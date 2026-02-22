@@ -1,0 +1,107 @@
+version: '3.8'
+
+services:
+  # API Gateway
+  gateway:
+    build: ./gateway
+    container_name: api-gateway
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - gateway/.env
+    environment:
+      - LOG_LEVEL=INFO
+    networks:
+      - web-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # FinancialDashboard 服务（独立 GitHub 项目）
+  financial-dashboard:
+    build:
+      context: https://github.com/user/FinancialDashboard.git#main
+      dockerfile: Dockerfile
+    container_name: financial-dashboard
+    restart: unless-stopped
+    ports:
+      - "8091:8091"
+    volumes:
+      - /data/financial-dashboard:/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    networks:
+      - web-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8091/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # xwlb-analyze 服务（独立 GitHub 项目）
+  xwlb-analyze:
+    build:
+      context: https://github.com/user/xwlb-analyze.git#main
+      dockerfile: Dockerfile
+    container_name: xwlb-analyze
+    restart: unless-stopped
+    ports:
+      - "8092:8092"
+    volumes:
+      - /data/xwlb-analyze:/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    networks:
+      - web-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8092/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # douying-collect 服务（独立 GitHub 项目）
+  douying-collect:
+    build:
+      context: https://github.com/user/douying-collect.git#main
+      dockerfile: Dockerfile
+    container_name: douying-collect
+    restart: unless-stopped
+    ports:
+      - "8093:8093"
+    volumes:
+      - /data/douying-collect:/data
+    environment:
+      - PYTHONUNBUFFERED=1
+      - LOG_LEVEL=INFO
+    networks:
+      - web-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Next.js 统一前端
+  frontend:
+    build: ./frontend
+    container_name: personal-web-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=http://gateway:8080
+    depends_on:
+      gateway:
+        condition: service_healthy
+    networks:
+      - web-network
+
+networks:
+  web-network:
+    driver: bridge
