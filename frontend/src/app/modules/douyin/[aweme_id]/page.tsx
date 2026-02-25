@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+
 interface VideoDetail {
   aweme_id: string;
   success: boolean;
@@ -42,7 +44,7 @@ export default function VideoDetailPage() {
 
       try {
         const response = await fetch(
-          `http://localhost:8080/api/douyin/videos/${aweme_id}`
+          `${API_BASE_URL}/api/douyin/videos/${aweme_id}`
         );
 
         if (!response.ok) {

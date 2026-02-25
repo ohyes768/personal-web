@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+
 interface VideoItem {
   aweme_id: string;
   success: boolean;
@@ -51,8 +53,8 @@ export default function DouyinPage() {
 
     try {
       const apiUrl = keyword
-        ? `http://localhost:8080/api/douyin/search?keyword=${encodeURIComponent(keyword)}&page=${page}&page_size=${pageSize}`
-        : `http://localhost:8080/api/douyin/videos?page=${page}&page_size=${pageSize}`;
+        ? `${API_BASE_URL}/api/douyin/search?keyword=${encodeURIComponent(keyword)}&page=${page}&page_size=${pageSize}`
+        : `${API_BASE_URL}/api/douyin/videos?page=${page}&page_size=${pageSize}`;
 
       const response = await fetch(apiUrl);
 
@@ -78,7 +80,7 @@ export default function DouyinPage() {
     setCollectMessage("正在启动采集任务...");
 
     try {
-      const response = await fetch("http://localhost:8080/api/douyin/collect", {
+      const response = await fetch(`${API_BASE_URL}/api/douyin/collect`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -106,7 +108,7 @@ export default function DouyinPage() {
       const pollInterval = setInterval(async () => {
         try {
           const statusResponse = await fetch(
-            "http://localhost:8080/api/douyin/collect/status"
+            `${API_BASE_URL}/api/douyin/collect/status`
           );
           const statusData = await statusResponse.json();
 
