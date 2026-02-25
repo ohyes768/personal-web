@@ -25,7 +25,6 @@ env/
 logs/
 
 # Environment
-.env
 .env.local
 
 # Git
