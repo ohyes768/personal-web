@@ -59,8 +59,8 @@ echo "   主网卡 IP: $SERVER_IP"
 log_info "配置 Frontend 环境变量..."
 if [ -f "docker-compose.yml" ]; then
     # 更新 NEXT_PUBLIC_API_BASE_URL
-    sed -i "s|NEXT_PUBLIC_API_BASE_URL=http://.*:8080|NEXT_PUBLIC_API_BASE_URL=http://$SERVER_IP:8080|g" docker-compose.yml
-    log_info "已配置 NEXT_PUBLIC_API_BASE_URL=http://$SERVER_IP:8080"
+    sed -i "s|NEXT_PUBLIC_API_BASE_URL=http://.*:8070|NEXT_PUBLIC_API_BASE_URL=http://$SERVER_IP:8070|g" docker-compose.yml
+    log_info "已配置 NEXT_PUBLIC_API_BASE_URL=http://$SERVER_IP:8070"
 fi
 
 # 5. 更新 CORS 配置
@@ -71,9 +71,9 @@ fi
 
 # 6. 检查端口占用
 log_info "检查端口占用..."
-if netstat -tulpn 2>/dev/null | grep -q ":8080 "; then
+if netstat -tulpn 2>/dev/null | grep -q ":8070 "; then
     log_warn "端口 8080 已被占用"
-    NETSTAT_PID=$(netstat -tulpn 2>/dev/null | grep ":8080 " | awk '{print $7}' | cut -d'/' -f1)
+    NETSTAT_PID=$(netstat -tulpn 2>/dev/null | grep ":8070 " | awk '{print $7}' | cut -d'/' -f1)
     echo "   占用进程 PID: $NETSTAT_PID"
     
     if [ -n "$NETSTAT_PID" ] && [ "$NETSTAT_PID" != "-" ]; then
@@ -115,7 +115,7 @@ sleep 20
 log_info "检查服务健康状态..."
 
 # 检查 Gateway
-if curl -f -s http://localhost:8080/api/health > /dev/null 2>&1; then
+if curl -f -s http://localhost:8070/api/health > /dev/null 2>&1; then
     log_info "✓ Gateway 服务正常"
 else
     log_warn "✗ Gateway 服务未响应，请检查日志"
@@ -148,9 +148,9 @@ echo -e "${GREEN}=========================================${NC}"
 echo ""
 echo -e "${GREEN}服务访问地址:${NC}"
 echo -e "  - Frontend:      ${BLUE}http://$SERVER_IP:3000${NC}"
-echo -e "  - Gateway:       ${BLUE}http://$SERVER_IP:8080${NC}"
-echo -e "  - API 文档:      ${BLUE}http://$SERVER_IP:8080/docs${NC}"
-echo -e "  - 抖音视频 API:  ${BLUE}http://$SERVER_IP:8080/api/douyin/videos${NC}"
+echo -e "  - Gateway:       ${BLUE}http://$SERVER_IP:8070${NC}"
+echo -e "  - API 文档:      ${BLUE}http://$SERVER_IP:8070/docs${NC}"
+echo -e "  - 抖音视频 API:  ${BLUE}http://$SERVER_IP:8070/api/douyin/videos${NC}"
 echo ""
 echo -e "${YELLOW}已部署的服务:${NC}"
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "NAMES|douying|gateway|frontend"
