@@ -24,7 +24,9 @@ COPY . .
 # 确保 public 目录存在
 RUN mkdir -p public
 
-# 构建 Next.js 应用
+# 构建 Next.js 应用（传入 API 地址）
+ARG NEXT_PUBLIC_API_BASE_URL
+ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
 RUN pnpm build || npm run build
 
 # 生产阶段
