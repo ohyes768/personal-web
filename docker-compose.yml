@@ -4,13 +4,13 @@ services:
     build: 
       context: ./gateway
       dockerfile: Dockerfile
-    container_name: personal-web-gateway  # 修改容器名，避免冲突
+    container_name: personal-web-gateway
     restart: unless-stopped
-    network_mode: host  # 使用宿主机网络
+    network_mode: host
     environment:
       - LOG_LEVEL=INFO
       - HOST=0.0.0.0
-      - PORT=8070  # 修改为 8070 端口
+      - PORT=8070
     env_file:
       - gateway/.env
     healthcheck:
@@ -20,7 +20,7 @@ services:
       retries: 3
       start_period: 10s
 
-  # Next.js 前端 (使用 bridge 网络)
+  # Next.js 前端
   frontend:
     build:
       context: ./frontend
@@ -33,6 +33,8 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_BASE_URL=http://172.18.133.13:8070
       - PORT=3000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - web-network
     healthcheck:
@@ -45,5 +47,3 @@ services:
 networks:
   web-network:
     driver: bridge
-
-# douying-collect 已在宿主机运行，使用 host 网络模式的 gateway 可以直接访问
