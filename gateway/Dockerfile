@@ -20,8 +20,9 @@ RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 复制应用代码
+# 复制应用代码和配置文件
 COPY app ./app
+COPY .env .env
 
 # 暴露端口
 EXPOSE 8070
