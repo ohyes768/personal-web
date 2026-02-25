@@ -25,9 +25,9 @@ COPY . .
 RUN mkdir -p public
 
 # 构建 Next.js 应用（传入 API 地址）
-ARG NEXT_PUBLIC_API_BASE_URL
+ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
-RUN pnpm build || npm run build
+RUN echo "API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL" && pnpm build || npm run build
 
 # 生产阶段
 FROM node:20-alpine AS runner
