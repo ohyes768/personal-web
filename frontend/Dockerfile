@@ -21,6 +21,9 @@ RUN pnpm install --frozen-lockfile || npm install
 # 复制源代码
 COPY . .
 
+# 确保 public 目录存在
+RUN mkdir -p public
+
 # 构建 Next.js 应用
 RUN pnpm build || npm run build
 
@@ -41,9 +44,9 @@ COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml* ./
 
-# 复制 public 目录（如果存在则复制，不存在则创建空目录）
+# 创建并复制 public 目录
 RUN mkdir -p ./public
-COPY --from=builder /app/public ./public || true
+COPY --from=builder /app/public/ ./public/
 
 # 复制 .next 目录
 RUN mkdir -p .next
