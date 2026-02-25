@@ -1,9 +1,9 @@
-version: '3.8'
-
 services:
   # API Gateway
   gateway:
-    build: ./gateway
+    build: 
+      context: ./gateway
+      dockerfile: Dockerfile
     container_name: api-gateway
     restart: unless-stopped
     ports:
@@ -12,6 +12,8 @@ services:
       - gateway/.env
     environment:
       - LOG_LEVEL=INFO
+      - HOST=0.0.0.0
+      - PORT=8080
     networks:
       - web-network
     healthcheck:
@@ -19,62 +21,21 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 10s
 
-  # FinancialDashboard 服务（独立 GitHub 项目）
-  financial-dashboard:
-    build:
-      context: https://github.com/user/FinancialDashboard.git#main
-      dockerfile: Dockerfile
-    container_name: financial-dashboard
-    restart: unless-stopped
-    ports:
-      - "8091:8091"
-    volumes:
-      - /data/financial-dashboard:/data
-    environment:
-      - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
-    networks:
-      - web-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8091/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # xwlb-analyze 服务（独立 GitHub 项目）
-  xwlb-analyze:
-    build:
-      context: https://github.com/user/xwlb-analyze.git#main
-      dockerfile: Dockerfile
-    container_name: xwlb-analyze
-    restart: unless-stopped
-    ports:
-      - "8092:8092"
-    volumes:
-      - /data/xwlb-analyze:/data
-    environment:
-      - PYTHONUNBUFFERED=1
-      - LOG_LEVEL=INFO
-    networks:
-      - web-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8092/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  # douying-collect 服务（独立 GitHub 项目）
+  # douying-collect 服务
   douying-collect:
     build:
-      context: https://github.com/user/douying-collect.git#main
+      context: ../douying-collect
       dockerfile: Dockerfile
     container_name: douying-collect
     restart: unless-stopped
     ports:
       - "8093:8093"
     volumes:
-      - /data/douying-collect:/data
+      - douying-data:/app/output
+      - douying-cache:/app/.cache
+      - douying-logs:/app/logs
     environment:
       - PYTHONUNBUFFERED=1
       - LOG_LEVEL=INFO
@@ -85,10 +46,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
 
-  # Next.js 统一前端
+  # Next.js 前端
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: personal-web-frontend
     restart: unless-stopped
     ports:
@@ -96,12 +60,29 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_BASE_URL=http://gateway:8080
+      - PORT=3000
     depends_on:
       gateway:
         condition: service_healthy
+      douying-collect:
+        condition: service_healthy
     networks:
       - web-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
 networks:
   web-network:
     driver: bridge
+
+volumes:
+  douying-data:
+    driver: local
+  douying-cache:
+    driver: local
+  douying-logs:
+    driver: local
