@@ -1,23 +1,18 @@
 services:
-  # API Gateway
+  # API Gateway (使用 host 网络模式)
   gateway:
     build: 
       context: ./gateway
       dockerfile: Dockerfile
     container_name: api-gateway
     restart: unless-stopped
-    ports:
-      - "8080:8080"
-    env_file:
-      - gateway/.env
+    network_mode: host  # 使用宿主机网络
     environment:
       - LOG_LEVEL=INFO
       - HOST=0.0.0.0
       - PORT=8080
-    extra_hosts:
-      - "douying-collect:host-gateway"  # 允许访问宿主机上的服务
-    networks:
-      - web-network
+    env_file:
+      - gateway/.env
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
@@ -25,7 +20,7 @@ services:
       retries: 3
       start_period: 10s
 
-  # Next.js 前端
+  # Next.js 前端 (使用 bridge 网络)
   frontend:
     build:
       context: ./frontend
@@ -36,11 +31,8 @@ services:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_BASE_URL=http://gateway:8080
+      - NEXT_PUBLIC_API_BASE_URL=http://172.18.133.13:8080
       - PORT=3000
-    depends_on:
-      gateway:
-        condition: service_healthy
     networks:
       - web-network
     healthcheck:
@@ -54,4 +46,4 @@ networks:
   web-network:
     driver: bridge
 
-# 不再定义 douying-collect 服务和数据卷，使用已存在的
+# douying-collect 已在宿主机运行，使用 host 网络模式的 gateway 可以直接访问
