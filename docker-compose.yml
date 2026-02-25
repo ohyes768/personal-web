@@ -4,7 +4,7 @@ services:
     build: 
       context: ./gateway
       dockerfile: Dockerfile
-    container_name: api-gateway
+    container_name: personal-web-gateway  # 修改容器名，避免冲突
     restart: unless-stopped
     network_mode: host  # 使用宿主机网络
     environment:

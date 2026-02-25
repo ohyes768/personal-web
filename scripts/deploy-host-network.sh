@@ -91,10 +91,10 @@ if netstat -tulpn 2>/dev/null | grep -q ":8070 "; then
 fi
 
 # 7. 停止旧容器（如果存在）
-if docker ps -a | grep -q api-gateway; then
+if docker ps -a | grep -q personal-web-gateway; then
     log_info "停止旧的 Gateway 容器..."
-    docker stop api-gateway 2>/dev/null || true
-    docker rm api-gateway 2>/dev/null || true
+    docker stop personal-web-gateway 2>/dev/null || true
+    docker rm personal-web-gateway 2>/dev/null || true
 fi
 
 if docker ps -a | grep -q personal-web-frontend; then
@@ -119,7 +119,7 @@ if curl -f -s http://localhost:8070/api/health > /dev/null 2>&1; then
     log_info "✓ Gateway 服务正常"
 else
     log_warn "✗ Gateway 服务未响应，请检查日志"
-    echo "   查看日志: docker logs api-gateway"
+    echo "   查看日志: docker logs personal-web-gateway"
 fi
 
 # 检查 Frontend
@@ -135,7 +135,7 @@ log_info "测试完整链路..."
 log_info "Frontend → Gateway → douying-collect"
 
 # 测试 Gateway → douying-collect
-if docker exec api-gateway curl -f -s http://localhost:8093/api/health > /dev/null 2>&1; then
+if docker exec personal-web-gateway curl -f -s http://localhost:8093/api/health > /dev/null 2>&1; then
     log_info "✓ Gateway 可以访问 douying-collect"
 else
     log_warn "✗ Gateway 无法访问 douying-collect"
@@ -156,9 +156,9 @@ echo -e "${YELLOW}已部署的服务:${NC}"
 docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep -E "NAMES|douying|gateway|frontend"
 echo ""
 echo -e "${YELLOW}常用命令:${NC}"
-echo -e "  查看 Gateway 日志:    ${BLUE}docker logs api-gateway -f${NC}"
+echo -e "  查看 Gateway 日志:    ${BLUE}docker logs personal-web-gateway -f${NC}"
 echo -e "  查看 Frontend 日志:   ${BLUE}docker logs personal-web-frontend -f${NC}"
-echo -e "  重启 Gateway:         ${BLUE}docker restart api-gateway${NC}"
+echo -e "  重启 Gateway:         ${BLUE}docker restart personal-web-gateway${NC}"
 echo -e "  停止服务:             ${BLUE}docker compose -f docker-compose.yml down${NC}"
 echo ""
 echo -e "${YELLOW}网络模式:${NC}"
