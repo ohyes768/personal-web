@@ -23,11 +23,9 @@ services:
       retries: 3
       start_period: 10s
 
-  # douying-collect 服务
+  # douying-collect 服务（使用已有镜像）
   douying-collect:
-    build:
-      context: ../douying-collect
-      dockerfile: Dockerfile
+    image: douying-collect:latest  # 使用已有镜像，不重新构建
     container_name: douying-collect
     restart: unless-stopped
     ports:
@@ -64,8 +62,6 @@ services:
     depends_on:
       gateway:
         condition: service_healthy
-      douying-collect:
-        condition: service_healthy
     networks:
       - web-network
     healthcheck:
@@ -78,6 +74,8 @@ services:
 networks:
   web-network:
     driver: bridge
+    # 如果 douying-collect 已在其他网络，可以设置为外部网络
+    # external: true
 
 volumes:
   douying-data:
