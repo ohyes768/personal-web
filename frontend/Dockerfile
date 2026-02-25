@@ -1,15 +1,21 @@
-# 构建阶段
+# 构建阶段 - 使用国内镜像源
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
+# 使用阿里云 npm 镜像
+RUN npm config set registry https://registry.npmmirror.com
+
 # 安装 pnpm
 RUN npm install -g pnpm
+
+# 配置 pnpm 使用阿里云镜像
+RUN pnpm config set registry https://registry.npmmirror.com
 
 # 复制依赖文件
 COPY package.json pnpm-lock.yaml* package-lock.json* ./
 
-# 安装依赖
+# 安装依赖（使用国内镜像）
 RUN pnpm install --frozen-lockfile || npm install
 
 # 复制源代码
@@ -41,8 +47,8 @@ COPY --from=builder /app/public ./public || true
 
 # 复制 .next 目录
 RUN mkdir -p .next
-COPY --from=builder --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 # 设置环境变量
 ENV NODE_ENV=production
