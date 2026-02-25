@@ -40,7 +40,3 @@ tests/
 # Docs
 README.md
 docs/
-
-# Docker
-Dockerfile
-.dockerignore
