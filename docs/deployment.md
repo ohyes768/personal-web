@@ -2,6 +2,13 @@
 
 本文档介绍如何使用 Docker Compose 将 personal-web 项目部署到阿里云 ECS。
 
+## Git Submodule 说明
+
+本项目包含 **douyin-processor** 作为 Git Submodule：
+- **子模块路径**: `backend/douyin-processor`
+- **子模块仓库**: https://github.com/ohyes768/douyin-processor.git
+- **克隆要求**: 必须使用 `--recurse-submodules` 参数
+
 ## 前置要求
 
 ### 1. 服务器要求
@@ -41,9 +48,12 @@ docker-compose --version
 将项目代码上传到服务器，推荐使用 Git：
 
 ```bash
-# 克隆项目（假设你有自己的 Git 仓库）
-git clone <your-repo-url> /opt/personal-web
+# 克隆项目（包含子模块）
+git clone --recurse-submodules <your-repo-url> /opt/personal-web
 cd /opt/personal-web
+
+# 如果已经克隆但忘记添加 --recurse-submodules，运行以下命令：
+# git submodule update --init --recursive
 
 # 或者使用 scp 上传代码
 # scp -r ./personal-web root@your-ecs-ip:/opt/
