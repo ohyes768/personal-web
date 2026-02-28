@@ -12,18 +12,21 @@ router = APIRouter()
 async def get_videos(
     request: Request,
     page: int = Query(1, description="页码"),
-    page_size: int = Query(20, description="每页数量")
+    page_size: int = Query(20, description="每页数量"),
+    status: str = Query(None, description="状态筛选")
 ):
-    """转发到 douying-collect 服务 - 获取视频列表"""
-    target_url = f"{settings.DOUYIN_SERVICE_URL}/api/douyin/videos"
+    """转发到 douyin-processor 服务 - 获取已处理视频列表"""
+    target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/videos"
     params = {"page": page, "page_size": page_size}
+    if status:
+        params["status"] = status
     return await proxy_request("GET", target_url, params=params, headers=dict(request.headers))
 
 
 @router.get("/videos/{video_id}")
 async def get_video_detail(request: Request, video_id: str):
-    """转发到 douying-collect 服务 - 获取视频详情"""
-    target_url = f"{settings.DOUYIN_SERVICE_URL}/api/douyin/videos/{video_id}"
+    """转发到 douyin-processor 服务 - 获取视频详情"""
+    target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/videos/{video_id}"
     return await proxy_request("GET", target_url, headers=dict(request.headers))
 
 
@@ -51,4 +54,25 @@ async def start_collection(request: Request):
 async def get_collection_status(request: Request):
     """转发到 douying-collect 服务 - 获取采集状态"""
     target_url = f"{settings.DOUYIN_SERVICE_URL}/api/douyin/collect/status"
+    return await proxy_request("GET", target_url, headers=dict(request.headers))
+
+
+@router.post("/process")
+async def process_videos(request: Request):
+    """转发到 douyin-processor 服务 - 触发视频处理（同步，等待完成）"""
+    target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/process"
+    return await proxy_request("POST", target_url, headers=dict(request.headers))
+
+
+@router.get("/stats")
+async def get_stats(request: Request):
+    """转发到 douyin-processor 服务 - 获取统计信息"""
+    target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/stats"
+    return await proxy_request("GET", target_url, headers=dict(request.headers))
+
+
+@router.get("/videos/{video_id}/result")
+async def get_video_result(request: Request, video_id: str):
+    """转发到 douyin-processor 服务 - 获取处理结果"""
+    target_url = f"{settings.DOUYIN_SERVICE_URL}/api/videos/{video_id}/result"
     return await proxy_request("GET", target_url, headers=dict(request.headers))

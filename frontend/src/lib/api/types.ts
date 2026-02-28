@@ -39,16 +39,27 @@ export interface SentimentDistribution {
 // 抖音视频类型
 export interface VideoInfo {
   aweme_id: string;
+  status: string;
   title: string;
   author: string;
-  create_time: number;
-  video_url: string;
-  share_url: string;
-  transcript?: {
+  description?: string;
+  audio_url: string;
+  transcript?: TranscriptInfo;
+  processed_at?: number;
+  upload_time?: string;
+  error?: string;
+}
+
+export interface TranscriptInfo {
+  text: string;
+  segments?: Array<{
+    start_time: number;
+    end_time: number;
     text: string;
-    audio_duration: number;
     confidence: number;
-  };
+  }>;
+  confidence: number;
+  audio_duration: number;
 }
 
 export interface VideoListResponse {

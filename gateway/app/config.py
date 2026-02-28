@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     FINANCIAL_SERVICE_URL: str = "http://localhost:8091"
     NEWS_SERVICE_URL: str = "http://localhost:8092"
     DOUYIN_SERVICE_URL: str = "http://localhost:8093"
+    DOUYIN_PROCESSOR_URL: str = "http://localhost:8093"
 
     # Gateway 配置
     APP_NAME: str = "个人资讯 API Gateway"

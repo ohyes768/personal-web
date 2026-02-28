@@ -8,25 +8,25 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
 
 interface VideoDetail {
   aweme_id: string;
-  success: boolean;
-  error_message: string;
-  info?: {
-    title: string;
-    author: string;
-    create_time: string;
-    share_url: string;
-  };
+  status: string;
+  title: string;
+  author: string;
+  description: string;
+  audio_url: string;
   transcript?: {
-    formatted_text: string;
     text: string;
-    audio_duration: number;
+    segments?: Array<{
+      start_time: number;
+      end_time: number;
+      text: string;
+      confidence: number;
+    }>;
     confidence: number;
+    audio_duration: number;
   };
-}
-
-interface VideoDetailResponse {
-  video: VideoDetail;
-  exists: boolean;
+  processed_at?: number;
+  upload_time?: string;
+  error?: string;
 }
 
 export default function VideoDetailPage() {
@@ -51,13 +51,8 @@ export default function VideoDetailPage() {
           throw new Error(`HTTP error! status: ${response.status}`);
         }
 
-        const data: VideoDetailResponse = await response.json();
-
-        if (!data.exists) {
-          throw new Error("视频不存在");
-        }
-
-        setVideo(data.video);
+        const data: VideoDetail = await response.json();
+        setVideo(data);
       } catch (err) {
         setError(err instanceof Error ? err.message : "获取视频详情失败");
         console.error("Error fetching video detail:", err);
@@ -71,9 +66,46 @@ export default function VideoDetailPage() {
     }
   }, [aweme_id]);
 
-  const formatCreateTime = (timestamp: number) => {
+  const formatTime = (timestamp: number | string) => {
     if (!timestamp) return "未知";
-    return new Date(timestamp * 1000).toLocaleString("zh-CN");
+    if (typeof timestamp === 'number') {
+      return new Date(timestamp * 1000).toLocaleString("zh-CN");
+    }
+    return new Date(timestamp).toLocaleString("zh-CN");
+  };
+
+  // 根据状态显示不同的标签
+  const renderStatusBadge = () => {
+    if (!video) return null;
+
+    switch (video.status) {
+      case "completed":
+        return (
+          <span className="px-3 py-1 bg-green-900/50 text-green-300 text-sm rounded-full whitespace-nowrap">
+            已识别
+          </span>
+        );
+      case "processing":
+        return (
+          <span className="px-3 py-1 bg-yellow-900/50 text-yellow-300 text-sm rounded-full whitespace-nowrap">
+            识别中
+          </span>
+        );
+      case "failed":
+        return (
+          <span className="px-3 py-1 bg-red-900/50 text-red-300 text-sm rounded-full whitespace-nowrap">
+            识别失败
+          </span>
+        );
+      case "pending":
+        return (
+          <span className="px-3 py-1 bg-gray-700/50 text-gray-300 text-sm rounded-full whitespace-nowrap">
+            待处理
+          </span>
+        );
+      default:
+        return null;
+    }
   };
 
   if (loading) {
@@ -107,48 +139,81 @@ export default function VideoDetailPage() {
     );
   }
 
-  // 解析格式化文本，提取纯段落内容
-  const parseFormattedText = (text: string): string[] => {
-    if (!text) return [];
+  // 如果处理失败，显示错误信息
+  if (video.status === "failed") {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="max-w-4xl mx-auto p-8">
+          <Link
+            href="/modules/douyin"
+            className="text-gray-400 hover:text-white transition-colors inline-block mb-8"
+          >
+            ← 返回列表
+          </Link>
 
-    const lines = text.split('\n');
-    const paragraphs: string[] = [];
-    let currentParagraph = '';
+          <div className="mb-6">
+            <h1 className="text-4xl font-bold mb-6 leading-tight">
+              {video.title || "未知标题"}
+            </h1>
+            {renderStatusBadge()}
+          </div>
 
-    for (const line of lines) {
-      // 跳过分隔线
-      if (line.includes('====')) continue;
+          <div className="p-6 bg-red-900/50 border border-red-700 rounded-lg">
+            <p className="text-red-300">识别失败: {video.error || "未知错误"}</p>
+          </div>
 
-      // 跳过时间范围和段落编号标记
-      if (line.match(/^\[\d{2}:\d{2}-\d{2}:\d{2}\]/)) continue;
-      if (line.match(/^第\s*\d+\s*段$/)) continue;
+          <div className="mt-8">
+            <Link
+              href="/modules/douyin"
+              className="px-6 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+            >
+              返回列表
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
-      // 如果是空行且当前段落有内容，保存段落
-      if (line.trim() === '') {
-        if (currentParagraph.trim()) {
-          paragraphs.push(currentParagraph.trim());
-          currentParagraph = '';
-        }
-        continue;
-      }
+  // 如果待处理，显示提示
+  if (video.status === "pending" || video.status === "processing") {
+    return (
+      <main className="min-h-screen bg-black text-white">
+        <div className="max-w-4xl mx-auto p-8">
+          <Link
+            href="/modules/douyin"
+            className="text-gray-400 hover:text-white transition-colors inline-block mb-8"
+          >
+            ← 返回列表
+          </Link>
 
-      // 累积行内容
-      currentParagraph += (currentParagraph ? ' ' : '') + line.trim();
-    }
+          <div className="mb-6">
+            <h1 className="text-4xl font-bold mb-6 leading-tight">
+              {video.title || "未知标题"}
+            </h1>
+            {renderStatusBadge()}
+          </div>
 
-    // 保存最后一个段落
-    if (currentParagraph.trim()) {
-      paragraphs.push(currentParagraph.trim());
-    }
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 p-6 bg-gray-900 rounded-lg">
+            <div>
+              <p className="text-gray-400 text-sm mb-1">作者</p>
+              <p className="text-lg">{video.author || "未知"}</p>
+            </div>
+            <div>
+              <p className="text-gray-400 text-sm mb-1">上传时间</p>
+              <p className="text-lg">{formatTime(video.upload_time)}</p>
+            </div>
+          </div>
 
-    return paragraphs;
-  };
-
-  // 获取标题和作者
-  const title = video.info?.title || "";
-  const author = video.info?.author || "";
-  const createTime = video.info?.create_time || "";
-  const shareUrl = video.info?.share_url || "";
+          <div className="p-6 bg-blue-900/50 border border-blue-700 rounded-lg">
+            <p className="text-blue-200">
+              {video.status === "processing" ? "视频正在识别中，请稍后再来查看" : "视频尚未处理，请在列表页点击\"处理待处理\"按钮"}
+            </p>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-black text-white">
@@ -163,18 +228,18 @@ export default function VideoDetailPage() {
 
         {/* 视频标题 */}
         <h1 className="text-4xl font-bold mb-6 leading-tight">
-          {title}
+          {video.title || "未知标题"}
         </h1>
 
         {/* 视频信息 */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8 p-6 bg-gray-900 rounded-lg">
           <div>
             <p className="text-gray-400 text-sm mb-1">作者</p>
-            <p className="text-lg">{author}</p>
+            <p className="text-lg">{video.author || "未知"}</p>
           </div>
           <div>
-            <p className="text-gray-400 text-sm mb-1">创建时间</p>
-            <p className="text-lg">{createTime}</p>
+            <p className="text-gray-400 text-sm mb-1">上传时间</p>
+            <p className="text-lg">{formatTime(video.upload_time)}</p>
           </div>
           {video.transcript && (
             <>
@@ -194,19 +259,44 @@ export default function VideoDetailPage() {
           )}
         </div>
 
+        {/* 描述 */}
+        {video.description && video.description !== video.title && (
+          <div className="bg-gray-900 rounded-lg p-6 mb-8">
+            <p className="text-gray-400 text-sm mb-2">视频描述</p>
+            <p className="text-gray-200">{video.description}</p>
+          </div>
+        )}
+
         {/* 文字稿内容 */}
         {video.transcript ? (
           <div className="bg-gray-900 rounded-lg p-8 mb-8">
             <h2 className="text-2xl font-bold mb-6">识别文字稿</h2>
 
-            {/* 识别内容 - 按段落显示 */}
+            {/* 完整文本 */}
             <div className="space-y-4">
-              {parseFormattedText(video.transcript.formatted_text || video.transcript.text).map((paragraph, index) => (
-                <p key={index} className="text-gray-200 leading-loose text-base">
-                  {paragraph}
-                </p>
-              ))}
+              <p className="text-gray-200 leading-loose text-base whitespace-pre-wrap">
+                {video.transcript.text}
+              </p>
             </div>
+
+            {/* 分段信息（如果有） */}
+            {video.transcript.segments && video.transcript.segments.length > 0 && (
+              <div className="mt-8 pt-8 border-t border-gray-800">
+                <h3 className="text-xl font-bold mb-4">分段详情</h3>
+                <div className="space-y-3">
+                  {video.transcript.segments.map((segment, index) => (
+                    <div key={index} className="flex gap-4 text-sm">
+                      <span className="text-gray-500 whitespace-nowrap">
+                        [{formatTime(segment.start_time)} - {formatTime(segment.end_time)}]
+                      </span>
+                      <span className="text-gray-300 flex-1">
+                        {segment.text}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="bg-gray-900 rounded-lg p-8 mb-8">
@@ -216,16 +306,6 @@ export default function VideoDetailPage() {
 
         {/* 操作按钮 */}
         <div className="flex gap-4">
-          {shareUrl && (
-            <a
-              href={shareUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-            >
-              在抖音中打开
-            </a>
-          )}
           <Link
             href="/modules/douyin"
             className="px-6 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"

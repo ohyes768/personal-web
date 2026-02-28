@@ -7,41 +7,68 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8
 
 interface VideoItem {
   aweme_id: string;
-  success: boolean;
-  error_message?: string;
-  info?: {
-    title: string;
-    author: string;
-    create_time: string;
-    share_url: string;
-  };
+  status: string;
+  title: string;
+  author: string;
+  description?: string;
+  audio_url: string;
   transcript?: {
-    formatted_text?: string;
-    text?: string;
-    audio_duration: number;
+    text: string;
+    segments?: Array<{
+      start_time: number;
+      end_time: number;
+      text: string;
+      confidence: number;
+    }>;
     confidence: number;
+    audio_duration: number;
   };
+  processed_at?: number;
+  upload_time?: string;
+  error?: string;
 }
 
 interface VideoListResponse {
-  total: number;
+  total_count: number;
+  videos: VideoItem[];
   page: number;
   page_size: number;
-  videos: VideoItem[];
+}
+
+interface StatsResponse {
+  total: number;
+  completed: number;
+  processing: number;
+  failed: number;
+  pending: number;
+  success_rate: number;
 }
 
 export default function DouyinPage() {
   const [videos, setVideos] = useState<VideoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [collecting, setCollecting] = useState(false);
-  const [collectMessage, setCollectMessage] = useState<string>("");
+  const [processing, setProcessing] = useState(false);
+  const [processMessage, setProcessMessage] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const [searchKeyword, setSearchKeyword] = useState("");
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const pageSize = 20;
+
+  const fetchStats = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/douyin/stats`);
+      if (response.ok) {
+        const data: StatsResponse = await response.json();
+        setPendingCount(data.pending || 0);
+      }
+    } catch (err) {
+      console.error("Error fetching stats:", err);
+    }
+  };
 
   const fetchVideos = async (keyword?: string, isRefresh: boolean = false) => {
     if (isRefresh) {
@@ -64,7 +91,7 @@ export default function DouyinPage() {
 
       const data: VideoListResponse = await response.json();
       setVideos(data.videos || []);
-      setTotal(data.total || 0);
+      setTotal(data.total_count || 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : "获取数据失败");
       console.error("Error fetching videos:", err);
@@ -74,13 +101,12 @@ export default function DouyinPage() {
     }
   };
 
-  const handleRefresh = async () => {
-    // 触发采集
-    setCollecting(true);
-    setCollectMessage("正在启动采集任务...");
+  const handleProcess = async () => {
+    setProcessing(true);
+    setProcessMessage("正在启动处理任务...");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/douyin/collect`, {
+      const response = await fetch(`${API_BASE_URL}/api/douyin/process`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -93,67 +119,37 @@ export default function DouyinPage() {
 
       const data = await response.json();
 
-      if (!data.success) {
-        setCollectMessage(data.message || "采集任务启动失败");
+      if (data.success) {
+        const { pending } = data.data || {};
+        setProcessMessage(`后台处理已启动，待处理 ${pending} 个视频`);
+
+        // 3 秒后刷新数据
         setTimeout(() => {
-          setCollecting(false);
-          setCollectMessage("");
+          setProcessing(false);
+          setProcessMessage("");
+          setPage(1);
+          fetchVideos(searchKeyword || undefined, true);
+          fetchStats();
         }, 3000);
-        return;
+      } else {
+        setProcessMessage(data.message || "处理任务启动失败");
+        setTimeout(() => {
+          setProcessing(false);
+          setProcessMessage("");
+        }, 3000);
       }
-
-      setCollectMessage("采集任务已启动，正在处理...");
-
-      // 轮询采集状态
-      const pollInterval = setInterval(async () => {
-        try {
-          const statusResponse = await fetch(
-            `${API_BASE_URL}/api/douyin/collect/status`
-          );
-          const statusData = await statusResponse.json();
-
-          if (!statusData.running) {
-            // 采集完成
-            clearInterval(pollInterval);
-            setCollectMessage(statusData.message || "采集完成");
-
-            setTimeout(() => {
-              setCollecting(false);
-              setCollectMessage("");
-              // 重新加载数据
-              setPage(1);
-              fetchVideos(searchKeyword || undefined, true);
-            }, 2000);
-          }
-        } catch (err) {
-          clearInterval(pollInterval);
-          setCollectMessage("获取采集状态失败");
-          setTimeout(() => {
-            setCollecting(false);
-            setCollectMessage("");
-          }, 3000);
-        }
-      }, 2000); // 每 2 秒查询一次状态
-
-      // 5 分钟后停止轮询（防止无限轮询）
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        if (collecting) {
-          setCollecting(false);
-          setCollectMessage("采集超时，请手动刷新");
-        }
-      }, 300000);
     } catch (err) {
-      setCollectMessage(err instanceof Error ? err.message : "启动采集失败");
+      setProcessMessage(err instanceof Error ? err.message : "启动处理失败");
       setTimeout(() => {
-        setCollecting(false);
-        setCollectMessage("");
+        setProcessing(false);
+        setProcessMessage("");
       }, 3000);
     }
   };
 
   useEffect(() => {
     fetchVideos(searchKeyword || undefined);
+    fetchStats();
   }, [page]);
 
   const handleSearch = () => {
@@ -181,13 +177,17 @@ export default function DouyinPage() {
             </div>
             <div className="text-right flex items-center gap-2">
               <button
-                onClick={handleRefresh}
-                disabled={refreshing || loading || collecting}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-lg transition-colors flex items-center gap-2"
-                title="获取所有收藏视频，最多采集10个并进行语音识别，可能需要较长时间"
+                onClick={handleProcess}
+                disabled={processing || loading || refreshing}
+                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
+                  pendingCount > 0
+                    ? "bg-orange-600 hover:bg-orange-700"
+                    : "bg-gray-700 hover:bg-gray-600"
+                } disabled:bg-gray-800 disabled:cursor-not-allowed`}
+                title={pendingCount > 0 ? `处理 ${pendingCount} 个待处理视频` : "没有待处理的视频"}
               >
                 <svg
-                  className={`w-5 h-5 ${collecting ? "animate-spin" : ""}`}
+                  className={`w-5 h-5 ${processing ? "animate-spin" : ""}`}
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -199,7 +199,7 @@ export default function DouyinPage() {
                     d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
                   />
                 </svg>
-                {collecting ? "采集中..." : "采集新数据"}
+                {processing ? "处理中..." : pendingCount > 0 ? `处理待处理 (${pendingCount})` : "处理待处理"}
               </button>
               <div className="group relative">
                 <svg
@@ -217,17 +217,17 @@ export default function DouyinPage() {
                 </svg>
                 <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-gray-800 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
                   <p className="text-gray-300 text-sm">
-                    获取所有收藏视频，最多采集10个并进行语音识别，可能需要较长时间
+                    点击处理所有待处理的音频文件，后台异步执行 ASR 识别
                   </p>
                 </div>
               </div>
             </div>
           </div>
 
-          {/* 采集状态提示 */}
-          {collectMessage && (
+          {/* 处理状态提示 */}
+          {processMessage && (
             <div className="mt-4 p-4 bg-blue-900/50 border border-blue-700 rounded-lg">
-              <p className="text-blue-200">{collectMessage}</p>
+              <p className="text-blue-200">{processMessage}</p>
             </div>
           )}
         </div>
@@ -254,9 +254,6 @@ export default function DouyinPage() {
         {error && (
           <div className="mb-8 p-4 bg-red-900/50 border border-red-700 rounded-lg">
             <p className="text-red-200">错误: {error}</p>
-            <p className="text-red-300 text-sm mt-2">
-              请确保后端服务已启动: python -m uvicorn api_server:app --port 8093
-            </p>
           </div>
         )}
 
@@ -280,21 +277,36 @@ export default function DouyinPage() {
                 >
                   <div className="flex justify-between items-start mb-3">
                     <h3 className="text-xl font-bold flex-1 pr-4">
-                      {video.info?.title || "未知标题"}
+                      {video.title || "未知标题"}
                     </h3>
-                    {video.transcript && (
+                    {video.status === "completed" && (
                       <span className="px-3 py-1 bg-green-900/50 text-green-300 text-sm rounded-full whitespace-nowrap">
                         已识别
+                      </span>
+                    )}
+                    {video.status === "processing" && (
+                      <span className="px-3 py-1 bg-yellow-900/50 text-yellow-300 text-sm rounded-full whitespace-nowrap">
+                        识别中
+                      </span>
+                    )}
+                    {video.status === "failed" && (
+                      <span className="px-3 py-1 bg-red-900/50 text-red-300 text-sm rounded-full whitespace-nowrap">
+                        识别失败
+                      </span>
+                    )}
+                    {video.status === "pending" && (
+                      <span className="px-3 py-1 bg-gray-700/50 text-gray-300 text-sm rounded-full whitespace-nowrap">
+                        待处理
                       </span>
                     )}
                   </div>
 
                   <p className="text-gray-400 mb-2">
-                    作者: {video.info?.author || "未知"}
+                    作者: {video.author || "未知"}
                   </p>
 
                   <p className="text-gray-600 text-sm">
-                    {video.info?.create_time || "未知时间"}
+                    {video.upload_time ? new Date(video.upload_time).toLocaleString() : "未知时间"}
                   </p>
                 </Link>
               ))}
