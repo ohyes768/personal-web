@@ -1,0 +1,3 @@
+[submodule "backend/douyin-processor"]
+	path = backend/douyin-processor
+	url = https://github.com/ohyes768/douyin-processor.git
