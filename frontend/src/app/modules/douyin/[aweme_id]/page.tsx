@@ -272,29 +272,26 @@ export default function VideoDetailPage() {
           <div className="bg-gray-900 rounded-lg p-8 mb-8">
             <h2 className="text-2xl font-bold mb-6">识别文字稿</h2>
 
-            {/* 完整文本 */}
-            <div className="space-y-4">
-              <p className="text-gray-200 leading-loose text-base whitespace-pre-wrap">
-                {video.transcript.text}
-              </p>
-            </div>
-
-            {/* 分段信息（如果有） */}
-            {video.transcript.segments && video.transcript.segments.length > 0 && (
-              <div className="mt-8 pt-8 border-t border-gray-800">
-                <h3 className="text-xl font-bold mb-4">分段详情</h3>
-                <div className="space-y-3">
-                  {video.transcript.segments.map((segment, index) => (
-                    <div key={index} className="flex gap-4 text-sm">
-                      <span className="text-gray-500 whitespace-nowrap">
-                        [{formatTime(segment.start_time)} - {formatTime(segment.end_time)}]
-                      </span>
-                      <span className="text-gray-300 flex-1">
-                        {segment.text}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+            {/* 分段信息（如果有分段） */}
+            {video.transcript.segments && video.transcript.segments.length > 0 ? (
+              <div className="space-y-3">
+                {video.transcript.segments.map((segment, index) => (
+                  <div key={index} className="flex gap-4 text-sm">
+                    <span className="text-gray-500 whitespace-nowrap">
+                      [{formatTime(segment.start_time)} - {formatTime(segment.end_time)}]
+                    </span>
+                    <span className="text-gray-300 flex-1">
+                      {segment.text}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              /* 没有分段时显示完整文本 */
+              <div className="space-y-4">
+                <p className="text-gray-200 leading-loose text-base whitespace-pre-wrap">
+                  {video.transcript.text}
+                </p>
               </div>
             )}
           </div>
