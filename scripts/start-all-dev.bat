@@ -1,98 +1,91 @@
 @echo off
 REM ============================================
-REM personal-web 本地开发环境 - 一键启动
-REM 启动 Gateway、Frontend、douyin-processor
+REM personal-web Local Development - Start All
+REM Gateway, Frontend, douyin-processor
 REM ============================================
 
 setlocal enabledelayedexpansion
 
-REM 颜色设置
-set GREEN=[92m
-set YELLOW=[93m
-set RED=[91m
-set BLUE=[94m
-set RESET=[0m
-
-echo %BLUE%========================================%RESET%
-echo %BLUE%  personal-web 本地开发环境启动%RESET%
-echo %BLUE%========================================%RESET%
+echo.
+echo ========================================
+echo   personal-web Dev Environment Start
+echo ========================================
 echo.
 
-REM 检查必要的环境
-echo %YELLOW%[1/5] 检查开发环境...%RESET%
+REM [1/5] Check environment
+echo [1/5] Checking development environment...
 
-where python >nul 2>nul
+where python >nul 2>&1
 if errorlevel 1 (
-    echo %RED%错误: 未找到 Python，请先安装 Python%RESET%
+    echo ERROR: Python not found
     pause
     exit /b 1
 )
 
-where node >nul 2>nul
-if errorlevel 2>nul (
-    echo %RED%错误: 未找到 Node.js，请先安装 Node.js%RESET%
+where node >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: Node.js not found
     pause
     exit /b 1
 )
 
-where uv >nul 2>nul
+where uv >nul 2>&1
 if errorlevel 1 (
-    echo %YELLOW%警告: 未找到 uv，尝试使用 pip...%RESET%
+    echo WARNING: uv not found, attempting to use pip...
     set USE_UV=0
 ) else (
     set USE_UV=1
 )
-echo %GREEN%✓ 环境检查完成%RESET%
+echo OK: Environment check passed
 echo.
 
-REM 1. 启动 douyin-processor
-echo %YELLOW%[2/5] 启动 douyin-processor...%RESET%
+REM [2/5] Start douyin-processor
+echo [2/5] Starting douyin-processor...
 cd /d "%~dp0..\backend\douyin-processor"
 
-REM 检查 .env 文件
+REM Check .env file
 if not exist ".env" (
-    echo %YELLOW%创建 .env 文件...%RESET%
+    echo Creating .env file...
     copy .env.example .env >nul
-    echo %YELLOW%警告: 请配置 backend\douyin-processor\.env 中的 ALIYUN_ACCESS_KEY%RESET%
+    echo WARNING: Please configure ALIYUN_ACCESS_KEY in backend\douyin-processor\.env
 )
 
-REM 检查虚拟环境
+REM Check virtual environment
 if not exist ".venv" (
-    echo %YELLOW%创建虚拟环境...%RESET%
+    echo Creating virtual environment...
     if "!USE_UV!"=="1" (
         uv venv .venv
         uv sync
     ) else (
-        echo %RED%错误: douyin-processor 需要 uv 包管理器%RESET%
-        echo %YELLOW%请安装: pip install uv%RESET%
+        echo ERROR: douyin-processor requires uv package manager
+        echo Please install: pip install uv
         pause
         exit /b 1
     )
 )
 
-REM 启动 douyin-processor（新窗口）
-echo %GREEN%✓ 启动 douyin-processor (端口 8093)%RESET%
+REM Start douyin-processor (new window)
+echo OK: Starting douyin-processor (port 8093)
 start "douyin-processor" cmd /k ".venv\Scripts\activate && python main.py"
 
 cd /d "%~dp0"
 timeout /t 2 /nobreak >nul
 
-REM 2. 启动 Gateway
-echo %YELLOW%[3/5] 启动 Gateway...%RESET%
+REM [3/5] Start Gateway
+echo [3/5] Starting Gateway...
 cd /d "%~dp0..\gateway"
 
-REM 检查虚拟环境
+REM Check virtual environment
 if not exist ".venv" (
-    echo %YELLOW%创建虚拟环境...%RESET%
+    echo Creating virtual environment...
     python -m venv .venv
     .venv\Scripts\pip install -r requirements.txt
 )
 
-REM 检查 .env 文件
+REM Check .env file
 if not exist ".env" (
-    echo %YELLOW%创建 .env 文件...%RESET%
+    echo Creating .env file...
     copy .env.example .env
-    REM 配置指向本地 douyin-processor
     echo DOUYIN_SERVICE_URL=http://localhost:8093 >> .env
     echo DOUYIN_PROCESSOR_URL=http://localhost:8093 >> .env
     echo HOST=0.0.0.0 >> .env
@@ -102,81 +95,81 @@ if not exist ".env" (
     echo CORS_ORIGINS=["http://localhost:3000"] >> .env
 )
 
-REM 启动 Gateway（新窗口）
-echo %GREEN%✓ 启动 Gateway (端口 8070)%RESET%
+REM Start Gateway (new window)
+echo OK: Starting Gateway (port 8070)
 start "Gateway" cmd /k ".venv\Scripts\activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8070"
 
 cd /d "%~dp0"
 timeout /t 2 /nobreak >nul
 
-REM 3. 启动 Frontend
-echo %YELLOW%[4/5] 启动 Frontend...%RESET%
+REM [4/5] Start Frontend
+echo [4/5] Starting Frontend...
 cd /d "%~dp0..\frontend"
 
-REM 检查 node_modules
+REM Check node_modules
 if not exist "node_modules" (
-    echo %YELLOW%安装前端依赖...%RESET%
+    echo Installing frontend dependencies...
     npm install
 )
 
-REM 检查 .env.local
+REM Check .env.local
 if not exist ".env.local" (
-    echo %YELLOW%创建 .env.local 文件...%RESET%
+    echo Creating .env.local file...
     echo NEXT_PUBLIC_API_BASE_URL=http://localhost:8070 > .env.local
 )
 
-REM 启动 Frontend（新窗口）
-echo %GREEN%✓ 启动 Frontend (端口 3000)%RESET%
+REM Start Frontend (new window)
+echo OK: Starting Frontend (port 3000)
 start "Frontend" cmd /k "npm run dev"
 
 cd /d "%~dp0"
 timeout /t 3 /nobreak >nul
 
-REM 4. 等待服务启动并检查
-echo %YELLOW%[5/5] 等待服务启动...%RESET%
+REM [5/5] Wait and check services
+echo [5/5] Waiting for services to start...
 echo.
 timeout /t 5 /nobreak >nul
 
-REM 检查服务状态
-echo %BLUE%========================================%RESET%
-echo %BLUE%  服务状态检查%RESET%
-echo %BLUE%========================================%RESET%
+REM Check service status
+echo ========================================
+echo   Service Status Check
+echo ========================================
 
-REM 检查 douyin-processor
-curl -s http://localhost:8093/health >nul 2>nul
+REM Check douyin-processor
+curl -s http://localhost:8093/health >nul 2>&1
 if errorlevel 1 (
-    echo %RED%✗ douyin-processor (8093) - 未响应%RESET%
+    echo X douyin-processor (8093) - Not responding
 ) else (
-    echo %GREEN%✓ douyin-processor (8093) - 运行正常%RESET%
+    echo OK douyin-processor (8093) - Running
 )
 
-REM 检查 Gateway
-curl -s http://localhost:8070/api/health >nul 2>nul
+REM Check Gateway
+curl -s http://localhost:8070/api/health >nul 2>&1
 if errorlevel 1 (
-    echo %RED%✗ Gateway (8070) - 未响应%RESET%
+    echo X Gateway (8070) - Not responding
 ) else (
-    echo %GREEN%✓ Gateway (8070) - 运行正常%RESET%
+    echo OK Gateway (8070) - Running
 )
 
-REM 检查 Frontend
-curl -s http://localhost:3000 >nul 2>nul
+REM Check Frontend
+curl -s http://localhost:3000 >nul 2>&1
 if errorlevel 1 (
-    echo %YELLOW%⏳ Frontend (3000) - 启动中...%RESET%
+    echo ... Frontend (3000) - Starting...
 ) else (
-    echo %GREEN%✓ Frontend (3000) - 运行正常%RESET%
+    echo OK Frontend (3000) - Running
 )
 
 echo.
-echo %GREEN%========================================%RESET%
-echo %GREEN%  所有服务已启动！%RESET%
-echo %GREEN%========================================%RESET%
+echo ========================================
+echo   All Services Started!
+echo ========================================
 echo.
-echo %BLUE%服务访问地址:%RESET%
-echo   - Frontend:      %BLUE%http://localhost:3000%RESET%
-echo   - Gateway API:   %BLUE%http://localhost:8070%RESET%
-echo   - Gateway 文档:  %BLUE%http://localhost:8070/docs%RESET%
-echo   - douyin-proc:   %BLUE%http://localhost:8093%RESET%
+echo Service URLs:
+echo   - Frontend:      http://localhost:3000
+echo   - Gateway API:   http://localhost:8070
+echo   - Gateway Docs:  http://localhost:8070/docs
+echo   - douyin-proc:   http://localhost:8093
 echo.
-echo %YELLOW%提示: 关闭此窗口不会停止服务，请关闭各自的服务窗口%RESET%
+echo TIP: Close individual service windows to stop each service
 echo.
 pause
