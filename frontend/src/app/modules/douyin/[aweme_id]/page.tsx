@@ -66,7 +66,7 @@ export default function VideoDetailPage() {
     }
   }, [aweme_id]);
 
-  const formatTime = (timestamp: number | string) => {
+  const formatTime = (timestamp: number | string | undefined) => {
     if (!timestamp) return "未知";
     if (typeof timestamp === 'number') {
       return new Date(timestamp * 1000).toLocaleString("zh-CN");
