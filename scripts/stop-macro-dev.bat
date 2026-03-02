@@ -1,35 +1,28 @@
 @echo off
 REM ============================================
-REM personal-web Local Development - Stop All
-REM Stop Gateway, Frontend, global-macro-fin
+REM personal-web Local Development - Stop
 REM ============================================
 
 echo.
 echo ========================================
-echo   Stop personal-web Dev Environment
+echo   Stopping Dev Environment
 echo ========================================
 echo.
 
-echo Stopping services by port...
-echo.
+echo Stopping services...
 
-powershell -NoProfile -Command ^
-  "$ports = @(8070, 8094, 3000);" ^
-  "$names = @{8070='Gateway'; 8094='global-macro-fin'; 3000='Frontend'};" ^
-  "foreach ($port in $ports) {" ^
-  "  try {" ^
-  "    $pid = (Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop | Select-Object -First 1).OwningProcess;" ^
-  "    if ($pid) {" ^
-  "      Write-Host \"Stopping $($names[$port]) (PID $pid)...\";" ^
-  "      Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue;" ^
-  "    }" ^
-  "  } catch {}" ^
-  "}"
+REM Run PowerShell script
+powershell -ExecutionPolicy Bypass -File "%~dp0stop-services.ps1"
 
 timeout /t 2 /nobreak >nul
 
-echo ========================================
-echo   All Services Stopped
-echo ========================================
+REM Fallback: kill by port
+echo Force checking ports...
+for %%p in (8070 8094 3000) do (
+    for /f "tokens=5" %%a in ('netstat -aon ^| find ":%%p " ^| find "LISTENING" 2^>nul') do (
+        if "%%a" neq "" taskkill /F /PID %%a >nul 2>&1
+    )
+)
+
 echo.
 pause
