@@ -13,13 +13,16 @@ async def get_videos(
     request: Request,
     page: int = Query(1, description="页码"),
     page_size: int = Query(20, description="每页数量"),
-    status: str = Query(None, description="状态筛选")
+    status: str = Query(None, description="状态筛选"),
+    is_read: bool = Query(None, description="已读状态筛选")
 ):
     """转发到 douyin-processor 服务 - 获取已处理视频列表"""
     target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/videos"
     params = {"page": page, "page_size": page_size}
     if status:
         params["status"] = status
+    if is_read is not None:
+        params["is_read"] = is_read
     return await proxy_request("GET", target_url, params=params, headers=dict(request.headers))
 
 
@@ -76,3 +79,17 @@ async def get_video_result(request: Request, video_id: str):
     """转发到 douyin-processor 服务 - 获取处理结果"""
     target_url = f"{settings.DOUYIN_SERVICE_URL}/api/videos/{video_id}/result"
     return await proxy_request("GET", target_url, headers=dict(request.headers))
+
+
+@router.post("/videos/{video_id}/read")
+async def mark_video_read(request: Request, video_id: str):
+    """转发到 douyin-processor 服务 - 标记视频已读/未读"""
+    target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/videos/{video_id}/read"
+    return await proxy_request("POST", target_url, headers=dict(request.headers), content=await request.body())
+
+
+@router.delete("/videos/{video_id}")
+async def delete_video(request: Request, video_id: str):
+    """转发到 douyin-processor 服务 - 删除视频"""
+    target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/videos/{video_id}"
+    return await proxy_request("DELETE", target_url, headers=dict(request.headers))

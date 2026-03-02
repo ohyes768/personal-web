@@ -16,6 +16,7 @@ async def proxy_request(
     params: Optional[Dict[str, Any]] = None,
     headers: Optional[Dict[str, str]] = None,
     json: Optional[Dict[str, Any]] = None,
+    content: Optional[str] = None,
     timeout: float = None
 ) -> Dict[str, Any]:
     """
@@ -27,6 +28,7 @@ async def proxy_request(
         params: 查询参数
         headers: 请求头
         json: JSON 请求体
+        content: 原始请求体（字符串或字节）
         timeout: 超时时间（秒）
 
     Returns:
@@ -47,9 +49,9 @@ async def proxy_request(
             if method.upper() == "GET":
                 response = await client.get(url, params=params, headers=filtered_headers)
             elif method.upper() == "POST":
-                response = await client.post(url, json=json, headers=filtered_headers)
+                response = await client.post(url, json=json, content=content, headers=filtered_headers)
             elif method.upper() == "PUT":
-                response = await client.put(url, json=json, headers=filtered_headers)
+                response = await client.put(url, json=json, content=content, headers=filtered_headers)
             elif method.upper() == "DELETE":
                 response = await client.delete(url, headers=filtered_headers)
             else:

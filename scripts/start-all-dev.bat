@@ -136,27 +136,27 @@ echo   Service Status Check
 echo ========================================
 
 REM Check douyin-processor
-curl -s http://localhost:8093/health >nul 2>&1
+powershell -Command "try { $response = Invoke-WebRequest -Uri 'http://localhost:8093/health' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
-    echo X douyin-processor (8093) - Not responding
+    echo [X] douyin-processor (8093) >> Not responding
 ) else (
-    echo OK douyin-processor (8093) - Running
+    echo [OK] douyin-processor (8093) >> Running
 )
 
 REM Check Gateway
-curl -s http://localhost:8070/api/health >nul 2>&1
+powershell -Command "try { $response = Invoke-WebRequest -Uri 'http://localhost:8070/api/health' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
-    echo X Gateway (8070) - Not responding
+    echo [X] Gateway (8070) >> Not responding
 ) else (
-    echo OK Gateway (8070) - Running
+    echo [OK] Gateway (8070) >> Running
 )
 
 REM Check Frontend
-curl -s http://localhost:3000 >nul 2>&1
+powershell -Command "try { $response = Invoke-WebRequest -Uri 'http://localhost:3000' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { exit 1 }" >nul 2>&1
 if errorlevel 1 (
-    echo ... Frontend (3000) - Starting...
+    echo [...] Frontend (3000) >> Starting...
 ) else (
-    echo OK Frontend (3000) - Running
+    echo [OK] Frontend (3000) >> Running
 )
 
 echo.
@@ -165,10 +165,10 @@ echo   All Services Started!
 echo ========================================
 echo.
 echo Service URLs:
-echo   - Frontend:      http://localhost:3000
-echo   - Gateway API:   http://localhost:8070
-echo   - Gateway Docs:  http://localhost:8070/docs
-echo   - douyin-proc:   http://localhost:8093
+echo   * Frontend:      http://localhost:3000
+echo   * Gateway API:   http://localhost:8070
+echo   * Gateway Docs:  http://localhost:8070/docs
+echo   * douyin-proc:   http://localhost:8093
 echo.
 echo TIP: Close individual service windows to stop each service
 echo.

@@ -74,6 +74,13 @@ export default function VideoDetailPage() {
     return new Date(timestamp).toLocaleString("zh-CN");
   };
 
+  // 格式化时间段（秒数 -> MM:SS 格式）
+  const formatSegmentTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
   // 根据状态显示不同的标签
   const renderStatusBadge = () => {
     if (!video) return null;
@@ -277,8 +284,8 @@ export default function VideoDetailPage() {
               <div className="space-y-3">
                 {video.transcript.segments.map((segment, index) => (
                   <div key={index} className="flex gap-4 text-sm">
-                    <span className="text-gray-500 whitespace-nowrap">
-                      [{formatTime(segment.start_time)} - {formatTime(segment.end_time)}]
+                    <span className="text-gray-500 whitespace-nowrap select-none">
+                      [{formatSegmentTime(segment.start_time)} - {formatSegmentTime(segment.end_time)}]
                     </span>
                     <span className="text-gray-300 flex-1">
                       {segment.text}
