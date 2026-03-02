@@ -1,3 +1,6 @@
 [submodule "backend/douyin-processor"]
 	path = backend/douyin-processor
 	url = https://github.com/ohyes768/douyin-processor.git
+[submodule "backend/global-macro-fin"]
+	path = backend/global-macro-fin
+	url = https://github.com/ohyes768/global-macro-fin.git

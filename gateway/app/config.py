@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     NEWS_SERVICE_URL: str = "http://localhost:8092"
     DOUYIN_SERVICE_URL: str = "http://localhost:8093"
     DOUYIN_PROCESSOR_URL: str = "http://localhost:8093"
+    MACRO_SERVICE_URL: str = "http://localhost:8094"
 
     # Gateway 配置
     APP_NAME: str = "个人资讯 API Gateway"

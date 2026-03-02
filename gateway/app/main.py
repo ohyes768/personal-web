@@ -4,7 +4,7 @@ API Gateway 主应用
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
-from app.routers import economic, news, douyin, health
+from app.routers import economic, news, douyin, health, macro
 import logging
 
 # 配置日志
@@ -37,6 +37,7 @@ app.add_middleware(
 app.include_router(economic.router, prefix="/api/economic", tags=["经济数据"])
 app.include_router(news.router, prefix="/api/news", tags=["新闻分析"])
 app.include_router(douyin.router, prefix="/api/douyin", tags=["抖音视频"])
+app.include_router(macro.router, prefix="/api/macro", tags=["宏观金融"])
 app.include_router(health.router, prefix="/api", tags=["健康检查"])
 
 
@@ -47,6 +48,7 @@ async def startup_event():
     logger.info(f"📡 经济服务: {settings.FINANCIAL_SERVICE_URL}")
     logger.info(f"📰 新闻服务: {settings.NEWS_SERVICE_URL}")
     logger.info(f"🎥 抖音服务: {settings.DOUYIN_SERVICE_URL}")
+    logger.info(f"💰 宏观金融服务: {settings.MACRO_SERVICE_URL}")
 
 
 @app.on_event("shutdown")
