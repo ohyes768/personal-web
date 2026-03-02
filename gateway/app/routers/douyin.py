@@ -67,6 +67,13 @@ async def process_videos(request: Request):
     return await proxy_request("POST", target_url, headers=dict(request.headers))
 
 
+@router.post("/process/async")
+async def process_videos_async(request: Request):
+    """转发到 douyin-processor 服务 - 触发视频处理（异步，立即返回）"""
+    target_url = f"{settings.DOUYIN_PROCESSOR_URL}/api/process/async"
+    return await proxy_request("POST", target_url, headers=dict(request.headers))
+
+
 @router.get("/stats")
 async def get_stats(request: Request):
     """转发到 douyin-processor 服务 - 获取统计信息"""
