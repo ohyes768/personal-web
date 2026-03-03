@@ -475,21 +475,19 @@ export default function DouyinPage() {
                     <div className="flex items-center gap-2">
                       {/* 未读 Tab 且状态为 completed 时不显示状态标识 */}
                       {(activeTab !== 'unread' || video.status !== 'completed') && renderStatusBadge(video.status)}
-                      {/* 已读 Tab 显示删除按钮 */}
-                      {activeTab === 'read' && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDelete(video.aweme_id);
-                          }}
-                          className="p-1 bg-red-600 hover:bg-red-700 rounded transition-colors opacity-0 group-hover:opacity-100"
-                          title="删除"
-                        >
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                          </svg>
-                        </button>
-                      )}
+                      {/* 删除按钮 - 所有 Tab 都显示 */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(video.aweme_id);
+                        }}
+                        className="p-1 bg-red-600 hover:bg-red-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                        title="删除"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
 
@@ -677,6 +675,18 @@ export default function DouyinPage() {
                     标记已读
                   </button>
                 )}
+                {/* 删除按钮 - 所有状态都可以删除 */}
+                <button
+                  onClick={() => {
+                    if (confirm(`确定要删除视频"${selectedVideo.title || '未知标题'}"吗？此操作无法撤销！`)) {
+                      handleDelete(selectedVideo.aweme_id);
+                      closeModal();
+                    }
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors"
+                >
+                  删除
+                </button>
               </div>
               <button
                 onClick={closeModal}
