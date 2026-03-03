@@ -2,38 +2,24 @@
  * 经济数据 API 封装
  */
 import { apiClient } from './client';
-import type { ExchangeRateData } from './types';
+import type { EconomicDataResponse } from '../types/economic';
 
 export const economicApi = {
   /**
-   * 获取汇率数据
+   * 获取宏观经济数据
    */
-  getExchangeRates: (timeRange: string = '1Y') =>
-    apiClient.get<ExchangeRateData[]>('/api/economic/exchange-rates', {
-      time_range: timeRange
-    }),
+  getData: async (startDate?: string, endDate?: string): Promise<EconomicDataResponse> => {
+    const params: Record<string, string> = {};
+    if (startDate) params.start_date = startDate;
+    if (endDate) params.end_date = endDate;
+
+    return apiClient.get<EconomicDataResponse>('/api/macro/data', params);
+  },
 
   /**
-   * 获取美债收益率数据
+   * 更新数据（通过 Gateway）
    */
-  getTreasuryYields: (timeRange: string = '1Y') =>
-    apiClient.get('/api/economic/treasury-yields', {
-      time_range: timeRange
-    }),
-
-  /**
-   * 获取债务GDP数据
-   */
-  getDebtGdp: (timeRange: string = '1Y') =>
-    apiClient.get('/api/economic/debt-gdp', {
-      time_range: timeRange
-    }),
-
-  /**
-   * 获取TGA/HIBOR数据
-   */
-  getTgaHibor: (timeRange: string = '1Y') =>
-    apiClient.get('/api/economic/tga-hibor', {
-      time_range: timeRange
-    }),
+  updateData: async () => {
+    return apiClient.post('/api/macro/update');
+  },
 };
