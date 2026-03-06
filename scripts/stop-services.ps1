@@ -1,36 +1,55 @@
-# Stop Macro Dev Services
+# Stop Dev Services - Kill Process Tree
 Write-Host ""
 Write-Host "========================================"
 Write-Host "  Stopping Dev Environment"
 Write-Host "========================================"
 Write-Host ""
 
-Write-Host "Stopping services..."
+Write-Host "Stopping services by port (with process tree)..."
 
-# Find cmd processes and close them with their child processes
-$cmdProcesses = Get-WmiObject Win32_Process | Where-Object { $_.Name -eq 'cmd.exe' }
+# Target ports and their service names
+$services = @{
+    8070 = "Gateway"
+    8093 = "douyin-processor"
+    8094 = "global-macro-fin"
+    3000 = "Frontend"
+}
 
-foreach ($proc in $cmdProcesses) {
-    $cmdLine = $proc.CommandLine
-    $procId = $proc.ProcessId
+$stoppedCount = 0
 
-    # Match using -like (wildcard search)
-    if ($cmdLine -like '*8094*' -or $cmdLine -like '*8070*' -or $cmdLine -like '*npm run dev*') {
-        Write-Host "Stopping: PID $procId"
+foreach ($port in $services.Keys) {
+    try {
+        # Find process listening on the port
+        $connection = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop |
+                      Select-Object -First 1
 
-        # Stop process tree (parent + all children)
-        Stop-Process -Id $procId -Force -ErrorAction SilentlyContinue
+        if ($connection) {
+            $pid = $connection.OwningProcess
+            $process = Get-Process -Id $pid -ErrorAction SilentlyContinue
 
-        # Also kill any child processes directly
-        $children = Get-WmiObject Win32_Process | Where-Object { $_.ParentProcessId -eq $procId }
-        foreach ($child in $children) {
-            Write-Host "  -> Child PID: $($child.ProcessId)"
-            Stop-Process -Id $child.ProcessId -Force -ErrorAction SilentlyContinue
+            if ($process) {
+                Write-Host "Stopping $($services[$port]) (PID $pid, port $port)..."
+
+                # Use taskkill /T to terminate the entire process tree
+                # /T = Terminate all child processes
+                # /F = Force termination
+                $result = & taskkill /F /T /PID $pid 2>&1
+
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Host "  -> Process tree terminated"
+                    $stoppedCount++
+                } else {
+                    Write-Host "  -> Failed: $result"
+                }
+            }
         }
+    } catch {
+        # Port not in use, skip
     }
 }
 
 Write-Host ""
+Write-Host "Stopped $stoppedCount service(s)"
 Write-Host "========================================"
 Write-Host "  All Services Stopped"
 Write-Host "========================================"

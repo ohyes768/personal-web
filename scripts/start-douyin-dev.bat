@@ -12,36 +12,14 @@ echo   personal-web Dev Environment Start
 echo ========================================
 echo.
 
-REM [1/5] Check environment
-echo [1/5] Checking development environment...
-
-where python >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: Python not found
-    pause
-    exit /b 1
-)
-
-where node >nul 2>&1
-if errorlevel 1 (
-    echo ERROR: Node.js not found
-    pause
-    exit /b 1
-)
-
-where uv >nul 2>&1
-if errorlevel 1 (
-    echo WARNING: uv not found, attempting to use pip...
-    set USE_UV=0
-) else (
-    set USE_UV=1
-)
-echo OK: Environment check passed
-echo.
-
-REM [2/5] Start douyin-processor
-echo [2/5] Starting douyin-processor...
+REM [1/3] Start douyin-processor
+echo [1/3] Starting douyin-processor (port 8093)...
 cd /d "%~dp0..\backend\douyin-processor"
+
+REM Clear Python cache to ensure fresh code load
+echo Cleaning Python cache...
+if exist "__pycache__" rmdir /s /q "__pycache__" 2>nul
+echo Cache cleared.
 
 REM Check .env file
 if not exist ".env" (
@@ -71,9 +49,14 @@ start "douyin-processor" cmd /k ".venv\Scripts\activate && python main.py"
 cd /d "%~dp0"
 timeout /t 2 /nobreak >nul
 
-REM [3/5] Start Gateway
-echo [3/5] Starting Gateway...
+REM [2/3] Start Gateway
+echo [2/3] Starting Gateway (port 8070)...
 cd /d "%~dp0..\gateway"
+
+REM Clear Python cache to ensure fresh code load
+echo Cleaning Python cache...
+if exist "__pycache__" rmdir /s /q "__pycache__" 2>nul
+echo Cache cleared.
 
 REM Check virtual environment
 if not exist ".venv" (
@@ -102,8 +85,8 @@ start "Gateway" cmd /k ".venv\Scripts\activate && uvicorn app.main:app --reload 
 cd /d "%~dp0"
 timeout /t 2 /nobreak >nul
 
-REM [4/5] Start Frontend
-echo [4/5] Starting Frontend...
+REM [3/3] Start Frontend
+echo [3/3] Starting Frontend (port 3000)...
 cd /d "%~dp0..\frontend"
 
 REM Check node_modules
@@ -122,43 +105,6 @@ REM Start Frontend (new window)
 echo OK: Starting Frontend (port 3000)
 start "Frontend" cmd /k "npm run dev"
 
-cd /d "%~dp0"
-timeout /t 3 /nobreak >nul
-
-REM [5/5] Wait and check services
-echo [5/5] Waiting for services to start...
-echo.
-timeout /t 5 /nobreak >nul
-
-REM Check service status
-echo ========================================
-echo   Service Status Check
-echo ========================================
-
-REM Check douyin-processor
-powershell -Command "try { $response = Invoke-WebRequest -Uri 'http://localhost:8093/health' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { exit 1 }" >nul 2>&1
-if errorlevel 1 (
-    echo [X] douyin-processor (8093) >> Not responding
-) else (
-    echo [OK] douyin-processor (8093) >> Running
-)
-
-REM Check Gateway
-powershell -Command "try { $response = Invoke-WebRequest -Uri 'http://localhost:8070/api/health' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { exit 1 }" >nul 2>&1
-if errorlevel 1 (
-    echo [X] Gateway (8070) >> Not responding
-) else (
-    echo [OK] Gateway (8070) >> Running
-)
-
-REM Check Frontend
-powershell -Command "try { $response = Invoke-WebRequest -Uri 'http://localhost:3000' -UseBasicParsing -TimeoutSec 2; exit 0 } catch { exit 1 }" >nul 2>&1
-if errorlevel 1 (
-    echo [...] Frontend (3000) >> Starting...
-) else (
-    echo [OK] Frontend (3000) >> Running
-)
-
 echo.
 echo ========================================
 echo   All Services Started!
@@ -169,7 +115,5 @@ echo   * Frontend:      http://localhost:3000
 echo   * Gateway API:   http://localhost:8070
 echo   * Gateway Docs:  http://localhost:8070/docs
 echo   * douyin-proc:   http://localhost:8093
-echo.
-echo TIP: Close individual service windows to stop each service
 echo.
 pause
