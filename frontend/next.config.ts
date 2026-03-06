@@ -10,14 +10,15 @@ const nextConfig = {
     },
   },
 
-  // 配置代理
+  // 配置代理（开发环境使用，生产环境使用 API Routes）
   async rewrites() {
+    const macroServiceUrl = process.env.MACRO_SERVICE_URL || 'http://localhost:8094'
     return [
       {
-        source: '/api/:path*',
-        destination: 'http://localhost:8094/api/:path*',
+        source: '/api/macro/:path*',
+        destination: `${macroServiceUrl}/api/macro/:path*`,
       },
-    ];
+    ]
   },
 }
 
