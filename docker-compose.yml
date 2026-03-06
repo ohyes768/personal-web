@@ -38,6 +38,10 @@ services:
       - "8093:8093"
     environment:
       - PORT=8093
+      - ALIYUN_ACCESS_KEY=${ALIYUN_ACCESS_KEY}
+    volumes:
+      - ./backend/douyin-processor/data:/app/data
+      - ./backend/douyin-processor/logs:/app/logs
     networks:
       - web-network
     healthcheck:
@@ -57,6 +61,9 @@ services:
     environment:
       - PORT=8094
       - FRED_API_KEY=${FRED_API_KEY}
+    volumes:
+      - ./backend/global-macro-fin/data:/app/data
+      - ./backend/global-macro-fin/logs:/app/logs
     networks:
       - web-network
     healthcheck:
