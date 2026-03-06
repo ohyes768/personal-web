@@ -43,6 +43,15 @@ coverage
 .temp/
 tmp/
 
+# Debug files
+debug-*.js
+
+# TypeScript
+*.tsbuildinfo
+
+# Windows bash artifacts
+nul
+
 # Python
 __pycache__/
 *.py[cod]
