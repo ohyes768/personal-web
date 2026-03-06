@@ -14,15 +14,53 @@ services:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_BASE_URL=/api
       - PORT=3000
-      - DOUYIN_SERVICE_URL=http://host.docker.internal:8093
-      - MACRO_SERVICE_URL=http://host.docker.internal:8094
+      - DOUYIN_SERVICE_URL=http://douyin-processor:8093
+      - MACRO_SERVICE_URL=http://global-macro-fin:8094
       - NEWS_SERVICE_URL=http://host.docker.internal:8092
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      - douyin-processor
+      - global-macro-fin
     networks:
       - web-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # 抖音视频处理服务
+  douyin-processor:
+    image: registry.cn-shenzhen.aliyuncs.com/personal-web/douyin-processor:latest
+    container_name: douyin-processor
+    restart: unless-stopped
+    ports:
+      - "8093:8093"
+    environment:
+      - PORT=8093
+    networks:
+      - web-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # 全球宏观经济数据服务
+  global-macro-fin:
+    image: registry.cn-shenzhen.aliyuncs.com/personal-web/global-macro-fin:latest
+    container_name: global-macro-fin
+    restart: unless-stopped
+    ports:
+      - "8094:8094"
+    environment:
+      - PORT=8094
+      - FRED_API_KEY=${FRED_API_KEY}
+    networks:
+      - web-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8094/api/macro/health"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Docker 生产环境部署脚本 - 阿里云 ECS
-# 用法: ./scripts/deploy.sh [选项]
+# 用法：./scripts/deploy.sh [选项]
 # 选项:
 #   logs     - 查看日志
 #   status   - 查看服务状态
@@ -35,41 +35,37 @@ log_step() {
 # 检查 Docker 和 Docker Compose
 check_dependencies() {
     log_step "检查依赖..."
-    
+
     if ! command -v docker &> /dev/null; then
         log_error "Docker 未安装，请先安装 Docker"
         exit 1
     fi
-    
+
     if ! command -v docker-compose &> /dev/null && ! docker compose version &> /dev/null; then
         log_error "Docker Compose 未安装，请先安装 Docker Compose"
         exit 1
     fi
-    
+
     # 确定使用哪个命令
     if docker compose version &> /dev/null; then
         DOCKER_COMPOSE="docker compose"
     else
         DOCKER_COMPOSE="docker-compose"
     fi
-    
+
     log_info "依赖检查通过 ($DOCKER_COMPOSE)"
 }
 
 # 准备环境变量
 prepare_env() {
     log_step "准备环境变量..."
-
-    # 检查后端服务是否在运行
-    log_info "确保后端服务已启动 (douyin-processor:8093, global-macro-fin:8094)"
-
     log_info "环境变量准备完成"
 }
 
 # 检查外部网络
 check_network() {
     log_step "检查 Docker 网络..."
-    
+
     if ! $DOCKER_COMPOSE -f docker-compose.yml networks 2>/dev/null | grep -q "web-network"; then
         log_info "创建外部网络 web-network..."
         docker network create web-network 2>/dev/null || true
@@ -81,18 +77,18 @@ check_network() {
 # 构建镜像
 build_images() {
     log_step "开始构建 Docker 镜像..."
-    
+
     $DOCKER_COMPOSE -f docker-compose.yml build --no-cache
-    
+
     log_info "镜像构建完成"
 }
 
 # 启动服务
 start_services() {
     log_step "启动服务..."
-    
+
     $DOCKER_COMPOSE -f docker-compose.yml up -d
-    
+
     log_info "服务启动完成"
 }
 
@@ -107,7 +103,14 @@ check_health() {
     if curl -f -s http://localhost:8093/health > /dev/null 2>&1; then
         log_info "✓ Douyin-Processor 服务正常"
     else
-        log_warn "✗ Douyin-Processor 服务未响应 (请手动启动)"
+        log_warn "✗ Douyin-Processor 服务未响应"
+    fi
+
+    # 检查 global-macro-fin
+    if curl -f -s http://localhost:8094/api/macro/health > /dev/null 2>&1; then
+        log_info "✓ Global-Macro-Fin 服务正常"
+    else
+        log_warn "✗ Global-Macro-Fin 服务未响应"
     fi
 
     # 检查 Frontend
@@ -124,7 +127,7 @@ show_status() {
     echo ""
     $DOCKER_COMPOSE -f docker-compose.yml ps
     echo ""
-    
+
     log_step "容器健康状态:"
     docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
 }
@@ -151,7 +154,7 @@ main() {
     echo -e "${BLUE}  Personal Web 生产环境部署脚本${NC}"
     echo -e "${BLUE}=========================================${NC}"
     echo ""
-    
+
     check_dependencies
     prepare_env
     check_network
@@ -159,7 +162,7 @@ main() {
     start_services
     check_health
     show_status
-    
+
     echo ""
     echo -e "${GREEN}=========================================${NC}"
     echo -e "${GREEN}  部署完成！${NC}"
@@ -170,15 +173,13 @@ main() {
     echo -e "  - Douyin API:     ${BLUE}http://localhost:8093${NC}"
     echo -e "  - Macro API:      ${BLUE}http://localhost:8094${NC}"
     echo ""
-    echo -e "${YELLOW}注意: 后端服务需要单独启动${NC}"
-    echo -e "  - Douyin:  ${BLUE}./scripts/start-douyin-dev.bat${NC}"
-    echo -e "  - Macro:   ${BLUE}./scripts/start-macro-dev.bat${NC}"
+    echo -e "${YELLOW}说明：所有服务已通过 Docker 统一部署${NC}"
     echo ""
     echo -e "${YELLOW}常用命令:${NC}"
     echo -e "  查看日志:   ${BLUE}./scripts/deploy.sh logs${NC}"
     echo -e "  查看状态:   ${BLUE}./scripts/deploy.sh status${NC}"
     echo -e "  重启服务:   ${BLUE}./scripts/deploy.sh restart${NC}"
-    echo -e "  停止服务:   ${BLUE}./scripts/stop-prod.sh${NC}"
+    echo -e "  停止服务:   ${BLUE}docker-compose down${NC}"
     echo ""
 }
 
