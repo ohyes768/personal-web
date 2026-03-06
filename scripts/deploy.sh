@@ -59,20 +59,10 @@ check_dependencies() {
 # 准备环境变量
 prepare_env() {
     log_step "准备环境变量..."
-    
-    # Gateway 环境变量
-    if [ ! -f "gateway/.env" ]; then
-        if [ -f "gateway/.env.example" ]; then
-            log_warn "gateway/.env 不存在，从 .env.example 复制"
-            cp gateway/.env.example gateway/.env
-            log_warn "请编辑 gateway/.env 配置必要的环境变量"
-            log_warn "关键配置: DOUYIN_SERVICE_URL=http://douying-collect:8093"
-        else
-            log_error "gateway/.env 和 gateway/.env.example 都不存在"
-            exit 1
-        fi
-    fi
-    
+
+    # 检查后端服务是否在运行
+    log_info "确保后端服务已启动 (douyin-processor:8093, global-macro-fin:8094)"
+
     log_info "环境变量准备完成"
 }
 
@@ -110,23 +100,16 @@ start_services() {
 check_health() {
     log_step "等待服务启动..."
     sleep 10
-    
+
     log_step "检查服务健康状态..."
-    
-    # 检查 douying-collect
-    if curl -f -s http://localhost:8093/api/health > /dev/null 2>&1; then
-        log_info "✓ Douying-Collect 服务正常"
+
+    # 检查 douyin-processor
+    if curl -f -s http://localhost:8093/health > /dev/null 2>&1; then
+        log_info "✓ Douyin-Processor 服务正常"
     else
-        log_warn "✗ Douying-Collect 服务未响应"
+        log_warn "✗ Douyin-Processor 服务未响应 (请手动启动)"
     fi
-    
-    # 检查 Gateway
-    if curl -f -s http://localhost:8080/api/health > /dev/null 2>&1; then
-        log_info "✓ Gateway 服务正常"
-    else
-        log_warn "✗ Gateway 服务未响应"
-    fi
-    
+
     # 检查 Frontend
     if curl -f -s http://localhost:3000 > /dev/null 2>&1; then
         log_info "✓ Frontend 服务正常"
@@ -183,10 +166,13 @@ main() {
     echo -e "${GREEN}=========================================${NC}"
     echo ""
     echo -e "${GREEN}服务访问地址:${NC}"
-    echo -e "  - Frontend:  ${BLUE}http://localhost:3000${NC}"
-    echo -e "  - Gateway:   ${BLUE}http://localhost:8080${NC}"
-    echo -e "  - API文档:   ${BLUE}http://localhost:8080/docs${NC}"
-    echo -e "  - 采集API:   ${BLUE}http://localhost:8080/api/douyin/videos${NC}"
+    echo -e "  - Frontend:       ${BLUE}http://localhost:3000${NC}"
+    echo -e "  - Douyin API:     ${BLUE}http://localhost:8093${NC}"
+    echo -e "  - Macro API:      ${BLUE}http://localhost:8094${NC}"
+    echo ""
+    echo -e "${YELLOW}注意: 后端服务需要单独启动${NC}"
+    echo -e "  - Douyin:  ${BLUE}./scripts/start-douyin-dev.bat${NC}"
+    echo -e "  - Macro:   ${BLUE}./scripts/start-macro-dev.bat${NC}"
     echo ""
     echo -e "${YELLOW}常用命令:${NC}"
     echo -e "  查看日志:   ${BLUE}./scripts/deploy.sh logs${NC}"

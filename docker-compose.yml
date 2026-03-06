@@ -1,40 +1,22 @@
 services:
-  # API Gateway (使用 host 网络模式)
-  gateway:
-    build: 
-      context: ./gateway
-      dockerfile: Dockerfile
-    container_name: personal-web-gateway
-    restart: unless-stopped
-    network_mode: host
-    environment:
-      - LOG_LEVEL=INFO
-      - HOST=0.0.0.0
-      - PORT=8070
-    env_file:
-      - gateway/.env
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8070/api/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-
   # Next.js 前端
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        - NEXT_PUBLIC_API_BASE_URL=http://120.26.218.136:8070
+        - NEXT_PUBLIC_API_BASE_URL=/api
     container_name: personal-web-frontend
     restart: unless-stopped
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_BASE_URL=http://120.26.218.136:8070
+      - NEXT_PUBLIC_API_BASE_URL=/api
       - PORT=3000
+      - DOUYIN_SERVICE_URL=http://host.docker.internal:8093
+      - MACRO_SERVICE_URL=http://host.docker.internal:8094
+      - NEWS_SERVICE_URL=http://host.docker.internal:8092
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

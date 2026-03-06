@@ -3,7 +3,10 @@
  */
 
 /** 时间范围选项 */
-export type TimeRange = '1M' | '3M' | '6M' | '1Y' | '3Y' | 'ALL';
+export type TimeRange = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
+
+/** Tab类型选项 */
+export type TabType = 'treasury-exchange' | 'bonds';
 
 /** 时间范围配置 */
 export interface TimeRangeConfig {
@@ -36,6 +39,16 @@ export interface EconomicDataResponse {
     '3m': number[];
     '2y': number[];
     '10y': number[];
+  };
+  eu_treasuries: {
+    '3m': number[];    // 欧洲 3 个月期国债收益率
+    '2y': number[];    // 欧洲 2 年期国债收益率
+    '10y': number[];   // 欧洲 10 年期国债收益率
+  };
+  jp_treasuries: {
+    '3m': number[];    // 日本 3 个月期国债收益率
+    '2y': number[];    // 日本 2 年期国债收益率
+    '10y': number[];   // 日本 10 年期国债收益率
   };
   exchange_rates?: {
     dollar_index: number[];
@@ -71,6 +84,8 @@ export interface ChartColors {
   treasury3M: string;
   treasury2Y: string;
   treasury10Y: string;
+  euroBond10Y: string;    // 欧债颜色
+  japanBond10Y: string;   // 日债颜色
   dollarIndex: string;
   usdCny: string;
   usdJpy: string;

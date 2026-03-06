@@ -3,13 +3,14 @@
  */
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TimeRange } from '@/lib/types/economic';
 import { useEconomicData } from '@/lib/hooks/useEconomicData';
 import { TimeRangeSelector } from './components/TimeRangeSelector';
 import { LoadingOverlay } from './components/LoadingOverlay';
+import { Tabs } from './components/Tabs';
 
 // 动态导入图表组件，禁用SSR
 const EconomicChart = dynamic(() => import('./components/EconomicChart').then(mod => ({ default: mod.EconomicChart })), {
@@ -17,9 +18,58 @@ const EconomicChart = dynamic(() => import('./components/EconomicChart').then(mo
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载图表中...</div>
 });
 
+const BondChart = dynamic(() => import('./components/BondChart').then(mod => ({ default: mod.BondChart })), {
+  ssr: false,
+  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载图表中...</div>
+});
+
+const BondChartDebug = dynamic(() => import('./components/BondChartDebug').then(mod => ({ default: mod.BondChartDebug })), {
+  ssr: false,
+  loading: () => <div>加载调试组件...</div>
+});
+
+// Tab类型定义
+type TabType = 'treasury-exchange' | 'bonds';
+
 export default function EconomicPage() {
+  const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
-  const { data, isLoading, error, isCached } = useEconomicData(timeRange);
+
+  // 根据 Tab 类型自动切换默认时间范围
+  const handleTabChange = (tabId: TabType) => {
+    setActiveTab(tabId);
+    // 美债汇率默认 3M，德债日债默认 1Y
+    if (tabId === 'bonds' && timeRange === '3M') {
+      setTimeRange('1Y');
+    } else if (tabId === 'treasury-exchange' && timeRange === '1Y') {
+      setTimeRange('3M');
+    }
+  };
+
+  // 获取数据
+  const { data, isLoading, error, isCached } = useEconomicData(timeRange, activeTab);
+
+  // 生成图表组件的 key，确保数据变化时重新挂载组件
+  const chartKey = useMemo(() => {
+    if (!data || data.dates.length === 0) return 'empty';
+    const firstDate = data.dates[0] || '';
+    const lastDate = data.dates[data.dates.length - 1] || '';
+    return firstDate + '-' + lastDate;
+  }, [data]);
+
+  // Tab配置
+  const tabs: Array<{ id: TabType; label: string; description: string }> = [
+    {
+      id: 'treasury-exchange',
+      label: '美债汇率',
+      description: '美国国债收益率与汇率数据趋势分析（日级）'
+    },
+    {
+      id: 'bonds',
+      label: '德债日债',
+      description: '德国和日本国债收益率对比分析（月级，每月1号数据）'
+    }
+  ];
 
   return (
     <main className="min-h-screen bg-black text-white p-8">
@@ -35,21 +85,25 @@ export default function EconomicPage() {
                 ← 返回首页
               </Link>
               <h1 className="text-4xl font-bold mt-4">宏观经济数据</h1>
-              <p className="text-gray-400 mt-2">
-                美国国债收益率与汇率数据趋势分析
-              </p>
             </div>
           </div>
-
-          {/* 时间范围选择器 */}
-          <div className="flex items-center gap-6">
-            <span className="text-gray-400">时间范围：</span>
-            <TimeRangeSelector value={timeRange} onChange={setTimeRange} />
-            {isCached && (
-              <span className="text-sm text-gray-500">（缓存）</span>
-            )}
-          </div>
         </header>
+
+        {/* Tab组件 */}
+        <Tabs
+          tabs={tabs}
+          activeTab={activeTab}
+          onTabChange={handleTabChange}
+        />
+
+        {/* 时间范围选择器 */}
+        <div className="flex items-center gap-6 mb-8">
+          <span className="text-gray-400">时间范围：</span>
+          <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType={activeTab} />
+          {isCached && (
+            <span className="text-sm text-gray-500">（缓存）</span>
+          )}
+        </div>
 
         {/* 错误提示 */}
         {error && (
@@ -62,7 +116,15 @@ export default function EconomicPage() {
         {/* 图表 */}
         {data && !isLoading && (
           <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-            <EconomicChart data={data} />
+            {/* 美债汇率 Tab */}
+            {activeTab === 'treasury-exchange' && (
+              <EconomicChart key={`treasury-${chartKey}`} data={data} showAllData={false} />
+            )}
+
+            {/* 德债日债 Tab */}
+            {activeTab === 'bonds' && (
+              <BondChart key={`bonds-${chartKey}`} data={data} />
+            )}
           </div>
         )}
 

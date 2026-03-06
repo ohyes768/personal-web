@@ -11,11 +11,9 @@ class ApiClient {
   }
 
   private async request<T>(
-    endpoint: string,
+    url: string,
     options?: RequestInit
   ): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-
     try {
       const response = await fetch(url, {
         ...options,
@@ -43,30 +41,48 @@ class ApiClient {
   }
 
   async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    const url = new URL(endpoint, this.baseUrl);
-    if (params) {
-      Object.keys(params).forEach(key => url.searchParams.append(key, params[key]));
+    // 检测是否是相对路径（以 / 开头，没有协议）
+    const isRelativePath = this.baseUrl.startsWith('/');
+
+    let url: string;
+    if (isRelativePath) {
+      // 相对路径：直接拼接
+      url = `${this.baseUrl}${endpoint}`;
+      if (params) {
+        const searchParams = new URLSearchParams(params);
+        url += `?${searchParams.toString()}`;
+      }
+    } else {
+      // 完整 URL：使用 URL 构造函数
+      const urlObj = new URL(endpoint, this.baseUrl);
+      if (params) {
+        Object.keys(params).forEach(key => urlObj.searchParams.append(key, params[key]));
+      }
+      url = urlObj.pathname + urlObj.search;
     }
 
-    return this.request<T>(url.pathname + url.search);
+    return this.request<T>(url);
   }
 
   async post<T>(endpoint: string, data?: any): Promise<T> {
-    return this.request<T>(endpoint, {
+    const url = `${this.baseUrl}${endpoint}`;
+    return this.request<T>(url, {
       method: 'POST',
       body: JSON.stringify(data),
     });
   }
 
   async put<T>(endpoint: string, data?: any): Promise<T> {
-    return this.request<T>(endpoint, {
+    const url = `${this.baseUrl}${endpoint}`;
+    return this.request<T>(url, {
       method: 'PUT',
       body: JSON.stringify(data),
     });
   }
 
   async delete<T>(endpoint: string): Promise<T> {
-    return this.request<T>(endpoint, {
+    const url = `${this.baseUrl}${endpoint}`;
+    return this.request<T>(url, {
       method: 'DELETE',
     });
   }

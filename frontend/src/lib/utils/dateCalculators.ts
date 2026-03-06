@@ -10,6 +10,7 @@ export const TIME_RANGE_MAP: Record<TimeRange, number | null> = {
   '6M': 180,
   '1Y': 365,
   '3Y': 1095,
+  '5Y': 1825,
   'ALL': null,
 };
 

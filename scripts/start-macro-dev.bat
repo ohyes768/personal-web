@@ -3,7 +3,7 @@ setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo   Starting Dev Environment
+echo   Starting Macro Dev Environment
 echo ========================================
 echo.
 
@@ -18,17 +18,6 @@ start "macro-fin" cmd /k ".venv\Scripts\activate && python -m uvicorn src.main:a
 
 timeout /t 2 /nobreak >nul
 
-REM Start Gateway
-echo Starting Gateway (port 8070)...
-cd /d "%~dp0..\gateway"
-if not exist ".venv" (
-    python -m venv .venv
-    .venv\Scripts\pip install -r requirements.txt
-)
-start "Gateway" cmd /k ".venv\Scripts\activate && uvicorn app.main:app --reload --host 0.0.0.0 --port 8070"
-
-timeout /t 2 /nobreak >nul
-
 REM Start Frontend
 echo Starting Frontend (port 3000)...
 cd /d "%~dp0..\frontend"
@@ -37,11 +26,10 @@ start "Frontend" cmd /k "npm run dev"
 
 echo.
 echo ========================================
-echo   All Services Started
+echo   Macro Dev Environment Started
 echo ========================================
 echo.
-echo Frontend:  http://localhost:3000
-echo Gateway:   http://localhost:8070
-echo Macro-Fin: http://localhost:8094
+echo Frontend:   http://localhost:3000
+echo Macro-Fin:  http://localhost:8094
 echo.
 pause

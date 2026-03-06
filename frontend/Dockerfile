@@ -13,21 +13,18 @@ RUN npm install -g pnpm
 RUN pnpm config set registry https://registry.npmmirror.com
 
 # 复制依赖文件
-COPY package.json pnpm-lock.yaml* package-lock.json* ./
+COPY package.json pnpm-lock.yaml* ./
 
-# 安装依赖（使用国内镜像）
-RUN pnpm install --frozen-lockfile || npm install
+# 安装依赖
+RUN pnpm install --frozen-lockfile
 
 # 复制源代码
 COPY . .
 
-# 确保 public 目录存在
-RUN mkdir -p public
-
-# 构建 Next.js 应用（传入 API 地址）
+# 构建 Next.js 应用
 ARG NEXT_PUBLIC_API_BASE_URL=http://localhost:8080
 ENV NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL}
-RUN echo "API_BASE_URL=$NEXT_PUBLIC_API_BASE_URL" && pnpm build || npm run build
+RUN pnpm build
 
 # 生产阶段
 FROM node:20-alpine AS runner

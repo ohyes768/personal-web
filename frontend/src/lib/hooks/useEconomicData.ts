@@ -2,9 +2,10 @@
  * 经济数据获取 Hook - 全量数据加载策略
  */
 import { useState, useEffect } from 'react';
-import type { TimeRange, EconomicDataResponse } from '../types/economic';
+import type { TimeRange, EconomicDataResponse, TabType } from '../types/economic';
 import { economicApi } from '../api/economic';
 import { calculateDateRange } from '../utils/dateCalculators';
+import { filterDataByTab, filterMonthlyData } from '../utils/dataFilterUtils';
 
 interface UseEconomicDataResult {
   data: EconomicDataResponse | null;
@@ -17,27 +18,51 @@ interface UseEconomicDataResult {
 // 全量数据缓存 Key
 const FULL_DATA_CACHE_KEY = 'economic_data_full_cache';
 
-export function useEconomicData(timeRange: TimeRange): UseEconomicDataResult {
+// 默认的经济数据结构
+function getDefaultEconomicData(): EconomicDataResponse {
+  return {
+    dates: [],
+    us_treasuries: { '3m': [], '2y': [], '10y': [] },
+    eu_treasuries: { '3m': [], '2y': [], '10y': [] },
+    jp_treasuries: { '3m': [], '2y': [], '10y': [] },
+    exchange_rates: {
+      dollar_index: [],
+      usd_cny: [],
+      usd_jpy: [],
+      usd_eur: [],
+    },
+  };
+}
+
+export function useEconomicData(timeRange: TimeRange, tabType: TabType = 'treasury-exchange'): UseEconomicDataResult {
   const [fullData, setFullData] = useState<EconomicDataResponse | null>(null);
   const [filteredData, setFilteredData] = useState<EconomicDataResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isCached, setIsCached] = useState(false);
 
-  // 根据时间范围过滤数据
-  const filterDataByTimeRange = (
+  // 根据时间和Tab类型过滤数据
+  const filterDataByTimeAndTab = (
     data: EconomicDataResponse,
-    range: TimeRange
+    range: TimeRange,
+    tab: TabType
   ): EconomicDataResponse => {
+    // 如果是德债日债Tab，先过滤月度数据
+    let processedData = data;
+    if (tab === 'bonds') {
+      processedData = filterMonthlyData(data);
+    }
+
     const { startDate, endDate } = calculateDateRange(range);
 
     // 如果是全部数据，直接返回
     if (range === 'ALL') {
-      return data;
+      const result = filterDataByTab(processedData!, tab, range);
+      return result || getDefaultEconomicData();
     }
 
     // 找到起始和结束索引
-    const dates = data.dates;
+    const dates = processedData!.dates;
     let startIndex = 0;
     let endIndex = dates.length;
 
@@ -54,20 +79,34 @@ export function useEconomicData(timeRange: TimeRange): UseEconomicDataResult {
     // 过滤数据
     const filteredDates = dates.slice(startIndex, endIndex);
 
-    return {
+    // 先按时间范围过滤，再按Tab类型过滤
+    const timeFiltered = {
       dates: filteredDates,
       us_treasuries: {
-        '3m': data.us_treasuries['3m'].slice(startIndex, endIndex),
-        '2y': data.us_treasuries['2y'].slice(startIndex, endIndex),
-        '10y': data.us_treasuries['10y'].slice(startIndex, endIndex),
+        '3m': processedData!.us_treasuries?.['3m']?.slice(startIndex, endIndex) ?? [],
+        '2y': processedData!.us_treasuries?.['2y']?.slice(startIndex, endIndex) ?? [],
+        '10y': processedData!.us_treasuries?.['10y']?.slice(startIndex, endIndex) ?? [],
       },
-      exchange_rates: data.exchange_rates ? {
-        dollar_index: data.exchange_rates.dollar_index.slice(startIndex, endIndex),
-        usd_cny: data.exchange_rates.usd_cny.slice(startIndex, endIndex),
-        usd_jpy: data.exchange_rates.usd_jpy.slice(startIndex, endIndex),
-        usd_eur: data.exchange_rates.usd_eur.slice(startIndex, endIndex),
+      eu_treasuries: {
+        '3m': processedData!.eu_treasuries?.['3m']?.slice(startIndex, endIndex) ?? [],
+        '2y': processedData!.eu_treasuries?.['2y']?.slice(startIndex, endIndex) ?? [],
+        '10y': processedData!.eu_treasuries?.['10y']?.slice(startIndex, endIndex) ?? [],
+      },
+      jp_treasuries: {
+        '3m': processedData!.jp_treasuries?.['3m']?.slice(startIndex, endIndex) ?? [],
+        '2y': processedData!.jp_treasuries?.['2y']?.slice(startIndex, endIndex) ?? [],
+        '10y': processedData!.jp_treasuries?.['10y']?.slice(startIndex, endIndex) ?? [],
+      },
+      exchange_rates: processedData!.exchange_rates ? {
+        dollar_index: processedData!.exchange_rates.dollar_index?.slice(startIndex, endIndex) ?? [],
+        usd_cny: processedData!.exchange_rates.usd_cny?.slice(startIndex, endIndex) ?? [],
+        usd_jpy: processedData!.exchange_rates.usd_jpy?.slice(startIndex, endIndex) ?? [],
+        usd_eur: processedData!.exchange_rates.usd_eur?.slice(startIndex, endIndex) ?? [],
       } : undefined,
     };
+
+    const result = filterDataByTab(timeFiltered, tab, range);
+    return result || getDefaultEconomicData();
   };
 
   // 首次加载全量数据
@@ -82,11 +121,16 @@ export function useEconomicData(timeRange: TimeRange): UseEconomicDataResult {
         if (cached) {
           const parsed = JSON.parse(cached);
           // 检查缓存是否过期（1小时）
-          if (Date.now() - parsed.timestamp < 3600000) {
+          const isOldFormat = !parsed.data?.eu_treasuries;
+          if (Date.now() - parsed.timestamp < 3600000 && !isOldFormat) {
             setFullData(parsed.data);
             setIsCached(true);
             setIsLoading(false);
             return;
+          }
+          // 如果是旧格式，清除缓存
+          if (isOldFormat) {
+            localStorage.removeItem(FULL_DATA_CACHE_KEY);
           }
         }
 
@@ -113,12 +157,12 @@ export function useEconomicData(timeRange: TimeRange): UseEconomicDataResult {
     fetchFullData();
   }, []); // 只在组件挂载时执行一次
 
-  // 根据时间范围过滤数据
+  // 根据时间范围和Tab类型过滤数据
   useEffect(() => {
     if (fullData) {
-      setFilteredData(filterDataByTimeRange(fullData, timeRange));
+      setFilteredData(filterDataByTimeAndTab(fullData, timeRange, tabType));
     }
-  }, [fullData, timeRange]);
+  }, [fullData, timeRange, tabType]);
 
   return {
     data: filteredData,

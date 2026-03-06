@@ -7,18 +7,31 @@ import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import { useDarkMode } from '@/lib/hooks/useDarkMode';
-import { createTreasuryTraces, createExchangeTraces, createChartLayout, createChartConfig } from '@/lib/utils/chartConfig';
+import { createTreasuryTraces, createEuroBondTraces, createJapanBondTraces, createExchangeTraces, createChartLayout, createTwoChartLayout, createChartConfig } from '@/lib/utils/chartConfig';
 
 interface EconomicChartProps {
   data: EconomicDataResponse;
+  showAllData?: boolean; // 是否显示所有数据（美债+欧债+日债+汇率），默认只显示美债+汇率
 }
 
-export function EconomicChart({ data }: EconomicChartProps) {
+export function EconomicChart({ data, showAllData = false }: EconomicChartProps) {
   const isDarkMode = useDarkMode();
 
   // 生成美债图表数据系列
   const treasuryTraces = useMemo(() => {
     return createTreasuryTraces(data.dates, data.us_treasuries);
+  }, [data]);
+
+  // 生成欧债图表数据系列
+  const euroBondTraces = useMemo(() => {
+    if (!data.eu_treasuries?.['10y'] || data.eu_treasuries['10y'].length === 0) return [];
+    return createEuroBondTraces(data.dates, data.eu_treasuries);
+  }, [data]);
+
+  // 生成日债图表数据系列
+  const japanBondTraces = useMemo(() => {
+    if (!data.jp_treasuries?.['10y'] || data.jp_treasuries['10y'].length === 0) return [];
+    return createJapanBondTraces(data.dates, data.jp_treasuries);
   }, [data]);
 
   // 生成汇率图表数据系列
@@ -27,27 +40,60 @@ export function EconomicChart({ data }: EconomicChartProps) {
     return createExchangeTraces(data.dates, data.exchange_rates);
   }, [data]);
 
+  // 合并图表数据：如果 showAllData 为 true，则显示所有数据；否则只显示美债和汇率
+  const traces = showAllData
+    ? [
+        ...treasuryTraces,
+        ...euroBondTraces,
+        ...japanBondTraces,
+        ...exchangeTraces,
+      ]
+    : [
+        ...treasuryTraces,
+        ...exchangeTraces,
+      ];
+
   // 生成图表布局
   const layout = useMemo(() => {
-    return createChartLayout(isDarkMode);
-  }, [isDarkMode]);
+    if (showAllData) {
+      // 显示所有数据时使用4个子图布局
+      const baseLayout = createChartLayout(isDarkMode);
+      return {
+        ...baseLayout,
+        xaxis: {
+          ...baseLayout.xaxis,
+          autorange: true,
+        },
+        xaxis2: {
+          ...baseLayout.xaxis2,
+          autorange: true,
+        },
+        xaxis3: {
+          ...baseLayout.xaxis3,
+          autorange: true,
+        },
+        xaxis4: {
+          ...baseLayout.xaxis4,
+          autorange: true,
+        },
+      };
+    } else {
+      // 只显示美债和汇率时使用2个子图布局
+      return createTwoChartLayout(isDarkMode);
+    }
+  }, [isDarkMode, showAllData]);
 
   // 生成图表配置
   const config = useMemo(() => {
     return createChartConfig();
   }, []);
 
-  // 如果没有汇率数据，只显示美债
-  const traces = exchangeTraces.length > 0
-    ? [...treasuryTraces, ...exchangeTraces]
-    : treasuryTraces;
-
   return (
     <Plot
       data={traces}
       layout={layout}
       config={config}
-      style={{ width: '100%', height: '700px' }}
+      style={{ width: '100%', height: '1000px' }}
       className="w-full"
       useResizeHandler
     />
