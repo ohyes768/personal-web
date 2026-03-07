@@ -1,7 +1,7 @@
 @echo off
 REM ============================================
 REM personal-web Local Development - Stop All
-REM Stop Gateway (8070), douyin-processor (8093), Frontend (3000)
+REM Stop douyin-processor (8093), Frontend (3000)
 REM ============================================
 
 setlocal enabledelayedexpansion
@@ -13,13 +13,6 @@ echo ========================================
 echo.
 
 echo [1/2] Stopping services by port with process tree...
-
-REM Check and stop port 8070 (Gateway)
-for /f "tokens=5" %%a in ('netstat -aon ^| find ":8070 " ^| find "LISTENING" 2^>nul') do (
-    set "PID=%%a"
-    echo Stopping service on port 8070 - PID !PID! with process tree...
-    taskkill /F /T /PID !PID! >nul 2>&1
-)
 
 REM Check and stop port 8093 (douyin-processor)
 for /f "tokens=5" %%a in ('netstat -aon ^| find ":8093 " ^| find "LISTENING" 2^>nul') do (
