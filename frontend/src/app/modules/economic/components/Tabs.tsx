@@ -3,19 +3,19 @@
  */
 'use client';
 
-interface Tab {
-  id: string;
+interface Tab<T extends string> {
+  id: T;
   label: string;
   description: string;
 }
 
-interface TabsProps {
-  tabs: Tab[];
-  activeTab: string;
-  onTabChange: (tabId: string) => void;
+interface TabsProps<T extends string> {
+  tabs: Tab<T>[];
+  activeTab: T;
+  onTabChange: (tabId: T) => void;
 }
 
-export function Tabs({ tabs, activeTab, onTabChange }: TabsProps) {
+export function Tabs<T extends string>({ tabs, activeTab, onTabChange }: TabsProps<T>) {
   return (
     <div className="w-full mb-8">
       <div className="flex flex-wrap gap-2 border-b border-gray-800 pb-2">
