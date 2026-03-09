@@ -11,13 +11,13 @@ export const economicApi = {
     if (endDate) params.end_date = endDate;
 
     // apiClient.get 已经返回 result.data，不需要再访问 .data
-    return apiClient.get<EconomicDataResponse>('/macro/data', params);
+    return apiClient.get<EconomicDataResponse>('/api/macro/data', params);
   },
 
   /**
    * 更新数据（通过 API Gateway）
    */
   updateData: async () => {
-    return apiClient.post('/macro/update');
+    return apiClient.post('/api/macro/update');
   },
 };
