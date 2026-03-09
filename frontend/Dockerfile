@@ -37,10 +37,6 @@ COPY --from=builder /app/next.config.ts ./
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/pnpm-lock.yaml* ./
 
-# 创建并复制 public 目录
-RUN mkdir -p ./public
-COPY --from=builder /app/public/ ./public/
-
 # 复制 .next 目录
 RUN mkdir -p .next
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
