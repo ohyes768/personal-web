@@ -32,18 +32,18 @@ async function proxyRequest(
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/')
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params
   const url = new URL(request.url)
-  const targetUrl = `${DOUYIN_SERVICE_URL}/api/${path}${url.search}`
+  const targetUrl = `${DOUYIN_SERVICE_URL}/api/${path.join('/')}${url.search}`
 
   return proxyRequest('GET', targetUrl)
 }
 
-export async function POST(request: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/')
+export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params
   const body = await request.json()
-  const targetUrl = `${DOUYIN_SERVICE_URL}/api/${path}`
+  const targetUrl = `${DOUYIN_SERVICE_URL}/api/${path.join('/')}`
 
   return proxyRequest('POST', targetUrl, {
     headers: { 'Content-Type': 'application/json' },
@@ -51,9 +51,9 @@ export async function POST(request: NextRequest, { params }: { params: { path: s
   })
 }
 
-export async function DELETE(request: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/')
-  const targetUrl = `${DOUYIN_SERVICE_URL}/api/${path}`
+export async function DELETE(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params
+  const targetUrl = `${DOUYIN_SERVICE_URL}/api/${path.join('/')}`
 
   return proxyRequest('DELETE', targetUrl)
 }

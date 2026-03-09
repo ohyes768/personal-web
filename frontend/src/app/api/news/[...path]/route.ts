@@ -32,10 +32,10 @@ async function proxyRequest(
   }
 }
 
-export async function GET(request: NextRequest, { params }: { params: { path: string[] } }) {
-  const path = params.path.join('/')
+export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
+  const { path } = await params
   const url = new URL(request.url)
-  const targetUrl = `${NEWS_SERVICE_URL}/api/news/${path}${url.search}`
+  const targetUrl = `${NEWS_SERVICE_URL}/api/news/${path.join('/')}${url.search}`
 
   return proxyRequest('GET', targetUrl)
 }
