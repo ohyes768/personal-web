@@ -7,7 +7,7 @@ class ApiClient {
   private baseUrl: string;
 
   constructor(baseUrl: string = '') {
-    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    this.baseUrl = baseUrl ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:8080';
   }
 
   private async request<T>(
