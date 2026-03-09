@@ -41,8 +41,8 @@ class ApiClient {
   }
 
   async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    // 检测是否是相对路径（以 / 开头，没有协议）
-    const isRelativePath = this.baseUrl.startsWith('/');
+    // 检测是否是相对路径（以 / 开头或 baseUrl 为空）
+    const isRelativePath = !this.baseUrl || this.baseUrl.startsWith('/');
 
     let url: string;
     if (isRelativePath) {
