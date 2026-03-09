@@ -1,19 +1,13 @@
-# 构建阶段 - 使用国内镜像源
+# 构建阶段 - 使用官方源（plotly.js 在国内镜像同步不完整）
 FROM node:20-alpine AS builder
 
 WORKDIR /app
 
-# 使用阿里云 npm 镜像
-RUN npm config set registry https://registry.npmmirror.com
-
 # 安装 pnpm
 RUN npm install -g pnpm
 
-# 配置 pnpm 使用阿里云镜像
-RUN pnpm config set registry https://registry.npmmirror.com
-
-# 复制依赖文件和 npm 配置
-COPY package.json pnpm-lock.yaml* .npmrc* ./
+# 复制依赖文件
+COPY package.json pnpm-lock.yaml* ./
 
 # 安装依赖
 RUN pnpm install --frozen-lockfile
