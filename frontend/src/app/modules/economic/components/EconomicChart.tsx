@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import { useDarkMode } from '@/lib/hooks/useDarkMode';
-import { createTreasuryTraces, createEuroBondTraces, createJapanBondTraces, createExchangeTraces, createChartLayout, createTwoChartLayout, createChartConfig } from '@/lib/utils/chartConfig';
+import { createTreasuryTraces, createEuroBondTraces, createJapanBondTraces, createExchangeTraces, createVIXTraces, createChartLayout, createTwoChartLayout, createThreeChartLayout, createChartConfig } from '@/lib/utils/chartConfig';
 
 interface EconomicChartProps {
   data: EconomicDataResponse;
@@ -40,7 +40,13 @@ export function EconomicChart({ data, showAllData = false }: EconomicChartProps)
     return createExchangeTraces(data.dates, data.exchange_rates);
   }, [data]);
 
-  // 合并图表数据：如果 showAllData 为 true，则显示所有数据；否则只显示美债和汇率
+  // 生成VIX图表数据系列
+  const vixTraces = useMemo(() => {
+    if (!data.vix || data.vix.length === 0) return [];
+    return createVIXTraces(data.dates, data.vix);
+  }, [data]);
+
+  // 合并图表数据：如果 showAllData 为 true，则显示所有数据；否则只显示美债、汇率和VIX
   const traces = showAllData
     ? [
         ...treasuryTraces,
@@ -51,6 +57,7 @@ export function EconomicChart({ data, showAllData = false }: EconomicChartProps)
     : [
         ...treasuryTraces,
         ...exchangeTraces,
+        ...vixTraces,
       ];
 
   // 生成图表布局
@@ -78,8 +85,8 @@ export function EconomicChart({ data, showAllData = false }: EconomicChartProps)
         },
       };
     } else {
-      // 只显示美债和汇率时使用2个子图布局
-      return createTwoChartLayout(isDarkMode);
+      // 只显示美债、汇率和VIX时使用3个子图布局
+      return createThreeChartLayout(isDarkMode);
     }
   }, [isDarkMode, showAllData]);
 
@@ -93,7 +100,7 @@ export function EconomicChart({ data, showAllData = false }: EconomicChartProps)
       data={traces}
       layout={layout}
       config={config}
-      style={{ width: '100%', height: '1000px' }}
+      style={{ width: '100%', height: showAllData ? '1000px' : '1200px' }}
       className="w-full"
       useResizeHandler
     />

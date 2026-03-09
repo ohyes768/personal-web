@@ -56,6 +56,7 @@ export interface EconomicDataResponse {
     usd_jpy: number[];
     usd_eur: number[];
   };
+  vix?: number[];  // VIX恐慌指数数据
 }
 
 /** 图表数据系列 */
@@ -90,4 +91,5 @@ export interface ChartColors {
   usdCny: string;
   usdJpy: string;
   usdEur: string;
+  vix: string;  // VIX恐慌指数颜色（紫色）
 }

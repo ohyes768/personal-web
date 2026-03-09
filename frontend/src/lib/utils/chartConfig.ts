@@ -14,6 +14,7 @@ export const CHART_COLORS: ChartColors = {
   usdCny: '#EC4899',      // 粉色
   usdJpy: '#F59E0B',      // 橙色
   usdEur: '#10B981',      // 绿色
+  vix: '#9467BD',         // 紫色（VIX恐慌指数）
 };
 
 /**
@@ -159,6 +160,26 @@ export function createExchangeTraces(
       line: { color: CHART_COLORS.usdEur, width: 2 },
       xaxis: 'x2',
       yaxis: 'y2',
+    },
+  ];
+}
+
+/**
+ * 生成VIX图表数据系列
+ */
+export function createVIXTraces(
+  dates: string[],
+  data: number[]
+): ChartTrace[] {
+  return [
+    {
+      x: dates,
+      y: data,
+      name: 'VIX恐慌指数',
+      mode: 'lines',
+      line: { color: CHART_COLORS.vix, width: 2 },
+      xaxis: 'x3',
+      yaxis: 'y3',
     },
   ];
 }
@@ -340,6 +361,101 @@ export function createTwoChartLayout(isDarkMode: boolean) {
     yaxis2: {
       title: '汇率相对变化 (%)',
       anchor: 'x2',
+      showgrid: true,
+      gridcolor: gridColor,
+      color: textColor,
+      fixedrange: true,
+    },
+    // 通用配置
+    hovermode: 'x unified' as const,
+    spikedistance: -1,
+    hoverdistance: 50,
+    // 暗色模式背景
+    paper_bgcolor: bgColor,
+    plot_bgcolor: bgColor,
+    font: {
+      color: textColor,
+    },
+    // 图例配置
+    showlegend: true,
+    legend: {
+      orientation: 'v' as const,
+      y: 0.5,
+      x: 1.02,
+      xanchor: 'left' as const,
+      yanchor: 'middle' as const,
+    },
+    // 边距
+    margin: {
+      l: 60,
+      r: 150,
+      t: 40,
+      b: 60,
+    },
+    // 子图间距
+    vertical_spacing: 0.08,
+  };
+}
+
+/**
+ * 生成3个子图的布局配置（美债 + 汇率 + VIX）
+ */
+export function createThreeChartLayout(isDarkMode: boolean) {
+  const bgColor = isDarkMode ? '#1a1a1a' : 'white';
+  const gridColor = isDarkMode ? '#333' : '#e5e7eb';
+  const textColor = isDarkMode ? '#e5e7eb' : '#374151';
+
+  return {
+    grid: {
+      rows: 3,
+      columns: 1,
+      pattern: 'independent',
+    },
+    // 美债收益率图（第 1 行）
+    xaxis: {
+      title: '日期',
+      anchor: 'y',
+      showgrid: true,
+      gridcolor: gridColor,
+      color: textColor,
+    },
+    yaxis: {
+      title: '收益率 (%)',
+      anchor: 'x',
+      showgrid: true,
+      gridcolor: gridColor,
+      color: textColor,
+      fixedrange: true,
+    },
+    // 汇率图（第 2 行）
+    xaxis2: {
+      title: '日期',
+      anchor: 'y2',
+      showgrid: true,
+      gridcolor: gridColor,
+      color: textColor,
+      matches: 'x', // X轴联动
+    },
+    yaxis2: {
+      title: '汇率相对变化 (%)',
+      anchor: 'x2',
+      showgrid: true,
+      gridcolor: gridColor,
+      color: textColor,
+      fixedrange: true,
+    },
+    // VIX恐慌指数图（第 3 行）
+    xaxis3: {
+      title: '日期',
+      anchor: 'y3',
+      showgrid: true,
+      gridcolor: gridColor,
+      color: textColor,
+      matches: 'x', // X轴联动
+    },
+    yaxis3: {
+      title: 'VIX指数',
+      anchor: 'x3',
       showgrid: true,
       gridcolor: gridColor,
       color: textColor,

@@ -12,8 +12,8 @@ RUN npm install -g pnpm
 # 配置 pnpm 使用阿里云镜像
 RUN pnpm config set registry https://registry.npmmirror.com
 
-# 复制依赖文件
-COPY package.json pnpm-lock.yaml* ./
+# 复制依赖文件和 npm 配置
+COPY package.json pnpm-lock.yaml* .npmrc* ./
 
 # 安装依赖
 RUN pnpm install --frozen-lockfile

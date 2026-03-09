@@ -31,6 +31,7 @@ function getDefaultEconomicData(): EconomicDataResponse {
       usd_jpy: [],
       usd_eur: [],
     },
+    vix: [],
   };
 }
 
@@ -103,6 +104,7 @@ export function useEconomicData(timeRange: TimeRange, tabType: TabType = 'treasu
         usd_jpy: processedData!.exchange_rates.usd_jpy?.slice(startIndex, endIndex) ?? [],
         usd_eur: processedData!.exchange_rates.usd_eur?.slice(startIndex, endIndex) ?? [],
       } : undefined,
+      vix: processedData!.vix?.slice(startIndex, endIndex) ?? [],
     };
 
     const result = filterDataByTab(timeFiltered, tab, range);
