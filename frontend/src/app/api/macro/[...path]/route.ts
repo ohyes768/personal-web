@@ -8,25 +8,30 @@ async function proxyRequest(
   options?: RequestInit
 ): Promise<NextResponse> {
   try {
+    console.log(`[API Proxy] Request: ${method} ${url}`)
     const response = await fetch(url, {
       method,
       ...options,
     })
+
+    console.log(`[API Proxy] Response status: ${response.status}`)
 
     const contentType = response.headers.get('content-type')
     let data: any
 
     if (contentType?.includes('application/json')) {
       data = await response.json()
+      console.log(`[API Proxy] Response data:`, JSON.stringify(data).slice(0, 200))
     } else {
       data = await response.text()
+      console.log(`[API Proxy] Response text:`, data.slice(0, 200))
     }
 
     return NextResponse.json(data, { status: response.status })
   } catch (error) {
     console.error(`[API Proxy] ${method} ${url} failed:`, error)
     return NextResponse.json(
-      { success: false, error: 'Failed to fetch data from backend service' },
+      { success: false, error: 'Failed to fetch data from backend service', details: String(error) },
       { status: 500 }
     )
   }
