@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const DOUYIN_SERVICE_URL = process.env.DOUYIN_SERVICE_URL || 'http://localhost:8093'
+const DOUYIN_SERVICE_URL = process.env.DOUYIN_SERVICE_URL ?? 'http://localhost:8093'
 
 async function proxyRequest(
   method: string,

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const NEWS_SERVICE_URL = process.env.NEWS_SERVICE_URL || 'http://localhost:8092'
+const NEWS_SERVICE_URL = process.env.NEWS_SERVICE_URL ?? 'http://localhost:8092'
 
 async function proxyRequest(
   method: string,
