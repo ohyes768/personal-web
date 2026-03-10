@@ -85,31 +85,31 @@ main() {
 
     # 1. 美国国债历史数据
     if fetch_history "美国国债" "/api/macro/fetch/us-treasuries/history"; then
-        ((success_count++))
+        success_count=$((success_count + 1))
     fi
     echo ""
 
     # 2. 汇率历史数据
     if fetch_history "汇率" "/api/macro/fetch/exchange-rates/history"; then
-        ((success_count++))
+        success_count=$((success_count + 1))
     fi
     echo ""
 
     # 3. 欧洲国债历史数据
     if fetch_history "欧洲国债" "/api/macro/fetch/eu-bonds/history"; then
-        ((success_count++))
+        success_count=$((success_count + 1))
     fi
     echo ""
 
     # 4. 日本国债历史数据
     if fetch_history "日本国债" "/api/macro/fetch/jp-bonds/history"; then
-        ((success_count++))
+        success_count=$((success_count + 1))
     fi
     echo ""
 
     # 5. VIX 历史数据
     if fetch_history "VIX恐慌指数" "/api/macro/fetch/vix/history"; then
-        ((success_count++))
+        success_count=$((success_count + 1))
     fi
     echo ""
 
