@@ -10,16 +10,8 @@ const nextConfig = {
     },
   },
 
-  // 配置代理（开发环境使用，生产环境使用 API Routes）
-  async rewrites() {
-    const macroServiceUrl = process.env.MACRO_SERVICE_URL || 'http://localhost:8094'
-    return [
-      {
-        source: '/api/macro/:path*',
-        destination: `${macroServiceUrl}/api/macro/:path*`,
-      },
-    ]
-  },
+  // 注意：代理逻辑已移至 src/app/api/macro/[...path]/route.ts
+  // 使用 API Routes 而非 rewrites，因为 rewrites 在构建时执行无法读取运行时环境变量
 }
 
 export default nextConfig
