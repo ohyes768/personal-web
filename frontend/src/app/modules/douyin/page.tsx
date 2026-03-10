@@ -700,11 +700,11 @@ export default function DouyinPage() {
                       {selectedVideo.transcript.segments && selectedVideo.transcript.segments.length > 0 ? (
                         <div className="space-y-3">
                           {selectedVideo.transcript.segments.map((segment, index) => (
-                            <div key={index} className="flex gap-4 text-sm">
+                            <div key={index} className="flex gap-4 text-lg">
                               <span className="text-gray-500 whitespace-nowrap select-none">
                                 [{formatSegmentTime(segment.start_time)} - {formatSegmentTime(segment.end_time)}]
                               </span>
-                              <span className="text-gray-300 flex-1">
+                              <span className="text-gray-300 flex-1 leading-relaxed">
                                 {segment.text}
                               </span>
                             </div>
