@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const MACRO_SERVICE_URL = process.env.MACRO_SERVICE_URL ?? 'http://localhost:8094'
+const MACRO_SERVICE_URL = process.env.MACRO_SERVICE_URL !== undefined && process.env.MACRO_SERVICE_URL !== null ? process.env.MACRO_SERVICE_URL : 'http://localhost:8094'
 
 async function proxyRequest(
   method: string,
