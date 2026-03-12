@@ -37,8 +37,8 @@ powershell -ExecutionPolicy Bypass -File "%~dp0stop-orphan-python.ps1"
 echo.
 echo Closing service windows...
 
-REM Call separate PowerShell script to close windows
-powershell -ExecutionPolicy Bypass -File "%~dp0stop-windows.ps1" "douyin-processor,Frontend"
+REM Call separate PowerShell script to close windows by port and command
+powershell -ExecutionPolicy Bypass -File "%~dp0stop-windows.ps1" -Ports "8093" -Commands "npm run dev"
 
 echo.
 echo All services stopped.
