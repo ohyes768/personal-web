@@ -40,7 +40,7 @@ async function proxyRequest(
 export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params
   const url = new URL(request.url)
-  const targetUrl = `${MACRO_SERVICE_URL}/api/macro/${path.join('/')}${url.search}`
+  const targetUrl = `${MACRO_SERVICE_URL}/api/${path.join('/')}${url.search}`
 
   return proxyRequest('GET', targetUrl)
 }
@@ -48,7 +48,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params
   const body = await request.json()
-  const targetUrl = `${MACRO_SERVICE_URL}/api/macro/${path.join('/')}`
+  const targetUrl = `${MACRO_SERVICE_URL}/api/${path.join('/')}`
 
   return proxyRequest('POST', targetUrl, {
     headers: { 'Content-Type': 'application/json' },

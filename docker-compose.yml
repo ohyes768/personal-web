@@ -17,7 +17,8 @@ services:
       # 指向已运行的后端服务（使用 host.docker.internal 访问宿主机）
       - DOUYIN_SERVICE_URL=http://host.docker.internal:8093
       - MACRO_SERVICE_URL=http://host.docker.internal:8094
-      - NEWS_SERVICE_URL=http://host.docker.internal:8092
+      - NEWS_SERVICE_URL=http://host.docker.internal:8091
+      - DIVIDEND_API_URL=http://host.docker.internal:8092
     networks:
       - web-network
     healthcheck:

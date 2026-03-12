@@ -49,7 +49,8 @@ ENV HOSTNAME="0.0.0.0"
 # 后端服务地址（运行时通过 docker-compose 覆盖）
 ENV DOUYIN_SERVICE_URL=http://localhost:8093
 ENV MACRO_SERVICE_URL=http://localhost:8094
-ENV NEWS_SERVICE_URL=http://localhost:8092
+ENV NEWS_SERVICE_URL=http://localhost:8091
+ENV DIVIDEND_API_URL=http://localhost:8092
 
 # 切换用户
 USER nextjs
