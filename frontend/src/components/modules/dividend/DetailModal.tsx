@@ -42,9 +42,9 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
     ];
 
     const rows = [
-      { key: 'avg_price', label: '平均股价', format: (v) => v ? `¥${formatValue(v)}` : '-' },
-      { key: 'dividend', label: '分红金额', format: (v) => v ? `¥${formatValue(v)}` : '-' },
-      { key: 'yield_pct', label: '股息率', format: (v) => v ? `${formatValue(v)}%` : '-' },
+      { key: 'avg_price', label: '平均股价', format: (v: number | null | undefined) => v ? `¥${formatValue(v)}` : '-' },
+      { key: 'dividend', label: '分红金额', format: (v: number | null | undefined) => v ? `¥${formatValue(v)}` : '-' },
+      { key: 'yield_pct', label: '股息率', format: (v: number | null | undefined) => v ? `${formatValue(v)}%` : '-' },
     ];
 
     return (
