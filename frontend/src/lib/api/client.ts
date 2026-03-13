@@ -62,14 +62,23 @@ class ApiClient {
       // 相对路径：直接拼接
       url = `${this.baseUrl}${endpoint}`;
       if (params) {
-        const searchParams = new URLSearchParams(params);
+        // 过滤掉 undefined、null 和空字符串的参数
+        const validParams = Object.fromEntries(
+          Object.entries(params).filter(([_, value]) => value !== undefined && value !== null && value !== '')
+        );
+        const searchParams = new URLSearchParams(validParams);
         url += `?${searchParams.toString()}`;
       }
     } else {
       // 完整 URL：使用 URL 构造函数
       const urlObj = new URL(endpoint, this.baseUrl);
       if (params) {
-        Object.keys(params).forEach(key => urlObj.searchParams.append(key, params[key]));
+        // 过滤掉 undefined、null 和空字符串的参数
+        Object.entries(params).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            urlObj.searchParams.append(key, value);
+          }
+        });
       }
       url = urlObj.pathname + urlObj.search;
     }

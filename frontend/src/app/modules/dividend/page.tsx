@@ -18,8 +18,8 @@ export default function DividendPage() {
   const [minYield, setMinYield] = useState(3);
   const [exchange, setExchange] = useState<string>('');
 
-  // 获取所有不重复的交易所
-  const exchanges = Array.from(new Set(data.map((item) => item.exchange))).filter(Boolean).sort();
+  // 固定的交易所选项
+  const exchanges = ['沪市主板', '深市主板'];
 
   // 处理阈值输入
   const handleMinYieldChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -31,7 +31,7 @@ export default function DividendPage() {
   const handleSearch = useCallback(() => {
     const params: DividendQueryParams = {
       min_yield: minYield,
-      exchange: exchange || undefined,
+      exchange: exchange === '全部' ? undefined : exchange,
     };
     refetch(params);
   }, [minYield, exchange, refetch]);
