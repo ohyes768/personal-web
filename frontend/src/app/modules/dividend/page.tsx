@@ -5,18 +5,48 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { useDividendData, useDetailModal } from '@/lib/modules/dividend/hooks';
+import { useDividendData, useDetailModal, useTechnicalData, useRefreshPrice, useStockInfo } from '@/lib/modules/dividend/hooks';
 import { DividendTable } from '@/components/modules/dividend/DividendTable';
 import { DetailModal } from '@/components/modules/dividend/DetailModal';
 import { Button } from '@/components/ui/Button';
-import type { DividendQueryParams } from '@/lib/modules/dividend/types';
+import type { DividendQueryParams, TechnicalIndicators } from '@/lib/modules/dividend/types';
 
 export default function DividendPage() {
   const { data, total, loading, error, refetch } = useDividendData();
   const { isOpen, modalType, stock, open, close } = useDetailModal();
 
+  // 获取技术指标数据（PE、M120 等）
+  const stockCodes = data.map(s => s.code);
+  const { technicalData: rawTechnicalData } = useTechnicalData(stockCodes);
+  const { stockInfoMap } = useStockInfo(stockCodes);
+
+  // 刷新功能
+  const { refresh, getRefreshState, getCache } = useRefreshPrice();
+
+  // 状态管理
   const [minYield, setMinYield] = useState(3);
   const [exchange, setExchange] = useState<string>('');
+  const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(rawTechnicalData);
+
+  // 将股票信息合并到数据中
+  const dataWithInfo = data.map(stock => {
+    const info = stockInfoMap.get(stock.code);
+    return {
+      ...stock,
+      exchange: info?.exchange || stock.exchange,
+      sw_level1: info?.sw_level1 || null,
+      sw_level2: info?.sw_level2 || null,
+      sw_level3: info?.sw_level3 || null,
+      // concept_board 和 industry_board 不在列表中显示，点击板块时再获取
+      concept_board: null,
+      industry_board: null,
+    };
+  });
+
+  // 监听技术指标数据变化
+  useEffect(() => {
+    setTechnicalData(rawTechnicalData);
+  }, [rawTechnicalData]);
 
   // 固定的交易所选项
   const exchanges = ['沪市主板', '深市主板'];
@@ -42,6 +72,30 @@ export default function DividendPage() {
       handleSearch();
     }
   }, [handleSearch]);
+
+  // 刷新实时股价
+  const handleRefresh = useCallback(async (code: string, m120: number) => {
+    const result = await refresh({ code, m120 });
+
+    if (result) {
+      // 更新技术指标数据中的实时价格字段
+      setTechnicalData(prev => {
+        const newMap = new Map(prev);
+        const existing = newMap.get(code) || {};
+
+        newMap.set(code, {
+          ...existing,
+          realtimeClose: result.close,
+          realtimeDeviation: result.deviation,
+          m120: m120,
+        });
+
+        return newMap;
+      });
+    }
+
+    return result;
+  }, [refresh]);
 
   // 骨架屏
   if (loading && data.length === 0) {
@@ -137,10 +191,13 @@ export default function DividendPage() {
             </Button>
           </div>
 
-          {data.length > 0 ? (
+          {dataWithInfo.length > 0 ? (
             <DividendTable
-              data={data}
+              data={dataWithInfo}
+              technicalData={technicalData}
               onOpenModal={open}
+              onRefresh={handleRefresh}
+              getRefreshState={getRefreshState}
             />
           ) : (
             <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900 h-[300px]">

@@ -119,3 +119,132 @@ export interface DetailModalProps {
   type: DetailModalType | null;
   stock: DividendStock | null;
 }
+
+// ========== 技术指标类型 ==========
+
+/**
+ * 股票 PE 数据
+ */
+export interface StockPE {
+  code: string;
+  name: string;
+  pe?: number | null;
+  pb?: number | null;
+  market_cap?: number | null;        // 总市值（万元）
+  circulation_market_cap?: number | null;  // 流通市值（万元）
+}
+
+/**
+ * PE 数据响应
+ */
+export interface StockPEResponse {
+  total: number;
+  items: StockPE[];
+  last_updated?: string | null;
+}
+
+/**
+ * M120 股票数据
+ */
+export interface M120Stock {
+  code: string;
+  name: string;
+  avg_yield_3y?: number | null;
+  m120?: number | null;
+  close?: number | null;
+  deviation?: number | null;
+}
+
+/**
+ * M120 列表响应
+ */
+export interface M120ListResponse {
+  total: number;
+  items: M120Stock[];
+  last_updated?: string | null;
+}
+
+/**
+ * 实时股价请求
+ */
+export interface RealtimePriceRequest {
+  code: string;
+  m120: number;
+}
+
+/**
+ * 实时股价响应
+ */
+export interface RealtimePriceResponse {
+  code: string;
+  close?: number | null;
+  deviation?: number | null;
+  timestamp?: string | null;
+}
+
+/**
+ * 技术指标数据
+ */
+export interface TechnicalIndicators {
+  pe?: number | null;
+  pb?: number | null;
+  m120?: number | null;
+  close?: number | null;           // 昨日收盘价（从 M120 数据获取）
+  deviation?: number | null;       // 与 M120 的偏离度（从 M120 数据获取）
+  realtimeClose?: number | null;   // 实时价格（刷新后更新）
+  realtimeDeviation?: number | null; // 实时偏离度（刷新后更新）
+}
+
+/**
+ * 带技术指标的股票数据
+ */
+export interface DividendStockWithTechnical extends DividendStock {
+  technical?: TechnicalIndicators;
+}
+
+/**
+ * 偏离度缓存数据
+ */
+export interface DeviationCache {
+  close: number;
+  deviation: number;
+  timestamp: number;
+}
+
+/**
+ * 刷新状态
+ */
+export interface RefreshState {
+  loading: boolean;
+  error: string | null;
+}
+
+// ========== 股票信息类型 ==========
+
+/**
+ * 股票行业/概念信息
+ */
+export interface StockInfo {
+  code: string;
+  exchange?: string | null;
+  sw_level1?: string | null;
+  sw_level2?: string | null;
+  sw_level3?: string | null;
+  concept_board?: string | null;
+  industry_board?: string | null;
+}
+
+/**
+ * 股票信息请求
+ */
+export interface StockInfoRequest {
+  codes: string[];
+}
+
+/**
+ * 股票信息响应
+ */
+export interface StockInfoResponse {
+  items: StockInfo[];
+  total: number;
+}

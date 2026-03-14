@@ -6,7 +6,9 @@
 
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
-import type { DividendStock } from '@/lib/modules/dividend/types';
+import { useState, useEffect, useCallback } from 'react';
+import { dividendApi } from '@/lib/modules/dividend/api';
+import type { DividendStock, StockInfo } from '@/lib/modules/dividend/types';
 
 export interface DetailModalProps {
   isOpen: boolean;
@@ -20,13 +22,83 @@ const formatValue = (value: number | null | undefined): string => {
   return value.toFixed(2);
 };
 
+// 缓存相关配置
+const CACHE_KEY_PREFIX = 'dividend-stock-info-';
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 1天（毫秒）
+
 export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) {
+  const [stockInfo, setStockInfo] = useState<StockInfo | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // 从 localStorage 读取缓存
+  const getCache = useCallback((code: string): StockInfo | null => {
+    try {
+      const cached = localStorage.getItem(`${CACHE_KEY_PREFIX}${code}`);
+      if (!cached) return null;
+
+      const data: StockInfo & { timestamp: number } = JSON.parse(cached);
+      const now = Date.now();
+
+      // 检查缓存是否过期
+      if (now - data.timestamp > CACHE_DURATION) {
+        localStorage.removeItem(`${CACHE_KEY_PREFIX}${code}`);
+        return null;
+      }
+
+      const { timestamp, ...info } = data;
+      return info;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  // 保存到 localStorage
+  const setCache = useCallback((info: StockInfo) => {
+    try {
+      const data = { ...info, timestamp: Date.now() };
+      localStorage.setItem(`${CACHE_KEY_PREFIX}${info.code}`, JSON.stringify(data));
+    } catch (err) {
+      console.error('Failed to save cache:', err);
+    }
+  }, []);
+
+  // 获取股票信息
+  useEffect(() => {
+    if (!isOpen || !stock || type !== 'sector') {
+      return;
+    }
+
+    // 先检查缓存
+    const cached = getCache(stock.code);
+    if (cached) {
+      setStockInfo(cached);
+      return;
+    }
+
+    // 从 API 获取
+    setLoading(true);
+    dividendApi.getStocksInfo({ codes: [stock.code] })
+      .then(response => {
+        if (response.items.length > 0) {
+          const info = response.items[0];
+          setStockInfo(info);
+          setCache(info);
+        }
+      })
+      .catch(err => {
+        console.error('Failed to fetch stock info:', err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [isOpen, stock, type, getCache, setCache]);
+
   if (!stock || !type) return null;
 
   const getModalTitle = () => {
     const titles = {
       quarterly: '季度股息率详情',
-      sector: '板块/行业',
+      sector: '板块',
       yearly: '年度详情',
       volatility: '价格波动详情',
     };
@@ -35,10 +107,10 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
 
   const renderQuarterlyContent = () => {
     const quarters = [
-      { name: 'Q1', data: stock.quarterly?.q1 },
-      { name: 'Q2', data: stock.quarterly?.q2 },
-      { name: 'Q3', data: stock.quarterly?.q3 },
-      { name: 'Q4', data: stock.quarterly?.q4 },
+      { name: '2025 Q4', data: stock.quarterly?.q4 },
+      { name: '2025 Q3', data: stock.quarterly?.q3 },
+      { name: '2025 Q2', data: stock.quarterly?.q2 },
+      { name: '2025 Q1', data: stock.quarterly?.q1 },
     ];
 
     const rows = [
@@ -76,23 +148,31 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
   };
 
   const renderSectorContent = () => {
-    const conceptBoards = stock.concept_board
-      ? stock.concept_board.split(/[,;]+/).map((b) => b.trim()).filter(Boolean)
+    // 概念板块和行业板块从 stockInfo 获取（点击板块时才获取）
+    const conceptBoards = stockInfo?.concept_board
+      ? stockInfo.concept_board.split(/[,;]+/).map((b) => b.trim()).filter(Boolean)
       : [];
-    const industryBoards = stock.industry_board
-      ? stock.industry_board.split(/[,;]+/).map((b) => b.trim()).filter(Boolean)
+    const industryBoards = stockInfo?.industry_board
+      ? stockInfo.industry_board.split(/[,;]+/).map((b) => b.trim()).filter(Boolean)
       : [];
 
     return (
       <div className="space-y-6">
-        {conceptBoards.length > 0 && (
+        {/* 概念板块 */}
+        {loading && (
+          <div className="flex items-center justify-center py-4">
+            <div className="text-gray-600 dark:text-gray-400 text-sm">加载板块信息...</div>
+          </div>
+        )}
+
+        {!loading && conceptBoards.length > 0 && (
           <div>
             <h3 className="text-base font-semibold text-gray-700 dark:text-gray-300 mb-3">概念板块</h3>
             <div className="flex flex-wrap gap-2">
               {conceptBoards.map((board, index) => (
                 <span
                   key={index}
-                  className="px-3 py-1.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded-full text-base"
+                  className="px-3 py-1.5 bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200 rounded-full text-sm"
                 >
                   {board}
                 </span>
@@ -101,14 +181,15 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
           </div>
         )}
 
-        {industryBoards.length > 0 && (
+        {/* 行业板块 */}
+        {!loading && industryBoards.length > 0 && (
           <div>
             <h3 className="text-base font-semibold text-gray-700 dark:text-gray-300 mb-3">行业板块</h3>
             <div className="flex flex-wrap gap-2">
               {industryBoards.map((board, index) => (
                 <span
                   key={index}
-                  className="px-3 py-1.5 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 rounded-full text-base"
+                  className="px-3 py-1.5 bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-200 rounded-full text-sm"
                 >
                   {board}
                 </span>
@@ -117,8 +198,8 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
           </div>
         )}
 
-        {conceptBoards.length === 0 && industryBoards.length === 0 && (
-          <p className="text-base text-gray-600 dark:text-gray-400">暂无板块/行业信息</p>
+        {!loading && conceptBoards.length === 0 && industryBoards.length === 0 && (
+          <p className="text-sm text-gray-600 dark:text-gray-400">暂无板块信息</p>
         )}
       </div>
     );
@@ -193,8 +274,8 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
     ];
 
     const changeCards = [
-      { label: '最高涨幅', value: stock.high_change_pct_2025, isPositive: false },
-      { label: '最高跌幅', value: stock.low_change_pct_2025, isPositive: true },
+      { label: '最高涨幅', value: stock.high_change_pct_2025, isPositive: true },
+      { label: '最高跌幅', value: stock.low_change_pct_2025, isPositive: false },
     ];
 
     return (

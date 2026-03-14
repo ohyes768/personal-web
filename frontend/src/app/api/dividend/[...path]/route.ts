@@ -48,3 +48,22 @@ export async function GET(
 
   return proxyRequest('GET', targetUrl);
 }
+
+export async function POST(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  const { path } = await params;
+  const url = new URL(request.url);
+  const targetUrl = `${BACKEND_URL}/api/${path.filter(p => p !== 'dividend').join('/')}${url.search}`;
+
+  // 获取请求体
+  const body = await request.json();
+
+  return proxyRequest('POST', targetUrl, {
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+}

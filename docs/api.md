@@ -10,10 +10,298 @@
 |---------|------|------|
 | douyin-processor | 8093 | 抖音视频处理服务 |
 | global-macro-fin | 8094 | 宏观经济数据服务 |
+| dividend-select | 8092 | 股息率筛选服务 |
 
 ---
 
-## 一、douyin-processor (抖音视频处理服务)
+## 三、dividend-select (股息率筛选服务)
+
+**服务地址**: `http://localhost:8092`
+
+**基础路径**: `/api`
+
+### 功能说明
+
+股息率筛选服务提供 A 股高股息率股票的查询和技术指标分析功能。
+
+---
+
+### 1. 获取股票列表
+
+查询符合条件的股票列表。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | GET |
+| 路径 | `/api/stocks` |
+
+**查询参数**
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| min_yield | float | 3.0 | 最小股息率(%) |
+| max_yield | float | - | 最大股息率(%) |
+| exchange | string | - | 交易所筛选 |
+| industry | string | - | 行业筛选 |
+| index | string | - | 指数筛选 |
+| sort_by | string | avg_yield_3y | 排序字段 |
+| sort_order | string | desc | 排序方向(asc/desc) |
+
+**响应**
+
+```json
+{
+  "total": 36,
+  "items": [
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "exchange": "沪市主板",
+      "sw_level1": "银行",
+      "sw_level2": "商业",
+      "sw_level3": "-",
+      "avg_yield_3y": 3.69,
+      "avg_price_3y": 10.5
+    }
+  ]
+}
+```
+
+---
+
+### 2. 获取股票详情
+
+获取单只股票的详细信息。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | GET |
+| 路径 | `/api/stocks/{code}` |
+
+**路径参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| code | string | 股票代码 |
+
+**响应**
+
+```json
+{
+  "code": "601857",
+  "name": "中国石油",
+  "quarterly": {
+    "q1": { "avg_price": 10.5, "dividend": 0.1, "yield_pct": 0.95 },
+    "q2": { "avg_price": 10.6, "dividend": 0.15, "yield_pct": 1.42 },
+    "q3": { "avg_price": 10.8, "dividend": 0.12, "yield_pct": 1.11 },
+    "q4": { "avg_price": 11.0, "dividend": 0.08, "yield_pct": 0.73 }
+  }
+}
+```
+
+---
+
+### 3. 获取 PE/PB 数据
+
+获取股票的市盈率和市净率数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | GET |
+| 路径 | `/api/pe` |
+
+**查询参数**
+
+| 参数 | 类型 | 说明 |
+|------|------|------|
+| code | string | 单只股票代码 |
+| codes | string | 多只股票代码（逗号分隔） |
+
+**响应**
+
+```json
+{
+  "total": 2,
+  "items": [
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "pe": 6.69,
+      "pb": 1.05,
+      "market_cap": 1200000,
+      "circulation_market_cap": 800000
+    }
+  ],
+  "last_updated": "2026-03-13T12:00:00Z"
+}
+```
+
+---
+
+### 4. 更新 PE/PB 数据
+
+从 akshare 获取最新的 PE/PB 数据并保存。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/pe/update` |
+
+**响应**
+
+```json
+{
+  "message": "PE数据更新完成",
+  "count": 4500
+}
+```
+
+---
+
+### 5. 获取 M120 数据
+
+获取股票的 120 日均线、收盘价和偏离度数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | GET |
+| 路径 | `/api/m120` |
+
+**查询参数**
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| min_yield | float | 3.0 | 最小股息率(%) |
+| sort_by | string | avg_yield_3y | 排序字段 |
+| sort_order | string | desc | 排序方向(asc/desc) |
+
+**响应**
+
+```json
+{
+  "total": 35,
+  "items": [
+    {
+      "code": "601857",
+      "name": "中国石油",
+      "avg_yield_3y": 3.69,
+      "m120": 9.85,
+      "close": 12.05,
+      "deviation": 22.38
+    }
+  ],
+  "last_updated": "2026-03-13T12:00:00Z"
+}
+```
+
+---
+
+### 6. 刷新 M120 数据
+
+获取所有股息率 > 3% 的股票的 M120 数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/m120/refresh` |
+
+**响应**
+
+```json
+{
+  "message": "M120数据刷新完成",
+  "count": 35
+}
+```
+
+---
+
+### 7. 获取实时价格
+
+获取单只股票的实时收盘价和偏离度。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/realtime-price` |
+
+**请求体**
+
+```json
+{
+  "code": "601919",
+  "m120": 14.80
+}
+```
+
+**响应**
+
+```json
+{
+  "code": "601919",
+  "close": 15.78,
+  "deviation": 6.6,
+  "timestamp": "2026-03-14T10:30:00Z"
+}
+```
+
+---
+
+### 8. 批量获取股票信息
+
+批量获取股票的行业/概念信息。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/stocks/info` |
+
+**请求体**
+
+```json
+{
+  "codes": ["601919", "601857"]
+}
+```
+
+**响应**
+
+```json
+{
+  "total": 2,
+  "items": [
+    {
+      "code": "601919",
+      "exchange": "沪市主板",
+      "sw_level1": "交通运输",
+      "sw_level2": "航运",
+      "sw_level3": "港口",
+      "concept_board": "一带一路,长三角一体化",
+      "industry_board": "交通运输,港口"
+    }
+  ]
+}
+```
+
+---
+
+## 四、douyin-processor (抖音视频处理服务)
 
 **服务地址**: `http://localhost:8093`
 
@@ -899,6 +1187,14 @@ interface EconomicDataResponse {
 
 | 服务 | 序号 | 路径 | 方法 | 功能 |
 |------|------|------|------|------|
+| **dividend-select** (8092) | 1 | `/api/stocks` | GET | 获取股票列表 |
+| | 2 | `/api/stocks/{code}` | GET | 获取股票详情 |
+| | 3 | `/api/pe` | GET | 获取 PE/PB 数据 |
+| | 4 | `/api/pe/update` | POST | 更新 PE/PB 数据 |
+| | 5 | `/api/m120` | GET | 获取 M120 数据 |
+| | 6 | `/api/m120/refresh` | POST | 刷新 M120 数据 |
+| | 7 | `/api/realtime-price` | POST | 获取实时价格 |
+| | 8 | `/api/stocks/info` | POST | 批量获取股票信息 |
 | **douyin-processor** (8093) | 1 | `/` | GET | 根路径服务信息 |
 | | 2 | `/health` | GET | 健康检查 |
 | | 3 | `/api/process/async` | POST | 异步处理视频 |
@@ -932,6 +1228,7 @@ interface EconomicDataResponse {
 
 | 前端路径 | 代理目标 | 说明 |
 |---------|---------|------|
+| `/api/dividend/*` | `http://localhost:8092/api/*` | 股息率筛选服务 |
 | `/api/macro/*` | `http://localhost:8094/api/macro/*` | 宏观经济数据服务 |
 | `/api/douyin/*` | `http://localhost:8093/api/*` | 抖音视频处理服务 |
 | `/api/news/*` | 外部新闻 API | 新闻数据聚合 |

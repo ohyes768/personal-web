@@ -2,9 +2,17 @@
  * 股息率模块自定义 Hooks
  * 封装组件中可复用的状态逻辑
  */
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { dividendApi } from './api';
-import type { DividendStock, DividendQueryParams } from './types';
+import type {
+  DividendStock,
+  DividendQueryParams,
+  TechnicalIndicators,
+  DeviationCache,
+  RefreshState,
+  RealtimePriceRequest,
+  StockInfo,
+} from './types';
 
 /**
  * 股息率数据 Hook
@@ -44,6 +52,76 @@ export function useDividendData() {
 }
 
 /**
+ * 技术指标数据 Hook
+ * 获取 PE/PB 和 M120 数据
+ */
+export function useTechnicalData(stockCodes: string[]) {
+  const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(new Map());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 使用 useMemo 缓存 stockCodes，避免无限循环
+  const memoizedStockCodes = useMemo(() => stockCodes, [JSON.stringify(stockCodes)]);
+
+  useEffect(() => {
+    if (memoizedStockCodes.length === 0) {
+      setTechnicalData(new Map());
+      return;
+    }
+
+    const fetchTechnicalData = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        // 并行获取 PE 和 M120 数据
+        const codesStr = memoizedStockCodes.join(',');
+        const [peResponse, m120Response] = await Promise.all([
+          dividendApi.getPEData({ codes: codesStr }),
+          dividendApi.getM120Data(),
+        ]);
+
+        const newTechnicalData = new Map<string, TechnicalIndicators>();
+
+        // 处理 PE 数据
+        const peMap = new Map(peResponse.items.map(item => [item.code, item]));
+
+        // 处理 M120 数据
+        const m120Map = new Map(m120Response.items.map(item => [item.code, item]));
+
+        // 合并数据
+        memoizedStockCodes.forEach(code => {
+          const pe = peMap.get(code);
+          const m120 = m120Map.get(code);
+
+          if (pe || m120) {
+            newTechnicalData.set(code, {
+              pe: pe?.pe ?? null,
+              pb: pe?.pb ?? null,
+              m120: m120?.m120 ?? null,
+              close: m120?.close ?? null,
+              deviation: m120?.deviation ?? null,
+            });
+          }
+        });
+
+        setTechnicalData(newTechnicalData);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '获取技术指标数据失败';
+        setError(message);
+        console.error('Failed to fetch technical data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTechnicalData();
+  }, [memoizedStockCodes]);
+
+  return { technicalData, loading, error };
+}
+
+/**
  * 详情弹框状态 Hook
  */
 export function useDetailModal() {
@@ -67,4 +145,164 @@ export function useDetailModal() {
   }, []);
 
   return { isOpen, modalType, stock, open, close };
+}
+
+/**
+ * 实时股价刷新 Hook
+ */
+export function useRefreshPrice() {
+  const [refreshStates, setRefreshStates] = useState<Map<string, RefreshState>>(new Map());
+
+  // 缓存相关
+  const CACHE_KEY_PREFIX = 'dividend-deviation-';
+  const CACHE_DURATION = 24 * 60 * 60 * 1000; // 1天（毫秒）
+
+  /**
+   * 从 localStorage 读取缓存
+   */
+  const getCache = useCallback((code: string): DeviationCache | null => {
+    try {
+      const cached = localStorage.getItem(`${CACHE_KEY_PREFIX}${code}`);
+      if (!cached) return null;
+
+      const data: DeviationCache = JSON.parse(cached);
+      const now = Date.now();
+
+      // 检查缓存是否过期
+      if (now - data.timestamp > CACHE_DURATION) {
+        localStorage.removeItem(`${CACHE_KEY_PREFIX}${code}`);
+        return null;
+      }
+
+      return data;
+    } catch {
+      return null;
+    }
+  }, []);
+
+  /**
+   * 保存到 localStorage
+   */
+  const setCache = useCallback((code: string, close: number, deviation: number) => {
+    try {
+      const data: DeviationCache = {
+        close,
+        deviation,
+        timestamp: Date.now(),
+      };
+      localStorage.setItem(`${CACHE_KEY_PREFIX}${code}`, JSON.stringify(data));
+    } catch (err) {
+      console.error('Failed to save cache:', err);
+    }
+  }, []);
+
+  /**
+   * 刷新实时股价
+   */
+  const refresh = useCallback(async (request: RealtimePriceRequest): Promise<{ close: number; deviation: number } | null> => {
+    const { code } = request;
+
+    // 设置加载状态
+    setRefreshStates(prev => {
+      const newStates = new Map(prev);
+      newStates.set(code, { loading: true, error: null });
+      return newStates;
+    });
+
+    try {
+      // 检查缓存
+      const cached = getCache(code);
+      if (cached) {
+        setRefreshStates(prev => {
+          const newStates = new Map(prev);
+          newStates.set(code, { loading: false, error: null });
+          return newStates;
+        });
+        return { close: cached.close, deviation: cached.deviation };
+      }
+
+      // 调用 API 获取实时股价
+      const response = await dividendApi.getRealtimePrice(request);
+
+      if (response.close && response.deviation !== undefined) {
+        // 保存到缓存
+        setCache(code, response.close, response.deviation);
+
+        // 更新状态
+        setRefreshStates(prev => {
+          const newStates = new Map(prev);
+          newStates.set(code, { loading: false, error: null });
+          return newStates;
+        });
+
+        return { close: response.close, deviation: response.deviation };
+      }
+
+      return null;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '刷新失败';
+      setRefreshStates(prev => {
+        const newStates = new Map(prev);
+        newStates.set(code, { loading: false, error: message });
+        return newStates;
+      });
+      console.error('Failed to refresh price:', err);
+      return null;
+    }
+  }, [getCache, setCache]);
+
+  /**
+   * 获取指定股票的刷新状态
+   */
+  const getRefreshState = useCallback((code: string): RefreshState => {
+    return refreshStates.get(code) || { loading: false, error: null };
+  }, [refreshStates]);
+
+  return { refresh, getRefreshState, getCache };
+}
+
+/**
+ * 股票基础信息 Hook
+ * 批量获取股票的交易所和申万行业信息（用于列表显示）
+ */
+export function useStockInfo(stockCodes: string[]) {
+  const [stockInfoMap, setStockInfoMap] = useState<Map<string, StockInfo>>(new Map());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // 使用 useMemo 缓存 stockCodes，避免无限循环
+  const memoizedStockCodes = useMemo(() => stockCodes, [JSON.stringify(stockCodes)]);
+
+  useEffect(() => {
+    if (memoizedStockCodes.length === 0) {
+      setStockInfoMap(new Map());
+      return;
+    }
+
+    const fetchStockInfo = async () => {
+      setLoading(true);
+      setError(null);
+
+      try {
+        const response = await dividendApi.getStocksInfo({ codes: memoizedStockCodes });
+
+        const infoMap = new Map<string, StockInfo>();
+        response.items.forEach(item => {
+          infoMap.set(item.code, item);
+        });
+
+        setStockInfoMap(infoMap);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : '获取股票信息失败';
+        setError(message);
+        console.error('Failed to fetch stock info:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchStockInfo();
+  }, [memoizedStockCodes]);
+
+  return { stockInfoMap, loading, error };
 }

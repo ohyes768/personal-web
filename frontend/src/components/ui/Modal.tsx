@@ -53,7 +53,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
       />
 
       {/* 弹框内容 */}
-      <div className="relative z-10 w-full max-w-2xl bg-white dark:bg-gray-900 rounded-lg shadow-xl mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+      <div className="relative z-10 w-full max-w-2xl bg-gray-200 rounded-lg shadow-xl mx-4 max-h-[80vh] overflow-hidden flex flex-col">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
