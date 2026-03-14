@@ -24,7 +24,7 @@ export default function DividendPage() {
   const { refresh, getRefreshState, getCache } = useRefreshPrice();
 
   // 状态管理
-  const [minYield, setMinYield] = useState(3);
+  const [minYield, setMinYield] = useState(5);
   const [exchange, setExchange] = useState<string>('');
   const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(rawTechnicalData);
 
