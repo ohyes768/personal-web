@@ -248,3 +248,32 @@ export interface StockInfoResponse {
   items: StockInfo[];
   total: number;
 }
+
+// ========== 板块信息类型 ==========
+
+/**
+ * 股票板块信息（概念板块/行业板块）
+ */
+export interface BoardInfo {
+  code: string;
+  name: string;
+  concept_board?: string | null;
+  industry_board?: string | null;
+}
+
+/**
+ * 板块信息请求参数
+ */
+export interface BoardInfoRequest {
+  code?: string;
+  codes?: string;
+}
+
+/**
+ * 板块信息响应
+ */
+export interface BoardInfoResponse {
+  total: number;
+  items: BoardInfo[];
+  last_updated?: string | null;
+}

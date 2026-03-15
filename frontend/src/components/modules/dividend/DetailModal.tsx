@@ -8,7 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { useState, useEffect, useCallback } from 'react';
 import { dividendApi } from '@/lib/modules/dividend/api';
-import type { DividendStock, StockInfo } from '@/lib/modules/dividend/types';
+import type { DividendStock, BoardInfo } from '@/lib/modules/dividend/types';
 
 export interface DetailModalProps {
   isOpen: boolean;
@@ -23,20 +23,20 @@ const formatValue = (value: number | null | undefined): string => {
 };
 
 // 缓存相关配置
-const CACHE_KEY_PREFIX = 'dividend-stock-info-';
+const CACHE_KEY_PREFIX = 'dividend-board-info-';
 const CACHE_DURATION = 24 * 60 * 60 * 1000; // 1天（毫秒）
 
 export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) {
-  const [stockInfo, setStockInfo] = useState<StockInfo | null>(null);
+  const [stockInfo, setBoardInfo] = useState<BoardInfo | null>(null);
   const [loading, setLoading] = useState(false);
 
   // 从 localStorage 读取缓存
-  const getCache = useCallback((code: string): StockInfo | null => {
+  const getCache = useCallback((code: string): BoardInfo | null => {
     try {
       const cached = localStorage.getItem(`${CACHE_KEY_PREFIX}${code}`);
       if (!cached) return null;
 
-      const data: StockInfo & { timestamp: number } = JSON.parse(cached);
+      const data: BoardInfo & { timestamp: number } = JSON.parse(cached);
       const now = Date.now();
 
       // 检查缓存是否过期
@@ -53,7 +53,7 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
   }, []);
 
   // 保存到 localStorage
-  const setCache = useCallback((info: StockInfo) => {
+  const setCache = useCallback((info: BoardInfo) => {
     try {
       const data = { ...info, timestamp: Date.now() };
       localStorage.setItem(`${CACHE_KEY_PREFIX}${info.code}`, JSON.stringify(data));
@@ -71,17 +71,17 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
     // 先检查缓存
     const cached = getCache(stock.code);
     if (cached) {
-      setStockInfo(cached);
+      setBoardInfo(cached);
       return;
     }
 
     // 从 API 获取
     setLoading(true);
-    dividendApi.getStocksInfo({ codes: [stock.code] })
+    dividendApi.getBoardInfo({ code: stock.code })
       .then(response => {
         if (response.items.length > 0) {
           const info = response.items[0];
-          setStockInfo(info);
+          setBoardInfo(info);
           setCache(info);
         }
       })

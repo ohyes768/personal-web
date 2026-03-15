@@ -42,7 +42,7 @@ export function useDividendData() {
   useEffect(() => {
     // 默认参数：阈值 3%，降序排序
     fetchData({
-      min_yield: 3,
+      min_yield: 5,
       sort_by: 'avg_yield_3y',
       sort_order: 'desc',
     });

@@ -12,6 +12,8 @@ import type {
   RealtimePriceResponse,
   StockInfoRequest,
   StockInfoResponse,
+  BoardInfoResponse,
+  BoardInfoRequest,
 } from './types';
 
 export const dividendApi = {
@@ -50,4 +52,10 @@ export const dividendApi = {
    */
   getStocksInfo: (data: StockInfoRequest) =>
     directClient.post<StockInfoResponse>('/api/dividend/stocks/info', data),
+
+  /**
+   * 获取股票板块信息（概念板块/行业板块）
+   */
+  getBoardInfo: (params: BoardInfoRequest) =>
+    directClient.get<BoardInfoResponse>('/api/dividend/board', params),
 };
