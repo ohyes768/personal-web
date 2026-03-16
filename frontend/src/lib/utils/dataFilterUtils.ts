@@ -1,7 +1,7 @@
 /**
  * 数据过滤工具
  */
-import type { EconomicDataResponse } from '../types/economic';
+import type { EconomicDataResponse, TabType } from '../types/economic';
 
 /**
  * 过滤每月1号的数据
@@ -82,10 +82,15 @@ export function filterMonthlyData(data: EconomicDataResponse): EconomicDataRespo
  */
 export function filterDataByTab(
   data: EconomicDataResponse | null,
-  tabType: 'treasury-exchange' | 'bonds',
+  tabType: TabType,
   timeRange: string
 ): EconomicDataResponse | null {
   if (!data) {
+    return null;
+  }
+
+  // fund-flow Tab 不处理经济数据，返回空
+  if (tabType === 'fund-flow') {
     return null;
   }
 
