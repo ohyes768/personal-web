@@ -12,6 +12,7 @@ import type {
   RefreshState,
   RealtimePriceRequest,
   StockInfo,
+  DividendStockWithTechnical,
 } from './types';
 
 /**
@@ -305,4 +306,126 @@ export function useStockInfo(stockCodes: string[]) {
   }, [memoizedStockCodes]);
 
   return { stockInfoMap, loading, error };
+}
+
+/**
+ * 股票对比功能 Hook
+ */
+export function useCompare(maxSelect: number = 5) {
+  const [selectedStocks, setSelectedStocks] = useState<DividendStock[]>([]);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+
+  /**
+   * 切换选中状态
+   */
+  const toggleStock = useCallback((stock: DividendStock) => {
+    setSelectedStocks(prev => {
+      const exists = prev.some(s => s.code === stock.code);
+      if (exists) {
+        return prev.filter(s => s.code !== stock.code);
+      }
+      if (prev.length >= maxSelect) {
+        return prev;
+      }
+      return [...prev, stock];
+    });
+  }, [maxSelect]);
+
+  /**
+   * 清空选中
+   */
+  const clearSelection = useCallback(() => {
+    setSelectedStocks([]);
+    setIsDrawerOpen(false);
+  }, []);
+
+  /**
+   * 打开对比抽屉
+   */
+  const openDrawer = useCallback(() => {
+    if (selectedStocks.length < 2) {
+      return false;
+    }
+    setIsDrawerOpen(true);
+    return true;
+  }, [selectedStocks.length]);
+
+  /**
+   * 关闭对比抽屉
+   */
+  const closeDrawer = useCallback(() => {
+    setIsDrawerOpen(false);
+  }, []);
+
+  /**
+   * 移除股票
+   */
+  const removeStock = useCallback((code: string) => {
+    setSelectedStocks(prev => prev.filter(s => s.code !== code));
+  }, []);
+
+  /**
+   * 检查是否已选中
+   */
+  const isSelected = useCallback((code: string) => {
+    return selectedStocks.some(s => s.code === code);
+  }, [selectedStocks]);
+
+  return {
+    selectedStocks,
+    isDrawerOpen,
+    toggleStock,
+    clearSelection,
+    openDrawer,
+    closeDrawer,
+    removeStock,
+    isSelected,
+  };
+}
+
+/**
+ * 高亮信息计算 Hook
+ */
+export function useHighlights(stocks: DividendStock[]) {
+  return useMemo(() => {
+    const yieldIndex = stocks.findIndex(s => s.avg_yield_3y === Math.max(...stocks.map(s => s.avg_yield_3y ?? -Infinity)));
+    const peValues = stocks.map(s => {
+      const pe = (s as DividendStockWithTechnical).technical?.pe;
+      return pe ?? Infinity;
+    });
+    const peIndex = peValues.indexOf(Math.min(...peValues));
+    const pbValues = stocks.map(s => {
+      const pb = (s as DividendStockWithTechnical).technical?.pb;
+      return pb ?? Infinity;
+    });
+    const pbIndex = pbValues.indexOf(Math.min(...pbValues));
+    // 昨日收盘/M120 比率，最小值为最优
+    const ratioValues = stocks.map(s => {
+      const technical = (s as DividendStockWithTechnical).technical;
+      if (technical?.close && technical?.m120) {
+        return technical.close / technical.m120;
+      }
+      return Infinity;
+    });
+    const ratioIndex = ratioValues.indexOf(Math.min(...ratioValues));
+    // 最高涨幅，最大值为最优
+    const highChangeValues = stocks.map(s => s.high_change_pct_2025 ?? -Infinity);
+    const highChangeIndex = highChangeValues.indexOf(Math.max(...highChangeValues));
+    // 最高跌幅，绝对值最小为最优
+    const lowChangeValues = stocks.map(s => {
+      const lowChange = s.low_change_pct_2025;
+      if (lowChange === null || lowChange === undefined) return Infinity;
+      return Math.abs(lowChange);
+    });
+    const lowChangeIndex = lowChangeValues.indexOf(Math.min(...lowChangeValues));
+
+    return {
+      yieldIndex: yieldIndex >= 0 ? yieldIndex : null,
+      peIndex: peIndex >= 0 ? peIndex : null,
+      pbIndex: pbIndex >= 0 ? pbIndex : null,
+      ratioIndex: ratioIndex >= 0 ? ratioIndex : null,
+      highChangeIndex: highChangeIndex >= 0 ? highChangeIndex : null,
+      lowChangeIndex: lowChangeIndex >= 0 ? lowChangeIndex : null,
+    };
+  }, [stocks]);
 }

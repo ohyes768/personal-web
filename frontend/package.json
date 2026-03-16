@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@heroicons/react": "^2.2.0",
     "@tailwindcss/postcss": "^4.2.0",
     "@tanstack/react-virtual": "^3.13.21",
     "lightweight-charts": "^5.1.0",

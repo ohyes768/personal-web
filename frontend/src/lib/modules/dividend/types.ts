@@ -277,3 +277,48 @@ export interface BoardInfoResponse {
   items: BoardInfo[];
   last_updated?: string | null;
 }
+
+// ========== 股票对比功能类型 ==========
+
+/**
+ * 高亮信息
+ */
+export interface HighlightInfo {
+  yieldIndex: number | null;
+  peIndex: number | null;
+  pbIndex: number | null;
+  ratioIndex: number | null;  // 昨日收盘/M120 比率，最小值为最优
+  highChangeIndex: number | null;  // 最高涨幅，最大值为最优
+  lowChangeIndex: number | null;   // 最高跌幅，绝对值最小为最优
+}
+
+/**
+ * 对比浮动栏 Props
+ */
+export interface CompareFloatingBarProps {
+  selectedCount: number;
+  selectedStocks: DividendStock[];
+  maxSelect: number;
+  onOpenCompare: () => void;
+  onClear: () => void;
+  isVisible: boolean;
+}
+
+/**
+ * 对比抽屉 Props
+ */
+export interface CompareDrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  stocks: DividendStockWithTechnical[];
+  onRemove: (code: string) => void;
+  drawerRef: React.RefObject<HTMLDivElement | null>;
+}
+
+/**
+ * 对比表格 Props
+ */
+export interface CompareTableProps {
+  stocks: DividendStockWithTechnical[];
+  onRemove: (code: string) => void;
+}

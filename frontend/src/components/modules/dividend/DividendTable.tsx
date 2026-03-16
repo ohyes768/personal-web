@@ -4,6 +4,7 @@
 'use client';
 
 import { Button } from '@/components/ui/Button';
+import { CheckIcon } from '@heroicons/react/24/outline';
 import type { DividendStock, TechnicalIndicators, RefreshState } from '@/lib/modules/dividend/types';
 import { RefreshButton } from './RefreshButton';
 
@@ -98,9 +99,21 @@ export interface DividendTableProps {
   onOpenModal: (type: 'quarterly' | 'sector' | 'yearly' | 'volatility', stock: DividendStock) => void;
   onRefresh?: (code: string, m120: number) => Promise<{ close: number; deviation: number } | null>;
   getRefreshState?: (code: string) => RefreshState;
+  selectedStockCodes: string[];
+  maxSelect: number;
+  onToggleCompare: (stock: DividendStock) => void;
 }
 
-export function DividendTable({ data, technicalData, onOpenModal, onRefresh, getRefreshState }: DividendTableProps) {
+export function DividendTable({
+  data,
+  technicalData,
+  onOpenModal,
+  onRefresh,
+  getRefreshState,
+  selectedStockCodes,
+  maxSelect,
+  onToggleCompare,
+}: DividendTableProps) {
   if (data.length === 0) {
     return (
       <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900">
@@ -140,7 +153,7 @@ export function DividendTable({ data, technicalData, onOpenModal, onRefresh, get
             <th className="w-56 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
               昨日收盘/M120
             </th>
-            <th className="w-52 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-80 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">
               操作
             </th>
           </tr>
@@ -151,11 +164,19 @@ export function DividendTable({ data, technicalData, onOpenModal, onRefresh, get
             const m120Value = formatM120(technical);
             const priceInfo = formatPriceDeviation(technical);
             const refreshState = getRefreshState ? getRefreshState(stock.code) : { loading: false, error: null };
+            const isSelected = selectedStockCodes.includes(stock.code);
+            const isMaxReached = selectedStockCodes.length >= maxSelect && !isSelected;
 
             return (
               <tr
                 key={stock.code}
-                className="border-b border-gray-800 hover:bg-gray-800 transition-colors cursor-pointer"
+                className={`
+                  border-b border-gray-800 transition-all duration-200 ease-out cursor-pointer
+                  ${isSelected
+                    ? 'bg-blue-900/20 border-l-4 border-l-blue-500'
+                    : 'hover:bg-gray-800 border-l-4 border-l-transparent'
+                  }
+                `}
                 tabIndex={0}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
@@ -213,12 +234,39 @@ export function DividendTable({ data, technicalData, onOpenModal, onRefresh, get
                     </div>
                   </div>
                 </td>
-                <td className="w-52 px-2 py-3 text-center">
+                <td className="w-80 px-2 py-3 text-center">
                   <div className="flex items-center justify-center gap-2">
+                    <Button
+                      variant={isSelected ? 'primary' : 'ghost'}
+                      size="sm"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleCompare(stock);
+                      }}
+                      disabled={isMaxReached}
+                      className={`
+                        h-8 min-w-[60px] flex items-center gap-1
+                        transition-all duration-200
+                        ${isMaxReached
+                          ? 'opacity-50 cursor-not-allowed'
+                          : ''
+                        }
+                      `}
+                      aria-label={isSelected
+                        ? `取消选中 ${stock.name} 进行对比`
+                        : `选中 ${stock.name} 进行对比`
+                      }
+                    >
+                      {isSelected && <CheckIcon className="w-4 h-4" />}
+                      对比
+                    </Button>
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onOpenModal('yearly', stock)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenModal('yearly', stock);
+                      }}
                       className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       年度
@@ -226,7 +274,10 @@ export function DividendTable({ data, technicalData, onOpenModal, onRefresh, get
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onOpenModal('quarterly', stock)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenModal('quarterly', stock);
+                      }}
                       className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       季度
@@ -234,7 +285,10 @@ export function DividendTable({ data, technicalData, onOpenModal, onRefresh, get
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onOpenModal('sector', stock)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenModal('sector', stock);
+                      }}
                       className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       板块
@@ -242,7 +296,10 @@ export function DividendTable({ data, technicalData, onOpenModal, onRefresh, get
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onOpenModal('volatility', stock)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenModal('volatility', stock);
+                      }}
                       className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       波动

@@ -3,13 +3,17 @@
  */
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { useDividendData, useDetailModal, useTechnicalData, useRefreshPrice, useStockInfo } from '@/lib/modules/dividend/hooks';
+import { useDividendData, useDetailModal, useTechnicalData, useRefreshPrice, useStockInfo, useCompare } from '@/lib/modules/dividend/hooks';
 import { DividendTable } from '@/components/modules/dividend/DividendTable';
 import { DetailModal } from '@/components/modules/dividend/DetailModal';
+import { CompareFloatingBar } from '@/components/modules/dividend/CompareFloatingBar';
+import { CompareDrawer } from '@/components/modules/dividend/CompareDrawer';
 import { Button } from '@/components/ui/Button';
-import type { DividendQueryParams, TechnicalIndicators } from '@/lib/modules/dividend/types';
+import type { DividendQueryParams, TechnicalIndicators, DividendStockWithTechnical, DividendStock } from '@/lib/modules/dividend/types';
+
+const MAX_COMPARE = 5;
 
 export default function DividendPage() {
   const { data, total, loading, error, refetch } = useDividendData();
@@ -22,6 +26,20 @@ export default function DividendPage() {
 
   // 刷新功能
   const { refresh, getRefreshState, getCache } = useRefreshPrice();
+
+  // 对比功能
+  const {
+    selectedStocks,
+    isDrawerOpen,
+    toggleStock,
+    clearSelection,
+    openDrawer,
+    closeDrawer,
+    removeStock,
+    isSelected,
+  } = useCompare(MAX_COMPARE);
+
+  const drawerRef = useRef<HTMLDivElement>(null);
 
   // 状态管理
   const [minYield, setMinYield] = useState(5);
@@ -96,6 +114,30 @@ export default function DividendPage() {
 
     return result;
   }, [refresh]);
+
+  // 切换对比选中
+  const handleToggleCompare = useCallback((stock: DividendStock) => {
+    toggleStock(stock);
+  }, [toggleStock]);
+
+  // 打开对比抽屉
+  const handleOpenCompare = useCallback(() => {
+    const success = openDrawer();
+    if (!success) {
+      alert('请至少选择 2 只股票进行对比');
+    }
+  }, [openDrawer]);
+
+  // 获取带技术指标的对比数据
+  const getStocksWithTechnical = useCallback((): DividendStockWithTechnical[] => {
+    return selectedStocks.map(stock => {
+      const technical = technicalData.get(stock.code);
+      return {
+        ...stock,
+        technical: technical || undefined,
+      };
+    });
+  }, [selectedStocks, technicalData]);
 
   // 骨架屏
   if (loading && data.length === 0) {
@@ -198,6 +240,9 @@ export default function DividendPage() {
               onOpenModal={open}
               onRefresh={handleRefresh}
               getRefreshState={getRefreshState}
+              selectedStockCodes={selectedStocks.map(s => s.code)}
+              maxSelect={MAX_COMPARE}
+              onToggleCompare={handleToggleCompare}
             />
           ) : (
             <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900 h-[300px]">
@@ -215,6 +260,25 @@ export default function DividendPage() {
         onClose={close}
         type={modalType}
         stock={stock}
+      />
+
+      {/* 对比浮动栏 */}
+      <CompareFloatingBar
+        selectedCount={selectedStocks.length}
+        selectedStocks={selectedStocks}
+        maxSelect={MAX_COMPARE}
+        onOpenCompare={handleOpenCompare}
+        onClear={clearSelection}
+        isVisible={selectedStocks.length > 0}
+      />
+
+      {/* 对比抽屉 */}
+      <CompareDrawer
+        isOpen={isDrawerOpen}
+        onClose={closeDrawer}
+        stocks={getStocksWithTechnical()}
+        onRemove={removeStock}
+        drawerRef={drawerRef}
       />
     </div>
   );
