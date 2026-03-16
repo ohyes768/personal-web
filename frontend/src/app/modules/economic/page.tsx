@@ -6,7 +6,7 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
-import type { TimeRange } from '@/lib/types/economic';
+import type { TimeRange, TabType } from '@/lib/types/economic';
 import type { TimeRange as FundFlowTimeRange, ChartData as FundFlowChartData } from '@/lib/modules/fund-flow/types';
 import { useEconomicData } from '@/lib/hooks/useEconomicData';
 import { TimeRangeSelector } from './components/TimeRangeSelector';
@@ -32,9 +32,6 @@ const FundFlowChart = dynamic(() => import('@/components/modules/fund-flow/FundF
   ssr: false,
   loading: () => <div className="h-[500px] flex items-center justify-center text-gray-400">加载图表中...</div>
 });
-
-// Tab类型定义
-type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow';
 
 export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
