@@ -225,7 +225,7 @@ export function useRefreshPrice() {
       // 调用 API 获取实时股价
       const response = await dividendApi.getRealtimePrice(request);
 
-      if (response.close && response.deviation !== undefined) {
+      if (response.close && response.deviation != null) {
         // 保存到缓存
         setCache(code, response.close, response.deviation);
 
