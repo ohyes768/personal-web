@@ -16,7 +16,7 @@ import type { DividendQueryParams, TechnicalIndicators, DividendStockWithTechnic
 const MAX_COMPARE = 5;
 
 export default function DividendPage() {
-  const { data, total, loading, error, refetch } = useDividendData();
+  const { data, total, loading, error, refetch, lastUpdated } = useDividendData();
   const { isOpen, modalType, stock, open, close } = useDetailModal();
 
   // 获取技术指标数据（PE、M120 等）
@@ -182,6 +182,11 @@ export default function DividendPage() {
           </div>
           <div className="text-right">
             <span className="text-gray-400">共 {total} 条数据</span>
+            {lastUpdated && (
+              <div className="text-gray-500 text-sm mt-1">
+                数据计算日期: {lastUpdated}
+              </div>
+            )}
           </div>
         </div>
       </div>

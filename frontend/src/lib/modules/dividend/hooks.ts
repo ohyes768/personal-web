@@ -23,6 +23,7 @@ export function useDividendData() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   const fetchData = useCallback(async (params?: DividendQueryParams) => {
     setLoading(true);
@@ -31,6 +32,7 @@ export function useDividendData() {
       const response = await dividendApi.getStocks(params);
       setData(response.items);
       setTotal(response.total);
+      setLastUpdated(response.last_updated ?? null);
     } catch (err) {
       const message = err instanceof Error ? err.message : '获取数据失败';
       setError(message);
@@ -49,7 +51,7 @@ export function useDividendData() {
     });
   }, [fetchData]);
 
-  return { data, total, loading, error, refetch: fetchData };
+  return { data, total, loading, error, refetch: fetchData, lastUpdated };
 }
 
 /**
