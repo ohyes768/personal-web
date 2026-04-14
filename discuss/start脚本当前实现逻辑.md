@@ -148,6 +148,34 @@ Press any key to continue . . .
 
 ---
 
+## ⚠️ 重要：启动命令必须携带端口号
+
+**原因**：停止脚本 (`stop-windows.ps1`) 通过匹配命令行中的端口号来定位并关闭对应的 cmd 窗口。
+
+**匹配逻辑**（stop-windows.ps1）：
+```powershell
+$has8094 = $cmdLine -like '*8094*'   # 后端窗口
+$hasNpmDev = $cmdLine -like '*npm run dev*'  # 前端窗口
+```
+
+**错误示例**（命令行不含端口，无法被停止脚本匹配）：
+```
+cmd /k "python -m uvicorn src.main:app --reload"
+cmd /k "npm run dev"
+```
+
+**正确示例**（命令行携带端口，停止脚本可正常匹配）：
+```
+cmd /k "python -m uvicorn src.main:app --reload --port 8094"
+cmd /k "npm run dev"  # Next.js 默认 3000，但仍建议显式指定
+```
+
+**实践建议**：
+- Python/后端：始终在启动命令中显式添加 `--port <端口>`
+- 前端：如果框架支持，通过环境变量或命令行参数指定端口（如 `set PORT=3000 && npm run dev`）
+
+---
+
 ## 设计特点
 
 ### 1. 自动环境准备

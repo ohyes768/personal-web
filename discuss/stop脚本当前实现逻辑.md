@@ -131,6 +131,8 @@ foreach ($proc in $cmdProcesses) {
 | macro-fin | `*8094*` |
 | Frontend | `*npm run dev*` |
 
+**⚠️ 前提条件**：启动脚本的命令行必须携带端口号，否则无法被匹配。详见 [start 脚本文档](../personal-web-feature-dividend/discuss/start脚本当前实现逻辑.md) 中的说明。
+
 ---
 
 ## 界面输出示例
@@ -171,6 +173,7 @@ All services stopped.
 | 窗口未关闭 | `$pid` 与 PowerShell 自动变量冲突 | 改名 `$procId` |
 | 误杀其他项目 | 只检查网络连接，过于暴力 | 添加项目路径检查 |
 | 正常服务被杀 | 只检查本地回环，未排除监听进程 | 双重判定：回环 + 不监听 |
+| 窗口匹配失败 | 启动命令未携带端口，匹配模式无法生效 | **启动命令必须携带端口号** |
 
 ---
 

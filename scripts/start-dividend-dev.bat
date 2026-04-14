@@ -29,7 +29,7 @@ if not exist ".venv" (
 )
 
 REM Start dividend-select service
-start "dividend-select" cmd /k ".venv\Scripts\activate && python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8092"
+start /d "%~dp0..\backend\dividend-select" "dividend-select" cmd /k ".venv\Scripts\activate && python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8092"
 
 timeout /t 2 /nobreak >nul
 
@@ -40,7 +40,7 @@ cd /d "%~dp0..\frontend"
 REM Setup node modules
 if not exist "node_modules" (
     echo Installing frontend dependencies...
-    pnpm install
+    cmd /c "cd /d %CD% && pnpm install"
 )
 
 REM Check .env.local
@@ -50,7 +50,7 @@ if not exist ".env.local" (
 )
 
 REM Start Frontend service
-start "Frontend" cmd /k "pnpm run dev"
+start /d "%~dp0..\frontend" "Frontend" cmd /k "pnpm run dev"
 
 echo.
 echo ========================================

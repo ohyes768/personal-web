@@ -78,6 +78,7 @@ export interface DividendStock {
 export interface DividendListResponse {
   total: number;
   items: DividendStock[];
+  last_updated?: string | null;
 }
 
 /**
