@@ -33,9 +33,9 @@ start /d "%~dp0..\backend\dividend-select" "dividend-select" cmd /k ".venv\Scrip
 
 timeout /t 2 /nobreak >nul
 
-REM [2/2] Start Frontend
+REM [2/2] Start Frontend (dividend app)
 echo [2/2] Starting Frontend (port 3000)...
-cd /d "%~dp0..\frontend"
+cd /d "%~dp0..\apps\dividend"
 
 REM Setup node modules
 if not exist "node_modules" (
@@ -50,7 +50,7 @@ if not exist ".env.local" (
 )
 
 REM Start Frontend service
-start /d "%~dp0..\frontend" "Frontend" cmd /k "pnpm run dev"
+start /d "%~dp0..\apps\dividend" "Frontend" cmd /k "pnpm run dev"
 
 echo.
 echo ========================================

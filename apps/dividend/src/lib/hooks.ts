@@ -3,7 +3,7 @@
  * 封装组件中可复用的状态逻辑
  */
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { dividendApi } from './api';
+import { dividendApi, dividendUpdateApi } from './api';
 import type {
   DividendStock,
   DividendQueryParams,
@@ -58,7 +58,7 @@ export function useDividendData() {
  * 技术指标数据 Hook
  * 获取 PE/PB 和 M120 数据
  */
-export function useTechnicalData(stockCodes: string[]) {
+export function useTechnicalData(stockCodes: string[], refreshKey?: number) {
   const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -104,6 +104,7 @@ export function useTechnicalData(stockCodes: string[]) {
               m120: m120?.m120 ?? null,
               close: m120?.close ?? null,
               deviation: m120?.deviation ?? null,
+              realtime: m120?.realtime ?? null,
             });
           }
         });
@@ -119,7 +120,7 @@ export function useTechnicalData(stockCodes: string[]) {
     };
 
     fetchTechnicalData();
-  }, [memoizedStockCodes]);
+  }, [memoizedStockCodes, refreshKey]);
 
   return { technicalData, loading, error };
 }
@@ -430,4 +431,119 @@ export function useHighlights(stocks: DividendStock[]) {
       lowChangeIndex: lowChangeIndex >= 0 ? lowChangeIndex : null,
     };
   }, [stocks]);
+}
+
+type UpdateState = {
+  dividend: 'idle' | 'loading' | 'success' | 'error';
+  m120: 'idle' | 'loading' | 'success' | 'error';
+  realtime: 'idle' | 'loading' | 'success' | 'error';
+  message?: string;
+};
+
+/**
+ * 数据更新 Hook
+ * 管理股息率、M120、实时股价的更新状态
+ */
+export function useDataUpdate() {
+  const [state, setState] = useState<UpdateState>({
+    dividend: 'idle',
+    m120: 'idle',
+    realtime: 'idle',
+  });
+  const [m120NeedsUpdate, setM120NeedsUpdate] = useState(true);
+  const [dividendNeedsUpdate, setDividendNeedsUpdate] = useState(true);
+
+  /**
+   * 检查 M120 是否需要更新
+   */
+  const checkM120Status = useCallback(async () => {
+    try {
+      const status = await dividendApi.getM120Status();
+      setM120NeedsUpdate(status.needs_update);
+    } catch (err) {
+      console.error('Failed to check M120 status:', err);
+      setM120NeedsUpdate(true);
+    }
+  }, []);
+
+  /**
+   * 检查股息率是否需要更新
+   */
+  const checkDividendStatus = useCallback(async () => {
+    try {
+      const status = await dividendApi.getDividendStatus();
+      setDividendNeedsUpdate(status.needs_update);
+    } catch (err) {
+      console.error('Failed to check dividend status:', err);
+      setDividendNeedsUpdate(true);
+    }
+  }, []);
+
+  // 初始化时检查状态
+  useEffect(() => {
+    checkM120Status();
+    checkDividendStatus();
+  }, [checkM120Status, checkDividendStatus]);
+
+  /**
+   * 更新股息率数据
+   */
+  const updateDividend = useCallback(async () => {
+    setState(prev => ({ ...prev, dividend: 'loading', message: undefined }));
+    try {
+      const result = await dividendUpdateApi.refreshDividend();
+      setState(prev => ({ ...prev, dividend: 'success', message: result.message }));
+      setDividendNeedsUpdate(false);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新失败';
+      setState(prev => ({ ...prev, dividend: 'error', message }));
+      return false;
+    }
+  }, []);
+
+  /**
+   * 更新 M120 数据
+   */
+  const updateM120 = useCallback(async () => {
+    setState(prev => ({ ...prev, m120: 'loading', message: undefined }));
+    try {
+      const result = await dividendUpdateApi.refreshM120();
+      setState(prev => ({ ...prev, m120: 'success', message: result.message }));
+      // 更新成功后标记为不需要更新
+      setM120NeedsUpdate(false);
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新失败';
+      setState(prev => ({ ...prev, m120: 'error', message }));
+      return false;
+    }
+  }, []);
+
+  /**
+   * 更新实时价格
+   */
+  const updateRealtimeInfo = useCallback(async () => {
+    setState(prev => ({ ...prev, realtime: 'loading', message: undefined }));
+    try {
+      const result = await dividendUpdateApi.refreshRealtimePrice();
+      setState(prev => ({ ...prev, realtime: 'success', message: result.message }));
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新失败';
+      setState(prev => ({ ...prev, realtime: 'error', message }));
+      return false;
+    }
+  }, []);
+
+  return {
+    state,
+    m120NeedsUpdate,
+    dividendNeedsUpdate,
+    checkM120Status,
+    checkDividendStatus,
+    updateDividend,
+    updateM120,
+    updateRealtimeInfo,
+  };
 }

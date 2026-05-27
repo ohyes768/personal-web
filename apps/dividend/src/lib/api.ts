@@ -63,6 +63,12 @@ export const dividendApi = {
    */
   getBoardInfo: (params: BoardInfoRequest) =>
     directClient.get<BoardInfoResponse>('/api/dividend/board', params),
+
+  /**
+   * 获取 PE/PB 数据
+   */
+  getPEData: (params: { codes?: string; code?: string }) =>
+    directClient.get<{ items: Array<{ code: string; pe: number | null; pb: number | null }>; total: number }>('/api/dividend/pe', params),
 };
 
 /**
