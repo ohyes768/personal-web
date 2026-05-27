@@ -1,9 +1,14 @@
 @echo off
+REM ============================================
+REM personal-web - Economic App Development
+REM Start global-macro-fin (8094) + Economic App (3001)
+REM ============================================
+
 setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo   Starting Macro Dev Environment
+echo   Economic Dev Environment Start
 echo ========================================
 echo.
 
@@ -31,25 +36,34 @@ start "macro-fin" cmd /k ".venv\Scripts\activate && python -m uvicorn src.main:a
 
 timeout /t 2 /nobreak >nul
 
-REM [2/2] Start Frontend
-echo [2/2] Starting Frontend (port 3000)...
-cd /d "%~dp0..\frontend"
+REM [2/2] Start Economic App
+echo [2/2] Starting Economic App (port 3001)...
+cd /d "%~dp0..\apps\economic"
 
-REM Setup node modules
+REM Check node_modules
 if not exist "node_modules" (
-    echo Installing frontend dependencies...
-    npm install
+    echo Installing dependencies...
+    cd /d "%~dp0.."
+    pnpm install
+    cd /d "%~dp0..\apps\economic"
 )
 
-REM Start Frontend service
-start "Frontend" cmd /k "npm run dev"
+REM Check .env.local
+if not exist ".env.local" (
+    echo Creating .env.local file...
+    echo BACKEND_URL=http://localhost:8094 > .env.local
+)
+
+REM Start Economic App service
+start "Economic App" cmd /k "pnpm dev"
 
 echo.
 echo ========================================
-echo   Macro Dev Environment Started
+echo   Economic Services Started!
 echo ========================================
 echo.
-echo Frontend:   http://localhost:3000
-echo Macro-Fin:  http://localhost:8094
+echo Service URLs:
+echo   * Economic App:  http://localhost:3001
+echo   * Macro-Fin:     http://localhost:8094
 echo.
 pause

@@ -1,35 +1,57 @@
+version: '3.8'
+
 services:
-  # Next.js 前端
-  frontend:
+  # 经济数据应用
+  economic:
     build:
-      context: ./frontend
+      context: ./apps/economic
       dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_BASE_URL=
-    container_name: personal-web-frontend
-    restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "3001:3001"
     environment:
       - NODE_ENV=production
-      - NEXT_PUBLIC_API_BASE_URL=
-      - PORT=3000
-      # 指向已运行的后端服务（使用 host.docker.internal 访问宿主机）
-      - DOUYIN_SERVICE_URL=http://host.docker.internal:8093
-      - MACRO_SERVICE_URL=http://host.docker.internal:8094
-      - NEWS_SERVICE_URL=http://host.docker.internal:8091
-      - DIVIDEND_API_URL=http://host.docker.internal:8092
-    networks:
-      - web-network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 10s
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
 
-networks:
-  web-network:
-    driver: bridge
+  # 资金流向应用
+  fund-flow:
+    build:
+      context: ./apps/fund-flow
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+
+  # 股息率应用
+  dividend:
+    build:
+      context: ./apps/dividend
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+
+  # 抖音视频文字稿应用
+  douyin:
+    build:
+      context: ./apps/douyin
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped
+
+  # 新闻联播分析应用
+  news:
+    build:
+      context: ./apps/news
+      dockerfile: Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=production
+    restart: unless-stopped

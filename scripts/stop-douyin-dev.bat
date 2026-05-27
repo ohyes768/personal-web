@@ -1,14 +1,14 @@
 @echo off
 REM ============================================
-REM personal-web Local Development - Stop All
-REM Stop douyin-processor (8093), Frontend (3000)
+REM personal-web - Douyin App Development Stop
+REM Stop douyin-processor (8093) + Douyin App (3004)
 REM ============================================
 
 setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo   Stopping Dev Environment
+echo   Stopping Douyin Dev Environment
 echo ========================================
 echo.
 
@@ -21,10 +21,10 @@ for /f "tokens=5" %%a in ('netstat -aon ^| find ":8093 " ^| find "LISTENING" 2^>
     taskkill /F /T /PID !PID! >nul 2>&1
 )
 
-REM Check and stop port 3000 (Frontend)
-for /f "tokens=5" %%a in ('netstat -aon ^| find ":3000 " ^| find "LISTENING" 2^>nul') do (
+REM Check and stop port 3004 (Douyin App)
+for /f "tokens=5" %%a in ('netstat -aon ^| find ":3004 " ^| find "LISTENING" 2^>nul') do (
     set "PID=%%a"
-    echo Stopping service on port 3000 - PID !PID! with process tree...
+    echo Stopping service on port 3004 - PID !PID! with process tree...
     taskkill /F /T /PID !PID! >nul 2>&1
 )
 
@@ -38,9 +38,9 @@ echo.
 echo Closing service windows...
 
 REM Call separate PowerShell script to close windows by port and command
-powershell -ExecutionPolicy Bypass -File "%~dp0stop-windows.ps1" -Ports "8093" -Commands "npm run dev"
+powershell -ExecutionPolicy Bypass -File "%~dp0stop-windows.ps1" -Ports "8093" -Commands "pnpm dev"
 
 echo.
-echo All services stopped.
+echo Douyin services stopped.
 echo.
 pause

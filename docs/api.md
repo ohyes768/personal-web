@@ -357,6 +357,10 @@
 | 欧洲国债 | 3 个月、2 年、10 年 | 日级 | 德国国债收益率曲线 |
 | 日本国债 | 10 年 | 日级 | 日本 10 年期国债收益率（注） |
 | 汇率数据 | 美元指数、USD/CNY、USD/JPY、USD/EUR | 日级 | 主要货币汇率 |
+| VIX | 恐慌指数 | 日级 | CBOE 波动率指数 |
+| 资金流向 | 北向/南向净流入 | 日级 | 沪深港通资金流向 |
+| 中国国债 | 10 年期 | 日级 | 中国国债收益率 |
+| TED利差 | SOFR - DGS3MO | 日级 | 市场流动性指标 |
 
 > **注**: 日本国债目前仅实现 10 年期数据。响应数据结构中保留 `3m` 和 `2y` 字段但返回空数组，待后续补充数据源。
 
@@ -761,6 +765,347 @@ n8n 调用此接口触发数据更新（美债 + 欧债 + 日债 + 汇率）。
       "usd_cny": [7.21, 7.24],
       "usd_jpy": [149.5, 149.8],
       "usd_eur": [0.91, 0.92]
+    },
+    "vix": [18.5, 17.2],
+    "fund_flow": {
+      "north_net_flow": [45.2, 52.3],
+      "north_buy": [null, null],
+      "north_sell": [null, null],
+      "south_net_flow": [-12.3, -15.2],
+      "south_buy": [null, null],
+      "south_sell": [null, null]
+    },
+    "china_bond": {
+      "10y": [1.82, 1.85]
+    },
+    "ted_spread": {
+      "sofr": [5.32, 5.35],
+      "us_3m": [5.30, 5.32],
+      "ted_spread": [0.02, 0.03]
+    }
+  }
+}
+```
+
+---
+
+### 13. 获取 VIX 历史数据
+
+从 2000 年开始获取全部 VIX 历史数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/fetch/vix/history` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "VIX历史数据获取成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "vix": {
+      "date": "2026-03-28",
+      "value": 18.5
+    }
+  }
+}
+```
+
+---
+
+### 14. 增量更新 VIX 数据
+
+增量更新最近 7 天的 VIX 数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/update/vix` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "VIX数据增量更新成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "vix": {
+      "date": "2026-03-28",
+      "value": 18.5
+    }
+  }
+}
+```
+
+---
+
+### 15. 获取资金流向历史数据
+
+从 2014-11-17（沪港通开通日）开始获取全部资金流向历史数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/fetch/fund-flow/history` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "资金流向历史数据获取成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "fund_flow": {
+      "north": {
+        "date": "2026-03-28",
+        "net_flow": 52.3,
+        "buy": null,
+        "sell": null
+      },
+      "south": {
+        "date": "2026-03-28",
+        "net_flow": -15.2,
+        "buy": null,
+        "sell": null
+      }
+    }
+  }
+}
+```
+
+---
+
+### 16. 增量更新资金流向数据
+
+增量更新最近 7 天的资金流向数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/update/fund-flow` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "资金流向数据增量更新成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "fund_flow": {
+      "north": {
+        "date": "2026-03-28",
+        "net_flow": 52.3,
+        "buy": null,
+        "sell": null
+      },
+      "south": {
+        "date": "2026-03-28",
+        "net_flow": -15.2,
+        "buy": null,
+        "sell": null
+      }
+    }
+  }
+}
+```
+
+---
+
+### 17. 获取资金流向累计数据
+
+获取北向/南向资金 7 日和 30 日累计净流入。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | GET |
+| 路径 | `/api/macro/fund-flow/cumulative` |
+
+**响应**
+
+```json
+{
+  "north_cumulative": {
+    "date": "2026-03-28",
+    "cum_7d": 358.5,
+    "cum_30d": 1520.3
+  },
+  "south_cumulative": {
+    "date": "2026-03-28",
+    "cum_7d": -85.2,
+    "cum_30d": -320.5
+  }
+}
+```
+
+---
+
+### 18. 获取资金流向历史数据（图表用）
+
+前端调用此接口获取图表展示数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | GET |
+| 路径 | `/api/macro/fund-flow/history` |
+
+**查询参数**
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| start_date | string | 否 | 开始日期，格式：YYYY-MM-DD |
+| end_date | string | 否 | 结束日期，格式：YYYY-MM-DD |
+
+**响应**
+
+```json
+{
+  "data": [
+    {
+      "date": "2026-03-01",
+      "north_net": 45.2,
+      "north_buy": null,
+      "north_sell": null,
+      "south_net": -12.3,
+      "south_buy": null,
+      "south_sell": null
+    }
+  ]
+}
+```
+
+---
+
+### 19. 获取中国国债历史数据
+
+从配置的开始日期获取全部中国国债历史数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/fetch/china-bonds/history` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "中国国债历史数据获取成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "china_bond_10y": {
+      "date": "2026-03-28",
+      "value": 1.85
+    }
+  }
+}
+```
+
+---
+
+### 20. 增量更新中国国债数据
+
+增量更新最近 7 天的中国国债数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/update/china-bonds` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "中国国债数据增量更新成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "china_bond_10y": {
+      "date": "2026-03-28",
+      "value": 1.85
+    }
+  }
+}
+```
+
+---
+
+### 21. 获取 TED 利差历史数据
+
+从 2012-01-01 开始获取全部 TED 利差历史数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/fetch/ted-spread/history` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "TED利差历史数据获取成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "ted_spread": {
+      "date": "2026-03-28",
+      "sofr": 5.35,
+      "us_3m": 5.32,
+      "ted_spread": 0.03
+    }
+  }
+}
+```
+
+---
+
+### 22. 增量更新 TED 利差数据
+
+增量更新最近 7 天的 TED 利差数据。
+
+**请求**
+
+| 属性 | 值 |
+|------|-----|
+| 方法 | POST |
+| 路径 | `/api/macro/update/ted-spread` |
+
+**响应**
+
+```json
+{
+  "success": true,
+  "message": "TED利差数据增量更新成功",
+  "updated_at": "2026-03-29T12:00:00Z",
+  "data": {
+    "ted_spread": {
+      "date": "2026-03-28",
+      "sofr": 5.35,
+      "us_3m": 5.32,
+      "ted_spread": 0.03
     }
   }
 }
@@ -836,9 +1181,72 @@ interface UpdateResponse {
     eu_treasuries?: EUTreasuries;
     jp_treasuries?: JPTreasuries;
     exchange_rates?: ExchangeRates;
+    vix?: VIXData;
+    fund_flow?: FundFlow;
+    china_bond_10y?: ChinaBondData;
+    ted_spread?: TedSpreadData;
   };
   updated_at?: string;   // ISO 8601 格式
   error_code?: string;
+}
+```
+
+### VIX 数据 (VIXData)
+
+```typescript
+interface VIXData {
+  date: string;           // YYYY-MM-DD
+  value: number | null;   // VIX 恐慌指数值
+}
+```
+
+### 资金流向数据 (FundFlowData)
+
+```typescript
+interface FundFlowData {
+  date: string;              // YYYY-MM-DD
+  net_flow: number | null;   // 净流入（亿元）
+  buy: number | null;        // 买入额（亿元）
+  sell: number | null;       // 卖出额（亿元）
+}
+```
+
+### 资金流向 (FundFlow)
+
+```typescript
+interface FundFlow {
+  north: FundFlowData;   // 北向资金（港股通→A股）
+  south: FundFlowData;   // 南向资金（A股→港股通）
+}
+```
+
+### 资金流向累计数据 (FundFlowCumulativeData)
+
+```typescript
+interface FundFlowCumulativeData {
+  date: string;            // YYYY-MM-DD
+  cum_7d: number | null;   // 7日累计净流入（亿元）
+  cum_30d: number | null;   // 30日累计净流入（亿元）
+}
+```
+
+### 中国国债数据 (ChinaBondData)
+
+```typescript
+interface ChinaBondData {
+  date: string;           // YYYY-MM-DD
+  value: number | null;   // 10年期国债收益率（%）
+}
+```
+
+### TED 利差数据 (TedSpreadData)
+
+```typescript
+interface TedSpreadData {
+  date: string;           // YYYY-MM-DD
+  sofr: number | null;    // SOFR 利率（%）
+  us_3m: number | null;   // 美国3个月国债收益率（%）
+  ted_spread: number | null;  // TED利差 = SOFR - DGS3MO（%）
 }
 ```
 
@@ -921,15 +1329,27 @@ interface EconomicDataResponse {
 | **global-macro-fin** (8094) | 1 | `/` | GET | 根路径服务信息 |
 | | 2 | `/api/macro/health` | GET | 健康检查 |
 | | 3 | `/api/macro/update` | POST | 更新全部数据 |
-| | 4 | `/api/macro/fetch/us-treasuries/history` | POST | 获取美债历史数据 |
-| | 5 | `/api/macro/update/us-treasuries` | POST | 增量更新美债 |
-| | 6 | `/api/macro/fetch/exchange-rates/history` | POST | 获取汇率历史数据 |
-| | 7 | `/api/macro/update/exchange-rates` | POST | 增量更新汇率 |
-| | 8 | `/api/macro/fetch/eu-bonds/history` | POST | 获取欧债历史数据 |
-| | 9 | `/api/macro/update/eu-bonds` | POST | 增量更新欧债 |
-| | 10 | `/api/macro/fetch/jp-bonds/history` | POST | 获取日债历史数据 |
-| | 11 | `/api/macro/update/jp-bonds` | POST | 增量更新日债 |
-| | 12 | `/api/macro/data` | GET | 查询宏观经济数据 |
+| | 4 | `/api/macro/data` | GET | 查询宏观经济数据 |
+| | 5 | `/api/macro/fetch/us-treasuries/history` | POST | 获取美债历史数据 |
+| | 6 | `/api/macro/update/us-treasuries` | POST | 增量更新美债 |
+| | 7 | `/api/macro/fetch/exchange-rates/history` | POST | 获取汇率历史数据 |
+| | 8 | `/api/macro/update/exchange-rates` | POST | 增量更新汇率 |
+| | 9 | `/api/macro/fetch/eu-bonds/history` | POST | 获取欧债历史数据 |
+| | 10 | `/api/macro/update/eu-bonds` | POST | 增量更新欧债 |
+| | 11 | `/api/macro/fetch/jp-bonds/history` | POST | 获取日债历史数据 |
+| | 12 | `/api/macro/update/jp-bonds` | POST | 增量更新日债 |
+| | 13 | `/api/macro/fetch/vix/history` | POST | 获取VIX历史数据 |
+| | 14 | `/api/macro/update/vix` | POST | 增量更新VIX |
+| | 15 | `/api/macro/fetch/fund-flow/history` | POST | 获取资金流向历史数据 |
+| | 16 | `/api/macro/update/fund-flow` | POST | 增量更新资金流向 |
+| | 17 | `/api/macro/fund-flow/cumulative` | GET | 获取资金累计流入 |
+| | 18 | `/api/macro/fund-flow/history` | GET | 获取资金流向图表数据 |
+| | 19 | `/api/macro/fetch/china-bonds/history` | POST | 获取中国国债历史数据 |
+| | 20 | `/api/macro/update/china-bonds` | POST | 增量更新中国国债 |
+| | 21 | `/api/macro/fetch/ted-spread/history` | POST | 获取TED利差历史数据 |
+| | 22 | `/api/macro/update/ted-spread` | POST | 增量更新TED利差 |
+
+**总计**: douyin-processor 10 个接口 + global-macro-fin 22 个接口 = 32 个接口
 
 ---
 
