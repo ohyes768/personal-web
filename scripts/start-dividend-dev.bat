@@ -50,7 +50,7 @@ if not exist ".env.local" (
 )
 
 REM Start Frontend service
-start /d "%~dp0..\apps\dividend" "Frontend" cmd /k "pnpm run dev"
+start "Frontend" cmd /k "cd /d "%~dp0..\apps\dividend" && pnpm run dev"
 
 echo.
 echo ========================================
