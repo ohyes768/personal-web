@@ -77,30 +77,25 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number) {
       setError(null);
 
       try {
-        // 并行获取 PE 和 M120 数据
+        // 并行获取 M120 和实时价格数据
         const codesStr = memoizedStockCodes.join(',');
-        const [peResponse, m120Response] = await Promise.all([
-          dividendApi.getPEData({ codes: codesStr }),
+        const [m120Response] = await Promise.all([
           dividendApi.getM120Data(),
         ]);
 
         const newTechnicalData = new Map<string, TechnicalIndicators>();
-
-        // 处理 PE 数据
-        const peMap = new Map(peResponse.items.map(item => [item.code, item]));
 
         // 处理 M120 数据
         const m120Map = new Map(m120Response.items.map(item => [item.code, item]));
 
         // 合并数据
         memoizedStockCodes.forEach(code => {
-          const pe = peMap.get(code);
           const m120 = m120Map.get(code);
 
-          if (pe || m120) {
+          if (m120) {
             newTechnicalData.set(code, {
-              pe: pe?.pe ?? null,
-              pb: pe?.pb ?? null,
+              pe: null,
+              pb: null,
               m120: m120?.m120 ?? null,
               close: m120?.close ?? null,
               deviation: m120?.deviation ?? null,
