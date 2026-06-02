@@ -27,6 +27,32 @@ export default function DividendPage() {
   // 刷新计数，用于强制表格重新渲染
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // 输出报告下拉菜单开关
+  const [reportOpen, setReportOpen] = useState(false);
+
+  // 下载报告（A4 一图版 / 手机竖版）
+  const downloadReport = async (type: 'a4' | 'carousel') => {
+    setReportOpen(false);
+    const config = type === 'a4'
+      ? { endpoint: '/api/dividend/report/one-pager', prefix: 'dividend_one_pager' }
+      : { endpoint: '/api/dividend/report/carousel', prefix: 'dividend_carousel' };
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8099';
+      const response = await fetch(`${API_BASE}${config.endpoint}`);
+      if (!response.ok) throw new Error('生成报告失败');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${config.prefix}_${new Date().toISOString().slice(0, 10)}.html`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('导出报告失败:', err);
+      alert('导出报告失败，请稍后重试');
+    }
+  };
+
   // 股票代码列表
   const stockCodes = useMemo(() => data.map(s => s.code), [data]);
 
@@ -373,31 +399,41 @@ export default function DividendPage() {
               导出CSV
             </button>
 
-            <button
-              onClick={async () => {
-                try {
-                  const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8099';
-                  const response = await fetch(`${API_BASE}/api/dividend/report/one-pager`);
-                  if (!response.ok) throw new Error('生成报告失败');
-                  const blob = await response.blob();
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = `dividend_one_pager_${new Date().toISOString().slice(0, 10)}.html`;
-                  a.click();
-                  URL.revokeObjectURL(url);
-                } catch (err) {
-                  console.error('导出报告失败:', err);
-                  alert('导出报告失败，请稍后重试');
-                }
-              }}
-              className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-500"
+            <div
+              className="relative"
+              onMouseLeave={() => setReportOpen(false)}
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              输出报告
-            </button>
+              <button
+                onClick={() => setReportOpen(!reportOpen)}
+                className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-500"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                输出报告
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {reportOpen && (
+                <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 min-w-[200px]">
+                  <button
+                    onClick={() => downloadReport('a4')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-blue-50 first:rounded-t"
+                  >
+                    <div className="font-medium">A4 一图版（横版）</div>
+                    <div className="text-xs text-gray-500 mt-0.5">适合电脑端分享/打印</div>
+                  </button>
+                  <button
+                    onClick={() => downloadReport('carousel')}
+                    className="block w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-blue-50 last:rounded-b border-t border-gray-100"
+                  >
+                    <div className="font-medium">手机竖版（轮播）</div>
+                    <div className="text-xs text-gray-500 mt-0.5">1080×1920 · 支持⬇下载原图</div>
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
