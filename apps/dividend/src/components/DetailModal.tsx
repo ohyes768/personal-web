@@ -8,6 +8,17 @@ import { Modal } from '@personal-web/shared-ui';
 import { Button } from '@personal-web/shared-ui';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { dividendApi } from '@/lib/api';
+import {
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from 'recharts';
 import type { DividendStock, BoardInfo, BoardInfoResponse } from '@/lib/types';
 
 export interface DetailModalProps {
@@ -28,6 +39,7 @@ const CACHE_DURATION = 24 * 60 * 60 * 1000; // 1天（毫秒）
 
 export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) {
   const [stockInfo, setBoardInfo] = useState<BoardInfo | null>(null);
+  const [stockDetail, setStockDetail] = useState<DividendStock | null>(null);
   const [loading, setLoading] = useState(false);
 
   // 从 localStorage 读取缓存
@@ -93,6 +105,26 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
       });
   }, [isOpen, stock, type, getCache, setCache]);
 
+  // 获取股票详情（分红历史）
+  useEffect(() => {
+    if (!isOpen || !stock || type !== 'quarterly') {
+      setStockDetail(null);
+      return;
+    }
+
+    setLoading(true);
+    dividendApi.getStockDetail(stock.code)
+      .then((response) => {
+        setStockDetail(response.data);
+      })
+      .catch((err: unknown) => {
+        console.error('Failed to fetch stock detail:', err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, [isOpen, stock, type]);
+
   if (!stock || !type) return null;
 
   const getModalTitle = () => {
@@ -106,61 +138,141 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
   };
 
   const renderQuarterlyContent = () => {
-    // 动态计算前4个已过去季度，最新在前
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = now.getMonth() + 1;
-    const currentQuarter = Math.ceil(month / 3);
+    const history = stockDetail?.dividend_history ?? stock?.dividend_history ?? null;
 
-    interface QuarterData {
-      name: string;
-      data: { avg_price?: number | null; dividend?: number | null; yield_pct?: number | null } | null;
+    if (loading) {
+      return <div className="flex items-center justify-center py-8 text-gray-400">加载中...</div>;
     }
-    const quarters: QuarterData[] = [];
-    // 从上一个完整季度开始往前数4个
-    let q = currentQuarter - 1;
-    let y = year;
-    if (q === 0) { q = 4; y--; }
-    for (let i = 0; i < 4; i++) {
-      const key = ['q1', 'q2', 'q3', 'q4'][i];
-      quarters.push({
-        name: `${y} Q${q}`,
-        data: stock.quarterly?.[key as keyof typeof stock.quarterly] ?? null,
-      });
-      q--;
-      if (q === 0) { q = 4; y--; }
+
+    if (!history || history.length === 0) {
+      return <div className="flex items-center justify-center py-8 text-gray-400">暂无分红数据</div>;
     }
+
+    // 按除权除息日期升序排列（ oldest first for chart )
+    const sortedHistory = [...history].sort(
+      (a, b) => new Date(a.ex_date).getTime() - new Date(b.ex_date).getTime()
+    );
+
+    // 生成固定36个月的时间序列 (2023年1月 ~ 2025年12月)
+    const months: string[] = [];
+    for (let i = 35; i >= 0; i--) {
+      const d = new Date(2025, 11 - i, 1); // 固定2023-01到2025-12
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+    }
+
+    // 只保留2023年及以后的分红数据
+    const recentHistory = sortedHistory.filter(
+      (item) => new Date(item.ex_date).getTime() >= new Date('2023-01-01').getTime()
+    );
+
+    // 构建月份到股息数据的映射
+    const dividendByMonth: Record<string, number> = {};
+    recentHistory.forEach((item) => {
+      const monthKey = item.ex_date.slice(0, 7); // YYYY-MM
+      dividendByMonth[monthKey] = item.ratio;
+    });
+
+    // 获取近4年每年股息率 (2022-2025)
+    const getYearlyYield = (year: number): number | null => {
+      const key = `yield_${year}` as keyof DividendStock;
+      return stock?.[key] as number | null;
+    };
+
+    // chart data - 36个月的固定序列，年度股息率作为折线
+    const chartData = months.map((month) => {
+      const year = parseInt(month.slice(0, 4));
+      const monthlyYield = getYearlyYield(year);
+      return {
+        month,
+        ratio: dividendByMonth[month] || 0,
+        yearlyYield: monthlyYield ?? null,
+      };
+    });
+
+    // 最近的5条记录用于展示（过滤掉2022年财年的记录）
+    const recentItems = recentHistory.filter(item => item.fiscal_year >= 2023).slice(-5).reverse();
 
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {quarters.map((q) => (
-          <div
-            key={q.name}
-            className="bg-gray-800 border border-gray-700 rounded-lg p-4 text-center"
-          >
-            <div className="text-sm font-semibold text-gray-200 mb-3">{q.name}</div>
-            <div className="space-y-2">
-              <div>
-                <div className="text-xs text-gray-400 mb-1">平均股价</div>
-                <div className="text-base font-semibold text-gray-100">
-                  {q.data?.avg_price ? `¥${formatValue(q.data.avg_price)}` : '-'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-400 mb-1">分红金额</div>
-                <div className="text-base font-semibold text-gray-100">
-                  {q.data?.dividend ? `¥${formatValue(q.data.dividend)}` : '-'}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-gray-400 mb-1">股息率</div>
-                <div className="text-base font-semibold text-green-400">
-                  {q.data?.yield_pct ? `${formatValue(q.data.yield_pct)}%` : '-'}
-                </div>
-              </div>
-            </div>
+      <div className="space-y-6">
+        {/* 柱状+折线组合图 */}
+        <div className="bg-gray-800/50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-200 mb-3">分红派息趋势</h3>
+          <ResponsiveContainer width="100%" height={200}>
+            <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <XAxis
+                dataKey="month"
+                tick={{ fill: '#9ca3af', fontSize: 10 }}
+                tickFormatter={(val) => val.replace('-', '.')} // YYYY.MM
+                tickAngle={-45}
+                interval={2}
+              />
+              <YAxis
+                yAxisId="left"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={(val) => `${val}元`}
+              />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tickFormatter={(val) => `${val}%`}
+              />
+              <Tooltip
+                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '6px' }}
+                labelStyle={{ color: '#e5e7eb' }}
+                formatter={(value, name) => {
+                  if (name === '每股派息') {
+                    return [`${value} 元/股`, '每股派息'];
+                  }
+                  return [`${value}%`, '年度股息率'];
+                }}
+                labelFormatter={(label) => `月份: ${label}`}
+              />
+              <Legend />
+              <Bar dataKey="ratio" name="每股派息" yAxisId="left" fill="#f59e0b" radius={[2, 2, 0, 0]} />
+              <Line type="stepAfter" dataKey="yearlyYield" name="年度股息率" yAxisId="right" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 2 }} connectNulls={false} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* 明细表格 */}
+        <div className="bg-gray-800/50 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-gray-200 mb-3">分红明细</h3>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-gray-700">
+                  <th className="text-left py-2 text-gray-400 font-medium">除权除息日</th>
+                  <th className="text-left py-2 text-gray-400 font-medium">财年</th>
+                  <th className="text-right py-2 text-gray-400 font-medium">派息 (元/股)</th>
+                  <th className="text-right py-2 text-gray-400 font-medium">单次股息率</th>
+                  <th className="text-right py-2 text-gray-400 font-medium">年度股息率</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentItems.map((item, idx) => {
+                  // 用财年获取平均价和年度股息率（2022年数据不全，跳过年度股息率）
+                  const fiscalYear = item.fiscal_year;
+                  const avgPriceKey = `avg_price_${fiscalYear}` as keyof DividendStock;
+                  const yieldKey = `yield_${fiscalYear}` as keyof DividendStock;
+                  const avgPrice = stock?.[avgPriceKey] as number | null;
+                  const yearlyYield = fiscalYear >= 2023 ? (stock?.[yieldKey] as number | null) : null;
+                  const singleYield = avgPrice ? ((item.ratio / avgPrice) * 100).toFixed(2) : null;
+                  return (
+                    <tr key={idx} className="border-b border-gray-700/50 hover:bg-gray-700/20">
+                      <td className="py-2 text-gray-300">{item.ex_date}</td>
+                      <td className="py-2 text-gray-300">{item.fiscal_year}年</td>
+                      <td className="py-2 text-right text-amber-400 font-semibold">{item.ratio}</td>
+                      <td className="py-2 text-right text-green-400">{singleYield !== null ? `${singleYield}%` : '-'}</td>
+                      <td className="py-2 text-right text-blue-400">{yearlyYield !== null ? `${yearlyYield.toFixed(2)}%` : '-'}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
-        ))}
+        </div>
       </div>
     );
   };
@@ -385,7 +497,7 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
       onClose={onClose}
       title={getModalTitle()}
       size="md"
-      className={(type === 'yearly' || type === 'quarterly' || type === 'volatility' || type === 'sector') ? '!max-w-[600px]' : ''}
+      className={(type === 'yearly' || type === 'quarterly' || type === 'volatility' || type === 'sector') ? (type === 'quarterly' ? '!max-w-[700px]' : '!max-w-[600px]') : ''}
     >
       {renderContent()}
     </Modal>

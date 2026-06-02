@@ -43,9 +43,9 @@ export function useDividendData() {
   }, []);
 
   useEffect(() => {
-    // 默认参数：阈值 3%，降序排序
+    // 默认参数：阈值 3.5%，降序排序
     fetchData({
-      min_yield: 5,
+      min_yield: 3.5,
       sort_by: 'avg_yield_3y',
       sort_order: 'desc',
     });
@@ -58,7 +58,7 @@ export function useDividendData() {
  * 技术指标数据 Hook
  * 获取 PE/PB 和 M120 数据
  */
-export function useTechnicalData(stockCodes: string[], refreshKey?: number) {
+export function useTechnicalData(stockCodes: string[], refreshKey?: number, minYield?: number) {
   const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -80,7 +80,7 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number) {
         // 并行获取 M120 和实时价格数据
         const codesStr = memoizedStockCodes.join(',');
         const [m120Response] = await Promise.all([
-          dividendApi.getM120Data(),
+          dividendApi.getM120Data({ min_yield: minYield || 3 }),
         ]);
 
         const newTechnicalData = new Map<string, TechnicalIndicators>();
@@ -94,12 +94,12 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number) {
 
           if (m120) {
             newTechnicalData.set(code, {
-              pe: null,
-              pb: null,
               m120: m120?.m120 ?? null,
               close: m120?.close ?? null,
               deviation: m120?.deviation ?? null,
               realtime: m120?.realtime ?? null,
+              realtimeDeviation: m120?.realtime_deviation ?? null,
+              yield_ttm: m120?.yield_ttm ?? null,
             });
           }
         });
@@ -387,16 +387,6 @@ export function useCompare(maxSelect: number = 5) {
 export function useHighlights(stocks: DividendStock[]) {
   return useMemo(() => {
     const yieldIndex = stocks.findIndex(s => s.avg_yield_3y === Math.max(...stocks.map(s => s.avg_yield_3y ?? -Infinity)));
-    const peValues = stocks.map(s => {
-      const pe = (s as DividendStockWithTechnical).technical?.pe;
-      return pe ?? Infinity;
-    });
-    const peIndex = peValues.indexOf(Math.min(...peValues));
-    const pbValues = stocks.map(s => {
-      const pb = (s as DividendStockWithTechnical).technical?.pb;
-      return pb ?? Infinity;
-    });
-    const pbIndex = pbValues.indexOf(Math.min(...pbValues));
     // 昨日收盘/M120 比率，最小值为最优
     const ratioValues = stocks.map(s => {
       const technical = (s as DividendStockWithTechnical).technical;
@@ -419,8 +409,6 @@ export function useHighlights(stocks: DividendStock[]) {
 
     return {
       yieldIndex: yieldIndex >= 0 ? yieldIndex : null,
-      peIndex: peIndex >= 0 ? peIndex : null,
-      pbIndex: pbIndex >= 0 ? pbIndex : null,
       ratioIndex: ratioIndex >= 0 ? ratioIndex : null,
       highChangeIndex: highChangeIndex >= 0 ? highChangeIndex : null,
       lowChangeIndex: lowChangeIndex >= 0 ? lowChangeIndex : null,
@@ -432,7 +420,12 @@ type UpdateState = {
   dividend: 'idle' | 'loading' | 'success' | 'error';
   m120: 'idle' | 'loading' | 'success' | 'error';
   realtime: 'idle' | 'loading' | 'success' | 'error';
+  financial: 'idle' | 'loading' | 'success' | 'error';
   message?: string;
+  dividend_failed_count?: number;
+  dividend_failed_codes?: string[];
+  dividend_target_count?: number;
+  dividend_completed_count?: number;
 };
 
 /**
@@ -444,9 +437,12 @@ export function useDataUpdate() {
     dividend: 'idle',
     m120: 'idle',
     realtime: 'idle',
+    financial: 'idle',
   });
   const [m120NeedsUpdate, setM120NeedsUpdate] = useState(true);
   const [dividendNeedsUpdate, setDividendNeedsUpdate] = useState(true);
+  const [financialNeedsUpdate, setFinancialNeedsUpdate] = useState(true);
+  const [financialMissingCodes, setFinancialMissingCodes] = useState<string[]>([]);
 
   /**
    * 检查 M120 是否需要更新
@@ -468,9 +464,32 @@ export function useDataUpdate() {
     try {
       const status = await dividendApi.getDividendStatus();
       setDividendNeedsUpdate(status.needs_update);
+      setState(prev => ({
+        ...prev,
+        dividend: 'idle',  // 重置状态，让按钮根据 needs_update 显示正确文案
+        dividend_target_count: status.target_count,
+        dividend_completed_count: status.completed_count,
+        dividend_failed_count: (status.target_count - status.completed_count),
+        dividend_failed_codes: status.failed_codes,
+      }));
     } catch (err) {
       console.error('Failed to check dividend status:', err);
       setDividendNeedsUpdate(true);
+    }
+  }, []);
+
+  /**
+   * 检查财务指标是否需要更新
+   */
+  const checkFinancialStatus = useCallback(async () => {
+    try {
+      const status = await dividendApi.getFinancialStatus();
+      setFinancialNeedsUpdate(status.missing_count > 0);
+      setFinancialMissingCodes(status.missing_codes || []);
+    } catch (err) {
+      console.error('Failed to check financial status:', err);
+      setFinancialNeedsUpdate(true);
+      setFinancialMissingCodes([]);
     }
   }, []);
 
@@ -478,7 +497,8 @@ export function useDataUpdate() {
   useEffect(() => {
     checkM120Status();
     checkDividendStatus();
-  }, [checkM120Status, checkDividendStatus]);
+    checkFinancialStatus();
+  }, [checkM120Status, checkDividendStatus, checkFinancialStatus]);
 
   /**
    * 更新股息率数据
@@ -487,26 +507,40 @@ export function useDataUpdate() {
     setState(prev => ({ ...prev, dividend: 'loading', message: undefined }));
     try {
       const result = await dividendUpdateApi.refreshDividend();
-      setState(prev => ({ ...prev, dividend: 'success', message: result.message }));
-      setDividendNeedsUpdate(false);
+      const failedCount = result.stats.failed_count;
+      const total = result.stats.total_processed;
+      const completed = result.stats.completed_count;
+      // 如果全部成功（failedCount=0），不需要继续高亮
+      setDividendNeedsUpdate(failedCount > 0);
+      setState(prev => ({
+        ...prev,
+        dividend: 'success',
+        message: result.message,
+        dividend_failed_count: failedCount,
+        dividend_failed_codes: result.stats.failed_codes,
+        dividend_target_count: total,
+        dividend_completed_count: completed,
+      }));
+      // 刷新完成后重新检查状态
+      await checkDividendStatus();
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : '更新失败';
       setState(prev => ({ ...prev, dividend: 'error', message }));
       return false;
     }
-  }, []);
+  }, [checkDividendStatus]);
 
   /**
    * 更新 M120 数据
    */
-  const updateM120 = useCallback(async () => {
+  const updateM120 = useCallback(async (codes?: string[]) => {
     setState(prev => ({ ...prev, m120: 'loading', message: undefined }));
     try {
-      const result = await dividendUpdateApi.refreshM120();
+      const result = await dividendUpdateApi.refreshM120(codes);
       setState(prev => ({ ...prev, m120: 'success', message: result.message }));
-      // 更新成功后标记为不需要更新
-      setM120NeedsUpdate(false);
+      // 更新成功后重新检查状态
+      await checkM120Status();
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : '更新失败';
@@ -518,10 +552,10 @@ export function useDataUpdate() {
   /**
    * 更新实时价格
    */
-  const updateRealtimeInfo = useCallback(async () => {
+  const updateRealtimeInfo = useCallback(async (codes?: string[]) => {
     setState(prev => ({ ...prev, realtime: 'loading', message: undefined }));
     try {
-      const result = await dividendUpdateApi.refreshRealtimePrice();
+      const result = await dividendUpdateApi.refreshRealtimePrice(codes);
       setState(prev => ({ ...prev, realtime: 'success', message: result.message }));
       return true;
     } catch (err) {
@@ -531,14 +565,40 @@ export function useDataUpdate() {
     }
   }, []);
 
+  /**
+   * 更新财务指标数据
+   */
+  const updateFinancial = useCallback(async (codes?: string[]) => {
+    setState(prev => ({ ...prev, financial: 'loading', message: undefined }));
+    try {
+      const result = await dividendUpdateApi.refreshFinancial(codes);
+      setState(prev => ({
+        ...prev,
+        financial: 'success',
+        message: result.message,
+      }));
+      // 更新完成后重新检查状态
+      await checkFinancialStatus();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新失败';
+      setState(prev => ({ ...prev, financial: 'error', message }));
+      return false;
+    }
+  }, [checkFinancialStatus]);
+
   return {
     state,
     m120NeedsUpdate,
     dividendNeedsUpdate,
+    financialNeedsUpdate,
+    financialMissingCodes,
     checkM120Status,
     checkDividendStatus,
+    checkFinancialStatus,
     updateDividend,
     updateM120,
     updateRealtimeInfo,
+    updateFinancial,
   };
 }

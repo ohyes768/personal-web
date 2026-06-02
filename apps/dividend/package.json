@@ -9,14 +9,15 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@personal-web/shared-ui": "workspace:*",
-    "@personal-web/api-client": "workspace:*",
     "@heroicons/react": "^2.2.0",
+    "@personal-web/api-client": "workspace:*",
+    "@personal-web/shared-ui": "workspace:*",
     "@tailwindcss/postcss": "^4.2.0",
     "@tanstack/react-virtual": "^3.13.21",
     "next": "^15.4.0",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "recharts": "^3.8.1"
   },
   "devDependencies": {
     "@types/node": "^20",

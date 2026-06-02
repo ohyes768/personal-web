@@ -5,10 +5,13 @@
 import { directClient } from '@personal-web/api-client';
 import type {
   DividendListResponse,
+  DividendDetailResponse,
   DividendQueryParams,
+  DividendStatusResponse,
   M120ListResponse,
   RealtimePriceRequest,
   RealtimePriceResponse,
+  RefreshDividendResponse,
   StockInfoRequest,
   StockInfoResponse,
   BoardInfoResponse,
@@ -26,7 +29,7 @@ export const dividendApi = {
    * 获取股票详情
    */
   getStockDetail: (code: string) =>
-    directClient.get(`/api/dividend/stocks/${code}`),
+    directClient.get<DividendDetailResponse>(`/api/dividend/stocks/${code}`),
 
   /**
    * 获取 M120 数据
@@ -38,13 +41,13 @@ export const dividendApi = {
    * 获取 M120 数据状态
    */
   getM120Status: () =>
-    directClient.get<{ needs_update: boolean; last_updated: string | null; file_exists: boolean }>('/api/dividend/m120/status'),
+    directClient.get<{ needs_update: boolean; last_updated: string | null; file_exists: boolean; missing_count: number; missing_codes: string[] }>('/api/dividend/m120/status'),
 
   /**
    * 获取股息率数据状态
    */
   getDividendStatus: () =>
-    directClient.get<{ needs_update: boolean; last_updated: string | null; file_exists: boolean }>('/api/dividend/dividend/status'),
+    directClient.get<DividendStatusResponse>('/api/dividend/dividend/status'),
 
   /**
    * 获取实时收盘价和偏离度
@@ -65,10 +68,16 @@ export const dividendApi = {
     directClient.get<BoardInfoResponse>('/api/dividend/board', params),
 
   /**
-   * 获取 PE/PB 数据
+   * 获取股票 PE/PB 数据
    */
   getPEData: (params: { codes?: string; code?: string }) =>
     directClient.get<{ items: Array<{ code: string; pe: number | null; pb: number | null }>; total: number }>('/api/dividend/pe', params),
+
+  /**
+   * 获取财务指标数据状态
+   */
+  getFinancialStatus: () =>
+    directClient.get<{ exists: boolean; last_updated: string | null; data_date: string | null; missing_count: number; missing_codes: string[] }>('/api/dividend/financial/status'),
 };
 
 /**
@@ -80,19 +89,34 @@ export const dividendUpdateApi = {
    * 从红利指数获取股票列表，调用 akshare 计算股息率
    */
   refreshDividend: () =>
-    directClient.post<{ success: boolean; message: string }>('/api/dividend/dividend/refresh', { min_dividend: 10 }),
+    directClient.post<RefreshDividendResponse>('/api/dividend/dividend/refresh', { min_dividend: 10 }),
 
   /**
    * 更新 M120 数据（每周一次）
-   * 获取所有股息率 > 3% 股票的 120 日均线数据
+   * 获取指定股票的 120 日均线数据
    */
-  refreshM120: () =>
-    directClient.post<{ success: boolean; message: string; count?: number }>('/api/dividend/m120/refresh'),
+  refreshM120: (codes?: string[]) =>
+    directClient.post<{ success: boolean; message: string; count?: number }>(
+      '/api/dividend/m120/refresh',
+      codes ? { codes } : undefined
+    ),
 
   /**
    * 更新实时价格（每日一次）
-   * 使用 comrms 批量接口获取所有股票的实时价格
+   * 使用 comrms 批量接口获取指定股票的实时价格
    */
-  refreshRealtimePrice: () =>
-    directClient.post<{ success: boolean; message: string; count?: number }>('/api/dividend/realtime/refresh'),
+  refreshRealtimePrice: (codes?: string[]) =>
+    directClient.post<{ success: boolean; message: string; count?: number }>(
+      '/api/dividend/realtime/refresh',
+      codes ? { codes } : undefined
+    ),
+
+  /**
+   * 更新财务指标数据
+   */
+  refreshFinancial: (codes?: string[]) =>
+    directClient.post<{ success: boolean; message: string; count?: number; missing_count?: number }>(
+      '/api/dividend/financial/refresh',
+      codes ? { codes } : undefined
+    ),
 };

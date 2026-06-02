@@ -8,7 +8,7 @@ import { CheckIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/o
 import { useState, useMemo } from 'react';
 import type { DividendStock, TechnicalIndicators } from '@/lib/types';
 
-type SortField = 'avg_yield_3y' | 'realtime_yield';
+type SortField = 'avg_yield_3y' | 'realtime_yield' | 'yield_ttm';
 type SortOrder = 'asc' | 'desc';
 
 const formatValue = (value: number | null | undefined): string => {
@@ -33,6 +33,14 @@ const calcRealtimeYieldValue = (dividend2025: number | null | undefined, realtim
   return dividend2025 / realtime * 100;
 };
 
+/**
+ * 格式化实时股息率TTM
+ */
+const formatYieldTtm = (technical: TechnicalIndicators | null): string => {
+  if (!technical || technical.yield_ttm === null || technical.yield_ttm === undefined) return '-';
+  return technical.yield_ttm.toFixed(2) + '%';
+};
+
 const formatSwIndustry = (stock: DividendStock): string[] => {
   return [
     stock.sw_level1 || '-',
@@ -52,7 +60,15 @@ const formatM120 = (technical: TechnicalIndicators | null): string => {
 };
 
 /**
- * 格式化 昨日收盘/M120 列
+ * 格式化股东户数（转换为万单位）
+ */
+const formatShareholderCount = (count: number | null | undefined): string => {
+  if (count === null || count === undefined) return '-';
+  return (count / 10000).toFixed(1) + '万';
+};
+
+/**
+ * 格式化 昨日/M120 列
  */
 const formatPriceDeviation = (technical: TechnicalIndicators | null): {
   line1: string;
@@ -135,12 +151,17 @@ export function DividendTable({
       if (sortField === 'avg_yield_3y') {
         aVal = a.avg_yield_3y ?? 0;
         bVal = b.avg_yield_3y ?? 0;
-      } else {
-        // realtime_yield
+      } else if (sortField === 'realtime_yield') {
         const techA = technicalData.get(a.code);
         const techB = technicalData.get(b.code);
         aVal = calcRealtimeYieldValue(a.dividend_2025, techA?.realtime ?? null);
         bVal = calcRealtimeYieldValue(b.dividend_2025, techB?.realtime ?? null);
+      } else {
+        // yield_ttm
+        const techA = technicalData.get(a.code);
+        const techB = technicalData.get(b.code);
+        aVal = techA?.yield_ttm ?? 0;
+        bVal = techB?.yield_ttm ?? 0;
       }
 
       if (aVal === bVal) return 0;
@@ -184,16 +205,16 @@ export function DividendTable({
         <thead className="bg-gray-800">
           <tr>
             <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-              股票代码
+              代码
             </th>
             <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-              股票名称
+              名称
             </th>
-            <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-              交易所
+            <th className="w-12 px-1 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+              市场
             </th>
             <th className="w-28 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
-              申万行业
+              行业
             </th>
             <th
               className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
@@ -207,11 +228,26 @@ export function DividendTable({
             >
               实时股息率 <SortIcon field="realtime_yield" />
             </th>
+            <th
+              className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
+              onClick={() => handleSort('yield_ttm')}
+            >
+              实时股息率TTM <SortIcon field="yield_ttm" />
+            </th>
             <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
               M120
             </th>
+            <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
+              户数
+            </th>
+            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
+              扣非同比
+            </th>
+            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
+              3年CAGR
+            </th>
             <th className="w-56 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
-              昨日收盘/M120
+              昨日/M120
             </th>
             <th className="w-80 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">
               操作
@@ -288,8 +324,47 @@ export function DividendTable({
                     );
                   })()}
                 </td>
+                <td className="w-20 px-2 py-3 text-sm text-right">
+                  {(() => {
+                    const yieldTtm = formatYieldTtm(technical);
+                    if (yieldTtm === '-') return <span className="text-gray-400">-</span>;
+                    const yieldVal = technical?.yield_ttm ?? 0;
+                    return (
+                      <span className={
+                        yieldVal >= 5
+                          ? 'text-green-400 font-semibold'
+                          : yieldVal >= 3
+                          ? 'text-green-400'
+                          : 'text-gray-400'
+                      }>
+                        {yieldTtm}
+                      </span>
+                    );
+                  })()}
+                </td>
                 <td className="w-16 px-2 py-3 text-sm text-gray-300">
                   {m120Value}
+                </td>
+                <td className="w-20 px-2 py-3 text-sm text-gray-300">
+                  {formatShareholderCount(stock.shareholder_count)}
+                </td>
+                <td className="w-20 px-2 py-3 text-sm text-right">
+                  {stock.net_profit_ex_non_recurring_yoy !== null && stock.net_profit_ex_non_recurring_yoy !== undefined
+                    ? (
+                      <span className={stock.net_profit_ex_non_recurring_yoy > 0 ? 'text-green-400' : 'text-red-400'}>
+                        {stock.net_profit_ex_non_recurring_yoy > 0 ? '+' : ''}{stock.net_profit_ex_non_recurring_yoy.toFixed(2)}%
+                      </span>
+                    )
+                    : '无法计算'}
+                </td>
+                <td className="w-20 px-2 py-3 text-sm text-right">
+                  {stock.net_profit_cagr_3y !== null && stock.net_profit_cagr_3y !== undefined
+                    ? (
+                      <span className={stock.net_profit_cagr_3y > 0 ? 'text-green-400' : 'text-red-400'}>
+                        {stock.net_profit_cagr_3y > 0 ? '+' : ''}{stock.net_profit_cagr_3y.toFixed(2)}%
+                      </span>
+                    )
+                    : '无法计算'}
                 </td>
                 <td className="w-56 px-2 py-3 text-xs text-gray-300 leading-tight">
                   <div className="text-xs leading-tight">
@@ -345,7 +420,7 @@ export function DividendTable({
                       }}
                       className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
-                      季度
+                      记录
                     </Button>
                     <Button
                       variant="ghost"

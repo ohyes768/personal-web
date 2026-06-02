@@ -56,6 +56,12 @@ export interface DividendStock {
   dividend_count_2023?: number | null;
   yield_2023?: number | null;
 
+  // 2022 年数据
+  avg_price_2022?: number | null;
+  dividend_2022?: number | null;
+  dividend_count_2022?: number | null;
+  yield_2022?: number | null;
+
   // 3 年平均
   avg_price_3y?: number | null;
   avg_yield_3y?: number | null;
@@ -68,6 +74,27 @@ export interface DividendStock {
 
   // 季度数据
   quarterly?: QuarterlyData | null;
+
+  // 股东户数（散户数）
+  shareholder_count?: number | null;      // 股东户数
+  shareholder_change_pct?: number | null; // 股东人数增幅(%)
+  per_share_holding?: number | null;      // 人均持股数量
+
+  // 财务指标 - 成长能力
+  net_profit_ex_non_recurring_yoy?: number | null; // 扣非净利润同比(%)
+  net_profit_cagr_3y?: number | null;             // 3年复合增长率(%)
+
+  // 近5年分红详情
+  dividend_history?: DividendHistoryItem[] | null;
+}
+
+/**
+ * 单次分红记录
+ */
+export interface DividendHistoryItem {
+  ex_date: string;       // 除权除息日 (YYYY-MM-DD)
+  ratio: number;         // 派息比例 (元/股)
+  fiscal_year: number;  // 财年
 }
 
 // ========== 响应类型 ==========
@@ -135,6 +162,7 @@ export interface M120Stock {
   deviation?: number | null;
   realtime?: number | null;
   realtime_deviation?: number | null;
+  yield_ttm?: number | null;  // 实时股息率TTM(%)
 }
 
 /**
@@ -173,6 +201,7 @@ export interface TechnicalIndicators {
   deviation?: number | null;       // 昨日收盘与M120的偏离度
   realtime?: number | null;       // 实时价格（从实时价格CSV获取）
   realtimeDeviation?: number | null; // 实时价格与M120的偏离度
+  yield_ttm?: number | null;      // 实时股息率TTM(%)
 }
 
 /**
@@ -227,6 +256,44 @@ export interface StockInfoRequest {
 export interface StockInfoResponse {
   items: StockInfo[];
   total: number;
+}
+
+/**
+ * 股息率刷新统计
+ */
+export interface RefreshStats {
+  total_processed: number;
+  new_or_updated: number;
+  skipped: number;
+  target_count: number;
+  completed_count: number;
+  failed_count: number;
+  failed_codes: string[];
+  file_path: string;
+  start_time: string;
+  end_time: string;
+}
+
+/**
+ * 股息率刷新响应
+ */
+export interface RefreshDividendResponse {
+  success: boolean;
+  message: string;
+  stats: RefreshStats;
+}
+
+/**
+ * 股息率数据状态响应
+ */
+export interface DividendStatusResponse {
+  needs_update: boolean;
+  last_updated: string | null;
+  file_exists: boolean;
+  pending_count: number;
+  target_count: number;
+  completed_count: number;
+  failed_codes: string[];
 }
 
 // ========== 板块信息类型 ==========
