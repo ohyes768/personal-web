@@ -37,7 +37,7 @@ export default function DividendPage() {
       ? { endpoint: '/api/dividend/report/one-pager', prefix: 'dividend_one_pager' }
       : { endpoint: '/api/dividend/report/carousel', prefix: 'dividend_carousel' };
     try {
-      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8099';
+      const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8092';
       const response = await fetch(`${API_BASE}${config.endpoint}`);
       if (!response.ok) throw new Error('生成报告失败');
       const blob = await response.blob();

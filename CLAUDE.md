@@ -49,7 +49,7 @@ source .venv/bin/activate  # Linux/Mac
 
 # 启动后端服务
 cd backend/dividend-select
-python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8081
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8092
 ```
 
 ### Windows 开发脚本

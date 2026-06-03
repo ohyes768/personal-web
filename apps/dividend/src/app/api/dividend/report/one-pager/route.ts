@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 
-const API_BASE = 'http://localhost:8080';
+const API_BASE = 'http://localhost:8092';
 
 export async function GET() {
   try {

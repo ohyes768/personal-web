@@ -7,7 +7,7 @@ echo   Starting Dividend Dev Environment
 echo ========================================
 echo.
 
-set "DIVIDEND_API_PORT=8099"
+set "DIVIDEND_API_PORT=8092"
 set "DIVIDEND_WEB_PORT=3003"
 
 REM [1/2] Start dividend-select
@@ -83,6 +83,6 @@ echo   Dividend Dev Environment Started
 echo ========================================
 echo.
 echo Frontend:        http://localhost:%DIVIDEND_WEB_PORT%/dividend
-echo Dividend-Select: http://localhost:%DIVIDEND_API_PORT%
+echo Dividend-Select: http://localhost:%DIVIDEND_API_PORT%  (submodule doc: 8092)
 echo.
 pause
