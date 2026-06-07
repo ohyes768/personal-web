@@ -220,7 +220,7 @@ export function DividendTable({
               className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
               onClick={() => handleSort('avg_yield_3y')}
             >
-              3年平均股息率 <SortIcon field="avg_yield_3y" />
+              3年股息率 <SortIcon field="avg_yield_3y" />
             </th>
             <th
               className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
@@ -231,8 +231,9 @@ export function DividendTable({
             <th
               className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
               onClick={() => handleSort('yield_ttm')}
+              title="实时股息率 TTM（过去 12 个月滚动分红 / 实时股价）"
             >
-              实时股息率TTM <SortIcon field="yield_ttm" />
+              TTM <SortIcon field="yield_ttm" />
             </th>
             <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
               M120
@@ -245,6 +246,9 @@ export function DividendTable({
             </th>
             <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
               3年CAGR
+            </th>
+            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider" title="分红比例 = 每股分红 / 每股净利润（最近一期年报）">
+              分红比例
             </th>
             <th className="w-56 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
               昨日/M120
@@ -365,6 +369,22 @@ export function DividendTable({
                       </span>
                     )
                     : '无法计算'}
+                </td>
+                <td className="w-20 px-2 py-3 text-sm text-right">
+                  {stock.payout_ratio !== null && stock.payout_ratio !== undefined
+                    ? (
+                      <span
+                        className={
+                          stock.payout_ratio < 30 ? 'text-yellow-400' :
+                          stock.payout_ratio > 80 ? 'text-red-400' :
+                          'text-green-400'
+                        }
+                        title={`基于 ${stock.eps_year ?? '?'} 年报 EPS = ${stock.eps?.toFixed(2) ?? '?'} 元`}
+                      >
+                        {stock.payout_ratio.toFixed(2)}%
+                      </span>
+                    )
+                    : '亏损/-'}
                 </td>
                 <td className="w-56 px-2 py-3 text-xs text-gray-300 leading-tight">
                   <div className="text-xs leading-tight">
