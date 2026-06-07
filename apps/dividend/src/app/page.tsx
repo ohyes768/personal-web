@@ -168,7 +168,7 @@ export default function DividendPage() {
             </Link>
             <h1 className="text-4xl font-bold mt-4 text-[#d1d4dc]">股息率</h1>
             <p className="text-[#787b86] mt-1">
-              共 {total} 只股票 | 3年平均股息率 ≥ {minYieldInput}%
+              共 {total} 只股票 | 3年股息率 ≥ {minYieldInput}%
             </p>
             {/* 筛选条件 */}
             <div className="mt-2 flex items-center gap-3">
@@ -349,7 +349,8 @@ export default function DividendPage() {
                   '3年平均股息率(%)', '实时股息率(%)', '实时股息率TTM(%)',
                   'M120', '实时价格', '收盘价/M120',
                   '股东户数(万)', '股东人数增幅(%)', '人均持股',
-                  '扣非净利润同比(%)', '3年复合增长率(%)'
+                  '扣非净利润同比(%)', '3年复合增长率(%)',
+                  '最近年报年度', 'EPS(元)', '分红比例(%)'
                 ];
 
                 const rows = stocksWithTechnical.map(stock => {
@@ -371,6 +372,9 @@ export default function DividendPage() {
                     ? stock.net_profit_ex_non_recurring_yoy.toFixed(2) : '无法计算';
                   const cagr = stock.net_profit_cagr_3y != null
                     ? stock.net_profit_cagr_3y.toFixed(2) : '无法计算';
+                  const eps_year_csv = stock.eps_year ?? '';
+                  const eps_csv = stock.eps != null ? stock.eps.toFixed(4) : '';
+                  const payout_csv = stock.payout_ratio != null ? stock.payout_ratio.toFixed(2) : '';
 
                   return [
                     stock.code, stock.name, stock.exchange,
@@ -378,7 +382,8 @@ export default function DividendPage() {
                     yield_3y, realtime_yield, yield_ttm,
                     m120, realtime, deviation,
                     shareholder_count, shareholder_change, per_share,
-                    yoy, cagr
+                    yoy, cagr,
+                    eps_year_csv, eps_csv, payout_csv
                   ].join(',');
                 });
 
