@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 
-const API_BASE = 'http://localhost:8092';
+const API_BASE = process.env.BACKEND_URL || 'http://localhost:8092/api/dividend';
 
 export async function GET() {
   try {
-    const response = await fetch(`${API_BASE}/api/dividend/report/one-pager`, {
+    const response = await fetch(`${API_BASE}/report/one-pager`, {
       method: 'GET',
       headers: {
         'Accept': 'text/html;charset=utf-8',
