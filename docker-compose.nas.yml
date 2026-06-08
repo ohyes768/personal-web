@@ -50,7 +50,8 @@ services:
     networks:
       - app-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
+      # 后端 router 注册时带 /api/dividend prefix，所以 health 端点实际是 /api/dividend/health
+      test: ["CMD", "curl", "-f", "http://localhost:8092/api/dividend/health"]
       interval: 30s
       timeout: 10s
       retries: 3
