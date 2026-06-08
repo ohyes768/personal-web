@@ -1,6 +1,7 @@
 """
 file-system-go 客户端
-负责从 file-system-go 获取视频列表和下载视频
+负责从 file-system-go 获取视频列表、下载/删除文件
+（v2.0 起 file-system-go 简化为 5 个纯文件 CRUD 端点）
 """
 
 import asyncio
@@ -10,7 +11,7 @@ from typing import Optional, List
 from loguru import logger
 import httpx
 
-from src.models import VideoFile, VideoMetadata
+from src.models import VideoFile
 
 
 class FileSystemClient:
@@ -19,8 +20,9 @@ class FileSystemClient:
     def __init__(
         self,
         base_url: str,
-        query_endpoint: str = "/api/videos/query",
-        download_endpoint_template: str = "/api/videos/{id}/download",
+        query_endpoint: str = "/api/files/query",
+        download_endpoint_template: str = "/api/files/{id}/download",
+        delete_endpoint_template: str = "/api/files/{id}",
         timeout: int = 300,
         cache_ttl: int = 30
     ):
@@ -30,12 +32,14 @@ class FileSystemClient:
             base_url: file-system-go 基础 URL
             query_endpoint: 查询接口路径
             download_endpoint_template: 下载接口路径模板
+            delete_endpoint_template: 删除接口路径模板
             timeout: 请求超时时间（秒）
             cache_ttl: 缓存有效期（秒），默认 30 秒
         """
         self.base_url = base_url.rstrip("/")
         self.query_url = f"{base_url}{query_endpoint}"
         self.download_endpoint_template = download_endpoint_template
+        self.delete_endpoint_template = delete_endpoint_template
         self.timeout = timeout
         self.cache_ttl = cache_ttl
 
@@ -139,9 +143,10 @@ class FileSystemClient:
         Returns:
             下载的文件路径，失败返回 None
         """
-        # 构建下载 URL
-        download_url = f"{self.base_url}/api/videos/{aweme_id}/download"
-        output_path = Path(output_dir) / f"{aweme_id}.mp4"
+        # v2.0: /api/files/{aweme_id}.wav/download
+        filename = f"{aweme_id}.wav"
+        download_url = f"{self.base_url}/api/files/{filename}/download"
+        output_path = Path(output_dir) / filename
 
         logger.info(f"下载视频: {aweme_id} -> {output_path}")
 
@@ -172,61 +177,6 @@ class FileSystemClient:
 
         except Exception as e:
             logger.error(f"视频下载异常: {e}")
-            return []
-
-    async def get_video_metadata(
-        self,
-        aweme_id: str
-    ) -> Optional[VideoMetadata]:
-        """获取视频元数据
-
-        Args:
-            aweme_id: 视频 ID
-
-        Returns:
-            视频元数据，失败返回 None
-        """
-        # 构建元数据 URL（filename 格式为 {aweme_id}.wav）
-        filename = f"{aweme_id}.wav"
-        metadata_url = f"{self.base_url}/api/metadata/{filename}"
-
-        logger.debug(f"获取视频元数据: {aweme_id}")
-
-        try:
-            async with httpx.AsyncClient(timeout=10.0) as client:
-                response = await client.get(metadata_url)
-
-                if response.status_code == 200:
-                    data = response.json()
-
-                    # 检查 success 字段
-                    if not data.get("success", False):
-                        logger.warning(f"获取视频元数据失败: {data.get('error', 'Unknown error')}")
-                        return None
-
-                    metadata_data = data.get("metadata", {})
-                    if not metadata_data:
-                        return None
-
-                    return VideoMetadata(
-                        filename=metadata_data.get("filename", filename),
-                        title=metadata_data.get("title", ""),
-                        author=metadata_data.get("author", ""),
-                        description=metadata_data.get("description", ""),
-                        upload_time=metadata_data.get("upload_time", "")
-                    )
-                elif response.status_code == 404:
-                    logger.debug(f"视频元数据不存在: {aweme_id}")
-                    return None
-                else:
-                    logger.warning(
-                        f"获取视频元数据失败: HTTP {response.status_code}, "
-                        f"{response.text}"
-                    )
-                    return None
-
-        except Exception as e:
-            logger.error(f"获取视频元数据异常: {e}")
             return None
 
     def invalidate_video_list_cache(self):
@@ -235,71 +185,38 @@ class FileSystemClient:
         self._video_list_cache_time = 0
         logger.info("视频列表缓存已清除")
 
-    async def delete_video(self, aweme_id: str):
-        """删除视频文件和元数据
+    async def delete_file(self, audio_filename: str) -> bool:
+        """删除 file-system-go 上的文件
 
         Args:
-            aweme_id: 视频 ID
-        """
-        # filename 格式为 {aweme_id}.wav
-        filename = f"{aweme_id}.wav"
-        delete_url = f"{self.base_url}/api/videos/{filename}"
+            audio_filename: 完整文件名（含扩展名），如 "123456789.wav"
 
-        logger.info(f"删除视频文件: {aweme_id}")
+        Returns:
+            删除成功返回 True
+        """
+        # v2.0: /api/files/{filename} DELETE
+        delete_url = f"{self.base_url}/api/files/{audio_filename}"
+
+        logger.info(f"删除文件: {audio_filename}")
 
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.delete(delete_url)
 
                 if response.status_code == 200:
-                    logger.info(f"视频文件删除成功: {aweme_id}")
+                    logger.info(f"文件删除成功: {audio_filename}")
                     return True
                 else:
                     logger.error(
-                        f"视频文件删除失败: HTTP {response.status_code}, "
+                        f"文件删除失败: HTTP {response.status_code}, "
                         f"{response.text}"
                     )
                     return False
 
         except Exception as e:
-            logger.error(f"视频文件删除异常: {e}")
+            logger.error(f"文件删除异常: {e}")
             return False
 
-    async def mark_read(self, filename: str) -> bool:
-        """标记文件为已读
-
-        Args:
-            filename: 文件名，如 "xxx.wav"
-
-        Returns:
-            标记成功返回 True，失败返回 False
-        """
-        url = f"{self.base_url}/api/read/mark"
-
-        logger.info(f"标记文件为已读: {filename}")
-
-        try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.post(
-                    url,
-                    json={"filename": filename}
-                )
-
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get("success", False):
-                        logger.info(f"文件已标记为已读: {filename}")
-                        return True
-                    else:
-                        logger.error(f"标记已读失败: {data.get('error', 'Unknown error')}")
-                        return False
-                else:
-                    logger.error(
-                        f"标记已读失败: HTTP {response.status_code}, "
-                        f"{response.text}"
-                    )
-                    return False
-
-        except Exception as e:
-            logger.error(f"标记已读异常: {e}")
-            return False
+    async def delete_video(self, aweme_id: str) -> bool:
+        """删除视频（保留旧接口，调用 delete_file）"""
+        return await self.delete_file(f"{aweme_id}.wav")

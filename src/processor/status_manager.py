@@ -16,20 +16,23 @@ from src.utils import load_json, save_json
 class StatusManager:
     """状态管理器"""
 
-    def __init__(self, status_file: str = "data/status.json"):
+    def __init__(self, status_file: str = "data/status.json", output_dir: str = "data/output"):
         """初始化状态管理器
 
         Args:
             status_file: 状态文件路径
+            output_dir: 转写结果输出目录（mark_processed 时同步写入，兼容旧 GET /api/videos/{id}/result 端点）
         """
         self.status_file = Path(status_file)
         self.status_file.parent.mkdir(parents=True, exist_ok=True)
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
         # 加载现有状态
         self._lock = asyncio.Lock()
         self._data = self._load()
 
-        logger.info(f"状态管理器初始化完成: {status_file}")
+        logger.info(f"状态管理器初始化完成: {status_file} (output_dir={output_dir})")
 
     def _load(self) -> dict:
         """加载状态文件"""
@@ -145,9 +148,13 @@ class StatusManager:
             if is_read:
                 self._data["videos"][aweme_id]["is_read"] = True
                 self._data["videos"][aweme_id]["read_at"] = now
+                self._data["videos"][aweme_id]["status"] = "read"
             else:
                 self._data["videos"][aweme_id]["is_read"] = False
                 self._data["videos"][aweme_id]["read_at"] = None
+                # 撤回 read 标回 unread
+                if self._data["videos"][aweme_id].get("status") == "read":
+                    self._data["videos"][aweme_id]["status"] = "unread"
 
             self._save()
             logger.info(f"视频 {aweme_id} 已标记为 {'已读' if is_read else '未读'}")
@@ -180,3 +187,136 @@ class StatusManager:
                 "is_read": video_data.get("is_read", False),
                 "read_at": video_data.get("read_at")
             }
+
+    # ========== 新增方法（按用户旅程） ==========
+
+    async def mark_pending(
+        self,
+        aweme_id: str,
+        audio_filename: str,
+        title: str = "",
+        author: str = "",
+        description: str = "",
+    ):
+        """追加待处理（douyin-collector 调）"""
+        async with self._lock:
+            now = datetime.now().isoformat()
+            record = self._data.setdefault("videos", {}).setdefault(aweme_id, {
+                "created_at": now
+            })
+            record.update({
+                "status": "pending",
+                "pending_at": now,
+                "updated_at": now,
+                "audio_filename": audio_filename,
+                "title": title,
+                "author": author,
+                "description": description,
+            })
+            self._save()
+            logger.info(f"视频 {aweme_id} 已加入待处理")
+
+    async def mark_processed(self, aweme_id: str, transcript: dict = None):
+        """标记处理完（ASR 完成）→ 状态变为 unread
+
+        v2.0: 同时把 transcript 写入 data/output/{aweme_id}.json，
+        兼容旧 GET /api/videos/{aweme_id}/result 端点（读 output 文件）
+        """
+        import json
+        async with self._lock:
+            now = datetime.now().isoformat()
+            record = self._data.setdefault("videos", {}).setdefault(aweme_id, {
+                "created_at": now
+            })
+            record.update({
+                "status": "unread",
+                "processed_at": now,
+                "updated_at": now,
+                "is_read": False,
+                "read_at": None,
+            })
+            self._save()
+            logger.info(f"视频 {aweme_id} 已处理完，标记为未读")
+
+        # 同步写入 output 文件（兼容旧端点）
+        if transcript:
+            try:
+                output_file = self.output_dir / f"{aweme_id}.json"
+                with open(output_file, "w", encoding="utf-8") as f:
+                    json.dump(transcript, f, ensure_ascii=False, indent=2)
+                logger.debug(f"已写入转写结果: {output_file}")
+            except Exception as e:
+                logger.warning(f"写入 output 文件失败: {aweme_id}, {e}")
+
+    async def mark_unread(self, aweme_id: str):
+        """标回未读（用户撤回已读时用）"""
+        await self.mark_read(aweme_id, is_read=False)
+
+    async def list_pending(self) -> list:
+        """返回所有 status=pending 的记录（含 metadata）"""
+        async with self._lock:
+            videos = self._data.get("videos", {})
+            return [
+                {
+                    "aweme_id": aid,
+                    "audio_filename": r.get("audio_filename", f"{aid}.wav"),
+                    "title": r.get("title", ""),
+                    "author": r.get("author", ""),
+                    "description": r.get("description", ""),
+                    "pending_at": r.get("pending_at"),
+                }
+                for aid, r in videos.items()
+                if r.get("status") == "pending"
+            ]
+
+    async def cleanup_old_records(self, days: int) -> list:
+        """清理 status=unread/read 且 processed_at 超过 N 天的记录
+
+        Returns:
+            删掉的 aweme_id 列表（供 caller 调 file-system-go 删文件）
+        """
+        from datetime import timedelta
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        to_delete = []
+        async with self._lock:
+            videos = self._data.get("videos", {})
+            for aid, r in list(videos.items()):
+                status = r.get("status")
+                if status in ("unread", "read"):
+                    processed_at = r.get("processed_at")
+                    if processed_at and processed_at < cutoff:
+                        to_delete.append(aid)
+            for aid in to_delete:
+                del videos[aid]
+            if to_delete:
+                self._save()
+                logger.info(f"已清理 {len(to_delete)} 条过期记录")
+        return to_delete
+
+    async def get_status_detail(self, aweme_id: str) -> dict:
+        """增强版 status 查询：返回 known/status/audio_filename"""
+        async with self._lock:
+            videos = self._data.get("videos", {})
+            record = videos.get(aweme_id)
+            if record is None:
+                return {"known": False, "status": None, "audio_filename": None}
+            return {
+                "known": True,
+                "status": record.get("status"),
+                "audio_filename": record.get("audio_filename", f"{aweme_id}.wav"),
+            }
+
+    async def mark_deleted(self, aweme_id: str):
+        """用户主动删（标 deleted_at，保留记录）"""
+        async with self._lock:
+            now = datetime.now().isoformat()
+            record = self._data.setdefault("videos", {}).setdefault(aweme_id, {
+                "created_at": now
+            })
+            record.update({
+                "status": "deleted",
+                "deleted_at": now,
+                "updated_at": now,
+            })
+            self._save()
+            logger.info(f"视频 {aweme_id} 已标记为 deleted")

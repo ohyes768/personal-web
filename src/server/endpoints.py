@@ -112,78 +112,118 @@ class ActionResponse(BaseModel):
     message: str
 
 
-@router.post("/api/process/async", response_model=TaskResponse)
-async def process_videos_async():
-    """异步处理所有音频（立即返回，后台处理）"""
+@router.get("/api/aweme/{aweme_id}/status")
+async def get_aweme_status(aweme_id: str) -> dict:
+    """单个数据查询（douyin-collector 调，判断是否需要上传）
+
+    替代旧的 /api/aweme/{id}/skip。返回 known/status/audio_filename，
+    UI/前端也能用。
+    """
     if processor is None:
         raise HTTPException(status_code=500, detail="处理器未初始化")
+    return await processor.status_manager.get_status_detail(aweme_id)
 
-    logger.info("接收到异步处理请求")
 
+class MarkPendingRequest(BaseModel):
+    """追加待处理请求"""
+    audio_filename: str
+    title: str = ""
+    author: str = ""
+    description: str = ""
+
+
+@router.post("/api/aweme/{aweme_id}/pending")
+async def mark_aweme_pending(aweme_id: str, request: MarkPendingRequest) -> dict:
+    """追加待处理（douyin-collector 上传后调）"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
     try:
-        # 获取音频列表（带缓存）
-        videos = await processor.filesystem_client.get_video_list(
-            filters={"suffix": ".wav"},
-            use_cache=True
+        await processor.status_manager.mark_pending(
+            aweme_id=aweme_id,
+            audio_filename=request.audio_filename,
+            title=request.title,
+            author=request.author,
+            description=request.description,
         )
-
-        if not videos:
-            return TaskResponse(
-                success=True,
-                message="没有待处理的音频",
-                data={"total": 0, "pending": 0}
-            )
-
-        # 统计待处理数量
-        pending_count = 0
-        skip_count = 0
-        all_statuses = await processor.status_manager.get_all_statuses()
-        for video in videos:
-            status_data = all_statuses.get(video.aweme_id, {})
-            status = status_data.get("status")
-            if status is None:
-                pending_count += 1
-            else:
-                skip_count += 1
-
-        # 创建后台任务
-        asyncio.create_task(processor.process_all())
-
-        return TaskResponse(
-            success=True,
-            message="后台处理任务已启动",
-            data={
-                "total": len(videos),
-                "pending": pending_count,
-                "skip": skip_count
-            }
-        )
-
+        return {"success": True, "message": "已加入待处理"}
     except Exception as e:
-        logger.error(f"启动异步任务失败: {e}")
+        logger.error(f"追加待处理失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/api/process", response_model=ProcessResponse)
-async def process_videos():
-    """同步处理所有音频（等待处理完成）"""
+@router.get("/api/aweme/pending")
+async def list_pending_aweme() -> dict:
+    """拉待处理列表（process 处理脚本调）"""
     if processor is None:
         raise HTTPException(status_code=500, detail="处理器未初始化")
+    items = await processor.status_manager.list_pending()
+    return {"items": items}
 
-    logger.info("接收到处理请求")
 
+class MarkProcessedRequest(BaseModel):
+    """标记处理完请求（ASR 完成时调）"""
+    transcript: Optional[dict] = None
+
+
+@router.post("/api/aweme/{aweme_id}/processed")
+async def mark_aweme_processed(aweme_id: str, request: MarkProcessedRequest) -> dict:
+    """标记处理完（ASR 完成）→ 状态变 unread"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
     try:
-        # 同步处理（等待完成）
-        summary = await processor.process_all()
-
-        return ProcessResponse(
-            success=True,
-            message="处理完成",
-            data=summary
+        await processor.status_manager.mark_processed(
+            aweme_id=aweme_id,
+            transcript=request.transcript,
         )
-
+        return {"success": True, "message": "已标记为未读"}
     except Exception as e:
-        logger.error(f"处理失败: {e}")
+        logger.error(f"标记处理完失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/aweme/{aweme_id}/unread", response_model=ActionResponse)
+async def mark_aweme_unread(aweme_id: str):
+    """标回未读（用户撤回已读时用）"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    try:
+        await processor.status_manager.mark_unread(aweme_id)
+        return ActionResponse(success=True, message="已标记为未读")
+    except Exception as e:
+        logger.error(f"标记未读失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/aweme/cleanup")
+async def cleanup_old_aweme(days: int = Query(30, ge=1, description="清理阈值（天）")):
+    """清理过期记录（process 清理脚本调）
+
+    行为：
+      1. 找 status=unread/read 且 processed_at 超过 N 天的记录
+      2. 调 file-system-go 删物理文件
+      3. 从 status.json 硬删
+    """
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    try:
+        deleted_ids = await processor.status_manager.cleanup_old_records(days)
+        failed = []
+        success_count = 0
+        for aid in deleted_ids:
+            audio_filename = f"{aid}.wav"
+            ok = await processor.filesystem_client.delete_file(audio_filename)
+            if ok:
+                success_count += 1
+            else:
+                failed.append(audio_filename)
+        logger.info(f"cleanup: 删 {success_count}/{len(deleted_ids)} 个文件，失败 {len(failed)}")
+        return {
+            "success": True,
+            "deleted": success_count,
+            "failed": failed,
+        }
+    except Exception as e:
+        logger.error(f"cleanup 失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -261,10 +301,15 @@ async def get_video_result(aweme_id: str):
 async def get_videos(
     page: int = Query(1, ge=1, description="页码"),
     page_size: int = Query(20, ge=1, le=100, description="每页数量"),
-    status: Optional[str] = Query(None, description="状态筛选: completed/processing/failed/pending"),
-    is_read: Optional[bool] = Query(None, description="已读状态筛选")
+    status: Optional[str] = Query(None, description="状态筛选: v2.0: unread/read/deleted/pending；兼容旧 completed/processing/failed"),
+    is_read: Optional[bool] = Query(None, description="已读状态筛选（兼容旧字段，新流程以 status=read/unread 为准）")
 ):
-    """获取视频列表（支持分页和状态筛选）"""
+    """获取视频列表（支持分页和状态筛选）
+
+    v2.0 适配：
+    - 已读/未读已并入 status 字段（read/unread），兼容旧 is_read 字段
+    - 默认过滤掉 pending + deleted 状态
+    """
     if processor is None:
         raise HTTPException(status_code=500, detail="处理器未初始化")
 
@@ -286,17 +331,22 @@ async def get_videos(
             aweme_id = video.aweme_id
             status_data = all_statuses.get(aweme_id, {})
             video_status = status_data.get("status", "pending")
-            video_is_read = status_data.get("is_read", False)
+            # 兼容：v2.0 用 status 字段，旧数据有 is_read 字段
+            # 优先从 status 字段推断（status=read → is_read=true）
+            if video_status in ("read", "unread", "deleted"):
+                video_is_read = (video_status == "read")
+            else:
+                video_is_read = status_data.get("is_read", False)
 
-            # 默认过滤掉 pending 状态的视频
-            if video_status == "pending":
+            # 默认过滤掉 pending 和 deleted 状态的视频
+            if video_status in ("pending", "deleted"):
                 continue
 
             # 状态筛选
             if status and video_status != status:
                 continue
 
-            # 已读状态筛选
+            # 已读状态筛选（兼容 is_read 入参）
             if is_read is not None and video_is_read != is_read:
                 continue
 
@@ -600,21 +650,17 @@ async def health_check():
     }
 
 
-@router.post("/api/videos/{aweme_id}/read", response_model=ActionResponse)
-async def mark_video_read(aweme_id: str, request: MarkReadRequest):
-    """标记视频已读/未读"""
+@router.post("/api/aweme/{aweme_id}/read", response_model=ActionResponse)
+async def mark_aweme_read(aweme_id: str, request: MarkReadRequest):
+    """标记已读/未读（重命名自 /api/videos/{aweme_id}/read）"""
     if processor is None:
         raise HTTPException(status_code=500, detail="处理器未初始化")
 
-    logger.info(f"标记视频已读状态: {aweme_id}, is_read={request.is_read}")
+    logger.info(f"标记 aweme 已读状态: {aweme_id}, is_read={request.is_read}")
 
     try:
+        # 直接调 mark_read（mark_read 内部已同步 status 字段）
         await processor.status_manager.mark_read(aweme_id, request.is_read)
-
-        # 标记已读时同步记录到 file-system-go
-        if request.is_read:
-            filename = f"{aweme_id}.wav"
-            await processor.filesystem_client.mark_read(filename)
 
         return ActionResponse(
             success=True,
@@ -625,44 +671,45 @@ async def mark_video_read(aweme_id: str, request: MarkReadRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.delete("/api/videos/{aweme_id}", response_model=ActionResponse)
-async def delete_video(aweme_id: str, keep_file: bool = False):
-    """取消收藏视频
+@router.delete("/api/aweme/{aweme_id}", response_model=ActionResponse)
+async def delete_aweme(aweme_id: str, keep_file: bool = False):
+    """用户主动删（重命名自 /api/videos/{aweme_id}）
 
-    Args:
-        aweme_id: 视频 ID
-        keep_file: 是否保留原始文件（仅删除本地记录），默认 False
+    行为：
+      1. 如果不保留文件，调 file-system-go 删物理文件
+      2. status.json 标 deleted（mark_deleted，保留记录）
+      3. 不删 status.json 里的记录（与 cleanup 区分）
     """
     if processor is None:
         raise HTTPException(status_code=500, detail="处理器未初始化")
 
-    action = "删除记录" if keep_file else "取消收藏视频"
+    action = "删除记录" if keep_file else "删除视频"
     logger.info(f"{action}: {aweme_id}")
 
     try:
-        # 1. 如果不保留文件，则从 file-system-go 删除原始文件
+        # 1. 调 file-system-go 删物理文件
         if not keep_file:
-            file_deleted = await processor.filesystem_client.delete_video(aweme_id)
+            file_deleted = await processor.filesystem_client.delete_file(f"{aweme_id}.wav")
             if file_deleted:
                 logger.info(f"已删除 file-system-go 上的文件: {aweme_id}")
             else:
                 logger.warning(f"file-system-go 文件删除失败或不存在: {aweme_id}")
 
-        # 2. 从状态文件中移除
-        await processor.status_manager.hard_delete(aweme_id)
+        # 2. 标 deleted（保留记录）
+        await processor.status_manager.mark_deleted(aweme_id)
 
-        # 3. 删除结果文件（如果存在）
+        # 3. 删 result json
         result_file = Path(processor.output_dir) / f"{aweme_id}.json"
         if result_file.exists():
             result_file.unlink()
             logger.info(f"已删除结果文件: {result_file}")
 
-        # 4. 清除视频列表缓存
+        # 4. 清缓存
         processor.filesystem_client.invalidate_video_list_cache()
 
         return ActionResponse(
             success=True,
-            message="已删除记录" if keep_file else "已取消收藏"
+            message="已删除"
         )
     except Exception as e:
         logger.error(f"{action}失败: {e}")
