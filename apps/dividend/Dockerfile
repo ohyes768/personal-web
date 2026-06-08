@@ -6,9 +6,8 @@ RUN npm install -g pnpm
 # 依赖阶段
 FROM base AS deps
 WORKDIR /app
-# ★ 关键：禁用 pnpm 软链，展平所有依赖为真实文件
-# 否则 docker COPY 时 .pnpm 软链会断，runner 阶段 require('next') 失败
-RUN pnpm config set shamefully-hoist true
+# ★ 用 pnpm-workspace.yaml 的 nodeLinker: hoisted 展平依赖
+#   （pnpm 8+ 标准写法，替代 deprecated 的 shamefully-hoist=true）
 # monorepo 必需：workspace 配置 + lockfile + 共享包源码 + 当前 app 的 package.json
 COPY pnpm-workspace.yaml pnpm-lock.yaml ./
 COPY packages/ ./packages/
