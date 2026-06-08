@@ -29,7 +29,14 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs
 RUN adduser --system --uid 1001 nextjs
 
-# standalone 输出按 monorepo 路径组织（apps/dividend/server.js）
+# ★ 显式复制完整 node_modules（pnpm + monorepo 软链下 standalone trace 不全）
+# standalone 输出里 next 软链到 .pnpm/next@...，docker COPY 不保证软链完整
+# 多带点 node_modules 是 docker 部署 next.js standalone 的常见做法
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/apps/dividend/node_modules ./apps/dividend/node_modules
+COPY --from=builder /app/packages ./packages
+
+# standalone 输出（server.js 在 apps/dividend/server.js）
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dividend/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/dividend/.next/static ./apps/dividend/.next/static
 
