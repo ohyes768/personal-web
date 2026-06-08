@@ -3,8 +3,13 @@
 # =============================================================================
 # 用途：Ubuntu Server NAS 一键拉起 4 个服务（2 个后端 + 2 个前端）
 # 用法：
-#   1. 准备 .env：cp .env.nas.example .env.nas 并填阿里云 key
-#   2. 拉起：   docker compose -f docker-compose.nas.yml --env-file .env.nas up -d
+#   1. 准备 .env：在仓库根目录创建 .env，填阿里云 key（已被 .gitignore 忽略）
+#        cat > .env << 'EOF'
+#        DIVIDEND_ALIYUN_ACCESS_KEY=你的key
+#        DOUYIN_ALIYUN_ACCESS_KEY=你的key
+#        EOF
+#   2. 拉起：   docker compose -f docker-compose.nas.yml up -d --build
+#               （自动读根目录 .env）
 #   3. 验证：   docker compose -f docker-compose.nas.yml ps
 #   4. 停止：   docker compose -f docker-compose.nas.yml down
 #
