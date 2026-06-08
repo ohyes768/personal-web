@@ -37,10 +37,16 @@ export function useDouyinVideos(page: number, pageSize: number, activeTab: TabTy
         is_read: activeTab === 'read' ? true : undefined,
       });
 
-      // 未读 Tab：前端过滤，只显示 completed 且 is_read=false 的视频
+      // 客户端二次过滤（兼容 v2.0 status=unread 与 旧 is_read=false）
       let filteredVideos = data.videos || [];
       if (activeTab === 'unread') {
-        filteredVideos = filteredVideos.filter((v) => !v.is_read);
+        filteredVideos = filteredVideos.filter(
+          (v) => v.status === 'unread' || (v.status === 'completed' && !v.is_read),
+        );
+      } else if (activeTab === 'read') {
+        filteredVideos = filteredVideos.filter(
+          (v) => v.status === 'read' || v.is_read === true,
+        );
       }
 
       setVideos(filteredVideos);
@@ -104,69 +110,20 @@ export function useAsyncProcess(onComplete?: () => void) {
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const startProcess = useCallback(async () => {
+    // v2.0 流程：处理由 douyin-collector 自动推送，前端不再触发
+    // 保留此函数仅做"刷新列表"语义
     setProcessing(true);
-    setProcessMessage('正在启动处理任务...');
-    setProgress({ current: 0, total: 0 });
-
+    setProcessMessage('刷新待处理列表（处理由 douyin-collector 自动推送）');
     try {
-      const response = await douyinApi.processAsync();
-
-      if (response.success) {
-        const totalTasks = response.data?.pending || 0;
-        setProgress({ current: 0, total: totalTasks });
-        setProcessMessage(`后台处理已启动，待处理 ${totalTasks} 个视频`);
-
-        // 记录开始时的已完成数量
-        let initialCompleted = 0;
-        let initialFailed = 0;
-
-        try {
-          const initialStats = await douyinApi.getStats();
-          initialCompleted = initialStats.completed || 0;
-          initialFailed = initialStats.failed || 0;
-        } catch (err) {
-          console.error('获取初始状态失败:', err);
-        }
-
-        // 轮询获取进度
-        pollingIntervalRef.current = setInterval(async () => {
-          try {
-            const statsData = await douyinApi.getStats();
-            const { completed, failed, processing: proc, pending: currentPending } = statsData;
-
-            // 计算本次完成的数量
-            const currentProcessed = (completed - initialCompleted) + (failed - initialFailed);
-            setProgress({ current: currentProcessed, total: totalTasks });
-            setProcessMessage(`处理中... 已完成（${currentProcessed}/${totalTasks}）`);
-
-            // 处理完成
-            if (proc === 0 && currentPending === 0) {
-              if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-              }
-              setProcessing(false);
-              setProcessMessage('');
-              onComplete?.();
-            }
-          } catch (err) {
-            console.error('轮询进度失败:', err);
-          }
-        }, 2000);
-      } else {
-        setProcessMessage(response.message || '处理任务启动失败');
-        setTimeout(() => {
-          setProcessing(false);
-          setProcessMessage('');
-        }, 3000);
-      }
-    } catch (err) {
-      setProcessMessage(err instanceof Error ? err.message : '启动处理失败');
-      setTimeout(() => {
-        setProcessing(false);
-        setProcessMessage('');
-      }, 3000);
+      await douyinApi.processAsync();
+    } catch {
+      // 忽略错误（旧接口已 stub 化）
     }
+    setTimeout(() => {
+      setProcessing(false);
+      setProcessMessage('');
+      onComplete?.();
+    }, 500);
   }, [onComplete]);
 
   // 清理定时器

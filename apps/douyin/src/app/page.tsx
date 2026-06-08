@@ -176,7 +176,7 @@ export default function DouyinPage() {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-gray-800 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
-                  <p className="text-gray-300 text-sm">点击处理所有待处理的音频文件，后台异步执行 ASR 识别</p>
+                  <p className="text-gray-300 text-sm">v2.0 流程：处理由 douyin-collector 自动推送，本按钮仅刷新待处理列表</p>
                 </div>
               </div>
             </div>

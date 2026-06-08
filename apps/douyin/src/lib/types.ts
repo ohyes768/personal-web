@@ -2,8 +2,17 @@
  * Douyin 模块类型定义
  */
 
-// 视频状态类型
-export type VideoStatus = 'pending' | 'processing' | 'completed' | 'failed';
+// 视频状态类型（v2.0 流程：已读/未读并入 status 字段）
+// 旧值（pending/processing/completed/failed）保留以兼容未迁移的 status.json 数据
+export type VideoStatus =
+  | 'pending'      // v2.0: 待处理（douyin-collector 推过来的新记录）
+  | 'unread'       // v2.0: ASR 完成、用户未读
+  | 'read'         // v2.0: 用户已读
+  | 'deleted'      // v2.0: 用户主动删
+  // 旧值（迁移前过渡期）
+  | 'processing'
+  | 'completed'
+  | 'failed';
 
 // Tab 类型
 export type TabType = 'unread' | 'read';

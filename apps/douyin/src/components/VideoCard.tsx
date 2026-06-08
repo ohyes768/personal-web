@@ -15,6 +15,26 @@ export interface VideoCardProps {
 
 function getStatusBadge(status: string) {
   switch (status) {
+    // v2.0 新状态
+    case 'unread':
+      return (
+        <span className="px-3 py-1 bg-blue-900/50 text-blue-300 text-sm rounded-full whitespace-nowrap">
+          未读
+        </span>
+      );
+    case 'read':
+      return (
+        <span className="px-3 py-1 bg-green-900/50 text-green-300 text-sm rounded-full whitespace-nowrap">
+          已读
+        </span>
+      );
+    case 'deleted':
+      return (
+        <span className="px-3 py-1 bg-gray-700/50 text-gray-400 text-sm rounded-full whitespace-nowrap">
+          已删除
+        </span>
+      );
+    // 旧值（迁移前过渡期保留）
     case 'completed':
       return (
         <span className="px-3 py-1 bg-green-900/50 text-green-300 text-sm rounded-full whitespace-nowrap">
@@ -60,11 +80,11 @@ export function VideoCard({
       <div className="flex justify-between items-start mb-3">
         <h3 className="text-xl font-bold flex-1 pr-4">{video.title || '未知标题'}</h3>
         <div className="flex items-center gap-2">
-          {/* 未读 Tab 且状态为 completed 时不显示状态标识 */}
-          {(activeTab !== 'unread' || video.status !== 'completed') && getStatusBadge(video.status)}
+          {/* 未读 Tab 且状态为 unread/completed 时不显示状态标识（列表默认就是未读） */}
+          {(activeTab !== 'unread' || (video.status !== 'unread' && video.status !== 'completed')) && getStatusBadge(video.status)}
 
-          {/* 已读视频显示删除选项 */}
-          {activeTab === 'read' && video.is_read && (
+          {/* 已读视频（status=read 或 老 is_read=true）显示删除选项 */}
+          {activeTab === 'read' && (video.status === 'read' || video.is_read) && (
             <>
               <button
                 onClick={(e) => {
@@ -93,8 +113,8 @@ export function VideoCard({
             </>
           )}
 
-          {/* 未读视频显示标记已读和删除记录按钮 */}
-          {activeTab === 'unread' && !video.is_read && (
+          {/* 未读视频（status=unread 或 老 is_read=false）显示标记已读和删除记录按钮 */}
+          {activeTab === 'unread' && video.status !== 'read' && !video.is_read && (
             <>
               <button
                 onClick={(e) => {

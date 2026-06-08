@@ -28,9 +28,11 @@ export function VideoModal({
 
   const [detailVideo, setDetailVideo] = useState<VideoInfo | null>(video);
 
-  // 如果没有详细信息，获取详情
+  // 如果没有详细信息，获取详情（兼容 v2.0 status=unread/read 与 旧 completed）
   useEffect(() => {
-    if (!video.transcript && video.status === 'completed' && !detailError) {
+    const hasTranscript = !!video.transcript;
+    const isViewable = video.status === 'unread' || video.status === 'read' || video.status === 'completed';
+    if (!hasTranscript && isViewable && !detailError) {
       fetchDetail(video.aweme_id).then((detail) => {
         if (detail) setDetailVideo(detail);
       });
@@ -93,8 +95,12 @@ export function VideoModal({
               <p className="text-blue-200">
                 {displayVideo.status === 'processing'
                   ? '视频正在识别中，请稍后再来查看'
-                  : '视频尚未处理，请在列表页点击"处理待处理"按钮'}
+                  : '视频尚未处理，处理由 douyin-collector 自动推送完成'}
               </p>
+            </div>
+          ) : displayVideo.status === 'deleted' ? (
+            <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg">
+              <p className="text-gray-300">此视频已被删除</p>
             </div>
           ) : (
             <>
@@ -166,8 +172,8 @@ export function VideoModal({
         {/* 底部操作栏 */}
         <div className="p-4 border-t border-gray-800 flex justify-between items-center">
           <div className="flex gap-2">
-            {/* 未读视频显示标记已读和删除记录按钮 */}
-            {!displayVideo.is_read && displayVideo.status === 'completed' && (
+            {/* 未读视频（status=unread 或 旧 is_read=false + status=completed）显示标记已读和删除记录按钮 */}
+            {(displayVideo.status === 'unread' || (displayVideo.status === 'completed' && !displayVideo.is_read)) && (
               <>
                 <button
                   onClick={handleMarkAsRead}
@@ -189,8 +195,8 @@ export function VideoModal({
                 </button>
               </>
             )}
-            {/* 已读视频显示删除记录和删除并取消收藏按钮 */}
-            {displayVideo.is_read && (
+            {/* 已读视频（status=read 或 旧 is_read=true）显示删除记录和删除并取消收藏按钮 */}
+            {(displayVideo.status === 'read' || displayVideo.is_read) && (
               <>
                 <button
                   onClick={handleDeleteRecord}
