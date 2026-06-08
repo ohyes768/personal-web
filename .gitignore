@@ -66,3 +66,6 @@ venv/
 ENV/
 env/
 .gitnexus
+
+# Dividend export artifacts
+dividend_export_*.csv
