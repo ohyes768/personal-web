@@ -104,8 +104,26 @@ apps/dividend (前端)
 - `useTechnicalData()` — M120/实时价格 Hook
 - `useDataUpdate()` — 数据刷新状态管理
 
-## 非目标
+## 子模块修改规则
 
-- `dividend-select` 是同 owner 的独立仓库（`ohyes768/dividend-select`），可以修改；commit 后回到主项目更新引用即可
-- 禁止直接修改其他第三方子模块：`douyin-processor`、`global-macro-fin`（这两个是真正的三方依赖，改动会跟 upstream 漂移）
+三个子模块都是 `ohyes768` 名下的独立仓库，**用户均作为开发者维护**：
+
+| 子模块 | 远程 | 说明 |
+|--------|------|------|
+| `backend/dividend-select` | `ohyes768/dividend-select` | A股股息率后端（FastAPI + akshare）|
+| `backend/douyin-processor` | `ohyes768/douyin-processor` | 抖音视频文字稿处理后端 |
+| `backend/global-macro-fin` | `ohyes768/global-macro-fin` | 宏观金工后端 |
+
+均可在子模块内直接修改、commit、push。流程：
+
+1. `cd backend/<submodule>` 在子模块内改代码
+2. 子模块内 `git add` + `git commit` + `git push origin main`
+3. 回到主项目：`git add backend/<submodule>` 更新 gitlink 指针
+4. 主项目 `git commit -m "chore: bump <submodule> pointer"`
+5. 主项目 `git push origin master`
+
+⚠️ **顺序很重要**：子模块必须先 push 到远程，主仓库才能 push gitlink 更新（否则别人 clone 后 `git submodule update` 会断链）
+
+## 其他约定
+
 - 不要在代码中硬编码凭证，使用环境变量
