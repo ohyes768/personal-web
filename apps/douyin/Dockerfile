@@ -40,6 +40,13 @@ RUN adduser --system --uid 1001 nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/apps/douyin/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /app/apps/douyin/.next/static ./apps/douyin/.next/static
 
+# ★ runner 阶段也要带 node_modules + packages
+#  原因：server.js require('next') + workspace 包 @personal-web/* 都要能找到
+#  standalone 输出里 .bin/ 软链在 docker COPY 跨 stage 时断裂
+#  用 builder 阶段真实文件（已 cp workspace 包到 node_modules/，见 builder 段）
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/packages ./packages
+
 USER nextjs
 
 EXPOSE 3004
