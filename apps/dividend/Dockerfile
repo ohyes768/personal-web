@@ -20,9 +20,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/ ./packages/
 COPY apps/dividend/ ./apps/dividend/
-# ★ 绕过 pnpm .bin/ 软链缺失问题：直接绝对路径调用 next 启动器
-#   背景：nodeLinker: hoisted 下 next 是真实目录，但 pnpm 没建 .bin/next 软链
-#   用 'pnpm --filter ... build' 找不到 next；用绝对路径最稳
+# ★ 手动 cp workspace 包到 node_modules/@personal-web/（绕开 pnpm 软链断裂）
+#  背景：nodeLinker: hoisted 下 pnpm 对 workspace 包仍用软链，docker COPY
+#   软链 target 失效导致 next resolve 失败。cp -rL 复制真实文件最稳
+RUN mkdir -p /app/node_modules/@personal-web && \
+    cp -rL /app/packages/* /app/node_modules/@personal-web/
+# ★ 绕过 pnpm .bin/ 软链缺失：直接绝对路径调用 next 启动器
 RUN cd /app/apps/dividend && /app/node_modules/next/dist/bin/next build
 
 # 运行阶段
