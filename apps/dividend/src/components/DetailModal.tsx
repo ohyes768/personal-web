@@ -202,9 +202,10 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
               <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
               <XAxis
                 dataKey="month"
-                tick={{ fill: '#9ca3af', fontSize: 10 }}
+                tick={{ fill: '#9ca3af', fontSize: 10, textAnchor: 'end' }}
                 tickFormatter={(val) => val.replace('-', '.')} // YYYY.MM
-                tickAngle={-45}
+                angle={-45}
+                height={60}
                 interval={2}
               />
               <YAxis
