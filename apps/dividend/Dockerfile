@@ -21,7 +21,9 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/ ./packages/
 COPY apps/dividend/ ./apps/dividend/
-RUN cd apps/dividend && pnpm build
+# ★ pnpm --filter 在 root context 执行，自动 prepend node_modules/.bin 到 PATH
+#   比 'cd apps/dividend && pnpm build' 可靠（避免子包下 .bin 找不到）
+RUN pnpm --filter @personal-web/app-dividend build
 
 # 运行阶段
 FROM base AS runner
