@@ -28,5 +28,9 @@ RUN mkdir -p data/output logs
 # 暴露端口
 EXPOSE 8093
 
+# 健康检查（与 dividend Dockerfile 一致，compose 漏配也能工作）
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8093/health || exit 1
+
 # 启动命令
 CMD ["uvicorn", "src.server.main:app", "--host", "0.0.0.0", "--port", "8093"]
