@@ -17,6 +17,7 @@ FROM base AS builder
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/apps/dividend/node_modules ./apps/dividend/node_modules
+COPY --from=deps /app/packages/ ./packages/
 COPY apps/dividend/ ./apps/dividend/
 RUN cd apps/dividend && pnpm build
 
