@@ -20,9 +20,10 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY --from=deps /app/packages/ ./packages/
 COPY apps/dividend/ ./apps/dividend/
-# ★ pnpm --filter 在 root context 执行，自动 prepend node_modules/.bin 到 PATH
-#   比 'cd apps/dividend && pnpm build' 可靠（避免子包下 .bin 找不到）
-RUN pnpm --filter @personal-web/app-dividend build
+# ★ 绕过 pnpm .bin/ 软链缺失问题：直接绝对路径调用 next 启动器
+#   背景：nodeLinker: hoisted 下 next 是真实目录，但 pnpm 没建 .bin/next 软链
+#   用 'pnpm --filter ... build' 找不到 next；用绝对路径最稳
+RUN cd /app/apps/dividend && /app/node_modules/next/dist/bin/next build
 
 # 运行阶段
 FROM base AS runner
