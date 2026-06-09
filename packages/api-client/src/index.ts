@@ -1,1 +1,0 @@
-export { apiClient, directClient, ApiClient } from './client';

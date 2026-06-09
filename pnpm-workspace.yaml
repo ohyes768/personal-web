@@ -1,7 +1,0 @@
-packages:
-  - 'packages/*'
-  - 'apps/*'
-
-# pnpm 8+ 标准写法（替代 shamefully-hoist=true）
-# 展平所有依赖到 monorepo 根 node_modules/，避免 .pnpm/ 软链在 docker COPY 时断裂
-nodeLinker: hoisted
