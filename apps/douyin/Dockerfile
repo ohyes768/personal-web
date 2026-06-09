@@ -38,7 +38,7 @@ RUN adduser --system --uid 1001 nextjs
 
 # standalone 输出（Next.js 15 monorepo 模式：入口是根的 server.js）
 COPY --from=builder --chown=nextjs:nodejs /app/apps/douyin/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/apps/douyin/.next/static ./apps/douyin/.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/apps/douyin/.next/static ./.next/static
 
 # ★ runner 阶段也要带 node_modules + packages
 #  原因：server.js require('next') + workspace 包 @personal-web/* 都要能找到
