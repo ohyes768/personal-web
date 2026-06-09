@@ -3,7 +3,7 @@
  */
 'use client';
 
-import { Button } from '@personal-web/shared-ui';
+import { Button } from './shared-ui/Button';
 import { CheckIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
 import { useState, useMemo } from 'react';
 import type { DividendStock, TechnicalIndicators } from '@/lib/types';

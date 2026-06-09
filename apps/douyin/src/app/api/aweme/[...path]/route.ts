@@ -4,7 +4,10 @@
  */
 import { NextRequest } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8093/api';
+// 修复：原 BACKEND_URL='http://localhost:8093/api' 拼出来是 '/api/aweme/{id}' 前缀正确，
+// 但当 douyin catch-all 也用同一个 env 时会产生冲突；env var 拆分为 AWEME_BACKEND_URL
+// 同时默认值补全 /api/aweme 路径前缀，与后端 router 注册路径对齐
+const BACKEND_URL = process.env.AWEME_BACKEND_URL || 'http://localhost:8093/api/aweme';
 
 export async function GET(
   request: NextRequest,

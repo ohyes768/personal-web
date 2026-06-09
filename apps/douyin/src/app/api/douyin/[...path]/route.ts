@@ -4,7 +4,9 @@
  */
 import { NextRequest } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8080';
+// 修复：原默认值 'http://localhost:8080' 8080 是老 gateway 端口（已废弃）
+// 改为指向实际后端 douyin-backend 8093 的 /api/douyin 路径，env var 拆分为 DOUYIN_BACKEND_URL
+const BACKEND_URL = process.env.DOUYIN_BACKEND_URL || 'http://localhost:8093/api/douyin';
 
 export async function GET(
   request: NextRequest,

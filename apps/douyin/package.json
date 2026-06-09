@@ -1,5 +1,5 @@
 {
-  "name": "@personal-web/app-douyin",
+  "name": "douyin",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -9,8 +9,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@personal-web/shared-ui": "workspace:*",
-    "@personal-web/api-client": "workspace:*",
     "@heroicons/react": "^2.2.0",
     "@tailwindcss/postcss": "^4.2.0",
     "next": "^15.4.0",

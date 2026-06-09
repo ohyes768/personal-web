@@ -62,8 +62,8 @@ services:
   # ---------------------------------------------------------------------------
   dividend-frontend:
     build:
-      context: .
-      dockerfile: apps/dividend/Dockerfile
+      context: ./apps/dividend         # 试点：app 独立 build，摆脱 monorepo
+      dockerfile: Dockerfile
     container_name: dividend-frontend
     restart: unless-stopped
     # 绑定到回环地址：宿主 Nginx 可访问，外部网络无法直达
@@ -112,20 +112,20 @@ services:
   # ---------------------------------------------------------------------------
   douyin-frontend:
     build:
-      context: .
-      dockerfile: apps/douyin/Dockerfile
+      context: ./apps/douyin           # 试点：app 独立 build，摆脱 monorepo
+      dockerfile: Dockerfile
     container_name: douyin-frontend
     restart: unless-stopped
     ports:
       - "127.0.0.1:3004:3004"
     environment:
       - NODE_ENV=production
-      # douyin 前端走 Next.js catch-all 代理（app/api/douyin/[...path]/route.ts）
-      # 两步配合：
-      #   1) NEXT_PUBLIC_API_BASE_URL 设为空 → directClient 走相对路径
-      #   2) BACKEND_URL 指向后端根 + 路径前缀 → catch-all 转发目标
+      # douyin 前端有双 catch-all 代理（/api/douyin/* 和 /api/aweme/*）
+      # 修复：原 BACKEND_URL=http://douyin-backend:8093/api 拼出错的 URL（少 /douyin 前缀）
+      # 拆分为两个独立 env var，分别指向 /api/douyin 和 /api/aweme 路径前缀
       - NEXT_PUBLIC_API_BASE_URL=
-      - BACKEND_URL=http://douyin-backend:8093/api
+      - DOUYIN_BACKEND_URL=http://douyin-backend:8093/api/douyin
+      - AWEME_BACKEND_URL=http://douyin-backend:8093/api/aweme
     networks:
       - app-net
     depends_on:

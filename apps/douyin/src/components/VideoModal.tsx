@@ -5,7 +5,7 @@
 import { useState, useEffect } from 'react';
 import { VideoInfo } from '@/lib/types';
 import { useDouyinUtils } from '@/lib/hooks';
-import { Loading } from '@personal-web/shared-ui';
+import { Loading } from './shared-ui/Loading';
 import { useVideoDetail } from '@/lib/hooks';
 
 export interface VideoModalProps {

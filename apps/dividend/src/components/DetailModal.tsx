@@ -4,8 +4,8 @@
  */
 'use client';
 
-import { Modal } from '@personal-web/shared-ui';
-import { Button } from '@personal-web/shared-ui';
+import { Modal } from './shared-ui/Modal';
+import { Button } from './shared-ui/Button';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { dividendApi } from '@/lib/api';
 import {

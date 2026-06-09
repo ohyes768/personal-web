@@ -1,5 +1,5 @@
 {
-  "name": "@personal-web/app-dividend",
+  "name": "dividend",
   "version": "1.0.0",
   "private": true,
   "scripts": {
@@ -10,8 +10,6 @@
   },
   "dependencies": {
     "@heroicons/react": "^2.2.0",
-    "@personal-web/api-client": "workspace:*",
-    "@personal-web/shared-ui": "workspace:*",
     "@tailwindcss/postcss": "^4.2.0",
     "@tanstack/react-virtual": "^3.13.21",
     "next": "^15.4.0",

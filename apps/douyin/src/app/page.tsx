@@ -2,8 +2,8 @@
 
 import { useState, useCallback } from 'react';
 import Link from 'next/link';
-import { Tabs } from '@personal-web/shared-ui';
-import { Loading } from '@personal-web/shared-ui';
+import { Tabs } from '@/components/shared-ui/Tabs';
+import { Loading } from '@/components/shared-ui/Loading';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoModal } from '@/components/VideoModal';
 import { useDouyinVideos, usePendingCount, useAsyncProcess, useVideoActions } from '@/lib/hooks';

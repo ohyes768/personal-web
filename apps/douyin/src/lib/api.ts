@@ -2,7 +2,7 @@
  * Douyin 模块 API 封装
  * 所有 Douyin 相关 API 调用必须通过此文件
  */
-import { directClient } from '@personal-web/api-client';
+import { directClient } from './api-client';
 import type {
   VideoInfo,
   VideoListResponse,
