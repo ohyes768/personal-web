@@ -1,10 +1,6 @@
-/**
+﻿/**
  * API HTTP 客户端
- * 复制自 packages/api-client/src/client.ts + types.ts（精简版）
- * 试点：apps/dividend 拆离 monorepo
  */
-
-// 通用 API 响应类型
 export interface ApiResponse<T = any> {
   success: boolean;
   data: T;
@@ -19,37 +15,23 @@ class ApiClient {
   private mode: ApiClientMode;
 
   constructor(baseUrl: string = '', mode: ApiClientMode = 'wrapped') {
-    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
     this.mode = mode;
   }
 
-  private async request<T>(
-    url: string,
-    options?: RequestInit
-  ): Promise<T> {
+  private async request<T>(url: string, options?: RequestInit): Promise<T> {
     try {
       const response = await fetch(url, {
         ...options,
-        headers: {
-          'Content-Type': 'application/json',
-          ...options?.headers,
-        },
+        headers: { 'Content-Type': 'application/json', ...options?.headers },
       });
 
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
-      if (this.mode === 'direct') {
-        return response.json() as Promise<T>;
-      }
+      if (this.mode === 'direct') return response.json() as Promise<T>;
 
       const result: ApiResponse<T> = await response.json();
-
-      if (!result.success) {
-        throw new Error(result.error || result.message || 'API request failed');
-      }
-
+      if (!result.success) throw new Error(result.error || result.message || 'API request failed');
       return result.data;
     } catch (error) {
       console.error('API request failed:', error);
@@ -58,25 +40,24 @@ class ApiClient {
   }
 
   async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    const isRelativePath = !this.baseUrl || this.baseUrl.startsWith('/');
-
+    const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
     let url: string;
-    if (isRelativePath) {
-      url = `${this.baseUrl}${endpoint}`;
+
+    if (!effectiveBase || effectiveBase.startsWith('/')) {
+      url = `${effectiveBase}${endpoint}`;
       if (params) {
         const validParams = Object.fromEntries(
-          Object.entries(params).filter(([_, value]) => value !== undefined && value !== null && value !== '')
+          Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== '')
         );
-        const searchParams = new URLSearchParams(validParams);
-        url += `?${searchParams.toString()}`;
+        if (Object.keys(validParams).length > 0) {
+          url += `?${new URLSearchParams(validParams).toString()}`;
+        }
       }
     } else {
-      const urlObj = new URL(endpoint, this.baseUrl);
+      const urlObj = new URL(endpoint, effectiveBase);
       if (params) {
-        Object.entries(params).forEach(([key, value]) => {
-          if (value !== undefined && value !== null && value !== '') {
-            urlObj.searchParams.append(key, value);
-          }
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== '') urlObj.searchParams.append(k, v);
         });
       }
       url = urlObj.toString();
@@ -86,30 +67,23 @@ class ApiClient {
   }
 
   async post<T>(endpoint: string, data?: any): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-    return this.request<T>(url, {
-      method: 'POST',
-      body: JSON.stringify(data),
-    });
+    const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
+    return this.request<T>(`${effectiveBase}${endpoint}`, { method: 'POST', body: JSON.stringify(data) });
   }
 
   async put<T>(endpoint: string, data?: any): Promise<T> {
-    const url = `${this.baseUrl}${endpoint}`;
-    return this.request<T>(url, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    });
+    const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
+    return this.request<T>(`${effectiveBase}${endpoint}`, { method: 'PUT', body: JSON.stringify(data) });
   }
 
   async delete<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
-    let url = `${this.baseUrl}${endpoint}`;
+    const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
+    let url = `${effectiveBase}${endpoint}`;
     if (params) {
-      const searchParams = new URLSearchParams(params);
-      url += `?${searchParams.toString()}`;
+      const validParams = Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ''));
+      if (Object.keys(validParams).length > 0) url += `?${new URLSearchParams(validParams).toString()}`;
     }
-    return this.request<T>(url, {
-      method: 'DELETE',
-    });
+    return this.request<T>(url, { method: 'DELETE' });
   }
 }
 
