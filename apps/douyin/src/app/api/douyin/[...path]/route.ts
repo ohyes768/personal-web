@@ -5,8 +5,10 @@
 import { NextRequest } from 'next/server';
 
 // 修复：原默认值 'http://localhost:8080' 8080 是老 gateway 端口（已废弃）
-// 改为指向实际后端 douyin-backend 8093 的 /api/douyin 路径，env var 拆分为 DOUYIN_BACKEND_URL
-const BACKEND_URL = process.env.DOUYIN_BACKEND_URL || 'http://localhost:8093/api/douyin';
+// 改为指向实际后端 douyin-backend 8093 的 /api/ 路径
+// （后端真实路由是 /api/videos、/api/aweme/...、/api/stats，没有 /api/douyin/ 这一层）
+// path = params.path.join('/')，例 'videos' → 拼成 http://localhost:8093/api/videos
+const BACKEND_URL = process.env.DOUYIN_BACKEND_URL || 'http://localhost:8093/api';
 
 export async function GET(
   request: NextRequest,
