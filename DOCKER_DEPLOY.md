@@ -1,128 +1,100 @@
-# Docker 快速部署指南
+﻿# Docker 快速部署指南
 
-快速开始使用 Docker 部署 personal-web 项目。
+快速启动使用 Docker 部署 personal-web 项目。
 
-## 快速开始
+## 快速启动
 
-### 1. 安装 Docker
-
+### 1. 准备环境变量
 ```bash
-# Ubuntu/Debian
-curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
-
-# 启动 Docker
-sudo systemctl start docker
-sudo systemctl enable docker
+# 在项目目录创建 .env 文件，填入阿里云 key
+cat > .env << 'EOF'
+DIVIDEND_ALIYUN_ACCESS_KEY=你的key
+DOUYIN_ALIYUN_ACCESS_KEY=你的key
+EOF
 ```
 
-### 2. 配置环境
-
+### 2. 克隆仓库
 ```bash
-# 进入项目目录
+# 包含 submodule
+git clone --recurse-submodules <your-repo-url>
 cd personal-web
 
-# 复制环境变量配置
-cp gateway/.env.example gateway/.env
-
-# 编辑配置（根据需要修改）
-vim gateway/.env
+# 如果已经 clone 但没有 submodule
+git submodule update --init --recursive
 ```
 
-### 3. 一键部署
-
+### 3. 启动
 ```bash
-# 方式1: 使用部署脚本（推荐）
-./scripts/deploy.sh
+# 本地开发
+docker compose up -d --build
 
-# 方式2: 手动启动
-docker compose -f docker-compose.prod.yml up -d --build
+# NAS 部署
+docker compose -f docker-compose.nas.yml up -d --build
 ```
 
-### 4. 验证部署
-
+### 4. 验证
 ```bash
-# 检查服务状态
-docker ps
-
-# 访问服务
-curl http://localhost:8080/api/health  # Gateway
-curl http://localhost:3000             # Frontend
+docker compose ps
+curl http://localhost:3003/dividend   # dividend 前端
+curl http://localhost:8092/api/dividend/health  # dividend 后端健康检查
 ```
 
-## 服务访问
+## NAS 部署说明
 
-部署完成后，可通过以下地址访问：
+`docker-compose.nas.yml` 用于 Ubuntu Server NAS，包含 dividend + douyin 两个完整场景。
 
-- **前端应用**: http://your-server-ip:3000
-- **API 网关**: http://your-server-ip:8080
-- **API 文档**: http://your-server-ip:8080/docs
+**网络路由**（由 NAS 上外部 Nginx 统一对外）：
+- `/dividend/*` → dividend-frontend:3003
+- `/api/dividend/*` → dividend-backend:8092
+- `/douyin/*` → douyin-frontend:3004
+- `/api/douyin/*` → douyin-backend:8093
+
+**数据持久化**（使用 named volume）：
+- `dividend-data`、`dividend-logs`、`dividend-config`
+- `douyin-data`、`douyin-logs`
 
 ## 常用命令
 
 ```bash
-# 启动服务
-./scripts/start-prod.sh
+# 启动
+docker compose -f docker-compose.nas.yml up -d
 
-# 停止服务
-./scripts/stop-prod.sh
+# 停止
+docker compose -f docker-compose.nas.yml down
 
 # 查看日志
-docker compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.nas.yml logs -f [service-name]
 
-# 重启服务
-docker compose -f docker-compose.prod.yml restart
+# 重启
+docker compose -f docker-compose.nas.yml restart
+
+# 重新构建
+docker compose -f docker-compose.nas.yml up -d --build
 ```
 
-## 数据持久化
-
-数据存储在 Docker Volumes 中：
+## 数据备份
 
 ```bash
-# 查看数据卷
-docker volume ls | grep personal-web
-
 # 备份数据卷
-docker run --rm -v personal-web_douying-data:/data -v $(pwd):/backup \
-  ubuntu tar czf /backup/douying-data-backup.tar.gz /data
+docker run --rm -v dividend-data:/data -v $(pwd):/backup \
+  ubuntu tar czf /backup/dividend-data-backup.tar.gz /data
 ```
-
-## 详细文档
-
-完整的部署文档请参考: [docs/deployment.md](docs/deployment.md)
 
 ## 故障排查
 
 ```bash
 # 查看容器日志
-docker compose -f docker-compose.prod.yml logs [service-name]
+docker compose -f docker-compose.nas.yml logs [service-name]
 
 # 进入容器调试
 docker exec -it <container-name> bash
 
-# 重新构建镜像
-docker compose -f docker-compose.prod.yml build --no-cache
+# 重新构建镜像（跳过缓存）
+docker compose -f docker-compose.nas.yml build --no-cache
 ```
 
-## 项目结构
+## 详细文档
 
-```
-personal-web/
-├── docker-compose.prod.yml    # 生产环境 Docker Compose 配置
-├── scripts/
-│   ├── deploy.sh              # 一键部署脚本
-│   ├── start-prod.sh          # 启动脚本
-│   └── stop-prod.sh           # 停止脚本
-├── nginx/
-│   └── nginx.conf             # Nginx 反向代理配置
-├── gateway/
-│   ├── Dockerfile             # Gateway 服务镜像
-│   └── .env                   # 环境变量配置
-├── frontend/
-│   └── Dockerfile             # Frontend 服务镜像
-└── docs/
-    └── deployment.md          # 详细部署文档
-```
-
-## 支持
-
-如有问题，请查看 [docs/deployment.md](docs/deployment.md) 获取详细文档。
+- [docs/deployment.md](docs/deployment.md) — 详细部署文档
+- [DEPLOYMENT_FILES.md](DEPLOYMENT_FILES.md) — 部署文件清单
+- [README.md](README.md) — 项目总览

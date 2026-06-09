@@ -1,285 +1,191 @@
-# 阿里云 ECS 部署文档
+﻿# 个人财富网站部署指南
 
-本文档介绍如何使用 Docker Compose 将 personal-web 项目部署到阿里云 ECS。
-
-## Git Submodule 说明
-
-本项目包含 **douyin-processor** 作为 Git Submodule：
-- **子模块路径**: `backend/douyin-processor`
-- **子模块仓库**: https://github.com/ohyes768/douyin-processor.git
-- **克隆要求**: 必须使用 `--recurse-submodules` 参数
+本文档介绍如何在 NAS 上部署 personal-web 项目。
 
 ## 前置要求
 
 ### 1. 服务器要求
+- **操作系统**: Ubuntu 20.04+ / Debian 10+
+- **Docker**: 已安装 Docker 和 Docker Compose
+- **网络**: NAS 上已有外部 Nginx，端口 80/443 对外
 
-- **操作系统**: Ubuntu 20.04+ / CentOS 7+ / Debian 10+
-- **CPU**: 2核及以上
-- **内存**: 4GB 及以上
-- **磁盘**: 20GB 及以上
-- **网络**: 公网 IP，开放以下端口：
-  - `80` (HTTP)
-  - `443` (HTTPS, 如需配置 SSL)
-  - `3000` (Frontend, 可选，用于调试)
-  - `8080` (Gateway API, 可选，用于调试)
-  - `8093` (Douying-Collect, 可选，用于调试)
+### 2. 开放端口
+- `80` (HTTP，由外部 Nginx 监听)
+- `443` (HTTPS，可选)
+- NAS 内部通信由 Docker 网络处理，无需额外开放
 
-### 2. 软件要求
-
-服务器需要安装以下软件：
-
-```bash
-# 安装 Docker
-curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
-
-# 安装 Docker Compose
-sudo curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-
-# 验证安装
-docker --version
-docker-compose --version
-```
+### 3. 已有的 Nginx 反向代理
+NAS 上需要配置好 Nginx，将以下路径转发到对应容器：
+- `/dividend/*` → dividend-frontend:3003
+- `/api/dividend/*` → dividend-backend:8092
+- `/douyin/*` → douyin-frontend:3004
+- `/api/douyin/*` → douyin-backend:8093
 
 ## 部署步骤
 
 ### 1. 准备代码
 
-将项目代码上传到服务器，推荐使用 Git：
-
 ```bash
-# 克隆项目（包含子模块）
+# 克隆仓库（包含 submodule）
 git clone --recurse-submodules <your-repo-url> /opt/personal-web
 cd /opt/personal-web
 
-# 如果已经克隆但忘记添加 --recurse-submodules，运行以下命令：
-# git submodule update --init --recursive
-
-# 或者使用 scp 上传代码
-# scp -r ./personal-web root@your-ecs-ip:/opt/
+# 如果已经 clone 但还没有 submodule
+git submodule update --init --recursive
 ```
 
 ### 2. 配置环境变量
 
-编辑 `gateway/.env` 文件，配置必要的环境变量：
+在项目根目录创建 `.env` 文件：
 
 ```bash
 cd /opt/personal-web
-
-# 如果不存在 .env，从示例复制
-cp gateway/.env.example gateway/.env
-
-# 编辑配置
-vim gateway/.env
+cat > .env << 'EOF'
+DIVIDEND_ALIYUN_ACCESS_KEY=你的阿里云key
+DOUYIN_ALIYUN_ACCESS_KEY=你的阿里云key
+EOF
 ```
 
-需要配置的关键变量：
-
-```env
-# Gateway 配置
-DOUYIN_SERVICE_URL=http://douying-collect:8093
-
-# 其他服务配置...
-# 根据你的实际需求配置
-```
-
-### 3. 构建和启动
-
-使用提供的部署脚本：
+### 3. 启动服务
 
 ```bash
-# 方式1: 使用完整部署脚本
-./scripts/deploy.sh
+# 构建并启动所有服务
+docker compose -f docker-compose.nas.yml up -d --build
 
-# 方式2: 手动启动
-./scripts/start-prod.sh
+# 查看服务状态
+docker compose -f docker-compose.nas.yml ps
 ```
 
-### 4. 检查服务状态
+### 4. 验证
 
 ```bash
-# 查看运行中的容器
-docker ps
+# 检查 dividend 后端健康
+curl http://localhost:8092/api/dividend/health
 
-# 查看服务日志
-docker compose -f docker-compose.prod.yml logs -f
+# 检查 dividend 前端
+curl http://localhost:3003/dividend
 
-# 检查健康状态
-curl http://localhost:8080/api/health
-curl http://localhost:3000
-curl http://localhost:8093/api/health
+# 查看日志
+docker compose -f docker-compose.nas.yml logs -f
 ```
 
 ## 服务说明
 
 ### 架构图
-
 ```
-                    Nginx (80)
-                     /    |    \
-                    /     |     \
-                   /      |      \
-        Frontend    Gateway   Douying-Collect
-          :3000      :8080        :8093
+外部 Nginx (:80)
+  ├── /dividend/*     → dividend-frontend:3003
+  ├── /api/dividend/* → dividend-backend:8092
+  ├── /douyin/*       → douyin-frontend:3004
+  └── /api/douyin/*   → douyin-backend:8093
 ```
 
 ### 服务列表
 
-| 服务名 | 端口 | 说明 |
-|--------|------|------|
-| frontend | 3000 | Next.js 前端应用 |
-| gateway | 8080 | FastAPI 网关服务 |
-| douying-collect | 8093 | 抖音数据采集服务 |
-| nginx | 80 | 反向代理（可选） |
+| 服务 | 容器名 | 端口 | 说明 |
+|------|--------|------|------|
+| dividend 后端 | dividend-backend | 8092 | 股息率 FastAPI |
+| dividend 前端 | dividend-frontend | 3003 | Next.js standalone |
+| douyin 后端 | douyin-backend | 8093 | 抖音处理服务 |
+| douyin 前端 | douyin-frontend | 3004 | Next.js standalone |
 
-### 数据持久化
+### 数据卷
 
-以下数据通过 Docker Volumes 持久化：
+| 卷名 | 用途 |
+|------|------|
+| dividend-data | 股息率 CSV 数据 |
+| dividend-logs | 股息率服务日志 |
+| dividend-config | 股息率配置 |
+| douyin-data | 抖音视频数据 |
+| douyin-logs | 抖音服务日志 |
 
-- `douying-data`: 采集的视频数据
-- `douying-cache`: 处理缓存
-- `douying-logs`: 应用日志
+## 常用维护命令
 
-## 常用命令
-
-### 服务管理
-
+### 启动/停止
 ```bash
-# 启动服务
-./scripts/start-prod.sh
+docker compose -f docker-compose.nas.yml up -d
+docker compose -f docker-compose.nas.yml down
+```
 
-# 停止服务
-./scripts/stop-prod.sh
-
-# 重启服务
-docker compose -f docker-compose.prod.yml restart
-
-# 查看日志
-docker compose -f docker-compose.prod.yml logs -f [service-name]
-
-# 进入容器
-docker exec -it <container-name> bash
+### 重启
+```bash
+docker compose -f docker-compose.nas.yml restart
 ```
 
 ### 更新部署
-
 ```bash
 # 拉取最新代码
 git pull
 
+# 更新 submodule
+git submodule update --init --recursive
+
 # 重新构建镜像
-docker compose -f docker-compose.prod.yml build --no-cache
+docker compose -f docker-compose.nas.yml build --no-cache
 
 # 重启服务
-docker compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.nas.yml up -d
 ```
 
-### 清理数据
+### 查看日志
+```bash
+# 所有服务日志
+docker compose -f docker-compose.nas.yml logs -f
+
+# 特定服务
+docker compose -f docker-compose.nas.yml logs -f dividend-backend
+docker compose -f docker-compose.nas.yml logs -f dividend-frontend
+```
+
+### 进入容器调试
+```bash
+docker exec -it dividend-backend bash
+docker exec -it dividend-frontend sh
+```
+
+## 数据备份
 
 ```bash
-# 停止并删除容器
-docker compose -f docker-compose.prod.yml down
+# 备份股息率数据
+docker run --rm -v dividend-data:/data -v $(pwd):/backup \
+  ubuntu tar czf /backup/dividend-data-backup.tar.gz /data
 
-# 删除数据卷（谨慎操作）
-docker volume rm personal-web_douying-data
-docker volume rm personal-web_douying-cache
-docker volume rm personal-web_douying-logs
+# 备份抖音数据
+docker run --rm -v douyin-data:/data -v $(pwd):/backup \
+  ubuntu tar czf /backup/douyin-data-backup.tar.gz /data
 ```
 
 ## 故障排查
 
 ### 1. 服务无法启动
-
 ```bash
-# 查看详细日志
-docker compose -f docker-compose.prod.yml logs
-
-# 检查配置文件
-cat docker-compose.prod.yml
+docker compose -f docker-compose.nas.yml logs [service-name]
 ```
 
-### 2. 端口冲突
+### 2. 健康检查失败
+```bash
+# 手动检查后端
+curl http://dividend-backend:8092/api/dividend/health
 
-如果端口被占用，修改 `docker-compose.prod.yml` 中的端口映射：
+# 检查容器网络
+docker network ls | grep nginx
+docker inspect dividend-backend | grep -A5 Networks
+```
 
+### 3. 端口冲突
+修改 `docker-compose.nas.yml` 中的端口映射：
 ```yaml
 ports:
   - "新端口:容器端口"
 ```
 
-### 3. 权限问题
+## 相关文档
 
-```bash
-# 确保脚本有执行权限
-chmod +x scripts/*.sh
-
-# 确保数据目录权限正确
-mkdir -p data
-chmod 755 data
-```
-
-### 4. 内存不足
-
-```bash
-# 查看资源使用情况
-docker stats
-
-# 限制容器资源（在 docker-compose.prod.yml 中配置）
-services:
-  frontend:
-    deploy:
-      resources:
-        limits:
-          memory: 512M
-```
-
-## 性能优化
-
-### 1. 启用 Nginx 缓存
-
-编辑 `nginx/nginx.conf`，根据需要调整缓存配置。
-
-### 2. 配置 CDN
-
-将静态资源上传到阿里云 OSS，并配置 CDN 加速。
-
-### 3. 数据库优化
-
-如果数据量较大，考虑使用独立的数据库服务（如 MySQL、MongoDB）。
-
-## 安全建议
-
-1. **防火墙配置**: 只开放必要的端口
-2. **HTTPS 配置**: 使用 Let's Encrypt 免费证书
-3. **定期备份**: 定期备份数据卷
-4. **更新维护**: 定期更新 Docker 镜像和系统补丁
-
-## 监控和日志
-
-### 查看日志
-
-```bash
-# 所有服务日志
-docker compose -f docker-compose.prod.yml logs
-
-# 特定服务日志
-docker compose -f docker-compose.prod.yml logs gateway
-docker compose -f docker-compose.prod.yml logs frontend
-docker compose -f docker-compose.prod.yml logs douying-collect
-```
-
-### 日志文件位置
-
-- Gateway: 容器内 `/app/logs`
-- Douying-Collect: 容器内 `/app/logs`，挂载到卷 `douying-logs`
-
-## 联系支持
-
-如遇到问题，请查看：
-- 项目 GitHub Issues
-- 技术文档: `docs/`
-- 配置示例: `*.example` 文件
+- [DOCKER_DEPLOY.md](../DOCKER_DEPLOY.md) — Docker 快速部署指南
+- [DEPLOYMENT_FILES.md](../DEPLOYMENT_FILES.md) — 部署文件清单
+- [README.md](../README.md) — 项目总览
+- [docs/dividend/](docs/dividend/) — 股息率模块技术文档
 
 ---
 
-最后更新: 2025-02
+最后更新: 2026-06
