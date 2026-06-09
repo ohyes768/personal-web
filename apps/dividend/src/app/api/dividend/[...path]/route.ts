@@ -1,31 +1,27 @@
-/**
+﻿/**
  * API 代理路由
  * 将前端 API 请求转发到后端服务
  */
 import { NextRequest } from 'next/server';
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8092/api/dividend';
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8092';
 
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const resolvedParams = await params;
-    const path = resolvedParams.path.join('/');
-    const url = new URL(request.url);
-    const targetUrl = new URL(path, BACKEND_URL);
+    const requestUrl = new URL(request.url);
+    const apiPath = requestUrl.pathname.replace(/^\/api\/dividend\//, '/');
+    const targetUrl = new URL(apiPath, BACKEND_URL);
 
-    // 复制查询参数
-    url.searchParams.forEach((value, key) => {
+    requestUrl.searchParams.forEach((value, key) => {
       targetUrl.searchParams.set(key, value);
     });
 
     const response = await fetch(targetUrl.toString(), {
       method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
 
     const data = await response.json();
@@ -41,16 +37,14 @@ export async function POST(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const resolvedParams = await params;
-    const path = resolvedParams.path.join('/');
-    const targetUrl = new URL(path, BACKEND_URL);
+    const requestUrl = new URL(request.url);
+    const apiPath = requestUrl.pathname.replace(/^\/api\/dividend\//, '/');
+    const targetUrl = new URL(apiPath, BACKEND_URL);
     const body = await request.json();
 
     const response = await fetch(targetUrl.toString(), {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
 
@@ -67,21 +61,17 @@ export async function DELETE(
   { params }: { params: Promise<{ path: string[] }> }
 ) {
   try {
-    const resolvedParams = await params;
-    const path = resolvedParams.path.join('/');
-    const targetUrl = new URL(path, BACKEND_URL);
-    const url = new URL(request.url);
+    const requestUrl = new URL(request.url);
+    const apiPath = requestUrl.pathname.replace(/^\/api\/dividend\//, '/');
+    const targetUrl = new URL(apiPath, BACKEND_URL);
 
-    // 复制查询参数
-    url.searchParams.forEach((value, key) => {
+    requestUrl.searchParams.forEach((value, key) => {
       targetUrl.searchParams.set(key, value);
     });
 
     const response = await fetch(targetUrl.toString(), {
       method: 'DELETE',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
     });
 
     if (response.status === 204) {

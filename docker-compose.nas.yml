@@ -1,42 +1,38 @@
+﻿# =============================================================================
+# 个人财富网站 - NAS 部署统一编排
 # =============================================================================
-# 个人资讯网站 - NAS 部署统一编排
-# =============================================================================
-# 用途：Ubuntu Server NAS 一键拉起 4 个服务（2 个后端 + 2 个前端）
+# 用途：Ubuntu Server NAS 部署 4 个服务（2 个后端 + 2 个前端）
 # 用法：
-#   1. 准备 .env：在仓库根目录创建 .env，填阿里云 key（已被 .gitignore 忽略）
+#   1. 准备 .env：在仓库根目录创建 .env，填入阿里云 key（已被 .gitignore 忽略）
 #        cat > .env << 'EOF'
 #        DIVIDEND_ALIYUN_ACCESS_KEY=你的key
 #        DOUYIN_ALIYUN_ACCESS_KEY=你的key
 #        EOF
-#   2. 拉起：   docker compose -f docker-compose.nas.yml up -d --build
-#               （自动读根目录 .env）
-#   3. 验证：   docker compose -f docker-compose.nas.yml ps
-#   4. 停止：   docker compose -f docker-compose.nas.yml down
+#   2. 启动：  docker compose -f docker-compose.nas.yml up -d --build
+#              （自动读取根目录 .env）
+#   3. 验证：  docker compose -f docker-compose.nas.yml ps
+#   4. 停止：  docker compose -f docker-compose.nas.yml down
 #
-# 网络拓扑（路径式反代，由宿主 Nginx 统一对外）：
-#   公网 → Nginx (:443)
-#     ├─ /dividend/*     → dividend-frontend:3003   (本机 127.0.0.1:3003)
-#     ├─ /api/dividend/* → dividend-backend:8092    (仅 docker 内网)
-#     ├─ /douyin/*       → douyin-frontend:3004     (本机 127.0.0.1:3004)
-#     └─ /api/douyin/*   → douyin-backend:8093      (仅 docker 内网)
+# 网络路由（路径式反代，由 NAS 上外部 Nginx 统一对外）：
+#   /dividend/*     → dividend-frontend:3003
+#   /api/dividend/* → dividend-backend:8092
+#   /douyin/*       → douyin-frontend:3004
+#   /api/douyin/*   → douyin-backend:8093
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
 #   douyin-data / douyin-logs
-#   备份：docker run --rm -v <volume>:/data -v $(pwd):/backup \
-#         ubuntu tar czf /backup/<volume>.tar.gz /data
 # =============================================================================
 
 services:
   # ---------------------------------------------------------------------------
-  # dividend 后端（A股高股息率分析）
+  # dividend 后端（A股高股息分析）
   # ---------------------------------------------------------------------------
   dividend-backend:
     build:
       context: ./backend/dividend-select
     container_name: dividend-backend
     restart: unless-stopped
-    # 不暴露 ports 到宿主，只在 docker 内部网络可达
     expose:
       - "8092"
     volumes:
@@ -45,12 +41,10 @@ services:
       - dividend-config:/app/config
     environment:
       - LOG_LEVEL=INFO
-      # 阿里云行情 API key（如需）
       - ALIYUN_ACCESS_KEY=${DIVIDEND_ALIYUN_ACCESS_KEY:-}
     networks:
       - app-net
     healthcheck:
-      # 后端 router 注册时带 /api/dividend prefix，所以 health 端点实际是 /api/dividend/health
       test: ["CMD", "curl", "-f", "http://localhost:8092/api/dividend/health"]
       interval: 30s
       timeout: 10s
@@ -58,25 +52,21 @@ services:
       start_period: 40s
 
   # ---------------------------------------------------------------------------
-  # dividend 前端（Next.js，basePath 已是 /dividend）
+  # dividend 前端（Next.js，basePath 已改为空）
   # ---------------------------------------------------------------------------
   dividend-frontend:
     build:
-      context: ./apps/dividend         # 试点：app 独立 build，摆脱 monorepo
+      context: ./apps/dividend
       dockerfile: Dockerfile
     container_name: dividend-frontend
     restart: unless-stopped
-    # 绑定到回环地址：宿主 Nginx 可访问，外部网络无法直达
     ports:
       - "127.0.0.1:3003:3003"
     environment:
       - NODE_ENV=production
-      # dividend 前端走 Next.js catch-all 代理（app/api/dividend/[...path]/route.ts）
-      # 两步配合：
-      #   1) NEXT_PUBLIC_API_BASE_URL 设为空 → directClient 走相对路径
-      #   2) BACKEND_URL 指向后端根 + 路径前缀 → catch-all 转发目标
       - NEXT_PUBLIC_API_BASE_URL=
-      - BACKEND_URL=http://dividend-backend:8092/api/dividend
+      # BACKEND_URL 不带 /api/dividend 前缀，由 BFF catch-all 路由从 request.url 提取完整路径
+      - BACKEND_URL=http://dividend-backend:8092
     networks:
       - app-net
     depends_on:
@@ -84,7 +74,7 @@ services:
         condition: service_healthy
 
   # ---------------------------------------------------------------------------
-  # douyin 后端（抖音视频文字稿）
+  # douyin 后端（抖音视频文字转写）
   # ---------------------------------------------------------------------------
   douyin-backend:
     build:
@@ -108,11 +98,11 @@ services:
       start_period: 40s
 
   # ---------------------------------------------------------------------------
-  # douyin 前端（Next.js，basePath 设为 /douyin）
+  # douyin 前端（Next.js，basePath 已改为空）
   # ---------------------------------------------------------------------------
   douyin-frontend:
     build:
-      context: ./apps/douyin           # 试点：app 独立 build，摆脱 monorepo
+      context: ./apps/douyin
       dockerfile: Dockerfile
     container_name: douyin-frontend
     restart: unless-stopped
@@ -120,9 +110,6 @@ services:
       - "127.0.0.1:3004:3004"
     environment:
       - NODE_ENV=production
-      # douyin 前端有双 catch-all 代理（/api/douyin/* 和 /api/aweme/*）
-      # 修复：原 BACKEND_URL=http://douyin-backend:8093/api 拼出错的 URL（少 /douyin 前缀）
-      # 拆分为两个独立 env var，分别指向 /api/douyin 和 /api/aweme 路径前缀
       - NEXT_PUBLIC_API_BASE_URL=
       - DOUYIN_BACKEND_URL=http://douyin-backend:8093/api/douyin
       - AWEME_BACKEND_URL=http://douyin-backend:8093/api/aweme

@@ -1,21 +1,16 @@
-import { NextResponse } from 'next/server';
+﻿import { NextResponse } from 'next/server';
 
-const API_BASE = process.env.BACKEND_URL || 'http://localhost:8092/api/dividend';
+const API_BASE = process.env.BACKEND_URL || 'http://localhost:8092';
 
 export async function GET() {
   try {
-    const response = await fetch(`${API_BASE}/report/carousel`, {
+    const response = await fetch(`${API_BASE}/api/dividend/report/carousel`, {
       method: 'GET',
-      headers: {
-        'Accept': 'text/html;charset=utf-8',
-      },
+      headers: { 'Accept': 'text/html;charset=utf-8' },
     });
 
     if (!response.ok) {
-      return NextResponse.json(
-        { error: '生成轮播报告失败' },
-        { status: response.status }
-      );
+      return NextResponse.json({ error: '生成轮播报告失败' }, { status: response.status });
     }
 
     const blob = await response.blob();
@@ -31,9 +26,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Failed to fetch carousel report:', error);
-    return NextResponse.json(
-      { error: '生成轮播报告失败，请稍后重试' },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: '生成轮播报告失败，请稍后重试' }, { status: 500 });
   }
 }
