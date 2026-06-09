@@ -19,7 +19,7 @@ class ApiClient {
   private mode: ApiClientMode;
 
   constructor(baseUrl: string = '', mode: ApiClientMode = 'wrapped') {
-    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
     this.mode = mode;
   }
 
