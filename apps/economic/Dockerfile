@@ -1,22 +1,18 @@
-FROM node:20-alpine AS base
-
-# 安装 pnpm
+﻿FROM node:20-alpine AS base
 RUN npm install -g pnpm
 
-# 依赖阶段
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
-# 构建阶段
 FROM base AS builder
 WORKDIR /app
+RUN npm install -g pnpm
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN pnpm build
 
-# 运行阶段
 FROM base AS runner
 WORKDIR /app
 ENV NODE_ENV=production
