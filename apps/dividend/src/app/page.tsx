@@ -58,7 +58,7 @@ export default function DividendPage() {
   const stockCodes = useMemo(() => data.map(s => s.code), [data]);
 
   // 技术指标数据
-  const { technicalData } = useTechnicalData(stockCodes, refreshKey, parseFloat(minYieldInput) || 3);
+  const { technicalData } = useTechnicalData(stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
 
   // 详情弹框
   const detailModal = useDetailModal();
@@ -196,7 +196,7 @@ export default function DividendPage() {
               <span className="text-sm text-[#787b86]">%</span>
               <button
                 onClick={() => {
-                  const minYield = parseFloat(minYieldInput) || 3;
+                  const minYield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
                   refetch({
                     min_yield: minYield,
                     exchange: exchangeFilter || undefined,
