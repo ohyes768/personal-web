@@ -38,7 +38,7 @@ echo.
 echo Closing service windows...
 
 REM Call separate PowerShell script to close windows by port and command
-powershell -ExecutionPolicy Bypass -File "%~dp0stop-windows.ps1" -Ports "8093" -Commands "pnpm dev"
+powershell -ExecutionPolicy Bypass -File "%~dp0stop-windows.ps1" -Ports "8093,3004" -Commands "pnpm dev,next.CMD dev,uvicorn src.server.main:app"
 
 echo.
 echo Douyin services stopped.
