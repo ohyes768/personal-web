@@ -74,6 +74,15 @@ if errorlevel 1 (
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-Content '.env.local') -replace '^NEXT_PUBLIC_API_BASE_URL=.*', 'NEXT_PUBLIC_API_BASE_URL=http://localhost:%DIVIDEND_API_PORT%' | Set-Content '.env.local'"
 
+REM Ensure BACKEND_URL exists (BFF route uses it to proxy /api/dividend/* to backend)
+findstr /B /C:"BACKEND_URL=" ".env.local" >nul 2>&1
+if errorlevel 1 (
+    echo Adding BACKEND_URL to .env.local...
+    echo BACKEND_URL=http://localhost:%DIVIDEND_API_PORT%/api/dividend >> .env.local
+)
+
+powershell -NoProfile -ExecutionPolicy Bypass -Command "(Get-Content '.env.local') -replace '^BACKEND_URL=.*', 'BACKEND_URL=http://localhost:%DIVIDEND_API_PORT%/api/dividend' | Set-Content '.env.local'"
+
 REM Start Frontend service directly (API already verified running)
 start "Frontend" cmd /k "cd /d "%~dp0..\apps\dividend" && .\node_modules\.bin\next.CMD dev -p %DIVIDEND_WEB_PORT%"
 
@@ -82,7 +91,7 @@ echo ========================================
 echo   Dividend Dev Environment Started
 echo ========================================
 echo.
-echo Frontend:        http://localhost:%DIVIDEND_WEB_PORT%/dividend
+echo Frontend:        http://localhost:%DIVIDEND_WEB_PORT%/
 echo Dividend-Select: http://localhost:%DIVIDEND_API_PORT%  (submodule doc: 8092)
 echo.
 pause
