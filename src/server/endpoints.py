@@ -17,6 +17,9 @@ router = APIRouter()
 # 全局处理器引用（在 main.py 中设置）
 processor = None
 
+# 处理任务锁：避免并发触发同一批 pending 被处理两次（重复消耗 ASR 配额）
+_process_lock = asyncio.Lock()
+
 
 def set_processor(proc):
     """设置处理器实例"""
@@ -110,6 +113,52 @@ class ActionResponse(BaseModel):
     """操作响应"""
     success: bool
     message: str
+
+
+async def _run_process_pending():
+    """后台任务：拿锁 → 跑 process_pending → 释放锁"""
+    async with _process_lock:
+        try:
+            await processor.process_pending()
+        except Exception as e:
+            logger.error(f"process_pending 后台任务异常: {e}")
+
+
+@router.post("/api/process/pending", response_model=TaskResponse)
+async def trigger_process_pending():
+    """触发处理 status=pending 的视频（ASR → unread）
+
+    行为：
+      1. 检查锁：已有任务在跑 → 拒（success=false）
+      2. 拉 pending 列表：空 → 直接返回
+      3. 非空 → asyncio.create_task 后台串行处理，立即返回
+    """
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    if _process_lock.locked():
+        return TaskResponse(
+            success=False,
+            message="已有处理任务正在进行中，请稍后再试",
+            data={"pending": 0},
+        )
+
+    pending_list = await processor.status_manager.list_pending()
+    if not pending_list:
+        return TaskResponse(
+            success=True,
+            message="没有待处理的音频",
+            data={"pending": 0},
+        )
+
+    asyncio.create_task(_run_process_pending())
+
+    logger.info(f"已启动 pending 处理任务: {len(pending_list)} 个视频")
+    return TaskResponse(
+        success=True,
+        message=f"已启动 ASR 处理（后台串行运行 {len(pending_list)} 个视频）",
+        data={"pending": len(pending_list)},
+    )
 
 
 @router.get("/api/aweme/{aweme_id}/status")

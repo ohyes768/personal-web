@@ -39,8 +39,105 @@ class VideoProcessor:
 
         logger.info("音频处理器初始化完成")
 
+    async def process_pending(self) -> dict:
+        """处理所有 status=pending 的视频（v2.0 流程）
+
+        从 status_manager.list_pending() 拉队列，逐个调阿里 ASR，
+        成功 mark_processed（→ unread + 写 output），失败 mark_failed。
+
+        Returns:
+            处理结果统计 {total, success, failed}
+        """
+        logger.info("开始处理 pending 视频")
+
+        pending_list = await self.status_manager.list_pending()
+        if not pending_list:
+            logger.warning("没有 pending 视频")
+            return {"total": 0, "success": 0, "failed": 0}
+
+        logger.info(f"找到 {len(pending_list)} 个 pending 视频")
+
+        # 拉一次 file-system-go 列表，建 aweme_id → url 映射，避免每个视频重拉
+        videos = await self.filesystem_client.get_video_list(
+            filters={"suffix": ".wav"},
+            use_cache=True,
+        )
+        url_map = {v.aweme_id: v.url for v in videos}
+
+        total = len(pending_list)
+        success = 0
+        failed = 0
+
+        for item in pending_list:
+            aweme_id = item["aweme_id"]
+            audio_url = url_map.get(aweme_id, "")
+
+            if not audio_url:
+                error = "找不到音频文件 URL"
+                logger.warning(f"{aweme_id}: {error}")
+                await self.status_manager.mark_failed(aweme_id, error)
+                failed += 1
+                continue
+
+            start_time = time.time()
+            logger.info(f"开始处理: {aweme_id} ({audio_url})")
+
+            try:
+                transcript = await self.asr_client.transcribe_file(
+                    audio_file="",
+                    file_url=audio_url,
+                )
+
+                if not transcript:
+                    error = "ASR 识别失败"
+                    logger.error(f"{aweme_id}: {error}")
+                    await self.status_manager.mark_failed(aweme_id, error)
+                    failed += 1
+                    continue
+
+                # 拼 output 数据，metadata 直接从 pending 记录取（不依赖已删除的 get_video_metadata）
+                output_data = {
+                    "aweme_id": aweme_id,
+                    "text": transcript.text,
+                    "segments": [
+                        {
+                            "start_time": seg.start_time,
+                            "end_time": seg.end_time,
+                            "text": seg.text,
+                            "confidence": seg.confidence,
+                        }
+                        for seg in transcript.segments
+                    ],
+                    "confidence": transcript.confidence,
+                    "audio_duration": transcript.audio_duration,
+                    "title": item.get("title", ""),
+                    "author": item.get("author", ""),
+                    "description": item.get("description", ""),
+                }
+
+                await self.status_manager.mark_processed(aweme_id, transcript=output_data)
+                success += 1
+
+                cost = time.time() - start_time
+                logger.info(f"处理成功: {aweme_id} (耗时 {cost:.2f}s)")
+
+            except Exception as e:
+                error = f"处理异常: {e}"
+                logger.error(f"{aweme_id}: {error}")
+                await self.status_manager.mark_failed(aweme_id, error)
+                failed += 1
+
+        summary = {
+            "total": total,
+            "success": success,
+            "failed": failed,
+        }
+        logger.info(f"处理完成: 总计 {total}，成功 {success}，失败 {failed}")
+        return summary
+
     async def process_all(self) -> dict:
-        """处理所有音频
+        """处理所有音频（v1.0 旧流程，依赖已删除的 filesystem_client.get_video_metadata，
+        目前已不可用，保留作历史参考）
 
         Returns:
             处理结果统计
