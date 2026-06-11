@@ -77,8 +77,8 @@ REM Ensure .env.local exists with required BFF backend URLs
 if not exist ".env.local" (
     echo Creating .env.local file...
     (
-        echo # BFF catch-allï¼ˆdev ç”¨ï¼›çº¿ä¸Šè¢« nginx ç»•è¿‡ï¼‰
-        echo # åŽç«¯çœŸå®žè·¯ç”±æ˜¯ /api/videosã€/api/aweme/...ã€/api/statsï¼Œæ²¡æœ‰ /api/douyin/ è¿™ä¸€å±‚
+        echo # BFF catch-all£¨dev ÓÃ£»ÏßÉÏ±» nginx ÈÆ¹ý£©
+        echo # ºó¶ËÕæÊµÂ·ÓÉÊÇ /api/videos¡¢/api/aweme/...¡¢/api/stats£¬Ã»ÓÐ /api/douyin/ ÕâÒ»²ã
         echo DOUYIN_BACKEND_URL=http://localhost:%DOUYIN_API_PORT%/api
         echo AWEME_BACKEND_URL=http://localhost:%DOUYIN_API_PORT%/api/aweme
     ) > .env.local
