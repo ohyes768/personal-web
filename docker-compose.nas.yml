@@ -43,7 +43,7 @@ services:
       - LOG_LEVEL=INFO
       - ALIYUN_ACCESS_KEY=${DIVIDEND_ALIYUN_ACCESS_KEY:-}
     networks:
-      - nginx_nginx-bridge
+      - app-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8092/api/dividend/health"]
       interval: 30s
@@ -68,7 +68,7 @@ services:
       # BACKEND_URL 不带 /api/dividend 前缀，由 BFF catch-all 路由从 request.url 提取完整路径
       - BACKEND_URL=http://dividend-backend:8092
     networks:
-      - nginx_nginx-bridge
+      - app-net
     depends_on:
       dividend-backend:
         condition: service_healthy
@@ -90,7 +90,7 @@ services:
     environment:
       - ALIYUN_ACCESS_KEY=${DOUYIN_ALIYUN_ACCESS_KEY:-}
     networks:
-      - nginx_nginx-bridge
+      - app-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
       interval: 30s
@@ -115,7 +115,7 @@ services:
       - DOUYIN_BACKEND_URL=http://douyin-backend:8093/api
       - AWEME_BACKEND_URL=http://douyin-backend:8093/api/aweme
     networks:
-      - nginx_nginx-bridge
+      - app-net
     depends_on:
       douyin-backend:
         condition: service_healthy
@@ -124,7 +124,8 @@ services:
 # 网络 & 数据卷
 # =============================================================================
 networks:
-  nginx_nginx-bridge:
+  app-net:
+    name: nginx_nginx-bridge
     external: true
 
 volumes:
