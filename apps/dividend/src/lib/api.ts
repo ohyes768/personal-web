@@ -16,6 +16,7 @@ import type {
   StockInfoResponse,
   BoardInfoResponse,
   BoardInfoRequest,
+  AuxDataStatus,
 } from './types';
 
 export const dividendApi = {
@@ -50,6 +51,24 @@ export const dividendApi = {
     directClient.get<DividendStatusResponse>('/api/dividend/dividend/status'),
 
   /**
+   * 获取申万行业数据状态
+   */
+  getSwIndustryStatus: () =>
+    directClient.get<AuxDataStatus>('/api/dividend/sw-industry/status'),
+
+  /**
+   * 获取股东户数数据状态
+   */
+  getShareholderStatus: () =>
+    directClient.get<AuxDataStatus>('/api/dividend/shareholder/status'),
+
+  /**
+   * 获取个股板块映射数据状态
+   */
+  getBoardStatus: () =>
+    directClient.get<AuxDataStatus>('/api/dividend/board/status'),
+
+  /**
    * 获取实时收盘价和偏离度
    */
   getRealtimePrice: (data: RealtimePriceRequest) =>
@@ -77,7 +96,7 @@ export const dividendApi = {
    * 获取财务指标数据状态
    */
   getFinancialStatus: () =>
-    directClient.get<{ exists: boolean; last_updated: string | null; data_date: string | null; missing_count: number; missing_codes: string[] }>('/api/dividend/financial/status'),
+    directClient.get<AuxDataStatus>('/api/dividend/financial/status'),
 };
 
 /**
@@ -114,9 +133,36 @@ export const dividendUpdateApi = {
   /**
    * 更新财务指标数据
    */
-  refreshFinancial: (codes?: string[]) =>
+  refreshFinancial: (codes?: string[], force = false) =>
     directClient.post<{ success: boolean; message: string; count?: number; missing_count?: number }>(
-      '/api/dividend/financial/refresh',
+      `/api/dividend/financial/refresh${force ? '?force=true' : ''}`,
+      codes ? { codes } : undefined
+    ),
+
+  /**
+   * 更新申万行业数据
+   */
+  refreshSwIndustry: (force = false) =>
+    directClient.post<{ success: boolean; message: string; count: number; quarter: string }>(
+      `/api/dividend/sw-industry/refresh${force ? '?force=true' : ''}`, {}
+    ),
+
+  /**
+   * 更新股东户数数据
+   */
+  refreshShareholder: (force = false) =>
+    directClient.post<{ success: boolean; message: string; count: number; quarter: string }>(
+      `/api/dividend/shareholder/refresh${force ? '?force=true' : ''}`, {}
+    ),
+
+  /**
+   * 更新个股板块映射数据
+   * @param codes 可选股票代码列表；不传=全量刷新，传=增量补缺
+   * @param force 是否强制刷新（忽略 90 天节流，仅全量模式生效）
+   */
+  refreshBoardMapping: (codes?: string[], force = false) =>
+    directClient.post<{ success: boolean; message: string; mode?: string }>(
+      `/api/dividend/board/refresh${force ? '?force=true' : ''}`,
       codes ? { codes } : undefined
     ),
 };

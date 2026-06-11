@@ -1,0 +1,17 @@
+scanned files: 281
+utf-8: 281
+gb18030 (non-utf-8): 0
+binary: 0
+
+=== files with mojibake signatures: 1
+--- F:\github\person_project\personal-web\scripts\scan_mojibake.py
+  L9 [utf8_as_latin1]
+     | #   4) known mojibake tokens (Ã©, â€™, Â , 锘? etc.)
+  L6 [known_token:锘?]
+     | #   2) file starts with 0x9518 (BOM EF BB BF misread as GBK -> 锘?)
+  L9 [known_token:Ã©]
+     | #   4) known mojibake tokens (Ã©, â€™, Â , 锘? etc.)
+  L9 [known_token:â€™]
+     | #   4) known mojibake tokens (Ã©, â€™, Â , 锘? etc.)
+  L9 [known_token:锘?]
+     | #   4) known mojibake tokens (Ã©, â€™, Â , 锘? etc.)

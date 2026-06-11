@@ -1,4 +1,4 @@
-﻿/**
+/**
  * API HTTP 客户端
  */
 export interface ApiResponse<T = any> {
@@ -26,7 +26,18 @@ class ApiClient {
         headers: { 'Content-Type': 'application/json', ...options?.headers },
       });
 
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      if (!response.ok) {
+        // 尝试从响应体中提取后端返回的 detail/message/error 字段
+        // 例如 FastAPI 的 HTTPException(429, detail="距上次更新仅 N 天...") 会返回 {"detail": "..."}
+        let serverMsg = '';
+        try {
+          const body = await response.clone().json();
+          serverMsg = body.detail || body.message || body.error || '';
+        } catch {
+          // 响应体不是 JSON 时忽略
+        }
+        throw new Error(serverMsg || `请求失败 (HTTP ${response.status})`);
+      }
 
       if (this.mode === 'direct') return response.json() as Promise<T>;
 

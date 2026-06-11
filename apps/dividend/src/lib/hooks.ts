@@ -421,11 +421,15 @@ type UpdateState = {
   m120: 'idle' | 'loading' | 'success' | 'error';
   realtime: 'idle' | 'loading' | 'success' | 'error';
   financial: 'idle' | 'loading' | 'success' | 'error';
+  sw_industry: 'idle' | 'loading' | 'success' | 'error';
+  shareholder: 'idle' | 'loading' | 'success' | 'error';
+  board: 'idle' | 'loading' | 'success' | 'error';
   message?: string;
   dividend_failed_count?: number;
   dividend_failed_codes?: string[];
   dividend_target_count?: number;
   dividend_completed_count?: number;
+  aux_message?: { sw_industry?: string; financial?: string; shareholder?: string; board?: string };
 };
 
 /**
@@ -438,11 +442,21 @@ export function useDataUpdate() {
     m120: 'idle',
     realtime: 'idle',
     financial: 'idle',
+    sw_industry: 'idle',
+    shareholder: 'idle',
+    board: 'idle',
   });
   const [m120NeedsUpdate, setM120NeedsUpdate] = useState(true);
   const [dividendNeedsUpdate, setDividendNeedsUpdate] = useState(true);
   const [financialNeedsUpdate, setFinancialNeedsUpdate] = useState(true);
   const [financialMissingCodes, setFinancialMissingCodes] = useState<string[]>([]);
+  const [boardMissingCodes, setBoardMissingCodes] = useState<string[]>([]);
+  const [auxStatuses, setAuxStatuses] = useState<{
+    sw_industry: import('./types').AuxDataStatus | null;
+    financial: import('./types').AuxDataStatus | null;
+    shareholder: import('./types').AuxDataStatus | null;
+    board: import('./types').AuxDataStatus | null;
+  }>({ sw_industry: null, financial: null, shareholder: null, board: null });
 
   /**
    * 检查 M120 是否需要更新
@@ -484,7 +498,7 @@ export function useDataUpdate() {
   const checkFinancialStatus = useCallback(async () => {
     try {
       const status = await dividendApi.getFinancialStatus();
-      setFinancialNeedsUpdate(status.missing_count > 0);
+      setFinancialNeedsUpdate((status.missing_count ?? 0) > 0);
       setFinancialMissingCodes(status.missing_codes || []);
     } catch (err) {
       console.error('Failed to check financial status:', err);
@@ -493,12 +507,34 @@ export function useDataUpdate() {
     }
   }, []);
 
+  /**
+   * 并行检查四项辅助数据状态
+   */
+  const checkAuxStatus = useCallback(async () => {
+    const [sw, fi, sh, bo] = await Promise.allSettled([
+      dividendApi.getSwIndustryStatus(),
+      dividendApi.getFinancialStatus(),
+      dividendApi.getShareholderStatus(),
+      dividendApi.getBoardStatus(),
+    ]);
+    setAuxStatuses({
+      sw_industry: sw.status === 'fulfilled' ? sw.value : null,
+      financial: fi.status === 'fulfilled' ? fi.value : null,
+      shareholder: sh.status === 'fulfilled' ? sh.value : null,
+      board: bo.status === 'fulfilled' ? bo.value : null,
+    });
+    // 同步提取 board 的 missing_codes（用于增量补缺）
+    const boardStatus = bo.status === 'fulfilled' ? bo.value : null;
+    setBoardMissingCodes(boardStatus?.missing_codes || []);
+  }, []);
+
   // 初始化时检查状态
   useEffect(() => {
     checkM120Status();
     checkDividendStatus();
     checkFinancialStatus();
-  }, [checkM120Status, checkDividendStatus, checkFinancialStatus]);
+    checkAuxStatus();
+  }, [checkM120Status, checkDividendStatus, checkFinancialStatus, checkAuxStatus]);
 
   /**
    * 更新股息率数据
@@ -568,10 +604,10 @@ export function useDataUpdate() {
   /**
    * 更新财务指标数据
    */
-  const updateFinancial = useCallback(async (codes?: string[]) => {
+  const updateFinancial = useCallback(async (codes?: string[], force = false) => {
     setState(prev => ({ ...prev, financial: 'loading', message: undefined }));
     try {
-      const result = await dividendUpdateApi.refreshFinancial(codes);
+      const result = await dividendUpdateApi.refreshFinancial(codes, force);
       setState(prev => ({
         ...prev,
         financial: 'success',
@@ -587,18 +623,89 @@ export function useDataUpdate() {
     }
   }, [checkFinancialStatus]);
 
+  /**
+   * 更新申万行业数据
+   */
+  const updateSwIndustry = useCallback(async (force = false) => {
+    setState(prev => ({ ...prev, sw_industry: 'loading', message: undefined }));
+    try {
+      const r = await dividendUpdateApi.refreshSwIndustry(force);
+      setState(prev => ({
+        ...prev,
+        sw_industry: 'success',
+        aux_message: { ...prev.aux_message, sw_industry: r.message },
+      }));
+      await checkAuxStatus();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新失败';
+      setState(prev => ({ ...prev, sw_industry: 'error', message }));
+      return false;
+    }
+  }, [checkAuxStatus]);
+
+  /**
+   * 更新股东户数数据
+   */
+  const updateShareholder = useCallback(async (force = false) => {
+    setState(prev => ({ ...prev, shareholder: 'loading', message: undefined }));
+    try {
+      const r = await dividendUpdateApi.refreshShareholder(force);
+      setState(prev => ({
+        ...prev,
+        shareholder: 'success',
+        aux_message: { ...prev.aux_message, shareholder: r.message },
+      }));
+      await checkAuxStatus();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新失败';
+      setState(prev => ({ ...prev, shareholder: 'error', message }));
+      return false;
+    }
+  }, [checkAuxStatus]);
+
+  /**
+   * 更新个股板块映射数据
+   * @param codes 可选股票代码列表；不传=全量刷新，传=增量补缺
+   * @param force 是否强制刷新（仅全量模式生效）
+   */
+  const updateBoard = useCallback(async (codes?: string[], force = false) => {
+    setState(prev => ({ ...prev, board: 'loading', message: undefined }));
+    try {
+      const r = await dividendUpdateApi.refreshBoardMapping(codes, force);
+      setState(prev => ({
+        ...prev,
+        board: 'success',
+        aux_message: { ...prev.aux_message, board: r.message },
+      }));
+      await checkAuxStatus();
+      return true;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : '更新失败';
+      setState(prev => ({ ...prev, board: 'error', message }));
+      return false;
+    }
+  }, [checkAuxStatus]);
+
   return {
     state,
     m120NeedsUpdate,
     dividendNeedsUpdate,
     financialNeedsUpdate,
     financialMissingCodes,
+    boardMissingCodes,
+    auxStatuses,
     checkM120Status,
     checkDividendStatus,
     checkFinancialStatus,
+    checkAuxStatus,
     updateDividend,
     updateM120,
     updateRealtimeInfo,
     updateFinancial,
+    updateSwIndustry,
+    updateShareholder,
+    updateBoard,
   };
 }

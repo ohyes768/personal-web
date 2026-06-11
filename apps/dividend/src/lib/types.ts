@@ -299,6 +299,20 @@ export interface DividendStatusResponse {
   failed_codes: string[];
 }
 
+/**
+ * 辅助数据状态（行业/财务/户数）
+ */
+export interface AuxDataStatus {
+  exists: boolean;
+  last_updated: string | null;
+  days_since_update: number | null;
+  quarter: string | null;
+  needs_update: boolean;
+  missing_count?: number;
+  missing_codes?: string[];
+  record_count?: number;
+}
+
 // ========== 板块信息类型 ==========
 
 /**

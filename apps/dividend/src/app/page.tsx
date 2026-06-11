@@ -30,6 +30,10 @@ export default function DividendPage() {
   // 输出报告下拉菜单开关
   const [reportOpen, setReportOpen] = useState(false);
 
+  // 更新辅助数据下拉菜单开关
+  const [auxOpen, setAuxOpen] = useState(false);
+  const [auxForce, setAuxForce] = useState(false);
+
   // 下载报告（A4 一图版 / 手机竖版）
   const downloadReport = async (type: 'a4' | 'carousel') => {
     setReportOpen(false);
@@ -67,7 +71,7 @@ export default function DividendPage() {
   const compare = useCompare(MAX_COMPARE_SELECT);
 
   // 数据更新功能
-  const { state: updateState, m120NeedsUpdate, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, updateDividend, updateM120, updateRealtimeInfo, updateFinancial } = useDataUpdate();
+  const { state: updateState, m120NeedsUpdate, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard } = useDataUpdate();
 
   // 抽屉引用
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -266,30 +270,90 @@ export default function DividendPage() {
               )}
             </button>
 
-            <button
-              onClick={() => {
-                updateFinancial(financialMissingCodes.length > 0 ? financialMissingCodes : undefined);
-              }}
-              disabled={!financialNeedsUpdate || updateState.financial === 'loading'}
-              className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2
-                ${!financialNeedsUpdate || updateState.financial === 'loading'
-                  ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                }
-              `}
-              title={financialNeedsUpdate ? "有缺失数据" : "已是最新"}
+            <div
+              className="relative"
+              onMouseLeave={() => setAuxOpen(false)}
             >
-              <svg
-                className={`w-4 h-4 ${updateState.financial === 'loading' ? 'animate-spin' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
+              <button
+                onClick={() => setAuxOpen(!auxOpen)}
+                disabled={updateState.sw_industry === 'loading' && updateState.financial === 'loading' && updateState.shareholder === 'loading' && updateState.board === 'loading'}
+                className={`
+                  px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                  ${updateState.sw_industry === 'loading' || updateState.financial === 'loading' || updateState.shareholder === 'loading' || updateState.board === 'loading'
+                    ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                  }
+                `}
               >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              更新财务数据
-            </button>
+                <svg
+                  className={`w-4 h-4 ${updateState.sw_industry === 'loading' || updateState.financial === 'loading' || updateState.shareholder === 'loading' || updateState.board === 'loading' ? 'animate-spin' : ''}`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                {(auxStatuses.sw_industry?.needs_update || auxStatuses.financial?.needs_update || auxStatuses.shareholder?.needs_update || auxStatuses.board?.needs_update) ? '📥 更新辅助数据' : '✅ 已是最新'}
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+              {auxOpen && (
+                <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 min-w-[280px]">
+                  {[
+                    { key: 'sw_industry', label: '申万行业', status: auxStatuses.sw_industry, updateFn: updateSwIndustry, loadingKey: 'sw_industry' as const },
+                    { key: 'financial', label: '财务指标', status: auxStatuses.financial, updateFn: (force: boolean) => updateFinancial(financialMissingCodes.length > 0 ? financialMissingCodes : undefined, force), loadingKey: 'financial' as const },
+                    { key: 'shareholder', label: '股东户数', status: auxStatuses.shareholder, updateFn: updateShareholder, loadingKey: 'shareholder' as const },
+                    { key: 'board', label: '个股板块', status: auxStatuses.board, updateFn: (force: boolean) => updateBoard(boardMissingCodes.length > 0 ? boardMissingCodes : undefined, force), loadingKey: 'board' as const },
+                  ].map(item => {
+                    const needsUpdate = item.status?.needs_update ?? true;
+                    const isLoading = updateState[item.loadingKey] === 'loading';
+                    const daysAgo = item.status?.days_since_update != null ? item.status.days_since_update : null;
+                    return (
+                      <button
+                        key={item.key}
+                        disabled={isLoading}
+                        onClick={async () => {
+                          setAuxOpen(false);
+                          await item.updateFn(auxForce);
+                        }}
+                        className="block w-full text-left px-4 py-3 text-sm text-gray-800 hover:bg-indigo-50 border-b border-gray-100 last:border-b-0 first:rounded-t"
+                      >
+                        <div className="flex items-center gap-2">
+                          {isLoading ? (
+                            <svg className="w-4 h-4 animate-spin text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          ) : needsUpdate ? (
+                            <span>📥</span>
+                          ) : (
+                            <span>✅</span>
+                          )}
+                          <span className="font-medium">{item.label}</span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 ml-6">
+                          {item.status?.last_updated
+                            ? `上次：${item.status.last_updated}${daysAgo != null ? ` (${daysAgo}天前)` : ''}`
+                            : '从未更新'}
+                          {item.status?.quarter ? ` · ${item.status.quarter}` : ''}
+                        </div>
+                      </button>
+                    );
+                  })}
+                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
+                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={auxForce}
+                        onChange={e => setAuxForce(e.target.checked)}
+                        className="rounded border-gray-300"
+                      />
+                      强制刷新（忽略 90 天节流）
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
 
             <button
               onClick={() => {

@@ -1,4 +1,4 @@
-﻿# Docker 快速部署指南
+# Docker 快速部署指南
 
 快速启动使用 Docker 部署 personal-web 项目。
 

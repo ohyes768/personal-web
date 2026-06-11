@@ -86,6 +86,7 @@ services:
     volumes:
       - douyin-data:/app/data
       - douyin-logs:/app/logs
+      - ./backend/douyin-processor/config:/app/config:ro  # file-system-go 地址可热改，无需 rebuild
     environment:
       - ALIYUN_ACCESS_KEY=${DOUYIN_ALIYUN_ACCESS_KEY:-}
     networks:

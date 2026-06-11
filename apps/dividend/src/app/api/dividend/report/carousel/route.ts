@@ -1,4 +1,4 @@
-﻿import { NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 
 const API_BASE = process.env.BACKEND_URL || 'http://localhost:8092';
 
