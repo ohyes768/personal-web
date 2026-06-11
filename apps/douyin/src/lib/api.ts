@@ -36,16 +36,12 @@ export const douyinApi = {
     directClient.get<StatsResponse>('/api/douyin/stats'),
 
   /**
-   * 异步处理所有待处理视频
-   * v2.0 流程：处理改由 douyin-collector 主动推送，本接口已弃用
-   * 保留返回结构兼容旧调用方，实际 do-nothing + 提示
+   * 触发后端处理 status=pending 的视频
+   * 后端 fire-and-forget：立即返回 + 后台串行调阿里 ASR + mark_processed
+   * 已有任务在跑会返回 success=false（前端据此提示）
    */
   processAsync: (): Promise<ProcessTaskResponse> =>
-    Promise.resolve({
-      success: true,
-      message: '处理已改为 douyin-collector 自动推送模式',
-      data: { pending: 0 },
-    }),
+    directClient.post<ProcessTaskResponse>('/api/douyin/process/pending', {}),
 
   /**
    * 标记已读/未读（v2.0: 路径从 /api/douyin/videos/{id}/read 改为 /api/aweme/{id}/read）

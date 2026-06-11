@@ -110,20 +110,33 @@ export function useAsyncProcess(onComplete?: () => void) {
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   const startProcess = useCallback(async () => {
-    // v2.0 流程：处理由 douyin-collector 自动推送，前端不再触发
-    // 保留此函数仅做"刷新列表"语义
     setProcessing(true);
-    setProcessMessage('刷新待处理列表（处理由 douyin-collector 自动推送）');
+    setProcessMessage('正在启动 ASR 处理...');
+    let nextMessageDelay = 3000;
     try {
-      await douyinApi.processAsync();
-    } catch {
-      // 忽略错误（旧接口已 stub 化）
+      const res = await douyinApi.processAsync();
+      const pending = res?.data?.pending ?? 0;
+      if (!res?.success) {
+        // 已有任务在跑 / 后端拒绝
+        setProcessMessage(res?.message || '已有处理任务在进行中');
+      } else if (pending === 0) {
+        setProcessMessage('没有待处理的视频');
+      } else {
+        setProcessMessage(
+          `已启动 ASR 处理 ${pending} 个视频（后台串行运行，请稍后刷新查看结果）`,
+        );
+        // 启动成功时延长提示停留时间
+        nextMessageDelay = 5000;
+      }
+    } catch (err) {
+      setProcessMessage('启动处理失败，请检查后端日志');
+      console.error('启动 ASR 处理失败:', err);
     }
     setTimeout(() => {
       setProcessing(false);
       setProcessMessage('');
       onComplete?.();
-    }, 500);
+    }, nextMessageDelay);
   }, [onComplete]);
 
   // 清理定时器
