@@ -43,6 +43,10 @@ class FileSystemClient:
         self.timeout = timeout
         self.cache_ttl = cache_ttl
 
+        # TODO 临时：file-system-go 服务器证书 SAN 不含 stock.duomi77.cn，先关掉 TLS 校验
+        # TODO 证书到位（包含正确域名/IP）后改成 verify="<ca.crt 路径>" 或留 None 走默认
+        self.verify = False
+
         # 视频列表缓存
         self._video_list_cache: Optional[List[VideoFile]] = None
         self._video_list_cache_time: float = 0
@@ -79,7 +83,7 @@ class FileSystemClient:
             request_body["filters"] = filters
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, verify=self.verify) as client:
                 response = await client.post(
                     self.query_url,
                     json=request_body
@@ -154,7 +158,7 @@ class FileSystemClient:
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
+            async with httpx.AsyncClient(timeout=self.timeout, verify=self.verify) as client:
                 response = await client.get(download_url)
 
                 if response.status_code == 200:
@@ -200,7 +204,7 @@ class FileSystemClient:
         logger.info(f"删除文件: {audio_filename}")
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=30.0, verify=self.verify) as client:
                 response = await client.delete(delete_url)
 
                 if response.status_code == 200:

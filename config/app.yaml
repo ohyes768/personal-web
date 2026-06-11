@@ -4,10 +4,10 @@ app:
     host: "0.0.0.0"
     port: 8093
 
-  # file-system-go 配置
+  # file-system-go 配置（v2.0：5 个文件 CRUD 端点）
   filesystem:
-    base_url: "http://120.26.218.136:8000"
-    query_endpoint: "/api/videos/query"
+    base_url: "https://stock.duomi77.cn:1443"
+    query_endpoint: "/api/files/query"
     timeout: 30
     cache_ttl: 30  # 视频列表缓存有效期（秒）
 
