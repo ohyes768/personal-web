@@ -42,6 +42,7 @@ services:
     environment:
       - LOG_LEVEL=INFO
       - ALIYUN_ACCESS_KEY=${DIVIDEND_ALIYUN_ACCESS_KEY:-}
+      - PYWENCAI_COOKIE=${PYWENCAI_COOKIE:-}
     networks:
       - app-net
     healthcheck:
