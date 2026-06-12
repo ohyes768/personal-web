@@ -407,26 +407,39 @@ async def get_videos(
                 "status_data": status_data
             })
 
-        # 按上传时间倒序排序（先读取 upload_time）
+        # 按上传时间倒序排序
+        # v2.0 数据 process_pending 没写 upload_time，要 fallback 到 status.json 里的
+        # pending_at / processed_at / created_at
         for v in candidate_videos:
             aweme_id = v["aweme_id"]
-            # 尝试从 output 文件读取 upload_time
+            status_data = v.get("status_data", {})
+
+            # 优先级：output_file.upload_time > status_data.upload_time >
+            #          status_data.pending_at > status_data.processed_at > status_data.created_at
+            sort_time = ""
             result_file = processor.output_dir / f"{aweme_id}.json"
             if result_file.exists():
                 try:
                     result_data = load_json(str(result_file))
-                    v["upload_time"] = result_data.get("upload_time", "")
+                    sort_time = result_data.get("upload_time", "") or ""
                 except:
-                    v["upload_time"] = ""
-            else:
-                v["upload_time"] = ""
+                    pass
+            if not sort_time:
+                sort_time = (
+                    status_data.get("upload_time", "")
+                    or status_data.get("pending_at", "")
+                    or status_data.get("processed_at", "")
+                    or status_data.get("created_at", "")
+                    or ""
+                )
+            v["sort_time"] = sort_time
 
         # 分成两组：有时间的和没时间的
-        with_time = [v for v in candidate_videos if v["upload_time"]]
-        without_time = [v for v in candidate_videos if not v["upload_time"]]
+        with_time = [v for v in candidate_videos if v["sort_time"]]
+        without_time = [v for v in candidate_videos if not v["sort_time"]]
 
         # 有时间的按时间倒序
-        with_time.sort(key=lambda x: x["upload_time"], reverse=True)
+        with_time.sort(key=lambda x: x["sort_time"], reverse=True)
         # 没时间的按 ID 倒序
         without_time.sort(key=lambda x: x["aweme_id"], reverse=True)
 
@@ -452,38 +465,44 @@ async def get_videos(
             processed_at = None
             read_at = None
 
-            # 读取转写结果（仅已完成且有结果文件）
-            if video_status == "completed":
-                result_file = processor.output_dir / f"{aweme_id}.json"
-                if result_file.exists():
-                    result_data = load_json(str(result_file))
+            # 1. metadata 永远从 status_data 取（v2.0 mark_pending 写入）
+            #    v1.0 旧数据 status_data 没这些字段就让它空
+            metadata["title"] = status_data.get("title", "")
+            metadata["author"] = status_data.get("author", "")
+            metadata["description"] = status_data.get("description", "")
+            metadata["upload_time"] = status_data.get("upload_time")
 
-                    # 从结果文件获取 metadata（优先）
-                    if result_data.get("title"):
-                        metadata = {
-                            "title": result_data.get("title", ""),
-                            "author": result_data.get("author", ""),
-                            "description": result_data.get("description", ""),
-                            "upload_time": result_data.get("upload_time")
-                        }
-
-                    transcript = TranscriptInfo(
-                        text=result_data.get("text", ""),
-                        segments=result_data.get("segments"),
-                        confidence=result_data.get("confidence", 0.0),
-                        audio_duration=result_data.get("audio_duration", 0.0)
-                    )
-
-                    # 从状态文件获取处理时间
-                    processed_at_str = status_data.get("updated_at", "")
-                    if processed_at_str:
-                        try:
-                            processed_at = int(datetime.fromisoformat(processed_at_str).timestamp())
-                        except:
-                            pass
-
-            # v2.0: metadata 只从 result_data 取（status.json 已闭环）
-            # 原 v1.0 兜底（filesystem_client.get_video_metadata）已删
+            # 2. transcript + metadata backup 从 output_file 取
+            #    任何 status 都能读（pending 状态没文件则 None）
+            output_file = processor.output_dir / f"{aweme_id}.json"
+            if output_file.exists():
+                result_data = load_json(str(output_file))
+                # output_file 里的字段覆盖 status_data（v2.0 两边都有但以 output_file 为准，
+                # 防止 status_data 写后被 mark_processed 改过 metadata 之类的边界情况）
+                if result_data.get("title"):
+                    metadata["title"] = result_data["title"]
+                if result_data.get("author"):
+                    metadata["author"] = result_data["author"]
+                if result_data.get("description"):
+                    metadata["description"] = result_data["description"]
+                if result_data.get("upload_time"):
+                    metadata["upload_time"] = result_data["upload_time"]
+                transcript = TranscriptInfo(
+                    text=result_data.get("text", ""),
+                    segments=result_data.get("segments"),
+                    confidence=result_data.get("confidence", 0.0),
+                    audio_duration=result_data.get("audio_duration", 0.0)
+                )
+                # processed_at 仍从 status_data 取（v2.0 mark_processed 会写 processed_at）
+                processed_at_str = (
+                    status_data.get("processed_at", "")
+                    or status_data.get("updated_at", "")
+                )
+                if processed_at_str:
+                    try:
+                        processed_at = int(datetime.fromisoformat(processed_at_str).timestamp())
+                    except:
+                        pass
 
             # 获取已读时间
             read_at_str = status_data.get("read_at")
@@ -556,7 +575,7 @@ async def get_video_detail(aweme_id: str):
                 audio_url = video.url
                 break
 
-        # 读取转写结果和 metadata（仅已完成）
+        # 默认值
         transcript = None
         processed_at = None
         error = None
@@ -565,34 +584,45 @@ async def get_video_detail(aweme_id: str):
         description = ""
         upload_time = None
 
-        if video_status == "completed":
-            result_file = processor.output_dir / f"{aweme_id}.json"
-            if result_file.exists():
-                result_data = load_json(str(result_file))
-                transcript = TranscriptInfo(
-                    text=result_data.get("text", ""),
-                    segments=result_data.get("segments"),
-                    confidence=result_data.get("confidence", 0.0),
-                    audio_duration=result_data.get("audio_duration", 0.0)
-                )
-                # 从结果文件获取 metadata（优先）
-                title = result_data.get("title", "")
-                author = result_data.get("author", "")
-                description = result_data.get("description", "")
-                upload_time = result_data.get("upload_time")
+        # 1. metadata 永远从 status_data 取（v2.0 mark_pending 写入）
+        #    v1.0 旧数据 status_data 没这些字段就让它空
+        title = status_data.get("title", "")
+        author = status_data.get("author", "")
+        description = status_data.get("description", "")
+        upload_time = status_data.get("upload_time")
 
-                # 获取处理时间
-                processed_at_str = status_data.get("updated_at", "")
-                if processed_at_str:
-                    try:
-                        processed_at = int(datetime.fromisoformat(processed_at_str).timestamp())
-                    except:
-                        pass
-        elif video_status == "failed":
+        # 2. transcript + metadata backup 从 output_file 取
+        output_file = processor.output_dir / f"{aweme_id}.json"
+        if output_file.exists():
+            result_data = load_json(str(output_file))
+            # output_file 里的字段覆盖 status_data
+            if result_data.get("title"):
+                title = result_data["title"]
+            if result_data.get("author"):
+                author = result_data["author"]
+            if result_data.get("description"):
+                description = result_data["description"]
+            if result_data.get("upload_time"):
+                upload_time = result_data["upload_time"]
+            transcript = TranscriptInfo(
+                text=result_data.get("text", ""),
+                segments=result_data.get("segments"),
+                confidence=result_data.get("confidence", 0.0),
+                audio_duration=result_data.get("audio_duration", 0.0)
+            )
+            # processed_at 从 status_data 取
+            processed_at_str = (
+                status_data.get("processed_at", "")
+                or status_data.get("updated_at", "")
+            )
+            if processed_at_str:
+                try:
+                    processed_at = int(datetime.fromisoformat(processed_at_str).timestamp())
+                except:
+                    pass
+
+        if video_status == "failed":
             error = status_data.get("error", "未知错误")
-
-        # v2.0: metadata 只从 result_data 取（status.json 已闭环）
-        # 原 v1.0 兜底（filesystem_client.get_video_metadata）已删
 
         return VideoDetailResponse(
             aweme_id=aweme_id,
