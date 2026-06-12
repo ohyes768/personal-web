@@ -353,7 +353,7 @@ async def get_video_result(aweme_id: str):
 @router.get("/api/videos", response_model=VideoListResponse)
 async def get_videos(
     page: int = Query(1, ge=1, description="页码"),
-    page_size: int = Query(20, ge=1, le=100, description="每页数量"),
+    page_size: int = Query(100, ge=1, le=1000, description="每页数量（默认 100，上限 1000）"),
     status: Optional[str] = Query(None, description="状态筛选: v2.0: unread/read/deleted/pending；兼容旧 completed/processing/failed"),
     is_read: Optional[bool] = Query(None, description="已读状态筛选（兼容旧字段，新流程以 status=read/unread 为准）")
 ):
