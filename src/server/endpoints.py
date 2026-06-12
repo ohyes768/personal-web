@@ -411,7 +411,7 @@ async def get_videos(
                 "status_data": status_data
             })
 
-        # 按上传时间倒序排序
+        # 按采集时间（upload_time）倒序排序
         # v2.0 数据 process_pending 没写 upload_time，要 fallback 到 status.json 里的
         # pending_at / processed_at / created_at
         for v in candidate_videos:
@@ -474,7 +474,7 @@ async def get_videos(
             metadata["title"] = status_data.get("title", "")
             metadata["author"] = status_data.get("author", "")
             metadata["description"] = status_data.get("description", "")
-            # upload_time 响应字段专门表示"推到 douyin 的时间" = status_data.pending_at
+            # 响应字段 upload_time 专门表示"采集时间" = status_data.pending_at
             # v1.0 旧数据没 pending_at → 空（v1.0 流程是 douyin-collector 直接 push 完整状态）
             metadata["upload_time"] = status_data.get("pending_at")
 
@@ -485,7 +485,7 @@ async def get_videos(
                 result_data = load_json(str(output_file))
                 # output_file 里的字段覆盖 status_data（v2.0 两边都有但以 output_file 为准，
                 # 防止 status_data 写后被 mark_processed 改过 metadata 之类的边界情况）
-                # 注意：upload_time 不在覆盖范围内——它专门表示"推到 douyin 时间"，跟 output_file.upload_time 语义不同
+                # 注意：响应字段 upload_time 专门表示"采集时间"，跟 output_file.upload_time（视频原发布时间）语义不同
                 if result_data.get("title"):
                     metadata["title"] = result_data["title"]
                 if result_data.get("author"):
@@ -602,7 +602,7 @@ async def get_video_detail(aweme_id: str):
         title = status_data.get("title", "")
         author = status_data.get("author", "")
         description = status_data.get("description", "")
-        # upload_time 响应字段专门表示"推到 douyin 的时间" = status_data.pending_at
+        # 响应字段 upload_time 专门表示"采集时间" = status_data.pending_at
         upload_time = status_data.get("pending_at")
         video_publish_time = status_data.get("video_publish_time")
 
@@ -617,7 +617,7 @@ async def get_video_detail(aweme_id: str):
                 author = result_data["author"]
             if result_data.get("description"):
                 description = result_data["description"]
-            # upload_time 不被 output_file.upload_time 覆盖（专门表示"推到 douyin 时间"）
+            # 响应字段 upload_time 专门表示"采集时间"，不被 output_file.upload_time 覆盖
             if result_data.get("video_publish_time"):
                 video_publish_time = result_data["video_publish_time"]
             transcript = TranscriptInfo(

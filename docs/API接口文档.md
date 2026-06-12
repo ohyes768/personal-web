@@ -212,7 +212,7 @@ GET /api/videos?page=1&page_size=20&status=completed
 | audio_url | string | 音频文件 URL |
 | transcript | object | 转写结果（仅 completed 状态） |
 | processed_at | int | 处理完成时间戳（仅 completed 状态） |
-| upload_time | string | 上传时间（ISO 8601 格式） |
+| upload_time | string | 采集时间（推到 douyin-processor 的时间，ISO 8601 格式） |
 | page | int | 当前页码 |
 | page_size | int | 每页数量 |
 

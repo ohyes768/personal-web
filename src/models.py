@@ -77,4 +77,4 @@ class VideoMetadata:
     title: str                  # 视频标题
     author: str                 # 作者名称
     description: str = ""       # 视频描述
-    upload_time: str = ""       # 上传时间（ISO 8601 格式）
+    upload_time: str = ""       # 视频原发布时间（ISO 8601 格式，来自 file-system-go / douyin-collector）
