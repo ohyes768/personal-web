@@ -68,6 +68,14 @@ const formatShareholderCount = (count: number | null | undefined): string => {
 };
 
 /**
+ * 格式化 扣非净利润(元) → 亿元
+ */
+const formatYi = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return '-';
+  return (value / 1e8).toFixed(2) + '亿';
+};
+
+/**
  * 格式化 昨日/M120 列
  */
 const formatPriceDeviation = (technical: TechnicalIndicators | null): {
@@ -352,7 +360,14 @@ export function DividendTable({
                 <td className="w-20 px-2 py-3 text-sm text-gray-300">
                   {formatShareholderCount(stock.shareholder_count)}
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-right">
+                <td
+                  className="w-20 px-2 py-3 text-sm text-right"
+                  title={
+                    stock.net_profit_ex_non_recurring_yoy !== null && stock.net_profit_ex_non_recurring_yoy !== undefined
+                      ? `2026Q1 扣非 ${formatYi(stock.latest_quarter_net_profit_ex_non_recurring)}｜同比 ${stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined ? stock.latest_quarter_yoy_pct.toFixed(2) + '%' : '无'}`
+                      : '无法计算'
+                  }
+                >
                   {stock.net_profit_ex_non_recurring_yoy !== null && stock.net_profit_ex_non_recurring_yoy !== undefined
                     ? (
                       <span className={stock.net_profit_ex_non_recurring_yoy > 0 ? 'text-green-400' : 'text-red-400'}>
@@ -361,7 +376,14 @@ export function DividendTable({
                     )
                     : '无法计算'}
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-right">
+                <td
+                  className="w-20 px-2 py-3 text-sm text-right"
+                  title={
+                    stock.net_profit_cagr_3y !== null && stock.net_profit_cagr_3y !== undefined
+                      ? `2026Q1 扣非 ${formatYi(stock.latest_quarter_net_profit_ex_non_recurring)}｜同比 ${stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined ? stock.latest_quarter_yoy_pct.toFixed(2) + '%' : '无'}`
+                      : '无法计算'
+                  }
+                >
                   {stock.net_profit_cagr_3y !== null && stock.net_profit_cagr_3y !== undefined
                     ? (
                       <span className={stock.net_profit_cagr_3y > 0 ? 'text-green-400' : 'text-red-400'}>
@@ -375,9 +397,10 @@ export function DividendTable({
                     ? (
                       <span
                         className={
-                          stock.payout_ratio < 30 ? 'text-yellow-400' :
-                          stock.payout_ratio > 80 ? 'text-red-400' :
-                          'text-green-400'
+                          stock.payout_ratio < 30 ? 'text-gray-400' :
+                          stock.payout_ratio < 60 ? 'text-yellow-400' :
+                          stock.payout_ratio <= 80 ? 'text-green-400' :
+                          'text-orange-400'
                         }
                         title={`基于 ${stock.eps_year ?? '?'} 年报 EPS = ${stock.eps?.toFixed(2) ?? '?'} 元`}
                       >
