@@ -154,6 +154,18 @@ export function VideoCard({
           ? new Date(video.upload_time).toLocaleString()
           : '未知时间'}
       </p>
+
+      {/* 文字稿预览 */}
+      <div className="mt-2">
+        {video.transcript?.text ? (
+          <p className="text-gray-500 text-sm truncate">
+            {video.transcript.text.slice(0, 100)}
+            {video.transcript.text.length > 100 ? '...' : ''}
+          </p>
+        ) : (
+          <p className="text-gray-600 text-sm italic">无解说</p>
+        )}
+      </div>
     </div>
   );
 }
