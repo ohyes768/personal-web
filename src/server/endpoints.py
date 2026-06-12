@@ -482,16 +482,8 @@ async def get_videos(
                         except:
                             pass
 
-            # 如果结果文件没有 metadata，从 file-system-go 获取
-            if not metadata["title"]:
-                md = await processor.filesystem_client.get_video_metadata(aweme_id)
-                if md:
-                    metadata = {
-                        "title": md.title,
-                        "author": md.author,
-                        "description": md.description,
-                        "upload_time": md.upload_time
-                    }
+            # v2.0: metadata 只从 result_data 取（status.json 已闭环）
+            # 原 v1.0 兜底（filesystem_client.get_video_metadata）已删
 
             # 获取已读时间
             read_at_str = status_data.get("read_at")
@@ -599,14 +591,8 @@ async def get_video_detail(aweme_id: str):
         elif video_status == "failed":
             error = status_data.get("error", "未知错误")
 
-        # 如果结果文件没有 metadata，从 file-system-go 获取
-        if not title:
-            metadata = await processor.filesystem_client.get_video_metadata(aweme_id)
-            if metadata:
-                title = metadata.title
-                author = metadata.author
-                description = metadata.description
-                upload_time = metadata.upload_time
+        # v2.0: metadata 只从 result_data 取（status.json 已闭环）
+        # 原 v1.0 兜底（filesystem_client.get_video_metadata）已删
 
         return VideoDetailResponse(
             aweme_id=aweme_id,
