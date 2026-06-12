@@ -691,13 +691,14 @@ async def get_stats():
             status_data = all_statuses.get(aweme_id, {})
             status = status_data.get("status", "pending")
 
-            if status == "completed":
+            # v2.0: unread/read/completed 都是"已完成"（ASR 处理完）
+            if status in ("completed", "unread", "read"):
                 completed += 1
             elif status == "processing":
                 processing += 1
             elif status == "failed":
                 failed += 1
-            else:
+            elif status == "pending":
                 pending += 1
 
         # 计算总数

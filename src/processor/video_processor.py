@@ -95,6 +95,9 @@ class VideoProcessor:
                     failed += 1
                     continue
 
+                # ASR 跑完但无解说，也算成功（显示"无解说"）
+                has_transcript = getattr(transcript, "has_transcript", True)
+
                 # 拼 output 数据，metadata 直接从 pending 记录取（不依赖已删除的 get_video_metadata）
                 output_data = {
                     "aweme_id": aweme_id,
@@ -114,6 +117,7 @@ class VideoProcessor:
                     "author": item.get("author", ""),
                     "description": item.get("description", ""),
                     "video_publish_time": item.get("video_publish_time", ""),
+                    "has_transcript": has_transcript,
                 }
 
                 await self.status_manager.mark_processed(aweme_id, transcript=output_data)

@@ -37,6 +37,7 @@ class TranscriptResult:
     segments: list[TranscriptSegment] = field(default_factory=list)  # 分段文本
     confidence: float = 0.0    # 整体置信度
     audio_duration: float = 0.0  # 音频时长（秒）
+    has_transcript: bool = True  # 是否有文字内容（False 表示 ASR 跑完但无解说）
 
 
 @dataclass

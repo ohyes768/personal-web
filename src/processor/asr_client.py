@@ -72,12 +72,23 @@ class AliyunASRClient:
             # 轮询查询结果
             result = await self._wait_for_result(task_id)
 
-            if result:
-                logger.info(f"识别任务完成: {task_id}")
-                return self._parse_response(result)
-            else:
+            if result is None:
                 logger.error(f"识别任务失败或超时: {task_id}")
                 return None
+
+            # ASR 跑完但无文字内容
+            if isinstance(result, dict) and not result.get("has_transcript", True):
+                logger.info(f"ASR 无解说: {task_id}")
+                return TranscriptResult(
+                    text="",
+                    segments=[],
+                    confidence=0.0,
+                    audio_duration=0.0,
+                    has_transcript=False,
+                )
+
+            logger.info(f"识别任务完成: {task_id}")
+            return self._parse_response(result)
 
         except Exception as e:
             logger.error(f"音频识别失败: {e}")
@@ -305,6 +316,11 @@ class AliyunASRClient:
                         if task_status == "SUCCEEDED":
                             return output
                         elif task_status == "FAILED":
+                            error_code = output.get("code", "")
+                            if error_code == "ASR_RESPONSE_HAVE_NO_WORDS":
+                                # ASR 成功跑完但无文字内容，不算失败
+                                logger.warning(f"ASR 识别无文字内容: {task_id}")
+                                return {"has_transcript": False}
                             logger.error(f"任务失败: {output}")
                             return None
                         else:
