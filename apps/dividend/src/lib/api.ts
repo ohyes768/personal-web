@@ -41,8 +41,8 @@ export const dividendApi = {
   /**
    * 获取 M120 数据状态
    */
-  getM120Status: () =>
-    directClient.get<{ needs_update: boolean; last_updated: string | null; file_exists: boolean; missing_count: number; missing_codes: string[] }>('/api/dividend/m120/status'),
+  getM120Status: (params?: { min_yield?: number }) =>
+    directClient.get<{ needs_update: boolean; last_updated: string | null; file_exists: boolean; missing_count: number; missing_codes: string[] }>('/api/dividend/m120/status', params),
 
   /**
    * 获取股息率数据状态

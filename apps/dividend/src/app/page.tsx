@@ -71,7 +71,7 @@ export default function DividendPage() {
   const compare = useCompare(MAX_COMPARE_SELECT);
 
   // 数据更新功能
-  const { state: updateState, m120NeedsUpdate, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard } = useDataUpdate();
+  const { state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard } = useDataUpdate();
 
   // 抽屉引用
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -357,7 +357,9 @@ export default function DividendPage() {
 
             <button
               onClick={() => {
-                updateM120(stockCodes);
+                // 优先传 missing_codes（增量补缺），没有缺失才传全集
+                const codesToUpdate = m120MissingCodes.length > 0 ? m120MissingCodes : stockCodes;
+                updateM120(codesToUpdate);
                 setRefreshKey(k => k + 1);
               }}
               disabled={!m120NeedsUpdate || updateState.m120 === 'loading'}

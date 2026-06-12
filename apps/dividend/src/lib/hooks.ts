@@ -447,6 +447,7 @@ export function useDataUpdate() {
     board: 'idle',
   });
   const [m120NeedsUpdate, setM120NeedsUpdate] = useState(true);
+  const [m120MissingCodes, setM120MissingCodes] = useState<string[]>([]);
   const [dividendNeedsUpdate, setDividendNeedsUpdate] = useState(true);
   const [financialNeedsUpdate, setFinancialNeedsUpdate] = useState(true);
   const [financialMissingCodes, setFinancialMissingCodes] = useState<string[]>([]);
@@ -460,14 +461,17 @@ export function useDataUpdate() {
 
   /**
    * 检查 M120 是否需要更新
+   * @param minYield 前端当前 min_yield 阈值（与 status 接口对齐口径）
    */
-  const checkM120Status = useCallback(async () => {
+  const checkM120Status = useCallback(async (minYield: number = 3.5) => {
     try {
-      const status = await dividendApi.getM120Status();
+      const status = await dividendApi.getM120Status({ min_yield: minYield });
       setM120NeedsUpdate(status.needs_update);
+      setM120MissingCodes(status.missing_codes || []);
     } catch (err) {
       console.error('Failed to check M120 status:', err);
       setM120NeedsUpdate(true);
+      setM120MissingCodes([]);
     }
   }, []);
 
@@ -691,6 +695,7 @@ export function useDataUpdate() {
   return {
     state,
     m120NeedsUpdate,
+    m120MissingCodes,
     dividendNeedsUpdate,
     financialNeedsUpdate,
     financialMissingCodes,
