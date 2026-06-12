@@ -78,9 +78,9 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
 
       try {
         // 并行获取 M120 和实时价格数据
-        const codesStr = memoizedStockCodes.join(',');
+        // 注意：不传 min_yield 以获取所有股票（股息的过滤已在 useDividendData 层做了）
         const [m120Response] = await Promise.all([
-          dividendApi.getM120Data({ min_yield: minYield || 3 }),
+          dividendApi.getM120Data({}),
         ]);
 
         const newTechnicalData = new Map<string, TechnicalIndicators>();
