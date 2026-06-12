@@ -197,6 +197,7 @@ class StatusManager:
         title: str = "",
         author: str = "",
         description: str = "",
+        video_publish_time: str = "",
     ):
         """追加待处理（douyin-collector 调）"""
         async with self._lock:
@@ -212,6 +213,7 @@ class StatusManager:
                 "title": title,
                 "author": author,
                 "description": description,
+                "video_publish_time": video_publish_time,
             })
             self._save()
             logger.info(f"视频 {aweme_id} 已加入待处理")

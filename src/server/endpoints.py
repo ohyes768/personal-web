@@ -66,6 +66,7 @@ class VideoListItem(BaseModel):
     transcript: Optional[TranscriptInfo] = None
     processed_at: Optional[int] = None
     upload_time: Optional[str] = None
+    video_publish_time: Optional[str] = None  # 原抖音平台发布时间（douyin-collector 推过来时存）
     is_read: bool = False
     read_at: Optional[int] = None
 
@@ -89,6 +90,7 @@ class VideoDetailResponse(BaseModel):
     transcript: Optional[TranscriptInfo] = None
     processed_at: Optional[int] = None
     upload_time: Optional[str] = None
+    video_publish_time: Optional[str] = None  # 原抖音平台发布时间（douyin-collector 推过来时存）
     error: Optional[str] = None
     is_read: bool = False
     read_at: Optional[int] = None
@@ -179,6 +181,7 @@ class MarkPendingRequest(BaseModel):
     title: str = ""
     author: str = ""
     description: str = ""
+    video_publish_time: Optional[str] = None  # 原抖音平台发布时间（ISO8601，douyin-collector 推）
 
 
 @router.post("/api/aweme/{aweme_id}/pending")
@@ -193,6 +196,7 @@ async def mark_aweme_pending(aweme_id: str, request: MarkPendingRequest) -> dict
             title=request.title,
             author=request.author,
             description=request.description,
+            video_publish_time=request.video_publish_time,
         )
         return {"success": True, "message": "已加入待处理"}
     except Exception as e:
@@ -512,6 +516,12 @@ async def get_videos(
                 except:
                     pass
 
+            # 视频发布时间：output_file 优先（process_pending 写入），status_data 兜底（mark_pending 写入）
+            video_publish_time = status_data.get("video_publish_time", "")
+            output_file_publish = result_data.get("video_publish_time", "") if output_file.exists() else ""
+            if output_file_publish:
+                video_publish_time = output_file_publish
+
             video_list.append(VideoListItem(
                 aweme_id=aweme_id,
                 status=video_status,
@@ -521,6 +531,7 @@ async def get_videos(
                 transcript=transcript,
                 processed_at=processed_at,
                 upload_time=metadata.get("upload_time"),
+                video_publish_time=video_publish_time or None,
                 is_read=v["is_read"],
                 read_at=read_at
             ))
@@ -583,6 +594,7 @@ async def get_video_detail(aweme_id: str):
         author = ""
         description = ""
         upload_time = None
+        video_publish_time = None
 
         # 1. metadata 永远从 status_data 取（v2.0 mark_pending 写入）
         #    v1.0 旧数据 status_data 没这些字段就让它空
@@ -590,6 +602,7 @@ async def get_video_detail(aweme_id: str):
         author = status_data.get("author", "")
         description = status_data.get("description", "")
         upload_time = status_data.get("upload_time")
+        video_publish_time = status_data.get("video_publish_time")
 
         # 2. transcript + metadata backup 从 output_file 取
         output_file = processor.output_dir / f"{aweme_id}.json"
@@ -604,6 +617,8 @@ async def get_video_detail(aweme_id: str):
                 description = result_data["description"]
             if result_data.get("upload_time"):
                 upload_time = result_data["upload_time"]
+            if result_data.get("video_publish_time"):
+                video_publish_time = result_data["video_publish_time"]
             transcript = TranscriptInfo(
                 text=result_data.get("text", ""),
                 segments=result_data.get("segments"),
@@ -634,6 +649,7 @@ async def get_video_detail(aweme_id: str):
             transcript=transcript,
             processed_at=processed_at,
             upload_time=upload_time,
+            video_publish_time=video_publish_time,
             error=error,
             is_read=is_read,
             read_at=read_at

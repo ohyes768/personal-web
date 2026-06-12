@@ -113,6 +113,7 @@ class VideoProcessor:
                     "title": item.get("title", ""),
                     "author": item.get("author", ""),
                     "description": item.get("description", ""),
+                    "video_publish_time": item.get("video_publish_time", ""),
                 }
 
                 await self.status_manager.mark_processed(aweme_id, transcript=output_data)
