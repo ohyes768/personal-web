@@ -81,7 +81,7 @@ export interface ProcessTaskResponse {
 export interface VideoListParams {
   page?: number;
   page_size?: number;
-  is_read?: boolean;
+  status?: 'unread' | 'read' | 'pending' | 'deleted';
 }
 
 // 标记已读 DTO

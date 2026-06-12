@@ -14,13 +14,13 @@ import type {
 
 /**
  * 视频列表 Hook
+ * v2.0: status 参数走服务端过滤，不再做客户端二次过滤
  */
-export function useDouyinVideos(page: number, pageSize: number, activeTab: TabType) {
+export function useDouyinVideos(activeTab: TabType) {
   const [videos, setVideos] = useState<VideoInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [total, setTotal] = useState(0);
 
   const fetchVideos = useCallback(async (isRefresh: boolean = false) => {
     if (isRefresh) {
@@ -32,25 +32,10 @@ export function useDouyinVideos(page: number, pageSize: number, activeTab: TabTy
 
     try {
       const data = await douyinApi.getVideos({
-        page,
-        page_size: pageSize,
-        is_read: activeTab === 'read' ? true : undefined,
+        status: activeTab,
       });
 
-      // 客户端二次过滤（兼容 v2.0 status=unread 与 旧 is_read=false）
-      let filteredVideos = data.videos || [];
-      if (activeTab === 'unread') {
-        filteredVideos = filteredVideos.filter(
-          (v) => v.status === 'unread' || (v.status === 'completed' && !v.is_read),
-        );
-      } else if (activeTab === 'read') {
-        filteredVideos = filteredVideos.filter(
-          (v) => v.status === 'read' || v.is_read === true,
-        );
-      }
-
-      setVideos(filteredVideos);
-      setTotal(filteredVideos.length);
+      setVideos(data.videos || []);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
       console.error('Error fetching videos:', err);
@@ -58,7 +43,7 @@ export function useDouyinVideos(page: number, pageSize: number, activeTab: TabTy
       setLoading(false);
       setRefreshing(false);
     }
-  }, [page, pageSize, activeTab]);
+  }, [activeTab]);
 
   useEffect(() => {
     fetchVideos();
@@ -69,7 +54,6 @@ export function useDouyinVideos(page: number, pageSize: number, activeTab: TabTy
     loading,
     refreshing,
     error,
-    total,
     refetch: fetchVideos,
   };
 }

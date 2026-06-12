@@ -15,12 +15,13 @@ import type {
 export const douyinApi = {
   /**
    * 获取视频列表
+   * v2.0: 用 status=unread|read 服务端过滤（替代旧的 is_read 客户端二次过滤）
    */
   getVideos: (params: VideoListParams = {}): Promise<VideoListResponse> =>
     directClient.get<VideoListResponse>('/api/douyin/videos', {
       page: params.page ?? 1,
-      page_size: params.page_size ?? 20,
-      ...(params.is_read !== undefined ? { is_read: params.is_read } : {}),
+      page_size: params.page_size ?? 100,
+      ...(params.status ? { status: params.status } : {}),
     }),
 
   /**

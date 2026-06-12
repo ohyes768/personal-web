@@ -9,20 +9,15 @@ import { VideoModal } from '@/components/VideoModal';
 import { useDouyinVideos, usePendingCount, useAsyncProcess, useVideoActions } from '@/lib/hooks';
 import type { TabType, VideoInfo } from '@/lib/types';
 
-const PAGE_SIZE = 20;
-
 export default function DouyinPage() {
   // Tab 状态
   const [activeTab, setActiveTab] = useState<TabType>('unread');
-  const [page, setPage] = useState(1);
 
   // Modal 状态
   const [selectedVideo, setSelectedVideo] = useState<VideoInfo | null>(null);
 
   // 数据获取
-  const { videos, loading, refreshing, error, total, refetch: refetchVideos } = useDouyinVideos(
-    page,
-    PAGE_SIZE,
+  const { videos, loading, refreshing, error, refetch: refetchVideos } = useDouyinVideos(
     activeTab,
   );
 
@@ -30,7 +25,6 @@ export default function DouyinPage() {
 
   // 处理完成回调（稳定引用）
   const handleProcessComplete = useCallback(() => {
-    setPage(1);
     refetchVideos(true);
     refetchPendingCount();
   }, [refetchVideos, refetchPendingCount]);
@@ -61,7 +55,6 @@ export default function DouyinPage() {
   // Tab 切换
   const handleTabChange = useCallback((tabId: string) => {
     setActiveTab(tabId as TabType);
-    setPage(1);
   }, []);
 
   // 标记已读（列表中直接标记）
@@ -207,44 +200,19 @@ export default function DouyinPage() {
 
         {/* 视频列表 */}
         {!loading && videos.length > 0 && (
-          <>
-            <div className="grid grid-cols-1 gap-6 mb-8">
-              {videos.map((video) => (
-                <VideoCard
-                  key={video.aweme_id}
-                  video={video}
-                  activeTab={activeTab}
-                  onClick={() => handleOpenVideo(video)}
-                  onMarkAsRead={handleMarkAsRead}
-                  onDeleteRecord={handleDeleteRecord}
-                  onDeleteWithFile={handleDeleteWithFile}
-                />
-              ))}
-            </div>
-
-            {/* 分页 */}
-            {total > PAGE_SIZE && (
-              <div className="flex justify-center gap-4">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
-                >
-                  上一页
-                </button>
-                <span className="px-4 py-2 text-gray-400">
-                  第 {page} 页，共 {Math.ceil(total / PAGE_SIZE)} 页
-                </span>
-                <button
-                  onClick={() => setPage((p) => p + 1)}
-                  disabled={page >= Math.ceil(total / PAGE_SIZE)}
-                  className="px-4 py-2 bg-gray-800 hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg transition-colors"
-                >
-                  下一页
-                </button>
-              </div>
-            )}
-          </>
+          <div className="grid grid-cols-1 gap-6 mb-8">
+            {videos.map((video) => (
+              <VideoCard
+                key={video.aweme_id}
+                video={video}
+                activeTab={activeTab}
+                onClick={() => handleOpenVideo(video)}
+                onMarkAsRead={handleMarkAsRead}
+                onDeleteRecord={handleDeleteRecord}
+                onDeleteWithFile={handleDeleteWithFile}
+              />
+            ))}
+          </div>
         )}
 
         {/* 空状态 */}
