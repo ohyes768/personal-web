@@ -148,7 +148,11 @@ export function VideoCard({
       <p className="text-gray-400 mb-2">作者: {video.author || '未知'}</p>
 
       <p className="text-gray-600 text-sm">
-        {video.upload_time ? new Date(video.upload_time).toLocaleString() : '未知时间'}
+        {video.video_publish_time
+          ? new Date(video.video_publish_time).toLocaleString()
+          : video.upload_time
+          ? new Date(video.upload_time).toLocaleString()
+          : '未知时间'}
       </p>
     </div>
   );

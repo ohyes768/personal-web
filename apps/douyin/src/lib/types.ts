@@ -43,7 +43,8 @@ export interface VideoInfo {
   audio_url: string;
   transcript?: TranscriptInfo;
   processed_at?: number;
-  upload_time?: string;
+  upload_time?: string;             // 推到 douyin-processor 的时间（v2.0 mark_pending 写入；旧数据为空）
+  video_publish_time?: string;     // 原抖音平台发布时间（v2.0 douyin-collector 推过来时存）
   error?: string;
   is_read?: boolean;
   read_at?: number;

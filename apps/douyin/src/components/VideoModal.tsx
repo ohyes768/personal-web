@@ -105,14 +105,18 @@ export function VideoModal({
           ) : (
             <>
               {/* 视频信息 */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6 p-4 bg-gray-800/50 rounded-lg">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-800/50 rounded-lg">
                 <div>
                   <p className="text-gray-400 text-sm mb-1">作者</p>
                   <p className="text-lg">{displayVideo.author || '未知'}</p>
                 </div>
                 <div>
-                  <p className="text-gray-400 text-sm mb-1">上传时间</p>
+                  <p className="text-gray-400 text-sm mb-1">推到 douyin 时间</p>
                   <p className="text-lg">{formatTime(displayVideo.upload_time)}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400 text-sm mb-1">视频发布时间</p>
+                  <p className="text-lg">{formatTime(displayVideo.video_publish_time)}</p>
                 </div>
                 {displayVideo.transcript && (
                   <>
