@@ -33,6 +33,28 @@ export default function DividendPage() {
   // 更新辅助数据下拉菜单开关
   const [auxOpen, setAuxOpen] = useState(false);
   const [auxForce, setAuxForce] = useState(false);
+  // 每行独立的"强制"开关：key = 'sw_industry' | 'financial' | 'shareholder' | 'board'
+  const [auxForceMap, setAuxForceMap] = useState<Record<string, boolean>>({});
+  const auxMenuRef = useRef<HTMLDivElement>(null);
+
+  // 辅助数据菜单：点击外部 / Esc 关闭
+  useEffect(() => {
+    if (!auxOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (auxMenuRef.current && !auxMenuRef.current.contains(e.target as Node)) {
+        setAuxOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setAuxOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [auxOpen]);
 
   // 下载报告（A4 一图版 / 手机竖版）
   const downloadReport = async (type: 'a4' | 'carousel') => {
@@ -270,89 +292,190 @@ export default function DividendPage() {
               )}
             </button>
 
-            <div
-              className="relative"
-              onMouseLeave={() => setAuxOpen(false)}
-            >
-              <button
-                onClick={() => setAuxOpen(!auxOpen)}
-                disabled={updateState.sw_industry === 'loading' && updateState.financial === 'loading' && updateState.shareholder === 'loading' && updateState.board === 'loading'}
-                className={`
-                  px-4 py-2 rounded font-medium transition-all flex items-center gap-2
-                  ${updateState.sw_industry === 'loading' || updateState.financial === 'loading' || updateState.shareholder === 'loading' || updateState.board === 'loading'
-                    ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                  }
-                `}
-              >
-                <svg
-                  className={`w-4 h-4 ${updateState.sw_industry === 'loading' || updateState.financial === 'loading' || updateState.shareholder === 'loading' || updateState.board === 'loading' ? 'animate-spin' : ''}`}
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                {(auxStatuses.sw_industry?.needs_update || auxStatuses.financial?.needs_update || auxStatuses.shareholder?.needs_update || auxStatuses.board?.needs_update) ? '📥 更新辅助数据' : '✅ 已是最新'}
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {auxOpen && (
-                <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 min-w-[280px]">
-                  {[
-                    { key: 'sw_industry', label: '申万行业', status: auxStatuses.sw_industry, updateFn: updateSwIndustry, loadingKey: 'sw_industry' as const },
-                    { key: 'financial', label: '财务指标', status: auxStatuses.financial, updateFn: (force: boolean) => updateFinancial(financialMissingCodes.length > 0 ? financialMissingCodes : undefined, force), loadingKey: 'financial' as const },
-                    { key: 'shareholder', label: '股东户数', status: auxStatuses.shareholder, updateFn: updateShareholder, loadingKey: 'shareholder' as const },
-                    { key: 'board', label: '个股板块', status: auxStatuses.board, updateFn: (force: boolean) => updateBoard(boardMissingCodes.length > 0 ? boardMissingCodes : undefined, force), loadingKey: 'board' as const },
-                  ].map(item => {
-                    const needsUpdate = item.status?.needs_update ?? true;
-                    const isLoading = updateState[item.loadingKey] === 'loading';
-                    const daysAgo = item.status?.days_since_update != null ? item.status.days_since_update : null;
-                    return (
-                      <button
-                        key={item.key}
-                        disabled={isLoading}
-                        onClick={async () => {
-                          setAuxOpen(false);
-                          await item.updateFn(auxForce);
-                        }}
-                        className="block w-full text-left px-4 py-3 text-sm text-gray-800 hover:bg-indigo-50 border-b border-gray-100 last:border-b-0 first:rounded-t"
-                      >
-                        <div className="flex items-center gap-2">
-                          {isLoading ? (
-                            <svg className="w-4 h-4 animate-spin text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          ) : needsUpdate ? (
-                            <span>📥</span>
-                          ) : (
-                            <span>✅</span>
-                          )}
-                          <span className="font-medium">{item.label}</span>
-                        </div>
-                        <div className="text-xs text-gray-500 mt-1 ml-6">
-                          {item.status?.last_updated
-                            ? `上次：${item.status.last_updated}${daysAgo != null ? ` (${daysAgo}天前)` : ''}`
-                            : '从未更新'}
-                          {item.status?.quarter ? ` · ${item.status.quarter}` : ''}
-                        </div>
-                      </button>
-                    );
-                  })}
-                  <div className="px-4 py-2 bg-gray-50 border-t border-gray-100">
-                    <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={auxForce}
-                        onChange={e => setAuxForce(e.target.checked)}
-                        className="rounded border-gray-300"
-                      />
-                      强制刷新（忽略 90 天节流）
-                    </label>
-                  </div>
-                </div>
-              )}
+            <div ref={auxMenuRef} className="relative">
+              {(() => {
+                const auxPendingCount =
+                  (auxStatuses.sw_industry?.needs_update ? 1 : 0) +
+                  (auxStatuses.financial?.needs_update ? 1 : 0) +
+                  (auxStatuses.shareholder?.needs_update ? 1 : 0) +
+                  (auxStatuses.board?.needs_update ? 1 : 0);
+                const auxAnyLoading =
+                  updateState.sw_industry === 'loading' ||
+                  updateState.financial === 'loading' ||
+                  updateState.shareholder === 'loading' ||
+                  updateState.board === 'loading';
+                return (
+                  <>
+                    <button
+                      onClick={() => setAuxOpen(!auxOpen)}
+                      disabled={auxAnyLoading}
+                      className={`
+                        px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                        ${auxAnyLoading
+                          ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                          : auxPendingCount > 0
+                            ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-md shadow-indigo-500/20'
+                            : 'bg-[#1c1f26] text-gray-400 border border-[#2a3041] hover:text-white'
+                        }
+                      `}
+                    >
+                      {auxAnyLoading ? (
+                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                      ) : auxPendingCount > 0 ? (
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                        </svg>
+                      ) : (
+                        <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
+                        </svg>
+                      )}
+                      辅助数据
+                      {auxPendingCount > 0 && (
+                        <span className="bg-white/25 text-white text-[11px] font-mono font-semibold rounded-full px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center -ml-1">
+                          {auxPendingCount}
+                        </span>
+                      )}
+                      <svg className={`w-3 h-3 transition-transform ${auxOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {auxOpen && (
+                      <div className="absolute right-0 mt-2 bg-[#1a1f2c] border border-[#3d4560] rounded-xl shadow-2xl z-50 w-[340px] overflow-hidden">
+                        {(() => {
+                          const auxItems: Array<{
+                            key: 'sw_industry' | 'financial' | 'shareholder' | 'board';
+                            label: string;
+                            sub: string;
+                            status: typeof auxStatuses.sw_industry;
+                            updateFn: (force: boolean) => Promise<unknown>;
+                            loadingKey: 'sw_industry' | 'financial' | 'shareholder' | 'board';
+                          }> = [
+                            { key: 'sw_industry', label: '申万行业', sub: '申万一级/二级/三级', status: auxStatuses.sw_industry, updateFn: updateSwIndustry, loadingKey: 'sw_industry' },
+                            { key: 'financial', label: '财务指标', sub: '财报基础数据', status: auxStatuses.financial, updateFn: (force) => updateFinancial(financialMissingCodes.length > 0 ? financialMissingCodes : undefined, force), loadingKey: 'financial' },
+                            { key: 'shareholder', label: '股东户数', sub: '披露日统计', status: auxStatuses.shareholder, updateFn: updateShareholder, loadingKey: 'shareholder' },
+                            { key: 'board', label: '个股板块', sub: 'emweb 板块归属', status: auxStatuses.board, updateFn: (force) => updateBoard(boardMissingCodes.length > 0 ? boardMissingCodes : undefined, force), loadingKey: 'board' },
+                          ];
+                          return (
+                            <>
+                              {auxPendingCount > 0 && !auxAnyLoading && (
+                                <div className="p-2.5 bg-gradient-to-b from-indigo-500/10 to-transparent border-b border-[#2a3041]">
+                                  <button
+                                    onClick={async () => {
+                                      const toUpdate = auxItems.filter(i => i.status?.needs_update);
+                                      await Promise.all(
+                                        toUpdate.map(i => i.updateFn(auxForceMap[i.key] ?? false))
+                                      );
+                                    }}
+                                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+                                  >
+                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                    </svg>
+                                    全部更新
+                                    <span className="bg-white/25 text-white text-[11px] font-mono font-semibold rounded-full px-1.5 min-w-[18px] h-[16px] inline-flex items-center justify-center">
+                                      {auxPendingCount}
+                                    </span>
+                                    项
+                                  </button>
+                                </div>
+                              )}
+                              <div>
+                                {auxItems.map(item => {
+                                  const isLoading = updateState[item.loadingKey] === 'loading';
+                                  const daysAgo = item.status?.days_since_update != null ? item.status.days_since_update : null;
+                                  const isCurrent = !isLoading && !item.status?.needs_update;
+                                  const rowForce = auxForceMap[item.key] ?? false;
+                                  return (
+                                    <div
+                                      key={item.key}
+                                      className={`
+                                        relative flex items-center gap-3 px-3.5 pl-[13px] py-2.5
+                                        border-b border-[#2a3041] last:border-b-0
+                                        border-l-[3px] transition-colors
+                                        ${isLoading ? 'border-l-blue-400 bg-[#131720]' :
+                                          isCurrent ? 'border-l-emerald-400 hover:bg-[#232938]' : 'border-l-amber-400 hover:bg-[#232938]'}
+                                      `}
+                                    >
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-0.5">
+                                          <span className="font-medium text-white text-[13px]">{item.label}</span>
+                                          {isLoading ? (
+                                            <span className="text-[11px] font-mono text-blue-400 inline-flex items-center gap-1">
+                                              <span className="w-2.5 h-2.5 border-[1.5px] border-blue-400 border-t-transparent rounded-full animate-spin" />
+                                              拉取中
+                                            </span>
+                                          ) : (
+                                            <span className={`text-[11px] font-mono ${isCurrent ? 'text-emerald-400' : 'text-amber-400'}`}>
+                                              {daysAgo != null ? `${daysAgo} 天前` : '从未更新'}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <div className="text-[11px] text-gray-500">
+                                          {item.sub}
+                                          {item.status?.quarter ? ` · ${item.status.quarter}` : ''}
+                                        </div>
+                                        {isLoading && (
+                                          <div className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden">
+                                            <div
+                                              className="h-full bg-gradient-to-r from-blue-400 to-indigo-500"
+                                              style={{
+                                                width: '40%',
+                                                animation: 'indeterminate 1.5s ease-in-out infinite',
+                                              }}
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                                        <label
+                                          className={`
+                                            flex items-center gap-1 text-[10px] uppercase tracking-wider font-mono font-medium
+                                            px-1.5 py-0.5 rounded border cursor-pointer select-none transition-colors
+                                            ${rowForce
+                                              ? 'text-amber-400 bg-amber-400/10 border-amber-400/30'
+                                              : 'text-gray-500 border-transparent hover:text-gray-400 hover:bg-[#0f1219]'
+                                            }
+                                          `}
+                                          title="强制覆盖（绕过 90 天节流）"
+                                        >
+                                          <input
+                                            type="checkbox"
+                                            checked={rowForce}
+                                            onChange={e => setAuxForceMap(prev => ({ ...prev, [item.key]: e.target.checked }))}
+                                            className="hidden"
+                                          />
+                                          <span className={`w-2.5 h-2.5 border border-current rounded-sm flex items-center justify-center ${rowForce ? 'bg-amber-400' : ''}`}>
+                                            {rowForce && <span className="text-[8px] text-black font-bold leading-none">✓</span>}
+                                          </span>
+                                          强制
+                                        </label>
+                                        <button
+                                          disabled={isLoading}
+                                          onClick={() => item.updateFn(rowForce)}
+                                          className={`
+                                            text-[11px] font-medium px-2.5 py-1 rounded border transition-colors
+                                            ${isLoading
+                                              ? 'border-[#2a3041] text-gray-500 cursor-not-allowed'
+                                              : 'border-[#3d4560] text-white hover:bg-indigo-600 hover:border-indigo-600'
+                                            }
+                                          `}
+                                        >
+                                          {isLoading ? '更新中' : '更新'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
             </div>
 
             <button
