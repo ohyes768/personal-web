@@ -3,7 +3,7 @@
  */
 'use client';
 
-import { StarIcon, XMarkIcon, TagIcon, ChartBarIcon, CalendarIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon } from '@heroicons/react/24/outline';
+import { StarIcon, XMarkIcon, TagIcon, ChartBarIcon, CalendarIcon, ArrowTrendingUpIcon, ArrowTrendingDownIcon, PresentationChartLineIcon, UsersIcon } from '@heroicons/react/24/outline';
 import { CompareTableProps, DividendStockWithTechnical } from '@/lib/types';
 import { useHighlights } from '@/lib/hooks';
 
@@ -25,6 +25,22 @@ const formatPrice = (value: number | null | undefined): string => {
 const formatDividend = (value: number | null | undefined): string => {
   if (value === null || value === undefined) return '-';
   return `每股${value.toFixed(2)}元`;
+};
+
+/**
+ * 格式化金额（元 → 亿元），与 DividendTable.formatYi 对齐
+ */
+const formatYi = (value: number | null | undefined): string => {
+  if (value === null || value === undefined) return '-';
+  return `${(value / 1e8).toFixed(2)}亿元`;
+};
+
+/**
+ * 格式化股东户数（户 → 万户），与 DividendTable.formatShareholderCount 对齐
+ */
+const formatShareholderCount = (count: number | null | undefined): string => {
+  if (count === null || count === undefined) return '-';
+  return `${(count / 10000).toFixed(2)}万户`;
 };
 
 export function CompareTable({ stocks, onRemove }: CompareTableProps) {
@@ -160,6 +176,136 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
                         <span className="font-mono">{ratio.toFixed(3)}</span>
                       )}
                     </>
+                  ) : (
+                    <span>-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+
+          {/* 财务成长 */}
+          <tr className="hover:bg-gray-800/50">
+            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+              <div className="flex items-center gap-2">
+                <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
+                <span>扣非净利润同比</span>
+              </div>
+            </td>
+            {stocks.map((stock, idx) => {
+              const value = stock.net_profit_ex_non_recurring_yoy;
+              const isHighlighted = highlights.nonRecurringYoYIndex === idx;
+              return (
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                  {value !== null && value !== undefined ? (
+                    isHighlighted ? (
+                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
+                        <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
+                        <span className="font-mono">{formatPercent(value)}</span>
+                      </div>
+                    ) : (
+                      <span className="font-mono">{formatPercent(value)}</span>
+                    )
+                  ) : (
+                    <span>-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+          <tr className="hover:bg-gray-800/50">
+            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+              <div className="flex items-center gap-2">
+                <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
+                <span>3年CAGR</span>
+              </div>
+            </td>
+            {stocks.map((stock, idx) => {
+              const value = stock.net_profit_cagr_3y;
+              const isHighlighted = highlights.cagr3yIndex === idx;
+              return (
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                  {value !== null && value !== undefined ? (
+                    isHighlighted ? (
+                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
+                        <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
+                        <span className="font-mono">{formatPercent(value)}</span>
+                      </div>
+                    ) : (
+                      <span className="font-mono">{formatPercent(value)}</span>
+                    )
+                  ) : (
+                    <span>-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+          <tr className="hover:bg-gray-800/50">
+            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+              <div className="flex items-center gap-2">
+                <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
+                <span>分红比例</span>
+              </div>
+            </td>
+            {stocks.map((stock) => {
+              const value = stock.payout_ratio;
+              return (
+                <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+                  {value !== null && value !== undefined ? (
+                    <span className="font-mono">{formatPercent(value)}</span>
+                  ) : (
+                    <span>-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+          <tr className="hover:bg-gray-800/50">
+            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+              <div className="flex items-center gap-2">
+                <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
+                <span>最新季度扣非</span>
+              </div>
+            </td>
+            {stocks.map((stock) => {
+              const amount = stock.latest_quarter_net_profit_ex_non_recurring;
+              const yoy = stock.latest_quarter_yoy_pct;
+              return (
+                <td key={stock.code} className="px-4 py-2 text-center text-gray-300">
+                  {amount !== null && amount !== undefined ? (
+                    <div className="flex flex-col items-center gap-0.5">
+                      {yoy !== null && yoy !== undefined ? (
+                        <span className={`font-mono text-sm font-semibold ${yoy >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {formatPercent(yoy)}
+                        </span>
+                      ) : (
+                        <span className="font-mono text-sm text-gray-500">同比 -</span>
+                      )}
+                      <span className="font-mono text-xs text-gray-500">{formatYi(amount)}</span>
+                    </div>
+                  ) : (
+                    <span>-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+
+          {/* 股东户数 */}
+          <tr className="hover:bg-gray-800/50">
+            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+              <div className="flex items-center gap-2">
+                <UsersIcon className="w-4 h-4 text-pink-400" />
+                <span>股东户数</span>
+              </div>
+            </td>
+            {stocks.map((stock) => {
+              const value = stock.shareholder_count;
+              return (
+                <td key={stock.code} className="px-4 py-2 text-center text-gray-300 border-b border-gray-700">
+                  {value !== null && value !== undefined ? (
+                    <span className="font-mono">{formatShareholderCount(value)}</span>
                   ) : (
                     <span>-</span>
                   )}

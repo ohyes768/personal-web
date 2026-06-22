@@ -358,6 +358,8 @@ export interface HighlightInfo {
   ratioIndex: number | null;  // 昨日收盘/M120 比率，最小值为最优
   highChangeIndex: number | null;  // 最高涨幅，最大值为最优
   lowChangeIndex: number | null;   // 最高跌幅，绝对值最小为最优
+  nonRecurringYoYIndex: number | null; // 扣非净利润同比，最大值为最优
+  cagr3yIndex: number | null;          // 3年复合增长率，最大值为最优
 }
 
 /**

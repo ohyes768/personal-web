@@ -407,11 +407,20 @@ export function useHighlights(stocks: DividendStock[]) {
     });
     const lowChangeIndex = lowChangeValues.indexOf(Math.min(...lowChangeValues));
 
+    // 扣非净利润同比，最大值为最优
+    const nonRecurringYoYValues = stocks.map(s => s.net_profit_ex_non_recurring_yoy ?? -Infinity);
+    const nonRecurringYoYIndex = nonRecurringYoYValues.indexOf(Math.max(...nonRecurringYoYValues));
+    // 3年复合增长率，最大值为最优
+    const cagr3yValues = stocks.map(s => s.net_profit_cagr_3y ?? -Infinity);
+    const cagr3yIndex = cagr3yValues.indexOf(Math.max(...cagr3yValues));
+
     return {
       yieldIndex: yieldIndex >= 0 ? yieldIndex : null,
       ratioIndex: ratioIndex >= 0 ? ratioIndex : null,
       highChangeIndex: highChangeIndex >= 0 ? highChangeIndex : null,
       lowChangeIndex: lowChangeIndex >= 0 ? lowChangeIndex : null,
+      nonRecurringYoYIndex: nonRecurringYoYIndex >= 0 ? nonRecurringYoYIndex : null,
+      cagr3yIndex: cagr3yIndex >= 0 ? cagr3yIndex : null,
     };
   }, [stocks]);
 }
