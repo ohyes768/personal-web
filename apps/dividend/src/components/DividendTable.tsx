@@ -5,10 +5,11 @@
 
 import { Button } from './shared-ui/Button';
 import { CheckIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, forwardRef } from 'react';
+import { createPortal } from 'react-dom';
 import type { DividendStock, TechnicalIndicators } from '@/lib/types';
 
-type SortField = 'avg_yield_3y' | 'realtime_yield' | 'yield_ttm';
+type SortField = 'avg_yield_3y' | 'realtime_yield';
 type SortOrder = 'asc' | 'desc';
 
 const formatValue = (value: number | null | undefined): string => {
@@ -150,6 +151,41 @@ export function DividendTable({
 }: DividendTableProps) {
   const [sortField, setSortField] = useState<SortField>(defaultSortField);
   const [sortOrder, setSortOrder] = useState<SortOrder>(defaultSortOrder);
+  // popover：扣非同比 / TTM 共用同一状态，kind 区分内容
+  const [popover, setPopover] = useState<{
+    code: string;
+    rect: DOMRect;
+    stock: DividendStock;
+    kind: 'koufei' | 'ttm';
+  } | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const closePopover = useCallback(() => setPopover(null), []);
+
+  // ESC 关闭 + 点击外部关闭
+  useEffect(() => {
+    if (!popover) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closePopover();
+    };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node | null;
+      if (!t) return;
+      if (popoverRef.current && popoverRef.current.contains(t)) return;
+      // 触发 cell 用 data-attr 标记，含 kind 前缀避免重码
+      const trigger = document.querySelector(`[data-popover-trigger="${popover.kind}:${popover.code}"]`);
+      if (trigger && trigger.contains(t)) return;
+      closePopover();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [popover, closePopover]);
 
   // 排序后的数据
   const sortedData = useMemo(() => {
@@ -165,11 +201,9 @@ export function DividendTable({
         aVal = calcRealtimeYieldValue(a.dividend_2025, techA?.realtime ?? null);
         bVal = calcRealtimeYieldValue(b.dividend_2025, techB?.realtime ?? null);
       } else {
-        // yield_ttm
-        const techA = technicalData.get(a.code);
-        const techB = technicalData.get(b.code);
-        aVal = techA?.yield_ttm ?? 0;
-        bVal = techB?.yield_ttm ?? 0;
+        // 不应到达（SortField 已移除 yield_ttm），兜底用 3 年平均
+        aVal = a.avg_yield_3y ?? 0;
+        bVal = b.avg_yield_3y ?? 0;
       }
 
       if (aVal === bVal) return 0;
@@ -208,7 +242,8 @@ export function DividendTable({
   }
 
   return (
-    <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900">
+    <>
+      <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900">
       <table className="w-full">
         <thead className="bg-gray-800">
           <tr>
@@ -235,13 +270,6 @@ export function DividendTable({
               onClick={() => handleSort('realtime_yield')}
             >
               实时股息率 <SortIcon field="realtime_yield" />
-            </th>
-            <th
-              className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
-              onClick={() => handleSort('yield_ttm')}
-              title="实时股息率 TTM（过去 12 个月滚动分红 / 实时股价）"
-            >
-              TTM <SortIcon field="yield_ttm" />
             </th>
             <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
               M120
@@ -318,7 +346,28 @@ export function DividendTable({
                     {stock.avg_yield_3y ? `${formatValue(stock.avg_yield_3y)}%` : '-'}
                   </span>
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-right">
+                <td
+                  data-popover-trigger={`ttm:${stock.code}`}
+                  className={`w-20 px-2 py-3 text-sm text-right select-none ${
+                    technical && technical.yield_ttm !== null && technical.yield_ttm !== undefined
+                      ? `cursor-pointer hover:bg-gray-800/60 ${popover?.code === stock.code && popover.kind === 'ttm' ? 'bg-gray-800/60' : ''}`
+                      : ''
+                  }`}
+                  onClick={(e) => {
+                    if (!technical || technical.yield_ttm === null || technical.yield_ttm === undefined) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    if (popover?.code === stock.code && popover.kind === 'ttm') {
+                      closePopover();
+                    } else {
+                      setPopover({ code: stock.code, rect, stock, kind: 'ttm' });
+                    }
+                  }}
+                  title={
+                    technical && technical.yield_ttm !== null && technical.yield_ttm !== undefined
+                      ? '点击查看 TTM 股息率'
+                      : '无 TTM 数据'
+                  }
+                >
                   {(() => {
                     const realtimeYield = formatRealtimeYield(stock.dividend_2025, technical?.realtime ?? null);
                     if (realtimeYield === '-') return <span className="text-gray-400">-</span>;
@@ -336,24 +385,6 @@ export function DividendTable({
                     );
                   })()}
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-right">
-                  {(() => {
-                    const yieldTtm = formatYieldTtm(technical);
-                    if (yieldTtm === '-') return <span className="text-gray-400">-</span>;
-                    const yieldVal = technical?.yield_ttm ?? 0;
-                    return (
-                      <span className={
-                        yieldVal >= 5
-                          ? 'text-green-400 font-semibold'
-                          : yieldVal >= 3
-                          ? 'text-green-400'
-                          : 'text-gray-400'
-                      }>
-                        {yieldTtm}
-                      </span>
-                    );
-                  })()}
-                </td>
                 <td className="w-16 px-2 py-3 text-sm text-gray-300">
                   {m120Value}
                 </td>
@@ -361,29 +392,40 @@ export function DividendTable({
                   {formatShareholderCount(stock.shareholder_count)}
                 </td>
                 <td
-                  className="w-20 px-2 py-3 text-sm text-right"
+                  data-popover-trigger={`koufei:${stock.code}`}
+                  className={`w-20 px-2 py-3 text-sm text-right select-none ${
+                    stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined
+                      ? `cursor-pointer hover:bg-gray-800/60 ${popover?.code === stock.code && popover.kind === 'koufei' ? 'bg-gray-800/60' : ''}`
+                      : ''
+                  }`}
+                  onClick={(e) => {
+                    if (stock.latest_quarter_yoy_pct === null || stock.latest_quarter_yoy_pct === undefined) return;
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    if (popover?.code === stock.code && popover.kind === 'koufei') {
+                      closePopover();
+                    } else {
+                      setPopover({ code: stock.code, rect, stock, kind: 'koufei' });
+                    }
+                  }}
                   title={
-                    stock.net_profit_ex_non_recurring_yoy !== null && stock.net_profit_ex_non_recurring_yoy !== undefined
-                      ? `2026Q1 扣非 ${formatYi(stock.latest_quarter_net_profit_ex_non_recurring)}｜同比 ${stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined ? stock.latest_quarter_yoy_pct.toFixed(2) + '%' : '无'}`
-                      : '无法计算'
+                    stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined
+                      ? '点击查看 2026Q1 扣非同比'
+                      : '无最新季度数据'
                   }
                 >
-                  {stock.net_profit_ex_non_recurring_yoy !== null && stock.net_profit_ex_non_recurring_yoy !== undefined
-                    ? (
-                      <span className={stock.net_profit_ex_non_recurring_yoy > 0 ? 'text-green-400' : 'text-red-400'}>
-                        {stock.net_profit_ex_non_recurring_yoy > 0 ? '+' : ''}{stock.net_profit_ex_non_recurring_yoy.toFixed(2)}%
-                      </span>
-                    )
-                    : '无法计算'}
+                  {(() => {
+                    const v = stock.net_profit_ex_non_recurring_yoy;
+                    if (v !== null && v !== undefined) {
+                      return (
+                        <span className={v > 0 ? 'text-green-400' : 'text-red-400'}>
+                          {v > 0 ? '+' : ''}{v.toFixed(2)}%
+                        </span>
+                      );
+                    }
+                    return '无法计算';
+                  })()}
                 </td>
-                <td
-                  className="w-20 px-2 py-3 text-sm text-right"
-                  title={
-                    stock.net_profit_cagr_3y !== null && stock.net_profit_cagr_3y !== undefined
-                      ? `2026Q1 扣非 ${formatYi(stock.latest_quarter_net_profit_ex_non_recurring)}｜同比 ${stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined ? stock.latest_quarter_yoy_pct.toFixed(2) + '%' : '无'}`
-                      : '无法计算'
-                  }
-                >
+                <td className="w-20 px-2 py-3 text-sm text-right">
                   {stock.net_profit_cagr_3y !== null && stock.net_profit_cagr_3y !== undefined
                     ? (
                       <span className={stock.net_profit_cagr_3y > 0 ? 'text-green-400' : 'text-red-400'}>
@@ -495,5 +537,202 @@ export function DividendTable({
         </tbody>
       </table>
     </div>
+    {mounted && popover && createPortal(
+      <FinancialPopover
+        ref={popoverRef}
+        stock={popover.stock}
+        anchorRect={popover.rect}
+        kind={popover.kind}
+        technical={technicalData.get(popover.code) ?? null}
+      />,
+      document.body,
+    )}
+    </>
   );
 }
+
+/**
+ * 财务 popover：扣非同比 / TTM 股息率 共用组件，按 kind 渲染不同内容。
+ */
+type FinancialPopoverProps = {
+  stock: DividendStock;
+  anchorRect: DOMRect;
+  kind: 'koufei' | 'ttm';
+  technical: TechnicalIndicators | null;
+};
+
+const FinancialPopover = forwardRef<HTMLDivElement, FinancialPopoverProps>(function FinancialPopover(
+  { stock, anchorRect, kind, technical },
+  ref,
+) {
+  // 位置：默认 cell 上方；上方空间不够则下方
+  const popHeight = 130;
+  const placeAbove = anchorRect.top > popHeight + 16;
+  const top = placeAbove ? anchorRect.top - 12 : anchorRect.bottom + 12;
+  const transformY = placeAbove ? '-100%' : '0%';
+  const arrowPos = placeAbove ? '-bottom-2' : '-top-2';
+  const arrowRotate = placeAbove ? 'rotate-180' : '';
+
+  // ----- koufei: 2026Q1 扣非同比 -----
+  if (kind === 'koufei') {
+    const yoy = stock.latest_quarter_yoy_pct;
+    const amount = stock.latest_quarter_net_profit_ex_non_recurring;
+    if (yoy === null || yoy === undefined) return null;
+    const positive = yoy >= 0;
+    const accent = positive ? 'bg-emerald-500' : 'bg-rose-500';
+    const accentText = positive ? 'text-emerald-400' : 'text-rose-400';
+
+    return (
+      <PopoverShell
+        ref={ref}
+        anchorRect={anchorRect}
+        top={top}
+        transformY={transformY}
+        arrowPos={arrowPos}
+        arrowRotate={arrowRotate}
+        accent={accent}
+        ariaLabel="最新季度扣非同比详情"
+      >
+        <div className="px-4 pt-3 pb-1.5">
+          <div className="flex items-center gap-2">
+            <span className={`inline-block w-1.5 h-1.5 rounded-full ${accent}`} aria-hidden />
+            <span className="text-[11px] font-semibold tracking-wider text-gray-200">
+              2026Q1 扣非同比
+            </span>
+          </div>
+          <div className="text-[10px] text-gray-500 mt-0.5 pl-3.5 font-mono">
+            vs 2025Q1
+          </div>
+        </div>
+
+        <div className="px-4 pb-3">
+          <div className={`flex items-baseline gap-1.5 font-mono ${accentText}`}>
+            <span className="text-xs opacity-70 leading-none">{positive ? '↑' : '↓'}</span>
+            <span className="text-[26px] font-bold tabular-nums leading-none">
+              {positive ? '+' : ''}{yoy.toFixed(2)}<span className="text-base ml-0.5">%</span>
+            </span>
+          </div>
+          {amount !== null && amount !== undefined && (
+            <div className="text-xs text-gray-400 mt-2">
+              扣非净利润{' '}
+              <span className="font-mono text-gray-200 tabular-nums">
+                {formatYi(amount)}
+              </span>
+            </div>
+          )}
+        </div>
+      </PopoverShell>
+    );
+  }
+
+  // ----- ttm: TTM 股息率 -----
+  const ttm = technical?.yield_ttm ?? null;
+  if (ttm === null || ttm === undefined) return null;
+
+  const realtime = technical?.realtime ?? null;
+  const realtimeYieldStr = realtime !== null && stock.dividend_2025
+    ? `${(stock.dividend_2025 / realtime * 100).toFixed(2)}%`
+    : null;
+
+  // TTM 颜色：>=5 绿加粗，>=3 绿，否则灰
+  const ttmClass = ttm >= 5
+    ? 'text-emerald-400'
+    : ttm >= 3
+    ? 'text-emerald-300'
+    : 'text-gray-300';
+  const accent = 'bg-sky-500';
+
+  return (
+    <PopoverShell
+      ref={ref}
+      anchorRect={anchorRect}
+      top={top}
+      transformY={transformY}
+      arrowPos={arrowPos}
+      arrowRotate={arrowRotate}
+      accent={accent}
+      ariaLabel="TTM 股息率详情"
+    >
+      <div className="px-4 pt-3 pb-1.5">
+        <div className="flex items-center gap-2">
+          <span className={`inline-block w-1.5 h-1.5 rounded-full ${accent}`} aria-hidden />
+          <span className="text-[11px] font-semibold tracking-wider text-gray-200">
+            TTM 股息率
+          </span>
+        </div>
+        <div className="text-[10px] text-gray-500 mt-0.5 pl-3.5 font-mono">
+          滚动 12 月 / 实时价
+        </div>
+      </div>
+
+      <div className="px-4 pb-3">
+        <div className={`flex items-baseline gap-1.5 font-mono ${ttmClass}`}>
+          <span className="text-[26px] font-bold tabular-nums leading-none">
+            {ttm.toFixed(2)}<span className="text-base ml-0.5">%</span>
+          </span>
+        </div>
+        {realtimeYieldStr !== null && (
+          <div className="text-xs text-gray-400 mt-2">
+            实时股息率{' '}
+            <span className="font-mono text-gray-200 tabular-nums">{realtimeYieldStr}</span>
+          </div>
+        )}
+      </div>
+    </PopoverShell>
+  );
+});
+
+/**
+ * Popover 外壳：定位 + 边框 + 箭头。两个 kind 共用。
+ */
+type PopoverShellProps = {
+  anchorRect: DOMRect;
+  top: number;
+  transformY: string;
+  arrowPos: string;
+  arrowRotate: string;
+  accent: string;
+  ariaLabel: string;
+  children: React.ReactNode;
+};
+
+const PopoverShell = forwardRef<HTMLDivElement, PopoverShellProps>(function PopoverShell(
+  { anchorRect, top, transformY, arrowPos, arrowRotate, accent, ariaLabel, children },
+  ref,
+) {
+  return (
+    <div
+      ref={ref}
+      role="dialog"
+      aria-label={ariaLabel}
+      className="fixed z-50 w-60 rounded-md bg-gray-900 border border-blue-500/30 shadow-2xl shadow-black/70"
+      style={{
+        left: anchorRect.left + anchorRect.width / 2,
+        top,
+        transform: `translateX(-50%) translateY(${transformY})`,
+      }}
+      onClick={(e) => e.stopPropagation()}
+    >
+      {/* 左 border accent */}
+      <div className={`absolute left-0 top-0 bottom-0 w-0.5 rounded-l-md ${accent}`} aria-hidden />
+
+      {children}
+
+      {/* 底部/顶部箭头 */}
+      <div
+        className={`absolute left-1/2 -translate-x-1/2 ${arrowPos} ${arrowRotate}`}
+        aria-hidden
+      >
+        <div
+          className="w-0 h-0"
+          style={{
+            borderLeft: '7px solid transparent',
+            borderRight: '7px solid transparent',
+            borderTop: '7px solid rgb(17, 24, 39)',
+            filter: 'drop-shadow(0 1px 0 rgba(59, 130, 246, 0.3))',
+          }}
+        />
+      </div>
+    </div>
+  );
+});
