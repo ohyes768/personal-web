@@ -17,7 +17,7 @@ export default function DouyinPage() {
   const [selectedVideo, setSelectedVideo] = useState<VideoInfo | null>(null);
 
   // 数据获取
-  const { videos, loading, refreshing, error, refetch: refetchVideos } = useDouyinVideos(
+  const { videos, totalCount, loading, refreshing, error, refetch: refetchVideos } = useDouyinVideos(
     activeTab,
   );
 
@@ -134,7 +134,7 @@ export default function DouyinPage() {
   );
 
   const tabs = [
-    { id: 'unread', label: '未读', badge: pendingCount || undefined },
+    { id: 'unread', label: '未读', badge: activeTab === 'unread' ? totalCount : undefined },
     { id: 'read', label: '已读' },
   ] as const;
 

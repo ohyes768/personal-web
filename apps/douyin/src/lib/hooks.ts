@@ -18,6 +18,7 @@ import type {
  */
 export function useDouyinVideos(activeTab: TabType) {
   const [videos, setVideos] = useState<VideoInfo[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -36,6 +37,7 @@ export function useDouyinVideos(activeTab: TabType) {
       });
 
       setVideos(data.videos || []);
+      setTotalCount(data.total_count ?? data.videos?.length ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : '获取数据失败');
       console.error('Error fetching videos:', err);
@@ -51,6 +53,7 @@ export function useDouyinVideos(activeTab: TabType) {
 
   return {
     videos,
+    totalCount,
     loading,
     refreshing,
     error,

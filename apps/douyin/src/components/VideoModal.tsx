@@ -7,7 +7,6 @@ import { VideoInfo, TranscriptSegment } from '@/lib/types';
 import { useDouyinUtils } from '@/lib/hooks';
 import { Loading } from './shared-ui/Loading';
 import { useVideoDetail } from '@/lib/hooks';
-import { TranscriptToc } from './TranscriptToc';
 
 export interface VideoModalProps {
   video: VideoInfo;
@@ -61,30 +60,31 @@ export function VideoModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 overflow-y-auto bg-ink/45 backdrop-blur-md p-6 sm:p-10"
+      className="fixed inset-0 z-50 bg-ink/45 backdrop-blur-md p-4 sm:p-6 flex items-start sm:items-center justify-center"
       onClick={onClose}
     >
-      {/* 关闭按钮 */}
-      <button
-        onClick={onClose}
-        className="fixed top-6 right-6 w-10 h-10 border-none bg-paper/90 rounded-full text-ink-muted cursor-pointer text-lg z-[110] shadow-sm hover:bg-paper hover:text-ink hover:scale-105 transition-all"
-        aria-label="关闭"
-      >
-        ✕
-      </button>
-
-      {/* 弹框主体：左阅读栏 + 右 TOC */}
+      {/* 弹框主体：max-h 限制 + flex column，滚动条在内部 */}
       <div
-        className="relative max-w-[1100px] mx-auto bg-paper rounded-[14px] shadow-[0_24px_64px_rgba(43,42,40,0.18)] grid grid-cols-1 lg:grid-cols-[1fr_280px] min-h-[calc(100vh-80px)] overflow-hidden"
+        className="relative w-full max-w-[920px] max-h-[calc(100vh-32px)] sm:max-h-[calc(100vh-48px)] bg-paper rounded-[14px] shadow-[0_24px_64px_rgba(43,42,40,0.18)] flex flex-col overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 标题 + 正文区 */}
-        <div className="px-8 sm:px-14 py-12 sm:py-14 max-w-[calc(68ch+112px)]">
-          <h2 className="font-serif-cn text-[28px] sm:text-[32px] font-bold leading-tight text-ink-strong mb-5 tracking-tight">
+        {/* 头部：标题 + 关闭按钮（固定不滚） */}
+        <header className="shrink-0 relative px-8 sm:px-14 pt-10 sm:pt-12 pb-6 border-b border-rule">
+          <button
+            onClick={onClose}
+            className="absolute top-4 right-4 w-9 h-9 border-none bg-paper hover:bg-paper-deep rounded-full text-ink-muted hover:text-ink cursor-pointer text-base flex items-center justify-center transition-all"
+            aria-label="关闭"
+          >
+            ✕
+          </button>
+          <h2 className="font-serif-cn text-[26px] sm:text-[30px] font-bold leading-tight text-ink-strong tracking-tight pr-12 line-clamp-2">
             {displayVideo.title || '未知标题'}
           </h2>
+        </header>
 
-          <div className="font-ui text-[13px] text-ink-muted pb-7 mb-9 border-b border-rule flex flex-wrap gap-3.5 items-center">
+        {/* 主体：滚动区 */}
+        <div className="flex-1 overflow-y-auto px-8 sm:px-14 py-8 sm:py-10">
+          <div className="font-ui text-[13px] text-ink-muted pb-6 mb-8 border-b border-rule flex flex-wrap gap-3.5 items-center">
             <span>作者 <span className="text-ink-strong font-medium">{displayVideo.author || '未知'}</span></span>
             <span className="text-ink-soft">·</span>
             <span>采集 <span className="text-ink-strong font-medium">{formatTime(displayVideo.upload_time)}</span></span>
@@ -152,10 +152,10 @@ export function VideoModal({
                         <div
                           key={index}
                           data-seg-idx={index}
-                          className="grid grid-cols-[100px_1fr] gap-5 py-[18px] border-b border-dashed border-rule scroll-mt-16 transition-colors hover:bg-accent/[0.03]"
+                          className="grid grid-cols-[68px_1fr] gap-3 py-[3px] scroll-mt-16 transition-colors hover:bg-accent/[0.03]"
                         >
-                          <span className="tnum font-serif-en text-[13px] text-accent font-medium pt-1.5 whitespace-nowrap tracking-wide">
-                            {formatSegmentTime(segment.start_time)} — {formatSegmentTime(segment.end_time)}
+                          <span className="tnum font-serif-en text-[11px] text-accent/70 font-normal pt-[7px] whitespace-nowrap tracking-wide select-none">
+                            {formatSegmentTime(segment.start_time)}
                           </span>
                           <span className="font-serif-cn text-[18px] leading-[1.85] text-ink tracking-wide">
                             {segment.text}
@@ -222,9 +222,6 @@ export function VideoModal({
             </>
           )}
         </div>
-
-        {/* 右侧 TOC（仅 segments 非空时显示） */}
-        {segments.length > 0 && <TranscriptToc segments={segments} />}
       </div>
     </div>
   );
