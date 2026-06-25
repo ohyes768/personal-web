@@ -17,9 +17,9 @@ export function Loading({ message = '加载中...', size = 'md' }: LoadingProps)
   };
 
   return (
-    <div className="text-center py-12">
-      <div className={`inline-block animate-spin rounded-full ${sizeClasses[size]} border-white`}></div>
-      <p className="mt-4 text-gray-400">{message}</p>
+    <div className="text-center py-12 font-ui">
+      <div className={`inline-block animate-spin rounded-full ${sizeClasses[size]} border-accent`}></div>
+      <p className="mt-4 text-ink-muted text-[14px]">{message}</p>
     </div>
   );
 }

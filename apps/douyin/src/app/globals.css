@@ -1,11 +1,63 @@
+@import url("https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&display=swap");
 @import "tailwindcss";
 
-:root {
-  --foreground-rgb: 255, 255, 255;
-  --background-rgb: 0, 0, 0;
+/* === 设计令牌（出版物浅色模式） === */
+@theme {
+  --color-paper:        #FAF8F3;
+  --color-paper-deep:   #F2EDE3;
+  --color-paper-card:   #FFFEFB;
+
+  --color-ink:          #2B2A28;
+  --color-ink-strong:   #1F1E1B;
+  --color-ink-muted:    #6B6864;
+  --color-ink-soft:     #9C958A;
+
+  --color-rule:         #E8E3D8;
+
+  --color-accent:       #B85C38;
+  --color-success:      #5C7A4F;
+  --color-danger:       #A03333;
+
+  --font-serif:         "Source Serif 4", "Noto Serif SC", Charter, "PingFang SC", "Times New Roman", serif;
+  --font-sans:          -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono:          "JetBrains Mono", "SF Mono", "Courier New", monospace;
+
+  --font-serif-cn:      "Noto Serif SC", "Source Serif 4", "PingFang SC", serif;
+  --font-serif-en:      "Source Serif 4", Charter, "Times New Roman", serif;
 }
 
-body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
+@layer base {
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+
+  body {
+    font-family: var(--font-serif);
+    background: var(--color-paper);
+    color: var(--color-ink);
+    font-size: 17px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+    font-feature-settings: "kern" 1, "liga" 1;
+  }
+
+  /* 衬线字体工具类 */
+  .font-serif-cn {
+    font-family: var(--font-serif-cn);
+  }
+  .font-serif-en {
+    font-family: var(--font-serif-en);
+  }
+  .font-ui {
+    font-family: var(--font-sans);
+  }
+
+  /* 表格数字对齐（时间戳/置信度） */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
 }

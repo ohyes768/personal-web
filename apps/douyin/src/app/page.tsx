@@ -134,64 +134,87 @@ export default function DouyinPage() {
   );
 
   const tabs = [
-    { id: 'unread', label: '未读' },
+    { id: 'unread', label: '未读', badge: pendingCount || undefined },
     { id: 'read', label: '已读' },
   ] as const;
 
   return (
-    <main className="min-h-screen bg-black text-white">
-      <div className="max-w-7xl mx-auto p-8">
+    <main className="min-h-screen bg-paper text-ink">
+      <div className="max-w-[960px] mx-auto px-6 sm:px-8 py-10 sm:py-12 pb-20">
         {/* 头部导航 */}
-        <div className="mb-8">
-          <div className="flex justify-between items-start">
-            <div>
-              <Link href="/" className="text-gray-400 hover:text-white transition-colors">
-                ← 返回首页
-              </Link>
-              <h1 className="text-4xl font-bold mt-4">抖音视频文字稿</h1>
-            </div>
-            <div className="text-right flex items-center gap-2">
-              <button
-                onClick={startProcess}
-                disabled={processing || loading || refreshing}
-                className={`px-4 py-2 rounded-lg transition-colors flex items-center gap-2 ${
-                  pendingCount > 0 ? 'bg-orange-600 hover:bg-orange-700' : 'bg-gray-700 hover:bg-gray-600'
-                } disabled:bg-gray-800 disabled:cursor-not-allowed`}
-                title={pendingCount > 0 ? `处理 ${pendingCount} 个待处理视频` : '没有待处理的视频'}
+        <header className="flex flex-wrap justify-between items-center gap-5 mb-12 pb-6 border-b border-rule">
+          <Link
+            href="/"
+            className="font-ui text-ink-muted hover:text-ink text-[14px] transition-colors no-underline whitespace-nowrap"
+          >
+            ← 返回首页
+          </Link>
+          <h1 className="font-serif-cn font-bold text-[22px] text-ink-strong flex-1 text-center order-first sm:order-none basis-full sm:basis-auto tracking-wide">
+            抖音视频文字稿
+          </h1>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={startProcess}
+              disabled={processing || loading || refreshing}
+              className={`font-ui px-3.5 py-2 rounded-md text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed ${
+                pendingCount > 0
+                  ? 'border border-accent text-accent bg-accent/[0.04] hover:bg-accent hover:text-paper'
+                  : 'border border-rule text-ink bg-paper hover:border-ink-soft'
+              }`}
+              title={pendingCount > 0 ? `处理 ${pendingCount} 个待处理视频` : '没有待处理的视频'}
+            >
+              <svg
+                className={`w-4 h-4 ${processing ? 'animate-spin' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
               >
-                <svg className={`w-5 h-5 ${processing ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                </svg>
-                {processing ? '处理中...' : `待处理 (${pendingCount})`}
-              </button>
-              <div className="group relative">
-                <svg className="w-5 h-5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                <div className="absolute right-0 top-full mt-2 w-64 p-3 bg-gray-800 border border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10">
-                  <p className="text-gray-300 text-sm">点击启动 ASR 处理 pending 视频（后台串行运行，慢慢来）</p>
-                </div>
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"
+                />
+              </svg>
+              {processing ? '处理中...' : `待处理 (${pendingCount})`}
+            </button>
+            <div className="group relative">
+              <svg
+                className="w-4 h-4 text-ink-muted cursor-help"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"
+                />
+              </svg>
+              <div className="font-ui absolute right-0 top-full mt-2 w-64 p-3 bg-ink-strong text-paper text-[13px] rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-10 leading-relaxed">
+                点击启动 ASR 处理 pending 视频（后台串行运行，慢慢来）
               </div>
             </div>
           </div>
+        </header>
 
-          {/* 处理状态提示 */}
-          {processMessage && (
-            <div className="mt-4 p-4 bg-blue-900/50 border border-blue-700 rounded-lg">
-              <p className="text-blue-200">{processMessage}</p>
-            </div>
-          )}
-        </div>
+        {/* 处理状态提示 */}
+        {processMessage && (
+          <div className="font-ui mb-6 p-4 bg-paper-deep border-l-[3px] border-l-accent rounded-r-md text-ink-muted text-[14px]">
+            {processMessage}
+          </div>
+        )}
 
         {/* Tab 切换 */}
-        <div className="mb-6">
+        <div className="mb-8">
           <Tabs tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
         </div>
 
         {/* 错误提示 */}
         {error && (
-          <div className="mb-8 p-4 bg-red-900/50 border border-red-700 rounded-lg">
-            <p className="text-red-200">错误: {error}</p>
+          <div className="font-ui mb-8 p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger text-[14px]">
+            错误: {error}
           </div>
         )}
 
@@ -200,7 +223,7 @@ export default function DouyinPage() {
 
         {/* 视频列表 */}
         {!loading && videos.length > 0 && (
-          <div className="grid grid-cols-1 gap-6 mb-8">
+          <div className="grid grid-cols-1 gap-4 mb-8">
             {videos.map((video) => (
               <VideoCard
                 key={video.aweme_id}
@@ -217,8 +240,10 @@ export default function DouyinPage() {
 
         {/* 空状态 */}
         {!loading && videos.length === 0 && !error && (
-          <div className="text-center py-12">
-            <p className="text-gray-400 text-lg">{activeTab === 'unread' ? '暂无未读视频' : '暂无已读视频'}</p>
+          <div className="text-center py-16 font-ui">
+            <p className="text-ink-soft text-[15px]">
+              {activeTab === 'unread' ? '暂无未读视频' : '暂无已读视频'}
+            </p>
           </div>
         )}
       </div>

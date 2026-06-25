@@ -18,44 +18,44 @@ function getStatusBadge(status: string) {
     // v2.0 新状态
     case 'unread':
       return (
-        <span className="px-3 py-1 bg-blue-900/50 text-blue-300 text-sm rounded-full whitespace-nowrap">
+        <span className="font-ui px-2 py-0.5 bg-ink-strong/5 text-ink-strong text-[11px] rounded tracking-wider">
           未读
         </span>
       );
     case 'read':
       return (
-        <span className="px-3 py-1 bg-green-900/50 text-green-300 text-sm rounded-full whitespace-nowrap">
+        <span className="font-ui px-2 py-0.5 bg-success/10 text-success text-[11px] rounded tracking-wider">
           已读
         </span>
       );
     case 'deleted':
       return (
-        <span className="px-3 py-1 bg-gray-700/50 text-gray-400 text-sm rounded-full whitespace-nowrap">
+        <span className="font-ui px-2 py-0.5 bg-ink/5 text-ink-soft text-[11px] rounded tracking-wider">
           已删除
         </span>
       );
     // 旧值（迁移前过渡期保留）
     case 'completed':
       return (
-        <span className="px-3 py-1 bg-green-900/50 text-green-300 text-sm rounded-full whitespace-nowrap">
+        <span className="font-ui px-2 py-0.5 bg-success/10 text-success text-[11px] rounded tracking-wider">
           已识别
         </span>
       );
     case 'processing':
       return (
-        <span className="px-3 py-1 bg-yellow-900/50 text-yellow-300 text-sm rounded-full whitespace-nowrap">
+        <span className="font-ui px-2 py-0.5 bg-accent/10 text-accent text-[11px] rounded tracking-wider">
           识别中
         </span>
       );
     case 'failed':
       return (
-        <span className="px-3 py-1 bg-red-900/50 text-red-300 text-sm rounded-full whitespace-nowrap">
+        <span className="font-ui px-2 py-0.5 bg-danger/10 text-danger text-[11px] rounded tracking-wider">
           识别失败
         </span>
       );
     case 'pending':
       return (
-        <span className="px-3 py-1 bg-gray-700/50 text-gray-300 text-sm rounded-full whitespace-nowrap">
+        <span className="font-ui px-2 py-0.5 bg-ink/5 text-ink-muted text-[11px] rounded tracking-wider">
           待处理
         </span>
       );
@@ -75,11 +75,13 @@ export function VideoCard({
   return (
     <div
       onClick={onClick}
-      className="relative group p-6 bg-gray-900 rounded-lg hover:bg-gray-800 transition-colors border border-gray-800 cursor-pointer"
+      className="group relative p-6 sm:p-7 bg-paper-card border border-rule rounded-[10px] cursor-pointer transition-all duration-200 shadow-[0_1px_2px_rgba(43,42,40,0.04),0_2px_8px_rgba(43,42,40,0.04)] hover:-translate-y-px hover:shadow-[0_4px_12px_rgba(43,42,40,0.06),0_16px_32px_rgba(43,42,40,0.06)] hover:border-ink-soft"
     >
-      <div className="flex justify-between items-start mb-3">
-        <h3 className="text-xl font-bold flex-1 pr-4">{video.title || '未知标题'}</h3>
-        <div className="flex items-center gap-2">
+      <div className="flex justify-between items-start mb-2.5 gap-4">
+        <h3 className="font-serif-cn text-[19px] sm:text-[20px] font-bold flex-1 text-ink-strong leading-snug tracking-tight">
+          {video.title || '未知标题'}
+        </h3>
+        <div className="flex items-center gap-1.5 shrink-0">
           {/* 未读 Tab 且状态为 unread/completed 时不显示状态标识（列表默认就是未读） */}
           {(activeTab !== 'unread' || (video.status !== 'unread' && video.status !== 'completed')) && getStatusBadge(video.status)}
 
@@ -91,7 +93,7 @@ export function VideoCard({
                   e.stopPropagation();
                   onDeleteRecord?.(video.aweme_id);
                 }}
-                className="p-1 bg-gray-600 hover:bg-gray-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                className="font-ui p-1 bg-ink/5 hover:bg-ink/15 text-ink-muted rounded transition-all opacity-0 group-hover:opacity-100"
                 title="删除记录"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -103,7 +105,7 @@ export function VideoCard({
                   e.stopPropagation();
                   onDeleteWithFile?.(video.aweme_id);
                 }}
-                className="p-1 bg-red-600 hover:bg-red-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                className="font-ui p-1 bg-danger/10 hover:bg-danger text-danger hover:text-paper rounded transition-all opacity-0 group-hover:opacity-100"
                 title="删除并取消收藏"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -121,7 +123,7 @@ export function VideoCard({
                   e.stopPropagation();
                   onMarkAsRead?.(video.aweme_id);
                 }}
-                className="p-1 bg-green-600 hover:bg-green-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                className="font-ui p-1 bg-success/10 hover:bg-success text-success hover:text-paper rounded transition-all opacity-0 group-hover:opacity-100"
                 title="标记已读"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -133,7 +135,7 @@ export function VideoCard({
                   e.stopPropagation();
                   onDeleteRecord?.(video.aweme_id);
                 }}
-                className="p-1 bg-gray-600 hover:bg-gray-700 rounded transition-colors opacity-0 group-hover:opacity-100"
+                className="font-ui p-1 bg-ink/5 hover:bg-ink/15 text-ink-muted rounded transition-all opacity-0 group-hover:opacity-100"
                 title="删除记录"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -145,23 +147,25 @@ export function VideoCard({
         </div>
       </div>
 
-      <p className="text-gray-400 mb-2">作者: {video.author || '未知'}</p>
-
-      <p className="text-gray-600 text-sm">
-        {video.upload_time
-          ? `采集时间: ${new Date(video.upload_time).toLocaleString()}`
-          : '采集时间: 未知'}
+      <p className="font-ui text-[13px] text-ink-muted mb-3.5 flex items-center gap-2.5">
+        <span>{video.author || '未知'}</span>
+        <span className="text-ink-soft">·</span>
+        <span>
+          {video.upload_time
+            ? `采集于 ${new Date(video.upload_time).toLocaleString('zh-CN')}`
+            : '采集时间未知'}
+        </span>
       </p>
 
       {/* 文字稿预览 */}
-      <div className="mt-2">
+      <div>
         {video.transcript?.text ? (
-          <p className="text-gray-500 text-sm truncate">
-            {video.transcript.text.slice(0, 100)}
-            {video.transcript.text.length > 100 ? '...' : ''}
+          <p className="text-ink-muted text-[15px] leading-[1.7] line-clamp-2 m-0">
+            {video.transcript.text.slice(0, 120)}
+            {video.transcript.text.length > 120 ? '...' : ''}
           </p>
         ) : (
-          <p className="text-gray-600 text-sm italic">无解说</p>
+          <p className="text-ink-soft text-[14px] italic">无解说</p>
         )}
       </div>
     </div>

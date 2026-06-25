@@ -3,10 +3,11 @@
  * Douyin 模块的视频详情弹框组件
  */
 import { useState, useEffect } from 'react';
-import { VideoInfo } from '@/lib/types';
+import { VideoInfo, TranscriptSegment } from '@/lib/types';
 import { useDouyinUtils } from '@/lib/hooks';
 import { Loading } from './shared-ui/Loading';
 import { useVideoDetail } from '@/lib/hooks';
+import { TranscriptToc } from './TranscriptToc';
 
 export interface VideoModalProps {
   video: VideoInfo;
@@ -56,177 +57,174 @@ export function VideoModal({
     onClose();
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" onClick={onClose}>
-      {/* 背景遮罩 */}
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm"></div>
+  const segments: TranscriptSegment[] = displayVideo.transcript?.segments ?? [];
 
-      {/* 弹框内容 */}
+  return (
+    <div
+      className="fixed inset-0 z-50 overflow-y-auto bg-ink/45 backdrop-blur-md p-6 sm:p-10"
+      onClick={onClose}
+    >
+      {/* 关闭按钮 */}
+      <button
+        onClick={onClose}
+        className="fixed top-6 right-6 w-10 h-10 border-none bg-paper/90 rounded-full text-ink-muted cursor-pointer text-lg z-[110] shadow-sm hover:bg-paper hover:text-ink hover:scale-105 transition-all"
+        aria-label="关闭"
+      >
+        ✕
+      </button>
+
+      {/* 弹框主体：左阅读栏 + 右 TOC */}
       <div
-        className="relative bg-gray-900 rounded-lg shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
+        className="relative max-w-[1100px] mx-auto bg-paper rounded-[14px] shadow-[0_24px_64px_rgba(43,42,40,0.18)] grid grid-cols-1 lg:grid-cols-[1fr_280px] min-h-[calc(100vh-80px)] overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* 标题栏 */}
-        <div className="flex items-center justify-between p-6 border-b border-gray-800">
-          <h2 className="text-2xl font-bold flex-1 pr-4 line-clamp-2">
+        {/* 标题 + 正文区 */}
+        <div className="px-8 sm:px-14 py-12 sm:py-14 max-w-[calc(68ch+112px)]">
+          <h2 className="font-serif-cn text-[28px] sm:text-[32px] font-bold leading-tight text-ink-strong mb-5 tracking-tight">
             {displayVideo.title || '未知标题'}
           </h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-800 rounded-lg transition-colors">
-            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
 
-        {/* 内容区域 */}
-        <div className="flex-1 overflow-y-auto p-6">
+          <div className="font-ui text-[13px] text-ink-muted pb-7 mb-9 border-b border-rule flex flex-wrap gap-3.5 items-center">
+            <span>作者 <span className="text-ink-strong font-medium">{displayVideo.author || '未知'}</span></span>
+            <span className="text-ink-soft">·</span>
+            <span>采集 <span className="text-ink-strong font-medium">{formatTime(displayVideo.upload_time)}</span></span>
+            {displayVideo.video_publish_time && (
+              <>
+                <span className="text-ink-soft">·</span>
+                <span>发布 <span className="text-ink-strong font-medium">{formatTime(displayVideo.video_publish_time)}</span></span>
+              </>
+            )}
+            {displayVideo.transcript && (
+              <>
+                <span className="text-ink-soft">·</span>
+                <span>音频 <span className="text-ink-strong font-medium tnum">{displayVideo.transcript.audio_duration.toFixed(0)}秒</span></span>
+                <span className="text-ink-soft">·</span>
+                <span>置信度 <span className="text-ink-strong font-medium tnum">{(displayVideo.transcript.confidence * 100).toFixed(1)}%</span></span>
+              </>
+            )}
+          </div>
+
           {detailLoading ? (
             <Loading message="加载详情中..." />
           ) : detailError ? (
-            <div className="p-6 bg-red-900/50 border border-red-700 rounded-lg">
-              <p className="text-red-200">错误: {detailError}</p>
+            <div className="p-6 bg-danger/10 border border-danger/30 rounded-lg">
+              <p className="text-danger">错误: {detailError}</p>
             </div>
           ) : displayVideo.status === 'failed' ? (
-            <div className="p-6 bg-red-900/50 border border-red-700 rounded-lg">
-              <p className="text-red-300">识别失败: {displayVideo.error || '未知错误'}</p>
+            <div className="p-6 bg-danger/10 border border-danger/30 rounded-lg">
+              <p className="text-danger">识别失败: {displayVideo.error || '未知错误'}</p>
             </div>
           ) : displayVideo.status === 'pending' || displayVideo.status === 'processing' ? (
-            <div className="p-6 bg-blue-900/50 border border-blue-700 rounded-lg">
-              <p className="text-blue-200">
+            <div className="p-6 bg-ink/5 border border-ink/15 rounded-lg">
+              <p className="text-ink-muted">
                 {displayVideo.status === 'processing'
                   ? '视频正在识别中，请稍后再来查看'
                   : '视频尚未处理，处理由 douyin-collector 自动推送完成'}
               </p>
             </div>
           ) : displayVideo.status === 'deleted' ? (
-            <div className="p-6 bg-gray-800/50 border border-gray-700 rounded-lg">
-              <p className="text-gray-300">此视频已被删除</p>
+            <div className="p-6 bg-ink/5 border border-ink/10 rounded-lg">
+              <p className="text-ink-muted">此视频已被删除</p>
             </div>
           ) : (
             <>
-              {/* 视频信息 */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6 p-4 bg-gray-800/50 rounded-lg">
-                <div>
-                  <p className="text-gray-400 text-sm mb-1">作者</p>
-                  <p className="text-lg">{displayVideo.author || '未知'}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-sm mb-1">采集时间</p>
-                  <p className="text-lg">{formatTime(displayVideo.upload_time)}</p>
-                </div>
-                <div>
-                  <p className="text-gray-400 text-sm mb-1">视频发布时间</p>
-                  <p className="text-lg">{formatTime(displayVideo.video_publish_time)}</p>
-                </div>
-                {displayVideo.transcript && (
-                  <>
-                    <div>
-                      <p className="text-gray-400 text-sm mb-1">音频时长</p>
-                      <p className="text-lg">{displayVideo.transcript.audio_duration.toFixed(2)} 秒</p>
-                    </div>
-                    <div>
-                      <p className="text-gray-400 text-sm mb-1">识别置信度</p>
-                      <p className="text-lg">{(displayVideo.transcript.confidence * 100).toFixed(1)}%</p>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* 描述 */}
+              {/* 视频描述 */}
               {displayVideo.description && displayVideo.description !== displayVideo.title && (
-                <div className="bg-gray-800/50 rounded-lg p-4 mb-6">
-                  <p className="text-gray-400 text-sm mb-2">视频描述</p>
-                  <p className="text-gray-200">{displayVideo.description}</p>
+                <div className="bg-paper-deep border-l-[3px] border-l-accent px-5 py-4 mb-8 rounded-r-md text-[15px] text-ink-muted leading-relaxed">
+                  <div className="font-ui text-[11px] uppercase tracking-[0.15em] text-ink-soft mb-1.5 font-semibold">
+                    视频描述
+                  </div>
+                  {displayVideo.description}
                 </div>
               )}
 
-              {/* 文字稿内容 */}
+              {/* 文字稿 */}
               {displayVideo.transcript ? (
-                <div className="bg-gray-800/50 rounded-lg p-6">
-                  <h3 className="text-xl font-bold mb-4">识别文字稿</h3>
+                <>
+                  <div className="font-ui text-[11px] uppercase tracking-[0.2em] text-ink-soft mb-2 font-semibold">
+                    识别文字稿
+                  </div>
+                  <div className="h-px bg-rule mb-6" />
 
-                  {displayVideo.transcript.segments && displayVideo.transcript.segments.length > 0 ? (
-                    <div className="space-y-3">
-                      {displayVideo.transcript.segments.map((segment, index) => (
-                        <div key={index} className="flex gap-4 text-lg">
-                          <span className="text-gray-500 whitespace-nowrap select-none">
-                            [{formatSegmentTime(segment.start_time)} - {formatSegmentTime(segment.end_time)}]
+                  {segments.length > 0 ? (
+                    <div className="space-y-0">
+                      {segments.map((segment, index) => (
+                        <div
+                          key={index}
+                          data-seg-idx={index}
+                          className="grid grid-cols-[100px_1fr] gap-5 py-[18px] border-b border-dashed border-rule scroll-mt-16 transition-colors hover:bg-accent/[0.03]"
+                        >
+                          <span className="tnum font-serif-en text-[13px] text-accent font-medium pt-1.5 whitespace-nowrap tracking-wide">
+                            {formatSegmentTime(segment.start_time)} — {formatSegmentTime(segment.end_time)}
                           </span>
-                          <span className="text-gray-300 flex-1 leading-relaxed">{segment.text}</span>
+                          <span className="font-serif-cn text-[18px] leading-[1.85] text-ink tracking-wide">
+                            {segment.text}
+                          </span>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <div className="space-y-4">
-                      <p className="text-gray-200 leading-loose text-base whitespace-pre-wrap">
-                        {displayVideo.transcript.text}
-                      </p>
-                    </div>
+                    <p className="font-serif-cn text-[17px] leading-[1.85] text-ink whitespace-pre-wrap tracking-wide">
+                      {displayVideo.transcript.text}
+                    </p>
                   )}
-                </div>
+                </>
               ) : (
-                <div className="bg-gray-800/50 rounded-lg p-6">
-                  <p className="text-gray-400">暂无文字稿</p>
+                <div className="bg-paper-deep px-6 py-6 rounded-lg">
+                  <p className="text-ink-muted">暂无文字稿</p>
                 </div>
               )}
+
+              {/* 操作栏 */}
+              <div className="mt-10 pt-6 border-t border-rule flex flex-wrap gap-2 justify-between items-center font-ui">
+                <div className="flex gap-2 flex-wrap">
+                  {(displayVideo.status === 'unread' || (displayVideo.status === 'completed' && !displayVideo.is_read)) && (
+                    <>
+                      <button
+                        onClick={handleMarkAsRead}
+                        className="px-4 py-2 rounded-md border border-accent text-accent bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:bg-accent hover:text-paper"
+                      >
+                        <span>✓</span>
+                        标记已读
+                      </button>
+                      <button
+                        onClick={handleDeleteRecord}
+                        className="px-4 py-2 rounded-md border border-rule text-ink bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:border-ink-soft hover:bg-paper-deep"
+                      >
+                        删除记录
+                      </button>
+                    </>
+                  )}
+                  {(displayVideo.status === 'read' || displayVideo.is_read) && (
+                    <>
+                      <button
+                        onClick={handleDeleteRecord}
+                        className="px-4 py-2 rounded-md border border-rule text-ink bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:border-ink-soft hover:bg-paper-deep"
+                      >
+                        删除记录
+                      </button>
+                      <button
+                        onClick={handleDeleteWithFile}
+                        className="px-4 py-2 rounded-md border border-danger text-danger bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:bg-danger hover:text-paper"
+                      >
+                        删除并取消收藏
+                      </button>
+                    </>
+                  )}
+                </div>
+                <button
+                  onClick={onClose}
+                  className="px-4 py-2 rounded-md border border-rule text-ink-muted bg-paper text-[13px] cursor-pointer transition-all hover:border-ink-soft hover:text-ink"
+                >
+                  关闭
+                </button>
+              </div>
             </>
           )}
         </div>
 
-        {/* 底部操作栏 */}
-        <div className="p-4 border-t border-gray-800 flex justify-between items-center">
-          <div className="flex gap-2">
-            {/* 未读视频（status=unread 或 旧 is_read=false + status=completed）显示标记已读和删除记录按钮 */}
-            {(displayVideo.status === 'unread' || (displayVideo.status === 'completed' && !displayVideo.is_read)) && (
-              <>
-                <button
-                  onClick={handleMarkAsRead}
-                  className="px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                  </svg>
-                  标记已读
-                </button>
-                <button
-                  onClick={handleDeleteRecord}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  删除记录
-                </button>
-              </>
-            )}
-            {/* 已读视频（status=read 或 旧 is_read=true）显示删除记录和删除并取消收藏按钮 */}
-            {(displayVideo.status === 'read' || displayVideo.is_read) && (
-              <>
-                <button
-                  onClick={handleDeleteRecord}
-                  className="px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                  删除记录
-                </button>
-                <button
-                  onClick={handleDeleteWithFile}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 rounded-lg transition-colors flex items-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                  </svg>
-                  删除并取消收藏
-                </button>
-              </>
-            )}
-          </div>
-          <button onClick={onClose} className="px-6 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
-            关闭
-          </button>
-        </div>
+        {/* 右侧 TOC（仅 segments 非空时显示） */}
+        {segments.length > 0 && <TranscriptToc segments={segments} />}
       </div>
     </div>
   );
