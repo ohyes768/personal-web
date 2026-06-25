@@ -4,6 +4,7 @@
  */
 import { useState, useEffect } from 'react';
 import { VideoInfo, TranscriptSegment } from '@/lib/types';
+import { mergeSegmentsToParagraphs } from '@/lib/segment';
 import { useDouyinUtils } from '@/lib/hooks';
 import { Loading } from './shared-ui/Loading';
 import { useVideoDetail } from '@/lib/hooks';
@@ -57,6 +58,7 @@ export function VideoModal({
   };
 
   const segments: TranscriptSegment[] = displayVideo.transcript?.segments ?? [];
+  const paragraphs = mergeSegmentsToParagraphs(segments);
 
   return (
     <div
@@ -148,17 +150,17 @@ export function VideoModal({
 
                   {segments.length > 0 ? (
                     <div className="space-y-0">
-                      {segments.map((segment, index) => (
+                      {paragraphs.map((paragraph, pIdx) => (
                         <div
-                          key={index}
-                          data-seg-idx={index}
+                          key={pIdx}
+                          data-para-idx={pIdx}
                           className="grid grid-cols-[68px_1fr] gap-3 py-[3px] scroll-mt-16 transition-colors hover:bg-accent/[0.03]"
                         >
                           <span className="tnum font-serif-en text-[11px] text-accent/70 font-normal pt-[7px] whitespace-nowrap tracking-wide select-none">
-                            {formatSegmentTime(segment.start_time)}
+                            {formatSegmentTime(paragraph.start_time)}
                           </span>
                           <span className="font-serif-cn text-[18px] leading-[1.85] text-ink tracking-wide">
-                            {segment.text}
+                            {paragraph.segments.map((s) => s.text).join(' ')}
                           </span>
                         </div>
                       ))}
