@@ -11,6 +11,12 @@ WORKDIR /app
 RUN npm install -g pnpm
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+
+# NEXT_PUBLIC_* 在 Next.js 里是 build-time inline，必须在 build 时传入
+# 默认值仅用于本地开发，生产环境通过 docker build --build-arg 覆盖
+ARG NEXT_PUBLIC_DOUYIN_RSS_TOKEN=""
+ENV NEXT_PUBLIC_DOUYIN_RSS_TOKEN=${NEXT_PUBLIC_DOUYIN_RSS_TOKEN}
+
 RUN pnpm build
 
 FROM node:20-alpine AS runner

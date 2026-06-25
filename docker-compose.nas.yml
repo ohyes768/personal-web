@@ -107,6 +107,9 @@ services:
     build:
       context: ./apps/douyin
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* 是 build-time inline，必须在 build 阶段传
+        NEXT_PUBLIC_DOUYIN_RSS_TOKEN: ${DOUYIN_RSS_TOKEN:-}
     container_name: douyin-frontend
     restart: unless-stopped
     ports:
