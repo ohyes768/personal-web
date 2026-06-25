@@ -872,6 +872,28 @@ async def _read_output_text(aweme_id: str) -> Optional[str]:
         return None
 
 
+async def _read_output_doc(aweme_id: str) -> Optional[dict]:
+    """读 output/{aweme_id}.json，返回 {text, segments}。
+
+    损坏/缺失 → None（单条跳过，不阻塞 RSS feed）。
+    """
+    try:
+        result_file = Path(processor.output_dir) / f"{aweme_id}.json"
+        if not result_file.exists():
+            logger.warning(f"RSS: output 文件缺失 {aweme_id}")
+            return None
+        data = load_json(str(result_file))
+        if not data:
+            return None
+        return {
+            "text": data.get("text", "") or "",
+            "segments": data.get("segments") or None,
+        }
+    except Exception as e:
+        logger.warning(f"RSS: 读 output 失败 {aweme_id}: {e}")
+        return None
+
+
 def _parse_iso_datetime(s: Optional[str]) -> Optional[datetime]:
     """解析 ISO 8601 字符串为 datetime（naive 当本地 +08:00）"""
     if not s:
@@ -937,17 +959,23 @@ async def rss_feed(
         cap = min(limit, _RSS_MAX_ITEMS)
         candidates = candidates[:cap]
 
-        # 5. 并发读 output text
-        texts = await asyncio.gather(
-            *[_read_output_text(aid) for aid, _ in candidates]
+        # 5. 并发读 output doc（text + segments）
+        docs = await asyncio.gather(
+            *[_read_output_doc(aid) for aid, _ in candidates]
         )
 
         # 6. 拼装 item dict
+        from src.server.rss_utils import xml_escape
+        from src.server.segment_html import merge_segments_to_paragraphs, render_paragraphs_html
+
         base_url = _RSS_CHANNEL_META.get("link", "").rstrip("/")
         items: list[dict] = []
-        for (aweme_id, st), text in zip(candidates, texts):
-            if text is None:
-                continue  # output 损坏/缺失的跳过
+        for (aweme_id, st), doc in zip(candidates, docs):
+            if doc is None or not doc["text"]:
+                continue  # output 损坏/缺失 → 跳过
+            text = doc["text"]
+            segments = doc["segments"]
+
             title = st.get("title") or f"视频 {aweme_id}"
             author = st.get("author") or "未知作者"
             description_field = st.get("description") or ""
@@ -957,6 +985,20 @@ async def rss_feed(
                 or st.get("created_at")
             ) or datetime.now()
 
+            # 分段策略（按优先级）
+            if segments:
+                paragraphs = merge_segments_to_paragraphs(segments)
+                body = render_paragraphs_html(paragraphs)
+            elif "\n\n" in text:
+                # 旧数据有预分段 → 按 \n\n 切
+                body = "\n".join(
+                    f"<p>{xml_escape(p.strip())}</p>"
+                    for p in text.split("\n\n") if p.strip()
+                )
+            else:
+                # 兜底：整段单 <p>
+                body = f"<p>{xml_escape(text.strip())}</p>"
+
             items.append({
                 "title": title,
                 "link": f"{base_url}/douyin/?video={aweme_id}",
@@ -965,7 +1007,7 @@ async def rss_feed(
                 "categories": extract_hashtags(description_field, max_n=5),
                 "pub_date": pub_dt,
                 "guid": aweme_id,
-                "content_encoded": text,
+                "content_encoded": body,
             })
 
         # 7. 拼 RSS XML
