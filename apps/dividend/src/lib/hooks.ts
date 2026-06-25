@@ -413,6 +413,9 @@ export function useHighlights(stocks: DividendStock[]) {
     // 3年复合增长率，最大值为最优
     const cagr3yValues = stocks.map(s => s.net_profit_cagr_3y ?? -Infinity);
     const cagr3yIndex = cagr3yValues.indexOf(Math.max(...cagr3yValues));
+    // 加权净资产收益率，最大值为最优
+    const roeValues = stocks.map(s => s.roe ?? -Infinity);
+    const roeIndex = roeValues.indexOf(Math.max(...roeValues));
 
     return {
       yieldIndex: yieldIndex >= 0 ? yieldIndex : null,
@@ -421,6 +424,7 @@ export function useHighlights(stocks: DividendStock[]) {
       lowChangeIndex: lowChangeIndex >= 0 ? lowChangeIndex : null,
       nonRecurringYoYIndex: nonRecurringYoYIndex >= 0 ? nonRecurringYoYIndex : null,
       cagr3yIndex: cagr3yIndex >= 0 ? cagr3yIndex : null,
+      roeIndex: roeIndex >= 0 ? roeIndex : null,
     };
   }, [stocks]);
 }

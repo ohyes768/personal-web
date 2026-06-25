@@ -189,6 +189,34 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
+                <span>ROE</span>
+              </div>
+            </td>
+            {stocks.map((stock, idx) => {
+              const value = stock.roe;
+              const isHighlighted = highlights.roeIndex === idx;
+              return (
+                <td key={stock.code} className="px-4 py-2 text-center border-b border-gray-700">
+                  {value !== null && value !== undefined ? (
+                    isHighlighted ? (
+                      <div className="inline-flex items-center gap-1 px-2 py-1 bg-green-900/20 text-green-400 rounded">
+                        <StarIcon className="w-4 h-4 text-yellow-400" aria-label="最优值" />
+                        <span className="font-mono">{formatPercent(value)}</span>
+                      </div>
+                    ) : (
+                      <span className="font-mono">{formatPercent(value)}</span>
+                    )
+                  ) : (
+                    <span>-</span>
+                  )}
+                </td>
+              );
+            })}
+          </tr>
+          <tr className="hover:bg-gray-800/50">
+            <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
+              <div className="flex items-center gap-2">
+                <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
                 <span>扣非净利润同比</span>
               </div>
             </td>

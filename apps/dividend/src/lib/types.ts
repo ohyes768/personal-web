@@ -361,6 +361,7 @@ export interface HighlightInfo {
   lowChangeIndex: number | null;   // 最高跌幅，绝对值最小为最优
   nonRecurringYoYIndex: number | null; // 扣非净利润同比，最大值为最优
   cagr3yIndex: number | null;          // 3年复合增长率，最大值为最优
+  roeIndex: number | null;             // 加权净资产收益率，最大值为最优
 }
 
 /**
