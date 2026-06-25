@@ -5,6 +5,7 @@ import { Tabs } from '@/components/shared-ui/Tabs';
 import { Loading } from '@/components/shared-ui/Loading';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoModal } from '@/components/VideoModal';
+import { RssSubscribe } from '@/components/RssSubscribe';
 import { useDouyinVideos, usePendingCount, useAsyncProcess, useVideoActions } from '@/lib/hooks';
 import type { TabType, VideoInfo } from '@/lib/types';
 
@@ -152,6 +153,7 @@ export default function DouyinPage() {
             抖音视频文字稿
           </h1>
           <div className="flex items-center gap-2">
+            <RssSubscribe />
             <button
               onClick={startProcess}
               disabled={processing || loading || refreshing}

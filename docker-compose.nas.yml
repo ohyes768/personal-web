@@ -90,6 +90,7 @@ services:
       - ./backend/douyin-processor/config:/app/config:ro  # file-system-go 地址可热改，无需 rebuild
     environment:
       - ALIYUN_ACCESS_KEY=${DOUYIN_ALIYUN_ACCESS_KEY:-}
+      - DOUYIN_RSS_TOKEN=${DOUYIN_RSS_TOKEN:-}
     networks:
       - app-net
     healthcheck:
@@ -115,6 +116,7 @@ services:
       - NEXT_PUBLIC_API_BASE_URL=/
       - DOUYIN_BACKEND_URL=http://douyin-backend:8093/api
       - AWEME_BACKEND_URL=http://douyin-backend:8093/api/aweme
+      - NEXT_PUBLIC_DOUYIN_RSS_TOKEN=${DOUYIN_RSS_TOKEN:-}
     networks:
       - app-net
     depends_on:
