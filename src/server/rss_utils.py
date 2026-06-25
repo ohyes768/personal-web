@@ -2,6 +2,9 @@
 RSS 2.0 订阅源工具函数
 为 /api/rss.xml 端点提供 XML 转义、CDATA 安全、日期格式化、hashtag 提取、摘要截断和 RSS 文档拼装。
 
+content_encoded 字段已分段（见 endpoints.py）：优先用 segments 启发式合并为带时间戳的段，
+旧数据 fallback 到 \\n\\n 切 / 整段 <p>。
+
 为什么手写不用 feedgen：项目零 XML 依赖，RSS 2.0 模板固定，手写 ~120 行足够可控。
 """
 
