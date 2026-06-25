@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import Link from 'next/link';
 import { Tabs } from '@/components/shared-ui/Tabs';
 import { Loading } from '@/components/shared-ui/Loading';
 import { VideoCard } from '@/components/VideoCard';
@@ -143,12 +142,12 @@ export default function DouyinPage() {
       <div className="max-w-[960px] mx-auto px-6 sm:px-8 py-10 sm:py-12 pb-20">
         {/* 头部导航 */}
         <header className="flex flex-wrap justify-between items-center gap-5 mb-12 pb-6 border-b border-rule">
-          <Link
+          <a
             href="/"
             className="font-ui text-ink-muted hover:text-ink text-[14px] transition-colors no-underline whitespace-nowrap"
           >
             ← 返回首页
-          </Link>
+          </a>
           <h1 className="font-serif-cn font-bold text-[22px] text-ink-strong flex-1 text-center order-first sm:order-none basis-full sm:basis-auto tracking-wide">
             抖音视频文字稿
           </h1>
