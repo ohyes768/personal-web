@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from loguru import logger
 
-from src.server.endpoints import router, set_processor
+from src.server.endpoints import router, set_processor, set_rss_config, set_rss_token
 from src.processor.filesystem_client import FileSystemClient
 from src.processor.asr_client import AliyunASRClient
 from src.processor.status_manager import StatusManager
@@ -69,6 +69,18 @@ async def lifespan(app: FastAPI):
     # 设置到全局
     set_processor(video_processor)
     app.state.processor = video_processor
+
+    # 注入 RSS 配置（channel meta + limits）
+    rss_config = app_config.get("rss", {})
+    rss_channel = rss_config.get("channel", {})
+    set_rss_config(
+        channel_meta=rss_channel,
+        max_items=rss_config.get("max_items", 200),
+        default_limit=rss_config.get("default_limit", 50),
+    )
+
+    # 注入 RSS token（仅环境变量，app.yaml 不写）
+    set_rss_token(os.getenv("DOUYIN_RSS_TOKEN", ""))
 
     logger.info("视频处理器初始化完成")
 

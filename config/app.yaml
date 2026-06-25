@@ -28,3 +28,16 @@ app:
     console: true
     file: true
     dir: "logs"
+
+  # RSS 订阅源（v1.0）
+  # token 走 DOUYIN_RSS_TOKEN 环境变量，app.yaml 不写
+  rss:
+    # channel 元数据
+    channel:
+      title: "抖音视频文字稿"
+      # 公网域名（已确认 = web.duomi77.cn:9443）
+      link: "https://web.duomi77.cn:9443"
+      description: "通过 douyin-processor 自动转写的抖音视频文字稿"
+    # 限制
+    max_items: 200            # 硬上限
+    default_limit: 50         # 默认 limit

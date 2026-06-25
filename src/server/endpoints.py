@@ -3,14 +3,21 @@ API 接口端点
 """
 
 import asyncio
+import hmac
+import os
 from datetime import datetime
-from fastapi import APIRouter, HTTPException, BackgroundTasks, Query
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Request, Response
 from pydantic import BaseModel
 from typing import Optional, List
 from pathlib import Path
 from loguru import logger
 
 from src.utils import load_json
+from src.server.rss_utils import (
+    build_rss_xml,
+    extract_hashtags,
+    truncate_for_summary,
+)
 
 router = APIRouter()
 
@@ -19,6 +26,48 @@ processor = None
 
 # 处理任务锁：避免并发触发同一批 pending 被处理两次（重复消耗 ASR 配额）
 _process_lock = asyncio.Lock()
+
+
+# ---- RSS 配置（由 main.py 注入）----
+
+_RSS_CHANNEL_META: dict = {
+    "title": "抖音视频文字稿",
+    "link": "",
+    "description": "通过 douyin-processor 自动转写的抖音视频文字稿",
+    "self_url": "",
+}
+_RSS_MAX_ITEMS: int = 200
+_RSS_DEFAULT_LIMIT: int = 50
+_RSS_TOKEN: str = ""
+
+
+def set_rss_config(
+    channel_meta: dict,
+    max_items: int,
+    default_limit: int,
+) -> None:
+    """注入 RSS 配置（main.py 启动时调用）"""
+    global _RSS_CHANNEL_META, _RSS_MAX_ITEMS, _RSS_DEFAULT_LIMIT
+    merged = dict(_RSS_CHANNEL_META)
+    merged.update(channel_meta or {})
+    _RSS_CHANNEL_META = merged
+    _RSS_MAX_ITEMS = int(max_items or 200)
+    _RSS_DEFAULT_LIMIT = int(default_limit or 50)
+
+
+def set_rss_token(token: str) -> None:
+    """注入 RSS 鉴权 token（main.py 启动时调用，从 env 读取）"""
+    global _RSS_TOKEN
+    _RSS_TOKEN = token or ""
+
+
+def _verify_rss_token(token: str) -> bool:
+    """constant-time token 校验"""
+    if not _RSS_TOKEN:
+        return False
+    if len(token) != len(_RSS_TOKEN):
+        return False
+    return hmac.compare_digest(token, _RSS_TOKEN)
 
 
 def set_processor(proc):
@@ -796,4 +845,154 @@ async def delete_aweme(aweme_id: str, keep_file: bool = False):
         )
     except Exception as e:
         logger.error(f"{action}失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# RSS 2.0 订阅源
+# =============================================================================
+
+
+async def _read_output_text(aweme_id: str) -> Optional[str]:
+    """读 output/{aweme_id}.json 中的转写 text，损坏/缺失返回 None。
+
+    load_json 对 FileNotFoundError 已兜底返回 {}，但 JSONDecodeError 仍会抛。
+    包装一层把任何异常都吞掉，单条失败不阻塞整条 RSS feed。
+    """
+    try:
+        result_file = Path(processor.output_dir) / f"{aweme_id}.json"
+        if not result_file.exists():
+            logger.warning(f"RSS: output 文件缺失 {aweme_id}")
+            return None
+        data = load_json(str(result_file))
+        text = data.get("text", "")
+        return text if text else None
+    except Exception as e:
+        logger.warning(f"RSS: 读 output 失败 {aweme_id}: {e}")
+        return None
+
+
+def _parse_iso_datetime(s: Optional[str]) -> Optional[datetime]:
+    """解析 ISO 8601 字符串为 datetime（naive 当本地 +08:00）"""
+    if not s:
+        return None
+    try:
+        # 形如 "2026-06-12T02:28:30.829899" 或带 timezone
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+@router.get("/api/rss.xml")
+async def rss_feed(
+    request: Request,
+    token: str = Query(..., description="RSS 订阅 token"),
+    limit: int = Query(50, ge=1, le=200, description="返回条目数上限"),
+    include_read: bool = Query(True, description="是否包含已读 (status=read)"),
+):
+    """RSS 2.0 订阅源（FreshRSS / Feedly / Inoreader 通用）
+
+    鉴权：query string `?token=xxx`，token 来自 DOUYIN_RSS_TOKEN 环境变量。
+    状态过滤：read + unread + completed（v1.0 旧 completed 也兼容）。
+    """
+    if not _verify_rss_token(token):
+        # 只记 token 前 4 字符（防日志泄漏）
+        prefix = token[:4] + "***" if token else "<empty>"
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(f"RSS 鉴权失败: token={prefix}, remote={client_ip}")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    try:
+        # 1. 拿所有状态
+        all_statuses = await processor.status_manager.get_all_statuses()
+
+        # 2. 过滤完成态
+        allowed_statuses = {"read", "unread", "completed"}
+        if not include_read:
+            allowed_statuses.discard("read")
+
+        candidates: list[tuple[str, dict]] = []
+        for aweme_id, st in all_statuses.items():
+            if st.get("status") in allowed_statuses:
+                candidates.append((aweme_id, st))
+
+        # 3. 排序：按 processed_at 倒序，fallback pending_at → created_at
+        def sort_key(item):
+            _, st = item
+            dt_str = (
+                st.get("processed_at")
+                or st.get("pending_at")
+                or st.get("created_at")
+            )
+            dt = _parse_iso_datetime(dt_str)
+            # 返 tuple 兼容 None 排序
+            return dt or datetime.min
+
+        candidates.sort(key=sort_key, reverse=True)
+
+        # 4. 截前 limit 条
+        cap = min(limit, _RSS_MAX_ITEMS)
+        candidates = candidates[:cap]
+
+        # 5. 并发读 output text
+        texts = await asyncio.gather(
+            *[_read_output_text(aid) for aid, _ in candidates]
+        )
+
+        # 6. 拼装 item dict
+        base_url = _RSS_CHANNEL_META.get("link", "").rstrip("/")
+        items: list[dict] = []
+        for (aweme_id, st), text in zip(candidates, texts):
+            if text is None:
+                continue  # output 损坏/缺失的跳过
+            title = st.get("title") or f"视频 {aweme_id}"
+            author = st.get("author") or "未知作者"
+            description_field = st.get("description") or ""
+            pub_dt = _parse_iso_datetime(
+                st.get("processed_at")
+                or st.get("pending_at")
+                or st.get("created_at")
+            ) or datetime.now()
+
+            items.append({
+                "title": title,
+                "link": f"{base_url}/douyin/?video={aweme_id}",
+                "description": truncate_for_summary(text, 200),
+                "author": author,
+                "categories": extract_hashtags(description_field, max_n=5),
+                "pub_date": pub_dt,
+                "guid": aweme_id,
+                "content_encoded": text,
+            })
+
+        # 7. 拼 RSS XML
+        build_dt = max((it["pub_date"] for it in items), default=datetime.now())
+        # self_url 来自当前请求
+        self_url = str(request.url)
+
+        channel_meta = {
+            "title": _RSS_CHANNEL_META.get("title", "抖音视频文字稿"),
+            "link": _RSS_CHANNEL_META.get("link", ""),
+            "description": _RSS_CHANNEL_META.get("description", ""),
+            "self_url": self_url,
+        }
+
+        xml = build_rss_xml(channel_meta, items, build_dt)
+
+        return Response(
+            content=xml,
+            media_type="application/rss+xml; charset=utf-8",
+            headers={
+                "Cache-Control": "public, max-age=300",
+                "X-Robots-Tag": "noindex",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RSS feed 异常: {e}")
         raise HTTPException(status_code=500, detail=str(e))
