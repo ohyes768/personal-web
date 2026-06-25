@@ -277,6 +277,9 @@ export function DividendTable({
             <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
               户数
             </th>
+            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider" title="加权净资产收益率(%)">
+              ROE
+            </th>
             <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
               扣非同比
             </th>
@@ -390,6 +393,21 @@ export function DividendTable({
                 </td>
                 <td className="w-20 px-2 py-3 text-sm text-gray-300">
                   {formatShareholderCount(stock.shareholder_count)}
+                </td>
+                <td className="w-20 px-2 py-3 text-sm text-right">
+                  {stock.roe !== null && stock.roe !== undefined
+                    ? (
+                      <span
+                        className={
+                          stock.roe < 0 ? 'text-red-400' :
+                          stock.roe >= 10 ? 'text-green-400 font-semibold' :
+                          'text-gray-200'
+                        }
+                      >
+                        {stock.roe.toFixed(2)}%
+                      </span>
+                    )
+                    : <span className="text-gray-400">-</span>}
                 </td>
                 <td
                   data-popover-trigger={`koufei:${stock.code}`}

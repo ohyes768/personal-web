@@ -86,6 +86,7 @@ export interface DividendStock {
   eps?: number | null;                            // 最近一期年报基本每股收益(元)
   eps_year?: number | null;                       // 最近一期年报年度
   payout_ratio?: number | null;                   // 分红比例(%)：DPS/EPS×100
+  roe?: number | null;                            // 加权净资产收益率(%)
 
   // 财务指标 - 最新季度（2026Q1 vs 2025Q1）
   latest_quarter_net_profit_ex_non_recurring?: number | null; // 最新季度扣非净利润(元)
