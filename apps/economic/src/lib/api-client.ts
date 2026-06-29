@@ -18,7 +18,7 @@ class ApiClient {
   private mode: ApiClientMode;
 
   constructor(baseUrl: string = '', mode: ApiClientMode = 'wrapped') {
-    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8080';
+    this.baseUrl = baseUrl || process.env.NEXT_PUBLIC_API_BASE_URL || '';
     this.mode = mode;
   }
 
@@ -86,9 +86,10 @@ class ApiClient {
 
   async post<T>(endpoint: string, data?: any): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
+    // 用 {} 兜底避免 body=undefined 时 fetch 发送空 POST body 引发下游 JSON parse 失败
     return this.request<T>(url, {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify(data ?? {}),
     });
   }
 

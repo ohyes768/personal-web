@@ -6,7 +6,11 @@
 import type { EconomicDataResponse, TabType } from '../types/economic';
 
 /**
- * 过滤每月1号的数据
+ * 过滤每月数据（每月首行）
+ * 改用"月份变化"判别而非"日 === 1"：
+ * - 后端 ffill 月度数据到 us_treasuries 交易日序列后，1 号若为周末会被推到 2 号或 3 号
+ * - 旧逻辑 `getDate() === 1` 会把这类月份整月丢弃（典型：2025-02 周六 → 2025-02-03）
+ * - 新逻辑：相邻两行月份不同就代表新一月开始，取该行
  */
 export function filterMonthlyData(data: EconomicDataResponse): EconomicDataResponse {
   if (!data || !data.dates || data.dates.length === 0) {
@@ -14,13 +18,13 @@ export function filterMonthlyData(data: EconomicDataResponse): EconomicDataRespo
   }
 
   const monthlyIndices: number[] = [];
+  let prevMonth = '';
 
   for (let i = 0; i < data.dates.length; i++) {
-    const dateStr = data.dates[i];
-    const date = new Date(dateStr);
-
-    if (date.getDate() === 1) {
+    const month = data.dates[i].slice(0, 7); // 'YYYY-MM'
+    if (month !== prevMonth) {
       monthlyIndices.push(i);
+      prevMonth = month;
     }
   }
 

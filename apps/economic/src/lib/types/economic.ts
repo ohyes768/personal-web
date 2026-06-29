@@ -8,7 +8,7 @@
 export type TimeRange = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
 /** Tab类型选项 */
-export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow';
+export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities';
 
 /** 时间范围配置 */
 export interface TimeRangeConfig {
@@ -59,6 +59,28 @@ export interface EconomicDataResponse {
     usd_eur: number[];
   };
   vix?: number[];
+  fund_flow?: {
+    north_net_flow: (number | null)[];
+    north_buy: (number | null)[];
+    north_sell: (number | null)[];
+    south_net_flow: (number | null)[];
+    south_buy: (number | null)[];
+    south_sell: (number | null)[];
+  };
+  china_bond?: {
+    '10y': (number | null)[];
+  };
+  ted_spread?: {
+    sofr: (number | null)[];
+    us_3m: (number | null)[];
+    ted_spread: (number | null)[];
+  };
+  commodities?: {
+    gold: (number | null)[];
+    silver: (number | null)[];
+    oil: (number | null)[];
+    copper: (number | null)[];
+  };
 }
 
 /** 图表数据系列 */

@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import type { TimeRange, EconomicDataResponse, TabType } from '../types/economic';
 import { economicApi } from '../modules/economic/api';
-import { calculateDateRange } from '../utils/dateCalculators';
+import { calculateDateRange, TIME_RANGE_MAP } from '../utils/dateCalculators';
 import { filterDataByTab, filterMonthlyData } from '../utils/dataFilterUtils';
 
 interface UseEconomicDataResult {
@@ -32,10 +32,20 @@ function getDefaultEconomicData(): EconomicDataResponse {
       usd_eur: [],
     },
     vix: [],
+    commodities: {
+      gold: [],
+      silver: [],
+      oil: [],
+      copper: [],
+    },
   };
 }
 
-export function useEconomicData(timeRange: TimeRange, tabType: TabType = 'treasury-exchange'): UseEconomicDataResult {
+export function useEconomicData(
+  timeRange: TimeRange,
+  tabType: TabType = 'treasury-exchange',
+  refreshKey: number = 0
+): UseEconomicDataResult {
   const [fullData, setFullData] = useState<EconomicDataResponse | null>(null);
   const [filteredData, setFilteredData] = useState<EconomicDataResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,13 +77,31 @@ export function useEconomicData(timeRange: TimeRange, tabType: TabType = 'treasu
     let startIndex = 0;
     let endIndex = dates.length;
 
-    if (startDate) {
-      startIndex = dates.findIndex(d => d >= startDate);
-      if (startIndex === -1) startIndex = 0;
+    // 用数据最后一天作为 endDate 基准（如果数据比 today 旧，caller 传的 endDate 会让 findIndex 全失败）
+    // 这样 startDate 倒推也有意义
+    const dataLastDate = dates[dates.length - 1];
+    const effectiveEndDate = dataLastDate && (!endDate || dataLastDate < endDate) ? dataLastDate : endDate;
+
+    if (startDate && effectiveEndDate) {
+      // 从 effectiveEndDate 倒推 days 天作为新的 startDate
+      const days = TIME_RANGE_MAP[range];
+      if (days && Number.isFinite(days)) {
+        const t = new Date(effectiveEndDate);
+        t.setDate(t.getDate() - days);
+        const adjustedStart = t.toISOString().split('T')[0];
+        startIndex = dates.findIndex(d => d >= adjustedStart);
+        if (startIndex === -1) {
+          // 兜底：从末尾往回数（按交易日密度 0.7 估算）
+          startIndex = Math.max(0, dates.length - Math.floor(days * 0.7));
+        }
+      } else {
+        startIndex = dates.findIndex(d => d >= startDate);
+        if (startIndex === -1) startIndex = 0;
+      }
     }
 
-    if (endDate) {
-      endIndex = dates.findIndex(d => d > endDate);
+    if (effectiveEndDate) {
+      endIndex = dates.findIndex(d => d > effectiveEndDate);
       if (endIndex === -1) endIndex = dates.length;
     }
 
@@ -105,6 +133,29 @@ export function useEconomicData(timeRange: TimeRange, tabType: TabType = 'treasu
         usd_eur: processedData!.exchange_rates.usd_eur?.slice(startIndex, endIndex) ?? [],
       } : undefined,
       vix: processedData!.vix?.slice(startIndex, endIndex) ?? [],
+      // 以下字段对比模块需要，必须保留
+      fund_flow: processedData!.fund_flow ? {
+        north_net_flow: processedData!.fund_flow.north_net_flow?.slice(startIndex, endIndex) ?? [],
+        north_buy: processedData!.fund_flow.north_buy?.slice(startIndex, endIndex) ?? [],
+        north_sell: processedData!.fund_flow.north_sell?.slice(startIndex, endIndex) ?? [],
+        south_net_flow: processedData!.fund_flow.south_net_flow?.slice(startIndex, endIndex) ?? [],
+        south_buy: processedData!.fund_flow.south_buy?.slice(startIndex, endIndex) ?? [],
+        south_sell: processedData!.fund_flow.south_sell?.slice(startIndex, endIndex) ?? [],
+      } : undefined,
+      china_bond: processedData!.china_bond ? {
+        '10y': processedData!.china_bond['10y']?.slice(startIndex, endIndex) ?? [],
+      } : undefined,
+      ted_spread: processedData!.ted_spread ? {
+        sofr: processedData!.ted_spread.sofr?.slice(startIndex, endIndex) ?? [],
+        us_3m: processedData!.ted_spread.us_3m?.slice(startIndex, endIndex) ?? [],
+        ted_spread: processedData!.ted_spread.ted_spread?.slice(startIndex, endIndex) ?? [],
+      } : undefined,
+      commodities: processedData!.commodities ? {
+        gold: processedData!.commodities.gold?.slice(startIndex, endIndex) ?? [],
+        silver: processedData!.commodities.silver?.slice(startIndex, endIndex) ?? [],
+        oil: processedData!.commodities.oil?.slice(startIndex, endIndex) ?? [],
+        copper: processedData!.commodities.copper?.slice(startIndex, endIndex) ?? [],
+      } : undefined,
     };
 
     const result = filterDataByTab(timeFiltered, tab, range);
@@ -118,26 +169,28 @@ export function useEconomicData(timeRange: TimeRange, tabType: TabType = 'treasu
       setError(null);
 
       try {
-        // 尝试从缓存读取全量数据
-        const cached = localStorage.getItem(FULL_DATA_CACHE_KEY);
-        if (cached) {
-          const parsed = JSON.parse(cached);
-          // 检查缓存是否过期（1小时）
-          const isOldFormat = !parsed.data?.eu_treasuries;
-          if (Date.now() - parsed.timestamp < 3600000 && !isOldFormat) {
-            setFullData(parsed.data);
-            setIsCached(true);
-            setIsLoading(false);
-            return;
+        // 尝试从缓存读取全量数据（refreshKey > 0 表示手动刷新，跳过 cache）
+        if (refreshKey === 0) {
+          const cached = localStorage.getItem(FULL_DATA_CACHE_KEY);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            const isOldFormat = !parsed.data?.eu_treasuries;
+            if (Date.now() - parsed.timestamp < 3600000 && !isOldFormat) {
+              setFullData(parsed.data);
+              setIsCached(true);
+              setIsLoading(false);
+              return;
+            }
+            if (isOldFormat) {
+              localStorage.removeItem(FULL_DATA_CACHE_KEY);
+            }
           }
-          // 如果是旧格式，清除缓存
-          if (isOldFormat) {
-            localStorage.removeItem(FULL_DATA_CACHE_KEY);
-          }
+        } else {
+          // 手动刷新：清掉旧 cache
+          localStorage.removeItem(FULL_DATA_CACHE_KEY);
         }
 
-        // 从API获取全量数据（传入很早的起始日期获取所有历史数据）
-        // 后端从2000年开始有数据，传入2000-01-01获取全量
+        // 从API获取全量数据
         const response = await economicApi.getData('2000-01-01', undefined);
         setFullData(response);
         setIsCached(false);
@@ -157,7 +210,7 @@ export function useEconomicData(timeRange: TimeRange, tabType: TabType = 'treasu
     };
 
     fetchFullData();
-  }, []); // 只在组件挂载时执行一次
+  }, [refreshKey]); // refreshKey 变化时强制重新 fetch（跳过 cache）
 
   // 根据时间范围和Tab类型过滤数据
   useEffect(() => {
