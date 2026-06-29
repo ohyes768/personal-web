@@ -1,10 +1,13 @@
 'use client';
 
 /**
- * 商品 Tab — Plotly 同图双轴叠加
- * - 左轴（y）：黄金 / 白银（元/克）
- * - 右轴（y2）：原油（$/桶）/ 铜（$/吨）
- * - 4 条曲线展示各商品价格走势
+ * 商品 Tab — Plotly 同图 4 轴叠加
+ * - y（左）   ：黄金（元/克）  ~900
+ * - y2（左内）：白银（元/克）  ~7
+ * - y3（右内）：原油（$/桶）   ~80
+ * - y4（右）  ：铜（$/吨）    ~13000
+ *
+ * 每个商品独立 scale，避免数值差异太大导致曲线被压扁
  * - 历史 silver 缺失段 Plotly connectgaps=false 自动断开
  */
 import { useMemo } from 'react';
@@ -16,10 +19,10 @@ interface CommodityChartProps {
 }
 
 const COMMODITY_META = {
-  gold:   { label: '黄金', color: '#eab308', axis: 'y',  unit: '元/克' },
-  silver: { label: '白银', color: '#94a3b8', axis: 'y',  unit: '元/克' },
-  oil:    { label: '原油', color: '#1e293b', axis: 'y2', unit: '$/桶' },
-  copper: { label: '铜',   color: '#b45309', axis: 'y2', unit: '$/吨' },
+  gold:   { label: '黄金', color: '#eab308', axis: 'y',  unit: '元/克', side: 'left'  as const },
+  silver: { label: '白银', color: '#94a3b8', axis: 'y2', unit: '元/克', side: 'left'  as const },
+  oil:    { label: '原油', color: '#1e293b', axis: 'y3', unit: '$/桶',  side: 'right' as const },
+  copper: { label: '铜',   color: '#b45309', axis: 'y4', unit: '$/吨',  side: 'right' as const },
 } as const;
 
 type CommodityKey = keyof typeof COMMODITY_META;
@@ -58,19 +61,39 @@ export function CommodityChart({ data }: CommodityChartProps) {
         gridcolor: '#333',
         color: '#e5e7eb',
       },
+      // 黄金 — 主左轴
       yaxis: {
-        title: '左轴：黄金/白银（元/克）',
+        title: { text: '黄金 (元/克)', font: { color: '#eab308' } },
         side: 'left' as const,
         showgrid: true,
         gridcolor: '#333',
         color: '#e5e7eb',
       },
+      // 白银 — 左轴次轴（overlay 在 y 上）
       yaxis2: {
-        title: '右轴：原油($/桶) / 铜($/吨)',
+        title: { text: '白银 (元/克)', font: { color: '#94a3b8' } },
+        overlaying: 'y' as const,
+        side: 'left' as const,
+        position: 0.08,
+        showgrid: false,
+        color: '#94a3b8',
+      },
+      // 原油 — 右轴次轴
+      yaxis3: {
+        title: { text: '原油 ($/桶)', font: { color: '#1e293b' } },
         overlaying: 'y' as const,
         side: 'right' as const,
         showgrid: false,
         color: '#e5e7eb',
+      },
+      // 铜 — 最右轴
+      yaxis4: {
+        title: { text: '铜 ($/吨)', font: { color: '#b45309' } },
+        overlaying: 'y' as const,
+        side: 'right' as const,
+        position: 0.92,
+        showgrid: false,
+        color: '#b45309',
       },
       hovermode: 'x unified' as const,
       paper_bgcolor: '#1a1a1a',
