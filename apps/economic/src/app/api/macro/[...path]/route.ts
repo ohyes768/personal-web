@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const MACRO_SERVICE_URL = process.env.MACRO_SERVICE_URL !== undefined && process.env.MACRO_SERVICE_URL !== null ? process.env.MACRO_SERVICE_URL : 'http://localhost:8094'
+const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8094'
 
 async function proxyRequest(
   method: string,
@@ -40,15 +40,21 @@ async function proxyRequest(
 export async function GET(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params
   const url = new URL(request.url)
-  const targetUrl = `${MACRO_SERVICE_URL}/api/${path.join('/')}${url.search}`
+  const targetUrl = `${BACKEND_URL}/api/${path.join('/')}${url.search}`
 
   return proxyRequest('GET', targetUrl)
 }
 
 export async function POST(request: NextRequest, { params }: { params: Promise<{ path: string[] }> }) {
   const { path } = await params
-  const body = await request.json()
-  const targetUrl = `${MACRO_SERVICE_URL}/api/${path.join('/')}`
+  // 容错空 body（fetch 可能在无 body POST 时不传 Content-Type）
+  let body: unknown = {}
+  try {
+    body = await request.json()
+  } catch {
+    body = {}
+  }
+  const targetUrl = `${BACKEND_URL}/api/${path.join('/')}`
 
   return proxyRequest('POST', targetUrl, {
     headers: { 'Content-Type': 'application/json' },
