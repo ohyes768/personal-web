@@ -2,8 +2,15 @@
  * Economic 模块 API 封装
  * 所有 Economic 相关 API 调用必须通过此文件
  */
-import { apiClient } from '@/lib/api-client';
-import type { EconomicDataResponse } from './types';
+import { apiClient, directClient } from '@/lib/api-client';
+import type { EconomicDataResponse } from '@/lib/types/economic';
+
+export interface UpdateResponse {
+  success: boolean;
+  message: string;
+  updated_at?: string;
+  error_code?: string;
+}
 
 export const economicApi = {
   /**
@@ -14,13 +21,67 @@ export const economicApi = {
     if (startDate) params.start_date = startDate;
     if (endDate) params.end_date = endDate;
 
-    return apiClient.get<EconomicDataResponse>('/api/data', params);
+    return apiClient.get<EconomicDataResponse>('/api/macro/data', params);
   },
 
   /**
-   * 更新数据
+   * 综合更新（n8n 调用入口，不在前端用）
    */
   updateData: () => {
-    return apiClient.post('/api/update');
+    return apiClient.post<UpdateResponse>('/api/macro/update');
+  },
+
+  /**
+   * 初始化历史数据（首次部署用）
+   * 并发调两个 /fetch/.../history 端点，从 2000-01-01 拉全量数据
+   * 任一成功即视为成功（与 updateUsTreasuriesAndRates 同模式）
+   */
+  initHistory: async (): Promise<UpdateResponse> => {
+    const [us, fx] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/fetch/us-treasuries/history'),
+      directClient.post<UpdateResponse>('/api/macro/fetch/exchange-rates/history'),
+    ]);
+    return us.success || fx.success ? us : us;
+  },
+
+  /**
+   * 初始化德债 + 日债历史数据（首次部署用）
+   * 并发调两个 history 端点，任一成功即视为成功
+   */
+  initBondsHistory: async (): Promise<UpdateResponse> => {
+    const [eu, jp] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/fetch/eu-bonds/history'),
+      directClient.post<UpdateResponse>('/api/macro/fetch/jp-bonds/history'),
+    ]);
+    return eu.success || jp.success ? eu : eu;
+  },
+
+  /**
+   * 更新美债 + 汇率（前端美债/汇率 tab 用，并发请求）
+   */
+  updateUsTreasuriesAndRates: async (): Promise<UpdateResponse> => {
+    const [us, fx] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/update/us-treasuries'),
+      directClient.post<UpdateResponse>('/api/macro/update/exchange-rates'),
+    ]);
+    return us.success || fx.success ? us : us;
+  },
+
+  /**
+   * 更新德债 + 日债（前端德债/日债 tab 用，并发请求）
+   */
+  updateBonds: async (): Promise<UpdateResponse> => {
+    const [eu, jp] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/update/eu-bonds'),
+      directClient.post<UpdateResponse>('/api/macro/update/jp-bonds'),
+    ]);
+    return eu.success || jp.success ? eu : eu;
+  },
+
+  /**
+   * 更新商品数据（黄金/白银/原油/铜，统一走阿里云 alirmcom2）
+   */
+  updateCommodities: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/commodities');
   },
 };
