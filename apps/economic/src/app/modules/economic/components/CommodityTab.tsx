@@ -12,6 +12,7 @@ import { useEconomicData } from '@/lib/hooks/useEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
+import { InitButton } from './InitButton';
 import { CommodityChart } from './CommodityChart';
 
 export function CommodityTab() {
@@ -29,6 +30,12 @@ export function CommodityTab() {
         <span className="text-gray-400">时间范围：</span>
         <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType="commodities" />
         {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
+        <InitButton
+          onInit={economicApi.initCommoditiesHistory}
+          storageKey="last_initialized_macro_commodities"
+          label="初始化商品数据"
+          hasData={!!data && data.dates && data.dates.length > 0}
+        />
         <RefreshButton
           onRefresh={economicApi.updateCommodities}
           storageKey="last_updated_commodities_daily"

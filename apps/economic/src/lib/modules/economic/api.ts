@@ -57,6 +57,14 @@ export const economicApi = {
   },
 
   /**
+   * 初始化商品历史数据（首次部署用）
+   * 调 /api/macro/fetch/commodities/history
+   */
+  initCommoditiesHistory: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/fetch/commodities/history');
+  },
+
+  /**
    * 更新美债 + 汇率（前端美债/汇率 tab 用，并发请求）
    */
   updateUsTreasuriesAndRates: async (): Promise<UpdateResponse> => {
