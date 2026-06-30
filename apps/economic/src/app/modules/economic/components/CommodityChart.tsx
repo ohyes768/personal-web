@@ -4,7 +4,7 @@
  * 商品 Tab — Plotly 同图 4 轴叠加
  * - y（左）   ：黄金（元/克）  ~900
  * - y2（左内）：白银（元/克）  ~7
- * - y3（右内）：原油（$/桶）   ~80
+ * - y3（右）  ：原油（$/桶）   ~80
  * - y4（右）  ：铜（$/吨）    ~13000
  *
  * 每个商品独立 scale，避免数值差异太大导致曲线被压扁
@@ -13,6 +13,11 @@
 import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
+import {
+  BASE_PLOT_CONFIG,
+  buildMultiAxisLayout,
+  type AxisSpec,
+} from '@/lib/utils/plotlyTheme';
 
 interface CommodityChartProps {
   data: EconomicDataResponse;
@@ -26,6 +31,14 @@ const COMMODITY_META = {
 } as const;
 
 type CommodityKey = keyof typeof COMMODITY_META;
+
+/** y 轴定义：title/titleColor/axisColor/side/overlaying/position。 */
+const AXES: AxisSpec[] = [
+  { key: 'y',  title: '黄金 (元/克)', titleColor: '#eab308', axisColor: '#e5e7eb', side: 'left' },
+  { key: 'y2', title: '白银 (元/克)', titleColor: '#94a3b8', axisColor: '#94a3b8', side: 'left',  overlaying: 'y', position: 0.08 },
+  { key: 'y3', title: '原油 ($/桶)',  titleColor: '#1e293b', axisColor: '#e5e7eb', side: 'right', overlaying: 'y' },
+  { key: 'y4', title: '铜 ($/吨)',    titleColor: '#b45309', axisColor: '#b45309', side: 'right', overlaying: 'y', position: 0.92 },
+];
 
 export function CommodityChart({ data }: CommodityChartProps) {
   const { traces, layout, config } = useMemo(() => {
@@ -54,77 +67,8 @@ export function CommodityChart({ data }: CommodityChartProps) {
       };
     });
 
-    const layout = {
-      xaxis: {
-        title: '日期',
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // 黄金 — 主左轴
-      yaxis: {
-        title: { text: '黄金 (元/克)', font: { color: '#eab308' } },
-        side: 'left' as const,
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // 白银 — 左轴次轴（overlay 在 y 上）
-      yaxis2: {
-        title: { text: '白银 (元/克)', font: { color: '#94a3b8' } },
-        overlaying: 'y' as const,
-        side: 'left' as const,
-        position: 0.08,
-        showgrid: false,
-        color: '#94a3b8',
-      },
-      // 原油 — 右轴次轴
-      yaxis3: {
-        title: { text: '原油 ($/桶)', font: { color: '#1e293b' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        showgrid: false,
-        color: '#e5e7eb',
-      },
-      // 铜 — 最右轴
-      yaxis4: {
-        title: { text: '铜 ($/吨)', font: { color: '#b45309' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        position: 0.92,
-        showgrid: false,
-        color: '#b45309',
-      },
-      hovermode: 'x unified' as const,
-      paper_bgcolor: '#1a1a1a',
-      plot_bgcolor: '#1a1a1a',
-      font: { color: '#e5e7eb' },
-      showlegend: true,
-      legend: {
-        orientation: 'v' as const,
-        y: 0.5,
-        x: 1.02,
-        xanchor: 'left' as const,
-        yanchor: 'middle' as const,
-      },
-      margin: { l: 80, r: 200, t: 40, b: 60 },
-    };
-
-    const config = {
-      responsive: true,
-      displayModeBar: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'hoverClosestCartesian',
-        'hoverCompareCartesian',
-        'zoom2d',
-        'pan2d',
-      ],
-      scrollZoom: false,
-      doubleClick: 'reset' as const,
-    };
+    const layout = buildMultiAxisLayout({ axes: AXES, legendX: 1.02 });
+    const config = BASE_PLOT_CONFIG;
 
     return { traces, layout, config };
   }, [data]);
@@ -132,8 +76,8 @@ export function CommodityChart({ data }: CommodityChartProps) {
   return (
     <Plot
       data={traces as never}
-      layout={layout as never}
-      config={config as never}
+      layout={layout}
+      config={config}
       style={{ width: '100%', height: '700px' }}
       className="w-full"
       useResizeHandler

@@ -11,11 +11,29 @@ import type { EconomicDataResponse } from '@/lib/types/economic';
 import { INDICATORS } from '@/lib/modules/comparison/indicators';
 import { extractSeries, normalize } from '@/lib/modules/comparison/normalize';
 import type { IndicatorId } from '@/lib/modules/comparison/types';
+import {
+  BASE_PLOT_CONFIG,
+  buildMultiAxisLayout,
+  type AxisSpec,
+} from '@/lib/utils/plotlyTheme';
 
 interface ComparisonChartProps {
   selectedIds: IndicatorId[];
   data: EconomicDataResponse;
 }
+
+/** y 轴定义：单轴 + 归一化 0 基线。 */
+const AXES: AxisSpec[] = [
+  {
+    key: 'y',
+    title: '归一化值（起点 = 100）',
+    axisColor: '#e5e7eb',
+    side: 'left',
+    zeroline: true,
+    zerolinecolor: '#666',
+    zerolinewidth: 1,
+  },
+];
 
 export function ComparisonChart({ selectedIds, data }: ComparisonChartProps) {
   const { traces, layout, config } = useMemo(() => {
@@ -47,52 +65,12 @@ export function ComparisonChart({ selectedIds, data }: ComparisonChartProps) {
       };
     });
 
-    const layout = {
-      xaxis: {
-        title: '日期',
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      yaxis: {
-        title: '归一化值（起点 = 100）',
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-        zeroline: true,
-        zerolinecolor: '#666',
-        zerolinewidth: 1,
-      },
-      hovermode: 'x unified' as const,
-      paper_bgcolor: '#1a1a1a',
-      plot_bgcolor: '#1a1a1a',
-      font: { color: '#e5e7eb' },
-      showlegend: true,
-      legend: {
-        orientation: 'v' as const,
-        y: 0.5,
-        x: 1.02,
-        xanchor: 'left' as const,
-        yanchor: 'middle' as const,
-      },
-      margin: { l: 70, r: 180, t: 40, b: 60 },
-    };
-
-    const config = {
-      responsive: true,
-      displayModeBar: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'hoverClosestCartesian',
-        'hoverCompareCartesian',
-        'zoom2d',
-        'pan2d',
-      ],
-      scrollZoom: false,
-      doubleClick: 'reset' as const,
-    };
+    const layout = buildMultiAxisLayout({
+      axes: AXES,
+      legendX: 1.02,
+      margin: { l: 70, r: 180 },
+    });
+    const config = BASE_PLOT_CONFIG;
 
     return { traces, layout, config };
   }, [selectedIds, data]);
@@ -108,8 +86,8 @@ export function ComparisonChart({ selectedIds, data }: ComparisonChartProps) {
   return (
     <Plot
       data={traces as never}
-      layout={layout as never}
-      config={config as never}
+      layout={layout}
+      config={config}
       style={{ width: '100%', height: '700px' }}
       className="w-full"
       useResizeHandler

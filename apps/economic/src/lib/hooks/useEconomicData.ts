@@ -153,6 +153,7 @@ export function useEconomicData(
       } : undefined,
       china_bond: processedData!.china_bond ? {
         '10y': processedData!.china_bond['10y']?.slice(startIndex, endIndex) ?? [],
+        'spread_10y_2y': processedData!.china_bond['spread_10y_2y']?.slice(startIndex, endIndex) ?? [],
       } : undefined,
       ted_spread: processedData!.ted_spread ? {
         sofr: processedData!.ted_spread.sofr?.slice(startIndex, endIndex) ?? [],

@@ -12,6 +12,11 @@
 import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
+import {
+  BASE_PLOT_CONFIG,
+  buildMultiAxisLayout,
+  type AxisSpec,
+} from '@/lib/utils/plotlyTheme';
 
 interface LiquidityChartProps {
   data: EconomicDataResponse;
@@ -24,6 +29,13 @@ const LIQUIDITY_META = {
 } as const;
 
 type LiquidityKey = keyof typeof LIQUIDITY_META;
+
+/** y 轴定义：title/titleColor/axisColor/side/overlaying/position。 */
+const AXES: AxisSpec[] = [
+  { key: 'y',  title: 'VIX 恐慌指数',          titleColor: '#a855f7', axisColor: '#e5e7eb', side: 'left' },
+  { key: 'y2', title: 'HIBOR 隔夜 (%)',         titleColor: '#14b8a6', axisColor: '#14b8a6', side: 'left',  overlaying: 'y', position: 0.06 },
+  { key: 'y3', title: 'TGA 余额 (千亿美元)',    titleColor: '#f97316', axisColor: '#f97316', side: 'right', overlaying: 'y' },
+];
 
 export function LiquidityChart({ data }: LiquidityChartProps) {
   const { traces, layout, config } = useMemo(() => {
@@ -53,68 +65,8 @@ export function LiquidityChart({ data }: LiquidityChartProps) {
       };
     });
 
-    const layout = {
-      xaxis: {
-        title: '日期',
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // VIX — 主左轴
-      yaxis: {
-        title: { text: 'VIX 恐慌指数', font: { color: '#a855f7' } },
-        side: 'left' as const,
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // HIBOR — 左轴次轴（overlay 在 y 上）
-      yaxis2: {
-        title: { text: 'HIBOR 隔夜 (%)', font: { color: '#14b8a6' } },
-        overlaying: 'y' as const,
-        side: 'left' as const,
-        position: 0.06,
-        showgrid: false,
-        color: '#14b8a6',
-      },
-      // TGA — 右轴
-      yaxis3: {
-        title: { text: 'TGA 余额 (千亿美元)', font: { color: '#f97316' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        showgrid: false,
-        color: '#f97316',
-      },
-      hovermode: 'x unified' as const,
-      paper_bgcolor: '#1a1a1a',
-      plot_bgcolor: '#1a1a1a',
-      font: { color: '#e5e7eb' },
-      showlegend: true,
-      legend: {
-        orientation: 'v' as const,
-        y: 0.5,
-        x: 1.02,
-        xanchor: 'left' as const,
-        yanchor: 'middle' as const,
-      },
-      margin: { l: 80, r: 200, t: 40, b: 60 },
-    };
-
-    const config = {
-      responsive: true,
-      displayModeBar: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'hoverClosestCartesian',
-        'hoverCompareCartesian',
-        'zoom2d',
-        'pan2d',
-      ],
-      scrollZoom: false,
-      doubleClick: 'reset' as const,
-    };
+    const layout = buildMultiAxisLayout({ axes: AXES, legendX: 1.02 });
+    const config = BASE_PLOT_CONFIG;
 
     return { traces, layout, config };
   }, [data]);
@@ -122,8 +74,8 @@ export function LiquidityChart({ data }: LiquidityChartProps) {
   return (
     <Plot
       data={traces as never}
-      layout={layout as never}
-      config={config as never}
+      layout={layout}
+      config={config}
       style={{ width: '100%', height: '700px' }}
       className="w-full"
       useResizeHandler

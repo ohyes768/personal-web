@@ -13,6 +13,11 @@
 import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
+import {
+  BASE_PLOT_CONFIG,
+  buildMultiAxisLayout,
+  type AxisSpec,
+} from '@/lib/utils/plotlyTheme';
 
 interface RatesChartProps {
   data: EconomicDataResponse;
@@ -29,6 +34,14 @@ const RATES_META = {
 } as const;
 
 type RatesKey = keyof typeof RATES_META;
+
+/** y 轴定义：title/titleColor/axisColor/side/overlaying/position。 */
+const AXES: AxisSpec[] = [
+  { key: 'y',  title: '利率水平 (SOFR / 美债3M, %)', titleColor: '#f472b6', axisColor: '#e5e7eb', side: 'left' },
+  { key: 'y2', title: 'TED 利差 (%)',                titleColor: '#ec4899', axisColor: '#ec4899', side: 'left',  overlaying: 'y', position: 0.06 },
+  { key: 'y3', title: '中国 10y (%)',                titleColor: '#f87171', axisColor: '#f87171', side: 'right', overlaying: 'y' },
+  { key: 'y4', title: '中国 10年-2年 (%)',           titleColor: '#fb7185', axisColor: '#fb7185', side: 'right', overlaying: 'y', position: 0.94 },
+];
 
 /** 嵌套取值：data[key1] 是对象时取 data[key1][key2]，否则取 data[key1] */
 function pickSeries(data: EconomicDataResponse, [k1, k2]: NestedKey): (number | null)[] {
@@ -66,77 +79,8 @@ export function RatesChart({ data }: RatesChartProps) {
       };
     });
 
-    const layout = {
-      xaxis: {
-        title: '日期',
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // 主左轴：SOFR + 美债3M（利率水平）
-      yaxis: {
-        title: { text: '利率水平 (SOFR / 美债3M, %)', font: { color: '#f472b6' } },
-        side: 'left' as const,
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // 左内：TED 利差
-      yaxis2: {
-        title: { text: 'TED 利差 (%)', font: { color: '#ec4899' } },
-        overlaying: 'y' as const,
-        side: 'left' as const,
-        position: 0.06,
-        showgrid: false,
-        color: '#ec4899',
-      },
-      // 主右轴：中国 10y
-      yaxis3: {
-        title: { text: '中国 10y (%)', font: { color: '#f87171' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        showgrid: false,
-        color: '#f87171',
-      },
-      // 右内：中国 10年-2年
-      yaxis4: {
-        title: { text: '中国 10年-2年 (%)', font: { color: '#fb7185' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        position: 0.94,
-        showgrid: false,
-        color: '#fb7185',
-      },
-      hovermode: 'x unified' as const,
-      paper_bgcolor: '#1a1a1a',
-      plot_bgcolor: '#1a1a1a',
-      font: { color: '#e5e7eb' },
-      showlegend: true,
-      legend: {
-        orientation: 'v' as const,
-        y: 0.5,
-        x: 1.06,
-        xanchor: 'left' as const,
-        yanchor: 'middle' as const,
-      },
-      margin: { l: 80, r: 220, t: 40, b: 60 },
-    };
-
-    const config = {
-      responsive: true,
-      displayModeBar: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'hoverClosestCartesian',
-        'hoverCompareCartesian',
-        'zoom2d',
-        'pan2d',
-      ],
-      scrollZoom: false,
-      doubleClick: 'reset' as const,
-    };
+    const layout = buildMultiAxisLayout({ axes: AXES, legendX: 1.06, margin: { r: 220 } });
+    const config = BASE_PLOT_CONFIG;
 
     return { traces, layout, config };
   }, [data]);
@@ -144,8 +88,8 @@ export function RatesChart({ data }: RatesChartProps) {
   return (
     <Plot
       data={traces as never}
-      layout={layout as never}
-      config={config as never}
+      layout={layout}
+      config={config}
       style={{ width: '100%', height: '700px' }}
       className="w-full"
       useResizeHandler

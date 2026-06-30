@@ -14,6 +14,11 @@
 import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
+import {
+  BASE_PLOT_CONFIG,
+  buildMultiAxisLayout,
+  type AxisSpec,
+} from '@/lib/utils/plotlyTheme';
 
 interface StockIndexChartProps {
   data: EconomicDataResponse;
@@ -28,6 +33,15 @@ const INDEX_META = {
 } as const;
 
 type IndexKey = keyof typeof INDEX_META;
+
+/** y 轴定义：title/titleColor/axisColor/side/overlaying/position。 */
+const AXES: AxisSpec[] = [
+  { key: 'y',  title: '恒生指数 (点)', titleColor: '#ef4444', axisColor: '#ef4444', side: 'left' },
+  { key: 'y2', title: '上证指数 (点)', titleColor: '#f59e0b', axisColor: '#f59e0b', side: 'left',  overlaying: 'y', position: 0.06 },
+  { key: 'y3', title: '标普500 (点)',  titleColor: '#3b82f6', axisColor: '#3b82f6', side: 'right', overlaying: 'y', position: 0.92 },
+  { key: 'y4', title: '纳指 (点)',     titleColor: '#10b981', axisColor: '#10b981', side: 'right', overlaying: 'y', position: 0.95 },
+  { key: 'y5', title: '道指 (点)',     titleColor: '#a855f7', axisColor: '#a855f7', side: 'right', overlaying: 'y', position: 0.98 },
+];
 
 export function StockIndexChart({ data }: StockIndexChartProps) {
   const { traces, layout, config } = useMemo(() => {
@@ -56,87 +70,12 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
       };
     });
 
-    const layout = {
-      xaxis: {
-        title: '日期',
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // 恒生 — 主左轴
-      yaxis: {
-        title: { text: '恒生指数 (点)', font: { color: '#ef4444' } },
-        side: 'left' as const,
-        showgrid: true,
-        gridcolor: '#333',
-        color: '#e5e7eb',
-      },
-      // 上证 — 左轴次轴（overlay 在 y 上）
-      yaxis2: {
-        title: { text: '上证指数 (点)', font: { color: '#f59e0b' } },
-        overlaying: 'y' as const,
-        side: 'left' as const,
-        position: 0.06,
-        showgrid: false,
-        color: '#f59e0b',
-      },
-      // 标普500 — 第一个右轴
-      yaxis3: {
-        title: { text: '标普500 (点)', font: { color: '#3b82f6' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        position: 0.92,
-        showgrid: false,
-        color: '#3b82f6',
-      },
-      // 纳指 — 右轴
-      yaxis4: {
-        title: { text: '纳指 (点)', font: { color: '#10b981' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        position: 0.95,
-        showgrid: false,
-        color: '#10b981',
-      },
-      // 道指 — 最右轴
-      yaxis5: {
-        title: { text: '道指 (点)', font: { color: '#a855f7' } },
-        overlaying: 'y' as const,
-        side: 'right' as const,
-        position: 0.98,
-        showgrid: false,
-        color: '#a855f7',
-      },
-      hovermode: 'x unified' as const,
-      paper_bgcolor: '#1a1a1a',
-      plot_bgcolor: '#1a1a1a',
-      font: { color: '#e5e7eb' },
-      showlegend: true,
-      legend: {
-        orientation: 'v' as const,
-        y: 0.5,
-        x: 1.05,
-        xanchor: 'left' as const,
-        yanchor: 'middle' as const,
-      },
-      margin: { l: 90, r: 250, t: 40, b: 60 },
-    };
-
-    const config = {
-      responsive: true,
-      displayModeBar: true,
-      displaylogo: false,
-      modeBarButtonsToRemove: [
-        'lasso2d',
-        'select2d',
-        'hoverClosestCartesian',
-        'hoverCompareCartesian',
-        'zoom2d',
-        'pan2d',
-      ],
-      scrollZoom: false,
-      doubleClick: 'reset' as const,
-    };
+    const layout = buildMultiAxisLayout({
+      axes: AXES,
+      legendX: 1.05,
+      margin: { l: 90, r: 250 },
+    });
+    const config = BASE_PLOT_CONFIG;
 
     return { traces, layout, config };
   }, [data]);
@@ -144,8 +83,8 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
   return (
     <Plot
       data={traces as never}
-      layout={layout as never}
-      config={config as never}
+      layout={layout}
+      config={config}
       style={{ width: '100%', height: '700px' }}
       className="w-full"
       useResizeHandler
