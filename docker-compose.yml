@@ -12,17 +12,6 @@ services:
       - NODE_ENV=production
     restart: unless-stopped
 
-  # 资金流向应用
-  fund-flow:
-    build:
-      context: ./apps/fund-flow
-      dockerfile: Dockerfile
-    ports:
-      - "3002:3002"
-    environment:
-      - NODE_ENV=production
-    restart: unless-stopped
-
   # 股息率应用
   dividend:
     build:

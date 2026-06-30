@@ -10,7 +10,6 @@ personal-web/
 │   ├── dividend/            # A 股高股息分析（端口 3003，basePath /dividend）
 │   ├── douyin/             # 抖音视频文字转写（端口 3004，basePath /douyin）
 │   ├── economic/           # 宏观经济（端口 3001）
-│   ├── fund-flow/          # 资金流向（端口 3002）
 │   └── news/               # 新闻联播分析（端口 3005）
 ├── backend/                 # 3 个 Python 后端（git submodule）
 │   ├── dividend-select/    # 股息率后端（FastAPI，端口 8092）
@@ -38,9 +37,8 @@ personal-web/
 
 1. **股息率分析** — A 股高股息选股，支持 TOP10 排名、多股对比、导出报告
 2. **宏观经济** — 汇率、美联储利率、GDP 等全球宏观指标
-3. **资金流向** — 盘口资金流向可视化
-4. **抖音视频转写** — 视频文案自动转写
-5. **新闻联播分析** — 政策推荐指数、板块影响分析
+3. **抖音视频转写** — 视频文案自动转写
+4. **新闻联播分析** — 政策推荐指数、板块影响分析
 
 ## 服务端口一览
 
@@ -49,7 +47,6 @@ personal-web/
 | dividend 前端 | 3003 | basePath /dividend |
 | douyin 前端 | 3004 | basePath /douyin |
 | economic 前端 | 3001 | |
-| fund-flow 前端 | 3002 | |
 | news 前端 | 3005 | |
 | dividend-select 后端 | 8092 | |
 | douyin-processor 后端 | 8093 | |
@@ -80,7 +77,6 @@ docker compose down
 ### Windows 开发脚本
 ```bash
 scripts\start-dividend-dev.bat   # 股息率前后端
-scripts\start-fundflow-dev.bat  # 资金流向
 scripts\start-news-dev.bat      # 新闻
 scripts\start-macro-dev.bat    # 宏观经济
 scripts\start-douyin-dev.bat    # 抖音

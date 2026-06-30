@@ -159,4 +159,30 @@ export const economicApi = {
   updateHIBOR: async (): Promise<UpdateResponse> => {
     return directClient.post<UpdateResponse>('/api/macro/update/hibor');
   },
+
+  /**
+   * 初始化利率利差历史数据（首次部署用）
+   * 并发调 china-bonds + ted-spread 两个 history 端点
+   * 任一成功即视为成功（与 initBondsHistory 同模式）
+   */
+  initRatesHistory: async (): Promise<UpdateResponse> => {
+    const [cn, ted] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/fetch/china-bonds/history'),
+      directClient.post<UpdateResponse>('/api/macro/fetch/ted-spread/history'),
+    ]);
+    return cn.success || ted.success ? cn : cn;
+  },
+
+  /**
+   * 增量更新利率利差数据（最近 7 天）
+   * 并发调 china-bonds + ted-spread 两个 update 端点
+   * 任一成功即视为成功
+   */
+  updateRates: async (): Promise<UpdateResponse> => {
+    const [cn, ted] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/update/china-bonds'),
+      directClient.post<UpdateResponse>('/api/macro/update/ted-spread'),
+    ]);
+    return cn.success || ted.success ? cn : cn;
+  },
 };

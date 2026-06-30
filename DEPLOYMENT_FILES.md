@@ -22,7 +22,7 @@ NAS 生产环境 Docker Compose 配置文件。
 本地开发用 Docker Compose 配置文件。
 **位置**: `/docker-compose.yml`
 
-**服务定义**: economic, fund-flow, dividend, douyin, news 五个前端
+**服务定义**: economic, dividend, douyin, news 四个前端
 
 ### 3. nginx/nginx.conf
 示例 Nginx 反向代理配置（参考用）。
@@ -40,7 +40,6 @@ NAS 生产环境 Docker Compose 配置文件。
 | dividend | `apps/dividend/Dockerfile` | 3003 | /dividend |
 | douyin | `apps/douyin/Dockerfile` | 3004 | /douyin |
 | economic | `apps/economic/Dockerfile` | 3001 | 无 |
-| fund-flow | `apps/fund-flow/Dockerfile` | 3002 | 无 |
 | news | `apps/news/Dockerfile` | 3005 | 无 |
 
 构建方式: standalone，三阶段（deps → builder → runner）

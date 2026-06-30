@@ -358,7 +358,6 @@
 | 日本国债 | 10 年 | 日级 | 日本 10 年期国债收益率（注） |
 | 汇率数据 | 美元指数、USD/CNY、USD/JPY、USD/EUR | 日级 | 主要货币汇率 |
 | VIX | 恐慌指数 | 日级 | CBOE 波动率指数 |
-| 资金流向 | 北向/南向净流入 | 日级 | 沪深港通资金流向 |
 | 中国国债 | 10 年期 | 日级 | 中国国债收益率 |
 | TED利差 | SOFR - DGS3MO | 日级 | 市场流动性指标 |
 
@@ -767,14 +766,6 @@ n8n 调用此接口触发数据更新（美债 + 欧债 + 日债 + 汇率）。
       "usd_eur": [0.91, 0.92]
     },
     "vix": [18.5, 17.2],
-    "fund_flow": {
-      "north_net_flow": [45.2, 52.3],
-      "north_buy": [null, null],
-      "north_sell": [null, null],
-      "south_net_flow": [-12.3, -15.2],
-      "south_buy": [null, null],
-      "south_sell": [null, null]
-    },
     "china_bond": {
       "10y": [1.82, 1.85]
     },
@@ -846,125 +837,6 @@ n8n 调用此接口触发数据更新（美债 + 欧债 + 日债 + 汇率）。
 ```
 
 ---
-
-### 15. 获取资金流向历史数据
-
-从 2014-11-17（沪港通开通日）开始获取全部资金流向历史数据。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | POST |
-| 路径 | `/api/macro/fetch/fund-flow/history` |
-
-**响应**
-
-```json
-{
-  "success": true,
-  "message": "资金流向历史数据获取成功",
-  "updated_at": "2026-03-29T12:00:00Z",
-  "data": {
-    "fund_flow": {
-      "north": {
-        "date": "2026-03-28",
-        "net_flow": 52.3,
-        "buy": null,
-        "sell": null
-      },
-      "south": {
-        "date": "2026-03-28",
-        "net_flow": -15.2,
-        "buy": null,
-        "sell": null
-      }
-    }
-  }
-}
-```
-
----
-
-### 16. 增量更新资金流向数据
-
-增量更新最近 7 天的资金流向数据。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | POST |
-| 路径 | `/api/macro/update/fund-flow` |
-
-**响应**
-
-```json
-{
-  "success": true,
-  "message": "资金流向数据增量更新成功",
-  "updated_at": "2026-03-29T12:00:00Z",
-  "data": {
-    "fund_flow": {
-      "north": {
-        "date": "2026-03-28",
-        "net_flow": 52.3,
-        "buy": null,
-        "sell": null
-      },
-      "south": {
-        "date": "2026-03-28",
-        "net_flow": -15.2,
-        "buy": null,
-        "sell": null
-      }
-    }
-  }
-}
-```
-
----
-
-### 17. 获取资金流向累计数据
-
-获取北向/南向资金 7 日和 30 日累计净流入。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | GET |
-| 路径 | `/api/macro/fund-flow/cumulative` |
-
-**响应**
-
-```json
-{
-  "north_cumulative": {
-    "date": "2026-03-28",
-    "cum_7d": 358.5,
-    "cum_30d": 1520.3
-  },
-  "south_cumulative": {
-    "date": "2026-03-28",
-    "cum_7d": -85.2,
-    "cum_30d": -320.5
-  }
-}
-```
-
----
-
-### 18. 获取资金流向历史数据（图表用）
-
-前端调用此接口获取图表展示数据。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | GET |
-| 路径 | `/api/macro/fund-flow/history` |
 
 **查询参数**
 
@@ -1182,7 +1054,6 @@ interface UpdateResponse {
     jp_treasuries?: JPTreasuries;
     exchange_rates?: ExchangeRates;
     vix?: VIXData;
-    fund_flow?: FundFlow;
     china_bond_10y?: ChinaBondData;
     ted_spread?: TedSpreadData;
   };
@@ -1200,35 +1071,6 @@ interface VIXData {
 }
 ```
 
-### 资金流向数据 (FundFlowData)
-
-```typescript
-interface FundFlowData {
-  date: string;              // YYYY-MM-DD
-  net_flow: number | null;   // 净流入（亿元）
-  buy: number | null;        // 买入额（亿元）
-  sell: number | null;       // 卖出额（亿元）
-}
-```
-
-### 资金流向 (FundFlow)
-
-```typescript
-interface FundFlow {
-  north: FundFlowData;   // 北向资金（港股通→A股）
-  south: FundFlowData;   // 南向资金（A股→港股通）
-}
-```
-
-### 资金流向累计数据 (FundFlowCumulativeData)
-
-```typescript
-interface FundFlowCumulativeData {
-  date: string;            // YYYY-MM-DD
-  cum_7d: number | null;   // 7日累计净流入（亿元）
-  cum_30d: number | null;   // 30日累计净流入（亿元）
-}
-```
 
 ### 中国国债数据 (ChinaBondData)
 
@@ -1340,10 +1182,6 @@ interface EconomicDataResponse {
 | | 12 | `/api/macro/update/jp-bonds` | POST | 增量更新日债 |
 | | 13 | `/api/macro/fetch/vix/history` | POST | 获取VIX历史数据 |
 | | 14 | `/api/macro/update/vix` | POST | 增量更新VIX |
-| | 15 | `/api/macro/fetch/fund-flow/history` | POST | 获取资金流向历史数据 |
-| | 16 | `/api/macro/update/fund-flow` | POST | 增量更新资金流向 |
-| | 17 | `/api/macro/fund-flow/cumulative` | GET | 获取资金累计流入 |
-| | 18 | `/api/macro/fund-flow/history` | GET | 获取资金流向图表数据 |
 | | 19 | `/api/macro/fetch/china-bonds/history` | POST | 获取中国国债历史数据 |
 | | 20 | `/api/macro/update/china-bonds` | POST | 增量更新中国国债 |
 | | 21 | `/api/macro/fetch/ted-spread/history` | POST | 获取TED利差历史数据 |

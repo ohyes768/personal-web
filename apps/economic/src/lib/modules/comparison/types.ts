@@ -27,7 +27,7 @@ export type IndicatorId =
   | 'vix'
   | 'tga' | 'hibor'
   | 'north_net' | 'south_net'
-  | 'ted_spread' | 'sofr'
+  | 'ted_spread' | 'sofr' | 'cn_10y_2y'
   | 'gold' | 'silver' | 'oil' | 'copper'
   | 'hk_hsi' | 'sh_000001' | 'spx' | 'ixic' | 'dji';
 

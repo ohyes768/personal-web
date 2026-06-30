@@ -42,6 +42,11 @@ const LiquidityTab = dynamic(() => import('./components/LiquidityTab').then(mod 
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载流动性/风险模块...</div>
 });
 
+const RatesTab = dynamic(() => import('./components/RatesTab').then(mod => ({ default: mod.RatesTab })), {
+  ssr: false,
+  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载利率利差模块...</div>
+});
+
 export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
@@ -60,6 +65,8 @@ export default function EconomicPage() {
     } else if (tabId === 'stock-indices' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
     } else if (tabId === 'liquidity-risk' && (timeRange === '3M' || timeRange === '1Y')) {
+      setTimeRange('6M');
+    } else if (tabId === 'rates' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
     }
   }, [timeRange]);
@@ -85,6 +92,11 @@ export default function EconomicPage() {
       id: 'liquidity-risk',
       label: '流动性/风险',
       description: 'VIX 恐慌指数 + TGA 账户余额 + HIBOR 隔夜拆息走势（日级）'
+    },
+    {
+      id: 'rates',
+      label: '利率利差',
+      description: 'SOFR + 美债3M + TED利差 + 中国10y + 中国10年-2年（同图 4 轴叠加，日级）'
     },
     {
       id: 'comparison',
@@ -149,6 +161,7 @@ export default function EconomicPage() {
         {activeTab === 'commodities' && <CommodityTab />}
         {activeTab === 'stock-indices' && <StockIndexTab />}
         {activeTab === 'liquidity-risk' && <LiquidityTab />}
+        {activeTab === 'rates' && <RatesTab />}
       </div>
     </main>
   );

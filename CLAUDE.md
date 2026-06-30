@@ -10,7 +10,6 @@ apps/
 ├── dividend/      # A 股高股息分析（Next.js 15, React 19, Tailwind CSS v4）
 ├── douyin/         # 抖音视频文字转写
 ├── economic/       # 宏观经济
-├── fund-flow/      # 资金流向
 └── news/           # 新闻联播分析
 
 backend/
@@ -52,7 +51,6 @@ cd backend/global-macro-fin
 ```bash
 scripts\start-dividend-dev.bat   # 启动股息率前后端
 scripts\stop-dividend-dev.bat   # 停止
-scripts\start-fundflow-dev.bat # 资金流向
 scripts\start-news-dev.bat     # 新闻
 scripts\start-macro-dev.bat    # 宏观经济
 scripts\start-douyin-dev.bat    # 抖音

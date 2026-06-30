@@ -30,6 +30,7 @@ export function extractSeries(
     case 'south_net': return data.fund_flow?.south_net_flow ?? [];
     case 'ted_spread': return data.ted_spread?.ted_spread ?? [];
     case 'sofr':       return data.ted_spread?.sofr ?? [];
+    case 'cn_10y_2y':  return data.china_bond?.['spread_10y_2y'] ?? [];
     case 'gold':   return data.commodities?.gold ?? [];
     case 'silver': return data.commodities?.silver ?? [];
     case 'oil':    return data.commodities?.oil ?? [];

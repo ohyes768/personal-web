@@ -39,8 +39,9 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   south_net: { id: 'south_net', label: '南向净流入', group: 'fund_flow', color: '#22d3ee', unit: '亿元', source: 'AKShare' },
 
   // 利率利差
-  ted_spread: { id: 'ted_spread', label: 'TED利差', group: 'rates',  color: '#ec4899', unit: '%',    source: 'FRED' },
-  sofr:       { id: 'sofr',       label: 'SOFR',   group: 'rates',  color: '#f472b6', unit: '%',    source: 'FRED' },
+  ted_spread: { id: 'ted_spread', label: 'TED利差',     group: 'rates',  color: '#ec4899', unit: '%',    source: 'FRED' },
+  sofr:       { id: 'sofr',       label: 'SOFR',         group: 'rates',  color: '#f472b6', unit: '%',    source: 'FRED' },
+  cn_10y_2y:  { id: 'cn_10y_2y',  label: '中国10年-2年', group: 'rates',  color: '#fb7185', unit: '%',    source: 'AKShare' },
 
   // 商品
   gold:   { id: 'gold',   label: '黄金', group: 'commodity', color: '#eab308', unit: '元/克', source: '阿里云' },
