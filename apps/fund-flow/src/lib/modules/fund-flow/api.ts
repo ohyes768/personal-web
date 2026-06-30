@@ -48,7 +48,7 @@ export async function getHistoryData(): Promise<ChartData[]> {
  */
 export async function updateData(): Promise<{ message: string }> {
   try {
-    const response = await fetch('/api/fund-flow/update', {
+    const response = await fetch('/api/update/fund-flow', {
       method: 'POST',
     });
 
