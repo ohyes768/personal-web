@@ -2,24 +2,43 @@
 
 /**
  * 对比模块 — 容器组件
- * - 复用 useEconomicData hook（tabType='treasury-exchange' 保留所有字段）
+ * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - useFilteredEconomicData 复用 'treasury-exchange' tabType（filterDataByTab 对此返 data 原样）
  * - 复用 TimeRangeSelector
  * - state: selectedIds（由 IndicatorSelector 管理，写 localStorage）
  */
 import { useState } from 'react';
-import type { TimeRange } from '@/lib/types/economic';
-import { useEconomicData } from '@/lib/hooks/useEconomicData';
+import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
+import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { IndicatorSelector } from './IndicatorSelector';
 import { ComparisonChart } from './ComparisonChart';
 import type { IndicatorId } from '@/lib/modules/comparison/types';
 
-export function ComparisonTab() {
-  const [timeRange, setTimeRange] = useState<TimeRange>('6M');
+interface ComparisonTabProps {
+  timeRange: TimeRange;
+  onTimeRangeChange: (value: TimeRange) => void;
+  refreshKey: number;
+  onRefreshSuccess: () => void;
+  fullData: EconomicDataResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  isCached: boolean;
+}
+
+export function ComparisonTab({
+  timeRange,
+  onTimeRangeChange,
+  refreshKey: _refreshKey,
+  onRefreshSuccess: _onRefreshSuccess,
+  fullData,
+  isLoading,
+  error,
+  isCached,
+}: ComparisonTabProps) {
   const [selectedIds, setSelectedIds] = useState<IndicatorId[]>([]);
 
-  // 复用现有 hook：用 'treasury-exchange' tabType（filterDataByTab 对此返 data 原样，含所有可选字段）
-  const { data, isLoading, error, isCached } = useEconomicData(timeRange, 'treasury-exchange');
+  const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
   return (
     <div className="space-y-6">
@@ -27,7 +46,7 @@ export function ComparisonTab() {
 
       <div className="flex items-center gap-6">
         <span className="text-gray-400">时间范围：</span>
-        <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType="comparison" />
+        <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="comparison" />
         {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
       </div>
 

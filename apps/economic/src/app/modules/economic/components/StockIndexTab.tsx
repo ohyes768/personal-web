@@ -2,34 +2,48 @@
 
 /**
  * 股指 Tab — 容器组件
- * - 复用 useEconomicData hook（tabType='treasury-exchange' 保留所有字段含 indices）
+ * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - useFilteredEconomicData 复用 'treasury-exchange' tabType（filterDataByTab 对 stock-indices 不裁剪）
  * - 复用 TimeRangeSelector
  * - 复用 RefreshButton（indices 是日级 K 线，cadence=daily）
  * - 复用 InitButton（首次部署用 fetch/indices/history）
  */
-import { useState, useCallback } from 'react';
-import type { TimeRange } from '@/lib/types/economic';
-import { useEconomicData } from '@/lib/hooks/useEconomicData';
+import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
+import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
 import { InitButton } from './InitButton';
 import { StockIndexChart } from './StockIndexChart';
 
-export function StockIndexTab() {
-  const [timeRange, setTimeRange] = useState<TimeRange>('6M');
-  const [refreshKey, setRefreshKey] = useState(0);
+interface StockIndexTabProps {
+  timeRange: TimeRange;
+  onTimeRangeChange: (value: TimeRange) => void;
+  refreshKey: number;
+  onRefreshSuccess: () => void;
+  fullData: EconomicDataResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  isCached: boolean;
+}
 
-  // 复用 treasury-exchange tabType（filterDataByTab 对 stock-indices 不裁剪）
-  const { data, isLoading, error, isCached } = useEconomicData(timeRange, 'treasury-exchange', refreshKey);
-
-  const handleRefreshSuccess = useCallback(() => setRefreshKey((k) => k + 1), []);
+export function StockIndexTab({
+  timeRange,
+  onTimeRangeChange,
+  refreshKey,
+  onRefreshSuccess,
+  fullData,
+  isLoading,
+  error,
+  isCached,
+}: StockIndexTabProps) {
+  const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-6 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
-        <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType="stock-indices" />
+        <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="stock-indices" />
         {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
           onInit={economicApi.initIndicesHistory}
@@ -42,7 +56,7 @@ export function StockIndexTab() {
           storageKey="last_updated_indices_daily"
           cadence="daily"
           label="更新股指"
-          onSuccess={handleRefreshSuccess}
+          onSuccess={onRefreshSuccess}
         />
       </div>
 

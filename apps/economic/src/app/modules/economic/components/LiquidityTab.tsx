@@ -3,72 +3,63 @@
 /**
  * 流动性/风险 Tab — 容器组件
  * - 展示 VIX 恐慌指数 + TGA 账户余额 + HIBOR 隔夜拆息
- * - 每个数据源独立的 InitButton + RefreshButton（参考 CommodityTab 模板）
- * - 复用 useEconomicData hook（tabType='treasury-exchange' 保留所有字段含 vix/tga/hibor）
+ * - 1 个「初始化」+ 1 个「更新数据」按钮（合并原 VIX/TGA/HIBOR 三套独立按钮），
+ *   内部并发调 3 个端点（economicApi.initLiquidityHistory / updateLiquidity）
+ * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - useFilteredEconomicData 复用 'treasury-exchange' tabType（filterDataByTab 对 liquidity-risk 走 fallthrough 返回 data 原样）
  * - 复用 TimeRangeSelector（liquidity-risk tabType 走 TREASURY_TIME_RANGES 默认）
+ * - onSuccess 用顶层 onRefreshSuccess prop，触发 page.tsx refreshKey++，
+ *   顶层 hook 重新 fetch，**所有 Tab 数据同步更新**
  */
-import { useState, useCallback } from 'react';
-import type { TimeRange } from '@/lib/types/economic';
-import { useEconomicData } from '@/lib/hooks/useEconomicData';
+import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
+import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
 import { InitButton } from './InitButton';
 import { LiquidityChart } from './LiquidityChart';
 
-export function LiquidityTab() {
-  const [timeRange, setTimeRange] = useState<TimeRange>('6M');
-  const [refreshKey, setRefreshKey] = useState(0);
+interface LiquidityTabProps {
+  timeRange: TimeRange;
+  onTimeRangeChange: (value: TimeRange) => void;
+  refreshKey: number;
+  onRefreshSuccess: () => void;
+  fullData: EconomicDataResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  isCached: boolean;
+}
 
-  // 复用 treasury-exchange tabType（filterDataByTab 对 liquidity-risk 走 fallthrough 返回 data 原样）
-  const { data, isLoading, error, isCached } = useEconomicData(timeRange, 'treasury-exchange', refreshKey);
-
-  const handleRefreshSuccess = useCallback(() => setRefreshKey((k) => k + 1), []);
+export function LiquidityTab({
+  timeRange,
+  onTimeRangeChange,
+  refreshKey: _refreshKey,
+  onRefreshSuccess,
+  fullData,
+  isLoading,
+  error,
+  isCached,
+}: LiquidityTabProps) {
+  const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-6 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
-        <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType="liquidity-risk" />
+        <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="liquidity-risk" />
         {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
-          onInit={economicApi.initVIXHistory}
-          storageKey="last_initialized_macro_liquidity_vix"
-          label="初始化 VIX"
-          hasData={!!data?.vix?.length}
+          onInit={economicApi.initLiquidityHistory}
+          storageKey="last_initialized_macro_liquidity"
+          label="初始化流动性/风险"
+          hasData={!!(data?.vix?.length && data?.tga?.length && data?.hibor?.length)}
         />
         <RefreshButton
-          onRefresh={economicApi.updateVIX}
-          storageKey="last_updated_liquidity_vix_daily"
+          onRefresh={economicApi.updateLiquidity}
+          storageKey="last_updated_liquidity_daily"
           cadence="daily"
-          label="更新 VIX"
-          onSuccess={handleRefreshSuccess}
-        />
-        <InitButton
-          onInit={economicApi.initTGAHistory}
-          storageKey="last_initialized_macro_liquidity_tga"
-          label="初始化 TGA"
-          hasData={!!data?.tga?.length}
-        />
-        <RefreshButton
-          onRefresh={economicApi.updateTGA}
-          storageKey="last_updated_liquidity_tga_daily"
-          cadence="daily"
-          label="更新 TGA"
-          onSuccess={handleRefreshSuccess}
-        />
-        <InitButton
-          onInit={economicApi.initHIBORHistory}
-          storageKey="last_initialized_macro_liquidity_hibor"
-          label="初始化 HIBOR"
-          hasData={!!data?.hibor?.length}
-        />
-        <RefreshButton
-          onRefresh={economicApi.updateHIBOR}
-          storageKey="last_updated_liquidity_hibor_daily"
-          cadence="daily"
-          label="更新 HIBOR"
-          onSuccess={handleRefreshSuccess}
+          label="更新数据"
+          onSuccess={onRefreshSuccess}
         />
       </div>
 

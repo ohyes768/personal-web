@@ -2,13 +2,14 @@
 
 /**
  * 德债日债 Tab — 容器组件
- * - 复用 useEconomicData hook（tabType='bonds' 走 filterMonthlyData 月级切分）
+ * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - useFilteredEconomicData 走 'bonds' tabType 内部自动调 filterMonthlyData 月级切分
  * - 复用 TimeRangeSelector / InitButton / RefreshButton（cadence=monthly）
  * - chartKey 防止数据区间无变化时重复挂载
  */
 import { useMemo, useCallback } from 'react';
 import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
-import { useEconomicData } from '@/lib/hooks/useEconomicData';
+import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { LoadingOverlay } from './LoadingOverlay';
@@ -21,10 +22,23 @@ interface BondsTabProps {
   onTimeRangeChange: (value: TimeRange) => void;
   refreshKey: number;
   onRefreshSuccess: () => void;
+  fullData: EconomicDataResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  isCached: boolean;
 }
 
-export function BondsTab({ timeRange, onTimeRangeChange, refreshKey, onRefreshSuccess }: BondsTabProps) {
-  const { data, isLoading, error, isCached } = useEconomicData(timeRange, 'bonds', refreshKey);
+export function BondsTab({
+  timeRange,
+  onTimeRangeChange,
+  refreshKey,
+  onRefreshSuccess,
+  fullData,
+  isLoading,
+  error,
+  isCached,
+}: BondsTabProps) {
+  const data = useFilteredEconomicData(fullData, timeRange, 'bonds');
 
   const handleRefreshSuccess = useCallback(() => onRefreshSuccess(), [onRefreshSuccess]);
 

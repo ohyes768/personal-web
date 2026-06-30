@@ -161,6 +161,34 @@ export const economicApi = {
   },
 
   /**
+   * 初始化流动性/风险历史数据（首次部署用）
+   * 并发调 vix + tga + hibor 三个 history 端点（参考 initBondsHistory 模式）
+   * 任一成功即视为成功
+   */
+  initLiquidityHistory: async (): Promise<UpdateResponse> => {
+    const [vix, tga, hibor] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/fetch/vix/history'),
+      directClient.post<UpdateResponse>('/api/macro/fetch/tga/history'),
+      directClient.post<UpdateResponse>('/api/macro/fetch/hibor/history'),
+    ]);
+    return vix.success || tga.success || hibor.success ? vix : vix;
+  },
+
+  /**
+   * 增量更新流动性/风险数据（最近 7 天）
+   * 并发调 vix + tga + hibor 三个 update 端点
+   * 任一成功即视为成功
+   */
+  updateLiquidity: async (): Promise<UpdateResponse> => {
+    const [vix, tga, hibor] = await Promise.all([
+      directClient.post<UpdateResponse>('/api/macro/update/vix'),
+      directClient.post<UpdateResponse>('/api/macro/update/tga'),
+      directClient.post<UpdateResponse>('/api/macro/update/hibor'),
+    ]);
+    return vix.success || tga.success || hibor.success ? vix : vix;
+  },
+
+  /**
    * 初始化利率利差历史数据（首次部署用）
    * 并发调 china-bonds + ted-spread 两个 history 端点
    * 任一成功即视为成功（与 initBondsHistory 同模式）

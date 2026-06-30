@@ -18,6 +18,7 @@ import {
   buildMultiAxisLayout,
   type AxisSpec,
 } from '@/lib/utils/plotlyTheme';
+import { usePlotlyAutoResize } from '@/lib/hooks/usePlotlyAutoResize';
 
 interface CommodityChartProps {
   data: EconomicDataResponse;
@@ -41,6 +42,7 @@ const AXES: AxisSpec[] = [
 ];
 
 export function CommodityChart({ data }: CommodityChartProps) {
+  const containerRef = usePlotlyAutoResize<HTMLDivElement>();
   const { traces, layout, config } = useMemo(() => {
     const dates = data.dates ?? [];
     const commodities = data.commodities;
@@ -74,13 +76,15 @@ export function CommodityChart({ data }: CommodityChartProps) {
   }, [data]);
 
   return (
-    <Plot
-      data={traces as never}
-      layout={layout}
-      config={config}
-      style={{ width: '100%', height: '700px' }}
-      className="w-full"
-      useResizeHandler
-    />
+    <div ref={containerRef} style={{ width: '100%' }}>
+      <Plot
+        data={traces as never}
+        layout={layout}
+        config={config}
+        style={{ width: '100%', height: '700px' }}
+        className="w-full"
+        useResizeHandler
+      />
+    </div>
   );
 }

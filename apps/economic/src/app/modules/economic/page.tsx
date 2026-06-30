@@ -1,7 +1,8 @@
 /**
  * 宏观经济数据页面 — 路由层
- * 数据获取 / 初始化 / 更新按钮 / 图表渲染等逻辑全部下沉到各 *Tab 子组件，
- * 此处只负责 tabs 路由 + 共享 state（timeRange / refreshKey）
+ * 数据获取：顶层 useFullEconomicData 拉一次，所有 Tab 共享 fullData
+ * 渲染：7 个 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
+ * 子组件：按 timeRange + tabType 用 useFilteredEconomicData 拿自己需要的 data
  */
 'use client';
 
@@ -9,6 +10,7 @@ import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
+import { useFullEconomicData } from '@/lib/hooks/useFullEconomicData';
 import { Tabs } from './components/Tabs';
 
 // 动态导入各 Tab 子组件（每个 Tab 自己的 hooks / 按钮 / 图表都在子组件里）
@@ -52,6 +54,9 @@ export default function EconomicPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
 
+  // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isCached
+  const { fullData, isLoading, error, isCached } = useFullEconomicData(refreshKey);
+
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
     setActiveTab(tabId);
@@ -71,7 +76,7 @@ export default function EconomicPage() {
     }
   }, [timeRange]);
 
-  // 刷新成功后递增 refreshKey 触发 useEconomicData 重新 fetch
+  // 刷新成功后递增 refreshKey 触发顶层 useFullEconomicData 重新 fetch
   const handleRefreshSuccess = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
@@ -140,28 +145,91 @@ export default function EconomicPage() {
           onTabChange={handleTabChange}
         />
 
-        {/* 各 Tab 子组件：每个子组件自己管 hooks + 按钮 + 图表 + 错误/空/加载 */}
-        {activeTab === 'treasury-exchange' && (
+        {/* 各 Tab 子组件：始终挂载，仅用 hidden 控制显隐 — state 持久，Plotly 不重建 */}
+        <div hidden={activeTab !== 'treasury-exchange'}>
           <TreasuryExchangeTab
             timeRange={timeRange}
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
+            fullData={fullData}
+            isLoading={isLoading}
+            error={error}
+            isCached={isCached}
           />
-        )}
-        {activeTab === 'bonds' && (
+        </div>
+        <div hidden={activeTab !== 'bonds'}>
           <BondsTab
             timeRange={timeRange}
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
+            fullData={fullData}
+            isLoading={isLoading}
+            error={error}
+            isCached={isCached}
           />
-        )}
-        {activeTab === 'comparison' && <ComparisonTab />}
-        {activeTab === 'commodities' && <CommodityTab />}
-        {activeTab === 'stock-indices' && <StockIndexTab />}
-        {activeTab === 'liquidity-risk' && <LiquidityTab />}
-        {activeTab === 'rates' && <RatesTab />}
+        </div>
+        <div hidden={activeTab !== 'comparison'}>
+          <ComparisonTab
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            refreshKey={refreshKey}
+            onRefreshSuccess={handleRefreshSuccess}
+            fullData={fullData}
+            isLoading={isLoading}
+            error={error}
+            isCached={isCached}
+          />
+        </div>
+        <div hidden={activeTab !== 'commodities'}>
+          <CommodityTab
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            refreshKey={refreshKey}
+            onRefreshSuccess={handleRefreshSuccess}
+            fullData={fullData}
+            isLoading={isLoading}
+            error={error}
+            isCached={isCached}
+          />
+        </div>
+        <div hidden={activeTab !== 'stock-indices'}>
+          <StockIndexTab
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            refreshKey={refreshKey}
+            onRefreshSuccess={handleRefreshSuccess}
+            fullData={fullData}
+            isLoading={isLoading}
+            error={error}
+            isCached={isCached}
+          />
+        </div>
+        <div hidden={activeTab !== 'liquidity-risk'}>
+          <LiquidityTab
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            refreshKey={refreshKey}
+            onRefreshSuccess={handleRefreshSuccess}
+            fullData={fullData}
+            isLoading={isLoading}
+            error={error}
+            isCached={isCached}
+          />
+        </div>
+        <div hidden={activeTab !== 'rates'}>
+          <RatesTab
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            refreshKey={refreshKey}
+            onRefreshSuccess={handleRefreshSuccess}
+            fullData={fullData}
+            isLoading={isLoading}
+            error={error}
+            isCached={isCached}
+          />
+        </div>
       </div>
     </main>
   );

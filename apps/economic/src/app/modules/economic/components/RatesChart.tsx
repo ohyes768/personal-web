@@ -18,6 +18,7 @@ import {
   buildMultiAxisLayout,
   type AxisSpec,
 } from '@/lib/utils/plotlyTheme';
+import { usePlotlyAutoResize } from '@/lib/hooks/usePlotlyAutoResize';
 
 interface RatesChartProps {
   data: EconomicDataResponse;
@@ -54,6 +55,7 @@ function pickSeries(data: EconomicDataResponse, [k1, k2]: NestedKey): (number | 
 }
 
 export function RatesChart({ data }: RatesChartProps) {
+  const containerRef = usePlotlyAutoResize<HTMLDivElement>();
   const { traces, layout, config } = useMemo(() => {
     const dates = data.dates ?? [];
 
@@ -86,13 +88,15 @@ export function RatesChart({ data }: RatesChartProps) {
   }, [data]);
 
   return (
-    <Plot
-      data={traces as never}
-      layout={layout}
-      config={config}
-      style={{ width: '100%', height: '700px' }}
-      className="w-full"
-      useResizeHandler
-    />
+    <div ref={containerRef} style={{ width: '100%' }}>
+      <Plot
+        data={traces as never}
+        layout={layout}
+        config={config}
+        style={{ width: '100%', height: '700px' }}
+        className="w-full"
+        useResizeHandler
+      />
+    </div>
   );
 }

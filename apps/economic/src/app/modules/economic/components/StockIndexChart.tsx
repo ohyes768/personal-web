@@ -19,6 +19,7 @@ import {
   buildMultiAxisLayout,
   type AxisSpec,
 } from '@/lib/utils/plotlyTheme';
+import { usePlotlyAutoResize } from '@/lib/hooks/usePlotlyAutoResize';
 
 interface StockIndexChartProps {
   data: EconomicDataResponse;
@@ -44,6 +45,7 @@ const AXES: AxisSpec[] = [
 ];
 
 export function StockIndexChart({ data }: StockIndexChartProps) {
+  const containerRef = usePlotlyAutoResize<HTMLDivElement>();
   const { traces, layout, config } = useMemo(() => {
     const dates = data.dates ?? [];
     const indices = data.indices;
@@ -81,13 +83,15 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
   }, [data]);
 
   return (
-    <Plot
-      data={traces as never}
-      layout={layout}
-      config={config}
-      style={{ width: '100%', height: '700px' }}
-      className="w-full"
-      useResizeHandler
-    />
+    <div ref={containerRef} style={{ width: '100%' }}>
+      <Plot
+        data={traces as never}
+        layout={layout}
+        config={config}
+        style={{ width: '100%', height: '700px' }}
+        className="w-full"
+        useResizeHandler
+      />
+    </div>
   );
 }

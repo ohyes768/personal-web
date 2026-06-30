@@ -4,32 +4,46 @@
  * 利率利差 Tab — 容器组件
  * - 展示 SOFR + 美债3M + TED 利差 + 中国10y + 中国10年-2年
  * - 数据源独立 InitButton + RefreshButton（参考 LiquidityTab 模板）
- * - 复用 useEconomicData hook（tabType='treasury-exchange' 保留所有字段含 ted_spread/china_bond）
+ * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - useFilteredEconomicData 复用 'treasury-exchange' tabType
  * - 复用 TimeRangeSelector（rates tabType 走 TREASURY_TIME_RANGES 默认）
  */
-import { useState, useCallback } from 'react';
-import type { TimeRange } from '@/lib/types/economic';
-import { useEconomicData } from '@/lib/hooks/useEconomicData';
+import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
+import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
 import { InitButton } from './InitButton';
 import { RatesChart } from './RatesChart';
 
-export function RatesTab() {
-  const [timeRange, setTimeRange] = useState<TimeRange>('6M');
-  const [refreshKey, setRefreshKey] = useState(0);
+interface RatesTabProps {
+  timeRange: TimeRange;
+  onTimeRangeChange: (value: TimeRange) => void;
+  refreshKey: number;
+  onRefreshSuccess: () => void;
+  fullData: EconomicDataResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  isCached: boolean;
+}
 
-  // 复用 treasury-exchange tabType（filterDataByTab 对 rates 走 fallthrough 返回 data 原样）
-  const { data, isLoading, error, isCached } = useEconomicData(timeRange, 'treasury-exchange', refreshKey);
-
-  const handleRefreshSuccess = useCallback(() => setRefreshKey((k) => k + 1), []);
+export function RatesTab({
+  timeRange,
+  onTimeRangeChange,
+  refreshKey: _refreshKey,
+  onRefreshSuccess,
+  fullData,
+  isLoading,
+  error,
+  isCached,
+}: RatesTabProps) {
+  const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-6 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
-        <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType="rates" />
+        <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="rates" />
         {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
           onInit={economicApi.initRatesHistory}
@@ -42,7 +56,7 @@ export function RatesTab() {
           storageKey="last_updated_rates_daily"
           cadence="daily"
           label="更新利率利差"
-          onSuccess={handleRefreshSuccess}
+          onSuccess={onRefreshSuccess}
         />
       </div>
 

@@ -2,13 +2,14 @@
 
 /**
  * 中美利差/汇率 Tab — 容器组件
- * - 复用 useEconomicData hook（tabType='treasury-exchange' 保留美债+汇率相关字段）
+ * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - useFilteredEconomicData 做本地时间范围 + tabType 过滤（无网络请求）
  * - 复用 TimeRangeSelector / InitButton / RefreshButton
  * - chartKey 防止数据区间无变化时重复挂载
  */
 import { useMemo, useCallback } from 'react';
 import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
-import { useEconomicData } from '@/lib/hooks/useEconomicData';
+import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { LoadingOverlay } from './LoadingOverlay';
@@ -21,10 +22,23 @@ interface TreasuryExchangeTabProps {
   onTimeRangeChange: (value: TimeRange) => void;
   refreshKey: number;
   onRefreshSuccess: () => void;
+  fullData: EconomicDataResponse | null;
+  isLoading: boolean;
+  error: string | null;
+  isCached: boolean;
 }
 
-export function TreasuryExchangeTab({ timeRange, onTimeRangeChange, refreshKey, onRefreshSuccess }: TreasuryExchangeTabProps) {
-  const { data, isLoading, error, isCached } = useEconomicData(timeRange, 'treasury-exchange', refreshKey);
+export function TreasuryExchangeTab({
+  timeRange,
+  onTimeRangeChange,
+  refreshKey,
+  onRefreshSuccess,
+  fullData,
+  isLoading,
+  error,
+  isCached,
+}: TreasuryExchangeTabProps) {
+  const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
   const handleRefreshSuccess = useCallback(() => onRefreshSuccess(), [onRefreshSuccess]);
 

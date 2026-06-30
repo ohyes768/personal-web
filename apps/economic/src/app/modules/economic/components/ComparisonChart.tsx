@@ -16,6 +16,7 @@ import {
   buildMultiAxisLayout,
   type AxisSpec,
 } from '@/lib/utils/plotlyTheme';
+import { usePlotlyAutoResize } from '@/lib/hooks/usePlotlyAutoResize';
 
 interface ComparisonChartProps {
   selectedIds: IndicatorId[];
@@ -36,6 +37,7 @@ const AXES: AxisSpec[] = [
 ];
 
 export function ComparisonChart({ selectedIds, data }: ComparisonChartProps) {
+  const containerRef = usePlotlyAutoResize<HTMLDivElement>();
   const { traces, layout, config } = useMemo(() => {
     const dates = data.dates;
 
@@ -84,13 +86,15 @@ export function ComparisonChart({ selectedIds, data }: ComparisonChartProps) {
   }
 
   return (
-    <Plot
-      data={traces as never}
-      layout={layout}
-      config={config}
-      style={{ width: '100%', height: '700px' }}
-      className="w-full"
-      useResizeHandler
-    />
+    <div ref={containerRef} style={{ width: '100%' }}>
+      <Plot
+        data={traces as never}
+        layout={layout}
+        config={config}
+        style={{ width: '100%', height: '700px' }}
+        className="w-full"
+        useResizeHandler
+      />
+    </div>
   );
 }
