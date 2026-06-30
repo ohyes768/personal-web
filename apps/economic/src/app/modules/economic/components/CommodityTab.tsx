@@ -34,7 +34,7 @@ export function CommodityTab() {
           onInit={economicApi.initCommoditiesHistory}
           storageKey="last_initialized_macro_commodities"
           label="初始化商品数据"
-          hasData={!!data && data.dates && data.dates.length > 0}
+          hasData={!!data?.commodities?.gold?.length}
         />
         <RefreshButton
           onRefresh={economicApi.updateCommodities}

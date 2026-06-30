@@ -35,7 +35,7 @@ export function StockIndexTab() {
           onInit={economicApi.initIndicesHistory}
           storageKey="last_initialized_macro_indices"
           label="初始化股指数据"
-          hasData={!!data && data.dates && data.dates.length > 0}
+          hasData={!!data?.indices?.SPX?.length}
         />
         <RefreshButton
           onRefresh={economicApi.updateIndices}
