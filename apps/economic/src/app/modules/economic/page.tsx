@@ -17,7 +17,7 @@ import { RefreshButton } from './components/RefreshButton';
 import { InitButton } from './components/InitButton';
 import { IndicatorCards } from '@/components/modules/fund-flow/IndicatorCards';
 import { TimeRangeSelector as FundFlowTimeRangeSelector } from '@/components/modules/fund-flow/TimeRangeSelector';
-import { getHistoryData, getCumulativeData } from '@/lib/modules/fund-flow/api';
+import * as fundFlowApi from '@/lib/modules/fund-flow/api';
 
 // 动态导入图表组件，禁用SSR
 const EconomicChart = dynamic(() => import('./components/EconomicChart').then(mod => ({ default: mod.EconomicChart })), {
@@ -48,12 +48,18 @@ const CommodityTab = dynamic(() => import('./components/CommodityTab').then(mod 
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载商品模块...</div>
 });
 
+// 动态导入股指模块
+const StockIndexTab = dynamic(() => import('./components/StockIndexTab').then(mod => ({ default: mod.StockIndexTab })), {
+  ssr: false,
+  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载股指模块...</div>
+});
+
 export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [fundFlowTimeRange, setFundFlowTimeRange] = useState<FundFlowTimeRange>('ALL');
   const [fundFlowData, setFundFlowData] = useState<FundFlowChartData[]>([]);
-  const [cumulativeData, setCumulativeData] = useState<Awaited<ReturnType<typeof getCumulativeData>> | null>(null);
+  const [cumulativeData, setCumulativeData] = useState<Awaited<ReturnType<typeof fundFlowApi.getCumulativeData>> | null>(null);
   const [fundFlowLoading, setFundFlowLoading] = useState(false);
   const [fundFlowError, setFundFlowError] = useState<string | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
@@ -68,6 +74,8 @@ export default function EconomicPage() {
       setTimeRange('3M');
     } else if (tabId === 'comparison' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
+    } else if (tabId === 'stock-indices' && (timeRange === '3M' || timeRange === '1Y')) {
+      setTimeRange('6M');
     }
   }, [timeRange]);
 
@@ -78,8 +86,8 @@ export default function EconomicPage() {
       setFundFlowError(null);
 
       const [history, cumulative] = await Promise.all([
-        getHistoryData(),
-        getCumulativeData(),
+        fundFlowApi.getHistoryData(),
+        fundFlowApi.getCumulativeData(),
       ]);
 
       setFundFlowData(history);
@@ -139,6 +147,11 @@ export default function EconomicPage() {
       id: 'commodities',
       label: '商品',
       description: '黄金/白银/原油/铜价格曲线（黄金白银左轴，原油铜右轴）'
+    },
+    {
+      id: 'stock-indices',
+      label: '股指',
+      description: '恒生/上证/标普500/纳指/道琼斯日 K 线（5 轴叠加）'
     }
   ];
 
@@ -168,7 +181,7 @@ export default function EconomicPage() {
         />
 
         {/* 经济数据 Tab 的时间范围选择器 + 更新按钮 */}
-        {activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && (
+        {activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
           <div className="flex items-center gap-6 mb-8 flex-wrap">
             <span className="text-gray-400">时间范围：</span>
             <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType={activeTab} />
@@ -213,7 +226,7 @@ export default function EconomicPage() {
         )}
 
         {/* 错误提示 - 经济数据 */}
-        {error && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && (
+        {error && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
           <div className="mb-8 p-6 bg-red-900/30 border border-red-700 rounded-lg">
             <p className="text-red-200 mb-2">获取数据失败</p>
             <p className="text-red-400 text-sm">{error}</p>
@@ -229,7 +242,7 @@ export default function EconomicPage() {
         )}
 
         {/* 经济数据图表 */}
-        {data && !isLoading && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && (
+        {data && !isLoading && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
           <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
             {/* 美债汇率 Tab */}
             {activeTab === 'treasury-exchange' && (
@@ -249,16 +262,32 @@ export default function EconomicPage() {
         {/* 商品 Tab */}
         {activeTab === 'commodities' && <CommodityTab />}
 
+        {/* 股指 Tab */}
+        {activeTab === 'stock-indices' && <StockIndexTab />}
+
         {/* 资金流向 Tab */}
         {activeTab === 'fund-flow' && (
           <>
             {/* 指标卡片 */}
             <IndicatorCards data={cumulativeData} />
 
-            {/* 时间范围选择器 */}
-            <div className="flex items-center gap-6 mb-6">
+            {/* 时间范围选择器 + 更新按钮 */}
+            <div className="flex items-center gap-6 mb-6 flex-wrap">
               <span className="text-gray-400">时间范围：</span>
               <FundFlowTimeRangeSelector value={fundFlowTimeRange} onChange={setFundFlowTimeRange} />
+              <InitButton
+                onInit={fundFlowApi.initHistory}
+                storageKey="last_initialized_macro_fund_flow"
+                label="初始化资金流向数据"
+                hasData={fundFlowData.length > 0}
+              />
+              <RefreshButton
+                onRefresh={fundFlowApi.updateData}
+                storageKey="last_updated_fund_flow_daily"
+                cadence="daily"
+                label="更新资金流向"
+                onSuccess={fetchFundFlowData}
+              />
             </div>
 
             {/* 图表 */}
@@ -267,14 +296,14 @@ export default function EconomicPage() {
         )}
 
         {/* 空状态 */}
-        {!isLoading && !fundFlowLoading && !data && !error && !fundFlowError && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && (
+        {!isLoading && !fundFlowLoading && !data && !error && !fundFlowError && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
           <div className="text-center py-20">
             <p className="text-gray-400 text-lg">暂无数据</p>
           </div>
         )}
 
         {/* 加载遮罩 */}
-        {((activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && isLoading) || fundFlowLoading) && <LoadingOverlay message="加载经济数据中..." />}
+        {((activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && isLoading) || fundFlowLoading) && <LoadingOverlay message="加载经济数据中..." />}
       </div>
     </main>
   );

@@ -8,7 +8,7 @@
 export type TimeRange = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
 /** Tab类型选项 */
-export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities';
+export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities' | 'stock-indices';
 
 /** 时间范围配置 */
 export interface TimeRangeConfig {
@@ -80,6 +80,13 @@ export interface EconomicDataResponse {
     silver: (number | null)[];
     oil: (number | null)[];
     copper: (number | null)[];
+  };
+  indices?: {
+    HKHSI: (number | null)[];
+    SH000001: (number | null)[];
+    SPX: (number | null)[];
+    IXIC: (number | null)[];
+    DJI: (number | null)[];
   };
 }
 

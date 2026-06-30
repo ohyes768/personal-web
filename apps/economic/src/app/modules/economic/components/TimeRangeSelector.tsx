@@ -6,7 +6,7 @@ import type { TimeRange } from '@/lib/types/economic';
 interface TimeRangeSelectorProps {
   value: TimeRange;
   onChange: (value: TimeRange) => void;
-  tabType: 'treasury-exchange' | 'bonds' | 'comparison' | 'commodities'; // 根据 Tab 类型显示不同选项
+  tabType: 'treasury-exchange' | 'bonds' | 'comparison' | 'commodities' | 'stock-indices'; // 根据 Tab 类型显示不同选项
 }
 
 // 美债汇率时间范围（日级数据）

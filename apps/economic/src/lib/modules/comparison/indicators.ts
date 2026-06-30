@@ -43,6 +43,13 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   silver: { id: 'silver', label: '白银', group: 'commodity', color: '#94a3b8', unit: '元/克', source: '阿里云' },
   oil:    { id: 'oil',    label: '原油', group: 'commodity', color: '#1e293b', unit: '$/桶',  source: '阿里云' },
   copper: { id: 'copper', label: '铜',   group: 'commodity', color: '#b45309', unit: '$/吨',  source: '阿里云' },
+
+  // 股指（5 个全球主要指数，统一走阿里云 alirmcom2 comkm）
+  hk_hsi:    { id: 'hk_hsi',    label: '恒生指数', group: 'stock_index', color: '#ef4444', unit: '点', source: '阿里云' },
+  sh_000001: { id: 'sh_000001', label: '上证指数', group: 'stock_index', color: '#f59e0b', unit: '点', source: '阿里云' },
+  spx:       { id: 'spx',       label: '标普500',  group: 'stock_index', color: '#3b82f6', unit: '点', source: '阿里云' },
+  ixic:      { id: 'ixic',      label: '纳斯达克', group: 'stock_index', color: '#10b981', unit: '点', source: '阿里云' },
+  dji:       { id: 'dji',       label: '道琼斯',   group: 'stock_index', color: '#a855f7', unit: '点', source: '阿里云' },
 };
 
 /** 数据源分组的显示顺序（与经济页 tab 顺序一致） */
@@ -56,6 +63,7 @@ export const GROUP_ORDER: Array<{ group: string; label: string }> = [
   { group: 'fund_flow',   label: '资金流' },
   { group: 'rates',       label: '利率利差' },
   { group: 'commodity',   label: '商品' },
+  { group: 'stock_index', label: '股指' },
 ];
 
 /** 指标默认选择（DXY + 美债10y + VIX，对比模块入口案例） */

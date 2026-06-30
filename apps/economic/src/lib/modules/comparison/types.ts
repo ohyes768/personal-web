@@ -13,7 +13,8 @@ export type IndicatorGroup =
   | 'volatility'
   | 'fund_flow'
   | 'rates'
-  | 'commodity';
+  | 'commodity'
+  | 'stock_index';
 
 /** 指标 ID 联合类型（覆盖所有可对比曲线） */
 export type IndicatorId =
@@ -25,7 +26,8 @@ export type IndicatorId =
   | 'vix'
   | 'north_net' | 'south_net'
   | 'ted_spread' | 'sofr'
-  | 'gold' | 'silver' | 'oil' | 'copper';
+  | 'gold' | 'silver' | 'oil' | 'copper'
+  | 'hk_hsi' | 'sh_000001' | 'spx' | 'ixic' | 'dji';
 
 /** 单个指标元信息（用于 IndicatorSelector 渲染 + ComparisonChart 取数据） */
 export interface IndicatorMeta {

@@ -38,6 +38,13 @@ function getDefaultEconomicData(): EconomicDataResponse {
       oil: [],
       copper: [],
     },
+    indices: {
+      HKHSI: [],
+      SH000001: [],
+      SPX: [],
+      IXIC: [],
+      DJI: [],
+    },
   };
 }
 
@@ -155,6 +162,13 @@ export function useEconomicData(
         silver: processedData!.commodities.silver?.slice(startIndex, endIndex) ?? [],
         oil: processedData!.commodities.oil?.slice(startIndex, endIndex) ?? [],
         copper: processedData!.commodities.copper?.slice(startIndex, endIndex) ?? [],
+      } : undefined,
+      indices: processedData!.indices ? {
+        HKHSI: processedData!.indices.HKHSI?.slice(startIndex, endIndex) ?? [],
+        SH000001: processedData!.indices.SH000001?.slice(startIndex, endIndex) ?? [],
+        SPX: processedData!.indices.SPX?.slice(startIndex, endIndex) ?? [],
+        IXIC: processedData!.indices.IXIC?.slice(startIndex, endIndex) ?? [],
+        DJI: processedData!.indices.DJI?.slice(startIndex, endIndex) ?? [],
       } : undefined,
     };
 

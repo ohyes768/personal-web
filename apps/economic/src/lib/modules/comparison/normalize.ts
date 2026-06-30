@@ -32,6 +32,11 @@ export function extractSeries(
     case 'silver': return data.commodities?.silver ?? [];
     case 'oil':    return data.commodities?.oil ?? [];
     case 'copper': return data.commodities?.copper ?? [];
+    case 'hk_hsi':    return data.indices?.HKHSI ?? [];
+    case 'sh_000001': return data.indices?.SH000001 ?? [];
+    case 'spx':       return data.indices?.SPX ?? [];
+    case 'ixic':      return data.indices?.IXIC ?? [];
+    case 'dji':       return data.indices?.DJI ?? [];
   }
 }
 

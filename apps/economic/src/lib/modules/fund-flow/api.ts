@@ -2,6 +2,7 @@
  * 资金流向 API 客户端
  */
 import { directClient } from '@/lib/api-client';
+import type { UpdateResponse } from '@/lib/modules/economic/api';
 import type { CumulativeData, HistoryDataResponse, ChartData } from './types';
 
 /**
@@ -27,8 +28,16 @@ export async function getHistoryData(): Promise<ChartData[]> {
 }
 
 /**
- * 手动更新数据
+ * 初始化资金流向历史数据（首次部署用）
+ * 调 /api/macro/fetch/fund-flow/history，从 2014-11-17 拉全量
  */
-export async function updateData(): Promise<{ message: string }> {
-  return directClient.post('/api/macro/update/fund-flow');
+export async function initHistory(): Promise<UpdateResponse> {
+  return directClient.post<UpdateResponse>('/api/macro/fetch/fund-flow/history');
+}
+
+/**
+ * 增量更新资金流向数据（日级）
+ */
+export async function updateData(): Promise<UpdateResponse> {
+  return directClient.post<UpdateResponse>('/api/macro/update/fund-flow');
 }

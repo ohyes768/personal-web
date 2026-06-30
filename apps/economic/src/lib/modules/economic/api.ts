@@ -92,4 +92,21 @@ export const economicApi = {
   updateCommodities: async (): Promise<UpdateResponse> => {
     return directClient.post<UpdateResponse>('/api/macro/update/commodities');
   },
+
+  /**
+   * 初始化股指历史数据（首次部署用）
+   * 5 个全球指数（恒生/上证/标普500/纳指/道指）5 年全量 K 线
+   * 调 /api/macro/fetch/indices/history
+   */
+  initIndicesHistory: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/fetch/indices/history');
+  },
+
+  /**
+   * 增量更新股指数据（统一走阿里云 alirmcom2 comkm K线接口）
+   * 调 /api/macro/update/indices
+   */
+  updateIndices: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/indices');
+  },
 };
