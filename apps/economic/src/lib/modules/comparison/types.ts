@@ -11,6 +11,7 @@ export type IndicatorGroup =
   | 'cn_treasury'
   | 'exchange'
   | 'volatility'
+  | 'liquidity'
   | 'fund_flow'
   | 'rates'
   | 'commodity'
@@ -24,6 +25,7 @@ export type IndicatorId =
   | 'cn_10y'
   | 'dxy' | 'usd_cny' | 'usd_jpy' | 'usd_eur'
   | 'vix'
+  | 'tga' | 'hibor'
   | 'north_net' | 'south_net'
   | 'ted_spread' | 'sofr'
   | 'gold' | 'silver' | 'oil' | 'copper'
@@ -36,5 +38,5 @@ export interface IndicatorMeta {
   group: IndicatorGroup;
   color: string;          // 曲线颜色（hex）
   unit: string;           // 单位（%, $/oz, ¥/g, 亿元等）
-  source: 'FRED' | 'AKShare' | 'ECB' | '阿里云';
+  source: 'FRED' | 'AKShare' | 'ECB' | '阿里云' | 'HKMA';
 }

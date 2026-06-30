@@ -111,4 +111,52 @@ export const economicApi = {
   updateIndices: async (): Promise<UpdateResponse> => {
     return directClient.post<UpdateResponse>('/api/macro/update/indices');
   },
+
+  /**
+   * 初始化 VIX 历史数据（首次部署用）
+   * 调 /api/macro/fetch/vix/history
+   */
+  initVIXHistory: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/fetch/vix/history');
+  },
+
+  /**
+   * 增量更新 VIX 数据（最近 7 天）
+   * 调 /api/macro/update/vix
+   */
+  updateVIX: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/vix');
+  },
+
+  /**
+   * 初始化 TGA 历史数据（首次部署用，FRED WTREGEN）
+   * 调 /api/macro/fetch/tga/history
+   */
+  initTGAHistory: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/fetch/tga/history');
+  },
+
+  /**
+   * 增量更新 TGA 数据（最近 7 天）
+   * 调 /api/macro/update/tga
+   */
+  updateTGA: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/tga');
+  },
+
+  /**
+   * 初始化 HIBOR 历史数据（首次部署用，HKMA API）
+   * 调 /api/macro/fetch/hibor/history
+   */
+  initHIBORHistory: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/fetch/hibor/history');
+  },
+
+  /**
+   * 增量更新 HIBOR 数据（最近 7 天）
+   * 调 /api/macro/update/hibor
+   */
+  updateHIBOR: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/hibor');
+  },
 };

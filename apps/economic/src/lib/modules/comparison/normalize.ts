@@ -24,6 +24,8 @@ export function extractSeries(
     case 'usd_jpy': return data.exchange_rates?.usd_jpy ?? [];
     case 'usd_eur': return data.exchange_rates?.usd_eur ?? [];
     case 'vix':     return data.vix ?? [];
+    case 'tga':     return data.tga ?? [];
+    case 'hibor':   return data.hibor ?? [];
     case 'north_net': return data.fund_flow?.north_net_flow ?? [];
     case 'south_net': return data.fund_flow?.south_net_flow ?? [];
     case 'ted_spread': return data.ted_spread?.ted_spread ?? [];

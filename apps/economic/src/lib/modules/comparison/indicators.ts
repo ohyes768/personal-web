@@ -30,6 +30,10 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   // 恐慌
   vix:     { id: 'vix',     label: 'VIX恐慌',  group: 'volatility',  color: '#a855f7', unit: '',      source: 'FRED' },
 
+  // 流动性
+  tga:     { id: 'tga',     label: 'TGA余额',  group: 'liquidity',   color: '#f97316', unit: '千亿美元', source: 'FRED' },
+  hibor:   { id: 'hibor',   label: 'HIBOR隔夜', group: 'liquidity',  color: '#14b8a6', unit: '%',        source: 'HKMA' },
+
   // 资金流
   north_net: { id: 'north_net', label: '北向净流入', group: 'fund_flow', color: '#06b6d4', unit: '亿元', source: 'AKShare' },
   south_net: { id: 'south_net', label: '南向净流入', group: 'fund_flow', color: '#22d3ee', unit: '亿元', source: 'AKShare' },
@@ -60,6 +64,7 @@ export const GROUP_ORDER: Array<{ group: string; label: string }> = [
   { group: 'cn_treasury', label: '中债' },
   { group: 'exchange',    label: '汇率' },
   { group: 'volatility',  label: '恐慌' },
+  { group: 'liquidity',   label: '流动性' },
   { group: 'fund_flow',   label: '资金流' },
   { group: 'rates',       label: '利率利差' },
   { group: 'commodity',   label: '商品' },

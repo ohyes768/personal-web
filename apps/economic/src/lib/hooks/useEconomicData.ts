@@ -45,6 +45,8 @@ function getDefaultEconomicData(): EconomicDataResponse {
       IXIC: [],
       DJI: [],
     },
+    tga: [],
+    hibor: [],
   };
 }
 
@@ -170,6 +172,8 @@ export function useEconomicData(
         IXIC: processedData!.indices.IXIC?.slice(startIndex, endIndex) ?? [],
         DJI: processedData!.indices.DJI?.slice(startIndex, endIndex) ?? [],
       } : undefined,
+      tga: processedData!.tga?.slice(startIndex, endIndex) ?? [],
+      hibor: processedData!.hibor?.slice(startIndex, endIndex) ?? [],
     };
 
     const result = filterDataByTab(timeFiltered, tab, range);

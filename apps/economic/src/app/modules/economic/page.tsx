@@ -54,6 +54,12 @@ const StockIndexTab = dynamic(() => import('./components/StockIndexTab').then(mo
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载股指模块...</div>
 });
 
+// 动态导入流动性/风险模块
+const LiquidityTab = dynamic(() => import('./components/LiquidityTab').then(mod => ({ default: mod.LiquidityTab })), {
+  ssr: false,
+  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载流动性/风险模块...</div>
+});
+
 export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
@@ -75,6 +81,8 @@ export default function EconomicPage() {
     } else if (tabId === 'comparison' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
     } else if (tabId === 'stock-indices' && (timeRange === '3M' || timeRange === '1Y')) {
+      setTimeRange('6M');
+    } else if (tabId === 'liquidity-risk' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
     }
   }, [timeRange]);
@@ -139,6 +147,11 @@ export default function EconomicPage() {
       description: '沪深港通北向/南向资金流向数据（日级）'
     },
     {
+      id: 'liquidity-risk',
+      label: '流动性/风险',
+      description: 'VIX 恐慌指数 + TGA 账户余额 + HIBOR 隔夜拆息走势（日级）'
+    },
+    {
       id: 'comparison',
       label: '对比',
       description: '多指标归一化对比分析（2-6 条曲线叠加）'
@@ -181,7 +194,7 @@ export default function EconomicPage() {
         />
 
         {/* 经济数据 Tab 的时间范围选择器 + 更新按钮 */}
-        {activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
+        {activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && activeTab !== 'liquidity-risk' && (
           <div className="flex items-center gap-6 mb-8 flex-wrap">
             <span className="text-gray-400">时间范围：</span>
             <TimeRangeSelector value={timeRange} onChange={setTimeRange} tabType={activeTab} />
@@ -226,7 +239,7 @@ export default function EconomicPage() {
         )}
 
         {/* 错误提示 - 经济数据 */}
-        {error && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
+        {error && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && activeTab !== 'liquidity-risk' && (
           <div className="mb-8 p-6 bg-red-900/30 border border-red-700 rounded-lg">
             <p className="text-red-200 mb-2">获取数据失败</p>
             <p className="text-red-400 text-sm">{error}</p>
@@ -242,7 +255,7 @@ export default function EconomicPage() {
         )}
 
         {/* 经济数据图表 */}
-        {data && !isLoading && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
+        {data && !isLoading && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && activeTab !== 'liquidity-risk' && (
           <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
             {/* 中美利差/汇率 Tab */}
             {activeTab === 'treasury-exchange' && (
@@ -264,6 +277,9 @@ export default function EconomicPage() {
 
         {/* 股指 Tab */}
         {activeTab === 'stock-indices' && <StockIndexTab />}
+
+        {/* 流动性/风险 Tab */}
+        {activeTab === 'liquidity-risk' && <LiquidityTab />}
 
         {/* 资金流向 Tab */}
         {activeTab === 'fund-flow' && (
@@ -296,14 +312,14 @@ export default function EconomicPage() {
         )}
 
         {/* 空状态 */}
-        {!isLoading && !fundFlowLoading && !data && !error && !fundFlowError && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
+        {!isLoading && !fundFlowLoading && !data && !error && !fundFlowError && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && activeTab !== 'liquidity-risk' && (
           <div className="text-center py-20">
             <p className="text-gray-400 text-lg">暂无数据</p>
           </div>
         )}
 
         {/* 加载遮罩 */}
-        {((activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && isLoading) || fundFlowLoading) && <LoadingOverlay message="加载经济数据中..." />}
+        {((activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && activeTab !== 'liquidity-risk' && isLoading) || fundFlowLoading) && <LoadingOverlay message="加载经济数据中..." />}
       </div>
     </main>
   );

@@ -8,7 +8,7 @@
 export type TimeRange = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
 /** Tab类型选项 */
-export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities' | 'stock-indices';
+export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk';
 
 /** 时间范围配置 */
 export interface TimeRangeConfig {
@@ -88,6 +88,8 @@ export interface EconomicDataResponse {
     IXIC: (number | null)[];
     DJI: (number | null)[];
   };
+  tga?: (number | null)[];     // 单位：百万美元（前端展示 ÷1e5 转千亿美元）
+  hibor?: (number | null)[];   // 单位：%
 }
 
 /** 图表数据系列 */

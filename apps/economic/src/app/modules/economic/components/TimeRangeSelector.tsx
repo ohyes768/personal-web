@@ -6,7 +6,7 @@ import type { TimeRange } from '@/lib/types/economic';
 interface TimeRangeSelectorProps {
   value: TimeRange;
   onChange: (value: TimeRange) => void;
-  tabType: 'treasury-exchange' | 'bonds' | 'comparison' | 'commodities' | 'stock-indices'; // 根据 Tab 类型显示不同选项
+  tabType: 'treasury-exchange' | 'bonds' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk'; // 根据 Tab 类型显示不同选项
 }
 
 // 中美利差/汇率时间范围（日级数据：US 10y、CN 10y、美元指数、4 个汇率对）
