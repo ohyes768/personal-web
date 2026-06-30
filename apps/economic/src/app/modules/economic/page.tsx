@@ -67,7 +67,7 @@ export default function EconomicPage() {
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
     setActiveTab(tabId);
-    // 美债汇率默认 3M，德债日债默认 1Y
+    // 中美利差/汇率默认 3M，德债日债默认 1Y
     if (tabId === 'bonds' && timeRange === '3M') {
       setTimeRange('1Y');
     } else if (tabId === 'treasury-exchange' && timeRange === '1Y') {
@@ -125,8 +125,8 @@ export default function EconomicPage() {
   const tabs: Array<{ id: TabType; label: string; description: string }> = [
     {
       id: 'treasury-exchange',
-      label: '美债汇率',
-      description: '美国国债收益率与汇率数据趋势分析（日级）'
+      label: '中美利差/汇率',
+      description: '中美 10y 国债利差 + 汇率数据趋势分析（日级）'
     },
     {
       id: 'bonds',
@@ -200,7 +200,7 @@ export default function EconomicPage() {
                   onRefresh={economicApi.updateUsTreasuriesAndRates}
                   storageKey="last_updated_us_treasuries_and_rates_daily"
                   cadence="daily"
-                  label="更新美债/汇率"
+                  label="更新中美利差/汇率"
                   onSuccess={handleRefreshSuccess}
                 />
               </>
@@ -244,7 +244,7 @@ export default function EconomicPage() {
         {/* 经济数据图表 */}
         {data && !isLoading && activeTab !== 'fund-flow' && activeTab !== 'comparison' && activeTab !== 'commodities' && activeTab !== 'stock-indices' && (
           <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-            {/* 美债汇率 Tab */}
+            {/* 中美利差/汇率 Tab */}
             {activeTab === 'treasury-exchange' && (
               <EconomicChart key={`treasury-${chartKey}`} data={data} showAllData={false} />
             )}

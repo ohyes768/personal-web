@@ -65,14 +65,16 @@ export const economicApi = {
   },
 
   /**
-   * 更新美债 + 汇率（前端美债/汇率 tab 用，并发请求）
+   * 更新美债 + 汇率 + 中国 10y（前端中美利差/汇率 tab 用，并发请求）
+   * 三个端点并发，任一成功即视为成功
    */
   updateUsTreasuriesAndRates: async (): Promise<UpdateResponse> => {
-    const [us, fx] = await Promise.all([
+    const [us, fx, cn] = await Promise.all([
       directClient.post<UpdateResponse>('/api/macro/update/us-treasuries'),
       directClient.post<UpdateResponse>('/api/macro/update/exchange-rates'),
+      directClient.post<UpdateResponse>('/api/macro/update/china-bonds'),
     ]);
-    return us.success || fx.success ? us : us;
+    return us.success || fx.success || cn.success ? us : fx;
   },
 
   /**

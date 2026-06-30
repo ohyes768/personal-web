@@ -99,6 +99,7 @@ export interface ChartTrace {
   line?: {
     color: string;
     width: number;
+    dash?: string;
   };
   xaxis?: string;
   yaxis?: string;
@@ -118,6 +119,7 @@ export interface ChartColors {
   treasury10Y: string;
   euroBond10Y: string;
   japanBond10Y: string;
+  chinaBond10Y: string;
   dollarIndex: string;
   usdCny: string;
   usdJpy: string;

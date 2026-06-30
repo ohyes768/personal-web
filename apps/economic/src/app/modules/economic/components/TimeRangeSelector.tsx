@@ -9,7 +9,7 @@ interface TimeRangeSelectorProps {
   tabType: 'treasury-exchange' | 'bonds' | 'comparison' | 'commodities' | 'stock-indices'; // 根据 Tab 类型显示不同选项
 }
 
-// 美债汇率时间范围（日级数据）
+// 中美利差/汇率时间范围（日级数据：US 10y、CN 10y、美元指数、4 个汇率对）
 const TREASURY_TIME_RANGES: Array<{ label: string; value: TimeRange }> = [
   { label: '1个月', value: '1M' },
   { label: '3个月', value: '3M' },

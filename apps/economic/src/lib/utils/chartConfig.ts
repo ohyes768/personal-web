@@ -12,6 +12,7 @@ export const CHART_COLORS: ChartColors = {
   treasury10Y: '#F59E0B', // 橙色
   euroBond10Y: '#EF4444', // 红色（欧债）
   japanBond10Y: '#8B5CF6', // 紫色（日债）
+  chinaBond10Y: '#FFD700', // 金色（中国国债）
   dollarIndex: '#06B6D4', // 青色
   usdCny: '#EC4899',      // 粉色
   usdJpy: '#F59E0B',      // 橙色
@@ -93,6 +94,26 @@ export function createJapanBondTraces(
       line: { color: CHART_COLORS.japanBond10Y, width: 2 },
       xaxis: 'x4',
       yaxis: 'y4',
+    },
+  ];
+}
+
+/**
+ * 生成中国国债图表数据系列（与美债同图，方便看中美 10y 利差）
+ */
+export function createChinaBondTraces(
+  dates: string[],
+  data: { '10y': (number | null)[] }
+): ChartTrace[] {
+  return [
+    {
+      x: dates,
+      y: data['10y'] as unknown as number[],
+      name: '中国 10 年期',
+      mode: 'lines',
+      line: { color: CHART_COLORS.chinaBond10Y, width: 2, dash: 'dash' },
+      xaxis: 'x',
+      yaxis: 'y',
     },
   ];
 }

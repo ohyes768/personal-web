@@ -7,7 +7,7 @@ import { useMemo } from 'react';
 import Plot from 'react-plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import { useDarkMode } from './useDarkMode';
-import { createTreasuryTraces, createEuroBondTraces, createJapanBondTraces, createExchangeTraces, createChartLayout, createTwoChartLayout, createChartConfig } from '@/lib/utils/chartConfig';
+import { createTreasuryTraces, createEuroBondTraces, createJapanBondTraces, createChinaBondTraces, createExchangeTraces, createChartLayout, createTwoChartLayout, createChartConfig } from '@/lib/utils/chartConfig';
 
 interface EconomicChartProps {
   data: EconomicDataResponse;
@@ -34,22 +34,30 @@ export function EconomicChart({ data, showAllData = false }: EconomicChartProps)
     return createJapanBondTraces(data.dates, data.jp_treasuries);
   }, [data]);
 
+  // 生成中国国债图表数据系列（与美债同图，方便看中美 10y 利差）
+  const chinaBondTraces = useMemo(() => {
+    if (!data.china_bond?.['10y'] || data.china_bond['10y'].length === 0) return [];
+    return createChinaBondTraces(data.dates, data.china_bond);
+  }, [data]);
+
   // 生成汇率图表数据系列
   const exchangeTraces = useMemo(() => {
     if (!data.exchange_rates) return [];
     return createExchangeTraces(data.dates, data.exchange_rates);
   }, [data]);
 
-  // 合并图表数据：如果 showAllData 为 true，则显示所有数据；否则只显示美债 + 汇率（VIX 暂时不在此页面显示）
+  // 合并图表数据：中国 10y 跟随美债放在图1（中美 10y 利差的核心叙事）
   const traces = showAllData
     ? [
         ...treasuryTraces,
+        ...chinaBondTraces,
         ...euroBondTraces,
         ...japanBondTraces,
         ...exchangeTraces,
       ]
     : [
         ...treasuryTraces,
+        ...chinaBondTraces,
         ...exchangeTraces,
       ];
 
