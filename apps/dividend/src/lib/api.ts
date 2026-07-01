@@ -3,6 +3,7 @@
  * 所有股息率相关 API 调用必须通过此文件
  */
 import { directClient } from './api-client';
+import type { FavoritesResponse } from './watchlist';
 import type {
   DividendListResponse,
   DividendDetailResponse,
@@ -97,6 +98,24 @@ export const dividendApi = {
    */
   getFinancialStatus: () =>
     directClient.get<AuxDataStatus>('/api/dividend/financial/status'),
+
+  /**
+   * 获取收藏列表
+   */
+  getFavorites: () =>
+    directClient.get<FavoritesResponse>('/api/dividend/favorites'),
+
+  /**
+   * 添加一只股票到收藏
+   */
+  addFavorite: (code: string) =>
+    directClient.post<FavoritesResponse>(`/api/dividend/favorites/${code}`),
+
+  /**
+   * 从收藏中移除
+   */
+  removeFavorite: (code: string) =>
+    directClient.delete<FavoritesResponse>(`/api/dividend/favorites/${code}`),
 };
 
 /**

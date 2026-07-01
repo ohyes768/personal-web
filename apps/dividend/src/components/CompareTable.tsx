@@ -157,7 +157,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <ChartBarIcon className="w-4 h-4 text-green-400" />
-                <span>昨日收盘/M120</span>
+                <span>昨日/M120</span>
               </div>
             </td>
             {stocks.map((stock, idx) => {

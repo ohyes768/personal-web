@@ -4,18 +4,30 @@
  */
 'use client';
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import { StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
 import { DividendTable } from '@/components/DividendTable';
 import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
+import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import type { DividendStock, DividendStockWithTechnical } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
+type TabKey = 'all' | 'watchlist';
 
 export default function DividendPage() {
+  return (
+    <Suspense fallback={<div className="container mx-auto px-8 py-8 min-h-screen bg-[#131722]" />}>
+      <DividendPageContent />
+    </Suspense>
+  );
+}
+
+function DividendPageContent() {
   // 交易所筛选
   const [exchangeFilter, setExchangeFilter] = useState<string>('');
   // 股息率阈值输入
@@ -95,6 +107,22 @@ export default function DividendPage() {
   // 数据更新功能
   const { state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard } = useDataUpdate();
 
+  // 收藏（watchlist）
+  const watchlist = useWatchlist();
+
+  // URL query 同步 tab（?tab=watchlist）
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: TabKey = tabParam === 'watchlist' ? 'watchlist' : 'all';
+  const handleTabChange = useCallback((tab: TabKey) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'all') params.delete('tab');
+    else params.set('tab', tab);
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : '?', { scroll: false });
+  }, [router, searchParams]);
+
   // 抽屉引用
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -105,6 +133,14 @@ export default function DividendPage() {
       technical: technicalData.get(stock.code) || undefined,
     }));
   }, [data, technicalData]);
+
+  // 按 tab 过滤显示数据
+  const displayData = useMemo(() => {
+    if (activeTab === 'watchlist') {
+      return stocksWithTechnical.filter(s => watchlist.has(s.code));
+    }
+    return stocksWithTechnical;
+  }, [stocksWithTechnical, activeTab, watchlist]);
 
   // 处理弹框
   const handleOpenModal = useCallback((type: 'quarterly' | 'sector' | 'yearly' | 'volatility', stock: DividendStock) => {
@@ -647,16 +683,63 @@ export default function DividendPage() {
         </div>
       )}
 
-      {/* 表格 - 使用 refreshKey 作为 key 强制刷新 */}
-      <DividendTable
-        key={refreshKey}
-        data={stocksWithTechnical}
-        technicalData={technicalData}
-        onOpenModal={handleOpenModal}
-        selectedStockCodes={compare.selectedStocks.map(s => s.code)}
-        maxSelect={MAX_COMPARE_SELECT}
-        onToggleCompare={handleToggleCompare}
-      />
+      {/* Tab 切换 */}
+      <div className="flex border-b border-gray-700 mb-4">
+        <button
+          onClick={() => handleTabChange('all')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'all'
+              ? 'border-blue-500 text-blue-400'
+              : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          全部
+          <span className="ml-2 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{stocksWithTechnical.length}</span>
+        </button>
+        <button
+          onClick={() => handleTabChange('watchlist')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === 'watchlist'
+              ? 'border-yellow-500 text-yellow-400'
+              : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          <StarIconOutline className="w-4 h-4" />
+          收藏
+          <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{watchlist.total}</span>
+        </button>
+      </div>
+
+      {/* 收藏 tab 空状态 */}
+      {activeTab === 'watchlist' && displayData.length === 0 && !loading && (
+        <div className="bg-[#1e222d] rounded-lg p-12 text-center">
+          <StarIconOutline className="w-12 h-12 mx-auto mb-3 text-gray-500" />
+          <p className="text-gray-400 mb-4">
+            {watchlist.total === 0 ? '还没有收藏的股票' : '本月筛选范围内暂无收藏的股票'}
+          </p>
+          <button
+            onClick={() => handleTabChange('all')}
+            className="text-blue-400 hover:underline text-sm"
+          >
+            去全部 tab 添加 →
+          </button>
+        </div>
+      )}
+
+      {/* 表格 - 使用 refreshKey 作为 key 强制刷新；watchlist tab 用 displayData，其他用 stocksWithTechnical */}
+      {!(activeTab === 'watchlist' && displayData.length === 0) && (
+        <DividendTable
+          key={refreshKey}
+          data={displayData}
+          technicalData={technicalData}
+          onOpenModal={handleOpenModal}
+          selectedStockCodes={compare.selectedStocks.map(s => s.code)}
+          maxSelect={MAX_COMPARE_SELECT}
+          onToggleCompare={handleToggleCompare}
+          watchlist={watchlist.codes}
+          onToggleWatchlist={watchlist.toggle}
+        />
+      )}
 
       {/* 详情弹框 */}
       <DetailModal

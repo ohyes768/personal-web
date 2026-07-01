@@ -4,7 +4,8 @@
 'use client';
 
 import { Button } from './shared-ui/Button';
-import { CheckIcon, ChevronUpIcon, ChevronDownIcon } from '@heroicons/react/24/outline';
+import { CheckIcon, ChevronUpIcon, ChevronDownIcon, StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
+import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useState, useMemo, useEffect, useRef, useCallback, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { DividendStock, TechnicalIndicators } from '@/lib/types';
@@ -49,6 +50,13 @@ const formatSwIndustry = (stock: DividendStock): string[] => {
     stock.sw_level3 || '-',
   ];
 };
+
+/**
+ * 行业文字截断：超过 max 字则显示前 max 字 + 省略号
+ * 用于"行业"列节省列宽（申万三级常 7-12 字，超过 w-28 列宽）
+ */
+const truncateIndustry = (text: string, max = 5): string =>
+  text.length > max ? text.slice(0, max) + '…' : text;
 
 /**
  * 格式化 M120 列
@@ -104,7 +112,7 @@ const formatPriceDeviation = (technical: TechnicalIndicators | null): {
     }
   }
 
-  const line1 = `昨日收盘：${close}（<span class="${ratioClass}">${ratioStr}</span>）`;
+  const line1 = `昨日：${close}（<span class="${ratioClass}">${ratioStr}</span>）`;
 
   // 实时数据（从CSV获取）
   const realtimeClose = technical.realtime !== null && technical.realtime !== undefined
@@ -135,6 +143,10 @@ export interface DividendTableProps {
   selectedStockCodes: string[];
   maxSelect: number;
   onToggleCompare: (stock: DividendStock) => void;
+  /** 已收藏的股票代码 Set（O(1) 查询） */
+  watchlist: Set<string>;
+  /** 切换某只股票的收藏状态 */
+  onToggleWatchlist: (code: string) => void;
   defaultSortField?: SortField;
   defaultSortOrder?: SortOrder;
 }
@@ -146,6 +158,8 @@ export function DividendTable({
   selectedStockCodes,
   maxSelect,
   onToggleCompare,
+  watchlist,
+  onToggleWatchlist,
   defaultSortField = 'avg_yield_3y',
   defaultSortOrder = 'desc',
 }: DividendTableProps) {
@@ -247,6 +261,9 @@ export function DividendTable({
       <table className="w-full">
         <thead className="bg-gray-800">
           <tr>
+            <th className="w-10 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider" title="收藏">
+              <StarIconOutline className="w-4 h-4 inline-block text-gray-500" />
+            </th>
             <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
               代码
             </th>
@@ -292,7 +309,7 @@ export function DividendTable({
             <th className="w-56 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
               昨日/M120
             </th>
-            <th className="w-80 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-72 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">
               操作
             </th>
           </tr>
@@ -322,6 +339,23 @@ export function DividendTable({
                   }
                 }}
               >
+                <td className="w-10 px-2 py-3 text-center">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onToggleWatchlist(stock.code);
+                    }}
+                    title={watchlist.has(stock.code) ? '取消收藏' : '加入收藏'}
+                    aria-label={watchlist.has(stock.code) ? `取消收藏 ${stock.name}` : `收藏 ${stock.name}`}
+                    className="inline-flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-gray-700/60"
+                  >
+                    {watchlist.has(stock.code) ? (
+                      <StarIconSolid className="w-5 h-5 text-yellow-400" />
+                    ) : (
+                      <StarIconOutline className="w-5 h-5 text-gray-500 hover:text-yellow-400" />
+                    )}
+                  </button>
+                </td>
                 <td className="w-16 px-2 py-3 font-mono text-sm text-gray-300">
                   {stock.code}
                 </td>
@@ -332,11 +366,19 @@ export function DividendTable({
                   {stock.exchange}
                 </td>
                 <td className="w-28 px-2 py-3 text-xs text-gray-300 leading-tight">
-                  {formatSwIndustry(stock).map((level, index) => (
-                    <div key={index} className="truncate">
-                      {level}
-                    </div>
-                  ))}
+                  {formatSwIndustry(stock).map((level, index) => {
+                    const display = truncateIndustry(level);
+                    const isTruncated = display !== level;
+                    return (
+                      <div
+                        key={index}
+                        className="truncate"
+                        title={isTruncated ? level : undefined}
+                      >
+                        {display}
+                      </div>
+                    );
+                  })}
                 </td>
                 <td className="w-20 px-2 py-3 text-sm text-right">
                   <span className={
@@ -477,8 +519,8 @@ export function DividendTable({
                     </div>
                   </div>
                 </td>
-                <td className="w-80 px-2 py-3 text-center">
-                  <div className="flex items-center justify-center gap-2">
+                <td className="w-72 px-2 py-3 text-center">
+                  <div className="flex items-center justify-center gap-1">
                     <Button
                       variant={isSelected ? 'primary' : 'ghost'}
                       size="sm"
@@ -488,7 +530,7 @@ export function DividendTable({
                       }}
                       disabled={isMaxReached}
                       className={`
-                        h-8 min-w-[60px] flex items-center gap-1
+                        h-7 px-2 flex items-center gap-1 whitespace-nowrap
                         transition-all duration-200
                         ${isMaxReached
                           ? 'opacity-50 cursor-not-allowed'
@@ -500,7 +542,7 @@ export function DividendTable({
                         : `选中 ${stock.name} 进行对比`
                       }
                     >
-                      {isSelected && <CheckIcon className="w-4 h-4" />}
+                      {isSelected && <CheckIcon className="w-3.5 h-3.5" />}
                       对比
                     </Button>
                     <Button
@@ -510,7 +552,7 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('yearly', stock);
                       }}
-                      className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       年度
                     </Button>
@@ -521,7 +563,7 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('quarterly', stock);
                       }}
-                      className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       记录
                     </Button>
@@ -532,7 +574,7 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('sector', stock);
                       }}
-                      className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       板块
                     </Button>
@@ -543,7 +585,7 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('volatility', stock);
                       }}
-                      className="h-7 px-2.5 text-sm text-white font-medium border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
                     >
                       波动
                     </Button>
