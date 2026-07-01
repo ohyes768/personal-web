@@ -122,7 +122,9 @@ export function buildMultiAxisLayout(opts: MultiAxisLayoutOpts): Partial<Layout>
       yAxisDef.zerolinecolor = axis.zerolinecolor;
       yAxisDef.zerolinewidth = axis.zerolinewidth;
     }
-    yAxes[axis.key] = yAxisDef;
+    // Plotly v3 要求 yaxis/yaxis2/yaxis3/yaxis4/yaxis5（不是简写 y/y2/y3/y4/y5）
+    const layoutKey = axis.key === 'y' ? 'yaxis' : `yaxis${axis.key.slice(1)}`;
+    yAxes[layoutKey] = yAxisDef;
   });
 
   return {
