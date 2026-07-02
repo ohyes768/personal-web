@@ -77,13 +77,13 @@ export function CompareDrawer({
           <div className="flex items-center justify-between px-6 py-4">
             <h2
               id="compare-drawer-title"
-              className="text-lg font-semibold text-white"
+              className="text-lg font-semibold text-ink-strong"
             >
               股票对比
             </h2>
             <button
               onClick={onClose}
-              className="min-h-10 min-w-10 flex items-center justify-center text-gray-400 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="min-h-10 min-w-10 flex items-center justify-center text-gray-400 hover:text-ink-strong hover:bg-gray-700 rounded transition-colors"
               aria-label="关闭对比窗口"
             >
               <XMarkIcon className="w-6 h-6" />

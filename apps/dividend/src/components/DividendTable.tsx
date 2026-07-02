@@ -4,7 +4,7 @@
 'use client';
 
 import { Button } from './shared-ui/Button';
-import { CheckIcon, ChevronUpIcon, ChevronDownIcon, StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
+import { ChevronUpIcon, ChevronDownIcon, StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useState, useMemo, useEffect, useRef, useCallback, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
@@ -257,59 +257,59 @@ export function DividendTable({
 
   return (
     <>
-      <div className="border border-gray-700 rounded-lg overflow-hidden bg-gray-900">
+      <div className="border border-rule rounded-lg overflow-hidden bg-paper-card">
       <table className="w-full">
-        <thead className="bg-gray-800">
+        <thead className="bg-paper-deep border-b-2 border-ink-strong">
           <tr>
-            <th className="w-10 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider" title="收藏">
-              <StarIconOutline className="w-4 h-4 inline-block text-gray-500" />
+            <th className="w-10 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="收藏">
+              <StarIconOutline className="w-4 h-4 inline-block text-ink-muted" />
             </th>
-            <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               代码
             </th>
-            <th className="w-24 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               名称
             </th>
-            <th className="w-12 px-1 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-12 px-1 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               市场
             </th>
-            <th className="w-28 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               行业
             </th>
             <th
-              className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
+              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
               onClick={() => handleSort('avg_yield_3y')}
             >
               3年股息率 <SortIcon field="avg_yield_3y" />
             </th>
             <th
-              className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 whitespace-nowrap cursor-pointer hover:text-white select-none"
+              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
               onClick={() => handleSort('realtime_yield')}
             >
               实时股息率 <SortIcon field="realtime_yield" />
             </th>
-            <th className="w-16 px-2 py-3 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-14 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               M120
             </th>
-            <th className="w-20 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
+            <th className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
               户数
             </th>
-            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider" title="加权净资产收益率(%)">
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="加权净资产收益率(%)">
               ROE
             </th>
-            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               扣非同比
             </th>
-            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               3年CAGR
             </th>
-            <th className="w-20 px-2 py-3 text-right text-xs font-medium text-gray-400 uppercase tracking-wider" title="分红比例 = 每股分红 / 每股净利润（最近一期年报）">
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="分红比例 = 每股分红 / 每股净利润（最近一期年报）">
               分红比例
             </th>
-            <th className="w-56 px-2 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
+            <th className="w-56 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
               昨日/M120
             </th>
-            <th className="w-72 px-2 py-3 text-center text-xs font-medium text-gray-400 uppercase tracking-wider">
+            <th className="w-64 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               操作
             </th>
           </tr>
@@ -326,10 +326,10 @@ export function DividendTable({
               <tr
                 key={stock.code}
                 className={`
-                  border-b border-gray-800 transition-all duration-200 ease-out cursor-pointer
+                  border-b border-rule transition-all duration-200 ease-out cursor-pointer even:bg-paper-tint
                   ${isSelected
-                    ? 'bg-blue-900/20 border-l-4 border-l-blue-500'
-                    : 'hover:bg-gray-800 hover:shadow-md hover:shadow-blue-500/10 border-l-4 border-l-transparent hover:border-l-blue-400'
+                    ? '!bg-info-tint border-l-4 border-l-info'
+                    : 'hover:bg-paper-deep hover:shadow-sm hover:shadow-info/10 border-l-4 border-l-transparent hover:border-l-info'
                   }
                 `}
                 tabIndex={0}
@@ -347,7 +347,7 @@ export function DividendTable({
                     }}
                     title={watchlist.has(stock.code) ? '取消收藏' : '加入收藏'}
                     aria-label={watchlist.has(stock.code) ? `取消收藏 ${stock.name}` : `收藏 ${stock.name}`}
-                    className="inline-flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-gray-700/60"
+                    className="inline-flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-paper-deep"
                   >
                     {watchlist.has(stock.code) ? (
                       <StarIconSolid className="w-5 h-5 text-yellow-400" />
@@ -359,7 +359,7 @@ export function DividendTable({
                 <td className="w-16 px-2 py-3 font-mono text-sm text-gray-300">
                   {stock.code}
                 </td>
-                <td className="w-24 px-2 py-3 text-sm font-medium text-gray-200">
+                <td className="w-28 px-2 py-3 text-sm font-semibold text-ink-strong whitespace-nowrap">
                   {stock.name}
                 </td>
                 <td className="w-16 px-2 py-3 text-sm text-gray-300">
@@ -381,13 +381,13 @@ export function DividendTable({
                   })}
                 </td>
                 <td className="w-20 px-2 py-3 text-sm text-right">
-                  <span className={
+                  <span className={`font-mono ${
                     stock.avg_yield_3y && stock.avg_yield_3y >= 5
-                      ? 'text-green-400 font-semibold'
+                      ? 'text-up font-semibold'
                       : stock.avg_yield_3y && stock.avg_yield_3y >= 3
-                      ? 'text-green-400'
-                      : 'text-gray-400'
-                  }>
+                      ? 'text-up font-medium'
+                      : 'text-ink-soft font-medium'
+                  }`}>
                     {stock.avg_yield_3y ? `${formatValue(stock.avg_yield_3y)}%` : '-'}
                   </span>
                 </td>
@@ -395,7 +395,7 @@ export function DividendTable({
                   data-popover-trigger={`ttm:${stock.code}`}
                   className={`w-20 px-2 py-3 text-sm text-right select-none ${
                     technical && technical.yield_ttm !== null && technical.yield_ttm !== undefined
-                      ? `cursor-pointer hover:bg-gray-800/60 ${popover?.code === stock.code && popover.kind === 'ttm' ? 'bg-gray-800/60' : ''}`
+                      ? `cursor-pointer hover:bg-paper-tint ${popover?.code === stock.code && popover.kind === 'ttm' ? 'bg-paper-tint' : ''}`
                       : ''
                   }`}
                   onClick={(e) => {
@@ -415,47 +415,47 @@ export function DividendTable({
                 >
                   {(() => {
                     const realtimeYield = formatRealtimeYield(stock.dividend_2025, technical?.realtime ?? null);
-                    if (realtimeYield === '-') return <span className="text-gray-400">-</span>;
+                    if (realtimeYield === '-') return <span className="text-ink-soft font-mono">-</span>;
                     const yieldVal = parseFloat(realtimeYield);
                     return (
-                      <span className={
+                      <span className={`font-mono ${
                         yieldVal >= 5
-                          ? 'text-green-400 font-semibold'
+                          ? 'text-up font-semibold'
                           : yieldVal >= 3
-                          ? 'text-green-400'
-                          : 'text-gray-400'
-                      }>
+                          ? 'text-up font-medium'
+                          : 'text-ink-soft font-medium'
+                      }`}>
                         {realtimeYield}
                       </span>
                     );
                   })()}
                 </td>
-                <td className="w-16 px-2 py-3 text-sm text-gray-300">
+                <td className="w-14 px-2 py-3 text-sm text-ink font-mono">
                   {m120Value}
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-gray-300">
+                <td className="w-16 px-1.5 py-3 text-sm text-ink font-mono whitespace-nowrap">
                   {formatShareholderCount(stock.shareholder_count)}
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-right">
+                <td className="w-20 px-1.5 py-3 text-sm text-right whitespace-nowrap">
                   {stock.roe !== null && stock.roe !== undefined
                     ? (
                       <span
-                        className={
-                          stock.roe < 0 ? 'text-red-400' :
-                          stock.roe >= 10 ? 'text-green-400 font-semibold' :
-                          'text-gray-200'
-                        }
+                        className={`font-mono ${
+                          stock.roe < 0 ? 'text-down font-medium' :
+                          stock.roe >= 10 ? 'text-up font-semibold' :
+                          'text-ink font-medium'
+                        }`}
                       >
-                        {stock.roe.toFixed(2)}%
+                        {stock.roe < 0 ? '▼ ' : stock.roe >= 10 ? '▲ ' : ''}{stock.roe.toFixed(2)}%
                       </span>
                     )
-                    : <span className="text-gray-400">-</span>}
+                    : <span className="text-gray-400 font-mono">-</span>}
                 </td>
                 <td
                   data-popover-trigger={`koufei:${stock.code}`}
-                  className={`w-20 px-2 py-3 text-sm text-right select-none ${
+                  className={`w-20 px-1.5 py-3 text-sm text-right whitespace-nowrap select-none ${
                     stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined
-                      ? `cursor-pointer hover:bg-gray-800/60 ${popover?.code === stock.code && popover.kind === 'koufei' ? 'bg-gray-800/60' : ''}`
+                      ? `cursor-pointer hover:bg-paper-tint ${popover?.code === stock.code && popover.kind === 'koufei' ? 'bg-paper-tint' : ''}`
                       : ''
                   }`}
                   onClick={(e) => {
@@ -477,39 +477,39 @@ export function DividendTable({
                     const v = stock.net_profit_ex_non_recurring_yoy;
                     if (v !== null && v !== undefined) {
                       return (
-                        <span className={v > 0 ? 'text-green-400' : 'text-red-400'}>
-                          {v > 0 ? '+' : ''}{v.toFixed(2)}%
+                        <span className={`font-mono font-medium ${v > 0 ? 'text-up' : v < 0 ? 'text-down' : 'text-ink'}`}>
+                          {v > 0 ? '▲ ' : v < 0 ? '▼ ' : ''}{v.toFixed(2)}%
                         </span>
                       );
                     }
-                    return '无法计算';
+                    return <span className="text-ink-soft font-mono">无法计算</span>;
                   })()}
                 </td>
-                <td className="w-20 px-2 py-3 text-sm text-right">
+                <td className="w-20 px-1.5 py-3 text-sm text-right whitespace-nowrap">
                   {stock.net_profit_cagr_3y !== null && stock.net_profit_cagr_3y !== undefined
                     ? (
-                      <span className={stock.net_profit_cagr_3y > 0 ? 'text-green-400' : 'text-red-400'}>
-                        {stock.net_profit_cagr_3y > 0 ? '+' : ''}{stock.net_profit_cagr_3y.toFixed(2)}%
+                      <span className={`font-mono font-medium ${stock.net_profit_cagr_3y > 0 ? 'text-up' : stock.net_profit_cagr_3y < 0 ? 'text-down' : 'text-ink'}`}>
+                        {stock.net_profit_cagr_3y > 0 ? '▲ ' : stock.net_profit_cagr_3y < 0 ? '▼ ' : ''}{stock.net_profit_cagr_3y.toFixed(2)}%
                       </span>
                     )
-                    : '无法计算'}
+                    : <span className="text-ink-soft font-mono">无法计算</span>}
                 </td>
                 <td className="w-20 px-2 py-3 text-sm text-right">
                   {stock.payout_ratio !== null && stock.payout_ratio !== undefined
                     ? (
                       <span
-                        className={
-                          stock.payout_ratio < 30 ? 'text-gray-400' :
-                          stock.payout_ratio < 60 ? 'text-yellow-400' :
-                          stock.payout_ratio <= 80 ? 'text-green-400' :
-                          'text-orange-400'
-                        }
+                        className={`font-mono ${
+                          stock.payout_ratio < 30 ? 'text-ink-soft font-medium' :
+                          stock.payout_ratio < 60 ? 'text-ink font-medium' :
+                          stock.payout_ratio <= 80 ? 'text-up font-semibold' :
+                          'text-accent font-bold'
+                        }`}
                         title={`基于 ${stock.eps_year ?? '?'} 年报 EPS = ${stock.eps?.toFixed(2) ?? '?'} 元`}
                       >
                         {stock.payout_ratio.toFixed(2)}%
                       </span>
                     )
-                    : '亏损/-'}
+                    : <span className="text-ink-soft font-mono">亏损/-</span>}
                 </td>
                 <td className="w-56 px-2 py-3 text-xs text-gray-300 leading-tight">
                   <div className="text-xs leading-tight">
@@ -519,7 +519,7 @@ export function DividendTable({
                     </div>
                   </div>
                 </td>
-                <td className="w-72 px-2 py-3 text-center">
+                <td className="w-64 px-2 py-3 text-center">
                   <div className="flex items-center justify-center gap-1">
                     <Button
                       variant={isSelected ? 'primary' : 'ghost'}
@@ -530,8 +530,11 @@ export function DividendTable({
                       }}
                       disabled={isMaxReached}
                       className={`
-                        h-7 px-2 flex items-center gap-1 whitespace-nowrap
-                        transition-all duration-200
+                        h-7 px-1.5 flex items-center gap-0 whitespace-nowrap border transition-all duration-200
+                        ${isSelected
+                          ? 'border-accent bg-accent text-white'
+                          : 'border-rule bg-paper-card text-ink hover:bg-paper-tint hover:border-info hover:text-info'
+                        }
                         ${isMaxReached
                           ? 'opacity-50 cursor-not-allowed'
                           : ''
@@ -542,9 +545,11 @@ export function DividendTable({
                         : `选中 ${stock.name} 进行对比`
                       }
                     >
-                      {isSelected && <CheckIcon className="w-3.5 h-3.5" />}
                       对比
                     </Button>
+                    {/* 分隔线：对比 vs 时间维度 */}
+                    <div className="w-px h-5 bg-rule mx-1 flex-shrink-0" aria-hidden="true" />
+                    {/* 时间维度组：年度 + 记录 */}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -552,7 +557,8 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('yearly', stock);
                       }}
-                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-ink font-medium whitespace-nowrap border border-rule bg-paper-card hover:bg-paper-tint hover:border-info hover:text-info shadow-sm shadow-ink/10 transition-all duration-200"
+                      title="年度详情"
                     >
                       年度
                     </Button>
@@ -563,10 +569,14 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('quarterly', stock);
                       }}
-                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-ink font-medium whitespace-nowrap border border-rule bg-paper-card hover:bg-paper-tint hover:border-info hover:text-info shadow-sm shadow-ink/10 transition-all duration-200"
+                      title="季度记录"
                     >
                       记录
                     </Button>
+                    {/* 分隔线：时间维度 vs 横向维度 */}
+                    <div className="w-px h-5 bg-rule mx-1 flex-shrink-0" aria-hidden="true" />
+                    {/* 横向维度组：板块 + 波动 */}
                     <Button
                       variant="ghost"
                       size="sm"
@@ -574,7 +584,8 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('sector', stock);
                       }}
-                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-ink font-medium whitespace-nowrap border border-rule bg-paper-card hover:bg-paper-tint hover:border-info hover:text-info shadow-sm shadow-ink/10 transition-all duration-200"
+                      title="板块归属"
                     >
                       板块
                     </Button>
@@ -585,7 +596,8 @@ export function DividendTable({
                         e.stopPropagation();
                         onOpenModal('volatility', stock);
                       }}
-                      className="h-7 px-2 text-xs text-white font-medium whitespace-nowrap border border-gray-500 bg-gray-800/80 hover:bg-blue-500 hover:border-blue-400 shadow-sm shadow-black/50 transition-all duration-200"
+                      className="h-7 px-2 text-xs text-ink font-medium whitespace-nowrap border border-rule bg-paper-card hover:bg-paper-tint hover:border-info hover:text-info shadow-sm shadow-ink/10 transition-all duration-200"
+                      title="价格波动"
                     >
                       波动
                     </Button>

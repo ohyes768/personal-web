@@ -21,7 +21,7 @@ type TabKey = 'all' | 'watchlist';
 
 export default function DividendPage() {
   return (
-    <Suspense fallback={<div className="container mx-auto px-8 py-8 min-h-screen bg-[#131722]" />}>
+    <Suspense fallback={<div className="container mx-auto px-8 py-8 min-h-screen bg-paper" />}>
       <DividendPageContent />
     </Suspense>
   );
@@ -155,12 +155,12 @@ function DividendPageContent() {
   // 骨架屏
   if (loading && data.length === 0) {
     return (
-      <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-[#131722]">
+      <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper">
         <div className="mb-6">
-          <div className="h-8 bg-[#1e222d] rounded w-48 mb-2 animate-pulse"></div>
-          <div className="h-5 bg-[#1e222d] rounded w-32 animate-pulse"></div>
+          <div className="h-8 bg-paper-card rounded w-48 mb-2 animate-pulse"></div>
+          <div className="h-5 bg-paper-card rounded w-32 animate-pulse"></div>
         </div>
-        <div className="bg-[#1e222d] rounded-lg h-[500px] animate-pulse"></div>
+        <div className="bg-paper-card rounded-lg h-[500px] animate-pulse"></div>
       </div>
     );
   }
@@ -168,14 +168,14 @@ function DividendPageContent() {
   // 空数据提示
   if (!loading && data.length === 0 && !error) {
     return (
-      <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-[#131722]">
+      <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper">
         <div className="mb-6">
           <div className="flex justify-between items-start">
             <div>
-              <Link href="/" className="text-[#787b86] hover:text-white transition-colors">
+              <Link href="/" className="text-ink-muted hover:text-ink-strong transition-colors">
                 ← 返回首页
               </Link>
-              <h1 className="text-4xl font-bold mt-4 text-[#d1d4dc]">股息率</h1>
+              <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             </div>
             <button
               onClick={updateDividend}
@@ -183,7 +183,7 @@ function DividendPageContent() {
               className={`
                 px-4 py-2 rounded font-medium transition-all flex items-center gap-2
                 ${updateState.dividend === 'loading'
-                  ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }
               `}
@@ -206,10 +206,10 @@ function DividendPageContent() {
             </button>
           </div>
         </div>
-        <div className="bg-[#1e222d] rounded-lg p-8 text-center">
+        <div className="bg-paper-card rounded-lg p-8 text-center">
           <div className="text-6xl mb-4">📊</div>
-          <h2 className="text-xl font-semibold text-[#d1d4dc] mb-2">本月股息率数据未计算</h2>
-          <p className="text-[#787b86] mb-6">请点击上方「更新股息率」按钮获取数据</p>
+          <h2 className="text-xl font-semibold text-ink mb-2">本月股息率数据未计算</h2>
+          <p className="text-ink-muted mb-6">请点击上方「更新股息率」按钮获取数据</p>
           {updateState.message && (
             <div className="bg-blue-900/50 border border-blue-700 text-blue-200 px-4 py-3 rounded inline-block">
               {updateState.message}
@@ -221,41 +221,41 @@ function DividendPageContent() {
   }
 
   return (
-    <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-[#131722]">
+    <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper">
       {/* 头部导航 */}
       <div className="mb-6">
         <div className="flex justify-between items-start">
           <div>
-            <Link href="/" className="text-[#787b86] hover:text-white transition-colors">
+            <Link href="/" className="text-ink-muted hover:text-ink-strong transition-colors">
               ← 返回首页
             </Link>
-            <h1 className="text-4xl font-bold mt-4 text-[#d1d4dc]">股息率</h1>
-            <p className="text-[#787b86] mt-1">
+            <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
+            <p className="text-ink-muted mt-1">
               共 {total} 只股票 | 3年股息率 ≥ {minYieldInput}%
             </p>
             {/* 筛选条件 */}
             <div className="mt-2 flex items-center gap-3">
-              <label className="text-sm text-[#787b86]">交易所:</label>
+              <label className="text-sm text-ink-muted">交易所:</label>
               <select
                 value={exchangeFilter}
                 onChange={(e) => setExchangeFilter(e.target.value)}
-                className="bg-[#2a2e39] text-[#d1d4dc] border border-[#3a3f4b] rounded px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500"
+                className="bg-paper-card text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
               >
                 <option value="">全部</option>
                 <option value="沪市主板">沪市主板</option>
                 <option value="深市主板">深市主板</option>
               </select>
-              <label className="text-sm text-[#787b86] ml-2">股息率≥:</label>
+              <label className="text-sm text-ink-muted ml-2">股息率≥:</label>
               <input
                 type="number"
                 value={minYieldInput}
                 onChange={(e) => setMinYieldInput(e.target.value)}
-                className="bg-[#2a2e39] text-[#d1d4dc] border border-[#3a3f4b] rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-indigo-500"
+                className="bg-paper-card text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
                 placeholder="3"
                 min="0"
                 step="0.1"
               />
-              <span className="text-sm text-[#787b86]">%</span>
+              <span className="text-sm text-ink-muted">%</span>
               <button
                 onClick={() => {
                   const minYield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
@@ -269,7 +269,7 @@ function DividendPageContent() {
                 className={`
                   px-4 py-1.5 rounded font-medium transition-all flex items-center gap-2 text-sm
                   ${loading
-                    ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                    ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                     : 'bg-indigo-600 text-white hover:bg-indigo-500'
                   }
                 `}
@@ -289,7 +289,7 @@ function DividendPageContent() {
               className={`
                 px-4 py-2 rounded font-medium transition-all flex items-center gap-2
                 ${!dividendNeedsUpdate || updateState.dividend === 'loading'
-                  ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }
               `}
@@ -348,10 +348,10 @@ function DividendPageContent() {
                       className={`
                         px-4 py-2 rounded font-medium transition-all flex items-center gap-2
                         ${auxAnyLoading
-                          ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                          ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                           : auxPendingCount > 0
                             ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-md shadow-indigo-500/20'
-                            : 'bg-[#1c1f26] text-gray-400 border border-[#2a3041] hover:text-white'
+                            : 'bg-paper-tint text-gray-400 border border-rule hover:text-ink-strong'
                         }
                       `}
                     >
@@ -377,7 +377,7 @@ function DividendPageContent() {
                       </svg>
                     </button>
                     {auxOpen && (
-                      <div className="absolute right-0 mt-2 bg-[#1a1f2c] border border-[#3d4560] rounded-xl shadow-2xl z-50 w-[340px] overflow-hidden">
+                      <div className="absolute right-0 mt-1 bg-paper-card border border-rule rounded-lg shadow-lg z-50 w-[340px] overflow-hidden">
                         {(() => {
                           const auxItems: Array<{
                             key: 'sw_industry' | 'financial' | 'shareholder' | 'board';
@@ -395,7 +395,7 @@ function DividendPageContent() {
                           return (
                             <>
                               {auxPendingCount > 0 && !auxAnyLoading && (
-                                <div className="p-2.5 bg-gradient-to-b from-indigo-500/10 to-transparent border-b border-[#2a3041]">
+                                <div className="p-2.5 bg-gradient-to-b from-indigo-500/10 to-transparent border-b border-rule">
                                   <button
                                     onClick={async () => {
                                       const toUpdate = auxItems.filter(i => i.status?.needs_update);
@@ -427,15 +427,15 @@ function DividendPageContent() {
                                       key={item.key}
                                       className={`
                                         relative flex items-center gap-3 px-3.5 pl-[13px] py-2.5
-                                        border-b border-[#2a3041] last:border-b-0
+                                        border-b border-rule last:border-b-0
                                         border-l-[3px] transition-colors
-                                        ${isLoading ? 'border-l-blue-400 bg-[#131720]' :
-                                          isCurrent ? 'border-l-emerald-400 hover:bg-[#232938]' : 'border-l-amber-400 hover:bg-[#232938]'}
+                                        ${isLoading ? 'border-l-info bg-paper-card' :
+                                          isCurrent ? 'border-l-up hover:bg-paper-tint' : 'border-l-amber-400 hover:bg-paper-tint'}
                                       `}
                                     >
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2 mb-0.5">
-                                          <span className="font-medium text-white text-[13px]">{item.label}</span>
+                                          <span className="font-medium text-ink text-[13px]">{item.label}</span>
                                           {isLoading ? (
                                             <span className="text-[11px] font-mono text-blue-400 inline-flex items-center gap-1">
                                               <span className="w-2.5 h-2.5 border-[1.5px] border-blue-400 border-t-transparent rounded-full animate-spin" />
@@ -447,7 +447,7 @@ function DividendPageContent() {
                                             </span>
                                           )}
                                         </div>
-                                        <div className="text-[11px] text-gray-500">
+                                        <div className="text-[11px] text-ink-muted">
                                           {item.sub}
                                           {item.status?.quarter ? ` · ${item.status.quarter}` : ''}
                                         </div>
@@ -470,7 +470,7 @@ function DividendPageContent() {
                                             px-1.5 py-0.5 rounded border cursor-pointer select-none transition-colors
                                             ${rowForce
                                               ? 'text-amber-400 bg-amber-400/10 border-amber-400/30'
-                                              : 'text-gray-500 border-transparent hover:text-gray-400 hover:bg-[#0f1219]'
+                                              : 'text-gray-500 border-transparent hover:text-gray-400 hover:bg-paper-deep'
                                             }
                                           `}
                                           title="强制覆盖（绕过 90 天节流）"
@@ -492,8 +492,8 @@ function DividendPageContent() {
                                           className={`
                                             text-[11px] font-medium px-2.5 py-1 rounded border transition-colors
                                             ${isLoading
-                                              ? 'border-[#2a3041] text-gray-500 cursor-not-allowed'
-                                              : 'border-[#3d4560] text-white hover:bg-indigo-600 hover:border-indigo-600'
+                                              ? 'border-rule text-ink-soft cursor-not-allowed'
+                                              : 'border-rule-strong text-ink hover:bg-accent hover:border-accent hover:text-white'
                                             }
                                           `}
                                         >
@@ -525,7 +525,7 @@ function DividendPageContent() {
               className={`
                 px-4 py-2 rounded font-medium transition-all flex items-center gap-2
                 ${!m120NeedsUpdate || updateState.m120 === 'loading'
-                  ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }
               `}
@@ -551,7 +551,7 @@ function DividendPageContent() {
               className={`
                 px-4 py-2 rounded font-medium transition-all flex items-center gap-2
                 ${updateState.realtime === 'loading'
-                  ? 'bg-[#2a2e39] text-[#787b86] cursor-not-allowed'
+                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }
               `}
@@ -647,20 +647,20 @@ function DividendPageContent() {
                 </svg>
               </button>
               {reportOpen && (
-                <div className="absolute right-0 mt-1 bg-white border border-gray-200 rounded shadow-lg z-50 min-w-[200px]">
+                <div className="absolute right-0 mt-1 bg-paper-card border border-rule rounded-lg shadow-lg z-50 min-w-[200px] overflow-hidden">
                   <button
                     onClick={() => downloadReport('a4')}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-blue-50 first:rounded-t"
+                    className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint first:rounded-t"
                   >
                     <div className="font-medium">A4 一图版（横版）</div>
-                    <div className="text-xs text-gray-500 mt-0.5">适合电脑端分享/打印</div>
+                    <div className="text-xs text-ink-muted mt-0.5">适合电脑端分享/打印</div>
                   </button>
                   <button
                     onClick={() => downloadReport('carousel')}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-800 hover:bg-blue-50 last:rounded-b border-t border-gray-100"
+                    className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint last:rounded-b border-t border-rule"
                   >
                     <div className="font-medium">手机竖版（轮播）</div>
-                    <div className="text-xs text-gray-500 mt-0.5">1080×1920 · 支持⬇下载原图</div>
+                    <div className="text-xs text-ink-muted mt-0.5">1080×1920 · 支持⬇下载原图</div>
                   </button>
                 </div>
               )}
@@ -712,7 +712,7 @@ function DividendPageContent() {
 
       {/* 收藏 tab 空状态 */}
       {activeTab === 'watchlist' && displayData.length === 0 && !loading && (
-        <div className="bg-[#1e222d] rounded-lg p-12 text-center">
+        <div className="bg-paper-card rounded-lg p-12 text-center">
           <StarIconOutline className="w-12 h-12 mx-auto mb-3 text-gray-500" />
           <p className="text-gray-400 mb-4">
             {watchlist.total === 0 ? '还没有收藏的股票' : '本月筛选范围内暂无收藏的股票'}

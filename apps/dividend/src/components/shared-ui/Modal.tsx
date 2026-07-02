@@ -70,7 +70,7 @@ export function Modal({ isOpen, onClose, title, children, size = 'md', className
           <h2 className="text-lg font-semibold text-gray-100">{title}</h2>
           <button
             onClick={onClose}
-            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-400 hover:text-gray-200 hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-blue-500 rounded-md transition-colors cursor-pointer"
+            className="min-h-[44px] min-w-[44px] flex items-center justify-center text-gray-400 hover:text-ink-strong hover:bg-paper-tint focus:outline-none focus:ring-2 focus:ring-info rounded-md transition-colors cursor-pointer"
             aria-label="关闭"
           >
             <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">

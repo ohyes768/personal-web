@@ -89,7 +89,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
         </thead>
         <tbody>
           {/* 元数据 */}
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <TagIcon className="w-4 h-4 text-blue-400" />
@@ -102,7 +102,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               </td>
             ))}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <TagIcon className="w-4 h-4 text-blue-400" />
@@ -115,7 +115,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               </td>
             ))}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <TagIcon className="w-4 h-4 text-blue-400" />
@@ -130,7 +130,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
           </tr>
 
           {/* 基础指标 */}
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <ChartBarIcon className="w-4 h-4 text-green-400" />
@@ -153,7 +153,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <ChartBarIcon className="w-4 h-4 text-green-400" />
@@ -185,7 +185,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
           </tr>
 
           {/* 财务成长 */}
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
@@ -213,7 +213,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
@@ -241,7 +241,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
@@ -269,7 +269,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
@@ -289,7 +289,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <PresentationChartLineIcon className="w-4 h-4 text-cyan-400" />
@@ -321,7 +321,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
           </tr>
 
           {/* 股东户数 */}
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <UsersIcon className="w-4 h-4 text-pink-400" />
@@ -343,7 +343,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
           </tr>
 
           {/* 价格波动 */}
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <ArrowTrendingUpIcon className="w-4 h-4 text-orange-400" />
@@ -373,7 +373,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <ArrowTrendingDownIcon className="w-4 h-4 text-red-400" />
@@ -405,7 +405,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
           </tr>
 
           {/* 历史股息率 */}
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-purple-400" />
@@ -425,7 +425,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300 border-b border-gray-700">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-purple-400" />
@@ -445,7 +445,7 @@ export function CompareTable({ stocks, onRemove }: CompareTableProps) {
               );
             })}
           </tr>
-          <tr className="hover:bg-gray-800/50">
+          <tr className="hover:bg-paper-tint">
             <td className="px-4 py-2 text-gray-300">
               <div className="flex items-center gap-2">
                 <CalendarIcon className="w-4 h-4 text-purple-400" />

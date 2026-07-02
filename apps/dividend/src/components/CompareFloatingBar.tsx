@@ -44,7 +44,7 @@ export function CompareFloatingBar({
           <div className="flex items-center gap-4 min-w-0">
             <button
               onClick={onClear}
-              className="px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded transition-colors"
+              className="px-3 py-1.5 text-sm text-gray-300 hover:text-ink-strong hover:bg-gray-700 rounded transition-colors"
               aria-label="清空已选股票"
             >
               清空

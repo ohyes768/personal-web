@@ -199,10 +199,10 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
           <h3 className="text-sm font-semibold text-gray-200 mb-3">分红派息趋势</h3>
           <ResponsiveContainer width="100%" height={200}>
             <ComposedChart data={chartData} margin={{ top: 5, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
+              <CartesianGrid strokeDasharray="3 3" stroke="#E8E3D8" />
               <XAxis
                 dataKey="month"
-                tick={{ fill: '#9ca3af', fontSize: 10, textAnchor: 'end' }}
+                tick={{ fill: '#6B6864', fontSize: 10, textAnchor: 'end' }}
                 tickFormatter={(val) => val.replace('-', '.')} // YYYY.MM
                 angle={-45}
                 height={60}
@@ -210,18 +210,18 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
               />
               <YAxis
                 yAxisId="left"
-                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tick={{ fill: '#6B6864', fontSize: 11 }}
                 tickFormatter={(val) => `${val}元`}
               />
               <YAxis
                 yAxisId="right"
                 orientation="right"
-                tick={{ fill: '#9ca3af', fontSize: 11 }}
+                tick={{ fill: '#6B6864', fontSize: 11 }}
                 tickFormatter={(val) => `${val}%`}
               />
               <Tooltip
-                contentStyle={{ backgroundColor: '#1f2937', border: '1px solid #374151', borderRadius: '6px' }}
-                labelStyle={{ color: '#e5e7eb' }}
+                contentStyle={{ backgroundColor: '#FFFFFF', border: '1px solid #E8E3D8', borderRadius: '6px' }}
+                labelStyle={{ color: '#1F1E1B' }}
                 formatter={(value, name) => {
                   if (name === '每股派息') {
                     return [`${value} 元/股`, '每股派息'];
@@ -231,8 +231,8 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
                 labelFormatter={(label) => `月份: ${label}`}
               />
               <Legend />
-              <Bar dataKey="ratio" name="每股派息" yAxisId="left" fill="#f59e0b" radius={[2, 2, 0, 0]} />
-              <Line type="stepAfter" dataKey="yearlyYield" name="年度股息率" yAxisId="right" stroke="#10b981" strokeWidth={2} dot={{ fill: '#10b981', r: 2 }} connectNulls={false} />
+              <Bar dataKey="ratio" name="每股派息" yAxisId="left" fill="#C9951F" radius={[2, 2, 0, 0]} />
+              <Line type="stepAfter" dataKey="yearlyYield" name="年度股息率" yAxisId="right" stroke="#3F7D58" strokeWidth={2} dot={{ fill: '#3F7D58', r: 2 }} connectNulls={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>

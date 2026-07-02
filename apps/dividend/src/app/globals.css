@@ -1,13 +1,127 @@
 @import "tailwindcss";
 
-:root {
-  --foreground-rgb: 255, 255, 255;
-  --background-rgb: 17, 24, 39;
+/* === 设计令牌：暖白现代数据看板 === */
+/* 核心思路：重写 Tailwind 默认色，让所有 bg-gray-XXX / text-gray-XXX 自动变成暖白色板 */
+/* 业务组件不用改 className，主题就跟着换 */
+@theme {
+  /* 语义色 token（在 Tailwind 中可用 bg-paper / text-ink-strong 等）*/
+  --color-paper:       #FBFAF6;
+  --color-paper-deep:  #F2EDE3;
+  --color-paper-card:  #FFFFFF;
+  --color-paper-tint:  #FAF8F3;
+
+  --color-ink:         #2B2A28;
+  --color-ink-strong:  #1F1E1B;
+  --color-ink-muted:   #6B6864;
+  --color-ink-soft:    #9C958A;
+
+  --color-rule:        #E8E3D8;
+  --color-rule-strong: #C5BFB0;
+
+  --color-up:          #3F7D58;
+  --color-up-tint:     #E8F0E5;
+  --color-down:        #A8453A;
+  --color-down-tint:   #F5E8E5;
+  --color-star:        #C9951F;
+
+  --color-accent:        #B85C38;
+  --color-accent-hover:  #C56A45;
+
+  --color-info:        #4A6B8A;
+  --color-info-tint:   #E8EEF3;
+
+  /* === Tailwind 默认色重映射（暖白主题）=== */
+  /* gray scale 反转：gray-900 = 最浅（页面底），gray-100 = 最深（最强文字）*/
+  --color-gray-900:    var(--color-paper);       /* #FBFAF6 */
+  --color-gray-800:    var(--color-paper-card);  /* #FFFFFF */
+  --color-gray-700:    var(--color-paper-tint);  /* #FAF8F3 */
+  --color-gray-600:    var(--color-paper-deep);  /* #F2EDE3 */
+  --color-gray-500:    var(--color-rule-strong); /* #C5BFB0 */
+  --color-gray-400:    var(--color-ink-muted);   /* #6B6864 */
+  --color-gray-300:    var(--color-ink);         /* #2B2A28 */
+  --color-gray-200:    var(--color-ink-strong);  /* #1F1E1B */
+  --color-gray-100:    var(--color-ink-strong);  /* #1F1E1B */
+
+  /* 涨跌色去饱和 */
+  --color-green-400:   var(--color-up);          /* #3F7D58 */
+  --color-green-500:   #2D5C40;                  /* 稍深 */
+  --color-green-300:   #5A9472;                  /* 稍浅 */
+  --color-green-900:   var(--color-up-tint);     /* #E8F0E5 */
+  --color-green-700:   #5A9472;
+  --color-green-800:   #2D5C40;
+  --color-green-600:   #4A8862;
+
+  --color-red-400:     var(--color-down);        /* #A8453A */
+  --color-red-500:     #8C3528;                  /* 稍深 */
+  --color-red-300:     #C66959;                  /* 稍浅 */
+  --color-red-900:     var(--color-down-tint);   /* #F5E8E5 */
+  --color-red-700:     #B85A4D;
+  --color-red-800:     #8C3528;
+  --color-red-600:     #94402F;
+
+  --color-yellow-400:  var(--color-star);        /* #C9951F */
+  --color-yellow-500:  #B07A0F;
+
+  --color-amber-400:   #B85C38;                  /* 暖橙 */
+  --color-amber-500:   #A04A28;
+
+  /* 强调色：暖橘红替代 indigo */
+  --color-indigo-600:  var(--color-accent);
+  --color-indigo-500:  var(--color-accent-hover);
+  --color-indigo-700:  var(--color-accent);
+
+  /* 蓝色辅助 → 深蓝灰 */
+  --color-blue-400:    var(--color-info);
+  --color-blue-500:    var(--color-info);
+  --color-blue-600:    #3A5670;
+  --color-blue-700:    #2C4258;
+  --color-blue-200:    #6B8AA8;
+  --color-blue-300:    #5A7A98;
+  --color-blue-800:    #2C4258;
+  --color-blue-900:    var(--color-info-tint);
+
+  /* 紫色 / 青色 / 粉色 / 橙色辅助 */
+  --color-cyan-400:    #4A8A8A;
+  --color-purple-400:  #7A5A8A;
+  --color-pink-400:    #A85A8A;
+  --color-orange-400:  #B85C38;
+
+  /* 字体策略：Sans 标题 + Mono 数字 + Serif 点缀 */
+  --font-sans:  "Inter", -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono:  "JetBrains Mono", "SF Mono", "Menlo", "Consolas", monospace;
+  --font-serif: "Source Serif 4", "Noto Serif SC", "Charter", serif;
+}
+
+/* === 全局默认：暖白底 + 墨色字 === */
+html, body {
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  color: rgb(var(--foreground-rgb));
-  background: rgb(var(--background-rgb));
+  color: var(--color-ink);
+  background: var(--color-paper);
+  font-family: var(--font-sans);
+  font-feature-settings: "kern" 1, "liga" 1, "tnum" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+/* 数字/财务表格纵向对齐 */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* 隐藏数字输入的 spin button */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
 }
 
 @keyframes indeterminate {
