@@ -69,3 +69,6 @@ env/
 
 # Dividend export artifacts
 dividend_export_*.csv
+
+# Douyin runtime status (submodule data that leaked to main repo root)
+status.json
