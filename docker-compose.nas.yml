@@ -1,12 +1,13 @@
 # =============================================================================
 # 个人财富网站 - NAS 部署统一编排
 # =============================================================================
-# 用途：Ubuntu Server NAS 部署 4 个服务（2 个后端 + 2 个前端）
+# 用途：Ubuntu Server NAS 部署 6 个服务（3 个后端 + 3 个前端）
 # 用法：
 #   1. 准备 .env：在仓库根目录创建 .env，填入阿里云 key（已被 .gitignore 忽略）
 #        cat > .env << 'EOF'
 #        DIVIDEND_ALIYUN_ACCESS_KEY=你的key
 #        DOUYIN_ALIYUN_ACCESS_KEY=你的key
+#        RSS_RELAY_TOKEN=随机字符串
 #        EOF
 #   2. 启动：  docker compose -f docker-compose.nas.yml up -d --build
 #              （自动读取根目录 .env）
@@ -18,10 +19,14 @@
 #   /api/dividend/* → dividend-backend:8092
 #   /douyin/*       → douyin-frontend:3004
 #   /api/douyin/*   → douyin-backend:8093
+#   /rss/*          → rss-relay-frontend:3006  (列表页)
+#   /rss/personal.xml   → rss-relay-backend:8095  (freshrss 订阅)
+#   /api/rss-relay/*    → rss-relay-backend:8095  (agent 推送 + 前端 BFF 转发)
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
 #   douyin-data / douyin-logs
+#   rss-relay-data
 # =============================================================================
 
 services:
@@ -126,6 +131,52 @@ services:
       douyin-backend:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # rss-relay 后端（个人 RSS 中转：agent 推送 markdown，对外 RSS 2.0 feed）
+  # ---------------------------------------------------------------------------
+  rss-relay-backend:
+    build:
+      context: ./backend/rss-relay
+    container_name: rss-relay-backend
+    restart: unless-stopped
+    expose:
+      - "8095"
+    volumes:
+      - rss-relay-data:/app/data
+    environment:
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - RSS_RELAY_TOKEN=${RSS_RELAY_TOKEN:-}
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8095/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # rss-relay 前端（Next.js，列表页浏览推送的 markdown）
+  # ---------------------------------------------------------------------------
+  rss-relay-frontend:
+    build:
+      context: ./apps/rss-relay
+      dockerfile: Dockerfile
+    container_name: rss-relay-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3006:3006"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=/
+      # BFF 用：把 /api/rss-relay/<path> 转到 http://rss-relay-backend:8095/api/<path>
+      - BACKEND_URL=http://rss-relay-backend:8095/api
+    networks:
+      - app-net
+    depends_on:
+      rss-relay-backend:
+        condition: service_healthy
+
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -145,3 +196,5 @@ volumes:
     name: douyin-data
   douyin-logs:
     name: douyin-logs
+  rss-relay-data:
+    name: rss-relay-data
