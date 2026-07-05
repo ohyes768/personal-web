@@ -4,11 +4,13 @@ import { usePosts } from '@/lib/hooks';
 import type { PostInfo } from '@/lib/types';
 import PostCard from '@/components/PostCard';
 import PostModal from '@/components/PostModal';
+import ApiGuideModal from '@/components/ApiGuideModal';
 import { RssSubscribe } from '@/components/RssSubscribe';
 
 export default function HomePage() {
   const { posts, loading, error, refresh } = usePosts(50);
   const [selected, setSelected] = useState<PostInfo | null>(null);
+  const [apiOpen, setApiOpen] = useState(false);
 
   return (
     <main className="min-h-screen">
@@ -31,6 +33,13 @@ export default function HomePage() {
               title="刷新"
             >
               {loading ? '加载中…' : '↻ 刷新'}
+            </button>
+            <button
+              onClick={() => setApiOpen(true)}
+              className="text-[13px] px-3 py-1.5 rounded-[6px] bg-paper-deep hover:bg-rule text-ink-muted hover:text-ink transition-colors"
+              title="查看对接文档（怎么接入这个服务）"
+            >
+              🔌 对接
             </button>
             <RssSubscribe />
           </div>
@@ -79,6 +88,9 @@ export default function HomePage() {
       {selected && (
         <PostModal post={selected} onClose={() => setSelected(null)} />
       )}
+
+      {/* 对接文档 */}
+      <ApiGuideModal open={apiOpen} onClose={() => setApiOpen(false)} />
     </main>
   );
 }
