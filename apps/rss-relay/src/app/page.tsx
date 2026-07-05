@@ -4,6 +4,7 @@ import { usePosts } from '@/lib/hooks';
 import type { PostInfo } from '@/lib/types';
 import PostCard from '@/components/PostCard';
 import PostModal from '@/components/PostModal';
+import { RssSubscribe } from '@/components/RssSubscribe';
 
 export default function HomePage() {
   const { posts, loading, error, refresh } = usePosts(50);
@@ -31,13 +32,7 @@ export default function HomePage() {
             >
               {loading ? '加载中…' : '↻ 刷新'}
             </button>
-            <a
-              href="/rss/personal.xml"
-              className="text-[13px] px-3 py-1.5 rounded-[6px] bg-accent/[0.08] hover:bg-accent/[0.16] text-accent transition-colors"
-              title="RSS feed（需带 token）"
-            >
-              📡 RSS
-            </a>
+            <RssSubscribe />
           </div>
         </div>
       </header>

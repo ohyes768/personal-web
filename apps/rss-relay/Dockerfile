@@ -8,6 +8,8 @@ RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
 
 FROM node:20-alpine AS builder
 WORKDIR /app
+ARG NEXT_PUBLIC_RSS_TOKEN=""
+ENV NEXT_PUBLIC_RSS_TOKEN=${NEXT_PUBLIC_RSS_TOKEN}
 RUN npm install -g pnpm
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .

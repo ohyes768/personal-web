@@ -19,9 +19,9 @@
 #   /api/dividend/* → dividend-backend:8092
 #   /douyin/*       → douyin-frontend:3004
 #   /api/douyin/*   → douyin-backend:8093
-#   /rss/*          → rss-relay-frontend:3006  (列表页)
-#   /rss/personal.xml   → rss-relay-backend:8095  (freshrss 订阅)
-#   /api/rss-relay/*    → rss-relay-backend:8095  (agent 推送 + 前端 BFF 转发)
+#   /rss/*                    → rss-relay-frontend:3006  (列表页)
+#   /rss/api/rss-relay/*      → rss-relay-backend:8095/api/*  (freshrss 订阅 + agent 推送)
+#   前端 BFF /rss/api/rss-relay/<slug> 已废弃，nginx 直转后端
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
@@ -163,6 +163,9 @@ services:
     build:
       context: ./apps/rss-relay
       dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* 是 build-time inline，必须在 build 阶段传
+        NEXT_PUBLIC_RSS_TOKEN: ${RSS_RELAY_TOKEN:-}
     container_name: rss-relay-frontend
     restart: unless-stopped
     ports:
