@@ -55,3 +55,23 @@ export function normalize(series: (number | null)[]): (number | null)[] {
   }
   return series.map(v => (v == null ? null : (v / firstValid) * 100));
 }
+
+/**
+ * 满幅归一化（min-max 百分位）：每条线各自的 min = 0, max = 100
+ * - 跨指标对比的标准做法：把量纲不同的曲线（HIBOR 0~5%, 恒生 15000~35000）
+ *   各自拉伸到同一 Y 轴 [0, 100]，能直观看到「同向/反向」关系
+ * - 所有 null 保留为 null
+ * - 全部值相同时（max == min）返 50（避免除 0，画一条中线）
+ * - 区间内无有效值时原样返回
+ */
+export function minMaxNormalize(series: (number | null)[]): (number | null)[] {
+  const valid = series.filter((v): v is number => v != null && !Number.isNaN(v));
+  if (valid.length === 0) return series;
+  const min = Math.min(...valid);
+  const max = Math.max(...valid);
+  if (max === min) {
+    // 区间内恒定，画一条中位线
+    return series.map(() => 50);
+  }
+  return series.map((v) => (v == null ? null : ((v - min) / (max - min)) * 100));
+}

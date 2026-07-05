@@ -40,3 +40,12 @@ export interface IndicatorMeta {
   unit: string;           // 单位（%, $/oz, ¥/g, 亿元等）
   source: 'FRED' | 'AKShare' | 'ECB' | '阿里云' | 'HKMA';
 }
+
+/**
+ * 对比图表的渲染模式（用户手动切换，不做自动判定）
+ * - minMax:                  满幅百分位（每条线 min=0, max=100，跨指标对比的标准做法）
+ * - normalize:               起点归一 100，单 Y 轴（适合同质指标看相对涨跌，如美债 2y + 10y）
+ * - dualAxis:                真实值，按 unit 种类分左右轴（看绝对水平）
+ * - dualAxisWithCorrelation: 双轴 + 下方 30 日滚动 Pearson 相关性子图（仅 2 个指标时可用）
+ */
+export type ViewMode = 'minMax' | 'normalize' | 'dualAxis' | 'dualAxisWithCorrelation';
