@@ -1,0 +1,25 @@
+app:
+  # 服务器配置
+  server:
+    host: "0.0.0.0"
+    port: 8095
+
+  # 存储
+  storage:
+    posts_dir: "data/posts"
+    retention_days: 15
+
+  # RSS 订阅源
+  # token 走 RSS_RELAY_TOKEN 环境变量，app.yaml 不写
+  rss:
+    channel:
+      title: "个人 RSS 中转"
+      # freshrss 订阅者看到的频道主站（NAS 域名）
+      link: "https://web.duomi77.cn:9443/rss/personal.xml"
+      description: "agent 采集推送的 markdown 内容中转站"
+    max_items: 200
+    default_limit: 50
+
+  # 日志
+  logging:
+    level: "INFO"

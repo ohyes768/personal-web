@@ -1,0 +1,21 @@
+services:
+  rss-relay-backend:
+    build:
+      context: .
+    container_name: rss-relay-backend
+    restart: unless-stopped
+    ports:
+      - "8095:8095"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config:ro
+    environment:
+      - LOG_LEVEL=INFO
+      - RSS_RELAY_TOKEN=${RSS_RELAY_TOKEN:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8095/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
