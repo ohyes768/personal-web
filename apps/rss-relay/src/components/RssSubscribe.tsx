@@ -6,9 +6,13 @@
  *
  * URL 是全站唯一的：用户把这个 URL 添加到 FreshRSS / Feedly / Inoreader 等 RSS reader。
  * 鉴权 token 来自 NEXT_PUBLIC_RSS_TOKEN 环境变量（build 时内联）。
+ *
+ * 弹窗用 React Portal 渲染到 document.body，避免父级 Header 的 backdrop-blur
+ * 创建新的 containing block，导致 fixed 定位弹窗只相对 Header 显示（被裁掉）。
  */
 
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 
 const RSS_URL_BASE = 'https://web.duomi77.cn:9443/rss/api/rss-relay/rss.xml';
 
@@ -39,7 +43,7 @@ export function RssSubscribe() {
       <button
         onClick={() => setOpen(true)}
         disabled={disabled}
-        className="font-ui px-3.5 py-2 rounded-md text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed border border-rule text-ink bg-paper hover:border-ink-soft"
+        className="font-ui text-[13px] px-3 py-1.5 rounded-[6px] cursor-pointer transition-colors inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed bg-paper-deep hover:bg-rule text-ink-muted hover:text-ink"
         title={disabled ? '未配置 NEXT_PUBLIC_RSS_TOKEN' : '查看 RSS 订阅源 URL'}
       >
         <svg
@@ -58,7 +62,7 @@ export function RssSubscribe() {
         RSS
       </button>
 
-      {open && (
+      {open && createPortal(
         <div
           className="fixed inset-0 z-50 bg-ink/45 backdrop-blur-md p-4 sm:p-6 flex items-start sm:items-center justify-center"
           onClick={() => setOpen(false)}
@@ -105,7 +109,8 @@ export function RssSubscribe() {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );
