@@ -98,6 +98,7 @@ services:
       - DOUYIN_RSS_TOKEN=${DOUYIN_RSS_TOKEN:-}
     networks:
       - app-net
+      - n8n-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
       interval: 30s
@@ -183,6 +184,9 @@ services:
 networks:
   app-net:
     name: nginx_nginx-bridge
+    external: true
+  n8n-net:
+    name: n8n_default
     external: true
 
 volumes:
