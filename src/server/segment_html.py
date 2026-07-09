@@ -50,28 +50,11 @@ def merge_segments_to_paragraphs(
     return paragraphs
 
 
-def format_ts(seconds: float) -> str:
-    """秒数 → 'MM:SS' 或 'H:MM:SS' 格式。
-
-    0.28 → "00:00"
-    75.4 → "01:15"
-    3725 → "1:02:05"
-    3600 → "1:00:00"
-    """
-    total = int(seconds)
-    h = total // 3600
-    m = (total % 3600) // 60
-    s = total % 60
-    if h > 0:
-        return f"{h}:{m:02d}:{s:02d}"
-    return f"{m:02d}:{s:02d}"
-
-
 def render_paragraphs_html(paragraphs: list[list[dict]]) -> str:
     """段 → HTML 字符串。
 
     每段渲染为:
-        <p><span class="ts">MM:SS</span> 段内文本</p>
+        <p>段内文本</p>
 
     段内各 segment 的 text 用单个空格 " " 拼接。
     多段之间用换行符 \\n 分隔（不影响 XML 解析，RSS reader 折叠）。
@@ -86,8 +69,7 @@ def render_paragraphs_html(paragraphs: list[list[dict]]) -> str:
     for paragraph in paragraphs:
         if not paragraph:
             continue
-        ts = format_ts(paragraph[0].get("start_time", 0))
         text = " ".join((seg.get("text", "") or "") for seg in paragraph)
-        parts.append(f'<p><span class="ts">{ts}</span> {xml_escape(text)}</p>')
+        parts.append(f'<p>{xml_escape(text)}</p>')
 
     return "\n".join(parts)
