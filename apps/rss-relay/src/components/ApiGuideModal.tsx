@@ -5,7 +5,7 @@
  * 内容来源：backend/rss-relay/README.md + endpoints.py 真实契约
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 
 interface Props {
   open: boolean;
@@ -44,6 +44,21 @@ function CodeBlock({ code, language }: { code: string; language?: string }) {
 }
 
 export default function ApiGuideModal({ open, onClose }: Props) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [allCopied, setAllCopied] = useState(false);
+
+  const handleCopyAll = async () => {
+    const content = contentRef.current;
+    if (!content) return;
+    try {
+      await navigator.clipboard.writeText(content.textContent || '');
+      setAllCopied(true);
+      setTimeout(() => setAllCopied(false), 1800);
+    } catch (err) {
+      console.error('复制失败:', err);
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -70,9 +85,18 @@ export default function ApiGuideModal({ open, onClose }: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <header className="px-6 sm:px-8 pt-5 pb-4 border-b border-rule flex items-start justify-between gap-4 shrink-0">
-          <h2 className="font-serif-cn text-[20px] sm:text-[22px] font-bold text-ink-strong">
-            对接文档
-          </h2>
+          <div className="flex items-center gap-3">
+            <h2 className="font-serif-cn text-[20px] sm:text-[22px] font-bold text-ink-strong">
+              对接文档
+            </h2>
+            <button
+              onClick={handleCopyAll}
+              className="font-ui text-[12px] px-2.5 py-1 rounded-[4px] bg-paper hover:bg-rule text-ink-muted hover:text-ink transition-colors"
+              title="复制全部内容"
+            >
+              {allCopied ? '✓ 已复制全部' : '复制全部'}
+            </button>
+          </div>
           <button
             onClick={onClose}
             className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full hover:bg-paper-deep transition-colors text-ink-muted hover:text-ink"
@@ -85,7 +109,7 @@ export default function ApiGuideModal({ open, onClose }: Props) {
           </button>
         </header>
 
-        <div className="flex-1 overflow-y-auto px-6 sm:px-8 py-5 sm:py-6 font-ui text-[14px] text-ink leading-relaxed space-y-7">
+        <div ref={contentRef} className="flex-1 overflow-y-auto px-6 sm:px-8 py-5 sm:py-6 font-ui text-[14px] text-ink leading-relaxed space-y-7">
           {/* 接口契约 */}
           <section>
             <h3 className="font-serif-cn text-[17px] font-bold text-ink-strong mb-2">
