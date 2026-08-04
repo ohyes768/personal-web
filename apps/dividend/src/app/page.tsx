@@ -40,54 +40,132 @@ const CORE_DIVIDEND_INDEXES: { code: string; label: string }[] = [
 ];
 
 /**
- * 4 个红利指数持仓刷新徽章
- * - 灰：未刷新过（无数据）
- * - 绿：最近一次刷新成功（hover 显示成分股数量）
- * - 红：最近一次刷新失败（hover 显示错误，可点击重试）
- * - 转：刷新中（animate-pulse）
+ * 红利指数持仓刷新状态下拉面板
+ * 触发按钮：「指数状态 X/Y ▾」，颜色随状态变（绿/黄/红/灰）
+ * 展开后 8 行详情：code + 名称 + 状态 + 成分数/错误 + 失败行可重试
  */
-function IndexBadges({
+function IndexStatusPopover({
   results,
   refreshing,
   onRetry,
+  open,
+  onToggle,
+  onClose,
 }: {
   results?: IndexRefreshItem[];
   refreshing: Record<string, boolean>;
   onRetry: (code: string) => void;
+  open: boolean;
+  onToggle: () => void;
+  onClose: () => void;
 }) {
+  const totalCount = CORE_DIVIDEND_INDEXES.length;
+  const validResults = results?.filter(r =>
+    CORE_DIVIDEND_INDEXES.some(c => c.code === r.code)
+  ) ?? [];
+  const hasData = validResults.length > 0;
+  const successCount = validResults.filter(r => r.success).length;
+  const failedCount = validResults.filter(r => !r.success).length;
+  const anyRefreshing = Object.values(refreshing).some(Boolean);
+
+  // 触发按钮配色
+  const btnClass = !hasData
+    ? 'bg-paper-tint text-gray-400 border border-rule hover:text-ink-strong'
+    : successCount === totalCount
+      ? 'bg-green-900/30 text-green-300 border border-green-700/50 hover:bg-green-900/40'
+      : failedCount === totalCount
+        ? 'bg-red-900/40 text-red-300 border border-red-700/50 hover:bg-red-900/50'
+        : 'bg-amber-900/30 text-amber-300 border border-amber-700/50 hover:bg-amber-900/40';
+
   return (
-    <div className="flex items-center gap-1 ml-2 flex-wrap">
-      {CORE_DIVIDEND_INDEXES.map(({ code, label }) => {
-        const item = results?.find(r => r.code === code);
-        const isRefreshing = refreshing[code];
-        const failed = !!item && !item.success;
-        const success = !!item?.success;
-        const clickable = failed && !isRefreshing;
-        const title = item
-          ? `${item.name || code} - ${item.success ? `${item.constituents_count} 只成分股` : `失败：${item.error ?? '未知错误}'}`}`
-          : `${code} 尚未刷新`;
-        return (
-          <button
-            key={code}
-            type="button"
-            onClick={() => clickable && onRetry(code)}
-            disabled={!clickable}
-            title={title}
-            className={`
-              text-xs px-2 py-1 rounded font-mono transition-colors
-              ${isRefreshing
-                ? 'bg-paper-deep text-ink-muted animate-pulse cursor-wait'
-                : failed
-                  ? 'bg-red-900/40 text-red-300 hover:bg-red-900/60 cursor-pointer'
-                  : success
-                    ? 'bg-green-900/30 text-green-300 cursor-default'
-                    : 'bg-paper-deep text-ink-muted cursor-default'}
-            `}
-          >
-            {label}{success && ' ✓'}{failed && (isRefreshing ? ' …' : ' ↻')}
-          </button>
-        );
-      })}
+    <div className="relative">
+      <button
+        type="button"
+        onClick={onToggle}
+        disabled={anyRefreshing}
+        title="红利指数持仓刷新状态"
+        className={`
+          px-3 py-2 rounded font-medium transition-all flex items-center gap-1.5 text-sm
+          ${btnClass}
+          ${anyRefreshing ? 'opacity-60 cursor-wait' : 'cursor-pointer'}
+        `}
+      >
+        {anyRefreshing ? (
+          <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        ) : successCount === totalCount && hasData ? (
+          <span className="text-green-400">✓</span>
+        ) : failedCount > 0 && hasData ? (
+          <span className="text-amber-400">⚠</span>
+        ) : null}
+        <span>指数状态 {hasData ? `${successCount}/${totalCount}` : `-${totalCount}`}</span>
+        <svg
+          className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`}
+          fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+
+      {open && (
+        <div className="absolute right-0 mt-2 w-96 bg-paper-card border border-rule rounded-lg shadow-xl z-50">
+          <div className="px-3 py-2 border-b border-rule flex justify-between items-center">
+            <span className="font-medium text-ink text-sm">红利指数持仓状态</span>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-ink-muted hover:text-ink-strong text-xs"
+              aria-label="关闭"
+            >✕</button>
+          </div>
+          <div className="max-h-96 overflow-y-auto">
+            {CORE_DIVIDEND_INDEXES.map(({ code, label }, idx) => {
+              const item = results?.find(r => r.code === code);
+              const isRefreshing = refreshing[code];
+              const failed = !!item && !item.success;
+              const success = !!item?.success;
+              return (
+                <div
+                  key={code}
+                  className={`px-3 py-2 flex items-center gap-2 text-sm ${idx < CORE_DIVIDEND_INDEXES.length - 1 ? 'border-b border-rule/30' : ''}`}
+                >
+                  <span className="font-mono text-xs text-ink-muted w-16 shrink-0">{label}</span>
+                  <span className="text-ink flex-1 truncate min-w-0">
+                    {item?.name || <span className="text-ink-muted">—</span>}
+                  </span>
+                  {isRefreshing ? (
+                    <span className="text-xs text-ink-muted animate-pulse shrink-0">刷新中…</span>
+                  ) : success ? (
+                    <span className="text-xs text-green-400 shrink-0">✓ {item.constituents_count}只</span>
+                  ) : failed ? (
+                    <>
+                      <span
+                        className="text-xs text-red-400 shrink-0 max-w-32 truncate"
+                        title={item.error || '失败'}
+                      >
+                        ✗ {item.error || '失败'}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => onRetry(code)}
+                        className="text-xs px-2 py-0.5 bg-red-900/40 text-red-300 hover:bg-red-900/60 rounded shrink-0"
+                      >重试</button>
+                    </>
+                  ) : (
+                    <span className="text-xs text-ink-muted shrink-0">未刷新</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {!hasData && (
+            <div className="px-3 py-2 border-t border-rule text-xs text-ink-muted">
+              点击「更新股息率」触发刷新后查看状态
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -142,24 +220,35 @@ function DividendPageContent() {
   const [auxForceMap, setAuxForceMap] = useState<Record<string, boolean>>({});
   const auxMenuRef = useRef<HTMLDivElement>(null);
 
-  // 辅助数据菜单：点击外部 / Esc 关闭
+  // 红利指数状态 popover 开关
+  const [indexPopoverOpen, setIndexPopoverOpen] = useState(false);
+  const indexPopoverRef = useRef<HTMLDivElement>(null);
+
+  // 辅助数据菜单 + 指数 popover：点击外部 / Esc 关闭
   useEffect(() => {
-    if (!auxOpen) return;
     const handleClick = (e: MouseEvent) => {
-      if (auxMenuRef.current && !auxMenuRef.current.contains(e.target as Node)) {
+      if (auxOpen && auxMenuRef.current && !auxMenuRef.current.contains(e.target as Node)) {
         setAuxOpen(false);
+      }
+      if (indexPopoverOpen && indexPopoverRef.current && !indexPopoverRef.current.contains(e.target as Node)) {
+        setIndexPopoverOpen(false);
       }
     };
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setAuxOpen(false);
+      if (e.key === 'Escape') {
+        setAuxOpen(false);
+        setIndexPopoverOpen(false);
+      }
     };
-    document.addEventListener('mousedown', handleClick);
-    document.addEventListener('keydown', handleKey);
+    if (auxOpen || indexPopoverOpen) {
+      document.addEventListener('mousedown', handleClick);
+      document.addEventListener('keydown', handleKey);
+    }
     return () => {
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('keydown', handleKey);
     };
-  }, [auxOpen]);
+  }, [auxOpen, indexPopoverOpen]);
 
   // 下载报告（A4 一图版 / 手机竖版）
   const downloadReport = async (type: 'a4' | 'carousel') => {
@@ -285,40 +374,33 @@ function DividendPageContent() {
               </Link>
               <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             </div>
-            <div className="flex items-center gap-2 flex-wrap justify-end">
-              <button
-                onClick={updateDividend}
-                disabled={updateState.dividend === 'loading'}
-                className={`
-                  px-4 py-2 rounded font-medium transition-all flex items-center gap-2
-                  ${updateState.dividend === 'loading'
-                    ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                  }
-                `}
-              >
-                {updateState.dividend === 'loading' ? (
-                  <>
-                    <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                    </svg>
-                    刷新中...
-                  </>
-                ) : (
-                  <>
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                    </svg>
-                    更新股息率
-                  </>
-                )}
-              </button>
-              <IndexBadges
-                results={indexResults}
-                refreshing={indexRefreshing}
-                onRetry={refreshIndexHoldings}
-              />
-            </div>
+            <button
+              onClick={updateDividend}
+              disabled={updateState.dividend === 'loading'}
+              className={`
+                px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                ${updateState.dividend === 'loading'
+                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
+                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                }
+              `}
+            >
+              {updateState.dividend === 'loading' ? (
+                <>
+                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  刷新中...
+                </>
+              ) : (
+                <>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                  </svg>
+                  更新股息率
+                </>
+              )}
+            </button>
           </div>
         </div>
         <div className="bg-paper-card rounded-lg p-8 text-center">
@@ -442,11 +524,16 @@ function DividendPageContent() {
                 </>
               )}
             </button>
-            <IndexBadges
-              results={indexResults}
-              refreshing={indexRefreshing}
-              onRetry={refreshIndexHoldings}
-            />
+            <div ref={indexPopoverRef}>
+              <IndexStatusPopover
+                results={indexResults}
+                refreshing={indexRefreshing}
+                onRetry={refreshIndexHoldings}
+                open={indexPopoverOpen}
+                onToggle={() => setIndexPopoverOpen(!indexPopoverOpen)}
+                onClose={() => setIndexPopoverOpen(false)}
+              />
+            </div>
 
             <div ref={auxMenuRef} className="relative">
               {(() => {

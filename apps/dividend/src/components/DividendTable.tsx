@@ -877,7 +877,8 @@ function AlertBellButton({
   }
 
   // 状态映射到颜色 + title
-  let bellClass = 'text-gray-600 hover:text-gray-400';
+  // 默认色用 text-ink-soft（暖白主题下 gray-600 / ink-muted 都偏暗，铃铛隐形）
+  let bellClass = 'text-ink-soft hover:text-ink-strong';
   let title = '设置挡位监控';
   if (isTriggered) {
     bellClass = 'text-red-400 hover:text-red-300 animate-pulse';
