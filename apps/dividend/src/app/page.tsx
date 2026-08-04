@@ -16,10 +16,81 @@ import { AlertSettingsModal } from '@/components/AlertSettingsModal';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
-import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem } from '@/lib/types';
+import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, IndexRefreshItem } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
 type TabKey = 'all' | 'watchlist';
+
+/**
+ * 红利指数徽章白名单（与 fetcher.py 的 DIVIDEND_INDEXES + ALT_API_INDEXES 对齐）
+ * 注意：932315 名为"中证红利质量"、931468 名为"红利质量"——徽章只展示 code 避免歧义，
+ * hover tooltip 显示完整 name（来自后端）
+ */
+const CORE_DIVIDEND_INDEXES: { code: string; label: string }[] = [
+  // 核心 4 个（中证系列，csindex 接口）
+  { code: '000922', label: '000922' },
+  { code: '932315', label: '932315' },
+  { code: '932309', label: '932309' },
+  { code: '931468', label: '931468' },
+  // 扩展 4 个
+  { code: '000015', label: '000015' },  // 上证红利，csindex
+  { code: '000825', label: '000825' },  // 中证系列，csindex（名称待确认）
+  { code: 'H30089', label: 'H30089' },  // 国证系列，ak.index_stock_cons
+  { code: '399324', label: '399324' },  // 深证红利，ak.index_stock_cons
+];
+
+/**
+ * 4 个红利指数持仓刷新徽章
+ * - 灰：未刷新过（无数据）
+ * - 绿：最近一次刷新成功（hover 显示成分股数量）
+ * - 红：最近一次刷新失败（hover 显示错误，可点击重试）
+ * - 转：刷新中（animate-pulse）
+ */
+function IndexBadges({
+  results,
+  refreshing,
+  onRetry,
+}: {
+  results?: IndexRefreshItem[];
+  refreshing: Record<string, boolean>;
+  onRetry: (code: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 ml-2 flex-wrap">
+      {CORE_DIVIDEND_INDEXES.map(({ code, label }) => {
+        const item = results?.find(r => r.code === code);
+        const isRefreshing = refreshing[code];
+        const failed = !!item && !item.success;
+        const success = !!item?.success;
+        const clickable = failed && !isRefreshing;
+        const title = item
+          ? `${item.name || code} - ${item.success ? `${item.constituents_count} 只成分股` : `失败：${item.error ?? '未知错误}'}`}`
+          : `${code} 尚未刷新`;
+        return (
+          <button
+            key={code}
+            type="button"
+            onClick={() => clickable && onRetry(code)}
+            disabled={!clickable}
+            title={title}
+            className={`
+              text-xs px-2 py-1 rounded font-mono transition-colors
+              ${isRefreshing
+                ? 'bg-paper-deep text-ink-muted animate-pulse cursor-wait'
+                : failed
+                  ? 'bg-red-900/40 text-red-300 hover:bg-red-900/60 cursor-pointer'
+                  : success
+                    ? 'bg-green-900/30 text-green-300 cursor-default'
+                    : 'bg-paper-deep text-ink-muted cursor-default'}
+            `}
+          >
+            {label}{success && ' ✓'}{failed && (isRefreshing ? ' …' : ' ↻')}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 /**
  * 把后端返回的 AlertStatusItem 转成 AlertSettingsModal 的 currentConfig 入参
@@ -127,7 +198,7 @@ function DividendPageContent() {
   const compare = useCompare(MAX_COMPARE_SELECT);
 
   // 数据更新功能
-  const { state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard } = useDataUpdate();
+  const { state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard, indexResults, indexRefreshing, refreshIndexHoldings } = useDataUpdate();
 
   // 收藏（watchlist）
   const watchlist = useWatchlist();
@@ -214,33 +285,40 @@ function DividendPageContent() {
               </Link>
               <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             </div>
-            <button
-              onClick={updateDividend}
-              disabled={updateState.dividend === 'loading'}
-              className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2
-                ${updateState.dividend === 'loading'
-                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                }
-              `}
-            >
-              {updateState.dividend === 'loading' ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  刷新中...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  更新股息率
-                </>
-              )}
-            </button>
+            <div className="flex items-center gap-2 flex-wrap justify-end">
+              <button
+                onClick={updateDividend}
+                disabled={updateState.dividend === 'loading'}
+                className={`
+                  px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                  ${updateState.dividend === 'loading'
+                    ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                  }
+                `}
+              >
+                {updateState.dividend === 'loading' ? (
+                  <>
+                    <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    刷新中...
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
+                    </svg>
+                    更新股息率
+                  </>
+                )}
+              </button>
+              <IndexBadges
+                results={indexResults}
+                refreshing={indexRefreshing}
+                onRetry={refreshIndexHoldings}
+              />
+            </div>
           </div>
         </div>
         <div className="bg-paper-card rounded-lg p-8 text-center">
@@ -364,6 +442,11 @@ function DividendPageContent() {
                 </>
               )}
             </button>
+            <IndexBadges
+              results={indexResults}
+              refreshing={indexRefreshing}
+              onRetry={refreshIndexHoldings}
+            />
 
             <div ref={auxMenuRef} className="relative">
               {(() => {

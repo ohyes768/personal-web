@@ -13,6 +13,7 @@ import type {
   RealtimePriceRequest,
   RealtimePriceResponse,
   RefreshDividendResponse,
+  IndexRefreshItem,
   StockInfoRequest,
   StockInfoResponse,
   BoardInfoResponse,
@@ -128,6 +129,13 @@ export const dividendUpdateApi = {
    */
   refreshDividend: () =>
     directClient.post<RefreshDividendResponse>('/api/dividend/dividend/refresh', { min_dividend: 10 }),
+
+  /**
+   * 单指数刷新持仓 CSV（只刷持仓，不算股息率）
+   * 用于"全量刷新后某指数失败 → 点徽章单独重试"场景
+   */
+  refreshIndexHoldings: (code: string) =>
+    directClient.post<IndexRefreshItem>('/api/dividend/dividend/index-holdings/refresh', { code }),
 
   /**
    * 更新 M120 数据（每周一次）

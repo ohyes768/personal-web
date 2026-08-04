@@ -13,6 +13,7 @@ import type {
   RealtimePriceRequest,
   StockInfo,
   DividendStockWithTechnical,
+  IndexRefreshItem,
 } from './types';
 
 /**
@@ -442,6 +443,7 @@ type UpdateState = {
   dividend_failed_codes?: string[];
   dividend_target_count?: number;
   dividend_completed_count?: number;
+  dividend_index_results?: IndexRefreshItem[];
   aux_message?: { sw_industry?: string; financial?: string; shareholder?: string; board?: string };
 };
 
@@ -471,6 +473,12 @@ export function useDataUpdate() {
     shareholder: import('./types').AuxDataStatus | null;
     board: import('./types').AuxDataStatus | null;
   }>({ sw_industry: null, financial: null, shareholder: null, board: null });
+
+  // 4 个红利指数持仓刷新状态：updateDividend 完成后从 stats.index_results 同步过来；
+  // 单指数刷新（refreshIndexHoldings）只更新该 code 的状态。
+  const [indexResults, setIndexResults] = useState<IndexRefreshItem[] | undefined>(undefined);
+  // 单指数刷新中标志（按 code 维度），用于徽章转圈
+  const [indexRefreshing, setIndexRefreshing] = useState<Record<string, boolean>>({});
 
   /**
    * 检查 M120 是否需要更新
@@ -573,7 +581,10 @@ export function useDataUpdate() {
         dividend_failed_codes: result.stats.failed_codes,
         dividend_target_count: total,
         dividend_completed_count: completed,
+        dividend_index_results: result.stats.index_results,
       }));
+      // 同步到独立的徽章状态（覆盖单指数刷新留下的局部状态）
+      setIndexResults(result.stats.index_results);
       // 刷新完成后重新检查状态
       await checkDividendStatus();
       return true;
@@ -583,6 +594,42 @@ export function useDataUpdate() {
       return false;
     }
   }, [checkDividendStatus]);
+
+  /**
+   * 单指数刷新持仓 CSV（只刷持仓，不算股息率）
+   * 用于"全量刷新后某指数失败 → 点徽章单独重试"场景
+   */
+  const refreshIndexHoldings = useCallback(async (code: string) => {
+    setIndexRefreshing(prev => ({ ...prev, [code]: true }));
+    try {
+      const result = await dividendUpdateApi.refreshIndexHoldings(code);
+      // 用最新返回更新对应 code 的徽章状态
+      setIndexResults(prev => {
+        const next = [...(prev ?? [])];
+        const idx = next.findIndex(x => x.code === code);
+        if (idx >= 0) next[idx] = result;
+        else next.push(result);
+        return next;
+      });
+      // 同步到 UpdateState.dividend_index_results（让其他依赖该字段的组件也能拿到最新值）
+      setState(prev => ({
+        ...prev,
+        dividend_index_results: (() => {
+          const next = [...(prev.dividend_index_results ?? [])];
+          const idx = next.findIndex(x => x.code === code);
+          if (idx >= 0) next[idx] = result;
+          else next.push(result);
+          return next;
+        })(),
+      }));
+      return result.success;
+    } catch (err) {
+      console.error('单指数刷新失败:', err);
+      return false;
+    } finally {
+      setIndexRefreshing(prev => ({ ...prev, [code]: false }));
+    }
+  }, []);
 
   /**
    * 更新 M120 数据
@@ -725,5 +772,8 @@ export function useDataUpdate() {
     updateSwIndustry,
     updateShareholder,
     updateBoard,
+    indexResults,
+    indexRefreshing,
+    refreshIndexHoldings,
   };
 }

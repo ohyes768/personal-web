@@ -267,6 +267,17 @@ export interface StockInfoResponse {
 }
 
 /**
+ * 单个红利指数持仓刷新状态（徽章数据源）
+ */
+export interface IndexRefreshItem {
+  code: string;
+  name: string;
+  success: boolean;
+  constituents_count: number;
+  error?: string | null;
+}
+
+/**
  * 股息率刷新统计
  */
 export interface RefreshStats {
@@ -280,6 +291,8 @@ export interface RefreshStats {
   file_path: string;
   start_time: string;
   end_time: string;
+  /** 各红利指数持仓刷新状态（仅 /dividend/refresh 返回） */
+  index_results?: IndexRefreshItem[];
 }
 
 /**
