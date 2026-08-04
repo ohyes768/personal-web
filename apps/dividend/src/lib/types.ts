@@ -307,6 +307,15 @@ export interface RefreshDividendResponse {
 /**
  * 股息率数据状态响应
  */
+export interface HoldingsStatus {
+  expected_index_count: number;
+  actual_index_count: number;
+  expected_index_codes: string[];
+  actual_index_codes: string[];
+  missing_index_codes: string[];
+  holdings_complete: boolean;
+}
+
 export interface DividendStatusResponse {
   needs_update: boolean;
   last_updated: string | null;
@@ -315,6 +324,8 @@ export interface DividendStatusResponse {
   target_count: number;
   completed_count: number;
   failed_codes: string[];
+  /** 持仓 CSV 覆盖度（指数数量是否齐全），后端 /dividend/status 返回 */
+  holdings_status?: HoldingsStatus;
 }
 
 /**

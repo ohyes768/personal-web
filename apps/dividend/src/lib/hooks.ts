@@ -14,6 +14,7 @@ import type {
   StockInfo,
   DividendStockWithTechnical,
   IndexRefreshItem,
+  HoldingsStatus,
 } from './types';
 
 /**
@@ -479,6 +480,8 @@ export function useDataUpdate() {
   const [indexResults, setIndexResults] = useState<IndexRefreshItem[] | undefined>(undefined);
   // 单指数刷新中标志（按 code 维度），用于徽章转圈
   const [indexRefreshing, setIndexRefreshing] = useState<Record<string, boolean>>({});
+  // 持仓 CSV 覆盖度（来自 status 接口，进页面就有，不用点全量刷新）
+  const [holdingsStatus, setHoldingsStatus] = useState<HoldingsStatus | undefined>(undefined);
 
   /**
    * 检查 M120 是否需要更新
@@ -503,6 +506,7 @@ export function useDataUpdate() {
     try {
       const status = await dividendApi.getDividendStatus();
       setDividendNeedsUpdate(status.needs_update);
+      setHoldingsStatus(status.holdings_status);
       setState(prev => ({
         ...prev,
         dividend: 'idle',  // 重置状态，让按钮根据 needs_update 显示正确文案
@@ -775,5 +779,6 @@ export function useDataUpdate() {
     indexResults,
     indexRefreshing,
     refreshIndexHoldings,
+    holdingsStatus,
   };
 }

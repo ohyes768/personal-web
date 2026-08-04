@@ -16,7 +16,7 @@ import { AlertSettingsModal } from '@/components/AlertSettingsModal';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
-import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, IndexRefreshItem } from '@/lib/types';
+import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
 type TabKey = 'all' | 'watchlist';
@@ -46,6 +46,7 @@ const CORE_DIVIDEND_INDEXES: { code: string; label: string }[] = [
  */
 function IndexStatusPopover({
   results,
+  holdingsStatus,
   refreshing,
   onRetry,
   open,
@@ -53,6 +54,7 @@ function IndexStatusPopover({
   onClose,
 }: {
   results?: IndexRefreshItem[];
+  holdingsStatus?: HoldingsStatus;
   refreshing: Record<string, boolean>;
   onRetry: (code: string) => void;
   open: boolean;
@@ -60,16 +62,44 @@ function IndexStatusPopover({
   onClose: () => void;
 }) {
   const totalCount = CORE_DIVIDEND_INDEXES.length;
-  const validResults = results?.filter(r =>
-    CORE_DIVIDEND_INDEXES.some(c => c.code === r.code)
-  ) ?? [];
-  const hasData = validResults.length > 0;
-  const successCount = validResults.filter(r => r.success).length;
-  const failedCount = validResults.filter(r => !r.success).length;
+
+  // 单行数据合并：优先 indexResults（精确状态），其次 holdingsStatus（CSV 覆盖度），最后 unknown
+  type RowState =
+    | { kind: 'refreshed_success'; item: IndexRefreshItem }
+    | { kind: 'refreshed_failed'; item: IndexRefreshItem }
+    | { kind: 'in_holdings' }
+    | { kind: 'missing_in_holdings' }
+    | { kind: 'unknown' };
+
+  function getRowState(code: string): RowState {
+    const irItem = results?.find(r => r.code === code);
+    if (irItem) {
+      return irItem.success
+        ? { kind: 'refreshed_success', item: irItem }
+        : { kind: 'refreshed_failed', item: irItem };
+    }
+    if (holdingsStatus) {
+      if (holdingsStatus.actual_index_codes.includes(code)) {
+        return { kind: 'in_holdings' };
+      }
+      return { kind: 'missing_in_holdings' };
+    }
+    return { kind: 'unknown' };
+  }
+
+  // 触发按钮统计
+  let successCount = 0;
+  let failedCount = 0;
+  CORE_DIVIDEND_INDEXES.forEach(({ code }) => {
+    const s = getRowState(code);
+    if (s.kind === 'refreshed_success' || s.kind === 'in_holdings') successCount++;
+    else if (s.kind === 'refreshed_failed' || s.kind === 'missing_in_holdings') failedCount++;
+  });
+  const hasAnyData = successCount + failedCount > 0;
   const anyRefreshing = Object.values(refreshing).some(Boolean);
 
   // 触发按钮配色
-  const btnClass = !hasData
+  const btnClass = !hasAnyData
     ? 'bg-paper-tint text-gray-400 border border-rule hover:text-ink-strong'
     : successCount === totalCount
       ? 'bg-green-900/30 text-green-300 border border-green-700/50 hover:bg-green-900/40'
@@ -94,12 +124,12 @@ function IndexStatusPopover({
           <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
           </svg>
-        ) : successCount === totalCount && hasData ? (
+        ) : successCount === totalCount && hasAnyData ? (
           <span className="text-green-400">✓</span>
-        ) : failedCount > 0 && hasData ? (
+        ) : failedCount > 0 && hasAnyData ? (
           <span className="text-amber-400">⚠</span>
         ) : null}
-        <span>指数状态 {hasData ? `${successCount}/${totalCount}` : `-${totalCount}`}</span>
+        <span>指数状态 {hasAnyData ? `${successCount}/${totalCount}` : `-${totalCount}`}</span>
         <svg
           className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`}
           fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -121,10 +151,8 @@ function IndexStatusPopover({
           </div>
           <div className="max-h-96 overflow-y-auto">
             {CORE_DIVIDEND_INDEXES.map(({ code, label }, idx) => {
-              const item = results?.find(r => r.code === code);
+              const state = getRowState(code);
               const isRefreshing = refreshing[code];
-              const failed = !!item && !item.success;
-              const success = !!item?.success;
               return (
                 <div
                   key={code}
@@ -132,20 +160,33 @@ function IndexStatusPopover({
                 >
                   <span className="font-mono text-xs text-ink-muted w-16 shrink-0">{label}</span>
                   <span className="text-ink flex-1 truncate min-w-0">
-                    {item?.name || <span className="text-ink-muted">—</span>}
+                    {state.kind === 'refreshed_success' || state.kind === 'refreshed_failed'
+                      ? (state.item.name || <span className="text-ink-muted">—</span>)
+                      : <span className="text-ink-muted text-xs">（持仓 CSV）</span>}
                   </span>
                   {isRefreshing ? (
                     <span className="text-xs text-ink-muted animate-pulse shrink-0">刷新中…</span>
-                  ) : success ? (
-                    <span className="text-xs text-green-400 shrink-0">✓ {item.constituents_count}只</span>
-                  ) : failed ? (
+                  ) : state.kind === 'refreshed_success' ? (
+                    <span className="text-xs text-green-400 shrink-0">✓ {state.item.constituents_count}只</span>
+                  ) : state.kind === 'refreshed_failed' ? (
                     <>
                       <span
                         className="text-xs text-red-400 shrink-0 max-w-32 truncate"
-                        title={item.error || '失败'}
+                        title={state.item.error || '失败'}
                       >
-                        ✗ {item.error || '失败'}
+                        ✗ {state.item.error || '失败'}
                       </span>
+                      <button
+                        type="button"
+                        onClick={() => onRetry(code)}
+                        className="text-xs px-2 py-0.5 bg-red-900/40 text-red-300 hover:bg-red-900/60 rounded shrink-0"
+                      >重试</button>
+                    </>
+                  ) : state.kind === 'in_holdings' ? (
+                    <span className="text-xs text-green-400 shrink-0">✓ 持仓已有</span>
+                  ) : state.kind === 'missing_in_holdings' ? (
+                    <>
+                      <span className="text-xs text-red-400 shrink-0">✗ 持仓缺失</span>
                       <button
                         type="button"
                         onClick={() => onRetry(code)}
@@ -159,7 +200,7 @@ function IndexStatusPopover({
               );
             })}
           </div>
-          {!hasData && (
+          {!hasAnyData && (
             <div className="px-3 py-2 border-t border-rule text-xs text-ink-muted">
               点击「更新股息率」触发刷新后查看状态
             </div>
@@ -287,7 +328,7 @@ function DividendPageContent() {
   const compare = useCompare(MAX_COMPARE_SELECT);
 
   // 数据更新功能
-  const { state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard, indexResults, indexRefreshing, refreshIndexHoldings } = useDataUpdate();
+  const { state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard, indexResults, indexRefreshing, refreshIndexHoldings, holdingsStatus } = useDataUpdate();
 
   // 收藏（watchlist）
   const watchlist = useWatchlist();
@@ -527,6 +568,7 @@ function DividendPageContent() {
             <div ref={indexPopoverRef}>
               <IndexStatusPopover
                 results={indexResults}
+                holdingsStatus={holdingsStatus}
                 refreshing={indexRefreshing}
                 onRetry={refreshIndexHoldings}
                 open={indexPopoverOpen}
