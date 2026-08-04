@@ -12,12 +12,34 @@ import { DividendTable } from '@/components/DividendTable';
 import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
 import { CompareDrawer } from '@/components/CompareDrawer';
+import { AlertSettingsModal } from '@/components/AlertSettingsModal';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
-import type { DividendStock, DividendStockWithTechnical } from '@/lib/types';
+import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
+import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
 type TabKey = 'all' | 'watchlist';
+
+/**
+ * 把后端返回的 AlertStatusItem 转成 AlertSettingsModal 的 currentConfig 入参
+ */
+function buildCurrentConfig(item: AlertStatusItem | undefined): AlertConfigRequest | null {
+  if (!item) return null;
+  return {
+    enabled: item.enabled,
+    star_rating: item.star_rating ?? null,
+    strategy: item.strategy ?? null,
+    doc_url: null,
+    analysis_date: null,
+    levels: item.levels ?? {
+      heavy_position: null,
+      add_position: null,
+      reduce_position: null,
+      full_exit: null,
+    },
+  };
+}
 
 export default function DividendPage() {
   return (
@@ -109,6 +131,21 @@ function DividendPageContent() {
 
   // 收藏（watchlist）
   const watchlist = useWatchlist();
+
+  // 挡位监控状态
+  const alertsStatus = useAlertsStatus();
+  const [alertStock, setAlertStock] = useState<DividendStock | null>(null);
+  const [alertOpen, setAlertOpen] = useState(false);
+
+  const handleOpenAlertSettings = useCallback((code: string) => {
+    const s = data.find(x => x.code === code);
+    if (s) {
+      setAlertStock(s);
+      setAlertOpen(true);
+    } else {
+      alert(`未找到股票 ${code}，请刷新页面后重试`);
+    }
+  }, [data]);
 
   // URL query 同步 tab（?tab=watchlist）
   const router = useRouter();
@@ -738,6 +775,8 @@ function DividendPageContent() {
           onToggleCompare={handleToggleCompare}
           watchlist={watchlist.codes}
           onToggleWatchlist={watchlist.toggle}
+          alertStatusItems={alertsStatus.alertMap}
+          onOpenAlertSettings={handleOpenAlertSettings}
         />
       )}
 
@@ -747,6 +786,21 @@ function DividendPageContent() {
         onClose={detailModal.close}
         type={detailModal.modalType}
         stock={detailModal.stock}
+      />
+
+      {/* 挡位设置弹框 */}
+      <AlertSettingsModal
+        isOpen={alertOpen}
+        onClose={() => setAlertOpen(false)}
+        stock={alertStock}
+        technical={alertStock ? technicalData.get(alertStock.code) || null : null}
+        currentConfig={alertStock ? buildCurrentConfig(alertsStatus.alertMap.get(alertStock.code)) : null}
+        onSubmit={async (code, body) => {
+          await alertsStatus.setAlerts(code, body as AlertConfigRequest);
+        }}
+        onClear={async (code) => {
+          await alertsStatus.clearAlerts(code);
+        }}
       />
 
       {/* 对比浮动栏 */}

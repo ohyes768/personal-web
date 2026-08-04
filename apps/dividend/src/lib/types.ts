@@ -394,3 +394,109 @@ export interface CompareTableProps {
   stocks: DividendStockWithTechnical[];
   onRemove: (code: string) => void;
 }
+
+// ========== 挡位监控（alerts）类型 ==========
+
+/**
+ * 单档挡位（价格必填，PE 选填仅作推送展示）
+ */
+export interface AlertLevel {
+  price: number;
+  pe?: number | null;
+}
+
+/**
+ * 4 档挡位配置
+ * - heavy_position  🟢 重仓（买入最深）
+ * - add_position    🟡 加仓
+ * - reduce_position 🟠 减仓
+ * - full_exit       🔴 全卖（卖出最深）
+ */
+export interface AlertLevels {
+  heavy_position?: AlertLevel | null;
+  add_position?: AlertLevel | null;
+  reduce_position?: AlertLevel | null;
+  full_exit?: AlertLevel | null;
+}
+
+/**
+ * 单只股票的挡位监控配置
+ */
+export interface AlertConfig {
+  enabled: boolean;
+  star_rating?: number | null;
+  strategy?: string | null;
+  doc_url?: string | null;
+  analysis_date?: string | null;
+  levels: AlertLevels;
+}
+
+/**
+ * 挡位配置更新请求（前端 → 后端）
+ */
+export type AlertConfigRequest = AlertConfig;
+
+/**
+ * 挡位状态条目（GET /favorites/alerts/status 返回）
+ */
+export interface AlertStatusItem {
+  code: string;
+  name?: string | null;
+  enabled: boolean;
+  has_levels: boolean;
+  level_count: number;
+  star_rating?: number | null;
+  strategy?: string | null;
+  levels?: AlertLevels | null;
+  triggered_today: string[];  // 今日此股触发的 level_key 列表
+}
+
+/**
+ * 挡位状态响应
+ */
+export interface AlertStatusResponse {
+  total: number;
+  enabled_count: number;
+  triggered_today_count: number;
+  dingtalk_configured: boolean;
+  items: AlertStatusItem[];
+}
+
+/**
+ * 手动触发挡位检查的返回
+ */
+export interface AlertCheckResult {
+  checked_at: string;
+  scanned: number;
+  triggered: Array<{
+    code: string;
+    name: string;
+    level_key: string;
+    level_label: string;
+    level_emoji: string;
+    direction: 'buy' | 'sell';
+    level_price: number;
+    level_pe?: number | null;
+    current_price: number;
+    current_pe?: number | null;
+    distance_pct: number;
+    strategy?: string | null;
+    star_rating?: number | null;
+    doc_url?: string | null;
+    triggered_at: string;
+  }>;
+  pushed: boolean;
+  push_error?: string | null;
+}
+
+/**
+ * 挡位 key 标签映射（前端展示用）
+ */
+export const LEVEL_META = {
+  heavy_position:  { label: '重仓档', emoji: '🟢', direction: 'buy'  as const, severity: 2 },
+  add_position:    { label: '加仓档', emoji: '🟡', direction: 'buy'  as const, severity: 1 },
+  reduce_position: { label: '减仓档', emoji: '🟠', direction: 'sell' as const, severity: 1 },
+  full_exit:       { label: '全卖档', emoji: '🔴', direction: 'sell' as const, severity: 2 },
+};
+
+export type LevelKey = keyof typeof LEVEL_META;

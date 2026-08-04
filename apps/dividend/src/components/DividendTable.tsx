@@ -4,11 +4,12 @@
 'use client';
 
 import { Button } from './shared-ui/Button';
-import { ChevronUpIcon, ChevronDownIcon, StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
+import { ChevronUpIcon, ChevronDownIcon, StarIcon as StarIconOutline, BellIcon } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useState, useMemo, useEffect, useRef, useCallback, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
-import type { DividendStock, TechnicalIndicators } from '@/lib/types';
+import type { DividendStock, TechnicalIndicators, AlertStatusItem, LevelKey } from '@/lib/types';
+import { LEVEL_META } from '@/lib/types';
 
 type SortField = 'avg_yield_3y' | 'realtime_yield';
 type SortOrder = 'asc' | 'desc';
@@ -147,6 +148,10 @@ export interface DividendTableProps {
   watchlist: Set<string>;
   /** 切换某只股票的收藏状态 */
   onToggleWatchlist: (code: string) => void;
+  /** 挡位状态 Map（code → AlertStatusItem），未传则不展示挡位按钮 */
+  alertStatusItems?: Map<string, AlertStatusItem>;
+  /** 打开挡位设置弹框（仅已收藏的股票会触发） */
+  onOpenAlertSettings?: (code: string) => void;
   defaultSortField?: SortField;
   defaultSortOrder?: SortOrder;
 }
@@ -160,6 +165,8 @@ export function DividendTable({
   onToggleCompare,
   watchlist,
   onToggleWatchlist,
+  alertStatusItems,
+  onOpenAlertSettings,
   defaultSortField = 'avg_yield_3y',
   defaultSortOrder = 'desc',
 }: DividendTableProps) {
@@ -261,7 +268,7 @@ export function DividendTable({
       <table className="w-full">
         <thead className="bg-paper-deep border-b-2 border-ink-strong">
           <tr>
-            <th className="w-10 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="收藏">
+            <th className="w-16 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="收藏 / 挡位监控">
               <StarIconOutline className="w-4 h-4 inline-block text-ink-muted" />
             </th>
             <th className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
@@ -339,22 +346,32 @@ export function DividendTable({
                   }
                 }}
               >
-                <td className="w-10 px-2 py-3 text-center">
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onToggleWatchlist(stock.code);
-                    }}
-                    title={watchlist.has(stock.code) ? '取消收藏' : '加入收藏'}
-                    aria-label={watchlist.has(stock.code) ? `取消收藏 ${stock.name}` : `收藏 ${stock.name}`}
-                    className="inline-flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-paper-deep"
-                  >
-                    {watchlist.has(stock.code) ? (
-                      <StarIconSolid className="w-5 h-5 text-yellow-400" />
-                    ) : (
-                      <StarIconOutline className="w-5 h-5 text-gray-500 hover:text-yellow-400" />
+                <td className="w-16 px-2 py-3 text-center">
+                  <div className="flex items-center justify-center gap-0.5">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onToggleWatchlist(stock.code);
+                      }}
+                      title={watchlist.has(stock.code) ? '取消收藏' : '加入收藏'}
+                      aria-label={watchlist.has(stock.code) ? `取消收藏 ${stock.name}` : `收藏 ${stock.name}`}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-paper-deep"
+                    >
+                      {watchlist.has(stock.code) ? (
+                        <StarIconSolid className="w-5 h-5 text-yellow-400" />
+                      ) : (
+                        <StarIconOutline className="w-5 h-5 text-gray-500 hover:text-yellow-400" />
+                      )}
+                    </button>
+                    {watchlist.has(stock.code) && onOpenAlertSettings && (
+                      <AlertBellButton
+                        code={stock.code}
+                        item={alertStatusItems?.get(stock.code)}
+                        technical={technical}
+                        onClick={() => onOpenAlertSettings(stock.code)}
+                      />
                     )}
-                  </button>
+                  </div>
                 </td>
                 <td className="w-16 px-2 py-3 font-mono text-sm text-gray-300">
                   {stock.code}
@@ -808,3 +825,101 @@ const PopoverShell = forwardRef<HTMLDivElement, PopoverShellProps>(function Popo
     </div>
   );
 });
+
+
+/**
+ * AlertBellButton — 挡位监控铃铛按钮（嵌在收藏列）
+ *
+ * 状态：
+ *   未配置  → 灰色铃铛
+ *   已配置未启用 → 浅色铃铛
+ *   已启用未触发 → 蓝色铃铛
+ *   今日触发 → 红/绿铃铛 + emoji badge（绿=买入，红=卖出）
+ */
+function AlertBellButton({
+  code,
+  item,
+  technical,
+  onClick,
+}: {
+  code: string;
+  item?: AlertStatusItem;
+  technical: TechnicalIndicators | null;
+  onClick: () => void;
+}) {
+  if (!item) {
+    // 已收藏但还未拉到 status（loading），不显示，避免闪动
+    return null;
+  }
+
+  const currentPrice = technical?.realtime ?? technical?.close ?? null;
+  const triggeredKeys = item.triggered_today || [];
+  const isTriggered = triggeredKeys.length > 0;
+  const hasLevels = item.has_levels;
+  const enabled = item.enabled;
+
+  // 找到"距离当前价最近的档位"用于 tooltip
+  let nearestHint = '';
+  if (currentPrice !== null && item.levels) {
+    const candidates: Array<{ key: LevelKey; price: number; distance: number }> = [];
+    (Object.keys(item.levels) as LevelKey[]).forEach(k => {
+      const lv = item.levels?.[k];
+      if (lv && lv.price > 0) {
+        candidates.push({ key: k, price: lv.price, distance: Math.abs(currentPrice - lv.price) / lv.price });
+      }
+    });
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => a.distance - b.distance);
+      const nearest = candidates[0];
+      const pct = ((currentPrice - nearest.price) / nearest.price) * 100;
+      nearestHint = `最近：${LEVEL_META[nearest.key].emoji}${LEVEL_META[nearest.key].label} ¥${nearest.price.toFixed(2)}（${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%）`;
+    }
+  }
+
+  // 状态映射到颜色 + title
+  let bellClass = 'text-gray-600 hover:text-gray-400';
+  let title = '设置挡位监控';
+  if (isTriggered) {
+    bellClass = 'text-red-400 hover:text-red-300 animate-pulse';
+    title = `今日触发：${triggeredKeys.map(k => LEVEL_META[k as LevelKey].emoji + LEVEL_META[k as LevelKey].label).join(', ')}`;
+  } else if (enabled && hasLevels) {
+    bellClass = 'text-blue-400 hover:text-blue-300';
+    title = hasLevels ? `已启用监控 · ${nearestHint}` : '已启用，未配置档位';
+  } else if (hasLevels) {
+    bellClass = 'text-amber-400 hover:text-amber-300';
+    title = `已配置 ${item.level_count} 档（未启用）· ${nearestHint}`;
+  } else {
+    title = '点击设置挡位';
+  }
+
+  // 触发 badge：取方向最严重的（卖 > 买）
+  let badge: string | null = null;
+  if (isTriggered) {
+    if (triggeredKeys.includes('full_exit')) badge = '🔴';
+    else if (triggeredKeys.includes('reduce_position')) badge = '🟠';
+    else if (triggeredKeys.includes('heavy_position')) badge = '🟢';
+    else if (triggeredKeys.includes('add_position')) badge = '🟡';
+  }
+
+  return (
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
+      title={title}
+      aria-label={`设置 ${code} 挡位`}
+      className="relative inline-flex items-center justify-center w-7 h-7 rounded transition-colors hover:bg-paper-deep"
+    >
+      <BellIcon className={`w-4 h-4 ${bellClass}`} />
+      {badge && (
+        <span className="absolute -top-0.5 -right-0.5 text-[9px] leading-none" aria-hidden>
+          {badge}
+        </span>
+      )}
+      {enabled && hasLevels && !isTriggered && (
+        <span className="absolute top-0 right-0.5 w-1.5 h-1.5 rounded-full bg-blue-400" aria-hidden />
+      )}
+    </button>
+  );
+}
