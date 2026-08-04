@@ -801,6 +801,8 @@ function DividendPageContent() {
         onClear={async (code) => {
           await alertsStatus.clearAlerts(code);
         }}
+        onRunCheck={alertsStatus.runCheck}
+        dingtalkConfigured={alertsStatus.status?.dingtalk_configured ?? false}
       />
 
       {/* 对比浮动栏 */}

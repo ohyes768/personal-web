@@ -15,6 +15,7 @@ import type {
   AlertConfigRequest,
   AlertLevels,
   AlertLevel,
+  AlertCheckResult,
   DividendStock,
   TechnicalIndicators,
 } from '@/lib/types';
@@ -30,6 +31,10 @@ export interface AlertSettingsModalProps {
   onSubmit: (code: string, body: AlertConfigRequest) => Promise<void>;
   /** 清除回调（调用 useAlertsStatus.clearAlerts） */
   onClear: (code: string) => Promise<void>;
+  /** 立即扫描全部挡位（测试推送）。不传则不显示按钮 */
+  onRunCheck?: () => Promise<AlertCheckResult>;
+  /** 钉钉是否已配置（影响按钮文案） */
+  dingtalkConfigured?: boolean;
 }
 
 type LevelKey = 'heavy_position' | 'add_position' | 'reduce_position' | 'full_exit';
@@ -66,6 +71,8 @@ export function AlertSettingsModal({
   currentConfig,
   onSubmit,
   onClear,
+  onRunCheck,
+  dingtalkConfigured,
 }: AlertSettingsModalProps) {
   const [enabled, setEnabled] = useState(false);
   const [levels, setLevels] = useState<AlertLevels>({ ...EMPTY_LEVELS });
@@ -74,6 +81,7 @@ export function AlertSettingsModal({
   const [docUrl, setDocUrl] = useState('');
   const [analysisDate, setAnalysisDate] = useState('');
   const [saving, setSaving] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 同步 currentConfig 到本地表单
@@ -173,6 +181,32 @@ export function AlertSettingsModal({
       setError(msg);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleRunCheck = async () => {
+    if (!onRunCheck) return;
+    setChecking(true);
+    setError(null);
+    try {
+      const result = await onRunCheck();
+      const hitCount = result.triggered.length;
+      const pushedText = result.pushed
+        ? '✅ 钉钉推送成功'
+        : result.push_error
+          ? `❌ 推送失败：${result.push_error}`
+          : dingtalkConfigured === false
+            ? '⚠️ 未配置钉钉 webhook（仅写入历史，未推送）'
+            : '⚠️ 未推送（可能今日已推送过，每日每档仅推一次）';
+      const hitList = hitCount > 0
+        ? result.triggered.map(t => `\n  ${t.level_emoji}${t.level_label} ${t.name}(${t.code}) ¥${t.current_price.toFixed(2)}`).join('')
+        : '';
+      alert(`扫描 ${result.scanned} 只股票，命中 ${hitCount} 只挡位\n${pushedText}${hitList}`);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '扫描失败';
+      setError(msg);
+    } finally {
+      setChecking(false);
     }
   };
 
@@ -311,14 +345,27 @@ export function AlertSettingsModal({
 
         {/* 操作按钮 */}
         <div className="flex items-center justify-between pt-2">
-          <Button
-            variant="ghost"
-            onClick={handleClear}
-            disabled={saving || !currentConfig}
-            className="text-red-400 hover:text-red-300"
-          >
-            清除挡位
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              onClick={handleClear}
+              disabled={saving || !currentConfig}
+              className="text-red-400 hover:text-red-300"
+            >
+              清除挡位
+            </Button>
+            {onRunCheck && (
+              <Button
+                variant="ghost"
+                onClick={handleRunCheck}
+                disabled={checking || saving}
+                title="立即调用后端挡位检查接口，命中会推送钉钉（每日每档仅推一次）"
+                className="text-blue-400 hover:text-blue-300"
+              >
+                {checking ? '扫描中...' : '🔔 立即扫描全部挡位'}
+              </Button>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onClose} disabled={saving}>
               取消
