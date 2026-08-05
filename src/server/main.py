@@ -40,6 +40,11 @@ async def _scheduled_cleanup(processor: "VideoProcessor", days: int) -> None:
                 success += 1
             else:
                 failed.append(audio_filename)
+            # 同步清 output json (data/output/{aweme_id}.json)，与 status.json 保持一致
+            try:
+                (processor.output_dir / f"{aid}.json").unlink(missing_ok=True)
+            except Exception as e:
+                logger.warning(f"清 output json 失败 {aid}: {e}")
         logger.info(
             f"定时清理完成:删 {success}/{len(deleted_ids)} 个文件(>{days}d),失败 {failed}"
         )
