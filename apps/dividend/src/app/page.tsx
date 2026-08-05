@@ -74,7 +74,11 @@ function IndexStatusPopover({
   function getRowState(code: string): RowState {
     const irItem = results?.find(r => r.code === code);
     if (irItem) {
-      return irItem.success
+      // 单指数刷成功判断：success（持仓刷成功）+ prefilter_resynced（prefilter 重算也成功）
+      // 旧后端响应无 prefilter_resynced 字段时 ?? true 兜底，保持向后兼容
+      const isFullSuccess =
+        irItem.success && (irItem.prefilter_resynced ?? true);
+      return isFullSuccess
         ? { kind: 'refreshed_success', item: irItem }
         : { kind: 'refreshed_failed', item: irItem };
     }
@@ -172,9 +176,16 @@ function IndexStatusPopover({
                     <>
                       <span
                         className="text-xs text-red-400 shrink-0 max-w-32 truncate"
-                        title={state.item.error || '失败'}
+                        title={
+                          state.item.prefilter_resynced === false
+                            ? `prefilter 同步失败：${state.item.prefilter_error || '详见后端日志'}`
+                            : state.item.error || '失败'
+                        }
                       >
-                        ✗ {state.item.error || '失败'}
+                        ✗{' '}
+                        {state.item.prefilter_resynced === false
+                          ? 'prefilter 失败'
+                          : state.item.error || '失败'}
                       </span>
                       <button
                         type="button"
