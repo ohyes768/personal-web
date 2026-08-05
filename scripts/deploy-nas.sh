@@ -17,14 +17,19 @@ fi
 #   ./scripts/deploy-nas.sh all                           # 全部 6 个服务
 #
 # 可选参数：
-#   --no-pull        跳过 git pull + submodule update
-#   --no-cache=false 关闭 --no-cache（默认开）
-#   --tail           部署完后 tail 日志（默认关，需要时显式加）
+#   --no-pull           跳过 git pull + submodule update
+#   --no-cache=false    关闭 --no-cache（默认开）
+#   --no-cache-buildx   关闭 buildx 持久 cache（默认开启 frontend 走 buildx）
+#                       首次跑会自动 docker buildx create nas-builder --driver docker-container
+#                       pnpm install 第二次起从 ~358s 降到 < 10s
+#                       仅对 frontend 生效，backend 仍走 docker compose build
+#   --tail              部署完后 tail 日志（默认关，需要时显式加）
 #
 # 示例：
 #   ./scripts/deploy-nas.sh dividend backend              # 拉最新 + 后端 build + restart + tail logs
 #   ./scripts/deploy-nas.sh all --no-tail                 # 拉最新 + 全部 build + restart + 不 tail
 #   ./scripts/deploy-nas.sh dividend frontend --no-pull   # 不 pull，直接 build + restart
+#   ./scripts/deploy-nas.sh dividend frontend --no-cache-buildx  # frontend 临时走 docker compose build
 # =============================================================================
 
 set -euo pipefail
@@ -43,7 +48,7 @@ if [[ -z "$TARGET" ]]; then
     echo "用法: $0 <target> <side> [options]"
     echo "  target: dividend | douyin | rss-relay | all"
     echo "  side:   backend | frontend | both (默认 both)"
-    echo "  options: --no-pull | --no-cache=false | --no-tail"
+    echo "  options: --no-pull | --no-cache=false | --no-cache-buildx | --no-tail"
     exit 1
 fi
 
@@ -51,16 +56,18 @@ shift 2 2>/dev/null || true
 
 DO_PULL=true
 NO_CACHE=true
+USE_CACHE=true    # 默认开启 buildx 持久 cache（frontend 加速）
 DO_TAIL=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --no-pull)        DO_PULL=false;    shift ;;
-        --no-cache)       NO_CACHE=true;    shift ;;
-        --no-cache=false) NO_CACHE=false;   shift ;;
-        --tail)           DO_TAIL=true;     shift ;;
+        --no-pull)          DO_PULL=false;    shift ;;
+        --no-cache)         NO_CACHE=true;    shift ;;
+        --no-cache=false)   NO_CACHE=false;   shift ;;
+        --no-cache-buildx)  USE_CACHE=false;  shift ;;
+        --tail)             DO_TAIL=true;     shift ;;
         -h|--help)
-            grep '^#' "$0" | head -30
+            grep '^#' "$0" | head -40
             exit 0
             ;;
         *)
@@ -98,12 +105,37 @@ get_services() {
     esac
 }
 
+# ---- frontend buildx context 映射 ----
+# USE_CACHE=true 时前端走 docker buildx 持久 cache，pnpm install 走 cache mount 复用
+get_buildx_config() {
+    local svc="$1"
+    case "$svc" in
+        dividend-frontend)  echo "apps/dividend:apps/dividend/Dockerfile:dividend-frontend" ;;
+        douyin-frontend)    echo "apps/douyin:apps/douyin/Dockerfile:douyin-frontend" ;;
+        rss-relay-frontend) echo "apps/rss-relay:apps/rss-relay/Dockerfile:rss-relay-frontend" ;;
+        *) return 1 ;;
+    esac
+}
+
+# ---- 确保 buildx builder 存在（持久 cache volume） ----
+ensure_buildx_builder() {
+    local builder_name="${1:-nas-builder}"
+    if docker buildx inspect "$builder_name" >/dev/null 2>&1; then
+        return 0
+    fi
+    echo ""
+    echo "==> 首次跑，自动创建 buildx builder '$builder_name'（持久 cache volume）"
+    docker buildx create --name "$builder_name" --driver docker-container --bootstrap >/dev/null
+    echo "    已创建 '$builder_name'（cache 跨构建保留）"
+}
+
 SERVICES=$(get_services "$TARGET" "$SIDE")
 echo "============================================================"
 echo "部署目标: $SERVICES"
-echo "  pull:    $DO_PULL"
-echo "  no-cache: $NO_CACHE"
-echo "  tail:    $DO_TAIL"
+echo "  pull:          $DO_PULL"
+echo "  no-cache:      $NO_CACHE"
+echo "  use-cache(bx): $USE_CACHE"
+echo "  tail:          $DO_TAIL"
 echo "============================================================"
 
 # ---- Step 1: git pull + submodule update ----
@@ -121,15 +153,40 @@ fi
 
 # ---- Step 2: build ----
 echo ""
-echo "==> [3/4] docker compose build"
-BUILD_ARGS=()
-if $NO_CACHE; then
-    BUILD_ARGS+=(--no-cache)
+if $USE_CACHE; then
+    ensure_buildx_builder nas-builder
+    echo "==> [3/4] docker buildx build (buildx cache frontend)"
+    for svc in $SERVICES; do
+        if cfg=$(get_buildx_config "$svc"); then
+            ctx=$(echo "$cfg" | cut -d: -f1)
+            df=$(echo  "$cfg" | cut -d: -f2)
+            tag=$(echo "$cfg" | cut -d: -f3)
+            cache_ref="nas-cache-${svc}"
+            echo "  --- buildx build $svc ---"
+            docker buildx build \
+                --cache-from "type=registry,ref=${cache_ref}" \
+                --cache-to   "type=inline" \
+                --tag "${tag}:latest" \
+                --load \
+                -f "$df" \
+                "$ctx"
+        else
+            # backend / 不支持 buildx 的服务 → 回退 docker compose build
+            echo "  --- compose build $svc（backend 不走 buildx） ---"
+            docker compose -f "$COMPOSE_FILE" build "$svc"
+        fi
+    done
+else
+    echo "==> [3/4] docker compose build"
+    BUILD_ARGS=()
+    if $NO_CACHE; then
+        BUILD_ARGS+=(--no-cache)
+    fi
+    for svc in $SERVICES; do
+        echo "  --- build $svc ---"
+        docker compose -f "$COMPOSE_FILE" build "$svc" "${BUILD_ARGS[@]}"
+    done
 fi
-for svc in $SERVICES; do
-    echo "  --- build $svc ---"
-    docker compose -f "$COMPOSE_FILE" build "$svc" "${BUILD_ARGS[@]}"
-done
 
 # ---- Step 3: restart ----
 echo ""
