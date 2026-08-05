@@ -847,10 +847,10 @@ function DividendPageContent() {
               实时价
             </button>
 
-            {/* 定时任务管理：outline 风格，避开主操作色（indigo）+ 次操作色（green/blue） */}
+            {/* 定时任务管理：slate-600 中性色，避开主操作色（indigo）+ 次操作色（green/blue） */}
             <button
               onClick={() => setSchedulerOpen(true)}
-              className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-paper-tint text-gray-300 border border-rule hover:text-ink-strong hover:border-rule-strong"
+              className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-slate-600 text-white hover:bg-slate-500"
               title="定时任务管理"
               aria-label="定时任务"
             >
