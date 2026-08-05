@@ -2,7 +2,7 @@
  * AlertSettingsModal — 挡位监控设置弹框
  *
  * 4 档价格（重仓/加仓/减仓/全卖），每档含 price + 选填 pe
- * 元数据：enabled、star_rating、strategy、doc_url、analysis_date
+ * 元数据：enabled + updated_at（自动记录，只读显示）
  *
  * 触发判断只在后端做（看价格），PE 仅作推送时展示。
  */
@@ -15,7 +15,6 @@ import type {
   AlertConfigRequest,
   AlertLevels,
   AlertLevel,
-  AlertCheckResult,
   DividendStock,
   TechnicalIndicators,
 } from '@/lib/types';
@@ -27,14 +26,12 @@ export interface AlertSettingsModalProps {
   technical?: TechnicalIndicators | null;
   /** 该股票当前 alerts 配置（来自 useAlertsStatus.alertMap） */
   currentConfig?: AlertConfigRequest | null;
+  /** 挡位最后更新时间（来自 currentConfig 被读时 item.updated_at） */
+  currentUpdatedAt?: string | null;
   /** 保存回调（调用 useAlertsStatus.setAlerts） */
   onSubmit: (code: string, body: AlertConfigRequest) => Promise<void>;
   /** 清除回调（调用 useAlertsStatus.clearAlerts） */
   onClear: (code: string) => Promise<void>;
-  /** 立即扫描全部挡位（测试推送）。不传则不显示按钮 */
-  onRunCheck?: () => Promise<AlertCheckResult>;
-  /** 钉钉是否已配置（影响按钮文案） */
-  dingtalkConfigured?: boolean;
 }
 
 type LevelKey = 'heavy_position' | 'add_position' | 'reduce_position' | 'full_exit';
@@ -63,25 +60,27 @@ function levelsToForm(levels?: AlertLevels | null): AlertLevels {
   };
 }
 
+function formatUpdatedAt(iso?: string | null): string {
+  if (!iso) return '从未设置';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export function AlertSettingsModal({
   isOpen,
   onClose,
   stock,
   technical,
   currentConfig,
+  currentUpdatedAt,
   onSubmit,
   onClear,
-  onRunCheck,
-  dingtalkConfigured,
 }: AlertSettingsModalProps) {
   const [enabled, setEnabled] = useState(false);
   const [levels, setLevels] = useState<AlertLevels>({ ...EMPTY_LEVELS });
-  const [starRating, setStarRating] = useState<number | ''>('');
-  const [strategy, setStrategy] = useState('');
-  const [docUrl, setDocUrl] = useState('');
-  const [analysisDate, setAnalysisDate] = useState('');
   const [saving, setSaving] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // 同步 currentConfig 到本地表单
@@ -89,10 +88,6 @@ export function AlertSettingsModal({
     if (!isOpen) return;
     setEnabled(currentConfig?.enabled ?? false);
     setLevels(levelsToForm(currentConfig?.levels));
-    setStarRating(currentConfig?.star_rating ?? '');
-    setStrategy(currentConfig?.strategy ?? '');
-    setDocUrl(currentConfig?.doc_url ?? '');
-    setAnalysisDate(currentConfig?.analysis_date ?? '');
     setError(null);
   }, [isOpen, currentConfig]);
 
@@ -152,10 +147,6 @@ export function AlertSettingsModal({
     try {
       const body: AlertConfigRequest = {
         enabled,
-        star_rating: typeof starRating === 'number' ? starRating : null,
-        strategy: strategy.trim() || null,
-        doc_url: docUrl.trim() || null,
-        analysis_date: analysisDate || null,
         levels: validLevels,
       };
       await onSubmit(stock.code, body);
@@ -184,32 +175,6 @@ export function AlertSettingsModal({
     }
   };
 
-  const handleRunCheck = async () => {
-    if (!onRunCheck) return;
-    setChecking(true);
-    setError(null);
-    try {
-      const result = await onRunCheck();
-      const hitCount = result.triggered.length;
-      const pushedText = result.pushed
-        ? '✅ 钉钉推送成功'
-        : result.push_error
-          ? `❌ 推送失败：${result.push_error}`
-          : dingtalkConfigured === false
-            ? '⚠️ 未配置钉钉 webhook（仅写入历史，未推送）'
-            : '⚠️ 未推送（可能今日已推送过，每日每档仅推一次）';
-      const hitList = hitCount > 0
-        ? result.triggered.map(t => `\n  ${t.level_emoji}${t.level_label} ${t.name}(${t.code}) ¥${t.current_price.toFixed(2)}`).join('')
-        : '';
-      alert(`扫描 ${result.scanned} 只股票，命中 ${hitCount} 只挡位\n${pushedText}${hitList}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '扫描失败';
-      setError(msg);
-    } finally {
-      setChecking(false);
-    }
-  };
-
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={stock ? `挡位设置 · ${stock.name} (${stock.code})` : '挡位设置'} size="md">
       <div className="space-y-4">
@@ -224,6 +189,9 @@ export function AlertSettingsModal({
               · M120: <span className="font-mono">{technical.m120.toFixed(2)}</span>
             </span>
           )}
+          <span className="text-ink-muted ml-auto">
+            更新于 <span className="font-mono text-ink">{formatUpdatedAt(currentUpdatedAt)}</span>
+          </span>
         </div>
 
         {/* 4 档价格表 */}
@@ -277,65 +245,16 @@ export function AlertSettingsModal({
           })}
         </div>
 
-        {/* 元数据 */}
-        <div className="grid grid-cols-2 gap-3">
-          <label className="flex items-center gap-2 text-sm col-span-2">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={e => setEnabled(e.target.checked)}
-              className="w-4 h-4 accent-indigo-500"
-            />
-            <span>启用监控（触发时推送钉钉）</span>
-          </label>
-
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-ink-muted w-16">星级</span>
-            <select
-              value={starRating}
-              onChange={e => setStarRating(e.target.value === '' ? '' : Number(e.target.value))}
-              className="bg-paper-card border border-rule rounded px-2 py-1 text-sm flex-1"
-            >
-              <option value="">-</option>
-              {[1, 2, 3, 4, 5].map(n => (
-                <option key={n} value={n}>{'⭐'.repeat(n)} ({n}/5)</option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex items-center gap-2 text-sm">
-            <span className="text-ink-muted w-16">分析日期</span>
-            <input
-              type="date"
-              value={analysisDate}
-              onChange={e => setAnalysisDate(e.target.value)}
-              className="bg-paper-card border border-rule rounded px-2 py-1 text-sm flex-1"
-            />
-          </label>
-
-          <label className="flex items-center gap-2 text-sm col-span-2">
-            <span className="text-ink-muted w-16">投资策略</span>
-            <input
-              type="text"
-              maxLength={200}
-              placeholder="如：深度价值 + 净现金垫"
-              value={strategy}
-              onChange={e => setStrategy(e.target.value)}
-              className="bg-paper-card border border-rule rounded px-2 py-1 text-sm flex-1"
-            />
-          </label>
-
-          <label className="flex items-center gap-2 text-sm col-span-2">
-            <span className="text-ink-muted w-16">文档链接</span>
-            <input
-              type="url"
-              placeholder="https://..."
-              value={docUrl}
-              onChange={e => setDocUrl(e.target.value)}
-              className="bg-paper-card border border-rule rounded px-2 py-1 text-sm flex-1"
-            />
-          </label>
-        </div>
+        {/* 启用监控 */}
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={e => setEnabled(e.target.checked)}
+            className="w-4 h-4 accent-indigo-500"
+          />
+          <span>启用监控（触发时推送钉钉）</span>
+        </label>
 
         {error && (
           <div className="bg-red-900/40 border border-red-700 text-red-200 px-3 py-2 rounded text-sm">
@@ -345,7 +264,7 @@ export function AlertSettingsModal({
 
         {/* 操作按钮 */}
         <div className="flex items-center justify-between pt-2">
-          <div className="flex items-center gap-2">
+          <div>
             <Button
               variant="ghost"
               onClick={handleClear}
@@ -354,17 +273,6 @@ export function AlertSettingsModal({
             >
               清除挡位
             </Button>
-            {onRunCheck && (
-              <Button
-                variant="ghost"
-                onClick={handleRunCheck}
-                disabled={checking || saving}
-                title="立即调用后端挡位检查接口，命中会推送钉钉（每日每档仅推一次）"
-                className="text-blue-400 hover:text-blue-300"
-              >
-                {checking ? '扫描中...' : '🔔 立即扫描全部挡位'}
-              </Button>
-            )}
           </div>
           <div className="flex items-center gap-2">
             <Button variant="ghost" onClick={onClose} disabled={saving}>

@@ -231,10 +231,6 @@ function buildCurrentConfig(item: AlertStatusItem | undefined): AlertConfigReque
   if (!item) return null;
   return {
     enabled: item.enabled,
-    star_rating: item.star_rating ?? null,
-    strategy: item.strategy ?? null,
-    doc_url: null,
-    analysis_date: null,
     levels: item.levels ?? {
       heavy_position: null,
       add_position: null,
@@ -1053,14 +1049,13 @@ function DividendPageContent() {
         stock={alertStock}
         technical={alertStock ? technicalData.get(alertStock.code) || null : null}
         currentConfig={alertStock ? buildCurrentConfig(alertsStatus.alertMap.get(alertStock.code)) : null}
+        currentUpdatedAt={alertStock ? alertsStatus.alertMap.get(alertStock.code)?.updated_at ?? null : null}
         onSubmit={async (code, body) => {
-          await alertsStatus.setAlerts(code, body as AlertConfigRequest);
+          await alertsStatus.setAlerts(code, body);
         }}
         onClear={async (code) => {
           await alertsStatus.clearAlerts(code);
         }}
-        onRunCheck={alertsStatus.runCheck}
-        dingtalkConfigured={alertsStatus.status?.dingtalk_configured ?? false}
       />
 
       {/* 定时任务管理弹框 */}

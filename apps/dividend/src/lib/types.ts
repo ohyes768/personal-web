@@ -485,17 +485,17 @@ export interface AlertLevels {
  */
 export interface AlertConfig {
   enabled: boolean;
-  star_rating?: number | null;
-  strategy?: string | null;
-  doc_url?: string | null;
-  analysis_date?: string | null;
+  /** 最后更新时间 (ISO 8601)，由后端自动记录，前端只读 */
+  updated_at?: string | null;
   levels: AlertLevels;
 }
 
 /**
  * 挡位配置更新请求（前端 → 后端）
+ *
+ * 不带 updated_at：后端在写入时自动 ts 戳，前端不可伪造。
  */
-export type AlertConfigRequest = AlertConfig;
+export type AlertConfigRequest = Pick<AlertConfig, 'enabled' | 'levels'>;
 
 /**
  * 挡位状态条目（GET /favorites/alerts/status 返回）
@@ -506,8 +506,8 @@ export interface AlertStatusItem {
   enabled: boolean;
   has_levels: boolean;
   level_count: number;
-  star_rating?: number | null;
-  strategy?: string | null;
+  /** 挡位最后更新时间（ISO 8601），未配置过返回 null */
+  updated_at?: string | null;
   levels?: AlertLevels | null;
   triggered_today: string[];  // 今日此股触发的 level_key 列表
 }

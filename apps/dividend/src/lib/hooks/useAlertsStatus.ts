@@ -94,8 +94,8 @@ export function useAlertsStatus(): UseAlertsStatusResult {
               ? {
                   ...it,
                   enabled: body.enabled,
-                  star_rating: body.star_rating ?? null,
-                  strategy: body.strategy ?? null,
+                  // updated_at 由后端刷新后提供（带真时间戳），乐观更新时用 ISO 字符串占位
+                  updated_at: new Date().toISOString(),
                   levels: body.levels,
                   has_levels:
                     !!body.levels.heavy_position ||
@@ -118,7 +118,7 @@ export function useAlertsStatus(): UseAlertsStatusResult {
       try {
         await apiSetAlerts(code, body);
         triggerSync();
-        // 拉最新服务器状态
+        // 拉最新服务器状态（拿真 updated_at）
         await refresh();
       } catch (err) {
         // 回滚
@@ -146,8 +146,7 @@ export function useAlertsStatus(): UseAlertsStatusResult {
                   levels: null,
                   has_levels: false,
                   level_count: 0,
-                  star_rating: null,
-                  strategy: null,
+                  updated_at: null,
                 }
               : it
           ),
