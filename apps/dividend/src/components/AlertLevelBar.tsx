@@ -202,8 +202,10 @@ export function AlertLevelBar({
         )}
       </div>
 
-      {/* L2 4 段色条 + ▲ 三角指针（位置通道） */}
-      <div className="relative">
+      {/* L2 4 段色条 + 当前价标识（位置通道） */}
+      {/* pt-9 = 36px 顶部内边距，给标签留空间，让色条仍在容器底部 */}
+      <div className="relative pt-9">
+        {/* 5 段色条 */}
         <div className="relative h-2.5 bg-paper-deep rounded-full overflow-hidden">
           {segments.map((seg, i) => (
             <div
@@ -218,27 +220,57 @@ export function AlertLevelBar({
           ))}
         </div>
 
-        {/* 当前价 ▲ 三角（色条上方） */}
+        {/* 当前价标识：垂直线 + 双层圆点 + 标签（专业行情光标） */}
+        {/* 整组绝对定位覆盖整个 L2 容器（含标签空间），clamp 防溢出 */}
         <div
-          className="absolute -top-1.5 transform -translate-x-1/2 text-accent text-sm leading-none"
-          style={{ left: `${markerLeftPct}%` }}
+          className="absolute inset-0 pointer-events-none"
+          aria-label={`当前价 ${fmtPrice(currentPrice)}`}
         >
-          ▲
-        </div>
+          {/* 垂直线：从标签下方贯穿到色条底部 */}
+          <div
+            className="absolute w-0.5 bg-accent opacity-60"
+            style={{
+              left: `${markerLeftPct}%`,
+              transform: 'translateX(-50%)',
+              top: '2.25rem',  // pt-9 (2.25rem) 之下开始，让线与标签底部对齐
+              bottom: 0,
+            }}
+          />
 
-        {/* 当前价标签（▲ 上方，clamp 避免溢出） */}
-        <div
-          className="absolute -top-9 transform -translate-x-1/2 text-center whitespace-nowrap"
-          style={{ left: `${markerLeftPct}%` }}
-        >
-          <div className="text-accent font-mono font-bold text-xs">¥{fmtPrice(currentPrice)}</div>
-          {(currentPE != null || currentPB != null) && (
-            <div className="text-accent-hover font-mono text-[10px] opacity-80">
-              {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
-              {' / '}
-              {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
-            </div>
-          )}
+          {/* 双层焦点圆（外暖橘 + 中纸白 halo + 内暖橘，14px 直径） */}
+          <div
+            className="absolute"
+            style={{
+              left: `${markerLeftPct}%`,
+              top: 'calc(2.25rem + 5px)',  // 色条垂直中心（h-2.5=10px 的一半）
+              transform: 'translate(-50%, -50%)',
+              width: '14px',
+              height: '14px',
+            }}
+          >
+            <div className="absolute inset-0 rounded-full bg-accent" />
+            <div className="absolute inset-[3px] rounded-full bg-paper-card shadow-sm" />
+            <div className="absolute inset-[5px] rounded-full bg-accent" />
+          </div>
+
+          {/* 价格标签：在线顶端（容器顶部） */}
+          <div
+            className="absolute text-center whitespace-nowrap"
+            style={{
+              left: `${markerLeftPct}%`,
+              top: 0,
+              transform: 'translateX(-50%)',
+            }}
+          >
+            <div className="text-accent font-mono font-bold text-xs">¥{fmtPrice(currentPrice)}</div>
+            {(currentPE != null || currentPB != null) && (
+              <div className="text-accent-hover font-mono text-[10px] opacity-80">
+                {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
+                {' / '}
+                {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -252,11 +284,13 @@ export function AlertLevelBar({
             orange: 'bg-orange-50 text-orange-700 border-orange-200',
             red: 'bg-red-50 text-red-700 border-red-200',
           }[meta.color];
+          // 顶头/顶尾的 tick 标签 clamp 到 [4%, 96%]，避免被卡片边界截掉一半
+          const tickLeftPct = Math.max(4, Math.min(96, pct(p.price)));
           return (
             <div
               key={p.key}
               className="absolute -translate-x-1/2 text-center"
-              style={{ left: `${pct(p.price)}%` }}
+              style={{ left: `${tickLeftPct}%` }}
             >
               <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-semibold border ${tagClass}`}>
                 {meta.tag}
