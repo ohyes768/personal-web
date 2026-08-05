@@ -1,9 +1,11 @@
 /**
  * AlertLevelBarMini — Modal 内的实时命中预览
  *
- * 与 AlertLevelBar 共享归一化逻辑，但只画 4 个 ▲ 标记（按 4 档价格定位）
- * 不画当前价 ▲（Modal 场景：用户在设置时还没有"现价"概念）
- * 不画距离行、不画 L1 头部——极简预览
+ * 与 AlertLevelBar 共享归一化逻辑：
+ *   - 4 个 ▲ 标记（按 4 档价格定位）
+ *   - 5 段色条（重仓/加仓/持有/减仓/全卖），持有区用中性灰
+ *   - 不画当前价 ▲（Modal 场景：用户在设置时还没有"现价"概念）
+ *   - 不画距离行、不画 L1 头部——极简预览
  */
 
 'use client';
@@ -16,6 +18,7 @@ export interface AlertLevelBarMiniProps {
 }
 
 type LevelKey = 'heavy_position' | 'add_position' | 'reduce_position' | 'full_exit';
+type SegmentKey = 'heavy' | 'add' | 'hold' | 'reduce' | 'full';
 
 const LEVEL_TAG: Record<LevelKey, { label: string; color: string }> = {
   heavy_position:  { label: '重仓', color: '#5A9472' },
@@ -23,6 +26,23 @@ const LEVEL_TAG: Record<LevelKey, { label: string; color: string }> = {
   reduce_position: { label: '减仓', color: '#B85C38' },
   full_exit:       { label: '全卖', color: '#A8453A' },
 };
+
+// 5 段色板（与 AlertLevelBar SEG_COLORS 对齐）
+const SEG_COLORS: Record<SegmentKey, string> = {
+  heavy:  '#5A9472',
+  add:    '#C9951F',
+  hold:   '#D9D2C2', // 中性灰（持有区）
+  reduce: '#B85C38',
+  full:   '#A8453A',
+};
+
+// 相邻两点之间的段语义映射：
+//   [0, p0]      heavy   （左侧外延）
+//   [p0, p1]     add     （p0 重仓 → p1 加仓之间）
+//   [p1, p2]     hold    （p1 加仓 → p2 减仓之间 = 持有区）
+//   [p2, p3]     reduce  （p2 减仓 → p3 全卖之间）
+//   [p3, max]    full    （右侧外延）
+const GAP_TO_SEGMENT: SegmentKey[] = ['heavy', 'add', 'hold', 'reduce', 'full'];
 
 export function AlertLevelBarMini({ levels }: AlertLevelBarMiniProps) {
   const points = useMemo(() => {
@@ -37,7 +57,6 @@ export function AlertLevelBarMini({ levels }: AlertLevelBarMiniProps) {
   }, [levels]);
 
   if (points.length < 2) {
-    // 至少 2 档才有预览意义，否则只占位提示
     return (
       <div className="h-6 flex items-center justify-center text-[11px] text-ink-muted">
         填写至少 2 档价格即可预览色块分布
@@ -52,21 +71,32 @@ export function AlertLevelBarMini({ levels }: AlertLevelBarMiniProps) {
 
   return (
     <div className="relative h-6">
-      {/* 4 段色条 */}
+      {/* 5 段色条 */}
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 bg-paper-deep rounded-full overflow-hidden">
+        {/* 第 0 段：[0, p0] heavy */}
+        <div
+          className="absolute top-0 bottom-0"
+          style={{ left: '0%', width: `${pct(points[0].price)}%`, backgroundColor: SEG_COLORS.heavy }}
+        />
+        {/* 中间 3 段：[p0,p1][p1,p2][p2,p3] 对应 add/hold/reduce */}
         {points.slice(0, -1).map((p, i) => {
           const next = points[i + 1];
           const left = pct(p.price);
           const right = pct(next.price);
-          const color = LEVEL_TAG[next.key].color;
+          const seg = GAP_TO_SEGMENT[i + 1];
           return (
             <div
               key={p.key}
               className="absolute top-0 bottom-0"
-              style={{ left: `${left}%`, width: `${right - left}%`, backgroundColor: color }}
+              style={{ left: `${left}%`, width: `${right - left}%`, backgroundColor: SEG_COLORS[seg] }}
             />
           );
         })}
+        {/* 末段：[p3, max] full */}
+        <div
+          className="absolute top-0 bottom-0"
+          style={{ left: `${pct(points[points.length - 1].price)}%`, width: `${100 - pct(points[points.length - 1].price)}%`, backgroundColor: SEG_COLORS.full }}
+        />
       </div>
 
       {/* 4 个 ▲ 标记 */}

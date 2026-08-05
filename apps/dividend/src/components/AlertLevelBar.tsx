@@ -36,15 +36,17 @@ const LEVEL_META: Record<LevelKey, { tag: string; shortLabel: string; color: 'gr
   full_exit:       { tag: '全卖', shortLabel: '全卖', color: 'red'    },
 };
 
-// 4 段色块颜色（暖白色板下低饱和暖色）
-const SEG_COLORS: Record<'heavy' | 'add' | 'reduce' | 'full', string> = {
+// 5 段色块颜色（暖白色板下低饱和暖色 + 中性灰持有区）
+// 持有区用 paper-deep 的加深一档，与"持有观望"徽章语义一致
+const SEG_COLORS: Record<'heavy' | 'add' | 'hold' | 'reduce' | 'full', string> = {
   heavy:  '#5A9472', // 暖绿
   add:    '#C9951F', // 暖黄
+  hold:   '#D9D2C2', // 中性灰（持有区，介于 paper-deep 与 rule-strong 之间）
   reduce: '#B85C38', // 暖橙
   full:   '#A8453A', // 暖红
 };
 
-// 命中状态：5 个色块 + 持有观望（无独立色段，徽章表达）
+// 命中状态：5 个色块 + 持有观望
 type HitStatus = 'heavy' | 'add' | 'hold' | 'reduce' | 'full' | 'inactive';
 
 function hitStatus(levels: AlertLevels, currentPrice: number): HitStatus {
@@ -132,12 +134,18 @@ export function AlertLevelBar({
   // 4 档价格按价位排序
   const sortedPoints = [...points].sort((a, b) => a.price - b.price);
 
-  // 4 段色块：[p0,p1][p1,p2][p2,p3] 三个内部段；首尾两段用淡背景表示外延
+  // 5 段色块：4 个相邻价格对切 5 段
+  //   [0, p0]     heavy  重仓区（极端低价）
+  //   [p0, p1]    add    加仓区
+  //   [p1, p2]    hold   持有区（独立中性灰，避免加仓色误读）
+  //   [p2, p3]    reduce 减仓区
+  //   [p3, max]   full   全卖区（极端高价）
   const segments = [
-    { side: 'heavy'  as const, left: pct(sortedPoints[0].price),                                  width: pct(sortedPoints[1].price) - pct(sortedPoints[0].price) },
-    { side: 'add'    as const, left: pct(sortedPoints[1].price),                                  width: pct(sortedPoints[2].price) - pct(sortedPoints[1].price) },
-    { side: 'reduce' as const, left: pct(sortedPoints[2].price),                                  width: pct(sortedPoints[3].price) - pct(sortedPoints[2].price) },
-    { side: 'full'   as const, left: pct(sortedPoints[3].price),                                  width: 100 - pct(sortedPoints[3].price) },
+    { side: 'heavy'  as const, left: 0,                                        width: pct(sortedPoints[0].price) },
+    { side: 'add'    as const, left: pct(sortedPoints[0].price),               width: pct(sortedPoints[1].price) - pct(sortedPoints[0].price) },
+    { side: 'hold'   as const, left: pct(sortedPoints[1].price),               width: pct(sortedPoints[2].price) - pct(sortedPoints[1].price) },
+    { side: 'reduce' as const, left: pct(sortedPoints[2].price),               width: pct(sortedPoints[3].price) - pct(sortedPoints[2].price) },
+    { side: 'full'   as const, left: pct(sortedPoints[3].price),               width: 100 - pct(sortedPoints[3].price) },
   ];
 
   const status = hitStatus(levels, currentPrice);
