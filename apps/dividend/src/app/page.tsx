@@ -13,15 +13,16 @@ import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { AlertSettingsModal } from '@/components/AlertSettingsModal';
+import { AlertLevelBar } from '@/components/AlertLevelBar';
 import { SchedulerSettingsModal } from '@/components/SchedulerSettingsModal';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
 import { dividendApi } from '@/lib/api';
-import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
+import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
-type TabKey = 'all' | 'watchlist';
+type TabKey = 'all' | 'watchlist' | 'alerts';
 
 /**
  * 红利指数徽章白名单（与 fetcher.py 的 DIVIDEND_INDEXES + ALT_API_INDEXES 对齐）
@@ -371,11 +372,13 @@ function DividendPageContent() {
     }
   }, [data]);
 
-  // URL query 同步 tab（?tab=watchlist）
+  // URL query 同步 tab（?tab=watchlist / ?tab=alerts）
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const activeTab: TabKey = tabParam === 'watchlist' ? 'watchlist' : 'all';
+  const activeTab: TabKey =
+    tabParam === 'watchlist' ? 'watchlist' :
+    tabParam === 'alerts' ? 'alerts' : 'all';
   const handleTabChange = useCallback((tab: TabKey) => {
     const params = new URLSearchParams(searchParams.toString());
     if (tab === 'all') params.delete('tab');
@@ -402,6 +405,40 @@ function DividendPageContent() {
     }
     return stocksWithTechnical;
   }, [stocksWithTechnical, activeTab, watchlist]);
+
+  // 挡位监控 Tab：filter 已设 alerts 的收藏股票 + 拉实时 PE/PB
+  const alertStocks = useMemo(() => {
+    const items = alertsStatus.status?.items ?? [];
+    return items
+      .filter(it => it.levels && Object.values(it.levels).some(lv => lv && lv.price))
+      .map(it => {
+        const stock = stocksWithTechnical.find(s => s.code === it.code);
+        if (!stock) return null;
+        return { stock, levels: it.levels as AlertLevels };
+      })
+      .filter((s): s is { stock: DividendStockWithTechnical; levels: AlertLevels } => s !== null);
+  }, [alertsStatus.status, stocksWithTechnical]);
+
+  const [pePbMap, setPePbMap] = useState<Record<string, { pe: number | null; pb: number | null }>>({});
+  useEffect(() => {
+    if (alertStocks.length === 0) {
+      setPePbMap({});
+      return;
+    }
+    if (activeTab !== 'alerts') return;
+    const codes = alertStocks.map(s => s.stock.code).join(',');
+    let cancelled = false;
+    dividendApi.getPEData({ codes }).then(resp => {
+      if (cancelled) return;
+      const m: Record<string, { pe: number | null; pb: number | null }> = {};
+      resp.items.forEach(it => { m[it.code] = { pe: it.pe, pb: it.pb }; });
+      setPePbMap(m);
+    }).catch(() => {
+      if (cancelled) return;
+      setPePbMap({});
+    });
+    return () => { cancelled = true; };
+  }, [activeTab, alertStocks]);
 
   // 处理弹框
   const handleOpenModal = useCallback((type: 'quarterly' | 'sector' | 'yearly' | 'volatility', stock: DividendStock) => {
@@ -999,6 +1036,19 @@ function DividendPageContent() {
           收藏
           <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{watchlist.total}</span>
         </button>
+        <button
+          onClick={() => handleTabChange('alerts')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
+            activeTab === 'alerts'
+              ? 'border-indigo-500 text-indigo-400'
+              : 'border-transparent text-gray-400 hover:text-gray-200'
+          }`}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 17l6-6 4 4 8-8M14 7h7v7" />
+          </svg>
+          挡位监控
+        </button>
       </div>
 
       {/* 收藏 tab 空状态 */}
@@ -1018,20 +1068,59 @@ function DividendPageContent() {
       )}
 
       {/* 表格 - 使用 refreshKey 作为 key 强制刷新；watchlist tab 用 displayData，其他用 stocksWithTechnical */}
-      {!(activeTab === 'watchlist' && displayData.length === 0) && (
-        <DividendTable
-          key={refreshKey}
-          data={displayData}
-          technicalData={technicalData}
-          onOpenModal={handleOpenModal}
-          selectedStockCodes={compare.selectedStocks.map(s => s.code)}
-          maxSelect={MAX_COMPARE_SELECT}
-          onToggleCompare={handleToggleCompare}
-          watchlist={watchlist.codes}
-          onToggleWatchlist={watchlist.toggle}
-          alertStatusItems={alertsStatus.alertMap}
-          onOpenAlertSettings={handleOpenAlertSettings}
-        />
+      {activeTab === 'alerts' ? (
+        <div className="space-y-4">
+          {alertStocks.length === 0 ? (
+            <div className="bg-paper-card rounded-lg p-12 text-center">
+              <svg className="w-12 h-12 mx-auto mb-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 17l6-6 4 4 8-8M14 7h7v7" />
+              </svg>
+              <h2 className="text-xl font-semibold text-ink mb-2">暂无设置挡位的收藏股票</h2>
+              <p className="text-ink-muted mb-4">去「收藏」或筛一下其他股票后点行设置挡位</p>
+              <button
+                onClick={() => handleTabChange('all')}
+                className="text-blue-400 hover:underline text-sm"
+              >
+                去全部 tab 浏览 →
+              </button>
+            </div>
+          ) : (
+            alertStocks.map(({ stock, levels }) => {
+              const tech = technicalData.get(stock.code);
+              const currentPrice = tech?.realtime ?? tech?.close ?? null;
+              if (currentPrice === null || currentPrice === undefined) return null;
+              const pp = pePbMap[stock.code];
+              return (
+                <AlertLevelBar
+                  key={stock.code}
+                  code={stock.code}
+                  name={stock.name}
+                  levels={levels}
+                  currentPrice={currentPrice}
+                  currentPE={pp?.pe ?? null}
+                  currentPB={pp?.pb ?? null}
+                  onClick={() => handleOpenAlertSettings(stock.code)}
+                />
+              );
+            })
+          )}
+        </div>
+      ) : (
+        !(activeTab === 'watchlist' && displayData.length === 0) && (
+          <DividendTable
+            key={refreshKey}
+            data={displayData}
+            technicalData={technicalData}
+            onOpenModal={handleOpenModal}
+            selectedStockCodes={compare.selectedStocks.map(s => s.code)}
+            maxSelect={MAX_COMPARE_SELECT}
+            onToggleCompare={handleToggleCompare}
+            watchlist={watchlist.codes}
+            onToggleWatchlist={watchlist.toggle}
+            alertStatusItems={alertsStatus.alertMap}
+            onOpenAlertSettings={handleOpenAlertSettings}
+          />
+        )
       )}
 
       {/* 详情弹框 */}

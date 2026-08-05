@@ -93,7 +93,7 @@ export function AlertSettingsModal({
 
   const currentPrice = technical?.realtime ?? technical?.close ?? null;
 
-  const updateLevel = (key: LevelKey, field: 'price' | 'pe', raw: string) => {
+  const updateLevel = (key: LevelKey, field: 'price' | 'pe' | 'pb', raw: string) => {
     setLevels(prev => {
       const next = { ...prev };
       const existing = prev[key] || { price: 0 };
@@ -101,11 +101,12 @@ export function AlertSettingsModal({
         const num = raw === '' ? 0 : parseFloat(raw);
         next[key] = { ...existing, price: isNaN(num) ? 0 : num };
       } else {
+        // pe / pb 共享 same logic
         if (raw === '') {
-          next[key] = { ...existing, pe: null };
+          next[key] = { ...existing, [field]: null };
         } else {
           const num = parseFloat(raw);
-          next[key] = { ...existing, pe: isNaN(num) ? null : num };
+          next[key] = { ...existing, [field]: isNaN(num) ? null : num };
         }
       }
       return next;
@@ -117,7 +118,7 @@ export function AlertSettingsModal({
     return (Object.keys(levels) as LevelKey[]).reduce<AlertLevels>((acc, key) => {
       const lv = levels[key];
       if (lv && lv.price > 0) {
-        acc[key] = { price: lv.price, pe: lv.pe ?? null };
+        acc[key] = { price: lv.price, pe: lv.pe ?? null, pb: lv.pb ?? null };
       } else {
         acc[key] = null;
       }
@@ -196,23 +197,25 @@ export function AlertSettingsModal({
 
         {/* 4 档价格表 */}
         <div className="border border-rule rounded overflow-hidden">
-          <div className="grid grid-cols-[100px_1fr_1fr_28px] gap-2 px-3 py-2 bg-paper-deep text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
+          <div className="grid grid-cols-[100px_1fr_1fr_1fr_28px] gap-2 px-3 py-2 bg-paper-deep text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
             <div>档位</div>
             <div className="text-right">价格（元）</div>
             <div className="text-right">PE（选填）</div>
+            <div className="text-right">PB（选填）</div>
             <div></div>
           </div>
           {LEVEL_DEFS.map(({ key, label, emoji, hint }) => {
             const lv = levels[key];
             const priceStr = lv && lv.price ? String(lv.price) : '';
             const peStr = lv && lv.pe !== null && lv.pe !== undefined ? String(lv.pe) : '';
+            const pbStr = lv && lv.pb !== null && lv.pb !== undefined ? String(lv.pb) : '';
             const hit = currentPrice !== null && lv && lv.price > 0
               ? (key === 'heavy_position' || key === 'add_position'
                   ? currentPrice <= lv.price
                   : currentPrice >= lv.price)
               : false;
             return (
-              <div key={key} className="grid grid-cols-[100px_1fr_1fr_28px] gap-2 px-3 py-2 items-center border-t border-rule">
+              <div key={key} className="grid grid-cols-[100px_1fr_1fr_1fr_28px] gap-2 px-3 py-2 items-center border-t border-rule">
                 <div className="flex flex-col">
                   <span className="text-sm text-ink">{emoji} {label}</span>
                   <span className="text-[10px] text-ink-muted">{hint}</span>
@@ -233,6 +236,15 @@ export function AlertSettingsModal({
                   placeholder="-"
                   value={peStr}
                   onChange={e => updateLevel(key, 'pe', e.target.value)}
+                  className="bg-paper-card border border-rule rounded px-2 py-1 text-right font-mono text-sm focus:outline-none focus:border-accent"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="-"
+                  value={pbStr}
+                  onChange={e => updateLevel(key, 'pb', e.target.value)}
                   className="bg-paper-card border border-rule rounded px-2 py-1 text-right font-mono text-sm focus:outline-none focus:border-accent"
                 />
                 <div className="text-center">

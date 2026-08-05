@@ -118,7 +118,7 @@ export function useAlertsStatus(): UseAlertsStatusResult {
       try {
         await apiSetAlerts(code, body);
         triggerSync();
-        // 拉最新服务器状态（拿真 updated_at）
+        // 拉最新服务器状态（拿真 updated_at 与 pb）
         await refresh();
       } catch (err) {
         // 回滚

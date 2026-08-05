@@ -459,11 +459,12 @@ export interface CompareTableProps {
 // ========== 挡位监控（alerts）类型 ==========
 
 /**
- * 单档挡位（价格必填，PE 选填仅作推送展示）
+ * 单档挡位（价格必填，PE/PB 选填仅作推送展示）
  */
 export interface AlertLevel {
   price: number;
   pe?: number | null;
+  pb?: number | null;
 }
 
 /**
