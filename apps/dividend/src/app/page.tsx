@@ -1048,6 +1048,7 @@ function DividendPageContent() {
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 17l6-6 4 4 8-8M14 7h7v7" />
           </svg>
           挡位监控
+          <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{alertStocks.length}</span>
         </button>
       </div>
 

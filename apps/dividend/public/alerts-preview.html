@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<!--
+  ⚠️ 此为 2026-08-05 之前的设计稿 v3（暗色背景 + 5 段色块），与最终暖白实现已脱钩。
+  当前实现见 apps/dividend/src/components/AlertLevelBar.tsx（暖白主题，4 段色条，3 级距离色阶）。
+  设计任务归档：.trellis/tasks/08-06-dividend-tier-monitor-ux/
+  本文件仅作历史参考，不再随设计演进同步。
+-->
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>挡位监控 · 水平价位条预览 v3（已脱钩，仅历史参考）</title>
+<style>
+  :root {
+    --bg: #0f172a;
+    --card: #1e293b;
+    --rule: #334155;
+    --ink: #e2e8f0;
+    --ink-muted: #94a3b8;
+    --accent: #6366f1;
+    --green: #22c55e;
+    --yellow: #eab308;
+    --gray: #64748b;
+    --orange: #f97316;
+    --red: #ef4444;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 24px;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 13px;
+  }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  .sub { color: var(--ink-muted); margin: 0 0 24px; font-size: 12px; }
+
+  .stock {
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 16px 20px 12px;
+    margin-bottom: 16px;
+  }
+  .stock-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 14px;
+    margin-bottom: 10px;
+  }
+  .stock-code { font-weight: 600; }
+  .stock-name { color: var(--ink-muted); }
+  .price-now {
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+    margin-left: auto;
+  }
+  .change { font-family: ui-monospace, monospace; color: var(--green); margin-left: 4px; }
+  .change.neg { color: var(--red); }
+  .badge {
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-green  { background: rgba(34, 197, 94, 0.15);  color: var(--green);  border: 1px solid rgba(34, 197, 94, 0.3); }
+  .badge-yellow { background: rgba(234, 179, 8, 0.15);  color: var(--yellow); border: 1px solid rgba(234, 179, 8, 0.3); }
+  .badge-orange { background: rgba(249, 115, 22, 0.15); color: var(--orange); border: 1px solid rgba(249, 115, 22, 0.3); }
+  .badge-red    { background: rgba(239, 68, 68, 0.15);  color: var(--red);    border: 1px solid rgba(239, 68, 68, 0.3); }
+  .badge-none   { background: rgba(100, 116, 139, 0.2); color: var(--ink-muted); border: 1px solid var(--rule); }
+
+  /* ===== 水平价位条 ===== */
+  .bar-wrap {
+    position: relative;
+    margin: 20px 0 4px;
+    padding: 0 8px;
+  }
+  /* 5 段色块：重仓区 / 加仓区 / 持有区 / 减仓区 / 全卖区 */
+  .bar-segments {
+    position: relative;
+    height: 10px;
+    border-radius: 5px;
+    overflow: hidden;
+    background: var(--rule);
+  }
+  .seg {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+  }
+  .seg-zone-heavy  { background: var(--green); }   /* 重仓区（≤ 重仓价） */
+  .seg-zone-add    { background: var(--yellow); }  /* 加仓区（重仓 < x ≤ 加仓） */
+  .seg-zone-hold   { background: var(--gray); opacity: 0.6; }  /* 持有区（加仓 < x ≤ 减仓） */
+  .seg-zone-reduce { background: var(--orange); }  /* 减仓区（减仓 < x ≤ 全卖） */
+  .seg-zone-full   { background: var(--red); }     /* 全卖区（> 全卖） */
+
+  /* 当前价指针 ▲ */
+  .marker {
+    position: absolute;
+    transform: translateX(-50%);
+    text-align: center;
+    font-family: ui-monospace, monospace;
+    white-space: nowrap;
+  }
+  .marker.cur {
+    top: -2px;
+    z-index: 5;
+  }
+  .marker.cur .arrow {
+    color: var(--accent);
+    font-size: 14px;
+    line-height: 1;
+    /* ▲ 倒置：border 三角箭头 */
+  }
+  .marker.cur .val {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 12px;
+  }
+  .marker.cur .pp {
+    color: var(--accent);
+    font-size: 10px;
+    opacity: 0.85;
+  }
+
+  /* 4 档价格刻度线（条下方）+ PE/PB 标注 */
+  .scales {
+    position: relative;
+    height: 44px;
+    margin-top: 6px;
+  }
+  .scale-tick {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    text-align: center;
+    font-size: 10px;
+    line-height: 1.4;
+  }
+  .scale-tick .tag {
+    display: inline-block;
+    padding: 0 5px;
+    border-radius: 3px;
+    margin-bottom: 2px;
+    font-size: 9px;
+    font-weight: 700;
+  }
+  .tag-green  { background: rgba(34, 197, 94, 0.25); color: var(--green); }
+  .tag-yellow { background: rgba(234, 179, 8, 0.25); color: var(--yellow); }
+  .tag-orange { background: rgba(249, 115, 22, 0.25); color: var(--orange); }
+  .tag-red    { background: rgba(239, 68, 68, 0.25); color: var(--red); }
+  .scale-tick .price-val {
+    color: var(--ink);
+    font-family: ui-monospace, monospace;
+    font-weight: 600;
+    font-size: 11px;
+  }
+  .scale-tick .pp {
+    color: var(--ink-muted);
+    font-family: ui-monospace, monospace;
+    font-size: 10px;
+  }
+
+  /* 4 档区间文字标签（条上方） */
+  .zone-labels {
+    position: relative;
+    height: 16px;
+    margin-bottom: 2px;
+  }
+  .zone-label {
+    position: absolute;
+    top: 0;
+    transform: translateX(-50%);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+  }
+  .zone-label.green  { color: var(--green); }
+  .zone-label.yellow { color: var(--yellow); }
+  .zone-label.gray   { color: var(--ink-muted); }
+  .zone-label.orange { color: var(--orange); }
+  .zone-label.red    { color: var(--red); }
+
+  /* 偏离度行 */
+  .distances {
+    display: flex;
+    gap: 12px;
+    font-size: 10px;
+    color: var(--ink-muted);
+    font-family: ui-monospace, monospace;
+    flex-wrap: wrap;
+    padding-top: 6px;
+    border-top: 1px dashed var(--rule);
+    margin-top: 6px;
+  }
+  .distances .hit { color: var(--green); font-weight: 600; }
+  .distances .near { color: var(--yellow); }
+
+  .legend {
+    margin: 24px 0;
+    padding: 12px 16px;
+    background: var(--card);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--ink-muted);
+  }
+  .legend strong { color: var(--ink); }
+  .legend .swatch {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    border-radius: 2px;
+    margin-right: 6px;
+    vertical-align: middle;
+  }
+</style>
+</head>
+<body>
+
+<h1>挡位监控 · 水平价位条预览 v3（5 色块 + PE/PB）</h1>
+<p class="sub">4 档价格切 5 段色块，每档价格刻度上标 PE/PB，现价 ▲ 处实时 PE/PB</p>
+
+<div class="legend">
+  <strong>5 段色块：</strong>
+  <span class="swatch" style="background: var(--green)"></span>重仓区（≤ 重仓）
+  <span class="swatch" style="background: var(--yellow)"></span>加仓区
+  <span class="swatch" style="background: var(--gray)"></span>持有区
+  <span class="swatch" style="background: var(--orange)"></span>减仓区
+  <span class="swatch" style="background: var(--red)"></span>全卖区（≥ 全卖）
+  &nbsp;|&nbsp;
+  <strong>▲</strong> 蓝色三角 = 当前价 + 实时 PE/PB
+</div>
+
+<!-- 示例 1：祁连山 — 加仓命中 -->
+<div class="stock">
+  <div class="stock-header">
+    <span class="stock-code">600720</span>
+    <span class="stock-name">祁连山</span>
+    <span class="price-now">¥35.20</span>
+    <span class="change">+1.5%</span>
+    <span class="badge badge-yellow">🟡 加仓命中</span>
+  </div>
+
+  <div class="bar-wrap">
+    <div class="zone-labels">
+      <div class="zone-label green"  style="left: 6%;">重仓区</div>
+      <div class="zone-label yellow" style="left: 23%;">加仓区</div>
+      <div class="zone-label gray"   style="left: 47%;">持有区</div>
+      <div class="zone-label orange" style="left: 70%;">减仓区</div>
+      <div class="zone-label red"    style="left: 93%;">全卖区</div>
+    </div>
+    <div class="bar-segments">
+      <div class="seg seg-zone-heavy"  style="left: 0%;  width: 13%;"></div>  <!-- ¥28 以左 -->
+      <div class="seg seg-zone-add"    style="left: 13%; width: 21%;"></div>  <!-- ¥28-¥32 -->
+      <div class="seg seg-zone-hold"   style="left: 34%; width: 26%;"></div>  <!-- ¥32-¥50 -->
+      <div class="seg seg-zone-reduce" style="left: 60%; width: 25%;"></div>  <!-- ¥50-¥60 -->
+      <div class="seg seg-zone-full"   style="left: 85%; width: 15%;"></div>  <!-- ¥60 以右 -->
+    </div>
+    <div class="marker cur" style="left: 24%;">
+      <div class="arrow">▲</div>
+      <div class="val">¥35.20</div>
+      <div class="pp">PE 8.5 / PB 1.2</div>
+    </div>
+    <div class="scales">
+      <div class="scale-tick" style="left: 0%;">
+        <span class="tag tag-green">🟢 重仓</span><br>
+        <span class="price-val">¥28.00</span><br>
+        <span class="pp">PE 6.8 / PB 0.95</span>
+      </div>
+      <div class="scale-tick" style="left: 13%;">
+        <span class="tag tag-yellow">🟡 加仓</span><br>
+        <span class="price-val">¥32.00</span><br>
+        <span class="pp">PE 7.7 / PB 1.09</span>
+      </div>
+      <div class="scale-tick" style="left: 34%;">
+        <span class="tag tag-orange">🟠 减仓</span><br>
+        <span class="price-val">¥50.00</span><br>
+        <span class="pp">PE 12.1 / PB 1.71</span>
+      </div>
+      <div class="scale-tick" style="left: 60%;">
+        <span class="tag tag-red">🔴 全卖</span><br>
+        <span class="price-val">¥60.00</span><br>
+        <span class="pp">PE 14.5 / PB 2.05</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="distances">
+    <span>距重仓 -20.5%</span>
+    <span>距加仓 <span class="near">-9.6%</span></span>
+    <span>距减仓 +29.7%</span>
+    <span>距全卖 +41.4%</span>
+  </div>
+</div>
+
+<!-- 示例 2：长江电力 — 现价破重仓（最严重） -->
+<div class="stock">
+  <div class="stock-header">
+    <span class="stock-code">600900</span>
+    <span class="stock-name">长江电力</span>
+    <span class="price-now">¥22.50</span>
+    <span class="change neg">-0.8%</span>
+    <span class="badge badge-green">🟢 重仓命中</span>
+  </div>
+
+  <div class="bar-wrap">
+    <div class="zone-labels">
+      <div class="zone-label green"  style="left: 12%;">重仓区</div>
+      <div class="zone-label yellow" style="left: 33%;">加仓区</div>
+      <div class="zone-label gray"   style="left: 58%;">持有区</div>
+      <div class="zone-label orange" style="left: 86%;">减仓区</div>
+      <div class="zone-label red"    style="left: 97%;">全卖</div>
+    </div>
+    <div class="bar-segments">
+      <div class="seg seg-zone-heavy"  style="left: 0%;  width: 25%;"></div>
+      <div class="seg seg-zone-add"    style="left: 25%; width: 17%;"></div>
+      <div class="seg seg-zone-hold"   style="left: 42%; width: 33%;"></div>
+      <div class="seg seg-zone-reduce" style="left: 75%; width: 20%;"></div>
+      <div class="seg seg-zone-full"   style="left: 95%; width: 5%;"></div>
+    </div>
+    <div class="marker cur" style="left: 13%;">
+      <div class="arrow">▲</div>
+      <div class="val">¥22.50</div>
+      <div class="pp">PE 18.6 / PB 2.4</div>
+    </div>
+    <div class="scales">
+      <div class="scale-tick" style="left: 0%;">
+        <span class="tag tag-green">🟢 重仓</span><br>
+        <span class="price-val">¥21.00</span><br>
+        <span class="pp">PE 17.4 / PB 2.24</span>
+      </div>
+      <div class="scale-tick" style="left: 25%;">
+        <span class="tag tag-yellow">🟡 加仓</span><br>
+        <span class="price-val">¥24.00</span><br>
+        <span class="pp">PE 19.8 / PB 2.56</span>
+      </div>
+      <div class="scale-tick" style="left: 42%;">
+        <span class="tag tag-orange">🟠 减仓</span><br>
+        <span class="price-val">¥31.00</span><br>
+        <span class="pp">PE 25.6 / PB 3.31</span>
+      </div>
+      <div class="scale-tick" style="left: 75%;">
+        <span class="tag tag-red">🔴 全卖</span><br>
+        <span class="price-val">¥35.00</span><br>
+        <span class="pp">PE 28.9 / PB 3.74</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="distances">
+    <span>距重仓 <span class="hit">-7.1% ✓</span></span>
+    <span>距加仓 -6.3%</span>
+    <span>距减仓 +27.4%</span>
+    <span>距全卖 +35.7%</span>
+  </div>
+</div>
+
+<!-- 示例 3：海螺水泥 — 持有观望 -->
+<div class="stock">
+  <div class="stock-header">
+    <span class="stock-code">600585</span>
+    <span class="stock-name">海螺水泥</span>
+    <span class="price-now">¥46.80</span>
+    <span class="change">+0.3%</span>
+    <span class="badge badge-none">⏸ 持有观望</span>
+  </div>
+
+  <div class="bar-wrap">
+    <div class="zone-labels">
+      <div class="zone-label green"  style="left: 11%;">重仓区</div>
+      <div class="zone-label yellow" style="left: 30%;">加仓区</div>
+      <div class="zone-label gray"   style="left: 50%;">持有区</div>
+      <div class="zone-label orange" style="left: 82%;">减仓区</div>
+      <div class="zone-label red"    style="left: 96%;">全卖</div>
+    </div>
+    <div class="bar-segments">
+      <div class="seg seg-zone-heavy"  style="left: 0%;  width: 23%;"></div>
+      <div class="seg seg-zone-add"    style="left: 23%; width: 14%;"></div>
+      <div class="seg seg-zone-hold"   style="left: 37%; width: 27%;"></div>
+      <div class="seg seg-zone-reduce" style="left: 64%; width: 28%;"></div>
+      <div class="seg seg-zone-full"   style="left: 92%; width: 8%;"></div>
+    </div>
+    <div class="marker cur" style="left: 34%;">
+      <div class="arrow">▲</div>
+      <div class="val">¥46.80</div>
+      <div class="pp">PE 7.9 / PB 1.05</div>
+    </div>
+    <div class="scales">
+      <div class="scale-tick" style="left: 0%;">
+        <span class="tag tag-green">🟢 重仓</span><br>
+        <span class="price-val">¥35.00</span><br>
+        <span class="pp">PE 5.9 / PB 0.79</span>
+      </div>
+      <div class="scale-tick" style="left: 23%;">
+        <span class="tag tag-yellow">🟡 加仓</span><br>
+        <span class="price-val">¥40.00</span><br>
+        <span class="pp">PE 6.8 / PB 0.90</span>
+      </div>
+      <div class="scale-tick" style="left: 37%;">
+        <span class="tag tag-orange">🟠 减仓</span><br>
+        <span class="price-val">¥50.00</span><br>
+        <span class="pp">PE 8.5 / PB 1.12</span>
+      </div>
+      <div class="scale-tick" style="left: 64%;">
+        <span class="tag tag-red">🔴 全卖</span><br>
+        <span class="price-val">¥56.00</span><br>
+        <span class="pp">PE 9.5 / PB 1.26</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="distances">
+    <span>距重仓 -25.3%</span>
+    <span>距加仓 -14.5%</span>
+    <span>距减仓 <span class="near">+6.4%</span></span>
+    <span>距全卖 +16.4%</span>
+  </div>
+</div>
+
+<!-- 示例 4：万科 A — 减仓命中 + 接近全卖 -->
+<div class="stock">
+  <div class="stock-header">
+    <span class="stock-code">000002</span>
+    <span class="stock-name">万科 A</span>
+    <span class="price-now">¥20.85</span>
+    <span class="change">+2.1%</span>
+    <span class="badge badge-orange">🟠 减仓命中</span>
+  </div>
+
+  <div class="bar-wrap">
+    <div class="zone-labels">
+      <div class="zone-label green"  style="left: 6%;">重仓区</div>
+      <div class="zone-label yellow" style="left: 24%;">加仓区</div>
+      <div class="zone-label gray"   style="left: 50%;">持有区</div>
+      <div class="zone-label orange" style="left: 80%;">减仓区</div>
+      <div class="zone-label red"    style="left: 92%;">全卖</div>
+    </div>
+    <div class="bar-segments">
+      <div class="seg seg-zone-heavy"  style="left: 0%;  width: 13%;"></div>
+      <div class="seg seg-zone-add"    style="left: 13%; width: 22%;"></div>
+      <div class="seg seg-zone-hold"   style="left: 35%; width: 30%;"></div>
+      <div class="seg seg-zone-reduce" style="left: 65%; width: 30%;"></div>
+      <div class="seg seg-zone-full"   style="left: 95%; width: 5%;"></div>
+    </div>
+    <div class="marker cur" style="left: 65%;">
+      <div class="arrow">▲</div>
+      <div class="val">¥20.85</div>
+      <div class="pp">PE 9.8 / PB 0.62</div>
+    </div>
+    <div class="scales">
+      <div class="scale-tick" style="left: 0%;">
+        <span class="tag tag-green">🟢 重仓</span><br>
+        <span class="price-val">¥13.00</span><br>
+        <span class="pp">PE 6.1 / PB 0.39</span>
+      </div>
+      <div class="scale-tick" style="left: 13%;">
+        <span class="tag tag-yellow">🟡 加仓</span><br>
+        <span class="price-val">¥15.50</span><br>
+        <span class="pp">PE 7.3 / PB 0.46</span>
+      </div>
+      <div class="scale-tick" style="left: 35%;">
+        <span class="tag tag-orange">🟠 减仓</span><br>
+        <span class="price-val">¥18.00</span><br>
+        <span class="pp">PE 8.5 / PB 0.53</span>
+      </div>
+      <div class="scale-tick" style="left: 65%;">
+        <span class="tag tag-red">🔴 全卖</span><br>
+        <span class="price-val">¥21.00</span><br>
+        <span class="pp">PE 9.9 / PB 0.62</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="distances">
+    <span>距重仓 -37.6%</span>
+    <span>距加仓 -25.6%</span>
+    <span>距减仓 <span class="hit">+13.6% ✓</span></span>
+    <span>距全卖 <span class="near">+0.7%</span></span>
+  </div>
+</div>
+
+<div class="legend">
+  <strong>说明：</strong>
+  <ul style="margin: 6px 0 0; padding-left: 20px;">
+    <li><strong>5 段色块</strong>：重仓区 / 加仓区 / 持有区 / 减仓区 / 全卖区（4 档价格切 5 段）</li>
+    <li><strong>▲ 三角</strong>：当前价位置 + 实时 PE/PB（来自 PEDataService）</li>
+    <li><strong>4 档价格刻度</strong>：档位 + 价格 + 对应 PE/PB（用户设置时输入存到 favorites.json）</li>
+    <li><strong>zone-label</strong>：除 4 档价格外，5 段色块上方加文字标签更好识别（可去除避免拥挤）</li>
+  </ul>
+</div>
+
+</body>
+</html>
