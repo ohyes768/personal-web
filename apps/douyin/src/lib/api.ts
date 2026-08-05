@@ -9,19 +9,17 @@ import type {
   StatsResponse,
   ProcessTaskResponse,
   VideoListParams,
-  MarkAsReadDto,
 } from './types';
 
 export const douyinApi = {
   /**
    * 获取视频列表
-   * v2.0: 用 status=unread|read 服务端过滤（替代旧的 is_read 客户端二次过滤）
+   * 后端默认过滤掉 pending/deleted，返回 read+unread+processing+failed 混合列表
    */
   getVideos: (params: VideoListParams = {}): Promise<VideoListResponse> =>
     directClient.get<VideoListResponse>('/api/douyin/videos', {
       page: params.page ?? 1,
       page_size: params.page_size ?? 100,
-      ...(params.status ? { status: params.status } : {}),
     }),
 
   /**
@@ -43,12 +41,6 @@ export const douyinApi = {
    */
   processAsync: (): Promise<ProcessTaskResponse> =>
     directClient.post<ProcessTaskResponse>('/api/douyin/process/pending', {}),
-
-  /**
-   * 标记已读/未读（v2.0: 路径从 /api/douyin/videos/{id}/read 改为 /api/aweme/{id}/read）
-   */
-  markAsRead: (videoId: string, data: MarkAsReadDto): Promise<void> =>
-    directClient.post<void>(`/api/aweme/${videoId}/read`, data),
 
   /**
    * 删除记录（仅删除 douyin-processor 记录，保留原始文件）

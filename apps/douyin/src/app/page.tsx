@@ -1,25 +1,19 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Tabs } from '@/components/shared-ui/Tabs';
 import { Loading } from '@/components/shared-ui/Loading';
 import { VideoCard } from '@/components/VideoCard';
 import { VideoModal } from '@/components/VideoModal';
 import { RssSubscribe } from '@/components/RssSubscribe';
 import { useDouyinVideos, usePendingCount, useAsyncProcess, useVideoActions } from '@/lib/hooks';
-import type { TabType, VideoInfo } from '@/lib/types';
+import type { VideoInfo } from '@/lib/types';
 
 export default function DouyinPage() {
-  // Tab 状态
-  const [activeTab, setActiveTab] = useState<TabType>('unread');
-
   // Modal 状态
   const [selectedVideo, setSelectedVideo] = useState<VideoInfo | null>(null);
 
   // 数据获取
-  const { videos, totalCount, loading, refreshing, error, refetch: refetchVideos } = useDouyinVideos(
-    activeTab,
-  );
+  const { videos, loading, refreshing, error, refetch: refetchVideos } = useDouyinVideos();
 
   const { pendingCount, refetch: refetchPendingCount } = usePendingCount();
 
@@ -40,7 +34,7 @@ export default function DouyinPage() {
   }, [refetchVideos, refetchPendingCount]);
 
   // 视频操作
-  const { markAsRead, deleteRecord, deleteWithFile } = useVideoActions(handleActionComplete);
+  const { deleteRecord, deleteWithFile } = useVideoActions(handleActionComplete);
 
   // 打开视频详情
   const handleOpenVideo = useCallback((video: VideoInfo) => {
@@ -51,23 +45,6 @@ export default function DouyinPage() {
   const handleCloseModal = useCallback(() => {
     setSelectedVideo(null);
   }, []);
-
-  // Tab 切换
-  const handleTabChange = useCallback((tabId: string) => {
-    setActiveTab(tabId as TabType);
-  }, []);
-
-  // 标记已读（列表中直接标记）
-  const handleMarkAsRead = useCallback(
-    async (videoId: string) => {
-      try {
-        await markAsRead(videoId, true);
-      } catch (err) {
-        console.error('标记已读失败:', err);
-      }
-    },
-    [markAsRead],
-  );
 
   // 删除记录（列表中直接删除）
   const handleDeleteRecord = useCallback(
@@ -99,18 +76,7 @@ export default function DouyinPage() {
     [deleteWithFile],
   );
 
-  // Modal 中的操作
-  const handleModalMarkAsRead = useCallback(
-    async (videoId: string) => {
-      try {
-        await markAsRead(videoId, true);
-      } catch (err) {
-        console.error('标记已读失败:', err);
-      }
-    },
-    [markAsRead],
-  );
-
+  // Modal 中的删除
   const handleModalDeleteRecord = useCallback(
     async (videoId: string) => {
       try {
@@ -132,11 +98,6 @@ export default function DouyinPage() {
     },
     [deleteWithFile],
   );
-
-  const tabs = [
-    { id: 'unread', label: '未读', badge: activeTab === 'unread' ? totalCount : undefined },
-    { id: 'read', label: '已读' },
-  ] as const;
 
   return (
     <main className="min-h-screen bg-paper text-ink">
@@ -207,11 +168,6 @@ export default function DouyinPage() {
           </div>
         )}
 
-        {/* Tab 切换 */}
-        <div className="mb-8">
-          <Tabs tabs={tabs} activeTab={activeTab} onTabChange={handleTabChange} />
-        </div>
-
         {/* 错误提示 */}
         {error && (
           <div className="font-ui mb-8 p-4 bg-danger/10 border border-danger/30 rounded-lg text-danger text-[14px]">
@@ -229,9 +185,7 @@ export default function DouyinPage() {
               <VideoCard
                 key={video.aweme_id}
                 video={video}
-                activeTab={activeTab}
                 onClick={() => handleOpenVideo(video)}
-                onMarkAsRead={handleMarkAsRead}
                 onDeleteRecord={handleDeleteRecord}
                 onDeleteWithFile={handleDeleteWithFile}
               />
@@ -242,9 +196,7 @@ export default function DouyinPage() {
         {/* 空状态 */}
         {!loading && videos.length === 0 && !error && (
           <div className="text-center py-16 font-ui">
-            <p className="text-ink-soft text-[15px]">
-              {activeTab === 'unread' ? '暂无未读视频' : '暂无已读视频'}
-            </p>
+            <p className="text-ink-soft text-[15px]">暂无视频</p>
           </div>
         )}
       </div>
@@ -254,7 +206,6 @@ export default function DouyinPage() {
         <VideoModal
           video={selectedVideo}
           onClose={handleCloseModal}
-          onMarkAsRead={handleModalMarkAsRead}
           onDeleteRecord={handleModalDeleteRecord}
           onDeleteWithFile={handleModalDeleteWithFile}
         />

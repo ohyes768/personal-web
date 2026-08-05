@@ -14,9 +14,6 @@ export type VideoStatus =
   | 'completed'
   | 'failed';
 
-// Tab 类型
-export type TabType = 'unread' | 'read';
-
 // 转写分段信息
 export interface TranscriptSegment {
   start_time: number;
@@ -81,10 +78,4 @@ export interface ProcessTaskResponse {
 export interface VideoListParams {
   page?: number;
   page_size?: number;
-  status?: 'unread' | 'read' | 'pending' | 'deleted';
-}
-
-// 标记已读 DTO
-export interface MarkAsReadDto {
-  is_read: boolean;
 }

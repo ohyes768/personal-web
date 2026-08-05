@@ -12,7 +12,6 @@ import { useVideoDetail } from '@/lib/hooks';
 export interface VideoModalProps {
   video: VideoInfo;
   onClose: () => void;
-  onMarkAsRead?: (videoId: string) => void;
   onDeleteRecord?: (videoId: string) => void;
   onDeleteWithFile?: (videoId: string) => void;
 }
@@ -20,7 +19,6 @@ export interface VideoModalProps {
 export function VideoModal({
   video,
   onClose,
-  onMarkAsRead,
   onDeleteRecord,
   onDeleteWithFile,
 }: VideoModalProps) {
@@ -41,11 +39,6 @@ export function VideoModal({
   }, [video, detailError, fetchDetail]);
 
   const displayVideo = detailVideo?.transcript ? detailVideo : video;
-
-  const handleMarkAsRead = () => {
-    onMarkAsRead?.(displayVideo.aweme_id);
-    onClose();
-  };
 
   const handleDeleteRecord = () => {
     onDeleteRecord?.(displayVideo.aweme_id);
@@ -180,39 +173,18 @@ export function VideoModal({
               {/* 操作栏 */}
               <div className="mt-10 pt-6 border-t border-rule flex flex-wrap gap-2 justify-between items-center font-ui">
                 <div className="flex gap-2 flex-wrap">
-                  {(displayVideo.status === 'unread' || (displayVideo.status === 'completed' && !displayVideo.is_read)) && (
-                    <>
-                      <button
-                        onClick={handleMarkAsRead}
-                        className="px-4 py-2 rounded-md border border-accent text-accent bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:bg-accent hover:text-paper"
-                      >
-                        <span>✓</span>
-                        标记已读
-                      </button>
-                      <button
-                        onClick={handleDeleteRecord}
-                        className="px-4 py-2 rounded-md border border-rule text-ink bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:border-ink-soft hover:bg-paper-deep"
-                      >
-                        删除记录
-                      </button>
-                    </>
-                  )}
-                  {(displayVideo.status === 'read' || displayVideo.is_read) && (
-                    <>
-                      <button
-                        onClick={handleDeleteRecord}
-                        className="px-4 py-2 rounded-md border border-rule text-ink bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:border-ink-soft hover:bg-paper-deep"
-                      >
-                        删除记录
-                      </button>
-                      <button
-                        onClick={handleDeleteWithFile}
-                        className="px-4 py-2 rounded-md border border-danger text-danger bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:bg-danger hover:text-paper"
-                      >
-                        删除并取消收藏
-                      </button>
-                    </>
-                  )}
+                  <button
+                    onClick={handleDeleteRecord}
+                    className="px-4 py-2 rounded-md border border-rule text-ink bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:border-ink-soft hover:bg-paper-deep"
+                  >
+                    删除记录
+                  </button>
+                  <button
+                    onClick={handleDeleteWithFile}
+                    className="px-4 py-2 rounded-md border border-danger text-danger bg-paper text-[13px] cursor-pointer transition-all inline-flex items-center gap-1.5 hover:bg-danger hover:text-paper"
+                  >
+                    删除并取消收藏
+                  </button>
                 </div>
                 <button
                   onClick={onClose}

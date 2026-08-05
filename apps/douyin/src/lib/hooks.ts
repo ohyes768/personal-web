@@ -9,14 +9,13 @@ import type {
   VideoListResponse,
   StatsResponse,
   ProcessTaskResponse,
-  TabType,
 } from './types';
 
 /**
  * 视频列表 Hook
- * v2.0: status 参数走服务端过滤，不再做客户端二次过滤
+ * 后端默认过滤掉 pending/deleted，返回 read+unread+processing+failed 混合列表
  */
-export function useDouyinVideos(activeTab: TabType) {
+export function useDouyinVideos() {
   const [videos, setVideos] = useState<VideoInfo[]>([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -32,9 +31,7 @@ export function useDouyinVideos(activeTab: TabType) {
     setError(null);
 
     try {
-      const data = await douyinApi.getVideos({
-        status: activeTab,
-      });
+      const data = await douyinApi.getVideos();
 
       setVideos(data.videos || []);
       setTotalCount(data.total_count ?? data.videos?.length ?? 0);
@@ -45,7 +42,7 @@ export function useDouyinVideos(activeTab: TabType) {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activeTab]);
+  }, []);
 
   useEffect(() => {
     fetchVideos();
@@ -149,19 +146,6 @@ export function useAsyncProcess(onComplete?: () => void) {
 export function useVideoActions(onSuccess?: () => void) {
   const [loading, setLoading] = useState(false);
 
-  const markAsRead = useCallback(async (videoId: string, isRead: boolean) => {
-    setLoading(true);
-    try {
-      await douyinApi.markAsRead(videoId, { is_read: isRead });
-      onSuccess?.();
-    } catch (err) {
-      console.error('标记已读失败:', err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [onSuccess]);
-
   const deleteRecord = useCallback(async (videoId: string) => {
     setLoading(true);
     try {
@@ -190,7 +174,6 @@ export function useVideoActions(onSuccess?: () => void) {
 
   return {
     loading,
-    markAsRead,
     deleteRecord,
     deleteWithFile,
   };
