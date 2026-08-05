@@ -115,7 +115,7 @@ function IndexStatusPopover({
         disabled={anyRefreshing}
         title="红利指数持仓刷新状态"
         className={`
-          px-3 py-2 rounded font-medium transition-all flex items-center gap-1.5 text-sm
+          px-3 py-2 rounded font-medium transition-all flex items-center gap-1.5 text-sm whitespace-nowrap
           ${btnClass}
           ${anyRefreshing ? 'opacity-60 cursor-wait' : 'cursor-pointer'}
         `}
@@ -129,7 +129,7 @@ function IndexStatusPopover({
         ) : failedCount > 0 && hasAnyData ? (
           <span className="text-amber-400">⚠</span>
         ) : null}
-        <span>指数状态 {hasAnyData ? `${successCount}/${totalCount}` : `-${totalCount}`}</span>
+        <span>指数 {hasAnyData ? `${successCount}/${totalCount}` : `-${totalCount}`}</span>
         <svg
           className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`}
           fill="none" stroke="currentColor" viewBox="0 0 24 24"
@@ -419,7 +419,7 @@ function DividendPageContent() {
               onClick={updateDividend}
               disabled={updateState.dividend === 'loading'}
               className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
                 ${updateState.dividend === 'loading'
                   ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
@@ -519,13 +519,25 @@ function DividendPageContent() {
               </button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div ref={indexPopoverRef}>
+              <IndexStatusPopover
+                results={indexResults}
+                holdingsStatus={holdingsStatus}
+                refreshing={indexRefreshing}
+                onRetry={refreshIndexHoldings}
+                open={indexPopoverOpen}
+                onToggle={() => setIndexPopoverOpen(!indexPopoverOpen)}
+                onClose={() => setIndexPopoverOpen(false)}
+              />
+            </div>
+
             <button
               onClick={updateDividend}
               disabled={!dividendNeedsUpdate || updateState.dividend === 'loading'}
               title={dividendNeedsUpdate ? '本月数据待更新' : '本月数据已更新'}
               className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
                 ${!dividendNeedsUpdate || updateState.dividend === 'loading'
                   ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
@@ -561,21 +573,10 @@ function DividendPageContent() {
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
                   </svg>
-                  更新股息率
+                  股息率
                 </>
               )}
             </button>
-            <div ref={indexPopoverRef}>
-              <IndexStatusPopover
-                results={indexResults}
-                holdingsStatus={holdingsStatus}
-                refreshing={indexRefreshing}
-                onRetry={refreshIndexHoldings}
-                open={indexPopoverOpen}
-                onToggle={() => setIndexPopoverOpen(!indexPopoverOpen)}
-                onClose={() => setIndexPopoverOpen(false)}
-              />
-            </div>
 
             <div ref={auxMenuRef} className="relative">
               {(() => {
@@ -595,7 +596,7 @@ function DividendPageContent() {
                       onClick={() => setAuxOpen(!auxOpen)}
                       disabled={auxAnyLoading}
                       className={`
-                        px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                        px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
                         ${auxAnyLoading
                           ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                           : auxPendingCount > 0
@@ -772,13 +773,13 @@ function DividendPageContent() {
               }}
               disabled={!m120NeedsUpdate || updateState.m120 === 'loading'}
               className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
                 ${!m120NeedsUpdate || updateState.m120 === 'loading'
                   ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }
               `}
-              title={m120NeedsUpdate ? "有缺失数据" : "已是最新"}
+              title={m120NeedsUpdate ? "更新 M120 均线（有缺失数据）" : "更新 M120 均线（已是最新）"}
             >
               <svg
                 className={`w-4 h-4 ${updateState.m120 === 'loading' ? 'animate-spin' : ''}`}
@@ -788,7 +789,7 @@ function DividendPageContent() {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
-              更新M120
+              M120
             </button>
 
             <button
@@ -798,13 +799,13 @@ function DividendPageContent() {
               }}
               disabled={updateState.realtime === 'loading'}
               className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2
+                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
                 ${updateState.realtime === 'loading'
                   ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
                   : 'bg-indigo-600 text-white hover:bg-indigo-500'
                 }
               `}
-              title="每日更新一次"
+              title="更新实时价格（每日更新一次）"
             >
               <svg
                 className={`w-4 h-4 ${updateState.realtime === 'loading' ? 'animate-spin' : ''}`}
@@ -814,7 +815,7 @@ function DividendPageContent() {
               >
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              更新实时价格
+              实时价
             </button>
 
             <button
@@ -871,12 +872,12 @@ function DividendPageContent() {
                 a.click();
                 URL.revokeObjectURL(url);
               }}
-              className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 bg-green-600 text-white hover:bg-green-500"
+              className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-green-600 text-white hover:bg-green-500"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              导出CSV
+              CSV
             </button>
 
             <div
@@ -885,12 +886,12 @@ function DividendPageContent() {
             >
               <button
                 onClick={() => setReportOpen(!reportOpen)}
-                className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 bg-blue-600 text-white hover:bg-blue-500"
+                className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-blue-600 text-white hover:bg-blue-500"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
-                输出报告
+                报告
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
