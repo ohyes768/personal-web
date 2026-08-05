@@ -46,6 +46,36 @@ const SEG_COLORS: Record<'heavy' | 'add' | 'hold' | 'reduce' | 'full', string> =
   full:   '#A8453A', // 暖红
 };
 
+// 段位语义判定：根据相邻两档的"买/卖方向"决定段色
+// - 两端段（首/尾）：用单边档位的色
+// - 中间段：两档同买→用右档色（更高）；两档同卖→用左档色（更低）；买→卖→持有
+// 这样即使只设 2/3 档（缺档），色段仍按"有意义的相邻区"渲染，不出 NaN/空段
+function gapColor(
+  leftKey: LevelKey | null,
+  rightKey: LevelKey | null
+): 'heavy' | 'add' | 'hold' | 'reduce' | 'full' {
+  const keyToSeg = (k: LevelKey): 'heavy' | 'add' | 'reduce' | 'full' => {
+    if (k === 'heavy_position')  return 'heavy';
+    if (k === 'add_position')    return 'add';
+    if (k === 'reduce_position') return 'reduce';
+    return 'full';
+  };
+  const isBuy = (k: LevelKey) => k === 'heavy_position' || k === 'add_position';
+  const isSell = (k: LevelKey) => k === 'reduce_position' || k === 'full_exit';
+
+  // 边界段：仅一边有 key
+  if (!leftKey && rightKey) return keyToSeg(rightKey);
+  if (leftKey && !rightKey) return keyToSeg(leftKey);
+
+  // 中间段：两边都有 key
+  if (leftKey && rightKey) {
+    if (isBuy(leftKey) && isBuy(rightKey))   return keyToSeg(rightKey); // 重仓→加仓 / 加仓→重仓：用较高价档色
+    if (isSell(leftKey) && isSell(rightKey)) return keyToSeg(leftKey);  // 减仓→全卖 / 全卖→减仓：用较低价档色
+    if (isBuy(leftKey) && isSell(rightKey))  return 'hold';             // 加仓→减仓：持有区
+  }
+  return 'hold';
+}
+
 // 命中状态：5 个色块 + 持有观望
 type HitStatus = 'heavy' | 'add' | 'hold' | 'reduce' | 'full' | 'inactive';
 
@@ -134,19 +164,42 @@ export function AlertLevelBar({
   // 4 档价格按价位排序
   const sortedPoints = [...points].sort((a, b) => a.price - b.price);
 
-  // 5 段色块：4 个相邻价格对切 5 段
-  //   [0, p0]     heavy  重仓区（极端低价）
-  //   [p0, p1]    add    加仓区
-  //   [p1, p2]    hold   持有区（独立中性灰，避免加仓色误读）
-  //   [p2, p3]    reduce 减仓区
-  //   [p3, max]   full   全卖区（极端高价）
-  const segments = [
-    { side: 'heavy'  as const, left: 0,                                        width: pct(sortedPoints[0].price) },
-    { side: 'add'    as const, left: pct(sortedPoints[0].price),               width: pct(sortedPoints[1].price) - pct(sortedPoints[0].price) },
-    { side: 'hold'   as const, left: pct(sortedPoints[1].price),               width: pct(sortedPoints[2].price) - pct(sortedPoints[1].price) },
-    { side: 'reduce' as const, left: pct(sortedPoints[2].price),               width: pct(sortedPoints[3].price) - pct(sortedPoints[2].price) },
-    { side: 'full'   as const, left: pct(sortedPoints[3].price),               width: 100 - pct(sortedPoints[3].price) },
-  ];
+  // 动态生成色段：基于实际设置的价格点数（2-4 档都支持）
+  // - 4 档：5 段（heavy/add/hold/reduce/full）
+  // - 3 档：4 段（按相邻语义合并缺失档位的色）
+  // - 2 档：3 段
+  // 不再硬编码 sortedPoints[0..3]，避免缺档时 NaN 段导致 5 段变 3 段
+  const segments: Array<{ side: 'heavy' | 'add' | 'hold' | 'reduce' | 'full'; left: number; width: number }> = [];
+  if (sortedPoints.length >= 1) {
+    // 首段：[0, p0] 用 p0 的色
+    segments.push({
+      side: gapColor(null, sortedPoints[0].key),
+      left: 0,
+      width: pct(sortedPoints[0].price),
+    });
+    // 中间段：[pi, pi+1] 按相邻语义着色
+    for (let i = 0; i < sortedPoints.length - 1; i++) {
+      const leftPct = pct(sortedPoints[i].price);
+      const rightPct = pct(sortedPoints[i + 1].price);
+      const width = rightPct - leftPct;
+      if (width <= 0) continue; // 两档同价时跳过 0 宽段
+      segments.push({
+        side: gapColor(sortedPoints[i].key, sortedPoints[i + 1].key),
+        left: leftPct,
+        width,
+      });
+    }
+    // 末段：[pn, max] 用 pn 的色
+    const lastPct = pct(sortedPoints[sortedPoints.length - 1].price);
+    const lastWidth = 100 - lastPct;
+    if (lastWidth > 0) {
+      segments.push({
+        side: gapColor(sortedPoints[sortedPoints.length - 1].key, null),
+        left: lastPct,
+        width: lastWidth,
+      });
+    }
+  }
 
   const status = hitStatus(levels, currentPrice);
   const badge = HIT_META[status];
@@ -263,13 +316,11 @@ export function AlertLevelBar({
             }}
           >
             <div className="text-accent font-mono font-bold text-xs">¥{fmtPrice(currentPrice)}</div>
-            {(currentPE != null || currentPB != null) && (
-              <div className="text-accent-hover font-mono text-[10px] opacity-80">
-                {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
-                {' / '}
-                {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
-              </div>
-            )}
+            <div className="text-accent-hover font-mono text-[10px] opacity-80">
+              {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
+              {' / '}
+              {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
+            </div>
           </div>
         </div>
       </div>
@@ -286,6 +337,9 @@ export function AlertLevelBar({
           }[meta.color];
           // 顶头/顶尾的 tick 标签 clamp 到 [4%, 96%]，避免被卡片边界截掉一半
           const tickLeftPct = Math.max(4, Math.min(96, pct(p.price)));
+          const tickLevel = levels[p.key];
+          const tickPE = tickLevel?.pe ?? null;
+          const tickPB = tickLevel?.pb ?? null;
           return (
             <div
               key={p.key}
@@ -296,6 +350,11 @@ export function AlertLevelBar({
                 {meta.tag}
               </span>
               <div className="text-ink font-mono font-semibold text-xs mt-0.5">¥{fmtPrice(p.price)}</div>
+              <div className="text-ink-muted font-mono text-[9px]">
+                {tickPE != null ? `PE ${tickPE.toFixed(1)}` : 'PE -'}
+                {' / '}
+                {tickPB != null ? `PB ${tickPB.toFixed(2)}` : 'PB -'}
+              </div>
             </div>
           );
         })}

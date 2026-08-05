@@ -2,8 +2,8 @@
  * AlertLevelBarMini — Modal 内的实时命中预览
  *
  * 与 AlertLevelBar 共享归一化逻辑：
- *   - 4 个 ▲ 标记（按 4 档价格定位）
- *   - 5 段色条（重仓/加仓/持有/减仓/全卖），持有区用中性灰
+ *   - N 个 ▲ 标记（N = 已设置的档数，2-4）
+ *   - N+1 段色条（动态按相邻档的买/卖方向着色）
  *   - 不画当前价 ▲（Modal 场景：用户在设置时还没有"现价"概念）
  *   - 不画距离行、不画 L1 头部——极简预览
  */
@@ -36,13 +36,31 @@ const SEG_COLORS: Record<SegmentKey, string> = {
   full:   '#A8453A',
 };
 
-// 相邻两点之间的段语义映射：
-//   [0, p0]      heavy   （左侧外延）
-//   [p0, p1]     add     （p0 重仓 → p1 加仓之间）
-//   [p1, p2]     hold    （p1 加仓 → p2 减仓之间 = 持有区）
-//   [p2, p3]     reduce  （p2 减仓 → p3 全卖之间）
-//   [p3, max]    full    （右侧外延）
-const GAP_TO_SEGMENT: SegmentKey[] = ['heavy', 'add', 'hold', 'reduce', 'full'];
+// 段位语义判定：与 AlertLevelBar gapColor 一致
+// - 边界段（首/尾）：用单边档位的色
+// - 中间段：两档同买→用右档色；同卖→用左档色；买→卖→持有
+function gapColor(
+  leftKey: LevelKey | null,
+  rightKey: LevelKey | null
+): SegmentKey {
+  const keyToSeg = (k: LevelKey): SegmentKey => {
+    if (k === 'heavy_position')  return 'heavy';
+    if (k === 'add_position')    return 'add';
+    if (k === 'reduce_position') return 'reduce';
+    return 'full';
+  };
+  const isBuy = (k: LevelKey) => k === 'heavy_position' || k === 'add_position';
+  const isSell = (k: LevelKey) => k === 'reduce_position' || k === 'full_exit';
+
+  if (!leftKey && rightKey) return keyToSeg(rightKey);
+  if (leftKey && !rightKey) return keyToSeg(leftKey);
+  if (leftKey && rightKey) {
+    if (isBuy(leftKey) && isBuy(rightKey))   return keyToSeg(rightKey);
+    if (isSell(leftKey) && isSell(rightKey)) return keyToSeg(leftKey);
+    if (isBuy(leftKey) && isSell(rightKey))  return 'hold';
+  }
+  return 'hold';
+}
 
 export function AlertLevelBarMini({ levels }: AlertLevelBarMiniProps) {
   const points = useMemo(() => {
@@ -69,37 +87,54 @@ export function AlertLevelBarMini({ levels }: AlertLevelBarMiniProps) {
   const range = maxP - minP || 1;
   const pct = (p: number) => Math.max(2, Math.min(98, ((p - minP) / range) * 100));
 
+  // 动态生成色段：N+1 段（N = 已设置的档数，2-4）
+  const segments: Array<{ key: string; left: number; width: number; color: string }> = [];
+  // 首段：[0, p0]
+  segments.push({
+    key: `seg-0-${points[0].key}`,
+    left: 0,
+    width: pct(points[0].price),
+    color: SEG_COLORS[gapColor(null, points[0].key)],
+  });
+  // 中间段
+  for (let i = 0; i < points.length - 1; i++) {
+    const leftPct = pct(points[i].price);
+    const rightPct = pct(points[i + 1].price);
+    const width = rightPct - leftPct;
+    if (width <= 0) continue;
+    segments.push({
+      key: `seg-${i + 1}-${points[i].key}-${points[i + 1].key}`,
+      left: leftPct,
+      width,
+      color: SEG_COLORS[gapColor(points[i].key, points[i + 1].key)],
+    });
+  }
+  // 末段：[pn, max]
+  const lastPct = pct(points[points.length - 1].price);
+  const lastWidth = 100 - lastPct;
+  if (lastWidth > 0) {
+    segments.push({
+      key: `seg-end-${points[points.length - 1].key}`,
+      left: lastPct,
+      width: lastWidth,
+      color: SEG_COLORS[gapColor(points[points.length - 1].key, null)],
+    });
+  }
+
   return (
     <div className="relative h-6">
-      {/* 5 段色条 */}
+      {/* 动态色条 */}
       <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-2 bg-paper-deep rounded-full overflow-hidden">
-        {/* 第 0 段：[0, p0] heavy */}
-        <div
-          className="absolute top-0 bottom-0"
-          style={{ left: '0%', width: `${pct(points[0].price)}%`, backgroundColor: SEG_COLORS.heavy }}
-        />
-        {/* 中间 3 段：[p0,p1][p1,p2][p2,p3] 对应 add/hold/reduce */}
-        {points.slice(0, -1).map((p, i) => {
-          const next = points[i + 1];
-          const left = pct(p.price);
-          const right = pct(next.price);
-          const seg = GAP_TO_SEGMENT[i + 1];
-          return (
-            <div
-              key={p.key}
-              className="absolute top-0 bottom-0"
-              style={{ left: `${left}%`, width: `${right - left}%`, backgroundColor: SEG_COLORS[seg] }}
-            />
-          );
-        })}
-        {/* 末段：[p3, max] full */}
-        <div
-          className="absolute top-0 bottom-0"
-          style={{ left: `${pct(points[points.length - 1].price)}%`, width: `${100 - pct(points[points.length - 1].price)}%`, backgroundColor: SEG_COLORS.full }}
-        />
+        {segments.map(seg => (
+          <div
+            key={seg.key}
+            className="absolute top-0 bottom-0"
+            style={{ left: `${seg.left}%`, width: `${seg.width}%`, backgroundColor: seg.color }}
+          />
+        ))}
       </div>
 
-      {/* 4 个 ▲ 标记 */}
+      {/* N 个 ▲ 标记 */}
       {points.map(p => {
         const left = Math.max(4, Math.min(96, pct(p.price)));
         const color = LEVEL_TAG[p.key].color;
