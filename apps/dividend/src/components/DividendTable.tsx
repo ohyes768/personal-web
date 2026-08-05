@@ -277,7 +277,7 @@ export function DividendTable({
             <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               名称
             </th>
-            <th className="w-12 px-1 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
+            <th className="w-8 px-1 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               市场
             </th>
             <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
@@ -379,8 +379,11 @@ export function DividendTable({
                 <td className="w-28 px-2 py-3 text-sm font-semibold text-ink-strong whitespace-nowrap">
                   {stock.name}
                 </td>
-                <td className="w-16 px-2 py-3 text-sm text-gray-300">
-                  {stock.exchange}
+                <td
+                  className="w-8 px-1 py-3 text-sm text-gray-300 text-center"
+                  title={stock.exchange}
+                >
+                  {stock.exchange?.charAt(0) || '-'}
                 </td>
                 <td className="w-28 px-2 py-3 text-xs text-gray-300 leading-tight">
                   {formatSwIndustry(stock).map((level, index) => {
