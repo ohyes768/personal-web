@@ -19,7 +19,7 @@ fi
 # 可选参数：
 #   --no-pull        跳过 git pull + submodule update
 #   --no-cache=false 关闭 --no-cache（默认开）
-#   --no-tail        部署完不 tail 日志（适合 cron 调用）
+#   --tail           部署完后 tail 日志（默认关，需要时显式加）
 #
 # 示例：
 #   ./scripts/deploy-nas.sh dividend backend              # 拉最新 + 后端 build + restart + tail logs
@@ -51,14 +51,14 @@ shift 2 2>/dev/null || true
 
 DO_PULL=true
 NO_CACHE=true
-DO_TAIL=true
+DO_TAIL=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --no-pull)        DO_PULL=false;    shift ;;
         --no-cache)       NO_CACHE=true;    shift ;;
         --no-cache=false) NO_CACHE=false;   shift ;;
-        --no-tail)        DO_TAIL=false;    shift ;;
+        --tail)           DO_TAIL=true;     shift ;;
         -h|--help)
             grep '^#' "$0" | head -30
             exit 0
