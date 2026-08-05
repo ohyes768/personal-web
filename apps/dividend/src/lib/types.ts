@@ -268,6 +268,14 @@ export interface StockInfoResponse {
 
 /**
  * 单个红利指数持仓刷新状态（徽章数据源）
+ *
+ * 新增字段（FR-4：区分"持仓+prefilter 都成功" vs "持仓成功但 prefilter 重算失败"）：
+ * - prefilter_resynced: true 表示后端单指数刷成功后本地重算 prefilter 也成功
+ * - prefilter_error: 重算失败原因；prefilter_resynced=false 时有意义
+ *
+ * 后端兼容：旧响应无这两个字段时按 ?? 默认值处理，让前端在部署期间不退化
+ * - prefilter_resynced 默认 true（兼容旧后端：仅 success 一项决定）
+ * - prefilter_error 默认 null
  */
 export interface IndexRefreshItem {
   code: string;
@@ -275,6 +283,10 @@ export interface IndexRefreshItem {
   success: boolean;
   constituents_count: number;
   error?: string | null;
+  /** 单指数刷新后是否完成 prefilter 本地重算。徽章显示 ✅ 需要 success + prefilter_resynced 都为 true。 */
+  prefilter_resynced?: boolean;
+  /** prefilter 重算失败原因（仅 prefilter_resynced=false 时有意义） */
+  prefilter_error?: string | null;
 }
 
 /**
