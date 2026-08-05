@@ -1,4 +1,10 @@
 #!/usr/bin/env bash
+# NAS 上 `sh` 是 dash 的别名，dash 不支持 set -o pipefail；
+# 如果被 dash 调用，自动 reexec 到 bash
+if [ -z "${BASH_VERSION:-}" ]; then
+    exec bash "$0" "$@"
+fi
+
 # =============================================================================
 # NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
 # =============================================================================
