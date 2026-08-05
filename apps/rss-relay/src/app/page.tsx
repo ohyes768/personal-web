@@ -18,7 +18,13 @@ export default function HomePage() {
       <header className="border-b border-rule bg-paper-card/60 backdrop-blur-sm sticky top-0 z-30">
         <div className="max-w-[960px] mx-auto px-6 py-4 flex items-center justify-between">
           <div>
-            <h1 className="font-serif-cn text-[22px] font-bold text-ink-strong">
+            <a
+              href="/"
+              className="font-ui text-[12px] text-ink-muted hover:text-ink-strong transition-colors"
+            >
+              ← 返回首页
+            </a>
+            <h1 className="font-serif-cn text-[22px] font-bold text-ink-strong mt-1">
               个人 RSS 中转
             </h1>
             <p className="font-ui text-[12px] text-ink-soft mt-0.5">
