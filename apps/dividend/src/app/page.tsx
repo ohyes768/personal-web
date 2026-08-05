@@ -16,6 +16,7 @@ import { AlertSettingsModal } from '@/components/AlertSettingsModal';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
+import { dividendApi } from '@/lib/api';
 import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
@@ -259,6 +260,19 @@ function DividendPageContent() {
   // 股息率数据
   const { data, total, loading, error, refetch } = useDividendData();
 
+  // 全量股票数（来自 /api/dividend/stats，未应用 min_yield 筛选）
+  const [totalCollected, setTotalCollected] = useState<number | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    dividendApi.getStats().then((s) => {
+      if (!cancelled) setTotalCollected(s.total_stocks);
+    }).catch((err) => {
+      // 接口失败时静默降级——头部文案显示「共 X 只」即可
+      console.error('获取全量股票数失败:', err);
+    });
+    return () => { cancelled = true; };
+  }, []);
+
   // 刷新计数，用于强制表格重新渲染
   const [refreshKey, setRefreshKey] = useState(0);
 
@@ -480,7 +494,9 @@ function DividendPageContent() {
             </Link>
             <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             <p className="text-ink-muted mt-1">
-              共 {total} 只股票 | 3年股息率 ≥ {minYieldInput}%
+              {totalCollected !== null
+                ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${minYieldInput}%`
+                : `共 ${total} 只股票 | 3年股息率 ≥ ${minYieldInput}%`}
             </p>
             {/* 筛选条件 */}
             <div className="mt-2 flex items-center gap-3">

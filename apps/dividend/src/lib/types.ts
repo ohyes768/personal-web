@@ -341,6 +341,31 @@ export interface DividendStatusResponse {
 }
 
 /**
+ * 股息率统计信息（来自 GET /api/dividend/stats）
+ * 字段含义见 backend/dividend-select/src/api/routes.py::get_stats
+ */
+export interface StatsResponse {
+  /** 全量股票数（未应用 min_yield 筛选） */
+  total_stocks: number;
+  yield_stats: {
+    max: number | null;
+    min: number | null;
+    median: number | null;
+    mean: number | null;
+  };
+  /** 3年股息率分桶计数 */
+  yield_distribution: {
+    above_6: number;
+    above_5: number;
+    above_4: number;
+    above_3: number;
+  };
+  industry_distribution: Record<string, number>;
+  index_distribution: Record<string, number>;
+  csv_last_modified: string | null;
+}
+
+/**
  * 辅助数据状态（行业/财务/户数）
  */
 export interface AuxDataStatus {

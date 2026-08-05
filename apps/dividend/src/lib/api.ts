@@ -19,6 +19,7 @@ import type {
   BoardInfoResponse,
   BoardInfoRequest,
   AuxDataStatus,
+  StatsResponse,
 } from './types';
 
 export const dividendApi = {
@@ -27,6 +28,12 @@ export const dividendApi = {
    */
   getStocks: (params?: DividendQueryParams) =>
     directClient.get<DividendListResponse>('/api/dividend/stocks', params),
+
+  /**
+   * 获取股息率统计信息（含全量股票数 total_stocks、各分桶计数）
+   */
+  getStats: () =>
+    directClient.get<StatsResponse>('/api/dividend/stats'),
 
   /**
    * 获取股票详情
