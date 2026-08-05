@@ -13,6 +13,7 @@ import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { AlertSettingsModal } from '@/components/AlertSettingsModal';
+import { SchedulerSettingsModal } from '@/components/SchedulerSettingsModal';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
@@ -362,6 +363,7 @@ function DividendPageContent() {
   const alertsStatus = useAlertsStatus();
   const [alertStock, setAlertStock] = useState<DividendStock | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
+  const [schedulerOpen, setSchedulerOpen] = useState(false);
 
   const handleOpenAlertSettings = useCallback((code: string) => {
     const s = data.find(x => x.code === code);
@@ -907,6 +909,18 @@ function DividendPageContent() {
               CSV
             </button>
 
+            <button
+              onClick={() => setSchedulerOpen(true)}
+              className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-gray-700 text-white hover:bg-gray-600"
+              title="定时任务管理"
+              aria-label="定时任务"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              定时任务
+            </button>
+
             <div
               className="relative"
               onMouseLeave={() => setReportOpen(false)}
@@ -1043,6 +1057,12 @@ function DividendPageContent() {
         }}
         onRunCheck={alertsStatus.runCheck}
         dingtalkConfigured={alertsStatus.status?.dingtalk_configured ?? false}
+      />
+
+      {/* 定时任务管理弹框 */}
+      <SchedulerSettingsModal
+        isOpen={schedulerOpen}
+        onClose={() => setSchedulerOpen(false)}
       />
 
       {/* 对比浮动栏 */}

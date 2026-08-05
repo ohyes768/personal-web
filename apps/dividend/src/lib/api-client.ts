@@ -87,6 +87,11 @@ class ApiClient {
     return this.request<T>(`${effectiveBase}${endpoint}`, { method: 'PUT', body: JSON.stringify(data) });
   }
 
+  async patch<T>(endpoint: string, data?: any): Promise<T> {
+    const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
+    return this.request<T>(`${effectiveBase}${endpoint}`, { method: 'PATCH', body: JSON.stringify(data) });
+  }
+
   async delete<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
     const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
     let url = `${effectiveBase}${endpoint}`;

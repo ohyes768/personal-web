@@ -561,3 +561,40 @@ export const LEVEL_META = {
 };
 
 export type LevelKey = keyof typeof LEVEL_META;
+
+// ========== 定时任务（scheduler）类型 ==========
+
+/**
+ * 单次执行结果（GET /api/dividend/scheduler/jobs/{job_id}/runs 返回）
+ */
+export interface SchedulerJobRun {
+  start: string;
+  end?: string | null;
+  status: 'success' | 'skipped' | 'failed';
+  count?: number | null;
+  reason?: string | null;
+  error?: string | null;
+}
+
+/**
+ * 调度任务（GET /api/dividend/scheduler/jobs 返回）
+ */
+export interface SchedulerJob {
+  id: string;
+  name: string;
+  target: string;
+  cron: string;
+  cron_human: string;
+  enabled: boolean;
+  next_run_time?: string | null;
+  last_run?: SchedulerJobRun | null;
+  description?: string;
+}
+
+/**
+ * 立即触发响应（POST /scheduler/jobs/{id}/run 返回）
+ */
+export interface SchedulerTriggerResponse {
+  job_id: string;
+  triggered_at: string;
+}

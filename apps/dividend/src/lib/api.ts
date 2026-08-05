@@ -20,6 +20,9 @@ import type {
   BoardInfoRequest,
   AuxDataStatus,
   StatsResponse,
+  SchedulerJob,
+  SchedulerJobRun,
+  SchedulerTriggerResponse,
 } from './types';
 
 export const dividendApi = {
@@ -198,5 +201,43 @@ export const dividendUpdateApi = {
     directClient.post<{ success: boolean; message: string; mode?: string }>(
       `/api/dividend/board/refresh${force ? '?force=true' : ''}`,
       codes ? { codes } : undefined
+    ),
+};
+
+/**
+ * 定时任务管理 API（替代外部 n8n 触发）
+ */
+export const schedulerApi = {
+  /**
+   * 列出所有调度任务（含 cron / cron_human / enabled / next_run_time / last_run）
+   */
+  listJobs: () =>
+    directClient.get<{ jobs: SchedulerJob[] }>('/api/dividend/scheduler/jobs'),
+
+  /**
+   * 启用或禁用某个任务
+   */
+  setEnabled: (jobId: string, enabled: boolean) =>
+    directClient.patch<SchedulerJob>(
+      `/api/dividend/scheduler/jobs/${jobId}`,
+      { enabled }
+    ),
+
+  /**
+   * 立即执行某个任务（异步，返回后用 getRuns 查结果）
+   */
+  runNow: (jobId: string) =>
+    directClient.post<SchedulerTriggerResponse>(
+      `/api/dividend/scheduler/jobs/${jobId}/run`,
+      {}
+    ),
+
+  /**
+   * 查任务最近 N 条执行历史
+   */
+  getRuns: (jobId: string, limit = 20) =>
+    directClient.get<{ job_id: string; runs: SchedulerJobRun[]; total_returned: number }>(
+      `/api/dividend/scheduler/jobs/${jobId}/runs`,
+      { limit }
     ),
 };
