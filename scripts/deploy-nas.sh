@@ -29,6 +29,9 @@ fi
 
 set -euo pipefail
 
+# 切到 repo root（脚本位于 <root>/scripts/）— docker compose -f 用相对路径必须在此目录
+cd "$(dirname "$0")/.."
+
 COMPOSE_FILE="docker-compose.nas.yml"
 
 # ---- 参数解析 ----
