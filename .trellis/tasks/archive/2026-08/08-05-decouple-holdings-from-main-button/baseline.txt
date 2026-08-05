@@ -1,0 +1,22 @@
+baseline for dividend-select @ commit 5a9f3d7 (2026-08-05)
+======================================================
+
+Status:
+  82 passed, 5 failed, 2 collection errors
+
+Pre-existing failures (NOT caused by our refactor; do not count as regression):
+
+  FAILED tests/test_calculator.py::TestDividendCalculator::test_get_yearly_dividend
+  FAILED tests/test_financial_fetcher.py::TestCalcLatestEps::test_calc_latest_eps_normal
+  FAILED tests/test_financial_fetcher.py::TestCalcLatestEps::test_calc_latest_eps_negative
+  FAILED tests/test_financial_fetcher.py::TestCalcLatestEps::test_calc_latest_eps_latest_year_first
+  FAILED tests/test_financial_fetcher.py::TestCalcLatestEps::test_calc_latest_eps_real_akshare_columns
+
+  ERROR tests/test_models.py
+  ERROR tests/test_processor.py
+    Root cause: src/data/__init__.py:9 → src/data/fetcher.py:15 uses `..utils.helpers`
+    relative import but tests run as top-level scripts (not as a package),
+    so the relative import goes beyond top-level. Unrelated to our refactor.
+
+Compare future test runs against this baseline. Any new failure is a regression
+introduced by our changes.
