@@ -41,3 +41,10 @@ app:
     # 限制
     max_items: 200            # 硬上限
     default_limit: 50         # 默认 limit
+
+  # 定时清理（删 N 天前的 .wav 源文件 + status.json 记录）
+  # 行为：复用 POST /api/aweme/cleanup 同样的清理逻辑,纯异步触发
+  cleanup:
+    days: 45                  # 清理阈值（天）
+    cron: "7 3 * * *"         # 每天 03:07 北京时间（跟 rss-relay 03:03 错开 4 分钟）
+    timezone: "Asia/Shanghai"

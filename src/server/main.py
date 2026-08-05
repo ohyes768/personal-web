@@ -4,6 +4,8 @@ FastAPI 服务器
 
 import os
 from contextlib import asynccontextmanager
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -15,6 +17,34 @@ from src.processor.asr_client import AliyunASRClient
 from src.processor.status_manager import StatusManager
 from src.processor.video_processor import VideoProcessor
 from src.utils import load_config, setup_logger
+
+
+async def _scheduled_cleanup(processor: "VideoProcessor", days: int) -> None:
+    """定时清理任务:复用 status_manager + filesystem_client,与手动 API 同源。
+
+    Args:
+        processor: 已初始化的 VideoProcessor 实例(lifespan 启动后可用)
+        days: 清理阈值(天)
+    """
+    try:
+        deleted_ids = await processor.status_manager.cleanup_old_records(days)
+        if not deleted_ids:
+            logger.info(f"定时清理:无过期记录(>{days}d)")
+            return
+        success = 0
+        failed = []
+        for aid in deleted_ids:
+            audio_filename = f"{aid}.wav"
+            ok = await processor.filesystem_client.delete_file(audio_filename)
+            if ok:
+                success += 1
+            else:
+                failed.append(audio_filename)
+        logger.info(
+            f"定时清理完成:删 {success}/{len(deleted_ids)} 个文件(>{days}d),失败 {failed}"
+        )
+    except Exception as e:
+        logger.error(f"定时清理失败: {e}")
 
 # 加载 .env 文件
 load_dotenv()
@@ -84,9 +114,37 @@ async def lifespan(app: FastAPI):
 
     logger.info("视频处理器初始化完成")
 
+    # 启动定时清理 scheduler
+    cleanup_config = app_config.get("cleanup", {})
+    cleanup_days = int(cleanup_config.get("days", 45))
+    cleanup_cron = cleanup_config.get("cron", "7 3 * * *")
+    cleanup_tz = cleanup_config.get("timezone", "Asia/Shanghai")
+
+    # 启动时立即清理一次(清停机期间过期的,失败不阻塞启动)
+    try:
+        await _scheduled_cleanup(video_processor, cleanup_days)
+    except Exception as e:
+        logger.error(f"启动时清理失败(非阻塞): {e}")
+
+    scheduler = AsyncIOScheduler(timezone=cleanup_tz)
+    scheduler.add_job(
+        _scheduled_cleanup,
+        CronTrigger.from_crontab(cleanup_cron, timezone=cleanup_tz),
+        args=[video_processor, cleanup_days],
+        id="cleanup_old_records",
+        replace_existing=True,
+    )
+    scheduler.start()
+    logger.info(
+        f"APScheduler 已启动:每天 {cleanup_cron} ({cleanup_tz}) 清理 >{cleanup_days}d 过期记录"
+    )
+    app.state.scheduler = scheduler
+
     yield
 
     # 关闭时清理
+    logger.info("关闭 scheduler...")
+    await app.state.scheduler.shutdown()
     logger.info("清理资源...")
 
 
