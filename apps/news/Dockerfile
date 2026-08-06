@@ -1,7 +1,6 @@
 ﻿FROM node:20-alpine AS base
 RUN npm install -g pnpm
 
-# syntax=docker/dockerfile:1.7
 FROM base AS deps
 WORKDIR /app
 COPY package.json pnpm-lock.yaml ./
