@@ -94,15 +94,16 @@ Header:
 {
   "results": [
     {"code": "600000", "ok": true, "error": null},
-    {"code": "abc",    "ok": false, "error": "股票代码格式错误: abc"}
+    {"code": "abc",    "ok": false, "error": "股票代码格式错误: abc"},
+    {"code": "000001", "ok": false, "error": "000001 不在收藏中"}
   ],
   "success_count": 1,
-  "fail_count": 1
+  "fail_count": 2
 }
 
 说明：
 - 4 档 price 必填 > 0；pe/pb/enabled 选填
-- code 未在收藏列表会自动加入，无需预先 POST /favorites/{code}
+- code 必须已收藏（POST /api/dividend/favorites/{code}）；未收藏 → 该条 fail，不会自动加入
 - 每条独立处理，部分失败不影响其他
 - 缺/错 token → 401；服务端未配 AGENT_API_TOKEN → 503`;
 
