@@ -4,11 +4,12 @@
  * 紧凑布局：
  *   L1 股票头：代码/名 + 距各档 + 现价/涨幅/操作建议
  *   L2 五区色条 + 5 个点（现价醒目 + 4 档）：上方价格，下方 PE/PB
+ *   点击点：弹出该价位股息率（2025 分红 / 价格，与表格「实时股息率」同口径）
  */
 
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import type { AlertLevels } from '@/lib/types';
 
 export interface AlertLevelBarProps {
@@ -18,6 +19,10 @@ export interface AlertLevelBarProps {
   currentPrice: number;
   currentPE?: number | null;
   currentPB?: number | null;
+  /** 2025 年每股分红（元），用于计算各价位股息率 */
+  dividend2025?: number | null;
+  /** 实时股息率 TTM（%），仅现价点展示 */
+  yieldTtm?: number | null;
   onClick?: () => void;
 }
 
@@ -129,6 +134,20 @@ function fmtPePb(pe?: number | null, pb?: number | null): string | null {
   return parts.length > 0 ? parts.join(' / ') : null;
 }
 
+/** 与表格「实时股息率」同口径：年度分红 / 价格 × 100% */
+function calcYieldAtPrice(dividend: number | null | undefined, price: number): number | null {
+  if (dividend == null || dividend <= 0 || price <= 0) return null;
+  return (dividend / price) * 100;
+}
+
+function yieldTone(y: number): string {
+  if (y >= 5) return 'text-emerald-700';
+  if (y >= 3) return 'text-emerald-600';
+  return 'text-ink';
+}
+
+type YieldKey = LevelKey | 'current';
+
 /**
  * 距离行三级色阶：
  *   <5%  红色字 + ✓（已命中或极近）
@@ -152,8 +171,12 @@ export function AlertLevelBar({
   currentPrice,
   currentPE,
   currentPB,
+  dividend2025,
+  yieldTtm,
   onClick,
 }: AlertLevelBarProps) {
+  const [openYield, setOpenYield] = useState<YieldKey | null>(null);
+
   const points: PricePoint[] = useMemo(() => {
     const list: PricePoint[] = [];
     (Object.keys(LEVEL_META) as LevelKey[]).forEach(k => {
@@ -271,7 +294,7 @@ export function AlertLevelBar({
         )}
       </div>
 
-      {/* L2 五区色条 + 5 点（现价醒目，4 档次之）：上价格 / 下 PE·PB */}
+      {/* L2 五区色条 + 5 点：上价格 / 下 PE·PB；点击点看股息率 */}
       <div className="relative pt-5 pb-7">
         <div className="relative h-6 bg-paper-deep rounded-md overflow-hidden">
           {segments.map((seg, i) => (
@@ -293,7 +316,7 @@ export function AlertLevelBar({
           ))}
         </div>
 
-        {/* 4 档位点：较小圆点，上方价格，下方选填 PE/PB */}
+        {/* 4 档位点 */}
         {sortedPoints.map(p => {
           const left = Math.max(4, Math.min(96, pct(p.price)));
           const meta = LEVEL_META[p.key];
@@ -305,75 +328,173 @@ export function AlertLevelBar({
             orange: SEG_COLORS.reduce,
             red: SEG_COLORS.full,
           }[meta.color];
+          const yld = calcYieldAtPrice(dividend2025, p.price);
+          const isOpen = openYield === p.key;
           return (
             <div
               key={p.key}
-              className="absolute inset-y-0 w-0 pointer-events-none"
+              className="absolute inset-y-0 w-0 z-[1]"
               style={{ left: `${left}%` }}
-              aria-label={`${meta.tag} ¥${fmtPrice(p.price)}`}
             >
               {/* 上：价格 */}
-              <div className="absolute left-0 -translate-x-1/2 top-0 whitespace-nowrap text-center">
+              <div className="absolute left-0 -translate-x-1/2 top-0 whitespace-nowrap text-center pointer-events-none">
                 <div className="font-mono font-semibold text-[10px] text-ink">¥{fmtPrice(p.price)}</div>
               </div>
-              {/* 点：色条垂直中心 */}
-              <div
-                className="absolute left-0 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-paper-card shadow-sm"
+              {/* 可点热区 + 色点 */}
+              <button
+                type="button"
+                title={`${meta.tag} · 点击看股息率`}
+                aria-expanded={isOpen}
+                className="absolute left-0 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-paper-card shadow-sm cursor-pointer hover:scale-125 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
                 style={{
                   top: 'calc(1.25rem + 12px)',
-                  width: '10px',
-                  height: '10px',
+                  width: '14px',
+                  height: '14px',
                   backgroundColor: dotColor,
+                }}
+                onClick={e => {
+                  e.stopPropagation();
+                  setOpenYield(prev => (prev === p.key ? null : p.key));
                 }}
               />
               {/* 下：选填 PE/PB */}
               {pePb && (
-                <div className="absolute left-0 -translate-x-1/2 top-[calc(1.25rem+24px+6px)] whitespace-nowrap text-center">
+                <div className="absolute left-0 -translate-x-1/2 top-[calc(1.25rem+24px+6px)] whitespace-nowrap text-center pointer-events-none">
                   <div className="font-mono text-[9px] text-ink-muted">{pePb}</div>
                 </div>
+              )}
+              {/* 股息率浮层 */}
+              {isOpen && (
+                <YieldPopover
+                  title={`${meta.tag}档`}
+                  price={p.price}
+                  yieldPct={yld}
+                  onClose={() => setOpenYield(null)}
+                />
               )}
             </div>
           );
         })}
 
-        {/* 现价点：更大、强调色，盖在档位点之上 */}
-        <div
-          className="absolute inset-y-0 w-0 z-10 pointer-events-none"
-          style={{ left: `${markerLeftPct}%` }}
-          aria-label={`现价 ¥${fmtPrice(currentPrice)}`}
-        >
-          {/* 上：价格 */}
-          <div className="absolute left-0 -translate-x-1/2 top-0 whitespace-nowrap text-center">
-            <div className="text-accent font-mono font-bold text-[11px] drop-shadow-sm">¥{fmtPrice(currentPrice)}</div>
-          </div>
-          {/* 垂线 */}
-          <div
-            className="absolute left-0 -translate-x-1/2 w-0.5 bg-accent opacity-70"
-            style={{ top: '1.05rem', height: '1.55rem' }}
-          />
-          {/* 双层焦点圆（比档位点更大） */}
-          <div
-            className="absolute left-0 -translate-x-1/2 -translate-y-1/2"
-            style={{
-              top: 'calc(1.25rem + 12px)',
-              width: '16px',
-              height: '16px',
-            }}
-          >
-            <div className="absolute inset-0 rounded-full bg-accent shadow-md" />
-            <div className="absolute inset-[3px] rounded-full bg-paper-card" />
-            <div className="absolute inset-[5.5px] rounded-full bg-accent" />
-          </div>
-          {/* 下：PE/PB */}
-          <div className="absolute left-0 -translate-x-1/2 top-[calc(1.25rem+24px+8px)] whitespace-nowrap text-center">
-            <div className="text-accent font-mono text-[10px] font-medium">
-              {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
-              {' / '}
-              {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
+        {/* 现价点：更大、强调色 */}
+        {(() => {
+          const yld = calcYieldAtPrice(dividend2025, currentPrice);
+          const isOpen = openYield === 'current';
+          return (
+            <div
+              className="absolute inset-y-0 w-0 z-10"
+              style={{ left: `${markerLeftPct}%` }}
+            >
+              <div className="absolute left-0 -translate-x-1/2 top-0 whitespace-nowrap text-center pointer-events-none">
+                <div className="text-accent font-mono font-bold text-[11px] drop-shadow-sm">¥{fmtPrice(currentPrice)}</div>
+              </div>
+              <div
+                className="absolute left-0 -translate-x-1/2 w-0.5 bg-accent opacity-70 pointer-events-none"
+                style={{ top: '1.05rem', height: '1.55rem' }}
+              />
+              <button
+                type="button"
+                title="现价 · 点击看股息率"
+                aria-expanded={isOpen}
+                aria-label={`现价 ¥${fmtPrice(currentPrice)}`}
+                className="absolute left-0 -translate-x-1/2 -translate-y-1/2 cursor-pointer hover:scale-110 transition-transform focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                style={{
+                  top: 'calc(1.25rem + 12px)',
+                  width: '18px',
+                  height: '18px',
+                }}
+                onClick={e => {
+                  e.stopPropagation();
+                  setOpenYield(prev => (prev === 'current' ? null : 'current'));
+                }}
+              >
+                <span className="absolute inset-0 rounded-full bg-accent shadow-md" />
+                <span className="absolute inset-[3px] rounded-full bg-paper-card" />
+                <span className="absolute inset-[5.5px] rounded-full bg-accent" />
+              </button>
+              <div className="absolute left-0 -translate-x-1/2 top-[calc(1.25rem+24px+8px)] whitespace-nowrap text-center pointer-events-none">
+                <div className="text-accent font-mono text-[10px] font-medium">
+                  {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
+                  {' / '}
+                  {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
+                </div>
+              </div>
+              {isOpen && (
+                <YieldPopover
+                  title="现价"
+                  price={currentPrice}
+                  yieldPct={yld}
+                  yieldTtm={yieldTtm}
+                  accent
+                  onClose={() => setOpenYield(null)}
+                />
+              )}
             </div>
-          </div>
-        </div>
+          );
+        })()}
       </div>
+    </div>
+  );
+}
+
+/** 股息率浮层：与系统「实时股息率」同口径 */
+function YieldPopover({
+  title,
+  price,
+  yieldPct,
+  yieldTtm,
+  accent,
+  onClose,
+}: {
+  title: string;
+  price: number;
+  yieldPct: number | null;
+  yieldTtm?: number | null;
+  accent?: boolean;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="absolute left-0 -translate-x-1/2 top-[calc(1.25rem+24px+22px)] z-20 w-max max-w-[11rem] rounded border border-rule bg-paper-card px-2.5 py-2 shadow-md"
+      onClick={e => e.stopPropagation()}
+      role="dialog"
+      aria-label={`${title}股息率`}
+    >
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <span className={`text-[10px] font-semibold tracking-wide ${accent ? 'text-accent' : 'text-ink-muted'}`}>
+          {title} · 股息率
+        </span>
+        <button
+          type="button"
+          className="text-[10px] text-ink-muted hover:text-ink leading-none"
+          onClick={e => {
+            e.stopPropagation();
+            onClose();
+          }}
+          aria-label="关闭"
+        >
+          ×
+        </button>
+      </div>
+      {yieldPct != null ? (
+        <div className={`font-mono font-bold text-lg leading-none tabular-nums ${yieldTone(yieldPct)}`}>
+          {yieldPct.toFixed(2)}
+          <span className="text-xs ml-0.5">%</span>
+        </div>
+      ) : (
+        <div className="font-mono text-sm text-ink-muted">—</div>
+      )}
+      <div className="text-[9px] text-ink-muted mt-1 font-mono">
+        2025分红 / ¥{fmtPrice(price)}
+      </div>
+      {yieldTtm != null && (
+        <div className="text-[10px] text-ink-muted mt-1.5 border-t border-dashed border-rule pt-1.5">
+          TTM{' '}
+          <span className={`font-mono font-semibold tabular-nums ${yieldTone(yieldTtm)}`}>
+            {yieldTtm.toFixed(2)}%
+          </span>
+        </div>
+      )}
     </div>
   );
 }

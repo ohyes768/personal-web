@@ -1078,6 +1078,8 @@ function DividendPageContent() {
                   currentPrice={currentPrice}
                   currentPE={tech?.pe ?? null}
                   currentPB={tech?.pb ?? null}
+                  dividend2025={stock.dividend_2025 ?? null}
+                  yieldTtm={tech?.yield_ttm ?? null}
                   onClick={() => handleOpenAlertSettings(stock.code)}
                 />
               );
