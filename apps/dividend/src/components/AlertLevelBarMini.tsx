@@ -82,6 +82,7 @@ export function AlertLevelBarMini({ levels }: AlertLevelBarMiniProps) {
     );
   }
 
+  // Mini 没有 currentPrice，但同样只用已设置档位的价格作区间，避免首/末段被压成 0
   const minP = points[0].price;
   const maxP = points[points.length - 1].price;
   const range = maxP - minP || 1;

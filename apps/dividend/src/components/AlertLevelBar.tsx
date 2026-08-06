@@ -156,8 +156,10 @@ export function AlertLevelBar({
     return null;
   }
 
-  const minP = Math.min(...points.map(p => p.price), currentPrice);
-  const maxP = Math.max(...points.map(p => p.price), currentPrice);
+  // 关键：只用已设置档位的价格作为区间，不把 currentPrice 算进 min/max
+  // 否则 currentPrice 在区间内时 minP==heavy / maxP==full，首/末段会被压成 0 宽度
+  const minP = Math.min(...points.map(p => p.price));
+  const maxP = Math.max(...points.map(p => p.price));
   const range = maxP - minP || 1;
   const pct = (p: number) => Math.max(0, Math.min(100, ((p - minP) / range) * 100));
 
