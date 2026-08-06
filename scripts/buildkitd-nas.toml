@@ -1,0 +1,9 @@
+# BuildKit 配置：给 docker-container buildx builder 用的 registry 镜像
+# 宿主机 /etc/docker/daemon.json 的 registry-mirrors 不会自动继承到 buildx
+#
+# 若镜像站失效，改 mirrors 后执行：
+#   docker buildx rm nas-builder-cn
+#   再跑 deploy-nas.sh（会自动重建）
+
+[registry."docker.io"]
+  mirrors = ["docker.m.daocloud.io", "docker.1ms.run"]

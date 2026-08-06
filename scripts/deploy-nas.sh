@@ -16,7 +16,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 COMPOSE_FILE="docker-compose.nas.yml"
-BUILDX_BUILDER="nas-builder"
+# 带国内 registry mirror 的 builder（旧名 nas-builder 不继承 daemon.json 加速，会直连 Docker Hub 超时）
+BUILDX_BUILDER="nas-builder-cn"
+BUILDKITD_CONFIG="scripts/buildkitd-nas.toml"
 
 show_help() {
     cat <<'EOF'
@@ -43,6 +45,14 @@ options:
   --cold              同上路径，但全部 --no-cache
   --no-buildx         frontend/backend 都走 compose 热构建
   --cold --no-buildx  全部 compose --no-cache
+
+说明:
+  buildx 使用 docker-container 驱动时，不会继承宿主机 daemon.json 的
+  registry-mirrors。脚本会创建 nas-builder-cn，并加载
+  scripts/buildkitd-nas.toml（Docker Hub → 国内镜像）。
+  若拉基础镜像仍超时：改 toml 里的 mirrors，然后
+    docker buildx rm nas-builder-cn
+  再重新部署。临时绕过可用 --no-buildx（走 compose，用宿主机镜像缓存）。
 
 示例:
   ./scripts/deploy-nas.sh dividend backend
@@ -149,16 +159,35 @@ get_buildx_config() {
     esac
 }
 
-# ---- 确保 buildx builder 存在（docker-container driver → 持久 cache volume） ----
+# ---- 确保 buildx builder 存在（docker-container + 国内 registry mirror） ----
 ensure_buildx_builder() {
     local builder_name="${1:-$BUILDX_BUILDER}"
+    local config_file="$BUILDKITD_CONFIG"
+
+    # 清理旧 builder（无 mirror 配置，会直连 Docker Hub 超时）
+    if docker buildx inspect nas-builder >/dev/null 2>&1; then
+        echo ""
+        echo "==> 移除旧 builder 'nas-builder'（无 registry mirror）"
+        docker buildx rm nas-builder >/dev/null 2>&1 || true
+    fi
+
     if docker buildx inspect "$builder_name" >/dev/null 2>&1; then
         return 0
     fi
+
+    if [[ ! -f "$config_file" ]]; then
+        echo "错误: 缺少 BuildKit 配置 $config_file" >&2
+        exit 1
+    fi
+
     echo ""
-    echo "==> 首次跑，自动创建 buildx builder '$builder_name'（持久 cache volume）"
-    docker buildx create --name "$builder_name" --driver docker-container --bootstrap >/dev/null
-    echo "    已创建 '$builder_name'（cache 跨构建保留）"
+    echo "==> 创建 buildx builder '$builder_name'（docker-container + $config_file）"
+    docker buildx create \
+        --name "$builder_name" \
+        --driver docker-container \
+        --config "$config_file" \
+        --bootstrap >/dev/null
+    echo "    已创建 '$builder_name'（pnpm cache 持久 + Docker Hub 走国内 mirror）"
 }
 
 compose_build() {
