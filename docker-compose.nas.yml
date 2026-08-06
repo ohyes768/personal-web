@@ -48,6 +48,7 @@ services:
       - LOG_LEVEL=INFO
       - ALIYUN_ACCESS_KEY=${DIVIDEND_ALIYUN_ACCESS_KEY:-}
       - PYWENCAI_COOKIE=${PYWENCAI_COOKIE:-}
+      - AGENT_API_TOKEN=${AGENT_API_TOKEN:-}
     networks:
       - app-net
     healthcheck:
