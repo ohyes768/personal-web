@@ -11,7 +11,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from loguru import logger
 
-from src.server.endpoints import router, set_processor, set_rss_config, set_rss_token
+from src.server.endpoints import (
+    router,
+    set_processor,
+    set_rss_config,
+    set_rss_token,
+    _run_process_pending,
+)
 from src.processor.filesystem_client import FileSystemClient
 from src.processor.asr_client import AliyunASRClient
 from src.processor.status_manager import StatusManager
@@ -139,6 +145,30 @@ async def lifespan(app: FastAPI):
         id="cleanup_old_records",
         replace_existing=True,
     )
+
+    # 注册 process_pending 自调度（09:45 / 17:15 北京时间，取代 n8n 外部触发）
+    # 与 cleanup 共用同一个 scheduler，共用 endpoints._process_lock 自动防重入
+    process_pending_config = app_config.get("process_pending", {})
+    pp_tz = process_pending_config.get("timezone", cleanup_tz)
+    pp_morning = process_pending_config.get("cron_morning", "45 9 * * *")
+    pp_evening = process_pending_config.get("cron_evening", "15 17 * * *")
+    scheduler.add_job(
+        _run_process_pending,
+        CronTrigger.from_crontab(pp_morning, timezone=pp_tz),
+        id="process_pending_morning",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        _run_process_pending,
+        CronTrigger.from_crontab(pp_evening, timezone=pp_tz),
+        id="process_pending_evening",
+        replace_existing=True,
+    )
+    logger.info(
+        f"APScheduler 已注册 process_pending: {pp_morning} / {pp_evening} ({pp_tz}) "
+        f"自动处理 status=pending 视频"
+    )
+
     scheduler.start()
     logger.info(
         f"APScheduler 已启动:每天 {cleanup_cron} ({cleanup_tz}) 清理 >{cleanup_days}d 过期记录"

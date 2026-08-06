@@ -381,7 +381,7 @@ GET /docs
 | 功能 | 网关路由 | 后端路由 | 说明 |
 |------|----------|----------|------|
 | 同步处理音频（前端调用） | `POST /api/douyin/process` | `/api/process` | 等待完成，前端使用 |
-| 异步处理音频（n8n 调用） | - | `/api/process/async` | 立即返回，后台处理 |
+| 异步处理音频（手动 / 自动调度） | - | `/api/process/pending` | 立即返回，后台串行处理；已由 APScheduler 每天 09:45 / 17:15 北京时间自调度，不再依赖 n8n |
 | 获取视频列表 | `GET /api/douyin/videos` | `/api/videos` | 支持分页和状态筛选 |
 | 获取视频详情 | `GET /api/douyin/videos/{aweme_id}` | `/api/videos/{aweme_id}` | 单个视频详情 |
 | 获取统计信息 | `GET /api/douyin/stats` | `/api/stats` | 处理统计数据 |

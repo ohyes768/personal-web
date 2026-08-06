@@ -48,3 +48,11 @@ app:
     days: 45                  # 清理阈值（天）
     cron: "7 3 * * *"         # 每天 03:07 北京时间（跟 rss-relay 03:03 错开 4 分钟）
     timezone: "Asia/Shanghai"
+
+  # 定时 process_pending:每天 09:45 / 17:15 北京时间自动处理 status=pending 视频
+  # 之前由 n8n 外部定时触发,改为后端 APScheduler 自调度,降低对外部服务依赖
+  # 与 cleanup 共用同一个 AsyncIOScheduler 实例,共用 endpoints._process_lock 防重入
+  process_pending:
+    cron_morning: "45 9 * * *"    # 每天 09:45 北京时间
+    cron_evening: "15 17 * * *"   # 每天 17:15 北京时间
+    timezone: "Asia/Shanghai"
