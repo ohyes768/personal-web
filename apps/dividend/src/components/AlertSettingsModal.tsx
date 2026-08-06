@@ -11,7 +11,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Modal } from './shared-ui/Modal';
 import { Button } from './shared-ui/Button';
-import { AlertLevelBarMini } from './AlertLevelBarMini';
 import type {
   AlertConfigRequest,
   AlertLevels,
@@ -256,12 +255,6 @@ export function AlertSettingsModal({
               </div>
             );
           })}
-        </div>
-
-        {/* 实时命中预览：4 档价格任意变化时自动重渲染 */}
-        <div className="border border-rule rounded p-3 bg-paper-tint">
-          <div className="text-[11px] text-ink-muted mb-2 font-medium">实时预览 · 价格变化即时反映</div>
-          <AlertLevelBarMini levels={validLevels} />
         </div>
 
         {/* 启用监控 */}
