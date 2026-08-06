@@ -406,7 +406,7 @@ function DividendPageContent() {
     return stocksWithTechnical;
   }, [stocksWithTechnical, activeTab, watchlist]);
 
-  // 挡位监控 Tab：filter 已设 alerts 的收藏股票 + 拉实时 PE/PB
+  // 挡位监控 Tab：filter 已设 alerts 的收藏股票
   const alertStocks = useMemo(() => {
     const items = alertsStatus.status?.items ?? [];
     return items
@@ -418,27 +418,6 @@ function DividendPageContent() {
       })
       .filter((s): s is { stock: DividendStockWithTechnical; levels: AlertLevels } => s !== null);
   }, [alertsStatus.status, stocksWithTechnical]);
-
-  const [pePbMap, setPePbMap] = useState<Record<string, { pe: number | null; pb: number | null }>>({});
-  useEffect(() => {
-    if (alertStocks.length === 0) {
-      setPePbMap({});
-      return;
-    }
-    if (activeTab !== 'alerts') return;
-    const codes = alertStocks.map(s => s.stock.code).join(',');
-    let cancelled = false;
-    dividendApi.getPEData({ codes }).then(resp => {
-      if (cancelled) return;
-      const m: Record<string, { pe: number | null; pb: number | null }> = {};
-      resp.items.forEach(it => { m[it.code] = { pe: it.pe, pb: it.pb }; });
-      setPePbMap(m);
-    }).catch(() => {
-      if (cancelled) return;
-      setPePbMap({});
-    });
-    return () => { cancelled = true; };
-  }, [activeTab, alertStocks]);
 
   // 处理弹框
   const handleOpenModal = useCallback((type: 'quarterly' | 'sector' | 'yearly' | 'volatility', stock: DividendStock) => {
@@ -1090,7 +1069,6 @@ function DividendPageContent() {
               const tech = technicalData.get(stock.code);
               const currentPrice = tech?.realtime ?? tech?.close ?? null;
               if (currentPrice === null || currentPrice === undefined) return null;
-              const pp = pePbMap[stock.code];
               return (
                 <AlertLevelBar
                   key={stock.code}
@@ -1098,8 +1076,8 @@ function DividendPageContent() {
                   name={stock.name}
                   levels={levels}
                   currentPrice={currentPrice}
-                  currentPE={pp?.pe ?? null}
-                  currentPB={pp?.pb ?? null}
+                  currentPE={tech?.pe ?? null}
+                  currentPB={tech?.pb ?? null}
                   onClick={() => handleOpenAlertSettings(stock.code)}
                 />
               );

@@ -58,7 +58,7 @@ export function useDividendData() {
 
 /**
  * 技术指标数据 Hook
- * 获取 PE/PB 和 M120 数据
+ * 获取 M120 / 实时价 / 静态PE / PB
  */
 export function useTechnicalData(stockCodes: string[], refreshKey?: number, minYield?: number) {
   const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(new Map());
@@ -79,7 +79,7 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
       setError(null);
 
       try {
-        // 并行获取 M120 和实时价格数据
+        // 并行获取 M120（含实时价 / 静态PE / PB）
         // 不传 min_yield，后端默认 0 = 不过滤，拿全部股票的实时价格
         const [m120Response] = await Promise.all([
           dividendApi.getM120Data({}),
@@ -102,6 +102,8 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
               realtime: m120?.realtime ?? null,
               realtimeDeviation: m120?.realtime_deviation ?? null,
               yield_ttm: m120?.yield_ttm ?? null,
+              pe: m120?.pe ?? null,
+              pb: m120?.pb ?? null,
             });
           }
         });

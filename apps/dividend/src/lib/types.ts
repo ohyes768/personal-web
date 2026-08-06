@@ -171,6 +171,8 @@ export interface M120Stock {
   realtime?: number | null;
   realtime_deviation?: number | null;
   yield_ttm?: number | null;  // 实时股息率TTM(%)
+  pe?: number | null;         // 静态市盈率(SY1)
+  pb?: number | null;         // 市净率(SJ)
 }
 
 /**
@@ -210,6 +212,8 @@ export interface TechnicalIndicators {
   realtime?: number | null;       // 实时价格（从实时价格CSV获取）
   realtimeDeviation?: number | null; // 实时价格与M120的偏离度
   yield_ttm?: number | null;      // 实时股息率TTM(%)
+  pe?: number | null;             // 静态市盈率(SY1，随实时价刷新)
+  pb?: number | null;             // 市净率(SJ，随实时价刷新)
 }
 
 /**
