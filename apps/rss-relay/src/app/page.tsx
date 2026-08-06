@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { usePosts } from '@/lib/hooks';
+import { rssRelayApi } from '@/lib/api';
 import type { PostInfo } from '@/lib/types';
 import PostCard from '@/components/PostCard';
 import PostModal from '@/components/PostModal';
@@ -11,6 +12,19 @@ export default function HomePage() {
   const { posts, loading, error, refresh } = usePosts(50);
   const [selected, setSelected] = useState<PostInfo | null>(null);
   const [apiOpen, setApiOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const handleDelete = async (post: PostInfo) => {
+    setDeletingId(post.id);
+    try {
+      await rssRelayApi.deletePost(post.id);
+      await refresh(); // 成功后重拉列表，把已删的那条移除
+    } catch (e) {
+      alert(`删除失败：${e instanceof Error ? e.message : '未知错误'}`);
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   return (
     <main className="min-h-screen">
@@ -84,7 +98,13 @@ export default function HomePage() {
         ) : (
           <div className="grid grid-cols-1 gap-4">
             {posts.map((post) => (
-              <PostCard key={post.id} post={post} onSelect={setSelected} />
+              <PostCard
+                key={post.id}
+                post={post}
+                onSelect={setSelected}
+                onDelete={handleDelete}
+                deleting={deletingId === post.id}
+              />
             ))}
           </div>
         )}

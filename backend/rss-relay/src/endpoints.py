@@ -10,7 +10,7 @@ from loguru import logger
 from pydantic import BaseModel, Field
 
 from .rss_utils import build_rss_xml, truncate_for_summary
-from .store import generate_id, write_post, list_posts
+from .store import generate_id, write_post, list_posts, delete_post as delete_post_file
 
 
 EAST8 = timezone(timedelta(hours=8))
@@ -184,6 +184,18 @@ async def list_posts_json(
             for p in posts
         ],
     }
+
+
+@router.delete("/api/posts/{post_id}", status_code=204)
+async def remove_post(post_id: str):
+    """删除一篇 post。无鉴权（依赖内网隔离）。
+
+    204 = 删除成功；404 = 文件不存在或 id 非法（路径分隔符、.. 等）。
+    """
+    deleted = delete_post_file(_POSTS_DIR, post_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Post not found")
+    logger.info(f"删除 post id={post_id!r}")
 
 
 @router.get("/health")

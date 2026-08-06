@@ -136,3 +136,34 @@ def list_posts(
 
     posts.sort(key=lambda p: p["created_at"], reverse=True)
     return posts[:limit]
+
+
+def _validate_post_id(post_id: str) -> bool:
+    """校验 post_id 合法：非空、不含路径分隔符/..、长度合理。
+
+    防止 delete_post 被路径穿越攻击（即使只内部使用，也要防一手）。
+    """
+    if not post_id:
+        return False
+    if "/" in post_id or "\\" in post_id:
+        return False
+    if ".." in post_id:
+        return False
+    if len(post_id) > 200:
+        return False
+    return True
+
+
+def delete_post(posts_dir: Path, post_id: str) -> bool:
+    """删除一个 post 文件。返回是否真的删了一个文件。
+
+    返回 True = 文件存在并已 unlink；False = id 非法或文件不存在。
+    调用方根据返回值翻译为 204 / 404。
+    """
+    if not _validate_post_id(post_id):
+        return False
+    file_path = posts_dir / f"{post_id}.md"
+    if not file_path.exists():
+        return False
+    file_path.unlink()
+    return True

@@ -24,6 +24,11 @@ class ApiClient {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
+    // 204 No Content 等没有 body 的响应
+    if (response.status === 204) {
+      return undefined as T;
+    }
+
     return response.json() as Promise<T>;
   }
 
@@ -56,6 +61,15 @@ class ApiClient {
     }
 
     return this.request<T>(url);
+  }
+
+  async delete(endpoint: string): Promise<void> {
+    // baseUrl 是相对路径时直接拼；绝对路径时按 endpoint 解析
+    const isRelativePath = !this.baseUrl || this.baseUrl.startsWith('/');
+    const url = isRelativePath
+      ? `${this.baseUrl}${endpoint}`
+      : new URL(endpoint, this.baseUrl).toString();
+    return this.request<void>(url, { method: 'DELETE' });
   }
 }
 

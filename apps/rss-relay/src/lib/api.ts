@@ -9,4 +9,10 @@ export const rssRelayApi = {
    */
   getPosts: (limit = 50) =>
     directClient.get<PostsResponse>('/rss/api/rss-relay/posts', { limit }),
+
+  /** 删除一篇 post。404 时 throw，调用方 catch。 */
+  deletePost: (id: string) =>
+    directClient.delete(
+      `/rss/api/rss-relay/posts/${encodeURIComponent(id)}`
+    ),
 };

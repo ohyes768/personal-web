@@ -29,6 +29,13 @@ export async function POST(
   return proxy(request, await params, 'POST');
 }
 
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  return proxy(request, await params, 'DELETE');
+}
+
 async function proxy(
   request: NextRequest,
   resolved: { slug: string[] },
