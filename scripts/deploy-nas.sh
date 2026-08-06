@@ -272,10 +272,10 @@ else
     done
 fi
 
-# ---- Step 3: restart ----
+# ---- Step 3: restart（--no-build：镜像已由上一步 buildx/compose 打好，禁止 compose 再用旧名偷偷重建） ----
 echo ""
-echo "==> [4/4] docker compose up -d --force-recreate"
-docker compose -f "$COMPOSE_FILE" up -d --force-recreate $SERVICES
+echo "==> [4/4] docker compose up -d --force-recreate --no-build"
+docker compose -f "$COMPOSE_FILE" up -d --force-recreate --no-build $SERVICES
 
 # ---- 验证状态 ----
 echo ""

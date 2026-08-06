@@ -61,6 +61,8 @@ services:
   # dividend 前端（Next.js，basePath 已改为空）
   # ---------------------------------------------------------------------------
   dividend-frontend:
+    # 固定镜像名，与 deploy-nas.sh buildx --tag 一致（否则 compose 用项目前缀名，buildx 白打）
+    image: dividend-frontend:latest
     build:
       context: ./apps/dividend
       dockerfile: Dockerfile
@@ -110,6 +112,7 @@ services:
   # douyin 前端（Next.js，basePath 已改为空）
   # ---------------------------------------------------------------------------
   douyin-frontend:
+    image: douyin-frontend:latest
     build:
       context: ./apps/douyin
       dockerfile: Dockerfile
@@ -160,6 +163,7 @@ services:
   # rss-relay 前端（Next.js，列表页浏览推送的 markdown）
   # ---------------------------------------------------------------------------
   rss-relay-frontend:
+    image: rss-relay-frontend:latest
     build:
       context: ./apps/rss-relay
       dockerfile: Dockerfile
