@@ -2,7 +2,8 @@
 WORKDIR /app
 RUN npm install -g pnpm
 COPY package.json pnpm-lock.yaml .npmrc ./
-RUN --mount=type=cache,target=/root/.local/share/pnpm/store \
+ARG PNPM_CACHE_BUST=shared
+RUN --mount=type=cache,id=pnpm-${PNPM_CACHE_BUST},target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile
 
 FROM node:20-alpine AS builder

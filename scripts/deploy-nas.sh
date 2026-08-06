@@ -35,16 +35,16 @@ side:（默认 both）
 
 options:
   --no-pull     跳过 git pull + submodule update
-  --cold        强制冷构建（全部加 --no-cache；默认热构建）
+  --cold        强制冷构建：清 Docker 层缓存 + 换新的空 pnpm store（真正重下依赖）
   --no-buildx   前端也退回 docker compose build（默认 frontend 走 buildx）
   --tail        部署完后 tail 日志（默认关）
   -h, --help    显示本帮助
 
 构建行为（两个正交开关）:
   (默认)              frontend → buildx 热构建；backend → compose 热构建
-  --cold              同上路径，但全部 --no-cache
+  --cold              同上路径，但 --no-cache + 新 pnpm store（不复用已下包）
   --no-buildx         frontend/backend 都走 compose 热构建
-  --cold --no-buildx  全部 compose --no-cache
+  --cold --no-buildx  全部 compose 真冷构建
 
 说明:
   buildx 使用 docker-container 驱动时，不会继承宿主机 daemon.json 的
@@ -194,7 +194,8 @@ compose_build() {
     local svc="$1"
     local args=()
     if $COLD; then
-        args+=(--no-cache)
+        # --no-cache 清层；PNPM_CACHE_BUST 换新 id → cache mount 是空的，真正重下包
+        args+=(--no-cache --build-arg "PNPM_CACHE_BUST=cold-$(date +%s)")
     fi
     docker compose -f "$COMPOSE_FILE" build "$svc" "${args[@]}"
 }
@@ -214,7 +215,7 @@ buildx_build_frontend() {
         -f "$df"
     )
     if $COLD; then
-        args+=(--no-cache)
+        args+=(--no-cache --build-arg "PNPM_CACHE_BUST=cold-$(date +%s)")
     fi
     docker buildx build "${args[@]}" "$ctx"
 }
