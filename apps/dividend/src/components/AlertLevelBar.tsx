@@ -3,13 +3,12 @@
  *
  * 紧凑布局：
  *   L1 股票头：代码/名 + 距各档 + 现价/涨幅/操作建议
- *   L2 色条 + 当前价指针（价格与静态 PE / PB 同一行）
- *   L3 档位刻度（tag + 价格）；点击档位弹出该档 PE/PB
+ *   L2 五区色条 + 5 个点（现价醒目 + 4 档）：上方价格，下方 PE/PB
  */
 
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { AlertLevels } from '@/lib/types';
 
 export interface AlertLevelBarProps {
@@ -23,6 +22,7 @@ export interface AlertLevelBarProps {
 }
 
 type LevelKey = 'heavy_position' | 'add_position' | 'reduce_position' | 'full_exit';
+type SegSide = 'heavy' | 'add' | 'hold' | 'reduce' | 'full';
 
 // 4 档价格 → 操作建议（色条 + 徽章共用元数据）
 const LEVEL_META: Record<LevelKey, { tag: string; shortLabel: string; color: 'green' | 'yellow' | 'orange' | 'red' }> = {
@@ -32,25 +32,38 @@ const LEVEL_META: Record<LevelKey, { tag: string; shortLabel: string; color: 'gr
   full_exit:       { tag: '全卖', shortLabel: '全卖', color: 'red'    },
 };
 
-// 5 段色块颜色（暖白色板下低饱和暖色 + 中性灰持有区）
-// 持有区用 paper-deep 的加深一档，与"持有观望"徽章语义一致
-const SEG_COLORS: Record<'heavy' | 'add' | 'hold' | 'reduce' | 'full', string> = {
+// 5 段色块颜色（暖白色板；减仓偏橙、全卖偏深红，拉开 4/5 段对比）
+const SEG_COLORS: Record<SegSide, string> = {
   heavy:  '#5A9472', // 暖绿
   add:    '#C9951F', // 暖黄
-  hold:   '#D9D2C2', // 中性灰（持有区，介于 paper-deep 与 rule-strong 之间）
-  reduce: '#B85C38', // 暖橙
-  full:   '#A8453A', // 暖红
+  hold:   '#D9D2C2', // 中性灰（持有区）
+  reduce: '#D4893A', // 暖琥珀橙（减仓）
+  full:   '#9B2F2F', // 深红（全卖，与减仓拉开）
+};
+
+// 色块上的五区标签
+const SEG_LABELS: Record<SegSide, string> = {
+  heavy:  '重仓区',
+  add:    '加仓区',
+  hold:   '持有区',
+  reduce: '减仓区',
+  full:   '全卖区',
+};
+
+// 色块标签字色：持有区浅底用深字，其余深色块用白字
+const SEG_LABEL_CLS: Record<SegSide, string> = {
+  heavy:  'text-white/95',
+  add:    'text-white/95',
+  hold:   'text-ink-muted',
+  reduce: 'text-white/95',
+  full:   'text-white/95',
 };
 
 // 段位语义判定：根据相邻两档的"买/卖方向"决定段色
 // - 两端段（首/尾）：用单边档位的色
 // - 中间段：两档同买→用右档色（更高）；两档同卖→用左档色（更低）；买→卖→持有
-// 这样即使只设 2/3 档（缺档），色段仍按"有意义的相邻区"渲染，不出 NaN/空段
-function gapColor(
-  leftKey: LevelKey | null,
-  rightKey: LevelKey | null
-): 'heavy' | 'add' | 'hold' | 'reduce' | 'full' {
-  const keyToSeg = (k: LevelKey): 'heavy' | 'add' | 'reduce' | 'full' => {
+function gapColor(leftKey: LevelKey | null, rightKey: LevelKey | null): SegSide {
+  const keyToSeg = (k: LevelKey): Exclude<SegSide, 'hold'> => {
     if (k === 'heavy_position')  return 'heavy';
     if (k === 'add_position')    return 'add';
     if (k === 'reduce_position') return 'reduce';
@@ -59,21 +72,19 @@ function gapColor(
   const isBuy = (k: LevelKey) => k === 'heavy_position' || k === 'add_position';
   const isSell = (k: LevelKey) => k === 'reduce_position' || k === 'full_exit';
 
-  // 边界段：仅一边有 key
   if (!leftKey && rightKey) return keyToSeg(rightKey);
   if (leftKey && !rightKey) return keyToSeg(leftKey);
 
-  // 中间段：两边都有 key
   if (leftKey && rightKey) {
-    if (isBuy(leftKey) && isBuy(rightKey))   return keyToSeg(rightKey); // 重仓→加仓 / 加仓→重仓：用较高价档色
-    if (isSell(leftKey) && isSell(rightKey)) return keyToSeg(leftKey);  // 减仓→全卖 / 全卖→减仓：用较低价档色
-    if (isBuy(leftKey) && isSell(rightKey))  return 'hold';             // 加仓→减仓：持有区
+    if (isBuy(leftKey) && isBuy(rightKey))   return keyToSeg(rightKey);
+    if (isSell(leftKey) && isSell(rightKey)) return keyToSeg(leftKey);
+    if (isBuy(leftKey) && isSell(rightKey))  return 'hold';
   }
   return 'hold';
 }
 
 // 命中状态：5 个色块 + 持有观望
-type HitStatus = 'heavy' | 'add' | 'hold' | 'reduce' | 'full' | 'inactive';
+type HitStatus = SegSide | 'inactive';
 
 function hitStatus(levels: AlertLevels, currentPrice: number): HitStatus {
   const heavy = levels.heavy_position?.price;
@@ -87,7 +98,6 @@ function hitStatus(levels: AlertLevels, currentPrice: number): HitStatus {
   return 'hold';
 }
 
-// 命中徽章暖白配色（底色 -50 + 文字 -700 + 边框 -200）
 const HIT_META: Record<HitStatus, { label: string; cls: string } | null> = {
   heavy:  { label: '🟢 可加仓',    cls: 'bg-green-50 text-green-700 border border-green-200' },
   add:    { label: '🟡 加仓价位',  cls: 'bg-yellow-50 text-yellow-700 border border-yellow-200' },
@@ -109,6 +119,14 @@ function fmtPrice(p: number): string {
 function fmtPct(p: number): string {
   const sign = p > 0 ? '+' : '';
   return `${sign}${p.toFixed(1)}%`;
+}
+
+/** 选填 PE/PB：有哪个标哪个，都没有返回 null */
+function fmtPePb(pe?: number | null, pb?: number | null): string | null {
+  const parts: string[] = [];
+  if (pe != null) parts.push(`PE ${pe.toFixed(1)}`);
+  if (pb != null) parts.push(`PB ${pb.toFixed(2)}`);
+  return parts.length > 0 ? parts.join(' / ') : null;
 }
 
 /**
@@ -152,43 +170,34 @@ export function AlertLevelBar({
     return null;
   }
 
-  // 关键：只用已设置档位的价格作为区间，不把 currentPrice 算进 min/max
-  // 否则 currentPrice 在区间内时 minP==heavy / maxP==full，首/末段会被压成 0 宽度
+  // 尺度：只用已设置档位的价格作为区间，不把 currentPrice 算进 min/max
   const minP = Math.min(...points.map(p => p.price));
   const maxP = Math.max(...points.map(p => p.price));
   const range = maxP - minP || 1;
   // pct clamp 到 [5, 95]：首/末段保底 5% 宽度，避免被压成 0 宽度而视觉消失
   const pct = (p: number) => Math.max(5, Math.min(95, ((p - minP) / range) * 100));
 
-  // 4 档价格按价位排序
   const sortedPoints = [...points].sort((a, b) => a.price - b.price);
 
-  // 动态生成色段：基于实际设置的价格点数（2-4 档都支持）
-  // - 4 档：5 段（heavy/add/hold/reduce/full）
-  // - 3 档：4 段（按相邻语义合并缺失档位的色）
-  // - 2 档：3 段
-  // 不再硬编码 sortedPoints[0..3]，避免缺档时 NaN 段导致 5 段变 3 段
-  const segments: Array<{ side: 'heavy' | 'add' | 'hold' | 'reduce' | 'full'; left: number; width: number }> = [];
+  // 动态生成色段：4 档 → 5 段（重仓/加仓/持有/减仓/全卖）
+  const segments: Array<{ side: SegSide; left: number; width: number }> = [];
   if (sortedPoints.length >= 1) {
-    // 首段：[0, p0] 用 p0 的色
     segments.push({
       side: gapColor(null, sortedPoints[0].key),
       left: 0,
       width: pct(sortedPoints[0].price),
     });
-    // 中间段：[pi, pi+1] 按相邻语义着色
     for (let i = 0; i < sortedPoints.length - 1; i++) {
       const leftPct = pct(sortedPoints[i].price);
       const rightPct = pct(sortedPoints[i + 1].price);
       const width = rightPct - leftPct;
-      if (width <= 0) continue; // 两档同价时跳过 0 宽段
+      if (width <= 0) continue;
       segments.push({
         side: gapColor(sortedPoints[i].key, sortedPoints[i + 1].key),
         left: leftPct,
         width,
       });
     }
-    // 末段：[pn, max] 用 pn 的色
     const lastPct = pct(sortedPoints[sortedPoints.length - 1].price);
     const lastWidth = 100 - lastPct;
     if (lastWidth > 0) {
@@ -203,7 +212,6 @@ export function AlertLevelBar({
   const status = hitStatus(levels, currentPrice);
   const badge = HIT_META[status];
 
-  // 命中涨跌幅（vs 距离最近的有效档算）
   const change = (() => {
     if (points.length === 0) return null;
     const sortedByPrice = [...points].sort((a, b) => a.price - b.price);
@@ -214,7 +222,6 @@ export function AlertLevelBar({
     return ((currentPrice - closest.price) / closest.price) * 100;
   })();
 
-  // 各档距离 %（按距离最近的有效档算）
   const distances = sortedPoints.map(p => {
     const isHit = (() => {
       if (p.key === 'heavy_position' || p.key === 'add_position') return currentPrice <= p.price;
@@ -228,10 +235,7 @@ export function AlertLevelBar({
     };
   });
 
-  // 当前价 ▲ 标签水平位置：clamp 到 [8%, 92%]，避免文字溢出卡片边界
   const markerLeftPct = Math.max(8, Math.min(92, pct(currentPrice)));
-
-  const [openPePbKey, setOpenPePbKey] = useState<LevelKey | null>(null);
 
   return (
     <div
@@ -267,116 +271,108 @@ export function AlertLevelBar({
         )}
       </div>
 
-      {/* L2 色条 + 当前价标识（价格标在色条上方一行） */}
-      <div className="relative pt-5">
-        <div className="relative h-2 bg-paper-deep rounded-full overflow-hidden">
+      {/* L2 五区色条 + 5 点（现价醒目，4 档次之）：上价格 / 下 PE·PB */}
+      <div className="relative pt-5 pb-7">
+        <div className="relative h-6 bg-paper-deep rounded-md overflow-hidden">
           {segments.map((seg, i) => (
             <div
               key={i}
-              className="absolute top-0 bottom-0"
+              className="absolute top-0 bottom-0 flex items-center justify-center overflow-hidden"
               style={{
                 left: `${seg.left}%`,
                 width: `${seg.width}%`,
                 backgroundColor: SEG_COLORS[seg.side],
               }}
-            />
+            >
+              {seg.width >= 8 && (
+                <span className={`text-[10px] font-semibold tracking-wide whitespace-nowrap select-none ${SEG_LABEL_CLS[seg.side]}`}>
+                  {SEG_LABELS[seg.side]}
+                </span>
+              )}
+            </div>
           ))}
         </div>
 
-        <div
-          className="absolute inset-0 pointer-events-none"
-          aria-label={`当前价 ${fmtPrice(currentPrice)}`}
-        >
-          <div
-            className="absolute w-0.5 bg-accent opacity-60"
-            style={{
-              left: `${markerLeftPct}%`,
-              transform: 'translateX(-50%)',
-              top: '1.25rem',
-              bottom: 0,
-            }}
-          />
-          <div
-            className="absolute"
-            style={{
-              left: `${markerLeftPct}%`,
-              top: 'calc(1.25rem + 4px)',
-              transform: 'translate(-50%, -50%)',
-              width: '12px',
-              height: '12px',
-            }}
-          >
-            <div className="absolute inset-0 rounded-full bg-accent" />
-            <div className="absolute inset-[2.5px] rounded-full bg-paper-card shadow-sm" />
-            <div className="absolute inset-[4.5px] rounded-full bg-accent" />
-          </div>
-          <div
-            className="absolute whitespace-nowrap"
-            style={{
-              left: `${markerLeftPct}%`,
-              top: 0,
-              transform: 'translateX(-50%)',
-            }}
-          >
-            <span className="text-accent font-mono font-bold text-[11px]">¥{fmtPrice(currentPrice)}</span>
-            <span className="text-accent-hover font-mono text-[10px] opacity-80 ml-1">
-              {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
-              {' / '}
-              {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* L3 档位刻度：仅 tag + 价格；点击档位弹出该档 PE/PB */}
-      <div className="relative h-8 mt-1.5">
+        {/* 4 档位点：较小圆点，上方价格，下方选填 PE/PB */}
         {sortedPoints.map(p => {
+          const left = Math.max(4, Math.min(96, pct(p.price)));
           const meta = LEVEL_META[p.key];
-          const tagClass = {
-            green: 'bg-green-50 text-green-700 border-green-200',
-            yellow: 'bg-yellow-50 text-yellow-700 border-yellow-200',
-            orange: 'bg-orange-50 text-orange-700 border-orange-200',
-            red: 'bg-red-50 text-red-700 border-red-200',
-          }[meta.color];
-          const tickLeftPct = Math.max(4, Math.min(96, pct(p.price)));
           const tickLevel = levels[p.key];
-          const tickPE = tickLevel?.pe ?? null;
-          const tickPB = tickLevel?.pb ?? null;
-          const isOpen = openPePbKey === p.key;
+          const pePb = fmtPePb(tickLevel?.pe, tickLevel?.pb);
+          const dotColor = {
+            green: SEG_COLORS.heavy,
+            yellow: SEG_COLORS.add,
+            orange: SEG_COLORS.reduce,
+            red: SEG_COLORS.full,
+          }[meta.color];
           return (
             <div
               key={p.key}
-              className="absolute -translate-x-1/2 text-center"
-              style={{ left: `${tickLeftPct}%` }}
+              className="absolute inset-y-0 w-0 pointer-events-none"
+              style={{ left: `${left}%` }}
+              aria-label={`${meta.tag} ¥${fmtPrice(p.price)}`}
             >
-              <button
-                type="button"
-                title="点击查看该档 PE/PB"
-                aria-expanded={isOpen}
-                className="inline-flex flex-col items-center cursor-pointer hover:opacity-80"
-                onClick={e => {
-                  e.stopPropagation();
-                  setOpenPePbKey(prev => (prev === p.key ? null : p.key));
+              {/* 上：价格 */}
+              <div className="absolute left-0 -translate-x-1/2 top-0 whitespace-nowrap text-center">
+                <div className="font-mono font-semibold text-[10px] text-ink">¥{fmtPrice(p.price)}</div>
+              </div>
+              {/* 点：色条垂直中心 */}
+              <div
+                className="absolute left-0 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-paper-card shadow-sm"
+                style={{
+                  top: 'calc(1.25rem + 12px)',
+                  width: '10px',
+                  height: '10px',
+                  backgroundColor: dotColor,
                 }}
-              >
-                <span className={`inline-block text-[10px] px-1.5 py-0.5 rounded font-semibold border ${tagClass}`}>
-                  {meta.tag}
-                </span>
-                <div className="text-ink font-mono font-semibold text-[11px] mt-0.5">¥{fmtPrice(p.price)}</div>
-              </button>
-              {isOpen && (
-                <div
-                  className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-10 whitespace-nowrap rounded border border-rule bg-paper-card px-2 py-1 shadow-sm font-mono text-[10px] text-ink"
-                  onClick={e => e.stopPropagation()}
-                >
-                  {tickPE != null ? `PE ${tickPE.toFixed(1)}` : 'PE -'}
-                  {' / '}
-                  {tickPB != null ? `PB ${tickPB.toFixed(2)}` : 'PB -'}
+              />
+              {/* 下：选填 PE/PB */}
+              {pePb && (
+                <div className="absolute left-0 -translate-x-1/2 top-[calc(1.25rem+24px+6px)] whitespace-nowrap text-center">
+                  <div className="font-mono text-[9px] text-ink-muted">{pePb}</div>
                 </div>
               )}
             </div>
           );
         })}
+
+        {/* 现价点：更大、强调色，盖在档位点之上 */}
+        <div
+          className="absolute inset-y-0 w-0 z-10 pointer-events-none"
+          style={{ left: `${markerLeftPct}%` }}
+          aria-label={`现价 ¥${fmtPrice(currentPrice)}`}
+        >
+          {/* 上：价格 */}
+          <div className="absolute left-0 -translate-x-1/2 top-0 whitespace-nowrap text-center">
+            <div className="text-accent font-mono font-bold text-[11px] drop-shadow-sm">¥{fmtPrice(currentPrice)}</div>
+          </div>
+          {/* 垂线 */}
+          <div
+            className="absolute left-0 -translate-x-1/2 w-0.5 bg-accent opacity-70"
+            style={{ top: '1.05rem', height: '1.55rem' }}
+          />
+          {/* 双层焦点圆（比档位点更大） */}
+          <div
+            className="absolute left-0 -translate-x-1/2 -translate-y-1/2"
+            style={{
+              top: 'calc(1.25rem + 12px)',
+              width: '16px',
+              height: '16px',
+            }}
+          >
+            <div className="absolute inset-0 rounded-full bg-accent shadow-md" />
+            <div className="absolute inset-[3px] rounded-full bg-paper-card" />
+            <div className="absolute inset-[5.5px] rounded-full bg-accent" />
+          </div>
+          {/* 下：PE/PB */}
+          <div className="absolute left-0 -translate-x-1/2 top-[calc(1.25rem+24px+8px)] whitespace-nowrap text-center">
+            <div className="text-accent font-mono text-[10px] font-medium">
+              {currentPE != null ? `PE ${currentPE.toFixed(1)}` : 'PE -'}
+              {' / '}
+              {currentPB != null ? `PB ${currentPB.toFixed(2)}` : 'PB -'}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
