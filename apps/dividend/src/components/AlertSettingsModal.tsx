@@ -68,6 +68,44 @@ function formatUpdatedAt(iso?: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+// 对接文档（外部 agent 调用 batch 接口的说明，常量避免每次渲染重建）
+const AGENT_DOC_TEXT = `POST /api/dividend/favorites/alerts/batch
+Header:
+  Content-Type: application/json
+  X-API-Token: <AGENT_API_TOKEN>    # 找运维拿，缺/错 → 401
+
+请求体（一次最多 100 条）：
+{
+  "updates": [
+    {
+      "code": "600000",                      # 6 位股票代码
+      "levels": {
+        "heavy_position":  {"price": 10.0, "pe": 8.5, "pb": 1.2},  # 重仓（必填 price>0，pe/pb 选填）
+        "add_position":    {"price": 12.0},                         # 加仓
+        "reduce_position": {"price": 15.0},                         # 减仓
+        "full_exit":       {"price": 18.0}                          # 全卖
+      },
+      "enabled": true                       # 选填，默认 true
+    }
+  ]
+}
+
+响应（HTTP 200，部分失败也是 200）：
+{
+  "results": [
+    {"code": "600000", "ok": true, "error": null},
+    {"code": "abc",    "ok": false, "error": "股票代码格式错误: abc"}
+  ],
+  "success_count": 1,
+  "fail_count": 1
+}
+
+说明：
+- 4 档 price 必填 > 0；pe/pb/enabled 选填
+- code 未在收藏列表会自动加入，无需预先 POST /favorites/{code}
+- 每条独立处理，部分失败不影响其他
+- 缺/错 token → 401；服务端未配 AGENT_API_TOKEN → 503`;
+
 export function AlertSettingsModal({
   isOpen,
   onClose,
@@ -82,6 +120,17 @@ export function AlertSettingsModal({
   const [levels, setLevels] = useState<AlertLevels>({ ...EMPTY_LEVELS });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyDoc = async () => {
+    try {
+      await navigator.clipboard.writeText(AGENT_DOC_TEXT);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch {
+      // clipboard API 在非 HTTPS / 旧浏览器可能失败，静默忽略
+    }
+  };
 
   // 同步 currentConfig 到本地表单
   useEffect(() => {
@@ -256,6 +305,28 @@ export function AlertSettingsModal({
             );
           })}
         </div>
+
+        {/* 对接文档（默认折叠，给外部 agent 对接用） */}
+        <details className="border border-rule rounded">
+          <summary className="px-3 py-2 cursor-pointer text-sm select-none flex items-center justify-between bg-paper-tint rounded">
+            <span>📄 对接文档 · 外部 agent batch 接口</span>
+            <span className="text-[11px] text-ink-muted">点击展开 / 收起</span>
+          </summary>
+          <div className="px-3 py-3 space-y-2">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleCopyDoc}
+                className="text-xs px-2 py-1 rounded border border-rule hover:bg-paper-tint bg-paper-card"
+              >
+                {copied ? '✓ 已复制' : '复制全部'}
+              </button>
+            </div>
+            <pre className="text-[11px] font-mono whitespace-pre-wrap bg-paper-deep p-3 rounded overflow-x-auto text-ink">
+              {AGENT_DOC_TEXT}
+            </pre>
+          </div>
+        </details>
 
         {/* 启用监控 */}
         <label className="flex items-center gap-2 text-sm">
