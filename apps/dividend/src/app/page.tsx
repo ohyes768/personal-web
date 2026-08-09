@@ -342,7 +342,7 @@ function DividendPageContent() {
   const stockCodes = useMemo(() => data.map(s => s.code), [data]);
 
   // 技术指标数据
-  const { technicalData } = useTechnicalData(stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
+  const { technicalData, priceUpdatedAt } = useTechnicalData(stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
 
   // 详情弹框
   const detailModal = useDetailModal();
@@ -1080,6 +1080,7 @@ function DividendPageContent() {
                   currentPB={tech?.pb ?? null}
                   dividend2025={stock.dividend_2025 ?? null}
                   yieldTtm={tech?.yield_ttm ?? null}
+                  priceUpdatedAt={priceUpdatedAt}
                   onClick={() => handleOpenAlertSettings(stock.code)}
                 />
               );

@@ -64,6 +64,8 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
   const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  /** 最近一次成功拉取的时间戳（ISO 字符串），用于在卡片上展示现价更新时间 */
+  const [priceUpdatedAt, setPriceUpdatedAt] = useState<string | null>(null);
 
   // 使用 useMemo 缓存 stockCodes，避免无限循环
   const memoizedStockCodes = useMemo(() => stockCodes, [JSON.stringify(stockCodes)]);
@@ -71,6 +73,7 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
   useEffect(() => {
     if (memoizedStockCodes.length === 0) {
       setTechnicalData(new Map());
+      setPriceUpdatedAt(null);
       return;
     }
 
@@ -109,6 +112,10 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
         });
 
         setTechnicalData(newTechnicalData);
+        // 仅在成功填充数据时更新现价时间戳
+        if (newTechnicalData.size > 0) {
+          setPriceUpdatedAt(new Date().toISOString());
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : '获取技术指标数据失败';
         setError(message);
@@ -121,7 +128,7 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
     fetchTechnicalData();
   }, [memoizedStockCodes, refreshKey]);
 
-  return { technicalData, loading, error };
+  return { technicalData, loading, error, priceUpdatedAt };
 }
 
 /**

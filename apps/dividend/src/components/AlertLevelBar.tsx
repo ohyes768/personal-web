@@ -23,6 +23,8 @@ export interface AlertLevelBarProps {
   dividend2025?: number | null;
   /** 实时股息率 TTM（%），仅现价点展示 */
   yieldTtm?: number | null;
+  /** 现价数据拉取时间（ISO 字符串），用于在 L1 行展示"更新于 MM-DD HH:MM" */
+  priceUpdatedAt?: string | null;
   onClick?: () => void;
 }
 
@@ -108,6 +110,15 @@ function fmtPct(p: number): string {
   return `${sign}${p.toFixed(1)}%`;
 }
 
+/** ISO 字符串 → "MM-DD HH:MM"（本地时区），无效入参返回 null */
+function fmtPriceUpdatedAt(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function fmtPePb(pe?: number | null, pb?: number | null): string | null {
   const parts: string[] = [];
   if (pe != null) parts.push(`PE ${pe.toFixed(1)}`);
@@ -162,6 +173,7 @@ export function AlertLevelBar({
   currentPB,
   dividend2025,
   yieldTtm,
+  priceUpdatedAt,
   onClick,
 }: AlertLevelBarProps) {
   const [openYield, setOpenYield] = useState<YieldKey | null>(null);
@@ -312,6 +324,17 @@ export function AlertLevelBar({
             {badge.label}
           </span>
         )}
+        {(() => {
+          const updated = fmtPriceUpdatedAt(priceUpdatedAt);
+          return updated ? (
+            <span
+              className="text-[10px] font-mono text-ink-muted whitespace-nowrap"
+              title={`现价更新于 ${updated}`}
+            >
+              更新 {updated}
+            </span>
+          ) : null;
+        })()}
       </div>
 
       {/* L2：价格 → 细条 → 点/PE·PB → 五区名 */}
