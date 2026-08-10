@@ -243,6 +243,30 @@ class RealtimePriceResponse(BaseModel):
     timestamp: Optional[str] = Field(None, description="数据获取时间")
 
 
+# ========== 现价（独立于 M120）模型 ==========
+
+
+class PriceItem(BaseModel):
+    """
+    单只股票的现价数据（不依赖 M120，供挡位监控等场景使用）
+    """
+    code: str = Field(..., description="股票代码")
+    close: Optional[float] = Field(None, description="昨日收盘价")
+    realtime: Optional[float] = Field(None, description="实时价格")
+    pe: Optional[float] = Field(None, description="静态市盈率(SY1)")
+    pb: Optional[float] = Field(None, description="市净率(SJ)")
+    yield_ttm: Optional[float] = Field(None, description="实时股息率TTM(%)")
+
+
+class PriceListResponse(BaseModel):
+    """
+    现价列表响应模型
+    """
+    total: int = Field(..., description="总记录数")
+    items: list[PriceItem] = Field(..., description="股票现价列表")
+    last_updated: Optional[str] = Field(None, description="实时价格数据最后更新时间")
+
+
 # ========== 股票信息相关模型 ==========
 
 

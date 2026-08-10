@@ -407,6 +407,68 @@ class M120Service(CsvPathService):
 
         return len(results)
 
+    def _read_price_csv(self) -> dict[str, dict]:
+        """
+        只读实时价格 CSV，返回 {code: {close, realtime, pe, pb}}。
+
+        与 read_m120_with_deviation 不同，本方法不以 M120 为主表，
+        实时价格文件有数据即可独立返回。文件不存在或读取失败返回 {}。
+        """
+        if not self.REALTIME_PRICE_CSV_FILE.exists():
+            logger.warning(f"实时价格数据文件不存在: {self.REALTIME_PRICE_CSV_FILE}")
+            return {}
+
+        try:
+            price_df = pd.read_csv(self.REALTIME_PRICE_CSV_FILE, encoding="utf-8-sig", dtype=CODE_DTYPE)
+        except Exception as e:
+            logger.error(f"读取实时价格数据失败: {e}")
+            return {}
+
+        result: dict[str, dict] = {}
+        for _, row in price_df.iterrows():
+            code = str(row["股票代码"]).zfill(6)
+
+            # 兼容新旧CSV格式：新格式有"昨日收盘"和"实时价格"，旧格式只有"收盘价"
+            if "昨日收盘" in price_df.columns:
+                close_val = float(row["昨日收盘"]) if pd.notna(row.get("昨日收盘")) else None
+                realtime_val = float(row["实时价格"]) if pd.notna(row.get("实时价格")) else None
+            else:
+                # 旧格式只有"收盘价"，作为昨日收盘
+                close_val = float(row["收盘价"]) if pd.notna(row.get("收盘价")) else None
+                realtime_val = None
+
+            pe_val = None
+            pb_val = None
+            if "静态PE" in price_df.columns and pd.notna(row.get("静态PE")):
+                try:
+                    pe_val = float(row["静态PE"])
+                except (ValueError, TypeError):
+                    pe_val = None
+            if "市净率" in price_df.columns and pd.notna(row.get("市净率")):
+                try:
+                    pb_val = float(row["市净率"])
+                except (ValueError, TypeError):
+                    pb_val = None
+
+            result[code] = {
+                "close": close_val,
+                "realtime": realtime_val,
+                "pe": pe_val,
+                "pb": pb_val,
+            }
+        return result
+
+    def read_prices_only(self) -> dict[str, dict]:
+        """
+        读取实时价格（不依赖 M120）。
+
+        供挡位监控等"只需现价/PE/PB"的场景使用：M120 数据缺失时仍可返回现价。
+
+        Returns:
+            {股票代码: {"close", "realtime", "pe", "pb"}} 字典
+        """
+        return self._read_price_csv()
+
     def read_m120_with_deviation(self) -> dict[str, dict]:
         """
         读取 M120 数据，并结合实时价格计算偏离度
@@ -429,45 +491,7 @@ class M120Service(CsvPathService):
             return {}
 
         # 读取实时价格数据（包含昨日收盘和实时价格）
-        price_dict = {}
-        if self.REALTIME_PRICE_CSV_FILE.exists():
-            try:
-                price_df = pd.read_csv(self.REALTIME_PRICE_CSV_FILE, encoding="utf-8-sig", dtype=CODE_DTYPE)
-                for _, row in price_df.iterrows():
-                    code = str(row["股票代码"]).zfill(6)
-
-                    # 兼容新旧CSV格式：新格式有"昨日收盘"和"实时价格"，旧格式只有"收盘价"
-                    if "昨日收盘" in price_df.columns:
-                        close_val = float(row["昨日收盘"]) if pd.notna(row.get("昨日收盘")) else None
-                        realtime_val = float(row["实时价格"]) if pd.notna(row.get("实时价格")) else None
-                    else:
-                        # 旧格式只有"收盘价"，作为昨日收盘
-                        close_val = float(row["收盘价"]) if pd.notna(row.get("收盘价")) else None
-                        realtime_val = None
-
-                    pe_val = None
-                    pb_val = None
-                    if "静态PE" in price_df.columns and pd.notna(row.get("静态PE")):
-                        try:
-                            pe_val = float(row["静态PE"])
-                        except (ValueError, TypeError):
-                            pe_val = None
-                    if "市净率" in price_df.columns and pd.notna(row.get("市净率")):
-                        try:
-                            pb_val = float(row["市净率"])
-                        except (ValueError, TypeError):
-                            pb_val = None
-
-                    price_dict[code] = {
-                        "close": close_val,
-                        "realtime": realtime_val,
-                        "pe": pe_val,
-                        "pb": pb_val,
-                    }
-            except Exception as e:
-                logger.error(f"读取实时价格数据失败: {e}")
-        else:
-            logger.warning(f"实时价格文件不存在，将使用 M120 作为收盘价: {self.REALTIME_PRICE_CSV_FILE}")
+        price_dict = self._read_price_csv()
 
         # 合并数据并计算偏离度
         result = {}

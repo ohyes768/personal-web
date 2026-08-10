@@ -33,6 +33,8 @@ from src.api.models import (
     M120Stock,
     QuarterlyData,
     Quarter,
+    PriceItem,
+    PriceListResponse,
     RealtimePriceRequest,
     RealtimePriceResponse,
     StockInfo,
@@ -73,6 +75,40 @@ from src.api.helpers.aux_data import (
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+
+def _compute_yield_ttm(row, realtime_price, calculator) -> Optional[float]:
+    """
+    根据主 CSV 行的「近5年分红详情」和实时价格计算实时股息率TTM(%)。
+
+    与 /api/dividend/m120 的 TTM 口径完全一致；失败或数据不足返回 None。
+    抽出为模块级 helper 供 /m120 与 /prices 共享，避免逻辑漂移。
+    """
+    if not realtime_price:
+        return None
+    try:
+        details_json = row.get("近5年分红详情")
+        if not details_json or not pd.notna(details_json):
+            return None
+        import json
+        details_list = json.loads(details_json)
+        from src.data.models import DividendDetail
+        dividend_details = [
+            DividendDetail(
+                ex_right_date=d.get("除权除息日", ""),
+                payout_ratio=float(d.get("派息比例", 0)),
+                fiscal_year=int(d.get("财年", 0)),
+            )
+            for d in details_list
+        ]
+        if not dividend_details:
+            return None
+        ttm_dividend = calculator.get_ttm_dividend(dividend_details)
+        if ttm_dividend > 0 and realtime_price > 0:
+            return round(ttm_dividend / realtime_price * 100, 2)
+    except Exception:
+        pass
+    return None
 
 # 创建路由
 router = APIRouter()
@@ -600,30 +636,8 @@ async def get_m120_stocks(
         m120_info = m120_data.get(code, {})
         realtime_price = m120_info.get("realtime")
 
-        # 计算实时股息率TTM
-        yield_ttm = None
-        try:
-            if realtime_price:
-                # 解析近5年分红详情JSON
-                dividend_details = []
-                details_json = row.get("近5年分红详情")
-                if details_json and pd.notna(details_json):
-                    import json
-                    details_list = json.loads(details_json)
-                    from src.data.models import DividendDetail
-                    for d in details_list:
-                        dividend_details.append(DividendDetail(
-                            ex_right_date=d.get("除权除息日", ""),
-                            payout_ratio=float(d.get("派息比例", 0)),
-                            fiscal_year=int(d.get("财年", 0))
-                        ))
-
-                if dividend_details:
-                    ttm_dividend = calculator.get_ttm_dividend(dividend_details)
-                    if ttm_dividend > 0 and realtime_price > 0:
-                        yield_ttm = round(ttm_dividend / realtime_price * 100, 2)
-        except Exception:
-            pass  # TTM计算失败不影响其他数据
+        # 计算实时股息率TTM（口径抽到 _compute_yield_ttm，与 /prices 共享）
+        yield_ttm = _compute_yield_ttm(row, realtime_price, calculator)
 
         items.append(M120Stock(
             code=code,
@@ -651,6 +665,58 @@ async def get_m120_stocks(
         items=items,
         last_updated=last_updated
     )
+
+
+@router.get("/prices", response_model=PriceListResponse)
+async def get_prices(
+    codes: str = Query("", description="逗号分隔的股票代码，空=返回实时价格CSV全部股票"),
+):
+    """
+    批量获取股票现价（独立于 M120）。
+
+    供挡位监控等"只需现价/PE/PB/yield_ttm"的场景：M120 数据缺失时仍可用。
+    yield_ttm 计算口径与 /api/dividend/m120 完全一致（_compute_yield_ttm）。
+    """
+    if data_reader is None or m120_service is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+
+    prices = m120_service.read_prices_only()
+
+    # codes 过滤（逗号分隔，前导零补全）
+    if codes.strip():
+        wanted = {c.strip().zfill(6) for c in codes.split(",") if c.strip()}
+        prices = {code: v for code, v in prices.items() if code in wanted}
+
+    # 读主 CSV 用于 yield_ttm 计算（按 code 索引）
+    df = data_reader.read_csv()
+    row_by_code: dict = {}
+    if not df.empty:
+        for _, row in df.iterrows():
+            row_by_code[str(row["股票代码"]).zfill(6)] = row
+
+    from src.core.calculator import DividendCalculator
+    calculator = DividendCalculator()
+
+    items: list[PriceItem] = []
+    for code, p in prices.items():
+        realtime = p.get("realtime")
+        row = row_by_code.get(code)
+        yield_ttm = _compute_yield_ttm(row, realtime, calculator) if row is not None else None
+        items.append(PriceItem(
+            code=code,
+            close=p.get("close"),
+            realtime=realtime,
+            pe=p.get("pe"),
+            pb=p.get("pb"),
+            yield_ttm=yield_ttm,
+        ))
+
+    last_updated = None
+    timestamp = m120_service.get_realtime_price_file_mtime()
+    if timestamp:
+        last_updated = datetime.fromtimestamp(timestamp).isoformat()
+
+    return PriceListResponse(total=len(items), items=items, last_updated=last_updated)
 
 
 @router.get("/m120/status")
