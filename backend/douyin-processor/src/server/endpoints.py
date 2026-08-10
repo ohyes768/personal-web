@@ -1,0 +1,1040 @@
+"""
+API 接口端点
+"""
+
+import asyncio
+import hmac
+import os
+from datetime import datetime
+from fastapi import APIRouter, HTTPException, BackgroundTasks, Query, Request, Response
+from pydantic import BaseModel
+from typing import Optional, List
+from pathlib import Path
+from loguru import logger
+
+from src.utils import load_json
+from src.server.rss_utils import (
+    build_rss_xml,
+    extract_hashtags,
+    truncate_for_summary,
+)
+
+router = APIRouter()
+
+# 全局处理器引用（在 main.py 中设置）
+processor = None
+
+# 处理任务锁：避免并发触发同一批 pending 被处理两次（重复消耗 ASR 配额）
+_process_lock = asyncio.Lock()
+
+
+# ---- RSS 配置（由 main.py 注入）----
+
+_RSS_CHANNEL_META: dict = {
+    "title": "抖音视频文字稿",
+    "link": "",
+    "description": "通过 douyin-processor 自动转写的抖音视频文字稿",
+    "self_url": "",
+}
+_RSS_MAX_ITEMS: int = 200
+_RSS_DEFAULT_LIMIT: int = 50
+_RSS_TOKEN: str = ""
+
+
+def set_rss_config(
+    channel_meta: dict,
+    max_items: int,
+    default_limit: int,
+) -> None:
+    """注入 RSS 配置（main.py 启动时调用）"""
+    global _RSS_CHANNEL_META, _RSS_MAX_ITEMS, _RSS_DEFAULT_LIMIT
+    merged = dict(_RSS_CHANNEL_META)
+    merged.update(channel_meta or {})
+    _RSS_CHANNEL_META = merged
+    _RSS_MAX_ITEMS = int(max_items or 200)
+    _RSS_DEFAULT_LIMIT = int(default_limit or 50)
+
+
+def set_rss_token(token: str) -> None:
+    """注入 RSS 鉴权 token（main.py 启动时调用，从 env 读取）"""
+    global _RSS_TOKEN
+    _RSS_TOKEN = token or ""
+
+
+def _verify_rss_token(token: str) -> bool:
+    """constant-time token 校验"""
+    if not _RSS_TOKEN:
+        return False
+    if len(token) != len(_RSS_TOKEN):
+        return False
+    return hmac.compare_digest(token, _RSS_TOKEN)
+
+
+def set_processor(proc):
+    """设置处理器实例"""
+    global processor
+    processor = proc
+
+
+class ProcessResponse(BaseModel):
+    """处理响应"""
+    success: bool
+    message: str
+    data: Optional[dict] = None
+
+
+class ResultResponse(BaseModel):
+    """结果响应"""
+    success: bool
+    data: Optional[dict] = None
+
+
+class TaskResponse(BaseModel):
+    """任务响应"""
+    success: bool
+    message: str
+    data: Optional[dict] = None
+
+
+# 新增响应模型
+class TranscriptInfo(BaseModel):
+    """转写信息"""
+    text: str
+    segments: Optional[List[dict]] = None
+    confidence: float
+    audio_duration: float
+
+
+class VideoListItem(BaseModel):
+    """视频列表项"""
+    aweme_id: str
+    status: str
+    title: str
+    author: str
+    audio_url: str
+    transcript: Optional[TranscriptInfo] = None
+    processed_at: Optional[int] = None
+    upload_time: Optional[str] = None
+    video_publish_time: Optional[str] = None  # 原抖音平台发布时间（douyin-collector 推过来时存）
+    is_read: bool = False
+    read_at: Optional[int] = None
+
+
+class VideoListResponse(BaseModel):
+    """视频列表响应"""
+    total_count: int
+    videos: List[VideoListItem]
+    page: int
+    page_size: int
+
+
+class VideoDetailResponse(BaseModel):
+    """视频详情响应"""
+    aweme_id: str
+    status: str
+    title: str
+    author: str
+    description: str
+    audio_url: str
+    transcript: Optional[TranscriptInfo] = None
+    processed_at: Optional[int] = None
+    upload_time: Optional[str] = None
+    video_publish_time: Optional[str] = None  # 原抖音平台发布时间（douyin-collector 推过来时存）
+    error: Optional[str] = None
+    is_read: bool = False
+    read_at: Optional[int] = None
+
+
+class StatsResponse(BaseModel):
+    """统计信息响应"""
+    total: int
+    completed: int
+    processing: int
+    failed: int
+    pending: int
+    success_rate: float
+
+
+class MarkReadRequest(BaseModel):
+    """标记已读请求"""
+    is_read: bool
+
+
+class ActionResponse(BaseModel):
+    """操作响应"""
+    success: bool
+    message: str
+
+
+async def _run_process_pending():
+    """后台任务：拿锁 → 跑 process_pending → 释放锁"""
+    async with _process_lock:
+        try:
+            await processor.process_pending()
+        except Exception as e:
+            logger.error(f"process_pending 后台任务异常: {e}")
+
+
+@router.post("/api/process/pending", response_model=TaskResponse)
+async def trigger_process_pending():
+    """触发处理 status=pending 的视频（ASR → unread）
+
+    行为：
+      1. 检查锁：已有任务在跑 → 拒（success=false）
+      2. 拉 pending 列表：空 → 直接返回
+      3. 非空 → asyncio.create_task 后台串行处理，立即返回
+    """
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    if _process_lock.locked():
+        return TaskResponse(
+            success=False,
+            message="已有处理任务正在进行中，请稍后再试",
+            data={"pending": 0},
+        )
+
+    pending_list = await processor.status_manager.list_pending()
+    if not pending_list:
+        return TaskResponse(
+            success=True,
+            message="没有待处理的音频",
+            data={"pending": 0},
+        )
+
+    asyncio.create_task(_run_process_pending())
+
+    logger.info(f"已启动 pending 处理任务: {len(pending_list)} 个视频")
+    return TaskResponse(
+        success=True,
+        message=f"已启动 ASR 处理（后台串行运行 {len(pending_list)} 个视频）",
+        data={"pending": len(pending_list)},
+    )
+
+
+@router.get("/api/aweme/{aweme_id}/status")
+async def get_aweme_status(aweme_id: str) -> dict:
+    """单个数据查询（douyin-collector 调，判断是否需要上传）
+
+    替代旧的 /api/aweme/{id}/skip。返回 known/status/audio_filename，
+    UI/前端也能用。
+    """
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    return await processor.status_manager.get_status_detail(aweme_id)
+
+
+class MarkPendingRequest(BaseModel):
+    """追加待处理请求"""
+    audio_filename: str
+    title: str = ""
+    author: str = ""
+    description: str = ""
+    video_publish_time: Optional[str] = None  # 原抖音平台发布时间（ISO8601，douyin-collector 推）
+
+
+@router.post("/api/aweme/{aweme_id}/pending")
+async def mark_aweme_pending(aweme_id: str, request: MarkPendingRequest) -> dict:
+    """追加待处理（douyin-collector 上传后调）"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    try:
+        await processor.status_manager.mark_pending(
+            aweme_id=aweme_id,
+            audio_filename=request.audio_filename,
+            title=request.title,
+            author=request.author,
+            description=request.description,
+            video_publish_time=request.video_publish_time,
+        )
+        return {"success": True, "message": "已加入待处理"}
+    except Exception as e:
+        logger.error(f"追加待处理失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/aweme/pending")
+async def list_pending_aweme() -> dict:
+    """拉待处理列表（process 处理脚本调）"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    items = await processor.status_manager.list_pending()
+    return {"items": items}
+
+
+class MarkProcessedRequest(BaseModel):
+    """标记处理完请求（ASR 完成时调）"""
+    transcript: Optional[dict] = None
+
+
+@router.post("/api/aweme/{aweme_id}/processed")
+async def mark_aweme_processed(aweme_id: str, request: MarkProcessedRequest) -> dict:
+    """标记处理完（ASR 完成）→ 状态变 unread"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    try:
+        await processor.status_manager.mark_processed(
+            aweme_id=aweme_id,
+            transcript=request.transcript,
+        )
+        return {"success": True, "message": "已标记为未读"}
+    except Exception as e:
+        logger.error(f"标记处理完失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/aweme/{aweme_id}/unread", response_model=ActionResponse)
+async def mark_aweme_unread(aweme_id: str):
+    """标回未读（用户撤回已读时用）"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    try:
+        await processor.status_manager.mark_unread(aweme_id)
+        return ActionResponse(success=True, message="已标记为未读")
+    except Exception as e:
+        logger.error(f"标记未读失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/api/aweme/cleanup")
+async def cleanup_old_aweme(days: int = Query(30, ge=1, description="清理阈值（天）")):
+    """清理过期记录（process 清理脚本调）
+
+    行为：
+      1. 找 status=unread/read 且 processed_at 超过 N 天的记录
+      2. 调 file-system-go 删物理文件
+      3. 从 status.json 硬删
+    """
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+    try:
+        deleted_ids = await processor.status_manager.cleanup_old_records(days)
+        failed = []
+        success_count = 0
+        for aid in deleted_ids:
+            audio_filename = f"{aid}.wav"
+            ok = await processor.filesystem_client.delete_file(audio_filename)
+            if ok:
+                success_count += 1
+            else:
+                failed.append(audio_filename)
+        logger.info(f"cleanup: 删 {success_count}/{len(deleted_ids)} 个文件，失败 {len(failed)}")
+        return {
+            "success": True,
+            "deleted": success_count,
+            "failed": failed,
+        }
+    except Exception as e:
+        logger.error(f"cleanup 失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/videos/{aweme_id}/result", response_model=ResultResponse)
+async def get_video_result(aweme_id: str):
+    """获取视频处理结果"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    logger.info(f"查询视频结果: {aweme_id}")
+
+    try:
+        # 检查状态
+        status = await processor.status_manager.get_status(aweme_id)
+
+        if status is None:
+            return ResultResponse(
+                success=True,
+                data={
+                    "aweme_id": aweme_id,
+                    "status": "pending",
+                    "message": "视频尚未处理"
+                }
+            )
+
+        if status == "processing":
+            return ResultResponse(
+                success=True,
+                data={
+                    "aweme_id": aweme_id,
+                    "status": "processing",
+                    "message": "视频正在处理中"
+                }
+            )
+
+        if status == "failed":
+            all_statuses = await processor.status_manager.get_all_statuses()
+            error = all_statuses.get(aweme_id, {}).get("error", "未知错误")
+            return ResultResponse(
+                success=True,
+                data={
+                    "aweme_id": aweme_id,
+                    "status": "failed",
+                    "error": error
+                }
+            )
+
+        # 已完成，读取结果文件
+        result_file = Path(processor.output_dir) / f"{aweme_id}.json"
+
+        if not result_file.exists():
+            return ResultResponse(
+                success=True,
+                data={
+                    "aweme_id": aweme_id,
+                    "status": "completed",
+                    "message": "结果文件不存在"
+                }
+            )
+
+        result_data = load_json(str(result_file))
+        result_data["status"] = "completed"
+
+        return ResultResponse(
+            success=True,
+            data=result_data
+        )
+
+    except Exception as e:
+        logger.error(f"查询结果失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/videos", response_model=VideoListResponse)
+async def get_videos(
+    page: int = Query(1, ge=1, description="页码"),
+    page_size: int = Query(100, ge=1, le=1000, description="每页数量（默认 100，上限 1000）"),
+    status: Optional[str] = Query(None, description="状态筛选: v2.0: unread/read/deleted/pending；兼容旧 completed/processing/failed"),
+    is_read: Optional[bool] = Query(None, description="已读状态筛选（兼容旧字段，新流程以 status=read/unread 为准）")
+):
+    """获取视频列表（支持分页和状态筛选）
+
+    v2.0 适配：
+    - 已读/未读已并入 status 字段（read/unread），兼容旧 is_read 字段
+    - 默认过滤掉 pending + deleted 状态
+    """
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    logger.info(f"获取视频列表: page={page}, page_size={page_size}, status={status}, is_read={is_read}")
+
+    try:
+        # 获取所有视频（使用缓存）
+        all_videos = await processor.filesystem_client.get_video_list(
+            filters={"suffix": ".wav"},
+            use_cache=True
+        )
+
+        # 获取所有状态
+        all_statuses = await processor.status_manager.get_all_statuses()
+
+        # 第一遍：快速筛选（只读内存数据）
+        candidate_videos = []
+        for video in all_videos:
+            aweme_id = video.aweme_id
+            status_data = all_statuses.get(aweme_id, {})
+            video_status = status_data.get("status", "pending")
+            # 兼容：v2.0 用 status 字段，旧数据有 is_read 字段
+            # 优先从 status 字段推断（status=read → is_read=true）
+            if video_status in ("read", "unread", "deleted"):
+                video_is_read = (video_status == "read")
+            else:
+                video_is_read = status_data.get("is_read", False)
+
+            # 默认过滤掉 pending 和 deleted 状态的视频
+            if video_status in ("pending", "deleted"):
+                continue
+
+            # 状态筛选
+            if status and video_status != status:
+                continue
+
+            # 已读状态筛选（兼容 is_read 入参）
+            if is_read is not None and video_is_read != is_read:
+                continue
+
+            candidate_videos.append({
+                "aweme_id": aweme_id,
+                "status": video_status,
+                "is_read": video_is_read,
+                "audio_url": video.url,
+                "status_data": status_data
+            })
+
+        # 按采集时间（upload_time）倒序排序
+        # v2.0 数据 process_pending 没写 upload_time，要 fallback 到 status.json 里的
+        # pending_at / processed_at / created_at
+        for v in candidate_videos:
+            aweme_id = v["aweme_id"]
+            status_data = v.get("status_data", {})
+
+            # 优先级：output_file.upload_time > status_data.upload_time >
+            #          status_data.pending_at > status_data.processed_at > status_data.created_at
+            sort_time = ""
+            result_file = processor.output_dir / f"{aweme_id}.json"
+            if result_file.exists():
+                try:
+                    result_data = load_json(str(result_file))
+                    sort_time = result_data.get("upload_time", "") or ""
+                except:
+                    pass
+            if not sort_time:
+                sort_time = (
+                    status_data.get("upload_time", "")
+                    or status_data.get("pending_at", "")
+                    or status_data.get("processed_at", "")
+                    or status_data.get("created_at", "")
+                    or ""
+                )
+            v["sort_time"] = sort_time
+
+        # 分成两组：有时间的和没时间的
+        with_time = [v for v in candidate_videos if v["sort_time"]]
+        without_time = [v for v in candidate_videos if not v["sort_time"]]
+
+        # 有时间的按时间倒序
+        with_time.sort(key=lambda x: x["sort_time"], reverse=True)
+        # 没时间的按 ID 倒序
+        without_time.sort(key=lambda x: x["aweme_id"], reverse=True)
+
+        # 合并
+        candidate_videos = with_time + without_time
+
+        # 分页处理
+        total_count = len(candidate_videos)
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        page_videos = candidate_videos[start_idx:end_idx]
+
+        # 只读取当前页需要的文件数据
+        video_list = []
+        for v in page_videos:
+            aweme_id = v["aweme_id"]
+            video_status = v["status"]
+            status_data = v["status_data"]
+
+            # 默认值
+            metadata = {"title": "", "author": "", "description": "", "upload_time": None}
+            transcript = None
+            processed_at = None
+            read_at = None
+
+            # 1. metadata 永远从 status_data 取（v2.0 mark_pending 写入）
+            #    v1.0 旧数据 status_data 没这些字段就让它空
+            metadata["title"] = status_data.get("title", "")
+            metadata["author"] = status_data.get("author", "")
+            metadata["description"] = status_data.get("description", "")
+            # 响应字段 upload_time 专门表示"采集时间" = status_data.pending_at
+            # v1.0 旧数据没 pending_at → 空（v1.0 流程是 douyin-collector 直接 push 完整状态）
+            metadata["upload_time"] = status_data.get("pending_at")
+
+            # 2. transcript + metadata backup 从 output_file 取
+            #    任何 status 都能读（pending 状态没文件则 None）
+            output_file = processor.output_dir / f"{aweme_id}.json"
+            if output_file.exists():
+                result_data = load_json(str(output_file))
+                # output_file 里的字段覆盖 status_data（v2.0 两边都有但以 output_file 为准，
+                # 防止 status_data 写后被 mark_processed 改过 metadata 之类的边界情况）
+                # 注意：响应字段 upload_time 专门表示"采集时间"，跟 output_file.upload_time（视频原发布时间）语义不同
+                if result_data.get("title"):
+                    metadata["title"] = result_data["title"]
+                if result_data.get("author"):
+                    metadata["author"] = result_data["author"]
+                if result_data.get("description"):
+                    metadata["description"] = result_data["description"]
+                transcript = TranscriptInfo(
+                    text=result_data.get("text", ""),
+                    segments=result_data.get("segments"),
+                    confidence=result_data.get("confidence", 0.0),
+                    audio_duration=result_data.get("audio_duration", 0.0)
+                )
+                # processed_at 仍从 status_data 取（v2.0 mark_processed 会写 processed_at）
+                processed_at_str = (
+                    status_data.get("processed_at", "")
+                    or status_data.get("updated_at", "")
+                )
+                if processed_at_str:
+                    try:
+                        processed_at = int(datetime.fromisoformat(processed_at_str).timestamp())
+                    except:
+                        pass
+
+            # 获取已读时间
+            read_at_str = status_data.get("read_at")
+            if read_at_str:
+                try:
+                    read_at = int(datetime.fromisoformat(read_at_str).timestamp())
+                except:
+                    pass
+
+            # 视频发布时间：output_file 优先（process_pending 写入），status_data 兜底（mark_pending 写入）
+            video_publish_time = status_data.get("video_publish_time", "")
+            output_file_publish = result_data.get("video_publish_time", "") if output_file.exists() else ""
+            if output_file_publish:
+                video_publish_time = output_file_publish
+
+            video_list.append(VideoListItem(
+                aweme_id=aweme_id,
+                status=video_status,
+                title=metadata.get("title", ""),
+                author=metadata.get("author", ""),
+                audio_url=v["audio_url"],
+                transcript=transcript,
+                processed_at=processed_at,
+                upload_time=metadata.get("upload_time"),
+                video_publish_time=video_publish_time or None,
+                is_read=v["is_read"],
+                read_at=read_at
+            ))
+
+        return VideoListResponse(
+            total_count=total_count,
+            videos=video_list,
+            page=page,
+            page_size=page_size
+        )
+
+    except Exception as e:
+        logger.error(f"获取视频列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/videos/{aweme_id}", response_model=VideoDetailResponse)
+async def get_video_detail(aweme_id: str):
+    """获取单个视频详情"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    logger.info(f"获取视频详情: {aweme_id}")
+
+    try:
+        # 获取状态
+        status = await processor.status_manager.get_status(aweme_id)
+        video_status = status if status else "pending"
+
+        # 获取所有状态（用于获取详细信息和错误信息）
+        all_statuses = await processor.status_manager.get_all_statuses()
+        status_data = all_statuses.get(aweme_id, {})
+
+        # 获取已读状态
+        is_read = status_data.get("is_read", False)
+        read_at = None
+        read_at_str = status_data.get("read_at")
+        if read_at_str:
+            try:
+                read_at = int(datetime.fromisoformat(read_at_str).timestamp())
+            except:
+                pass
+
+        # 获取音频 URL（使用缓存）
+        videos = await processor.filesystem_client.get_video_list(
+            filters={"suffix": ".wav"},
+            use_cache=True
+        )
+        audio_url = ""
+        for video in videos:
+            if video.aweme_id == aweme_id:
+                audio_url = video.url
+                break
+
+        # 默认值
+        transcript = None
+        processed_at = None
+        error = None
+        title = ""
+        author = ""
+        description = ""
+        upload_time = None
+        video_publish_time = None
+
+        # 1. metadata 永远从 status_data 取（v2.0 mark_pending 写入）
+        #    v1.0 旧数据 status_data 没这些字段就让它空
+        title = status_data.get("title", "")
+        author = status_data.get("author", "")
+        description = status_data.get("description", "")
+        # 响应字段 upload_time 专门表示"采集时间" = status_data.pending_at
+        upload_time = status_data.get("pending_at")
+        video_publish_time = status_data.get("video_publish_time")
+
+        # 2. transcript + metadata backup 从 output_file 取
+        output_file = processor.output_dir / f"{aweme_id}.json"
+        if output_file.exists():
+            result_data = load_json(str(output_file))
+            # output_file 里的字段覆盖 status_data
+            if result_data.get("title"):
+                title = result_data["title"]
+            if result_data.get("author"):
+                author = result_data["author"]
+            if result_data.get("description"):
+                description = result_data["description"]
+            # 响应字段 upload_time 专门表示"采集时间"，不被 output_file.upload_time 覆盖
+            if result_data.get("video_publish_time"):
+                video_publish_time = result_data["video_publish_time"]
+            transcript = TranscriptInfo(
+                text=result_data.get("text", ""),
+                segments=result_data.get("segments"),
+                confidence=result_data.get("confidence", 0.0),
+                audio_duration=result_data.get("audio_duration", 0.0)
+            )
+            # processed_at 从 status_data 取
+            processed_at_str = (
+                status_data.get("processed_at", "")
+                or status_data.get("updated_at", "")
+            )
+            if processed_at_str:
+                try:
+                    processed_at = int(datetime.fromisoformat(processed_at_str).timestamp())
+                except:
+                    pass
+
+        if video_status == "failed":
+            error = status_data.get("error", "未知错误")
+
+        return VideoDetailResponse(
+            aweme_id=aweme_id,
+            status=video_status,
+            title=title,
+            author=author,
+            description=description,
+            audio_url=audio_url,
+            transcript=transcript,
+            processed_at=processed_at,
+            upload_time=upload_time,
+            video_publish_time=video_publish_time,
+            error=error,
+            is_read=is_read,
+            read_at=read_at
+        )
+
+    except Exception as e:
+        logger.error(f"获取视频详情失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/api/stats", response_model=StatsResponse)
+async def get_stats():
+    """获取处理统计信息"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    logger.info("获取统计信息")
+
+    try:
+        # 从 file-system-go 获取所有视频列表（带缓存）
+        all_videos = await processor.filesystem_client.get_video_list(
+            filters={"suffix": ".wav"},
+            use_cache=True
+        )
+
+        # 从 status_manager 获取所有状态
+        all_statuses = await processor.status_manager.get_all_statuses()
+
+        # 统计各状态数量
+        completed = 0
+        processing = 0
+        failed = 0
+        pending = 0
+
+        # 遍历所有实际视频，判断其处理状态
+        for video in all_videos:
+            aweme_id = video.aweme_id
+            status_data = all_statuses.get(aweme_id, {})
+            status = status_data.get("status", "pending")
+
+            # v2.0: unread/read/completed 都是"已完成"（ASR 处理完）
+            if status in ("completed", "unread", "read"):
+                completed += 1
+            elif status == "processing":
+                processing += 1
+            elif status == "failed":
+                failed += 1
+            elif status == "pending":
+                pending += 1
+
+        # 计算总数
+        total = len(all_videos)
+
+        # 计算成功率
+        success_rate = 0.0
+        if completed + failed > 0:
+            success_rate = round(completed / (completed + failed), 2)
+
+        return StatsResponse(
+            total=total,
+            completed=completed,
+            processing=processing,
+            failed=failed,
+            pending=pending,
+            success_rate=success_rate
+        )
+
+    except Exception as e:
+        logger.error(f"获取统计信息失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/health")
+async def health_check():
+    """健康检查"""
+    return {
+        "status": "healthy",
+        "version": "1.0.0",
+        "processor_ready": processor is not None
+    }
+
+
+@router.post("/api/aweme/{aweme_id}/read", response_model=ActionResponse)
+async def mark_aweme_read(aweme_id: str, request: MarkReadRequest):
+    """标记已读/未读（重命名自 /api/videos/{aweme_id}/read）"""
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    logger.info(f"标记 aweme 已读状态: {aweme_id}, is_read={request.is_read}")
+
+    try:
+        # 直接调 mark_read（mark_read 内部已同步 status 字段）
+        await processor.status_manager.mark_read(aweme_id, request.is_read)
+
+        return ActionResponse(
+            success=True,
+            message=f"已{'标记已读' if request.is_read else '标记未读'}"
+        )
+    except Exception as e:
+        logger.error(f"标记已读失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.delete("/api/aweme/{aweme_id}", response_model=ActionResponse)
+async def delete_aweme(aweme_id: str, keep_file: bool = False):
+    """用户主动删（重命名自 /api/videos/{aweme_id}）
+
+    行为：
+      1. 如果不保留文件，调 file-system-go 删物理文件
+      2. status.json 标 deleted（mark_deleted，保留记录）
+      3. 不删 status.json 里的记录（与 cleanup 区分）
+    """
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    action = "删除记录" if keep_file else "删除视频"
+    logger.info(f"{action}: {aweme_id}")
+
+    try:
+        # 1. 调 file-system-go 删物理文件
+        if not keep_file:
+            file_deleted = await processor.filesystem_client.delete_file(f"{aweme_id}.wav")
+            if file_deleted:
+                logger.info(f"已删除 file-system-go 上的文件: {aweme_id}")
+            else:
+                logger.warning(f"file-system-go 文件删除失败或不存在: {aweme_id}")
+
+        # 2. 标 deleted（保留记录）
+        await processor.status_manager.mark_deleted(aweme_id)
+
+        # 3. 删 result json
+        result_file = Path(processor.output_dir) / f"{aweme_id}.json"
+        if result_file.exists():
+            result_file.unlink()
+            logger.info(f"已删除结果文件: {result_file}")
+
+        # 4. 清缓存
+        processor.filesystem_client.invalidate_video_list_cache()
+
+        return ActionResponse(
+            success=True,
+            message="已删除"
+        )
+    except Exception as e:
+        logger.error(f"{action}失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# =============================================================================
+# RSS 2.0 订阅源
+# =============================================================================
+
+
+async def _read_output_text(aweme_id: str) -> Optional[str]:
+    """读 output/{aweme_id}.json 中的转写 text，损坏/缺失返回 None。
+
+    load_json 对 FileNotFoundError 已兜底返回 {}，但 JSONDecodeError 仍会抛。
+    包装一层把任何异常都吞掉，单条失败不阻塞整条 RSS feed。
+    """
+    try:
+        result_file = Path(processor.output_dir) / f"{aweme_id}.json"
+        if not result_file.exists():
+            logger.warning(f"RSS: output 文件缺失 {aweme_id}")
+            return None
+        data = load_json(str(result_file))
+        text = data.get("text", "")
+        return text if text else None
+    except Exception as e:
+        logger.warning(f"RSS: 读 output 失败 {aweme_id}: {e}")
+        return None
+
+
+async def _read_output_doc(aweme_id: str) -> Optional[dict]:
+    """读 output/{aweme_id}.json，返回 {text, segments}。
+
+    损坏/缺失 → None（单条跳过，不阻塞 RSS feed）。
+    """
+    try:
+        result_file = Path(processor.output_dir) / f"{aweme_id}.json"
+        if not result_file.exists():
+            logger.warning(f"RSS: output 文件缺失 {aweme_id}")
+            return None
+        data = load_json(str(result_file))
+        if not data:
+            return None
+        return {
+            "text": data.get("text", "") or "",
+            "segments": data.get("segments") or None,
+        }
+    except Exception as e:
+        logger.warning(f"RSS: 读 output 失败 {aweme_id}: {e}")
+        return None
+
+
+def _parse_iso_datetime(s: Optional[str]) -> Optional[datetime]:
+    """解析 ISO 8601 字符串为 datetime（naive 当本地 +08:00）"""
+    if not s:
+        return None
+    try:
+        # 形如 "2026-06-12T02:28:30.829899" 或带 timezone
+        return datetime.fromisoformat(s)
+    except (ValueError, TypeError):
+        return None
+
+
+@router.get("/api/rss.xml")
+async def rss_feed(
+    request: Request,
+    token: str = Query(..., description="RSS 订阅 token"),
+    limit: int = Query(50, ge=1, le=200, description="返回条目数上限"),
+    include_read: bool = Query(True, description="是否包含已读 (status=read)"),
+):
+    """RSS 2.0 订阅源（FreshRSS / Feedly / Inoreader 通用）
+
+    鉴权：query string `?token=xxx`，token 来自 DOUYIN_RSS_TOKEN 环境变量。
+    状态过滤：read + unread + completed（v1.0 旧 completed 也兼容）。
+    """
+    if not _verify_rss_token(token):
+        # 只记 token 前 4 字符（防日志泄漏）
+        prefix = token[:4] + "***" if token else "<empty>"
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(f"RSS 鉴权失败: token={prefix}, remote={client_ip}")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    if processor is None:
+        raise HTTPException(status_code=500, detail="处理器未初始化")
+
+    try:
+        # 1. 拿所有状态
+        all_statuses = await processor.status_manager.get_all_statuses()
+
+        # 2. 过滤完成态
+        allowed_statuses = {"read", "unread", "completed"}
+        if not include_read:
+            allowed_statuses.discard("read")
+
+        candidates: list[tuple[str, dict]] = []
+        for aweme_id, st in all_statuses.items():
+            if st.get("status") in allowed_statuses:
+                candidates.append((aweme_id, st))
+
+        # 3. 排序：按 processed_at 倒序，fallback pending_at → created_at
+        def sort_key(item):
+            _, st = item
+            dt_str = (
+                st.get("processed_at")
+                or st.get("pending_at")
+                or st.get("created_at")
+            )
+            dt = _parse_iso_datetime(dt_str)
+            # 返 tuple 兼容 None 排序
+            return dt or datetime.min
+
+        candidates.sort(key=sort_key, reverse=True)
+
+        # 4. 截前 limit 条
+        cap = min(limit, _RSS_MAX_ITEMS)
+        candidates = candidates[:cap]
+
+        # 5. 并发读 output doc（text + segments）
+        docs = await asyncio.gather(
+            *[_read_output_doc(aid) for aid, _ in candidates]
+        )
+
+        # 6. 拼装 item dict
+        from src.server.rss_utils import xml_escape
+        from src.server.segment_html import merge_segments_to_paragraphs, render_paragraphs_html
+
+        base_url = _RSS_CHANNEL_META.get("link", "").rstrip("/")
+        items: list[dict] = []
+        for (aweme_id, st), doc in zip(candidates, docs):
+            if doc is None or not doc["text"]:
+                continue  # output 损坏/缺失 → 跳过
+            text = doc["text"]
+            segments = doc["segments"]
+
+            title = st.get("title") or f"视频 {aweme_id}"
+            author = st.get("author") or "未知作者"
+            description_field = st.get("description") or ""
+            pub_dt = _parse_iso_datetime(
+                st.get("processed_at")
+                or st.get("pending_at")
+                or st.get("created_at")
+            ) or datetime.now()
+
+            # 分段策略（按优先级）
+            if segments:
+                paragraphs = merge_segments_to_paragraphs(segments)
+                body = render_paragraphs_html(paragraphs)
+            elif "\n\n" in text:
+                # 旧数据有预分段 → 按 \n\n 切
+                body = "\n".join(
+                    f"<p>{xml_escape(p.strip())}</p>"
+                    for p in text.split("\n\n") if p.strip()
+                )
+            else:
+                # 兜底：整段单 <p>
+                body = f"<p>{xml_escape(text.strip())}</p>"
+
+            items.append({
+                "title": title,
+                "link": f"{base_url}/douyin/?video={aweme_id}",
+                "description": truncate_for_summary(text, 200),
+                "author": author,
+                "categories": extract_hashtags(description_field, max_n=5),
+                "pub_date": pub_dt,
+                "guid": aweme_id,
+                "content_encoded": body,
+            })
+
+        # 7. 拼 RSS XML
+        build_dt = max((it["pub_date"] for it in items), default=datetime.now())
+        # self_url 来自当前请求
+        self_url = str(request.url)
+
+        channel_meta = {
+            "title": _RSS_CHANNEL_META.get("title", "抖音视频文字稿"),
+            "link": _RSS_CHANNEL_META.get("link", ""),
+            "description": _RSS_CHANNEL_META.get("description", ""),
+            "self_url": self_url,
+        }
+
+        xml = build_rss_xml(channel_meta, items, build_dt)
+
+        return Response(
+            content=xml,
+            media_type="application/rss+xml; charset=utf-8",
+            headers={
+                "Cache-Control": "public, max-age=300",
+                "X-Robots-Tag": "noindex",
+            },
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"RSS feed 异常: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

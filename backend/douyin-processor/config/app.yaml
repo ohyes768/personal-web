@@ -1,0 +1,58 @@
+app:
+  # 服务器配置
+  server:
+    host: "0.0.0.0"
+    port: 8093
+
+  # file-system-go 配置（v2.0：5 个文件 CRUD 端点）
+  filesystem:
+    base_url: "https://stock.duomi77.cn:1443"
+    query_endpoint: "/api/files/query"
+    timeout: 30
+    cache_ttl: 30  # 视频列表缓存有效期（秒）
+
+  # 文件配置
+  files:
+    output_dir: "data/output"
+    status_file: "data/status.json"
+
+  # ASR配置
+  asr:
+    provider: "aliyun"
+    model: "fun-asr"
+    access_key: "ALIYUN_ACCESS_KEY"
+
+  # 日志配置
+  logging:
+    level: "INFO"
+    console: true
+    file: true
+    dir: "logs"
+
+  # RSS 订阅源（v1.0）
+  # token 走 DOUYIN_RSS_TOKEN 环境变量，app.yaml 不写
+  rss:
+    # channel 元数据
+    channel:
+      title: "抖音视频文字稿"
+      # 公网域名（已确认 = web.duomi77.cn:9443）
+      link: "https://web.duomi77.cn:9443"
+      description: "通过 douyin-processor 自动转写的抖音视频文字稿"
+    # 限制
+    max_items: 200            # 硬上限
+    default_limit: 50         # 默认 limit
+
+  # 定时清理（删 N 天前的 .wav 源文件 + status.json 记录）
+  # 行为：复用 POST /api/aweme/cleanup 同样的清理逻辑,纯异步触发
+  cleanup:
+    days: 45                  # 清理阈值（天）
+    cron: "7 3 * * *"         # 每天 03:07 北京时间（跟 rss-relay 03:03 错开 4 分钟）
+    timezone: "Asia/Shanghai"
+
+  # 定时 process_pending:每天 09:45 / 17:15 北京时间自动处理 status=pending 视频
+  # 之前由 n8n 外部定时触发,改为后端 APScheduler 自调度,降低对外部服务依赖
+  # 与 cleanup 共用同一个 AsyncIOScheduler 实例,共用 endpoints._process_lock 防重入
+  process_pending:
+    cron_morning: "45 9 * * *"    # 每天 09:45 北京时间
+    cron_evening: "15 17 * * *"   # 每天 17:15 北京时间
+    timezone: "Asia/Shanghai"

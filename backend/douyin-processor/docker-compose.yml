@@ -1,0 +1,26 @@
+services:
+  douyin-processor:
+    build: .
+    container_name: douyin-processor
+    restart: unless-stopped
+    ports:
+      - "8093:8093"
+    environment:
+      - ALIYUN_ACCESS_KEY=${ALIYUN_ACCESS_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - api-network  # 使用 api-gateway 的网络
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8093/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+# 使用 api-gateway 的外部网络
+networks:
+  api-network:
+    external: true
+    name: api-gateway_api-network
