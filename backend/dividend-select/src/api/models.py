@@ -1,0 +1,534 @@
+"""
+API 数据模型
+定义请求和响应的 Pydantic 模型
+"""
+from typing import Optional
+
+from pydantic import BaseModel, Field
+
+
+# ========== 基础数据模型 ==========
+
+
+class QuarterlyData(BaseModel):
+    """
+    季度数据模型
+    """
+    q1: Optional["Quarter"] = Field(None, description="第一季度")
+    q2: Optional["Quarter"] = Field(None, description="第二季度")
+    q3: Optional["Quarter"] = Field(None, description="第三季度")
+    q4: Optional["Quarter"] = Field(None, description="第四季度")
+
+
+class Quarter(BaseModel):
+    """
+    单季度数据模型
+    """
+    avg_price: Optional[float] = Field(None, description="平均股价")
+    dividend: Optional[float] = Field(None, description="分红金额(元/股)")
+    yield_pct: Optional[float] = Field(None, description="股息率(%)")
+
+
+# 更新前向引用
+QuarterlyData.model_rebuild()
+
+
+class DividendHistoryItem(BaseModel):
+    """单次分红记录"""
+    ex_date: str = Field(..., description="除权除息日 (YYYY-MM-DD)")
+    ratio: float = Field(..., description="派息比例 (元/股)")
+    fiscal_year: int = Field(..., description="财年")
+
+
+class DividendStock(BaseModel):
+    """
+    股息率股票数据模型
+    """
+    # 基础信息
+    code: str = Field(..., description="股票代码")
+    name: str = Field(..., description="股票名称")
+    exchange: str = Field(..., description="交易所")
+    source_index: Optional[str] = Field(None, description="来源指数")
+    sw_level1: Optional[str] = Field(None, description="申万一级行业")
+    sw_level2: Optional[str] = Field(None, description="申万二级行业")
+    sw_level3: Optional[str] = Field(None, description="申万三级行业")
+    concept_board: Optional[str] = Field(None, description="概念板块")
+    industry_board: Optional[str] = Field(None, description="行业板块")
+
+    # 2025 年数据
+    avg_price_2025: Optional[float] = Field(None, description="2025年平均价")
+    dividend_2025: Optional[float] = Field(None, description="2025年分红(元/股)")
+    dividend_count_2025: Optional[int] = Field(None, description="2025年分红次数")
+    yield_2025: Optional[float] = Field(None, description="2025年股息率(%)")
+
+    # 2024 年数据
+    avg_price_2024: Optional[float] = Field(None, description="2024年平均价")
+    dividend_2024: Optional[float] = Field(None, description="2024年分红(元/股)")
+    dividend_count_2024: Optional[int] = Field(None, description="2024年分红次数")
+    yield_2024: Optional[float] = Field(None, description="2024年股息率(%)")
+
+    # 2023 年数据
+    avg_price_2023: Optional[float] = Field(None, description="2023年平均价")
+    dividend_2023: Optional[float] = Field(None, description="2023年分红(元/股)")
+    dividend_count_2023: Optional[int] = Field(None, description="2023年分红次数")
+    yield_2023: Optional[float] = Field(None, description="2023年股息率(%)")
+
+    # 3 年平均
+    avg_price_3y: Optional[float] = Field(None, description="近3年平均股价")
+    avg_yield_3y: Optional[float] = Field(None, description="3年平均股息率(%)")
+
+    # 2025 年价格波动
+    high_price_2025: Optional[float] = Field(None, description="2025年最高价")
+    low_price_2025: Optional[float] = Field(None, description="2025年最低价")
+    high_change_pct_2025: Optional[float] = Field(None, description="2025年最高涨幅(%)")
+    low_change_pct_2025: Optional[float] = Field(None, description="2025年最低跌幅(%)")
+
+    # 季度数据
+    quarterly: Optional[QuarterlyData] = Field(None, description="季度数据")
+
+    # 散户数/股东户数
+    shareholder_count: Optional[int] = Field(None, description="股东户数")
+    shareholder_change_pct: Optional[float] = Field(None, description="股东人数增幅(%)")
+    per_share_holding: Optional[float] = Field(None, description="人均持股数量")
+
+    # 财务指标
+    gross_profit_margin: Optional[float] = Field(None, description="主营业务利润率(%)")
+    net_profit_margin: Optional[float] = Field(None, description="净利率(%)")
+    roe: Optional[float] = Field(None, description="加权净资产收益率(%)")
+    debt_asset_ratio: Optional[float] = Field(None, description="资产负债率(%)")
+    net_profit_ex_non_recurring_yoy: Optional[float] = Field(None, description="扣非净利润同比增速(%)")
+    net_profit_cagr_3y: Optional[float] = Field(None, description="扣非净利润3年复合增长率(%)")
+    eps: Optional[float] = Field(None, description="最近一期年报摊薄每股收益(元)")
+    eps_year: Optional[int] = Field(None, description="最近一期年报年度")
+    payout_ratio: Optional[float] = Field(None, description="分红比例(%)：每股分红/每股净利润×100")
+    latest_quarter_net_profit_ex_non_recurring: Optional[float] = Field(None, description="最新季度扣非净利润(元)，2026Q1")
+    latest_quarter_yoy_pct: Optional[float] = Field(None, description="最新季度扣非同比(%)，2026Q1 vs 2025Q1")
+
+    # 近5年分红详情
+    dividend_history: Optional[list[DividendHistoryItem]] = Field(None, description="近5年分红详情")
+
+
+# ========== 请求模型 ==========
+
+
+class StockListQuery(BaseModel):
+    """
+    股票列表查询参数（通过 Query 参数传递，此处仅作类型参考）
+    """
+    min_yield: Optional[float] = Field(None, description="最小股息率(%)")
+    max_yield: Optional[float] = Field(None, description="最大股息率(%)")
+    exchange: Optional[str] = Field(None, description="交易所筛选")
+    industry: Optional[str] = Field(None, description="行业筛选")
+    index: Optional[str] = Field(None, description="来源指数筛选")
+    sort_by: str = Field("avg_yield_3y", description="排序字段")
+    sort_order: str = Field("desc", description="排序方向(asc/desc)")
+    page: int = Field(1, ge=1, description="页码")
+    page_size: int = Field(50, ge=1, le=500, description="每页数量")
+
+
+# ========== 响应模型 ==========
+
+
+class StockListResponse(BaseModel):
+    """
+    股票列表响应模型（无分页）
+    """
+    total: int = Field(..., description="总记录数")
+    items: list[DividendStock] = Field(..., description="股票列表")
+    last_updated: Optional[str] = Field(None, description="数据最后更新时间")
+
+
+class StockDetailResponse(BaseModel):
+    """
+    股票详情响应模型
+    """
+    data: DividendStock = Field(..., description="股票数据")
+    quarterly: QuarterlyData = Field(..., description="季度数据")
+
+
+class StatsResponse(BaseModel):
+    """
+    统计信息响应模型
+    """
+    total_stocks: int = Field(..., description="总股票数")
+    yield_stats: dict = Field(..., description="股息率统计")
+    yield_distribution: dict = Field(..., description="股息率分布")
+    industry_distribution: dict = Field(..., description="行业分布")
+    index_distribution: dict = Field(..., description="指数分布")
+    csv_last_modified: Optional[str] = Field(None, description="CSV最后修改时间")
+
+
+class HealthResponse(BaseModel):
+    """
+    健康检查响应模型
+    """
+    status: str = Field(..., description="服务状态")
+    service: str = Field(..., description="服务名称")
+    version: str = Field(..., description="服务版本")
+    csv_exists: bool = Field(..., description="CSV文件是否存在")
+    total_records: int = Field(..., description="总记录数")
+
+
+# ========== PE 相关模型 ==========
+
+
+class StockPE(BaseModel):
+    """
+    股票PE数据模型
+    """
+    code: str = Field(..., description="股票代码")
+    name: str = Field(..., description="股票名称")
+    pe: Optional[float] = Field(None, description="市盈率(PE)")
+    pb: Optional[float] = Field(None, description="市净率(PB)")
+    market_cap: Optional[float] = Field(None, description="总市值(万元)")
+    circulation_market_cap: Optional[float] = Field(None, description="流通市值(万元)")
+
+
+class StockPEResponse(BaseModel):
+    """
+    股票PE数据响应模型
+    """
+    total: int = Field(..., description="总记录数")
+    items: list[StockPE] = Field(..., description="股票PE列表")
+    last_updated: Optional[str] = Field(None, description="数据最后更新时间")
+
+
+# ========== M120 相关模型 ==========
+
+
+class M120Stock(BaseModel):
+    """
+    M120 股票数据模型
+    """
+    code: str = Field(..., description="股票代码")
+    name: str = Field(..., description="股票名称")
+    avg_yield_3y: Optional[float] = Field(None, description="3年平均股息率(%)")
+    m120: Optional[float] = Field(None, description="120日均线")
+    close: Optional[float] = Field(None, description="昨日收盘价")
+    deviation: Optional[float] = Field(None, description="昨日收盘价与M120的偏离度(%)")
+    realtime: Optional[float] = Field(None, description="实时价格")
+    realtime_deviation: Optional[float] = Field(None, description="实时价格与M120的偏离度(%)")
+    yield_ttm: Optional[float] = Field(None, description="实时股息率TTM(%)")
+    pe: Optional[float] = Field(None, description="静态市盈率(SY1)")
+    pb: Optional[float] = Field(None, description="市净率(SJ)")
+
+
+class M120ListResponse(BaseModel):
+    """
+    M120 股票列表响应模型
+    """
+    total: int = Field(..., description="总记录数")
+    items: list[M120Stock] = Field(..., description="股票列表")
+    last_updated: Optional[str] = Field(None, description="数据最后更新时间")
+
+
+# ========== 实时股价相关模型 ==========
+
+
+class RealtimePriceRequest(BaseModel):
+    """
+    实时股价请求模型
+    """
+    code: str = Field(..., description="股票代码")
+    m120: float = Field(..., description="120日均线值", gt=0)
+
+
+class RealtimePriceResponse(BaseModel):
+    """
+    实时股价响应模型
+    """
+    code: str = Field(..., description="股票代码")
+    close: Optional[float] = Field(None, description="最新收盘价")
+    deviation: Optional[float] = Field(None, description="偏离度(%)")
+    timestamp: Optional[str] = Field(None, description="数据获取时间")
+
+
+# ========== 现价（独立于 M120）模型 ==========
+
+
+class PriceItem(BaseModel):
+    """
+    单只股票的现价数据（不依赖 M120，供挡位监控等场景使用）
+    """
+    code: str = Field(..., description="股票代码")
+    close: Optional[float] = Field(None, description="昨日收盘价")
+    realtime: Optional[float] = Field(None, description="实时价格")
+    pe: Optional[float] = Field(None, description="静态市盈率(SY1)")
+    pb: Optional[float] = Field(None, description="市净率(SJ)")
+    yield_ttm: Optional[float] = Field(None, description="实时股息率TTM(%)")
+
+
+class PriceListResponse(BaseModel):
+    """
+    现价列表响应模型
+    """
+    total: int = Field(..., description="总记录数")
+    items: list[PriceItem] = Field(..., description="股票现价列表")
+    last_updated: Optional[str] = Field(None, description="实时价格数据最后更新时间")
+
+
+# ========== 股票信息相关模型 ==========
+
+
+class StockInfo(BaseModel):
+    """
+    股票行业/概念信息模型
+    """
+    code: str = Field(..., description="股票代码")
+    exchange: Optional[str] = Field(None, description="交易所")
+    sw_level1: Optional[str] = Field(None, description="申万一级行业")
+    sw_level2: Optional[str] = Field(None, description="申万二级行业")
+    sw_level3: Optional[str] = Field(None, description="申万三级行业")
+    concept_board: Optional[str] = Field(None, description="概念板块")
+    industry_board: Optional[str] = Field(None, description="行业板块")
+
+
+class StockInfoRequest(BaseModel):
+    """
+    批量查询股票信息请求模型
+    """
+    codes: list[str] = Field(..., description="股票代码列表", min_length=1)
+
+
+class StockInfoResponse(BaseModel):
+    """
+    批量查询股票信息响应模型
+    """
+    items: list[StockInfo] = Field(..., description="股票信息列表")
+    total: int = Field(..., description="总记录数")
+
+
+# ========== 股息率刷新相关模型 ==========
+
+
+class IndexRefreshItem(BaseModel):
+    """
+    单个红利指数持仓刷新状态（用于全量刷新后展示每个指数的成败）
+
+    新增字段（FR-2/FR-4）：prefilter_resynced + prefilter_error 让前端能区分
+    "持仓成功 + prefilter 也成功" 与 "持仓成功但 prefilter 重算失败"，后者
+    徽章仍显示 ✗ + 重试按钮，不让主按钮误判完成。
+    """
+    code: str = Field(..., description="指数代码，如 000922")
+    name: str = Field("", description="指数名称，如 中证红利")
+    success: bool = Field(..., description="是否成功")
+    constituents_count: int = Field(0, description="成分股数量")
+    error: Optional[str] = Field(None, description="失败原因（success=True 时为 None）")
+    prefilter_resynced: bool = Field(
+        False,
+        description="单指数刷成功后是否完成 prefilter 本地重算。"
+                    "前端徽章显示 ✅ 需要 success + prefilter_resynced 都为 True",
+    )
+    prefilter_error: Optional[str] = Field(
+        None,
+        description="prefilter 重算失败原因（prefilter_resynced=False 时有意义）",
+    )
+
+
+class RefreshStats(BaseModel):
+    """
+    刷新统计信息模型
+    """
+    total_processed: int = Field(..., description="处理总数")
+    new_or_updated: int = Field(..., description="新增/更新数")
+    skipped: int = Field(..., description="跳过数（已存在）")
+    target_count: int = Field(..., description="目标股票总数")
+    completed_count: int = Field(..., description="成功完成数")
+    failed_count: int = Field(..., description="失败数")
+    failed_codes: list[str] = Field(default_factory=list, description="失败的股票代码列表")
+    file_path: str = Field(..., description="文件路径")
+    start_time: str = Field(..., description="开始时间 (ISO 8601)")
+    end_time: str = Field(..., description="结束时间 (ISO 8601)")
+    index_results: Optional[list[IndexRefreshItem]] = Field(
+        None, description="各红利指数持仓刷新状态（仅 /dividend/refresh 返回）"
+    )
+
+
+class RefreshRequest(BaseModel):
+    """
+    股息率刷新请求模型
+    """
+    min_dividend: int = Field(10, description="最小分红次数阈值，默认10", ge=1)
+
+
+class CodesRequest(BaseModel):
+    """
+    股票代码列表请求模型（用于刷新接口）
+    """
+    codes: list[str] = Field(..., description="股票代码列表", min_length=1)
+
+
+class IndexRefreshRequest(BaseModel):
+    """
+    单指数持仓刷新请求模型（用于 /dividend/index-holdings/refresh）
+    """
+    code: str = Field(..., description="红利指数代码，如 000922")
+
+
+class RefreshResponse(BaseModel):
+    """
+    股息率刷新响应模型
+    """
+    success: bool = Field(..., description="是否成功")
+    message: str = Field(..., description="操作结果消息")
+    stats: RefreshStats = Field(..., description="统计信息")
+
+
+# ========== 板块相关模型 ==========
+
+
+class BoardInfo(BaseModel):
+    """
+    股票板块信息模型
+    """
+    code: str = Field(..., description="股票代码")
+    name: str = Field(..., description="股票名称")
+    concept_board: Optional[str] = Field(None, description="概念板块")
+    industry_board: Optional[str] = Field(None, description="行业板块")
+
+
+class BoardInfoResponse(BaseModel):
+    """
+    板块信息响应模型
+    """
+    total: int = Field(..., description="总记录数")
+    items: list[BoardInfo] = Field(..., description="板块信息列表")
+    last_updated: Optional[str] = Field(None, description="数据最后更新时间")
+
+
+# ========== 收藏相关模型 ==========
+
+
+class AlertLevel(BaseModel):
+    """单档挡位（价格必填，PE/PB 选填仅作推送展示）"""
+    price: float = Field(..., description="挡位价格（元）", gt=0)
+    pe: Optional[float] = Field(None, description="对应挡位 PE（选填，仅推送时展示）")
+    pb: Optional[float] = Field(None, description="对应挡位 PB（选填，前端水平价位条展示）")
+
+
+class AlertLevels(BaseModel):
+    """4 档挡位配置"""
+    heavy_position: Optional[AlertLevel] = Field(None, description="🟢 重仓档（买入最深）")
+    add_position: Optional[AlertLevel] = Field(None, description="🟡 加仓档")
+    reduce_position: Optional[AlertLevel] = Field(None, description="🟠 减仓档")
+    full_exit: Optional[AlertLevel] = Field(None, description="🔴 全卖档（卖出最深）")
+
+
+class AlertConfig(BaseModel):
+    """单只股票的挡位监控配置"""
+    enabled: bool = Field(False, description="是否启用监控")
+    updated_at: Optional[str] = Field(None, description="最后更新时间 (ISO 8601)，由后端自动记录")
+    levels: AlertLevels = Field(default_factory=AlertLevels, description="4 档价格配置")
+
+
+class FavoriteItem(BaseModel):
+    """单条收藏"""
+    code: str = Field(..., description="6 位股票代码")
+    added_at: str = Field(..., description="添加时间 (ISO 8601)")
+    note: Optional[str] = Field(None, description="用户备注")
+    alerts: Optional[AlertConfig] = Field(None, description="挡位监控配置（缺省视为未配置）")
+
+
+class FavoritesNotify(BaseModel):
+    """通知元数据"""
+    enabled: bool = Field(False, description="是否启用通知")
+    rules: list = Field(default_factory=list, description="通知规则列表（兼容字段，当前由 alerts 替代）")
+    last_notified_at: Optional[str] = Field(None, description="上次通知时间 (ISO 8601)")
+
+
+class FavoritesResponse(BaseModel):
+    """完整收藏响应"""
+    version: int = Field(..., description="schema 版本")
+    updated_at: str = Field(..., description="最后更新时间 (ISO 8601)")
+    total: int = Field(..., description="收藏总数")
+    codes: list[str] = Field(..., description="股票代码列表（去重）")
+    items: list[FavoriteItem] = Field(..., description="收藏详情列表")
+    notify: FavoritesNotify = Field(..., description="通知配置")
+
+
+class FavoriteNoteRequest(BaseModel):
+    """备注更新请求"""
+    note: Optional[str] = Field(None, description="新备注，null/空串=清空", max_length=200)
+
+
+class AlertConfigRequest(BaseModel):
+    """挡位配置更新请求（updated_at 不接受前端传，由后端自动写）"""
+    enabled: bool = Field(False, description="是否启用监控")
+    levels: AlertLevels = Field(default_factory=AlertLevels)
+
+
+# ========== 挡位监控相关响应模型 ==========
+
+
+class AlertStatusItem(BaseModel):
+    """单只股票的挡位状态"""
+    code: str
+    name: Optional[str] = None
+    enabled: bool
+    has_levels: bool = Field(..., description="是否配置了至少 1 档价格")
+    level_count: int = Field(..., description="已配置档位数（0-4）")
+    updated_at: Optional[str] = Field(None, description="挡位最后更新时间 (ISO 8601)")
+    levels: Optional[AlertLevels] = None
+    triggered_today: list = Field(
+        default_factory=list,
+        description="今日此股触发的档位 key 列表",
+    )
+
+
+class AlertStatusResponse(BaseModel):
+    """所有收藏股票的挡位状态 + 今日触发汇总"""
+    total: int = Field(..., description="收藏总数")
+    enabled_count: int = Field(..., description="已启用监控的股票数")
+    triggered_today_count: int = Field(..., description="今日累计触发档位数")
+    dingtalk_configured: bool = Field(..., description="钉钉 webhook 是否已配置")
+    items: list[AlertStatusItem] = Field(default_factory=list)
+
+
+class AlertCheckResult(BaseModel):
+    """手动触发挡位检查的返回"""
+    checked_at: str
+    scanned: int
+    triggered: list[dict] = Field(default_factory=list)
+    pushed: bool
+    push_error: Optional[str] = None
+
+
+# ========== Batch API 模型（外部 agent 入口） ==========
+
+
+class AlertBatchLevelsInput(BaseModel):
+    """batch 4 档输入：每档全必填（vs AlertLevels 全 Optional）
+
+    复用 AlertLevel（price>0 必填，pe/pb 选填）作为字段类型；
+    与 AlertLevels 的差异是：每档不可缺省（agent 必须传 4 档完整价格）
+    """
+    heavy_position: AlertLevel
+    add_position: AlertLevel
+    reduce_position: AlertLevel
+    full_exit: AlertLevel
+
+
+class AlertBatchUpdateItem(BaseModel):
+    """batch 单条：code + 4 档 levels + enabled 默认 true"""
+    code: str = Field(..., min_length=1, max_length=6, description="6 位股票代码")
+    levels: AlertBatchLevelsInput
+    enabled: bool = Field(True, description="是否启用监控，默认 true")
+
+
+class AlertBatchRequest(BaseModel):
+    """batch 请求体：updates 数组，1-100 条"""
+    updates: list[AlertBatchUpdateItem] = Field(..., min_length=1, max_length=100)
+
+
+class AlertBatchResultItem(BaseModel):
+    """batch 单条结果"""
+    code: str
+    ok: bool
+    error: Optional[str] = None
+
+
+class AlertBatchResponse(BaseModel):
+    """batch 响应：per-stock 结果列表 + 统计"""
+    results: list[AlertBatchResultItem]
+    success_count: int
+    fail_count: int
