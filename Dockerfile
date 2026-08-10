@@ -38,4 +38,5 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8092/health || exit 1
 
 # 启动命令
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8092"]
+# 端口从 DIVIDEND_PORT 读（与 scheduler self-call 同源），未设置时 fallback 8092
+CMD ["sh", "-c", "uvicorn src.main:app --host 0.0.0.0 --port ${DIVIDEND_PORT:-8092}"]

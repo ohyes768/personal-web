@@ -52,6 +52,8 @@ class SchedulerManager:
             logger.warning("scheduler 已启动，忽略 start")
             return
         self._assert_single_worker()
+        # 延迟到 server serve 后再探活：lifespan 阶段 uvicorn 尚未 bind socket
+        asyncio.create_task(self._delayed_self_port_probe())
 
         self._services = services
         config = self._load_config()
@@ -271,6 +273,28 @@ class SchedulerManager:
             raise RuntimeError(
                 f"scheduler 要求单 worker 模式，检测到 workers={workers_str}。"
                 "请用 --workers 1 或 unset WEB_CONCURRENCY/UVICORN_WORKERS"
+            )
+
+    async def _delayed_self_port_probe(self, delay: float = 5.0, timeout: float = 2.0) -> None:
+        """server serve 后探活 self-call 端口，不一致则大声报警（防回归）。
+
+        不能在 start() 里立即探：uvicorn server.startup 是「先 lifespan、后
+        create_server bind」，lifespan 阶段 socket 尚未 bind，立即 TCP 探活必失败。
+        故起后台 task 延迟到 server serve 后再探。env 单源设计下端口本应一致，
+        此探针纯为防回归——若有人改了一处端口来源忘改另一处，这里会 logger.error
+        暴露。端口不通时只报警不 abort（server 已起，abort 反而更糟）。
+        """
+        import socket
+
+        await asyncio.sleep(delay)
+        try:
+            with socket.create_connection(("127.0.0.1", self.port), timeout=timeout):
+                logger.info(f"self-call 端口探活通过: 127.0.0.1:{self.port} 可连通")
+        except OSError as e:
+            logger.error(
+                f"⚠️ self-call 端口探活失败: 127.0.0.1:{self.port} 连不上 ({e})。"
+                "定时任务将全部失败！检查 DIVIDEND_PORT / app.yaml server.port "
+                "与 uvicorn 启动端口是否一致。"
             )
 
 

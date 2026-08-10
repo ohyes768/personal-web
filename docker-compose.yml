@@ -11,10 +11,11 @@ services:
       - ./config:/app/config
     environment:
       - LOG_LEVEL=INFO
+      - DIVIDEND_PORT=8092
     networks:
       - app-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8092/health"]
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:${DIVIDEND_PORT:-8092}/health"]
       interval: 30s
       timeout: 10s
       retries: 3

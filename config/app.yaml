@@ -4,7 +4,7 @@ app:
   # 服务器配置
   server:
     host: "0.0.0.0"
-    port: 8099
+    port: 8092  # 线上由 DIVIDEND_PORT 环境变量覆盖（避开 named volume 覆盖陷阱）；此值仅本地开发 fallback
 
   # 数据配置
   data:

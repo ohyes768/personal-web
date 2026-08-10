@@ -1,6 +1,7 @@
 """
 配置加载工具
 """
+import os
 import yaml
 from pathlib import Path
 from typing import Any
@@ -66,7 +67,14 @@ class AppConfig:
 
     @staticmethod
     def get_server_port() -> int:
-        """获取服务器端口"""
+        """获取服务器端口。
+
+        优先读 DIVIDEND_PORT 环境变量（部署态），避开 NAS named volume
+        覆盖 config/app.yaml 导致的端口不一致；未设置时 fallback 到 yaml。
+        """
+        env_port = os.getenv("DIVIDEND_PORT")
+        if env_port:
+            return int(env_port)
         return get_config()["app"]["server"]["port"]
 
     @staticmethod
