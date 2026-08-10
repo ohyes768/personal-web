@@ -51,13 +51,14 @@ services:
       - dividend-config:/app/config
     environment:
       - LOG_LEVEL=INFO
+      - DIVIDEND_PORT=8092
       - ALIYUN_ACCESS_KEY=${DIVIDEND_ALIYUN_ACCESS_KEY:-}
       - PYWENCAI_COOKIE=${PYWENCAI_COOKIE:-}
       - AGENT_API_TOKEN=${AGENT_API_TOKEN:-}
     networks:
       - app-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8092/api/dividend/health"]
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:${DIVIDEND_PORT:-8092}/api/dividend/health"]
       interval: 30s
       timeout: 10s
       retries: 3
