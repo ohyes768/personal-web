@@ -125,11 +125,23 @@ done
 get_services() {
     local target="$1" side="$2"
     case "$target" in
-        dividend|douyin|rss-relay|economic)
+        dividend|douyin|rss-relay)
             case "$side" in
                 backend)  echo "${target}-backend" ;;
                 frontend) echo "${target}-frontend" ;;
                 both)     echo "${target}-backend ${target}-frontend" ;;
+                *)
+                    echo "错误: side 必须是 backend | frontend | both，实际 '$side'" >&2
+                    exit 1
+                    ;;
+            esac
+            ;;
+        economic)
+            # economic 前端是 economic-frontend，后端是 macro-backend（不是 economic-backend）
+            case "$side" in
+                backend)  echo "macro-backend" ;;
+                frontend) echo "economic-frontend" ;;
+                both)     echo "macro-backend economic-frontend" ;;
                 *)
                     echo "错误: side 必须是 backend | frontend | both，实际 '$side'" >&2
                     exit 1
