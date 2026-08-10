@@ -1,0 +1,136 @@
+'use client';
+
+/**
+ * 单张分组卡片
+ * - 卡头第一行(小字标识):圆点 + 分组名 + 右侧「X 项指标」
+ * - 卡头第二行(主信号):20px 加粗白色 conclusion(或「数据缺失」)
+ * - 指标列表:每行 label + value + updated_at
+ * - 整组 indicators 为空 → 列表区显示「本月数据缺失」占位
+ */
+import type { DimensionKey, MacroSignalGroup, MacroIndicator } from '@/lib/modules/macro-signal/types';
+import type { TabType } from '@/lib/types/economic';
+import { GROUP_META, getIndicatorMeta, INDICATOR_LINK_MAP } from './constants';
+
+interface GroupCardProps {
+  groupKey: DimensionKey;
+  group: MacroSignalGroup;
+  /** 所选月份 'YYYY-MM',用于判断指标数据是否偏旧 */
+  selectedMonth: string;
+  /** 指标跳转回调(若有该指标的曲线 Tab),由父级透传 */
+  onJumpToTab?: (tab: TabType) => void;
+}
+
+/** 格式化指标数值 */
+function formatValue(v: number | null, meta: { digits?: number; unit?: string }): string {
+  if (v === null || v === undefined) return '—';
+  const d = meta.digits ?? 2;
+  const u = meta.unit ?? '';
+  return Number(v).toFixed(d) + u;
+}
+
+/** ISO 日期 → 相对时间 */
+function relativeDate(iso: string | null): string {
+  if (!iso) return '无数据';
+  const d = new Date(iso + 'T00:00:00Z');
+  const now = new Date();
+  const days = Math.floor((now.getTime() - d.getTime()) / 86400000);
+  if (days <= 0) return '今日更新';
+  if (days === 1) return '1 天前';
+  if (days < 30) return `${days} 天前`;
+  return iso;
+}
+
+/** 判断指标是否偏旧(距所选月初 35 天以上) */
+function isStale(updatedAt: string | null, selectedMonth: string): boolean {
+  if (!updatedAt) return false;
+  const monthStart = new Date(selectedMonth + '-01T00:00:00Z');
+  const d = new Date(updatedAt + 'T00:00:00Z');
+  return monthStart.getTime() - d.getTime() > 35 * 86400000;
+}
+
+function IndicatorRow({
+  ind,
+  selectedMonth,
+  onJumpToTab,
+}: {
+  ind: MacroIndicator;
+  selectedMonth: string;
+  onJumpToTab?: (tab: TabType) => void;
+}) {
+  const meta = getIndicatorMeta(ind.key);
+  const hasValue = ind.value !== null && ind.value !== undefined;
+  const stale = isStale(ind.updated_at, selectedMonth);
+  const linkTab = INDICATOR_LINK_MAP[ind.key];
+
+  return (
+    <div className="flex items-baseline justify-between py-2 border-b border-gray-800 last:border-0">
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm text-gray-300">{meta.label}</span>
+          {linkTab && onJumpToTab && (
+            <button
+              type="button"
+              onClick={() => onJumpToTab(linkTab)}
+              title={`查看 ${meta.label} 曲线`}
+              className="text-gray-500 hover:text-blue-400 transition-colors text-xs leading-none"
+            >
+              📈
+            </button>
+          )}
+        </div>
+        <div className={`text-xs mt-0.5 ${stale ? 'text-yellow-600' : 'text-gray-500'}`}>
+          {ind.updated_at ? (
+            <>
+              <span className="font-mono">{ind.updated_at}</span>
+              {' · '}{relativeDate(ind.updated_at)}
+              {stale ? ' · 数据偏旧' : ''}
+            </>
+          ) : '本月无数据'}
+        </div>
+      </div>
+      <div className={`text-lg font-mono ml-3 ${hasValue ? 'text-white' : 'text-gray-600'}`}>
+        {formatValue(ind.value, meta)}
+      </div>
+    </div>
+  );
+}
+
+export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: GroupCardProps) {
+  const meta = GROUP_META[groupKey];
+  const indicators = group.indicators ?? [];
+  const isEmpty = indicators.length === 0;
+  const conclusionText = group.conclusion ?? '数据缺失';
+  const conclusionClass = group.conclusion
+    ? 'text-xl font-bold text-white tracking-wide'
+    : 'text-xl font-bold text-gray-600 tracking-wide';
+
+  return (
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 hover:border-gray-600 transition-colors">
+      {/* 卡头 */}
+      <div className="mb-4 pb-3 border-b border-gray-800">
+        <div className="flex items-center gap-1.5 mb-2">
+          <span className={`w-2 h-2 rounded-full ${meta.calendarColor}`}></span>
+          <span className="text-xs text-gray-400">{meta.title}</span>
+          <span className="ml-auto text-xs text-gray-500">{indicators.length} 项指标</span>
+        </div>
+        <div className={conclusionClass}>{conclusionText}</div>
+      </div>
+
+      {/* 指标列表 */}
+      {isEmpty ? (
+        <div className="text-sm text-gray-600 py-6 text-center">本月数据缺失</div>
+      ) : (
+        <div>
+          {indicators.map(ind => (
+            <IndicatorRow
+              key={ind.key}
+              ind={ind}
+              selectedMonth={selectedMonth}
+              onJumpToTab={onJumpToTab}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

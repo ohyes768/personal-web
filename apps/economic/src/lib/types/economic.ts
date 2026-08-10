@@ -8,7 +8,7 @@
 export type TimeRange = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
 /** Tab类型选项 */
-export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk' | 'rates';
+export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk' | 'rates' | 'macro-signal';
 
 /** 时间范围配置 */
 export interface TimeRangeConfig {

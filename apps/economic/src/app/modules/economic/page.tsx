@@ -6,11 +6,13 @@
  */
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
+import type { MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
 import { useFullEconomicData } from '@/lib/hooks/useFullEconomicData';
+import { loadMockSnapshot, MOCK_AVAILABLE_MONTHS } from '@/lib/modules/macro-signal/mock-data';
 import { Tabs } from './components/Tabs';
 
 // 动态导入各 Tab 子组件（每个 Tab 自己的 hooks / 按钮 / 图表都在子组件里）
@@ -49,6 +51,11 @@ const RatesTab = dynamic(() => import('./components/RatesTab').then(mod => ({ de
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载利率利差模块...</div>
 });
 
+const MacroSignalTab = dynamic(() => import('./components/MacroSignalTab').then(mod => ({ default: mod.MacroSignalTab })), {
+  ssr: false,
+  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载宏观信号...</div>
+});
+
 export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
@@ -56,6 +63,28 @@ export default function EconomicPage() {
 
   // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isCached
   const { fullData, isLoading, error, isCached } = useFullEconomicData(refreshKey);
+
+  // === 宏观信号数据源 ===
+  // 本地开发(NODE_ENV === 'development')用 mock;线上(NODE_ENV === 'production')走真实接口
+  // (线上接口当前未接入,后续 agent 实现后只需保证 /api/macro/signal 与 /api/macro/months 返回正确 shape 即可)
+  const useMock = process.env.NODE_ENV !== 'production';
+  const loadSnapshot = useMock
+    ? loadMockSnapshot
+    : async (month: string): Promise<MacroSignalSnapshot | null> => {
+        const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return res.json();
+      };
+  const [availableMonths, setAvailableMonths] = useState<string[]>(
+    useMock ? MOCK_AVAILABLE_MONTHS : []
+  );
+  useEffect(() => {
+    if (useMock) return;
+    fetch('/api/macro/months')
+      .then(r => (r.ok ? r.json() : { months: [] }))
+      .then(d => setAvailableMonths(Array.isArray(d?.months) ? d.months : []))
+      .catch(() => { /* 接口未接入时保持空数组,MacroSignalTab 会显示 loading/error */ });
+  }, [useMock]);
 
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
@@ -117,6 +146,11 @@ export default function EconomicPage() {
       id: 'stock-indices',
       label: '股指',
       description: '恒生/上证/标普500/纳指/道琼斯日 K 线（5 轴叠加）'
+    },
+    {
+      id: 'macro-signal',
+      label: '宏观信号',
+      description: '当月 6 维度宏观判断卡片 + 发布日历'
     }
   ];
 
@@ -228,6 +262,13 @@ export default function EconomicPage() {
             isLoading={isLoading}
             error={error}
             isCached={isCached}
+          />
+        </div>
+        <div hidden={activeTab !== 'macro-signal'}>
+          <MacroSignalTab
+            loadSnapshot={loadSnapshot}
+            availableMonths={availableMonths}
+            onJumpToTab={setActiveTab}
           />
         </div>
       </div>
