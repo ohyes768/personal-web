@@ -301,7 +301,7 @@ function JobCard({
           </Button>
           <Button
             onClick={onToggleExpand}
-            className="bg-gray-700 text-gray-200 hover:bg-gray-600 text-sm px-3 py-1.5"
+            className="border border-gray-500 bg-transparent text-gray-200 hover:bg-gray-700/60 text-sm px-3 py-1.5"
           >
             {expanded ? '收起历史' : '查看历史'}
           </Button>
