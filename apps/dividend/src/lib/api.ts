@@ -10,6 +10,7 @@ import type {
   DividendQueryParams,
   DividendStatusResponse,
   M120ListResponse,
+  PriceListResponse,
   RealtimePriceRequest,
   RealtimePriceResponse,
   RefreshDividendResponse,
@@ -49,6 +50,15 @@ export const dividendApi = {
    */
   getM120Data: (params?: { min_yield?: number; sort_by?: string; sort_order?: string }) =>
     directClient.get<M120ListResponse>('/api/dividend/m120', params),
+
+  /**
+   * 获取现价（独立于 M120，挡位监控用）
+   */
+  getPrices: (codes?: string[]) =>
+    directClient.get<PriceListResponse>(
+      '/api/dividend/prices',
+      codes && codes.length > 0 ? { codes: codes.join(',') } : undefined
+    ),
 
   /**
    * 获取 M120 数据状态

@@ -18,6 +18,7 @@ import { SchedulerSettingsModal } from '@/components/SchedulerSettingsModal';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
+import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { dividendApi } from '@/lib/api';
 import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
 
@@ -418,6 +419,10 @@ function DividendPageContent() {
       })
       .filter((s): s is { stock: DividendStockWithTechnical; levels: AlertLevels } => s !== null);
   }, [alertsStatus.status, stocksWithTechnical]);
+
+  // 挡位监控现价（独立于 M120：M120 缺失时仍能取现价，避免挡位 bar 空窗）
+  const alertCodes = useMemo(() => alertStocks.map(s => s.stock.code), [alertStocks]);
+  const { priceMap: alertPriceMap } = useRealtimePrices(alertCodes);
 
   // 处理弹框
   const handleOpenModal = useCallback((type: 'quarterly' | 'sector' | 'yearly' | 'volatility', stock: DividendStock) => {
@@ -1066,8 +1071,8 @@ function DividendPageContent() {
             </div>
           ) : (
             alertStocks.map(({ stock, levels }) => {
-              const tech = technicalData.get(stock.code);
-              const currentPrice = tech?.realtime ?? tech?.close ?? null;
+              const price = alertPriceMap.get(stock.code);
+              const currentPrice = price?.realtime ?? price?.close ?? null;
               if (currentPrice === null || currentPrice === undefined) return null;
               return (
                 <AlertLevelBar
@@ -1076,10 +1081,10 @@ function DividendPageContent() {
                   name={stock.name}
                   levels={levels}
                   currentPrice={currentPrice}
-                  currentPE={tech?.pe ?? null}
-                  currentPB={tech?.pb ?? null}
+                  currentPE={price?.pe ?? null}
+                  currentPB={price?.pb ?? null}
                   dividend2025={stock.dividend_2025 ?? null}
-                  yieldTtm={tech?.yield_ttm ?? null}
+                  yieldTtm={price?.yield_ttm ?? null}
                   priceUpdatedAt={priceUpdatedAt}
                   onClick={() => handleOpenAlertSettings(stock.code)}
                 />

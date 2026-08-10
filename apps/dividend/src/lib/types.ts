@@ -185,6 +185,27 @@ export interface M120ListResponse {
 }
 
 /**
+ * 现价数据（独立于 M120，供挡位监控等场景）
+ */
+export interface PriceItem {
+  code: string;
+  close?: number | null;
+  realtime?: number | null;
+  pe?: number | null;
+  pb?: number | null;
+  yield_ttm?: number | null;
+}
+
+/**
+ * 现价列表响应
+ */
+export interface PriceListResponse {
+  total: number;
+  items: PriceItem[];
+  last_updated?: string | null;
+}
+
+/**
  * 实时股价请求
  */
 export interface RealtimePriceRequest {
