@@ -300,8 +300,9 @@ function JobCard({
             {running ? '触发中…' : '立即执行'}
           </Button>
           <Button
+            variant="secondary"
             onClick={onToggleExpand}
-            className="border border-gray-500 bg-transparent text-gray-200 hover:bg-gray-700/60 text-sm px-3 py-1.5"
+            className="px-3 py-1.5"
           >
             {expanded ? '收起历史' : '查看历史'}
           </Button>
