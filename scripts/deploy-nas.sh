@@ -34,7 +34,7 @@ side:（默认 both）
   backend | frontend | both
 
 options:
-  --no-pull     跳过 git pull + submodule update
+  --no-pull     跳过 git pull
   --cold        强制冷构建：清 Docker 层缓存 + 换新的空 pnpm store（真正重下依赖）
   --no-buildx   前端也退回 docker compose build（默认 frontend 走 buildx）
   --tail        部署完后 tail 日志（默认关）
@@ -250,17 +250,11 @@ echo "  buildx:    $USE_BUILDX"
 echo "  tail:      $DO_TAIL"
 echo "============================================================"
 
-# ---- Step 1: git pull + submodule update ----
+# ---- Step 1: git pull ----
 if $DO_PULL; then
     echo ""
-    echo "==> [1/4] git pull"
+    echo "==> [1/3] git pull"
     git pull
-
-    echo ""
-    echo "==> [2/4] git submodule update --remote --merge"
-    # --remote: 拉子模块远端最新 commit（默认是 superproject 锁定的 gitlink）
-    # --merge:  fast-forward merge 子模块 master 到本地（不 detach HEAD）
-    git submodule update --remote --merge
 fi
 
 # ---- Step 2: build ----
@@ -268,9 +262,9 @@ echo ""
 if $USE_BUILDX; then
     ensure_buildx_builder "$BUILDX_BUILDER"
     if $COLD; then
-        echo "==> [3/4] build（buildx frontend + compose backend，--cold）"
+        echo "==> [2/3] build（buildx frontend + compose backend，--cold）"
     else
-        echo "==> [3/4] build（buildx frontend + compose backend，热构建）"
+        echo "==> [2/3] build（buildx frontend + compose backend，热构建）"
     fi
     for svc in $SERVICES; do
         if get_buildx_config "$svc" >/dev/null; then
@@ -283,9 +277,9 @@ if $USE_BUILDX; then
     done
 else
     if $COLD; then
-        echo "==> [3/4] docker compose build（--cold）"
+        echo "==> [2/3] docker compose build（--cold）"
     else
-        echo "==> [3/4] docker compose build（热构建）"
+        echo "==> [2/3] docker compose build（热构建）"
     fi
     for svc in $SERVICES; do
         echo "  --- compose build $svc ---"
@@ -295,7 +289,7 @@ fi
 
 # ---- Step 3: restart（--no-build：镜像已由上一步 buildx/compose 打好，禁止 compose 再用旧名偷偷重建） ----
 echo ""
-echo "==> [4/4] docker compose up -d --force-recreate --no-build"
+echo "==> [3/3] docker compose up -d --force-recreate --no-build"
 docker compose -f "$COMPOSE_FILE" up -d --force-recreate --no-build $SERVICES
 
 # ---- 验证状态 ----
