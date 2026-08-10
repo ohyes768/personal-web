@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # 中国国债数据起始日期
     china_bond_start_date: str = "2000-01-01"
 
+    # macro-fin-skill 输出目录(给后端读取各 JSON 用)
+    # 默认本地开发路径,生产环境通过环境变量 MACRO_SIGNAL_DATA_DIR 覆盖
+    macro_signal_data_dir: str = "F:/personal-projects/macro-fin-skill/skills"
+
     class Config:
         env_file = ".env"
         case_sensitive = False

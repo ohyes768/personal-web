@@ -43,6 +43,8 @@ from src.models import (
     CommoditiesUpdateData,
     IndicesData,
     IndicesUpdateData,
+    MacroSignalResponse,
+    MacroMonthsResponse,
 )
 from src.services.fred_service import get_fred_service
 from src.services.ecb_service import get_ecb_service
@@ -53,6 +55,7 @@ from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
 from src.services.index_service import get_index_service
+from src.services.macro_signal_service import get_macro_signal_service
 from src.utils.logger import setup_logger
 from src.config import get_settings
 
@@ -2369,3 +2372,42 @@ async def update_indices():
         )
     finally:
         release_update_lock()
+
+
+# === 宏观信号 API ===
+
+@router.get("/macro/signal", response_model=MacroSignalResponse)
+async def get_macro_signal(month: str = Query(..., description="月份 YYYY-MM")):
+    """获取指定月份的宏观信号快照(6 维度)
+
+    数据源:macro-fin-skill 各子 skill 的 macro_signal.json + risk_data.json
+    缓存:5 分钟内存缓存
+    """
+    try:
+        logger.info(f"查询宏观信号: month={month}")
+        service = get_macro_signal_service()
+        snapshot = service.get_snapshot(month)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail=f"No data for month {month}")
+        return MacroSignalResponse(success=True, data=snapshot)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"查询宏观信号失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/macro/months", response_model=MacroMonthsResponse)
+async def get_macro_months():
+    """获取当前可用的月份列表(降序)
+
+    数据源:从各 skill JSON 的 data_date 推断可用月份
+    """
+    try:
+        logger.info("查询可用月份列表")
+        service = get_macro_signal_service()
+        months = service.get_available_months()
+        return MacroMonthsResponse(months=months)
+    except Exception as e:
+        logger.error(f"查询月份列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

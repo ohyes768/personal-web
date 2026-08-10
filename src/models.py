@@ -308,3 +308,36 @@ class IndicesUpdateData(BaseModel):
     """股指更新响应数据"""
 
     indices: IndicesData
+
+
+# === 宏观信号数据模型(对齐前端 MacroSignalSnapshot shape) ===
+
+class MacroIndicator(BaseModel):
+    """单个指标(粒度到指标级,updated_at 是 ISO 'YYYY-MM-DD')"""
+    key: str
+    value: Optional[float] = None
+    updated_at: Optional[str] = None  # 'YYYY-MM-DD'
+
+
+class MacroSignalGroup(BaseModel):
+    """一个分组(6 大主题之一)"""
+    conclusion: Optional[str] = None
+    indicators: List[MacroIndicator] = []
+
+
+class MacroSignalSnapshot(BaseModel):
+    """一个月快照 = 6 个分组"""
+    month: str  # 'YYYY-MM'
+    groups: Dict[str, MacroSignalGroup]  # 6 个 dimension key
+    generated_at: Optional[str] = None
+
+
+class MacroSignalResponse(BaseModel):
+    """GET /api/macro/signal 响应"""
+    success: bool = True
+    data: MacroSignalSnapshot
+
+
+class MacroMonthsResponse(BaseModel):
+    """GET /api/macro/months 响应"""
+    months: List[str] = []  # 降序
