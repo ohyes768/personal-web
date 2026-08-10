@@ -5,12 +5,12 @@ WORKDIR /app
 # 安装 uv
 RUN pip install --no-cache-dir uv
 
-# 复制项目配置
-COPY pyproject.toml ./
+# 复制项目配置（pyproject.toml + uv.lock 一起，sync 用 lockfile 锁版本）
+COPY pyproject.toml uv.lock ./
 
-# 创建虚拟环境并安装依赖
+# 创建虚拟环境并按 lockfile 安装依赖（--frozen: lockfile 与 pyproject 不一致则报错）
 RUN uv venv .venv
-RUN uv pip install --no-cache-dir -e .
+RUN uv sync --frozen
 
 # 复制源代码
 COPY src/ ./src/
