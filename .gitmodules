@@ -1,9 +1,0 @@
-[submodule "backend/douyin-processor"]
-	path = backend/douyin-processor
-	url = git@github.com:ohyes768/douyin-processor.git
-[submodule "backend/global-macro-fin"]
-	path = backend/global-macro-fin
-	url = git@github.com:ohyes768/global-macro-fin.git
-[submodule "backend/dividend-select"]
-	path = backend/dividend-select
-	url = git@github.com:ohyes768/dividend-select.git
