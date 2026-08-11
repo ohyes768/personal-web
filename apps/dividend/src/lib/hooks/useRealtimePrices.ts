@@ -12,6 +12,7 @@ import type { PriceItem } from '@/lib/types';
 
 export function useRealtimePrices(codes: string[]) {
   const [priceMap, setPriceMap] = useState<Map<string, PriceItem>>(new Map());
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   // 缓存 codes 引用，避免每次渲染触发 fetch（与 useTechnicalData 一致）
@@ -20,6 +21,7 @@ export function useRealtimePrices(codes: string[]) {
   useEffect(() => {
     if (memoCodes.length === 0) {
       setPriceMap(new Map());
+      setLastUpdated(null);
       return;
     }
     let cancelled = false;
@@ -31,6 +33,9 @@ export function useRealtimePrices(codes: string[]) {
         const m = new Map<string, PriceItem>();
         for (const it of res.items ?? []) m.set(it.code, it);
         setPriceMap(m);
+        // 现价更新时间取后端返回的实时价格文件 mtime（res.last_updated），
+        // 而非访问时间，与挡位监控 bar 展示的现价同源。
+        setLastUpdated(res.last_updated ?? null);
       })
       .catch(err => {
         console.error('[useRealtimePrices] fetch failed:', err);
@@ -43,5 +48,5 @@ export function useRealtimePrices(codes: string[]) {
     };
   }, [memoCodes]);
 
-  return { priceMap, loading };
+  return { priceMap, lastUpdated, loading };
 }

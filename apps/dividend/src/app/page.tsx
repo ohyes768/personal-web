@@ -343,7 +343,7 @@ function DividendPageContent() {
   const stockCodes = useMemo(() => data.map(s => s.code), [data]);
 
   // 技术指标数据
-  const { technicalData, priceUpdatedAt } = useTechnicalData(stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
+  const { technicalData } = useTechnicalData(stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
 
   // 详情弹框
   const detailModal = useDetailModal();
@@ -422,7 +422,7 @@ function DividendPageContent() {
 
   // 挡位监控现价（独立于 M120：M120 缺失时仍能取现价，避免挡位 bar 空窗）
   const alertCodes = useMemo(() => alertStocks.map(s => s.stock.code), [alertStocks]);
-  const { priceMap: alertPriceMap } = useRealtimePrices(alertCodes);
+  const { priceMap: alertPriceMap, lastUpdated: alertPriceUpdatedAt } = useRealtimePrices(alertCodes);
 
   // 处理弹框
   const handleOpenModal = useCallback((type: 'quarterly' | 'sector' | 'yearly' | 'volatility', stock: DividendStock) => {
@@ -1085,7 +1085,7 @@ function DividendPageContent() {
                   currentPB={price?.pb ?? null}
                   dividend2025={stock.dividend_2025 ?? null}
                   yieldTtm={price?.yield_ttm ?? null}
-                  priceUpdatedAt={priceUpdatedAt}
+                  priceUpdatedAt={alertPriceUpdatedAt}
                   onClick={() => handleOpenAlertSettings(stock.code)}
                 />
               );
