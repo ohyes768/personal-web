@@ -18,6 +18,12 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
+# crontab 表达式统一按 Asia/Shanghai 解析。APScheduler 的 from_crontab 不传
+# timezone 会落到系统默认时区（容器内为 UTC），与 scheduler 的 timezone 不一致，
+# 导致触发时间偏移 8 小时（如 14:25 UTC = 22:25 北京）。scheduler 与每个 trigger
+# 必须共用同一时区。
+SCHEDULER_TIMEZONE = "Asia/Shanghai"
+
 
 class SchedulerManager:
     """内建 APScheduler 管理器。
@@ -60,9 +66,7 @@ class SchedulerManager:
         self.jobs_meta = {j["id"]: j for j in config.get("jobs", [])}
 
         scheduler = AsyncIOScheduler(
-            # 显式指定 Shanghai 时区：crontab 表达式按本地时间解析
-            # 缺省为 UTC，会导致 0 2 1 * * 触发时机偏移 8 小时（02:00 UTC = 10:00 北京）
-            timezone="Asia/Shanghai",
+            timezone=SCHEDULER_TIMEZONE,
             job_defaults={
                 "max_instances": 1,
                 "coalesce": True,
@@ -73,7 +77,9 @@ class SchedulerManager:
             job_id = job_cfg["id"]
             self._run_locks[job_id] = asyncio.Lock()
             try:
-                trigger = CronTrigger.from_crontab(job_cfg["cron"])
+                trigger = CronTrigger.from_crontab(
+                    job_cfg["cron"], timezone=SCHEDULER_TIMEZONE
+                )
             except Exception as e:
                 logger.error(f"[{job_id}] cron 解析失败: {e}")
                 continue
