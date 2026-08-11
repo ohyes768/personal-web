@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## 项目概述
 
-个人财富网站，5 个独立 Next.js 前端 + 3 个 Python 后端（git submodule）。
+个人财富网站，5 个独立 Next.js 前端 + 3 个 Python 后端。
 ```
 apps/
 ├── dividend/      # A 股高股息分析（Next.js 15, React 19, Tailwind CSS v4）
@@ -95,24 +95,21 @@ docker compose down
 - `useTechnicalData()` — M120/实时价格 Hook
 - `useDataUpdate()` — 数据刷新状态管理
 
-## 子模块管理规范
+## 后端开发说明
 
-三个后端都是 `ohyes768` 名下的独立仓库，**用户都作开为发者维护**：
+三个后端已合并进 monorepo，是 `backend/` 下的普通 git 目录（不再是 git submodule）：
 
-| 子模块 | 远端 | 说明 |
-|--------|------|------|
-| `backend/dividend-select` | `ohyes768/dividend-select` | A 股股息率后端，FastAPI + akshare |
-| `backend/douyin-processor` | `ohyes768/douyin-processor` | 抖音视频文字转写处理后端 |
-| `backend/global-macro-fin` | `ohyes768/global-macro-fin` | 宏观金融后端 |
+| 目录 | 说明 |
+|--------|------|
+| `backend/dividend-select` | A 股股息率后端，FastAPI + akshare |
+| `backend/douyin-processor` | 抖音视频文字转写处理后端 |
+| `backend/global-macro-fin` | 宏观金融后端 |
 
-更新流程：
-1. `cd backend/<submodule>` 在子模块内改代码
-2. 子模块内 `git add` + `git commit` + `git push origin main`
-3. 回到主仓库 `git add backend/<submodule>` 更新 gitlink
-4. 主仓库 `git commit -m "chore: bump <submodule> pointer"`
-5. 主仓库 `git push origin master`
+改动流程（与前端一致，单仓库）：
+1. 在 `backend/<服务>/` 下改代码
+2. 主仓库 `git add` + `git commit` + `git push origin master`
 
-**顺序很重要**：子模块必须先 push 到远端，主仓库才能 push gitlink 更新（否则 clone 后 `git submodule update` 会断链接）。
+不再有两阶段提交、gitlink、`git submodule update` 等概念。
 
 ## 其他约定
 
