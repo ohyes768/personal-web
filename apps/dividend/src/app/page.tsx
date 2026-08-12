@@ -23,7 +23,7 @@ import { dividendApi } from '@/lib/api';
 import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
-type TabKey = 'all' | 'watchlist' | 'alerts';
+type TabKey = 'all' | 'alerts';
 
 /**
  * 红利指数徽章白名单（与 fetcher.py 的 DIVIDEND_INDEXES + ALT_API_INDEXES 对齐）
@@ -373,13 +373,13 @@ function DividendPageContent() {
     }
   }, [data]);
 
-  // URL query 同步 tab（?tab=watchlist / ?tab=alerts）
+  // URL query 同步 tab（?tab=alerts）+ 收藏过滤（?fav=1）
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const activeTab: TabKey =
-    tabParam === 'watchlist' ? 'watchlist' :
-    tabParam === 'alerts' ? 'alerts' : 'all';
+  const activeTab: TabKey = tabParam === 'alerts' ? 'alerts' : 'all';
+  // 兼容旧 ?tab=watchlist 书签 → 等价于 all + 只看收藏
+  const favOnly = searchParams.get('fav') === '1' || tabParam === 'watchlist';
   const handleTabChange = useCallback((tab: TabKey) => {
     const params = new URLSearchParams(searchParams.toString());
     if (tab === 'all') params.delete('tab');
@@ -387,6 +387,13 @@ function DividendPageContent() {
     const qs = params.toString();
     router.replace(qs ? `?${qs}` : '?', { scroll: false });
   }, [router, searchParams]);
+  const handleToggleFav = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (favOnly) params.delete('fav');
+    else params.set('fav', '1');
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : '?', { scroll: false });
+  }, [router, searchParams, favOnly]);
 
   // 抽屉引用
   const drawerRef = useRef<HTMLDivElement>(null);
@@ -399,13 +406,13 @@ function DividendPageContent() {
     }));
   }, [data, technicalData]);
 
-  // 按 tab 过滤显示数据
+  // 按 tab + 收藏过滤显示数据（"只看收藏"仅在 all tab 生效）
   const displayData = useMemo(() => {
-    if (activeTab === 'watchlist') {
+    if (activeTab === 'all' && favOnly) {
       return stocksWithTechnical.filter(s => watchlist.has(s.code));
     }
     return stocksWithTechnical;
-  }, [stocksWithTechnical, activeTab, watchlist]);
+  }, [stocksWithTechnical, activeTab, favOnly, watchlist]);
 
   // 挡位监控 Tab：filter 已设 alerts 的收藏股票
   const alertStocks = useMemo(() => {
@@ -995,8 +1002,8 @@ function DividendPageContent() {
         </div>
       )}
 
-      {/* Tab 切换 */}
-      <div className="flex border-b border-gray-700 mb-4">
+      {/* Tab 切换：全部 / 挡位监控；收藏过滤用右侧"只看收藏"按钮 */}
+      <div className="flex border-b border-gray-700 mb-4 items-center">
         <button
           onClick={() => handleTabChange('all')}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -1007,18 +1014,6 @@ function DividendPageContent() {
         >
           全部
           <span className="ml-2 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{stocksWithTechnical.length}</span>
-        </button>
-        <button
-          onClick={() => handleTabChange('watchlist')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-            activeTab === 'watchlist'
-              ? 'border-yellow-500 text-yellow-400'
-              : 'border-transparent text-gray-400 hover:text-gray-200'
-          }`}
-        >
-          <StarIconOutline className="w-4 h-4" />
-          收藏
-          <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{watchlist.total}</span>
         </button>
         <button
           onClick={() => handleTabChange('alerts')}
@@ -1034,25 +1029,41 @@ function DividendPageContent() {
           挡位监控
           <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{alertStocks.length}</span>
         </button>
+        {/* 只看收藏 toggle：仅 all tab 显示，过滤当前列表 */}
+        {activeTab === 'all' && (
+          <button
+            onClick={handleToggleFav}
+            className={`ml-auto mb-[-1px] px-3 py-1.5 text-sm rounded-md flex items-center gap-1.5 border transition-colors ${
+              favOnly
+                ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
+                : 'text-gray-400 hover:text-yellow-400 border-transparent hover:border-gray-600'
+            }`}
+            title={favOnly ? '当前仅显示收藏股，点击恢复全部' : '只看收藏的股票'}
+          >
+            <StarIconOutline className="w-4 h-4" />
+            只看收藏
+            <span className="text-xs bg-gray-700 px-1.5 py-0.5 rounded">{watchlist.total}</span>
+          </button>
+        )}
       </div>
 
-      {/* 收藏 tab 空状态 */}
-      {activeTab === 'watchlist' && displayData.length === 0 && !loading && (
+      {/* 只看收藏 空状态 */}
+      {activeTab === 'all' && favOnly && displayData.length === 0 && !loading && (
         <div className="bg-paper-card rounded-lg p-12 text-center">
           <StarIconOutline className="w-12 h-12 mx-auto mb-3 text-gray-500" />
           <p className="text-gray-400 mb-4">
-            {watchlist.total === 0 ? '还没有收藏的股票' : '本月筛选范围内暂无收藏的股票'}
+            {watchlist.total === 0 ? '还没有收藏的股票，在列表里点星标添加' : '本月筛选范围内暂无收藏的股票'}
           </p>
           <button
-            onClick={() => handleTabChange('all')}
+            onClick={handleToggleFav}
             className="text-blue-400 hover:underline text-sm"
           >
-            去全部 tab 添加 →
+            查看全部 →
           </button>
         </div>
       )}
 
-      {/* 表格 - 使用 refreshKey 作为 key 强制刷新；watchlist tab 用 displayData，其他用 stocksWithTechnical */}
+      {/* 表格 - 使用 refreshKey 作为 key 强制刷新；all+favOnly 用过滤后的 displayData */}
       {activeTab === 'alerts' ? (
         <div className="space-y-2">
           {alertStocks.length === 0 ? (
@@ -1061,7 +1072,7 @@ function DividendPageContent() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 17l6-6 4 4 8-8M14 7h7v7" />
               </svg>
               <h2 className="text-xl font-semibold text-ink mb-2">暂无设置挡位的收藏股票</h2>
-              <p className="text-ink-muted mb-4">去「收藏」或筛一下其他股票后点行设置挡位</p>
+              <p className="text-ink-muted mb-4">去「全部」tab 浏览股票，点星标收藏后设置挡位</p>
               <button
                 onClick={() => handleTabChange('all')}
                 className="text-blue-400 hover:underline text-sm"
@@ -1093,7 +1104,7 @@ function DividendPageContent() {
           )}
         </div>
       ) : (
-        !(activeTab === 'watchlist' && displayData.length === 0) && (
+        !(activeTab === 'all' && favOnly && displayData.length === 0) && (
           <DividendTable
             key={refreshKey}
             data={displayData}
