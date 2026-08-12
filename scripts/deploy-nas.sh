@@ -22,7 +22,9 @@ BUILDKITD_CONFIG="scripts/buildkitd-nas.toml"
 # nginx target 配置（容器名可被环境变量覆盖）
 # 注：nginx 容器已 bind mount 仓库 nginx/web.conf → /etc/nginx/conf.d/web.conf，
 # 所以脚本只负责 reload，不再 cp/mv；NGINX_CONF_DEST 已废弃。
+# nginx compose 文件在另一个项目里（~/-/nginx/），路径可被环境变量覆盖。
 NGINX_CONTAINER="${NGINX_CONTAINER:-nginx}"
+NGINX_COMPOSE_FILE="${NGINX_COMPOSE_FILE:-/home/ohyes768/nginx/docker-compose.yml}"
 
 show_help() {
     cat <<'EOF'
@@ -127,15 +129,17 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ---- nginx 同步（nginx 容器已 bind mount nginx/web.conf，只需 reload）----
-# 之前 cp 进容器再 mv 会 EBUSY：nginx master 持有 /etc/nginx/conf.d/ 目录 fd，
-# 任何 rename/truncate 都撞目录 inode 锁。bind mount 后容器直接读宿主文件，
-# 改完 web.conf 只需 reload。
+# ---- nginx 同步（nginx 容器已 bind mount nginx/web.conf，需 restart 重挂载）----
+# bind mount 在文件 inode 层是同步的（同一路径），但 nginx master 进程
+# 启动时 open() 拿到 fd 后不会重读，reload 也不重新挂载。所以
+# 改完 web.conf 之后必须 docker compose restart nginx（3 秒）才能生效。
+# 单纯 nginx -s reload 在「bind mount + nginx worker」这个组合下会
+# 静默不生效，看起来 reload 成功但实际加载的是旧版本。
 sync_nginx() {
     echo "==> nginx -t（测试配置，失败则中止，不会 reload）"
     docker exec "$NGINX_CONTAINER" nginx -t
-    echo "==> nginx -s reload"
-    docker exec "$NGINX_CONTAINER" nginx -s reload
+    echo "==> docker compose -f $NGINX_COMPOSE_FILE restart $NGINX_CONTAINER（重新挂载 bind mount，加载新配置）"
+    docker compose -f "$NGINX_COMPOSE_FILE" restart "$NGINX_CONTAINER"
     echo "============================================================"
     echo "nginx 配置已更新并 reload"
     echo "============================================================"
