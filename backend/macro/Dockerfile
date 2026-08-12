@@ -2,6 +2,11 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# 安装系统依赖 curl（slim 镜像默认不带；healthcheck 探针需要）
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # 安装 uv
 RUN pip install --no-cache-dir uv
 
