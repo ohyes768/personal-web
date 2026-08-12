@@ -19,9 +19,10 @@ COMPOSE_FILE="docker-compose.nas.yml"
 # 带国内 registry mirror 的 builder（旧名 nas-builder 不继承 daemon.json 加速，会直连 Docker Hub 超时）
 BUILDX_BUILDER="nas-builder-cn"
 BUILDKITD_CONFIG="scripts/buildkitd-nas.toml"
-# nginx target 配置（可被环境变量覆盖，如 NGINX_CONTAINER=web-nginx）
+# nginx target 配置（容器名可被环境变量覆盖）
+# 注：nginx 容器已 bind mount 仓库 nginx/web.conf → /etc/nginx/conf.d/web.conf，
+# 所以脚本只负责 reload，不再 cp/mv；NGINX_CONF_DEST 已废弃。
 NGINX_CONTAINER="${NGINX_CONTAINER:-nginx}"
-NGINX_CONF_DEST="${NGINX_CONF_DEST:-/etc/nginx/conf.d/web.conf}"
 
 show_help() {
     cat <<'EOF'
@@ -126,17 +127,11 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# ---- nginx 同步（nginx/web.conf → 容器 + reload）----
-# 不能直接 `docker cp` 覆盖 NGINX_CONF_DEST：nginx worker 已 mmap/持有该文件 fd，
-# docker daemon 的 unlinkat 会 EBUSY。改成 cp 到带时间戳的临时路径，再在容器内
-# `mv -f` 原子替换（rename(2)，不打断已有 fd），然后 nginx -t + reload。
+# ---- nginx 同步（nginx 容器已 bind mount nginx/web.conf，只需 reload）----
+# 之前 cp 进容器再 mv 会 EBUSY：nginx master 持有 /etc/nginx/conf.d/ 目录 fd，
+# 任何 rename/truncate 都撞目录 inode 锁。bind mount 后容器直接读宿主文件，
+# 改完 web.conf 只需 reload。
 sync_nginx() {
-    local tmp_name="web.conf.new.$(date +%s).$$"
-    local tmp_dest="/etc/nginx/conf.d/${tmp_name}"
-    echo "==> 同步 nginx/web.conf → ${NGINX_CONTAINER}:${NGINX_CONF_DEST}"
-    docker cp nginx/web.conf "${NGINX_CONTAINER}:${tmp_dest}"
-    echo "==> 原子替换 ${tmp_dest} → ${NGINX_CONF_DEST}"
-    docker exec "$NGINX_CONTAINER" mv -f "$tmp_dest" "$NGINX_CONF_DEST"
     echo "==> nginx -t（测试配置，失败则中止，不会 reload）"
     docker exec "$NGINX_CONTAINER" nginx -t
     echo "==> nginx -s reload"

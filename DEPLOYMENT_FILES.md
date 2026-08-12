@@ -29,8 +29,10 @@ NAS 上 nginx 容器的反向代理配置（source of truth，已纳入版本管
 **位置**: `/nginx/web.conf`
 
 **说明**: NAS nginx 是独立容器（容器名 `nginx`），不在 docker-compose.nas.yml 内。
-改 web.conf 后部署：`./scripts/deploy-nas.sh nginx`（自动 `docker cp` 进容器 + `nginx -t` + `nginx -s reload`）。
-容器名/路径可用环境变量覆盖：`NGINX_CONTAINER` / `NGINX_CONF_DEST`（默认 `/etc/nginx/conf.d/web.conf`）。
+启动时将仓库 `nginx/web.conf` **bind mount** 到容器内 `/etc/nginx/conf.d/web.conf`，
+所以容器直接读宿主文件——改完 web.conf 后部署 `./scripts/deploy-nas.sh nginx`，
+脚本只做 `nginx -t` + `nginx -s reload`（不再 cp/mv，避免触发 nginx 持有的目录 inode 锁 EBUSY）。
+容器名可用环境变量覆盖：`NGINX_CONTAINER`（默认 `nginx`）。
 
 ## Dockerfiles
 
