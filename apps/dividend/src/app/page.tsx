@@ -1036,7 +1036,7 @@ function DividendPageContent() {
             className={`ml-auto mb-[-1px] px-3 py-1.5 text-sm rounded-md flex items-center gap-1.5 border transition-colors ${
               favOnly
                 ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50'
-                : 'text-gray-400 hover:text-yellow-400 border-transparent hover:border-gray-600'
+                : 'text-yellow-600/80 hover:text-yellow-400 border-transparent hover:border-yellow-500/40 hover:bg-yellow-500/10'
             }`}
             title={favOnly ? '当前仅显示收藏股，点击恢复全部' : '只看收藏的股票'}
           >
