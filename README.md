@@ -15,7 +15,7 @@ personal-web/
 │   ├── dividend-select/    # 股息率后端（FastAPI，端口 8092）
 │   ├── douyin-processor/    # 抖音后端（端口 8093）
 │   └── macro/   # 宏观金融后端（端口 8094）
-├── nginx/                   # 示例 Nginx 配置（参考用）
+├── nginx/                   # nginx 反代配置 web.conf（NAS 容器用；deploy-nas.sh nginx 同步+reload）
 ├── docs/                    # 模块级技术文档
 └── docker-compose.yml       # 本地开发用 Docker Compose
 ```
@@ -108,6 +108,8 @@ docker compose -f docker-compose.nas.yml ps
 - `/api/dividend/*` → dividend-backend:8092
 - `/douyin/*` → douyin-frontend:3004
 - `/api/douyin/*` → douyin-backend:8093
+- `/macro/*` → macro-frontend:3001
+- `/api/macro/*` → macro-frontend:3001（前端 BFF 再转 macro-backend:8094）
 
 **数据卷**：
 - `dividend-data`、`dividend-logs`、`dividend-config`

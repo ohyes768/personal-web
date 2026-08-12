@@ -24,11 +24,13 @@ NAS 生产环境 Docker Compose 配置文件。
 
 **服务定义**: macro, dividend, douyin, news 四个前端
 
-### 3. nginx/nginx.conf
-示例 Nginx 反向代理配置（参考用）。
-**位置**: `/nginx/nginx.conf`
+### 3. nginx/web.conf
+NAS 上 nginx 容器的反向代理配置（source of truth，已纳入版本管理）。
+**位置**: `/nginx/web.conf`
 
-**说明**: NAS 上使用外部 Nginx，此文件仅供参考对比。
+**说明**: NAS nginx 是独立容器（容器名 `nginx`），不在 docker-compose.nas.yml 内。
+改 web.conf 后部署：`./scripts/deploy-nas.sh nginx`（自动 `docker cp` 进容器 + `nginx -t` + `nginx -s reload`）。
+容器名/路径可用环境变量覆盖：`NGINX_CONTAINER` / `NGINX_CONF_DEST`（默认 `/etc/nginx/conf.d/web.conf`）。
 
 ## Dockerfiles
 

@@ -19,6 +19,9 @@ COMPOSE_FILE="docker-compose.nas.yml"
 # 带国内 registry mirror 的 builder（旧名 nas-builder 不继承 daemon.json 加速，会直连 Docker Hub 超时）
 BUILDX_BUILDER="nas-builder-cn"
 BUILDKITD_CONFIG="scripts/buildkitd-nas.toml"
+# nginx target 配置（可被环境变量覆盖，如 NGINX_CONTAINER=web-nginx）
+NGINX_CONTAINER="${NGINX_CONTAINER:-nginx}"
+NGINX_CONF_DEST="${NGINX_CONF_DEST:-/etc/nginx/conf.d/web.conf}"
 
 show_help() {
     cat <<'EOF'
@@ -28,7 +31,8 @@ NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
   ./scripts/deploy-nas.sh <target> [side] [options]
 
 target:
-  dividend | douyin | rss-relay | macro | all
+  dividend | douyin | rss-relay | macro | nginx | all
+  （nginx 只同步 nginx/web.conf 到 nginx 容器并 reload，不走 build/up，忽略 side）
 
 side:（默认 both）
   backend | frontend | both
@@ -62,6 +66,7 @@ options:
   ./scripts/deploy-nas.sh rss-relay both
   ./scripts/deploy-nas.sh macro both
   ./scripts/deploy-nas.sh macro backend
+  ./scripts/deploy-nas.sh nginx              # 同步 nginx/web.conf + reload（忽略 side）
   ./scripts/deploy-nas.sh all
   ./scripts/deploy-nas.sh dividend frontend --no-pull
   ./scripts/deploy-nas.sh dividend frontend --cold
@@ -120,6 +125,19 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# ---- nginx 同步（nginx/web.conf → 容器 + reload）----
+sync_nginx() {
+    echo "==> 同步 nginx/web.conf → ${NGINX_CONTAINER}:${NGINX_CONF_DEST}"
+    docker cp nginx/web.conf "${NGINX_CONTAINER}:${NGINX_CONF_DEST}"
+    echo "==> nginx -t（测试配置，失败则中止，不会 reload）"
+    docker exec "$NGINX_CONTAINER" nginx -t
+    echo "==> nginx -s reload"
+    docker exec "$NGINX_CONTAINER" nginx -s reload
+    echo "============================================================"
+    echo "nginx 配置已更新并 reload"
+    echo "============================================================"
+}
 
 # ---- 服务映射 ----
 get_services() {
@@ -222,6 +240,17 @@ buildx_build_frontend() {
     fi
     docker buildx build "${args[@]}" "$ctx"
 }
+
+# ---- nginx target：只同步 web.conf + reload，不走 build/up ----
+if [[ "$TARGET" == "nginx" ]]; then
+    if $DO_PULL; then
+        echo ""
+        echo "==> git pull"
+        git pull
+    fi
+    sync_nginx
+    exit 0
+fi
 
 SERVICES=$(get_services "$TARGET" "$SIDE")
 echo "============================================================"
