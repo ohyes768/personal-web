@@ -19,12 +19,14 @@
 数据源根目录通过环境变量 `MACRO_SIGNAL_DATA_DIR` 配置:
 
 ```bash
-# 本地开发(默认)
+# 本地开发(默认，读 macro-fin-skill 仓库产出)
 export MACRO_SIGNAL_DATA_DIR=F:/personal-projects/macro-fin-skill/skills
 
-# 生产环境(NAS)
-export MACRO_SIGNAL_DATA_DIR=/volume1/web/data/macro-fin-skill/skills
+# 生产环境(NAS，由 agent 推送写入，持久卷 macro-data 下)
+# docker-compose.nas.yml 已注入：MACRO_SIGNAL_DATA_DIR=/app/data/macro-signals
 ```
+
+**生产环境数据由 agent 推送写入**(见下方 `POST /api/macro/signal/upload`),不再依赖共享存储 / n8n 同步。本地开发则直接读 macro-fin-skill 仓库目录。
 
 数据源根目录若不存在或子目录缺 JSON 文件,该维度返回空 group,接口整体仍可正常返回 200(除非 6 个维度都无月份匹配 → 返回 404)。
 
@@ -132,6 +134,73 @@ curl 'http://localhost:8094/api/macro/months'
 
 - `months` 数组,按 'YYYY-MM' **降序** 排列
 - 来源:扫描 6 个 JSON,提取各 `data_date` 的 'YYYY-MM' 部分,合并去重
+
+---
+
+## 路径说明（nginx 反代）
+
+| 层 | 路径 |
+|---|---|
+| 对外(浏览器 / agent 经网关) | `/api/macro/signal`、`/api/macro/months`、`/api/macro/signal/upload` |
+| 后端内部(router prefix `/api`) | `/api/signal`、`/api/months`、`/api/signal/upload` |
+
+nginx `location /api/macro/` 剥前缀直转后端,故**对外路径保持 `/api/macro/<x>` 不变**;本地直连后端测试用 `/api/<x>`。
+
+---
+
+### `POST /api/macro/signal/upload`
+
+接收 macro-fin-skill agent 推送的 JSON,落盘到 `MACRO_SIGNAL_DATA_DIR`。写后自动清内存缓存,`GET /api/macro/signal` 立即可读新数据。
+
+#### 请求
+
+```bash
+curl -X POST 'https://web.duomi77.cn:9443/api/macro/signal/upload' \
+  -H "X-Upload-Token: $MACRO_SIGNAL_UPLOAD_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"skill":"monetary-policy-skill","file":"macro_signal.json","data":{ ...macro_signal.json 内容... }}'
+```
+
+#### 入参
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `skill` | string | 子 skill 目录名,白名单:`monetary-policy-skill` / `money-supply-skill` / `entity-economy-skill` / `inflation-skill` / `exchange-rate-skill` / `risk-appetite-skill` |
+| `file` | string | `macro_signal.json` 或 `risk_data.json`(白名单) |
+| `data` | object | 该 skill 产出的原始 JSON |
+
+#### 响应(200)
+
+```json
+{ "success": true, "skill": "monetary-policy-skill", "file": "macro_signal.json", "path": "/app/data/macro-signals/monetary-policy-skill/macro_signal.json", "bytes": 241 }
+```
+
+#### 错误码
+
+| 状态码 | 触发条件 |
+|---|---|
+| 401 | `X-Upload-Token` 缺失/错误,或服务端未配 `MACRO_SIGNAL_UPLOAD_TOKEN` |
+| 400 | `skill`/`file` 不在白名单(防路径穿越),或 `data` 非对象 |
+
+#### 鉴权
+
+`X-Upload-Token` header,constant-time 校验,值来自环境变量 `MACRO_SIGNAL_UPLOAD_TOKEN`(docker-compose.nas.yml 注入,根 `.env` 提供)。未配置则所有推送 401(生产必须配)。
+
+#### agent 对接(macro-fin-skill 侧,跨仓库)
+
+`run_all.py` 跑完 6 个 skill 后,遍历产出 JSON 逐个推送:
+
+```bash
+UPLOAD_URL='https://web.duomi77.cn:9443/api/macro/signal/upload'
+for pair in "monetary-policy-skill:macro_signal.json" "money-supply-skill:macro_signal.json" \
+            "entity-economy-skill:macro_signal.json" "inflation-skill:macro_signal.json" \
+            "exchange-rate-skill:macro_signal.json" "risk-appetite-skill:risk_data.json"; do
+  skill="${pair%%:*}"; file="${pair##*:}"
+  curl -X POST "$UPLOAD_URL" -H "X-Upload-Token: $MACRO_SIGNAL_UPLOAD_TOKEN" \
+    -H "Content-Type: application/json" \
+    -d "$(jq -nc --arg skill "$skill" --arg file "$file" --slurpfile d "skills/$skill/$file" '{skill:$skill,file:$file,data:$d[0]}')"
+done
+```
 
 ---
 

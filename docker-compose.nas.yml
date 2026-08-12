@@ -209,6 +209,8 @@ services:
     environment:
       - FRED_API_KEY=${FRED_API_KEY}
       - ALIRMCOM_APPCODE=${ALIRMCOM_APPCODE:-}
+      - MACRO_SIGNAL_DATA_DIR=/app/data/macro-signals
+      - MACRO_SIGNAL_UPLOAD_TOKEN=${MACRO_SIGNAL_UPLOAD_TOKEN:-}
     networks:
       - app-net
     healthcheck:

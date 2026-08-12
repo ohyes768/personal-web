@@ -23,6 +23,11 @@ export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, on
   const [showCalendar, setShowCalendar] = useState<boolean>(false);
 
   useEffect(() => {
+    // 月份未就绪（availableMonths 还在加载）时不发请求，避免 month=undefined 触发 404
+    if (!selectedMonth) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -41,6 +46,14 @@ export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, on
       });
     return () => { cancelled = true; };
   }, [selectedMonth, loadSnapshot]);
+
+  // availableMonths 异步就绪后，补选最近月份
+  // （首次 render 时 months 为空 → selectedMonth 为 undefined；months 到位后这里补上）
+  useEffect(() => {
+    if (!selectedMonth && defaultMonth) {
+      setSelectedMonth(defaultMonth);
+    }
+  }, [selectedMonth, defaultMonth]);
 
   return (
     <div className="space-y-6">

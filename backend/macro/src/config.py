@@ -109,6 +109,10 @@ class Settings(BaseSettings):
     # 默认本地开发路径,生产环境通过环境变量 MACRO_SIGNAL_DATA_DIR 覆盖
     macro_signal_data_dir: str = "F:/personal-projects/macro-fin-skill/skills"
 
+    # agent 推送写入接口的鉴权 token(POST /api/signal/upload 的 X-Upload-Token)
+    # 生产环境通过环境变量 MACRO_SIGNAL_UPLOAD_TOKEN 注入;未配置则写入接口拒绝(401)
+    macro_signal_upload_token: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = False

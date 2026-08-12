@@ -1,9 +1,12 @@
 """API 路由模块"""
 print("[INIT-20260303-0942] routes.py 模块已加载")
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Header
 from datetime import datetime, timedelta
+import hmac
 import pandas as pd
 from typing import Optional
+
+from pydantic import BaseModel
 
 from src.models import (
     UpdateResponse,
@@ -2376,7 +2379,7 @@ async def update_indices():
 
 # === 宏观信号 API ===
 
-@router.get("/macro/signal", response_model=MacroSignalResponse)
+@router.get("/signal", response_model=MacroSignalResponse)
 async def get_macro_signal(month: str = Query(..., description="月份 YYYY-MM")):
     """获取指定月份的宏观信号快照(6 维度)
 
@@ -2397,7 +2400,7 @@ async def get_macro_signal(month: str = Query(..., description="月份 YYYY-MM")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/macro/months", response_model=MacroMonthsResponse)
+@router.get("/months", response_model=MacroMonthsResponse)
 async def get_macro_months():
     """获取当前可用的月份列表(降序)
 
@@ -2411,3 +2414,49 @@ async def get_macro_months():
     except Exception as e:
         logger.error(f"查询月份列表失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# === 宏观信号数据写入（agent 推送）===
+
+class SkillUploadRequest(BaseModel):
+    """agent 推送 macro-fin-skill JSON 的入参"""
+    skill: str          # 子 skill 目录名（白名单）
+    file: str           # macro_signal.json | risk_data.json（白名单）
+    data: dict          # 该 skill 的原始 JSON 内容
+
+
+def _verify_upload_token(token: str | None) -> None:
+    """constant-time 校验推送 token；未配置或错误 → 401。"""
+    expected = settings.macro_signal_upload_token
+    if not expected:
+        raise HTTPException(status_code=401, detail="upload token 未配置（MACRO_SIGNAL_UPLOAD_TOKEN）")
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@router.post("/signal/upload")
+async def upload_skill_json(
+    req: SkillUploadRequest,
+    x_upload_token: str = Header(..., alias="X-Upload-Token"),
+):
+    """接收 macro-fin-skill agent 推送的 JSON，落盘到 MACRO_SIGNAL_DATA_DIR。
+
+    鉴权：X-Upload-Token header（constant-time，未配置拒绝）。
+    安全：skill/file 白名单防路径穿越。
+    对外路径：经 nginx 剥前缀为 /api/macro/signal/upload。
+    """
+    _verify_upload_token(x_upload_token)
+    service = get_macro_signal_service()
+    try:
+        path = service.save_skill_json(req.skill, req.file, req.data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    service.clear_cache()
+    logger.info(f"agent 推送 skill={req.skill} file={req.file}")
+    return {
+        "success": True,
+        "skill": req.skill,
+        "file": req.file,
+        "path": str(path),
+        "bytes": path.stat().st_size,
+    }

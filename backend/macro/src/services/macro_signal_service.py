@@ -28,6 +28,13 @@ DIMENSION_FILES = {
 # risk_appetite 是 risk_data.json(不是 macro_signal.json,结构也不同)
 RISK_APPETITE_FILE = "risk-appetite-skill/risk_data.json"
 
+# agent 推送写入白名单(防路径穿越；save_skill_json 只接受这些值)
+ALLOWED_SKILLS = {
+    "monetary-policy-skill", "money-supply-skill", "entity-economy-skill",
+    "inflation-skill", "exchange-rate-skill", "risk-appetite-skill",
+}
+ALLOWED_FILES = {"macro_signal.json", "risk_data.json"}
+
 # 6 个 dimension 的固定顺序(对齐前端 GROUP_ORDER)
 DIMENSION_ORDER = [
     "monetary_policy", "money_supply", "entity_economy",
@@ -191,6 +198,33 @@ class MacroSignalService:
         sorted_months = sorted(months, reverse=True)
         self._set_cache(cache_key, sorted_months)
         return sorted_months
+
+    def save_skill_json(self, skill: str, file: str, data: dict) -> Path:
+        """agent 推送写入:白名单校验 → 原子落盘 → 返回路径。违例抛 ValueError。"""
+        if skill not in ALLOWED_SKILLS:
+            raise ValueError(f"非法 skill: {skill}")
+        if file not in ALLOWED_FILES:
+            raise ValueError(f"非法 file: {file}")
+        if not isinstance(data, dict):
+            raise ValueError("data 必须是 JSON 对象")
+
+        target_dir = Path(self.settings.macro_signal_data_dir) / skill
+        target_dir.mkdir(parents=True, exist_ok=True)
+        target_path = target_dir / file
+        # 原子写:临时文件 + replace,避免半写状态被读到
+        tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(target_path)
+
+        size = target_path.stat().st_size
+        logger.info(f"skill JSON 已写入: {target_path} ({size} bytes)")
+        return target_path
+
+    def clear_cache(self) -> None:
+        """清空内存缓存(写入后调用,让后续读立即生效,不必等 5 分钟 TTL)。"""
+        self._cache.clear()
+        logger.info("macro_signal 缓存已清空")
 
 
 _singleton: Optional[MacroSignalService] = None
