@@ -9,13 +9,13 @@ This file provides guidance to Claude Code when working with code in this reposi
 apps/
 ├── dividend/      # A 股高股息分析（Next.js 15, React 19, Tailwind CSS v4）
 ├── douyin/         # 抖音视频文字转写
-├── economic/       # 宏观经济
+├── macro/       # 宏观经济
 └── news/           # 新闻联播分析
 
 backend/
 ├── dividend-select/  # 股息率后端（FastAPI, akshare, 阿里云行情 API）
 ├── douyin-processor/  # 抖音后端
-└── global-macro-fin/ # 宏观金融后端
+└── macro/ # 宏观金融后端
 ```
 
 ## 常用命令
@@ -42,8 +42,8 @@ python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8092
 cd backend/douyin-processor
 python -m uvicorn src.server.main:app --reload --host 0.0.0.0 --port 8093
 
-# global-macro-fin
-cd backend/global-macro-fin
+# macro
+cd backend/macro
 ./.venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8094
 ```
 
@@ -103,7 +103,7 @@ docker compose down
 |--------|------|
 | `backend/dividend-select` | A 股股息率后端，FastAPI + akshare |
 | `backend/douyin-processor` | 抖音视频文字转写处理后端 |
-| `backend/global-macro-fin` | 宏观金融后端 |
+| `backend/macro` | 宏观金融后端 |
 
 改动流程（与前端一致，单仓库）：
 1. 在 `backend/<服务>/` 下改代码
@@ -114,5 +114,5 @@ docker compose down
 ## 其他约定
 
 - 不要在代码中硬编码端口号，使用环境变量
-- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，其他三个无 basePath
+- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交

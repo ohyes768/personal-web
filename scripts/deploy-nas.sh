@@ -28,7 +28,7 @@ NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
   ./scripts/deploy-nas.sh <target> [side] [options]
 
 target:
-  dividend | douyin | rss-relay | economic | macro | all
+  dividend | douyin | rss-relay | macro | all
 
 side:（默认 both）
   backend | frontend | both
@@ -60,7 +60,7 @@ options:
   ./scripts/deploy-nas.sh dividend both
   ./scripts/deploy-nas.sh douyin both
   ./scripts/deploy-nas.sh rss-relay both
-  ./scripts/deploy-nas.sh economic both
+  ./scripts/deploy-nas.sh macro both
   ./scripts/deploy-nas.sh macro backend
   ./scripts/deploy-nas.sh all
   ./scripts/deploy-nas.sh dividend frontend --no-pull
@@ -125,7 +125,7 @@ done
 get_services() {
     local target="$1" side="$2"
     case "$target" in
-        dividend|douyin|rss-relay)
+        dividend|douyin|rss-relay|macro)
             case "$side" in
                 backend)  echo "${target}-backend" ;;
                 frontend) echo "${target}-frontend" ;;
@@ -136,32 +136,14 @@ get_services() {
                     ;;
             esac
             ;;
-        economic)
-            # economic 前端是 economic-frontend，后端是 macro-backend（不是 economic-backend）
-            case "$side" in
-                backend)  echo "macro-backend" ;;
-                frontend) echo "economic-frontend" ;;
-                both)     echo "macro-backend economic-frontend" ;;
-                *)
-                    echo "错误: side 必须是 backend | frontend | both，实际 '$side'" >&2
-                    exit 1
-                    ;;
-            esac
-            ;;
-        macro)
-            if [[ "$side" != "backend" ]]; then
-                echo "提示: target=macro 时 side 强制 backend（忽略 '$side'，macro 无前端）" >&2
-            fi
-            echo "macro-backend"
-            ;;
         all)
             if [[ "$side" != "both" ]]; then
                 echo "提示: target=all 时 side 强制 both（忽略 '$side'）" >&2
             fi
-            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend economic-frontend"
+            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend"
             ;;
         *)
-            echo "错误: target 必须是 dividend | douyin | rss-relay | economic | macro | all，实际 '$target'" >&2
+            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | all，实际 '$target'" >&2
             exit 1
             ;;
     esac
@@ -175,7 +157,7 @@ get_buildx_config() {
         dividend-frontend)  echo "apps/dividend:apps/dividend/Dockerfile:dividend-frontend" ;;
         douyin-frontend)    echo "apps/douyin:apps/douyin/Dockerfile:douyin-frontend" ;;
         rss-relay-frontend) echo "apps/rss-relay:apps/rss-relay/Dockerfile:rss-relay-frontend" ;;
-        economic-frontend) echo "apps/economic:apps/economic/Dockerfile:economic-frontend" ;;
+        macro-frontend) echo "apps/macro:apps/macro/Dockerfile:macro-frontend" ;;
         *) return 1 ;;
     esac
 }

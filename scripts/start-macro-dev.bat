@@ -1,23 +1,23 @@
 @echo off
 REM ============================================
-REM personal-web - Economic App Development
-REM Start global-macro-fin (8094) + Economic App (3001)
+REM personal-web - Macro App Development
+REM Start macro (8094) + Macro App (3001)
 REM ============================================
 
 setlocal enabledelayedexpansion
 
 echo.
 echo ========================================
-echo   Economic Dev Environment Start
+echo   Macro Dev Environment Start
 echo ========================================
 echo.
 
 set "MACRO_API_PORT=8094"
-set "ECONOMIC_WEB_PORT=3001"
+set "MACRO_WEB_PORT=3001"
 
-REM [1/2] Start global-macro-fin
-echo [1/2] Starting global-macro-fin (port %MACRO_API_PORT%)...
-cd /d "%~dp0..\backend\global-macro-fin"
+REM [1/2] Start macro
+echo [1/2] Starting macro (port %MACRO_API_PORT%)...
+cd /d "%~dp0..\backend\macro"
 
 REM Kill any existing process on API port first
 for /f "tokens=5" %%a in ('netstat -aon ^| find ":%MACRO_API_PORT% " ^| find "LISTENING" 2^>nul') do (
@@ -28,14 +28,14 @@ timeout /t 1 /nobreak >nul
 
 REM Check backend .env (FRED_API_KEY is mandatory, missing = crash on startup)
 if not exist ".env" (
-    echo [ERROR] backend\global-macro-fin\.env not found.
+    echo [ERROR] backend\macro\.env not found.
     echo         Copy .env.example to .env and fill in FRED_API_KEY.
-    echo         See: backend\global-macro-fin\.env.example
+    echo         See: backend\macro\.env.example
     goto :error
 )
 findstr /B /C:"FRED_API_KEY=" ".env" >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] FRED_API_KEY missing in backend\global-macro-fin\.env
+    echo [ERROR] FRED_API_KEY missing in backend\macro\.env
     goto :error
 )
 
@@ -54,18 +54,18 @@ if not exist ".venv" (
     uv sync
 )
 
-REM Start global-macro-fin service
-start "macro-fin" cmd /k ".venv\Scripts\activate && python -m uvicorn src.main:app --reload --host 0.0.0.0 --port %MACRO_API_PORT%"
+REM Start macro service
+start "macro" cmd /k ".venv\Scripts\activate && python -m uvicorn src.main:app --reload --host 0.0.0.0 --port %MACRO_API_PORT%"
 
 timeout /t 2 /nobreak >nul
 
-REM [2/2] Start Economic App
-echo [2/2] Starting Economic App (port %ECONOMIC_WEB_PORT%)...
-cd /d "%~dp0..\apps\economic"
+REM [2/2] Start Macro App
+echo [2/2] Starting Macro App (port %MACRO_WEB_PORT%)...
+cd /d "%~dp0..\apps\macro"
 
 REM Kill any existing process on frontend port first
-for /f "tokens=5" %%a in ('netstat -aon ^| find ":%ECONOMIC_WEB_PORT% " ^| find "LISTENING" 2^>nul') do (
-    echo Killing existing process on port %ECONOMIC_WEB_PORT% - PID %%a
+for /f "tokens=5" %%a in ('netstat -aon ^| find ":%MACRO_WEB_PORT% " ^| find "LISTENING" 2^>nul') do (
+    echo Killing existing process on port %MACRO_WEB_PORT% - PID %%a
     taskkill /F /T /PID %%a >nul 2>&1
 )
 timeout /t 1 /nobreak >nul
@@ -75,7 +75,7 @@ if not exist "node_modules" (
     echo Installing dependencies...
     cd /d "%~dp0.."
     pnpm install
-    cd /d "%~dp0..\apps\economic"
+    cd /d "%~dp0..\apps\macro"
 )
 
 REM Check .env.local
@@ -84,16 +84,16 @@ if not exist ".env.local" (
     echo BACKEND_URL=http://localhost:%MACRO_API_PORT% > .env.local
 )
 
-REM Start Economic App service
-start "Economic App" cmd /k "pnpm dev"
+REM Start Macro App service
+start "Macro App" cmd /k "pnpm dev"
 
 echo.
 echo ========================================
-echo   Economic Services Started!
+echo   Macro Services Started!
 echo ========================================
 echo.
 echo Service URLs:
-echo   * Economic App:  http://localhost:%ECONOMIC_WEB_PORT%
+echo   * Macro App:  http://localhost:%MACRO_WEB_PORT%
 echo   * Macro-Fin:     http://localhost:%MACRO_API_PORT%
 echo.
 goto :eof

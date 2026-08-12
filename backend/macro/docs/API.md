@@ -2,14 +2,6 @@
 
 本文档描述了后端所有服务的 API 接口规范。
 
-> **注意**: 各服务的详细 API 文档已独立到对应服务的 `docs/` 目录下。
-
-| 服务 | 独立文档路径 |
-|------|-------------|
-| dividend-select | `backend/dividend-select/docs/api.md` |
-
-本文档主要保留 API 接口汇总表和前端代理配置说明。
-
 ---
 
 ## 服务架构
@@ -18,7 +10,6 @@
 |---------|------|------|
 | douyin-processor | 8093 | 抖音视频处理服务 |
 | macro | 8094 | 宏观经济数据服务 |
-| dividend-select | 8092 | 股息率筛选服务 |
 
 ---
 
@@ -86,7 +77,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | POST |
-| 路径 | `/api/process/async` |
+| 路径 | `/api/macro/process/async` |
 
 **响应**
 
@@ -113,7 +104,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | POST |
-| 路径 | `/api/process` |
+| 路径 | `/api/macro/process` |
 
 **响应**
 
@@ -140,7 +131,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | GET |
-| 路径 | `/api/videos` |
+| 路径 | `/api/macro/videos` |
 
 **查询参数**
 
@@ -183,7 +174,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | GET |
-| 路径 | `/api/videos/{aweme_id}` |
+| 路径 | `/api/macro/videos/{aweme_id}` |
 
 **路径参数**
 
@@ -227,7 +218,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | GET |
-| 路径 | `/api/videos/{aweme_id}/result` |
+| 路径 | `/api/macro/videos/{aweme_id}/result` |
 
 **路径参数**
 
@@ -260,7 +251,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | POST |
-| 路径 | `/api/videos/{aweme_id}/read` |
+| 路径 | `/api/macro/videos/{aweme_id}/read` |
 
 **路径参数**
 
@@ -296,7 +287,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | DELETE |
-| 路径 | `/api/videos/{aweme_id}` |
+| 路径 | `/api/macro/videos/{aweme_id}` |
 
 **路径参数**
 
@@ -324,7 +315,7 @@
 | 属性 | 值 |
 |------|-----|
 | 方法 | GET |
-| 路径 | `/api/stats` |
+| 路径 | `/api/macro/stats` |
 
 **响应**
 
@@ -357,13 +348,9 @@
 | 欧洲国债 | 3 个月、2 年、10 年 | 日级 | 德国国债收益率曲线 |
 | 日本国债 | 10 年 | 日级 | 日本 10 年期国债收益率（注） |
 | 汇率数据 | 美元指数、USD/CNY、USD/JPY、USD/EUR | 日级 | 主要货币汇率 |
-| VIX | 恐慌指数 | 日级 | CBOE 波动率指数 |
-| 中国国债 | 10 年期 | 日级 | 中国国债收益率 |
-| TED利差 | SOFR - DGS3MO | 日级 | 市场流动性指标 |
+| VIX恐慌指数 | VIXCLS | 日级 | CBOE波动率指数 |
 
 > **注**: 日本国债目前仅实现 10 年期数据。响应数据结构中保留 `3m` 和 `2y` 字段但返回空数组，待后续补充数据源。
-
-> **注意**: 德债日债分析 Tab 使用月度数据（每月 1 号），美债汇率分析 Tab 使用日级数据。
 
 ---
 
@@ -743,46 +730,59 @@ n8n 调用此接口触发数据更新（美债 + 欧债 + 日债 + 汇率）。
   "success": true,
   "message": "数据查询成功",
   "data": {
-    "dates": ["2026-03-01", "2026-03-02"],
     "us_treasuries": {
-      "3m": [4.48, 4.50],
-      "2y": [4.15, 4.18],
-      "10y": [4.02, 4.05]
+      "m3": [
+        {"date": "2026-03-01", "value": 4.48},
+        {"date": "2026-03-02", "value": 4.50}
+      ],
+      "y2": [
+        {"date": "2026-03-01", "value": 4.15},
+        {"date": "2026-03-02", "value": 4.18}
+      ],
+      "y10": [
+        {"date": "2026-03-01", "value": 4.02},
+        {"date": "2026-03-02", "value": 4.05}
+      ]
     },
     "eu_treasuries": {
-      "3m": [3.20, 3.22],
-      "2y": [2.10, 2.12],
-      "10y": [2.42, 2.45]
+      "y10": [
+        {"date": "2026-03-01", "value": 2.42},
+        {"date": "2026-03-02", "value": 2.45}
+      ]
     },
     "jp_treasuries": {
-      "3m": [0.50, 0.52],
-      "2y": [0.70, 0.72],
-      "10y": [0.95, 0.98]
+      "y10": [
+        {"date": "2026-03-01", "value": 0.95},
+        {"date": "2026-03-02", "value": 0.98}
+      ]
     },
     "exchange_rates": {
-      "dollar_index": [104.2, 104.5],
-      "usd_cny": [7.21, 7.24],
-      "usd_jpy": [149.5, 149.8],
-      "usd_eur": [0.91, 0.92]
+      "dollar_index": [
+        {"date": "2026-03-01", "value": 104.2},
+        {"date": "2026-03-02", "value": 104.5}
+      ],
+      "usd_cny": [
+        {"date": "2026-03-01", "value": 7.21},
+        {"date": "2026-03-02", "value": 7.24}
+      ],
+      "usd_jpy": [
+        {"date": "2026-03-01", "value": 149.5},
+        {"date": "2026-03-02", "value": 149.8}
+      ],
+      "usd_eur": [
+        {"date": "2026-03-01", "value": 0.91},
+        {"date": "2026-03-02", "value": 0.92}
+      ]
     },
-    "vix": [18.5, 17.2],
-    "china_bond": {
-      "10y": [1.82, 1.85]
-    },
-    "ted_spread": {
-      "sofr": [5.32, 5.35],
-      "us_3m": [5.30, 5.32],
-      "ted_spread": [0.02, 0.03]
-    }
   }
 }
 ```
 
----
+n---
 
-### 13. 获取 VIX 历史数据
+### 13. 获取VIX历史数据
 
-从 2000 年开始获取全部 VIX 历史数据。
+从 2000 年开始获取全部 VIX 恐慌指数历史数据。
 
 **请求**
 
@@ -797,11 +797,11 @@ n8n 调用此接口触发数据更新（美债 + 欧债 + 日债 + 汇率）。
 {
   "success": true,
   "message": "VIX历史数据获取成功",
-  "updated_at": "2026-03-29T12:00:00Z",
+  "updated_at": "2026-03-08T12:00:00Z",
   "data": {
     "vix": {
-      "date": "2026-03-28",
-      "value": 18.5
+      "date": "2026-03-08",
+      "value": 18.52
     }
   }
 }
@@ -809,9 +809,9 @@ n8n 调用此接口触发数据更新（美债 + 欧债 + 日债 + 汇率）。
 
 ---
 
-### 14. 增量更新 VIX 数据
+### 14. 增量更新VIX数据
 
-增量更新最近 7 天的 VIX 数据。
+增量更新最近 7 天的 VIX 恐慌指数数据。
 
 **请求**
 
@@ -826,158 +826,11 @@ n8n 调用此接口触发数据更新（美债 + 欧债 + 日债 + 汇率）。
 {
   "success": true,
   "message": "VIX数据增量更新成功",
-  "updated_at": "2026-03-29T12:00:00Z",
+  "updated_at": "2026-03-08T12:00:00Z",
   "data": {
     "vix": {
-      "date": "2026-03-28",
-      "value": 18.5
-    }
-  }
-}
-```
-
----
-
-**查询参数**
-
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| start_date | string | 否 | 开始日期，格式：YYYY-MM-DD |
-| end_date | string | 否 | 结束日期，格式：YYYY-MM-DD |
-
-**响应**
-
-```json
-{
-  "data": [
-    {
-      "date": "2026-03-01",
-      "north_net": 45.2,
-      "north_buy": null,
-      "north_sell": null,
-      "south_net": -12.3,
-      "south_buy": null,
-      "south_sell": null
-    }
-  ]
-}
-```
-
----
-
-### 19. 获取中国国债历史数据
-
-从配置的开始日期获取全部中国国债历史数据。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | POST |
-| 路径 | `/api/macro/fetch/china-bonds/history` |
-
-**响应**
-
-```json
-{
-  "success": true,
-  "message": "中国国债历史数据获取成功",
-  "updated_at": "2026-03-29T12:00:00Z",
-  "data": {
-    "china_bond_10y": {
-      "date": "2026-03-28",
-      "value": 1.85
-    }
-  }
-}
-```
-
----
-
-### 20. 增量更新中国国债数据
-
-增量更新最近 7 天的中国国债数据。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | POST |
-| 路径 | `/api/macro/update/china-bonds` |
-
-**响应**
-
-```json
-{
-  "success": true,
-  "message": "中国国债数据增量更新成功",
-  "updated_at": "2026-03-29T12:00:00Z",
-  "data": {
-    "china_bond_10y": {
-      "date": "2026-03-28",
-      "value": 1.85
-    }
-  }
-}
-```
-
----
-
-### 21. 获取 TED 利差历史数据
-
-从 2012-01-01 开始获取全部 TED 利差历史数据。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | POST |
-| 路径 | `/api/macro/fetch/ted-spread/history` |
-
-**响应**
-
-```json
-{
-  "success": true,
-  "message": "TED利差历史数据获取成功",
-  "updated_at": "2026-03-29T12:00:00Z",
-  "data": {
-    "ted_spread": {
-      "date": "2026-03-28",
-      "sofr": 5.35,
-      "us_3m": 5.32,
-      "ted_spread": 0.03
-    }
-  }
-}
-```
-
----
-
-### 22. 增量更新 TED 利差数据
-
-增量更新最近 7 天的 TED 利差数据。
-
-**请求**
-
-| 属性 | 值 |
-|------|-----|
-| 方法 | POST |
-| 路径 | `/api/macro/update/ted-spread` |
-
-**响应**
-
-```json
-{
-  "success": true,
-  "message": "TED利差数据增量更新成功",
-  "updated_at": "2026-03-29T12:00:00Z",
-  "data": {
-    "ted_spread": {
-      "date": "2026-03-28",
-      "sofr": 5.35,
-      "us_3m": 5.32,
-      "ted_spread": 0.03
+      "date": "2026-03-08",
+      "value": 18.52
     }
   }
 }
@@ -1053,42 +906,10 @@ interface UpdateResponse {
     eu_treasuries?: EUTreasuries;
     jp_treasuries?: JPTreasuries;
     exchange_rates?: ExchangeRates;
-    vix?: VIXData;
-    china_bond_10y?: ChinaBondData;
-    ted_spread?: TedSpreadData;
   };
+    vix?: VIXData;
   updated_at?: string;   // ISO 8601 格式
   error_code?: string;
-}
-```
-
-### VIX 数据 (VIXData)
-
-```typescript
-interface VIXData {
-  date: string;           // YYYY-MM-DD
-  value: number | null;   // VIX 恐慌指数值
-}
-```
-
-
-### 中国国债数据 (ChinaBondData)
-
-```typescript
-interface ChinaBondData {
-  date: string;           // YYYY-MM-DD
-  value: number | null;   // 10年期国债收益率（%）
-}
-```
-
-### TED 利差数据 (TedSpreadData)
-
-```typescript
-interface TedSpreadData {
-  date: string;           // YYYY-MM-DD
-  sofr: number | null;    // SOFR 利率（%）
-  us_3m: number | null;   // 美国3个月国债收益率（%）
-  ted_spread: number | null;  // TED利差 = SOFR - DGS3MO（%）
 }
 ```
 
@@ -1116,41 +937,40 @@ interface DataResponse {
       usd_jpy: ExchangeRateData[];
       usd_eur: ExchangeRateData[];
     };
+    };
+    vix?: number[];
   };
   error_code?: string;
 }
 ```
 
-### 经济数据响应 (EconomicDataResponse)
+n### VIX恐慌指数数据 (VIXData)
 
 ```typescript
-interface EconomicDataResponse {
-  dates: string[];         // 日期数组，格式：YYYY-MM-DD
-  us_treasuries: {
-    '3m': number[];        // 美国 3 个月期国债收益率
-    '2y': number[];        // 美国 2 年期国债收益率
-    '10y': number[];       // 美国 10 年期国债收益率
-  };
-  eu_treasuries: {
-    '3m': number[];        // 欧洲 3 个月期国债收益率
-    '2y': number[];        // 欧洲 2 年期国债收益率
-    '10y': number[];       // 欧洲 10 年期国债收益率
-  };
-  jp_treasuries: {
-    '3m': number[];        // 日本 3 个月期国债收益率
-    '2y': number[];        // 日本 2 年期国债收益率
-    '10y': number[];       // 日本 10 年期国债收益率
-  };
-  exchange_rates?: {
-    dollar_index: number[];  // 美元指数
-    usd_cny: number[];       // 美元兑人民币
-    usd_jpy: number[];       // 美元兑日元
-    usd_eur: number[];       // 美元兑欧元
-  };
+interface VIXData {
+  date: string;           // YYYY-MM-DD
+  value: number | null;   // VIX指数值
 }
 ```
 
-> **注意**: 数据格式已更新为日期数组 + 数值数组的形式，不再使用对象数组。
+### VIX更新响应数据 (VIXUpdateData)
+
+```typescript
+interface VIXUpdateData {
+  vix: VIXData;
+}
+```
+
+### 健康检查响应 (HealthResponse)
+
+```typescript
+interface HealthResponse {
+  status: string;
+  service: string;
+  version: string;
+  last_update?: string;
+}
+```
 
 ---
 
@@ -1160,73 +980,25 @@ interface EconomicDataResponse {
 |------|------|------|------|------|
 | **douyin-processor** (8093) | 1 | `/` | GET | 根路径服务信息 |
 | | 2 | `/health` | GET | 健康检查 |
-| | 3 | `/api/process/async` | POST | 异步处理视频 |
-| | 4 | `/api/process` | POST | 同步处理视频 |
-| | 5 | `/api/videos` | GET | 获取视频列表 |
-| | 6 | `/api/videos/{aweme_id}` | GET | 获取视频详情 |
-| | 7 | `/api/videos/{aweme_id}/result` | GET | 获取视频处理结果 |
-| | 8 | `/api/videos/{aweme_id}/read` | POST | 标记已读/未读 |
-| | 9 | `/api/videos/{aweme_id}` | DELETE | 删除视频 |
-| | 10 | `/api/stats` | GET | 获取统计信息 |
+| | 3 | `/api/macro/process/async` | POST | 异步处理视频 |
+| | 4 | `/api/macro/process` | POST | 同步处理视频 |
+| | 5 | `/api/macro/videos` | GET | 获取视频列表 |
+| | 6 | `/api/macro/videos/{aweme_id}` | GET | 获取视频详情 |
+| | 7 | `/api/macro/videos/{aweme_id}/result` | GET | 获取视频处理结果 |
+| | 8 | `/api/macro/videos/{aweme_id}/read` | POST | 标记已读/未读 |
+| | 9 | `/api/macro/videos/{aweme_id}` | DELETE | 删除视频 |
+| | 10 | `/api/macro/stats` | GET | 获取统计信息 |
 | **macro** (8094) | 1 | `/` | GET | 根路径服务信息 |
 | | 2 | `/api/macro/health` | GET | 健康检查 |
 | | 3 | `/api/macro/update` | POST | 更新全部数据 |
-| | 4 | `/api/macro/data` | GET | 查询宏观经济数据 |
-| | 5 | `/api/macro/fetch/us-treasuries/history` | POST | 获取美债历史数据 |
-| | 6 | `/api/macro/update/us-treasuries` | POST | 增量更新美债 |
-| | 7 | `/api/macro/fetch/exchange-rates/history` | POST | 获取汇率历史数据 |
-| | 8 | `/api/macro/update/exchange-rates` | POST | 增量更新汇率 |
-| | 9 | `/api/macro/fetch/eu-bonds/history` | POST | 获取欧债历史数据 |
-| | 10 | `/api/macro/update/eu-bonds` | POST | 增量更新欧债 |
-| | 11 | `/api/macro/fetch/jp-bonds/history` | POST | 获取日债历史数据 |
-| | 12 | `/api/macro/update/jp-bonds` | POST | 增量更新日债 |
+| | 4 | `/api/macro/fetch/us-treasuries/history` | POST | 获取美债历史数据 |
+| | 5 | `/api/macro/update/us-treasuries` | POST | 增量更新美债 |
+| | 6 | `/api/macro/fetch/exchange-rates/history` | POST | 获取汇率历史数据 |
+| | 7 | `/api/macro/update/exchange-rates` | POST | 增量更新汇率 |
+| | 8 | `/api/macro/fetch/eu-bonds/history` | POST | 获取欧债历史数据 |
+| | 9 | `/api/macro/update/eu-bonds` | POST | 增量更新欧债 |
+| | 10 | `/api/macro/fetch/jp-bonds/history` | POST | 获取日债历史数据 |
+| | 11 | `/api/macro/update/jp-bonds` | POST | 增量更新日债 |
+| | 12 | `/api/macro/data` | GET | 查询宏观经济数据 |
 | | 13 | `/api/macro/fetch/vix/history` | POST | 获取VIX历史数据 |
 | | 14 | `/api/macro/update/vix` | POST | 增量更新VIX |
-| | 19 | `/api/macro/fetch/china-bonds/history` | POST | 获取中国国债历史数据 |
-| | 20 | `/api/macro/update/china-bonds` | POST | 增量更新中国国债 |
-| | 21 | `/api/macro/fetch/ted-spread/history` | POST | 获取TED利差历史数据 |
-| | 22 | `/api/macro/update/ted-spread` | POST | 增量更新TED利差 |
-
-**总计**: douyin-processor 10 个接口 + macro 22 个接口 = 32 个接口
-
----
-
-## 前端 API 代理
-
-### API 路径映射
-
-前端通过 Next.js API Routes 代理请求到后端服务，避免跨域问题。
-
-| 前端路径 | 代理目标 | 说明 |
-|---------|---------|------|
-| `/api/dividend/*` | `http://localhost:8092/api/*` | 股息率筛选服务 |
-| `/api/macro/*` | `http://localhost:8094/api/macro/*` | 宏观经济数据服务 |
-| `/api/douyin/*` | `http://localhost:8093/api/*` | 抖音视频处理服务 |
-| `/api/news/*` | 外部新闻 API | 新闻数据聚合 |
-
-### 数据格式变更说明
-
-**v2.0 数据格式** (当前版本):
-
-```typescript
-{
-  dates: string[],
-  us_treasuries: { '3m': number[], '2y': number[], '10y': number[] },
-  eu_treasuries: { '3m': number[], '2y': number[], '10y': number[] },
-  jp_treasuries: { '3m': number[], '2y': number[], '10y': number[] },
-  exchange_rates: { dollar_index: number[], usd_cny: number[], ... }
-}
-```
-
-**v1.0 数据格式** (已废弃):
-
-```typescript
-{
-  us_treasuries: { m3: {date, value}[], y2: {...}[], y10: {...}[] },
-  eu_treasuries: { y10: {...}[] },
-  jp_treasuries: { y10: {...}[] },
-  exchange_rates: { dollar_index: {date, value}[], ... }
-}
-```
-
-> 迁移指南：旧格式使用对象数组，新格式使用平行数组（日期数组 + 数值数组）。

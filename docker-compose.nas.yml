@@ -24,8 +24,8 @@
 #   /rss/*                    → rss-relay-frontend:3006  (列表页)
 #   /rss/api/rss-relay/*      → rss-relay-backend:8095/api/*  (freshrss 订阅 + agent 推送)
 #   前端 BFF /rss/api/rss-relay/<slug> 已废弃，nginx 直转后端
-#   /economic/*     → economic-frontend:3001   (basePath = /economic)
-#   /api/macro/*    → economic-frontend:3001   (前端 BFF catch-all 再转 macro-backend:8094/api/*)
+#   /macro/*     → macro-frontend:3001   (basePath = /macro)
+#   /api/macro/*    → macro-frontend:3001   (前端 BFF catch-all 再转 macro-backend:8094/api/*)
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
@@ -194,11 +194,11 @@ services:
 
   # ---------------------------------------------------------------------------
   # macro 后端（全球宏观经济：美/欧/日国债、汇率、VIX、商品、股指、资金流向）
-  # 子模块：backend/global-macro-fin（FastAPI + FRED + 阿里云商品 API）
+  # backend/macro（FastAPI + FRED + 阿里云商品 API）
   # ---------------------------------------------------------------------------
   macro-backend:
     build:
-      context: ./backend/global-macro-fin
+      context: ./backend/macro
     container_name: macro-backend
     restart: unless-stopped
     expose:
@@ -220,15 +220,15 @@ services:
       start_period: 40s
 
   # ---------------------------------------------------------------------------
-  # economic 前端（Next.js，basePath = /economic）
+  # macro 前端（Next.js，basePath = /macro）
   # BFF route.ts: /api/macro/<path> → ${BACKEND_URL}/api/<path>
   # ---------------------------------------------------------------------------
-  economic-frontend:
-    image: economic-frontend:latest
+  macro-frontend:
+    image: macro-frontend:latest
     build:
-      context: ./apps/economic
+      context: ./apps/macro
       dockerfile: Dockerfile
-    container_name: economic-frontend
+    container_name: macro-frontend
     restart: unless-stopped
     ports:
       - "127.0.0.1:3001:3001"

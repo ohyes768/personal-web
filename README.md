@@ -9,12 +9,12 @@ personal-web/
 ├── apps/                    # 5 个独立 Next.js 前端（各有 package.json + Dockerfile）
 │   ├── dividend/            # A 股高股息分析（端口 3003，basePath /dividend）
 │   ├── douyin/             # 抖音视频文字转写（端口 3004，basePath /douyin）
-│   ├── economic/           # 宏观经济（端口 3001）
+│   ├── macro/           # 宏观经济（端口 3001）
 │   └── news/               # 新闻联播分析（端口 3005）
 ├── backend/                 # 3 个 Python 后端（git submodule）
 │   ├── dividend-select/    # 股息率后端（FastAPI，端口 8092）
 │   ├── douyin-processor/    # 抖音后端（端口 8093）
-│   └── global-macro-fin/   # 宏观金融后端（端口 8094）
+│   └── macro/   # 宏观金融后端（端口 8094）
 ├── nginx/                   # 示例 Nginx 配置（参考用）
 ├── docs/                    # 模块级技术文档
 └── docker-compose.yml       # 本地开发用 Docker Compose
@@ -46,11 +46,11 @@ personal-web/
 |------|------|------|
 | dividend 前端 | 3003 | basePath /dividend |
 | douyin 前端 | 3004 | basePath /douyin |
-| economic 前端 | 3001 | |
+| macro 前端 | 3001 | |
 | news 前端 | 3005 | |
 | dividend-select 后端 | 8092 | |
 | douyin-processor 后端 | 8093 | |
-| global-macro-fin 后端 | 8094 | |
+| macro 后端 | 8094 | |
 
 ## 快速启动
 
