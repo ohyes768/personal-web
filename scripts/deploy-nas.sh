@@ -127,9 +127,16 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---- nginx 同步（nginx/web.conf → 容器 + reload）----
+# 不能直接 `docker cp` 覆盖 NGINX_CONF_DEST：nginx worker 已 mmap/持有该文件 fd，
+# docker daemon 的 unlinkat 会 EBUSY。改成 cp 到带时间戳的临时路径，再在容器内
+# `mv -f` 原子替换（rename(2)，不打断已有 fd），然后 nginx -t + reload。
 sync_nginx() {
+    local tmp_name="web.conf.new.$(date +%s).$$"
+    local tmp_dest="/etc/nginx/conf.d/${tmp_name}"
     echo "==> 同步 nginx/web.conf → ${NGINX_CONTAINER}:${NGINX_CONF_DEST}"
-    docker cp nginx/web.conf "${NGINX_CONTAINER}:${NGINX_CONF_DEST}"
+    docker cp nginx/web.conf "${NGINX_CONTAINER}:${tmp_dest}"
+    echo "==> 原子替换 ${tmp_dest} → ${NGINX_CONF_DEST}"
+    docker exec "$NGINX_CONTAINER" mv -f "$tmp_dest" "$NGINX_CONF_DEST"
     echo "==> nginx -t（测试配置，失败则中止，不会 reload）"
     docker exec "$NGINX_CONTAINER" nginx -t
     echo "==> nginx -s reload"
