@@ -25,6 +25,8 @@ export interface AlertLevelBarProps {
   yieldTtm?: number | null;
   /** 现价数据拉取时间（ISO 字符串），用于在 L1 行展示"更新于 MM-DD HH:MM" */
   priceUpdatedAt?: string | null;
+  /** 昨日收盘价（阿里云 YC），用于 L1 行展示当日涨跌幅 */
+  preClose?: number | null;
   onClick?: () => void;
 }
 
@@ -174,6 +176,7 @@ export function AlertLevelBar({
   dividend2025,
   yieldTtm,
   priceUpdatedAt,
+  preClose,
   onClick,
 }: AlertLevelBarProps) {
   const [openYield, setOpenYield] = useState<YieldKey | null>(null);
@@ -254,12 +257,10 @@ export function AlertLevelBar({
   const status = hitStatus(levels, currentPrice);
   const badge = HIT_META[status];
 
-  const change = (() => {
-    const closest = sortedPoints.reduce((prev, p) =>
-      Math.abs(p.price - currentPrice) < Math.abs(prev.price - currentPrice) ? p : prev
-    );
-    if (closest.price === 0) return null;
-    return ((currentPrice - closest.price) / closest.price) * 100;
+  // 当日涨跌幅 = (现价 - 昨收) / 昨收；昨收缺失或非正时不展示
+  const dayChange = (() => {
+    if (preClose == null || preClose <= 0) return null;
+    return ((currentPrice - preClose) / preClose) * 100;
   })();
 
   const distances = sortedPoints.map(p => {
@@ -314,9 +315,12 @@ export function AlertLevelBar({
           })}
         </div>
         <span className="font-mono font-semibold text-ink text-sm ml-auto tabular-nums">¥{fmtPrice(currentPrice)}</span>
-        {change !== null && (
-          <span className={`font-mono text-[11px] tabular-nums ${change >= 0 ? 'text-up' : 'text-down'}`}>
-            {fmtPct(change)}
+        {dayChange !== null && (
+          <span
+            className={`font-mono text-[11px] tabular-nums ${dayChange >= 0 ? 'text-up' : 'text-down'}`}
+            title="当日涨跌幅（现价 vs 昨收）"
+          >
+            {fmtPct(dayChange)}
           </span>
         )}
         {badge && (

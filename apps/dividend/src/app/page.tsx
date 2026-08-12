@@ -1097,6 +1097,7 @@ function DividendPageContent() {
                   dividend2025={stock.dividend_2025 ?? null}
                   yieldTtm={price?.yield_ttm ?? null}
                   priceUpdatedAt={alertPriceUpdatedAt}
+                  preClose={price?.close ?? null}
                   onClick={() => handleOpenAlertSettings(stock.code)}
                 />
               );
