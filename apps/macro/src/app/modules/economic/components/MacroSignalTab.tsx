@@ -7,14 +7,30 @@
  * - 管理 loading / error / snapshot 三态
  */
 import { useState, useEffect } from 'react';
-import type { MacroSignalTabProps, MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
 import { MonthSwitcher } from './macro-signal/MonthSwitcher';
 import { GroupCardGrid } from './macro-signal/GroupCardGrid';
 import { ReleaseCalendar } from './macro-signal/ReleaseCalendar';
+import { GROUP_ORDER } from './macro-signal/constants';
+import type { DimensionKey, MacroSignalGroup, MacroSignalSnapshot, MacroSignalTabProps } from '@/lib/modules/macro-signal/types';
+
+/** availableMonths 异步未就绪时,fallback 到当前真实月份,让月份选择器至少有值 */
+function currentYearMonth(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 空快照:snapshot 接口返回 null 时构造,让六大维度卡片仍展示「数据缺失」态 */
+function emptySnapshot(month: string): MacroSignalSnapshot {
+  const groups = GROUP_ORDER.reduce<Record<DimensionKey, MacroSignalGroup>>((acc, key) => {
+    acc[key] = { conclusion: null, indicators: [] };
+    return acc;
+  }, {} as Record<DimensionKey, MacroSignalGroup>);
+  return { month, groups };
+}
 
 export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, onJumpToTab }: MacroSignalTabProps) {
   const sorted = [...availableMonths].sort();
-  const defaultMonth = initialMonth ?? sorted[sorted.length - 1];
+  const defaultMonth = initialMonth ?? sorted[sorted.length - 1] ?? currentYearMonth();
 
   const [selectedMonth, setSelectedMonth] = useState<string>(defaultMonth);
   const [snapshot, setSnapshot] = useState<MacroSignalSnapshot | null>(null);
@@ -93,18 +109,12 @@ export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, on
         </div>
       )}
 
-      {!loading && !error && snapshot && (
+      {!loading && !error && (
         <GroupCardGrid
-          snapshot={snapshot}
+          snapshot={snapshot ?? emptySnapshot(selectedMonth)}
           selectedMonth={selectedMonth}
           onJumpToTab={onJumpToTab}
         />
-      )}
-
-      {!loading && !error && !snapshot && (
-        <div className="p-12 bg-gray-900 border border-gray-800 rounded-lg text-center">
-          <p className="text-gray-400">该月份无数据</p>
-        </div>
       )}
 
       {/* 发布日历弹框 */}

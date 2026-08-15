@@ -20,6 +20,8 @@ export function MonthSwitcher({ currentMonth, availableMonths, onChange }: Month
   const sorted = [...availableMonths].sort();
   const minMonth = sorted[0];
   const maxMonth = sorted[sorted.length - 1];
+  /** availableMonths 未就绪 或 当前月不在可切换列表里 → 切换按钮全部禁用 */
+  const canSwitch = sorted.length > 0 && sorted.includes(currentMonth);
 
   const handlePrev = () => {
     const idx = sorted.indexOf(currentMonth);
@@ -35,7 +37,7 @@ export function MonthSwitcher({ currentMonth, availableMonths, onChange }: Month
       <button
         type="button"
         onClick={handlePrev}
-        disabled={currentMonth <= minMonth}
+        disabled={!canSwitch || currentMonth <= minMonth}
         className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
       >
         ← 上一月
@@ -44,18 +46,23 @@ export function MonthSwitcher({ currentMonth, availableMonths, onChange }: Month
         <select
           value={currentMonth}
           onChange={e => onChange(e.target.value)}
-          className="appearance-none bg-gray-800 text-white px-6 py-2 pr-10 rounded-lg border border-gray-700 hover:bg-gray-700 cursor-pointer"
+          disabled={!canSwitch}
+          className="appearance-none bg-gray-800 text-white px-6 py-2 pr-10 rounded-lg border border-gray-700 hover:bg-gray-700 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          {sorted.map(m => (
-            <option key={m} value={m}>{formatMonthLabel(m)}</option>
-          ))}
+          {sorted.length === 0 ? (
+            <option value="" disabled>加载中…</option>
+          ) : (
+            sorted.map(m => (
+              <option key={m} value={m}>{formatMonthLabel(m)}</option>
+            ))
+          )}
         </select>
         <span className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none">▼</span>
       </div>
       <button
         type="button"
         onClick={handleNext}
-        disabled={currentMonth >= maxMonth}
+        disabled={!canSwitch || currentMonth >= maxMonth}
         className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
       >
         下一月 →
