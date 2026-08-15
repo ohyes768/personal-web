@@ -73,7 +73,9 @@ export default function EconomicPage() {
     : async (month: string): Promise<MacroSignalSnapshot | null> => {
         const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
+        // 后端 MacroSignalResponse 是 { success, data } 包装,前端契约只要 data
+        const body = await res.json() as { success?: boolean; data?: MacroSignalSnapshot };
+        return body?.data ?? null;
       };
   const [availableMonths, setAvailableMonths] = useState<string[]>(
     useMock ? MOCK_AVAILABLE_MONTHS : []
