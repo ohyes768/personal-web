@@ -55,7 +55,7 @@ function isStale(updatedAt: string | null, selectedMonth: string): boolean {
   return monthStart.getTime() - d.getTime() > 35 * 86400000;
 }
 
-function IndicatorRow({
+/** 判断指标是否偏旧(距所选月初 35 天以上) */
   ind,
   selectedMonth,
   onJumpToTab,

@@ -315,10 +315,20 @@ class IndicesUpdateData(BaseModel):
 # === 宏观信号数据模型(对齐前端 MacroSignalSnapshot shape) ===
 
 class MacroIndicator(BaseModel):
-    """单个指标(粒度到指标级,updated_at 是 ISO 'YYYY-MM-DD')"""
+    """单个指标(三时间都是指标级)
+
+    - data_date:       数据时间(指标数值所属/发布日期)
+    - analyzed_at:     分析时间(skill 生成该值的时间,ISO timestamp)
+    - next_release_at: 下个周期预期发布日期(自报优先,后端规则兜底)
+    - updated_at:      兼容别名 = data_date,前端迁移完成后删除
+    """
     key: str
     value: Optional[float] = None
-    updated_at: Optional[str] = None  # 'YYYY-MM-DD'
+    updated_at: Optional[str] = None       # 'YYYY-MM-DD',兼容别名 = data_date
+    data_date: Optional[str] = None        # 'YYYY-MM-DD',数据时间
+    analyzed_at: Optional[str] = None      # ISO timestamp,分析时间
+    next_release_at: Optional[str] = None  # 'YYYY-MM-DD',下个周期预期发布日
+    next_release_note: Optional[str] = None  # 预期口径说明,如「CPI/PPI 每月9日发布」
 
 
 class MacroSignalGroup(BaseModel):
@@ -332,7 +342,7 @@ class MacroSignalSnapshot(BaseModel):
     """一个月快照 = 6 个分组"""
     month: str  # 'YYYY-MM'
     groups: Dict[str, MacroSignalGroup]  # 6 个 dimension key
-    generated_at: Optional[str] = None
+    generated_at: Optional[str] = None  # 所有指标 analyzed_at 的最大值(全页最新分析时间)
 
 
 class MacroSignalResponse(BaseModel):

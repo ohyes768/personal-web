@@ -36,11 +36,15 @@ export const INDICATOR_LABELS: Record<string, { label: string; unit?: string; di
   // 货币政策
   dr007:              { label: 'DR007',              unit: '%',  digits: 3 },
   lpr_1y:             { label: '1年期 LPR',          unit: '%',  digits: 2 },
+  lpr_5y:             { label: '5年期 LPR',          unit: '%',  digits: 2 },
   mlf_1y:             { label: '1年期 MLF',          unit: '%',  digits: 2 },
+  mlf_net_yi:         { label: 'MLF 净投放',         unit: '亿', digits: 0 },
   // 信用扩张
   m2_yoy:             { label: 'M2 同比',            unit: '%',  digits: 1 },
   m1_yoy:             { label: 'M1 同比',            unit: '%',  digits: 1 },
   social_yoy:         { label: '社融存量同比',        unit: '%', digits: 1 },
+  m2_m1_spread:       { label: 'M2-M1 剪刀差',       unit: '%', digits: 1 },
+  spread_change_pp:   { label: '剪刀差环比',         unit: 'pp', digits: 1 },
   // 经济运行
   pmi_manufacturing:  { label: '制造业 PMI',         unit: '%', digits: 1 },
   industrial_yoy:     { label: '工业增加值同比',     unit: '%', digits: 1 },
@@ -48,13 +52,17 @@ export const INDICATOR_LABELS: Record<string, { label: string; unit?: string; di
   retail_yoy:         { label: '社零同比',           unit: '%', digits: 1 },
   electricity_yoy:    { label: '工业用电量同比',     unit: '%', digits: 1 },
   railway_yoy:        { label: '铁路货运量同比',     unit: '%', digits: 1 },
+  keqiang_index:      { label: '克强指数',           unit: '%', digits: 1 },
   // 通胀环境
   cpi_yoy:            { label: 'CPI 同比',           unit: '%',  digits: 1 },
   ppi_yoy:            { label: 'PPI 同比',           unit: '%',  digits: 1 },
   core_cpi_yoy:       { label: '核心 CPI 同比',      unit: '%', digits: 1 },
   // 外部压力
   dollar_index:       { label: '美元指数',           digits: 2 },
-  usd_cny:            { label: '美元兑人民币',       digits: 4 },
+  usd_cny:            { label: '美元兑人民币',                  digits: 4 },
+  north_turnover_7d_yi:    { label: '北向7日日均成交额', unit: '亿', digits: 0 },
+  north_turnover_today_yi: { label: '北向当日成交额',     unit: '亿', digits: 0 },
+  north_change_pct:   { label: '北向7日环比',        unit: '%', digits: 1 },
   ted_spread:         { label: 'TED 利差',           unit: '%', digits: 2 },
   '美元指数':          { label: '美元指数',           digits: 2 },
   '美元兑人民币':      { label: '美元兑人民币',       digits: 4 },
