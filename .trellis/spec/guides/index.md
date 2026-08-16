@@ -23,6 +23,7 @@ These guides help you **ask the right questions before coding**.
 |-------|---------|-------------|
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
+| [Macro Signal Upload API](./macro-signal-upload.md) | agent 推送宏观信号 JSON 的接口契约（路径、token、白名单、payload、落盘） | 维护 macro-fin-skill 子 skill、对接 `/api/macro/signal/upload` |
 
 ---
 

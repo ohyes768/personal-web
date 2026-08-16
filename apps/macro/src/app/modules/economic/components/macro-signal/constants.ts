@@ -56,10 +56,20 @@ export const INDICATOR_LABELS: Record<string, { label: string; unit?: string; di
   dollar_index:       { label: '美元指数',           digits: 2 },
   usd_cny:            { label: '美元兑人民币',       digits: 4 },
   ted_spread:         { label: 'TED 利差',           unit: '%', digits: 2 },
+  '美元指数':          { label: '美元指数',           digits: 2 },
+  '美元兑人民币':      { label: '美元兑人民币',       digits: 4 },
+  'TED利差':           { label: 'TED 利差',           unit: '%', digits: 2 },
+  '北向7日日均成交额':  { label: '北向7日日均成交额',  unit: '亿', digits: 0 },
+  '北向当日成交额':     { label: '北向当日成交额',     unit: '亿', digits: 0 },
+  '北向7日环比':       { label: '北向7日环比',        unit: '%', digits: 2 },
   // 市场情绪
   total_amount_yi:    { label: '两市成交额',         unit: '亿', digits: 0 },
   turnover_rate:      { label: '换手率',             unit: '%',  digits: 2 },
   margin_balance_yi:  { label: '融资融券余额',       unit: '亿', digits: 0 },
+  // 中文 key（后端/skill 直接以中文指标名作为 key 输出时的映射）
+  '两市成交额':        { label: '两市成交额',         unit: '亿', digits: 0 },
+  '换手率':            { label: '换手率',             unit: '%',  digits: 2 },
+  '融资融券余额':      { label: '融资融券余额',       unit: '亿', digits: 0 },
 };
 
 /** 取 indicator label meta,查不到 fallback */
@@ -76,4 +86,7 @@ export const INDICATOR_LINK_MAP: Record<string, TabType> = {
   dollar_index: 'treasury-exchange',
   usd_cny:      'treasury-exchange',
   ted_spread:   'rates',
+  '美元指数':     'treasury-exchange',
+  '美元兑人民币': 'treasury-exchange',
+  'TED利差':      'rates',
 };

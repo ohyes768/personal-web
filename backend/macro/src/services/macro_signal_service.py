@@ -115,20 +115,20 @@ class MacroSignalService:
         indicators: List[MacroIndicator] = []
         if volume:
             indicators.append(MacroIndicator(
-                key="total_amount_yi",
+                key="两市成交额",
                 value=volume.get("total_amount_yi"),
                 updated_at=volume.get("date"),
             ))
         if turnover:
             indicators.append(MacroIndicator(
-                key="turnover_rate",
+                key="换手率",
                 value=turnover.get("turnover_rate"),
                 updated_at=turnover.get("date"),
             ))
         if margin:
-            # rzye = 融资余额(亿元),与前端约定的 margin_balance_yi 一致
+            # rzye = 融资余额(亿元)
             indicators.append(MacroIndicator(
-                key="margin_balance_yi",
+                key="融资融券余额",
                 value=margin.get("rzye"),
                 updated_at=margin.get("date"),
             ))
