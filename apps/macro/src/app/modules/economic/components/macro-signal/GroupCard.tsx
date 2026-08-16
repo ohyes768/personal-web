@@ -4,7 +4,7 @@
  * 单张分组卡片
  * - 卡头第一行(小字标识):圆点 + 分组名 + 右侧评分徽章 + 「X 项指标」
  * - 卡头第二行(主信号):20px 加粗白色 conclusion(或「数据缺失」)
- * - 指标列表:每行 label + value + updated_at
+ * - 指标列表:每行 label + value + 三时间(数据/分析/下期预期)
  * - 整组 indicators 为空 → 列表区显示「本月数据缺失」占位
  */
 import type { DimensionKey, MacroSignalGroup, MacroIndicator } from '@/lib/modules/macro-signal/types';
@@ -35,7 +35,7 @@ function scoreBadgeClass(score: number): string {
   return 'bg-rose-900/50 text-rose-300 border-rose-700';
 }
 
-/** ISO 日期 → 相对时间 */
+/** ISO 日期 → 相对时间(基于数据时间) */
 function relativeDate(iso: string | null): string {
   if (!iso) return '无数据';
   const d = new Date(iso + 'T00:00:00Z');
@@ -47,6 +47,14 @@ function relativeDate(iso: string | null): string {
   return iso;
 }
 
+/** 分析时间 ISO timestamp → 本地 'MM-DD HH:mm'(转北京时间等本地时区) */
+function formatAnalyzed(ts: string): string {
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 /** 判断指标是否偏旧(距所选月初 35 天以上) */
 function isStale(updatedAt: string | null, selectedMonth: string): boolean {
   if (!updatedAt) return false;
@@ -55,7 +63,8 @@ function isStale(updatedAt: string | null, selectedMonth: string): boolean {
   return monthStart.getTime() - d.getTime() > 35 * 86400000;
 }
 
-/** 判断指标是否偏旧(距所选月初 35 天以上) */
+/** 指标行:label + value + 三时间(数据/分析/下期预期) */
+function IndicatorRow({
   ind,
   selectedMonth,
   onJumpToTab,
@@ -66,8 +75,14 @@ function isStale(updatedAt: string | null, selectedMonth: string): boolean {
 }) {
   const meta = getIndicatorMeta(ind.key);
   const hasValue = ind.value !== null && ind.value !== undefined;
-  const stale = isStale(ind.updated_at, selectedMonth);
+  // 兼容期:data_date 优先,旧接口回退 updated_at
+  const dataDate = ind.data_date ?? ind.updated_at ?? null;
+  const stale = isStale(dataDate, selectedMonth);
   const linkTab = INDICATOR_LINK_MAP[ind.key];
+  const nextReleaseShort = ind.next_release_at ? ind.next_release_at.slice(5) : null;
+  const nextReleaseTitle = ind.next_release_at
+    ? `下期预期 ${ind.next_release_at}${ind.next_release_note ? ` · ${ind.next_release_note}` : ''}`
+    : undefined;
 
   return (
     <div className="flex items-baseline justify-between py-2 border-b border-gray-800 last:border-0">
@@ -85,14 +100,27 @@ function isStale(updatedAt: string | null, selectedMonth: string): boolean {
             </button>
           )}
         </div>
-        <div className={`text-xs mt-0.5 ${stale ? 'text-yellow-600' : 'text-gray-500'}`}>
-          {ind.updated_at ? (
-            <>
-              <span className="font-mono">{ind.updated_at}</span>
-              {' · '}{relativeDate(ind.updated_at)}
+        {/* 三时间行:数据时间(+相对时间) · 分析时间 · 下期预期 */}
+        <div className={`text-xs mt-0.5 flex flex-wrap items-baseline gap-x-2 ${stale ? 'text-yellow-600' : 'text-gray-500'}`}>
+          {dataDate ? (
+            <span>
+              数据 <span className="font-mono">{dataDate}</span>
+              {' · '}{relativeDate(dataDate)}
               {stale ? ' · 数据偏旧' : ''}
-            </>
-          ) : '本月无数据'}
+            </span>
+          ) : (
+            <span>本月无数据</span>
+          )}
+          {ind.analyzed_at && (
+            <span title={`分析时间 ${ind.analyzed_at}`}>
+              分析 <span className="font-mono">{formatAnalyzed(ind.analyzed_at)}</span>
+            </span>
+          )}
+          {nextReleaseShort && (
+            <span title={nextReleaseTitle} className="cursor-help">
+              下次 <span className="font-mono">≈{nextReleaseShort}</span>
+            </span>
+          )}
         </div>
       </div>
       <div className={`text-lg font-mono ml-3 ${hasValue ? 'text-white' : 'text-gray-600'}`}>

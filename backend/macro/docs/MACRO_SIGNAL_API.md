@@ -51,28 +51,37 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
   "success": true,
   "data": {
     "month": "2026-05",
-    "generated_at": null,
+    "generated_at": "2026-05-22T07:59:22Z",
     "groups": {
       "monetary_policy": {
         "conclusion": "偏宽松",
+        "score": 67.44,
         "indicators": [
-          { "key": "dr007",  "value": 1.328, "updated_at": "2026-05-21" },
-          { "key": "lpr_1y", "value": 3.0,   "updated_at": "2026-05-21" }
+          {
+            "key": "dr007", "value": 1.328,
+            "updated_at": "2026-05-21", "data_date": "2026-05-21",
+            "analyzed_at": "2026-05-22T07:59:22Z",
+            "next_release_at": "2026-05-25", "next_release_note": "DR007 每个工作日随银行间市场更新"
+          },
+          {
+            "key": "lpr_1y", "value": 3.0,
+            "updated_at": "2026-05-20", "data_date": "2026-05-20",
+            "analyzed_at": "2026-05-22T07:59:22Z",
+            "next_release_at": "2026-06-22", "next_release_note": "LPR 每月20日发布(节假日顺延)"
+          }
         ]
       },
       "money_supply": {
         "conclusion": "信用扩张",
         "indicators": [
-          { "key": "m2_yoy",     "value": 8.6, "updated_at": "2026-05-13" },
-          { "key": "m1_yoy",     "value": 5.0, "updated_at": "2026-05-13" },
-          { "key": "social_yoy", "value": 7.8, "updated_at": "2026-05-13" }
+          { "key": "m2_yoy", "value": 8.6, "updated_at": "2026-05-13", "data_date": "2026-05-13", "analyzed_at": "2026-05-22T07:59:22Z", "next_release_at": "2026-06-12", "next_release_note": "金融统计数据(M2/社融)约每月13日发布" }
         ]
       },
       "entity_economy": {
         "conclusion": "平稳",
         "indicators": [
-          { "key": "electricity_yoy", "value": 3.5, "updated_at": "2026-04-20" },
-          { "key": "railway_yoy",     "value": null, "updated_at": null }
+          { "key": "electricity_yoy", "value": 3.5, "updated_at": "2026-04-20", "data_date": "2026-04-20", "analyzed_at": "2026-05-22T07:59:22Z", "next_release_at": "2026-05-20", "next_release_note": "工业用电量约每月20日发布" },
+          { "key": "railway_yoy", "value": null, "updated_at": null, "data_date": null, "analyzed_at": null, "next_release_at": null, "next_release_note": null }
         ]
       },
       "inflation":      { "conclusion": "温和",       "indicators": [...] },
@@ -95,14 +104,70 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `month` | string | 'YYYY-MM' |
+| `generated_at` | string \| null | 全页最新分析时间 = 所有指标 `analyzed_at` 的最大值 |
 | `groups` | object | 6 个 dimension key,固定顺序 |
 | `groups[d].conclusion` | string \| null | skill 的定性结论(中文),如「温和」「偏宽松」「外部中性」 |
-| `groups[d].indicators` | array | 该维度的所有指标 |
+| `groups[d].indicators` | array | 该维度的所有指标(三时间都是指标级) |
 | `indicators[].key` | string | 指标 key,如 `cpi_yoy`、`dr007` |
 | `indicators[].value` | number \| null | 指标数值,无数据为 null |
-| `indicators[].updated_at` | string \| null | ISO 'YYYY-MM-DD',粒度到指标级 |
+| `indicators[].data_date` | string \| null | **数据时间** 'YYYY-MM-DD',指标数值所属/发布日期 |
+| `indicators[].analyzed_at` | string \| null | **分析时间** ISO timestamp,skill 生成该值的时间 |
+| `indicators[].next_release_at` | string \| null | **下个周期预期发布日** 'YYYY-MM-DD',自报优先、后端规则兑底 |
+| `indicators[].next_release_note` | string \| null | 预期口径说明,如「CPI/PPI 约每月9日发布上月数据」 |
+| `indicators[].updated_at` | string \| null | **兼容别名** = `data_date`,后端双写过渡,前端迁移完成后删除 |
 
-**indicator.updated_at 来源**:当前从 dimension `data_date` 派生(所有指标共用同一日期)。后续如果 skill 输出改为 per-indicator 时间戳,服务层不用改、前端自动正确显示。
+#### 指标级三时间的来源优先级
+
+| API 字段 | macro_signal.json 自报 | 兑底(当前默认) |
+|---|---|---|
+| `data_date` | `indicator_meta[key].data_date` | 组级 `data_date` 前 10 位 |
+| `analyzed_at` | `indicator_meta[key].analyzed_at` | 组级 `generated_at`(risk_data 用子块 `fetched_at`) |
+| `next_release_at/note` | `indicator_meta[key].next_release` | 后端 `release_rules.py` 按指标规则推算 |
+
+risk_data.json 天然指标级:子块 `date` → `data_date`,子块 `fetched_at` → `analyzed_at`,子块 `next_release` → 自报下期预期。
+
+#### skill 自报契约(可选,向后兼容)
+
+macro_signal.json 可选新增 `indicator_meta`,不新增也不影响现有兼容逻辑:
+
+```json
+{
+  "dimension": "inflation",
+  "conclusion": "温和",
+  "data_date": "2026-05-11",
+  "generated_at": "2026-05-22T07:59:22Z",
+  "details": { "cpi_yoy": 1.2 },
+  "indicator_meta": {
+    "cpi_yoy": {
+      "data_date": "2026-05-11",
+      "analyzed_at": "2026-05-22T07:59:22Z",
+      "next_release": { "date": "2026-06-09", "note": "CPI/PPI 约每月9日发布上月数据" }
+    }
+  }
+}
+```
+
+risk_data.json 子块自报:`data.volume.next_release = { "date": ..., "note": ... }`(turnover/margin 同理)。
+
+#### 后端兑底规则表(`src/services/release_rules.py`)
+
+规则来源:各 skill SKILL.md「数据发布时间」,工作日=周一~周五(不含法定节假日,note 用「约」表达误差)。
+基准日 = max(指标 `data_date`, 今天),保证「下次」一定在未来。
+
+| indicator key | 规则 | 周末校正 |
+|---|---|---|
+| `dr007` / `dollar_index` / `usd_cny` / `ted_spread` / `total_amount_yi` / `turnover_rate` / `margin_balance_yi` | 每工作日 → 下一个工作日 | — |
+| `lpr_1y` | 每月20日 | 顺延(央行惯例) |
+| `mlf_1y` | 每月15日 | 顺延 |
+| `m2_yoy` / `m1_yoy` / `social_yoy` | 每月13日 | 前移 |
+| `industrial_yoy` / `fai_yoy` / `retail_yoy` | 每月13日 | 前移(统计局惯例提前) |
+| `electricity_yoy` | 每月20日 | 前移 |
+| `railway_yoy` | 每月7日 | 前移 |
+| `cpi_yoy` / `ppi_yoy` / `core_cpi_yoy` | 每月9日 | 前移 |
+| `pmi_manufacturing` | 每月最后一日发布当月数据 | 不校正 |
+| 其他未知 key | 无规则 → `next_release_at: null`,前端不渲染「下次」段 | — |
+
+> 注:前端 `release-rules.ts` 的 inflation 规则(10日)与 SKILL.md(9日)不一致,以后端本表(9日)为准;前端发布日历后续可改为消费本 API。
 
 #### 容错行为
 

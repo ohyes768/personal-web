@@ -1,10 +1,11 @@
 /**
  * mock 数据 + 异步加载函数
  *
- * 数据结构对齐 demo v2 终稿:每个 group = { conclusion, indicators: [{key, value, updated_at}] }
- * 2026-05 数据从 skill JSON 直接复制 conclusion + 指标值,所有指标配 updated_at
- * 2026-04 / 2026-03:数值 ±10%,updated_at 前移一月,conclusion 调整
- * 2026-03 risk_appetite 设为 { conclusion: null, indicators: [] } 演示空分组
+ * 数据结构对齐 demo v2 终稿:每个 group = { conclusion, total_score, indicators }
+ * 2026-05 数据从 skill JSON 直接复制 conclusion + 指标值,指标带三时间
+ * (data_date/analyzed_at/next_release_at+note,next_release 按后端 release_rules 推算)
+ * 2026-04 / 2026-03:保留旧结构(仅 updated_at),验证前端 data_date ?? updated_at 兼容回退
+ * 2026-03 risk_appetite 设为 { conclusion: null, total_score: null, indicators: [] } 演示空分组(total_score 未推送时不渲染徽章)
  *
  * loadMockSnapshot 用 setTimeout 300ms 模拟网络延迟,让 loading 态可见
  */
@@ -17,38 +18,38 @@ const MOCK_DATA: Record<string, MacroSignalSnapshot> = {
     month: '2026-05',
     generated_at: '2026-05-22T07:28:47Z',
     groups: {
-      monetary_policy: { conclusion: '适度宽松', total_score: 62.0, indicators: [
-        { key: 'dr007',  value: 1.328, updated_at: '2026-05-21' },
-        { key: 'lpr_1y', value: 3.00,  updated_at: '2026-05-20' },
-        { key: 'mlf_1y', value: 2.00,  updated_at: '2026-05-15' },
+      monetary_policy: { conclusion: '适度宽松', total_score: 65, indicators: [
+        { key: 'dr007',  value: 1.328, updated_at: '2026-05-21', data_date: '2026-05-21', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-05-25', next_release_note: 'DR007 每个工作日随银行间市场更新' },
+        { key: 'lpr_1y', value: 3.00,  updated_at: '2026-05-20', data_date: '2026-05-20', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-22', next_release_note: 'LPR 每月20日发布(节假日顺延)' },
+        { key: 'mlf_1y', value: 2.00,  updated_at: '2026-05-15', data_date: '2026-05-15', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-15', next_release_note: 'MLF 每月中旬操作日公布' },
       ]},
-      money_supply: { conclusion: '信用扩张', total_score: 66.0, indicators: [
-        { key: 'm2_yoy',     value: 8.6, updated_at: '2026-05-13' },
-        { key: 'm1_yoy',     value: 5.0, updated_at: '2026-05-13' },
-        { key: 'social_yoy', value: 7.8, updated_at: '2026-05-13' },
+      money_supply: { conclusion: '信用扩张', total_score: 72, indicators: [
+        { key: 'm2_yoy',     value: 8.6, updated_at: '2026-05-13', data_date: '2026-05-13', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-12', next_release_note: '金融统计数据(M2/社融)约每月13日发布' },
+        { key: 'm1_yoy',     value: 5.0, updated_at: '2026-05-13', data_date: '2026-05-13', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-12', next_release_note: '金融统计数据(M2/社融)约每月13日发布' },
+        { key: 'social_yoy', value: 7.8, updated_at: '2026-05-13', data_date: '2026-05-13', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-12', next_release_note: '金融统计数据(M2/社融)约每月13日发布' },
       ]},
-      entity_economy: { conclusion: '稳健', total_score: 48.0, indicators: [
-        { key: 'pmi_manufacturing', value: 49.5, updated_at: '2026-04-30' },
-        { key: 'industrial_yoy',    value: 5.6,  updated_at: '2026-05-13' },
-        { key: 'fai_yoy',           value: 4.0,  updated_at: '2026-05-13' },
-        { key: 'retail_yoy',        value: 4.8,  updated_at: '2026-05-13' },
-        { key: 'electricity_yoy',   value: 3.5,  updated_at: '2026-05-20' },
+      entity_economy: { conclusion: '稳健', total_score: 55, indicators: [
+        { key: 'pmi_manufacturing', value: 49.5, updated_at: '2026-04-30', data_date: '2026-04-30', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-05-31', next_release_note: '制造业 PMI 每月最后一日发布当月数据' },
+        { key: 'industrial_yoy',    value: 5.6,  updated_at: '2026-05-13', data_date: '2026-05-13', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-12', next_release_note: '工业增加值等统计局数据约每月13日发布' },
+        { key: 'fai_yoy',           value: 4.0,  updated_at: '2026-05-13', data_date: '2026-05-13', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-12', next_release_note: '固投/社零约每月13日发布' },
+        { key: 'retail_yoy',        value: 4.8,  updated_at: '2026-05-13', data_date: '2026-05-13', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-12', next_release_note: '固投/社零约每月13日发布' },
+        { key: 'electricity_yoy',   value: 3.5,  updated_at: '2026-05-20', data_date: '2026-05-20', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-19', next_release_note: '工业用电量约每月20日发布' },
         { key: 'railway_yoy',       value: null, updated_at: null },
       ]},
-      inflation: { conclusion: '温和', total_score: 52.0, indicators: [
-        { key: 'cpi_yoy',      value: 1.2, updated_at: '2026-05-10' },
-        { key: 'ppi_yoy',      value: 2.8, updated_at: '2026-05-10' },
-        { key: 'core_cpi_yoy', value: 1.2, updated_at: '2026-05-10' },
+      inflation: { conclusion: '温和', total_score: 42, indicators: [
+        { key: 'cpi_yoy',      value: 1.2, updated_at: '2026-05-10', data_date: '2026-05-10', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-09', next_release_note: 'CPI/PPI 约每月9日发布上月数据' },
+        { key: 'ppi_yoy',      value: 2.8, updated_at: '2026-05-10', data_date: '2026-05-10', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-09', next_release_note: 'CPI/PPI 约每月9日发布上月数据' },
+        { key: 'core_cpi_yoy', value: 1.2, updated_at: '2026-05-10', data_date: '2026-05-10', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-06-09', next_release_note: '核心 CPI 随 CPI 同步发布' },
       ]},
-      exchange_rate: { conclusion: '外部中性', total_score: 68.0, indicators: [
-        { key: 'dollar_index', value: 119.2825, updated_at: '2026-05-22' },
-        { key: 'usd_cny',      value: 6.8092,   updated_at: '2026-05-22' },
-        { key: 'ted_spread',   value: -0.15,    updated_at: '2026-05-22' },
+      exchange_rate: { conclusion: '外部中性', total_score: 45, indicators: [
+        { key: 'dollar_index', value: 119.2825, updated_at: '2026-05-22', data_date: '2026-05-22', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-05-25', next_release_note: '美元指数每工作日更新(FRED 延迟约1天)' },
+        { key: 'usd_cny',      value: 6.8092,   updated_at: '2026-05-22', data_date: '2026-05-22', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-05-25', next_release_note: '汇率每工作日更新' },
+        { key: 'ted_spread',   value: -0.15,    updated_at: '2026-05-22', data_date: '2026-05-22', analyzed_at: '2026-05-22T07:28:47Z', next_release_at: '2026-05-25', next_release_note: 'TED 利差每工作日更新(FRED 延迟约1周)' },
       ]},
-      risk_appetite: { conclusion: '偏热', total_score: 72.0, indicators: [
-        { key: 'total_amount_yi',   value: 50816.71, updated_at: '2026-05-22' },
-        { key: 'turnover_rate',     value: 2.5297,   updated_at: '2026-05-22' },
-        { key: 'margin_balance_yi', value: 28872.12, updated_at: '2026-05-22' },
+      risk_appetite: { conclusion: '偏热', total_score: 75, indicators: [
+        { key: 'total_amount_yi',   value: 50816.71, updated_at: '2026-05-22', data_date: '2026-05-22', analyzed_at: '2026-05-22T07:31:13Z', next_release_at: '2026-05-25', next_release_note: '两市成交额每交易日盘后更新' },
+        { key: 'turnover_rate',     value: 2.5297,   updated_at: '2026-05-22', data_date: '2026-05-22', analyzed_at: '2026-05-22T07:28:35Z', next_release_at: '2026-05-25', next_release_note: '换手率每交易日盘后更新' },
+        { key: 'margin_balance_yi', value: 28872.12, updated_at: '2026-05-22', data_date: '2026-05-22', analyzed_at: '2026-05-22T07:31:17Z', next_release_at: '2026-05-25', next_release_note: '融资余额次日 09:45 更新前一交易日' },
       ]},
     },
   },
