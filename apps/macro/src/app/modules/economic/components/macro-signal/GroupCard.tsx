@@ -2,7 +2,7 @@
 
 /**
  * 单张分组卡片
- * - 卡头第一行(小字标识):圆点 + 分组名 + 右侧「X 项指标」
+ * - 卡头第一行(小字标识):圆点 + 分组名 + 右侧评分徽章 + 「X 项指标」
  * - 卡头第二行(主信号):20px 加粗白色 conclusion(或「数据缺失」)
  * - 指标列表:每行 label + value + updated_at
  * - 整组 indicators 为空 → 列表区显示「本月数据缺失」占位
@@ -26,6 +26,13 @@ function formatValue(v: number | null, meta: { digits?: number; unit?: string })
   const d = meta.digits ?? 2;
   const u = meta.unit ?? '';
   return Number(v).toFixed(d) + u;
+}
+
+/** 维度总分徽章配色(仅表强度,不表方向) */
+function scoreBadgeClass(score: number): string {
+  if (score >= 70) return 'bg-emerald-900/50 text-emerald-300 border-emerald-700';
+  if (score >= 40) return 'bg-amber-900/50 text-amber-300 border-amber-700';
+  return 'bg-rose-900/50 text-rose-300 border-rose-700';
 }
 
 /** ISO 日期 → 相对时间 */
@@ -111,7 +118,15 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
         <div className="flex items-center gap-1.5 mb-2">
           <span className={`w-2 h-2 rounded-full ${meta.calendarColor}`}></span>
           <span className="text-xs text-gray-400">{meta.title}</span>
-          <span className="ml-auto text-xs text-gray-500">{indicators.length} 项指标</span>
+          {group.total_score != null && (
+            <span
+              className={`ml-auto text-xs font-mono px-1.5 py-0.5 rounded border ${scoreBadgeClass(group.total_score)}`}
+              title="维度总分(0-100)"
+            >
+              {group.total_score.toFixed(1)}
+            </span>
+          )}
+          <span className={`${group.total_score != null ? '' : 'ml-auto '}text-xs text-gray-500`}>{indicators.length} 项指标</span>
         </div>
         <div className={conclusionClass}>{conclusionText}</div>
       </div>

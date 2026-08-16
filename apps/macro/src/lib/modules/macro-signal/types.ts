@@ -4,7 +4,7 @@
  * 数据契约对齐 macro-fin-skill 的 6 个子 skill 输出:
  * - skill 的 `conclusion` 字段 → MacroSignalGroup.conclusion(卡头主信号)
  * - skill 的 `details` 字段 → 拆分为 MacroIndicator 数组,每个指标带各自的 updated_at
- * - skill 的 `score` 字段 → 前端不展示,类型中也不含
+ * - skill 的 `total_score` 字段 → MacroSignalGroup.total_score(卡头右上角评分徽章)
  */
 import type { TabType } from '@/lib/types/economic';
 
@@ -31,6 +31,8 @@ export interface MacroIndicator {
 export interface MacroSignalGroup {
   /** skill 的定性结论,如「温和」「适度宽松」;null = 整组缺失 */
   conclusion: string | null;
+  /** 维度总分(0-100,skill 评分框架输出);null/缺省 = 未提供,不显示徽章 */
+  total_score?: number | null;
   /** 该分组下所有指标,空数组 = 整组缺失 */
   indicators: MacroIndicator[];
 }

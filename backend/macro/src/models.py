@@ -324,6 +324,7 @@ class MacroIndicator(BaseModel):
 class MacroSignalGroup(BaseModel):
     """一个分组(6 大主题之一)"""
     conclusion: Optional[str] = None
+    total_score: Optional[float] = None  # 维度总分(0-100,skill 评分框架输出)
     indicators: List[MacroIndicator] = []
 
 

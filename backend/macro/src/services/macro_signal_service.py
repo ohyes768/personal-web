@@ -96,7 +96,11 @@ class MacroSignalService:
                 ))
             # 跳过非数值(value 是 None 或字符串),不写入 indicators
 
-        return MacroSignalGroup(conclusion=conclusion, indicators=indicators)
+        total_score = raw.get("total_score")
+        if not isinstance(total_score, (int, float)):
+            total_score = None
+
+        return MacroSignalGroup(conclusion=conclusion, indicators=indicators, total_score=total_score)
 
     def _convert_risk_appetite(self, raw: Optional[dict]) -> MacroSignalGroup:
         """从 risk_data.json 转 MacroSignalGroup(结构嵌套在 data.* 下)"""
@@ -133,7 +137,12 @@ class MacroSignalService:
                 updated_at=margin.get("date"),
             ))
 
-        return MacroSignalGroup(conclusion=conclusion, indicators=indicators)
+        # score.total_score 是维度总分(0-100,skill 评分框架输出)
+        total_score = score_block.get("total_score")
+        if not isinstance(total_score, (int, float)):
+            total_score = None
+
+        return MacroSignalGroup(conclusion=conclusion, indicators=indicators, total_score=total_score)
 
     def get_snapshot(self, month: str) -> Optional[MacroSignalSnapshot]:
         """获取某月 6 维度快照;无数据返回 None"""
