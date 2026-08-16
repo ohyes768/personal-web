@@ -35,7 +35,7 @@ function scoreBadgeClass(score: number): string {
   return 'bg-rose-900/50 text-rose-300 border-rose-700';
 }
 
-/** ISO 日期 → 相对时间(基于数据时间) */
+/** ISO 日期 → 相对时间(基于数据时间);≥30 天用「N 个月前」,不回退原始日期(前面已展示,重复无信息量) */
 function relativeDate(iso: string | null): string {
   if (!iso) return '无数据';
   const d = new Date(iso + 'T00:00:00Z');
@@ -44,7 +44,7 @@ function relativeDate(iso: string | null): string {
   if (days <= 0) return '今日更新';
   if (days === 1) return '1 天前';
   if (days < 30) return `${days} 天前`;
-  return iso;
+  return `${Math.floor(days / 30)} 个月前`;
 }
 
 /** 分析时间 ISO timestamp → 本地 'MM-DD HH:mm'(转北京时间等本地时区) */
@@ -79,7 +79,9 @@ function IndicatorRow({
   const dataDate = ind.data_date ?? ind.updated_at ?? null;
   const stale = isStale(dataDate, selectedMonth);
   const linkTab = INDICATOR_LINK_MAP[ind.key];
-  const nextReleaseShort = ind.next_release_at ? ind.next_release_at.slice(5) : null;
+  // 日频指标每个工作日都更新,「下次」无信息量 → 只有月频才渲染
+  const isMonthly = ind.frequency !== 'daily';
+  const nextReleaseShort = isMonthly && ind.next_release_at ? ind.next_release_at.slice(5) : null;
   const nextReleaseTitle = ind.next_release_at
     ? `下期预期 ${ind.next_release_at}${ind.next_release_note ? ` · ${ind.next_release_note}` : ''}`
     : undefined;
@@ -120,6 +122,8 @@ function IndicatorRow({
             <span title={nextReleaseTitle} className="cursor-help">
               下次 <span className="font-mono">≈{nextReleaseShort}</span>
             </span>
+          )}{ind.frequency === 'daily' && (
+            <span title="日频指标,每个工作日更新">日频</span>
           )}
         </div>
       </div>

@@ -6,13 +6,13 @@
 """
 import json
 import time
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Tuple
 
 from src.config import get_settings
 from src.models import MacroSignalSnapshot, MacroSignalGroup, MacroIndicator
-from src.services.release_rules import get_next_release
+from src.services.release_rules import get_next_release, get_frequency
 from src.utils.logger import setup_logger
 
 logger = setup_logger("macro_signal_service")
@@ -64,18 +64,24 @@ class MacroSignalService:
     def _set_cache(self, key: str, value: Any) -> None:
         self._cache[key] = (time.time(), value)
 
-    def _read_json(self, rel_path: str) -> Optional[dict]:
-        """读 skill JSON 文件,容错:缺失/损坏返回 None"""
+    def _read_json(self, rel_path: str) -> Tuple[Optional[dict], Optional[str]]:
+        """读 skill JSON 文件,容错:缺失/损坏返回 (None, None)。
+
+        同时返回文件 mtime(UTC ISO)——skill 未自报 analyzed_at/generated_at 时,
+        它就是「分析/推送时间」的最后兜底(agent 推送写入 = mtime 即推送时间)。
+        """
         full_path = Path(self.settings.macro_signal_data_dir) / rel_path
         try:
             with open(full_path, encoding="utf-8") as f:
-                return json.load(f)
+                raw = json.load(f)
+            mtime = datetime.fromtimestamp(full_path.stat().st_mtime, tz=timezone.utc)
+            return raw, mtime.strftime("%Y-%m-%dT%H:%M:%SZ")
         except FileNotFoundError:
             logger.warning(f"macro-signal JSON 不存在: {full_path}")
-            return None
+            return None, None
         except json.JSONDecodeError as e:
             logger.warning(f"macro-signal JSON 解析失败: {full_path} - {e}")
-            return None
+            return None, None
 
     @staticmethod
     def _date10(value: Any) -> Optional[str]:
@@ -104,23 +110,26 @@ class MacroSignalService:
         computed = get_next_release(key, ref)
         return computed if computed else (None, None)
 
-    def _convert_dimension_from_macro_signal(self, raw: Optional[dict]) -> MacroSignalGroup:
+    def _convert_dimension_from_macro_signal(
+        self, raw: Optional[dict], file_mtime: Optional[str] = None
+    ) -> MacroSignalGroup:
         """从 macro_signal.json 转 MacroSignalGroup
-
-        三时间都是指标级,来源优先级:
+    
+        三时间都是指标级,来源优先级(自报优先、规则兜底):
         - data_date:   indicator_meta[key].data_date → 组级 data_date
-        - analyzed_at: indicator_meta[key].analyzed_at → 组级 generated_at
+        - analyzed_at: indicator_meta[key].analyzed_at → 组级 generated_at → 文件 mtime(推送时间)
         - next_release_at: indicator_meta[key].next_release(自报) → 后端规则兜底
+        - frequency:   indicator_meta[key].frequency(自报,'daily'/'monthly') → 规则表 kind 推导
         """
         if raw is None:
             return MacroSignalGroup(conclusion=None, total_score=None, indicators=[])
-
+    
         conclusion = raw.get("conclusion")
         total_score = self._extract_total_score(raw)
         data_date = raw.get("data_date")  # 'YYYY-MM-DD' 或 ISO timestamp
         # data_date 可能带时间(如 '2026-05-22T07:28:34Z'),只取前 10 位
         date_only = data_date[:10] if isinstance(data_date, str) else None
-        generated_at = raw.get("generated_at")  # skill 分析时间(ISO timestamp)
+        generated_at = raw.get("generated_at") or file_mtime  # skill 分析时间,缺失用文件 mtime 兜底
 
         meta = raw.get("indicator_meta")
         meta = meta if isinstance(meta, dict) else {}
@@ -134,6 +143,8 @@ class MacroSignalService:
                 ind_date = self._date10(m.get("data_date")) or date_only
                 ind_analyzed = m.get("analyzed_at") or generated_at
                 nr_at, nr_note = self._resolve_next_release(key, ind_date, m.get("next_release"))
+                freq = m.get("frequency")
+                freq = freq if freq in ("daily", "monthly") else get_frequency(key)
                 indicators.append(MacroIndicator(
                     key=key,
                     value=float(value),
@@ -142,6 +153,7 @@ class MacroSignalService:
                     analyzed_at=ind_analyzed if isinstance(ind_analyzed, str) else None,
                     next_release_at=nr_at,
                     next_release_note=nr_note,
+                    frequency=freq,
                 ))
             # 跳过非数值(value 是 None 或字符串),不写入 indicators
 
@@ -161,38 +173,44 @@ class MacroSignalService:
                 return float(value)
         return None
 
-    def _convert_risk_appetite(self, raw: Optional[dict]) -> MacroSignalGroup:
+    def _convert_risk_appetite(
+        self, raw: Optional[dict], file_mtime: Optional[str] = None
+    ) -> MacroSignalGroup:
         """从 risk_data.json 转 MacroSignalGroup(结构嵌套在 data.* 下)"""
         if raw is None:
             return MacroSignalGroup(conclusion=None, total_score=None, indicators=[])
-
+    
         # score.conclusion 是定性结论(中文,例:「偏热/乐观」)
         score_block = raw.get("score") or {}
         conclusion = score_block.get("conclusion")
-
+    
         data = raw.get("data") or {}
-
+        data_fetched_at = data.get("fetched_at") or file_mtime  # 顶层拉取时间,缺失用 mtime 兜底
+    
         # risk_data 的三时间天然指标级:子块 date=数据时间,子块 fetched_at=分析时间,
-        # 子块 next_release=自报下期预期(缺失由后端规则兜底,三类都是每工作日)
+        # 子块 next_release/frequency=自报下期预期与频率(缺失由后端规则兜底,三者都是每工作日)
         indicators: List[MacroIndicator] = []
         for sub_key, ind_key, field in (
-            ("volume",   "两市成交额",   "total_amount_yi"),
-            ("turnover", "换手率",       "turnover_rate"),
-            ("margin",   "融资融券余额", "rzye"),  # rzye = 融资余额(亿元)
+            ("volume",   "total_amount_yi",   "total_amount_yi"),  # 两市成交额
+            ("turnover", "turnover_rate",     "turnover_rate"),    # 换手率
+            ("margin",   "margin_balance_yi", "rzye"),             # 融资融券余额(rzye=融资余额,亿元)
         ):
             block = data.get(sub_key) or {}
             if not block:
                 continue
             ind_date = self._date10(block.get("date"))
             nr_at, nr_note = self._resolve_next_release(ind_key, ind_date, block.get("next_release"))
+            freq = block.get("frequency")
+            freq = freq if freq in ("daily", "monthly") else get_frequency(ind_key)
             indicators.append(MacroIndicator(
                 key=ind_key,
                 value=block.get(field),
                 updated_at=ind_date,  # 兼容别名 = data_date
                 data_date=ind_date,
-                analyzed_at=block.get("fetched_at"),
+                analyzed_at=block.get("fetched_at") or data_fetched_at,
                 next_release_at=nr_at,
                 next_release_note=nr_note,
+                frequency=freq,
             ))
 
         # score.total_score 是维度总分(0-100,skill 评分框架输出)
@@ -209,14 +227,14 @@ class MacroSignalService:
         if cached is not None:
             return cached
 
-        # 读 6 个 skill JSON 并转 shape
+        # 读 6 个 skill JSON 并转 shape(mtime 作为 analyzed_at 的最后兜底)
         groups: Dict[str, MacroSignalGroup] = {}
         for dim_key, rel_path in DIMENSION_FILES.items():
-            raw = self._read_json(rel_path)
-            groups[dim_key] = self._convert_dimension_from_macro_signal(raw)
+            raw, file_mtime = self._read_json(rel_path)
+            groups[dim_key] = self._convert_dimension_from_macro_signal(raw, file_mtime)
         # risk_appetite 单独处理
-        risk_raw = self._read_json(RISK_APPETITE_FILE)
-        groups["risk_appetite"] = self._convert_risk_appetite(risk_raw)
+        risk_raw, risk_mtime = self._read_json(RISK_APPETITE_FILE)
+        groups["risk_appetite"] = self._convert_risk_appetite(risk_raw, risk_mtime)
 
         # 数据日期检查:有任一维度的 indicator updated_at 落在请求月份内 → 视为该月有数据
         any_match = any(
@@ -255,7 +273,7 @@ class MacroSignalService:
 
         # 从 macro_signal.json 的 data_date 取 YYYY-MM
         for rel_path in DIMENSION_FILES.values():
-            raw = self._read_json(rel_path)
+            raw, _ = self._read_json(rel_path)
             if raw is None:
                 continue
             data_date = raw.get("data_date", "")
@@ -263,7 +281,7 @@ class MacroSignalService:
                 months.add(data_date[:7])
 
         # 从 risk_data.json 取(月度切片用 volume.date / turnover.date / margin.date)
-        risk_raw = self._read_json(RISK_APPETITE_FILE)
+        risk_raw, _ = self._read_json(RISK_APPETITE_FILE)
         if risk_raw:
             data = risk_raw.get("data") or {}
             for sub in [data.get("volume"), data.get("turnover"), data.get("margin")]:

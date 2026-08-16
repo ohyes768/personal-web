@@ -142,3 +142,11 @@ def get_next_release(key: str, ref_date: date) -> Optional[Tuple[str, str]]:
         return None
 
     return nxt.isoformat(), rule.note
+
+
+def get_frequency(key: str) -> Optional[str]:
+    """指标发布频率:workdaily → 'daily',monthly/month_end → 'monthly';无规则返回 None"""
+    rule = INDICATOR_RELEASE_RULES.get(key)
+    if rule is None:
+        return None
+    return "daily" if rule.kind == "workdaily" else "monthly"

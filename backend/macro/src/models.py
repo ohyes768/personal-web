@@ -320,6 +320,7 @@ class MacroIndicator(BaseModel):
     - data_date:       数据时间(指标数值所属/发布日期)
     - analyzed_at:     分析时间(skill 生成该值的时间,ISO timestamp)
     - next_release_at: 下个周期预期发布日期(自报优先,后端规则兜底)
+    - frequency:       发布频率 'daily'/'monthly'(日频前端不渲染「下次」段)
     - updated_at:      兼容别名 = data_date,前端迁移完成后删除
     """
     key: str
@@ -329,6 +330,7 @@ class MacroIndicator(BaseModel):
     analyzed_at: Optional[str] = None      # ISO timestamp,分析时间
     next_release_at: Optional[str] = None  # 'YYYY-MM-DD',下个周期预期发布日
     next_release_note: Optional[str] = None  # 预期口径说明,如「CPI/PPI 每月9日发布」
+    frequency: Optional[str] = None        # 'daily' | 'monthly',自报优先、规则表兜底;null=未知
 
 
 class MacroSignalGroup(BaseModel):

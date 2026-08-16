@@ -27,10 +27,12 @@ export interface MacroIndicator {
   data_date?: string | null;
   /** 分析时间(skill 生成该值的时间,ISO timestamp,如 '2026-05-22T07:59:22Z') */
   analyzed_at?: string | null;
-  /** 下个周期预期发布日期 'YYYY-MM-DD'(skill 自报优先,后端规则兑底) */
+  /** 下个周期预期发布日期 'YYYY-MM-DD'(skill 自报优先,后端规则兜底;仅月频指标展示) */
   next_release_at?: string | null;
   /** 预期口径说明,如「CPI/PPI 约每月9日发布上月数据」(悬浮展示) */
   next_release_note?: string | null;
+  /** 发布频率 'daily'(日频,不渲染「下次」段) | 'monthly'(月频);null = 未知按月频处理 */
+  frequency?: 'daily' | 'monthly' | null;
   /** 兼容别名 = data_date,后端双写过渡,前端迁移完成后删除 */
   updated_at: string | null;
 }
