@@ -3,8 +3,8 @@
 /**
  * 单张分组卡片
  * - 卡头第一行(小字标识):圆点 + 分组名 + 右侧评分徽章 + 「X 项指标」
- * - 卡头第二行(主信号):20px 加粗 conclusion(命中档位时染档位色,否则白色;缺失=灰色)
- * - 卡头第三行(档位刻度):全部 5 档横排,当前档加粗染色突出,其余灰色
+ * - 卡头第二行(档位刻度):全部档位横排,当前档大字+档位色突出,其余小字灰色;
+ *   定位不到当前档时兜底显示 conclusion(白)或「数据缺失」(灰)大字
  * - 指标列表:每行 label + value + 三时间(数据/分析/下期预期)
  * - 整组 indicators 为空 → 列表区显示「本月数据缺失」占位
  */
@@ -146,11 +146,9 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
   const indicators = group.indicators ?? [];
   const isEmpty = indicators.length === 0;
   const conclusionText = group.conclusion ?? '数据缺失';
-  // 当前档位:conclusion 文本匹配优先、total_score 区间兜底;命中后主信号与刻度轴同步染色
+  // 当前档位:conclusion 文本匹配优先、total_score 区间兜底;刻度行内当前档大字染色突出
   const activeLevel = findActiveLevel(groupKey, group.conclusion, group.total_score);
-  const conclusionClass = group.conclusion
-    ? `text-xl font-bold tracking-wide ${activeLevel?.activeClass ?? 'text-white'}`
-    : 'text-xl font-bold text-gray-600 tracking-wide';
+  const scales = GROUP_SCALES[groupKey];
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 hover:border-gray-600 transition-colors">
@@ -169,17 +167,16 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
           )}
           <span className={`${group.total_score != null ? '' : 'ml-auto '}text-xs text-gray-500`}>{indicators.length} 项指标</span>
         </div>
-        <div className={conclusionClass}>{conclusionText}</div>
-        {/* 档位刻度:全部档位横排作参照系,当前档加粗染色突出;conclusion 缺失时无当前态不展示 */}
-        {group.conclusion && GROUP_SCALES[groupKey] && (
-          <div className="mt-1.5 flex flex-wrap items-baseline text-xs leading-5">
-            {GROUP_SCALES[groupKey].map((lvl, i) => {
-              const isActive = activeLevel?.label === lvl.label;
+        {/* 档位刻度:全部档位横排作参照系,当前档大字+档位色突出,其余小字灰色;定位不到当前档时兜底显示 conclusion 大字 */}
+        {activeLevel && scales ? (
+          <div className="flex flex-wrap items-baseline">
+            {scales.map((lvl, i) => {
+              const isActive = activeLevel.label === lvl.label;
               return (
                 <span key={lvl.label} className="flex items-baseline whitespace-nowrap">
-                  {i > 0 && <span className="text-gray-700 mx-1">·</span>}
+                  {i > 0 && <span className="text-gray-700 mx-1.5">·</span>}
                   <span
-                    className={isActive ? `font-bold ${lvl.activeClass}` : 'text-gray-600'}
+                    className={isActive ? `text-xl font-bold tracking-wide ${lvl.activeClass}` : 'text-xs text-gray-600'}
                     title={isActive ? `当前档位(总分区间 ${lvl.min}-${lvl.max})` : `总分区间 ${lvl.min}-${lvl.max}`}
                   >
                     {lvl.label}
@@ -188,6 +185,8 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
               );
             })}
           </div>
+        ) : (
+          <div className={`text-xl font-bold tracking-wide ${group.conclusion ? 'text-white' : 'text-gray-600'}`}>{conclusionText}</div>
         )}
       </div>
 
