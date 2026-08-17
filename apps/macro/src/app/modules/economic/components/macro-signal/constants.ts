@@ -85,6 +85,95 @@ export function getIndicatorMeta(key: string): { label: string; unit?: string; d
   return INDICATOR_LABELS[key] ?? { label: key, digits: 2 };
 }
 
+/** 单个档位(对齐各 skill SKILL.md 评分框架的总分映射表) */
+export interface ScaleLevel {
+  /** 展示文本 */
+  label: string;
+  /** 总分区间 [min, max),用于 total_score 定位当前档 */
+  min: number;
+  max: number;
+  /** conclusion 等价表述(skill 实际输出可能不等于 label,如「偏宽松」= 适度宽松) */
+  aliases?: string[];
+  /** 当前档位高亮色 */
+  activeClass: string;
+}
+
+/** 6 大分组的档位刻度,数组顺序 = 总分从高到低 */
+export const GROUP_SCALES: Record<DimensionKey, ScaleLevel[]> = {
+  // 货币政策: ≥80 明显宽松 | 60-79 适度宽松 | 40-59 中性 | 20-39 适度紧缩 | <20 明显紧缩
+  monetary_policy: [
+    { label: '明显宽松', min: 80, max: 100, activeClass: 'text-emerald-400' },
+    { label: '适度宽松', min: 60, max: 80, aliases: ['偏宽松', '宽松'], activeClass: 'text-emerald-300' },
+    { label: '中性',     min: 40, max: 60, aliases: ['稳健'], activeClass: 'text-amber-300' },
+    { label: '适度紧缩', min: 20, max: 40, aliases: ['偏紧缩', '偏紧', '边际收紧'], activeClass: 'text-rose-300' },
+    { label: '明显紧缩', min: 0,  max: 20, aliases: ['紧缩'], activeClass: 'text-rose-400' },
+  ],
+  // 信用扩张: ≥80 明显信用扩张 | 60-79 适度信用扩张 | 40-59 中性 | 20-39 适度信用收缩 | <20 明显信用收缩
+  money_supply: [
+    { label: '明显扩张', min: 80, max: 100, aliases: ['明显信用扩张'], activeClass: 'text-emerald-400' },
+    { label: '适度扩张', min: 60, max: 80, aliases: ['适度信用扩张', '信用扩张', '扩张'], activeClass: 'text-emerald-300' },
+    { label: '中性',     min: 40, max: 60, activeClass: 'text-amber-300' },
+    { label: '适度收缩', min: 20, max: 40, aliases: ['适度信用收缩', '信用收缩', '收缩'], activeClass: 'text-rose-300' },
+    { label: '明显收缩', min: 0,  max: 20, aliases: ['明显信用收缩'], activeClass: 'text-rose-400' },
+  ],
+  // 经济运行: ≥80 经济过热 | 60-79 经济偏热 | 40-59 经济稳健 | 20-39 经济偏冷 | <20 经济过冷
+  entity_economy: [
+    { label: '过热', min: 80, max: 100, aliases: ['经济过热'], activeClass: 'text-rose-400' },
+    { label: '偏热', min: 60, max: 80, aliases: ['经济偏热'], activeClass: 'text-orange-300' },
+    { label: '稳健', min: 40, max: 60, aliases: ['经济稳健', '平稳'], activeClass: 'text-emerald-300' },
+    { label: '偏冷', min: 20, max: 40, aliases: ['经济偏冷'], activeClass: 'text-sky-300' },
+    { label: '过冷', min: 0,  max: 20, aliases: ['经济过冷'], activeClass: 'text-blue-400' },
+  ],
+  // 通胀环境: ≥80 明显通胀偏高 | 60-79 通胀温和偏高 | 40-59 温和/低位 | 20-39 低通胀 | <20 通缩风险
+  inflation: [
+    { label: '明显偏高', min: 80, max: 100, aliases: ['明显通胀偏高', '通胀偏高', '偏高'], activeClass: 'text-rose-400' },
+    { label: '温和偏高', min: 60, max: 80, aliases: ['通胀温和偏高'], activeClass: 'text-orange-300' },
+    { label: '温和',     min: 40, max: 60, aliases: ['通胀温和/低位', '温和/低位', '低位', '低通胀'], activeClass: 'text-emerald-300' },
+    { label: '偏低',     min: 20, max: 40, aliases: ['通胀偏低'], activeClass: 'text-sky-300' },
+    { label: '通缩风险', min: 0,  max: 20, aliases: ['通缩'], activeClass: 'text-blue-400' },
+  ],
+  // 外部压力: ≥80 极度风险规避 | 60-79 风险偏好偏低 | 40-59 中性 | 30-39 风险偏好偏高 | <30 极度乐观(区间特殊)
+  exchange_rate: [
+    { label: '极度风险规避', min: 80, max: 100, aliases: ['风险规避'], activeClass: 'text-rose-400' },
+    { label: '风险偏低',     min: 60, max: 80, aliases: ['风险偏好偏低'], activeClass: 'text-orange-300' },
+    { label: '中性',         min: 40, max: 60, aliases: ['外部中性'], activeClass: 'text-amber-300' },
+    { label: '风险偏高',     min: 30, max: 40, aliases: ['风险偏好偏高'], activeClass: 'text-emerald-300' },
+    { label: '极度乐观',     min: 0,  max: 30, activeClass: 'text-emerald-400' },
+  ],
+  // 市场情绪: ≥80 极度亢奋 | 60-79 偏热/乐观 | 40-59 中性 | 20-39 偏冷/谨慎 | <20 极度恐慌
+  risk_appetite: [
+    { label: '极度亢奋',  min: 80, max: 100, aliases: ['亢奋'], activeClass: 'text-rose-400' },
+    { label: '偏热/乐观', min: 60, max: 80, aliases: ['偏热乐观', '偏热', '乐观'], activeClass: 'text-orange-300' },
+    { label: '中性',      min: 40, max: 60, activeClass: 'text-amber-300' },
+    { label: '偏冷/谨慎', min: 20, max: 40, aliases: ['偏冷谨慎', '偏冷', '谨慎'], activeClass: 'text-sky-300' },
+    { label: '极度恐慌',  min: 0,  max: 20, aliases: ['恐慌'], activeClass: 'text-blue-400' },
+  ],
+};
+
+/**
+ * 定位当前档位:conclusion 文本匹配优先(保证与卡头主信号一致),
+ * 匹配不上回退 total_score 区间;都失败返回 null(轴上不高亮)。
+ * 文本匹配只做 conclusion.includes(alias) 单向包含,避免「温和」误配「温和偏高」。
+ */
+export function findActiveLevel(
+  groupKey: DimensionKey,
+  conclusion: string | null,
+  totalScore?: number | null,
+): ScaleLevel | null {
+  const levels = GROUP_SCALES[groupKey];
+  if (!levels) return null;
+  if (conclusion) {
+    const byText = levels.find(
+      l => l.label === conclusion || (l.aliases ?? []).some(a => conclusion.includes(a)),
+    );
+    if (byText) return byText;
+  }
+  if (totalScore != null) {
+    return levels.find(l => totalScore >= l.min && totalScore < l.max) ?? null;
+  }
+  return null;
+}
+
 /**
  * indicator key → 可跳转到的曲线图 Tab id
  * 只有现有 Tab 已有对应曲线的指标才列入,其他指标不显示「查看曲线」按钮

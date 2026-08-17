@@ -3,13 +3,14 @@
 /**
  * 单张分组卡片
  * - 卡头第一行(小字标识):圆点 + 分组名 + 右侧评分徽章 + 「X 项指标」
- * - 卡头第二行(主信号):20px 加粗白色 conclusion(或「数据缺失」)
+ * - 卡头第二行(主信号):20px 加粗 conclusion(命中档位时染档位色,否则白色;缺失=灰色)
+ * - 卡头第三行(档位刻度):全部 5 档横排,当前档加粗染色突出,其余灰色
  * - 指标列表:每行 label + value + 三时间(数据/分析/下期预期)
  * - 整组 indicators 为空 → 列表区显示「本月数据缺失」占位
  */
 import type { DimensionKey, MacroSignalGroup, MacroIndicator } from '@/lib/modules/macro-signal/types';
 import type { TabType } from '@/lib/types/economic';
-import { GROUP_META, getIndicatorMeta, INDICATOR_LINK_MAP } from './constants';
+import { GROUP_META, GROUP_SCALES, findActiveLevel, getIndicatorMeta, INDICATOR_LINK_MAP } from './constants';
 
 interface GroupCardProps {
   groupKey: DimensionKey;
@@ -81,6 +82,8 @@ function IndicatorRow({
   const linkTab = INDICATOR_LINK_MAP[ind.key];
   // 日频指标每个工作日都更新,「下次」无信息量 → 只有月频才渲染
   const isMonthly = ind.frequency !== 'daily';
+  // 月频数据时间只显到年月(日的精度无意义),相对时间也省略;悬停 title 保留完整日期
+  const dataDateText = isMonthly && dataDate ? dataDate.slice(0, 7) : dataDate;
   const nextReleaseShort = isMonthly && ind.next_release_at ? ind.next_release_at.slice(5) : null;
   const nextReleaseTitle = ind.next_release_at
     ? `下期预期 ${ind.next_release_at}${ind.next_release_note ? ` · ${ind.next_release_note}` : ''}`
@@ -105,9 +108,13 @@ function IndicatorRow({
         {/* 三时间行:数据时间(+相对时间) · 分析时间 · 下期预期 */}
         <div className={`text-xs mt-0.5 flex flex-wrap items-baseline gap-x-2 ${stale ? 'text-yellow-600' : 'text-gray-500'}`}>
           {dataDate ? (
-            <span>
-              数据 <span className="font-mono">{dataDate}</span>
-              {' · '}{relativeDate(dataDate)}
+            <span title={isMonthly ? `数据时间 ${dataDate}` : undefined}>
+              数据 <span className="font-mono">{dataDateText}</span>
+              {!isMonthly && (
+                <>
+                  {' · '}{relativeDate(dataDate)}
+                </>
+              )}
               {stale ? ' · 数据偏旧' : ''}
             </span>
           ) : (
@@ -139,8 +146,10 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
   const indicators = group.indicators ?? [];
   const isEmpty = indicators.length === 0;
   const conclusionText = group.conclusion ?? '数据缺失';
+  // 当前档位:conclusion 文本匹配优先、total_score 区间兜底;命中后主信号与刻度轴同步染色
+  const activeLevel = findActiveLevel(groupKey, group.conclusion, group.total_score);
   const conclusionClass = group.conclusion
-    ? 'text-xl font-bold text-white tracking-wide'
+    ? `text-xl font-bold tracking-wide ${activeLevel?.activeClass ?? 'text-white'}`
     : 'text-xl font-bold text-gray-600 tracking-wide';
 
   return (
@@ -161,6 +170,25 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
           <span className={`${group.total_score != null ? '' : 'ml-auto '}text-xs text-gray-500`}>{indicators.length} 项指标</span>
         </div>
         <div className={conclusionClass}>{conclusionText}</div>
+        {/* 档位刻度:全部档位横排作参照系,当前档加粗染色突出;conclusion 缺失时无当前态不展示 */}
+        {group.conclusion && GROUP_SCALES[groupKey] && (
+          <div className="mt-1.5 flex flex-wrap items-baseline text-xs leading-5">
+            {GROUP_SCALES[groupKey].map((lvl, i) => {
+              const isActive = activeLevel?.label === lvl.label;
+              return (
+                <span key={lvl.label} className="flex items-baseline whitespace-nowrap">
+                  {i > 0 && <span className="text-gray-700 mx-1">·</span>}
+                  <span
+                    className={isActive ? `font-bold ${lvl.activeClass}` : 'text-gray-600'}
+                    title={isActive ? `当前档位(总分区间 ${lvl.min}-${lvl.max})` : `总分区间 ${lvl.min}-${lvl.max}`}
+                  >
+                    {lvl.label}
+                  </span>
+                </span>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* 指标列表 */}
