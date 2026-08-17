@@ -200,8 +200,14 @@ class MacroSignalService:
                     next_release_at=nr_at,
                     next_release_note=nr_note,
                     frequency=freq,
+                    month_avg=float(month_avg) if isinstance(month_avg, (int, float)) else None,
                 ))
             # 跳过非数值(value 是 None 或字符串),不写入 indicators
+
+        # 按月过滤下整组无有值指标 → conclusion/total_score 是别的月份的判断,置空
+        # (避免「暂未获取」的月份视图仍透出旧月档位,如 8 月显示 5 月的「温和」)
+        if month is not None and not any(i.value is not None for i in indicators):
+            conclusion, total_score = None, None
 
         return MacroSignalGroup(conclusion=conclusion, total_score=total_score, indicators=indicators)
 
@@ -273,6 +279,10 @@ class MacroSignalService:
         total_score = score_block.get("total_score")
         if not isinstance(total_score, (int, float)):
             total_score = None
+
+        # 按月过滤下整组无有值指标 → conclusion/total_score 置空(同 macro_signal 路径)
+        if month is not None and not any(i.value is not None for i in indicators):
+            conclusion, total_score = None, None
 
         return MacroSignalGroup(conclusion=conclusion, indicators=indicators, total_score=total_score)
 

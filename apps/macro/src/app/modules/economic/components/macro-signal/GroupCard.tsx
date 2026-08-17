@@ -145,7 +145,10 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
   const meta = GROUP_META[groupKey];
   const indicators = group.indicators ?? [];
   const isEmpty = indicators.length === 0;
-  const conclusionText = group.conclusion ?? '数据缺失';
+  // conclusion 为空时的兜底文案:组内有占位指标(可推预期发布)说明「暂未获取」,
+  // 连占位都没有才是真「数据缺失」——与指标行口径一致
+  const hasPlaceholder = indicators.some(i => i.value == null && i.next_release_at);
+  const conclusionText = group.conclusion ?? (hasPlaceholder ? '暂未获取' : '数据缺失');
   // 当前档位:conclusion 文本匹配优先、total_score 区间兜底;刻度行内当前档大字染色突出
   const activeLevel = findActiveLevel(groupKey, group.conclusion, group.total_score);
   const scales = GROUP_SCALES[groupKey];
