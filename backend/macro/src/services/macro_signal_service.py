@@ -13,7 +13,7 @@ from typing import Optional, Dict, List, Any, Tuple
 
 from src.config import get_settings
 from src.models import MacroSignalSnapshot, MacroSignalGroup, MacroIndicator
-from src.services.release_rules import get_next_release, get_frequency
+from src.services.release_rules import get_next_release, get_frequency, INDICATOR_RELEASE_RULES
 from src.utils.logger import setup_logger
 
 logger = setup_logger("macro_signal_service")
@@ -124,20 +124,46 @@ class MacroSignalService:
         computed = get_next_release(key, ref)
         return computed if computed else (None, None)
 
+    def _placeholder_indicator(self, key: str) -> Optional[MacroIndicator]:
+        """构造「暂未获取」占位指标:value/data_date 为空,发布预期走规则表。
+
+        规则表查不到的 key 返回 None(调用方剔除——无规则可推预期,不造占位)。
+        next_release 基准日 = 今天(_resolve_next_release 数据时间为 None 时
+        自然落到今天,推算出「请求月数据」的发布日)。
+        """
+        nr_at, nr_note = self._resolve_next_release(key, None, None)
+        freq = get_frequency(key)
+        if nr_at is None or freq is None:
+            return None
+        return MacroIndicator(
+            key=key,
+            value=None,
+            updated_at=None,
+            data_date=None,
+            analyzed_at=None,
+            next_release_at=nr_at,
+            next_release_note=nr_note,
+            frequency=freq,
+        )
+
     def _convert_dimension_from_macro_signal(
-        self, raw: Optional[dict], file_mtime: Optional[str] = None
+        self, raw: Optional[dict], file_mtime: Optional[str] = None,
+        month: Optional[str] = None,
     ) -> MacroSignalGroup:
         """从 macro_signal.json 转 MacroSignalGroup
-    
+
         三时间都是指标级,来源优先级(自报优先、规则兜底):
         - data_date:   indicator_meta[key].data_date → 组级 data_date
         - analyzed_at: indicator_meta[key].analyzed_at → 组级 generated_at → 文件 mtime(推送时间)
         - next_release_at: indicator_meta[key].next_release(自报) → 后端规则兜底
         - frequency:   indicator_meta[key].frequency(自报,'daily'/'monthly') → 规则表 kind 推导
+
+        month(兜底路径按月过滤):指标 data_date 落在请求月才保留原值,
+        否则转占位(value=null + 规则推算 next_release)。None = 不过滤(归档路径)。
         """
         if raw is None:
             return MacroSignalGroup(conclusion=None, total_score=None, indicators=[])
-    
+
         conclusion = raw.get("conclusion")
         total_score = self._extract_total_score(raw)
         data_date = raw.get("data_date")  # 'YYYY-MM-DD' 或 ISO timestamp
@@ -155,6 +181,12 @@ class MacroSignalService:
                 m = meta.get(key)
                 m = m if isinstance(m, dict) else {}
                 ind_date = self._date10(m.get("data_date")) or date_only
+                # 按月过滤:data_date 不在请求月 → 占位(非请求月数据不冒充请求月)
+                if month is not None and not (ind_date or "").startswith(month):
+                    ph = self._placeholder_indicator(key)
+                    if ph is not None:
+                        indicators.append(ph)
+                    continue
                 ind_analyzed = m.get("analyzed_at") or generated_at
                 nr_at, nr_note = self._resolve_next_release(key, ind_date, m.get("next_release"))
                 freq = m.get("frequency")
@@ -188,19 +220,23 @@ class MacroSignalService:
         return None
 
     def _convert_risk_appetite(
-        self, raw: Optional[dict], file_mtime: Optional[str] = None
+        self, raw: Optional[dict], file_mtime: Optional[str] = None,
+        month: Optional[str] = None,
     ) -> MacroSignalGroup:
-        """从 risk_data.json 转 MacroSignalGroup(结构嵌套在 data.* 下)"""
+        """从 risk_data.json 转 MacroSignalGroup(结构嵌套在 data.* 下)
+
+        month 语义同 _convert_dimension_from_macro_signal(兜底路径按月过滤)。
+        """
         if raw is None:
             return MacroSignalGroup(conclusion=None, total_score=None, indicators=[])
-    
+
         # score.conclusion 是定性结论(中文,例:「偏热/乐观」)
         score_block = raw.get("score") or {}
         conclusion = score_block.get("conclusion")
-    
+
         data = raw.get("data") or {}
         data_fetched_at = data.get("fetched_at") or file_mtime  # 顶层拉取时间,缺失用 mtime 兜底
-    
+
         # risk_data 的三时间天然指标级:子块 date=数据时间,子块 fetched_at=分析时间,
         # 子块 next_release/frequency=自报下期预期与频率(缺失由后端规则兜底,三者都是每工作日)
         indicators: List[MacroIndicator] = []
@@ -213,6 +249,12 @@ class MacroSignalService:
             if not block:
                 continue
             ind_date = self._date10(block.get("date"))
+            # 按月过滤:data_date 不在请求月 → 占位
+            if month is not None and not (ind_date or "").startswith(month):
+                ph = self._placeholder_indicator(ind_key)
+                if ph is not None:
+                    indicators.append(ph)
+                continue
             nr_at, nr_note = self._resolve_next_release(ind_key, ind_date, block.get("next_release"))
             freq = block.get("frequency")
             freq = freq if freq in ("daily", "monthly") else get_frequency(ind_key)
@@ -252,22 +294,27 @@ class MacroSignalService:
                 groups[dim_key] = self._convert_dimension_from_macro_signal(raw, file_mtime)
         return groups
 
-    def _read_latest_groups(self) -> Dict[str, MacroSignalGroup]:
-        """读平铺最新 6 个 skill JSON 并转 shape(mtime 作为 analyzed_at 的最后兜底)"""
+    def _read_latest_groups(self, month: Optional[str] = None) -> Dict[str, MacroSignalGroup]:
+        """读平铺最新 6 个 skill JSON 并转 shape(mtime 作为 analyzed_at 的最后兜底)
+
+        month 非 None 时按月过滤+占位(兜底路径语义)。
+        """
         groups: Dict[str, MacroSignalGroup] = {}
         for dim_key, rel_path in DIMENSION_FILES.items():
             raw, file_mtime = self._read_json(rel_path)
-            groups[dim_key] = self._convert_dimension_from_macro_signal(raw, file_mtime)
+            groups[dim_key] = self._convert_dimension_from_macro_signal(raw, file_mtime, month)
         # risk_appetite 单独处理
         risk_raw, risk_mtime = self._read_json(RISK_APPETITE_FILE)
-        groups["risk_appetite"] = self._convert_risk_appetite(risk_raw, risk_mtime)
+        groups["risk_appetite"] = self._convert_risk_appetite(risk_raw, risk_mtime, month)
         return groups
 
     def get_snapshot(self, month: str) -> Optional[MacroSignalSnapshot]:
         """获取某月 6 维度快照;无数据返回 None。
 
         读取优先级:archive/<month>/(按月归档,生产真源) → 平铺最新文件
-        (本地开发直读 skill 仓库 / 归档未覆盖的存量月兜底)。
+        (本地开发直读 skill 仓库 / 归档未覆盖的存量月兜底,按月过滤:
+        非请求月的指标转「暂未获取」占位,不冒充请求月数据)。
+        请求月早于最新数据月且无归档 → None(历史空洞月)。
         """
         # month 会拼入归档路径,严格格式校验防穿越
         if not isinstance(month, str) or not MONTH_PATTERN.match(month):
@@ -281,16 +328,13 @@ class MacroSignalService:
         # 归档优先:archive/<month>/ 存在 → 直接用归档(部分 skill 缺失 → 空维度)
         groups = self._read_archive_groups(month)
         if groups is None:
-            # 兜底:读平铺最新 6 文件,指标日期落在请求月内才视为该月有数据
-            groups = self._read_latest_groups()
-            any_match = any(
-                ind.updated_at is not None and ind.updated_at.startswith(month)
-                for group in groups.values()
-                for ind in group.indicators
-            )
-            if not any_match:
+            # 空洞月判定:无归档且早于当前自然月的月,数据永远不会再补 → None
+            # (当前/未来月走全占位,让用户看到「暂未获取+预期发布」)
+            if month < date.today().strftime("%Y-%m"):
                 logger.info(f"月份 {month} 无数据(macro-fin-skill 暂无快照)")
                 return None
+            # 兜底:读平铺最新 6 文件,按月过滤(非请求月指标 → 占位)
+            groups = self._read_latest_groups(month)
 
         # generated_at = 所有指标 analyzed_at 的最大值(同格式 ISO 字符串,字典序=时间序)
         analyzed_list = [
