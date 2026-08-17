@@ -59,7 +59,7 @@ export interface MacroSignalSnapshot {
 
 /** 容器组件 Props —— 切换月份 = 调 loadSnapshot */
 export interface MacroSignalTabProps {
-  /** 月份数据加载函数。本期父级传 loadMockSnapshot;后续 agent 替换为 API fetch */
+  /** 月份数据加载函数:fetch /api/macro/signal,返回 null=该月无数据 */
   loadSnapshot: (month: string) => Promise<MacroSignalSnapshot | null>;
   /** 可切换的月份列表(YYYY-MM) */
   availableMonths: string[];

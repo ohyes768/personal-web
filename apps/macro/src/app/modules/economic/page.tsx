@@ -12,7 +12,6 @@ import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
 import type { MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
 import { useFullEconomicData } from '@/lib/hooks/useFullEconomicData';
-import { loadMockSnapshot, MOCK_AVAILABLE_MONTHS } from '@/lib/modules/macro-signal/mock-data';
 import { Tabs } from './components/Tabs';
 
 // 动态导入各 Tab 子组件（每个 Tab 自己的 hooks / 按钮 / 图表都在子组件里）
@@ -65,28 +64,22 @@ export default function EconomicPage() {
   const { fullData, isLoading, error, isCached } = useFullEconomicData(refreshKey);
 
   // === 宏观信号数据源 ===
-  // 本地开发(NODE_ENV === 'development')用 mock;线上(NODE_ENV === 'production')走真实接口
-  // (线上接口当前未接入,后续 agent 实现后只需保证 /api/macro/signal 与 /api/macro/months 返回正确 shape 即可)
-  const useMock = process.env.NODE_ENV !== 'production';
-  const loadSnapshot = useMock
-    ? loadMockSnapshot
-    : async (month: string): Promise<MacroSignalSnapshot | null> => {
-        const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // 后端 MacroSignalResponse 是 { success, data } 包装,前端契约只要 data
-        const body = await res.json() as { success?: boolean; data?: MacroSignalSnapshot };
-        return body?.data ?? null;
-      };
-  const [availableMonths, setAvailableMonths] = useState<string[]>(
-    useMock ? MOCK_AVAILABLE_MONTHS : []
-  );
+  // 直连后端 /api/macro/*:本地 dev 由 next.config.js rewrites 代理到 localhost:8094,
+  // 生产由 nginx 反代到 macro 后端容器(后端未启动时 MacroSignalTab 显示 error 态)
+  const loadSnapshot = async (month: string): Promise<MacroSignalSnapshot | null> => {
+    const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // 后端 MacroSignalResponse 是 { success, data } 包装,前端契约只要 data
+    const body = await res.json() as { success?: boolean; data?: MacroSignalSnapshot };
+    return body?.data ?? null;
+  };
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
   useEffect(() => {
-    if (useMock) return;
     fetch('/api/macro/months')
       .then(r => (r.ok ? r.json() : { months: [] }))
       .then(d => setAvailableMonths(Array.isArray(d?.months) ? d.months : []))
-      .catch(() => { /* 接口未接入时保持空数组,MacroSignalTab 会显示 loading/error */ });
-  }, [useMock]);
+      .catch(() => { /* 后端未启动时保持空数组,MacroSignalTab 会显示 error 态 */ });
+  }, []);
 
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
