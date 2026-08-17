@@ -1,11 +1,15 @@
 FROM python:3.12-slim
 
 # 配置国内镜像源
+# tzdata：slim 镜像不带 zoneinfo，不装的话 ENV TZ 不生效（datetime.now() 会停在 UTC）
 RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     sed -i 's|http://security.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl nodejs && \
+    apt-get install -y --no-install-recommends curl nodejs tzdata && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 容器时区设为北京时间，保证 datetime.now() / 文件 mtime 序列化输出为本地时间
+ENV TZ=Asia/Shanghai
 
 # 配置 pip 国内镜像源
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
