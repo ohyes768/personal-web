@@ -8,12 +8,19 @@
 
 ```
 {数据源根目录}/
-├── monetary-policy-skill/macro_signal.json   # 货币政策
-├── money-supply-skill/macro_signal.json       # 信用扩张
-├── entity-economy-skill/macro_signal.json     # 经济运行
-├── inflation-skill/macro_signal.json          # 通胀环境
-├── exchange-rate-skill/macro_signal.json      # 外部压力
-└── risk-appetite-skill/risk_data.json         # 市场情绪(注意文件名不同!)
+├── monetary-policy-skill/macro_signal.json   # 最新快照:货币政策
+├── money-supply-skill/macro_signal.json       # 最新快照:信用扩张
+├── entity-economy-skill/macro_signal.json     # 最新快照:经济运行
+├── inflation-skill/macro_signal.json          # 最新快照:通胀环境
+├── exchange-rate-skill/macro_signal.json      # 最新快照:外部压力
+├── risk-appetite-skill/risk_data.json         # 最新快照:市场情绪(注意文件名不同!)
+└── archive/                                   # 按月归档(生产真源,upload 自动写入)
+    ├── 2026-05/
+    │   ├── monetary-policy-skill.json
+    │   ├── ...                               # 每个 skill 一个 <skill目录名>.json
+    │   └── risk-appetite-skill.json
+    └── 2026-06/
+        └── ...
 ```
 
 数据源根目录通过环境变量 `MACRO_SIGNAL_DATA_DIR` 配置:
@@ -29,6 +36,15 @@ export MACRO_SIGNAL_DATA_DIR=F:/personal-projects/macro-fin-skill/skills
 **生产环境数据由 agent 推送写入**(见下方 `POST /api/macro/signal/upload`),不再依赖共享存储 / n8n 同步。本地开发则直接读 macro-fin-skill 仓库目录。
 
 数据源根目录若不存在或子目录缺 JSON 文件,该维度返回空 group,接口整体仍可正常返回 200(除非 6 个维度都无月份匹配 → 返回 404)。
+
+### 按月留存(归档)
+
+- **写入**:`POST /api/macro/signal/upload` 落盘时执行三步——①旧最新文件按其数据月份**抢救归档**(跨月推送自动留存历史;部署后首次推送自动迁移存量) ②覆盖平铺最新文件 ③本次数据按其数据月份归档。同月重复推送幂等(归档被最新一次覆盖)。
+- **归档月份提取**:`macro_signal.json` 取顶层 `data_date` 前 7 位;`risk_data.json` 取 `data.{volume,turnover,margin}.date` 最大值的前 7 位;格式必须为 `YYYY-MM`,提取失败仅跳过归档(平铺最新文件仍写入)。
+- **读取**:`GET /api/macro/signal?month=` 优先读 `archive/<month>/`(生产真源,部分 skill 缺失 → 该维度空 group);归档无该月再兜底读平铺最新文件并做月份匹配(本地开发直读 skill 仓库场景)。`month` 参数严格校验 `^\d{4}-\d{2}$`(防路径穿越),非法返回 404。
+- **容量**:每 skill JSON 数 KB,每月 6 个文件,默认永久保留。
+
+> 详细设计见[宏观信号按月留存设计.md](./宏观信号按月留存设计.md)。
 
 ---
 
@@ -98,7 +114,7 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
 
 | 状态码 | 触发条件 | body |
 |---|---|---|
-| 404 | 请求月份无任何维度数据(macro-fin-skill 暂无快照) | `{ "detail": "No data for month YYYY-MM" }` |
+| 404 | 请求月份无任何维度数据(macro-fin-skill 暂无快照),或 month 格式非法(非 `YYYY-MM`,防路径穿越) | `{ "detail": "No data for month YYYY-MM" }` |
 | 500 | 服务内部异常 | `{ "detail": "错误描述" }` |
 
 #### 字段说明
@@ -211,7 +227,7 @@ curl 'http://localhost:8094/api/macro/months'
 #### 字段说明
 
 - `months` 数组,按 'YYYY-MM' **降序** 排列
-- 来源:扫描 6 个 JSON,提取各 `data_date` 的 'YYYY-MM' 部分,合并去重
+- 来源:`archive/` 归档月目录 ∪ 平铺最新 6 个 JSON 的 `data_date` 'YYYY-MM',合并去重
 
 ---
 
@@ -228,7 +244,7 @@ nginx `location /api/macro/` 剥前缀直转后端,故**对外路径保持 `/api
 
 ### `POST /api/macro/signal/upload`
 
-接收 macro-fin-skill agent 推送的 JSON,落盘到 `MACRO_SIGNAL_DATA_DIR`。写后自动清内存缓存,`GET /api/macro/signal` 立即可读新数据。
+接收 macro-fin-skill agent 推送的 JSON,落盘到 `MACRO_SIGNAL_DATA_DIR` 并**按月归档**(见上方「按月留存」)。写后自动清内存缓存,`GET /api/macro/signal` 立即可读新数据,历史月通过 `?month=` 可查。
 
 #### 请求
 
@@ -250,8 +266,14 @@ curl -X POST 'https://web.duomi77.cn:9443/api/macro/signal/upload' \
 #### 响应(200)
 
 ```json
-{ "success": true, "skill": "monetary-policy-skill", "file": "macro_signal.json", "path": "/app/data/macro-signals/monetary-policy-skill/macro_signal.json", "bytes": 241 }
+{ "success": true, "skill": "monetary-policy-skill", "file": "macro_signal.json", "path": "/app/data/macro-signals/monetary-policy-skill/macro_signal.json", "bytes": 241, "archived_month": "2026-08" }
 ```
+
+#### 响应字段
+
+| 字段 | 说明 |
+|---|---|
+| `archived_month` | 本次数据归档到的月份 'YYYY-MM';data 提取不到合法月份时为 `null`(此时仅写平铺最新文件,历史留存降级) |
 
 #### 错误码
 
