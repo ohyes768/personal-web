@@ -145,7 +145,7 @@ export default function EconomicPage() {
     {
       id: 'macro-signal',
       label: '宏观信号',
-      description: '当月 6 维度宏观判断卡片 + 发布日历'
+      description: '当月 6 维度宏观判断卡片'
     }
   ];
 

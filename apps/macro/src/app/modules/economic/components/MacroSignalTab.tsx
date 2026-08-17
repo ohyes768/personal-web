@@ -6,10 +6,9 @@
  * - 内部 useEffect 监听 selectedMonth 变化,触发 loadSnapshot
  * - 管理 loading / error / snapshot 三态
  */
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { MonthSwitcher } from './macro-signal/MonthSwitcher';
 import { GroupCardGrid } from './macro-signal/GroupCardGrid';
-import { ReleaseCalendar } from './macro-signal/ReleaseCalendar';
 import { GROUP_ORDER } from './macro-signal/constants';
 import type { DimensionKey, MacroSignalGroup, MacroSignalSnapshot, MacroSignalTabProps } from '@/lib/modules/macro-signal/types';
 
@@ -29,14 +28,18 @@ function emptySnapshot(month: string): MacroSignalSnapshot {
 }
 
 export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, onJumpToTab }: MacroSignalTabProps) {
-  const sorted = [...availableMonths].sort();
+  // 当前自然月始终可选:当月尚无数据时也要能切进去看「暂未获取+预期发布」
+  const monthsWithNow = useMemo(
+    () => Array.from(new Set([...availableMonths, currentYearMonth()])).sort(),
+    [availableMonths],
+  );
+  const sorted = monthsWithNow;
   const defaultMonth = initialMonth ?? sorted[sorted.length - 1] ?? currentYearMonth();
 
   const [selectedMonth, setSelectedMonth] = useState<string>(defaultMonth);
   const [snapshot, setSnapshot] = useState<MacroSignalSnapshot | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
-  const [showCalendar, setShowCalendar] = useState<boolean>(false);
 
   useEffect(() => {
     // 月份未就绪（availableMonths 还在加载）时不发请求，避免 month=undefined 触发 404
@@ -76,16 +79,9 @@ export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, on
       <div className="flex items-center gap-4 mb-8 flex-wrap">
         <MonthSwitcher
           currentMonth={selectedMonth}
-          availableMonths={availableMonths}
+          availableMonths={monthsWithNow}
           onChange={setSelectedMonth}
         />
-        <button
-          type="button"
-          onClick={() => setShowCalendar(true)}
-          className="px-4 py-2 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 transition-colors"
-        >
-          📅 发布日历
-        </button>
       </div>
 
       {loading && (
@@ -115,30 +111,6 @@ export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, on
           selectedMonth={selectedMonth}
           onJumpToTab={onJumpToTab}
         />
-      )}
-
-      {/* 发布日历弹框 */}
-      {showCalendar && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
-          onClick={() => setShowCalendar(false)}
-        >
-          <div
-            className="max-w-3xl w-full max-h-[90vh] overflow-auto"
-            onClick={e => e.stopPropagation()}
-          >
-            <div className="flex justify-end mb-2">
-              <button
-                type="button"
-                onClick={() => setShowCalendar(false)}
-                className="px-3 py-1 rounded-lg bg-gray-800 text-gray-300 hover:bg-gray-700 text-sm"
-              >
-                ✕ 关闭
-              </button>
-            </div>
-            <ReleaseCalendar month={selectedMonth} />
-          </div>
-        </div>
       )}
     </div>
   );

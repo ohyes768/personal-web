@@ -4,7 +4,7 @@
 import type { DimensionKey } from '@/lib/modules/macro-signal/types';
 import type { TabType } from '@/lib/types/economic';
 
-/** 6 大分组元数据(calendarColor 仅日历色点用,与评分无关) */
+/** 6 大分组元数据(color 仅卡头色点用,与评分无关) */
 export const GROUP_META: Record<DimensionKey, {
   title: string;
   order: number;
