@@ -156,12 +156,21 @@ export default function EconomicPage() {
         <header className="mb-8">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <Link
-                href="/macro"
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                刷新
-              </Link>
+              <div className="flex items-center gap-4">
+                {/* 原生 <a> 而非 Link：basePath=/macro 会把 Link 的 href 改写为自身 */}
+                <a
+                  href="/"
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ← 返回首页
+                </a>
+                <Link
+                  href="/macro"
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  刷新
+                </Link>
+              </div>
               <h1 className="text-4xl font-bold mt-4">宏观经济数据</h1>
             </div>
           </div>
