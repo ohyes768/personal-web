@@ -328,13 +328,19 @@ class MacroSignalService:
         # 归档优先:archive/<month>/ 存在 → 直接用归档(部分 skill 缺失 → 空维度)
         groups = self._read_archive_groups(month)
         if groups is None:
-            # 空洞月判定:无归档且早于当前自然月的月,数据永远不会再补 → None
-            # (当前/未来月走全占位,让用户看到「暂未获取+预期发布」)
-            if month < date.today().strftime("%Y-%m"):
-                logger.info(f"月份 {month} 无数据(macro-fin-skill 暂无快照)")
-                return None
             # 兜底:读平铺最新 6 文件,按月过滤(非请求月指标 → 占位)
             groups = self._read_latest_groups(month)
+            any_match = any(
+                ind.data_date is not None and ind.data_date.startswith(month)
+                for group in groups.values()
+                for ind in group.indicators
+            )
+            if not any_match:
+                # 无任何指标落在请求月:当前/未来月返回全占位(暂未获取+预期发布),
+                # 历史月数据不会再补 → None
+                if month < date.today().strftime("%Y-%m"):
+                    logger.info(f"月份 {month} 无数据(macro-fin-skill 暂无快照)")
+                    return None
 
         # generated_at = 所有指标 analyzed_at 的最大值(同格式 ISO 字符串,字典序=时间序)
         analyzed_list = [

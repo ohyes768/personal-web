@@ -124,7 +124,8 @@ function IndicatorRow({
               分析 <span className="font-mono">{formatAnalyzed(ind.analyzed_at)}</span>
             </span>
           )}
-          {nextReleaseShort && (
+          {/* 占位行「预计…发布」已含发布日,不再重复渲染「下次」段 */}
+          {!isPlaceholder && nextReleaseShort && (
             <span title={nextReleaseTitle} className="cursor-help">
               下次 <span className="font-mono">≈{nextReleaseShort}</span>
             </span>
