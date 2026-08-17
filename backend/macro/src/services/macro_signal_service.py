@@ -5,6 +5,7 @@
 不重新实现 skill 计算逻辑,只做 IO + 格式转换。
 """
 import json
+import re
 import time
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -42,6 +43,19 @@ DIMENSION_ORDER = [
     "monetary_policy", "money_supply", "entity_economy",
     "inflation", "exchange_rate", "risk_appetite",
 ]
+
+# 归档月份格式 'YYYY-MM'(month 会拼入归档路径,严格校验防穿越)
+MONTH_PATTERN = re.compile(r"^\d{4}-\d{2}$")
+
+# dimension key → skill 目录名(归档文件名 = <skill 目录名>.json)
+DIMENSION_SKILL_DIRS = {
+    "monetary_policy": "monetary-policy-skill",
+    "money_supply":    "money-supply-skill",
+    "entity_economy":  "entity-economy-skill",
+    "inflation":       "inflation-skill",
+    "exchange_rate":   "exchange-rate-skill",
+    "risk_appetite":   "risk-appetite-skill",
+}
 
 
 class MacroSignalService:
@@ -220,14 +234,26 @@ class MacroSignalService:
 
         return MacroSignalGroup(conclusion=conclusion, indicators=indicators, total_score=total_score)
 
-    def get_snapshot(self, month: str) -> Optional[MacroSignalSnapshot]:
-        """获取某月 6 维度快照;无数据返回 None"""
-        cache_key = f"snapshot:{month}"
-        cached = self._get_cached(cache_key)
-        if cached is not None:
-            return cached
+    def _read_archive_groups(self, month: str) -> Optional[Dict[str, MacroSignalGroup]]:
+        """读 archive/<month>/ 下 6 个归档文件并转 shape;目录不存在返回 None。
 
-        # 读 6 个 skill JSON 并转 shape(mtime 作为 analyzed_at 的最后兜底)
+        目录存在但某 skill 归档缺失 → 该维度空 group(与平铺「维度缺失」语义一致)。
+        """
+        archive_dir = Path(self.settings.macro_signal_data_dir) / "archive" / month
+        if not archive_dir.is_dir():
+            return None
+
+        groups: Dict[str, MacroSignalGroup] = {}
+        for dim_key, skill_dir in DIMENSION_SKILL_DIRS.items():
+            raw, file_mtime = self._read_json(f"archive/{month}/{skill_dir}.json")
+            if dim_key == "risk_appetite":
+                groups[dim_key] = self._convert_risk_appetite(raw, file_mtime)
+            else:
+                groups[dim_key] = self._convert_dimension_from_macro_signal(raw, file_mtime)
+        return groups
+
+    def _read_latest_groups(self) -> Dict[str, MacroSignalGroup]:
+        """读平铺最新 6 个 skill JSON 并转 shape(mtime 作为 analyzed_at 的最后兜底)"""
         groups: Dict[str, MacroSignalGroup] = {}
         for dim_key, rel_path in DIMENSION_FILES.items():
             raw, file_mtime = self._read_json(rel_path)
@@ -235,16 +261,36 @@ class MacroSignalService:
         # risk_appetite 单独处理
         risk_raw, risk_mtime = self._read_json(RISK_APPETITE_FILE)
         groups["risk_appetite"] = self._convert_risk_appetite(risk_raw, risk_mtime)
+        return groups
 
-        # 数据日期检查:有任一维度的 indicator updated_at 落在请求月份内 → 视为该月有数据
-        any_match = any(
-            ind.updated_at is not None and ind.updated_at.startswith(month)
-            for group in groups.values()
-            for ind in group.indicators
-        )
-        if not any_match:
-            logger.info(f"月份 {month} 无数据(macro-fin-skill 暂无快照)")
+    def get_snapshot(self, month: str) -> Optional[MacroSignalSnapshot]:
+        """获取某月 6 维度快照;无数据返回 None。
+
+        读取优先级:archive/<month>/(按月归档,生产真源) → 平铺最新文件
+        (本地开发直读 skill 仓库 / 归档未覆盖的存量月兜底)。
+        """
+        # month 会拼入归档路径,严格格式校验防穿越
+        if not isinstance(month, str) or not MONTH_PATTERN.match(month):
             return None
+
+        cache_key = f"snapshot:{month}"
+        cached = self._get_cached(cache_key)
+        if cached is not None:
+            return cached
+
+        # 归档优先:archive/<month>/ 存在 → 直接用归档(部分 skill 缺失 → 空维度)
+        groups = self._read_archive_groups(month)
+        if groups is None:
+            # 兜底:读平铺最新 6 文件,指标日期落在请求月内才视为该月有数据
+            groups = self._read_latest_groups()
+            any_match = any(
+                ind.updated_at is not None and ind.updated_at.startswith(month)
+                for group in groups.values()
+                for ind in group.indicators
+            )
+            if not any_match:
+                logger.info(f"月份 {month} 无数据(macro-fin-skill 暂无快照)")
+                return None
 
         # generated_at = 所有指标 analyzed_at 的最大值(同格式 ISO 字符串,字典序=时间序)
         analyzed_list = [
@@ -271,7 +317,14 @@ class MacroSignalService:
 
         months = set()
 
-        # 从 macro_signal.json 的 data_date 取 YYYY-MM
+        # 归档月:archive/ 子目录名(仅保留 YYYY-MM 合法者,生产真源)
+        archive_dir = Path(self.settings.macro_signal_data_dir) / "archive"
+        if archive_dir.is_dir():
+            for sub in archive_dir.iterdir():
+                if sub.is_dir() and MONTH_PATTERN.match(sub.name):
+                    months.add(sub.name)
+
+        # 平铺最新文件的月份(存量未归档月兜底):从 macro_signal.json 的 data_date 取 YYYY-MM
         for rel_path in DIMENSION_FILES.values():
             raw, _ = self._read_json(rel_path)
             if raw is None:
@@ -292,8 +345,56 @@ class MacroSignalService:
         self._set_cache(cache_key, sorted_months)
         return sorted_months
 
-    def save_skill_json(self, skill: str, file: str, data: dict) -> Path:
-        """agent 推送写入:白名单校验 → 原子落盘 → 返回路径。违例抛 ValueError。"""
+    @staticmethod
+    def _atomic_write_json(path: Path, data: dict) -> None:
+        """原子写 JSON:临时文件 + replace,避免半写状态被读到"""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp_path = path.with_suffix(path.suffix + ".tmp")
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        tmp_path.replace(path)
+
+    @staticmethod
+    def _extract_archive_month(file: str, data: Optional[dict]) -> Optional[str]:
+        """从 skill JSON 提取归档月份 'YYYY-MM';提取不到返回 None(格式非法视为提取不到)
+
+        - macro_signal.json: 顶层 data_date 前 7 位
+        - risk_data.json:    data.{volume,turnover,margin}.date 最大值的前 7 位
+        """
+        if not isinstance(data, dict):
+            return None
+
+        def _norm(value: Any) -> Optional[str]:
+            month = value[:7] if isinstance(value, str) and len(value) >= 7 else None
+            return month if month and MONTH_PATTERN.match(month) else None
+
+        if file == "risk_data.json":
+            data_block = data.get("data") or {}
+            sub_dates = [
+                sub.get("date") for sub in (
+                    data_block.get("volume"), data_block.get("turnover"), data_block.get("margin"),
+                ) if isinstance(sub, dict)
+            ]
+            valid = [m for m in (_norm(d) for d in sub_dates) if m]
+            return max(valid) if valid else None
+        return _norm(data.get("data_date"))
+
+    def _archive_skill_json(self, skill: str, month: str, data: dict) -> Path:
+        """归档 skill JSON 到 archive/<month>/<skill>.json(原子写)"""
+        archive_path = (
+            Path(self.settings.macro_signal_data_dir) / "archive" / month / f"{skill}.json"
+        )
+        self._atomic_write_json(archive_path, data)
+        logger.info(f"skill JSON 已归档: {archive_path} ({archive_path.stat().st_size} bytes)")
+        return archive_path
+
+    def save_skill_json(self, skill: str, file: str, data: dict) -> Tuple[Path, Optional[str]]:
+        """agent 推送写入(按月留存):白名单校验 → 抢救归档旧文件 → 覆盖最新文件 → 归档当月。
+
+        返回 (最新文件路径, 归档月份);违例抛 ValueError。
+        抢救归档保证历史月零丢失:跨月推送自动留存上月,部署后首推自动迁移存量;
+        同月重推时第 1 步产物会被第 3 步覆盖,幂等。
+        """
         if skill not in ALLOWED_SKILLS:
             raise ValueError(f"非法 skill: {skill}")
         if file not in ALLOWED_FILES:
@@ -301,18 +402,29 @@ class MacroSignalService:
         if not isinstance(data, dict):
             raise ValueError("data 必须是 JSON 对象")
 
-        target_dir = Path(self.settings.macro_signal_data_dir) / skill
-        target_dir.mkdir(parents=True, exist_ok=True)
-        target_path = target_dir / file
-        # 原子写:临时文件 + replace,避免半写状态被读到
-        tmp_path = target_path.with_suffix(target_path.suffix + ".tmp")
-        with open(tmp_path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-        tmp_path.replace(target_path)
+        latest_path = Path(self.settings.macro_signal_data_dir) / skill / file
 
-        size = target_path.stat().st_size
-        logger.info(f"skill JSON 已写入: {target_path} ({size} bytes)")
-        return target_path
+        # 1. 抢救归档:旧最新文件在被覆盖前按其数据月份留存(提取不到月份则跳过)
+        old_raw, _ = self._read_json(f"{skill}/{file}")
+        if old_raw is not None:
+            old_month = self._extract_archive_month(file, old_raw)
+            if old_month:
+                self._archive_skill_json(skill, old_month, old_raw)
+            else:
+                logger.warning(f"旧 skill JSON 提取不到归档月份,跳过抢救归档: {latest_path}")
+
+        # 2. 覆盖写最新文件(原子写)
+        self._atomic_write_json(latest_path, data)
+        logger.info(f"skill JSON 已写入: {latest_path} ({latest_path.stat().st_size} bytes)")
+
+        # 3. 归档当月(提取失败不阻塞写入,仅跳过归档)
+        new_month = self._extract_archive_month(file, data)
+        if new_month:
+            self._archive_skill_json(skill, new_month, data)
+        else:
+            logger.warning(f"推送 data 提取不到归档月份,跳过归档: skill={skill} file={file}")
+
+        return latest_path, new_month
 
     def clear_cache(self) -> None:
         """清空内存缓存(写入后调用,让后续读立即生效,不必等 5 分钟 TTL)。"""

@@ -2443,20 +2443,23 @@ async def upload_skill_json(
 
     鉴权：X-Upload-Token header（constant-time，未配置拒绝）。
     安全：skill/file 白名单防路径穿越。
+    按月留存：旧文件覆盖前抢救归档 + 本次数据归档到 archive/<月>/，
+    历史月可通过 GET /api/signal?month= 查询。
     对外路径：经 nginx 剥前缀为 /api/macro/signal/upload。
     """
     _verify_upload_token(x_upload_token)
     service = get_macro_signal_service()
     try:
-        path = service.save_skill_json(req.skill, req.file, req.data)
+        path, archived_month = service.save_skill_json(req.skill, req.file, req.data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     service.clear_cache()
-    logger.info(f"agent 推送 skill={req.skill} file={req.file}")
+    logger.info(f"agent 推送 skill={req.skill} file={req.file} archived_month={archived_month}")
     return {
         "success": True,
         "skill": req.skill,
         "file": req.file,
         "path": str(path),
         "bytes": path.stat().st_size,
+        "archived_month": archived_month,
     }
