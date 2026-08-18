@@ -331,6 +331,7 @@ class MacroIndicator(BaseModel):
     next_release_at: Optional[str] = None  # 'YYYY-MM-DD',下个周期预期发布日
     next_release_note: Optional[str] = None  # 预期口径说明,如「CPI/PPI 每月9日发布」
     frequency: Optional[str] = None        # 'daily' | 'monthly',自报优先、规则表兜底;null=未知
+    month_avg: Optional[float] = None      # 日频指标的月均值(skill 计算,透传;与 value 同采样月)
 
 
 class MacroSignalGroup(BaseModel):

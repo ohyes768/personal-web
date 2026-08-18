@@ -33,6 +33,8 @@ export interface MacroIndicator {
   next_release_note?: string | null;
   /** 发布频率 'daily'(日频,不渲染「下次」段) | 'monthly'(月频);null = 未知按月频处理 */
   frequency?: 'daily' | 'monthly' | null;
+  /** 日频指标的月均值(skill 计算,与 value 同采样月);历史月卡片主数值位显示,当月显示最新值 */
+  month_avg?: number | null;
   /** 兼容别名 = data_date,后端双写过渡,前端迁移完成后删除 */
   updated_at: string | null;
 }

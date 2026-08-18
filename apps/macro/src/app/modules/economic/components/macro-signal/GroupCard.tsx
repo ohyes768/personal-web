@@ -22,7 +22,7 @@ interface GroupCardProps {
 }
 
 /** 格式化指标数值 */
-function formatValue(v: number | null, meta: { digits?: number; unit?: string }): string {
+function formatValue(v: number | null | undefined, meta: { digits?: number; unit?: string }): string {
   if (v === null || v === undefined) return '—';
   const d = meta.digits ?? 2;
   const u = meta.unit ?? '';
@@ -75,6 +75,10 @@ function IndicatorRow({
   const linkTab = INDICATOR_LINK_MAP[ind.key];
   // 日频指标每个工作日都更新,「下次」无信息量 → 只有月频才渲染
   const isMonthly = ind.frequency !== 'daily';
+  // 日频指标分层展示:历史月显示月均(整月代表性口径),当月显示最新日度值
+  const isCurrentMonth =
+    selectedMonth === `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`;
+  const showMonthAvg = ind.frequency === 'daily' && !isCurrentMonth && ind.month_avg != null;
   // 月频数据时间只显到年月(日的精度无意义),相对时间也省略;悬停 title 保留完整日期
   const dataDateText = isMonthly && dataDate ? dataDate.slice(0, 7) : dataDate;
   // 「暂未获取」占位态:该月无数据(value 空)但可推预期发布日
@@ -129,13 +133,18 @@ function IndicatorRow({
             <span title={nextReleaseTitle} className="cursor-help">
               下次 <span className="font-mono">≈{nextReleaseShort}</span>
             </span>
-          )}{ind.frequency === 'daily' && (
+          )}{ind.frequency === 'daily' && !showMonthAvg && (
             <span title="日频指标,每个工作日更新">日频</span>
+          )}{showMonthAvg && (
+            <span title="日频指标,显示该月读数均值(数据截至所列日期)">月均</span>
           )}
         </div>
       </div>
-      <div className={`text-lg font-mono ml-3 ${hasValue ? 'text-white' : 'text-gray-600'}`}>
-        {formatValue(ind.value, meta)}
+      <div
+        className={`text-lg font-mono ml-3 ${hasValue ? 'text-white' : 'text-gray-600'}`}
+        title={showMonthAvg ? `该月均值(最新读数 ${formatValue(ind.value, meta)})` : undefined}
+      >
+        {showMonthAvg ? formatValue(ind.month_avg, meta) : formatValue(ind.value, meta)}
       </div>
     </div>
   );

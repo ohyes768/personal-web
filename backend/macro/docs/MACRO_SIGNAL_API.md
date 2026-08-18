@@ -133,6 +133,7 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
 | `indicators[].next_release_at` | string \| null | **下个周期预期发布日** 'YYYY-MM-DD',自报优先、后端规则兜底 |
 | `indicators[].next_release_note` | string \| null | 预期口径说明,如「CPI/PPI 约每月9日发布上月数据」 |
 | `indicators[].frequency` | 'daily' \| 'monthly' \| null | **发布频率**(自报优先、规则表推导);日频前端不渲染「下次」段,只显示「日频」标记 |
+| `indicators[].month_avg` | number \| null | **日频指标的月均值**(skill 计算,与 value 同采样月,后端透传不计算);历史月卡片主数值位显示月均并标注「月均」,当月卡片显示最新日度值;月频指标与占位指标恒为 null,旧 skill JSON 无此字段亦为 null(前端回退显示单日值) |
 | `indicators[].updated_at` | string \| null | **兼容别名** = `data_date`,后端双写过渡,前端迁移完成后删除 |
 
 #### 指标级三时间的来源优先级
@@ -143,8 +144,9 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
 | `analyzed_at` | `indicator_meta[key].analyzed_at` | 组级 `generated_at`(risk_data 用子块 `fetched_at` → 顶层 `data.fetched_at`) → **文件 mtime(推送时间)** |
 | `next_release_at/note` | `indicator_meta[key].next_release` | 后端 `release_rules.py` 按指标规则推算 |
 | `frequency` | `indicator_meta[key].frequency`('daily'/'monthly') | 规则表 kind 推导(workdaily→daily,monthly/month_end→monthly) |
+| `month_avg` | `indicator_meta[key].month_avg`(数值) | 无兜底(后端不计算月均;非数值/缺失 → null) |
 
-risk_data.json 天然指标级:子块 `date` → `data_date`,子块 `fetched_at` → `analyzed_at`,子块 `next_release`/`frequency` → 自报下期预期与频率。
+risk_data.json 天然指标级:子块 `date` → `data_date`,子块 `fetched_at` → `analyzed_at`,子块 `next_release`/`frequency` → 自报下期预期与频率,子块 `month_avg` → `month_avg`。
 
 #### skill 自报契约(可选,向后兼容)
 
@@ -163,12 +165,25 @@ macro_signal.json 可选新增 `indicator_meta`,不新增也不影响现有兼�
       "analyzed_at": "2026-05-22T07:59:22Z",
       "next_release": { "date": "2026-06-09", "note": "CPI/PPI 约每月9日发布上月数据" },
       "frequency": "monthly"
+    },
+    "dr007": {
+      "data_date": "2026-05-21",
+      "frequency": "daily",
+      "month_avg": 1.65
     }
   }
 }
 ```
 
-risk_data.json 子块自报:`data.volume.next_release = { "date": ..., "note": ... }`、`data.volume.frequency = "daily"`(turnover/margin 同理)。
+`month_avg` 契约(macro-fin-skill 侧配套,本仓库只透传):
+- **语义**:该指标 `data_date` 所在月的日频读数算术平均;历史月 = 全月终值,
+  当月推送 = 本月至今均值(月未走完,口径为截至今日)。
+- **位置**:macro_signal.json 放 `indicator_meta[key].month_avg`,
+  risk_data.json 放 `data.{volume,turnover,margin}.month_avg`(子块级)。
+- **仅日频指标输出**;月频指标与占位指标恒为 null。
+- 与 `value` 同采样月绑定,跟随按月过滤,不单独做月份匹配。
+
+risk_data.json 子块自报:`data.volume.next_release = { "date": ..., "note": ... }`、`data.volume.frequency = "daily"`、`data.volume.month_avg = 17800.5`(turnover/margin 同理)。
 
 #### 后端兜底规则表(`src/services/release_rules.py`)
 

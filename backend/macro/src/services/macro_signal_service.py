@@ -191,6 +191,7 @@ class MacroSignalService:
                 nr_at, nr_note = self._resolve_next_release(key, ind_date, m.get("next_release"))
                 freq = m.get("frequency")
                 freq = freq if freq in ("daily", "monthly") else get_frequency(key)
+                month_avg = m.get("month_avg")
                 indicators.append(MacroIndicator(
                     key=key,
                     value=float(value),
@@ -264,6 +265,7 @@ class MacroSignalService:
             nr_at, nr_note = self._resolve_next_release(ind_key, ind_date, block.get("next_release"))
             freq = block.get("frequency")
             freq = freq if freq in ("daily", "monthly") else get_frequency(ind_key)
+            month_avg = block.get("month_avg")
             indicators.append(MacroIndicator(
                 key=ind_key,
                 value=block.get(field),
@@ -273,6 +275,7 @@ class MacroSignalService:
                 next_release_at=nr_at,
                 next_release_note=nr_note,
                 frequency=freq,
+                month_avg=float(month_avg) if isinstance(month_avg, (int, float)) else None,
             ))
 
         # score.total_score 是维度总分(0-100,skill 评分框架输出)
