@@ -63,8 +63,6 @@ export interface MacroSignalSnapshot {
 export interface MacroSignalTabProps {
   /** 月份数据加载函数:fetch /api/macro/signal,返回 null=该月无数据 */
   loadSnapshot: (month: string) => Promise<MacroSignalSnapshot | null>;
-  /** 可切换的月份列表(YYYY-MM) */
-  availableMonths: string[];
   /** 初始选中的月份 'YYYY-MM';不传则取 availableMonths 排序后最大值 */
   initialMonth?: string;
   /** 指标跳转回调(若该指标已有对应的曲线图 Tab),父级透传 setActiveTab */

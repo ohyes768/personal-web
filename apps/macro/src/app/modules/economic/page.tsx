@@ -6,7 +6,7 @@
  */
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
@@ -70,6 +70,7 @@ export default function EconomicPage() {
   // === 宏观信号数据源 ===
   // 直连后端 /api/macro/*:本地 dev 由 next.config.js rewrites 代理到 localhost:8094,
   // 生产由 nginx 反代到 macro 后端容器(后端未启动时 MacroSignalTab 显示 error 态)
+  // availableMonths 由 MacroSignalTab 内部懒加载（首屏不再为其发请求）
   const loadSnapshot = async (month: string): Promise<MacroSignalSnapshot | null> => {
     const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -77,13 +78,6 @@ export default function EconomicPage() {
     const body = await res.json() as { success?: boolean; data?: MacroSignalSnapshot };
     return body?.data ?? null;
   };
-  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
-  useEffect(() => {
-    fetch('/api/macro/months')
-      .then(r => (r.ok ? r.json() : { months: [] }))
-      .then(d => setAvailableMonths(Array.isArray(d?.months) ? d.months : []))
-      .catch(() => { /* 后端未启动时保持空数组,MacroSignalTab 会显示 error 态 */ });
-  }, []);
 
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
@@ -275,7 +269,6 @@ export default function EconomicPage() {
         <div hidden={activeTab !== 'macro-signal'}>
           <MacroSignalTab
             loadSnapshot={loadSnapshot}
-            availableMonths={availableMonths}
             onJumpToTab={setActiveTab}
           />
         </div>

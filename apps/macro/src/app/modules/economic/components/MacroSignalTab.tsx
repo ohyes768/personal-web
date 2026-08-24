@@ -27,7 +27,17 @@ function emptySnapshot(month: string): MacroSignalSnapshot {
   return { month, groups };
 }
 
-export function MacroSignalTab({ loadSnapshot, availableMonths, initialMonth, onJumpToTab }: MacroSignalTabProps) {
+export function MacroSignalTab({ loadSnapshot, initialMonth, onJumpToTab }: MacroSignalTabProps) {
+  // 懒加载可用月份：仅在 MacroSignalTab 实际挂载时才发请求，
+  // 默认 tab=treasury-exchange 时首屏不浪费一次小请求
+  const [availableMonths, setAvailableMonths] = useState<string[]>([]);
+  useEffect(() => {
+    fetch('/api/macro/months')
+      .then(r => (r.ok ? r.json() : { months: [] }))
+      .then(d => setAvailableMonths(Array.isArray(d?.months) ? d.months : []))
+      .catch(() => { /* 后端未启动时保持空数组,MonthSwitcher 会 fallback 到当前月 */ });
+  }, []);
+
   // 当前自然月始终可选:当月尚无数据时也要能切进去看「暂未获取+预期发布」
   const monthsWithNow = useMemo(
     () => Array.from(new Set([...availableMonths, currentYearMonth()])).sort(),
