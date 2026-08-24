@@ -105,6 +105,10 @@ class Settings(BaseSettings):
     # 中国国债数据起始日期
     china_bond_start_date: str = "2000-01-01"
 
+    # DR007（中国货币网7天质押式回购加权利率）数据起始日期
+    # 货币网公开历史自 2014-12 起，取 2015 起保留 1 年缓冲
+    dr007_start_date: str = "2015-01-01"
+
     # macro-fin-skill 输出目录(给后端读取各 JSON 用)
     # 默认本地开发路径,生产环境通过环境变量 MACRO_SIGNAL_DATA_DIR 覆盖
     macro_signal_data_dir: str = "F:/personal-projects/macro-fin-skill/skills"

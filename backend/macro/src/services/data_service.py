@@ -53,7 +53,8 @@ class DataService:
             "commodities": self.data_dir / "commodities.csv",
             "indices": self.data_dir / "indices.csv",
             "tga": self.data_dir / "tga.csv",
-            "hibor": self.data_dir / "hibor.csv"
+            "hibor": self.data_dir / "hibor.csv",
+            "dr007": self.data_dir / "dr007.csv"
         }
 
     def _ensure_file_exists(self, file_path: Path, columns: list) -> None:
@@ -344,6 +345,60 @@ class DataService:
         self._ensure_file_exists(self.files["hibor"], ["HIBOR_Overnight"])
         self.append_data("hibor", hibor_df)
         logger.info(f"已保存HIBOR数据，共 {len(hibor_df)} 条记录")
+
+    def save_dr007_data(self, df: pd.DataFrame, path=None) -> None:
+        """保存 DR007 数据到 dr007.csv（合并现有数据，避免覆盖丢历史）。
+
+        接受 DataFrame，列必须包含 ['date', 'dr007']。
+        - 空 df → 写入空文件（保留 header）便于首次建表
+        - 非空 → 与现有 CSV 合并（按 date 去重，保留新值），再按 date 升序写入
+
+        Args:
+            df: 待写入的 DataFrame（必须有 'date' / 'dr007' 列）
+            path: 目标 CSV 路径，默认 backend/macro/data/dr007.csv
+        """
+        if path is None:
+            path = self.files["dr007"]
+
+        if df.empty:
+            self._ensure_file_exists(path, ["dr007"])
+            logger.info("DR007 数据为空，仅写入空文件")
+            return
+
+        if "date" not in df.columns or "dr007" not in df.columns:
+            raise ValueError("DR007 DataFrame 必须包含 'date' 和 'dr007' 列")
+
+        new_part = df[["date", "dr007"]].copy()
+        new_part["date"] = pd.to_datetime(new_part["date"])
+        new_part = new_part.set_index("date").sort_index()
+
+        # 与现有 CSV 合并，避免 fetcher 返回部分数据时丢历史
+        existing = self.load_dr007(path)
+        if not existing.empty:
+            # 旧值在前，新值在后（drop_duplicates keep='last' 保证新值覆盖旧值）
+            combined = pd.concat([existing, new_part])
+            combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+        else:
+            combined = new_part
+
+        self._ensure_file_exists(path, ["dr007"])
+        combined.to_csv(path)
+        logger.info(f"已保存 DR007 数据，共 {len(combined)} 条记录")
+
+    def load_dr007(self, path=None) -> pd.DataFrame:
+        """从 dr007.csv 读取 DataFrame（index=date, columns=['dr007']）。"""
+        if path is None:
+            path = self.files["dr007"]
+        if not path.exists():
+            return pd.DataFrame()
+        try:
+            df = pd.read_csv(path, index_col=0, parse_dates=True)
+            if "dr007" not in df.columns:
+                return pd.DataFrame()
+            return df
+        except Exception as e:
+            logger.error(f"加载 DR007 失败: {e}")
+            return pd.DataFrame()
 
     def _save_china_bond(self, data: Dict[str, pd.Series]) -> None:
         """保存中国国债数据
@@ -639,7 +694,8 @@ class DataService:
                 "DJI": []
             },
             "tga": [],
-            "hibor": []
+            "hibor": [],
+            "dr007": []
         }
 
         # 加载美国国债数据
@@ -866,6 +922,17 @@ class DataService:
                 hibor_full = hibor_data.reindex(target_index, method="ffill")
                 hibor_aligned = hibor_full[(hibor_full.index >= start_date) & (hibor_full.index <= end_date)]
                 result["hibor"] = hibor_aligned["HIBOR_Overnight"].tolist()
+
+        # 加载DR007（中国货币网7天质押式回购加权利率，日频）
+        dr007_data = self.load_dr007()
+        if not dr007_data.empty:
+            dr007_data = dr007_data.ffill()
+            dr007_filtered = dr007_data[(dr007_data.index >= start_date) & (dr007_data.index <= end_date)]
+            if "dr007" in dr007_filtered.columns and not dr007_filtered.empty:
+                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                dr007_full = dr007_data.reindex(target_index, method="ffill")
+                dr007_aligned = dr007_full[(dr007_full.index >= start_date) & (dr007_full.index <= end_date)]
+                result["dr007"] = dr007_aligned["dr007"].tolist()
 
         return result
 

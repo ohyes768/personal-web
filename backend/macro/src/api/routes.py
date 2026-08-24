@@ -31,6 +31,8 @@ from src.models import (
     TGAUpdateData,
     HIBORData,
     HIBORUpdateData,
+    DR007Data,
+    DR007UpdateData,
     FundFlowData,
     FundFlow,
     FundFlowUpdateData,
@@ -54,6 +56,7 @@ from src.services.ecb_service import get_ecb_service
 from src.services.data_service import get_data_service
 from src.services.vix_service import get_vix_service
 from src.services.hibor_service import get_hibor_service
+from src.services.dr007_service import get_dr007_service
 from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
@@ -1013,7 +1016,7 @@ def health_check():
 
         # 获取最后更新时间
         last_updates = {}
-        for data_type in ["us_treasuries", "eu_bonds", "jp_bonds", "exchange_rates", "vix", "fund_flow", "china_bond", "ted_spread", "indices", "tga", "hibor"]:
+        for data_type in ["us_treasuries", "eu_bonds", "jp_bonds", "exchange_rates", "vix", "fund_flow", "china_bond", "ted_spread", "indices", "tga", "hibor", "dr007"]:
             last_date = data_service.get_last_date(data_type)
             if last_date:
                 last_updates[data_type] = last_date.strftime("%Y-%m-%d")
@@ -2477,3 +2480,141 @@ async def upload_skill_json(
         "bytes": path.stat().st_size,
         "archived_month": archived_month,
     }
+
+
+@router.post("/fetch/dr007/history", response_model=UpdateResponse)
+async def fetch_dr007_history():
+    """获取 DR007（中国货币网7天质押式回购加权利率）历史数据接口
+
+    数据源：中国货币网 prr-chrt.csv
+    起始日期：settings.dr007_start_date（默认 2015-01-01）
+    """
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS"
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始获取 DR007 历史数据...")
+        dr007_service = get_dr007_service()
+        data_service = get_data_service()
+
+        latest_end = pd.Timestamp.now().normalize()
+        start_date = pd.Timestamp(settings.dr007_start_date)
+
+        logger.info(f"获取 DR007 历史数据，从 {start_date} 到 {latest_end}")
+
+        dr007_df = await dr007_service.fetch_history(start_date, latest_end)
+
+        if dr007_df.empty:
+            raise Exception("未能获取到任何 DR007 数据")
+
+        data_service.save_dr007_data(dr007_df)
+
+        last_idx = dr007_df["date"].iloc[-1]
+        last_val = dr007_df["dr007"].iloc[-1]
+        dr007_latest = DR007Data(
+            date=last_idx.date() if last_idx is not None else latest_end.date(),
+            value=float(last_val) if last_val is not None else None,
+        )
+
+        response_data = DR007UpdateData(dr007=dr007_latest)
+
+        logger.info("DR007 历史数据获取成功")
+        return UpdateResponse(
+            success=True,
+            message="DR007 历史数据获取成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"获取 DR007 历史数据失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"获取 DR007 历史数据失败: {str(e)}",
+            error_code="UPDATE_FAILED"
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/dr007", response_model=UpdateResponse)
+async def update_dr007():
+    """增量更新 DR007 数据 - 拉取 CSV 最后一行的下一天到今天"""
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS"
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始增量更新 DR007 数据...")
+        dr007_service = get_dr007_service()
+        data_service = get_data_service()
+
+        latest_end = pd.Timestamp.now().normalize()
+        start_date = _compute_incremental_start(data_service, "dr007", latest_end)
+
+        if start_date is None or start_date > latest_end:
+            logger.info("DR007 数据已是最新，无需更新")
+            return UpdateResponse(
+                success=True,
+                message="DR007 数据已是最新，无需更新",
+                data=DR007UpdateData(dr007=DR007Data(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
+
+        logger.info(f"增量更新 DR007 数据，从 {start_date} 到 {latest_end}")
+
+        dr007_df = await dr007_service.fetch_latest(start_date, latest_end)
+
+        if dr007_df.empty:
+            # 货币网 CSV 在区间内无新数据（节假日 / 数据尚未发布）→ 视为已是最新，不抛错
+            logger.info(f"DR007 区间 [{start_date}, {latest_end}] 无新数据，跳过")
+            return UpdateResponse(
+                success=True,
+                message="DR007 数据已是最新，无需更新",
+                data=DR007UpdateData(dr007=DR007Data(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
+
+        data_service.save_dr007_data(dr007_df)
+
+        last_idx = dr007_df["date"].iloc[-1]
+        last_val = dr007_df["dr007"].iloc[-1]
+        dr007_latest = DR007Data(
+            date=last_idx.date() if last_idx is not None else latest_end.date(),
+            value=float(last_val) if last_val is not None else None,
+        )
+
+        response_data = DR007UpdateData(dr007=dr007_latest)
+
+        logger.info("DR007 数据增量更新成功")
+        return UpdateResponse(
+            success=True,
+            message="DR007 数据增量更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"DR007 数据增量更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"DR007 数据增量更新失败: {str(e)}",
+            error_code="UPDATE_FAILED"
+        )
+    finally:
+        release_update_lock()

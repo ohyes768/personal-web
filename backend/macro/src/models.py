@@ -124,6 +124,19 @@ class HIBORUpdateData(BaseModel):
     hibor: HIBORData
 
 
+class DR007Data(BaseModel):
+    """DR007（中国货币网7天质押式回购加权利率，单位：%）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class DR007UpdateData(BaseModel):
+    """DR007 更新响应数据"""
+
+    dr007: DR007Data
+
+
 class FundFlowData(BaseModel):
     """资金流向数据"""
 
@@ -228,6 +241,7 @@ class UpdateResponse(BaseModel):
         | TedSpreadUpdateData
         | CommoditiesUpdateData
         | IndicesUpdateData
+        | DR007UpdateData
     ] = None
     updated_at: Optional[str] = None
     error_code: Optional[str] = None
