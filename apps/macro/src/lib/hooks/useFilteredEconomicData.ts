@@ -41,6 +41,7 @@ function getDefaultEconomicData(): EconomicDataResponse {
     indices: { HKHSI: [], SH000001: [], SPX: [], IXIC: [], DJI: [] },
     tga: [],
     hibor: [],
+    dr007: [],
   };
 }
 
@@ -197,6 +198,7 @@ export function useFilteredEconomicData(
         : undefined,
       tga: processedData.tga?.slice(startIndex, endIndex) ?? [],
       hibor: processedData.hibor?.slice(startIndex, endIndex) ?? [],
+      dr007: processedData.dr007?.slice(startIndex, endIndex) ?? [],
     };
 
     const result = filterDataByTab(timeFiltered, tabType, timeRange);

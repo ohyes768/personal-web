@@ -91,6 +91,7 @@ export interface EconomicDataResponse {
   };
   tga?: (number | null)[];     // 单位：百万美元（前端展示 ÷1e5 转千亿美元）
   hibor?: (number | null)[];   // 单位：%
+  dr007?: (number | null)[];   // 单位：%（中国货币网7天质押式回购加权利率）
 }
 
 /** 图表数据系列 */
