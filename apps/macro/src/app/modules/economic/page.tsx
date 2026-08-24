@@ -60,8 +60,8 @@ export default function EconomicPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
 
-  // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isCached/isFullRange
-  const { fullData, isLoading, error, isCached, isFullRange } = useFullEconomicData(refreshKey);
+  // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isFullRange
+  const { fullData, isLoading, error, isFullRange } = useFullEconomicData(refreshKey);
 
   // ALL 档 + 后台全量数据未就绪 → 沿用首屏 loading 视觉
   // 避免"半张图"（阶段 1 只有 1Y，ALL 档画不满）
@@ -191,7 +191,6 @@ export default function EconomicPage() {
             fullData={fullData}
             isLoading={isLoadingForTab}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'bonds'}>
@@ -203,7 +202,6 @@ export default function EconomicPage() {
             fullData={fullData}
             isLoading={isLoadingForTab}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'comparison'}>
@@ -215,7 +213,6 @@ export default function EconomicPage() {
             fullData={fullData}
             isLoading={isLoadingForTab}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'commodities'}>
@@ -227,7 +224,6 @@ export default function EconomicPage() {
             fullData={fullData}
             isLoading={isLoadingForTab}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'stock-indices'}>
@@ -239,7 +235,6 @@ export default function EconomicPage() {
             fullData={fullData}
             isLoading={isLoadingForTab}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'liquidity-risk'}>
@@ -251,7 +246,6 @@ export default function EconomicPage() {
             fullData={fullData}
             isLoading={isLoadingForTab}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'rates'}>
@@ -263,7 +257,6 @@ export default function EconomicPage() {
             fullData={fullData}
             isLoading={isLoadingForTab}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'macro-signal'}>

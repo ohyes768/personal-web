@@ -27,7 +27,6 @@ interface LiquidityTabProps {
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
-  isCached: boolean;
 }
 
 export function LiquidityTab({
@@ -38,7 +37,6 @@ export function LiquidityTab({
   fullData,
   isLoading,
   error,
-  isCached,
 }: LiquidityTabProps) {
   const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
@@ -47,7 +45,6 @@ export function LiquidityTab({
       <div className="flex items-center gap-6 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
         <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="liquidity-risk" />
-        {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
           onInit={economicApi.initLiquidityHistory}
           storageKey="last_initialized_macro_liquidity"

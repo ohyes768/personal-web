@@ -25,7 +25,6 @@ interface TreasuryExchangeTabProps {
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
-  isCached: boolean;
 }
 
 export function TreasuryExchangeTab({
@@ -36,7 +35,6 @@ export function TreasuryExchangeTab({
   fullData,
   isLoading,
   error,
-  isCached,
 }: TreasuryExchangeTabProps) {
   const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
@@ -50,7 +48,6 @@ export function TreasuryExchangeTab({
       <div className="flex items-center gap-6 mb-8 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
         <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="treasury-exchange" />
-        {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
           onInit={economicApi.initHistory}
           storageKey="last_initialized_macro_data"

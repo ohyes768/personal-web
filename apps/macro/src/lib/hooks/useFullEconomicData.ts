@@ -11,8 +11,6 @@
  * localStorage 缓存已移除：
  * - HTTP 响应头 Cache-Control: public, max-age=300（后端）让浏览器 disk cache 覆盖 TTL 内访问
  * - 几 MB JSON 同步 parse 阻塞主线程 + 写入常超 5MB 配额静默失败
- * - isCached 字段保留以兼容现有 Tab 组件 props，移除 localStorage 后恒 false
- *   （"（缓存）" UI 标签的归宿见 .trellis/tasks/08-24-macro-page-perf/prd.md P2 死代码项）
  *
  * 关键点：
  * - 首屏用 native fetch 直连 /api/macro/data，不走 economicApi 抽象，
@@ -28,7 +26,6 @@ export interface UseFullEconomicDataResult {
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
-  isCached: boolean;
   /** 当前 fullData 是否覆盖到 ALL 时间范围（true 后 ALL 档可正常渲染） */
   isFullRange: boolean;
 }
@@ -96,7 +93,6 @@ export function useFullEconomicData(
   const [fullData, setFullData] = useState<EconomicDataResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isCached] = useState(false); // 恒 false（保留字段以兼容 Tab 组件 props）
   const [isFullRange, setIsFullRange] = useState(false);
 
   useEffect(() => {
@@ -192,7 +188,6 @@ export function useFullEconomicData(
     fullData: safeFullData,
     isLoading,
     error,
-    isCached,
     isFullRange,
   };
 }
