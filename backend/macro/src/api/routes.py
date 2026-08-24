@@ -1,6 +1,6 @@
 """API 路由模块"""
 print("[INIT-20260303-0942] routes.py 模块已加载")
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Header, Response
 from datetime import datetime, timedelta
 import hmac
 import pandas as pd
@@ -968,11 +968,20 @@ async def update_data():
 
 
 @router.get("/data", response_model=DataResponse)
-async def get_data(
+def get_data(
+    response: Response,
     start_date: Optional[str] = Query(None, description="起始日期 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)"),
 ):
-    """查询数据接口 - 前端调用此接口获取展示数据"""
+    """查询数据接口 - 前端调用此接口获取展示数据
+
+    改 def（非 async def）：FastAPI 自动丢线程池跑同步 handler，
+    避免 pandas 读 12 个 CSV 阻塞事件循环（之前 async + 同步阻塞
+    会让 /signal /months /health 全部排队）。
+    数据日更，HTTP 缓存 5 分钟安全：浏览器/代理可命中磁盘缓存，
+    免去 localStorage TTL 过期后每次重拉几 MB JSON。
+    前端手动刷新（refreshKey>0）配 fetch cache:'reload' 绕过。
+    """
     try:
         logger.info(f"查询数据: start_date={start_date}, end_date={end_date}")
         data_service = get_data_service()
@@ -980,6 +989,7 @@ async def get_data(
         data = data_service.query_data(start_date, end_date)
 
         logger.info("数据查询成功")
+        response.headers["Cache-Control"] = "public, max-age=300"
         return DataResponse(success=True, message="数据查询成功", data=data)
 
     except Exception as e:
@@ -992,8 +1002,12 @@ async def get_data(
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check():
-    """健康检查接口"""
+def health_check():
+    """健康检查接口
+
+    改 def：循环读 11 个 CSV，同 /data 性质，且是 docker healthcheck
+    周期调用的端点，阻塞事件循环会拖累监控。FastAPI 线程池自动承载。
+    """
     try:
         data_service = get_data_service()
 

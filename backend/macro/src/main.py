@@ -1,6 +1,7 @@
 """FastAPI 应用主入口"""
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from src.api.routes import router
 from src.utils.logger import setup_logger
 from src.config import get_settings
@@ -24,6 +25,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# gzip 压缩：/api/data 全量 JSON 几 MB，压缩率 ~90%。
+# add 在 CORS 之后 = 外层包裹，让响应先经 CORS 头加好再压缩。
+# minimum_size=1024 避免压缩小响应得不偿失（nginx gzip_min_length 也是 1024，两端对齐）。
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # 注册路由
 app.include_router(router)
