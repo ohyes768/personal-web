@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/08-24-macro-page-perf/prd.md", "reason": "任务需求、约束与验收标准（P0/P1 范围划分）"}
+{"file": ".trellis/tasks/08-24-macro-page-perf/design.md", "reason": "技术设计：gzip 两层方案、handler 线程池化、Cache-Control、前端分层加载细节与风险"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨 nginx/后端/前端三层，改动需保持生产与 dev 链路行为一致"}
