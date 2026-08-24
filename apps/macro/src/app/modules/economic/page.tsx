@@ -60,8 +60,12 @@ export default function EconomicPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
 
-  // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isCached
-  const { fullData, isLoading, error, isCached } = useFullEconomicData(refreshKey);
+  // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isCached/isFullRange
+  const { fullData, isLoading, error, isCached, isFullRange } = useFullEconomicData(refreshKey);
+
+  // ALL 档 + 后台全量数据未就绪 → 沿用首屏 loading 视觉
+  // 避免"半张图"（阶段 1 只有 1Y，ALL 档画不满）
+  const isLoadingForTab = isLoading || (activeTab !== 'macro-signal' && timeRange === 'ALL' && !isFullRange);
 
   // === 宏观信号数据源 ===
   // 直连后端 /api/macro/*:本地 dev 由 next.config.js rewrites 代理到 localhost:8094,
@@ -191,7 +195,7 @@ export default function EconomicPage() {
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
             fullData={fullData}
-            isLoading={isLoading}
+            isLoading={isLoadingForTab}
             error={error}
             isCached={isCached}
           />
@@ -203,7 +207,7 @@ export default function EconomicPage() {
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
             fullData={fullData}
-            isLoading={isLoading}
+            isLoading={isLoadingForTab}
             error={error}
             isCached={isCached}
           />
@@ -215,7 +219,7 @@ export default function EconomicPage() {
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
             fullData={fullData}
-            isLoading={isLoading}
+            isLoading={isLoadingForTab}
             error={error}
             isCached={isCached}
           />
@@ -227,7 +231,7 @@ export default function EconomicPage() {
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
             fullData={fullData}
-            isLoading={isLoading}
+            isLoading={isLoadingForTab}
             error={error}
             isCached={isCached}
           />
@@ -239,7 +243,7 @@ export default function EconomicPage() {
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
             fullData={fullData}
-            isLoading={isLoading}
+            isLoading={isLoadingForTab}
             error={error}
             isCached={isCached}
           />
@@ -251,7 +255,7 @@ export default function EconomicPage() {
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
             fullData={fullData}
-            isLoading={isLoading}
+            isLoading={isLoadingForTab}
             error={error}
             isCached={isCached}
           />
@@ -263,7 +267,7 @@ export default function EconomicPage() {
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
             fullData={fullData}
-            isLoading={isLoading}
+            isLoading={isLoadingForTab}
             error={error}
             isCached={isCached}
           />
