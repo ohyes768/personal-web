@@ -54,7 +54,10 @@ class DataService:
             "indices": self.data_dir / "indices.csv",
             "tga": self.data_dir / "tga.csv",
             "hibor": self.data_dir / "hibor.csv",
-            "dr007": self.data_dir / "dr007.csv"
+            "dr007": self.data_dir / "dr007.csv",
+            "volume": self.data_dir / "volume.csv",
+            "turnover": self.data_dir / "turnover.csv",
+            "margin": self.data_dir / "margin.csv"
         }
 
     def _ensure_file_exists(self, file_path: Path, columns: list) -> None:
@@ -400,6 +403,81 @@ class DataService:
             logger.error(f"加载 DR007 失败: {e}")
             return pd.DataFrame()
 
+    def save_volume_data(self, df: pd.DataFrame, path=None) -> None:
+        """保存两市成交额到 volume.csv（合并现有数据，append + 去重）。"""
+        self._save_market_sentiment_data(df, "volume", "total_amount_yi", path)
+
+    def load_volume(self, path=None) -> pd.DataFrame:
+        """从 volume.csv 读取 DataFrame（index=date, columns=['total_amount_yi']）"""
+        return self._load_market_sentiment_data(path or self.files["volume"], "total_amount_yi")
+
+    def save_turnover_data(self, df: pd.DataFrame, path=None) -> None:
+        """保存换手率到 turnover.csv（合并现有数据）。"""
+        self._save_market_sentiment_data(df, "turnover", "turnover_rate", path)
+
+    def load_turnover(self, path=None) -> pd.DataFrame:
+        """从 turnover.csv 读取 DataFrame"""
+        return self._load_market_sentiment_data(path or self.files["turnover"], "turnover_rate")
+
+    def save_margin_data(self, df: pd.DataFrame, path=None) -> None:
+        """保存融资余额到 margin.csv（合并现有数据）。"""
+        self._save_market_sentiment_data(df, "margin", "margin_balance_yi", path)
+
+    def load_margin(self, path=None) -> pd.DataFrame:
+        """从 margin.csv 读取 DataFrame"""
+        return self._load_market_sentiment_data(path or self.files["margin"], "margin_balance_yi")
+
+    def _save_market_sentiment_data(
+        self, df: pd.DataFrame, indicator: str, value_col: str, path=None
+    ) -> None:
+        """市场情绪数据通用保存逻辑（参考 save_dr007_data 合并写模式）。
+
+        Args:
+            df: 待写入的 DataFrame（必须有 'date' 和 value_col 两列）
+            indicator: 指标名（用于日志）
+            value_col: CSV 中的数值列名
+            path: 目标 CSV 路径
+        """
+        if path is None:
+            path = self.files[indicator]
+
+        if df.empty:
+            self._ensure_file_exists(path, [value_col])
+            logger.info("%s 数据为空，仅写入空文件", indicator)
+            return
+
+        if "date" not in df.columns or value_col not in df.columns:
+            raise ValueError(f"{indicator} DataFrame 必须包含 'date' 和 '{value_col}' 列")
+
+        new_part = df[["date", value_col]].copy()
+        new_part["date"] = pd.to_datetime(new_part["date"])
+        new_part = new_part.set_index("date").sort_index()
+
+        # 与现有 CSV 合并
+        existing = self._load_market_sentiment_data(path, value_col)
+        if not existing.empty:
+            combined = pd.concat([existing, new_part])
+            combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+        else:
+            combined = new_part
+
+        self._ensure_file_exists(path, [value_col])
+        combined.to_csv(path)
+        logger.info(f"已保存 {indicator} 数据，共 {len(combined)} 条记录")
+
+    def _load_market_sentiment_data(self, path, value_col: str) -> pd.DataFrame:
+        """从 market_sentiment CSV 读取 DataFrame（index=date, columns=[value_col]）"""
+        if not path.exists():
+            return pd.DataFrame()
+        try:
+            df = pd.read_csv(path, index_col=0, parse_dates=True)
+            if value_col not in df.columns:
+                return pd.DataFrame()
+            return df
+        except Exception as e:
+            logger.error(f"加载 {path.name} 失败: {e}")
+            return pd.DataFrame()
+
     def _save_china_bond(self, data: Dict[str, pd.Series]) -> None:
         """保存中国国债数据
 
@@ -695,7 +773,10 @@ class DataService:
             },
             "tga": [],
             "hibor": [],
-            "dr007": []
+            "dr007": [],
+            "volume": [],
+            "turnover": [],
+            "margin": [],
         }
 
         # 加载美国国债数据
@@ -933,6 +1014,39 @@ class DataService:
                 dr007_full = dr007_data.reindex(target_index, method="ffill")
                 dr007_aligned = dr007_full[(dr007_full.index >= start_date) & (dr007_full.index <= end_date)]
                 result["dr007"] = dr007_aligned["dr007"].tolist()
+
+        # 加载两市成交额（沪+深合计，日频）
+        volume_data = self.load_volume()
+        if not volume_data.empty:
+            volume_data = volume_data.ffill()
+            volume_filtered = volume_data[(volume_data.index >= start_date) & (volume_data.index <= end_date)]
+            if "total_amount_yi" in volume_filtered.columns and not volume_filtered.empty:
+                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                volume_full = volume_data.reindex(target_index, method="ffill")
+                volume_aligned = volume_full[(volume_full.index >= start_date) & (volume_full.index <= end_date)]
+                result["volume"] = volume_aligned["total_amount_yi"].tolist()
+
+        # 加载两市加权换手率（沪+深按成交额加权，日频）
+        turnover_data = self.load_turnover()
+        if not turnover_data.empty:
+            turnover_data = turnover_data.ffill()
+            turnover_filtered = turnover_data[(turnover_data.index >= start_date) & (turnover_data.index <= end_date)]
+            if "turnover_rate" in turnover_filtered.columns and not turnover_filtered.empty:
+                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                turnover_full = turnover_data.reindex(target_index, method="ffill")
+                turnover_aligned = turnover_full[(turnover_full.index >= start_date) & (turnover_full.index <= end_date)]
+                result["turnover"] = turnover_aligned["turnover_rate"].tolist()
+
+        # 加载融资余额（沪+深合计，日频）
+        margin_data = self.load_margin()
+        if not margin_data.empty:
+            margin_data = margin_data.ffill()
+            margin_filtered = margin_data[(margin_data.index >= start_date) & (margin_data.index <= end_date)]
+            if "margin_balance_yi" in margin_filtered.columns and not margin_filtered.empty:
+                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                margin_full = margin_data.reindex(target_index, method="ffill")
+                margin_aligned = margin_full[(margin_full.index >= start_date) & (margin_full.index <= end_date)]
+                result["margin"] = margin_aligned["margin_balance_yi"].tolist()
 
         return result
 

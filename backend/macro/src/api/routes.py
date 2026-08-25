@@ -33,6 +33,12 @@ from src.models import (
     HIBORUpdateData,
     DR007Data,
     DR007UpdateData,
+    VolumeData,
+    VolumeUpdateData,
+    TurnoverData,
+    TurnoverUpdateData,
+    MarginData,
+    MarginUpdateData,
     FundFlowData,
     FundFlow,
     FundFlowUpdateData,
@@ -57,6 +63,9 @@ from src.services.data_service import get_data_service
 from src.services.vix_service import get_vix_service
 from src.services.hibor_service import get_hibor_service
 from src.services.dr007_service import get_dr007_service
+from src.services.volume_service import get_volume_service
+from src.services.turnover_service import get_turnover_service
+from src.services.margin_service import get_margin_service
 from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
@@ -1016,7 +1025,7 @@ def health_check():
 
         # 获取最后更新时间
         last_updates = {}
-        for data_type in ["us_treasuries", "eu_bonds", "jp_bonds", "exchange_rates", "vix", "fund_flow", "china_bond", "ted_spread", "indices", "tga", "hibor", "dr007"]:
+        for data_type in ["us_treasuries", "eu_bonds", "jp_bonds", "exchange_rates", "vix", "fund_flow", "china_bond", "ted_spread", "indices", "tga", "hibor", "dr007", "volume", "turnover", "margin"]:
             last_date = data_service.get_last_date(data_type)
             if last_date:
                 last_updates[data_type] = last_date.strftime("%Y-%m-%d")
@@ -2615,6 +2624,184 @@ async def update_dr007():
             success=False,
             message=f"DR007 数据增量更新失败: {str(e)}",
             error_code="UPDATE_FAILED"
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/volume", response_model=UpdateResponse)
+async def update_volume():
+    """当日更新两市成交额（沪深交易所官方 API 当日点）
+
+    适用调度：每个交易日盘后 16:30 触发。
+    """
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始当日更新两市成交额...")
+        volume_service = get_volume_service()
+        data_service = get_data_service()
+
+        result = await volume_service.fetch_today()
+
+        if result["status"] == "failed":
+            raise Exception(f"两市成交额获取失败: SSE={result.get('sse_amount_yi')} SZSE={result.get('szse_amount_yi')}")
+
+        # 单值转 DataFrame（save_volume_data 要求 DataFrame 格式）
+        df = pd.DataFrame({
+            "date": [pd.Timestamp(result["date"])],
+            "total_amount_yi": [result["total_amount_yi"]],
+        })
+        data_service.save_volume_data(df)
+
+        volume_latest = VolumeData(
+            date=pd.Timestamp(result["date"]).date(),
+            value=float(result["total_amount_yi"]) if result["total_amount_yi"] is not None else None,
+        )
+        response_data = VolumeUpdateData(volume=volume_latest)
+
+        logger.info(
+            "两市成交额当日更新成功: date=%s, total=%.2f亿",
+            result["date"], result["total_amount_yi"] or 0,
+        )
+        return UpdateResponse(
+            success=True,
+            message="两市成交额更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"两市成交额更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"两市成交额更新失败: {str(e)}",
+            error_code="UPDATE_FAILED",
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/turnover", response_model=UpdateResponse)
+async def update_turnover():
+    """当日更新两市换手率（沪深交易所官方 API 当日点）"""
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始当日更新两市换手率...")
+        turnover_service = get_turnover_service()
+        data_service = get_data_service()
+
+        result = await turnover_service.fetch_today()
+
+        if result["status"] == "failed":
+            raise Exception(f"两市换手率获取失败: result={result}")
+
+        df = pd.DataFrame({
+            "date": [pd.Timestamp(result["date"])],
+            "turnover_rate": [result["turnover_rate"]],
+        })
+        data_service.save_turnover_data(df)
+
+        turnover_latest = TurnoverData(
+            date=pd.Timestamp(result["date"]).date(),
+            value=float(result["turnover_rate"]) if result["turnover_rate"] is not None else None,
+        )
+        response_data = TurnoverUpdateData(turnover=turnover_latest)
+
+        logger.info(
+            "两市换手率当日更新成功: date=%s, rate=%.4f%%",
+            result["date"], result["turnover_rate"] or 0,
+        )
+        return UpdateResponse(
+            success=True,
+            message="两市换手率更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"两市换手率更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"两市换手率更新失败: {str(e)}",
+            error_code="UPDATE_FAILED",
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/margin", response_model=UpdateResponse)
+async def update_margin():
+    """当日更新融资余额（akshare 当日点，T-1 数据 09:45+ 可用）"""
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始当日更新融资余额...")
+        margin_service = get_margin_service()
+        data_service = get_data_service()
+
+        result = margin_service.fetch_today()
+
+        if result["status"] == "failed":
+            raise Exception(f"融资余额获取失败: {result.get('error', 'unknown')}")
+
+        df = pd.DataFrame({
+            "date": [pd.Timestamp(result["date"])],
+            "margin_balance_yi": [result["rzye"]],
+        })
+        data_service.save_margin_data(df)
+
+        margin_latest = MarginData(
+            date=pd.Timestamp(result["date"]).date(),
+            value=float(result["rzye"]) if result["rzye"] is not None else None,
+        )
+        response_data = MarginUpdateData(margin=margin_latest)
+
+        logger.info(
+            "融资余额当日更新成功: date=%s, balance=%.2f亿",
+            result["date"], result["rzye"] or 0,
+        )
+        return UpdateResponse(
+            success=True,
+            message="融资余额更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"融资余额更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"融资余额更新失败: {str(e)}",
+            error_code="UPDATE_FAILED",
         )
     finally:
         release_update_lock()

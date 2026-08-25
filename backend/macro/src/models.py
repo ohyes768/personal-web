@@ -137,6 +137,45 @@ class DR007UpdateData(BaseModel):
     dr007: DR007Data
 
 
+class VolumeData(BaseModel):
+    """两市合计成交额（单位：亿元）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class VolumeUpdateData(BaseModel):
+    """两市成交额 更新响应数据"""
+
+    volume: VolumeData
+
+
+class TurnoverData(BaseModel):
+    """两市加权换手率（单位：%）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class TurnoverUpdateData(BaseModel):
+    """换手率 更新响应数据"""
+
+    turnover: TurnoverData
+
+
+class MarginData(BaseModel):
+    """融资余额（单位：亿元）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class MarginUpdateData(BaseModel):
+    """融资余额 更新响应数据"""
+
+    margin: MarginData
+
+
 class FundFlowData(BaseModel):
     """资金流向数据"""
 
@@ -242,6 +281,9 @@ class UpdateResponse(BaseModel):
         | CommoditiesUpdateData
         | IndicesUpdateData
         | DR007UpdateData
+        | VolumeUpdateData
+        | TurnoverUpdateData
+        | MarginUpdateData
     ] = None
     updated_at: Optional[str] = None
     error_code: Optional[str] = None
