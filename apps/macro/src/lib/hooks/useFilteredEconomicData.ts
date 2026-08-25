@@ -42,6 +42,9 @@ function getDefaultEconomicData(): EconomicDataResponse {
     tga: [],
     hibor: [],
     dr007: [],
+    volume: [],
+    turnover: [],
+    margin: [],
   };
 }
 
@@ -199,6 +202,9 @@ export function useFilteredEconomicData(
       tga: processedData.tga?.slice(startIndex, endIndex) ?? [],
       hibor: processedData.hibor?.slice(startIndex, endIndex) ?? [],
       dr007: processedData.dr007?.slice(startIndex, endIndex) ?? [],
+      volume: processedData.volume?.slice(startIndex, endIndex) ?? [],
+      turnover: processedData.turnover?.slice(startIndex, endIndex) ?? [],
+      margin: processedData.margin?.slice(startIndex, endIndex) ?? [],
     };
 
     const result = filterDataByTab(timeFiltered, tabType, timeRange);

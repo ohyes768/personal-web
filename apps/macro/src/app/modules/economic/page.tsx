@@ -55,6 +55,11 @@ const MacroSignalTab = dynamic(() => import('./components/MacroSignalTab').then(
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载宏观信号...</div>
 });
 
+const MarketSentimentTab = dynamic(() => import('./components/MarketSentimentTab').then(mod => ({ default: mod.MarketSentimentTab })), {
+  ssr: false,
+  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载市场情绪...</div>
+});
+
 export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
@@ -94,6 +99,8 @@ export default function EconomicPage() {
     } else if (tabId === 'liquidity-risk' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
     } else if (tabId === 'rates' && (timeRange === '3M' || timeRange === '1Y')) {
+      setTimeRange('6M');
+    } else if (tabId === 'market-sentiment' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
     }
   }, [timeRange]);
@@ -144,6 +151,11 @@ export default function EconomicPage() {
       id: 'macro-signal',
       label: '宏观信号',
       description: '当月 6 维度宏观判断卡片'
+    },
+    {
+      id: 'market-sentiment',
+      label: '市场情绪',
+      description: '两市成交额 + 换手率 + 融资余额（日级，由后端每日盘后调度追加）'
     }
   ];
 
@@ -263,6 +275,15 @@ export default function EconomicPage() {
           <MacroSignalTab
             loadSnapshot={loadSnapshot}
             onJumpToTab={setActiveTab}
+          />
+        </div>
+        <div hidden={activeTab !== 'market-sentiment'}>
+          <MarketSentimentTab
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            fullData={fullData}
+            isLoading={isLoadingForTab}
+            error={error}
           />
         </div>
       </div>
