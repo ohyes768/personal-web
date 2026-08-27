@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "check 需验证前后端契约一致:job 字段、status 枚举(success/partial/failed/skipped)、items 子明细结构、API 路径 rewrite"}

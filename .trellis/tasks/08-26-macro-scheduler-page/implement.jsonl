@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨后端 scheduler/路由/前端页面多层,数据流(API 路径、状态语义、items 结构)需跨层一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "从 dividend-select 复制 scheduler 模块而非抽象共享;该指南帮助判断复制 vs 复用的边界"}
