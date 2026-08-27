@@ -93,6 +93,14 @@ class ApiClient {
     });
   }
 
+  async patch<T>(endpoint: string, data?: any): Promise<T> {
+    const url = `${this.baseUrl}${endpoint}`;
+    return this.request<T>(url, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
   async put<T>(endpoint: string, data?: any): Promise<T> {
     const url = `${this.baseUrl}${endpoint}`;
     return this.request<T>(url, {
