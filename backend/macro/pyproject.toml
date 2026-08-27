@@ -15,6 +15,18 @@ dependencies = [
     "httpx>=0.27.0",
     "akshare>=1.14.0",
     "tenacity>=8.2.0",
+    "apscheduler>=3.10,<4.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: 单元测试（mock 外部依赖，速度快）",
+    "integration: 集成测试",
 ]
 
 [build-system]
