@@ -24,6 +24,7 @@ These guides help you **ask the right questions before coding**.
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
 | [Macro Signal Upload API](./macro-signal-upload.md) | agent 推送宏观信号 JSON 的接口契约（路径、token、白名单、payload、落盘） | 维护 macro-fin-skill 子 skill、对接 `/api/macro/signal/upload` |
+| [Macro Daily Snapshot API](./macro-daily-snapshot.md) | 信号首页 · 日频快照契约(15:00 规则、asof 回退、跨层 key 对齐、禁用 query_data_by_tab 的原因) | 改 3 维度指标清单、日频取数或前端 DAILY_GROUPS |
 
 ---
 

@@ -413,3 +413,35 @@ class MacroSignalResponse(BaseModel):
 class MacroMonthsResponse(BaseModel):
     """GET /api/macro/months 响应"""
     months: List[str] = []  # 降序
+
+
+# === 日频快照数据模型(信号首页 · 日频模式) ===
+
+class DailyIndicator(BaseModel):
+    """日频快照单个指标
+
+    - value/prev_value: 所选日期(或回退)的值与其前一个有值日的值(前端算日变化)
+    - data_date: 实际数据日期;≠ 所选 date 即发生了回退(如 15:00 后当日未入库)
+    """
+    key: str                          # 与前端 INDICATOR_LABELS key 对齐
+    value: Optional[float] = None
+    prev_value: Optional[float] = None
+    data_date: Optional[str] = None   # 'YYYY-MM-DD'
+
+
+class DailyGroup(BaseModel):
+    """日频快照一个分组(3 大维度之一;无 skill 评分,故无 conclusion/total_score)"""
+    indicators: List[DailyIndicator] = []
+
+
+class DailySnapshotData(BaseModel):
+    """GET /api/macro/daily-snapshot 数据体"""
+    date: str                     # 实际生效日期 'YYYY-MM-DD'(date 参数或 15:00 规则推导)
+    dates: List[str] = []         # 可选日期列表(降序,A股交易日近 60 个 ∪ 今日)
+    groups: Dict[str, DailyGroup]  # 3 个 dimension key
+
+
+class DailySnapshotResponse(BaseModel):
+    """GET /api/macro/daily-snapshot 响应"""
+    success: bool = True
+    data: DailySnapshotData

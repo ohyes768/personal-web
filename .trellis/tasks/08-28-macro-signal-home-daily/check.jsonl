@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查前后端字段契约一致性与默认日期规则前后端行为一致"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "日频组件应复用 GROUP_META/getIndicatorMeta/INDICATOR_LINK_MAP 与月度组件样式,避免重复定义"}

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/macro-signal-upload.md", "reason": "月度 /signal GET 契约必须保持不变;skill 上传的数据结构决定了 MacroSignalSnapshot 类型对齐方式"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务横跨 FastAPI 后端契约与 Next.js 前端消费,新接口字段命名前后端需一致(DailyIndicator.key 与前端 INDICATOR_LABELS 对齐)"}

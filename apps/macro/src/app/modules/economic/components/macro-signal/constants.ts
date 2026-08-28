@@ -1,7 +1,7 @@
 /**
  * 宏观信号分组的元数据 + 指标中文翻译表
  */
-import type { DimensionKey } from '@/lib/modules/macro-signal/types';
+import type { DailyDimensionKey, DimensionKey } from '@/lib/modules/macro-signal/types';
 import type { TabType } from '@/lib/types/economic';
 
 /** 6 大分组元数据(color 仅卡头色点用,与评分无关) */
@@ -26,6 +26,13 @@ export const GROUP_ORDER: DimensionKey[] = [
   'inflation',
   'exchange_rate',
   'risk_appetite',
+];
+
+/** 日频模式卡片:3 维度 7 指标(key 对齐后端 _DAILY_INDICATORS,数组顺序即展示顺序) */
+export const DAILY_GROUPS: Array<{ key: DailyDimensionKey; indicators: string[] }> = [
+  { key: 'monetary_policy', indicators: ['dr007'] },
+  { key: 'exchange_rate',   indicators: ['dollar_index', 'usd_cny', 'ted_spread'] },
+  { key: 'risk_appetite',   indicators: ['volume', 'turnover', 'margin'] },
 ];
 
 /**
@@ -74,6 +81,10 @@ export const INDICATOR_LABELS: Record<string, { label: string; unit?: string; di
   total_amount_yi:    { label: '两市成交额',         unit: '亿', digits: 0 },
   turnover_rate:      { label: '换手率',             unit: '%',  digits: 2 },
   margin_balance_yi:  { label: '融资融券余额',       unit: '亿', digits: 0 },
+  // 日频快照 key(= market-sentiment 曲线序列名)
+  volume:             { label: '两市成交额',         unit: '亿', digits: 0 },
+  turnover:           { label: '换手率',             unit: '%',  digits: 2 },
+  margin:             { label: '融资融券余额',       unit: '亿', digits: 0 },
   // 中文 key（后端/skill 直接以中文指标名作为 key 输出时的映射）
   '两市成交额':        { label: '两市成交额',         unit: '亿', digits: 0 },
   '换手率':            { label: '换手率',             unit: '%',  digits: 2 },
@@ -183,6 +194,11 @@ export const INDICATOR_LINK_MAP: Record<string, TabType> = {
   dollar_index: 'treasury-exchange',
   usd_cny:      'treasury-exchange',
   ted_spread:   'rates',
+  // 日频快照指标 → 对应曲线 Tab
+  dr007:        'rates',
+  volume:       'market-sentiment',
+  turnover:     'market-sentiment',
+  margin:       'market-sentiment',
   '美元指数':     'treasury-exchange',
   '美元兑人民币': 'treasury-exchange',
   'TED利差':      'rates',

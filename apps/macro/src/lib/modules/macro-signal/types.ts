@@ -68,3 +68,36 @@ export interface MacroSignalTabProps {
   /** 指标跳转回调(若该指标已有对应的曲线图 Tab),父级透传 setActiveTab */
   onJumpToTab?: (tab: TabType) => void;
 }
+
+// === 日频模式(信号首页 · 日频) ===
+// 数据契约对齐后端 GET /api/macro/daily-snapshot 的 DailySnapshotData
+
+/** 日频快照单个指标 */
+export interface DailyIndicator {
+  /** 指标 key,与月度 INDICATOR_LABELS 同一翻译表 */
+  key: string;
+  /** 所选日期(或回退)的值,null = 无数据 */
+  value: number | null;
+  /** data_date 前一个有值日的值(算日变化);null = 无前值(显示「—」) */
+  prev_value: number | null;
+  /** 实际数据日期 'YYYY-MM-DD';≠ 所选 date 即发生了回退(行内标注) */
+  data_date: string | null;
+}
+
+/** 日频快照分组(无 skill 评分,故无 conclusion/total_score) */
+export interface DailyGroup {
+  indicators: DailyIndicator[];
+}
+
+/** 日频模式的三个维度 key(月度 6 维度中有日频数据支撑的子集) */
+export type DailyDimensionKey = 'monetary_policy' | 'exchange_rate' | 'risk_appetite';
+
+/** 日频快照 */
+export interface DailySnapshot {
+  /** 实际生效日期 'YYYY-MM-DD'(date 参数或 15:00 规则推导) */
+  date: string;
+  /** 可选日期列表(降序,A股交易日近 60 个 ∪ 今日) */
+  dates: string[];
+  /** 3 个维度分组 */
+  groups: Record<DailyDimensionKey, DailyGroup>;
+}

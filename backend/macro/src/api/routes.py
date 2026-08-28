@@ -56,6 +56,7 @@ from src.models import (
     IndicesUpdateData,
     MacroSignalResponse,
     MacroMonthsResponse,
+    DailySnapshotResponse,
 )
 from src.services.fred_service import get_fred_service
 from src.services.ecb_service import get_ecb_service
@@ -71,6 +72,7 @@ from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
 from src.services.index_service import get_index_service
 from src.services.macro_signal_service import get_macro_signal_service
+from src.services.daily_snapshot_service import get_daily_snapshot_service
 from src.utils.logger import setup_logger
 from src.config import get_settings
 
@@ -2469,6 +2471,32 @@ async def get_macro_months():
         return MacroMonthsResponse(months=months)
     except Exception as e:
         logger.error(f"查询月份列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/daily-snapshot", response_model=DailySnapshotResponse)
+def get_daily_snapshot(date: Optional[str] = Query(None, description="日期 YYYY-MM-DD;缺省按 15:00 规则取默认")):
+    """获取日频快照(信号首页 · 日频模式:3 维度 7 指标)
+
+    数据源:已落库的原始指标序列(dr007/汇率/TED/市场情绪),asof 取值。
+    改 def（非 async def）：pandas 读 CSV 阻塞,FastAPI 丢线程池跑同步
+    handler,避免阻塞事件循环(与 /data 路由同款理由)。
+    """
+    if date is not None:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"非法日期格式: {date},应为 YYYY-MM-DD")
+
+    try:
+        logger.info(f"查询日频快照: date={date or '(默认)'}")
+        service = get_daily_snapshot_service()
+        data = service.get_daily_snapshot(date)
+        return DailySnapshotResponse(success=True, data=data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"查询日频快照失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

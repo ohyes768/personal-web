@@ -56,7 +56,7 @@ const MarketSentimentTab = dynamic(() => import('./components/MarketSentimentTab
 });
 
 export default function EconomicPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
+  const [activeTab, setActiveTab] = useState<TabType>('macro-signal');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
 
@@ -99,8 +99,13 @@ export default function EconomicPage() {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  // Tab配置
+  // Tab配置(信号首页 = 宏观信号,置首)
   const tabs: Array<{ id: TabType; label: string; description: string }> = [
+    {
+      id: 'macro-signal',
+      label: '信号首页',
+      description: '月度 6 维度宏观判断卡片 + 日频指标快照'
+    },
     {
       id: 'treasury-exchange',
       label: '中美利差/汇率',
@@ -130,11 +135,6 @@ export default function EconomicPage() {
       id: 'stock-indices',
       label: '股指',
       description: '恒生/上证/标普500/纳指/道琼斯日 K 线（5 轴叠加）'
-    },
-    {
-      id: 'macro-signal',
-      label: '宏观信号',
-      description: '当月 6 维度宏观判断卡片'
     },
     {
       id: 'market-sentiment',
