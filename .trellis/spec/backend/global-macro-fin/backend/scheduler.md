@@ -37,7 +37,7 @@ GET    /api/scheduler/jobs/{id}/runs?limit=20 → {"job_id": str, "runs": Schedu
   "id": "a_share_daily",
   "name": "A 股数据日度组",
   "target": "run_group",            // job 类型,固定值,映射到 jobs.JOB_TARGETS
-  "cron": "10 16 * * 1-5",          // Asia/Shanghai,from_crontab 解析
+  "cron": "30 16 * * 1-5",          // Asia/Shanghai,from_crontab 解析
   "enabled": true,
   "check_trading_day": true,        // true 时非 A 股交易日整组 skipped
   "targets": ["/update/china-bonds", "..."],  // 真正要跑的端点路径(有序,顺序执行)
@@ -52,7 +52,7 @@ GET    /api/scheduler/jobs/{id}/runs?limit=20 → {"job_id": str, "runs": Schedu
 | 字段 | 类型 | 说明 |
 |------|------|------|
 | id / name / target / cron | str | 定义回显 |
-| cron_human | str | cron 转中文,如"每周一至周五 16:10" |
+| cron_human | str | cron 转中文,如"每周一至周五 16:30" |
 | enabled | bool | 禁用时 `next_run_time` 为 null |
 | next_run_time | iso+08:00 \| null | APScheduler 计算的下次触发 |
 | last_run | SchedulerLastRun \| null | **仅** {start,end,status,count,reason,error},无 job_id/target/items(前端 `SchedulerLastRun = Pick<SchedulerJobRun,...>`) |

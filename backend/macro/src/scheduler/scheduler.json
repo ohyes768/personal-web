@@ -5,7 +5,7 @@
       "id": "a_share_daily",
       "name": "A 股数据日度组",
       "target": "run_group",
-      "cron": "10 16 * * 1-5",
+      "cron": "30 16 * * 1-5",
       "enabled": true,
       "check_trading_day": true,
       "targets": [
