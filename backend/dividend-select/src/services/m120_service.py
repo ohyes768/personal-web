@@ -3,6 +3,7 @@ M120 服务
 负责获取和计算120日均线数据
 """
 import json
+import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -27,7 +28,7 @@ logger = setup_logger(__name__)
 ALIYUN_API_HOST = "http://alirmcom2.market.alicloudapi.com"
 ALIYUN_API_PATH_HIST = "/query/comkm"  # 历史K线（计算M120用）
 ALIYUN_API_PATH_REALTIME = "/query/comrms"  # 批量实时行情
-ALIYUN_API_APPCODE = "404de3caed3742ca897e75ddff633066"
+ALIYUN_API_APPCODE = os.getenv("ALIYUN_API_APPCODE", "")
 
 # 全局限流标志（与 calculator.py 共用）
 _rate_limited = False

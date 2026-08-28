@@ -9,7 +9,7 @@
 #        DOUYIN_ALIYUN_ACCESS_KEY=你的key
 #        RSS_RELAY_TOKEN=随机字符串
 #        FRED_API_KEY=FRED数据key
-#        ALIRMCOM_APPCODE=阿里云商品数据appcode（可选，留空则商品接口报错）
+#        ALIYUN_API_APPCODE=阿里云行情API appcode（dividend/macro 共用，留空则行情/商品接口报错）
 #        EOF
 #   2. 启动：  docker compose -f docker-compose.nas.yml up -d --build
 #              （自动读取根目录 .env）
@@ -53,6 +53,7 @@ services:
       - LOG_LEVEL=INFO
       - DIVIDEND_PORT=8092
       - ALIYUN_ACCESS_KEY=${DIVIDEND_ALIYUN_ACCESS_KEY:-}
+      - ALIYUN_API_APPCODE=${ALIYUN_API_APPCODE:-}
       - PYWENCAI_COOKIE=${PYWENCAI_COOKIE:-}
       - AGENT_API_TOKEN=${AGENT_API_TOKEN:-}
     networks:
@@ -208,7 +209,7 @@ services:
       - macro-logs:/app/logs
     environment:
       - FRED_API_KEY=${FRED_API_KEY}
-      - ALIRMCOM_APPCODE=${ALIRMCOM_APPCODE:-}
+      - ALIYUN_API_APPCODE=${ALIYUN_API_APPCODE:-}
       - MACRO_SIGNAL_DATA_DIR=/app/data/macro-signals
       - MACRO_SIGNAL_UPLOAD_TOKEN=${MACRO_SIGNAL_UPLOAD_TOKEN:-}
     networks:

@@ -29,7 +29,7 @@
 
 **认证方式**: APPCODE Header
 
-**API Key** (AppCode): `404de3caed3742ca897e75ddff633066`
+**API Key** (AppCode): 从环境变量 `ALIYUN_API_APPCODE` 读取（配置在 .env，勿写入代码/文档）
 
 ### 0.2 历史K线接口 (`/query/comkm`)
 
@@ -44,7 +44,7 @@ GET http://alirmcom2.market.alicloudapi.com/query/comkm?period=D&pidx=1&psize=50
 
 **请求头**:
 ```
-Authorization: APPCODE 404de3caed3742ca897e75ddff633066
+Authorization: APPCODE <your_appcode>
 ```
 
 **参数说明**:
@@ -94,7 +94,7 @@ GET http://alirmcom2.market.alicloudapi.com/query/comrms?c=SH600019,SZ000001&wit
 
 **请求头**:
 ```
-Authorization: APPCODE 404de3caed3742ca897e75ddff633066
+Authorization: APPCODE <your_appcode>
 ```
 
 **参数说明**:
