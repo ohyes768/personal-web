@@ -2,9 +2,13 @@
 
 /**
  * 数据源子明细表 — 组任务一次运行里每个 update 端点的结果
- * 列：路径 / 状态 / 条数 / 耗时 / 错误（错误点击可复制）
+ * 列：端点 / 指标 / 状态 / 条数 / 耗时 / 错误（错误点击可复制）
  */
 import type { SchedulerRunItem } from '@/lib/modules/scheduler/types';
+import {
+  getUpdateEndpointLabel,
+  getUpdateEndpointSource,
+} from '@/lib/modules/scheduler/updateLabels';
 
 interface ItemTableProps {
   items: SchedulerRunItem[];
@@ -21,7 +25,8 @@ export function ItemTable({ items }: ItemTableProps) {
       <table className="w-full text-xs">
         <thead>
           <tr className="text-gray-500 border-b border-gray-800">
-            <th className="text-left font-normal py-1.5 pr-4">数据源</th>
+            <th className="text-left font-normal py-1.5 pr-4">端点</th>
+            <th className="text-left font-normal py-1.5 pr-4">指标</th>
             <th className="text-left font-normal py-1.5 pr-4">状态</th>
             <th className="text-right font-normal py-1.5 pr-4">条数</th>
             <th className="text-right font-normal py-1.5 pr-4">耗时</th>
@@ -29,10 +34,19 @@ export function ItemTable({ items }: ItemTableProps) {
           </tr>
         </thead>
         <tbody>
-          {items.map((item, i) => (
+          {items.map((item, i) => {
+            const label = getUpdateEndpointLabel(item.path);
+            const source = getUpdateEndpointSource(item.path);
+            return (
             <tr key={`${item.path}-${i}`} className="border-b border-gray-800/60 last:border-b-0">
               <td className="py-1.5 pr-4 whitespace-nowrap">
                 <code className="bg-gray-800 px-1.5 py-0.5 rounded text-gray-300">{item.path}</code>
+              </td>
+              <td
+                className="py-1.5 pr-4 text-gray-200 max-w-[12rem]"
+                title={source ? `${label}（${source}）` : label}
+              >
+                {label}
               </td>
               <td className={`py-1.5 pr-4 ${ITEM_STATUS_CLS[item.status] ?? 'text-gray-400'}`}>
                 {item.status === 'success' ? '成功' : '失败'}
@@ -58,7 +72,8 @@ export function ItemTable({ items }: ItemTableProps) {
                 )}
               </td>
             </tr>
-          ))}
+            );
+          })}
         </tbody>
       </table>
     </div>
