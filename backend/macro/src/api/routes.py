@@ -991,6 +991,37 @@ async def get_data(
         )
 
 
+@router.get("/data/{tab}", response_model=DataResponse)
+async def get_data_by_tab(
+    tab: str,
+    start_date: Optional[str] = Query(None, description="起始日期 (YYYY-MM-DD)，缺省为 historical_start_date"),
+    end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)，缺省为今日"),
+):
+    """按 Tab 查询数据 — 只加载并返回该 Tab 相关字段（全历史，供前端本地切时间周期）"""
+    from src.services.data_service import VALID_DATA_TABS
+
+    if tab not in VALID_DATA_TABS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"无效的 tab: {tab}，可选: {', '.join(sorted(VALID_DATA_TABS))}",
+        )
+
+    try:
+        logger.info(f"按 Tab 查询数据: tab={tab}, start_date={start_date}, end_date={end_date}")
+        data_service = get_data_service()
+        data = data_service.query_data_by_tab(tab, start_date, end_date)
+        return DataResponse(success=True, message="数据查询成功", data=data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"按 Tab 查询数据失败: {str(e)}")
+        return DataResponse(
+            success=False,
+            message=f"数据查询失败: {str(e)}",
+            error_code="QUERY_FAILED",
+        )
+
+
 @router.get("/health", response_model=HealthResponse)
 async def health_check():
     """健康检查接口"""

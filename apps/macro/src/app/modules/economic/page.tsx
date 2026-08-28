@@ -1,6 +1,6 @@
 /**
  * 宏观经济数据页面 — 路由层
- * 数据获取：顶层 useFullEconomicData 拉一次，所有 Tab 共享 fullData
+ * 数据获取：按 activeTab 用 useTabEconomicData 拉该 Tab 全历史并缓存；切时间周期仅本地切片
  * 渲染：7 个 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
  * 子组件：按 timeRange + tabType 用 useFilteredEconomicData 拿自己需要的 data
  */
@@ -11,7 +11,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
 import type { MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
-import { useFullEconomicData } from '@/lib/hooks/useFullEconomicData';
+import { useTabEconomicData } from '@/lib/hooks/useTabEconomicData';
 import { loadMockSnapshot, MOCK_AVAILABLE_MONTHS } from '@/lib/modules/macro-signal/mock-data';
 import { Tabs } from './components/Tabs';
 
@@ -61,8 +61,8 @@ export default function EconomicPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
 
-  // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isCached
-  const { fullData, isLoading, error, isCached } = useFullEconomicData(refreshKey);
+  // 按 Tab 拉全历史：切换 Tab 请求 /api/macro/data/{tab}，同 Tab 切时间周期不再请求
+  const { tabDataMap, isLoading, error, isCached } = useTabEconomicData(activeTab, refreshKey);
 
   // === 宏观信号数据源 ===
   // 本地开发(NODE_ENV === 'development')用 mock;线上(NODE_ENV === 'production')走真实接口
@@ -188,8 +188,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoading}
+            fullData={tabDataMap['treasury-exchange'] ?? null}
+            isLoading={activeTab === 'treasury-exchange' && isLoading}
             error={error}
             isCached={isCached}
           />
@@ -200,8 +200,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoading}
+            fullData={tabDataMap['bonds'] ?? null}
+            isLoading={activeTab === 'bonds' && isLoading}
             error={error}
             isCached={isCached}
           />
@@ -212,8 +212,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoading}
+            fullData={tabDataMap['comparison'] ?? null}
+            isLoading={activeTab === 'comparison' && isLoading}
             error={error}
             isCached={isCached}
           />
@@ -224,8 +224,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoading}
+            fullData={tabDataMap['commodities'] ?? null}
+            isLoading={activeTab === 'commodities' && isLoading}
             error={error}
             isCached={isCached}
           />
@@ -236,8 +236,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoading}
+            fullData={tabDataMap['stock-indices'] ?? null}
+            isLoading={activeTab === 'stock-indices' && isLoading}
             error={error}
             isCached={isCached}
           />
@@ -248,8 +248,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoading}
+            fullData={tabDataMap['liquidity-risk'] ?? null}
+            isLoading={activeTab === 'liquidity-risk' && isLoading}
             error={error}
             isCached={isCached}
           />
@@ -260,8 +260,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoading}
+            fullData={tabDataMap['rates'] ?? null}
+            isLoading={activeTab === 'rates' && isLoading}
             error={error}
             isCached={isCached}
           />
