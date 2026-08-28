@@ -124,6 +124,58 @@ class HIBORUpdateData(BaseModel):
     hibor: HIBORData
 
 
+class DR007Data(BaseModel):
+    """DR007（中国货币网7天质押式回购加权利率，单位：%）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class DR007UpdateData(BaseModel):
+    """DR007 更新响应数据"""
+
+    dr007: DR007Data
+
+
+class VolumeData(BaseModel):
+    """两市合计成交额（单位：亿元）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class VolumeUpdateData(BaseModel):
+    """两市成交额 更新响应数据"""
+
+    volume: VolumeData
+
+
+class TurnoverData(BaseModel):
+    """两市加权换手率（单位：%）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class TurnoverUpdateData(BaseModel):
+    """换手率 更新响应数据"""
+
+    turnover: TurnoverData
+
+
+class MarginData(BaseModel):
+    """融资余额（单位：亿元）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class MarginUpdateData(BaseModel):
+    """融资余额 更新响应数据"""
+
+    margin: MarginData
+
+
 class FundFlowData(BaseModel):
     """资金流向数据"""
 
@@ -228,6 +280,10 @@ class UpdateResponse(BaseModel):
         | TedSpreadUpdateData
         | CommoditiesUpdateData
         | IndicesUpdateData
+        | DR007UpdateData
+        | VolumeUpdateData
+        | TurnoverUpdateData
+        | MarginUpdateData
     ] = None
     updated_at: Optional[str] = None
     error_code: Optional[str] = None
@@ -315,10 +371,23 @@ class IndicesUpdateData(BaseModel):
 # === 宏观信号数据模型(对齐前端 MacroSignalSnapshot shape) ===
 
 class MacroIndicator(BaseModel):
-    """单个指标(粒度到指标级,updated_at 是 ISO 'YYYY-MM-DD')"""
+    """单个指标(三时间都是指标级)
+
+    - data_date:       数据时间(指标数值所属/发布日期)
+    - analyzed_at:     分析时间(skill 生成该值的时间,ISO timestamp)
+    - next_release_at: 下个周期预期发布日期(自报优先,后端规则兜底)
+    - frequency:       发布频率 'daily'/'monthly'(日频前端不渲染「下次」段)
+    - updated_at:      兼容别名 = data_date,前端迁移完成后删除
+    """
     key: str
     value: Optional[float] = None
-    updated_at: Optional[str] = None  # 'YYYY-MM-DD'
+    updated_at: Optional[str] = None       # 'YYYY-MM-DD',兼容别名 = data_date
+    data_date: Optional[str] = None        # 'YYYY-MM-DD',数据时间
+    analyzed_at: Optional[str] = None      # ISO timestamp,分析时间
+    next_release_at: Optional[str] = None  # 'YYYY-MM-DD',下个周期预期发布日
+    next_release_note: Optional[str] = None  # 预期口径说明,如「CPI/PPI 每月9日发布」
+    frequency: Optional[str] = None        # 'daily' | 'monthly',自报优先、规则表兜底;null=未知
+    month_avg: Optional[float] = None      # 日频指标的月均值(skill 计算,透传;与 value 同采样月)
 
 
 class MacroSignalGroup(BaseModel):
@@ -332,7 +401,7 @@ class MacroSignalSnapshot(BaseModel):
     """一个月快照 = 6 个分组"""
     month: str  # 'YYYY-MM'
     groups: Dict[str, MacroSignalGroup]  # 6 个 dimension key
-    generated_at: Optional[str] = None
+    generated_at: Optional[str] = None  # 所有指标 analyzed_at 的最大值(全页最新分析时间)
 
 
 class MacroSignalResponse(BaseModel):

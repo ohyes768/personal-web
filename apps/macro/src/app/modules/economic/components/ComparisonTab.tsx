@@ -23,7 +23,6 @@ interface ComparisonTabProps {
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
-  isCached: boolean;
 }
 
 const VIEW_MODE_OPTIONS: Array<{ value: ViewMode; label: string; hint: string }> = [
@@ -41,7 +40,6 @@ export function ComparisonTab({
   fullData,
   isLoading,
   error,
-  isCached,
 }: ComparisonTabProps) {
   const [selectedIds, setSelectedIds] = useState<IndicatorId[]>([]);
   const [viewMode, setViewMode] = useState<ViewMode>('minMax');
@@ -89,7 +87,6 @@ export function ComparisonTab({
         <div className="flex items-center gap-3">
           <span className="text-gray-400">时间范围：</span>
           <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="comparison" />
-          {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         </div>
       </div>
 

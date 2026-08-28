@@ -24,7 +24,6 @@ interface StockIndexTabProps {
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
-  isCached: boolean;
 }
 
 export function StockIndexTab({
@@ -35,7 +34,6 @@ export function StockIndexTab({
   fullData,
   isLoading,
   error,
-  isCached,
 }: StockIndexTabProps) {
   const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
@@ -44,7 +42,6 @@ export function StockIndexTab({
       <div className="flex items-center gap-6 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
         <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="stock-indices" />
-        {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
           onInit={economicApi.initIndicesHistory}
           storageKey="last_initialized_macro_indices"

@@ -29,6 +29,15 @@ def test_query_data_by_tab_bonds_fields():
     assert "exchange_rates" not in data
 
 
+def test_query_data_by_tab_market_sentiment_fields():
+    service = DataService()
+    data = service.query_data_by_tab(
+        "market-sentiment", start_date="2024-01-01", end_date="2024-06-01"
+    )
+    assert set(data.keys()) <= {"dates", "volume", "turnover", "margin"}
+    assert "us_treasuries" not in data
+
+
 def test_query_data_by_tab_invalid_tab():
     service = DataService()
     with pytest.raises(ValueError, match="无效的 tab"):

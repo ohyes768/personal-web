@@ -1,18 +1,17 @@
 /**
  * 宏观经济数据页面 — 路由层
  * 数据获取：按 activeTab 用 useTabEconomicData 拉该 Tab 全历史并缓存；切时间周期仅本地切片
- * 渲染：7 个 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
+ * 渲染：各 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
  * 子组件：按 timeRange + tabType 用 useFilteredEconomicData 拿自己需要的 data
  */
 'use client';
 
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
 import type { MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
 import { useTabEconomicData } from '@/lib/hooks/useTabEconomicData';
-import { loadMockSnapshot, MOCK_AVAILABLE_MONTHS } from '@/lib/modules/macro-signal/mock-data';
 import { Tabs } from './components/Tabs';
 
 // 动态导入各 Tab 子组件（每个 Tab 自己的 hooks / 按钮 / 图表都在子组件里）
@@ -56,37 +55,30 @@ const MacroSignalTab = dynamic(() => import('./components/MacroSignalTab').then(
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载宏观信号...</div>
 });
 
+const MarketSentimentTab = dynamic(() => import('./components/MarketSentimentTab').then(mod => ({ default: mod.MarketSentimentTab })), {
+  ssr: false,
+  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载市场情绪...</div>
+});
+
 export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('treasury-exchange');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
 
   // 按 Tab 拉全历史：切换 Tab 请求 /api/macro/data/{tab}，同 Tab 切时间周期不再请求
-  const { tabDataMap, isLoading, error, isCached } = useTabEconomicData(activeTab, refreshKey);
+  const { tabDataMap, isLoading, error } = useTabEconomicData(activeTab, refreshKey);
 
   // === 宏观信号数据源 ===
-  // 本地开发(NODE_ENV === 'development')用 mock;线上(NODE_ENV === 'production')走真实接口
-  // (线上接口当前未接入,后续 agent 实现后只需保证 /api/macro/signal 与 /api/macro/months 返回正确 shape 即可)
-  const useMock = process.env.NODE_ENV !== 'production';
-  const loadSnapshot = useMock
-    ? loadMockSnapshot
-    : async (month: string): Promise<MacroSignalSnapshot | null> => {
-        const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        // 后端 MacroSignalResponse 是 { success, data } 包装,前端契约只要 data
-        const body = await res.json() as { success?: boolean; data?: MacroSignalSnapshot };
-        return body?.data ?? null;
-      };
-  const [availableMonths, setAvailableMonths] = useState<string[]>(
-    useMock ? MOCK_AVAILABLE_MONTHS : []
-  );
-  useEffect(() => {
-    if (useMock) return;
-    fetch('/api/macro/months')
-      .then(r => (r.ok ? r.json() : { months: [] }))
-      .then(d => setAvailableMonths(Array.isArray(d?.months) ? d.months : []))
-      .catch(() => { /* 接口未接入时保持空数组,MacroSignalTab 会显示 loading/error */ });
-  }, [useMock]);
+  // 直连后端 /api/macro/*:本地 dev 由 next.config.js rewrites 代理到 localhost:8094,
+  // 生产由 nginx 反代到 macro 后端容器(后端未启动时 MacroSignalTab 显示 error 态)
+  // availableMonths 由 MacroSignalTab 内部懒加载（首屏不再为其发请求）
+  const loadSnapshot = async (month: string): Promise<MacroSignalSnapshot | null> => {
+    const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // 后端 MacroSignalResponse 是 { success, data } 包装,前端契约只要 data
+    const body = await res.json() as { success?: boolean; data?: MacroSignalSnapshot };
+    return body?.data ?? null;
+  };
 
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
@@ -104,10 +96,12 @@ export default function EconomicPage() {
       setTimeRange('6M');
     } else if (tabId === 'rates' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
+    } else if (tabId === 'market-sentiment' && (timeRange === '3M' || timeRange === '1Y')) {
+      setTimeRange('6M');
     }
   }, [timeRange]);
 
-  // 刷新成功后递增 refreshKey 触发顶层 useFullEconomicData 重新 fetch
+  // 刷新成功后递增 refreshKey 触发当前 Tab 重新 fetch
   const handleRefreshSuccess = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
@@ -152,7 +146,12 @@ export default function EconomicPage() {
     {
       id: 'macro-signal',
       label: '宏观信号',
-      description: '当月 6 维度宏观判断卡片 + 发布日历'
+      description: '当月 6 维度宏观判断卡片'
+    },
+    {
+      id: 'market-sentiment',
+      label: '市场情绪',
+      description: '两市成交额 + 换手率 + 融资余额（日级，由后端每日盘后调度追加）'
     }
   ];
 
@@ -163,12 +162,21 @@ export default function EconomicPage() {
         <header className="mb-8">
           <div className="flex justify-between items-start mb-6">
             <div>
-              <Link
-                href="/macro"
-                className="text-gray-400 hover:text-white transition-colors"
-              >
-                刷新
-              </Link>
+              <div className="flex items-center gap-4">
+                {/* 原生 <a> 而非 Link：basePath=/macro 会把 Link 的 href 改写为自身 */}
+                <a
+                  href="/"
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  ← 返回首页
+                </a>
+                <Link
+                  href="/macro"
+                  className="text-gray-400 hover:text-white transition-colors"
+                >
+                  刷新
+                </Link>
+              </div>
               <h1 className="text-4xl font-bold mt-4">宏观经济数据</h1>
             </div>
           </div>
@@ -191,7 +199,6 @@ export default function EconomicPage() {
             fullData={tabDataMap['treasury-exchange'] ?? null}
             isLoading={activeTab === 'treasury-exchange' && isLoading}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'bonds'}>
@@ -203,7 +210,6 @@ export default function EconomicPage() {
             fullData={tabDataMap['bonds'] ?? null}
             isLoading={activeTab === 'bonds' && isLoading}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'comparison'}>
@@ -215,7 +221,6 @@ export default function EconomicPage() {
             fullData={tabDataMap['comparison'] ?? null}
             isLoading={activeTab === 'comparison' && isLoading}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'commodities'}>
@@ -227,7 +232,6 @@ export default function EconomicPage() {
             fullData={tabDataMap['commodities'] ?? null}
             isLoading={activeTab === 'commodities' && isLoading}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'stock-indices'}>
@@ -239,7 +243,6 @@ export default function EconomicPage() {
             fullData={tabDataMap['stock-indices'] ?? null}
             isLoading={activeTab === 'stock-indices' && isLoading}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'liquidity-risk'}>
@@ -251,7 +254,6 @@ export default function EconomicPage() {
             fullData={tabDataMap['liquidity-risk'] ?? null}
             isLoading={activeTab === 'liquidity-risk' && isLoading}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'rates'}>
@@ -263,17 +265,42 @@ export default function EconomicPage() {
             fullData={tabDataMap['rates'] ?? null}
             isLoading={activeTab === 'rates' && isLoading}
             error={error}
-            isCached={isCached}
           />
         </div>
         <div hidden={activeTab !== 'macro-signal'}>
           <MacroSignalTab
             loadSnapshot={loadSnapshot}
-            availableMonths={availableMonths}
             onJumpToTab={setActiveTab}
           />
         </div>
+        <div hidden={activeTab !== 'market-sentiment'}>
+          <MarketSentimentTab
+            timeRange={timeRange}
+            onTimeRangeChange={setTimeRange}
+            fullData={tabDataMap['market-sentiment'] ?? null}
+            isLoading={activeTab === 'market-sentiment' && isLoading}
+            error={error}
+          />
+        </div>
       </div>
+
+      {/* 悬浮入口：右下角齿轮按钮，跳转定时任务管理页（/macro/scheduler） */}
+      <Link
+        href="/scheduler"
+        aria-label="定时任务管理"
+        title="定时任务管理"
+        className="fixed bottom-6 right-6 z-50 w-12 h-12 flex items-center justify-center rounded-full bg-gray-800 border border-gray-700 text-gray-300 hover:bg-gray-700 hover:text-white transition-colors shadow-lg"
+      >
+        {/* 齿轮图标（内联 SVG，不引入图标库新依赖） */}
+        <svg className="w-6 h-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M10.343 3.94c.09-.542.56-.94 1.113-.94h1.088c.553 0 1.023.398 1.113.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 011.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.09c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 01-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.397.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.113.94h-1.088c-.553 0-1.023-.398-1.113-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 01-.12-1.45l.527-.737c.25-.35.272-.806.108-1.204-.165-.397-.505-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.09c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.929-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 01.12-1.45l.773-.773a1.125 1.125 0 011.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.929l.15-.894z"
+          />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      </Link>
     </main>
   );
 }

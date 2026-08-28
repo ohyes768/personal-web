@@ -1,6 +1,6 @@
 """API 路由模块"""
 print("[INIT-20260303-0942] routes.py 模块已加载")
-from fastapi import APIRouter, HTTPException, Query, Header
+from fastapi import APIRouter, HTTPException, Query, Header, Response
 from datetime import datetime, timedelta
 import hmac
 import pandas as pd
@@ -31,6 +31,14 @@ from src.models import (
     TGAUpdateData,
     HIBORData,
     HIBORUpdateData,
+    DR007Data,
+    DR007UpdateData,
+    VolumeData,
+    VolumeUpdateData,
+    TurnoverData,
+    TurnoverUpdateData,
+    MarginData,
+    MarginUpdateData,
     FundFlowData,
     FundFlow,
     FundFlowUpdateData,
@@ -54,6 +62,10 @@ from src.services.ecb_service import get_ecb_service
 from src.services.data_service import get_data_service
 from src.services.vix_service import get_vix_service
 from src.services.hibor_service import get_hibor_service
+from src.services.dr007_service import get_dr007_service
+from src.services.volume_service import get_volume_service
+from src.services.turnover_service import get_turnover_service
+from src.services.margin_service import get_margin_service
 from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
@@ -968,11 +980,20 @@ async def update_data():
 
 
 @router.get("/data", response_model=DataResponse)
-async def get_data(
+def get_data(
+    response: Response,
     start_date: Optional[str] = Query(None, description="起始日期 (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)"),
 ):
-    """查询数据接口 - 前端调用此接口获取展示数据"""
+    """查询数据接口 - 前端调用此接口获取展示数据
+
+    改 def（非 async def）：FastAPI 自动丢线程池跑同步 handler，
+    避免 pandas 读 12 个 CSV 阻塞事件循环（之前 async + 同步阻塞
+    会让 /signal /months /health 全部排队）。
+    数据日更，HTTP 缓存 5 分钟安全：浏览器/代理可命中磁盘缓存，
+    免去 localStorage TTL 过期后每次重拉几 MB JSON。
+    前端手动刷新（refreshKey>0）配 fetch cache:'reload' 绕过。
+    """
     try:
         logger.info(f"查询数据: start_date={start_date}, end_date={end_date}")
         data_service = get_data_service()
@@ -980,6 +1001,7 @@ async def get_data(
         data = data_service.query_data(start_date, end_date)
 
         logger.info("数据查询成功")
+        response.headers["Cache-Control"] = "public, max-age=300"
         return DataResponse(success=True, message="数据查询成功", data=data)
 
     except Exception as e:
@@ -1023,14 +1045,18 @@ async def get_data_by_tab(
 
 
 @router.get("/health", response_model=HealthResponse)
-async def health_check():
-    """健康检查接口"""
+def health_check():
+    """健康检查接口
+
+    改 def：循环读 11 个 CSV，同 /data 性质，且是 docker healthcheck
+    周期调用的端点，阻塞事件循环会拖累监控。FastAPI 线程池自动承载。
+    """
     try:
         data_service = get_data_service()
 
         # 获取最后更新时间
         last_updates = {}
-        for data_type in ["us_treasuries", "eu_bonds", "jp_bonds", "exchange_rates", "vix", "fund_flow", "china_bond", "ted_spread", "indices", "tga", "hibor"]:
+        for data_type in ["us_treasuries", "eu_bonds", "jp_bonds", "exchange_rates", "vix", "fund_flow", "china_bond", "ted_spread", "indices", "tga", "hibor", "dr007", "volume", "turnover", "margin"]:
             last_date = data_service.get_last_date(data_type)
             if last_date:
                 last_updates[data_type] = last_date.strftime("%Y-%m-%d")
@@ -2474,20 +2500,339 @@ async def upload_skill_json(
 
     鉴权：X-Upload-Token header（constant-time，未配置拒绝）。
     安全：skill/file 白名单防路径穿越。
+    按月留存：旧文件覆盖前抢救归档 + 本次数据归档到 archive/<月>/，
+    历史月可通过 GET /api/signal?month= 查询。
     对外路径：经 nginx 剥前缀为 /api/macro/signal/upload。
     """
     _verify_upload_token(x_upload_token)
     service = get_macro_signal_service()
     try:
-        path = service.save_skill_json(req.skill, req.file, req.data)
+        path, archived_month = service.save_skill_json(req.skill, req.file, req.data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     service.clear_cache()
-    logger.info(f"agent 推送 skill={req.skill} file={req.file}")
+    logger.info(f"agent 推送 skill={req.skill} file={req.file} archived_month={archived_month}")
     return {
         "success": True,
         "skill": req.skill,
         "file": req.file,
         "path": str(path),
         "bytes": path.stat().st_size,
+        "archived_month": archived_month,
     }
+
+
+@router.post("/fetch/dr007/history", response_model=UpdateResponse)
+async def fetch_dr007_history():
+    """获取 DR007（中国货币网7天质押式回购加权利率）历史数据接口
+
+    数据源：中国货币网 prr-chrt.csv
+    起始日期：settings.dr007_start_date（默认 2015-01-01）
+    """
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS"
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始获取 DR007 历史数据...")
+        dr007_service = get_dr007_service()
+        data_service = get_data_service()
+
+        latest_end = pd.Timestamp.now().normalize()
+        start_date = pd.Timestamp(settings.dr007_start_date)
+
+        logger.info(f"获取 DR007 历史数据，从 {start_date} 到 {latest_end}")
+
+        dr007_df = await dr007_service.fetch_history(start_date, latest_end)
+
+        if dr007_df.empty:
+            raise Exception("未能获取到任何 DR007 数据")
+
+        data_service.save_dr007_data(dr007_df)
+
+        last_idx = dr007_df["date"].iloc[-1]
+        last_val = dr007_df["dr007"].iloc[-1]
+        dr007_latest = DR007Data(
+            date=last_idx.date() if last_idx is not None else latest_end.date(),
+            value=float(last_val) if last_val is not None else None,
+        )
+
+        response_data = DR007UpdateData(dr007=dr007_latest)
+
+        logger.info("DR007 历史数据获取成功")
+        return UpdateResponse(
+            success=True,
+            message="DR007 历史数据获取成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"获取 DR007 历史数据失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"获取 DR007 历史数据失败: {str(e)}",
+            error_code="UPDATE_FAILED"
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/dr007", response_model=UpdateResponse)
+async def update_dr007():
+    """增量更新 DR007 数据 - 拉取 CSV 最后一行的下一天到今天"""
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS"
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始增量更新 DR007 数据...")
+        dr007_service = get_dr007_service()
+        data_service = get_data_service()
+
+        latest_end = pd.Timestamp.now().normalize()
+        start_date = _compute_incremental_start(data_service, "dr007", latest_end)
+
+        if start_date is None or start_date > latest_end:
+            logger.info("DR007 数据已是最新，无需更新")
+            return UpdateResponse(
+                success=True,
+                message="DR007 数据已是最新，无需更新",
+                data=DR007UpdateData(dr007=DR007Data(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
+
+        logger.info(f"增量更新 DR007 数据，从 {start_date} 到 {latest_end}")
+
+        dr007_df = await dr007_service.fetch_latest(start_date, latest_end)
+
+        if dr007_df.empty:
+            # 货币网 CSV 在区间内无新数据（节假日 / 数据尚未发布）→ 视为已是最新，不抛错
+            logger.info(f"DR007 区间 [{start_date}, {latest_end}] 无新数据，跳过")
+            return UpdateResponse(
+                success=True,
+                message="DR007 数据已是最新，无需更新",
+                data=DR007UpdateData(dr007=DR007Data(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
+
+        data_service.save_dr007_data(dr007_df)
+
+        last_idx = dr007_df["date"].iloc[-1]
+        last_val = dr007_df["dr007"].iloc[-1]
+        dr007_latest = DR007Data(
+            date=last_idx.date() if last_idx is not None else latest_end.date(),
+            value=float(last_val) if last_val is not None else None,
+        )
+
+        response_data = DR007UpdateData(dr007=dr007_latest)
+
+        logger.info("DR007 数据增量更新成功")
+        return UpdateResponse(
+            success=True,
+            message="DR007 数据增量更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"DR007 数据增量更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"DR007 数据增量更新失败: {str(e)}",
+            error_code="UPDATE_FAILED"
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/volume", response_model=UpdateResponse)
+async def update_volume():
+    """当日更新两市成交额（沪深交易所官方 API 当日点）
+
+    适用调度：每个交易日盘后 16:30 触发。
+    """
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始当日更新两市成交额...")
+        volume_service = get_volume_service()
+        data_service = get_data_service()
+
+        result = await volume_service.fetch_today()
+
+        if result["status"] == "failed":
+            raise Exception(f"两市成交额获取失败: SSE={result.get('sse_amount_yi')} SZSE={result.get('szse_amount_yi')}")
+
+        # 单值转 DataFrame（save_volume_data 要求 DataFrame 格式）
+        df = pd.DataFrame({
+            "date": [pd.Timestamp(result["date"])],
+            "total_amount_yi": [result["total_amount_yi"]],
+        })
+        data_service.save_volume_data(df)
+
+        volume_latest = VolumeData(
+            date=pd.Timestamp(result["date"]).date(),
+            value=float(result["total_amount_yi"]) if result["total_amount_yi"] is not None else None,
+        )
+        response_data = VolumeUpdateData(volume=volume_latest)
+
+        logger.info(
+            "两市成交额当日更新成功: date=%s, total=%.2f亿",
+            result["date"], result["total_amount_yi"] or 0,
+        )
+        return UpdateResponse(
+            success=True,
+            message="两市成交额更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"两市成交额更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"两市成交额更新失败: {str(e)}",
+            error_code="UPDATE_FAILED",
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/turnover", response_model=UpdateResponse)
+async def update_turnover():
+    """当日更新两市换手率（沪深交易所官方 API 当日点）"""
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始当日更新两市换手率...")
+        turnover_service = get_turnover_service()
+        data_service = get_data_service()
+
+        result = await turnover_service.fetch_today()
+
+        if result["status"] == "failed":
+            raise Exception(f"两市换手率获取失败: result={result}")
+
+        df = pd.DataFrame({
+            "date": [pd.Timestamp(result["date"])],
+            "turnover_rate": [result["turnover_rate"]],
+        })
+        data_service.save_turnover_data(df)
+
+        turnover_latest = TurnoverData(
+            date=pd.Timestamp(result["date"]).date(),
+            value=float(result["turnover_rate"]) if result["turnover_rate"] is not None else None,
+        )
+        response_data = TurnoverUpdateData(turnover=turnover_latest)
+
+        logger.info(
+            "两市换手率当日更新成功: date=%s, rate=%.4f%%",
+            result["date"], result["turnover_rate"] or 0,
+        )
+        return UpdateResponse(
+            success=True,
+            message="两市换手率更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"两市换手率更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"两市换手率更新失败: {str(e)}",
+            error_code="UPDATE_FAILED",
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/margin", response_model=UpdateResponse)
+async def update_margin():
+    """当日更新融资余额（akshare 当日点，T-1 数据 09:45+ 可用）"""
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始当日更新融资余额...")
+        margin_service = get_margin_service()
+        data_service = get_data_service()
+
+        result = margin_service.fetch_today()
+
+        if result["status"] == "failed":
+            raise Exception(f"融资余额获取失败: {result.get('error', 'unknown')}")
+
+        df = pd.DataFrame({
+            "date": [pd.Timestamp(result["date"])],
+            "margin_balance_yi": [result["rzye"]],
+        })
+        data_service.save_margin_data(df)
+
+        margin_latest = MarginData(
+            date=pd.Timestamp(result["date"]).date(),
+            value=float(result["rzye"]) if result["rzye"] is not None else None,
+        )
+        response_data = MarginUpdateData(margin=margin_latest)
+
+        logger.info(
+            "融资余额当日更新成功: date=%s, balance=%.2f亿",
+            result["date"], result["rzye"] or 0,
+        )
+        return UpdateResponse(
+            success=True,
+            message="融资余额更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"融资余额更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"融资余额更新失败: {str(e)}",
+            error_code="UPDATE_FAILED",
+        )
+    finally:
+        release_update_lock()

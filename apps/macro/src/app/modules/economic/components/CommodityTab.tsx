@@ -23,7 +23,6 @@ interface CommodityTabProps {
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
-  isCached: boolean;
 }
 
 export function CommodityTab({
@@ -34,7 +33,6 @@ export function CommodityTab({
   fullData,
   isLoading,
   error,
-  isCached,
 }: CommodityTabProps) {
   const data = useFilteredEconomicData(fullData, timeRange, 'treasury-exchange');
 
@@ -43,7 +41,6 @@ export function CommodityTab({
       <div className="flex items-center gap-6 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
         <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="commodities" />
-        {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
           onInit={economicApi.initCommoditiesHistory}
           storageKey="last_initialized_macro_commodities"

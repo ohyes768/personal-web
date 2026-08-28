@@ -225,4 +225,25 @@ export const economicApi = {
     ]);
     return cn.success || ted.success ? cn : cn;
   },
+
+  /**
+   * 当日更新两市成交额（沪深交易所官方 API 当日点）
+   */
+  updateVolume: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/volume');
+  },
+
+  /**
+   * 当日更新两市换手率（沪深交易所官方 API 当日点）
+   */
+  updateTurnover: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/turnover');
+  },
+
+  /**
+   * 当日更新融资余额（akshare 当日点）
+   */
+  updateMargin: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/margin');
+  },
 };

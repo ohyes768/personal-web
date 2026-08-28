@@ -8,12 +8,19 @@
 
 ```
 {数据源根目录}/
-├── monetary-policy-skill/macro_signal.json   # 货币政策
-├── money-supply-skill/macro_signal.json       # 信用扩张
-├── entity-economy-skill/macro_signal.json     # 经济运行
-├── inflation-skill/macro_signal.json          # 通胀环境
-├── exchange-rate-skill/macro_signal.json      # 外部压力
-└── risk-appetite-skill/risk_data.json         # 市场情绪(注意文件名不同!)
+├── monetary-policy-skill/macro_signal.json   # 最新快照:货币政策
+├── money-supply-skill/macro_signal.json       # 最新快照:信用扩张
+├── entity-economy-skill/macro_signal.json     # 最新快照:经济运行
+├── inflation-skill/macro_signal.json          # 最新快照:通胀环境
+├── exchange-rate-skill/macro_signal.json      # 最新快照:外部压力
+├── risk-appetite-skill/risk_data.json         # 最新快照:市场情绪(注意文件名不同!)
+└── archive/                                   # 按月归档(生产真源,upload 自动写入)
+    ├── 2026-05/
+    │   ├── monetary-policy-skill.json
+    │   ├── ...                               # 每个 skill 一个 <skill目录名>.json
+    │   └── risk-appetite-skill.json
+    └── 2026-06/
+        └── ...
 ```
 
 数据源根目录通过环境变量 `MACRO_SIGNAL_DATA_DIR` 配置:
@@ -29,6 +36,15 @@ export MACRO_SIGNAL_DATA_DIR=F:/personal-projects/macro-fin-skill/skills
 **生产环境数据由 agent 推送写入**(见下方 `POST /api/macro/signal/upload`),不再依赖共享存储 / n8n 同步。本地开发则直接读 macro-fin-skill 仓库目录。
 
 数据源根目录若不存在或子目录缺 JSON 文件,该维度返回空 group,接口整体仍可正常返回 200(除非 6 个维度都无月份匹配 → 返回 404)。
+
+### 按月留存(归档)
+
+- **写入**:`POST /api/macro/signal/upload` 落盘时执行三步——①旧最新文件按其数据月份**抢救归档**(跨月推送自动留存历史;部署后首次推送自动迁移存量) ②覆盖平铺最新文件 ③本次数据按其数据月份归档。同月重复推送幂等(归档被最新一次覆盖)。
+- **归档月份提取**:`macro_signal.json` 取顶层 `data_date` 前 7 位;`risk_data.json` 取 `data.{volume,turnover,margin}.date` 最大值的前 7 位;格式必须为 `YYYY-MM`,提取失败仅跳过归档(平铺最新文件仍写入)。
+- **读取**:`GET /api/macro/signal?month=` 优先读 `archive/<month>/`(生产真源,部分 skill 缺失 → 该维度空 group);归档无该月再兜底读平铺最新文件并做月份匹配(本地开发直读 skill 仓库场景)。`month` 参数严格校验 `^\d{4}-\d{2}$`(防路径穿越),非法返回 404。
+- **容量**:每 skill JSON 数 KB,每月 6 个文件,默认永久保留。
+
+> 详细设计见[宏观信号按月留存设计.md](./宏观信号按月留存设计.md)。
 
 ---
 
@@ -51,28 +67,39 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
   "success": true,
   "data": {
     "month": "2026-05",
-    "generated_at": null,
+    "generated_at": "2026-05-22T07:59:22Z",
     "groups": {
       "monetary_policy": {
         "conclusion": "偏宽松",
+        "score": 67.44,
         "indicators": [
-          { "key": "dr007",  "value": 1.328, "updated_at": "2026-05-21" },
-          { "key": "lpr_1y", "value": 3.0,   "updated_at": "2026-05-21" }
+          {
+            "key": "dr007", "value": 1.328,
+            "updated_at": "2026-05-21", "data_date": "2026-05-21",
+            "analyzed_at": "2026-05-22T07:59:22Z",
+            "next_release_at": "2026-05-25", "next_release_note": "DR007 每个工作日随银行间市场更新",
+            "frequency": "daily"
+          },
+          {
+            "key": "lpr_1y", "value": 3.0,
+            "updated_at": "2026-05-20", "data_date": "2026-05-20",
+            "analyzed_at": "2026-05-22T07:59:22Z",
+            "next_release_at": "2026-06-22", "next_release_note": "LPR 每月20日发布(节假日顺延)",
+            "frequency": "monthly"
+          }
         ]
       },
       "money_supply": {
         "conclusion": "信用扩张",
         "indicators": [
-          { "key": "m2_yoy",     "value": 8.6, "updated_at": "2026-05-13" },
-          { "key": "m1_yoy",     "value": 5.0, "updated_at": "2026-05-13" },
-          { "key": "social_yoy", "value": 7.8, "updated_at": "2026-05-13" }
+          { "key": "m2_yoy", "value": 8.6, "updated_at": "2026-05-13", "data_date": "2026-05-13", "analyzed_at": "2026-05-22T07:59:22Z", "next_release_at": "2026-06-12", "next_release_note": "金融统计数据(M2/社融)约每月13日发布" }
         ]
       },
       "entity_economy": {
         "conclusion": "平稳",
         "indicators": [
-          { "key": "electricity_yoy", "value": 3.5, "updated_at": "2026-04-20" },
-          { "key": "railway_yoy",     "value": null, "updated_at": null }
+          { "key": "electricity_yoy", "value": 3.5, "updated_at": "2026-04-20", "data_date": "2026-04-20", "analyzed_at": "2026-05-22T07:59:22Z", "next_release_at": "2026-05-20", "next_release_note": "工业用电量约每月20日发布" },
+          { "key": "railway_yoy", "value": null, "updated_at": null, "data_date": null, "analyzed_at": null, "next_release_at": null, "next_release_note": null }
         ]
       },
       "inflation":      { "conclusion": "温和",       "indicators": [...] },
@@ -87,7 +114,7 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
 
 | 状态码 | 触发条件 | body |
 |---|---|---|
-| 404 | 请求月份无任何维度数据(macro-fin-skill 暂无快照) | `{ "detail": "No data for month YYYY-MM" }` |
+| 404 | 请求月份无任何维度数据(macro-fin-skill 暂无快照),或 month 格式非法(非 `YYYY-MM`,防路径穿越) | `{ "detail": "No data for month YYYY-MM" }` |
 | 500 | 服务内部异常 | `{ "detail": "错误描述" }` |
 
 #### 字段说明
@@ -95,14 +122,96 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
 | 字段 | 类型 | 说明 |
 |---|---|---|
 | `month` | string | 'YYYY-MM' |
+| `generated_at` | string \| null | 全页最新分析时间 = 所有指标 `analyzed_at` 的最大值 |
 | `groups` | object | 6 个 dimension key,固定顺序 |
 | `groups[d].conclusion` | string \| null | skill 的定性结论(中文),如「温和」「偏宽松」「外部中性」 |
-| `groups[d].indicators` | array | 该维度的所有指标 |
+| `groups[d].indicators` | array | 该维度的所有指标(三时间都是指标级) |
 | `indicators[].key` | string | 指标 key,如 `cpi_yoy`、`dr007` |
 | `indicators[].value` | number \| null | 指标数值,无数据为 null |
-| `indicators[].updated_at` | string \| null | ISO 'YYYY-MM-DD',粒度到指标级 |
+| `indicators[].data_date` | string \| null | **数据时间** 'YYYY-MM-DD',指标数值所属/发布日期 |
+| `indicators[].analyzed_at` | string \| null | **分析时间** ISO timestamp,skill 生成/推送该值的时间(自报缺失时用文件 mtime 兜底) |
+| `indicators[].next_release_at` | string \| null | **下个周期预期发布日** 'YYYY-MM-DD',自报优先、后端规则兜底 |
+| `indicators[].next_release_note` | string \| null | 预期口径说明,如「CPI/PPI 约每月9日发布上月数据」 |
+| `indicators[].frequency` | 'daily' \| 'monthly' \| null | **发布频率**(自报优先、规则表推导);日频前端不渲染「下次」段,只显示「日频」标记 |
+| `indicators[].month_avg` | number \| null | **日频指标的月均值**(skill 计算,与 value 同采样月,后端透传不计算);历史月卡片主数值位显示月均并标注「月均」,当月卡片显示最新日度值;月频指标与占位指标恒为 null,旧 skill JSON 无此字段亦为 null(前端回退显示单日值) |
+| `indicators[].updated_at` | string \| null | **兼容别名** = `data_date`,后端双写过渡,前端迁移完成后删除 |
 
-**indicator.updated_at 来源**:当前从 dimension `data_date` 派生(所有指标共用同一日期)。后续如果 skill 输出改为 per-indicator 时间戳,服务层不用改、前端自动正确显示。
+#### 指标级三时间的来源优先级
+
+| API 字段 | macro_signal.json 自报 | 兜底(当前默认) |
+|---|---|---|
+| `data_date` | `indicator_meta[key].data_date` | 组级 `data_date` 前 10 位 |
+| `analyzed_at` | `indicator_meta[key].analyzed_at` | 组级 `generated_at`(risk_data 用子块 `fetched_at` → 顶层 `data.fetched_at`) → **文件 mtime(推送时间)** |
+| `next_release_at/note` | `indicator_meta[key].next_release` | 后端 `release_rules.py` 按指标规则推算 |
+| `frequency` | `indicator_meta[key].frequency`('daily'/'monthly') | 规则表 kind 推导(workdaily→daily,monthly/month_end→monthly) |
+| `month_avg` | `indicator_meta[key].month_avg`(数值) | 无兜底(后端不计算月均;非数值/缺失 → null) |
+
+risk_data.json 天然指标级:子块 `date` → `data_date`,子块 `fetched_at` → `analyzed_at`,子块 `next_release`/`frequency` → 自报下期预期与频率,子块 `month_avg` → `month_avg`。
+
+#### skill 自报契约(可选,向后兼容)
+
+macro_signal.json 可选新增 `indicator_meta`,不新增也不影响现有兼容逻辑:
+
+```json
+{
+  "dimension": "inflation",
+  "conclusion": "温和",
+  "data_date": "2026-05-11",
+  "generated_at": "2026-05-22T07:59:22Z",
+  "details": { "cpi_yoy": 1.2 },
+  "indicator_meta": {
+    "cpi_yoy": {
+      "data_date": "2026-05-11",
+      "analyzed_at": "2026-05-22T07:59:22Z",
+      "next_release": { "date": "2026-06-09", "note": "CPI/PPI 约每月9日发布上月数据" },
+      "frequency": "monthly"
+    },
+    "dr007": {
+      "data_date": "2026-05-21",
+      "frequency": "daily",
+      "month_avg": 1.65
+    }
+  }
+}
+```
+
+`month_avg` 契约(macro-fin-skill 侧配套,本仓库只透传):
+- **语义**:该指标 `data_date` 所在月的日频读数算术平均;历史月 = 全月终值,
+  当月推送 = 本月至今均值(月未走完,口径为截至今日)。
+- **位置**:macro_signal.json 放 `indicator_meta[key].month_avg`,
+  risk_data.json 放 `data.{volume,turnover,margin}.month_avg`(子块级)。
+- **仅日频指标输出**;月频指标与占位指标恒为 null。
+- 与 `value` 同采样月绑定,跟随按月过滤,不单独做月份匹配。
+
+risk_data.json 子块自报:`data.volume.next_release = { "date": ..., "note": ... }`、`data.volume.frequency = "daily"`、`data.volume.month_avg = 17800.5`(turnover/margin 同理)。
+
+#### 后端兜底规则表(`src/services/release_rules.py`)
+
+规则来源:各 skill SKILL.md「数据发布时间」,工作日=周一~周五(不含法定节假日,note 用「约」表达误差)。
+基准日 = max(指标 `data_date`, 今天),保证「下次」一定在未来。
+频率划分:**日频**(每工作日更新,前端不显示「下次」只显示「日频」标记)与**月频**(显示「下次 ≈MM-DD」);API 层两类都返回 `next_release_at`,是否展示由前端按 `frequency` 决定。
+
+**日频(daily)**:
+
+| indicator key | 规则 |
+|---|---|
+| `dr007` / `dollar_index` / `usd_cny` / `ted_spread` / `total_amount_yi` / `turnover_rate` / `margin_balance_yi` | 每工作日 → 下一个工作日 |
+
+**月频(monthly)**:
+
+| indicator key | 规则 | 周末校正 |
+|---|---|---|
+| `lpr_1y` | 每月20日 | 顺延(央行惯例) |
+| `mlf_1y` | 每月15日 | 顺延 |
+| `m2_yoy` / `m1_yoy` / `social_yoy` | 每月13日 | 前移 |
+| `industrial_yoy` / `fai_yoy` / `retail_yoy` | 每月13日 | 前移(统计局惯例提前) |
+| `electricity_yoy` | 每月20日 | 前移 |
+| `railway_yoy` | 每月7日 | 前移 |
+| `cpi_yoy` / `ppi_yoy` / `core_cpi_yoy` | 每月9日 | 前移 |
+| `pmi_manufacturing` | 每月最后一日发布当月数据 | 不校正 |
+| 其他未知 key | 无规则 → `next_release_at`/`frequency` 均为 null,前端不渲染「下次」段 | — |
+
+> 注:货币政策组是混合频率(DR007 日频 + LPR/MLF 月频),因此 frequency 做在指标级而非维度级。前端 `release-rules.ts` 的 inflation 规则(10日)与 SKILL.md(9日)不一致,以后端本表(9日)为准;前端发布日历后续可改为消费本 API。
 
 #### 容错行为
 
@@ -133,7 +242,7 @@ curl 'http://localhost:8094/api/macro/months'
 #### 字段说明
 
 - `months` 数组,按 'YYYY-MM' **降序** 排列
-- 来源:扫描 6 个 JSON,提取各 `data_date` 的 'YYYY-MM' 部分,合并去重
+- 来源:`archive/` 归档月目录 ∪ 平铺最新 6 个 JSON 的 `data_date` 'YYYY-MM',合并去重
 
 ---
 
@@ -150,7 +259,7 @@ nginx `location /api/macro/` 剥前缀直转后端,故**对外路径保持 `/api
 
 ### `POST /api/macro/signal/upload`
 
-接收 macro-fin-skill agent 推送的 JSON,落盘到 `MACRO_SIGNAL_DATA_DIR`。写后自动清内存缓存,`GET /api/macro/signal` 立即可读新数据。
+接收 macro-fin-skill agent 推送的 JSON,落盘到 `MACRO_SIGNAL_DATA_DIR` 并**按月归档**(见上方「按月留存」)。写后自动清内存缓存,`GET /api/macro/signal` 立即可读新数据,历史月通过 `?month=` 可查。
 
 #### 请求
 
@@ -172,8 +281,14 @@ curl -X POST 'https://web.duomi77.cn:9443/api/macro/signal/upload' \
 #### 响应(200)
 
 ```json
-{ "success": true, "skill": "monetary-policy-skill", "file": "macro_signal.json", "path": "/app/data/macro-signals/monetary-policy-skill/macro_signal.json", "bytes": 241 }
+{ "success": true, "skill": "monetary-policy-skill", "file": "macro_signal.json", "path": "/app/data/macro-signals/monetary-policy-skill/macro_signal.json", "bytes": 241, "archived_month": "2026-08" }
 ```
+
+#### 响应字段
+
+| 字段 | 说明 |
+|---|---|
+| `archived_month` | 本次数据归档到的月份 'YYYY-MM';data 提取不到合法月份时为 `null`(此时仅写平铺最新文件,历史留存降级) |
 
 #### 错误码
 

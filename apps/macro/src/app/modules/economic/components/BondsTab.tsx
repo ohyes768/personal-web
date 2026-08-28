@@ -25,7 +25,6 @@ interface BondsTabProps {
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
-  isCached: boolean;
 }
 
 export function BondsTab({
@@ -36,7 +35,6 @@ export function BondsTab({
   fullData,
   isLoading,
   error,
-  isCached,
 }: BondsTabProps) {
   const data = useFilteredEconomicData(fullData, timeRange, 'bonds');
 
@@ -50,7 +48,6 @@ export function BondsTab({
       <div className="flex items-center gap-6 mb-8 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
         <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="bonds" />
-        {isCached && <span className="text-sm text-gray-500">（缓存）</span>}
         <InitButton
           onInit={economicApi.initBondsHistory}
           storageKey="last_initialized_macro_bonds"

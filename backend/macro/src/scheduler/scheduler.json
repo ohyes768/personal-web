@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "a_share_daily",
+      "name": "A 股数据日度组",
+      "target": "run_group",
+      "cron": "10 16 * * 1-5",
+      "enabled": true,
+      "check_trading_day": true,
+      "targets": [
+        "/update/china-bonds",
+        "/update/dr007",
+        "/update/fund-flow",
+        "/update/volume",
+        "/update/turnover",
+        "/update/margin"
+      ],
+      "description": "A 股收盘后顺序更新中债/DR007/北向/成交额/换手率/融资余额"
+    },
+    {
+      "id": "global_daily",
+      "name": "全球市场日度组",
+      "target": "run_group",
+      "cron": "30 7 * * 1-5",
+      "enabled": true,
+      "check_trading_day": false,
+      "targets": [
+        "/update/us-treasuries",
+        "/update/exchange-rates",
+        "/update/eu-bonds",
+        "/update/jp-bonds",
+        "/update/vix",
+        "/update/tga",
+        "/update/hibor",
+        "/update/ted-spread",
+        "/update/commodities",
+        "/update/indices"
+      ],
+      "description": "北京早晨(美东收盘后)顺序更新美债/汇率/欧日债/VIX/TGA/HIBOR/TED/商品/指数"
+    }
+  ]
+}

@@ -8,6 +8,12 @@
  *   各 Tab 用 useFilteredEconomicData 拿自己需要的 data
  *   timeRange/tabType 变化时只重算 useMemo，不发请求
  *
+ * 分层加载兜底：timeRange='ALL' 时若数据起始日期晚于 2020-01-01，
+ * 说明 fullData 还是 useFullEconomicData 阶段 1 的近 1 年子集，
+ * 返回 null 让 Tab 显示 loading 占位（与 isLoading 一致）。
+ * 阈值 '2020-01-01' 选在阶段 1（~1Y）起点 2025-08-24 之前、
+ * 阶段 2（2000-01-03）之后的安全区间，未来 STAGE1 调整仍有效。
+ *
  * bonds tabType 内部自动调 filterMonthlyData（按月级切分德债日债数据）
  */
 'use client';
@@ -35,6 +41,10 @@ function getDefaultEconomicData(): EconomicDataResponse {
     indices: { HKHSI: [], SH000001: [], SPX: [], IXIC: [], DJI: [] },
     tga: [],
     hibor: [],
+    dr007: [],
+    volume: [],
+    turnover: [],
+    margin: [],
   };
 }
 
@@ -45,6 +55,12 @@ export function useFilteredEconomicData(
 ): EconomicDataResponse | null {
   return useMemo(() => {
     if (!fullData || fullData.dates.length === 0) {
+      return null;
+    }
+
+    // 分层加载兜底：ALL 档若 fullData 还是阶段 1 的近 1Y 子集（首日 > 2020-01-01），
+    // 返回 null 让 Tab 显示 loading 占位，避免"半张图"
+    if (timeRange === 'ALL' && fullData.dates[0] > '2020-01-01') {
       return null;
     }
 
@@ -185,6 +201,10 @@ export function useFilteredEconomicData(
         : undefined,
       tga: processedData.tga?.slice(startIndex, endIndex) ?? [],
       hibor: processedData.hibor?.slice(startIndex, endIndex) ?? [],
+      dr007: processedData.dr007?.slice(startIndex, endIndex) ?? [],
+      volume: processedData.volume?.slice(startIndex, endIndex) ?? [],
+      turnover: processedData.turnover?.slice(startIndex, endIndex) ?? [],
+      margin: processedData.margin?.slice(startIndex, endIndex) ?? [],
     };
 
     const result = filterDataByTab(timeFiltered, tabType, timeRange);

@@ -8,7 +8,7 @@
 export type TimeRange = '1M' | '3M' | '6M' | '1Y' | '3Y' | '5Y' | 'ALL';
 
 /** Tab类型选项 */
-export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk' | 'rates' | 'macro-signal';
+export type TabType = 'treasury-exchange' | 'bonds' | 'fund-flow' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk' | 'rates' | 'macro-signal' | 'market-sentiment';
 
 /** 时间范围配置 */
 export interface TimeRangeConfig {
@@ -91,6 +91,10 @@ export interface EconomicDataResponse {
   };
   tga?: (number | null)[];     // 单位：百万美元（前端展示 ÷1e5 转千亿美元）
   hibor?: (number | null)[];   // 单位：%
+  dr007?: (number | null)[];   // 单位：%（中国货币网7天质押式回购加权利率）
+  volume?: (number | null)[];   // 单位：亿元（沪深两市合计成交额）
+  turnover?: (number | null)[]; // 单位：%（沪深两市加权换手率）
+  margin?: (number | null)[];   // 单位：亿元（沪深两市合计融资余额）
 }
 
 /** 图表数据系列 */
