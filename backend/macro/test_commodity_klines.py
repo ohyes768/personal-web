@@ -138,7 +138,7 @@ async def test_pagination():
     settings = get_settings()
     # 直接构造 client_obj 不走 async with，注入 mock transport
     client_obj = AliyunCommodityKlineClient(
-        settings.alirmcom_appcode or "test-appcode",
+        settings.aliyun_api_appcode or "test-appcode",
         settings.alirmcom_base_url,
     )
     client_obj._client = httpx.AsyncClient(

@@ -46,7 +46,7 @@ MAX_CONSECUTIVE_FAILURES = 5
 # 阿里云行情API配置
 ALIYUN_API_HOST = os.getenv("ALIYUN_API_HOST", "http://alirmcom2.market.alicloudapi.com")
 ALIYUN_API_PATH = os.getenv("ALIYUN_API_PATH", "/query/comkm")
-ALIYUN_API_APPCODE = os.getenv("ALIYUN_API_APPCODE", "404de3caed3742ca897e75ddff633066")
+ALIYUN_API_APPCODE = os.getenv("ALIYUN_API_APPCODE", "")
 
 
 def is_rate_limited() -> bool:

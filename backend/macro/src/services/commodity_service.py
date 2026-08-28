@@ -155,8 +155,8 @@ class CommodityService:
             Series.index 是 date（Timestamp），values 是 close（float，已换算到展示单位）
             失败的 symbol 对应空 Series（不抛异常）
         """
-        if not settings.alirmcom_appcode:
-            logger.error("ALIRMCOM_APPCODE 未配置")
+        if not settings.aliyun_api_appcode:
+            logger.error("ALIYUN_API_APPCODE 未配置")
             return {}
 
         names = ["gold", "silver", "oil", "copper"]
@@ -173,7 +173,7 @@ class CommodityService:
 
             try:
                 async with AliyunCommodityKlineClient(
-                    settings.alirmcom_appcode, settings.alirmcom_base_url
+                    settings.aliyun_api_appcode, settings.alirmcom_base_url
                 ) as client:
                     records = await client.fetch_klines(sym)
             except Exception as e:

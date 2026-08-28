@@ -150,8 +150,8 @@ class IndexService:
             Series.index 是 date（Timestamp），values 是 close（float）
             失败的 symbol 对应空 Series（不抛异常）
         """
-        if not settings.alirmcom_appcode:
-            logger.error("ALIRMCOM_APPCODE 未配置")
+        if not settings.aliyun_api_appcode:
+            logger.error("ALIYUN_API_APPCODE 未配置")
             return {}
 
         names = list(settings.index_symbols.keys())
@@ -160,7 +160,7 @@ class IndexService:
             sym = settings.index_symbols[name]
             try:
                 async with AliyunIndexClient(
-                    settings.alirmcom_appcode, settings.alirmcom_base_url
+                    settings.aliyun_api_appcode, settings.alirmcom_base_url
                 ) as client:
                     records = await client.fetch_klines(sym)
             except Exception as e:
