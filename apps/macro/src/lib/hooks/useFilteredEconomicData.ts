@@ -13,15 +13,13 @@
  * 返回 null 让 Tab 显示 loading 占位（与 isLoading 一致）。
  * 阈值 '2020-01-01' 选在阶段 1（~1Y）起点 2025-08-24 之前、
  * 阶段 2（2000-01-03）之后的安全区间，未来 STAGE1 调整仍有效。
- *
- * bonds tabType 内部自动调 filterMonthlyData（按月级切分德债日债数据）
  */
 'use client';
 
 import { useMemo } from 'react';
 import type { EconomicDataResponse, TimeRange, TabType } from '../types/economic';
 import { calculateDateRange, TIME_RANGE_MAP } from '../utils/dateCalculators';
-import { filterDataByTab, filterMonthlyData } from '../utils/dataFilterUtils';
+import { filterDataByTab } from '../utils/dataFilterUtils';
 
 // 默认空数据（保证 slice 时不报 undefined.length）
 function getDefaultEconomicData(): EconomicDataResponse {
@@ -64,12 +62,7 @@ export function useFilteredEconomicData(
       return null;
     }
 
-    // 1. bonds Tab 先做月度切分
-    let processedData: EconomicDataResponse = fullData;
-    if (tabType === 'bonds') {
-      processedData = filterMonthlyData(fullData);
-    }
-
+    const processedData: EconomicDataResponse = fullData;
     const { startDate, endDate } = calculateDateRange(timeRange);
 
     // ALL：直接返回 processedData 按 tabType 过滤

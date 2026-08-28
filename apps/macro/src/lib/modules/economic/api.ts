@@ -45,18 +45,6 @@ export const economicApi = {
   },
 
   /**
-   * 初始化德债 + 日债历史数据（首次部署用）
-   * 并发调两个 history 端点，任一成功即视为成功
-   */
-  initBondsHistory: async (): Promise<UpdateResponse> => {
-    const [eu, jp] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/fetch/eu-bonds/history'),
-      directClient.post<UpdateResponse>('/api/macro/fetch/jp-bonds/history'),
-    ]);
-    return eu.success || jp.success ? eu : eu;
-  },
-
-  /**
    * 初始化商品历史数据（首次部署用）
    * 调 /api/macro/fetch/commodities/history
    */
@@ -75,17 +63,6 @@ export const economicApi = {
       directClient.post<UpdateResponse>('/api/macro/update/china-bonds'),
     ]);
     return us.success || fx.success || cn.success ? us : fx;
-  },
-
-  /**
-   * 更新德债 + 日债（前端德债/日债 tab 用，并发请求）
-   */
-  updateBonds: async (): Promise<UpdateResponse> => {
-    const [eu, jp] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/update/eu-bonds'),
-      directClient.post<UpdateResponse>('/api/macro/update/jp-bonds'),
-    ]);
-    return eu.success || jp.success ? eu : eu;
   },
 
   /**
@@ -162,7 +139,7 @@ export const economicApi = {
 
   /**
    * 初始化流动性/风险历史数据（首次部署用）
-   * 并发调 vix + tga + hibor 三个 history 端点（参考 initBondsHistory 模式）
+   * 并发调 vix + tga + hibor 三个 history 端点（任一成功即视为成功）
    * 任一成功即视为成功
    */
   initLiquidityHistory: async (): Promise<UpdateResponse> => {
@@ -191,7 +168,7 @@ export const economicApi = {
   /**
    * 初始化利率利差历史数据（首次部署用）
    * 并发调 china-bonds + ted-spread 两个 history 端点
-   * 任一成功即视为成功（与 initBondsHistory 同模式）
+   * 任一成功即视为成功
    */
   initRatesHistory: async (): Promise<UpdateResponse> => {
     const [cn, ted] = await Promise.all([

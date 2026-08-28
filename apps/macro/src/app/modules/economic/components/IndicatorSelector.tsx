@@ -21,8 +21,9 @@ function loadFromStorage(): IndicatorId[] | null {
     const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed) && parsed.every((id) => id in INDICATORS)) {
-      return parsed.slice(0, MAX_INDICATORS) as IndicatorId[];
+    if (Array.isArray(parsed)) {
+      const valid = parsed.filter((id) => id in INDICATORS).slice(0, MAX_INDICATORS) as IndicatorId[];
+      return valid.length > 0 ? valid : null;
     }
   } catch {
     /* ignore */

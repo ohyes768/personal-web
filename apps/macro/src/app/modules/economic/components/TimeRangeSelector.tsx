@@ -6,11 +6,11 @@ import type { TimeRange } from '@/lib/types/economic';
 interface TimeRangeSelectorProps {
   value: TimeRange;
   onChange: (value: TimeRange) => void;
-  tabType: 'treasury-exchange' | 'bonds' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk' | 'rates'; // 根据 Tab 类型显示不同选项
+  tabType: 'treasury-exchange' | 'comparison' | 'commodities' | 'stock-indices' | 'liquidity-risk' | 'rates';
 }
 
-// 中美利差/汇率时间范围（日级数据：US 10y、CN 10y、美元指数、4 个汇率对）
-const TREASURY_TIME_RANGES: Array<{ label: string; value: TimeRange }> = [
+// 日级数据时间范围（美债/汇率/商品/股指/流动性/利率/对比共用）
+const TIME_RANGES: Array<{ label: string; value: TimeRange }> = [
   { label: '1个月', value: '1M' },
   { label: '3个月', value: '3M' },
   { label: '6个月', value: '6M' },
@@ -19,21 +19,10 @@ const TREASURY_TIME_RANGES: Array<{ label: string; value: TimeRange }> = [
   { label: '全部', value: 'ALL' },
 ];
 
-// 德债日债时间范围（月级数据）
-const BONDS_TIME_RANGES: Array<{ label: string; value: TimeRange }> = [
-  { label: '6个月', value: '6M' },
-  { label: '1年', value: '1Y' },
-  { label: '3年', value: '3Y' },
-  { label: '5年', value: '5Y' },
-  { label: '全部', value: 'ALL' },
-];
-
-export function TimeRangeSelector({ value, onChange, tabType }: TimeRangeSelectorProps) {
-  const timeRanges = tabType === 'bonds' ? BONDS_TIME_RANGES : TREASURY_TIME_RANGES;
-
+export function TimeRangeSelector({ value, onChange }: TimeRangeSelectorProps) {
   return (
     <div className="flex flex-wrap gap-2">
-      {timeRanges.map((range) => (
+      {TIME_RANGES.map((range) => (
         <button
           key={range.value}
           onClick={() => onChange(range.value)}

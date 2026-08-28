@@ -28,8 +28,6 @@
       "targets": [
         "/update/us-treasuries",
         "/update/exchange-rates",
-        "/update/eu-bonds",
-        "/update/jp-bonds",
         "/update/vix",
         "/update/tga",
         "/update/hibor",
@@ -37,7 +35,7 @@
         "/update/commodities",
         "/update/indices"
       ],
-      "description": "北京早晨(美东收盘后)顺序更新美债/汇率/欧日债/VIX/TGA/HIBOR/TED/商品/指数"
+      "description": "北京早晨(美东收盘后)顺序更新美债/汇率/VIX/TGA/HIBOR/TED/商品/指数"
     }
   ]
 }

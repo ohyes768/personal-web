@@ -2,7 +2,7 @@
  * Plotly 暗黑主题 + 通用 layout / config — 共享给 CommodityChart / RatesChart /
  * StockIndexChart / LiquidityChart / ComparisonChart 这 5 个"多轴叠加折线"图表。
  *
- * 不动 EconomicChart / BondChart（继续走 chartConfig.ts）。
+ * 不动 EconomicChart（继续走 chartConfig.ts）。
  *
  * 设计原则：
  * - 暗黑配色写死（这 5 个 Tab 都在黑底页面）

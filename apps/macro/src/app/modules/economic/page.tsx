@@ -1,7 +1,7 @@
 /**
  * 宏观经济数据页面 — 路由层
  * 数据获取：顶层 useFullEconomicData 拉一次，所有 Tab 共享 fullData
- * 渲染：7 个 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
+ * 渲染：各 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
  * 子组件：按 timeRange + tabType 用 useFilteredEconomicData 拿自己需要的 data
  */
 'use client';
@@ -18,11 +18,6 @@ import { Tabs } from './components/Tabs';
 const TreasuryExchangeTab = dynamic(() => import('./components/TreasuryExchangeTab').then(mod => ({ default: mod.TreasuryExchangeTab })), {
   ssr: false,
   loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载中美利差/汇率...</div>
-});
-
-const BondsTab = dynamic(() => import('./components/BondsTab').then(mod => ({ default: mod.BondsTab })), {
-  ssr: false,
-  loading: () => <div className="h-[700px] flex items-center justify-center text-gray-400">加载德债日债...</div>
 });
 
 const ComparisonTab = dynamic(() => import('./components/ComparisonTab').then(mod => ({ default: mod.ComparisonTab })), {
@@ -87,10 +82,8 @@ export default function EconomicPage() {
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
     setActiveTab(tabId);
-    // 中美利差/汇率默认 3M，德债日债默认 1Y
-    if (tabId === 'bonds' && timeRange === '3M') {
-      setTimeRange('1Y');
-    } else if (tabId === 'treasury-exchange' && timeRange === '1Y') {
+    // 中美利差/汇率默认 3M
+    if (tabId === 'treasury-exchange' && timeRange === '1Y') {
       setTimeRange('3M');
     } else if (tabId === 'comparison' && (timeRange === '3M' || timeRange === '1Y')) {
       setTimeRange('6M');
@@ -116,11 +109,6 @@ export default function EconomicPage() {
       id: 'treasury-exchange',
       label: '中美利差/汇率',
       description: '中美 10y 国债利差 + 汇率数据趋势分析（日级）'
-    },
-    {
-      id: 'bonds',
-      label: '德债日债',
-      description: '德国和日本国债收益率对比分析（月级，每月1号数据）'
     },
     {
       id: 'liquidity-risk',
@@ -196,17 +184,6 @@ export default function EconomicPage() {
         {/* 各 Tab 子组件：始终挂载，仅用 hidden 控制显隐 — state 持久，Plotly 不重建 */}
         <div hidden={activeTab !== 'treasury-exchange'}>
           <TreasuryExchangeTab
-            timeRange={timeRange}
-            onTimeRangeChange={setTimeRange}
-            refreshKey={refreshKey}
-            onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
-            error={error}
-          />
-        </div>
-        <div hidden={activeTab !== 'bonds'}>
-          <BondsTab
             timeRange={timeRange}
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}

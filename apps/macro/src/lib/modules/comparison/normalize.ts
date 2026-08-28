@@ -14,10 +14,6 @@ export function extractSeries(
     case 'us_3m':  return data.us_treasuries['3m'] ?? [];
     case 'us_2y':  return data.us_treasuries['2y'] ?? [];
     case 'us_10y': return data.us_treasuries['10y'] ?? [];
-    case 'eu_3m':  return data.eu_treasuries['3m'] ?? [];
-    case 'eu_2y':  return data.eu_treasuries['2y'] ?? [];
-    case 'eu_10y': return data.eu_treasuries['10y'] ?? [];
-    case 'jp_10y': return data.jp_treasuries['10y'] ?? [];
     case 'cn_10y': return data.china_bond?.['10y'] ?? [];
     case 'dxy':     return data.exchange_rates?.dollar_index ?? [];
     case 'usd_cny': return data.exchange_rates?.usd_cny ?? [];

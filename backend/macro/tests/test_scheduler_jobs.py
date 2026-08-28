@@ -11,6 +11,8 @@ mock httpx.AsyncClient 与 is_trading_day，验证：
 from __future__ import annotations
 
 import asyncio
+import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -233,3 +235,16 @@ def test_empty_targets_fails_loud():
     assert result["status"] == "failed"
     assert "targets" in result["error"]
     assert client.calls == []
+
+
+@pytest.mark.unit
+def test_global_daily_preset_excludes_monthly_eu_jp_bonds():
+    """全球日度组不再调度月度德债/日债（对应页面 Tab 已下线）"""
+    config_path = Path(__file__).resolve().parents[1] / "src" / "scheduler" / "scheduler.json"
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    global_daily = next(j for j in config["jobs"] if j["id"] == "global_daily")
+    targets = global_daily["targets"]
+    assert "/update/eu-bonds" not in targets
+    assert "/update/jp-bonds" not in targets
+    assert "/update/us-treasuries" in targets
+    assert "/update/exchange-rates" in targets

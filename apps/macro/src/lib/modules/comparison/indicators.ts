@@ -1,5 +1,5 @@
 /**
- * 20 个指标的注册表（按数据源分组）
+ * 对比指标注册表（按数据源分组）
  * 颜色与现有 chartConfig.ts 的 CHART_COLORS 保持一致
  */
 import type { IndicatorId, IndicatorMeta } from './types';
@@ -9,14 +9,6 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   us_3m:  { id: 'us_3m',  label: '美债3m',   group: 'us_treasury', color: '#3b82f6', unit: '%',     source: 'FRED' },
   us_2y:  { id: 'us_2y',  label: '美债2y',   group: 'us_treasury', color: '#60a5fa', unit: '%',     source: 'FRED' },
   us_10y: { id: 'us_10y', label: '美债10y',  group: 'us_treasury', color: '#93c5fd', unit: '%',     source: 'FRED' },
-
-  // 德债
-  eu_3m:  { id: 'eu_3m',  label: '德债3m',   group: 'eu_treasury', color: '#f59e0b', unit: '%',     source: 'FRED' },
-  eu_2y:  { id: 'eu_2y',  label: '德债2y',   group: 'eu_treasury', color: '#fbbf24', unit: '%',     source: 'ECB'  },
-  eu_10y: { id: 'eu_10y', label: '德债10y',  group: 'eu_treasury', color: '#fcd34d', unit: '%',     source: 'FRED' },
-
-  // 日债
-  jp_10y: { id: 'jp_10y', label: '日债10y',  group: 'jp_treasury', color: '#ef4444', unit: '%',     source: 'FRED' },
 
   // 中债
   cn_10y: { id: 'cn_10y', label: '中债10y',  group: 'cn_treasury', color: '#f87171', unit: '%',     source: 'AKShare' },
@@ -60,8 +52,6 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
 /** 数据源分组的显示顺序（与经济页 tab 顺序一致） */
 export const GROUP_ORDER: Array<{ group: string; label: string }> = [
   { group: 'us_treasury', label: '美债' },
-  { group: 'eu_treasury', label: '德债' },
-  { group: 'jp_treasury', label: '日债' },
   { group: 'cn_treasury', label: '中债' },
   { group: 'exchange',    label: '汇率' },
   { group: 'volatility',  label: '恐慌' },
