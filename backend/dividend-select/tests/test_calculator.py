@@ -201,8 +201,9 @@ class TestDividendCalculator:
         import pandas as pd
 
         df = pd.DataFrame({
-            "日期": pd.to_datetime(["2025-01-15", "2025-07-15"]),
-            "每10股派息(元)": [5.0, 3.0],  # 每股0.5 + 0.3 = 0.8
+            "财年": [2025, 2025],
+            "_is_cninfo": [False, False],
+            "派息": [5.0, 3.0],  # 每10股派息(元)，0.5 + 0.3 = 0.8
         })
 
         dividend, count = calculator.get_yearly_dividend(df, 2025)

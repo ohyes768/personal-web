@@ -1,11 +1,19 @@
 """
 M120 Service 单元测试
 """
+import os
+
 import pandas as pd
 import pytest
 from unittest.mock import patch
 
 from src.services.m120_service import M120Service
+
+# 打真实阿里云行情 API 的集成测试：需要 ALIYUN_API_APPCODE 且能访问外网
+requires_aliyun_appcode = pytest.mark.skipif(
+    not os.getenv("ALIYUN_API_APPCODE"),
+    reason="集成测试需要环境变量 ALIYUN_API_APPCODE（真实阿里云行情 API）",
+)
 
 
 def _write_realtime_csv(svc, rows):
@@ -17,6 +25,7 @@ def _write_realtime_csv(svc, rows):
 class TestM120Service:
     """M120 服务测试"""
 
+    @requires_aliyun_appcode
     def test_get_realtime_prices_batch_single(self):
         """测试批量获取单个股票的实时价格"""
         service = M120Service()
@@ -29,6 +38,7 @@ class TestM120Service:
         assert "realtime" in sample and "close" in sample
         assert "pe" in sample and "pb" in sample
 
+    @requires_aliyun_appcode
     def test_get_realtime_prices_batch_multiple(self):
         """测试批量获取多个股票的实时价格"""
         service = M120Service()
@@ -46,6 +56,7 @@ class TestM120Service:
 
         assert result == {}, "空列表应该返回空字典"
 
+    @requires_aliyun_appcode
     def test_get_m120_from_aliyun(self):
         """测试从阿里云获取单只股票M120"""
         service = M120Service()

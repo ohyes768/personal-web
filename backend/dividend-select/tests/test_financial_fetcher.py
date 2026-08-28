@@ -29,7 +29,7 @@ class TestCalcLatestEps:
         """正常情况：3 年 12-31 数据，返回最新一年 EPS"""
         df = pd.DataFrame({
             "日期": ["2022-12-31", "2023-12-31", "2024-12-31", "2025-03-31"],
-            "摊薄每股收益(元)": [0.80, 1.00, 1.20, 0.30],
+            "加权每股收益(元)": [0.80, 1.00, 1.20, 0.30],
         })
         result = fetcher._calc_latest_eps(df)
         assert result == {"最新EPS年度": 2024, "最新EPS(元)": 1.20}
@@ -47,7 +47,7 @@ class TestCalcLatestEps:
         """亏损股：EPS 负值保留（路由层识别"亏损"）"""
         df = pd.DataFrame({
             "日期": ["2022-12-31", "2023-12-31", "2024-12-31"],
-            "摊薄每股收益(元)": [0.50, -0.20, -0.50],
+            "加权每股收益(元)": [0.50, -0.20, -0.50],
         })
         result = fetcher._calc_latest_eps(df)
         assert result == {"最新EPS年度": 2024, "最新EPS(元)": -0.50}
@@ -56,7 +56,7 @@ class TestCalcLatestEps:
         """取最新一年而非最早：数据乱序时仍取 2024 而非 2022"""
         df = pd.DataFrame({
             "日期": ["2024-12-31", "2022-12-31", "2023-12-31"],
-            "摊薄每股收益(元)": [1.50, 0.80, 1.00],
+            "加权每股收益(元)": [1.50, 0.80, 1.00],
         })
         result = fetcher._calc_latest_eps(df)
         assert result["最新EPS年度"] == 2024
@@ -94,7 +94,7 @@ class TestCalcLatestEps:
         result = fetcher._calc_latest_eps(df)
         # 必须取到 2025 年报数据
         assert result["最新EPS年度"] == 2025, f"应取 2025-12-31，实际 {result}"
-        assert result["最新EPS(元)"] == 1.20, f"应用摊薄EPS=1.20，实际 {result}"
+        assert result["最新EPS(元)"] == 1.22, f"应用加权EPS=1.22（而非摊薄1.20/基本1.21），实际 {result}"
 
 
 class TestCalcQuarterlyYoy:

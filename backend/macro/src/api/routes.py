@@ -2082,7 +2082,6 @@ async def update_ted_spread():
 
 
 @router.post("/fetch/commodities/history", response_model=UpdateResponse)
-@router.post("/fetch/commodities/history", response_model=UpdateResponse)
 async def fetch_commodities_history():
     """获取商品（黄金/白银/原油/铜）日 K 线 - comkm 历史接口拉 5 年全量
 
