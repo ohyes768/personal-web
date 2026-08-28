@@ -3,7 +3,7 @@
  * 所有 Economic 相关 API 调用必须通过此文件
  */
 import { apiClient, directClient } from '@/lib/api-client';
-import type { EconomicDataResponse } from '@/lib/types/economic';
+import type { EconomicDataResponse, TabType } from '@/lib/types/economic';
 
 export interface UpdateResponse {
   success: boolean;
@@ -22,6 +22,18 @@ export const economicApi = {
     if (endDate) params.end_date = endDate;
 
     return apiClient.get<EconomicDataResponse>('/api/macro/data', params);
+  },
+
+  /**
+   * 按 Tab 获取全历史经济数据（切换 Tab 时调用，时间周期由前端本地切片）
+   */
+  getTabData: (
+    tab: Exclude<TabType, 'macro-signal'>,
+    startDate: string = '2000-01-01'
+  ): Promise<EconomicDataResponse> => {
+    return apiClient.get<EconomicDataResponse>(`/api/macro/data/${tab}`, {
+      start_date: startDate,
+    });
   },
 
   /**

@@ -1,6 +1,6 @@
 /**
  * 宏观经济数据页面 — 路由层
- * 数据获取：顶层 useFullEconomicData 拉一次，所有 Tab 共享 fullData
+ * 数据获取：按 activeTab 用 useTabEconomicData 拉该 Tab 全历史并缓存；切时间周期仅本地切片
  * 渲染：各 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
  * 子组件：按 timeRange + tabType 用 useFilteredEconomicData 拿自己需要的 data
  */
@@ -11,7 +11,7 @@ import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
 import type { MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
-import { useFullEconomicData } from '@/lib/hooks/useFullEconomicData';
+import { useTabEconomicData } from '@/lib/hooks/useTabEconomicData';
 import { Tabs } from './components/Tabs';
 
 // 动态导入各 Tab 子组件（每个 Tab 自己的 hooks / 按钮 / 图表都在子组件里）
@@ -60,12 +60,8 @@ export default function EconomicPage() {
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
 
-  // 顶层只调一次：所有 Tab 共享同一份 fullData + loading/error/isFullRange
-  const { fullData, isLoading, error, isFullRange } = useFullEconomicData(refreshKey);
-
-  // ALL 档 + 后台全量数据未就绪 → 沿用首屏 loading 视觉
-  // 避免"半张图"（阶段 1 只有 1Y，ALL 档画不满）
-  const isLoadingForTab = isLoading || (activeTab !== 'macro-signal' && timeRange === 'ALL' && !isFullRange);
+  // 按 Tab 拉全历史：切换 Tab 请求 /api/macro/data/{tab}，同 Tab 切时间周期不再请求
+  const { tabDataMap, isLoading, error } = useTabEconomicData(activeTab, refreshKey);
 
   // === 宏观信号数据源 ===
   // 直连后端 /api/macro/*:本地 dev 由 next.config.js rewrites 代理到 localhost:8094,
@@ -98,7 +94,7 @@ export default function EconomicPage() {
     }
   }, [timeRange]);
 
-  // 刷新成功后递增 refreshKey 触发顶层 useFullEconomicData 重新 fetch
+  // 刷新成功后递增 refreshKey 触发当前 Tab 重新 fetch
   const handleRefreshSuccess = useCallback(() => {
     setRefreshKey((k) => k + 1);
   }, []);
@@ -188,8 +184,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
+            fullData={tabDataMap['treasury-exchange'] ?? null}
+            isLoading={activeTab === 'treasury-exchange' && isLoading}
             error={error}
           />
         </div>
@@ -199,8 +195,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
+            fullData={tabDataMap['comparison'] ?? null}
+            isLoading={activeTab === 'comparison' && isLoading}
             error={error}
           />
         </div>
@@ -210,8 +206,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
+            fullData={tabDataMap['commodities'] ?? null}
+            isLoading={activeTab === 'commodities' && isLoading}
             error={error}
           />
         </div>
@@ -221,8 +217,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
+            fullData={tabDataMap['stock-indices'] ?? null}
+            isLoading={activeTab === 'stock-indices' && isLoading}
             error={error}
           />
         </div>
@@ -232,8 +228,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
+            fullData={tabDataMap['liquidity-risk'] ?? null}
+            isLoading={activeTab === 'liquidity-risk' && isLoading}
             error={error}
           />
         </div>
@@ -243,8 +239,8 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
+            fullData={tabDataMap['rates'] ?? null}
+            isLoading={activeTab === 'rates' && isLoading}
             error={error}
           />
         </div>
@@ -258,8 +254,8 @@ export default function EconomicPage() {
           <MarketSentimentTab
             timeRange={timeRange}
             onTimeRangeChange={setTimeRange}
-            fullData={fullData}
-            isLoading={isLoadingForTab}
+            fullData={tabDataMap['market-sentiment'] ?? null}
+            isLoading={activeTab === 'market-sentiment' && isLoading}
             error={error}
           />
         </div>
