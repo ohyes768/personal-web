@@ -46,7 +46,7 @@ export function CommodityTab({
           onInit={economicApi.initCommoditiesHistory}
           storageKey="last_initialized_macro_commodities"
           label="初始化历史数据"
-          hasData={!!data?.commodities?.gold?.length}
+          hasData={!!fullData?.commodities?.gold?.length}
           onSuccess={onRefreshSuccess}
         />
         <RefreshButton

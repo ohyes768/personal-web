@@ -47,7 +47,13 @@ export function MarketSentimentTab({
           onInit={economicApi.initMarketSentimentHistory}
           storageKey="last_initialized_macro_market_sentiment"
           label="初始化历史数据"
-          hasData={!!(fullData?.volume?.length || fullData?.turnover?.length || fullData?.fund_flow?.north_deal_amount?.length)}
+          hasData={
+            !!(
+              fullData?.volume?.length &&
+              fullData?.turnover?.length &&
+              fullData?.fund_flow?.north_deal_amount?.length
+            )
+          }
           onSuccess={onRefreshSuccess}
         />
         <RefreshButton

@@ -101,20 +101,15 @@ class FredService:
         }
 
         for name, code in exchange_codes.items():
-            try:
-                logger.info(f"获取汇率数据: {name} ({code}), 从 {start_date} 到 {end_date}")
-                series = await self.fetch_series(code, start_date, end_date)
-                
-                # 对欧元汇率取倒数（FRED 提供的是 EUR/USD）
-                if name == "usd_eur":
-                    series = 1 / series
-                    logger.info(f"已将 EUR/USD 转换为 USD/EUR")
-                
-                result[name] = series
-            except Exception as e:
-                logger.error(f"获取 {name} ({code}) 数据时出错: {e}")
-                # 创建空序列作为占位符
-                result[name] = pd.Series(dtype="float64")
+            logger.info(f"获取汇率数据: {name} ({code}), 从 {start_date} 到 {end_date}")
+            series = await self.fetch_series(code, start_date, end_date)
+
+            # 对欧元汇率取倒数（FRED 提供的是 EUR/USD）
+            if name == "usd_eur":
+                series = 1 / series
+                logger.info("已将 EUR/USD 转换为 USD/EUR")
+
+            result[name] = series
 
         return result
 

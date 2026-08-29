@@ -47,7 +47,14 @@ export function RatesTab({
           onInit={economicApi.initRatesHistory}
           storageKey="last_initialized_macro_rates"
           label="初始化历史数据"
-          hasData={!!(data?.ted_spread?.ted_spread?.length || data?.china_bond?.['spread_10y_2y']?.length)}
+          hasData={
+            !!(
+              fullData?.dr007?.length &&
+              fullData?.ted_spread?.ted_spread?.length &&
+              fullData?.china_bond?.['10y']?.length &&
+              fullData?.us_treasuries?.['3m']?.length
+            )
+          }
           onSuccess={onRefreshSuccess}
         />
         <RefreshButton

@@ -106,6 +106,29 @@ def is_updating() -> bool:
     return _is_updating
 
 
+def _has_observations(data) -> bool:
+    """区间内是否有有效观测。支持 Series / DataFrame / dict[str, Series|DataFrame]。"""
+    if data is None:
+        return False
+    if isinstance(data, dict):
+        return any(_has_observations(v) for v in data.values())
+    if isinstance(data, pd.DataFrame):
+        if data.empty:
+            return False
+        return any(
+            isinstance(data[col], pd.Series) and data[col].last_valid_index() is not None
+            for col in data.columns
+        )
+    if isinstance(data, pd.Series):
+        return (not data.empty) and data.last_valid_index() is not None
+    return False
+
+
+def _empty_increment_is_current(data_service, data_type: str) -> bool:
+    """增量拉数全空时：底库已有 last_date 则视为已是最新。"""
+    return data_service.get_last_date(data_type) is not None
+
+
 async def _fetch_us_treasuries(
     fred_service, start_date: pd.Timestamp, end_date: pd.Timestamp
 ) -> dict:
@@ -126,12 +149,7 @@ async def _fetch_us_treasuries(
 
     for name in us_codes:
         code = settings.fred_codes[name]
-        try:
-            series = await fred_service.fetch_series(code, start_date, end_date)
-            us_data[name] = series
-        except Exception as e:
-            logger.error(f"获取 {name} ({code}) 数据时出错: {e}")
-            us_data[name] = pd.Series(dtype="float64")
+        us_data[name] = await fred_service.fetch_series(code, start_date, end_date)
 
     return us_data
 
@@ -430,7 +448,22 @@ async def update_us_treasuries():
 
         new_data = await _fetch_us_treasuries(fred_service, us_start, latest_end)
 
-        if not any(not series.empty for series in new_data.values()):
+        if not _has_observations(new_data):
+            if _empty_increment_is_current(data_service, "us_treasuries"):
+                logger.info("美债增量区间无新观测，底库已有 last_date，视为已是最新")
+                response_data = USTreasuriesUpdateData(
+                    us_treasuries=USTreasuries(
+                        m3=TreasuryData(date=latest_end.date(), value=None),
+                        y2=TreasuryData(date=latest_end.date(), value=None),
+                        y10=TreasuryData(date=latest_end.date(), value=None),
+                    )
+                )
+                return UpdateResponse(
+                    success=True,
+                    message="美债数据已是最新，无需更新",
+                    data=response_data,
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何美债新数据")
 
         data_service.save_fred_data(new_data)
@@ -587,7 +620,23 @@ async def update_exchange_rates():
 
         exchange_data = await _fetch_exchange_rates(fred_service, start_date, latest_end)
 
-        if not any(not series.empty for series in exchange_data.values()):
+        if not _has_observations(exchange_data):
+            if _empty_increment_is_current(data_service, "exchange_rates"):
+                logger.info("汇率增量区间无新观测，底库已有 last_date，视为已是最新")
+                response_data = ExchangeRatesUpdateData(
+                    exchange_rates=ExchangeRates(
+                        dollar_index=ExchangeRateData(date=latest_end.date(), value=None),
+                        usd_cny=ExchangeRateData(date=latest_end.date(), value=None),
+                        usd_jpy=ExchangeRateData(date=latest_end.date(), value=None),
+                        usd_eur=ExchangeRateData(date=latest_end.date(), value=None),
+                    )
+                )
+                return UpdateResponse(
+                    success=True,
+                    message="汇率数据已是最新，无需更新",
+                    data=response_data,
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何汇率新数据")
 
         # 保存汇率数据
@@ -1227,7 +1276,15 @@ async def update_vix():
         vix_code = settings.fred_codes.get("vix", "VIXCLS")
         vix_series = await fred_service.fetch_series(vix_code, start_date, latest_end)
 
-        if vix_series.empty:
+        if not _has_observations(vix_series):
+            if _empty_increment_is_current(data_service, "vix"):
+                logger.info("VIX增量区间无新观测，底库已有 last_date，视为已是最新")
+                return UpdateResponse(
+                    success=True,
+                    message="VIX数据已是最新，无需更新",
+                    data=VIXUpdateData(vix=VIXData(date=latest_end.date(), value=None)),
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何VIX新数据")
 
         # 处理VIX数据：时区转换、验证、标准化
@@ -1367,7 +1424,15 @@ async def update_tga():
         tga_code = settings.fred_codes.get("tga", "WTREGEN")
         tga_series = await fred_service.fetch_series(tga_code, start_date, latest_end)
 
-        if tga_series.empty:
+        if not _has_observations(tga_series):
+            if _empty_increment_is_current(data_service, "tga"):
+                logger.info("TGA增量区间无新观测，底库已有 last_date，视为已是最新")
+                return UpdateResponse(
+                    success=True,
+                    message="TGA数据已是最新，无需更新",
+                    data=TGAUpdateData(tga=TGAData(date=latest_end.date(), value=None)),
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何TGA新数据")
 
         tga_data = {"tga": tga_series}
@@ -1498,7 +1563,15 @@ async def update_hibor():
 
         hibor_series = await hibor_service.fetch_series(start_date, latest_end)
 
-        if hibor_series.empty:
+        if not _has_observations(hibor_series):
+            if _empty_increment_is_current(data_service, "hibor"):
+                logger.info("HIBOR增量区间无新观测，底库已有 last_date，视为已是最新")
+                return UpdateResponse(
+                    success=True,
+                    message="HIBOR数据已是最新，无需更新",
+                    data=HIBORUpdateData(hibor=HIBORData(date=latest_end.date(), value=None)),
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何HIBOR新数据")
 
         hibor_data = {"hibor": hibor_series}
@@ -1922,7 +1995,18 @@ async def update_china_bonds():
         # 获取中国国债收益率数据
         bond_df = china_bond_service.fetch_china_bond_yield(start_date.strftime("%Y-%m-%d"), latest_end.strftime("%Y-%m-%d"))
 
-        if bond_df.empty:
+        if not _has_observations(bond_df):
+            if _empty_increment_is_current(data_service, "china_bond"):
+                logger.info("中国国债增量区间无新观测，底库已有 last_date，视为已是最新")
+                response_data = ChinaBondUpdateData(
+                    china_bond_10y=ChinaBondData(date=latest_end.date(), value=None)
+                )
+                return UpdateResponse(
+                    success=True,
+                    message="中国国债数据已是最新，无需更新",
+                    data=response_data,
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何中国国债新数据")
 
         # 保存中国国债数据（传短 key 让 _save_china_bond 自动加 "中国" 前缀）
@@ -2086,7 +2170,18 @@ async def update_ted_spread():
         us_3m_code = settings.fred_codes.get("us_3m", "DGS3MO")
         us_3m_series = await fred_service.fetch_series(us_3m_code, start_date, latest_end)
 
-        if sofr_series.empty and us_3m_series.empty:
+        ted_payload = {"sofr": sofr_series, "us_3m": us_3m_series}
+        if not _has_observations(ted_payload):
+            if _empty_increment_is_current(data_service, "ted_spread"):
+                logger.info("TED利差增量区间无新观测，底库已有 last_date，视为已是最新")
+                return UpdateResponse(
+                    success=True,
+                    message="TED利差数据已是最新，无需更新",
+                    data=TedSpreadUpdateData(
+                        ted_spread=TedSpreadData(date=latest_end.date(), sofr=None, us_3m=None, ted_spread=None)
+                    ),
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何TED利差新数据")
 
         # 保存TED利差数据
@@ -2254,7 +2349,21 @@ async def update_commodities():
         )
         new_data = await commodity_service.fetch_all(start_date.date(), latest_end.date())
 
-        if not new_data or all(s.empty for s in new_data.values()):
+        if not _has_observations(new_data):
+            if _empty_increment_is_current(data_service, "commodities"):
+                logger.info("商品增量区间无新观测，底库已有 last_date，视为已是最新")
+                today = latest_end.date()
+                return UpdateResponse(
+                    success=True,
+                    message="商品数据已是最新",
+                    data=CommoditiesUpdateData(
+                        commodities=CommoditiesData(
+                            date=today,
+                            gold=None, silver=None, oil=None, copper=None,
+                        )
+                    ),
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何商品新数据")
 
         data_service.save_commodities(new_data)
@@ -2411,7 +2520,15 @@ async def update_indices():
         )
         new_data = await index_service.fetch_all(start_date.date(), latest_end.date())
 
-        if not new_data or all(s.empty for s in new_data.values()):
+        if not _has_observations(new_data):
+            if _empty_increment_is_current(data_service, "indices"):
+                logger.info("股指增量区间无新观测，底库已有 last_date，视为已是最新")
+                return UpdateResponse(
+                    success=True,
+                    message="股指数据已是最新",
+                    data=IndicesUpdateData(indices=IndicesData(date=latest_end.date())),
+                    updated_at=datetime.now().isoformat(),
+                )
             raise Exception("未能获取到任何股指新数据")
 
         data_service.save_indices(new_data)

@@ -88,4 +88,4 @@ cd ../../apps/macro && pnpm exec tsc --noEmit
 ## `task.py start` 前检查
 
 - [x] 已与 `08-29-macro-tab-write-align` 合并
-- [ ] 用户确认规划后才 `python ./.trellis/scripts/task.py start 08-29-macro-us-treasury-empty-update`
+- [x] 用户确认规划后才 `python ./.trellis/scripts/task.py start 08-29-macro-us-treasury-empty-update`

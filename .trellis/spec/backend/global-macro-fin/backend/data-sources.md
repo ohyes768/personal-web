@@ -157,6 +157,18 @@ return post("/api/macro/update/margin");
 `RefreshButton`：文案「初始化历史数据」/「更新数据」；两者成功都要 `onSuccess` 刷图。
 信号首页与对比不加写数按钮。各 Tab 独立 `storageKey`。
 
+多端点必须 **串行** 且 **全部成功** 才置灰（`postSerial`）。禁止 `Promise.all`。
+
+| Tab | 初始化 | 更新 |
+|-----|--------|------|
+| 中美利差/汇率 | us-treasuries → exchange-rates → china-bonds history | 同序 `/update/*` |
+| 利率利差 | china-bonds → ted-spread → dr007 → us-treasuries history | 同序 `/update/*` |
+| 流动性/风险 | vix → tga → hibor history | 同序 `/update/*` |
+| 商品 / 股指 | 单端点 history | 单端点 update |
+| 市场情绪 | volume-turnover → margin → fund-flow history | volume → turnover → margin → fund-flow |
+
+日度增量：外部 API 成功但区间无观测、CSV 已有 last_date → `success`「已是最新」。FRED 单系列失败必须上抛，不能吞成空 Series。
+
 ---
 
 ## Scenario: akshare 融资余额历史

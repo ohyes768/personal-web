@@ -52,7 +52,13 @@ export function TreasuryExchangeTab({
           onInit={economicApi.initHistory}
           storageKey="last_initialized_macro_data"
           label="初始化历史数据"
-          hasData={!!data && data.dates && data.dates.length > 0}
+          hasData={
+            !!(
+              fullData?.us_treasuries?.['10y']?.length &&
+              fullData?.exchange_rates?.dollar_index?.length &&
+              fullData?.china_bond?.['10y']?.length
+            )
+          }
           onSuccess={handleRefreshSuccess}
         />
         <RefreshButton

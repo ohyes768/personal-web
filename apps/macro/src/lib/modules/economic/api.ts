@@ -14,6 +14,20 @@ export interface UpdateResponse {
   error_code?: string;
 }
 
+/** 多端点写入必须串行：routes 全局 _is_updating，并发会 UPDATE_IN_PROGRESS。 */
+async function postSerial(paths: readonly string[]): Promise<UpdateResponse> {
+  let last: UpdateResponse | undefined;
+  for (const path of paths) {
+    const res = await directClient.post<UpdateResponse>(path);
+    if (!res.success) return res;
+    last = res;
+  }
+  if (!last) {
+    return { success: false, message: 'empty serial post list' };
+  }
+  return last;
+}
+
 export const economicApi = {
   /**
    * 月度宏观信号快照。模块级引用稳定，避免父组件重渲染导致 MacroSignalTab 重复请求。
@@ -59,15 +73,14 @@ export const economicApi = {
 
   /**
    * 初始化历史数据（首次部署用）
-   * 并发调两个 /fetch/.../history 端点，从 2000-01-01 拉全量数据
-   * 任一成功即视为成功（与 updateUsTreasuriesAndRates 同模式）
+   * 串行：美债 → 汇率 → 中债 history
    */
-  initHistory: async (): Promise<UpdateResponse> => {
-    const [us, fx] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/fetch/us-treasuries/history'),
-      directClient.post<UpdateResponse>('/api/macro/fetch/exchange-rates/history'),
+  initHistory: (): Promise<UpdateResponse> => {
+    return postSerial([
+      '/api/macro/fetch/us-treasuries/history',
+      '/api/macro/fetch/exchange-rates/history',
+      '/api/macro/fetch/china-bonds/history',
     ]);
-    return us.success || fx.success ? us : us;
   },
 
   /**
@@ -79,16 +92,14 @@ export const economicApi = {
   },
 
   /**
-   * 更新美债 + 汇率 + 中国 10y（前端中美利差/汇率 tab 用，并发请求）
-   * 三个端点并发，任一成功即视为成功
+   * 更新美债 + 汇率 + 中国 10y（前端中美利差/汇率 tab 用）
    */
-  updateUsTreasuriesAndRates: async (): Promise<UpdateResponse> => {
-    const [us, fx, cn] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/update/us-treasuries'),
-      directClient.post<UpdateResponse>('/api/macro/update/exchange-rates'),
-      directClient.post<UpdateResponse>('/api/macro/update/china-bonds'),
+  updateUsTreasuriesAndRates: (): Promise<UpdateResponse> => {
+    return postSerial([
+      '/api/macro/update/us-treasuries',
+      '/api/macro/update/exchange-rates',
+      '/api/macro/update/china-bonds',
     ]);
-    return us.success || fx.success || cn.success ? us : fx;
   },
 
   /**
@@ -165,56 +176,52 @@ export const economicApi = {
 
   /**
    * 初始化流动性/风险历史数据（首次部署用）
-   * 并发调 vix + tga + hibor 三个 history 端点（任一成功即视为成功）
-   * 任一成功即视为成功
+   * 串行：vix → tga → hibor history
    */
-  initLiquidityHistory: async (): Promise<UpdateResponse> => {
-    const [vix, tga, hibor] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/fetch/vix/history'),
-      directClient.post<UpdateResponse>('/api/macro/fetch/tga/history'),
-      directClient.post<UpdateResponse>('/api/macro/fetch/hibor/history'),
+  initLiquidityHistory: (): Promise<UpdateResponse> => {
+    return postSerial([
+      '/api/macro/fetch/vix/history',
+      '/api/macro/fetch/tga/history',
+      '/api/macro/fetch/hibor/history',
     ]);
-    return vix.success || tga.success || hibor.success ? vix : vix;
   },
 
   /**
-   * 增量更新流动性/风险数据（最近 7 天）
-   * 并发调 vix + tga + hibor 三个 update 端点
-   * 任一成功即视为成功
+   * 增量更新流动性/风险数据
+   * 串行：vix → tga → hibor update
    */
-  updateLiquidity: async (): Promise<UpdateResponse> => {
-    const [vix, tga, hibor] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/update/vix'),
-      directClient.post<UpdateResponse>('/api/macro/update/tga'),
-      directClient.post<UpdateResponse>('/api/macro/update/hibor'),
+  updateLiquidity: (): Promise<UpdateResponse> => {
+    return postSerial([
+      '/api/macro/update/vix',
+      '/api/macro/update/tga',
+      '/api/macro/update/hibor',
     ]);
-    return vix.success || tga.success || hibor.success ? vix : vix;
   },
 
   /**
    * 初始化利率利差历史数据（首次部署用）
-   * 并发调 china-bonds + ted-spread 两个 history 端点
-   * 任一成功即视为成功
+   * 串行：中债 → TED → DR007 → 美债 history
    */
-  initRatesHistory: async (): Promise<UpdateResponse> => {
-    const [cn, ted] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/fetch/china-bonds/history'),
-      directClient.post<UpdateResponse>('/api/macro/fetch/ted-spread/history'),
+  initRatesHistory: (): Promise<UpdateResponse> => {
+    return postSerial([
+      '/api/macro/fetch/china-bonds/history',
+      '/api/macro/fetch/ted-spread/history',
+      '/api/macro/fetch/dr007/history',
+      '/api/macro/fetch/us-treasuries/history',
     ]);
-    return cn.success || ted.success ? cn : cn;
   },
 
   /**
-   * 增量更新利率利差数据（最近 7 天）
-   * 并发调 china-bonds + ted-spread 两个 update 端点
-   * 任一成功即视为成功
+   * 增量更新利率利差数据
+   * 串行：中债 → TED → DR007 → 美债 update
    */
-  updateRates: async (): Promise<UpdateResponse> => {
-    const [cn, ted] = await Promise.all([
-      directClient.post<UpdateResponse>('/api/macro/update/china-bonds'),
-      directClient.post<UpdateResponse>('/api/macro/update/ted-spread'),
+  updateRates: (): Promise<UpdateResponse> => {
+    return postSerial([
+      '/api/macro/update/china-bonds',
+      '/api/macro/update/ted-spread',
+      '/api/macro/update/dr007',
+      '/api/macro/update/us-treasuries',
     ]);
-    return cn.success || ted.success ? cn : cn;
   },
 
   /**
@@ -240,32 +247,25 @@ export const economicApi = {
 
   /**
    * 初始化市场情绪历史：串行 volume-turnover → margin → fund-flow。
-   * 三条 /fetch/.../history 端点共用 routes 全局 _is_updating 锁，不能 Promise.all。
-   * 任一步失败则整体失败、不置灰。
+   * 三条 /fetch/.../history 端点共用 routes 全局 _is_updating 锁。
    */
-  initMarketSentimentHistory: async (): Promise<UpdateResponse> => {
-    const volumeTurnover = await directClient.post<UpdateResponse>(
+  initMarketSentimentHistory: (): Promise<UpdateResponse> => {
+    return postSerial([
       '/api/macro/fetch/volume-turnover/history',
-    );
-    if (!volumeTurnover.success) return volumeTurnover;
-    const margin = await directClient.post<UpdateResponse>(
       '/api/macro/fetch/margin/history',
-    );
-    if (!margin.success) return margin;
-    return directClient.post<UpdateResponse>('/api/macro/fetch/fund-flow/history');
+      '/api/macro/fetch/fund-flow/history',
+    ]);
   },
 
   /**
    * 增量更新市场情绪：串行 volume → turnover → margin → fund-flow
-   * 避开 routes 全局 _is_updating 锁；任一步失败则整体失败
    */
-  updateMarketSentiment: async (): Promise<UpdateResponse> => {
-    const volume = await directClient.post<UpdateResponse>('/api/macro/update/volume');
-    if (!volume.success) return volume;
-    const turnover = await directClient.post<UpdateResponse>('/api/macro/update/turnover');
-    if (!turnover.success) return turnover;
-    const margin = await directClient.post<UpdateResponse>('/api/macro/update/margin');
-    if (!margin.success) return margin;
-    return directClient.post<UpdateResponse>('/api/macro/update/fund-flow');
+  updateMarketSentiment: (): Promise<UpdateResponse> => {
+    return postSerial([
+      '/api/macro/update/volume',
+      '/api/macro/update/turnover',
+      '/api/macro/update/margin',
+      '/api/macro/update/fund-flow',
+    ]);
   },
 };
