@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/08-29-macro-hsgt-fund-flow/prd.md", "reason": "需求、已验证的数据源事实（东财 API 参数/MUTUAL_TYPE 编码/单位换算/勾稽数据）、验收标准 AC1-AC7"}
+{"file": ".trellis/tasks/08-29-macro-hsgt-fund-flow/design.md", "reason": "分层契约：fund_flow_service 取数签名、CSV 4 列、TAB_SECTIONS/INDICATOR_SECTIONS 改动点、前端组件与 API 链改动清单"}
+{"file": ".trellis/tasks/08-29-macro-hsgt-fund-flow/implement.md", "reason": "5 步实施顺序与每步验证命令、风险点（旧 CSV 列不匹配、东财反爬）与回滚"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/data-sources.md", "reason": "同类数据源接入范式：baostock 的状态返回/幂等/测试模式，本任务对齐（增量 10 日窗口自愈、monkeypatch 禁真连）"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/scheduler.md", "reason": "调度契约：a_share_daily 组 HTTP self-call 模式，/update/fund-flow 已在组内无需改 scheduler.json"}

@@ -26,9 +26,9 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   tga:     { id: 'tga',     label: 'TGA余额',  group: 'liquidity',   color: '#f97316', unit: '千亿美元', source: 'FRED' },
   hibor:   { id: 'hibor',   label: 'HIBOR隔夜', group: 'liquidity',  color: '#14b8a6', unit: '%',        source: 'HKMA' },
 
-  // 资金流
-  north_net: { id: 'north_net', label: '北向净流入', group: 'fund_flow', color: '#06b6d4', unit: '亿元', source: 'AKShare' },
-  south_net: { id: 'south_net', label: '南向净流入', group: 'fund_flow', color: '#22d3ee', unit: '亿元', source: 'AKShare' },
+  // 资金流（北向净买额 2024-08 停发，换北向成交额；来源为东财原始 API）
+  north_deal: { id: 'north_deal', label: '北向成交额', group: 'fund_flow', color: '#06b6d4', unit: '亿元', source: '东财' },
+  south_net: { id: 'south_net', label: '南向净流入', group: 'fund_flow', color: '#22d3ee', unit: '亿元', source: '东财' },
 
   // 利率利差
   ted_spread: { id: 'ted_spread', label: 'TED利差',     group: 'rates',  color: '#ec4899', unit: '%',    source: 'FRED' },

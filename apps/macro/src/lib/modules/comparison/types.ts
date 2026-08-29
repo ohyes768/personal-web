@@ -22,7 +22,7 @@ export type IndicatorId =
   | 'dxy' | 'usd_cny' | 'usd_jpy' | 'usd_eur'
   | 'vix'
   | 'tga' | 'hibor'
-  | 'north_net' | 'south_net'
+  | 'north_deal' | 'south_net'
   | 'ted_spread' | 'sofr' | 'cn_10y_2y'
   | 'gold' | 'silver' | 'oil' | 'copper'
   | 'hk_hsi' | 'sh_000001' | 'spx' | 'ixic' | 'dji';
@@ -34,7 +34,7 @@ export interface IndicatorMeta {
   group: IndicatorGroup;
   color: string;          // 曲线颜色（hex）
   unit: string;           // 单位（%, $/oz, ¥/g, 亿元等）
-  source: 'FRED' | 'AKShare' | '阿里云' | 'HKMA';
+  source: 'FRED' | 'AKShare' | '阿里云' | 'HKMA' | '东财';
 }
 
 /**

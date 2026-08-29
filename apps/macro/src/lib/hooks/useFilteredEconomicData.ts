@@ -130,12 +130,8 @@ export function useFilteredEconomicData(
       // 以下字段对比模块需要，必须保留
       fund_flow: processedData.fund_flow
         ? {
-            north_net_flow:
-              processedData.fund_flow.north_net_flow?.slice(startIndex, endIndex) ?? [],
-            north_buy:
-              processedData.fund_flow.north_buy?.slice(startIndex, endIndex) ?? [],
-            north_sell:
-              processedData.fund_flow.north_sell?.slice(startIndex, endIndex) ?? [],
+            north_deal_amount:
+              processedData.fund_flow.north_deal_amount?.slice(startIndex, endIndex) ?? [],
             south_net_flow:
               processedData.fund_flow.south_net_flow?.slice(startIndex, endIndex) ?? [],
             south_buy:

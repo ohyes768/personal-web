@@ -60,9 +60,7 @@ export interface EconomicDataResponse {
   };
   vix?: number[];
   fund_flow?: {
-    north_net_flow: (number | null)[];
-    north_buy: (number | null)[];
-    north_sell: (number | null)[];
+    north_deal_amount: (number | null)[];
     south_net_flow: (number | null)[];
     south_buy: (number | null)[];
     south_sell: (number | null)[];

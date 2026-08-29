@@ -3,8 +3,9 @@
 /**
  * 市场情绪 Tab — 容器组件
  *
- * 数据源：EconomicDataResponse.volume / turnover / margin
- * 写入：InitButton → /fetch/volume-turnover/history；RefreshButton → 串行 update volume/turnover/margin
+ * 数据源：EconomicDataResponse.volume / turnover / margin / fund_flow
+ * 写入：InitButton → 串行 /fetch/volume-turnover/history → /fetch/margin/history → /fetch/fund-flow/history；
+ *       RefreshButton → 串行 update volume/turnover/margin/fund-flow
  */
 import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
 import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
@@ -13,6 +14,7 @@ import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
 import { InitButton } from './InitButton';
 import { MarketSentimentChart } from './MarketSentimentChart';
+import { HsgtFundFlowChart } from './HsgtFundFlowChart';
 import { TabPanelLoading } from './TabPanelLoading';
 
 interface MarketSentimentTabProps {
@@ -45,7 +47,7 @@ export function MarketSentimentTab({
           onInit={economicApi.initMarketSentimentHistory}
           storageKey="last_initialized_macro_market_sentiment"
           label="初始化历史数据"
-          hasData={!!(fullData?.volume?.length || fullData?.turnover?.length)}
+          hasData={!!(fullData?.volume?.length || fullData?.turnover?.length || fullData?.fund_flow?.north_deal_amount?.length)}
           onSuccess={onRefreshSuccess}
         />
         <RefreshButton
@@ -65,9 +67,14 @@ export function MarketSentimentTab({
       )}
 
       {data && !isLoading && (
-        <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
-          <MarketSentimentChart data={data} />
-        </div>
+        <>
+          <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
+            <MarketSentimentChart data={data} />
+          </div>
+          <div className="bg-gray-900 rounded-lg p-6 border border-gray-800">
+            <HsgtFundFlowChart data={data} />
+          </div>
+        </>
       )}
 
       {isLoading && <TabPanelLoading message="加载市场情绪数据中…" />}

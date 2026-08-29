@@ -22,7 +22,7 @@ export function extractSeries(
     case 'vix':     return data.vix ?? [];
     case 'tga':     return data.tga ?? [];
     case 'hibor':   return data.hibor ?? [];
-    case 'north_net': return data.fund_flow?.north_net_flow ?? [];
+    case 'north_deal': return data.fund_flow?.north_deal_amount ?? [];
     case 'south_net': return data.fund_flow?.south_net_flow ?? [];
     case 'ted_spread': return data.ted_spread?.ted_spread ?? [];
     case 'sofr':       return data.ted_spread?.sofr ?? [];
