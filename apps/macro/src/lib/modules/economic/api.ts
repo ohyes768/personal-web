@@ -15,17 +15,6 @@ export interface UpdateResponse {
 
 export const economicApi = {
   /**
-   * 获取经济数据
-   */
-  getData: (startDate?: string, endDate?: string): Promise<EconomicDataResponse> => {
-    const params: Record<string, string> = {};
-    if (startDate) params.start_date = startDate;
-    if (endDate) params.end_date = endDate;
-
-    return apiClient.get<EconomicDataResponse>('/api/macro/data', params);
-  },
-
-  /**
    * 按 Tab 获取全历史经济数据（切换 Tab 时调用，时间周期由前端本地切片）
    * 对比页请用 getComparisonData，不要打无 indicators 的 /data/comparison
    */

@@ -2,7 +2,7 @@
 
 /**
  * 中美利差/汇率 Tab — 容器组件
- * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - page.tsx 按 Tab 用 useTabEconomicData 拉数，本组件接 props 拿 fullData
  * - useFilteredEconomicData 做本地时间范围 + tabType 过滤（无网络请求）
  * - 复用 TimeRangeSelector / InitButton / RefreshButton
  * - chartKey 防止数据区间无变化时重复挂载

@@ -5,7 +5,7 @@
  * - 展示 VIX 恐慌指数 + TGA 账户余额 + HIBOR 隔夜拆息
  * - 1 个「初始化」+ 1 个「更新数据」按钮（合并原 VIX/TGA/HIBOR 三套独立按钮），
  *   内部并发调 3 个端点（economicApi.initLiquidityHistory / updateLiquidity）
- * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - page.tsx 按 Tab 用 useTabEconomicData 拉数，本组件接 props 拿 fullData
  * - useFilteredEconomicData 复用 'treasury-exchange' tabType（filterDataByTab 对 liquidity-risk 走 fallthrough 返回 data 原样）
  * - 复用 TimeRangeSelector（liquidity-risk tabType 走 TREASURY_TIME_RANGES 默认）
  * - onSuccess 用顶层 onRefreshSuccess prop，触发 page.tsx refreshKey++，

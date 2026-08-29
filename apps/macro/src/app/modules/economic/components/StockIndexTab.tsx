@@ -2,7 +2,7 @@
 
 /**
  * 股指 Tab — 容器组件
- * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - page.tsx 按 Tab 用 useTabEconomicData 拉数，本组件接 props 拿 fullData
  * - useFilteredEconomicData 复用 'treasury-exchange' tabType（filterDataByTab 对 stock-indices 不裁剪）
  * - 复用 TimeRangeSelector
  * - 复用 RefreshButton（indices 是日级 K 线，cadence=daily）

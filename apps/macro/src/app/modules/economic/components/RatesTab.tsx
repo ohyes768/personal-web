@@ -4,7 +4,7 @@
  * 利率利差 Tab — 容器组件
  * - 展示 SOFR + 美债3M + TED 利差 + 中国10y + 中国10年-2年
  * - 数据源独立 InitButton + RefreshButton（参考 LiquidityTab 模板）
- * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - page.tsx 按 Tab 用 useTabEconomicData 拉数，本组件接 props 拿 fullData
  * - useFilteredEconomicData 复用 'treasury-exchange' tabType
  * - 复用 TimeRangeSelector（rates tabType 走 TREASURY_TIME_RANGES 默认）
  */

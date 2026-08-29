@@ -2,7 +2,7 @@
 
 /**
  * 商品 Tab — 容器组件
- * - 顶层 page.tsx 用 useFullEconomicData 拉一次全量数据，本组件接 props 拿 fullData
+ * - page.tsx 按 Tab 用 useTabEconomicData 拉数，本组件接 props 拿 fullData
  * - useFilteredEconomicData 复用 'treasury-exchange' tabType（filterDataByTab 对 commodities 不裁剪）
  * - 复用 TimeRangeSelector
  * - 复用 RefreshButton（commodities 是日级，cadence=daily）
