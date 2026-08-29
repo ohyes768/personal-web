@@ -41,3 +41,43 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: 宏观页数据 Tab 写入 UX 统一
+
+**Date**: 2026-08-29
+**Task**: 宏观页数据 Tab 写入 UX 统一
+**Package**: backend/global-macro-fin
+**Branch**: `master`
+
+### Summary
+
+六个数据 Tab 统一初始化/更新/置灰；成交额历史改到 /fetch/volume-turnover/history；市场情绪三个增量串行，避开全局更新锁。信号首页与对比保持只读。
+
+### Main Changes
+
+- 六个数据 Tab（中美利差/汇率、流动性/风险、利率利差、商品、股指、市场情绪）统一 InitButton + RefreshButton：文案「初始化历史数据」/「更新数据」，成功后 onSuccess 刷图，各用独立 storageKey。
+- 信号首页与对比保持只读，不加写数按钮。
+- 成交额+换手率历史规范为 POST /api/fetch/volume-turnover/history；删除旧 /update/volume-turnover/history，不留别名。
+- 市场情绪更新串行打 volume → turnover → margin，避开 routes.py 全局 _is_updating 锁；不抄流动性 Tab 的 Promise.all。
+- 融资余额 history 与流动性并发锁修复不在本任务范围。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `26538b4` | (see git log) |
+| `c394523` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
