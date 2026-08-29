@@ -81,3 +81,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 融资余额历史回补接口
+
+**Date**: 2026-08-29
+**Task**: 融资余额历史回补接口
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+新增 POST /fetch/margin/history，akshare 沪深全表按日期 outer join 回补 margin.csv；市场情绪初始化串行 volume-turnover → margin → fund-flow history。pytest tests/test_margin.py 12 passed。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ce6c8cc` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
