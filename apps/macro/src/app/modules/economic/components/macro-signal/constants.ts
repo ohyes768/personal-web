@@ -18,12 +18,17 @@ export const GROUP_META: Record<DimensionKey, {
   risk_appetite:   { title: '市场情绪', order: 6, calendarColor: 'bg-pink-500'    },
 };
 
-/** 分组按固定顺序排列的 key 列表 */
-export const GROUP_ORDER: DimensionKey[] = [
+/** 月度模式只展示统计局/央行月频四维；外部压力、市场情绪只在日频 */
+export const MONTHLY_GROUPS: DimensionKey[] = [
   'monetary_policy',
   'money_supply',
   'entity_economy',
   'inflation',
+];
+
+/** 全部分组 key（GROUP_META / 空快照类型用；月度渲染请用 MONTHLY_GROUPS） */
+export const GROUP_ORDER: DimensionKey[] = [
+  ...MONTHLY_GROUPS,
   'exchange_rate',
   'risk_appetite',
 ];

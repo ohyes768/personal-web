@@ -12,7 +12,7 @@ import { MonthSwitcher } from './macro-signal/MonthSwitcher';
 import { DailySwitcher } from './macro-signal/DailySwitcher';
 import { GroupCardGrid } from './macro-signal/GroupCardGrid';
 import { DailyCardGrid } from './macro-signal/DailyCardGrid';
-import { GROUP_ORDER } from './macro-signal/constants';
+import { GROUP_ORDER, MONTHLY_GROUPS } from './macro-signal/constants';
 import type {
   DailySnapshot,
   DimensionKey,
@@ -37,7 +37,7 @@ function prevYearMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-/** 空快照:snapshot 接口返回 null 时构造,让六大维度卡片仍展示「数据缺失」态 */
+/** 空快照:snapshot 接口返回 null 时构造,月度四维仍展示「数据缺失」态 */
 function emptySnapshot(month: string): MacroSignalSnapshot {
   const groups = GROUP_ORDER.reduce<Record<DimensionKey, MacroSignalGroup>>((acc, key) => {
     acc[key] = { conclusion: null, indicators: [] };
@@ -186,8 +186,8 @@ export function MacroSignalTab({ loadSnapshot, initialMonth, onJumpToTab }: Macr
       {mode === 'monthly' && (
         <>
           {loading && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {Array.from({ length: 6 }).map((_, i) => (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {Array.from({ length: MONTHLY_GROUPS.length }).map((_, i) => (
                 <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-5 h-48 animate-pulse">
                   <div className="h-3 w-20 bg-gray-800 rounded mb-3"></div>
                   <div className="h-5 w-16 bg-gray-800 rounded mb-4"></div>

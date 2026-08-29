@@ -5,6 +5,7 @@
 import { apiClient, directClient } from '@/lib/api-client';
 import type { EconomicDataResponse, TabType } from '@/lib/types/economic';
 import type { IndicatorId } from '@/lib/modules/comparison/types';
+import type { MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
 
 export interface UpdateResponse {
   success: boolean;
@@ -14,6 +15,15 @@ export interface UpdateResponse {
 }
 
 export const economicApi = {
+  /**
+   * 月度宏观信号快照。模块级引用稳定，避免父组件重渲染导致 MacroSignalTab 重复请求。
+   * 无数据时后端 404，调用方 catch；成功但 data 缺失时返回 null。
+   */
+  getSignalSnapshot: async (month: string): Promise<MacroSignalSnapshot | null> => {
+    const data = await apiClient.get<MacroSignalSnapshot | null>('/api/macro/signal', { month });
+    return data ?? null;
+  },
+
   /**
    * 按 Tab 获取全历史经济数据（切换 Tab 时调用，时间周期由前端本地切片）
    * 对比页请用 getComparisonData，不要打无 indicators 的 /data/comparison

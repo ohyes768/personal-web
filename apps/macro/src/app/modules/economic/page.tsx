@@ -10,7 +10,7 @@ import { useState, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
-import type { MacroSignalSnapshot } from '@/lib/modules/macro-signal/types';
+import { economicApi } from '@/lib/modules/economic/api';
 import { useTabEconomicData } from '@/lib/hooks/useTabEconomicData';
 import { Tabs } from './components/Tabs';
 
@@ -62,18 +62,6 @@ export default function EconomicPage() {
 
   // 按 Tab 拉全历史：切换 Tab 请求 /api/macro/data/{tab}，同 Tab 切时间周期不再请求
   const { tabDataMap, isLoading, error } = useTabEconomicData(activeTab, refreshKey);
-
-  // === 宏观信号数据源 ===
-  // 直连后端 /api/macro/*:本地 dev 由 next.config.js rewrites 代理到 localhost:8094,
-  // 生产由 nginx 反代到 macro 后端容器(后端未启动时 MacroSignalTab 显示 error 态)
-  // availableMonths 由 MacroSignalTab 内部懒加载（首屏不再为其发请求）
-  const loadSnapshot = async (month: string): Promise<MacroSignalSnapshot | null> => {
-    const res = await fetch(`/api/macro/signal?month=${encodeURIComponent(month)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    // 后端 MacroSignalResponse 是 { success, data } 包装,前端契约只要 data
-    const body = await res.json() as { success?: boolean; data?: MacroSignalSnapshot };
-    return body?.data ?? null;
-  };
 
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
@@ -243,8 +231,9 @@ export default function EconomicPage() {
           />
         </div>
         <div hidden={activeTab !== 'macro-signal'}>
+          {/* 模块级函数引用稳定：切 Tab 重渲染不会再打 /api/macro/signal */}
           <MacroSignalTab
-            loadSnapshot={loadSnapshot}
+            loadSnapshot={economicApi.getSignalSnapshot}
             onJumpToTab={setActiveTab}
           />
         </div>
