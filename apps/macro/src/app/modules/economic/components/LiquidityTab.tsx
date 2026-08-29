@@ -49,8 +49,9 @@ export function LiquidityTab({
         <InitButton
           onInit={economicApi.initLiquidityHistory}
           storageKey="last_initialized_macro_liquidity"
-          label="初始化流动性/风险"
+          label="初始化历史数据"
           hasData={!!(data?.vix?.length && data?.tga?.length && data?.hibor?.length)}
+          onSuccess={onRefreshSuccess}
         />
         <RefreshButton
           onRefresh={economicApi.updateLiquidity}

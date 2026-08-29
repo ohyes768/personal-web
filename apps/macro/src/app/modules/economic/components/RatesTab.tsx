@@ -46,14 +46,15 @@ export function RatesTab({
         <InitButton
           onInit={economicApi.initRatesHistory}
           storageKey="last_initialized_macro_rates"
-          label="初始化利率利差"
+          label="初始化历史数据"
           hasData={!!(data?.ted_spread?.ted_spread?.length || data?.china_bond?.['spread_10y_2y']?.length)}
+          onSuccess={onRefreshSuccess}
         />
         <RefreshButton
           onRefresh={economicApi.updateRates}
           storageKey="last_updated_rates_daily"
           cadence="daily"
-          label="更新利率利差"
+          label="更新数据"
           onSuccess={onRefreshSuccess}
         />
       </div>

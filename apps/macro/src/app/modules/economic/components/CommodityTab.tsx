@@ -45,14 +45,15 @@ export function CommodityTab({
         <InitButton
           onInit={economicApi.initCommoditiesHistory}
           storageKey="last_initialized_macro_commodities"
-          label="初始化商品数据"
+          label="初始化历史数据"
           hasData={!!data?.commodities?.gold?.length}
+          onSuccess={onRefreshSuccess}
         />
         <RefreshButton
           onRefresh={economicApi.updateCommodities}
           storageKey="last_updated_commodities_daily"
           cadence="daily"
-          label="更新商品"
+          label="更新数据"
           onSuccess={onRefreshSuccess}
         />
       </div>

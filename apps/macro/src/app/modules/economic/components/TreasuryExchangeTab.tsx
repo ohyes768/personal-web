@@ -53,12 +53,13 @@ export function TreasuryExchangeTab({
           storageKey="last_initialized_macro_data"
           label="初始化历史数据"
           hasData={!!data && data.dates && data.dates.length > 0}
+          onSuccess={handleRefreshSuccess}
         />
         <RefreshButton
           onRefresh={economicApi.updateUsTreasuriesAndRates}
           storageKey="last_updated_us_treasuries_and_rates_daily"
           cadence="daily"
-          label="更新中美利差/汇率"
+          label="更新数据"
           onSuccess={handleRefreshSuccess}
         />
       </div>

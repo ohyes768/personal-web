@@ -218,14 +218,14 @@ export const economicApi = {
   },
 
   /**
-   * 当日更新两市成交额（沪深交易所官方 API 当日点）
+   * 当日更新两市成交额（BaoStock 近 10 日窗口）
    */
   updateVolume: async (): Promise<UpdateResponse> => {
     return directClient.post<UpdateResponse>('/api/macro/update/volume');
   },
 
   /**
-   * 当日更新两市换手率（沪深交易所官方 API 当日点）
+   * 当日更新两市换手率（BaoStock 近 10 日窗口）
    */
   updateTurnover: async (): Promise<UpdateResponse> => {
     return directClient.post<UpdateResponse>('/api/macro/update/turnover');
@@ -235,6 +235,26 @@ export const economicApi = {
    * 当日更新融资余额（akshare 当日点）
    */
   updateMargin: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/update/margin');
+  },
+
+  /**
+   * 初始化市场情绪历史（成交额 + 换手率一次回补）
+   * POST /api/macro/fetch/volume-turnover/history（默认 2010-01-01 ~ 昨天）
+   */
+  initMarketSentimentHistory: async (): Promise<UpdateResponse> => {
+    return directClient.post<UpdateResponse>('/api/macro/fetch/volume-turnover/history');
+  },
+
+  /**
+   * 增量更新市场情绪：串行 volume → turnover → margin
+   * 避开 routes 全局 _is_updating 锁；任一步失败则整体失败
+   */
+  updateMarketSentiment: async (): Promise<UpdateResponse> => {
+    const volume = await directClient.post<UpdateResponse>('/api/macro/update/volume');
+    if (!volume.success) return volume;
+    const turnover = await directClient.post<UpdateResponse>('/api/macro/update/turnover');
+    if (!turnover.success) return turnover;
     return directClient.post<UpdateResponse>('/api/macro/update/margin');
   },
 };

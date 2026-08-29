@@ -13,7 +13,7 @@
 baostock 免费服务需显式 login/logout，一次会话内完成两指标拉取（logout 放 finally）。
 
 调用频率：每个交易日盘后（n8n POST /api/macro/update/volume|turnover）；
-历史回补走 POST /api/macro/update/volume-turnover/history。
+历史回补走 POST /api/macro/fetch/volume-turnover/history。
 """
 from __future__ import annotations
 

@@ -2829,8 +2829,8 @@ async def update_turnover():
         release_update_lock()
 
 
-@router.post("/update/volume-turnover/history", response_model=UpdateResponse)
-async def update_volume_turnover_history(
+@router.post("/fetch/volume-turnover/history", response_model=UpdateResponse)
+async def fetch_volume_turnover_history(
     start_date: str = Query(default="2010-01-01", description="回补起始日期 YYYY-MM-DD"),
     end_date: Optional[str] = Query(default=None, description="回补结束日期 YYYY-MM-DD，默认昨天"),
 ):

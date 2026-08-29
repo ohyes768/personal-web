@@ -37,8 +37,8 @@ get_baostock_service() -> BaostockService  # 模块级单例
 API 端点（routes.py）：
 - `POST /api/update/volume` / `POST /api/update/turnover` — 日常增量（内部调
   `fetch_today()`，路径与响应模型不变，n8n 调度无感知）
-- `POST /api/update/volume-turnover/history?start_date=2010-01-01&end_date=<昨天>`
-  — 一次性回补，响应 data 带 `{volume_rows, turnover_rows, start, end}`
+- `POST /api/fetch/volume-turnover/history?start_date=2010-01-01&end_date=<昨天>`
+  — 一次性回补（与其它数据源 `/fetch/{xxx}/history` 同前缀），响应 data 带 `{volume_rows, turnover_rows, start, end}`
 
 ### 3. Contracts
 

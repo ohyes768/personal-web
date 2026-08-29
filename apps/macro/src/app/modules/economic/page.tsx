@@ -87,12 +87,17 @@ export default function EconomicPage() {
     setRefreshKey((k) => k + 1);
   }, []);
 
-  // Tab配置(信号首页 = 宏观信号,置首)
+  // Tab 顺序：信号总览 → 利率/汇率/流动性 → 资产价格 → A 股情绪 → 对比工具
   const tabs: Array<{ id: TabType; label: string; description: string }> = [
     {
       id: 'macro-signal',
       label: '信号首页',
       description: '月度 6 维度宏观判断卡片 + 日频指标快照'
+    },
+    {
+      id: 'rates',
+      label: '利率利差',
+      description: 'SOFR + 美债3M + TED利差 + 中国10y + 中国10年-2年（同图 4 轴叠加，日级）'
     },
     {
       id: 'treasury-exchange',
@@ -103,16 +108,6 @@ export default function EconomicPage() {
       id: 'liquidity-risk',
       label: '流动性/风险',
       description: 'VIX 恐慌指数 + TGA 账户余额 + HIBOR 隔夜拆息走势（日级）'
-    },
-    {
-      id: 'rates',
-      label: '利率利差',
-      description: 'SOFR + 美债3M + TED利差 + 中国10y + 中国10年-2年（同图 4 轴叠加，日级）'
-    },
-    {
-      id: 'comparison',
-      label: '对比',
-      description: '多指标归一化对比分析（2-6 条曲线叠加）'
     },
     {
       id: 'commodities',
@@ -127,7 +122,12 @@ export default function EconomicPage() {
     {
       id: 'market-sentiment',
       label: '市场情绪',
-      description: '两市成交额 + 换手率 + 融资余额（日级，由后端每日盘后调度追加）'
+      description: '两市成交额 + 换手率 + 融资余额（日级）'
+    },
+    {
+      id: 'comparison',
+      label: '对比',
+      description: '多指标归一化对比分析（2-6 条曲线叠加）'
     }
   ];
 
@@ -233,6 +233,8 @@ export default function EconomicPage() {
           <MarketSentimentTab
             timeRange={timeRange}
             onTimeRangeChange={setTimeRange}
+            refreshKey={refreshKey}
+            onRefreshSuccess={handleRefreshSuccess}
             fullData={tabDataMap['market-sentiment'] ?? null}
             isLoading={activeTab === 'market-sentiment' && isLoading}
             error={error}

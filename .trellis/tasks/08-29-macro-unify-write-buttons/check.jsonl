@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/global-macro-fin/backend/data-sources.md", "reason": "Verify history uses /fetch/volume-turnover/history not /update/.../history"}
+{"file": "backend/macro/docs/数据更新端点规范.md", "reason": "Verify InitButton maps to fetch/history and RefreshButton to update"}

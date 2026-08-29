@@ -46,14 +46,15 @@ export function StockIndexTab({
         <InitButton
           onInit={economicApi.initIndicesHistory}
           storageKey="last_initialized_macro_indices"
-          label="初始化股指数据"
+          label="初始化历史数据"
           hasData={!!data?.indices?.SPX?.length}
+          onSuccess={onRefreshSuccess}
         />
         <RefreshButton
           onRefresh={economicApi.updateIndices}
           storageKey="last_updated_indices_daily"
           cadence="daily"
-          label="更新股指"
+          label="更新数据"
           onSuccess={onRefreshSuccess}
         />
       </div>

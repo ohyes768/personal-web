@@ -3,21 +3,23 @@
 /**
  * 市场情绪 Tab — 容器组件
  *
- * 数据源：EconomicDataResponse.volume / turnover / margin 三个扁平数组
- * 数据流：page 按 Tab 请求 /api/macro/data/market-sentiment → useFilteredEconomicData 本地切片
- *
- * 注：本 tab 数据由后端每日盘后调度（n8n POST /api/macro/update/volume/turnover/margin）追加，
- * 无需前端 InitButton / RefreshButton。CSV 自然累积。
+ * 数据源：EconomicDataResponse.volume / turnover / margin
+ * 写入：InitButton → /fetch/volume-turnover/history；RefreshButton → 串行 update volume/turnover/margin
  */
 import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
 import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
+import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
+import { RefreshButton } from './RefreshButton';
+import { InitButton } from './InitButton';
 import { MarketSentimentChart } from './MarketSentimentChart';
 import { TabPanelLoading } from './TabPanelLoading';
 
 interface MarketSentimentTabProps {
   timeRange: TimeRange;
   onTimeRangeChange: (value: TimeRange) => void;
+  refreshKey: number;
+  onRefreshSuccess: () => void;
   fullData: EconomicDataResponse | null;
   isLoading: boolean;
   error: string | null;
@@ -26,6 +28,8 @@ interface MarketSentimentTabProps {
 export function MarketSentimentTab({
   timeRange,
   onTimeRangeChange,
+  refreshKey: _refreshKey,
+  onRefreshSuccess,
   fullData,
   isLoading,
   error,
@@ -37,9 +41,20 @@ export function MarketSentimentTab({
       <div className="flex items-center gap-6 flex-wrap">
         <span className="text-gray-400">时间范围：</span>
         <TimeRangeSelector value={timeRange} onChange={onTimeRangeChange} tabType="rates" />
-        <span className="text-xs text-gray-500">
-          数据由后端每日盘后 16:30 调度自动追加（无需手动刷新）
-        </span>
+        <InitButton
+          onInit={economicApi.initMarketSentimentHistory}
+          storageKey="last_initialized_macro_market_sentiment"
+          label="初始化历史数据"
+          hasData={!!(fullData?.volume?.length || fullData?.turnover?.length)}
+          onSuccess={onRefreshSuccess}
+        />
+        <RefreshButton
+          onRefresh={economicApi.updateMarketSentiment}
+          storageKey="last_updated_market_sentiment_daily"
+          cadence="daily"
+          label="更新数据"
+          onSuccess={onRefreshSuccess}
+        />
       </div>
 
       {error && (

@@ -17,9 +17,10 @@ interface InitButtonProps {
   storageKey: string;
   label: string;
   hasData?: boolean;
+  onSuccess?: () => void;
 }
 
-export function InitButton({ onInit, storageKey, label, hasData = false }: InitButtonProps) {
+export function InitButton({ onInit, storageKey, label, hasData = false, onSuccess }: InitButtonProps) {
   const [isInitializing, setIsInitializing] = useState(false);
   const [initAt, setInitAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +63,7 @@ export function InitButton({ onInit, storageKey, label, hasData = false }: InitB
           /* ignore */
         }
         setInitAt(now);
+        onSuccess?.();
       } else {
         setError(res.message || res.error_code || '初始化失败');
       }
@@ -70,7 +72,7 @@ export function InitButton({ onInit, storageKey, label, hasData = false }: InitB
     } finally {
       setIsInitializing(false);
     }
-  }, [isInitializing, isInitialized, onInit, storageKey]);
+  }, [isInitializing, isInitialized, onInit, storageKey, onSuccess]);
 
   // 已完成：置灰 + 显示初始化时间
   if (isInitialized) {
