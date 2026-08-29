@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/08-29-baostock-volume-turnover/research/baostock-data-source.md", "reason": "数据源调研结论：baostock 接口/单位/覆盖范围/口径差异"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/scheduler.md", "reason": "内置定时任务契约：update 端点与调度的关系"}

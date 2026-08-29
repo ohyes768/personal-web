@@ -39,6 +39,8 @@ from src.models import (
     TurnoverUpdateData,
     MarginData,
     MarginUpdateData,
+    VolumeTurnoverHistoryData,
+    VolumeTurnoverHistoryUpdateData,
     FundFlowData,
     FundFlow,
     FundFlowUpdateData,
@@ -64,8 +66,7 @@ from src.services.data_service import get_data_service
 from src.services.vix_service import get_vix_service
 from src.services.hibor_service import get_hibor_service
 from src.services.dr007_service import get_dr007_service
-from src.services.volume_service import get_volume_service
-from src.services.turnover_service import get_turnover_service
+from src.services.baostock_service import get_baostock_service
 from src.services.margin_service import get_margin_service
 from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
@@ -2717,9 +2718,9 @@ async def update_dr007():
 
 @router.post("/update/volume", response_model=UpdateResponse)
 async def update_volume():
-    """当日更新两市成交额（沪深交易所官方 API 当日点）
+    """当日更新两市成交额（BaoStock 上证+深证综指日线）
 
-    适用调度：每个交易日盘后 16:30 触发。
+    适用调度：每个交易日盘后 16:30 触发。拉近 10 个自然日窗口，自动补节假日缺口。
     """
     global _is_updating
 
@@ -2734,20 +2735,16 @@ async def update_volume():
 
     try:
         logger.info("开始当日更新两市成交额...")
-        volume_service = get_volume_service()
+        baostock_service = get_baostock_service()
         data_service = get_data_service()
 
-        result = await volume_service.fetch_today()
+        result = baostock_service.fetch_today()
 
-        if result["status"] == "failed":
-            raise Exception(f"两市成交额获取失败: SSE={result.get('sse_amount_yi')} SZSE={result.get('szse_amount_yi')}")
+        if result["status"] == "failed" or result["total_amount_yi"] is None:
+            raise Exception(f"两市成交额获取失败: {result.get('error', result.get('date'))}")
 
-        # 单值转 DataFrame（save_volume_data 要求 DataFrame 格式）
-        df = pd.DataFrame({
-            "date": [pd.Timestamp(result["date"])],
-            "total_amount_yi": [result["total_amount_yi"]],
-        })
-        data_service.save_volume_data(df)
+        # 近 10 日窗口批量落库（keep=last，自动补缺口并覆盖同日）
+        data_service.save_volume_data(result["volume"])
 
         volume_latest = VolumeData(
             date=pd.Timestamp(result["date"]).date(),
@@ -2779,7 +2776,7 @@ async def update_volume():
 
 @router.post("/update/turnover", response_model=UpdateResponse)
 async def update_turnover():
-    """当日更新两市换手率（沪深交易所官方 API 当日点）"""
+    """当日更新两市换手率（BaoStock 上证+深证综指日线，成交额加权）"""
     global _is_updating
 
     if _is_updating:
@@ -2793,19 +2790,16 @@ async def update_turnover():
 
     try:
         logger.info("开始当日更新两市换手率...")
-        turnover_service = get_turnover_service()
+        baostock_service = get_baostock_service()
         data_service = get_data_service()
 
-        result = await turnover_service.fetch_today()
+        result = baostock_service.fetch_today()
 
-        if result["status"] == "failed":
-            raise Exception(f"两市换手率获取失败: result={result}")
+        if result["status"] == "failed" or result["turnover_rate"] is None:
+            raise Exception(f"两市换手率获取失败: {result.get('error', result.get('date'))}")
 
-        df = pd.DataFrame({
-            "date": [pd.Timestamp(result["date"])],
-            "turnover_rate": [result["turnover_rate"]],
-        })
-        data_service.save_turnover_data(df)
+        # 近 10 日窗口批量落库（keep=last，自动补缺口并覆盖同日）
+        data_service.save_turnover_data(result["turnover"])
 
         turnover_latest = TurnoverData(
             date=pd.Timestamp(result["date"]).date(),
@@ -2829,6 +2823,71 @@ async def update_turnover():
         return UpdateResponse(
             success=False,
             message=f"两市换手率更新失败: {str(e)}",
+            error_code="UPDATE_FAILED",
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/volume-turnover/history", response_model=UpdateResponse)
+async def update_volume_turnover_history(
+    start_date: str = Query(default="2010-01-01", description="回补起始日期 YYYY-MM-DD"),
+    end_date: Optional[str] = Query(default=None, description="回补结束日期 YYYY-MM-DD，默认昨天"),
+):
+    """历史回补两市成交额/换手率（BaoStock 全量历史，一次性）
+
+    默认起点 2010-01-01（与融资余额历史起点对齐）；同日覆盖 keep=last，幂等可重复调用。
+    """
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    end = end_date or (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始回补两市成交额/换手率历史: %s ~ %s", start_date, end)
+        baostock_service = get_baostock_service()
+        data_service = get_data_service()
+
+        result = baostock_service.fetch_history(start_date, end)
+
+        if result["status"] == "failed":
+            raise Exception(f"两市成交额/换手率历史拉取失败: {result.get('error', 'unknown')}")
+
+        data_service.save_volume_data(result["volume"])
+        data_service.save_turnover_data(result["turnover"])
+
+        history_data = VolumeTurnoverHistoryData(
+            volume_rows=len(result["volume"]),
+            turnover_rows=len(result["turnover"]),
+            start=start_date,
+            end=end,
+        )
+        response_data = VolumeTurnoverHistoryUpdateData(history=history_data)
+
+        logger.info(
+            "两市成交额/换手率历史回补成功: %s ~ %s, volume=%d行, turnover=%d行",
+            start_date, end, history_data.volume_rows, history_data.turnover_rows,
+        )
+        return UpdateResponse(
+            success=True,
+            message="两市成交额/换手率历史回补成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"两市成交额/换手率历史回补失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"两市成交额/换手率历史回补失败: {str(e)}",
             error_code="UPDATE_FAILED",
         )
     finally:

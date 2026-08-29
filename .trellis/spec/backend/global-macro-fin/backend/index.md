@@ -20,6 +20,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
 | [Scheduler Contract](./scheduler.md) | 内建定时任务 API/契约/分组接入指南 | Filled 2026-08-27 |
+| [Data Source Contracts](./data-sources.md) | 外部数据源取数契约（BaoStock 两市成交额/换手率等） | Filled 2026-08-29 |
 
 ---
 

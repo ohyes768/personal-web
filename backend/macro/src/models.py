@@ -176,6 +176,21 @@ class MarginUpdateData(BaseModel):
     margin: MarginData
 
 
+class VolumeTurnoverHistoryData(BaseModel):
+    """两市成交额/换手率历史回补结果"""
+
+    volume_rows: int = 0        # 成交额写入行数
+    turnover_rows: int = 0      # 换手率写入行数
+    start: str                  # 实际起始日期
+    end: str                    # 实际结束日期
+
+
+class VolumeTurnoverHistoryUpdateData(BaseModel):
+    """两市成交额/换手率 历史回补响应数据"""
+
+    history: VolumeTurnoverHistoryData
+
+
 class FundFlowData(BaseModel):
     """资金流向数据"""
 
@@ -284,6 +299,7 @@ class UpdateResponse(BaseModel):
         | VolumeUpdateData
         | TurnoverUpdateData
         | MarginUpdateData
+        | VolumeTurnoverHistoryUpdateData
     ] = None
     updated_at: Optional[str] = None
     error_code: Optional[str] = None
