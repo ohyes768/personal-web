@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/global-macro-fin/backend/data-sources.md", "reason": "全局 _is_updating：多端点必须串行，禁止 Promise.all"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 InitButton/RefreshButton；抽取 postSerial，不要抄流动性 Promise.all"}
+{"file": "backend/macro/docs/数据更新端点规范.md", "reason": "fetch/*/history 与 update/{xxx} 命名及 DR007/中债/美债端点清单"}
+{"file": ".trellis/tasks/08-29-macro-tab-write-align/prd.md", "reason": "已锁定的 Tab 指标清单、串行成败、hasData AND、AC1-AC8"}
+{"file": ".trellis/tasks/08-29-macro-tab-write-align/design.md", "reason": "postSerial 契约、路径表、重叠写入、回滚"}
+{"file": ".trellis/tasks/08-29-macro-tab-write-align/implement.md", "reason": "改 api.ts 再改 hasData 的顺序、验证命令、与并行任务边界"}

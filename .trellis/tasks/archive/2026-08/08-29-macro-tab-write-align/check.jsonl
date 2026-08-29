@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/global-macro-fin/backend/data-sources.md", "reason": "核对所有多端点 Tab 都串行，源码无 Promise.all"}
+{"file": "backend/macro/docs/数据更新端点规范.md", "reason": "核对 init 走 fetch/history、update 走 /update，且利率含 dr007"}
+{"file": ".trellis/tasks/08-29-macro-tab-write-align/prd.md", "reason": "对照 AC1-AC8：路径清单、无任一成功、hasData、信号/对比无按钮"}

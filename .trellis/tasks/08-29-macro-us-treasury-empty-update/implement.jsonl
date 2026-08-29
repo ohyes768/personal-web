@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/global-macro-fin/backend/data-sources.md", "reason": "全局锁禁止 Promise.all；合并后路径表写入此 spec"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 InitButton/RefreshButton；抽取 postSerial"}
+{"file": "backend/macro/docs/数据更新端点规范.md", "reason": "增量空窗、error_code、fetch/history vs update"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/scheduler.md", "reason": "global_daily self-call 用 body.success"}
+{"file": ".trellis/tasks/08-29-macro-us-treasury-empty-update/prd.md", "reason": "合并后的空窗 + 展示即写入 + hasData + AC1-AC15"}
+{"file": ".trellis/tasks/08-29-macro-us-treasury-empty-update/design.md", "reason": "helper、postSerial、完整路径表、hasData"}
+{"file": ".trellis/tasks/08-29-macro-us-treasury-empty-update/implement.md", "reason": "后端空窗 → api.ts 路径 → hasData → pytest → 文档"}
