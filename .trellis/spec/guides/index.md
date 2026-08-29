@@ -50,6 +50,7 @@ These guides help you **ask the right questions before coding**.
 - [ ] **You're creating a new utility/helper function** ← Search first!
 - [ ] Two files read the same untyped payload field with local casts
 - [ ] Multiple branches update the same derived state from `kind` / `action`
+- [ ] 宏观经济页加「初始化 / 更新」按钮 → 复用 `InitButton` / `RefreshButton`，不要抄流动性 Tab 的 `Promise.all`（见 data-sources.md 全局更新锁）
 
 → Read [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md)
 

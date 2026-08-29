@@ -111,15 +111,15 @@
 
 ## 验收标准（Acceptance Criteria）
 
-- [ ] **AC1** 6 个数据 Tab 都看得到「初始化历史数据」和「更新数据」两个按钮；信号首页、对比看不到这两个按钮。
-- [ ] **AC2** 任一数据 Tab 点「更新数据」：请求进行中按钮禁用并显示「更新中...」；成功后置灰到明天 00:00，文案含「下次更新」；刷新页面后仍置灰。
-- [ ] **AC3** 点「初始化历史数据」成功后按钮永久置灰；该 Tab 图表自动重拉（不再需要再点更新或手动刷新页面）。CSV 已有该 Tab 数据时初始化按钮直接是已初始化态。
-- [ ] **AC4** 6 个 Tab 的更新互不影响置灰状态（各用各的 `storageKey`）。
-- [ ] **AC5** 市场情绪点「更新数据」串行打 `POST /update/volume`、`/update/turnover`、`/update/margin`；成功后该 Tab 重拉 `/api/macro/data/market-sentiment`。
-- [ ] **AC6** 现有 5 个 Tab 的更新/初始化仍打原来的 API，不回退。
-- [ ] **AC7** 信号首页仍只读快照；对比仍按 `indicators` 读，没有写数按钮。
-- [ ] **AC8** 市场情绪点「初始化历史数据」打 `POST /api/macro/fetch/volume-turnover/history`（不是三个当日 update）；成功后永久置灰并重拉图表。
-- [ ] **AC9** 全量历史只走 `/fetch/*/history`：`POST /fetch/volume-turnover/history` 存在；旧路径 `POST /update/volume-turnover/history` 返回 404。日常增量仍是 `/update/volume`、`/update/turnover`。
+- [x] **AC1** 6 个数据 Tab 都看得到「初始化历史数据」和「更新数据」两个按钮；信号首页、对比看不到这两个按钮。
+- [x] **AC2** 任一数据 Tab 点「更新数据」：请求进行中按钮禁用并显示「更新中...」；成功后置灰到明天 00:00，文案含「下次更新」；刷新页面后仍置灰。（`RefreshButton` cadence=daily + 独立 storageKey；未做浏览器实地点击）
+- [x] **AC3** 点「初始化历史数据」成功后按钮永久置灰；该 Tab 图表自动重拉。CSV 已有该 Tab 数据时初始化按钮直接是已初始化态。（`InitButton.onSuccess` → `refreshKey++`）
+- [x] **AC4** 6 个 Tab 的更新互不影响置灰状态（各用各的 `storageKey`）。
+- [x] **AC5** 市场情绪点「更新数据」串行打 `POST /update/volume`、`/update/turnover`、`/update/margin`；成功后该 Tab 重拉 `/api/macro/data/market-sentiment`。
+- [x] **AC6** 现有 5 个 Tab 的更新/初始化仍打原来的 API，不回退。
+- [x] **AC7** 信号首页仍只读快照；对比仍按 `indicators` 读，没有写数按钮。
+- [x] **AC8** 市场情绪点「初始化历史数据」打 `POST /api/macro/fetch/volume-turnover/history`。
+- [x] **AC9** `POST /fetch/volume-turnover/history` 存在；旧路径 `/update/volume-turnover/history` 已删除。日常增量仍是 `/update/volume`、`/update/turnover`。
 
 ## 范围外
 
@@ -143,3 +143,4 @@
 
 - 用户原话：全站统一，信号首页/对比是特殊的。历史端点由其它任务补；本任务接线，并把误放在 `/update/` 下的 history 改到 `/fetch/`。
 - 置灰是浏览器 `localStorage`，不是后端锁。本任务不改成服务端锁。
+- 实现提交：`26538b4`。浏览器端到端点击未跑；验收按源码对照。

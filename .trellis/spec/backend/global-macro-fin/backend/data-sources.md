@@ -34,11 +34,21 @@ class BaostockService:
 get_baostock_service() -> BaostockService  # 模块级单例
 ```
 
-API 端点（routes.py）：
-- `POST /api/update/volume` / `POST /api/update/turnover` — 日常增量（内部调
-  `fetch_today()`，路径与响应模型不变，n8n 调度无感知）
-- `POST /api/fetch/volume-turnover/history?start_date=2010-01-01&end_date=<昨天>`
-  — 一次性回补（与其它数据源 `/fetch/{xxx}/history` 同前缀），响应 data 带 `{volume_rows, turnover_rows, start, end}`
+API 端点（routes.py）。后端 `APIRouter(prefix="/api")`，前端 Next rewrite
+`/api/macro/:path*` → `/api/:path*`，所以页面里写 `/api/macro/...`：
+
+| 用途 | 后端路径 | 前端 `economicApi` |
+|------|----------|-------------------|
+| 全量回补成交额+换手率 | `POST /api/fetch/volume-turnover/history` | `initMarketSentimentHistory` |
+| 增量成交额 | `POST /api/update/volume` | `updateMarketSentiment` 第 1 步 |
+| 增量换手率 | `POST /api/update/turnover` | `updateMarketSentiment` 第 2 步 |
+| 增量融资余额 | `POST /api/update/margin` | `updateMarketSentiment` 第 3 步 |
+
+- 历史必须走 `/fetch/{xxx}/history`，禁止 `/update/.../history`（规范见 `backend/macro/docs/数据更新端点规范.md`）。
+- `start_date` 默认 `2010-01-01`，`end_date` 默认昨天；前端 POST 空 body 即可。
+- 回补响应 `data` 带 `{volume_rows, turnover_rows, start, end}`。
+- 融资余额暂无 `/fetch/margin/history`（另任务）；初始化只回补 volume/turnover。
+- `routes.py` 全局 `_is_updating`：**同一时刻只能跑一个 update**。市场情绪三个增量必须 **await 串行**；不要 `Promise.all`（流动性 Tab 的并发+「任一成功」会让另外两条拿到 `UPDATE_IN_PROGRESS`）。
 
 ### 3. Contracts
 
@@ -98,6 +108,16 @@ import baostock as bs
 requests.get(SSE_URL, params={"SEARCH_DATE": "2015-06-12"})
 ```
 
+```python
+# 全量初始化挂在 /update/ 下 — 违反「fetch=历史、update=增量」
+@router.post("/update/volume-turnover/history")
+```
+
+```typescript
+// 并发三个 update — 撞 _is_updating，后两个 UPDATE_IN_PROGRESS
+await Promise.all([updateVolume(), updateTurnover(), updateMargin()]);
+```
+
 #### Correct
 
 ```python
@@ -120,6 +140,22 @@ try:
 finally:
     bs.logout()
 ```
+
+```python
+@router.post("/fetch/volume-turnover/history")
+```
+
+```typescript
+const volume = await post("/api/macro/update/volume");
+if (!volume.success) return volume;
+const turnover = await post("/api/macro/update/turnover");
+if (!turnover.success) return turnover;
+return post("/api/macro/update/margin");
+```
+
+前端数据 Tab（中美利差 / 流动性 / 利率 / 商品 / 股指 / 市场情绪）复用 `InitButton` +
+`RefreshButton`：文案「初始化历史数据」/「更新数据」；两者成功都要 `onSuccess` 刷图。
+信号首页与对比不加写数按钮。各 Tab 独立 `storageKey`。
 
 ---
 
