@@ -39,16 +39,16 @@ API 端点（routes.py）。后端 `APIRouter(prefix="/api")`，前端 Next rewr
 
 | 用途 | 后端路径 | 前端 `economicApi` |
 |------|----------|-------------------|
-| 全量回补成交额+换手率 | `POST /api/fetch/volume-turnover/history` | `initMarketSentimentHistory` |
+| 全量回补成交额+换手率 | `POST /api/fetch/volume-turnover/history` | `initMarketSentimentHistory` 第 1 步 |
+| 全量回补融资余额 | `POST /api/fetch/margin/history` | `initMarketSentimentHistory` 第 2 步 |
 | 增量成交额 | `POST /api/update/volume` | `updateMarketSentiment` 第 1 步 |
 | 增量换手率 | `POST /api/update/turnover` | `updateMarketSentiment` 第 2 步 |
 | 增量融资余额 | `POST /api/update/margin` | `updateMarketSentiment` 第 3 步 |
 
 - 历史必须走 `/fetch/{xxx}/history`，禁止 `/update/.../history`（规范见 `backend/macro/docs/数据更新端点规范.md`）。
-- `start_date` 默认 `2010-01-01`，`end_date` 默认昨天；前端 POST 空 body 即可。
-- 回补响应 `data` 带 `{volume_rows, turnover_rows, start, end}`。
-- 融资余额暂无 `/fetch/margin/history`（另任务）；初始化只回补 volume/turnover。
-- `routes.py` 全局 `_is_updating`：**同一时刻只能跑一个 update**。市场情绪三个增量必须 **await 串行**；不要 `Promise.all`（流动性 Tab 的并发+「任一成功」会让另外两条拿到 `UPDATE_IN_PROGRESS`）。
+- volume-turnover 的 `start_date` 默认 `2010-01-01`，`end_date` 默认昨天；前端 POST 空 body 即可。
+- 回补响应 `data` 带 `{volume_rows, turnover_rows, start, end}`（成交额/换手率）或 `{rows, start, end}`（融资余额）。
+- `routes.py` 全局 `_is_updating`：**同一时刻只能跑一个 fetch/update**。市场情绪初始化必须 **await 串行** volume-turnover → margin → fund-flow history；增量同样串行。不要 `Promise.all`。
 
 ### 3. Contracts
 
@@ -156,6 +156,91 @@ return post("/api/macro/update/margin");
 前端数据 Tab（中美利差 / 流动性 / 利率 / 商品 / 股指 / 市场情绪）复用 `InitButton` +
 `RefreshButton`：文案「初始化历史数据」/「更新数据」；两者成功都要 `onSuccess` 刷图。
 信号首页与对比不加写数按钮。各 Tab 独立 `storageKey`。
+
+---
+
+## Scenario: akshare 融资余额历史
+
+### 1. Scope / Trigger
+
+- 触发：`margin` 全量回补（`POST /api/fetch/margin/history`）与当日增量（已有 `POST /api/update/margin`）
+- 背景：`macro_china_market_margin_sh/sz` 一次调用即 2010-03-31 起全表；`fetch_today()` 只取末行。沪约 3983 行 / 深约 3785 行，必须按日期对齐，禁止 iloc 行号对齐。
+
+### 2. Signatures
+
+```python
+class MarginService:
+    def fetch_today() -> dict   # 沪+深最新一行合计，亿元
+    def fetch_history() -> dict
+        # {"status": "ok"|"failed", "error": str|None,
+        #  "data": DataFrame[date, margin_balance_yi]}
+        # outer join on date，缺侧 0；元 ÷ 1e8；过滤 < historical_start_date
+```
+
+- 前端初始化第 2 步：`POST /api/macro/fetch/margin/history`（空 body）
+- 响应 `data.history`: `{rows, start, end}`
+- CSV：`data/margin.csv` 列 `date,margin_balance_yi`，`save_margin_data` keep=last
+
+### 3. Contracts
+
+- 请求：POST 空 body；不接受日期 query（akshare 一次返回全表，落盘前丢掉 `< historical_start_date` 的行）。
+- 成功：`success=true`，`data.history.rows/start/end` 为写入后的行数与实际起止日期。
+- 失败：`success=false`，`error_code` 为 `UPDATE_IN_PROGRESS`（全局锁占用）或 `UPDATE_FAILED`（解析空、akshare 异常）。
+- 单位：akshare 列是**元**，写入亿元（÷1e8，2 位小数）。注释里的「万元」是错的。
+- 幂等：同日 `keep=last`。日常增量仍是 `POST /api/update/margin`。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+|---|---|
+| `_is_updating` 已占用 | `UPDATE_IN_PROGRESS`，不调 akshare |
+| 列名识别失败 / 沪或深空表 | `fetch_history` 返回 `status=failed`，路由 `UPDATE_FAILED` |
+| 过滤 `historical_start_date` 后为空 | 同上 |
+| 沪深日期不完全重合 | outer join，缺侧 0，不丢行 |
+| akshare 抛异常 | `status=failed` + error 字符串，不把异常漏出锁外 |
+
+### 5. Good/Base/Bad Cases
+
+- Good: 回补后 `margin.csv` 从 2010-03-31 起约数千行，无重复日期；单位与 `update/margin` 当日点同量级（亿元）。
+- Base: 已有几天日更点时再跑 history，同日覆盖、更早日期追加。
+- Bad: 按 `iloc` 把深市第 i 行加到沪市第 i 行（行数 3983 vs 3785）→ 错位相加。
+
+### 6. Tests Required
+
+`tests/test_margin.py`（mock akshare，禁止真连）：
+- outer join 缺侧 0，日期列表与手算亿元一致
+- 行数不同时 8-18 只有沪市，合计不是「沪[0]+深[0]」
+- 列名无法识别 → `_merge_margin_history` 返回 None
+- `fetch_history` 空表 → `status=failed`
+- `save_margin_data` keep=last 幂等（已有 roundtrip 测试）
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+# 按行号对齐 — 沪深交易日不完全重合，会错位相加
+for i in range(min(len(sh), len(sz))):
+    total = sh.iloc[-(i+1)]["融资余额"] + sz.iloc[-(i+1)]["融资余额"]
+```
+
+```typescript
+await Promise.all([fetchVtHistory(), fetchMarginHistory()]); // 撞 _is_updating
+```
+
+#### Correct
+
+```python
+aligned = pd.concat([sh_s, sz_s], axis=1).fillna(0)  # outer join，缺侧 0
+```
+
+```typescript
+const vt = await post("/api/macro/fetch/volume-turnover/history");
+if (!vt.success) return vt;
+const margin = await post("/api/macro/fetch/margin/history");
+if (!margin.success) return margin;
+return post("/api/macro/fetch/fund-flow/history");
+```
 
 ---
 

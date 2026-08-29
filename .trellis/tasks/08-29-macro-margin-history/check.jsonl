@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/global-macro-fin/backend/data-sources.md", "reason": "对照：history 路径、串行初始化、融资余额单位元、禁止按行号对齐"}
+{"file": "backend/macro/docs/数据更新端点规范.md", "reason": "对照 9 步骨架、锁、fetch vs update 命名"}
+{"file": ".trellis/tasks/archive/2026-08/08-29-baostock-volume-turnover/research/baostock-data-source.md", "reason": "对照融资余额全量起点 2010-03-31 与单位"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查是否复用列名检测/save_margin_data/InitButton，有无重复造轮子"}

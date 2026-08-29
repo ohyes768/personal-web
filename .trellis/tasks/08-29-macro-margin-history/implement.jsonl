@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/global-macro-fin/backend/data-sources.md", "reason": "BaoStock/融资余额数据源契约：history 必须走 /fetch/*/history，市场情绪串行，禁止 Promise.all"}
+{"file": "backend/macro/docs/数据更新端点规范.md", "reason": "全量端点 9 步骨架、historical_start_date、禁止 /update/.../history"}
+{"file": ".trellis/tasks/archive/2026-08/08-29-baostock-volume-turnover/research/baostock-data-source.md", "reason": "融资余额调研：akshare 全表、单位元、fetch_today 只取末行"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "前端 InitButton → 两条 history → CSV → 读数图 的跨层数据流"}

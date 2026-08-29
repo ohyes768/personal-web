@@ -1,16 +1,23 @@
-"""资金流向服务模块"""
+"""资金流向服务模块 — 东财沪深港通成交历史（RPT_MUTUAL_DEAL_HISTORY）
+
+北向净买额自 2024-08-16 起交易所停发（BUY_AMT/SELL_AMT/NET_DEAL_AMT 全 null），
+但北向成交总额 DEAL_AMT 与南向三列仍每日公布。akshare stock_hsgt_hist_em
+与东财同源同 reportName，但其列映射漏掉 DEAL_AMT，故此处直调原始 API。
+
+- MUTUAL_TYPE: 005=北向合计(沪+深), 006=南向合计
+- 单位: 原始值百万元，÷100 转亿元（南向为亿港元）
+- 增量窗口近 10 个自然日：节假日/断连缺口次日自愈（对齐 baostock 模式）
+"""
 import pandas as pd
-from datetime import datetime, timedelta
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional
 import requests
-import akshare as ak
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+
 from src.config import get_settings
 from src.utils.logger import setup_logger
 
-
 # 东方财富偶发断连/超时：捕获 requests 传输层错误，重试 3 次指数退避
-akshare_retry = retry(
+_eastmoney_retry = retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=2, min=2, max=8),
     retry=retry_if_exception_type((
@@ -24,163 +31,107 @@ akshare_retry = retry(
 logger = setup_logger("fund_flow_service")
 settings = get_settings()
 
+_EASTMONEY_URL = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+
+# 东财列名 → 落库中文列名（单位亿元）
+_NORTH_COLS = {"DEAL_AMT": "北向成交额"}
+_SOUTH_COLS = {"NET_DEAL_AMT": "南向净流入", "BUY_AMT": "南向买入", "SELL_AMT": "南向卖出"}
+
+
+def _request(params: dict) -> requests.Response:
+    return requests.get(
+        _EASTMONEY_URL, params=params, headers={"User-Agent": "Mozilla/5.0"}, timeout=15
+    )
+
 
 class FundFlowService:
-    """资金流向服务类 - 使用 AKShare 获取沪深港通资金流向数据"""
+    """沪深港通资金服务 — 北向成交额 + 南向净流入/买入/卖出"""
 
     def __init__(self):
-        """初始化资金流向服务"""
         self.start_date = settings.fund_flow_start_date
 
-    def fetch_all_fund_flow(
+    def _fetch_page(self, mutual_type: str, page: int, page_size: int = 500) -> list:
+        """拉取一页 RPT_MUTUAL_DEAL_HISTORY，返回行列表（空页 = 翻页终止）"""
+        params = {
+            "reportName": "RPT_MUTUAL_DEAL_HISTORY",
+            "columns": "ALL",
+            "filter": f'(MUTUAL_TYPE="{mutual_type}")',
+            "pageSize": str(page_size),
+            "pageNumber": str(page),
+            "sortColumns": "TRADE_DATE",
+            "sortTypes": "1",
+        }
+        resp = _eastmoney_retry(_request)(params)
+        resp.raise_for_status()
+        payload = resp.json()
+        if payload.get("success") is not True and "result" not in payload:
+            raise Exception(f"东财接口返回异常: {payload.get('message', 'unknown')}")
+        result = payload.get("result") or {}
+        return result.get("data") or []
+
+    def _fetch_all_pages(
+        self, mutual_type: str, start_date: str, end_date: str, page_size: int = 500
+    ) -> list:
+        """按 TRADE_DATE 正序翻页拉取，日期过滤在本地做（API filter 不支持日期区间）"""
+        rows: list = []
+        page = 1
+        while True:
+            batch = self._fetch_page(mutual_type, page, page_size)
+            if not batch:
+                break
+            rows.extend(batch)
+            if len(batch) < page_size:
+                break
+            page += 1
+        # 正序拉全量后截区间：start/end 均含端点
+        return [
+            r for r in rows
+            if start_date <= str(r.get("TRADE_DATE", ""))[:10] <= end_date
+        ]
+
+    @staticmethod
+    def _to_frame(rows: list, col_map: Dict[str, str]) -> pd.DataFrame:
+        """东财行 → DataFrame（index=日期，百万元 ÷100 转亿元）"""
+        if not rows:
+            return pd.DataFrame(columns=list(col_map.values()))
+        data = {
+            cn: [round(float(r[en]) / 100, 4) if r.get(en) is not None else None for r in rows]
+            for en, cn in col_map.items()
+        }
+        df = pd.DataFrame(data, index=[str(r["TRADE_DATE"])[:10] for r in rows])
+        df.index = pd.to_datetime(df.index)
+        df.index.name = "date"
+        return df
+
+    def fetch_history(
         self, start_date: Optional[str] = None, end_date: Optional[str] = None
     ) -> Dict[str, pd.DataFrame]:
-        """获取所有资金流向数据（北向和南向）
-
-        Args:
-            start_date: 起始日期 (YYYY-MM-DD)，默认为配置中的起始日期
-            end_date: 结束日期 (YYYY-MM-DD)，默认为今天
+        """全量拉取北向/南向历史（翻页到起始日期）
 
         Returns:
-            包含北向和南向资金流向数据的字典
+            {"north": df(北向成交额), "south": df(南向净流入, 南向买入, 南向卖出)}
         """
-        try:
-            logger.info(f"获取资金流向历史数据: {start_date or self.start_date} 到 {end_date or '今天'}")
+        start = start_date or self.start_date
+        end = end_date or pd.Timestamp.now().normalize().strftime("%Y-%m-%d")
+        logger.info(f"获取沪深港通资金历史: {start} ~ {end}")
 
-            # AKShare 接口：市场资金流向 (加重试：东方财富偶发 RemoteDisconnected)
-            df = akshare_retry(ak.stock_market_fund_flow)()
+        north_rows = self._fetch_all_pages("005", start, end)
+        south_rows = self._fetch_all_pages("006", start, end)
 
-            # 使用列索引来访问（避免编码问题）
-            # 列索引：0=日期, 1=上证净流入, 2=上证涨幅, 3=深证净流入, 4=深证涨幅, 5=沪深港通净流入, 6=沪深港通涨幅
-            # 7=北向净流入, 8=北向涨幅, 9=南向净流入, 10=南向涨幅, 11=中证全指, 12=中证全指涨幅, 13=上证50, 14=上证50涨幅
-            if len(df.columns) >= 11:
-                # 转换日期列
-                date_col = df.columns[0]
-                df["date"] = pd.to_datetime(df[date_col])
-                df = df.set_index("date")
-
-                # 筛选日期范围
-                start_dt = pd.to_datetime(start_date) if start_date else pd.to_datetime(self.start_date)
-                end_dt = pd.to_datetime(end_date) if end_date else pd.Timestamp.now().normalize()
-
-                df = df[(df.index >= start_dt) & (df.index <= end_dt)]
-
-                # 构建北向和南向资金数据
-                result = {}
-
-                # 北向资金数据（列索引：7=净流入, 8=涨幅）
-                # 数据单位是元，需要转换为亿元（除以 1 亿）
-                north_data = pd.DataFrame({
-                    "net_flow": df.iloc[:, 7] / 1e8,  # 转换为亿元
-                    "buy": None,  # 该接口没有买入/卖出额
-                    "sell": None
-                })
-                north_data.index = df.index
-                result["north"] = north_data
-
-                # 南向资金数据（列索引：9=净流入, 10=涨幅）
-                # 数据单位是元，需要转换为亿元（除以 1 亿）
-                south_data = pd.DataFrame({
-                    "net_flow": df.iloc[:, 9] / 1e8,  # 转换为亿元
-                    "buy": None,
-                    "sell": None
-                })
-                south_data.index = df.index
-                result["south"] = south_data
-
-                logger.info(f"成功获取资金流向数据，北向 {len(result['north'])} 条，南向 {len(result['south'])} 条记录")
-                return result
-            else:
-                logger.error(f"返回的列数不足: {len(df.columns)}")
-                raise Exception(f"返回的列数不足: {len(df.columns)}")
-
-        except Exception as e:
-            logger.error(f"获取资金流向数据失败: {str(e)}")
-            raise
-
-    def fetch_latest_fund_flow(self) -> Dict[str, pd.DataFrame]:
-        """获取最新的资金流向数据点
-
-        Returns:
-            包含最新北向和南向资金流向数据的字典
-        """
-        # 获取最近7天的数据（确保有数据）
-        end = pd.Timestamp.now().normalize()
-        start = (end - pd.Timedelta(days=7)).normalize()
-
-        data = self.fetch_all_fund_flow(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
-
-        # 过滤出最新的非空数据点
-        latest = {}
-        for direction, df in data.items():
-            if not df.empty:
-                last_idx = df.last_valid_index()
-                if last_idx is not None:
-                    latest[direction] = df.loc[[last_idx]]
-
-        return latest
-
-    def calculate_cumulative_flow(
-        self, direction: str = "north"
-    ) -> Dict[str, float]:
-        """计算北向/南向资金的累计流入（7日和30日）
-
-        Args:
-            direction: 资金方向，"north" 或 "south"
-
-        Returns:
-            包含 7日累计和30日累计的字典
-        """
-        # 获取最近30天的数据
-        end = pd.Timestamp.now().normalize()
-        start = (end - pd.Timedelta(days=40)).normalize()
-
-        data = self.fetch_all_fund_flow(start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"))
-
-        if direction not in data or data[direction].empty:
-            return {"cum_7d": None, "cum_30d": None}
-
-        df = data[direction]
-
-        # 过滤出最近的30个交易日
-        df = df.sort_index(ascending=True).tail(30)
-
-        # 计算7日累计和30日累计
-        cum_7d = df.tail(7)["net_flow"].sum()
-        cum_30d = df.tail(30)["net_flow"].sum()
-
-        # 处理 NaN 值
-        cum_7d = float(cum_7d) if pd.notna(cum_7d) else None
-        cum_30d = float(cum_30d) if pd.notna(cum_30d) else None
-
-        return {
-            "cum_7d": cum_7d,
-            "cum_30d": cum_30d
+        result = {
+            "north": self._to_frame(north_rows, _NORTH_COLS),
+            "south": self._to_frame(south_rows, _SOUTH_COLS),
         }
+        logger.info(
+            f"成功获取沪深港通资金数据，北向 {len(result['north'])} 条，南向 {len(result['south'])} 条"
+        )
+        return result
 
-    def get_cumulative_flow_data(self) -> Dict:
-        """获取北向和南向资金的累计流入数据
-
-        Returns:
-            包含北向和南向累计流入数据的字典
-        """
-        north_cum = self.calculate_cumulative_flow("north")
-        south_cum = self.calculate_cumulative_flow("south")
-
+    def fetch_recent(self, days: int = 10) -> Dict[str, pd.DataFrame]:
+        """增量窗口：近 N 个自然日（缺口自愈），结构同 fetch_history"""
         end = pd.Timestamp.now().normalize()
-
-        return {
-            "north_cumulative": {
-                "date": end.date(),
-                "cum_7d": north_cum["cum_7d"],
-                "cum_30d": north_cum["cum_30d"]
-            },
-            "south_cumulative": {
-                "date": end.date(),
-                "cum_7d": south_cum["cum_7d"],
-                "cum_30d": south_cum["cum_30d"]
-            }
-        }
+        start = (end - pd.Timedelta(days=days)).strftime("%Y-%m-%d")
+        return self.fetch_history(start, end.strftime("%Y-%m-%d"))
 
 
 # 创建全局资金流向服务实例
@@ -188,11 +139,7 @@ _fund_flow_service: Optional[FundFlowService] = None
 
 
 def get_fund_flow_service() -> FundFlowService:
-    """获取资金流向服务单例
-
-    Returns:
-        资金流向服务实例
-    """
+    """获取资金流向服务单例"""
     global _fund_flow_service
     if _fund_flow_service is None:
         _fund_flow_service = FundFlowService()

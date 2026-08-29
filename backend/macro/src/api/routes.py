@@ -41,6 +41,8 @@ from src.models import (
     MarginUpdateData,
     VolumeTurnoverHistoryData,
     VolumeTurnoverHistoryUpdateData,
+    MarginHistoryData,
+    MarginHistoryUpdateData,
     FundFlowData,
     FundFlow,
     FundFlowUpdateData,
@@ -1531,7 +1533,7 @@ async def update_hibor():
 
 @router.post("/fetch/fund-flow/history", response_model=UpdateResponse)
 async def fetch_fund_flow_history():
-    """获取资金流向历史数据接口 - 从 2014-11-17 开始获取全部历史数据"""
+    """获取沪深港通资金历史数据 - 从 2014-11-17 全量回补（北向成交额+南向三列）"""
     global _is_updating
 
     if _is_updating:
@@ -1544,17 +1546,29 @@ async def fetch_fund_flow_history():
     await acquire_update_lock()
 
     try:
-        logger.info("开始获取资金流向历史数据...")
+        logger.info("开始获取沪深港通资金历史数据...")
         fund_flow_service = get_fund_flow_service()
         data_service = get_data_service()
 
         latest_end = pd.Timestamp.now().normalize()
         start_date = settings.fund_flow_start_date
 
-        logger.info(f"获取资金流向历史数据，从 {start_date} 到 {latest_end}")
+        # 旧 6 列文件（北向净流入/买入/卖出）与现 4 列结构不兼容，直接重建
+        old_file = data_service.files["fund_flow"]
+        if old_file.exists():
+            try:
+                existing = data_service.load_data("fund_flow")
+                legacy_cols = {"北向净流入", "北向买入", "北向卖出"}
+                if existing.empty or (legacy_cols & set(existing.columns)):
+                    old_file.unlink()
+                    logger.info("删除旧结构 fund_flow.csv，回补时重建")
+            except Exception as exc:
+                logger.warning(f"检查旧 fund_flow.csv 失败，忽略: {exc}")
+
+        logger.info(f"获取沪深港通资金历史数据，从 {start_date} 到 {latest_end}")
 
         # 获取资金流向数据
-        fund_flow_data = fund_flow_service.fetch_all_fund_flow(start_date, latest_end.strftime("%Y-%m-%d"))
+        fund_flow_data = fund_flow_service.fetch_history(start_date, latest_end.strftime("%Y-%m-%d"))
 
         if not any(not df.empty for df in fund_flow_data.values()):
             raise Exception("未能获取到任何资金流向数据")
@@ -1572,9 +1586,7 @@ async def fetch_fund_flow_history():
                 row = fund_flow_data["north"].loc[last_idx]
                 latest_north = FundFlowData(
                     date=last_idx.date(),
-                    net_flow=float(row["net_flow"]) if pd.notna(row["net_flow"]) else None,
-                    buy=float(row["buy"]) if pd.notna(row["buy"]) else None,
-                    sell=float(row["sell"]) if pd.notna(row["sell"]) else None
+                    deal_amount=float(row["北向成交额"]) if pd.notna(row["北向成交额"]) else None,
                 )
 
         if "south" in fund_flow_data and not fund_flow_data["south"].empty:
@@ -1583,9 +1595,9 @@ async def fetch_fund_flow_history():
                 row = fund_flow_data["south"].loc[last_idx]
                 latest_south = FundFlowData(
                     date=last_idx.date(),
-                    net_flow=float(row["net_flow"]) if pd.notna(row["net_flow"]) else None,
-                    buy=float(row["buy"]) if pd.notna(row["buy"]) else None,
-                    sell=float(row["sell"]) if pd.notna(row["sell"]) else None
+                    net_flow=float(row["南向净流入"]) if pd.notna(row["南向净流入"]) else None,
+                    buy=float(row["南向买入"]) if pd.notna(row["南向买入"]) else None,
+                    sell=float(row["南向卖出"]) if pd.notna(row["南向卖出"]) else None,
                 )
 
         # 如果没有数据，使用默认值
@@ -1598,7 +1610,7 @@ async def fetch_fund_flow_history():
             fund_flow=FundFlow(north=latest_north, south=latest_south)
         )
 
-        logger.info("资金流向历史数据获取成功")
+        logger.info("沪深港通资金历史数据获取成功")
         return UpdateResponse(
             success=True,
             message="资金流向历史数据获取成功",
@@ -1619,7 +1631,7 @@ async def fetch_fund_flow_history():
 
 @router.post("/update/fund-flow", response_model=UpdateResponse)
 async def update_fund_flow():
-    """更新资金流向数据接口 - 增量更新最近 7 天的数据"""
+    """更新沪深港通资金数据 - 增量拉取近 10 个自然日（缺口自愈，keep=last 幂等）"""
     global _is_updating
 
     if _is_updating:
@@ -1632,33 +1644,15 @@ async def update_fund_flow():
     await acquire_update_lock()
 
     try:
-        logger.info("开始增量更新资金流向数据...")
+        logger.info("开始增量更新沪深港通资金数据...")
         fund_flow_service = get_fund_flow_service()
         data_service = get_data_service()
 
         latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "fund_flow", latest_end)
 
-        if start_date is None or start_date > latest_end:
-            # 数据已是最新（或 CSV 已含今天数据），跳过本次更新
-            logger.info("资金流向数据已是最新，无需更新")
-            today = latest_end.date()
-            return UpdateResponse(
-                success=True,
-                message="资金流向数据已是最新，无需更新",
-                data=FundFlowUpdateData(
-                    fund_flow=FundFlow(
-                        north=FundFlowData(date=today),
-                        south=FundFlowData(date=today),
-                    )
-                ),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新资金流向数据，从 {start_date} 到 {latest_end}")
-
-        # 获取资金流向数据
-        fund_flow_data = fund_flow_service.fetch_all_fund_flow(start_date.strftime("%Y-%m-%d"), latest_end.strftime("%Y-%m-%d"))
+        # 固定近 10 个自然日窗口重写（对齐 baostock fetch_today 自愈模式），
+        # 不做"已是最新跳过"：节假日后首日与断连缺口都能自动补上
+        fund_flow_data = fund_flow_service.fetch_recent(days=10)
 
         if not any(not df.empty for df in fund_flow_data.values()):
             raise Exception("未能获取到任何资金流向新数据")
@@ -1676,9 +1670,7 @@ async def update_fund_flow():
                 row = fund_flow_data["north"].loc[last_idx]
                 latest_north = FundFlowData(
                     date=last_idx.date(),
-                    net_flow=float(row["net_flow"]) if pd.notna(row["net_flow"]) else None,
-                    buy=float(row["buy"]) if pd.notna(row["buy"]) else None,
-                    sell=float(row["sell"]) if pd.notna(row["sell"]) else None
+                    deal_amount=float(row["北向成交额"]) if pd.notna(row["北向成交额"]) else None,
                 )
 
         if "south" in fund_flow_data and not fund_flow_data["south"].empty:
@@ -1687,9 +1679,9 @@ async def update_fund_flow():
                 row = fund_flow_data["south"].loc[last_idx]
                 latest_south = FundFlowData(
                     date=last_idx.date(),
-                    net_flow=float(row["net_flow"]) if pd.notna(row["net_flow"]) else None,
-                    buy=float(row["buy"]) if pd.notna(row["buy"]) else None,
-                    sell=float(row["sell"]) if pd.notna(row["sell"]) else None
+                    net_flow=float(row["南向净流入"]) if pd.notna(row["南向净流入"]) else None,
+                    buy=float(row["南向买入"]) if pd.notna(row["南向买入"]) else None,
+                    sell=float(row["南向卖出"]) if pd.notna(row["南向卖出"]) else None,
                 )
 
         # 如果没有数据，使用默认值
@@ -1723,26 +1715,33 @@ async def update_fund_flow():
 
 @router.get("/fund-flow/cumulative", response_model=FundFlowCumulativeResponse)
 async def get_fund_flow_cumulative():
-    """获取资金流向累计数据接口 - 北向/南向资金7日和30日累计净流入"""
+    """获取资金流向累计数据接口 - 北向/南向资金7日和30日累计
+
+    北向净流入 2024-08 起停发，north_cumulative 恒为空；南向从 CSV 现算。
+    """
     try:
         logger.info("获取资金流向累计数据...")
-        fund_flow_service = get_fund_flow_service()
+        data_service = get_data_service()
 
-        cumulative_data = fund_flow_service.get_cumulative_flow_data()
+        fund_flow_data = data_service.load_data("fund_flow")
 
-        north_cum = FundFlowCumulativeData(
-            date=cumulative_data["north_cumulative"]["date"],
-            cum_7d=cumulative_data["north_cumulative"]["cum_7d"],
-            cum_30d=cumulative_data["north_cumulative"]["cum_30d"]
-        )
+        south_7d: Optional[float] = None
+        south_30d: Optional[float] = None
+        if not fund_flow_data.empty and "南向净流入" in fund_flow_data.columns:
+            df = fund_flow_data.sort_index(ascending=True).tail(30)
+            s = df["南向净流入"].dropna()
+            if not s.empty:
+                south_30d = float(s.tail(30).sum())
+                south_7d = float(s.tail(7).sum())
+
+        today = pd.Timestamp.now().date()
+        north_cum = FundFlowCumulativeData(date=today)  # 北向累计净流入停发，恒空
         south_cum = FundFlowCumulativeData(
-            date=cumulative_data["south_cumulative"]["date"],
-            cum_7d=cumulative_data["south_cumulative"]["cum_7d"],
-            cum_30d=cumulative_data["south_cumulative"]["cum_30d"]
+            date=today, cum_7d=south_7d, cum_30d=south_30d
         )
 
         logger.info(
-            f"北向资金累计: 7日={north_cum.cum_7d}亿元, 30日={north_cum.cum_30d}亿元; "
+            f"北向资金累计: 已停发; "
             f"南向资金累计: 7日={south_cum.cum_7d}亿元, 30日={south_cum.cum_30d}亿元"
         )
 
@@ -1797,21 +1796,11 @@ async def get_fund_flow_history(
 
         # 构建响应数据
         history_items = []
-        col_mapping = {
-            "北向净流入": "north_net",
-            "北向买入": "north_buy",
-            "北向卖出": "north_sell",
-            "南向净流入": "south_net",
-            "南向买入": "south_buy",
-            "南向卖出": "south_sell"
-        }
 
         for idx, row in fund_flow_filtered.iterrows():
             item = FundFlowHistoryItem(
                 date=idx.strftime("%Y-%m-%d"),
-                north_net=float(row["北向净流入"]) if pd.notna(row.get("北向净流入")) else None,
-                north_buy=float(row["北向买入"]) if pd.notna(row.get("北向买入")) else None,
-                north_sell=float(row["北向卖出"]) if pd.notna(row.get("北向卖出")) else None,
+                north_deal_amount=float(row["北向成交额"]) if pd.notna(row.get("北向成交额")) else None,
                 south_net=float(row["南向净流入"]) if pd.notna(row.get("南向净流入")) else None,
                 south_buy=float(row["南向买入"]) if pd.notna(row.get("南向买入")) else None,
                 south_sell=float(row["南向卖出"]) if pd.notna(row.get("南向卖出")) else None,
@@ -2888,6 +2877,69 @@ async def fetch_volume_turnover_history(
         return UpdateResponse(
             success=False,
             message=f"两市成交额/换手率历史回补失败: {str(e)}",
+            error_code="UPDATE_FAILED",
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/fetch/margin/history", response_model=UpdateResponse)
+async def fetch_margin_history():
+    """历史回补融资余额（akshare 沪深全表，按日期对齐合计）
+
+    数据源一次返回 2010-03-31 起全量；落盘前丢掉早于 historical_start_date 的行。
+    同日覆盖 keep=last，幂等可重复调用。
+    """
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS",
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始回补融资余额历史...")
+        margin_service = get_margin_service()
+        data_service = get_data_service()
+
+        result = margin_service.fetch_history()
+
+        if result["status"] == "failed":
+            raise Exception(f"融资余额历史拉取失败: {result.get('error', 'unknown')}")
+
+        df = result["data"]
+        if df.empty:
+            raise Exception("未能获取到任何融资余额历史数据")
+
+        data_service.save_margin_data(df)
+
+        history_data = MarginHistoryData(
+            rows=len(df),
+            start=pd.Timestamp(df["date"].iloc[0]).strftime("%Y-%m-%d"),
+            end=pd.Timestamp(df["date"].iloc[-1]).strftime("%Y-%m-%d"),
+        )
+        response_data = MarginHistoryUpdateData(history=history_data)
+
+        logger.info(
+            "融资余额历史回补成功: %s ~ %s, %d行",
+            history_data.start, history_data.end, history_data.rows,
+        )
+        return UpdateResponse(
+            success=True,
+            message="融资余额历史回补成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"融资余额历史回补失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"融资余额历史回补失败: {str(e)}",
             error_code="UPDATE_FAILED",
         )
     finally:

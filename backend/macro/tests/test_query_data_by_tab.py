@@ -52,7 +52,8 @@ def test_query_data_by_tab_market_sentiment_fields():
     data = service.query_data_by_tab(
         "market-sentiment", start_date="2024-01-01", end_date="2024-06-01"
     )
-    assert set(data.keys()) <= {"dates", "volume", "turnover", "margin"}
+    # fund_flow 2026-08 起并入市场情绪 Tab（北向成交额+南向三列）
+    assert set(data.keys()) <= {"dates", "volume", "turnover", "margin", "fund_flow"}
     assert "us_treasuries" not in data
 
 

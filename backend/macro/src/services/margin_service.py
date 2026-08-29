@@ -1,15 +1,16 @@
-"""融资余额服务模块 — akshare 当日点抓取
+"""融资余额服务模块 — akshare 当日点 + 全量历史
 
 数据源：
   - 沪市: akshare.macro_china_market_margin_sh()
   - 深市: akshare.macro_china_market_margin_sz()
-合并沪+深最新一行（最新交易日），融资余额合计（万元 → 亿元）。
+合并沪+深按日期对齐（outer join，缺侧 0），融资余额合计（元 → 亿元）。
 
 参考 risk-appetite-skill/scripts/fetch_margin.py:fetch_margin_ohlc。
 本项目独立实现，不 import skill（akshare 依赖保留）。
+历史禁止按行号/iloc 对齐（沪深交易日不完全重合）。
 
 调用频率：每个交易日 09:45+（融资余额 T-1 数据已发布），建议与 volume/turnover
-串行调用。
+串行调用。全量回补走 POST /api/macro/fetch/margin/history。
 """
 from __future__ import annotations
 
@@ -18,6 +19,7 @@ from typing import Any, Optional
 
 import pandas as pd
 
+from src.config import get_settings
 from src.utils.logger import setup_logger
 from src.utils.retry import async_retry
 
@@ -85,7 +87,7 @@ def _extract_latest_margin(
 ) -> dict[str, Any] | None:
     """从沪市 + 深市 DataFrame 提取最新一行，合并融资融券余额。
 
-    单位：akshare 返回万元 → 转换为亿元（÷ 100000000）。
+    单位：akshare 返回元 → 转换为亿元（÷ 1e8）。
     """
     sh_map = _detect_margin_columns(sh_cols)
     sz_map = _detect_margin_columns(sz_cols)
@@ -98,7 +100,7 @@ def _extract_latest_margin(
     sh_latest = sh_df.iloc[-1]
     sz_latest = sz_df.iloc[-1]
 
-    # 沪市 + 深市 融资余额（万元）
+    # 单位：akshare 返回元 → 转换为亿元（÷ 1e8）。
     rzye_wan_sh = _to_float(sh_latest[sh_map["rzye"]])
     rzye_wan_sz = _to_float(sz_latest[sz_map["rzye"]])
     # 沪市 + 深市 融券余额（万元）
@@ -126,8 +128,47 @@ def _extract_latest_margin(
     }
 
 
+def _margin_series_by_date(df: pd.DataFrame, col_map: dict[str, str]) -> pd.Series:
+    """单市融资余额：按日期去重 keep=last，元 → 亿元。"""
+    part = pd.DataFrame({
+        "date": pd.to_datetime(df[col_map["date"]], errors="coerce"),
+        "rzye": pd.to_numeric(df[col_map["rzye"]], errors="coerce"),
+    }).dropna(subset=["date"])
+    part = part.drop_duplicates(subset=["date"], keep="last")
+    return part.set_index("date")["rzye"] / 1e8
+
+
+def _merge_margin_history(
+    sh_df: pd.DataFrame, sz_df: pd.DataFrame,
+) -> pd.DataFrame | None:
+    """沪+深按日期 outer join 合计融资余额。
+
+    缺一侧记 0。列名无法识别时返回 None。返回 columns: date, margin_balance_yi。
+    """
+    sh = sh_df.copy()
+    sz = sz_df.copy()
+    sh.columns = [str(c).strip() for c in sh.columns]
+    sz.columns = [str(c).strip() for c in sz.columns]
+
+    sh_map = _detect_margin_columns(sh.columns.tolist())
+    sz_map = _detect_margin_columns(sz.columns.tolist())
+    if not sh_map or not sz_map:
+        return None
+
+    sh_s = _margin_series_by_date(sh, sh_map)
+    sz_s = _margin_series_by_date(sz, sz_map)
+    aligned = pd.concat([sh_s.rename("sh"), sz_s.rename("sz")], axis=1).fillna(0)
+    aligned = aligned.reset_index()
+    date_col = aligned.columns[0]
+    out = pd.DataFrame({
+        "date": pd.to_datetime(aligned[date_col]),
+        "margin_balance_yi": (aligned["sh"] + aligned["sz"]).round(2),
+    }).sort_values("date").reset_index(drop=True)
+    return out
+
+
 class MarginService:
-    """融资余额服务（akshare 当日点）"""
+    """融资余额服务（akshare 当日点 + 全量历史）"""
 
     def __init__(self) -> None:
         # akshare 模块按需导入；模块级 import 会拖慢启动，且 akshare 在某些环境不可用
@@ -183,6 +224,51 @@ class MarginService:
             return result
         except Exception as exc:
             logger.warning("akshare 融资余额抓取失败: %s", exc)
+            result["error"] = str(exc)
+            return result
+
+    def fetch_history(self) -> dict[str, Any]:
+        """拉取沪深全表，按日期对齐合计后返回 DataFrame。
+
+        返回:
+            {
+                "status": "ok" | "failed",
+                "error": str | None,
+                "data": DataFrame[date, margin_balance_yi],
+            }
+        """
+        empty = pd.DataFrame(columns=["date", "margin_balance_yi"])
+        result: dict[str, Any] = {"status": "failed", "error": None, "data": empty}
+
+        try:
+            ak = self._get_akshare()
+            sh_df = ak.macro_china_market_margin_sh()
+            sz_df = ak.macro_china_market_margin_sz()
+            sh_df.columns = [c.strip() for c in sh_df.columns]
+            sz_df.columns = [c.strip() for c in sz_df.columns]
+
+            merged = _merge_margin_history(sh_df, sz_df)
+            if merged is None or merged.empty:
+                logger.warning("akshare 融资余额历史解析失败（列名识别失败或数据空）")
+                return result
+
+            start = pd.Timestamp(get_settings().historical_start_date)
+            merged = merged[merged["date"] >= start].reset_index(drop=True)
+            if merged.empty:
+                logger.warning("akshare 融资余额历史过滤后为空")
+                return result
+
+            result["status"] = "ok"
+            result["data"] = merged
+            logger.info(
+                "akshare 融资余额历史获取成功: %d行, %s ~ %s",
+                len(merged),
+                merged["date"].iloc[0].strftime("%Y-%m-%d"),
+                merged["date"].iloc[-1].strftime("%Y-%m-%d"),
+            )
+            return result
+        except Exception as exc:
+            logger.warning("akshare 融资余额历史抓取失败: %s", exc)
             result["error"] = str(exc)
             return result
 

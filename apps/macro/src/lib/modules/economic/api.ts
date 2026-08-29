@@ -239,15 +239,24 @@ export const economicApi = {
   },
 
   /**
-   * 初始化市场情绪历史（成交额 + 换手率一次回补）
-   * POST /api/macro/fetch/volume-turnover/history（默认 2010-01-01 ~ 昨天）
+   * 初始化市场情绪历史：串行 volume-turnover → margin → fund-flow。
+   * 三条 /fetch/.../history 端点共用 routes 全局 _is_updating 锁，不能 Promise.all。
+   * 任一步失败则整体失败、不置灰。
    */
   initMarketSentimentHistory: async (): Promise<UpdateResponse> => {
-    return directClient.post<UpdateResponse>('/api/macro/fetch/volume-turnover/history');
+    const volumeTurnover = await directClient.post<UpdateResponse>(
+      '/api/macro/fetch/volume-turnover/history',
+    );
+    if (!volumeTurnover.success) return volumeTurnover;
+    const margin = await directClient.post<UpdateResponse>(
+      '/api/macro/fetch/margin/history',
+    );
+    if (!margin.success) return margin;
+    return directClient.post<UpdateResponse>('/api/macro/fetch/fund-flow/history');
   },
 
   /**
-   * 增量更新市场情绪：串行 volume → turnover → margin
+   * 增量更新市场情绪：串行 volume → turnover → margin → fund-flow
    * 避开 routes 全局 _is_updating 锁；任一步失败则整体失败
    */
   updateMarketSentiment: async (): Promise<UpdateResponse> => {
@@ -255,6 +264,8 @@ export const economicApi = {
     if (!volume.success) return volume;
     const turnover = await directClient.post<UpdateResponse>('/api/macro/update/turnover');
     if (!turnover.success) return turnover;
-    return directClient.post<UpdateResponse>('/api/macro/update/margin');
+    const margin = await directClient.post<UpdateResponse>('/api/macro/update/margin');
+    if (!margin.success) return margin;
+    return directClient.post<UpdateResponse>('/api/macro/update/fund-flow');
   },
 };

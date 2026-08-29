@@ -8,7 +8,10 @@
 """
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
+
+os.environ.setdefault("FRED_API_KEY", "test-not-a-real-key")
 
 import pandas as pd
 import pytest
@@ -18,6 +21,7 @@ from src.services.margin_service import (
     MarginService,
     _detect_margin_columns,
     _extract_latest_margin,
+    _merge_margin_history,
 )
 
 
@@ -93,6 +97,98 @@ def test_extract_latest_margin_sums_sh_and_sz():
     assert latest["rzye"] == pytest.approx(2700.0)
     # (6e9 + 4e9) / 1e8 = 1e2 = 100 亿元
     assert latest["rqye"] == pytest.approx(100.0)
+
+
+# ============================================================
+# 历史：按日期 outer join 合计（禁止按行号对齐）
+# ============================================================
+
+@pytest.mark.unit
+def test_merge_margin_history_outer_join_fills_missing_side_with_zero():
+    """沪有 8-19/8-20，深有 8-20/8-21 → 三天都保留，缺侧按 0 再合计。"""
+    sh_df = pd.DataFrame({
+        "日期": pd.to_datetime(["2026-08-19", "2026-08-20"]),
+        "融资余额": [1.0e11, 1.5e11],  # 元
+    })
+    sz_df = pd.DataFrame({
+        "日期": pd.to_datetime(["2026-08-20", "2026-08-21"]),
+        "融资余额": [8.0e10, 9.0e10],
+    })
+
+    merged = _merge_margin_history(sh_df, sz_df)
+
+    assert list(merged["date"].dt.strftime("%Y-%m-%d")) == [
+        "2026-08-19", "2026-08-20", "2026-08-21",
+    ]
+    # 8-19: 仅沪 1e11/1e8 = 1000
+    # 8-20: (1.5e11 + 8e10)/1e8 = 2300
+    # 8-21: 仅深 9e10/1e8 = 900
+    assert merged["margin_balance_yi"].tolist() == pytest.approx([1000.0, 2300.0, 900.0])
+
+
+@pytest.mark.unit
+def test_merge_margin_history_does_not_align_by_row_index():
+    """行数不同时禁止 iloc 对齐：深市少一天，不能把深的第一天加到沪的第一天上。"""
+    sh_df = pd.DataFrame({
+        "日期": pd.to_datetime(["2026-08-18", "2026-08-19", "2026-08-20"]),
+        "融资余额": [1.0e10, 2.0e10, 3.0e10],
+    })
+    sz_df = pd.DataFrame({
+        "日期": pd.to_datetime(["2026-08-19", "2026-08-20"]),
+        "融资余额": [4.0e10, 5.0e10],
+    })
+
+    merged = _merge_margin_history(sh_df, sz_df)
+    by_date = dict(zip(
+        merged["date"].dt.strftime("%Y-%m-%d"),
+        merged["margin_balance_yi"],
+    ))
+    # 若按 iloc 把深[0] 加到沪[0]：8-18 会变成 500 而不是 100
+    assert by_date["2026-08-18"] == pytest.approx(100.0)
+    assert by_date["2026-08-19"] == pytest.approx(600.0)
+    assert by_date["2026-08-20"] == pytest.approx(800.0)
+
+
+@pytest.mark.unit
+def test_merge_margin_history_returns_none_when_columns_unreadable():
+    sh_df = pd.DataFrame({"foo": [1], "bar": [2]})
+    sz_df = pd.DataFrame({"foo": [1], "bar": [2]})
+    assert _merge_margin_history(sh_df, sz_df) is None
+
+
+@pytest.mark.unit
+def test_fetch_history_returns_merged_frame():
+    sh_df = pd.DataFrame({
+        "日期": pd.to_datetime(["2026-08-19", "2026-08-20"]),
+        "融资余额": [1.0e11, 1.5e11],
+    })
+    sz_df = pd.DataFrame({
+        "日期": pd.to_datetime(["2026-08-20"]),
+        "融资余额": [8.0e10],
+    })
+    svc = MarginService()
+    with patch.object(svc, "_get_akshare") as mock_ak:
+        mock_ak.return_value.macro_china_market_margin_sh.return_value = sh_df.copy()
+        mock_ak.return_value.macro_china_market_margin_sz.return_value = sz_df.copy()
+        result = svc.fetch_history()
+
+    assert result["status"] == "ok"
+    df = result["data"]
+    assert len(df) == 2
+    assert df.loc[df["date"] == pd.Timestamp("2026-08-19"), "margin_balance_yi"].iloc[0] == pytest.approx(1000.0)
+
+
+@pytest.mark.unit
+def test_fetch_history_failed_when_akshare_empty():
+    svc = MarginService()
+    empty = pd.DataFrame(columns=["日期", "融资余额"])
+    with patch.object(svc, "_get_akshare") as mock_ak:
+        mock_ak.return_value.macro_china_market_margin_sh.return_value = empty
+        mock_ak.return_value.macro_china_market_margin_sz.return_value = empty
+        result = svc.fetch_history()
+
+    assert result["status"] == "failed"
+    assert result["data"].empty
 
 
 # ============================================================

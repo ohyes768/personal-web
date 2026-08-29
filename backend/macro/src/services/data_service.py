@@ -32,7 +32,7 @@ TAB_SECTIONS: Dict[str, Optional[FrozenSet[str]]] = {
     "comparison": None,
     "commodities": frozenset({"commodities"}),
     "stock-indices": frozenset({"indices"}),
-    "market-sentiment": frozenset({"volume", "turnover", "margin"}),
+    "market-sentiment": frozenset({"volume", "turnover", "margin", "fund_flow"}),
 }
 
 # 各 Tab API 响应保留的字段
@@ -43,7 +43,7 @@ TAB_RESPONSE_FIELDS: Dict[str, Optional[FrozenSet[str]]] = {
     "comparison": None,
     "commodities": frozenset({"dates", "commodities"}),
     "stock-indices": frozenset({"dates", "indices"}),
-    "market-sentiment": frozenset({"dates", "volume", "turnover", "margin"}),
+    "market-sentiment": frozenset({"dates", "volume", "turnover", "margin", "fund_flow"}),
 }
 
 VALID_DATA_TABS = frozenset(TAB_SECTIONS.keys())
@@ -62,7 +62,7 @@ INDICATOR_SECTIONS: Dict[str, str] = {
     "vix": "vix",
     "tga": "tga",
     "hibor": "hibor",
-    "north_net": "fund_flow",
+    "north_deal": "fund_flow",
     "south_net": "fund_flow",
     "ted_spread": "ted_spread",
     "sofr": "ted_spread",
@@ -646,47 +646,34 @@ class DataService:
         self._save_ted_spread(data)
 
     def save_fund_flow(self, data: Dict[str, pd.DataFrame]) -> None:
-        """保存资金流向数据
+        """保存沪深港通资金数据（北向成交额 + 南向三列）
 
         Args:
             data: 资金流向数据字典，包含 'north' 和 'south' 两个 DataFrame
+                north: 1 列（北向成交额）；south: 3 列（南向净流入/买入/卖出）
         """
         if not data:
             logger.warning("资金流向数据为空，跳过保存")
             return
 
-        # 合并北向和南向资金流向数据
         fund_flow_list = []
-        columns = []
 
         if "north" in data and not data["north"].empty:
-            north_df = data["north"].copy()
-            north_df.columns = ["北向净流入", "北向买入", "北向卖出"]
-            fund_flow_list.append(north_df)
-            if not columns:
-                columns = north_df.columns.tolist()
+            fund_flow_list.append(data["north"].copy())
 
         if "south" in data and not data["south"].empty:
-            south_df = data["south"].copy()
-            south_df.columns = ["南向净流入", "南向买入", "南向卖出"]
-            fund_flow_list.append(south_df)
-            if not columns:
-                columns = south_df.columns.tolist()
-            else:
-                columns.extend(south_df.columns.tolist())
+            fund_flow_list.append(data["south"].copy())
 
         if not fund_flow_list:
             logger.warning("资金流向数据为空，跳过保存")
             return
 
-        # 按日期合并北向和南向数据
+        # 按日期合并北向和南向数据（outer：单边缺行的日期另一边留 NaN）
         fund_flow_df = pd.concat(fund_flow_list, axis=1)
-
-        # 设置索引名称
         fund_flow_df.index.name = "date"
 
-        # 确保所有必要的列都存在
-        all_columns = ["北向净流入", "北向买入", "北向卖出", "南向净流入", "南向买入", "南向卖出"]
+        # 确保所有必要的列都存在（服务端列名已与落库列一致）
+        all_columns = ["北向成交额", "南向净流入", "南向买入", "南向卖出"]
         for col in all_columns:
             if col not in fund_flow_df.columns:
                 fund_flow_df[col] = None
@@ -909,9 +896,7 @@ class DataService:
             },
             "vix": [],
             "fund_flow": {
-                "north_net_flow": [],
-                "north_buy": [],
-                "north_sell": [],
+                "north_deal_amount": [],
                 "south_net_flow": [],
                 "south_buy": [],
                 "south_sell": []
@@ -1074,11 +1059,9 @@ class DataService:
             fund_flow_data = fund_flow_data.ffill()
             fund_flow_filtered = fund_flow_data[(fund_flow_data.index >= start_date) & (fund_flow_data.index <= end_date)]
 
-            # 资金流向数据列名映射
+            # 资金流向数据列名映射（北向净买额 2024-08 起停发，已移除）
             col_mapping = {
-                "北向净流入": "north_net_flow",
-                "北向买入": "north_buy",
-                "北向卖出": "north_sell",
+                "北向成交额": "north_deal_amount",
                 "南向净流入": "south_net_flow",
                 "南向买入": "south_buy",
                 "南向卖出": "south_sell"

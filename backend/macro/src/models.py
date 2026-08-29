@@ -191,19 +191,34 @@ class VolumeTurnoverHistoryUpdateData(BaseModel):
     history: VolumeTurnoverHistoryData
 
 
+class MarginHistoryData(BaseModel):
+    """融资余额历史回补结果"""
+
+    rows: int = 0
+    start: str
+    end: str
+
+
+class MarginHistoryUpdateData(BaseModel):
+    """融资余额 历史回补响应数据"""
+
+    history: MarginHistoryData
+
+
 class FundFlowData(BaseModel):
     """资金流向数据"""
 
     date: date
-    net_flow: Optional[float] = None  # 净流入（亿元）
-    buy: Optional[float] = None       # 买入额（亿元）
-    sell: Optional[float] = None      # 卖出额（亿元）
+    deal_amount: Optional[float] = None  # 成交总额（亿元；北向专用）
+    net_flow: Optional[float] = None  # 净流入（亿元；南向专用）
+    buy: Optional[float] = None       # 买入额（亿元；南向专用）
+    sell: Optional[float] = None      # 卖出额（亿元；南向专用）
 
 
 class FundFlow(BaseModel):
     """资金流向"""
 
-    north: FundFlowData  # 北向资金（港股通→A股）
+    north: FundFlowData  # 北向资金（港股通→A股，仅成交额）
     south: FundFlowData  # 南向资金（A股→港股通）
 
 
@@ -241,9 +256,7 @@ class FundFlowHistoryItem(BaseModel):
     """资金流向历史数据项"""
 
     date: str
-    north_net: Optional[float] = None    # 北向净流入
-    north_buy: Optional[float] = None    # 北向买入
-    north_sell: Optional[float] = None   # 北向卖出
+    north_deal_amount: Optional[float] = None  # 北向成交额
     south_net: Optional[float] = None    # 南向净流入
     south_buy: Optional[float] = None    # 南向买入
     south_sell: Optional[float] = None   # 南向卖出
@@ -300,6 +313,7 @@ class UpdateResponse(BaseModel):
         | TurnoverUpdateData
         | MarginUpdateData
         | VolumeTurnoverHistoryUpdateData
+        | MarginHistoryUpdateData
     ] = None
     updated_at: Optional[str] = None
     error_code: Optional[str] = None
