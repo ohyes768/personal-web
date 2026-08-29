@@ -4,6 +4,7 @@
  */
 import { apiClient, directClient } from '@/lib/api-client';
 import type { EconomicDataResponse, TabType } from '@/lib/types/economic';
+import type { IndicatorId } from '@/lib/modules/comparison/types';
 
 export interface UpdateResponse {
   success: boolean;
@@ -26,12 +27,26 @@ export const economicApi = {
 
   /**
    * 按 Tab 获取全历史经济数据（切换 Tab 时调用，时间周期由前端本地切片）
+   * 对比页请用 getComparisonData，不要打无 indicators 的 /data/comparison
    */
   getTabData: (
-    tab: Exclude<TabType, 'macro-signal'>,
+    tab: Exclude<TabType, 'macro-signal' | 'comparison'>,
     startDate: string = '2000-01-01'
   ): Promise<EconomicDataResponse> => {
     return apiClient.get<EconomicDataResponse>(`/api/macro/data/${tab}`, {
+      start_date: startDate,
+    });
+  },
+
+  /**
+   * 对比页按需拉指标：GET /api/macro/data/comparison?indicators=a,b&start_date=2000-01-01
+   */
+  getComparisonData: (
+    ids: IndicatorId[],
+    startDate: string = '2000-01-01'
+  ): Promise<EconomicDataResponse> => {
+    return apiClient.get<EconomicDataResponse>('/api/macro/data/comparison', {
+      indicators: ids.join(','),
       start_date: startDate,
     });
   },

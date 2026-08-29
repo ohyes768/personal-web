@@ -12,7 +12,7 @@ import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
 import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
-import { LoadingOverlay } from './LoadingOverlay';
+import { TabPanelLoading } from './TabPanelLoading';
 import { RefreshButton } from './RefreshButton';
 import { InitButton } from './InitButton';
 import { EconomicChart } from './EconomicChart';
@@ -82,7 +82,7 @@ export function TreasuryExchangeTab({
         </div>
       )}
 
-      {isLoading && <LoadingOverlay message="加载经济数据中..." />}
+      {isLoading && <TabPanelLoading message="加载中美利差/汇率数据中…" />}
     </div>
   );
 }

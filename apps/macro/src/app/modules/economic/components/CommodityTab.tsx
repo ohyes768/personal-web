@@ -14,6 +14,7 @@ import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
 import { InitButton } from './InitButton';
 import { CommodityChart } from './CommodityChart';
+import { TabPanelLoading } from './TabPanelLoading';
 
 interface CommodityTabProps {
   timeRange: TimeRange;
@@ -69,11 +70,7 @@ export function CommodityTab({
         </div>
       )}
 
-      {isLoading && (
-        <div className="bg-gray-900 rounded-lg p-12 border border-gray-800 text-center">
-          <p className="text-gray-400">加载商品数据中...</p>
-        </div>
-      )}
+      {isLoading && <TabPanelLoading message="加载商品数据中…" />}
     </div>
   );
 }

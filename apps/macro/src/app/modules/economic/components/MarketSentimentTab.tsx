@@ -4,7 +4,7 @@
  * 市场情绪 Tab — 容器组件
  *
  * 数据源：EconomicDataResponse.volume / turnover / margin 三个扁平数组
- * 数据流：顶层 useFullEconomicData 拉一次 → useFilteredEconomicData 按 timeRange + tabType 切片
+ * 数据流：page 按 Tab 请求 /api/macro/data/market-sentiment → useFilteredEconomicData 本地切片
  *
  * 注：本 tab 数据由后端每日盘后调度（n8n POST /api/macro/update/volume/turnover/margin）追加，
  * 无需前端 InitButton / RefreshButton。CSV 自然累积。
@@ -13,6 +13,7 @@ import type { TimeRange, EconomicDataResponse } from '@/lib/types/economic';
 import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { MarketSentimentChart } from './MarketSentimentChart';
+import { TabPanelLoading } from './TabPanelLoading';
 
 interface MarketSentimentTabProps {
   timeRange: TimeRange;
@@ -54,11 +55,7 @@ export function MarketSentimentTab({
         </div>
       )}
 
-      {isLoading && (
-        <div className="bg-gray-900 rounded-lg p-12 border border-gray-800 text-center">
-          <p className="text-gray-400">加载市场情绪数据中...</p>
-        </div>
-      )}
+      {isLoading && <TabPanelLoading message="加载市场情绪数据中…" />}
     </div>
   );
 }

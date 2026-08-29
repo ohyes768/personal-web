@@ -24,22 +24,22 @@ _QUERY_CACHE: Dict[Tuple, Tuple[float, Dict]] = {}
 _QUERY_CACHE_LOCK = threading.Lock()
 _CACHE_VERSION = 0  # 全局版本号：每次 CSV 写入 +1，所有缓存 key 失效
 
-# 各 Tab 需加载的 CSV 段（None = 全量，与 comparison Tab 对齐）
+# 各 Tab 需加载的 CSV 段（None = 全量；comparison 走 query_data_by_indicators）
 TAB_SECTIONS: Dict[str, Optional[FrozenSet[str]]] = {
     "treasury-exchange": frozenset({"us_treasuries", "exchange_rates", "china_bond"}),
-    "liquidity-risk": frozenset({"us_treasuries", "vix", "tga", "hibor"}),
+    "liquidity-risk": frozenset({"vix", "tga", "hibor"}),
     "rates": frozenset({"us_treasuries", "ted_spread", "china_bond", "dr007"}),
     "comparison": None,
-    "commodities": frozenset({"us_treasuries", "commodities"}),
-    "stock-indices": frozenset({"us_treasuries", "indices"}),
-    "market-sentiment": frozenset({"us_treasuries", "volume", "turnover", "margin"}),
+    "commodities": frozenset({"commodities"}),
+    "stock-indices": frozenset({"indices"}),
+    "market-sentiment": frozenset({"volume", "turnover", "margin"}),
 }
 
-# 各 Tab API 响应保留的字段（us_treasuries 在部分 Tab 仅作日期轴，不返回）
+# 各 Tab API 响应保留的字段
 TAB_RESPONSE_FIELDS: Dict[str, Optional[FrozenSet[str]]] = {
     "treasury-exchange": frozenset({"dates", "us_treasuries", "exchange_rates", "china_bond"}),
     "liquidity-risk": frozenset({"dates", "vix", "tga", "hibor"}),
-    "rates": frozenset({"dates", "ted_spread", "china_bond", "dr007"}),
+    "rates": frozenset({"dates", "us_treasuries", "ted_spread", "china_bond", "dr007"}),
     "comparison": None,
     "commodities": frozenset({"dates", "commodities"}),
     "stock-indices": frozenset({"dates", "indices"}),
@@ -47,6 +47,50 @@ TAB_RESPONSE_FIELDS: Dict[str, Optional[FrozenSet[str]]] = {
 }
 
 VALID_DATA_TABS = frozenset(TAB_SECTIONS.keys())
+
+# 对比页 indicator id → CSV section（与前端 IndicatorId 对齐）
+INDICATOR_SECTIONS: Dict[str, str] = {
+    "us_3m": "us_treasuries",
+    "us_2y": "us_treasuries",
+    "us_10y": "us_treasuries",
+    "cn_10y": "china_bond",
+    "cn_10y_2y": "china_bond",
+    "dxy": "exchange_rates",
+    "usd_cny": "exchange_rates",
+    "usd_jpy": "exchange_rates",
+    "usd_eur": "exchange_rates",
+    "vix": "vix",
+    "tga": "tga",
+    "hibor": "hibor",
+    "north_net": "fund_flow",
+    "south_net": "fund_flow",
+    "ted_spread": "ted_spread",
+    "sofr": "ted_spread",
+    "gold": "commodities",
+    "silver": "commodities",
+    "oil": "commodities",
+    "copper": "commodities",
+    "hk_hsi": "indices",
+    "sh_000001": "indices",
+    "spx": "indices",
+    "ixic": "indices",
+    "dji": "indices",
+}
+
+
+def _union_index(*dataframes) -> pd.DatetimeIndex:
+    """多个 DataFrame 索引的并集（排序、去重）。空输入返回空 DatetimeIndex。"""
+    indexes = []
+    for df in dataframes:
+        if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+            continue
+        indexes.append(pd.DatetimeIndex(df.index))
+    if not indexes:
+        return pd.DatetimeIndex([])
+    union = indexes[0]
+    for idx in indexes[1:]:
+        union = union.union(idx)
+    return pd.DatetimeIndex(union.sort_values().unique())
 
 
 def _bump_cache_version() -> None:
@@ -739,6 +783,8 @@ class DataService:
         """按 Tab 查询数据：只读该 Tab 相关 CSV，响应只含该 Tab 字段。"""
         if tab not in VALID_DATA_TABS:
             raise ValueError(f"无效的 tab: {tab}")
+        if tab == "comparison":
+            raise ValueError("comparison 请用 query_data_by_indicators，禁止无 indicators 全量")
 
         if start_date is None:
             start_date = settings.historical_start_date
@@ -775,6 +821,49 @@ class DataService:
         if keep is None:
             return result
         return {key: result[key] for key in keep if key in result}
+
+    def query_data_by_indicators(
+        self,
+        indicator_ids: list,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> Dict:
+        """按对比指标 id 查询：只读映射到的 CSV 段，响应裁剪为这些段 + dates。"""
+        if not indicator_ids:
+            raise ValueError("indicators 不能为空")
+
+        unknown = [i for i in indicator_ids if i not in INDICATOR_SECTIONS]
+        if unknown:
+            raise ValueError(f"未知的 indicator: {', '.join(unknown)}")
+
+        if start_date is None:
+            start_date = settings.historical_start_date
+        if end_date is None:
+            end_date = pd.Timestamp.now().normalize().strftime("%Y-%m-%d")
+
+        sections = frozenset(INDICATOR_SECTIONS[i] for i in indicator_ids)
+        cache_key = (_CACHE_VERSION, "indicators", tuple(sorted(indicator_ids)), start_date, end_date)
+        now = time.time()
+
+        with _QUERY_CACHE_LOCK:
+            cached = _QUERY_CACHE.get(cache_key)
+            if cached is not None:
+                ts, data = cached
+                if now - ts < _QUERY_CACHE_TTL_S:
+                    logger.debug("query_data_by_indicators 缓存命中")
+                    return data
+                del _QUERY_CACHE[cache_key]
+
+        raw = self._query_data_impl(start_date, end_date, sections=sections)
+        keep = {"dates"} | set(sections)
+        data = {key: raw[key] for key in keep if key in raw}
+
+        with _QUERY_CACHE_LOCK:
+            _QUERY_CACHE[cache_key] = (now, data)
+            if len(_QUERY_CACHE) > _QUERY_CACHE_MAX_ENTRIES:
+                _QUERY_CACHE.clear()
+
+        return data
 
     def _query_data_impl(
         self,
@@ -857,26 +946,63 @@ class DataService:
             "margin": [],
         }
 
-        # 加载美国国债数据（多数 Tab 的 dates 时间轴）
-        if _want("us_treasuries"):
-            us_data = self.load_data("us_treasuries")
+        def _load(section: str) -> pd.DataFrame:
+            if not _want(section):
+                return pd.DataFrame()
+            if section == "dr007":
+                return self.load_dr007()
+            if section == "volume":
+                return self.load_volume()
+            if section == "turnover":
+                return self.load_turnover()
+            if section == "margin":
+                return self.load_margin()
+            return self.load_data(section)
+
+        us_data = _load("us_treasuries")
+        eu_data = _load("eu_bonds")
+        jp_data = _load("jp_bonds")
+        exchange_data = _load("exchange_rates")
+        vix_data = _load("vix")
+        fund_flow_data = _load("fund_flow")
+        china_bond_data = _load("china_bond")
+        ted_data = _load("ted_spread")
+        commodity_data = _load("commodities")
+        indices_data = _load("indices")
+        tga_data = _load("tga")
+        hibor_data = _load("hibor")
+        dr007_data = _load("dr007")
+        volume_data = _load("volume")
+        turnover_data = _load("turnover")
+        margin_data = _load("margin")
+
+        # 含美债的查询沿用美债交易日；其它 Tab 用已 load CSV 的日期并集，禁止 date_range 填自然日
+        if not us_data.empty and (sections is None or "us_treasuries" in sections):
+            axis_index = us_data.index
+        elif sections is None:
+            axis_index = pd.date_range(start_date, end_date)
+        else:
+            axis_index = _union_index(
+                us_data, eu_data, jp_data, exchange_data, vix_data,
+                fund_flow_data, china_bond_data, ted_data, commodity_data,
+                indices_data, tga_data, hibor_data, dr007_data,
+                volume_data, turnover_data, margin_data,
+            )
+        axis_index = pd.DatetimeIndex(axis_index)
+        if len(axis_index) > 0:
+            axis_in_range = axis_index[(axis_index >= start_date) & (axis_index <= end_date)]
+            result["dates"] = axis_in_range.strftime("%Y-%m-%d").tolist()
+
+        # 美国国债
         if _want("us_treasuries") and not us_data.empty:
-            # 填充缺失值
             us_data = us_data.ffill()
-            # 筛选时间范围
             us_filtered = us_data[(us_data.index >= start_date) & (us_data.index <= end_date)]
-            result["dates"] = us_filtered.index.strftime("%Y-%m-%d").tolist()
-            # 新列名映射到 API 格式
             col_mapping = {"美债3m": "3m", "美债2y": "2y", "美债10y": "10y"}
             for new_col, old_col in col_mapping.items():
                 if new_col in us_filtered.columns:
                     result["us_treasuries"][old_col] = us_filtered[new_col].tolist()
 
         # 加载德债数据（月度数据，需要独立处理日期对齐）
-        if not _want("eu_bonds"):
-            eu_data = pd.DataFrame()
-        else:
-            eu_data = self.load_data("eu_bonds")
         if _want("eu_bonds") and not eu_data.empty:
             eu_data = eu_data.ffill()
             eu_filtered = eu_data[(eu_data.index >= start_date) & (eu_data.index <= end_date)]
@@ -885,7 +1011,7 @@ class DataService:
             eu_col_mapping = {"德债3m": "3m", "德债2y": "2y", "德债10y": "10y"}
 
             # 创建一个包含所有日期的完整日期范围用于对齐
-            target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+            target_index = axis_index
 
             # 处理每个期限的数据
             for chinese_col, api_col in eu_col_mapping.items():
@@ -897,10 +1023,6 @@ class DataService:
                     result["eu_treasuries"][api_col] = eu_aligned[chinese_col].tolist()
 
         # 加载日债数据（月度数据，需要独立处理日期对齐）
-        if not _want("jp_bonds"):
-            jp_data = pd.DataFrame()
-        else:
-            jp_data = self.load_data("jp_bonds")
         if _want("jp_bonds") and not jp_data.empty:
             jp_data = jp_data.ffill()
             jp_filtered = jp_data[(jp_data.index >= start_date) & (jp_data.index <= end_date)]
@@ -911,7 +1033,7 @@ class DataService:
             if jp_col in jp_filtered.columns and not jp_filtered.empty:
                 # 将月度数据对齐到美债的日期数组（前向填充）
                 # 先创建一个包含所有日期的完整日期范围
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 # 先将日债数据重新索引到完整日期范围，然后前向填充
                 jp_full = jp_data.reindex(target_index, method="ffill")
                 # 再筛选时间范围
@@ -919,10 +1041,6 @@ class DataService:
                 result["jp_treasuries"]["10y"] = jp_aligned[jp_col].tolist()
 
         # 加载汇率数据
-        if not _want("exchange_rates"):
-            exchange_data = pd.DataFrame()
-        else:
-            exchange_data = self.load_data("exchange_rates")
         if _want("exchange_rates") and not exchange_data.empty:
             exchange_data = exchange_data.ffill()
             exchange_filtered = exchange_data[(exchange_data.index >= start_date) & (exchange_data.index <= end_date)]
@@ -940,26 +1058,18 @@ class DataService:
                     result["exchange_rates"][api_col] = exchange_filtered[chinese_col].tolist()
 
         # 加载VIX数据
-        if not _want("vix"):
-            vix_data = pd.DataFrame()
-        else:
-            vix_data = self.load_data("vix")
         if _want("vix") and not vix_data.empty:
             vix_data = vix_data.ffill()
             vix_filtered = vix_data[(vix_data.index >= start_date) & (vix_data.index <= end_date)]
 
             # 将VIX数据对齐到美债的日期数组（前向填充）
             if "Close_VIX" in vix_filtered.columns and not vix_filtered.empty:
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 vix_full = vix_data.reindex(target_index, method="ffill")
                 vix_aligned = vix_full[(vix_full.index >= start_date) & (vix_full.index <= end_date)]
                 result["vix"] = vix_aligned["Close_VIX"].tolist()
 
         # 加载资金流向数据
-        if not _want("fund_flow"):
-            fund_flow_data = pd.DataFrame()
-        else:
-            fund_flow_data = self.load_data("fund_flow")
         if _want("fund_flow") and not fund_flow_data.empty:
             fund_flow_data = fund_flow_data.ffill()
             fund_flow_filtered = fund_flow_data[(fund_flow_data.index >= start_date) & (fund_flow_data.index <= end_date)]
@@ -975,7 +1085,7 @@ class DataService:
             }
 
             # 将资金流向数据对齐到美债的日期数组（前向填充）
-            target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+            target_index = axis_index
             fund_flow_full = fund_flow_data.reindex(target_index, method="ffill")
             fund_flow_aligned = fund_flow_full[(fund_flow_full.index >= start_date) & (fund_flow_full.index <= end_date)]
 
@@ -984,10 +1094,6 @@ class DataService:
                     result["fund_flow"][api_col] = fund_flow_aligned[chinese_col].tolist()
 
         # 加载中国国债数据
-        if not _want("china_bond"):
-            china_bond_data = pd.DataFrame()
-        else:
-            china_bond_data = self.load_data("china_bond")
         if _want("china_bond") and not china_bond_data.empty:
             china_bond_data = china_bond_data.ffill()
             china_bond_filtered = china_bond_data[(china_bond_data.index >= start_date) & (china_bond_data.index <= end_date)]
@@ -1006,7 +1112,7 @@ class DataService:
 
             if col_10y:
                 # 将中国国债数据对齐到美债的日期数组（前向填充）
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 china_bond_full = china_bond_data.reindex(target_index, method="ffill")
                 china_bond_aligned = china_bond_full[(china_bond_full.index >= start_date) & (china_bond_full.index <= end_date)]
                 result["china_bond"]["10y"] = china_bond_aligned[col_10y].tolist()
@@ -1017,10 +1123,6 @@ class DataService:
                     result["china_bond"]["spread_10y_2y"] = china_bond_aligned[col_spread].tolist()
 
         # 加载TED利差数据
-        if not _want("ted_spread"):
-            ted_data = pd.DataFrame()
-        else:
-            ted_data = self.load_data("ted_spread")
         if _want("ted_spread") and not ted_data.empty:
             ted_data = ted_data.ffill()
             ted_filtered = ted_data[(ted_data.index >= start_date) & (ted_data.index <= end_date)]
@@ -1033,7 +1135,7 @@ class DataService:
             }
 
             # 将TED利差数据对齐到美债的日期数组（前向填充）
-            target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+            target_index = axis_index
             ted_full = ted_data.reindex(target_index, method="ffill")
             ted_aligned = ted_full[(ted_full.index >= start_date) & (ted_full.index <= end_date)]
 
@@ -1042,16 +1144,12 @@ class DataService:
                     result["ted_spread"][api_col] = ted_aligned[col].tolist()
 
         # 加载商品数据
-        if not _want("commodities"):
-            commodity_data = pd.DataFrame()
-        else:
-            commodity_data = self.load_data("commodities")
         if _want("commodities") and not commodity_data.empty:
             commodity_data = commodity_data.ffill()
 
             # 将商品数据对齐到美债的日期数组（前向填充）
             # 这保证 commodities 各字段长度与 dates 一致，前端 Plotly 才能正确配对 x/y
-            target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+            target_index = axis_index
 
             # 兼容老 CSV（无 silver 列）：reindex columns 自动补 NaN，前端 Plotly 会自动断开
             expected_cols = ["黄金", "白银", "原油", "铜"]
@@ -1071,15 +1169,11 @@ class DataService:
                     result["commodities"][api_col] = commodity_filtered[chinese_col].tolist()
 
         # 加载全球股指数据（恒生/上证/标普500/纳指/道指）
-        if not _want("indices"):
-            indices_data = pd.DataFrame()
-        else:
-            indices_data = self.load_data("indices")
         if _want("indices") and not indices_data.empty:
             indices_data = indices_data.ffill()
 
             # 与 commodities 一致：reindex 到 target_index 保证长度对齐 dates
-            target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+            target_index = axis_index
             indices_aligned = indices_data.reindex(target_index, method="ffill")
             indices_filtered = indices_aligned[(indices_aligned.index >= start_date) & (indices_aligned.index <= end_date)]
 
@@ -1088,86 +1182,62 @@ class DataService:
                 if col in indices_filtered.columns:
                     result["indices"][col] = indices_filtered[col].tolist()
 
-        # 加载TGA账户余额数据（对齐到美债日期数组）
-        if not _want("tga"):
-            tga_data = pd.DataFrame()
-        else:
-            tga_data = self.load_data("tga")
+        # 加载TGA账户余额数据（对齐到日期轴）
         if _want("tga") and not tga_data.empty:
             tga_data = tga_data.ffill()
             tga_filtered = tga_data[(tga_data.index >= start_date) & (tga_data.index <= end_date)]
             if "Close_TGA" in tga_filtered.columns and not tga_filtered.empty:
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 tga_full = tga_data.reindex(target_index, method="ffill")
                 tga_aligned = tga_full[(tga_full.index >= start_date) & (tga_full.index <= end_date)]
                 result["tga"] = tga_aligned["Close_TGA"].tolist()
 
-        # 加载HIBOR隔夜拆息数据（对齐到美债日期数组）
-        if not _want("hibor"):
-            hibor_data = pd.DataFrame()
-        else:
-            hibor_data = self.load_data("hibor")
+        # 加载HIBOR隔夜拆息数据（对齐到日期轴）
         if _want("hibor") and not hibor_data.empty:
             hibor_data = hibor_data.ffill()
             hibor_filtered = hibor_data[(hibor_data.index >= start_date) & (hibor_data.index <= end_date)]
             if "HIBOR_Overnight" in hibor_filtered.columns and not hibor_filtered.empty:
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 hibor_full = hibor_data.reindex(target_index, method="ffill")
                 hibor_aligned = hibor_full[(hibor_full.index >= start_date) & (hibor_full.index <= end_date)]
                 result["hibor"] = hibor_aligned["HIBOR_Overnight"].tolist()
 
         # 加载DR007（中国货币网7天质押式回购加权利率，日频）
-        if not _want("dr007"):
-            dr007_data = pd.DataFrame()
-        else:
-            dr007_data = self.load_dr007()
         if _want("dr007") and not dr007_data.empty:
             dr007_data = dr007_data.ffill()
             dr007_filtered = dr007_data[(dr007_data.index >= start_date) & (dr007_data.index <= end_date)]
             if "dr007" in dr007_filtered.columns and not dr007_filtered.empty:
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 dr007_full = dr007_data.reindex(target_index, method="ffill")
                 dr007_aligned = dr007_full[(dr007_full.index >= start_date) & (dr007_full.index <= end_date)]
                 result["dr007"] = dr007_aligned["dr007"].tolist()
 
         # 加载两市成交额（沪+深合计，日频）
-        if not _want("volume"):
-            volume_data = pd.DataFrame()
-        else:
-            volume_data = self.load_volume()
         if _want("volume") and not volume_data.empty:
             volume_data = volume_data.ffill()
             volume_filtered = volume_data[(volume_data.index >= start_date) & (volume_data.index <= end_date)]
             if "total_amount_yi" in volume_filtered.columns and not volume_filtered.empty:
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 volume_full = volume_data.reindex(target_index, method="ffill")
                 volume_aligned = volume_full[(volume_full.index >= start_date) & (volume_full.index <= end_date)]
                 result["volume"] = volume_aligned["total_amount_yi"].tolist()
 
         # 加载两市加权换手率（沪+深按成交额加权，日频）
-        if not _want("turnover"):
-            turnover_data = pd.DataFrame()
-        else:
-            turnover_data = self.load_turnover()
         if _want("turnover") and not turnover_data.empty:
             turnover_data = turnover_data.ffill()
             turnover_filtered = turnover_data[(turnover_data.index >= start_date) & (turnover_data.index <= end_date)]
             if "turnover_rate" in turnover_filtered.columns and not turnover_filtered.empty:
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 turnover_full = turnover_data.reindex(target_index, method="ffill")
                 turnover_aligned = turnover_full[(turnover_full.index >= start_date) & (turnover_full.index <= end_date)]
                 result["turnover"] = turnover_aligned["turnover_rate"].tolist()
 
         # 加载融资余额（沪+深合计，日频）
-        if not _want("margin"):
-            margin_data = pd.DataFrame()
-        else:
-            margin_data = self.load_margin()
         if _want("margin") and not margin_data.empty:
             margin_data = margin_data.ffill()
             margin_filtered = margin_data[(margin_data.index >= start_date) & (margin_data.index <= end_date)]
             if "margin_balance_yi" in margin_filtered.columns and not margin_filtered.empty:
-                target_index = us_data.index if not us_data.empty else pd.date_range(start_date, end_date)
+                target_index = axis_index
                 margin_full = margin_data.reindex(target_index, method="ffill")
                 margin_aligned = margin_full[(margin_full.index >= start_date) & (margin_full.index <= end_date)]
                 result["margin"] = margin_aligned["margin_balance_yi"].tolist()

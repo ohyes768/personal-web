@@ -195,9 +195,7 @@ export default function EconomicPage() {
             onTimeRangeChange={setTimeRange}
             refreshKey={refreshKey}
             onRefreshSuccess={handleRefreshSuccess}
-            fullData={tabDataMap['comparison'] ?? null}
-            isLoading={activeTab === 'comparison' && isLoading}
-            error={error}
+            isActive={activeTab === 'comparison'}
           />
         </div>
         <div hidden={activeTab !== 'commodities'}>

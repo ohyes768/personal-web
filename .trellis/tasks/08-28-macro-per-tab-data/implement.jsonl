@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Tab 读数跨 FastAPI / data_service / Next hook 三层，对齐契约与日期轴"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 query_data_by_tab 与现有 EconomicDataResponse，不另造对比 payload"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/index.md", "reason": "macro 后端 spec 入口"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/error-handling.md", "reason": "400 与 DataResponse error_code 约定"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/quality-guidelines.md", "reason": "后端质量门槛"}

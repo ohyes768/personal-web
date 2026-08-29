@@ -49,6 +49,7 @@ function buildAxisDef(axis: typeof AXES[number], isMain: boolean) {
   return {
     title: titleObj,
     side: axis.side,
+    overlaying: isMain ? undefined : 'y',
     showgrid: isMain,
     gridcolor: PLOTLY_DARK.gridColor,
     color: axis.axisColor,

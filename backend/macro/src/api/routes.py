@@ -1016,12 +1016,17 @@ def get_data(
 
 
 @router.get("/data/{tab}", response_model=DataResponse)
-async def get_data_by_tab(
+def get_data_by_tab(
     tab: str,
     start_date: Optional[str] = Query(None, description="起始日期 (YYYY-MM-DD)，缺省为 historical_start_date"),
     end_date: Optional[str] = Query(None, description="结束日期 (YYYY-MM-DD)，缺省为今日"),
+    indicators: Optional[str] = Query(None, description="对比页必填，逗号分隔的指标 id"),
 ):
-    """按 Tab 查询数据 — 只加载并返回该 Tab 相关字段（全历史，供前端本地切时间周期）"""
+    """按 Tab 查询数据 — 只加载并返回该 Tab 相关字段（全历史，供前端本地切时间周期）
+
+    改 def（非 async def）：与 GET /data 一样丢线程池，避免同步 pandas 堵事件循环。
+    tab=comparison 必须带 indicators；其它 tab 带 indicators 返回 400。
+    """
     from src.services.data_service import VALID_DATA_TABS
 
     if tab not in VALID_DATA_TABS:
@@ -1030,10 +1035,33 @@ async def get_data_by_tab(
             detail=f"无效的 tab: {tab}，可选: {', '.join(sorted(VALID_DATA_TABS))}",
         )
 
+    # 直接函数调用(测试)时默认值是 Query 对象而非 None(HTTP 路径 FastAPI 已解析成真值)→ 归一化
+    if not isinstance(indicators, str):
+        indicators = None
+
+    if tab == "comparison":
+        ids = [x.strip() for x in (indicators or "").split(",") if x.strip()]
+        if not ids:
+            raise HTTPException(
+                status_code=400,
+                detail="comparison 必须提供 indicators 参数（逗号分隔的指标 id）",
+            )
+    elif indicators:
+        raise HTTPException(
+            status_code=400,
+            detail="仅 comparison tab 接受 indicators 参数",
+        )
+
     try:
-        logger.info(f"按 Tab 查询数据: tab={tab}, start_date={start_date}, end_date={end_date}")
+        logger.info(
+            f"按 Tab 查询数据: tab={tab}, start_date={start_date}, "
+            f"end_date={end_date}, indicators={indicators}"
+        )
         data_service = get_data_service()
-        data = data_service.query_data_by_tab(tab, start_date, end_date)
+        if tab == "comparison":
+            data = data_service.query_data_by_indicators(ids, start_date, end_date)
+        else:
+            data = data_service.query_data_by_tab(tab, start_date, end_date)
         return DataResponse(success=True, message="数据查询成功", data=data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

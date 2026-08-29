@@ -3,16 +3,8 @@
  * 输入：fullData + timeRange + tabType
  * 输出：按时间范围 + Tab 类型裁剪后的 data
  *
- * 与 useFullEconomicData 配合使用：
- *   page.tsx 顶层调 useFullEconomicData 拿 fullData
- *   各 Tab 用 useFilteredEconomicData 拿自己需要的 data
- *   timeRange/tabType 变化时只重算 useMemo，不发请求
- *
- * 分层加载兜底：timeRange='ALL' 时若数据起始日期晚于 2020-01-01，
- * 说明 fullData 还是 useFullEconomicData 阶段 1 的近 1 年子集，
- * 返回 null 让 Tab 显示 loading 占位（与 isLoading 一致）。
- * 阈值 '2020-01-01' 选在阶段 1（~1Y）起点 2025-08-24 之前、
- * 阶段 2（2000-01-03）之后的安全区间，未来 STAGE1 调整仍有效。
+ * 与 useTabEconomicData 配合：各 Tab 已拉自己的全历史，本 hook 只做本地切片。
+ * timeRange/tabType 变化时只重算 useMemo，不发请求。
  */
 'use client';
 
@@ -53,12 +45,6 @@ export function useFilteredEconomicData(
 ): EconomicDataResponse | null {
   return useMemo(() => {
     if (!fullData || fullData.dates.length === 0) {
-      return null;
-    }
-
-    // 分层加载兜底：ALL 档若 fullData 还是阶段 1 的近 1Y 子集（首日 > 2020-01-01），
-    // 返回 null 让 Tab 显示 loading 占位，避免"半张图"
-    if (timeRange === 'ALL' && fullData.dates[0] > '2020-01-01') {
       return null;
     }
 

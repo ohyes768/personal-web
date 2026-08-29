@@ -18,6 +18,7 @@ import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
 import { InitButton } from './InitButton';
 import { LiquidityChart } from './LiquidityChart';
+import { TabPanelLoading } from './TabPanelLoading';
 
 interface LiquidityTabProps {
   timeRange: TimeRange;
@@ -73,11 +74,7 @@ export function LiquidityTab({
         </div>
       )}
 
-      {isLoading && (
-        <div className="bg-gray-900 rounded-lg p-12 border border-gray-800 text-center">
-          <p className="text-gray-400">加载流动性/风险数据中...</p>
-        </div>
-      )}
+      {isLoading && <TabPanelLoading message="加载流动性/风险数据中…" />}
     </div>
   );
 }
