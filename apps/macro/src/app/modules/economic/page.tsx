@@ -132,7 +132,7 @@ export default function EconomicPage() {
   ];
 
   return (
-    <main className="min-h-screen bg-black text-white p-8">
+    <main className="min-h-screen bg-black text-white p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* 头部 */}
         <header className="mb-8">
