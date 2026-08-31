@@ -78,41 +78,6 @@ class FredService:
 
         return result
 
-    async def fetch_exchange_rates(
-        self, start_date: pd.Timestamp, end_date: pd.Timestamp
-    ) -> Dict[str, pd.Series]:
-        """获取所有汇率数据
-
-        Args:
-            start_date: 起始日期
-            end_date: 结束日期
-
-        Returns:
-            包含所有汇率数据的字典
-        """
-        result = {}
-
-        # 汇率数据代码
-        exchange_codes = {
-            "dollar_index": "DTWEXBGS",
-            "usd_cny": "DEXCHUS",
-            "usd_jpy": "DEXJPUS",
-            "usd_eur": "DEXUSEU",
-        }
-
-        for name, code in exchange_codes.items():
-            logger.info(f"获取汇率数据: {name} ({code}), 从 {start_date} 到 {end_date}")
-            series = await self.fetch_series(code, start_date, end_date)
-
-            # 对欧元汇率取倒数（FRED 提供的是 EUR/USD）
-            if name == "usd_eur":
-                series = 1 / series
-                logger.info("已将 EUR/USD 转换为 USD/EUR")
-
-            result[name] = series
-
-        return result
-
     async def fetch_latest_data(self) -> Dict[str, pd.Series]:
         """获取最新的数据点
 

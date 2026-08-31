@@ -40,7 +40,7 @@ export const UPDATE_ENDPOINT_LABELS: Record<string, UpdateEndpointMeta> = {
   },
   '/update/exchange-rates': {
     label: '主要汇率',
-    source: 'FRED',
+    source: '阿里云行情 API',
   },
   '/update/eu-bonds': {
     label: '欧洲（德国）国债收益率',

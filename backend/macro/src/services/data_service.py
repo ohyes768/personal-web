@@ -232,12 +232,15 @@ class DataService:
             return None
         return pd.Timestamp(data.index[-1]).normalize()
 
-    def save_fred_data(self, data: Dict[str, pd.Series], key: str = "auto") -> None:
-        """保存 FRED 数据到对应的 CSV 文件
+    def save_fred_data(
+        self, data: Dict[str, pd.Series], key: str = "auto", *, replace: bool = False
+    ) -> None:
+        """保存 FRED / 汇率等按 key 落盘的数据
 
         Args:
-            data: FRED 数据字典
+            data: 数据字典
             key: 数据类型标识，"auto" 表示自动识别（默认），或指定具体类型
+            replace: 仅 exchange_rates 有效；True 时整表覆盖（阿里云切源全量回补）
         """
         if key == "auto":
             self._save_by_auto_detection(data)
@@ -248,7 +251,7 @@ class DataService:
         elif key == "jp_bonds":
             self._save_jp_bonds(data)
         elif key == "exchange_rates":
-            self._save_exchange_rates(data)
+            self._save_exchange_rates(data, replace=replace)
         elif key == "vix":
             self._save_vix(data)
         elif key == "tga":
@@ -349,12 +352,23 @@ class DataService:
             self.append_data("jp_bonds", jp_df)
             logger.info(f"已保存日债数据: {list(jp_data.keys())}")
 
-    def _save_exchange_rates(self, data: Dict[str, pd.Series]) -> None:
-        """保存汇率数据
+    # ICE DXY 近年约 90–110；FRED DTWEXBGS 近年约 115–130。用于拒绝混写。
+    FRED_BROAD_DOLLAR_MIN = 115.0
 
-        Args:
-            data: 汇率数据字典
-        """
+    def exchange_rates_need_aliyun_rebuild(self) -> bool:
+        """底库最后一根美元指数仍是 FRED 广义指数量级时，禁止增量混写 DXY。"""
+        data = self.load_data("exchange_rates")
+        if data.empty or "美元指数" not in data.columns:
+            return False
+        last = data["美元指数"].dropna()
+        if last.empty:
+            return False
+        return float(last.iloc[-1]) >= self.FRED_BROAD_DOLLAR_MIN
+
+    def _save_exchange_rates(
+        self, data: Dict[str, pd.Series], *, replace: bool = False
+    ) -> None:
+        """保存汇率数据。replace=True 整表覆盖，避免 FRED 广义指数与 ICE DXY 拼接。"""
         exchange_data = {}
         exchange_mapping = {
             "dollar_index": "美元指数",
@@ -369,9 +383,15 @@ class DataService:
 
         if exchange_data:
             exchange_df = pd.DataFrame(exchange_data)
-            self._ensure_file_exists(self.files["exchange_rates"], ["美元指数", "美元人民币", "美元日元", "美元欧元"])
-            self.append_data("exchange_rates", exchange_df)
-            logger.info(f"已保存汇率数据: {list(exchange_data.keys())}")
+            exchange_df.index.name = "date"
+            cols = ["美元指数", "美元人民币", "美元日元", "美元欧元"]
+            if replace:
+                exchange_df = exchange_df.reindex(columns=cols)
+                self.save_data("exchange_rates", exchange_df)
+            else:
+                self._ensure_file_exists(self.files["exchange_rates"], cols)
+                self.append_data("exchange_rates", exchange_df)
+            logger.info(f"已保存汇率数据: {list(exchange_data.keys())} replace={replace}")
 
     def _save_vix(self, data: Dict[str, pd.Series]) -> None:
         """保存VIX数据

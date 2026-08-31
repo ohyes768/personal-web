@@ -169,7 +169,97 @@ return post("/api/macro/update/margin");
 
 日度增量：外部 API 成功但区间无观测、CSV `last_date` 存在且落后 ≤ 5 个日历天 → `success`「已是最新」（覆盖周末 + FRED/TGA T+1~T+2）。`last_date` 为空，或落后超过 5 天仍无观测 → `UPDATE_FAILED`，message 带底库日期与落后天数。FRED 单系列失败必须上抛，不能吞成空 Series。
 
-商品/股指走阿里云 `comkm`（倒序，最新在前）。`fetch_all(start, end)` 把 `start` 传给翻页 `since`：当前页最旧一根 ≤ since 即停，日常增量通常 1 页（500 根 ≈ 2 年）。`Code=-100`（最多 10 年内）是翻页结束，打 INFO 不是 ERROR。全量 history 的 start 很早，仍会翻到上限。实现：`src/services/aliyun_comkm.py`。
+商品/股指/汇率走阿里云 `comkm`（倒序，最新在前）。`fetch_all(start, end)` 把 `start` 传给翻页 `since`：当前页最旧一根 ≤ since 即停，日常增量通常 1 页（500 根 ≈ 2 年）。`Code=-100`（最多 10 年内）是翻页结束，打 INFO 不是 ERROR。全量 history 的 start 很早，仍会翻到上限。实现：`src/services/aliyun_comkm.py`。
+
+---
+
+## Scenario: 阿里云 comkm 汇率 / ICE DXY（切源）
+
+### 1. Scope / Trigger
+
+- 触发：`POST /api/fetch/exchange-rates/history` 全量回补与 `POST /api/update/exchange-rates` 日度增量（2026-08-31 起生效）
+- 背景：FRED H.10（`DEXCHUS` 等）常滞后 7–10 个日历天；`DTWEXBGS` 是贸易加权广义指数（量级约 118），不是 ICE DXY（约 99）。同一套 `ALIYUN_API_APPCODE` 的 comkm 可查 `DXY/USDCNY/USDJPY/EURUSD`，最新约 T+1。
+- API 字段名不变：`dollar_index` / `usd_cny` / `usd_jpy` / `usd_eur`。CSV 列名仍是 `美元指数,美元人民币,美元日元,美元欧元`。
+
+### 2. Signatures
+
+```python
+# src/services/exchange_rate_service.py
+class ExchangeRateService:
+    async def fetch_all(start_date: date, end_date: date) -> dict[str, pd.Series]
+        # keys: dollar_index, usd_cny, usd_jpy, usd_eur
+        # usd_eur = 1 / EURUSD（与旧 FRED 倒数列同向：外币/1 美元）
+
+DataService.save_fred_data(data, key="exchange_rates", *, replace=False)
+DataService.exchange_rates_need_aliyun_rebuild() -> bool
+    # 底库最后一根「美元指数」>= 115 → 仍是 FRED DTWEXBGS，禁止增量
+```
+
+| 用途 | 后端路径 |
+|------|----------|
+| 全量回补（整表覆盖） | `POST /api/fetch/exchange-rates/history` |
+| 日度增量 | `POST /api/update/exchange-rates` |
+
+全量窗口 `settings.exchange_history_years`（默认 10 年，对齐 comkm 上限）。symbol 映射在 `settings.exchange_rate_symbols`。
+
+### 3. Contracts
+
+- 认证：`ALIYUN_API_APPCODE`；未配置 `fetch_all` 返回 `{}`，路由 `UPDATE_FAILED`
+- 全量 history **必须 `replace=True` 整表覆盖**，禁止 append 到 FRED 历史（DXY≈99 接到 DTWEXBGS≈118 会在图上断裂）
+- 增量：若 `exchange_rates_need_aliyun_rebuild()` 为 True，**不调阿里云**，直接 `UPDATE_FAILED`，message 含 `/fetch/exchange-rates/history`
+- `usd_cny`/`usd_jpy` 与 FRED 同向（外币/1 美元）但报价口径不同，仍不得混写
+- 不要用 `FXINDEX`（comkm `SYMBOL未找到`）；不要把 DXY 当 DTWEXBGS 补洞
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+|---|---|
+| AppCode 未配置 / comkm 全空 | history/update `UPDATE_FAILED` |
+| 底库美元指数 ≥ 115 | 增量拒绝，提示先跑 history |
+| 底库已是 DXY（约 99） | 增量 append，keep=last |
+| 空窗且 last_date 落后 ≤ 5 天 | 与其它日度源相同，「已是最新」 |
+| 单 symbol 失败 | 该 series 空，其它继续（与商品/股指一致） |
+
+### 5. Good/Base/Bad Cases
+
+- Good: NAS 先跑 history → `exchange_rates.csv` 从约 10 年前起、最新 DXY≈99.7、USDCNY≈6.73（2026-08-28）
+- Base: 次日 `update/exchange-rates` 只翻 1 页，append 新行
+- Bad: 不跑 history 直接增量 → 拒绝，避免 118 后面接 99
+
+### 6. Tests Required
+
+`tests/test_exchange_rate_service.py`（mock `fetch_comkm_klines`，禁止真连）：
+- DXY/USDCNY/USDJPY/EURUSD 映射到四个 API key；`usd_eur == 1/EURUSD`
+- 无 AppCode 返回 `{}`
+- `replace=True` 丢掉 FRED 118.x 历史；之后 `need_aliyun_rebuild` 为 False
+- 增量在 FRED 口径底库上不调用 fetch，message 含 `history`
+
+### 7. Wrong vs Correct
+
+#### Wrong
+
+```python
+# 把 Aliyun DXY append 进 FRED DTWEXBGS CSV
+data_service.save_fred_data(dxy_batch, key="exchange_rates")
+```
+
+```python
+# 把 EURUSD 原值当 usd_eur 落盘（旧列是 1/EURUSD）
+series = eur_usd_close
+```
+
+#### Correct
+
+```python
+data_service.save_fred_data(aliyun_fx, key="exchange_rates", replace=True)
+```
+
+```python
+if name == "usd_eur":
+    series = 1.0 / series
+```
+
+部署：NAS 升级后必须先点「中美利差/汇率」初始化（或手动 POST history），再依赖 `global_daily` 增量。
 
 ---
 

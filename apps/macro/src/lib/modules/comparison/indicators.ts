@@ -14,10 +14,10 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   cn_10y: { id: 'cn_10y', label: '中债10y',  group: 'cn_treasury', color: '#f87171', unit: '%',     source: 'AKShare' },
 
   // 汇率
-  dxy:     { id: 'dxy',     label: '美元指数', group: 'exchange',   color: '#10b981', unit: '',      source: 'FRED' },
-  usd_cny: { id: 'usd_cny', label: 'USD/CNY', group: 'exchange',   color: '#34d399', unit: '',      source: 'FRED' },
-  usd_jpy: { id: 'usd_jpy', label: 'USD/JPY', group: 'exchange',   color: '#6ee7b7', unit: '',      source: 'FRED' },
-  usd_eur: { id: 'usd_eur', label: 'USD/EUR', group: 'exchange',   color: '#a7f3d0', unit: '',      source: 'FRED' },
+  dxy:     { id: 'dxy',     label: '美元指数', group: 'exchange',   color: '#10b981', unit: '',      source: '阿里云' },
+  usd_cny: { id: 'usd_cny', label: 'USD/CNY', group: 'exchange',   color: '#34d399', unit: '',      source: '阿里云' },
+  usd_jpy: { id: 'usd_jpy', label: 'USD/JPY', group: 'exchange',   color: '#6ee7b7', unit: '',      source: '阿里云' },
+  usd_eur: { id: 'usd_eur', label: 'USD/EUR', group: 'exchange',   color: '#a7f3d0', unit: '',      source: '阿里云' },
 
   // 恐慌
   vix:     { id: 'vix',     label: 'VIX恐慌',  group: 'volatility',  color: '#a855f7', unit: '',      source: 'FRED' },

@@ -74,6 +74,7 @@ from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
 from src.services.index_service import get_index_service
+from src.services.exchange_rate_service import ExchangeRateService
 from src.services.macro_signal_service import get_macro_signal_service
 from src.services.daily_snapshot_service import get_daily_snapshot_service
 from src.utils.logger import setup_logger
@@ -224,23 +225,18 @@ async def _fetch_oecd_bonds(
 
 
 
+_EXCHANGE_REBUILD_MSG = (
+    "汇率底库仍是 FRED 广义美元指数（DTWEXBGS），与阿里云 DXY 不能混写。"
+    "请先调用 POST /fetch/exchange-rates/history 全量重建。"
+)
+
+
 async def _fetch_exchange_rates(
-    fred_service, start_date: pd.Timestamp, end_date: pd.Timestamp
+    _fred_service, start_date: pd.Timestamp, end_date: pd.Timestamp
 ) -> dict:
-    """获取汇率数据的内部函数
-
-    Args:
-        fred_service: FRED 服务实例
-        start_date: 起始日期
-        end_date: 结束日期
-
-    Returns:
-        汇率数据字典
-    """
+    """获取汇率数据（阿里云 comkm）。保留 _fred_service 形参以兼容现有 mock。"""
     logger.info(f"获取汇率数据范围: {start_date} 到 {end_date}")
-
-    exchange_data = await fred_service.fetch_exchange_rates(start_date, end_date)
-    return exchange_data
+    return await ExchangeRateService.fetch_all(start_date.date(), end_date.date())
 
 
 def _compute_incremental_start(
@@ -538,12 +534,14 @@ async def fetch_exchange_rates_history():
     await acquire_update_lock()
 
     try:
-        logger.info("开始获取汇率历史数据...")
+        logger.info("开始获取汇率历史数据（阿里云 comkm 全量覆盖）...")
         fred_service = get_fred_service()
         data_service = get_data_service()
 
         latest_end = pd.Timestamp.now().normalize()
-        start_date = pd.Timestamp(settings.historical_start_date)
+        start_date = (
+            latest_end - pd.Timedelta(days=settings.exchange_history_years * 365)
+        ).normalize()
 
         logger.info(f"获取汇率历史数据，从 {start_date} 到 {latest_end}")
 
@@ -552,8 +550,8 @@ async def fetch_exchange_rates_history():
         if not any(not series.empty for series in exchange_data.values()):
             raise Exception("未能获取到任何汇率数据")
 
-        # 保存汇率数据
-        data_service.save_fred_data(exchange_data, key="exchange_rates")
+        # 整表覆盖，避免与 FRED DTWEXBGS 历史拼接
+        data_service.save_fred_data(exchange_data, key="exchange_rates", replace=True)
 
         # 构建只包含汇率的响应数据
         latest_rates = {}
@@ -614,6 +612,9 @@ async def update_exchange_rates():
         logger.info("开始增量更新汇率数据...")
         fred_service = get_fred_service()
         data_service = get_data_service()
+
+        if data_service.exchange_rates_need_aliyun_rebuild():
+            raise Exception(_EXCHANGE_REBUILD_MSG)
 
         latest_end = pd.Timestamp.now().normalize()
         start_date = _compute_incremental_start(data_service, "exchange_rates", latest_end)
@@ -1018,6 +1019,8 @@ async def update_data():
 
         # 获取汇率数据 — 数据已是最新时跳过
         if er_start is not None:
+            if data_service.exchange_rates_need_aliyun_rebuild():
+                raise Exception(_EXCHANGE_REBUILD_MSG)
             exchange_data = await _fetch_exchange_rates(fred_service, er_start, latest_end)
 
         if not new_data and not exchange_data:

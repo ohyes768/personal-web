@@ -49,13 +49,13 @@ INDICATOR_RELEASE_RULES: Dict[str, ReleaseRule] = {
     "cpi_yoy":      ReleaseRule("monthly", day=9, note="CPI/PPI 约每月9日发布上月数据"),
     "ppi_yoy":      ReleaseRule("monthly", day=9, note="CPI/PPI 约每月9日发布上月数据"),
     "core_cpi_yoy": ReleaseRule("monthly", day=9, note="核心 CPI 随 CPI 同步发布"),
-    # === 外部压力(每工作日,FRED 延迟 1-2 天) ===
-    "dollar_index": ReleaseRule("workdaily", note="美元指数每工作日更新(FRED 延迟约1天)"),
-    "usd_cny":      ReleaseRule("workdaily", note="汇率每工作日更新"),
+    # === 外部压力(每工作日,汇率走阿里云 DXY/即期；TED 仍 FRED) ===
+    "dollar_index": ReleaseRule("workdaily", note="美元指数每工作日更新(阿里云 DXY，延迟约1天)"),
+    "usd_cny":      ReleaseRule("workdaily", note="汇率每工作日更新(阿里云 USDCNY)"),
     "ted_spread":   ReleaseRule("workdaily", note="TED 利差每工作日更新(FRED 延迟约1周)"),
     # 中文 key(skill 端直接以中文指标名作 key 输出时兜底,与英文 key 同规则)
-    "美元指数":        ReleaseRule("workdaily", note="美元指数每工作日更新(FRED 延迟约1天)"),
-    "美元兑人民币":    ReleaseRule("workdaily", note="汇率每工作日更新"),
+    "美元指数":        ReleaseRule("workdaily", note="美元指数每工作日更新(阿里云 DXY，延迟约1天)"),
+    "美元兑人民币":    ReleaseRule("workdaily", note="汇率每工作日更新(阿里云 USDCNY)"),
     "TED利差":         ReleaseRule("workdaily", note="TED 利差每工作日更新(FRED 延迟约1周)"),
     "北向7日日均成交额": ReleaseRule("workdaily", note="北向成交额每交易日盘后更新"),
     "北向当日成交额":    ReleaseRule("workdaily", note="北向成交额每交易日盘后更新"),

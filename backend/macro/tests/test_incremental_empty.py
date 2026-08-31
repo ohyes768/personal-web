@@ -39,6 +39,9 @@ class FakeDataService:
     def save_indices(self, *_a, **_k):
         self.saved = True
 
+    def exchange_rates_need_aliyun_rebuild(self):
+        return False
+
 
 @pytest.fixture(autouse=True)
 def _reset_lock():

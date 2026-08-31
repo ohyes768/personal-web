@@ -62,6 +62,16 @@ class Settings(BaseSettings):
         "DJI": "DJI",           # 道琼斯
     }
 
+    # 汇率 / 美元指数（阿里云 comkm；API 字段名保持 dollar_index 等，勿与 FRED 系列混写）
+    exchange_rate_symbols: dict = {
+        "dollar_index": "DXY",      # ICE 美元指数，不是 FRED DTWEXBGS
+        "usd_cny": "USDCNY",
+        "usd_jpy": "USDJPY",
+        "usd_eur": "EURUSD",        # 落盘前取倒数，与旧 usd_eur 列同向
+    }
+    # 全量回补窗口（年）；comkm 日 K 最多约 10 年
+    exchange_history_years: int = 10
+
     # FRED 数据代码
     fred_codes: dict = {
         "us_3m": "DGS3MO",
@@ -73,11 +83,6 @@ class Settings(BaseSettings):
         # 日本国债收益率（OECD数据）
         "jp_3m": "IR3TIB01JPM156N",    # 日本3个月银行间利率
         "jp_10y": "IRLTLT01JPM156N",   # 日本10年期国债收益率
-        # 汇率数据
-        "dollar_index": "DTWEXBGS",    # 美元指数
-        "usd_cny": "DEXCHUS",          # 美元兑人民币
-        "usd_jpy": "DEXJPUS",          # 美元兑日元
-        "usd_eur": "DEXUSEU",          # 美元兑欧元
         # VIX恐慌指数
         "vix": "VIXCLS",               # CBOE波动率指数
         # TGA（美国财政部一般账户余额，原始单位百万美元）
