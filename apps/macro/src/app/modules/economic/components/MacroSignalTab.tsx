@@ -149,9 +149,9 @@ export function MacroSignalTab({ loadSnapshot, initialMonth, onJumpToTab }: Macr
   const effectiveDate = selectedDate ?? dailySnapshot?.date ?? '';
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-5">
       {/* 区块一:月度信号(标题 + 月份选择器 + 4 卡) */}
-      <section className="space-y-4">
+      <section className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <h3 className="text-sm font-medium text-gray-400">月度信号</h3>
           <MonthSwitcher
@@ -162,9 +162,9 @@ export function MacroSignalTab({ loadSnapshot, initialMonth, onJumpToTab }: Macr
         </div>
 
         {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {Array.from({ length: MONTHLY_GROUPS.length }).map((_, i) => (
-              <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-5 h-48 animate-pulse">
+              <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-3 h-36 animate-pulse">
                 <div className="h-3 w-20 bg-gray-800 rounded mb-3"></div>
                 <div className="h-5 w-16 bg-gray-800 rounded mb-4"></div>
                 <div className="h-3 w-full bg-gray-800 rounded mb-2"></div>
@@ -192,7 +192,7 @@ export function MacroSignalTab({ loadSnapshot, initialMonth, onJumpToTab }: Macr
       </section>
 
       {/* 区块二:日频信号(标题「截至 M 月 D 日」+ 日期选择器 + 3 卡) */}
-      <section className="space-y-4">
+      <section className="space-y-3">
         <div className="flex items-center justify-between flex-wrap gap-4">
           <h3 className="text-sm font-medium text-gray-400">
             日频信号{effectiveDate ? ` · 截至 ${formatDateLabel(effectiveDate)}` : ''}
@@ -205,9 +205,9 @@ export function MacroSignalTab({ loadSnapshot, initialMonth, onJumpToTab }: Macr
         </div>
 
         {dailyLoading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-5 h-48 animate-pulse">
+              <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-3 h-28 animate-pulse">
                 <div className="h-3 w-20 bg-gray-800 rounded mb-3"></div>
                 <div className="h-5 w-16 bg-gray-800 rounded mb-4"></div>
                 <div className="h-3 w-full bg-gray-800 rounded mb-2"></div>

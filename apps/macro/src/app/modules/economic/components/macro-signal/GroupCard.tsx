@@ -5,7 +5,7 @@
  * - 卡头第一行(小字标识):圆点 + 分组名 + 「X 项指标」
  * - 卡头第二行(档位刻度):全部档位横排,当前档大字+档位色突出,其余小字灰色;
  *   定位不到当前档时兜底显示 conclusion(白)或「数据缺失」(灰)大字
- * - 指标列表:每行 label + value + 三时间(数据/分析/下期预期)
+ * - 指标列表:每行名称+数值;数据/分析/下次在 title
  * - 整组 indicators 为空 → 列表区显示「本月数据缺失」占位
  */
 import type { DimensionKey, MacroSignalGroup, MacroIndicator } from '@/lib/modules/macro-signal/types';
@@ -57,7 +57,38 @@ function isStale(updatedAt: string | null, selectedMonth: string): boolean {
   return monthStart.getTime() - d.getTime() > 35 * 86400000;
 }
 
-/** 指标行:label + value + 三时间(数据/分析/下期预期) */
+/** 指标行悬停说明:数据/分析/下次等次要信息不占高度 */
+function buildMonthlyRowTitle(opts: {
+  label: string;
+  canJump: boolean;
+  isPlaceholder: boolean;
+  dataDate: string | null;
+  dataDateText: string | null;
+  isMonthly: boolean;
+  stale: boolean;
+  analyzedAt: string | null;
+  nextReleaseTitle?: string;
+  showMonthAvg: boolean;
+  latestValueText: string;
+}): string {
+  const parts: string[] = [];
+  if (opts.canJump) parts.push(`查看 ${opts.label} 曲线`);
+  if (opts.isPlaceholder) {
+    parts.push(opts.nextReleaseTitle ?? '暂未获取');
+  } else if (!opts.dataDate) {
+    parts.push('本月无数据');
+  } else {
+    parts.push(`数据 ${opts.dataDateText ?? opts.dataDate}`);
+    if (!opts.isMonthly) parts.push(relativeDate(opts.dataDate));
+    if (opts.stale) parts.push('数据偏旧');
+  }
+  if (opts.analyzedAt) parts.push(`分析 ${formatAnalyzed(opts.analyzedAt)}`);
+  if (!opts.isPlaceholder && opts.nextReleaseTitle) parts.push(opts.nextReleaseTitle);
+  if (opts.showMonthAvg) parts.push(`月均（最新 ${opts.latestValueText}）`);
+  return parts.join(' · ');
+}
+
+/** 指标行:一行名称+数值;次要时间在 title */
 function IndicatorRow({
   ind,
   selectedMonth,
@@ -84,71 +115,49 @@ function IndicatorRow({
   const dataDateText = isMonthly && dataDate ? dataDate.slice(0, 7) : dataDate;
   // 「暂未获取」占位态:该月无数据(value 空)但可推预期发布日
   const isPlaceholder = !hasValue && !!ind.next_release_at;
-  const nextReleaseShort = isMonthly && ind.next_release_at ? ind.next_release_at.slice(5) : null;
-  const nextReleaseTitle = ind.next_release_at
+  const nextReleaseTitle = isMonthly && ind.next_release_at
     ? `下期预期 ${ind.next_release_at}${ind.next_release_note ? ` · ${ind.next_release_note}` : ''}`
     : undefined;
 
+  const rowTitle = buildMonthlyRowTitle({
+    label: meta.label,
+    canJump,
+    isPlaceholder,
+    dataDate,
+    dataDateText,
+    isMonthly,
+    stale,
+    analyzedAt: ind.analyzed_at ?? null,
+    nextReleaseTitle,
+    showMonthAvg,
+    latestValueText: formatValue(ind.value, meta),
+  });
+
   const rowClass = [
-    'flex w-full items-baseline justify-between py-2 border-b border-gray-800 last:border-0 text-left',
+    'flex w-full items-baseline justify-between py-1 border-b border-gray-800 last:border-0 text-left',
     canJump ? 'group rounded-md -mx-1 px-1 cursor-pointer hover:bg-gray-800/80' : '',
   ].join(' ');
 
+  const nameClass = stale
+    ? 'text-yellow-500'
+    : canJump
+      ? 'text-gray-300 group-hover:text-white'
+      : 'text-gray-300';
+
   const body = (
     <>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className={`text-sm ${canJump ? 'text-gray-300 group-hover:text-white' : 'text-gray-300'}`}>
-            {meta.label}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className={`text-sm truncate ${nameClass}`}>{meta.label}</span>
+        {canJump && (
+          <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-xs leading-none shrink-0" aria-hidden>
+            📈
           </span>
-          {canJump && (
-            <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-xs leading-none" aria-hidden>
-              📈
-            </span>
-          )}
-        </div>
-        {/* 三时间行:数据时间(+相对时间) · 分析时间 · 下期预期 */}
-        <div className={`text-xs mt-0.5 flex flex-wrap items-baseline gap-x-2 ${stale ? 'text-yellow-600' : 'text-gray-500'}`}>
-          {dataDate ? (
-            <span title={isMonthly ? `数据时间 ${dataDate}` : undefined}>
-              数据 <span className="font-mono">{dataDateText}</span>
-              {!isMonthly && (
-                <>
-                  {' · '}{relativeDate(dataDate)}
-                </>
-              )}
-              {stale ? ' · 数据偏旧' : ''}
-            </span>
-          ) : isPlaceholder ? (
-            <span title={nextReleaseTitle} className="cursor-help">
-              暂未获取{nextReleaseShort ? <> · 预计 <span className="font-mono">≈{nextReleaseShort}</span> 发布</> : null}
-            </span>
-          ) : (
-            <span>本月无数据</span>
-          )}
-          {ind.analyzed_at && (
-            <span title={`分析时间 ${ind.analyzed_at}`}>
-              分析 <span className="font-mono">{formatAnalyzed(ind.analyzed_at)}</span>
-            </span>
-          )}
-          {/* 占位行「预计…发布」已含发布日,不再重复渲染「下次」段 */}
-          {!isPlaceholder && nextReleaseShort && (
-            <span title={nextReleaseTitle} className="cursor-help">
-              下次 <span className="font-mono">≈{nextReleaseShort}</span>
-            </span>
-          )}{ind.frequency === 'daily' && !showMonthAvg && (
-            <span title="日频指标,每个工作日更新">日频</span>
-          )}{showMonthAvg && (
-            <span title="日频指标,显示该月读数均值(数据截至所列日期)">月均</span>
-          )}
-        </div>
+        )}
+        {showMonthAvg && <span className="text-[10px] text-gray-500 shrink-0">月均</span>}
       </div>
-      <div
-        className={`text-lg font-mono ml-3 ${hasValue ? 'text-white' : 'text-gray-600'}`}
-        title={showMonthAvg ? `该月均值(最新读数 ${formatValue(ind.value, meta)})` : undefined}
-      >
+      <span className={`text-base font-mono ml-3 shrink-0 ${hasValue ? 'text-white' : 'text-gray-600'}`}>
         {showMonthAvg ? formatValue(ind.month_avg, meta) : formatValue(ind.value, meta)}
-      </div>
+      </span>
     </>
   );
 
@@ -157,7 +166,7 @@ function IndicatorRow({
       <button
         type="button"
         onClick={() => onJumpToTab!(linkTab)}
-        title={`查看 ${meta.label} 曲线`}
+        title={rowTitle}
         className={`${rowClass} bg-transparent border-0`}
       >
         {body}
@@ -165,7 +174,11 @@ function IndicatorRow({
     );
   }
 
-  return <div className={rowClass}>{body}</div>;
+  return (
+    <div className={rowClass} title={rowTitle}>
+      {body}
+    </div>
+  );
 }
 
 export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: GroupCardProps) {
@@ -181,10 +194,10 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
   const scales = GROUP_SCALES[groupKey];
 
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-5 hover:border-gray-600 transition-colors">
+    <div className="bg-gray-900 border border-gray-800 rounded-lg p-3 hover:border-gray-600 transition-colors">
       {/* 卡头 */}
-      <div className="mb-4 pb-3 border-b border-gray-800">
-        <div className="flex items-center gap-1.5 mb-2">
+      <div className="mb-2 pb-2 border-b border-gray-800">
+        <div className="flex items-center gap-1.5 mb-1">
           <span className={`w-2 h-2 rounded-full ${meta.calendarColor}`}></span>
           <span className="text-xs text-gray-400">{meta.title}</span>
           <span className="ml-auto text-xs text-gray-500">{indicators.length} 项指标</span>
@@ -198,7 +211,7 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
                 <span key={lvl.label} className="flex items-baseline whitespace-nowrap">
                   {i > 0 && <span className="text-gray-700 mx-1.5">·</span>}
                   <span
-                    className={isActive ? `text-xl font-bold tracking-wide ${lvl.activeClass}` : 'text-xs text-gray-600'}
+                    className={isActive ? `text-lg font-bold tracking-wide ${lvl.activeClass}` : 'text-xs text-gray-600'}
                     title={isActive ? `当前档位(总分区间 ${lvl.min}-${lvl.max})` : `总分区间 ${lvl.min}-${lvl.max}`}
                   >
                     {lvl.label}
@@ -208,13 +221,13 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
             })}
           </div>
         ) : (
-          <div className={`text-xl font-bold tracking-wide ${group.conclusion ? 'text-white' : 'text-gray-600'}`}>{conclusionText}</div>
+          <div className={`text-lg font-bold tracking-wide ${group.conclusion ? 'text-white' : 'text-gray-600'}`}>{conclusionText}</div>
         )}
       </div>
 
       {/* 指标列表 */}
       {isEmpty ? (
-        <div className="text-sm text-gray-600 py-6 text-center">本月数据缺失</div>
+        <div className="text-sm text-gray-600 py-3 text-center">本月数据缺失</div>
       ) : (
         <div>
           {indicators.map(ind => (

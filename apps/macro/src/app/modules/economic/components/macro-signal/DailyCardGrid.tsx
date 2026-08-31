@@ -47,31 +47,29 @@ function DailyIndicatorRow({
   const linkTab = INDICATOR_LINK_MAP[ind.key];
   const canJump = !!(linkTab && onJumpToTab);
   const rowClass = [
-    'flex w-full items-baseline justify-between py-2 border-b border-gray-800 last:border-0 text-left',
+    'flex w-full items-baseline justify-between py-1 border-b border-gray-800 last:border-0 text-left',
     canJump ? 'group rounded-md -mx-1 px-1 cursor-pointer hover:bg-gray-800/80' : '',
   ].join(' ');
 
   const body = (
     <>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className={`text-sm ${canJump ? 'text-gray-300 group-hover:text-white' : 'text-gray-300'}`}>
-            {meta.label}
+      <div className="flex items-center gap-1.5 min-w-0">
+        <span className={`text-sm truncate ${canJump ? 'text-gray-300 group-hover:text-white' : 'text-gray-300'}`}>
+          {meta.label}
+        </span>
+        {canJump && (
+          <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-xs leading-none shrink-0" aria-hidden>
+            📈
           </span>
-          {canJump && (
-            <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-xs leading-none" aria-hidden>
-              📈
-            </span>
-          )}
-        </div>
+        )}
         {isFallback && (
-          <div className="text-xs mt-0.5 text-gray-500" title="所查日期无更新,已回退最近可得值">
-            实际 <span className="font-mono">{ind.data_date}</span>
-          </div>
+          <span className="text-[10px] text-gray-500 font-mono shrink-0" title="所查日期无更新,已回退最近可得值">
+            {ind.data_date?.slice(5)}
+          </span>
         )}
       </div>
-      <div className="flex items-baseline gap-2 ml-3">
-        <span className={`text-lg font-mono ${hasValue ? 'text-white' : 'text-gray-600'}`}>
+      <div className="flex items-baseline gap-2 ml-3 shrink-0">
+        <span className={`text-base font-mono ${hasValue ? 'text-white' : 'text-gray-600'}`}>
           {hasValue ? ind.value!.toFixed(digits) + (meta.unit ?? '') : '—'}
         </span>
         {chg && <span className={`text-xs font-mono ${chg.className}`}>{chg.text}</span>}
@@ -97,7 +95,7 @@ function DailyIndicatorRow({
 
 export function DailyCardGrid({ snapshot, onJumpToTab }: DailyCardGridProps) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {DAILY_GROUPS.map(({ key, indicators: order }) => {
         const meta = GROUP_META[key];
         const group = snapshot.groups[key];
@@ -112,9 +110,9 @@ export function DailyCardGrid({ snapshot, onJumpToTab }: DailyCardGridProps) {
         );
 
         return (
-          <div key={key} className="bg-gray-900 border border-gray-800 rounded-lg p-5 hover:border-gray-600 transition-colors">
+          <div key={key} className="bg-gray-900 border border-gray-800 rounded-lg p-3 hover:border-gray-600 transition-colors">
             {/* 卡头 */}
-            <div className="mb-4 pb-3 border-b border-gray-800">
+            <div className="mb-2 pb-2 border-b border-gray-800">
               <div className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${meta.calendarColor}`}></span>
                 <span className="text-xs text-gray-400">{meta.title}</span>
@@ -126,7 +124,7 @@ export function DailyCardGrid({ snapshot, onJumpToTab }: DailyCardGridProps) {
 
             {/* 指标列表 */}
             {ordered.length === 0 ? (
-              <div className="text-sm text-gray-600 py-6 text-center">无数据</div>
+              <div className="text-sm text-gray-600 py-3 text-center">无数据</div>
             ) : (
               ordered.map(ind => (
                 <DailyIndicatorRow
