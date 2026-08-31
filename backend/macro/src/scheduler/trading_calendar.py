@@ -1,11 +1,12 @@
 """A 股交易日历判断（akshare 拉取 + 本地缓存）"""
 
 import json
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import akshare as ak
 
+from src.scheduler.timezone import now_shanghai
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -23,7 +24,7 @@ def is_trading_day(d: date | None = None, cache_path: Path | None = None) -> boo
     - 缓存过期 → 尝试刷新；拉失败时退回旧缓存
     - 无缓存 + 拉取失败 → 返回 True + warn（宁错杀不放过）
     """
-    d = d or date.today()
+    d = d or now_shanghai().date()
     path = Path(cache_path) if cache_path else _DEFAULT_CACHE_PATH
     cal = _load_or_refresh(path)
     if cal is None:
@@ -35,7 +36,7 @@ def is_trading_day(d: date | None = None, cache_path: Path | None = None) -> boo
 def _load_or_refresh(cache_path: Path) -> set[str] | None:
     """返回交易日日期字符串集合（YYYY-MM-DD）。失败返回 None。"""
     cache = _load_cache(cache_path)
-    today = date.today()
+    today = now_shanghai().date()
 
     # 缓存有效
     if cache is not None:
@@ -78,7 +79,7 @@ def _save_cache(cache_path: Path, dates: set[str]) -> None:
     try:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {
-            "cached_at": date.today().isoformat(),
+            "cached_at": now_shanghai().date().isoformat(),
             "dates": sorted(dates),
         }
         with open(cache_path, "w", encoding="utf-8") as f:

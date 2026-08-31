@@ -6,6 +6,7 @@ services:
     ports:
       - "8094:8094"
     environment:
+      - TZ=Asia/Shanghai
       - PORT=8094
       - FRED_API_KEY=${FRED_API_KEY}
     volumes:

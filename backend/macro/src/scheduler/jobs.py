@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from src.scheduler.timezone import now_shanghai
 from src.scheduler.trading_calendar import is_trading_day
 from src.utils.logger import setup_logger
 
@@ -28,7 +29,7 @@ async def run_group(ctx: "SchedulerManager", job_id: str) -> dict[str, Any]:
     - 返回 record dict（status/count/items/start/end），items 随历史落盘
     """
     spec = ctx.jobs_meta[job_id]
-    start = datetime.now()
+    start = now_shanghai()
 
     if spec.get("check_trading_day") and not is_trading_day():
         logger.info(f"[{job_id}] 非交易日，skip")
@@ -36,7 +37,7 @@ async def run_group(ctx: "SchedulerManager", job_id: str) -> dict[str, Any]:
             "status": "skipped",
             "reason": "non_trading_day",
             "start": start.isoformat(),
-            "end": datetime.now().isoformat(),
+            "end": now_shanghai().isoformat(),
         }
 
     targets = spec.get("targets") or []
@@ -48,7 +49,7 @@ async def run_group(ctx: "SchedulerManager", job_id: str) -> dict[str, Any]:
             "count": 0,
             "items": [],
             "start": start.isoformat(),
-            "end": datetime.now().isoformat(),
+            "end": now_shanghai().isoformat(),
         }
 
     items: list[dict[str, Any]] = []
@@ -74,7 +75,7 @@ async def run_group(ctx: "SchedulerManager", job_id: str) -> dict[str, Any]:
         "count": ok_count,
         "items": items,
         "start": start.isoformat(),
-        "end": datetime.now().isoformat(),
+        "end": now_shanghai().isoformat(),
     }
 
 
@@ -87,7 +88,7 @@ async def _self_call_one(
     - 200 但 body.success=False → failed，记 body.message；继续下一个
     - 非 200 / 网络异常 / 超时 → failed；继续下一个（单源失败不中断）
     """
-    t0 = datetime.now()
+    t0 = now_shanghai()
     url = f"http://127.0.0.1:{port}/api{path}"
     try:
         resp = await client.post(url)
@@ -136,7 +137,7 @@ def _data_count(data: Any) -> int | None:
 
 
 def _elapsed_ms(t0: datetime) -> int:
-    return int((datetime.now() - t0).total_seconds() * 1000)
+    return int((now_shanghai() - t0).total_seconds() * 1000)
 
 
 # target 字段 → 函数映射

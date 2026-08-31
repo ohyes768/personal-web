@@ -3,9 +3,13 @@ FROM python:3.12-slim
 WORKDIR /app
 
 # curl：healthcheck 探针；vim：进容器改 JSON / 排障（slim 默认都不带）
+# tzdata：slim 镜像不带 zoneinfo，不装的话 ENV TZ 不生效（datetime.now() 会停在 UTC）
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl vim && \
+    apt-get install -y --no-install-recommends curl vim tzdata && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# 容器时区设为北京时间，保证 date.today() / 文件 mtime 与调度落盘一致
+ENV TZ=Asia/Shanghai
 
 # 安装 uv
 RUN pip install --no-cache-dir uv

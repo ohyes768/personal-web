@@ -208,6 +208,7 @@ services:
       - macro-data:/app/data
       - macro-logs:/app/logs
     environment:
+      - TZ=Asia/Shanghai
       - FRED_API_KEY=${FRED_API_KEY}
       - ALIYUN_API_APPCODE=${ALIYUN_API_APPCODE:-}
       - MACRO_SIGNAL_DATA_DIR=/app/data/macro-signals

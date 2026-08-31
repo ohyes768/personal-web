@@ -3,10 +3,10 @@
 import asyncio
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from src.scheduler.timezone import now_shanghai
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -103,7 +103,7 @@ class JSONLReaderWriter:
                 return
             if self._path.stat().st_size < self._max_size_bytes:
                 return
-            ts = datetime.now().strftime("%Y%m%d")
+            ts = now_shanghai().strftime("%Y%m%d")
             archive_path = self._path.with_name(f"{self._path.stem}.{ts}{self._path.suffix}")
             # 同一天已存在归档时加序号
             counter = 1

@@ -4,7 +4,7 @@
 > 改分组、排查定时任务问题时必读。来源:任务 08-26-macro-scheduler-page(2026-08-27),
 > 架构复制自 `backend/dividend-select/src/scheduler/`(两处独立副本,改一处勿同步另一处)。
 >
-> **Last verified**: 2026-08-27
+> **Last verified**: 2026-08-31
 > **Source files**:
 > - `backend/macro/src/scheduler/`(manager / jobs / routes / history / trading_calendar / cron_human)
 > - `backend/macro/src/scheduler/scheduler.json`(任务预设,git 跟踪)
@@ -55,7 +55,7 @@ GET    /api/scheduler/jobs/{id}/runs?limit=20 → {"job_id": str, "runs": Schedu
 | cron_human | str | cron 转中文,如"每周一至周五 16:30" |
 | enabled | bool | 禁用时 `next_run_time` 为 null |
 | next_run_time | iso+08:00 \| null | APScheduler 计算的下次触发 |
-| last_run | SchedulerLastRun \| null | **仅** {start,end,status,count,reason,error},无 job_id/target/items(前端 `SchedulerLastRun = Pick<SchedulerJobRun,...>`) |
+| last_run | SchedulerLastRun \| null | **仅** {start,end,status,count,reason,error},无 job_id/target/items(前端 `SchedulerLastRun = Pick<SchedulerJobRun,...>`)。start/end 为 iso+08:00 |
 | description | str | |
 
 ### SchedulerJobRun(历史条目,JSONL 每次运行一条)
@@ -65,7 +65,7 @@ GET    /api/scheduler/jobs/{id}/runs?limit=20 → {"job_id": str, "runs": Schedu
 | status | `success` \| `partial` \| `failed` \| `skipped` | 组内全部成功 / 有成有败 / 全败 / 非交易日 |
 | count | int \| null | **成功的数据源个数**(非数据行数) |
 | items | {path, status, count, ms, error}[] | 数据源级子明细,item.status 仅 success/failed |
-| start / end | iso | |
+| start / end | iso+08:00 | 北京时间（`timezone.now_shanghai_iso()`）。旧 JSONL 可能是 naive UTC，前端 `formatTs` 按 UTC 解释再转北京 |
 
 ### 成败判定(与 dividend 不同!)
 

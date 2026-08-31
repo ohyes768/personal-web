@@ -7,7 +7,6 @@
 import asyncio
 import json
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -18,6 +17,7 @@ from apscheduler.triggers.date import DateTrigger
 from src.scheduler.cron_human import cron_to_human
 from src.scheduler.history import JSONLReaderWriter, build_record
 from src.scheduler.jobs import JOB_TARGETS
+from src.scheduler.timezone import SCHEDULER_TZ_NAME, now_shanghai, now_shanghai_iso
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -25,8 +25,8 @@ logger = setup_logger(__name__)
 # crontab 表达式统一按 Asia/Shanghai 解析。APScheduler 的 from_crontab 不传
 # timezone 会落到系统默认时区（容器内为 UTC），与 scheduler 的 timezone 不一致，
 # 导致触发时间偏移 8 小时（如 14:25 UTC = 22:25 北京）。scheduler 与每个 trigger
-# 必须共用同一时区。
-SCHEDULER_TIMEZONE = "Asia/Shanghai"
+# 必须共用同一时区。落盘时间戳见 timezone.now_shanghai_iso()（带 +08:00）。
+SCHEDULER_TIMEZONE = SCHEDULER_TZ_NAME
 
 
 class SchedulerManager:
@@ -168,12 +168,12 @@ class SchedulerManager:
             raise KeyError(job_id)
         if self._scheduler is None:
             raise RuntimeError("scheduler 未启动")
-        triggered_at = datetime.now().isoformat()
+        triggered_at = now_shanghai_iso()
         # 一次性任务：用 DateTrigger 立即触发；id 加后缀避免与 cron job 冲突
-        run_id = f"{job_id}_manual_{int(datetime.now().timestamp() * 1000)}"
+        run_id = f"{job_id}_manual_{int(now_shanghai().timestamp() * 1000)}"
         self._scheduler.add_job(
             self._run_job_wrapper,
-            DateTrigger(run_date=datetime.now()),
+            DateTrigger(run_date=now_shanghai()),
             id=run_id,
             args=[job_id],
             replace_existing=False,
@@ -207,15 +207,15 @@ class SchedulerManager:
                 result = await target_fn(self, job_id)
             except Exception as e:
                 logger.exception(f"[{job_id}] target 抛异常")
-                now_iso = datetime.now().isoformat()
+                now_iso = now_shanghai_iso()
                 result = {
                     "status": "failed",
                     "error": f"unhandled: {e}",
                     "start": now_iso,
                     "end": now_iso,
                 }
-            result.setdefault("start", datetime.now().isoformat())
-            result.setdefault("end", datetime.now().isoformat())
+            result.setdefault("start", now_shanghai_iso())
+            result.setdefault("end", now_shanghai_iso())
             record = build_record(
                 job_id=job_id,
                 target=target_name,

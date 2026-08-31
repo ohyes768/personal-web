@@ -12,13 +12,24 @@ export const STATUS_META: Record<SchedulerJobRun['status'], { label: string; cls
   failed: { label: '失败', cls: 'bg-red-900/50 text-red-300 border-red-700' },
 };
 
-/** ISO 时间 → "YYYY-MM-DD HH:mm"（本地时区） */
+const BEIJING = 'Asia/Shanghai';
+
+function hasExplicitOffset(iso: string): boolean {
+  return /Z$/i.test(iso) || /[+-]\d{2}:\d{2}$/.test(iso);
+}
+
+/** ISO 时间 → "YYYY-MM-DD HH:mm"（固定北京时间）
+ *
+ * 带 Z / ±偏移的按绝对时刻转北京；无偏移的旧历史按 UTC 解释
+ * （NAS 容器曾用 naive UTC 落盘，08:30 实际是北京 16:30）。
+ */
 export function formatTs(iso?: string | null): string {
   if (!iso) return '-';
-  const d = new Date(iso);
+  const normalized = hasExplicitOffset(iso) ? iso : `${iso}Z`;
+  const d = new Date(normalized);
   if (isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  const s = d.toLocaleString('sv-SE', { timeZone: BEIJING });
+  return s.slice(0, 16);
 }
 
 /** start/end → 可读耗时（"450ms" / "3.2s" / "1m05s"） */
