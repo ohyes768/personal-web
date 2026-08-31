@@ -14,6 +14,7 @@
 - 返回按 date 升序的 Series（应用 commodity_units factor 换算到展示单位）
 - 后端 routes 在 fetch/commodities/history 时全量写入 commodities.csv，
   update/commodities 时增量追加
+- 翻页实现见 aliyun_comkm.fetch_comkm_klines：增量传 since=start_date，第 1 页覆盖即停
 """
 import asyncio
 from datetime import date
@@ -23,6 +24,7 @@ import httpx
 import pandas as pd
 
 from src.config import get_settings
+from src.services.aliyun_comkm import fetch_comkm_klines
 from src.utils.logger import setup_logger
 
 logger = setup_logger("commodity_service")
@@ -35,10 +37,6 @@ class AliyunCommodityKlineClient:
     comkm 不支持批量 symbols，所以每个 symbol 单独拉取+翻页
     （镜像 index_service.AliyunIndexClient 模式）
     """
-
-    API_PATH = "/query/comkm"
-    PAGE_SIZE = 500
-    MAX_PAGES = 20  # 20 页 × 500 条 ≈ 27 年日线，足够 + 兜底防无限循环
 
     def __init__(self, appcode: str, base_url: str):
         self._headers = {"Authorization": f"APPCODE {appcode}"}
@@ -54,80 +52,17 @@ class AliyunCommodityKlineClient:
             await self._client.aclose()
             self._client = None
 
-    async def fetch_klines(self, symbol: str) -> List[dict]:
-        """拉取单个 symbol 全部日 K 线（翻页累加，返回升序）
-
-        Args:
-            symbol: 商品代码（如 "SGEAU9999"/"SGEAG9999"/"UKOIL"/"USHG"）
-
-        Returns:
-            [{"date": Timestamp, "close": float (raw，未做单位换算)}, ...] 升序排列
-            失败时返回已拉到的部分（不抛异常）
-        """
+    async def fetch_klines(self, symbol: str, since: Optional[date] = None) -> List[dict]:
+        """拉取单个 symbol 日 K（翻页累加，返回升序）。since 用于增量提前停。"""
         if self._client is None:
             raise RuntimeError("AliyunCommodityKlineClient must be used via 'async with'")
-
-        all_records: List[dict] = []
-        pidx = 1
-        while pidx <= self.MAX_PAGES:
-            params = (
-                f"period=D&pidx={pidx}&psize={self.PAGE_SIZE}"
-                f"&symbol={symbol}&withlast=0"
-            )
-            url = f"{self._base}{self.API_PATH}?{params}"
-            try:
-                resp = await self._client.get(url)
-                resp.raise_for_status()
-            except Exception as e:
-                logger.error(f"aliyun comkm {symbol} pidx={pidx} HTTP 失败: {e}")
-                return all_records
-
-            try:
-                payload = resp.json()
-            except Exception as e:
-                logger.error(f"aliyun comkm {symbol} pidx={pidx} JSON 解析失败: {e}")
-                return all_records
-
-            if not isinstance(payload, dict):
-                logger.error(f"aliyun comkm {symbol} pidx={pidx} 返回非 dict: {type(payload).__name__}")
-                return all_records
-            code_val = payload.get("Code")
-            if code_val != 0:
-                logger.error(
-                    f"aliyun comkm {symbol} pidx={pidx} 返回错误: "
-                    f"Code={code_val}, Msg={payload.get('Msg', '')}"
-                )
-                return all_records
-
-            klines = payload.get("Obj") or []
-            for item in klines:
-                if not isinstance(item, dict):
-                    continue
-                d_str = item.get("D")
-                c_val = item.get("C")
-                if not d_str or c_val in (None, ""):
-                    continue
-                try:
-                    all_records.append({
-                        "date": pd.Timestamp(d_str[:10]),
-                        "close": float(c_val),
-                    })
-                except (ValueError, TypeError):
-                    continue
-
-            logger.info(f"aliyun comkm {symbol} pidx={pidx} 返回 {len(klines)} 条，累计 {len(all_records)} 条")
-
-            if len(klines) < self.PAGE_SIZE:
-                # 数据不足一页，说明翻页到头
-                break
-            pidx += 1
-
-        if pidx > self.MAX_PAGES:
-            logger.warning(f"aliyun comkm {symbol} 翻页超过 {self.MAX_PAGES} 次，主动停止")
-
-        # 阿里云返回是倒序（最新在前），翻为升序
-        all_records.sort(key=lambda r: r["date"])
-        return all_records
+        return await fetch_comkm_klines(
+            self._client,
+            base_url=self._base,
+            symbol=symbol,
+            logger=logger,
+            since=since,
+        )
 
 
 class CommodityService:
@@ -175,7 +110,7 @@ class CommodityService:
                 async with AliyunCommodityKlineClient(
                     settings.aliyun_api_appcode, settings.alirmcom_base_url
                 ) as client:
-                    records = await client.fetch_klines(sym)
+                    records = await client.fetch_klines(sym, since=start_date)
             except Exception as e:
                 logger.error(f"aliyun 拉取 {name}({sym}) 失败: {e}")
                 return name, pd.Series(dtype="float64")

@@ -124,9 +124,29 @@ def _has_observations(data) -> bool:
     return False
 
 
-def _empty_increment_is_current(data_service, data_type: str) -> bool:
-    """增量拉数全空时：底库已有 last_date 则视为已是最新。"""
-    return data_service.get_last_date(data_type) is not None
+# 空窗「已是最新」只覆盖周末 + FRED/TGA 常见 T+1~T+2。
+# 超过该日历天数仍无观测 = 底库过期，不得标成 success。
+EMPTY_INCREMENT_MAX_LAG_DAYS = 5
+
+
+def _empty_increment_is_current(data_service, data_type: str, as_of=None) -> bool:
+    """增量拉数全空时：底库 last_date 存在且落后不超过允许天数 → 已是最新。"""
+    last_date = data_service.get_last_date(data_type)
+    if last_date is None:
+        return False
+    as_of_ts = pd.Timestamp(as_of) if as_of is not None else pd.Timestamp.now()
+    lag = (as_of_ts.normalize() - pd.Timestamp(last_date).normalize()).days
+    return 0 <= lag <= EMPTY_INCREMENT_MAX_LAG_DAYS
+
+
+def _empty_increment_fail_message(data_service, data_type: str, label: str) -> str:
+    """无底库 vs 底库过期：失败文案区分，方便调度器识别假绿灯。"""
+    last_date = data_service.get_last_date(data_type)
+    if last_date is None:
+        return f"未能获取到任何{label}新数据"
+    last_s = pd.Timestamp(last_date).strftime("%Y-%m-%d")
+    lag = (pd.Timestamp.now().normalize() - pd.Timestamp(last_date).normalize()).days
+    return f"未能获取到任何{label}新数据（底库 last_date={last_s}，已落后 {lag} 天）"
 
 
 async def _fetch_us_treasuries(
@@ -464,7 +484,7 @@ async def update_us_treasuries():
                     data=response_data,
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何美债新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "us_treasuries", "美债"))
 
         data_service.save_fred_data(new_data)
 
@@ -637,7 +657,7 @@ async def update_exchange_rates():
                     data=response_data,
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何汇率新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "exchange_rates", "汇率"))
 
         # 保存汇率数据
         data_service.save_fred_data(exchange_data, key="exchange_rates")
@@ -1285,7 +1305,7 @@ async def update_vix():
                     data=VIXUpdateData(vix=VIXData(date=latest_end.date(), value=None)),
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何VIX新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "vix", "VIX"))
 
         # 处理VIX数据：时区转换、验证、标准化
         vix_series = vix_service.convert_timezone(vix_series)
@@ -1433,7 +1453,7 @@ async def update_tga():
                     data=TGAUpdateData(tga=TGAData(date=latest_end.date(), value=None)),
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何TGA新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "tga", "TGA"))
 
         tga_data = {"tga": tga_series}
         data_service.save_fred_data(tga_data, key="tga")
@@ -1572,7 +1592,7 @@ async def update_hibor():
                     data=HIBORUpdateData(hibor=HIBORData(date=latest_end.date(), value=None)),
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何HIBOR新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "hibor", "HIBOR"))
 
         hibor_data = {"hibor": hibor_series}
         data_service.save_fred_data(hibor_data, key="hibor")
@@ -2007,7 +2027,7 @@ async def update_china_bonds():
                     data=response_data,
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何中国国债新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "china_bond", "中国国债"))
 
         # 保存中国国债数据（传短 key 让 _save_china_bond 自动加 "中国" 前缀）
         china_bond_data = {
@@ -2182,7 +2202,7 @@ async def update_ted_spread():
                     ),
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何TED利差新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "ted_spread", "TED利差"))
 
         # 保存TED利差数据
         data_service.save_ted_spread_data(sofr_series, us_3m_series)
@@ -2364,7 +2384,7 @@ async def update_commodities():
                     ),
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何商品新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "commodities", "商品"))
 
         data_service.save_commodities(new_data)
 
@@ -2529,7 +2549,7 @@ async def update_indices():
                     data=IndicesUpdateData(indices=IndicesData(date=latest_end.date())),
                     updated_at=datetime.now().isoformat(),
                 )
-            raise Exception("未能获取到任何股指新数据")
+            raise Exception(_empty_increment_fail_message(data_service, "indices", "股指"))
 
         data_service.save_indices(new_data)
 

@@ -64,8 +64,18 @@ def test_has_observations_dict_and_empty_series():
 
 
 def test_empty_increment_is_current():
-    assert _empty_increment_is_current(FakeDataService(pd.Timestamp("2026-08-28")), "us_treasuries")
-    assert not _empty_increment_is_current(FakeDataService(None), "us_treasuries")
+    as_of = pd.Timestamp("2026-08-31")
+    assert _empty_increment_is_current(
+        FakeDataService(pd.Timestamp("2026-08-27")), "us_treasuries", as_of=as_of
+    )
+    assert _empty_increment_is_current(
+        FakeDataService(pd.Timestamp("2026-08-26")), "tga", as_of=as_of
+    )
+    assert not _empty_increment_is_current(FakeDataService(None), "us_treasuries", as_of=as_of)
+    # 汇率底库停在 8-21、今天 8-31：空窗不得当成已是最新
+    assert not _empty_increment_is_current(
+        FakeDataService(pd.Timestamp("2026-08-21")), "exchange_rates", as_of=as_of
+    )
 
 
 def test_us_treasuries_empty_window_is_current(client, monkeypatch):
@@ -115,6 +125,47 @@ def test_us_treasuries_empty_without_csv_fails(client, monkeypatch):
     body = res.json()
     assert body["success"] is False
     assert "未能获取到任何美债新数据" in body["message"]
+
+
+def test_us_treasuries_empty_window_stale_fails(client, monkeypatch):
+    """底库 last_date 落后超过允许空窗天数：API 空观测不得标成已是最新。"""
+    ds = FakeDataService(pd.Timestamp.now().normalize() - pd.Timedelta(days=10))
+
+    async def empty_fetch(*_a, **_k):
+        return {"us_3m": _empty_series(), "us_2y": _empty_series(), "us_10y": _empty_series()}
+
+    monkeypatch.setattr(routes, "get_data_service", lambda: ds)
+    monkeypatch.setattr(routes, "_fetch_us_treasuries", empty_fetch)
+
+    res = client.post("/api/update/us-treasuries")
+    body = res.json()
+    assert body["success"] is False
+    assert body["error_code"] == "UPDATE_FAILED"
+    assert "未能获取到任何美债新数据" in body["message"]
+    assert "落后" in body["message"]
+    assert ds.saved is False
+
+
+def test_exchange_rates_empty_window_stale_fails(client, monkeypatch):
+    ds = FakeDataService(pd.Timestamp.now().normalize() - pd.Timedelta(days=10))
+
+    async def empty_fetch(*_a, **_k):
+        return {
+            "dollar_index": _empty_series(),
+            "usd_cny": _empty_series(),
+            "usd_jpy": _empty_series(),
+            "usd_eur": _empty_series(),
+        }
+
+    monkeypatch.setattr(routes, "get_data_service", lambda: ds)
+    monkeypatch.setattr(routes, "_fetch_exchange_rates", empty_fetch)
+
+    res = client.post("/api/update/exchange-rates")
+    body = res.json()
+    assert body["success"] is False
+    assert "未能获取到任何汇率新数据" in body["message"]
+    assert "落后" in body["message"]
+    assert ds.saved is False
 
 
 def test_us_treasuries_history_empty_still_fails(client, monkeypatch):

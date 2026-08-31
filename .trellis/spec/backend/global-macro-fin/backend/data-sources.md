@@ -167,7 +167,9 @@ return post("/api/macro/update/margin");
 | 商品 / 股指 | 单端点 history | 单端点 update |
 | 市场情绪 | volume-turnover → margin → fund-flow history | volume → turnover → margin → fund-flow |
 
-日度增量：外部 API 成功但区间无观测、CSV 已有 last_date → `success`「已是最新」。FRED 单系列失败必须上抛，不能吞成空 Series。
+日度增量：外部 API 成功但区间无观测、CSV `last_date` 存在且落后 ≤ 5 个日历天 → `success`「已是最新」（覆盖周末 + FRED/TGA T+1~T+2）。`last_date` 为空，或落后超过 5 天仍无观测 → `UPDATE_FAILED`，message 带底库日期与落后天数。FRED 单系列失败必须上抛，不能吞成空 Series。
+
+商品/股指走阿里云 `comkm`（倒序，最新在前）。`fetch_all(start, end)` 把 `start` 传给翻页 `since`：当前页最旧一根 ≤ since 即停，日常增量通常 1 页（500 根 ≈ 2 年）。`Code=-100`（最多 10 年内）是翻页结束，打 INFO 不是 ERROR。全量 history 的 start 很早，仍会翻到上限。实现：`src/services/aliyun_comkm.py`。
 
 ---
 
