@@ -220,7 +220,39 @@ def test_query_data_by_indicators_default_four_ids(tmp_path):
     assert "vix" in data
     assert "commodities" in data
     assert "indices" not in data
+    assert "dr007" not in data
+    assert "volume" not in data
+    assert "turnover" not in data
+    assert "margin" not in data
     assert "dates" in data
+
+
+def test_query_data_by_indicators_dr007_and_sentiment(tmp_path):
+    """DR007 / 成交额 / 换手率 / 融资余额可按 id 映射到对应 CSV 段。"""
+    service = _make_service(tmp_path)
+    dates = ["2026-08-26", "2026-08-27"]
+    _write_csv(tmp_path / "dr007.csv", dates, {"dr007": [1.65, 1.66]})
+    _write_csv(tmp_path / "volume.csv", dates, {"total_amount_yi": [8000.0, 8100.0]})
+    _write_csv(tmp_path / "turnover.csv", dates, {"turnover_rate": [0.8, 0.9]})
+    _write_csv(tmp_path / "margin.csv", dates, {"margin_balance_yi": [15000.0, 15100.0]})
+    _write_csv(
+        tmp_path / "us_treasuries.csv",
+        dates,
+        {"美债3m": [4.2, 4.3], "美债2y": [3.8, 3.9], "美债10y": [4.0, 4.1]},
+    )
+
+    data = service.query_data_by_indicators(
+        ["dr007", "volume", "turnover", "margin"],
+        start_date="2026-08-01",
+        end_date="2026-08-31",
+    )
+
+    assert data["dr007"] == pytest.approx([1.65, 1.66])
+    assert data["volume"] == pytest.approx([8000.0, 8100.0])
+    assert data["turnover"] == pytest.approx([0.8, 0.9])
+    assert data["margin"] == pytest.approx([15000.0, 15100.0])
+    assert "us_treasuries" not in data
+    assert data["dates"] == dates
 
 
 def test_query_data_by_indicators_unknown_id_raises(tmp_path):

@@ -34,6 +34,7 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   ted_spread: { id: 'ted_spread', label: 'TED利差',     group: 'rates',  color: '#ec4899', unit: '%',    source: 'FRED' },
   sofr:       { id: 'sofr',       label: 'SOFR',         group: 'rates',  color: '#f472b6', unit: '%',    source: 'FRED' },
   cn_10y_2y:  { id: 'cn_10y_2y',  label: '中国10年-2年', group: 'rates',  color: '#fb7185', unit: '%',    source: 'AKShare' },
+  dr007:      { id: 'dr007',      label: 'DR007',        group: 'rates',  color: '#f97316', unit: '%',    source: '中国货币网' },
 
   // 商品
   gold:   { id: 'gold',   label: '黄金', group: 'commodity', color: '#eab308', unit: '元/克', source: '阿里云' },
@@ -47,6 +48,11 @@ export const INDICATORS: Record<IndicatorId, IndicatorMeta> = {
   spx:       { id: 'spx',       label: '标普500',  group: 'stock_index', color: '#3b82f6', unit: '点', source: '阿里云' },
   ixic:      { id: 'ixic',      label: '纳斯达克', group: 'stock_index', color: '#10b981', unit: '点', source: '阿里云' },
   dji:       { id: 'dji',       label: '道琼斯',   group: 'stock_index', color: '#a855f7', unit: '点', source: '阿里云' },
+
+  // 市场情绪（与 MarketSentimentChart 同色）
+  volume:   { id: 'volume',   label: '两市成交额', group: 'market_sentiment', color: '#f97316', unit: '亿元', source: 'BaoStock' },
+  turnover: { id: 'turnover', label: '换手率',     group: 'market_sentiment', color: '#eab308', unit: '%',    source: 'BaoStock' },
+  margin:   { id: 'margin',   label: '融资余额',   group: 'market_sentiment', color: '#22c55e', unit: '亿元', source: 'AKShare' },
 };
 
 /** 数据源分组的显示顺序（与经济页 tab 顺序一致） */
@@ -57,9 +63,10 @@ export const GROUP_ORDER: Array<{ group: string; label: string }> = [
   { group: 'volatility',  label: '恐慌' },
   { group: 'liquidity',   label: '流动性' },
   { group: 'fund_flow',   label: '资金流' },
-  { group: 'rates',       label: '利率利差' },
-  { group: 'commodity',   label: '商品' },
-  { group: 'stock_index', label: '股指' },
+  { group: 'rates',              label: '利率利差' },
+  { group: 'commodity',          label: '商品' },
+  { group: 'stock_index',        label: '股指' },
+  { group: 'market_sentiment',   label: '市场情绪' },
 ];
 
 /** 指标默认选择（DXY + 美债10y + VIX，对比模块入口案例） */

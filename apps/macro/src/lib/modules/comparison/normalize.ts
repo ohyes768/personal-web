@@ -27,6 +27,7 @@ export function extractSeries(
     case 'ted_spread': return data.ted_spread?.ted_spread ?? [];
     case 'sofr':       return data.ted_spread?.sofr ?? [];
     case 'cn_10y_2y':  return data.china_bond?.['spread_10y_2y'] ?? [];
+    case 'dr007':      return data.dr007 ?? [];
     case 'gold':   return data.commodities?.gold ?? [];
     case 'silver': return data.commodities?.silver ?? [];
     case 'oil':    return data.commodities?.oil ?? [];
@@ -36,6 +37,9 @@ export function extractSeries(
     case 'spx':       return data.indices?.SPX ?? [];
     case 'ixic':      return data.indices?.IXIC ?? [];
     case 'dji':       return data.indices?.DJI ?? [];
+    case 'volume':   return data.volume ?? [];
+    case 'turnover': return data.turnover ?? [];
+    case 'margin':   return data.margin ?? [];
   }
 }
 

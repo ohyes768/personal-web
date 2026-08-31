@@ -13,7 +13,8 @@ export type IndicatorGroup =
   | 'fund_flow'
   | 'rates'
   | 'commodity'
-  | 'stock_index';
+  | 'stock_index'
+  | 'market_sentiment';
 
 /** 指标 ID 联合类型（覆盖所有可对比曲线） */
 export type IndicatorId =
@@ -23,9 +24,10 @@ export type IndicatorId =
   | 'vix'
   | 'tga' | 'hibor'
   | 'north_deal' | 'south_net'
-  | 'ted_spread' | 'sofr' | 'cn_10y_2y'
+  | 'ted_spread' | 'sofr' | 'cn_10y_2y' | 'dr007'
   | 'gold' | 'silver' | 'oil' | 'copper'
-  | 'hk_hsi' | 'sh_000001' | 'spx' | 'ixic' | 'dji';
+  | 'hk_hsi' | 'sh_000001' | 'spx' | 'ixic' | 'dji'
+  | 'volume' | 'turnover' | 'margin';
 
 /** 单个指标元信息（用于 IndicatorSelector 渲染 + ComparisonChart 取数据） */
 export interface IndicatorMeta {
@@ -34,7 +36,7 @@ export interface IndicatorMeta {
   group: IndicatorGroup;
   color: string;          // 曲线颜色（hex）
   unit: string;           // 单位（%, $/oz, ¥/g, 亿元等）
-  source: 'FRED' | 'AKShare' | '阿里云' | 'HKMA' | '东财';
+  source: 'FRED' | 'AKShare' | '阿里云' | 'HKMA' | '东财' | '中国货币网' | 'BaoStock';
 }
 
 /**
