@@ -73,6 +73,7 @@ function IndicatorRow({
   const dataDate = ind.data_date ?? ind.updated_at ?? null;
   const stale = isStale(dataDate, selectedMonth);
   const linkTab = INDICATOR_LINK_MAP[ind.key];
+  const canJump = !!(linkTab && onJumpToTab);
   // 日频指标每个工作日都更新,「下次」无信息量 → 只有月频才渲染
   const isMonthly = ind.frequency !== 'daily';
   // 日频指标分层展示:历史月显示月均(整月代表性口径),当月显示最新日度值
@@ -88,20 +89,22 @@ function IndicatorRow({
     ? `下期预期 ${ind.next_release_at}${ind.next_release_note ? ` · ${ind.next_release_note}` : ''}`
     : undefined;
 
-  return (
-    <div className="flex items-baseline justify-between py-2 border-b border-gray-800 last:border-0">
+  const rowClass = [
+    'flex w-full items-baseline justify-between py-2 border-b border-gray-800 last:border-0 text-left',
+    canJump ? 'group rounded-md -mx-1 px-1 cursor-pointer hover:bg-gray-800/80' : '',
+  ].join(' ');
+
+  const body = (
+    <>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-sm text-gray-300">{meta.label}</span>
-          {linkTab && onJumpToTab && (
-            <button
-              type="button"
-              onClick={() => onJumpToTab(linkTab)}
-              title={`查看 ${meta.label} 曲线`}
-              className="text-gray-500 hover:text-blue-400 transition-colors text-xs leading-none"
-            >
+          <span className={`text-sm ${canJump ? 'text-gray-300 group-hover:text-white' : 'text-gray-300'}`}>
+            {meta.label}
+          </span>
+          {canJump && (
+            <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-xs leading-none" aria-hidden>
               📈
-            </button>
+            </span>
           )}
         </div>
         {/* 三时间行:数据时间(+相对时间) · 分析时间 · 下期预期 */}
@@ -146,8 +149,23 @@ function IndicatorRow({
       >
         {showMonthAvg ? formatValue(ind.month_avg, meta) : formatValue(ind.value, meta)}
       </div>
-    </div>
+    </>
   );
+
+  if (canJump) {
+    return (
+      <button
+        type="button"
+        onClick={() => onJumpToTab!(linkTab)}
+        title={`查看 ${meta.label} 曲线`}
+        className={`${rowClass} bg-transparent border-0`}
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return <div className={rowClass}>{body}</div>;
 }
 
 export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: GroupCardProps) {

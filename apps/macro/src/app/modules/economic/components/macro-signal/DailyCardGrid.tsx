@@ -45,21 +45,23 @@ function DailyIndicatorRow({
   // 回退:接口按 asof 给了最近可得值,实际数据日期 ≠ 所选日期 → 行内标注
   const isFallback = ind.data_date !== null && ind.data_date !== selectedDate;
   const linkTab = INDICATOR_LINK_MAP[ind.key];
+  const canJump = !!(linkTab && onJumpToTab);
+  const rowClass = [
+    'flex w-full items-baseline justify-between py-2 border-b border-gray-800 last:border-0 text-left',
+    canJump ? 'group rounded-md -mx-1 px-1 cursor-pointer hover:bg-gray-800/80' : '',
+  ].join(' ');
 
-  return (
-    <div className="flex items-baseline justify-between py-2 border-b border-gray-800 last:border-0">
+  const body = (
+    <>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-1.5">
-          <span className="text-sm text-gray-300">{meta.label}</span>
-          {linkTab && onJumpToTab && (
-            <button
-              type="button"
-              onClick={() => onJumpToTab(linkTab)}
-              title={`查看 ${meta.label} 曲线`}
-              className="text-gray-500 hover:text-blue-400 transition-colors text-xs leading-none"
-            >
+          <span className={`text-sm ${canJump ? 'text-gray-300 group-hover:text-white' : 'text-gray-300'}`}>
+            {meta.label}
+          </span>
+          {canJump && (
+            <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-xs leading-none" aria-hidden>
               📈
-            </button>
+            </span>
           )}
         </div>
         {isFallback && (
@@ -74,8 +76,23 @@ function DailyIndicatorRow({
         </span>
         {chg && <span className={`text-xs font-mono ${chg.className}`}>{chg.text}</span>}
       </div>
-    </div>
+    </>
   );
+
+  if (canJump) {
+    return (
+      <button
+        type="button"
+        onClick={() => onJumpToTab!(linkTab)}
+        title={`查看 ${meta.label} 曲线`}
+        className={`${rowClass} bg-transparent border-0`}
+      >
+        {body}
+      </button>
+    );
+  }
+
+  return <div className={rowClass}>{body}</div>;
 }
 
 export function DailyCardGrid({ snapshot, onJumpToTab }: DailyCardGridProps) {

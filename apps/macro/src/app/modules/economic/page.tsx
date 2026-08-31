@@ -59,6 +59,8 @@ export default function EconomicPage() {
   const [activeTab, setActiveTab] = useState<TabType>('macro-signal');
   const [timeRange, setTimeRange] = useState<TimeRange>('3M');
   const [refreshKey, setRefreshKey] = useState(0);  // 数据刷新触发器
+  // 仅「信号首页 📈 跳进图表」为 true；顶栏直进图表为 false
+  const [fromSignal, setFromSignal] = useState(false);
 
   // 按 Tab 拉全历史：切换 Tab 请求 /api/macro/data/{tab}，同 Tab 切时间周期不再请求
   const { tabDataMap, isLoading, error } = useTabEconomicData(activeTab, refreshKey);
@@ -66,6 +68,9 @@ export default function EconomicPage() {
   // 根据 Tab 类型自动切换默认时间范围
   const handleTabChange = useCallback((tabId: TabType) => {
     setActiveTab(tabId);
+    if (tabId === 'macro-signal') {
+      setFromSignal(false);
+    }
     // 中美利差/汇率默认 3M
     if (tabId === 'treasury-exchange' && timeRange === '1Y') {
       setTimeRange('3M');
@@ -81,6 +86,11 @@ export default function EconomicPage() {
       setTimeRange('6M');
     }
   }, [timeRange]);
+
+  const handleJumpToTab = useCallback((tabId: TabType) => {
+    setFromSignal(true);
+    handleTabChange(tabId);
+  }, [handleTabChange]);
 
   // 刷新成功后递增 refreshKey 触发当前 Tab 重新 fetch
   const handleRefreshSuccess = useCallback(() => {
@@ -157,6 +167,18 @@ export default function EconomicPage() {
           onTabChange={handleTabChange}
         />
 
+        {fromSignal && activeTab !== 'macro-signal' && (
+          <div className="-mt-4 mb-6">
+            <button
+              type="button"
+              onClick={() => handleTabChange('macro-signal')}
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              ← 返回信号首页
+            </button>
+          </div>
+        )}
+
         {/* 各 Tab 子组件：始终挂载，仅用 hidden 控制显隐 — state 持久，Plotly 不重建 */}
         <div hidden={activeTab !== 'treasury-exchange'}>
           <TreasuryExchangeTab
@@ -226,7 +248,7 @@ export default function EconomicPage() {
           {/* 模块级函数引用稳定：切 Tab 重渲染不会再打 /api/macro/signal */}
           <MacroSignalTab
             loadSnapshot={economicApi.getSignalSnapshot}
-            onJumpToTab={setActiveTab}
+            onJumpToTab={handleJumpToTab}
           />
         </div>
         <div hidden={activeTab !== 'market-sentiment'}>
