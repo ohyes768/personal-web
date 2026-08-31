@@ -14,9 +14,9 @@ RUN pip install --no-cache-dir uv
 COPY pyproject.toml uv.lock ./
 
 # 创建虚拟环境并按 lockfile 安装依赖
-# --frozen: 不改 lock；--locked: pyproject 与 lock 不一致则构建失败
+# --locked: pyproject 与 lock 不一致则构建失败（与 --frozen 互斥，不能同时用）
 RUN uv venv .venv
-RUN uv sync --frozen --locked
+RUN uv sync --locked --no-dev
 
 # 复制源代码
 COPY src/ ./src/
