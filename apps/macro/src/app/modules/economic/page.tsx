@@ -117,7 +117,7 @@ export default function EconomicPage() {
     {
       id: 'stock-indices',
       label: '股指',
-      description: '恒生/上证/标普500/纳指/道琼斯日 K 线（5 轴叠加）'
+      description: '恒生+上证 / 标普500+纳指 / 道琼斯，三子图日 K 线'
     },
     {
       id: 'market-sentiment',

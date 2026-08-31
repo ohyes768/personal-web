@@ -17,13 +17,14 @@ import { rollingCorrelation } from '@/lib/modules/comparison/stats';
 import { buildDualAxisAssignment } from '@/lib/modules/comparison/viewMode';
 import type { IndicatorId, ViewMode } from '@/lib/modules/comparison/types';
 import {
-  buildLinkedSubplotLayout,
   buildMultiAxisLayout,
   buildLineTrace,
   chartHeightForSubplots,
   type AxisKey,
+  type SubplotPanelSpec,
   type XAxisKey,
 } from '@/lib/utils/plotlyTheme';
+import { LinkedSubplots } from './LinkedSubplots';
 import { MacroPlot } from './MacroPlot';
 
 interface ComparisonChartProps {
@@ -36,11 +37,17 @@ const CORR_WINDOW = 30;
 const CORR_MIN_SAMPLES = 10;
 const DASHES = ['solid', 'dash', 'dot', 'dashdot'] as const;
 
-interface BuiltChart {
-  traces: Data[];
-  layout: Record<string, unknown>;
-  subplotCount: number;
-}
+type BuiltChart =
+  | {
+      kind: 'single';
+      traces: Data[];
+      layout: Record<string, unknown>;
+      subplotCount: number;
+    }
+  | {
+      kind: 'linked';
+      subplots: SubplotPanelSpec[];
+    };
 
 export function ComparisonChart({ selectedIds, data, viewMode }: ComparisonChartProps) {
   const chart = useMemo(
@@ -57,6 +64,10 @@ export function ComparisonChart({ selectedIds, data, viewMode }: ComparisonChart
         emptyMessage="请至少选择 1 个指标开始对比"
       />
     );
+  }
+
+  if (chart.kind === 'linked') {
+    return <LinkedSubplots subplots={chart.subplots} />;
   }
 
   return (
@@ -126,7 +137,7 @@ function buildMinMax(ids: IndicatorId[], data: EconomicDataResponse): BuiltChart
     ],
   });
 
-  return { traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
+  return { kind: 'single', traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
 }
 
 function buildNormalize(ids: IndicatorId[], data: EconomicDataResponse): BuiltChart {
@@ -173,7 +184,7 @@ function buildNormalize(ids: IndicatorId[], data: EconomicDataResponse): BuiltCh
     ],
   });
 
-  return { traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
+  return { kind: 'single', traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
 }
 
 function groupByUnit(ids: IndicatorId[]): Array<{ unit: string; ids: IndicatorId[] }> {
@@ -211,7 +222,7 @@ function buildDualAxis(ids: IndicatorId[], data: EconomicDataResponse): BuiltCha
   if (unitGroups.length <= 2) {
     return buildDualAxisSingle(ids, data);
   }
-  return buildDualAxisSubplots(ids, data, packUnitGroups(unitGroups));
+  return buildDualAxisSubplots(data, packUnitGroups(unitGroups));
 }
 
 function buildDualAxisSingle(ids: IndicatorId[], data: EconomicDataResponse): BuiltChart {
@@ -242,11 +253,10 @@ function buildDualAxisSingle(ids: IndicatorId[], data: EconomicDataResponse): Bu
     axes: assignment.axes,
   });
 
-  return { traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
+  return { kind: 'single', traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
 }
 
 function buildDualAxisSubplots(
-  ids: IndicatorId[],
   data: EconomicDataResponse,
   slots: Array<Array<{ unit: string; ids: IndicatorId[] }>>,
 ): BuiltChart {
@@ -258,8 +268,7 @@ function buildDualAxisSubplots(
     ['y5', 'y6'],
   ];
 
-  const traces: Data[] = [];
-  const subplots = slots.map((slot, slotIdx) => {
+  const panels: SubplotPanelSpec[] = slots.map((slot, slotIdx) => {
     const [leftKey, rightKey] = yPairs[slotIdx];
     const xAxisKey = xKeys[slotIdx];
     const yAxes = slot.map((group, axisIdx) => {
@@ -275,6 +284,7 @@ function buildDualAxisSubplots(
       };
     });
 
+    const traces: Data[] = [];
     slot.forEach((group, axisIdx) => {
       const yaxis = axisIdx === 0 ? leftKey : rightKey;
       group.ids.forEach((id, idx) => {
@@ -296,15 +306,10 @@ function buildDualAxisSubplots(
       });
     });
 
-    return { xAxisKey, yAxes };
+    return { traces, spec: { xAxisKey, yAxes } };
   });
 
-  const layout = buildLinkedSubplotLayout({ subplots });
-  return {
-    traces,
-    layout: layout as Record<string, unknown>,
-    subplotCount: Math.max(1, slots.length) as 1 | 2 | 3,
-  };
+  return { kind: 'linked', subplots: panels };
 }
 
 function buildDualAxisWithCorrelation(ids: IndicatorId[], data: EconomicDataResponse): BuiltChart {
@@ -348,40 +353,43 @@ function buildDualAxisWithCorrelation(ids: IndicatorId[], data: EconomicDataResp
     corr,
   );
 
-  const layout = buildLinkedSubplotLayout({
+  return {
+    kind: 'linked',
     subplots: [
       {
-        xAxisKey: 'x',
-        yAxes: assignment.axes.map((axis, idx) => ({
-          key: axis.key,
-          title: axis.title,
-          titleColor: axis.titleColor,
-          axisColor: axis.axisColor,
-          side: axis.side,
-          overlaying: idx === 0 ? undefined : 'y',
-        })),
+        traces: upperTraces,
+        spec: {
+          xAxisKey: 'x',
+          yAxes: assignment.axes.map((axis, idx) => ({
+            key: axis.key,
+            title: axis.title,
+            titleColor: axis.titleColor,
+            axisColor: axis.axisColor,
+            side: axis.side,
+            overlaying: idx === 0 ? undefined : 'y',
+          })),
+        },
+        emptyMessage: '暂无对比数据',
       },
       {
-        xAxisKey: 'x2',
-        yAxes: [
-          {
-            key: 'y3',
-            title: `30 日滚动相关性 · ${INDICATORS[a].label} × ${INDICATORS[b].label}`,
-            axisColor: '#e5e7eb',
-            side: 'left',
-            range: [-1.05, 1.05],
-            zeroline: true,
-            zerolinecolor: '#666',
-            zerolinewidth: 1,
-          },
-        ],
+        traces: corrTrace ? [corrTrace] : [],
+        spec: {
+          xAxisKey: 'x2',
+          yAxes: [
+            {
+              key: 'y3',
+              title: `30 日滚动相关性 · ${INDICATORS[a].label} × ${INDICATORS[b].label}`,
+              axisColor: '#e5e7eb',
+              side: 'left',
+              range: [-1.05, 1.05],
+              zeroline: true,
+              zerolinecolor: '#666',
+              zerolinewidth: 1,
+            },
+          ],
+        },
+        emptyMessage: '样本不足，无法计算滚动相关性',
       },
     ],
-  });
-
-  return {
-    traces: corrTrace ? [...upperTraces, corrTrace] : upperTraces,
-    layout: layout as Record<string, unknown>,
-    subplotCount: 2,
   };
 }

@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 股指 Tab — 3 个联动子图
+ * 股指 Tab — 3 个联动子图（独立 Plot 实例）
  * 上：恒生 + 上证
  * 中：标普500 + 纳斯达克
  * 下：道琼斯
@@ -11,9 +11,9 @@ import type { Data } from 'plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
-  buildLinkedSubplotLayout,
+  type SubplotPanelSpec,
 } from '@/lib/utils/plotlyTheme';
-import { MacroPlot } from './MacroPlot';
+import { LinkedSubplots } from './LinkedSubplots';
 
 interface StockIndexChartProps {
   data: EconomicDataResponse;
@@ -27,66 +27,69 @@ const META = {
   DJI:      { label: '道琼斯',   color: '#a855f7', dash: 'solid' as const },
 } as const;
 
+function tracesOf(...items: Array<Data | null>): Data[] {
+  return items.filter((t): t is Data => t != null);
+}
+
 export function StockIndexChart({ data }: StockIndexChartProps) {
-  const { traces, layout } = useMemo(() => {
+  const subplots = useMemo<SubplotPanelSpec[]>(() => {
     const dates = data.dates ?? [];
     const indices = data.indices;
 
-    const traces = [
+    const line = (
+      key: keyof typeof META,
+      yaxis: 'y' | 'y2' | 'y3' | 'y4' | 'y5',
+      xaxis: 'x' | 'x2' | 'x3',
+    ) =>
       buildLineTrace(
-        { label: META.HKHSI.label, color: META.HKHSI.color, unit: '点', yaxis: 'y', xaxis: 'x', dash: META.HKHSI.dash, valueFormat: ',.0f' },
-        dates,
-        indices?.HKHSI ?? [],
-      ),
-      buildLineTrace(
-        { label: META.SH000001.label, color: META.SH000001.color, unit: '点', yaxis: 'y2', xaxis: 'x', dash: META.SH000001.dash, valueFormat: ',.0f' },
-        dates,
-        indices?.SH000001 ?? [],
-      ),
-      buildLineTrace(
-        { label: META.SPX.label, color: META.SPX.color, unit: '点', yaxis: 'y3', xaxis: 'x2', dash: META.SPX.dash, valueFormat: ',.0f' },
-        dates,
-        indices?.SPX ?? [],
-      ),
-      buildLineTrace(
-        { label: META.IXIC.label, color: META.IXIC.color, unit: '点', yaxis: 'y4', xaxis: 'x2', dash: META.IXIC.dash, valueFormat: ',.0f' },
-        dates,
-        indices?.IXIC ?? [],
-      ),
-      buildLineTrace(
-        { label: META.DJI.label, color: META.DJI.color, unit: '点', yaxis: 'y5', xaxis: 'x3', dash: META.DJI.dash, valueFormat: ',.0f' },
-        dates,
-        indices?.DJI ?? [],
-      ),
-    ].filter(Boolean) as Data[];
-
-    const layout = buildLinkedSubplotLayout({
-      subplots: [
         {
+          label: META[key].label,
+          color: META[key].color,
+          unit: '点',
+          yaxis,
+          xaxis,
+          dash: META[key].dash,
+          valueFormat: ',.0f',
+        },
+        dates,
+        indices?.[key] ?? [],
+      );
+
+    return [
+      {
+        traces: tracesOf(line('HKHSI', 'y', 'x'), line('SH000001', 'y2', 'x')),
+        spec: {
           xAxisKey: 'x',
           yAxes: [
             { key: 'y', title: '恒生 (点)', titleColor: META.HKHSI.color, axisColor: META.HKHSI.color, side: 'left' },
             { key: 'y2', title: '上证 (点)', titleColor: META.SH000001.color, axisColor: META.SH000001.color, side: 'right', overlaying: 'y' },
           ],
         },
-        {
+        emptyMessage: '暂无港股/A 股指数',
+      },
+      {
+        traces: tracesOf(line('SPX', 'y3', 'x2'), line('IXIC', 'y4', 'x2')),
+        spec: {
           xAxisKey: 'x2',
           yAxes: [
             { key: 'y3', title: '标普500 (点)', titleColor: META.SPX.color, axisColor: META.SPX.color, side: 'left' },
             { key: 'y4', title: '纳指 (点)', titleColor: META.IXIC.color, axisColor: META.IXIC.color, side: 'right', overlaying: 'y3' },
           ],
         },
-        {
+        emptyMessage: '暂无美股成长指数',
+      },
+      {
+        traces: tracesOf(line('DJI', 'y5', 'x3')),
+        spec: {
           xAxisKey: 'x3',
           yAxes: [
             { key: 'y5', title: '道指 (点)', titleColor: META.DJI.color, axisColor: META.DJI.color, side: 'left' },
           ],
         },
-      ],
-    });
-
-    return { traces, layout };
+        emptyMessage: '暂无道琼斯数据',
+      },
+    ];
   }, [data]);
 
-  return <MacroPlot data={traces} layout={layout} subplotCount={3} />;
+  return <LinkedSubplots subplots={subplots} />;
 }

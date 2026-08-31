@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * 利率利差 Tab — 3 个联动子图
+ * 利率利差 Tab — 3 个联动子图（独立 Plot 实例）
  * 上：DR007 / SOFR / 美债3M（同单位 %）
  * 中：TED 利差
  * 下：中国 10y + 中国 10年-2年（双轴）
@@ -13,11 +13,11 @@ import type { Data } from 'plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
-  buildLinkedSubplotLayout,
   type AxisKey,
+  type SubplotPanelSpec,
   type XAxisKey,
 } from '@/lib/utils/plotlyTheme';
-import { MacroPlot } from './MacroPlot';
+import { LinkedSubplots } from './LinkedSubplots';
 
 interface RatesChartProps {
   data: EconomicDataResponse;
@@ -58,11 +58,9 @@ function pickSeries(data: EconomicDataResponse, dataKey: NestedKey | FlatKey): (
   return [];
 }
 
-export function RatesChart({ data }: RatesChartProps) {
-  const { traces, layout } = useMemo(() => {
-    const dates = data.dates ?? [];
-
-    const traces = RATES_META.map((meta) =>
+function tracesOf(dates: string[], data: EconomicDataResponse, metas: TraceMeta[]): Data[] {
+  return metas
+    .map((meta) =>
       buildLineTrace(
         {
           label: meta.label,
@@ -76,34 +74,48 @@ export function RatesChart({ data }: RatesChartProps) {
         dates,
         pickSeries(data, meta.dataKey),
       ),
-    ).filter(Boolean) as Data[];
+    )
+    .filter((t): t is Data => t != null);
+}
 
-    const layout = buildLinkedSubplotLayout({
-      subplots: [
-        {
+export function RatesChart({ data }: RatesChartProps) {
+  const subplots = useMemo<SubplotPanelSpec[]>(() => {
+    const dates = data.dates ?? [];
+
+    return [
+      {
+        traces: tracesOf(dates, data, RATES_META.filter((m) => m.xaxis === 'x')),
+        spec: {
           xAxisKey: 'x',
           yAxes: [
             { key: 'y', title: '短端利率 (%)', titleColor: '#f97316', axisColor: '#e5e7eb', side: 'left' },
           ],
         },
-        {
+        emptyMessage: '暂无短端利率数据',
+      },
+      {
+        traces: tracesOf(dates, data, RATES_META.filter((m) => m.xaxis === 'x2')),
+        spec: {
           xAxisKey: 'x2',
           yAxes: [
             { key: 'y2', title: 'TED 利差 (%)', titleColor: '#ec4899', axisColor: '#ec4899', side: 'left' },
           ],
         },
-        {
+        emptyMessage: '暂无 TED 利差数据',
+      },
+      {
+        traces: tracesOf(dates, data, RATES_META.filter((m) => m.xaxis === 'x3')),
+        spec: {
           xAxisKey: 'x3',
           yAxes: [
             { key: 'y3', title: '中国 10y (%)', titleColor: '#f87171', axisColor: '#f87171', side: 'left' },
             { key: 'y4', title: '10y-2y (%)', titleColor: '#a78bfa', axisColor: '#a78bfa', side: 'right', overlaying: 'y3' },
           ],
         },
-      ],
-    });
-
-    return { traces, layout };
+        emptyMessage: '暂无中国国债数据',
+      },
+    ];
   }, [data]);
 
-  return <MacroPlot data={traces} layout={layout} subplotCount={3} emptyMessage="暂无利率利差数据" />;
+  return <LinkedSubplots subplots={subplots} />;
 }

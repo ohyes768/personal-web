@@ -110,6 +110,18 @@ export interface SubplotSpec {
   title?: string;
 }
 
+/**
+ * 联动子图拆分方案：单个子图面板的输入。
+ * traces 按子图分组；trace 的 xaxis/yaxis key 沿用原命名（子图二用 x2/y3 等），
+ * 独立实例间 x 轴联动由 LinkedSubplots 组件用 relayout 事件同步。
+ */
+export interface SubplotPanelSpec {
+  traces: Data[];
+  spec: SubplotSpec;
+  height?: number;
+  emptyMessage?: string;
+}
+
 const SHORT_SERIES_MARKER_THRESHOLD = 8;
 
 /** Plotly 会把显式 undefined 当成非法枚举，必须在写入 layout 前剥掉 */
@@ -128,27 +140,6 @@ export function layoutAxisKey(axisKey: AxisKey | XAxisKey): string {
   return `yaxis${axisKey.slice(1)}`;
 }
 
-/** 子图纵向 domain，从上到下；gap 为子图间距 */
-export function buildSubplotDomains(
-  count: 1 | 2 | 3,
-  gap = 0.07,
-): Array<[number, number]> {
-  if (count === 1) return [[0, 1]];
-  if (count === 2) {
-    const mid = 0.5 + gap / 2;
-    return [
-      [mid, 1],
-      [0, 0.5 - gap / 2],
-    ];
-  }
-  const band = (1 - gap * 2) / 3;
-  const top: [number, number] = [1 - band, 1];
-  const mid: [number, number] = [band + gap, band + gap + band];
-  const bottom: [number, number] = [0, band];
-  return [top, mid, bottom];
-}
-
-/** 按子图数量估算图表高度 */
 export function chartHeightForSubplots(count: number, compact = false): number {
   const per = compact ? 220 : 260;
   const base = compact ? 40 : 60;
@@ -211,11 +202,10 @@ export function buildBaseLayout(opts?: {
 
 export function buildTimeAxis(opts: {
   isBottom: boolean;
-  matches?: XAxisKey;
   compact?: boolean;
   title?: string;
 }): Record<string, unknown> {
-  const { isBottom, matches, compact = false, title } = opts;
+  const { isBottom, compact = false, title } = opts;
   return omitUndefined({
     title: isBottom ? (title ?? '日期') : undefined,
     showgrid: true,
@@ -229,7 +219,6 @@ export function buildTimeAxis(opts: {
     spikethickness: 1,
     spikecolor: '#6b7280',
     nticks: compact ? 4 : 8,
-    matches,
   });
 }
 
@@ -273,60 +262,45 @@ export function buildValueAxis(opts: {
 }
 
 /**
- * 生成上下联动子图 layout。
- * 每个 subplot 可有 1 至 2 个 Y 轴；日期轴通过 matches 联动到第一个 x。
+ * 拆分方案：单子图独立 layout。
+ * 顶部横排 legend 由 buildBaseLayout 提供，自动落在本子图上方；
+ * 无 grid/matches，子图间联动由 LinkedSubplots 组件做事件同步。
+ * xRange 注入联动共享范围（null/undefined 表示 autorange）。
  */
-export function buildLinkedSubplotLayout(opts: {
-  subplots: SubplotSpec[];
+export function buildSubplotLayout(opts: {
+  spec: SubplotSpec;
   compact?: boolean;
   margin?: { l?: number; r?: number; t?: number; b?: number };
+  xRange?: [number, number] | [string, string] | null;
 }): Partial<Layout> {
-  const { subplots, compact = false } = opts;
-  const count = Math.min(3, Math.max(1, subplots.length)) as 1 | 2 | 3;
-  const base = buildBaseLayout({ compact, margin: opts.margin });
+  const { spec, compact = false, margin } = opts;
+  const mainY = spec.yAxes[0];
   const layout: Record<string, unknown> = {
-    ...base,
-    // 用 grid 分摊子图高度。手动 domain + matches + 全轴 automargin
-    // 会在 hidden Tab（宽高为 0）首次 newPlot 时把绘图区算成空白。
-    grid: {
-      rows: count,
-      columns: 1,
-      pattern: 'independent',
-      roworder: 'top to bottom',
-      ygap: compact ? 0.1 : 0.08,
-    },
+    ...buildBaseLayout({ compact, margin }),
   };
+  if (!mainY) return layout as Partial<Layout>;
 
-  subplots.forEach((subplot, idx) => {
-    const isBottom = idx === subplots.length - 1;
-    const mainY = subplot.yAxes[0];
-    if (!mainY) return;
+  // 独立实例必须自带完整日期轴（刻度/拖拽参照），恒为底部轴
+  layout[layoutAxisKey(spec.xAxisKey)] = omitUndefined({
+    ...buildTimeAxis({ isBottom: true, compact }),
+    anchor: mainY.key,
+    range: opts.xRange ?? undefined,
+  });
 
-    const xLayoutKey = layoutAxisKey(subplot.xAxisKey);
-    layout[xLayoutKey] = omitUndefined({
-      ...buildTimeAxis({
-        isBottom,
-        matches: idx === 0 ? undefined : 'x',
-        compact,
-      }),
-      anchor: mainY.key,
-    });
-
-    subplot.yAxes.forEach((axis, axisIdx) => {
-      const isMain = axisIdx === 0;
-      layout[layoutAxisKey(axis.key)] = buildValueAxis({
-        title: axis.title,
-        titleColor: axis.titleColor,
-        axisColor: axis.axisColor,
-        side: axis.side ?? (isMain ? 'left' : 'right'),
-        overlaying: isMain ? undefined : (axis.overlaying ?? mainY.key),
-        showgrid: axis.showgrid ?? isMain,
-        zeroline: axis.zeroline,
-        zerolinecolor: axis.zerolinecolor,
-        zerolinewidth: axis.zerolinewidth,
-        range: axis.range,
-        anchor: subplot.xAxisKey,
-      });
+  spec.yAxes.forEach((axis, axisIdx) => {
+    const isMain = axisIdx === 0;
+    layout[layoutAxisKey(axis.key)] = buildValueAxis({
+      title: axis.title,
+      titleColor: axis.titleColor,
+      axisColor: axis.axisColor,
+      side: axis.side ?? (isMain ? 'left' : 'right'),
+      overlaying: isMain ? undefined : (axis.overlaying ?? mainY.key),
+      showgrid: axis.showgrid ?? isMain,
+      zeroline: axis.zeroline,
+      zerolinecolor: axis.zerolinecolor,
+      zerolinewidth: axis.zerolinewidth,
+      range: axis.range,
+      anchor: spec.xAxisKey,
     });
   });
 

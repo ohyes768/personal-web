@@ -24,6 +24,8 @@ interface MacroPlotProps {
   config?: Partial<Config>;
   className?: string;
   emptyMessage?: string;
+  /** Plotly relayout 事件透传（联动子图用于同步 x 轴范围） */
+  onRelayout?: (e: Record<string, unknown>) => void;
 }
 
 export function MacroPlot({
@@ -34,6 +36,7 @@ export function MacroPlot({
   config,
   className,
   emptyMessage = '暂无可用数据',
+  onRelayout,
 }: MacroPlotProps) {
   const containerRef = usePlotlyAutoResize<HTMLDivElement>();
   const resolvedHeight = height ?? chartHeightForSubplots(subplotCount);
@@ -67,6 +70,7 @@ export function MacroPlot({
         style={{ width: '100%', height: resolvedHeight }}
         className="w-full"
         useResizeHandler
+        onRelayout={onRelayout}
       />
     </div>
   );

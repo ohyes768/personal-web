@@ -2,6 +2,7 @@
  * 经济数据图表组件 — 中美利差 / 汇率
  * 上图：美债 + 中国10y（收益率 %）
  * 下图：汇率相对变化 %（tooltip 同时显示原始汇率）
+ * 拆分方案：两个子图独立实例（图例各自在上方），x 轴由 LinkedSubplots 联动
  */
 'use client';
 
@@ -10,10 +11,10 @@ import type { Data } from 'plotly.js';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
-  buildLinkedSubplotLayout,
   hasValidPoints,
+  type SubplotPanelSpec,
 } from '@/lib/utils/plotlyTheme';
-import { MacroPlot } from './MacroPlot';
+import { LinkedSubplots } from './LinkedSubplots';
 
 interface EconomicChartProps {
   data: EconomicDataResponse;
@@ -30,13 +31,13 @@ function relativeChange(values: Array<number | null | undefined>): Array<number 
 }
 
 export function EconomicChart({ data }: EconomicChartProps) {
-  const { traces, layout } = useMemo(() => {
+  const subplots = useMemo<SubplotPanelSpec[]>(() => {
     const dates = data.dates ?? [];
     const us = data.us_treasuries;
     const china = data.china_bond;
     const fx = data.exchange_rates;
 
-    const traces: Data[] = [];
+    const rateTraces: Data[] = [];
 
     const pushRate = (
       label: string,
@@ -49,13 +50,15 @@ export function EconomicChart({ data }: EconomicChartProps) {
         dates,
         series ?? [],
       );
-      if (t) traces.push(t);
+      if (t) rateTraces.push(t);
     };
 
     pushRate('美债3M', '#3b82f6', us?.['3m'], 'dot');
     pushRate('美债2Y', '#10b981', us?.['2y'], 'dash');
     pushRate('美债10Y', '#f59e0b', us?.['10y'], 'solid');
     pushRate('中国10Y', '#fbbf24', china?.['10y'], 'dash');
+
+    const fxTraces: Data[] = [];
 
     const pushFx = (
       label: string,
@@ -79,7 +82,7 @@ export function EconomicChart({ data }: EconomicChartProps) {
             `<extra></extra>`,
         },
       );
-      if (t) traces.push(t);
+      if (t) fxTraces.push(t);
     };
 
     pushFx('美元指数', '#06b6d4', fx?.dollar_index, 'solid');
@@ -87,15 +90,20 @@ export function EconomicChart({ data }: EconomicChartProps) {
     pushFx('USD/JPY', '#a78bfa', fx?.usd_jpy, 'dot');
     pushFx('USD/EUR', '#34d399', fx?.usd_eur, 'dash');
 
-    const layout = buildLinkedSubplotLayout({
-      subplots: [
-        {
+    return [
+      {
+        traces: rateTraces,
+        spec: {
           xAxisKey: 'x',
           yAxes: [
             { key: 'y', title: '收益率 (%)', titleColor: '#f59e0b', axisColor: '#e5e7eb', side: 'left' },
           ],
         },
-        {
+        emptyMessage: '暂无收益率数据',
+      },
+      {
+        traces: fxTraces,
+        spec: {
           xAxisKey: 'x2',
           yAxes: [
             {
@@ -110,11 +118,10 @@ export function EconomicChart({ data }: EconomicChartProps) {
             },
           ],
         },
-      ],
-    });
-
-    return { traces, layout };
+        emptyMessage: '暂无汇率数据',
+      },
+    ];
   }, [data]);
 
-  return <MacroPlot data={traces} layout={layout} subplotCount={2} />;
+  return <LinkedSubplots subplots={subplots} />;
 }
