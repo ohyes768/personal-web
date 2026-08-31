@@ -36,7 +36,7 @@ export const GROUP_ORDER: DimensionKey[] = [
 /** 日频模式卡片:3 维度 7 指标(key 对齐后端 _DAILY_INDICATORS,数组顺序即展示顺序) */
 export const DAILY_GROUPS: Array<{ key: DailyDimensionKey; indicators: string[] }> = [
   { key: 'monetary_policy', indicators: ['dr007'] },
-  { key: 'exchange_rate',   indicators: ['dollar_index', 'usd_cny', 'ted_spread'] },
+  { key: 'exchange_rate',   indicators: ['dollar_index', 'usd_cny', 'ted_spread', 'hibor_overnight'] },
   { key: 'risk_appetite',   indicators: ['volume', 'turnover', 'margin'] },
 ];
 
@@ -76,6 +76,7 @@ export const INDICATOR_LABELS: Record<string, { label: string; unit?: string; di
   north_turnover_today_yi: { label: '北向当日成交额',     unit: '亿', digits: 0 },
   north_change_pct:   { label: '北向7日环比',        unit: '%', digits: 1 },
   ted_spread:         { label: 'TED 利差',           unit: '%', digits: 2 },
+  hibor_overnight:    { label: 'HIBOR 隔夜',         unit: '%', digits: 3 },
   '美元指数':          { label: '美元指数',           digits: 2 },
   '美元兑人民币':      { label: '美元兑人民币',       digits: 4 },
   'TED利差':           { label: 'TED 利差',           unit: '%', digits: 2 },
@@ -201,6 +202,7 @@ export const INDICATOR_LINK_MAP: Record<string, TabType> = {
   ted_spread:   'rates',
   // 日频快照指标 → 对应曲线 Tab
   dr007:        'rates',
+  hibor_overnight: 'liquidity-risk',
   volume:       'market-sentiment',
   turnover:     'market-sentiment',
   margin:       'market-sentiment',

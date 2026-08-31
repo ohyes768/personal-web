@@ -1,0 +1,2 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/guides/macro-daily-snapshot.md", "reason": "校验日频快照新增 hibor_overnight 后跨层对齐无回归,响应 shape 一致"}

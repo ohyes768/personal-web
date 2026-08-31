@@ -54,6 +54,7 @@ def service(tmp_path: Path) -> DailySnapshotService:
         ds.files["ted_spread"], DATES,
         {"SOFR": [4.30, 4.31, 4.32], "美债3m": [4.20, 4.20, 4.21], "TED利差": [0.20, 0.21, 0.21]},
     )
+    _write_csv(ds.files["hibor"], DATES, {"HIBOR_Overnight": [2.90, 2.98, 3.05]})
     return DailySnapshotService(ds)
 
 
@@ -71,9 +72,11 @@ def test_explicit_date_takes_values(service: DailySnapshotService):
     assert dr007["data_date"] == "2026-08-27"
 
     ex = {i["key"]: i for i in g["exchange_rate"]["indicators"]}
-    assert set(ex.keys()) == {"dollar_index", "usd_cny", "ted_spread"}
+    assert set(ex.keys()) == {"dollar_index", "usd_cny", "ted_spread", "hibor_overnight"}
     assert ex["dollar_index"]["value"] == pytest.approx(103.5)
     assert ex["usd_cny"]["prev_value"] == pytest.approx(7.12)
+    assert ex["hibor_overnight"]["value"] == pytest.approx(3.05)
+    assert ex["hibor_overnight"]["data_date"] == "2026-08-27"
 
     risk = {i["key"]: i for i in g["risk_appetite"]["indicators"]}
     assert set(risk.keys()) == {"volume", "turnover", "margin"}

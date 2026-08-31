@@ -31,6 +31,7 @@ _DAILY_INDICATORS: Dict[str, List[Tuple[str, str, str]]] = {
         ("dollar_index", "load_data:exchange_rates", "美元指数"),
         ("usd_cny", "load_data:exchange_rates", "美元人民币"),
         ("ted_spread", "load_data:ted_spread", "TED利差"),
+        ("hibor_overnight", "load_data:hibor", "HIBOR_Overnight"),
     ],
     "risk_appetite": [
         ("volume", "load_volume", "total_amount_yi"),
