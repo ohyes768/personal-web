@@ -9,7 +9,7 @@ from typing import Any
 from src.scheduler.timezone import now_shanghai
 from src.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("scheduler")
 
 _DEFAULT_MAX_SIZE_MB = 5
 _DEFAULT_TAIL_N = 200
@@ -34,6 +34,10 @@ class JSONLReaderWriter:
         # 文件不存在则建空
         if not self._path.exists():
             self._path.touch()
+
+    @property
+    def path(self) -> Path:
+        return self._path
 
     async def append(self, record: dict[str, Any]) -> None:
         """追加一行记录。失败 warn 但不抛（NFR-6）。"""

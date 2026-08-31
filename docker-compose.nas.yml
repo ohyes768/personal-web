@@ -207,6 +207,9 @@ services:
     volumes:
       - macro-data:/app/data
       - macro-logs:/app/logs
+    # 定时任务日志: /app/logs/scheduler.log + docker logs macro-backend
+    # 执行历史: /app/data/scheduler/history.jsonl
+    # 排查 API: GET /api/scheduler/status
     environment:
       - TZ=Asia/Shanghai
       - FRED_API_KEY=${FRED_API_KEY}

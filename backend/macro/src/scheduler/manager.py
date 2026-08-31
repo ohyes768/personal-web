@@ -10,6 +10,11 @@ import os
 from pathlib import Path
 from typing import Any
 
+from apscheduler.events import (
+    EVENT_JOB_ERROR,
+    EVENT_JOB_MAX_INSTANCES,
+    EVENT_JOB_MISSED,
+)
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -20,12 +25,16 @@ from src.scheduler.jobs import JOB_TARGETS
 from src.scheduler.timezone import SCHEDULER_TZ_NAME, now_shanghai, now_shanghai_iso
 from src.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("scheduler")
 
 # crontab 表达式统一按 Asia/Shanghai 解析。APScheduler 的 from_crontab 不传
 # timezone 会落到系统默认时区（容器内为 UTC），与 scheduler 的 timezone 不一致，
 # 导致触发时间偏移 8 小时（如 14:25 UTC = 22:25 北京）。scheduler 与每个 trigger
 # 必须共用同一时区。落盘时间戳见 timezone.now_shanghai_iso()（带 +08:00）。
+#
+# dow 数字陷阱：APScheduler 3.x 的 CronTrigger 0=周一（Python 习惯），
+# 不是 crontab 的 0=周日。`1-5` 实际是周二到周六，周一整组不会跑。
+# 工作日必须写 mon-fri（或 0-4）。
 SCHEDULER_TIMEZONE = SCHEDULER_TZ_NAME
 
 
@@ -96,15 +105,21 @@ class SchedulerManager:
             )
             if not job_cfg.get("enabled", True):
                 scheduler.pause_job(job_id)
+            self._warn_numeric_weekday(job_id, job_cfg["cron"])
             logger.info(
                 f"[{job_id}] 注册: cron={job_cfg['cron']} "
                 f"({cron_to_human(job_cfg['cron'])}) "
                 f"enabled={job_cfg.get('enabled', True)} "
                 f"target={job_cfg['target']}"
             )
+        scheduler.add_listener(
+            self._on_scheduler_event,
+            EVENT_JOB_MISSED | EVENT_JOB_ERROR | EVENT_JOB_MAX_INSTANCES,
+        )
         scheduler.start()
         self._scheduler = scheduler
         logger.info(f"scheduler 启动完成，{len(self.jobs_meta)} 个任务")
+        self._log_schedule_dump()
 
     async def shutdown(self, wait: bool = True, timeout: int = 30) -> None:
         if self._scheduler is None:
@@ -162,6 +177,22 @@ class SchedulerManager:
             logger.info(f"[{job_id}] 已禁用")
         # 返回更新后的 job（list_jobs 重新读 history 拿 last_run）
         return next(j for j in self.list_jobs() if j["id"] == job_id)
+
+    def get_status(self) -> dict[str, Any]:
+        """排查用运行时快照：时区、端口、历史文件、下次触发。"""
+        hist = self._history.path
+        exists = hist.exists()
+        return {
+            "timezone": SCHEDULER_TZ_NAME,
+            "now": now_shanghai_iso(),
+            "port": self.port,
+            "config_path": str(self._config_path),
+            "history_path": str(hist),
+            "history_exists": exists,
+            "history_size_bytes": hist.stat().st_size if exists else 0,
+            "running": self._scheduler is not None and bool(self._scheduler.running),
+            "jobs": self.list_jobs(),
+        }
 
     async def trigger_now(self, job_id: str) -> dict[str, Any]:
         if job_id not in self.jobs_meta:
@@ -234,6 +265,62 @@ class SchedulerManager:
             logger.info(
                 f"[{job_id}] 执行结束 status={record['status']} "
                 f"count={record.get('count')} reason={record.get('reason')}"
+            )
+
+    def _log_schedule_dump(self) -> None:
+        """启动后把时区 / 端口 / 历史路径 / 各 job next_run 打一行，方便对照「为啥没跑」。"""
+        hist = self._history.path
+        logger.info(
+            f"scheduler 运行时 tz={SCHEDULER_TZ_NAME} TZ={os.environ.get('TZ')} "
+            f"now={now_shanghai_iso()} port={self.port} "
+            f"config={self._config_path} history={hist}"
+        )
+        for job_id, spec in self.jobs_meta.items():
+            sched_job = (
+                self._scheduler.get_job(job_id) if self._scheduler else None
+            )
+            if sched_job is None:
+                next_run = "unregistered"
+            elif sched_job.next_run_time is None:
+                next_run = "paused/none"
+            else:
+                next_run = sched_job.next_run_time.isoformat()
+            logger.info(
+                f"[{job_id}] schedule next_run={next_run} "
+                f"enabled={spec.get('enabled', True)} cron={spec['cron']}"
+            )
+
+    def _on_scheduler_event(self, event: Any) -> None:
+        job_id = getattr(event, "job_id", "?")
+        scheduled = getattr(event, "scheduled_run_time", None)
+        if event.code == EVENT_JOB_MISSED:
+            logger.warning(
+                f"[{job_id}] 错过触发 scheduled={scheduled} "
+                f"(进程当时未在跑，或距计划点已超过 misfire_grace_time=3600s)"
+            )
+        elif event.code == EVENT_JOB_ERROR:
+            logger.error(
+                f"[{job_id}] APScheduler 报告执行错误: "
+                f"{getattr(event, 'exception', None)}"
+            )
+        elif event.code == EVENT_JOB_MAX_INSTANCES:
+            logger.warning(
+                f"[{job_id}] 上一轮尚未结束，本轮被跳过 (max_instances=1)"
+            )
+
+    @staticmethod
+    def _warn_numeric_weekday(job_id: str, cron: str) -> None:
+        fields = cron.strip().split()
+        if len(fields) != 5:
+            return
+        dow = fields[4]
+        if dow in ("*",) or any(ch.isalpha() for ch in dow):
+            return
+        # 纯数字 dow：提醒 1-5 ≠ 周一到周五
+        if "1-5" in dow or dow == "1-5":
+            logger.warning(
+                f"[{job_id}] cron dow={dow!r} 在 APScheduler 中 0=周一，"
+                f"1-5 实际是周二到周六。请改成 mon-fri。"
             )
 
     def _load_config(self) -> dict:

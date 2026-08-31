@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 from src.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("scheduler")
 
 router = APIRouter(prefix="/scheduler", tags=["scheduler"])
 
@@ -26,6 +26,13 @@ def _get_scheduler(request: Request):
 async def list_jobs(request: Request):
     scheduler = _get_scheduler(request)
     return {"jobs": scheduler.list_jobs()}
+
+
+@router.get("/status")
+async def scheduler_status(request: Request):
+    """排查快照：时区、self-call 端口、历史文件、各任务 next/last。"""
+    scheduler = _get_scheduler(request)
+    return scheduler.get_status()
 
 
 @router.patch("/jobs/{job_id}")

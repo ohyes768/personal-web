@@ -1,6 +1,7 @@
 """cron 表达式 → 中文可读描述转换"""
 
-# 周中文映射：cron dow 字段 0/7 都表示周日
+# 数字 dow 按 *标准 crontab* 习惯展示（0/7=周日）。注意：APScheduler 3.x
+# 的 CronTrigger 数字 0=周一，与 crontab 相反；预设必须写 mon-fri，不要写 1-5。
 _DOW_NAMES = {
     "0": "日",
     "7": "日",
@@ -12,12 +13,25 @@ _DOW_NAMES = {
     "6": "六",
 }
 
+# APScheduler / 标准 cron 都认英文缩写，无数字歧义
+_DOW_ABBREV = {
+    "sun": "日",
+    "mon": "一",
+    "tue": "二",
+    "wed": "三",
+    "thu": "四",
+    "fri": "五",
+    "sat": "六",
+}
+
 
 def cron_to_human(cron: str) -> str:
     """将 5 字段 cron 表达式转中文可读描述。
 
     支持常见模式；无法识别时返回原字符串。
 
+    >>> cron_to_human("30 16 * * mon-fri")
+    '每周一至周五 16:30'
     >>> cron_to_human("30 15 * * 1-5")
     '每周一至周五 15:30'
     >>> cron_to_human("0 2 * * 6")
@@ -81,17 +95,27 @@ def _format_hhmm(h: str, m: str) -> str:
 
 def _format_dow(dow: str) -> str | None:
     """dow 字段转中文描述"""
-    # 单值：1, 2, ...
-    if dow in _DOW_NAMES:
-        return f"周{_DOW_NAMES[dow]}"
-    # 范围：1-5
-    if "-" in dow:
-        parts = dow.split("-")
+    key = dow.strip().lower()
+    # 英文缩写：mon / mon-fri / sat,sun（APScheduler 预设用这个，避免 1-5 歧义）
+    if key in _DOW_ABBREV:
+        return f"周{_DOW_ABBREV[key]}"
+    if "-" in key:
+        left, right = key.split("-", 1)
+        if left in _DOW_ABBREV and right in _DOW_ABBREV:
+            return f"周{_DOW_ABBREV[left]}至周{_DOW_ABBREV[right]}"
+    # 数字单值：1, 2, ...
+    if key in _DOW_NAMES:
+        return f"周{_DOW_NAMES[key]}"
+    # 数字范围：1-5（仅文案；APScheduler 实际会当成周二到周六）
+    if "-" in key:
+        parts = key.split("-")
         if len(parts) == 2 and parts[0] in _DOW_NAMES and parts[1] in _DOW_NAMES:
             return f"周{_DOW_NAMES[parts[0]]}至周{_DOW_NAMES[parts[1]]}"
-    # 列表：0,6
-    if "," in dow:
-        parts = dow.split(",")
+    # 列表：0,6 或 sat,sun
+    if "," in key:
+        parts = [p.strip() for p in key.split(",")]
+        if all(p in _DOW_ABBREV for p in parts):
+            return "周" + "".join(_DOW_ABBREV[p] for p in parts)
         if all(p in _DOW_NAMES for p in parts):
             return "周" + "".join(_DOW_NAMES[p] for p in parts)
     return None

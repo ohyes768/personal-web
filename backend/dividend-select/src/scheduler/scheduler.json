@@ -5,7 +5,7 @@
       "id": "daily_price_pre",
       "name": "每日刷新实时价格（盘前尾段）",
       "target": "refresh_realtime",
-      "cron": "25 14 * * 1-5",
+      "cron": "25 14 * * mon-fri",
       "enabled": true,
       "check_trading_day": true,
       "description": "A 股 14:25 拉尾盘实时价（接口内顺带触发挡位告警）"
@@ -14,7 +14,7 @@
       "id": "daily_price_post",
       "name": "每日刷新实时价格（盘后）",
       "target": "refresh_realtime",
-      "cron": "30 15 * * 1-5",
+      "cron": "30 15 * * mon-fri",
       "enabled": true,
       "check_trading_day": true,
       "description": "A 股 15:00 收盘后半小时刷收盘价（接口内顺带触发挡位告警）"

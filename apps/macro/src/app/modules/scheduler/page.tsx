@@ -154,9 +154,21 @@ export default function SchedulerPage() {
           </div>
         )}
 
-        <div className="text-xs text-gray-400 bg-gray-900 border border-gray-800 rounded px-3 py-2 mb-4">
-          后端内建定时调度：A 股组（收盘后）与全球组（北京早晨）各一个组任务，顺序更新组内全部数据源。
-          cron 由配置文件固定，UI 仅开放启用/禁用与立即执行。
+        <div className="text-xs text-gray-400 bg-gray-900 border border-gray-800 rounded px-3 py-2 mb-4 space-y-1">
+          <p>
+            后端内建定时调度：A 股组（收盘后）与全球组（北京早晨）各一个组任务，顺序更新组内全部数据源。
+            cron 由配置文件固定，UI 仅开放启用/禁用与立即执行。
+          </p>
+          <p className="text-gray-500">
+            排查：本页看下次/上次运行；执行历史{' '}
+            <code className="text-gray-400">data/scheduler/history.jsonl</code>
+            ；日志{' '}
+            <code className="text-gray-400">logs/scheduler.log</code>
+            （容器内 /app/logs/scheduler.log，也可{' '}
+            <code className="text-gray-400">docker logs macro-backend</code>
+            ）；快照{' '}
+            <code className="text-gray-400">GET /api/macro/scheduler/status</code>
+          </p>
         </div>
 
         {loading && jobs.length === 0 ? (

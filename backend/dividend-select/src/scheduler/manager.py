@@ -22,6 +22,8 @@ logger = setup_logger(__name__)
 # timezone 会落到系统默认时区（容器内为 UTC），与 scheduler 的 timezone 不一致，
 # 导致触发时间偏移 8 小时（如 14:25 UTC = 22:25 北京）。scheduler 与每个 trigger
 # 必须共用同一时区。
+# dow 数字陷阱：APScheduler 3.x 的 CronTrigger 0=周一，不是 crontab 的 0=周日。
+# 工作日必须写 mon-fri（`1-5` 实际是周二到周六）。
 SCHEDULER_TIMEZONE = "Asia/Shanghai"
 
 

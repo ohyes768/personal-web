@@ -18,7 +18,7 @@ from src.utils.logger import setup_logger
 if TYPE_CHECKING:
     from src.scheduler.manager import SchedulerManager
 
-logger = setup_logger(__name__)
+logger = setup_logger("scheduler")
 
 
 async def run_group(ctx: "SchedulerManager", job_id: str) -> dict[str, Any]:
@@ -32,7 +32,7 @@ async def run_group(ctx: "SchedulerManager", job_id: str) -> dict[str, Any]:
     start = now_shanghai()
 
     if spec.get("check_trading_day") and not is_trading_day():
-        logger.info(f"[{job_id}] 非交易日，skip")
+        logger.info(f"[{job_id}] 非交易日，skip date={now_shanghai().date().isoformat()}")
         return {
             "status": "skipped",
             "reason": "non_trading_day",

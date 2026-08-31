@@ -9,7 +9,7 @@ import akshare as ak
 from src.scheduler.timezone import now_shanghai
 from src.utils.logger import setup_logger
 
-logger = setup_logger(__name__)
+logger = setup_logger("scheduler")
 
 # 缓存路径（相对工作目录，与 scheduler 历史同放 data/scheduler/ 下）
 _DEFAULT_CACHE_PATH = Path("data/scheduler/trading_calendar_cache.json")

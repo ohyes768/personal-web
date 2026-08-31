@@ -25,6 +25,7 @@
 
 ```
 GET    /api/scheduler/jobs                    → {"jobs": SchedulerJob[]}
+GET    /api/scheduler/status                 → 排查快照（时区/端口/历史文件/next_run）
 PATCH  /api/scheduler/jobs/{id}   body {"enabled": bool} → SchedulerJob
 POST   /api/scheduler/jobs/{id}/run           → {"job_id": str, "triggered_at": iso}
 GET    /api/scheduler/jobs/{id}/runs?limit=20 → {"job_id": str, "runs": SchedulerJobRun[], "total_returned": int}
@@ -37,7 +38,7 @@ GET    /api/scheduler/jobs/{id}/runs?limit=20 → {"job_id": str, "runs": Schedu
   "id": "a_share_daily",
   "name": "A 股数据日度组",
   "target": "run_group",            // job 类型,固定值,映射到 jobs.JOB_TARGETS
-  "cron": "30 16 * * 1-5",          // Asia/Shanghai,from_crontab 解析
+  "cron": "30 16 * * mon-fri",          // Asia/Shanghai；必须用 mon-fri（APScheduler 数字 1-5 = 周二到周六）
   "enabled": true,
   "check_trading_day": true,        // true 时非 A 股交易日整组 skipped
   "targets": ["/update/china-bonds", "..."],  // 真正要跑的端点路径(有序,顺序执行)
@@ -77,6 +78,10 @@ macro 的 update 端点返回 **HTTP 200 + body `{success, message, data?}`**:
 
 - 配置 `src/scheduler/scheduler.json`;运行历史 `data/scheduler/history.jsonl`;
   交易日历缓存 `data/scheduler/trading_calendar_cache.json`(TTL 30 天,拉取失败退旧缓存,再失败按交易日处理)
+- 应用日志 `logs/service.log` + 定时任务专用 `logs/scheduler.log`(Rotating 5MB×5);
+  容器 stdout 同步一份 → `docker logs macro-backend`
+- 工作日 cron **必须写 `mon-fri`**(或 `0-4`)。APScheduler 3.x 的 dow 数字 0=周一,
+  crontab 习惯的 `1-5` 会被解析成周二到周六,周一整组不会触发。
 - self-call 端口 = `settings.service_port`;依赖 `apscheduler>=3.10,<4.0`
 
 ## 4. Validation & Error Matrix
@@ -99,11 +104,13 @@ macro 的 update 端点返回 **HTTP 200 + body `{success, message, data?}`**:
 
 ## 6. Tests Required
 
-`backend/macro/tests/test_scheduler_*.py`(25 例,新增分组/端点后必须补):
+`backend/macro/tests/test_scheduler_*.py`(新增分组/端点后必须补):
 - `test_scheduler_jobs.py`:run_group 四态聚合、单源失败不中断、URL 拼接契约、非交易日 skip(mock httpx 与 is_trading_day)
 - `test_scheduler_history.py`:append/read_tail roundtrip(items 保留)、坏行跳过
 - `test_scheduler_manager.py`:items 透传落盘、unhandled 异常落 failed
 - cron 修改后:`test_scheduler_cron_human.py` 同步两个预设的中文断言
+- `test_scheduler_cron_weekday.py`:预设 cron 周一必须触发(防 1-5 被当成周二到周六)
+- `test_scheduler_observability.py`:启动 dump next_run、JOB_MISSED 日志、GET status 路径
 
 ## 7. Wrong vs Correct
 
@@ -132,6 +139,19 @@ data/scheduler/history.jsonl   # 运行历史(启停会写回前者的 enabled �
 ```python
 data = resp.json()
 item_status = "success" if resp.status_code == 200 and data.get("success") else "failed"
+```
+
+### Wrong:工作日写成 crontab 的 `1-5`
+
+```
+# ❌ APScheduler 3.x 数字 0=周一，1-5 = 周二到周六，周一整组不触发
+"cron": "30 16 * * 1-5"
+```
+
+### Correct:写 `mon-fri`
+
+```
+"cron": "30 16 * * mon-fri"
 ```
 
 ---

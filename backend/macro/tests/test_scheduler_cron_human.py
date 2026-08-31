@@ -13,9 +13,10 @@ from src.scheduler.cron_human import cron_to_human
 @pytest.mark.parametrize(
     "cron,expected",
     [
-        # scheduler.json 预设：A 股组 16:30 / 全球组 07:30（工作日）
+        # scheduler.json 预设：A 股组 16:30 / 全球组 07:30（工作日，必须 mon-fri）
+        ("30 16 * * mon-fri", "每周一至周五 16:30"),
+        ("30 7 * * mon-fri", "每周一至周五 07:30"),
         ("30 16 * * 1-5", "每周一至周五 16:30"),
-        ("30 7 * * 1-5", "每周一至周五 07:30"),
         # 其他常见模式
         ("0 2 * * 6", "每周六 02:00"),
         ("0 2 1 * *", "每月 1 日 02:00"),
