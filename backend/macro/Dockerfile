@@ -2,9 +2,9 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# 安装系统依赖 curl（slim 镜像默认不带；healthcheck 探针需要）
+# curl：healthcheck 探针；vim：进容器改 JSON / 排障（slim 默认都不带）
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends curl && \
+    apt-get install -y --no-install-recommends curl vim && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 安装 uv
