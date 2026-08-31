@@ -416,7 +416,10 @@ export function buildLineTrace(
       `%{y:${fmt}}${unit}` +
       `<extra></extra>`;
 
-  return {
+  // trace 与 layout 一样要剥显式 undefined：'marker' in trace 会命中
+  // 值为 undefined 的键，Plotly cleanData 随即对它做 'line' in undefined
+  // 抛 TypeError，整图渲染中断且无任何报错（react-plotly.js 吞错）
+  return omitUndefined({
     type: 'scatter',
     mode: showMarkers ? 'lines+markers' : 'lines',
     name: meta.label,
@@ -435,5 +438,5 @@ export function buildLineTrace(
       : undefined,
     hovertemplate,
     connectgaps: false,
-  } as Data;
+  }) as Data;
 }
