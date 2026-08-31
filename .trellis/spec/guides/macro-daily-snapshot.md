@@ -1,8 +1,9 @@
 # Macro Daily Snapshot API Contract
 
-> **Purpose**: 信号首页 · 日频模式的接口契约与跨层对齐约定。改动 3 维度指标清单、15:00 规则或回退语义前必读。
+> **Purpose**: 信号首页 · 日频区块的接口契约与跨层对齐约定。改动 3 维度指标清单、15:00 规则或回退语义前必读。
 >
-> **Last verified**: 2026-08-28
+> **Last verified**: 2026-08-31
+> 信号首页自 2026-08-31 起为单页双区块(月度 4 卡 + 日频 3 卡同屏,MacroSignalTab 挂载即并行请求,无模式切换/懒加载)
 > **Source files**:
 > - `backend/macro/src/services/daily_snapshot_service.py`(`_DAILY_INDICATORS` 指标清单)
 > - `backend/macro/src/api/routes.py`(`GET /daily-snapshot`)
