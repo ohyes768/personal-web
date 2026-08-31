@@ -4,9 +4,10 @@
  * 联动子图容器 — 拆分方案核心：
  * - 每个子图独立 MacroPlot，legend 自动落在本子图上方（buildBaseLayout 顶部横排）
  * - x 轴联动：onRelayout 同步 range / autorange 到所有子图
- * - 防循环：Plotly 程序性 relayout 同样触发事件，靠值比较跳过相同 range；
- *   xRange 用 ref 读取，保证 onRelayout 闭包不因 state 更新而过期
- *   （react-plotly.js 只在 updatePlotly 后重绑事件，闭包可能滞后）
+ * - 防循环：值比较跳过相同 range；xRange 用 ref 读取，保证 onRelayout
+ *   闭包不因 state 更新而过期（react-plotly.js 只在 updatePlotly 后重绑事件）
+ *   注意 buildSubplotLayout 注入 range 时必须拷贝数组 — Plotly 拖拽时会
+ *   原地改写注入的 range，共享引用会让值比较永远相等、联动失效
  */
 import { useCallback, useRef, useState } from 'react';
 import {
@@ -90,6 +91,11 @@ export function LinkedSubplots({
           height={panel.height ?? chartHeightForSubplots(1, compact)}
           emptyMessage={panel.emptyMessage}
           onRelayout={(e) => handleRelayout(panel, e)}
+          onError={(err) => {
+            // react-plotly.js 默认静默吞掉 Plotly.react 抛错，这里至少留痕
+            // eslint-disable-next-line no-console
+            console.warn('[LinkedSubplots] Plotly 更新失败', panel.spec.xAxisKey, err);
+          }}
         />
       ))}
     </div>

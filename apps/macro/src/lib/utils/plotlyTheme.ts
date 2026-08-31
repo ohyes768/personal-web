@@ -45,7 +45,9 @@ export const BASE_PLOT_CONFIG: Partial<Config> = {
     'hoverCompareCartesian',
   ],
   scrollZoom: false,
-  doubleClick: 'reset',
+  // 'reset' 会回到 hidden Tab 首绘时的旧快照（数据切片前，范围错误）；
+  // 'autosize' 双击回到当前数据的自动范围，联动子图复位后天然一致
+  doubleClick: 'autosize',
 };
 
 /** Plotly y 轴 key（最多 6 轴，覆盖 3 子图 × 双轴） */
@@ -280,11 +282,13 @@ export function buildSubplotLayout(opts: {
   };
   if (!mainY) return layout as Partial<Layout>;
 
-  // 独立实例必须自带完整日期轴（刻度/拖拽参照），恒为底部轴
+  // 独立实例必须自带完整日期轴（刻度/拖拽参照），恒为底部轴。
+  // range 必须拷贝：Plotly 会原地改写注入的 range 数组（拖拽缩放时），
+  // 共享引用会污染调用方的 state，导致联动值比较永远相等
   layout[layoutAxisKey(spec.xAxisKey)] = omitUndefined({
     ...buildTimeAxis({ isBottom: true, compact }),
     anchor: mainY.key,
-    range: opts.xRange ?? undefined,
+    range: opts.xRange ? [...opts.xRange] : undefined,
   });
 
   spec.yAxes.forEach((axis, axisIdx) => {
