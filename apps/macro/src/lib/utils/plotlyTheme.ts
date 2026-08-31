@@ -112,6 +112,13 @@ export interface SubplotSpec {
 
 const SHORT_SERIES_MARKER_THRESHOLD = 8;
 
+/** Plotly 会把显式 undefined 当成非法枚举，必须在写入 layout 前剥掉 */
+function omitUndefined<T extends Record<string, unknown>>(obj: T): T {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, value]) => value !== undefined),
+  ) as T;
+}
+
 /** 布局轴字段名：y → yaxis，y2 → yaxis2 */
 export function layoutAxisKey(axisKey: AxisKey | XAxisKey): string {
   if (axisKey === 'x' || axisKey === 'y') {
@@ -165,14 +172,15 @@ export function buildBaseLayout(opts?: {
 }): Partial<Layout> {
   const compact = opts?.compact ?? false;
   const margin = {
-    l: compact ? 48 : 64,
-    r: compact ? 24 : 36,
-    t: compact ? 48 : 56,
-    b: compact ? 40 : 48,
+    l: compact ? 52 : 68,
+    r: compact ? 36 : 52,
+    t: compact ? 56 : 72,
+    b: compact ? 44 : 52,
     ...(opts?.margin ?? {}),
   };
 
   return {
+    autosize: true,
     paper_bgcolor: PLOTLY_DARK.paper_bgcolor,
     plot_bgcolor: PLOTLY_DARK.plot_bgcolor,
     font: {
@@ -208,20 +216,21 @@ export function buildTimeAxis(opts: {
   title?: string;
 }): Record<string, unknown> {
   const { isBottom, matches, compact = false, title } = opts;
-  return {
-    title: isBottom ? (title ?? '日期') : '',
+  return omitUndefined({
+    title: isBottom ? (title ?? '日期') : undefined,
     showgrid: true,
     gridcolor: PLOTLY_DARK.gridColor,
     color: PLOTLY_DARK.fontColor,
-    automargin: true,
+    // 只让底部日期轴自动撑边距；所有轴都 automargin 会把绘图区挤成 0
+    automargin: isBottom,
     showspikes: true,
     spikemode: 'across',
     spikesnap: 'cursor',
     spikethickness: 1,
     spikecolor: '#6b7280',
     nticks: compact ? 4 : 8,
-    ...(matches ? { matches } : {}),
-  };
+    matches,
+  });
 }
 
 export function buildValueAxis(opts: {
@@ -243,7 +252,7 @@ export function buildValueAxis(opts: {
     ? { text: opts.title, font: { color: opts.titleColor, size: 12 } }
     : { text: opts.title, font: { size: 12 } };
 
-  return {
+  return omitUndefined({
     title: titleObj,
     side: opts.side ?? 'left',
     overlaying: opts.overlaying,
@@ -251,7 +260,8 @@ export function buildValueAxis(opts: {
     showgrid: opts.showgrid ?? true,
     gridcolor: PLOTLY_DARK.gridColor,
     color: opts.axisColor,
-    automargin: true,
+    // overlaying 轴再开 automargin 会和主轴抢边距，绘图区容易塌掉
+    automargin: !opts.overlaying,
     zeroline: opts.zeroline ?? false,
     zerolinecolor: opts.zerolinecolor,
     zerolinewidth: opts.zerolinewidth,
@@ -259,7 +269,7 @@ export function buildValueAxis(opts: {
     domain: opts.domain,
     anchor: opts.anchor,
     separatethousands: true,
-  };
+  });
 }
 
 /**
@@ -273,26 +283,34 @@ export function buildLinkedSubplotLayout(opts: {
 }): Partial<Layout> {
   const { subplots, compact = false } = opts;
   const count = Math.min(3, Math.max(1, subplots.length)) as 1 | 2 | 3;
-  const domains = buildSubplotDomains(count);
   const base = buildBaseLayout({ compact, margin: opts.margin });
-  const layout: Record<string, unknown> = { ...base };
+  const layout: Record<string, unknown> = {
+    ...base,
+    // 用 grid 分摊子图高度。手动 domain + matches + 全轴 automargin
+    // 会在 hidden Tab（宽高为 0）首次 newPlot 时把绘图区算成空白。
+    grid: {
+      rows: count,
+      columns: 1,
+      pattern: 'independent',
+      roworder: 'top to bottom',
+      ygap: compact ? 0.1 : 0.08,
+    },
+  };
 
   subplots.forEach((subplot, idx) => {
-    const domain = domains[idx] ?? ([0, 1] as [number, number]);
     const isBottom = idx === subplots.length - 1;
     const mainY = subplot.yAxes[0];
     if (!mainY) return;
 
     const xLayoutKey = layoutAxisKey(subplot.xAxisKey);
-    layout[xLayoutKey] = {
+    layout[xLayoutKey] = omitUndefined({
       ...buildTimeAxis({
         isBottom,
         matches: idx === 0 ? undefined : 'x',
         compact,
       }),
       anchor: mainY.key,
-      domain: [0, 1],
-    };
+    });
 
     subplot.yAxes.forEach((axis, axisIdx) => {
       const isMain = axisIdx === 0;
@@ -307,8 +325,6 @@ export function buildLinkedSubplotLayout(opts: {
         zerolinecolor: axis.zerolinecolor,
         zerolinewidth: axis.zerolinewidth,
         range: axis.range,
-        // overlaying 轴继承主轴 domain，重复设置会导致子图错位
-        domain: isMain ? domain : undefined,
         anchor: subplot.xAxisKey,
       });
     });
@@ -329,10 +345,10 @@ export function buildMultiAxisLayout(opts: MultiAxisLayoutOpts): Partial<Layout>
 
   const base = buildBaseLayout({
     margin: {
-      l: 64,
-      r: legendOrientation === 'v' ? 160 : 36,
-      t: legendOrientation === 'h' ? 56 : 40,
-      b: 48,
+      l: 68,
+      r: legendOrientation === 'v' ? 160 : 52,
+      t: legendOrientation === 'h' ? 72 : 48,
+      b: 52,
       ...margin,
     },
   });

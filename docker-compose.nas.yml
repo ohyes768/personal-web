@@ -237,6 +237,7 @@ services:
       - "127.0.0.1:3001:3001"
     environment:
       - NODE_ENV=production
+      - HOSTNAME=0.0.0.0
       - NEXT_PUBLIC_API_BASE_URL=/
       # 不带 /api 前缀，BFF catch-all 自己拼 /api/<path>
       - BACKEND_URL=http://macro-backend:8094

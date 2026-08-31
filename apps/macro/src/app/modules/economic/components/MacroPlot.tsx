@@ -1,7 +1,7 @@
 /**
  * 宏观页 Plotly 统一包装：
  * - hidden Tab 显示后自动 resize
- * - 统一 config / 默认高度
+ * - 把 height/autosize 写入 layout，避免 hidden 容器首次 newPlot 得到 0 高图
  * - 不拼业务 traces，只负责渲染壳
  */
 'use client';
@@ -52,11 +52,17 @@ export function MacroPlot({
     );
   }
 
+  const mergedLayout: Partial<Layout> = {
+    ...layout,
+    autosize: true,
+    height: layout.height ?? resolvedHeight,
+  };
+
   return (
     <div ref={containerRef} className={className} style={{ width: '100%' }}>
       <Plot
         data={data}
-        layout={layout}
+        layout={mergedLayout}
         config={{ ...BASE_PLOT_CONFIG, ...config }}
         style={{ width: '100%', height: resolvedHeight }}
         className="w-full"
