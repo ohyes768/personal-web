@@ -25,7 +25,7 @@
 #   /rss/api/rss-relay/*      → rss-relay-backend:8095/api/*  (freshrss 订阅 + agent 推送)
 #   前端 BFF /rss/api/rss-relay/<slug> 已废弃，nginx 直转后端
 #   /macro/*     → macro-frontend:3001   (basePath = /macro)
-#   /api/macro/*    → macro-frontend:3001   (前端 BFF catch-all 再转 macro-backend:8094/api/*)
+#   /api/macro/*    → macro-backend:8094/api/*  (nginx 直转后端；macro 前端 BFF 已删除)
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
@@ -224,7 +224,8 @@ services:
 
   # ---------------------------------------------------------------------------
   # macro 前端（Next.js，basePath = /macro）
-  # BFF route.ts: /api/macro/<path> → ${BACKEND_URL}/api/<path>
+  # API 请求不经前端：nginx 把 /api/macro/* 直转 macro-backend（见 nginx/web.conf），
+  # 前端代码无 BFF 路由，也不读 BACKEND_URL
   # ---------------------------------------------------------------------------
   macro-frontend:
     image: macro-frontend:latest
@@ -238,8 +239,6 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_BASE_URL=/
-      # 不带 /api 前缀，BFF catch-all 自己拼 /api/<path>
-      - BACKEND_URL=http://macro-backend:8094
     networks:
       - app-net
     depends_on:
