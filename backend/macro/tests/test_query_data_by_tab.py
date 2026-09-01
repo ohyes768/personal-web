@@ -302,3 +302,56 @@ def test_get_data_bonds_tab_is_400():
     with pytest.raises(HTTPException) as exc:
         get_data_by_tab(tab="bonds")
     assert exc.value.status_code == 400
+
+
+def test_treasury_exchange_aligns_shorter_fx_to_us_dates(tmp_path):
+    """汇率短于美债时必须 reindex 到 dates。
+
+    阿里云 comkm 大约 10 年，美债从 2000 起。不对齐则前端按索引切 1Y
+    会切到汇率数组末尾之后，下图空白。
+    """
+    import math
+
+    service = _make_service(tmp_path)
+    us_dates = pd.bdate_range("2020-01-02", "2026-08-28").strftime("%Y-%m-%d").tolist()
+    fx_dates = pd.bdate_range("2025-01-02", "2026-08-28").strftime("%Y-%m-%d").tolist()
+    _write_csv(
+        tmp_path / "us_treasuries.csv",
+        us_dates,
+        {
+            "美债3m": [4.0] * len(us_dates),
+            "美债2y": [4.1] * len(us_dates),
+            "美债10y": [4.2] * len(us_dates),
+        },
+    )
+    _write_csv(
+        tmp_path / "exchange_rates.csv",
+        fx_dates,
+        {
+            "美元指数": [99.0] * len(fx_dates),
+            "美元人民币": [7.1] * len(fx_dates),
+            "美元日元": [148.0] * len(fx_dates),
+            "美元欧元": [0.92] * len(fx_dates),
+        },
+    )
+    _write_csv(
+        tmp_path / "china_bond.csv",
+        us_dates,
+        {"中国国债收益率10年": [2.0] * len(us_dates)},
+    )
+
+    data = service.query_data_by_tab(
+        "treasury-exchange", start_date="2020-01-01", end_date="2026-08-28"
+    )
+
+    n = len(data["dates"])
+    assert n == len(us_dates)
+    dollar = data["exchange_rates"]["dollar_index"]
+    assert len(dollar) == n
+    assert dollar[-1] == pytest.approx(99.0)
+    # 1Y 窗口落在 dates 末尾；对齐后这段必须有值
+    year_start = n - 260
+    recent = dollar[year_start:]
+    assert any(v is not None and not (isinstance(v, float) and math.isnan(v)) for v in recent)
+    first = dollar[0]
+    assert first is None or (isinstance(first, float) and math.isnan(first))

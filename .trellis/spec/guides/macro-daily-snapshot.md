@@ -50,7 +50,7 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 
 ## 4. 取数路径(重要)
 
-**不要**用 `query_data_by_tab` 组装日频数据:其 `us_treasuries`/`exchange_rates` 段不 reindex 到 union 轴(序列与 `dates` 可能不等长,按索引 zip 会错位)。
+**不要**用 `query_data_by_tab` 组装日频数据:该接口 `dates` 在含美债 Tab 上是美债交易日,不是日频卡用的 volume 并集;`us_treasuries` 本身不 reindex 到任意 union 轴。日频按索引 zip 仍会错位。`exchange_rates` 已对齐查询轴(与 china_bond/commodities 相同)。
 日频走 `DataService` 原始 load 方法(`load_dr007`/`load_volume`/`load_data('exchange_rates')` 等),自己 dropna + asof(≤ 所选日期最后一个值)。
 
 ## 5. 跨层对齐约定(改指标必须三处同步)

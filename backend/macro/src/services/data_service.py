@@ -1049,12 +1049,18 @@ class DataService:
                 jp_aligned = jp_full[(jp_full.index >= start_date) & (jp_full.index <= end_date)]
                 result["jp_treasuries"]["10y"] = jp_aligned[jp_col].tolist()
 
-        # 加载汇率数据
+        # 加载汇率数据（对齐到日期轴；阿里云约 10 年，短于美债 2000 起）
         if _want("exchange_rates") and not exchange_data.empty:
             exchange_data = exchange_data.ffill()
-            exchange_filtered = exchange_data[(exchange_data.index >= start_date) & (exchange_data.index <= end_date)]
 
-            # 汇率数据列名映射
+            # 与 commodities/china_bond 一致：reindex 到 target_index，否则
+            # 前端按 dates 索引切 1Y 会切到汇率数组末尾之后，下图空白
+            target_index = axis_index
+            exchange_full = exchange_data.reindex(target_index, method="ffill")
+            exchange_filtered = exchange_full[
+                (exchange_full.index >= start_date) & (exchange_full.index <= end_date)
+            ]
+
             col_mapping = {
                 "美元指数": "dollar_index",
                 "美元人民币": "usd_cny",
