@@ -11,6 +11,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AlertLevels } from '@/lib/types';
+import { formatBeijingMdHm } from '@/lib/formatTs';
 
 export interface AlertLevelBarProps {
   code: string;
@@ -112,13 +113,9 @@ function fmtPct(p: number): string {
   return `${sign}${p.toFixed(1)}%`;
 }
 
-/** ISO 字符串 → "MM-DD HH:MM"（本地时区），无效入参返回 null */
+/** ISO 字符串 → "MM-DD HH:MM"（固定北京时间），无效入参返回 null */
 function fmtPriceUpdatedAt(iso: string | null | undefined): string | null {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const pad = (n: number) => n.toString().padStart(2, '0');
-  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatBeijingMdHm(iso);
 }
 
 function fmtPePb(pe?: number | null, pb?: number | null): string | null {

@@ -17,6 +17,7 @@ import { Modal } from './shared-ui/Modal';
 import { Button } from './shared-ui/Button';
 import { schedulerApi } from '@/lib/api';
 import type { SchedulerJob, SchedulerJobRun } from '@/lib/types';
+import { formatBeijingTs } from '@/lib/formatTs';
 
 export interface SchedulerSettingsModalProps {
   isOpen: boolean;
@@ -31,11 +32,7 @@ const STATUS_META: Record<SchedulerJobRun['status'], { label: string; cls: strin
 
 function formatTs(iso?: string | null): string {
   if (!iso) return '-';
-  // 形如 "2026-08-05T15:30:00+08:00"
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatBeijingTs(iso) ?? iso;
 }
 
 function durationOf(run: SchedulerJobRun): string {

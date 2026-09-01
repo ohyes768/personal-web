@@ -64,6 +64,7 @@ from src.services.shareholder_financial_reader import ShareholderReader, Financi
 from src.services import weekly_comparison
 from src.data.financial_fetcher import FinancialFetcher
 from src.utils.helpers import save_csv_data, DATA_DIR, CODE_DTYPE
+from src.utils.timezone import fromtimestamp_shanghai_iso
 from src.api.helpers.aux_data import (
     REFRESH_INTERVAL_DAYS,
     aux_file_path,
@@ -474,7 +475,7 @@ async def get_stocks(
     last_updated = None
     if data_reader.check_csv_exists():
         timestamp = data_reader.get_file_mtime()
-        last_updated = datetime.fromtimestamp(timestamp).isoformat()
+        last_updated = fromtimestamp_shanghai_iso(timestamp)
 
     return StockListResponse(
         total=len(items),
@@ -567,7 +568,7 @@ async def get_stats():
     csv_mtime = None
     timestamp = data_reader.get_file_mtime()
     if timestamp is not None:
-        csv_mtime = datetime.fromtimestamp(timestamp).isoformat()
+        csv_mtime = fromtimestamp_shanghai_iso(timestamp)
 
     return StatsResponse(
         total_stocks=len(df),
@@ -658,7 +659,7 @@ async def get_m120_stocks(
     if m120_service.check_m120_file_exists():
         timestamp = m120_service.get_m120_file_mtime()
         if timestamp:
-            last_updated = datetime.fromtimestamp(timestamp).isoformat()
+            last_updated = fromtimestamp_shanghai_iso(timestamp)
 
     return M120ListResponse(
         total=len(items),
@@ -714,7 +715,7 @@ async def get_prices(
     last_updated = None
     timestamp = m120_service.get_realtime_price_file_mtime()
     if timestamp:
-        last_updated = datetime.fromtimestamp(timestamp).isoformat()
+        last_updated = fromtimestamp_shanghai_iso(timestamp)
 
     return PriceListResponse(total=len(items), items=items, last_updated=last_updated)
 
@@ -739,8 +740,6 @@ async def get_m120_status(
     if m120_service is None or data_reader is None or filter_service is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
 
-    from datetime import datetime
-
     file_exists = m120_service.check_m120_file_exists()
     last_updated = None
 
@@ -749,8 +748,7 @@ async def get_m120_status(
         if m120_file.exists():
             timestamp = m120_service.get_m120_file_mtime()
             if timestamp:
-                last_updated_dt = datetime.fromtimestamp(timestamp)
-                last_updated = last_updated_dt.isoformat()
+                last_updated = fromtimestamp_shanghai_iso(timestamp)
 
     # 读取当前股票列表 + 按 min_yield 筛（与前端展示口径对齐）
     all_stocks_df = data_reader.read_csv()
@@ -1197,7 +1195,7 @@ async def get_pe_data(
 
     last_updated = None
     if pe_service.get_file_mtime():
-        last_updated = datetime.fromtimestamp(pe_service.get_file_mtime()).isoformat()
+        last_updated = fromtimestamp_shanghai_iso(pe_service.get_file_mtime())
 
     return StockPEResponse(
         total=len(items),
@@ -1530,7 +1528,7 @@ async def get_board_info(
     last_updated = None
     if board_file.exists():
         timestamp = board_file.stat().st_mtime
-        last_updated = datetime.fromtimestamp(timestamp).isoformat()
+        last_updated = fromtimestamp_shanghai_iso(timestamp)
 
     return BoardInfoResponse(
         total=len(items),
@@ -1697,7 +1695,7 @@ async def get_dividend_status():
     completed_count = 0
     if file_exists:
         timestamp = dividend_file.stat().st_mtime
-        last_updated = datetime.fromtimestamp(timestamp).isoformat()
+        last_updated = fromtimestamp_shanghai_iso(timestamp)
         try:
             completed_count = len(pd.read_csv(dividend_file))
         except Exception:
@@ -1749,9 +1747,9 @@ async def get_dividend_status():
     fhps_info = {
         "cache_path": str(DATA_DIR / "fhps" / "fhps_20251231.csv"),
         "cache_exists": (DATA_DIR / "fhps" / "fhps_20251231.csv").exists(),
-        "cache_mtime": datetime.fromtimestamp(
+        "cache_mtime": fromtimestamp_shanghai_iso(
             (DATA_DIR / "fhps" / "fhps_20251231.csv").stat().st_mtime
-        ).isoformat() if (DATA_DIR / "fhps" / "fhps_20251231.csv").exists() else None,
+        ) if (DATA_DIR / "fhps" / "fhps_20251231.csv").exists() else None,
         "year_end": "20251231",
         "note": "每次 /dividend/refresh 都会强制重拉（~30s），无 mtime TTL",
     }

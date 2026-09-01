@@ -18,6 +18,7 @@ import type {
   DividendStock,
   TechnicalIndicators,
 } from '@/lib/types';
+import { formatBeijingTs } from '@/lib/formatTs';
 
 export interface AlertSettingsModalProps {
   isOpen: boolean;
@@ -62,10 +63,7 @@ function levelsToForm(levels?: AlertLevels | null): AlertLevels {
 
 function formatUpdatedAt(iso?: string | null): string {
   if (!iso) return '从未设置';
-  const d = new Date(iso);
-  if (isNaN(d.getTime())) return iso;
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return formatBeijingTs(iso) ?? iso;
 }
 
 // 对接文档（外部 agent 调用 batch 接口的说明，常量避免每次渲染重建）

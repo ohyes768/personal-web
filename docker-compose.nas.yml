@@ -53,6 +53,7 @@ services:
       - dividend-logs:/app/logs
       - dividend-config:/app/config
     environment:
+      - TZ=Asia/Shanghai
       - LOG_LEVEL=INFO
       - DIVIDEND_PORT=8092
       - ALIYUN_ACCESS_KEY=${DIVIDEND_ALIYUN_ACCESS_KEY:-}

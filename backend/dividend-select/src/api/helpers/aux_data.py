@@ -8,15 +8,16 @@ from pathlib import Path
 from typing import Optional
 
 from ...utils.helpers import DATA_DIR
+from ...utils.timezone import fromtimestamp_shanghai_iso
 
 REFRESH_INTERVAL_DAYS = 90
 
 
 def file_mtime_iso(path: Path) -> Optional[str]:
-    """返回文件最后修改时间的 ISO 格式字符串"""
+    """返回文件最后修改时间的 ISO 格式字符串（北京时间，带 +08:00）"""
     if not path.exists():
         return None
-    return datetime.fromtimestamp(path.stat().st_mtime).isoformat()
+    return fromtimestamp_shanghai_iso(path.stat().st_mtime)
 
 
 def days_since_update(path: Path) -> Optional[int]:

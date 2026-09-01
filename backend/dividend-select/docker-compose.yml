@@ -10,6 +10,7 @@ services:
       - ./logs:/app/logs
       - ./config:/app/config
     environment:
+      - TZ=Asia/Shanghai
       - LOG_LEVEL=INFO
       - DIVIDEND_PORT=8092
     networks:
