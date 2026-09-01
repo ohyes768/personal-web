@@ -37,7 +37,7 @@ export function HsgtFundFlowChart({ data }: HsgtFundFlowChartProps) {
       buildLineTrace(
         {
           label: '南向净流入',
-          color: '#22d3ee',
+          color: '#ec4899',
           unit: '亿元',
           yaxis: 'y2',
           dash: 'dash',
@@ -60,8 +60,8 @@ export function HsgtFundFlowChart({ data }: HsgtFundFlowChartProps) {
         {
           key: 'y2',
           title: '南向净流入 (亿元)',
-          titleColor: '#22d3ee',
-          axisColor: '#22d3ee',
+          titleColor: '#ec4899',
+          axisColor: '#ec4899',
           side: 'right',
           overlaying: 'y',
           zeroline: true,
