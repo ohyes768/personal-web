@@ -10,6 +10,13 @@ import type { DailyIndicator, DailySnapshot } from '@/lib/modules/macro-signal/t
 import type { TabType } from '@/lib/types/economic';
 import { GROUP_META, DAILY_GROUPS, getIndicatorMeta, INDICATOR_LINK_MAP } from './constants';
 
+/** 日频模式分组标题覆盖:monetary_policy 在日频语境下指代资金面而非货币政策立场,
+ *  展示为「流动性」(与汇率/市场情绪形态一致,纯数据无档位)。
+ *  月度模式该组标题仍走 GROUP_META 的「货币政策」。 */
+const DAILY_GROUP_TITLES: Partial<Record<keyof typeof GROUP_META, string>> = {
+  monetary_policy: '流动性',
+};
+
 interface DailyCardGridProps {
   snapshot: DailySnapshot;
   /** 指标跳转回调(若有该指标的曲线 Tab),由父级透传 */
@@ -98,6 +105,7 @@ export function DailyCardGrid({ snapshot, onJumpToTab }: DailyCardGridProps) {
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {DAILY_GROUPS.map(({ key, indicators: order }) => {
         const meta = GROUP_META[key];
+        const title = DAILY_GROUP_TITLES[key] ?? meta.title;
         const group = snapshot.groups[key];
         const indicators = group?.indicators ?? [];
         // 按常量声明顺序渲染(后端返回顺序一致,此处显式排序防漂移)
@@ -115,7 +123,7 @@ export function DailyCardGrid({ snapshot, onJumpToTab }: DailyCardGridProps) {
             <div className="mb-2 pb-2 border-b border-gray-800">
               <div className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${meta.calendarColor}`}></span>
-                <span className="text-xs text-gray-400">{meta.title}</span>
+                <span className="text-xs text-gray-400">{title}</span>
                 <span className="ml-auto text-xs text-gray-500">
                   {ordered.length} 项{asOf ? ` · 截至 ${asOf.slice(5)}` : ''}
                 </span>

@@ -2,7 +2,7 @@
 
 从 DataService 的原始 CSV 序列按 asof 语义取「≤ 所选日期最近可得值」。
 不走 query_data_by_tab:其 us_treasuries/exchange_rates 段不 reindex 到
-union 轴(与 dates 可能不等长),且会组装整 Tab 全字段,这里只要 7 项指标。
+union 轴(与 dates 可能不等长),且会组装整 Tab 全字段,这里只要 8 项指标。
 """
 from datetime import datetime, time as dtime
 from typing import Any, Dict, List, Optional, Tuple
@@ -25,6 +25,7 @@ _DATES_LIMIT = 60
 #   其余为 DataService 上的专用 load 方法名
 _DAILY_INDICATORS: Dict[str, List[Tuple[str, str, str]]] = {
     "monetary_policy": [
+        ("dr001", "load_dr001", "dr001"),
         ("dr007", "load_dr007", "dr007"),
     ],
     "exchange_rate": [
@@ -42,7 +43,7 @@ _DAILY_INDICATORS: Dict[str, List[Tuple[str, str, str]]] = {
 
 
 class DailySnapshotService:
-    """组装日频快照(3 维度 7 指标)"""
+    """组装日频快照(3 维度 8 指标)"""
 
     def __init__(self, data_service: DataService):
         self._ds = data_service

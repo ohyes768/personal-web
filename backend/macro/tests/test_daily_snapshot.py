@@ -65,11 +65,11 @@ def test_explicit_date_takes_values(service: DailySnapshotService):
     g = snap["groups"]
     assert set(g.keys()) == {"monetary_policy", "exchange_rate", "risk_appetite"}
 
-    dr007 = g["monetary_policy"]["indicators"][0]
-    assert dr007["key"] == "dr007"
-    assert dr007["value"] == pytest.approx(1.65)
-    assert dr007["prev_value"] == pytest.approx(1.66)
-    assert dr007["data_date"] == "2026-08-27"
+    monetary = {i["key"]: i for i in g["monetary_policy"]["indicators"]}
+    assert set(monetary.keys()) == {"dr001", "dr007"}
+    assert monetary["dr007"]["value"] == pytest.approx(1.65)
+    assert monetary["dr007"]["prev_value"] == pytest.approx(1.66)
+    assert monetary["dr007"]["data_date"] == "2026-08-27"
 
     ex = {i["key"]: i for i in g["exchange_rate"]["indicators"]}
     assert set(ex.keys()) == {"dollar_index", "usd_cny", "ted_spread", "hibor_overnight"}
@@ -86,7 +86,7 @@ def test_explicit_date_takes_values(service: DailySnapshotService):
 def test_fallback_when_date_beyond_data(service: DailySnapshotService):
     """查询晚于最新数据的日期(如 15:00 后当日未入库)→ asof 回退 + 标注实际日期"""
     snap = service.get_daily_snapshot("2026-08-28")
-    ind = snap["groups"]["monetary_policy"]["indicators"][0]
+    ind = snap["groups"]["monetary_policy"]["indicators"][1]  # dr007 仍取自 CSV
     assert snap["date"] == "2026-08-28"
     assert ind["value"] == pytest.approx(1.65)
     assert ind["data_date"] == "2026-08-27"
@@ -145,8 +145,11 @@ def test_empty_volume_falls_back_to_today(tmp_path: Path):
     snap = service.get_daily_snapshot(now=now)
     assert snap["date"] == "2026-08-28"
     assert snap["dates"] == ["2026-08-28"]
-    ind = snap["groups"]["monetary_policy"]["indicators"][0]
-    assert ind["value"] is None and ind["data_date"] is None
+    # monetary_policy 组 DR001 + DR007 都应为空值(无数据)
+    inds = snap["groups"]["monetary_policy"]["indicators"]
+    assert len(inds) == 2
+    assert {i["key"] for i in inds} == {"dr001", "dr007"}
+    assert all(i["value"] is None and i["data_date"] is None for i in inds)
 
 
 def test_route_rejects_invalid_date_format():
@@ -156,3 +159,30 @@ def test_route_rejects_invalid_date_format():
     with pytest.raises(HTTPException) as exc_info:
         route(date="2026/08/28")
     assert exc_info.value.status_code == 400
+
+
+def test_dr001_failure_does_not_affect_dr007(service: DailySnapshotService):
+    """DR001 实时拉取失败 → DR001 value 为 null,DR007 仍正常返回"""
+    import pandas as pd
+    from unittest.mock import patch
+    from src.services import dr001_service
+
+    empty_df = pd.DataFrame(columns=["dr001"])
+
+    # 让 DR001 服务返回空 DataFrame(模拟网络失败或字段缺失)
+    fake_service = dr001_service.DR001Service()
+
+    async def _fetch_empty():
+        return empty_df
+
+    with patch.object(
+        dr001_service, "get_dr001_service", return_value=fake_service
+    ), patch.object(fake_service, "fetch_today", side_effect=_fetch_empty):
+        snap = service.get_daily_snapshot("2026-08-27")
+
+    monetary = {i["key"]: i for i in snap["groups"]["monetary_policy"]["indicators"]}
+    assert monetary["dr001"]["value"] is None
+    assert monetary["dr001"]["data_date"] is None
+    # DR007 不受影响
+    assert monetary["dr007"]["value"] == pytest.approx(1.65)
+    assert monetary["dr007"]["data_date"] == "2026-08-27"

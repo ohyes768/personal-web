@@ -33,9 +33,9 @@ export const GROUP_ORDER: DimensionKey[] = [
   'risk_appetite',
 ];
 
-/** 日频模式卡片:3 维度 7 指标(key 对齐后端 _DAILY_INDICATORS,数组顺序即展示顺序) */
+/** 日频模式卡片:3 维度 8 指标(key 对齐后端 _DAILY_INDICATORS,数组顺序即展示顺序) */
 export const DAILY_GROUPS: Array<{ key: DailyDimensionKey; indicators: string[] }> = [
-  { key: 'monetary_policy', indicators: ['dr007'] },
+  { key: 'monetary_policy', indicators: ['dr001', 'dr007'] },
   { key: 'exchange_rate',   indicators: ['dollar_index', 'usd_cny', 'ted_spread', 'hibor_overnight'] },
   { key: 'risk_appetite',   indicators: ['volume', 'turnover', 'margin'] },
 ];
@@ -46,6 +46,7 @@ export const DAILY_GROUPS: Array<{ key: DailyDimensionKey; indicators: string[] 
  */
 export const INDICATOR_LABELS: Record<string, { label: string; unit?: string; digits?: number }> = {
   // 货币政策
+  dr001:              { label: 'DR001',              unit: '%',  digits: 3 },
   dr007:              { label: 'DR007',              unit: '%',  digits: 3 },
   lpr_1y:             { label: '1年期 LPR',          unit: '%',  digits: 2 },
   lpr_5y:             { label: '5年期 LPR',          unit: '%',  digits: 2 },
@@ -201,7 +202,6 @@ export const INDICATOR_LINK_MAP: Record<string, TabType> = {
   usd_cny:      'treasury-exchange',
   ted_spread:   'rates',
   // 日频快照指标 → 对应曲线 Tab
-  dr007:        'rates',
   hibor_overnight: 'liquidity-risk',
   volume:       'market-sentiment',
   turnover:     'market-sentiment',

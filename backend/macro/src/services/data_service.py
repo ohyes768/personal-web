@@ -495,6 +495,23 @@ class DataService:
             logger.error(f"加载 DR007 失败: {e}")
             return pd.DataFrame()
 
+    def load_dr001(self) -> pd.DataFrame:
+        """拉取当日 DR001 加权利率(实时外部数据,不落 CSV)。
+
+        数据源:prr-md.json(中国货币网质押式回购当日快照,只提供当日值)。
+        返回单行 DataFrame(index=date, columns=['dr001']),与 load_dr007 形态一致。
+        失败/字段缺失返回空 DataFrame(保留列结构)。
+        """
+        import asyncio
+        from src.services.dr001_service import get_dr001_service
+
+        service = get_dr001_service()
+        try:
+            return asyncio.run(service.fetch_today())
+        except Exception as e:
+            logger.error(f"加载 DR001 失败: {e}")
+            return pd.DataFrame(columns=["dr001"])
+
     def save_volume_data(self, df: pd.DataFrame, path=None) -> None:
         """保存两市成交额到 volume.csv（合并现有数据，append + 去重）。"""
         self._save_market_sentiment_data(df, "volume", "total_amount_yi", path)
