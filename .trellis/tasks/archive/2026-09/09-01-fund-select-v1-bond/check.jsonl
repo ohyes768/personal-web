@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查对比组件是否只改文案/泛型，有没有改坏 dividend 源"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "验收：主表列、年费、利率债占比、筛选 query 在前后端是否一致"}
+{"file": ".trellis/spec/backend/dividend-select/backend/error-handling.md", "reason": "刷新单只失败不阻断、空列表与 404 行为"}
+{"file": ".trellis/spec/backend/dividend-select/backend/quality-guidelines.md", "reason": "单测覆盖与禁止模式"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/scheduler.md", "reason": "只拉配置名单，没有全市场扫描"}

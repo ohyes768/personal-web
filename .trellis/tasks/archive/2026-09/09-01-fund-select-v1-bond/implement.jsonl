@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "对比三件套从 dividend 复制后泛型化，避免再发明一套交互"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "screen DTO 跨 FastAPI / 代理 / FundTable / CompareTable，字段需对齐"}
+{"file": ".trellis/spec/backend/dividend-select/backend/index.md", "reason": "FastAPI 目录、config、错误处理与 dividend-select 对齐"}
+{"file": ".trellis/spec/backend/dividend-select/backend/directory-structure.md", "reason": "backend 模块划分参考"}
+{"file": ".trellis/spec/backend/global-macro-fin/backend/scheduler.md", "reason": "定时任务与手动刷新对齐已有 scheduler.json 形态"}
