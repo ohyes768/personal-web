@@ -57,7 +57,7 @@ async def refresh_dividend(ctx: "SchedulerManager", job_id: str) -> dict[str, An
     return await _self_call(
         ctx,
         job_id,
-        target_path="/refresh",
+        target_path="/dividend/refresh",
         body=params,
         interpret_409_as_skipped=True,
     )
