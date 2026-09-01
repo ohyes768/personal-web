@@ -34,7 +34,7 @@ NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
   ./scripts/deploy-nas.sh <target> [side] [options]
 
 target:
-  dividend | douyin | rss-relay | macro | nginx | all
+  dividend | douyin | rss-relay | macro | fund-select | nginx | all
   （nginx 只同步 nginx/web.conf 到 nginx 容器并 reload，不走 build/up，忽略 side）
 
 side:（默认 both）
@@ -69,6 +69,7 @@ options:
   ./scripts/deploy-nas.sh rss-relay both
   ./scripts/deploy-nas.sh macro both
   ./scripts/deploy-nas.sh macro backend
+  ./scripts/deploy-nas.sh fund-select both
   ./scripts/deploy-nas.sh nginx              # 同步 nginx/web.conf + reload（忽略 side）
   ./scripts/deploy-nas.sh all
   ./scripts/deploy-nas.sh dividend frontend --no-pull
@@ -149,7 +150,7 @@ sync_nginx() {
 get_services() {
     local target="$1" side="$2"
     case "$target" in
-        dividend|douyin|rss-relay|macro)
+        dividend|douyin|rss-relay|macro|fund-select)
             case "$side" in
                 backend)  echo "${target}-backend" ;;
                 frontend) echo "${target}-frontend" ;;
@@ -164,10 +165,10 @@ get_services() {
             if [[ "$side" != "both" ]]; then
                 echo "提示: target=all 时 side 强制 both（忽略 '$side'）" >&2
             fi
-            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend"
+            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend fund-select-backend fund-select-frontend"
             ;;
         *)
-            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | all，实际 '$target'" >&2
+            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | fund-select | all，实际 '$target'" >&2
             exit 1
             ;;
     esac
@@ -182,6 +183,7 @@ get_buildx_config() {
         douyin-frontend)    echo "apps/douyin:apps/douyin/Dockerfile:douyin-frontend" ;;
         rss-relay-frontend) echo "apps/rss-relay:apps/rss-relay/Dockerfile:rss-relay-frontend" ;;
         macro-frontend) echo "apps/macro:apps/macro/Dockerfile:macro-frontend" ;;
+        fund-select-frontend) echo "apps/fund-select:apps/fund-select/Dockerfile:fund-select-frontend" ;;
         *) return 1 ;;
     esac
 }
