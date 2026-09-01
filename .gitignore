@@ -72,3 +72,10 @@ dividend_export_*.csv
 
 # Douyin runtime status (submodule data that leaked to main repo root)
 status.json
+
+# fund-select runtime data (SQLite + akshare JSON cache)
+backend/fund-select/data/
+backend/fund-select/cache/
+backend/fund-select/logs/
+backend/fund-select/.coverage
+backend/fund-select/.pytest_cache/

@@ -1,0 +1,46 @@
+[project]
+name = "fund-select"
+version = "0.1.0"
+description = "债基筛选平台后端（31 只精选基金，FastAPI + akshare）"
+requires-python = ">=3.11"
+dependencies = [
+    "akshare>=1.14.0",
+    "pyyaml>=6.0.0",
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pandas>=2.0.0",
+    "requests>=2.31.0",
+    "python-dotenv>=1.0.0",
+    "sqlalchemy>=2.0.0",
+    # 定时任务：APScheduler 3.x（不要 4.x，API 不兼容）
+    "apscheduler>=3.10,<4.0",
+    "httpx2[dev]>=2.12.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+]
+
+# 应用而非库：不打包安装，uvicorn 从项目根目录直接跑 src.main:app
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

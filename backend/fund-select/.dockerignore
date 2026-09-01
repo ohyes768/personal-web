@@ -1,0 +1,39 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# 测试（不进镜像，CI 用另起 image）
+tests/
+
+# 数据 / 缓存 / 日志（运行时由 volume 接管）
+data/
+logs/
+cache/
+
+# 环境变量（避免泄漏本地密钥）
+.env
+.env.local
+
+# VCS / IDE
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 构建产物
+dist/
+build/
+
+# 文档（与运行无关）
+README.md
+docs/

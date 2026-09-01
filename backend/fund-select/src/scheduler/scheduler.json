@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "jobs": [
+    {
+      "id": "daily_fund_refresh",
+      "name": "每日刷新配置名单基金",
+      "target": "refresh_configured",
+      "cron": "5 7 * * *",
+      "enabled": true,
+      "description": "每日 07:05 拉取 config/funds.yaml 名单（净值/基础信息/季报持仓/费率）"
+    }
+  ]
+}

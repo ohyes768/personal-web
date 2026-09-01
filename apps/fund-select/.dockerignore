@@ -1,0 +1,36 @@
+# Node / 构建产物
+node_modules/
+.next/
+out/
+dist/
+build/
+
+# 测试 / 覆盖率
+coverage/
+*.lcov
+.nyc_output/
+
+# VCS / IDE
+.git/
+.gitignore
+.gitattributes
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# 环境变量（避免泄漏本地密钥；NEXT_PUBLIC_* 走 build args 而不是 .env）
+.env
+.env.local
+.env.*.local
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# 文档 / 杂项
+README.md
+docs/

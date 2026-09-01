@@ -1,0 +1,94 @@
+/**
+ * 筛选状态 + URL 双向同步
+ *
+ * 无阈值 = 参数不出现在 URL；默认 sort=size_yi&order=desc 也不带参。
+ * 例：?min_age=3&min_size_yi=2&max_dd_3y=5&min_mgr_exp=5&sort=size_yi&order=desc
+ */
+'use client';
+
+import { useCallback, useMemo } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+
+import { DEFAULT_FILTERS, type FundFilters } from './types';
+
+type FilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'sort' | 'order';
+
+const NUMERIC_KEYS: FilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp'];
+
+/** 从 URL 解析筛选（异常值回落默认） */
+export function parseFiltersFromSearch(search: URLSearchParams): FundFilters {
+  const filters: FundFilters = { ...DEFAULT_FILTERS };
+  for (const key of NUMERIC_KEYS) {
+    const raw = search.get(key);
+    if (raw === null || raw === '') continue;
+    const v = Number(raw);
+    if (Number.isFinite(v) && v >= 0) {
+      (filters[key] as number | null) = v;
+    }
+  }
+  const sort = search.get('sort');
+  if (sort) filters.sort = sort;
+  const order = search.get('order');
+  if (order === 'asc' || order === 'desc') filters.order = order;
+  return filters;
+}
+
+/** 筛选 → URL 查询串（默认值省略） */
+export function filtersToSearch(filters: FundFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const key of NUMERIC_KEYS) {
+    const v = filters[key] as number | null;
+    if (v !== null && v !== undefined) params.set(key, String(v));
+  }
+  if (filters.sort !== DEFAULT_FILTERS.sort) params.set('sort', filters.sort);
+  if (filters.order !== DEFAULT_FILTERS.order) params.set('order', filters.order);
+  return params;
+}
+
+export function useFilters() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const filters = useMemo(
+    () => parseFiltersFromSearch(searchParams),
+    [searchParams]
+  );
+
+  /** 更新一个维度并同步 URL（push，可回退） */
+  const setFilter = useCallback((key: FilterKey, value: number | string | null) => {
+    const next: FundFilters = { ...filters };
+    if (key === 'sort') {
+      next.sort = value as string;
+    } else if (key === 'order') {
+      next.order = (value === 'asc' ? 'asc' : 'desc');
+    } else {
+      (next[key] as number | null) = value === null || value === '' ? null : Number(value);
+    }
+    const params = filtersToSearch(next);
+    const qs = params.toString();
+    router.push(qs ? `?${qs}` : location.pathname, { scroll: false });
+  }, [filters, router]);
+
+  /** 排序切换：同字段翻转方向，异字段重置为 desc */
+  const toggleSort = useCallback((field: string) => {
+    if (filters.sort === field) {
+      setFilter('order', filters.order === 'desc' ? 'asc' : 'desc');
+    } else {
+      const next: FundFilters = { ...filters, sort: field, order: 'desc' };
+      const qs = filtersToSearch(next).toString();
+      router.push(qs ? `?${qs}` : location.pathname, { scroll: false });
+    }
+  }, [filters, setFilter, router]);
+
+  /** 清空全部筛选 */
+  const clearAll = useCallback(() => {
+    router.push(location.pathname, { scroll: false });
+  }, [router]);
+
+  /** 已激活的筛选维度数（chip 用） */
+  const activeCount = NUMERIC_KEYS.filter(
+    k => (filters[k] as number | null) !== null
+  ).length;
+
+  return { filters, setFilter, toggleSort, clearAll, activeCount };
+}

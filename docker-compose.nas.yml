@@ -26,12 +26,15 @@
 #   前端 BFF /rss/api/rss-relay/<slug> 已废弃，nginx 直转后端
 #   /macro/*     → macro-frontend:3001   (basePath = /macro)
 #   /api/macro/*    → macro-backend:8094/api/*  (nginx 直转后端；macro 前端 BFF 已删除)
+#   /funds/*         → fund-select-frontend:3005  (basePath = /funds，apps/fund-select/)
+#   /api/funds/*   → fund-select-backend:8095/api/*  (nginx 直转后端；fund-select 前端 BFF 仅本地)
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
 #   douyin-data / douyin-logs
 #   rss-relay-data
 #   macro-data / macro-logs
+#   fund-select-data / fund-select-cache / fund-select-config / fund-select-logs
 # =============================================================================
 
 services:
@@ -249,6 +252,57 @@ services:
       macro-backend:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # fund-select 后端（债基筛选，backend/fund-select/）
+  # ---------------------------------------------------------------------------
+  fund-select-backend:
+    build:
+      context: ./backend/fund-select
+    container_name: fund-select-backend
+    restart: unless-stopped
+    expose:
+      - "8095"
+    volumes:
+      - fund-select-data:/app/data
+      - fund-select-cache:/app/cache
+      - fund-select-config:/app/config
+      - fund-select-logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - SERVER_PORT=8095
+      - LOG_LEVEL=INFO
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:${SERVER_PORT:-8095}/api/funds/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # fund-select 前端（Next.js 15，basePath='/funds'，apps/fund-select/）
+  # BFF 用 BACKEND_URL 找到后端 service name
+  # ---------------------------------------------------------------------------
+  fund-select-frontend:
+    image: fund-select-frontend:latest
+    build:
+      context: ./apps/fund-select
+      dockerfile: Dockerfile
+    container_name: fund-select-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3005:3005"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=/funds
+      - BACKEND_URL=http://fund-select-backend:8095
+    networks:
+      - app-net
+    depends_on:
+      fund-select-backend:
+        condition: service_healthy
+
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -277,3 +331,11 @@ volumes:
     name: macro-data
   macro-logs:
     name: macro-logs
+  fund-select-data:
+    name: fund-select-data
+  fund-select-cache:
+    name: fund-select-cache
+  fund-select-config:
+    name: fund-select-config
+  fund-select-logs:
+    name: fund-select-logs

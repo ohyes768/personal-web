@@ -4,18 +4,20 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## 项目概述
 
-个人财富网站，5 个独立 Next.js 前端 + 3 个 Python 后端。
+个人财富网站，6 个独立 Next.js 前端 + 4 个 Python 后端。
 ```
 apps/
 ├── dividend/      # A 股高股息分析（Next.js 15, React 19, Tailwind CSS v4）
 ├── douyin/         # 抖音视频文字转写
 ├── macro/       # 宏观经济
-└── news/           # 新闻联播分析
+├── news/           # 新闻联播分析
+└── fund-select/  # 债基筛选平台
 
 backend/
 ├── dividend-select/  # 股息率后端（FastAPI, akshare, 阿里云行情 API）
 ├── douyin-processor/  # 抖音后端
-└── macro/ # 宏观金融后端
+├── macro/ # 宏观金融后端
+└── fund-select/  # 债基筛选后端
 ```
 
 ## 常用命令
@@ -45,6 +47,15 @@ python -m uvicorn src.server.main:app --reload --host 0.0.0.0 --port 8093
 # macro
 cd backend/macro
 ./.venv/bin/uvicorn src.main:app --reload --host 0.0.0.0 --port 8094
+
+# fund-select（已在 monorepo 内）
+cd backend/fund-select
+uv sync
+python -m pytest tests/ -v
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8095
+# fund-select 前端
+cd apps/fund-select
+pnpm dev          # 端口 3005，访问 /funds
 ```
 
 ### Windows 开发脚本
