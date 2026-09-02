@@ -8,6 +8,7 @@
 这种情况直接走 danjuanfunds 接口 + 自取字段，避免整个 refresh task 失败。
 """
 import re
+from threading import local as _thread_local
 
 import akshare as ak
 import pandas as pd
@@ -21,6 +22,19 @@ USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
 )
+
+# 复用 Session：thread-local 保 multi-threaded 安全；单线程下零开销
+_session_pool = _thread_local()
+
+
+def _http() -> requests.Session:
+    """thread-local Session 单例，复用 TCP 连接 + 默认 UA。"""
+    s = getattr(_session_pool, "session", None)
+    if s is None:
+        s = requests.Session()
+        s.headers.update({"User-Agent": USER_AGENT})
+        _session_pool.session = s
+    return s
 
 # akshare 列子集缺失时，fallback 走 danjuanfunds 接口，自行 mapping 字段
 _FALLBACK_FIELDS = {
@@ -77,9 +91,8 @@ def fetch_basic(code: str) -> dict:
 def _fetch_basic_fallback(code: str) -> dict:
     """直接打 danjuanfunds 接口取已有字段。type_desc='互认基金' 标准化为 'QDII-互认'
     以对接 screen_stock 的 LIKE 'QDII%' 谓词。"""
-    r = requests.get(
+    r = _http().get(
         f"https://danjuanfunds.com/djapi/fund/{code}",
-        headers={"User-Agent": USER_AGENT},
         timeout=15,
     )
     data = r.json().get("data") or {}

@@ -27,6 +27,15 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger("fund-select.refresh_service")
 
+# 雪球 achievement_xq 中文列名 → ORM 字段 + 类型。集中维护，新增列只改这里。
+ACHIEVEMENT_COLUMNS: dict[str, tuple[str, str]] = {
+    "业绩类型": ("period_kind", "text"),
+    "周期": ("period", "text"),
+    "本产品区间收益": ("ret", "numeric"),
+    "本产品最大回撒": ("max_dd", "numeric"),
+    "周期收益同类排名": ("peer_rank", "text"),
+}
+
 
 def snapshot_fund(
     code: str,
@@ -150,15 +159,16 @@ def _replace_achievement(db: Session, code: str, df, as_of_date) -> None:
         return
     rows = []
     for _, r in df.iterrows():
-        rows.append(FundAchievementRank(
-            code=code,
-            period_kind=str(r.get("业绩类型", "")).strip(),
-            period=str(r.get("周期", "")).strip(),
-            ret=_to_float(r.get("本产品区间收益")),
-            max_dd=_to_float(r.get("本产品最大回撒")),
-            peer_rank=str(r.get("周期收益同类排名", "")).strip() or None,
-            as_of_date=as_of_date,
-        ))
+        kwargs: dict = {"code": code, "as_of_date": as_of_date}
+        for col_zh, (field, kind) in ACHIEVEMENT_COLUMNS.items():
+            v = r.get(col_zh)
+            if kind == "numeric":
+                kwargs[field] = _to_float(v)
+            elif field == "peer_rank":
+                kwargs[field] = (str(v).strip() if v is not None else "") or None
+            else:  # period_kind / period（NOT NULL）
+                kwargs[field] = str(v if v is not None else "").strip()
+        rows.append(FundAchievementRank(**kwargs))
     db.add_all(rows)
 
 

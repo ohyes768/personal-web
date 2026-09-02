@@ -135,6 +135,72 @@ class TestFetchBasic:
                 out = fetch_basic("000000")
         assert out == {}
 
+    def test_session_reused_across_calls(self):
+        """thread-local Session 复用：连续 fallback 调 _http() 拿到同一个 Session 实例"""
+        # mock fund_individual 失败 + http get 任意返回
+        with patch(
+            "src.data.fund_basic_fetcher.ak.fund_individual_basic_info_xq",
+            side_effect=KeyError("missing"),
+        ), patch.object(fund_basic_fetcher.requests, "get"):
+            s1 = fund_basic_fetcher._http()
+            s2 = fund_basic_fetcher._http()
+        assert s1 is s2
+        assert s1.headers["User-Agent"] == fund_basic_fetcher.USER_AGENT
+
+
+class TestReplaceAchievementGenericMapping:
+    """_replace_achievement 走 ACHIEVEMENT_COLUMNS 通用映射"""
+
+    def test_numeric_and_text_columns(self, db_session):
+        """ret/max_dd 列数值化，period_kind/period/peer_rank 字符串化"""
+        from src.services.refresh_service import _replace_achievement
+        from src.db.models import FundAchievementRank
+        import pandas as pd
+        df = pd.DataFrame({
+            "业绩类型": ["年度业绩", "年度业绩"],
+            "周期": ["2025", "2024"],
+            "本产品区间收益": ["6.86", 1.7],
+            "本产品最大回撒": ["13.96", 21.02],
+            "周期收益同类排名": ["4406/5118", ""],
+        })
+        _replace_achievement(db_session, "000001", df, _ref_date())
+        db_session.commit()
+
+        rows = db_session.query(FundAchievementRank).filter_by(code="000001").all()
+        assert len(rows) == 2
+        sorted_rows = sorted(rows, key=lambda r: r.period)
+        r2024 = sorted_rows[0]  # period '2024': ret=1.7, peer_rank=''
+        r2025 = sorted_rows[1]  # period '2025': ret=6.86, peer_rank='4406/5118'
+        # numeric 列转 float
+        assert r2024.ret == 1.7
+        assert r2024.max_dd == 21.02
+        assert r2025.ret == 6.86
+        # period_kind / period 强制 str
+        assert r2024.period_kind == "年度业绩"
+        assert r2025.period == "2025"
+        # peer_rank 空字符串落 None（可空）；非空保留
+        assert r2024.peer_rank is None
+        assert r2025.peer_rank == "4406/5118"
+
+    def test_idempotent_replace(self, db_session):
+        """重复调用覆盖旧行，不累积"""
+        from src.services.refresh_service import _replace_achievement
+        from src.db.models import FundAchievementRank
+        import pandas as pd
+        df = pd.DataFrame({"业绩类型": ["a"], "周期": ["1y"], "本产品区间收益": [10.0]})
+        _replace_achievement(db_session, "000002", df, _ref_date())
+        db_session.commit()  # 模拟生产：每只基金 commit 一次
+        _replace_achievement(db_session, "000002", df, _ref_date())
+        db_session.commit()
+
+        rows = db_session.query(FundAchievementRank).filter_by(code="000002").all()
+        assert len(rows) == 1
+
+
+def _ref_date():
+    from datetime import date
+    return date(2026, 9, 1)
+
 
 class TestFundUniverse:
     def test_load_configured_codes(self):
