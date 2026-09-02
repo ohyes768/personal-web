@@ -22,7 +22,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import router
+from src.api.routes import router, router_stock
 from src.db.session import init_db
 from src.scheduler.manager import SchedulerManager
 from src.utils.config import get_server_host, get_server_port
@@ -68,6 +68,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api/funds")
+app.include_router(router_stock, prefix="/api/funds")
 
 
 if __name__ == "__main__":

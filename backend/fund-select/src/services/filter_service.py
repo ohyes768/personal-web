@@ -3,10 +3,13 @@
 
 宇宙 = 库内 is_active 基金（配置名单已采集成功的）。
 不按 category==bond 过滤：31 只里含混合/QDII，照常展示。
+
+screen      — 通用筛选（债基 / 全用）
+screen_stock — 仅股票型 + QDII（股票 tab 专用，fund_type LIKE 限定）
 """
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance
@@ -82,6 +85,65 @@ class FilterService:
         }
         getter = key_map[sort_key]
         # dd_3y 用户视角：默认 desc = 回撤绝对值从大到小；asc = 小到大（最优在前）
+        items.sort(
+            key=lambda it: (getter(it) is None, getter(it) if getter(it) is not None else 0),
+            reverse=descending,
+        )
+        return {"total": len(items), "items": items}
+
+    def screen_stock(
+        self,
+        min_age: Optional[float] = None,
+        min_size_yi: Optional[float] = None,
+        max_dd_3y: Optional[float] = None,
+        min_mgr_exp: Optional[float] = None,
+        sort: str = "ret_5y",
+        order: str = "desc",
+    ) -> dict:
+        """股票 tab 筛选：fund_type 限定股票型-* / QDII* / QDII。
+
+        与 screen 主体逻辑同；仅追加 fund_type 谓词 + 默认 ret_5y desc（业绩优先）。
+        """
+        q = (
+            select(Fund, FundPerformance, FundFees, FundHoldingsBond)
+            .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
+            .outerjoin(FundFees, Fund.code == FundFees.code)
+            .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
+            .where(Fund.is_active == True)  # noqa: E712
+            .where(
+                or_(
+                    Fund.fund_type.like("股票型-%"),
+                    Fund.fund_type.like("QDII%"),
+                    Fund.fund_type == "QDII",
+                )
+            )
+        )
+        if min_age is not None:
+            q = q.where(Fund.age_years >= min_age)
+        if min_size_yi is not None:
+            q = q.where(Fund.size_yi >= min_size_yi)
+        if max_dd_3y is not None:
+            q = q.where(FundPerformance.dd_3y >= -abs(max_dd_3y))
+        if min_mgr_exp is not None:
+            q = q.where(Fund.mgr_experience_years >= min_mgr_exp)
+
+        rows = self.db.execute(q).all()
+        items = [self._to_dto(f, p, fee, hold) for f, p, fee, hold in rows]
+        sort_key = sort if sort in SORT_COLUMNS else "ret_5y"
+        descending = order != "asc"
+
+        key_map = {
+            "size_yi": lambda it: it["size_yi"],
+            "age_years": lambda it: it["age_years"],
+            "mgr_experience_years": lambda it: it["mgr_experience_years"],
+            "dd_3y": lambda it: None if it["dd_3y"] is None else abs(it["dd_3y"]),
+            "ret_1y": lambda it: it["ret_1y"],
+            "ret_3y": lambda it: it["ret_3y"],
+            "ret_5y": lambda it: it["ret_5y"],
+            "fee_annual": lambda it: it["fee_annual"],
+            "code": lambda it: it["code"],
+        }
+        getter = key_map[sort_key]
         items.sort(
             key=lambda it: (getter(it) is None, getter(it) if getter(it) is not None else 0),
             reverse=descending,

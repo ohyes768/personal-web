@@ -1,5 +1,8 @@
 """
-API 路由定义（前缀 /api/funds）
+API 路由定义
+
+主路由：/api/funds/*（债基 + 通用，对应 /funds）
+股票路由：/api/funds/stock/*（股票型 + QDII，对应 /funds/stock）
 """
 import json
 from typing import Optional
@@ -9,15 +12,23 @@ from fastapi.responses import Response
 from sqlalchemy import func, select
 
 from src.api.models import (
+    AchievementRankDTO,
     FundDetailResponse,
     RefreshResponse,
     RefreshStatusResponse,
     ScreenResponse,
     StatsResponse,
 )
-from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance, RefreshRun
+from src.db.models import (
+    Fund,
+    FundAchievementRank,
+    FundFees,
+    FundHoldingsBond,
+    FundPerformance,
+    RefreshRun,
+)
 from src.db.session import get_db
-from src.scheduler.tasks import refresh_configured_funds_sync
+from src.scheduler.tasks import refresh_configured_funds_sync, refresh_stock_funds_sync
 from src.services.export_service import export_csv
 from src.services.filter_service import FilterService
 from src.utils.logger import setup_logger
@@ -25,6 +36,7 @@ from src.utils.logger import setup_logger
 logger = setup_logger("fund-select.api")
 
 router = APIRouter()
+router_stock = APIRouter(prefix="/stock", tags=["stock"])
 
 
 @router.get("/health", tags=["system"])
@@ -145,3 +157,156 @@ async def fund_detail(code: str, db=Depends(get_db)):
     if detail is None:
         raise HTTPException(status_code=404, detail=f"基金不存在: {code}")
     return detail
+
+
+# ──────────────────────────────────────────────────────────────────
+# 股票 tab 路由（/api/funds/stock/*）
+# 与现有 /api/funds/* 平列；fund_type 限定股票型-* / QDII
+# ──────────────────────────────────────────────────────────────────
+
+def _stock_screen_params(
+    min_age: Optional[float] = Query(None, ge=0, le=100),
+    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+    max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
+    min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
+    sort: str = Query("ret_5y"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+):
+    """股票筛选参数共享"""
+    return {
+        "min_age": min_age, "min_size_yi": min_size_yi,
+        "max_dd_3y": max_dd_3y, "min_mgr_exp": min_mgr_exp,
+        "sort": sort, "order": order,
+    }
+
+
+@router_stock.get("/screen", response_model=ScreenResponse)
+async def stock_screen(
+    min_age: Optional[float] = Query(None, ge=0, le=100),
+    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+    max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
+    min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
+    sort: str = Query("ret_5y"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    db=Depends(get_db),
+):
+    """股票 tab 筛选（fund_type 限定股票型-/QDII）"""
+    return FilterService(db).screen_stock(
+        min_age=min_age, min_size_yi=min_size_yi,
+        max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp,
+        sort=sort, order=order,
+    )
+
+
+@router_stock.get("/export/csv")
+async def stock_export_csv(
+    min_age: Optional[float] = Query(None, ge=0, le=100),
+    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+    max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
+    min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
+    sort: str = Query("ret_5y"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    db=Depends(get_db),
+):
+    """股票 tab CSV 导出"""
+    filters = {
+        "min_age": min_age, "min_size_yi": min_size_yi, "max_dd_3y": max_dd_3y,
+        "min_mgr_exp": min_mgr_exp, "sort": sort, "order": order,
+    }
+    content, filename = export_csv(filters, FilterService(db), kind="stock")
+    return Response(
+        content="﻿" + content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router_stock.get("/refresh", response_model=RefreshResponse)
+async def stock_refresh(
+    background: BackgroundTasks,
+    limit: Optional[int] = Query(None, ge=1, le=100),
+):
+    """手动触发股票 tab 名单刷新（后台执行）"""
+    import uuid
+    task_id = str(uuid.uuid4())
+    background.add_task(refresh_stock_funds_sync, limit=limit, preset_task_id=task_id)
+    return RefreshResponse(task_id=task_id, status="started")
+
+
+@router_stock.get("/refresh/status", response_model=RefreshStatusResponse)
+async def stock_refresh_status(
+    task_id: Optional[str] = Query(None),
+    db=Depends(get_db),
+):
+    """股票 tab 刷新进度（复用 RefreshRun 表）"""
+    q = select(RefreshRun)
+    if task_id:
+        q = q.where(RefreshRun.task_id == task_id)
+    else:
+        q = q.order_by(RefreshRun.started_at.desc()).limit(1)
+    run = db.execute(q).scalars().first()
+    if run is None:
+        raise HTTPException(status_code=404, detail="无刷新记录")
+    errors = []
+    if run.errors:
+        try:
+            errors = json.loads(run.errors)
+        except (json.JSONDecodeError, TypeError):
+            errors = []
+    return RefreshStatusResponse(
+        task_id=run.task_id, status=run.status, total=run.total,
+        completed=run.completed, failed=run.failed, errors=errors,
+    )
+
+
+@router_stock.get("/stats", response_model=StatsResponse)
+async def stock_stats(db=Depends(get_db)):
+    """股票 tab 库内概况（限定 fund_type）"""
+    base = select(Fund).where(Fund.is_active == True).where(  # noqa: E712
+        (Fund.fund_type.like("股票型-%")) | (Fund.fund_type.like("QDII%")) | (Fund.fund_type == "QDII")
+    )
+    total = db.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
+    fund_codes = {r.code for r in db.execute(base).scalars()}
+    with_perf = db.execute(
+        select(func.count()).select_from(FundPerformance).where(FundPerformance.code.in_(fund_codes))
+    ).scalar() or 0 if fund_codes else 0
+    with_fees = db.execute(
+        select(func.count()).select_from(FundFees).where(FundFees.code.in_(fund_codes))
+    ).scalar() or 0 if fund_codes else 0
+    with_hold = db.execute(
+        select(func.count()).select_from(FundHoldingsBond).where(FundHoldingsBond.code.in_(fund_codes))
+    ).scalar() or 0 if fund_codes else 0
+    last_run = db.execute(
+        select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
+    ).scalars().first()
+    return StatsResponse(
+        total=total,
+        with_performance=with_perf,
+        with_fees=with_fees,
+        with_holdings=with_hold,
+        last_refresh_at=last_run.finished_at if last_run else None,
+    )
+
+
+@router_stock.get("/{code}", response_model=FundDetailResponse)
+async def stock_fund_detail(code: str, db=Depends(get_db)):
+    """单只股票基金详情（含业绩排名）"""
+    base_detail = FilterService(db).get_detail(code)
+    if base_detail is None:
+        raise HTTPException(status_code=404, detail=f"基金不存在: {code}")
+    # 附加 achievement_ranks
+    rows = db.execute(
+        select(FundAchievementRank)
+        .where(FundAchievementRank.code == code)
+        .order_by(FundAchievementRank.period_kind, FundAchievementRank.period)
+    ).scalars().all()
+    base_detail["achievement_ranks"] = [
+        AchievementRankDTO(
+            period_kind=r.period_kind,
+            period=r.period,
+            ret=r.ret,
+            peer_rank=r.peer_rank,
+        )
+        for r in rows
+    ]
+    return base_detail

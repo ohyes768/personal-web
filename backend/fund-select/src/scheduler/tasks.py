@@ -17,7 +17,7 @@ from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance, Ref
 from src.db.session import SessionLocal
 from src.scheduler.daily_refresh import bootstrap_from_csv
 from src.services.refresh_service import persist_snapshot, snapshot_fund
-from src.utils.config import PROJECT_ROOT
+from src.utils.config import PROJECT_ROOT, get_stock_funds_config_path
 from src.utils.logger import setup_logger
 
 logger = setup_logger("fund-select.tasks")
@@ -89,6 +89,66 @@ def _update_progress(db: Session, run: RefreshRun, completed: int, failed: int, 
     if errors:
         run.errors = _errors_json(errors)
     db.commit()
+
+
+def refresh_stock_funds_sync(
+    limit: int | None = None,
+    use_cache: bool = True,
+    preset_task_id: str | None = None,
+) -> dict:
+    """同步刷新股票型 + QDII 名单（读 config/funds_stock.yaml）。
+
+    与 refresh_configured_funds_sync 骨架一致：
+    - 单只失败重试 3 次后跳过
+    - 每只立即 commit（断点续传）
+    - 进度写入 RefreshRun 表
+    """
+    task_id = preset_task_id or str(uuid.uuid4())
+    codes = load_fund_codes(get_stock_funds_config_path())
+    if limit:
+        codes = codes[:limit]
+
+    db = SessionLocal()
+    try:
+        run = RefreshRun(task_id=task_id, status="running", total=len(codes))
+        db.add(run)
+        db.commit()
+
+        if not codes:
+            _finish_run(db, run, errors=["股票基金配置名单为空"])
+            return {"task_id": task_id, "total": 0, "completed": 0, "failed": 0}
+
+        mgr_worktime, mgr_company = fetch_manager_table(use_cache=use_cache)
+
+        completed = 0
+        failed = 0
+        errors: list[str] = []
+        for i, code in enumerate(codes, 1):
+            snap = None
+            last_err = None
+            for attempt in range(1, MAX_RETRY_PER_FUND + 1):
+                try:
+                    snap = snapshot_fund(code, mgr_worktime, mgr_company)
+                    break
+                except Exception as e:
+                    last_err = str(e)[:150]
+                    logger.warning("[stock %d/%d] %s 第 %d 次失败: %s", i, len(codes), code, attempt, last_err)
+            if snap is None:
+                failed += 1
+                errors.append(f"{code}: {last_err}")
+                _update_progress(db, run, completed, failed, errors)
+                continue
+
+            persist_snapshot(db, snap)
+            db.commit()
+            completed += 1
+            _update_progress(db, run, completed, failed, errors)
+            logger.info("[stock %d/%d] ✓ %s %s", i, len(codes), code, snap.get("name", "")[:20])
+
+        _finish_run(db, run, completed, failed, errors, final_status="done")
+        return {"task_id": task_id, "total": len(codes), "completed": completed, "failed": failed}
+    finally:
+        db.close()
 
 
 def _finish_run(db: Session, run: RefreshRun, completed: int = 0, failed: int = 0,

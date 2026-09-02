@@ -1,7 +1,7 @@
 """
 单只基金快照 + 刷新进度跟踪（移植 fund_screen_31.py 流程）
 
-单只流程：基础信息 → 净值 → 东财季报持仓 → 费率（经理表提前一次拉好）
+单只流程：基础信息 → 净值 → 东财季报持仓 → 费率 → [股票型/QDII] 业绩排名
 """
 import re
 from datetime import UTC, date, datetime
@@ -9,12 +9,19 @@ from datetime import UTC, date, datetime
 import pandas as pd
 from sqlalchemy.orm import Session
 
+from src.data.achievement_fetcher import fetch_achievement
 from src.data.fee_fetcher import fetch_fees
 from src.data.fund_basic_fetcher import _clean, fetch_basic, parse_size
 from src.data.holdings_fetcher import analyze_holdings, fetch_bond_hold
 from src.data.manager_fetcher import fetch_manager_table
 from src.data.nav_fetcher import fetch_nav
-from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance
+from src.db.models import (
+    Fund,
+    FundAchievementRank,
+    FundFees,
+    FundHoldingsBond,
+    FundPerformance,
+)
 from src.services.performance_service import compute_performance
 from src.utils.logger import setup_logger
 
@@ -29,7 +36,7 @@ def snapshot_fund(
     holdings_year: str | None = None,
 ) -> dict:
     """采集单只基金全量数据，返回待入库 dict。失败抛异常。"""
-    out: dict = {"code": code}
+    out: dict = {"code": code, "achievement": None}
     ref = today if today is not None else pd.Timestamp.now().normalize()
     year = holdings_year or str(ref.year - 1)  # 默认取上一完整年度季报
 
@@ -76,6 +83,17 @@ def snapshot_fund(
     # 4. 费率
     out["fees"] = fetch_fees(code)
 
+    # 5. 业绩排名（仅股票型 + QDII，避免对债基空跑）
+    fund_type = out["fund_type"]
+    if fund_type.startswith("股票型") or fund_type.startswith("QDII") or fund_type == "QDII":
+        try:
+            ach_df = fetch_achievement(code)
+            if not ach_df.empty:
+                out["achievement"] = ach_df
+                out["achievement_as_of_date"] = ref.date()
+        except Exception as e:
+            logger.warning("achievement_xq 失败 %s: %s", code, str(e)[:150])
+
     out["is_active"] = True
     return out
 
@@ -110,3 +128,39 @@ def persist_snapshot(db: Session, snap: dict) -> None:
     hold = snap.get("holdings")
     if hold:
         db.merge(FundHoldingsBond(code=code, updated_at=datetime.now(UTC), **hold))
+
+    # 业绩排名：delete + bulk insert，幂等覆盖
+    ach_df = snap.get("achievement")
+    if ach_df is not None:
+        _replace_achievement(db, code, ach_df, snap["achievement_as_of_date"])
+
+
+def _replace_achievement(db: Session, code: str, df, as_of_date) -> None:
+    """delete 该 code 旧行 + bulk insert 新行。空 df 仅清空。"""
+    db.query(FundAchievementRank).filter(FundAchievementRank.code == code).delete()
+    if df.empty:
+        return
+    rows = []
+    for _, r in df.iterrows():
+        rows.append(FundAchievementRank(
+            code=code,
+            period_kind=str(r.get("业绩类型", "")).strip(),
+            period=str(r.get("周期", "")).strip(),
+            ret=_to_float(r.get("本产品区间收益")),
+            max_dd=_to_float(r.get("本产品最大回撒")),
+            peer_rank=str(r.get("周期收益同类排名", "")).strip() or None,
+            as_of_date=as_of_date,
+        ))
+    db.add_all(rows)
+
+
+def _to_float(v) -> float | None:
+    """雪球 ret/max_dd 可能是 str 或 NaN。"""
+    if v is None:
+        return None
+    try:
+        f = float(v)
+        from math import isnan
+        return None if isnan(f) else f
+    except (TypeError, ValueError):
+        return None

@@ -80,6 +80,14 @@ class FundDetailResponse(BaseModel):
     nav_date: Optional[date] = None
     fees: FeeDTO = FeeDTO()
     holdings: Optional[HoldingsDTO] = None
+    achievement_ranks: list["AchievementRankDTO"] = []
+
+
+class AchievementRankDTO(BaseModel):
+    period_kind: str
+    period: str
+    ret: Optional[float] = None
+    peer_rank: Optional[str] = None
 
 
 class RefreshResponse(BaseModel):

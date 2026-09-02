@@ -30,16 +30,23 @@ CSV_COLUMNS = [
 def export_csv(
     filters: dict,
     filter_service: FilterService,
+    kind: str = "bond",
 ) -> tuple[str, str]:
-    """生成 CSV 内容 + 文件名。UTF-8 BOM 便于 Excel 直接打开。"""
-    result = filter_service.screen(**filters)
+    """生成 CSV 内容 + 文件名。UTF-8 BOM 便于 Excel 直接打开。
+
+    kind = "bond"  调 FilterService.screen（债基/通用）
+    kind = "stock" 调 FilterService.screen_stock（股票型 + QDII）
+    """
+    method = filter_service.screen_stock if kind == "stock" else filter_service.screen
+    result = method(**filters)
     buf = io.StringIO()
     writer = csv.writer(buf)
     writer.writerow([label for _, label in CSV_COLUMNS])
     for item in result["items"]:
         writer.writerow([_fmt(item.get(key)) for key, _ in CSV_COLUMNS])
 
-    filename = f"funds_{date.today().strftime('%Y%m%d')}.csv"
+    prefix = "stock_funds" if kind == "stock" else "funds"
+    filename = f"{prefix}_{date.today().strftime('%Y%m%d')}.csv"
     return buf.getvalue(), filename
 
 

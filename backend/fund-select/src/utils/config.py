@@ -34,3 +34,11 @@ def get_log_level() -> str:
 
 def get_funds_config_path() -> Path:
     return CONFIG_DIR / "funds.yaml"
+
+
+def get_stock_funds_config_path() -> Path:
+    """股票基金配置（股票型 + QDII，与债基并列的 demo 名额）
+
+    与 funds.yaml 同结构 (version + funds)，由 refresh_stock_funds_sync 读取。
+    """
+    return CONFIG_DIR / "funds_stock.yaml"
