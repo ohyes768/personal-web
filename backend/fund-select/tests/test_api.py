@@ -48,6 +48,26 @@ class TestScreen:
         assert client.get("/api/funds/screen?min_age=-1").status_code == 422
         assert client.get("/api/funds/screen?order=up").status_code == 422
 
+    def test_stock_screen_does_not_include_bond_seed(self, client):
+        """股票 yaml 在夹具里为空；债基种子不得出现在 /stock/screen。"""
+        r = client.get("/api/funds/stock/screen")
+        assert r.status_code == 200
+        assert r.json()["total"] == 0
+        assert r.json()["items"] == []
+
+
+class TestStats:
+    def test_bond_stats_total_is_universe(self, client):
+        r = client.get("/api/funds/stats")
+        assert r.status_code == 200
+        assert r.json()["total"] == 3  # 000001/000002/000004
+
+    def test_stock_stats_empty_when_stock_universe_unpatched(self, client):
+        """seeded_db 把股票 yaml 打成空名单，股票 stats 不得把债基算进去。"""
+        r = client.get("/api/funds/stock/stats")
+        assert r.status_code == 200
+        assert r.json()["total"] == 0
+
 
 class TestDetail:
     def test_detail_found(self, client):

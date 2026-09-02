@@ -1,15 +1,15 @@
 """
 API 路由定义
 
-主路由：/api/funds/*（债基 + 通用，对应 /funds）
-股票路由：/api/funds/stock/*（股票型 + QDII，对应 /funds/stock）
+主路由：/api/funds/*（债基，对应 /funds，宇宙 = funds.yaml）
+股票路由：/api/funds/stock/*（对应 /funds/stock，宇宙 = funds_stock.yaml）
 """
 import json
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from fastapi.responses import Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from src.api.models import (
     AchievementRankDTO,
@@ -20,11 +20,7 @@ from src.api.models import (
     StatsResponse,
 )
 from src.db.models import (
-    Fund,
     FundAchievementRank,
-    FundFees,
-    FundHoldingsBond,
-    FundPerformance,
     RefreshRun,
 )
 from src.db.session import get_db
@@ -133,19 +129,13 @@ async def refresh(
 
 @router.get("/stats", response_model=StatsResponse)
 async def stats(db=Depends(get_db)):
-    """库内数据概况"""
-    total = db.execute(select(func.count()).select_from(Fund).where(Fund.is_active == True)).scalar() or 0  # noqa: E712
-    with_perf = db.execute(select(func.count()).select_from(FundPerformance)).scalar() or 0
-    with_fees = db.execute(select(func.count()).select_from(FundFees)).scalar() or 0
-    with_hold = db.execute(select(func.count()).select_from(FundHoldingsBond)).scalar() or 0
+    """债基 tab 库内概况（funds.yaml ∩ is_active）"""
+    counts = FilterService(db).universe_stats("bond")
     last_run = db.execute(
         select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
     ).scalars().first()
     return StatsResponse(
-        total=total,
-        with_performance=with_perf,
-        with_fees=with_fees,
-        with_holdings=with_hold,
+        **counts,
         last_refresh_at=last_run.finished_at if last_run else None,
     )
 
@@ -161,7 +151,7 @@ async def fund_detail(code: str, db=Depends(get_db)):
 
 # ──────────────────────────────────────────────────────────────────
 # 股票 tab 路由（/api/funds/stock/*）
-# 与现有 /api/funds/* 平列；fund_type 限定股票型-* / QDII
+# 与现有 /api/funds/* 平列；成员 = funds_stock.yaml ∩ is_active
 # ──────────────────────────────────────────────────────────────────
 
 def _stock_screen_params(
@@ -190,7 +180,7 @@ async def stock_screen(
     order: str = Query("desc", pattern="^(asc|desc)$"),
     db=Depends(get_db),
 ):
-    """股票 tab 筛选（fund_type 限定股票型-/QDII）"""
+    """股票 tab 筛选（funds_stock.yaml ∩ is_active）"""
     return FilterService(db).screen_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp,
@@ -261,29 +251,13 @@ async def stock_refresh_status(
 
 @router_stock.get("/stats", response_model=StatsResponse)
 async def stock_stats(db=Depends(get_db)):
-    """股票 tab 库内概况（限定 fund_type）"""
-    base = select(Fund).where(Fund.is_active == True).where(  # noqa: E712
-        (Fund.fund_type.like("股票型-%")) | (Fund.fund_type.like("QDII%")) | (Fund.fund_type == "QDII")
-    )
-    total = db.execute(select(func.count()).select_from(base.subquery())).scalar() or 0
-    fund_codes = {r.code for r in db.execute(base).scalars()}
-    with_perf = db.execute(
-        select(func.count()).select_from(FundPerformance).where(FundPerformance.code.in_(fund_codes))
-    ).scalar() or 0 if fund_codes else 0
-    with_fees = db.execute(
-        select(func.count()).select_from(FundFees).where(FundFees.code.in_(fund_codes))
-    ).scalar() or 0 if fund_codes else 0
-    with_hold = db.execute(
-        select(func.count()).select_from(FundHoldingsBond).where(FundHoldingsBond.code.in_(fund_codes))
-    ).scalar() or 0 if fund_codes else 0
+    """股票 tab 库内概况（funds_stock.yaml ∩ is_active）"""
+    counts = FilterService(db).universe_stats("stock")
     last_run = db.execute(
         select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
     ).scalars().first()
     return StatsResponse(
-        total=total,
-        with_performance=with_perf,
-        with_fees=with_fees,
-        with_holdings=with_hold,
+        **counts,
         last_refresh_at=last_run.finished_at if last_run else None,
     )
 

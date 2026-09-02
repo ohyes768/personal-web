@@ -22,7 +22,12 @@
 
 - **dd_3y 库内为负值**（如 -4.47）。用户阈值 `max_dd_3y=5` 按**绝对值**比较：SQL 用 `dd_3y >= -abs(max_dd_3y)`。前端展示原值（负号保留）。
 - **fee_annual 是计算字段**：`fee_mgmt + fee_custody + (fee_service or 0)`；任一主字段缺失返回 null（不是 0）。
-- **筛选宇宙 = `is_active==True` 全部**，不按债券类型过滤（31 只含混合/QDII 照常展示）。
+- **筛选宇宙按 yaml 切分**，再 ∩ `is_active==True`：
+  - `/screen`、`/export/csv`、`/stats` → `config/funds.yaml`
+  - `/stock/screen`、`/stock/export/csv`、`/stock/stats` → `config/funds_stock.yaml`
+  - **不要用 `fund_type LIKE` 当成员判定**（债基名单含混合/QDII，股票名单含偏股混合）。
+  - 详情 `/{code}`、`/stock/{code}` 仍按 code 查库，不按宇宙 404。
+- 不按债券类型过滤（31 只含混合/QDII 照常展示）。
 - FundPerformance 用 **LEFT JOIN**：无业绩记录的基金保留在筛选结果（业绩列显示 null → 前端 "-"）。
 
 ### ORM（src/db/models.py）
@@ -74,15 +79,16 @@ cache/fees_{code}.json = {
 ## 5. Good/Base/Bad Cases
 
 - Good: `GET /screen?max_dd_3y=5` 返回 dd_3y∈[-5,0] 的基金
-- Base: `GET /screen` 无参 → 全部 is_active（31 只）
+- Base: `GET /screen` 无参 → `funds.yaml` ∩ is_active（约 31 只）
 - Bad: `GET /screen?sort=name` → 422（白名单外）；`GET /999999` → 404
 
 ## 6. Tests Required
 
-`backend/tests/`（41 个，覆盖率 62% ≥ 60% 门槛）：
+`backend/tests/`（含交叉泄漏回归）：
 - `test_filter_service.py`：四维组合/边界/排序/LEFT JOIN 保留/is_active 排除
+- `test_universe_isolation.py`：债基/股票 yaml 宇宙互不泄漏；`fund_type` 不是成员谓词
 - `test_performance_service.py`：回撤算法（1.0→1.2→0.9 = -25%）/收益窗口/None 语义
-- `test_api.py`：TestClient + in-memory 覆盖依赖；422/404/BOM
+- `test_api.py`：TestClient + in-memory 覆盖依赖；422/404/BOM；stats 按宇宙计数
 - `test_data_fetchers.py`：31 份费率夹具契约、债券分类关键词、yaml 宇宙
 
 **测试夹具注意**：in-memory SQLite + TestClient 必须用 `StaticPool`（单连接共享），否则 TestClient 线程看不到建表。
@@ -92,10 +98,13 @@ cache/fees_{code}.json = {
 ### Wrong
 ```python
 q.filter(FundPerformance.dd_3y <= max_dd_3y)   # 库内负值，-4.47 <= 5 恒真，筛不掉
+q.where(Fund.is_active == True)                # 债基 tab 会看到股票 refresh 写入的全部活跃基金
+Fund.fund_type.like("股票型-%")                # 股票 tab 会吃到债基名单里的混合/QDII
 init_db()  # 测试里对全局 engine 建表，但请求走 override session（另一 engine）
 ```
 ### Correct
 ```python
 q.filter(FundPerformance.dd_3y >= -abs(max_dd_3y))  # 绝对值语义
+q.where(Fund.is_active == True, Fund.code.in_(resolve_universe_codes("bond")))
 # conftest: create_engine("sqlite:///:memory:", poolclass=StaticPool)
 ```

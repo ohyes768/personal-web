@@ -34,8 +34,8 @@ def export_csv(
 ) -> tuple[str, str]:
     """生成 CSV 内容 + 文件名。UTF-8 BOM 便于 Excel 直接打开。
 
-    kind = "bond"  调 FilterService.screen（债基/通用）
-    kind = "stock" 调 FilterService.screen_stock（股票型 + QDII）
+    kind = "bond"  调 FilterService.screen（债基 yaml 宇宙）
+    kind = "stock" 调 FilterService.screen_stock（股票 yaml 宇宙）
     """
     method = filter_service.screen_stock if kind == "stock" else filter_service.screen
     result = method(**filters)

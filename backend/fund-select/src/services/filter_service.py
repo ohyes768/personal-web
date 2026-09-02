@@ -1,17 +1,16 @@
 """
 筛选逻辑（核心）：四维度 + 排序
 
-宇宙 = 库内 is_active 基金（配置名单已采集成功的）。
-不按 category==bond 过滤：31 只里含混合/QDII，照常展示。
-
-screen      — 通用筛选（债基 / 全用）
-screen_stock — 仅股票型 + QDII（股票 tab 专用，fund_type LIKE 限定）
+宇宙 = 各自 yaml 名单 ∩ 库内 is_active。
+screen      — 债基 tab，读 funds.yaml
+screen_stock — 股票 tab，读 funds_stock.yaml（不再用 fund_type LIKE）
 """
 from typing import Optional
 
-from sqlalchemy import and_, not_, or_, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from src.data.fund_universe import resolve_universe_codes
 from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance
 
 # 排序白名单（防 SQL 注入）
@@ -47,13 +46,90 @@ class FilterService:
         min_mgr_exp: Optional[float] = None,       # 经理从业年限 ≥ W（年）
         sort: str = "size_yi",
         order: str = "desc",
+        universe_codes: list[str] | None = None,
     ) -> dict:
+        return self._screen(
+            "bond", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+            sort, order, universe_codes,
+        )
+
+    def screen_stock(
+        self,
+        min_age: Optional[float] = None,
+        min_size_yi: Optional[float] = None,
+        max_dd_3y: Optional[float] = None,
+        min_mgr_exp: Optional[float] = None,
+        sort: str = "ret_5y",
+        order: str = "desc",
+        universe_codes: list[str] | None = None,
+    ) -> dict:
+        """股票 tab 筛选：成员 = funds_stock.yaml ∩ is_active。"""
+        return self._screen(
+            "stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+            sort, order, universe_codes,
+        )
+
+    def universe_stats(
+        self,
+        kind: str,
+        universe_codes: list[str] | None = None,
+    ) -> dict:
+        """按宇宙统计活跃基金及关联表覆盖。不含 last_refresh_at。"""
+        codes = resolve_universe_codes(kind, universe_codes)
+        empty = {"total": 0, "with_performance": 0, "with_fees": 0, "with_holdings": 0}
+        if not codes:
+            return empty
+        active = set(
+            self.db.execute(
+                select(Fund.code).where(
+                    Fund.is_active == True,  # noqa: E712
+                    Fund.code.in_(codes),
+                )
+            ).scalars().all()
+        )
+        if not active:
+            return empty
+        with_perf = self.db.execute(
+            select(func.count()).select_from(FundPerformance).where(
+                FundPerformance.code.in_(active)
+            )
+        ).scalar() or 0
+        with_fees = self.db.execute(
+            select(func.count()).select_from(FundFees).where(FundFees.code.in_(active))
+        ).scalar() or 0
+        with_hold = self.db.execute(
+            select(func.count()).select_from(FundHoldingsBond).where(
+                FundHoldingsBond.code.in_(active)
+            )
+        ).scalar() or 0
+        return {
+            "total": len(active),
+            "with_performance": with_perf,
+            "with_fees": with_fees,
+            "with_holdings": with_hold,
+        }
+
+    def _screen(
+        self,
+        kind: str,
+        min_age: Optional[float],
+        min_size_yi: Optional[float],
+        max_dd_3y: Optional[float],
+        min_mgr_exp: Optional[float],
+        sort: str,
+        order: str,
+        universe_codes: list[str] | None,
+    ) -> dict:
+        codes = resolve_universe_codes(kind, universe_codes)
+        if not codes:
+            return {"total": 0, "items": []}
         q = (
             select(Fund, FundPerformance, FundFees, FundHoldingsBond)
             .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
             .outerjoin(FundFees, Fund.code == FundFees.code)
             .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
             .where(Fund.is_active == True)  # noqa: E712
+            .where(Fund.code.in_(codes))
         )
         if min_age is not None:
             q = q.where(Fund.age_years >= min_age)
@@ -66,75 +142,9 @@ class FilterService:
             q = q.where(Fund.mgr_experience_years >= min_mgr_exp)
 
         rows = self.db.execute(q).all()
-
         items = [self._to_dto(f, p, fee, hold) for f, p, fee, hold in rows]
-        sort_key = sort if sort in SORT_COLUMNS else "size_yi"
-        descending = order != "asc"
-
-        # Python 侧排序：fee_annual 是计算字段；None 统一排最后
-        key_map = {
-            "size_yi": lambda it: it["size_yi"],
-            "age_years": lambda it: it["age_years"],
-            "mgr_experience_years": lambda it: it["mgr_experience_years"],
-            "dd_3y": lambda it: None if it["dd_3y"] is None else abs(it["dd_3y"]),
-            "ret_1y": lambda it: it["ret_1y"],
-            "ret_3y": lambda it: it["ret_3y"],
-            "ret_5y": lambda it: it["ret_5y"],
-            "fee_annual": lambda it: it["fee_annual"],
-            "code": lambda it: it["code"],
-        }
-        getter = key_map[sort_key]
-        # dd_3y 用户视角：默认 desc = 回撤绝对值从大到小；asc = 小到大（最优在前）
-        items.sort(
-            key=lambda it: (getter(it) is None, getter(it) if getter(it) is not None else 0),
-            reverse=descending,
-        )
-        return {"total": len(items), "items": items}
-
-    def screen_stock(
-        self,
-        min_age: Optional[float] = None,
-        min_size_yi: Optional[float] = None,
-        max_dd_3y: Optional[float] = None,
-        min_mgr_exp: Optional[float] = None,
-        sort: str = "ret_5y",
-        order: str = "desc",
-    ) -> dict:
-        """股票 tab 筛选：fund_type 限定股票型-* / QDII* / QDII。
-
-        与 screen 主体逻辑同；仅追加 fund_type 谓词 + 默认 ret_5y desc（业绩优先）。
-        """
-        q = (
-            select(Fund, FundPerformance, FundFees, FundHoldingsBond)
-            .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
-            .outerjoin(FundFees, Fund.code == FundFees.code)
-            .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
-            .where(Fund.is_active == True)  # noqa: E712
-            .where(
-                and_(
-                    or_(
-                        Fund.fund_type.like("股票型-%"),
-                        Fund.fund_type.like("QDII%"),
-                        Fund.fund_type == "QDII",
-                        Fund.fund_type.like("混合型-%"),
-                    ),
-                    # QDII-债券（海外债基）不属于股票基金主题
-                    not_(Fund.fund_type.like("QDII-债券%")),
-                )
-            )
-        )
-        if min_age is not None:
-            q = q.where(Fund.age_years >= min_age)
-        if min_size_yi is not None:
-            q = q.where(Fund.size_yi >= min_size_yi)
-        if max_dd_3y is not None:
-            q = q.where(FundPerformance.dd_3y >= -abs(max_dd_3y))
-        if min_mgr_exp is not None:
-            q = q.where(Fund.mgr_experience_years >= min_mgr_exp)
-
-        rows = self.db.execute(q).all()
-        items = [self._to_dto(f, p, fee, hold) for f, p, fee, hold in rows]
-        sort_key = sort if sort in SORT_COLUMNS else "ret_5y"
+        default_sort = "ret_5y" if kind == "stock" else "size_yi"
+        sort_key = sort if sort in SORT_COLUMNS else default_sort
         descending = order != "asc"
 
         key_map = {

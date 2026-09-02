@@ -1,14 +1,25 @@
 """
-基金宇宙：读 backend/config/funds.yaml（v1 不扫全市场）
+基金宇宙：读 config/funds.yaml 或 funds_stock.yaml（v1 不扫全市场）
 """
 from pathlib import Path
 
 import yaml
 
-from src.utils.config import get_funds_config_path
+from src.utils.config import get_funds_config_path, get_stock_funds_config_path
 from src.utils.logger import setup_logger
 
 logger = setup_logger("fund-select.universe")
+
+
+def resolve_universe_codes(kind: str, override: list[str] | None = None) -> list[str]:
+    """债基 / 股票宇宙代码。override 非空时走测试注入，不读 yaml。"""
+    if kind not in ("bond", "stock"):
+        raise ValueError(f"unknown universe kind: {kind}")
+    if override is not None:
+        return [str(c).strip().zfill(6) for c in override if str(c).strip()]
+    if kind == "stock":
+        return load_fund_codes(get_stock_funds_config_path())
+    return load_fund_codes()
 
 
 def load_fund_codes(config_path: Path | None = None) -> list[str]:

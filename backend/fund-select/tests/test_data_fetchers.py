@@ -11,7 +11,7 @@ from src.data import fund_basic_fetcher
 from src.data.bond_classifier import classify_bond
 from src.data.fee_fetcher import _parse_pct, fetch_fees
 from src.data.fund_basic_fetcher import fetch_basic, parse_size
-from src.data.fund_universe import load_fund_codes
+from src.data.fund_universe import load_fund_codes, resolve_universe_codes
 
 LEGACY_CACHE = Path(__file__).parent.parent.parent / "cache"
 
@@ -117,7 +117,7 @@ class TestFetchBasic:
 
         assert out["基金代码"] == "968157"
         assert out["基金名称"] == "东亚联丰环球股票人民币"
-        # 互认基金标准化映射为 QDII-互认，对接 screen_stock 谓词
+        # 互认基金标准化映射为 QDII-互认（展示字段，不是 screen 成员谓词）
         assert out["基金类型"] == "QDII-互认"
         assert out["基金公司"] == "东亚联丰投资管理有限公司"
         # 缺字段不在 dict 里
@@ -216,3 +216,18 @@ class TestFundUniverse:
         p = tmp_path / "empty.yaml"
         p.write_text("funds: []\n", encoding="utf-8")
         assert load_fund_codes(p) == []
+
+    def test_resolve_override_skips_yaml(self):
+        assert resolve_universe_codes("bond", ["1", "200002"]) == ["000001", "200002"]
+        assert resolve_universe_codes("stock", []) == []
+
+    def test_resolve_unknown_kind_raises(self):
+        import pytest
+        with pytest.raises(ValueError, match="unknown universe kind"):
+            resolve_universe_codes("etf")
+
+    def test_resolve_stock_reads_stock_yaml(self):
+        codes = resolve_universe_codes("stock")
+        assert len(codes) == 143
+        assert "671030" in codes
+        assert "003547" not in codes

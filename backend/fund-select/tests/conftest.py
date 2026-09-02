@@ -46,13 +46,24 @@ def _mk_fund(code: str, **kw) -> Fund:
 
 
 @pytest.fixture
-def seeded_db(db_session):
+def seeded_db(db_session, monkeypatch):
     """3 只代表性基金：
     A: 全字段，优等生
     B: 高回撤、年轻、小规模、资浅经理
     C: is_active=False（清盘），不应出现在筛选结果
     D: 无业绩记录（LEFT JOIN 应保留）
     """
+    from pathlib import Path
+
+    from src.utils.config import get_funds_config_path, get_stock_funds_config_path
+
+    def _load(config_path=None):
+        path = Path(config_path) if config_path is not None else get_funds_config_path()
+        if path.resolve() == get_stock_funds_config_path().resolve() or path.name == "funds_stock.yaml":
+            return []
+        return ["000001", "000002", "000003", "000004"]
+
+    monkeypatch.setattr("src.data.fund_universe.load_fund_codes", _load)
     db_session.add_all([
         _mk_fund("000001", name="基金A"),
         _mk_fund("000002", name="基金B", age_years=1.0, size_yi=0.5,

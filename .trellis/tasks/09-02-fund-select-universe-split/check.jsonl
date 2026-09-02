@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/fund-select/backend/contracts.md", "reason": "验收 screen/stats/csv 宇宙语义与详情 404 行为是否符合契约"}
+{"file": ".trellis/spec/backend/fund-select/backend/index.md", "reason": "确认改动仍落在 FilterService 查询层，没有拆表或改 refresh"}
+{"file": ".trellis/spec/guides/index.md", "reason": "交叉泄漏属于跨层数据流，检查是否只修后端查询"}

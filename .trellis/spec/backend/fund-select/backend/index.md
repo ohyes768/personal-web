@@ -11,4 +11,4 @@
 
 ## 一句话架构
 
-`config/funds.yaml`（宇宙）→ fetcher 层（akshare + 东财 F10 + 季报）→ SQLite（4 业务表 + refresh_runs）→ FilterService（四维筛选）→ FastAPI 路由 → Next.js 代理（:3005/funds）。
+`config/funds.yaml`（债基宇宙）+ `config/funds_stock.yaml`（股票宇宙）→ fetcher → SQLite（共用 `funds` 表）→ FilterService 按 yaml 切宇宙 → FastAPI `/api/funds` 与 `/api/funds/stock` → Next.js 代理（:3005/funds）。

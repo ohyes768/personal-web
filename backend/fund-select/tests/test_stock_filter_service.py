@@ -1,12 +1,12 @@
 """
-screen_stock 单测：验证 fund_type 限定 + 4 维度筛选 + 默认排序 ret_5y desc。
-
-复用 conftest.py 的 db_session + 自建股/债/QDII 混合基金。
+screen_stock 单测：yaml 宇宙 ∩ is_active + 4 维度筛选 + 默认排序 ret_5y desc。
 """
 from datetime import date
 
-from src.db.models import Fund, FundFees, FundPerformance
+from src.db.models import Fund, FundPerformance
 from src.services.filter_service import FilterService
+
+STOCK_UNIVERSE = ["600001", "600002", "600003", "600004", "600005"]
 
 
 def _mk_stock(code: str, **kw) -> Fund:
@@ -21,28 +21,17 @@ def _mk_stock(code: str, **kw) -> Fund:
     return Fund(**defaults)
 
 
-def _add_perf(db, code, ret_5y=None, dd_3y=None, ret_1y=None):
-    db.merge(FundPerformance(
-        code=code, as_of_date=date(2026, 9, 1),
-        ret_1y=ret_1y, ret_5y=ret_5y, dd_3y=dd_3y,
-    ))
-
-
 def _seed_stock(db):
     db.add_all([
-        # 命中：股票型
+        # 宇宙内：股票型 / QDII / 混合型
         _mk_stock("600001", fund_type="股票型-标准指数"),
         _mk_stock("600002", fund_type="股票型-增强指数"),
-        # 命中：QDII（带前缀）
         _mk_stock("600003", fund_type="QDII"),
         _mk_stock("600004", fund_type="QDII-股票"),
-        # 不命中：混合型-偏股（决策 1 未覆盖）
         _mk_stock("600005", fund_type="混合型-偏股"),
-        # 不命中：债基
+        # 库内但默认不在股票宇宙
         _mk_stock("600006", fund_type="债券型-长期纯债"),
-        # 不命中：清盘
         _mk_stock("600007", fund_type="股票型-标准指数", is_active=False),
-        # 不命中：QDII-债券（海外债基，跟股票基金无关）
         _mk_stock("600008", fund_type="QDII-债券"),
     ])
     # perf 给前 5 只（含混合型-偏股 600005）。600005 数值均匀居中。
@@ -61,24 +50,27 @@ def _seed_stock(db):
     db.commit()
 
 
+def _screen_stock(db, **kw):
+    kw.setdefault("universe_codes", STOCK_UNIVERSE)
+    return FilterService(db).screen_stock(**kw)
+
+
 def test_screen_stock_only_match(db_session):
-    """命中股票型 / QDII-股票 / QDII-互认 / 混合型，排除 QDII-债券 / 债基 / 清盘"""
+    """只返回宇宙内且 is_active 的基金；名单外的债基/QDII-债券/清盘不出现。"""
     _seed_stock(db_session)
-    svc = FilterService(db_session)
-    result = svc.screen_stock()  # 无筛选
+    result = _screen_stock(db_session)
     codes = {it["code"] for it in result["items"]}
-    # 600008 (QDII-债券) 被排除；600006 (债基) / 600007 (清盘) 不在
     assert codes == {"600001", "600002", "600003", "600004", "600005"}
     assert result["total"] == 5
+    assert "600006" not in codes
+    assert "600007" not in codes
     assert "600008" not in codes
 
 
 def test_screen_stock_default_sort_ret5y_desc(db_session):
     """默认 ret_5y desc：80 / 60 / 40 / 30 / 20"""
     _seed_stock(db_session)
-    svc = FilterService(db_session)
-    result = svc.screen_stock()
-    items = result["items"]
+    items = _screen_stock(db_session)["items"]
     # 600005 的 ret_5y=30 排在 600004(ret_5y=20) 之前
     assert [it["code"] for it in items] == [
         "600001", "600002", "600003", "600005", "600004"
@@ -88,10 +80,8 @@ def test_screen_stock_default_sort_ret5y_desc(db_session):
 def test_screen_stock_filters(db_session):
     """min_age/min_size_yi/max_dd_3y/min_mgr_exp 四维度同时应用"""
     _seed_stock(db_session)
-    svc = FilterService(db_session)
-    # 600001/600002/600003/600004/600005 都在范围内（混合型 600005 也通过）
-    result = svc.screen_stock(
-        min_age=3, min_size_yi=5, max_dd_3y=20, min_mgr_exp=5,
+    result = _screen_stock(
+        db_session, min_age=3, min_size_yi=5, max_dd_3y=20, min_mgr_exp=5,
     )
     codes = {it["code"] for it in result["items"]}
     assert "600001" in codes
@@ -103,21 +93,21 @@ def test_screen_stock_max_dd_filters_out(db_session):
     600001(-15)/600002(-12) 没过；600003(-10)/600004(-8)/600005(-7) 过
     """
     _seed_stock(db_session)
-    svc = FilterService(db_session)
-    result = svc.screen_stock(max_dd_3y=10)
+    result = _screen_stock(db_session, max_dd_3y=10)
     codes = {it["code"] for it in result["items"]}
     assert codes == {"600003", "600004", "600005"}
 
 
 def test_screen_stock_min_mgr_exp_filters_out(db_session):
-    """min_mgr_exp=5.5（偏紧）：只剩 mgr_experience_years >= 5.5；所有测试基金都是 5.5 → 全过"""
+    """min_mgr_exp=5.0：经理 4 年的 600010 即使在宇宙里也被筛掉。"""
     _seed_stock(db_session)
-    svc = FilterService(db_session)
-    # 加一只经理 4 年的
     db_session.merge(_mk_stock("600010", fund_type="股票型-标准指数",
                                 mgr_experience_years=4.0))
     db_session.commit()
-    result = svc.screen_stock(min_mgr_exp=5.0)
+    result = _screen_stock(
+        db_session, min_mgr_exp=5.0,
+        universe_codes=STOCK_UNIVERSE + ["600010"],
+    )
     codes = {it["code"] for it in result["items"]}
     assert "600010" not in codes
     assert "600001" in codes
