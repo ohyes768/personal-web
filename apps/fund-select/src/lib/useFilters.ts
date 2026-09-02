@@ -1,8 +1,15 @@
 /**
  * 筛选状态 + URL 双向同步
  *
- * 无阈值 = 参数不出现在 URL；默认 sort=size_yi&order=desc 也不带参。
- * 例：?min_age=3&min_size_yi=2&max_dd_3y=5&min_mgr_exp=5&sort=size_yi&order=desc
+ * 状态-URL 对照：
+ *   - 裸路径（无任何 numeric 参数）→ 默认值 DEFAULT_FILTERS（首屏体验）
+ *   - 任意 numeric 参数出现 → URL 中的字段用 URL 值，缺失字段 = null（不限）
+ *   - cleared=1 → 全部不限（用户主动"清空"）
+ *
+ * 例：
+ *   /                                    → 默认 (3, 5, 5, 5)
+ *   ?min_age=5&min_size_yi=5&...         → 显式覆盖，缺失 = null
+ *   ?cleared=1                           → 全部 null
  */
 'use client';
 
@@ -15,9 +22,35 @@ type FilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'sort
 
 const NUMERIC_KEYS: FilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp'];
 
-/** 从 URL 解析筛选（异常值回落默认） */
+/** 从 URL 解析筛选 */
 export function parseFiltersFromSearch(search: URLSearchParams): FundFilters {
-  const filters: FundFilters = { ...DEFAULT_FILTERS };
+  if (search.get('cleared') === '1') {
+    // 用户主动"清空"：全部不限
+    return {
+      min_age: null,
+      min_size_yi: null,
+      max_dd_3y: null,
+      min_mgr_exp: null,
+      sort: (search.get('sort') as string) || DEFAULT_FILTERS.sort,
+      order: (search.get('order') as 'asc' | 'desc') || DEFAULT_FILTERS.order,
+    };
+  }
+
+  const hasNumeric = NUMERIC_KEYS.some(k => search.has(k));
+  if (!hasNumeric) {
+    // 首次访问或没改过筛选：套用默认
+    return { ...DEFAULT_FILTERS };
+  }
+
+  // URL 有部分 numeric：缺失字段 = null（不允许 fallback 到默认值）
+  const filters: FundFilters = {
+    min_age: null,
+    min_size_yi: null,
+    max_dd_3y: null,
+    min_mgr_exp: null,
+    sort: DEFAULT_FILTERS.sort,
+    order: DEFAULT_FILTERS.order,
+  };
   for (const key of NUMERIC_KEYS) {
     const raw = search.get(key);
     if (raw === null || raw === '') continue;
@@ -33,12 +66,19 @@ export function parseFiltersFromSearch(search: URLSearchParams): FundFilters {
   return filters;
 }
 
-/** 筛选 → URL 查询串（默认值省略） */
+/** 筛选 → URL 查询串 */
 export function filtersToSearch(filters: FundFilters): URLSearchParams {
   const params = new URLSearchParams();
-  for (const key of NUMERIC_KEYS) {
-    const v = filters[key] as number | null;
-    if (v !== null && v !== undefined) params.set(key, String(v));
+  const allNull = NUMERIC_KEYS.every(k => filters[k] === null);
+  if (allNull) {
+    // 全部不限 → 用 cleared=1 区分于"首次访问默认"
+    params.set('cleared', '1');
+  } else {
+    // 仅写非 null 字段；缺失字段由 URL 语义识别为 null（不限）
+    for (const key of NUMERIC_KEYS) {
+      const v = filters[key] as number | null;
+      if (v !== null && v !== undefined) params.set(key, String(v));
+    }
   }
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_FILTERS.order) params.set('order', filters.order);
@@ -80,9 +120,9 @@ export function useFilters() {
     }
   }, [filters, setFilter, router]);
 
-  /** 清空全部筛选 */
+  /** 清空全部筛选（保留 sort/order） */
   const clearAll = useCallback(() => {
-    router.push(location.pathname, { scroll: false });
+    router.push(`${location.pathname}?cleared=1`, { scroll: false });
   }, [router]);
 
   /** 已激活的筛选维度数（chip 用） */

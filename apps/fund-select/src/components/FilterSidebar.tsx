@@ -37,7 +37,7 @@ function DimensionControl({ dim, value, onChange }: {
 }) {
   return (
     <div className="px-2.5 py-2 border-b border-rule last:border-b-0">
-      <div className="flex items-center justify-between gap-1 mb-1.5">
+      <div className="flex items-center justify-between gap-1">
         <span className="text-xs font-medium text-ink-strong shrink-0">{dim.label}</span>
         <div className="flex items-center gap-0.5 min-w-0">
           <input
@@ -65,20 +65,6 @@ function DimensionControl({ dim, value, onChange }: {
             </button>
           )}
         </div>
-      </div>
-      <input
-        type="range"
-        min={dim.min}
-        max={dim.max}
-        step={dim.step}
-        value={value ?? dim.min}
-        onChange={e => onChange(Number(e.target.value) === dim.min ? null : Number(e.target.value))}
-        className="w-full accent-[var(--color-accent)]"
-        aria-label={`${dim.label}滑块`}
-      />
-      <div className="flex justify-between text-[10px] text-ink-soft mt-0.5">
-        <span>{dim.min}{dim.unit}</span>
-        <span>{dim.max}{dim.unit}</span>
       </div>
     </div>
   );

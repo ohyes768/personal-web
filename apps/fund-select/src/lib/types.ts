@@ -90,10 +90,10 @@ export interface FundFilters {
 }
 
 export const DEFAULT_FILTERS: FundFilters = {
-  min_age: null,
-  min_size_yi: null,
-  max_dd_3y: null,
-  min_mgr_exp: null,
+  min_age: 3,
+  min_size_yi: 5,
+  max_dd_3y: 5,
+  min_mgr_exp: 5,
   sort: 'size_yi',
   order: 'desc',
 };
