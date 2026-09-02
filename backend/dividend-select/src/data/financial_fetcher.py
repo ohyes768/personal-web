@@ -103,7 +103,8 @@ class FinancialFetcher:
         Returns:
             财务指标 DataFrame
         """
-        results = []
+        results = []       # 待保存队列（每批交给 on_batch 后清空）
+        all_results = []   # 累计成功结果（用于最终统计和返回值）
         total = len(codes)
         failed = 0
 
@@ -113,6 +114,7 @@ class FinancialFetcher:
 
             if result:
                 results.append(result)
+                all_results.append(result)
             else:
                 failed += 1
 
@@ -134,12 +136,12 @@ class FinancialFetcher:
                 time.sleep(delay)
 
         if show_progress:
-            logger.info(f"财务指标获取完成: 成功 {len(results)}/{total}, 失败 {failed}")
+            logger.info(f"财务指标获取完成: 成功 {len(all_results)}/{total}, 失败 {failed}")
 
-        if not results:
+        if not all_results:
             return pd.DataFrame()
 
-        df = pd.DataFrame(results)
+        df = pd.DataFrame(all_results)
         return df
 
     def fetch_and_save(self, codes: list[str], delay: float = 0.5) -> bool:

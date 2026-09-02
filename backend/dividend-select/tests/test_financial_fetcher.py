@@ -97,6 +97,52 @@ class TestCalcLatestEps:
         assert result["最新EPS(元)"] == 1.22, f"应用加权EPS=1.22（而非摊薄1.20/基本1.21），实际 {result}"
 
 
+class TestFetchBatch:
+    """fetch_batch 单元测试 — 成功计数与返回值不受分批保存影响"""
+
+    @pytest.fixture
+    def fetcher(self):
+        return FinancialFetcher()
+
+    @staticmethod
+    def _mock_result(code):
+        return {"股票代码": code, "ROE": 10.0}
+
+    def test_returns_all_results_across_batches(self, fetcher, caplog):
+        """回归 guard：batch 保存后 results 会被清空，但最终返回必须是累计成功结果。
+
+        历史 bug：曾复用被清空的 results 做统计和返回值，导致
+        202 只股票全部成功时打印"成功 0/202"、API count 返回 0。
+        """
+        codes = [str(600000 + i) for i in range(25)]  # 25 只，batch_size=10 → 3 批
+        with patch.object(FinancialFetcher, "fetch_one", side_effect=lambda code, **_: self._mock_result(code)):
+            with caplog.at_level("INFO", logger="src.data.financial_fetcher"):
+                df = fetcher.fetch_batch(codes, delay=0, show_progress=True, batch_size=10)
+
+        assert len(df) == 25, f"应返回全部 25 条成功结果，实际 {len(df)}"
+        assert list(df["股票代码"]) == codes
+
+        # 完成日志必须报告累计成功数，而不是被批次清空后的剩余数
+        done_logs = [r.message for r in caplog.records if "财务指标获取完成" in r.message]
+        assert done_logs and "成功 25/25" in done_logs[-1], f"完成日志应含 '成功 25/25'，实际 {done_logs}"
+
+    def test_counts_failures_in_stats(self, fetcher, caplog):
+        """失败计数累计：25 只中 5 只失败 → 成功 20/25, 失败 5"""
+        codes = [str(600000 + i) for i in range(25)]
+        fail_codes = set(codes[:5])
+
+        def mock_fetch_one(code, **_):
+            return None if code in fail_codes else self._mock_result(code)
+
+        with patch.object(FinancialFetcher, "fetch_one", side_effect=mock_fetch_one):
+            with caplog.at_level("INFO", logger="src.data.financial_fetcher"):
+                df = fetcher.fetch_batch(codes, delay=0, show_progress=True, batch_size=10)
+
+        assert len(df) == 20
+        done_logs = [r.message for r in caplog.records if "财务指标获取完成" in r.message]
+        assert done_logs and "成功 20/25, 失败 5" in done_logs[-1], f"实际 {done_logs}"
+
+
 class TestCalcQuarterlyYoy:
     """_calc_quarterly_yoy 单元测试（固定 2026Q1 vs 2025Q1 扣非同比）"""
 
