@@ -42,6 +42,8 @@ def _seed_stock(db):
         _mk_stock("600006", fund_type="债券型-长期纯债"),
         # 不命中：清盘
         _mk_stock("600007", fund_type="股票型-标准指数", is_active=False),
+        # 不命中：QDII-债券（海外债基，跟股票基金无关）
+        _mk_stock("600008", fund_type="QDII-债券"),
     ])
     # perf 给前 5 只（含混合型-偏股 600005）。600005 数值均匀居中。
     db.add_all([
@@ -60,13 +62,15 @@ def _seed_stock(db):
 
 
 def test_screen_stock_only_match(db_session):
-    """命中股票型 / QDII / 混合型，排除债基 / 清盘"""
+    """命中股票型 / QDII-股票 / QDII-互认 / 混合型，排除 QDII-债券 / 债基 / 清盘"""
     _seed_stock(db_session)
     svc = FilterService(db_session)
     result = svc.screen_stock()  # 无筛选
     codes = {it["code"] for it in result["items"]}
+    # 600008 (QDII-债券) 被排除；600006 (债基) / 600007 (清盘) 不在
     assert codes == {"600001", "600002", "600003", "600004", "600005"}
     assert result["total"] == 5
+    assert "600008" not in codes
 
 
 def test_screen_stock_default_sort_ret5y_desc(db_session):

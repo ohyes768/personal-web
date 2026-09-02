@@ -9,7 +9,7 @@ screen_stock — 仅股票型 + QDII（股票 tab 专用，fund_type LIKE 限定
 """
 from typing import Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import and_, not_, or_, select
 from sqlalchemy.orm import Session
 
 from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance
@@ -111,11 +111,15 @@ class FilterService:
             .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
             .where(Fund.is_active == True)  # noqa: E712
             .where(
-                or_(
-                    Fund.fund_type.like("股票型-%"),
-                    Fund.fund_type.like("QDII%"),
-                    Fund.fund_type == "QDII",
-                    Fund.fund_type.like("混合型-%"),
+                and_(
+                    or_(
+                        Fund.fund_type.like("股票型-%"),
+                        Fund.fund_type.like("QDII%"),
+                        Fund.fund_type == "QDII",
+                        Fund.fund_type.like("混合型-%"),
+                    ),
+                    # QDII-债券（海外债基）不属于股票基金主题
+                    not_(Fund.fund_type.like("QDII-债券%")),
                 )
             )
         )
