@@ -78,6 +78,7 @@ function StockFundsPageInner() {
               isSelected={compare.isSelected}
               isCompareFull={compare.isFull}
               onToggleCompare={compare.toggle}
+              showBondColumns={false}
             />
           </section>
         </div>

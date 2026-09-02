@@ -17,6 +17,8 @@ interface FundTableProps {
   isSelected: (code: string) => boolean;
   isCompareFull: boolean;
   onToggleCompare: (fund: FundListItem) => void;
+  /** 隐藏「利率债」列（股票 tab 用；债基 tab 默认 true 兼容） */
+  showBondColumns?: boolean;
 }
 
 const NAME_MAX = 10;
@@ -72,6 +74,7 @@ function HoverName({ name }: { name: string }) {
 
 export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
+  showBondColumns = true,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -116,7 +119,7 @@ export function FundTable({
             <SortableHeader label="近1年" field="ret_1y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近3年" field="ret_3y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近5年" field="ret_5y" currentSort={sort} currentOrder={order} onSort={onSort} />
-            <th className={`${th} text-right text-xs font-medium text-ink-muted`}>利率债</th>
+            {showBondColumns && <th className={`${th} text-right text-xs font-medium text-ink-muted`}>利率债</th>}
             <SortableHeader label="年费" field="fee_annual" currentSort={sort} currentOrder={order} onSort={onSort} />
             <th className={`${th} text-center text-xs font-medium text-ink-muted`}>对比</th>
           </tr>
@@ -152,7 +155,7 @@ export function FundTable({
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</td>
-                <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.rate_bond_pct, 1, '%')}</td>
+                {showBondColumns && <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.rate_bond_pct, 1, '%')}</td>}
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.fee_annual, 2, '%')}</td>
                 <td className={`${td} text-center`}>
                   <button
