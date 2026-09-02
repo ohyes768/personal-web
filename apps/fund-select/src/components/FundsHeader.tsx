@@ -51,8 +51,9 @@ export function FundsHeader({
           <div className="flex items-baseline gap-3 mt-0.5">
             <h1 className="text-lg font-semibold text-ink-strong">{title}</h1>
             <nav className="flex items-center gap-0.5 text-sm">
-              <TabLink href="/funds" active={active === 'bond'}>债基</TabLink>
-              <TabLink href="/funds/stock" active={active === 'stock'}>股票</TabLink>
+              {/* Link 的 href 相对 basePath：写 /funds 会被拼成 /funds/funds */}
+              <TabLink href="/" active={active === 'bond'}>债基</TabLink>
+              <TabLink href="/stock" active={active === 'stock'}>股票</TabLink>
             </nav>
           </div>
         </div>

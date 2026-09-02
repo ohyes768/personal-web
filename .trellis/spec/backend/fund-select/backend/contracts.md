@@ -63,7 +63,7 @@ cache/fees_{code}.json = {
 **Cause**: page 放在 `app/funds/page.tsx` 且 basePath 也是 `/funds` → 实际路由 = basePath + 目录 = 双前缀；且 `redirect('/funds')` 会再叠一层
 **Fix**:
 - page 放 `app/page.tsx` 根（basePath 承担前缀）
-- `router.push` 用**相对路径**（`?${qs}` 或 `location.pathname`），Next 自动加 basePath
+- `router.push` / `<Link href>` 用**相对 basePath 的路径**（`/` → `/funds`，`/stock` → `/funds/stock`）；写 `href="/funds"` 会被拼成 `/funds/funds`
 - 原生 `fetch('/funds/api/...')` **必须写全路径**——fetch 不吃 basePath
 
 ### Gotcha: 代理剥 BOM
