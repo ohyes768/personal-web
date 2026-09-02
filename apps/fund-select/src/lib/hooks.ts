@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { fundApi } from './api';
+import { fundApi, stockApi } from './api';
 import type { FundDetail, FundFilters, FundListItem } from './types';
 
 /**
@@ -28,6 +28,44 @@ export function useFundList(filters: FundFilters) {
     setLoading(true);
     setError(null);
     fundApi.screen(filters, controller.signal)
+      .then(r => {
+        setItems(r.items);
+        setTotal(r.total);
+      })
+      .catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setError(err instanceof Error ? err.message : '加载失败');
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, reloadNonce]);
+
+  const reload = useCallback(() => setReloadNonce(n => n + 1), []);
+
+  return { items, total, loading, error, reload };
+}
+
+/**
+ * 股票基金列表（与 useFundList 同骨架，调 stockApi.screen）
+ */
+export function useStockFundList(filters: FundFilters) {
+  const [items, setItems] = useState<FundListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const query = [
+    filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
+    filters.sort, filters.order,
+  ].join('|');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    stockApi.screen(filters, controller.signal)
       .then(r => {
         setItems(r.items);
         setTotal(r.total);

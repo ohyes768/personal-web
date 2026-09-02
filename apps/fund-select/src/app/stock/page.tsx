@@ -1,5 +1,13 @@
 /**
- * 债基筛选主页
+ * 股票基金筛选主页（/funds/stock）
+ *
+ * 与债基页（/funds）平列，复用：
+ *   - FundsHeader（nav「债基 | 股票」）
+ *   - FilterPanel / FilterSheet（4 维度筛选）
+ *   - FilterChipBar / FundTable / CompareDrawer / CompareFloatingBar
+ * 差异：
+ *   - 默认值 STOCK_DEFAULT_FILTERS（3 / 5 / 5 / 20）
+ *   - 调 stockApi（/api/funds/stock/*）
  */
 'use client';
 
@@ -12,18 +20,18 @@ import { FilterSheet } from '@/components/FilterSheet';
 import { FilterPanel } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
-import { useCompare, useFeeDetails, useFundList } from '@/lib/hooks';
+import { useCompare, useFeeDetails, useStockFundList } from '@/lib/hooks';
 import {
   feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions,
 } from '@/lib/compareDimensions';
 import { useFilters } from '@/lib/useFilters';
-import type { FundListItem } from '@/lib/types';
+import { STOCK_DEFAULT_FILTERS, type FundListItem } from '@/lib/types';
 
 type NumFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp';
 
-function FundsPageInner() {
-  const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters();
-  const { items, total, loading, error, reload } = useFundList(filters);
+function StockFundsPageInner() {
+  const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(STOCK_DEFAULT_FILTERS);
+  const { items, total, loading, error, reload } = useStockFundList(filters);
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -36,13 +44,13 @@ function FundsPageInner() {
   return (
     <main className="min-h-screen pb-20">
       <FundsHeader
-        active="bond"
+        active="stock"
         total={total}
         activeFilterCount={activeCount}
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
         filters={filters}
-        exportKind="bond"
+        exportKind="stock"
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
@@ -104,10 +112,10 @@ function FundsPageInner() {
   );
 }
 
-export default function FundsPage() {
+export default function StockFundsPage() {
   return (
     <Suspense fallback={<div className="p-8 text-ink-muted">加载中…</div>}>
-      <FundsPageInner />
+      <StockFundsPageInner />
     </Suspense>
   );
 }

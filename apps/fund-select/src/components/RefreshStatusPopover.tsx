@@ -11,11 +11,15 @@ import type { RefreshStatus } from '@/lib/types';
 
 interface RefreshStatusPopoverProps {
   onRefreshed?: () => void;
+  /** 覆盖默认刷新端点（不传走 fundApi.refresh）。股票 tab 传 '/funds/api/funds/stock/refresh' */
+  refreshUrl?: string;
+  /** 覆盖默认状态端点。股票 tab 传 '/funds/api/funds/stock/refresh/status' */
+  statusUrl?: string;
 }
 
 const POLL_INTERVAL_MS = 5000;
 
-export function RefreshStatusPopover({ onRefreshed }: RefreshStatusPopoverProps) {
+export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: RefreshStatusPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
@@ -34,11 +38,23 @@ export function RefreshStatusPopover({ onRefreshed }: RefreshStatusPopoverProps)
     setStarting(true);
     setStatus(null);
     try {
-      const r = await fundApi.refresh();
+      let r;
+      if (refreshUrl) {
+        const res = await fetch(refreshUrl, { cache: 'no-store' });
+        r = await res.json();
+      } else {
+        r = await fundApi.refresh();
+      }
       stopPolling();
       timerRef.current = setInterval(async () => {
         try {
-          const s = await fundApi.getRefreshStatus(r.task_id);
+          let s: RefreshStatus;
+          if (statusUrl) {
+            const res = await fetch(`${statusUrl}?task_id=${r.task_id}`, { cache: 'no-store' });
+            s = await res.json();
+          } else {
+            s = await fundApi.getRefreshStatus(r.task_id);
+          }
           setStatus(s);
           if (s.status !== 'running') {
             stopPolling();

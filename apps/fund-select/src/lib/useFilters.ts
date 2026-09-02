@@ -6,6 +6,9 @@
  *   - 任意 numeric 参数出现 → URL 中的字段用 URL 值，缺失字段 = null（不限）
  *   - cleared=1 → 全部不限（用户主动"清空"）
  *
+ * useFilters(initial) 接受 override：股票 tab 传 STOCK_DEFAULT_FILTERS；
+ * 债基 tab 不传，走 DEFAULT_FILTERS。
+ *
  * 例：
  *   /                                    → 默认 (3, 5, 5, 5)
  *   ?min_age=5&min_size_yi=5&...         → 显式覆盖，缺失 = null
@@ -23,7 +26,10 @@ type FilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'sort
 const NUMERIC_KEYS: FilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp'];
 
 /** 从 URL 解析筛选 */
-export function parseFiltersFromSearch(search: URLSearchParams): FundFilters {
+export function parseFiltersFromSearch(
+  search: URLSearchParams,
+  fallback: FundFilters = DEFAULT_FILTERS,
+): FundFilters {
   if (search.get('cleared') === '1') {
     // 用户主动"清空"：全部不限
     return {
@@ -31,15 +37,15 @@ export function parseFiltersFromSearch(search: URLSearchParams): FundFilters {
       min_size_yi: null,
       max_dd_3y: null,
       min_mgr_exp: null,
-      sort: (search.get('sort') as string) || DEFAULT_FILTERS.sort,
-      order: (search.get('order') as 'asc' | 'desc') || DEFAULT_FILTERS.order,
+      sort: (search.get('sort') as string) || fallback.sort,
+      order: (search.get('order') as 'asc' | 'desc') || fallback.order,
     };
   }
 
   const hasNumeric = NUMERIC_KEYS.some(k => search.has(k));
   if (!hasNumeric) {
-    // 首次访问或没改过筛选：套用默认
-    return { ...DEFAULT_FILTERS };
+    // 首次访问或没改过筛选：套用默认（可能为 STOCK_DEFAULT_FILTERS）
+    return { ...fallback };
   }
 
   // URL 有部分 numeric：缺失字段 = null（不允许 fallback 到默认值）
@@ -48,8 +54,8 @@ export function parseFiltersFromSearch(search: URLSearchParams): FundFilters {
     min_size_yi: null,
     max_dd_3y: null,
     min_mgr_exp: null,
-    sort: DEFAULT_FILTERS.sort,
-    order: DEFAULT_FILTERS.order,
+    sort: fallback.sort,
+    order: fallback.order,
   };
   for (const key of NUMERIC_KEYS) {
     const raw = search.get(key);
@@ -85,13 +91,18 @@ export function filtersToSearch(filters: FundFilters): URLSearchParams {
   return params;
 }
 
-export function useFilters() {
+export function useFilters(initial?: Partial<FundFilters>) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const merged = useMemo<FundFilters>(
+    () => ({ ...DEFAULT_FILTERS, ...(initial ?? {}) } as FundFilters),
+    [initial],
+  );
+
   const filters = useMemo(
-    () => parseFiltersFromSearch(searchParams),
-    [searchParams]
+    () => parseFiltersFromSearch(searchParams, merged),
+    [searchParams, merged],
   );
 
   /** 更新一个维度并同步 URL（push，可回退） */

@@ -72,3 +72,45 @@ export const fundApi = {
     URL.revokeObjectURL(url);
   },
 };
+
+/**
+ * 股票基金 tab API（接口前缀 /api/funds/stock/*）
+ * 与 fundApi 对偶：screen / getDetail / refresh / getRefreshStatus / exportCsv
+ */
+const STOCK_BASE = '/funds/api/funds/stock';
+
+export const stockApi = {
+  screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
+    return getJson(`${STOCK_BASE}/screen${buildQuery(filters)}`);
+  },
+
+  getDetail(code: string): Promise<FundDetail> {
+    return getJson(`${STOCK_BASE}/${code}`);
+  },
+
+  refresh(limit?: number): Promise<{ task_id: string; status: string }> {
+    return getJson(`${STOCK_BASE}/refresh${limit ? `?limit=${limit}` : ''}`);
+  },
+
+  getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
+    return getJson(`${STOCK_BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
+  },
+
+  async exportCsv(filters: Partial<FundFilters>): Promise<void> {
+    const res = await fetch(`${STOCK_BASE}/export/csv${buildQuery(filters)}`);
+    if (!res.ok) throw new Error(`导出失败 ${res.status}`);
+    const blob = await res.blob();
+    const disposition = res.headers.get('content-disposition') || '';
+    const m = disposition.match(/filename="?([^";]+)"?/);
+    const filename = m ? m[1] : `stock_funds_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  },
+};

@@ -60,6 +60,7 @@ export interface FundDetail extends FundListItem {
   nav_date: string | null;
   fees: FundFees;
   holdings: FundHoldings | null;
+  achievement_ranks: FundAchievementRank[];
 }
 
 export interface StatsResponse {
@@ -97,3 +98,21 @@ export const DEFAULT_FILTERS: FundFilters = {
   sort: 'size_yi',
   order: 'desc',
 };
+
+/** 股票基金 tab 默认筛选（决策：3 / 5 / 5 / 20，业绩优先 ret_5y desc） */
+export const STOCK_DEFAULT_FILTERS: FundFilters = {
+  min_age: 3,
+  min_size_yi: 5,
+  max_dd_3y: 20,
+  min_mgr_exp: 5,
+  sort: 'ret_5y',
+  order: 'desc',
+};
+
+/** 业绩排名一行（详情页用） */
+export interface FundAchievementRank {
+  period_kind: string;
+  period: string;
+  ret: number | null;
+  peer_rank: string | null;
+}
