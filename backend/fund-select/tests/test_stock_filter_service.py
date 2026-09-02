@@ -43,7 +43,7 @@ def _seed_stock(db):
         # 不命中：清盘
         _mk_stock("600007", fund_type="股票型-标准指数", is_active=False),
     ])
-    # perf 仅给前 4 只（QDII/股票型）
+    # perf 给前 5 只（含混合型-偏股 600005）。600005 数值均匀居中。
     db.add_all([
         FundPerformance(code="600001", as_of_date=date(2026, 9, 1),
                         ret_5y=80.0, ret_1y=10.0, dd_3y=-15.0),
@@ -53,52 +53,56 @@ def _seed_stock(db):
                         ret_5y=40.0, ret_1y=5.0, dd_3y=-10.0),
         FundPerformance(code="600004", as_of_date=date(2026, 9, 1),
                         ret_5y=20.0, ret_1y=3.0, dd_3y=-8.0),
+        FundPerformance(code="600005", as_of_date=date(2026, 9, 1),
+                        ret_5y=30.0, ret_1y=6.0, dd_3y=-7.0),
     ])
     db.commit()
 
 
 def test_screen_stock_only_match(db_session):
-    """仅命中股票型/QDII，排除混合偏股/债基/清盘"""
+    """命中股票型 / QDII / 混合型，排除债基 / 清盘"""
     _seed_stock(db_session)
     svc = FilterService(db_session)
     result = svc.screen_stock()  # 无筛选
     codes = {it["code"] for it in result["items"]}
-    assert codes == {"600001", "600002", "600003", "600004"}
-    assert result["total"] == 4
+    assert codes == {"600001", "600002", "600003", "600004", "600005"}
+    assert result["total"] == 5
 
 
 def test_screen_stock_default_sort_ret5y_desc(db_session):
-    """默认 ret_5y desc：80/60/40/20"""
+    """默认 ret_5y desc：80 / 60 / 40 / 30 / 20"""
     _seed_stock(db_session)
     svc = FilterService(db_session)
     result = svc.screen_stock()
     items = result["items"]
-    assert [it["code"] for it in items] == ["600001", "600002", "600003", "600004"]
+    # 600005 的 ret_5y=30 排在 600004(ret_5y=20) 之前
+    assert [it["code"] for it in items] == [
+        "600001", "600002", "600003", "600005", "600004"
+    ]
 
 
 def test_screen_stock_filters(db_session):
     """min_age/min_size_yi/max_dd_3y/min_mgr_exp 四维度同时应用"""
     _seed_stock(db_session)
     svc = FilterService(db_session)
-    # 期望只过 600001：年龄 4≥3，规模 10≥5，回撤 15<20，经理 5.5>5
+    # 600001/600002/600003/600004/600005 都在范围内（混合型 600005 也通过）
     result = svc.screen_stock(
         min_age=3, min_size_yi=5, max_dd_3y=20, min_mgr_exp=5,
     )
     codes = {it["code"] for it in result["items"]}
     assert "600001" in codes
-    # 600003（QDII）的 ddmgr/mgr 满足，回撤-10<20 应过；实际因有 4 只都在范围内
-    assert len(codes) == 4
+    assert len(codes) == 5
 
 
 def test_screen_stock_max_dd_filters_out(db_session):
     """max_dd_3y=10 → 留下回撤>-10%（绝对值 ≤10），即 dd_3y >= -10
-    600001(-15)/600002(-12) 没过；600003(-10)/600004(-8) 过
+    600001(-15)/600002(-12) 没过；600003(-10)/600004(-8)/600005(-7) 过
     """
     _seed_stock(db_session)
     svc = FilterService(db_session)
     result = svc.screen_stock(max_dd_3y=10)
     codes = {it["code"] for it in result["items"]}
-    assert codes == {"600003", "600004"}
+    assert codes == {"600003", "600004", "600005"}
 
 
 def test_screen_stock_min_mgr_exp_filters_out(db_session):

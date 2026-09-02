@@ -115,6 +115,7 @@ class FilterService:
                     Fund.fund_type.like("股票型-%"),
                     Fund.fund_type.like("QDII%"),
                     Fund.fund_type == "QDII",
+                    Fund.fund_type.like("混合型-%"),
                 )
             )
         )
