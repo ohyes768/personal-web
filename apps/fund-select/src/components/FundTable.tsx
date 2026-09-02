@@ -3,8 +3,6 @@
  */
 'use client';
 
-import { ScaleIcon } from '@heroicons/react/24/outline';
-
 import type { SortOrder } from './SortableHeader';
 import { SortableHeader } from './SortableHeader';
 import type { FundListItem } from '@/lib/types';
@@ -21,6 +19,8 @@ interface FundTableProps {
   onToggleCompare: (fund: FundListItem) => void;
 }
 
+const NAME_MAX = 10;
+
 const fmt = (v: number | null | undefined, digits = 2, suffix = ''): string => {
   if (v === null || v === undefined) return '-';
   return `${v.toFixed(digits)}${suffix}`;
@@ -36,17 +36,37 @@ const retColor = (v: number | null | undefined): string => {
   return v >= 0 ? 'text-up' : 'text-down';
 };
 
-/** 近 3 年回撤进度条：满刻度 10%，缺失显示 "-" */
+const truncateName = (name: string, max = NAME_MAX): string =>
+  name.length > max ? `${name.slice(0, max)}…` : name;
+
+/** 债基页去掉公共前缀，完整类型走 title */
+const displayFundType = (type: string): string =>
+  type.replace(/^债券型-/, '') || '-';
+
+/** 近 3 年回撤：数字 + 单元格内细条，避免横向占宽 */
 function DrawdownBar({ dd }: { dd: number | null }) {
   if (dd === null) return <span className="text-ink-soft">-</span>;
   const pct = Math.min(Math.abs(dd) / 10, 1) * 100;
   return (
-    <div className="flex items-center gap-2 justify-end">
-      <span className="tnum text-xs w-12 text-right text-down">{dd.toFixed(2)}%</span>
-      <div className="w-16 h-1.5 bg-rule rounded-full overflow-hidden" aria-hidden="true">
+    <div className="flex flex-col items-end gap-0.5 min-w-0">
+      <span className="tnum text-xs text-down">{dd.toFixed(2)}%</span>
+      <div className="w-full max-w-[3.5rem] h-1 bg-rule rounded-full overflow-hidden" aria-hidden="true">
         <div className="h-full bg-down rounded-full" style={{ width: `${pct}%` }} />
       </div>
     </div>
+  );
+}
+
+function HoverName({ name }: { name: string }) {
+  const truncated = name.length > NAME_MAX;
+  return (
+    <span
+      className={truncated ? 'hover-tip' : undefined}
+      data-tip={truncated ? name : undefined}
+      aria-label={name}
+    >
+      {truncateName(name)}
+    </span>
   );
 }
 
@@ -78,64 +98,67 @@ export function FundTable({
     );
   }
 
+  const th = 'px-1.5 py-2';
+  const td = 'px-1.5 py-1.5';
+
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+    <div className="w-full min-w-0">
+      <table className="w-full table-fixed text-xs">
         <thead className="border-b border-rule-strong">
           <tr>
             <SortableHeader label="代码" field="code" currentSort={sort} currentOrder={order} onSort={onSort} align="left" />
-            <th className="px-3 py-2 text-left text-xs font-medium text-ink-muted">名称</th>
-            <th className="px-3 py-2 text-left text-xs font-medium text-ink-muted">类型</th>
-            <SortableHeader label="规模(亿)" field="size_yi" currentSort={sort} currentOrder={order} onSort={onSort} />
-            <SortableHeader label="成立年限" field="age_years" currentSort={sort} currentOrder={order} onSort={onSort} />
-            <th className="px-3 py-2 text-right text-xs font-medium text-ink-muted">
-              <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                <ScaleIcon className="w-3 h-3 opacity-60" />
-                近3年回撤
-              </span>
-            </th>
+            <th className={`${th} w-[7rem] text-left text-xs font-medium text-ink-muted`}>名称</th>
+            <th className={`${th} text-left text-xs font-medium text-ink-muted`}>类型</th>
+            <SortableHeader label="规模" field="size_yi" currentSort={sort} currentOrder={order} onSort={onSort} />
+            <SortableHeader label="年限" field="age_years" currentSort={sort} currentOrder={order} onSort={onSort} />
+            <th className={`${th} text-right text-xs font-medium text-ink-muted`}>回撤</th>
             <SortableHeader label="经理" field="mgr_experience_years" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近1年" field="ret_1y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近3年" field="ret_3y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近5年" field="ret_5y" currentSort={sort} currentOrder={order} onSort={onSort} />
-            <th className="px-3 py-2 text-right text-xs font-medium text-ink-muted">利率债</th>
+            <th className={`${th} text-right text-xs font-medium text-ink-muted`}>利率债</th>
             <SortableHeader label="年费" field="fee_annual" currentSort={sort} currentOrder={order} onSort={onSort} />
-            <th className="px-3 py-2 text-center text-xs font-medium text-ink-muted">对比</th>
+            <th className={`${th} text-center text-xs font-medium text-ink-muted`}>对比</th>
           </tr>
         </thead>
         <tbody>
           {items.map(fund => {
             const selected = isSelected(fund.code);
             const disabled = !selected && isCompareFull;
+            const typeFull = fund.fund_type || '-';
+            const typeShow = displayFundType(typeFull);
+            const mgrTip = `${fund.mgr_name || '-'} / ${fund.mgr_company || '-'}`;
             return (
               <tr
                 key={fund.code}
                 className={`border-b border-rule transition-colors hover:bg-paper-tint ${selected ? 'bg-info-tint' : ''}`}
               >
-                <td className="px-3 py-2 font-mono text-xs text-info">{fund.code}</td>
-                <td className="px-3 py-2 text-ink-strong whitespace-nowrap" title={fund.name}>
-                  {fund.name}
+                <td className={`${td} font-mono text-info whitespace-nowrap`}>{fund.code}</td>
+                <td className={`${td} w-[7rem] text-ink-strong`}>
+                  <HoverName name={fund.name} />
                 </td>
-                <td className="px-3 py-2 text-xs text-ink-muted whitespace-nowrap">{fund.fund_type || '-'}</td>
-                <td className="px-3 py-2 text-right tnum">{fmt(fund.size_yi)}</td>
-                <td className="px-3 py-2 text-right tnum">{fmt(fund.age_years, 1)}</td>
-                <td className="px-3 py-2"><DrawdownBar dd={fund.dd_3y} /></td>
-                <td className="px-3 py-2 text-right whitespace-nowrap">
-                  <div className="tnum text-xs">{fund.mgr_experience_years != null ? `${fund.mgr_experience_years.toFixed(1)}年` : '-'}</div>
-                  <div className="text-[10px] text-ink-soft truncate max-w-[90px]" title={`${fund.mgr_name || '-'} / ${fund.mgr_company || '-'}`}>
+                <td className={`${td} text-ink-muted leading-tight`} title={typeFull}>
+                  {typeShow}
+                </td>
+                <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.size_yi)}</td>
+                <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.age_years, 1)}</td>
+                <td className={td}><DrawdownBar dd={fund.dd_3y} /></td>
+                <td className={`${td} text-right`}>
+                  <div className="tnum whitespace-nowrap">{fund.mgr_experience_years != null ? `${fund.mgr_experience_years.toFixed(1)}年` : '-'}</div>
+                  <div className="text-[10px] text-ink-soft truncate" title={mgrTip}>
                     {fund.mgr_name || '-'}
                   </div>
                 </td>
-                <td className={`px-3 py-2 text-right tnum ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</td>
-                <td className={`px-3 py-2 text-right tnum ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</td>
-                <td className={`px-3 py-2 text-right tnum ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</td>
-                <td className="px-3 py-2 text-right tnum">{fmt(fund.rate_bond_pct, 1)}</td>
-                <td className="px-3 py-2 text-right tnum">{fmt(fund.fee_annual)}</td>
-                <td className="px-3 py-2 text-center">
+                <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</td>
+                <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</td>
+                <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</td>
+                <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.rate_bond_pct, 1, '%')}</td>
+                <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.fee_annual, 2, '%')}</td>
+                <td className={`${td} text-center`}>
                   <button
                     onClick={() => onToggleCompare(fund)}
                     disabled={disabled}
-                    className={`px-2 py-1 text-xs rounded transition-colors ${
+                    className={`px-1.5 py-0.5 rounded transition-colors ${
                       selected
                         ? 'bg-info text-white'
                         : disabled

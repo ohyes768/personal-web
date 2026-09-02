@@ -23,17 +23,19 @@ export function SortableHeader({
   const active = currentSort === field;
   const Icon = !active ? ArrowsUpDownIcon : currentOrder === 'desc' ? ArrowDownIcon : ArrowUpIcon;
 
+  const alignClass = align === 'left' ? 'text-left' : align === 'center' ? 'text-center' : 'text-right';
+
   return (
-    <th className={`px-3 py-2 text-${align} ${className}`}>
+    <th className={`px-1.5 py-2 ${alignClass} ${className}`}>
       <button
         onClick={() => onSort(field)}
-        className={`inline-flex items-center gap-1 text-xs font-medium transition-colors ${
+        className={`group inline-flex items-center gap-0.5 text-xs font-medium transition-colors ${
           active ? 'text-ink-strong' : 'text-ink-muted hover:text-ink-strong'
         }`}
         aria-label={`按${label}排序`}
       >
-        <span className="whitespace-nowrap">{label}</span>
-        <Icon className={`w-3 h-3 ${active ? 'opacity-100' : 'opacity-40'}`} />
+        <span>{label}</span>
+        <Icon className={`w-3 h-3 shrink-0 ${active ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`} />
       </button>
     </th>
   );

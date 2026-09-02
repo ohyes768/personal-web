@@ -32,9 +32,9 @@ export function FilterSheet({ isOpen, onClose, filters, onChange, onClearAll, ac
 
   return (
     <>
-      <div className="fixed inset-0 bg-black/40 z-40 sm:hidden" onClick={onClose} aria-hidden="true" />
+      <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={onClose} aria-hidden="true" />
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 bg-paper rounded-t-2xl max-h-[80vh] overflow-y-auto sm:hidden"
+        className="fixed bottom-0 left-0 right-0 z-50 bg-paper rounded-t-2xl max-h-[80vh] overflow-y-auto lg:hidden"
         role="dialog"
         aria-modal="true"
         aria-label="筛选条件"

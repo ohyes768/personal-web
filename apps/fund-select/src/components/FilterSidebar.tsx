@@ -24,10 +24,10 @@ interface Dimension {
 }
 
 const DIMENSIONS: Dimension[] = [
-  { key: 'min_age', label: '成立年限', unit: '年', min: 0, max: 20, step: 0.5 },
+  { key: 'min_age', label: '年限', unit: '年', min: 0, max: 20, step: 0.5 },
   { key: 'min_size_yi', label: '规模', unit: '亿', min: 0, max: 350, step: 5 },
-  { key: 'max_dd_3y', label: '近3年最大回撤', unit: '%', min: 0, max: 20, step: 0.5 },
-  { key: 'min_mgr_exp', label: '经理从业年限', unit: '年', min: 0, max: 20, step: 0.5 },
+  { key: 'max_dd_3y', label: '3年回撤', unit: '%', min: 0, max: 20, step: 0.5 },
+  { key: 'min_mgr_exp', label: '经理', unit: '年', min: 0, max: 20, step: 0.5 },
 ];
 
 function DimensionControl({ dim, value, onChange }: {
@@ -36,10 +36,10 @@ function DimensionControl({ dim, value, onChange }: {
   onChange: (v: number | null) => void;
 }) {
   return (
-    <div className="px-4 py-3 border-b border-rule last:border-b-0">
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-sm font-medium text-ink-strong">{dim.label}</span>
-        <div className="flex items-center gap-1">
+    <div className="px-2.5 py-2 border-b border-rule last:border-b-0">
+      <div className="flex items-center justify-between gap-1 mb-1.5">
+        <span className="text-xs font-medium text-ink-strong shrink-0">{dim.label}</span>
+        <div className="flex items-center gap-0.5 min-w-0">
           <input
             type="number"
             min={dim.min}
@@ -51,10 +51,10 @@ function DimensionControl({ dim, value, onChange }: {
               const raw = e.target.value;
               onChange(raw === '' ? null : Number(raw));
             }}
-            className="w-16 px-2 py-1 text-right text-sm tnum border border-rule rounded bg-paper-card focus:outline-none focus:border-info"
+            className="w-12 px-1 py-0.5 text-right text-xs tnum border border-rule rounded bg-paper-card focus:outline-none focus:border-info"
             aria-label={`${dim.label}阈值`}
           />
-          <span className="text-xs text-ink-soft">{dim.unit}</span>
+          <span className="text-[10px] text-ink-soft">{dim.unit}</span>
           {value !== null && (
             <button
               onClick={() => onChange(null)}
@@ -87,14 +87,14 @@ function DimensionControl({ dim, value, onChange }: {
 export function FilterPanel({ filters, onChange, onClearAll, activeCount }: FilterPanelProps) {
   return (
     <div className="bg-paper-card rounded-lg border border-rule">
-      <div className="px-4 py-3 border-b border-rule flex items-center justify-between">
-        <span className="text-sm font-semibold text-ink-strong">筛选</span>
+      <div className="px-2.5 py-2 border-b border-rule flex items-center justify-between gap-1">
+        <span className="text-xs font-semibold text-ink-strong">筛选</span>
         <button
           onClick={onClearAll}
           disabled={activeCount === 0}
-          className="text-xs text-ink-muted hover:text-down disabled:opacity-40 disabled:cursor-not-allowed"
+          className="text-[11px] text-ink-muted hover:text-down disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          清空全部
+          清空
         </button>
       </div>
       {DIMENSIONS.map(dim => (

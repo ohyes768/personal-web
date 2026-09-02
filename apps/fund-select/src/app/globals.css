@@ -128,3 +128,26 @@ input[type="number"] {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
 }
+
+/* 截断名称悬停展示全名（立刻出现，不依赖原生 title 延迟） */
+.hover-tip {
+  position: relative;
+  cursor: default;
+}
+.hover-tip[data-tip]:hover::after {
+  content: attr(data-tip);
+  position: absolute;
+  left: 0;
+  top: calc(100% + 4px);
+  z-index: 40;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--color-ink);
+  color: var(--color-paper-card);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.14);
+}

@@ -38,7 +38,7 @@ function FundsPageInner() {
   return (
     <main className="min-h-screen pb-20">
       <header className="border-b border-rule bg-paper-card sticky top-0 z-30">
-        <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-3 flex items-center justify-between">
+        <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-3 flex items-center justify-between">
           <h1 className="text-lg font-semibold text-ink-strong">债基筛选</h1>
           <div className="flex items-center gap-2 sm:gap-3">
             <ExportCsvButton filters={filters} />
@@ -48,7 +48,7 @@ function FundsPageInner() {
             </span>
             <button
               onClick={() => setSheetOpen(true)}
-              className="sm:hidden inline-flex items-center gap-1 px-2.5 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted"
+              className="lg:hidden inline-flex items-center gap-1 px-2.5 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted"
               aria-label="打开筛选"
             >
               <FunnelIcon className="w-4 h-4" />
@@ -58,13 +58,13 @@ function FundsPageInner() {
         </div>
       </header>
 
-      <div className="max-w-[1400px] mx-auto px-4 sm:px-6 py-4">
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
         <FilterChipBar
           filters={filters}
           onRemove={key => setFilter(key, null)}
         />
-        <div className="grid grid-cols-1 sm:grid-cols-[260px_1fr] gap-4 items-start">
-          <aside className="hidden sm:block sticky top-16">
+        <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
+          <aside className="hidden lg:block sticky top-16">
             <FilterPanel
               filters={filters}
               onChange={(key, v) => setFilter(key, v)}
@@ -72,7 +72,7 @@ function FundsPageInner() {
               activeCount={activeCount}
             />
           </aside>
-          <section className="bg-paper-card rounded-lg border border-rule overflow-hidden">
+          <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
             <FundTable
               items={items}
               loading={loading}
