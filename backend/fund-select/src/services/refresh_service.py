@@ -75,10 +75,18 @@ def snapshot_fund(
     nav = fetch_nav(code)
     out["performance"] = compute_performance(nav, today=ref)
 
-    # 3. 季报债券持仓
-    tables = fetch_bond_hold(code, year)
-    if tables:
-        out["holdings"] = {"report_date": date(int(year), 12, 31), **analyze_holdings(tables)}
+    # 3. 季报债券持仓（仅债券型/混合型有意义；股票基金与 QDII 的季报是股票持仓，
+    #    不匹配 fund_holdings_bond 的利率债/信用债/可转债字段——短路避免无效请求 + warn 噪音）
+    fund_type = out["fund_type"]
+    is_stock_or_qdii = (
+        fund_type.startswith("股票型")
+        or fund_type.startswith("QDII")
+        or fund_type == "QDII"
+    )
+    if not is_stock_or_qdii:
+        tables = fetch_bond_hold(code, year)
+        if tables:
+            out["holdings"] = {"report_date": date(int(year), 12, 31), **analyze_holdings(tables)}
 
     # 4. 费率
     out["fees"] = fetch_fees(code)
