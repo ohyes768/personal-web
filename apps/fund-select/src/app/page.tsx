@@ -38,8 +38,17 @@ function FundsPageInner() {
   return (
     <main className="min-h-screen pb-20">
       <header className="border-b border-rule bg-paper-card sticky top-0 z-30">
-        <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-semibold text-ink-strong">债基筛选</h1>
+        <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            {/* 原生 <a> 而非 Link：basePath=/funds 会把 Link 的 href="/" 拼成 /funds */}
+            <a
+              href="/"
+              className="text-xs text-ink-muted hover:text-ink-strong transition-colors"
+            >
+              ← 返回首页
+            </a>
+            <h1 className="text-lg font-semibold text-ink-strong mt-0.5">债基筛选</h1>
+          </div>
           <div className="flex items-center gap-2 sm:gap-3">
             <ExportCsvButton filters={filters} />
             <RefreshStatusPopover onRefreshed={reload} />
