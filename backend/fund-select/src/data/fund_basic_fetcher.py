@@ -75,7 +75,8 @@ def fetch_basic(code: str) -> dict:
 
 
 def _fetch_basic_fallback(code: str) -> dict:
-    """直接打 danjuanfunds 接口取已有字段。"""
+    """直接打 danjuanfunds 接口取已有字段。type_desc='互认基金' 标准化为 'QDII-互认'
+    以对接 screen_stock 的 LIKE 'QDII%' 谓词。"""
     r = requests.get(
         f"https://danjuanfunds.com/djapi/fund/{code}",
         headers={"User-Agent": USER_AGENT},
@@ -85,6 +86,12 @@ def _fetch_basic_fallback(code: str) -> dict:
     out: dict = {}
     for k_eng, k_ch in _FALLBACK_FIELDS.items():
         v = data.get(k_eng)
-        if v is not None:
+        if v is None:
+            continue
+        if k_eng == "type_desc":
+            # 互认基金（如 968157 东亚联丰环球股票）标准化为 QDII-互认，
+            # 与原 akshare QDII 类目保持 screen_stock 谓词一致
+            out[k_ch] = "QDII-互认" if str(v).strip() == "互认基金" else str(v).strip()
+        else:
             out[k_ch] = str(v).strip()
     return out

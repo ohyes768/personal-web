@@ -117,7 +117,8 @@ class TestFetchBasic:
 
         assert out["基金代码"] == "968157"
         assert out["基金名称"] == "东亚联丰环球股票人民币"
-        assert out["基金类型"] == "互认基金"
+        # 互认基金标准化映射为 QDII-互认，对接 screen_stock 谓词
+        assert out["基金类型"] == "QDII-互认"
         assert out["基金公司"] == "东亚联丰投资管理有限公司"
         # 缺字段不在 dict 里
         assert "最新规模" not in out
