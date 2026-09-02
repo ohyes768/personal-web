@@ -138,4 +138,5 @@ class FinancialReader:
             "eps": float(row["最新EPS(元)"]) if pd.notna(row.get("最新EPS(元)")) else None,
             "latest_quarter_net_profit_ex_non_recurring": float(row["最新季度扣非(元)"]) if pd.notna(row.get("最新季度扣非(元)")) else None,
             "latest_quarter_yoy_pct": float(row["最新季度扣非同比(%)"]) if pd.notna(row.get("最新季度扣非同比(%)")) else None,
+            "latest_quarter_label": str(row["数据季度"]) if pd.notna(row.get("数据季度")) and str(row["数据季度"]).strip() else None,
         }

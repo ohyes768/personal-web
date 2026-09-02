@@ -88,9 +88,10 @@ export interface DividendStock {
   payout_ratio?: number | null;                   // 分红比例(%)：DPS/EPS×100
   roe?: number | null;                            // 加权净资产收益率(%)
 
-  // 财务指标 - 最新季度（2026Q1 vs 2025Q1）
+  // 财务指标 - 最新季度（单季口径，各股最新已披露报告期）
   latest_quarter_net_profit_ex_non_recurring?: number | null; // 最新季度扣非净利润(元)
   latest_quarter_yoy_pct?: number | null;                      // 最新季度扣非同比(%)
+  latest_quarter_label?: string | null;                        // 数据所属报告期，如 2026Q2
 
   // 近5年分红详情
   dividend_history?: DividendHistoryItem[] | null;

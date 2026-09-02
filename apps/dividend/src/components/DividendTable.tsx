@@ -53,6 +53,18 @@ const formatSwIndustry = (stock: DividendStock): string[] => {
 };
 
 /**
+ * 最新季度扣非数据所属报告期（如 "2026Q2"），老数据无该字段时回退 "最新季度"
+ */
+const latestQuarterLabel = (stock: DividendStock): string =>
+  stock.latest_quarter_label || '最新季度';
+
+/**
+ * 去年同期报告期标签（"2026Q2" → "2025Q2"），用于同比副标题
+ */
+const prevYearQuarterLabel = (label: string): string =>
+  label.replace(/\d{4}/, (y) => String(Number(y) - 1));
+
+/**
  * 行业文字截断：超过 max 字则显示前 max 字 + 省略号
  * 用于"行业"列节省列宽（申万三级常 7-12 字，超过 w-28 列宽）
  */
@@ -489,7 +501,7 @@ export function DividendTable({
                   }}
                   title={
                     stock.latest_quarter_yoy_pct !== null && stock.latest_quarter_yoy_pct !== undefined
-                      ? '点击查看 2026Q1 扣非同比'
+                      ? `点击查看 ${latestQuarterLabel(stock)} 扣非同比`
                       : '无最新季度数据'
                   }
                 >
@@ -665,7 +677,7 @@ const FinancialPopover = forwardRef<HTMLDivElement, FinancialPopoverProps>(funct
   const arrowPos = placeAbove ? '-bottom-2' : '-top-2';
   const arrowRotate = placeAbove ? 'rotate-180' : '';
 
-  // ----- koufei: 2026Q1 扣非同比 -----
+  // ----- koufei: 最新季度扣非同比（报告期取后端 latest_quarter_label） -----
   if (kind === 'koufei') {
     const yoy = stock.latest_quarter_yoy_pct;
     const amount = stock.latest_quarter_net_profit_ex_non_recurring;
@@ -673,6 +685,8 @@ const FinancialPopover = forwardRef<HTMLDivElement, FinancialPopoverProps>(funct
     const positive = yoy >= 0;
     const accent = positive ? 'bg-emerald-500' : 'bg-rose-500';
     const accentText = positive ? 'text-emerald-400' : 'text-rose-400';
+    const label = latestQuarterLabel(stock);
+    const hasLabel = Boolean(stock.latest_quarter_label);
 
     return (
       <PopoverShell
@@ -689,12 +703,14 @@ const FinancialPopover = forwardRef<HTMLDivElement, FinancialPopoverProps>(funct
           <div className="flex items-center gap-2">
             <span className={`inline-block w-1.5 h-1.5 rounded-full ${accent}`} aria-hidden />
             <span className="text-[11px] font-semibold tracking-wider text-gray-200">
-              2026Q1 扣非同比
+              {label} 扣非同比
             </span>
           </div>
-          <div className="text-[10px] text-gray-500 mt-0.5 pl-3.5 font-mono">
-            vs 2025Q1
-          </div>
+          {hasLabel && (
+            <div className="text-[10px] text-gray-500 mt-0.5 pl-3.5 font-mono">
+              vs {prevYearQuarterLabel(label)}
+            </div>
+          )}
         </div>
 
         <div className="px-4 pb-3">

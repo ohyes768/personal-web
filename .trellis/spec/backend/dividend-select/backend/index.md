@@ -15,6 +15,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Code Type Guidelines](./code-type-guidelines.md) | 股票代码/指数代码全链路 str 契约、CSV dtype 规范 | Active |
+| [Financial Quarterly Contract](./financial-quarterly-contract.md) | 最新季度扣非单季口径、数据季度=报告期、latest_quarter_label 全链路透传 | Active |
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |

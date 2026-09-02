@@ -14,12 +14,6 @@ from ..utils.helpers import (
     CODE_DTYPE,
 )
 
-# 季度扣非同比的"本期"固定口径（akshare stock_financial_analysis_indicator
-# 实际返回到 2026Q1）。选择"全市场固定季度"而非"每只股票最新季度"，
-# 是为了让前端展示口径一致（2026Q1 vs 2025Q1 同比）。
-QUARTERLY_YOY_REPORT_DATE = date(2026, 3, 31)  # 2026Q1
-QUARTERLY_YOY_BASE_DATE = date(2025, 3, 31)    # 2025Q1（去年同期）
-
 logger = setup_logger(__name__)
 
 
@@ -77,13 +71,9 @@ class FinancialFetcher:
             eps_metrics = self._calc_latest_eps(df)
             result.update(eps_metrics)
 
-            # 计算 2026Q1 vs 2025Q1 扣非同比（前端 hover tooltip 用）
+            # 计算最新季度扣非同比（前端 hover tooltip 用），并产出数据季度
             quarterly_metrics = self._calc_quarterly_yoy(df)
             result.update(quarterly_metrics)
-
-            # 添加数据季度
-            from ..api.helpers.aux_data import current_quarter
-            result["数据季度"] = current_quarter()
 
             return result
 
@@ -212,41 +202,70 @@ class FinancialFetcher:
 
     def _calc_quarterly_yoy(self, df: pd.DataFrame) -> dict:
         """
-        计算固定季度（2026Q1 vs 2025Q1）的扣非净利润同比
+        计算最新季度扣非净利润同比（单季口径，自动按各股最新报告期）
 
-        固定取全市场 2026Q1 口径（QUARTERLY_YOY_REPORT_DATE = 2026-03-31），
-        让前端展示口径一致。新股或未发布该季报的股票返回 None。
+        akshare 的"扣除非经常性损益后的净利润(元)"为报告期累计值
+        （06-30=H1累计，09-30=前三季累计，12-31=全年累计，03-31 累计=单季），
+        需减去同年上一报告期还原单季值，再与去年同期单季值比较。
 
         Args:
             df: 财务指标 DataFrame（已按日期降序排列）
 
         Returns:
             {
-                "最新季度扣非(元)": float 或 None,         # 2026Q1 扣非绝对值
-                "最新季度扣非同比(%)": float 或 None,      # (2026Q1-2025Q1) / abs(2025Q1) * 100
+                "最新季度扣非(元)": float 或 None,      # 最新报告期单季扣非
+                "最新季度扣非同比(%)": float 或 None,   # 单季 vs 去年同期单季
+                "数据季度": str 或 None,                # 如 "2026Q2"（最新报告期）
             }
         """
         col = "扣除非经常性损益后的净利润(元)"
         dates = pd.to_datetime(df["日期"]).dt.date
-        report_row = df[dates == QUARTERLY_YOY_REPORT_DATE]
-        base_row = df[dates == QUARTERLY_YOY_BASE_DATE]
+        values = dict(zip(dates, df[col]))
 
-        if report_row.empty:
-            return {"最新季度扣非(元)": None, "最新季度扣非同比(%)": None}
+        # 报告期 → 同年上一报告期（用于累计值还原单季）
+        prev_date = {
+            1: None,                      # Q1 累计=单季
+            2: (lambda d: date(d.year, 3, 31)),
+            3: (lambda d: date(d.year, 6, 30)),
+            4: (lambda d: date(d.year, 9, 30)),
+        }
 
-        report_value = self._safe_float(report_row.iloc[0][col])
+        def single_quarter(d: date) -> Optional[float]:
+            """单季扣非 = 该报告期累计 − 同年上一报告期累计"""
+            q = (d.month - 1) // 3 + 1
+            cumulative = self._safe_float(values.get(d))
+            if cumulative is None:
+                return None
+            prev = prev_date[q](d) if prev_date[q] else None
+            if prev is None:              # Q1
+                return cumulative
+            prev_value = self._safe_float(values.get(prev))
+            if prev_value is None:
+                return None               # 缺同年上一累计期，无法还原单季
+            return cumulative - prev_value
 
-        if base_row.empty:
-            return {"最新季度扣非(元)": report_value, "最新季度扣非同比(%)": None}
+        empty = {"最新季度扣非(元)": None, "最新季度扣非同比(%)": None, "数据季度": None}
+        if not values:
+            return empty
 
-        base_value = self._safe_float(base_row.iloc[0][col])
-        if base_value is None or base_value == 0 or report_value is None:
-            return {"最新季度扣非(元)": report_value, "最新季度扣非同比(%)": None}
+        latest_date = max(values)
+        q = (latest_date.month - 1) // 3 + 1
+        label = f"{latest_date.year}Q{q}"
 
-        yoy = (report_value - base_value) / abs(base_value) * 100
+        single = single_quarter(latest_date)
+        if single is None:
+            return {**empty, "数据季度": label}
+
+        # 去年同期单季 = 去年同月报告期累计 − 去年上一报告期累计
+        same_last_year = single_quarter(date(latest_date.year - 1, latest_date.month, latest_date.day))
+        if same_last_year is None or same_last_year == 0:
+            return {"最新季度扣非(元)": single, "最新季度扣非同比(%)": None, "数据季度": label}
+
+        yoy = (single - same_last_year) / abs(same_last_year) * 100
         return {
-            "最新季度扣非(元)": report_value,
+            "最新季度扣非(元)": single,
             "最新季度扣非同比(%)": round(yoy, 2),
+            "数据季度": label,
         }
 
     def _calc_growth_metrics(self, df: pd.DataFrame) -> dict:
