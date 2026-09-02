@@ -91,6 +91,15 @@ export function filtersToSearch(filters: FundFilters): URLSearchParams {
   return params;
 }
 
+/** 只推 ?query，不要拼 location.pathname（含 basePath，router.push 会再叠一层） */
+function pushQuery(
+  router: { push: (href: string, opts?: { scroll?: boolean }) => void },
+  params: URLSearchParams,
+) {
+  const qs = params.toString();
+  router.push(qs ? `?${qs}` : '?', { scroll: false });
+}
+
 export function useFilters(initial?: Partial<FundFilters>) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -115,9 +124,7 @@ export function useFilters(initial?: Partial<FundFilters>) {
     } else {
       (next[key] as number | null) = value === null || value === '' ? null : Number(value);
     }
-    const params = filtersToSearch(next);
-    const qs = params.toString();
-    router.push(qs ? `?${qs}` : location.pathname, { scroll: false });
+    pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
 
   /** 排序切换：同字段翻转方向，异字段重置为 desc */
@@ -126,15 +133,21 @@ export function useFilters(initial?: Partial<FundFilters>) {
       setFilter('order', filters.order === 'desc' ? 'asc' : 'desc');
     } else {
       const next: FundFilters = { ...filters, sort: field, order: 'desc' };
-      const qs = filtersToSearch(next).toString();
-      router.push(qs ? `?${qs}` : location.pathname, { scroll: false });
+      pushQuery(router, filtersToSearch(next));
     }
   }, [filters, setFilter, router]);
 
   /** 清空全部筛选（保留 sort/order） */
   const clearAll = useCallback(() => {
-    router.push(`${location.pathname}?cleared=1`, { scroll: false });
-  }, [router]);
+    const next: FundFilters = {
+      ...filters,
+      min_age: null,
+      min_size_yi: null,
+      max_dd_3y: null,
+      min_mgr_exp: null,
+    };
+    pushQuery(router, filtersToSearch(next));
+  }, [filters, router]);
 
   /** 已激活的筛选维度数（chip 用） */
   const activeCount = NUMERIC_KEYS.filter(

@@ -64,6 +64,7 @@ cache/fees_{code}.json = {
 **Fix**:
 - page 放 `app/page.tsx` 根（basePath 承担前缀）
 - `router.push` / `<Link href>` 用**相对 basePath 的路径**（`/` → `/funds`，`/stock` → `/funds/stock`）；写 `href="/funds"` 会被拼成 `/funds/funds`
+- 同步筛选 URL 只用 `?qs`，不要拼 `location.pathname`（浏览器 pathname 已含 `/funds`，`router.push('/funds?cleared=1')` 同样会变成 `/funds/funds?cleared=1`）
 - 原生 `fetch('/funds/api/...')` **必须写全路径**——fetch 不吃 basePath
 
 ### Gotcha: 代理剥 BOM
