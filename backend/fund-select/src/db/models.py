@@ -92,3 +92,23 @@ class RefreshRun(Base):
     errors = Column(String(2048), nullable=True)  # JSON 数组字符串
     started_at = Column(DateTime, default=lambda: datetime.now(UTC))
     finished_at = Column(DateTime, nullable=True)
+
+
+class FundAchievementRank(Base):
+    """业绩排名（雪球 achievement_xq）
+
+    每只基金多条记录，复合主键 (code, period_kind, period)。
+    第一阶段仅用于决策"同类排名"展示；决策 7 不展示"周期最大回撒"列，
+    但 achievement_xq 一次性返回，全量入表便于未来拓展。
+    """
+    __tablename__ = "fund_achievement_rank"
+
+    code = Column(String(6), primary_key=True)
+    period_kind = Column(String(32), primary_key=True)         # 年度业绩 / 季度业绩 / 周业绩
+    period = Column(String(32), primary_key=True)               # 1y / 3y / 5y / 2025 / 成立以来
+    ret = Column(Float, nullable=True)                          # 本产品区间收益（%）
+    max_dd = Column(Float, nullable=True)                       # 本产品最大回撒（%，决定 7 不展示但保留列）
+    peer_rank = Column(String(32), nullable=True)               # '1694/5606'
+    as_of_date = Column(Date, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))
