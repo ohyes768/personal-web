@@ -112,3 +112,32 @@ class FundAchievementRank(Base):
     as_of_date = Column(Date, nullable=False)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC))
+
+
+class FundBenchmark(Base):
+    """业绩比较基准 TRI 序列（参考日=1000 加权日收益复利累加）
+
+    每只基金 × 交易日一行，复合主键 (code, date)。
+    tri=NULL 表示无可用基准（如 968157 互认基金无「业绩比较基准」字段）。
+    """
+    __tablename__ = "fund_benchmark"
+
+    code = Column(String(6), primary_key=True)
+    date = Column(Date, primary_key=True)
+    tri = Column(Float, nullable=True)
+    source = Column(String(64), nullable=False, default="fetched")
+    # 'fetched' / 'partial:fallback:sh000906' / 'fallback_chain:sh000906'
+    # / 'unavailable:no_field' / 'unavailable:exhausted'
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))
+
+
+class RiskFreeRate(Base):
+    """无风险利率日频（主源中国国债 2Y，年化小数）"""
+    __tablename__ = "risk_free_rate"
+
+    date = Column(Date, primary_key=True)
+    rate = Column(Float, nullable=False)
+    source = Column(String(32), nullable=False, default="bond_zh_us_rate_2y")
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))
