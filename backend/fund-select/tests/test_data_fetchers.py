@@ -2,18 +2,15 @@
 数据层单测：债券分类 / 费率契约 / 宇宙配置 / 基础信息 fetcher 容错（不联网，用 mock）
 """
 import json
-from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
 
-from src.data import fund_basic_fetcher
+from src.data import fee_fetcher, fund_basic_fetcher
 from src.data.bond_classifier import classify_bond
 from src.data.fee_fetcher import _parse_pct, fetch_fees
 from src.data.fund_basic_fetcher import fetch_basic, parse_size
 from src.data.fund_universe import load_fund_codes, resolve_universe_codes
-
-LEGACY_CACHE = Path(__file__).parent.parent.parent / "cache"
 
 
 class TestClassifyBond:
@@ -44,24 +41,45 @@ class TestFeeContract:
         assert _parse_pct("") is None
         assert _parse_pct("无") is None
 
-    def test_fetch_fees_from_fixture(self):
-        """预研缓存夹具：契约字段解析为 float"""
+    def test_fetch_fees_from_fixture(self, tmp_path, monkeypatch):
+        """缓存夹具契约：字符串数字解析为 float，空值字段剔除。
+
+        夹具自包含（tmp_path），不依赖仓库外预研 cache/ 目录——
+        该目录不入 git，缺失时旧写法会退化成真联网拉东财。
+        """
+        (tmp_path / "fees_003547.json").write_text(
+            json.dumps({
+                "fee_buy_small": "0.8",
+                "fee_redeem_lt7d": "1.5",
+                "fee_mgmt": "0.3",
+                "fee_custody": "0.1",
+                "fee_service": None,  # 该基金无销售服务费
+            }),
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(fee_fetcher, "CACHE_DIR", tmp_path)
         fees = fetch_fees("003547")
         assert fees["fee_buy_small"] == 0.8
         assert fees["fee_redeem_lt7d"] == 1.5
         assert fees["fee_mgmt"] == 0.3
         assert fees["fee_custody"] == 0.1
-        assert "fee_service" not in fees  # 该基金无销售服务费
+        assert "fee_service" not in fees
 
-    def test_fetch_fees_all_31_fixtures(self):
-        """31 份夹具全部可解析（契约稳定性）"""
-        files = list(LEGACY_CACHE.glob("fees_*.json"))
-        assert len(files) == 31
-        for f in files:
-            code = f.stem.split("_")[1]
+    def test_fetch_fees_all_fixtures(self, tmp_path, monkeypatch):
+        """多份夹具批量可解析（契约稳定性：费率档位变体、字符串数字）"""
+        fixtures = {
+            "003547": {"fee_buy_small": "0.8", "fee_redeem_lt7d": "1.5", "fee_mgmt": "0.3", "fee_custody": "0.1"},
+            "000082": {"fee_mgmt": "0.7", "fee_custody": "0.2", "fee_service": "0.4", "fee_redeem_ge7d": "0.05"},
+            "673010": {"fee_mgmt": "1.2", "fee_custody": "0.2", "fee_service": "0.0"},  # 0.0 是合法值不可剔除
+        }
+        for code, raw in fixtures.items():
+            (tmp_path / f"fees_{code}.json").write_text(json.dumps(raw), encoding="utf-8")
+        monkeypatch.setattr(fee_fetcher, "CACHE_DIR", tmp_path)
+        for code, raw in fixtures.items():
             fees = fetch_fees(code)
             assert isinstance(fees, dict), f"{code} 解析失败"
             assert fees.get("fee_mgmt") is not None, f"{code} 缺管理费"
+            assert fees == {k: float(v) for k, v in raw.items() if v not in (None, "")}
 
 
 class TestParseSize:
