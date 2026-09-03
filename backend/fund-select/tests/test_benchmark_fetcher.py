@@ -201,6 +201,75 @@ class TestFetchBenchmarkTri:
         assert "sh000906" in calls or True  # fallback 链是否介入取决于配置
         assert source.startswith("partial:fallback:") or source == "fetched"
 
+    def test_mixed_calendar_no_return_duplication(self):
+        """混合日历价格对齐：成分缺席日收益贡献 0，不复制前一交易日收益（09-04 B2 修复）。
+
+        A 交易日 = d1/d3/d5（周一三五），B = d2/d4（周二四），50/50。
+        旧算法对收益 ffill：d3/d5 复制 B 的 d2/d4 收益、d4 复制 A 的 d3 收益（双计）。
+        新算法：B 缺席日 d3/d5 贡献 0（价格 held），TRI 只含 A 当日收益。
+        """
+        dates_a = ["2026-01-05", "2026-01-07", "2026-01-09"]
+        dates_b = ["2026-01-06", "2026-01-08"]
+
+        def mock_idx(symbol, source, start, end):
+            if symbol == "sz399330":  # A
+                return _idx_df([100.0, 110.0, 121.0], dates=dates_a)   # r=[0,.10,.10]
+            return _idx_df([200.0, 204.0], dates=dates_b)              # B r=[0,.02]
+
+        with patch("src.data.benchmark_fetcher.fetch_basic",
+                   return_value=self._basic("深证100指数收益率×50%+上证国债指数收益率×50%")), \
+             patch("src.data.benchmark_fetcher._fetch_index_daily", side_effect=mock_idx):
+            df, source = fetch_benchmark_tri("000001", date(2026, 1, 1), date(2026, 9, 1))
+        assert source == "fetched"
+        # 前导裁剪：d1 只有 A 有价，并集起点裁到 d2（此后并集完整 d2..d5）
+        assert list(df["date"].dt.strftime("%Y-%m-%d")) == ["2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09"]
+        # weighted = [0, .05(A r .10), .01(B r .02), .05(A r .10)]
+        assert list(df["tri"]) == pytest.approx([1000.0, 1050.0, 1060.5, 1113.525], abs=1e-9)
+
+    def test_leading_dates_trimmed_to_latest_component(self):
+        """成分 B 首个交易日晚于 A：输出首行 = B 首日（前导 NaN 无法 ffill，裁掉）"""
+        def mock_idx(symbol, source, start, end):
+            if symbol == "sz399330":  # A 从 d1 有价
+                return _idx_df([100.0, 105.0, 110.25], dates=["2026-01-05", "2026-01-06", "2026-01-07"])
+            return _idx_df([50.0, 52.5], dates=["2026-01-06", "2026-01-07"])  # B 从 d2
+
+        with patch("src.data.benchmark_fetcher.fetch_basic",
+                   return_value=self._basic("深证100指数收益率×50%+上证国债指数收益率×50%")), \
+             patch("src.data.benchmark_fetcher._fetch_index_daily", side_effect=mock_idx):
+            df, _ = fetch_benchmark_tri("000001", date(2026, 1, 1), date(2026, 9, 1))
+        assert df["date"].iloc[0] == pd.Timestamp("2026-01-06")
+        # TRI 参考日 = 裁剪后首行（d2, =1000）；d3 起 A、B 各 +5% → 加权 +5%
+        assert df["tri"].iloc[0] == pytest.approx(1000.0)
+        assert df["tri"].iloc[1] == pytest.approx(1050.0, abs=1e-9)
+
+    def test_same_calendar_matches_return_compound(self):
+        """回归：全成分同一日历 → 新算法与「收益序列直接 cumprod」完全一致（09-04 B2）"""
+        def mock_idx(symbol, source, start, end):
+            if symbol == "sz399330":
+                return _idx_df([100.0, 110.0, 121.0])   # r=[0, .10, .10]
+            return _idx_df([200.0, 202.0, 204.0])       # r=[0, .01, .00990099...]
+
+        with patch("src.data.benchmark_fetcher.fetch_basic",
+                   return_value=self._basic("深证100指数收益率×50%+上证国债指数收益率×50%")), \
+             patch("src.data.benchmark_fetcher._fetch_index_daily", side_effect=mock_idx):
+            df, source = fetch_benchmark_tri("000001", date(2026, 1, 1), date(2026, 9, 1))
+        r_a = pd.Series([100.0, 110.0, 121.0]).pct_change().fillna(0)
+        r_b = pd.Series([200.0, 202.0, 204.0]).pct_change().fillna(0)
+        expected = ((1 + 0.5 * (r_a + r_b)).cumprod() * 1000).tolist()
+        assert source == "fetched"
+        assert list(df["tri"]) == pytest.approx(expected, rel=1e-9)
+
+    def test_deposit_weight_normalization(self):
+        """权重和 <1 时归一：90% 指数 + 5% 存款 → 实际 90/95 与 5/95"""
+        with patch("src.data.benchmark_fetcher.fetch_basic",
+                   return_value=self._basic("中证白酒指数收益率×90%+银行活期存款利率（税后）×5%")), \
+             patch("src.data.benchmark_fetcher._fetch_index_daily",
+                   return_value=_idx_df([100.0, 110.0])):
+            df, source = fetch_benchmark_tri("000001", date(2026, 1, 1), date(2026, 9, 1))
+        expected_r = (0.90 / 0.95) * 0.10 + (0.05 / 0.95) * (0.0035 / 252)
+        assert df["tri"].iloc[1] == pytest.approx(1000.0 * (1 + expected_r))
+        assert source == "fetched"
+
     def test_no_field_returns_empty_unavailable(self):
         """无「业绩比较基准」字段（968157 互认基金）→ 空 df + unavailable source"""
         with patch("src.data.benchmark_fetcher.fetch_basic", return_value={"基金代码": "968157"}):

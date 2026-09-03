@@ -47,6 +47,34 @@
 - α = T-M 回归截距 ×252 简单年化；γ = 日频二次项系数（不年化、无量纲）；α-IR = α_d/σ_e×√252；夏普/IR = 日均超额/std×√252；excess_3y = 连乘累计算术差。
 - `refresh_runs`：task_id PK，进度轮询数据源
 
+### 基准 TRI 合成契约（fetch_benchmark_tri，benchmark_fetcher.py）
+
+多成分基准（公式 N 个指数 + 存款）**必须按价格对齐，禁止对日收益 ffill**（任务 09-04-benchmark-price-align）：
+
+```
+成分存 close（index 与 unknown→fallback 分支都是）
+→ 并集日历 reindex → ffill 价格 → dropna()（裁掉最晚成分上市前的前导行）
+→ pct_change().fillna(0)   # 缺席交易日价格不变 → 收益 0，不复制前日收益
+→ weighted = Σ ret×(w/total_w)；deposit 成分 = PBOC_DEPOSIT_FLOOR_RATE/252 常数铺满
+→ tri = (1+weighted).cumprod() × 1000；source 标记（fetched/partial:fallback/fallback_chain）不变
+```
+
+**Why**：A/HK/美/中债交易日历互不重合（港股佛诞、美股感恩节、中债日期还错位——见下）。对收益 ffill 会把成分缺席日的前一日收益**再计一次**，混合日历 3 年虚高 13.5pp（004316：真 +21.8% 算成 +35.3%），excess/IR/α 全歪。单成分基准两算法等价（回归测试锁定）。
+
+**已知未修问题（改这里前先看）**：
+- **B1**：`bond_composite_index_cbond` 返回日期整体 **−1 天**（真实周一标成周日、周五标成周四，3 年分布 Fri=9/Sat=11/Sun=142 实证）。中债成分收益落在错位日期上，inner join 丢周末行 → 中债周五收益永久丢失。修复方向：中债成分日期 +1 天或换源。
+- **B3**：unknown 成分被 fallback 指数（中证800）**静默替换**，`source` 有 `partial:fallback` 标记但指标照算——006373 有 85% 权重成分被换，excess_3y=+146% 失真；32 只非 QDII 受影响（部分是 yaml 名字归一化缺口：科创板50/A50/科创创业50/红利低波等）。修复方向：高权重 unknown 置 NULL + 补 yaml。
+
+**Tests**（test_benchmark_fetcher.py）：mixed_calendar_no_return_duplication（双计消除）/ leading_dates_trimmed（前导裁剪）/ same_calendar_matches_return_compound（回归）/ deposit_weight_normalization。
+
+```python
+# Wrong: 对收益 ffill —— B 缺席日复制前日收益（3年 +13.5pp）
+ret_df = pd.DataFrame({k: s_return for ...}).sort_index().ffill().fillna(0)
+# Correct: 对价格 ffill 后统一重算
+px = pd.DataFrame({k: s_close for ...}).sort_index().ffill().dropna()
+rets = px.pct_change().fillna(0)
+```
+
 ## 3. 费率缓存契约（补回的 fetcher）
 
 ```

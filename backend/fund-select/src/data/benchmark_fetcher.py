@@ -218,8 +218,8 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
         logger.warning("%s 公式整体不可解析: %r → fallback_chain", code, str(raw)[:80])
         return _fallback_chain_tri(start, end, cfg, ctx)
 
-    # 逐成分取日收益序列
-    series: dict[str, pd.Series] = {}   # key -> 日收益（index=date）
+    # 逐成分取收盘价序列（价格对齐合成：ffill 价格后重算日收益，缺席日贡献 0）
+    series: dict[str, pd.Series] = {}   # key -> 收盘价（index=date）；deposit 为 None 占位
     weights: dict[str, float] = {}      # key -> 原始权重
     fallback_syms: list[str] = []
     for c in components:
@@ -235,14 +235,14 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
             if got is None:
                 return _fallback_chain_tri(start, end, cfg, ctx)
             sym, df = got
-            series[key] = df.set_index("date")["return"]
+            series[key] = df.set_index("date")["close"]
             weights[key] = c.weight
         else:  # unknown → fallback_index 替换
             got = _resolve(None, start, end, cfg, f"{ctx} | 成分「{c.name}」(未收录)")
             if got is None:
                 return _fallback_chain_tri(start, end, cfg, ctx)
             sym, df = got
-            series[key] = df.set_index("date")["return"]
+            series[key] = df.set_index("date")["close"]
             weights[key] = c.weight
             fallback_syms.append(sym)
 
@@ -250,11 +250,14 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
     all_dates = sorted(set().union(*[s.index for s in series.values() if s is not None]))
     if not all_dates:
         return _fallback_chain_tri(start, end, cfg, ctx)
-    ret_df = pd.DataFrame(index=pd.DatetimeIndex(all_dates))
+    # 价格对齐：并集日历上 ffill 价格（成分缺席日价格不变 → 收益 0，不再复制前日收益）；
+    # dropna 裁掉前导缺失行（任一成分未上市前基准无定义）
+    px = pd.DataFrame(index=pd.DatetimeIndex(all_dates))
     for key, s in series.items():
         if s is not None:
-            ret_df[key] = s
-    ret_df = ret_df.sort_index().ffill().fillna(0)
+            px[key] = s
+    px = px.sort_index().ffill().dropna()
+    ret_df = px.pct_change().fillna(0)
 
     total_w = sum(weights.values())
     if total_w <= 0:
