@@ -3,7 +3,7 @@
   "name": "stock-fund-select-phase2-indicators",
   "title": "phase2-B 指标计算：risk_service + 前端展示列",
   "description": "依赖 phase2-A。实现：(1) src/services/risk_service.py - Sharpe / IR / T-M 回归（选股α + 择时γ） / α-IR 计算；(2) FundRiskMetrics 表 + refresh pipeline 接入；(3) 新增 /api/funds/stock/risk 接口；(4) 前端 /funds/stock 表格新增 6 列展示（Sharpe / IR / 选股α / 择时γ / α-IR / 超额收益）；(5) 单测覆盖 risk_service 各指标。注：实际代码路径 backend/fund-select（注册表暂不支持该 package，沿用 douyin-processor 占位）。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend/douyin-processor",

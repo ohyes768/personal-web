@@ -57,8 +57,9 @@
 ### 5. 前端（apps/fund-select）
 
 - `/funds/stock` 表格追加 6 列：夏普 / IR / 选股α / 择时γ / α-IR / 超额收益(3y)
-- 排序按钮可用；导出 CSV 包含新列；空值 "—"
+- 排序按钮可用；空值 "—"
 - 不动债基页面
+- **CSV 导出功能已整体下线**（用户 2026-09-03 指令「csv导出的功能先去掉吧」）：前后端全部移除，含债基页既有按钮
 
 ## Acceptance Criteria
 
@@ -68,8 +69,8 @@
 - [ ] `uv run pytest tests/ -v` 全过（含 A 的测试）
 - [ ] 全量 143 只计算一次入库；142 只 6 指标非 NULL，968157 全 NULL
 - [ ] `GET /api/funds/stock` 返回 6 个新字段
-- [ ] 前端 `/funds/stock` 显示 6 列 + 排序 + CSV 导出
-- [ ] `pnpm exec tsc --noEmit` 0 错；`pnpm build` 过
+- [ ] 前端 `/funds/stock` 显示 6 列 + 排序（CSV 导出已下线，不在验收内）
+- [ ] `pnpm exec tsc --noEmit` 0 错；`pnpm build` 核心阶段过（编译/类型/prerender）
 - [ ] 债基页面 `/funds` 零变化
 
 ## Notes
