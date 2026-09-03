@@ -177,7 +177,8 @@ def _fetch_index_daily(symbol: str, source: str, start: date, end: date) -> pd.D
     return win.reset_index(drop=True)
 
 
-def _resolve(symbol: str | None, start: date, end: date, cfg: dict):
+def _resolve(symbol: str | None, start: date, end: date, cfg: dict, ctx: str = ""):
+    """ctx：告警附带的基金定位信息（code/名称/基准公式/成分名），由调用方拼好透传。"""
     sources = {entry["ak_symbol"]: entry["source"] for entry in cfg["indices"].values()}
     chain = ([symbol] if symbol else []) + [s for s in cfg["fallback_chain"] if s != symbol]
     for sym in chain:
@@ -185,7 +186,10 @@ def _resolve(symbol: str | None, start: date, end: date, cfg: dict):
             df = _fetch_index_daily(sym, sources.get(sym, "stock_zh_index_daily"), start, end)
             return sym, df
         except Exception as e:  # noqa: BLE001
-            logger.warning("指数 %s 拉取失败(%s: %s)，尝试 fallback", sym, type(e).__name__, str(e)[:80])
+            logger.warning(
+                "指数 %s 拉取失败(%s: %s)，尝试 fallback | %s",
+                sym, type(e).__name__, str(e)[:80], ctx,
+            )
     return None
 
 
@@ -205,10 +209,14 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
     if not raw or not str(raw).strip():
         return pd.DataFrame(columns=["date", "tri"]), "unavailable:no_field"
 
+    # 告警定位上下文：基金 code/名称 + 基准公式原文（雪球源叫「基金简称」，蛋卷 fallback 叫「基金名称」）
+    fund_name = str(info.get("基金简称") or info.get("基金名称") or "").strip()
+    ctx = f"基金 {code} {fund_name} | 基准公式: {str(raw)[:100]}"
+
     components = parse_formula(str(raw))
     if not components or all(c.kind == "unknown" for c in components):
         logger.warning("%s 公式整体不可解析: %r → fallback_chain", code, str(raw)[:80])
-        return _fallback_chain_tri(start, end, cfg)
+        return _fallback_chain_tri(start, end, cfg, ctx)
 
     # 逐成分取日收益序列
     series: dict[str, pd.Series] = {}   # key -> 日收益（index=date）
@@ -223,16 +231,16 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
             series[key] = None  # 占位，合成阶段按常数日收益
             weights[key] = c.weight
         elif c.kind == "index":
-            got = _resolve(c.ak_symbol, start, end, cfg)
+            got = _resolve(c.ak_symbol, start, end, cfg, f"{ctx} | 成分「{c.name}」")
             if got is None:
-                return _fallback_chain_tri(start, end, cfg)
+                return _fallback_chain_tri(start, end, cfg, ctx)
             sym, df = got
             series[key] = df.set_index("date")["return"]
             weights[key] = c.weight
         else:  # unknown → fallback_index 替换
-            got = _resolve(None, start, end, cfg)
+            got = _resolve(None, start, end, cfg, f"{ctx} | 成分「{c.name}」(未收录)")
             if got is None:
-                return _fallback_chain_tri(start, end, cfg)
+                return _fallback_chain_tri(start, end, cfg, ctx)
             sym, df = got
             series[key] = df.set_index("date")["return"]
             weights[key] = c.weight
@@ -241,7 +249,7 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
     # 交易日骨架 = 各指数日期并集
     all_dates = sorted(set().union(*[s.index for s in series.values() if s is not None]))
     if not all_dates:
-        return _fallback_chain_tri(start, end, cfg)
+        return _fallback_chain_tri(start, end, cfg, ctx)
     ret_df = pd.DataFrame(index=pd.DatetimeIndex(all_dates))
     for key, s in series.items():
         if s is not None:
@@ -250,7 +258,7 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
 
     total_w = sum(weights.values())
     if total_w <= 0:
-        return _fallback_chain_tri(start, end, cfg)
+        return _fallback_chain_tri(start, end, cfg, ctx)
     weighted = pd.Series(0.0, index=ret_df.index)
     for key, s in series.items():
         w = weights[key] / total_w
@@ -266,9 +274,9 @@ def fetch_benchmark_tri(code: str, start: date, end: date) -> tuple[pd.DataFrame
     return out, "fetched"
 
 
-def _fallback_chain_tri(start: date, end: date, cfg: dict) -> tuple[pd.DataFrame, str]:
+def _fallback_chain_tri(start: date, end: date, cfg: dict, ctx: str = "") -> tuple[pd.DataFrame, str]:
     empty = pd.DataFrame(columns=["date", "tri"])
-    got = _resolve(None, start, end, cfg)
+    got = _resolve(None, start, end, cfg, ctx)
     if got is None:
         return empty, "unavailable:exhausted"
     sym, df = got
