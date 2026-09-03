@@ -145,7 +145,7 @@ class RiskFreeRate(Base):
 
 
 class FundRiskMetrics(Base):
-    """风险/超额指标（phase2-B，近 3 年窗口，基于累计净值 vs benchmark TRI）
+    """风险/超额指标（phase2-B，近 3 年窗口，基于日增长率复权收益 vs benchmark TRI）
 
     benchmark 不可用（tri=NULL）或样本不足时各指标为 NULL。
     """

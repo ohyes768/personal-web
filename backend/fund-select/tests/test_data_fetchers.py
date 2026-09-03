@@ -228,6 +228,6 @@ class TestFundUniverse:
 
     def test_resolve_stock_reads_stock_yaml(self):
         codes = resolve_universe_codes("stock")
-        assert len(codes) == 143
+        assert len(codes) == 142  # a22fd17 移除 968157
         assert "671030" in codes
         assert "003547" not in codes

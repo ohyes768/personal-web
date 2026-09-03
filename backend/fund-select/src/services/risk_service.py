@@ -2,10 +2,14 @@
 风险/超额指标计算（phase2-B）
 
 compute_risk_metrics: 纯函数（日频序列 → 6 指标），无 IO 依赖。
-refresh_fund_risks:  编排（nav 累计净值 + DB benchmark/risk_free → upsert）。
+refresh_fund_risks:  编排（nav 日增长率 + DB benchmark/risk_free → upsert）。
 
-口径：近 3 年窗口；R_p 基于累计净值（分红再投），R_b 基于 benchmark TRI（财富口径）；
-R_f 年化小数 / 252 折日频。√252 年化。
+口径：近 3 年窗口；R_p 基于东财「日增长率」（分红日已调整的复权日收益，
+/100 折小数），R_b 基于 benchmark TRI（财富口径）；R_f 年化小数 / 252 折日频。
+√252 年化。
+
+勿用东财「累计净值」pct_change 算 R_p：累计净值 = 单位净值 + 历史分红简单加总
+（非复权），历史有分红的基金其 Δnav/(nav+C) 会稀释整条收益序列，6 项指标失真。
 """
 import math
 from dataclasses import dataclass
@@ -15,7 +19,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy.orm import Session
 
-from src.data.nav_fetcher import fetch_nav_accumulated
+from src.data.nav_fetcher import fetch_nav
 from src.db.models import FundBenchmark, FundRiskMetrics, RiskFreeRate
 from src.utils.logger import setup_logger
 
@@ -145,14 +149,7 @@ def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
                 if bench_rows else pd.Series(dtype=float)
             )
 
-            nav = _safe_fetch_nav(code)
-            if nav.empty:
-                r_p = pd.Series(dtype=float)
-            else:
-                nav = nav[nav["净值日期"] >= pd.Timestamp(start)]
-                r_p = (
-                    nav.set_index("净值日期")["累计净值"].pct_change().dropna()
-                )
+            r_p = _risk_returns(_safe_fetch_nav(code), pd.Timestamp(start))
 
             m = compute_risk_metrics(r_p, r_b, r_f)
             _upsert(db, code, m, as_of)
@@ -166,12 +163,23 @@ def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
     return errors
 
 
+def _risk_returns(nav: pd.DataFrame, start: pd.Timestamp) -> pd.Series:
+    """单位净值「日增长率」（%）→ 复权日收益小数序列，索引为净值日期。
+
+    净值日期 >= start 切近 3 年窗口，dropna 语义与旧口径一致。
+    """
+    if nav.empty:
+        return pd.Series(dtype=float)
+    nav = nav[nav["净值日期"] >= start]
+    return nav.set_index("净值日期")["日增长率"].astype(float).div(100).dropna()
+
+
 def _safe_fetch_nav(code: str) -> pd.DataFrame:
-    """拉累计净值；无数据源（互认基金返回 HTML 等）→ 空 DataFrame，指标全 NULL。"""
+    """拉单位净值（含日增长率）；无数据源（互认基金返回 HTML 等）→ 空 DataFrame，指标全 NULL。"""
     try:
-        return fetch_nav_accumulated(code)
+        return fetch_nav(code)
     except Exception as e:  # noqa: BLE001
-        logger.warning("累计净值 %s 不可用: %s", code, str(e)[:100])
+        logger.warning("单位净值 %s 不可用: %s", code, str(e)[:100])
         return pd.DataFrame()
 
 

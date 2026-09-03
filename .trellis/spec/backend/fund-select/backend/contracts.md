@@ -38,6 +38,13 @@
 - `fund_performance`：code PK；ret_1m/6m/1y/3y/5y + **dd_1y/3y/5y**（只有这三档回撤，无 dd_1m/dd_6m——performance_service 显式过滤）
 - `fund_fees`：8 字段对齐预研 `cache/fees_{code}.json` 契约
 - `fund_holdings_bond`：(code, report_date) 复合 PK。**只由债基 refresh 写入**：`snapshot_fund(fetch_holdings=True)`（债基路径默认）；股票 refresh 传 `fetch_holdings=False` 完全跳过季报拉取，不发 zqcc 请求。跳过逻辑按宇宙开关，不按 `fund_type` 猜（fund_type 短路已删）。
+
+### 风险指标口径（fund_risk_metrics，risk_service.py）
+
+- r_p 用 `fetch_nav` 的**日增长率/100**（东财复权口径，分红日已调整）。**陷阱**：不要用「累计净值」pct_change——它是 `单位净值+历史分红` 的简单加总（非复权），历史有分红的基金（库内 11/143 只）全序列被稀释：673010 实证 3 年 cum_p 63.4%（稀释）vs 98.8%（真复权），超额3y 46% → 81%。`fetch_nav_accumulated` 已因此删除。
+- r_b = benchmark TRI pct_change（tri=NULL 的 QDII/互认基金：sharpe 有值、基准相关 4 指标 None）；r_f = risk_free_rate 表年化小数 /252 折日频。
+- 窗口 = 近 3 年自然日；r_p∩r_b inner join，实际窗口尾日受 TRI 尾日约束（可能比净值尾日早一天，`as_of_date` 存的是刷新日）。样本下限 250 天。
+- α = T-M 回归截距 ×252 简单年化；γ = 日频二次项系数（不年化、无量纲）；α-IR = α_d/σ_e×√252；夏普/IR = 日均超额/std×√252；excess_3y = 连乘累计算术差。
 - `refresh_runs`：task_id PK，进度轮询数据源
 
 ## 3. 费率缓存契约（补回的 fetcher）
