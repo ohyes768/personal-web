@@ -14,6 +14,12 @@
 #   中证红利 sh000922 断于 2019-01、中证800成长 sh000907 断于 2016-06、
 #   中证800价值 sh000908 断于 2019-01 —— 这 3 个已改走腾讯源（2026-09-03 实测全量更新）；
 #   其余如再遇新浪断更指数，同样改 source 为 stock_zh_index_daily_tx。
+#
+# 2026-09-04 补录（09-04-benchmark-yaml-coverage，探测脚本留档于任务 research/：probe_index_sources_0904.py）：
+#   stock_zh_index_hist_csindex  中证官网（930xxx/H30xxx 等，新浪无源或停更，末条 T-1 新鲜）
+#   index_hist_sw                申万行业指数
+#   index_hist_cni               国证指数
+#   无源指数（探测失败/不达标）走 aliases curated 替代，理由见各条注释。
 version: 1
 fallback_index: "sh000300"
 fallback_chain: ["sh000906", "sh000300"]   # 中证800 → 沪深300
@@ -67,6 +73,29 @@ indices:
   # ---- 港股（2，腾讯源）----
   恒生指数: {ak_symbol: "hkHSI", source: "stock_zh_index_daily_tx"}      # 1989-至今 9324 行
   恒生科技: {ak_symbol: "hkHSTECH", source: "stock_zh_index_daily_tx"}   # 2020 发布日起全量
+  # ---- 中证官网（17，stock_zh_index_hist_csindex，2026-09-04 实测末条 T-1）----
+  # symbol 来自中证官网全表（ak.index_csindex_all）指数全称精确匹配，非猜测
+  中证A50: {ak_symbol: "930050", source: "stock_zh_index_hist_csindex"}
+  中证红利低波动: {ak_symbol: "H30269", source: "stock_zh_index_hist_csindex"}
+  中证港股通高股息投资: {ak_symbol: "930914", source: "stock_zh_index_hist_csindex"}
+  中证中金优选300: {ak_symbol: "931069", source: "stock_zh_index_hist_csindex"}
+  中证东方红优势成长: {ak_symbol: "931579", source: "stock_zh_index_hist_csindex"}
+  中证东方红红利低波动: {ak_symbol: "931446", source: "stock_zh_index_hist_csindex"}
+  中证港股通央企红利: {ak_symbol: "931233", source: "stock_zh_index_hist_csindex"}
+  中证科创创业50: {ak_symbol: "931643", source: "stock_zh_index_hist_csindex"}
+  中证国信价值: {ak_symbol: "931052", source: "stock_zh_index_hist_csindex"}
+  中证内地资源: {ak_symbol: "000944", source: "stock_zh_index_hist_csindex"}   # 新浪 sh000944 断于 2021-02，必须走中证官网
+  中证高端装备制造: {ak_symbol: "930599", source: "stock_zh_index_hist_csindex"}
+  中证800相对成长: {ak_symbol: "H30357", source: "stock_zh_index_hist_csindex"}
+  中证沪港深高股息精选: {ak_symbol: "930836", source: "stock_zh_index_hist_csindex"}
+  中证移动互联网: {ak_symbol: "399970", source: "stock_zh_index_hist_csindex"}
+  中证互联网: {ak_symbol: "H30535", source: "stock_zh_index_hist_csindex"}
+  中证海外中国互联网: {ak_symbol: "H11136", source: "stock_zh_index_hist_csindex"}
+  中证香港银行投资: {ak_symbol: "930792", source: "stock_zh_index_hist_csindex"}
+  # ---- 国证 / 申万（3，2026-09-04 实测末条 T-1）----
+  国证自由现金流: {ak_symbol: "980092", source: "index_hist_cni"}
+  申万医药生物行业: {ak_symbol: "801150", source: "index_hist_sw"}
+  申银万国制造业: {ak_symbol: "801110", source: "index_hist_sw"}
 
 # 同指数的不同写法（名称清洗后仍对不上时兜底）。
 # key 兼顾两种形态：原始写法 + 去掉「指数/收益率」后缀的短写法。
@@ -93,3 +122,21 @@ aliases:
   上证科创板100: 科创板100
   中证港股通综合: 恒生指数        # 近似（用户确认 2026-09-02）：港股通综合与恒指相关 ~0.95，真源（中证 H 段）无免费数据
   港股通综合: 恒生指数
+  # ---- 名称归一（同一指数的官方全称/旧称写法，2026-09-04）----
+  上证科创板50成份指数: 科创50    # sh000688 官方全称「上证科创板50成份指数」
+  中证环保产业: 中证环保          # sh000827 官方全称「中证环保产业指数」
+  中证全指证券公司: 中证全指证券  # sz399975 官方全称「中证全指证券公司指数」
+  中国债券总指数: 中债综合财富    # 中债综合指数曾用名「中国债券总指数」
+  # ---- curated 替代（无 akshare 源 → 最接近的已收录指数，2026-09-04）----
+  # 以下指数逐个探测无源（任务 research/probe_index_sources_0904.py），指向同类资产中最近似者；
+  # 歧义/无合理对应的（MSCI ACWI、MSCI 印度/欧洲/全球信息科技、标普全球大中盘/高端消费品/
+  # 全球1200医疗保健、越南VN30、东京证交所、摩根大通全球债券、标普港股通低波红利、
+  # 中信证券印度ETP）一律不建，保留 unknown → 高权重走 unavailable:unknown_majority 置 NULL。
+  标普500等权重指数: 标普500      # curated：成分同标普500 仅加权方式不同（PRD 指定例）
+  标普500净总收益指数: 标普500    # curated：同一指数的净总收益口径（050025 QDII，仅解析归一）
+  纳斯达克100总收益指数: 纳斯达克100   # curated：同一指数的总收益口径（270042 QDII，仅解析归一）
+  恒生综合: 恒生指数              # curated：港股大盘宽基（先例同「中证港股通综合→恒生指数」；新浪 HSCI 仅 41 行不达标）
+  中证国债指数: 上证国债          # curated：中证官网无「中证国债指数」独立条目（全表实测），同为国债资产
+  中债全债: 中债综合财富          # curated：中债全债口径 → 综合（先例同「中证全债→中债综合财富」）
+  中债-国债总全价: 中债综合财富   # curated：国债+全价 → 综合财富（先例同「中债-总全价」）
+  中债-1-3年国债及政策性金融债财富: 上证国债   # curated：短久期利率债 → 国债（期限近似，权重 ≤5%）

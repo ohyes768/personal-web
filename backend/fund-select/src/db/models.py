@@ -128,7 +128,9 @@ class FundBenchmark(Base):
     source = Column(String(64), nullable=False, default="fetched")
     # 'fetched' / 'partial:fallback:sh000906' / 'fallback_chain:sh000906'
     # / 'unavailable:no_field' / 'unavailable:exhausted' / 'skipped:qdii'
-    # （QDII/互认基金跳过合成，tri=NULL，基准相关指标显示 -）
+    # / 'unavailable:unknown_majority'
+    # （QDII/互认基金跳过合成，tri=NULL，基准相关指标显示 -；
+    #   unknown_majority = 非停更收录指数缺失且 ≥50% 权重成分未收录，宁缺毋错不顶替）
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC))
 

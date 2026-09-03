@@ -56,16 +56,27 @@
 → 并集日历 reindex → ffill 价格 → dropna()（裁掉最晚成分上市前的前导行）
 → pct_change().fillna(0)   # 缺席交易日价格不变 → 收益 0，不复制前日收益
 → weighted = Σ ret×(w/total_w)；deposit 成分 = PBOC_DEPOSIT_FLOOR_RATE/252 常数铺满
-→ tri = (1+weighted).cumprod() × 1000；source 标记（fetched/partial:fallback/fallback_chain）不变
+→ tri = (1+weighted).cumprod() × 1000；source 标记不变
 ```
+
+**source 枚举**（`fund_benchmark.source`，同 models.py 注释）：`fetched` / `partial:fallback:<sym>` / `fallback_chain:<sym>` / `unavailable:no_field` / `unavailable:basic_failed` / `unavailable:exhausted` / `unavailable:unknown_majority` / `skipped:qdii`。
+
+**parse_formula 语义**（09-04-benchmark-yaml-coverage 扩充）：
+
+- 乘号归一：`×`/`＊` translate；半角 `x` **仅在后跟数字时**视为乘号（`x(?=\d)`）——「收益率x60%」是乘号、「Index」内 x 是字母，一律 translate 会把英文名拆碎成 weight=0 的 unknown。
+- 裸 `N%` 成分（公式末尾 `＋1%` 无指数名）→ `Component(name='存款加成', kind='deposit_floor')` 常数日收益 N%/252，不打「无法解析权重」warning。
+- 剥离嵌套括号后残留的孤立 `(`/`)` 一并清除（非贪婪 `\(.*?\)` 只能剥一层）。
+- `_PREFIXES` 含「人民币计价的」「经汇率调整的（后）」等实测语料前缀。
+
+**高权重 unknown 置 NULL（R4，宁缺毋错）**：unknown 成分 weight ≥ 0.5 时**不**用 fallback 指数顶替，返回空 TRI + `source=unavailable:unknown_majority`（risk_service 对 tri=NULL 行取不到 r_b → 4 指标 None，不抛错）；weight < 0.5 维持 fallback 顶替 + `partial:fallback` 标记。
 
 **Why**：A/HK/美/中债交易日历互不重合（港股佛诞、美股感恩节、中债日期还错位——见下）。对收益 ffill 会把成分缺席日的前一日收益**再计一次**，混合日历 3 年虚高 13.5pp（004316：真 +21.8% 算成 +35.3%），excess/IR/α 全歪。单成分基准两算法等价（回归测试锁定）。
 
 **已知未修问题（改这里前先看）**：
 - **B1**：`bond_composite_index_cbond` 返回日期整体 **−1 天**（真实周一标成周日、周五标成周四，3 年分布 Fri=9/Sat=11/Sun=142 实证）。中债成分收益落在错位日期上，inner join 丢周末行 → 中债周五收益永久丢失。修复方向：中债成分日期 +1 天或换源。
-- **B3**：unknown 成分被 fallback 指数（中证800）**静默替换**，`source` 有 `partial:fallback` 标记但指标照算——006373 有 85% 权重成分被换，excess_3y=+146% 失真；32 只非 QDII 受影响（部分是 yaml 名字归一化缺口：科创板50/A50/科创创业50/红利低波等）。修复方向：高权重 unknown 置 NULL + 补 yaml。
+- **B3（已修复，09-04-benchmark-yaml-coverage）**：unknown 成分被 fallback 指数（中证800）**静默替换**、指标照算（006373 85% 权重被换，excess_3y=+146% 失真）→ 已按上方「高权重 unknown 置 NULL」语义修复，并补录 20 个 yaml 指数（中证官网 `stock_zh_index_hist_csindex` / 申万 `index_hist_sw` / 国证 `index_hist_cni`，收录标准=拉到日线且末条距今 ≤10 天）+ curated aliases。重刷实证：unknown 主成分被顶替 45→14 只（剩余均为确认无源无替代的海外指数，走置 NULL）、`partial:fallback` 9→0 行。
 
-**Tests**（test_benchmark_fetcher.py）：mixed_calendar_no_return_duplication（双计消除）/ leading_dates_trimmed（前导裁剪）/ same_calendar_matches_return_compound（回归）/ deposit_weight_normalization。
+**Tests**（test_benchmark_fetcher.py）：mixed_calendar_no_return_duplication（双计消除）/ leading_dates_trimmed（前导裁剪）/ same_calendar_matches_return_compound（回归）/ deposit_weight_normalization / major_unknown_component_returns_null（R4 置 NULL，断言完全不发起指数拉取）/ bare_percent_addon_compounds_as_deposit（裸 N% 加成）/ half_width_x_is_mul_only_before_digit（乘号规则）。
 
 ```python
 # Wrong: 对收益 ffill —— B 缺席日复制前日收益（3年 +13.5pp）
