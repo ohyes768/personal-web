@@ -36,7 +36,7 @@ export function FundsHeader({
   filters,
   exportKind,
 }: FundsHeaderProps) {
-  const title = active === 'bond' ? '债基筛选' : '股票基金筛选';
+  const title = active === 'bond' ? '债券基金筛选' : '股票基金筛选';
   return (
     <header className="border-b border-rule bg-paper-card sticky top-0 z-30">
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-3">
@@ -51,8 +51,8 @@ export function FundsHeader({
           <div className="flex items-baseline gap-3 mt-0.5">
             <h1 className="text-lg font-semibold text-ink-strong">{title}</h1>
             <nav className="flex items-center gap-0.5 text-sm">
-              {/* Link 的 href 相对 basePath：写 /funds 会被拼成 /funds/funds */}
-              <TabLink href="/" active={active === 'bond'}>债基</TabLink>
+              {/* Link 的 href 相对 basePath：/bond → /funds/bond */}
+              <TabLink href="/bond" active={active === 'bond'}>债基</TabLink>
               <TabLink href="/stock" active={active === 'stock'}>股票</TabLink>
             </nav>
           </div>

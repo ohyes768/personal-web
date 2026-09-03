@@ -97,18 +97,18 @@ export const DEFAULT_FILTERS: FundFilters = {
   max_dd_3y: 5,
   min_mgr_exp: 5,
   exclude_qdii: false,
-  sort: 'size_yi',
+  sort: 'ret_3y',
   order: 'desc',
 };
 
-/** 股票基金 tab 默认筛选（决策：3 / 5 / 5 / 20，业绩优先 ret_5y desc） */
+/** 股票基金 tab 默认筛选（决策：3 / 5 / 20 / 5，与债基一致按 ret_3y desc） */
 export const STOCK_DEFAULT_FILTERS: FundFilters = {
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 20,
   min_mgr_exp: 5,
   exclude_qdii: false,
-  sort: 'ret_5y',
+  sort: 'ret_3y',
   order: 'desc',
 };
 
