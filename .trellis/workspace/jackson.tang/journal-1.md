@@ -115,3 +115,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: QDII/互认基金跳过业绩基准合成
+
+**Date**: 2026-09-03
+**Task**: QDII/互认基金跳过业绩基准合成
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+股票宇宙刷新时 QDII/互认基金不再合成业绩基准 TRI（公式多无免费源，fallback 中证800口径失真），直接写 tri=NULL/source=skipped:qdii，界面 IR/α/γ/α-IR/超额3y 显示 -，夏普与净值业绩不受影响；判定口径同 exclude_qdii；funds_stock.yaml 移除 968157；新增 5 用例。遗留：sh000922/000908 停更换源（中证红利→中证800 fallback 精度问题）待另立任务。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a22fd17` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
