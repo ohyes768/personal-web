@@ -25,7 +25,6 @@ from src.db.models import (
 )
 from src.db.session import get_db
 from src.scheduler.tasks import refresh_configured_funds_sync, refresh_stock_funds_sync
-from src.services.export_service import export_csv
 from src.services.filter_service import FilterService
 from src.utils.logger import setup_logger
 
@@ -65,31 +64,6 @@ async def screen(
         sort=sort,
         order=order,
         exclude_qdii=exclude_qdii,
-    )
-
-
-@router.get("/export/csv")
-async def export_csv_route(
-    min_age: Optional[float] = Query(None, ge=0, le=100),
-    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
-    max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
-    min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
-    sort: str = Query("size_yi"),
-    order: str = Query("desc", pattern="^(asc|desc)$"),
-    exclude_qdii: bool = Query(False),
-    db=Depends(get_db),
-):
-    """导出当前筛选结果 CSV（UTF-8 BOM，文件名含日期）"""
-    filters = {
-        "min_age": min_age, "min_size_yi": min_size_yi, "max_dd_3y": max_dd_3y,
-        "min_mgr_exp": min_mgr_exp, "sort": sort, "order": order,
-        "exclude_qdii": exclude_qdii,
-    }
-    content, filename = export_csv(filters, FilterService(db))
-    return Response(
-        content="﻿" + content,  # BOM
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 
@@ -190,31 +164,6 @@ async def stock_screen(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
-    )
-
-
-@router_stock.get("/export/csv")
-async def stock_export_csv(
-    min_age: Optional[float] = Query(None, ge=0, le=100),
-    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
-    max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
-    min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
-    sort: str = Query("ret_5y"),
-    order: str = Query("desc", pattern="^(asc|desc)$"),
-    exclude_qdii: bool = Query(False),
-    db=Depends(get_db),
-):
-    """股票 tab CSV 导出"""
-    filters = {
-        "min_age": min_age, "min_size_yi": min_size_yi, "max_dd_3y": max_dd_3y,
-        "min_mgr_exp": min_mgr_exp, "sort": sort, "order": order,
-        "exclude_qdii": exclude_qdii,
-    }
-    content, filename = export_csv(filters, FilterService(db), kind="stock")
-    return Response(
-        content="﻿" + content,
-        media_type="text/csv; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 
 

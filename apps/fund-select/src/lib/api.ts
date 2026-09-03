@@ -53,30 +53,11 @@ export const fundApi = {
   getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
     return getJson(`${BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
   },
-
-  /** CSV 下载（blob → 触发浏览器下载，文件名取后端 content-disposition） */
-  async exportCsv(filters: Partial<FundFilters>): Promise<void> {
-    const res = await fetch(`${BASE}/export/csv${buildQuery(filters)}`);
-    if (!res.ok) throw new Error(`导出失败 ${res.status}`);
-    const blob = await res.blob();
-    const disposition = res.headers.get('content-disposition') || '';
-    const m = disposition.match(/filename="?([^";]+)"?/);
-    const filename = m ? m[1] : `funds_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  },
 };
 
 /**
  * 股票基金 tab API（接口前缀 /api/funds/stock/*）
- * 与 fundApi 对偶：screen / getDetail / refresh / getRefreshStatus / exportCsv
+ * 与 fundApi 对偶：screen / getDetail / refresh / getRefreshStatus
  */
 const STOCK_BASE = '/funds/api/funds/stock';
 
@@ -95,23 +76,5 @@ export const stockApi = {
 
   getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
     return getJson(`${STOCK_BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
-  },
-
-  async exportCsv(filters: Partial<FundFilters>): Promise<void> {
-    const res = await fetch(`${STOCK_BASE}/export/csv${buildQuery(filters)}`);
-    if (!res.ok) throw new Error(`导出失败 ${res.status}`);
-    const blob = await res.blob();
-    const disposition = res.headers.get('content-disposition') || '';
-    const m = disposition.match(/filename="?([^";]+)"?/);
-    const filename = m ? m[1] : `stock_funds_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.csv`;
-
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
   },
 };

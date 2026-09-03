@@ -19,6 +19,8 @@ interface FundTableProps {
   onToggleCompare: (fund: FundListItem) => void;
   /** 隐藏「利率债」列（股票 tab 用；债基 tab 默认 true 兼容） */
   showBondColumns?: boolean;
+  /** 显示 phase2-B 风险指标 6 列（股票 tab 用） */
+  showRiskColumns?: boolean;
 }
 
 const NAME_MAX = 10;
@@ -36,6 +38,12 @@ const fmtRet = (v: number | null | undefined): string => {
 const retColor = (v: number | null | undefined): string => {
   if (v === null || v === undefined) return 'text-ink-soft';
   return v >= 0 ? 'text-up' : 'text-down';
+};
+
+/** 小数 → 带符号百分比（选股α / 超额收益，库内为年化小数） */
+const fmtPctFromDecimal = (v: number | null | undefined): string => {
+  if (v === null || v === undefined) return '-';
+  return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
 };
 
 const truncateName = (name: string, max = NAME_MAX): string =>
@@ -74,7 +82,7 @@ function HoverName({ name }: { name: string }) {
 
 export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
-  showBondColumns = true,
+  showBondColumns = true, showRiskColumns = false,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -119,6 +127,16 @@ export function FundTable({
             <SortableHeader label="近1年" field="ret_1y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近3年" field="ret_3y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近5年" field="ret_5y" currentSort={sort} currentOrder={order} onSort={onSort} />
+            {showRiskColumns && (
+              <>
+                <SortableHeader label="夏普" field="sharpe" currentSort={sort} currentOrder={order} onSort={onSort} />
+                <SortableHeader label="IR" field="ir" currentSort={sort} currentOrder={order} onSort={onSort} />
+                <SortableHeader label="选股α" field="alpha" currentSort={sort} currentOrder={order} onSort={onSort} />
+                <SortableHeader label="择时γ" field="gamma" currentSort={sort} currentOrder={order} onSort={onSort} />
+                <SortableHeader label="α-IR" field="alpha_ir" currentSort={sort} currentOrder={order} onSort={onSort} />
+                <SortableHeader label="超额3y" field="excess_3y" currentSort={sort} currentOrder={order} onSort={onSort} />
+              </>
+            )}
             {showBondColumns && <th className={`${th} text-right text-xs font-medium text-ink-muted`}>利率债</th>}
             <SortableHeader label="年费" field="fee_annual" currentSort={sort} currentOrder={order} onSort={onSort} />
             <th className={`${th} text-center text-xs font-medium text-ink-muted`}>对比</th>
@@ -155,6 +173,16 @@ export function FundTable({
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</td>
+                {showRiskColumns && (
+                  <>
+                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.sharpe)}</td>
+                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.ir)}</td>
+                    <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.alpha)}`}>{fmtPctFromDecimal(fund.alpha)}</td>
+                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.gamma)}</td>
+                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.alpha_ir)}</td>
+                    <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.excess_3y)}`}>{fmtPctFromDecimal(fund.excess_3y)}</td>
+                  </>
+                )}
                 {showBondColumns && <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.rate_bond_pct, 1, '%')}</td>}
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.fee_annual, 2, '%')}</td>
                 <td className={`${td} text-center`}>

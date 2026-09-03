@@ -11,7 +11,6 @@ import Link from 'next/link';
 
 import { FunnelIcon } from '@heroicons/react/24/outline';
 
-import { ExportCsvButton } from './ExportCsvButton';
 import { RefreshStatusPopover } from './RefreshStatusPopover';
 import type { FundFilters } from '@/lib/types';
 
@@ -23,7 +22,7 @@ interface FundsHeaderProps {
   /** 「债基」时由父级调 reset 回调；「股票」也同 */
   onRefreshed: () => void;
   filters: FundFilters;
-  /** 切换列表数据源函数：'bond' → fundApi.exportCsv；'stock' → stockApi.exportCsv */
+  /** 刷新接口选择：'stock' → /funds/stock/*，'bond' → /funds/* */
   exportKind: 'bond' | 'stock';
 }
 
@@ -58,11 +57,6 @@ export function FundsHeader({
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
-          {exportKind === 'bond' ? (
-            <ExportCsvButton filters={filters} />
-          ) : (
-            <StockExportCsvButton filters={filters} />
-          )}
           <RefreshStatusPopover
             refreshUrl={exportKind === 'stock' ? '/funds/api/funds/stock/refresh' : undefined}
             statusUrl={exportKind === 'stock' ? '/funds/api/funds/stock/refresh/status' : undefined}
@@ -98,35 +92,5 @@ function TabLink({ href, active, children }: { href: string; active: boolean; ch
     >
       {children}
     </Link>
-  );
-}
-
-// 简单的股票 CSV 导出按钮（避免在 FundsHeader 里硬编码 stockApi import 路径）
-function StockExportCsvButton({ filters }: { filters: FundFilters }) {
-  const onClick = async () => {
-    const params = new URLSearchParams();
-    for (const [k, v] of Object.entries(filters)) {
-      if (v !== null && v !== undefined && k !== 'sort' && k !== 'order') {
-        if (typeof v === 'boolean') {
-          if (v) params.set(k, 'true');
-        } else if (typeof v === 'number') {
-          params.set(k, String(v));
-        }
-      }
-    }
-    if (filters.sort) params.set('sort', String(filters.sort));
-    if (filters.order) params.set('order', String(filters.order));
-    const qs = params.toString();
-    const url = `/funds/api/funds/stock/export/csv${qs ? `?${qs}` : ''}`;
-    window.location.href = url;
-  };
-  return (
-    <button
-      onClick={onClick}
-      className="hidden sm:inline-flex items-center px-2.5 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:text-ink-strong"
-      aria-label="导出 CSV"
-    >
-      导出
-    </button>
   );
 }

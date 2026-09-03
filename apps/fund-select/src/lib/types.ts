@@ -13,6 +13,12 @@ export interface FundListItem {
   ret_1y: number | null;
   ret_3y: number | null;
   ret_5y: number | null;
+  sharpe: number | null;
+  ir: number | null;
+  alpha: number | null;
+  gamma: number | null;
+  alpha_ir: number | null;
+  excess_3y: number | null;
   mgr_name: string | null;
   mgr_company: string | null;
   mgr_experience_years: number | null;
