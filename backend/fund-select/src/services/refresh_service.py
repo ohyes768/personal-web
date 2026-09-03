@@ -1,7 +1,7 @@
 """
 单只基金快照 + 刷新进度跟踪（移植 fund_screen_31.py 流程）
 
-单只流程：基础信息 → 净值 → 东财季报持仓 → 费率 → [股票型/QDII] 业绩排名
+单只流程：基础信息 → 净值 → [fetch_holdings] 东财季报持仓 → 费率 → [股票型/QDII] 业绩排名
 """
 import re
 from datetime import UTC, date, datetime
@@ -43,6 +43,7 @@ def snapshot_fund(
     mgr_company: dict[str, str],
     today: pd.Timestamp | None = None,
     holdings_year: str | None = None,
+    fetch_holdings: bool = True,
 ) -> dict:
     """采集单只基金全量数据，返回待入库 dict。失败抛异常。"""
     out: dict = {"code": code, "achievement": None}
@@ -84,15 +85,9 @@ def snapshot_fund(
     nav = fetch_nav(code)
     out["performance"] = compute_performance(nav, today=ref)
 
-    # 3. 季报债券持仓（仅债券型/混合型有意义；股票基金与 QDII 的季报是股票持仓，
-    #    不匹配 fund_holdings_bond 的利率债/信用债/可转债字段——短路避免无效请求 + warn 噪音）
-    fund_type = out["fund_type"]
-    is_stock_or_qdii = (
-        fund_type.startswith("股票型")
-        or fund_type.startswith("QDII")
-        or fund_type == "QDII"
-    )
-    if not is_stock_or_qdii:
+    # 3. 季报债券持仓（只服务债基筛选的持仓分析；股票宇宙刷新传 fetch_holdings=False 跳过，
+    #    避免对无债券持仓披露的基金发无效请求）
+    if fetch_holdings:
         tables = fetch_bond_hold(code, year)
         if tables:
             out["holdings"] = {"report_date": date(int(year), 12, 31), **analyze_holdings(tables)}

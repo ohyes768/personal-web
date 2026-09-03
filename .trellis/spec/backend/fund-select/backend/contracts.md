@@ -37,7 +37,7 @@
 - `funds`：code PK；age_years/size_yi/mgr_experience_years（Float 可空）；is_active 默认 True
 - `fund_performance`：code PK；ret_1m/6m/1y/3y/5y + **dd_1y/3y/5y**（只有这三档回撤，无 dd_1m/dd_6m——performance_service 显式过滤）
 - `fund_fees`：8 字段对齐预研 `cache/fees_{code}.json` 契约
-- `fund_holdings_bond`：(code, report_date) 复合 PK
+- `fund_holdings_bond`：(code, report_date) 复合 PK。**只由债基 refresh 写入**：`snapshot_fund(fetch_holdings=True)`（债基路径默认）；股票 refresh 传 `fetch_holdings=False` 完全跳过季报拉取，不发 zqcc 请求。跳过逻辑按宇宙开关，不按 `fund_type` 猜（fund_type 短路已删）。
 - `refresh_runs`：task_id PK，进度轮询数据源
 
 ## 3. 费率缓存契约（补回的 fetcher）

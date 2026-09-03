@@ -102,6 +102,7 @@ def refresh_stock_funds_sync(
     - 单只失败重试 3 次后跳过
     - 每只立即 commit（断点续传）
     - 进度写入 RefreshRun 表
+    - 差异：fetch_holdings=False，股票宇宙不拉债券季报（债基 tab 才消费持仓）
     """
     task_id = preset_task_id or str(uuid.uuid4())
     codes = load_fund_codes(get_stock_funds_config_path())
@@ -128,7 +129,7 @@ def refresh_stock_funds_sync(
             last_err = None
             for attempt in range(1, MAX_RETRY_PER_FUND + 1):
                 try:
-                    snap = snapshot_fund(code, mgr_worktime, mgr_company)
+                    snap = snapshot_fund(code, mgr_worktime, mgr_company, fetch_holdings=False)
                     break
                 except Exception as e:
                     last_err = str(e)[:150]
