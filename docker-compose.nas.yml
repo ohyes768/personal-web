@@ -34,7 +34,7 @@
 #   douyin-data / douyin-logs
 #   rss-relay-data
 #   macro-data / macro-logs
-#   fund-select-data / fund-select-cache / fund-select-config / fund-select-logs
+#   fund-select-data / fund-select-cache / fund-select-logs
 # =============================================================================
 
 services:
@@ -266,8 +266,9 @@ services:
     volumes:
       - fund-select-data:/app/data
       - fund-select-cache:/app/cache
-      - fund-select-config:/app/config
       - fund-select-logs:/app/logs
+      # /app/config 不挂 volume：静态配置随镜像 COPY 分发，挂 volume 会被旧内容遮蔽
+      # （benchmarks.yaml 因此在 NAS 上 FileNotFoundError，2026-09-03 修复）
     environment:
       - TZ=Asia/Shanghai
       - SERVER_PORT=8095
@@ -336,7 +337,5 @@ volumes:
     name: fund-select-data
   fund-select-cache:
     name: fund-select-cache
-  fund-select-config:
-    name: fund-select-config
   fund-select-logs:
     name: fund-select-logs
