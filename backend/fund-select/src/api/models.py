@@ -30,6 +30,12 @@ class FundListItem(BaseModel):
     ret_1y: Optional[float] = None
     ret_3y: Optional[float] = None
     ret_5y: Optional[float] = None
+    sharpe: Optional[float] = None      # phase2-B 风险指标（近 3 年）
+    ir: Optional[float] = None
+    alpha: Optional[float] = None       # T-M 截距年化
+    gamma: Optional[float] = None       # T-M 二次项
+    alpha_ir: Optional[float] = None
+    excess_3y: Optional[float] = None   # 3 年累计超额（小数）
     mgr_name: Optional[str] = None
     mgr_company: Optional[str] = None
     mgr_experience_years: Optional[float] = None

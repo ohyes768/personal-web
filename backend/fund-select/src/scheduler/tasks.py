@@ -145,9 +145,13 @@ def refresh_stock_funds_sync(
             _update_progress(db, run, completed, failed, errors)
             logger.info("[stock %d/%d] ✓ %s %s", i, len(codes), code, snap.get("name", "")[:20])
 
-        # 业绩基准 TRI（phase2-A）：主循环后统一跑，单只失败不影响整批
+        # 业绩基准 TRI（phase2-A）+ 风险指标（phase2-B）：主循环后统一跑，单只失败不影响整批
         bench_failed = _refresh_fund_benchmarks(db, codes)
         errors.extend(bench_failed)
+
+        from src.services.risk_service import refresh_fund_risks
+        risk_failed = refresh_fund_risks(db, codes)
+        errors.extend(risk_failed)
 
         _finish_run(db, run, completed, failed, errors, final_status="done")
         return {"task_id": task_id, "total": len(codes), "completed": completed, "failed": failed}

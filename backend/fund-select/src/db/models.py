@@ -141,3 +141,23 @@ class RiskFreeRate(Base):
     source = Column(String(32), nullable=False, default="bond_zh_us_rate_2y")
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC))
+
+
+class FundRiskMetrics(Base):
+    """风险/超额指标（phase2-B，近 3 年窗口，基于累计净值 vs benchmark TRI）
+
+    benchmark 不可用（tri=NULL）或样本不足时各指标为 NULL。
+    """
+    __tablename__ = "fund_risk_metrics"
+
+    code = Column(String(6), primary_key=True)
+    sharpe = Column(Float, nullable=True)
+    ir = Column(Float, nullable=True)
+    alpha = Column(Float, nullable=True)          # T-M 截距年化
+    gamma = Column(Float, nullable=True)          # T-M 二次项（日频原值）
+    alpha_ir = Column(Float, nullable=True)
+    excess_3y = Column(Float, nullable=True)      # 3 年累计超额（小数）
+    sample_days = Column(Integer, nullable=True)  # 实际样本交易日数（诊断）
+    as_of_date = Column(Date, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))

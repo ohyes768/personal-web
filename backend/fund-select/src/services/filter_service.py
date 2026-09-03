@@ -16,7 +16,7 @@ from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from src.data.fund_universe import resolve_universe_codes
-from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance
+from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance, FundRiskMetrics
 
 # 排序白名单（防 SQL 注入）
 SORT_COLUMNS = {
@@ -27,6 +27,12 @@ SORT_COLUMNS = {
     "ret_1y": FundPerformance.ret_1y,
     "ret_3y": FundPerformance.ret_3y,
     "ret_5y": FundPerformance.ret_5y,
+    "sharpe": FundRiskMetrics.sharpe,
+    "ir": FundRiskMetrics.ir,
+    "alpha": FundRiskMetrics.alpha,
+    "gamma": FundRiskMetrics.gamma,
+    "alpha_ir": FundRiskMetrics.alpha_ir,
+    "excess_3y": FundRiskMetrics.excess_3y,
     "fee_annual": FundFees.fee_mgmt,  # 年费排序：以管理费为主键近似（mgmt 占大头）
     "code": Fund.code,
 }
@@ -132,10 +138,11 @@ class FilterService:
         if not codes:
             return {"total": 0, "items": []}
         q = (
-            select(Fund, FundPerformance, FundFees, FundHoldingsBond)
+            select(Fund, FundPerformance, FundFees, FundHoldingsBond, FundRiskMetrics)
             .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
             .outerjoin(FundFees, Fund.code == FundFees.code)
             .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
+            .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
             .where(Fund.is_active == True)  # noqa: E712
             .where(Fund.code.in_(codes))
         )
@@ -161,7 +168,7 @@ class FilterService:
             q = q.where(Fund.mgr_experience_years >= min_mgr_exp)
 
         rows = self.db.execute(q).all()
-        items = [self._to_dto(f, p, fee, hold) for f, p, fee, hold in rows]
+        items = [self._to_dto(f, p, fee, hold, risk) for f, p, fee, hold, risk in rows]
         default_sort = "ret_5y" if kind == "stock" else "size_yi"
         sort_key = sort if sort in SORT_COLUMNS else default_sort
         descending = order != "asc"
@@ -174,19 +181,26 @@ class FilterService:
             "ret_1y": lambda it: it["ret_1y"],
             "ret_3y": lambda it: it["ret_3y"],
             "ret_5y": lambda it: it["ret_5y"],
+            "sharpe": lambda it: it["sharpe"],
+            "ir": lambda it: it["ir"],
+            "alpha": lambda it: it["alpha"],
+            "gamma": lambda it: it["gamma"],
+            "alpha_ir": lambda it: it["alpha_ir"],
+            "excess_3y": lambda it: it["excess_3y"],
             "fee_annual": lambda it: it["fee_annual"],
             "code": lambda it: it["code"],
         }
         getter = key_map[sort_key]
-        items.sort(
-            key=lambda it: (getter(it) is None, getter(it) if getter(it) is not None else 0),
-            reverse=descending,
-        )
-        return {"total": len(items), "items": items}
+        # None 值永远排尾部（asc/desc 皆是）：先排非 None，再追加 None
+        valued = [it for it in items if getter(it) is not None]
+        valued.sort(key=getter, reverse=descending)
+        empty = [it for it in items if getter(it) is None]
+        return {"total": len(items), "items": valued + empty}
 
     @staticmethod
     def _to_dto(
-        f: Fund, p: FundPerformance | None, fee: FundFees | None, hold: FundHoldingsBond | None
+        f: Fund, p: FundPerformance | None, fee: FundFees | None, hold: FundHoldingsBond | None,
+        risk: FundRiskMetrics | None = None,
     ) -> dict:
         annual = _fee_annual(fee)
         return {
@@ -200,6 +214,12 @@ class FilterService:
             "ret_1y": p.ret_1y if p else None,
             "ret_3y": p.ret_3y if p else None,
             "ret_5y": p.ret_5y if p else None,
+            "sharpe": risk.sharpe if risk else None,
+            "ir": risk.ir if risk else None,
+            "alpha": risk.alpha if risk else None,
+            "gamma": risk.gamma if risk else None,
+            "alpha_ir": risk.alpha_ir if risk else None,
+            "excess_3y": risk.excess_3y if risk else None,
             "mgr_name": f.mgr_name,
             "mgr_company": f.mgr_company,
             "mgr_experience_years": f.mgr_experience_years,
