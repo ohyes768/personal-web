@@ -36,6 +36,12 @@ class TestLoadYaml:
         assert "沪深300" in cfg["indices"]
         assert cfg["aliases"]["中债总指数"] == "中债综合财富"
 
+    def test_sina_stale_indices_use_tx(self):
+        """新浪断更的 3 个中证指数（红利/800成长/800价值）必须走腾讯源（2026-09-03 修复）"""
+        cfg = _load_benchmarks_yaml()
+        for name in ("中证红利", "中证800成长", "中证800价值"):
+            assert cfg["indices"][name]["source"] == "stock_zh_index_daily_tx"
+
 
 class TestParseFormula:
     """8 类真实公式（A-H，PRD Background 分组）"""
@@ -136,6 +142,14 @@ class TestFetchIndexDaily:
                                     date(2026, 1, 1), date(2026, 9, 1))
         assert mock.call_args.kwargs == {"symbol": "hkHSI"}
         assert df["return"].iloc[-1] == pytest.approx(0.02)
+
+    def test_tencent_source_a_share(self):
+        """A 股指数同样可走腾讯源（中证红利 sh000922 新浪断于 2019，2026-09-03 修复）"""
+        fresh = _idx_df([4000.0, 4040.0], dates=["2026-08-31", "2026-09-01"])
+        with patch("src.data.benchmark_fetcher.ak.stock_zh_index_daily_tx", return_value=fresh):
+            df = _fetch_index_daily("sh000922", "stock_zh_index_daily_tx",
+                                    date(2026, 1, 1), date(2026, 9, 1))
+        assert df["return"].iloc[-1] == pytest.approx(0.01)
 
 
 class TestFetchBenchmarkTri:

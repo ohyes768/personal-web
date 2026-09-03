@@ -10,9 +10,10 @@
 # 港股指数源探测结论：东财 em 源 ConnectionError、新浪 hk 源无数据 → 腾讯源可用。
 # 恒生综合 hkHSCI 与中证港股通综合（930950）腾讯也无 → 这两个名字仍走 fallback_chain。
 #
-# 部分新浪指数已停更（末条数据 < end-10 天时 fetcher 视为 stale 自动 fallback）：
+# 新浪对部分中证指数断更（末条数据 < end-10 天时 fetcher 视为 stale 自动 fallback）：
 #   中证红利 sh000922 断于 2019-01、中证800成长 sh000907 断于 2016-06、
-#   中证800价值 sh000908 断于 2019-01 —— 收录备查，实际会走 fallback。
+#   中证800价值 sh000908 断于 2019-01 —— 这 3 个已改走腾讯源（2026-09-03 实测全量更新）；
+#   其余如再遇新浪断更指数，同样改 source 为 stock_zh_index_daily_tx。
 version: 1
 fallback_index: "sh000300"
 fallback_chain: ["sh000906", "sh000300"]   # 中证800 → 沪深300
@@ -33,10 +34,10 @@ indices:
   创业板50: {ak_symbol: "sz399673", source: "stock_zh_index_daily"}
   科创板100: {ak_symbol: "sh000698", source: "stock_zh_index_daily"}
   # ---- 风格 / 因子（4）----
-  中证红利: {ak_symbol: "sh000922", source: "stock_zh_index_daily"}     # 新浪停更于 2019，实际走 fallback
+  中证红利: {ak_symbol: "sh000922", source: "stock_zh_index_daily_tx"}  # 新浪断于 2019，腾讯源全量（2026-09-03 修复）
   上证红利: {ak_symbol: "sh000015", source: "stock_zh_index_daily"}
-  中证800成长: {ak_symbol: "sh000907", source: "stock_zh_index_daily"}  # 新浪停更于 2016，实际走 fallback
-  中证800价值: {ak_symbol: "sh000908", source: "stock_zh_index_daily"}  # 新浪停更于 2019，实际走 fallback
+  中证800成长: {ak_symbol: "sh000907", source: "stock_zh_index_daily_tx"}  # 新浪断于 2016，腾讯源全量
+  中证800价值: {ak_symbol: "sh000908", source: "stock_zh_index_daily_tx"}  # 新浪断于 2019，腾讯源全量
   # ---- 行业主题（15）----
   中证白酒: {ak_symbol: "sz399997", source: "stock_zh_index_daily"}
   中证医药: {ak_symbol: "sz399933", source: "stock_zh_index_daily"}
