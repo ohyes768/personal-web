@@ -127,7 +127,8 @@ class FundBenchmark(Base):
     tri = Column(Float, nullable=True)
     source = Column(String(64), nullable=False, default="fetched")
     # 'fetched' / 'partial:fallback:sh000906' / 'fallback_chain:sh000906'
-    # / 'unavailable:no_field' / 'unavailable:exhausted'
+    # / 'unavailable:no_field' / 'unavailable:exhausted' / 'skipped:qdii'
+    # （QDII/互认基金跳过合成，tri=NULL，基准相关指标显示 -）
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC))
 

@@ -9,6 +9,7 @@ import csv
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.data.fund_universe import load_fund_codes
@@ -165,8 +166,20 @@ def _refresh_fund_benchmarks(db: Session, codes: list[str]) -> list[str]:
 
     窗口近 3 年（与 dd_3y 口径一致）；指数级缓存让 143 只只拉 ~35 次指数日线。
     无基准字段的基金写一行 tri=NULL（phase2-B 读到即跳过该基金指标计算）。
+    QDII/互认基金基准公式多无免费数据源（MSCI/标普全球等），fallback 出的中证800
+    是错误口径 → 跳过合成直接写 tri=NULL（PRD 09-03-qdii-skip-benchmark）；
+    判定口径同 filter_service 的 exclude_qdii。
     """
     from src.data.benchmark_fetcher import clear_index_cache, fetch_benchmark_tri
+
+    skip_codes = {
+        code for (code,) in db.query(Fund.code).filter(
+            Fund.code.in_(codes),
+            or_(Fund.fund_type.like("QDII%"), Fund.fund_type == "互认基金"),
+        ).all()
+    }
+    if skip_codes:
+        logger.info("[benchmark] 跳过 %d 只 QDII/互认基金基准合成", len(skip_codes))
 
     clear_index_cache()
     end = date.today()
@@ -174,8 +187,12 @@ def _refresh_fund_benchmarks(db: Session, codes: list[str]) -> list[str]:
     bench_errors: list[str] = []
     for i, code in enumerate(codes, 1):
         try:
-            df, source = fetch_benchmark_tri(code, start, end)
             db.query(FundBenchmark).filter(FundBenchmark.code == code).delete()
+            if code in skip_codes:
+                db.add(FundBenchmark(code=code, date=end, tri=None, source="skipped:qdii"))
+                db.commit()
+                continue
+            df, source = fetch_benchmark_tri(code, start, end)
             if df.empty:
                 db.add(FundBenchmark(code=code, date=end, tri=None, source=source))
             else:
