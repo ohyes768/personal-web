@@ -7,13 +7,14 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 import { useEffect } from 'react';
 
 import type { FundFilters } from '@/lib/types';
+import type { FilterKey } from '@/lib/useFilters';
 import { FilterPanel } from './FilterSidebar';
 
 interface FilterSheetProps {
   isOpen: boolean;
   onClose: () => void;
   filters: FundFilters;
-  onChange: (key: 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp', value: number | null) => void;
+  onChange: (key: FilterKey, value: number | boolean | null) => void;
   onClearAll: () => void;
   activeCount: number;
 }

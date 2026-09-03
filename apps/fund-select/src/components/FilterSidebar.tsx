@@ -6,16 +6,17 @@
 import { XMarkIcon } from '@heroicons/react/24/outline';
 
 import type { FundFilters } from '@/lib/types';
+import type { FilterKey, NumericFilterKey } from '@/lib/useFilters';
 
 interface FilterPanelProps {
   filters: FundFilters;
-  onChange: (key: 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp', value: number | null) => void;
+  onChange: (key: FilterKey, value: number | boolean | null) => void;
   onClearAll: () => void;
   activeCount: number;
 }
 
 interface Dimension {
-  key: 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp';
+  key: NumericFilterKey;
   label: string;
   unit: string;
   min: number;
@@ -87,10 +88,20 @@ export function FilterPanel({ filters, onChange, onClearAll, activeCount }: Filt
         <DimensionControl
           key={dim.key}
           dim={dim}
-          value={filters[dim.key] as number | null}
+          value={filters[dim.key]}
           onChange={v => onChange(dim.key, v)}
         />
       ))}
+      <label className="px-2.5 py-2 flex items-center gap-1.5 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={filters.exclude_qdii}
+          onChange={e => onChange('exclude_qdii', e.target.checked)}
+          className="rounded border-rule text-info focus:ring-info"
+          aria-label="排除 QDII"
+        />
+        <span className="text-xs font-medium text-ink-strong">排除 QDII</span>
+      </label>
     </div>
   );
 }

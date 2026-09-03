@@ -2,7 +2,6 @@
 from datetime import date
 
 from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance
-from src.services.export_service import export_csv
 from src.services.filter_service import FilterService
 
 
@@ -76,6 +75,33 @@ def test_bond_universe_keeps_mixed_and_qdii(db_session):
     assert "100004" in codes  # QDII
 
 
+def test_exclude_qdii_is_optional_overlay(db_session):
+    """排除 QDII 是用户筛选，不是宇宙成员判定。默认仍保留 QDII。"""
+    _seed_mixed(db_session)
+    db_session.add_all([
+        _mk("200004", fund_type="QDII-股票"),
+        _mk("200005", fund_type="QDII-互认"),
+        _mk("200006", fund_type="互认基金"),
+        _mk("200007", fund_type=""),
+    ])
+    db_session.commit()
+    svc = FilterService(db_session)
+
+    bond_all = svc.screen(universe_codes=BOND_UNIVERSE)
+    assert "100004" in {it["code"] for it in bond_all["items"]}
+
+    bond = svc.screen(universe_codes=BOND_UNIVERSE, exclude_qdii=True)
+    assert {it["code"] for it in bond["items"]} == {"100001", "100002"}
+
+    stock_u = STOCK_UNIVERSE + ["200004", "200005", "200006", "200007"]
+    stock = svc.screen_stock(universe_codes=stock_u, exclude_qdii=True)
+    codes = {it["code"] for it in stock["items"]}
+    assert codes == {"200001", "200002", "200003", "200007"}
+    assert "200004" not in codes
+    assert "200005" not in codes
+    assert "200006" not in codes
+
+
 def test_stock_universe_keeps_mixed_and_bond_typed(db_session):
     """成员判定不再看 fund_type：名单里的混合型、甚至债券型都留在股票 tab。"""
     _seed_mixed(db_session)
@@ -116,23 +142,24 @@ def test_universe_stats_counts_only_active_in_universe(db_session):
     assert stock["with_holdings"] == 0
 
 
-def test_csv_export_follows_universe(db_session):
+def test_screen_follows_universe(db_session):
+    """宇宙隔离（screen 层）：债基 screen 不含股票代码，反之亦然；exclude_qdii 生效"""
     _seed_mixed(db_session)
     svc = FilterService(db_session)
-    # export_csv 走 screen/screen_stock；注入宇宙需由方法参数传递。
-    # 这里直接调 screen 结果对齐 CSV：债券导出不含股票代码。
-    content, _ = export_csv(
-        {"universe_codes": BOND_UNIVERSE, "sort": "size_yi", "order": "desc"},
-        svc,
-        kind="bond",
-    )
-    assert "100001" in content
-    assert "200001" not in content
 
-    content_s, _ = export_csv(
-        {"universe_codes": STOCK_UNIVERSE, "sort": "ret_5y", "order": "desc"},
-        svc,
-        kind="stock",
+    bond = svc.screen(universe_codes=BOND_UNIVERSE, sort="size_yi", order="desc")
+    codes = {it["code"] for it in bond["items"]}
+    assert "100001" in codes
+    assert "200001" not in codes
+
+    stock = svc.screen_stock(universe_codes=STOCK_UNIVERSE, sort="ret_5y", order="desc")
+    codes_s = {it["code"] for it in stock["items"]}
+    assert "200001" in codes_s
+    assert "100001" not in codes_s
+
+    no_qdii = svc.screen(
+        universe_codes=BOND_UNIVERSE, sort="size_yi", order="desc", exclude_qdii=True,
     )
-    assert "200001" in content_s
-    assert "100001" not in content_s
+    codes_n = {it["code"] for it in no_qdii["items"]}
+    assert "100001" in codes_n
+    assert "100004" not in codes_n

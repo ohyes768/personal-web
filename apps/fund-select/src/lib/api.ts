@@ -19,6 +19,7 @@ function buildQuery(filters: Partial<FundFilters>): string {
   if (filters.min_mgr_exp != null) params.set('min_mgr_exp', String(filters.min_mgr_exp));
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.order) params.set('order', filters.order);
+  if (filters.exclude_qdii) params.set('exclude_qdii', 'true');
   const q = params.toString();
   return q ? `?${q}` : '';
 }

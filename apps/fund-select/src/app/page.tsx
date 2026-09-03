@@ -19,8 +19,6 @@ import {
 import { useFilters } from '@/lib/useFilters';
 import type { FundListItem } from '@/lib/types';
 
-type NumFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp';
-
 function FundsPageInner() {
   const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters();
   const { items, total, loading, error, reload } = useFundList(filters);
@@ -48,7 +46,7 @@ function FundsPageInner() {
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
         <FilterChipBar
           filters={filters}
-          onRemove={key => setFilter(key, null)}
+          onRemove={key => setFilter(key, key === 'exclude_qdii' ? false : null)}
         />
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">
@@ -79,7 +77,7 @@ function FundsPageInner() {
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
         filters={filters}
-        onChange={(key: NumFilterKey, v) => setFilter(key, v)}
+        onChange={(key, v) => setFilter(key, v)}
         onClearAll={clearAll}
         activeCount={activeCount}
       />

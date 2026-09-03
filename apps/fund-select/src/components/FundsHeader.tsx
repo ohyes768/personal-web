@@ -107,7 +107,11 @@ function StockExportCsvButton({ filters }: { filters: FundFilters }) {
     const params = new URLSearchParams();
     for (const [k, v] of Object.entries(filters)) {
       if (v !== null && v !== undefined && k !== 'sort' && k !== 'order') {
-        if (typeof v === 'number') params.set(k, String(v));
+        if (typeof v === 'boolean') {
+          if (v) params.set(k, 'true');
+        } else if (typeof v === 'number') {
+          params.set(k, String(v));
+        }
       }
     }
     if (filters.sort) params.set('sort', String(filters.sort));

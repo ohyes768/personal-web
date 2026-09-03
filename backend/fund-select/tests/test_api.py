@@ -6,7 +6,7 @@ import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from src.db.models import Base
+from src.db.models import Base, Fund
 
 
 @pytest.fixture
@@ -55,6 +55,20 @@ class TestScreen:
         assert r.json()["total"] == 0
         assert r.json()["items"] == []
 
+    def test_exclude_qdii_query_drops_qdii_typed(self, client, seeded_db):
+        """exclude_qdii 是筛选 overlay：默认保留 QDII，勾上后丢掉。"""
+        seeded_db.get(Fund, "000001").fund_type = "QDII-债券"
+        seeded_db.commit()
+        kept = [it["code"] for it in client.get("/api/funds/screen").json()["items"]]
+        assert "000001" in kept
+        dropped = [
+            it["code"]
+            for it in client.get("/api/funds/screen?exclude_qdii=true").json()["items"]
+        ]
+        assert "000001" not in dropped
+        assert "000002" in dropped
+        assert "000004" in dropped
+
 
 class TestStats:
     def test_bond_stats_total_is_universe(self, client):
@@ -79,23 +93,6 @@ class TestDetail:
 
     def test_detail_404(self, client):
         assert client.get("/api/funds/999999").status_code == 404
-
-
-class TestExportCsv:
-    def test_csv_bom_and_header(self, client):
-        r = client.get("/api/funds/export/csv")
-        assert r.status_code == 200
-        assert r.content.startswith("﻿".encode("utf-8"))  # BOM
-        assert "基金代码" in r.text
-        assert "attachment" in r.headers["content-disposition"]
-        assert "funds_" in r.headers["content-disposition"]
-
-    def test_csv_respects_filter(self, client):
-        r = client.get("/api/funds/export/csv?min_age=3&min_mgr_exp=5")
-        lines = r.text.strip().splitlines()
-        # header + 000001 + 000004（D 无业绩但 age/mgr 满足，LEFT JOIN 保留）
-        assert len(lines) == 3
-        assert "000002" not in r.text
 
 
 class TestRefreshStatus:

@@ -11,7 +11,7 @@
 | 路由 | 参数 | 返回 | 错误 |
 |---|---|---|---|
 | /health | - | `{status:"ok"}` | - |
-| /screen | min_age, min_size_yi, max_dd_3y, min_mgr_exp（均可空）; sort; order | `{total, items:[FundListItem]}` 不分页 | sort 不在白名单→422 |
+| /screen | min_age, min_size_yi, max_dd_3y, min_mgr_exp（均可空）; sort; order; exclude_qdii（默认 false） | `{total, items:[FundListItem]}` 不分页 | sort 不在白名单→422 |
 | /{code} | - | FundDetail（业绩+fees+holdings） | 404 |
 | /refresh | limit 可空 | `{task_id, status:"started"}`（BackgroundTasks） | - |
 | /refresh/status | task_id 可空（空=最近一次） | `{task_id,status,total,completed,failed,errors[]}` | 404 无记录 |
@@ -25,8 +25,10 @@
 - **筛选宇宙按 yaml 切分**，再 ∩ `is_active==True`：
   - `/screen`、`/export/csv`、`/stats` → `config/funds.yaml`
   - `/stock/screen`、`/stock/export/csv`、`/stock/stats` → `config/funds_stock.yaml`
-  - **不要用 `fund_type LIKE` 当成员判定**（债基名单含混合/QDII，股票名单含偏股混合）。
+  - **yaml 名单阶段不要用 `fund_type LIKE` 当成员判定**（名单已分宇宙；`fund_type` 只展示）。
+  - **全市场扫描（未做）** 再启用 `fund_type` 收口（股票型 / QDII / 混合型 vs 债券型）。
   - 详情 `/{code}`、`/stock/{code}` 仍按 code 查库，不按宇宙 404。
+- **排除 QDII 是用户筛选 overlay**（`exclude_qdii=true`）：丢掉 `fund_type LIKE 'QDII%'` 或 `fund_type == '互认基金'`；`fund_type` 为 NULL 的保留。默认关闭，yaml 里的 QDII 仍显示。债基 `/screen`、`/export/csv` 与股票 `/stock/screen`、`/stock/export/csv` 都支持。
 - 不按债券类型过滤（31 只含混合/QDII 照常展示）。
 - FundPerformance 用 **LEFT JOIN**：无业绩记录的基金保留在筛选结果（业绩列显示 null → 前端 "-"）。
 

@@ -1,5 +1,6 @@
-# 股票基金筛选平台配置（与 funds.yaml 债基名单平列）
+# 股票基金宇宙（与 funds.yaml 债基名单平列）。成员以本名单为准，不按 fund_type 过滤。
 # 改此文件后重启后端生效；refresh_stock_funds_sync 读取。
+# 全市场扫描尚未做；那时才需要按 fund_type 收口。
 version: 1
 funds:
   - "671030"

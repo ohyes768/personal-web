@@ -3,11 +3,16 @@
 
 宇宙 = 各自 yaml 名单 ∩ 库内 is_active。
 screen      — 债基 tab，读 funds.yaml
-screen_stock — 股票 tab，读 funds_stock.yaml（不再用 fund_type LIKE）
+screen_stock — 股票 tab，读 funds_stock.yaml
+
+fund_type 只当表格展示字段，不做成员判定。
+yaml 手工名单已经分好债基/股票宇宙，不需要 LIKE 股票型/QDII/混合型。
+以后扫全市场时再按 fund_type 收口（本模块尚未实现）。
+用户可选 exclude_qdii：丢掉 fund_type 以 QDII 开头或「互认基金」的记录（两 tab 都支持）。
 """
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from src.data.fund_universe import resolve_universe_codes
@@ -46,11 +51,12 @@ class FilterService:
         min_mgr_exp: Optional[float] = None,       # 经理从业年限 ≥ W（年）
         sort: str = "size_yi",
         order: str = "desc",
+        exclude_qdii: bool = False,
         universe_codes: list[str] | None = None,
     ) -> dict:
         return self._screen(
             "bond", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
-            sort, order, universe_codes,
+            sort, order, universe_codes, exclude_qdii,
         )
 
     def screen_stock(
@@ -61,12 +67,13 @@ class FilterService:
         min_mgr_exp: Optional[float] = None,
         sort: str = "ret_5y",
         order: str = "desc",
+        exclude_qdii: bool = False,
         universe_codes: list[str] | None = None,
     ) -> dict:
-        """股票 tab 筛选：成员 = funds_stock.yaml ∩ is_active。"""
+        """股票 tab 筛选：成员 = funds_stock.yaml ∩ is_active（不看 fund_type）。"""
         return self._screen(
             "stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
-            sort, order, universe_codes,
+            sort, order, universe_codes, exclude_qdii,
         )
 
     def universe_stats(
@@ -119,6 +126,7 @@ class FilterService:
         sort: str,
         order: str,
         universe_codes: list[str] | None,
+        exclude_qdii: bool = False,
     ) -> dict:
         codes = resolve_universe_codes(kind, universe_codes)
         if not codes:
@@ -131,6 +139,17 @@ class FilterService:
             .where(Fund.is_active == True)  # noqa: E712
             .where(Fund.code.in_(codes))
         )
+        if exclude_qdii:
+            # fund_type 为 NULL 的保留；只丢掉 QDII* 与「互认基金」
+            q = q.where(
+                or_(
+                    Fund.fund_type.is_(None),
+                    and_(
+                        not_(Fund.fund_type.like("QDII%")),
+                        Fund.fund_type != "互认基金",
+                    ),
+                )
+            )
         if min_age is not None:
             q = q.where(Fund.age_years >= min_age)
         if min_size_yi is not None:

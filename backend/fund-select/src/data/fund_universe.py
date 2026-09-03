@@ -1,5 +1,8 @@
 """
-基金宇宙：读 config/funds.yaml 或 funds_stock.yaml（v1 不扫全市场）
+基金宇宙：读 config/funds.yaml 或 funds_stock.yaml。
+
+v1 不扫全市场：成员以 yaml 代码为准，不按 fund_type 过滤。
+全市场扫描（未做）才需要再用 fund_type LIKE 区分债基/股票/QDII。
 """
 from pathlib import Path
 

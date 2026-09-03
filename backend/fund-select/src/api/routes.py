@@ -49,6 +49,7 @@ async def screen(
     min_mgr_exp: Optional[float] = Query(None, ge=0, le=100, description="经理从业年限 ≥ W（年）"),
     sort: str = Query("size_yi", description="排序字段"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
+    exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
     db=Depends(get_db),
 ):
     """筛选（不分页，v1 名单仅 31 只）"""
@@ -63,6 +64,7 @@ async def screen(
         min_mgr_exp=min_mgr_exp,
         sort=sort,
         order=order,
+        exclude_qdii=exclude_qdii,
     )
 
 
@@ -74,12 +76,14 @@ async def export_csv_route(
     min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
     sort: str = Query("size_yi"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
+    exclude_qdii: bool = Query(False),
     db=Depends(get_db),
 ):
     """导出当前筛选结果 CSV（UTF-8 BOM，文件名含日期）"""
     filters = {
         "min_age": min_age, "min_size_yi": min_size_yi, "max_dd_3y": max_dd_3y,
         "min_mgr_exp": min_mgr_exp, "sort": sort, "order": order,
+        "exclude_qdii": exclude_qdii,
     }
     content, filename = export_csv(filters, FilterService(db))
     return Response(
@@ -178,13 +182,14 @@ async def stock_screen(
     min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
     sort: str = Query("ret_5y"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
+    exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
     db=Depends(get_db),
 ):
     """股票 tab 筛选（funds_stock.yaml ∩ is_active）"""
     return FilterService(db).screen_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp,
-        sort=sort, order=order,
+        sort=sort, order=order, exclude_qdii=exclude_qdii,
     )
 
 
@@ -196,12 +201,14 @@ async def stock_export_csv(
     min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
     sort: str = Query("ret_5y"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
+    exclude_qdii: bool = Query(False),
     db=Depends(get_db),
 ):
     """股票 tab CSV 导出"""
     filters = {
         "min_age": min_age, "min_size_yi": min_size_yi, "max_dd_3y": max_dd_3y,
         "min_mgr_exp": min_mgr_exp, "sort": sort, "order": order,
+        "exclude_qdii": exclude_qdii,
     }
     content, filename = export_csv(filters, FilterService(db), kind="stock")
     return Response(
