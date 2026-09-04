@@ -151,3 +151,15 @@ input[type="number"] {
   pointer-events: none;
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.14);
 }
+
+/* 表头指标说明：多行 + 靠右展开（风险指标列贴屏幕右缘，向左展开防溢出） */
+.hover-tip--wrap[data-tip]:hover::after {
+  white-space: normal;
+  width: max-content;
+  max-width: 13rem;
+  text-align: left;
+}
+.hover-tip--right[data-tip]:hover::after {
+  left: auto;
+  right: 0;
+}

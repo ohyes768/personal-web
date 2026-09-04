@@ -15,10 +15,12 @@ interface SortableHeaderProps {
   onSort: (field: string) => void;
   align?: 'left' | 'right' | 'center';
   className?: string;
+  /** 表头悬停说明（长文案，多行 + 靠右展开） */
+  tip?: string;
 }
 
 export function SortableHeader({
-  label, field, currentSort, currentOrder, onSort, align = 'right', className = '',
+  label, field, currentSort, currentOrder, onSort, align = 'right', className = '', tip = '',
 }: SortableHeaderProps) {
   const active = currentSort === field;
   const Icon = !active ? ArrowsUpDownIcon : currentOrder === 'desc' ? ArrowDownIcon : ArrowUpIcon;
@@ -34,7 +36,12 @@ export function SortableHeader({
         }`}
         aria-label={`按${label}排序`}
       >
-        <span>{label}</span>
+        <span
+          className={tip ? 'hover-tip hover-tip--wrap hover-tip--right' : undefined}
+          data-tip={tip || undefined}
+        >
+          {label}
+        </span>
         <Icon className={`w-3 h-3 shrink-0 ${active ? 'opacity-100' : 'opacity-0 group-hover:opacity-40'}`} />
       </button>
     </th>

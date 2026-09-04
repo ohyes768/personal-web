@@ -25,6 +25,16 @@ interface FundTableProps {
 
 const NAME_MAX = 10;
 
+/** 风险指标表头悬停说明（均为近 3 年日频口径，公共口径见表格下方脚注） */
+const RISK_TIPS: Record<string, string> = {
+  sharpe: '夏普比率：每承担 1 份波动，换来的超额收益（相对无风险利率）。>1 优秀；<0 意味着近 3 年还没跑赢无风险收益',
+  ir: '信息比率：每 1 份偏离基准的波动，换来的稳定超额，衡量跑赢基准的性价比。>0.5 良好，>1 优秀',
+  alpha: '选股α：剔除市场涨跌与择时贡献后，经理纯靠选股获得的年化超额收益。越高选股能力越强；持续为负 = 选股在拖后腿',
+  gamma: '择时γ：市场大涨大跌前调仓的能力。>0 涨时跟得上、跌时躲得开；≈0 基本不择时；<0 疑似追涨杀跌',
+  alpha_ir: 'α-IR：选股α的稳定度（α÷其波动）。>1 选股能力稳定可信；<0.5 说明 α 忽有忽无，参考价值低',
+  excess_3y: '近 3 年累计跑赢基准的幅度（复利口径）',
+};
+
 const fmt = (v: number | null | undefined, digits = 2, suffix = ''): string => {
   if (v === null || v === undefined) return '-';
   return `${v.toFixed(digits)}${suffix}`;
@@ -129,12 +139,12 @@ export function FundTable({
             <SortableHeader label="近5年" field="ret_5y" currentSort={sort} currentOrder={order} onSort={onSort} />
             {showRiskColumns && (
               <>
-                <SortableHeader label="夏普" field="sharpe" currentSort={sort} currentOrder={order} onSort={onSort} />
-                <SortableHeader label="IR" field="ir" currentSort={sort} currentOrder={order} onSort={onSort} />
-                <SortableHeader label="选股α" field="alpha" currentSort={sort} currentOrder={order} onSort={onSort} />
-                <SortableHeader label="择时γ" field="gamma" currentSort={sort} currentOrder={order} onSort={onSort} />
-                <SortableHeader label="α-IR" field="alpha_ir" currentSort={sort} currentOrder={order} onSort={onSort} />
-                <SortableHeader label="超额3y" field="excess_3y" currentSort={sort} currentOrder={order} onSort={onSort} />
+                <SortableHeader label="夏普" field="sharpe" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.sharpe} />
+                <SortableHeader label="IR" field="ir" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.ir} />
+                <SortableHeader label="选股α" field="alpha" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.alpha} />
+                <SortableHeader label="择时γ" field="gamma" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.gamma} />
+                <SortableHeader label="α-IR" field="alpha_ir" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.alpha_ir} />
+                <SortableHeader label="超额3y" field="excess_3y" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.excess_3y} />
               </>
             )}
             {showBondColumns && <th className={`${th} text-right text-xs font-medium text-ink-muted`}>利率债</th>}
@@ -207,6 +217,11 @@ export function FundTable({
           })}
         </tbody>
       </table>
+      {showRiskColumns && (
+        <p className="mt-2 text-[10px] leading-relaxed text-ink-soft">
+          风险指标为近 3 年日频口径：基准取各基金业绩基准，无风险利率取 1 年定存；历史不足 250 个交易日的基金显示「-」。
+        </p>
+      )}
     </div>
   );
 }
