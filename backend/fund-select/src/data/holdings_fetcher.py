@@ -4,7 +4,6 @@
 import json
 import re
 from io import StringIO
-from pathlib import Path
 
 import pandas as pd
 import requests

@@ -5,7 +5,6 @@
 - 单只失败重试 3 次后跳过，记入 errors，不阻塞其它
 - 空库可用 results_31.csv 引导（bootstrap_from_csv）
 """
-import csv
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
@@ -14,7 +13,7 @@ from sqlalchemy.orm import Session
 
 from src.data.fund_universe import load_fund_codes
 from src.data.manager_fetcher import fetch_manager_table
-from src.db.models import Fund, FundBenchmark, FundFees, FundHoldingsBond, FundPerformance, RefreshRun, RiskFreeRate
+from src.db.models import Fund, FundBenchmark, RefreshRun, RiskFreeRate
 from src.db.session import SessionLocal
 from src.scheduler.daily_refresh import bootstrap_from_csv
 from src.services.refresh_service import persist_snapshot, snapshot_fund

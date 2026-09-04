@@ -13,7 +13,6 @@ from src.data.achievement_fetcher import fetch_achievement
 from src.data.fee_fetcher import fetch_fees
 from src.data.fund_basic_fetcher import _clean, fetch_basic, parse_size
 from src.data.holdings_fetcher import analyze_holdings, fetch_bond_hold
-from src.data.manager_fetcher import fetch_manager_table
 from src.data.nav_fetcher import fetch_nav
 from src.db.models import (
     Fund,

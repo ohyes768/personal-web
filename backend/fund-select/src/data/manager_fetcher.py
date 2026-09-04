@@ -1,8 +1,6 @@
 """
 基金经理数据源：akshare fund_manager_em（全市场经理表，一次拉取）
 """
-from pathlib import Path
-
 import akshare as ak
 import pandas as pd
 

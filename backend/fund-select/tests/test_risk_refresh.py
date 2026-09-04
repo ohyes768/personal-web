@@ -84,7 +84,7 @@ class TestRiskReturnsAdjustedBasis:
 
     def test_window_filter_and_dropna(self):
         """净值日期 >= start 切窗；日增长率 NaN 行 dropna（与旧口径 dropna 语义一致）"""
-        df, g, dates = _synthetic_nav()
+        df, _g, dates = _synthetic_nav()
         df.loc[N_DAYS - 1, "日增长率"] = np.nan
         start = dates[N_DAYS // 2]
 
@@ -104,7 +104,7 @@ class TestRefreshFundRisksAdjustedBasis:
 
     def test_excess_3y_uses_adjusted_compounding(self, db_session, monkeypatch):
         """excess_3y = 日增长率连乘累计 − 基准连乘累计；旧口径（nav pct_change）显著偏小"""
-        df, g, dates = _synthetic_nav()
+        df, _g, dates = _synthetic_nav()
         # 与 refresh_fund_risks 内部同款窗口（date.today() - 3 年自然日），期望值才能同窗对齐
         start = pd.Timestamp(date.today()) - pd.Timedelta(days=365 * 3)
         assert dates[DIV_IDX] >= start  # 分红日落在窗口内

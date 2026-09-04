@@ -3,6 +3,7 @@ benchmark_fetcher 单测：mock akshare / 指数日线，验证公式解析与 T
 
 样例公式全部来自 tmp/benchmark_extract_report.json（143 只真实基金的业绩基准字段）。
 """
+from dataclasses import FrozenInstanceError
 from datetime import date
 from unittest.mock import patch
 
@@ -10,7 +11,6 @@ import pandas as pd
 import pytest
 
 from src.data.benchmark_fetcher import (
-    Component,
     StaleIndexError,
     _fetch_index_daily,
     _load_benchmarks_yaml,
@@ -41,6 +41,14 @@ class TestLoadYaml:
         cfg = _load_benchmarks_yaml()
         for name in ("中证红利", "中证800成长", "中证800价值"):
             assert cfg["indices"][name]["source"] == "stock_zh_index_daily_tx"
+
+    def test_cbond_uses_general_source(self):
+        """B1 修复：中债综合财富必须走日期正确的 bond_index_general_cbond
+        （旧源 bond_composite_index_cbond 同指数但日期整体 -1 天，丢中债周五收益）"""
+        cfg = _load_benchmarks_yaml()
+        assert cfg["indices"]["中债综合财富"] == {
+            "ak_symbol": "CBA00301", "source": "bond_index_general_cbond",
+        }
 
     @pytest.mark.parametrize("name,symbol,source", [
         # 2026-09-04 收录（探测脚本留档于任务 research/probe_index_sources_0904.py，实测末条 T-1）
@@ -176,7 +184,7 @@ class TestParseFormula:
 
     def test_component_is_frozen(self):
         c = parse_formula("纳斯达克100指数")[0]
-        with pytest.raises(Exception):
+        with pytest.raises(FrozenInstanceError):   # frozen dataclass 专有异常，非裸 Exception
             c.weight = 0.5  # type: ignore[misc]
 
 
@@ -184,10 +192,10 @@ class TestFetchIndexDaily:
     def test_stale_index_raises(self):
         """停更指数（末条 < end - 10 天）→ StaleIndexError，上层走 fallback"""
         stale = _idx_df([100.0, 101.0], dates=["2016-06-10", "2016-06-13"])
-        with patch("src.data.benchmark_fetcher.ak.stock_zh_index_daily", return_value=stale):
-            with pytest.raises(StaleIndexError):
-                _fetch_index_daily("sh000907", "stock_zh_index_daily",
-                                   date(2023, 1, 1), date(2026, 9, 1))
+        with patch("src.data.benchmark_fetcher.ak.stock_zh_index_daily", return_value=stale), \
+                pytest.raises(StaleIndexError):
+            _fetch_index_daily("sh000907", "stock_zh_index_daily",
+                               date(2023, 1, 1), date(2026, 9, 1))
 
     def test_fresh_index_ok(self):
         fresh = _idx_df([100.0, 101.0], dates=["2026-08-31", "2026-09-01"])
@@ -228,6 +236,28 @@ class TestFetchIndexDaily:
         with patch("src.data.benchmark_fetcher.ak.index_hist_cni", return_value=cni):
             df = _fetch_index_daily("980092", "index_hist_cni", date(2026, 1, 1), date(2026, 9, 1))
         assert df["return"].iloc[-1] == pytest.approx(0.02)
+
+    def test_cbond_source_dates_kept_as_is(self):
+        """B1 回归：中债源日期必须原样透传（旧源整体 -1 天 → 周五标成周四、周日混入）。
+
+        mock 真实债市日历：10-11 周五 / 10-12 周六（债市调休交易日，股市休市）/ 10-14 周一。
+        断言：调用参数锁定综合指数/财富/总值；周五行保留（B1 核心损失）；无周日错位行。
+        """
+        raw = pd.DataFrame({
+            "date": pd.to_datetime(["2024-10-11", "2024-10-12", "2024-10-14"]),
+            "value": [100.0, 101.0, 102.0],
+        })
+        with patch("src.data.benchmark_fetcher.ak.bond_index_general_cbond",
+                   return_value=raw) as mock:
+            df = _fetch_index_daily("CBA00301", "bond_index_general_cbond",
+                                    date(2024, 1, 1), date(2024, 10, 14))
+        assert mock.call_args.kwargs == {
+            "index_category": "综合指数", "indicator": "财富", "period": "总值",
+        }
+        assert list(df["date"].dt.strftime("%Y-%m-%d")) == ["2024-10-11", "2024-10-12", "2024-10-14"]
+        assert df["date"].dt.weekday.tolist() == [4, 5, 0]   # 周五(保留!) / 周六调休 / 周一
+        assert not (df["date"].dt.weekday == 6).any()        # 旧源错位特征是大量周日行
+        assert df["return"].iloc[-1] == pytest.approx(102.0 / 101.0 - 1.0)
 
 
 class TestFetchBenchmarkTri:
@@ -274,7 +304,7 @@ class TestFetchBenchmarkTri:
         with patch("src.data.benchmark_fetcher.fetch_basic",
                    return_value=self._basic("沪深300指数收益率×65%+中证某定制小指数×5%+上证国债指数收益率×30%")), \
              patch("src.data.benchmark_fetcher._fetch_index_daily", side_effect=mock_idx):
-            df, source = fetch_benchmark_tri("000001", date(2026, 1, 1), date(2026, 9, 1))
+            _, source = fetch_benchmark_tri("000001", date(2026, 1, 1), date(2026, 9, 1))
         assert {"sh000300", "sh000012", "sh000906"} <= set(calls)   # 两成分 + fallback 顶替
         assert source.startswith("partial:fallback:")
 
@@ -393,7 +423,7 @@ class TestFetchBenchmarkTri:
         with patch("src.data.benchmark_fetcher.fetch_basic",
                    return_value=self._basic("标普港股通低波红利指数收益率")), \
              patch("src.data.benchmark_fetcher._fetch_index_daily",
-                   return_value=_idx_df([100.0, 105.0])) as mock_idx:
+                   return_value=_idx_df([100.0, 105.0])):
             df, source = fetch_benchmark_tri("000001", date(2026, 1, 1), date(2026, 9, 1))
         assert source.startswith("fallback_chain:")
         assert df["tri"].iloc[1] == pytest.approx(1050.0)  # fallback 指数自身收益

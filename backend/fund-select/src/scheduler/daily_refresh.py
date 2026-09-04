@@ -50,7 +50,6 @@ def bootstrap_from_csv(csv_path=None) -> int:
                 if db.get(Fund, code):
                     continue
 
-                est = row.get("established_date") or ""
                 mgr_days = _i(row, "mgr_days")
                 db.add(Fund(
                     code=code,

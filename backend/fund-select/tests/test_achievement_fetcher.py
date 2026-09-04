@@ -40,6 +40,5 @@ class TestFetchAchievement:
         with patch(
             "src.data.achievement_fetcher.ak.fund_individual_achievement_xq",
             side_effect=Exception("akshare 网络错误"),
-        ):
-            with pytest.raises(Exception, match="akshare 网络错误"):
-                fetch_achievement("000001")
+        ), pytest.raises(Exception, match="akshare 网络错误"):
+            fetch_achievement("000001")

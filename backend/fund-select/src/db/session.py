@@ -1,8 +1,6 @@
 """
 数据库 engine / Session / 建表
 """
-from pathlib import Path
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 

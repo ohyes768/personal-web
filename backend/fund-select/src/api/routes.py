@@ -8,7 +8,6 @@ import json
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
-from fastapi.responses import Response
 from sqlalchemy import select
 
 from src.api.models import (

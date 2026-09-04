@@ -1,7 +1,7 @@
 """
 ORM 模型（SQLAlchemy 2.x）
 """
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 from sqlalchemy import Boolean, Column, Date, DateTime, Float, Index, Integer, String
 from sqlalchemy.orm import DeclarativeBase

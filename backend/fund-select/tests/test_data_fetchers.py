@@ -117,21 +117,20 @@ class TestFetchBasic:
         with patch(
             "src.data.fund_basic_fetcher.ak.fund_individual_basic_info_xq",
             side_effect=KeyError("['最新规模', ...] not in index"),
-        ):
-            with patch.object(fund_basic_fetcher.requests, "get") as mock_get:
-                mock_get.return_value.json.return_value = {
-                    "data": {
-                        "fd_code": "968157",
-                        "fd_name": "东亚联丰环球股票人民币",
-                        "fd_full_name": "东亚联丰环球股票基金R(3)类别人民币",
-                        "found_date": "2024-12-09",
-                        "keeper_name": "东亚联丰投资管理有限公司",
-                        "manager_name": "张文健",
-                        "type_desc": "互认基金",
-                        "rating_desc": "暂无评级",
-                    }
+        ), patch.object(fund_basic_fetcher.requests, "get") as mock_get:
+            mock_get.return_value.json.return_value = {
+                "data": {
+                    "fd_code": "968157",
+                    "fd_name": "东亚联丰环球股票人民币",
+                    "fd_full_name": "东亚联丰环球股票基金R(3)类别人民币",
+                    "found_date": "2024-12-09",
+                    "keeper_name": "东亚联丰投资管理有限公司",
+                    "manager_name": "张文健",
+                    "type_desc": "互认基金",
+                    "rating_desc": "暂无评级",
                 }
-                out = fetch_basic("968157")
+            }
+            out = fetch_basic("968157")
 
         assert out["基金代码"] == "968157"
         assert out["基金名称"] == "东亚联丰环球股票人民币"
@@ -147,10 +146,9 @@ class TestFetchBasic:
         with patch(
             "src.data.fund_basic_fetcher.ak.fund_individual_basic_info_xq",
             side_effect=KeyError("missing"),
-        ):
-            with patch.object(fund_basic_fetcher.requests, "get") as mock_get:
-                mock_get.return_value.json.return_value = {"data": None}
-                out = fetch_basic("000000")
+        ), patch.object(fund_basic_fetcher.requests, "get") as mock_get:
+            mock_get.return_value.json.return_value = {"data": None}
+            out = fetch_basic("000000")
         assert out == {}
 
     def test_session_reused_across_calls(self):

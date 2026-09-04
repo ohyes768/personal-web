@@ -4,7 +4,9 @@
 # 数据源（2026-09-02 实测，探测脚本 tmp/probe_index_sources*.py / probe_hk_sources.py）：
 #   stock_zh_index_daily        新浪，A 股指数（含少量停更陷阱，见各条注释）
 #   stock_zh_index_daily_tx     腾讯，A 股 + 港股指数（恒生 hkHSI 1989-至今全历史）
-#   bond_composite_index_cbond  中债网，中债-综合指数（财富/总值口径）
+#   bond_index_general_cbond    中债网，中债-综合指数（财富/总值口径）
+#     （B1 修复 2026-09-04：旧源 bond_composite_index_cbond 同指数但日期整体 -1 天，换此源，
+#      全史 6171 行逐值 0 差值、日期为真实交易日；实证脚本留档任务 research/）
 #   index_us_stock_sina         新浪，美股指数（QDII 基准用）
 #
 # 港股指数源探测结论：东财 em 源 ConnectionError、新浪 hk 源无数据 → 腾讯源可用。
@@ -63,7 +65,7 @@ indices:
   # ---- 债券（2）----
   中债综合财富:
     ak_symbol: "CBA00301"
-    source: "bond_composite_index_cbond"
+    source: "bond_index_general_cbond"
     # 中债-综合指数（财富/总值），2002-至今；公式里各类「中债总/中证全债/中证综合债」
     # 名称的债指数均近似映射到此（财富=全收益口径，与基金复权净值同口径）
   上证国债: {ak_symbol: "sh000012", source: "stock_zh_index_daily"}

@@ -34,6 +34,14 @@ python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
 
+# ruff 规则集钉在基线 5 类债务（09-04-fix-bond-index-date-shift 清零）。
+# 用 select（替换默认集）而非 extend-select（默认集+追加）：ruff 0.16 内置默认集在本项目
+# 有 121 处既有告警（UP045×86 / BLE001×11 / B008×8 / I001×4 等），extend-select 会让 CI 全红；
+# 修掉它们违背「零行为变更」（UP045 是大面积注解改写、BLE001 动异常语义）。收窄成显式
+# 5 类 = 可执行的基线契约。不开 ALL：中文注释触发 RUF002/003，FastAPI Depends 惯用触发 B008。
+[tool.ruff.lint]
+select = ["F401", "F841", "B017", "SIM117", "RUF059"]
+
 [tool.coverage.run]
 source = ["src"]
 omit = ["tests/*"]

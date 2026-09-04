@@ -1,12 +1,10 @@
 """
 API 接口单测：用 in-memory DB 覆盖依赖
 """
-import datetime
-
 import pytest
 from fastapi.testclient import TestClient
 
-from src.db.models import Base, Fund
+from src.db.models import Fund
 
 
 @pytest.fixture

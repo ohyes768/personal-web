@@ -70,13 +70,12 @@
 
 **高权重 unknown 置 NULL（R4，宁缺毋错）**：unknown 成分 weight ≥ 0.5 时**不**用 fallback 指数顶替，返回空 TRI + `source=unavailable:unknown_majority`（risk_service 对 tri=NULL 行取不到 r_b → 4 指标 None，不抛错）；weight < 0.5 维持 fallback 顶替 + `partial:fallback` 标记。
 
-**Why**：A/HK/美/中债交易日历互不重合（港股佛诞、美股感恩节、中债日期还错位——见下）。对收益 ffill 会把成分缺席日的前一日收益**再计一次**，混合日历 3 年虚高 13.5pp（004316：真 +21.8% 算成 +35.3%），excess/IR/α 全歪。单成分基准两算法等价（回归测试锁定）。
+**Why**：A/HK/美/中债交易日历互不重合（港股佛诞、美股感恩节等）。对收益 ffill 会把成分缺席日的前一日收益**再计一次**，混合日历 3 年虚高 13.5pp（004316：真 +21.8% 算成 +35.3%），excess/IR/α 全歪。单成分基准两算法等价（回归测试锁定）。
 
-**已知未修问题（改这里前先看）**：
-- **B1**：`bond_composite_index_cbond` 返回日期整体 **−1 天**（真实周一标成周日、周五标成周四，3 年分布 Fri=9/Sat=11/Sun=142 实证）。中债成分收益落在错位日期上，inner join 丢周末行 → 中债周五收益永久丢失。修复方向：中债成分日期 +1 天或换源。
+**B1（已修复，09-04-fix-bond-index-date-shift）**：旧源 `bond_composite_index_cbond`（中债综合指数 财富/总值）返回日期整体 **−1 天**（真实周一标成周日、周五标成周四；2026-09-04 复测 3 年分布 Sun=142/Sat=11/Fri=9，与 A 股日历重叠 580/746；+1 天后 725/746，剩余 20 个周末行全部是债市调休交易日——股市休市、银行间开市，属正常）。中债成分收益落在错位日期上，inner join 丢周末行 → 中债周五收益永久丢失。**修复 = 换源非 shift**：`bond_index_general_cbond(index_category="综合指数", indicator="财富", period="总值")` 与旧源全史 6171 行逐值 **0 差值**（同一指数序列）、日期正确、还多最新一天；不做 +1 天 hack（源若日后自行修正会反向错位）。yaml `中债综合财富.source` 已改，ak_symbol 仍为 CBA00301。注意：中债日历含约 20 天/3 年的调休周六日，与 A 股指数并集合成时这些行股指数贡献 0、债指数贡献真实收益，是正确行为。
 - **B3（已修复，09-04-benchmark-yaml-coverage）**：unknown 成分被 fallback 指数（中证800）**静默替换**、指标照算（006373 85% 权重被换，excess_3y=+146% 失真）→ 已按上方「高权重 unknown 置 NULL」语义修复，并补录 20 个 yaml 指数（中证官网 `stock_zh_index_hist_csindex` / 申万 `index_hist_sw` / 国证 `index_hist_cni`，收录标准=拉到日线且末条距今 ≤10 天）+ curated aliases。重刷实证：unknown 主成分被顶替 45→14 只（剩余均为确认无源无替代的海外指数，走置 NULL）、`partial:fallback` 9→0 行。
 
-**Tests**（test_benchmark_fetcher.py）：mixed_calendar_no_return_duplication（双计消除）/ leading_dates_trimmed（前导裁剪）/ same_calendar_matches_return_compound（回归）/ deposit_weight_normalization / major_unknown_component_returns_null（R4 置 NULL，断言完全不发起指数拉取）/ bare_percent_addon_compounds_as_deposit（裸 N% 加成）/ half_width_x_is_mul_only_before_digit（乘号规则）。
+**Tests**（test_benchmark_fetcher.py）：mixed_calendar_no_return_duplication（双计消除）/ leading_dates_trimmed（前导裁剪）/ same_calendar_matches_return_compound（回归）/ deposit_weight_normalization / major_unknown_component_returns_null（R4 置 NULL，断言完全不发起指数拉取）/ bare_percent_addon_compounds_as_deposit（裸 N% 加成）/ half_width_x_is_mul_only_before_digit（乘号规则）/ cbond_uses_general_source + cbond_source_dates_kept_as_is（B1 换源后日期原样透传，周五行保留、无周日错位行）。
 
 ```python
 # Wrong: 对收益 ffill —— B 缺席日复制前日收益（3年 +13.5pp）
