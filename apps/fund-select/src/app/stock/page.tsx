@@ -6,7 +6,7 @@
  *   - FilterPanel / FilterSheet（5 维度筛选：四维 + 夏普）
  *   - FilterChipBar / FundTable / CompareDrawer / CompareFloatingBar
  * 差异：
- *   - 默认值 STOCK_DEFAULT_FILTERS（3 / 5 / 20 / 5 / 夏普 0.8）
+ *   - 默认值 STOCK_DEFAULT_FILTERS（3 / 5 / 30 / 5 / 夏普 0.8）
  *   - 调 stockApi（/api/funds/stock/*）
  */
 'use client';

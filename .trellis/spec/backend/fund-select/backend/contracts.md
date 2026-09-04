@@ -31,7 +31,7 @@
 - **排除 QDII 是用户筛选 overlay**（`exclude_qdii=true`）：丢掉 `fund_type LIKE 'QDII%'` 或 `fund_type == '互认基金'`；`fund_type` 为 NULL 的保留。默认关闭，yaml 里的 QDII 仍显示。债基 `/screen`、`/export/csv` 与股票 `/stock/screen`、`/stock/export/csv` 都支持。
 - 不按债券类型过滤（31 只含混合/QDII 照常展示）。
 - FundPerformance 用 **LEFT JOIN**：无业绩记录的基金保留在筛选结果（业绩列显示 null → 前端 "-"）。
-- **min_sharpe 仅股票 tab（09-04-stock-fund-sharpe-filter）**：`/stock/screen?min_sharpe=X` → `sharpe >= X`；sharpe 为 NULL（benchmark 不可用/样本不足，见 fund_risk_metrics 语义）的基金被一并排除，与 dd_3y 筛选惯例一致。前端 `STOCK_DEFAULT_FILTERS.min_sharpe = 0.8`（股票宇宙分布：中位 0.73 / p75 0.90，默认结果 142→53 只；叠加四维默认后 6 只）；债基 `DEFAULT_FILTERS.min_sharpe = null` 且侧栏不渲染该项（`FilterPanel dimensions` prop 默认四维，股票页传 `STOCK_DIMENSIONS` 五维）。
+- **min_sharpe 仅股票 tab（09-04-stock-fund-sharpe-filter）**：`/stock/screen?min_sharpe=X` → `sharpe >= X`；sharpe 为 NULL（benchmark 不可用/样本不足，见 fund_risk_metrics 语义）的基金被一并排除，与 dd_3y 筛选惯例一致。前端 `STOCK_DEFAULT_FILTERS.min_sharpe = 0.8`（股票宇宙分布：中位 0.73 / p75 0.90，默认结果 142→53 只；叠加四维默认〔回撤 30〕后 25 只）；债基 `DEFAULT_FILTERS.min_sharpe = null` 且侧栏不渲染该项（`FilterPanel dimensions` prop 默认四维，股票页传 `STOCK_DIMENSIONS` 五维）。
 
 ### ORM（src/db/models.py）
 

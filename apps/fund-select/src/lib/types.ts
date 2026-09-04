@@ -109,11 +109,11 @@ export const DEFAULT_FILTERS: FundFilters = {
   order: 'desc',
 };
 
-/** 股票基金 tab 默认筛选（决策：3 / 5 / 20 / 5 / 夏普 0.8，按 ret_3y desc） */
+/** 股票基金 tab 默认筛选（决策：3 / 5 / 30 / 5 / 夏普 0.8，按 ret_3y desc） */
 export const STOCK_DEFAULT_FILTERS: FundFilters = {
   min_age: 3,
   min_size_yi: 5,
-  max_dd_3y: 20,
+  max_dd_3y: 30,
   min_mgr_exp: 5,
   min_sharpe: 0.8,
   exclude_qdii: false,
