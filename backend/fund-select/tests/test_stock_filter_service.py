@@ -3,7 +3,7 @@ screen_stock 单测：yaml 宇宙 ∩ is_active + 4 维度筛选 + 默认排序 
 """
 from datetime import date
 
-from src.db.models import Fund, FundPerformance
+from src.db.models import Fund, FundPerformance, FundRiskMetrics
 from src.services.filter_service import FilterService
 
 STOCK_UNIVERSE = ["600001", "600002", "600003", "600004", "600005"]
@@ -111,3 +111,31 @@ def test_screen_stock_min_mgr_exp_filters_out(db_session):
     codes = {it["code"] for it in result["items"]}
     assert "600010" not in codes
     assert "600001" in codes
+
+
+def _seed_risk(db):
+    """sharpe：1.2 / 0.8 / 0.5 / 无记录(600004) / 0.9"""
+    db.add_all([
+        FundRiskMetrics(code="600001", sharpe=1.2, as_of_date=date(2026, 9, 1)),
+        FundRiskMetrics(code="600002", sharpe=0.8, as_of_date=date(2026, 9, 1)),
+        FundRiskMetrics(code="600003", sharpe=0.5, as_of_date=date(2026, 9, 1)),
+        FundRiskMetrics(code="600005", sharpe=0.9, as_of_date=date(2026, 9, 1)),
+    ])
+    db.commit()
+
+
+def test_screen_stock_min_sharpe_filters_out(db_session):
+    """min_sharpe=0.8：sharpe<0.8（600003）与无指标记录（600004）都被筛掉。"""
+    _seed_stock(db_session)
+    _seed_risk(db_session)
+    result = _screen_stock(db_session, min_sharpe=0.8)
+    codes = {it["code"] for it in result["items"]}
+    assert codes == {"600001", "600002", "600005"}
+
+
+def test_screen_stock_without_min_sharpe_keeps_null_metrics(db_session):
+    """不传 min_sharpe：无风险指标的基金不受影响（行为不变）。"""
+    _seed_stock(db_session)
+    _seed_risk(db_session)
+    result = _screen_stock(db_session)
+    assert result["total"] == 5

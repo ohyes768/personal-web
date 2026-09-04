@@ -153,6 +153,7 @@ async def stock_screen(
     min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
     max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
     min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
+    min_sharpe: Optional[float] = Query(None, ge=-10, le=10, description="夏普 ≥ X（近 3 年）"),
     sort: str = Query("ret_5y"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
@@ -161,7 +162,7 @@ async def stock_screen(
     """股票 tab 筛选（funds_stock.yaml ∩ is_active）"""
     return FilterService(db).screen_stock(
         min_age=min_age, min_size_yi=min_size_yi,
-        max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp,
+        max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
     )
 

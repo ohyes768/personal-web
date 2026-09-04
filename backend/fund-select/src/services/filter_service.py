@@ -71,6 +71,7 @@ class FilterService:
         min_size_yi: Optional[float] = None,
         max_dd_3y: Optional[float] = None,
         min_mgr_exp: Optional[float] = None,
+        min_sharpe: Optional[float] = None,        # 夏普 ≥ X（近 3 年；NULL 指标被排除）
         sort: str = "ret_5y",
         order: str = "desc",
         exclude_qdii: bool = False,
@@ -79,7 +80,7 @@ class FilterService:
         """股票 tab 筛选：成员 = funds_stock.yaml ∩ is_active（不看 fund_type）。"""
         return self._screen(
             "stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
-            sort, order, universe_codes, exclude_qdii,
+            sort, order, universe_codes, exclude_qdii, min_sharpe,
         )
 
     def universe_stats(
@@ -133,6 +134,7 @@ class FilterService:
         order: str,
         universe_codes: list[str] | None,
         exclude_qdii: bool = False,
+        min_sharpe: Optional[float] = None,
     ) -> dict:
         codes = resolve_universe_codes(kind, universe_codes)
         if not codes:
@@ -166,6 +168,9 @@ class FilterService:
             q = q.where(FundPerformance.dd_3y >= -abs(max_dd_3y))
         if min_mgr_exp is not None:
             q = q.where(Fund.mgr_experience_years >= min_mgr_exp)
+        if min_sharpe is not None:
+            # sharpe 为 NULL（无风险指标）的基金一并排除，与 dd_3y 筛选惯例一致
+            q = q.where(FundRiskMetrics.sharpe >= min_sharpe)
 
         rows = self.db.execute(q).all()
         items = [self._to_dto(f, p, fee, hold, risk) for f, p, fee, hold, risk in rows]

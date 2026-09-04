@@ -8,7 +8,7 @@ import { useEffect } from 'react';
 
 import type { FundFilters } from '@/lib/types';
 import type { FilterKey } from '@/lib/useFilters';
-import { FilterPanel } from './FilterSidebar';
+import { FilterPanel, type Dimension } from './FilterSidebar';
 
 interface FilterSheetProps {
   isOpen: boolean;
@@ -17,9 +17,10 @@ interface FilterSheetProps {
   onChange: (key: FilterKey, value: number | boolean | null) => void;
   onClearAll: () => void;
   activeCount: number;
+  dimensions?: Dimension[];
 }
 
-export function FilterSheet({ isOpen, onClose, filters, onChange, onClearAll, activeCount }: FilterSheetProps) {
+export function FilterSheet({ isOpen, onClose, filters, onChange, onClearAll, activeCount, dimensions }: FilterSheetProps) {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -47,7 +48,7 @@ export function FilterSheet({ isOpen, onClose, filters, onChange, onClearAll, ac
           </button>
         </div>
         <div className="p-3">
-          <FilterPanel filters={filters} onChange={onChange} onClearAll={onClearAll} activeCount={activeCount} />
+          <FilterPanel filters={filters} onChange={onChange} onClearAll={onClearAll} activeCount={activeCount} dimensions={dimensions} />
           <button
             onClick={onClose}
             className="w-full mt-3 py-2.5 text-sm font-medium text-white bg-accent hover:bg-accent-hover rounded-lg"

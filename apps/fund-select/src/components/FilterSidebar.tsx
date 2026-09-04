@@ -13,9 +13,10 @@ interface FilterPanelProps {
   onChange: (key: FilterKey, value: number | boolean | null) => void;
   onClearAll: () => void;
   activeCount: number;
+  dimensions?: Dimension[];
 }
 
-interface Dimension {
+export interface Dimension {
   key: NumericFilterKey;
   label: string;
   unit: string;
@@ -29,6 +30,12 @@ const DIMENSIONS: Dimension[] = [
   { key: 'min_size_yi', label: '规模', unit: '亿', min: 0, max: 350, step: 5 },
   { key: 'max_dd_3y', label: '3年回撤', unit: '%', min: 0, max: 20, step: 0.5 },
   { key: 'min_mgr_exp', label: '经理', unit: '年', min: 0, max: 20, step: 0.5 },
+];
+
+/** 股票 tab 维度：四维 + 夏普（近 3 年，范围参考宇宙分布 -0.1 ~ 1.6） */
+export const STOCK_DIMENSIONS: Dimension[] = [
+  ...DIMENSIONS,
+  { key: 'min_sharpe', label: '夏普', unit: '', min: -1, max: 2, step: 0.1 },
 ];
 
 function DimensionControl({ dim, value, onChange }: {
@@ -71,7 +78,7 @@ function DimensionControl({ dim, value, onChange }: {
   );
 }
 
-export function FilterPanel({ filters, onChange, onClearAll, activeCount }: FilterPanelProps) {
+export function FilterPanel({ filters, onChange, onClearAll, activeCount, dimensions = DIMENSIONS }: FilterPanelProps) {
   return (
     <div className="bg-paper-card rounded-lg border border-rule">
       <div className="px-2.5 py-2 border-b border-rule flex items-center justify-between gap-1">
@@ -84,7 +91,7 @@ export function FilterPanel({ filters, onChange, onClearAll, activeCount }: Filt
           清空
         </button>
       </div>
-      {DIMENSIONS.map(dim => (
+      {dimensions.map(dim => (
         <DimensionControl
           key={dim.key}
           dim={dim}

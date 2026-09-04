@@ -17,6 +17,7 @@ function buildQuery(filters: Partial<FundFilters>): string {
   if (filters.min_size_yi != null) params.set('min_size_yi', String(filters.min_size_yi));
   if (filters.max_dd_3y != null) params.set('max_dd_3y', String(filters.max_dd_3y));
   if (filters.min_mgr_exp != null) params.set('min_mgr_exp', String(filters.min_mgr_exp));
+  if (filters.min_sharpe != null) params.set('min_sharpe', String(filters.min_sharpe));
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.order) params.set('order', filters.order);
   if (filters.exclude_qdii) params.set('exclude_qdii', 'true');

@@ -3,10 +3,10 @@
  *
  * 与债基页（/funds）平列，复用：
  *   - FundsHeader（nav「债基 | 股票」）
- *   - FilterPanel / FilterSheet（4 维度筛选）
+ *   - FilterPanel / FilterSheet（5 维度筛选：四维 + 夏普）
  *   - FilterChipBar / FundTable / CompareDrawer / CompareFloatingBar
  * 差异：
- *   - 默认值 STOCK_DEFAULT_FILTERS（3 / 5 / 5 / 20）
+ *   - 默认值 STOCK_DEFAULT_FILTERS（3 / 5 / 20 / 5 / 夏普 0.8）
  *   - 调 stockApi（/api/funds/stock/*）
  */
 'use client';
@@ -17,7 +17,7 @@ import { CompareDrawer } from '@/components/CompareDrawer';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
 import { FilterChipBar } from '@/components/FilterChipBar';
 import { FilterSheet } from '@/components/FilterSheet';
-import { FilterPanel } from '@/components/FilterSidebar';
+import { FilterPanel, STOCK_DIMENSIONS } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
 import { useCompare, useFeeDetails, useStockFundList } from '@/lib/hooks';
@@ -63,6 +63,7 @@ function StockFundsPageInner() {
               onChange={(key, v) => setFilter(key, v)}
               onClearAll={clearAll}
               activeCount={activeCount}
+              dimensions={STOCK_DIMENSIONS}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -90,6 +91,7 @@ function StockFundsPageInner() {
         onChange={(key, v) => setFilter(key, v)}
         onClearAll={clearAll}
         activeCount={activeCount}
+        dimensions={STOCK_DIMENSIONS}
       />
 
       <CompareFloatingBar

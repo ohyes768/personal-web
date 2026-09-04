@@ -20,6 +20,7 @@ export function useFundList(filters: FundFilters) {
 
   const query = [
     filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
+    filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
   ].join('|');
 
@@ -58,6 +59,7 @@ export function useStockFundList(filters: FundFilters) {
 
   const query = [
     filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
+    filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
   ].join('|');
 

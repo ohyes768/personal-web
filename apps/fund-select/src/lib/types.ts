@@ -86,12 +86,13 @@ export interface RefreshStatus {
   errors: string[];
 }
 
-/** 筛选四维度（均可空 = 不限制）+ 排除 QDII 开关 */
+/** 筛选维度（均可空 = 不限制）+ 排除 QDII 开关；min_sharpe 仅股票 tab 使用 */
 export interface FundFilters {
   min_age: number | null;
   min_size_yi: number | null;
   max_dd_3y: number | null;
   min_mgr_exp: number | null;
+  min_sharpe: number | null;
   exclude_qdii: boolean;
   sort: string;
   order: 'asc' | 'desc';
@@ -102,17 +103,19 @@ export const DEFAULT_FILTERS: FundFilters = {
   min_size_yi: 5,
   max_dd_3y: 5,
   min_mgr_exp: 5,
+  min_sharpe: null,
   exclude_qdii: false,
   sort: 'ret_3y',
   order: 'desc',
 };
 
-/** 股票基金 tab 默认筛选（决策：3 / 5 / 20 / 5，与债基一致按 ret_3y desc） */
+/** 股票基金 tab 默认筛选（决策：3 / 5 / 20 / 5 / 夏普 0.8，按 ret_3y desc） */
 export const STOCK_DEFAULT_FILTERS: FundFilters = {
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 20,
   min_mgr_exp: 5,
+  min_sharpe: 0.8,
   exclude_qdii: false,
   sort: 'ret_3y',
   order: 'desc',

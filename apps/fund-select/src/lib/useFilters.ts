@@ -23,10 +23,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 
 import { DEFAULT_FILTERS, type FundFilters } from './types';
 
-export type NumericFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp';
+export type NumericFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'min_sharpe';
 export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii';
 
-const NUMERIC_KEYS: NumericFilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp'];
+const NUMERIC_KEYS: NumericFilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp', 'min_sharpe'];
 
 function parseExcludeQdii(search: URLSearchParams): boolean {
   return search.get('exclude_qdii') === '1';
@@ -39,12 +39,13 @@ export function parseFiltersFromSearch(
 ): FundFilters {
   const exclude_qdii = parseExcludeQdii(search);
   if (search.get('cleared') === '1') {
-    // 用户主动"清空"：四维不限；exclude_qdii 仍按 URL 正交解析
+    // 用户主动"清空"：全部维度不限；exclude_qdii 仍按 URL 正交解析
     return {
       min_age: null,
       min_size_yi: null,
       max_dd_3y: null,
       min_mgr_exp: null,
+      min_sharpe: null,
       exclude_qdii,
       sort: (search.get('sort') as string) || fallback.sort,
       order: (search.get('order') as 'asc' | 'desc') || fallback.order,
@@ -63,6 +64,7 @@ export function parseFiltersFromSearch(
     min_size_yi: null,
     max_dd_3y: null,
     min_mgr_exp: null,
+    min_sharpe: null,
     exclude_qdii,
     sort: fallback.sort,
     order: fallback.order,
@@ -158,6 +160,7 @@ export function useFilters(initial?: Partial<FundFilters>) {
       min_size_yi: null,
       max_dd_3y: null,
       min_mgr_exp: null,
+      min_sharpe: null,
       exclude_qdii: false,
     };
     pushQuery(router, filtersToSearch(next));

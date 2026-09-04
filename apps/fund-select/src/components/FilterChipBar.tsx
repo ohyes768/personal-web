@@ -18,6 +18,7 @@ const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => stri
   min_size_yi: { label: '规模', fmt: v => `≥ ${v} 亿` },
   max_dd_3y: { label: '近3年回撤', fmt: v => `≤ ${v}%` },
   min_mgr_exp: { label: '经理从业', fmt: v => `≥ ${v} 年` },
+  min_sharpe: { label: '夏普', fmt: v => `≥ ${v}` },  // 仅股票 tab 有值；债基恒 null 不显示
 };
 
 const NUMERIC_KEYS = Object.keys(LABELS) as NumericFilterKey[];
