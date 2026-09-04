@@ -38,4 +38,5 @@
 - [x] 单测（回归）：全成分同一日历的基准，新旧算法 TRI 完全一致
 - [x] `uv run pytest tests/ -v` 全过（130 passed）
 - [x] 定向重刷 004316（benchmark+risk）：TRI 3y 涨幅 +22.75% ≈ 独立复算 +21.77%（残差 0.95pp 为 B1 中债日期错位，在容忍内）。注：excess_3y 预期值 −15.6% 是 PRD 撰写时用旧基金侧口径 + TRI 端点口径混算的 flawed 预期——指标按 inner-join 日历计算，实际 −11.41%（基准端修复 +2.03pp 与 join 日历下双计消除量一致，归因详见 check 报告）
-- [ ] ~~全量重建 142 只~~ → 用户决定 descoped：代码修复即提交，全量重建在生产环境验证时进行（2026-09-04）
+- [x] ~~全量重建 142 只~~ → descoped 后已被后续任务实际覆盖完成：`09-04-benchmark-yaml-coverage`（28b52a4，收录扩充后全库 142 只 benchmark+risk 重刷）与 `09-04-fix-bond-index-date-shift`（fe8c992，中债换源后再重刷 42 只中债成分基金）。当前库内数据 = B1+B2+B3 三重修复后的最终状态，无需再重建。
+> 归档补注（2026-09-04）：B1 已由 fix-bond-index-date-shift 修复（换源，0 差值实证）；B3 已由 benchmark-yaml-coverage 修复（顶替 32→0）。本 PRD「边界」段引用的 B1/B3 开放状态均已关闭。
