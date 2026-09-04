@@ -149,3 +149,38 @@
 ### Next Steps
 
 - None - task complete
+
+---
+
+## 2026-09-04 | 09-04-stock-fund-sharpe-filter
+
+### Summary
+
+股票 tab 筛选接入已有夏普指标（fund_risk_metrics.sharpe，近 3 年）：/stock/screen 新增 min_sharpe，NULL 指标一并排除；前端股票 tab 侧栏加夏普输入项默认 0.8（FilterPanel 改 dimensions prop 可配置，债基保持四维隔离）。实测完整默认组合 6 只、单夏普条件 53 只、移除 chip 恢复 22 只。
+
+### Main Changes
+
+- backend: filter_service._screen 尾参 min_sharpe + where；routes.stock_screen 加 Query(ge=-10, le=10)
+- frontend: types/useFilters/api/hooks 贯通 min_sharpe；FilterSidebar 导出 STOCK_DIMENSIONS；FilterSheet 透传
+- tests: 新增 min_sharpe 筛选/NULL 不受影响 2 用例（TDD，先 RED 后 GREEN）
+- spec: contracts.md 关键语义区补 min_sharpe 契约
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `877d18b` | feat(fund-select): 股票 tab 筛选接入夏普指标（默认 ≥0.8） |
+
+### Testing
+
+- 后端 pytest 全量 162 passed；ruff 通过
+- 前端 tsc --noEmit 通过；build 编译成功（standalone symlink EPERM 为既有 Windows 环境问题，stash 验证无改动同样报错）
+- Playwright 实测：侧栏夏普输入 0.8 / chip「夏普 ≥ 0.8」/ 共 6 只；移除 chip → 22 只；债基 tab 4 项无夏普、18 只正常
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 未 push（等用户确认）；pnpm lint 未跑通系该 app 未初始化 ESLint 配置（既有）
