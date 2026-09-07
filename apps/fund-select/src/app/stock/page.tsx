@@ -20,6 +20,7 @@ import { FilterSheet } from '@/components/FilterSheet';
 import { FilterPanel, STOCK_DIMENSIONS } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
+import { RowDetailDrawer } from '@/components/RowDetailDrawer';
 import { useCompare, useFeeDetails, useStockFundList } from '@/lib/hooks';
 import {
   feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions,
@@ -32,6 +33,7 @@ function StockFundsPageInner() {
   const { items, total, loading, error, reload } = useStockFundList(filters);
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
 
   const compareDimensions = useMemo(
     () => [...fundCompareDimensions, ...fundDisplayOnlyDimensions, ...feeDetailDimensions],
@@ -79,7 +81,7 @@ function StockFundsPageInner() {
               onToggleCompare={compare.toggle}
               showBondColumns={false}
               showRiskColumns
-              showRankColumns
+              onRowClick={setDetailFund}
             />
           </section>
         </div>
@@ -110,6 +112,11 @@ function StockFundsPageInner() {
         items={selectedWithFees}
         dimensions={compareDimensions}
         onRemove={compare.removeItem}
+      />
+
+      <RowDetailDrawer
+        fund={detailFund}
+        onClose={() => setDetailFund(null)}
       />
     </main>
   );

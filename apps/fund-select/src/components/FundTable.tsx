@@ -5,7 +5,7 @@
 
 import type { SortOrder } from './SortableHeader';
 import { SortableHeader } from './SortableHeader';
-import type { FundListItem, RankPercentile } from '@/lib/types';
+import type { FundListItem } from '@/lib/types';
 
 interface FundTableProps {
   items: FundListItem[];
@@ -21,8 +21,8 @@ interface FundTableProps {
   showBondColumns?: boolean;
   /** 显示 phase2-B 风险指标 6 列（股票 tab 用） */
   showRiskColumns?: boolean;
-  /** 显示同类排名 4 列（股票 tab 用；债基无 ETL 数据，不传） */
-  showRankColumns?: boolean;
+  /** 行点击回调（股票 tab 用来打开详情弹框；债基 tab 不传） */
+  onRowClick?: (fund: FundListItem) => void;
 }
 
 const NAME_MAX = 10;
@@ -36,42 +36,6 @@ const RISK_TIPS: Record<string, string> = {
   alpha_ir: 'α-IR：选股α的稳定度（α÷其波动）。>1 选股能力稳定可信；<0.5 说明 α 忽有忽无，参考价值低',
   excess_3y: '近 3 年累计跑赢基准的幅度（复利口径）',
 };
-
-/** 同类排名表头悬停说明（雪球蛋卷基金口径） */
-const RANK_TIPS: Record<string, string> = {
-  rank_ytd: '同类排名（今年以来）：雪球蛋卷基金 · 当前排名 ÷ 同类基金总数。百分位越小越靠前',
-  rank_1y:  '同类排名（近 1 年）：雪球蛋卷基金 · 当前排名 ÷ 同类基金总数。百分位越小越靠前',
-  rank_3y:  '同类排名（近 3 年）：雪球蛋卷基金 · 当前排名 ÷ 同类基金总数。百分位越小越靠前',
-  rank_5y:  '同类排名（近 5 年）：雪球蛋卷基金 · 当前排名 ÷ 同类基金总数。百分位越小越靠前',
-};
-
-/** 排名 chip 颜色梯度：5 段（≤10 优秀 / ≤25 良好 / ≤50 中性 / ≤75 偏弱 / 落后） */
-function rankColor(pct: number): string {
-  if (pct <= 10)  return 'bg-rank-top text-white';
-  if (pct <= 25)  return 'bg-rank-top-soft text-rank-top-strong';
-  if (pct <= 50)  return 'bg-rank-mid text-ink-muted';
-  if (pct <= 75)  return 'bg-rank-bottom-soft text-rank-bottom-strong';
-  return 'bg-rank-bottom text-white';
-}
-
-/** 排名 chip：前 {pct}% + tooltip 显示原始排名/总数 */
-function RankChip({ rank }: { rank: RankPercentile | null }) {
-  if (!rank || rank.pct === null || rank.total === null) {
-    return <span className="text-ink-soft">-</span>;
-  }
-  // 从 pct/total 反推整数排名（与雪球原始字符串四舍五入近似）
-  const originalRank = Math.round(rank.pct * rank.total / 100);
-  const tooltip = `${originalRank}/${rank.total}`;
-  return (
-    <span
-      className={`tnum text-[10px] px-1 py-0.5 rounded font-medium hover-tip ${rankColor(rank.pct)}`}
-      data-tip={tooltip}
-      aria-label={`同类排名 ${tooltip}`}
-    >
-      前 {rank.pct}%
-    </span>
-  );
-}
 
 const fmt = (v: number | null | undefined, digits = 2, suffix = ''): string => {
   if (v === null || v === undefined) return '-';
@@ -130,7 +94,7 @@ function HoverName({ name }: { name: string }) {
 
 export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
-  showBondColumns = true, showRiskColumns = false, showRankColumns = false,
+  showBondColumns = true, showRiskColumns = false, onRowClick,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -175,22 +139,6 @@ export function FundTable({
             <SortableHeader label="近1年" field="ret_1y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近3年" field="ret_3y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近5年" field="ret_5y" currentSort={sort} currentOrder={order} onSort={onSort} />
-            {showRankColumns && (
-              <>
-                <th className={`${th} w-[3.5rem] text-right text-xs font-medium text-ink-muted`}>
-                  <span className="hover-tip" data-tip={RANK_TIPS.rank_ytd}>排名·今年来</span>
-                </th>
-                <th className={`${th} w-[3.5rem] text-right text-xs font-medium text-ink-muted`}>
-                  <span className="hover-tip" data-tip={RANK_TIPS.rank_1y}>排名·近1年</span>
-                </th>
-                <th className={`${th} w-[3.5rem] text-right text-xs font-medium text-ink-muted`}>
-                  <span className="hover-tip" data-tip={RANK_TIPS.rank_3y}>排名·近3年</span>
-                </th>
-                <th className={`${th} w-[3.5rem] text-right text-xs font-medium text-ink-muted`}>
-                  <span className="hover-tip" data-tip={RANK_TIPS.rank_5y}>排名·近5年</span>
-                </th>
-              </>
-            )}
             {showRiskColumns && (
               <>
                 <SortableHeader label="夏普" field="sharpe" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.sharpe} />
@@ -202,7 +150,6 @@ export function FundTable({
               </>
             )}
             {showBondColumns && <th className={`${th} text-right text-xs font-medium text-ink-muted`}>利率债</th>}
-            <SortableHeader label="年费" field="fee_annual" currentSort={sort} currentOrder={order} onSort={onSort} />
             <th className={`${th} text-center text-xs font-medium text-ink-muted`}>对比</th>
           </tr>
         </thead>
@@ -216,7 +163,8 @@ export function FundTable({
             return (
               <tr
                 key={fund.code}
-                className={`border-b border-rule transition-colors hover:bg-paper-tint ${selected ? 'bg-info-tint' : ''}`}
+                onClick={onRowClick ? () => onRowClick(fund) : undefined}
+                className={`border-b border-rule transition-colors hover:bg-paper-tint ${onRowClick ? 'cursor-pointer' : ''} ${selected ? 'bg-info-tint' : ''}`}
               >
                 <td className={`${td} font-mono text-info whitespace-nowrap`}>{fund.code}</td>
                 <td className={`${td} w-[7rem] text-ink-strong`}>
@@ -237,14 +185,6 @@ export function FundTable({
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</td>
-                {showRankColumns && (
-                  <>
-                    <td className={`${td} text-right whitespace-nowrap`}><RankChip rank={fund.rank_ytd} /></td>
-                    <td className={`${td} text-right whitespace-nowrap`}><RankChip rank={fund.rank_1y} /></td>
-                    <td className={`${td} text-right whitespace-nowrap`}><RankChip rank={fund.rank_3y} /></td>
-                    <td className={`${td} text-right whitespace-nowrap`}><RankChip rank={fund.rank_5y} /></td>
-                  </>
-                )}
                 {showRiskColumns && (
                   <>
                     <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.sharpe)}</td>
@@ -256,10 +196,9 @@ export function FundTable({
                   </>
                 )}
                 {showBondColumns && <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.rate_bond_pct, 1, '%')}</td>}
-                <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.fee_annual, 2, '%')}</td>
                 <td className={`${td} text-center`}>
                   <button
-                    onClick={() => onToggleCompare(fund)}
+                    onClick={(e) => { e.stopPropagation(); onToggleCompare(fund); }}
                     disabled={disabled}
                     className={`px-1.5 py-0.5 rounded transition-colors ${
                       selected
@@ -282,12 +221,6 @@ export function FundTable({
       {showRiskColumns && (
         <p className="mt-2 text-[10px] leading-relaxed text-ink-soft">
           风险指标为近 3 年日频口径：基准取各基金业绩基准，无风险利率取 1 年定存；历史不足 250 个交易日的基金显示「-」。
-        </p>
-      )}
-      {showRankColumns && (
-        <p className="mt-2 text-[10px] leading-relaxed text-ink-soft space-y-0.5">
-          <span className="block">排名口径：雪球蛋卷基金 · 同类基金按区间收益排序，分母随时间变化。鼠标悬停查看原始「排名/总数」。</span>
-          <span className="block">小贴士：近 1 年排名靠前 ≠ 长期表现稳定，建议结合 4 个周期判断热度与持续度。</span>
         </p>
       )}
     </div>
