@@ -13,6 +13,7 @@ import { XMarkIcon } from '@heroicons/react/24/outline';
 import type { FundDetail, FundListItem } from '@/lib/types';
 import { stockApi } from '@/lib/api';
 import { RankChip } from '@/lib/rankColor';
+import { FEE_ROWS } from '@/lib/feeRows';
 
 /** 与后端 RANK_PERIODS 对齐：4 周期主表顺序 */
 const PERIODS: Array<{ kind: string; period: string; label: string }> = [
@@ -20,18 +21,6 @@ const PERIODS: Array<{ kind: string; period: string; label: string }> = [
   { kind: '阶段业绩', period: '近1年',    label: '近 1 年' },
   { kind: '阶段业绩', period: '近3年',    label: '近 3 年' },
   { kind: '阶段业绩', period: '近5年',    label: '近 5 年' },
-];
-
-/** 费率明细行：key 与 FundFees 字段同；suffix 仅展示用 */
-const FEE_ROWS: Array<{ key: keyof NonNullable<FundDetail['fees']>; label: string; suffix?: string }> = [
-  { key: 'fee_buy_small',   label: '申购费(小额档)' },
-  { key: 'fee_redeem_lt7d',  label: '赎回 <7天' },
-  { key: 'fee_redeem_7d_1y', label: '赎回 7天~1年' },
-  { key: 'fee_redeem_ge1y',  label: '赎回 ≥1年' },
-  { key: 'fee_redeem_ge7d',  label: '赎回 ≥7天' },
-  { key: 'fee_mgmt',         label: '管理费',     suffix: '/年' },
-  { key: 'fee_custody',      label: '托管费',     suffix: '/年' },
-  { key: 'fee_service',      label: '销售服务费', suffix: '/年' },
 ];
 
 /** 排序历年年度业绩：数字年份 desc；"今年以来"置顶；"成立以来"末位 */
