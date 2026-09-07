@@ -16,7 +16,14 @@ from sqlalchemy import and_, func, not_, or_, select
 from sqlalchemy.orm import Session
 
 from src.data.fund_universe import resolve_universe_codes
-from src.db.models import Fund, FundFees, FundHoldingsBond, FundPerformance, FundRiskMetrics
+from src.db.models import (
+    Fund,
+    FundAchievementRank,
+    FundFees,
+    FundHoldingsBond,
+    FundPerformance,
+    FundRiskMetrics,
+)
 
 # 排序白名单（防 SQL 注入）
 SORT_COLUMNS = {
@@ -43,6 +50,33 @@ def _fee_annual(fees: FundFees | None) -> Optional[float]:
     if fees is None or fees.fee_mgmt is None or fees.fee_custody is None:
         return None
     return round(fees.fee_mgmt + fees.fee_custody + (fees.fee_service or 0), 4)
+
+
+def _parse_peer_rank(value: str | None) -> dict | None:
+    """'1694/5606' → {'pct': 30.2, 'total': 5606}；格式异常/缺分母 → None。
+
+    用于股票 tab 同类排名显示；债基 tab 永远返回 None（无入库数据）。
+    """
+    if not value or "/" not in value:
+        return None
+    try:
+        rank_s, total_s = value.split("/", 1)
+        rank = int(rank_s.strip())
+        total = int(total_s.strip())
+    except (ValueError, TypeError):
+        return None
+    if rank <= 0 or total <= 0 or rank > total:
+        return None
+    return {"pct": round(rank / total * 100, 1), "total": total}
+
+
+# stock tab 主表 4 个排名口径：(period_kind, period) → DTO 键
+RANK_PERIODS: list[tuple[str, str, str]] = [
+    ("年度业绩", "今年以来", "rank_ytd"),
+    ("阶段业绩", "近1年",    "rank_1y"),
+    ("阶段业绩", "近3年",    "rank_3y"),
+    ("阶段业绩", "近5年",    "rank_5y"),
+]
 
 
 class FilterService:
@@ -173,7 +207,36 @@ class FilterService:
             q = q.where(FundRiskMetrics.sharpe >= min_sharpe)
 
         rows = self.db.execute(q).all()
-        items = [self._to_dto(f, p, fee, hold, risk) for f, p, fee, hold, risk in rows]
+        # 一次性取 4 个目标周期排名（30 只名单下 ≤120 行）；dict 查找避免 ORM subquery 复杂度
+        ach_map: dict[str, dict[tuple[str, str], str | None]] = {}
+        if rows:
+            codes = [f.code for f, *_ in rows]
+            pairs = [(pk, pp) for pk, pp, _ in RANK_PERIODS]
+            ach_rows = self.db.execute(
+                select(
+                    FundAchievementRank.code,
+                    FundAchievementRank.period_kind,
+                    FundAchievementRank.period,
+                    FundAchievementRank.peer_rank,
+                )
+                .where(FundAchievementRank.code.in_(codes))
+                .where(
+                    or_(*[
+                        and_(
+                            FundAchievementRank.period_kind == pk,
+                            FundAchievementRank.period == pp,
+                        )
+                        for pk, pp in pairs
+                    ])
+                )
+            ).all()
+            for r in ach_rows:
+                ach_map.setdefault(r.code, {})[(r.period_kind, r.period)] = r.peer_rank
+
+        items = [
+            self._to_dto(f, p, fee, hold, risk, ach_map.get(f.code))
+            for f, p, fee, hold, risk in rows
+        ]
         default_sort = "ret_5y" if kind == "stock" else "size_yi"
         sort_key = sort if sort in SORT_COLUMNS else default_sort
         descending = order != "asc"
@@ -206,8 +269,14 @@ class FilterService:
     def _to_dto(
         f: Fund, p: FundPerformance | None, fee: FundFees | None, hold: FundHoldingsBond | None,
         risk: FundRiskMetrics | None = None,
+        ach_for_code: dict[tuple[str, str], str | None] | None = None,
     ) -> dict:
         annual = _fee_annual(fee)
+        # 4 个排名周期：缺失/异常统一为 None；债基 tab ach_for_code 为空 dict → 全部 None
+        ranks = {
+            key: _parse_peer_rank((ach_for_code or {}).get((pk, pp)))
+            for pk, pp, key in RANK_PERIODS
+        }
         return {
             "code": f.code,
             "name": f.name,
@@ -234,6 +303,7 @@ class FilterService:
             "fee_service": fee.fee_service if fee else None,
             "fee_annual": annual,
             "updated_at": f.updated_at,
+            **ranks,
         }
 
     def get_detail(self, code: str) -> dict | None:

@@ -2,6 +2,12 @@
  * 共享类型（与后端 src/api/models.py 对齐）
  */
 
+/** 同类排名百分位：{pct: 当前排名÷同类总数×100, total: 同类总数}；缺失/异常 → null */
+export interface RankPercentile {
+  pct: number | null;
+  total: number | null;
+}
+
 export interface FundListItem {
   code: string;
   name: string;
@@ -28,6 +34,11 @@ export interface FundListItem {
   fee_service: number | null;
   fee_annual: number | null;
   updated_at: string | null;
+  /** 同类排名（雪球蛋卷基金）：4 个周期；债基 tab 永远 null */
+  rank_ytd: RankPercentile | null;
+  rank_1y:  RankPercentile | null;
+  rank_3y:  RankPercentile | null;
+  rank_5y:  RankPercentile | null;
 }
 
 export interface ScreenResponse {

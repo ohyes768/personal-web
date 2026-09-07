@@ -30,6 +30,15 @@
   --color-info:        #4A6B8A;
   --color-info-tint:   #E8EEF3;
 
+  /* === 同类排名 chip 5 段色阶（5 段渐变，区分"前 10% / 25% / 50% / 75% / 之后"） === */
+  --color-rank-top:          #2D5C40;  /* 前 10% 深绿底白字 */
+  --color-rank-top-soft:     #C8E0D2;  /* 前 25% 浅绿底 */
+  --color-rank-top-strong:   #1F4530;  /* 前 25% 文字色 */
+  --color-rank-mid:          #F0E6D2;  /* 前 50% 米色底（中性区） */
+  --color-rank-bottom-soft:  #F2D2C2;  /* 后 50% 浅橙底 */
+  --color-rank-bottom-strong:#7A2E1C;  /* 后 50% 文字色 */
+  --color-rank-bottom:       #8C3528;  /* 后 25% 深红底白字 */
+
   /* === Tailwind 默认色重映射（暖白主题）=== */
   /* gray scale 反转：gray-900 = 最浅（页面底），gray-100 = 最深（最强文字）*/
   --color-gray-900:    var(--color-paper);       /* #FBFAF6 */

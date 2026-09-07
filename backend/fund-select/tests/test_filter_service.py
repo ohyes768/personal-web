@@ -1,7 +1,7 @@
 """
 筛选逻辑单测：四维度组合 / 边界 / 排序 / LEFT JOIN 保留
 """
-from src.services.filter_service import FilterService
+from src.services.filter_service import FilterService, _parse_peer_rank
 
 
 class TestScreen:
@@ -71,3 +71,24 @@ class TestDetail:
 
     def test_get_detail_not_found(self, seeded_db):
         assert FilterService(seeded_db).get_detail("999999") is None
+
+
+class TestParsePeerRank:
+    """雪球 peer_rank='1694/5606' → pct/total 字典；格式异常统一 None。"""
+
+    def test_valid(self):
+        assert _parse_peer_rank("1694/5606") == {"pct": 30.2, "total": 5606}
+
+    def test_valid_leading_one(self):
+        # 最强基金：1/N
+        assert _parse_peer_rank("1/5615") == {"pct": 0.0, "total": 5615}
+
+    def test_invalid_formats_return_none(self):
+        for v in ("abc", "1", "", "1/0", "-1/5", "5/3", "1//2", " /5", "1/ "):
+            assert _parse_peer_rank(v) is None, f"expected None for {v!r}"
+
+    def test_none_input(self):
+        assert _parse_peer_rank(None) is None
+
+    def test_whitespace_tolerated(self):
+        assert _parse_peer_rank("  100  /  500  ") == {"pct": 20.0, "total": 500}

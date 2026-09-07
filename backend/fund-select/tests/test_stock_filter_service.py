@@ -3,7 +3,7 @@ screen_stock 单测：yaml 宇宙 ∩ is_active + 4 维度筛选 + 默认排序 
 """
 from datetime import date
 
-from src.db.models import Fund, FundPerformance, FundRiskMetrics
+from src.db.models import Fund, FundAchievementRank, FundPerformance, FundRiskMetrics
 from src.services.filter_service import FilterService
 
 STOCK_UNIVERSE = ["600001", "600002", "600003", "600004", "600005"]
@@ -139,3 +139,103 @@ def test_screen_stock_without_min_sharpe_keeps_null_metrics(db_session):
     _seed_risk(db_session)
     result = _screen_stock(db_session)
     assert result["total"] == 5
+
+
+def _seed_ranks_full(db, codes):
+    """4 个目标周期全部入库；4 段位分别为顶部 5% / 20% / 60% / 90%。"""
+    targets = [
+        ("年度业绩", "今年以来"),
+        ("阶段业绩", "近1年"),
+        ("阶段业绩", "近3年"),
+        ("阶段业绩", "近5年"),
+    ]
+    ranks = ("50", "200", "600", "900")  # /1000
+    total = "1000"
+    rows = []
+    for code in codes:
+        for i, (pk, pp) in enumerate(targets):
+            rows.append(FundAchievementRank(
+                code=code, period_kind=pk, period=pp,
+                peer_rank=f"{ranks[i]}/{total}",
+                as_of_date=date(2026, 9, 1),
+            ))
+    db.add_all(rows)
+    db.commit()
+
+
+def test_screen_stock_dto_has_rank_keys_with_full_data(db_session):
+    """完整排名数据 → 4 个 rank 字段均有值"""
+    _seed_stock(db_session)
+    _seed_ranks_full(db_session, ["600001", "600002"])
+    items = _screen_stock(db_session)["items"]
+    for it in items:
+        assert set(["rank_ytd", "rank_1y", "rank_3y", "rank_5y"]).issubset(it.keys())
+    by_code = {it["code"]: it for it in items}
+    assert by_code["600001"]["rank_ytd"] == {"pct": 5.0, "total": 1000}
+    assert by_code["600001"]["rank_1y"] == {"pct": 20.0, "total": 1000}
+    assert by_code["600001"]["rank_3y"] == {"pct": 60.0, "total": 1000}
+    assert by_code["600001"]["rank_5y"] == {"pct": 90.0, "total": 1000}
+
+
+def test_screen_stock_dto_rank_null_when_no_data(db_session):
+    """完全无排名数据 → 4 个 rank 字段均为 None，不报错"""
+    _seed_stock(db_session)
+    items = _screen_stock(db_session)["items"]
+    for it in items:
+        assert it["rank_ytd"] is None
+        assert it["rank_1y"] is None
+        assert it["rank_3y"] is None
+        assert it["rank_5y"] is None
+
+
+def test_screen_stock_dto_rank_partial(db_session):
+    """部分周期有数据 → 该键为 pct dict，缺的为 None"""
+    _seed_stock(db_session)
+    db_session.add(FundAchievementRank(
+        code="600001", period_kind="阶段业绩", period="近1年",
+        peer_rank="100/1000", as_of_date=date(2026, 9, 1),
+    ))
+    db_session.add(FundAchievementRank(
+        code="600001", period_kind="阶段业绩", period="近5年",
+        peer_rank="abc",  # 异常格式
+        as_of_date=date(2026, 9, 1),
+    ))
+    db_session.commit()
+    items = {it["code"]: it for it in _screen_stock(db_session)["items"]}
+    assert items["600001"]["rank_1y"] == {"pct": 10.0, "total": 1000}
+    assert items["600001"]["rank_5y"] is None      # 异常格式
+    assert items["600001"]["rank_ytd"] is None    # 完全无记录
+    assert items["600001"]["rank_3y"] is None
+    # 其余基金一律 None
+    for code in ("600002", "600003", "600004", "600005"):
+        assert items[code]["rank_ytd"] is None
+        assert items[code]["rank_1y"] is None
+
+
+def test_screen_stock_dto_unrelated_period_ignored(db_session):
+    """入库了非目标周期的排名 → 不出现在 DTO 4 字段"""
+    _seed_stock(db_session)
+    db_session.add(FundAchievementRank(
+        code="600001", period_kind="阶段业绩", period="近1月",
+        peer_rank="10/1000", as_of_date=date(2026, 9, 1),
+    ))
+    db_session.add(FundAchievementRank(
+        code="600001", period_kind="年度业绩", period="2024",
+        peer_rank="100/5000", as_of_date=date(2026, 9, 1),
+    ))
+    db_session.commit()
+    items = {it["code"]: it for it in _screen_stock(db_session)["items"]}
+    # 4 个目标键一律 None，不被"近1月"或"2024"污染
+    for k in ("rank_ytd", "rank_1y", "rank_3y", "rank_5y"):
+        assert items["600001"][k] is None
+
+
+def test_screen_bond_dto_has_rank_keys_all_null(seeded_db):
+    """债基 tab 永远返回 4 个 rank 键但全 None（接口契约向后兼容）"""
+    items = FilterService(seeded_db).screen()["items"]
+    for it in items:
+        assert set(["rank_ytd", "rank_1y", "rank_3y", "rank_5y"]).issubset(it.keys())
+        assert it["rank_ytd"] is None
+        assert it["rank_1y"] is None
+        assert it["rank_3y"] is None
+        assert it["rank_5y"] is None
