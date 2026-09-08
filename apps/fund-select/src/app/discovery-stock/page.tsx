@@ -42,13 +42,20 @@ function DiscoveryStockPageInner() {
   // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
   const [preFilters, setPreFilters] = useState<{
     min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null;
+    min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
   }>({
     min_age: DISCOVERY_STOCK_DEFAULT_FILTERS.min_age,
     min_size_yi: DISCOVERY_STOCK_DEFAULT_FILTERS.min_size_yi,
     min_mgr_exp: null,
+    min_ret_1y: null,
+    min_ret_3y: null,
+    max_nav_stale_days: null,
   });
 
-  const handleFullRefreshComplete = useCallback((pf: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null }) => {
+  const handleFullRefreshComplete = useCallback((pf: {
+    min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null;
+    min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
+  }) => {
     setPreFilters(pf);
   }, []);
 
