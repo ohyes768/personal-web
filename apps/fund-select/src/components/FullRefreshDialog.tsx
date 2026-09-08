@@ -30,8 +30,9 @@ const POLL_INTERVAL_MS = 2000;
 export function FullRefreshDialog({
   open, onClose, refreshUrl, statusUrl, onComplete, initial,
 }: FullRefreshDialogProps) {
-  const [minAge, setMinAge] = useState<number | null>(initial?.min_age ?? 3);
-  const [minSizeYi, setMinSizeYi] = useState<number | null>(initial?.min_size_yi ?? 5);
+  // 默认不限预筛选（让用户主动填才会限制 universe）
+  const [minAge, setMinAge] = useState<number | null>(initial?.min_age ?? null);
+  const [minSizeYi, setMinSizeYi] = useState<number | null>(initial?.min_size_yi ?? null);
   const [minMgrExp, setMinMgrExp] = useState<number | null>(initial?.min_mgr_exp ?? null);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
