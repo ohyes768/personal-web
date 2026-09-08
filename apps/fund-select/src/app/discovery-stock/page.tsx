@@ -30,7 +30,7 @@ import {
   type FundListItem,
 } from '@/lib/types';
 
-const LOCKED_PRE_FILTERS = ['min_age', 'min_size_yi', 'min_mgr_exp'];
+const LOCKED_PRE_FILTERS = ['min_ret_1y', 'min_ret_3y', 'max_nav_stale_days'];
 
 function DiscoveryStockPageInner() {
   const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(DISCOVERY_STOCK_DEFAULT_FILTERS);
