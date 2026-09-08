@@ -43,7 +43,9 @@ function DiscoveryStockPageInner() {
   const [preFilters, setPreFilters] = useState<{
     min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null;
   }>({
-    min_age: null, min_size_yi: null, min_mgr_exp: null,
+    min_age: DISCOVERY_STOCK_DEFAULT_FILTERS.min_age,
+    min_size_yi: DISCOVERY_STOCK_DEFAULT_FILTERS.min_size_yi,
+    min_mgr_exp: null,
   });
 
   const handleFullRefreshComplete = useCallback((pf: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null }) => {
