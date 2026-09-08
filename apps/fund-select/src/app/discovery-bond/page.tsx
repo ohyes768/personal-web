@@ -77,6 +77,7 @@ function DiscoveryBondPageInner() {
               activeCount={activeCount}
               showMarketTypes
               marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
+              hideExcludeQdii
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -106,6 +107,7 @@ function DiscoveryBondPageInner() {
         activeCount={activeCount}
         showMarketTypes
         marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
+        hideExcludeQdii
       />
 
       <CompareFloatingBar

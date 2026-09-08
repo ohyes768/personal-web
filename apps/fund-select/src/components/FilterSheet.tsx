@@ -22,11 +22,13 @@ interface FilterSheetProps {
   showMarketTypes?: boolean;
   /** market tab 基金类型可选项；不传 = MARKET_TYPE_OPTIONS 全集 */
   marketTypeOptions?: { value: string; label: string }[];
+  /** 隐藏「排除 QDII」（QDII 不在该 tab universe 时用） */
+  hideExcludeQdii?: boolean;
 }
 
 export function FilterSheet({
   isOpen, onClose, filters, onChange, onClearAll, activeCount,
-  dimensions, showMarketTypes, marketTypeOptions,
+  dimensions, showMarketTypes, marketTypeOptions, hideExcludeQdii,
 }: FilterSheetProps) {
   useEffect(() => {
     if (isOpen) {
@@ -63,6 +65,7 @@ export function FilterSheet({
             dimensions={dimensions}
             showMarketTypes={showMarketTypes}
             marketTypeOptions={marketTypeOptions}
+            hideExcludeQdii={hideExcludeQdii}
           />
           <button
             onClick={onClose}

@@ -19,6 +19,8 @@ interface FilterPanelProps {
   showMarketTypes?: boolean;
   /** market tab 基金类型可选项；不传 = MARKET_TYPE_OPTIONS 全集（仅老 tab 用得到） */
   marketTypeOptions?: { value: string; label: string }[];
+  /** 隐藏「排除 QDII」复选框（QDII 不在该 tab universe 时用，如债基·市场） */
+  hideExcludeQdii?: boolean;
   dimensions?: Dimension[];
 }
 
@@ -140,6 +142,7 @@ function MarketTypeControl({
 export function FilterPanel({
   filters, onChange, onClearAll, activeCount,
   showMarketTypes = false, marketTypeOptions = MARKET_TYPE_OPTIONS,
+  hideExcludeQdii = false,
   dimensions = DIMENSIONS,
 }: FilterPanelProps) {
   return (
@@ -169,16 +172,18 @@ export function FilterPanel({
           options={marketTypeOptions}
         />
       )}
-      <label className="px-2.5 py-2 flex items-center gap-1.5 cursor-pointer">
-        <input
-          type="checkbox"
-          checked={filters.exclude_qdii}
-          onChange={e => onChange('exclude_qdii', e.target.checked)}
-          className="rounded border-rule text-info focus:ring-info"
-          aria-label="排除 QDII"
-        />
-        <span className="text-xs font-medium text-ink-strong">排除 QDII</span>
-      </label>
+      {!hideExcludeQdii && (
+        <label className="px-2.5 py-2 flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={filters.exclude_qdii}
+            onChange={e => onChange('exclude_qdii', e.target.checked)}
+            className="rounded border-rule text-info focus:ring-info"
+            aria-label="排除 QDII"
+          />
+          <span className="text-xs font-medium text-ink-strong">排除 QDII</span>
+        </label>
+      )}
     </div>
   );
 }
