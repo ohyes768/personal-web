@@ -94,35 +94,40 @@ function DonutChart({ rate, credit, convertible }: {
   );
 }
 
-/** 持仓集中度进度条：0-50% 量程；≤30 绿 / 30-50 黄 / >50 红 */
+/** 持仓集中度进度条：0-100% 量程；≤30 绿 / 30-50 黄 / >50 红；
+ * 条长如实反映数字（不再被 50% 截断），30/50 处画刻度线作为参考 */
 function ConcentrationBar({ pct }: { pct: number | null }) {
-  const max = 50;
-  const displayPct = pct === null ? 0 : Math.min(pct, max);
-  const ratio = max > 0 ? (displayPct / max) * 100 : 0;
+  const max = 100;
+  const ratio = pct === null ? 0 : Math.min(pct, max);
   let color = 'bg-paper-deep';
+  let verdict = '';
   if (pct !== null) {
-    if (pct <= 30) color = 'bg-up';
-    else if (pct <= 50) color = 'bg-star';
-    else color = 'bg-down';
+    if (pct <= 30) { color = 'bg-up'; verdict = '分散'; }
+    else if (pct <= 50) { color = 'bg-star'; verdict = '中等'; }
+    else { color = 'bg-down'; verdict = '集中'; }
   }
   return (
     <div className="space-y-1">
       <div className="flex items-baseline justify-between">
         <span className="text-xs text-ink-strong">前 5 大债券占比</span>
         <span className="text-sm tnum text-ink-strong font-medium">
-          {pct === null ? '-' : `${pct.toFixed(1)}%`}
+          {pct === null ? '-' : `${pct.toFixed(1)}%${verdict ? ` · ${verdict}` : ''}`}
         </span>
       </div>
-      <div className="h-2 bg-paper-deep rounded-full overflow-hidden" aria-hidden="true">
+      <div className="relative h-2 bg-paper-deep rounded-full overflow-hidden" aria-hidden="true">
         <div
           className={`h-full ${color} transition-all`}
           style={{ width: `${ratio}%` }}
         />
+        {/* 30% / 50% 刻度线 */}
+        <div className="absolute top-0 bottom-0 w-px bg-rule-strong/40" style={{ left: '30%' }} />
+        <div className="absolute top-0 bottom-0 w-px bg-rule-strong/40" style={{ left: '50%' }} />
       </div>
       <div className="flex justify-between text-[10px] text-ink-soft">
         <span>0%</span>
-        <span>30%（分散）</span>
-        <span>50%（集中）</span>
+        <span className="ml-[18%]">30%</span>
+        <span className="ml-[18%]">50%</span>
+        <span>100%</span>
       </div>
     </div>
   );

@@ -73,11 +73,13 @@ def analyze_holdings(tables: list[pd.DataFrame]) -> dict:
     rate = float(latest.loc[classes == "rate", "占净值比例"].sum())
     credit = float(latest.loc[classes == "credit", "占净值比例"].sum())
     convert = float(latest.loc[classes == "convertible", "占净值比例"].sum())
-    top5 = float(latest.nlargest(5, "占净值比例")["占净值比例"].sum())
+    # 按「占净值比例」降序取前 5（集中度 & 明细共用同一组，避免数字对不上）
+    top5_df = latest.nlargest(5, "占净值比例")
+    top5 = float(top5_df["占净值比例"].sum())
 
     top5_str = "; ".join(
         f"{r['债券名称']}({r['占净值比例']:.1f}%)"
-        for _, r in latest.head(5).iterrows()
+        for _, r in top5_df.iterrows()
     )
     return {
         "rate_bond_pct": round(rate, 2),
