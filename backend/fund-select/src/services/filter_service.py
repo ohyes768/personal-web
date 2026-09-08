@@ -1,14 +1,17 @@
 """
 筛选逻辑（核心）：四维度 + 排序
 
-宇宙 = 各自 yaml 名单 ∩ 库内 is_active。
-screen      — 债基 tab，读 funds.yaml
-screen_stock — 股票 tab，读 funds_stock.yaml
+四种 tab：
+- screen          — 债基 tab（funds.yaml 名单）
+- screen_stock    — 股票 tab（funds_stock.yaml 名单）
+- screen_discovery_bond  — 债基·市场 tab（akshare market_type 粗分类）
+- screen_discovery_stock — 股基·市场 tab
 
 fund_type 只当表格展示字段，不做成员判定。
 yaml 手工名单已经分好债基/股票宇宙，不需要 LIKE 股票型/QDII/混合型。
+市场 tab 用 akshare 粗分类（market_type 字段）作为成员判定。
 以后扫全市场时再按 fund_type 收口（本模块尚未实现）。
-用户可选 exclude_qdii：丢掉 fund_type 以 QDII 开头或「互认基金」的记录（两 tab 都支持）。
+用户可选 exclude_qdii：丢掉 fund_type 以 QDII 开头或「互认基金」的记录（四 tab 都支持）。
 """
 from typing import Optional
 
@@ -24,6 +27,12 @@ from src.db.models import (
     FundPerformance,
     FundRiskMetrics,
 )
+
+# 各 tab 的默认市场 universe（market_type 粗分类枚举）
+DEFAULT_DISCOVERY_UNIVERSE: dict[str, list[str]] = {
+    "discovery-bond": ["债券型", "定开债券"],
+    "discovery-stock": ["股票型", "指数型", "混合型", "QDII"],
+}
 
 # 排序白名单（防 SQL 注入）
 SORT_COLUMNS = {
@@ -117,24 +126,78 @@ class FilterService:
             sort, order, universe_codes, exclude_qdii, min_sharpe,
         )
 
+    def screen_discovery_bond(
+        self,
+        min_age: Optional[float] = None,
+        min_size_yi: Optional[float] = None,
+        max_dd_3y: Optional[float] = None,
+        min_mgr_exp: Optional[float] = None,
+        min_sharpe: Optional[float] = None,
+        sort: str = "size_yi",
+        order: str = "desc",
+        exclude_qdii: bool = False,
+        market_types: list[str] | None = None,
+    ) -> dict:
+        """债基·市场 tab 筛选：成员 = market_type ∈ default['discovery-bond'] ∩ is_active。"""
+        types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE["discovery-bond"]
+        return self._screen(
+            "discovery-bond", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+            sort, order, None, exclude_qdii, min_sharpe, types,
+        )
+
+    def screen_discovery_stock(
+        self,
+        min_age: Optional[float] = None,
+        min_size_yi: Optional[float] = None,
+        max_dd_3y: Optional[float] = None,
+        min_mgr_exp: Optional[float] = None,
+        min_sharpe: Optional[float] = None,
+        sort: str = "ret_5y",
+        order: str = "desc",
+        exclude_qdii: bool = False,
+        market_types: list[str] | None = None,
+    ) -> dict:
+        """股基·市场 tab 筛选：成员 = market_type ∈ default['discovery-stock'] ∩ is_active。"""
+        types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE["discovery-stock"]
+        return self._screen(
+            "discovery-stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+            sort, order, None, exclude_qdii, min_sharpe, types,
+        )
+
     def universe_stats(
         self,
         kind: str,
         universe_codes: list[str] | None = None,
+        market_types: list[str] | None = None,
     ) -> dict:
-        """按宇宙统计活跃基金及关联表覆盖。不含 last_refresh_at。"""
-        codes = resolve_universe_codes(kind, universe_codes)
+        """按宇宙统计活跃基金及关联表覆盖。不含 last_refresh_at。
+
+        kind:
+          - 'bond' / 'stock'：走 yaml 名单（resolve_universe_codes）
+          - 'discovery-bond' / 'discovery-stock'：走 market_type（DEFAULT_DISCOVERY_UNIVERSE）
+        """
         empty = {"total": 0, "with_performance": 0, "with_fees": 0, "with_holdings": 0}
-        if not codes:
-            return empty
-        active = set(
-            self.db.execute(
-                select(Fund.code).where(
-                    Fund.is_active == True,  # noqa: E712
-                    Fund.code.in_(codes),
-                )
-            ).scalars().all()
-        )
+
+        if kind in ("bond", "stock"):
+            codes = resolve_universe_codes(kind, universe_codes)
+            if not codes:
+                return empty
+            active_q = (
+                select(Fund.code)
+                .where(Fund.is_active == True, Fund.code.in_(codes))  # noqa: E712
+            )
+        elif kind in ("discovery-bond", "discovery-stock"):
+            types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE[kind]
+            if not types:
+                return empty
+            active_q = (
+                select(Fund.code)
+                .where(Fund.is_active == True, Fund.market_type.in_(types))  # noqa: E712
+            )
+        else:
+            raise ValueError(f"unknown universe kind: {kind}")
+
+        active = set(self.db.execute(active_q).scalars().all())
         if not active:
             return empty
         with_perf = self.db.execute(
@@ -169,19 +232,38 @@ class FilterService:
         universe_codes: list[str] | None,
         exclude_qdii: bool = False,
         min_sharpe: Optional[float] = None,
+        market_types: list[str] | None = None,
     ) -> dict:
-        codes = resolve_universe_codes(kind, universe_codes)
-        if not codes:
-            return {"total": 0, "items": []}
-        q = (
-            select(Fund, FundPerformance, FundFees, FundHoldingsBond, FundRiskMetrics)
-            .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
-            .outerjoin(FundFees, Fund.code == FundFees.code)
-            .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
-            .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
-            .where(Fund.is_active == True)  # noqa: E712
-            .where(Fund.code.in_(codes))
-        )
+        # 成员判定：bond/stock 走 yaml；discovery-* 走 market_type
+        if kind in ("bond", "stock"):
+            codes = resolve_universe_codes(kind, universe_codes)
+            if not codes:
+                return {"total": 0, "items": []}
+            q = (
+                select(Fund, FundPerformance, FundFees, FundHoldingsBond, FundRiskMetrics)
+                .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
+                .outerjoin(FundFees, Fund.code == FundFees.code)
+                .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
+                .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
+                .where(Fund.is_active == True)  # noqa: E712
+                .where(Fund.code.in_(codes))
+            )
+        elif kind in ("discovery-bond", "discovery-stock"):
+            types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE[kind]
+            if not types:
+                return {"total": 0, "items": []}
+            q = (
+                select(Fund, FundPerformance, FundFees, FundHoldingsBond, FundRiskMetrics)
+                .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
+                .outerjoin(FundFees, Fund.code == FundFees.code)
+                .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
+                .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
+                .where(Fund.is_active == True)  # noqa: E712
+                .where(Fund.market_type.in_(types))
+            )
+        else:
+            raise ValueError(f"unknown screen kind: {kind}")
+
         if exclude_qdii:
             # fund_type 为 NULL 的保留；只丢掉 QDII* 与「互认基金」
             q = q.where(
@@ -237,7 +319,7 @@ class FilterService:
             self._to_dto(f, p, fee, hold, risk, ach_map.get(f.code))
             for f, p, fee, hold, risk in rows
         ]
-        default_sort = "ret_5y" if kind == "stock" else "size_yi"
+        default_sort = "ret_5y" if kind in ("stock", "discovery-stock") else "size_yi"
         sort_key = sort if sort in SORT_COLUMNS else default_sort
         descending = order != "asc"
 

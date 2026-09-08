@@ -3,6 +3,8 @@ API 路由定义
 
 主路由：/api/funds/*（债基，对应 /funds，宇宙 = funds.yaml）
 股票路由：/api/funds/stock/*（对应 /funds/stock，宇宙 = funds_stock.yaml）
+市场路由：/api/funds/discovery-bond/* 与 /api/funds/discovery-stock/*（对应 /funds/discovery-*，
+          宇宙 = akshare market_type 粗分类）
 """
 import json
 from typing import Optional
@@ -23,7 +25,11 @@ from src.db.models import (
     RefreshRun,
 )
 from src.db.session import get_db
-from src.scheduler.tasks import refresh_configured_funds_sync, refresh_stock_funds_sync
+from src.scheduler.tasks import (
+    refresh_configured_funds_sync,
+    refresh_market_universe_sync,
+    refresh_stock_funds_sync,
+)
 from src.services.filter_service import FilterService
 from src.utils.logger import setup_logger
 
@@ -31,6 +37,8 @@ logger = setup_logger("fund-select.api")
 
 router = APIRouter()
 router_stock = APIRouter(prefix="/stock", tags=["stock"])
+router_discovery_bond = APIRouter(prefix="/discovery-bond", tags=["discovery-bond"])
+router_discovery_stock = APIRouter(prefix="/discovery-stock", tags=["discovery-stock"])
 
 
 @router.get("/health", tags=["system"])
@@ -240,3 +248,164 @@ async def stock_fund_detail(code: str, db=Depends(get_db)):
         for r in rows
     ]
     return base_detail
+
+
+# ──────────────────────────────────────────────────────────────────
+# 市场 tab 路由（/api/funds/discovery-{bond,stock}/*）
+# 成员 = market_type ∈ DEFAULT_DISCOVERY_UNIVERSE ∩ is_active
+# 单只详情复用 /api/funds/{code}（设计决策 D2）
+# ──────────────────────────────────────────────────────────────────
+
+
+def _parse_market_types(raw: Optional[str]) -> list[str] | None:
+    """查询串 '债券型,定开债券' → ['债券型','定开债券']；None/空 → None（走默认）"""
+    if not raw:
+        return None
+    out = [s.strip() for s in raw.split(",") if s.strip()]
+    return out if out else None
+
+
+@router_discovery_bond.get("/screen", response_model=ScreenResponse)
+async def discovery_bond_screen(
+    min_age: Optional[float] = Query(None, ge=0, le=100),
+    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+    max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
+    min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
+    min_sharpe: Optional[float] = Query(None, ge=-10, le=10),
+    sort: str = Query("size_yi"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    exclude_qdii: bool = Query(False),
+    market_type: Optional[str] = Query(None, description="akshare 基金类型，CSV；空 = 走默认 universe"),
+    db=Depends(get_db),
+):
+    """债基·市场 tab 筛选（market_type 默认 = 债券型、定开债券）"""
+    return FilterService(db).screen_discovery_bond(
+        min_age=min_age, min_size_yi=min_size_yi,
+        max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
+        sort=sort, order=order, exclude_qdii=exclude_qdii,
+        market_types=_parse_market_types(market_type),
+    )
+
+
+@router_discovery_bond.get("/refresh", response_model=RefreshResponse)
+async def discovery_bond_refresh(
+    background: BackgroundTasks,
+    limit: Optional[int] = Query(None, ge=1, le=100),
+):
+    """手动触发全市场名单 refresh（discovery-bond / discovery-stock 共用）"""
+    import uuid
+    task_id = str(uuid.uuid4())
+    background.add_task(refresh_market_universe_sync, preset_task_id=task_id)
+    return RefreshResponse(task_id=task_id, status="started")
+
+
+@router_discovery_bond.get("/refresh/status", response_model=RefreshStatusResponse)
+async def discovery_bond_refresh_status(
+    task_id: Optional[str] = Query(None),
+    db=Depends(get_db),
+):
+    """市场名单刷新进度（复用 RefreshRun）"""
+    q = select(RefreshRun)
+    if task_id:
+        q = q.where(RefreshRun.task_id == task_id)
+    else:
+        q = q.order_by(RefreshRun.started_at.desc()).limit(1)
+    run = db.execute(q).scalars().first()
+    if run is None:
+        raise HTTPException(status_code=404, detail="无刷新记录")
+    errors = []
+    if run.errors:
+        try:
+            errors = json.loads(run.errors)
+        except (json.JSONDecodeError, TypeError):
+            errors = []
+    return RefreshStatusResponse(
+        task_id=run.task_id, status=run.status, total=run.total,
+        completed=run.completed, failed=run.failed, errors=errors,
+    )
+
+
+@router_discovery_bond.get("/stats", response_model=StatsResponse)
+async def discovery_bond_stats(db=Depends(get_db)):
+    """债基·市场 tab 库内概况（market_type ∩ is_active）"""
+    counts = FilterService(db).universe_stats("discovery-bond")
+    last_run = db.execute(
+        select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
+    ).scalars().first()
+    return StatsResponse(
+        **counts,
+        last_refresh_at=last_run.finished_at if last_run else None,
+    )
+
+
+@router_discovery_stock.get("/screen", response_model=ScreenResponse)
+async def discovery_stock_screen(
+    min_age: Optional[float] = Query(None, ge=0, le=100),
+    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+    max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
+    min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
+    min_sharpe: Optional[float] = Query(None, ge=-10, le=10),
+    sort: str = Query("ret_5y"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    exclude_qdii: bool = Query(False),
+    market_type: Optional[str] = Query(None, description="akshare 基金类型，CSV；空 = 走默认 universe"),
+    db=Depends(get_db),
+):
+    """股基·市场 tab 筛选（market_type 默认 = 股票型、指数型、混合型、QDII）"""
+    return FilterService(db).screen_discovery_stock(
+        min_age=min_age, min_size_yi=min_size_yi,
+        max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
+        sort=sort, order=order, exclude_qdii=exclude_qdii,
+        market_types=_parse_market_types(market_type),
+    )
+
+
+@router_discovery_stock.get("/refresh", response_model=RefreshResponse)
+async def discovery_stock_refresh(
+    background: BackgroundTasks,
+    limit: Optional[int] = Query(None, ge=1, le=100),
+):
+    """手动触发全市场名单 refresh（与 discovery-bond 共用同一 task）"""
+    import uuid
+    task_id = str(uuid.uuid4())
+    background.add_task(refresh_market_universe_sync, preset_task_id=task_id)
+    return RefreshResponse(task_id=task_id, status="started")
+
+
+@router_discovery_stock.get("/refresh/status", response_model=RefreshStatusResponse)
+async def discovery_stock_refresh_status(
+    task_id: Optional[str] = Query(None),
+    db=Depends(get_db),
+):
+    """市场名单刷新进度（复用 RefreshRun；与 discovery-bond 共用）"""
+    q = select(RefreshRun)
+    if task_id:
+        q = q.where(RefreshRun.task_id == task_id)
+    else:
+        q = q.order_by(RefreshRun.started_at.desc()).limit(1)
+    run = db.execute(q).scalars().first()
+    if run is None:
+        raise HTTPException(status_code=404, detail="无刷新记录")
+    errors = []
+    if run.errors:
+        try:
+            errors = json.loads(run.errors)
+        except (json.JSONDecodeError, TypeError):
+            errors = []
+    return RefreshStatusResponse(
+        task_id=run.task_id, status=run.status, total=run.total,
+        completed=run.completed, failed=run.failed, errors=errors,
+    )
+
+
+@router_discovery_stock.get("/stats", response_model=StatsResponse)
+async def discovery_stock_stats(db=Depends(get_db)):
+    """股基·市场 tab 库内概况（market_type ∩ is_active）"""
+    counts = FilterService(db).universe_stats("discovery-stock")
+    last_run = db.execute(
+        select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
+    ).scalars().first()
+    return StatsResponse(
+        **counts,
+        last_refresh_at=last_run.finished_at if last_run else None,
+    )

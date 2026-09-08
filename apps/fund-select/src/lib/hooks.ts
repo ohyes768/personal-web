@@ -5,7 +5,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { fundApi, stockApi } from './api';
+import { discoveryBondApi, discoveryStockApi, fundApi, stockApi } from './api';
 import type { FundDetail, FundFilters, FundListItem } from './types';
 
 /**
@@ -68,6 +68,86 @@ export function useStockFundList(filters: FundFilters) {
     setLoading(true);
     setError(null);
     stockApi.screen(filters, controller.signal)
+      .then(r => {
+        setItems(r.items);
+        setTotal(r.total);
+      })
+      .catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setError(err instanceof Error ? err.message : '加载失败');
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, reloadNonce]);
+
+  const reload = useCallback(() => setReloadNonce(n => n + 1), []);
+
+  return { items, total, loading, error, reload };
+}
+
+/**
+ * 债基·市场列表（discovery-bond，调 discoveryBondApi.screen）
+ */
+export function useDiscoveryBondFundList(filters: FundFilters) {
+  const [items, setItems] = useState<FundListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const query = [
+    filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
+    filters.min_sharpe,
+    filters.exclude_qdii, filters.sort, filters.order,
+    (filters.market_types ?? []).join(','),
+  ].join('|');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    discoveryBondApi.screen(filters, controller.signal)
+      .then(r => {
+        setItems(r.items);
+        setTotal(r.total);
+      })
+      .catch(err => {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
+        setError(err instanceof Error ? err.message : '加载失败');
+      })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [query, reloadNonce]);
+
+  const reload = useCallback(() => setReloadNonce(n => n + 1), []);
+
+  return { items, total, loading, error, reload };
+}
+
+/**
+ * 股基·市场列表（discovery-stock，调 discoveryStockApi.screen）
+ */
+export function useDiscoveryStockFundList(filters: FundFilters) {
+  const [items, setItems] = useState<FundListItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reloadNonce, setReloadNonce] = useState(0);
+
+  const query = [
+    filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
+    filters.min_sharpe,
+    filters.exclude_qdii, filters.sort, filters.order,
+    (filters.market_types ?? []).join(','),
+  ].join('|');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    discoveryStockApi.screen(filters, controller.signal)
       .then(r => {
         setItems(r.items);
         setTotal(r.total);

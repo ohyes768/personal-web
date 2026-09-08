@@ -14,13 +14,17 @@ interface FilterSheetProps {
   isOpen: boolean;
   onClose: () => void;
   filters: FundFilters;
-  onChange: (key: FilterKey, value: number | boolean | null) => void;
+  onChange: (key: FilterKey, value: number | boolean | string[] | null) => void;
   onClearAll: () => void;
   activeCount: number;
   dimensions?: Dimension[];
+  /** market tab 传 true 显示基金类型多选 */
+  showMarketTypes?: boolean;
 }
 
-export function FilterSheet({ isOpen, onClose, filters, onChange, onClearAll, activeCount, dimensions }: FilterSheetProps) {
+export function FilterSheet({
+  isOpen, onClose, filters, onChange, onClearAll, activeCount, dimensions, showMarketTypes,
+}: FilterSheetProps) {
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -48,7 +52,14 @@ export function FilterSheet({ isOpen, onClose, filters, onChange, onClearAll, ac
           </button>
         </div>
         <div className="p-3">
-          <FilterPanel filters={filters} onChange={onChange} onClearAll={onClearAll} activeCount={activeCount} dimensions={dimensions} />
+          <FilterPanel
+            filters={filters}
+            onChange={onChange}
+            onClearAll={onClearAll}
+            activeCount={activeCount}
+            dimensions={dimensions}
+            showMarketTypes={showMarketTypes}
+          />
           <button
             onClick={onClose}
             className="w-full mt-3 py-2.5 text-sm font-medium text-white bg-accent hover:bg-accent-hover rounded-lg"

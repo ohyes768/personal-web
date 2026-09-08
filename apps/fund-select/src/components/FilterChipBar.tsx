@@ -1,5 +1,8 @@
 /**
  * 顶部筛选 chip：显示已选条件，点 × 移除
+ *
+ * 老 tab（bond / stock）：只显示 numeric + exclude_qdii
+ * market tab：加 market_types 多选 chip（每个类型单独一个 ×）
  */
 'use client';
 
@@ -9,8 +12,8 @@ import type { FundFilters } from '@/lib/types';
 import type { FilterKey, NumericFilterKey } from '@/lib/useFilters';
 
 interface FilterChipBarProps {
-  filters: Pick<FundFilters, NumericFilterKey | 'exclude_qdii'>;
-  onRemove: (key: FilterKey) => void;
+  filters: Pick<FundFilters, NumericFilterKey | 'exclude_qdii' | 'market_types'>;
+  onRemove: (key: FilterKey, value?: string) => void;
 }
 
 const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => string }> = {
@@ -18,16 +21,17 @@ const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => stri
   min_size_yi: { label: '规模', fmt: v => `≥ ${v} 亿` },
   max_dd_3y: { label: '近3年回撤', fmt: v => `≤ ${v}%` },
   min_mgr_exp: { label: '经理从业', fmt: v => `≥ ${v} 年` },
-  min_sharpe: { label: '夏普', fmt: v => `≥ ${v}` },  // 仅股票 tab 有值；债基恒 null 不显示
+  min_sharpe: { label: '夏普', fmt: v => `≥ ${v}` },
 };
 
 const NUMERIC_KEYS = Object.keys(LABELS) as NumericFilterKey[];
 
 export function FilterChipBar({ filters, onRemove }: FilterChipBarProps) {
   const activeNumeric = NUMERIC_KEYS.filter(k => filters[k] !== null);
+  const marketTypes = filters.market_types ?? [];
   const hasQdii = filters.exclude_qdii;
 
-  if (activeNumeric.length === 0 && !hasQdii) {
+  if (activeNumeric.length === 0 && !hasQdii && marketTypes.length === 0) {
     return (
       <div className="flex items-center gap-1.5 text-xs text-ink-soft py-1.5">
         <FunnelIcon className="w-3.5 h-3.5" />
@@ -57,6 +61,21 @@ export function FilterChipBar({ filters, onRemove }: FilterChipBarProps) {
           </span>
         );
       })}
+      {marketTypes.map(t => (
+        <span
+          key={t}
+          className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-info-tint text-info"
+        >
+          基金类型: {t}
+          <button
+            onClick={() => onRemove('market_types', t)}
+            className="hover:text-down"
+            aria-label={`移除基金类型 ${t}`}
+          >
+            <XMarkIcon className="w-3 h-3" />
+          </button>
+        </span>
+      ))}
       {hasQdii && (
         <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-info-tint text-info">
           排除 QDII

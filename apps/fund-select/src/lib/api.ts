@@ -21,6 +21,9 @@ function buildQuery(filters: Partial<FundFilters>): string {
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.order) params.set('order', filters.order);
   if (filters.exclude_qdii) params.set('exclude_qdii', 'true');
+  if (filters.market_types && filters.market_types.length > 0) {
+    params.set('market_type', filters.market_types.join(','));
+  }
   const q = params.toString();
   return q ? `?${q}` : '';
 }
@@ -77,5 +80,48 @@ export const stockApi = {
 
   getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
     return getJson(`${STOCK_BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
+  },
+};
+
+/**
+ * 市场 tab API（接口前缀 /api/funds/discovery-{bond,stock}/*）
+ * 单只详情复用 fundApi.getDetail（设计决策 D2：detail 不依赖 universe）
+ */
+const DISCOVERY_BOND_BASE = '/funds/api/funds/discovery-bond';
+const DISCOVERY_STOCK_BASE = '/funds/api/funds/discovery-stock';
+
+export const discoveryBondApi = {
+  screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
+    return getJson(`${DISCOVERY_BOND_BASE}/screen${buildQuery(filters)}`);
+  },
+
+  getStats(): Promise<StatsResponse> {
+    return getJson(`${DISCOVERY_BOND_BASE}/stats`);
+  },
+
+  refresh(): Promise<{ task_id: string; status: string }> {
+    return getJson(`${DISCOVERY_BOND_BASE}/refresh`);
+  },
+
+  getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
+    return getJson(`${DISCOVERY_BOND_BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
+  },
+};
+
+export const discoveryStockApi = {
+  screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
+    return getJson(`${DISCOVERY_STOCK_BASE}/screen${buildQuery(filters)}`);
+  },
+
+  getStats(): Promise<StatsResponse> {
+    return getJson(`${DISCOVERY_STOCK_BASE}/stats`);
+  },
+
+  refresh(): Promise<{ task_id: string; status: string }> {
+    return getJson(`${DISCOVERY_STOCK_BASE}/refresh`);
+  },
+
+  getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
+    return getJson(`${DISCOVERY_STOCK_BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
   },
 };

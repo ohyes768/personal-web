@@ -1,7 +1,9 @@
 """
-APScheduler 管理器（每日刷新配置名单）
+APScheduler 管理器
 
-调度形态对齐 dividend 的 scheduler.json；v1 仅一个每日任务。
+调度任务：
+- 每日 06:30 拉取全市场名单（market tab 数据源；先于 yaml refresh 完成，确保老 tab 用老数据时 market tab 已就绪）
+- 每日 07:05 拉取配置名单（债基净值一般前一晚已更新）
 """
 import asyncio
 from datetime import datetime
@@ -22,6 +24,14 @@ class SchedulerManager:
         self.scheduler = AsyncIOScheduler(timezone="Asia/Shanghai")
 
     def start(self, app) -> None:
+        # 每日 06:30 拉全市场名单（market tab 数据源）
+        self.scheduler.add_job(
+            self._daily_market_universe_refresh,
+            CronTrigger(hour=6, minute=30, timezone="Asia/Shanghai"),
+            id="daily_market_universe_refresh",
+            name="每日刷新全市场基金名单",
+            replace_existing=True,
+        )
         # 每日 07:05 拉取配置名单（债基净值一般前一晚已更新）
         self.scheduler.add_job(
             self._daily_refresh,
@@ -31,7 +41,22 @@ class SchedulerManager:
             replace_existing=True,
         )
         self.scheduler.start()
-        logger.info("Scheduler 已启动：daily_fund_refresh @ 07:05 Asia/Shanghai")
+        logger.info(
+            "Scheduler 已启动：daily_market_universe_refresh @ 06:30 + "
+            "daily_fund_refresh @ 07:05 Asia/Shanghai"
+        )
+
+    async def _daily_market_universe_refresh(self) -> None:
+        from src.scheduler.tasks import refresh_market_universe_sync
+
+        logger.info("定时全市场刷新开始")
+        try:
+            await asyncio.get_event_loop().run_in_executor(
+                None, refresh_market_universe_sync
+            )
+        except Exception:
+            logger.exception("定时全市场刷新失败")
+        logger.info("定时全市场刷新结束 %s", datetime.now().isoformat())
 
     async def _daily_refresh(self) -> None:
         # 采集是同步阻塞的（requests/akshare），放线程池执行

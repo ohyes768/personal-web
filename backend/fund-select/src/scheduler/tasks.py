@@ -1,5 +1,7 @@
 """
 刷新任务：只拉 config/funds.yaml 名单（v1 不扫全市场）
++
+全市场基金名单 refresh（market tab 专用）：ak.fund_name_em() 一次拉全市场
 
 - 断点续传思路：每完成一只立即 commit，进程崩溃后下次重跑
 - 单只失败重试 3 次后跳过，记入 errors，不阻塞其它
@@ -13,9 +15,11 @@ from sqlalchemy.orm import Session
 
 from src.data.fund_universe import load_fund_codes
 from src.data.manager_fetcher import fetch_manager_table
+from src.data.market_universe_fetcher import fetch_market_universe
 from src.db.models import Fund, FundBenchmark, RefreshRun, RiskFreeRate
 from src.db.session import SessionLocal
 from src.scheduler.daily_refresh import bootstrap_from_csv
+from src.services.market_universe_refresh import refresh as refresh_market_db
 from src.services.refresh_service import persist_snapshot, snapshot_fund
 from src.utils.config import PROJECT_ROOT, get_stock_funds_config_path
 from src.utils.logger import setup_logger
@@ -228,6 +232,44 @@ def refresh_risk_free_rate_sync() -> dict:
         db.commit()
         logger.info("[risk_free] 刷新 %d 行", len(df))
         return {"rows": len(df)}
+    finally:
+        db.close()
+
+
+def refresh_market_universe_sync(preset_task_id: str | None = None) -> dict:
+    """全市场基金名单 refresh（market tab 数据源）。
+
+    1. 调 ak.fund_name_em() 一次拉全市场 ~1 万只
+    2. upsert Fund 表的 name / market_type，不动 fund_type / is_active / 业绩数据
+    3. RefreshRun 记录进度
+
+    返回 refresh() 的结果字典：{task_id, total, inserted, updated, failed, errors}。
+    """
+    import json as _json
+
+    task_id = preset_task_id or str(uuid.uuid4())
+    db = SessionLocal()
+    run: RefreshRun | None = None
+    try:
+        run = RefreshRun(task_id=task_id, status="running", total=0)
+        db.add(run)
+        db.commit()
+
+        df = fetch_market_universe()
+        result = refresh_market_db(db, df, task_id=task_id)
+        logger.info(
+            "[market_universe] task=%s total=%d inserted=%d updated=%d failed=%d",
+            task_id, result["total"], result["inserted"], result["updated"], result["failed"],
+        )
+        return result
+    except Exception as e:
+        logger.exception("refresh_market_universe_sync 失败: %s", str(e)[:200])
+        if run is not None:
+            run.status = "error"
+            run.finished_at = datetime.now(UTC)
+            run.errors = _json.dumps([str(e)[:200]], ensure_ascii=False)
+            db.commit()
+        raise
     finally:
         db.close()
 

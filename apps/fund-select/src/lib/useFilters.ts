@@ -6,15 +6,17 @@
  *   - 任意 numeric 参数出现 → URL 中的字段用 URL 值，缺失字段 = null（不限）
  *   - cleared=1 → 全部不限（用户主动"清空"）
  *   - exclude_qdii=1 与 numeric / cleared 正交：仅此参数仍套用默认四维
+ *   - market_type=债券型,定开债券 → 缩窄到这些类型；空 = 走 tab 默认 universe
  *
  * useFilters(initial) 接受 override：股票 tab 传 STOCK_DEFAULT_FILTERS；
- * 债基 tab 不传，走 DEFAULT_FILTERS。
+ * discovery tab 传 DISCOVERY_*_DEFAULT_FILTERS；债基 tab 不传，走 DEFAULT_FILTERS。
  *
  * 例：
  *   /                                    → 默认 (3, 5, 5, 5)
  *   ?min_age=5&min_size_yi=5&...         → 显式覆盖，缺失 = null
  *   ?cleared=1                           → 全部 null
  *   ?exclude_qdii=1                      → 默认四维 + 排除 QDII
+ *   ?market_type=债券型                  → market_types=['债券型']
  */
 'use client';
 
@@ -24,12 +26,19 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { DEFAULT_FILTERS, type FundFilters } from './types';
 
 export type NumericFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'min_sharpe';
-export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii';
+export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii' | 'market_types';
 
 const NUMERIC_KEYS: NumericFilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp', 'min_sharpe'];
 
 function parseExcludeQdii(search: URLSearchParams): boolean {
   return search.get('exclude_qdii') === '1';
+}
+
+function parseMarketTypes(search: URLSearchParams): string[] | null {
+  const raw = search.get('market_type');
+  if (raw == null) return null;
+  const out = raw.split(',').map(s => s.trim()).filter(Boolean);
+  return out.length > 0 ? out : null;
 }
 
 /** 从 URL 解析筛选 */
@@ -38,8 +47,9 @@ export function parseFiltersFromSearch(
   fallback: FundFilters = DEFAULT_FILTERS,
 ): FundFilters {
   const exclude_qdii = parseExcludeQdii(search);
+  const market_types = parseMarketTypes(search);
   if (search.get('cleared') === '1') {
-    // 用户主动"清空"：全部维度不限；exclude_qdii 仍按 URL 正交解析
+    // 用户主动"清空"：全部维度不限；exclude_qdii / market_types 仍按 URL 正交解析
     return {
       min_age: null,
       min_size_yi: null,
@@ -47,6 +57,7 @@ export function parseFiltersFromSearch(
       min_mgr_exp: null,
       min_sharpe: null,
       exclude_qdii,
+      market_types,
       sort: (search.get('sort') as string) || fallback.sort,
       order: (search.get('order') as 'asc' | 'desc') || fallback.order,
     };
@@ -54,8 +65,8 @@ export function parseFiltersFromSearch(
 
   const hasNumeric = NUMERIC_KEYS.some(k => search.has(k));
   if (!hasNumeric) {
-    // 首次访问或没改过筛选：套用默认（可能为 STOCK_DEFAULT_FILTERS）
-    return { ...fallback, exclude_qdii };
+    // 首次访问或没改过筛选：套用默认（可能为 STOCK_DEFAULT_FILTERS / DISCOVERY_*_DEFAULT_FILTERS）
+    return { ...fallback, exclude_qdii, market_types: market_types ?? fallback.market_types };
   }
 
   // URL 有部分 numeric：缺失字段 = null（不允许 fallback 到默认值）
@@ -66,6 +77,7 @@ export function parseFiltersFromSearch(
     min_mgr_exp: null,
     min_sharpe: null,
     exclude_qdii,
+    market_types,
     sort: fallback.sort,
     order: fallback.order,
   };
@@ -99,6 +111,9 @@ export function filtersToSearch(filters: FundFilters): URLSearchParams {
     }
   }
   if (filters.exclude_qdii) params.set('exclude_qdii', '1');
+  if (filters.market_types && filters.market_types.length > 0) {
+    params.set('market_type', filters.market_types.join(','));
+  }
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_FILTERS.order) params.set('order', filters.order);
   return params;
@@ -128,7 +143,7 @@ export function useFilters(initial?: Partial<FundFilters>) {
   );
 
   /** 更新一个维度并同步 URL（push，可回退） */
-  const setFilter = useCallback((key: FilterKey, value: number | string | boolean | null) => {
+  const setFilter = useCallback((key: FilterKey, value: number | string | boolean | string[] | null) => {
     const next: FundFilters = { ...filters };
     if (key === 'sort') {
       next.sort = value as string;
@@ -136,6 +151,8 @@ export function useFilters(initial?: Partial<FundFilters>) {
       next.order = (value === 'asc' ? 'asc' : 'desc');
     } else if (key === 'exclude_qdii') {
       next.exclude_qdii = Boolean(value);
+    } else if (key === 'market_types') {
+      next.market_types = Array.isArray(value) && value.length > 0 ? (value as string[]) : null;
     } else {
       next[key] = value === null || value === '' ? null : Number(value);
     }
@@ -152,7 +169,7 @@ export function useFilters(initial?: Partial<FundFilters>) {
     }
   }, [filters, setFilter, router]);
 
-  /** 清空全部筛选（保留 sort/order，关掉排除 QDII） */
+  /** 清空全部筛选（保留 sort/order，关掉排除 QDII，重置 market_types） */
   const clearAll = useCallback(() => {
     const next: FundFilters = {
       ...filters,
@@ -162,6 +179,7 @@ export function useFilters(initial?: Partial<FundFilters>) {
       min_mgr_exp: null,
       min_sharpe: null,
       exclude_qdii: false,
+      market_types: null,
     };
     pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
@@ -169,7 +187,9 @@ export function useFilters(initial?: Partial<FundFilters>) {
   /** 已激活的筛选维度数（chip 用） */
   const activeCount = NUMERIC_KEYS.filter(
     k => filters[k] !== null
-  ).length + (filters.exclude_qdii ? 1 : 0);
+  ).length
+    + (filters.exclude_qdii ? 1 : 0)
+    + (filters.market_types && filters.market_types.length > 0 ? 1 : 0);
 
   return { filters, setFilter, toggleSort, clearAll, activeCount };
 }

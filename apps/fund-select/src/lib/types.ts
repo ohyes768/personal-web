@@ -97,7 +97,7 @@ export interface RefreshStatus {
   errors: string[];
 }
 
-/** 筛选维度（均可空 = 不限制）+ 排除 QDII 开关；min_sharpe 仅股票 tab 使用 */
+/** 筛选维度（均可空 = 不限制）+ 排除 QDII 开关；min_sharpe 仅股票/市场股基 tab 使用 */
 export interface FundFilters {
   min_age: number | null;
   min_size_yi: number | null;
@@ -105,6 +105,8 @@ export interface FundFilters {
   min_mgr_exp: number | null;
   min_sharpe: number | null;
   exclude_qdii: boolean;
+  /** akshare 基金类型（粗分类），null = 走 tab 默认 universe */
+  market_types: string[] | null;
   sort: string;
   order: 'asc' | 'desc';
 }
@@ -116,6 +118,7 @@ export const DEFAULT_FILTERS: FundFilters = {
   min_mgr_exp: 5,
   min_sharpe: null,
   exclude_qdii: false,
+  market_types: null,
   sort: 'ret_3y',
   order: 'desc',
 };
@@ -128,9 +131,48 @@ export const STOCK_DEFAULT_FILTERS: FundFilters = {
   min_mgr_exp: 5,
   min_sharpe: 0.8,
   exclude_qdii: false,
+  market_types: null,
   sort: 'ret_3y',
   order: 'desc',
 };
+
+/** 债基·市场 tab 默认筛选：默认 universe = ['债券型','定开债券']，按 size_yi desc */
+export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
+  min_age: 3,
+  min_size_yi: 5,
+  max_dd_3y: 5,
+  min_mgr_exp: 5,
+  min_sharpe: null,
+  exclude_qdii: false,
+  market_types: ['债券型', '定开债券'],
+  sort: 'size_yi',
+  order: 'desc',
+};
+
+/** 股基·市场 tab 默认筛选：默认 universe = ['股票型','指数型','混合型','QDII']，按 ret_3y desc */
+export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
+  min_age: 3,
+  min_size_yi: 5,
+  max_dd_3y: 30,
+  min_mgr_exp: 5,
+  min_sharpe: 0.8,
+  exclude_qdii: false,
+  market_types: ['股票型', '指数型', '混合型', 'QDII'],
+  sort: 'ret_3y',
+  order: 'desc',
+};
+
+/** akshare `基金类型` 字段的全部已知枚举（market tab 维度选项） */
+export const MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '债券型', label: '债券型' },
+  { value: '定开债券', label: '定开债券' },
+  { value: '股票型', label: '股票型' },
+  { value: '指数型', label: '指数型' },
+  { value: '混合型', label: '混合型' },
+  { value: 'QDII', label: 'QDII' },
+  { value: '货币型', label: '货币型' },
+  { value: 'FOF', label: 'FOF' },
+];
 
 /** 业绩排名一行（详情页用） */
 export interface FundAchievementRank {

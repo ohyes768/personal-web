@@ -26,6 +26,9 @@ class Fund(Base):
     mgr_days = Column(Integer, nullable=True)
     mgr_experience_years = Column(Float, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
+    # akshare 粗分类（fund_name_em 的「基金类型」枚举：债券型/股票型/混合型/QDII/指数型/...）；
+    # 与 fund_type（雪球细分类）语义不同，market tab 宇宙筛选专用。
+    market_type = Column(String(64), nullable=True, index=True)
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 
