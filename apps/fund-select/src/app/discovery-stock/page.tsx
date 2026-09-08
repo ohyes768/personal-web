@@ -106,6 +106,7 @@ function DiscoveryStockPageInner() {
               showMarketTypes
               marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
               lockedFields={LOCKED_PRE_FILTERS}
+              hideExcludeQdii
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -138,6 +139,7 @@ function DiscoveryStockPageInner() {
         showMarketTypes
         marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
         lockedFields={LOCKED_PRE_FILTERS}
+        hideExcludeQdii
       />
 
       <CompareFloatingBar

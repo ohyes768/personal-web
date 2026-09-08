@@ -136,7 +136,7 @@ export const STOCK_DEFAULT_FILTERS: FundFilters = {
   order: 'desc',
 };
 
-/** 债基·市场 tab 默认筛选：默认 universe = 10 个债券相关子类，按 size_yi desc */
+/** 债基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
 export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
   min_age: 3,
   min_size_yi: 5,
@@ -144,16 +144,12 @@ export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
   min_mgr_exp: 5,
   min_sharpe: null,
   exclude_qdii: false,
-  market_types: [
-    '债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-混合债',
-    '债券型-利率债', '债券型-信用债', '债券型-长期纯债',
-    '指数型-固收', 'QDII-纯债', 'QDII-混合债',
-  ],
+  market_types: ['纯债型', '混合型', '指数型', 'QDII', 'REITs'],
   sort: 'size_yi',
   order: 'desc',
 };
 
-/** 股基·市场 tab 默认筛选：默认 universe = 14 个股票相关子类，按 ret_3y desc */
+/** 股基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
 export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
   min_age: 3,
   min_size_yi: 5,
@@ -161,67 +157,76 @@ export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
   min_mgr_exp: 5,
   min_sharpe: 0.8,
   exclude_qdii: false,
-  market_types: [
-    '股票型', '指数型-海外股票', '指数型-其他',
-    '混合型-平衡', '混合型-绝对收益', '混合型-灵活',
-    'QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活', 'QDII-混合平衡',
-    'QDII-FOF', 'QDII-REITs', 'Reits', 'REITs',
-  ],
+  market_types: ['股票型', '混合型', '指数型', 'QDII', 'REITs'],
   sort: 'ret_3y',
   order: 'desc',
 };
 
-/** akshare `基金类型` 字段的全部已知子类（market tab 维度选项全集）。
- *  注意：akshare 实际是「粗分类-子类」拼接字符串，不是粗分类枚举。
- *  用 market_subtype_map 的 SUBCLASS_TO_CATEGORY 在后端映射为 tab 分类。
- */
+/** 基金类型（market tab 维度选项全集） */
 export const MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
-  // 股基·市场 子类（14 项）
+  // 股基·市场 5 个粗类别
   { value: '股票型', label: '股票型' },
-  { value: '指数型-海外股票', label: '指数型·海外股票' },
-  { value: '指数型-其他', label: '指数型·其他' },
-  { value: '混合型-平衡', label: '混合型·平衡' },
-  { value: '混合型-绝对收益', label: '混合型·绝对收益' },
-  { value: '混合型-灵活', label: '混合型·灵活' },
-  { value: 'QDII-普通股票', label: 'QDII·普通股票' },
-  { value: 'QDII-混合偏股', label: 'QDII·混合偏股' },
-  { value: 'QDII-混合灵活', label: 'QDII·混合灵活' },
-  { value: 'QDII-混合平衡', label: 'QDII·混合平衡' },
-  { value: 'QDII-FOF', label: 'QDII·FOF' },
-  { value: 'QDII-REITs', label: 'QDII·REITs' },
-  { value: 'Reits', label: 'Reits' },
+  { value: '混合型', label: '混合型' },
+  { value: '指数型', label: '指数型' },
+  { value: 'QDII', label: 'QDII' },
   { value: 'REITs', label: 'REITs' },
-  // 债基·市场 子类（10 项）
-  { value: '债券型-中短债', label: '债券型·中短债' },
-  { value: '债券型-混合一级', label: '债券型·混合一级' },
-  { value: '债券型-混合二级', label: '债券型·混合二级' },
-  { value: '债券型-混合债', label: '债券型·混合债' },
-  { value: '债券型-利率债', label: '债券型·利率债' },
-  { value: '债券型-信用债', label: '债券型·信用债' },
-  { value: '债券型-长期纯债', label: '债券型·长期纯债' },
-  { value: '指数型-固收', label: '指数型·固收' },
-  { value: 'QDII-纯债', label: 'QDII·纯债' },
-  { value: 'QDII-混合债', label: 'QDII·混合债' },
 ];
 
-/** 债基·市场 tab 可选基金类型（与后端 DISCOVERY_BOND_SUBTYPES 同步） */
-export const BOND_MARKET_TYPE_OPTIONS = MARKET_TYPE_OPTIONS.filter(o =>
-  [
-    '债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-混合债',
-    '债券型-利率债', '债券型-信用债', '债券型-长期纯债',
-    '指数型-固收', 'QDII-纯债', 'QDII-混合债',
-  ].includes(o.value)
-);
+/** 债基·市场 5 个粗类别（"纯债型" 是股基的"股票型" 在债基的对应物） */
+export const BOND_MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '纯债型', label: '纯债型' },
+  { value: '混合型', label: '混合债基' },
+  { value: '指数型', label: '指数债' },
+  { value: 'QDII', label: 'QDII 债' },
+  { value: 'REITs', label: 'REITs' },
+];
 
-/** 股基·市场 tab 可选基金类型（与后端 DISCOVERY_STOCK_SUBTYPES 同步） */
-export const STOCK_MARKET_TYPE_OPTIONS = MARKET_TYPE_OPTIONS.filter(o =>
-  [
-    '股票型', '指数型-海外股票', '指数型-其他',
-    '混合型-平衡', '混合型-绝对收益', '混合型-灵活',
-    'QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活', 'QDII-混合平衡',
-    'QDII-FOF', 'QDII-REITs', 'Reits', 'REITs',
-  ].includes(o.value)
-);
+/** 股基·市场 5 个粗类别（与 BOND_MARKET_TYPE_OPTIONS 同结构，value 不同） */
+export const STOCK_MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '股票型', label: '股票型' },
+  { value: '混合型', label: '混合型' },
+  { value: '指数型', label: '指数型' },
+  { value: 'QDII', label: 'QDII' },
+  { value: 'REITs', label: 'REITs' },
+];
+
+/**
+ * 粗类别 → 后端精确 market_subtype 映射
+ * 前端 UI 选粗类别，发送时映射成精确 subtype 列表传给后端 IN 过滤
+ */
+export const COARSE_TO_SUBTYPES_STOCK: Record<string, string[]> = {
+  '股票型': ['股票型'],
+  '混合型': ['混合型-平衡', '混合型-绝对收益', '混合型-灵活'],
+  '指数型': ['指数型-海外股票', '指数型-其他'],
+  'QDII': ['QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活', 'QDII-混合平衡', 'QDII-FOF'],
+  'REITs': ['Reits', 'REITs', 'QDII-REITs'],
+};
+
+export const COARSE_TO_SUBTYPES_BOND: Record<string, string[]> = {
+  '纯债型': ['债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-利率债', '债券型-信用债', '债券型-长期纯债'],
+  '混合型': ['债券型-混合债'],  // 混合债基（区别于混合一级/二级）
+  '指数型': ['指数型-固收'],
+  'QDII': ['QDII-纯债', 'QDII-混合债'],
+  'REITs': [],  // 债基 universe 不含 REITs
+};
+
+/** 把 UI 粗类别展开成精确 subtype 列表（去重保序） */
+export function coarseToSubtypes(
+  coarse: string[],
+  mapping: Record<string, string[]>,
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const c of coarse) {
+    for (const s of mapping[c] ?? []) {
+      if (!seen.has(s)) {
+        seen.add(s);
+        out.push(s);
+      }
+    }
+  }
+  return out;
+}
 
 /** 业绩排名一行（详情页用） */
 export interface FundAchievementRank {

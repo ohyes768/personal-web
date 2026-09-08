@@ -1,17 +1,20 @@
 /**
  * 后端 API client（走 Next.js catch-all 代理，同源）
  */
-import type {
-  FundDetail,
-  RefreshStatus,
-  ScreenResponse,
-  StatsResponse,
+import {
+  COARSE_TO_SUBTYPES_BOND,
+  COARSE_TO_SUBTYPES_STOCK,
+  coarseToSubtypes,
+  type FundDetail,
+  type RefreshStatus,
+  type ScreenResponse,
+  type StatsResponse,
 } from './types';
 import type { FundFilters } from './types';
 
 const BASE = '/funds/api/funds';  // 原生 fetch 不吃 basePath，需带全路径
 
-function buildQuery(filters: Partial<FundFilters>): string {
+function buildQuery(filters: Partial<FundFilters>, coarseMapping?: Record<string, string[]>): string {
   const params = new URLSearchParams();
   if (filters.min_age != null) params.set('min_age', String(filters.min_age));
   if (filters.min_size_yi != null) params.set('min_size_yi', String(filters.min_size_yi));
@@ -21,8 +24,12 @@ function buildQuery(filters: Partial<FundFilters>): string {
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.order) params.set('order', filters.order);
   if (filters.exclude_qdii) params.set('exclude_qdii', 'true');
+  // market_types：粗类别 → 精确 subtype 展开（前端持有 UI 粗类别，后端只认精确值）
   if (filters.market_types && filters.market_types.length > 0) {
-    params.set('market_type', filters.market_types.join(','));
+    const expanded = coarseMapping
+      ? coarseToSubtypes(filters.market_types, coarseMapping)
+      : filters.market_types;
+    if (expanded.length > 0) params.set('market_type', expanded.join(','));
   }
   const q = params.toString();
   return q ? `?${q}` : '';
@@ -92,7 +99,7 @@ const DISCOVERY_STOCK_BASE = '/funds/api/funds/discovery-stock';
 
 export const discoveryBondApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${DISCOVERY_BOND_BASE}/screen${buildQuery(filters)}`);
+    return getJson(`${DISCOVERY_BOND_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_BOND)}`);
   },
 
   getStats(): Promise<StatsResponse> {
@@ -110,7 +117,7 @@ export const discoveryBondApi = {
 
 export const discoveryStockApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${DISCOVERY_STOCK_BASE}/screen${buildQuery(filters)}`);
+    return getJson(`${DISCOVERY_STOCK_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_STOCK)}`);
   },
 
   getStats(): Promise<StatsResponse> {
