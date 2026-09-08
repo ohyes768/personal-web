@@ -152,6 +152,18 @@ def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
             r_p = _risk_returns(_safe_fetch_nav(code), pd.Timestamp(start))
 
             m = compute_risk_metrics(r_p, r_b, r_f)
+            # 调试：算不出 IR/alpha 时打日志（r_p 太短 / r_b tri=NULL）
+            if m.ir is None and len(bench_rows) > 0:
+                logger.info(
+                    "[risk %d/%d] %s: ir=None (r_p=%d, r_b=%d, source=%s)",
+                    i, len(codes), code, len(r_p), len(r_b),
+                    bench_rows[0].source if bench_rows else "none",
+                )
+            elif m.ir is None and len(bench_rows) == 0:
+                logger.info(
+                    "[risk %d/%d] %s: ir=None (fund_benchmark.tri=NULL → QDII / 互认基金 / 公式无基准)",
+                    i, len(codes), code,
+                )
             _upsert(db, code, m, as_of)
             db.commit()
             if i % 20 == 0:
