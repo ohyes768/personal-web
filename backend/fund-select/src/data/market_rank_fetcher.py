@@ -49,10 +49,11 @@ def fetch_market_rank_page(symbol: str, sd: str | None = None, ed: str | None = 
         return pd.DataFrame()
 
     # 列名标准化
+    dates = pd.to_datetime(df["日期"], errors="coerce").dt.date
     out = pd.DataFrame({
         "code": df["基金代码"].astype(str).str.zfill(6),
         "name": df["基金简称"].astype(str).str.strip(),
-        "nav_date": pd.to_datetime(df["日期"]).dt.date,
+        "nav_date": dates.where(dates.notna(), other=None),  # NaT → None（避免 SQLAlchemy 写 NaT 报错）
         "nav_latest": df["单位净值"].apply(_to_float),
         "acc_nav": df["累计净值"].apply(_to_float),
         "ret_1d": df["日增长率"].apply(_to_float),
@@ -68,7 +69,9 @@ def fetch_market_rank_page(symbol: str, sd: str | None = None, ed: str | None = 
         "fee_buy": df["手续费"].astype(str).str.strip(),
         "ft_code": symbol,
     })
-    return out
+    # 过滤 nav_date / nav_latest 都没值的行（数据残缺）
+    out = out.dropna(subset=["code"])
+    return out.reset_index(drop=True)
 
 
 def _to_float(v) -> float | None:
