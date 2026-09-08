@@ -43,8 +43,13 @@ def snapshot_fund(
     today: pd.Timestamp | None = None,
     holdings_year: str | None = None,
     fetch_holdings: bool = True,
+    fetch_ranking: bool = False,
 ) -> dict:
-    """采集单只基金全量数据，返回待入库 dict。失败抛异常。"""
+    """采集单只基金全量数据，返回待入库 dict。失败抛异常。
+
+    fetch_holdings：债基 refresh 路径传 True 拉债券季报持仓；stock 路径传 False 跳过。
+    fetch_ranking：stock refresh 路径传 True 拉雪球业绩排名（含混合型）；债基路径默认 False 不拉。
+    """
     out: dict = {"code": code, "achievement": None}
     ref = today if today is not None else pd.Timestamp.now().normalize()
     year = holdings_year or str(ref.year - 1)  # 默认取上一完整年度季报
@@ -94,9 +99,8 @@ def snapshot_fund(
     # 4. 费率
     out["fees"] = fetch_fees(code)
 
-    # 5. 业绩排名（仅股票型 + QDII，避免对债基空跑）
-    fund_type = out["fund_type"]
-    if fund_type.startswith("股票型") or fund_type.startswith("QDII") or fund_type == "QDII":
+    # 5. 业绩排名（由调用方 fetch_ranking 控制；债基路径默认 False 不抓）
+    if fetch_ranking:
         try:
             ach_df = fetch_achievement(code)
             if not ach_df.empty:
