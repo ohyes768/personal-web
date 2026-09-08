@@ -22,7 +22,11 @@ import { RowDetailDrawer } from '@/components/RowDetailDrawer';
 import { useCompare, useDiscoveryStockFundList, useFeeDetails } from '@/lib/hooks';
 import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions } from '@/lib/compareDimensions';
 import { useFilters } from '@/lib/useFilters';
-import { DISCOVERY_STOCK_DEFAULT_FILTERS, type FundListItem } from '@/lib/types';
+import {
+  DISCOVERY_STOCK_DEFAULT_FILTERS,
+  STOCK_MARKET_TYPE_OPTIONS,
+  type FundListItem,
+} from '@/lib/types';
 
 function DiscoveryStockPageInner() {
   const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(DISCOVERY_STOCK_DEFAULT_FILTERS);
@@ -73,6 +77,7 @@ function DiscoveryStockPageInner() {
               activeCount={activeCount}
               dimensions={STOCK_DIMENSIONS}
               showMarketTypes
+              marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -103,6 +108,7 @@ function DiscoveryStockPageInner() {
         activeCount={activeCount}
         dimensions={STOCK_DIMENSIONS}
         showMarketTypes
+        marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
       />
 
       <CompareFloatingBar

@@ -162,7 +162,7 @@ export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
   order: 'desc',
 };
 
-/** akshare `基金类型` 字段的全部已知枚举（market tab 维度选项） */
+/** akshare `基金类型` 字段的全部已知枚举（market tab 维度选项全集） */
 export const MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: '债券型', label: '债券型' },
   { value: '定开债券', label: '定开债券' },
@@ -173,6 +173,22 @@ export const MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: '货币型', label: '货币型' },
   { value: 'FOF', label: 'FOF' },
 ];
+
+/** 债基·市场 tab 可选基金类型（默认 universe 同 DEFAULT_DISCOVERY_UNIVERSE） */
+export const BOND_MARKET_TYPE_OPTIONS = MARKET_TYPE_OPTIONS.filter(
+  o => DEFAULT_DISCOVERY_UNIVERSE_CODES.bond.includes(o.value)
+);
+
+/** 股基·市场 tab 可选基金类型 */
+export const STOCK_MARKET_TYPE_OPTIONS = MARKET_TYPE_OPTIONS.filter(
+  o => DEFAULT_DISCOVERY_UNIVERSE_CODES.stock.includes(o.value)
+);
+
+/** 后端 DEFAULT_DISCOVERY_UNIVERSE 的前端镜像（UI 选项对齐后端默认 universe） */
+const DEFAULT_DISCOVERY_UNIVERSE_CODES: Record<'bond' | 'stock', string[]> = {
+  bond: ['债券型', '定开债券'],
+  stock: ['股票型', '指数型', '混合型', 'QDII'],
+};
 
 /** 业绩排名一行（详情页用） */
 export interface FundAchievementRank {

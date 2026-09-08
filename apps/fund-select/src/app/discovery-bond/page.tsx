@@ -22,7 +22,11 @@ import { RowDetailDrawerBond } from '@/components/RowDetailDrawerBond';
 import { useCompare, useDiscoveryBondFundList, useFeeDetails } from '@/lib/hooks';
 import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions } from '@/lib/compareDimensions';
 import { useFilters } from '@/lib/useFilters';
-import { DISCOVERY_BOND_DEFAULT_FILTERS, type FundListItem } from '@/lib/types';
+import {
+  BOND_MARKET_TYPE_OPTIONS,
+  DISCOVERY_BOND_DEFAULT_FILTERS,
+  type FundListItem,
+} from '@/lib/types';
 
 function DiscoveryBondPageInner() {
   const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(DISCOVERY_BOND_DEFAULT_FILTERS);
@@ -72,6 +76,7 @@ function DiscoveryBondPageInner() {
               onClearAll={clearAll}
               activeCount={activeCount}
               showMarketTypes
+              marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -100,6 +105,7 @@ function DiscoveryBondPageInner() {
         onClearAll={clearAll}
         activeCount={activeCount}
         showMarketTypes
+        marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
       />
 
       <CompareFloatingBar

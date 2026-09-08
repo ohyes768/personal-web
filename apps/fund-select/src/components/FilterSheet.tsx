@@ -20,10 +20,13 @@ interface FilterSheetProps {
   dimensions?: Dimension[];
   /** market tab 传 true 显示基金类型多选 */
   showMarketTypes?: boolean;
+  /** market tab 基金类型可选项；不传 = MARKET_TYPE_OPTIONS 全集 */
+  marketTypeOptions?: { value: string; label: string }[];
 }
 
 export function FilterSheet({
-  isOpen, onClose, filters, onChange, onClearAll, activeCount, dimensions, showMarketTypes,
+  isOpen, onClose, filters, onChange, onClearAll, activeCount,
+  dimensions, showMarketTypes, marketTypeOptions,
 }: FilterSheetProps) {
   useEffect(() => {
     if (isOpen) {
@@ -59,6 +62,7 @@ export function FilterSheet({
             activeCount={activeCount}
             dimensions={dimensions}
             showMarketTypes={showMarketTypes}
+            marketTypeOptions={marketTypeOptions}
           />
           <button
             onClick={onClose}

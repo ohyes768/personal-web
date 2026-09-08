@@ -17,6 +17,8 @@ interface FilterPanelProps {
   activeCount: number;
   /** 老 tab（bond / stock）不传；market tab 传 true 显示基金类型多选 */
   showMarketTypes?: boolean;
+  /** market tab 基金类型可选项；不传 = MARKET_TYPE_OPTIONS 全集（仅老 tab 用得到） */
+  marketTypeOptions?: { value: string; label: string }[];
   dimensions?: Dimension[];
 }
 
@@ -83,10 +85,11 @@ function DimensionControl({ dim, value, onChange }: {
 }
 
 function MarketTypeControl({
-  value, onChange,
+  value, onChange, options,
 }: {
   value: string[] | null;
   onChange: (next: string[] | null) => void;
+  options: { value: string; label: string }[];
 }) {
   const selected = value ?? [];
   const toggle = (v: string) => {
@@ -111,7 +114,7 @@ function MarketTypeControl({
         )}
       </div>
       <div className="grid grid-cols-2 gap-1">
-        {MARKET_TYPE_OPTIONS.map(opt => {
+        {options.map(opt => {
           const checked = selected.includes(opt.value);
           return (
             <label
@@ -136,7 +139,8 @@ function MarketTypeControl({
 
 export function FilterPanel({
   filters, onChange, onClearAll, activeCount,
-  showMarketTypes = false, dimensions = DIMENSIONS,
+  showMarketTypes = false, marketTypeOptions = MARKET_TYPE_OPTIONS,
+  dimensions = DIMENSIONS,
 }: FilterPanelProps) {
   return (
     <div className="bg-paper-card rounded-lg border border-rule">
@@ -162,6 +166,7 @@ export function FilterPanel({
         <MarketTypeControl
           value={filters.market_types}
           onChange={next => onChange('market_types', next)}
+          options={marketTypeOptions}
         />
       )}
       <label className="px-2.5 py-2 flex items-center gap-1.5 cursor-pointer">
