@@ -102,7 +102,7 @@ class TestLoadMarketUniverse:
 
 class TestRefreshMarketFullSync:
     def _mock_all_fetchers(self, monkeypatch):
-        """mock 5 个 fetcher 避免网络调用（patch module 顶部 import 的引用）"""
+        """mock 6 个 fetcher 避免网络调用（patch module 顶部 import 的引用）"""
         import pandas as pd
         from datetime import date
         monkeypatch.setattr(
@@ -139,6 +139,10 @@ class TestRefreshMarketFullSync:
             "src.services.market_full_pipeline.fetch_market_nav",
             lambda codes, **kw: {c: pd.DataFrame({"净值日期": [date(2026, 9, 7)], "单位净值": [1.0], "日增长率": [0.1]}) for c in codes},
         )
+        monkeypatch.setattr(
+            "src.services.market_full_pipeline.fetch_market_achievement",
+            lambda codes, **kw: {},  # 模拟无同类排名数据
+        )
         # refresh 函数
         monkeypatch.setattr(
             "src.services.market_full_pipeline.refresh_market_rank_db",
@@ -159,6 +163,11 @@ class TestRefreshMarketFullSync:
             "src.services.market_full_pipeline.refresh_market_risk_db",
             lambda db, codes, task_id=None: {"task_id": task_id, "total": len(codes),
                                                  "completed": len(codes), "failed": 0, "errors": []},
+        )
+        monkeypatch.setattr(
+            "src.services.market_full_pipeline.refresh_market_achievement",
+            lambda db, ach_data, task_id=None: {"task_id": task_id, "total": len(ach_data),
+                                                    "inserted": len(ach_data), "failed": 0, "errors": []},
         )
 
     def test_empty_universe_returns_early(self, db_session, monkeypatch):

@@ -23,8 +23,10 @@ from src.data.market_subtype_map import (
     DISCOVERY_STOCK_SUBTYPES,
 )
 from src.data.market_universe_fetcher import fetch_market_universe
+from src.data.market_achievement_fetcher import fetch_market_achievement
 from src.db.models import Fund, RefreshRun
 from src.db.session import SessionLocal
+from src.services.market_achievement_refresh import refresh as refresh_market_achievement
 from src.services.market_basic_refresh import refresh as refresh_market_basic_db
 from src.services.market_nav_refresh import refresh as refresh_market_nav_db
 from src.services.market_rank_refresh import refresh as refresh_market_rank_db
@@ -198,6 +200,16 @@ def refresh_market_full_sync(
                                                 len(codes), _stage_l4)
         _update_main_progress(len(codes),
                               failed=stage_results["L4_risk"].get("result", {}).get("failed", 0))
+
+        # L5 同类排名（ak.fund_individual_achievement_xq，每只单只拉 ~1.5s）
+        def _stage_l5(d):
+            ach_data = fetch_market_achievement(codes)
+            return refresh_market_achievement(d, ach_data, task_id=f"{task_id}_L5")
+
+        stage_results["L5_achievement"] = _run_stage(db, task_id, "L5_achievement",
+                                                    len(codes), _stage_l5)
+        _update_main_progress(len(codes),
+                              failed=stage_results["L5_achievement"].get("result", {}).get("failed", 0))
 
         # 主 task 标记完成
         main_run.status = "done" if all(
