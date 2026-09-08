@@ -1,11 +1,9 @@
 """
-rankhandler fetcher 单测（mock HTTP，不联网）
+ak.fund_open_fund_rank_em fetcher 单测（mock akshare，不联网）
 """
 from datetime import date
-from unittest.mock import patch, MagicMock
-
+from unittest.mock import patch
 import pandas as pd
-import pytest
 
 from src.data.market_rank_fetcher import (
     fetch_market_rank_page,
@@ -13,82 +11,112 @@ from src.data.market_rank_fetcher import (
 )
 
 
-MOCK_RESPONSE = (
-    'var rankData = {datas:['
-    '"006502,财通集成电路产业股票A,CTJCDLCYGPA,2026-09-07,7.2634,7.2634,'
-    '7.96,-0.99,-3.06,-6.99,78.34,121.2,478.57,391.23,83.62,626.34,'
-    '2018-11-29,1,375.8517,1.50%,0.15%,1,0.15%,1,237.69"'
-    '],allRecords:1,allPages:1,pageIndex:1,pageNum:50};'
-)
+def _mock_rank_df(seed: int = 0) -> pd.DataFrame:
+    """构造 akshare 返回的 DataFrame：用 seed 生成不同 code 验证 dedup 行为"""
+    return pd.DataFrame([
+        {
+            "序号": 1, "基金代码": f"00582{seed}",
+            "基金简称": f"基金A{seed}",
+            "日期": date(2026, 9, 7),
+            "单位净值": 9.606, "累计净值": 10.0484,
+            "日增长率": 4.17, "近1周": -1.34, "近1月": 5.12, "近3月": 19.07,
+            "近6月": 74.45, "近1年": 140.48, "近2年": 334.9, "近3年": 283.76,
+            "今年来": 95.8, "成立来": 1020.34, "自定义": 141.181, "手续费": "0.15%",
+        },
+        {
+            "序号": 2, "基金代码": f"00000{seed + 1}",
+            "基金简称": f"基金B{seed}",
+            "日期": date(2026, 9, 7),
+            "单位净值": 1.5, "累计净值": 2.5,
+            "日增长率": 0.5, "近1周": 1.0, "近1月": 2.0, "近3月": 5.0,
+            "近6月": 8.0, "近1年": 15.0, "近2年": 30.0, "近3年": 50.0,
+            "今年来": 10.0, "成立来": 200.0, "自定义": 50.0, "手续费": "0.10%",
+        },
+    ])
 
 
 class TestFetchMarketRankPage:
-    def test_parses_jsonp_response(self):
-        with patch("src.data.market_rank_fetcher.requests.get") as mock_get:
-            mock_get.return_value = MagicMock(text=MOCK_RESPONSE, raise_for_status=lambda: None)
-            rows = fetch_market_rank_page("gp", "2023-09-01", "2026-09-08", pi=1, pn=50)
-        assert len(rows) == 1
-        r = rows[0]
-        assert r["code"] == "006502"
-        assert r["name"] == "财通集成电路产业股票A"
-        assert r["nav_latest"] == 7.2634
-        assert r["ret_1w"] == -0.99
-        assert r["ret_1m"] == -3.06
-        assert r["ret_3y"] == 391.23
-        assert r["ret_ytd"] == 83.62
-        assert r["size_yi"] == 375.8517
-        assert r["nav_date"] == date(2026, 9, 7)
+    def test_normalizes_columns_and_types(self):
+        with patch(
+            "src.data.market_rank_fetcher.ak.fund_open_fund_rank_em",
+            return_value=_mock_rank_df(0),
+        ):
+            df = fetch_market_rank_page("股票型")
+        assert len(df) == 2
+        assert "code" in df.columns
+        assert df.iloc[0]["code"] == "005820"
+        assert df.iloc[0]["name"] == "基金A0"
+        assert df.iloc[0]["nav_latest"] == 9.606
+        assert df.iloc[0]["nav_date"] == date(2026, 9, 7)
+        assert df.iloc[0]["ret_3y"] == 283.76
+        assert df.iloc[0]["ret_ytd"] == 95.8
+        assert df.iloc[0]["ret_all"] == 1020.34
+        assert df.iloc[0]["ft_code"] == "股票型"
+        assert df.iloc[0]["fee_buy"] == "0.15%"
 
-    def test_handles_network_error(self):
-        with patch("src.data.market_rank_fetcher.requests.get") as mock_get:
-            mock_get.return_value = MagicMock(text="not rankhandler", raise_for_status=lambda: None)
-            with pytest.raises(ValueError, match="格式异常"):
-                fetch_market_rank_page("gp", "2023-09-01", "2026-09-08")
+    def test_empty_result(self):
+        with patch(
+            "src.data.market_rank_fetcher.ak.fund_open_fund_rank_em",
+            return_value=pd.DataFrame(),
+        ):
+            df = fetch_market_rank_page("股票型")
+        assert df.empty
 
-    def test_skips_short_rows(self):
-        short_response = 'var rankData = {datas:["006502,X,CTJCDLCYGPA"],allRecords:1,allPages:1};'
-        with patch("src.data.market_rank_fetcher.requests.get") as mock_get:
-            mock_get.return_value = MagicMock(text=short_response, raise_for_status=lambda: None)
-            rows = fetch_market_rank_page("gp", "2023-09-01", "2026-09-08")
-        assert rows == []
+    def test_handles_akshare_exception(self):
+        with patch(
+            "src.data.market_rank_fetcher.ak.fund_open_fund_rank_em",
+            side_effect=RuntimeError("network error"),
+        ):
+            df = fetch_market_rank_page("股票型")
+        assert df.empty
 
 
 class TestFetchMarketRankBulk:
-    def test_pages_through_ft(self):
-        """pages_per_ft=2 调用 2 次 page，每页 1 行 → 共 2 行（不同 code）"""
-        call_count = [0]
+    def test_concatenates_multiple_symbols(self):
+        call_log = []
+        seed_counter = [0]
 
-        def fake_page(ft, sd, ed, pi=1, pn=50, sc="3nzf", st="desc"):
-            call_count[0] += 1
-            return [{
-                "code": f"00000{call_count[0]}", "name": "X", "ret_1y": 1.0,
-                "nav_date": date(2026, 9, 7), "nav_latest": 1.0,
-                "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
-                "ret_6m": 6.0, "ret_2y": 10.0, "ret_3y": 15.0,
-                "ret_ytd": 5.0, "ret_all": 20.0, "size_yi": 5.0,
-                "ft_code": "1",
-            }]
+        def fake_akshare(symbol):
+            call_log.append(symbol)
+            seed = seed_counter[0]
+            seed_counter[0] += 1
+            return _mock_rank_df(seed=seed)
 
-        with patch("src.data.market_rank_fetcher.fetch_market_rank_page", side_effect=fake_page):
-            df = fetch_market_rank_bulk(["gp"], pages_per_ft=2, page_delay_s=0)
-        assert len(df) == 2
-        assert call_count[0] == 2
-
-    def test_empty_when_fts_empty(self):
-        df = fetch_market_rank_bulk([], pages_per_ft=5, page_delay_s=0)
-        assert df.empty
+        with patch(
+            "src.data.market_rank_fetcher.ak.fund_open_fund_rank_em",
+            side_effect=fake_akshare,
+        ):
+            df = fetch_market_rank_bulk(["股票型", "混合型"], page_delay_s=0)
+        assert sorted(call_log) == ["混合型", "股票型"]
+        # 2 symbols × 2 rows = 4 unique codes（mock 用不同 seed）
+        assert len(df) == 4
         assert "code" in df.columns
 
+    def test_default_symbols(self):
+        with patch(
+            "src.data.market_rank_fetcher.ak.fund_open_fund_rank_em",
+            return_value=_mock_rank_df(0),
+        ) as mock_ak:
+            df = fetch_market_rank_bulk(page_delay_s=0)
+        # 默认拉 5 类
+        assert mock_ak.call_count == 5
+
     def test_dedup_by_code(self):
-        with patch("src.data.market_rank_fetcher.fetch_market_rank_page") as mock_page:
-            mock_page.return_value = [
-                {"code": "000001", "name": "X", "ret_1y": 1.0,
-                 "nav_date": date(2026, 9, 7), "nav_latest": 1.0,
-                 "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
-                 "ret_6m": 6.0, "ret_2y": 10.0, "ret_3y": 15.0,
-                 "ret_ytd": 5.0, "ret_all": 20.0, "size_yi": 5.0,
-                 "ft_code": "1"},
-            ]
-            df = fetch_market_rank_bulk(["gp"], pages_per_ft=3, page_delay_s=0)
-        # 3 pages × 1 row each = 3 rows but all same code → dedup to 1
-        assert len(df) == 1
+        """同一只基金在多个 symbol 返回时去重"""
+        with patch(
+            "src.data.market_rank_fetcher.ak.fund_open_fund_rank_em",
+            return_value=_mock_rank_df(0),  # 每次返回同样的 005820 + 000001
+        ):
+            df = fetch_market_rank_bulk(["股票型", "混合型"], page_delay_s=0)
+        # 2 symbols × 2 rows = 4 → dedup by code → 2 unique
+        assert len(df) == 2
+
+    def test_empty_when_all_symbols_return_empty(self):
+        with patch(
+            "src.data.market_rank_fetcher.ak.fund_open_fund_rank_em",
+            return_value=pd.DataFrame(),
+        ):
+            df = fetch_market_rank_bulk(["股票型"], page_delay_s=0)
+        assert df.empty
+        for col in ("code", "nav_latest", "ret_1y", "ret_3y", "ft_code"):
+            assert col in df.columns

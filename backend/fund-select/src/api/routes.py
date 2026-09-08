@@ -442,6 +442,40 @@ async def discovery_bond_full_refresh(
     return RefreshResponse(task_id=task_id, status="started")
 
 
+@router_discovery_bond.get("/full/refresh/status", response_model=RefreshStatusResponse)
+async def discovery_bond_full_refresh_status(
+    task_id: Optional[str] = Query(None),
+    db=Depends(get_db),
+):
+    """全量 refresh 进度（查主 task 的 RefreshRun 记录；sub-task ID 自动 fallback）"""
+    q = select(RefreshRun)
+    if task_id:
+        # 先查主 task；查不到再查 sub-task（id prefix 匹配）
+        q = q.where(RefreshRun.task_id == task_id)
+        run = db.execute(q).scalars().first()
+        if run is None:
+            # fallback: 查同前缀的 sub-task 列表（取最后一条）
+            sub_q = select(RefreshRun).where(
+                RefreshRun.task_id.like(f"{task_id}_%")
+            ).order_by(RefreshRun.started_at.desc()).limit(1)
+            run = db.execute(sub_q).scalars().first()
+    else:
+        q = q.order_by(RefreshRun.started_at.desc()).limit(1)
+        run = db.execute(q).scalars().first()
+    if run is None:
+        raise HTTPException(status_code=404, detail="无刷新记录")
+    errors = []
+    if run.errors:
+        try:
+            errors = json.loads(run.errors)
+        except (json.JSONDecodeError, TypeError):
+            errors = []
+    return RefreshStatusResponse(
+        task_id=run.task_id, status=run.status, total=run.total,
+        completed=run.completed, failed=run.failed, errors=errors,
+    )
+
+
 @router_discovery_stock.get("/full/refresh", response_model=RefreshResponse)
 async def discovery_stock_full_refresh(
     background: BackgroundTasks,
@@ -464,3 +498,35 @@ async def discovery_stock_full_refresh(
         preset_task_id=task_id,
     )
     return RefreshResponse(task_id=task_id, status="started")
+
+
+@router_discovery_stock.get("/full/refresh/status", response_model=RefreshStatusResponse)
+async def discovery_stock_full_refresh_status(
+    task_id: Optional[str] = Query(None),
+    db=Depends(get_db),
+):
+    """股基·市场全量 refresh 进度（复用 RefreshRun；sub-task fallback 同 bond）"""
+    q = select(RefreshRun)
+    if task_id:
+        q = q.where(RefreshRun.task_id == task_id)
+        run = db.execute(q).scalars().first()
+        if run is None:
+            sub_q = select(RefreshRun).where(
+                RefreshRun.task_id.like(f"{task_id}_%")
+            ).order_by(RefreshRun.started_at.desc()).limit(1)
+            run = db.execute(sub_q).scalars().first()
+    else:
+        q = q.order_by(RefreshRun.started_at.desc()).limit(1)
+        run = db.execute(q).scalars().first()
+    if run is None:
+        raise HTTPException(status_code=404, detail="无刷新记录")
+    errors = []
+    if run.errors:
+        try:
+            errors = json.loads(run.errors)
+        except (json.JSONDecodeError, TypeError):
+            errors = []
+    return RefreshStatusResponse(
+        task_id=run.task_id, status=run.status, total=run.total,
+        completed=run.completed, failed=run.failed, errors=errors,
+    )

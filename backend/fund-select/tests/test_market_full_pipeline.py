@@ -92,13 +92,12 @@ class TestLoadMarketUniverse:
 
 class TestRefreshMarketFullSync:
     def _mock_all_fetchers(self, monkeypatch):
-        """mock 4 个 fetcher 避免网络调用"""
+        """mock 4 个 fetcher 避免网络调用（patch module 顶部 import 的引用）"""
         import pandas as pd
         from datetime import date
-        # 函数内 import，patch 原始模块
         monkeypatch.setattr(
-            "src.data.market_rank_fetcher.fetch_market_rank_bulk",
-            lambda fts, **kw: pd.DataFrame([{
+            "src.services.market_full_pipeline.fetch_market_rank_bulk",
+            lambda symbols=None, **kw: pd.DataFrame([{
                 "code": "000001", "name": "X", "nav_date": date(2026, 9, 7),
                 "nav_latest": 1.5, "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
                 "ret_6m": 6.0, "ret_1y": 12.0, "ret_2y": 25.0, "ret_3y": 40.0,
@@ -106,7 +105,7 @@ class TestRefreshMarketFullSync:
             }]),
         )
         monkeypatch.setattr(
-            "src.data.market_basic_fetcher.fetch_market_basic",
+            "src.services.market_full_pipeline.fetch_market_basic",
             lambda codes, **kw: pd.DataFrame([{
                 "code": c, "name": f"X{c}", "fund_type": "股票型",
                 "established_date": date(2020, 1, 1), "age_years": 6.0,
@@ -115,10 +114,10 @@ class TestRefreshMarketFullSync:
             } for c in codes]),
         )
         monkeypatch.setattr(
-            "src.data.market_nav_fetcher.fetch_market_nav",
+            "src.services.market_full_pipeline.fetch_market_nav",
             lambda codes, **kw: {c: pd.DataFrame({"净值日期": [date(2026, 9, 7)], "单位净值": [1.0], "日增长率": [0.1]}) for c in codes},
         )
-        # refresh 函数在 market_full_pipeline 顶部 import，是模块属性
+        # refresh 函数
         monkeypatch.setattr(
             "src.services.market_full_pipeline.refresh_market_rank_db",
             lambda db, df, task_id=None: {"task_id": task_id, "total": len(df),
@@ -216,7 +215,7 @@ class TestRefreshMarketFullSync:
         )
         # L2 的 fetcher 也失败
         monkeypatch.setattr(
-            "src.data.market_basic_fetcher.fetch_market_basic",
+            "src.services.market_full_pipeline.fetch_market_basic",
             lambda codes, **kw: (_ for _ in ()).throw(RuntimeError("L2 boom")),
         )
 

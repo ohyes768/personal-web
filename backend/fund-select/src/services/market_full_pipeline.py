@@ -15,6 +15,9 @@ from typing import Optional
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from src.data.market_basic_fetcher import fetch_market_basic
+from src.data.market_nav_fetcher import fetch_market_nav
+from src.data.market_rank_fetcher import fetch_market_rank_bulk
 from src.data.market_subtype_map import (
     DISCOVERY_BOND_SUBTYPES,
     DISCOVERY_STOCK_SUBTYPES,
@@ -104,39 +107,57 @@ def refresh_market_full_sync(
             task_id, len(codes), universe_filter, min_age, min_size_yi,
         )
 
+        # 创建主 task 的 RefreshRun 记录（前端轮询用）
+        from src.db.models import RefreshRun
+        from datetime import UTC, datetime
+        main_run = RefreshRun(
+            task_id=task_id, status="running",
+            total=len(codes) * 4 if codes else 4,  # 4 阶段总和（用于粗略进度）
+            completed=0, failed=0,
+            started_at=datetime.now(UTC),
+        )
+        db.add(main_run)
+        db.commit()
+
         stage_results = {}
 
-        # L1 rankhandler 业绩（全 universe 不筛 universe_filter，仅按 ft 拉）
-        # 即使 universe_filter 指定 bond/stock，rankhandler 仍拉全部 5 个 ft（gp/hh/zq/zs/qdii）
-        # 这是因为 rankhandler 只支持单 ft 查询，按 ft 全拉再 upsert；filter 在 DB 层做
+        def _update_main_progress(stage_done_codes: int, failed: int = 0):
+            """每阶段完成后更新主 task 进度（粗略聚合）"""
+            main_run.completed += stage_done_codes
+            main_run.failed += failed
+            db.commit()
+
+        # L1 rankhandler 业绩（用 akshare fund_open_fund_rank_em，单类全量返回）
         def _stage_l1(d):
-            from src.data.market_rank_fetcher import fetch_market_rank_bulk
             df = fetch_market_rank_bulk(
-                fts=["gp", "hh", "zq", "zs", "qdii"],
-                pages_per_ft=20,
+                symbols=["股票型", "混合型", "债券型", "指数型", "QDII"],
             )
             return refresh_market_rank_db(d, df, task_id=f"{task_id}_L1")
 
         stage_results["L1_rank"] = _run_stage(db, task_id, "L1_rank",
                                               len(codes) or 1, _stage_l1)
+        _update_main_progress(len(codes) or 1,
+                              failed=stage_results["L1_rank"].get("result", {}).get("failed", 0))
 
-        # L2 fund_basic 经理/类型（仅 universe codes）
+        # L2 fund_basic 经理/类型
         def _stage_l2(d):
-            from src.data.market_basic_fetcher import fetch_market_basic
             df = fetch_market_basic(codes)
             return refresh_market_basic_db(d, df, task_id=f"{task_id}_L2")
 
         stage_results["L2_basic"] = _run_stage(db, task_id, "L2_basic",
                                                 len(codes), _stage_l2)
+        _update_main_progress(len(codes),
+                              failed=stage_results["L2_basic"].get("result", {}).get("failed", 0))
 
         # L3 日频净值 + dd/ret
         def _stage_l3(d):
-            from src.data.market_nav_fetcher import fetch_market_nav
             nav_data = fetch_market_nav(codes)
             return refresh_market_nav_db(d, nav_data, task_id=f"{task_id}_L3")
 
         stage_results["L3_nav"] = _run_stage(db, task_id, "L3_nav",
                                               len(codes), _stage_l3)
+        _update_main_progress(len(codes),
+                              failed=stage_results["L3_nav"].get("result", {}).get("failed", 0))
 
         # L4 业绩比较基准 + 风险指标
         def _stage_l4(d):
@@ -144,6 +165,15 @@ def refresh_market_full_sync(
 
         stage_results["L4_risk"] = _run_stage(db, task_id, "L4_risk",
                                                 len(codes), _stage_l4)
+        _update_main_progress(len(codes),
+                              failed=stage_results["L4_risk"].get("result", {}).get("failed", 0))
+
+        # 主 task 标记完成
+        main_run.status = "done" if all(
+            r.get("status") == "done" for r in stage_results.values()
+        ) else "error"
+        main_run.finished_at = datetime.now(UTC)
+        db.commit()
 
         return {
             "task_id": task_id,
