@@ -38,10 +38,20 @@ logger = setup_logger("fund-select.market_full")
 def _load_market_universe(
     session: Session,
     universe_filter: Optional[list[str]] = None,
-    min_age: Optional[float] = None,
-    min_size_yi: Optional[float] = None,
+    min_ret_1y: Optional[float] = None,
+    min_ret_3y: Optional[float] = None,
+    max_nav_stale_days: Optional[int] = None,
 ) -> list[str]:
-    """加载股基·市场 + 债基·市场 universe 的 code 列表（SQL 预过滤）。"""
+    """加载股基·市场 + 债基·市场 universe 的 code 列表。
+
+    按 market_subtype + L1 业绩字段预过滤：
+      - min_ret_1y / min_ret_3y：基于 market_fund_rank 表的 ret_1y / ret_3y
+        （隐式要求成立 ≥ 1/3 年，NULL 字段过不了 >= X 检查）
+      - max_nav_stale_days：排除疑似清盘
+
+    不用 L2 字段（min_age / min_size_yi / min_mgr_exp）——
+    funds 这些字段 99% 是 NULL，做预筛会把 universe 砍到 ~120 只，违反初衷。
+    """
     all_types = list(DISCOVERY_BOND_SUBTYPES) + list(DISCOVERY_STOCK_SUBTYPES)
     if universe_filter:
         all_types = [t for t in all_types if t in universe_filter]
@@ -51,10 +61,20 @@ def _load_market_universe(
         Fund.is_active == True,  # noqa: E712
         Fund.market_subtype.in_(all_types),
     )
-    if min_age is not None:
-        q = q.where(Fund.age_years >= min_age)
-    if min_size_yi is not None:
-        q = q.where(Fund.size_yi >= min_size_yi)
+    # L1 业绩字段预筛（隐式 LEFT JOIN market_fund_rank）
+    from src.db.models import MarketFundRank as _MR
+    if min_ret_1y is not None or min_ret_3y is not None or max_nav_stale_days is not None:
+        sub = select(_MR.code).where(_MR.code == Fund.code)
+        if min_ret_1y is not None:
+            sub = sub.where(_MR.ret_1y >= min_ret_1y)
+        if min_ret_3y is not None:
+            sub = sub.where(_MR.ret_3y >= min_ret_3y)
+        if max_nav_stale_days is not None:
+            from datetime import date as _date, timedelta as _td
+            cutoff = _date.today() - _td(days=max_nav_stale_days)
+            from sqlalchemy import or_ as _or
+            sub = sub.where(_or(_MR.nav_date.is_(None), _MR.nav_date >= cutoff))
+        q = q.where(sub.exists())
     return list(session.execute(q).scalars().all())
 
 
@@ -83,30 +103,27 @@ def _run_stage(db: Session, task_id: str, stage_name: str,
 
 def refresh_market_full_sync(
     universe_filter: Optional[list[str]] = None,
-    min_age: Optional[float] = None,
-    min_size_yi: Optional[float] = None,
+    min_ret_1y: Optional[float] = None,
+    min_ret_3y: Optional[float] = None,
+    max_nav_stale_days: Optional[int] = None,
     preset_task_id: Optional[str] = None,
 ) -> dict:
-    """市场 tab 全量数据 refresh（4 阶段流水线）。
+    """市场 tab 全量数据 refresh（5 阶段流水线）。
 
-    参数：
-      universe_filter: market_subtype 子集（None = 全 universe）
-      min_age / min_size_yi: SQL 预过滤（用户传入）
+    预筛参数（用 L1 业绩字段）：
+      - min_ret_1y / min_ret_3y：近 1/3 年涨跌幅 ≥ X%
+      - max_nav_stale_days：净值日距今 ≤ N 天
 
-    返回：
-      {
-        task_id, universe_size, stage_results: {
-          "L1_rank": {...}, "L2_basic": {...}, "L3_nav": {...}, "L4_risk": {...}
-        }
-      }
+    L2 字段（min_age / min_size_yi / min_mgr_exp）99% 是 NULL，做预筛会砍到 0，
+    所以这里不接——那些字段留给左侧筛选面板（要求 L2 跑过才有数据）。
     """
     task_id = preset_task_id or str(_uuid.uuid4())
     db = SessionLocal()
     try:
-        codes = _load_market_universe(db, universe_filter, min_age, min_size_yi)
+        codes = _load_market_universe(db, universe_filter, min_ret_1y, min_ret_3y, max_nav_stale_days)
         logger.info(
-            "[market_full] task=%s universe=%d (filter=%s min_age=%s min_size_yi=%s)",
-            task_id, len(codes), universe_filter, min_age, min_size_yi,
+            "[market_full] task=%s universe=%d (filter=%s min_ret_1y=%s min_ret_3y=%s max_nav_stale_days=%s)",
+            task_id, len(codes), universe_filter, min_ret_1y, min_ret_3y, max_nav_stale_days,
         )
 
         # 创建主 task 的 RefreshRun 记录（前端轮询用）

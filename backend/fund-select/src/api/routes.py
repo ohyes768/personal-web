@@ -431,12 +431,14 @@ async def discovery_stock_stats(db=Depends(get_db)):
 @router_discovery_bond.get("/full/refresh", response_model=RefreshResponse)
 async def discovery_bond_full_refresh(
     background: BackgroundTasks,
-    min_age: Optional[float] = Query(None, ge=0, le=100),
-    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+    min_ret_1y: Optional[float] = Query(None, description="近 1 年涨跌幅 ≥ X%（L1 字段）"),
+    min_ret_3y: Optional[float] = Query(None, description="近 3 年涨跌幅 ≥ X%（L1 字段）"),
+    max_nav_stale_days: Optional[int] = Query(None, ge=0, description="净值日距今 ≤ N 天（L1 字段）"),
 ):
     """手动触发债基·市场全量 refresh（4 阶段流水线）
 
-    可选预筛选：min_age / min_size_yi
+    预筛用 L1 业绩字段（min_ret_1y / min_ret_3y / max_nav_stale_days）——
+    L2 字段（min_age / min_size_yi / min_mgr_exp）99% 是 NULL，做预筛会砍到 0，不可用。
     """
     import uuid
     from src.data.market_subtype_map import DISCOVERY_BOND_SUBTYPES
@@ -445,8 +447,8 @@ async def discovery_bond_full_refresh(
     background.add_task(
         refresh_market_full_sync,
         universe_filter=list(DISCOVERY_BOND_SUBTYPES),
-        min_age=min_age,
-        min_size_yi=min_size_yi,
+        min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
+        max_nav_stale_days=max_nav_stale_days,
         preset_task_id=task_id,
     )
     return RefreshResponse(task_id=task_id, status="started")
@@ -489,12 +491,14 @@ async def discovery_bond_full_refresh_status(
 @router_discovery_stock.get("/full/refresh", response_model=RefreshResponse)
 async def discovery_stock_full_refresh(
     background: BackgroundTasks,
-    min_age: Optional[float] = Query(None, ge=0, le=100),
-    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+    min_ret_1y: Optional[float] = Query(None, description="近 1 年涨跌幅 ≥ X%（L1 字段）"),
+    min_ret_3y: Optional[float] = Query(None, description="近 3 年涨跌幅 ≥ X%（L1 字段）"),
+    max_nav_stale_days: Optional[int] = Query(None, ge=0, description="净值日距今 ≤ N 天（L1 字段）"),
 ):
     """手动触发股基·市场全量 refresh（4 阶段流水线）
 
-    可选预筛选：min_age / min_size_yi
+    预筛用 L1 业绩字段（min_ret_1y / min_ret_3y / max_nav_stale_days）——
+    L2 字段（min_age / min_size_yi / min_mgr_exp）99% 是 NULL，做预筛会砍到 0，不可用。
     """
     import uuid
     from src.data.market_subtype_map import DISCOVERY_STOCK_SUBTYPES
@@ -503,8 +507,8 @@ async def discovery_stock_full_refresh(
     background.add_task(
         refresh_market_full_sync,
         universe_filter=list(DISCOVERY_STOCK_SUBTYPES),
-        min_age=min_age,
-        min_size_yi=min_size_yi,
+        min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
+        max_nav_stale_days=max_nav_stale_days,
         preset_task_id=task_id,
     )
     return RefreshResponse(task_id=task_id, status="started")

@@ -57,27 +57,37 @@ class TestLoadMarketUniverse:
         codes = _load_market_universe(db_session, universe_filter=["股票型"])
         assert codes == ["000002"]
 
-    def test_filter_by_min_size_yi(self, db_session):
-        db_session.add_all([
-            _mk_fund("000001", "股票型", size_yi=5),
-            _mk_fund("000002", "股票型", size_yi=20),
-            _mk_fund("000003", "股票型", size_yi=100),
-        ])
+    def test_filter_by_min_ret_3y(self, db_session):
+        """L1 业绩字段预筛：min_ret_3y=30 隐式要求 ret_3y >= 30（NULL 排除）"""
+        from src.db.models import MarketFundRank
+        from datetime import date as _date
+        # funds 表记录（必须，否则 EXISTS 子查询无意义）
+        for code, ret_3y in [("000001", 50.0), ("000002", 35.0), ("000003", 20.0), ("000004", None)]:
+            db_session.add(_mk_fund(code, "股票型"))
+            db_session.add(MarketFundRank(
+                code=code, nav_date=_date(2026, 9, 7), nav_latest=1.0,
+                ret_3y=ret_3y, ft_code="股票型",
+            ))
         db_session.commit()
 
-        codes = _load_market_universe(db_session, min_size_yi=10)
-        assert set(codes) == {"000002", "000003"}
+        codes = _load_market_universe(db_session, min_ret_3y=30)
+        assert set(codes) == {"000001", "000002"}  # 000003 (20<30) 和 000004 (NULL) 被排除
 
-    def test_filter_by_min_age(self, db_session):
-        db_session.add_all([
-            _mk_fund("000001", "股票型", age_years=1),
-            _mk_fund("000002", "股票型", age_years=5),
-            _mk_fund("000003", "股票型", age_years=10),
-        ])
+    def test_filter_by_max_nav_stale_days(self, db_session):
+        """L1 字段预筛：max_nav_stale_days=30 排除 nav_date 太老的"""
+        from src.db.models import MarketFundRank
+        from datetime import date as _date, timedelta as _td
+        today = _date(2026, 9, 7)
+        for code, days_ago in [("000001", 5), ("000002", 15), ("000003", 60)]:
+            db_session.add(_mk_fund(code, "股票型"))
+            db_session.add(MarketFundRank(
+                code=code, nav_date=today - _td(days=days_ago), nav_latest=1.0,
+                ft_code="股票型",
+            ))
         db_session.commit()
 
-        codes = _load_market_universe(db_session, min_age=3)
-        assert set(codes) == {"000002", "000003"}
+        codes = _load_market_universe(db_session, max_nav_stale_days=30)
+        assert set(codes) == {"000001", "000002"}  # 000003 (60 天前) 被排除
 
     def test_inactive_excluded(self, db_session):
         db_session.add_all([
@@ -163,10 +173,18 @@ class TestRefreshMarketFullSync:
         assert result["stage_results"]["L1_rank"]["status"] == "done"
 
     def test_pipeline_4_stages_run_in_order(self, db_session, monkeypatch):
+        from src.db.models import MarketFundRank
+        from datetime import date as _date
         db_session.add_all([
             _mk_fund("000001", "股票型", size_yi=20, age_years=5),
             _mk_fund("000002", "股票型", size_yi=30, age_years=8),
         ])
+        # 必须给两基金加 market_fund_rank 业绩，否则 EXISTS 子查询排除
+        for code in ("000001", "000002"):
+            db_session.add(MarketFundRank(
+                code=code, nav_date=_date(2026, 9, 7), nav_latest=1.0,
+                ret_3y=20.0, ft_code="股票型",
+            ))
         db_session.commit()
 
         call_log = []
@@ -200,7 +218,7 @@ class TestRefreshMarketFullSync:
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result = refresh_market_full_sync(
                 universe_filter=["股票型"],
-                min_size_yi=10,
+                min_ret_3y=0,
                 preset_task_id="test-pipeline",
             )
 

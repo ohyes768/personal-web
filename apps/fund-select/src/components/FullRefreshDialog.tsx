@@ -20,9 +20,9 @@ interface FullRefreshDialogProps {
   /** /api/funds/discovery-{bond,stock}/full/refresh/status */
   statusUrl: string;
   /** refresh 完成后回调（preFilters 同步到左侧筛选面板） */
-  onComplete: (preFilters: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null; min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null }) => void;
+  onComplete: (preFilters: { min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null }) => void;
   /** 默认预筛选值（来自上次 refresh） */
-  initial?: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null; min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null };
+  initial?: { min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null };
 }
 
 const POLL_INTERVAL_MS = 2000;
@@ -30,13 +30,9 @@ const POLL_INTERVAL_MS = 2000;
 export function FullRefreshDialog({
   open, onClose, refreshUrl, statusUrl, onComplete, initial,
 }: FullRefreshDialogProps) {
-  // 默认预筛选：成立 ≥ 3 年 + 规模 ≥ 5 亿（用户希望保持这个初筛）
-  const [minAge, setMinAge] = useState<number | null>(initial?.min_age ?? 3);
-  const [minSizeYi, setMinSizeYi] = useState<number | null>(initial?.min_size_yi ?? 5);
-  const [minMgrExp, setMinMgrExp] = useState<number | null>(initial?.min_mgr_exp ?? null);
-  // 业绩预筛选（L1 拉完后可用）
+  // 默认预筛选：L1 业绩字段（min_ret_3y=0 跑全集；用户填大值砍规模）
   const [minRet1y, setMinRet1y] = useState<number | null>(initial?.min_ret_1y ?? null);
-  const [minRet3y, setMinRet3y] = useState<number | null>(initial?.min_ret_3y ?? null);
+  const [minRet3y, setMinRet3y] = useState<number | null>(initial?.min_ret_3y ?? 0);
   const [maxNavStaleDays, setMaxNavStaleDays] = useState<number | null>(initial?.max_nav_stale_days ?? null);
   const [refreshing, setRefreshing] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
@@ -78,9 +74,6 @@ export function FullRefreshDialog({
           stopPolling();
           if (s.status === 'done') {
             onComplete({
-              min_age: minAge,
-              min_size_yi: minSizeYi,
-              min_mgr_exp: minMgrExp,
               min_ret_1y: minRet1y,
               min_ret_3y: minRet3y,
               max_nav_stale_days: maxNavStaleDays,
@@ -96,9 +89,6 @@ export function FullRefreshDialog({
         stopPolling();
         if (s.status === 'done') {
           onComplete({
-            min_age: minAge,
-            min_size_yi: minSizeYi,
-            min_mgr_exp: minMgrExp,
             min_ret_1y: minRet1y,
             min_ret_3y: minRet3y,
             max_nav_stale_days: maxNavStaleDays,
@@ -108,7 +98,7 @@ export function FullRefreshDialog({
     } catch {
       // 轮询失败静默，下轮重试
     }
-  }, [statusUrl, refreshUrl, stopPolling, onComplete, minAge, minSizeYi, minMgrExp, minRet1y, minRet3y, maxNavStaleDays]);
+  }, [statusUrl, refreshUrl, stopPolling, onComplete, minRet1y, minRet3y, maxNavStaleDays]);
 
   const startRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -117,9 +107,6 @@ export function FullRefreshDialog({
     stoppedRef.current = false;
 
     const params = new URLSearchParams();
-    if (minAge != null) params.set('min_age', String(minAge));
-    if (minSizeYi != null) params.set('min_size_yi', String(minSizeYi));
-    if (minMgrExp != null) params.set('min_mgr_exp', String(minMgrExp));
     if (minRet1y != null) params.set('min_ret_1y', String(minRet1y));
     if (minRet3y != null) params.set('min_ret_3y', String(minRet3y));
     if (maxNavStaleDays != null) params.set('max_nav_stale_days', String(maxNavStaleDays));
@@ -137,7 +124,7 @@ export function FullRefreshDialog({
       setError(e instanceof Error ? e.message : '触发失败');
       setRefreshing(false);
     }
-  }, [refreshUrl, minAge, minSizeYi, minMgrExp, minRet1y, minRet3y, maxNavStaleDays, pollOnce]);
+  }, [refreshUrl, minRet1y, minRet3y, maxNavStaleDays, pollOnce]);
 
   if (!open) return null;
 
@@ -166,15 +153,12 @@ export function FullRefreshDialog({
               预筛选（缩小拉取范围；拉到约 600 只约 10 分钟，不筛约 1.5 小时跑全 4000+ 只）
             </p>
             <div className="space-y-2 mb-3">
-              <NumberField label="成立年限 ≥" value={minAge} onChange={setMinAge} placeholder="不限" unit="年" />
-              <NumberField label="规模 ≥" value={minSizeYi} onChange={setMinSizeYi} placeholder="不限" unit="亿" />
-              <NumberField label="经理从业 ≥" value={minMgrExp} onChange={setMinMgrExp} placeholder="不限" unit="年" />
-              <div className="border-t border-rule pt-2 mt-2">
-                <p className="text-[10px] text-ink-soft mb-1.5">业绩预筛选（L1 拉完后可用）</p>
-                <NumberField label="近 1 年涨 ≥" value={minRet1y} onChange={setMinRet1y} placeholder="不限" unit="%" />
-                <NumberField label="近 3 年涨 ≥" value={minRet3y} onChange={setMinRet3y} placeholder="不限" unit="%" />
-                <NumberField label="净值新鲜度 ≤" value={maxNavStaleDays} onChange={setMaxNavStaleDays} placeholder="不限" unit="天" />
-              </div>
+              <p className="text-[10px] text-ink-soft mb-1.5">
+                业绩预筛选（用 L1 market_fund_rank 字段；L2 字段 99% NULL 做预筛会砍到 0 不可用）
+              </p>
+              <NumberField label="近 1 年涨 ≥" value={minRet1y} onChange={setMinRet1y} placeholder="不限" unit="%" />
+              <NumberField label="近 3 年涨 ≥" value={minRet3y} onChange={setMinRet3y} placeholder="不限" unit="%" />
+              <NumberField label="净值新鲜度 ≤" value={maxNavStaleDays} onChange={setMaxNavStaleDays} placeholder="不限" unit="天" />
             </div>
             {error && <p className="text-xs text-down mb-2">{error}</p>}
             <button

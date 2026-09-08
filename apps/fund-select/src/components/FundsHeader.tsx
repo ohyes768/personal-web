@@ -34,12 +34,10 @@ interface FundsHeaderProps {
   exportKind: FundsTab;
   /** 全量 refresh 完成回调（仅 discovery-* tab 传）：同步预筛选值到左侧 */
   onFullRefreshComplete?: (preFilters: {
-    min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null;
     min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
   }) => void;
   /** 当前生效的预筛选值（用于初始化弹窗 default） */
   preFilters?: {
-    min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null;
     min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
   };
 }
