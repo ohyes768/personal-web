@@ -1,6 +1,6 @@
 /**
  * 共享顶部 header：左侧「← 返回首页 + 标题」+ 中部 tab 导航
- * （债基 | 股票 | 债基·市场 | 股基·市场）
+ * （债基·雪球三分法 | 股基·雪球三分法 | 债基·市场 | 股基·市场）
  * 右侧 slot 由调用方传入（导出 / 刷新 / 总数 / 筛选按钮）
  *
  * 各 tab 通过 `<FundsHeader active="bond" right={...}>` 等传入。
@@ -8,9 +8,11 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 
 import { FunnelIcon } from '@heroicons/react/24/outline';
 
+import { FullRefreshDialog } from './FullRefreshDialog';
 import { RefreshStatusPopover } from './RefreshStatusPopover';
 import type { FundFilters } from '@/lib/types';
 
@@ -21,26 +23,36 @@ interface FundsHeaderProps {
   total: number;
   activeFilterCount: number;
   onOpenMobileFilter: () => void;
-  /** 「债基」时由父级调 reset 回调；「股票」也同 */
+  /** 「债基·雪球三分法」「股基·雪球三分法」tab 由父级调 reset 回调 */
   onRefreshed: () => void;
   filters: FundFilters;
   /** 刷新接口选择：'stock' → /funds/api/funds/stock/*，
    *  'discovery-bond'/'discovery-stock' → /funds/api/funds/discovery-*/
   exportKind: FundsTab;
+  /** 全量 refresh 完成回调（仅 discovery-* tab 传）：同步预筛选值到左侧 */
+  onFullRefreshComplete?: (preFilters: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null }) => void;
+  /** 当前生效的预筛选值（用于初始化弹窗 default） */
+  preFilters?: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null };
 }
 
 const TITLE: Record<FundsTab, string> = {
-  'bond': '债券基金筛选',
-  'stock': '股票基金筛选',
-  'discovery-bond': '债券基金·市场',
-  'discovery-stock': '股票基金·市场',
+  'bond': '债基·雪球三分法',
+  'stock': '股基·雪球三分法',
+  'discovery-bond': '债基·市场',
+  'discovery-stock': '股基·市场',
 };
 
-/** 各 tab 的 refresh 端点（不传 → bond tab 不显示刷新按钮，走默认 fundApi） */
+/** 各 tab 的 refresh 端点 */
 const REFRESH_URL: Partial<Record<FundsTab, string>> = {
   'stock': '/funds/api/funds/stock/refresh',
   'discovery-bond': '/funds/api/funds/discovery-bond/refresh',
   'discovery-stock': '/funds/api/funds/discovery-stock/refresh',
+};
+
+/** discovery-* tab 的全量 refresh 端点（4 阶段流水线） */
+const FULL_REFRESH_URL: Partial<Record<FundsTab, string>> = {
+  'discovery-bond': '/funds/api/funds/discovery-bond/full/refresh',
+  'discovery-stock': '/funds/api/funds/discovery-stock/full/refresh',
 };
 
 export function FundsHeader({
@@ -51,16 +63,20 @@ export function FundsHeader({
   onRefreshed,
   filters,
   exportKind,
+  onFullRefreshComplete,
+  preFilters,
 }: FundsHeaderProps) {
   const title = TITLE[active];
   const refreshUrl = REFRESH_URL[exportKind];
   const statusUrl = refreshUrl ? `${refreshUrl}/status` : undefined;
+  const fullRefreshUrl = FULL_REFRESH_URL[exportKind];
+
+  const [fullOpen, setFullOpen] = useState(false);
 
   return (
     <header className="border-b border-rule bg-paper-card sticky top-0 z-30">
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-3">
         <div className="min-w-0 flex-1">
-          {/* 原生 <a> 而非 Link：basePath=/funds 会把 Link 的 href="/" 拼成 /funds */}
           <a
             href="/"
             className="text-xs text-ink-muted hover:text-ink-strong transition-colors"
@@ -70,9 +86,8 @@ export function FundsHeader({
           <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
             <h1 className="text-lg font-semibold text-ink-strong">{title}</h1>
             <nav className="flex items-center gap-0.5 text-sm flex-wrap">
-              {/* Link 的 href 相对 basePath：/bond → /funds/bond */}
-              <TabLink href="/bond" active={active === 'bond'}>债基</TabLink>
-              <TabLink href="/stock" active={active === 'stock'}>股票</TabLink>
+              <TabLink href="/bond" active={active === 'bond'}>债基·雪球三分法</TabLink>
+              <TabLink href="/stock" active={active === 'stock'}>股基·雪球三分法</TabLink>
               <TabLink href="/discovery-bond" active={active === 'discovery-bond'}>债基·市场</TabLink>
               <TabLink href="/discovery-stock" active={active === 'discovery-stock'}>股基·市场</TabLink>
             </nav>
@@ -85,6 +100,29 @@ export function FundsHeader({
               statusUrl={statusUrl}
               onRefreshed={onRefreshed}
             />
+          )}
+          {fullRefreshUrl && onFullRefreshComplete && (
+            <>
+              <button
+                onClick={() => setFullOpen(true)}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:bg-info-tint hover:text-info transition-colors"
+                aria-label="全量刷新"
+              >
+                全量刷新
+              </button>
+              <FullRefreshDialog
+                open={fullOpen}
+                onClose={() => setFullOpen(false)}
+                refreshUrl={fullRefreshUrl}
+                statusUrl={`${fullRefreshUrl}/status`}
+                onComplete={(pf) => {
+                  setFullOpen(false);
+                  onFullRefreshComplete(pf);
+                  onRefreshed();
+                }}
+                initial={preFilters}
+              />
+            </>
           )}
           <span className="hidden sm:inline text-sm text-ink-muted">
             共 <span className="tnum font-semibold text-ink-strong">{total}</span> 只

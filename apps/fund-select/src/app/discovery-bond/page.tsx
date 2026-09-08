@@ -3,13 +3,15 @@
  *
  * 与债基 tab（/funds/bond）平列，复用 FundsHeader / FilterPanel / FundTable / CompareDrawer 等；
  * 差异：
- *   - 默认值 DISCOVERY_BOND_DEFAULT_FILTERS（含默认 market_types = ['债券型','定开债券']）
+ *   - 默认值 DISCOVERY_BOND_DEFAULT_FILTERS（含默认 market_types = 10 个债券子类）
  *   - 调 discoveryBondApi（/api/funds/discovery-bond/*）
  *   - 筛选面板多一栏「基金类型」多选
+ *   - 「全量刷新」按钮：触发 4 阶段流水线，完成后把预筛选值同步到左侧（disabled 不可改）
+ *   - 隐藏「排除 QDII」复选框（QDII 不在债基·市场 universe）
  */
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -28,12 +30,35 @@ import {
   type FundListItem,
 } from '@/lib/types';
 
+const LOCKED_PRE_FILTERS = ['min_age', 'min_size_yi', 'min_mgr_exp'];
+
 function DiscoveryBondPageInner() {
   const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(DISCOVERY_BOND_DEFAULT_FILTERS);
   const { items, total, loading, error, reload } = useDiscoveryBondFundList(filters);
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
+
+  // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
+  const [preFilters, setPreFilters] = useState<{
+    min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null;
+  }>({
+    min_age: DISCOVERY_BOND_DEFAULT_FILTERS.min_age,
+    min_size_yi: DISCOVERY_BOND_DEFAULT_FILTERS.min_size_yi,
+    min_mgr_exp: null,
+  });
+
+  const handleFullRefreshComplete = useCallback((pf: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null }) => {
+    setPreFilters(pf);
+  }, []);
+
+  // 把预筛选值合并到 filters（locked 后用户改不动）
+  const effectiveFilters = useMemo(() => ({
+    ...filters,
+    min_age: preFilters.min_age ?? null,
+    min_size_yi: preFilters.min_size_yi ?? null,
+    min_mgr_exp: preFilters.min_mgr_exp ?? null,
+  }), [filters, preFilters]);
 
   const compareDimensions = useMemo(
     () => [...fundCompareDimensions, ...fundDisplayOnlyDimensions, ...feeDetailDimensions],
@@ -64,20 +89,23 @@ function DiscoveryBondPageInner() {
         onRefreshed={reload}
         filters={filters}
         exportKind="discovery-bond"
+        onFullRefreshComplete={handleFullRefreshComplete}
+        preFilters={preFilters}
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
-        <FilterChipBar filters={filters} onRemove={handleRemove} />
+        <FilterChipBar filters={effectiveFilters} onRemove={handleRemove} />
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">
             <FilterPanel
-              filters={filters}
+              filters={effectiveFilters}
               onChange={(key, v) => setFilter(key, v)}
               onClearAll={clearAll}
               activeCount={activeCount}
               showMarketTypes
               marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
               hideExcludeQdii
+              lockedFields={LOCKED_PRE_FILTERS}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -101,13 +129,14 @@ function DiscoveryBondPageInner() {
       <FilterSheet
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
-        filters={filters}
+        filters={effectiveFilters}
         onChange={(key, v) => setFilter(key, v)}
         onClearAll={clearAll}
         activeCount={activeCount}
         showMarketTypes
         marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
         hideExcludeQdii
+        lockedFields={LOCKED_PRE_FILTERS}
       />
 
       <CompareFloatingBar

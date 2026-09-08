@@ -21,6 +21,8 @@ interface FilterPanelProps {
   marketTypeOptions?: { value: string; label: string }[];
   /** 隐藏「排除 QDII」复选框（QDII 不在该 tab universe 时用，如债基·市场） */
   hideExcludeQdii?: boolean;
+  /** 锁定的字段 key 列表（disabled 不可改；用于预筛选字段：年限/规模/经理） */
+  lockedFields?: string[];
   dimensions?: Dimension[];
 }
 
@@ -46,10 +48,11 @@ export const STOCK_DIMENSIONS: Dimension[] = [
   { key: 'min_sharpe', label: '夏普', unit: '', min: -1, max: 2, step: 0.1 },
 ];
 
-function DimensionControl({ dim, value, onChange }: {
+function DimensionControl({ dim, value, onChange, disabled = false }: {
   dim: Dimension;
   value: number | null;
   onChange: (v: number | null) => void;
+  disabled?: boolean;
 }) {
   return (
     <div className="px-2.5 py-2 border-b border-rule last:border-b-0">
@@ -63,15 +66,18 @@ function DimensionControl({ dim, value, onChange }: {
             step={dim.step}
             value={value ?? ''}
             placeholder="不限"
+            disabled={disabled}
             onChange={e => {
               const raw = e.target.value;
               onChange(raw === '' ? null : Number(raw));
             }}
-            className="w-12 px-1 py-0.5 text-right text-xs tnum border border-rule rounded bg-paper-card focus:outline-none focus:border-info"
+            className={`w-12 px-1 py-0.5 text-right text-xs tnum border border-rule rounded bg-paper-card focus:outline-none focus:border-info ${
+              disabled ? 'opacity-50 cursor-not-allowed bg-paper-tint' : ''
+            }`}
             aria-label={`${dim.label}阈值`}
           />
           <span className="text-[10px] text-ink-soft">{dim.unit}</span>
-          {value !== null && (
+          {value !== null && !disabled && (
             <button
               onClick={() => onChange(null)}
               className="p-0.5 text-ink-soft hover:text-down"
@@ -143,6 +149,7 @@ export function FilterPanel({
   filters, onChange, onClearAll, activeCount,
   showMarketTypes = false, marketTypeOptions = MARKET_TYPE_OPTIONS,
   hideExcludeQdii = false,
+  lockedFields = [],
   dimensions = DIMENSIONS,
 }: FilterPanelProps) {
   return (
@@ -162,6 +169,7 @@ export function FilterPanel({
           key={dim.key}
           dim={dim}
           value={filters[dim.key]}
+          disabled={lockedFields.includes(dim.key)}
           onChange={v => onChange(dim.key, v)}
         />
       ))}

@@ -152,6 +152,31 @@ class RiskFreeRate(Base):
                         onupdate=lambda: datetime.now(UTC))
 
 
+class MarketFundRank(Base):
+    """市场 tab 业绩（东方财富 rankhandler 批量接口）
+
+    与 fund_performance 独立：
+      - 老 yaml refresh 走 fund_performance（含 dd_3y + sharpe + ir + alpha + ...）
+      - 市场 tab 走 market_fund_rank（9 个时间段涨幅：ret_1w/1m/3m/6m/1y/2y/3y/ytd/all）
+    """
+    __tablename__ = "market_fund_rank"
+
+    code = Column(String(6), primary_key=True)
+    nav_date = Column(Date, nullable=True)
+    nav_latest = Column(Float, nullable=True)
+    ret_1w = Column(Float, nullable=True)
+    ret_1m = Column(Float, nullable=True)
+    ret_3m = Column(Float, nullable=True)
+    ret_6m = Column(Float, nullable=True)
+    ret_1y = Column(Float, nullable=True)
+    ret_2y = Column(Float, nullable=True)
+    ret_3y = Column(Float, nullable=True)
+    ret_ytd = Column(Float, nullable=True)
+    ret_all = Column(Float, nullable=True)
+    ft_code = Column(String(8), nullable=True)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+
 class FundRiskMetrics(Base):
     """风险/超额指标（phase2-B，近 3 年窗口，基于日增长率复权收益 vs benchmark TRI）
 

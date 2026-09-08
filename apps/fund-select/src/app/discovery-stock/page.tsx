@@ -6,10 +6,12 @@
  *   - 默认值 DISCOVERY_STOCK_DEFAULT_FILTERS（含默认 market_types = ['股票型','指数型','混合型','QDII']）
  *   - 调 discoveryStockApi（/api/funds/discovery-stock/*）
  *   - 筛选面板多一栏「基金类型」多选
+ *   - 「全量刷新」按钮：触发 4 阶段流水线（rankhandler + fund_basic + 日频净值 + 风险指标），
+ *     完成后把预筛选值同步到左侧面板（disabled 不可改）
  */
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState } from 'react';
 
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -28,12 +30,35 @@ import {
   type FundListItem,
 } from '@/lib/types';
 
+const LOCKED_PRE_FILTERS = ['min_age', 'min_size_yi', 'min_mgr_exp'];
+
 function DiscoveryStockPageInner() {
   const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(DISCOVERY_STOCK_DEFAULT_FILTERS);
   const { items, total, loading, error, reload } = useDiscoveryStockFundList(filters);
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
+
+  // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
+  const [preFilters, setPreFilters] = useState<{
+    min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null;
+  }>({
+    min_age: DISCOVERY_STOCK_DEFAULT_FILTERS.min_age,
+    min_size_yi: DISCOVERY_STOCK_DEFAULT_FILTERS.min_size_yi,
+    min_mgr_exp: null,
+  });
+
+  const handleFullRefreshComplete = useCallback((pf: { min_age: number | null; min_size_yi: number | null; min_mgr_exp: number | null }) => {
+    setPreFilters(pf);
+  }, []);
+
+  // 把预筛选值合并到 filters（locked 后用户改不动）
+  const effectiveFilters = useMemo(() => ({
+    ...filters,
+    min_age: preFilters.min_age ?? null,
+    min_size_yi: preFilters.min_size_yi ?? null,
+    min_mgr_exp: preFilters.min_mgr_exp ?? null,
+  }), [filters, preFilters]);
 
   const compareDimensions = useMemo(
     () => [...fundCompareDimensions, ...fundDisplayOnlyDimensions, ...feeDetailDimensions],
@@ -64,20 +89,23 @@ function DiscoveryStockPageInner() {
         onRefreshed={reload}
         filters={filters}
         exportKind="discovery-stock"
+        onFullRefreshComplete={handleFullRefreshComplete}
+        preFilters={preFilters}
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
-        <FilterChipBar filters={filters} onRemove={handleRemove} />
+        <FilterChipBar filters={effectiveFilters} onRemove={handleRemove} />
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">
             <FilterPanel
-              filters={filters}
+              filters={effectiveFilters}
               onChange={(key, v) => setFilter(key, v)}
               onClearAll={clearAll}
               activeCount={activeCount}
               dimensions={STOCK_DIMENSIONS}
               showMarketTypes
               marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
+              lockedFields={LOCKED_PRE_FILTERS}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -102,13 +130,14 @@ function DiscoveryStockPageInner() {
       <FilterSheet
         isOpen={sheetOpen}
         onClose={() => setSheetOpen(false)}
-        filters={filters}
+        filters={effectiveFilters}
         onChange={(key, v) => setFilter(key, v)}
         onClearAll={clearAll}
         activeCount={activeCount}
         dimensions={STOCK_DIMENSIONS}
         showMarketTypes
         marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
+        lockedFields={LOCKED_PRE_FILTERS}
       />
 
       <CompareFloatingBar

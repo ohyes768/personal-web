@@ -1,5 +1,5 @@
 /**
- * 债券基金筛选主页（/funds/bond），与股票页（/funds/stock）平列
+ * 债基·雪球三分法主页（/funds/bond），与股基·雪球三分法页（/funds/stock）平列
  */
 'use client';
 

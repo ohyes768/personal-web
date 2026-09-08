@@ -24,6 +24,11 @@ from src.services.refresh_service import persist_snapshot, snapshot_fund
 from src.utils.config import PROJECT_ROOT, get_stock_funds_config_path
 from src.utils.logger import setup_logger
 
+# market_full_pipeline 单独 import（避免循环依赖）
+def _import_full_pipeline():
+    from src.services.market_full_pipeline import refresh_market_full_sync
+    return refresh_market_full_sync
+
 logger = setup_logger("fund-select.tasks")
 
 # 预研 CSV（空库引导）

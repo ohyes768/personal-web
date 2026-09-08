@@ -30,6 +30,7 @@ from src.scheduler.tasks import (
     refresh_market_universe_sync,
     refresh_stock_funds_sync,
 )
+# refresh_market_full_sync 单独 import（避免 tasks.py 循环依赖 market_full_pipeline）
 from src.services.filter_service import FilterService
 from src.utils.logger import setup_logger
 
@@ -409,3 +410,57 @@ async def discovery_stock_stats(db=Depends(get_db)):
         **counts,
         last_refresh_at=last_run.finished_at if last_run else None,
     )
+
+
+# ──────────────────────────────────────────────────────────────────
+# 市场 tab 全量 refresh（4 阶段流水线：rankhandler + fund_basic + nav + risk）
+# 手动触发，预筛选参数缩小 universe
+# ──────────────────────────────────────────────────────────────────
+
+
+@router_discovery_bond.get("/full/refresh", response_model=RefreshResponse)
+async def discovery_bond_full_refresh(
+    background: BackgroundTasks,
+    min_age: Optional[float] = Query(None, ge=0, le=100),
+    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+):
+    """手动触发债基·市场全量 refresh（4 阶段流水线）
+
+    可选预筛选：min_age / min_size_yi
+    """
+    import uuid
+    from src.data.market_subtype_map import DISCOVERY_BOND_SUBTYPES
+    from src.services.market_full_pipeline import refresh_market_full_sync
+    task_id = str(uuid.uuid4())
+    background.add_task(
+        refresh_market_full_sync,
+        universe_filter=list(DISCOVERY_BOND_SUBTYPES),
+        min_age=min_age,
+        min_size_yi=min_size_yi,
+        preset_task_id=task_id,
+    )
+    return RefreshResponse(task_id=task_id, status="started")
+
+
+@router_discovery_stock.get("/full/refresh", response_model=RefreshResponse)
+async def discovery_stock_full_refresh(
+    background: BackgroundTasks,
+    min_age: Optional[float] = Query(None, ge=0, le=100),
+    min_size_yi: Optional[float] = Query(None, ge=0, le=10000),
+):
+    """手动触发股基·市场全量 refresh（4 阶段流水线）
+
+    可选预筛选：min_age / min_size_yi
+    """
+    import uuid
+    from src.data.market_subtype_map import DISCOVERY_STOCK_SUBTYPES
+    from src.services.market_full_pipeline import refresh_market_full_sync
+    task_id = str(uuid.uuid4())
+    background.add_task(
+        refresh_market_full_sync,
+        universe_filter=list(DISCOVERY_STOCK_SUBTYPES),
+        min_age=min_age,
+        min_size_yi=min_size_yi,
+        preset_task_id=task_id,
+    )
+    return RefreshResponse(task_id=task_id, status="started")

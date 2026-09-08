@@ -1,8 +1,8 @@
 /**
- * 股票基金筛选主页（/funds/stock）
+ * 股基·雪球三分法主页（/funds/stock）
  *
- * 与债基页（/funds）平列，复用：
- *   - FundsHeader（nav「债基 | 股票」）
+ * 与债基·雪球三分法页（/funds/bond）平列，复用：
+ *   - FundsHeader（nav「债基·雪球三分法 | 股基·雪球三分法 | 债基·市场 | 股基·市场」）
  *   - FilterPanel / FilterSheet（5 维度筛选：四维 + 夏普）
  *   - FilterChipBar / FundTable / CompareDrawer / CompareFloatingBar
  * 差异：

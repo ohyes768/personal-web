@@ -24,11 +24,13 @@ interface FilterSheetProps {
   marketTypeOptions?: { value: string; label: string }[];
   /** 隐藏「排除 QDII」（QDII 不在该 tab universe 时用） */
   hideExcludeQdii?: boolean;
+  /** 锁定的字段 key 列表（disabled） */
+  lockedFields?: string[];
 }
 
 export function FilterSheet({
   isOpen, onClose, filters, onChange, onClearAll, activeCount,
-  dimensions, showMarketTypes, marketTypeOptions, hideExcludeQdii,
+  dimensions, showMarketTypes, marketTypeOptions, hideExcludeQdii, lockedFields,
 }: FilterSheetProps) {
   useEffect(() => {
     if (isOpen) {
@@ -66,6 +68,7 @@ export function FilterSheet({
             showMarketTypes={showMarketTypes}
             marketTypeOptions={marketTypeOptions}
             hideExcludeQdii={hideExcludeQdii}
+            lockedFields={lockedFields}
           />
           <button
             onClick={onClose}
