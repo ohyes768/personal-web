@@ -4,12 +4,12 @@
 四种 tab：
 - screen          — 债基 tab（funds.yaml 名单）
 - screen_stock    — 股票 tab（funds_stock.yaml 名单）
-- screen_discovery_bond  — 债基·市场 tab（akshare market_type 粗分类）
+- screen_discovery_bond  — 债基·市场 tab（akshare market_subtype 子类精确 IN）
 - screen_discovery_stock — 股基·市场 tab
 
 fund_type 只当表格展示字段，不做成员判定。
 yaml 手工名单已经分好债基/股票宇宙，不需要 LIKE 股票型/QDII/混合型。
-市场 tab 用 akshare 粗分类（market_type 字段）作为成员判定。
+市场 tab 用 akshare 子类（market_subtype 字段）+ market_type tab 分类作为成员判定。
 以后扫全市场时再按 fund_type 收口（本模块尚未实现）。
 用户可选 exclude_qdii：丢掉 fund_type 以 QDII 开头或「互认基金」的记录（四 tab 都支持）。
 """
@@ -27,11 +27,15 @@ from src.db.models import (
     FundPerformance,
     FundRiskMetrics,
 )
+from src.data.market_subtype_map import (
+    DISCOVERY_BOND_SUBTYPES,
+    DISCOVERY_STOCK_SUBTYPES,
+)
 
-# 各 tab 的默认市场 universe（market_type 粗分类枚举）
+# 各 tab 的默认市场 universe（akshare 子类精确枚举）
 DEFAULT_DISCOVERY_UNIVERSE: dict[str, list[str]] = {
-    "discovery-bond": ["债券型", "定开债券"],
-    "discovery-stock": ["股票型", "指数型", "混合型", "QDII"],
+    "discovery-bond": list(DISCOVERY_BOND_SUBTYPES),
+    "discovery-stock": list(DISCOVERY_STOCK_SUBTYPES),
 }
 
 # 排序白名单（防 SQL 注入）
@@ -192,7 +196,7 @@ class FilterService:
                 return empty
             active_q = (
                 select(Fund.code)
-                .where(Fund.is_active == True, Fund.market_type.in_(types))  # noqa: E712
+                .where(Fund.is_active == True, Fund.market_subtype.in_(types))  # noqa: E712
             )
         else:
             raise ValueError(f"unknown universe kind: {kind}")
@@ -259,7 +263,7 @@ class FilterService:
                 .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
                 .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
                 .where(Fund.is_active == True)  # noqa: E712
-                .where(Fund.market_type.in_(types))
+                .where(Fund.market_subtype.in_(types))
             )
         else:
             raise ValueError(f"unknown screen kind: {kind}")

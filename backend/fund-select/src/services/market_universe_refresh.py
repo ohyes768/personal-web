@@ -70,16 +70,19 @@ def refresh(
                         .where(Fund.code == code)
                         .values(
                             name=row.name,
+                            market_subtype=row.market_subtype,
                             market_type=row.market_type,
                             updated_at=now,
                         )
                     )
                     updated += 1
                 else:
-                    # 新增：market_type 用 akshare 值；fund_type 留空（雪球数据后续 refresh 填）
+                    # 新增：market_subtype 存 akshare 原值，market_type 是 tab 分类（bond/stock/other）；
+                    # fund_type 留空（雪球细分类数据后续 yaml refresh 填）。
                     session.add(Fund(
                         code=code,
                         name=row.name,
+                        market_subtype=row.market_subtype,
                         market_type=row.market_type,
                         fund_type="",
                         is_active=True,

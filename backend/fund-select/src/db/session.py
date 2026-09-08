@@ -27,17 +27,19 @@ def init_db() -> None:
 
 
 def _ensure_market_type_column(engine) -> None:
-    """funds.market_type 列：旧库（PR 之前）需要 ALTER TABLE；新库由 create_all 创建。
+    """funds.market_type / market_subtype 列：旧库需要 ALTER TABLE；新库由 create_all 创建。
 
     SQLite 不支持 ADD COLUMN IF NOT EXISTS，所以用 PRAGMA table_info 查询列存在性。
+    market_type 老值是 akshare 粗分类字符串（如「债券型」），新值是 tab 分类（bond/stock/other）；
+    升级时保留老值不影响，后续 refresh 会按新规则覆盖。
     """
     with engine.begin() as conn:
         rows = conn.execute(text("PRAGMA table_info(funds)")).fetchall()
         col_names = {row[1] for row in rows}
-        if "market_type" not in col_names:
-            conn.execute(text("ALTER TABLE funds ADD COLUMN market_type VARCHAR(64)"))
-            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_funds_market_type ON funds(market_type)"))
-            logger.info("funds.market_type 列已添加（旧库升级）")
+        if "market_subtype" not in col_names:
+            conn.execute(text("ALTER TABLE funds ADD COLUMN market_subtype VARCHAR(128)"))
+            conn.execute(text("CREATE INDEX IF NOT EXISTS ix_funds_market_subtype ON funds(market_subtype)"))
+            logger.info("funds.market_subtype 列已添加（旧库升级）")
 
 
 def get_db():
