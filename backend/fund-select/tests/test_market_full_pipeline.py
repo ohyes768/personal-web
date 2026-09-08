@@ -92,9 +92,21 @@ class TestLoadMarketUniverse:
 
 class TestRefreshMarketFullSync:
     def _mock_all_fetchers(self, monkeypatch):
-        """mock 4 个 fetcher 避免网络调用（patch module 顶部 import 的引用）"""
+        """mock 5 个 fetcher 避免网络调用（patch module 顶部 import 的引用）"""
         import pandas as pd
         from datetime import date
+        monkeypatch.setattr(
+            "src.services.market_full_pipeline.fetch_market_universe",
+            lambda: pd.DataFrame([{
+                "code": "000001", "name": "X", "market_subtype": "股票型",
+                "market_type": "stock",
+            }]),
+        )
+        monkeypatch.setattr(
+            "src.services.market_full_pipeline.refresh_market_universe_db",
+            lambda db, df, task_id=None: {"task_id": task_id, "total": len(df),
+                                                 "inserted": len(df), "updated": 0, "failed": 0, "errors": []},
+        )
         monkeypatch.setattr(
             "src.services.market_full_pipeline.fetch_market_rank_bulk",
             lambda symbols=None, **kw: pd.DataFrame([{
@@ -195,11 +207,11 @@ class TestRefreshMarketFullSync:
         assert result["task_id"] == "test-pipeline"
         assert result["universe_size"] == 2
 
-        # 4 阶段都 done
-        for stage in ("L1_rank", "L2_basic", "L3_nav", "L4_risk"):
+        # 4 阶段都 done（实际 5 阶段：L0 universe + L1 rank + L2 basic + L3 nav + L4 risk）
+        for stage in ("L0_universe", "L1_rank", "L2_basic", "L3_nav", "L4_risk"):
             assert result["stage_results"][stage]["status"] == "done", f"{stage} not done"
 
-        # 顺序：L1 → L2 → L3 → L4
+        # 顺序：L0 → L1 → L2 → L3 → L4
         assert call_log == ["L1_refresh", "L2_refresh", "L3_refresh", "L4_refresh"]
 
     def test_single_stage_failure_does_not_block_others(self, db_session, monkeypatch):
@@ -226,3 +238,5 @@ class TestRefreshMarketFullSync:
         assert result["stage_results"]["L2_basic"]["status"] == "error"
         assert result["stage_results"]["L3_nav"]["status"] == "done"
         assert result["stage_results"]["L4_risk"]["status"] == "done"
+        # L0 universe 在最前面跑过，状态应是 done（除非 L2 影响整体）
+        assert result["stage_results"]["L0_universe"]["status"] == "done"

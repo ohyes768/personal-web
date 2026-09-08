@@ -4,6 +4,9 @@
  * 右侧 slot 由调用方传入（导出 / 刷新 / 总数 / 筛选按钮）
  *
  * 各 tab 通过 `<FundsHeader active="bond" right={...}>` 等传入。
+ *
+ * 注意：discovery-* tab 只有一个「全量刷新」按钮（4 阶段流水线已内置 fund_name_em 拉名单）；
+ * 老 tab 的「刷新」按钮保留（刷新 yaml 名单 60 只的业绩）。
  */
 'use client';
 
@@ -23,7 +26,7 @@ interface FundsHeaderProps {
   total: number;
   activeFilterCount: number;
   onOpenMobileFilter: () => void;
-  /** 「债基·雪球三分法」「股基·雪球三分法」tab 由父级调 reset 回调 */
+  /** 「债基」时由父级调 reset 回调；「股票」也同 */
   onRefreshed: () => void;
   filters: FundFilters;
   /** 刷新接口选择：'stock' → /funds/api/funds/stock/*，
@@ -42,14 +45,13 @@ const TITLE: Record<FundsTab, string> = {
   'discovery-stock': '股基·市场',
 };
 
-/** 各 tab 的 refresh 端点 */
+/** 老 tab 的 refresh 端点（仅 bond / stock：刷 yaml 60 只业绩）。
+ *  discovery-* tab 已合并到「全量刷新」按钮（pipeline L0 自动跑 fund_name_em）。 */
 const REFRESH_URL: Partial<Record<FundsTab, string>> = {
   'stock': '/funds/api/funds/stock/refresh',
-  'discovery-bond': '/funds/api/funds/discovery-bond/refresh',
-  'discovery-stock': '/funds/api/funds/discovery-stock/refresh',
 };
 
-/** discovery-* tab 的全量 refresh 端点（4 阶段流水线） */
+/** discovery-* tab 的全量 refresh 端点（5 阶段流水线：universe + rank + basic + nav + risk） */
 const FULL_REFRESH_URL: Partial<Record<FundsTab, string>> = {
   'discovery-bond': '/funds/api/funds/discovery-bond/full/refresh',
   'discovery-stock': '/funds/api/funds/discovery-stock/full/refresh',
