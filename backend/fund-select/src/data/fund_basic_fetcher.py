@@ -73,30 +73,26 @@ def parse_size(text) -> float | None:
 
 
 def fetch_basic(code: str) -> dict:
-    """拉基础信息，返回 item -> value 字典。失败抛异常。
+    """拉基础信息，返回 item -> value 字典。失败抛异常（让 L2 流水线跳过单只失败）。
 
-    雪球对个别基金（如 968157 互认基金）schema 残缺、akshare 列子集 KeyError，
-    fallback 走 danjuanfunds 接口取已有字段，缺字段不出现在 dict 中。
+    雪球对个别基金（如 968157 互认基金）schema 残缺，akshare 列子集 KeyError。
+    注意：之前 fallback 走 danjuanfunds 接口，但该接口 schema 已变化（'data' key 丢失），
+    两步失败无意义。直接抛异常让上层处理。
     """
-    try:
-        df = ak.fund_individual_basic_info_xq(symbol=code)
-    except KeyError as e:
-        logger.warning(
-            "akshare 列缺失，fallback danjuanfunds %s: %s", code, str(e)[:120],
-        )
-        return _fetch_basic_fallback(code)
+    df = ak.fund_individual_basic_info_xq(symbol=code)
     return {row["item"]: row["value"] for _, row in df.iterrows()}
 
 
 def _fetch_basic_fallback(code: str) -> dict:
-    """直接打 danjuanfunds 接口取已有字段。type_desc='互认基金' 标准化为 'QDII-互认'
-    （展示用 fund_type；成员判定以 yaml 宇宙为准，不再靠 LIKE）。"""
-    r = _http().get(
-        f"https://danjuanfunds.com/djapi/fund/{code}",
-        timeout=15,
+    """【已弃用】保留仅为兼容；现在直接抛异常由 L2 pipeline 跳过单只失败。
+
+    之前走 danjuanfunds.com/djapi/fund/{code} 接口，但该接口 schema 已变（'data' key 丢失），
+    fallback 实际是死路。
+    """
+    raise NotImplementedError(
+        f"fallback danjuanfunds for {code} is no longer reliable; "
+        "fetch_basic now propagates exceptions to the L2 pipeline."
     )
-    data = r.json().get("data") or {}
-    out: dict = {}
     for k_eng, k_ch in _FALLBACK_FIELDS.items():
         v = data.get(k_eng)
         if v is None:

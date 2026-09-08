@@ -4,6 +4,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 import pandas as pd
 
 from src.data import fee_fetcher, fund_basic_fetcher
@@ -112,44 +114,23 @@ class TestFetchBasic:
         assert out["基金代码"] == "005827"
         assert out["基金类型"] == "混合型-偏股"
 
-    def test_keyerror_triggers_fallback(self):
-        """akshare 列子集 KeyError → fallback 走 danjuanfunds 已有字段"""
+    def test_keyerror_propagates_no_fallback(self):
+        """akshare 接口 KeyError 直接抛（fallback danjuanfunds 已不可用）"""
         with patch(
             "src.data.fund_basic_fetcher.ak.fund_individual_basic_info_xq",
             side_effect=KeyError("['最新规模', ...] not in index"),
-        ), patch.object(fund_basic_fetcher.requests, "get") as mock_get:
-            mock_get.return_value.json.return_value = {
-                "data": {
-                    "fd_code": "968157",
-                    "fd_name": "东亚联丰环球股票人民币",
-                    "fd_full_name": "东亚联丰环球股票基金R(3)类别人民币",
-                    "found_date": "2024-12-09",
-                    "keeper_name": "东亚联丰投资管理有限公司",
-                    "manager_name": "张文健",
-                    "type_desc": "互认基金",
-                    "rating_desc": "暂无评级",
-                }
-            }
-            out = fetch_basic("968157")
+        ):
+            with pytest.raises(KeyError):
+                fetch_basic("968157")
 
-        assert out["基金代码"] == "968157"
-        assert out["基金名称"] == "东亚联丰环球股票人民币"
-        # 互认基金标准化映射为 QDII-互认（展示字段，不是 screen 成员谓词）
-        assert out["基金类型"] == "QDII-互认"
-        assert out["基金公司"] == "东亚联丰投资管理有限公司"
-        # 缺字段不在 dict 里
-        assert "最新规模" not in out
-        assert "托管银行" not in out
-
-    def test_fallback_empty_data(self):
-        """danjuanfunds 返回 data=None 时 fallback 返回空 dict（refresh 上层捕捉）"""
+    def test_other_exceptions_propagate(self):
+        """其他异常（如网络）也直接抛，让 L2 pipeline 跳过单只失败"""
         with patch(
             "src.data.fund_basic_fetcher.ak.fund_individual_basic_info_xq",
-            side_effect=KeyError("missing"),
-        ), patch.object(fund_basic_fetcher.requests, "get") as mock_get:
-            mock_get.return_value.json.return_value = {"data": None}
-            out = fetch_basic("000000")
-        assert out == {}
+            side_effect=RuntimeError("network error"),
+        ):
+            with pytest.raises(RuntimeError, match="network"):
+                fetch_basic("000000")
 
     def test_session_reused_across_calls(self):
         """thread-local Session 复用：连续 fallback 调 _http() 拿到同一个 Session 实例"""
