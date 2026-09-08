@@ -4,7 +4,7 @@
 'use client';
 
 import { ArrowPathIcon, CheckCircleIcon, ExclamationCircleIcon } from '@heroicons/react/24/outline';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { fundApi } from '@/lib/api';
 import type { RefreshStatus } from '@/lib/types';
@@ -17,26 +17,58 @@ interface RefreshStatusPopoverProps {
   statusUrl?: string;
 }
 
-const POLL_INTERVAL_MS = 5000;
+const POLL_INTERVAL_MS = 1000;  // 市场 tab 全量 27800 只 ~10s 完成；1s 轮询才能看到进度跳动
+
+/** 根据 statusUrl 推断刷新文案（覆盖默认「拉取配置名单 31 只基金」老文案） */
+function describeScope(refreshUrl?: string): string {
+  if (!refreshUrl) return '拉取配置名单 31 只基金（净值 / 季报持仓 / 费率），约 2-3 分钟';
+  if (refreshUrl.includes('discovery')) return '拉取全市场基金名单（约 2-3 万只），约 10-30 秒';
+  if (refreshUrl.includes('/stock/')) return '拉取股票基金名单（约 30 只），约 2-3 分钟';
+  return '拉取数据中…';
+}
 
 export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: RefreshStatusPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stoppedRef = useRef(false);
 
-  const stopPolling = () => {
+  const stopPolling = useCallback(() => {
+    stoppedRef.current = true;
     if (timerRef.current) {
       clearInterval(timerRef.current);
       timerRef.current = null;
     }
-  };
+  }, []);
 
-  useEffect(() => stopPolling, []);
+  useEffect(() => stopPolling, [stopPolling]);
+
+  const pollOnce = useCallback(async (taskId: string) => {
+    if (stoppedRef.current) return;
+    try {
+      let s: RefreshStatus;
+      if (statusUrl) {
+        const res = await fetch(`${statusUrl}?task_id=${taskId}`, { cache: 'no-store' });
+        s = await res.json();
+      } else {
+        s = await fundApi.getRefreshStatus(taskId);
+      }
+      if (stoppedRef.current) return;
+      setStatus(s);
+      if (s.status !== 'running') {
+        stopPolling();
+        onRefreshed?.();
+      }
+    } catch {
+      // 轮询失败静默，下轮重试
+    }
+  }, [statusUrl, stopPolling, onRefreshed]);
 
   const startRefresh = async () => {
     setStarting(true);
     setStatus(null);
+    stoppedRef.current = false;
     try {
       let r;
       if (refreshUrl) {
@@ -45,25 +77,10 @@ export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: Ref
       } else {
         r = await fundApi.refresh();
       }
-      stopPolling();
-      timerRef.current = setInterval(async () => {
-        try {
-          let s: RefreshStatus;
-          if (statusUrl) {
-            const res = await fetch(`${statusUrl}?task_id=${r.task_id}`, { cache: 'no-store' });
-            s = await res.json();
-          } else {
-            s = await fundApi.getRefreshStatus(r.task_id);
-          }
-          setStatus(s);
-          if (s.status !== 'running') {
-            stopPolling();
-            onRefreshed?.();
-          }
-        } catch {
-          // 轮询失败静默，下轮重试
-        }
-      }, POLL_INTERVAL_MS);
+      // 立即轮询一次（不等 interval），让用户尽快看到 running 状态
+      // （背景任务 27800 只可能 10s 完成，5s 间隔太迟）
+      timerRef.current = setInterval(() => pollOnce(r.task_id), POLL_INTERVAL_MS);
+      pollOnce(r.task_id);
     } catch (e) {
       setStatus({
         task_id: '', status: 'error', total: 0, completed: 0, failed: 0,
@@ -108,7 +125,7 @@ export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: Ref
 
             {!status && (
               <p className="text-xs text-ink-muted">
-                拉取配置名单 31 只基金（净值 / 季报持仓 / 费率），约 2-3 分钟
+                {describeScope(refreshUrl)}
               </p>
             )}
 
