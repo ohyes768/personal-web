@@ -273,16 +273,21 @@ async def discovery_bond_screen(
     max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
     min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
     min_sharpe: Optional[float] = Query(None, ge=-10, le=10),
+    min_ret_1y: Optional[float] = Query(None, description="近 1 年涨跌幅 ≥ X%（隐式要求成立 ≥ 1 年）"),
+    min_ret_3y: Optional[float] = Query(None, description="近 3 年涨跌幅 ≥ X%（隐式要求成立 ≥ 3 年）"),
+    max_nav_stale_days: Optional[int] = Query(None, ge=0, description="净值日距今 ≤ N 天（排除疑似清盘）"),
     sort: str = Query("size_yi"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False),
     market_type: Optional[str] = Query(None, description="akshare 基金类型，CSV；空 = 走默认 universe"),
     db=Depends(get_db),
 ):
-    """债基·市场 tab 筛选（market_type 默认 = 债券型、定开债券）"""
+    """债基·市场 tab 筛选（market_type 默认 = 10 个债券相关子类）"""
     return FilterService(db).screen_discovery_bond(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
+        min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
+        max_nav_stale_days=max_nav_stale_days,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
         market_types=_parse_market_types(market_type),
     )
@@ -346,16 +351,21 @@ async def discovery_stock_screen(
     max_dd_3y: Optional[float] = Query(None, ge=0, le=100),
     min_mgr_exp: Optional[float] = Query(None, ge=0, le=100),
     min_sharpe: Optional[float] = Query(None, ge=-10, le=10),
+    min_ret_1y: Optional[float] = Query(None, description="近 1 年涨跌幅 ≥ X%（隐式要求成立 ≥ 1 年）"),
+    min_ret_3y: Optional[float] = Query(None, description="近 3 年涨跌幅 ≥ X%（隐式要求成立 ≥ 3 年）"),
+    max_nav_stale_days: Optional[int] = Query(None, ge=0, description="净值日距今 ≤ N 天（排除疑似清盘）"),
     sort: str = Query("ret_5y"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False),
     market_type: Optional[str] = Query(None, description="akshare 基金类型，CSV；空 = 走默认 universe"),
     db=Depends(get_db),
 ):
-    """股基·市场 tab 筛选（market_type 默认 = 股票型、指数型、混合型、QDII）"""
+    """股基·市场 tab 筛选（market_type 默认 = 5 个粗类别：股票型/混合型/指数型/QDII/REITs）"""
     return FilterService(db).screen_discovery_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
+        min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
+        max_nav_stale_days=max_nav_stale_days,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
         market_types=_parse_market_types(market_type),
     )

@@ -26,6 +26,7 @@ from src.db.models import (
     FundHoldingsBond,
     FundPerformance,
     FundRiskMetrics,
+    MarketFundRank,
 )
 from src.data.market_subtype_map import (
     DISCOVERY_BOND_SUBTYPES,
@@ -137,16 +138,21 @@ class FilterService:
         max_dd_3y: Optional[float] = None,
         min_mgr_exp: Optional[float] = None,
         min_sharpe: Optional[float] = None,
+        min_ret_1y: Optional[float] = None,
+        min_ret_3y: Optional[float] = None,
+        max_nav_stale_days: Optional[int] = None,
         sort: str = "size_yi",
         order: str = "desc",
         exclude_qdii: bool = False,
         market_types: list[str] | None = None,
     ) -> dict:
-        """债基·市场 tab 筛选：成员 = market_type ∈ default['discovery-bond'] ∩ is_active。"""
+        """债基·市场 tab 筛选：成员 = market_subtype ∈ default['discovery-bond'] ∩ is_active。"""
         types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE["discovery-bond"]
         return self._screen(
             "discovery-bond", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
             sort, order, None, exclude_qdii, min_sharpe, types,
+            min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
+            max_nav_stale_days=max_nav_stale_days,
         )
 
     def screen_discovery_stock(
@@ -156,16 +162,21 @@ class FilterService:
         max_dd_3y: Optional[float] = None,
         min_mgr_exp: Optional[float] = None,
         min_sharpe: Optional[float] = None,
+        min_ret_1y: Optional[float] = None,
+        min_ret_3y: Optional[float] = None,
+        max_nav_stale_days: Optional[int] = None,
         sort: str = "ret_5y",
         order: str = "desc",
         exclude_qdii: bool = False,
         market_types: list[str] | None = None,
     ) -> dict:
-        """股基·市场 tab 筛选：成员 = market_type ∈ default['discovery-stock'] ∩ is_active。"""
+        """股基·市场 tab 筛选：成员 = market_subtype ∈ default['discovery-stock'] ∩ is_active。"""
         types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE["discovery-stock"]
         return self._screen(
             "discovery-stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
             sort, order, None, exclude_qdii, min_sharpe, types,
+            min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
+            max_nav_stale_days=max_nav_stale_days,
         )
 
     def universe_stats(
@@ -237,18 +248,23 @@ class FilterService:
         exclude_qdii: bool = False,
         min_sharpe: Optional[float] = None,
         market_types: list[str] | None = None,
+        min_ret_1y: Optional[float] = None,
+        min_ret_3y: Optional[float] = None,
+        max_nav_stale_days: Optional[int] = None,
     ) -> dict:
-        # 成员判定：bond/stock 走 yaml；discovery-* 走 market_type
+        # 成员判定：bond/stock 走 yaml；discovery-* 走 market_subtype
         if kind in ("bond", "stock"):
             codes = resolve_universe_codes(kind, universe_codes)
             if not codes:
                 return {"total": 0, "items": []}
             q = (
-                select(Fund, FundPerformance, FundFees, FundHoldingsBond, FundRiskMetrics)
+                select(Fund, FundPerformance, FundFees, FundHoldingsBond,
+                       FundRiskMetrics, MarketFundRank)
                 .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
                 .outerjoin(FundFees, Fund.code == FundFees.code)
                 .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
                 .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
+                .outerjoin(MarketFundRank, Fund.code == MarketFundRank.code)
                 .where(Fund.is_active == True)  # noqa: E712
                 .where(Fund.code.in_(codes))
             )
@@ -257,11 +273,13 @@ class FilterService:
             if not types:
                 return {"total": 0, "items": []}
             q = (
-                select(Fund, FundPerformance, FundFees, FundHoldingsBond, FundRiskMetrics)
+                select(Fund, FundPerformance, FundFees, FundHoldingsBond,
+                       FundRiskMetrics, MarketFundRank)
                 .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
                 .outerjoin(FundFees, Fund.code == FundFees.code)
                 .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
                 .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
+                .outerjoin(MarketFundRank, Fund.code == MarketFundRank.code)
                 .where(Fund.is_active == True)  # noqa: E712
                 .where(Fund.market_subtype.in_(types))
             )
@@ -291,6 +309,19 @@ class FilterService:
         if min_sharpe is not None:
             # sharpe 为 NULL（无风险指标）的基金一并排除，与 dd_3y 筛选惯例一致
             q = q.where(FundRiskMetrics.sharpe >= min_sharpe)
+        if min_ret_1y is not None:
+            # 隐式要求成立 ≥ 1 年（ret_1y IS NULL = akshare 没给，近似 < 1 年）
+            q = q.where(MarketFundRank.ret_1y >= min_ret_1y)
+        if min_ret_3y is not None:
+            # 隐式要求成立 ≥ 3 年
+            q = q.where(MarketFundRank.ret_3y >= min_ret_3y)
+        if max_nav_stale_days is not None:
+            # 净值日距今 ≤ N 天（NULL 也算通过）
+            from datetime import date as _date, timedelta as _td
+            cutoff = _date.today() - _td(days=max_nav_stale_days)
+            from sqlalchemy import or_ as _or
+            q = q.where(_or(MarketFundRank.nav_date.is_(None),
+                            MarketFundRank.nav_date >= cutoff))
 
         rows = self.db.execute(q).all()
         # 一次性取 4 个目标周期排名（30 只名单下 ≤120 行）；dict 查找避免 ORM subquery 复杂度
@@ -320,8 +351,8 @@ class FilterService:
                 ach_map.setdefault(r.code, {})[(r.period_kind, r.period)] = r.peer_rank
 
         items = [
-            self._to_dto(f, p, fee, hold, risk, ach_map.get(f.code))
-            for f, p, fee, hold, risk in rows
+            self._to_dto(f, p, fee, hold, risk, market_rank, ach_map.get(f.code))
+            for f, p, fee, hold, risk, market_rank in rows
         ]
         default_sort = "ret_5y" if kind in ("stock", "discovery-stock") else "size_yi"
         sort_key = sort if sort in SORT_COLUMNS else default_sort
@@ -355,6 +386,7 @@ class FilterService:
     def _to_dto(
         f: Fund, p: FundPerformance | None, fee: FundFees | None, hold: FundHoldingsBond | None,
         risk: FundRiskMetrics | None = None,
+        market_rank: MarketFundRank | None = None,
         ach_for_code: dict[tuple[str, str], str | None] | None = None,
     ) -> dict:
         annual = _fee_annual(fee)
@@ -389,6 +421,18 @@ class FilterService:
             "fee_service": fee.fee_service if fee else None,
             "fee_annual": annual,
             "updated_at": f.updated_at,
+            # market_fund_rank 字段（L1 业绩）
+            "mr_nav_latest": market_rank.nav_latest if market_rank else None,
+            "mr_nav_date": market_rank.nav_date.isoformat() if market_rank and market_rank.nav_date else None,
+            "mr_ret_1w": market_rank.ret_1w if market_rank else None,
+            "mr_ret_1m": market_rank.ret_1m if market_rank else None,
+            "mr_ret_3m": market_rank.ret_3m if market_rank else None,
+            "mr_ret_6m": market_rank.ret_6m if market_rank else None,
+            "mr_ret_1y": market_rank.ret_1y if market_rank else None,
+            "mr_ret_2y": market_rank.ret_2y if market_rank else None,
+            "mr_ret_3y": market_rank.ret_3y if market_rank else None,
+            "mr_ret_ytd": market_rank.ret_ytd if market_rank else None,
+            "mr_ret_all": market_rank.ret_all if market_rank else None,
             **ranks,
         }
 
