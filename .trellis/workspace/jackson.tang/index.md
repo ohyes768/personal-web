@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-09-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~220 | Active |
+| `journal-1.md` | ~254 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-09-09 | Pre-existing pytest 修复：peer_rank 契约补 rank 键 + cbond 源迁移 | `cb349d9` | `master` |
 | 5 | 2026-09-09 | Fund-select 4 tab 列表分页（server page/limit） | `25e6141` | `master` |
 | 4 | 2026-09-03 | QDII/互认基金跳过业绩基准合成 | `a22fd17` | `master` |
 | 3 | 2026-08-29 | 融资余额历史回补接口 | `ce6c8cc` | `master` |

@@ -218,3 +218,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Pre-existing pytest 修复：peer_rank 契约补 rank 键 + cbond 源迁移
+
+**Date**: 2026-09-09
+**Task**: Pre-existing pytest 修复：peer_rank 契约补 rank 键 + cbond 源迁移
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+修复 6 个 pre-existing pytest 失败（与分页任务无关）。5 个 peer_rank：d82928e 给 _parse_peer_rank 返回 dict 加 rank 键（旧 2 键 → 新 3 键 pct/total/rank），测试断言跟上；生产实现未改。1 个 cbond 源：akshare 1.18.39 移除 ak.bond_index_general_cbond API（生产代码也用了，refresh 命中会 AttributeError），迁到 ak.bond_new_composite_index_cbond()；实证新源无 B1 错位 bug（6174 行 / Sun=11 / Sat=9 调休 / Mon-Fri=144-149），无需参数。同步更新 yaml config（中债综合财富 source 字段）、benchmark_fetcher.py 注释、contracts.md B1 段落（B1.2 迁移注记）。pytest tests/ → 263 passed, 0 failed（之前 6 failed）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cb349d9` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
