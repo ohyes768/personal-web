@@ -83,6 +83,7 @@ function StockFundsPageInner() {
               showBondColumns={false}
               showRiskColumns
               onRowClick={setDetailFund}
+              ddBarCapPct={60}
             />
             <Pagination
               page={filters.page}

@@ -121,6 +121,7 @@ function DiscoveryStockPageInner() {
               showBondColumns={false}
               showRiskColumns
               onRowClick={setDetailFund}
+              ddBarCapPct={60}
             />
             <Pagination
               page={filters.page}

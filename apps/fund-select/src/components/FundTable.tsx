@@ -24,6 +24,8 @@ interface FundTableProps {
   showRiskColumns?: boolean;
   /** 行点击回调（股票 tab 用来打开详情弹框；债基 tab 不传） */
   onRowClick?: (fund: FundListItem) => void;
+  /** 回撤进度条封顶值（百分比）。债基默认 20，股票默认 60 */
+  ddBarCapPct?: number;
 }
 
 const NAME_MAX = 10;
@@ -55,15 +57,21 @@ const truncateName = (name: string, max = NAME_MAX): string =>
 const displayFundType = (type: string): string =>
   type.replace(/^债券型-/, '') || '-';
 
-/** 近 3 年回撤：数字 + 单元格内细条，避免横向占宽 */
-function DrawdownBar({ dd }: { dd: number | null }) {
+/** 近 3 年回撤：数字 + 单元格内细条，避免横向占宽
+ *  - dd_3y 在数据层是小数（0.18 表示 18%），显示时 ×100
+ *  - 进度条封顶值由调用方传入（债基 20、股票 60），区分不同基金的回撤量级
+ */
+const DD_BAR_CAP_BOND = 20;
+const DD_BAR_CAP_STOCK = 60;
+function DrawdownBar({ dd, capPct }: { dd: number | null; capPct: number }) {
   if (dd === null) return <span className="text-ink-soft">-</span>;
-  const pct = Math.min(Math.abs(dd) / 10, 1) * 100;
+  const pctValue = Math.abs(dd) * 100;
+  const widthPct = Math.min(pctValue / capPct, 1) * 100;
   return (
     <div className="flex flex-col items-end gap-0.5 min-w-0">
-      <span className="tnum text-xs text-down">{dd.toFixed(2)}%</span>
+      <span className="tnum text-xs text-down">{pctValue.toFixed(2)}%</span>
       <div className="w-full max-w-[3.5rem] h-1 bg-rule rounded-full overflow-hidden" aria-hidden="true">
-        <div className="h-full bg-down rounded-full" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-down rounded-full" style={{ width: `${widthPct}%` }} />
       </div>
     </div>
   );
@@ -85,6 +93,7 @@ function HoverName({ name }: { name: string }) {
 export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
   showBondColumns = true, showRiskColumns = false, onRowClick,
+  ddBarCapPct = DD_BAR_CAP_BOND,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -158,7 +167,7 @@ export function FundTable({
                 </td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.size_yi)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.age_years, 1)}</td>
-                <td className={td}><DrawdownBar dd={fund.dd_3y} /></td>
+                <td className={td}><DrawdownBar dd={fund.dd_3y} capPct={ddBarCapPct} /></td>
                 <td className={`${td} text-right`}>
                   <div className="tnum whitespace-nowrap">{fund.mgr_experience_years != null ? `${fund.mgr_experience_years.toFixed(1)}年` : '-'}</div>
                   <div className="text-[10px] text-ink-soft truncate" title={mgrTip}>

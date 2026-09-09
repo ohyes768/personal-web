@@ -119,6 +119,7 @@ function DiscoveryBondPageInner() {
               onToggleCompare={compare.toggle}
               showBondColumns
               onRowClick={setDetailFund}
+              ddBarCapPct={20}
             />
             <Pagination
               page={filters.page}
