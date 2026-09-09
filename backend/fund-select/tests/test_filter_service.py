@@ -77,11 +77,11 @@ class TestParsePeerRank:
     """雪球 peer_rank='1694/5606' → pct/total 字典；格式异常统一 None。"""
 
     def test_valid(self):
-        assert _parse_peer_rank("1694/5606") == {"pct": 30.2, "total": 5606}
+        assert _parse_peer_rank("1694/5606") == {"pct": 30.2, "total": 5606, "rank": 1694}
 
     def test_valid_leading_one(self):
         # 最强基金：1/N
-        assert _parse_peer_rank("1/5615") == {"pct": 0.0, "total": 5615}
+        assert _parse_peer_rank("1/5615") == {"pct": 0.0, "total": 5615, "rank": 1}
 
     def test_invalid_formats_return_none(self):
         for v in ("abc", "1", "", "1/0", "-1/5", "5/3", "1//2", " /5", "1/ "):
@@ -91,7 +91,7 @@ class TestParsePeerRank:
         assert _parse_peer_rank(None) is None
 
     def test_whitespace_tolerated(self):
-        assert _parse_peer_rank("  100  /  500  ") == {"pct": 20.0, "total": 500}
+        assert _parse_peer_rank("  100  /  500  ") == {"pct": 20.0, "total": 500, "rank": 100}
 
 
 class TestPagination:

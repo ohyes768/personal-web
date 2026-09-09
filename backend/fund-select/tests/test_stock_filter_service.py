@@ -171,10 +171,10 @@ def test_screen_stock_dto_has_rank_keys_with_full_data(db_session):
     for it in items:
         assert set(["rank_ytd", "rank_1y", "rank_3y", "rank_5y"]).issubset(it.keys())
     by_code = {it["code"]: it for it in items}
-    assert by_code["600001"]["rank_ytd"] == {"pct": 5.0, "total": 1000}
-    assert by_code["600001"]["rank_1y"] == {"pct": 20.0, "total": 1000}
-    assert by_code["600001"]["rank_3y"] == {"pct": 60.0, "total": 1000}
-    assert by_code["600001"]["rank_5y"] == {"pct": 90.0, "total": 1000}
+    assert by_code["600001"]["rank_ytd"] == {"pct": 5.0, "total": 1000, "rank": 50}
+    assert by_code["600001"]["rank_1y"] == {"pct": 20.0, "total": 1000, "rank": 200}
+    assert by_code["600001"]["rank_3y"] == {"pct": 60.0, "total": 1000, "rank": 600}
+    assert by_code["600001"]["rank_5y"] == {"pct": 90.0, "total": 1000, "rank": 900}
 
 
 def test_screen_stock_dto_rank_null_when_no_data(db_session):
@@ -202,7 +202,7 @@ def test_screen_stock_dto_rank_partial(db_session):
     ))
     db_session.commit()
     items = {it["code"]: it for it in _screen_stock(db_session)["items"]}
-    assert items["600001"]["rank_1y"] == {"pct": 10.0, "total": 1000}
+    assert items["600001"]["rank_1y"] == {"pct": 10.0, "total": 1000, "rank": 100}
     assert items["600001"]["rank_5y"] is None      # 异常格式
     assert items["600001"]["rank_ytd"] is None    # 完全无记录
     assert items["600001"]["rank_3y"] is None

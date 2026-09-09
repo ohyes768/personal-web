@@ -43,11 +43,12 @@ class TestLoadYaml:
             assert cfg["indices"][name]["source"] == "stock_zh_index_daily_tx"
 
     def test_cbond_uses_general_source(self):
-        """B1 修复：中债综合财富必须走日期正确的 bond_index_general_cbond
-        （旧源 bond_composite_index_cbond 同指数但日期整体 -1 天，丢中债周五收益）"""
+        """B1 修复：中债综合财富走 bond_new_composite_index_cbond
+        （akshare 1.18.39 起 bond_index_general_cbond 被移除；该源本身无 B1 错位 bug：
+         6174 行 / Sun=11 / Sat=9 调休 / 周五保留，09-09-fix-pre-existing-pytest 二次迁移）"""
         cfg = _load_benchmarks_yaml()
         assert cfg["indices"]["中债综合财富"] == {
-            "ak_symbol": "CBA00301", "source": "bond_index_general_cbond",
+            "ak_symbol": "CBA00301", "source": "bond_new_composite_index_cbond",
         }
 
     @pytest.mark.parametrize("name,symbol,source", [
@@ -241,19 +242,18 @@ class TestFetchIndexDaily:
         """B1 回归：中债源日期必须原样透传（旧源整体 -1 天 → 周五标成周四、周日混入）。
 
         mock 真实债市日历：10-11 周五 / 10-12 周六（债市调休交易日，股市休市）/ 10-14 周一。
-        断言：调用参数锁定综合指数/财富/总值；周五行保留（B1 核心损失）；无周日错位行。
+        断言：周五行保留（B1 核心损失）；无周日错位行。
+        09-09-fix-pre-existing-pytest：bond_index_general_cbond 已移除，迁移到
+        bond_new_composite_index_cbond()（无参数），无需验证参数 kwargs。
         """
         raw = pd.DataFrame({
             "date": pd.to_datetime(["2024-10-11", "2024-10-12", "2024-10-14"]),
             "value": [100.0, 101.0, 102.0],
         })
-        with patch("src.data.benchmark_fetcher.ak.bond_index_general_cbond",
-                   return_value=raw) as mock:
-            df = _fetch_index_daily("CBA00301", "bond_index_general_cbond",
+        with patch("src.data.benchmark_fetcher.ak.bond_new_composite_index_cbond",
+                   return_value=raw):
+            df = _fetch_index_daily("CBA00301", "bond_new_composite_index_cbond",
                                     date(2024, 1, 1), date(2024, 10, 14))
-        assert mock.call_args.kwargs == {
-            "index_category": "综合指数", "indicator": "财富", "period": "总值",
-        }
         assert list(df["date"].dt.strftime("%Y-%m-%d")) == ["2024-10-11", "2024-10-12", "2024-10-14"]
         assert df["date"].dt.weekday.tolist() == [4, 5, 0]   # 周五(保留!) / 周六调休 / 周一
         assert not (df["date"].dt.weekday == 6).any()        # 旧源错位特征是大量周日行

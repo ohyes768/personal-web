@@ -193,13 +193,14 @@ def _fetch_index_daily(symbol: str, source: str, start: date, end: date) -> pd.D
     if symbol in _index_cache:
         df = _index_cache[symbol]
     else:
-        if source == "bond_index_general_cbond":
+        if source == "bond_new_composite_index_cbond":
             # B1 修复（2026-09-04 实证）：旧源 bond_composite_index_cbond 同一指数但日期整体
             # -1 天（真实周一标成周日、周五标成周四，3 年分布 Sun=142/Sat=11），inner join
-            # 丢周末行 → 中债周五收益永久丢失。改用 bond_index_general_cbond(综合指数/财富/总值)：
-            # 与旧源全史 6171 行逐值 0 差值（同一指数序列），日期为真实交易日
-            # （含债市调休周六日：股市休市、银行间开市，3 年 20 天，属正常交易日非错位）。
-            raw = ak.bond_index_general_cbond(index_category="综合指数", indicator="财富", period="总值")
+            # 丢周末行 → 中债周五收益永久丢失。
+            # 09-09-fix-pre-existing-pytest 二次迁移：akshare 1.18.39 移除 bond_index_general_cbond，
+            # 改用 bond_new_composite_index_cbond()。该源无 B1 错位 bug：6174 行 / Sun=11 / Sat=9
+            # 调休 / 周五保留。无需参数（默认全序列，返回列 [date, value]）。
+            raw = ak.bond_new_composite_index_cbond()
             df = raw.rename(columns={"value": "close"})[["date", "close"]]
         elif source == "stock_zh_index_hist_csindex":  # 中证官网（930xxx/H30xxx 无新浪源，2026-09-04 实测）
             df = ak.stock_zh_index_hist_csindex(
