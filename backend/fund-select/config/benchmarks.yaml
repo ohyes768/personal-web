@@ -34,6 +34,7 @@ indices:
   中证500: {ak_symbol: "sh000905", source: "stock_zh_index_daily"}
   中证1000: {ak_symbol: "sh000852", source: "stock_zh_index_daily"}
   上证50: {ak_symbol: "sh000016", source: "stock_zh_index_daily"}
+  上证A股: {ak_symbol: "sh000002", source: "stock_zh_index_daily"}    # 新增：上证A股指数（110001 易方达平稳增长）
   中证800: {ak_symbol: "sh000906", source: "stock_zh_index_daily"}
   创业板指: {ak_symbol: "sz399006", source: "stock_zh_index_daily"}
   科创50: {ak_symbol: "sh000688", source: "stock_zh_index_daily"}
@@ -58,6 +59,8 @@ indices:
   中证传媒: {ak_symbol: "sz399971", source: "stock_zh_index_daily"}
   中证计算机: {ak_symbol: "sz399973", source: "stock_zh_index_daily"}
   中证电子: {ak_symbol: "sz399811", source: "stock_zh_index_daily"}
+  中证TMT: {ak_symbol: "sz399610", source: "stock_zh_index_daily"}     # 新增：中证 TMT 150（覆盖 001070/003853/005885）
+  中证TMT产业主题: {ak_symbol: "sz399610", source: "stock_zh_index_daily"}
   中证钢铁: {ak_symbol: "sz399813", source: "stock_zh_index_daily"}
   中证汽车: {ak_symbol: "sz399812", source: "stock_zh_index_daily"}
   中证煤炭: {ak_symbol: "sz399810", source: "stock_zh_index_daily"}
@@ -106,6 +109,7 @@ indices:
 aliases:
   中债总指数: 中债综合财富
   中债总: 中债综合财富
+  中债总财富: 中债综合财富      # 新增：公式里常用「中债总财富指数收益率」，剥后缀两次得到
   中债综合指数: 中债综合财富
   中债综合: 中债综合财富
   中债-综合全价: 中债综合财富     # 近似：全价口径 → 财富口径（债权重通常 ≤30%，误差可接受）
