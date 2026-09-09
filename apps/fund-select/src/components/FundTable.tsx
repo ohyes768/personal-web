@@ -169,11 +169,8 @@ export function FundTable({
                   <div className={`tnum whitespace-nowrap ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</div>
                   <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft">
                     <RankChip rank={fund.rank_1y} />
-                    {fund.rank_1y?.pct != null && (
-                      <span>前 {fund.rank_1y.pct.toFixed(1)}%</span>
-                    )}
                     {fund.rank_1y?.rank != null && fund.rank_1y?.total != null && (
-                      <span>· {fund.rank_1y.rank}/{fund.rank_1y.total}</span>
+                      <span>{fund.rank_1y.rank}/{fund.rank_1y.total}</span>
                     )}
                   </div>
                 </td>
@@ -181,11 +178,8 @@ export function FundTable({
                   <div className={`tnum whitespace-nowrap ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</div>
                   <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft">
                     <RankChip rank={fund.rank_3y} />
-                    {fund.rank_3y?.pct != null && (
-                      <span>前 {fund.rank_3y.pct.toFixed(1)}%</span>
-                    )}
                     {fund.rank_3y?.rank != null && fund.rank_3y?.total != null && (
-                      <span>· {fund.rank_3y.rank}/{fund.rank_3y.total}</span>
+                      <span>{fund.rank_3y.rank}/{fund.rank_3y.total}</span>
                     )}
                   </div>
                 </td>
@@ -193,11 +187,8 @@ export function FundTable({
                   <div className={`tnum whitespace-nowrap ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</div>
                   <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft">
                     <RankChip rank={fund.rank_5y} />
-                    {fund.rank_5y?.pct != null && (
-                      <span>前 {fund.rank_5y.pct.toFixed(1)}%</span>
-                    )}
                     {fund.rank_5y?.rank != null && fund.rank_5y?.total != null && (
-                      <span>· {fund.rank_5y.rank}/{fund.rank_5y.total}</span>
+                      <span>{fund.rank_5y.rank}/{fund.rank_5y.total}</span>
                     )}
                   </div>
                 </td>

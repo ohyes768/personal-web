@@ -26,11 +26,11 @@ export function RankChip({ rank }: { rank: RankPercentile | null }) {
   const tooltip = `${originalRank}/${rank.total}`;
   return (
     <span
-      className={`tnum text-[10px] px-1 py-0.5 rounded font-medium hover-tip ${rankColor(rank.pct)}`}
+      className={`tnum text-[10px] px-1 py-0.5 rounded font-medium whitespace-nowrap hover-tip ${rankColor(rank.pct)}`}
       data-tip={tooltip}
       aria-label={`同类排名 ${tooltip}`}
     >
-      前 {rank.pct}%
+      前 {rank.pct.toFixed(1)}%
     </span>
   );
 }
