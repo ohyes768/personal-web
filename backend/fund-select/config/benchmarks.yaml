@@ -15,9 +15,15 @@
 # 恒生综合 hkHSCI 与中证港股通综合（930950）腾讯也无 → 这两个名字仍走 fallback_chain。
 #
 # 新浪对部分中证指数断更（末条数据 < end-10 天时 fetcher 视为 stale 自动 fallback）：
-#   中证红利 sh000922 断于 2019-01、中证800成长 sh000907 断于 2016-06、
-#   中证800价值 sh000908 断于 2019-01 —— 这 3 个已改走腾讯源（2026-09-03 实测全量更新）；
-#   其余如再遇新浪断更指数，同样改 source 为 stock_zh_index_daily_tx。
+#   中证红利 sh000922 断于 2019-01 → 已改走腾讯源（2026-09-03 实测全量更新）；
+#   中证TMT sh000998 断于 2021-02 → 走中证官网源。
+#   其余如再遇新浪断更指数，同样改 source（腾讯源或中证官网）。
+#
+# 2026-09-09 错码修复（3 源交叉实证：新浪 spot 名称表 + 中证官网全表 index_csindex_all +
+#   国证全表；探测脚本 tmp/verify_benchmarks_0909*.py）：行业/风格段 9 条张冠李戴，逐条改正——
+#   计算机 399973 实为国防、钢铁 399813 实为国安、汽车 399812 实为养老产业、
+#   煤炭 399810 实为申万传媒、房地产 000933 实为 800医卫、800成长/价值 000907/000908
+#   实为中证700/沪深300能源（旧「断更改腾讯源」结论即建立在此错码上）、TMT 399610 实为国证TMT50。
 #
 # 2026-09-04 补录（09-04-benchmark-yaml-coverage，探测脚本留档于任务 research/：probe_index_sources_0904.py）：
 #   stock_zh_index_hist_csindex  中证官网（930xxx/H30xxx 等，新浪无源或停更，末条 T-1 新鲜）
@@ -47,31 +53,32 @@ indices:
   # ---- 风格 / 因子（4）----
   中证红利: {ak_symbol: "sh000922", source: "stock_zh_index_daily_tx"}  # 新浪断于 2019，腾讯源全量（2026-09-03 修复）
   上证红利: {ak_symbol: "sh000015", source: "stock_zh_index_daily"}
-  中证800成长: {ak_symbol: "sh000907", source: "stock_zh_index_daily_tx"}  # 新浪断于 2016，腾讯源全量
-  中证800价值: {ak_symbol: "sh000908", source: "stock_zh_index_daily_tx"}  # 新浪断于 2019，腾讯源全量
+  中证800成长: {ak_symbol: "H30355", source: "stock_zh_index_hist_csindex"}  # 09-09 修正：sh000907 实为中证700
+  中证800价值: {ak_symbol: "H30356", source: "stock_zh_index_hist_csindex"}  # 09-09 修正：sh000908 实为沪深300能源
   # ---- 行业主题（15）----
   中证白酒: {ak_symbol: "sz399997", source: "stock_zh_index_daily"}
   中证医药: {ak_symbol: "sz399933", source: "stock_zh_index_daily"}
-  中证消费: {ak_symbol: "sh000932", source: "stock_zh_index_daily"}
+  中证消费: {ak_symbol: "sh000932", source: "stock_zh_index_daily"}    # 全称「中证主要消费指数」(800消费)，狭义消费的标准对应
   中证银行: {ak_symbol: "sz399986", source: "stock_zh_index_daily"}
   中证军工: {ak_symbol: "sz399967", source: "stock_zh_index_daily"}
   中证新能源: {ak_symbol: "sz399808", source: "stock_zh_index_daily"}
   中证传媒: {ak_symbol: "sz399971", source: "stock_zh_index_daily"}
-  中证计算机: {ak_symbol: "sz399973", source: "stock_zh_index_daily"}
-  中证电子: {ak_symbol: "sz399811", source: "stock_zh_index_daily"}
-  中证TMT: {ak_symbol: "sz399610", source: "stock_zh_index_daily"}     # 新增：中证 TMT 150（覆盖 001070/003853/005885）
-  中证TMT产业主题: {ak_symbol: "sz399610", source: "stock_zh_index_daily"}
-  中证钢铁: {ak_symbol: "sz399813", source: "stock_zh_index_daily"}
-  中证汽车: {ak_symbol: "sz399812", source: "stock_zh_index_daily"}
-  中证煤炭: {ak_symbol: "sz399810", source: "stock_zh_index_daily"}
+  中证计算机: {ak_symbol: "930651", source: "stock_zh_index_hist_csindex"}  # 09-09 修正：399973 实为中证国防
+  中证电子: {ak_symbol: "930652", source: "stock_zh_index_hist_csindex"}   # 09-09 修正：399811 实为中证申万电子（CSSW电子）
+  中证TMT: {ak_symbol: "000998", source: "stock_zh_index_hist_csindex"}    # 09-09 修正：399610 实为国证 TMT50（覆盖 001070/003853/005885）
+  中证TMT产业主题: {ak_symbol: "000998", source: "stock_zh_index_hist_csindex"}  # 官方全称即「中证TMT产业主题指数」，与上条同码
+  中证钢铁: {ak_symbol: "930606", source: "stock_zh_index_hist_csindex"}   # 09-09 修正：399813 实为中证国安
+  中证汽车: {ak_symbol: "930607", source: "stock_zh_index_hist_csindex"}   # 09-09 修正：399812 实为中证养老产业
+  中证煤炭: {ak_symbol: "sz399998", source: "stock_zh_index_daily"}        # 09-09 修正：399810 实为中证申万传媒
   中证全指证券: {ak_symbol: "sz399975", source: "stock_zh_index_daily"}
   中证环保: {ak_symbol: "sh000827", source: "stock_zh_index_daily"}
-  中证房地产: {ak_symbol: "sh000933", source: "stock_zh_index_daily"}
+  中证房地产: {ak_symbol: "931775", source: "stock_zh_index_hist_csindex"}  # 09-09 修正：sh000933 实为中证医药卫生（800医卫）；本条=中证全指房地产
   # ---- 债券（2）----
   中债综合财富:
     ak_symbol: "CBA00301"
     source: "bond_new_composite_index_cbond"
-    # 中债-综合指数（财富/总值），2002-至今；公式里各类「中债总/中证全债/中证综合债」
+    # 接口实抓「中债-新综合财富(总值)指数」（akshare 源码实证 2026-09-09），基日 2002-12-31；
+    # 与「中债-综合财富」为近亲口径，作近似可接受。公式里各类「中债总/中证全债/中证综合债」
     # 名称的债指数均近似映射到此（财富=全收益口径，与基金复权净值同口径）
   上证国债: {ak_symbol: "sh000012", source: "stock_zh_index_daily"}
   # ---- 美股（2，QDII 基准）----
@@ -80,7 +87,7 @@ indices:
   # ---- 港股（2，腾讯源）----
   恒生指数: {ak_symbol: "hkHSI", source: "stock_zh_index_daily_tx"}      # 1989-至今 9324 行
   恒生科技: {ak_symbol: "hkHSTECH", source: "stock_zh_index_daily_tx"}   # 2020 发布日起全量
-  # ---- 中证官网（17，stock_zh_index_hist_csindex，2026-09-04 实测末条 T-1）----
+  # ---- 中证官网（stock_zh_index_hist_csindex，2026-09-04 实测末条 T-1）----
   # symbol 来自中证官网全表（ak.index_csindex_all）指数全称精确匹配，非猜测
   中证A50: {ak_symbol: "930050", source: "stock_zh_index_hist_csindex"}
   中证红利低波动: {ak_symbol: "H30269", source: "stock_zh_index_hist_csindex"}

@@ -36,11 +36,18 @@ class TestLoadYaml:
         assert "沪深300" in cfg["indices"]
         assert cfg["aliases"]["中债总指数"] == "中债综合财富"
 
-    def test_sina_stale_indices_use_tx(self):
-        """新浪断更的 3 个中证指数（红利/800成长/800价值）必须走腾讯源（2026-09-03 修复）"""
+    def test_stale_or_miscoded_indices_use_alt_source(self):
+        """断更/错码指数必须换可用源：中证红利新浪断更走腾讯（2026-09-03）；
+        800成长/价值旧码 sh000907/908 实为中证700/沪深300能源（09-09 错码修复，
+        三源交叉实证 tmp/verify_benchmarks_0909*.py），改正 H30355/H30356 走中证官网"""
         cfg = _load_benchmarks_yaml()
-        for name in ("中证红利", "中证800成长", "中证800价值"):
-            assert cfg["indices"][name]["source"] == "stock_zh_index_daily_tx"
+        assert cfg["indices"]["中证红利"]["source"] == "stock_zh_index_daily_tx"
+        assert cfg["indices"]["中证800成长"] == {
+            "ak_symbol": "H30355", "source": "stock_zh_index_hist_csindex",
+        }
+        assert cfg["indices"]["中证800价值"] == {
+            "ak_symbol": "H30356", "source": "stock_zh_index_hist_csindex",
+        }
 
     def test_cbond_uses_general_source(self):
         """B1 修复：中债综合财富走 bond_new_composite_index_cbond
