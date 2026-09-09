@@ -86,8 +86,15 @@ def fetch_market_size(codes: list[str], delay_s: float = DELAY_S) -> list[dict]:
         [{code, established_date, age_years, size_yi, mgr_company}, ...]
     """
     rows: list[dict] = []
-    for code in codes:
+    total = len(codes)
+    if total:
+        logger.info("fetch_market_size 开始: %d 只", total)
+    for i, code in enumerate(codes, 1):
         data = fetch_size(code, delay_s=delay_s)
         if data is not None:
             rows.append(data)
+        # 每 200 只（或最后一只）打一行进度
+        if i % 200 == 0 or i == total:
+            logger.info("fetch_market_size 进度: %d/%d (%.0f%%) 成功 %d",
+                        i, total, 100 * i / total, len(rows))
     return rows

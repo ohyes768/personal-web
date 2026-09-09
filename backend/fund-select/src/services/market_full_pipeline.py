@@ -104,19 +104,33 @@ def _load_market_universe(
 def _run_stage(db: Session, task_id: str, stage_name: str,
                total_codes: int, fn) -> dict:
     """跑单阶段，写进度到 RefreshRun。fn 接受 db 并返回 dict。"""
+    import time as _time
     sub_task_id = f"{task_id}_{stage_name}"
     run = RefreshRun(task_id=sub_task_id, status="running", total=total_codes)
     db.add(run)
     db.commit()
+    logger.info("▶ 阶段 %s 开始 (total=%d)", stage_name, total_codes)
+    _t0 = _time.monotonic()
     try:
         result = fn(db)
         run.status = "done"
         run.completed = total_codes
         run.finished_at = datetime.now(UTC)
         db.commit()
+        # 提取关键数字（inserted/updated/failed/completed/total）方便日志看
+        if isinstance(result, dict):
+            summary = {k: result[k] for k in ("total", "inserted", "updated", "completed", "failed") if k in result}
+        else:
+            summary = {}
+        elapsed = _time.monotonic() - _t0
+        logger.info(
+            "✓ 阶段 %s 完成 (%.1fs) %s",
+            stage_name, elapsed, summary,
+        )
         return {"stage": stage_name, "status": "done", "result": result}
     except Exception as e:  # noqa: BLE001
-        logger.exception("stage %s 失败", stage_name)
+        elapsed = _time.monotonic() - _t0
+        logger.exception("✗ 阶段 %s 失败 (%.1fs)", stage_name, elapsed)
         run.status = "error"
         run.errors = _json.dumps([str(e)[:200]], ensure_ascii=False)
         run.finished_at = datetime.now(UTC)

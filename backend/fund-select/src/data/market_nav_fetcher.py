@@ -24,13 +24,20 @@ def fetch_market_nav(codes: list[str], max_workers: int = MAX_WORKERS,
         return {}
 
     out: dict[str, pd.DataFrame] = {}
+    total = len(codes)
+    logger.info("fetch_market_nav 开始: %d 只 (workers=%d)", total, max_workers)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         future_to_code = {executor.submit(_safe_fetch, code, delay_s): code for code in codes}
+        done = 0
         for future in as_completed(future_to_code):
             code = future_to_code[future]
             df = future.result()
             if df is not None and not df.empty:
                 out[code] = df
+            done += 1
+            if done % 100 == 0 or done == total:
+                logger.info("fetch_market_nav 进度: %d/%d (%.0f%%) 成功 %d",
+                            done, total, 100 * done / total, len(out))
 
     logger.info("fetch_market_nav: %d/%d 只成功", len(out), len(codes))
     return out
