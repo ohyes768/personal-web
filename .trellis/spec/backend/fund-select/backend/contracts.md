@@ -102,6 +102,56 @@ cache/fees_{code}.json = {
 - 值是**字符串数字**，fetch_fees 读时转 float；缺字段=无该项
 - 联网重拉走东财 `fundf10.eastmoney.com/jjfl_{code}.html` 正则解析，31 份预研缓存优先命中
 
+## 3a. 同类排名契约（fund_achievement_rank → FundListItem.rank_*）
+
+`_parse_peer_rank(value: str | None) -> dict | None` 把数据库 `fund_achievement_rank.peer_rank`（格式 `'<rank>/<total>'`，如 `'25/204'`）解析成 DTO 字段：
+
+```python
+{"pct": round(rank / total * 100, 1), "total": total, "rank": rank}
+```
+
+**字段语义**（09-08-stock-fund-list-rank 引入 `rank` 字段，向后兼容）：
+- `pct`：当前排名 ÷ 同类总数 × 100，保留 1 位小数（**前 X.X%** 展示用）
+- `total`：同类总数（**分母**）
+- `rank`：当前排名（**分子**，新增；旧后端不返回时前端 `rank=null` 不渲染分子段）
+
+**边界行为**（验证过）：
+| 输入 | 返回 |
+|---|---|
+| `'25/204'` | `{'pct': 12.3, 'total': 204, 'rank': 25}` |
+| `'1694/5606'` | `{'pct': 30.2, 'total': 5606, 'rank': 1694}` |
+| `'invalid'` / `''` / `None` | `None` |
+| `'25'`（无斜杠） | `None` |
+| `'0/100'` | `None`（rank ≤ 0） |
+| `'200/100'` | `None`（rank > total） |
+| 任何 ValueError/TypeError | `None`（不抛异常） |
+
+**4 个排名口径**（`filter_service.RANK_PERIODS`）：
+- `(年度业绩, 今年以来)` → `rank_ytd`
+- `(阶段业绩, 近1年)` → `rank_1y`
+- `(阶段业绩, 近3年)` → `rank_3y`
+- `(阶段业绩, 近5年)` → `rank_5y`
+
+**债基 tab 永远返回 `None`**（无入库数据）；`_screen("bond"/"discovery-bond")` 路径不查 `fund_achievement_rank`，DTO 字段是 null。
+
+**DTO 字段类型**（前后端契约，`apps/fund-select/src/lib/types.ts`）：
+```ts
+export interface RankPercentile {
+  pct: number | null;
+  total: number | null;
+  rank: number | null;  // 09-08-stock-fund-list-rank 新增
+}
+```
+
+**前端消费模式**（双行列表展示）：
+```tsx
+{fund.rank_1y?.pct != null && <span>前 {fund.rank_1y.pct.toFixed(1)}%</span>}
+{fund.rank_1y?.rank != null && fund.rank_1y?.total != null && (
+  <span>· {fund.rank_1y.rank}/{fund.rank_1y.total}</span>
+)}
+```
+`rank === null` 时仅显示"前 X.X%"，分子段不渲染——向后兼容旧后端。
+
 ## 4. 前后端链路（basePath 陷阱）
 
 ```
@@ -137,6 +187,7 @@ cache/fees_{code}.json = {
 - `test_universe_isolation.py`：债基/股票 yaml 宇宙互不泄漏；`fund_type` 不是成员谓词
 - `test_performance_service.py`：回撤算法（1.0→1.2→0.9 = -25%）/收益窗口/None 语义
 - `test_api.py`：TestClient + in-memory 覆盖依赖；422/404/BOM；stats 按宇宙计数
+- `test_discovery_filter_service.py`：discovery 路径 SQL LEFT JOIN market_fund_rank + 业绩字段来源 + `_parse_peer_rank` 解析边界（25/204 / invalid / 0/100 / 200/100 全返 None）
 - `test_data_fetchers.py`：31 份费率夹具契约、债券分类关键词、yaml 宇宙
 
 **测试夹具注意**：in-memory SQLite + TestClient 必须用 `StaticPool`（单连接共享），否则 TestClient 线程看不到建表。
