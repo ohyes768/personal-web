@@ -354,3 +354,124 @@ class TestRefreshMarketFullSync:
         assert result["stage_results"]["L4_risk"]["status"] == "done"
         # L0 universe 在最前面跑过，状态应是 done（除非 L2 影响整体）
         assert result["stage_results"]["L0_universe"]["status"] == "done"
+
+    def test_codes_recomputed_after_each_stage(self, db_session, monkeypatch):
+        """分阶段重算 codes：清库场景下 size_yi 全空时仍能命中
+
+        场景：
+          - funds 表 mgr_* 已填，size_yi 全空（首次清库跑）
+          - market_fund_rank 表空
+          - 预筛参数：min_ret_3y=20 / min_size_yi=5 / min_mgr_exp=5
+          - mock L1 真实写入 market_fund_rank 表（L1 后预筛 2 能命中）
+          - mock L2 真实更新 funds.size_yi（L2 后预筛 3 能命中）
+          - 期望最终 codes 非空
+        """
+        from datetime import date as _date
+        import pandas as _pd
+        from src.db.models import MarketFundRank, Fund
+        # 4 只基金：mgr_exp + size_yi 状态各异
+        funds = [
+            ("000001", 10.0, None),   # mgr_exp 10 + 业绩后 size=30 → 命中
+            ("000002", 3.0,  None),   # mgr_exp 3 → 预筛 1 排除
+            ("000003", 10.0, None),   # mgr_exp 10 + 业绩后 size=2 → 预筛 3 排除
+            ("000004", 10.0, None),   # mgr_exp 10 + 业绩后 size=10 → 命中
+        ]
+        for code, mgr_exp, size in funds:
+            db_session.add(_mk_fund(code, "股票型", mgr_experience_years=mgr_exp, size_yi=size))
+        db_session.commit()
+
+        # mock L0 universe fetch（关键：必须 patch L0 内部 import 的版本）
+        monkeypatch.setattr(
+            "src.data.market_universe_fetcher.fetch_market_universe",
+            lambda: _pd.DataFrame([{
+                "code": "000001", "name": "X", "market_subtype": "股票型", "market_type": "stock",
+            }]),
+        )
+        # mock L1 rank fetch（只返回 mgr_exp>=5 的 3 只，避免 fake_rank 跑无关行）
+        monkeypatch.setattr(
+            "src.services.market_full_pipeline.fetch_market_rank_bulk",
+            lambda symbols=None, **kw: _pd.DataFrame([{
+                "code": "000001", "name": "X", "nav_date": _date(2026, 9, 7),
+                "nav_latest": 1.5, "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
+                "ret_6m": 6.0, "ret_1y": 12.0, "ret_2y": 25.0, "ret_3y": 40.0,
+                "ret_ytd": 8.0, "ret_all": 60.0, "ft_code": "gp",
+            }, {
+                "code": "000003", "name": "X", "nav_date": _date(2026, 9, 7),
+                "nav_latest": 1.5, "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
+                "ret_6m": 6.0, "ret_1y": 12.0, "ret_2y": 25.0, "ret_3y": 35.0,
+                "ret_ytd": 8.0, "ret_all": 60.0, "ft_code": "gp",
+            }, {
+                "code": "000004", "name": "X", "nav_date": _date(2026, 9, 7),
+                "nav_latest": 1.5, "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
+                "ret_6m": 6.0, "ret_1y": 12.0, "ret_2y": 25.0, "ret_3y": 30.0,
+                "ret_ytd": 8.0, "ret_all": 60.0, "ft_code": "gp",
+            }]),
+        )
+
+        # mock L1 refresh：真实写 MarketFundRank（让预筛 2 命中）
+        def fake_rank_refresh(db, df, task_id=None):
+            inserted = 0
+            for row in df.to_dict("records"):
+                db.add(MarketFundRank(
+                    code=row["code"],
+                    nav_date=_date(2026, 9, 7),
+                    nav_latest=1.0,
+                    ret_3y=row.get("ret_3y", 25.0),
+                    ft_code="gp",
+                ))
+                inserted += 1
+            db.commit()
+            return {"task_id": task_id, "total": len(df), "inserted": inserted, "updated": 0, "failed": 0, "errors": []}
+
+        # mock L2 refresh：真实更新 Fund.size_yi（让预筛 3 能命中）
+        def fake_size_refresh(db, rows, task_id=None):
+            updated = 0
+            for r in rows:
+                code = r["code"]
+                fake_size = {"000001": 30.0, "000003": 2.0, "000004": 10.0}.get(code)
+                if fake_size is not None:
+                    fund = db.query(Fund).filter_by(code=code).one()
+                    fund.size_yi = fake_size
+                    updated += 1
+            db.commit()
+            return {"task_id": task_id, "total": len(rows), "inserted": 0, "updated": updated, "failed": 0, "errors": []}
+
+        # 用 _mock_all_fetchers 先 mock 其他 fetcher 和 refresh
+        self._mock_all_fetchers(monkeypatch)
+        # **之后**再覆盖 fetch_market_rank_bulk + refresh_market_rank_db + refresh_market_size_db
+        # （_mock_all_fetchers 已经 mock 了这些，但我们要让 fake 真正写 DB 让后续 _load_market_universe 能看到）
+        monkeypatch.setattr(
+            "src.services.market_full_pipeline.fetch_market_rank_bulk",
+            lambda symbols=None, **kw: _pd.DataFrame([
+                {"code": "000001", "name": "X", "nav_date": _date(2026, 9, 7),
+                 "nav_latest": 1.5, "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
+                 "ret_6m": 6.0, "ret_1y": 12.0, "ret_2y": 25.0, "ret_3y": 40.0,
+                 "ret_ytd": 8.0, "ret_all": 60.0, "ft_code": "gp"},
+                {"code": "000003", "name": "X", "nav_date": _date(2026, 9, 7),
+                 "nav_latest": 1.5, "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
+                 "ret_6m": 6.0, "ret_1y": 12.0, "ret_2y": 25.0, "ret_3y": 35.0,
+                 "ret_ytd": 8.0, "ret_all": 60.0, "ft_code": "gp"},
+                {"code": "000004", "name": "X", "nav_date": _date(2026, 9, 7),
+                 "nav_latest": 1.5, "ret_1w": 0.5, "ret_1m": 1.0, "ret_3m": 3.0,
+                 "ret_6m": 6.0, "ret_1y": 12.0, "ret_2y": 25.0, "ret_3y": 30.0,
+                 "ret_ytd": 8.0, "ret_all": 60.0, "ft_code": "gp"},
+            ]),
+        )
+        monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_rank_db", fake_rank_refresh)
+        monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_size_db", fake_size_refresh)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result = refresh_market_full_sync(
+                universe_filter=["股票型"],
+                min_ret_3y=20,
+                min_size_yi=5,
+                min_mgr_exp=5,
+                preset_task_id="test-recompute",
+            )
+
+        # 最终 universe_size 应为 2（000001 + 000004 命中三段预筛）
+        assert result["universe_size"] == 2, f"分阶段重算后 universe 应为 2 只，实际 {result['universe_size']}"
+
+        # 所有阶段 done
+        for stage in ("L0_universe", "L1_rank", "L2_size", "L3_nav", "L4_risk", "L5_achievement"):
+            assert result["stage_results"][stage]["status"] == "done", f"{stage} not done"

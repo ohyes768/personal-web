@@ -1,18 +1,26 @@
 """
-市场 tab 全量数据 refresh（6 阶段流水线 + 三段预筛）
+市场 tab 全量数据 refresh（6 阶段流水线 + 分阶段重算 codes）
 
 阶段：
   L0 universe 全市场名单（ak.fund_name_em，5 秒）
   L1 rankhandler 业绩（ak.fund_open_fund_rank_em，50 秒）
-  L2 size_yi + age_years（东财 msm 接口，单只 ~0.4s，~10 分钟）
+  L2 size_yi + age_years（东财 msm 接口，单只 ~0.4s，~8 分钟）
   L3 日频净值 + dd/ret（22 分钟）
   L4 业绩比较基准 + 风险指标（44 分钟）
   L5 同类排名（fund_achievement_xq，22 分钟）
 
-三段预筛（仅接 3 个用户参数）：
-  预筛 1：mgr_experience_years（funds 表已有字段，无需 L1 刷新）
-  预筛 2：ret_3y + nav_date 常量（market_fund_rank 表字段，需 L1 刷新后）
-  预筛 3：size_yi（funds 表字段，需 L2 刷新后；首次刷新时多数 NULL 不过滤）
+分阶段重算 codes（关键：避免首次空跑）：
+  初始：仅预筛 1（mgr_exp，funds 表已有字段）
+  L1 后：+预筛 2（ret_3y + nav_date，market_fund_rank 表已填）
+  L2 后：+预筛 3（size_yi，funds 表已填）→ 最终 L3/L4/L5 用这个 codes
+
+仅接 3 个用户参数：
+  - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years）
+  - min_ret_3y：近 3 年涨跌幅 ≥ X%（预筛 2，market_fund_rank.ret_3y）
+  - min_size_yi：规模 ≥ Y 亿（预筛 3，funds.size_yi）
+
+后端常量：
+  - 净值新鲜度 ≤ MAX_NAV_STALE_DAYS = 14 天（不再接用户参数）
 """
 import json as _json
 import uuid as _uuid
@@ -145,7 +153,7 @@ def refresh_market_full_sync(
     min_mgr_exp: Optional[float] = None,
     preset_task_id: Optional[str] = None,
 ) -> dict:
-    """市场 tab 全量数据 refresh（5 阶段流水线 + 三段预筛）。
+    """市场 tab 全量数据 refresh（6 阶段流水线 + 分阶段重算 codes）。
 
     仅接 3 个用户参数：
       - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years）
@@ -154,22 +162,26 @@ def refresh_market_full_sync(
 
     后端常量：
       - 净值新鲜度 ≤ MAX_NAV_STALE_DAYS = 14 天（不再接用户参数）
+
+    分阶段重算 codes（避免首次空跑）：
+      初始 → L0/L1 → 重算 +预筛 2 → L2 → 重算 +预筛 3 → L3/L4/L5
+      这样 L0/L1/L2 完成后才应用 L1/L2 数据依赖的预筛，L3-L5 拿到真实命中。
     """
     task_id = preset_task_id or str(_uuid.uuid4())
     db = SessionLocal()
     try:
+        # 分阶段重算 codes（关键：每次都看最新数据，避免首次空跑）
+        #   初始：仅预筛 1（mgr_exp，funds 表已有字段）
+        #   L1 后：+预筛 2（ret_3y + nav_date，market_fund_rank 表已填）
+        #   L2 后：+预筛 3（size_yi，funds 表已填）→ 最终 L3/L4/L5 用这个 codes
         codes = _load_market_universe(
             db,
             universe_filter,
             min_mgr_exp=min_mgr_exp,
-            min_ret_3y=min_ret_3y,
-            max_nav_stale_days=MAX_NAV_STALE_DAYS,
-            min_size_yi=min_size_yi,
         )
         logger.info(
-            "[market_full] task=%s universe=%d (filter=%s min_ret_3y=%s min_size_yi=%s min_mgr_exp=%s max_nav_stale_days=%s)",
-            task_id, len(codes), universe_filter,
-            min_ret_3y, min_size_yi, min_mgr_exp, MAX_NAV_STALE_DAYS,
+            "[market_full] task=%s 初始 universe=%d (filter=%s min_mgr_exp=%s)",
+            task_id, len(codes), universe_filter, min_mgr_exp,
         )
 
         # 创建主 task 的 RefreshRun 记录（前端轮询用）
@@ -177,7 +189,7 @@ def refresh_market_full_sync(
         from datetime import UTC, datetime
         main_run = RefreshRun(
             task_id=task_id, status="running",
-            total=len(codes) * 6 if codes else 6,  # 6 阶段（L0_universe/L1_rank/L2_size/L3_nav/L4_risk/L5_achievement）
+            total=len(codes) * 6 if codes else 6,  # 占位，L1/L2 后会更新
             completed=0, failed=0,
             started_at=datetime.now(UTC),
         )
@@ -216,8 +228,23 @@ def refresh_market_full_sync(
         _update_main_progress(len(codes) or 1,
                               failed=stage_results["L1_rank"].get("result", {}).get("failed", 0))
 
+        # L1 后重算 codes（加预筛 2：ret_3y + nav_date）
+        # L1 写入 market_fund_rank 全市场数据，预筛 2 现在能命中
+        codes_after_l1 = _load_market_universe(
+            db,
+            universe_filter,
+            min_mgr_exp=min_mgr_exp,
+            min_ret_3y=min_ret_3y,
+            max_nav_stale_days=MAX_NAV_STALE_DAYS,
+        )
+        logger.info(
+            "[market_full] task=%s L1 后 universe=%d (min_ret_3y=%s max_nav_stale_days=%s)",
+            task_id, len(codes_after_l1), min_ret_3y, MAX_NAV_STALE_DAYS,
+        )
+        codes = codes_after_l1
+
         # L2 size_yi + age_years（东财移动端 msm 接口，单只 ~0.4s）
-        # 仅对 L1 预筛后 ~1573 只跑，避免拉全 universe 浪费
+        # 仅对 L1 预筛后剩下的 codes 跑（避免拉全 universe 浪费）
         def _stage_l2(d):
             rows = fetch_market_size(codes)
             return refresh_market_size_db(d, rows, task_id=f"{task_id}_L2")
@@ -226,6 +253,25 @@ def refresh_market_full_sync(
                                               len(codes), _stage_l2)
         _update_main_progress(len(codes),
                               failed=stage_results["L2_size"].get("result", {}).get("failed", 0))
+
+        # L2 后重算 codes（加预筛 3：size_yi >= Y 亿）
+        # L2 已把 size_yi 写入 funds 表，预筛 3 现在能命中
+        codes_after_l2 = _load_market_universe(
+            db,
+            universe_filter,
+            min_mgr_exp=min_mgr_exp,
+            min_ret_3y=min_ret_3y,
+            max_nav_stale_days=MAX_NAV_STALE_DAYS,
+            min_size_yi=min_size_yi,
+        )
+        logger.info(
+            "[market_full] task=%s L2 后 universe=%d (最终 L3/L4/L5 用这个 codes min_size_yi=%s)",
+            task_id, len(codes_after_l2), min_size_yi,
+        )
+        codes = codes_after_l2
+        # 更新主 task 总进度
+        main_run.total = len(codes) * 6 if codes else 6
+        db.commit()
 
         # L3 日频净值 + dd/ret
         def _stage_l3(d):
