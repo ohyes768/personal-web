@@ -21,6 +21,165 @@ def _df(rows: list[tuple[str, str, str, str]]) -> pd.DataFrame:
     return pd.DataFrame(rows, columns=["code", "name", "market_subtype", "market_type"])
 
 
+def _df_with_ft(rows: list[tuple[str, str, str, str, str]]) -> pd.DataFrame:
+    """构造带 fund_type 列的 DataFrame：code / name / market_subtype / market_type / fund_type。"""
+    return pd.DataFrame(rows, columns=["code", "name", "market_subtype", "market_type", "fund_type"])
+
+
+# ── 阶段 0（09-08）扩展：fund_type / mgr_* 写入 ────────────────────────────────
+
+
+class TestRefreshMarketUniverseStage0:
+    """阶段 0：refresh() 同步写入 fund_type / mgr_name / mgr_company / mgr_days /
+    mgr_experience_years（数据源：ak.fund_name_em() + ak.fund_manager_em()）。
+    """
+
+    def _mgr_by_code(
+        self,
+        rows: list[tuple[str, str, str, int]],
+    ) -> dict[str, list[dict]]:
+        """构造 mgr_by_code 字典：rows = [(code, name, company, days), ...]"""
+        result: dict[str, list[dict]] = {}
+        for code, name, company, days in rows:
+            result.setdefault(code, []).append(
+                {"name": name, "company": company, "days": days}
+            )
+        return result
+
+    def test_insert_new_writes_fund_type_and_mgr_fields(self, db_session):
+        """新增基金时 fund_type / mgr_* 全部从入参写入。"""
+        df = _df_with_ft([
+            ("000001", "华夏成长", "股票型", "stock", "股票型"),
+            ("000003", "易方达债", "债券型-中短债", "bond", "债券型-中短债"),
+        ])
+        mgr_by_code = self._mgr_by_code([
+            ("000001", "陈染", "华夏基金", 2000),
+            ("000003", "缪扬帆", "易方达基金", 3000),
+        ])
+        result = refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
+        assert result["inserted"] == 2
+
+        f1 = db_session.get(Fund, "000001")
+        assert f1.fund_type == "股票型"
+        assert f1.mgr_name == "陈染"
+        assert f1.mgr_company == "华夏基金"
+        assert f1.mgr_days == 2000
+        assert f1.mgr_experience_years == round(2000 / 365.25, 2)
+
+        f3 = db_session.get(Fund, "000003")
+        assert f3.fund_type == "债券型-中短债"
+        assert f3.mgr_name == "缪扬帆"
+        assert f3.mgr_company == "易方达基金"
+        assert f3.mgr_days == 3000
+
+    def test_update_existing_preserves_nonempty_fund_type(self, db_session):
+        """关键不变量：已有 fund_type='中长期纯债'（老 L2 雪球写入），不被阶段 0 覆盖。"""
+        db_session.add(Fund(
+            code="000001", name="老基金", fund_type="中长期纯债",
+            is_active=True, age_years=5.0,
+        ))
+        db_session.commit()
+
+        df = _df_with_ft([("000001", "改名", "债券型-长期纯债", "bond", "债券型-长期纯债")])
+        refresh_market_universe(db_session, df, mgr_by_code={})
+
+        f = db_session.get(Fund, "000001")
+        assert f.fund_type == "中长期纯债"        # 保留
+        assert f.name == "改名"                   # name 仍覆盖
+        assert f.market_subtype == "债券型-长期纯债"
+        # mgr_* 字段原为 None/空（老 L2 没填），传入 mgr_by_code={} 时保持 None
+        assert f.mgr_name is None
+        assert f.mgr_days is None
+
+    def test_update_existing_writes_fund_type_when_previously_empty(self, db_session):
+        """已有 fund_type='' 的行，阶段 0 的 fund_type 会被写入。"""
+        db_session.add(Fund(code="000001", name="新基金", fund_type="", is_active=True))
+        db_session.commit()
+
+        df = _df_with_ft([("000001", "新基金改名", "股票型", "stock", "股票型")])
+        refresh_market_universe(db_session, df, mgr_by_code={})
+
+        f = db_session.get(Fund, "000001")
+        assert f.fund_type == "股票型"
+
+    def test_multi_manager_join_and_min_days(self, db_session):
+        """多经理：name 用 `、` 拼接；days 取 min（保守估计）；company 取首位。"""
+        df = _df_with_ft([("000001", "双经理基金", "混合型-灵活", "stock", "混合型-灵活")])
+        mgr_by_code = self._mgr_by_code([
+            ("000001", "陈染", "华夏基金", 5000),    # 老将
+            ("000001", "缪扬帆", "易方达基金", 1000),  # 新人 → min 取 1000
+        ])
+        refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
+
+        f = db_session.get(Fund, "000001")
+        assert f.mgr_name == "陈染、缪扬帆"   # 按 mgr_by_code list 顺序
+        assert f.mgr_company == "华夏基金"      # 第一位
+        assert f.mgr_days == 1000              # min
+        assert f.mgr_experience_years == round(1000 / 365.25, 2)
+
+    def test_update_existing_with_mgr_writes_mgr_only_keeps_fund_type(self, db_session):
+        """已有行同时有 fund_type（不覆盖）+ mgr_by_code 提供 mgr（写入）。"""
+        db_session.add(Fund(
+            code="000001", name="老基金", fund_type="中长期纯债",
+            is_active=True, mgr_name="旧经理",
+        ))
+        db_session.commit()
+
+        df = _df_with_ft([("000001", "改名", "债券型-长期纯债", "bond", "债券型-长期纯债")])
+        mgr_by_code = self._mgr_by_code([("000001", "陈染", "华夏基金", 2000)])
+        refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
+
+        f = db_session.get(Fund, "000001")
+        assert f.fund_type == "中长期纯债"   # 不覆盖
+        assert f.mgr_name == "陈染"           # 覆盖 mgr_*
+        assert f.mgr_company == "华夏基金"
+        assert f.mgr_days == 2000
+
+    def test_no_mgr_data_leaves_mgr_fields_none(self, db_session):
+        """mgr_by_code 中没有该 code → mgr_* 写 None（不写入 DB，等同保持 None）。"""
+        df = _df_with_ft([("000001", "无经理基金", "股票型", "stock", "股票型")])
+        mgr_by_code = self._mgr_by_code([("000002", "另一经理", "他基金", 100)])  # 不含 000001
+        refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
+
+        f = db_session.get(Fund, "000001")
+        assert f.fund_type == "股票型"
+        assert f.mgr_name is None
+        assert f.mgr_company is None
+        assert f.mgr_days is None
+        assert f.mgr_experience_years is None
+
+    def test_empty_mgr_company_falls_back_to_none(self, db_session):
+        """akshare 经理公司为空字符串时，mgr_company 写 None（不写空串）。"""
+        df = _df_with_ft([("000001", "无公司基金", "股票型", "stock", "股票型")])
+        mgr_by_code = self._mgr_by_code([("000001", "陈染", "", 2000)])
+        refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
+
+        f = db_session.get(Fund, "000001")
+        assert f.mgr_name == "陈染"
+        assert f.mgr_company is None
+        assert f.mgr_days == 2000
+
+    def test_backward_compatible_signature_no_mgr_writes(self, db_session):
+        """老调用方不传 mgr_by_code → 不写 mgr_*（保持向后兼容）。"""
+        df = _df_with_ft([("000001", "测试", "股票型", "stock", "股票型")])
+        # 不传 mgr_by_code
+        refresh_market_universe(db_session, df)
+
+        f = db_session.get(Fund, "000001")
+        assert f.fund_type == "股票型"
+        assert f.mgr_name is None          # 不写
+        assert f.mgr_days is None          # 不写
+
+    def test_df_without_fund_type_column_skips_fund_type_writes(self, db_session):
+        """df 不含 fund_type 列 → 不写 fund_type 字段（兼容旧调用方）。"""
+        df = _df([("000001", "测试", "股票型", "stock")])  # 无 fund_type
+        refresh_market_universe(db_session, df, mgr_by_code={})
+
+        f = db_session.get(Fund, "000001")
+        assert f.fund_type == ""           # 默认空
+        assert f.market_subtype == "股票型"
+
+
 class TestRefreshMarketUniverse:
     def test_insert_new_codes(self, db_session):
         df = _df([

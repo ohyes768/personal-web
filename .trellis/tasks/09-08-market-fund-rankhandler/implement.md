@@ -1,23 +1,108 @@
 # Implement: market tab 全量数据接入（rankhandler + fund_basic + 日频净值 + 风险指标）
 
 > **本任务不实现定时任务**。用户明确要求：先做手动「全量刷新」按钮，定时 cron 后续再说。
-> 全量刷新 = 4 阶段流水线，~1.5 小时跑完全市场 ~4452 只股基 / ~5353 只债基。
+> 全量刷新 = **4 阶段流水线**（L2 fund_basic 整阶段已废弃），~1.5 小时跑完全市场 ~4454 只股基 / ~5353 只债基。
+>
+> **09-09 探索更新**：原 5 阶段流水线（L2 fund_basic 用雪球接口）发现雪球 schema 残缺 + 29 只 C/E 份额拿不到数据；改为「L0 universe 全量接口 + L2 size_yi 单只接口」两阶段拆开。详见阶段 0/2 描述末尾「**09-09 探索结论**」段。
 
 ## 概览
 
-按 4 个阶段交付，每阶段独立可验证：
+按 **6 阶段**交付，每阶段独立可验证：
 
-1. **阶段 1：rankhandler 业绩**（最快）— 已有初步设计，需扩展字段
-2. **阶段 2：fund_basic 经理/类型/年限**（基础字段补全）
-3. **阶段 3：日频净值 + dd_3y / ret_5y**（回撤与长周期收益）
-4. **阶段 4：业绩比较基准 + 风险指标**（sharpe / IR / α / γ）
-5. **阶段 5：前端「全量刷新」按钮**（4 阶段串联 + 进度聚合）
+1. **阶段 0：universe + 基础字段**（L0，最快）— 新增 fund_type / mgr_*，用 akshare 全量接口
+2. **阶段 1：rankhandler 业绩**（L1）— 已有，待扩展字段
+3. **阶段 2：size_yi / age_years**（L2）— 新增，单只 HTTP 接口（仅对 L1 预筛后 ~1573 只）
+4. **阶段 3：日频净值 + dd_3y / ret_5y**（L3）— 回撤与长周期收益
+5. **阶段 4：业绩比较基准 + 风险指标**（L4）— sharpe / IR / α / γ
+6. **阶段 5：同类排名**（L5）— ak.fund_individual_achievement_xq
+7. **阶段 6：前端「全量刷新」按钮**（流水线 + 进度聚合）
 
 每阶段末尾设 review gate。
 
 ---
 
-## 阶段 1：rankhandler 业绩（新增 market_fund_rank 表）
+## 阶段 0：universe + 基础字段（L0，全量接口）
+
+> **09-09 探索结论（替代原 L2 fund_basic 整阶段）**
+>
+> 原 L2 阶段用雪球 `ak.fund_individual_basic_info_xq` 单只拉，**29 只 C/E 份额拿不到**（雪球 schema 残缺：`r.json()["data"]` 缺 key）。
+>
+> 替代方案：
+> - **`fund_type`** → `ak.fund_name_em()` 全量 27805 只，5 秒
+> - **`mgr_name / mgr_company / mgr_days / mgr_experience_years`** → `ak.fund_manager_em()` 全量 36086 行（多经理拼接），30 秒
+> - **age_years / size_yi** → 推迟到 L2 size_yi 阶段（仅对 L1 预筛后 ~1573 只，**避免拉全 universe 浪费**）
+>
+> 收益：原来 L2 跑 1584 只 × 2.5s ≈ 1 小时 → 现在 L0 + L2 共 ~30 秒 + ~10 分钟（仅 1573 只）。
+
+### 0.1 `market_universe_refresh.refresh` 扩展
+
+**字段写入策略**（upsert 时不覆盖已有非空字段）：
+
+| funds 表字段 | 来源接口 | 字段 |
+|---|---|---|
+| `name` | `ak.fund_name_em()` | `基金简称` |
+| `fund_type` | 同上 | `基金类型`（如「股票型」「混合型-灵活」） |
+| `market_subtype` | 同上 | 同 `fund_type`（akshare 自身就是粗-子类拼接） |
+| `mgr_name` | `ak.fund_manager_em()` | 多经理 `、`拼接（按「现任基金代码」反查） |
+| `mgr_company` | 同上 | 第一只经理的公司 |
+| `mgr_days` | 同上 | 多经理中从业时间**最短**的那位（最资深） |
+| `mgr_experience_years` | 同上 | `mgr_days / 365.25` |
+| ~~`established_date / age_years / size_yi`~~ | ~~雪球 `fund_individual_basic_info_xq`~~ | **L0 不再写**；L2 size_yi 阶段补 |
+
+**upsert 关键**：fund_type / mgr_* 用「funds 行已存在该字段非空 → 不覆盖」策略，避免每天跑 L0 覆盖掉 yaml 名单的 fund_type（yaml 是雪球细分类，跟 akshare 不一样）。
+
+```python
+def refresh(session, df_codes, df_mgr, task_id=None):
+    # 1. 加载 funds 表当前 fund_type / mgr_* 快照（key=code）
+    existing = {f.code: f for f in session.query(Fund).filter(Fund.code.in_(codes)).all()}
+    # 2. 写 fund_type（已有非空 → 跳过）
+    for code, fund_type in df_codes.items():
+        f = existing.get(code)
+        if f is None: continue
+        if not f.fund_type:  # 空或 None 才覆盖
+            f.fund_type = fund_type
+    # 3. 写 mgr_*（已有非空 → 跳过）
+    for code, mgr_info in df_mgr.items():
+        ...
+```
+
+### 0.2 验证
+
+```bash
+# 1. 跑一次 L0（用 venv 直接调 refresh）
+cd backend/fund-select && .venv/Scripts/python.exe -c "
+from src.db.session import SessionLocal
+from src.services.market_universe_refresh import refresh
+from src.data.market_universe_fetcher import fetch_market_universe
+from src.data.manager_fetcher import fetch_manager_table
+db = SessionLocal()
+df_codes = fetch_market_universe()  # 5 秒
+df_mgr, _ = fetch_manager_table(use_cache=True)  # 30 秒（缓存命中）
+print('refresh result:', refresh(db, df_codes, df_mgr))
+db.close()
+"
+
+# 2. 检查覆盖率
+.venv/Scripts/python.exe -c "
+from src.db.session import SessionLocal
+from src.db.models import Fund
+from src.data.market_subtype_map import DISCOVERY_STOCK_SUBTYPES
+from sqlalchemy import select, func
+db = SessionLocal()
+codes = set(db.execute(select(Fund.code).where(Fund.is_active == True, Fund.market_subtype.in_(DISCOVERY_STOCK_SUBTYPES))).scalars().all())
+print(f'stock universe: {len(codes)}')
+for label, col in [('fund_type', Fund.fund_type), ('mgr_name', Fund.mgr_name), ('mgr_company', Fund.mgr_company), ('mgr_days', Fund.mgr_days), ('mgr_experience_years', Fund.mgr_experience_years)]:
+    n = db.execute(select(func.count()).select_from(Fund).where(Fund.code.in_(codes), col.isnot(None), col != '')).scalar()
+    print(f'  {label}: {n}/{len(codes)} ({n/len(codes)*100:.1f}%)')
+db.close()
+"
+```
+
+**Review Gate 0**：stock universe 内 fund_type / mgr_* 覆盖率 ≥ 99%（之前是 36%）
+
+---
+
+## 阶段 1：rankhandler 业绩（L1，新增 market_fund_rank 表）
 
 ### 1.1 `db/models.py` 新增 `MarketFundRank`
 
@@ -206,96 +291,137 @@ python -m pytest tests/test_market_rank_fetcher.py tests/test_market_rank_refres
 
 ---
 
-## 阶段 2：fund_basic 给全市场补经理/类型/年限
+## 阶段 2：size_yi + age_years（L2，单只接口，仅对 L1 预筛后 ~1573 只）
 
-### 2.1 `data/market_basic_fetcher.py` 新增
+> **09-09 探索结论（替代原 2.1 / 2.2 fund_basic 整阶段）**
+>
+> 原 2.1/2.2 用雪球 `ak.fund_individual_basic_info_xq` 逐只拉，4452 只 × 2s = 30 分钟，但**雪球接口已挂**（29 只 C/E 份额全军覆没）。
+>
+> 替代方案：用东财移动端 msm 接口 `FundMNBasicInformation`，单只 ~0.4s + 0.4s sleep。**只在 L1 预筛后 ~1573 只上跑**（10 分钟），避免拉全 universe。
+>
+> **关键边界**：L2 只写 `size_yi / age_years / established_date`，**不重写** L0 阶段写的 `fund_type / mgr_*`（那些字段已经在 L0 用 akshare 全量拉过了）。
+
+### 2.1 `data/market_size_fetcher.py` 新增
 
 ```python
 """
-全市场 fund_basic 并发 fetcher（雪球 ak.fund_individual_basic_info_xq）
+size_yi + age_years 单只 fetcher（东财移动端 msm 接口）
 
-每只 ~2s，5 worker 并发：4452 只 / 5 × 2s ≈ 30 分钟
-复用现有 fetch_basic()，仅改 batch + 并发包装
+单只 ~0.4s + 0.4s sleep。1573 只 ≈ 10 分钟。
+
+URL: https://fundmobapi.eastmoney.com/FundMNewApi/FundMNBasicInformation?FCODE={code}
+字段映射：
+  ESTABDATE → established_date (date)
+  ENDNAV    → size_yi（万元，÷1e4 = 亿元）
+  JJGS      → mgr_company（覆盖 L0 阶段的第一只经理公司，可能更准）
 """
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+import requests
+from datetime import date as _date
 
-import pandas as pd
-
-from src.data.fund_basic_fetcher import fetch_basic
 from src.utils.logger import setup_logger
 
-logger = setup_logger("fund-select.market_basic")
-MAX_WORKERS = 5
-DELAY_S = 0.2  # 防雪球限流
+logger = setup_logger("fund-select.market_size")
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/80.0.3987.149 Safari/537.36"
+)
+REFERER = "https://fund.eastmoney.com/"
+DELAY_S = 0.4   # 防东财移动端限频
+URL = (
+    "https://fundmobapi.eastmoney.com/FundMNewApi/FundMNBasicInformation"
+    "?FCODE={code}&deviceid=W&plat=Wap&product=EFund&version=2.0.0"
+)
 
 
-def fetch_market_basic(codes: list[str], max_workers: int = MAX_WORKERS) -> pd.DataFrame:
-    """并发拉全市场 fund_basic。返回 [code, fund_type, age_years, size_yi, mgr_name, ...]"""
-    rows: list[dict] = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        future_to_code = {executor.submit(_safe_fetch, code): code for code in codes}
-        for future in as_completed(future_to_code):
-            code = future_to_code[future]
-            data = future.result()
-            if data:
-                rows.append({"code": code, **data})
-    return pd.DataFrame(rows)
-
-
-def _safe_fetch(code: str) -> dict | None:
-    """单只 fetch_basic + 字段标准化。失败返回 None。"""
+def fetch_size(code: str) -> dict | None:
+    """单只基金 size_yi / age_years。失败返回 None。"""
     time.sleep(DELAY_S)
     try:
-        info = fetch_basic(code)
-        # 提取字段（fund_basic_fetcher 返回 item -> value dict）
-        out = {}
-        out["fund_type"] = info.get("基金类型", "")
-        out["established_date"] = info.get("成立时间", "")
-        out["size_yi_raw"] = info.get("最新规模", "")
-        out["mgr_name"] = info.get("基金经理", "")
-        # mgr_days / mgr_experience_years 需要经理表 cross-reference → 复用现有 mgr_fetcher
-        # 但单只 fund_basic 不返回 mgr_days；需要从 manager_em.json 查（缓存已有）
-        return out
-    except Exception as e:
-        logger.warning("fetch_basic %s 失败: %s", code, str(e)[:120])
+        r = requests.get(URL.format(code=code), timeout=15,
+                          headers={"User-Agent": USER_AGENT, "Referer": REFERER})
+        r.raise_for_status()
+        d = r.json().get("Datas") or {}
+        if not d:
+            return None
+
+        ed_str = d.get("ESTABDATE")
+        established_date = None
+        age_years = None
+        if ed_str and len(ed_str) >= 10:
+            established_date = _date.fromisoformat(ed_str[:10])
+            age_years = round((_date.today() - established_date).days / 365.25, 2)
+
+        endnav = d.get("ENDNAV")
+        size_yi = round(float(endnav) / 1e8, 4) if endnav is not None else None  # 万元/1e4=亿
+
+        return {
+            "code": code,
+            "established_date": established_date,
+            "age_years": age_years,
+            "size_yi": size_yi,
+            "mgr_company": d.get("JJGS"),  # 覆盖 L0 的 mgr_company（更准）
+        }
+    except Exception as e:  # noqa: BLE001
+        logger.warning("FundMNBasicInformation %s 失败: %s", code, str(e)[:120])
         return None
+
+
+def fetch_market_size(codes: list[str], delay_s: float = DELAY_S) -> list[dict]:
+    """逐只拉 size_yi + age_years。返回 [{code, established_date, age_years, size_yi, mgr_company}]。"""
+    rows: list[dict] = []
+    for code in codes:
+        data = fetch_size(code)
+        if data:
+            rows.append(data)
+    return rows
 ```
 
-### 2.2 `data/market_basic_refresh.py` 新增
+### 2.2 `data/market_size_refresh.py` 新增
 
-upsert funds 表的 `fund_type / established_date / age_years / size_yi / mgr_name / mgr_company / mgr_days / mgr_experience_years` 字段。
+upsert funds 表的 `size_yi / established_date / age_years / mgr_company` 字段。
 
-**不重置** `market_subtype / market_type / name`（这两列由 market_universe_refresh 写）。
+**只覆盖**：L1 预筛后 ~1573 只 + 当前 size_yi / age_years / established_date 为空的 funds。
 
-**复用** `manager_fetcher.fetch_manager_table()` 的缓存（已有 2.7 万条经理表），cross-reference 经理名 → 从业天数。
+**不重写**：`fund_type / mgr_name / mgr_days / mgr_experience_years`（L0 阶段写过；这里只补 3 个 size/age 字段 + mgr_company 兜底更新）。
 
 ```python
-def refresh(session: Session, df: pd.DataFrame, task_id=None) -> dict:
-    """upsert funds 表基础字段（fund_type / age_years / size_yi / mgr_*）"""
-    # 加载经理表
-    mgr_worktime, mgr_company = fetch_manager_table(use_cache=True)
+def refresh(session: Session, rows: list[dict], task_id=None) -> dict:
+    """upsert funds.size_yi / age_years / established_date / mgr_company
 
-    for batch in chunks(df, 500):
-        codes = batch['code'].tolist()
-        existing = get existing funds
-        for row in batch:
-            if row.code in existing:
-                update funds set fund_type=..., age_years=..., mgr_name=...,
-                                mgr_company=..., mgr_days=..., mgr_experience_years=...,
-                                size_yi=..., updated_at=now
-                            where code=...
-            else:
-                insert new fund row（fund_type / mgr_*）
+    rows: [{code, established_date, age_years, size_yi, mgr_company}]
+    """
+    inserted = updated = failed = 0
+    for r in rows:
+        f = session.get(Fund, r["code"])
+        if f is None:
+            failed += 1
+            continue
+        if f.established_date is None and r.get("established_date"):
+            f.established_date = r["established_date"]
+        if f.age_years is None and r.get("age_years") is not None:
+            f.age_years = r["age_years"]
+        if f.size_yi is None and r.get("size_yi") is not None:
+            f.size_yi = r["size_yi"]
+        # mgr_company 始终用 msm 接口的（更准）：覆盖 L0 阶段的值
+        if r.get("mgr_company"):
+            f.mgr_company = r["mgr_company"]
+        f.updated_at = datetime.now(UTC)
+        updated += 1
+        if updated % 100 == 0:
+            session.commit()
+    session.commit()
+    return {"updated": updated, "failed": failed}
 ```
 
 ### 2.3 验证
 
 ```bash
-python -m pytest tests/test_market_basic_refresh.py -v
+python -m pytest tests/test_market_size_fetcher.py -v
+python -m pytest tests/test_market_size_refresh.py -v
 ```
 
-**Review Gate 2**：跑一次 fund_basic 全市场补全，mgr_* / fund_type / age_years 填满
+**Review Gate 2**：L1 预筛后 ~1573 只里 size_yi / age_years 覆盖率 ≥ 99%（之前是 36%）
 
 ---
 
@@ -455,9 +581,31 @@ python -m pytest tests/test_market_risk_refresh.py -v
 
 ---
 
-## 阶段 5：前端「全量刷新」按钮 + 4 阶段串联
+## 阶段 5：同类排名（L5，ak.fund_individual_achievement_xq）
 
-### 5.1 `scheduler/tasks.py` 加 `refresh_market_full_sync`
+### 5.1 `data/market_achievement_fetcher.py`（已有）
+
+5 worker 并发拉 `fetch_achievement(code)`（ak.fund_individual_achievement_xq），单只 ~1.5s。
+已有：4454 × 1.5s / 5 ≈ 22 分钟。
+
+### 5.2 `services/market_achievement_refresh.py`（已有）
+
+upsert fund_achievement_rank 表（先 delete 该 code 旧行，再 bulk insert）。
+已有：每 500 行 commit。
+
+### 5.3 验证
+
+```bash
+python -m pytest tests/test_market_achievement_fetcher.py tests/test_market_achievement_refresh.py -v
+```
+
+**Review Gate 5**：fund_achievement_rank 表 L1 预筛后 universe 覆盖率 ≥ 80%
+
+---
+
+## 阶段 6：前端「全量刷新」按钮 + 6 阶段串联
+
+### 6.1 `scheduler/tasks.py` 加 `refresh_market_full_sync`
 
 ```python
 def refresh_market_full_sync(
@@ -557,7 +705,7 @@ def _run_stage(db, task_id, stage_name, total_codes, fn) -> dict:
         return {"error": str(e)[:200]}
 ```
 
-### 5.2 `api/routes.py` 加 `/discovery-{bond,stock}/full/refresh` 端点
+### 6.2 `api/routes.py` 加 `/discovery-{bond,stock}/full/refresh` 端点
 
 ```python
 @router_discovery_bond.get("/full/refresh", response_model=RefreshResponse)
@@ -587,7 +735,7 @@ async def discovery_bond_full_refresh(
 
 discovery-stock 同理。
 
-### 5.3 前端「全量刷新」按钮 + 预筛选表单 + 筛选面板拆分
+### 6.3 前端「全量刷新」按钮 + 预筛选表单 + 筛选面板拆分
 
 **核心 UX**：
 - **「全量刷新」按钮旁的预筛选表单**：年限 / 规模 / 经理 / 净值天数（基础维度）
@@ -711,7 +859,7 @@ function DimensionControl({ dim, value, onChange, disabled = false }) {
 }
 ```
 
-### 5.4 验证
+### 6.4 验证
 
 ```bash
 # 端到端
@@ -740,11 +888,13 @@ db.close()
 
 | Gate | 检查项 | 命令 |
 |---|---|---|
+| 0 | universe + fund_type / mgr_* 全市场 | 跑 L0 + 查覆盖率 ≥ 99% |
 | 1 | rankhandler fetcher + refresh | `pytest tests/test_market_rank_*` + 实测拉取 |
-| 2 | fund_basic 并发 + refresh | `pytest tests/test_market_basic_*` + mgr_* 填满 |
+| 2 | size_yi / age_years 单只接口 | `pytest tests/test_market_size_*` + L1 预筛后 ~1573 只 size_yi 覆盖率 ≥ 99% |
 | 3 | 日频净值 + dd/ret 计算 | `pytest tests/test_market_nav_*` + dd_3y/ret_5y 填满 |
 | 4 | 业绩基准 + 风险指标 | `pytest tests/test_market_risk_*` + sharpe/IR 填满 |
-| 5 | 前端 + 端到端 | 综合测试 + 浏览器手工 |
+| 5 | 同类排名 | `pytest tests/test_market_achievement_*` + achievement_rank 填满 |
+| 6 | 前端 + 端到端 | 综合测试 + 浏览器手工 |
 
 ## ⚠️ 不在范围内（明确排除）
 

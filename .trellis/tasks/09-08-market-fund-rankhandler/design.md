@@ -19,7 +19,7 @@
 ### 不在范围内（保持原样）
 
 - 老 yaml refresh 路径（funds.fund_type + fund_performance/fees/holdings/risk_metrics/benchmark/achievement_rank）
-- `funds` 表的 size_yi / name / market_subtype / age_years / mgr_*（fund_basic 写入的数据）
+- `funds` 表的 size_yi / name / market_subtype / age_years / mgr_*（L0 + L2 阶段写入的数据）
 - `_screen("bond"/"stock")` 老路径（仍走 yaml 名单 + LEFT JOIN FundPerformance）
 - 现有 `discovery-*` 接口 URL（只是 SQL 加了一个 LEFT JOIN，DTO 字段不变）
 
@@ -28,6 +28,21 @@
 - 老接口 `GET /api/funds/discovery-{bond,stock}/screen` 返回结构兼容：`items[].ret_1y/3y/...` 字段存在但来源从 FundPerformance 切到 MarketFundRank
 - 老 60 只 yaml 名单基金同时有 FundPerformance（详细：含 dd_3y / sharpe / ir / alpha）**和** MarketFundRank（最新业绩）—— DTO 优先 MarketFundRank，但 fund_performance 数据不丢
 - 老 stock tab（funds_stock.yaml）SQL 不变，性能不受影响
+
+### 09-09 探索更新
+
+**原计划 L2 fund_basic 阶段被拆分为两部分**：
+
+| 字段 | 原计划 | 新方案 |
+|---|---|---|
+| `fund_type` | L2 雪球单只拉 | **L0 用 `ak.fund_name_em()` 全量 5 秒** |
+| `mgr_name / mgr_company / mgr_days / mgr_experience_years` | L2 雪球单只拉 | **L0 用 `ak.fund_manager_em()` 全量 30 秒** |
+| `established_date / age_years / size_yi` | L2 雪球单只拉 | **L2 用东财移动端 `FundMNBasicInformation` 逐只，仅对 L1 预筛后 ~1573 只，10 分钟** |
+
+理由：
+- 雪球 `ak.fund_individual_basic_info_xq` 接口已 schema 残缺（`r.json()["data"]` 缺 key），29 只 C/E 份额拿不到
+- 经理和基金分类本来就有全量接口（akshare 一把抓），没必要逐只拉
+- size_yi / age_years 是低频字段，且逐只慢（0.4s/只），只对筛选后的小 universe 跑
 
 ## 2. 数据库 Schema
 
@@ -112,8 +127,8 @@ URL / query / response 结构**不变**：
 
 ### D1 数据源彻底分开
 - yaml 名单：仍走 fund_individual_basic_info_xq 逐只 → 完整字段（含 fund_type 细分类 + dd_3y + sharpe + ir + alpha + holdings + fees + benchmark + achievement_rank）
-- market 名单：走 rankhandler 批量 → 仅业绩（ret_1y/3y/...）+ 规模 + 净值日期
-- **两套实现不混用**：market 路径完全不调 fund_basic / fetch_nav / fetch_fees / fetch_holdings / fetch_achievement
+- market 名单：L0 全量 akshare + L1 rankhandler 批量 + L2 东财 msm 单只 → fund_type / mgr_* / 业绩 + 规模/成立日期
+- **两套实现不混用**：market 路径完全不调老 fund_basic fetcher / fetch_nav / fetch_fees / fetch_holdings / fetch_achievement
 
 ### D2 rankhandler ft 映射
 

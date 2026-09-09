@@ -1,10 +1,11 @@
 """
-market_full_pipeline 4 阶段 pipeline 单测
+market_full_pipeline 三段预筛 pipeline 单测
 
 验证：
-  _load_market_universe SQL 预过滤
-  4 阶段依次执行
-  单阶段失败不阻塞后续阶段
+  _load_market_universe 三段 SQL 预过滤（mgr_exp / ret_3y / size_yi）
+  MAX_NAV_STALE_DAYS 常量 = 14（端点不暴露 max_nav_stale_days 参数）
+  5 阶段流水线（新增 L5 achievement）
+  refresh_market_full_sync 新签名（3 用户参数 + 后端常量）
 """
 from datetime import date
 from unittest.mock import patch, MagicMock
@@ -13,6 +14,7 @@ import pytest
 
 from src.db.models import Fund, MarketFundRank
 from src.services.market_full_pipeline import (
+    MAX_NAV_STALE_DAYS,
     _load_market_universe,
     refresh_market_full_sync,
 )
@@ -99,6 +101,92 @@ class TestLoadMarketUniverse:
         codes = _load_market_universe(db_session)
         assert codes == ["000001"]
 
+    # ── 三段预筛新增测试 ─────────────────────────────────────────
+
+    def test_stage1_filter_by_mgr_experience_years(self, db_session):
+        """预筛 1：min_mgr_exp=10 排除 mgr_experience_years < 10 的基金"""
+        db_session.add_all([
+            _mk_fund("000001", "股票型", mgr_experience_years=15.0),
+            _mk_fund("000002", "股票型", mgr_experience_years=8.0),
+            _mk_fund("000003", "股票型", mgr_experience_years=None),  # NULL 排除
+        ])
+        db_session.commit()
+
+        codes = _load_market_universe(db_session, min_mgr_exp=10)
+        assert codes == ["000001"]
+
+    def test_stage3_filter_by_size_yi(self, db_session):
+        """预筛 3：min_size_yi=20 排除 size_yi < 20 的基金"""
+        db_session.add_all([
+            _mk_fund("000001", "股票型", size_yi=50.0),
+            _mk_fund("000002", "股票型", size_yi=15.0),
+            _mk_fund("000003", "股票型", size_yi=None),  # NULL 排除
+        ])
+        db_session.commit()
+
+        codes = _load_market_universe(db_session, min_size_yi=20)
+        assert codes == ["000001"]
+
+    def test_combined_three_stage_filters(self, db_session):
+        """三段预筛全部生效：mgr_exp + ret_3y + size_yi"""
+        from src.db.models import MarketFundRank
+        from datetime import date as _date
+        # 000001: 三段都过
+        # 000002: mgr_exp < 5  → 预筛 1 排除
+        # 000003: ret_3y < 20 → 预筛 2 排除
+        # 000004: size_yi < 10 → 预筛 3 排除
+        db_session.add_all([
+            _mk_fund("000001", "股票型", mgr_experience_years=10.0, size_yi=30.0),
+            _mk_fund("000002", "股票型", mgr_experience_years=3.0, size_yi=30.0),
+            _mk_fund("000003", "股票型", mgr_experience_years=10.0, size_yi=30.0),
+            _mk_fund("000004", "股票型", mgr_experience_years=10.0, size_yi=5.0),
+        ])
+        db_session.add_all([
+            MarketFundRank(code="000001", nav_date=_date(2026, 9, 7),
+                           nav_latest=1.0, ret_3y=25.0, ft_code="股票型"),
+            MarketFundRank(code="000002", nav_date=_date(2026, 9, 7),
+                           nav_latest=1.0, ret_3y=25.0, ft_code="股票型"),
+            MarketFundRank(code="000003", nav_date=_date(2026, 9, 7),
+                           nav_latest=1.0, ret_3y=15.0, ft_code="股票型"),
+            MarketFundRank(code="000004", nav_date=_date(2026, 9, 7),
+                           nav_latest=1.0, ret_3y=25.0, ft_code="股票型"),
+        ])
+        db_session.commit()
+
+        codes = _load_market_universe(
+            db_session,
+            min_mgr_exp=5, min_ret_3y=20, min_size_yi=10,
+            max_nav_stale_days=MAX_NAV_STALE_DAYS,
+        )
+        assert codes == ["000001"]
+
+    def test_max_nav_stale_days_constant_is_14(self):
+        """常量 = 14（A 股工作日 5/周 + 节假日 buffer）"""
+        assert MAX_NAV_STALE_DAYS == 14
+
+
+class TestRefreshMarketFullSyncSignature:
+
+    def test_accepts_three_user_params_plus_task_id(self):
+        """新签名：universe_filter + 3 用户参数 + preset_task_id"""
+        import inspect
+        sig = inspect.signature(refresh_market_full_sync)
+        params = list(sig.parameters.keys())
+        assert params == [
+            "universe_filter",
+            "min_ret_3y",
+            "min_size_yi",
+            "min_mgr_exp",
+            "preset_task_id",
+        ]
+
+    def test_no_longer_accepts_min_ret_1y_or_max_nav_stale_days(self):
+        """旧参数被移除：min_ret_1y / max_nav_stale_days"""
+        import inspect
+        sig = inspect.signature(refresh_market_full_sync)
+        assert "min_ret_1y" not in sig.parameters
+        assert "max_nav_stale_days" not in sig.parameters
+
 
 class TestRefreshMarketFullSync:
     def _mock_all_fetchers(self, monkeypatch):
@@ -127,13 +215,12 @@ class TestRefreshMarketFullSync:
             }]),
         )
         monkeypatch.setattr(
-            "src.services.market_full_pipeline.fetch_market_basic",
-            lambda codes, **kw: pd.DataFrame([{
-                "code": c, "name": f"X{c}", "fund_type": "股票型",
-                "established_date": date(2020, 1, 1), "age_years": 6.0,
-                "size_yi": 25.0, "mgr_name": "经理", "mgr_company": "公司",
-                "mgr_days": 365 * 3, "mgr_experience_years": 3.0,
-            } for c in codes]),
+            "src.services.market_full_pipeline.fetch_market_size",
+            lambda codes, **kw: [
+                {"code": c, "established_date": date(2020, 1, 1),
+                 "age_years": 6.0, "size_yi": 25.0, "mgr_company": "公司"}
+                for c in codes
+            ],
         )
         monkeypatch.setattr(
             "src.services.market_full_pipeline.fetch_market_nav",
@@ -150,9 +237,9 @@ class TestRefreshMarketFullSync:
                                               "inserted": len(df), "updated": 0, "failed": 0, "errors": []},
         )
         monkeypatch.setattr(
-            "src.services.market_full_pipeline.refresh_market_basic_db",
-            lambda db, df, task_id=None: {"task_id": task_id, "total": len(df),
-                                              "inserted": 0, "updated": len(df), "failed": 0, "errors": []},
+            "src.services.market_full_pipeline.refresh_market_size_db",
+            lambda db, rows, task_id=None: {"task_id": task_id, "total": len(rows),
+                                                 "inserted": 0, "updated": len(rows), "failed": 0, "errors": []},
         )
         monkeypatch.setattr(
             "src.services.market_full_pipeline.refresh_market_nav_db",
@@ -202,16 +289,16 @@ class TestRefreshMarketFullSync:
         # 在 mock refresh_*_db 内部记录调用顺序
         import src.services.market_full_pipeline as mfp
         original_rank = mfp.refresh_market_rank_db
-        original_basic = mfp.refresh_market_basic_db
+        original_size = mfp.refresh_market_size_db
         original_nav = mfp.refresh_market_nav_db
         original_risk = mfp.refresh_market_risk_db
 
         def rank_with_log(db, df, task_id=None):
             call_log.append("L1_refresh")
             return original_rank(db, df, task_id)
-        def basic_with_log(db, df, task_id=None):
+        def size_with_log(db, rows, task_id=None):
             call_log.append("L2_refresh")
-            return original_basic(db, df, task_id)
+            return original_size(db, rows, task_id)
         def nav_with_log(db, nav_data, task_id=None):
             call_log.append("L3_refresh")
             return original_nav(db, nav_data, task_id)
@@ -220,7 +307,7 @@ class TestRefreshMarketFullSync:
             return original_risk(db, codes, task_id)
 
         monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_rank_db", rank_with_log)
-        monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_basic_db", basic_with_log)
+        monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_size_db", size_with_log)
         monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_nav_db", nav_with_log)
         monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_risk_db", risk_with_log)
 
@@ -234,11 +321,11 @@ class TestRefreshMarketFullSync:
         assert result["task_id"] == "test-pipeline"
         assert result["universe_size"] == 2
 
-        # 4 阶段都 done（实际 5 阶段：L0 universe + L1 rank + L2 basic + L3 nav + L4 risk）
-        for stage in ("L0_universe", "L1_rank", "L2_basic", "L3_nav", "L4_risk"):
+        # 6 阶段都 done：L0_universe / L1_rank / L2_size / L3_nav / L4_risk / L5_achievement
+        for stage in ("L0_universe", "L1_rank", "L2_size", "L3_nav", "L4_risk", "L5_achievement"):
             assert result["stage_results"][stage]["status"] == "done", f"{stage} not done"
 
-        # 顺序：L0 → L1 → L2 → L3 → L4
+        # 顺序：L0 → L1 → L2 → L3 → L4（call_log 只记 refresh 阶段，不含 L0 fetch_universe 和 L5 achievement；后者 mock 返回空 dict）
         assert call_log == ["L1_refresh", "L2_refresh", "L3_refresh", "L4_refresh"]
 
     def test_single_stage_failure_does_not_block_others(self, db_session, monkeypatch):
@@ -249,12 +336,12 @@ class TestRefreshMarketFullSync:
         self._mock_all_fetchers(monkeypatch)
         # L2 故意失败
         monkeypatch.setattr(
-            "src.services.market_full_pipeline.refresh_market_basic_db",
-            lambda db, df, task_id=None: (_ for _ in ()).throw(RuntimeError("L2 boom")),
+            "src.services.market_full_pipeline.refresh_market_size_db",
+            lambda db, rows, task_id=None: (_ for _ in ()).throw(RuntimeError("L2 boom")),
         )
         # L2 的 fetcher 也失败
         monkeypatch.setattr(
-            "src.services.market_full_pipeline.fetch_market_basic",
+            "src.services.market_full_pipeline.fetch_market_size",
             lambda codes, **kw: (_ for _ in ()).throw(RuntimeError("L2 boom")),
         )
 
@@ -262,7 +349,7 @@ class TestRefreshMarketFullSync:
             result = refresh_market_full_sync(universe_filter=["股票型"], preset_task_id="test-fail")
 
         assert result["stage_results"]["L1_rank"]["status"] == "done"
-        assert result["stage_results"]["L2_basic"]["status"] == "error"
+        assert result["stage_results"]["L2_size"]["status"] == "error"
         assert result["stage_results"]["L3_nav"]["status"] == "done"
         assert result["stage_results"]["L4_risk"]["status"] == "done"
         # L0 universe 在最前面跑过，状态应是 done（除非 L2 影响整体）

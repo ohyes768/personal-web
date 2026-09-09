@@ -45,10 +45,12 @@ URL: http://fund.eastmoney.com/data/rankhandler.aspx
 ## 数据齐全性
 
 **最终展示要求**：股基·市场 4452 只 + 债基·市场 5353 只，**每个基金**的字段：
-- ✅ 基础：code / name / market_subtype / size_yi / age_years / mgr_name / mgr_company / mgr_experience_years（来自 funds 表，由 ak.fund_name_em + refresh 写入）
-- ✅ 业绩：nav_latest / nav_date / ret_1w / ret_1m / ret_3m / ret_6m / ret_1y / ret_2y / ret_3y / ret_ytd / ret_all（来自 market_fund_rank，本任务新增）
+- ✅ 基础：code / name / market_subtype / size_yi / age_years / mgr_name / mgr_company / mgr_experience_years（来自 funds 表，由 L0 universe + L2 size_yi 写入）
+- ✅ 业绩：nav_latest / nav_date / ret_1w / ret_1m / ret_3m / ret_6m / ret_1y / ret_2y / ret_3y / ret_ytd / ret_all（来自 market_fund_rank，L1 写入）
 
 **业绩字段对全 universe 覆盖**：每日 06:30 跑 rankhandler 分页，每 ft 拉 N 页（如 N=20，每页 50 只 = 每 ft 1000 只），4 ft = 4000 只。
+
+**09-09 探索更新**：原 L2 fund_basic 阶段（雪球 `fund_individual_basic_info_xq` 逐只拉 4452 只）发现雪球 schema 残缺，**29 只 C/E 份额全军覆没**。改为 L0 用 akshare 全量接口（fund_name_em + fund_manager_em，35 秒）+ L2 用东财移动端 msm 接口（仅对 L1 预筛后 ~1573 只）。详情见 implement.md「阶段 0 / 阶段 2」。
 
 ### 字段对齐
 
@@ -73,9 +75,10 @@ MarketFundRank 字段映射：
 
 `_screen("discovery-*")` 的 DTO 字段名：
 - `ret_1y`, `ret_3y` → 来自 `MarketFundRank.ret_1y / ret_3y`
-- `size_yi` → 来自 `funds.size_yi`（fund_basic 写入的规模；如果 user 希望用 rankhandler 的规模，可覆盖 funds.size_yi）
+- `size_yi` → 来自 `funds.size_yi`（**L2 阶段 FundMNBasicInformation 写入**；只有 ~1573 只 L1 预筛后基金有，老 yaml 名单基金可能没有）
+- `fund_type` → 来自 `funds.fund_type`（**L0 阶段 ak.fund_name_em 写入**；已有数据）
 
-**决策**：funds.size_yi 保持 fund_basic 写入（已有数据）；不覆盖。rankhandler 拉来的规模仅在 UI 缺数据时使用（实际 fund_basic 都有 size_yi，rankhandler 不会比它新）。
+**决策**：funds.size_yi / fund_type 都不被 rankhandler 覆盖（保持入库原值）；rankhandler 拉来的规模仅在 UI 缺数据时使用。
 
 ## Requirements
 
@@ -200,7 +203,8 @@ export const discoveryBondApi = {
 - ❌ 历史业绩快照（rankhandler 只返回当前累计涨幅）
 - ❌ 单只净值历史曲线（market tab 不展示）
 - ❌ 持仓 / 费率 / 风险指标（market tab 不展示）
-- ❌ market_fund_rank 表覆盖 funds.size_yi（保留 fund_basic 写入的规模）
+- ❌ market_fund_rank 表覆盖 funds.size_yi（保留 L2 FundMNBasicInformation 写入的规模）
+- ❌ 用雪球 `ak.fund_individual_basic_info_xq` 逐只拉 fund_basic（接口 schema 残缺，29 只 C/E 份额拿不到；改用 L0 akshare 全量 + L2 东财 msm 单只）
 
 ## Acceptance Criteria
 
@@ -216,6 +220,9 @@ export const discoveryBondApi = {
 - [ ] **AC6** `GET /api/funds/discovery-stock/stats` 的 `with_performance` 字段 ≥ 3000（vs 现状 0/几十）
 - [ ] **AC7** 老接口回归：`GET /api/funds/screen` 和 `GET /api/funds/stock/screen` 返回不变，老 yaml 名单基金仍走 FundPerformance 路径
 - [ ] **AC8** 老 60 只 yaml 名单的 code 既出现在 `funds.fund_type`（雪球细分类）又出现在 `market_fund_rank`（akshare 业绩）—— 两套数据互补
+- [ ] **AC8.1**（L0 阶段）`fund_name_em()` 全量拉取（5 秒）+ `fund_manager_em()` 全量拉取（30 秒）后，stock universe 内 `fund_type / mgr_name / mgr_company / mgr_days / mgr_experience_years` 覆盖率 ≥ 99%（原 36%）
+- [ ] **AC8.2**（L2 阶段）`FundMNBasicInformation` 对 L1 预筛后 ~1573 只拉取后，funds 表 `size_yi / age_years / established_date` 覆盖率 ≥ 99%（原 64%）
+- [ ] **AC8.3**（L2 阶段）原 29 只「雪球 schema 残缺的 C/E 份额」用 `FundMNBasicInformation` 全字段补齐
 
 ### 前端
 
