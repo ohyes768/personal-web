@@ -26,12 +26,15 @@ import { useCompare, useDiscoveryStockFundList, useFeeDetails } from '@/lib/hook
 import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions } from '@/lib/compareDimensions';
 import { useFilters } from '@/lib/useFilters';
 import {
+  DEFAULT_FULL_REFRESH_FILTERS,
   DISCOVERY_STOCK_DEFAULT_FILTERS,
   STOCK_MARKET_TYPE_OPTIONS,
+  type FullRefreshFilters,
   type FundListItem,
 } from '@/lib/types';
 
-const LOCKED_PRE_FILTERS = ['min_ret_1y', 'min_ret_3y', 'max_nav_stale_days'];
+/** 全量 refresh 完成后，左侧筛选面板锁定的 3 个预筛字段 */
+const LOCKED_PRE_FILTERS = ['min_ret_3y', 'min_size_yi', 'min_mgr_exp'];
 
 function DiscoveryStockPageInner() {
   const { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount } = useFilters(DISCOVERY_STOCK_DEFAULT_FILTERS);
@@ -41,26 +44,18 @@ function DiscoveryStockPageInner() {
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
 
   // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
-  const [preFilters, setPreFilters] = useState<{
-    min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
-  }>({
-    min_ret_1y: null,
-    min_ret_3y: 0,
-    max_nav_stale_days: null,
-  });
+  const [preFilters, setPreFilters] = useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS);
 
-  const handleFullRefreshComplete = useCallback((pf: {
-    min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
-  }) => {
+  const handleFullRefreshComplete = useCallback((pf: FullRefreshFilters) => {
     setPreFilters(pf);
   }, []);
 
   // 把预筛选值合并到 filters（locked 后用户改不动）
   const effectiveFilters = useMemo(() => ({
     ...filters,
-    min_ret_1y: preFilters.min_ret_1y ?? null,
-    min_ret_3y: preFilters.min_ret_3y ?? null,
-    max_nav_stale_days: preFilters.max_nav_stale_days ?? null,
+    min_ret_3y: preFilters.min_ret_3y,
+    min_size_yi: preFilters.min_size_yi,
+    min_mgr_exp: preFilters.min_mgr_exp,
   }), [filters, preFilters]);
 
   const compareDimensions = useMemo(

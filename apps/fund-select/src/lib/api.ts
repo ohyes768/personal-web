@@ -5,6 +5,7 @@ import {
   COARSE_TO_SUBTYPES_BOND,
   COARSE_TO_SUBTYPES_STOCK,
   coarseToSubtypes,
+  type FullRefreshFilters,
   type FundDetail,
   type RefreshStatus,
   type ScreenResponse,
@@ -116,6 +117,20 @@ export const discoveryBondApi = {
   getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
     return getJson(`${DISCOVERY_BOND_BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
   },
+
+  /** 全量 refresh（5 阶段流水线 + 三段预筛）。仅传 min_ret_3y / min_size_yi / min_mgr_exp */
+  fullRefresh(filters: Partial<FullRefreshFilters>): Promise<{ task_id: string; status: string }> {
+    const params = new URLSearchParams();
+    if (filters.min_ret_3y != null) params.set('min_ret_3y', String(filters.min_ret_3y));
+    if (filters.min_size_yi != null) params.set('min_size_yi', String(filters.min_size_yi));
+    if (filters.min_mgr_exp != null) params.set('min_mgr_exp', String(filters.min_mgr_exp));
+    const q = params.toString();
+    return getJson(`${DISCOVERY_BOND_BASE}/full/refresh${q ? `?${q}` : ''}`);
+  },
+
+  getFullRefreshStatus(taskId?: string): Promise<RefreshStatus> {
+    return getJson(`${DISCOVERY_BOND_BASE}/full/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
+  },
 };
 
 export const discoveryStockApi = {
@@ -133,5 +148,19 @@ export const discoveryStockApi = {
 
   getRefreshStatus(taskId?: string): Promise<RefreshStatus> {
     return getJson(`${DISCOVERY_STOCK_BASE}/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
+  },
+
+  /** 全量 refresh（5 阶段流水线 + 三段预筛）。仅传 min_ret_3y / min_size_yi / min_mgr_exp */
+  fullRefresh(filters: Partial<FullRefreshFilters>): Promise<{ task_id: string; status: string }> {
+    const params = new URLSearchParams();
+    if (filters.min_ret_3y != null) params.set('min_ret_3y', String(filters.min_ret_3y));
+    if (filters.min_size_yi != null) params.set('min_size_yi', String(filters.min_size_yi));
+    if (filters.min_mgr_exp != null) params.set('min_mgr_exp', String(filters.min_mgr_exp));
+    const q = params.toString();
+    return getJson(`${DISCOVERY_STOCK_BASE}/full/refresh${q ? `?${q}` : ''}`);
+  },
+
+  getFullRefreshStatus(taskId?: string): Promise<RefreshStatus> {
+    return getJson(`${DISCOVERY_STOCK_BASE}/full/refresh/status${taskId ? `?task_id=${taskId}` : ''}`);
   },
 };

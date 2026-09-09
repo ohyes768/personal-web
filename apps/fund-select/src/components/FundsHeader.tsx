@@ -5,7 +5,7 @@
  *
  * 各 tab 通过 `<FundsHeader active="bond" right={...}>` 等传入。
  *
- * 注意：discovery-* tab 只有一个「全量刷新」按钮（4 阶段流水线已内置 fund_name_em 拉名单）；
+ * 注意：discovery-* tab 只有一个「全量刷新」按钮（5 阶段流水线已内置 fund_name_em 拉名单）；
  * 老 tab 的「刷新」按钮保留（刷新 yaml 名单 60 只的业绩）。
  */
 'use client';
@@ -15,9 +15,10 @@ import { useState } from 'react';
 
 import { FunnelIcon } from '@heroicons/react/24/outline';
 
+import { discoveryBondApi, discoveryStockApi } from '@/lib/api';
 import { FullRefreshDialog } from './FullRefreshDialog';
 import { RefreshStatusPopover } from './RefreshStatusPopover';
-import type { FundFilters } from '@/lib/types';
+import type { FullRefreshFilters, FundFilters, RefreshStatus } from '@/lib/types';
 
 export type FundsTab = 'bond' | 'stock' | 'discovery-bond' | 'discovery-stock';
 
@@ -33,13 +34,9 @@ interface FundsHeaderProps {
    *  'discovery-bond'/'discovery-stock' → /funds/api/funds/discovery-*/
   exportKind: FundsTab;
   /** 全量 refresh 完成回调（仅 discovery-* tab 传）：同步预筛选值到左侧 */
-  onFullRefreshComplete?: (preFilters: {
-    min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
-  }) => void;
+  onFullRefreshComplete?: (preFilters: FullRefreshFilters) => void;
   /** 当前生效的预筛选值（用于初始化弹窗 default） */
-  preFilters?: {
-    min_ret_1y: number | null; min_ret_3y: number | null; max_nav_stale_days: number | null;
-  };
+  preFilters?: FullRefreshFilters;
 }
 
 const TITLE: Record<FundsTab, string> = {
@@ -55,10 +52,19 @@ const REFRESH_URL: Partial<Record<FundsTab, string>> = {
   'stock': '/funds/api/funds/stock/refresh',
 };
 
-/** discovery-* tab 的全量 refresh 端点（5 阶段流水线：universe + rank + basic + nav + risk） */
-const FULL_REFRESH_URL: Partial<Record<FundsTab, string>> = {
-  'discovery-bond': '/funds/api/funds/discovery-bond/full/refresh',
-  'discovery-stock': '/funds/api/funds/discovery-stock/full/refresh',
+/** discovery-* tab 的全量 refresh：start 闭包 + poll 闭包（避免组件持有 URL 字符串） */
+const FULL_REFRESH_API: Partial<Record<FundsTab, {
+  startFullRefresh: (filters: FullRefreshFilters) => Promise<{ task_id: string; status: string }>;
+  pollFullRefreshStatus: (taskId: string) => Promise<RefreshStatus>;
+}>> = {
+  'discovery-bond': {
+    startFullRefresh: (filters: FullRefreshFilters) => discoveryBondApi.fullRefresh(filters),
+    pollFullRefreshStatus: (taskId: string) => discoveryBondApi.getFullRefreshStatus(taskId),
+  },
+  'discovery-stock': {
+    startFullRefresh: (filters: FullRefreshFilters) => discoveryStockApi.fullRefresh(filters),
+    pollFullRefreshStatus: (taskId: string) => discoveryStockApi.getFullRefreshStatus(taskId),
+  },
 };
 
 export function FundsHeader({
@@ -75,7 +81,7 @@ export function FundsHeader({
   const title = TITLE[active];
   const refreshUrl = REFRESH_URL[exportKind];
   const statusUrl = refreshUrl ? `${refreshUrl}/status` : undefined;
-  const fullRefreshUrl = FULL_REFRESH_URL[exportKind];
+  const fullRefreshApi = FULL_REFRESH_API[exportKind];
 
   const [fullOpen, setFullOpen] = useState(false);
 
@@ -107,7 +113,7 @@ export function FundsHeader({
               onRefreshed={onRefreshed}
             />
           )}
-          {fullRefreshUrl && onFullRefreshComplete && (
+          {fullRefreshApi && onFullRefreshComplete && (
             <>
               <button
                 onClick={() => setFullOpen(true)}
@@ -119,8 +125,8 @@ export function FundsHeader({
               <FullRefreshDialog
                 open={fullOpen}
                 onClose={() => setFullOpen(false)}
-                refreshUrl={fullRefreshUrl}
-                statusUrl={`${fullRefreshUrl}/status`}
+                startFullRefresh={fullRefreshApi.startFullRefresh}
+                pollFullRefreshStatus={fullRefreshApi.pollFullRefreshStatus}
                 onComplete={(pf) => {
                   setFullOpen(false);
                   onFullRefreshComplete(pf);

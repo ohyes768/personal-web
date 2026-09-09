@@ -243,6 +243,25 @@ export function coarseToSubtypes(
   return out;
 }
 
+/**
+ * 全量刷新预筛参数（discovery-* tab）
+ * 后端 /full/refresh 端点参数；max_nav_stale_days 后端固定 14，不暴露
+ */
+export interface FullRefreshFilters {
+  /** 近 3 年涨 ≥ X%（L1 字段，预筛 2） */
+  min_ret_3y: number | null;
+  /** 规模 ≥ Y 亿（L2 字段，预筛 3） */
+  min_size_yi: number | null;
+  /** 经理从业 ≥ W 年（L0 字段，预筛 1） */
+  min_mgr_exp: number | null;
+}
+
+export const DEFAULT_FULL_REFRESH_FILTERS: FullRefreshFilters = {
+  min_ret_3y: 20,
+  min_size_yi: 5,
+  min_mgr_exp: 5,
+};
+
 /** 业绩排名一行（详情页用） */
 export interface FundAchievementRank {
   period_kind: string;
