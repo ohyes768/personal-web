@@ -12,6 +12,7 @@ import { FilterSheet } from '@/components/FilterSheet';
 import { FilterPanel } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
+import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawerBond } from '@/components/RowDetailDrawerBond';
 import { useCompare, useFeeDetails, useFundList } from '@/lib/hooks';
 import {
@@ -21,7 +22,7 @@ import { useFilters } from '@/lib/useFilters';
 import type { FundListItem } from '@/lib/types';
 
 function FundsPageInner() {
-  const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters();
+  const { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount } = useFilters();
   const { items, total, loading, error, reload } = useFundList(filters);
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -71,6 +72,13 @@ function FundsPageInner() {
               isCompareFull={compare.isFull}
               onToggleCompare={compare.toggle}
               onRowClick={setDetailFund}
+            />
+            <Pagination
+              page={filters.page}
+              limit={filters.limit}
+              total={total}
+              onPageChange={setPage}
+              onLimitChange={setLimit}
             />
           </section>
         </div>

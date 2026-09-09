@@ -204,3 +204,114 @@ class TestRegressionExistingTabs:
                 min_age=None, min_size_yi=None, max_dd_3y=None, min_mgr_exp=None,
                 sort="size_yi", order="desc", universe_codes=None,
             )
+
+
+class TestDiscoveryPagination:
+    """discovery-* tab 分页：total 仍是筛后总数，items 切片"""
+    @staticmethod
+    def _seed_many(db, n: int = 30, subtype: str = "债券型-长期纯债"):
+        """seed N 只同 subtype，规模递增"""
+        rows = [
+            _mk_fund(f"{900000 + i}", market_subtype=subtype, size_yi=float(i + 1))
+            for i in range(n)
+        ]
+        db.add_all(rows)
+        db.commit()
+
+    def test_discovery_bond_default_returns_all_when_under_limit(self, db_session):
+        self._seed_many(db_session, n=5)
+        r = FilterService(db_session).screen_discovery_bond(limit=50)
+        assert r["total"] == 5
+        assert len(r["items"]) == 5
+
+    def test_discovery_bond_first_page_slice(self, db_session):
+        self._seed_many(db_session, n=30)
+        r = FilterService(db_session).screen_discovery_bond(
+            sort="size_yi", order="desc", page=1, limit=10,
+        )
+        assert r["total"] == 30
+        assert len(r["items"]) == 10
+        sizes = [it["size_yi"] for it in r["items"]]
+        assert sizes == [30.0, 29.0, 28.0, 27.0, 26.0, 25.0, 24.0, 23.0, 22.0, 21.0]
+
+    def test_discovery_bond_second_page_no_overlap(self, db_session):
+        self._seed_many(db_session, n=30)
+        p1 = FilterService(db_session).screen_discovery_bond(
+            sort="size_yi", order="desc", page=1, limit=10,
+        )
+        p2 = FilterService(db_session).screen_discovery_bond(
+            sort="size_yi", order="desc", page=2, limit=10,
+        )
+        codes1 = {it["code"] for it in p1["items"]}
+        codes2 = {it["code"] for it in p2["items"]}
+        assert codes1.isdisjoint(codes2)
+        sizes2 = [it["size_yi"] for it in p2["items"]]
+        assert sizes2 == [20.0, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0, 13.0, 12.0, 11.0]
+        assert p1["total"] == 30
+        assert p2["total"] == 30
+
+    def test_discovery_bond_oversized_page_returns_empty(self, db_session):
+        self._seed_many(db_session, n=30)
+        r = FilterService(db_session).screen_discovery_bond(
+            sort="size_yi", order="desc", page=999, limit=10,
+        )
+        assert r["total"] == 30
+        assert r["items"] == []
+
+    def test_discovery_bond_total_unaffected_by_limit(self, db_session):
+        self._seed_many(db_session, n=30)
+        r = FilterService(db_session).screen_discovery_bond(
+            sort="size_yi", order="desc", page=1, limit=5,
+        )
+        assert r["total"] == 30
+        assert len(r["items"]) == 5
+
+    def test_discovery_bond_none_sort_still_tail_with_pagination(self, db_session):
+        # 5 只有 size_yi（valued）
+        for i in range(5):
+            code = f"{910000 + i}"
+            db_session.add(_mk_fund(code, market_subtype="债券型-长期纯债",
+                                    size_yi=float(10 - i)))
+        # 3 只 size_yi=None
+        for i in range(3):
+            code = f"{920000 + i}"
+            db_session.add(_mk_fund(code, market_subtype="债券型-长期纯债",
+                                    size_yi=None))
+        db_session.commit()
+        r = FilterService(db_session).screen_discovery_bond(
+            sort="size_yi", order="desc", page=1, limit=4,
+        )
+        assert r["total"] == 8
+        assert [it["size_yi"] for it in r["items"]] == [10.0, 9.0, 8.0, 7.0]
+        r2 = FilterService(db_session).screen_discovery_bond(
+            sort="size_yi", order="desc", page=2, limit=4,
+        )
+        assert [it["size_yi"] for it in r2["items"]] == [6.0, None, None, None]
+
+    def test_discovery_stock_first_page_slice(self, db_session):
+        # 股基·市场
+        from src.db.models import FundPerformance
+        import datetime
+        for i in range(30):
+            code = f"{930000 + i}"
+            db_session.add(_mk_fund(code, market_subtype="股票型",
+                                    size_yi=float(i + 1)))
+            db_session.add(FundPerformance(
+                code=code, as_of_date=datetime.date(2026, 9, 1),
+                ret_5y=float(100 - i),
+            ))
+        db_session.commit()
+        r = FilterService(db_session).screen_discovery_stock(
+            sort="ret_5y", order="desc", page=1, limit=10,
+        )
+        assert r["total"] == 30
+        assert len(r["items"]) == 10
+        rets = [it["ret_5y"] for it in r["items"]]
+        assert rets == [100.0, 99.0, 98.0, 97.0, 96.0, 95.0, 94.0, 93.0, 92.0, 91.0]
+        # 第 2 页 ret_5y = 90..81
+        r2 = FilterService(db_session).screen_discovery_stock(
+            sort="ret_5y", order="desc", page=2, limit=10,
+        )
+        assert [it["ret_5y"] for it in r2["items"]] == \
+            [90.0, 89.0, 88.0, 87.0, 86.0, 85.0, 84.0, 83.0, 82.0, 81.0]
+        assert r2["total"] == 30

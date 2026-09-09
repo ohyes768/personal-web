@@ -20,6 +20,7 @@ import { FilterSheet } from '@/components/FilterSheet';
 import { FilterPanel } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
+import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawerBond } from '@/components/RowDetailDrawerBond';
 import { useCompare, useDiscoveryBondFundList, useFeeDetails } from '@/lib/hooks';
 import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions } from '@/lib/compareDimensions';
@@ -33,7 +34,7 @@ import {
 const LOCKED_PRE_FILTERS = ['min_ret_1y', 'min_ret_3y', 'max_nav_stale_days'];
 
 function DiscoveryBondPageInner() {
-  const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(DISCOVERY_BOND_DEFAULT_FILTERS);
+  const { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount } = useFilters(DISCOVERY_BOND_DEFAULT_FILTERS);
   const { items, total, loading, error, reload } = useDiscoveryBondFundList(filters);
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -123,6 +124,13 @@ function DiscoveryBondPageInner() {
               onToggleCompare={compare.toggle}
               showBondColumns
               onRowClick={setDetailFund}
+            />
+            <Pagination
+              page={filters.page}
+              limit={filters.limit}
+              total={total}
+              onPageChange={setPage}
+              onLimitChange={setLimit}
             />
           </section>
         </div>

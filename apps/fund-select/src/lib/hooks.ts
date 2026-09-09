@@ -22,6 +22,7 @@ export function useFundList(filters: FundFilters) {
     filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
     filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
+    filters.page, filters.limit,
   ].join('|');
 
   useEffect(() => {
@@ -61,6 +62,7 @@ export function useStockFundList(filters: FundFilters) {
     filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
     filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
+    filters.page, filters.limit,
   ].join('|');
 
   useEffect(() => {
@@ -101,6 +103,7 @@ export function useDiscoveryBondFundList(filters: FundFilters) {
     filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
     (filters.market_types ?? []).join(','),
+    filters.page, filters.limit,
   ].join('|');
 
   useEffect(() => {
@@ -141,6 +144,7 @@ export function useDiscoveryStockFundList(filters: FundFilters) {
     filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
     (filters.market_types ?? []).join(','),
+    filters.page, filters.limit,
   ].join('|');
 
   useEffect(() => {

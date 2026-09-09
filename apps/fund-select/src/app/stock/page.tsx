@@ -20,6 +20,7 @@ import { FilterSheet } from '@/components/FilterSheet';
 import { FilterPanel, STOCK_DIMENSIONS } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
+import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawer } from '@/components/RowDetailDrawer';
 import { useCompare, useFeeDetails, useStockFundList } from '@/lib/hooks';
 import {
@@ -29,7 +30,7 @@ import { useFilters } from '@/lib/useFilters';
 import { STOCK_DEFAULT_FILTERS, type FundListItem } from '@/lib/types';
 
 function StockFundsPageInner() {
-  const { filters, setFilter, toggleSort, clearAll, activeCount } = useFilters(STOCK_DEFAULT_FILTERS);
+  const { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount } = useFilters(STOCK_DEFAULT_FILTERS);
   const { items, total, loading, error, reload } = useStockFundList(filters);
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -82,6 +83,13 @@ function StockFundsPageInner() {
               showBondColumns={false}
               showRiskColumns
               onRowClick={setDetailFund}
+            />
+            <Pagination
+              page={filters.page}
+              limit={filters.limit}
+              total={total}
+              onPageChange={setPage}
+              onLimitChange={setLimit}
             />
           </section>
         </div>

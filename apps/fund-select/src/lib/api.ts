@@ -31,6 +31,9 @@ function buildQuery(filters: Partial<FundFilters>, coarseMapping?: Record<string
       : filters.market_types;
     if (expanded.length > 0) params.set('market_type', expanded.join(','));
   }
+  // 分页：默认 page=1 / limit=50 不传；其余透传
+  if (filters.page != null && filters.page > 1) params.set('page', String(filters.page));
+  if (filters.limit != null && filters.limit !== 50) params.set('limit', String(filters.limit));
   const q = params.toString();
   return q ? `?${q}` : '';
 }

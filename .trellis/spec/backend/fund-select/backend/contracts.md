@@ -11,12 +11,77 @@
 | 路由 | 参数 | 返回 | 错误 |
 |---|---|---|---|
 | /health | - | `{status:"ok"}` | - |
-| /screen | min_age, min_size_yi, max_dd_3y, min_mgr_exp（均可空）; sort; order; exclude_qdii（默认 false） | `{total, items:[FundListItem]}` 不分页 | sort 不在白名单→422 |
+| /screen | min_age, min_size_yi, max_dd_3y, min_mgr_exp（均可空）; sort; order; exclude_qdii（默认 false）; **page**（默认 1, ≥1）; **limit**（默认 50, 1-200） | `{total, items:[FundListItem]}` **total=筛后总数；items=当页** | sort 不在白名单→422；page<1 / limit<1 / limit>200 → 422 |
+| /stock/screen | min_age, min_size_yi, max_dd_3y, min_mgr_exp, min_sharpe（股票独有）; sort; order; exclude_qdii; **page, limit** | 同 /screen | 同 /screen |
+| /discovery-bond/screen | min_age, min_size_yi, max_dd_3y, min_mgr_exp, min_sharpe, min_ret_1y, min_ret_3y, max_nav_stale_days; market_types（akshare 粗类别，可空）; sort; order; exclude_qdii; **page, limit** | 同 /screen | 同 /screen |
+| /discovery-stock/screen | 同 /discovery-bond/screen | 同 /screen | 同 /screen |
 | /{code} | - | FundDetail（业绩+fees+holdings） | 404 |
 | /refresh | limit 可空 | `{task_id, status:"started"}`（BackgroundTasks） | - |
 | /refresh/status | task_id 可空（空=最近一次） | `{task_id,status,total,completed,failed,errors[]}` | 404 无记录 |
 | /export/csv | 同 screen | text/csv + UTF-8 BOM + `filename=funds_YYYYMMDD.csv` | - |
 | /stats | - | `{total,with_performance,with_fees,with_holdings,last_refresh_at}` | - |
+
+### 分页契约（09-09-fund-select-pagination）
+
+**核心不变量**：
+
+- `total` 永远是**筛后命中总数**，与 page / limit 无关。前端用它算总页数 `Math.ceil(total/limit)`。
+- `items` 长度 ≤ `limit`，可能为空（`page` 越界时）。
+- `total` 与 `items` 的关系：`items ⊂ 全量items；total = len(全量items)`。多页之间无重叠、无遗漏（按当前 sort 排序后切片）。
+
+**服务端排序-切片顺序（关键）**：
+
+```python
+# 1. SQL JOIN 取全量 rows
+rows = self.db.execute(q).all()
+# 2. ach_map 仍按全量 codes 查（保证排序前数据完整，rank 字段不丢）
+codes = [f.code for f, *_ in rows]
+ach_rows = self.db.execute(select(...).where(FundAchievementRank.code.in_(codes))).all()
+# 3. 组装全量 items
+items = [_to_dto(f, p, fee, hold, risk, market_rank, ach_map.get(f.code)) for f, p, fee, hold, risk, market_rank in rows]
+total = len(items)
+# 4. Python in-memory 排序（None 永远排末位）
+valued = [it for it in items if getter(it) is not None]
+valued.sort(key=getter, reverse=descending)
+empty = [it for it in items if getter(it) is None]
+ordered = valued + empty
+# 5. ★ 切片在排序之后
+offset = (page - 1) * limit
+items_page = ordered[offset : offset + limit]
+return {"total": total, "items": items_page}
+```
+
+**为什么不在 SQL 层 ORDER BY + LIMIT/OFFSET**：
+
+- 现状：discovery-stock universe ~4500 只 → Python `list.sort` < 100ms，深页 offset 切片 O(N) 但仍 < 1s
+- 风险：5000→5w+ 时再切 SQL。当前不做是为避免 SQL 注入白名单、LEFT JOIN 多表、ach_map 二次查询的复杂改造
+- 触发再切的条件：universe > 5w 或 P95 > 1s
+
+**与 FundAchievementRank 的关系**：
+
+`ach_map` 查询用 `codes = [f.code for f, *_ in rows]`，是**排序前**的全量 codes。排序-切片不会影响 rank 字段正确性（每页 DTO 内 rank_* 都来自同一份 ach_map）。
+
+**前端 URL 同步**（`useFilters` / `parseFiltersFromSearch` / `filtersToSearch`）：
+
+| URL 参数 | 写入条件 | 默认 |
+|---|---|---|
+| `page` | `page > 1` | 1 |
+| `limit` | `limit !== 50` | 50 |
+
+**筛选 vs 排序 对 page 的影响**：
+
+| 触发 | page 重置？ |
+|---|---|
+| numeric 维度 / exclude_qdii / market_types 变化 | ✅ 重置 page=1 |
+| sort 字段 / order 变化 | ❌ 保持 page |
+| setLimit | ✅ 重置 page=1 |
+| clearAll | ✅ 重置 page=1（合理：清空筛选后命中集变了，原 page 没意义） |
+
+**前端状态归属**：`page` / `limit` 是 `FundFilters` 的字段，跟其它 numeric 维度一起序列化/反序列化、一起触发 useEffect 重拉。不另起 state，避免 URL / 状态双源。
+
+**`LIMIT_OPTIONS = [25, 50, 100] as const`** 导出在 `apps/fund-select/src/lib/types.ts`，Pagination 组件直接复用，不硬编码。
+
+**Performance budget**：discovery-bond 全 universe（~500 只）page=1, limit=50 → 后端 P95 < 800ms（含 DB JOIN × 5 + Python sort + 4 周期排名查询）；前端首屏 < 1.5s。
 
 ### 关键语义
 
@@ -177,18 +242,27 @@ export interface RankPercentile {
 ## 5. Good/Base/Bad Cases
 
 - Good: `GET /screen?max_dd_3y=5` 返回 dd_3y∈[-5,0] 的基金
-- Base: `GET /screen` 无参 → `funds.yaml` ∩ is_active（约 31 只）
+- Good: `GET /discovery-stock/screen?page=2&limit=50&sort=ret_3y&order=desc` 返回 `items[50..99]`；`total` = 全量筛后命中数；与 page=1 无重叠
+- Good: `GET /bond/screen?page=1&limit=50` 返回 31 只全量（total=31，items 长度=31，债基 tab 不显示分页器）
+- Base: `GET /screen` 无参 → `funds.yaml` ∩ is_active（约 31 只）；分页默认 page=1, limit=50
+- Base: `GET /screen?page=1`（URL 不带 limit）→ limit=50
 - Bad: `GET /screen?sort=name` → 422（白名单外）；`GET /999999` → 404
+- Bad: `GET /screen?page=0` / `?limit=0` / `?limit=1000` → 422
+- Bad: `GET /screen?page=999` 越界 → 200 + `items=[]`，`total` 不变（前端分页器下一页按钮 disabled）
+- Bad: 假设 `len(items) == total` —— 那是改造前的契约，引入分页后 `len(items) == min(limit, total - offset)`
 
 ## 6. Tests Required
 
 `backend/tests/`（含交叉泄漏回归）：
-- `test_filter_service.py`：四维组合/边界/排序/LEFT JOIN 保留/is_active 排除
+- `test_filter_service.py`：四维组合/边界/排序/LEFT JOIN 保留/is_active 排除 + **TestPagination**（默认/单页/跨页不重叠/越界空/total 不受 page 影响/None 排序尾部）
+- `test_stock_filter_service.py`：股票 tab 测试 + **TestStockPagination**
+- `test_discovery_filter_service.py`：discovery 路径 SQL LEFT JOIN market_fund_rank + 业绩字段来源 + `_parse_peer_rank` 解析边界（25/204 / invalid / 0/100 / 200/100 全返 None）+ **TestDiscoveryPagination**（discovery-bond + discovery-stock）
 - `test_universe_isolation.py`：债基/股票 yaml 宇宙互不泄漏；`fund_type` 不是成员谓词
 - `test_performance_service.py`：回撤算法（1.0→1.2→0.9 = -25%）/收益窗口/None 语义
-- `test_api.py`：TestClient + in-memory 覆盖依赖；422/404/BOM；stats 按宇宙计数
-- `test_discovery_filter_service.py`：discovery 路径 SQL LEFT JOIN market_fund_rank + 业绩字段来源 + `_parse_peer_rank` 解析边界（25/204 / invalid / 0/100 / 200/100 全返 None）
+- `test_api.py`：TestClient + in-memory 覆盖依赖；422/404/BOM；stats 按宇宙计数 + **TestScreenPagination422**（page=0/limit=0/limit=1000/page=-1/limit=-1 全 422）
 - `test_data_fetchers.py`：31 份费率夹具契约、债券分类关键词、yaml 宇宙
+
+**分页测试夹具**：filter_service 用 `monkeypatch.setattr("src.data.fund_universe.load_fund_codes", ...)` 让 universe 包含 seed codes（避免依赖 yaml 实际 31 只名单）；discovery 测试 seed 同 `market_subtype` 让默认 universe 自动选中。
 
 **测试夹具注意**：in-memory SQLite + TestClient 必须用 `StaticPool`（单连接共享），否则 TestClient 线程看不到建表。
 
@@ -200,10 +274,21 @@ q.filter(FundPerformance.dd_3y <= max_dd_3y)   # 库内负值，-4.47 <= 5 恒�
 q.where(Fund.is_active == True)                # 债基 tab 会看到股票 refresh 写入的全部活跃基金
 Fund.fund_type.like("股票型-%")                # 股票 tab 会吃到债基名单里的混合/QDII
 init_db()  # 测试里对全局 engine 建表，但请求走 override session（另一 engine）
+
+# 分页相关
+items.sort(...); items = items[:limit]         # 切片在排序之前——多页之间会错位、重叠
+total = len(items_page)                        # total 当成页长度——前端分页器总页数算错
+ach_map = {c: ... for c in codes_after_slice}  # 按切片后 codes 查 ach——DTO 内 rank_* 字段大量丢
 ```
 ### Correct
 ```python
 q.filter(FundPerformance.dd_3y >= -abs(max_dd_3y))  # 绝对值语义
 q.where(Fund.is_active == True, Fund.code.in_(resolve_universe_codes("bond")))
 # conftest: create_engine("sqlite:///:memory:", poolclass=StaticPool)
+
+# 分页相关
+total = len(items)                          # total 在切片前算
+ordered = valued_sort + empty_tail
+items_page = ordered[offset : offset+limit]  # 切片在排序之后
+return {"total": total, "items": items_page}
 ```

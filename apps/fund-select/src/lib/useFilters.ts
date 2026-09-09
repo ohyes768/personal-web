@@ -7,6 +7,7 @@
  *   - cleared=1 → 全部不限（用户主动"清空"）
  *   - exclude_qdii=1 与 numeric / cleared 正交：仅此参数仍套用默认四维
  *   - market_type=债券型,定开债券 → 缩窄到这些类型；空 = 走 tab 默认 universe
+ *   - page=N（≠1）、limit=K（≠50）写入 URL；默认值省略（避免噪音）
  *
  * useFilters(initial) 接受 override：股票 tab 传 STOCK_DEFAULT_FILTERS；
  * discovery tab 传 DISCOVERY_*_DEFAULT_FILTERS；债基 tab 不传，走 DEFAULT_FILTERS。
@@ -17,18 +18,20 @@
  *   ?cleared=1                           → 全部 null
  *   ?exclude_qdii=1                      → 默认四维 + 排除 QDII
  *   ?market_type=债券型                  → market_types=['债券型']
+ *   ?page=2&limit=25                     → 第 2 页 / 每页 25
  */
 'use client';
 
 import { useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-import { DEFAULT_FILTERS, type FundFilters } from './types';
+import { DEFAULT_FILTERS, LIMIT_OPTIONS, type FundFilters } from './types';
 
 export type NumericFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'min_sharpe';
 export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii' | 'market_types';
 
 const NUMERIC_KEYS: NumericFilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp', 'min_sharpe'];
+const DEFAULT_LIMIT = 50;
 
 function parseExcludeQdii(search: URLSearchParams): boolean {
   return search.get('exclude_qdii') === '1';
@@ -41,6 +44,25 @@ function parseMarketTypes(search: URLSearchParams): string[] | null {
   return out.length > 0 ? out : null;
 }
 
+function parsePage(search: URLSearchParams): number {
+  const raw = search.get('page');
+  if (raw == null) return 1;
+  const n = Number(raw);
+  return Number.isFinite(n) && n >= 1 ? Math.floor(n) : 1;
+}
+
+function parseLimit(search: URLSearchParams): number {
+  const raw = search.get('limit');
+  if (raw == null) return DEFAULT_LIMIT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 1) return DEFAULT_LIMIT;
+  // 取最近的合法选项（25/50/100），避免 URL 写 99 等非白名单值
+  const nearest = LIMIT_OPTIONS.reduce((best, opt) =>
+    Math.abs(opt - n) < Math.abs(best - n) ? opt : best
+  );
+  return nearest;
+}
+
 /** 从 URL 解析筛选 */
 export function parseFiltersFromSearch(
   search: URLSearchParams,
@@ -48,6 +70,8 @@ export function parseFiltersFromSearch(
 ): FundFilters {
   const exclude_qdii = parseExcludeQdii(search);
   const market_types = parseMarketTypes(search);
+  const page = parsePage(search);
+  const limit = parseLimit(search);
   if (search.get('cleared') === '1') {
     // 用户主动"清空"：全部维度不限；exclude_qdii / market_types 仍按 URL 正交解析
     return {
@@ -60,13 +84,21 @@ export function parseFiltersFromSearch(
       market_types,
       sort: (search.get('sort') as string) || fallback.sort,
       order: (search.get('order') as 'asc' | 'desc') || fallback.order,
+      page,
+      limit,
     };
   }
 
   const hasNumeric = NUMERIC_KEYS.some(k => search.has(k));
   if (!hasNumeric) {
     // 首次访问或没改过筛选：套用默认（可能为 STOCK_DEFAULT_FILTERS / DISCOVERY_*_DEFAULT_FILTERS）
-    return { ...fallback, exclude_qdii, market_types: market_types ?? fallback.market_types };
+    return {
+      ...fallback,
+      exclude_qdii,
+      market_types: market_types ?? fallback.market_types,
+      page,
+      limit,
+    };
   }
 
   // URL 有部分 numeric：缺失字段 = null（不允许 fallback 到默认值）
@@ -80,6 +112,8 @@ export function parseFiltersFromSearch(
     market_types,
     sort: fallback.sort,
     order: fallback.order,
+    page,
+    limit,
   };
   for (const key of NUMERIC_KEYS) {
     const raw = search.get(key);
@@ -116,6 +150,9 @@ export function filtersToSearch(filters: FundFilters): URLSearchParams {
   }
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_FILTERS.order) params.set('order', filters.order);
+  // 分页：默认 page=1 / limit=50 不写 URL；其余写
+  if (filters.page > 1) params.set('page', String(filters.page));
+  if (filters.limit !== DEFAULT_LIMIT) params.set('limit', String(filters.limit));
   return params;
 }
 
@@ -142,7 +179,10 @@ export function useFilters(initial?: Partial<FundFilters>) {
     [searchParams, merged],
   );
 
-  /** 更新一个维度并同步 URL（push，可回退） */
+  /** 更新一个维度并同步 URL（push，可回退）。
+   * numeric / exclude_qdii / market_types 改动时强制 page=1（命中集变了，原 page 没意义）。
+   * sort / order 改动不影响 page（用户在排序字段之间翻页是合理操作）。
+   */
   const setFilter = useCallback((key: FilterKey, value: number | string | boolean | string[] | null) => {
     const next: FundFilters = { ...filters };
     if (key === 'sort') {
@@ -151,15 +191,30 @@ export function useFilters(initial?: Partial<FundFilters>) {
       next.order = (value === 'asc' ? 'asc' : 'desc');
     } else if (key === 'exclude_qdii') {
       next.exclude_qdii = Boolean(value);
+      next.page = 1;
     } else if (key === 'market_types') {
       next.market_types = Array.isArray(value) && value.length > 0 ? (value as string[]) : null;
+      next.page = 1;
     } else {
       next[key] = value === null || value === '' ? null : Number(value);
+      next.page = 1;
     }
     pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
 
-  /** 排序切换：同字段翻转方向，异字段重置为 desc */
+  /** 翻页：保持当前 limit；只改 page */
+  const setPage = useCallback((page: number) => {
+    const next: FundFilters = { ...filters, page: Math.max(1, Math.floor(page)) };
+    pushQuery(router, filtersToSearch(next));
+  }, [filters, router]);
+
+  /** 改每页条数：强制 page=1（位置变了，原 page 失去意义） */
+  const setLimit = useCallback((limit: number) => {
+    const next: FundFilters = { ...filters, limit, page: 1 };
+    pushQuery(router, filtersToSearch(next));
+  }, [filters, router]);
+
+  /** 排序切换：同字段翻转方向，异字段重置为 desc；保持 page 不变 */
   const toggleSort = useCallback((field: string) => {
     if (filters.sort === field) {
       setFilter('order', filters.order === 'desc' ? 'asc' : 'desc');
@@ -169,7 +224,7 @@ export function useFilters(initial?: Partial<FundFilters>) {
     }
   }, [filters, setFilter, router]);
 
-  /** 清空全部筛选（保留 sort/order，关掉排除 QDII，重置 market_types） */
+  /** 清空全部筛选（保留 sort/order，关掉排除 QDII，重置 market_types；page 重置为 1） */
   const clearAll = useCallback(() => {
     const next: FundFilters = {
       ...filters,
@@ -180,6 +235,7 @@ export function useFilters(initial?: Partial<FundFilters>) {
       min_sharpe: null,
       exclude_qdii: false,
       market_types: null,
+      page: 1,
     };
     pushQuery(router, filtersToSearch(next));
   }, [filters, router]);
@@ -191,5 +247,5 @@ export function useFilters(initial?: Partial<FundFilters>) {
     + (filters.exclude_qdii ? 1 : 0)
     + (filters.market_types && filters.market_types.length > 0 ? 1 : 0);
 
-  return { filters, setFilter, toggleSort, clearAll, activeCount };
+  return { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount };
 }

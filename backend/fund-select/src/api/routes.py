@@ -57,9 +57,11 @@ async def screen(
     sort: str = Query("size_yi", description="排序字段"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
+    page: int = Query(1, ge=1, description="页码，1-indexed"),
+    limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """筛选（不分页，v1 名单仅 31 只）"""
+    """筛选（分页：page/limit 默认 1/50）"""
     if sort not in ("size_yi", "age_years", "mgr_experience_years", "dd_3y",
                     "ret_1y", "ret_3y", "ret_5y", "fee_annual", "code"):
         raise HTTPException(status_code=422, detail=f"不支持的排序字段: {sort}")
@@ -72,6 +74,8 @@ async def screen(
         sort=sort,
         order=order,
         exclude_qdii=exclude_qdii,
+        page=page,
+        limit=limit,
     )
 
 
@@ -166,13 +170,16 @@ async def stock_screen(
     sort: str = Query("ret_5y"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
+    page: int = Query(1, ge=1, description="页码，1-indexed"),
+    limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """股票 tab 筛选（funds_stock.yaml ∩ is_active）"""
+    """股票 tab 筛选（funds_stock.yaml ∩ is_active；分页 page/limit 默认 1/50）"""
     return FilterService(db).screen_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
+        page=page, limit=limit,
     )
 
 
@@ -280,9 +287,11 @@ async def discovery_bond_screen(
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False),
     market_type: Optional[str] = Query(None, description="akshare 基金类型，CSV；空 = 走默认 universe"),
+    page: int = Query(1, ge=1, description="页码，1-indexed"),
+    limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """债基·市场 tab 筛选（market_type 默认 = 10 个债券相关子类）"""
+    """债基·市场 tab 筛选（market_type 默认 = 10 个债券相关子类；分页 page/limit 默认 1/50）"""
     return FilterService(db).screen_discovery_bond(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
@@ -290,6 +299,7 @@ async def discovery_bond_screen(
         max_nav_stale_days=max_nav_stale_days,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
         market_types=_parse_market_types(market_type),
+        page=page, limit=limit,
     )
 
 
@@ -358,9 +368,11 @@ async def discovery_stock_screen(
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False),
     market_type: Optional[str] = Query(None, description="akshare 基金类型，CSV；空 = 走默认 universe"),
+    page: int = Query(1, ge=1, description="页码，1-indexed"),
+    limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """股基·市场 tab 筛选（market_type 默认 = 5 个粗类别：股票型/混合型/指数型/QDII/REITs）"""
+    """股基·市场 tab 筛选（market_type 默认 = 5 个粗类别：股票型/混合型/指数型/QDII/REITs；分页 page/limit 默认 1/50）"""
     return FilterService(db).screen_discovery_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
@@ -368,6 +380,7 @@ async def discovery_stock_screen(
         max_nav_stale_days=max_nav_stale_days,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
         market_types=_parse_market_types(market_type),
+        page=page, limit=limit,
     )
 
 

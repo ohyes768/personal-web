@@ -110,7 +110,13 @@ export interface FundFilters {
   market_types: string[] | null;
   sort: string;
   order: 'asc' | 'desc';
+  /** 分页（仅前端 state，写入 URL）；page=1 / limit=50 默认值不进 URL */
+  page: number;
+  limit: number;
 }
+
+/** 每页条数选项（与后端 limit 取值范围 1-200 对齐） */
+export const LIMIT_OPTIONS = [25, 50, 100] as const;
 
 export const DEFAULT_FILTERS: FundFilters = {
   min_age: 3,
@@ -122,6 +128,8 @@ export const DEFAULT_FILTERS: FundFilters = {
   market_types: null,
   sort: 'ret_3y',
   order: 'desc',
+  page: 1,
+  limit: 50,
 };
 
 /** 股票基金 tab 默认筛选（决策：3 / 5 / 30 / 5 / 夏普 0.8，按 ret_3y desc） */
@@ -135,6 +143,8 @@ export const STOCK_DEFAULT_FILTERS: FundFilters = {
   market_types: null,
   sort: 'ret_3y',
   order: 'desc',
+  page: 1,
+  limit: 50,
 };
 
 /** 债基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
@@ -148,6 +158,8 @@ export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
   market_types: ['纯债型', '混合型', '指数型', 'QDII', 'REITs'],
   sort: 'size_yi',
   order: 'desc',
+  page: 1,
+  limit: 50,
 };
 
 /** 股基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
@@ -161,6 +173,8 @@ export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
   market_types: ['股票型', '混合型', '指数型', 'QDII', 'REITs'],
   sort: 'ret_3y',
   order: 'desc',
+  page: 1,
+  limit: 50,
 };
 
 /** 基金类型（market tab 维度选项全集） */

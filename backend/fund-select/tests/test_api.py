@@ -93,6 +93,43 @@ class TestDetail:
         assert client.get("/api/funds/999999").status_code == 404
 
 
+class TestScreenPagination422:
+    """page/limit 边界：FastAPI Query 校验 → 422"""
+
+    def test_page_zero_returns_422(self, client):
+        assert client.get("/api/funds/screen?page=0").status_code == 422
+
+    def test_page_negative_returns_422(self, client):
+        assert client.get("/api/funds/screen?page=-1").status_code == 422
+
+    def test_limit_zero_returns_422(self, client):
+        assert client.get("/api/funds/screen?limit=0").status_code == 422
+
+    def test_limit_too_large_returns_422(self, client):
+        assert client.get("/api/funds/screen?limit=201").status_code == 422
+        assert client.get("/api/funds/screen?limit=1000").status_code == 422
+
+    def test_limit_negative_returns_422(self, client):
+        assert client.get("/api/funds/screen?limit=-5").status_code == 422
+
+    def test_stock_screen_page_zero_422(self, client):
+        assert client.get("/api/funds/stock/screen?page=0").status_code == 422
+        assert client.get("/api/funds/stock/screen?limit=0").status_code == 422
+
+    def test_discovery_bond_screen_page_zero_422(self, client):
+        assert client.get("/api/funds/discovery-bond/screen?page=0").status_code == 422
+        assert client.get("/api/funds/discovery-bond/screen?limit=0").status_code == 422
+
+    def test_discovery_stock_screen_page_zero_422(self, client):
+        assert client.get("/api/funds/discovery-stock/screen?page=0").status_code == 422
+        assert client.get("/api/funds/discovery-stock/screen?limit=0").status_code == 422
+
+    def test_default_page_limit_returns_200(self, client):
+        """不传 page/limit 走默认 1/50，向后兼容"""
+        assert client.get("/api/funds/screen").status_code == 200
+        assert client.get("/api/funds/screen?page=1&limit=50").status_code == 200
+
+
 class TestRefreshStatus:
     def test_status_404_when_empty(self, seeded_db, monkeypatch):
         """无刷新记录 → 404（seeded_db 无 RefreshRun）"""

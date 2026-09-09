@@ -107,10 +107,13 @@ class FilterService:
         order: str = "desc",
         exclude_qdii: bool = False,
         universe_codes: list[str] | None = None,
+        page: int = 1,
+        limit: int = 50,
     ) -> dict:
         return self._screen(
             "bond", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
             sort, order, universe_codes, exclude_qdii,
+            page=page, limit=limit,
         )
 
     def screen_stock(
@@ -124,11 +127,14 @@ class FilterService:
         order: str = "desc",
         exclude_qdii: bool = False,
         universe_codes: list[str] | None = None,
+        page: int = 1,
+        limit: int = 50,
     ) -> dict:
         """股票 tab 筛选：成员 = funds_stock.yaml ∩ is_active（不看 fund_type）。"""
         return self._screen(
             "stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
             sort, order, universe_codes, exclude_qdii, min_sharpe,
+            page=page, limit=limit,
         )
 
     def screen_discovery_bond(
@@ -145,6 +151,8 @@ class FilterService:
         order: str = "desc",
         exclude_qdii: bool = False,
         market_types: list[str] | None = None,
+        page: int = 1,
+        limit: int = 50,
     ) -> dict:
         """债基·市场 tab 筛选：成员 = market_subtype ∈ default['discovery-bond'] ∩ is_active。"""
         types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE["discovery-bond"]
@@ -153,6 +161,7 @@ class FilterService:
             sort, order, None, exclude_qdii, min_sharpe, types,
             min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
             max_nav_stale_days=max_nav_stale_days,
+            page=page, limit=limit,
         )
 
     def screen_discovery_stock(
@@ -169,6 +178,8 @@ class FilterService:
         order: str = "desc",
         exclude_qdii: bool = False,
         market_types: list[str] | None = None,
+        page: int = 1,
+        limit: int = 50,
     ) -> dict:
         """股基·市场 tab 筛选：成员 = market_subtype ∈ default['discovery-stock'] ∩ is_active。"""
         types = market_types if market_types is not None else DEFAULT_DISCOVERY_UNIVERSE["discovery-stock"]
@@ -177,6 +188,7 @@ class FilterService:
             sort, order, None, exclude_qdii, min_sharpe, types,
             min_ret_1y=min_ret_1y, min_ret_3y=min_ret_3y,
             max_nav_stale_days=max_nav_stale_days,
+            page=page, limit=limit,
         )
 
     def universe_stats(
@@ -251,6 +263,8 @@ class FilterService:
         min_ret_1y: Optional[float] = None,
         min_ret_3y: Optional[float] = None,
         max_nav_stale_days: Optional[int] = None,
+        page: int = 1,
+        limit: int = 50,
     ) -> dict:
         # 成员判定：bond/stock 走 yaml；discovery-* 走 market_subtype
         if kind in ("bond", "stock"):
@@ -380,7 +394,12 @@ class FilterService:
         valued = [it for it in items if getter(it) is not None]
         valued.sort(key=getter, reverse=descending)
         empty = [it for it in items if getter(it) is None]
-        return {"total": len(items), "items": valued + empty}
+        # 分页切片：total 是筛后总数（与 page/limit 无关）；items 切片
+        total = len(items)
+        ordered = valued + empty
+        offset = (page - 1) * limit
+        items_page = ordered[offset:offset + limit]
+        return {"total": total, "items": items_page}
 
     @staticmethod
     def _to_dto(

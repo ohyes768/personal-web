@@ -92,3 +92,108 @@ class TestParsePeerRank:
 
     def test_whitespace_tolerated(self):
         assert _parse_peer_rank("  100  /  500  ") == {"pct": 20.0, "total": 500}
+
+
+class TestPagination:
+    """分页（page/limit）：total 仍是筛后总数，items 切片"""
+    @staticmethod
+    def _seed_many(db, n: int = 30, monkeypatch=None):
+        """seed N 只活跃债基，规模按序号递增，便于排序断言。
+        同时 monkeypatch load_fund_codes 让 universe 包含这些 code。
+        """
+        from src.db.models import Fund
+        rows = []
+        codes = []
+        for i in range(n):
+            code = f"{i + 10:06d}"
+            codes.append(code)
+            rows.append(Fund(
+                code=code, name=f"基金{code}", fund_type="债券型-长期纯债",
+                age_years=5.0, size_yi=float(i + 1),  # 1..30
+                mgr_name="张", mgr_company="某司",
+                mgr_days=3650, mgr_experience_years=10.0, is_active=True,
+            ))
+        db.add_all(rows)
+        db.commit()
+        if monkeypatch is not None:
+            monkeypatch.setattr(
+                "src.data.fund_universe.load_fund_codes",
+                lambda *args, **kwargs: codes,
+            )
+        return codes
+
+    def test_default_returns_all_when_under_limit(self, db_session, monkeypatch):
+        self._seed_many(db_session, n=5, monkeypatch=monkeypatch)
+        r = FilterService(db_session).screen(limit=50)
+        assert r["total"] == 5
+        assert len(r["items"]) == 5
+
+    def test_first_page_slice(self, db_session, monkeypatch):
+        self._seed_many(db_session, n=30, monkeypatch=monkeypatch)
+        r = FilterService(db_session).screen(sort="size_yi", order="desc", page=1, limit=10)
+        assert r["total"] == 30
+        assert len(r["items"]) == 10
+        # size_yi desc：前 10 名 size=30..21
+        sizes = [it["size_yi"] for it in r["items"]]
+        assert sizes == [30.0, 29.0, 28.0, 27.0, 26.0, 25.0, 24.0, 23.0, 22.0, 21.0]
+
+    def test_second_page_no_overlap(self, db_session, monkeypatch):
+        self._seed_many(db_session, n=30, monkeypatch=monkeypatch)
+        p1 = FilterService(db_session).screen(sort="size_yi", order="desc", page=1, limit=10)
+        p2 = FilterService(db_session).screen(sort="size_yi", order="desc", page=2, limit=10)
+        codes1 = {it["code"] for it in p1["items"]}
+        codes2 = {it["code"] for it in p2["items"]}
+        assert codes1.isdisjoint(codes2)
+        # 第 2 页 size=20..11
+        sizes2 = [it["size_yi"] for it in p2["items"]]
+        assert sizes2 == [20.0, 19.0, 18.0, 17.0, 16.0, 15.0, 14.0, 13.0, 12.0, 11.0]
+        # total 与 page 无关
+        assert p1["total"] == 30
+        assert p2["total"] == 30
+
+    def test_oversized_page_returns_empty(self, db_session, monkeypatch):
+        self._seed_many(db_session, n=30, monkeypatch=monkeypatch)
+        r = FilterService(db_session).screen(sort="size_yi", order="desc", page=999, limit=10)
+        assert r["total"] == 30
+        assert r["items"] == []
+
+    def test_total_unaffected_by_limit(self, db_session, monkeypatch):
+        self._seed_many(db_session, n=30, monkeypatch=monkeypatch)
+        r = FilterService(db_session).screen(sort="size_yi", order="desc", page=1, limit=5)
+        assert r["total"] == 30
+        assert len(r["items"]) == 5
+
+    def test_none_sort_still_tail_with_pagination(self, db_session, monkeypatch):
+        """None 值仍排末位；分页切片不破坏顺序"""
+        from src.db.models import Fund
+        codes = []
+        # 5 只有 size_yi（valued）
+        for i in range(5):
+            code = f"{i + 10:06d}"
+            codes.append(code)
+            db_session.add(Fund(
+                code=code, name=f"基金{code}", fund_type="债券型",
+                age_years=5.0, size_yi=float(10 - i),  # 10,9,8,7,6
+                mgr_name="x", mgr_company="y", mgr_days=100, mgr_experience_years=1.0,
+                is_active=True))
+        # 3 只 size_yi=None（empty，固定排末位）
+        for i in range(3):
+            code = f"{i + 20:06d}"
+            codes.append(code)
+            db_session.add(Fund(
+                code=code, name=f"空基金{i}", fund_type="债券型",
+                age_years=5.0, size_yi=None,
+                mgr_name="x", mgr_company="y", mgr_days=100, mgr_experience_years=1.0,
+                is_active=True))
+        db_session.commit()
+        monkeypatch.setattr(
+            "src.data.fund_universe.load_fund_codes",
+            lambda *args, **kwargs: codes,
+        )
+        r = FilterService(db_session).screen(sort="size_yi", order="desc", page=1, limit=4)
+        assert r["total"] == 8
+        # 前 4 名是 valued 段（10,9,8,7）
+        assert [it["size_yi"] for it in r["items"]] == [10.0, 9.0, 8.0, 7.0]
+        # 第 2 页：第 5 名 + 3 个 empty（None 排末位）
+        r2 = FilterService(db_session).screen(sort="size_yi", order="desc", page=2, limit=4)
+        assert [it["size_yi"] for it in r2["items"]] == [6.0, None, None, None]
