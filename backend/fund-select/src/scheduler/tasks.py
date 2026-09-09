@@ -184,7 +184,10 @@ def _refresh_fund_benchmarks(db: Session, codes: list[str]) -> list[str]:
     skip_codes = {
         code for (code,) in db.query(Fund.code).filter(
             Fund.code.in_(codes),
-            or_(Fund.fund_type.like("QDII%"), Fund.fund_type == "互认基金"),
+            # 用 market_subtype 判定 QDII（funds.fund_type 字段从 fetch_market_universe 没填过，
+            # 全为空字符串；market_subtype 是 akshare 原始 27 个枚举值，准确）
+            or_(Fund.market_subtype.like("QDII%"),
+                Fund.market_subtype == "互认基金"),
         ).all()
     }
     if skip_codes:

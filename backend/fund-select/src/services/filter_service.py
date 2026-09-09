@@ -301,13 +301,16 @@ class FilterService:
             raise ValueError(f"unknown screen kind: {kind}")
 
         if exclude_qdii:
-            # fund_type 为 NULL 的保留；只丢掉 QDII* 与「互认基金」
+            # market_subtype 为 NULL/空 的保留；只丢掉 QDII* 与「互认基金」
+            # （funds.fund_type 字段从 fetch_market_universe 没填过，全为空；
+            #  用 market_subtype 才是准的；fund_type 是「债基/股票」tab 老分类预留字段）
             q = q.where(
                 or_(
-                    Fund.fund_type.is_(None),
+                    Fund.market_subtype.is_(None),
+                    Fund.market_subtype == "",
                     and_(
-                        not_(Fund.fund_type.like("QDII%")),
-                        Fund.fund_type != "互认基金",
+                        not_(Fund.market_subtype.like("QDII%")),
+                        Fund.market_subtype != "互认基金",
                     ),
                 )
             )

@@ -32,7 +32,7 @@ def _mk_fund(code: str, **kw) -> Fund:
     defaults = dict(
         code=code,
         name=f"基金{code}",
-        fund_type="债券型-长期纯债",
+        market_subtype="债券型-长期纯债",  # 默认非 QDII；QDII 测试显式传 market_subtype="QDII-xxx"
         age_years=5.0,
         size_yi=10.0,
         mgr_name="张三",

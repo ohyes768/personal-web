@@ -38,7 +38,7 @@ def _rows(db, code: str) -> list[FundBenchmark]:
 
 def test_qdii_fund_skipped_with_null_tri(db_session, mock_benchmark):
     """QDII 基金：不调 fetch_benchmark_tri，写单行 tri=NULL source=skipped:qdii。"""
-    db_session.add(_mk_fund("270042", fund_type="QDII-股票"))
+    db_session.add(_mk_fund("270042", market_subtype="QDII-股票"))
     db_session.commit()
 
     errors = _refresh_fund_benchmarks(db_session, ["270042"])
@@ -52,8 +52,8 @@ def test_qdii_fund_skipped_with_null_tri(db_session, mock_benchmark):
 
 
 def test_mutual_recognition_fund_skipped(db_session, mock_benchmark):
-    """互认基金（fund_type 不以 QDII 开头）同样跳过。"""
-    db_session.add(_mk_fund("968157", fund_type="互认基金"))
+    """互认基金（market_subtype='互认基金'）同样跳过。"""
+    db_session.add(_mk_fund("968157", market_subtype="互认基金"))
     db_session.commit()
 
     _refresh_fund_benchmarks(db_session, ["968157"])
@@ -66,7 +66,7 @@ def test_mutual_recognition_fund_skipped(db_session, mock_benchmark):
 
 def test_non_qdii_fund_still_fetches(db_session, mock_benchmark):
     """非 QDII：行为不变，正常合成 TRI 入库。"""
-    db_session.add(_mk_fund("671030", fund_type="股票型-偏股"))
+    db_session.add(_mk_fund("671030", market_subtype="股票型-偏股"))
     db_session.commit()
 
     errors = _refresh_fund_benchmarks(db_session, ["671030"])
@@ -79,7 +79,7 @@ def test_non_qdii_fund_still_fetches(db_session, mock_benchmark):
 
 def test_skip_replaces_stale_benchmark_rows(db_session, mock_benchmark):
     """跳过要幂等覆盖旧数据：库内已有的 fallback 旧基准行必须清掉。"""
-    db_session.add(_mk_fund("486002", fund_type="QDII"))
+    db_session.add(_mk_fund("486002", market_subtype="QDII"))
     db_session.add_all([
         FundBenchmark(code="486002", date=date(2026, 8, 1), tri=1000.0, source="fallback_chain:sh000906"),
         FundBenchmark(code="486002", date=date(2026, 8, 2), tri=1002.0, source="fallback_chain:sh000906"),
@@ -92,8 +92,8 @@ def test_skip_replaces_stale_benchmark_rows(db_session, mock_benchmark):
     assert len(rows) == 1 and rows[0].source == "skipped:qdii"
 
 
-def test_fund_type_null_treated_as_non_qdii(db_session, mock_benchmark):
-    """fund_type 为空的基金不跳过（与 exclude_qdii 口径一致：NULL 保留）。"""
+def test_market_subtype_null_treated_as_non_qdii(db_session, mock_benchmark):
+    """market_subtype 为空的基金不跳过（与 exclude_qdii 口径一致：NULL 保留）。"""
     db_session.add(Fund(code="100001", name="基金X", is_active=True))
     db_session.commit()
 

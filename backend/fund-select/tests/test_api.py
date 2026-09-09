@@ -55,7 +55,7 @@ class TestScreen:
 
     def test_exclude_qdii_query_drops_qdii_typed(self, client, seeded_db):
         """exclude_qdii 是筛选 overlay：默认保留 QDII，勾上后丢掉。"""
-        seeded_db.get(Fund, "000001").fund_type = "QDII-债券"
+        seeded_db.get(Fund, "000001").market_subtype = "QDII-债券"
         seeded_db.commit()
         kept = [it["code"] for it in client.get("/api/funds/screen").json()["items"]]
         assert "000001" in kept

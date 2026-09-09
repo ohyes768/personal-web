@@ -23,7 +23,7 @@ def _seed_mixed(db):
         _mk("100001", fund_type="债券型-长期纯债"),          # 债基 yaml
         _mk("100002", fund_type="混合型-偏债"),              # 债基 yaml（类型不是债）
         _mk("100003", fund_type="债券型-长期纯债", is_active=False),  # 债基 yaml 但清盘
-        _mk("100004", fund_type="QDII"),                     # 债基 yaml
+        _mk("100004", market_subtype="QDII"),                    # 债基 yaml
         _mk("200001", fund_type="股票型-标准指数"),          # 股票 yaml
         _mk("200002", fund_type="混合型-偏股"),              # 股票 yaml
         _mk("200003", fund_type="债券型-长期纯债"),          # 股票 yaml（类型是债，仍属股票宇宙）
@@ -79,10 +79,10 @@ def test_exclude_qdii_is_optional_overlay(db_session):
     """排除 QDII 是用户筛选，不是宇宙成员判定。默认仍保留 QDII。"""
     _seed_mixed(db_session)
     db_session.add_all([
-        _mk("200004", fund_type="QDII-股票"),
-        _mk("200005", fund_type="QDII-互认"),
-        _mk("200006", fund_type="互认基金"),
-        _mk("200007", fund_type=""),
+        _mk("200004", market_subtype="QDII-股票"),
+        _mk("200005", market_subtype="QDII-互认"),
+        _mk("200006", market_subtype="互认基金"),
+        _mk("200007", market_subtype=""),
     ])
     db_session.commit()
     svc = FilterService(db_session)
