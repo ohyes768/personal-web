@@ -41,6 +41,7 @@ indices:
   中证1000: {ak_symbol: "sh000852", source: "stock_zh_index_daily"}
   上证50: {ak_symbol: "sh000016", source: "stock_zh_index_daily"}
   上证A股: {ak_symbol: "sh000002", source: "stock_zh_index_daily"}    # 新增：上证A股指数（110001 易方达平稳增长）
+  上证综指: {ak_symbol: "sh000001", source: "stock_zh_index_daily"}    # 新增 09-09：官方名「上证综合指数」（160105 等公式写「上证综指」）
   中证800: {ak_symbol: "sh000906", source: "stock_zh_index_daily"}
   创业板指: {ak_symbol: "sz399006", source: "stock_zh_index_daily"}
   科创50: {ak_symbol: "sh000688", source: "stock_zh_index_daily"}
@@ -110,6 +111,30 @@ indices:
   国证自由现金流: {ak_symbol: "980092", source: "index_hist_cni"}
   申万医药生物行业: {ak_symbol: "801150", source: "index_hist_sw"}
   申银万国制造业: {ak_symbol: "801110", source: "index_hist_sw"}
+  # ---- 09-09 补录（458 基准 CSV unknown 清单吸收，中证全表+源探测实证）----
+  # 名称解析核对捷径：csindex 接口原始返回自带「指数中文全称」列，可直接验证代码身份
+  中国战略新兴产业成份: {ak_symbol: "000171", source: "stock_zh_index_hist_csindex"}  # 新兴成指，10 只基金基准
+  中证新兴产业: {ak_symbol: "000964", source: "stock_zh_index_hist_csindex"}   # 新浪 sh000964 停更 2019-01
+  中证内地消费主题: {ak_symbol: "000942", source: "stock_zh_index_hist_csindex"}  # 新浪停更 2016-06
+  沪深300成长: {ak_symbol: "000918", source: "stock_zh_index_hist_csindex"}    # 新浪停更 2021-02
+  中证全指信息技术: {ak_symbol: "sh000993", source: "stock_zh_index_daily"}
+  中证信息技术: {ak_symbol: "sh000935", source: "stock_zh_index_daily"}      # 官方全称即「中证信息技术指数」(800信息)
+  中证全指原材料: {ak_symbol: "sh000987", source: "stock_zh_index_daily"}
+  中证全指能源: {ak_symbol: "sh000986", source: "stock_zh_index_daily"}
+  中证金融地产: {ak_symbol: "sh000934", source: "stock_zh_index_daily"}      # 800金地；注意 000933=800医卫勿混
+  中证国有企业改革: {ak_symbol: "sz399974", source: "stock_zh_index_daily"}
+  中证工业4.0: {ak_symbol: "sz399803", source: "stock_zh_index_daily"}
+  中证新能源汽车: {ak_symbol: "sz399976", source: "stock_zh_index_daily"}    # CS新能车
+  中证高端制造主题: {ak_symbol: "930820", source: "stock_zh_index_hist_csindex"}
+  中证贵金属产业: {ak_symbol: "931237", source: "stock_zh_index_hist_csindex"}
+  中证科技100: {ak_symbol: "931187", source: "stock_zh_index_hist_csindex"}
+  中证装备产业: {ak_symbol: "H11054", source: "stock_zh_index_hist_csindex"}
+  中证科技传媒通信150: {ak_symbol: "H30318", source: "stock_zh_index_hist_csindex"}  # TMT150 正身（非国证 TMT50 399610）
+  中证全指电信服务: {ak_symbol: "932144", source: "stock_zh_index_hist_csindex"}
+  中证港美上市全球智能汽车主题: {ak_symbol: "931900", source: "stock_zh_index_hist_csindex"}
+  中证国防: {ak_symbol: "sz399973", source: "stock_zh_index_daily"}   # 错码修复腾出的正主（399973 从「中证计算机」摘下）
+  申万国防军工: {ak_symbol: "801740", source: "index_hist_sw"}
+  上海金Au99.99: {ak_symbol: "Au99.99", source: "spot_hist_sge"}      # 上金所现货；黄金类基准统一近似（Sh上海金 源全 0 无效）
 
 # 同指数的不同写法（名称清洗后仍对不上时兜底）。
 # key 兼顾两种形态：原始写法 + 去掉「指数/收益率」后缀的短写法。
@@ -139,6 +164,9 @@ aliases:
   港股通综合: 恒生指数
   # ---- 名称归一（同一指数的官方全称/旧称写法，2026-09-04）----
   上证科创板50成份指数: 科创50    # sh000688 官方全称「上证科创板50成份指数」
+  上证综合指数: 上证综指          # sh000001 官方全称（09-09 新增）
+  上证指数: 上证综指              # 常见短写法
+  中证医药卫生: 中证医药          # sz399933 官方全称即「中证医药卫生指数」（09-09 新增，018209 实证）
   中证环保产业: 中证环保          # sh000827 官方全称「中证环保产业指数」
   中证全指证券公司: 中证全指证券  # sz399975 官方全称「中证全指证券公司指数」
   中国债券总指数: 中债综合财富    # 中债综合指数曾用名「中国债券总指数」
@@ -155,3 +183,29 @@ aliases:
   中债全债: 中债综合财富          # curated：中债全债口径 → 综合（先例同「中证全债→中债综合财富」）
   中债-国债总全价: 中债综合财富   # curated：国债+全价 → 综合财富（先例同「中债-总全价」）
   中债-1-3年国债及政策性金融债财富: 上证国债   # curated：短久期利率债 → 国债（期限近似，权重 ≤5%）
+  # ---- 09-09 补录（458 基准 CSV unknown 清单吸收）----
+  中债-新综合财富: 中债综合财富   # 精确：bond_new_composite_index_cbond 抓的就是「中债-新综合财富(总值)」
+  中债新综合: 中债综合财富
+  中债-总财富: 中债综合财富
+  中债-国债总财富: 中债综合财富     # curated：先例同「中债-总全价」（纯国债走综合，口径近似）
+  中债国债总: 中债综合财富
+  中国债券综合全价: 中债综合财富    # curated：先例同「中债综合全价」
+  中国债券综合: 中债综合财富
+  沪深300全收益: 沪深300            # curated：同一指数收益口径差异（先例同「标普500净总收益指数」）
+  申万制造业: 申银万国制造业
+  申银万国医药生物行业: 申万医药生物行业
+  中证内地资源主题: 中证内地资源    # 000944 官方全称即「中证内地资源主题指数」
+  中证全指一级行业材料: 中证全指原材料  # curated：全指一级行业体系已并入全指行业，材料资产同
+  中证全指一级行业能源: 中证全指能源    # curated：同上
+  中证全指电信业务: 中证全指电信服务    # curated：电信业务为旧称，资产同
+  # ---- 黄金类基准写法 → 上海金Au99.99（curated 近似：Au99.99 与上海金集中定价/现货延期价差 <0.2%）----
+  上海黄金交易所上海金集中定价合约午盘基准价格: 上海金Au99.99
+  上海黄金交易所上海金集中定价合约的午盘基准价格: 上海金Au99.99
+  上海黄金交易所上海金集中定价合约的午盘基准价的: 上海金Au99.99
+  上海黄金交易所AU99.99: 上海金Au99.99
+  上海黄金交易所Au99.99现货实盘合约收盘价: 上海金Au99.99
+  上海黄金交易所Au99.99现货实盘合约收盘价计算的: 上海金Au99.99
+  上海黄金交易所挂盘交易的Au99.99合约: 上海金Au99.99
+  上海黄金交易所黄金现货实盘合约Au9999价格: 上海金Au99.99
+  国内黄金现货价格: 上海金Au99.99
+  黄金现货延期交收合约的结算价: 上海金Au99.99

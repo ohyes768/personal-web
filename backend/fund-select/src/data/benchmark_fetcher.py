@@ -214,6 +214,9 @@ def _fetch_index_daily(symbol: str, source: str, start: date, end: date) -> pd.D
             df = ak.index_hist_cni(
                 symbol=symbol, start_date=start.strftime("%Y%m%d"), end_date=end.strftime("%Y%m%d"),
             ).rename(columns={"日期": "date", "收盘价": "close"})[["date", "close"]]
+        elif source == "spot_hist_sge":  # 上金所现货（黄金 ETF 联接基准，2026-09-09 实测；
+            # Sh上海金 symbol 返回全 0 无效，黄金类基准统一走 Au99.99，与上海金定价价差 <0.2%）
+            df = ak.spot_hist_sge(symbol=symbol)[["date", "close"]]
         elif source == "index_us_stock_sina":
             df = ak.index_us_stock_sina(symbol=symbol)[["date", "close"]]
         elif source == "stock_zh_index_daily_tx":  # 腾讯（港股指数唯一可用源）
