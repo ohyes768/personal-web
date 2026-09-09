@@ -218,6 +218,17 @@ export interface RankPercentile {
 ```
 `rank === null` 时仅显示"前 X.X%"，分子段不渲染——向后兼容旧后端。
 
+**⚠️ 隐式契约：`src/api/models.py:FundListItem` 必须同步声明新字段**
+
+`/screen` 端点的 `response_model=ScreenResponse → items: list[FundListItem]` 用 Pydantic v2 严格序列化——`_to_dto` 返回 dict 里**任何不在 `FundListItem` 模型里定义的字段都会被静默丢弃**（不报错、不警告）。所以后端在 `_to_dto` 加新字段时，**必须同时**给 `models.FundListItem` 补 Optional 字段，否则前端永远拿不到。
+
+09-09 实战踩坑：`mr_*`（L1 业绩 11 字段）+ `rank_ytd/1y/3y/5y`（4 字段）=_to_dto 早就有，response 一律不见。原因就是 `models.FundListItem` 没补。修复 = 在 `models.py` 加 `RankPercentileDTO` 嵌套 + 14 个 Optional 字段。
+
+**新增 list-item 字段 checklist**（加字段时 3 处必须同步）：
+1. `services/filter_service.py:_to_dto` — 加进 return dict（**ranks 走 `**ranks` 展开**）
+2. `api/models.py:FundListItem` — Pydantic 字段声明（**否则被静默砍掉**）
+3. `apps/fund-select/src/lib/types.ts:FundListItem` — TS 接口同步
+
 ## 4. 前后端链路（basePath 陷阱）
 
 ```
