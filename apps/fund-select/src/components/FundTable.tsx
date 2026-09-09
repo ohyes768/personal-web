@@ -58,14 +58,14 @@ const displayFundType = (type: string): string =>
   type.replace(/^债券型-/, '') || '-';
 
 /** 近 3 年回撤：数字 + 单元格内细条，避免横向占宽
- *  - dd_3y 在数据层是小数（0.18 表示 18%），显示时 ×100
+ *  - dd_3y 在数据层是负百分数（如 -15 表示回撤 15%），显示时取绝对值即可
  *  - 进度条封顶值由调用方传入（债基 20、股票 60），区分不同基金的回撤量级
  */
 const DD_BAR_CAP_BOND = 20;
 const DD_BAR_CAP_STOCK = 60;
 function DrawdownBar({ dd, capPct }: { dd: number | null; capPct: number }) {
   if (dd === null) return <span className="text-ink-soft">-</span>;
-  const pctValue = Math.abs(dd) * 100;
+  const pctValue = Math.abs(dd);
   const widthPct = Math.min(pctValue / capPct, 1) * 100;
   return (
     <div className="flex flex-col items-end gap-0.5 min-w-0">
