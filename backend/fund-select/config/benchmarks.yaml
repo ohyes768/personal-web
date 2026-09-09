@@ -88,6 +88,7 @@ indices:
   # ---- 港股（2，腾讯源）----
   恒生指数: {ak_symbol: "hkHSI", source: "stock_zh_index_daily_tx"}      # 1989-至今 9324 行
   恒生科技: {ak_symbol: "hkHSTECH", source: "stock_zh_index_daily_tx"}   # 2020 发布日起全量
+  恒生中国企业: {ak_symbol: "hkHSCEI", source: "stock_zh_index_daily_tx"}   # 09-09 新增：8175 行全量（110031 联接基准 95%）
   # ---- 中证官网（stock_zh_index_hist_csindex，2026-09-04 实测末条 T-1）----
   # symbol 来自中证官网全表（ak.index_csindex_all）指数全称精确匹配，非猜测
   中证A50: {ak_symbol: "930050", source: "stock_zh_index_hist_csindex"}
@@ -135,6 +136,19 @@ indices:
   中证国防: {ak_symbol: "sz399973", source: "stock_zh_index_daily"}   # 错码修复腾出的正主（399973 从「中证计算机」摘下）
   申万国防军工: {ak_symbol: "801740", source: "index_hist_sw"}
   上海金Au99.99: {ak_symbol: "Au99.99", source: "spot_hist_sge"}      # 上金所现货；黄金类基准统一近似（Sh上海金 源全 0 无效）
+  # ---- 09-09 补录二（港股通系，csindex 实测全量；恒生行业指数无源走近似见 aliases）----
+  中证港股通综合: {ak_symbol: "930930", source: "stock_zh_index_hist_csindex"}   # 替代旧「→恒生指数」近似 alias（09-09 升级为精确）
+  中证港股通科技: {ak_symbol: "931573", source: "stock_zh_index_hist_csindex"}
+  中证港股通医药卫生综合: {ak_symbol: "930965", source: "stock_zh_index_hist_csindex"}
+  中证香港美国上市中美科技: {ak_symbol: "931734", source: "stock_zh_index_hist_csindex"}
+  中证港股通内地金融: {ak_symbol: "H11146", source: "stock_zh_index_hist_csindex"}
+  中证港股通TMT主题: {ak_symbol: "931026", source: "stock_zh_index_hist_csindex"}
+  中证港股通电子综合: {ak_symbol: "931958", source: "stock_zh_index_hist_csindex"}
+  中证港股通消费主题: {ak_symbol: "931454", source: "stock_zh_index_hist_csindex"}
+  中证沪港深互联网: {ak_symbol: "930625", source: "stock_zh_index_hist_csindex"}
+  中证香港中国中小综合: {ak_symbol: "930923", source: "stock_zh_index_hist_csindex"}
+  中证港股通能源: {ak_symbol: "930960", source: "stock_zh_index_hist_csindex"}   # 亦作恒生能源近似正身
+  中证港股通原材料: {ak_symbol: "930961", source: "stock_zh_index_hist_csindex"}  # 亦作恒生原材料近似正身
 
 # 同指数的不同写法（名称清洗后仍对不上时兜底）。
 # key 兼顾两种形态：原始写法 + 去掉「指数/收益率」后缀的短写法。
@@ -160,8 +174,16 @@ aliases:
   标普: 标普500
   创业板指数: 创业板指
   上证科创板100: 科创板100
-  中证港股通综合: 恒生指数        # 近似（用户确认 2026-09-02）：港股通综合与恒指相关 ~0.95，真源（中证 H 段）无免费数据
-  港股通综合: 恒生指数
+  中证港股通: 中证港股通综合       # 公式短写「中证港股通指数」即综合指数
+  港股通综合: 中证港股通综合      # 09-09 升级精确：930930 真源已收录（原近似→恒生指数，2026-09-02 确认时无真源）
+  中证港股通TMT主题投资: 中证港股通TMT主题   # 「主题投资」与「主题」两种公式写法
+  # ---- 恒生行业指数近似（腾讯/东财/新浪港股接口均无恒生行业指数，09-09 实测 → 中证同类近似）----
+  恒生医疗保健: 中证港股通医药卫生综合
+  恒生能源行业: 中证港股通能源
+  恒生原材料行业: 中证港股通原材料
+  恒生高股息率: 中证港股通高股息投资
+  恒生互联网科技业: 恒生科技
+  恒生港股通: 中证港股通综合      # curated 近似：标的池与中证综合高度重合（009863）
   # ---- 名称归一（同一指数的官方全称/旧称写法，2026-09-04）----
   上证科创板50成份指数: 科创50    # sh000688 官方全称「上证科创板50成份指数」
   上证综合指数: 上证综指          # sh000001 官方全称（09-09 新增）
