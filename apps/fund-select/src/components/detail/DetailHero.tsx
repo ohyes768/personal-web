@@ -29,9 +29,9 @@ function buildHeadline(fund: FundDetail, score: number): string {
     ? '选股贡献突出'
     : null;
 
-  const ddTxt = fund.dd_3y !== null && fund.dd_3y !== undefined && fund.dd_3y <= 0.2
+  const ddTxt = fund.dd_3y !== null && fund.dd_3y !== undefined && Math.abs(fund.dd_3y) <= 20
     ? '回撤控制良好'
-    : fund.dd_3y !== null && fund.dd_3y !== undefined && fund.dd_3y >= 0.35
+    : fund.dd_3y !== null && fund.dd_3y !== undefined && Math.abs(fund.dd_3y) >= 35
       ? '回撤较大'
       : null;
 
@@ -111,17 +111,17 @@ export function DetailHero({ fund }: DetailHeroProps) {
           value={
             fund.dd_3y === null || fund.dd_3y === undefined
               ? '-'
-              : `-${(fund.dd_3y * 100).toFixed(1)}%`
+              : `-${Math.abs(fund.dd_3y).toFixed(1)}%`
           }
           sub={
             fund.dd_3y !== null && fund.dd_3y !== undefined
-              ? fund.dd_3y <= 0.15 ? '回撤可控'
-                : fund.dd_3y <= 0.25 ? '回撤一般'
-                  : fund.dd_3y <= 0.35 ? '回撤较大'
+              ? Math.abs(fund.dd_3y) <= 15 ? '回撤可控'
+                : Math.abs(fund.dd_3y) <= 25 ? '回撤一般'
+                  : Math.abs(fund.dd_3y) <= 35 ? '回撤较大'
                     : '回撤很大'
               : '-'
           }
-          accent={fund.dd_3y !== null && fund.dd_3y !== undefined && fund.dd_3y > 0.3 ? 'down' : undefined}
+          accent={fund.dd_3y !== null && fund.dd_3y !== undefined && Math.abs(fund.dd_3y) > 30 ? 'down' : undefined}
         />
         <KpiCell
           label="基金规模"
