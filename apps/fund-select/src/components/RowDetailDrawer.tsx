@@ -1,9 +1,12 @@
 /**
  * 行点击详情抽屉（股票 tab）
  *
+ * 结构：
+ *   1. 头部（代码 + 名称 + 类型 + 关闭按钮）
+ *   2. DetailHero（综合评级 + 6 指标卡片 + 4 个 KPI + 基础信息行）
+ *   3. 3 张明细表（同类排名 / 历年年度业绩 / 费率明细）
+ *
  * 沿用 CompareDrawer 风格：mask + 右侧 fixed drawer + Escape 关闭 + body overflow 锁定。
- * 内容：基金代码/名称 + 4 周期排名 + 历年年度业绩 + 费率明细。
- * 加载：useEffect 监听 fund.code → stockApi.getDetail；骨架屏渲染。
  */
 'use client';
 
@@ -14,6 +17,8 @@ import type { FundDetail, FundListItem } from '@/lib/types';
 import { stockApi } from '@/lib/api';
 import { RankChip } from '@/lib/rankColor';
 import { FEE_ROWS } from '@/lib/feeRows';
+
+import { DetailHero } from './detail/DetailHero';
 
 /** 与后端 RANK_PERIODS 对齐：4 周期主表顺序 */
 const PERIODS: Array<{ kind: string; period: string; label: string }> = [
@@ -36,34 +41,7 @@ function sortAnnualRanks(ranks: FundDetail['achievement_ranks']) {
     });
 }
 
-/** 风险拆解块字段定义：复用 FundTable 的 RISK_TIPS 文案，6 行（夏普 / IR / α / γ / α-IR / 超额 3y） */
-const RISK_FIELDS: Array<{
-  key: 'sharpe' | 'ir' | 'alpha' | 'gamma' | 'alpha_ir' | 'excess_3y';
-  label: string;
-  tip: string;
-  /** 库内 α / 超额为年化小数，渲染时翻成百分号 */
-  fromDecimal: boolean;
-}> = [
-  { key: 'sharpe',    label: '夏普',   tip: '夏普比率：每承担 1 份波动，换来的超额收益（相对无风险利率）。>1 优秀；<0 意味着近 3 年还没跑赢无风险收益', fromDecimal: false },
-  { key: 'ir',        label: 'IR',     tip: '信息比率：每 1 份偏离基准的波动，换来的稳定超额，衡量跑赢基准的性价比。>0.5 良好，>1 优秀', fromDecimal: false },
-  { key: 'alpha',     label: '选股α',  tip: '选股α：剔除市场涨跌与择时贡献后，经理纯靠选股获得的年化超额收益。越高选股能力越强；持续为负 = 选股在拖后腿', fromDecimal: true },
-  { key: 'gamma',     label: '择时γ',  tip: '择时γ：市场大涨大跌前调仓的能力。>0 涨时跟得上、跌时躲得开；≈0 基本不择时；<0 疑似追涨杀跌', fromDecimal: false },
-  { key: 'alpha_ir',  label: 'α-IR',   tip: 'α-IR：选股α的稳定度（α÷其波动）。>1 选股能力稳定可信；<0.5 说明 α 忽有忽无，参考价值低', fromDecimal: false },
-  { key: 'excess_3y', label: '超额 3y', tip: '近 3 年累计跑赢基准的幅度（复利口径）', fromDecimal: true },
-];
-
-const retColor = (v: number | null | undefined): string => {
-  if (v === null || v === undefined) return 'text-ink-soft';
-  return v >= 0 ? 'text-up' : 'text-down';
-};
-
-const fmtRisk = (v: number | null | undefined, fromDecimal: boolean): string => {
-  if (v === null || v === undefined) return '-';
-  if (fromDecimal) {
-    return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
-  }
-  return v.toFixed(2);
-};
+/** 风险拆解块字段定义已迁移至 detail/RiskMetricsGrid.tsx（Hero 区第 3 块） */
 
 interface RowDetailDrawerProps {
   fund: FundListItem | null;
@@ -129,19 +107,33 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
         aria-labelledby="row-detail-drawer-title"
         tabIndex={-1}
       >
-        {/* 头部 */}
-        <div className="sticky top-0 z-10 bg-gray-900 border-b border-gray-700">
-          <div className="flex items-center justify-between px-6 py-4">
+        {/* 头部：标题行 + 关闭按钮 */}
+        <div className="sticky top-0 z-10 bg-gray-900 border-b border-rule">
+          <div className="flex items-start justify-between px-6 pt-5 pb-4 gap-4">
             <div className="min-w-0 flex-1">
-              <h2 id="row-detail-drawer-title" className="text-base font-semibold text-ink-strong truncate">
-                <span className="font-mono text-info mr-2">{fund.code}</span>
+              <div className="flex items-baseline gap-3">
+                <span
+                  className="font-mono text-info text-xs tracking-wide"
+                >
+                  {fund.code}
+                </span>
+                {fund.fund_type && (
+                  <span className="text-[10px] uppercase tracking-[0.12em] text-ink-soft">
+                    {fund.fund_type}
+                  </span>
+                )}
+              </div>
+              <h2
+                id="row-detail-drawer-title"
+                className="mt-1 text-xl text-ink-strong leading-tight"
+                style={{ fontFamily: 'var(--font-serif)', fontWeight: 600 }}
+              >
                 {fund.name}
               </h2>
-              <p className="text-xs text-ink-muted mt-0.5 truncate">{fund.fund_type || '-'}</p>
             </div>
             <button
               onClick={onClose}
-              className="min-h-10 min-w-10 flex items-center justify-center text-gray-400 hover:text-ink-strong hover:bg-gray-700 rounded transition-colors"
+              className="min-h-10 min-w-10 flex items-center justify-center text-gray-400 hover:text-ink-strong hover:bg-gray-700 rounded transition-colors shrink-0"
               aria-label="关闭详情"
             >
               <XMarkIcon className="w-6 h-6" />
@@ -150,20 +142,27 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
         </div>
 
         {/* 内容 */}
-        <div className="overflow-y-auto flex-1 px-6 py-4 space-y-6">
+        <div className="overflow-y-auto flex-1 px-6 py-6 space-y-7">
           {loading && !detail && <SkeletonSection />}
 
           {detail && (
             <>
+              {/* Hero：综合评级 + 4 个 KPI + 基础信息行 */}
+              <DetailHero fund={detail} />
+
               {/* 表 1：4 周期排名 */}
-              <RankTable title="同类排名 · 4 周期">
+              <DetailSection
+                eyebrow="业绩排名"
+                title="同类排名 · 4 周期"
+                caption="雪球蛋卷基金同类区间排序（分母随时间变化）"
+              >
                 <table className="w-full text-xs">
                   <thead className="text-ink-muted border-b border-rule">
                     <tr>
-                      <th className="text-left py-1 font-medium">周期</th>
-                      <th className="text-right py-1 font-medium">收益</th>
-                      <th className="text-right py-1 font-medium">百分位</th>
-                      <th className="text-right py-1 font-medium">同类排名</th>
+                      <th className="text-left py-1.5 font-medium">周期</th>
+                      <th className="text-right py-1.5 font-medium">收益</th>
+                      <th className="text-right py-1.5 font-medium">百分位</th>
+                      <th className="text-right py-1.5 font-medium">同类排名</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -176,7 +175,6 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                         ? 'text-ink-soft'
                         : ret >= 0 ? 'text-up' : 'text-down';
                       const retText = ret === null ? '-' : `${ret >= 0 ? '+' : ''}${ret.toFixed(2)}%`;
-                      // 重建 RankPercentile（仅 4 周期主表）
                       const rankPct = (() => {
                         if (!row?.peer_rank) return null;
                         const parts = row.peer_rank.split('/');
@@ -187,27 +185,31 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                         return { pct: Math.round(r / t * 1000) / 10, total: t, rank: r };
                       })();
                       return (
-                        <tr key={p.label} className="border-b border-rule">
-                          <td className="py-1.5 text-ink-strong">{p.label}</td>
-                          <td className={`py-1.5 text-right tnum ${retClass}`}>{retText}</td>
-                          <td className="py-1.5 text-right"><RankChip rank={rankPct} /></td>
-                          <td className="py-1.5 text-right tnum text-ink-muted">{row?.peer_rank || '-'}</td>
+                        <tr key={p.label} className="border-b border-rule last:border-b-0">
+                          <td className="py-2 text-ink-strong">{p.label}</td>
+                          <td className={`py-2 text-right tnum ${retClass}`}>{retText}</td>
+                          <td className="py-2 text-right"><RankChip rank={rankPct} /></td>
+                          <td className="py-2 text-right tnum text-ink-muted">{row?.peer_rank || '-'}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
-              </RankTable>
+              </DetailSection>
 
-              {/* 表 2：历年年度业绩（完整） */}
-              <RankTable title="历年年度业绩">
+              {/* 表 2：历年年度业绩 */}
+              <DetailSection
+                eyebrow="历史业绩"
+                title="历年年度业绩"
+                caption="每自然年完整年度收益（成立不足一年按实际交易日折算）"
+              >
                 <table className="w-full text-xs">
                   <thead className="text-ink-muted border-b border-rule">
                     <tr>
-                      <th className="text-left py-1 font-medium">年份</th>
-                      <th className="text-right py-1 font-medium">收益</th>
-                      <th className="text-right py-1 font-medium">百分位</th>
-                      <th className="text-right py-1 font-medium">同类排名</th>
+                      <th className="text-left py-1.5 font-medium">年份</th>
+                      <th className="text-right py-1.5 font-medium">收益</th>
+                      <th className="text-right py-1.5 font-medium">百分位</th>
+                      <th className="text-right py-1.5 font-medium">同类排名</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -215,7 +217,7 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                       const annuals = sortAnnualRanks(detail.achievement_ranks);
                       if (annuals.length === 0) {
                         return (
-                          <tr><td colSpan={4} className="py-2 text-center text-ink-soft">暂无年度业绩数据</td></tr>
+                          <tr><td colSpan={4} className="py-3 text-center text-ink-soft">暂无年度业绩数据</td></tr>
                         );
                       }
                       return annuals.map(r => {
@@ -234,46 +236,33 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                           return { pct: Math.round(rr / tt * 1000) / 10, total: tt, rank: rr };
                         })();
                         return (
-                          <tr key={r.period_kind + r.period} className="border-b border-rule">
-                            <td className="py-1.5 text-ink-strong">{r.period}</td>
-                            <td className={`py-1.5 text-right tnum ${retClass}`}>{retText}</td>
-                            <td className="py-1.5 text-right"><RankChip rank={rankPct} /></td>
-                            <td className="py-1.5 text-right tnum text-ink-muted">{r.peer_rank || '-'}</td>
+                          <tr key={r.period_kind + r.period} className="border-b border-rule last:border-b-0">
+                            <td className="py-2 text-ink-strong">{r.period}</td>
+                            <td className={`py-2 text-right tnum ${retClass}`}>{retText}</td>
+                            <td className="py-2 text-right"><RankChip rank={rankPct} /></td>
+                            <td className="py-2 text-right tnum text-ink-muted">{r.peer_rank || '-'}</td>
                           </tr>
                         );
                       });
                     })()}
                   </tbody>
                 </table>
-              </RankTable>
-
-              {/* 表 3：风险拆解（夏普 / IR / 选股α / 择时γ / α-IR / 超额 3y） */}
-              <RankTable title="风险拆解">
-                <table className="w-full text-xs">
-                  <tbody>
-                    {RISK_FIELDS.map(f => {
-                      const v = detail[f.key];
-                      return (
-                        <tr key={f.key} className="border-b border-rule">
-                          <td className="py-1.5 text-ink-strong hover-tip hover-tip--wrap" title={f.tip}>{f.label}</td>
-                          <td className={`py-1.5 text-right tnum ${retColor(v)}`}>{fmtRisk(v, f.fromDecimal)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </RankTable>
+              </DetailSection>
 
               {/* 表 4：费率明细 */}
-              <RankTable title="费率明细">
+              <DetailSection
+                eyebrow="持有成本"
+                title="费率明细"
+                caption="申购费 / 赎回费 / 管理费 / 托管费 / 服务费合计"
+              >
                 <table className="w-full text-xs">
                   <tbody>
                     {FEE_ROWS.map(row => {
                       const v = detail.fees?.[row.key];
                       return (
                         <tr key={row.key} className="border-b border-rule">
-                          <td className="py-1.5 text-ink-strong">{row.label}</td>
-                          <td className="py-1.5 text-right tnum text-ink-muted">
+                          <td className="py-2 text-ink-strong">{row.label}</td>
+                          <td className="py-2 text-right tnum text-ink-muted">
                             {v === null || v === undefined
                               ? '-'
                               : `${v.toFixed(2)}%${row.suffix ?? ''}`}
@@ -282,8 +271,8 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                       );
                     })}
                     <tr className="border-b border-rule bg-paper-tint">
-                      <td className="py-1.5 text-ink-strong font-medium">年费合计</td>
-                      <td className="py-1.5 text-right tnum text-ink-strong font-medium">
+                      <td className="py-2 text-ink-strong font-medium">年费合计</td>
+                      <td className="py-2 text-right tnum text-ink-strong font-medium">
                         {(() => {
                           const m = detail.fees?.fee_mgmt;
                           const c = detail.fees?.fee_custody;
@@ -295,10 +284,10 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                     </tr>
                   </tbody>
                 </table>
-              </RankTable>
+              </DetailSection>
 
               {/* 口径脚注 */}
-              <p className="text-[10px] leading-relaxed text-ink-soft">
+              <p className="text-[10px] leading-relaxed text-ink-soft pt-2 border-t border-rule">
                 数据口径：排名来自雪球蛋卷基金（同类基金区间收益排序，分母随时间变化）；
                 费率为基金销售/管理费率（不含业绩报酬/申购费优惠）。点击列头或悬停可看更多解释。
               </p>
@@ -310,24 +299,62 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
   );
 }
 
-/** 子组件：带标题的表卡片 */
-function RankTable({ title, children }: { title: string; children: React.ReactNode }) {
+/** 子组件：分节卡片（左 eyebrow + 主标题 + caption + 内容） */
+function DetailSection({
+  eyebrow, title, caption, children,
+}: {
+  eyebrow?: string;
+  title: string;
+  caption?: string;
+  children: React.ReactNode;
+}) {
   return (
     <section>
-      <h3 className="text-sm font-medium text-ink-strong mb-2">{title}</h3>
-      <div className="rounded border border-rule bg-gray-900 p-3">{children}</div>
+      <header className="mb-2">
+        {eyebrow && (
+          <div className="text-[10px] uppercase tracking-[0.18em] text-ink-soft">
+            {eyebrow}
+          </div>
+        )}
+        <h3
+          className="text-base text-ink-strong"
+          style={{ fontFamily: 'var(--font-serif)', fontWeight: 600 }}
+        >
+          {title}
+        </h3>
+        {caption && (
+          <p className="text-[11px] text-ink-muted mt-0.5">{caption}</p>
+        )}
+      </header>
+      <div className="rounded border border-rule bg-paper-card p-3">
+        {children}
+      </div>
     </section>
   );
 }
 
-/** 骨架屏：4 张表占位（同类排名 / 历年年度 / 风险拆解 / 费率明细） */
+/** 骨架屏：Hero 占位 + 4 张表占位 */
 function SkeletonSection() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-7">
+      <section>
+        <div className="h-3 w-24 bg-paper-deep rounded mb-3 animate-pulse" />
+        <div className="h-6 w-3/4 bg-paper-deep rounded animate-pulse" />
+        <div className="mt-5 grid grid-cols-2 md:grid-cols-4 gap-px bg-rule">
+          {[0, 1, 2, 3].map(i => (
+            <div key={i} className="bg-paper-card px-4 py-3 space-y-2">
+              <div className="h-2 w-12 bg-paper-deep rounded animate-pulse" />
+              <div className="h-6 w-20 bg-paper-deep rounded animate-pulse" />
+              <div className="h-2 w-16 bg-paper-deep rounded animate-pulse" />
+            </div>
+          ))}
+        </div>
+      </section>
       {[0, 1, 2, 3].map(i => (
         <section key={i}>
-          <div className="h-4 w-24 bg-paper-deep rounded mb-2 animate-pulse" />
-          <div className="rounded border border-rule bg-gray-900 p-3 space-y-2">
+          <div className="h-3 w-16 bg-paper-deep rounded mb-2 animate-pulse" />
+          <div className="h-5 w-32 bg-paper-deep rounded mb-1 animate-pulse" />
+          <div className="rounded border border-rule bg-paper-card p-3 space-y-2">
             {Array.from({ length: 4 }).map((_, j) => (
               <div key={j} className="h-3 bg-paper-deep rounded animate-pulse" style={{ width: `${60 + j * 8}%` }} />
             ))}
