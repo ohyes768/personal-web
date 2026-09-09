@@ -2,10 +2,11 @@
  * 共享类型（与后端 src/api/models.py 对齐）
  */
 
-/** 同类排名百分位：{pct: 当前排名÷同类总数×100, total: 同类总数}；缺失/异常 → null */
+/** 同类排名百分位：{pct: 当前排名÷同类总数×100, total: 同类总数, rank: 同类排名分子}；缺失/异常 → null */
 export interface RankPercentile {
   pct: number | null;
   total: number | null;
+  rank: number | null;
 }
 
 export interface FundListItem {

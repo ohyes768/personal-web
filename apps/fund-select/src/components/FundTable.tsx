@@ -6,6 +6,7 @@
 import type { SortOrder } from './SortableHeader';
 import { SortableHeader } from './SortableHeader';
 import type { FundListItem } from '@/lib/types';
+import { RankChip } from '@/lib/rankColor';
 
 interface FundTableProps {
   items: FundListItem[];
@@ -19,7 +20,7 @@ interface FundTableProps {
   onToggleCompare: (fund: FundListItem) => void;
   /** 隐藏「利率债」列（股票 tab 用；债基 tab 默认 true 兼容） */
   showBondColumns?: boolean;
-  /** 显示 phase2-B 风险指标 6 列（股票 tab 用） */
+  /** 显示夏普列（股票 tab 用；债基 tab 默认 false） */
   showRiskColumns?: boolean;
   /** 行点击回调（股票 tab 用来打开详情弹框；债基 tab 不传） */
   onRowClick?: (fund: FundListItem) => void;
@@ -27,14 +28,9 @@ interface FundTableProps {
 
 const NAME_MAX = 10;
 
-/** 风险指标表头悬停说明（均为近 3 年日频口径，公共口径见表格下方脚注） */
+/** 夏普悬停说明（IR / α / γ / α-IR / 超额 3y 等风险拆解指标已下放到详情块） */
 const RISK_TIPS: Record<string, string> = {
   sharpe: '夏普比率：每承担 1 份波动，换来的超额收益（相对无风险利率）。>1 优秀；<0 意味着近 3 年还没跑赢无风险收益',
-  ir: '信息比率：每 1 份偏离基准的波动，换来的稳定超额，衡量跑赢基准的性价比。>0.5 良好，>1 优秀',
-  alpha: '选股α：剔除市场涨跌与择时贡献后，经理纯靠选股获得的年化超额收益。越高选股能力越强；持续为负 = 选股在拖后腿',
-  gamma: '择时γ：市场大涨大跌前调仓的能力。>0 涨时跟得上、跌时躲得开；≈0 基本不择时；<0 疑似追涨杀跌',
-  alpha_ir: 'α-IR：选股α的稳定度（α÷其波动）。>1 选股能力稳定可信；<0.5 说明 α 忽有忽无，参考价值低',
-  excess_3y: '近 3 年累计跑赢基准的幅度（复利口径）',
 };
 
 const fmt = (v: number | null | undefined, digits = 2, suffix = ''): string => {
@@ -50,12 +46,6 @@ const fmtRet = (v: number | null | undefined): string => {
 const retColor = (v: number | null | undefined): string => {
   if (v === null || v === undefined) return 'text-ink-soft';
   return v >= 0 ? 'text-up' : 'text-down';
-};
-
-/** 小数 → 带符号百分比（选股α / 超额收益，库内为年化小数） */
-const fmtPctFromDecimal = (v: number | null | undefined): string => {
-  if (v === null || v === undefined) return '-';
-  return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
 };
 
 const truncateName = (name: string, max = NAME_MAX): string =>
@@ -140,14 +130,7 @@ export function FundTable({
             <SortableHeader label="近3年" field="ret_3y" currentSort={sort} currentOrder={order} onSort={onSort} />
             <SortableHeader label="近5年" field="ret_5y" currentSort={sort} currentOrder={order} onSort={onSort} />
             {showRiskColumns && (
-              <>
-                <SortableHeader label="夏普" field="sharpe" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.sharpe} />
-                <SortableHeader label="IR" field="ir" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.ir} />
-                <SortableHeader label="选股α" field="alpha" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.alpha} />
-                <SortableHeader label="择时γ" field="gamma" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.gamma} />
-                <SortableHeader label="α-IR" field="alpha_ir" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.alpha_ir} />
-                <SortableHeader label="超额3y" field="excess_3y" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.excess_3y} />
-              </>
+              <SortableHeader label="夏普" field="sharpe" currentSort={sort} currentOrder={order} onSort={onSort} tip={RISK_TIPS.sharpe} />
             )}
             {showBondColumns && <th className={`${th} text-right text-xs font-medium text-ink-muted`}>利率债</th>}
             <th className={`${th} text-center text-xs font-medium text-ink-muted`}>对比</th>
@@ -182,18 +165,44 @@ export function FundTable({
                     {fund.mgr_name || '-'}
                   </div>
                 </td>
-                <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</td>
-                <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</td>
-                <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</td>
+                <td className={`${td} text-right`}>
+                  <div className={`tnum whitespace-nowrap ${retColor(fund.ret_1y)}`}>{fmtRet(fund.ret_1y)}</div>
+                  <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft">
+                    <RankChip rank={fund.rank_1y} />
+                    {fund.rank_1y?.pct != null && (
+                      <span>前 {fund.rank_1y.pct.toFixed(1)}%</span>
+                    )}
+                    {fund.rank_1y?.rank != null && fund.rank_1y?.total != null && (
+                      <span>· {fund.rank_1y.rank}/{fund.rank_1y.total}</span>
+                    )}
+                  </div>
+                </td>
+                <td className={`${td} text-right`}>
+                  <div className={`tnum whitespace-nowrap ${retColor(fund.ret_3y)}`}>{fmtRet(fund.ret_3y)}</div>
+                  <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft">
+                    <RankChip rank={fund.rank_3y} />
+                    {fund.rank_3y?.pct != null && (
+                      <span>前 {fund.rank_3y.pct.toFixed(1)}%</span>
+                    )}
+                    {fund.rank_3y?.rank != null && fund.rank_3y?.total != null && (
+                      <span>· {fund.rank_3y.rank}/{fund.rank_3y.total}</span>
+                    )}
+                  </div>
+                </td>
+                <td className={`${td} text-right`}>
+                  <div className={`tnum whitespace-nowrap ${retColor(fund.ret_5y)}`}>{fmtRet(fund.ret_5y)}</div>
+                  <div className="flex items-center justify-end gap-1 text-[10px] text-ink-soft">
+                    <RankChip rank={fund.rank_5y} />
+                    {fund.rank_5y?.pct != null && (
+                      <span>前 {fund.rank_5y.pct.toFixed(1)}%</span>
+                    )}
+                    {fund.rank_5y?.rank != null && fund.rank_5y?.total != null && (
+                      <span>· {fund.rank_5y.rank}/{fund.rank_5y.total}</span>
+                    )}
+                  </div>
+                </td>
                 {showRiskColumns && (
-                  <>
-                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.sharpe)}</td>
-                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.ir)}</td>
-                    <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.alpha)}`}>{fmtPctFromDecimal(fund.alpha)}</td>
-                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.gamma)}</td>
-                    <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.alpha_ir)}</td>
-                    <td className={`${td} text-right tnum whitespace-nowrap ${retColor(fund.excess_3y)}`}>{fmtPctFromDecimal(fund.excess_3y)}</td>
-                  </>
+                  <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.sharpe)}</td>
                 )}
                 {showBondColumns && <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.rate_bond_pct, 1, '%')}</td>}
                 <td className={`${td} text-center`}>

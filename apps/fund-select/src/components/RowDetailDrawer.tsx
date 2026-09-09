@@ -36,6 +36,35 @@ function sortAnnualRanks(ranks: FundDetail['achievement_ranks']) {
     });
 }
 
+/** 风险拆解块字段定义：复用 FundTable 的 RISK_TIPS 文案，6 行（夏普 / IR / α / γ / α-IR / 超额 3y） */
+const RISK_FIELDS: Array<{
+  key: 'sharpe' | 'ir' | 'alpha' | 'gamma' | 'alpha_ir' | 'excess_3y';
+  label: string;
+  tip: string;
+  /** 库内 α / 超额为年化小数，渲染时翻成百分号 */
+  fromDecimal: boolean;
+}> = [
+  { key: 'sharpe',    label: '夏普',   tip: '夏普比率：每承担 1 份波动，换来的超额收益（相对无风险利率）。>1 优秀；<0 意味着近 3 年还没跑赢无风险收益', fromDecimal: false },
+  { key: 'ir',        label: 'IR',     tip: '信息比率：每 1 份偏离基准的波动，换来的稳定超额，衡量跑赢基准的性价比。>0.5 良好，>1 优秀', fromDecimal: false },
+  { key: 'alpha',     label: '选股α',  tip: '选股α：剔除市场涨跌与择时贡献后，经理纯靠选股获得的年化超额收益。越高选股能力越强；持续为负 = 选股在拖后腿', fromDecimal: true },
+  { key: 'gamma',     label: '择时γ',  tip: '择时γ：市场大涨大跌前调仓的能力。>0 涨时跟得上、跌时躲得开；≈0 基本不择时；<0 疑似追涨杀跌', fromDecimal: false },
+  { key: 'alpha_ir',  label: 'α-IR',   tip: 'α-IR：选股α的稳定度（α÷其波动）。>1 选股能力稳定可信；<0.5 说明 α 忽有忽无，参考价值低', fromDecimal: false },
+  { key: 'excess_3y', label: '超额 3y', tip: '近 3 年累计跑赢基准的幅度（复利口径）', fromDecimal: true },
+];
+
+const retColor = (v: number | null | undefined): string => {
+  if (v === null || v === undefined) return 'text-ink-soft';
+  return v >= 0 ? 'text-up' : 'text-down';
+};
+
+const fmtRisk = (v: number | null | undefined, fromDecimal: boolean): string => {
+  if (v === null || v === undefined) return '-';
+  if (fromDecimal) {
+    return `${v >= 0 ? '+' : ''}${(v * 100).toFixed(2)}%`;
+  }
+  return v.toFixed(2);
+};
+
 interface RowDetailDrawerProps {
   fund: FundListItem | null;
   onClose: () => void;
@@ -155,7 +184,7 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                         const r = Number(parts[0]);
                         const t = Number(parts[1]);
                         if (!r || !t || r > t) return null;
-                        return { pct: Math.round(r / t * 1000) / 10, total: t };
+                        return { pct: Math.round(r / t * 1000) / 10, total: t, rank: r };
                       })();
                       return (
                         <tr key={p.label} className="border-b border-rule">
@@ -202,7 +231,7 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                           const rr = Number(parts[0]);
                           const tt = Number(parts[1]);
                           if (!rr || !tt || rr > tt) return null;
-                          return { pct: Math.round(rr / tt * 1000) / 10, total: tt };
+                          return { pct: Math.round(rr / tt * 1000) / 10, total: tt, rank: rr };
                         })();
                         return (
                           <tr key={r.period_kind + r.period} className="border-b border-rule">
@@ -218,7 +247,24 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                 </table>
               </RankTable>
 
-              {/* 表 3：费率明细 */}
+              {/* 表 3：风险拆解（夏普 / IR / 选股α / 择时γ / α-IR / 超额 3y） */}
+              <RankTable title="风险拆解">
+                <table className="w-full text-xs">
+                  <tbody>
+                    {RISK_FIELDS.map(f => {
+                      const v = detail[f.key];
+                      return (
+                        <tr key={f.key} className="border-b border-rule">
+                          <td className="py-1.5 text-ink-strong hover-tip hover-tip--wrap" title={f.tip}>{f.label}</td>
+                          <td className={`py-1.5 text-right tnum ${retColor(v)}`}>{fmtRisk(v, f.fromDecimal)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </RankTable>
+
+              {/* 表 4：费率明细 */}
               <RankTable title="费率明细">
                 <table className="w-full text-xs">
                   <tbody>
@@ -274,11 +320,11 @@ function RankTable({ title, children }: { title: string; children: React.ReactNo
   );
 }
 
-/** 骨架屏：3 张表占位 */
+/** 骨架屏：4 张表占位（同类排名 / 历年年度 / 风险拆解 / 费率明细） */
 function SkeletonSection() {
   return (
     <div className="space-y-6">
-      {[0, 1, 2].map(i => (
+      {[0, 1, 2, 3].map(i => (
         <section key={i}>
           <div className="h-4 w-24 bg-paper-deep rounded mb-2 animate-pulse" />
           <div className="rounded border border-rule bg-gray-900 p-3 space-y-2">

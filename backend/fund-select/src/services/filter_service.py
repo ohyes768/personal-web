@@ -67,7 +67,7 @@ def _fee_annual(fees: FundFees | None) -> Optional[float]:
 
 
 def _parse_peer_rank(value: str | None) -> dict | None:
-    """'1694/5606' → {'pct': 30.2, 'total': 5606}；格式异常/缺分母 → None。
+    """'1694/5606' → {'pct': 30.2, 'total': 5606, 'rank': 1694}；格式异常/缺分母 → None。
 
     用于股票 tab 同类排名显示；债基 tab 永远返回 None（无入库数据）。
     """
@@ -81,7 +81,7 @@ def _parse_peer_rank(value: str | None) -> dict | None:
         return None
     if rank <= 0 or total <= 0 or rank > total:
         return None
-    return {"pct": round(rank / total * 100, 1), "total": total}
+    return {"pct": round(rank / total * 100, 1), "total": total, "rank": rank}
 
 
 # stock tab 主表 4 个排名口径：(period_kind, period) → DTO 键
