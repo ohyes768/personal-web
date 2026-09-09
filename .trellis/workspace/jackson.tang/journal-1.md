@@ -184,3 +184,37 @@
 ### Next Steps
 
 - 未 push（等用户确认）；pnpm lint 未跑通系该 app 未初始化 ESLint 配置（既有）
+
+
+## Session 5: Fund-select 4 tab 列表分页（server page/limit）
+
+**Date**: 2026-09-09
+**Task**: Fund-select 4 tab 列表分页（server page/limit）
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+市场 tab 单 tab 经常 2000+ 只基金，前端渲染慢。给 4 个 screen 端点（bond/stock/discovery-bond/discovery-stock）统一接入服务端 page/limit 经典分页：后端 FilterService._screen 排序后切片（total 仍是筛后总数），4 个 routes 加 page/limit Query；前端 FundFilters 加 page/limit 字段，4 个 useFundList* 触发串同步，新增 Pagination 组件挂在 4 个 page。Sort 在 slice 前保证多页无重叠/无遗漏；ach_map 仍按全量 codes 查，rank 字段不丢。28 个新 pytest case 全 PASS，pnpm build 编译/lint/types/8 静态页全通过。同步更新 contracts.md 分页契约段。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `25e6141` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
