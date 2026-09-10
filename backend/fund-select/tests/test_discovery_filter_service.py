@@ -140,6 +140,38 @@ class TestScreenDiscoveryStock:
         assert r["items"][0]["code"] == "000002"
         assert r["items"][1]["code"] == "000001"
 
+    def test_qdii_reits_excluded_when_qdii_coarse_unchecked(self, db_session):
+        """回归：QDII-REITs 归 QDII 粗类别后，不勾 QDII 时必须排除（QDII-股票类同）。
+
+        注：粗类别→精确 subtype 展开由前端 COARSE_TO_SUBTYPES_STOCK 完成，后端只认精确值。
+        这里用前端展开后的精确列表调用 screen_discovery_stock，模拟真实请求。
+        """
+        db_session.add_all([
+            _mk_fund("000001", market_subtype="QDII-REITs"),
+            _mk_fund("000002", market_subtype="QDII-普通股票"),
+            _mk_fund("000003", market_subtype="股票型"),
+        ])
+        db_session.commit()
+
+        # 模拟前端展开：仅勾 REITs（不勾 QDII）→ ['Reits', 'REITs']
+        r = FilterService(db_session).screen_discovery_stock(market_types=["Reits", "REITs"])
+        codes = {it["code"] for it in r["items"]}
+        assert codes == set(), f"QDII 基金不应出现，实际: {codes}"
+
+        # 模拟前端展开：勾 QDII（不勾 REITs）→ QDII 系列 6 个精确 subtype
+        qdii_subtypes = ['QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活',
+                         'QDII-混合平衡', 'QDII-FOF', 'QDII-REITs']
+        r2 = FilterService(db_session).screen_discovery_stock(market_types=qdii_subtypes)
+        codes2 = {it["code"] for it in r2["items"]}
+        assert codes2 == {"000001", "000002"}
+
+        # 模拟前端展开：同时勾 QDII + REITs → QDII 系列 + REITs 系列（股票型不在其中）
+        all_subtypes = qdii_subtypes + ['Reits', 'REITs']
+        r3 = FilterService(db_session).screen_discovery_stock(market_types=all_subtypes)
+        codes3 = {it["code"] for it in r3["items"]}
+        # 000003 market_subtype='股票型' 不在勾选列表里，不出现
+        assert codes3 == {"000001", "000002"}
+
 
 class TestUniverseStatsDiscovery:
     def test_bond_kind_counts_only_bond_universe(self, db_session):

@@ -213,8 +213,8 @@ export const COARSE_TO_SUBTYPES_STOCK: Record<string, string[]> = {
   '股票型': ['股票型'],
   '混合型': ['混合型-平衡', '混合型-绝对收益', '混合型-灵活'],
   '指数型': ['指数型-海外股票', '指数型-其他'],
-  'QDII': ['QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活', 'QDII-混合平衡', 'QDII-FOF'],
-  'REITs': ['Reits', 'REITs', 'QDII-REITs'],
+  'QDII': ['QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活', 'QDII-混合平衡', 'QDII-FOF', 'QDII-REITs'],
+  'REITs': ['Reits', 'REITs'],
 };
 
 export const COARSE_TO_SUBTYPES_BOND: Record<string, string[]> = {
