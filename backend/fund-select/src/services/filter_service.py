@@ -459,17 +459,18 @@ class FilterService:
         }
 
     def get_detail(self, code: str) -> dict | None:
-        """单只详情（fund + performance + fees + holdings）。"""
+        """单只详情（fund + performance + fees + holdings + risk）。"""
         row = self.db.execute(
-            select(Fund, FundPerformance, FundFees, FundHoldingsBond)
+            select(Fund, FundPerformance, FundFees, FundHoldingsBond, FundRiskMetrics)
             .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
             .outerjoin(FundFees, Fund.code == FundFees.code)
             .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
+            .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
             .where(Fund.code == code)
         ).first()
         if row is None:
             return None
-        f, p, fee, hold = row
+        f, p, fee, hold, risk = row
         return {
             "code": f.code,
             "name": f.name,
@@ -492,6 +493,12 @@ class FilterService:
             "dd_5y": p.dd_5y if p else None,
             "nav_latest": p.nav_latest if p else None,
             "nav_date": p.nav_date if p else None,
+            "sharpe": risk.sharpe if risk else None,
+            "ir": risk.ir if risk else None,
+            "alpha": risk.alpha if risk else None,
+            "gamma": risk.gamma if risk else None,
+            "alpha_ir": risk.alpha_ir if risk else None,
+            "excess_3y": risk.excess_3y if risk else None,
             "fees": {
                 "fee_buy_small": fee.fee_buy_small if fee else None,
                 "fee_redeem_lt7d": fee.fee_redeem_lt7d if fee else None,

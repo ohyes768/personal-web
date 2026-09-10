@@ -72,6 +72,37 @@ class TestDetail:
     def test_get_detail_not_found(self, seeded_db):
         assert FilterService(seeded_db).get_detail("999999") is None
 
+    def test_get_detail_includes_risk_metrics(self, seeded_db):
+        """有 FundRiskMetrics 行时，详情接口返回 sharpe/ir/alpha/gamma/alpha_ir/excess_3y（用于 Hero 区 RiskMetricsGrid）"""
+        from datetime import date
+
+        from src.db.models import FundRiskMetrics
+
+        seeded_db.add(FundRiskMetrics(
+            code="000001",
+            sharpe=1.5, ir=0.8, alpha=0.05, gamma=0.02, alpha_ir=1.2, excess_3y=0.15,
+            as_of_date=date(2026, 9, 1),
+        ))
+        seeded_db.commit()
+
+        d = FilterService(seeded_db).get_detail("000001")
+        assert d["sharpe"] == 1.5
+        assert d["ir"] == 0.8
+        assert d["alpha"] == 0.05
+        assert d["gamma"] == 0.02
+        assert d["alpha_ir"] == 1.2
+        assert d["excess_3y"] == 0.15
+
+    def test_get_detail_risk_metrics_none_when_missing(self, seeded_db):
+        """无 FundRiskMetrics 行时（LEFT JOIN 缺失），risk 字段全为 None（前端显示「无数据」）"""
+        d = FilterService(seeded_db).get_detail("000004")
+        assert d["sharpe"] is None
+        assert d["ir"] is None
+        assert d["alpha"] is None
+        assert d["gamma"] is None
+        assert d["alpha_ir"] is None
+        assert d["excess_3y"] is None
+
 
 class TestParsePeerRank:
     """雪球 peer_rank='1694/5606' → pct/total 字典；格式异常统一 None。"""
