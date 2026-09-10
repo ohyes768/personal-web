@@ -6,6 +6,7 @@
 import type { SortOrder } from './SortableHeader';
 import { SortableHeader } from './SortableHeader';
 import type { FundListItem } from '@/lib/types';
+import { resolveCoarseLabel } from '@/lib/types';
 import { RankInline } from '@/lib/rankColor';
 
 interface FundTableProps {
@@ -53,9 +54,25 @@ const retColor = (v: number | null | undefined): string => {
 const truncateName = (name: string, max = NAME_MAX): string =>
   name.length > max ? `${name.slice(0, max)}…` : name;
 
-/** 债基页去掉公共前缀，完整类型走 title */
-const displayFundType = (type: string): string =>
-  type.replace(/^债券型-/, '') || '-';
+/** 类型列：上行浅灰底 chip 显示 5 粗类别，下行灰字显示精确 market_subtype。
+ *  - 已知 subtype → 两行（chip + 小字）
+ *  - 未知 subtype（如QDII-商品 / 商品 / 其他） → 单行灰字
+ *  - subtype 为空 → 单行 "-" */
+function TypeCell({ subtype }: { subtype: string | null }) {
+  if (!subtype) return <span className="text-ink-soft">-</span>;
+  const coarse = resolveCoarseLabel(subtype);
+  if (!coarse) {
+    return <span className="text-ink-soft">{subtype}</span>;
+  }
+  return (
+    <div className="flex flex-col gap-0.5 leading-tight">
+      <span className="inline-block self-start px-1.5 py-0.5 rounded text-[10px] font-medium bg-paper-tint text-ink-strong">
+        {coarse}
+      </span>
+      <span className="text-[10px] text-ink-soft">{subtype}</span>
+    </div>
+  );
+}
 
 /** 近 3 年回撤：数字 + 单元格内细条，避免横向占宽
  *  - dd_3y 在数据层是负百分数（如 -15 表示回撤 15%），显示时取绝对值即可
@@ -149,8 +166,6 @@ export function FundTable({
           {items.map(fund => {
             const selected = isSelected(fund.code);
             const disabled = !selected && isCompareFull;
-            const typeFull = fund.fund_type || '-';
-            const typeShow = displayFundType(typeFull);
             const mgrTip = `${fund.mgr_name || '-'} / ${fund.mgr_company || '-'}`;
             return (
               <tr
@@ -162,8 +177,8 @@ export function FundTable({
                 <td className={`${td} w-[7rem] text-ink-strong`}>
                   <HoverName name={fund.name} />
                 </td>
-                <td className={`${td} text-ink-muted leading-tight`} title={typeFull}>
-                  {typeShow}
+                <td className={`${td} leading-tight`}>
+                  <TypeCell subtype={fund.market_subtype} />
                 </td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.size_yi)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.age_years, 1)}</td>

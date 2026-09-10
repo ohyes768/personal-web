@@ -13,6 +13,8 @@ export interface FundListItem {
   code: string;
   name: string;
   fund_type: string;
+  /** akshare 精确子类（fund_type 全空，用这个做类型列展示；与后端 models.FundListItem.market_subtype 同步） */
+  market_subtype: string;
   size_yi: number | null;
   age_years: number | null;
   dd_3y: number | null;
@@ -224,6 +226,26 @@ export const COARSE_TO_SUBTYPES_BOND: Record<string, string[]> = {
   'QDII': ['QDII-纯债', 'QDII-混合债'],
   'REITs': [],  // 债基 universe 不含 REITs
 };
+
+/** 反向：精确 subtype → UI 粗类别（粗类别 chip 显示用）。
+ *  在模块初始化时从 COARSE_TO_SUBTYPES_* invert 得到。
+ *  未知 subtype（如 QDII-商品 / 商品）走 undefined，前端 chip 单行展示原值。 */
+function invertCoarseMap(m: Record<string, string[]>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [coarse, subs] of Object.entries(m)) {
+    for (const s of subs) out[s] = coarse;
+  }
+  return out;
+}
+
+export const SUBTYPE_TO_COARSE_STOCK: Record<string, string> = invertCoarseMap(COARSE_TO_SUBTYPES_STOCK);
+export const SUBTYPE_TO_COARSE_BOND: Record<string, string> = invertCoarseMap(COARSE_TO_SUBTYPES_BOND);
+
+/** 把精确 subtype 解析为 UI 5 大类（股基侧优先，未命中再走债基侧；都不命中返回 null） */
+export function resolveCoarseLabel(subtype: string | null | undefined): string | null {
+  if (!subtype) return null;
+  return SUBTYPE_TO_COARSE_STOCK[subtype] ?? SUBTYPE_TO_COARSE_BOND[subtype] ?? null;
+}
 
 /** 把 UI 粗类别展开成精确 subtype 列表（去重保序） */
 export function coarseToSubtypes(

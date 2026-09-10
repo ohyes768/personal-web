@@ -30,6 +30,7 @@ class FundListItem(BaseModel):
     code: str
     name: str
     fund_type: str
+    market_subtype: Optional[str] = None  # akshare 精确子类（fund_type 全空，用这个做 UI 展示）
     size_yi: Optional[float] = None
     age_years: Optional[float] = None
     dd_3y: Optional[float] = None

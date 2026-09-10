@@ -190,6 +190,19 @@ class TestScreenDiscoveryStock:
         codes = {it["code"] for it in r["items"]}
         assert "000001" not in codes and "000002" not in codes, "QDII-商品/商品不应进 stock universe"
 
+    def test_to_dto_includes_market_subtype(self, db_session):
+        """回归（09-10-fund-table-type-chip）：_to_dto 必须暴露 market_subtype，前端类型列展示用。"""
+        db_session.add_all([
+            _mk_fund("000001", market_subtype="指数型-股票"),
+            _mk_fund("000002", market_subtype="QDII-普通股票"),
+        ])
+        db_session.commit()
+
+        r = FilterService(db_session).screen_discovery_stock()
+        items_by_code = {it["code"]: it for it in r["items"]}
+        assert items_by_code["000001"]["market_subtype"] == "指数型-股票"
+        assert items_by_code["000002"]["market_subtype"] == "QDII-普通股票"
+
     def test_default_sort_ret_5y_desc(self, db_session):
         from src.db.models import FundPerformance
         import datetime

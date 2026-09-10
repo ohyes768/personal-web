@@ -421,6 +421,7 @@ class FilterService:
             "code": f.code,
             "name": f.name,
             "fund_type": f.fund_type,
+            "market_subtype": f.market_subtype,  # akshare 精确子类（前端类型列展示用）
             "size_yi": f.size_yi,
             "age_years": f.age_years,
             "dd_3y": p.dd_3y if p else None,
