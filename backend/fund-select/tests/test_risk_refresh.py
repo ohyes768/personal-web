@@ -10,12 +10,14 @@ fund_risk_metrics 6 项指标失真（09-03-fix-risk-adjusted-nav）。
 测试内不联网即报错，且指标数值对不上）。全程 mock，不联网。
 """
 from datetime import date
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
 import pytest
 
 from src.db.models import FundBenchmark, FundRiskMetrics
+from src.services.market_risk_refresh import refresh as refresh_market_risk
 from src.services.risk_service import _risk_returns, refresh_fund_risks
 from tests.conftest import _mk_fund
 
@@ -141,3 +143,78 @@ class TestRefreshFundRisksAdjustedBasis:
         ).dropna()
         diluted_excess = _cum(diluted_joined["p"]) - _cum(diluted_joined["b"])
         assert expected_excess - diluted_excess > 0.04
+
+
+class TestMarketRiskRefreshBenchmarkPrefetch:
+    """market_risk_refresh.refresh 必须先 benchmark_refresh.refresh 再 refresh_fund_risks，
+    否则 IR 公式读不到基准行 → 'no fund_benchmark row' 日志（PRD 09-10-market-tab-l4-benchmark-prefetch）。
+    """
+
+    def test_market_risk_refresh_writes_benchmark_first(self, db_session):
+        """调用顺序：benchmark_refresh.refresh 在 refresh_fund_risks 之前"""
+        call_order: list[str] = []
+
+        def fake_benchmark(db, codes):
+            call_order.append("benchmark")
+            return []
+
+        def fake_risk(db, codes):
+            call_order.append("risk")
+            return []
+
+        with patch(
+            "src.services.market_risk_refresh.benchmark_refresh.refresh",
+            side_effect=fake_benchmark,
+        ), patch(
+            "src.services.market_risk_refresh.refresh_fund_risks",
+            side_effect=fake_risk,
+        ):
+            result = refresh_market_risk(db_session, ["673010", "673020"])
+
+        assert call_order == ["benchmark", "risk"]
+        assert result["total"] == 2
+        assert result["completed"] == 2
+        assert result["failed"] == 0
+        assert result["errors"] == []
+
+    def test_market_risk_refresh_propagates_benchmark_errors(self, db_session):
+        """benchmark refresh 报错合并到 errors 列表，不阻塞后续 risk 调用"""
+        bench_errors = [
+            "benchmark:999999: fetch failed",
+            "benchmark:888888: timeout",
+        ]
+
+        def fake_benchmark(db, codes):
+            return list(bench_errors)
+
+        def fake_risk(db, codes):
+            return []
+
+        with patch(
+            "src.services.market_risk_refresh.benchmark_refresh.refresh",
+            side_effect=fake_benchmark,
+        ), patch(
+            "src.services.market_risk_refresh.refresh_fund_risks",
+            side_effect=fake_risk,
+        ):
+            result = refresh_market_risk(db_session, ["999999", "888888"])
+
+        assert result["errors"] == bench_errors
+        assert result["failed"] == 2
+        assert result["completed"] == 0
+
+    def test_market_risk_refresh_skips_benchmark_when_codes_empty(self, db_session):
+        """codes 为空时 benchmark 和 risk 都不被调用（避免空转）"""
+        with patch(
+            "src.services.market_risk_refresh.benchmark_refresh.refresh"
+        ) as mock_bench, patch(
+            "src.services.market_risk_refresh.refresh_fund_risks"
+        ) as mock_risk:
+            result = refresh_market_risk(db_session, [])
+
+        mock_bench.assert_not_called()
+        mock_risk.assert_not_called()
+        assert result["total"] == 0
+        assert result["completed"] == 0
+        assert result["failed"] == 0
+        assert result["errors"] == []

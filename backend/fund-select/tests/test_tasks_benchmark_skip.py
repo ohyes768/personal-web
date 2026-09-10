@@ -1,5 +1,5 @@
 """
-_refresh_fund_benchmarks 的 QDII 跳过逻辑（PRD 09-03-qdii-skip-benchmark）。
+benchmark_refresh.refresh 的 QDII 跳过逻辑（PRD 09-03-qdii-skip-benchmark）。
 
 为什么：QDII/互认基准公式（MSCI、标普全球等）无免费数据源，fallback 出的
 中证800 基准是错误口径 → 直接跳过合成，写 tri=NULL，界面 5 列显示 -。
@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from src.db.models import Fund, FundBenchmark
-from src.scheduler.tasks import _refresh_fund_benchmarks
+from src.services.benchmark_refresh import refresh
 from tests.conftest import _mk_fund
 
 
@@ -41,7 +41,7 @@ def test_qdii_fund_skipped_with_null_tri(db_session, mock_benchmark):
     db_session.add(_mk_fund("270042", market_subtype="QDII-股票"))
     db_session.commit()
 
-    errors = _refresh_fund_benchmarks(db_session, ["270042"])
+    errors = refresh(db_session, ["270042"])
 
     assert errors == []
     assert mock_benchmark == []                       # 未触发真实/打桩 fetch
@@ -56,7 +56,7 @@ def test_mutual_recognition_fund_skipped(db_session, mock_benchmark):
     db_session.add(_mk_fund("968157", market_subtype="互认基金"))
     db_session.commit()
 
-    _refresh_fund_benchmarks(db_session, ["968157"])
+    refresh(db_session, ["968157"])
 
     assert mock_benchmark == []
     rows = _rows(db_session, "968157")
@@ -69,7 +69,7 @@ def test_non_qdii_fund_still_fetches(db_session, mock_benchmark):
     db_session.add(_mk_fund("671030", market_subtype="股票型-偏股"))
     db_session.commit()
 
-    errors = _refresh_fund_benchmarks(db_session, ["671030"])
+    errors = refresh(db_session, ["671030"])
 
     assert errors == []
     assert mock_benchmark == ["671030"]
@@ -86,7 +86,7 @@ def test_skip_replaces_stale_benchmark_rows(db_session, mock_benchmark):
     ])
     db_session.commit()
 
-    _refresh_fund_benchmarks(db_session, ["486002"])
+    refresh(db_session, ["486002"])
 
     rows = _rows(db_session, "486002")
     assert len(rows) == 1 and rows[0].source == "skipped:qdii"
@@ -97,6 +97,6 @@ def test_market_subtype_null_treated_as_non_qdii(db_session, mock_benchmark):
     db_session.add(Fund(code="100001", name="基金X", is_active=True))
     db_session.commit()
 
-    _refresh_fund_benchmarks(db_session, ["100001"])
+    refresh(db_session, ["100001"])
 
     assert mock_benchmark == ["100001"]

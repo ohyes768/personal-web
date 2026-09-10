@@ -8,17 +8,17 @@
 - 空库可用 results_31.csv 引导（bootstrap_from_csv）
 """
 import uuid
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 
-from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from src.data.fund_universe import load_fund_codes
 from src.data.manager_fetcher import fetch_manager_table
 from src.data.market_universe_fetcher import fetch_market_universe
-from src.db.models import Fund, FundBenchmark, RefreshRun, RiskFreeRate
+from src.db.models import RefreshRun, RiskFreeRate
 from src.db.session import SessionLocal
 from src.scheduler.daily_refresh import bootstrap_from_csv
+from src.services import benchmark_refresh
 from src.services.market_universe_refresh import refresh as refresh_market_db
 from src.services.refresh_service import persist_snapshot, snapshot_fund
 from src.utils.config import PROJECT_ROOT, get_stock_funds_config_path
@@ -157,7 +157,7 @@ def refresh_stock_funds_sync(
             logger.info("[stock %d/%d] ✓ %s %s", i, len(codes), code, snap.get("name", "")[:20])
 
         # 业绩基准 TRI（phase2-A）+ 风险指标（phase2-B）：主循环后统一跑，单只失败不影响整批
-        bench_failed = _refresh_fund_benchmarks(db, codes)
+        bench_failed = benchmark_refresh.refresh(db, codes)
         errors.extend(bench_failed)
 
         from src.services.risk_service import refresh_fund_risks
@@ -168,58 +168,6 @@ def refresh_stock_funds_sync(
         return {"task_id": task_id, "total": len(codes), "completed": completed, "failed": failed}
     finally:
         db.close()
-
-
-def _refresh_fund_benchmarks(db: Session, codes: list[str]) -> list[str]:
-    """全量刷新 fund_benchmark（delete + insert，仿 _replace_achievement 模式）。
-
-    窗口近 3 年（与 dd_3y 口径一致）；指数级缓存让 143 只只拉 ~35 次指数日线。
-    无基准字段的基金写一行 tri=NULL（phase2-B 读到即跳过该基金指标计算）。
-    QDII/互认基金基准公式多无免费数据源（MSCI/标普全球等），fallback 出的中证800
-    是错误口径 → 跳过合成直接写 tri=NULL（PRD 09-03-qdii-skip-benchmark）；
-    判定口径同 filter_service 的 exclude_qdii。
-    """
-    from src.data.benchmark_fetcher import clear_index_cache, fetch_benchmark_tri
-
-    skip_codes = {
-        code for (code,) in db.query(Fund.code).filter(
-            Fund.code.in_(codes),
-            # 用 market_subtype 判定 QDII（funds.fund_type 字段从 fetch_market_universe 没填过，
-            # 全为空字符串；market_subtype 是 akshare 原始 27 个枚举值，准确）
-            or_(Fund.market_subtype.like("QDII%"),
-                Fund.market_subtype == "互认基金"),
-        ).all()
-    }
-    if skip_codes:
-        logger.info("[benchmark] 跳过 %d 只 QDII/互认基金基准合成", len(skip_codes))
-
-    clear_index_cache()
-    end = date.today()
-    start = end - timedelta(days=365 * 3)
-    bench_errors: list[str] = []
-    for i, code in enumerate(codes, 1):
-        try:
-            db.query(FundBenchmark).filter(FundBenchmark.code == code).delete()
-            if code in skip_codes:
-                db.add(FundBenchmark(code=code, date=end, tri=None, source="skipped:qdii"))
-                db.commit()
-                continue
-            df, source = fetch_benchmark_tri(code, start, end)
-            if df.empty:
-                db.add(FundBenchmark(code=code, date=end, tri=None, source=source))
-            else:
-                db.add_all([
-                    FundBenchmark(code=code, date=r["date"].date(), tri=float(r["tri"]), source=source)
-                    for _, r in df.iterrows()
-                ])
-            db.commit()
-            if i % 20 == 0:
-                logger.info("[benchmark %d/%d] 缓存进度", i, len(codes))
-        except Exception as e:  # noqa: BLE001  单只失败不阻塞
-            db.rollback()
-            bench_errors.append(f"benchmark:{code}: {str(e)[:120]}")
-            logger.warning("[benchmark %d/%d] %s 失败: %s", i, len(codes), code, str(e)[:120])
-    return bench_errors
 
 
 def refresh_risk_free_rate_sync() -> dict:

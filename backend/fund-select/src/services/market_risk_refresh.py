@@ -3,6 +3,10 @@ fund_risk_metrics 表 upsert refresh（market tab 风险指标计算）
 
 复用 risk_service.refresh_fund_risks 单只逻辑（已含 fetch_benchmark_tri / fetch_nav），
 但只对传入的 codes 跑。
+
+refresh_fund_risks 内部虽再调 fetch_benchmark_tri，但不会写入 fund_benchmark 表；
+market tab 必须先 benchmark_refresh.refresh 写入基准行，否则 IR 算不出
+（PRD 09-10-market-tab-l4-benchmark-prefetch）。
 """
 import json
 from datetime import UTC, datetime
@@ -11,6 +15,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from src.db.models import RefreshRun
+from src.services import benchmark_refresh
 from src.services.risk_service import refresh_fund_risks
 from src.utils.logger import setup_logger
 
@@ -18,7 +23,7 @@ logger = setup_logger("fund-select.market_risk_refresh")
 
 
 def refresh(session: Session, codes: list[str], task_id: Optional[str] = None) -> dict:
-    """对 codes 列表调 refresh_fund_risks，统计 errors。"""
+    """对 codes 列表先写基金基准行，再算风险指标，统计 errors。"""
     total = len(codes)
     errors: list[str] = []
 
@@ -35,8 +40,11 @@ def refresh(session: Session, codes: list[str], task_id: Optional[str] = None) -
             _finish_run(session, run, 0, 0, [], final_status="done")
         return {"task_id": task_id, "total": 0, "completed": 0, "failed": 0, "errors": []}
 
-    # refresh_fund_risks 内部已并发执行每只基金的 benchmark + nav + 计算
-    errors = refresh_fund_risks(session, codes)
+    # 先写基金基准行（QDII 写 tri=NULL 跳过行，其他写真实指数），否则 IR 公式读不到基准
+    errors.extend(benchmark_refresh.refresh(session, codes))
+
+    # 再算风险指标
+    errors.extend(refresh_fund_risks(session, codes))
 
     failed = len(errors)
     completed = total - failed
