@@ -135,12 +135,15 @@ def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
     errors: list[str] = []
     for i, code in enumerate(codes, 1):
         try:
-            bench_rows = (
+            # 查所有 FundBenchmark 记录（含 tri=NULL 的 QDII 跳过行），
+            # bench_rows 是 tri 非空子集（用于 IR 公式计算）
+            all_bench_rows = (
                 db.query(FundBenchmark)
-                .filter(FundBenchmark.code == code, FundBenchmark.tri.isnot(None))
+                .filter(FundBenchmark.code == code)
                 .order_by(FundBenchmark.date)
                 .all()
             )
+            bench_rows = [r for r in all_bench_rows if r.tri is not None]
             r_b = (
                 pd.Series(
                     [row.tri for row in bench_rows],
@@ -152,18 +155,57 @@ def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
             r_p = _risk_returns(_safe_fetch_nav(code), pd.Timestamp(start))
 
             m = compute_risk_metrics(r_p, r_b, r_f)
-            # 调试：算不出 IR/alpha 时打日志（r_p 太短 / r_b tri=NULL）
-            if m.ir is None and len(bench_rows) > 0:
-                logger.info(
-                    "[risk %d/%d] %s: ir=None (r_p=%d, r_b=%d, source=%s)",
-                    i, len(codes), code, len(r_p), len(r_b),
-                    bench_rows[0].source if bench_rows else "none",
-                )
-            elif m.ir is None and len(bench_rows) == 0:
-                logger.info(
-                    "[risk %d/%d] %s: ir=None (fund_benchmark.tri=NULL → QDII / 互认基金 / 公式无基准)",
-                    i, len(codes), code,
-                )
+            # 调试：算不出 IR/alpha 时打诊断（区分失败原因）
+            if m.ir is None:
+                if not all_bench_rows:
+                    # fund_benchmark 表里没这只基金的记录
+                    logger.info(
+                        "[risk %d/%d] %s: ir=None (no fund_benchmark row → 公式可能 FETCH ERR)",
+                        i, len(codes), code,
+                    )
+                else:
+                    # 有记录但 IR 算不出，区分原因
+                    src = all_bench_rows[0].source
+                    if src == "skipped:qdii":
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (source=skipped:qdii → QDII/互认基金无基准)",
+                            i, len(codes), code,
+                        )
+                    elif src.startswith("fallback_chain"):
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (source=fallback_chain → 公式整体不可解析→fallback 中证800)",
+                            i, len(codes), code,
+                        )
+                    elif src.startswith("unavailable:basic_failed"):
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (source=basic_failed → fund_basic 网络失败)",
+                            i, len(codes), code,
+                        )
+                    elif src.startswith("unavailable:no_field"):
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (source=no_field → 业绩比较基准字段缺失)",
+                            i, len(codes), code,
+                        )
+                    elif src.startswith("unavailable:unknown_majority"):
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (source=unknown_majority → 成分指数未收录 tri=NULL)",
+                            i, len(codes), code,
+                        )
+                    elif len(r_p) < 252 * 3 - 30:  # 3 年窗口约 750 天，留 30 缓冲
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (nav 数据不足：r_p=%d < %d)",
+                            i, len(codes), code, len(r_p), 252 * 3 - 30,
+                        )
+                    elif len(r_b) < 252 * 3 - 30:
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (bench 数据不足：r_b=%d < %d)",
+                            i, len(codes), code, len(r_b), 252 * 3 - 30,
+                        )
+                    else:
+                        logger.info(
+                            "[risk %d/%d] %s: ir=None (source=%s, r_p=%d, r_b=%d → 数据齐但回归退化)",
+                            i, len(codes), code, src, len(r_p), len(r_b),
+                        )
             _upsert(db, code, m, as_of)
             db.commit()
             if i % 20 == 0:
