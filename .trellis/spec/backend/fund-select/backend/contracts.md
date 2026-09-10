@@ -304,3 +304,100 @@ ordered = valued_sort + empty_tail
 items_page = ordered[offset : offset+limit]  # 切片在排序之后
 return {"total": total, "items": items_page}
 ```
+
+## 8. discovery-* tab「基金类型」粗类别映射契约（09-10-qdii-reits-coarse-mapping）
+
+### 两层过滤模式
+
+前端 UI 暴露**粗类别**（5 个：`股票型 / 混合型 / 指数型 / QDII / REITs`），用户勾选的也是粗类别；后端 SQL 只认**精确 subtype**（akshare 子类枚举，如 `QDII-普通股票`）。
+
+```typescript
+// apps/fund-select/src/lib/types.ts — 前端做粗→精展开
+'QDII': ['QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活', 'QDII-混合平衡', 'QDII-FOF', 'QDII-REITs'],
+'REITs': ['Reits', 'REITs'],
+// 展开后写入 ?market_type=QDII-普通股票,... 后端 IN (...) 过滤
+```
+
+后端 `_parse_market_types` 仅做 `split(',')`，不做粗→精展开（设计决策 D3：粗类别的语义归前端）。后端写单测时**必须模拟前端展开后的精确列表**，不要直接传 `["QDII"]` 给 `screen_discovery_stock(market_types=...)`——会得到空集（因为 `market_subtype` 字段值是 `QDII-普通股票` 等，没有 "QDII" 这个值）。
+
+### 跨界 subtype 归类（QDII-REITs 边界 case）
+
+`market_subtype` 字段值中部分 subtype 同时归属两个语义类别（如 `QDII-REITs` 既是 QDII 又是 REITs）。归类决策按**用户心智模型**而非纯语义——「QDII」粗类别包含所有 QDII 系列，与标的无关：
+
+| 精确 subtype | SUBCLASS_TO_CATEGORY（后端） | COARSE_TO_SUBTYPES_STOCK 粗类别（前端） |
+|---|---|---|
+| `QDII-REITs` | `stock`（与 Reits/REITs 同组，避免落 `other`） | **`QDII`**（不是 `REITs`） |
+
+**为什么 QDII-REITs 归 QDII 粗类别**：不勾「QDII」时用户期望"无任何 QDII 基金"，若归 REITs 则会出现名字带「(QDII)」的海外 REIT（鹏华美国房地产、嘉实全球房地产、诺安全球收益不动产等）——前端语义必须与用户直觉对齐。代价：勾 QDII 但不勾 REITs 时也能看到 QDII-REITs，但这与「QDII 大类」的语义一致。
+
+### Common Mistake: 后端单测传粗类别而非精确 subtype
+
+**Symptom**: `screen_discovery_stock(market_types=["QDII"])` 返回空集；测试失败。
+
+**Cause**: 后端 `market_subtype` 字段没有值为 "QDII" 的记录，只有 `QDII-普通股票 / QDII-混合偏股 / ...` 等子串。粗→精展开由前端 `COARSE_TO_SUBTYPES_STOCK` 完成。
+
+**Fix**: 单测里手写展开后的精确列表：
+```python
+qdii_subtypes = ['QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活',
+                 'QDII-混合平衡', 'QDII-FOF', 'QDII-REITs']
+FilterService(db).screen_discovery_stock(market_types=qdii_subtypes)
+```
+
+### Tests Required（09-10 新增）
+
+`tests/test_discovery_filter_service.py::TestScreenDiscoveryStock::test_qdii_reits_excluded_when_qdii_coarse_unchecked`：
+- 断言 1：不勾 QDII（仅勾 REITs 展开 `["Reits", "REITs"]`）→ QDII-REITs 不命中
+- 断言 2：勾 QDII（展开 6 个精确 subtype）→ QDII-REITs 命中
+- 断言 3：勾 QDII + REITs → 两者都命中（QDII-REITs 只出现 1 次，靠精确列表去重）
+
+### Gotcha: UI 5 粗类别 = universe 全集
+
+`DISCOVERY_STOCK_SUBTYPES` 14 个 subtype 全部分配在 5 个粗类别里（无 "other"）。`DISCOVERY_BOND_SUBTYPES` 10 个同理。修改 `COARSE_TO_SUBTYPES_STOCK` 时**必须保证 universe 全集仍被 5 粗类别覆盖**——漏掉的 subtype 默认 `market_types=null` 走 `DISCOVERY_STOCK_SUBTYPES` 全集时会重新出现，与 UI 行为脱节。
+
+## 9. SUBCLASS_TO_CATEGORY 完整枚举契约（09-10-subtype-coverage-fix）
+
+`SUBCLASS_TO_CATEGORY` 是 akshare 27+ 个精确 subtype → 4 类 universe（stock / bond / other / 未声明）的**显式白名单**。**未知 subtype 降级 "other"**（不出现在 universe 中）——这是有意为之，让运维在数据新增/异常时显式补映射，避免静默错归。
+
+### 当前完整映射（stock universe 16 个 / bond universe 11 个）
+
+| universe | 精确 subtype 列表 |
+|---|---|
+| **stock** | 股票型 / 指数型-海外股票 / 指数型-其他 / 指数型-股票 / 混合型-平衡 / 混合型-绝对收益 / 混合型-灵活 / 混合型-偏股 / QDII-普通股票 / QDII-混合偏股 / QDII-混合灵活 / QDII-混合平衡 / QDII-FOF / QDII-REITs / Reits / REITs |
+| **bond** | 债券型-中短债 / 债券型-混合一级 / 债券型-混合二级 / 债券型-混合债 / 债券型-利率债 / 债券型-信用债 / 债券型-长期纯债 / 指数型-固收 / QDII-纯债 / QDII-混合债 / 混合型-偏债 |
+| **other**（不进 universe） | FOF-稳健型 / FOF-均衡型 / FOF-进取型 / 货币型-普通货币 / 货币型-浮动净值 / QDII-商品 / 商品 / 其他 |
+
+### Convention: 修改 SUBCLASS_TO_CATEGORY 必须同步改前端 COARSE_TO_SUBTYPES_STOCK/BOND
+
+`SUBCLASS_TO_CATEGORY` 控制"是否进 universe"；`COARSE_TO_SUBTYPES_STOCK` / `COARSE_TO_SUBTYPES_BOND` 控制"在 UI 上被哪个粗类别命中"。两者一一对应：
+
+- 加 subtype 进 `SUBCLASS_TO_CATEGORY` 时，**必须**同时加进对应粗类别数组，否则用户勾不到
+- 删 subtype 时同理两端都删，避免前端展开列表包含 universe 外的值（`market_types=[...]` 命中空集但用户不知道为啥）
+
+### Convention: 跨界 subtype 必须显式归 stock 或 bond，不允许 "other"
+
+09-10 实战踩坑：修复前 `指数型-股票` (5677 只) / `混合型-偏股` (5726 只) / `混合型-偏债` (1464 只) 漏在 SUBCLASS_TO_CATEGORY 之外，默认归 other，**前端 UI 完全搜不到**。这三类是 A 股 ETF/指数增强主流、偏股混合主流、偏债混合主流，规模巨大。
+
+判定原则：
+- `指数型-股票`：A 股 ETF / 指数增强（华夏沪深 300ETF 联接A 等）→ 投资标的是股 → **stock**
+- `混合型-偏股`：偏股混合基金（股票仓位 ≥60%）→ **stock**
+- `混合型-偏债`：偏债混合基金（股票仓位 ≤40%）→ **bond**
+
+### 暂时保持 other 的 subtype
+
+- `QDII-商品` / `商品`（黄金、原油等大宗商品基金）：不属于股基/债基范畴，避免污染 universe。等有需要再加第 6 粗类别「商品型」。
+
+### Tests Required（09-10 新增）
+
+`tests/test_discovery_filter_service.py`：
+- `TestScreenDiscoveryStock::test_index_stock_included_when_index_coarse_selected` — 勾「指数型」粗类别展开（含 `指数型-股票`）→ 命中 `指数型-股票 / 指数型-海外股票 / 指数型-其他` 三种
+- `TestScreenDiscoveryStock::test_partial_stock_included_when_mixed_coarse_selected` — 勾「混合型」（股基侧，含 `混合型-偏股`）→ 命中 `混合型-偏股`，**不**含 `混合型-偏债`
+- `TestScreenDiscoveryStock::test_qdii_commodity_still_excluded_from_stock_universe` — `QDII-商品 / 商品` 默认不进 stock universe
+- `TestScreenDiscoveryBond::test_partial_bond_included_when_mixed_coarse_selected` — 勾「混合型」（债基侧，含 `混合型-偏债`）→ 命中 `混合型-偏债 + 债券型-混合债`
+
+### Gotcha: 修改 SUBCLASS_TO_CATEGORY 后 universe 规模会变
+
+修复后 universe 实际规模（活跃基金）：
+- stock: ~11.6k → ~17.3k（+5677 指数型-股票 +5726 混合型-偏股 - 重复？→ 单算）
+- bond: ~7.3k → ~8.8k（+1464 混合型-偏债）
+
+走默认 universe 的接口（`screen_discovery_stock/bond`、`universe_stats`、全量 refresh `universe_filter`）行为都会变化。前端首屏 P95 可能受影响（5 粗类别默认全选时结果集变大），本次不优化，留后续观察。

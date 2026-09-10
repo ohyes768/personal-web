@@ -211,15 +211,15 @@ export const STOCK_MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
  */
 export const COARSE_TO_SUBTYPES_STOCK: Record<string, string[]> = {
   '股票型': ['股票型'],
-  '混合型': ['混合型-平衡', '混合型-绝对收益', '混合型-灵活'],
-  '指数型': ['指数型-海外股票', '指数型-其他'],
+  '混合型': ['混合型-平衡', '混合型-绝对收益', '混合型-灵活', '混合型-偏股'],
+  '指数型': ['指数型-海外股票', '指数型-其他', '指数型-股票'],
   'QDII': ['QDII-普通股票', 'QDII-混合偏股', 'QDII-混合灵活', 'QDII-混合平衡', 'QDII-FOF', 'QDII-REITs'],
   'REITs': ['Reits', 'REITs'],
 };
 
 export const COARSE_TO_SUBTYPES_BOND: Record<string, string[]> = {
   '纯债型': ['债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-利率债', '债券型-信用债', '债券型-长期纯债'],
-  '混合型': ['债券型-混合债'],  // 混合债基（区别于混合一级/二级）
+  '混合型': ['债券型-混合债', '混合型-偏债'],  // 混合债基（区别于混合一级/二级；含偏债混合）
   '指数型': ['指数型-固收'],
   'QDII': ['QDII-纯债', 'QDII-混合债'],
   'REITs': [],  // 债基 universe 不含 REITs

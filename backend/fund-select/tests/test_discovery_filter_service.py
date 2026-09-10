@@ -79,6 +79,21 @@ class TestScreenDiscoveryBond:
         codes = {it["code"] for it in r["items"]}
         assert codes == {"000001"}
 
+    def test_partial_bond_included_when_mixed_coarse_selected(self, db_session):
+        """回归（09-10-subtype-coverage-fix）：混合型-偏债 必须归 bond universe 且能通过 混合型 粗类别命中（债基侧）。"""
+        db_session.add_all([
+            _mk_fund("000001", market_subtype="混合型-偏债"),
+            _mk_fund("000002", market_subtype="债券型-混合债"),
+            _mk_fund("000003", market_subtype="混合型-偏股"),  # 归 stock，不在 bond universe
+        ])
+        db_session.commit()
+
+        # 模拟前端展开：勾「混合型」（债基侧）→ 含 债券型-混合债 + 混合型-偏债
+        expanded = ['债券型-混合债', '混合型-偏债']
+        r = FilterService(db_session).screen_discovery_bond(market_types=expanded)
+        codes = {it["code"] for it in r["items"]}
+        assert codes == {"000001", "000002"}, f"债基混合型粗类别应不含偏股混合，实际: {codes}"
+
     def test_index_bond_routed_to_bond_not_stock(self, db_session):
         """关键回归：指数型-固收（债指数）必须归债基，不能错归股基 universe。"""
         db_session.add_all([
@@ -122,6 +137,58 @@ class TestScreenDiscoveryStock:
         r = FilterService(db_session).screen_discovery_stock(market_types=["QDII-普通股票"])
         codes = {it["code"] for it in r["items"]}
         assert codes == {"000002"}
+
+    def test_index_stock_included_when_index_coarse_selected(self, db_session):
+        """回归（09-10-subtype-coverage-fix）：指数型-股票 必须归 stock universe 且能通过 指数型 粗类别命中。
+
+        不修这条 case 时，勾「指数型」搜不到 5677 只 A 股 ETF / 指数增强主流基金。
+        """
+        db_session.add_all([
+            _mk_fund("000001", market_subtype="指数型-股票"),
+            _mk_fund("000002", market_subtype="指数型-海外股票"),
+            _mk_fund("000003", market_subtype="指数型-其他"),
+            _mk_fund("000004", market_subtype="股票型"),  # 对照：不在指数型里
+        ])
+        db_session.commit()
+
+        # 模拟前端展开：勾「指数型」→ 3 种指数型 subtype 都包含
+        expanded = ['指数型-海外股票', '指数型-其他', '指数型-股票']
+        r = FilterService(db_session).screen_discovery_stock(market_types=expanded)
+        codes = {it["code"] for it in r["items"]}
+        assert codes == {"000001", "000002", "000003"}, f"指数型粗类别应命中 3 种 subtype，实际: {codes}"
+
+        # 单独勾「指数型-股票」也能命中（前端展开正确性）
+        r2 = FilterService(db_session).screen_discovery_stock(market_types=["指数型-股票"])
+        codes2 = {it["code"] for it in r2["items"]}
+        assert codes2 == {"000001"}
+
+    def test_partial_stock_included_when_mixed_coarse_selected(self, db_session):
+        """回归（09-10-subtype-coverage-fix）：混合型-偏股 必须归 stock universe 且能通过 混合型 粗类别命中。"""
+        db_session.add_all([
+            _mk_fund("000001", market_subtype="混合型-偏股"),
+            _mk_fund("000002", market_subtype="混合型-平衡"),
+            _mk_fund("000003", market_subtype="混合型-灵活"),
+            _mk_fund("000004", market_subtype="混合型-偏债"),  # 归债基，不在 stock universe
+        ])
+        db_session.commit()
+
+        expanded = ['混合型-平衡', '混合型-绝对收益', '混合型-灵活', '混合型-偏股']
+        r = FilterService(db_session).screen_discovery_stock(market_types=expanded)
+        codes = {it["code"] for it in r["items"]}
+        assert codes == {"000001", "000002", "000003"}, f"混合型粗类别应不含偏债混合，实际: {codes}"
+
+    def test_qdii_commodity_still_excluded_from_stock_universe(self, db_session):
+        """回归（09-10-subtype-coverage-fix）：QDII-商品 / 商品 保持归 other，不进 stock universe。"""
+        db_session.add_all([
+            _mk_fund("000001", market_subtype="QDII-商品"),
+            _mk_fund("000002", market_subtype="商品"),
+            _mk_fund("000003", market_subtype="股票型"),
+        ])
+        db_session.commit()
+
+        r = FilterService(db_session).screen_discovery_stock()
+        codes = {it["code"] for it in r["items"]}
+        assert "000001" not in codes and "000002" not in codes, "QDII-商品/商品不应进 stock universe"
 
     def test_default_sort_ret_5y_desc(self, db_session):
         from src.db.models import FundPerformance

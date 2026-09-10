@@ -22,9 +22,11 @@ SUBCLASS_TO_CATEGORY: dict[str, str] = {
     "股票型": "stock",
     "指数型-海外股票": "stock",
     "指数型-其他": "stock",
+    "指数型-股票": "stock",         # A 股 ETF / 指数增强（主流股基指数）
     "混合型-平衡": "stock",
     "混合型-绝对收益": "stock",
     "混合型-灵活": "stock",
+    "混合型-偏股": "stock",         # 偏股混合基金（股票仓位 ≥60%）
     "QDII-普通股票": "stock",
     "QDII-混合偏股": "stock",
     "QDII-混合灵活": "stock",
@@ -45,6 +47,7 @@ SUBCLASS_TO_CATEGORY: dict[str, str] = {
     "指数型-固收": "bond",     # 债指数 → 债基
     "QDII-纯债": "bond",       # 海外债 → 债基
     "QDII-混合债": "bond",
+    "混合型-偏债": "bond",     # 偏债混合基金（股票仓位 ≤40%）→ 债基
 
     # ── 不在股基/债基 universe（FOF / 货币型 / 商品） ──
     "FOF-稳健型": "other",
