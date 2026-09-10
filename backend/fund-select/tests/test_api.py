@@ -92,6 +92,16 @@ class TestDetail:
     def test_detail_404(self, client):
         assert client.get("/api/funds/999999").status_code == 404
 
+    def test_detail_response_includes_risk_metric_keys(self, client):
+        """API 响应 schema 必须包含 6 个 risk 字段（即使值都是 None）；否则 Pydantic 会 drop 字段、前端 RiskMetricsGrid 拿不到键"""
+        r = client.get("/api/funds/000001")
+        assert r.status_code == 200
+        d = r.json()
+        for key in ("sharpe", "ir", "alpha", "gamma", "alpha_ir", "excess_3y"):
+            assert key in d, f"响应缺 {key} 字段（Pydantic schema 未声明）"
+            # 000001 在 seeded_db 里没 FundRiskMetrics 行 → 期望 None
+            assert d[key] is None
+
 
 class TestScreenPagination422:
     """page/limit 边界：FastAPI Query 校验 → 422"""

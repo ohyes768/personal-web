@@ -108,6 +108,13 @@ class FundDetailResponse(BaseModel):
     dd_5y: Optional[float] = None
     nav_latest: Optional[float] = None
     nav_date: Optional[date] = None
+    # 风险/超额指标（phase2-B；FundRiskMetrics 行缺失时全为 None，前端 RiskMetricsGrid 显示「无数据」）
+    sharpe: Optional[float] = None
+    ir: Optional[float] = None
+    alpha: Optional[float] = None
+    gamma: Optional[float] = None
+    alpha_ir: Optional[float] = None
+    excess_3y: Optional[float] = None
     fees: FeeDTO = FeeDTO()
     holdings: Optional[HoldingsDTO] = None
     achievement_ranks: list["AchievementRankDTO"] = []
