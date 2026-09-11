@@ -2,7 +2,11 @@
 
 ## 1. Scope / Trigger
 
-任务 09-01-fund-select-v1-bond 新增跨层契约（FastAPI ↔ Next.js 代理 ↔ 前端表格/对比），且补回了预研缺失的费率 fetcher 契约。记录于此防止后续 session 漂移。
+- 任务 09-01-fund-select-v1-bond：新增跨层契约（FastAPI ↔ Next.js 代理 ↔ 前端表格/对比），且补回了预研缺失的费率 fetcher 契约。
+- 任务 09-09-fund-select-pagination：分页契约（server 端排序-切片、total/limit 不变量）。
+- 任务 09-09-fund-list-rank：同类排名 DTO（RankPercentile 三字段 + Pydantic 静默砍字段陷阱）。
+- 任务 09-10-qdii-reits-coarse-mapping / 09-10-subtype-coverage-fix / 09-10-fund-table-type-chip：粗类别映射契约的完整化与边界。
+- 任务 09-11-bond-market-type-fix（本次）：粗类别映射契约的**前端一致性**强化（chip 文案 derive + 死选项清理 + 跨 tab 透传），沉淀于 §8a–§8d。
 
 ## 2. Signatures
 
@@ -353,6 +357,133 @@ FilterService(db).screen_discovery_stock(market_types=qdii_subtypes)
 ### Gotcha: UI 5 粗类别 = universe 全集
 
 `DISCOVERY_STOCK_SUBTYPES` 14 个 subtype 全部分配在 5 个粗类别里（无 "other"）。`DISCOVERY_BOND_SUBTYPES` 10 个同理。修改 `COARSE_TO_SUBTYPES_STOCK` 时**必须保证 universe 全集仍被 5 粗类别覆盖**——漏掉的 subtype 默认 `market_types=null` 走 `DISCOVERY_STOCK_SUBTYPES` 全集时会重新出现，与 UI 行为脱节。
+
+## 8a. 前端粗类别 UI 一致性契约（09-11-bond-market-type-fix）
+
+> 大白话：用户在筛选器看到的钮 = 用户在表格里看到的 chip = 实际能筛出来的基金。三者必须严格对齐，错一个就是用户被骗。债基 5 个钮里 REITs 钮点了等于没点（09-11 实战），就是这个契约破了。
+
+### 三处必须对齐的真相源
+
+| 真相源 | 类型 | 位置 |
+|---|---|---|
+| `*_MARKET_TYPE_OPTIONS` | UI 筛选器可选项（value + label） | `apps/fund-select/src/lib/types.ts:182-208` |
+| `COARSE_TO_SUBTYPES_*` | 粗类别 value → 精确 subtype 列表（前端 → 后端 IN 过滤） | `apps/fund-select/src/lib/types.ts:214-228` |
+| `SUBCLASS_TO_CATEGORY`（后端） | 精确 subtype → universe 成员判定（bond / stock / other） | `backend/fund-select/src/data/market_subtype_map.py` |
+
+**三者一一对应**，任何一边改了必须三边同步，否则出现：钮能点 / 表格能看 / 筛选结果对不上的三角错位。
+
+### Convention: 死选项三处同步清理
+
+`COARSE_TO_SUBTYPES_*['某粗类别'] = []` 是**死选项征兆**——后端 universe 不含此粗类别任何 subtype，前端钮点了展开为空 array → `api.ts:33` 静默不传参 → 后端 `_parse_market_types(None)` → 走默认 universe 返回全部基金。
+
+清理死选项必须**同时**删三处（不是一处）：
+1. `*_MARKET_TYPE_OPTIONS` 删该粗类别选项
+2. `COARSE_TO_SUBTYPES_*` 删该死键
+3. `DISCOVERY_*_DEFAULT_FILTERS.market_types` 删该粗类别引用（否则 `FilterChipBar` 会渲染出无法从 `FilterPanel` 重新加入的死 chip）
+
+09-11 实战：债基侧 REITs 死选项，先删 1 + 2 → 仍然在 3 留死引用 → commit 后自修（commit `dd08321` 包含 default filters 数组同步清理）。
+
+### Convention: chip 文案 = OPTIONS label 唯一真相源
+
+表格类型列 `<TypeCell>` 显示两层：上行 chip（粗类别）+ 下行小字（精确 subtype）。chip 文案**必须**从 `*_MARKET_TYPE_OPTIONS` 的 `label` 字段 derive，禁止硬编码第二份文案。
+
+实现位置：`apps/fund-select/src/lib/types.ts` 导出 `STOCK_OPTION_LABELS` / `BOND_OPTION_LABELS`，由 `buildOptionLabelMap(*_MARKET_TYPE_OPTIONS)` 生成。
+
+```typescript
+// Wrong — 硬编码两份文案，第二份必漂
+export const SUBTYPE_TO_LABEL: Record<string, string> = {
+  '混合型-偏债': '混合债基',
+  '指数型-固收': '指数债',
+  // ... 改 OPTIONS 时忘改这里 → 用户看到 chip「混合型」, 筛选器显示「混合债基」
+};
+
+// Correct — 唯一真相源
+function buildOptionLabelMap(opts: { value: string; label: string }[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const o of opts) out[o.value] = o.label;
+  return out;
+}
+export const BOND_OPTION_LABELS = buildOptionLabelMap(BOND_MARKET_TYPE_OPTIONS);
+```
+
+### Convention: 跨 tab 渲染 FundTable 必须显式传 `marketKind`
+
+`resolveCoarseLabel(subtype, kind?)` 是粗类别 → label 的解析器，`kind` 决定走 stock 还是 bond 的 label map：
+
+- `kind === undefined` → 走 `STOCK ?? BOND` fallback（**仅**老 `/bond`、`/stock` tab 用，不区分 context）
+- `kind === 'stock' | 'bond'` → 按指定 tab 解析 chip label
+
+`FundTable.tsx` props 加 `marketKind?: 'stock' | 'bond'`（**optional，老 tab 不传**）。`discovery-bond/page.tsx` 传 `marketKind="bond"`，`discovery-stock/page.tsx` 传 `marketKind="stock"`。
+
+不传 `marketKind` 的代码路径（老 `/bond`、`/stock` tab）**逐字节保持原行为**——不允许"为了统一让老 tab 也传"。
+
+### Common Mistake: 改 OPTIONS 文案不查仓库里所有引用
+
+**Symptom**: 改了 `BOND_MARKET_TYPE_OPTIONS` 里某项 label，单元测试过、生产跑通，但上线后用户报告"表格 chip 文案和筛选器对不上"。
+
+**Cause**: 仓库里**至少 4 处**可能引用到 label 或粗类别名（按命中优先级排查）：
+1. `DISCOVERY_*_DEFAULT_FILTERS.market_types`（数组元素是 OPTIONS 的 value）
+2. `discovery-{bond,stock}/page.tsx` 顶部注释（文档漂移主灾区）
+3. `api/routes.py` docstring（"10 个债券相关子类" 这种描述，**09-11 实战：补完混合型-偏债后是 11 个，注释没改**）
+4. `tests/test_discovery_filter_service.py` 断言字符串
+
+**Prevention**:
+- 改 `*_MARKET_TYPE_OPTIONS` / `COARSE_TO_SUBTYPES_*` 后，**必须** grep `apps/fund-select` 与 `backend/fund-select` 全部相关引用（不止上面 4 处）
+- 优先靠「唯一真相源」设计消除漂移（OPTIONS label derive），而不是靠"搜得全"
+
+### Gotcha: 跨界 subtype 同时归属两个粗类别时归类决策按用户心智模型
+
+见 §8「跨界 subtype 归类（QDII-REITs 边界 case）」。09-10 决策：QDII-REITs 归 QDII 粗类别（不勾 QDII 时不出现），代价是勾 QDII 但不勾 REITs 仍能看到 QDII-REITs。
+
+**新增陷阱**：跨界 subtype 在 chip 展示时也要按归类决策走，不能按 `market_subtype` 字符串前缀匹配。`SUBTYPE_TO_COARSE_*` 反向 map 的值必须与 §8 表格里的归类决策**逐字一致**。
+
+### Tests Required（09-11 新增）
+
+`apps/fund-select` 无单测框架（仅 backend pytest）。契约靠 `pnpm build` + `next dev` 手动验证，09-11 实证：
+
+- 改完 `BOND_MARKET_TYPE_OPTIONS` 删 REITs → `pnpm build` 通过 + 手动 `discovery-bond` 页面确认筛选器只 4 选项
+- chip 文案与筛选器 label 逐字一致 → 手动 `discovery-bond` 表格确认 `混合型-偏债` 行 chip =「混合债基」
+- 老 `/bond`、`/stock` tab 渲染逐字节不变 → 手动切换老 tab 确认（**重点**：老 tab 不传 `marketKind`，走 STOCK ?? BOND fallback）
+- `DISCOVERY_BOND_DEFAULT_FILTERS` 不含 REITs → `FilterChipBar` 不渲染死 chip
+
+### Wrong vs Correct
+
+#### Wrong
+```typescript
+// ❌ 死选项单边清理 — 只删 OPTIONS 不删 COARSE_TO_SUBTYPES
+BOND_MARKET_TYPE_OPTIONS = [{ value: '纯债型', ... }, { value: '混合型', ... }];  // 删了 REITs
+COARSE_TO_SUBTYPES_BOND = { ..., 'REITs': [] };  // 忘了删 — 仓库里留不可达死数组
+
+// ❌ chip 文案硬编码第二份真相源
+function resolveCoarseLabel(s: string) {
+  if (s === '混合型-偏债') return '混合债基';  // 改 OPTIONS 时必漂
+  return SUBTYPE_TO_COARSE_STOCK[s] ?? SUBTYPE_TO_COARSE_BOND[s];
+}
+
+// ❌ 老 /bond tab 传 marketKind='bond'
+<FundTable items={items} marketKind="bond" />  // 老 tab 数据走老 path, marketKind='bond' 会让老股票基金 chip 显示债基 label
+```
+
+#### Correct
+```typescript
+// ✅ 死选项三处同步清理
+BOND_MARKET_TYPE_OPTIONS = [{ value: '纯债型', ... }, { value: '混合型', ... }, { value: '指数型', ... }, { value: 'QDII', ... }];
+COARSE_TO_SUBTYPES_BOND = { '纯债型': [...], '混合型': [...], '指数型': [...], 'QDII': [...] };  // 无 REITs 键
+DISCOVERY_BOND_DEFAULT_FILTERS = { market_types: ['纯债型', '混合型', '指数型', 'QDII'], ... };  // 数组同步
+
+// ✅ chip 文案 derive
+export const BOND_OPTION_LABELS = buildOptionLabelMap(BOND_MARKET_TYPE_OPTIONS);
+function resolveCoarseLabel(s: string, kind?: 'stock' | 'bond') {
+  if (kind === undefined) return SUBTYPE_TO_COARSE_STOCK[s] ?? SUBTYPE_TO_COARSE_BOND[s] ?? null;
+  const coarse = (kind === 'stock' ? SUBTYPE_TO_COARSE_STOCK : SUBTYPE_TO_COARSE_BOND)[s];
+  return coarse ? (kind === 'stock' ? STOCK_OPTION_LABELS : BOND_OPTION_LABELS)[coarse] : null;
+}
+
+// ✅ 老 tab 不传 marketKind，老 path 走 STOCK ?? BOND fallback
+<FundTable items={items} />  // 老 /bond、/stock 用
+<FundTable items={items} marketKind="bond" />  // discovery-bond 用
+<FundTable items={items} marketKind="stock" />  // discovery-stock 用
+```
 
 ## 9. SUBCLASS_TO_CATEGORY 完整枚举契约（09-10-subtype-coverage-fix）
 
