@@ -295,3 +295,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 8: 债基全量刷新默认 10% 收尾
+
+**Date**: 2026-09-11
+**Task**: 债基全量刷新默认 10% 收尾
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+债基全量刷新 min_ret_3y 默认改为 10%（股基保持 20%），拆分 BOND/STOCK 独立常量；4 个脏任务已归档；spec 沉淀预筛默认拆分契约后归档本任务。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c26cf3f` | (see git log) |
+| `260f8f0` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
