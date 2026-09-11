@@ -401,3 +401,72 @@ FilterService(db).screen_discovery_stock(market_types=qdii_subtypes)
 - bond: ~7.3k → ~8.8k（+1464 混合型-偏债）
 
 走默认 universe 的接口（`screen_discovery_stock/bond`、`universe_stats`、全量 refresh `universe_filter`）行为都会变化。前端首屏 P95 可能受影响（5 粗类别默认全选时结果集变大），本次不优化，留后续观察。
+
+## 10. 全量 refresh pipeline profile 契约（09-11-bond-full-pipeline-trim）
+
+### 两套独立的 refresh pipeline（不要混淆）
+
+fund-select 实际有 **两套独立**的全量 refresh pipeline，不是同一套接不同 universe：
+
+| 维度 | 市场 tab 全量（`market_full_pipeline`） | 债基/股基三分法（`scheduler.tasks`） |
+|---|---|---|
+| 入口函数 | `refresh_market_full_sync` | `refresh_configured_funds_sync` / `refresh_stock_funds_sync` |
+| Universe 来源 | `ak.fund_name_em()` 全市场 ~2.8 万只 | `config/funds.yaml` / `funds_stock.yaml` 手工名单 |
+| 循环模式 | 阶段化流水线 + 分阶段重算 codes | `for code: snapshot_fund(code)` 单只 IO |
+| 主要写表 | `market_fund_rank` / `market_nav` / `fund_risk_metrics` / `fund_achievement_rank` | `funds` / `FundFees` / `FundHoldingsBond` / `FundPerformance` |
+| 触发方式 | 手动（`/full/refresh` 端点） | daily scheduler + 手动 |
+| 适用页面 | `/funds/discovery-bond` / `/funds/discovery-stock` | `/funds/bond` / `/funds/stock` |
+
+**两者之间没有共享 universe、没有共享 fetcher、没有共享进度回调**。老债基三分法不跑 L4/L5（`snapshot_fund` 默认 `fetch_ranking=False`，`refresh_configured_funds_sync` 不调 `benchmark_refresh.refresh`）—— 本任务的"精简"只对市场 tab pipeline 有效。
+
+### pipeline_profile 参数（市场 tab pipeline 内部切换）
+
+`refresh_market_full_sync` 新增 `pipeline_profile: str = "stock"` 参数：
+
+- `"stock"`（默认）：6 阶段全跑 — L0 universe → L1 rank → L2 size → L3 nav → L4 risk → L5 achievement
+- `"bond"`：4 阶段，跳 L4 + L5 — 保留 L0/L1/L2/L3
+
+非法值在函数顶部抛 `ValueError`，不写 `RefreshRun`。
+
+### 债基详情页不消费的数据（L4/L5 跳过理由）
+
+- **`fund_risk_metrics`** 6 指标（sharpe / ir / alpha / gamma / alpha_ir / excess_3y）：只有 `RowDetailDrawer.tsx`（股基详情页）import `RiskMetricsGrid`，`RowDetailDrawerBond.tsx` 完全没 import → 债基详情页不展示这 6 个指标
+- **`fund_achievement_rank`** 同类排名：只有 `RowDetailDrawer.tsx` 消费 `detail.achievement_ranks`，债基详情页 / 列表页 / 筛选器均不消费
+
+保留 L3 nav 是因为 `max_dd_3y` 是债基筛选维度（`discovery-bond/page.tsx:77`），且 nav 数据是 1y/3y 涨幅计算基础。
+
+### main_run.total 按 profile 动态算
+
+- stock: `len(codes) * 6`
+- bond: `len(codes) * 4`
+
+`RefreshRun.total` 在两处写入：初始化时（line 192，原"占位"）和 L2 后（line 273）。两处都用 `stages_per_code` 动态算。前端 `discoveryBondApi.getFullRefreshStatus` 拿到的 total/completed 比例与实际跑的阶段数匹配。
+
+### 路由层接入
+
+- `routes.py:444 discovery_bond_full_refresh` 显式传 `pipeline_profile="bond"`
+- `routes.py:505 discovery_stock_full_refresh` 不传 profile → 默认 `"stock"`，行为不变
+- `scheduler/tasks.py` 若有调用 `refresh_market_full_sync` 的入口需手动加 profile 参数（`pipeline_profile` 默认 `"stock"` 保证向后兼容）
+
+### Tests Required（09-11 新增）
+
+`tests/test_market_full_pipeline.py::TestPipelineProfile` 覆盖：
+
+- `test_bond_profile_skips_l4_and_l5` — profile="bond" 时 L4/L5 sentinel 函数被设但 flag 仍为 False；`stage_results.keys()` 只含 L0/L1/L2/L3
+- `test_default_profile_runs_all_six_stages` — 不传 profile → 6 阶段全跑（回归保护）
+- `test_invalid_profile_raises_value_error` — `pipeline_profile="etf"` 抛 `ValueError` 且不写 `RefreshRun`
+- `test_main_run_total_reflects_stages_per_code` — bond profile total = universe × 4；stock profile total = universe × 6
+
+### Common Mistake: 把"债基市场刷新"当成"债基三分法刷新"
+
+两者是独立 pipeline：
+- 想精简债基市场刷新 → 改 `refresh_market_full_sync` + `discovery_bond_full_refresh`（本次范围）
+- 想精简债基三分法 → 改 `refresh_configured_funds_sync`（独立任务，且老路径无 L4/L5 可精简）
+
+### Gotcha: pipeline 跳过阶段后 `stage_results` 不造假
+
+`stage_results` dict 在 profile="bond" 时**不写** `L4_risk` / `L5_achievement` key（不写占位如 `{"skipped": "..."}`）。前端轮询拿到的 `RefreshRun.total/completed/failed` 自然反映 4 阶段进度。日志里通过 `logger.info("跳过 L4/L5 阶段")` 留痕。
+
+### 后续：合并两套 pipeline（不在本任务范围）
+
+把"市场 tab 全量"和"债基三分法"合并成一个 profile-driven 的统一刷新系统，是更大的架构重构（涉及 universe 来源 IO、单只 vs 阶段化循环、字段映射、schema 差异）。本次不动。
