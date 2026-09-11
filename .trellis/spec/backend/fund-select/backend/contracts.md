@@ -356,7 +356,7 @@ FilterService(db).screen_discovery_stock(market_types=qdii_subtypes)
 
 ### Gotcha: UI 5 粗类别 = universe 全集
 
-`DISCOVERY_STOCK_SUBTYPES` 14 个 subtype 全部分配在 5 个粗类别里（无 "other"）。`DISCOVERY_BOND_SUBTYPES` 10 个同理。修改 `COARSE_TO_SUBTYPES_STOCK` 时**必须保证 universe 全集仍被 5 粗类别覆盖**——漏掉的 subtype 默认 `market_types=null` 走 `DISCOVERY_STOCK_SUBTYPES` 全集时会重新出现，与 UI 行为脱节。
+`DISCOVERY_STOCK_SUBTYPES` 16 个 subtype 全部分配在 5 个粗类别里（无 "other"）。`DISCOVERY_BOND_SUBTYPES` 11 个分配在 4 个粗类别里（债基 universe 不含 REITs）。修改 `COARSE_TO_SUBTYPES_*` 时**必须保证 universe 全集仍被对应粗类别覆盖**——漏掉的 subtype 默认 `market_types=null` 走默认 universe 全集时会重新出现，与 UI 行为脱节。
 
 ## 8a. 前端粗类别 UI 一致性契约（09-11-bond-market-type-fix）
 
@@ -424,7 +424,7 @@ export const BOND_OPTION_LABELS = buildOptionLabelMap(BOND_MARKET_TYPE_OPTIONS);
 **Cause**: 仓库里**至少 4 处**可能引用到 label 或粗类别名（按命中优先级排查）：
 1. `DISCOVERY_*_DEFAULT_FILTERS.market_types`（数组元素是 OPTIONS 的 value）
 2. `discovery-{bond,stock}/page.tsx` 顶部注释（文档漂移主灾区）
-3. `api/routes.py` docstring（"10 个债券相关子类" 这种描述，**09-11 实战：补完混合型-偏债后是 11 个，注释没改**）
+3. `api/routes.py` docstring（必须跟 `DISCOVERY_*_SUBTYPES` 长度同步；09-11 已把「10 个债券相关子类」改为「11 个」）
 4. `tests/test_discovery_filter_service.py` 断言字符串
 
 **Prevention**:

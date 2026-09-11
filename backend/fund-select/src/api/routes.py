@@ -291,7 +291,7 @@ async def discovery_bond_screen(
     limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """债基·市场 tab 筛选（market_type 默认 = 10 个债券相关子类；分页 page/limit 默认 1/50）"""
+    """债基·市场 tab 筛选（market_type 默认 = 11 个债券相关子类；分页 page/limit 默认 1/50）"""
     return FilterService(db).screen_discovery_bond(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
