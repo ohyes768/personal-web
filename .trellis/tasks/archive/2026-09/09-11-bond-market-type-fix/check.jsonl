@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check 阶段重点验证 4 个 tab（债基/股基/老 /bond/老 /stock）的 market_type 参数 payload 形状与原值一致，确保 P0 修复不引入新跨层语义漂移。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check 阶段重点：确认 chip label 是从 *_MARKET_TYPE_OPTIONS derive（不是硬编码 switch/map）；若发现第二份文案立即标 'no_change_needed' 风格的死代码警告。"}

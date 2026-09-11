@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "P0 bug 本身是跨层：前端空数组 → api.ts 不发参 → 后端 _parse_market_types(None) → filter_service 走默认 universe。实现时务必端到端再走一遍这条链，确认新代码不再产生跨层歧义。"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "P1 要从 *_MARKET_TYPE_OPTIONS derive value→label 映射；不要硬编码第二份文案。基金类型选项是唯一真相源。"}
+{"file": ".trellis/spec/backend/fund-select/backend/contracts.md", "reason": "改前端 market_type 拼装时，核对 basePath/双前缀不要顺带动了 /api/funds/discovery-bond 前缀；market_type Query 参数契约本任务不破。"}
