@@ -252,3 +252,46 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 7: 债基·市场 tab 类型筛选修正：删 REITs 死选项 + chip 文案对齐
+
+**Date**: 2026-09-11
+**Task**: 债基·市场 tab 类型筛选修正：删 REITs 死选项 + chip 文案对齐
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+债基·市场 tab 类型筛选修正：删 REITs 死选项，chip 文案与筛选器 label 对齐；收尾同步 universe 子类数为 11。
+
+### Main Changes
+
+- 删 BOND_MARKET_TYPE_OPTIONS / COARSE_TO_SUBTYPES_BOND 的 REITs 死选项，避免空展开静默退回全量债基
+- resolveCoarseLabel 加 kind，chip 从 OPTIONS label derive（混合型-偏债 → 混合债基）
+- discovery-bond/stock 分别传 marketKind；老 /bond /stock 不传
+- DISCOVERY_BOND_DEFAULT_FILTERS 同步去掉 REITs，避免 FilterChipBar 死 chip
+- spec §8a 沉淀死选项三处清理 + chip 文案唯一真相源
+- routes docstring / spec gotcha 子类数 10 → 11
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c26cf3f` | (see git log) |
+| `dd08321` | (see git log) |
+| `c7e3728` | (see git log) |
+| `36ac681` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
