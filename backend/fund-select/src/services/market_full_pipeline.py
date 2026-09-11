@@ -3,9 +3,11 @@
 
 profile（pipeline_profile 参数）：
   "stock" — 6 阶段：L0 universe / L1 rank / L2 size / L3 nav / L4 risk / L5 achievement
-  "bond"  — 4 阶段：L0 universe / L1 rank / L2 size / L3 nav（跳过 L4/L5）
-    跳过原因：债基详情页不消费 risk_service 6 指标、不展示同类排名
-    （RowDetailDrawerBond.tsx 未导入 RiskMetricsGrid / achievement_ranks）；
+  "bond"  — 5 阶段：L0 universe / L1 rank / L2 size / L3 nav / L6 fees_holdings（跳过 L4/L5）
+    跳过 L4/L5 原因：债基详情页不消费 risk_service 6 指标、不展示同类排名
+    （RowDetailDrawerBond.tsx 未导入 RiskMetricsGrid / achievement_ranks）。
+    跳过的同时也用 L6_fees_holdings 替代——债基详情页消费 fees/holdings 数据
+    （fund_fees / fund_holdings_bond 表），复用 fetch_fees + fetch_bond_hold + persist_snapshot 写入。
     老债基三分法（refresh_configured_funds_sync）路径独立处理，与本 pipeline 无关。
 
 阶段：
@@ -15,6 +17,7 @@ profile（pipeline_profile 参数）：
   L3 日频净值 + dd/ret（22 分钟）
   L4 业绩比较基准 + 风险指标（44 分钟，stock only）
   L5 同类排名（fund_achievement_xq，22 分钟，stock only）
+  L6 fees + bond holdings（5 worker 并发，bond only；复用 fetch_fees + fetch_bond_hold + persist_snapshot）
 
 分阶段重算 codes（关键：避免首次空跑）：
   初始：仅预筛 1（mgr_exp，funds 表已有字段）
@@ -58,7 +61,6 @@ from src.services.market_risk_refresh import refresh as refresh_market_risk_db
 from src.services.market_size_refresh import refresh as refresh_market_size_db
 from src.services.market_universe_refresh import refresh as refresh_market_universe_db
 from src.utils.logger import setup_logger
-
 logger = setup_logger("fund-select.market_full")
 
 
@@ -153,6 +155,95 @@ def _run_stage(db: Session, task_id: str, stage_name: str,
         return {"stage": stage_name, "status": "error", "error": str(e)[:200]}
 
 
+def _fetch_one_fees_holdings(code: str, year: str) -> dict:
+    """单只 fees + holdings 抓取，结果装入 persist_snapshot 期望的 dict 形态。
+
+    复用 fetch_fees / fetch_bond_hold / analyze_holdings；不调 snapshot_fund 避免
+    重复拉 basic/nav/performance（L0/L1/L2/L3 已写过 funds/market_nav 表）。
+
+    失败容错：fetch_bond_hold 内部已吞异常（返回 []），空表 → holdings=None 跳过 persist。
+    fetch_fees 失败抛异常 → 由调用方 `_stage_l6_fees_holdings` 外层捕获，计入 failed。
+    """
+    from src.data.fee_fetcher import fetch_fees
+    from src.data.holdings_fetcher import analyze_holdings, fetch_bond_hold
+
+    out: dict = {"code": code, "achievement": None}  # achievement=None 让 persist_snapshot 跳过
+    fees = fetch_fees(code)
+    out["fees"] = fees if fees else {}
+    tables = fetch_bond_hold(code, year)
+    if tables:
+        out["holdings"] = {
+            "report_date": date(int(year), 12, 31),
+            **analyze_holdings(tables),
+        }
+    else:
+        out["holdings"] = None
+    return out
+
+
+def _stage_l6_fees_holdings(d: Session, codes: list[str], task_id: str) -> dict:
+    """L6 fees + bond holdings（仅 profile='bond' 触发）。
+
+    复用 fetch_fees + fetch_bond_hold + analyze_holdings + persist_snapshot。
+    ThreadPoolExecutor(max_workers=5) 对齐 market_nav_fetcher.MAX_WORKERS（东财反爬限流）。
+    单只失败仅入账 errors，不重试、不阻塞其他（激进跳过策略——东财接口反爬重试收益低）。
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    from src.services.refresh_service import persist_snapshot
+
+    # 防御性二次过滤：理论上 codes_after_l2 已是债基 universe，但兜底
+    # （未来 profile 扩展时这层过滤防呆；当前 universe_filter 已收紧到债基）
+    bond_codes = list(
+        d.execute(
+            select(Fund.code).where(
+                Fund.code.in_(codes),
+                Fund.market_subtype.in_(DISCOVERY_BOND_SUBTYPES),
+            )
+        ).scalars().all()
+    )
+    if not bond_codes:
+        logger.info("[market_full] L6 无债基 universe，跳过")
+        return {"task_id": f"{task_id}_L6", "total": 0, "completed": 0, "failed": 0, "errors": []}
+
+    # 默认抓上一年报（对齐 snapshot_fund:47 内部 `holdings_year = str(ref.year - 1)`）
+    holdings_year = str(date.today().year - 1)
+    completed = failed = 0
+    errors: list[str] = []
+
+    with ThreadPoolExecutor(max_workers=5) as ex:
+        futures = {
+            ex.submit(_fetch_one_fees_holdings, code, holdings_year): code
+            for code in bond_codes
+        }
+        for fut in as_completed(futures):
+            code = futures[fut]
+            try:
+                snap = fut.result()
+                # fees 或 holdings 任一有值就 persist（避免空 dict 触发空 upsert）
+                if snap.get("fees") or snap.get("holdings"):
+                    persist_snapshot(d, snap)
+                    d.commit()  # 每只立即提交（断点续传，对齐老路径行为）
+                completed += 1
+            except Exception as e:  # noqa: BLE001
+                failed += 1
+                err_msg = str(e)[:120]
+                errors.append(f"fees_holdings:{code}: {err_msg}")
+                logger.warning("L6 %s 失败: %s", code, err_msg)
+
+    logger.info(
+        "market_full L6: total=%d completed=%d failed=%d",
+        len(bond_codes), completed, failed,
+    )
+    return {
+        "task_id": f"{task_id}_L6",
+        "total": len(bond_codes),
+        "completed": completed,
+        "failed": failed,
+        "errors": errors,
+    }
+
+
 def refresh_market_full_sync(
     universe_filter: Optional[list[str]] = None,
     min_ret_3y: Optional[float] = None,
@@ -165,7 +256,7 @@ def refresh_market_full_sync(
 
     pipeline_profile:
       "stock" — 6 阶段（L0..L5）
-      "bond"  — 4 阶段（跳 L4 risk + L5 achievement；债基详情页不消费这两阶段数据）
+      "bond"  — 5 阶段（跳 L4 risk + L5 achievement；L6_fees_holdings 替代——债基详情页消费 fees/holdings）
 
     仅接 3 个用户参数：
       - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years）
@@ -182,11 +273,12 @@ def refresh_market_full_sync(
     if pipeline_profile not in ("stock", "bond"):
         raise ValueError(f"pipeline_profile must be 'stock' or 'bond', got {pipeline_profile!r}")
 
-    # profile → 阶段配置。L0/L1/L2/L3 共用；L4/L5 仅 stock profile。
-    # bond 跳过 L4/L5 后单次刷新 ~100min → ~30min（44+22 分钟风险/排名 IO 省下）。
-    skip_risk = pipeline_profile == "bond"
-    skip_achievement = pipeline_profile == "bond"
-    stages_per_code = 4 if skip_risk else 6  # main_run.total 用
+    # bond profile 跳过 L4/L5 后单次刷新 ~100min → ~30min（44+22 分钟风险/排名 IO 省下），
+    # 用 L6_fees_holdings 补上详情页消费的 fees/holdings 数据写入。
+    if pipeline_profile == "bond":
+        stages_per_code = 5  # L0/L1/L2/L3/L6_fees_holdings
+    else:
+        stages_per_code = 6  # L0/L1/L2/L3/L4/L5
 
     task_id = preset_task_id or str(_uuid.uuid4())
     db = SessionLocal()
@@ -304,8 +396,29 @@ def refresh_market_full_sync(
         _update_main_progress(len(codes),
                               failed=stage_results["L3_nav"].get("result", {}).get("failed", 0))
 
+        if pipeline_profile == "bond":
+            # L6 fees + bond holdings（仅 bond profile）
+            # 复用 fetch_fees / fetch_bond_hold fetcher + persist_snapshot 写入路径
+            # 单只失败仅入账 errors，不阻塞其他（对齐 market_nav_fetcher.MAX_WORKERS = 5 限流）
+            def _stage_l6(d):
+                return _stage_l6_fees_holdings(d, codes, task_id=task_id)
+
+            stage_results["L6_fees_holdings"] = _run_stage(db, task_id, "L6_fees_holdings",
+                                                          len(codes), _stage_l6)
+            _update_main_progress(len(codes),
+                                  failed=stage_results["L6_fees_holdings"].get("result", {}).get("failed", 0))
+            logger.info("[market_full] task=%s profile=bond 跳过 L4 risk + L5 achievement，跑 L6 fees_holdings",
+                       task_id)
+
+            # bond profile：L4/L5 跳过
+            skip_risk_actual = True
+            skip_achievement_actual = True
+        else:
+            skip_risk_actual = False
+            skip_achievement_actual = False
+
         # L4 业绩比较基准 + 风险指标（stock only；bond profile 跳过）
-        if not skip_risk:
+        if not skip_risk_actual:
             def _stage_l4(d):
                 return refresh_market_risk_db(d, codes, task_id=f"{task_id}_L4")
 
@@ -318,7 +431,7 @@ def refresh_market_full_sync(
 
         # L5 同类排名（ak.fund_individual_achievement_xq，每只单只拉 ~1.5s）
         # stock only；bond profile 跳过（前端债基详情页不展示同类排名）
-        if not skip_achievement:
+        if not skip_achievement_actual:
             def _stage_l5(d):
                 ach_data = fetch_market_achievement(codes)
                 return refresh_market_achievement(d, ach_data, task_id=f"{task_id}_L5")

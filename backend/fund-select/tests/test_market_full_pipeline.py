@@ -479,12 +479,33 @@ class TestRefreshMarketFullSync:
 
 
 class TestPipelineProfile:
-    """pipeline_profile 参数决定跑 6 阶段（stock）还是 4 阶段（bond）。"""
+    """pipeline_profile 参数决定跑 6 阶段（stock）还是 5 阶段（bond=L0/L1/L2/L3/L6）。"""
 
     def _mock_all_fetchers(self, monkeypatch):
         """复用 TestRefreshMarketFullSync 的 mock 集合（避免重新抄一遍）"""
         from tests.test_market_full_pipeline import TestRefreshMarketFullSync
         TestRefreshMarketFullSync()._mock_all_fetchers(monkeypatch)
+        # L6 阶段额外 mock：fetch_fees / fetch_bond_hold / persist_snapshot
+        self._mock_l6_fees_holdings(monkeypatch)
+
+    def _mock_l6_fees_holdings(self, monkeypatch):
+        """mock L6 阶段的 fetcher + persist_snapshot（避免东财反爬/DB 写入）
+
+        注：market_full_pipeline 用 lazy import（函数内 import src.data.fee_fetcher.fetch_fees 等），
+        mock 必须 patch 原始模块路径，不能 patch market_full_pipeline 命名空间。
+        """
+        monkeypatch.setattr(
+            "src.data.fee_fetcher.fetch_fees",
+            lambda code, **kw: {"fee_mgmt": 0.3, "fee_custody": 0.1},
+        )
+        monkeypatch.setattr(
+            "src.data.holdings_fetcher.fetch_bond_hold",
+            lambda code, year, **kw: [],
+        )
+        monkeypatch.setattr(
+            "src.services.refresh_service.persist_snapshot",
+            lambda db, snap: None,
+        )
 
     def _seed_funds(self, db_session):
         """注入 2 只债券型 + 1 只股票型 universe，让 _load_market_universe 返回非空"""
@@ -513,8 +534,8 @@ class TestPipelineProfile:
         ])
         db_session.commit()
 
-    def test_bond_profile_skips_l4_and_l5(self, db_session, monkeypatch):
-        """profile='bond' → stage_results 仅含 L0/L1/L2/L3；L4/L5 key 不存在"""
+    def test_bond_profile_runs_l6_not_l4_l5(self, db_session, monkeypatch):
+        """profile='bond' → stage_results 含 L0/L1/L2/L3/L6_fees_holdings；L4/L5 key 不存在"""
         self._mock_all_fetchers(monkeypatch)
         self._seed_funds(db_session)
 
@@ -540,9 +561,10 @@ class TestPipelineProfile:
                 preset_task_id="test-bond-profile",
             )
 
-        # 阶段：只跑 4 个
-        assert set(result["stage_results"].keys()) == {"L0_universe", "L1_rank", "L2_size", "L3_nav"}, \
-            f"bond profile 应只跑 4 阶段，实际 {set(result['stage_results'].keys())}"
+        # 阶段：L0/L1/L2/L3/L6_fees_holdings（5 阶段，跳过 L4/L5）
+        expected_stages = {"L0_universe", "L1_rank", "L2_size", "L3_nav", "L6_fees_holdings"}
+        assert set(result["stage_results"].keys()) == expected_stages, \
+            f"bond profile 应跑 5 阶段（L0/L1/L2/L3/L6），实际 {set(result['stage_results'].keys())}"
 
         # L4/L5 不能被调用
         assert l4_called["flag"] is False, "L4 risk refresh 不该被调用"
@@ -552,7 +574,6 @@ class TestPipelineProfile:
         from src.db.models import RefreshRun
         run = db_session.get(RefreshRun, "test-bond-profile")
         assert run.status == "done"
-        assert run.total == run.universe_size * 4 if hasattr(run, "universe_size") else run.total >= 4
 
     def test_default_profile_runs_all_six_stages(self, db_session, monkeypatch):
         """不传 pipeline_profile → 默认 stock，6 阶段全跑（回归保护）"""
@@ -588,7 +609,7 @@ class TestPipelineProfile:
         assert run is None, "非法 profile 不该写 RefreshRun 记录"
 
     def test_main_run_total_reflects_stages_per_code(self, db_session, monkeypatch):
-        """main_run.total = codes × stages_per_code（stock=6, bond=4）"""
+        """main_run.total = codes × stages_per_code（stock=6, bond=5）"""
         from src.db.models import RefreshRun
         self._mock_all_fetchers(monkeypatch)
         self._seed_funds(db_session)
@@ -601,8 +622,8 @@ class TestPipelineProfile:
                 preset_task_id="test-total-bond",
             )
         run_bond = db_session.get(RefreshRun, "test-total-bond")
-        assert run_bond.total == result_bond["universe_size"] * 4, \
-            f"bond profile total 应为 universe × 4，实际 {run_bond.total} vs {result_bond['universe_size']}×4"
+        assert run_bond.total == result_bond["universe_size"] * 5, \
+            f"bond profile total 应为 universe × 5，实际 {run_bond.total} vs {result_bond['universe_size']}×5"
 
         # 跑 stock profile
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
@@ -614,3 +635,189 @@ class TestPipelineProfile:
         run_stock = db_session.get(RefreshRun, "test-total-stock")
         assert run_stock.total == result_stock["universe_size"] * 6, \
             f"stock profile total 应为 universe × 6，实际 {run_stock.total} vs {result_stock['universe_size']}×6"
+
+
+class TestL6FeesHoldings:
+    """L6_fees_holdings 阶段专项：复用 fetcher + persist_snapshot，单只失败容错。"""
+
+    def _seed_bond_universe(self, db_session):
+        """注入 3 只债基（含一只非债基混入用于过滤验证）"""
+        from src.db.models import MarketFundRank
+        from datetime import date
+        db_session.add_all([
+            _mk_fund("000001", "债券型-中短债", size_yi=10, is_active=True),
+            _mk_fund("000002", "债券型-长期纯债", size_yi=10, is_active=True),
+            _mk_fund("000003", "债券型-利率债", size_yi=10, is_active=True),
+            _mk_fund("000004", "股票型", size_yi=10, is_active=True),  # 非债基，应被过滤
+        ])
+        db_session.add_all([
+            MarketFundRank(code=c, nav_date=date(2026, 9, 7), ret_3y=20.0,
+                           ret_1w=0.5, ret_1m=1.0, ret_3m=3.0,
+                           ret_6m=6.0, ret_1y=12.0, ret_2y=25.0, ret_ytd=8.0,
+                           ret_all=60.0, ft_code="gp")
+            for c in ("000001", "000002", "000003", "000004")
+        ])
+        db_session.commit()
+
+    def _mock_basic_fetchers(self, monkeypatch):
+        """mock L0-L3 fetcher（避免 akshare 网络调用）"""
+        from tests.test_market_full_pipeline import TestRefreshMarketFullSync
+        TestRefreshMarketFullSync()._mock_all_fetchers(monkeypatch)
+
+    def test_l6_invokes_fetch_fees_and_bond_hold_per_bond_code(self, db_session, monkeypatch):
+        """profile='bond' 跑完后，fetch_fees / fetch_bond_hold 被调用次数 = 债基 universe 数"""
+        self._mock_basic_fetchers(monkeypatch)
+        self._seed_bond_universe(db_session)
+
+        fees_calls = []
+        hold_calls = []
+
+        def fake_fees(code, **kw):
+            fees_calls.append(code)
+            return {"fee_mgmt": 0.3, "fee_custody": 0.1}
+
+        def fake_hold(code, year, **kw):
+            hold_calls.append((code, year))
+            return []  # 空表 → analyze_holdings 返回 {}
+
+        monkeypatch.setattr("src.data.fee_fetcher.fetch_fees", fake_fees)
+        monkeypatch.setattr("src.data.holdings_fetcher.fetch_bond_hold", fake_hold)
+        monkeypatch.setattr("src.services.refresh_service.persist_snapshot", lambda db, snap: None)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result = refresh_market_full_sync(
+                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                pipeline_profile="bond",
+                preset_task_id="test-l6-count",
+            )
+
+        l6 = result["stage_results"]["L6_fees_holdings"]
+        # 3 只债基（000001/000002/000003），每只调一次 fetch_fees + fetch_bond_hold
+        assert sorted(fees_calls) == ["000001", "000002", "000003"], \
+            f"fetch_fees 应调 3 次（每只债基），实际 {fees_calls}"
+        assert len(hold_calls) == 3, f"fetch_bond_hold 应调 3 次，实际 {len(hold_calls)}"
+        # 000004（股票型）从未被处理
+        assert "000004" not in fees_calls, "股票型 code 不应触发 fetch_fees"
+
+    def test_l6_filters_non_bond_subtypes(self, db_session, monkeypatch):
+        """market_subtype 不在 DISCOVERY_BOND_SUBTYPES 的 code 被 L6 过滤掉"""
+        self._mock_basic_fetchers(monkeypatch)
+        # universe_filter 给的是"债券型-中短债"（DISCOVERY_BOND_SUBTYPES 之一）
+        # 但实际 codes 来自 funds 表，如果 funds 表里有非债基 code 也应被过滤
+        self._seed_bond_universe(db_session)
+
+        fees_calls = []
+
+        def fake_fees(code, **kw):
+            fees_calls.append(code)
+            return {"fee_mgmt": 0.3}
+
+        monkeypatch.setattr("src.data.fee_fetcher.fetch_fees", fake_fees)
+        monkeypatch.setattr("src.data.holdings_fetcher.fetch_bond_hold", lambda code, year, **kw: [])
+        monkeypatch.setattr("src.services.refresh_service.persist_snapshot", lambda db, snap: None)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            refresh_market_full_sync(
+                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债", "股票型"],
+                pipeline_profile="bond",
+                preset_task_id="test-l6-filter",
+            )
+
+        # 000004 股票型被过滤（防御性二次过滤生效）
+        assert "000004" not in fees_calls, \
+            f"非债基 000004 应被 L6 二次过滤，实际调用: {fees_calls}"
+
+    def test_l6_single_fund_failure_does_not_block_others(self, db_session, monkeypatch):
+        """单只 fetch_fees 抛异常 → 该只 failed、其他 completed"""
+        self._mock_basic_fetchers(monkeypatch)
+        self._seed_bond_universe(db_session)
+
+        def flaky_fees(code, **kw):
+            if code == "000002":
+                raise RuntimeError("东财反爬 timeout")
+            return {"fee_mgmt": 0.3, "fee_custody": 0.1}
+
+        persist_calls = []
+
+        def fake_persist(db, snap):
+            persist_calls.append(snap["code"])
+
+        monkeypatch.setattr("src.data.fee_fetcher.fetch_fees", flaky_fees)
+        monkeypatch.setattr("src.data.holdings_fetcher.fetch_bond_hold", lambda code, year, **kw: [])
+        monkeypatch.setattr("src.services.refresh_service.persist_snapshot", fake_persist)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result = refresh_market_full_sync(
+                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                pipeline_profile="bond",
+                preset_task_id="test-l6-fail",
+            )
+
+        l6 = result["stage_results"]["L6_fees_holdings"]["result"]
+        # 000002 失败，其他两只（000001/000003）走通
+        assert l6["total"] == 3
+        assert l6["completed"] >= 2, f"至少有 2 只应 completed，实际 {l6['completed']}"
+        assert l6["failed"] >= 1, f"至少有 1 只应 failed（000002），实际 {l6['failed']}"
+        assert any("000002" in e for e in l6["errors"]), \
+            f"errors 应包含 000002 失败信息，实际 {l6['errors']}"
+
+    def test_l6_invokes_persist_snapshot_when_data_present(self, db_session, monkeypatch):
+        """fees/holdings 任一有值时调 persist_snapshot（空 dict/None 跳过）"""
+        self._mock_basic_fetchers(monkeypatch)
+        self._seed_bond_universe(db_session)
+
+        persist_calls = []
+
+        def fake_persist(db, snap):
+            persist_calls.append({"code": snap["code"],
+                                  "has_fees": bool(snap.get("fees")),
+                                  "has_holdings": bool(snap.get("holdings"))})
+
+        # 000001 给 fees、000002 给空 fees（模拟拉取失败返回空 dict）、000003 给 fees
+        def fake_fees(code, **kw):
+            return {"fee_mgmt": 0.3} if code != "000002" else {}
+
+        monkeypatch.setattr("src.data.fee_fetcher.fetch_fees", fake_fees)
+        monkeypatch.setattr("src.data.holdings_fetcher.fetch_bond_hold", lambda code, year, **kw: [])
+        monkeypatch.setattr("src.services.refresh_service.persist_snapshot", fake_persist)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result = refresh_market_full_sync(
+                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                pipeline_profile="bond",
+                preset_task_id="test-l6-persist",
+            )
+
+        # 000002 fees 是空 dict → out["fees"]={} → holdings=None → 跳过 persist
+        codes_called = [p["code"] for p in persist_calls]
+        assert "000002" not in codes_called, \
+            f"fees 空 dict 且 holdings=None 时应跳过 persist，实际 {codes_called}"
+        assert set(codes_called) == {"000001", "000003"}, \
+            f"应只 persist 000001/000003，实际 {codes_called}"
+
+    def test_l6_not_invoked_for_stock_profile(self, db_session, monkeypatch):
+        """profile='stock' 不调 fetch_fees / fetch_bond_hold（回归保护）"""
+        self._mock_basic_fetchers(monkeypatch)
+        self._seed_bond_universe(db_session)
+
+        fees_calls = []
+
+        def fake_fees(code, **kw):
+            fees_calls.append(code)
+            return {}
+
+        monkeypatch.setattr("src.data.fee_fetcher.fetch_fees", fake_fees)
+        monkeypatch.setattr("src.data.holdings_fetcher.fetch_bond_hold", lambda code, year, **kw: [])
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result = refresh_market_full_sync(
+                universe_filter=["股票型"],
+                pipeline_profile="stock",
+                preset_task_id="test-stock-no-l6",
+            )
+
+        # L6_fees_holdings 不应在 stage_results
+        assert "L6_fees_holdings" not in result["stage_results"], \
+            f"stock profile 不应跑 L6_fees_holdings，实际阶段: {set(result['stage_results'].keys())}"
+        # fetch_fees 完全没被调用
+        assert fees_calls == [], f"stock profile 不应调 fetch_fees，实际 {fees_calls}"
