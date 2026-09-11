@@ -27,6 +27,8 @@ interface FundTableProps {
   onRowClick?: (fund: FundListItem) => void;
   /** 回撤进度条封顶值（百分比）。债基默认 20，股票默认 60 */
   ddBarCapPct?: number;
+  /** 市场 tab 类型列上下文：影响 chip 文案（债基侧 value/label 不同）；老 tab 不传 */
+  marketKind?: 'stock' | 'bond';
 }
 
 const NAME_MAX = 10;
@@ -58,9 +60,9 @@ const truncateName = (name: string, max = NAME_MAX): string =>
  *  - 已知 subtype → 两行（chip + 小字）
  *  - 未知 subtype（如QDII-商品 / 商品 / 其他） → 单行灰字
  *  - subtype 为空 → 单行 "-" */
-function TypeCell({ subtype }: { subtype: string | null }) {
+function TypeCell({ subtype, kind }: { subtype: string | null; kind?: 'stock' | 'bond' }) {
   if (!subtype) return <span className="text-ink-soft">-</span>;
-  const coarse = resolveCoarseLabel(subtype);
+  const coarse = resolveCoarseLabel(subtype, kind);
   if (!coarse) {
     return <span className="text-ink-soft">{subtype}</span>;
   }
@@ -110,7 +112,7 @@ function HoverName({ name }: { name: string }) {
 export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
   showBondColumns = true, showRiskColumns = false, onRowClick,
-  ddBarCapPct = DD_BAR_CAP_BOND,
+  ddBarCapPct = DD_BAR_CAP_BOND, marketKind,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -178,7 +180,7 @@ export function FundTable({
                   <HoverName name={fund.name} />
                 </td>
                 <td className={`${td} leading-tight`}>
-                  <TypeCell subtype={fund.market_subtype} />
+                  <TypeCell subtype={fund.market_subtype} kind={marketKind} />
                 </td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.size_yi)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.age_years, 1)}</td>

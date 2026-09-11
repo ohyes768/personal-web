@@ -149,7 +149,7 @@ export const STOCK_DEFAULT_FILTERS: FundFilters = {
   limit: 50,
 };
 
-/** 债基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
+/** 债基·市场 tab 默认筛选：默认 universe = 4 个粗类别全选（债基侧无 REITs） */
 export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
   min_age: 3,
   min_size_yi: 5,
@@ -157,7 +157,7 @@ export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
   min_mgr_exp: 5,
   min_sharpe: null,
   exclude_qdii: false,
-  market_types: ['纯债型', '混合型', '指数型', 'QDII', 'REITs'],
+  market_types: ['纯债型', '混合型', '指数型', 'QDII'],
   sort: 'size_yi',
   order: 'desc',
   page: 1,

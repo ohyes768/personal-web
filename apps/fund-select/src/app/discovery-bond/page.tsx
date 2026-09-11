@@ -3,7 +3,7 @@
  *
  * 与债基 tab（/funds/bond）平列，复用 FundsHeader / FilterPanel / FundTable / CompareDrawer 等；
  * 差异：
- *   - 默认值 DISCOVERY_BOND_DEFAULT_FILTERS（含默认 market_types = 10 个债券子类）
+ *   - 默认值 DISCOVERY_BOND_DEFAULT_FILTERS（含默认 market_types = 4 个粗类别，11 个精确子类）
  *   - 调 discoveryBondApi（/api/funds/discovery-bond/*）
  *   - 筛选面板多一栏「基金类型」多选
  *   - 「全量刷新」按钮：触发 4 阶段流水线，完成后把预筛选值同步到左侧（disabled 不可改）
