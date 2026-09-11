@@ -1,13 +1,20 @@
 """
-市场 tab 全量数据 refresh（6 阶段流水线 + 分阶段重算 codes）
+市场 tab 全量数据 refresh（profile-driven 流水线 + 分阶段重算 codes）
+
+profile（pipeline_profile 参数）：
+  "stock" — 6 阶段：L0 universe / L1 rank / L2 size / L3 nav / L4 risk / L5 achievement
+  "bond"  — 4 阶段：L0 universe / L1 rank / L2 size / L3 nav（跳过 L4/L5）
+    跳过原因：债基详情页不消费 risk_service 6 指标、不展示同类排名
+    （RowDetailDrawerBond.tsx 未导入 RiskMetricsGrid / achievement_ranks）；
+    老债基三分法（refresh_configured_funds_sync）路径独立处理，与本 pipeline 无关。
 
 阶段：
   L0 universe 全市场名单（ak.fund_name_em，5 秒）
   L1 rankhandler 业绩（ak.fund_open_fund_rank_em，50 秒）
-  L2 size_yi + age_years（东财 msm 接口，单只 ~0.4s，~8 分钟）
+  L2 size_yi + age_years（雪球优先 + 东财 msm fallback，单只 ~0.4s，~8 分钟）
   L3 日频净值 + dd/ret（22 分钟）
-  L4 业绩比较基准 + 风险指标（44 分钟）
-  L5 同类排名（fund_achievement_xq，22 分钟）
+  L4 业绩比较基准 + 风险指标（44 分钟，stock only）
+  L5 同类排名（fund_achievement_xq，22 分钟，stock only）
 
 分阶段重算 codes（关键：避免首次空跑）：
   初始：仅预筛 1（mgr_exp，funds 表已有字段）
@@ -152,8 +159,13 @@ def refresh_market_full_sync(
     min_size_yi: Optional[float] = None,
     min_mgr_exp: Optional[float] = None,
     preset_task_id: Optional[str] = None,
+    pipeline_profile: str = "stock",
 ) -> dict:
-    """市场 tab 全量数据 refresh（6 阶段流水线 + 分阶段重算 codes）。
+    """市场 tab 全量数据 refresh（profile-driven 流水线 + 分阶段重算 codes）。
+
+    pipeline_profile:
+      "stock" — 6 阶段（L0..L5）
+      "bond"  — 4 阶段（跳 L4 risk + L5 achievement；债基详情页不消费这两阶段数据）
 
     仅接 3 个用户参数：
       - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years）
@@ -167,6 +179,15 @@ def refresh_market_full_sync(
       初始 → L0/L1 → 重算 +预筛 2 → L2 → 重算 +预筛 3 → L3/L4/L5
       这样 L0/L1/L2 完成后才应用 L1/L2 数据依赖的预筛，L3-L5 拿到真实命中。
     """
+    if pipeline_profile not in ("stock", "bond"):
+        raise ValueError(f"pipeline_profile must be 'stock' or 'bond', got {pipeline_profile!r}")
+
+    # profile → 阶段配置。L0/L1/L2/L3 共用；L4/L5 仅 stock profile。
+    # bond 跳过 L4/L5 后单次刷新 ~100min → ~30min（44+22 分钟风险/排名 IO 省下）。
+    skip_risk = pipeline_profile == "bond"
+    skip_achievement = pipeline_profile == "bond"
+    stages_per_code = 4 if skip_risk else 6  # main_run.total 用
+
     task_id = preset_task_id or str(_uuid.uuid4())
     db = SessionLocal()
     try:
@@ -180,8 +201,8 @@ def refresh_market_full_sync(
             min_mgr_exp=min_mgr_exp,
         )
         logger.info(
-            "[market_full] task=%s 初始 universe=%d (filter=%s min_mgr_exp=%s)",
-            task_id, len(codes), universe_filter, min_mgr_exp,
+            "[market_full] task=%s profile=%s 初始 universe=%d (filter=%s min_mgr_exp=%s)",
+            task_id, pipeline_profile, len(codes), universe_filter, min_mgr_exp,
         )
 
         # 创建主 task 的 RefreshRun 记录（前端轮询用）
@@ -189,7 +210,7 @@ def refresh_market_full_sync(
         from datetime import UTC, datetime
         main_run = RefreshRun(
             task_id=task_id, status="running",
-            total=len(codes) * 6 if codes else 6,  # 占位，L1/L2 后会更新
+            total=len(codes) * stages_per_code if codes else stages_per_code,
             completed=0, failed=0,
             started_at=datetime.now(UTC),
         )
@@ -265,12 +286,12 @@ def refresh_market_full_sync(
             min_size_yi=min_size_yi,
         )
         logger.info(
-            "[market_full] task=%s L2 后 universe=%d (最终 L3/L4/L5 用这个 codes min_size_yi=%s)",
-            task_id, len(codes_after_l2), min_size_yi,
+            "[market_full] task=%s profile=%s L2 后 universe=%d (最终 codes min_size_yi=%s stages=%d)",
+            task_id, pipeline_profile, len(codes_after_l2), min_size_yi, stages_per_code,
         )
         codes = codes_after_l2
-        # 更新主 task 总进度
-        main_run.total = len(codes) * 6 if codes else 6
+        # 更新主 task 总进度（按 profile 动态算：stock=6, bond=4）
+        main_run.total = len(codes) * stages_per_code if codes else stages_per_code
         db.commit()
 
         # L3 日频净值 + dd/ret
@@ -283,24 +304,31 @@ def refresh_market_full_sync(
         _update_main_progress(len(codes),
                               failed=stage_results["L3_nav"].get("result", {}).get("failed", 0))
 
-        # L4 业绩比较基准 + 风险指标
-        def _stage_l4(d):
-            return refresh_market_risk_db(d, codes, task_id=f"{task_id}_L4")
+        # L4 业绩比较基准 + 风险指标（stock only；bond profile 跳过）
+        if not skip_risk:
+            def _stage_l4(d):
+                return refresh_market_risk_db(d, codes, task_id=f"{task_id}_L4")
 
-        stage_results["L4_risk"] = _run_stage(db, task_id, "L4_risk",
-                                                len(codes), _stage_l4)
-        _update_main_progress(len(codes),
-                              failed=stage_results["L4_risk"].get("result", {}).get("failed", 0))
+            stage_results["L4_risk"] = _run_stage(db, task_id, "L4_risk",
+                                                    len(codes), _stage_l4)
+            _update_main_progress(len(codes),
+                                  failed=stage_results["L4_risk"].get("result", {}).get("failed", 0))
+        else:
+            logger.info("[market_full] task=%s profile=bond 跳过 L4 risk 阶段", task_id)
 
         # L5 同类排名（ak.fund_individual_achievement_xq，每只单只拉 ~1.5s）
-        def _stage_l5(d):
-            ach_data = fetch_market_achievement(codes)
-            return refresh_market_achievement(d, ach_data, task_id=f"{task_id}_L5")
+        # stock only；bond profile 跳过（前端债基详情页不展示同类排名）
+        if not skip_achievement:
+            def _stage_l5(d):
+                ach_data = fetch_market_achievement(codes)
+                return refresh_market_achievement(d, ach_data, task_id=f"{task_id}_L5")
 
-        stage_results["L5_achievement"] = _run_stage(db, task_id, "L5_achievement",
-                                                    len(codes), _stage_l5)
-        _update_main_progress(len(codes),
-                              failed=stage_results["L5_achievement"].get("result", {}).get("failed", 0))
+            stage_results["L5_achievement"] = _run_stage(db, task_id, "L5_achievement",
+                                                        len(codes), _stage_l5)
+            _update_main_progress(len(codes),
+                                  failed=stage_results["L5_achievement"].get("result", {}).get("failed", 0))
+        else:
+            logger.info("[market_full] task=%s profile=bond 跳过 L5 achievement 阶段", task_id)
 
         # 主 task 标记完成
         main_run.status = "done" if all(

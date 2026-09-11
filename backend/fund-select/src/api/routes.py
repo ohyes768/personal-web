@@ -448,10 +448,13 @@ async def discovery_bond_full_refresh(
     min_size_yi: Optional[float] = Query(None, description="规模 ≥ Y 亿（L2 字段，预筛 3）"),
     min_mgr_exp: Optional[float] = Query(None, description="经理从业 ≥ W 年（L2 字段，预筛 1）"),
 ):
-    """手动触发债基·市场全量 refresh（5 阶段流水线 + 三段预筛）
+    """手动触发债基·市场全量 refresh（4 阶段流水线 + 三段预筛；跳 L4 risk + L5 achievement）
 
     仅接 3 个用户参数：min_ret_3y / min_size_yi / min_mgr_exp。
     净值新鲜度 ≤ 14 天 后端固定（MAX_NAV_STALE_DAYS 常量），不再接 query。
+    pipeline_profile="bond" → pipeline 跳过 L4（风险指标）和 L5（同类排名），
+    因债基详情页不消费这两阶段数据（RowDetailDrawerBond.tsx 未导入 RiskMetricsGrid
+    与 achievement_ranks）。
     """
     import uuid
     from src.data.market_subtype_map import DISCOVERY_BOND_SUBTYPES
@@ -464,6 +467,7 @@ async def discovery_bond_full_refresh(
         min_size_yi=min_size_yi,
         min_mgr_exp=min_mgr_exp,
         preset_task_id=task_id,
+        pipeline_profile="bond",
     )
     return RefreshResponse(task_id=task_id, status="started")
 

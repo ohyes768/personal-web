@@ -178,7 +178,8 @@ class TestRefreshMarketFullSyncSignature:
             "min_size_yi",
             "min_mgr_exp",
             "preset_task_id",
-        ]
+            "pipeline_profile",
+        ], f"签名变更：新增 pipeline_profile；当前参数: {params}"
 
     def test_no_longer_accepts_min_ret_1y_or_max_nav_stale_days(self):
         """旧参数被移除：min_ret_1y / max_nav_stale_days"""
@@ -475,3 +476,141 @@ class TestRefreshMarketFullSync:
         # 所有阶段 done
         for stage in ("L0_universe", "L1_rank", "L2_size", "L3_nav", "L4_risk", "L5_achievement"):
             assert result["stage_results"][stage]["status"] == "done", f"{stage} not done"
+
+
+class TestPipelineProfile:
+    """pipeline_profile 参数决定跑 6 阶段（stock）还是 4 阶段（bond）。"""
+
+    def _mock_all_fetchers(self, monkeypatch):
+        """复用 TestRefreshMarketFullSync 的 mock 集合（避免重新抄一遍）"""
+        from tests.test_market_full_pipeline import TestRefreshMarketFullSync
+        TestRefreshMarketFullSync()._mock_all_fetchers(monkeypatch)
+
+    def _seed_funds(self, db_session):
+        """注入 2 只债券型 + 1 只股票型 universe，让 _load_market_universe 返回非空"""
+        from src.db.models import MarketFundRank
+        from datetime import date
+        db_session.add_all([
+            _mk_fund("000001", "债券型-中短债", size_yi=10, is_active=True),
+            _mk_fund("000002", "债券型-长期纯债", size_yi=10, is_active=True),
+            _mk_fund("000003", "股票型", size_yi=10, is_active=True),
+        ])
+        # 给 000001/000002/000003 写入 nav_date + ret_3y（让 L1 后预筛 2 不把它们都砍掉）
+        # MarketFundRank 没有 name 列
+        db_session.add_all([
+            MarketFundRank(code="000001", nav_date=date(2026, 9, 7), ret_3y=20.0,
+                           ret_1w=0.5, ret_1m=1.0, ret_3m=3.0,
+                           ret_6m=6.0, ret_1y=12.0, ret_2y=25.0, ret_ytd=8.0,
+                           ret_all=60.0, ft_code="gp"),
+            MarketFundRank(code="000002", nav_date=date(2026, 9, 7), ret_3y=20.0,
+                           ret_1w=0.5, ret_1m=1.0, ret_3m=3.0,
+                           ret_6m=6.0, ret_1y=12.0, ret_2y=25.0, ret_ytd=8.0,
+                           ret_all=60.0, ft_code="gp"),
+            MarketFundRank(code="000003", nav_date=date(2026, 9, 7), ret_3y=20.0,
+                           ret_1w=0.5, ret_1m=1.0, ret_3m=3.0,
+                           ret_6m=6.0, ret_1y=12.0, ret_2y=25.0, ret_ytd=8.0,
+                           ret_all=60.0, ft_code="gp"),
+        ])
+        db_session.commit()
+
+    def test_bond_profile_skips_l4_and_l5(self, db_session, monkeypatch):
+        """profile='bond' → stage_results 仅含 L0/L1/L2/L3；L4/L5 key 不存在"""
+        self._mock_all_fetchers(monkeypatch)
+        self._seed_funds(db_session)
+
+        # 故意把 L4/L5 标记为"调用即炸"，确保不被调用
+        l4_called = {"flag": False}
+        l5_called = {"flag": False}
+
+        def fake_risk(db, codes, task_id=None):
+            l4_called["flag"] = True
+            return {"task_id": task_id, "total": len(codes), "completed": len(codes), "failed": 0, "errors": []}
+
+        def fake_achievement(db, ach_data, task_id=None):
+            l5_called["flag"] = True
+            return {"task_id": task_id, "total": len(ach_data), "inserted": len(ach_data), "failed": 0, "errors": []}
+
+        monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_risk_db", fake_risk)
+        monkeypatch.setattr("src.services.market_full_pipeline.refresh_market_achievement", fake_achievement)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result = refresh_market_full_sync(
+                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                pipeline_profile="bond",
+                preset_task_id="test-bond-profile",
+            )
+
+        # 阶段：只跑 4 个
+        assert set(result["stage_results"].keys()) == {"L0_universe", "L1_rank", "L2_size", "L3_nav"}, \
+            f"bond profile 应只跑 4 阶段，实际 {set(result['stage_results'].keys())}"
+
+        # L4/L5 不能被调用
+        assert l4_called["flag"] is False, "L4 risk refresh 不该被调用"
+        assert l5_called["flag"] is False, "L5 achievement refresh 不该被调用"
+
+        # 状态：main task 标记 done
+        from src.db.models import RefreshRun
+        run = db_session.get(RefreshRun, "test-bond-profile")
+        assert run.status == "done"
+        assert run.total == run.universe_size * 4 if hasattr(run, "universe_size") else run.total >= 4
+
+    def test_default_profile_runs_all_six_stages(self, db_session, monkeypatch):
+        """不传 pipeline_profile → 默认 stock，6 阶段全跑（回归保护）"""
+        self._mock_all_fetchers(monkeypatch)
+        self._seed_funds(db_session)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result = refresh_market_full_sync(
+                universe_filter=["股票型"],
+                preset_task_id="test-default-profile",
+            )
+
+        expected = {"L0_universe", "L1_rank", "L2_size", "L3_nav", "L4_risk", "L5_achievement"}
+        assert set(result["stage_results"].keys()) == expected, \
+            f"默认 profile 应跑 6 阶段，实际 {set(result['stage_results'].keys())}"
+
+    def test_invalid_profile_raises_value_error(self, db_session, monkeypatch):
+        """pipeline_profile='xxx' → ValueError 早抛，不进 pipeline"""
+        from src.db.models import RefreshRun
+        self._mock_all_fetchers(monkeypatch)
+        self._seed_funds(db_session)
+
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            with pytest.raises(ValueError, match="pipeline_profile must be 'stock' or 'bond'"):
+                refresh_market_full_sync(
+                    universe_filter=["股票型"],
+                    pipeline_profile="etf",
+                    preset_task_id="test-bad-profile",
+                )
+
+        # 不应创建 RefreshRun
+        run = db_session.get(RefreshRun, "test-bad-profile")
+        assert run is None, "非法 profile 不该写 RefreshRun 记录"
+
+    def test_main_run_total_reflects_stages_per_code(self, db_session, monkeypatch):
+        """main_run.total = codes × stages_per_code（stock=6, bond=4）"""
+        from src.db.models import RefreshRun
+        self._mock_all_fetchers(monkeypatch)
+        self._seed_funds(db_session)
+
+        # 跑 bond profile
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result_bond = refresh_market_full_sync(
+                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                pipeline_profile="bond",
+                preset_task_id="test-total-bond",
+            )
+        run_bond = db_session.get(RefreshRun, "test-total-bond")
+        assert run_bond.total == result_bond["universe_size"] * 4, \
+            f"bond profile total 应为 universe × 4，实际 {run_bond.total} vs {result_bond['universe_size']}×4"
+
+        # 跑 stock profile
+        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
+            result_stock = refresh_market_full_sync(
+                universe_filter=["股票型"],
+                pipeline_profile="stock",
+                preset_task_id="test-total-stock",
+            )
+        run_stock = db_session.get(RefreshRun, "test-total-stock")
+        assert run_stock.total == result_stock["universe_size"] * 6, \
+            f"stock profile total 应为 universe × 6，实际 {run_stock.total} vs {result_stock['universe_size']}×6"
