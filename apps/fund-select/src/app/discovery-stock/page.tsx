@@ -26,7 +26,7 @@ import { useCompare, useDiscoveryStockFundList, useFeeDetails } from '@/lib/hook
 import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions } from '@/lib/compareDimensions';
 import { useFilters } from '@/lib/useFilters';
 import {
-  DEFAULT_FULL_REFRESH_FILTERS,
+  DEFAULT_FULL_REFRESH_FILTERS_STOCK,
   DISCOVERY_STOCK_DEFAULT_FILTERS,
   STOCK_MARKET_TYPE_OPTIONS,
   type FullRefreshFilters,
@@ -44,7 +44,7 @@ function DiscoveryStockPageInner() {
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
 
   // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
-  const [preFilters, setPreFilters] = useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS);
+  const [preFilters, setPreFilters] = useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS_STOCK);
 
   const handleFullRefreshComplete = useCallback((pf: FullRefreshFilters) => {
     setPreFilters(pf);
@@ -122,6 +122,7 @@ function DiscoveryStockPageInner() {
               showRiskColumns
               onRowClick={setDetailFund}
               ddBarCapPct={60}
+              marketKind="stock"
             />
             <Pagination
               page={filters.page}

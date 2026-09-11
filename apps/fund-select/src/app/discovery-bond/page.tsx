@@ -27,7 +27,7 @@ import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions }
 import { useFilters } from '@/lib/useFilters';
 import {
   BOND_MARKET_TYPE_OPTIONS,
-  DEFAULT_FULL_REFRESH_FILTERS,
+  DEFAULT_FULL_REFRESH_FILTERS_BOND,
   DISCOVERY_BOND_DEFAULT_FILTERS,
   type FullRefreshFilters,
   type FundListItem,
@@ -44,7 +44,7 @@ function DiscoveryBondPageInner() {
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
 
   // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
-  const [preFilters, setPreFilters] = useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS);
+  const [preFilters, setPreFilters] = useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS_BOND);
 
   const handleFullRefreshComplete = useCallback((pf: FullRefreshFilters) => {
     setPreFilters(pf);
@@ -120,6 +120,7 @@ function DiscoveryBondPageInner() {
               showBondColumns
               onRowClick={setDetailFund}
               ddBarCapPct={20}
+              marketKind="bond"
             />
             <Pagination
               page={filters.page}

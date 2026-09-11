@@ -189,13 +189,12 @@ export const MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'REITs', label: 'REITs' },
 ];
 
-/** 债基·市场 5 个粗类别（"纯债型" 是股基的"股票型" 在债基的对应物） */
+/** 债基·市场 4 个粗类别（"纯债型" 是股基的"股票型" 在债基的对应物；债基 universe 不含 REITs，故不暴露该选项） */
 export const BOND_MARKET_TYPE_OPTIONS: { value: string; label: string }[] = [
   { value: '纯债型', label: '纯债型' },
   { value: '混合型', label: '混合债基' },
   { value: '指数型', label: '指数债' },
   { value: 'QDII', label: 'QDII 债' },
-  { value: 'REITs', label: 'REITs' },
 ];
 
 /** 股基·市场 5 个粗类别（与 BOND_MARKET_TYPE_OPTIONS 同结构，value 不同） */
@@ -224,7 +223,6 @@ export const COARSE_TO_SUBTYPES_BOND: Record<string, string[]> = {
   '混合型': ['债券型-混合债', '混合型-偏债'],  // 混合债基（区别于混合一级/二级；含偏债混合）
   '指数型': ['指数型-固收'],
   'QDII': ['QDII-纯债', 'QDII-混合债'],
-  'REITs': [],  // 债基 universe 不含 REITs
 };
 
 /** 反向：精确 subtype → UI 粗类别（粗类别 chip 显示用）。
@@ -241,10 +239,32 @@ function invertCoarseMap(m: Record<string, string[]>): Record<string, string> {
 export const SUBTYPE_TO_COARSE_STOCK: Record<string, string> = invertCoarseMap(COARSE_TO_SUBTYPES_STOCK);
 export const SUBTYPE_TO_COARSE_BOND: Record<string, string> = invertCoarseMap(COARSE_TO_SUBTYPES_BOND);
 
-/** 把精确 subtype 解析为 UI 5 大类（股基侧优先，未命中再走债基侧；都不命中返回 null） */
-export function resolveCoarseLabel(subtype: string | null | undefined): string | null {
+/** 从 *_MARKET_TYPE_OPTIONS derive value→label 映射（避免硬编码第二份文案） */
+function buildOptionLabelMap(options: { value: string; label: string }[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const o of options) out[o.value] = o.label;
+  return out;
+}
+
+export const STOCK_OPTION_LABELS: Record<string, string> = buildOptionLabelMap(STOCK_MARKET_TYPE_OPTIONS);
+export const BOND_OPTION_LABELS: Record<string, string> = buildOptionLabelMap(BOND_MARKET_TYPE_OPTIONS);
+
+/**
+ * 把精确 subtype 解析为 UI 粗类别显示文案
+ * - kind 缺省：保持原 STOCK ?? BOND fallback，返回粗类别 key（向后兼容 /bond、/stock 老 tab）
+ * - kind='stock' / 'bond'：先按指定 kind 找粗类别，再映射到对应 OPTIONS 的 label
+ *   （股基侧 value === label；债基侧 value 与 label 不同，如 '混合型' → '混合债基'）
+ * - subtype 为空或不命中：返回 null
+ */
+export function resolveCoarseLabel(subtype: string | null | undefined, kind?: 'stock' | 'bond'): string | null {
   if (!subtype) return null;
-  return SUBTYPE_TO_COARSE_STOCK[subtype] ?? SUBTYPE_TO_COARSE_BOND[subtype] ?? null;
+  if (kind === undefined) {
+    return SUBTYPE_TO_COARSE_STOCK[subtype] ?? SUBTYPE_TO_COARSE_BOND[subtype] ?? null;
+  }
+  const coarse = (kind === 'stock' ? SUBTYPE_TO_COARSE_STOCK : SUBTYPE_TO_COARSE_BOND)[subtype];
+  if (!coarse) return null;
+  const labels = kind === 'stock' ? STOCK_OPTION_LABELS : BOND_OPTION_LABELS;
+  return labels[coarse] ?? null;
 }
 
 /** 把 UI 粗类别展开成精确 subtype 列表（去重保序） */
@@ -278,11 +298,20 @@ export interface FullRefreshFilters {
   min_mgr_exp: number | null;
 }
 
-export const DEFAULT_FULL_REFRESH_FILTERS: FullRefreshFilters = {
+export const DEFAULT_FULL_REFRESH_FILTERS_BOND: FullRefreshFilters = {
+  min_ret_3y: 10,
+  min_size_yi: 5,
+  min_mgr_exp: 5,
+};
+
+export const DEFAULT_FULL_REFRESH_FILTERS_STOCK: FullRefreshFilters = {
   min_ret_3y: 20,
   min_size_yi: 5,
   min_mgr_exp: 5,
 };
+
+/** @deprecated 债基/股基应分别用 BOND/STOCK 变体；此 alias 仅保留给 FullRefreshDialog 字段级 fallback。 */
+export const DEFAULT_FULL_REFRESH_FILTERS: FullRefreshFilters = DEFAULT_FULL_REFRESH_FILTERS_STOCK;
 
 /** 业绩排名一行（详情页用） */
 export interface FundAchievementRank {
