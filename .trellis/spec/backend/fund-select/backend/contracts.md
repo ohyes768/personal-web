@@ -6,7 +6,8 @@
 - 任务 09-09-fund-select-pagination：分页契约（server 端排序-切片、total/limit 不变量）。
 - 任务 09-09-fund-list-rank：同类排名 DTO（RankPercentile 三字段 + Pydantic 静默砍字段陷阱）。
 - 任务 09-10-qdii-reits-coarse-mapping / 09-10-subtype-coverage-fix / 09-10-fund-table-type-chip：粗类别映射契约的完整化与边界。
-- 任务 09-11-bond-market-type-fix（本次）：粗类别映射契约的**前端一致性**强化（chip 文案 derive + 死选项清理 + 跨 tab 透传），沉淀于 §8a–§8d。
+- 任务 09-11-bond-market-type-fix：粗类别映射契约的**前端一致性**强化（chip 文案 derive + 死选项清理 + 跨 tab 透传），沉淀于 §8a–§8d。
+- 任务 09-11-bond-full-refresh-default-10pct：债基/股基全量刷新预筛默认必须拆开（`min_ret_3y` 10 vs 20），沉淀于 §11。
 
 ## 2. Signatures
 
@@ -601,3 +602,29 @@ fund-select 实际有 **两套独立**的全量 refresh pipeline，不是同一�
 ### 后续：合并两套 pipeline（不在本任务范围）
 
 把"市场 tab 全量"和"债基三分法"合并成一个 profile-driven 的统一刷新系统，是更大的架构重构（涉及 universe 来源 IO、单只 vs 阶段化循环、字段映射、schema 差异）。本次不动。
+
+## 11. 市场 tab 全量刷新预筛前端默认值（09-11-bond-full-refresh-default-10pct）
+
+后端 `/discovery-bond/full/refresh` 与 `/discovery-stock/full/refresh` 的 `min_ret_3y` 都是 `Optional[float]`，**默认值只在客户端**。债基与股基收益弹性不同，禁止共用同一个 `min_ret_3y` 默认。
+
+| 常量 | 位置 | `min_ret_3y` | 使用方 |
+|---|---|---|---|
+| `DEFAULT_FULL_REFRESH_FILTERS_BOND` | `apps/fund-select/src/lib/types.ts` | **10** | `discovery-bond/page.tsx` → `preFilters` → `FullRefreshDialog initial` |
+| `DEFAULT_FULL_REFRESH_FILTERS_STOCK` | 同上 | **20** | `discovery-stock/page.tsx` 同上 |
+| `DEFAULT_FULL_REFRESH_FILTERS` | 同上，**deprecated alias → STOCK** | 20 | 仅 `FullRefreshDialog` 在 `initial` 缺字段时的 fallback |
+
+**Convention**: 债基页必须 import `_BOND`，股基页必须 import `_STOCK`。不要让债基走 deprecated alias，否则对话框默认会显示 20%。
+
+**Gotcha**: `FullRefreshDialog` 用 `initial?.min_ret_3y ?? DEFAULT_FULL_REFRESH_FILTERS.min_ret_3y`。`??` 在 `null`/`undefined` 时落到股基 20%。债基 happy path 始终传入 `preFilters.min_ret_3y=10`，A1 不受影响；若日后 `initial` 漏传或把该字段清成 `null`，债基弹窗会回显 20%。
+
+### Wrong vs Correct
+
+```typescript
+// Wrong — 债基页复用股基默认，对话框会显示 20%
+import { DEFAULT_FULL_REFRESH_FILTERS } from '@/lib/types';
+useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS);
+
+// Correct
+import { DEFAULT_FULL_REFRESH_FILTERS_BOND } from '@/lib/types';
+useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS_BOND);
+```
