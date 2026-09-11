@@ -8,6 +8,7 @@
 - 任务 09-10-qdii-reits-coarse-mapping / 09-10-subtype-coverage-fix / 09-10-fund-table-type-chip：粗类别映射契约的完整化与边界。
 - 任务 09-11-bond-market-type-fix：粗类别映射契约的**前端一致性**强化（chip 文案 derive + 死选项清理 + 跨 tab 透传），沉淀于 §8a–§8d。
 - 任务 09-11-bond-full-refresh-default-10pct：债基/股基全量刷新预筛默认必须拆开（`min_ret_3y` 10 vs 20），沉淀于 §11。
+- 任务 09-11-bond-detail-fees-holdings-writeback：market_full_pipeline 加 `pipeline_profile` + L6_fees_holdings 阶段；债基详情页自给自足（复用 fetch_fees/fetch_bond_hold/persist_snapshot），沉淀于 §12。
 
 ## 2. Signatures
 
@@ -627,4 +628,82 @@ useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS);
 // Correct
 import { DEFAULT_FULL_REFRESH_FILTERS_BOND } from '@/lib/types';
 useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS_BOND);
+```
+
+## 12. market_full_pipeline profile + L6_fees_holdings（09-11-bond-detail-fees-holdings-writeback）
+
+`refresh_market_full_sync` 加 `pipeline_profile: str = "stock"` 参数控制阶段序列。债基详情页自给自足（不再依赖老 v1 yaml 写 `FundFees` / `FundHoldingsBond`）。
+
+| profile | 阶段序列 | `main_run.total` |
+|---|---|---|
+| `"stock"`（默认） | L0 universe → L1 rank → L2 size → L3 nav → L4 risk → L5 achievement | `codes × 6` |
+| `"bond"` | L0 universe → L1 rank → L2 size → L3 nav → **L6 fees_holdings** | `codes × 5`（跳过 L4/L5） |
+
+**路由层契约**：
+- `discovery_bond_full_refresh`（`routes.py:470`）显式 `pipeline_profile="bond"`
+- `discovery_stock_full_refresh` 不传参（默认 `"stock"`，6 阶段行为不变）
+- `refresh_configured_funds_sync`（v1 yaml 老路径）独立运行，不进本 pipeline
+
+**L6_fees_holdings 契约**（仅 profile="bond"）：
+- 防御性二次过滤 `codes ∩ market_subtype ∈ DISCOVERY_BOND_SUBTYPES`
+- `ThreadPoolExecutor(max_workers=5)` 对齐 `market_nav_fetcher.MAX_WORKERS`
+- **复用**：`fetch_fees` / `fetch_bond_hold` / `analyze_holdings` / `persist_snapshot`
+- **不复用** `snapshot_fund`：避免重复拉 basic/nav/performance（L0-L3 已写过 `funds` / `market_nav`）
+- `holdings_year = str(date.today().year - 1)` 对齐老路径默认（上年年报）
+- 单只失败仅入账 `errors`，**不重试**（激进跳过，避免长尾）
+- 每只立即 `db.commit()`（断点续传）
+
+**Validation & Error Matrix**：
+| 输入 | 行为 |
+|---|---|
+| `pipeline_profile = "stock"` | 6 阶段，不调 `fetch_fees` / `fetch_bond_hold` |
+| `pipeline_profile = "bond"` | 5 阶段，跳 L4/L5，调 L6 |
+| `pipeline_profile` 未传 | 默认 `"stock"`（向后兼容） |
+| `pipeline_profile = "invalid"` | `ValueError`（函数顶部校验） |
+| `universe_filter` 不在债基 | L6 跑空，`bond_codes = []`，不报错 |
+| 单只 `fetch_fees` 抛异常 | 外层 try/except 捕获 → `failed += 1`，其余继续 |
+| 单只 `fetch_bond_hold` 返回 `[]` | `out["holdings"] = None` → `persist_snapshot` 跳过写入 |
+
+**Convention**：
+- profile 默认值 `"stock"` 必须保留——所有"不显式传参"的调用点（含 scheduler）行为不变
+- 复用 `persist_snapshot` 时只填 `snap["fees"]` / `snap["holdings"]`，**不要**重复填 `basic` / `performance`（已写）
+- L6 阶段命名 `_stage_l6_fees_holdings`，**不要** 改名 `_stage_l4_fees`（避免与股基 L4 视觉混淆）
+- lazy import `fetch_fees` / `fetch_bond_hold` / `persist_snapshot`（防循环依赖 `refresh_service` → `market_full_pipeline` → `refresh_service`）
+
+**Gotcha**：
+- `fetch_bond_hold` 内部已吞异常返 `[]`，但 `fetch_fees` 失败会**抛异常**（不吞）。L6 内层不要包 try/except 吞 `fetch_fees`，否则外层 `failed += 1` 永远不触发（09-11 L6 self-fix 教训）
+- `persist_snapshot` 用 `snap.get("fees")` truthy 判断——空 dict `{}` 也会跳过写入。`_fetch_one_fees_holdings` 用 `fees if fees else {}` 是正确选择，避免空 dict 触发无意义 upsert
+- 前端 0 改动：详情页 `fundApi.getDetail` 接口和 DTO 不变，本任务纯后端写表
+
+**测试覆盖**（`tests/test_market_full_pipeline.py`，24 条全过）：
+- `TestPipelineProfile`（4 条）：bond=5 阶段、stock=6 阶段、非法值 ValueError、main_run.total 公式
+- `TestL6FeesHoldings`（5 条）：调用次数 = 债基 codes、defensive 过滤、单只失败容错、persist_snapshot 触发条件（空 dict 跳过）、stock profile 不调 L6
+
+**Wrong vs Correct**
+
+```python
+# Wrong — 路由层漏传 profile，bond 默认走 6 阶段，债基又被写废 66 分钟
+background.add_task(refresh_market_full_sync,
+                   universe_filter=list(DISCOVERY_BOND_SUBTYPES),
+                   min_ret_3y=min_ret_3y, ...)
+
+# Correct
+background.add_task(refresh_market_full_sync,
+                   universe_filter=list(DISCOVERY_BOND_SUBTYPES),
+                   pipeline_profile="bond",   # 显式声明
+                   min_ret_3y=min_ret_3y, ...)
+```
+
+```python
+# Wrong — L6 内层包 try/except 吞 fetch_fees 异常
+def _fetch_one(...):
+    try:
+        out["fees"] = fetch_fees(code)
+    except Exception:
+        out["fees"] = {}  # 吞异常 → 外层 failed += 1 永不触发
+
+# Correct — 让异常冒泡到外层 _stage_l6 捕获
+def _fetch_one(...):
+    out["fees"] = fetch_fees(code)   # 异常自然传播
+    ...
 ```
