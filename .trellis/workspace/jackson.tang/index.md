@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 8
-- **Last Active**: 2026-09-11
+- **Total Sessions**: 9
+- **Last Active**: 2026-09-13
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~332 | Active |
+| `journal-1.md` | ~367 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 9 | 2026-09-13 | 债基·市场 tab 详情页自给自足：新套补写 FundFees + FundHoldingsBond | `dcafbd1`, `0037748` | `master` |
 | 8 | 2026-09-11 | 债基全量刷新默认 10% 收尾 | `c26cf3f`, `260f8f0` | `master` |
 | 7 | 2026-09-11 | 债基·市场 tab 类型筛选修正：删 REITs 死选项 + chip 文案对齐 | `c26cf3f`, `dd08321`, `c7e3728`, `36ac681` | `master` |
 | 6 | 2026-09-09 | Pre-existing pytest 修复：peer_rank 契约补 rank 键 + cbond 源迁移 | `cb349d9` | `master` |

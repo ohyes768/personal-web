@@ -330,3 +330,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 9: 债基·市场 tab 详情页自给自足：新套补写 FundFees + FundHoldingsBond
+
+**Date**: 2026-09-13
+**Task**: 债基·市场 tab 详情页自给自足：新套补写 FundFees + FundHoldingsBond
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+债基·市场 tab 详情页原本依赖老 v1 yaml 写的 FundFees / FundHoldingsBond。本任务给 market_full_pipeline 加 pipeline_profile 参数（stock/bond），bond 走 5 阶段流水线（L0/L1/L2/L3/L6_fees_holdings，跳过 L4 risk + L5 achievement），复用 fetch_fees + fetch_bond_hold + persist_snapshot 写入路径，5 worker ThreadPoolExecutor 并发对齐 market_nav_fetcher 限流，单只失败仅入账 errors 不重试。前端 0 改动、schema 0 改动。测试：24 条 test_market_full_pipeline 全过（含 5 条新增 L6 + 4 条 profile + 既有 19 条回归），350 条后端全套无回归。spec §12 沉淀到 contracts.md。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dcafbd1` | (see git log) |
+| `0037748` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
