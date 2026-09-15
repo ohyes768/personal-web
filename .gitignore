@@ -79,3 +79,6 @@ backend/fund-select/cache/
 backend/fund-select/logs/
 backend/fund-select/.coverage
 backend/fund-select/.pytest_cache/
+# Local AI agent metadata
+.agents/
+.codex/
