@@ -5,8 +5,8 @@ URL: https://www.chinamoney.com.cn/r/cms/www/chinamoney/data/currency/prr-md.jso
 
 注意：此接口为 POST 请求，必须带 Referer + X-Requested-With 头，否则可能返回 403。
 
-响应 JSON 结构:
-  data.records[]: 每个期限一条记录，字段包含 productCode/weightedRate/latestRate/date 等
+响应 JSON 结构（真实抓包确认，2026-09-15）:
+  records[] 在顶层: 每个期限一条记录，字段包含 productCode/weightedRate/latestRate/date 等
   DR001 加权利率取自 records[productCode='DR001'].weightedRate
 
 参考：monetary-policy-skill 的 prr-md.json 同源数据；本项目内独立维护以避免跨项目耦合。
@@ -79,10 +79,12 @@ class DR001Service:
         """
         if not isinstance(payload, dict):
             return None
-        data = payload.get("data")
-        if not isinstance(data, dict):
-            return None
-        records = data.get("records")
+        # 真实响应 records 在顶层；data 下只有 showDate 字段。
+        # 顶层无 records 时回退 data.records（防接口结构回摆）。
+        records = payload.get("records")
+        if not isinstance(records, list):
+            data = payload.get("data")
+            records = data.get("records") if isinstance(data, dict) else None
         if not isinstance(records, list):
             return None
 

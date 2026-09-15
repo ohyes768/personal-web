@@ -2,9 +2,10 @@
 
 > **Purpose**: 信号首页 · 日频区块的接口契约与跨层对齐约定。改动 3 维度指标清单、15:00 规则或回退语义前必读。
 >
-> **Last verified**: 2026-09-01
+> **Last verified**: 2026-09-15
 > 信号首页自 2026-08-31 起为单页双区块(月度 4 卡 + 日频 3 卡同屏,MacroSignalTab 挂载即并行请求,无模式切换/懒加载)
 > 2026-09-01:日频 monetary_policy 组加 DR001(隔夜),来源 `prr-md.json`,与 DR007(7 天)并列展示;共 3 维度 8 指标。前端组标题日频模式显示「流动性」(月度模式仍为「货币政策」,后端 dimension key 仍为 `monetary_policy`,API 无变更)。详见 §2.1。
+> 2026-09-15:修正 DR001 恒空 bug——`prr-md.json` 真实响应 `records` 在**顶层**(`data` 下仅 showDateCN/showDateEN),`extract_dr001` 此前按 `data.records` 解析导致自上线起解析永远失败、被失败隔离静默吞成 null;测试 mock 与代码同错,测试全绿但从未对过真实接口。详见 §2.1 响应结构小节。
 > **Source files**:
 > - `backend/macro/src/services/daily_snapshot_service.py`(`_DAILY_INDICATORS` 指标清单)
 > - `backend/macro/src/api/routes.py`(`GET /daily-snapshot`)
@@ -49,6 +50,9 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 ### 2.1 DR001 边界语义(2026-09-01 起)
 
 - `dr001` = 银行间隔夜质押式回购加权利率,数据源中国货币网 `prr-md.json`(POST 接口,需 Referer + X-Requested-With 头)
+- **真实响应结构(2026-09-15 实测修正)**:`{"head": {...}, "data": {"showDateCN", "showDateEN"}, "records": [...]}` —— `records` 在**顶层**;`data` 下只有 showDate 两个字段,没有 records。akshare `bond_china_money.py` 同源解析亦取顶层 `data_json["records"]`。
+- 解析契约:`extract_dr001` 顶层 `payload["records"]` 优先,回退兼容 `payload["data"]["records"]`(防接口结构回摆);两处皆非 list → None(失败隔离)。
+- **Common Mistake(本次 bug 教训)**:外部接口的解析代码与测试 mock 不能互为依据——mock 按"想象的结构"构造、代码按同一想象解析,测试全绿但从未对过真实接口,DR001 自 2026-09-01 上线起恒空两周才被发现。**新接外部数据源时,必须先用真实响应跑一次端到端验证**(如 `PYTHONPATH=. python -c "...fetch_today()..."`),再以真实结构写 mock。
 - 仅当日快照:**不攒历史、不算 MA5、不跳转曲线**
 - 失败隔离:`prr-md.json` 拉取失败 / DR001 字段缺失 → `dr001` 指标 `value`/`prev_value` 为 null,**不影响同组 DR007**
 - 后端服务:`backend/macro/src/services/dr001_service.py`(`extract_dr001` 静态方法 + `fetch_today` 异步方法)
