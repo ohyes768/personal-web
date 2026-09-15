@@ -162,7 +162,7 @@ class MacroSignalService:
         否则转占位(value=null + 规则推算 next_release)。None = 不过滤(归档路径)。
         """
         if raw is None:
-            return MacroSignalGroup(conclusion=None, total_score=None, indicators=[])
+            return MacroSignalGroup(conclusion=None, total_score=None, pushed_at=None, indicators=[])
 
         conclusion = raw.get("conclusion")
         total_score = self._extract_total_score(raw)
@@ -210,7 +210,12 @@ class MacroSignalService:
         if month is not None and not any(i.value is not None for i in indicators):
             conclusion, total_score = None, None
 
-        return MacroSignalGroup(conclusion=conclusion, total_score=total_score, indicators=indicators)
+        return MacroSignalGroup(
+            conclusion=conclusion,
+            total_score=total_score,
+            pushed_at=file_mtime,
+            indicators=indicators,
+        )
 
     @staticmethod
     def _extract_total_score(raw: dict) -> Optional[float]:
@@ -235,7 +240,7 @@ class MacroSignalService:
         month 语义同 _convert_dimension_from_macro_signal(兜底路径按月过滤)。
         """
         if raw is None:
-            return MacroSignalGroup(conclusion=None, total_score=None, indicators=[])
+            return MacroSignalGroup(conclusion=None, total_score=None, pushed_at=None, indicators=[])
 
         # score.conclusion 是定性结论(中文,例:「偏热/乐观」)
         score_block = raw.get("score") or {}
@@ -287,7 +292,12 @@ class MacroSignalService:
         if month is not None and not any(i.value is not None for i in indicators):
             conclusion, total_score = None, None
 
-        return MacroSignalGroup(conclusion=conclusion, indicators=indicators, total_score=total_score)
+        return MacroSignalGroup(
+            conclusion=conclusion,
+            indicators=indicators,
+            total_score=total_score,
+            pushed_at=file_mtime,
+        )
 
     def _read_archive_groups(self, month: str) -> Optional[Dict[str, MacroSignalGroup]]:
         """读 archive/<month>/ 下 6 个归档文件并转 shape;目录不存在返回 None。

@@ -147,7 +147,7 @@ function IndicatorRow({
   const body = (
     <>
       <div className="flex items-center gap-1.5 min-w-0">
-        <span className={`text-sm truncate ${nameClass}`}>{meta.label}</span>
+        <span className={`text-sm truncate ${nameClass}`} title={meta.label}>{meta.label}</span>
         {canJump && (
           <span className="text-gray-500 group-hover:text-blue-400 transition-colors text-xs leading-none shrink-0" aria-hidden>
             📈
@@ -240,6 +240,13 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
           ))}
         </div>
       )}
+
+      <div
+        className="mt-2 pt-2 border-t border-gray-800 text-[11px] text-gray-500"
+        title="线上接收并写入该分组数据的时间"
+      >
+        推送：{group.pushed_at ? formatAnalyzed(group.pushed_at) : '时间未知'}
+      </div>
     </div>
   );
 }

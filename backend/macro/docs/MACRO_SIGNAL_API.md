@@ -125,6 +125,7 @@ curl 'http://localhost:8094/api/macro/signal?month=2026-05'
 | `generated_at` | string \| null | 全页最新分析时间 = 所有指标 `analyzed_at` 的最大值 |
 | `groups` | object | 6 个 dimension key,固定顺序 |
 | `groups[d].conclusion` | string \| null | skill 的定性结论(中文),如「温和」「偏宽松」「外部中性」 |
+| `groups[d].pushed_at` | string \| null | **分组推送时间**：线上接收并写入该分组 JSON 文件的时间(UTC ISO timestamp)；不是 skill 自报的分析时间 |
 | `groups[d].indicators` | array | 该维度的所有指标(三时间都是指标级) |
 | `indicators[].key` | string | 指标 key,如 `cpi_yoy`、`dr007` |
 | `indicators[].value` | number \| null | 指标数值,无数据为 null |

@@ -45,6 +45,8 @@ export interface MacroSignalGroup {
   conclusion: string | null;
   /** 维度总分(0-100,skill 评分框架输出);不直接展示,仅档位刻度定位兜底用 */
   total_score?: number | null;
+  /** 线上接收并写入该分组数据的时间(UTC ISO timestamp);缺失表示未知 */
+  pushed_at?: string | null;
   /** 该分组下所有指标,空数组 = 整组缺失 */
   indicators: MacroIndicator[];
 }
