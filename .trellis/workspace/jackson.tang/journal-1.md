@@ -365,3 +365,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 排查并修复线上流动性卡片 DR001 恒空
+
+**Date**: 2026-09-15
+**Task**: 排查并修复线上流动性卡片 DR001 恒空
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+线上宏观日频流动性卡片 DR001 显示「—」。排查:线上 /api/macro/daily-snapshot dr001 全 null 而 DR007 正常;本机同款请求拉 prr-md.json 有值;端到端复现 extract_dr001 返回 None。根因:真实响应 records 在顶层,data 下仅 showDate 字段,解析按 data.records 写,自 2026-09-01 上线起恒空;测试 mock 与代码同错致测试全绿。修复:extract_dr001 顶层优先+data.records 回退;mock 改真实结构+旧结构兼容用例(12 passed,全量 169 passed,真实接口 fetch_today 返回 1.4266);spec macro-daily-snapshot.md §2.1 沉淀真实结构与外部数据源端到端验证教训。待 push + NAS 部署生效。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3e20e8f` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
