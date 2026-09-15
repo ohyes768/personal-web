@@ -190,4 +190,4 @@ $MACRO_SIGNAL_DATA_DIR/
 └── risk-appetite-skill/risk_data.json
 ```
 
-> 默认开发路径 `F:/personal-projects/macro-fin-skill/skills`（`backend/macro/src/config.py:110`），生产由环境变量覆盖。
+> 默认开发路径 `F:/personal-projects/skills/finance-macro/output`（`backend/macro/src/config.py`），生产由环境变量覆盖。

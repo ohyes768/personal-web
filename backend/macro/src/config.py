@@ -114,9 +114,9 @@ class Settings(BaseSettings):
     # 货币网公开历史自 2014-12 起，取 2015 起保留 1 年缓冲
     dr007_start_date: str = "2015-01-01"
 
-    # macro-fin-skill 输出目录(给后端读取各 JSON 用)
+    # finance-macro skill 输出目录(给后端读取各 JSON 用)
     # 默认本地开发路径,生产环境通过环境变量 MACRO_SIGNAL_DATA_DIR 覆盖
-    macro_signal_data_dir: str = "F:/personal-projects/macro-fin-skill/skills"
+    macro_signal_data_dir: str = "F:/personal-projects/skills/finance-macro/output"
 
     # agent 推送写入接口的鉴权 token(POST /api/signal/upload 的 X-Upload-Token)
     # 生产环境通过环境变量 MACRO_SIGNAL_UPLOAD_TOKEN 注入;未配置则写入接口拒绝(401)

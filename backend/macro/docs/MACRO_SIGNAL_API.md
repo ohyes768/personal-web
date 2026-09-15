@@ -26,8 +26,8 @@
 数据源根目录通过环境变量 `MACRO_SIGNAL_DATA_DIR` 配置:
 
 ```bash
-# 本地开发(默认，读 macro-fin-skill 仓库产出)
-export MACRO_SIGNAL_DATA_DIR=F:/personal-projects/macro-fin-skill/skills
+# 本地开发(默认，读 finance-macro skill 的 output 产出)
+export MACRO_SIGNAL_DATA_DIR=F:/personal-projects/skills/finance-macro/output
 
 # 生产环境(NAS，由 agent 推送写入，持久卷 macro-data 下)
 # docker-compose.nas.yml 已注入：MACRO_SIGNAL_DATA_DIR=/app/data/macro-signals
