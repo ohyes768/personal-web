@@ -399,3 +399,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: DR001 改定时落库对齐 DR007 设计
+
+**Date**: 2026-09-16
+**Task**: DR001 改定时落库对齐 DR007 设计
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+用户发现 /update/dr007 命名易误解,排查确认 prr-chrt.csv 本就同时含 DR001/DR007/DR014 三列(index 6/7/8,与当日快照交叉验证),仅 DR007 被解析入库。按用户决策把 DR001 改为 DR007 同款定时落库:dr001_service 重写(同源 CSV 取 index 6,删 prr-md.json 实时链路)、data_service files/save/load、新增 POST /update/dr001、scheduler a_share_daily 接入、docs/api.md;daily_snapshot 零改动前端无感。测试 169 passed,端到端回补 66 行(最新 1.4266 与源一致)。DR001 从此具备 asof 回退,外部源故障不再整行消失。部署后需手动 POST /api/update/dr001 首次回补或等 16:30 定时。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `56b32a3` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
