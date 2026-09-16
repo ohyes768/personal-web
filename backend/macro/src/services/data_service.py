@@ -127,6 +127,7 @@ class DataService:
             "tga": self.data_dir / "tga.csv",
             "hibor": self.data_dir / "hibor.csv",
             "dr007": self.data_dir / "dr007.csv",
+            "dr001": self.data_dir / "dr001.csv",
             "volume": self.data_dir / "volume.csv",
             "turnover": self.data_dir / "turnover.csv",
             "margin": self.data_dir / "margin.csv"
@@ -495,22 +496,59 @@ class DataService:
             logger.error(f"加载 DR007 失败: {e}")
             return pd.DataFrame()
 
-    def load_dr001(self) -> pd.DataFrame:
-        """拉取当日 DR001 加权利率(实时外部数据,不落 CSV)。
+    def save_dr001_data(self, df: pd.DataFrame, path=None) -> None:
+        """保存 DR001 数据到 dr001.csv（合并现有数据，避免覆盖丢历史）。
 
-        数据源:prr-md.json(中国货币网质押式回购当日快照,只提供当日值)。
-        返回单行 DataFrame(index=date, columns=['dr001']),与 load_dr007 形态一致。
-        失败/字段缺失返回空 DataFrame(保留列结构)。
+        接受 DataFrame，列必须包含 ['date', 'dr001']。
+        - 空 df → 写入空文件（保留 header）便于首次建表
+        - 非空 → 与现有 CSV 合并（按 date 去重，保留新值），再按 date 升序写入
+
+        Args:
+            df: 待写入的 DataFrame（必须有 'date' / 'dr001' 列）
+            path: 目标 CSV 路径，默认 backend/macro/data/dr001.csv
         """
-        import asyncio
-        from src.services.dr001_service import get_dr001_service
+        if path is None:
+            path = self.files["dr001"]
 
-        service = get_dr001_service()
+        if df.empty:
+            self._ensure_file_exists(path, ["dr001"])
+            logger.info("DR001 数据为空，仅写入空文件")
+            return
+
+        if "date" not in df.columns or "dr001" not in df.columns:
+            raise ValueError("DR001 DataFrame 必须包含 'date' 和 'dr001' 列")
+
+        new_part = df[["date", "dr001"]].copy()
+        new_part["date"] = pd.to_datetime(new_part["date"])
+        new_part = new_part.set_index("date").sort_index()
+
+        # 与现有 CSV 合并，避免 fetcher 返回部分数据时丢历史
+        existing = self.load_dr001(path)
+        if not existing.empty:
+            # 旧值在前，新值在后（drop_duplicates keep='last' 保证新值覆盖旧值）
+            combined = pd.concat([existing, new_part])
+            combined = combined[~combined.index.duplicated(keep="last")].sort_index()
+        else:
+            combined = new_part
+
+        self._ensure_file_exists(path, ["dr001"])
+        combined.to_csv(path)
+        logger.info(f"已保存 DR001 数据，共 {len(combined)} 条记录")
+
+    def load_dr001(self, path=None) -> pd.DataFrame:
+        """从 dr001.csv 读取 DataFrame（index=date, columns=['dr001']）。"""
+        if path is None:
+            path = self.files["dr001"]
+        if not path.exists():
+            return pd.DataFrame()
         try:
-            return asyncio.run(service.fetch_today())
+            df = pd.read_csv(path, index_col=0, parse_dates=True)
+            if "dr001" not in df.columns:
+                return pd.DataFrame()
+            return df
         except Exception as e:
             logger.error(f"加载 DR001 失败: {e}")
-            return pd.DataFrame(columns=["dr001"])
+            return pd.DataFrame()
 
     def save_volume_data(self, df: pd.DataFrame, path=None) -> None:
         """保存两市成交额到 volume.csv（合并现有数据，append + 去重）。"""

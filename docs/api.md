@@ -1186,8 +1186,9 @@ interface EconomicDataResponse {
 | | 20 | `/api/macro/update/china-bonds` | POST | 增量更新中国国债 |
 | | 21 | `/api/macro/fetch/ted-spread/history` | POST | 获取TED利差历史数据 |
 | | 22 | `/api/macro/update/ted-spread` | POST | 增量更新TED利差 |
+| | 23 | `/api/macro/update/dr001` | POST | 增量更新 DR001 数据（与 DR007 同源 prr-chrt.csv，取 DR001 列） |
 
-**总计**: douyin-processor 10 个接口 + macro 22 个接口 = 32 个接口
+**总计**: douyin-processor 10 个接口 + macro 23 个接口 = 33 个接口
 
 ---
 

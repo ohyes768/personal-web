@@ -33,6 +33,8 @@ from src.models import (
     HIBORUpdateData,
     DR007Data,
     DR007UpdateData,
+    DR001Data,
+    DR001UpdateData,
     VolumeData,
     VolumeUpdateData,
     TurnoverData,
@@ -68,6 +70,7 @@ from src.services.data_service import get_data_service
 from src.services.vix_service import get_vix_service
 from src.services.hibor_service import get_hibor_service
 from src.services.dr007_service import get_dr007_service
+from src.services.dr001_service import get_dr001_service
 from src.services.baostock_service import get_baostock_service
 from src.services.margin_service import get_margin_service
 from src.services.fund_flow_service import get_fund_flow_service
@@ -2772,7 +2775,10 @@ async def fetch_dr007_history():
 
 @router.post("/update/dr007", response_model=UpdateResponse)
 async def update_dr007():
-    """增量更新 DR007 数据 - 拉取 CSV 最后一行的下一天到今天"""
+    """增量更新 DR007 数据 - 拉取 CSV 最后一行的下一天到今天
+
+    数据源 prr-chrt.csv 同一文件亦含 DR001/DR014 列，DR001 由 /update/dr001 独立入库。
+    """
     global _is_updating
 
     if _is_updating:
@@ -2839,6 +2845,84 @@ async def update_dr007():
         return UpdateResponse(
             success=False,
             message=f"DR007 数据增量更新失败: {str(e)}",
+            error_code="UPDATE_FAILED"
+        )
+    finally:
+        release_update_lock()
+
+
+@router.post("/update/dr001", response_model=UpdateResponse)
+async def update_dr001():
+    """增量更新 DR001 数据 - 拉取 CSV 最后一行的下一天到今天
+
+    与 /update/dr007 同源（prr-chrt.csv），取 DR001 加权利率列，独立落库到 dr001.csv。
+    """
+    global _is_updating
+
+    if _is_updating:
+        return UpdateResponse(
+            success=False,
+            message="数据更新正在进行中，请稍后再试",
+            error_code="UPDATE_IN_PROGRESS"
+        )
+
+    await acquire_update_lock()
+
+    try:
+        logger.info("开始增量更新 DR001 数据...")
+        dr001_service = get_dr001_service()
+        data_service = get_data_service()
+
+        latest_end = pd.Timestamp.now().normalize()
+        start_date = _compute_incremental_start(data_service, "dr001", latest_end)
+
+        if start_date is None or start_date > latest_end:
+            logger.info("DR001 数据已是最新，无需更新")
+            return UpdateResponse(
+                success=True,
+                message="DR001 数据已是最新，无需更新",
+                data=DR001UpdateData(dr001=DR001Data(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
+
+        logger.info(f"增量更新 DR001 数据，从 {start_date} 到 {latest_end}")
+
+        dr001_df = await dr001_service.fetch_latest(start_date, latest_end)
+
+        if dr001_df.empty:
+            # 货币网 CSV 在区间内无新数据（节假日 / 数据尚未发布）→ 视为已是最新，不抛错
+            logger.info(f"DR001 区间 [{start_date}, {latest_end}] 无新数据，跳过")
+            return UpdateResponse(
+                success=True,
+                message="DR001 数据已是最新，无需更新",
+                data=DR001UpdateData(dr001=DR001Data(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
+
+        data_service.save_dr001_data(dr001_df)
+
+        last_idx = dr001_df["date"].iloc[-1]
+        last_val = dr001_df["dr001"].iloc[-1]
+        dr001_latest = DR001Data(
+            date=last_idx.date() if last_idx is not None else latest_end.date(),
+            value=float(last_val) if last_val is not None else None,
+        )
+
+        response_data = DR001UpdateData(dr001=dr001_latest)
+
+        logger.info("DR001 数据增量更新成功")
+        return UpdateResponse(
+            success=True,
+            message="DR001 数据增量更新成功",
+            data=response_data,
+            updated_at=datetime.now().isoformat(),
+        )
+
+    except Exception as e:
+        logger.error(f"DR001 数据增量更新失败: {str(e)}")
+        return UpdateResponse(
+            success=False,
+            message=f"DR001 数据增量更新失败: {str(e)}",
             error_code="UPDATE_FAILED"
         )
     finally:

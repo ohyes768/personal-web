@@ -137,6 +137,19 @@ class DR007UpdateData(BaseModel):
     dr007: DR007Data
 
 
+class DR001Data(BaseModel):
+    """DR001（中国货币网隔夜质押式回购加权利率，单位：%）"""
+
+    date: date
+    value: Optional[float] = None
+
+
+class DR001UpdateData(BaseModel):
+    """DR001 更新响应数据"""
+
+    dr001: DR001Data
+
+
 class VolumeData(BaseModel):
     """两市合计成交额（单位：亿元）"""
 

@@ -6,6 +6,7 @@
 > 信号首页自 2026-08-31 起为单页双区块(月度 4 卡 + 日频 3 卡同屏,MacroSignalTab 挂载即并行请求,无模式切换/懒加载)
 > 2026-09-01:日频 monetary_policy 组加 DR001(隔夜),来源 `prr-md.json`,与 DR007(7 天)并列展示;共 3 维度 8 指标。前端组标题日频模式显示「流动性」(月度模式仍为「货币政策」,后端 dimension key 仍为 `monetary_policy`,API 无变更)。详见 §2.1。
 > 2026-09-15:修正 DR001 恒空 bug——`prr-md.json` 真实响应 `records` 在**顶层**(`data` 下仅 showDateCN/showDateEN),`extract_dr001` 此前按 `data.records` 解析导致自上线起解析永远失败、被失败隔离静默吞成 null;测试 mock 与代码同错,测试全绿但从未对过真实接口。详见 §2.1 响应结构小节。
+> 2026-09-16:DR001 弃用 prr-md.json 实时旁路,改为 DR007 同款定时落库(`POST /update/dr001` → 同一 `prr-chrt.csv` 取 index 6 列 → `dr001.csv`),获得 asof 回退能力;prr-md 实时链路代码整体删除。详见 §2.1/§4。
 > **Source files**:
 > - `backend/macro/src/services/daily_snapshot_service.py`(`_DAILY_INDICATORS` 指标清单)
 > - `backend/macro/src/api/routes.py`(`GET /daily-snapshot`)
@@ -47,15 +48,13 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 - `data_date ≠ 所选 date` 即发生了回退(前端行内灰字标注「实际 MM-DD」)
 - `prev_value` = `data_date` 前一个有值日(前端算日变化,红涨绿跌);null 显示「—」
 
-### 2.1 DR001 边界语义(2026-09-01 起)
+### 2.1 DR001 边界语义(2026-09-01 引入,2026-09-16 起定时落库)
 
-- `dr001` = 银行间隔夜质押式回购加权利率,数据源中国货币网 `prr-md.json`(POST 接口,需 Referer + X-Requested-With 头)
-- **真实响应结构(2026-09-15 实测修正)**:`{"head": {...}, "data": {"showDateCN", "showDateEN"}, "records": [...]}` —— `records` 在**顶层**;`data` 下只有 showDate 两个字段,没有 records。akshare `bond_china_money.py` 同源解析亦取顶层 `data_json["records"]`。
-- 解析契约:`extract_dr001` 顶层 `payload["records"]` 优先,回退兼容 `payload["data"]["records"]`(防接口结构回摆);两处皆非 list → None(失败隔离)。
-- **Common Mistake(本次 bug 教训)**:外部接口的解析代码与测试 mock 不能互为依据——mock 按"想象的结构"构造、代码按同一想象解析,测试全绿但从未对过真实接口,DR001 自 2026-09-01 上线起恒空两周才被发现。**新接外部数据源时,必须先用真实响应跑一次端到端验证**(如 `PYTHONPATH=. python -c "...fetch_today()..."`),再以真实结构写 mock。
-- 仅当日快照:**不攒历史、不算 MA5、不跳转曲线**
-- 失败隔离:`prr-md.json` 拉取失败 / DR001 字段缺失 → `dr001` 指标 `value`/`prev_value` 为 null,**不影响同组 DR007**
-- 后端服务:`backend/macro/src/services/dr001_service.py`(`extract_dr001` 静态方法 + `fetch_today` 异步方法)
+- `dr001` = 银行间隔夜质押式回购加权利率(隔夜),与 DR007 **同源同文件**:`prr-chrt.csv`(GET,同 headers),取 `cols[6]`(DR001 加权利率;cols[7]=DR007、cols[8]=DR014,已与当日快照交叉验证)。解析要求 `len(cols)>=9` 且 float 可转,否则跳行(不猜测 8 列老格式列位)。
+- **取数链路(2026-09-16 起,与 DR007 完全同款)**:scheduler `a_share_daily` 16:30 → `POST /update/dr001` → `dr001.csv`(合并去重升序) → `/daily-snapshot` 读 CSV asof 取值。首部署需手动触发一次 `/update/dr001` 全量回补(受 CSV 滚动窗口限制,约 3 个月)。
+- 回退语义与 DR007 一致:外部源故障/当日未发布 → asof 回退最近可得值 + 行内标注;**不再**出现「实时拉取失败整行消失」(2026-09-16 前的旧行为)。
+- `prr-md.json`(POST 当日快照)链路已退役删除——其历史教训保留:外部接口解析与测试 mock 不能互为依据,mock 按"想象的结构"构造会全绿但对不上真实接口(2026-09-15 DR001 恒空两周根因)。**新接外部数据源必须先用真实响应跑一次端到端验证,再以真实结构写 mock。**
+- 仅日频快照展示:**不算 MA5、不跳转曲线**(无 INDICATOR_LINK_MAP 条目);该组日频模式组标题「流动性」,不渲染档位刻度。
 - 前端展示:日频模式该组标题显示「流动性」(`DailyCardGrid.tsx` `DAILY_GROUP_TITLES` 覆盖);月度模式不受影响
 - 该组在日频模式下**不渲染档位刻度**(与汇率/风险偏好两张卡一致,纯数据组)
 
@@ -69,7 +68,7 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 
 **不要**用 `query_data_by_tab` 组装日频数据:该接口 `dates` 在含美债 Tab 上是美债交易日,不是日频卡用的 volume 并集;`us_treasuries` 本身不 reindex 到任意 union 轴。日频按索引 zip 仍会错位。`exchange_rates` 已对齐查询轴(与 china_bond/commodities 相同)。
 日频走 `DataService` 原始 load 方法(`load_dr001`/`load_dr007`/`load_volume`/`load_data('exchange_rates')` 等),自己 dropna + asof(≤ 所选日期最后一个值)。
-- `load_dr001` 走 `prr-md.json`(POST 接口,与 `load_dr007` 的 `prr-chrt.csv` GET 接口不同),取 `records[productCode='DR001'].weightedRate`
+- `load_dr001` 与 `load_dr007` 同款:读各自 CSV(`dr001.csv`/`dr007.csv`),由 `/update/dr001`/`/update/dr007` 定时落库。两指标同源 `prr-chrt.csv`(DR001 取 `cols[6]`、DR007 取 `cols[7]`),解析服务 `dr001_service.py`/`dr007_service.py` 互为镜像
 
 ## 5. 跨层对齐约定(改指标必须三处同步)
 

@@ -161,24 +161,9 @@ def test_route_rejects_invalid_date_format():
     assert exc_info.value.status_code == 400
 
 
-def test_dr001_failure_does_not_affect_dr007(service: DailySnapshotService):
-    """DR001 实时拉取失败 → DR001 value 为 null,DR007 仍正常返回"""
-    import pandas as pd
-    from unittest.mock import patch
-    from src.services import dr001_service
-
-    empty_df = pd.DataFrame(columns=["dr001"])
-
-    # 让 DR001 服务返回空 DataFrame(模拟网络失败或字段缺失)
-    fake_service = dr001_service.DR001Service()
-
-    async def _fetch_empty():
-        return empty_df
-
-    with patch.object(
-        dr001_service, "get_dr001_service", return_value=fake_service
-    ), patch.object(fake_service, "fetch_today", side_effect=_fetch_empty):
-        snap = service.get_daily_snapshot("2026-08-27")
+def test_dr001_missing_csv_does_not_affect_dr007(service: DailySnapshotService):
+    """DR001 无数据(改造后读 dr001.csv,fixture 未写该文件=数据缺失) → DR001 value 为 null,DR007 仍正常返回"""
+    snap = service.get_daily_snapshot("2026-08-27")
 
     monetary = {i["key"]: i for i in snap["groups"]["monetary_policy"]["indicators"]}
     assert monetary["dr001"]["value"] is None

@@ -11,12 +11,13 @@
       "targets": [
         "/update/china-bonds",
         "/update/dr007",
+        "/update/dr001",
         "/update/fund-flow",
         "/update/volume",
         "/update/turnover",
         "/update/margin"
       ],
-      "description": "A 股收盘后顺序更新中债/DR007/北向/成交额/换手率/融资余额"
+      "description": "A 股收盘后顺序更新中债/DR001/DR007/北向/成交额/换手率/融资余额"
     },
     {
       "id": "global_daily",

@@ -1,209 +1,208 @@
 """DR001 fetcher 单元测试
 
-数据源:中国货币网 prr-md.json(POST 请求,Referer + X-Requested-With 必带)
-真实响应 records[] 在顶层(data 下只有 showDate 字段),其中 productCode='DR001' 的
-weightedRate 即当日 DR001 加权利率;旧结构 data.records[] 作为回退兼容分支保留。
+数据源：中国货币网 prr-chrt.csv（与 DR007 同一文件）
+列含义（index，实测 2026-09-15 共 9 列）：
+  0 日期（YYYY-MM-DD）
+  1-5 其他盘口字段（本服务不使用）
+  6 DR001 加权利率(%)  ← DR001 取这一列
+  7 DR007 加权利率(%)
+  8 DR014 加权利率(%)
 """
 import asyncio
-import json
-from datetime import datetime
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
-import requests
 
 from src.services.dr001_service import DR001Service
-
-
-def _make_payload(product_code: str = "DR001", weighted_rate: str = "1.3576", date_str: str = "26-09-01"):
-    """构造与 prr-md.json 真实响应同构的 payload(records 在顶层)"""
-    return {
-        "data": {"showDateCN": "2026-09-01", "showDateEN": "2026-09-01"},
-        "records": [
-            {
-                "date": date_str,
-                "productCode": product_code,
-                "latestRate": "1.3223",
-                "weightedRate": weighted_rate,
-                "avgPrd": "1",
-            }
-        ],
-    }
+from src.services.data_service import DataService
 
 
 @pytest.mark.unit
-def test_extract_dr001_returns_value_and_date():
-    """解析:records 中 DR001 的 weightedRate + date 字段正确抽取"""
-    payload = _make_payload(weighted_rate="1.3576", date_str="26-09-01")
-    out = DR001Service.extract_dr001(payload)
-    assert out is not None
-    assert out["value"] == pytest.approx(1.3576)
-    assert out["data_date"] == "2026-09-01"
+def test_parse_csv_extracts_dr001_column():
+    """解析：index 6 为当日 DR001 利率（%）——真实 9 列格式样本"""
+    csv_text = (
+        "2026-09-15,,,,,,1.4266,1.4244,1.4169\n"
+        "2026-09-14,,,,,,1.4200,1.4100,1.4000\n"
+    )
+    df = DR001Service.parse_csv(csv_text)
+
+    assert list(df.columns) == ["date", "dr001"]
+    assert len(df) == 2
+    # parse_csv 按日期升序输出，所以 iloc[0] 是较早的 9/14，iloc[-1] 是最新 9/15
+    assert df.iloc[0]["date"] == pd.Timestamp("2026-09-14")
+    assert df.iloc[0]["dr001"] == pytest.approx(1.4200)
+    assert df.iloc[-1]["date"] == pd.Timestamp("2026-09-15")
+    assert df.iloc[-1]["dr001"] == pytest.approx(1.4266)
 
 
 @pytest.mark.unit
-def test_extract_dr001_skips_other_products_and_picks_dr001():
-    """解析:records 含多产品(DR007/DR001/DR014)时只取 DR001"""
-    payload = {
-        "records": [
-            {"date": "26-09-01", "productCode": "DR007", "weightedRate": "1.5000"},
-            {"date": "26-09-01", "productCode": "DR001", "weightedRate": "1.3576"},
-            {"date": "26-09-01", "productCode": "DR014", "weightedRate": "1.6500"},
-        ]
-    }
-    out = DR001Service.extract_dr001(payload)
-    assert out is not None
-    assert out["value"] == pytest.approx(1.3576)
-    assert out["data_date"] == "2026-09-01"
+def test_parse_csv_skips_rows_with_fewer_than_9_cols():
+    """解析：列数不足 9 列（含老格式 8 列行）→ 跳过，不猜测列位"""
+    csv_text = (
+        "2026-08-20,1.6200,1.6200,1234,500,1.7,1.6,1.6200\n"    # 老格式 8 列
+        "2026-08-22,1.6500,1.6500\n"                            # 短行
+        "2026-08-21,,,,,,1.6300,1.6300,1.6100\n"                # 合法 9 列
+    )
+    df = DR001Service.parse_csv(csv_text)
 
-
-@pytest.mark.unit
-def test_extract_dr001_returns_none_when_missing_record():
-    """解析:records 中无 DR001 → None"""
-    payload = {
-        "records": [
-            {"date": "26-09-01", "productCode": "DR007", "weightedRate": "1.5000"},
-        ]
-    }
-    assert DR001Service.extract_dr001(payload) is None
-
-
-@pytest.mark.unit
-def test_extract_dr001_returns_none_when_weighted_rate_missing():
-    """解析:DR001 记录存在但 weightedRate 字段缺失 → None"""
-    payload = {
-        "records": [
-            {"date": "26-09-01", "productCode": "DR001", "latestRate": "1.3223"},
-        ]
-    }
-    assert DR001Service.extract_dr001(payload) is None
-
-
-@pytest.mark.unit
-def test_extract_dr001_returns_none_when_weighted_rate_not_float():
-    """解析:weightedRate 非数字 → None"""
-    payload = {
-        "records": [
-            {"date": "26-09-01", "productCode": "DR001", "weightedRate": "N/A"},
-        ]
-    }
-    assert DR001Service.extract_dr001(payload) is None
-
-
-@pytest.mark.unit
-def test_extract_dr001_returns_none_for_malformed_payload():
-    """解析:响应结构异常 → None(不抛);顶层/回退两条路径都不合法时拒绝"""
-    assert DR001Service.extract_dr001({}) is None
-    assert DR001Service.extract_dr001({"records": "not-list"}) is None
-    assert DR001Service.extract_dr001({"data": "not-dict"}) is None
-    assert DR001Service.extract_dr001({"data": {"records": "not-list"}}) is None
-    assert DR001Service.extract_dr001(None) is None
-
-
-@pytest.mark.unit
-def test_extract_dr001_parses_legacy_data_records_structure():
-    """解析:旧结构 data.records[] 仍可解析(回退兼容分支,防接口结构回摆回归)"""
-    payload = {
-        "data": {
-            "records": [
-                {"date": "26-09-01", "productCode": "DR001", "weightedRate": "1.3576"},
-            ]
-        }
-    }
-    out = DR001Service.extract_dr001(payload)
-    assert out is not None
-    assert out["value"] == pytest.approx(1.3576)
-    assert out["data_date"] == "2026-09-01"
-
-
-@pytest.mark.unit
-def test_extract_dr001_returns_none_when_date_missing():
-    """解析:weightedRate 存在但 date 字段缺失 → 抽不到合法日期(None)"""
-    payload = {
-        "records": [
-            {"productCode": "DR001", "weightedRate": "1.3576"},
-        ]
-    }
-    out = DR001Service.extract_dr001(payload)
-    assert out is not None
-    assert out["value"] == pytest.approx(1.3576)
-    assert out["data_date"] is None
-
-
-@pytest.mark.unit
-def test_fetch_today_returns_single_row_dataframe():
-    """网络:fetch_today 成功 → 单行 DataFrame(index=date, columns=['dr001'])"""
-    payload = _make_payload(weighted_rate="1.3576", date_str="26-09-01")
-
-    fake_response = MagicMock()
-    fake_response.encoding = "utf-8"
-    fake_response.text = json.dumps(payload)
-
-    service = DR001Service()
-    with patch.object(service.session, "post", return_value=fake_response):
-        df = asyncio.run(service.fetch_today())
-
-    assert list(df.columns) == ["dr001"]
     assert len(df) == 1
-    assert df.index[0] == pd.Timestamp("2026-09-01")
-    assert df["dr001"].iloc[0] == pytest.approx(1.3576)
+    assert df.iloc[0]["date"] == pd.Timestamp("2026-08-21")
+    assert df.iloc[0]["dr001"] == pytest.approx(1.6300)
 
 
 @pytest.mark.unit
-def test_fetch_today_returns_empty_when_request_fails():
-    """网络:session.post 抛错(网络/403/超时) → 空 DataFrame,不抛异常"""
-    service = DR001Service()
-    with patch.object(
-        service.session,
-        "post",
-        side_effect=requests.exceptions.HTTPError("403 Forbidden"),
-    ):
-        df = asyncio.run(service.fetch_today())
+def test_parse_csv_skips_non_numeric_value():
+    """解析：index 6 非 float → 跳过该行"""
+    csv_text = (
+        "2026-09-14,,,,,,notnum,1.4244,1.4169\n"
+        "2026-09-15,,,,,,1.4266,1.4244,1.4169\n"
+    )
+    df = DR001Service.parse_csv(csv_text)
 
-    assert list(df.columns) == ["dr001"]
+    assert len(df) == 1
+    assert df.iloc[0]["date"] == pd.Timestamp("2026-09-15")
+
+
+@pytest.mark.unit
+def test_parse_csv_empty_input_returns_empty_df():
+    """空输入 → 空 DataFrame（列结构不变）"""
+    df = DR001Service.parse_csv("")
+    assert list(df.columns) == ["date", "dr001"]
     assert len(df) == 0
 
 
 @pytest.mark.unit
-def test_fetch_today_returns_empty_when_field_missing():
-    """网络:接口响应中 DR001 缺失 → 空 DataFrame,不抛异常"""
-    payload = {
-        "records": [
-            {"date": "26-09-01", "productCode": "DR007", "weightedRate": "1.5000"},
-        ]
-    }
-    fake_response = MagicMock()
-    fake_response.encoding = "utf-8"
-    fake_response.text = json.dumps(payload)
+def test_parse_csv_sorts_by_date_ascending():
+    """解析：CSV 倒序时按日期升序返回"""
+    csv_text = (
+        "2026-09-15,,,,,,1.4266,1.4244,1.4169\n"
+        "2026-09-11,,,,,,1.4000,1.4000,1.3900\n"
+        "2026-09-14,,,,,,1.4200,1.4100,1.4000\n"
+    )
+    df = DR001Service.parse_csv(csv_text)
 
-    service = DR001Service()
-    with patch.object(service.session, "post", return_value=fake_response):
-        df = asyncio.run(service.fetch_today())
-
-    assert list(df.columns) == ["dr001"]
-    assert len(df) == 0
+    assert df["date"].tolist() == [
+        pd.Timestamp("2026-09-11"),
+        pd.Timestamp("2026-09-14"),
+        pd.Timestamp("2026-09-15"),
+    ]
 
 
 @pytest.mark.unit
-def test_post_uses_referer_and_xrequestedwith_headers():
-    """网络:请求必须带 Referer + X-Requested-With 头(否则可能被拒)"""
-    payload = _make_payload()
-    fake_response = MagicMock()
-    fake_response.encoding = "utf-8"
-    fake_response.text = json.dumps(payload)
+def test_parse_csv_deduplicates_by_date():
+    """解析：同日期多行 → 去重保留首次出现的值"""
+    csv_text = (
+        "2026-09-15,,,,,,1.4266,1.4244,1.4169\n"
+        "2026-09-15,,,,,,1.9999,1.4244,1.4169\n"
+    )
+    df = DR001Service.parse_csv(csv_text)
 
+    assert len(df) == 1
+    assert df.iloc[0]["dr001"] == pytest.approx(1.4266)
+
+
+@pytest.mark.unit
+def test_fetch_history_filters_by_date_range():
+    """fetch_history：拉全量 CSV 后筛 [start, end] 区间（mock 网络层）"""
+    csv_text = (
+        "2026-09-10,,,,,,1.3900,1.3900,1.3800\n"
+        "2026-09-11,,,,,,1.4000,1.4000,1.3900\n"
+        "2026-09-14,,,,,,1.4200,1.4100,1.4000\n"
+        "2026-09-15,,,,,,1.4266,1.4244,1.4169\n"
+    )
     service = DR001Service()
-    with patch.object(service.session, "post", return_value=fake_response) as mock_post:
-        asyncio.run(service.fetch_today())
 
-    # 验证 POST 调用时的 headers 包含必带头
-    call_kwargs = mock_post.call_args.kwargs
-    sent_headers = call_kwargs.get("headers", {})
-    # session.headers 会被合并,但 session.headers.update(DEFAULT_HEADERS) 后应包含
-    assert "Referer" in service.session.headers
-    assert "X-Requested-With" in service.session.headers
-    assert service.session.headers["Referer"].startswith("https://www.chinamoney.com.cn")
-    assert service.session.headers["X-Requested-With"] == "XMLHttpRequest"
-    # POST 而非 GET
-    assert mock_post.called
+    with patch.object(service, "fetch_csv_text", return_value=csv_text):
+        df = asyncio.run(
+            service.fetch_history(pd.Timestamp("2026-09-11"), pd.Timestamp("2026-09-14"))
+        )
+
+    assert df["date"].tolist() == [
+        pd.Timestamp("2026-09-11"),
+        pd.Timestamp("2026-09-14"),
+    ]
+    assert df["dr001"].tolist() == [pytest.approx(1.4000), pytest.approx(1.4200)]
+
+
+@pytest.mark.unit
+def test_fetch_latest_returns_empty_when_no_new_data():
+    """fetch_latest：区间内无新数据（如节假日）→ 空 DataFrame"""
+    csv_text = "2026-09-15,,,,,,1.4266,1.4244,1.4169\n"
+    service = DR001Service()
+
+    with patch.object(service, "fetch_csv_text", return_value=csv_text):
+        df = asyncio.run(
+            service.fetch_latest(pd.Timestamp("2026-09-16"), pd.Timestamp("2026-09-17"))
+        )
+
+    assert df.empty
+
+
+@pytest.mark.integration
+def test_save_and_load_dr001_roundtrip(tmp_path):
+    """save_dr001_data → load_dr001 能读回（首次写入）"""
+    csv_path = tmp_path / "dr001.csv"
+    df_to_write = pd.DataFrame({
+        "date": pd.to_datetime(["2026-09-13", "2026-09-14", "2026-09-15"]),
+        "dr001": [1.40, 1.42, 1.4266],
+    })
+
+    service = DataService()
+    service.save_dr001_data(df_to_write, path=csv_path)
+    assert csv_path.exists()
+
+    loaded = service.load_dr001(path=csv_path)
+    assert len(loaded) == 3
+    assert loaded["dr001"].iloc[-1] == pytest.approx(1.4266)
+    assert loaded["dr001"].iloc[0] == pytest.approx(1.40)
+
+
+@pytest.mark.integration
+def test_save_dr001_merges_with_existing_data(tmp_path):
+    """save_dr001_data 与现有 CSV 合并（按 date 去重，新值覆盖旧值）"""
+    csv_path = tmp_path / "dr001.csv"
+    service = DataService()
+
+    # 第一次写入
+    first = pd.DataFrame({
+        "date": pd.to_datetime(["2026-09-13", "2026-09-14"]),
+        "dr001": [1.40, 1.42],
+    })
+    service.save_dr001_data(first, path=csv_path)
+
+    # 第二次写入：含 1 条旧日期（覆盖）+ 1 条新日期
+    second = pd.DataFrame({
+        "date": pd.to_datetime(["2026-09-14", "2026-09-15"]),
+        "dr001": [1.99, 1.4266],  # 9/14 应覆盖为 1.99
+    })
+    service.save_dr001_data(second, path=csv_path)
+
+    loaded = service.load_dr001(path=csv_path)
+    assert len(loaded) == 3
+    # 验证合并：9/14 被新值覆盖
+    assert loaded.loc[pd.Timestamp("2026-09-14"), "dr001"] == pytest.approx(1.99)
+    assert loaded.loc[pd.Timestamp("2026-09-15"), "dr001"] == pytest.approx(1.4266)
+
+
+@pytest.mark.integration
+def test_save_dr001_creates_file_with_header(tmp_path):
+    """save_dr001_data 写入空 df 也能建带 header 的空文件"""
+    csv_path = tmp_path / "dr001.csv"
+    empty_df = pd.DataFrame(columns=["date", "dr001"])
+
+    service = DataService()
+    service.save_dr001_data(empty_df, path=csv_path)
+    assert csv_path.exists()
+
+    header = csv_path.read_text(encoding="utf-8").splitlines()[0]
+    assert "date" in header
+    assert "dr001" in header
+
+
+@pytest.mark.integration
+def test_load_dr001_missing_file_returns_empty(tmp_path):
+    """dr001.csv 不存在 → 空 DataFrame（与 load_dr007 行为一致）"""
+    service = DataService()
+    loaded = service.load_dr001(path=tmp_path / "not-exist.csv")
+    assert loaded.empty
