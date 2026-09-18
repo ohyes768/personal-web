@@ -15,6 +15,14 @@ set -euo pipefail
 # 切到 repo root（脚本位于 <root>/scripts/）— docker compose -f 用相对路径必须在此目录
 cd "$(dirname "$0")/.."
 
+# 加载根 .env 到环境变量：compose 会自动读它做插值，但下面 frontend 走 buildx
+# 直构建、不经 compose，NEXT_PUBLIC_* 的 build args 需要从 shell 环境取值
+if [[ -f .env ]]; then
+    set -a
+    . ./.env
+    set +a
+fi
+
 COMPOSE_FILE="docker-compose.nas.yml"
 # 带国内 registry mirror 的 builder（旧名 nas-builder 不继承 daemon.json 加速，会直连 Docker Hub 超时）
 BUILDX_BUILDER="nas-builder-cn"
@@ -177,6 +185,9 @@ get_services() {
 
 # ---- frontend buildx context 映射 ----
 # USE_BUILDX=true 时前端走 docker buildx，pnpm install 走 Dockerfile cache mount 复用
+# 格式 ctx:df:tag[:build_args]，build_args 段用 | 分隔多个 ARG=值（可省略）。
+# buildx 不读 compose 的 build.args，需要 build-time inline 的 NEXT_PUBLIC_*
+# 必须在这里显式传（值经顶部 .env 加载进入 shell 环境）
 get_buildx_config() {
     local svc="$1"
     case "$svc" in
@@ -185,7 +196,7 @@ get_buildx_config() {
         rss-relay-frontend) echo "apps/rss-relay:apps/rss-relay/Dockerfile:rss-relay-frontend" ;;
         macro-frontend) echo "apps/macro:apps/macro/Dockerfile:macro-frontend" ;;
         fund-select-frontend) echo "apps/fund-select:apps/fund-select/Dockerfile:fund-select-frontend" ;;
-        housing-map-frontend) echo "apps/housing-map:apps/housing-map/Dockerfile:housing-map-frontend" ;;
+        housing-map-frontend) echo "apps/housing-map:apps/housing-map/Dockerfile:housing-map-frontend:NEXT_PUBLIC_GAODE_MAP_KEY=${GAODE_MAP_KEY:-}|NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY=${GAODE_MAP_SECURITY_KEY:-}" ;;
         *) return 1 ;;
     esac
 }
@@ -233,7 +244,7 @@ compose_build() {
 
 buildx_build_frontend() {
     local svc="$1"
-    local cfg ctx df tag
+    local cfg ctx df tag build_args
     cfg=$(get_buildx_config "$svc")
     ctx=$(echo "$cfg" | cut -d: -f1)
     df=$(echo  "$cfg" | cut -d: -f2)
@@ -245,6 +256,14 @@ buildx_build_frontend() {
         --load
         -f "$df"
     )
+    # 第 4 段：build args（| 分隔），有 KEY=* 形态的 NEXT_PUBLIC_* 需要 build-time inline
+    build_args=$(echo "$cfg" | cut -d: -f4)
+    if [[ -n "$build_args" ]]; then
+        local pair
+        for pair in ${build_args//|/ }; do
+            args+=(--build-arg "$pair")
+        done
+    fi
     if $COLD; then
         args+=(--no-cache --build-arg "PNPM_CACHE_BUST=cold-$(date +%s)")
     fi
