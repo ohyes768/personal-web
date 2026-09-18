@@ -1,15 +1,17 @@
 # =============================================================================
 # 个人财富网站 - NAS 部署统一编排
 # =============================================================================
-# 用途：Ubuntu Server NAS 部署 8 个服务（4 个后端 + 4 个前端）
+# 用途：Ubuntu Server NAS 部署（6 个后端 + 6 个前端，共 12 个服务）
 # 用法：
-#   1. 准备 .env：在仓库根目录创建 .env，填入阿里云 key（已被 .gitignore 忽略）
+#   1. 准备 .env：在仓库根目录创建 .env，填入各服务 key（已被 .gitignore 忽略）
 #        cat > .env << 'EOF'
 #        DIVIDEND_ALIYUN_ACCESS_KEY=你的key
 #        DOUYIN_ALIYUN_ACCESS_KEY=你的key
 #        RSS_RELAY_TOKEN=随机字符串
 #        FRED_API_KEY=FRED数据key
 #        ALIYUN_API_APPCODE=阿里云行情API appcode（dividend/macro 共用，留空则行情/商品接口报错）
+#        GAODE_MAP_KEY=高德地图key（housing-map 前端 build arg）
+#        GAODE_MAP_SECURITY_KEY=高德地图安全密钥（housing-map 前端 build arg）
 #        EOF
 #   2. 启动：  docker compose -f docker-compose.nas.yml up -d --build
 #              （自动读取根目录 .env）
@@ -28,6 +30,8 @@
 #   /api/macro/*    → macro-backend:8094/api/*  (nginx 直转后端；macro 前端 BFF 已删除)
 #   /funds/*         → fund-select-frontend:3005  (basePath = /funds，apps/fund-select/)
 #   /api/funds/*   → fund-select-backend:8095/api/*  (nginx 直转后端；fund-select 前端 BFF 仅本地)
+#   /map/*         → housing-map-frontend:3007  (basePath = /map，apps/housing-map/)
+#   /api/map/*     → housing-map-backend:8096/api/*  (nginx 直转后端)
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
@@ -35,6 +39,7 @@
 #   rss-relay-data
 #   macro-data / macro-logs
 #   fund-select-data / fund-select-cache / fund-select-logs
+#   housing-map-data / housing-map-logs
 # =============================================================================
 
 services:
@@ -305,6 +310,61 @@ services:
       fund-select-backend:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # housing-map 后端（滨江区购房地图，backend/housing-map/）
+  # 静态数据随镜像 COPY 到 /app/data，首次挂空 named volume 自动 seed；
+  # refresh 重写 price_snapshots.jsonl 写入 volume 持久化
+  # ---------------------------------------------------------------------------
+  housing-map-backend:
+    build:
+      context: ./backend/housing-map
+    container_name: housing-map-backend
+    restart: unless-stopped
+    expose:
+      - "8096"
+    volumes:
+      - housing-map-data:/app/data
+      - housing-map-logs:/app/logs
+    environment:
+      - TZ=Asia/Shanghai
+      - HOUSING_PORT=8096
+      - LOG_LEVEL=INFO
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:${HOUSING_PORT:-8096}/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # ---------------------------------------------------------------------------
+  # housing-map 前端（Next.js 16，basePath='/map'，apps/housing-map/）
+  # API 请求不经前端：nginx 把 /api/map/* 直转 housing-map-backend（见 nginx/web.conf）
+  # 高德 key 是 build-time inline，必须在 build 阶段经 args 传入（根 .env 提供）
+  # ---------------------------------------------------------------------------
+  housing-map-frontend:
+    image: housing-map-frontend:latest
+    build:
+      context: ./apps/housing-map
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_GAODE_MAP_KEY: ${GAODE_MAP_KEY:-}
+        NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY: ${GAODE_MAP_SECURITY_KEY:-}
+    container_name: housing-map-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3007:3007"
+    environment:
+      - NODE_ENV=production
+      # 实际 fetch 走 nginx 相对路径 /api/map/*，此变量仅为运行时占位（对齐 macro）
+      - NEXT_PUBLIC_API_BASE_URL=/
+    networks:
+      - app-net
+    depends_on:
+      housing-map-backend:
+        condition: service_healthy
+
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -339,3 +399,7 @@ volumes:
     name: fund-select-cache
   fund-select-logs:
     name: fund-select-logs
+  housing-map-data:
+    name: housing-map-data
+  housing-map-logs:
+    name: housing-map-logs

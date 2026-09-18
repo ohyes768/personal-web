@@ -48,6 +48,8 @@ curl http://localhost:8092/api/dividend/health  # dividend 后端健康检查
 - `/api/dividend/*` → dividend-backend:8092
 - `/douyin/*` → douyin-frontend:3004
 - `/api/douyin/*` → douyin-backend:8093
+- `/map/*` → housing-map-frontend:3007（basePath = /map）
+- `/api/map/*` → housing-map-backend:8096
 
 **数据持久化**（使用 named volume）：
 - `dividend-data`、`dividend-logs`、`dividend-config`

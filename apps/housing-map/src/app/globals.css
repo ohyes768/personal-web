@@ -1,0 +1,841 @@
+@import "tailwindcss";
+
+:root {
+  --bg-primary: #F5F6F8;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F0F2F5;
+  --border: #E3E6EB;
+  --text-primary: #1F2429;
+  --text-muted: #7A828C;
+  --accent-warm: #B45F3F;
+  --accent-gold: #A97B1F;
+  --price-up: #D64541;
+  --price-down: #2E8B44;
+  --metro: #3B76D2;
+  --school: #6C5CE7;
+  --hospital: #D94F7E;
+  --mall: #DE8F0E;
+  --park: #2E9E55;
+  --bus: #4899BE;
+}
+
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --font-sans: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Bricolage Grotesque', var(--font-sans);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* 地图区域 */
+.map-container {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 64px);
+  background: linear-gradient(135deg, #EEF1F5 0%, #E3E7ED 100%);
+  overflow: hidden;
+}
+
+/* 模拟地图网格 */
+.map-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(160, 170, 185, 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160, 170, 185, 0.25) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* 小区标记点 */
+.community-marker {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+.community-marker:hover {
+  transform: scale(1.3);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  z-index: 100;
+}
+
+/* 价格标签 */
+.price-tag {
+  position: absolute;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* 控制面板 */
+.control-panel {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 280px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+  transition: transform 0.3s ease;
+}
+
+.control-panel.collapsed {
+  transform: translateX(calc(100% + 24px));
+}
+
+/* 控制栏收起/展开把手 */
+.panel-toggle {
+  position: absolute;
+  right: 312px; /* 面板宽 280 + 右边距 16, 紧贴面板左缘 */
+  top: 16px;
+  width: 24px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: right 0.3s ease;
+  z-index: 10;
+}
+
+.panel-toggle.collapsed {
+  right: 16px;
+  border-right: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.panel-section {
+  margin-bottom: 20px;
+}
+
+.panel-section:last-child {
+  margin-bottom: 0;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+/* POI 开关按钮 */
+.poi-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.poi-toggle:hover {
+  border-color: var(--text-muted);
+}
+
+.poi-toggle.active {
+  border-color: var(--accent-warm);
+  background: rgba(194, 117, 88, 0.15);
+}
+
+.poi-toggle .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* 权重滑块 */
+.weight-slider {
+  margin-bottom: 16px;
+}
+
+.weight-slider label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.weight-slider input[type="range"] {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.weight-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent-warm);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.weight-slider input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* 小区弹窗 */
+/* 小区详情: 左侧抽屉, 点击小区从左滑入, 占满地图区高度, 内部滚动 */
+.community-popup {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 480px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  border-radius: 0 16px 16px 0;
+  padding: 24px;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  overflow-y: auto;
+  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.12);
+  z-index: 300;
+}
+
+.community-popup.open {
+  transform: translateX(0);
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.popup-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.popup-subdistrict {
+  font-size: 12px;
+  color: var(--accent-warm);
+  background: rgba(194, 117, 88, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.popup-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.score-badge {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent-gold);
+  font-family: var(--font-display);
+}
+
+.score-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 20px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ——————————————————————————————————————————————————————————— */
+/* 弹窗数据条 + 评分翻转卡片: 同一行八列, 房价4项 + 评分4项           */
+/* ——————————————————————————————————————————————————————————— */
+.popup-data-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);   /* 房价一行 4 + 评分卡一行 4, 480px 宽度下每格 ~105px */
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.stat-cell {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 2px 7px;
+  text-align: center;
+  min-width: 0;
+  position: relative;            /* 评分卡翻转容器需要相对定位, 不影响其他 cell */
+  overflow: hidden;              /* face 翻出时超出容器部分裁剪 */
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ——————————————————————————————————————————————————————————— */
+/* 评分卡: 点击在"分数正面"与"明细背面"间切换                         */
+/* 实现方式: 两个 face 绝对定位叠放, 用透明度过渡切换显示.             */
+/* 刻意不用 3D rotateY 翻转 —— 无镜像字风险, 无 preserve-3d 兼容坑     */
+/* ——————————————————————————————————————————————————————————— */
+.score-card.stat-cell {
+  cursor: pointer;
+  min-height: 108px;
+  padding: 0;                     /* face 自带内边距, 容器 padding 归零 */
+}
+
+.score-card-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  padding: 8px 4px 5px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.25s ease;
+}
+
+/* 正面: 图标 + 维度名 + 分数 */
+.score-card-front {
+  align-items: center;
+  text-align: center;
+  background: rgba(212, 168, 75, 0.10);
+  opacity: 1;
+}
+.score-card.stat-cell:hover .score-card-front {
+  background: rgba(212, 168, 75, 0.18);
+}
+.score-card.flipped .score-card-front { opacity: 0; }
+
+/* 背面: 该维度的子项明细 */
+.score-card-back {
+  background: var(--bg-elevated);
+  opacity: 0;
+}
+.score-card.flipped .score-card-back { opacity: 1; }
+
+.score-card-icon { font-size: 11px; line-height: 1; }
+.score-card-label { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+.score-card-score {
+  font-size: 20px; font-weight: 700; color: var(--accent-gold);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+.score-card-back-label {
+  font-size: 10px; font-weight: 600; color: var(--accent-warm);
+  text-align: center; padding-bottom: 3px;
+  border-bottom: 1px solid var(--border); margin-bottom: 3px;
+}
+
+.score-detail { display: flex; flex-direction: column; gap: 2px; font-size: 10px; flex: 1; min-height: 0; overflow: auto; }
+.score-detail-row { display: flex; justify-content: space-between; gap: 4px; }
+.score-detail-label { color: var(--text-muted); white-space: nowrap; }
+.score-detail-val { color: var(--text-primary); font-weight: 500; text-align: right; }
+.score-detail-empty { font-size: 10px; color: var(--text-muted); text-align: center; padding-top: 12px; }
+
+/* 周边配套分类磁贴 (默认收起, 点击展开) */
+.poi-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.poi-tile {
+  --tile-color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.poi-tile:hover:not(.empty):not(.active) {
+  border-color: var(--tile-color);
+}
+
+.poi-tile:active:not(.empty) {
+  transform: scale(0.95);
+}
+
+.poi-tile.active {
+  border-color: var(--tile-color);
+  background: color-mix(in srgb, var(--tile-color) 14%, var(--bg-elevated));
+}
+
+.poi-tile.empty {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.poi-tile-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.poi-tile-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tile-color);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.poi-tile-near {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.poi-tile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* 周边配套 */
+.poi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.poi-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.poi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.poi-info {
+  flex: 1;
+}
+
+.poi-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.poi-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.poi-distance {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* 统计卡片（看板页） */
+.stat-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* 数据表格 */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table tr:hover td {
+  background: var(--bg-elevated);
+}
+
+/* 标签 */
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tag-subway { background: rgba(91, 141, 239, 0.2); color: var(--metro); }
+.tag-school { background: rgba(123, 104, 238, 0.2); color: var(--school); }
+.tag-hospital { background: rgba(255, 107, 157, 0.2); color: var(--hospital); }
+.tag-mall { background: rgba(255, 179, 71, 0.2); color: var(--mall); }
+.tag-park { background: rgba(80, 200, 120, 0.2); color: var(--park); }
+.tag-bus { background: rgba(135, 206, 235, 0.2); color: var(--bus); }
+
+/* 搜索框 */
+.search-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  width: 200px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--accent-warm);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* 按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--accent-warm);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #a8624a;
+}
+
+.btn-secondary {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  border-color: var(--text-muted);
+}
+
+/* 标签切换 */
+.tab-nav {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-elevated);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* 筛选栏 */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.select-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+}
+
+.select-input:focus {
+  border-color: var(--accent-warm);
+}
+
+/* 分页 */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+}
+
+.pagination button {
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+  border-color: var(--accent-warm);
+}
+
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination span {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 0 12px;
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+/* 响应式 */
+@media (max-width: 1024px) {
+  .control-panel {
+    width: 240px;
+  }
+}
+
+@media (max-width: 768px) {
+  .control-panel {
+    position: relative;
+    right: 0;
+    top: 0;
+    width: 100%;
+    border-radius: 12px 12px 0 0;
+  }
+
+  /* 移动端面板为文档流全宽布局, 收起把手不适用 */
+  .panel-toggle {
+    display: none;
+  }
+
+  .map-container {
+    height: auto;
+    min-height: calc(100vh - 64px);
+  }
+}
+/* 控制面板折叠区 (评分权重等低频设置) */
+.panel-collapse {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.panel-collapse summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.panel-collapse[open] summary {
+  margin-bottom: 12px;
+}
+
+/* 地图 hover 小提示 */
+.map-tooltip {
+  position: absolute;
+  z-index: 400;
+  pointer-events: none;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+  white-space: nowrap;
+  display: none;
+}
+
+.map-tooltip .tt-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.map-tooltip .tt-price {
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 价格口径角标: 签=成交价口径, 挂=要价口径 (签约价系统性低于挂牌价, 提示避免误比) */
+.map-tooltip .tt-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  border-radius: 3px;
+  background: rgba(194, 117, 88, 0.15);
+  color: var(--accent-warm);
+  vertical-align: 1px;
+}

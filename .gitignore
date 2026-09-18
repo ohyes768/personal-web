@@ -79,6 +79,11 @@ backend/fund-select/cache/
 backend/fund-select/logs/
 backend/fund-select/.coverage
 backend/fund-select/.pytest_cache/
+
+# housing-map runtime data (static JSON snapshots + refresh-written price jsonl)
+backend/housing-map/data/
+# Gaode API key config for scraper scripts (copy _gaode_config.py.example)
+backend/housing-map/scripts/_gaode_config.py
 # Local AI agent metadata
 .agents/
 .codex/

@@ -1,0 +1,39 @@
+[project]
+name = "housing-map"
+version = "0.1.0"
+description = "滨江购房地图后端（FastAPI 移植自 hangzhou-housingmap，评分逻辑与源项目一致）"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "httpx>=0.27.0",
+]
+
+# 应用而非库：不打包安装，uvicorn 从项目根目录直接跑 src.main:app
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

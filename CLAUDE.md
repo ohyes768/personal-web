@@ -11,13 +11,15 @@ apps/
 ├── douyin/         # 抖音视频文字转写
 ├── macro/       # 宏观经济
 ├── news/           # 新闻联播分析
-└── fund-select/  # 债基筛选平台
+├── fund-select/  # 债基筛选平台
+└── housing-map/  # 滨江区购房地图（Next.js 16, basePath /map）
 
 backend/
 ├── dividend-select/  # 股息率后端（FastAPI, akshare, 阿里云行情 API）
 ├── douyin-processor/  # 抖音后端
 ├── macro/ # 宏观金融后端
-└── fund-select/  # 债基筛选后端
+├── fund-select/  # 债基筛选后端
+└── housing-map/  # 滨江购房地图后端（FastAPI + 透明售房网采集脚本）
 ```
 
 ## 常用命令
@@ -56,6 +58,15 @@ python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8095
 # fund-select 前端
 cd apps/fund-select
 pnpm dev          # 端口 3005，访问 /funds
+
+# housing-map（滨江购房地图，已在 monorepo 内）
+cd backend/housing-map
+uv sync
+python -m pytest tests/ -v
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8096
+# housing-map 前端
+cd apps/housing-map
+pnpm dev          # 端口 3007，访问 /map（需 .env.local 填高德地图 key）
 ```
 
 ### Windows 开发脚本
@@ -65,6 +76,7 @@ scripts\stop-dividend-dev.bat   # 停止
 scripts\start-news-dev.bat     # 新闻
 scripts\start-macro-dev.bat    # 宏观经济
 scripts\start-douyin-dev.bat    # 抖音
+scripts\start-housing-dev.bat   # 滨江购房地图
 ```
 
 ### Docker（本地）
@@ -125,5 +137,5 @@ docker compose down
 ## 其他约定
 
 - 不要在代码中硬编码端口号，使用环境变量
-- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，其他无 basePath
+- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交
