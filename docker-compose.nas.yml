@@ -349,8 +349,9 @@ services:
       context: ./apps/housing-map
       dockerfile: Dockerfile
       args:
-        NEXT_PUBLIC_GAODE_MAP_KEY: ${GAODE_MAP_KEY:-}
-        NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY: ${GAODE_MAP_SECURITY_KEY:-}
+        # 变量名兼容两种写法：GAODE_MAP_KEY 或源项目风格的 NEXT_PUBLIC_GAODE_MAP_KEY
+        NEXT_PUBLIC_GAODE_MAP_KEY: ${GAODE_MAP_KEY:-${NEXT_PUBLIC_GAODE_MAP_KEY:-}}
+        NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY: ${GAODE_MAP_SECURITY_KEY:-${NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY:-}}
     container_name: housing-map-frontend
     restart: unless-stopped
     ports:

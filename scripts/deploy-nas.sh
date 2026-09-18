@@ -196,7 +196,7 @@ get_buildx_config() {
         rss-relay-frontend) echo "apps/rss-relay:apps/rss-relay/Dockerfile:rss-relay-frontend" ;;
         macro-frontend) echo "apps/macro:apps/macro/Dockerfile:macro-frontend" ;;
         fund-select-frontend) echo "apps/fund-select:apps/fund-select/Dockerfile:fund-select-frontend" ;;
-        housing-map-frontend) echo "apps/housing-map:apps/housing-map/Dockerfile:housing-map-frontend:NEXT_PUBLIC_GAODE_MAP_KEY=${GAODE_MAP_KEY:-}|NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY=${GAODE_MAP_SECURITY_KEY:-}" ;;
+        housing-map-frontend) echo "apps/housing-map:apps/housing-map/Dockerfile:housing-map-frontend:NEXT_PUBLIC_GAODE_MAP_KEY=${GAODE_MAP_KEY:-${NEXT_PUBLIC_GAODE_MAP_KEY:-}}|NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY=${GAODE_MAP_SECURITY_KEY:-${NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY:-}}" ;;
         *) return 1 ;;
     esac
 }
