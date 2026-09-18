@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/prd.md", "reason": "验收标准清单（8 条）——check 的判定基准"}
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/design.md", "reason": "接口契约与 D1-D8 决策——检查实现是否偏离设计"}
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/research/source-api-analysis.md", "reason": "移植正确性对照：清洗规则、评分公式、refresh 数据安全流程逐条核对"}
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/research/repo-conventions.md", "reason": "仓库规范符合性检查：Dockerfile/nginx location 写法、端口、gitignore"}

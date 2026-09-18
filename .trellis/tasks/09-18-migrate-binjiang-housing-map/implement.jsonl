@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/research/source-api-analysis.md", "reason": "源项目 4 个 API 路由逐行分析、data-loader 清洗规则、scoring 公式、前端 5 处 fetch 调用点——后端移植与前端改造的直接依据"}
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/research/data-inventory.md", "reason": "11 个必须迁移的数据文件清单、16 个采集脚本依赖矩阵、_gaode_config gitignore 事实"}
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/research/repo-conventions.md", "reason": "fund-select Dockerfile/目录规范、macro 纯前端无 BFF+rewrites 模式、nginx location 模板、端口分配、deploy-nas.sh 三处映射表位置"}
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/prd.md", "reason": "需求边界、已确认决策（/map 前缀、Next 16.2.6、脚本迁后端）、验收标准"}
+{"file": ".trellis/tasks/09-18-migrate-binjiang-housing-map/design.md", "reason": "8 条设计决策（D1-D8）、接口契约、目录结构、部署改动全量清单"}
