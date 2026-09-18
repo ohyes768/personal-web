@@ -75,7 +75,9 @@ volumes:
   - <name>-data:/app/data   # named volume 首次挂载为空时，Docker 自动把镜像内内容 seed 进卷
 ```
 
-零初始化代码：首启自动灌数据，之后 refresh 写入持久化，改数据文件需 rebuild + 删卷（`docker volume rm <name>-data`）。数据目录本身 gitignore。
+零初始化代码：首启自动灌数据，之后 refresh 写入持久化，改数据文件需 rebuild + 删卷（`docker volume rm <name>-data`）。
+
+> **Warning**：数据目录能否 gitignore 取决于数据来源。运行时生成/可经 API 拉取的数据（fund-select/macro 模式）→ gitignore；**静态快照数据（无运行时获取路径，如 housing-map 的爬取快照）必须入 git**——NAS 部署链路是 `git pull` → `docker build`，gitignore 的数据永远到不了 NAS，build 时 `COPY data` 直接失败（2026-09-18 housing-map 首次 NAS 部署实测踩坑）。只 ignore 运行时会重写的派生产物（`*.bak.*`、人读 CSV）。
 
 ## 4. nginx location 三件套（模板）
 

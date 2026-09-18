@@ -1,0 +1,3107 @@
+{
+ "20044031": {
+  "name": "万科璞悦湾",
+  "parking_spots": 1421,
+  "households": 1771,
+  "property_fee": 2.25,
+  "gross_area_sqm": 228000,
+  "crawled_at": "2026-09-16T13:40:48",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "5001710": {
+  "name": "三维大厦",
+  "households": 0,
+  "property_fee": 3.0,
+  "gross_area_sqm": 200000,
+  "crawled_at": "2026-09-16T13:40:50"
+ },
+ "170413978": {
+  "name": "世茂之西湖",
+  "parking_spots": 802,
+  "households": 0,
+  "crawled_at": "2026-09-16T10:16:22"
+ },
+ "341371290": {
+  "name": "世茂之西湖茂御居",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:41:15",
+  "far_ratio": 3.44,
+  "greening_rate": 21
+ },
+ "5000403": {
+  "name": "东冠公寓",
+  "households": 408,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:41:17",
+  "greening_rate": 30
+ },
+ "5000401": {
+  "name": "东冠创业大厦",
+  "parking_spots": 200,
+  "households": 0,
+  "property_fee": 2.5,
+  "gross_area_sqm": 20000,
+  "crawled_at": "2026-09-16T13:41:20",
+  "far_ratio": 2.5
+ },
+ "5000404": {
+  "name": "东冠社区",
+  "parking_spots": 50,
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:41:22",
+  "far_ratio": 2.65,
+  "greening_rate": 30
+ },
+ "453981876": {
+  "name": "东冠路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:41:24"
+ },
+ "20111228": {
+  "name": "东冠路710号",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:41:26"
+ },
+ "5000410": {
+  "name": "东和云第",
+  "parking_spots": 430,
+  "households": 480,
+  "property_fee": 2.3,
+  "gross_area_sqm": 64791,
+  "crawled_at": "2026-09-16T13:41:28",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "5000396": {
+  "name": "东方通信城",
+  "parking_spots": 200,
+  "households": 0,
+  "gross_area_sqm": 140000,
+  "crawled_at": "2026-09-16T13:41:30"
+ },
+ "453982560": {
+  "name": "中天科技园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:41:32"
+ },
+ "5002735": {
+  "name": "中恒世纪科技园",
+  "parking_spots": 300,
+  "households": 0,
+  "gross_area_sqm": 53000,
+  "crawled_at": "2026-09-16T13:41:34",
+  "far_ratio": 1.56,
+  "greening_rate": 30
+ },
+ "5002737": {
+  "name": "中控六和大厦",
+  "households": 0,
+  "property_fee": 3.9,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:41:37"
+ },
+ "10005560": {
+  "name": "中海钱塘山水",
+  "parking_spots": 856,
+  "households": 1125,
+  "property_fee": 2.0,
+  "gross_area_sqm": 149000,
+  "crawled_at": "2026-09-16T13:41:41",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "10003626": {
+  "name": "临江花园",
+  "parking_spots": 1400,
+  "households": 2000,
+  "property_fee": 0.8,
+  "gross_area_sqm": 300000,
+  "crawled_at": "2026-09-16T13:41:43",
+  "far_ratio": 2.7,
+  "greening_rate": 35
+ },
+ "10000584": {
+  "name": "之江公寓",
+  "parking_spots": 400,
+  "households": 200,
+  "property_fee": 1.1,
+  "gross_area_sqm": 100000,
+  "crawled_at": "2026-09-16T13:41:46",
+  "far_ratio": 2.3,
+  "greening_rate": 40
+ },
+ "20002643": {
+  "name": "之江花园",
+  "parking_spots": 300,
+  "households": 900,
+  "property_fee": 1.6,
+  "gross_area_sqm": 200000,
+  "crawled_at": "2026-09-16T13:41:48",
+  "far_ratio": 3.5,
+  "greening_rate": 35
+ },
+ "20153706": {
+  "name": "之江花园（排屋）",
+  "parking_spots": 300,
+  "households": 900,
+  "property_fee": 1.6,
+  "crawled_at": "2026-09-16T13:41:50",
+  "far_ratio": 3.5,
+  "greening_rate": 35
+ },
+ "5002379": {
+  "name": "亚科中心",
+  "households": 0,
+  "gross_area_sqm": 80000,
+  "crawled_at": "2026-09-16T13:41:55"
+ },
+ "3043699002": {
+  "name": "伟星咏滨名邸",
+  "parking_spots": 677,
+  "households": 533,
+  "crawled_at": "2026-09-16T13:41:57",
+  "far_ratio": 1.7,
+  "greening_rate": 30
+ },
+ "5000164": {
+  "name": "保亿创艺大厦",
+  "parking_spots": 145,
+  "households": 0,
+  "property_fee": 3.5,
+  "gross_area_sqm": 40000,
+  "crawled_at": "2026-09-16T13:41:59",
+  "far_ratio": 5.07,
+  "greening_rate": 20
+ },
+ "5002338": {
+  "name": "信雅达科技大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:42:01"
+ },
+ "5002525": {
+  "name": "元光德园",
+  "parking_spots": 350,
+  "households": 0,
+  "property_fee": 3.8,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:42:03"
+ },
+ "5002528": {
+  "name": "元天科技大楼",
+  "parking_spots": 330,
+  "households": 0,
+  "property_fee": 2.0,
+  "gross_area_sqm": 83515,
+  "crawled_at": "2026-09-16T13:42:05",
+  "far_ratio": 2.2
+ },
+ "453982253": {
+  "name": "先锋科技大厦",
+  "households": 0,
+  "property_fee": 3.0,
+  "crawled_at": "2026-09-16T13:42:07"
+ },
+ "10000594": {
+  "name": "六合天寓",
+  "households": 1347,
+  "property_fee": 0.9,
+  "gross_area_sqm": 240000,
+  "crawled_at": "2026-09-16T13:42:10",
+  "far_ratio": 3.5,
+  "greening_rate": 40
+ },
+ "5000275": {
+  "name": "创新大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:42:11"
+ },
+ "10002373": {
+  "name": "化工路",
+  "households": 0,
+  "property_fee": 1.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:42:13"
+ },
+ "689": {
+  "name": "华荣时代大厦",
+  "parking_spots": 90,
+  "households": 250,
+  "property_fee": 3.5,
+  "gross_area_sqm": 40000,
+  "crawled_at": "2026-09-16T13:42:15",
+  "far_ratio": 3.8,
+  "greening_rate": 40
+ },
+ "5002816": {
+  "name": "卓信大厦",
+  "households": 0,
+  "gross_area_sqm": 36000,
+  "crawled_at": "2026-09-16T13:42:18"
+ },
+ "10001474": {
+  "name": "南都江滨花园",
+  "parking_spots": 600,
+  "households": 600,
+  "property_fee": 1.8,
+  "gross_area_sqm": 93380,
+  "crawled_at": "2026-09-16T13:42:20",
+  "far_ratio": 1,
+  "greening_rate": 45
+ },
+ "20000675": {
+  "name": "和顺风尚蓝湾",
+  "parking_spots": 244,
+  "households": 600,
+  "property_fee": 3.5,
+  "gross_area_sqm": 51671,
+  "crawled_at": "2026-09-16T13:42:22",
+  "far_ratio": 3.8,
+  "greening_rate": 30
+ },
+ "10001508": {
+  "name": "国信嘉园",
+  "parking_spots": 300,
+  "households": 1230,
+  "property_fee": 2.2,
+  "gross_area_sqm": 138069,
+  "crawled_at": "2026-09-16T13:42:24",
+  "far_ratio": 1,
+  "greening_rate": 45
+ },
+ "20153704": {
+  "name": "国信嘉园(排屋）",
+  "parking_spots": 300,
+  "households": 1230,
+  "property_fee": 2.2,
+  "gross_area_sqm": 138069,
+  "crawled_at": "2026-09-16T13:42:26",
+  "far_ratio": 1,
+  "greening_rate": 45
+ },
+ "453981854": {
+  "name": "大同公寓",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:42:28"
+ },
+ "10006149": {
+  "name": "天鸿君邑",
+  "parking_spots": 714,
+  "households": 1843,
+  "property_fee": 3.5,
+  "gross_area_sqm": 160000,
+  "crawled_at": "2026-09-16T13:42:30",
+  "far_ratio": 2.5,
+  "greening_rate": 50
+ },
+ "10001509": {
+  "name": "太阳国际公寓",
+  "parking_spots": 800,
+  "households": 1000,
+  "property_fee": 2.0,
+  "gross_area_sqm": 180000,
+  "crawled_at": "2026-09-16T13:42:32",
+  "far_ratio": 2.98,
+  "greening_rate": 55
+ },
+ "453981918": {
+  "name": "宏华大厦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:42:34"
+ },
+ "20173280": {
+  "name": "德信AI产业园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:42:36"
+ },
+ "5002697": {
+  "name": "志成大厦",
+  "households": 0,
+  "gross_area_sqm": 41892,
+  "crawled_at": "2026-09-16T13:42:42"
+ },
+ "20005520": {
+  "name": "新浦苑",
+  "households": 210,
+  "property_fee": 0.5,
+  "crawled_at": "2026-09-16T13:42:47",
+  "far_ratio": 2,
+  "greening_rate": 30
+ },
+ "2062601899": {
+  "name": "时代·滨江悦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:42:49"
+ },
+ "10001471": {
+  "name": "时代长岛之春",
+  "parking_spots": 450,
+  "households": 235,
+  "property_fee": 0.7,
+  "gross_area_sqm": 60000,
+  "crawled_at": "2026-09-16T13:42:51",
+  "far_ratio": 1.83,
+  "greening_rate": 25
+ },
+ "5001446": {
+  "name": "明德大楼",
+  "households": 0,
+  "gross_area_sqm": 8300,
+  "crawled_at": "2026-09-16T13:42:53"
+ },
+ "10006113": {
+  "name": "星汇荣邸",
+  "parking_spots": 282,
+  "households": 464,
+  "property_fee": 1.5,
+  "gross_area_sqm": 55391,
+  "crawled_at": "2026-09-16T13:42:55",
+  "far_ratio": 2.2,
+  "greening_rate": 32
+ },
+ "10001516": {
+  "name": "景江苑",
+  "parking_spots": 300,
+  "households": 155,
+  "property_fee": 1.0,
+  "gross_area_sqm": 100000,
+  "crawled_at": "2026-09-16T13:42:57",
+  "far_ratio": 1.69,
+  "greening_rate": 40
+ },
+ "5002398": {
+  "name": "杨家墩",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:43:00"
+ },
+ "5000894": {
+  "name": "汇智地",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:43:02"
+ },
+ "453981952": {
+  "name": "江南商业大厦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:43:03"
+ },
+ "10005189": {
+  "name": "江南文苑",
+  "parking_spots": 780,
+  "households": 1155,
+  "property_fee": 1.2,
+  "gross_area_sqm": 170000,
+  "crawled_at": "2026-09-16T13:43:06",
+  "far_ratio": 2.28,
+  "greening_rate": 30
+ },
+ "10004945": {
+  "name": "江涛阁",
+  "parking_spots": 140,
+  "households": 264,
+  "property_fee": 1.08,
+  "gross_area_sqm": 6000,
+  "crawled_at": "2026-09-16T13:43:08",
+  "far_ratio": 5.09,
+  "greening_rate": 25
+ },
+ "5000975": {
+  "name": "江畔云庐",
+  "households": 0,
+  "property_fee": 1.56,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:43:11",
+  "greening_rate": 30
+ },
+ "453982295": {
+  "name": "油厂宿舍",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:43:14"
+ },
+ "20054265": {
+  "name": "浙新小区",
+  "households": 820,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:43:17",
+  "far_ratio": 3.5,
+  "greening_rate": 10
+ },
+ "10000637": {
+  "name": "浦乐新苑",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:43:19"
+ },
+ "812": {
+  "name": "浦沿公寓",
+  "parking_spots": 100,
+  "households": 59,
+  "property_fee": 1.18,
+  "gross_area_sqm": 13020,
+  "crawled_at": "2026-09-16T13:43:21",
+  "far_ratio": 2,
+  "greening_rate": 30
+ },
+ "10005060": {
+  "name": "浦沿小区",
+  "parking_spots": 50,
+  "households": 59,
+  "property_fee": 1.18,
+  "gross_area_sqm": 13020,
+  "crawled_at": "2026-09-16T13:43:23",
+  "far_ratio": 2,
+  "greening_rate": 30
+ },
+ "470978590": {
+  "name": "浦沿街",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:43:25"
+ },
+ "453982308": {
+  "name": "浦沿邮电局",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:43:27"
+ },
+ "453982309": {
+  "name": "浦沿镇",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:43:29"
+ },
+ "453982703": {
+  "name": "浦沿镇新浦路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:43:31"
+ },
+ "5001530": {
+  "name": "浦联村",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:43:35"
+ },
+ "10000253": {
+  "name": "浮力森林苑",
+  "parking_spots": 20,
+  "households": 100,
+  "property_fee": 1.0,
+  "gross_area_sqm": 12000,
+  "crawled_at": "2026-09-16T13:43:37",
+  "far_ratio": 2,
+  "greening_rate": 35
+ },
+ "5002535": {
+  "name": "源越大厦",
+  "parking_spots": 110,
+  "households": 0,
+  "crawled_at": "2026-09-16T13:43:39"
+ },
+ "20000261": {
+  "name": "滨文苑",
+  "households": 1300,
+  "property_fee": 0.8,
+  "gross_area_sqm": 400000,
+  "crawled_at": "2026-09-16T10:19:13"
+ },
+ "2312414534": {
+  "name": "滨江兴耀滨耀学府",
+  "parking_spots": 1222,
+  "households": 997,
+  "property_fee": 4.5,
+  "gross_area_sqm": 152002,
+  "crawled_at": "2026-09-16T13:44:03",
+  "far_ratio": 2.2,
+  "greening_rate": 35
+ },
+ "5000191": {
+  "name": "滨江海创园",
+  "parking_spots": 2000,
+  "households": 0,
+  "property_fee": 3.0,
+  "gross_area_sqm": 240000,
+  "crawled_at": "2026-09-16T13:44:05"
+ },
+ "453981800": {
+  "name": "滨江科技大厦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:44:07"
+ },
+ "453981799": {
+  "name": "滨江高教园区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:44:09"
+ },
+ "20111220": {
+  "name": "滨盛社区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:44:11"
+ },
+ "20037055": {
+  "name": "潮人汇大厦",
+  "parking_spots": 800,
+  "households": 800,
+  "property_fee": 3.0,
+  "crawled_at": "2026-09-16T13:44:13",
+  "far_ratio": 2.4,
+  "greening_rate": 30
+ },
+ "5000363": {
+  "name": "电化厂宿舍",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:44:15"
+ },
+ "1143": {
+  "name": "盛元慧谷",
+  "parking_spots": 1300,
+  "households": 1256,
+  "property_fee": 1.5,
+  "gross_area_sqm": 250000,
+  "crawled_at": "2026-09-16T13:44:17",
+  "far_ratio": 3.5,
+  "greening_rate": 50
+ },
+ "5002695": {
+  "name": "知本大厦",
+  "parking_spots": 300,
+  "households": 160,
+  "property_fee": 2.5,
+  "gross_area_sqm": 103700,
+  "crawled_at": "2026-09-16T13:44:19",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "10001504": {
+  "name": "碧水豪园",
+  "parking_spots": 450,
+  "households": 536,
+  "property_fee": 1.0,
+  "gross_area_sqm": 116000,
+  "crawled_at": "2026-09-16T13:44:22",
+  "far_ratio": 1.5,
+  "greening_rate": 40
+ },
+ "10006244": {
+  "name": "积家",
+  "parking_spots": 180,
+  "households": 630,
+  "property_fee": 2.6,
+  "gross_area_sqm": 33000,
+  "crawled_at": "2026-09-16T13:44:24",
+  "far_ratio": 3.8,
+  "greening_rate": 30
+ },
+ "453981930": {
+  "name": "立业园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:44:26"
+ },
+ "470978499": {
+  "name": "立德园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:44:28"
+ },
+ "5001260": {
+  "name": "立志园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:44:30"
+ },
+ "5001366": {
+  "name": "绿城巧园",
+  "households": 247,
+  "property_fee": 2.75,
+  "gross_area_sqm": 60641,
+  "crawled_at": "2026-09-16T13:44:31",
+  "far_ratio": 2.7,
+  "greening_rate": 30
+ },
+ "5001284": {
+  "name": "联庄一区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:44:33"
+ },
+ "5001281": {
+  "name": "联庄三区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:44:36"
+ },
+ "5001280": {
+  "name": "联庄二区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:44:37"
+ },
+ "10001681": {
+  "name": "联庄公寓",
+  "parking_spots": 300,
+  "households": 320,
+  "property_fee": 1.08,
+  "gross_area_sqm": 35000,
+  "crawled_at": "2026-09-16T13:44:39",
+  "far_ratio": 0.91,
+  "greening_rate": 45
+ },
+ "5001282": {
+  "name": "联庄四区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:44:41"
+ },
+ "2705650262": {
+  "name": "荣盛江荣府",
+  "households": 1528,
+  "gross_area_sqm": 172029,
+  "crawled_at": "2026-09-16T13:44:43",
+  "far_ratio": 2.2,
+  "greening_rate": 35
+ },
+ "5000270": {
+  "name": "褚家潭小区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:44:45",
+  "greening_rate": 30
+ },
+ "2952419255": {
+  "name": "观晖美寓",
+  "parking_spots": 749,
+  "households": 667,
+  "property_fee": 4.5,
+  "gross_area_sqm": 118237,
+  "crawled_at": "2026-09-16T13:44:47",
+  "far_ratio": 2.8,
+  "greening_rate": 35
+ },
+ "10004881": {
+  "name": "贺田尚城",
+  "parking_spots": 1300,
+  "households": 1418,
+  "property_fee": 0.9,
+  "gross_area_sqm": 125000,
+  "crawled_at": "2026-09-16T13:44:49",
+  "far_ratio": 1.63,
+  "greening_rate": 30
+ },
+ "20153705": {
+  "name": "贺田尚城（排屋）",
+  "parking_spots": 1300,
+  "households": 1418,
+  "property_fee": 0.9,
+  "gross_area_sqm": 125000,
+  "crawled_at": "2026-09-16T13:44:51",
+  "far_ratio": 1.63,
+  "greening_rate": 30
+ },
+ "10005080": {
+  "name": "超级星期天",
+  "parking_spots": 315,
+  "households": 734,
+  "property_fee": 1.0,
+  "gross_area_sqm": 48597,
+  "crawled_at": "2026-09-16T13:44:53",
+  "far_ratio": 2.52,
+  "greening_rate": 39
+ },
+ "536": {
+  "name": "通策广场",
+  "households": 300,
+  "property_fee": 2.0,
+  "gross_area_sqm": 140000,
+  "crawled_at": "2026-09-16T13:44:55"
+ },
+ "10004960": {
+  "name": "逸天广场",
+  "parking_spots": 400,
+  "households": 400,
+  "property_fee": 1.8,
+  "gross_area_sqm": 170000,
+  "crawled_at": "2026-09-16T13:44:57",
+  "far_ratio": 1.73,
+  "greening_rate": 40
+ },
+ "5001042": {
+  "name": "金南创业大厦",
+  "parking_spots": 80,
+  "households": 0,
+  "property_fee": 2.0,
+  "gross_area_sqm": 12000,
+  "crawled_at": "2026-09-16T13:44:59",
+  "far_ratio": 3,
+  "greening_rate": 25
+ },
+ "3150312098": {
+  "name": "金地江映云邸",
+  "households": 416,
+  "gross_area_sqm": 81619,
+  "crawled_at": "2026-09-16T13:45:02",
+  "far_ratio": 2.3,
+  "greening_rate": 35
+ },
+ "10004920": {
+  "name": "金盛曼城",
+  "parking_spots": 598,
+  "households": 900,
+  "property_fee": 1.18,
+  "gross_area_sqm": 130000,
+  "crawled_at": "2026-09-16T13:45:04",
+  "far_ratio": 2.1,
+  "greening_rate": 35
+ },
+ "5001060": {
+  "name": "金盛浦沿公寓",
+  "parking_spots": 100,
+  "households": 59,
+  "property_fee": 1.18,
+  "gross_area_sqm": 13020,
+  "crawled_at": "2026-09-16T13:45:06",
+  "far_ratio": 2,
+  "greening_rate": 30
+ },
+ "20000561": {
+  "name": "钱塘大观",
+  "parking_spots": 2000,
+  "households": 2000,
+  "property_fee": 3.0,
+  "gross_area_sqm": 300000,
+  "crawled_at": "2026-09-16T13:45:08",
+  "far_ratio": 2.5,
+  "greening_rate": 45
+ },
+ "10003234": {
+  "name": "钱塘景苑",
+  "parking_spots": 180,
+  "households": 369,
+  "property_fee": 1.6,
+  "gross_area_sqm": 70000,
+  "crawled_at": "2026-09-16T13:45:10",
+  "far_ratio": 2.18,
+  "greening_rate": 35
+ },
+ "362683221": {
+  "name": "钱塘玫瑰湾",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:45:12",
+  "far_ratio": 2.2,
+  "greening_rate": 30
+ },
+ "453982303": {
+  "name": "钱塘福苑",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:45:14"
+ },
+ "10001734": {
+  "name": "钱江彩虹城",
+  "parking_spots": 2400,
+  "households": 3000,
+  "property_fee": 1.44,
+  "gross_area_sqm": 469000,
+  "crawled_at": "2026-09-16T13:45:16",
+  "far_ratio": 2,
+  "greening_rate": 37
+ },
+ "20000162": {
+  "name": "钱江彩虹豪庭",
+  "parking_spots": 500,
+  "households": 476,
+  "property_fee": 4.8,
+  "gross_area_sqm": 150000,
+  "crawled_at": "2026-09-16T13:45:18",
+  "far_ratio": 2,
+  "greening_rate": 30
+ },
+ "10001663": {
+  "name": "钱江湾花园",
+  "parking_spots": 1180,
+  "households": 1400,
+  "property_fee": 1.4,
+  "gross_area_sqm": 220000,
+  "crawled_at": "2026-09-16T13:45:21",
+  "far_ratio": 1.53,
+  "greening_rate": 42
+ },
+ "5002457": {
+  "name": "银杏汇",
+  "parking_spots": 1123,
+  "households": 354,
+  "property_fee": 4.8,
+  "gross_area_sqm": 200000,
+  "crawled_at": "2026-09-16T13:45:23",
+  "far_ratio": 3.16,
+  "greening_rate": 30
+ },
+ "10005183": {
+  "name": "银爵世纪公寓",
+  "parking_spots": 487,
+  "households": 730,
+  "property_fee": 1.44,
+  "gross_area_sqm": 10000,
+  "crawled_at": "2026-09-16T13:45:25",
+  "far_ratio": 2.2,
+  "greening_rate": 30
+ },
+ "10000523": {
+  "name": "银色港湾公寓",
+  "parking_spots": 309,
+  "households": 800,
+  "property_fee": 1.55,
+  "gross_area_sqm": 120000,
+  "crawled_at": "2026-09-16T13:45:27",
+  "far_ratio": 3,
+  "greening_rate": 35
+ },
+ "20063925": {
+  "name": "镇前路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:45:29"
+ },
+ "5001340": {
+  "name": "龙禧BOSS港",
+  "parking_spots": 420,
+  "households": 351,
+  "property_fee": 3.5,
+  "gross_area_sqm": 32178,
+  "crawled_at": "2026-09-16T13:45:31",
+  "far_ratio": 2.49,
+  "greening_rate": 25
+ },
+ "20141509": {
+  "name": "龙禧公寓",
+  "households": 460,
+  "property_fee": 3.0,
+  "crawled_at": "2026-09-16T13:45:34",
+  "far_ratio": 4,
+  "greening_rate": 20
+ },
+ "20050220": {
+  "name": "龙禧大酒店",
+  "parking_spots": 150,
+  "households": 300,
+  "property_fee": 3.0,
+  "gross_area_sqm": 43000,
+  "crawled_at": "2026-09-16T13:45:36",
+  "far_ratio": 1,
+  "greening_rate": 20
+ },
+ "20000164": {
+  "name": "龙禧硅谷酒店广场",
+  "parking_spots": 150,
+  "households": 300,
+  "property_fee": 3.0,
+  "gross_area_sqm": 43000,
+  "crawled_at": "2026-09-16T13:45:38",
+  "far_ratio": 1,
+  "greening_rate": 21
+ },
+ "5001818": {
+  "name": "世茂中心",
+  "parking_spots": 488,
+  "households": 200,
+  "property_fee": 6.0,
+  "gross_area_sqm": 180000,
+  "crawled_at": "2026-09-16T13:45:40",
+  "far_ratio": 4.99,
+  "greening_rate": 15
+ },
+ "20028179": {
+  "name": "世茂钱塘帝景",
+  "parking_spots": 1216,
+  "households": 1200,
+  "property_fee": 2.8,
+  "gross_area_sqm": 157887,
+  "crawled_at": "2026-09-16T13:45:42",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "5000750": {
+  "name": "东冠恒鑫大厦",
+  "parking_spots": 600,
+  "households": 0,
+  "property_fee": 4.0,
+  "gross_area_sqm": 68500,
+  "crawled_at": "2026-09-16T13:45:44"
+ },
+ "20044683": {
+  "name": "东和时代",
+  "parking_spots": 400,
+  "households": 395,
+  "property_fee": 3.6,
+  "gross_area_sqm": 46812,
+  "crawled_at": "2026-09-16T13:45:47",
+  "far_ratio": 3.5,
+  "greening_rate": 21
+ },
+ "5002772": {
+  "name": "中兴大厦",
+  "households": 246,
+  "property_fee": 3.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:45:49",
+  "far_ratio": 1.4,
+  "greening_rate": 35
+ },
+ "20000043": {
+  "name": "中南公寓",
+  "parking_spots": 80,
+  "households": 100,
+  "property_fee": 0.3,
+  "gross_area_sqm": 10000,
+  "crawled_at": "2026-09-16T13:45:51",
+  "far_ratio": 1.8,
+  "greening_rate": 30
+ },
+ "5002744": {
+  "name": "中南国际大厦",
+  "households": 0,
+  "gross_area_sqm": 30268,
+  "crawled_at": "2026-09-16T13:45:53"
+ },
+ "5002745": {
+  "name": "中南职工楼",
+  "parking_spots": 260,
+  "households": 500,
+  "gross_area_sqm": 15000,
+  "crawled_at": "2026-09-16T13:46:00",
+  "far_ratio": 2.8,
+  "greening_rate": 40
+ },
+ "20000607": {
+  "name": "中奥江锦国际",
+  "parking_spots": 172,
+  "households": 393,
+  "property_fee": 3.5,
+  "crawled_at": "2026-09-16T13:46:03",
+  "far_ratio": 4.5,
+  "greening_rate": 40
+ },
+ "5002771": {
+  "name": "中心花园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:46:05"
+ },
+ "20032791": {
+  "name": "中海寰宇天下",
+  "parking_spots": 1000,
+  "households": 1000,
+  "property_fee": 3.0,
+  "gross_area_sqm": 800000,
+  "crawled_at": "2026-09-16T13:46:07",
+  "far_ratio": 2.7,
+  "greening_rate": 35
+ },
+ "5002707": {
+  "name": "中财大厦",
+  "households": 0,
+  "gross_area_sqm": 43000,
+  "crawled_at": "2026-09-16T13:46:09",
+  "far_ratio": 3.45
+ },
+ "20155838": {
+  "name": "云台国际商务中心（杭州印）",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:46:11"
+ },
+ "20002563": {
+  "name": "仁苑小区",
+  "households": 952,
+  "property_fee": 1.95,
+  "gross_area_sqm": 60000,
+  "crawled_at": "2026-09-16T13:46:14",
+  "far_ratio": 3,
+  "greening_rate": 30
+ },
+ "20175420": {
+  "name": "信达中心|杭州壹号院",
+  "households": 2503,
+  "crawled_at": "2026-09-16T13:46:17",
+  "far_ratio": 3.3,
+  "greening_rate": 30
+ },
+ "2547": {
+  "name": "信雅达国际",
+  "parking_spots": 725,
+  "households": 324,
+  "property_fee": 8.0,
+  "gross_area_sqm": 170812,
+  "crawled_at": "2026-09-16T13:46:19",
+  "far_ratio": 6,
+  "greening_rate": 35
+ },
+ "20172046": {
+  "name": "兴祺大厦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:46:21"
+ },
+ "528214540": {
+  "name": "兴耀·星澜之城",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:46:23",
+  "far_ratio": 4,
+  "greening_rate": 25
+ },
+ "5002355": {
+  "name": "兴耀大厦",
+  "parking_spots": 150,
+  "households": 0,
+  "gross_area_sqm": 35450,
+  "crawled_at": "2026-09-16T13:46:25",
+  "far_ratio": 1.5,
+  "greening_rate": 22
+ },
+ "71971210": {
+  "name": "凯瑞金座",
+  "parking_spots": 280,
+  "households": 485,
+  "property_fee": 3.7,
+  "gross_area_sqm": 46406,
+  "crawled_at": "2026-09-16T13:46:27",
+  "far_ratio": 4.5,
+  "greening_rate": 25
+ },
+ "5000144": {
+  "name": "半岛壹号",
+  "households": 0,
+  "property_fee": 3.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:46:29"
+ },
+ "5000860": {
+  "name": "华元世纪广场",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:46:31"
+ },
+ "5000828": {
+  "name": "华联星光时代",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:46:40"
+ },
+ "5000829": {
+  "name": "华龙国际大厦",
+  "parking_spots": 200,
+  "households": 0,
+  "property_fee": 3.5,
+  "gross_area_sqm": 40578,
+  "crawled_at": "2026-09-16T13:46:42",
+  "far_ratio": 3.4,
+  "greening_rate": 35
+ },
+ "20048800": {
+  "name": "博风创意大厦",
+  "households": 0,
+  "gross_area_sqm": 102254,
+  "crawled_at": "2026-09-16T13:46:44",
+  "far_ratio": 6,
+  "greening_rate": 25
+ },
+ "453982612": {
+  "name": "印月尚庭",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:46:47",
+  "greening_rate": 60
+ },
+ "600": {
+  "name": "同人春江时代花园",
+  "parking_spots": 1580,
+  "households": 800,
+  "property_fee": 1.5,
+  "gross_area_sqm": 230000,
+  "crawled_at": "2026-09-16T13:46:49",
+  "far_ratio": 2.31,
+  "greening_rate": 50
+ },
+ "20045552": {
+  "name": "君尚金座",
+  "parking_spots": 216,
+  "households": 1000,
+  "property_fee": 4.8,
+  "gross_area_sqm": 46179,
+  "crawled_at": "2026-09-16T13:46:51",
+  "far_ratio": 5,
+  "greening_rate": 30
+ },
+ "1060": {
+  "name": "天恒大厦",
+  "parking_spots": 305,
+  "households": 900,
+  "property_fee": 4.8,
+  "gross_area_sqm": 52679,
+  "crawled_at": "2026-09-16T13:46:53",
+  "far_ratio": 3,
+  "greening_rate": 35
+ },
+ "20005614": {
+  "name": "天阳半岛国际",
+  "parking_spots": 11,
+  "households": 1566,
+  "property_fee": 3.0,
+  "gross_area_sqm": 240000,
+  "crawled_at": "2026-09-16T13:46:55",
+  "far_ratio": 2.64,
+  "greening_rate": 30
+ },
+ "5002072": {
+  "name": "威陵大厦",
+  "parking_spots": 300,
+  "households": 0,
+  "property_fee": 2.5,
+  "gross_area_sqm": 52000,
+  "crawled_at": "2026-09-16T13:46:57"
+ },
+ "5000077": {
+  "name": "寰宇商务中心",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:47:00"
+ },
+ "5001198": {
+  "name": "康恩贝大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:47:02"
+ },
+ "20000242": {
+  "name": "新世界铂悦轩",
+  "households": 0,
+  "property_fee": 2.5,
+  "crawled_at": "2026-09-16T13:47:06",
+  "far_ratio": 5.2,
+  "greening_rate": 35
+ },
+ "5002280": {
+  "name": "新大集团",
+  "households": 0,
+  "gross_area_sqm": 80000,
+  "crawled_at": "2026-09-16T13:47:08"
+ },
+ "2514": {
+  "name": "昆仑水印城",
+  "parking_spots": 21604,
+  "households": 1600,
+  "property_fee": 1.8,
+  "gross_area_sqm": 300000,
+  "crawled_at": "2026-09-16T13:47:11",
+  "far_ratio": 3.5,
+  "greening_rate": 40
+ },
+ "5001817": {
+  "name": "明豪大厦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:47:14"
+ },
+ "453982599": {
+  "name": "星光百货",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:47:17"
+ },
+ "20142985": {
+  "name": "柏悦轩",
+  "parking_spots": 250,
+  "households": 506,
+  "property_fee": 3.5,
+  "gross_area_sqm": 47834,
+  "crawled_at": "2026-09-16T13:47:20",
+  "far_ratio": 5.2,
+  "greening_rate": 35
+ },
+ "5000553": {
+  "name": "歌山品悦大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:47:25"
+ },
+ "453982737": {
+  "name": "水电社区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:47:28"
+ },
+ "20076889": {
+  "name": "汉峰峰公馆",
+  "parking_spots": 410,
+  "households": 1200,
+  "property_fee": 4.1,
+  "gross_area_sqm": 90000,
+  "crawled_at": "2026-09-16T13:47:30",
+  "far_ratio": 4,
+  "greening_rate": 35
+ },
+ "5000644": {
+  "name": "汉氏大厦",
+  "households": 0,
+  "gross_area_sqm": 90000,
+  "crawled_at": "2026-09-16T13:47:32",
+  "far_ratio": 4,
+  "greening_rate": 35
+ },
+ "5000963": {
+  "name": "江南国美家园",
+  "households": 0,
+  "gross_area_sqm": 8000,
+  "crawled_at": "2026-09-16T13:47:34",
+  "far_ratio": 2.1
+ },
+ "20003859": {
+  "name": "江景国际",
+  "parking_spots": 172,
+  "households": 571,
+  "property_fee": 3.5,
+  "gross_area_sqm": 39087,
+  "crawled_at": "2026-09-16T13:47:36",
+  "far_ratio": 4.5,
+  "greening_rate": 30
+ },
+ "20111231": {
+  "name": "江汉路小区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:47:38"
+ },
+ "433196630": {
+  "name": "江滨澜廷",
+  "households": 0,
+  "property_fee": 5.5,
+  "gross_area_sqm": 55035,
+  "crawled_at": "2026-09-16T13:47:41",
+  "far_ratio": 5,
+  "greening_rate": 20
+ },
+ "5002653": {
+  "name": "浙江农资大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:47:44"
+ },
+ "5002678": {
+  "name": "浙能第二大厦",
+  "parking_spots": 90,
+  "households": 0,
+  "gross_area_sqm": 26320,
+  "crawled_at": "2026-09-16T13:47:46"
+ },
+ "10004460": {
+  "name": "海威国际",
+  "parking_spots": 926,
+  "households": 1000,
+  "property_fee": 1.44,
+  "gross_area_sqm": 300000,
+  "crawled_at": "2026-09-16T13:47:48",
+  "far_ratio": 3.5,
+  "greening_rate": 50
+ },
+ "5000635": {
+  "name": "海威钱塘之星",
+  "parking_spots": 409,
+  "households": 433,
+  "property_fee": 4.0,
+  "gross_area_sqm": 50000,
+  "crawled_at": "2026-09-16T13:47:50",
+  "far_ratio": 4,
+  "greening_rate": 25
+ },
+ "5000638": {
+  "name": "海越大厦",
+  "households": 0,
+  "property_fee": 5.5,
+  "gross_area_sqm": 48440,
+  "crawled_at": "2026-09-16T13:47:53"
+ },
+ "20001484": {
+  "name": "滨海大厦",
+  "parking_spots": 300,
+  "households": 473,
+  "property_fee": 8.0,
+  "crawled_at": "2026-09-16T13:47:55",
+  "far_ratio": 7.06,
+  "greening_rate": 32
+ },
+ "3157612036": {
+  "name": "滨盛云座",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:47:57"
+ },
+ "10000281": {
+  "name": "白金海岸花园",
+  "parking_spots": 1200,
+  "households": 1587,
+  "property_fee": 1.3,
+  "gross_area_sqm": 320000,
+  "crawled_at": "2026-09-16T13:48:00",
+  "far_ratio": 2.3,
+  "greening_rate": 40
+ },
+ "474467277": {
+  "name": "盛庐",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:48:03"
+ },
+ "5000456": {
+  "name": "盾安发展大厦",
+  "parking_spots": 200,
+  "households": 0,
+  "property_fee": 6.0,
+  "gross_area_sqm": 30000,
+  "crawled_at": "2026-09-16T13:48:05"
+ },
+ "20073231": {
+  "name": "省水电新村一区",
+  "households": 1282,
+  "property_fee": 1.0,
+  "gross_area_sqm": 508500,
+  "crawled_at": "2026-09-16T13:48:07",
+  "far_ratio": 1.7,
+  "greening_rate": 30
+ },
+ "20056022": {
+  "name": "省水电新村三区",
+  "households": 1490,
+  "property_fee": 1.0,
+  "gross_area_sqm": 508500,
+  "crawled_at": "2026-09-16T13:48:09",
+  "far_ratio": 1.7,
+  "greening_rate": 30
+ },
+ "5001850": {
+  "name": "省水电新村二区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:48:12",
+  "greening_rate": 38
+ },
+ "5000758": {
+  "name": "红门家园",
+  "parking_spots": 600,
+  "households": 600,
+  "property_fee": 0.8,
+  "gross_area_sqm": 3000,
+  "crawled_at": "2026-09-16T13:48:14",
+  "far_ratio": 2.5,
+  "greening_rate": 40
+ },
+ "20043161": {
+  "name": "绿地旭辉城",
+  "parking_spots": 3000,
+  "households": 2000,
+  "property_fee": 3.6,
+  "gross_area_sqm": 264551,
+  "crawled_at": "2026-09-16T13:48:17",
+  "far_ratio": 4.5,
+  "greening_rate": 30
+ },
+ "1871276523": {
+  "name": "绿城·晓风印月",
+  "households": 804,
+  "gross_area_sqm": 214628,
+  "crawled_at": "2026-09-16T13:48:19",
+  "far_ratio": 2.8,
+  "greening_rate": 30
+ },
+ "453981805": {
+  "name": "缤纷东苑",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:48:22"
+ },
+ "5000208": {
+  "name": "缤纷北苑",
+  "parking_spots": 350,
+  "households": 1069,
+  "property_fee": 0.5,
+  "gross_area_sqm": 352100,
+  "crawled_at": "2026-09-16T13:48:24",
+  "far_ratio": 2.31,
+  "greening_rate": 34
+ },
+ "20001341": {
+  "name": "缤纷小区",
+  "parking_spots": 800,
+  "households": 3000,
+  "property_fee": 1.5,
+  "gross_area_sqm": 200000,
+  "crawled_at": "2026-09-16T13:48:26",
+  "far_ratio": 1.3,
+  "greening_rate": 35
+ },
+ "5000209": {
+  "name": "缤纷西苑",
+  "parking_spots": 100,
+  "households": 1069,
+  "property_fee": 0.5,
+  "gross_area_sqm": 32000,
+  "crawled_at": "2026-09-16T13:48:29",
+  "far_ratio": 2.4,
+  "greening_rate": 33
+ },
+ "20002500": {
+  "name": "网新双城国际",
+  "parking_spots": 697,
+  "households": 0,
+  "property_fee": 6.5,
+  "gross_area_sqm": 144135,
+  "crawled_at": "2026-09-16T13:48:31",
+  "far_ratio": 3.8,
+  "greening_rate": 35
+ },
+ "5001888": {
+  "name": "苏泊尔大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:48:33"
+ },
+ "20057206": {
+  "name": "莱蒙水榭春天",
+  "parking_spots": 950,
+  "households": 850,
+  "property_fee": 3.0,
+  "gross_area_sqm": 154157,
+  "crawled_at": "2026-09-16T13:48:36",
+  "far_ratio": 3,
+  "greening_rate": 40
+ },
+ "5001224": {
+  "name": "莱蒙领尚",
+  "parking_spots": 989,
+  "households": 264,
+  "property_fee": 4.5,
+  "gross_area_sqm": 150000,
+  "crawled_at": "2026-09-16T13:48:39",
+  "far_ratio": 4,
+  "greening_rate": 30
+ },
+ "5002254": {
+  "name": "萧宏大厦",
+  "parking_spots": 192,
+  "households": 0,
+  "gross_area_sqm": 40000,
+  "crawled_at": "2026-09-16T13:48:42",
+  "far_ratio": 7,
+  "greening_rate": 30
+ },
+ "453982238": {
+  "name": "西兴镇水电社区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:48:44"
+ },
+ "604": {
+  "name": "西房锦绣江南",
+  "parking_spots": 1000,
+  "households": 883,
+  "property_fee": 1.2,
+  "gross_area_sqm": 220000,
+  "crawled_at": "2026-09-16T13:48:58",
+  "far_ratio": 3.5,
+  "greening_rate": 40
+ },
+ "297455416": {
+  "name": "金铂湾",
+  "households": 0,
+  "property_fee": 3.25,
+  "crawled_at": "2026-09-16T13:49:00",
+  "far_ratio": 4.99,
+  "greening_rate": 20
+ },
+ "20000001": {
+  "name": "金龙大厦（金龙钱江MOHO）",
+  "parking_spots": 208,
+  "households": 439,
+  "property_fee": 2.5,
+  "gross_area_sqm": 46837,
+  "crawled_at": "2026-09-16T13:49:02",
+  "far_ratio": 4.5,
+  "greening_rate": 28
+ },
+ "5001562": {
+  "name": "钱江大厦",
+  "households": 0,
+  "gross_area_sqm": 34000,
+  "crawled_at": "2026-09-16T13:49:04"
+ },
+ "2528": {
+  "name": "钱江水晶城",
+  "parking_spots": 1700,
+  "households": 1700,
+  "property_fee": 1.44,
+  "gross_area_sqm": 320000,
+  "crawled_at": "2026-09-16T13:49:07",
+  "far_ratio": 2.5,
+  "greening_rate": 35
+ },
+ "5001569": {
+  "name": "钱江水晶澜轩",
+  "parking_spots": 256,
+  "households": 256,
+  "property_fee": 5.8,
+  "gross_area_sqm": 127337,
+  "crawled_at": "2026-09-16T13:49:09",
+  "far_ratio": 2.49,
+  "greening_rate": 30
+ },
+ "453982316": {
+  "name": "钱龙名汇",
+  "households": 504,
+  "property_fee": 3.5,
+  "crawled_at": "2026-09-16T13:49:11",
+  "far_ratio": 4.5,
+  "greening_rate": 29
+ },
+ "453982707": {
+  "name": "钱龙名汇公馆",
+  "households": 488,
+  "property_fee": 3.5,
+  "crawled_at": "2026-09-16T13:49:13",
+  "far_ratio": 4.5,
+  "greening_rate": 29
+ },
+ "20000494": {
+  "name": "银丰央座",
+  "parking_spots": 319,
+  "households": 519,
+  "property_fee": 5.6,
+  "gross_area_sqm": 62777,
+  "crawled_at": "2026-09-16T13:49:15",
+  "far_ratio": 4,
+  "greening_rate": 35
+ },
+ "169611390": {
+  "name": "银泰国际",
+  "parking_spots": 994,
+  "households": 0,
+  "property_fee": 6.0,
+  "crawled_at": "2026-09-16T13:49:17",
+  "far_ratio": 4.73,
+  "greening_rate": 35
+ },
+ "20046024": {
+  "name": "隆和国际大厦",
+  "parking_spots": 149,
+  "households": 69,
+  "property_fee": 4.6,
+  "gross_area_sqm": 35281,
+  "crawled_at": "2026-09-16T13:49:19",
+  "far_ratio": 3.5,
+  "greening_rate": 45
+ },
+ "5002374": {
+  "name": "雪峰银座",
+  "parking_spots": 100,
+  "households": 0,
+  "gross_area_sqm": 29754,
+  "crawled_at": "2026-09-16T13:49:21",
+  "far_ratio": 7,
+  "greening_rate": 30
+ },
+ "5002238": {
+  "name": "香溢公寓",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:49:23"
+ },
+ "5002237": {
+  "name": "香溢大厦",
+  "households": 0,
+  "gross_area_sqm": 42664,
+  "crawled_at": "2026-09-16T13:49:25"
+ },
+ "453981873": {
+  "name": "高新产业大楼",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:49:27"
+ },
+ "20057204": {
+  "name": "龙湖春江彼岸",
+  "parking_spots": 2000,
+  "households": 1843,
+  "property_fee": 3.5,
+  "gross_area_sqm": 235229,
+  "crawled_at": "2026-09-16T13:49:30",
+  "far_ratio": 2.3,
+  "greening_rate": 30
+ },
+ "5002041": {
+  "name": "万轮科技工业园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:49:32"
+ },
+ "20000098": {
+  "name": "三江商厦",
+  "parking_spots": 200,
+  "households": 25,
+  "property_fee": 2.3,
+  "gross_area_sqm": 300,
+  "crawled_at": "2026-09-16T13:49:34",
+  "far_ratio": 1.5,
+  "greening_rate": 30
+ },
+ "20098220": {
+  "name": "世茂智慧之门",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:49:36"
+ },
+ "10004860": {
+  "name": "东方商务会馆",
+  "parking_spots": 196,
+  "households": 435,
+  "property_fee": 3.5,
+  "gross_area_sqm": 22583,
+  "crawled_at": "2026-09-16T13:49:38",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "10000860": {
+  "name": "中兴花园",
+  "parking_spots": 357,
+  "households": 1215,
+  "property_fee": 0.9,
+  "gross_area_sqm": 162330,
+  "crawled_at": "2026-09-16T13:49:40",
+  "far_ratio": 2.31,
+  "greening_rate": 35
+ },
+ "20002560": {
+  "name": "中天官河锦庭",
+  "parking_spots": 1200,
+  "households": 1350,
+  "property_fee": 2.75,
+  "gross_area_sqm": 190000,
+  "crawled_at": "2026-09-16T13:49:42",
+  "far_ratio": 2.4,
+  "greening_rate": 30
+ },
+ "20153707": {
+  "name": "中天官河锦庭（排屋）",
+  "parking_spots": 1200,
+  "households": 1350,
+  "property_fee": 2.75,
+  "gross_area_sqm": 190000,
+  "crawled_at": "2026-09-16T13:49:44",
+  "far_ratio": 2.4,
+  "greening_rate": 30
+ },
+ "5002781": {
+  "name": "中赢云际",
+  "crawled_at": "2026-09-16T13:49:47"
+ },
+ "5002778": {
+  "name": "中赢国际",
+  "parking_spots": 662,
+  "households": 0,
+  "gross_area_sqm": 117615,
+  "crawled_at": "2026-09-16T13:49:49",
+  "far_ratio": 3.5,
+  "greening_rate": 25
+ },
+ "5002780": {
+  "name": "中赢康康谷",
+  "parking_spots": 600,
+  "households": 0,
+  "property_fee": 5.0,
+  "gross_area_sqm": 129210,
+  "crawled_at": "2026-09-16T13:49:51",
+  "far_ratio": 3.5,
+  "greening_rate": 25
+ },
+ "10004720": {
+  "name": "云厦连园",
+  "parking_spots": 400,
+  "households": 700,
+  "property_fee": 1.2,
+  "gross_area_sqm": 100000,
+  "crawled_at": "2026-09-16T13:49:54",
+  "far_ratio": 1.8,
+  "greening_rate": 30
+ },
+ "10001152": {
+  "name": "六眼井小区",
+  "parking_spots": 20,
+  "households": 120,
+  "crawled_at": "2026-09-16T13:49:56",
+  "far_ratio": 1,
+  "greening_rate": 10
+ },
+ "5002358": {
+  "name": "兴业嘉园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:49:58"
+ },
+ "10000304": {
+  "name": "兴盛花园",
+  "parking_spots": 150,
+  "households": 1000,
+  "property_fee": 0.5,
+  "gross_area_sqm": 100000,
+  "crawled_at": "2026-09-16T13:49:59",
+  "far_ratio": 2,
+  "greening_rate": 15
+ },
+ "167483594": {
+  "name": "兴耀鑫都汇",
+  "parking_spots": 600,
+  "households": 600,
+  "property_fee": 3.8,
+  "gross_area_sqm": 101340,
+  "crawled_at": "2026-09-16T13:50:02",
+  "far_ratio": 4,
+  "greening_rate": 35
+ },
+ "10000004": {
+  "name": "协同村小区",
+  "households": 160,
+  "property_fee": 0.5,
+  "gross_area_sqm": 10000,
+  "crawled_at": "2026-09-16T13:50:04",
+  "far_ratio": 2.11,
+  "greening_rate": 21
+ },
+ "20111230": {
+  "name": "古塘路小区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:50:06"
+ },
+ "5000905": {
+  "name": "吉利大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:50:08"
+ },
+ "453982314": {
+  "name": "启智街",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:50:10"
+ },
+ "10005441": {
+  "name": "固陵路小区",
+  "households": 0,
+  "gross_area_sqm": 25000,
+  "crawled_at": "2026-09-16T13:50:12",
+  "far_ratio": 1.5,
+  "greening_rate": 35
+ },
+ "10001748": {
+  "name": "官河公寓",
+  "parking_spots": 150,
+  "households": 320,
+  "property_fee": 0.5,
+  "gross_area_sqm": 27200,
+  "crawled_at": "2026-09-16T13:50:14",
+  "far_ratio": 1.8,
+  "greening_rate": 43
+ },
+ "20153700": {
+  "name": "官河公寓(排屋）",
+  "parking_spots": 320,
+  "households": 320,
+  "property_fee": 0.5,
+  "crawled_at": "2026-09-16T13:50:16",
+  "far_ratio": 2.5,
+  "greening_rate": 20
+ },
+ "5000596": {
+  "name": "广润西园",
+  "parking_spots": 500,
+  "households": 500,
+  "property_fee": 0.5,
+  "gross_area_sqm": 55000,
+  "crawled_at": "2026-09-16T13:50:18",
+  "far_ratio": 2,
+  "greening_rate": 40
+ },
+ "470978586": {
+  "name": "戴家墙门",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:50:20"
+ },
+ "5002285": {
+  "name": "新东方国际科技中心",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:50:22"
+ },
+ "10005320": {
+  "name": "新州花苑",
+  "parking_spots": 500,
+  "households": 790,
+  "property_fee": 0.8,
+  "gross_area_sqm": 150000,
+  "crawled_at": "2026-09-16T13:50:24",
+  "far_ratio": 2,
+  "greening_rate": 30
+ },
+ "20155805": {
+  "name": "新洲三秋花苑",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:50:26"
+ },
+ "20076890": {
+  "name": "新都汇",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:50:28"
+ },
+ "2099748597": {
+  "name": "时代滨江·丹枫四季院",
+  "parking_spots": 1011,
+  "households": 632,
+  "crawled_at": "2026-09-16T13:50:31",
+  "far_ratio": 3,
+  "greening_rate": 35
+ },
+ "10004523": {
+  "name": "星光国际广场",
+  "parking_spots": 1500,
+  "households": 800,
+  "property_fee": 3.8,
+  "gross_area_sqm": 300000,
+  "crawled_at": "2026-09-16T13:50:33",
+  "far_ratio": 4.3,
+  "greening_rate": 15
+ },
+ "1170921657": {
+  "name": "星耀中心",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:50:35",
+  "far_ratio": 4,
+  "greening_rate": 25
+ },
+ "20044420": {
+  "name": "星耀城",
+  "parking_spots": 1230,
+  "households": 672,
+  "property_fee": 3.0,
+  "gross_area_sqm": 158330,
+  "crawled_at": "2026-09-16T13:50:37",
+  "far_ratio": 4,
+  "greening_rate": 25
+ },
+ "20111222": {
+  "name": "春晓路小区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:50:39"
+ },
+ "20001481": {
+  "name": "春波小区",
+  "parking_spots": 1500,
+  "households": 1500,
+  "property_fee": 1.0,
+  "gross_area_sqm": 25000,
+  "crawled_at": "2026-09-16T13:50:41",
+  "far_ratio": 1.9,
+  "greening_rate": 47
+ },
+ "5000282": {
+  "name": "春波西苑",
+  "parking_spots": 288,
+  "households": 288,
+  "property_fee": 1.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:50:43",
+  "far_ratio": 1.9,
+  "greening_rate": 46
+ },
+ "5002702": {
+  "name": "智慧E谷",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:50:45"
+ },
+ "10004141": {
+  "name": "欣盛东方郡",
+  "parking_spots": 1800,
+  "households": 3200,
+  "property_fee": 1.99,
+  "gross_area_sqm": 410000,
+  "crawled_at": "2026-09-16T13:50:48",
+  "far_ratio": 2.3,
+  "greening_rate": 37
+ },
+ "5001511": {
+  "name": "歌山品悦府",
+  "parking_spots": 117,
+  "households": 84,
+  "property_fee": 2.25,
+  "gross_area_sqm": 24175,
+  "crawled_at": "2026-09-16T13:50:51",
+  "far_ratio": 1.2,
+  "greening_rate": 30
+ },
+ "989": {
+  "name": "水晶湾城市雅苑",
+  "parking_spots": 80,
+  "households": 168,
+  "property_fee": 1.1,
+  "gross_area_sqm": 100000,
+  "crawled_at": "2026-09-16T13:50:53",
+  "far_ratio": 1.5,
+  "greening_rate": 30
+ },
+ "10004521": {
+  "name": "江南星座",
+  "parking_spots": 300,
+  "households": 700,
+  "property_fee": 2.9,
+  "gross_area_sqm": 25185,
+  "crawled_at": "2026-09-16T13:50:55",
+  "far_ratio": 3,
+  "greening_rate": 35
+ },
+ "5000971": {
+  "name": "江南望庄",
+  "households": 482,
+  "gross_area_sqm": 88313,
+  "crawled_at": "2026-09-16T13:50:57",
+  "far_ratio": 2.5
+ },
+ "10001172": {
+  "name": "江南豪园",
+  "parking_spots": 218,
+  "households": 1000,
+  "property_fee": 1.08,
+  "gross_area_sqm": 240000,
+  "crawled_at": "2026-09-16T13:51:00",
+  "far_ratio": 2.5,
+  "greening_rate": 40
+ },
+ "10001146": {
+  "name": "河畔花园",
+  "parking_spots": 300,
+  "households": 421,
+  "property_fee": 0.5,
+  "gross_area_sqm": 80000,
+  "crawled_at": "2026-09-16T13:51:02",
+  "far_ratio": 2,
+  "greening_rate": 36
+ },
+ "1175481161": {
+  "name": "海威·新界",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:51:04",
+  "far_ratio": 4,
+  "greening_rate": 25
+ },
+ "5000634": {
+  "name": "海威大厦",
+  "parking_spots": 318,
+  "households": 0,
+  "property_fee": 4.0,
+  "gross_area_sqm": 50000,
+  "crawled_at": "2026-09-16T13:51:06"
+ },
+ "10004541": {
+  "name": "温兴风情苑",
+  "parking_spots": 504,
+  "households": 916,
+  "property_fee": 0.8,
+  "gross_area_sqm": 160000,
+  "crawled_at": "2026-09-16T13:51:08",
+  "far_ratio": 2,
+  "greening_rate": 35
+ },
+ "10001613": {
+  "name": "温馨人家",
+  "parking_spots": 88,
+  "households": 1580,
+  "property_fee": 0.5,
+  "gross_area_sqm": 230000,
+  "crawled_at": "2026-09-16T13:51:11",
+  "far_ratio": 0.4,
+  "greening_rate": 28
+ },
+ "5002243": {
+  "name": "湘云雅苑",
+  "households": 1883,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:51:13",
+  "greening_rate": 30
+ },
+ "20001754": {
+  "name": "滨安小区",
+  "parking_spots": 400,
+  "households": 400,
+  "gross_area_sqm": 15000,
+  "crawled_at": "2026-09-16T13:51:15",
+  "far_ratio": 4.5,
+  "greening_rate": 25
+ },
+ "1836440262": {
+  "name": "滨康天曜城",
+  "parking_spots": 1661,
+  "households": 1355,
+  "gross_area_sqm": 192712,
+  "crawled_at": "2026-09-16T13:51:17",
+  "far_ratio": 2.57,
+  "greening_rate": 30
+ },
+ "453981801": {
+  "name": "滨康路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:51:19"
+ },
+ "453982172": {
+  "name": "滨江人才公寓",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:51:21"
+ },
+ "5000654": {
+  "name": "滨江宝龙城市广场",
+  "parking_spots": 3000,
+  "households": 346,
+  "property_fee": 4.0,
+  "gross_area_sqm": 400000,
+  "crawled_at": "2026-09-16T13:51:24",
+  "far_ratio": 3.4,
+  "greening_rate": 15
+ },
+ "2794087681": {
+  "name": "滨江建杭江晖府",
+  "parking_spots": 700,
+  "households": 578,
+  "gross_area_sqm": 130500,
+  "crawled_at": "2026-09-16T13:51:26",
+  "far_ratio": 2.5,
+  "greening_rate": 35
+ },
+ "1283548755": {
+  "name": "滨江御滨府",
+  "parking_spots": 716,
+  "households": 716,
+  "property_fee": 7.0,
+  "crawled_at": "2026-09-16T13:51:28",
+  "far_ratio": 2.3,
+  "greening_rate": 35
+ },
+ "5000197": {
+  "name": "滨江时代",
+  "households": 0,
+  "gross_area_sqm": 400000,
+  "crawled_at": "2026-09-16T13:51:30",
+  "far_ratio": 4,
+  "greening_rate": 30
+ },
+ "10004560": {
+  "name": "燕语林森",
+  "parking_spots": 300,
+  "households": 381,
+  "property_fee": 1.1,
+  "gross_area_sqm": 55000,
+  "crawled_at": "2026-09-16T13:51:32",
+  "far_ratio": 1.2,
+  "greening_rate": 39
+ },
+ "20037939": {
+  "name": "玲珑府",
+  "parking_spots": 700,
+  "households": 700,
+  "property_fee": 2.0,
+  "crawled_at": "2026-09-16T13:51:34",
+  "far_ratio": 2.4,
+  "greening_rate": 30
+ },
+ "5001318": {
+  "name": "玲珑府叮当",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:51:36"
+ },
+ "20043624": {
+  "name": "瑞立东方花城",
+  "parking_spots": 1560,
+  "households": 999,
+  "property_fee": 2.1,
+  "gross_area_sqm": 190898,
+  "crawled_at": "2026-09-16T13:51:39",
+  "far_ratio": 2.2,
+  "greening_rate": 30
+ },
+ "10004520": {
+  "name": "瑞立中央花城",
+  "parking_spots": 1100,
+  "households": 1200,
+  "property_fee": 1.3,
+  "gross_area_sqm": 220000,
+  "crawled_at": "2026-09-16T13:51:41",
+  "far_ratio": 2.8,
+  "greening_rate": 40
+ },
+ "5000132": {
+  "name": "百得利大厦",
+  "households": 0,
+  "property_fee": 3.5,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:51:43"
+ },
+ "1175482124": {
+  "name": "绿城九龙仓·柳岸晓风",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:51:45",
+  "far_ratio": 2,
+  "greening_rate": 30
+ },
+ "20028182": {
+  "name": "绿城明月江南",
+  "parking_spots": 1500,
+  "households": 1665,
+  "property_fee": 2.8,
+  "gross_area_sqm": 240000,
+  "crawled_at": "2026-09-16T13:51:48",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "5001432": {
+  "name": "美苑创意大厦",
+  "households": 0,
+  "gross_area_sqm": 20000,
+  "crawled_at": "2026-09-16T13:51:50"
+ },
+ "5001172": {
+  "name": "聚光科技大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:51:52"
+ },
+ "5002272": {
+  "name": "芯图大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:51:54"
+ },
+ "5001414": {
+  "name": "茂源大厦",
+  "parking_spots": 400,
+  "households": 0,
+  "gross_area_sqm": 21000,
+  "crawled_at": "2026-09-16T13:51:56"
+ },
+ "20057205": {
+  "name": "荣安望江南",
+  "parking_spots": 504,
+  "households": 500,
+  "property_fee": 2.5,
+  "gross_area_sqm": 88313,
+  "crawled_at": "2026-09-16T13:51:58",
+  "far_ratio": 2.5,
+  "greening_rate": 25
+ },
+ "5002207": {
+  "name": "西兴社区",
+  "households": 356,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:52:00"
+ },
+ "453982235": {
+  "name": "西兴街道",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:52:02"
+ },
+ "20064204": {
+  "name": "西兴镇人民路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:52:04"
+ },
+ "453982237": {
+  "name": "西兴镇官河路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:52:09"
+ },
+ "20064061": {
+  "name": "西兴镇西兴街258号",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:52:13"
+ },
+ "453982239": {
+  "name": "西兴镇邮电宿舍",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:52:16"
+ },
+ "5001830": {
+  "name": "视界之窗",
+  "parking_spots": 196,
+  "households": 435,
+  "property_fee": 3.5,
+  "gross_area_sqm": 22583,
+  "crawled_at": "2026-09-16T13:52:19",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "5002468": {
+  "name": "迎春东苑",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:52:21"
+ },
+ "20065349": {
+  "name": "迎春北苑",
+  "parking_spots": 700,
+  "households": 700,
+  "property_fee": 0.8,
+  "crawled_at": "2026-09-16T13:52:23",
+  "far_ratio": 0.3,
+  "greening_rate": 25
+ },
+ "5002469": {
+  "name": "迎春南苑",
+  "parking_spots": 250,
+  "households": 0,
+  "gross_area_sqm": 23000,
+  "crawled_at": "2026-09-16T13:52:25",
+  "far_ratio": 4.5,
+  "greening_rate": 33
+ },
+ "10000486": {
+  "name": "迎春小区",
+  "parking_spots": 400,
+  "households": 400,
+  "property_fee": 0.2,
+  "gross_area_sqm": 35000,
+  "crawled_at": "2026-09-16T13:52:28",
+  "far_ratio": 2.01,
+  "greening_rate": 35
+ },
+ "10003960": {
+  "name": "钱塘春晓",
+  "parking_spots": 350,
+  "households": 1370,
+  "property_fee": 1.46,
+  "gross_area_sqm": 80200,
+  "crawled_at": "2026-09-16T13:52:31",
+  "far_ratio": 2.5,
+  "greening_rate": 48
+ },
+ "20000096": {
+  "name": "钱塘滨和花园",
+  "parking_spots": 1000,
+  "households": 1000,
+  "property_fee": 0.5,
+  "gross_area_sqm": 112000,
+  "crawled_at": "2026-09-16T13:52:33",
+  "far_ratio": 1.5,
+  "greening_rate": 35
+ },
+ "1021": {
+  "name": "钱龙大厦",
+  "households": 488,
+  "property_fee": 3.5,
+  "gross_area_sqm": 49861,
+  "crawled_at": "2026-09-16T13:52:40",
+  "far_ratio": 6.1
+ },
+ "10001530": {
+  "name": "铁岭花园",
+  "parking_spots": 400,
+  "households": 600,
+  "property_fee": 0.3,
+  "gross_area_sqm": 150000,
+  "crawled_at": "2026-09-16T13:52:42",
+  "far_ratio": 2.5,
+  "greening_rate": 42
+ },
+ "20000262": {
+  "name": "铂金时代",
+  "parking_spots": 420,
+  "households": 754,
+  "property_fee": 1.08,
+  "gross_area_sqm": 131113,
+  "crawled_at": "2026-09-16T13:52:45",
+  "far_ratio": 2,
+  "greening_rate": 40
+ },
+ "5002451": {
+  "name": "银丰大厦",
+  "parking_spots": 319,
+  "households": 155,
+  "gross_area_sqm": 62777,
+  "crawled_at": "2026-09-16T13:52:48",
+  "far_ratio": 4,
+  "greening_rate": 35
+ },
+ "470978580": {
+  "name": "陈家弄",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:52:50"
+ },
+ "10001742": {
+  "name": "顺发倾城之恋",
+  "parking_spots": 1170,
+  "households": 1180,
+  "property_fee": 1.1,
+  "gross_area_sqm": 300000,
+  "crawled_at": "2026-09-16T13:52:52",
+  "far_ratio": 2.5,
+  "greening_rate": 35
+ },
+ "20111229": {
+  "name": "风荷路小区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:52:58"
+ },
+ "10001039": {
+  "name": "风雅钱塘世纪花园",
+  "parking_spots": 2000,
+  "households": 2306,
+  "property_fee": 1.45,
+  "gross_area_sqm": 320000,
+  "crawled_at": "2026-09-16T13:53:01",
+  "far_ratio": 3,
+  "greening_rate": 55
+ },
+ "20172640": {
+  "name": "马湖新村",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:53:03"
+ },
+ "2098503570": {
+  "name": "龙湖·郦城公馆",
+  "parking_spots": 1803,
+  "households": 1685,
+  "property_fee": 3.0,
+  "gross_area_sqm": 600000,
+  "crawled_at": "2026-09-16T13:53:05",
+  "far_ratio": 2.96,
+  "greening_rate": 30
+ },
+ "5001332": {
+  "name": "龙湖春江郦城",
+  "parking_spots": 1803,
+  "households": 1685,
+  "property_fee": 3.0,
+  "gross_area_sqm": 600000,
+  "crawled_at": "2026-09-16T13:53:07",
+  "far_ratio": 2.96,
+  "greening_rate": 30
+ },
+ "169072204": {
+  "name": "龙湖滨江天街",
+  "parking_spots": 1803,
+  "households": 0,
+  "property_fee": 6.0,
+  "crawled_at": "2026-09-16T13:53:09",
+  "far_ratio": 2.96,
+  "greening_rate": 30
+ },
+ "5000079": {
+  "name": "5H Art艺术园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:13"
+ },
+ "5000088": {
+  "name": "IX-WORK",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:15"
+ },
+ "5000092": {
+  "name": "UT斯达康",
+  "parking_spots": 800,
+  "households": 0,
+  "gross_area_sqm": 230000,
+  "crawled_at": "2026-09-16T13:53:17"
+ },
+ "5002015": {
+  "name": "万福中心",
+  "parking_spots": 460,
+  "households": 0,
+  "property_fee": 5.1,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:19"
+ },
+ "5000930": {
+  "name": "万科城市之光",
+  "parking_spots": 997,
+  "households": 988,
+  "property_fee": 2.25,
+  "crawled_at": "2026-09-16T13:53:21",
+  "far_ratio": 2.2,
+  "greening_rate": 30
+ },
+ "3017629894": {
+  "name": "万科朗拾滨屿府",
+  "parking_spots": 649,
+  "households": 600,
+  "crawled_at": "2026-09-16T13:53:24",
+  "far_ratio": 2.2,
+  "greening_rate": 35
+ },
+ "5001737": {
+  "name": "上峰电商产业园",
+  "households": 0,
+  "gross_area_sqm": 210000,
+  "crawled_at": "2026-09-16T13:53:26"
+ },
+ "5000440": {
+  "name": "东忠科技园",
+  "parking_spots": 200,
+  "households": 0,
+  "gross_area_sqm": 25257,
+  "crawled_at": "2026-09-16T13:53:27"
+ },
+ "10004941": {
+  "name": "中兴和园",
+  "parking_spots": 600,
+  "households": 1207,
+  "property_fee": 1.44,
+  "gross_area_sqm": 136000,
+  "crawled_at": "2026-09-16T13:53:29",
+  "far_ratio": 1.8,
+  "greening_rate": 31
+ },
+ "453982556": {
+  "name": "中南建设大厦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:53:32"
+ },
+ "453982554": {
+  "name": "中控软件园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:53:34"
+ },
+ "1971507498": {
+  "name": "中海云宸",
+  "households": 409,
+  "crawled_at": "2026-09-16T13:53:37"
+ },
+ "453982496": {
+  "name": "乐通科技园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:53:39"
+ },
+ "5002560": {
+  "name": "云狐科技园",
+  "parking_spots": 600,
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:41"
+ },
+ "5002491": {
+  "name": "优迈科技园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:43"
+ },
+ "10004522": {
+  "name": "保亿风景蝶院",
+  "parking_spots": 700,
+  "households": 1580,
+  "property_fee": 1.2,
+  "gross_area_sqm": 180000,
+  "crawled_at": "2026-09-16T13:53:45",
+  "far_ratio": 2.2,
+  "greening_rate": 30
+ },
+ "1836435617": {
+  "name": "保利天汇",
+  "parking_spots": 1728,
+  "households": 1037,
+  "gross_area_sqm": 316162,
+  "crawled_at": "2026-09-16T13:53:47",
+  "far_ratio": 3.2,
+  "greening_rate": 25
+ },
+ "453982271": {
+  "name": "悦江商业中心",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:53:49"
+ },
+ "5002356": {
+  "name": "兴耀科技园",
+  "parking_spots": 500,
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:51"
+ },
+ "5000585": {
+  "name": "冠二社区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:55"
+ },
+ "5000586": {
+  "name": "冠山小区",
+  "households": 2056,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:53:57",
+  "far_ratio": 3.5,
+  "greening_rate": 25
+ },
+ "5000858": {
+  "name": "华业大厦",
+  "parking_spots": 1000,
+  "households": 0,
+  "property_fee": 5.5,
+  "gross_area_sqm": 48260,
+  "crawled_at": "2026-09-16T13:53:59"
+ },
+ "5000950": {
+  "name": "华创大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:01"
+ },
+ "5000841": {
+  "name": "华盛达广场",
+  "parking_spots": 300,
+  "households": 0,
+  "property_fee": 3.8,
+  "gross_area_sqm": 50000,
+  "crawled_at": "2026-09-16T13:54:03"
+ },
+ "5000830": {
+  "name": "华美达大酒店",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:06"
+ },
+ "10000826": {
+  "name": "南岸晶都花园",
+  "parking_spots": 1000,
+  "households": 1600,
+  "property_fee": 1.58,
+  "gross_area_sqm": 270000,
+  "crawled_at": "2026-09-16T13:54:08",
+  "far_ratio": 2.9,
+  "greening_rate": 40
+ },
+ "5000722": {
+  "name": "和瑞国际科技广场",
+  "parking_spots": 1800,
+  "households": 0,
+  "property_fee": 3.0,
+  "gross_area_sqm": 200000,
+  "crawled_at": "2026-09-16T13:54:10",
+  "far_ratio": 2.3,
+  "greening_rate": 30
+ },
+ "5001937": {
+  "name": "天和高科技产业园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:12"
+ },
+ "453982153": {
+  "name": "天官公寓",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:14"
+ },
+ "470978516": {
+  "name": "天官第",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:16"
+ },
+ "453982154": {
+  "name": "天官路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:18"
+ },
+ "5001471": {
+  "name": "寰诺大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:20"
+ },
+ "470978528": {
+  "name": "山下里",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:22"
+ },
+ "5000223": {
+  "name": "彩宏大厦",
+  "parking_spots": 200,
+  "households": 0,
+  "gross_area_sqm": 22000,
+  "crawled_at": "2026-09-16T13:54:24"
+ },
+ "1165429073": {
+  "name": "德信·时代之心",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:26",
+  "far_ratio": 5,
+  "greening_rate": 20
+ },
+ "165570436": {
+  "name": "恒鼎博邑郡",
+  "parking_spots": 358,
+  "households": 738,
+  "property_fee": 4.5,
+  "gross_area_sqm": 61726,
+  "crawled_at": "2026-09-16T13:54:28",
+  "far_ratio": 4,
+  "greening_rate": 35
+ },
+ "5000896": {
+  "name": "慧港科技园",
+  "parking_spots": 250,
+  "households": 0,
+  "property_fee": 3.5,
+  "gross_area_sqm": 49000,
+  "crawled_at": "2026-09-16T13:54:30"
+ },
+ "5002006": {
+  "name": "拓森科技园",
+  "households": 0,
+  "property_fee": 2.0,
+  "gross_area_sqm": 33700,
+  "crawled_at": "2026-09-16T13:54:32"
+ },
+ "20000099": {
+  "name": "拾排里小区",
+  "households": 50,
+  "property_fee": 0.8,
+  "gross_area_sqm": 6000,
+  "crawled_at": "2026-09-16T13:54:34",
+  "far_ratio": 0.9,
+  "greening_rate": 32
+ },
+ "5002092": {
+  "name": "文苑大厦",
+  "households": 0,
+  "property_fee": 3.5,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:36"
+ },
+ "474466918": {
+  "name": "新街镇北塘河",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:38"
+ },
+ "2601928924": {
+  "name": "晓月映翠公寓",
+  "parking_spots": 922,
+  "households": 836,
+  "property_fee": 6.1,
+  "gross_area_sqm": 158743,
+  "crawled_at": "2026-09-16T13:54:40",
+  "far_ratio": 2.5,
+  "greening_rate": 35
+ },
+ "1024": {
+  "name": "朗庭",
+  "parking_spots": 127,
+  "households": 171,
+  "property_fee": 1.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:42",
+  "far_ratio": 2,
+  "greening_rate": 39
+ },
+ "5000652": {
+  "name": "杭新科技园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:44"
+ },
+ "5000142": {
+  "name": "柏盛大厦",
+  "households": 0,
+  "property_fee": 4.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:54:46"
+ },
+ "20111221": {
+  "name": "楚天路小区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:50"
+ },
+ "470978540": {
+  "name": "水沟沿",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:52"
+ },
+ "470978539": {
+  "name": "江二社区农场园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:54"
+ },
+ "453981951": {
+  "name": "江南九鼎大厦",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:56"
+ },
+ "453981945": {
+  "name": "江南大道",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:54:58"
+ },
+ "20001883": {
+  "name": "江南铭庭",
+  "parking_spots": 419,
+  "households": 625,
+  "property_fee": 1.3,
+  "gross_area_sqm": 87300,
+  "crawled_at": "2026-09-16T13:55:00",
+  "far_ratio": 2.2,
+  "greening_rate": 30
+ },
+ "5000960": {
+  "name": "江虹国际创意园",
+  "parking_spots": 400,
+  "households": 0,
+  "gross_area_sqm": 66158,
+  "crawled_at": "2026-09-16T13:55:02"
+ },
+ "20004719": {
+  "name": "江虹小区",
+  "parking_spots": 350,
+  "households": 760,
+  "property_fee": 0.5,
+  "gross_area_sqm": 50000,
+  "crawled_at": "2026-09-16T13:55:04",
+  "far_ratio": 1.7,
+  "greening_rate": 35
+ },
+ "10001254": {
+  "name": "河口孙",
+  "households": 0,
+  "property_fee": 1.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:06"
+ },
+ "5001899": {
+  "name": "泰林大厦",
+  "households": 0,
+  "gross_area_sqm": 15000,
+  "crawled_at": "2026-09-16T13:55:08"
+ },
+ "5000899": {
+  "name": "活水工业园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:10"
+ },
+ "1217875168": {
+  "name": "海威天地",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:12"
+ },
+ "474467406": {
+  "name": "湖头陈村社区",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:14"
+ },
+ "5000775": {
+  "name": "湖漫雅筑",
+  "parking_spots": 257,
+  "households": 300,
+  "property_fee": 2.5,
+  "gross_area_sqm": 44789,
+  "crawled_at": "2026-09-16T13:55:15",
+  "far_ratio": 1.8,
+  "greening_rate": 30
+ },
+ "5000206": {
+  "name": "滨兴东苑",
+  "parking_spots": 300,
+  "households": 900,
+  "property_fee": 0.8,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:17",
+  "far_ratio": 1.2,
+  "greening_rate": 33
+ },
+ "5000205": {
+  "name": "滨兴北苑",
+  "households": 0,
+  "property_fee": 1.0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:19",
+  "far_ratio": 1.6,
+  "greening_rate": 10
+ },
+ "453981804": {
+  "name": "滨兴家园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:21"
+ },
+ "20001275": {
+  "name": "滨兴小区",
+  "parking_spots": 300,
+  "households": 900,
+  "property_fee": 1.2,
+  "gross_area_sqm": 15000,
+  "crawled_at": "2026-09-16T13:55:23",
+  "far_ratio": 1.2,
+  "greening_rate": 33
+ },
+ "5000207": {
+  "name": "滨兴西苑",
+  "households": 392,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:25",
+  "greening_rate": 10
+ },
+ "453981707": {
+  "name": "滨和路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:27"
+ },
+ "5000203": {
+  "name": "滨康二苑",
+  "households": 1253,
+  "property_fee": 0.3,
+  "gross_area_sqm": 310232,
+  "crawled_at": "2026-09-16T13:55:29",
+  "far_ratio": 2.5,
+  "greening_rate": 30
+ },
+ "20065348": {
+  "name": "滨康小区",
+  "parking_spots": 923,
+  "households": 923,
+  "property_fee": 0.3,
+  "crawled_at": "2026-09-16T13:55:32",
+  "far_ratio": 2.7,
+  "greening_rate": 40
+ },
+ "4003488": {
+  "name": "滨江周家园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:33"
+ },
+ "5000201": {
+  "name": "滨江园区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:35"
+ },
+ "1175480888": {
+  "name": "滨江金茂府",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:38",
+  "far_ratio": 2.5,
+  "greening_rate": 35
+ },
+ "10001688": {
+  "name": "火炬小区",
+  "parking_spots": 350,
+  "households": 830,
+  "property_fee": 1.0,
+  "gross_area_sqm": 24500,
+  "crawled_at": "2026-09-16T13:55:40",
+  "far_ratio": 2.35,
+  "greening_rate": 15
+ },
+ "5001923": {
+  "name": "特迅软件园",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:42"
+ },
+ "20128342": {
+  "name": "环亚航银座",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:44"
+ },
+ "474467415": {
+  "name": "环南路居委会",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:46"
+ },
+ "20000608": {
+  "name": "现代印象广场",
+  "parking_spots": 325,
+  "households": 1066,
+  "property_fee": 1.8,
+  "gross_area_sqm": 97906,
+  "crawled_at": "2026-09-16T13:55:48",
+  "far_ratio": 3.5,
+  "greening_rate": 35
+ },
+ "2710552781": {
+  "name": "璞荟铭庭（共有产权）",
+  "parking_spots": 368,
+  "households": 368,
+  "property_fee": 3.25,
+  "gross_area_sqm": 54721,
+  "crawled_at": "2026-09-16T13:55:50",
+  "far_ratio": 2.5,
+  "greening_rate": 35
+ },
+ "20043608": {
+  "name": "白马湖壹号",
+  "parking_spots": 800,
+  "households": 670,
+  "property_fee": 0.5,
+  "gross_area_sqm": 508500,
+  "crawled_at": "2026-09-16T13:55:52",
+  "far_ratio": 1.6,
+  "greening_rate": 35
+ },
+ "4002307": {
+  "name": "白马湖小区凤凰苑",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:55:54"
+ },
+ "5000122": {
+  "name": "白马湖小区孔雀苑",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:56"
+ },
+ "5000121": {
+  "name": "白马湖小区白鹤苑",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:55:58"
+ },
+ "20175740": {
+  "name": "白马湖小区鸿雁苑",
+  "households": 1312,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:56:00",
+  "greening_rate": 30
+ },
+ "5001206": {
+  "name": "科达投资大厦",
+  "households": 0,
+  "gross_area_sqm": 30000,
+  "crawled_at": "2026-09-16T13:56:02"
+ },
+ "20174861": {
+  "name": "绿城卓越·傲旋城",
+  "parking_spots": 1348,
+  "households": 1187,
+  "gross_area_sqm": 212668,
+  "crawled_at": "2026-09-16T13:56:04",
+  "far_ratio": 10,
+  "greening_rate": 30
+ },
+ "2675269121": {
+  "name": "绿城晓月和风",
+  "parking_spots": 968,
+  "households": 860,
+  "property_fee": 4.8,
+  "gross_area_sqm": 154219,
+  "crawled_at": "2026-09-16T13:56:06",
+  "far_ratio": 2.4,
+  "greening_rate": 35
+ },
+ "453982197": {
+  "name": "网投文化创意园",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:56:07"
+ },
+ "453982256": {
+  "name": "襄七房",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:56:09"
+ },
+ "5002537": {
+  "name": "远方科技中心",
+  "parking_spots": 150,
+  "households": 0,
+  "property_fee": 3.5,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:56:11"
+ },
+ "2654714191": {
+  "name": "金成滨玺云著邸",
+  "parking_spots": 871,
+  "households": 559,
+  "property_fee": 3.35,
+  "gross_area_sqm": 62840,
+  "crawled_at": "2026-09-16T13:56:13",
+  "far_ratio": 2.5,
+  "greening_rate": 35
+ },
+ "20027514": {
+  "name": "金门·文耀大厦",
+  "households": 0,
+  "gross_area_sqm": 35988,
+  "crawled_at": "2026-09-16T13:56:15"
+ },
+ "20056679": {
+  "name": "铂金名筑",
+  "parking_spots": 1000,
+  "households": 815,
+  "property_fee": 2.0,
+  "gross_area_sqm": 111907,
+  "crawled_at": "2026-09-16T13:56:17",
+  "far_ratio": 2,
+  "greening_rate": 40
+ },
+ "5002594": {
+  "name": "长健大厦",
+  "parking_spots": 420,
+  "households": 0,
+  "gross_area_sqm": 170812,
+  "crawled_at": "2026-09-16T13:56:19"
+ },
+ "20000322": {
+  "name": "长兴苑",
+  "parking_spots": 180,
+  "households": 85,
+  "property_fee": 0.8,
+  "gross_area_sqm": 20000,
+  "crawled_at": "2026-09-16T13:56:21",
+  "far_ratio": 1,
+  "greening_rate": 40
+ },
+ "470978554": {
+  "name": "长江中路",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:56:23"
+ },
+ "20002246": {
+  "name": "长江小区",
+  "parking_spots": 200,
+  "households": 2100,
+  "property_fee": 0.5,
+  "crawled_at": "2026-09-16T13:56:25",
+  "far_ratio": 1.4,
+  "greening_rate": 30
+ },
+ "5002595": {
+  "name": "长江西苑",
+  "households": 368,
+  "property_fee": 0.5,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:56:27",
+  "greening_rate": 40
+ },
+ "453981821": {
+  "name": "长河中学教工宿舍",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:56:29"
+ },
+ "20000321": {
+  "name": "长河商厦",
+  "parking_spots": 759,
+  "households": 1000,
+  "property_fee": 2.0,
+  "gross_area_sqm": 23110,
+  "crawled_at": "2026-09-16T13:56:31",
+  "far_ratio": 2.2,
+  "greening_rate": 30
+ },
+ "5002591": {
+  "name": "长河长一社区",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:56:34"
+ },
+ "20096840": {
+  "name": "长虹苑",
+  "households": 482,
+  "property_fee": 2.0,
+  "crawled_at": "2026-09-16T13:56:36"
+ },
+ "297457006": {
+  "name": "高润云杉郡",
+  "households": 0,
+  "crawled_at": "2026-09-16T13:56:53",
+  "far_ratio": 4,
+  "greening_rate": 25
+ },
+ "5002380": {
+  "name": "亚琪科技大楼",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:41:53"
+ },
+ "5000744": {
+  "name": "恒生大厦",
+  "households": 0,
+  "gross_area_sqm": 0,
+  "crawled_at": "2026-09-16T13:42:45"
+ }
+}

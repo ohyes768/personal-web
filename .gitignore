@@ -80,8 +80,10 @@ backend/fund-select/logs/
 backend/fund-select/.coverage
 backend/fund-select/.pytest_cache/
 
-# housing-map runtime data (static JSON snapshots + refresh-written price jsonl)
-backend/housing-map/data/
+# housing-map：静态快照数据随 git 分发（NAS git pull 后 Dockerfile COPY data 才有内容），
+# 只忽略 refresh 运行时生成的备份与 CSV 副本
+backend/housing-map/data/*.bak.*
+backend/housing-map/data/price_snapshots.csv
 # Gaode API key config for scraper scripts (copy _gaode_config.py.example)
 backend/housing-map/scripts/_gaode_config.py
 # Local AI agent metadata
