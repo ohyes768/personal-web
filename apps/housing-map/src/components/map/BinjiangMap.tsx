@@ -89,28 +89,75 @@ function buildPOIInfoContent(poi: MapPOI, color: string): string {
   </div>`;
 }
 
+// —— 高德 JS API 2.0 最小类型面 ——
+// 未引入官方类型包 (@amap/amap-jsapi-types), 仅声明本文件用到的 API 表面;
+// 构造器选项保持宽松 (Record<string, unknown>), 覆盖物实例按实际用法定型
+
+// 覆盖物鼠标事件参数 (仅用到 pixel)
+interface AMapEvent {
+  pixel: { x: number; y: number };
+}
+
+// 覆盖物公共能力 (Polygon/Polyline/Circle/Marker)
+interface AMapOverlay {
+  on: (event: string, handler: (ev: AMapEvent) => void) => void;
+  setOptions: (options: Record<string, unknown>) => void;
+  setMap: (map: AMapMap | null) => void;
+}
+
+interface AMapMarker extends AMapOverlay {
+  setContent: (content: string) => void;
+}
+
+interface AMapInfoWindow {
+  close: () => void;
+  setContent: (content: string) => void;
+  open: (map: AMapMap, position: number[]) => void;
+}
+
+interface AMapMap {
+  add: (overlay: AMapOverlay) => void;
+  remove: (overlay: AMapOverlay) => void;
+  on: (event: string, handler: () => void) => void;
+  getZoom: () => number;
+  setZoomAndCenter: (zoom: number, center: number[], immediately?: boolean) => void;
+  addControl: (control: object) => void;
+  destroy: () => void;
+}
+
 declare global {
   interface Window {
-    AMap: any;
-    _amapSecurityConfig: any;
+    AMap: {
+      Map: new (container: HTMLElement, options: Record<string, unknown>) => AMapMap;
+      Scale: new () => object;
+      ToolBar: new (options?: Record<string, unknown>) => object;
+      Polygon: new (options: Record<string, unknown>) => AMapOverlay;
+      Polyline: new (options: Record<string, unknown>) => AMapOverlay;
+      Circle: new (options: Record<string, unknown>) => AMapOverlay;
+      Marker: new (options: Record<string, unknown>) => AMapMarker;
+      InfoWindow: new (options?: Record<string, unknown>) => AMapInfoWindow;
+      Pixel: new (x: number, y: number) => object;
+    };
+    _amapSecurityConfig?: { securityJsCode: string };
+    __binjiangMap?: AMapMap;
   }
 }
 
 export default function BinjiangMap({ communities, pois, transit, onCommunityClick, selectedCommunity, focus, priceMode = 'all' }: BinjiangMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
-  const mapInstanceRef = useRef<any>(null);
-  const markersRef = useRef<any[]>([]);
-  const polygonsRef = useRef<any[]>([]);
-  const polygonByCommIdRef = useRef<Map<string, any>>(new Map());
+  const mapInstanceRef = useRef<AMapMap | null>(null);
+  const markersRef = useRef<AMapMarker[]>([]);
+  const polygonsRef = useRef<AMapOverlay[]>([]);
+  const polygonByCommIdRef = useRef<Map<string, AMapOverlay>>(new Map());
   const commByCidRef = useRef<Map<string, Community>>(new Map());
-  const circleRef = useRef<any>(null);
+  const circleRef = useRef<AMapOverlay | null>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const selectedIdRef = useRef<string | null>(null);
-  const poiMarkersRef = useRef<any[]>([]);
-  const poiMarkerStylesRef = useRef<{ marker: any; dot: string; full: string }[]>([]);
-  const poiInfoWindowRef = useRef<any>(null);
-  const transitLinesRef = useRef<any[]>([]);
-  const transitStopsRef = useRef<any[]>([]);
+  const poiMarkersRef = useRef<AMapMarker[]>([]);
+  const poiMarkerStylesRef = useRef<{ marker: AMapMarker; dot: string; full: string }[]>([]);
+  const poiInfoWindowRef = useRef<AMapInfoWindow | null>(null);
+  const transitLinesRef = useRef<AMapOverlay[]>([]);
+  const transitStopsRef = useRef<AMapMarker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
 
   // 供轮廓事件回调读取最新选中态, 避免闭包过期
@@ -164,7 +211,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
     map.addControl(new window.AMap.Scale());
     map.addControl(new window.AMap.ToolBar({ position: 'LB' }));
     mapInstanceRef.current = map;
-    (window as any).__binjiangMap = map;
+    window.__binjiangMap = map;
 
     // POI 点击信息窗(单例复用); 点地图任意处关闭(小区轮廓 bubble:true 点击也会冒泡触发关闭)
     poiInfoWindowRef.current = new window.AMap.InfoWindow({
@@ -189,11 +236,12 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
 
   // 添加小区标记点
   useEffect(() => {
-    if (!mapInstanceRef.current || !mapLoaded) return;
+    const map = mapInstanceRef.current;
+    if (!map || !mapLoaded) return;
 
-    markersRef.current.forEach(m => mapInstanceRef.current.remove(m));
+    markersRef.current.forEach(m => map.remove(m));
     markersRef.current = [];
-    polygonsRef.current.forEach(p => mapInstanceRef.current.remove(p));
+    polygonsRef.current.forEach(p => map.remove(p));
     polygonsRef.current = [];
     polygonByCommIdRef.current.clear();
     commByCidRef.current.clear();
@@ -222,12 +270,12 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
       if (tooltipRef.current) tooltipRef.current.style.display = 'none';
     };
     // 悬停提亮轮廓 + 显示提示; 移出后按选中态还原
-    const bindHover = (overlay: any, community: Community) => {
-      overlay.on('mouseover', (ev: any) => {
+    const bindHover = (overlay: AMapOverlay, community: Community) => {
+      overlay.on('mouseover', (ev) => {
         overlay.setOptions(styleOptions(community, selectedIdRef.current === community.community_id, true));
         showTooltip(community, ev?.pixel);
       });
-      overlay.on('mousemove', (ev: any) => moveTooltip(ev?.pixel));
+      overlay.on('mousemove', (ev) => moveTooltip(ev?.pixel));
       overlay.on('mouseout', () => {
         overlay.setOptions(styleOptions(community, selectedIdRef.current === community.community_id, false));
         hideTooltip();
@@ -260,7 +308,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         });
         polygon.on('click', () => onCommunityClick(community));
         bindHover(polygon, community);
-        mapInstanceRef.current.add(polygon);
+        map.add(polygon);
         polygonsRef.current.push(polygon);
         polygonByCommIdRef.current.set(community.community_id, polygon);
       }
@@ -288,7 +336,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         });
         placeholder.on('click', () => onCommunityClick(community));
         bindHover(placeholder, community);
-        mapInstanceRef.current.add(placeholder);
+        map.add(placeholder);
         polygonsRef.current.push(placeholder);
         polygonByCommIdRef.current.set(community.community_id, placeholder);
 
@@ -297,7 +345,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
           anchor: 'center',
           content: `<div style="pointer-events:none;width:14px;height:14px;border-radius:50%;background:rgba(10,14,22,0.8);color:#fff;font-size:10px;line-height:14px;text-align:center;font-weight:700;box-shadow:0 0 3px rgba(0,0,0,0.5)">?</div>`,
         });
-        mapInstanceRef.current.add(questionMark);
+        map.add(questionMark);
         markersRef.current.push(questionMark);
       }
     });
@@ -305,10 +353,11 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
 
   // 地铁路线 + 地铁站 (在小区轮廓之下)
   useEffect(() => {
-    if (!mapInstanceRef.current || !mapLoaded || !transit) return;
+    const map = mapInstanceRef.current;
+    if (!map || !mapLoaded || !transit) return;
 
-    transitLinesRef.current.forEach(l => mapInstanceRef.current.remove(l));
-    transitStopsRef.current.forEach(s => mapInstanceRef.current.remove(s));
+    transitLinesRef.current.forEach(l => map.remove(l));
+    transitStopsRef.current.forEach(s => map.remove(s));
     transitLinesRef.current = [];
     transitStopsRef.current = [];
 
@@ -321,7 +370,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         strokeOpacity: 0.85,
         zIndex: 50,  // 低于小区轮廓(小区是默认 100+)
       });
-      mapInstanceRef.current.add(line);
+      map.add(line);
       transitLinesRef.current.push(line);
     });
 
@@ -331,7 +380,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         anchor: 'center',
         content: `<div style="width:10px;height:10px;border-radius:50%;background:#fff;border:2px solid #3B76D2;box-shadow:0 1px 2px rgba(0,0,0,0.3)"></div>`,
       });
-      mapInstanceRef.current.add(dot);
+      map.add(dot);
       transitStopsRef.current.push(dot);
     });
   }, [transit, mapLoaded]);
@@ -376,13 +425,14 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
 
   // 添加 POI 圆点（已跨小区去重, 由 page.tsx 按开关过滤后传入）
   useEffect(() => {
-    if (!mapInstanceRef.current || !mapLoaded) return;
+    const map = mapInstanceRef.current;
+    if (!map || !mapLoaded) return;
 
-    poiMarkersRef.current.forEach(m => mapInstanceRef.current.remove(m));
+    poiMarkersRef.current.forEach(m => map.remove(m));
     poiMarkersRef.current = [];
     poiMarkerStylesRef.current = [];
 
-    const useIcon = mapInstanceRef.current.getZoom() >= POI_ICON_MIN_ZOOM;
+    const useIcon = map.getZoom() >= POI_ICON_MIN_ZOOM;
     (pois || []).forEach(poi => {
       const color = poi.type === 'school' && poi.level
         ? (SCHOOL_LEVEL_COLORS[poi.level] ?? POI_MARKER_COLORS.school)
@@ -401,9 +451,9 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         const info = poiInfoWindowRef.current;
         if (!info) return;
         info.setContent(buildPOIInfoContent(poi, color));
-        info.open(mapInstanceRef.current, [poi.longitude, poi.latitude]);
+        info.open(map, [poi.longitude, poi.latitude]);
       });
-      mapInstanceRef.current.add(marker);
+      map.add(marker);
       poiMarkersRef.current.push(marker);
       poiMarkerStylesRef.current.push({ marker, dot, full });
     });
@@ -411,15 +461,16 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
 
   // 绘制地铁路线 + 站点 (一次性, OSM 官方颜色)
   useEffect(() => {
-    if (!mapInstanceRef.current || !mapLoaded || ! transit) return;
+    const map = mapInstanceRef.current;
+    if (!map || !mapLoaded || !transit) return;
 
-    transitLinesRef.current.forEach(p => mapInstanceRef.current.remove(p));
+    transitLinesRef.current.forEach(p => map.remove(p));
     transitLinesRef.current = [];
-    transitStopsRef.current.forEach(m => mapInstanceRef.current.remove(m));
+    transitStopsRef.current.forEach(m => map.remove(m));
     transitStopsRef.current = [];
 
-    const newLines: any[] = [];
-    const newStops: any[] = [];
+    const newLines: AMapOverlay[] = [];
+    const newStops: AMapMarker[] = [];
     for (const route of transit.routes) {
       const polyline = new window.AMap.Polyline({
         path: route.path,
@@ -428,7 +479,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         strokeOpacity: 0.85,
         zIndex: 1, // 在小区轮廓下方
       });
-      polyline.setMap(mapInstanceRef.current);
+      polyline.setMap(map);
       polyline.on('mouseover', () => polyline.setOptions({ strokeWeight: 6, strokeOpacity: 1 }));
       polyline.on('mouseout', () => polyline.setOptions({ strokeWeight: 4, strokeOpacity: 0.85 }));
       polyline.on('click', () => {
@@ -441,7 +492,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
             </div>
           </div>`
         );
-        poiInfoWindowRef.current?.open(mapInstanceRef.current, route.path[Math.floor(route.path.length / 2)]);
+        poiInfoWindowRef.current?.open(map, route.path[Math.floor(route.path.length / 2)]);
       });
       newLines.push(polyline);
     }
@@ -460,9 +511,9 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
             <div style="font-size:12px;color:#5a6478;margin-top:3px">地铁站</div>
           </div>`
         );
-        poiInfoWindowRef.current?.open(mapInstanceRef.current, [stop.lng, stop.lat]);
+        poiInfoWindowRef.current?.open(map, [stop.lng, stop.lat]);
       });
-      marker.setMap(mapInstanceRef.current);
+      marker.setMap(map);
       newStops.push(marker);
     }
     transitLinesRef.current = newLines;

@@ -64,12 +64,8 @@ function CommunityPopup({
 
   const [expandedPOI, setExpandedPOI] = useState<POIType | null>(null);
   // 每张评分卡独立翻转 (互不影响), Set 记录当前翻开的维度
+  // 切换小区时收起展开的分类与翻开的评分卡: 由父组件以 community_id 作为 key 重挂载本组件实现
   const [flippedScores, setFlippedScores] = useState<Set<ScoreCardKey>>(new Set());
-  // 切换小区时收起展开的分类与翻开的评分卡
-  useEffect(() => {
-    setExpandedPOI(null);
-    setFlippedScores(new Set());
-  }, [community.community_id]);
 
   const toggleScoreCard = useCallback((key: ScoreCardKey) => {
     setFlippedScores(prev => {
@@ -405,11 +401,6 @@ export default function BinjiangMapPage() {
                   setMapFocus({ lng: c.longitude, lat: c.latitude, key: Date.now() });
                 }
               }}
-              onBack={() => {
-                setSelectedCommunity(null);
-                setCameFromDashboard(false);
-                setActiveTab('dashboard');
-              }}
             />
           </div>
         ) : (
@@ -578,6 +569,7 @@ export default function BinjiangMapPage() {
 
             {selectedCommunity && (
               <CommunityPopup
+                key={selectedCommunity.community_id}
                 community={selectedCommunity}
                 onClose={() => setSelectedCommunity(null)}
               />
@@ -657,8 +649,8 @@ function ProductDetail({ c }: { c: Community }) {
   if (age != null) rows.push({ k: '楼龄', v: `${age} 年 (${c.build_year} 建)` });
   if (c.parking_ratio != null) rows.push({ k: '车位比', v: `${c.parking_ratio} (车户比)` });
   if (c.property_fee != null) rows.push({ k: '物业费', v: `${c.property_fee} 元/㎡/月` });
-  if ((c as any).far_ratio != null) rows.push({ k: '容积率', v: `${(c as any).far_ratio}` });
-  if ((c as any).greening_rate != null) rows.push({ k: '绿化率', v: `${(c as any).greening_rate}%` });
+  if (c.far_ratio != null) rows.push({ k: '容积率', v: `${c.far_ratio}` });
+  if (c.greening_rate != null) rows.push({ k: '绿化率', v: `${c.greening_rate}%` });
   if (rows.length === 0) return <div className="score-detail-empty">产品数据缺失, 评分无法计算</div>;
   return (
     <div className="score-detail">
@@ -812,6 +804,29 @@ function AppHeader({
   );
 }
 
+// 表头单元格: 带点击排序 + 方向箭头 (模块顶层组件, 排序态经 props 传入, 避免渲染期重建)
+function Th({
+  label, k, align, sortKey, sortOrder, onToggle,
+}: {
+  label: string;
+  k?: DashSortKey;
+  align?: 'right';
+  sortKey: DashSortKey;
+  sortOrder: 'asc' | 'desc';
+  onToggle: (key: DashSortKey) => void;
+}) {
+  return (
+    <th
+      style={{ cursor: k ? 'pointer' : 'default', textAlign: align, userSelect: 'none' }}
+      onClick={k ? () => onToggle(k) : undefined}
+      title={k ? '点击排序' : undefined}
+    >
+      {label}
+      {k && sortKey === k && <span style={{ marginLeft: '2px' }}>{sortOrder === 'desc' ? '↓' : '↑'}</span>}
+    </th>
+  );
+}
+
 function DashboardPage({
   communities,
   onView,
@@ -823,7 +838,6 @@ function DashboardPage({
   scoreFilter, setScoreFilter,
   sortKey, setSortKey,
   sortOrder, setSortOrder,
-  onBack,           // 从地图返回看板, 弹窗定位/选中状态恢复后, 清弹窗并保留看板过滤态
 }: {
   communities: Community[];
   onView: (c: Community) => void;
@@ -835,7 +849,6 @@ function DashboardPage({
   scoreFilter: string; setScoreFilter: (v: string) => void;
   sortKey: DashSortKey; setSortKey: (v: DashSortKey | ((k: DashSortKey) => DashSortKey)) => void;
   sortOrder: 'asc' | 'desc'; setSortOrder: (v: 'asc' | 'desc' | ((o: 'asc' | 'desc') => 'asc' | 'desc')) => void;
-  onBack: () => void;
 }) {
 
   const pageSize = 50;
@@ -908,18 +921,6 @@ function DashboardPage({
     withPrice: filtered.filter(c => getDisplayPrice(c.price) != null).length,
   };
 
-  // 表头单元格: 带点击排序 + 方向箭头
-  const Th = ({ label, k, align }: { label: string; k?: DashSortKey; align?: 'right' }) => (
-    <th
-      style={{ cursor: k ? 'pointer' : 'default', textAlign: align, userSelect: 'none' }}
-      onClick={k ? () => toggleSort(k) : undefined}
-      title={k ? '点击排序' : undefined}
-    >
-      {label}
-      {k && sortKey === k && <span style={{ marginLeft: '2px' }}>{sortOrder === 'desc' ? '↓' : '↑'}</span>}
-    </th>
-  );
-
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       {header}
@@ -983,15 +984,15 @@ function DashboardPage({
         <table className="data-table">
           <thead>
             <tr>
-              <Th label="小区名" k="name" />
+              <Th label="小区名" k="name" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
               <th>板块</th>
               <th>物业类型</th>
-              <Th label="均价 (元/㎡)" k="price" />
-              <Th label="综合评分" k="total_score" />
-              <Th label="最近地铁" k="subway" />
-              <Th label="建成年代" k="build_year" />
-              <Th label="物业费" k="property_fee" />
-              <Th label="车位比" k="parking_ratio" />
+              <Th label="均价 (元/㎡)" k="price" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
+              <Th label="综合评分" k="total_score" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
+              <Th label="最近地铁" k="subway" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
+              <Th label="建成年代" k="build_year" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
+              <Th label="物业费" k="property_fee" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
+              <Th label="车位比" k="parking_ratio" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
               <th>操作</th>
             </tr>
           </thead>
