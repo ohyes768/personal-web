@@ -95,3 +95,4 @@ backend/housing-map/scripts/_gaode_config.py
 # Local AI agent metadata
 .agents/
 .codex/
+backend/skill-manager/.wsl-wheels/
