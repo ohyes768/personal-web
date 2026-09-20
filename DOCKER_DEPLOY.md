@@ -50,10 +50,15 @@ curl http://localhost:8092/api/dividend/health  # dividend 后端健康检查
 - `/api/douyin/*` → douyin-backend:8093
 - `/map/*` → housing-map-frontend:3007（basePath = /map）
 - `/api/map/*` → housing-map-backend:8096
+- `/skills/*` → skill-manager-frontend:3008（basePath = /skills）
+- `/api/skills/*` → skill-manager-backend:8097
 
 **数据持久化**（使用 named volume）：
 - `dividend-data`、`dividend-logs`、`dividend-config`
 - `douyin-data`、`douyin-logs`
+- `skill-manager-state`
+
+skill-manager 后端额外需要四个宿主机目录的 bind mount（Skills 源库、GitHub 缓存、OpenClaw/Hermes 技能目录）与管理密码，均在 NAS `.env` 中配置，详见 [docs/skill-manager-nas-setup.md](docs/skill-manager-nas-setup.md)。
 
 ## 常用命令
 

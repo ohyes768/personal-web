@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## 项目概述
 
-个人财富网站，6 个独立 Next.js 前端 + 4 个 Python 后端。
+个人财富网站，7 个独立 Next.js 前端 + 5 个 Python 后端。
 ```
 apps/
 ├── dividend/      # A 股高股息分析（Next.js 15, React 19, Tailwind CSS v4）
@@ -12,14 +12,16 @@ apps/
 ├── macro/       # 宏观经济
 ├── news/           # 新闻联播分析
 ├── fund-select/  # 债基筛选平台
-└── housing-map/  # 滨江区购房地图（Next.js 16, basePath /map）
+├── housing-map/  # 滨江区购房地图（Next.js 16, basePath /map）
+└── skill-manager/  # Skill 发布管理台（Next.js 15, basePath /skills）
 
 backend/
 ├── dividend-select/  # 股息率后端（FastAPI, akshare, 阿里云行情 API）
 ├── douyin-processor/  # 抖音后端
 ├── macro/ # 宏观金融后端
 ├── fund-select/  # 债基筛选后端
-└── housing-map/  # 滨江购房地图后端（FastAPI + 透明售房网采集脚本）
+├── housing-map/  # 滨江购房地图后端（FastAPI + 透明售房网采集脚本）
+└── skill-manager/  # Skill 发布管理台后端（FastAPI，受限 NAS 目录内发布 Skill 到 OpenClaw/Hermes）
 ```
 
 ## 常用命令
@@ -67,6 +69,17 @@ python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8096
 # housing-map 前端
 cd apps/housing-map
 pnpm dev          # 端口 3007，访问 /map（需 .env.local 填高德地图 key）
+
+# skill-manager（Skill 发布管理台，已在 monorepo 内）
+cd backend/skill-manager
+uv sync
+UV_CACHE_DIR=.uvcache uv run pytest tests/ -v
+# 启动需先设置环境变量（SKILLS_SOURCE_ROOT 等五个受限路径 + SKILL_MANAGER_ADMIN_PASSWORD），
+# 本机可直接跑 scripts/start-skill-manager-dev.bat
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8097
+# skill-manager 前端
+cd apps/skill-manager
+pnpm dev          # 端口 3008，访问 /skills
 ```
 
 ### Windows 开发脚本
@@ -77,6 +90,7 @@ scripts\start-news-dev.bat     # 新闻
 scripts\start-macro-dev.bat    # 宏观经济
 scripts\start-douyin-dev.bat    # 抖音
 scripts\start-housing-dev.bat   # 滨江购房地图
+scripts\start-skill-manager-dev.bat   # Skill 发布管理台
 ```
 
 ### Docker（本地）
@@ -137,5 +151,5 @@ docker compose down
 ## 其他约定
 
 - 不要在代码中硬编码端口号，使用环境变量
-- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，其他无 basePath
+- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交
