@@ -8,7 +8,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
 
-SkillId = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
+# discover_local 等非 Pydantic 场景复用同一 pattern，避免两处正则漂移
+SKILL_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
+SkillId = Annotated[str, Field(pattern=SKILL_ID_PATTERN)]
 Tag = Annotated[str, Field(min_length=1, max_length=40)]
 
 
@@ -38,6 +40,8 @@ class RegistrySkill(BaseModel):
     tags: list[Tag] = []
     summary: str = ""
     status: Literal["active", "deprecated"] = "active"
+    # 编排型 skill 的依赖清单（skill id 列表）；design 3.1 之外的可选扩展字段
+    depends_on: list[SkillId] = []
 
     @model_validator(mode="after")
     def _validate_source_specific_fields(self) -> "RegistrySkill":
@@ -46,3 +50,23 @@ class RegistrySkill(BaseModel):
         if self.source is SkillSource.LOCAL and self.repository is not None:
             raise ValueError("local skill must not carry repository")
         return self
+
+
+class RegistryAgent(BaseModel):
+    """`registry.json` 顶层 `agents` 对象的单个 agent 分配。
+
+    只保存 description 与分配的 skill id 列表；机器本地的 skills_dir、
+    enabled 等目标配置不进注册表（由 sync-config.json / NAS 部署配置提供）。
+    """
+
+    description: str = ""
+    skills: list[SkillId] = []
+
+
+class RegistryFile(BaseModel):
+    """`registry.json` 顶层结构：skill 清单 + 显式 agent 分配。"""
+
+    version: str = "1.0"
+    updated: str = ""
+    skills: list[RegistrySkill] = []
+    agents: dict[str, RegistryAgent] = {}

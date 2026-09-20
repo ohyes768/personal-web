@@ -24,6 +24,9 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]
+# tmp_path 固定在仓库内（F: 盘）：本机 %TEMP% 目录上 os.replace 报 WinError 6，
+# 生产环境（NAS Linux）不受影响
+addopts = "--basetemp=.pytest-tmp"
 
 [tool.coverage.run]
 source = ["src"]
