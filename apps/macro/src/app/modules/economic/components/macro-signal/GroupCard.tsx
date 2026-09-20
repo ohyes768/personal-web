@@ -200,6 +200,7 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
         <div className="flex items-center gap-1.5 mb-1">
           <span className={`w-2 h-2 rounded-full ${meta.calendarColor}`}></span>
           <span className="text-xs text-gray-400">{meta.title}</span>
+          <span className="text-[10px] text-gray-500">· 月频</span>
           <span className="ml-auto text-xs text-gray-500">{indicators.length} 项指标</span>
         </div>
         {/* 档位刻度:全部档位横排作参照系,当前档大字+档位色突出,其余小字灰色;定位不到当前档时兜底显示 conclusion 大字 */}

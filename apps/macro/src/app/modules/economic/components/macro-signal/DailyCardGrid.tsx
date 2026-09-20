@@ -124,6 +124,7 @@ export function DailyCardGrid({ snapshot, onJumpToTab }: DailyCardGridProps) {
               <div className="flex items-center gap-1.5">
                 <span className={`w-2 h-2 rounded-full ${meta.calendarColor}`}></span>
                 <span className="text-xs text-gray-400">{title}</span>
+                <span className="text-[10px] text-gray-500">· 日频</span>
                 <span className="ml-auto text-xs text-gray-500">
                   {ordered.length} 项{asOf ? ` · 截至 ${asOf.slice(5)}` : ''}
                 </span>
