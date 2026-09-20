@@ -6,11 +6,19 @@
 import json
 import math
 import os
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+from src.services.community_filters import is_residential_community
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
 OSM_PATH = os.path.join(DATA_DIR, 'binjiang_osm_residential.geojson')
 COMM_PATH = os.path.join(DATA_DIR, 'binjiang_communities.json')
 COORD_PATH = os.path.join(DATA_DIR, 'binjiang_coordinates.json')
+PROPERTY_TYPES_PATH = os.path.join(DATA_DIR, 'property_types.json')
 OUT_PATH = os.path.join(DATA_DIR, 'binjiang_polygons_merged.json')
 
 NAME_MATCH_MAX_M = 800
@@ -91,6 +99,27 @@ def match_osm(lon, lat, name, osm_feats, osm_by_name):
     return None
 
 
+def select_residential_points(communities, coords, property_types):
+    """返回与地图展示口径一致、且具备坐标的住宅小区。"""
+    points = []
+    filtered = 0
+    for community in communities:
+        community_id = community.get('community_id')
+        coordinate = coords.get(community_id, {})
+        if not coordinate.get('latitude'):
+            continue
+        if not is_residential_community(community, property_types):
+            filtered += 1
+            continue
+        points.append((
+            community_id,
+            community.get('community_name', ''),
+            coordinate['longitude'],
+            coordinate['latitude'],
+        ))
+    return points, filtered
+
+
 def main():
     osm = json.load(open(OSM_PATH, encoding='utf-8'))
     osm_feats = osm['features']
@@ -101,16 +130,21 @@ def main():
     if isinstance(communities, dict):
         communities = communities['communities']
     coords = json.load(open(COORD_PATH, encoding='utf-8'))
-    points = [(c['community_id'], c.get('community_name', ''), coords[c['community_id']]['longitude'], coords[c['community_id']]['latitude'])
-              for c in communities if coords.get(c.get('community_id'), {}).get('latitude')]
+    property_types = json.load(open(PROPERTY_TYPES_PATH, encoding='utf-8'))
+    points, filtered = select_residential_points(communities, coords, property_types)
+    print(f'已过滤非住宅/无效条目: {filtered}')
+    print(f'住宅小区待匹配: {len(points)}')
 
     polygons = {}
     matched = 0
+    unmatched = []
     for cid, name, lon, lat in points:
         osm_hit = match_osm(lon, lat, name, osm_feats, osm_by_name)
         if osm_hit:
             polygons[cid] = {'source': 'osm', 'rings': osm_hit[0]}
             matched += 1
+        else:
+            unmatched.append((cid, name, lon, lat))
 
     output = {
         '_meta': {
@@ -125,9 +159,12 @@ def main():
     with open(temp_path, 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False)
     os.replace(temp_path, OUT_PATH)
-    print(f'OSM 匹配: {matched}/{len(points)} = {matched / len(points) * 100:.0f}%')
+    for cid, name, lon, lat in unmatched:
+        print(f'[未匹配] {cid} {name} ({lon:.6f}, {lat:.6f})')
+    rate = matched / len(points) * 100 if points else 0
+    print(f'OSM 匹配（住宅）: {matched}/{len(points)} = {rate:.0f}%')
     print(f'已保存 {OUT_PATH}')
-    return {'matched': matched, 'unmatched': len(points) - matched, 'total': len(points)}
+    return {'matched': matched, 'unmatched': len(unmatched), 'total': len(points), 'filtered': filtered}
 
 
 if __name__ == '__main__':
