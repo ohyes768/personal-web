@@ -10,6 +10,7 @@ from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
 from src.api.models import MOCK_COMMUNITIES, RefreshLimit, ScoreWeights
+from src.services import boundary_refresh
 from src.services import refresh as refresh_service
 from src.services.community_filters import is_residential_community
 from src.services.market_reference import load_market_reference
@@ -323,4 +324,15 @@ async def start_refresh_job(params: Annotated[RefreshLimit, Query()]):
 @router.delete("/refresh")
 async def stop_refresh_job():
     _, status, body = await refresh_service.stop_refresh()
+    return JSONResponse(status_code=status, content=body)
+
+
+@router.get("/boundaries/rebuild")
+async def get_boundary_rebuild_status():
+    return {"success": True, "data": boundary_refresh.job}
+
+
+@router.post("/boundaries/rebuild")
+async def start_boundary_rebuild_job():
+    _, status, body = await boundary_refresh.start_rebuild()
     return JSONResponse(status_code=status, content=body)

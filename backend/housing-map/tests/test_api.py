@@ -16,6 +16,16 @@ def test_health_returns_ok():
     assert resp.json() == {"status": "ok"}
 
 
+def test_boundary_rebuild_status_is_separate_from_price_refresh():
+    resp = client.get("/api/boundaries/rebuild")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert body["data"]["phase"] == "idle"
+    assert body["data"]["running"] is False
+
+
 def test_market_reference_endpoint_returns_listing_reference_snapshot():
     resp = client.get("/api/market-reference")
 

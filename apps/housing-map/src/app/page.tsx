@@ -319,6 +319,25 @@ export default function BinjiangMapPage() {
     try { await fetch('/api/map/refresh', { method: 'DELETE' }); } catch { /* 轮询会拿到终态 */ }
   }, []);
 
+  // —— 小区轮廓重建: 只按当前 OSM 数据重新匹配，不触发房价采集 ——
+  const [boundaryState, setBoundaryState] = useState<{
+    running: boolean; phase: string; error: string | null;
+  } | null>(null);
+
+  const startBoundaryRebuild = useCallback(async () => {
+    try {
+      const res = await fetch('/api/map/boundaries/rebuild', { method: 'POST' });
+      const d = await res.json();
+      if (!d.success) {
+        setBoundaryState({ running: false, phase: 'error', error: d.error });
+        return;
+      }
+      setBoundaryState({ running: true, phase: 'rebuilding', error: null });
+    } catch {
+      setBoundaryState({ running: false, phase: 'error', error: '触发轮廓重建失败' });
+    }
+  }, []);
+
   useEffect(() => {
     if (!refreshState?.running) return;
     const timer = setInterval(async () => {
@@ -338,6 +357,24 @@ export default function BinjiangMapPage() {
     }, 3000);
     return () => clearInterval(timer);
   }, [refreshState?.running]);
+
+  useEffect(() => {
+    if (!boundaryState?.running) return;
+    const timer = setInterval(async () => {
+      try {
+        const res = await fetch('/api/map/boundaries/rebuild');
+        const d = await res.json();
+        const j = d.data;
+        setBoundaryState({ running: j.running, phase: j.phase, error: j.error });
+        if (j.phase === 'done') {
+          const data = await fetchCommunities();
+          setCommunities(data);
+          setLoading(false);
+        }
+      } catch { /* 网络抖动, 下个周期重试 */ }
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [boundaryState?.running]);
 
   const filteredCommunities = communities.filter(c =>
     c.community_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -391,6 +428,8 @@ export default function BinjiangMapPage() {
         refreshState={refreshState}
         onRefresh={startRefresh}
         onStopRefresh={stopRefresh}
+        boundaryState={boundaryState}
+        onBoundaryRebuild={startBoundaryRebuild}
       />
 
       {/* Tab 导航 */}
@@ -879,6 +918,8 @@ function AppHeader({
   refreshState,
   onRefresh,
   onStopRefresh,
+  boundaryState,
+  onBoundaryRebuild,
 }: {
   searchQuery: string;
   onSearchChange: (v: string) => void;
@@ -886,6 +927,8 @@ function AppHeader({
   refreshState: { running: boolean; phase: string; processed: number; total: number; error: string | null } | null;
   onRefresh: () => void;
   onStopRefresh: () => void;
+  boundaryState: { running: boolean; phase: string; error: string | null } | null;
+  onBoundaryRebuild: () => void;
 }) {
   return (
     <header style={{
@@ -937,6 +980,17 @@ function AppHeader({
               刷新失败
             </span>
           )}
+          {boundaryState?.running && (
+            <span style={{ marginLeft: '8px', color: 'var(--accent-warm)' }}>轮廓重建中…</span>
+          )}
+          {boundaryState && !boundaryState.running && boundaryState.phase === 'done' && (
+            <span style={{ marginLeft: '8px', color: 'var(--price-down)' }}>轮廓已更新</span>
+          )}
+          {boundaryState && !boundaryState.running && boundaryState.phase === 'error' && (
+            <span style={{ marginLeft: '8px', color: 'var(--price-up)' }} title={boundaryState.error ?? ''}>
+              轮廓重建失败
+            </span>
+          )}
         </span>
         {refreshState?.running ? (
           <button className="btn btn-secondary" onClick={onStopRefresh}>
@@ -947,6 +1001,14 @@ function AppHeader({
             <span>🔄</span> 刷新
           </button>
         )}
+        <button
+          className="btn btn-secondary"
+          onClick={onBoundaryRebuild}
+          disabled={boundaryState?.running}
+          title="按当前 OSM 数据重新匹配小区轮廓，不更新房价"
+        >
+          <span>🗺️</span> {boundaryState?.running ? '重建中' : '重建轮廓'}
+        </button>
       </div>
     </header>
   );
