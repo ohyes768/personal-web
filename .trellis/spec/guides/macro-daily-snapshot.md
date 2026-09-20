@@ -4,10 +4,12 @@
 >
 > **Last verified**: 2026-09-20
 > 信号首页自 2026-08-31 起为单页双区块(月度 4 卡 + 日频 3 卡同屏,MacroSignalTab 挂载即并行请求,无模式切换/懒加载)
-> 2026-09-01:日频 monetary_policy 组加 DR001(隔夜),来源 `prr-md.json`,与 DR007(7 天)并列展示;共 3 维度 8 指标。前端组标题日频模式显示「流动性」(月度模式仍为「货币政策」,后端 dimension key 仍为 `monetary_policy`,API 无变更)。详见 §2.1。
+> 2026-09-01:日频 monetary_policy 组加 DR001(隔夜),与 DR007(7 天)并列展示。前端组标题日频模式显示「流动性」(月度模式仍为「货币政策」,后端 dimension key 仍为 `monetary_policy`,API 无变更)。详见 §2.1。
 > 2026-09-15:修正 DR001 恒空 bug——`prr-md.json` 真实响应 `records` 在**顶层**(`data` 下仅 showDateCN/showDateEN),`extract_dr001` 此前按 `data.records` 解析导致自上线起解析永远失败、被失败隔离静默吞成 null;测试 mock 与代码同错,测试全绿但从未对过真实接口。详见 §2.1 响应结构小节。
 > 2026-09-16:DR001 弃用 prr-md.json 实时旁路,改为 DR007 同款定时落库(`POST /update/dr001` → 同一 `prr-chrt.csv` 取 index 6 列 → `dr001.csv`),获得 asof 回退能力;prr-md 实时链路代码整体删除。详见 §2.1/§4。
-> 2026-09-20:修正 `POST /update/dr001`「数据已落库但响应报失败」问题——新增更新端点的载荷类型必须同步加入共享 `UpdateResponse.data` 联合类型，并以端点级测试覆盖成功响应。详见 §7。
+> 2026-09-20(上午):修正 `POST /update/dr001`「数据已落库但响应报失败」问题——新增更新端点的载荷类型必须同步加入共享 `UpdateResponse.data` 联合类型，并以端点级测试覆盖成功响应。详见 §7。
+> 2026-09-20:日频扩充至 **3 维度 13 指标**——exchange_rate 组追加北向资金 3 指标(`north_today_yi`/`north_7d_avg_yi`/`north_7d_change_pct`,7 日窗口口径见 §2.2),risk_appetite 组追加南向净流入(`south_net_yi`);4 个新 key 均挂 `INDICATOR_LINK_MAP → market-sentiment` 曲线跳转。北向净买额自 2024-08 停发,只能上成交额口径。详见 §2.2/§5。
+> 2026-09-20(第二批):monetary_policy 组追加中债利率 2 指标——`cn_10y`(列「中国10y」)/`cn_10y_2y`(列「中国10年-2年」),数据源 `load_data:china_bond`(china_bond.csv),单点 asof;2 个 key 挂 `INDICATOR_LINK_MAP → rates` 曲线跳转(该 Tab 数据段含 china_bond)。日频扩充至 **3 维度 15 指标**。详见 §2.3/§5。
 > **Source files**:
 > - `backend/macro/src/services/daily_snapshot_service.py`(`_DAILY_INDICATORS` 指标清单)
 > - `backend/macro/src/api/routes.py`(`GET /daily-snapshot`)
@@ -59,6 +61,23 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 - 前端展示:日频模式该组标题显示「流动性」(`DailyCardGrid.tsx` `DAILY_GROUP_TITLES` 覆盖);月度模式不受影响
 - 该组在日频模式下**不渲染档位刻度**(与汇率/风险偏好两张卡一致,纯数据组)
 
+### 2.2 北向/南向资金指标(2026-09-20 引入)
+
+- 数据源:`load_data:fund_flow` 读 `fund_flow.csv`(列 `date,北向成交额,南向净流入,南向买入,南向卖出`),由 `fund_flow_service.py`(akshare stock_hsgt_hist_em)每日更新。
+- **北向只有成交额口径**:净买额(BUY_AMT/SELL_AMT/NET_DEAL_AMT)自 2024-08-16 起交易所停发,不要再尝试净流入口径。
+- 三个 key:`north_today_yi`(当日成交额,单点 asof)、`north_7d_avg_yi`(含当日最近 7 个交易日窗口均值)、`north_7d_change_pct`(当前窗口日均 vs 前一窗口日均的百分比变化)。窗口计算在 `daily_snapshot_service.py::_extract_windowed`,基于序列自身交易日(asof ≤ 所选日期);窗口不足 7 日 → value=None 但保留 data_date。
+- `south_net_yi`(南向净流入,亿港元)归 risk_appetite 组:南向是内地资金外溢信号,非外部压力;无评分体系引用,纯数据展示。
+- 窗口指标 `prev_value` 恒 None:均值类指标的日变化无意义,环比已有专门 key。前端对 prev_value=None 自动不渲染日变化箭头。
+- 4 个新 key 均有 `INDICATOR_LINK_MAP → market-sentiment` 曲线跳转(该 Tab 含 fund_flow 曲线)。
+- 与 exchange-rate-skill 月度评分体系的中文 key(`北向7日日均成交额` 等)是不同 key 空间,`INDICATOR_LABELS` 独立条目、digits 不同(日频环比 1 位、skill 中文 key 2 位),互不覆盖。
+
+### 2.3 中债利率指标(2026-09-20 引入)
+
+- 数据源:`load_data:china_bond` 读 `china_bond.csv`(表头 `date,中国10y,中国10年-2年`),单点 asof,与 exchange_rate 组单点指标同款语义(value/prev_value/data_date 完整)。
+- 两个 key:`cn_10y`(中债 10Y 到期收益率,列「中国10y」)、`cn_10y_2y`(中国 10Y-2Y 期限利差,列「中国10年-2年」),单位 %、digits 2。
+- 2 个 key 均挂 `INDICATOR_LINK_MAP → rates` 曲线跳转(rates Tab 数据段含 china_bond,`RatesChart.tsx` 渲染该曲线);`data_service.py` 另有同名 key 映射到 `china_bond`(query_data_by_tab 用),与本清单互不影响。
+- 归 monetary_policy 组(日频标题「流动性」),组内仍不渲染档位刻度。
+
 ## 3. 默认日期规则(15:00 规则)
 
 - 本地时间 `< 15:00`(A股未收盘)→ 今日之前最近的 volume 交易日
@@ -78,8 +97,11 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 | indicator key | indicators 数组 key | label/单位/小数位翻译 |
 
 - key 变更 → 三处同步 + `INDICATOR_LINK_MAP` 的曲线跳转映射
-- CSV 数值列是中文列名(如 `美元指数`/`TED利差`),与英文 key 的映射只存在于 `_DAILY_INDICATORS`
-- `monetary_policy` 组当前 key 列表(2026-09-01):`dr001`、`dr007`(`INDICATOR_LINK_MAP` 无对应条目,该组无曲线跳转入口)
+- CSV 数值列是中文列名(如 `美元指数`/`TED利差`/`北向成交额`),与英文 key 的映射只存在于 `_DAILY_INDICATORS`
+- 当前各组 key 清单(2026-09-20,15 指标):
+  - `monetary_policy`:`dr001`、`dr007`(`INDICATOR_LINK_MAP` 无条目,无曲线跳转)、`cn_10y`、`cn_10y_2y`(均 → `rates`)
+  - `exchange_rate`:`dollar_index`、`usd_cny`、`ted_spread`、`hibor_overnight`、`north_today_yi`、`north_7d_avg_yi`、`north_7d_change_pct`
+  - `risk_appetite`:`volume`、`turnover`、`margin`、`south_net_yi`
 
 ## 6. dates 列表口径
 

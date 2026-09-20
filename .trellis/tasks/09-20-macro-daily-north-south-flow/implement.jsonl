@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/macro-daily-snapshot.md", "reason": "日频快照接口契约：asof 语义、三处同步约定(§5)、取数路径禁令(§4)、dates 口径(§6)"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "前后端跨层改动对齐检查思路"}

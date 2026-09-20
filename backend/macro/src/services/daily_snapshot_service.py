@@ -2,7 +2,7 @@
 
 从 DataService 的原始 CSV 序列按 asof 语义取「≤ 所选日期最近可得值」。
 不走 query_data_by_tab:其 us_treasuries/exchange_rates 段不 reindex 到
-union 轴(与 dates 可能不等长),且会组装整 Tab 全字段,这里只要 8 项指标。
+union 轴(与 dates 可能不等长),且会组装整 Tab 全字段,这里只要 15 项指标。
 """
 from datetime import datetime, time as dtime
 from typing import Any, Dict, List, Optional, Tuple
@@ -27,23 +27,32 @@ _DAILY_INDICATORS: Dict[str, List[Tuple[str, str, str]]] = {
     "monetary_policy": [
         ("dr001", "load_dr001", "dr001"),
         ("dr007", "load_dr007", "dr007"),
+        ("cn_10y", "load_data:china_bond", "中国10y"),
+        ("cn_10y_2y", "load_data:china_bond", "中国10年-2年"),
     ],
     "exchange_rate": [
         ("dollar_index", "load_data:exchange_rates", "美元指数"),
         ("usd_cny", "load_data:exchange_rates", "美元人民币"),
         ("ted_spread", "load_data:ted_spread", "TED利差"),
         ("hibor_overnight", "load_data:hibor", "HIBOR_Overnight"),
+        ("north_today_yi", "load_data:fund_flow", "北向成交额"),
+        ("north_7d_avg_yi", "load_data:fund_flow", "北向成交额"),
+        ("north_7d_change_pct", "load_data:fund_flow", "北向成交额"),
     ],
     "risk_appetite": [
         ("volume", "load_volume", "total_amount_yi"),
         ("turnover", "load_turnover", "turnover_rate"),
         ("margin", "load_margin", "margin_balance_yi"),
+        ("south_net_yi", "load_data:fund_flow", "南向净流入"),
     ],
 }
 
+# 走 7 日窗口统计而非单点 asof 的指标 key(见 _extract_windowed)
+_WINDOWED_KEYS = frozenset({"north_7d_avg_yi", "north_7d_change_pct"})
+
 
 class DailySnapshotService:
-    """组装日频快照(3 维度 8 指标)"""
+    """组装日频快照(3 维度 15 指标)"""
 
     def __init__(self, data_service: DataService):
         self._ds = data_service
@@ -75,7 +84,7 @@ class DailySnapshotService:
         groups: Dict[str, Any] = {}
         for dimension, indicators in _DAILY_INDICATORS.items():
             rows = [
-                self._extract(self._load_series(loader, column), effective, key)
+                self._extract_by_key(self._load_series(loader, column), effective, key)
                 for key, loader, column in indicators
             ]
             groups[dimension] = {"indicators": rows}
@@ -103,6 +112,44 @@ class DailySnapshotService:
         if df.empty or column not in df.columns:
             return pd.Series(dtype=float)
         return df[column].dropna().sort_index()
+
+    def _extract_by_key(
+        self, series: pd.Series, target: str, key: str
+    ) -> Dict[str, Any]:
+        """按 key 分派提取方式:7 日窗口指标走 _extract_windowed,其余单点 asof"""
+        if key in _WINDOWED_KEYS:
+            return self._extract_windowed(series, target, key)
+        return self._extract(series, target, key)
+
+    @staticmethod
+    def _extract_windowed(series: pd.Series, target: str, key: str) -> Dict[str, Any]:
+        """7 日窗口指标(基于序列自身交易日,asof ≤ target):
+
+        - north_7d_avg_yi:含 target 的最近 7 个交易日窗口均值;窗口不足 7 日 → value=None
+        - north_7d_change_pct:当前窗口均值 vs 前一窗口(第 8~14 交易日)均值的
+          百分比变化(×100);任一窗口不足或前窗口均值为 0 → value=None
+        - prev_value 恒 None(均值类指标的日变化无意义,环比已有专门指标)
+        - data_date = ≤ target 最近可得数据日(数据存在但窗口不足时仍返回,供前端标注)
+        """
+        empty = {"key": key, "value": None, "prev_value": None, "data_date": None}
+        if series.empty:
+            return empty
+        sub = series[series.index <= pd.Timestamp(target)]
+        if sub.empty:
+            return empty
+        data_date = sub.index[-1].strftime("%Y-%m-%d")
+        cur = sub.iloc[-7:]
+        if len(cur) < 7:
+            return {**empty, "data_date": data_date}
+        cur_avg = float(cur.mean())
+        if key == "north_7d_avg_yi":
+            return {"key": key, "value": cur_avg, "prev_value": None, "data_date": data_date}
+        prev = sub.iloc[-14:-7]
+        if len(prev) < 7:
+            return {"key": key, "value": None, "prev_value": None, "data_date": data_date}
+        prev_avg = float(prev.mean())
+        value = (cur_avg - prev_avg) / prev_avg * 100 if prev_avg != 0 else None
+        return {"key": key, "value": value, "prev_value": None, "data_date": data_date}
 
     @staticmethod
     def _extract(series: pd.Series, target: str, key: str) -> Dict[str, Any]:

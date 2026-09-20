@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/macro-daily-snapshot.md", "reason": "验收对照：响应 shape、回退语义、跨层 key 对齐"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 _extract/asof 模式而非新造轮子"}
