@@ -322,6 +322,7 @@ class UpdateResponse(BaseModel):
         | CommoditiesUpdateData
         | IndicesUpdateData
         | DR007UpdateData
+        | DR001UpdateData
         | VolumeUpdateData
         | TurnoverUpdateData
         | MarginUpdateData
