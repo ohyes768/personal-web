@@ -4,6 +4,7 @@
 """
 
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, HttpUrl, model_validator
@@ -70,3 +71,30 @@ class RegistryFile(BaseModel):
     updated: str = ""
     skills: list[RegistrySkill] = []
     agents: dict[str, RegistryAgent] = {}
+
+
+class PublishItem(BaseModel):
+    """单次发布输入（Publisher 服务层内部对象）。
+
+    `source` 由服务端从注册表/缓存解析；Task 5 的 API 请求模型不得接受
+    调用方传入文件系统路径（R5）。
+    """
+
+    skill_id: SkillId
+    target: TargetKey
+    source: Path
+    revision: str = ""
+
+
+class PublishResultItem(BaseModel):
+    """单项发布/回滚结果；批量接口以逐项结果表达部分成功（design 7）。"""
+
+    skill_id: str
+    target: TargetKey
+    status: Literal["success", "blocked", "error"]
+    action: Literal["add", "update", "rollback", "none"] = "none"
+    error: str = ""
+
+
+class PublishBatchResult(BaseModel):
+    items: list[PublishResultItem] = []

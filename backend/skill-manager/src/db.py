@@ -1,0 +1,278 @@
+"""SQLite 运行状态库（design 3.2）。
+
+只保存发布审计、回滚快照与运行状态；Skill 清单真源是 Skills Git 仓库的
+registry.json，本库不复制注册表内容。
+
+连接管理采用"每次操作短连接"：SQLite 本地文件连接创建开销极低，短连接
+不跨线程共享，天然规避 FastAPI 线程池下的并发问题，因此无需
+`check_same_thread=False` 与额外的锁；若未来成为瓶颈，可在不改变本类
+接口的前提下切换 WAL + 每请求连接。
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from contextlib import closing
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from src.config import Settings
+
+DEFAULT_DB_FILENAME = "skill-manager.sqlite3"
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS deployment (
+    skill_id            TEXT NOT NULL,
+    target              TEXT NOT NULL,
+    source_revision     TEXT NOT NULL DEFAULT '',
+    source_path         TEXT NOT NULL,
+    current_link_target TEXT NOT NULL,
+    status              TEXT NOT NULL,
+    published_at        TEXT NOT NULL,
+    PRIMARY KEY (skill_id, target)
+);
+
+CREATE TABLE IF NOT EXISTS deployment_history (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    skill_id             TEXT NOT NULL,
+    target               TEXT NOT NULL,
+    action               TEXT NOT NULL,
+    result               TEXT NOT NULL,
+    previous_link_target TEXT,
+    new_link_target      TEXT,
+    source_revision      TEXT,
+    error                TEXT,
+    created_at           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_skill_target
+    ON deployment_history (skill_id, target, id);
+
+CREATE TABLE IF NOT EXISTS rollback_snapshot (
+    skill_id             TEXT NOT NULL,
+    target               TEXT NOT NULL,
+    previous_link_target TEXT NOT NULL,
+    previous_revision    TEXT NOT NULL DEFAULT '',
+    updated_at           TEXT NOT NULL,
+    PRIMARY KEY (skill_id, target)
+);
+"""
+
+
+@dataclass(frozen=True)
+class DeploymentRecord:
+    """`deployment` 行：某 skill 在某 target 的当前部署状态。"""
+
+    skill_id: str
+    target: str
+    source_revision: str
+    source_path: str
+    current_link_target: str
+    status: str
+    published_at: str
+
+
+@dataclass(frozen=True)
+class HistoryEntry:
+    """`deployment_history` 行：一次发布/下架/回滚的审计记录（只追加）。"""
+
+    skill_id: str
+    target: str
+    action: str
+    result: str
+    previous_link_target: str | None
+    new_link_target: str | None
+    source_revision: str | None
+    error: str | None
+    created_at: str
+
+
+@dataclass(frozen=True)
+class RollbackSnapshot:
+    """`rollback_snapshot` 行：某 skill × target 上一次可恢复的链接目标。"""
+
+    skill_id: str
+    target: str
+    previous_link_target: str
+    previous_revision: str
+    updated_at: str
+
+
+class SkillStateStore:
+    """deployment / deployment_history / rollback_snapshot 的唯一读写入口。"""
+
+    def __init__(self, db_path: Path) -> None:
+        self.db_path = Path(db_path)
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        with closing(self._connect()) as conn:
+            conn.executescript(_SCHEMA)
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> "SkillStateStore":
+        """生产入口：数据库文件路径由 Settings.state_dir 派生。"""
+        return cls(settings.state_dir / DEFAULT_DB_FILENAME)
+
+    # ---------- deployment ----------
+
+    def upsert_deployment(self, record: DeploymentRecord) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO deployment
+                    (skill_id, target, source_revision, source_path,
+                     current_link_target, status, published_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.skill_id,
+                    record.target,
+                    record.source_revision,
+                    record.source_path,
+                    record.current_link_target,
+                    record.status,
+                    record.published_at,
+                ),
+            )
+
+    def get_deployment(self, skill_id: str, target: str) -> DeploymentRecord | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT * FROM deployment WHERE skill_id = ? AND target = ?",
+                (skill_id, target),
+            ).fetchone()
+        return _row_to_deployment(row) if row is not None else None
+
+    def list_deployments(self) -> list[DeploymentRecord]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT * FROM deployment ORDER BY skill_id, target"
+            ).fetchall()
+        return [_row_to_deployment(row) for row in rows]
+
+    # ---------- deployment_history（只追加） ----------
+
+    def append_history(self, entry: HistoryEntry) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute(
+                """
+                INSERT INTO deployment_history
+                    (skill_id, target, action, result, previous_link_target,
+                     new_link_target, source_revision, error, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    entry.skill_id,
+                    entry.target,
+                    entry.action,
+                    entry.result,
+                    entry.previous_link_target,
+                    entry.new_link_target,
+                    entry.source_revision,
+                    entry.error,
+                    entry.created_at,
+                ),
+            )
+
+    def list_history(
+        self,
+        skill_id: str | None = None,
+        target: str | None = None,
+        limit: int = 200,
+    ) -> list[HistoryEntry]:
+        query = "SELECT * FROM deployment_history"
+        conditions: list[str] = []
+        params: list[Any] = []
+        if skill_id is not None:
+            conditions.append("skill_id = ?")
+            params.append(skill_id)
+        if target is not None:
+            conditions.append("target = ?")
+            params.append(target)
+        if conditions:
+            query += " WHERE " + " AND ".join(conditions)
+        query += " ORDER BY id LIMIT ?"
+        params.append(limit)
+        with closing(self._connect()) as conn:
+            rows = conn.execute(query, params).fetchall()
+        return [_row_to_history(row) for row in rows]
+
+    # ---------- rollback_snapshot ----------
+
+    def set_rollback_snapshot(self, snapshot: RollbackSnapshot) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO rollback_snapshot
+                    (skill_id, target, previous_link_target, previous_revision,
+                     updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    snapshot.skill_id,
+                    snapshot.target,
+                    snapshot.previous_link_target,
+                    snapshot.previous_revision,
+                    snapshot.updated_at,
+                ),
+            )
+
+    def get_rollback_snapshot(
+        self, skill_id: str, target: str
+    ) -> RollbackSnapshot | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT * FROM rollback_snapshot WHERE skill_id = ? AND target = ?",
+                (skill_id, target),
+            ).fetchone()
+        return _row_to_snapshot(row) if row is not None else None
+
+    def delete_rollback_snapshot(self, skill_id: str, target: str) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute(
+                "DELETE FROM rollback_snapshot WHERE skill_id = ? AND target = ?",
+                (skill_id, target),
+            )
+
+    # ---------- 内部 ----------
+
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+
+def _row_to_deployment(row: sqlite3.Row) -> DeploymentRecord:
+    return DeploymentRecord(
+        skill_id=row["skill_id"],
+        target=row["target"],
+        source_revision=row["source_revision"],
+        source_path=row["source_path"],
+        current_link_target=row["current_link_target"],
+        status=row["status"],
+        published_at=row["published_at"],
+    )
+
+
+def _row_to_history(row: sqlite3.Row) -> HistoryEntry:
+    return HistoryEntry(
+        skill_id=row["skill_id"],
+        target=row["target"],
+        action=row["action"],
+        result=row["result"],
+        previous_link_target=row["previous_link_target"],
+        new_link_target=row["new_link_target"],
+        source_revision=row["source_revision"],
+        error=row["error"],
+        created_at=row["created_at"],
+    )
+
+
+def _row_to_snapshot(row: sqlite3.Row) -> RollbackSnapshot:
+    return RollbackSnapshot(
+        skill_id=row["skill_id"],
+        target=row["target"],
+        previous_link_target=row["previous_link_target"],
+        previous_revision=row["previous_revision"],
+        updated_at=row["updated_at"],
+    )
