@@ -467,3 +467,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 信号卡片标题追加月频/日频标注
+
+**Date**: 2026-09-20
+**Task**: 信号卡片标题追加月频/日频标注
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+宏观信号首页 7 张卡卡头追加频率弱化标注(月度·月频/日频·日频),渲染处拼 span 保证后缀不泄漏到图例;保留月度「货币政策」vs日频「流动性」概念区分;纯前端,pnpm build 通过
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `abcbee3` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
