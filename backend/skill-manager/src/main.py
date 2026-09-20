@@ -1,12 +1,65 @@
-"""skill-manager FastAPI 入口。
+"""skill-manager FastAPI 入口（design 7）。
 
-注意：Settings 不在此模块实例化——import app 不应要求环境变量已就绪，
-部署入口（uvicorn 启动的进程）在需要时自行构造 Settings。
+注意：Settings 不在模块导入时实例化——import app 不应要求环境变量已就绪。
+lifespan 在应用启动时从环境变量构造 Settings 并初始化各 service 单例
+（挂到 app.state，路由经 src.api.dependencies 定位）；测试可用
+dependency_overrides 替换任意服务（如离线 remotes 的 GitCacheService）。
+
+错误契约（design 7）：HTTPException 的 dict detail 展平为顶层
+`{"code", "message"}`；请求体校验失败统一 400 `invalid_request`。
 """
 
-from fastapi import FastAPI
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
-app = FastAPI(title="skill-manager")
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
+
+from src.api.routes import router
+from src.config import Settings
+from src.db import SkillStateStore
+from src.services.git_cache import GitCacheService
+from src.services.publisher import Publisher
+from src.services.registry import RegistryService
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    settings = Settings()
+    store = SkillStateStore.from_settings(settings)
+    app.state.settings = settings
+    app.state.store = store
+    app.state.registry = RegistryService(settings.skills_source_root)
+    app.state.publisher = Publisher(settings, store)
+    app.state.git_cache = GitCacheService(settings, store)
+    yield
+
+
+app = FastAPI(title="skill-manager", lifespan=lifespan)
+app.include_router(router)
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException) -> JSONResponse:
+    """把 dict detail 展平为顶层错误契约；非 dict detail 兜底包装。"""
+    if isinstance(exc.detail, dict):
+        return JSONResponse(status_code=exc.status_code, content=exc.detail)
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"code": "error", "message": str(exc.detail)},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """请求体/参数校验失败统一 400（design 7：非法 id/path/target → 400）。"""
+    return JSONResponse(
+        status_code=400,
+        content={"code": "invalid_request", "message": "请求参数不合法"},
+    )
 
 
 @app.get("/api/health")

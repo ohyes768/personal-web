@@ -29,6 +29,8 @@ from src.models import (
     PublishBatchResult,
     PublishItem,
     PublishResultItem,
+    RegistrySkill,
+    SkillSource,
     TargetKey,
 )
 
@@ -55,6 +57,48 @@ class RollbackUnavailableError(PublisherError):
 
 def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def validated_source(settings: Settings, source: Path) -> Path:
+    """把任意候选源目录校验为受控源；返回 resolve 后的绝对路径。
+
+    规则（design 6.1 第 1 步）：目录存在、含 `SKILL.md`、resolve 后位于
+    源库根或 GitHub 缓存根之内。Publisher 与 API plan/publish 端点共用。
+    """
+    resolved = Path(source).resolve()
+    if not resolved.is_dir():
+        raise InvalidSourceError(f"source directory does not exist: {resolved}")
+    if not (resolved / _SKILL_MD).is_file():
+        raise InvalidSourceError(
+            f"source directory {resolved} does not contain SKILL.md"
+        )
+    if not _inside_controlled_roots(settings, resolved):
+        raise InvalidSourceError(
+            f"source {resolved} is outside the controlled roots "
+            f"({settings.skills_source_root}, {settings.github_skill_cache_root})"
+        )
+    return resolved
+
+
+def resolve_registry_source(settings: Settings, skill: RegistrySkill) -> Path:
+    """把注册表条目解析为受控源目录；无效时抛 InvalidSourceError。
+
+    local 条目 → `${SKILLS_SOURCE_ROOT}/${path}`；
+    github 条目 → `${GITHUB_SKILL_CACHE_ROOT}/${skill.id}/${path}`。
+    """
+    if skill.source is SkillSource.LOCAL:
+        candidate = (settings.skills_source_root / skill.path).resolve()
+    else:
+        candidate = (
+            settings.github_skill_cache_root / skill.id / skill.path
+        ).resolve()
+    return validated_source(settings, candidate)
+
+
+def _inside_controlled_roots(settings: Settings, resolved: Path) -> bool:
+    return resolved.is_relative_to(
+        settings.skills_source_root
+    ) or resolved.is_relative_to(settings.github_skill_cache_root)
 
 
 class Publisher:
@@ -111,7 +155,7 @@ class Publisher:
         try:
             if final_link.is_symlink():
                 resolved = final_link.resolve()
-                if not self._inside_controlled_roots(resolved):
+                if not _inside_controlled_roots(self.settings, resolved):
                     raise PublishBlockedError(
                         f"existing link {final_link} points outside the controlled "
                         f"roots ({resolved}); refusing to delete it"
@@ -249,7 +293,7 @@ class Publisher:
         """分类现有目标：add（不存在）/ update（受管 symlink）/ 拒绝。"""
         if final_link.is_symlink():
             resolved = final_link.resolve()
-            if not self._inside_controlled_roots(resolved):
+            if not _inside_controlled_roots(self.settings, resolved):
                 raise PublishBlockedError(
                     f"existing link {final_link} points outside the controlled "
                     f"roots ({resolved}); refusing to touch it"
@@ -276,25 +320,7 @@ class Publisher:
             raise InvalidSourceError(f"invalid skill id: {skill_id!r}")
 
     def _validated_source(self, source: Path | str) -> Path:
-        resolved = Path(source).resolve()
-        if not resolved.is_dir():
-            raise InvalidSourceError(f"source directory does not exist: {resolved}")
-        if not (resolved / _SKILL_MD).is_file():
-            raise InvalidSourceError(
-                f"source directory {resolved} does not contain SKILL.md"
-            )
-        if not self._inside_controlled_roots(resolved):
-            raise InvalidSourceError(
-                f"source {resolved} is outside the controlled roots "
-                f"({self.settings.skills_source_root}, "
-                f"{self.settings.github_skill_cache_root})"
-            )
-        return resolved
-
-    def _inside_controlled_roots(self, resolved: Path) -> bool:
-        return resolved.is_relative_to(
-            self.settings.skills_source_root
-        ) or resolved.is_relative_to(self.settings.github_skill_cache_root)
+        return validated_source(self.settings, Path(source))
 
     # ---------- 内部：状态持久化 ----------
 

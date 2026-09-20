@@ -123,3 +123,129 @@ class UpdateInfo(BaseModel):
     cached_revision: str = ""
     has_update: bool = False
     checked_at: str
+
+
+# ---------- API 请求/响应契约（design 7 / Task 5） ----------
+# 密码只出现在请求体中，服务端常量时间比较后立即丢弃（R5）；
+# 带密码模型与公开 plan 模型分开定义。
+
+
+class AdminPasswordRequest(BaseModel):
+    """仅含密码的写操作请求体（回滚、下架）。"""
+
+    password: str
+
+
+class ScanRequest(BaseModel):
+    """`POST /api/skills/github/scan`：临时 clone 扫描候选目录。"""
+
+    repository: str
+
+
+class ScanResponse(BaseModel):
+    repository: str
+    candidates: list[ScanCandidate] = []
+
+
+class RegisterGithubSkillRequest(BaseModel):
+    """`POST /api/skills/github`：登记管理员选定的候选目录。
+
+    skill id 由服务端从仓库与路径派生（design 3.1），不接受调用方指定。
+    """
+
+    password: str
+    repository: str
+    path: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1)]
+    tags: list[Tag] = []
+    summary: str = ""
+
+
+class CheckUpdatesRequest(BaseModel):
+    """`POST /api/skills/check-updates`：空列表表示全部 GitHub Skill。"""
+
+    skill_ids: list[SkillId] = []
+
+
+class UpdateCheckItem(BaseModel):
+    """更新检查逐项结果：单项失败不中断其余项。"""
+
+    skill_id: str
+    result: Literal["ok", "error"]
+    info: UpdateInfo | None = None
+    error: str = ""
+
+
+class UpdateCheckResponse(BaseModel):
+    items: list[UpdateCheckItem] = []
+
+
+class TargetDeployment(BaseModel):
+    """`GET /api/skills` 卡片内单个 target 的部署状态。"""
+
+    status: str
+    revision: str = ""
+    published_at: str = ""
+    link_target: str = ""
+
+
+class SkillCard(BaseModel):
+    """左栏 Skill 卡片：筛选所需全部字段 + 双 target 状态 + 更新标记。"""
+
+    id: SkillId
+    name: str
+    source: SkillSource
+    path: str
+    repository: str | None = None
+    tags: list[str] = []
+    summary: str = ""
+    status: str = "active"
+    deployments: dict[str, TargetDeployment] = {}
+    update: UpdateInfo | None = None
+
+
+class SkillListResponse(BaseModel):
+    items: list[SkillCard] = []
+
+
+class QueueItemRequest(BaseModel):
+    """右栏发布队列单项：skill + 选定目标（OpenClaw/Hermes/两者）。"""
+
+    skill_id: SkillId
+    targets: Annotated[list[TargetKey], Field(min_length=1)]
+
+
+class PublishPlanRequest(BaseModel):
+    """`POST /api/skills/publish/plan`：只读预览，绝不变更文件系统。"""
+
+    items: list[QueueItemRequest] = []
+
+
+class PublishRequest(PublishPlanRequest):
+    """`POST /api/skills/publish`：与 plan 相同的 items + 管理密码。"""
+
+    password: str
+
+
+PlanAction = Literal["add", "update", "unchanged", "blocked"]
+
+
+class PlanItem(BaseModel):
+    """发布计划单项：action 分类与原因（design 4.2）。"""
+
+    skill_id: str
+    target: TargetKey
+    action: PlanAction
+    reason: str = ""
+    current_revision: str = ""
+    planned_revision: str = ""
+
+
+class PlanResponse(BaseModel):
+    items: list[PlanItem] = []
+
+
+class UnpublishResponse(BaseModel):
+    skill_id: str
+    target: TargetKey
+    status: Literal["removed"] = "removed"
