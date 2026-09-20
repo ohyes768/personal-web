@@ -47,14 +47,66 @@ mkdir -p ~/openclaw/skills ~/hermes/skills   # 按实际部署路径调整
 ./scripts/deploy-nas.sh nginx                          # 下发 /skills 与 /api/skills 路由并 reload
 ```
 
-## 验证
+## NAS 上线验证清单
+
+按顺序执行；前五步只读不写，最后一步用真实发布验证 symlink 链路。
+
+### 1. 部署后端与前端
 
 ```bash
-curl -fsS http://127.0.0.1:8097/api/health      # 期望 {"status":"ok"}
-curl -fsSk https://127.0.0.1:9443/skills        # 前端页面（经 Nginx）
+./scripts/deploy-nas.sh skill-manager both --no-pull   # 或去掉 --no-pull 先拉取镜像
 ```
 
-再在浏览器进入 `/skills/`，执行一次"发布计划"预览——计划预览是只读操作，不产生任何文件系统变更。
+### 2. 后端健康检查
+
+```bash
+curl -fsS http://127.0.0.1:8097/api/health    # 期望 {"status":"ok"}
+```
+
+### 3. Nginx 配置校验并下发路由
+
+```bash
+docker run --rm -v "${PWD}/nginx/web.conf:/etc/nginx/conf.d/web.conf:ro" nginx nginx -t
+./scripts/deploy-nas.sh nginx                 # 下发 /skills 与 /api/skills 路由并 reload
+```
+
+### 4. 页面可达
+
+浏览器打开 `https://<NAS 地址>:9443/skills/`，双栏工作台应正常渲染，左栏能看到注册表中的 Skill。
+
+### 5. 计划预览不改文件系统
+
+在界面上把任一 Skill 加入右栏并执行"发布计划"预览；随后在 NAS 上确认目标目录未新增任何条目（预览是只读操作）：
+
+```bash
+ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
+```
+
+### 6. 一次真实发布（测试目录）
+
+建议先指向一个临时目标目录做冒烟验证，再切换到真实 Agent 目录：
+
+1. 在 `.env` 中把 `OPENCLAW_SKILLS_HOST_PATH` 临时指向测试目录（如 `~/skill-manager/smoke-target`）并 `mkdir -p` 该目录。
+2. `./scripts/deploy-nas.sh skill-manager both --no-pull` 重建后端。
+3. 在界面登记一个 GitHub Skill（或选用现有 local Skill），加入右栏、选择 openclaw、执行发布并输入管理密码。
+4. 验证链接落在目标根内且指向受控源：
+
+   ```bash
+   ls -la "$OPENCLAW_SKILLS_HOST_PATH/<skill-id>"     # 应为 symlink
+   readlink -f "$OPENCLAW_SKILLS_HOST_PATH/<skill-id>" # 应位于 /mnt/skills-source 或 /mnt/github-skill-cache 对应的宿主目录内
+   ```
+
+5. 在界面对同一项执行"回滚"验证快照链路；再执行"下架"确认只删除链接本身：
+
+   ```bash
+   ls "$OPENCLAW_SKILLS_HOST_PATH/"                   # 该 skill 链接应消失，目录仍在
+   ```
+
+6. 验证完毕后把 `OPENCLAW_SKILLS_HOST_PATH` 改回真实路径并重建后端。
+
+### 7. 错误密码不产生副作用
+
+在确认窗口输入错误密码提交发布，界面应提示密码错误，且目标目录无任何变化。
 
 ## 回滚
 

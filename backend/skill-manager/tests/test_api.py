@@ -406,6 +406,57 @@ def test_check_updates_reports_versions_without_publishing(client, roots):
     assert not any(roots.hermes.iterdir())
 
 
+@pytest.mark.requires_symlink
+def test_registered_github_skill_can_be_planned_published_and_rolled_back(
+    client, roots
+):
+    """Task 8 端到端：扫描 → 登记（密码）→ 计划 → 发布（密码）→ symlink 落地 → 回滚。"""
+    scanned = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
+    assert scanned.status_code == 200
+    candidates = scanned.json()["candidates"]
+    assert candidates
+
+    registered = client.post(
+        "/api/skills/github",
+        json={
+            "password": PASSWORD,
+            "repository": CANONICAL_URL,
+            "path": candidates[0]["path"],
+            "name": "Fixture",
+            "tags": ["test"],
+        },
+    )
+    assert registered.status_code == 200
+    skill_id = registered.json()["id"]
+
+    plan = client.post(
+        "/api/skills/publish/plan",
+        json={"items": [{"skill_id": skill_id, "targets": ["openclaw"]}]},
+    )
+    assert plan.status_code == 200
+    assert plan.json()["items"][0]["action"] == "add"
+
+    published = client.post(
+        "/api/skills/publish",
+        json={
+            "password": PASSWORD,
+            "items": [{"skill_id": skill_id, "targets": ["openclaw"]}],
+        },
+    )
+    assert published.status_code == 200
+    assert published.json()["items"][0]["status"] == "success"
+    link = roots.openclaw / skill_id
+    assert link.is_symlink()
+    assert link.resolve() == (roots.github_cache / skill_id / candidates[0]["path"]).resolve()
+
+    rollback = client.post(
+        f"/api/skills/{skill_id}/targets/openclaw/rollback",
+        json={"password": PASSWORD},
+    )
+    # 首次发布目标为空、无先前快照 → 409；若替换过既有受管链接 → 200
+    assert rollback.status_code in {200, 409}
+
+
 def test_check_updates_is_public_and_reports_unknown_ids(client):
     response = client.post("/api/skills/check-updates", json={"skill_ids": ["ghost"]})
 

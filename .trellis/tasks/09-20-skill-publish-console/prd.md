@@ -58,14 +58,18 @@
 
 ## Acceptance Criteria
 
-- [ ] 管理台以独立服务和路由在 NAS 部署，且可进入双栏发布界面。
-- [ ] 管理员能以名称、来源、标签、状态、更新状态筛选左栏 Skill，并将任意 Skill 加入/移出右栏队列；移出不会改变当前部署。
-- [ ] 管理员可登记一个 GitHub 仓库；系统拒绝无 `SKILL.md` 的候选，能从多 Skill 仓库中选择有效目录，并保存标签。
-- [ ] 手动检查更新后，GitHub Skill 展示远端、本地缓存、OpenClaw 与 Hermes 的版本差异；不会自动发布。
-- [ ] 对选择的一个或两个目标发布时，服务只在配置的 NAS 目录内创建/替换 Linux symbolic link，并以原子替换保证失败不破坏现有已发布链接。
-- [ ] 发布、更新、下架和回滚要求正确管理密码；错误密码或未认证请求不会改变文件系统或注册信息。
-- [ ] 单项发布失败时，页面显示该项原因，未失败项和既有 Skill 均保持可用。
-- [ ] 管理员可查看每个目标的部署状态与最近一次发布记录，并可把某项回滚至上一次成功版本。
+> 证据说明：Windows 开发机无 symlink 特权，依赖真实符号链接的测试在 Windows 显式 skip，
+> 已在 WSL（Ubuntu 26.04，等价依赖环境）中跑通完整套件；NAS 实机操作见
+> `docs/skill-manager-nas-setup.md` 的「NAS 上线验证清单」。
+
+- [ ] 管理台以独立服务和路由在 NAS 部署，且可进入双栏发布界面。（待 NAS 上线验证；本地已验证 `docker compose -f docker-compose.nas.yml config --quiet` 与前端 `pnpm build` 编译/类型检查通过、`nginx` 路由配置就绪）
+- [x] 管理员能以名称、来源、标签、状态、更新状态筛选左栏 Skill，并将任意 Skill 加入/移出右栏队列；移出不会改变当前部署。（证据：`cd apps/skill-manager && pnpm test -- --run`，6 passed；"移出队列不改部署"由 `src/lib/queue.test.ts` 覆盖；界面实机操作随 NAS 上线确认）
+- [x] 管理员可登记一个 GitHub 仓库；系统拒绝无 `SKILL.md` 的候选，能从多 Skill 仓库中选择有效目录，并保存标签。（证据：`cd backend/skill-manager && UV_CACHE_DIR=.uvcache uv run pytest tests/test_api.py tests/test_git_cache.py -q`，覆盖扫描候选、多目录选择、标签持久化与非法仓库拒绝）
+- [x] 手动检查更新后，GitHub Skill 展示远端、本地缓存、OpenClaw 与 Hermes 的版本差异；不会自动发布。（证据：`uv run pytest tests/test_api.py -k check_updates`，含"检查动作不发布：目标根保持为空"断言）
+- [x] 对选择的一个或两个目标发布时，服务只在配置的 NAS 目录内创建/替换 Linux symbolic link，并以原子替换保证失败不破坏现有已发布链接。（证据：WSL 中 `pytest tests -q` 全量通过，含 symlink 落点、临时链接校验、原子替换与目标根外拒绝；Windows 无特权时显式 skip，见 conftest）
+- [x] 发布、更新、下架和回滚要求正确管理密码；错误密码或未认证请求不会改变文件系统或注册信息。（证据：`uv run pytest tests/test_api.py -k password`，含错误密码下文件系统与注册表逐字节不变断言；下架密码拒绝在 WSL 全量中验证）
+- [x] 单项发布失败时，页面显示该项原因，未失败项和既有 Skill 均保持可用。（证据：`pytest tests/test_api.py -k batch` 与 `tests/test_publisher.py`，批量混合结果逐项返回 status/reason 且成功项不受阻断项影响；页面呈现随 NAS 上线确认）
+- [x] 管理员可查看每个目标的部署状态与最近一次发布记录，并可把某项回滚至上一次成功版本。（证据：`uv run pytest tests/test_api.py -k "list_skills or rollback"`，卡片含双目标部署状态；回滚恢复上一次链接在 WSL 全量中验证，无快照返回 409）
 
 ## Out of Scope
 
