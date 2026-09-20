@@ -1,0 +1,37 @@
+[project]
+name = "skill-manager"
+version = "0.1.0"
+description = "Skill 发布管理台后端（FastAPI，受限 NAS 目录内安全发布自研与 GitHub Skill 到 OpenClaw/Hermes）"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.6.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+]
+
+# 应用而非库：不打包安装，uvicorn 从项目根目录直接跑 src.main:app
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]

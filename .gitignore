@@ -81,6 +81,7 @@ backend/fund-select/cache/
 backend/fund-select/logs/
 backend/fund-select/.coverage
 backend/fund-select/.pytest_cache/
+backend/skill-manager/.pytest_cache/
 
 # housing-map：静态快照数据随 git 分发（NAS git pull 后 Dockerfile COPY data 才有内容），
 # 只忽略 refresh 运行时生成的备份与 CSV 副本
