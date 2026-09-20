@@ -15,6 +15,7 @@ import { CompareDrawer } from '@/components/CompareDrawer';
 import { AlertSettingsModal } from '@/components/AlertSettingsModal';
 import { AlertLevelBar } from '@/components/AlertLevelBar';
 import { SchedulerSettingsModal } from '@/components/SchedulerSettingsModal';
+import { DataUpdateDrawer } from '@/components/DataUpdateDrawer';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
@@ -362,6 +363,7 @@ function DividendPageContent() {
   const [alertStock, setAlertStock] = useState<DividendStock | null>(null);
   const [alertOpen, setAlertOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
+  const [dataUpdateOpen, setDataUpdateOpen] = useState(false);
 
   const handleOpenAlertSettings = useCallback((code: string) => {
     const s = data.find(x => x.code === code);
@@ -572,7 +574,21 @@ function DividendPageContent() {
               </button>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setDataUpdateOpen(true)}
+              className="flex items-center gap-2 rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+            >
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v18m9-9H3" /></svg>
+              数据更新
+            </button>
+            <DataUpdateDrawer
+              isOpen={dataUpdateOpen}
+              onClose={() => setDataUpdateOpen(false)}
+              onOpenScheduler={() => setSchedulerOpen(true)}
+            >
+            <div className="flex flex-wrap items-center gap-2">
             <div ref={indexPopoverRef}>
               <IndexStatusPopover
                 results={indexResults}
@@ -871,18 +887,8 @@ function DividendPageContent() {
               实时价
             </button>
 
-            {/* 定时任务管理：slate-600 中性色，避开主操作色（indigo）+ 次操作色（green/blue） */}
-            <button
-              onClick={() => setSchedulerOpen(true)}
-              className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-slate-600 text-white hover:bg-slate-500"
-              title="定时任务管理"
-              aria-label="定时任务"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              定时任务
-            </button>
+            </div>
+            </DataUpdateDrawer>
           </div>
 
           {/* 第二行：导出按钮，靠右 */}
