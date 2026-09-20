@@ -1,0 +1,75 @@
+# =============================================================================
+# skill-manager（Skill 发布管理台）服务定义 —— overlay 文件
+# 由 scripts/deploy-nas.sh 仅在 target=skill-manager|all 时叠加加载：
+#   docker compose -f docker-compose.nas.yml -f docker-compose.skill-manager.nas.yml ...
+# 单独成文件的原因：compose 的变量插值与卷规格校验是全文件的，若放在基础
+# 文件里，skill-manager 的必填 .env 变量（管理密码、NAS 挂载路径）会卡住
+# 其他所有 target 的 build/up。
+# =============================================================================
+
+services:
+  # ---------------------------------------------------------------------------
+  # skill-manager 后端（Skill 发布管理台，backend/skill-manager/）
+  # 挂载边界（R6）：仅 Skill 源库 / GitHub 缓存 / 两个 Agent 目标目录 / state，
+  # 不挂 docker.sock、宿主根或任何无关目录；管理密码只注入本服务
+  # 目标根（targets mount）必须位于 /mnt/targets 之内（config.py 启动时校验）
+  # ---------------------------------------------------------------------------
+  skill-manager-backend:
+    build:
+      context: ./backend/skill-manager
+    container_name: skill-manager-backend
+    restart: unless-stopped
+    expose:
+      - "8097"
+    volumes:
+      - ${SKILLS_SOURCE_HOST_PATH}:/mnt/skills-source:rw
+      - ${GITHUB_SKILL_CACHE_HOST_PATH}:/mnt/github-skill-cache:rw
+      - ${OPENCLAW_SKILLS_HOST_PATH}:/mnt/targets/openclaw:rw
+      - ${HERMES_SKILLS_HOST_PATH}:/mnt/targets/hermes:rw
+      - skill-manager-state:/app/state
+    environment:
+      - TZ=Asia/Shanghai
+      - SKILLS_SOURCE_ROOT=/mnt/skills-source
+      - GITHUB_SKILL_CACHE_ROOT=/mnt/github-skill-cache
+      - OPENCLAW_SKILLS_ROOT=/mnt/targets/openclaw
+      - HERMES_SKILLS_ROOT=/mnt/targets/hermes
+      - SKILL_MANAGER_STATE_DIR=/app/state
+      - SKILL_MANAGER_TARGETS_MOUNT_ROOT=/mnt/targets
+      # 必填：缺失时 compose 拒绝启动，避免密码为空的服务上线
+      # （config.py 另有非空校验兜底，覆盖不经 compose 的本地启动路径）
+      - SKILL_MANAGER_ADMIN_PASSWORD=${SKILL_MANAGER_ADMIN_PASSWORD:?set SKILL_MANAGER_ADMIN_PASSWORD in .env}
+    networks:
+      - app-net
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:${SKILL_MANAGER_SERVICE_PORT:-8097}/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # skill-manager 前端（Next.js 15，basePath='/skills'，apps/skill-manager/）
+  # API 请求不经前端：nginx 把 /api/skills/* 原样直转 skill-manager-backend
+  # （见 nginx/web.conf）；本服务绝不注入 SKILL_MANAGER_ADMIN_PASSWORD
+  # ---------------------------------------------------------------------------
+  skill-manager-frontend:
+    image: skill-manager-frontend:latest
+    build:
+      context: ./apps/skill-manager
+      dockerfile: Dockerfile
+    container_name: skill-manager-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3008:3008"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=/
+    networks:
+      - app-net
+    depends_on:
+      skill-manager-backend:
+        condition: service_healthy
+
+volumes:
+  skill-manager-state:
+    name: skill-manager-state

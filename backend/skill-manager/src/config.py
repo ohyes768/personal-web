@@ -46,6 +46,10 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def _validate_mounted_roots(self) -> "Settings":
         """resolve 每个根路径、要求目录存在，并限定 target 根的挂载边界。"""
+        if not self.admin_password.get_secret_value():
+            raise ValueError(
+                "SKILL_MANAGER_ADMIN_PASSWORD must be set to a non-empty value"
+            )
         for field_name in _MOUNT_ROOT_FIELDS:
             resolved = getattr(self, field_name).resolve()
             if not resolved.is_dir():

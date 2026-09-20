@@ -24,6 +24,7 @@ if [[ -f .env ]]; then
 fi
 
 COMPOSE_FILE="docker-compose.nas.yml"
+COMPOSE_ARGS=(-f "$COMPOSE_FILE")
 # 带国内 registry mirror 的 builder（旧名 nas-builder 不继承 daemon.json 加速，会直连 Docker Hub 超时）
 BUILDX_BUILDER="nas-builder-cn"
 BUILDKITD_CONFIG="scripts/buildkitd-nas.toml"
@@ -141,6 +142,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---- nginx 同步（nginx 容器已 bind mount nginx/web.conf，需 restart 重挂载）----
+# skill-manager 服务定义在 overlay 文件里，只在部署它（或 all）时叠加加载，
+# 否则其必填 .env 变量（管理密码、NAS 挂载路径）会卡住其他 target 的 build/up
+case "$TARGET" in
+    skill-manager|all) COMPOSE_ARGS+=(-f docker-compose.skill-manager.nas.yml) ;;
+esac
+
 # bind mount 在文件 inode 层是同步的（同一路径），但 nginx master 进程
 # 启动时 open() 拿到 fd 后不会重读，reload 也不重新挂载。所以
 # 改完 web.conf 之后必须 docker compose restart nginx（3 秒）才能生效。
@@ -241,7 +248,7 @@ compose_build() {
         # --no-cache 清层；PNPM_CACHE_BUST 换新 id → cache mount 是空的，真正重下包
         args+=(--no-cache --build-arg "PNPM_CACHE_BUST=cold-$(date +%s)")
     fi
-    docker compose -f "$COMPOSE_FILE" build "$svc" "${args[@]}"
+    docker compose "${COMPOSE_ARGS[@]}" build "$svc" "${args[@]}"
 }
 
 buildx_build_frontend() {
@@ -332,14 +339,14 @@ fi
 # ---- Step 3: restart（--no-build：镜像已由上一步 buildx/compose 打好，禁止 compose 再用旧名偷偷重建） ----
 echo ""
 echo "==> [3/3] docker compose up -d --force-recreate --no-build"
-docker compose -f "$COMPOSE_FILE" up -d --force-recreate --no-build $SERVICES
+docker compose "${COMPOSE_ARGS[@]}" up -d --force-recreate --no-build $SERVICES
 
 # ---- 验证状态 ----
 echo ""
 echo "============================================================"
 echo "部署完成。当前容器状态："
 echo "============================================================"
-docker compose -f "$COMPOSE_FILE" ps $SERVICES
+docker compose "${COMPOSE_ARGS[@]}" ps $SERVICES
 
 # ---- tail logs ----
 if $DO_TAIL; then
@@ -347,5 +354,5 @@ if $DO_TAIL; then
     echo "============================================================"
     echo "tail logs（Ctrl+C 退出，不会停止容器）："
     echo "============================================================"
-    docker compose -f "$COMPOSE_FILE" logs -f --tail 50 $SERVICES
+    docker compose "${COMPOSE_ARGS[@]}" logs -f --tail 50 $SERVICES
 fi

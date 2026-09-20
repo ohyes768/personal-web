@@ -62,7 +62,7 @@ curl -fsSk https://127.0.0.1:9443/skills        # 前端页面（经 Nginx）
 - **管理台自身下线**：管理台是独立服务，删除它不影响既有 Agent 的技能链接。
 
   ```bash
-  docker compose -f docker-compose.nas.yml down --remove-orphans skill-manager-frontend skill-manager-backend
+  docker compose -f docker-compose.nas.yml -f docker-compose.skill-manager.nas.yml down --remove-orphans skill-manager-frontend skill-manager-backend
   ```
 
   然后从 `nginx/web.conf` 删除 `/skills*` 与 `/api/skills/` 路由块并执行 `./scripts/deploy-nas.sh nginx`。
