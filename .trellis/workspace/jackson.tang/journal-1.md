@@ -501,3 +501,42 @@
 ### Next Steps
 
 - None - task complete
+
+---
+
+## Session: skill-manager Skill 发布管理台
+
+**Date**: 2026-09-20
+**Task**: 09-20-skill-publish-console
+**Package**: backend/skill-manager + apps/skill-manager
+**Branch**: `master`
+
+### Summary
+
+新增第 7 组服务 skill-manager（前端 3008 / 后端 8097）：双栏发布工作台管理自研与 GitHub Agent Skills，密码保护发布/下架/回滚到 NAS 宿主机 OpenClaw/Hermes（受限目录内原子 symlink）。注册表从 HTML 内嵌 JSON 迁移为 skills 仓库 registry.json（17 Skill / 4 Agent）。8 个 Task 全部完成，trellis-check 发现并修复 2 个生产缺陷（nginx 无尾斜杠 404、GitHub 发布前未 fetch 受记录 revision）。
+
+### Main Changes
+
+- backend/skill-manager：FastAPI + SQLite 审计 + RegistryService/GitCacheService/Publisher，89 测试通过（WSL 98 全过）
+- apps/skill-manager：Next.js 15 /skills 双栏工作台，queue 纯函数 6 测试
+- skills 仓库：registry.json 真源 + 三个 sync 脚本改造
+- 部署：compose 双服务（五类受限挂载、密码 fail-fast）、nginx 三件路由、deploy 脚本映射
+- spec 沉淀：Windows 测试环境契约 + nginx 无尾斜杠警告
+
+### Git Commits
+
+2520687 / 0630abd(skills) / e20f1f3 / b0ee0fe / 4275438 / 59a960c / 02a5e7b / 02752dc / 5e182aa / 101de50 / 8ed182b
+
+### Testing
+
+- 后端 `uv run pytest tests -q`：88 passed + 13 skipped（symlink 特权跳过，WSL 98 全过）
+- 前端 vitest 6 passed + lint 零错误 + 编译通过（standalone 拷贝受本机 symlink 特权限制，生产走 Docker）
+- compose/deploy 静态检查通过；nginx -t 待 NAS
+
+### Status
+
+[OK] **Completed（NAS 实机验收待执行）**
+
+### Next Steps
+
+- NAS 上按 docs/skill-manager-nas-setup.md 上线验证清单执行（deploy、health、nginx -t、/skills 渲染、真实发布冒烟）
