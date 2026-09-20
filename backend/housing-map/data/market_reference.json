@@ -1,0 +1,51 @@
+{
+  "source": {
+    "name": "安居客",
+    "url": "https://m.anjuke.com/hz/trendency/binjiangb/",
+    "captured_at": "2026-09-19"
+  },
+  "scope": "滨江区",
+  "price_kind": "listing_reference",
+  "overall": {
+    "avg_price": 38323,
+    "mom_percent": 0.41,
+    "yoy_percent": 3.6
+  },
+  "subdistricts": [
+    {
+      "name": "彩虹城",
+      "avg_price": 42525,
+      "mom_percent": 1.46,
+      "map_subdistrict": "长河",
+      "map_scope_note": "按长河街道近似查看，非商圈边界"
+    },
+    {
+      "name": "东冠",
+      "avg_price": 41019,
+      "mom_percent": 0,
+      "map_subdistrict": "浦沿",
+      "map_scope_note": "按浦沿街道近似查看，非商圈边界"
+    },
+    {
+      "name": "区政府",
+      "avg_price": 40311,
+      "mom_percent": 0.83,
+      "map_subdistrict": "滨盛",
+      "map_scope_note": "按滨盛街道近似查看，非商圈边界"
+    },
+    {
+      "name": "四桥南",
+      "avg_price": 39742,
+      "mom_percent": 1.72,
+      "map_subdistrict": "浦沿",
+      "map_scope_note": "按浦沿街道近似查看，非商圈边界"
+    },
+    {
+      "name": "西兴",
+      "avg_price": 36488,
+      "mom_percent": 1.8,
+      "map_subdistrict": "西兴",
+      "map_scope_note": "与地图街道一致"
+    }
+  ]
+}

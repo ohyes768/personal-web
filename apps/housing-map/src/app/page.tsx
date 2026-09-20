@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
-import type { Community, MapPOI, SchoolLevel } from '@/lib/types';
-import { getDisplayPrice, getPriceColor, getSchoolLevel, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
+import type { Community, MapPOI, MarketReference, SchoolLevel } from '@/lib/types';
+import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
 import { isInBinjiang } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
 
@@ -15,6 +15,18 @@ async function fetchCommunities(): Promise<Community[]> {
   } catch (error) {
     console.error('Failed to fetch communities:', error);
     return [];
+  }
+}
+
+async function fetchMarketReference(): Promise<MarketReference> {
+  try {
+    const res = await fetch('/api/map/market-reference');
+    const payload = await res.json();
+    if (isListingReference(payload.data)) return payload.data;
+    return { available: false, reason: payload.data?.reason ?? 'invalid_response' };
+  } catch (error) {
+    console.error('Failed to fetch market reference:', error);
+    return { available: false, reason: 'request_failed' };
   }
 }
 
@@ -194,7 +206,7 @@ function CommunityPopup({
 
 // 主页面组件
 export default function BinjiangMapPage() {
-  const [activeTab, setActiveTab] = useState<'map' | 'dashboard'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market'>('map');
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   // 数据看板"查看"触发的地图定位信号 (key 用时间戳, 同一小区重复点击也能再次触发)
   const [mapFocus, setMapFocus] = useState<{ lng: number; lat: number; key: number } | null>(null);
@@ -210,6 +222,8 @@ export default function BinjiangMapPage() {
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [communities, setCommunities] = useState<Community[]>([]);
   const [loading, setLoading] = useState(true);
+  const [marketReference, setMarketReference] = useState<MarketReference | null>(null);
+  const [marketSubdistrict, setMarketSubdistrict] = useState<string | null>(null);
 
   // 数据看板的筛选/分页/排序状态: 提到主组件, 切到地图不卸载看板组件时仍能保留
   const [dashPage, setDashPage] = useState(1);
@@ -227,6 +241,11 @@ export default function BinjiangMapPage() {
       setCommunities(data);
       setLoading(false);
     });
+  }, []);
+
+  // 市场行情快照独立加载，失败不会影响地图和看板。
+  useEffect(() => {
+    fetchMarketReference().then(setMarketReference);
   }, []);
 
   // 加载地铁路线 + 地铁站 (OSM 数据, 一次即可, 不随筛选变化)
@@ -324,6 +343,9 @@ export default function BinjiangMapPage() {
     c.community_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
     (propertyTypes.has('全部') || propertyTypes.has(c.property_type ?? ''))
   );
+  const mapCommunities = marketSubdistrict
+    ? filteredCommunities.filter(c => c.subdistrict === marketSubdistrict)
+    : filteredCommunities;
 
   // 跨小区去重后的可见 POI（同一地铁站/学校会出现在多个小区的周边列表里）
   // 地图绘制以滨江区行政边界多边形为地理围栏(矩形 bbox 会误伤钱塘江北岸设施);
@@ -380,11 +402,24 @@ export default function BinjiangMapPage() {
           <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
             数据看板
           </button>
+          <button className={`tab-btn ${activeTab === 'market' ? 'active' : ''}`} onClick={() => setActiveTab('market')}>
+            市场行情
+          </button>
         </div>
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-        {activeTab === 'dashboard' ? (
+        {activeTab === 'market' ? (
+          <MarketOverviewPage
+            marketReference={marketReference}
+            onViewSubdistrict={(subdistrict) => {
+              setSelectedCommunity(null);
+              setCameFromDashboard(false);
+              setMarketSubdistrict(subdistrict);
+              setActiveTab('map');
+            }}
+          />
+        ) : activeTab === 'dashboard' ? (
           <div style={{ flex: 1, overflowY: 'auto' }}>
             <DashboardPage
               communities={filteredCommunities}
@@ -429,6 +464,12 @@ export default function BinjiangMapPage() {
                 ← 返回数据看板 (筛选保留)
               </button>
             )}
+            {marketSubdistrict && (
+              <div className="market-map-filter" role="status">
+                <span>正在查看：{marketSubdistrict}</span>
+                <button onClick={() => setMarketSubdistrict(null)} aria-label="清除市场行情地图筛选">清除</button>
+              </div>
+            )}
             {loading ? (
               <div style={{
                 position: 'absolute', inset: 0,
@@ -439,7 +480,7 @@ export default function BinjiangMapPage() {
               </div>
             ) : (
               <BinjiangMap
-                communities={filteredCommunities}
+                communities={mapCommunities}
                 pois={visiblePOIs}
                 transit={transit ?? undefined}
                 onCommunityClick={handleCommunityClick}
@@ -542,7 +583,7 @@ export default function BinjiangMapPage() {
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
                 价格区间
                 <span style={{ marginLeft: '6px' }}>
-                  (签 {filteredCommunities.filter(c => c.price.deal_avg_price != null).length} / 挂 {filteredCommunities.filter(c => c.price.listing_avg_price != null).length})
+                  (签 {mapCommunities.filter(c => c.price.deal_avg_price != null).length} / 挂 {mapCommunities.filter(c => c.price.listing_avg_price != null).length})
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
@@ -580,6 +621,102 @@ export default function BinjiangMapPage() {
         )}
       </div>
     </div>
+  );
+}
+
+function formatMarketChange(value: number): { text: string; tone: 'up' | 'down' | 'flat' } {
+  if (value > 0) return { text: `↑ ${value.toFixed(2)}%`, tone: 'up' };
+  if (value < 0) return { text: `↓ ${Math.abs(value).toFixed(2)}%`, tone: 'down' };
+  return { text: '— 持平', tone: 'flat' };
+}
+
+function MarketOverviewPage({
+  marketReference,
+  onViewSubdistrict,
+}: {
+  marketReference: MarketReference | null;
+  onViewSubdistrict: (subdistrict: string) => void;
+}) {
+  if (!marketReference) {
+    return <div className="market-overview market-empty">正在加载市场参考数据…</div>;
+  }
+
+  if (!marketReference.available) {
+    return (
+      <div className="market-overview market-empty">
+        <div className="market-kicker">MARKET REFERENCE</div>
+        <h1>暂无市场参考数据</h1>
+        <p>地图与数据看板仍可正常使用；待维护者补充并校验最新挂牌参考快照。</p>
+      </div>
+    );
+  }
+
+  const mom = formatMarketChange(marketReference.overall.mom_percent);
+  const yoy = formatMarketChange(marketReference.overall.yoy_percent);
+  return (
+    <main className="market-overview">
+      <section className="market-hero">
+        <div>
+          <div className="market-kicker">MARKET REFERENCE · {marketReference.scope}</div>
+          <h1>滨江市场行情 <span>挂牌参考</span></h1>
+          <p className="market-source">
+            数据来源：<a href={marketReference.source.url} target="_blank" rel="noreferrer">{marketReference.source.name}</a>
+            <span>快照日期：{marketReference.source.captured_at}</span>
+          </p>
+        </div>
+        <p className="market-disclaimer">挂牌参考价反映当前卖方报价，不是网签成交价。</p>
+      </section>
+
+      <section className="market-summary" aria-label="滨江挂牌参考概览">
+        <article className="market-card market-price-card">
+          <div className="market-card-label">滨江挂牌参考均价</div>
+          <strong>{marketReference.overall.avg_price.toLocaleString()}</strong>
+          <span>元 / ㎡</span>
+        </article>
+        <article className="market-card">
+          <div className="market-card-label">环比</div>
+          <strong className={`market-change ${mom.tone}`}>{mom.text}</strong>
+          <span>相较上月</span>
+        </article>
+        <article className="market-card">
+          <div className="market-card-label">同比</div>
+          <strong className={`market-change ${yoy.tone}`}>{yoy.text}</strong>
+          <span>相较去年同期</span>
+        </article>
+      </section>
+
+      <section className="market-table-panel">
+        <div className="market-section-head">
+          <div>
+            <div className="market-kicker">SOURCE LABELS</div>
+            <h2>热门商圈挂牌参考</h2>
+          </div>
+          <p>商圈为来源页面标签；地图按街道近似查看。</p>
+        </div>
+        <div className="market-table-wrap">
+          <table className="market-table">
+            <thead>
+              <tr><th>来源商圈</th><th>挂牌参考均价</th><th>环比</th><th>地图查看</th></tr>
+            </thead>
+            <tbody>
+              {marketReference.subdistricts.map((row) => {
+                const change = formatMarketChange(row.mom_percent);
+                return (
+                  <tr key={row.name}>
+                    <td><strong>{row.name}</strong><small>{row.map_scope_note}</small></td>
+                    <td className="market-price-cell">{row.avg_price.toLocaleString()} <span>元 / ㎡</span></td>
+                    <td><span className={`market-change ${change.tone}`}>{change.text}</span></td>
+                    <td><button className="market-view-btn" onClick={() => onViewSubdistrict(row.map_subdistrict)}>查看 {row.map_subdistrict}</button></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <p className="market-footnote">口径说明：挂牌均价适合观察区域卖方报价变化，可能与透明售房网的小区网签/成交数据不同。</p>
+    </main>
   );
 }
 

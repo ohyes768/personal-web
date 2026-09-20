@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from src.api.models import MOCK_COMMUNITIES, RefreshLimit, ScoreWeights
 from src.services import refresh as refresh_service
 from src.services.community_filters import is_residential_community
+from src.services.market_reference import load_market_reference
 from src.services.data_loader import (
     get_data_paths,
     load_communities,
@@ -158,6 +159,13 @@ def _assemble_community(
 async def health():
     """健康检查"""
     return {"status": "ok"}
+
+
+@router.get("/market-reference")
+async def get_market_reference():
+    """返回人工校验的挂牌参考行情，不参与小区价格或评分。"""
+    snapshot = load_market_reference()
+    return {"success": True, "data": snapshot}
 
 
 @router.get("/communities")

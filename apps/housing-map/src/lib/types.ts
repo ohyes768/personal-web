@@ -204,3 +204,35 @@ export interface DashboardStats {
   max_price: number;
   min_price: number;
 }
+
+export interface MarketReferenceRow {
+  name: string;
+  avg_price: number;
+  mom_percent: number;
+  map_subdistrict: string;
+  map_scope_note: string;
+}
+
+export interface MarketReferenceAvailable {
+  available: true;
+  source: { name: string; url: string; captured_at: string };
+  scope: string;
+  price_kind: 'listing_reference';
+  overall: { avg_price: number; mom_percent: number; yoy_percent: number };
+  subdistricts: MarketReferenceRow[];
+}
+
+export interface MarketReferenceUnavailable {
+  available: false;
+  reason: string;
+}
+
+export type MarketReference = MarketReferenceAvailable | MarketReferenceUnavailable;
+
+export function isListingReference(value: unknown): value is MarketReferenceAvailable {
+  if (!value || typeof value !== 'object') return false;
+  const reference = value as Partial<MarketReferenceAvailable>;
+  return reference.available === true && reference.price_kind === 'listing_reference'
+    && Boolean(reference.source?.name && reference.source.url && reference.source.captured_at)
+    && Boolean(reference.overall) && Array.isArray(reference.subdistricts);
+}
