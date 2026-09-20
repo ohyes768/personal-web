@@ -97,3 +97,22 @@ compose 环境变量：根 `.env` 需新增 `GAODE_MAP_KEY`（前端 build arg�
 2. 移植一致性抽样：本地同起源 Next.js dev 与 FastAPI，`/api/communities` 比对 total、首个小区 score、`/api/transit` 比对 route_count/stop_count
 3. 前端：`pnpm build` 通过；`pnpm dev` 地图页点位/价格色阶/评分弹窗正常
 4. nginx：`docker run --rm -v nginx/web.conf nginx -t` 或 NAS 部署时验证
+
+## Addendum: 透明售房网轻量指纹采集（2026-09-20）
+
+### 决策
+
+`/api/refresh` 不再通过子进程运行 `scripts/fetch_tmsf_price_snapshot.py`。采集、解析和快照构建统一归 `src/services/tmsf_fetcher.py`；refresh 服务在进程内以 `asyncio.to_thread` 调用同步采集方法，脚本只保留同一服务的命令行入口。
+
+透明售房网详情页对普通 `urllib` 返回 HTTP 405，而真实浏览器可访问。未发现可替换的公开 JSON 接口，因此采用 `curl_cffi` 的 Chrome TLS/HTTP 指纹作为轻量传输层，不引入 Chromium/Playwright。该依赖加入后端镜像，Docker 仍仅保留现有 `curl` 用于 healthcheck。
+
+### 数据与失败契约
+
+- 一次刷新只采集 `is_residential_community` 通过的条目；逐条串行，避免对目标站点施压。
+- 详情页、趋势页独立请求；任一成功即可产出其可验证快照，双双失败才计为该小区失败。
+- 新快照仅在整个任务成功完成时，与备份按 `community_id|price_type` 合并并原子写回；取消或任务级异常不改原价格文件。
+- 旧的 `visible_listing_unit_price_avg` 一律不生成、不展示；只接受近期签约趋势或页面明确标注的挂牌均价。
+
+### 部署影响
+
+后端新增 Python 依赖 `curl_cffi`，不新增浏览器、Node 或系统级浏览器包。镜像体积只小幅增加；目标站点调整反爬策略时，refresh 会显式报错并保留历史数据。

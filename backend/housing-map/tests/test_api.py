@@ -16,6 +16,17 @@ def test_health_returns_ok():
     assert resp.json() == {"status": "ok"}
 
 
+def test_market_reference_endpoint_returns_listing_reference_snapshot():
+    resp = client.get("/api/market-reference")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["success"] is True
+    assert body["data"]["available"] is True
+    assert body["data"]["price_kind"] == "listing_reference"
+    assert body["data"]["source"]["captured_at"]
+
+
 def test_communities_structure():
     resp = client.get("/api/communities")
     assert resp.status_code == 200
@@ -52,9 +63,11 @@ def test_communities_excludes_dirty_data():
     resp = client.get("/api/communities")
     data = resp.json()["data"]
     names = {c["community_name"] for c in data}
-    # 路名伪小区与个案脏数据不返回
+    # 路名伪小区、个案脏数据与非住宅项目不返回
     assert "江南大道" not in names
     assert "新街镇北塘河" not in names
+    assert "通策广场" not in names
+    assert all(c.get("property_type") in {"住宅", "别墅", "排屋"} for c in data)
     # 水电片区 4 个 drop 成员合并掉, 只留 primary
     assert "453982238" not in {c["community_id"] for c in data}
     assert "453982737" in {c["community_id"] for c in data}

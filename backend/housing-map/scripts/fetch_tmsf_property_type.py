@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from fetch_tmsf_price_snapshot import BASE_URL, fetch_html_with_curl, input_value_by_id, strip_tags
+from fetch_tmsf_price_snapshot import BASE_URL, fetch_html, input_value_by_id, strip_tags
 
 
 DEFAULT_INPUT = "data/binjiang_communities.json"
@@ -70,7 +70,7 @@ def fetch_one(community: dict[str, Any], timeout: int) -> dict[str, Any]:
     url = f"{BASE_URL}/esf/xq_indexnew_{community_id}.htm"
     started = time.perf_counter()
     try:
-        html = fetch_html_with_curl(url, timeout)
+        html = fetch_html(url, timeout)
         property_type = extract_property_type(html)
         return {
             "community_id": community_id,

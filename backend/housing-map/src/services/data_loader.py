@@ -6,6 +6,7 @@
 
 import json
 import re
+from datetime import date
 from pathlib import Path
 
 # 数据目录: backend/housing-map/data (src/services/data_loader.py -> parents[2] = 服务根)
@@ -290,9 +291,29 @@ def load_pois() -> dict[str, dict]:
     return result
 
 
+MAX_MONTHLY_DEAL_AGE_MONTHS = 6
+
+
+def _monthly_deal_is_recent(record: dict) -> bool:
+    raw_payload = record.get("raw_payload")
+    tendency = raw_payload.get("tendency") if isinstance(raw_payload, dict) else None
+    latest_month = tendency.get("latest_month") if isinstance(tendency, dict) else None
+    snapshot_date = record.get("snapshot_date")
+    if not isinstance(latest_month, str) or not isinstance(snapshot_date, str):
+        return False
+    try:
+        latest_year, latest_month_number = map(int, latest_month.split("-"))
+        snapshot_year, snapshot_month = map(int, snapshot_date[:7].split("-"))
+        date(latest_year, latest_month_number, 1)
+        date(snapshot_year, snapshot_month, 1)
+    except ValueError:
+        return False
+    month_gap = (snapshot_year - latest_year) * 12 + snapshot_month - latest_month_number
+    return 0 <= month_gap <= MAX_MONTHLY_DEAL_AGE_MONTHS
+
+
 def load_price_snapshots(path: Path | None = None) -> dict[str, dict]:
-    """价格快照: 同小区 monthly_deal_avg_latest(签约均价) 优先于
-    visible_listing_unit_price_avg(挂牌样本均价)"""
+    """加载经过质量筛选的价格快照：近期签约均价优先，明确挂牌均价兜底。"""
     if path is None:
         path = get_data_paths()["price_snapshots"]
     result: dict[str, dict] = {}
@@ -300,30 +321,41 @@ def load_price_snapshots(path: Path | None = None) -> dict[str, dict]:
     try:
         if path.exists():
             content = path.read_text(encoding="utf-8")
-            lines = [line for line in content.split("\n") if line]
-
-            for line in lines:
+            records: list[dict] = []
+            for line in content.split("\n"):
+                if not line:
+                    continue
                 try:
                     record = json.loads(line)
                 except (json.JSONDecodeError, ValueError):
                     continue  # 忽略无效行
                 if not isinstance(record, dict):
                     continue
-                # TS: record.avg_price !== undefined (null 视为有效, 保留进结果)
-                if record.get("community_id") and "avg_price" in record:
-                    existing = result.get(record["community_id"])
-                    snapshot = {
-                        "price": record["avg_price"],
-                        "date": record.get("snapshot_date") or "",
-                        "listing_count": record.get("listing_count") or 0,
-                        "deal_count": record.get("deal_count") or 0,
-                        "price_type": record.get("price_type") or "",
-                    }
-                    # 优先 monthly_deal_avg_latest(签约均价)，否则用挂牌样本均价
-                    if existing is None:
-                        result[record["community_id"]] = snapshot
-                    elif record.get("price_type") == "monthly_deal_avg_latest":
-                        result[record["community_id"]] = snapshot
+                records.append(record)
+
+            for record in records:
+                price_type = record.get("price_type")
+                if not record.get("community_id") or not isinstance(record.get("avg_price"), (int, float)) or record["avg_price"] <= 0:
+                    continue
+                if price_type == "monthly_deal_avg_latest":
+                    if not _monthly_deal_is_recent(record):
+                        continue
+                elif price_type == "listing_avg":
+                    if not record.get("listing_count"):
+                        continue
+                else:
+                    continue
+
+                existing = result.get(record["community_id"])
+                snapshot = {
+                    "price": record["avg_price"],
+                    "date": record.get("snapshot_date") or "",
+                    "listing_count": record.get("listing_count") or 0,
+                    "deal_count": record.get("deal_count") or 0,
+                    "price_type": price_type,
+                }
+                if existing is None or price_type == "monthly_deal_avg_latest":
+                    result[record["community_id"]] = snapshot
     except OSError as exc:
         print(f"加载价格快照失败: {exc}")
 

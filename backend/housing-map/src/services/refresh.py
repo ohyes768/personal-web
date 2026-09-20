@@ -1,27 +1,28 @@
 """手动刷新价格快照
 
 移植自源项目 web/src/app/api/refresh/route.ts。
-POST   后台启动 scripts/fetch_tmsf_price_snapshot.py (全量小区 id, ?limit=N 为测试用)
+POST   后台启动服务内采集任务 (仅住宅小区 id, ?limit=N 为测试用)
 GET    轮询任务进度
 DELETE 终止当前任务
 
-数据安全: 脚本只在全部抓完后一次性覆盖 price_snapshots.jsonl,
-因此启动前先备份旧文件; 退出码 0 时把新记录与备份合并(新优先,
+数据安全: 任务只在全部抓完后一次性覆盖 price_snapshots.jsonl，
+因此启动前先备份旧文件; 成功时把新记录与备份合并(新优先,
 未抓到的小区保留旧价), 失败/中止时原文件未动。
 """
 
 import asyncio
+from dataclasses import asdict
 import json
-import os
 import shutil
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable
 
-from src.services.data_loader import DATA_DIR, load_communities
+from src.services.community_filters import is_residential_community
+from src.services.data_loader import DATA_DIR, load_communities, load_property_types
+from src.services.tmsf_fetcher import CommunityFetchResult, fetch_community_snapshots
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]  # backend/housing-map
-SCRIPT_PATH = PROJECT_ROOT / "scripts" / "fetch_tmsf_price_snapshot.py"
+DEFAULT_FETCH_TIMEOUT = 20
 CSV_FIELDS = [
     "community_id", "community_name", "snapshot_date", "source", "price_type",
     "avg_price", "listing_count", "deal_count", "sample_count",
@@ -42,7 +43,7 @@ job: dict = {
     "result": None,
 }
 
-_child: asyncio.subprocess.Process | None = None
+_task: asyncio.Task | None = None
 _cancel_requested = False
 
 
@@ -67,23 +68,22 @@ def _read_jsonl(path: Path) -> list[dict]:
     return rows
 
 
-def merge_snapshots(snapshot_path: Path, backup_path: Path) -> dict:
-    """合并: 新记录在前, 按 community_id+price_type 去重, 未刷新到的小区保留旧价"""
-    fresh = _read_jsonl(snapshot_path)
-    old = _read_jsonl(backup_path)
+def merge_snapshot_rows(fresh: list[dict], old: list[dict]) -> list[dict]:
+    """新记录优先，未刷新到的小区继续保留旧记录。"""
 
     def key_of(r: dict) -> str:
         return f"{r.get('community_id')}|{r.get('price_type')}"
 
     seen = {key_of(r) for r in fresh}
     kept = [r for r in old if key_of(r) not in seen]
-    rows = fresh + kept
-    # JSON.stringify 输出原始 UTF-8 字符 (非 ASCII 不转义)
+    return fresh + kept
+
+
+def write_jsonl(snapshot_path: Path, rows: list[dict]) -> None:
     snapshot_path.write_text(
-        "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n",
+        "\n".join(json.dumps(row, ensure_ascii=False) for row in rows) + ("\n" if rows else ""),
         encoding="utf-8",
     )
-    return {"fetched": len(fresh), "keptOld": len(kept), "rows": rows}
 
 
 def rewrite_csv(data_path: Path, rows: list[dict]) -> None:
@@ -114,75 +114,79 @@ def rewrite_csv(data_path: Path, rows: list[dict]) -> None:
     )
 
 
-async def _watch_process(
-    proc: asyncio.subprocess.Process,
+def select_refresh_targets(communities: list[dict], property_types: dict[str, dict]) -> list[str]:
+    return [
+        str(community["community_id"])
+        for community in communities
+        if community.get("community_id") and is_residential_community(community, property_types)
+    ]
+
+
+async def run_refresh_once(
+    targets: list[str],
     snapshot_path: Path,
     backup_path: Path,
     data_path: Path,
+    *,
+    fetcher: Callable[..., CommunityFetchResult] = fetch_community_snapshots,
+    sleep_seconds: float = 1.2,
+) -> dict:
+    """在服务进程内采集并在完整循环后写盘；中断前绝不改原快照。"""
+    fresh: list[dict] = []
+    failed = 0
+    for index, community_id in enumerate(targets):
+        if _cancel_requested:
+            raise asyncio.CancelledError
+        result = await asyncio.to_thread(fetcher, community_id, timeout=DEFAULT_FETCH_TIMEOUT)
+        job["processed"] += 1
+        if result.snapshots:
+            fresh.extend(asdict(snapshot) for snapshot in result.snapshots)
+            job["okCount"] += 1
+        else:
+            failed += 1
+            job["errorCount"] += 1
+        if index < len(targets) - 1 and sleep_seconds:
+            await asyncio.sleep(sleep_seconds)
+
+    if not fresh:
+        raise RuntimeError("no verified price collected from TMSF")
+
+    job["phase"] = "merging"
+    old = _read_jsonl(backup_path)
+    rows = merge_snapshot_rows(fresh, old)
+    write_jsonl(snapshot_path, rows)
+    rewrite_csv(data_path, rows)
+    return {"fetched": len(fresh), "keptOld": len(rows) - len(fresh), "total": len(rows), "failed": failed}
+
+
+async def _watch_refresh(
+    targets: list[str], snapshot_path: Path, backup_path: Path, data_path: Path
 ) -> None:
-    """消费子进程输出并按退出码落盘 (对应 TS child.stdout/stderr/exit 回调)"""
-    global _child, _cancel_requested
-    assert proc.stdout is not None and proc.stderr is not None
-
-    stderr_tail = ""
-
-    async def pump_stderr() -> None:
-        nonlocal stderr_tail
-        # 脚本 stderr 仅在异常时输出, 保留最后一段用于排错
-        async for chunk in proc.stderr:
-            stderr_tail += chunk.decode("utf-8", errors="replace")
-
-    async def pump_stdout() -> None:
-        # 行前缀 [ok]/[error] 计数
-        async for chunk in proc.stdout:
-            for line in chunk.decode("utf-8", errors="replace").split("\n"):
-                if line.startswith("[ok]"):
-                    job["processed"] += 1
-                    job["okCount"] += 1
-                elif line.startswith("[error]"):
-                    job["processed"] += 1
-                    job["errorCount"] += 1
-
-    await asyncio.gather(pump_stdout(), pump_stderr())
-    code = await proc.wait()
-
-    _child = None
-    job["finishedAt"] = _now_iso()
-    if code == 0:
-        job["phase"] = "merging"
-        try:
-            merged = merge_snapshots(snapshot_path, backup_path)
-            rewrite_csv(data_path, merged["rows"])
-            job["result"] = {
-                "fetched": merged["fetched"],
-                "keptOld": merged["keptOld"],
-                "total": len(merged["rows"]),
-            }
-            job["phase"] = "done"
-        except (OSError, ValueError) as exc:
-            job["phase"] = "error"
-            job["error"] = f"合并快照失败: {exc}"
-    elif _cancel_requested:
+    global _task
+    try:
+        job["result"] = await run_refresh_once(targets, snapshot_path, backup_path, data_path)
+        job["phase"] = "done"
+    except asyncio.CancelledError:
         job["phase"] = "cancelled"
         job["error"] = "任务已被终止(数据未改动)"
-    else:
+    except (OSError, ValueError, RuntimeError) as error:
         job["phase"] = "error"
-        job["error"] = f"采集脚本退出码 {code}(数据未改动, 备份 {backup_path.name})"
-    if stderr_tail:
-        job["error"] = stderr_tail[-500:]
-    job["running"] = False
+        job["error"] = f"采集或合并快照失败: {error}"
+    finally:
+        _task = None
+        job["running"] = False
+        job["finishedAt"] = _now_iso()
 
 
 async def start_refresh(limit: int) -> tuple[bool, int, dict]:
     """启动刷新任务。返回 (ok, http_status, body)"""
-    global _child, _cancel_requested
+    global _task, _cancel_requested
     if job["running"]:
         return False, 409, {"success": False, "error": "已有刷新任务在运行"}
 
     limit = min(max(limit, 0), 500)
 
-    ids = [c.get("community_id") for c in load_communities()]
-    ids = [cid for cid in ids if cid]  # TS filter(Boolean)
+    ids = select_refresh_targets(load_communities(), load_property_types())
     if len(ids) == 0:
         return False, 500, {"success": False, "error": "小区清单为空, 无法刷新"}
     targets = ids[:limit] if limit > 0 else ids
@@ -205,31 +209,8 @@ async def start_refresh(limit: int) -> tuple[bool, int, dict]:
     job["error"] = None
     job["result"] = None
 
-    args: list[str] = []
-    for cid in targets:
-        args.extend(["--community-id", cid])
-    args.extend(["--output-dir", str(data_path), "--sleep", "1.2"])
-
-    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
-    try:
-        _cancel_requested = False
-        _child = await asyncio.create_subprocess_exec(
-            sys.executable, str(SCRIPT_PATH), *args,
-            env=env,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-    except (OSError, ValueError) as exc:
-        _child = None
-        job["running"] = False
-        job["phase"] = "error"
-        job["finishedAt"] = _now_iso()
-        job["error"] = f"无法启动采集进程: {exc}"
-        return False, 500, {"success": False, "error": job["error"]}
-
-    asyncio.create_task(
-        _watch_process(_child, snapshot_path, backup_path, data_path)
-    )
+    _cancel_requested = False
+    _task = asyncio.create_task(_watch_refresh(targets, snapshot_path, backup_path, data_path))
 
     return True, 200, {
         "success": True,
@@ -243,8 +224,8 @@ async def start_refresh(limit: int) -> tuple[bool, int, dict]:
 async def stop_refresh() -> tuple[bool, int, dict]:
     """终止当前任务 (数据不动)。返回 (ok, http_status, body)"""
     global _cancel_requested
-    if not job["running"] or _child is None:
+    if not job["running"] or _task is None:
         return False, 409, {"success": False, "error": "没有运行中的刷新任务"}
     _cancel_requested = True
-    _child.kill()
+    _task.cancel()
     return True, 200, {"success": True, "data": {"message": "终止信号已发送"}}

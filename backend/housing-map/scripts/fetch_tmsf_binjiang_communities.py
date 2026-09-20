@@ -5,20 +5,25 @@ import csv
 import datetime as dt
 import json
 import re
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from fetch_tmsf_price_snapshot import (
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.services.tmsf_fetcher import (
     BASE_URL,
     PriceSnapshot,
     build_snapshots,
-    fetch_html,
     parse_tendency_page,
     write_outputs,
 )
+from fetch_tmsf_price_snapshot import fetch_html
 
 
 COMMUNITY_LIST_URL = f"{BASE_URL}/include/hzweb/index_search_newCommunitylist.js"
@@ -184,9 +189,6 @@ def fetch_price_snapshots_for_one(community: Community, timeout: int, price_mode
     snapshots = build_snapshots(community.community_id, index_html, "")
     for snapshot in snapshots:
         apply_community_hints(snapshot, community)
-        if snapshot.price_type == "visible_listing_unit_price_avg":
-            snapshot.confidence_score = 0.6
-            snapshot.raw_payload["fallback_reason"] = "missing_tendency_price"
     return snapshots
 
 

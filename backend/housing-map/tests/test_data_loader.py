@@ -113,13 +113,14 @@ def _write_jsonl(tmp_path, records):
 
 
 def test_price_deal_type_wins_over_listing(tmp_path):
-    # monthly_deal_avg_latest (签约) 优先于 visible_listing_unit_price_avg (挂牌)
+    # monthly_deal_avg_latest (签约) 优先于页面明确标注的挂牌均价
     path = _write_jsonl(tmp_path, [
-        {"community_id": "A", "avg_price": 100, "price_type": "visible_listing_unit_price_avg",
+        {"community_id": "A", "avg_price": 100, "price_type": "listing_avg",
          "listing_count": 5, "deal_count": 0, "snapshot_date": "2026-09-01"},
         {"community_id": "A", "avg_price": 200, "price_type": "monthly_deal_avg_latest",
-         "listing_count": 6, "deal_count": 2, "snapshot_date": "2026-09-02"},
-        {"community_id": "B", "avg_price": 300, "price_type": "visible_listing_unit_price_avg",
+         "listing_count": 6, "deal_count": 2, "snapshot_date": "2026-09-02",
+         "raw_payload": {"tendency": {"latest_month": "2026-09"}}},
+        {"community_id": "B", "avg_price": 300, "price_type": "listing_avg",
          "listing_count": 7, "deal_count": 0, "snapshot_date": "2026-09-01"},
     ])
     result = load_price_snapshots(path)
@@ -132,8 +133,9 @@ def test_price_deal_first_listing_later_does_not_overwrite(tmp_path):
     # 签约价先出现时, 后到的挂牌价不能覆盖
     path = _write_jsonl(tmp_path, [
         {"community_id": "A", "avg_price": 200, "price_type": "monthly_deal_avg_latest",
-         "listing_count": 6, "deal_count": 2, "snapshot_date": "2026-09-02"},
-        {"community_id": "A", "avg_price": 100, "price_type": "visible_listing_unit_price_avg",
+         "listing_count": 6, "deal_count": 2, "snapshot_date": "2026-09-02",
+         "raw_payload": {"tendency": {"latest_month": "2026-09"}}},
+        {"community_id": "A", "avg_price": 100, "price_type": "listing_avg",
          "listing_count": 5, "deal_count": 0, "snapshot_date": "2026-09-01"},
     ])
     result = load_price_snapshots(path)
@@ -141,7 +143,28 @@ def test_price_deal_first_listing_later_does_not_overwrite(tmp_path):
     assert result["A"]["price_type"] == "monthly_deal_avg_latest"
 
 
-def test_price_invalid_line_skipped(tmp_path):
+def test_price_loader_accepts_explicit_listing_average_with_active_listings(tmp_path):
+    path = _write_jsonl(tmp_path, [{
+        "community_id": "A", "avg_price": 30000, "price_type": "listing_avg",
+        "listing_count": 2, "deal_count": 0, "snapshot_date": "2026-09-20",
+    }])
+
+    result = load_price_snapshots(path)
+
+    assert result["A"]["price"] == 30000
+    assert result["A"]["price_type"] == "listing_avg"
+
+
+def test_price_loader_rejects_explicit_listing_average_without_active_listings(tmp_path):
+    path = _write_jsonl(tmp_path, [{
+        "community_id": "A", "avg_price": 30000, "price_type": "listing_avg",
+        "listing_count": 0, "deal_count": 0, "snapshot_date": "2026-09-20",
+    }])
+
+    assert load_price_snapshots(path) == {}
+
+
+def test_price_unsupported_type_rejected(tmp_path):
     path = tmp_path / "price_snapshots.jsonl"
     path.write_text(
         json.dumps({"community_id": "A", "avg_price": 100, "price_type": "x",
@@ -150,7 +173,39 @@ def test_price_invalid_line_skipped(tmp_path):
         encoding="utf-8",
     )
     result = load_price_snapshots(path)
-    assert set(result.keys()) == {"A"}
+    assert result == {}
+
+
+def test_price_loader_rejects_visible_listing_when_listing_count_is_zero(tmp_path):
+    path = _write_jsonl(tmp_path, [{
+        "community_id": "A", "avg_price": 30000,
+        "price_type": "visible_listing_unit_price_avg", "listing_count": 0,
+        "raw_payload": {"visible_listing_unit_prices": [30000]},
+    }])
+
+    assert load_price_snapshots(path) == {}
+
+
+def test_price_loader_rejects_reused_visible_listing_vector(tmp_path):
+    shared = [44688, 60948, 22651, 26929]
+    path = _write_jsonl(tmp_path, [
+        {"community_id": "A", "avg_price": 38804, "price_type": "visible_listing_unit_price_avg", "listing_count": 4,
+         "raw_payload": {"visible_listing_unit_prices": shared}},
+        {"community_id": "B", "avg_price": 38804, "price_type": "visible_listing_unit_price_avg", "listing_count": 4,
+         "raw_payload": {"visible_listing_unit_prices": shared}},
+    ])
+
+    assert load_price_snapshots(path) == {}
+
+
+def test_price_loader_rejects_monthly_deal_older_than_six_months_at_crawl_time(tmp_path):
+    path = _write_jsonl(tmp_path, [{
+        "community_id": "A", "avg_price": 20000,
+        "price_type": "monthly_deal_avg_latest", "snapshot_date": "2026-09-20",
+        "raw_payload": {"tendency": {"latest_month": "2025-01"}},
+    }])
+
+    assert load_price_snapshots(path) == {}
 
 
 def test_price_missing_file_returns_empty(tmp_path):

@@ -4,7 +4,6 @@
 响应结构与字段名与源 Next.js 完全一致（design D8）。
 """
 
-import re
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -12,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from src.api.models import MOCK_COMMUNITIES, RefreshLimit, ScoreWeights
 from src.services import refresh as refresh_service
+from src.services.community_filters import is_residential_community
 from src.services.data_loader import (
     get_data_paths,
     load_communities,
@@ -31,11 +31,6 @@ from src.services.scoring import DEFAULT_WEIGHTS, calculate_score, find_nearest_
 from src.services.transit import boundary_points, build_subway_data
 
 router = APIRouter()
-
-# tmsf 脏数据: 以"大道/路/街/巷"结尾的是道路名而非小区(如"江南大道""滨康路"), 不返回
-ROAD_NAME_SUFFIX = re.compile(r"(?:大道|路|街|巷)$")
-# 个案脏数据: "新街镇北塘河"名字主体是萧山新街镇地名, 滨江无此小区(POI 搜索匹配到 7.5km 外萧山)
-EXCLUDED_COMMUNITIES = {"新街镇北塘河"}
 
 # 水电片区: tmsf 以新旧名重复收录 5 个条目(同一片区), 合并为单条展示。
 # 价格/POI 借用有数据的成员(西兴镇水电社区: 挂牌 35127 可信;
@@ -167,15 +162,14 @@ async def health():
 
 @router.get("/communities")
 async def get_communities():
+    property_types = load_property_types()
     communities_list = [
         c for c in load_communities()
-        if not ROAD_NAME_SUFFIX.search(c.get("community_name") or "")
-        and (c.get("community_name") or "") not in EXCLUDED_COMMUNITIES
+        if is_residential_community(c, property_types)
         and c.get("community_id") not in MERGE_DROP_IDS
     ]
     coordinates = load_coordinates()
     pois_data = load_pois()
-    property_types = load_property_types()
     polygons = load_polygons()
     subway_stations = load_subway_stations()
     community_ages = load_community_ages()
