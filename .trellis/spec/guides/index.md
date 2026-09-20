@@ -28,6 +28,7 @@ These guides help you **ask the right questions before coding**.
 | [PBC OMO 公告爬虫](./pbc-omo-crawler.md) | 央行公开市场操作公告爬虫的技术参考(栏目入口、URL 规律、HTML 结构、净投放本地计算、反爬、隐藏坑、schema 建议) | 启动净投放/利差定档任务前的预热阅读;与 `daily-liquidity-signal` 无关 |
 | [Fund Select Backend Contracts](../backend/fund-select/backend/contracts.md) | 债基筛选 API/DB/费率缓存契约、basePath 双前缀与代理 BOM 陷阱 | 维护 fund-select 后端或其前端代理 |
 | [New Service Onboarding Contract](./new-service-onboarding.md) | 新服务接入 monorepo 的 9 接入点契约（nginx 三件套、volume seed、纯前端无 BFF、NEXT_PUBLIC build args） | 新增/迁移任何一组前后端服务前必读 |
+| [Windows 测试环境契约](../backend/testing-environment.md) | Windows 开发机 pytest 硬约束（basetemp 重定向、requires_symlink marker、Windows/WSL 不共用 .pytest-tmp） | 在 Windows 上写/跑 Python 后端测试，或测试涉及 symlink/原子替换 |
 
 ---
 

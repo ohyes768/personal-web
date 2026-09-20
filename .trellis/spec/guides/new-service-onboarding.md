@@ -109,7 +109,22 @@ location /api/<name>/ {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
 }
+
+# ③' 变体（skill-manager 模式）：后端路由是完整路径（/api/<name>/...，
+#    router prefix 已含业务段），nginx 直转不剥前缀。此时【必须】再补一条
+#    精确匹配兜底，否则无尾斜杠请求（fetch('/api/<name>')）落不进任何
+#    location → 生产 404，前端列表不可用：
+location = /api/<name> {
+    proxy_pass http://<name>_backend;
+    proxy_set_header Host $host;
+}
 ```
+
+> **Warning**：location ③ 用 `location /api/<name>/`（带尾斜杠前缀）只能匹配
+> `/api/<name>/xxx`；浏览器/客户端请求 `/api/<name>`（无尾斜杠）不匹配它，也没有
+> `location /` 兜底时就是 404。skill-manager 上线检查时发现此缺陷（09-20）。
+> 判断标准：前端 api 客户端里出现的每个无尾斜杠端点路径，都必须能在 web.conf
+> 中找到能匹配它的 location。
 
 upstream 两行（resolve 防 compose 重启 IP 漂移 → 502）：
 
@@ -126,6 +141,7 @@ server 名必须与 compose `container_name` 一致。首页聚合页（`locatio
 |------|------|----------|
 | compose 语法 | `docker compose -f docker-compose.nas.yml config --quiet` | YAML/service 引用错误 |
 | nginx 语法 | `docker run --rm -v nginx/web.conf:/etc/nginx/conf.d/web.conf:ro nginx nginx -t`（或 NAS 上 `deploy-nas.sh nginx`，内含 nginx -t 失败不 reload） | location/upstream 语法错误 |
+| API 端点匹配 | 对照前端 api.ts 全部端点路径逐一 curl（含无尾斜杠形态） | 404 = location 覆盖缺口（见 §4 ③' 警告） |
 | 部署脚本 | `bash -n scripts/deploy-nas.sh` | 映射表语法错误 |
 | 后端 | `uv sync && python -m pytest tests/ -v` + curl `/api/health` | 移植/依赖错误 |
 | 前端 | `pnpm build`（standalone 产物必须成功） | basePath/依赖错误 |
