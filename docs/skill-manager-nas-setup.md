@@ -117,7 +117,7 @@ ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
   docker compose -f docker-compose.nas.yml -f docker-compose.skill-manager.nas.yml down --remove-orphans skill-manager-frontend skill-manager-backend
   ```
 
-  然后从 `nginx/web.conf` 删除 `/skills*` 与 `/api/skills/` 路由块并执行 `./scripts/deploy-nas.sh nginx`。
+  然后从 `nginx/web.conf` 删除 `/skills*` 与 `/api/skills`（含 `location = /api/skills` 精确匹配块）路由块并执行 `./scripts/deploy-nas.sh nginx`。
 - **注册表错误**：`registry.json` 在 Skills Git 仓库中，从 Git 历史恢复。
 - **已发布项错误**：从管理台回滚；或按"管理台自身下线"处理后手工修复目标目录中的符号链接（只删链接本身，不删目录）。
 

@@ -197,6 +197,7 @@ def test_normalize_repository_strips_git_suffix(git_cache):
         "https://github.com/a/b/tree/main",
         "https://github.com/../etc",
         "https://github.com/owner",
+        "https://github.com/owner/..",
         "not a url",
     ],
 )

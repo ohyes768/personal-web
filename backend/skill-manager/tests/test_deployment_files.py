@@ -145,6 +145,8 @@ def test_nginx_routes_skill_manager(nginx_text: str):
     assert "location /skills/_next/static/" in nginx_text
     assert "location /skills" in nginx_text
     assert "location /api/skills/" in nginx_text
+    # 列表端点 GET /api/skills 无子路径（前端请求无尾斜杠），需要精确匹配防 404
+    assert "location = /api/skills" in nginx_text
     # 静态资源走长缓存
     skills_static_block = nginx_text.split("location /skills/_next/static/")[1]
     assert "immutable" in skills_static_block

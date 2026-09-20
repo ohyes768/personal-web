@@ -328,11 +328,7 @@ def _plan_one(
     else:
         action = "add"
     deployment = store.get_deployment(skill.id, target.value)
-    planned_revision = (
-        git_cache.current_revision(skill.id)
-        if skill.source is SkillSource.GITHUB
-        else ""
-    )
+    planned_revision = _planned_revision(store, git_cache, skill)
     return PlanItem(
         skill_id=skill.id,
         target=target,
@@ -340,6 +336,19 @@ def _plan_one(
         current_revision=deployment.source_revision if deployment else "",
         planned_revision=planned_revision,
     )
+
+
+def _planned_revision(
+    store: SkillStateStore, git_cache: GitCacheService, skill: RegistrySkill
+) -> str:
+    """GitHub 条目以最近一次成功检查的远端 revision 为准（发布将检出它）；
+    无记录时退回缓存 HEAD。全程只读，绝不 fetch（design 4.2/5）。"""
+    if skill.source is not SkillSource.GITHUB:
+        return ""
+    check = store.get_github_check(skill.id)
+    if check is not None and check.result == "ok" and check.remote_revision:
+        return check.remote_revision
+    return git_cache.current_revision(skill.id)
 
 
 def _target_root(settings: Settings, target: TargetKey) -> Path:
@@ -366,6 +375,7 @@ def publish(
     registry: RegistryService = Depends(get_registry),
     publisher: Publisher = Depends(get_publisher),
     git_cache: GitCacheService = Depends(get_git_cache),
+    store: SkillStateStore = Depends(get_store),
 ) -> PublishBatchResult:
     """执行发布：逐项独立事务，单项失败只记录该项（design 6.1 / 7）。"""
     ensure_admin_password(settings, req.password)
@@ -386,7 +396,7 @@ def publish(
             continue
         for target in queue_item.targets:
             results.append(
-                _publish_one(settings, publisher, git_cache, skill, target)
+                _publish_one(settings, publisher, git_cache, store, skill, target)
             )
     return PublishBatchResult(items=results)
 
@@ -395,11 +405,21 @@ def _publish_one(
     settings: Settings,
     publisher: Publisher,
     git_cache: GitCacheService,
+    store: SkillStateStore,
     skill: RegistrySkill,
     target: TargetKey,
 ) -> PublishResultItem:
     try:
+        if skill.source is SkillSource.GITHUB:
+            # design 5 / R3：实际缓存更新仅随管理员确认的发布执行——
+            # 发布时才 fetch 并检出最近一次成功检查记录的远端 revision
+            _ensure_cached_at_recorded_revision(git_cache, store, skill)
         source = resolve_registry_source(settings, skill)
+    except GitCacheError as exc:
+        return PublishResultItem(
+            skill_id=skill.id, target=target, status="error",
+            error=f"GitHub 缓存更新失败：{exc}",
+        )
     except InvalidSourceError as exc:
         return PublishResultItem(
             skill_id=skill.id, target=target, status="blocked",
@@ -420,6 +440,18 @@ def _publish_one(
         return PublishResultItem(
             skill_id=skill.id, target=target, status="error", error=str(exc)
         )
+
+
+def _ensure_cached_at_recorded_revision(
+    git_cache: GitCacheService, store: SkillStateStore, skill: RegistrySkill
+) -> None:
+    """把 GitHub 缓存更新到最近一次成功检查记录的远端 revision。
+
+    无成功检查记录时保持缓存现状（登记后从未检查过的场景，缓存即登记版本）。
+    """
+    check = store.get_github_check(skill.id)
+    if check is not None and check.result == "ok" and check.remote_revision:
+        git_cache.ensure_cached(skill, check.remote_revision)
 
 
 # ---------- 密码：回滚与下架 ----------

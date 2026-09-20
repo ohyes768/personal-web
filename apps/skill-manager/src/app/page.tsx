@@ -63,11 +63,14 @@ function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
     if (filters.tags.some((tag) => !skill.tags.includes(tag))) {
       return false;
     }
-    const deployedTargets = Object.keys(skill.deployments);
-    if (filters.deployment === 'published' && deployedTargets.length === 0) {
+    // "已发布"只认 status=active 的部署记录；下架后记录仍在（status=removed）
+    const hasActiveDeployment = Object.values(skill.deployments).some(
+      (deployment) => deployment.status === 'active'
+    );
+    if (filters.deployment === 'published' && !hasActiveDeployment) {
       return false;
     }
-    if (filters.deployment === 'unpublished' && deployedTargets.length > 0) {
+    if (filters.deployment === 'unpublished' && hasActiveDeployment) {
       return false;
     }
     if (filters.update === 'has_update' && !skill.update?.has_update) {

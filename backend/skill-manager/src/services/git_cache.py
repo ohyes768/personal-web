@@ -104,7 +104,8 @@ class GitCacheService:
     def normalize_repository(self, url: str) -> str:
         """把可接受的 GitHub HTTPS URL 规范化为 `https://github.com/<owner>/<repo>`。"""
         match = _GITHUB_HTTPS_RE.match(url.strip())
-        if match is None:
+        if match is None or match["repo"] in {".", ".."}:
+            # repo 段拒绝 "."/".."：纯点段是路径语义特殊段，防止 URL 拼接歧义
             raise InvalidRepositoryError(
                 f"only normalized https://github.com/<owner>/<repo> URLs are "
                 f"accepted, got: {url!r}"

@@ -84,8 +84,11 @@ function SkillCardItem({
             </span>
           ) : null}
           {skill.update?.has_update ? (
-            <span className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800">
-              有更新
+            <span
+              className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800"
+              title={`缓存 ${skill.update.cached_revision.slice(0, 7) || '无'} → 远端 ${skill.update.remote_revision.slice(0, 7)}`}
+            >
+              有更新 · {skill.update.remote_revision.slice(0, 7)}
             </span>
           ) : null}
         </div>

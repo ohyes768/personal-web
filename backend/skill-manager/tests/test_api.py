@@ -407,6 +407,65 @@ def test_check_updates_reports_versions_without_publishing(client, roots):
 
 
 @pytest.mark.requires_symlink
+def test_publish_fetches_recorded_remote_revision_before_linking(
+    client, roots, upstream_repo, tmp_path
+):
+    """R3 / design 5：缓存更新仅随管理员确认的发布执行——检查发现远端
+    更新后，发布动作把缓存 fetch/checkout 到受记录 revision，再创建链接。"""
+    registered = client.post("/api/skills/github", json=_register_payload()).json()
+    skill_id = registered["id"]
+    v1 = upstream_repo.revision
+
+    # 远端前进一个 commit：只改 skills/alpha 的 SKILL.md
+    work = tmp_path / "push-work"
+    run_git("clone", str(upstream_repo.bare), str(work))
+    run_git("config", "user.email", "fixture@example.com", cwd=work)
+    run_git("config", "user.name", "Fixture", cwd=work)
+    (work / "skills" / "alpha" / "SKILL.md").write_text(
+        "---\nname: alpha-v2\n---\n", encoding="utf-8"
+    )
+    run_git("commit", "-am", "fixture: alpha v2", cwd=work)
+    run_git("push", cwd=work)
+    v2 = run_git("rev-parse", "HEAD", cwd=work).strip()
+    assert v2 != v1
+
+    checked = client.post("/api/skills/check-updates", json={}).json()["items"][0]
+    assert checked["result"] == "ok"
+    assert checked["info"]["has_update"] is True
+    assert checked["info"]["remote_revision"] == v2
+    assert checked["info"]["cached_revision"] == v1
+
+    # 计划展示的待发布版本 = 受记录的远端 revision
+    plan = client.post(
+        "/api/skills/publish/plan",
+        json={"items": [{"skill_id": skill_id, "targets": ["openclaw"]}]},
+    ).json()
+    assert plan["items"][0]["action"] == "add"
+    assert plan["items"][0]["planned_revision"] == v2
+
+    published = client.post(
+        "/api/skills/publish",
+        json={
+            "password": PASSWORD,
+            "items": [{"skill_id": skill_id, "targets": ["openclaw"]}],
+        },
+    )
+    assert published.status_code == 200
+    assert published.json()["items"][0]["status"] == "success"
+
+    # 缓存与目标链接都落在远端最新 revision
+    skill_dir = (roots.github_cache / skill_id / "skills/alpha").resolve()
+    assert "alpha-v2" in (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    link = roots.openclaw / skill_id
+    assert link.is_symlink()
+    assert link.resolve() == skill_dir
+    card = next(
+        item for item in client.get("/api/skills").json()["items"] if item["id"] == skill_id
+    )
+    assert card["deployments"]["openclaw"]["revision"] == v2
+
+
+@pytest.mark.requires_symlink
 def test_registered_github_skill_can_be_planned_published_and_rolled_back(
     client, roots
 ):

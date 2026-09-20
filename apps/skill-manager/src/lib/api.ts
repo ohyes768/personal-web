@@ -35,17 +35,25 @@ export class ApiClientError extends Error {
 async function parseErrorBody(response: Response): Promise<ApiError> {
   try {
     const body: unknown = await response.json();
-    // FastAPI HTTPException 把契约对象包在 detail 字段里
-    const detail = (body as { detail?: unknown })?.detail;
-    if (detail && typeof detail === 'object') {
-      const d = detail as { code?: unknown; message?: unknown; item_id?: unknown };
-      if (typeof d.message === 'string') {
-        return {
-          code: typeof d.code === 'string' ? d.code : 'http_error',
-          message: d.message,
-          item_id: typeof d.item_id === 'string' ? d.item_id : undefined,
-        };
+    // main.py 的 exception handler 把契约对象展平到顶层 {"code","message"}；
+    // 兼容读取顶层字段与 FastAPI 默认的 detail 包装两种形态
+    for (const candidate of [
+      body,
+      (body as { detail?: unknown })?.detail,
+    ]) {
+      if (candidate && typeof candidate === 'object') {
+        const d = candidate as { code?: unknown; message?: unknown; item_id?: unknown };
+        if (typeof d.message === 'string') {
+          return {
+            code: typeof d.code === 'string' ? d.code : 'http_error',
+            message: d.message,
+            item_id: typeof d.item_id === 'string' ? d.item_id : undefined,
+          };
+        }
       }
+    }
+    const detail = (body as { detail?: unknown })?.detail;
+    if (detail !== undefined && detail !== null) {
       return { code: 'http_error', message: String(detail) };
     }
   } catch {
