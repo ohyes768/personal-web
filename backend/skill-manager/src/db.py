@@ -57,6 +57,17 @@ CREATE TABLE IF NOT EXISTS rollback_snapshot (
     updated_at           TEXT NOT NULL,
     PRIMARY KEY (skill_id, target)
 );
+
+CREATE TABLE IF NOT EXISTS github_check (
+    skill_id        TEXT PRIMARY KEY,
+    repository      TEXT NOT NULL,
+    remote_revision TEXT NOT NULL DEFAULT '',
+    remote_tags     TEXT NOT NULL DEFAULT '',
+    cached_revision TEXT NOT NULL DEFAULT '',
+    result          TEXT NOT NULL,
+    error           TEXT,
+    checked_at      TEXT NOT NULL
+);
 """
 
 
@@ -97,6 +108,20 @@ class RollbackSnapshot:
     previous_link_target: str
     previous_revision: str
     updated_at: str
+
+
+@dataclass(frozen=True)
+class GithubCheckRecord:
+    """`github_check` 行：某 GitHub Skill 最近一次手动更新检查结果。"""
+
+    skill_id: str
+    repository: str
+    remote_revision: str
+    remote_tags: str
+    cached_revision: str
+    result: str
+    error: str | None
+    checked_at: str
 
 
 class SkillStateStore:
@@ -234,6 +259,36 @@ class SkillStateStore:
                 (skill_id, target),
             )
 
+    # ---------- github_check ----------
+
+    def upsert_github_check(self, record: GithubCheckRecord) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO github_check
+                    (skill_id, repository, remote_revision, remote_tags,
+                     cached_revision, result, error, checked_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.skill_id,
+                    record.repository,
+                    record.remote_revision,
+                    record.remote_tags,
+                    record.cached_revision,
+                    record.result,
+                    record.error,
+                    record.checked_at,
+                ),
+            )
+
+    def get_github_check(self, skill_id: str) -> GithubCheckRecord | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT * FROM github_check WHERE skill_id = ?", (skill_id,)
+            ).fetchone()
+        return _row_to_github_check(row) if row is not None else None
+
     # ---------- 内部 ----------
 
     def _connect(self) -> sqlite3.Connection:
@@ -275,4 +330,17 @@ def _row_to_snapshot(row: sqlite3.Row) -> RollbackSnapshot:
         previous_link_target=row["previous_link_target"],
         previous_revision=row["previous_revision"],
         updated_at=row["updated_at"],
+    )
+
+
+def _row_to_github_check(row: sqlite3.Row) -> GithubCheckRecord:
+    return GithubCheckRecord(
+        skill_id=row["skill_id"],
+        repository=row["repository"],
+        remote_revision=row["remote_revision"],
+        remote_tags=row["remote_tags"],
+        cached_revision=row["cached_revision"],
+        result=row["result"],
+        error=row["error"],
+        checked_at=row["checked_at"],
     )

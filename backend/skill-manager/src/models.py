@@ -98,3 +98,28 @@ class PublishResultItem(BaseModel):
 
 class PublishBatchResult(BaseModel):
     items: list[PublishResultItem] = []
+
+
+class ScanCandidate(BaseModel):
+    """`POST /api/skills/github/scan` 返回的候选 Skill 目录。
+
+    `path` 是仓库内相对 posix 路径（仓库根为 "."）；是否登记由管理员决定。
+    """
+
+    path: Annotated[str, Field(min_length=1)]
+
+
+class UpdateInfo(BaseModel):
+    """`POST /api/skills/check-updates` 的单项结果（design 3.2 github_check）。
+
+    只反映检查时点的快照：远端 HEAD/tags、本地缓存 revision 与二者差异；
+    检查动作本身不 fetch/clone、不变更缓存内容（R3）。
+    """
+
+    skill_id: str
+    repository: str
+    remote_revision: str
+    remote_tags: list[str] = []
+    cached_revision: str = ""
+    has_update: bool = False
+    checked_at: str
