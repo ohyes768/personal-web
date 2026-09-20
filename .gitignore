@@ -37,6 +37,8 @@ Thumbs.db
 # Testing
 coverage
 .nyc_output
+backend/housing-map/.tmp_pytest/
+backend/housing-map/.uv-tmp/
 
 # Misc
 .cache/
