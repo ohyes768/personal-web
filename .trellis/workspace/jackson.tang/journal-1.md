@@ -433,3 +433,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 日频信号首页补充北向/南向资金与中债利率指标
+
+**Date**: 2026-09-20
+**Task**: 日频信号首页补充北向/南向资金与中债利率指标
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+对比宏观信号首页与系统数据面找出未展示指标;补全日频快照 9→15 指标:外部压力组加北向成交额3指标(7日窗口口径,净买额已停发)、市场情绪组加南向净流入、流动性组加中债10Y/10Y-2Y利差;新增key挂曲线跳转;16测试全绿+前端build通过;spec macro-daily-snapshot 同步至15指标(§2.2/§2.3/§5)
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `54e46c6` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
