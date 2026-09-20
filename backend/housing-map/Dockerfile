@@ -25,8 +25,9 @@ COPY uv.lock ./
 COPY src ./src
 COPY scripts ./scripts
 COPY data ./data
-# 已存在的 named volume 会遮住 /app/data；保留轮廓重建所需的只读种子副本，启动时按需补齐。
+# 已存在的 named volume 会遮住 /app/data；保留缺失时需要补齐的只读种子副本。
 COPY data/binjiang_osm_residential.geojson ./seed-data/binjiang_osm_residential.geojson
+COPY data/market_reference.json ./seed-data/market_reference.json
 
 # 安装依赖（uv sync 从 lock 文件精确安装）
 RUN uv sync --frozen --no-dev
@@ -44,5 +45,5 @@ EXPOSE 8096
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD sh -c "curl -f http://localhost:${HOUSING_PORT:-8096}/api/health || exit 1"
 
-# 启动命令（端口从 HOUSING_PORT 读，未设置时 fallback 8096）
-CMD ["sh", "-c", "if [ ! -f /app/data/binjiang_osm_residential.geojson ]; then cp /app/seed-data/binjiang_osm_residential.geojson /app/data/; fi; exec uvicorn src.main:app --host 0.0.0.0 --port ${HOUSING_PORT:-8096}"]
+# 启动命令（端口从 HOUSING_PORT 读，未设置时 fallback 8096）；已有数据卷文件绝不覆盖。
+CMD ["sh", "-c", "if [ ! -f /app/data/binjiang_osm_residential.geojson ]; then cp /app/seed-data/binjiang_osm_residential.geojson /app/data/; fi; if [ ! -f /app/data/market_reference.json ]; then cp /app/seed-data/market_reference.json /app/data/; fi; exec uvicorn src.main:app --host 0.0.0.0 --port ${HOUSING_PORT:-8096}"]
