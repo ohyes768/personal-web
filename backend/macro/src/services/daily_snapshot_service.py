@@ -2,7 +2,7 @@
 
 从 DataService 的原始 CSV 序列按 asof 语义取「≤ 所选日期最近可得值」。
 不走 query_data_by_tab:其 us_treasuries/exchange_rates 段不 reindex 到
-union 轴(与 dates 可能不等长),且会组装整 Tab 全字段,这里只要 15 项指标。
+union 轴(与 dates 可能不等长),且会组装整 Tab 全字段,这里只要 17 项指标。
 """
 from datetime import datetime, time as dtime
 from typing import Any, Dict, List, Optional, Tuple
@@ -38,6 +38,8 @@ _DAILY_INDICATORS: Dict[str, List[Tuple[str, str, str]]] = {
         ("north_today_yi", "load_data:fund_flow", "北向成交额"),
         ("north_7d_avg_yi", "load_data:fund_flow", "北向成交额"),
         ("north_7d_change_pct", "load_data:fund_flow", "北向成交额"),
+        ("cn_us_10y_spread", "derived:cn_us_10y_spread", ""),
+        ("vix", "load_data:vix", "Close_VIX"),
     ],
     "risk_appetite": [
         ("volume", "load_volume", "total_amount_yi"),
@@ -52,7 +54,7 @@ _WINDOWED_KEYS = frozenset({"north_7d_avg_yi", "north_7d_change_pct"})
 
 
 class DailySnapshotService:
-    """组装日频快照(3 维度 15 指标)"""
+    """组装日频快照(3 维度 17 指标)"""
 
     def __init__(self, data_service: DataService):
         self._ds = data_service
@@ -105,6 +107,8 @@ class DailySnapshotService:
 
     def _load_series(self, loader: str, column: str) -> pd.Series:
         """加载单个指标原始序列(index=date 升序、dropna);文件缺失/列缺失返回空 Series"""
+        if loader.startswith("derived:"):
+            return getattr(self, f"_load_{loader.split(':', 1)[1]}")()
         if loader.startswith("load_data:"):
             df = self._ds.load_data(loader.split(":", 1)[1])
         else:
@@ -112,6 +116,15 @@ class DailySnapshotService:
         if df.empty or column not in df.columns:
             return pd.Series(dtype=float)
         return df[column].dropna().sort_index()
+
+    def _load_cn_us_10y_spread(self) -> pd.Series:
+        """中美利差(10Y) = 中国10y − 美债10y;美债按中国交易日轴 ffill 对齐后做差"""
+        cn = self._load_series("load_data:china_bond", "中国10y")
+        us = self._load_series("load_data:us_treasuries", "美债10y")
+        if cn.empty or us.empty:
+            return pd.Series(dtype=float)
+        us_aligned = us.reindex(cn.index, method="ffill")
+        return (cn - us_aligned).dropna().sort_index()
 
     def _extract_by_key(
         self, series: pd.Series, target: str, key: str

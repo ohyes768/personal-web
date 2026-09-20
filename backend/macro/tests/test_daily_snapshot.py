@@ -63,6 +63,8 @@ def service(tmp_path: Path) -> DailySnapshotService:
         ds.files["china_bond"], DATES,
         {"中国10y": [1.80, 1.78, 1.75], "中国10年-2年": [0.50, 0.48, 0.45]},
     )
+    _write_csv(ds.files["us_treasuries"], DATES, {"美债10y": [4.20, 4.10, 4.05]})
+    _write_csv(ds.files["vix"], DATES, {"Close_VIX": [15.0, 14.5, 14.2]})
     return DailySnapshotService(ds)
 
 
@@ -89,6 +91,7 @@ def test_explicit_date_takes_values(service: DailySnapshotService):
     assert set(ex.keys()) == {
         "dollar_index", "usd_cny", "ted_spread", "hibor_overnight",
         "north_today_yi", "north_7d_avg_yi", "north_7d_change_pct",
+        "cn_us_10y_spread", "vix",
     }
     assert ex["dollar_index"]["value"] == pytest.approx(103.5)
     assert ex["usd_cny"]["prev_value"] == pytest.approx(7.12)
@@ -100,6 +103,12 @@ def test_explicit_date_takes_values(service: DailySnapshotService):
     # 仅 3 个交易日,不足 7 日窗口 → 均值/环比为 None
     assert ex["north_7d_avg_yi"]["value"] is None
     assert ex["north_7d_change_pct"]["value"] is None
+    # 中美利差 = 中国10y − 美债10y:1.75 − 4.05 = −2.30,前值 1.78 − 4.10 = −2.32
+    assert ex["cn_us_10y_spread"]["value"] == pytest.approx(-2.30)
+    assert ex["cn_us_10y_spread"]["prev_value"] == pytest.approx(-2.32)
+    assert ex["cn_us_10y_spread"]["data_date"] == "2026-08-27"
+    assert ex["vix"]["value"] == pytest.approx(14.2)
+    assert ex["vix"]["prev_value"] == pytest.approx(14.5)
 
     risk = {i["key"]: i for i in g["risk_appetite"]["indicators"]}
     assert set(risk.keys()) == {"volume", "turnover", "margin", "south_net_yi"}
@@ -292,3 +301,34 @@ def test_fund_flow_missing_csv_returns_null(tmp_path: Path):
     south = {i["key"]: i for i in snap["groups"]["risk_appetite"]["indicators"]}["south_net_yi"]
     assert south["value"] is None
     assert south["data_date"] is None
+
+
+def test_cn_us_spread_ffill_alignment(tmp_path: Path):
+    """美债缺最后一天(美国假期)→ 按中国交易日轴 ffill 对齐:
+    08-27 利差 = 1.75 − 4.10(ffill 自 08-26)= −2.35,data_date 仍为 08-27"""
+    ds = _make_service(tmp_path)
+    _write_csv(ds.files["volume"], DATES, {"total_amount_yi": [6000.0, 6500.0, 6800.0]})
+    _write_csv(
+        ds.files["china_bond"], DATES,
+        {"中国10y": [1.80, 1.78, 1.75], "中国10年-2年": [0.50, 0.48, 0.45]},
+    )
+    _write_csv(ds.files["us_treasuries"], DATES[:2], {"美债10y": [4.20, 4.10]})
+    service = DailySnapshotService(ds)
+
+    snap = service.get_daily_snapshot("2026-08-27")
+    ex = {i["key"]: i for i in snap["groups"]["exchange_rate"]["indicators"]}
+    assert ex["cn_us_10y_spread"]["value"] == pytest.approx(-2.35)
+    assert ex["cn_us_10y_spread"]["prev_value"] == pytest.approx(-2.32)
+    assert ex["cn_us_10y_spread"]["data_date"] == "2026-08-27"
+
+
+def test_vix_and_spread_missing_csv_returns_null(tmp_path: Path):
+    """vix.csv / us_treasuries.csv 缺失 → vix 与中美利差 value/data_date 均为 None,接口不报错"""
+    ds = _make_service(tmp_path)
+    service = DailySnapshotService(ds)
+    snap = service.get_daily_snapshot("2026-08-27")
+    ex = {i["key"]: i for i in snap["groups"]["exchange_rate"]["indicators"]}
+    assert ex["vix"]["value"] is None
+    assert ex["vix"]["data_date"] is None
+    assert ex["cn_us_10y_spread"]["value"] is None
+    assert ex["cn_us_10y_spread"]["data_date"] is None

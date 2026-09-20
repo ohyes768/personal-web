@@ -10,6 +10,7 @@
 > 2026-09-20(上午):修正 `POST /update/dr001`「数据已落库但响应报失败」问题——新增更新端点的载荷类型必须同步加入共享 `UpdateResponse.data` 联合类型，并以端点级测试覆盖成功响应。详见 §7。
 > 2026-09-20:日频扩充至 **3 维度 13 指标**——exchange_rate 组追加北向资金 3 指标(`north_today_yi`/`north_7d_avg_yi`/`north_7d_change_pct`,7 日窗口口径见 §2.2),risk_appetite 组追加南向净流入(`south_net_yi`);4 个新 key 均挂 `INDICATOR_LINK_MAP → market-sentiment` 曲线跳转。北向净买额自 2024-08 停发,只能上成交额口径。详见 §2.2/§5。
 > 2026-09-20(第二批):monetary_policy 组追加中债利率 2 指标——`cn_10y`(列「中国10y」)/`cn_10y_2y`(列「中国10年-2年」),数据源 `load_data:china_bond`(china_bond.csv),单点 asof;2 个 key 挂 `INDICATOR_LINK_MAP → rates` 曲线跳转(该 Tab 数据段含 china_bond)。日频扩充至 **3 维度 15 指标**。详见 §2.3/§5。
+> 2026-09-20(第三批):exchange_rate 组追加 `cn_us_10y_spread`(中美利差,派生序列见 §2.4)与 `vix`(vix.csv `Close_VIX` 列);前者跳转 treasury-exchange、后者跳转 liquidity-risk。日频扩充至 **3 维度 17 指标**。本地环境 vix.csv 缺失属正常——`/update/vix` 由 scheduler 北京早晨批量 job 触发,未跑过则 value=null。详见 §2.4/§5。
 > **Source files**:
 > - `backend/macro/src/services/daily_snapshot_service.py`(`_DAILY_INDICATORS` 指标清单)
 > - `backend/macro/src/api/routes.py`(`GET /daily-snapshot`)
@@ -78,6 +79,13 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 - 2 个 key 均挂 `INDICATOR_LINK_MAP → rates` 曲线跳转(rates Tab 数据段含 china_bond,`RatesChart.tsx` 渲染该曲线);`data_service.py` 另有同名 key 映射到 `china_bond`(query_data_by_tab 用),与本清单互不影响。
 - 归 monetary_policy 组(日频标题「流动性」),组内仍不渲染档位刻度。
 
+### 2.4 中美利差与 VIX(2026-09-20 引入)
+
+- `cn_us_10y_spread` = 中国10y − 美债10y(正=中国利率更高,负=倒挂)。**派生序列**:两个 CSV 无交集日期保证,`_load_cn_us_10y_spread` 以中国交易日轴为基准,美债10y `reindex(ffill)` 对齐后做差(美国节假日缺日由 ffill 兜底)。`_DAILY_INDICATORS` 条目用 `derived:` 前缀 loader 表达,`_load_series` 分派到同名 `_load_*` 方法;派生序列复用 `_extract` 的 asof/prev_value 语义。
+- treasury-exchange Tab 实际是「美债+中国10y 双曲线对比」展示,无独立利差序列——前后端口径独立,`INDICATOR_LINK_MAP` 指向该 Tab 仅为就近看两条源曲线。
+- `vix` 读 vix.csv `Close_VIX` 列(`_save_vix` 写入,FRED VIXCLS 源)。更新链路:scheduler 北京早晨批量 job(`美债/汇率/VIX/TGA/HIBOR/TED/商品/指数` 顺序)→ `/update/vix`。**环境未跑过该 job 时 vix.csv 不存在,value=null 属正常**,接口不报错。
+- 2 个 key 跳转:`cn_us_10y_spread → treasury-exchange`,`vix → liquidity-risk`。
+
 ## 3. 默认日期规则(15:00 规则)
 
 - 本地时间 `< 15:00`(A股未收盘)→ 今日之前最近的 volume 交易日
@@ -98,9 +106,9 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 
 - key 变更 → 三处同步 + `INDICATOR_LINK_MAP` 的曲线跳转映射
 - CSV 数值列是中文列名(如 `美元指数`/`TED利差`/`北向成交额`),与英文 key 的映射只存在于 `_DAILY_INDICATORS`
-- 当前各组 key 清单(2026-09-20,15 指标):
+- 当前各组 key 清单(2026-09-20,17 指标):
   - `monetary_policy`:`dr001`、`dr007`(`INDICATOR_LINK_MAP` 无条目,无曲线跳转)、`cn_10y`、`cn_10y_2y`(均 → `rates`)
-  - `exchange_rate`:`dollar_index`、`usd_cny`、`ted_spread`、`hibor_overnight`、`north_today_yi`、`north_7d_avg_yi`、`north_7d_change_pct`
+  - `exchange_rate`:`dollar_index`、`usd_cny`、`ted_spread`、`hibor_overnight`、`north_today_yi`、`north_7d_avg_yi`、`north_7d_change_pct`、`cn_us_10y_spread`(→`treasury-exchange`)、`vix`(→`liquidity-risk`)
   - `risk_appetite`:`volume`、`turnover`、`margin`、`south_net_yi`
 
 ## 6. dates 列表口径

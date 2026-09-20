@@ -2637,7 +2637,7 @@ async def get_macro_months():
 
 @router.get("/daily-snapshot", response_model=DailySnapshotResponse)
 def get_daily_snapshot(date: Optional[str] = Query(None, description="日期 YYYY-MM-DD;缺省按 15:00 规则取默认")):
-    """获取日频快照(信号首页 · 日频模式:3 维度 15 指标)
+    """获取日频快照(信号首页 · 日频模式:3 维度 17 指标)
 
     数据源:已落库的原始指标序列(dr001/dr007/中债利率/汇率/TED/资金流向/市场情绪),asof 取值。
     改 def（非 async def）：pandas 读 CSV 阻塞,FastAPI 丢线程池跑同步

@@ -33,10 +33,10 @@ export const GROUP_ORDER: DimensionKey[] = [
   'risk_appetite',
 ];
 
-/** 日频模式卡片:3 维度 15 指标(key 对齐后端 _DAILY_INDICATORS,数组顺序即展示顺序) */
+/** 日频模式卡片:3 维度 17 指标(key 对齐后端 _DAILY_INDICATORS,数组顺序即展示顺序) */
 export const DAILY_GROUPS: Array<{ key: DailyDimensionKey; indicators: string[] }> = [
   { key: 'monetary_policy', indicators: ['dr001', 'dr007', 'cn_10y', 'cn_10y_2y'] },
-  { key: 'exchange_rate',   indicators: ['dollar_index', 'usd_cny', 'ted_spread', 'hibor_overnight', 'north_today_yi', 'north_7d_avg_yi', 'north_7d_change_pct'] },
+  { key: 'exchange_rate',   indicators: ['dollar_index', 'usd_cny', 'ted_spread', 'hibor_overnight', 'north_today_yi', 'north_7d_avg_yi', 'north_7d_change_pct', 'cn_us_10y_spread', 'vix'] },
   { key: 'risk_appetite',   indicators: ['volume', 'turnover', 'margin', 'south_net_yi'] },
 ];
 
@@ -85,6 +85,9 @@ export const INDICATOR_LABELS: Record<string, { label: string; unit?: string; di
   north_7d_avg_yi:    { label: '北向7日日均成交额',  unit: '亿', digits: 0 },
   north_7d_change_pct:{ label: '北向7日环比',        unit: '%',  digits: 1 },
   south_net_yi:       { label: '南向净流入',         unit: '亿', digits: 0 },
+  // 美元利率与风险(日频快照英文 key)
+  cn_us_10y_spread:   { label: '中美利差(10Y)',      unit: '%', digits: 2 },
+  vix:                { label: 'VIX',                digits: 2 },
   '美元指数':          { label: '美元指数',           digits: 2 },
   '美元兑人民币':      { label: '美元兑人民币',       digits: 4 },
   'TED利差':           { label: 'TED 利差',           unit: '%', digits: 2 },
@@ -217,6 +220,8 @@ export const INDICATOR_LINK_MAP: Record<string, TabType> = {
   north_7d_avg_yi:     'market-sentiment',
   north_7d_change_pct: 'market-sentiment',
   south_net_yi:        'market-sentiment',
+  cn_us_10y_spread:    'treasury-exchange',
+  vix:                 'liquidity-risk',
   cn_10y:              'rates',
   cn_10y_2y:           'rates',
   '美元指数':     'treasury-exchange',
