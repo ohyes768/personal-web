@@ -27,3 +27,14 @@ def test_main_does_not_need_shapefile_for_unmatched_community(monkeypatch, tmp_p
     builder.main()
 
     assert json.loads(output_path.read_text(encoding="utf-8"))["polygons"] == {}
+
+
+def test_default_osm_boundary_input_is_packaged_with_the_service():
+    assert Path(builder.OSM_PATH).is_file()
+
+
+def test_docker_image_keeps_a_seed_copy_for_existing_data_volumes():
+    dockerfile = (Path(__file__).parents[1] / "Dockerfile").read_text(encoding="utf-8")
+
+    assert "COPY data/binjiang_osm_residential.geojson ./seed-data/binjiang_osm_residential.geojson" in dockerfile
+    assert "seed-data/binjiang_osm_residential.geojson" in dockerfile
