@@ -90,8 +90,8 @@ function CommunityPopup({
         <button className="close-btn" onClick={onClose}>×</button>
       </div>
 
-      {/* 房价 4 项 + 评分 4 项, 同一行八列; 评分卡可点击翻转看详情 */}
-      <div className="popup-data-row">
+      {/* 房价 4 项: 一行紧凑数字条 */}
+      <div className="popup-price-row">
         <div className="stat-cell">
           <div className="stat-label">挂牌均价</div>
           <div className="stat-value">{fmtCompact(community.price.listing_avg_price)}</div>
@@ -108,8 +108,10 @@ function CommunityPopup({
           <div className="stat-label">近月签约</div>
           <div className="stat-value">{community.price.deal_count ?? '-'}</div>
         </div>
+      </div>
 
-        {/* 评分 4 项 - 可翻转 */}
+      {/* 评分维度 2×2 大卡: 可点击翻转看明细, 宽度翻倍解决明细显示不下 */}
+      <div className="score-grid">
         <ScoreCard
           label="区位" icon="📍"
           score={community.score.location_score}
@@ -626,15 +628,16 @@ function AmenityDetail({ pois }: { pois: Partial<Record<POIType, Community['pois
     return { t, count: list.length, nearest };
   });
   const total = (Object.values(pois) as Community['pois'][]).reduce((s, l) => s + (l?.length || 0), 0);
+  // 两列网格: 每格标签在上、数值在下, 6 项只占 3 行, 宽卡下无需滚动
   return (
-    <div className="score-detail">
+    <div className="score-detail score-detail-grid2">
       {rows.map(r => (
-        <div key={r.t} className="score-detail-row">
+        <div key={r.t} className="score-detail-cell">
           <span className="score-detail-label">{POI_LABELS_BACK[r.t]}</span>
           <span className="score-detail-val">{r.count} 所 · {r.nearest}</span>
         </div>
       ))}
-      <div className="score-detail-row" style={{ borderTop: '1px solid var(--border)', paddingTop: '4px', marginTop: '4px' }}>
+      <div className="score-detail-cell score-detail-full">
         <span className="score-detail-label">合计</span>
         <span className="score-detail-val">{total} 个</span>
       </div>
@@ -652,10 +655,11 @@ function ProductDetail({ c }: { c: Community }) {
   if (c.far_ratio != null) rows.push({ k: '容积率', v: `${c.far_ratio}` });
   if (c.greening_rate != null) rows.push({ k: '绿化率', v: `${c.greening_rate}%` });
   if (rows.length === 0) return <div className="score-detail-empty">产品数据缺失, 评分无法计算</div>;
+  // 两列网格: 5 项占 3 行, 与配套卡同样的紧凑排布
   return (
-    <div className="score-detail">
+    <div className="score-detail score-detail-grid2">
       {rows.map(r => (
-        <div key={r.k} className="score-detail-row">
+        <div key={r.k} className="score-detail-cell">
           <span className="score-detail-label">{r.k}</span>
           <span className="score-detail-val">{r.v}</span>
         </div>
@@ -706,17 +710,24 @@ function ScoreCard({
     onFlip();
     setTimeout(() => { lockRef.current = false; }, 650);
   };
-  // 容器复用 .stat-cell 的视觉 (背景/边框/圆角/内边距), 在网格中与房价 4 项同高
+  // 容器复用 .stat-cell 的视觉 (背景/边框/圆角), 在 2×2 score-grid 中占半宽
   // 内层 .score-card-face 绝对定位铺满, 翻转时保持视觉一致
+  const barPct = Math.max(0, Math.min(100, score ?? 0));
   return (
-    <div className={`stat-cell score-card ${flipped ? 'flipped' : ''}`} onClick={handleFlip} title={flipped ? '点击翻回正面' : '点击查看详情'}>
+    <div className={`stat-cell score-card ${flipped ? 'flipped' : ''}`} onClick={handleFlip} title={flipped ? '点击翻回正面' : '点击查看明细'}>
       <div className="score-card-face score-card-front">
-        <div className="score-card-icon">{icon}</div>
-        <div className="score-card-label">{label}</div>
-        <div className="score-card-score">{score ?? '—'}</div>
+        <div className="score-card-head">
+          <span className="score-card-icon">{icon}</span>
+          <span className="score-card-label">{label}</span>
+          <span className="score-card-score">{score ?? '—'}</span>
+        </div>
+        <div className="score-card-bar" aria-hidden="true">
+          <div className="score-card-bar-fill" style={{ width: `${barPct}%` }} />
+        </div>
+        <div className="score-card-hint">{flipped ? '点击翻回正面' : '点击看明细'}</div>
       </div>
       <div className="score-card-face score-card-back">
-        <div className="score-card-back-label">{label}</div>
+        <div className="score-card-back-label">{label} · 明细</div>
         {detail}
       </div>
     </div>

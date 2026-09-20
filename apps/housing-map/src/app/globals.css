@@ -244,7 +244,7 @@ body {
   top: 0;
   bottom: 0;
   left: 0;
-  width: 480px;
+  width: 560px;
   max-width: calc(100vw - 32px);
   background: var(--bg-surface);
   border-right: 1px solid var(--border);
@@ -319,11 +319,19 @@ body {
 }
 
 /* ——————————————————————————————————————————————————————————— */
-/* 弹窗数据条 + 评分翻转卡片: 同一行八列, 房价4项 + 评分4项           */
+/* 房价数字条 (一行 4 列紧凑) + 评分维度 2×2 大卡 (可翻转)           */
 /* ——————————————————————————————————————————————————————————— */
-.popup-data-row {
+.popup-price-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);   /* 房价一行 4 + 评分卡一行 4, 480px 宽度下每格 ~105px */
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* 评分卡 2×2: 560px 抽屉下每张 ~264px 宽, 明细背面两列排布无需滚动 */
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
   gap: 8px;
   margin-bottom: 14px;
 }
@@ -361,7 +369,7 @@ body {
 /* ——————————————————————————————————————————————————————————— */
 .score-card.stat-cell {
   cursor: pointer;
-  min-height: 108px;
+  min-height: 120px;
   padding: 0;                     /* face 自带内边距, 容器 padding 归零 */
 }
 
@@ -369,17 +377,16 @@ body {
   position: absolute;
   inset: 0;
   border-radius: 8px;
-  padding: 8px 4px 5px;
+  padding: 10px 12px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   transition: opacity 0.25s ease;
 }
 
-/* 正面: 图标 + 维度名 + 分数 */
+/* 正面: 图标+维度名 居左, 大分数 居右, 下方评分进度条, 底部翻转提示 */
 .score-card-front {
-  align-items: center;
-  text-align: center;
+  padding: 12px 14px 9px;
   background: rgba(212, 168, 75, 0.10);
   opacity: 1;
 }
@@ -395,25 +402,79 @@ body {
 }
 .score-card.flipped .score-card-back { opacity: 1; }
 
-.score-card-icon { font-size: 11px; line-height: 1; }
-.score-card-label { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
-.score-card-score {
-  font-size: 20px; font-weight: 700; color: var(--accent-gold);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.2;
-  margin-top: 2px;
+.score-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
 }
-.score-card-back-label {
-  font-size: 10px; font-weight: 600; color: var(--accent-warm);
-  text-align: center; padding-bottom: 3px;
-  border-bottom: 1px solid var(--border); margin-bottom: 3px;
+.score-card-icon { font-size: 14px; line-height: 1; }
+.score-card-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.score-card-score {
+  margin-left: auto;
+  font-size: 26px; font-weight: 800; color: var(--accent-gold);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
 
-.score-detail { display: flex; flex-direction: column; gap: 2px; font-size: 10px; flex: 1; min-height: 0; overflow: auto; }
-.score-detail-row { display: flex; justify-content: space-between; gap: 4px; }
+/* 评分进度条: 分值/100 的直观映射, 金色渐变填充 */
+.score-card-bar {
+  margin-top: 9px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(212, 168, 75, 0.18);
+  overflow: hidden;
+}
+.score-card-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent-warm), var(--accent-gold));
+  transition: width 0.5s ease;
+}
+
+.score-card-hint {
+  margin-top: auto;
+  padding-top: 7px;
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: right;
+  opacity: 0.65;
+  transition: opacity 0.2s;
+}
+.score-card.stat-cell:hover .score-card-hint { opacity: 1; color: var(--accent-warm); }
+
+.score-card-back-label {
+  font-size: 11px; font-weight: 600; color: var(--accent-warm);
+  text-align: left; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border); margin-bottom: 5px;
+}
+
+.score-detail { display: flex; flex-direction: column; gap: 3px; font-size: 11px; flex: 1; min-height: 0; overflow: auto; }
+.score-detail-row { display: flex; justify-content: space-between; gap: 6px; }
 .score-detail-label { color: var(--text-muted); white-space: nowrap; }
 .score-detail-val { color: var(--text-primary); font-weight: 500; text-align: right; }
-.score-detail-empty { font-size: 10px; color: var(--text-muted); text-align: center; padding-top: 12px; }
+.score-detail-empty { font-size: 11px; color: var(--text-muted); text-align: center; padding-top: 14px; }
+
+/* 两列明细网格 (配套/产品卡): 标签在上、数值在下, 宽卡下全部可见无需滚动 */
+.score-detail-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  align-content: start;
+}
+.score-detail-cell { display: flex; flex-direction: column; min-width: 0; }
+.score-detail-cell .score-detail-label { font-size: 9px; }
+.score-detail-cell .score-detail-val {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.score-detail-full {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  padding-top: 3px;
+}
 
 /* 周边配套分类磁贴 (默认收起, 点击展开) */
 .poi-tiles {
