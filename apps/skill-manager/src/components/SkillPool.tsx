@@ -16,6 +16,7 @@ interface SkillPoolProps {
   queue: QueueEntry[];
   onAddToQueue: (skillId: string, targets: TargetKey[]) => void;
   onClone: (skillId: string) => void;
+  onDelete: (skill: SkillCard) => void;
 }
 
 function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
@@ -52,11 +53,13 @@ function SkillCardItem({
   queuedTargets,
   onAddToQueue,
   onClone,
+  onDelete,
 }: {
   skill: SkillCard;
   queuedTargets: TargetKey[];
   onAddToQueue: SkillPoolProps['onAddToQueue'];
   onClone: SkillPoolProps['onClone'];
+  onDelete: SkillPoolProps['onDelete'];
 }) {
   const [selectedTargets, setSelectedTargets] = useState<TargetKey[]>([]);
   const [targetHint, setTargetHint] = useState(false);
@@ -166,6 +169,16 @@ function SkillCardItem({
         >
           加入队列
         </button>
+        {skill.source === 'github' ? (
+          <button
+            type="button"
+            onClick={() => onDelete(skill)}
+            title="移除登记条目并删除本机缓存"
+            className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+          >
+            删除
+          </button>
+        ) : null}
       </div>
       {targetHint ? (
         <p className="mt-1 text-xs text-rose-600">请先选择发布目标（OpenClaw / Hermes）</p>
@@ -188,7 +201,13 @@ function SkillCardItem({
   );
 }
 
-export default function SkillPool({ skills, queue, onAddToQueue, onClone }: SkillPoolProps) {
+export default function SkillPool({
+  skills,
+  queue,
+  onAddToQueue,
+  onClone,
+  onDelete,
+}: SkillPoolProps) {
   const queuedBySkill = new Map<string, TargetKey[]>();
   for (const entry of queue) {
     queuedBySkill.set(entry.skillId, entry.targets);
@@ -211,6 +230,7 @@ export default function SkillPool({ skills, queue, onAddToQueue, onClone }: Skil
           queuedTargets={queuedBySkill.get(skill.id) ?? []}
           onAddToQueue={onAddToQueue}
           onClone={onClone}
+          onDelete={onDelete}
         />
       ))}
     </ul>

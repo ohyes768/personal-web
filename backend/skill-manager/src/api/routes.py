@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
+import sqlite3
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -29,6 +31,7 @@ from src.db import GithubCheckRecord, SkillStateStore
 from src.models import (
     AdminPasswordRequest,
     CheckUpdatesRequest,
+    DeleteSkillResponse,
     PlanItem,
     PlanResponse,
     PublishBatchResult,
@@ -603,6 +606,78 @@ def unpublish(
     return UnpublishResponse(skill_id=skill_id, target=target_key)
 
 
+@router.delete("/skills/{skill_id}", response_model=DeleteSkillResponse)
+def delete_skill(
+    skill_id: str,
+    req: AdminPasswordRequest,
+    settings: Settings = Depends(get_settings),
+    registry: RegistryService = Depends(get_registry),
+    store: SkillStateStore = Depends(get_store),
+) -> DeleteSkillResponse:
+    """删除已登记的 GitHub Skill（design：仅 github 来源，任一 target
+    active 时拒绝）。registry.json 为真源：先移除并 git 提交，派生数据
+    （检查记录、回滚快照、本地缓存）随后尽力清理。"""
+    ensure_admin_password(settings, req.password)
+    _require_skill_id(skill_id)
+    skill = _require_known_skill(registry, skill_id, code="unknown_skill")
+    if skill.source is SkillSource.LOCAL:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "local_source",
+                "message": f"skill {skill.id} 是本地来源，不支持删除（移除源目录即消失）",
+                "item_id": skill.id,
+            },
+        )
+    active = [
+        record
+        for record in store.list_deployments()
+        if record.skill_id == skill_id and record.status == "active"
+    ]
+    if active:
+        targets = ", ".join(record.target for record in active)
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "skill_active",
+                "message": f"skill {skill_id} 仍有 active 部署（{targets}），请先下架",
+                "item_id": skill_id,
+            },
+        )
+    try:
+        registry.remove(skill_id)
+        registry.commit_registry_change()
+    except RegistryValidationError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "unknown_skill",
+                "message": f"未知 skill：{skill_id}",
+                "item_id": skill_id,
+            },
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "code": "delete_failed",
+                "message": f"注册表已更新但 Git 提交失败：{exc}",
+                "item_id": skill_id,
+            },
+        ) from exc
+    try:
+        store.delete_github_check(skill_id)
+        store.delete_rollback_snapshots(skill_id)
+    except sqlite3.Error as exc:
+        # design：派生数据尽力清理，失败不改变响应（registry 真源已提交）
+        logger.warning("delete derived state failed: skill=%s error=%s", skill_id, exc)
+    try:
+        shutil.rmtree(settings.github_skill_cache_root / skill_id)
+    except OSError as exc:
+        logger.warning("delete cache failed: skill=%s error=%s", skill_id, exc)
+    return DeleteSkillResponse(skill_id=skill_id)
+
+
 # ---------- 参数校验 helper ----------
 
 
@@ -631,14 +706,16 @@ def _require_target(target: str) -> TargetKey:
         ) from exc
 
 
-def _require_known_skill(registry: RegistryService, skill_id: str) -> RegistrySkill:
+def _require_known_skill(
+    registry: RegistryService, skill_id: str, code: str = "skill_not_found"
+) -> RegistrySkill:
     for skill in registry.load().skills:
         if skill.id == skill_id:
             return skill
     raise HTTPException(
         status_code=404,
         detail={
-            "code": "skill_not_found",
+            "code": code,
             "message": f"未知 skill：{skill_id}",
             "item_id": skill_id,
         },

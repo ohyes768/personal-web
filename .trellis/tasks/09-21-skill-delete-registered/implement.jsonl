@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "GitHub 缓存生命周期与多环境语义：删除涉及缓存目录清理与 registry 全局同步，实现前必读"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "功能横跨后端 API 与前端卡片/队列，需对齐字段命名与错误语义"}

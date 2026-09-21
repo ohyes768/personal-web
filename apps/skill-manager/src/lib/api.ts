@@ -163,3 +163,13 @@ export function unpublishSkill(
     body: jsonBody({ password }),
   });
 }
+
+export function deleteSkill(
+  skillId: string,
+  password: string
+): Promise<{ skill_id: string }> {
+  return request<{ skill_id: string }>(`/${encodeURIComponent(skillId)}`, {
+    method: 'DELETE',
+    body: jsonBody({ password }),
+  });
+}

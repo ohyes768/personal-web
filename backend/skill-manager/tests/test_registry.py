@@ -210,6 +210,59 @@ def test_load_missing_registry_raises(registry_service):
         registry_service.load()
 
 
+# ---------- 删除条目 ----------
+
+
+def test_remove_deletes_entry_and_preserves_agents_and_others(
+    registry_service, source_root
+):
+    make_local_skill_dir(source_root, "alpha")
+    make_local_skill_dir(source_root, "beta")
+    registry_service.upsert(
+        RegistrySkill(id="alpha", name="alpha", source="local", path="alpha")
+    )
+    registry_service.upsert(
+        RegistrySkill(id="beta", name="beta", source="local", path="beta")
+    )
+
+    updated = registry_service.remove("alpha")
+
+    assert [s.id for s in updated.skills] == ["beta"]
+    reloaded = registry_service.load()
+    assert [s.id for s in reloaded.skills] == ["beta"]
+
+
+def test_remove_preserves_agents(registry_service, source_root):
+    make_local_skill_dir(source_root, "alpha")
+    write_registry_file(
+        source_root,
+        {
+            "skills": [
+                {"id": "alpha", "name": "alpha", "source": "local", "path": "alpha"}
+            ],
+            "agents": {"openclaw": {"description": "研究", "skills": ["alpha"]}},
+        },
+    )
+
+    registry_service.remove("alpha")
+
+    reloaded = registry_service.load()
+    assert reloaded.skills == []
+    assert reloaded.agents["openclaw"].skills == ["alpha"]
+
+
+def test_remove_unknown_id_raises(registry_service, source_root):
+    make_local_skill_dir(source_root, "alpha")
+    registry_service.upsert(
+        RegistrySkill(id="alpha", name="alpha", source="local", path="alpha")
+    )
+
+    with pytest.raises(RegistryValidationError, match="unknown skill id"):
+        registry_service.remove("ghost")
+    # 报错时文件内容不变
+    assert [s.id for s in registry_service.load().skills] == ["alpha"]
+
+
 # ---------- 固定 git 提交 ----------
 
 

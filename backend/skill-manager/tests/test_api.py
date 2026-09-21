@@ -19,7 +19,12 @@ from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_git_cache
 from src.config import Settings
-from src.db import DeploymentRecord, SkillStateStore
+from src.db import (
+    DeploymentRecord,
+    GithubCheckRecord,
+    RollbackSnapshot,
+    SkillStateStore,
+)
 from src.services.git_cache import GitCacheService
 
 PASSWORD = "test-password"
@@ -694,3 +699,129 @@ def test_list_reports_no_link_missing_when_active_link_exists(client, roots):
     cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
 
     assert cards["alpha"]["deployments"]["hermes"]["link_missing"] is False
+
+
+# ---------- 删除已登记 GitHub Skill ----------
+
+
+def _seed_deletable_github_skill(roots: SimpleNamespace) -> None:
+    """registry 追加 GitHub 条目并把源库初始化为 Git 仓库（提交可断言）。"""
+    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
+    run_git("init", str(roots.source_root))
+    run_git("config", "user.email", "fixture@example.com", cwd=roots.source_root)
+    run_git("config", "user.name", "Fixture", cwd=roots.source_root)
+    run_git("add", "-A", cwd=roots.source_root)
+    run_git("commit", "-m", "fixture: seed registry", cwd=roots.source_root)
+
+
+def _seed_derived_state(skill_id: str) -> SkillStateStore:
+    """写入 github_check 与 rollback_snapshot，供删除清理断言。"""
+    store = SkillStateStore.from_settings(Settings())
+    store.upsert_github_check(
+        GithubCheckRecord(
+            skill_id=skill_id,
+            repository=CANONICAL_URL,
+            remote_revision="sha-r",
+            remote_tags="",
+            cached_revision="sha-r",
+            result="ok",
+            error=None,
+            checked_at="2026-09-21T00:00:00+00:00",
+        )
+    )
+    store.set_rollback_snapshot(
+        RollbackSnapshot(
+            skill_id=skill_id,
+            target="openclaw",
+            previous_link_target="/tmp/old-link",
+            previous_revision="sha-0",
+            updated_at="2026-09-21T00:00:00+00:00",
+        )
+    )
+    return store
+
+
+def _commit_count(source_root: Path) -> int:
+    output = run_git("rev-list", "--count", "HEAD", cwd=source_root)
+    return int(output.strip())
+
+
+def test_delete_github_skill_removes_registry_entry_and_derived_state(
+    client, roots
+):
+    """成功删除：registry 条目移除且产生 git commit；github_check、
+    rollback_snapshot 清理；缓存目录移除；列表不再显示。"""
+    _seed_deletable_github_skill(roots)
+    store = _seed_derived_state("two-skills")
+    cache_dir = roots.github_cache / "two-skills" / ".git"
+    cache_dir.mkdir(parents=True)
+    commits_before = _commit_count(roots.source_root)
+
+    response = client.request(
+        "DELETE", "/api/skills/two-skills", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"skill_id": "two-skills"}
+    registry_data = json.loads(
+        (roots.source_root / "registry.json").read_text(encoding="utf-8")
+    )
+    assert [s["id"] for s in registry_data["skills"]] == ["alpha"]
+    assert _commit_count(roots.source_root) == commits_before + 1
+    assert store.get_github_check("two-skills") is None
+    assert store.get_rollback_snapshot("two-skills", "openclaw") is None
+    assert not (roots.github_cache / "two-skills").exists()
+    card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
+    assert "two-skills" not in card_ids
+
+
+def test_delete_github_skill_with_active_deployment_returns_409(client, roots):
+    """任一 target 存在 active 部署 → 409，registry 与派生数据均无变化。"""
+    _seed_deletable_github_skill(roots)
+    store = _seed_derived_state("two-skills")
+    _insert_active_deployment(roots, "two-skills", "openclaw")
+
+    response = client.request(
+        "DELETE", "/api/skills/two-skills", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "skill_active"
+    registry_data = json.loads(
+        (roots.source_root / "registry.json").read_text(encoding="utf-8")
+    )
+    assert any(s["id"] == "two-skills" for s in registry_data["skills"])
+    assert store.get_github_check("two-skills") is not None
+
+
+def test_delete_local_skill_returns_400(client):
+    response = client.request(
+        "DELETE", "/api/skills/alpha", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "local_source"
+
+
+def test_delete_unknown_skill_returns_404(client):
+    response = client.request(
+        "DELETE", "/api/skills/ghost", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "unknown_skill"
+
+
+def test_delete_github_skill_requires_password(client, roots):
+    _seed_deletable_github_skill(roots)
+    before = (roots.source_root / "registry.json").read_text(encoding="utf-8")
+
+    response = client.request(
+        "DELETE", "/api/skills/two-skills", json={"password": "wrong"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_password"
+    assert (
+        (roots.source_root / "registry.json").read_text(encoding="utf-8") == before
+    )

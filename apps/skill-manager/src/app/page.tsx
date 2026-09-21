@@ -11,6 +11,7 @@ import {
   ApiClientError,
   checkUpdates,
   cloneGithubCache,
+  deleteSkill,
   listSkills,
   publish,
   publishPlan,
@@ -52,6 +53,12 @@ interface PendingTargetOp {
 
 /** 待 Clone 缓存的 GitHub Skill（缓存缺失，发布前必须先重建缓存）。 */
 interface PendingClone {
+  skillId: string;
+  skillName: string;
+}
+
+/** 待删除登记的 GitHub Skill（移除 registry 条目并清理本机缓存）。 */
+interface PendingDelete {
   skillId: string;
   skillName: string;
 }
@@ -127,6 +134,7 @@ export default function Page() {
   const [showRegister, setShowRegister] = useState(false);
   const [pendingOp, setPendingOp] = useState<PendingTargetOp | null>(null);
   const [pendingClone, setPendingClone] = useState<PendingClone | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -318,6 +326,26 @@ export default function Page() {
     }
   }
 
+  async function performDelete(password: string) {
+    if (!pendingDelete) {
+      return;
+    }
+    setActionBusy(true);
+    setActionError('');
+    try {
+      await deleteSkill(pendingDelete.skillId, password);
+      const { skillId, skillName } = pendingDelete;
+      setPendingDelete(null);
+      setQueue((prev) => removeQueueItem(prev, skillId));
+      setNotice({ kind: 'ok', text: `已删除 GitHub Skill「${skillName}」` });
+      await refreshSkills();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '删除失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   const publishableItems = plan?.filter(
     (item) => item.action === 'add' || item.action === 'update'
   );
@@ -383,6 +411,10 @@ export default function Page() {
                   skillId,
                   skillName: skillNames.get(skillId) ?? skillId,
                 });
+              }}
+              onDelete={(skill) => {
+                setActionError('');
+                setPendingDelete({ skillId: skill.id, skillName: skill.name });
               }}
             />
           )}
@@ -489,6 +521,24 @@ export default function Page() {
           error={actionError}
           onConfirm={(password) => void performClone(password)}
           onCancel={() => setPendingClone(null)}
+        />
+      ) : null}
+
+      {pendingDelete ? (
+        <ConfirmActionDialog
+          title="确认删除 Skill"
+          description={
+            <p>
+              将移除「{pendingDelete.skillName}
+              」的登记条目并删除本机缓存（不影响已发布目标；已有
+              active 部署时需先下架）。此操作通过 Git 提交全局生效。
+            </p>
+          }
+          confirmLabel="确认删除"
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={(password) => void performDelete(password)}
+          onCancel={() => setPendingDelete(null)}
         />
       ) : null}
 

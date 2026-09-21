@@ -254,3 +254,9 @@ class UnpublishResponse(BaseModel):
     skill_id: str
     target: TargetKey
     status: Literal["removed"] = "removed"
+
+
+class DeleteSkillResponse(BaseModel):
+    """`DELETE /api/skills/{skill_id}`：删除已登记 GitHub Skill。"""
+
+    skill_id: str

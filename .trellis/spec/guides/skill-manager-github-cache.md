@@ -64,4 +64,12 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
   完整发布链路在 Docker/Linux 验证；pytest 侧见
   [Windows 测试环境契约](./testing-environment.md) 的 `requires_symlink`；
 - 手工往 registry.json 加 GitHub 条目不会触发 clone，发布前必须走
-  Clone 按钮（或补一次登记流程）。
+  Clone 按钮（或补一次登记流程）；
+- 手工改动 registry.json 后**必须自行 commit**，否则删除流程会踩
+  "nothing to commit"：删除已登记条目（`DELETE /api/skills/{id}`）的顺序是
+  registry.remove + git commit → 派生数据清理，净零 diff 时 commit 以
+  非零码退出，API 返回 500 `delete_failed`（文件其实已删成功）——
+  2026-09 删除功能实测时踩过；真实登记/删除路径不受影响；
+- 删除已登记 GitHub 条目是**全局生效**的（registry.json 随源库同步所有
+  环境），但缓存清理只影响执行删除的本环境，其他环境残留孤儿缓存目录
+  属无害派生数据。

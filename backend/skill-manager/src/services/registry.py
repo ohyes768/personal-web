@@ -76,6 +76,16 @@ class RegistryService:
         self._save(updated)
         return updated
 
+    def remove(self, skill_id: str) -> RegistryFile:
+        """移除单个条目，保留 agents 与其他条目；id 不存在时报错。"""
+        registry = self._load_or_empty()
+        remaining = [s for s in registry.skills if s.id != skill_id]
+        if len(remaining) == len(registry.skills):
+            raise RegistryValidationError(f"unknown skill id: {skill_id}")
+        updated = registry.model_copy(update={"skills": remaining})
+        self._save(updated)
+        return updated
+
     # ---------- 本地发现 ----------
 
     def discover_local(self) -> list[RegistrySkill]:

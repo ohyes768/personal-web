@@ -5,6 +5,7 @@ from contextlib import closing
 
 from src.db import (
     DeploymentRecord,
+    GithubCheckRecord,
     HistoryEntry,
     RollbackSnapshot,
     SkillStateStore,
@@ -137,3 +138,60 @@ def test_snapshot_set_get_delete(tmp_path):
 
     store.delete_rollback_snapshot("macro", "openclaw")
     assert store.get_rollback_snapshot("macro", "openclaw") is None
+
+
+def test_delete_rollback_snapshots_removes_all_targets_for_skill(tmp_path):
+    store = SkillStateStore(tmp_path / "state" / "skills.sqlite3")
+    store.set_rollback_snapshot(
+        RollbackSnapshot(
+            skill_id="macro",
+            target="openclaw",
+            previous_link_target="/mnt/old-openclaw",
+            previous_revision="sha-1",
+            updated_at="2026-09-21T08:00:00+00:00",
+        )
+    )
+    store.set_rollback_snapshot(
+        RollbackSnapshot(
+            skill_id="macro",
+            target="hermes",
+            previous_link_target="/mnt/old-hermes",
+            previous_revision="sha-2",
+            updated_at="2026-09-21T09:00:00+00:00",
+        )
+    )
+    store.set_rollback_snapshot(
+        RollbackSnapshot(
+            skill_id="other",
+            target="openclaw",
+            previous_link_target="/mnt/other",
+            previous_revision="sha-3",
+            updated_at="2026-09-21T10:00:00+00:00",
+        )
+    )
+
+    store.delete_rollback_snapshots("macro")
+
+    assert store.get_rollback_snapshot("macro", "openclaw") is None
+    assert store.get_rollback_snapshot("macro", "hermes") is None
+    assert store.get_rollback_snapshot("other", "openclaw") is not None
+
+
+def test_delete_github_check(tmp_path):
+    store = SkillStateStore(tmp_path / "state" / "skills.sqlite3")
+    store.upsert_github_check(
+        GithubCheckRecord(
+            skill_id="macro",
+            repository="https://github.com/a/macro",
+            remote_revision="sha-1",
+            remote_tags="",
+            cached_revision="sha-1",
+            result="ok",
+            error=None,
+            checked_at="2026-09-21T08:00:00+00:00",
+        )
+    )
+
+    store.delete_github_check("macro")
+
+    assert store.get_github_check("macro") is None

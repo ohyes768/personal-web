@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "检查删除实现是否破坏缓存死锁修复契约（cache_missing 口径、Clone 端点语义勿回退）"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查是否复用现有 request helper、ConfirmActionDialog、queue 工具而非重复造轮子"}

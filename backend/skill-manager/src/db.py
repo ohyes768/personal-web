@@ -259,6 +259,12 @@ class SkillStateStore:
                 (skill_id, target),
             )
 
+    def delete_rollback_snapshots(self, skill_id: str) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute(
+                "DELETE FROM rollback_snapshot WHERE skill_id = ?", (skill_id,)
+            )
+
     # ---------- github_check ----------
 
     def upsert_github_check(self, record: GithubCheckRecord) -> None:
@@ -288,6 +294,12 @@ class SkillStateStore:
                 "SELECT * FROM github_check WHERE skill_id = ?", (skill_id,)
             ).fetchone()
         return _row_to_github_check(row) if row is not None else None
+
+    def delete_github_check(self, skill_id: str) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute(
+                "DELETE FROM github_check WHERE skill_id = ?", (skill_id,)
+            )
 
     # ---------- 内部 ----------
 
