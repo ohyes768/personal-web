@@ -574,3 +574,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: skill-manager 删除已登记 GitHub Skill 功能
+
+**Date**: 2026-09-21
+**Task**: skill-manager 删除已登记 GitHub Skill 功能
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+新增 DELETE /api/skills/{skill_id}（仅 github 来源，active 部署 409 拒绝）：registry.remove + git commit + 尽力清理 github_check/回滚快照/缓存目录；前端 GitHub 卡片删除按钮 + 密码确认 + 队列清理。浏览器实测 401/409/成功三路径全通过，测试条目与 skills 仓库测试提交已清理。spec 补充：手工改 registry 未 commit 时删除会因 nothing-to-commit 500；删除全局生效、缓存清理仅本环境。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `032a344` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
