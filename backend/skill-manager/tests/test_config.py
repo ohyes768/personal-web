@@ -72,3 +72,24 @@ def test_settings_resolves_relative_roots(monkeypatch, tmp_path):
 
     assert settings.skills_source_root.is_absolute()
     assert settings.skills_source_root == source.resolve()
+
+
+def test_settings_accepts_absent_targets_mount_root(monkeypatch, tmp_path):
+    """同路径挂载部署（NAS）：不传 targets_mount_root → 构造成功，
+    target 根可与其它根无共同父级，包含关系校验跳过。"""
+    source, cache, state, targets = _prepare_roots(tmp_path)
+    _set_base_env(monkeypatch, tmp_path, source, cache, state, targets)
+    # 两个 target 根分属 tmp_path 下互不相干的独立目录（模拟宿主机上
+    # 两个 agent 各自的 skills 目录，与源库/缓存无共同挂载父级）
+    openclaw = tmp_path / "openclaw-standalone" / "workspace" / "skills"
+    hermes = tmp_path / "hermes-standalone" / "skills"
+    openclaw.mkdir(parents=True)
+    hermes.mkdir(parents=True)
+    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(openclaw))
+    monkeypatch.setenv("HERMES_SKILLS_ROOT", str(hermes))
+
+    settings = Settings()
+
+    assert settings.targets_mount_root is None
+    assert settings.openclaw_skills_root == openclaw.resolve()
+    assert settings.hermes_skills_root == hermes.resolve()
