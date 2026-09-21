@@ -1,7 +1,8 @@
 """SQLite 运行状态库（design 3.2）。
 
-只保存发布审计、回滚快照与运行状态；Skill 清单真源是 Skills Git 仓库的
-registry.json，本库不复制注册表内容。
+保存发布审计、回滚快照、运行状态与登记真源（registry_skill 表）。
+Skills 源库的 registry.json 不再是登记真源——它归 sync 工具链所有，
+skill-manager 只在首次启动时做一次只读迁移导入，之后绝不读写该文件。
 
 连接管理采用"每次操作短连接"：SQLite 本地文件连接创建开销极低，短连接
 不跨线程共享，天然规避 FastAPI 线程池下的并发问题，因此无需
@@ -11,13 +12,16 @@ registry.json，本库不复制注册表内容。
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from src.config import Settings
+from src.models import RegistrySkill
 
 DEFAULT_DB_FILENAME = "skill-manager.sqlite3"
 
@@ -67,6 +71,21 @@ CREATE TABLE IF NOT EXISTS github_check (
     result          TEXT NOT NULL,
     error           TEXT,
     checked_at      TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS registry_skill (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    source      TEXT NOT NULL CHECK (source IN ('local','github')),
+    path        TEXT NOT NULL,
+    repository  TEXT,
+    tags        TEXT NOT NULL DEFAULT '[]',
+    summary     TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'active'
+                CHECK (status IN ('active','deprecated')),
+    depends_on  TEXT NOT NULL DEFAULT '[]',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
 );
 """
 
@@ -301,6 +320,67 @@ class SkillStateStore:
                 "DELETE FROM github_check WHERE skill_id = ?", (skill_id,)
             )
 
+    # ---------- registry_skill（登记真源） ----------
+
+    def list_registry_skills(self) -> list[RegistrySkill]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute(
+                "SELECT * FROM registry_skill ORDER BY id"
+            ).fetchall()
+        return [_row_to_registry_skill(row) for row in rows]
+
+    def get_registry_skill(self, skill_id: str) -> RegistrySkill | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT * FROM registry_skill WHERE id = ?", (skill_id,)
+            ).fetchone()
+        return _row_to_registry_skill(row) if row is not None else None
+
+    def upsert_registry_skill(self, skill: RegistrySkill) -> None:
+        """同 id 替换；created_at 保留首次写入值，updated_at 每次刷新。"""
+        now = _utcnow_iso()
+        with closing(self._connect()) as conn, conn:
+            row = conn.execute(
+                "SELECT created_at FROM registry_skill WHERE id = ?", (skill.id,)
+            ).fetchone()
+            created_at = row["created_at"] if row is not None else now
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO registry_skill
+                    (id, name, source, path, repository, tags, summary, status,
+                     depends_on, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    skill.id,
+                    skill.name,
+                    skill.source.value,
+                    skill.path,
+                    str(skill.repository) if skill.repository else None,
+                    json.dumps(skill.tags, ensure_ascii=False),
+                    skill.summary,
+                    skill.status,
+                    json.dumps(skill.depends_on, ensure_ascii=False),
+                    created_at,
+                    now,
+                ),
+            )
+
+    def delete_registry_skill(self, skill_id: str) -> bool:
+        """删除登记条目，返回该 id 是否原本存在。"""
+        with closing(self._connect()) as conn, conn:
+            cursor = conn.execute(
+                "DELETE FROM registry_skill WHERE id = ?", (skill_id,)
+            )
+        return cursor.rowcount > 0
+
+    def count_registry_skills(self) -> int:
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) AS n FROM registry_skill"
+            ).fetchone()
+        return int(row["n"])
+
     # ---------- 内部 ----------
 
     def _connect(self) -> sqlite3.Connection:
@@ -356,3 +436,21 @@ def _row_to_github_check(row: sqlite3.Row) -> GithubCheckRecord:
         error=row["error"],
         checked_at=row["checked_at"],
     )
+
+
+def _row_to_registry_skill(row: sqlite3.Row) -> RegistrySkill:
+    return RegistrySkill(
+        id=row["id"],
+        name=row["name"],
+        source=row["source"],
+        path=row["path"],
+        repository=row["repository"],
+        tags=json.loads(row["tags"]),
+        summary=row["summary"],
+        status=row["status"],
+        depends_on=json.loads(row["depends_on"]),
+    )
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(UTC).isoformat()

@@ -15,8 +15,10 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
   └── <registry.path>/SKILL.md                # path 为 "." 时即仓库根
 ```
 
-注册记录（registry.json）随源库同步到**所有环境**，缓存却是**环境本地**的。
-所以任何"手工写入注册表"或"换环境/重建缓存卷"的场景，缓存必然缺失。
+**登记真源是 skill-manager 自己的 SQLite（`registry_skill` 表，2026-09-21
+从 registry.json 迁移）**，环境本地；缓存也是环境本地的。skills 源库的
+`registry.json` 已归还给源库 sync 工具链（4 个 sync 脚本），skill-manager
+只在首次启动、表为空时做一次只读导入，之后绝不读写该文件。
 
 ## clone/fetch 的全部触发点
 
@@ -63,13 +65,11 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
   publisher 建临时 `.next` 链接一步失败——本地只验收 plan 与 clone，
   完整发布链路在 Docker/Linux 验证；pytest 侧见
   [Windows 测试环境契约](./testing-environment.md) 的 `requires_symlink`；
-- 手工往 registry.json 加 GitHub 条目不会触发 clone，发布前必须走
+- 手工往 SQLite `registry_skill` 表插 GitHub 条目不会触发 clone，发布前必须走
   Clone 按钮（或补一次登记流程）；
-- 手工改动 registry.json 后**必须自行 commit**，否则删除流程会踩
-  "nothing to commit"：删除已登记条目（`DELETE /api/skills/{id}`）的顺序是
-  registry.remove + git commit → 派生数据清理，净零 diff 时 commit 以
-  非零码退出，API 返回 500 `delete_failed`（文件其实已删成功）——
-  2026-09 删除功能实测时踩过；真实登记/删除路径不受影响；
-- 删除已登记 GitHub 条目是**全局生效**的（registry.json 随源库同步所有
-  环境），但缓存清理只影响执行删除的本环境，其他环境残留孤儿缓存目录
-  属无害派生数据。
+- 登记/删除**无任何 git 写依赖**（2026-09-21 迁移后）：源目录不需要是 git
+  仓库、不需要凭据；此前"git add/commit registry.json 失败导致登记/删除
+  报错"（NAS `git add` 128 等）一类问题已随迁移根除；
+- 删除已登记 GitHub 条目只影响**本环境**的 DB、状态库与缓存；skills 仓库
+  registry.json 归 sync 工具链，管理台操作不反映到它（未来"界面编辑 +
+  手动导入/导出"任务会补这个桥）。

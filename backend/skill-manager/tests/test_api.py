@@ -2,7 +2,9 @@
 无副作用、批量逐项结果与错误契约。
 
 fixture 环境：tmp_path 构造全部受控根目录 + registry.json 写入 local
-skill 条目 + 本地 bare 仓库经 remotes 映射充当 GitHub 远端（离线）。
+skill 条目（启动迁移导入 SQLite 登记真源）+ 本地 bare 仓库经 remotes
+映射充当 GitHub 远端（离线）。registry.json 全程只读：登记/删除断言
+DB 状态变化且文件逐字节不变。
 依赖真实 symlink 的测试标 `requires_symlink`（conftest 在无特权时跳过）。
 """
 
@@ -25,7 +27,9 @@ from src.db import (
     RollbackSnapshot,
     SkillStateStore,
 )
+from src.models import RegistrySkill
 from src.services.git_cache import GitCacheService
+from src.services.registry import RegistryService
 
 PASSWORD = "test-password"
 CANONICAL_URL = "https://github.com/example/two-skills"
@@ -325,12 +329,16 @@ def test_rollback_restores_previous_link(client, publish_request, roots):
     v2 = roots.source_root / "alpha-v2"
     v2.mkdir()
     (v2 / "SKILL.md").write_text("---\nname: alpha-v2\n---\n", encoding="utf-8")
-    registry = json.loads(
-        (roots.source_root / "registry.json").read_text(encoding="utf-8")
-    )
-    registry["skills"][0]["path"] = "alpha-v2"
-    (roots.source_root / "registry.json").write_text(
-        json.dumps(registry, ensure_ascii=False), encoding="utf-8"
+    _upsert_registry_entry(
+        roots,
+        {
+            "id": "alpha",
+            "name": "Alpha",
+            "source": "local",
+            "path": "alpha-v2",
+            "tags": ["demo"],
+            "summary": "本地示例技能",
+        },
     )
     client.post("/api/skills/publish", json=publish_request)
 
@@ -360,13 +368,12 @@ def _register_payload(password: str = PASSWORD) -> dict:
 
 
 def test_register_github_skill_requires_password_and_persists(client, roots):
-    before = (roots.source_root / "registry.json").read_text(encoding="utf-8")
+    registry_file = roots.source_root / "registry.json"
+    before = registry_file.read_text(encoding="utf-8")
 
     denied = client.post("/api/skills/github", json=_register_payload("wrong"))
     assert denied.status_code == 401
-    assert (
-        (roots.source_root / "registry.json").read_text(encoding="utf-8") == before
-    )
+    assert registry_file.read_text(encoding="utf-8") == before
     assert not any(roots.github_cache.iterdir())
 
     ok = client.post("/api/skills/github", json=_register_payload())
@@ -376,10 +383,13 @@ def test_register_github_skill_requires_password_and_persists(client, roots):
     assert card["name"] == "Fixture"
     assert card["tags"] == ["test"]
 
-    registry_data = json.loads(
-        (roots.source_root / "registry.json").read_text(encoding="utf-8")
-    )
-    assert any(s["id"] == card["id"] for s in registry_data["skills"])
+    # 登记真源是 SQLite：新条目入库且列表可见；registry.json 逐字节不变
+    assert registry_file.read_text(encoding="utf-8") == before
+    store = SkillStateStore.from_settings(Settings())
+    registry = RegistryService(store, roots.source_root)
+    assert registry.get(card["id"]) is not None
+    card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
+    assert card["id"] in card_ids
     assert (roots.github_cache / card["id"] / "skills" / "alpha" / "SKILL.md").is_file()
 
 
@@ -534,15 +544,11 @@ def test_check_updates_is_public_and_reports_unknown_ids(client):
 # ---------- 缓存缺失 Clone 端点 ----------
 
 
-def _append_github_skill(roots: SimpleNamespace, skill: dict) -> None:
-    """向测试源库 registry.json 追加一个 GitHub 条目（模拟跨环境同步后
-    缓存缺失的登记记录）。"""
-    registry = json.loads(
-        (roots.source_root / "registry.json").read_text(encoding="utf-8")
-    )
-    registry["skills"].append(skill)
-    (roots.source_root / "registry.json").write_text(
-        json.dumps(registry, ensure_ascii=False), encoding="utf-8"
+def _upsert_registry_entry(roots: SimpleNamespace, skill: dict) -> None:
+    """直接向登记 DB upsert 条目（登记真源是 SQLite，registry.json 只读）。"""
+    store = SkillStateStore.from_settings(Settings())
+    RegistryService(store, roots.source_root).upsert(
+        RegistrySkill.model_validate(skill)
     )
 
 
@@ -559,7 +565,7 @@ def _missing_cache_skill(repository: str) -> dict:
 def test_clone_rebuilds_missing_cache_and_reports_revision(client, roots, upstream_repo):
     """缓存缺失的 GitHub skill：clone 重建缓存并返回检出 revision；local
     来源卡片恒不缺失。"""
-    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
+    _upsert_registry_entry(roots, _missing_cache_skill(CANONICAL_URL))
     cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
     assert cards["two-skills"]["cache_missing"] is True
     assert cards["alpha"]["cache_missing"] is False
@@ -602,7 +608,7 @@ def test_clone_returns_400_when_remote_unreachable(client, roots, upstream_repo)
     → 400 cache_failed，且缓存目录保持为空。"""
     from src.main import app
 
-    _append_github_skill(
+    _upsert_registry_entry(
         roots, _missing_cache_skill("https://github.com/example/missing")
     )
     settings = Settings()
@@ -634,7 +640,7 @@ def test_clone_returns_400_when_git_binary_missing(client, roots, monkeypatch):
         raise FileNotFoundError(2, "No such file or directory", "git")
 
     monkeypatch.setattr(git_cache_module.subprocess, "run", _raise_file_not_found)
-    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
+    _upsert_registry_entry(roots, _missing_cache_skill(CANONICAL_URL))
     response = client.post(
         "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
     )
@@ -645,7 +651,7 @@ def test_clone_returns_400_when_git_binary_missing(client, roots, monkeypatch):
 
 
 def test_clone_requires_password(client, roots):
-    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
+    _upsert_registry_entry(roots, _missing_cache_skill(CANONICAL_URL))
 
     denied = client.post(
         "/api/skills/github/two-skills/clone", json={"password": "wrong"}
@@ -705,13 +711,8 @@ def test_list_reports_no_link_missing_when_active_link_exists(client, roots):
 
 
 def _seed_deletable_github_skill(roots: SimpleNamespace) -> None:
-    """registry 追加 GitHub 条目并把源库初始化为 Git 仓库（提交可断言）。"""
-    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
-    run_git("init", str(roots.source_root))
-    run_git("config", "user.email", "fixture@example.com", cwd=roots.source_root)
-    run_git("config", "user.name", "Fixture", cwd=roots.source_root)
-    run_git("add", "-A", cwd=roots.source_root)
-    run_git("commit", "-m", "fixture: seed registry", cwd=roots.source_root)
+    """登记一个 GitHub 条目；源库保持非 git 仓库（模拟 NAS git add 128 场景）。"""
+    _upsert_registry_entry(roots, _missing_cache_skill(CANONICAL_URL))
 
 
 def _seed_derived_state(skill_id: str) -> SkillStateStore:
@@ -741,21 +742,17 @@ def _seed_derived_state(skill_id: str) -> SkillStateStore:
     return store
 
 
-def _commit_count(source_root: Path) -> int:
-    output = run_git("rev-list", "--count", "HEAD", cwd=source_root)
-    return int(output.strip())
-
-
-def test_delete_github_skill_removes_registry_entry_and_derived_state(
-    client, roots
-):
-    """成功删除：registry 条目移除且产生 git commit；github_check、
-    rollback_snapshot 清理；缓存目录移除；列表不再显示。"""
+def test_delete_github_skill_removes_registry_entry_and_derived_state(client, roots):
+    """成功删除：DB 行移除且源库无需是 git 仓库（NAS git add 128 场景）；
+    registry.json 逐字节不变；github_check、rollback_snapshot 清理；缓存
+    目录移除；列表不再显示。"""
     _seed_deletable_github_skill(roots)
     store = _seed_derived_state("two-skills")
     cache_dir = roots.github_cache / "two-skills" / ".git"
     cache_dir.mkdir(parents=True)
-    commits_before = _commit_count(roots.source_root)
+    registry_file = roots.source_root / "registry.json"
+    before = registry_file.read_text(encoding="utf-8")
+    assert not (roots.source_root / ".git").exists()
 
     response = client.request(
         "DELETE", "/api/skills/two-skills", json={"password": PASSWORD}
@@ -763,11 +760,9 @@ def test_delete_github_skill_removes_registry_entry_and_derived_state(
 
     assert response.status_code == 200
     assert response.json() == {"skill_id": "two-skills"}
-    registry_data = json.loads(
-        (roots.source_root / "registry.json").read_text(encoding="utf-8")
-    )
-    assert [s["id"] for s in registry_data["skills"]] == ["alpha"]
-    assert _commit_count(roots.source_root) == commits_before + 1
+    assert registry_file.read_text(encoding="utf-8") == before
+    registry = RegistryService(store, roots.source_root)
+    assert registry.get("two-skills") is None
     assert store.get_github_check("two-skills") is None
     assert store.get_rollback_snapshot("two-skills", "openclaw") is None
     assert not (roots.github_cache / "two-skills").exists()
@@ -776,10 +771,12 @@ def test_delete_github_skill_removes_registry_entry_and_derived_state(
 
 
 def test_delete_github_skill_with_active_deployment_returns_409(client, roots):
-    """任一 target 存在 active 部署 → 409，registry 与派生数据均无变化。"""
+    """任一 target 存在 active 部署 → 409，登记真源与派生数据均无变化。"""
     _seed_deletable_github_skill(roots)
     store = _seed_derived_state("two-skills")
     _insert_active_deployment(roots, "two-skills", "openclaw")
+    registry_file = roots.source_root / "registry.json"
+    before = registry_file.read_text(encoding="utf-8")
 
     response = client.request(
         "DELETE", "/api/skills/two-skills", json={"password": PASSWORD}
@@ -787,11 +784,38 @@ def test_delete_github_skill_with_active_deployment_returns_409(client, roots):
 
     assert response.status_code == 409
     assert response.json()["code"] == "skill_active"
-    registry_data = json.loads(
-        (roots.source_root / "registry.json").read_text(encoding="utf-8")
-    )
-    assert any(s["id"] == "two-skills" for s in registry_data["skills"])
+    assert registry_file.read_text(encoding="utf-8") == before
     assert store.get_github_check("two-skills") is not None
+    registry = RegistryService(store, roots.source_root)
+    assert registry.get("two-skills") is not None
+
+
+def test_register_and_delete_spawn_no_registry_git_processes(client, monkeypatch):
+    """R2：登记/删除不再产生 git add/commit 子进程；删除流程全程零 git
+    子进程（GitHub 缓存 clone/fetch 属 GitCacheService 职责，不在禁止范围）。"""
+    calls: list[list[str]] = []
+    real_run = subprocess.run
+
+    def spy_run(cmd, *args, **kwargs):
+        calls.append([str(part) for part in cmd])
+        return real_run(cmd, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", spy_run)
+
+    registered = client.post("/api/skills/github", json=_register_payload())
+    assert registered.status_code == 200
+    skill_id = registered.json()["id"]
+
+    git_calls = [argv for argv in calls if argv and argv[0] == "git"]
+    assert not any(argv[:2] == ["git", "add"] for argv in git_calls)
+    assert not any(argv[:2] == ["git", "commit"] for argv in git_calls)
+
+    calls.clear()
+    deleted = client.request(
+        "DELETE", f"/api/skills/{skill_id}", json={"password": PASSWORD}
+    )
+    assert deleted.status_code == 200
+    assert [argv for argv in calls if argv and argv[0] == "git"] == []
 
 
 def test_delete_local_skill_returns_400(client):

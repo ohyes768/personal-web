@@ -11,6 +11,7 @@ dependency_overrides 替换任意服务（如离线 remotes 的 GitCacheService�
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+import logging
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -21,7 +22,9 @@ from src.config import Settings
 from src.db import SkillStateStore
 from src.services.git_cache import GitCacheService
 from src.services.publisher import Publisher
-from src.services.registry import RegistryService
+from src.services.registry import RegistryService, import_registry_json_if_empty
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -30,9 +33,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     store = SkillStateStore.from_settings(settings)
     app.state.settings = settings
     app.state.store = store
-    app.state.registry = RegistryService(settings.skills_source_root)
+    app.state.registry = RegistryService(store, settings.skills_source_root)
     app.state.publisher = Publisher(settings, store)
     app.state.git_cache = GitCacheService(settings, store)
+    imported = import_registry_json_if_empty(store, settings.skills_source_root)
+    logger.info("registry migration: imported %d skills", imported)
     yield
 
 

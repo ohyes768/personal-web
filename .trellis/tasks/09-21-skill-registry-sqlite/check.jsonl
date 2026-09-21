@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查是否复用 SkillStateStore 短连接模式与既有校验逻辑，而非并行造第二套"}

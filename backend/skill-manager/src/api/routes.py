@@ -82,13 +82,7 @@ def list_skills(
     settings: Settings = Depends(get_settings),
 ) -> SkillListResponse:
     """左栏卡片：注册表 + 部署状态 + 最近一次更新检查。"""
-    try:
-        skills = registry.load().skills
-    except RegistryValidationError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={"code": "registry_invalid", "message": f"注册表加载失败：{exc}"},
-        ) from exc
+    skills = registry.list_skills()
     deployments: dict[str, dict[str, TargetDeployment]] = {}
     for record in store.list_deployments():
         # 账实核对：active 记录对目标链接做 lstat 存在性检查（纯 lstat，
@@ -218,13 +212,12 @@ def register_github_skill(
             status_code=409,
             detail={"code": "registry_conflict", "message": f"注册表写入被拒绝：{exc}"},
         ) from exc
-    _commit_registry_best_effort(registry)
     return _build_card(skill, {}, store.get_github_check(skill.id))
 
 
 def _derive_skill_id(registry: RegistryService, canonical: str, path: str) -> str:
     """从仓库与路径派生稳定 slug；与现有条目冲突时追加序号。"""
-    existing = {s.id for s in registry.load().skills}
+    existing = {s.id for s in registry.list_skills()}
     repo_name = canonical.rstrip("/").rsplit("/", 1)[-1]
     parts = [repo_name]
     if path not in (".", ""):
@@ -241,15 +234,6 @@ def _derive_skill_id(registry: RegistryService, canonical: str, path: str) -> st
         candidate = f"{slug}-{counter}"
         counter += 1
     return candidate
-
-
-def _commit_registry_best_effort(registry: RegistryService) -> None:
-    """注册表 Git 提交尽力而为：非 Git 环境/提交失败不阻断登记。"""
-    try:
-        registry.commit_registry_change()
-    except Exception:
-        # 测试源库与部分 NAS 源库可能没有 Git 历史；登记本身已落盘
-        pass
 
 
 # ---------- 密码：重建 GitHub 缓存（Clone） ----------
@@ -309,7 +293,7 @@ def check_updates(
     git_cache: GitCacheService = Depends(get_git_cache),
 ) -> UpdateCheckResponse:
     """只读检查远端/缓存版本差异；绝不 fetch 缓存、绝不发布（R3）。"""
-    skills = registry.load().skills
+    skills = registry.list_skills()
     selected = [
         skill
         for skill in skills
@@ -348,7 +332,7 @@ def publish_plan(
     git_cache: GitCacheService = Depends(get_git_cache),
 ) -> PlanResponse:
     """右栏计划预览：逐项 add/update/unchanged/blocked；只读（design 4.2）。"""
-    known = {skill.id: skill for skill in registry.load().skills}
+    known = {skill.id: skill for skill in registry.list_skills()}
     items: list[PlanItem] = []
     for queue_item in req.items:
         skill = known.get(queue_item.skill_id)
@@ -449,7 +433,7 @@ def publish(
 ) -> PublishBatchResult:
     """执行发布：逐项独立事务，单项失败只记录该项（design 6.1 / 7）。"""
     ensure_admin_password(settings, req.password)
-    known = {skill.id: skill for skill in registry.load().skills}
+    known = {skill.id: skill for skill in registry.list_skills()}
     results: list[PublishResultItem] = []
     for queue_item in req.items:
         skill = known.get(queue_item.skill_id)
@@ -615,8 +599,8 @@ def delete_skill(
     store: SkillStateStore = Depends(get_store),
 ) -> DeleteSkillResponse:
     """删除已登记的 GitHub Skill（design：仅 github 来源，任一 target
-    active 时拒绝）。registry.json 为真源：先移除并 git 提交，派生数据
-    （检查记录、回滚快照、本地缓存）随后尽力清理。"""
+    active 时拒绝）。登记真源是 SQLite：先移除 DB 行（无 git 依赖），
+    派生数据（检查记录、回滚快照、本地缓存）随后尽力清理。"""
     ensure_admin_password(settings, req.password)
     _require_skill_id(skill_id)
     skill = _require_known_skill(registry, skill_id, code="unknown_skill")
@@ -646,22 +630,12 @@ def delete_skill(
         )
     try:
         registry.remove(skill_id)
-        registry.commit_registry_change()
     except RegistryValidationError as exc:
         raise HTTPException(
             status_code=404,
             detail={
                 "code": "unknown_skill",
                 "message": f"未知 skill：{skill_id}",
-                "item_id": skill_id,
-            },
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={
-                "code": "delete_failed",
-                "message": f"注册表已更新但 Git 提交失败：{exc}",
                 "item_id": skill_id,
             },
         ) from exc
@@ -709,9 +683,9 @@ def _require_target(target: str) -> TargetKey:
 def _require_known_skill(
     registry: RegistryService, skill_id: str, code: str = "skill_not_found"
 ) -> RegistrySkill:
-    for skill in registry.load().skills:
-        if skill.id == skill_id:
-            return skill
+    skill = registry.get(skill_id)
+    if skill is not None:
+        return skill
     raise HTTPException(
         status_code=404,
         detail={

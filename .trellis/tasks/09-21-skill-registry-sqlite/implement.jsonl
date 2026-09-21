@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "缓存生命周期背景；注意其中 registry 多环境语义段落后续将过时，本任务不动该 spec（step 3.3 统一更新）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "真源从文件迁 DB，需核对所有 registry 消费点（路由/服务/测试/文档）不遗漏"}

@@ -1,16 +1,17 @@
-"""registry.json 的校验、原子写入与本地 Skill 发现（design 3.1）。
+"""登记真源服务（SQLite registry_skill 表）与 registry.json 一次性导入。
 
-RegistryService 是 Skills 源库内 `registry.json` 的唯一写入者：
+RegistryService 是登记真源（skill-manager 自己的 SQLite）的唯一读写入口：
 
-- 只加载 `registry.json`，不回读 HTML 或其他来源；
+- 登记与删除不产生任何 git 子进程调用，也不读写 Skills 源库的
+  registry.json（该文件归源库 sync 工具链，见 NAS 部署文档）；
 - 本地 Skill path resolve 后必须位于源库根内且目录含 `SKILL.md`，
   穿越源库根时报错信息包含 "source root"；
-- 拒绝重复 id 与重复的 github repository+path 组合；
-- tags 排序去重；
-- 全部写入使用临时文件 + `os.replace` 原子替换；
-- `commit_registry_change()` 只运行固定参数列表的
-  `git add registry.json` 与 `git commit`（shell=False），
-  不接受任何外部拼接的命令片段。
+- 拒绝 github repository+path 组合重复（同 id 视为更新，排除自身）；
+- tags 排序去重。
+
+`import_registry_json_if_empty()` 做一次性单向迁移：registry_skill 表为空
+且源库 registry.json 存在时全部导入；表非空则跳过（绝不重复导入）；
+全程只读该文件，绝不回写。
 """
 
 from __future__ import annotations
@@ -18,16 +19,14 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
-import uuid
 from pathlib import Path
 
 from pydantic import ValidationError
 
+from src.db import SkillStateStore
 from src.models import RegistryFile, RegistrySkill, SKILL_ID_PATTERN, SkillSource
 
 REGISTRY_FILENAME = "registry.json"
-COMMIT_MESSAGE = "chore(registry): update registry.json"
 
 _ID_RE = re.compile(SKILL_ID_PATTERN)
 
@@ -36,55 +35,36 @@ _DISCOVERY_EXCLUDED_DIRS = {"scripts", "__pycache__", "node_modules", "logs", "o
 
 
 class RegistryValidationError(ValueError):
-    """registry.json 内容或候选 Skill 目录未通过校验。"""
+    """登记操作未通过校验，或操作的 skill id 不存在。"""
 
 
 class RegistryService:
-    """以 `source_root` 为边界的注册表读写服务。"""
+    """以 registry_skill 表为真源、`source_root` 为路径边界的登记服务。"""
 
-    def __init__(self, source_root: Path) -> None:
+    def __init__(self, store: SkillStateStore, source_root: Path) -> None:
+        self.store = store
         self.source_root = source_root.resolve()
 
-    @property
-    def registry_path(self) -> Path:
-        return self.source_root / REGISTRY_FILENAME
+    # ---------- 读取 ----------
 
-    # ---------- 读取与校验 ----------
+    def list_skills(self) -> list[RegistrySkill]:
+        return self.store.list_registry_skills()
 
-    def load(self) -> RegistryFile:
-        if not self.registry_path.is_file():
-            raise RegistryValidationError(f"registry not found: {self.registry_path}")
-        try:
-            registry = RegistryFile.model_validate(
-                json.loads(self.registry_path.read_text(encoding="utf-8"))
-            )
-        except ValidationError as exc:
-            raise RegistryValidationError(f"invalid {REGISTRY_FILENAME}: {exc}") from exc
-        self._validate_unique(registry)
-        validated = registry.model_copy(
-            update={"skills": [self._validated(skill) for skill in registry.skills]}
-        )
-        return validated
+    def get(self, skill_id: str) -> RegistrySkill | None:
+        return self.store.get_registry_skill(skill_id)
 
-    def upsert(self, skill: RegistrySkill) -> RegistryFile:
-        """校验并写入单个条目（同 id 替换），保留 agents 与其他条目。"""
+    # ---------- 写入 ----------
+
+    def upsert(self, skill: RegistrySkill) -> None:
+        """校验并写入单个条目（同 id 替换）。"""
         normalized = self._validated(skill)
-        registry = self._load_or_empty()
-        skills = [s for s in registry.skills if s.id != normalized.id]
-        skills.append(normalized)
-        updated = registry.model_copy(update={"skills": skills})
-        self._save(updated)
-        return updated
+        self._reject_duplicate_repo_path(normalized)
+        self.store.upsert_registry_skill(normalized)
 
-    def remove(self, skill_id: str) -> RegistryFile:
-        """移除单个条目，保留 agents 与其他条目；id 不存在时报错。"""
-        registry = self._load_or_empty()
-        remaining = [s for s in registry.skills if s.id != skill_id]
-        if len(remaining) == len(registry.skills):
+    def remove(self, skill_id: str) -> None:
+        """移除单个条目；id 不存在时报错。"""
+        if not self.store.delete_registry_skill(skill_id):
             raise RegistryValidationError(f"unknown skill id: {skill_id}")
-        updated = registry.model_copy(update={"skills": remaining})
-        self._save(updated)
-        return updated
 
     # ---------- 本地发现 ----------
 
@@ -118,32 +98,7 @@ class RegistryService:
         candidates.sort(key=lambda skill: skill.path)
         return candidates
 
-    # ---------- 固定参数 git 提交 ----------
-
-    def commit_registry_change(self) -> None:
-        """只运行固定参数的 `git add registry.json` 与 `git commit`。
-
-        命令为写死的列表参数（shell=False），消息为模块常量；
-        不存在可由调用方注入的命令片段。
-        """
-        for argv in (
-            ["git", "add", REGISTRY_FILENAME],
-            ["git", "commit", "-m", COMMIT_MESSAGE],
-        ):
-            subprocess.run(
-                argv,
-                cwd=self.source_root,
-                shell=False,
-                check=True,
-                capture_output=True,
-            )
-
     # ---------- 内部工具 ----------
-
-    def _load_or_empty(self) -> RegistryFile:
-        if not self.registry_path.is_file():
-            return RegistryFile()
-        return self.load()
 
     def _validated(self, skill: RegistrySkill) -> RegistrySkill:
         """返回 tags 排序去重后的新对象，并校验路径边界。"""
@@ -171,33 +126,44 @@ class RegistryService:
                 f"github skill path {skill.path!r} must be a relative subdirectory"
             )
 
-    @staticmethod
-    def _validate_unique(registry: RegistryFile) -> None:
-        seen_ids: set[str] = set()
-        seen_repo_paths: set[tuple[str, str]] = set()
-        for skill in registry.skills:
-            if skill.id in seen_ids:
-                raise RegistryValidationError(f"duplicate skill id: {skill.id}")
-            seen_ids.add(skill.id)
-            if skill.source is SkillSource.GITHUB:
-                key = (str(skill.repository), skill.path)
-                if key in seen_repo_paths:
-                    raise RegistryValidationError(
-                        f"duplicate github repository+path: {key}"
-                    )
-                seen_repo_paths.add(key)
+    def _reject_duplicate_repo_path(self, skill: RegistrySkill) -> None:
+        """github repository+path 组合唯一；同 id 视为更新，排除自身。"""
+        if skill.source is not SkillSource.GITHUB:
+            return
+        key = (str(skill.repository), skill.path)
+        for other in self.store.list_registry_skills():
+            if other.id == skill.id or other.source is not SkillSource.GITHUB:
+                continue
+            if (str(other.repository), other.path) == key:
+                raise RegistryValidationError(
+                    f"duplicate github repository+path: {key}"
+                )
 
-    def _save(self, registry: RegistryFile) -> None:
-        payload = (
-            json.dumps(registry.model_dump(mode="json"), ensure_ascii=False, indent=2)
-            + "\n"
+
+def import_registry_json_if_empty(store: SkillStateStore, source_root: Path) -> int:
+    """一次性迁移：registry_skill 表为空时导入源库 registry.json 全部条目。
+
+    表非空 → 返回 0（单向迁移，绝不重复导入、绝不回写文件）；
+    表空且文件不存在 → 返回 0；
+    表空且文件损坏 → 抛 RegistryValidationError（消息含文件路径与原因），
+    让应用启动失败而非静默丢失登记清单。
+    """
+    if store.count_registry_skills() > 0:
+        return 0
+    registry_path = source_root / REGISTRY_FILENAME
+    if not registry_path.is_file():
+        return 0
+    try:
+        registry = RegistryFile.model_validate(
+            json.loads(registry_path.read_text(encoding="utf-8"))
         )
-        tmp_path = self.registry_path.with_name(
-            f"{REGISTRY_FILENAME}.{uuid.uuid4().hex}.tmp"
+    except (OSError, json.JSONDecodeError, ValidationError) as exc:
+        raise RegistryValidationError(
+            f"invalid {registry_path}: {exc}"
+        ) from exc
+    for skill in registry.skills:
+        # 与旧版 load() 行为一致：导入条目同样做 tags 排序去重（PRD R5）
+        store.upsert_registry_skill(
+            skill.model_copy(update={"tags": sorted(set(skill.tags))})
         )
-        try:
-            tmp_path.write_text(payload, encoding="utf-8")
-            os.replace(tmp_path, self.registry_path)
-        finally:
-            if tmp_path.exists():
-                tmp_path.unlink()
+    return len(registry.skills)

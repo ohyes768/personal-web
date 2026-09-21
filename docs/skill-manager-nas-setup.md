@@ -10,7 +10,7 @@ Skill 发布管理台（`apps/skill-manager` 前端 + `backend/skill-manager` �
 git clone https://github.com/ohyes768/skills.git ~/skills
 ```
 
-管理台把 `${SKILLS_SOURCE_ROOT}/registry.json` 作为登记真源。若开放注册表推送（见第 4 步），该 clone 需具备对 `ohyes768/skills` 的写权限。
+管理台的登记真源是自身 SQLite 状态库（`skill-manager.sqlite3`，位于 `SKILL_MANAGER_STATE_DIR`）。首次启动时若 `registry_skill` 表为空且源库存在 `registry.json`，会做一次性只读导入；此后 `registry.json` 归源库 `scripts/` 下 sync 工具链所有，管理台不再读写它，clone 无需写权限。
 
 ### 2. 创建缓存与状态目录
 
@@ -36,9 +36,7 @@ mkdir -p ~/openclaw/skills ~/hermes/skills   # 按实际部署路径调整
 
 四个 `*_HOST_PATH` 以读写方式 bind mount 进后端容器，容器内路径与宿主机路径完全一致（同路径挂载）——发布的 symlink target 是宿主机真实路径，宿主机上的 Agent 可直接解析。除此之外后端没有其他挂载，也没有 docker.sock。
 
-### 4.（可选）Skills 仓库写凭据
-
-登记 GitHub Skill 时管理台会把 `registry.json` 的变更 commit 到 Skills 源库；是否 push 取决于源库 clone 自身的凭据（如已配置的 credential helper 或 deploy key）。不配置写凭据时，登记仍可用，但变更只保留在 NAS 本地 commit，审计中标记"待推送"。
+登记/删除不再产生任何 git 操作（历史版本曾把 `registry.json` 提交到 Skills 源库，已由 SQLite 登记真源取代）；源库无需配置任何写凭据。
 
 ## 部署
 
@@ -118,7 +116,7 @@ ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
   ```
 
   然后从 `nginx/web.conf` 删除 `/skills*` 与 `/api/skills`（含 `location = /api/skills` 精确匹配块）路由块并执行 `./scripts/deploy-nas.sh nginx`。
-- **注册表错误**：`registry.json` 在 Skills Git 仓库中，从 Git 历史恢复。
+- **登记数据错误**：登记真源在 `skill-manager-state` volume 内的 SQLite 库（`registry_skill` 表），从该卷的备份恢复；源库 `registry.json` 不承载管理台登记内容，不要用它恢复。
 - **已发布项错误**：从管理台回滚；或按"管理台自身下线"处理后手工修复目标目录中的符号链接（只删链接本身，不删目录）。
 
 ## 安全要点
