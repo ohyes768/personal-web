@@ -3,6 +3,7 @@ print("[INIT-20260303-0942] routes.py 模块已加载")
 from fastapi import APIRouter, HTTPException, Query, Header, Response
 from datetime import datetime, timedelta
 import hmac
+import re
 import pandas as pd
 from typing import Optional
 
@@ -63,6 +64,7 @@ from src.models import (
     MacroSignalResponse,
     MacroMonthsResponse,
     DailySnapshotResponse,
+    AnalysisSnapshotResponse,
 )
 from src.services.fred_service import get_fred_service
 from src.services.ecb_service import get_ecb_service
@@ -80,6 +82,7 @@ from src.services.index_service import get_index_service
 from src.services.exchange_rate_service import ExchangeRateService
 from src.services.macro_signal_service import get_macro_signal_service
 from src.services.daily_snapshot_service import get_daily_snapshot_service
+from src.services.analysis_snapshot_service import get_analysis_snapshot_service
 from src.utils.logger import setup_logger
 from src.config import get_settings
 
@@ -2658,6 +2661,37 @@ def get_daily_snapshot(date: Optional[str] = Query(None, description="日期 YYY
         raise
     except Exception as e:
         logger.error(f"查询日频快照失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/analysis/snapshot", response_model=AnalysisSnapshotResponse)
+def get_analysis_snapshot(
+    months: Optional[str] = Query(None, description="逗号分隔的月度信号月份 YYYY-MM，最多12个"),
+    date: Optional[str] = Query(None, description="日频快照日期 YYYY-MM-DD；缺省使用15:00规则"),
+):
+    """供外部 Skill 一次读取多个月度信号和一份日频七卡快照。"""
+    parsed_months = None
+    if months is not None:
+        parsed_months = []
+        for month in (part.strip() for part in months.split(",")):
+            if re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month) is None:
+                raise HTTPException(status_code=400, detail="months 必须是逗号分隔的 YYYY-MM")
+            if month not in parsed_months:
+                parsed_months.append(month)
+        if not parsed_months or len(parsed_months) > 12:
+            raise HTTPException(status_code=400, detail="months 必须包含 1 至 12 个 YYYY-MM")
+    if date is not None:
+        try:
+            datetime.strptime(date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"非法日期格式: {date},应为 YYYY-MM-DD")
+    try:
+        data = get_analysis_snapshot_service().build(parsed_months, date)
+        return AnalysisSnapshotResponse(success=True, data=data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"查询 Skill 聚合快照失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

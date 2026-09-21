@@ -490,3 +490,52 @@ class DailySnapshotResponse(BaseModel):
     """GET /api/macro/daily-snapshot 响应"""
     success: bool = True
     data: DailySnapshotData
+
+
+# === Skill 分析聚合快照模型 ===
+
+class AnalysisIndicator(BaseModel):
+    """供外部 Skill 消费的统一指标投影。"""
+    key: str
+    name: str
+    unit: Optional[str] = None
+    value: Optional[float] = None
+    previous_value: Optional[float] = None
+    change: Optional[float] = None
+    data_date: Optional[str] = None
+    analyzed_at: Optional[str] = None
+    next_release_at: Optional[str] = None
+    next_release_note: Optional[str] = None
+    is_asof_fallback: bool = False
+    status: str
+
+
+class AnalysisCard(BaseModel):
+    id: str
+    title: str
+    frequency: str
+    conclusion: Optional[str] = None
+    score: Optional[float] = None
+    status: str = "ok"
+    indicators: List[AnalysisIndicator] = []
+
+
+class AnalysisMonthlyPeriod(BaseModel):
+    month: str
+    status: str = "ok"
+    cards: List[AnalysisCard] = []
+
+
+class AnalysisSnapshotData(BaseModel):
+    schema_version: str = "1.0"
+    generated_at: str
+    request: Dict[str, Optional[object]]
+    monthly: Dict[str, List[AnalysisMonthlyPeriod]]
+    daily: Dict[str, object]
+    quality: Dict[str, object]
+
+
+class AnalysisSnapshotResponse(BaseModel):
+    """GET /api/macro/analysis/snapshot 响应。"""
+    success: bool = True
+    data: AnalysisSnapshotData
