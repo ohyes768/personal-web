@@ -44,6 +44,13 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
 
 ## 相关坑
 
+- **symlink 全命名空间一致**：symlink target 是写入时的字面路径。Hermes/
+  OpenClaw 跑在宿主机，所以 NAS 部署必须用**同路径 bind mount**
+  （`${VAR}:${VAR}`，env 根 = 宿主路径，`SKILL_MANAGER_TARGETS_MOUNT_ROOT`
+  不传）——容器内写的路径即宿主机路径，两侧解析一致。任何"容器 A 路径 +
+  宿主机消费"的组合都会断链（2026-09 生产实锤：`~/.hermes/skills/<id>` →
+  `/mnt/...` 宿主机不可解析）。迁移/回滚步骤见
+  [deploy/README-same-path-mounts.md](../../../deploy/README-same-path-mounts.md)；
 - **运行镜像必须含 git**：`python:3.12-slim` 不带 git，Dockerfile 漏装时所有
   git 调用（登记/检查更新/Clone）抛 `FileNotFoundError` → 500（2026-09 生产
   实际发生）。已双保险：Dockerfile 补装 git；`_run_git` 把 `FileNotFoundError`

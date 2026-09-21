@@ -14,12 +14,13 @@ SKILL_COMPOSE_FILE = REPO_ROOT / "docker-compose.skill-manager.nas.yml"
 NGINX_CONF = REPO_ROOT / "nginx" / "web.conf"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-nas.sh"
 
-# skill-manager-backend 允许的完整挂载清单（design 2.2 / R6：仅五类目录）
+# skill-manager-backend 允许的完整挂载清单（design 2.2 / R6：仅五类目录；
+# 同路径挂载——两侧同一宿主路径，保证 symlink target 宿主机可解析）
 BACKEND_ALLOWED_MOUNTS = {
-    "${SKILLS_SOURCE_HOST_PATH}:/mnt/skills-source:rw",
-    "${GITHUB_SKILL_CACHE_HOST_PATH}:/mnt/github-skill-cache:rw",
-    "${OPENCLAW_SKILLS_HOST_PATH}:/mnt/targets/openclaw:rw",
-    "${HERMES_SKILLS_HOST_PATH}:/mnt/targets/hermes:rw",
+    "${SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH}:rw",
+    "${GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH}:rw",
+    "${OPENCLAW_SKILLS_HOST_PATH}:${OPENCLAW_SKILLS_HOST_PATH}:rw",
+    "${HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH}:rw",
     "skill-manager-state:/app/state",
 }
 

@@ -34,7 +34,7 @@ mkdir -p ~/openclaw/skills ~/hermes/skills   # 按实际部署路径调整
 | `HERMES_SKILLS_HOST_PATH` | Hermes 生效技能目录的绝对路径 |
 | `SKILL_MANAGER_ADMIN_PASSWORD` | 管理密码。发布/下架/回滚/登记时在确认窗口输入；缺失时 compose 拒绝启动后端 |
 
-四个 `*_HOST_PATH` 会以读写方式 bind mount 进后端容器的固定容器路径（`/mnt/skills-source`、`/mnt/github-skill-cache`、`/mnt/targets/openclaw`、`/mnt/targets/hermes`），后端不会收到宿主机路径本身。除此之外后端没有其他挂载，也没有 docker.sock。
+四个 `*_HOST_PATH` 以读写方式 bind mount 进后端容器，容器内路径与宿主机路径完全一致（同路径挂载）——发布的 symlink target 是宿主机真实路径，宿主机上的 Agent 可直接解析。除此之外后端没有其他挂载，也没有 docker.sock。
 
 ### 4.（可选）Skills 仓库写凭据
 
@@ -93,7 +93,7 @@ ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
 
    ```bash
    ls -la "$OPENCLAW_SKILLS_HOST_PATH/<skill-id>"     # 应为 symlink
-   readlink -f "$OPENCLAW_SKILLS_HOST_PATH/<skill-id>" # 应位于 /mnt/skills-source 或 /mnt/github-skill-cache 对应的宿主目录内
+   readlink -f "$OPENCLAW_SKILLS_HOST_PATH/<skill-id>" # 应位于 SKILLS_SOURCE_HOST_PATH 或 GITHUB_SKILL_CACHE_HOST_PATH 指向的宿主目录内
    ```
 
 5. 在界面对同一项执行"回滚"验证快照链路；再执行"下架"确认只删除链接本身：

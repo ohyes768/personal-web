@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest 硬约束（basetemp/requires_symlink），本任务要改 config 校验并新增/调整测试"}
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "GitHub 缓存生命周期与 WinError 1314 坑；本任务的 symlink 路径语义与该指南强相关"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "link_missing 字段跨 models/routes/types/components 四层"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查配置校验与前端徽章是否复用既有模式"}

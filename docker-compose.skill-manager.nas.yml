@@ -12,7 +12,9 @@ services:
   # skill-manager 后端（Skill 发布管理台，backend/skill-manager/）
   # 挂载边界（R6）：仅 Skill 源库 / GitHub 缓存 / 两个 Agent 目标目录 / state，
   # 不挂 docker.sock、宿主根或任何无关目录；管理密码只注入本服务
-  # 目标根（targets mount）必须位于 /mnt/targets 之内（config.py 启动时校验）
+  # 同路径 bind mount：发布的 symlink 落在宿主机技能目录、由宿主机 agent
+  # 消费，symlink target 必须是宿主机真实路径——两侧用同一宿主路径后，
+  # 容器内校验与宿主机解析天然一致
   # ---------------------------------------------------------------------------
   skill-manager-backend:
     build:
@@ -22,10 +24,10 @@ services:
     expose:
       - "8097"
     volumes:
-      - ${SKILLS_SOURCE_HOST_PATH}:/mnt/skills-source:rw
-      - ${GITHUB_SKILL_CACHE_HOST_PATH}:/mnt/github-skill-cache:rw
-      - ${OPENCLAW_SKILLS_HOST_PATH}:/mnt/targets/openclaw:rw
-      - ${HERMES_SKILLS_HOST_PATH}:/mnt/targets/hermes:rw
+      - ${SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH}:rw
+      - ${GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH}:rw
+      - ${OPENCLAW_SKILLS_HOST_PATH}:${OPENCLAW_SKILLS_HOST_PATH}:rw
+      - ${HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH}:rw
       - skill-manager-state:/app/state
       # FastGithub MITM 根证书：容器内 git 校验 github.com 证书链必需
       # （宿主机 proxy_on 输出 issuer=FastGithub 即 MITM 模式）。文件由
@@ -33,12 +35,13 @@ services:
       - ./deploy/fastgithub-ca.pem:/etc/ssl/fastgithub-ca.pem:ro
     environment:
       - TZ=Asia/Shanghai
-      - SKILLS_SOURCE_ROOT=/mnt/skills-source
-      - GITHUB_SKILL_CACHE_ROOT=/mnt/github-skill-cache
-      - OPENCLAW_SKILLS_ROOT=/mnt/targets/openclaw
-      - HERMES_SKILLS_ROOT=/mnt/targets/hermes
+      - SKILLS_SOURCE_ROOT=${SKILLS_SOURCE_HOST_PATH}
+      - GITHUB_SKILL_CACHE_ROOT=${GITHUB_SKILL_CACHE_HOST_PATH}
+      - OPENCLAW_SKILLS_ROOT=${OPENCLAW_SKILLS_HOST_PATH}
+      - HERMES_SKILLS_ROOT=${HERMES_SKILLS_HOST_PATH}
       - SKILL_MANAGER_STATE_DIR=/app/state
-      - SKILL_MANAGER_TARGETS_MOUNT_ROOT=/mnt/targets
+      # 两个 target 根分属不同宿主目录，无共同挂载父级；
+      # 容器可见文件系统边界由上述 bind mount 白名单保证
       # GitHub 走宿主机 FastGithub 代理（仅监听 127.0.0.1，由宿主机 socat
       # 转发到 docker0 的 172.17.0.1，见 deploy/README-fastgithub.md）；
       # NO_PROXY 保护 healthcheck 的 localhost 请求不吃代理
