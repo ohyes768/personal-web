@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 13
-- **Last Active**: 2026-09-20
+- **Total Sessions**: 14
+- **Last Active**: 2026-09-21
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~503 | Active |
+| `journal-1.md` | ~576 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 14 | 2026-09-21 | skill-manager 右栏改为已部署视图 | `492b22b` | `master` |
 | 13 | 2026-09-20 | 信号卡片标题追加月频/日频标注 | `abcbee3` | `master` |
 | 12 | 2026-09-20 | 日频信号首页补充北向/南向资金与中债利率指标 | `54e46c6` | `master` |
 | 11 | 2026-09-16 | DR001 改定时落库对齐 DR007 设计 | `56b32a3` | `master` |

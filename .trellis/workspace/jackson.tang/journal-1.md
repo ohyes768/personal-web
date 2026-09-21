@@ -540,3 +540,37 @@
 ### Next Steps
 
 - NAS 上按 docs/skill-manager-nas-setup.md 上线验证清单执行（deploy、health、nginx -t、/skills 渲染、真实发布冒烟）
+
+
+## Session 14: skill-manager 右栏改为已部署视图
+
+**Date**: 2026-09-21
+**Task**: skill-manager 右栏改为已部署视图
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+右栏从手动发布队列改为按 OpenClaw/Hermes 分组的已部署视图（仅 active），回滚/下架入口迁移至此；队列保留为辅助流程，计划预览新增'新增 N 项·更新 M 项'汇总与实底徽章。无后端改动。浏览器实测全流程通过。发现环境级问题：Windows 非提权进程 symlink 发布始终 WinError 1314（spec 已记载），本机跑通发布需开开发者模式或提权后端，或后续考虑 junction 方案。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `492b22b` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
