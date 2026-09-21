@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 15
+- **Total Sessions**: 16
 - **Last Active**: 2026-09-21
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~610 | Active |
+| `journal-1.md` | ~644 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 16 | 2026-09-21 | skill-manager 登记真源迁移 SQLite | `a77e6ff` | `master` |
 | 15 | 2026-09-21 | skill-manager 删除已登记 GitHub Skill 功能 | `032a344` | `master` |
 | 14 | 2026-09-21 | skill-manager 右栏改为已部署视图 | `492b22b` | `master` |
 | 13 | 2026-09-20 | 信号卡片标题追加月频/日频标注 | `abcbee3` | `master` |

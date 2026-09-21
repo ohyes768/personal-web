@@ -608,3 +608,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: skill-manager 登记真源迁移 SQLite
+
+**Date**: 2026-09-21
+**Task**: skill-manager 登记真源迁移 SQLite
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+登记/删除/列表改为 SQLite registry_skill 表真源，删除 registry.json 写入与 git commit 依赖（NAS git add 128 根除）。首次启动单向导入 registry.json（真实环境验证：17 条导入、二次启动不重复、文件逐字节未变、错误码契约不变）。registry.json 归还 skills 仓库 sync 工具链。质量检查 0 问题；spec 已同步新语义。后续任务：界面编辑 + 手动导入/导出 registry.json。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a77e6ff` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
