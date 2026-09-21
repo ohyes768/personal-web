@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "质量检查需在 Windows 环境正确运行 pytest（basetemp/symlink 约束）"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查 Clone 端点与前端 api 方法是否复用既有模式而非重复造轮子"}

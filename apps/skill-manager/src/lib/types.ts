@@ -38,6 +38,8 @@ export interface SkillCard {
   status: string;
   deployments: Record<string, TargetDeployment>;
   update: UpdateInfo | null;
+  /** 本环境 GitHub 缓存目录缺失（local 来源恒 false）；true 时需先 Clone */
+  cache_missing: boolean;
 }
 
 /** models.SkillListResponse */

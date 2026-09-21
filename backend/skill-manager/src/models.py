@@ -202,6 +202,9 @@ class SkillCard(BaseModel):
     status: str = "active"
     deployments: dict[str, TargetDeployment] = {}
     update: UpdateInfo | None = None
+    # 本环境 GitHub 缓存目录缺失（local 来源恒 False）；True 时前端禁用
+    # 发布入口，引导先调 POST /api/skills/github/{id}/clone 重建缓存
+    cache_missing: bool = False
 
 
 class SkillListResponse(BaseModel):

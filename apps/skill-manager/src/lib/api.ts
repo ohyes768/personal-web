@@ -119,6 +119,19 @@ export function registerGithubSkill(
   });
 }
 
+export function cloneGithubCache(
+  skillId: string,
+  password: string
+): Promise<{ skill_id: string; revision: string }> {
+  return request<{ skill_id: string; revision: string }>(
+    `/github/${encodeURIComponent(skillId)}/clone`,
+    {
+      method: 'POST',
+      body: jsonBody({ password }),
+    }
+  );
+}
+
 export function publish(
   items: QueueItemRequest[],
   password: string

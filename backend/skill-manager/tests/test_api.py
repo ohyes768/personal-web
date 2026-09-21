@@ -523,3 +523,109 @@ def test_check_updates_is_public_and_reports_unknown_ids(client):
     items = response.json()["items"]
     assert [item["skill_id"] for item in items] == ["ghost"]
     assert items[0]["result"] == "error"
+
+
+# ---------- 缓存缺失 Clone 端点 ----------
+
+
+def _append_github_skill(roots: SimpleNamespace, skill: dict) -> None:
+    """向测试源库 registry.json 追加一个 GitHub 条目（模拟跨环境同步后
+    缓存缺失的登记记录）。"""
+    registry = json.loads(
+        (roots.source_root / "registry.json").read_text(encoding="utf-8")
+    )
+    registry["skills"].append(skill)
+    (roots.source_root / "registry.json").write_text(
+        json.dumps(registry, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _missing_cache_skill(repository: str) -> dict:
+    return {
+        "id": "two-skills",
+        "name": "Two Skills",
+        "source": "github",
+        "path": "skills/alpha",
+        "repository": repository,
+    }
+
+
+def test_clone_rebuilds_missing_cache_and_reports_revision(client, roots, upstream_repo):
+    """缓存缺失的 GitHub skill：clone 重建缓存并返回检出 revision；local
+    来源卡片恒不缺失。"""
+    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
+    cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
+    assert cards["two-skills"]["cache_missing"] is True
+    assert cards["alpha"]["cache_missing"] is False
+
+    response = client.post(
+        "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "skill_id": "two-skills",
+        "revision": upstream_repo.revision,
+    }
+    assert (roots.github_cache / "two-skills" / "skills" / "alpha" / "SKILL.md").is_file()
+    # clone 后卡片恢复可用
+    cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
+    assert cards["two-skills"]["cache_missing"] is False
+
+
+def test_clone_unknown_skill_returns_404(client):
+    response = client.post(
+        "/api/skills/github/ghost/clone", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "skill_not_found"
+
+
+def test_clone_local_skill_returns_400(client):
+    response = client.post(
+        "/api/skills/github/alpha/clone", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_skill"
+
+
+def test_clone_returns_400_when_remote_unreachable(client, roots, upstream_repo):
+    """ls-remote 失败（远端映射指向不存在的本地 bare 仓库，离线快速失败）
+    → 400 cache_failed，且缓存目录保持为空。"""
+    from src.main import app
+
+    _append_github_skill(
+        roots, _missing_cache_skill("https://github.com/example/missing")
+    )
+    settings = Settings()
+    store = SkillStateStore.from_settings(settings)
+    app.dependency_overrides[get_git_cache] = lambda: GitCacheService(
+        settings,
+        store,
+        remotes={
+            "https://github.com/example/missing": str(
+                upstream_repo.bare.parent / "missing.git"
+            )
+        },
+    )
+    response = client.post(
+        "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "cache_failed"
+    assert not any(roots.github_cache.iterdir())
+
+
+def test_clone_requires_password(client, roots):
+    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
+
+    denied = client.post(
+        "/api/skills/github/two-skills/clone", json={"password": "wrong"}
+    )
+
+    assert denied.status_code == 401
+    assert denied.json()["code"] == "invalid_password"
+    assert not any(roots.github_cache.iterdir())

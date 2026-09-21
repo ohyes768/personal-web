@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 开发机 pytest 硬约束：basetemp 重定向、requires_symlink marker，本任务要在 Windows 上新增并运行 skill-manager 后端测试"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本功能跨 API(models/routes) 与前端(types/api/components) 两层，新增字段 cache_missing 的数据流需跨层对齐"}

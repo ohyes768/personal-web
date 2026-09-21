@@ -9,6 +9,7 @@ import SkillPool from '@/components/SkillPool';
 import {
   ApiClientError,
   checkUpdates,
+  cloneGithubCache,
   listSkills,
   publish,
   publishPlan,
@@ -46,6 +47,12 @@ interface PendingTargetOp {
   skillId: string;
   skillName: string;
   target: TargetKey;
+}
+
+/** 待 Clone 缓存的 GitHub Skill（缓存缺失，发布前必须先重建缓存）。 */
+interface PendingClone {
+  skillId: string;
+  skillName: string;
 }
 
 function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
@@ -118,6 +125,7 @@ export default function Page() {
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
   const [showRegister, setShowRegister] = useState(false);
   const [pendingOp, setPendingOp] = useState<PendingTargetOp | null>(null);
+  const [pendingClone, setPendingClone] = useState<PendingClone | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -291,6 +299,24 @@ export default function Page() {
     }
   }
 
+  async function performClone(password: string) {
+    if (!pendingClone) {
+      return;
+    }
+    setActionBusy(true);
+    setActionError('');
+    try {
+      await cloneGithubCache(pendingClone.skillId, password);
+      setPendingClone(null);
+      setNotice({ kind: 'ok', text: `「${pendingClone.skillName}」缓存已就绪` });
+      await refreshSkills();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Clone 失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   const publishableItems = plan?.filter(
     (item) => item.action === 'add' || item.action === 'update'
   );
@@ -366,6 +392,13 @@ export default function Page() {
                   target,
                 });
               }}
+              onClone={(skillId) => {
+                setActionError('');
+                setPendingClone({
+                  skillId,
+                  skillName: skillNames.get(skillId) ?? skillId,
+                });
+              }}
             />
           )}
         </section>
@@ -426,6 +459,23 @@ export default function Page() {
           error={actionError}
           onConfirm={(password) => void performTargetOp(password)}
           onCancel={() => setPendingOp(null)}
+        />
+      ) : null}
+
+      {pendingClone ? (
+        <ConfirmActionDialog
+          title="确认 Clone 缓存"
+          description={
+            <p>
+              将从 GitHub 拉取「{pendingClone.skillName}
+              」的仓库到本机缓存目录（只写缓存，不触碰已发布目标）。
+            </p>
+          }
+          confirmLabel="执行 Clone"
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={(password) => void performClone(password)}
+          onCancel={() => setPendingClone(null)}
         />
       ) : null}
 

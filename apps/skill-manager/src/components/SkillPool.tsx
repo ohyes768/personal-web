@@ -17,6 +17,7 @@ interface SkillPoolProps {
   onAddToQueue: (skillId: string, targets: TargetKey[]) => void;
   onRollback: (skillId: string, target: TargetKey) => void;
   onUnpublish: (skillId: string, target: TargetKey) => void;
+  onClone: (skillId: string) => void;
 }
 
 function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
@@ -44,16 +45,21 @@ function SkillCardItem({
   onAddToQueue,
   onRollback,
   onUnpublish,
+  onClone,
 }: {
   skill: SkillCard;
   queuedTargets: TargetKey[];
   onAddToQueue: SkillPoolProps['onAddToQueue'];
   onRollback: SkillPoolProps['onRollback'];
   onUnpublish: SkillPoolProps['onUnpublish'];
+  onClone: SkillPoolProps['onClone'];
 }) {
   const [selectedTargets, setSelectedTargets] = useState<TargetKey[]>([]);
+  const [targetHint, setTargetHint] = useState(false);
+  const cacheMissing = skill.cache_missing;
 
   function toggleTarget(target: TargetKey) {
+    setTargetHint(false);
     setSelectedTargets((prev) =>
       prev.includes(target) ? prev.filter((t) => t !== target) : [...prev, target]
     );
@@ -149,7 +155,7 @@ function SkillCardItem({
             <button
               key={target}
               type="button"
-              disabled={queued}
+              disabled={queued || cacheMissing}
               onClick={() => toggleTarget(target)}
               className={`rounded px-2 py-0.5 text-xs ${
                 queued
@@ -157,8 +163,8 @@ function SkillCardItem({
                   : selected
                     ? 'bg-sky-600 text-white'
                     : 'border border-slate-300 text-slate-600 hover:bg-slate-50'
-              } disabled:cursor-not-allowed`}
-              title={queued ? '已在发布队列中' : undefined}
+              } disabled:cursor-not-allowed disabled:opacity-50`}
+              title={queued ? '已在发布队列中' : cacheMissing ? '请先 Clone 缓存' : undefined}
             >
               {queued ? `${TARGET_LABEL[target]} 已在队列` : TARGET_LABEL[target]}
             </button>
@@ -166,16 +172,38 @@ function SkillCardItem({
         })}
         <button
           type="button"
-          disabled={selectedTargets.length === 0}
+          disabled={cacheMissing}
           onClick={() => {
+            if (selectedTargets.length === 0) {
+              setTargetHint(true);
+              return;
+            }
             onAddToQueue(skill.id, selectedTargets);
             setSelectedTargets([]);
           }}
-          className="ml-auto rounded bg-sky-600 px-2.5 py-1 text-xs text-white hover:bg-sky-700 disabled:opacity-40"
+          title={cacheMissing ? '请先 Clone 缓存' : undefined}
+          className="ml-auto rounded bg-sky-600 px-2.5 py-1 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           加入队列
         </button>
       </div>
+      {targetHint ? (
+        <p className="mt-1 text-xs text-rose-600">请先选择发布目标（OpenClaw / Hermes）</p>
+      ) : null}
+      {cacheMissing ? (
+        <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
+          <span className="text-xs text-amber-700">
+            缓存缺失：本环境没有该 Skill 的 GitHub 缓存，无法发布
+          </span>
+          <button
+            type="button"
+            onClick={() => onClone(skill.id)}
+            className="shrink-0 rounded bg-amber-600 px-2.5 py-1 text-xs text-white hover:bg-amber-700"
+          >
+            Clone
+          </button>
+        </div>
+      ) : null}
     </li>
   );
 }
@@ -186,6 +214,7 @@ export default function SkillPool({
   onAddToQueue,
   onRollback,
   onUnpublish,
+  onClone,
 }: SkillPoolProps) {
   const queuedBySkill = new Map<string, TargetKey[]>();
   for (const entry of queue) {
@@ -210,6 +239,7 @@ export default function SkillPool({
           onAddToQueue={onAddToQueue}
           onRollback={onRollback}
           onUnpublish={onUnpublish}
+          onClone={onClone}
         />
       ))}
     </ul>

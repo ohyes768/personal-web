@@ -73,6 +73,7 @@ _ID_RE = re.compile(SKILL_ID_PATTERN)
 def list_skills(
     registry: RegistryService = Depends(get_registry),
     store: SkillStateStore = Depends(get_store),
+    settings: Settings = Depends(get_settings),
 ) -> SkillListResponse:
     """左栏卡片：注册表 + 部署状态 + 最近一次更新检查。"""
     try:
@@ -91,7 +92,15 @@ def list_skills(
             link_target=record.current_link_target,
         )
     cards = [
-        _build_card(skill, deployments.get(skill.id, {}), store.get_github_check(skill.id))
+        _build_card(
+            skill,
+            deployments.get(skill.id, {}),
+            store.get_github_check(skill.id),
+            # 与 ensure_cached 决定 fetch/clone 的口径一致：纯文件系统判断，
+            # 零 git 子进程；注册表随源库同步而缓存环境本地，缺失属常态
+            cache_missing=skill.source is SkillSource.GITHUB
+            and not (settings.github_skill_cache_root / skill.id / ".git").is_dir(),
+        )
         for skill in skills
     ]
     return SkillListResponse(items=cards)
@@ -101,6 +110,7 @@ def _build_card(
     skill: RegistrySkill,
     deployments: dict[str, TargetDeployment],
     check: GithubCheckRecord | None,
+    cache_missing: bool = False,
 ) -> SkillCard:
     update: UpdateInfo | None = None
     if check is not None and check.result == "ok":
@@ -124,6 +134,7 @@ def _build_card(
         status=skill.status,
         deployments=deployments,
         update=update,
+        cache_missing=cache_missing,
     )
 
 
@@ -227,6 +238,47 @@ def _commit_registry_best_effort(registry: RegistryService) -> None:
     except Exception:
         # 测试源库与部分 NAS 源库可能没有 Git 历史；登记本身已落盘
         pass
+
+
+# ---------- 密码：重建 GitHub 缓存（Clone） ----------
+
+
+@router.post("/skills/github/{skill_id}/clone")
+def clone_github_cache(
+    skill_id: str,
+    req: AdminPasswordRequest,
+    settings: Settings = Depends(get_settings),
+    registry: RegistryService = Depends(get_registry),
+    git_cache: GitCacheService = Depends(get_git_cache),
+) -> dict[str, str]:
+    """重建本环境缺失的 GitHub 缓存，返回检出的 revision。
+
+    语义与登记流程一致（design 5）：`check_update()` 只读 ls-remote 并刷新
+    检查记录 → `ensure_cached()` clone/fetch 并检出远端 revision。刻意不走
+    `_ensure_cached_at_recorded_revision`——它在无成功检查记录时是 no-op，
+    对"缓存根本不存在"的场景无效。只写 GITHUB_SKILL_CACHE_ROOT 之内，
+    不触碰源库与目标目录。
+    """
+    ensure_admin_password(settings, req.password)
+    skill = _require_known_skill(registry, _require_skill_id(skill_id))
+    if skill.source is not SkillSource.GITHUB:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_skill",
+                "message": f"skill {skill.id} 不是 GitHub 来源，无需 Clone 缓存",
+                "item_id": skill.id,
+            },
+        )
+    try:
+        info = git_cache.check_update(skill)
+        git_cache.ensure_cached(skill, info.remote_revision)
+    except GitCacheError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "cache_failed", "message": f"GitHub 缓存更新失败：{exc}"},
+        ) from exc
+    return {"skill_id": skill.id, "revision": info.remote_revision}
 
 
 # ---------- 公开：更新检查 ----------
@@ -564,14 +616,15 @@ def _require_target(target: str) -> TargetKey:
         ) from exc
 
 
-def _require_known_skill(registry: RegistryService, skill_id: str) -> None:
-    known = {skill.id for skill in registry.load().skills}
-    if skill_id not in known:
-        raise HTTPException(
-            status_code=404,
-            detail={
-                "code": "skill_not_found",
-                "message": f"未知 skill：{skill_id}",
-                "item_id": skill_id,
-            },
-        )
+def _require_known_skill(registry: RegistryService, skill_id: str) -> RegistrySkill:
+    for skill in registry.load().skills:
+        if skill.id == skill_id:
+            return skill
+    raise HTTPException(
+        status_code=404,
+        detail={
+            "code": "skill_not_found",
+            "message": f"未知 skill：{skill_id}",
+            "item_id": skill_id,
+        },
+    )
