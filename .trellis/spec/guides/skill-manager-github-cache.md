@@ -44,6 +44,10 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
 
 ## 相关坑
 
+- **运行镜像必须含 git**：`python:3.12-slim` 不带 git，Dockerfile 漏装时所有
+  git 调用（登记/检查更新/Clone）抛 `FileNotFoundError` → 500（2026-09 生产
+  实际发生）。已双保险：Dockerfile 补装 git；`_run_git` 把 `FileNotFoundError`
+  包装为 `GitOperationError`，降级为 400 cache_failed；
 - Windows 开发机非提权进程无法创建 symlink（WinError 1314），发布会在
   publisher 建临时 `.next` 链接一步失败——本地只验收 plan 与 clone，
   完整发布链路在 Docker/Linux 验证；pytest 侧见

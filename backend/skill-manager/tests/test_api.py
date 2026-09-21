@@ -619,6 +619,25 @@ def test_clone_returns_400_when_remote_unreachable(client, roots, upstream_repo)
     assert not any(roots.github_cache.iterdir())
 
 
+def test_clone_returns_400_when_git_binary_missing(client, roots, monkeypatch):
+    """运行环境没有 git 二进制：FileNotFoundError 被包装为域错误 →
+    400 cache_failed，而非未捕获异常的 500。"""
+    import src.services.git_cache as git_cache_module
+
+    def _raise_file_not_found(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory", "git")
+
+    monkeypatch.setattr(git_cache_module.subprocess, "run", _raise_file_not_found)
+    _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
+    response = client.post(
+        "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "cache_failed"
+    assert "git" in response.json()["message"]
+
+
 def test_clone_requires_password(client, roots):
     _append_github_skill(roots, _missing_cache_skill(CANONICAL_URL))
 

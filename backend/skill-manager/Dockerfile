@@ -5,7 +5,7 @@ FROM python:3.12-slim
 RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     sed -i 's|http://security.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
     apt-get update && \
-    apt-get install -y --no-install-recommends curl tzdata && \
+    apt-get install -y --no-install-recommends curl git tzdata && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 容器时区设为北京时间，保证审计记录里的发布时间为本地时间

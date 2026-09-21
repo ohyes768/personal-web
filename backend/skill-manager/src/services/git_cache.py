@@ -201,6 +201,13 @@ class GitCacheService:
             raise GitOperationError(
                 f"git {argv[0]} failed: {detail.strip()}"
             ) from exc
+        except FileNotFoundError as exc:
+            # 运行环境没有 git 二进制（如镜像漏装）：包装成域错误，
+            # 让 API 层表达为 400 而非未捕获异常的 500
+            raise GitOperationError(
+                f"git {argv[0]} unavailable: git is not installed in this "
+                f"runtime environment"
+            ) from exc
         except subprocess.TimeoutExpired as exc:
             raise GitOperationError(f"git {argv[0]} timed out") from exc
         return completed.stdout
