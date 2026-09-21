@@ -97,3 +97,4 @@ backend/housing-map/scripts/_gaode_config.py
 .codex/
 backend/skill-manager/.wsl-wheels/
 .playwright-cli/
+deploy/fastgithub-ca.pem

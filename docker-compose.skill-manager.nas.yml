@@ -27,6 +27,10 @@ services:
       - ${OPENCLAW_SKILLS_HOST_PATH}:/mnt/targets/openclaw:rw
       - ${HERMES_SKILLS_HOST_PATH}:/mnt/targets/hermes:rw
       - skill-manager-state:/app/state
+      # FastGithub MITM 根证书：容器内 git 校验 github.com 证书链必需
+      # （宿主机 proxy_on 输出 issuer=FastGithub 即 MITM 模式）。文件由
+      # NAS 侧放置（见 .gitignore，机器自生成不入库），缺失会导致 clone 报错
+      - ./deploy/fastgithub-ca.pem:/etc/ssl/fastgithub-ca.pem:ro
     environment:
       - TZ=Asia/Shanghai
       - SKILLS_SOURCE_ROOT=/mnt/skills-source
@@ -35,11 +39,21 @@ services:
       - HERMES_SKILLS_ROOT=/mnt/targets/hermes
       - SKILL_MANAGER_STATE_DIR=/app/state
       - SKILL_MANAGER_TARGETS_MOUNT_ROOT=/mnt/targets
+      # GitHub 走宿主机 FastGithub 代理（仅监听 127.0.0.1，由宿主机 socat
+      # 转发到 docker0 的 172.17.0.1，见 deploy/README-fastgithub.md）；
+      # NO_PROXY 保护 healthcheck 的 localhost 请求不吃代理
+      - HTTPS_PROXY=http://host.docker.internal:38457
+      - HTTP_PROXY=http://host.docker.internal:38457
+      - NO_PROXY=localhost,127.0.0.1
+      - GIT_SSL_CAINFO=/etc/ssl/fastgithub-ca.pem
       # 必填：缺失时 compose 拒绝启动，避免密码为空的服务上线
       # （config.py 另有非空校验兜底，覆盖不经 compose 的本地启动路径）
       - SKILL_MANAGER_ADMIN_PASSWORD=${SKILL_MANAGER_ADMIN_PASSWORD:?set SKILL_MANAGER_ADMIN_PASSWORD in .env}
     networks:
       - app-net
+    extra_hosts:
+      # 容器内访问宿主机 FastGithub 代理（127.0.0.1:38457）的固定入口
+      - "host.docker.internal:host-gateway"
     healthcheck:
       test: ["CMD", "sh", "-c", "curl -f http://localhost:${SKILL_MANAGER_SERVICE_PORT:-8097}/api/health"]
       interval: 30s

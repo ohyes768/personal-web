@@ -48,6 +48,10 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
   git 调用（登记/检查更新/Clone）抛 `FileNotFoundError` → 500（2026-09 生产
   实际发生）。已双保险：Dockerfile 补装 git；`_run_git` 把 `FileNotFoundError`
   包装为 `GitOperationError`，降级为 400 cache_failed；
+- **NAS 生产容器的 GitHub 连通性**：直连被墙（GnuTLS -110），走宿主机
+  FastGithub 代理——但它只听 127.0.0.1 且为 MITM 模式，容器侧需要
+  socat 转发 + HTTPS_PROXY + GIT_SSL_CAINFO 三件套，完整步骤见
+  [deploy/README-fastgithub.md](../../../deploy/README-fastgithub.md)；
 - Windows 开发机非提权进程无法创建 symlink（WinError 1314），发布会在
   publisher 建临时 `.next` 链接一步失败——本地只验收 plan 与 clone，
   完整发布链路在 Docker/Linux 验证；pytest 侧见
