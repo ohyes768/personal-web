@@ -9,6 +9,7 @@ skill 条目 + 本地 bare 仓库经 remotes 映射充当 GitHub 远端（离线
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,7 +19,7 @@ from fastapi.testclient import TestClient
 
 from src.api.dependencies import get_git_cache
 from src.config import Settings
-from src.db import SkillStateStore
+from src.db import DeploymentRecord, SkillStateStore
 from src.services.git_cache import GitCacheService
 
 PASSWORD = "test-password"
@@ -648,3 +649,48 @@ def test_clone_requires_password(client, roots):
     assert denied.status_code == 401
     assert denied.json()["code"] == "invalid_password"
     assert not any(roots.github_cache.iterdir())
+
+
+# ---------- 卡片账实核对（link_missing） ----------
+
+
+def _insert_active_deployment(roots: SimpleNamespace, skill_id: str, target: str) -> None:
+    """向账本直插一条 active 部署记录（不经发布流程，无需 symlink 特权）。"""
+    store = SkillStateStore.from_settings(Settings())
+    store.upsert_deployment(
+        DeploymentRecord(
+            skill_id=skill_id,
+            target=target,
+            source_revision="",
+            source_path=str(roots.source_root / skill_id),
+            current_link_target="",
+            status="active",
+            published_at="2026-09-21T00:00:00+00:00",
+        )
+    )
+
+
+def test_list_flags_link_missing_for_active_deployment_without_link(client, roots):
+    """账本 active 但目标链接不存在（如被手动删除）→ 卡片标记 link_missing。"""
+    _insert_active_deployment(roots, "alpha", "hermes")
+
+    cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
+
+    deployment = cards["alpha"]["deployments"]["hermes"]
+    assert deployment["status"] == "active"
+    assert deployment["link_missing"] is True
+    # 未插记录的 target 不出现在卡片 deployments 里
+    assert "openclaw" not in cards["alpha"]["deployments"]
+
+
+@pytest.mark.requires_symlink
+def test_list_reports_no_link_missing_when_active_link_exists(client, roots):
+    """账本 active 且目标链接存在 → 不标记 link_missing（正常 emerald 徽章）。"""
+    _insert_active_deployment(roots, "alpha", "hermes")
+    os.symlink(
+        roots.source_root / "alpha", roots.hermes / "alpha", target_is_directory=True
+    )
+
+    cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
+
+    assert cards["alpha"]["deployments"]["hermes"]["link_missing"] is False

@@ -13,6 +13,8 @@ export interface TargetDeployment {
   revision: string;
   published_at: string;
   link_target: string;
+  /** 账实核对：账本 active 但目标链接不存在；真实动作以计划预览为准 */
+  link_missing: boolean;
 }
 
 /** models.UpdateInfo */

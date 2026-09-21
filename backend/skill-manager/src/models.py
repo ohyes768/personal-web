@@ -187,6 +187,8 @@ class TargetDeployment(BaseModel):
     revision: str = ""
     published_at: str = ""
     link_target: str = ""
+    # 账实核对：账本 active 但目标链接不存在；真实动作以计划预览目录扫描为准
+    link_missing: bool = False
 
 
 class SkillCard(BaseModel):

@@ -88,11 +88,17 @@ def list_skills(
         ) from exc
     deployments: dict[str, dict[str, TargetDeployment]] = {}
     for record in store.list_deployments():
+        # 账实核对：active 记录对目标链接做 lstat 存在性检查（纯 lstat，
+        # 每条一次，零子进程）；removed 记录不出徽章，不检查
+        link_missing = record.status == "active" and not (
+            _target_root(settings, TargetKey(record.target)) / record.skill_id
+        ).is_symlink()
         deployments.setdefault(record.skill_id, {})[record.target] = TargetDeployment(
             status=record.status,
             revision=record.source_revision,
             published_at=record.published_at,
             link_target=record.current_link_target,
+            link_missing=link_missing,
         )
     cards = [
         _build_card(

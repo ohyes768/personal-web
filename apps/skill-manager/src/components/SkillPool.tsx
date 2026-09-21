@@ -22,6 +22,16 @@ function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
   if (!deployment) {
     return <span className="text-xs text-slate-400">未发布</span>;
   }
+  if (deployment.status === 'active' && deployment.link_missing) {
+    return (
+      <span
+        className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700"
+        title="账本记录已发布，但目标目录的链接已不存在（可能被手动删除）；生成发布计划会按实况判定动作"
+      >
+        已发布 · 链接缺失
+      </span>
+    );
+  }
   if (deployment.status === 'active') {
     return (
       <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700">
