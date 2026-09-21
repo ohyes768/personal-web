@@ -9,8 +9,8 @@ const TARGET_LABEL: Record<TargetKey, string> = {
 };
 
 const ACTION_META: Record<PlanItem['action'], { label: string; className: string }> = {
-  add: { label: '新增', className: 'bg-emerald-50 text-emerald-700' },
-  update: { label: '更新', className: 'bg-sky-50 text-sky-700' },
+  add: { label: '新增', className: 'bg-emerald-600 text-white' },
+  update: { label: '更新', className: 'bg-sky-600 text-white' },
   unchanged: { label: '无需操作', className: 'bg-slate-100 text-slate-500' },
   blocked: { label: '已阻止', className: 'bg-rose-50 text-rose-700' },
 };
@@ -51,9 +51,11 @@ export default function PublishQueue({
 }: PublishQueueProps) {
   const publishableCount =
     plan?.filter((item) => item.action === 'add' || item.action === 'update').length ?? 0;
+  const addCount = plan?.filter((item) => item.action === 'add').length ?? 0;
+  const updateCount = plan?.filter((item) => item.action === 'update').length ?? 0;
 
   return (
-    <div className="flex h-full flex-col gap-3">
+    <div className="flex flex-col gap-3">
       <section className="rounded-lg border border-slate-200 bg-white">
         <header className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
           <h2 className="text-sm font-semibold text-slate-700">
@@ -137,8 +139,11 @@ export default function PublishQueue({
 
       {plan ? (
         <section className="flex-1 overflow-y-auto rounded-lg border border-slate-200 bg-white">
-          <header className="border-b border-slate-100 px-3 py-2">
+          <header className="flex items-center justify-between border-b border-slate-100 px-3 py-2">
             <h2 className="text-sm font-semibold text-slate-700">发布计划预览（只读）</h2>
+            <span className="text-xs text-slate-500">
+              新增 {addCount} 项 · 更新 {updateCount} 项
+            </span>
           </header>
           <ul className="divide-y divide-slate-100">
             {plan.map((item) => {

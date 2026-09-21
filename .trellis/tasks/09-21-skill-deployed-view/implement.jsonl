@@ -1,0 +1,2 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "发布四态与缓存缺失→Clone 语义的背景契约，UI 重排不得破坏该流程"}

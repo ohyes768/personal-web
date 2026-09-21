@@ -15,8 +15,6 @@ interface SkillPoolProps {
   skills: SkillCard[];
   queue: QueueEntry[];
   onAddToQueue: (skillId: string, targets: TargetKey[]) => void;
-  onRollback: (skillId: string, target: TargetKey) => void;
-  onUnpublish: (skillId: string, target: TargetKey) => void;
   onClone: (skillId: string) => void;
 }
 
@@ -38,20 +36,16 @@ function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
   );
 }
 
-/** 左栏单张 Skill 卡片：target 多选 chips + 加入队列；部署行内联回滚/下架。 */
+/** 左栏单张 Skill 卡片：target 多选 chips + 加入队列；部署状态只读徽章。 */
 function SkillCardItem({
   skill,
   queuedTargets,
   onAddToQueue,
-  onRollback,
-  onUnpublish,
   onClone,
 }: {
   skill: SkillCard;
   queuedTargets: TargetKey[];
   onAddToQueue: SkillPoolProps['onAddToQueue'];
-  onRollback: SkillPoolProps['onRollback'];
-  onUnpublish: SkillPoolProps['onUnpublish'];
   onClone: SkillPoolProps['onClone'];
 }) {
   const [selectedTargets, setSelectedTargets] = useState<TargetKey[]>([]);
@@ -112,38 +106,14 @@ function SkillCardItem({
         </div>
       ) : null}
 
-      {/* 部署状态 + 回滚/下架 */}
+      {/* 部署状态（只读，回滚/下架入口在右栏已部署视图） */}
       <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-        {ALL_TARGETS.map((target) => {
-          const deployment = skill.deployments[target];
-          const deployed = Boolean(deployment);
-          return (
-            <div key={target} className="flex items-center justify-between gap-2 text-xs">
-              <span className="flex items-center gap-2">
-                <span className="w-16 text-slate-500">{TARGET_LABEL[target]}</span>
-                <DeploymentBadge deployment={deployment} />
-              </span>
-              {deployed ? (
-                <span className="flex gap-1">
-                  <button
-                    type="button"
-                    onClick={() => onRollback(skill.id, target)}
-                    className="rounded border border-slate-300 px-1.5 py-0.5 text-xs text-slate-600 hover:bg-slate-50"
-                  >
-                    回滚
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onUnpublish(skill.id, target)}
-                    className="rounded border border-rose-200 px-1.5 py-0.5 text-xs text-rose-600 hover:bg-rose-50"
-                  >
-                    下架
-                  </button>
-                </span>
-              ) : null}
-            </div>
-          );
-        })}
+        {ALL_TARGETS.map((target) => (
+          <div key={target} className="flex items-center gap-2 text-xs">
+            <span className="w-16 text-slate-500">{TARGET_LABEL[target]}</span>
+            <DeploymentBadge deployment={skill.deployments[target]} />
+          </div>
+        ))}
       </div>
 
       {/* 加入队列：target 多选 chips */}
@@ -208,14 +178,7 @@ function SkillCardItem({
   );
 }
 
-export default function SkillPool({
-  skills,
-  queue,
-  onAddToQueue,
-  onRollback,
-  onUnpublish,
-  onClone,
-}: SkillPoolProps) {
+export default function SkillPool({ skills, queue, onAddToQueue, onClone }: SkillPoolProps) {
   const queuedBySkill = new Map<string, TargetKey[]>();
   for (const entry of queue) {
     queuedBySkill.set(entry.skillId, entry.targets);
@@ -237,8 +200,6 @@ export default function SkillPool({
           skill={skill}
           queuedTargets={queuedBySkill.get(skill.id) ?? []}
           onAddToQueue={onAddToQueue}
-          onRollback={onRollback}
-          onUnpublish={onUnpublish}
           onClone={onClone}
         />
       ))}

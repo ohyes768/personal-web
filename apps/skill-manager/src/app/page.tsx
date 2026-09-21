@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import DeployedView from '@/components/DeployedView';
 import PublishQueue from '@/components/PublishQueue';
 import RegisterGithubDialog from '@/components/RegisterGithubDialog';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
@@ -320,6 +321,8 @@ export default function Page() {
   const publishableItems = plan?.filter(
     (item) => item.action === 'add' || item.action === 'update'
   );
+  const planAddCount = plan?.filter((item) => item.action === 'add').length ?? 0;
+  const planUpdateCount = plan?.filter((item) => item.action === 'update').length ?? 0;
 
   return (
     <main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
@@ -374,24 +377,6 @@ export default function Page() {
               skills={filteredSkills}
               queue={queue}
               onAddToQueue={handleAddToQueue}
-              onRollback={(skillId, target) => {
-                setActionError('');
-                setPendingOp({
-                  kind: 'rollback',
-                  skillId,
-                  skillName: skillNames.get(skillId) ?? skillId,
-                  target,
-                });
-              }}
-              onUnpublish={(skillId, target) => {
-                setActionError('');
-                setPendingOp({
-                  kind: 'unpublish',
-                  skillId,
-                  skillName: skillNames.get(skillId) ?? skillId,
-                  target,
-                });
-              }}
               onClone={(skillId) => {
                 setActionError('');
                 setPendingClone({
@@ -403,8 +388,29 @@ export default function Page() {
           )}
         </section>
 
-        {/* 右栏：发布队列 */}
-        <section className="min-h-0 overflow-y-auto pr-1">
+        {/* 右栏：已部署视图（主体）+ 发布队列（辅助） */}
+        <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+          <DeployedView
+            skills={skills}
+            onRollback={(skillId, target) => {
+              setActionError('');
+              setPendingOp({
+                kind: 'rollback',
+                skillId,
+                skillName: skillNames.get(skillId) ?? skillId,
+                target,
+              });
+            }}
+            onUnpublish={(skillId, target) => {
+              setActionError('');
+              setPendingOp({
+                kind: 'unpublish',
+                skillId,
+                skillName: skillNames.get(skillId) ?? skillId,
+                target,
+              });
+            }}
+          />
           <PublishQueue
             queue={queue}
             skillNames={skillNames}
@@ -427,14 +433,20 @@ export default function Page() {
         <ConfirmActionDialog
           title="确认发布"
           description={
-            <ul className="list-disc space-y-0.5 pl-4">
-              {publishableItems.map((item) => (
-                <li key={`${item.skill_id}-${item.target}`}>
-                  {skillNames.get(item.skill_id) ?? item.skill_id} → {TARGET_LABEL[item.target]}
-                  （{item.action === 'add' ? '新增' : '更新'}）
-                </li>
-              ))}
-            </ul>
+            <div className="space-y-1">
+              <p className="font-medium">
+                新增 {planAddCount} 项 · 更新 {planUpdateCount} 项
+              </p>
+              <ul className="list-disc space-y-0.5 pl-4">
+                {publishableItems.map((item) => (
+                  <li key={`${item.skill_id}-${item.target}`}>
+                    {skillNames.get(item.skill_id) ?? item.skill_id} →{' '}
+                    {TARGET_LABEL[item.target]}
+                    （{item.action === 'add' ? '新增' : '更新'}）
+                  </li>
+                ))}
+              </ul>
+            </div>
           }
           confirmLabel="执行发布"
           busy={actionBusy}
