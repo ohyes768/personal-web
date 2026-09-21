@@ -96,3 +96,4 @@ backend/housing-map/scripts/_gaode_config.py
 .agents/
 .codex/
 backend/skill-manager/.wsl-wheels/
+.playwright-cli/
