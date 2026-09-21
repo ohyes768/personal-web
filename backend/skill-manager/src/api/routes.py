@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from pathlib import Path
 
@@ -62,6 +63,8 @@ from src.services.publisher import (
 from src.services.registry import RegistryService, RegistryValidationError
 
 router = APIRouter(prefix="/api")
+
+logger = logging.getLogger(__name__)
 
 _ID_RE = re.compile(SKILL_ID_PATTERN)
 
@@ -270,14 +273,20 @@ def clone_github_cache(
                 "item_id": skill.id,
             },
         )
+    # clone 大仓库可能持续数分钟，主动打日志避免"请求期间无任何输出"
+    logger.info("clone cache start: skill=%s repository=%s", skill.id, skill.repository)
     try:
         info = git_cache.check_update(skill)
         git_cache.ensure_cached(skill, info.remote_revision)
     except GitCacheError as exc:
+        logger.warning("clone cache failed: skill=%s error=%s", skill.id, exc)
         raise HTTPException(
             status_code=400,
             detail={"code": "cache_failed", "message": f"GitHub 缓存更新失败：{exc}"},
         ) from exc
+    logger.info(
+        "clone cache done: skill=%s revision=%s", skill.id, info.remote_revision
+    )
     return {"skill_id": skill.id, "revision": info.remote_revision}
 
 

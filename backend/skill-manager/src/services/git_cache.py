@@ -33,7 +33,9 @@ from src.config import Settings
 from src.db import GithubCheckRecord, SkillStateStore
 from src.models import RegistrySkill, ScanCandidate, SkillSource, UpdateInfo
 
-_GIT_TIMEOUT_SECONDS = 60
+# 单条 git 命令上限：大仓库经代理 clone 可能超过 1 分钟（生产 ui-ux-pro-max
+# 实测 60s 被杀留半成品缓存），与 nginx /api/skills 的 300s 代理超时对齐
+_GIT_TIMEOUT_SECONDS = 300
 _SKILL_MD = "SKILL.md"
 _SCAN_WORKSPACE_PARENT = "scan"
 

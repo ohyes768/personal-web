@@ -481,6 +481,7 @@ export default function Page() {
             <p>
               将从 GitHub 拉取「{pendingClone.skillName}
               」的仓库到本机缓存目录（只写缓存，不触碰已发布目标）。
+              大仓库经代理可能需要数分钟，请耐心等待。
             </p>
           }
           confirmLabel="执行 Clone"
