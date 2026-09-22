@@ -615,21 +615,27 @@ def delete_skill(
     registry: RegistryService = Depends(get_registry),
     store: SkillStateStore = Depends(get_store),
 ) -> DeleteSkillResponse:
-    """删除已登记的 GitHub Skill（design：仅 github 来源，任一 target
-    active 时拒绝）。登记真源是 SQLite：先移除 DB 行（无 git 依赖），
-    派生数据（检查记录、回滚快照、本地缓存）随后尽力清理。"""
+    """删除已登记的 Skill（design：任一 target active 时拒绝）。
+
+    - GitHub 来源：删除登记 + 清理本地缓存；
+    - 本地来源：仅删除数据库登记记录（源目录若存在则拒绝，移除目录后自动解除）。
+
+    登记真源是 SQLite：先移除 DB 行，派生数据随后尽力清理。"""
     ensure_admin_password(settings, req.password)
     _require_skill_id(skill_id)
     skill = _require_known_skill(registry, skill_id, code="unknown_skill")
     if skill.source is SkillSource.LOCAL:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "code": "local_source",
-                "message": f"skill {skill.id} 是本地来源，不支持删除（移除源目录即消失）",
-                "item_id": skill.id,
-            },
-        )
+        source_dir = settings.skills_source_root / skill.path
+        if source_dir.exists():
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "local_source",
+                    "message": f"skill {skill.id} 是本地来源，不支持删除（移除源目录即消失）",
+                    "item_id": skill.id,
+                },
+            )
+        # 源目录不存在，允许删除数据库登记记录
     active = [
         record
         for record in store.list_deployments()
