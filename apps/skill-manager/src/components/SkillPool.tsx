@@ -185,7 +185,7 @@ function SkillCardItem({
         >
           加入队列
         </button>
-        {skill.source === 'github' ? (
+        {(skill.source === 'github' || sourceMissing) ? (
           <button
             type="button"
             onClick={() => onDelete(skill)}
