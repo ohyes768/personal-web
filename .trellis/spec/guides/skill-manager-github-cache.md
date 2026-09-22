@@ -15,10 +15,12 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
   └── <registry.path>/SKILL.md                # path 为 "." 时即仓库根
 ```
 
-**登记真源是 skill-manager 自己的 SQLite（`registry_skill` 表，2026-09-21
-从 registry.json 迁移）**，环境本地；缓存也是环境本地的。skills 源库的
-`registry.json` 已归还给源库 sync 工具链（4 个 sync 脚本），skill-manager
-只在首次启动、表为空时做一次只读导入，之后绝不读写该文件。
+**登记真源是 skill-manager 自己的 SQLite（`registry_skill` 表）**，环境本地；
+缓存也是环境本地的。skills 源库的登记/发布 sync 工具链已于 2026-09-22 废弃
+（`registry.json` / `sync-config.json` / `scripts/sync_*.py` 全部删除）——
+skill-manager **不读源库任何登记文件**：自研 Skill 经 `sync_local()` 对账自动
+登记，GitHub Skill 经 API 登记，见
+[skill-manager-registry-sync.md](./skill-manager-registry-sync.md)。
 
 ## clone/fetch 的全部触发点
 
@@ -70,6 +72,5 @@ ${GITHUB_SKILL_CACHE_ROOT}/<skill-id>/        # 整仓 clone
 - 登记/删除**无任何 git 写依赖**（2026-09-21 迁移后）：源目录不需要是 git
   仓库、不需要凭据；此前"git add/commit registry.json 失败导致登记/删除
   报错"（NAS `git add` 128 等）一类问题已随迁移根除；
-- 删除已登记 GitHub 条目只影响**本环境**的 DB、状态库与缓存；skills 仓库
-  registry.json 归 sync 工具链，管理台操作不反映到它（未来"界面编辑 +
-  手动导入/导出"任务会补这个桥）。
+- 删除已登记 GitHub 条目只影响**本环境**的 DB、状态库与缓存；源库已无
+  registry.json（工具链废弃），不存在"管理台操作要回写源库"的桥。

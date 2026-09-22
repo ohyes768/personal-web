@@ -30,6 +30,7 @@ These guides help you **ask the right questions before coding**.
 | [New Service Onboarding Contract](./new-service-onboarding.md) | 新服务接入 monorepo 的 9 接入点契约（nginx 三件套、volume seed、纯前端无 BFF、NEXT_PUBLIC build args） | 新增/迁移任何一组前后端服务前必读 |
 | [Windows 测试环境契约](../backend/testing-environment.md) | Windows 开发机 pytest 硬约束（basetemp 重定向、requires_symlink marker、Windows/WSL 不共用 .pytest-tmp） | 在 Windows 上写/跑 Python 后端测试，或测试涉及 symlink/原子替换 |
 | [Skill Manager GitHub 缓存生命周期](./skill-manager-github-cache.md) | GitHub Skill 缓存何时 clone/fetch、缓存缺失死锁成因、Clone 端点契约、WinError 1314 坑 | 排查"源不可用：source directory does not exist"，或改 skill-manager 登记缓存发布流程 |
+| [Skill Manager 自研 Skill 登记与对账](./skill-manager-registry-sync.md) | 自研 Skill 的 sync_local() 对账契约、source_missing 语义、源库 sync 工具链废弃后的遗留状态 | 改 skill-manager 登记/列表流程，或排查"源缺失"徽章与 junction 兼容 |
 
 ---
 
