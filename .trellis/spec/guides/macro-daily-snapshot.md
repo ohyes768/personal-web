@@ -115,58 +115,66 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 
 `volume` 序列(A股交易日,每交易日必有值)近 60 个 ∪ 今日。以 volume 为交易日基准的原因:三张卡中 DR007/市场情绪均为 A股日历;美元/TED 指标在非美交易日的缺失由行级 asof 回退兜底。
 
-## 7. 更新端点共享响应契约（2026-09-20）
+## 7. 更新端点注册表与共享管道契约（2026-09-22）
 
 ### 1. Scope / Trigger
 
-- 触发：新增或修改任何返回 `UpdateResponse` 的 `/api/update/*` 端点，尤其是端点携带新增的 `*UpdateData` payload 时。
+- 触发：新增或修改任何返回 `UpdateResponse` 的 `/api/update*` 端点，或改变 fetch / validate / save / payload 任一阶段时。
 
 ### 2. Signatures
 
-- `POST /api/update/dr001` → `UpdateResponse(data=DR001UpdateData(dr001=DR001Data(...)))`
-- `UpdateResponse.data` 定义于 `backend/macro/src/models.py`，是显式联合类型。
+- `src/services/update_pipeline.py::UpdatePipeline.run(fetch, validate, save, build_payload)` 是增量更新的唯一流程执行器。
+- `src/services/update_registry.py::UPDATE_SPECS` 为 18 条增量端点登记 `key`、相对路径、payload 类型与契约测试文件。
+- `UpdateResponse.data` 仍定义于 `backend/macro/src/models.py`，保持显式联合类型。
 
 ### 3. Contracts
 
-- 成功写盘后必须响应 `success=true`，且 `data.dr001.date`、`data.dr001.value` 可序列化。
-- `DR001UpdateData` 必须是 `UpdateResponse.data` 联合类型的成员；仅定义模型或在路由中导入它都不足以满足响应契约。
+- 路由保留锁、HTTP 状态及错误消息语义；数据流必须通过 `fetch → validate → save → build_payload`，使校验失败发生在落库之前。
+- `UpdateSpec.payload_type` 必须属于 `UpdateResponse.data` 联合类型，且登记的测试文件必须存在。
+- 注册表路径集合必须与 `APIRouter` 的 18 条 `/api/update*` 路径完全一致。新增端点时只补齐注册表与端点级契约测试，前端响应 shape 不变。
 
 ### 4. Validation & Error Matrix
 
 | 条件 | 预期结果 |
 |---|---|
-| `DR001UpdateData` 在联合类型中 | 保存成功后返回 `success=true` |
-| 载荷类型漏入联合类型 | 数据可能已经写盘，但 Pydantic 校验失败，端点错误返回 `success=false`；scheduler 会把该项记录为失败 |
+| fetch 抛异常或 validate 失败 | 不执行 save，端点返回既有 `UPDATE_FAILED` 语义 |
+| 增量窗口无观测且底库近期 | 端点保留既有 `success=true` / “已是最新” no-op 响应 |
+| payload 类型漏入 `UpdateResponse.data` | `test_update_pipeline.py` 完整性测试失败，阻止 Pydantic 序列化失败进入运行期 |
+| 端点漏登记或注册路径错误 | 注册表路径与路由集合断言失败 |
 
 ### 5. Good / Base / Bad Cases
 
-- Good：路由返回的 `DR001UpdateData` 已登记在 `UpdateResponse.data`，调用方收到成功响应。
-- Base：`data=None` 的“已是最新”响应仍可通过现有联合类型契约。
-- Bad：新增 `FooUpdateData` 只在路由内构造，未加入 `UpdateResponse.data`，导致持久化和响应结果不一致。
+- Good：新增 `FooUpdateData` 同时进入 `UpdateResponse.data`、`UPDATE_SPECS` 和对应契约测试；路径与路由一致。
+- Base：底库近期但外部源无新观测，validate 发出 no-op，save 不被调用。
+- Bad：路由手写 fetch / save，或只新增模型却漏登记；测试在本地而非 scheduler 运行时失败。
 
 ### 6. Tests Required
 
-- 对每个新增的更新 payload 写端点级测试：mock fetcher 返回一行有效数据，断言 HTTP 200、`success is True`、`data` 结构正确，并断言存储方法被调用。
-- DR001 回归测试：`backend/macro/tests/test_dr001_update_response.py::test_update_dr001_returns_success_after_persisting_valid_data`。
+- 对每个新增端点写成功与失败契约：mock fetcher 返回有效数据时断言 HTTP 200、`success=true`、payload shape 和 save 调用；fetch/validate 失败时断言不落库。
+- 在 `tests/test_update_pipeline.py` 断言 18 条注册、payload 联合类型、契约测试文件与实际路由路径相互一致。
+- 每次批量迁移后运行 `python -m pytest tests/ -q`；scheduler 仍通过 HTTP self-call 判定 `body.success`，无需修改 job 配置。
 
 ### 7. Wrong vs Correct
 
 #### Wrong
 
 ```python
-# 只新增 DR001UpdateData 和路由返回值
-return UpdateResponse(data=DR001UpdateData(dr001=latest))
+# 路由内手写流程；新增 payload 时容易遗漏联合类型或契约测试
+data = await fetcher()
+save(data)
+return UpdateResponse(data=FooUpdateData(...))
 ```
 
 #### Correct
 
 ```python
-class UpdateResponse(BaseModel):
-    data: Optional[
-        DR007UpdateData
-        | DR001UpdateData
-        # ...other update payloads
-    ] = None
+spec = UPDATE_SPECS["foo"]
+response_data = await UpdatePipeline.run(
+    fetch=spec_fetch,
+    validate=spec_validate,
+    save=spec_save,
+    build_payload=spec_build_payload,
+)
 ```
 
-路由端点测试必须验证此响应能通过 Pydantic 校验，而不只验证 `save_dr001_data` 已执行。
+注册表完整性和端点级测试必须同时通过；不能只验证 save 已执行。

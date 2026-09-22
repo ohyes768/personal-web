@@ -78,6 +78,8 @@ from src.services.margin_service import get_margin_service
 from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
+from src.services.update_pipeline import UpdatePipeline
+from src.services.update_registry import UPDATE_SPECS
 from src.services.index_service import get_index_service
 from src.services.exchange_rate_service import ExchangeRateService
 from src.services.macro_signal_service import get_macro_signal_service
@@ -94,6 +96,10 @@ router = APIRouter(prefix="/api", tags=["macro"])
 # 并发控制锁
 _update_lock = None
 _is_updating = False
+
+
+class _NoNewData(Exception):
+    """Signals the existing successful no-op update response."""
 
 
 async def acquire_update_lock():
@@ -340,6 +346,8 @@ def _build_response_data_with_rates(
     us_m3 = latest.get("us_3m", TreasuryData(date=end_date.date(), value=None))
     us_y2 = latest.get("us_2y", TreasuryData(date=end_date.date(), value=None))
     us_y10 = latest.get("us_10y", TreasuryData(date=end_date.date(), value=None))
+    eu_m3 = latest.get("eu_3m", TreasuryData(date=end_date.date(), value=None))
+    eu_y2 = latest.get("eu_2y_ecb", TreasuryData(date=end_date.date(), value=None))
     eu_y10 = latest.get("eu_10y", TreasuryData(date=end_date.date(), value=None))
     jp_y10 = latest.get("jp_10y", TreasuryData(date=end_date.date(), value=None))
 
@@ -468,43 +476,45 @@ async def update_us_treasuries():
 
         logger.info(f"增量更新美债数据，从 {us_start} 到 {latest_end}")
 
-        new_data = await _fetch_us_treasuries(fred_service, us_start, latest_end)
+        async def fetch():
+            return await _fetch_us_treasuries(fred_service, us_start, latest_end)
 
-        if not _has_observations(new_data):
-            if _empty_increment_is_current(data_service, "us_treasuries"):
-                logger.info("美债增量区间无新观测，底库已有 last_date，视为已是最新")
-                response_data = USTreasuriesUpdateData(
-                    us_treasuries=USTreasuries(
-                        m3=TreasuryData(date=latest_end.date(), value=None),
-                        y2=TreasuryData(date=latest_end.date(), value=None),
-                        y10=TreasuryData(date=latest_end.date(), value=None),
-                    )
+        def validate(new_data):
+            if not _has_observations(new_data):
+                if _empty_increment_is_current(data_service, "us_treasuries"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "us_treasuries", "美债"))
+            return new_data
+
+        def build_payload(new_data):
+            latest = {}
+            for name, series in new_data.items():
+                if not series.empty:
+                    last_idx = series.last_valid_index()
+                    if last_idx is not None:
+                        latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
+            return USTreasuriesUpdateData(
+                us_treasuries=USTreasuries(
+                    m3=latest.get("us_3m", TreasuryData(date=latest_end.date(), value=None)),
+                    y2=latest.get("us_2y", TreasuryData(date=latest_end.date(), value=None)),
+                    y10=latest.get("us_10y", TreasuryData(date=latest_end.date(), value=None)),
                 )
-                return UpdateResponse(
-                    success=True,
-                    message="美债数据已是最新，无需更新",
-                    data=response_data,
-                    updated_at=datetime.now().isoformat(),
+            )
+
+        try:
+            response_data = await UpdatePipeline.run(
+                fetch, validate, data_service.save_fred_data, build_payload
+            )
+        except _NoNewData:
+            logger.info("美债增量区间无新观测，底库已有 last_date，视为已是最新")
+            response_data = USTreasuriesUpdateData(
+                us_treasuries=USTreasuries(
+                    m3=TreasuryData(date=latest_end.date(), value=None),
+                    y2=TreasuryData(date=latest_end.date(), value=None),
+                    y10=TreasuryData(date=latest_end.date(), value=None),
                 )
-            raise Exception(_empty_increment_fail_message(data_service, "us_treasuries", "美债"))
-
-        data_service.save_fred_data(new_data)
-
-        # 构建只包含美债的响应数据
-        latest = {}
-        for name, series in new_data.items():
-            if not series.empty:
-                last_idx = series.last_valid_index()
-                if last_idx is not None:
-                    latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
-
-        us_m3 = latest.get("us_3m", TreasuryData(date=latest_end.date(), value=None))
-        us_y2 = latest.get("us_2y", TreasuryData(date=latest_end.date(), value=None))
-        us_y10 = latest.get("us_10y", TreasuryData(date=latest_end.date(), value=None))
-
-        response_data = USTreasuriesUpdateData(
-            us_treasuries=USTreasuries(m3=us_m3, y2=us_y2, y10=us_y10)
-        )
+            )
+            return UpdateResponse(success=True, message="美债数据已是最新，无需更新", data=response_data, updated_at=datetime.now().isoformat())
 
         logger.info("美国国债数据增量更新成功")
         return UpdateResponse(
@@ -645,51 +655,49 @@ async def update_exchange_rates():
 
         logger.info(f"增量更新汇率数据，从 {start_date} 到 {latest_end}")
 
-        exchange_data = await _fetch_exchange_rates(fred_service, start_date, latest_end)
+        async def fetch():
+            return await _fetch_exchange_rates(fred_service, start_date, latest_end)
 
-        if not _has_observations(exchange_data):
-            if _empty_increment_is_current(data_service, "exchange_rates"):
-                logger.info("汇率增量区间无新观测，底库已有 last_date，视为已是最新")
-                response_data = ExchangeRatesUpdateData(
-                    exchange_rates=ExchangeRates(
-                        dollar_index=ExchangeRateData(date=latest_end.date(), value=None),
-                        usd_cny=ExchangeRateData(date=latest_end.date(), value=None),
-                        usd_jpy=ExchangeRateData(date=latest_end.date(), value=None),
-                        usd_eur=ExchangeRateData(date=latest_end.date(), value=None),
-                    )
-                )
-                return UpdateResponse(
-                    success=True,
-                    message="汇率数据已是最新，无需更新",
-                    data=response_data,
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "exchange_rates", "汇率"))
+        def validate(exchange_data):
+            if not _has_observations(exchange_data):
+                if _empty_increment_is_current(data_service, "exchange_rates"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "exchange_rates", "汇率"))
+            return exchange_data
 
-        # 保存汇率数据
-        data_service.save_fred_data(exchange_data, key="exchange_rates")
+        def save(exchange_data):
+            data_service.save_fred_data(exchange_data, key="exchange_rates")
 
-        # 构建只包含汇率的响应数据
-        latest_rates = {}
-        for name, series in exchange_data.items():
-            if not series.empty:
-                last_idx = series.last_valid_index()
-                if last_idx is not None:
-                    latest_rates[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
+        def build_payload(exchange_data):
+            latest_rates = {}
+            for name, series in exchange_data.items():
+                if not series.empty:
+                    last_idx = series.last_valid_index()
+                    if last_idx is not None:
+                        latest_rates[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
+            return ExchangeRatesUpdateData(exchange_rates=ExchangeRates(
+                dollar_index=latest_rates.get("dollar_index", ExchangeRateData(date=latest_end.date(), value=None)),
+                usd_cny=latest_rates.get("usd_cny", ExchangeRateData(date=latest_end.date(), value=None)),
+                usd_jpy=latest_rates.get("usd_jpy", ExchangeRateData(date=latest_end.date(), value=None)),
+                usd_eur=latest_rates.get("usd_eur", ExchangeRateData(date=latest_end.date(), value=None)),
+            ))
 
-        dollar_index = latest_rates.get("dollar_index", ExchangeRateData(date=latest_end.date(), value=None))
-        usd_cny = latest_rates.get("usd_cny", ExchangeRateData(date=latest_end.date(), value=None))
-        usd_jpy = latest_rates.get("usd_jpy", ExchangeRateData(date=latest_end.date(), value=None))
-        usd_eur = latest_rates.get("usd_eur", ExchangeRateData(date=latest_end.date(), value=None))
-
-        response_data = ExchangeRatesUpdateData(
-            exchange_rates=ExchangeRates(
-                dollar_index=dollar_index,
-                usd_cny=usd_cny,
-                usd_jpy=usd_jpy,
-                usd_eur=usd_eur,
+        try:
+            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
+        except _NoNewData:
+            logger.info("汇率增量区间无新观测，底库已有 last_date，视为已是最新")
+            response_data = ExchangeRatesUpdateData(exchange_rates=ExchangeRates(
+                dollar_index=ExchangeRateData(date=latest_end.date(), value=None),
+                usd_cny=ExchangeRateData(date=latest_end.date(), value=None),
+                usd_jpy=ExchangeRateData(date=latest_end.date(), value=None),
+                usd_eur=ExchangeRateData(date=latest_end.date(), value=None),
+            ))
+            return UpdateResponse(
+                success=True,
+                message="汇率数据已是最新，无需更新",
+                data=response_data,
+                updated_at=datetime.now().isoformat(),
             )
-        )
 
         logger.info("汇率数据增量更新成功")
         return UpdateResponse(
@@ -802,27 +810,33 @@ async def update_eu_bonds():
 
         logger.info(f"增量更新欧债数据，从 {start_date} 到 {latest_end}")
 
-        eu_data = await _fetch_oecd_bonds(fred_service, start_date, latest_end)
-        eu_only = {k: v for k, v in eu_data.items() if k.startswith("eu_")}
+        async def fetch():
+            return {
+                key: series for key, series in (
+                    await _fetch_oecd_bonds(fred_service, start_date, latest_end)
+                ).items() if key.startswith("eu_")
+            }
 
-        if not any(not series.empty for series in eu_only.values()):
-            raise Exception("未能获取到任何欧债新数据")
+        def validate(eu_only):
+            if not any(not series.empty for series in eu_only.values()):
+                raise Exception("未能获取到任何欧债新数据")
+            return eu_only
 
-        data_service.save_fred_data(eu_only)
+        def build_payload(eu_only):
+            latest = {}
+            for name, series in eu_only.items():
+                if not series.empty:
+                    last_idx = series.last_valid_index()
+                    if last_idx is not None:
+                        latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
+            return EUTreasuriesUpdateData(eu_treasuries=EUTreasuries(
+                m3=latest.get("eu_3m", TreasuryData(date=latest_end.date(), value=None)),
+                y2=latest.get("eu_2y_ecb", TreasuryData(date=latest_end.date(), value=None)),
+                y10=latest.get("eu_10y", TreasuryData(date=latest_end.date(), value=None)),
+            ))
 
-        latest = {}
-        for name, series in eu_only.items():
-            if not series.empty:
-                last_idx = series.last_valid_index()
-                if last_idx is not None:
-                    latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
-
-        eu_m3 = latest.get("eu_3m", TreasuryData(date=latest_end.date(), value=None))
-        eu_y2 = latest.get("eu_2y_ecb", TreasuryData(date=latest_end.date(), value=None))
-        eu_y10 = latest.get("eu_10y", TreasuryData(date=latest_end.date(), value=None))
-
-        response_data = EUTreasuriesUpdateData(
-            eu_treasuries=EUTreasuries(m3=eu_m3, y2=eu_y2, y10=eu_y10)
+        response_data = await UpdatePipeline.run(
+            fetch, validate, data_service.save_fred_data, build_payload
         )
 
         logger.info("欧洲国债数据增量更新成功")
@@ -932,25 +946,31 @@ async def update_jp_bonds():
 
         logger.info(f"增量更新日债数据，从 {start_date} 到 {latest_end}")
 
-        jp_data = await _fetch_oecd_bonds(fred_service, start_date, latest_end)
-        jp_only = {k: v for k, v in jp_data.items() if k.startswith("jp_")}
+        async def fetch():
+            return {
+                key: series for key, series in (
+                    await _fetch_oecd_bonds(fred_service, start_date, latest_end)
+                ).items() if key.startswith("jp_")
+            }
 
-        if not any(not series.empty for series in jp_only.values()):
-            raise Exception("未能获取到任何日债新数据")
+        def validate(jp_only):
+            if not any(not series.empty for series in jp_only.values()):
+                raise Exception("未能获取到任何日债新数据")
+            return jp_only
 
-        data_service.save_fred_data(jp_only)
+        def build_payload(jp_only):
+            latest = {}
+            for name, series in jp_only.items():
+                if not series.empty:
+                    last_idx = series.last_valid_index()
+                    if last_idx is not None:
+                        latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
+            return JPTreasuriesUpdateData(jp_treasuries=JPTreasuries(
+                y10=latest.get("jp_10y", TreasuryData(date=latest_end.date(), value=None))
+            ))
 
-        latest = {}
-        for name, series in jp_only.items():
-            if not series.empty:
-                last_idx = series.last_valid_index()
-                if last_idx is not None:
-                    latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
-
-        jp_y10 = latest.get("jp_10y", TreasuryData(date=latest_end.date(), value=None))
-
-        response_data = JPTreasuriesUpdateData(
-            jp_treasuries=JPTreasuries(y10=jp_y10)
+        response_data = await UpdatePipeline.run(
+            fetch, validate, data_service.save_fred_data, build_payload
         )
 
         logger.info("日本国债数据增量更新成功")
@@ -1011,37 +1031,36 @@ async def update_data():
         else:
             logger.info(f"汇率增量更新，从 {er_start} 到 {latest_end}")
 
-        new_data = {}
-        exchange_data = {}
+        async def fetch():
+            new_data = {}
+            exchange_data = {}
+            if us_start is not None:
+                new_data.update(await _fetch_us_treasuries(fred_service, us_start, latest_end))
+            new_data.update(await _fetch_oecd_bonds(fred_service, oecd_start, latest_end))
+            if er_start is not None:
+                if data_service.exchange_rates_need_aliyun_rebuild():
+                    raise Exception(_EXCHANGE_REBUILD_MSG)
+                exchange_data = await _fetch_exchange_rates(fred_service, er_start, latest_end)
+            return new_data, exchange_data
 
-        # 获取美国国债数据（3m, 2y, 10y）— 数据已是最新时跳过
-        if us_start is not None:
-            us_data = await _fetch_us_treasuries(fred_service, us_start, latest_end)
-            new_data.update(us_data)
+        def validate(update_data):
+            new_data, exchange_data = update_data
+            if not new_data and not exchange_data:
+                raise Exception("未能获取到任何新数据")
+            return update_data
 
-        # 获取 OECD 数据（德国、日本 10y）
-        oecd_data = await _fetch_oecd_bonds(fred_service, oecd_start, latest_end)
-        new_data.update(oecd_data)
+        def save(update_data):
+            new_data, exchange_data = update_data
+            if new_data:
+                data_service.save_fred_data(new_data)
+            if exchange_data:
+                data_service.save_fred_data(exchange_data, key="exchange_rates")
 
-        # 获取汇率数据 — 数据已是最新时跳过
-        if er_start is not None:
-            if data_service.exchange_rates_need_aliyun_rebuild():
-                raise Exception(_EXCHANGE_REBUILD_MSG)
-            exchange_data = await _fetch_exchange_rates(fred_service, er_start, latest_end)
+        def build_payload(update_data):
+            new_data, exchange_data = update_data
+            return _build_response_data_with_rates(new_data, exchange_data, latest_end)
 
-        if not new_data and not exchange_data:
-            raise Exception("未能获取到任何新数据")
-
-        # 保存债券数据
-        if new_data:
-            data_service.save_fred_data(new_data)
-
-        # 保存汇率数据
-        if exchange_data:
-            data_service.save_fred_data(exchange_data, key="exchange_rates")
-
-        # 构建包含汇率的响应数据
-        response_data = _build_response_data_with_rates(new_data, exchange_data, latest_end)
+        response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
 
         logger.info("数据更新成功")
         return UpdateResponse(
@@ -1301,38 +1320,39 @@ async def update_vix():
 
         logger.info(f"增量更新VIX数据，从 {start_date} 到 {latest_end}")
 
-        # 获取VIX数据
         vix_code = settings.fred_codes.get("vix", "VIXCLS")
-        vix_series = await fred_service.fetch_series(vix_code, start_date, latest_end)
+        async def fetch():
+            return await fred_service.fetch_series(vix_code, start_date, latest_end)
 
-        if not _has_observations(vix_series):
-            if _empty_increment_is_current(data_service, "vix"):
-                logger.info("VIX增量区间无新观测，底库已有 last_date，视为已是最新")
-                return UpdateResponse(
-                    success=True,
-                    message="VIX数据已是最新，无需更新",
-                    data=VIXUpdateData(vix=VIXData(date=latest_end.date(), value=None)),
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "vix", "VIX"))
+        def validate(vix_series):
+            if not _has_observations(vix_series):
+                if _empty_increment_is_current(data_service, "vix"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "vix", "VIX"))
+            vix_series = vix_service.convert_timezone(vix_series)
+            vix_series = vix_service.validate_data(vix_series)
+            return vix_service.normalize_data(vix_series)
 
-        # 处理VIX数据：时区转换、验证、标准化
-        vix_series = vix_service.convert_timezone(vix_series)
-        vix_series = vix_service.validate_data(vix_series)
-        vix_series = vix_service.normalize_data(vix_series)
+        def save(vix_series):
+            data_service.save_fred_data({"vix": vix_series}, key="vix")
 
-        # 保存VIX数据
-        vix_data = {"vix": vix_series}
-        data_service.save_fred_data(vix_data, key="vix")
+        def build_payload(vix_series):
+            last_idx = vix_series.last_valid_index()
+            return VIXUpdateData(vix=VIXData(
+                date=last_idx.date() if last_idx is not None else latest_end.date(),
+                value=float(vix_series[last_idx]) if last_idx is not None else None,
+            ))
 
-        # 构建响应数据
-        last_idx = vix_series.last_valid_index()
-        vix_latest = VIXData(
-            date=last_idx.date() if last_idx is not None else latest_end.date(),
-            value=float(vix_series[last_idx]) if last_idx is not None else None
-        )
-
-        response_data = VIXUpdateData(vix=vix_latest)
+        try:
+            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
+        except _NoNewData:
+            logger.info("VIX增量区间无新观测，底库已有 last_date，视为已是最新")
+            return UpdateResponse(
+                success=True,
+                message="VIX数据已是最新，无需更新",
+                data=VIXUpdateData(vix=VIXData(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
 
         logger.info("VIX数据增量更新成功")
         return UpdateResponse(
@@ -1451,29 +1471,37 @@ async def update_tga():
         logger.info(f"增量更新TGA数据，从 {start_date} 到 {latest_end}")
 
         tga_code = settings.fred_codes.get("tga", "WTREGEN")
-        tga_series = await fred_service.fetch_series(tga_code, start_date, latest_end)
 
-        if not _has_observations(tga_series):
-            if _empty_increment_is_current(data_service, "tga"):
-                logger.info("TGA增量区间无新观测，底库已有 last_date，视为已是最新")
-                return UpdateResponse(
-                    success=True,
-                    message="TGA数据已是最新，无需更新",
-                    data=TGAUpdateData(tga=TGAData(date=latest_end.date(), value=None)),
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "tga", "TGA"))
+        async def fetch():
+            return await fred_service.fetch_series(tga_code, start_date, latest_end)
 
-        tga_data = {"tga": tga_series}
-        data_service.save_fred_data(tga_data, key="tga")
+        def validate(tga_series):
+            if not _has_observations(tga_series):
+                if _empty_increment_is_current(data_service, "tga"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "tga", "TGA"))
+            return tga_series
 
-        last_idx = tga_series.last_valid_index()
-        tga_latest = TGAData(
-            date=last_idx.date() if last_idx is not None else latest_end.date(),
-            value=float(tga_series[last_idx]) if last_idx is not None else None
-        )
+        def save(tga_series):
+            data_service.save_fred_data({"tga": tga_series}, key="tga")
 
-        response_data = TGAUpdateData(tga=tga_latest)
+        def build_payload(tga_series):
+            last_idx = tga_series.last_valid_index()
+            return TGAUpdateData(tga=TGAData(
+                date=last_idx.date() if last_idx is not None else latest_end.date(),
+                value=float(tga_series[last_idx]) if last_idx is not None else None,
+            ))
+
+        try:
+            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
+        except _NoNewData:
+            logger.info("TGA增量区间无新观测，底库已有 last_date，视为已是最新")
+            return UpdateResponse(
+                success=True,
+                message="TGA数据已是最新，无需更新",
+                data=TGAUpdateData(tga=TGAData(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
 
         logger.info("TGA数据增量更新成功")
         return UpdateResponse(
@@ -1590,29 +1618,36 @@ async def update_hibor():
 
         logger.info(f"增量更新HIBOR数据，从 {start_date} 到 {latest_end}")
 
-        hibor_series = await hibor_service.fetch_series(start_date, latest_end)
+        async def fetch():
+            return await hibor_service.fetch_series(start_date, latest_end)
 
-        if not _has_observations(hibor_series):
-            if _empty_increment_is_current(data_service, "hibor"):
-                logger.info("HIBOR增量区间无新观测，底库已有 last_date，视为已是最新")
-                return UpdateResponse(
-                    success=True,
-                    message="HIBOR数据已是最新，无需更新",
-                    data=HIBORUpdateData(hibor=HIBORData(date=latest_end.date(), value=None)),
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "hibor", "HIBOR"))
+        def validate(hibor_series):
+            if not _has_observations(hibor_series):
+                if _empty_increment_is_current(data_service, "hibor"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "hibor", "HIBOR"))
+            return hibor_series
 
-        hibor_data = {"hibor": hibor_series}
-        data_service.save_fred_data(hibor_data, key="hibor")
+        def save(hibor_series):
+            data_service.save_fred_data({"hibor": hibor_series}, key="hibor")
 
-        last_idx = hibor_series.last_valid_index()
-        hibor_latest = HIBORData(
-            date=last_idx.date() if last_idx is not None else latest_end.date(),
-            value=float(hibor_series[last_idx]) if last_idx is not None else None
-        )
+        def build_payload(hibor_series):
+            last_idx = hibor_series.last_valid_index()
+            return HIBORUpdateData(hibor=HIBORData(
+                date=last_idx.date() if last_idx is not None else latest_end.date(),
+                value=float(hibor_series[last_idx]) if last_idx is not None else None,
+            ))
 
-        response_data = HIBORUpdateData(hibor=hibor_latest)
+        try:
+            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
+        except _NoNewData:
+            logger.info("HIBOR增量区间无新观测，底库已有 last_date，视为已是最新")
+            return UpdateResponse(
+                success=True,
+                message="HIBOR数据已是最新，无需更新",
+                data=HIBORUpdateData(hibor=HIBORData(date=latest_end.date(), value=None)),
+                updated_at=datetime.now().isoformat(),
+            )
 
         logger.info("HIBOR数据增量更新成功")
         return UpdateResponse(
@@ -1752,48 +1787,42 @@ async def update_fund_flow():
 
         latest_end = pd.Timestamp.now().normalize()
 
-        # 固定近 10 个自然日窗口重写（对齐 baostock fetch_today 自愈模式），
-        # 不做"已是最新跳过"：节假日后首日与断连缺口都能自动补上
-        fund_flow_data = fund_flow_service.fetch_recent(days=10)
+        async def fetch():
+            return fund_flow_service.fetch_recent(days=10)
 
-        if not any(not df.empty for df in fund_flow_data.values()):
-            raise Exception("未能获取到任何资金流向新数据")
+        def validate(fund_flow_data):
+            if not any(not df.empty for df in fund_flow_data.values()):
+                raise Exception("未能获取到任何资金流向新数据")
+            return fund_flow_data
 
-        # 保存资金流向数据
-        data_service.save_fund_flow(fund_flow_data)
+        def build_payload(fund_flow_data):
+            latest_north = None
+            latest_south = None
+            if "north" in fund_flow_data and not fund_flow_data["north"].empty:
+                last_idx = fund_flow_data["north"].last_valid_index()
+                if last_idx is not None:
+                    row = fund_flow_data["north"].loc[last_idx]
+                    latest_north = FundFlowData(
+                        date=last_idx.date(),
+                        deal_amount=float(row["北向成交额"]) if pd.notna(row["北向成交额"]) else None,
+                    )
+            if "south" in fund_flow_data and not fund_flow_data["south"].empty:
+                last_idx = fund_flow_data["south"].last_valid_index()
+                if last_idx is not None:
+                    row = fund_flow_data["south"].loc[last_idx]
+                    latest_south = FundFlowData(
+                        date=last_idx.date(),
+                        net_flow=float(row["南向净流入"]) if pd.notna(row["南向净流入"]) else None,
+                        buy=float(row["南向买入"]) if pd.notna(row["南向买入"]) else None,
+                        sell=float(row["南向卖出"]) if pd.notna(row["南向卖出"]) else None,
+                    )
+            return FundFlowUpdateData(fund_flow=FundFlow(
+                north=latest_north or FundFlowData(date=latest_end.date()),
+                south=latest_south or FundFlowData(date=latest_end.date()),
+            ))
 
-        # 构建响应数据
-        latest_north = None
-        latest_south = None
-
-        if "north" in fund_flow_data and not fund_flow_data["north"].empty:
-            last_idx = fund_flow_data["north"].last_valid_index()
-            if last_idx is not None:
-                row = fund_flow_data["north"].loc[last_idx]
-                latest_north = FundFlowData(
-                    date=last_idx.date(),
-                    deal_amount=float(row["北向成交额"]) if pd.notna(row["北向成交额"]) else None,
-                )
-
-        if "south" in fund_flow_data and not fund_flow_data["south"].empty:
-            last_idx = fund_flow_data["south"].last_valid_index()
-            if last_idx is not None:
-                row = fund_flow_data["south"].loc[last_idx]
-                latest_south = FundFlowData(
-                    date=last_idx.date(),
-                    net_flow=float(row["南向净流入"]) if pd.notna(row["南向净流入"]) else None,
-                    buy=float(row["南向买入"]) if pd.notna(row["南向买入"]) else None,
-                    sell=float(row["南向卖出"]) if pd.notna(row["南向卖出"]) else None,
-                )
-
-        # 如果没有数据，使用默认值
-        if latest_north is None:
-            latest_north = FundFlowData(date=latest_end.date())
-        if latest_south is None:
-            latest_south = FundFlowData(date=latest_end.date())
-
-        response_data = FundFlowUpdateData(
-            fund_flow=FundFlow(north=latest_north, south=latest_south)
+        response_data = await UpdatePipeline.run(
+            fetch, validate, data_service.save_fund_flow, build_payload
         )
 
         logger.info("资金流向数据增量更新成功")
@@ -2021,39 +2050,45 @@ async def update_china_bonds():
 
         logger.info(f"增量更新中国国债数据，从 {start_date} 到 {latest_end}")
 
-        # 获取中国国债收益率数据
-        bond_df = china_bond_service.fetch_china_bond_yield(start_date.strftime("%Y-%m-%d"), latest_end.strftime("%Y-%m-%d"))
+        async def fetch():
+            return china_bond_service.fetch_china_bond_yield(
+                start_date.strftime("%Y-%m-%d"), latest_end.strftime("%Y-%m-%d")
+            )
 
-        if not _has_observations(bond_df):
-            if _empty_increment_is_current(data_service, "china_bond"):
-                logger.info("中国国债增量区间无新观测，底库已有 last_date，视为已是最新")
-                response_data = ChinaBondUpdateData(
-                    china_bond_10y=ChinaBondData(date=latest_end.date(), value=None)
-                )
-                return UpdateResponse(
-                    success=True,
-                    message="中国国债数据已是最新，无需更新",
-                    data=response_data,
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "china_bond", "中国国债"))
+        def validate(bond_df):
+            if not _has_observations(bond_df):
+                if _empty_increment_is_current(data_service, "china_bond"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "china_bond", "中国国债"))
+            return bond_df
 
-        # 保存中国国债数据（传短 key 让 _save_china_bond 自动加 "中国" 前缀）
-        china_bond_data = {
-            "10y": bond_df["中国国债收益率10年"],
-            "10年-2年": bond_df["中国国债收益率10年-2年"],
-        }
-        data_service.save_china_bond_data(china_bond_data)
+        def save(bond_df):
+            data_service.save_china_bond_data({
+                "10y": bond_df["中国国债收益率10年"],
+                "10年-2年": bond_df["中国国债收益率10年-2年"],
+            })
 
-        # 构建响应数据
-        col_10y = "中国国债收益率10年"
-        last_idx = bond_df.index[-1]
-        bond_10y_latest = ChinaBondData(
-            date=last_idx.date(),
-            value=float(bond_df[col_10y].iloc[-1]) if pd.notna(bond_df[col_10y].iloc[-1]) else None
-        )
+        def build_payload(bond_df):
+            col_10y = "中国国债收益率10年"
+            last_idx = bond_df.index[-1]
+            return ChinaBondUpdateData(china_bond_10y=ChinaBondData(
+                date=last_idx.date(),
+                value=float(bond_df[col_10y].iloc[-1]) if pd.notna(bond_df[col_10y].iloc[-1]) else None,
+            ))
 
-        response_data = ChinaBondUpdateData(china_bond_10y=bond_10y_latest)
+        try:
+            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
+        except _NoNewData:
+            logger.info("中国国债增量区间无新观测，底库已有 last_date，视为已是最新")
+            response_data = ChinaBondUpdateData(
+                china_bond_10y=ChinaBondData(date=latest_end.date(), value=None)
+            )
+            return UpdateResponse(
+                success=True,
+                message="中国国债数据已是最新，无需更新",
+                data=response_data,
+                updated_at=datetime.now().isoformat(),
+            )
 
         logger.info("中国国债数据增量更新成功")
         return UpdateResponse(
@@ -2191,51 +2226,54 @@ async def update_ted_spread():
 
         logger.info(f"增量更新TED利差数据，从 {start_date} 到 {latest_end}")
 
-        # 获取SOFR数据
         sofr_code = settings.fred_codes.get("sofr", "SOFR")
-        sofr_series = await fred_service.fetch_series(sofr_code, start_date, latest_end)
-
-        # 获取3个月美债数据
         us_3m_code = settings.fred_codes.get("us_3m", "DGS3MO")
-        us_3m_series = await fred_service.fetch_series(us_3m_code, start_date, latest_end)
 
-        ted_payload = {"sofr": sofr_series, "us_3m": us_3m_series}
-        if not _has_observations(ted_payload):
-            if _empty_increment_is_current(data_service, "ted_spread"):
-                logger.info("TED利差增量区间无新观测，底库已有 last_date，视为已是最新")
-                return UpdateResponse(
-                    success=True,
-                    message="TED利差数据已是最新，无需更新",
-                    data=TedSpreadUpdateData(
-                        ted_spread=TedSpreadData(date=latest_end.date(), sofr=None, us_3m=None, ted_spread=None)
-                    ),
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "ted_spread", "TED利差"))
+        async def fetch():
+            return {
+                "sofr": await fred_service.fetch_series(sofr_code, start_date, latest_end),
+                "us_3m": await fred_service.fetch_series(us_3m_code, start_date, latest_end),
+            }
 
-        # 保存TED利差数据
-        data_service.save_ted_spread_data(sofr_series, us_3m_series)
+        def validate(ted_payload):
+            if not _has_observations(ted_payload):
+                if _empty_increment_is_current(data_service, "ted_spread"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "ted_spread", "TED利差"))
+            return ted_payload
 
-        # 构建响应数据
-        sofr_last_idx = sofr_series.last_valid_index() if not sofr_series.empty else None
-        us_3m_last_idx = us_3m_series.last_valid_index() if not us_3m_series.empty else None
+        def save(ted_payload):
+            data_service.save_ted_spread_data(ted_payload["sofr"], ted_payload["us_3m"])
 
-        if sofr_last_idx is None and us_3m_last_idx is None:
-            raise Exception("未能获取到任何有效TED利差数据")
-
-        last_idx = sofr_last_idx if sofr_last_idx else us_3m_last_idx
-        sofr_val = float(sofr_series[last_idx]) if sofr_last_idx and pd.notna(sofr_series[sofr_last_idx]) else None
-        us_3m_val = float(us_3m_series[last_idx]) if us_3m_last_idx and pd.notna(us_3m_series[us_3m_last_idx]) else None
-        ted_val = (sofr_val - us_3m_val) if sofr_val is not None and us_3m_val is not None else None
-
-        response_data = TedSpreadUpdateData(
-            ted_spread=TedSpreadData(
+        def build_payload(ted_payload):
+            sofr_series = ted_payload["sofr"]
+            us_3m_series = ted_payload["us_3m"]
+            sofr_last_idx = sofr_series.last_valid_index() if not sofr_series.empty else None
+            us_3m_last_idx = us_3m_series.last_valid_index() if not us_3m_series.empty else None
+            if sofr_last_idx is None and us_3m_last_idx is None:
+                raise Exception("未能获取到任何有效TED利差数据")
+            last_idx = sofr_last_idx if sofr_last_idx else us_3m_last_idx
+            sofr_val = float(sofr_series[last_idx]) if sofr_last_idx and pd.notna(sofr_series[sofr_last_idx]) else None
+            us_3m_val = float(us_3m_series[last_idx]) if us_3m_last_idx and pd.notna(us_3m_series[us_3m_last_idx]) else None
+            return TedSpreadUpdateData(ted_spread=TedSpreadData(
                 date=last_idx.date() if last_idx else latest_end.date(),
                 sofr=sofr_val,
                 us_3m=us_3m_val,
-                ted_spread=ted_val
+                ted_spread=(sofr_val - us_3m_val) if sofr_val is not None and us_3m_val is not None else None,
+            ))
+
+        try:
+            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
+        except _NoNewData:
+            logger.info("TED利差增量区间无新观测，底库已有 last_date，视为已是最新")
+            return UpdateResponse(
+                success=True,
+                message="TED利差数据已是最新，无需更新",
+                data=TedSpreadUpdateData(ted_spread=TedSpreadData(
+                    date=latest_end.date(), sofr=None, us_3m=None, ted_spread=None,
+                )),
+                updated_at=datetime.now().isoformat(),
             )
-        )
 
         logger.info("TED利差数据增量更新成功")
         return UpdateResponse(
@@ -2376,44 +2414,45 @@ async def update_commodities():
         logger.info(
             f"增量更新商品，从 {start_date.strftime('%Y-%m-%d')} 到 {latest_end.strftime('%Y-%m-%d')}"
         )
-        new_data = await commodity_service.fetch_all(start_date.date(), latest_end.date())
+        async def fetch():
+            return await commodity_service.fetch_all(start_date.date(), latest_end.date())
 
-        if not _has_observations(new_data):
-            if _empty_increment_is_current(data_service, "commodities"):
-                logger.info("商品增量区间无新观测，底库已有 last_date，视为已是最新")
-                today = latest_end.date()
-                return UpdateResponse(
-                    success=True,
-                    message="商品数据已是最新",
-                    data=CommoditiesUpdateData(
-                        commodities=CommoditiesData(
-                            date=today,
-                            gold=None, silver=None, oil=None, copper=None,
-                        )
-                    ),
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "commodities", "商品"))
+        def validate(new_data):
+            if not _has_observations(new_data):
+                if _empty_increment_is_current(data_service, "commodities"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "commodities", "商品"))
+            return new_data
 
-        data_service.save_commodities(new_data)
-
-        # 构造响应：取每个商品的最后一个有效值
-        latest_per_commodity: dict = {}
-        for name, series in new_data.items():
-            if not series.empty:
-                last_idx = series.last_valid_index()
-                if last_idx is not None:
-                    latest_per_commodity[name] = float(series[last_idx])
-
-        response_data = CommoditiesUpdateData(
-            commodities=CommoditiesData(
+        def build_payload(new_data):
+            latest_per_commodity = {}
+            for name, series in new_data.items():
+                if not series.empty:
+                    last_idx = series.last_valid_index()
+                    if last_idx is not None:
+                        latest_per_commodity[name] = float(series[last_idx])
+            return CommoditiesUpdateData(commodities=CommoditiesData(
                 date=latest_end.date(),
                 gold=latest_per_commodity.get("gold"),
                 silver=latest_per_commodity.get("silver"),
                 oil=latest_per_commodity.get("oil"),
                 copper=latest_per_commodity.get("copper"),
+            ))
+
+        try:
+            response_data = await UpdatePipeline.run(
+                fetch, validate, data_service.save_commodities, build_payload
             )
-        )
+        except _NoNewData:
+            logger.info("商品增量区间无新观测，底库已有 last_date，视为已是最新")
+            return UpdateResponse(
+                success=True,
+                message="商品数据已是最新",
+                data=CommoditiesUpdateData(commodities=CommoditiesData(
+                    date=latest_end.date(), gold=None, silver=None, oil=None, copper=None,
+                )),
+                updated_at=datetime.now().isoformat(),
+            )
 
         logger.info("商品数据增量更新成功")
         return UpdateResponse(
@@ -2547,38 +2586,44 @@ async def update_indices():
         logger.info(
             f"增量更新股指，从 {start_date.strftime('%Y-%m-%d')} 到 {latest_end.strftime('%Y-%m-%d')}"
         )
-        new_data = await index_service.fetch_all(start_date.date(), latest_end.date())
+        async def fetch():
+            return await index_service.fetch_all(start_date.date(), latest_end.date())
 
-        if not _has_observations(new_data):
-            if _empty_increment_is_current(data_service, "indices"):
-                logger.info("股指增量区间无新观测，底库已有 last_date，视为已是最新")
-                return UpdateResponse(
-                    success=True,
-                    message="股指数据已是最新",
-                    data=IndicesUpdateData(indices=IndicesData(date=latest_end.date())),
-                    updated_at=datetime.now().isoformat(),
-                )
-            raise Exception(_empty_increment_fail_message(data_service, "indices", "股指"))
+        def validate(new_data):
+            if not _has_observations(new_data):
+                if _empty_increment_is_current(data_service, "indices"):
+                    raise _NoNewData()
+                raise Exception(_empty_increment_fail_message(data_service, "indices", "股指"))
+            return new_data
 
-        data_service.save_indices(new_data)
-
-        latest_per_idx: dict = {}
-        for name, series in new_data.items():
-            if not series.empty:
-                last_idx = series.last_valid_index()
-                if last_idx is not None:
-                    latest_per_idx[name] = float(series[last_idx])
-
-        response_data = IndicesUpdateData(
-            indices=IndicesData(
+        def build_payload(new_data):
+            latest_per_idx = {}
+            for name, series in new_data.items():
+                if not series.empty:
+                    last_idx = series.last_valid_index()
+                    if last_idx is not None:
+                        latest_per_idx[name] = float(series[last_idx])
+            return IndicesUpdateData(indices=IndicesData(
                 date=latest_end.date(),
                 HKHSI=latest_per_idx.get("HKHSI"),
                 SH000001=latest_per_idx.get("SH000001"),
                 SPX=latest_per_idx.get("SPX"),
                 IXIC=latest_per_idx.get("IXIC"),
                 DJI=latest_per_idx.get("DJI"),
+            ))
+
+        try:
+            response_data = await UpdatePipeline.run(
+                fetch, validate, data_service.save_indices, build_payload
             )
-        )
+        except _NoNewData:
+            logger.info("股指增量区间无新观测，底库已有 last_date，视为已是最新")
+            return UpdateResponse(
+                success=True,
+                message="股指数据已是最新",
+                data=IndicesUpdateData(indices=IndicesData(date=latest_end.date())),
+                updated_at=datetime.now().isoformat(),
+            )
 
         logger.info("股指数据增量更新成功")
         return UpdateResponse(
@@ -2843,10 +2888,27 @@ async def update_dr007():
 
         logger.info(f"增量更新 DR007 数据，从 {start_date} 到 {latest_end}")
 
-        dr007_df = await dr007_service.fetch_latest(start_date, latest_end)
+        async def fetch():
+            return await dr007_service.fetch_latest(start_date, latest_end)
 
-        if dr007_df.empty:
-            # 货币网 CSV 在区间内无新数据（节假日 / 数据尚未发布）→ 视为已是最新，不抛错
+        def validate(dr007_df):
+            if dr007_df.empty:
+                raise _NoNewData()
+            return dr007_df
+
+        def build_payload(dr007_df):
+            last_idx = dr007_df["date"].iloc[-1]
+            last_val = dr007_df["dr007"].iloc[-1]
+            return DR007UpdateData(dr007=DR007Data(
+                date=last_idx.date() if last_idx is not None else latest_end.date(),
+                value=float(last_val) if last_val is not None else None,
+            ))
+
+        try:
+            response_data = await UpdatePipeline.run(
+                fetch, validate, data_service.save_dr007_data, build_payload
+            )
+        except _NoNewData:
             logger.info(f"DR007 区间 [{start_date}, {latest_end}] 无新数据，跳过")
             return UpdateResponse(
                 success=True,
@@ -2854,17 +2916,6 @@ async def update_dr007():
                 data=DR007UpdateData(dr007=DR007Data(date=latest_end.date(), value=None)),
                 updated_at=datetime.now().isoformat(),
             )
-
-        data_service.save_dr007_data(dr007_df)
-
-        last_idx = dr007_df["date"].iloc[-1]
-        last_val = dr007_df["dr007"].iloc[-1]
-        dr007_latest = DR007Data(
-            date=last_idx.date() if last_idx is not None else latest_end.date(),
-            value=float(last_val) if last_val is not None else None,
-        )
-
-        response_data = DR007UpdateData(dr007=dr007_latest)
 
         logger.info("DR007 数据增量更新成功")
         return UpdateResponse(
@@ -2921,10 +2972,27 @@ async def update_dr001():
 
         logger.info(f"增量更新 DR001 数据，从 {start_date} 到 {latest_end}")
 
-        dr001_df = await dr001_service.fetch_latest(start_date, latest_end)
+        async def fetch():
+            return await dr001_service.fetch_latest(start_date, latest_end)
 
-        if dr001_df.empty:
-            # 货币网 CSV 在区间内无新数据（节假日 / 数据尚未发布）→ 视为已是最新，不抛错
+        def validate(dr001_df):
+            if dr001_df.empty:
+                raise _NoNewData()
+            return dr001_df
+
+        def build_payload(dr001_df):
+            last_idx = dr001_df["date"].iloc[-1]
+            last_val = dr001_df["dr001"].iloc[-1]
+            return DR001UpdateData(dr001=DR001Data(
+                date=last_idx.date() if last_idx is not None else latest_end.date(),
+                value=float(last_val) if last_val is not None else None,
+            ))
+
+        try:
+            response_data = await UpdatePipeline.run(
+                fetch, validate, data_service.save_dr001_data, build_payload
+            )
+        except _NoNewData:
             logger.info(f"DR001 区间 [{start_date}, {latest_end}] 无新数据，跳过")
             return UpdateResponse(
                 success=True,
@@ -2932,17 +3000,6 @@ async def update_dr001():
                 data=DR001UpdateData(dr001=DR001Data(date=latest_end.date(), value=None)),
                 updated_at=datetime.now().isoformat(),
             )
-
-        data_service.save_dr001_data(dr001_df)
-
-        last_idx = dr001_df["date"].iloc[-1]
-        last_val = dr001_df["dr001"].iloc[-1]
-        dr001_latest = DR001Data(
-            date=last_idx.date() if last_idx is not None else latest_end.date(),
-            value=float(last_val) if last_val is not None else None,
-        )
-
-        response_data = DR001UpdateData(dr001=dr001_latest)
 
         logger.info("DR001 数据增量更新成功")
         return UpdateResponse(
@@ -2985,23 +3042,12 @@ async def update_volume():
         baostock_service = get_baostock_service()
         data_service = get_data_service()
 
-        result = baostock_service.fetch_today()
-
-        if result["status"] == "failed" or result["total_amount_yi"] is None:
-            raise Exception(f"两市成交额获取失败: {result.get('error', result.get('date'))}")
-
-        # 近 10 日窗口批量落库（keep=last，自动补缺口并覆盖同日）
-        data_service.save_volume_data(result["volume"])
-
-        volume_latest = VolumeData(
-            date=pd.Timestamp(result["date"]).date(),
-            value=float(result["total_amount_yi"]) if result["total_amount_yi"] is not None else None,
-        )
-        response_data = VolumeUpdateData(volume=volume_latest)
+        stages = UPDATE_SPECS["volume"].build_stages(data_service, baostock_service)
+        response_data = await UpdatePipeline.run_stages(stages)
 
         logger.info(
             "两市成交额当日更新成功: date=%s, total=%.2f亿",
-            result["date"], result["total_amount_yi"] or 0,
+            response_data.volume.date, response_data.volume.value or 0,
         )
         return UpdateResponse(
             success=True,
@@ -3040,23 +3086,12 @@ async def update_turnover():
         baostock_service = get_baostock_service()
         data_service = get_data_service()
 
-        result = baostock_service.fetch_today()
-
-        if result["status"] == "failed" or result["turnover_rate"] is None:
-            raise Exception(f"两市换手率获取失败: {result.get('error', result.get('date'))}")
-
-        # 近 10 日窗口批量落库（keep=last，自动补缺口并覆盖同日）
-        data_service.save_turnover_data(result["turnover"])
-
-        turnover_latest = TurnoverData(
-            date=pd.Timestamp(result["date"]).date(),
-            value=float(result["turnover_rate"]) if result["turnover_rate"] is not None else None,
-        )
-        response_data = TurnoverUpdateData(turnover=turnover_latest)
+        stages = UPDATE_SPECS["turnover"].build_stages(data_service, baostock_service)
+        response_data = await UpdatePipeline.run_stages(stages)
 
         logger.info(
             "两市换手率当日更新成功: date=%s, rate=%.4f%%",
-            result["date"], result["turnover_rate"] or 0,
+            response_data.turnover.date, response_data.turnover.value or 0,
         )
         return UpdateResponse(
             success=True,
@@ -3223,26 +3258,12 @@ async def update_margin():
         margin_service = get_margin_service()
         data_service = get_data_service()
 
-        result = margin_service.fetch_today()
-
-        if result["status"] == "failed":
-            raise Exception(f"融资余额获取失败: {result.get('error', 'unknown')}")
-
-        df = pd.DataFrame({
-            "date": [pd.Timestamp(result["date"])],
-            "margin_balance_yi": [result["rzye"]],
-        })
-        data_service.save_margin_data(df)
-
-        margin_latest = MarginData(
-            date=pd.Timestamp(result["date"]).date(),
-            value=float(result["rzye"]) if result["rzye"] is not None else None,
-        )
-        response_data = MarginUpdateData(margin=margin_latest)
+        stages = UPDATE_SPECS["margin"].build_stages(data_service, margin_service)
+        response_data = await UpdatePipeline.run_stages(stages)
 
         logger.info(
             "融资余额当日更新成功: date=%s, balance=%.2f亿",
-            result["date"], result["rzye"] or 0,
+            response_data.margin.date, response_data.margin.value or 0,
         )
         return UpdateResponse(
             success=True,
