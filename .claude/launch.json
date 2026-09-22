@@ -1,0 +1,35 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "skill-manager-web",
+      "url": "http://localhost:3008",
+      "port": 3008
+    },
+    {
+      "name": "skill-manager-web-alt",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["exec", "next", "dev", "-p", "3009"],
+      "cwd": "apps/skill-manager",
+      "port": 3009,
+      "url": "http://localhost:3009"
+    },
+    {
+      "name": "skill-manager-web-test",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["exec", "next", "dev", "-p", "3010"],
+      "cwd": "apps/skill-manager",
+      "port": 3010,
+      "url": "http://localhost:3010"
+    },
+    {
+      "name": "skill-manager-api",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "export SKILLS_SOURCE_ROOT=F:/personal-projects/skills GITHUB_SKILL_CACHE_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/github-cache SKILL_MANAGER_STATE_DIR=F:/personal-projects/personal-web/.skill-manager-dev/state OPENCLAW_SKILLS_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/targets/openclaw HERMES_SKILLS_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/targets/hermes SKILL_MANAGER_TARGETS_MOUNT_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/targets SKILL_MANAGER_ADMIN_PASSWORD=dev-only-not-for-production && cd backend/skill-manager && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8097"
+      ],
+      "port": 8097
+    }
+  ]
+}
