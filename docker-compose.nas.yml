@@ -1,7 +1,7 @@
 # =============================================================================
 # 个人财富网站 - NAS 部署统一编排
 # =============================================================================
-# 用途：Ubuntu Server NAS 部署（6 个后端 + 6 个前端，共 12 个服务）
+# 用途：Ubuntu Server NAS 部署（7 个后端 + 7 个前端，共 14 个服务）
 # 用法：
 #   1. 准备 .env：在仓库根目录创建 .env，填入各服务 key（已被 .gitignore 忽略）
 #        cat > .env << 'EOF'
@@ -12,6 +12,11 @@
 #        ALIYUN_API_APPCODE=阿里云行情API appcode（dividend/macro 共用，留空则行情/商品接口报错）
 #        GAODE_MAP_KEY=高德地图key（housing-map 前端 build arg）
 #        GAODE_MAP_SECURITY_KEY=高德地图安全密钥（housing-map 前端 build arg）
+#        SKILLS_SOURCE_HOST_PATH=NAS 上 skills 仓库路径
+#        GITHUB_SKILL_CACHE_HOST_PATH=GitHub 缓存目录路径
+#        OPENCLAW_SKILLS_HOST_PATH=OpenClaw 技能目录路径
+#        HERMES_SKILLS_HOST_PATH=Hermes 技能目录路径
+#        SKILL_MANAGER_ADMIN_PASSWORD=skill-manager 管理密码
 #        EOF
 #   2. 启动：  docker compose -f docker-compose.nas.yml up -d --build
 #              （自动读取根目录 .env）
@@ -42,9 +47,7 @@
 #   macro-data / macro-logs
 #   fund-select-data / fund-select-cache / fund-select-logs
 #   housing-map-data / housing-map-logs
-# skill-manager 服务与 skill-manager-state 卷定义在
-# docker-compose.skill-manager.nas.yml（overlay，deploy-nas.sh 按 target 叠加加载），
-# 其 .env 变量（*_HOST_PATH、管理密码）只在该文件插值，详见 docs/skill-manager-nas-setup.md
+# skill-manager 服务已合并到主文件，各服务共享 .env 变量，详见 docs/skill-manager-nas-setup.md
 # =============================================================================
 
 services:
@@ -371,6 +374,69 @@ services:
       housing-map-backend:
         condition: service_healthy
 
+  # ---------------------------------------------------------------------------
+  # skill-manager 后端（Skill 发布管理台，backend/skill-manager/）
+  # 挂载边界：仅 Skill 源库 / GitHub 缓存 / 两个 Agent 目标目录 / state
+  # ---------------------------------------------------------------------------
+  skill-manager-backend:
+    build:
+      context: ./backend/skill-manager
+    container_name: skill-manager-backend
+    restart: unless-stopped
+    expose:
+      - "8097"
+    volumes:
+      - ${SKILLS_SOURCE_HOST_PATH:?skill-manager requires SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH:?}:rw
+      - ${GITHUB_SKILL_CACHE_HOST_PATH:?skill-manager requires GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH:?}:rw
+      - ${OPENCLAW_SKILLS_HOST_PATH:?skill-manager requires OPENCLAW_SKILLS_HOST_PATH}:${OPENCLAW_SKILLS_HOST_PATH:?}:rw
+      - ${HERMES_SKILLS_HOST_PATH:?skill-manager requires HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH:?}:rw
+      - skill-manager-state:/app/state
+      - ./deploy/fastgithub-ca.pem:/etc/ssl/fastgithub-ca.pem:ro
+    environment:
+      - TZ=Asia/Shanghai
+      - SKILLS_SOURCE_ROOT=${SKILLS_SOURCE_HOST_PATH:-}
+      - GITHUB_SKILL_CACHE_ROOT=${GITHUB_SKILL_CACHE_HOST_PATH:-}
+      - OPENCLAW_SKILLS_ROOT=${OPENCLAW_SKILLS_HOST_PATH:-}
+      - HERMES_SKILLS_ROOT=${HERMES_SKILLS_HOST_PATH:-}
+      - SKILL_MANAGER_STATE_DIR=/app/state
+      - HTTPS_PROXY=http://host.docker.internal:38457
+      - HTTP_PROXY=http://host.docker.internal:38457
+      - NO_PROXY=localhost,127.0.0.1
+      - GIT_SSL_CAINFO=/etc/ssl/fastgithub-ca.pem
+      - SKILL_MANAGER_ADMIN_PASSWORD=${SKILL_MANAGER_ADMIN_PASSWORD:-}
+      - SKILL_MANAGER_SERVICE_PORT=${SKILL_MANAGER_SERVICE_PORT:-8097}
+    networks:
+      - app-net
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "sh", "-c", "curl -f http://localhost:${SKILL_MANAGER_SERVICE_PORT:-8097}/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # skill-manager 前端（Next.js 15，basePath='/skills'，apps/skill-manager/）
+  # ---------------------------------------------------------------------------
+  skill-manager-frontend:
+    image: skill-manager-frontend:latest
+    build:
+      context: ./apps/skill-manager
+      dockerfile: Dockerfile
+    container_name: skill-manager-frontend
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3008:3008"
+    environment:
+      - NODE_ENV=production
+      - NEXT_PUBLIC_API_BASE_URL=/
+    networks:
+      - app-net
+    depends_on:
+      skill-manager-backend:
+        condition: service_healthy
+
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -409,3 +475,5 @@ volumes:
     name: housing-map-data
   housing-map-logs:
     name: housing-map-logs
+  skill-manager-state:
+    name: skill-manager-state

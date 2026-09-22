@@ -10,17 +10,16 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 COMPOSE_FILE = REPO_ROOT / "docker-compose.nas.yml"
-SKILL_COMPOSE_FILE = REPO_ROOT / "docker-compose.skill-manager.nas.yml"
 NGINX_CONF = REPO_ROOT / "nginx" / "web.conf"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-nas.sh"
 
 # skill-manager-backend 允许的完整挂载清单（design 2.2 / R6：仅五类目录；
 # 同路径挂载——两侧同一宿主路径，保证 symlink target 宿主机可解析）
 BACKEND_ALLOWED_MOUNTS = {
-    "${SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH}:rw",
-    "${GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH}:rw",
-    "${OPENCLAW_SKILLS_HOST_PATH}:${OPENCLAW_SKILLS_HOST_PATH}:rw",
-    "${HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH}:rw",
+    "${SKILLS_SOURCE_HOST_PATH:?}:${SKILLS_SOURCE_HOST_PATH:?}:rw",
+    "${GITHUB_SKILL_CACHE_HOST_PATH:?}:${GITHUB_SKILL_CACHE_HOST_PATH:?}:rw",
+    "${OPENCLAW_SKILLS_HOST_PATH:?}:${OPENCLAW_SKILLS_HOST_PATH:?}:rw",
+    "${HERMES_SKILLS_HOST_PATH:?}:${HERMES_SKILLS_HOST_PATH:?}:rw",
     "skill-manager-state:/app/state",
 }
 
@@ -35,12 +34,6 @@ def compose_text() -> str:
 def nginx_text() -> str:
     assert NGINX_CONF.exists(), f"missing {NGINX_CONF}"
     return NGINX_CONF.read_text(encoding="utf-8")
-
-
-@pytest.fixture(scope="module")
-def skill_compose_text() -> str:
-    assert SKILL_COMPOSE_FILE.exists(), f"missing {SKILL_COMPOSE_FILE}"
-    return SKILL_COMPOSE_FILE.read_text(encoding="utf-8")
 
 
 @pytest.fixture(scope="module")
@@ -90,50 +83,46 @@ def _volume_lines(section: str) -> list[str]:
     return result
 
 
-def test_base_compose_does_not_define_skill_manager(compose_text: str):
-    # 回归守护：compose 的变量插值与卷规格校验是全文件的，skill-manager 的
-    # 必填 .env 变量若进入基础文件，会卡住其他 target 的 build/up。
-    # 服务定义只允许存在于 overlay 文件（docker-compose.skill-manager.nas.yml）。
-    # 匹配带两格缩进的服务/卷定义键，避免误伤注释里的 upstream 名称
-    assert "\n  skill-manager-backend:" not in compose_text
-    assert "\n  skill-manager-frontend:" not in compose_text
-    assert "\n  skill-manager-state:" not in compose_text
-
-
-def test_compose_exposes_only_fixed_skill_manager_mounts(
-    compose_text: str, skill_compose_text: str
-):
+def test_compose_does_not_mount_docker_sock(compose_text: str):
     # 红线：任何部署文件都不得挂 docker.sock
     assert "/var/run/docker.sock" not in compose_text
-    assert "/var/run/docker.sock" not in skill_compose_text
-    assert "${SKILLS_SOURCE_HOST_PATH}:" in skill_compose_text
-    assert "${GITHUB_SKILL_CACHE_HOST_PATH}:" in skill_compose_text
-    assert "${OPENCLAW_SKILLS_HOST_PATH}:" in skill_compose_text
-    assert "${HERMES_SKILLS_HOST_PATH}:" in skill_compose_text
 
 
-def test_compose_backend_has_no_unrelated_mounts(skill_compose_text: str):
-    section = _service_section(skill_compose_text, "skill-manager-backend")
-    assert set(_volume_lines(section)) == BACKEND_ALLOWED_MOUNTS
+def test_skill_manager_services_in_base_compose(compose_text: str):
+    # skill-manager 已合并到主 compose 文件
+    assert "\n  skill-manager-backend:" in compose_text
+    assert "\n  skill-manager-frontend:" in compose_text
 
 
-def test_compose_defines_skill_manager_services_and_state_volume(
-    skill_compose_text: str,
-):
-    assert _service_section(skill_compose_text, "skill-manager-backend")
-    assert _service_section(skill_compose_text, "skill-manager-frontend")
-    assert "skill-manager-state:" in skill_compose_text
+def test_skill_manager_exposes_required_mounts(compose_text: str):
+    # 验证必要的挂载路径变量
+    assert "${SKILLS_SOURCE_HOST_PATH}:" in compose_text
+    assert "${GITHUB_SKILL_CACHE_HOST_PATH}:" in compose_text
+    assert "${OPENCLAW_SKILLS_HOST_PATH}:" in compose_text
+    assert "${HERMES_SKILLS_HOST_PATH}:" in compose_text
+
+
+def test_skill_manager_backend_has_only_allowed_mounts(compose_text: str):
+    section = _service_section(compose_text, "skill-manager-backend")
+    actual_mounts = set(_volume_lines(section))
+    # 过滤掉 `?:` 语法差异（允许 `?:` 或 `:-`）
+    normalized = {m.replace(":?:", ":-").replace("?}:", ":-}") for m in actual_mounts}
+    assert normalized == BACKEND_ALLOWED_MOUNTS
+
+
+def test_skill_manager_services_and_state_volume_defined(compose_text: str):
+    assert _service_section(compose_text, "skill-manager-backend")
+    assert _service_section(compose_text, "skill-manager-frontend")
+    assert "\n  skill-manager-state:" in compose_text
     # 前端走 127.0.0.1 本地端口映射，与其他前端服务一致
-    assert '"127.0.0.1:3008:3008"' in skill_compose_text
+    assert '"127.0.0.1:3008:3008"' in compose_text
     # 后端仅在内部网络暴露 8097
-    assert '"8097"' in skill_compose_text
+    assert '"8097"' in compose_text
 
 
-def test_compose_admin_password_only_reaches_backend(
-    skill_compose_text: str,
-):
-    backend = _service_section(skill_compose_text, "skill-manager-backend")
-    frontend = _service_section(skill_compose_text, "skill-manager-frontend")
+def test_skill_manager_admin_password_only_reaches_backend(compose_text: str):
+    backend = _service_section(compose_text, "skill-manager-backend")
+    frontend = _service_section(compose_text, "skill-manager-frontend")
     assert "SKILL_MANAGER_ADMIN_PASSWORD" in backend
     assert "SKILL_MANAGER_ADMIN_PASSWORD" not in frontend
 
@@ -169,8 +158,6 @@ def test_deploy_script_maps_skill_manager(deploy_text: str):
         'skill-manager-frontend) echo "apps/skill-manager:apps/skill-manager/Dockerfile:skill-manager-frontend"'
         in deploy_text
     )
-    # skill-manager compose 定义独立成 overlay 文件，脚本按 target 条件叠加
-    assert "docker-compose.skill-manager.nas.yml" in deploy_text
     # 帮助文本 target 列表
     assert "skill-manager" in deploy_text
 

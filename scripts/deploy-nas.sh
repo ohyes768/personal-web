@@ -142,10 +142,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---- nginx 同步（nginx 容器已 bind mount nginx/web.conf，需 restart 重挂载）----
-# skill-manager 服务定义在 overlay 文件里，只在部署它（或 all）时叠加加载，
-# 否则其必填 .env 变量（管理密码、NAS 挂载路径）会卡住其他 target 的 build/up
+# skill-manager 已合并到 docker-compose.nas.yml，与其他服务一起部署
 case "$TARGET" in
-    skill-manager|all) COMPOSE_ARGS+=(-f docker-compose.skill-manager.nas.yml) ;;
 esac
 
 # bind mount 在文件 inode 层是同步的（同一路径），但 nginx master 进程
