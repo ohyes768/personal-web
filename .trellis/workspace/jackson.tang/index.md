@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 16
-- **Last Active**: 2026-09-21
+- **Total Sessions**: 17
+- **Last Active**: 2026-09-22
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~644 | Active |
+| `journal-1.md` | ~681 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 17 | 2026-09-22 | skill 管理：自研对账登记 + 废弃源库 sync 工具链 | `c46aa14`, `b2b361d`, `555a500`, `20f0848` | `master` |
 | 16 | 2026-09-21 | skill-manager 登记真源迁移 SQLite | `a77e6ff` | `master` |
 | 15 | 2026-09-21 | skill-manager 删除已登记 GitHub Skill 功能 | `032a344` | `master` |
 | 14 | 2026-09-21 | skill-manager 右栏改为已部署视图 | `492b22b` | `master` |

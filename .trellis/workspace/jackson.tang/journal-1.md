@@ -642,3 +642,40 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: skill 管理：自研对账登记 + 废弃源库 sync 工具链
+
+**Date**: 2026-09-22
+**Task**: skill 管理：自研对账登记 + 废弃源库 sync 工具链
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+1) skill-manager 自研 skill 由源库目录自动对账登记（sync_local），SKILL.md frontmatter 解析元数据，source_missing 提示，测试 111 通过；2) 废弃源库 F:/personal-projects/skills 的 sync 工具链，删除 registry.json/sync-config/skill-agent-matrix/scripts/sync_*.py，README 移交 skill-manager；3) spec 记录对账契约。已归档 09-22-skill-local-sync 与 09-22-skill-manager-replace-sync
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c46aa14` | (see git log) |
+| `b2b361d` | (see git log) |
+| `555a500` | (see git log) |
+| `20f0848` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
