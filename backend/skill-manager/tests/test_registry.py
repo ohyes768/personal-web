@@ -1,13 +1,11 @@
 """RegistryService（SQLite 登记真源）测试。
 
 覆盖：路径边界、SKILL.md 校验、tags 归一化、github repository+path 唯一、
-同 id 替换、删除，以及 registry.json 一次性迁移导入（首启导入、二次跳过、
-损坏文件启动失败、非空忽略、文件逐字节未变、agents 不导入）。
+同 id 替换、删除，以及本地发现与对账（sync_local）。
 """
 
 from __future__ import annotations
 
-import json
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -18,10 +16,8 @@ from pydantic import ValidationError
 from src.db import SkillStateStore
 from src.models import RegistrySkill
 from src.services.registry import (
-    REGISTRY_FILENAME,
     RegistryService,
     RegistryValidationError,
-    import_registry_json_if_empty,
 )
 
 
@@ -45,12 +41,6 @@ def registry_service(store: SkillStateStore, source_root: Path) -> RegistryServi
 def make_local_skill_dir(source_root: Path, dir_name: str) -> None:
     (source_root / dir_name).mkdir(parents=True)
     (source_root / dir_name / "SKILL.md").write_text("---\nname: x\n---", encoding="utf-8")
-
-
-def write_registry_file(source_root: Path, payload: dict) -> bytes:
-    raw = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-    (source_root / REGISTRY_FILENAME).write_bytes(raw)
-    return raw
 
 
 # ---------- 本地发现 ----------
@@ -222,7 +212,7 @@ def test_remove_unknown_id_raises(registry_service, source_root):
     assert [s.id for s in registry_service.list_skills()] == ["alpha"]
 
 
-# ---------- 登记真源持久化，registry.json 只读 ----------
+# ---------- 登记真源持久化 ----------
 
 
 def test_upsert_persists_created_at_and_updates_updated_at(store, source_root):
@@ -249,134 +239,3 @@ def _select_timestamps(store: SkillStateStore, skill_id: str) -> tuple[str, str]
     assert row is not None
     return str(row[0]), str(row[1])
 
-
-def test_operations_never_touch_registry_json(registry_service, source_root):
-    """R4：登记/删除绝不创建或修改 registry.json（文件不存在也不创建）。"""
-    make_local_skill_dir(source_root, "alpha")
-    registry_service.upsert(
-        RegistrySkill(id="alpha", name="alpha", source="local", path="alpha")
-    )
-    registry_service.remove("alpha")
-
-    assert not (source_root / REGISTRY_FILENAME).exists()
-
-
-def test_operations_leave_existing_registry_json_byte_identical(
-    store, source_root
-):
-    make_local_skill_dir(source_root, "alpha")
-    raw = write_registry_file(
-        source_root,
-        {"skills": [{"id": "seed", "name": "seed", "source": "local", "path": "."}]},
-    )
-    service = RegistryService(store, source_root)
-
-    import_registry_json_if_empty(store, source_root)
-    service.upsert(
-        RegistrySkill(id="alpha", name="alpha", source="local", path="alpha")
-    )
-    service.remove("seed")
-
-    assert (source_root / REGISTRY_FILENAME).read_bytes() == raw
-
-
-# ---------- registry.json 一次性迁移导入 ----------
-
-
-def test_import_imports_all_entries_when_table_empty(store, source_root):
-    make_local_skill_dir(source_root, "alpha")
-    raw = write_registry_file(
-        source_root,
-        {
-            "version": "1.0",
-            "updated": "2026-09-21",
-            "skills": [
-                {
-                    "id": "alpha",
-                    "name": "Alpha",
-                    "source": "local",
-                    "path": "alpha",
-                    "tags": ["z", "a", "a"],
-                },
-                {
-                    "id": "remote",
-                    "name": "Remote",
-                    "source": "github",
-                    "path": ".",
-                    "repository": "https://github.com/a/remote",
-                },
-            ],
-            "agents": {"openclaw": {"description": "研究", "skills": ["alpha"]}},
-        },
-    )
-
-    imported = import_registry_json_if_empty(store, source_root)
-
-    assert imported == 2
-    assert [s.id for s in store.list_registry_skills()] == ["alpha", "remote"]
-    # 导入条目与旧版 load() 行为一致：tags 排序去重
-    assert store.get_registry_skill("alpha").tags == ["a", "z"]
-    github_entry = store.get_registry_skill("remote")
-    assert str(github_entry.repository) == "https://github.com/a/remote"
-    # R4：agents 字段不导入；文件逐字节保持迁移前状态
-    assert store.get_registry_skill("openclaw") is None
-    assert (source_root / REGISTRY_FILENAME).read_bytes() == raw
-
-
-def test_import_is_idempotent_on_second_start(store, source_root):
-    make_local_skill_dir(source_root, "alpha")
-    write_registry_file(
-        source_root,
-        {"skills": [{"id": "alpha", "name": "Alpha", "source": "local", "path": "alpha"}]},
-    )
-    assert import_registry_json_if_empty(store, source_root) == 1
-
-    assert import_registry_json_if_empty(store, source_root) == 0
-    assert store.count_registry_skills() == 1
-
-
-def test_import_skips_file_when_table_not_empty(store, source_root):
-    make_local_skill_dir(source_root, "existing")
-    store.upsert_registry_skill(
-        RegistrySkill(id="existing", name="Existing", source="local", path="existing")
-    )
-    write_registry_file(
-        source_root,
-        {"skills": [{"id": "from-file", "name": "FromFile", "source": "local", "path": "."}]},
-    )
-
-    assert import_registry_json_if_empty(store, source_root) == 0
-    assert [s.id for s in store.list_registry_skills()] == ["existing"]
-
-
-def test_import_fails_loudly_on_corrupt_json(store, source_root):
-    (source_root / REGISTRY_FILENAME).write_text("{not json", encoding="utf-8")
-
-    with pytest.raises(RegistryValidationError, match=REGISTRY_FILENAME):
-        import_registry_json_if_empty(store, source_root)
-    assert store.count_registry_skills() == 0
-
-
-def test_import_fails_loudly_on_model_violation(store, source_root):
-    write_registry_file(
-        source_root,
-        {
-            "skills": [
-                {
-                    "id": "broken",
-                    "name": "Broken",
-                    "source": "github",
-                    "path": ".",
-                }
-            ]
-        },
-    )
-
-    with pytest.raises(RegistryValidationError, match=REGISTRY_FILENAME):
-        import_registry_json_if_empty(store, source_root)
-    assert store.count_registry_skills() == 0
-
-
-def test_import_with_missing_file_and_empty_table_is_noop(store, source_root):
-    assert import_registry_json_if_empty(store, source_root) == 0
-    assert store.count_registry_skills() == 0

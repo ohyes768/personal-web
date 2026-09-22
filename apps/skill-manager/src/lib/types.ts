@@ -42,6 +42,8 @@ export interface SkillCard {
   update: UpdateInfo | null;
   /** 本环境 GitHub 缓存目录缺失（local 来源恒 false）；true 时需先 Clone */
   cache_missing: boolean;
+  /** 本环境源库中登记目录缺失（github 来源恒 false）；true 时提示源缺失 */
+  source_missing: boolean;
 }
 
 /** models.SkillListResponse */

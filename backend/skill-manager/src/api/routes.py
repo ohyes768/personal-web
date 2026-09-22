@@ -81,7 +81,17 @@ def list_skills(
     store: SkillStateStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
 ) -> SkillListResponse:
-    """左栏卡片：注册表 + 部署状态 + 最近一次更新检查。"""
+    """左栏卡片：先对账自研目录再返回注册表 + 部署状态 + 更新检查。
+
+    对账失败（源库不可达/登记写库异常）只记日志，列表降级为现有登记，
+    绝不因同步问题返回 5xx（PRD R4）。
+    """
+    try:
+        synced = registry.sync_local()
+        if synced:
+            logger.info("local sync: registered %d new skills", synced)
+    except (OSError, RegistryValidationError, sqlite3.Error) as exc:
+        logger.warning("local sync failed, falling back to existing registry: %s", exc)
     skills = registry.list_skills()
     deployments: dict[str, dict[str, TargetDeployment]] = {}
     for record in store.list_deployments():
@@ -99,6 +109,7 @@ def list_skills(
         )
     cards = [
         _build_card(
+            settings,
             skill,
             deployments.get(skill.id, {}),
             store.get_github_check(skill.id),
@@ -113,6 +124,7 @@ def list_skills(
 
 
 def _build_card(
+    settings: Settings,
     skill: RegistrySkill,
     deployments: dict[str, TargetDeployment],
     check: GithubCheckRecord | None,
@@ -129,6 +141,10 @@ def _build_card(
             has_update=check.remote_revision != check.cached_revision,
             checked_at=check.checked_at,
         )
+    source_missing = (
+        skill.source is SkillSource.LOCAL
+        and not (settings.skills_source_root / skill.path / "SKILL.md").is_file()
+    )
     return SkillCard(
         id=skill.id,
         name=skill.name,
@@ -141,6 +157,7 @@ def _build_card(
         deployments=deployments,
         update=update,
         cache_missing=cache_missing,
+        source_missing=source_missing,
     )
 
 
@@ -212,7 +229,7 @@ def register_github_skill(
             status_code=409,
             detail={"code": "registry_conflict", "message": f"注册表写入被拒绝：{exc}"},
         ) from exc
-    return _build_card(skill, {}, store.get_github_check(skill.id))
+    return _build_card(settings, skill, {}, store.get_github_check(skill.id))
 
 
 def _derive_skill_id(registry: RegistryService, canonical: str, path: str) -> str:

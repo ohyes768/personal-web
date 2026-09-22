@@ -64,6 +64,8 @@ function SkillCardItem({
   const [selectedTargets, setSelectedTargets] = useState<TargetKey[]>([]);
   const [targetHint, setTargetHint] = useState(false);
   const cacheMissing = skill.cache_missing;
+  const sourceMissing = skill.source_missing;
+  const publishBlocked = cacheMissing || sourceMissing;
 
   function toggleTarget(target: TargetKey) {
     setTargetHint(false);
@@ -138,7 +140,7 @@ function SkillCardItem({
             <button
               key={target}
               type="button"
-              disabled={queued || cacheMissing}
+              disabled={queued || publishBlocked}
               onClick={() => toggleTarget(target)}
               className={`rounded px-2 py-0.5 text-xs ${
                 queued
@@ -147,7 +149,15 @@ function SkillCardItem({
                     ? 'bg-sky-600 text-white'
                     : 'border border-slate-300 text-slate-600 hover:bg-slate-50'
               } disabled:cursor-not-allowed disabled:opacity-50`}
-              title={queued ? '已在发布队列中' : cacheMissing ? '请先 Clone 缓存' : undefined}
+              title={
+                queued
+                  ? '已在发布队列中'
+                  : sourceMissing
+                    ? '源库登记目录缺失，无法发布'
+                    : cacheMissing
+                      ? '请先 Clone 缓存'
+                      : undefined
+              }
             >
               {queued ? `${TARGET_LABEL[target]} 已在队列` : TARGET_LABEL[target]}
             </button>
@@ -155,7 +165,7 @@ function SkillCardItem({
         })}
         <button
           type="button"
-          disabled={cacheMissing}
+          disabled={publishBlocked}
           onClick={() => {
             if (selectedTargets.length === 0) {
               setTargetHint(true);
@@ -164,7 +174,13 @@ function SkillCardItem({
             onAddToQueue(skill.id, selectedTargets);
             setSelectedTargets([]);
           }}
-          title={cacheMissing ? '请先 Clone 缓存' : undefined}
+          title={
+            sourceMissing
+              ? '源库登记目录缺失，无法发布'
+              : cacheMissing
+                ? '请先 Clone 缓存'
+                : undefined
+          }
           className="ml-auto rounded bg-sky-600 px-2.5 py-1 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           加入队列
@@ -196,6 +212,11 @@ function SkillCardItem({
             Clone
           </button>
         </div>
+      ) : null}
+      {sourceMissing ? (
+        <p className="mt-2 border-t border-slate-100 pt-2 text-xs text-amber-700">
+          源缺失：源库中该 Skill 目录不存在，无法发布；恢复目录后自动解除
+        </p>
       ) : null}
     </li>
   );

@@ -22,7 +22,7 @@ from src.config import Settings
 from src.db import SkillStateStore
 from src.services.git_cache import GitCacheService
 from src.services.publisher import Publisher
-from src.services.registry import RegistryService, import_registry_json_if_empty
+from src.services.registry import RegistryService
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +36,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.registry = RegistryService(store, settings.skills_source_root)
     app.state.publisher = Publisher(settings, store)
     app.state.git_cache = GitCacheService(settings, store)
-    imported = import_registry_json_if_empty(store, settings.skills_source_root)
-    logger.info("registry migration: imported %d skills", imported)
     yield
 
 

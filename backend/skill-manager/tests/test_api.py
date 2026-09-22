@@ -1,16 +1,14 @@
 """API 层测试（design 7 / Task 5）：公开只读端点、密码守卫、发布计划
 无副作用、批量逐项结果与错误契约。
 
-fixture 环境：tmp_path 构造全部受控根目录 + registry.json 写入 local
-skill 条目（启动迁移导入 SQLite 登记真源）+ 本地 bare 仓库经 remotes
-映射充当 GitHub 远端（离线）。registry.json 全程只读：登记/删除断言
-DB 状态变化且文件逐字节不变。
+fixture 环境：tmp_path 构造全部受控根目录 + 源库 local skill 目录
+（首次 /api/skills 对账自动登记 SQLite）+ 本地 bare 仓库经 remotes
+映射充当 GitHub 远端（离线）。登记/删除断言 DB 状态变化。
 依赖真实 symlink 的测试标 `requires_symlink`（conftest 在无特权时跳过）。
 """
 
 from __future__ import annotations
 
-import json
 import os
 import subprocess
 from pathlib import Path
@@ -33,22 +31,6 @@ from src.services.registry import RegistryService
 
 PASSWORD = "test-password"
 CANONICAL_URL = "https://github.com/example/two-skills"
-
-LOCAL_REGISTRY = {
-    "version": "1.0",
-    "updated": "",
-    "skills": [
-        {
-            "id": "alpha",
-            "name": "Alpha",
-            "source": "local",
-            "path": "alpha",
-            "tags": ["demo"],
-            "summary": "本地示例技能",
-        }
-    ],
-    "agents": {},
-}
 
 
 def run_git(*argv: str, cwd: Path | None = None) -> str:
@@ -98,13 +80,10 @@ def env(roots, monkeypatch):
 
 @pytest.fixture()
 def source_repo(roots):
-    """源库内容：local skill `alpha` + registry.json。"""
+    """源库内容：local skill `alpha` 目录（首次列表对账自动登记）。"""
     skill_dir = roots.source_root / "alpha"
     skill_dir.mkdir()
     (skill_dir / "SKILL.md").write_text("---\nname: alpha\n---\n", encoding="utf-8")
-    (roots.source_root / "registry.json").write_text(
-        json.dumps(LOCAL_REGISTRY, ensure_ascii=False), encoding="utf-8"
-    )
 
 
 @pytest.fixture()
@@ -139,6 +118,8 @@ def client(env, source_repo, upstream_repo):
             store,
             remotes={CANONICAL_URL: str(upstream_repo.bare)},
         )
+        # 预热：首次列表触发对账，登记源库自研 skill（替代原 registry.json 导入）
+        test_client.get("/api/skills")
         yield test_client
     app.dependency_overrides.clear()
 
@@ -167,7 +148,9 @@ def test_list_skills_is_public(client):
     assert items
     alpha = next(card for card in items if card["id"] == "alpha")
     assert alpha["source"] == "local"
-    assert alpha["tags"] == ["demo"]
+    # alpha 由源库对账自动登记（frontmatter 无 tags/description）
+    assert alpha["tags"] == []
+    assert alpha["source_missing"] is False
 
 
 def test_publish_requires_correct_password(client, publish_request):
@@ -368,12 +351,8 @@ def _register_payload(password: str = PASSWORD) -> dict:
 
 
 def test_register_github_skill_requires_password_and_persists(client, roots):
-    registry_file = roots.source_root / "registry.json"
-    before = registry_file.read_text(encoding="utf-8")
-
     denied = client.post("/api/skills/github", json=_register_payload("wrong"))
     assert denied.status_code == 401
-    assert registry_file.read_text(encoding="utf-8") == before
     assert not any(roots.github_cache.iterdir())
 
     ok = client.post("/api/skills/github", json=_register_payload())
@@ -383,8 +362,7 @@ def test_register_github_skill_requires_password_and_persists(client, roots):
     assert card["name"] == "Fixture"
     assert card["tags"] == ["test"]
 
-    # 登记真源是 SQLite：新条目入库且列表可见；registry.json 逐字节不变
-    assert registry_file.read_text(encoding="utf-8") == before
+    # 登记真源是 SQLite：新条目入库且列表可见
     store = SkillStateStore.from_settings(Settings())
     registry = RegistryService(store, roots.source_root)
     assert registry.get(card["id"]) is not None
@@ -545,7 +523,7 @@ def test_check_updates_is_public_and_reports_unknown_ids(client):
 
 
 def _upsert_registry_entry(roots: SimpleNamespace, skill: dict) -> None:
-    """直接向登记 DB upsert 条目（登记真源是 SQLite，registry.json 只读）。"""
+    """直接向登记 DB upsert 条目（登记真源是 SQLite）。"""
     store = SkillStateStore.from_settings(Settings())
     RegistryService(store, roots.source_root).upsert(
         RegistrySkill.model_validate(skill)
@@ -744,14 +722,11 @@ def _seed_derived_state(skill_id: str) -> SkillStateStore:
 
 def test_delete_github_skill_removes_registry_entry_and_derived_state(client, roots):
     """成功删除：DB 行移除且源库无需是 git 仓库（NAS git add 128 场景）；
-    registry.json 逐字节不变；github_check、rollback_snapshot 清理；缓存
-    目录移除；列表不再显示。"""
+    github_check、rollback_snapshot 清理；缓存目录移除；列表不再显示。"""
     _seed_deletable_github_skill(roots)
     store = _seed_derived_state("two-skills")
     cache_dir = roots.github_cache / "two-skills" / ".git"
     cache_dir.mkdir(parents=True)
-    registry_file = roots.source_root / "registry.json"
-    before = registry_file.read_text(encoding="utf-8")
     assert not (roots.source_root / ".git").exists()
 
     response = client.request(
@@ -760,7 +735,6 @@ def test_delete_github_skill_removes_registry_entry_and_derived_state(client, ro
 
     assert response.status_code == 200
     assert response.json() == {"skill_id": "two-skills"}
-    assert registry_file.read_text(encoding="utf-8") == before
     registry = RegistryService(store, roots.source_root)
     assert registry.get("two-skills") is None
     assert store.get_github_check("two-skills") is None
@@ -775,8 +749,6 @@ def test_delete_github_skill_with_active_deployment_returns_409(client, roots):
     _seed_deletable_github_skill(roots)
     store = _seed_derived_state("two-skills")
     _insert_active_deployment(roots, "two-skills", "openclaw")
-    registry_file = roots.source_root / "registry.json"
-    before = registry_file.read_text(encoding="utf-8")
 
     response = client.request(
         "DELETE", "/api/skills/two-skills", json={"password": PASSWORD}
@@ -784,7 +756,6 @@ def test_delete_github_skill_with_active_deployment_returns_409(client, roots):
 
     assert response.status_code == 409
     assert response.json()["code"] == "skill_active"
-    assert registry_file.read_text(encoding="utf-8") == before
     assert store.get_github_check("two-skills") is not None
     registry = RegistryService(store, roots.source_root)
     assert registry.get("two-skills") is not None
@@ -838,7 +809,6 @@ def test_delete_unknown_skill_returns_404(client):
 
 def test_delete_github_skill_requires_password(client, roots):
     _seed_deletable_github_skill(roots)
-    before = (roots.source_root / "registry.json").read_text(encoding="utf-8")
 
     response = client.request(
         "DELETE", "/api/skills/two-skills", json={"password": "wrong"}
@@ -846,6 +816,3 @@ def test_delete_github_skill_requires_password(client, roots):
 
     assert response.status_code == 401
     assert response.json()["code"] == "invalid_password"
-    assert (
-        (roots.source_root / "registry.json").read_text(encoding="utf-8") == before
-    )

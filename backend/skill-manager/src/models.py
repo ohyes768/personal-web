@@ -26,7 +26,7 @@ class TargetKey(StrEnum):
 
 
 class RegistrySkill(BaseModel):
-    """`registry.json` 单条目。
+    """SQLite 登记表 `registry_skill` 单条目。
 
     - `source=local`：`path` 是源库内相对目录，必须含 `SKILL.md`（目录级校验在 RegistryService）。
     - `source=github`：`repository` 必填，`path` 是仓库内相对目录，可为 `.`。
@@ -51,26 +51,6 @@ class RegistrySkill(BaseModel):
         if self.source is SkillSource.LOCAL and self.repository is not None:
             raise ValueError("local skill must not carry repository")
         return self
-
-
-class RegistryAgent(BaseModel):
-    """`registry.json` 顶层 `agents` 对象的单个 agent 分配。
-
-    只保存 description 与分配的 skill id 列表；机器本地的 skills_dir、
-    enabled 等目标配置不进注册表（由 sync-config.json / NAS 部署配置提供）。
-    """
-
-    description: str = ""
-    skills: list[SkillId] = []
-
-
-class RegistryFile(BaseModel):
-    """`registry.json` 顶层结构：skill 清单 + 显式 agent 分配。"""
-
-    version: str = "1.0"
-    updated: str = ""
-    skills: list[RegistrySkill] = []
-    agents: dict[str, RegistryAgent] = {}
 
 
 class PublishItem(BaseModel):
@@ -207,6 +187,9 @@ class SkillCard(BaseModel):
     # 本环境 GitHub 缓存目录缺失（local 来源恒 False）；True 时前端禁用
     # 发布入口，引导先调 POST /api/skills/github/{id}/clone 重建缓存
     cache_missing: bool = False
+    # 本环境源库中登记目录缺失（github 来源恒 False）；True 时前端提示
+    # 源缺失并禁用发布入口，登记条目本身保留（不自动删除）
+    source_missing: bool = False
 
 
 class SkillListResponse(BaseModel):

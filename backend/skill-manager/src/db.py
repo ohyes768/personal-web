@@ -1,8 +1,8 @@
 """SQLite 运行状态库（design 3.2）。
 
 保存发布审计、回滚快照、运行状态与登记真源（registry_skill 表）。
-Skills 源库的 registry.json 不再是登记真源——它归 sync 工具链所有，
-skill-manager 只在首次启动时做一次只读迁移导入，之后绝不读写该文件。
+SQLite 是唯一登记真源：源库自研 skill 目录经 `sync_local()` 对账自动
+登记，github skill 经 API 登记；skill-manager 不读写源库任何登记文件。
 
 连接管理采用"每次操作短连接"：SQLite 本地文件连接创建开销极低，短连接
 不跨线程共享，天然规避 FastAPI 线程池下的并发问题，因此无需

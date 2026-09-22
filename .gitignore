@@ -98,3 +98,6 @@ backend/housing-map/scripts/_gaode_config.py
 backend/skill-manager/.wsl-wheels/
 .playwright-cli/
 deploy/fastgithub-ca.pem
+
+# skill-manager 本机 dev scratch 目录（github-cache / state / targets 镜像）
+.skill-manager-dev/
