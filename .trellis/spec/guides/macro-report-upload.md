@@ -24,7 +24,7 @@ nginx `/api/macro/` → 剥前缀 → 后端 `/api/reports*`。dev 模式由 app
 
 ## 2. POST /api/reports/upload
 
-Header `X-Upload-Token`：constant-time 比对 `MACRO_REPORT_UPLOAD_TOKEN`。
+Header `X-Upload-Token`：constant-time 比对 `MACRO_SIGNAL_UPLOAD_TOKEN`（**与月频信号上传共用同一 token**，不单设报告变量）。
 注意 header 声明为 `Optional`（**故意区别于 signal/upload 的必填**）：必填 header 缺失时 FastAPI 返回 422，无法满足「无 token → 401」的错误语义。
 
 ### 2.1 请求体（字段全部 snake_case）
@@ -59,7 +59,7 @@ Header `X-Upload-Token`：constant-time 比对 `MACRO_REPORT_UPLOAD_TOKEN`。
 
 | 状态码 | 触发条件 |
 |--------|---------|
-| 401 | token 未配置（`MACRO_REPORT_UPLOAD_TOKEN`）或错误 |
+| 401 | token 未配置（`MACRO_SIGNAL_UPLOAD_TOKEN`）或错误 |
 | 400 | source 不在白名单 / title、content 越界 |
 | 422 | body 非 JSON（FastAPI 默认） |
 
@@ -81,7 +81,7 @@ frontmatter 键：`title / source / url / analyzed_at / pushed_at`（自家写�
 ## 5. skill 推送端约定（两个 impact skill 的 push_rss.py）
 
 1. RSS 推送**成功后**才追加推 macro；RSS 失败路径（strict 阻断 / duplicate 返回 2、3）不触发 macro。
-2. 配置：`--report-endpoint`（默认 `https://web.duomi77.cn:9443/api/macro/reports/upload`）、`--report-token`（默认 env `MACRO_REPORT_UPLOAD_TOKEN`，skill 侧放 `finance-macro/.env`）、`--insecure` 同时作用于两端。
+2. 配置：`--report-endpoint`（默认 `https://web.duomi77.cn:9443/api/macro/reports/upload`）、`--report-token`（默认 env `MACRO_SIGNAL_UPLOAD_TOKEN`，与月频信号推送共用，skill 侧放 `finance-macro/.env`）、`--insecure` 同时作用于两端。
 3. 结果 JSON 增加 `report_push` 字段，**任何 macro 失败都不改变整体返回码**：
    - `ok` / `duplicate` / `failed: <原因>` / `skipped_no_token`（token 缺失时告警跳过，RSS 仍算成功）。
 4. 标准库 urllib 实现，不引入 requests。
@@ -118,4 +118,4 @@ if data.get("duplicate"):
 
 ## 9. 部署
 
-`docker-compose.nas.yml` macro-backend：`MACRO_REPORT_DATA_DIR=/app/data/reports`、`MACRO_REPORT_UPLOAD_TOKEN`（根 `.env` 提供；skill 侧 `finance-macro/.env` 同步配置同名变量）。nginx/volume 零改动。
+`docker-compose.nas.yml` macro-backend：`MACRO_REPORT_DATA_DIR=/app/data/reports`；鉴权复用 `MACRO_SIGNAL_UPLOAD_TOKEN`（根 `.env` 已有，skill 侧 `finance-macro/.env` 已有），无需新增变量。nginx/volume 零改动。

@@ -2806,10 +2806,10 @@ class ReportUploadRequest(BaseModel):
 
 
 def _verify_report_upload_token(token: str | None) -> None:
-    """constant-time 校验报告推送 token;未配置或错误 → 401。"""
-    expected = settings.macro_report_upload_token
+    """constant-time 校验报告推送 token;未配置或错误 → 401。复用月频信号的 MACRO_SIGNAL_UPLOAD_TOKEN。"""
+    expected = settings.macro_signal_upload_token
     if not expected:
-        raise HTTPException(status_code=401, detail="upload token 未配置（MACRO_REPORT_UPLOAD_TOKEN）")
+        raise HTTPException(status_code=401, detail="upload token 未配置（MACRO_SIGNAL_UPLOAD_TOKEN）")
     if not token or not hmac.compare_digest(token, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 

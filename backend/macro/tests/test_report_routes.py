@@ -36,7 +36,7 @@ class _FakeSettings:
 
 def make_client(tmp_path, monkeypatch, token=TOKEN):
     """挂 router 的 TestClient;token 写入路由层 settings,数据目录指向 tmp_path"""
-    monkeypatch.setattr(routes.settings, "macro_report_upload_token", token)
+    monkeypatch.setattr(routes.settings, "macro_signal_upload_token", token)
     monkeypatch.setattr(
         rbs, "get_settings", lambda: _FakeSettings(str(tmp_path / "reports"))
     )
@@ -76,7 +76,7 @@ def test_upload_401_when_token_unconfigured(tmp_path, monkeypatch):
     resp = client.post("/api/reports/upload", json=UPLOAD_BODY, headers=auth_header())
     assert resp.status_code == 401
     assert "未配置" in resp.json()["detail"]
-    assert "MACRO_REPORT_UPLOAD_TOKEN" in resp.json()["detail"]
+    assert "MACRO_SIGNAL_UPLOAD_TOKEN" in resp.json()["detail"]
 
 
 def test_upload_400_invalid_source(tmp_path, monkeypatch):
