@@ -60,7 +60,6 @@ from src.services.publisher import (
     PublishBlockedError,
     Publisher,
     PublisherError,
-    RollbackUnavailableError,
     resolve_registry_source,
 )
 from src.services.registry import RegistryService, RegistryValidationError
@@ -525,51 +524,7 @@ def _ensure_cached_at_recorded_revision(
         git_cache.ensure_cached(skill, check.remote_revision)
 
 
-# ---------- 密码：回滚与下架 ----------
-
-
-@router.post(
-    "/skills/{skill_id}/targets/{target}/rollback",
-    response_model=PublishResultItem,
-)
-def rollback(
-    skill_id: str,
-    target: str,
-    req: AdminPasswordRequest,
-    settings: Settings = Depends(get_settings),
-    registry: RegistryService = Depends(get_registry),
-    publisher: Publisher = Depends(get_publisher),
-) -> PublishResultItem:
-    """回滚到该 target 最近一次成功快照；无快照 → 409（design 6.2）。"""
-    ensure_admin_password(settings, req.password)
-    _require_known_skill(registry, _require_skill_id(skill_id))
-    target_key = _require_target(target)
-    try:
-        return publisher.rollback(skill_id, target_key)
-    except RollbackUnavailableError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "code": "rollback_unavailable",
-                "message": f"没有可回滚的快照：{exc}",
-                "item_id": skill_id,
-            },
-        ) from exc
-    except InvalidSourceError as exc:
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "invalid_source", "message": f"快照目标不可用：{exc}", "item_id": skill_id},
-        ) from exc
-    except PublishBlockedError as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "target_blocked", "message": f"目标被阻止：{exc}", "item_id": skill_id},
-        ) from exc
-    except PublisherError as exc:
-        raise HTTPException(
-            status_code=500,
-            detail={"code": "rollback_failed", "message": f"回滚失败：{exc}", "item_id": skill_id},
-        ) from exc
+# ---------- 密码：下架 ----------
 
 
 @router.delete(
@@ -664,7 +619,6 @@ def delete_skill(
         ) from exc
     try:
         store.delete_github_check(skill_id)
-        store.delete_rollback_snapshots(skill_id)
     except sqlite3.Error as exc:
         # design：派生数据尽力清理，失败不改变响应（registry 真源已提交）
         logger.warning("delete derived state failed: skill=%s error=%s", skill_id, exc)

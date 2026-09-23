@@ -72,7 +72,7 @@ class PublishResultItem(BaseModel):
     skill_id: str
     target: TargetKey
     status: Literal["success", "blocked", "error"]
-    action: Literal["add", "update", "rollback", "none"] = "none"
+    action: Literal["add", "update", "none"] = "none"
     error: str = ""
 
 

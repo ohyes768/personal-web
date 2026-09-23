@@ -22,7 +22,6 @@ from src.config import Settings
 from src.db import (
     DeploymentRecord,
     GithubCheckRecord,
-    RollbackSnapshot,
     SkillStateStore,
 )
 from src.models import RegistrySkill
@@ -210,11 +209,6 @@ def test_unknown_skill_returns_404(client):
     assert plan.status_code == 404
     assert plan.json()["code"] == "skill_not_found"
 
-    rollback = client.post(
-        "/api/skills/ghost/targets/openclaw/rollback", json={"password": PASSWORD}
-    )
-    assert rollback.status_code == 404
-
     unpublish = client.request(
         "DELETE", "/api/skills/ghost/targets/openclaw", json={"password": PASSWORD}
     )
@@ -234,20 +228,8 @@ def test_invalid_skill_id_and_target_return_400(client):
     )
     assert bad_target.status_code == 400
 
-    bad_path = client.post("/api/skills/BAD/targets/openclaw/rollback", json={"password": PASSWORD})
-    assert bad_path.status_code == 400
 
-
-def test_rollback_without_snapshot_returns_409(client):
-    response = client.post(
-        "/api/skills/alpha/targets/openclaw/rollback", json={"password": PASSWORD}
-    )
-
-    assert response.status_code == 409
-    assert response.json()["code"] == "rollback_unavailable"
-
-
-# ---------- 需要真实 symlink 的发布/下架/回滚 ----------
+# ---------- 需要真实 symlink 的发布/下架 ----------
 
 
 @pytest.mark.requires_symlink
@@ -303,37 +285,6 @@ def test_unpublish_requires_password_then_removes_only_the_link(
     assert ok.status_code == 200
     assert ok.json()["status"] == "removed"
     assert not (roots.openclaw / "alpha").exists()
-
-
-@pytest.mark.requires_symlink
-def test_rollback_restores_previous_link(client, publish_request, roots):
-    client.post("/api/skills/publish", json=publish_request)
-    # 第二次发布前制造一个可回滚来源：把 alpha 换成不同内容目录再发布
-    v2 = roots.source_root / "alpha-v2"
-    v2.mkdir()
-    (v2 / "SKILL.md").write_text("---\nname: alpha-v2\n---\n", encoding="utf-8")
-    _upsert_registry_entry(
-        roots,
-        {
-            "id": "alpha",
-            "name": "Alpha",
-            "source": "local",
-            "path": "alpha-v2",
-            "tags": ["demo"],
-            "summary": "本地示例技能",
-        },
-    )
-    client.post("/api/skills/publish", json=publish_request)
-
-    response = client.post(
-        "/api/skills/alpha/targets/openclaw/rollback", json={"password": PASSWORD}
-    )
-
-    assert response.status_code == 200
-    assert response.json()["action"] == "rollback"
-    assert (roots.openclaw / "alpha").resolve() == (
-        roots.source_root / "alpha"
-    ).resolve()
 
 
 # ---------- GitHub 登记与更新检查 ----------
@@ -460,10 +411,8 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
 
 
 @pytest.mark.requires_symlink
-def test_registered_github_skill_can_be_planned_published_and_rolled_back(
-    client, roots
-):
-    """Task 8 端到端：扫描 → 登记（密码）→ 计划 → 发布（密码）→ symlink 落地 → 回滚。"""
+def test_registered_github_skill_can_be_planned_and_published(client, roots):
+    """Task 8 端到端：扫描 → 登记（密码）→ 计划 → 发布（密码）→ symlink 落地。"""
     scanned = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
     assert scanned.status_code == 200
     candidates = scanned.json()["candidates"]
@@ -501,13 +450,6 @@ def test_registered_github_skill_can_be_planned_published_and_rolled_back(
     link = roots.openclaw / skill_id
     assert link.is_symlink()
     assert link.resolve() == (roots.github_cache / skill_id / candidates[0]["path"]).resolve()
-
-    rollback = client.post(
-        f"/api/skills/{skill_id}/targets/openclaw/rollback",
-        json={"password": PASSWORD},
-    )
-    # 首次发布目标为空、无先前快照 → 409；若替换过既有受管链接 → 200
-    assert rollback.status_code in {200, 409}
 
 
 def test_check_updates_is_public_and_reports_unknown_ids(client):
@@ -694,7 +636,7 @@ def _seed_deletable_github_skill(roots: SimpleNamespace) -> None:
 
 
 def _seed_derived_state(skill_id: str) -> SkillStateStore:
-    """写入 github_check 与 rollback_snapshot，供删除清理断言。"""
+    """写入 github_check，供删除清理断言。"""
     store = SkillStateStore.from_settings(Settings())
     store.upsert_github_check(
         GithubCheckRecord(
@@ -708,21 +650,12 @@ def _seed_derived_state(skill_id: str) -> SkillStateStore:
             checked_at="2026-09-21T00:00:00+00:00",
         )
     )
-    store.set_rollback_snapshot(
-        RollbackSnapshot(
-            skill_id=skill_id,
-            target="openclaw",
-            previous_link_target="/tmp/old-link",
-            previous_revision="sha-0",
-            updated_at="2026-09-21T00:00:00+00:00",
-        )
-    )
     return store
 
 
 def test_delete_github_skill_removes_registry_entry_and_derived_state(client, roots):
     """成功删除：DB 行移除且源库无需是 git 仓库（NAS git add 128 场景）；
-    github_check、rollback_snapshot 清理；缓存目录移除；列表不再显示。"""
+    github_check 清理；缓存目录移除；列表不再显示。"""
     _seed_deletable_github_skill(roots)
     store = _seed_derived_state("two-skills")
     cache_dir = roots.github_cache / "two-skills" / ".git"
@@ -738,7 +671,6 @@ def test_delete_github_skill_removes_registry_entry_and_derived_state(client, ro
     registry = RegistryService(store, roots.source_root)
     assert registry.get("two-skills") is None
     assert store.get_github_check("two-skills") is None
-    assert store.get_rollback_snapshot("two-skills", "openclaw") is None
     assert not (roots.github_cache / "two-skills").exists()
     card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
     assert "two-skills" not in card_ids

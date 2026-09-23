@@ -7,7 +7,6 @@ from src.db import (
     DeploymentRecord,
     GithubCheckRecord,
     HistoryEntry,
-    RollbackSnapshot,
     SkillStateStore,
 )
 
@@ -51,7 +50,7 @@ def test_creates_expected_tables(tmp_path):
         rows = conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'"
         ).fetchall()
-    assert {"deployment", "deployment_history", "rollback_snapshot"} <= {
+    assert {"deployment", "deployment_history"} <= {
         row[0] for row in rows
     }
 
@@ -105,76 +104,6 @@ def test_append_history_and_list_with_filter(tmp_path):
     store.append_history(other)
 
     assert store.list_history(skill_id="macro", target="openclaw") == [first, second]
-
-
-def test_snapshot_set_get_delete(tmp_path):
-    store = SkillStateStore(tmp_path / "state" / "skills.sqlite3")
-    snapshot = RollbackSnapshot(
-        skill_id="macro",
-        target="openclaw",
-        previous_link_target="/mnt/skills-source/macro-old",
-        previous_revision="sha-0",
-        updated_at="2026-09-20T08:00:00+00:00",
-    )
-
-    assert store.get_rollback_snapshot("macro", "openclaw") is None
-
-    store.set_rollback_snapshot(snapshot)
-    assert store.get_rollback_snapshot("macro", "openclaw") == snapshot
-
-    store.set_rollback_snapshot(
-        RollbackSnapshot(
-            skill_id="macro",
-            target="openclaw",
-            previous_link_target="/mnt/skills-source/macro-new",
-            previous_revision="sha-1",
-            updated_at="2026-09-20T09:00:00+00:00",
-        )
-    )
-    assert (
-        store.get_rollback_snapshot("macro", "openclaw").previous_link_target
-        == "/mnt/skills-source/macro-new"
-    )
-
-    store.delete_rollback_snapshot("macro", "openclaw")
-    assert store.get_rollback_snapshot("macro", "openclaw") is None
-
-
-def test_delete_rollback_snapshots_removes_all_targets_for_skill(tmp_path):
-    store = SkillStateStore(tmp_path / "state" / "skills.sqlite3")
-    store.set_rollback_snapshot(
-        RollbackSnapshot(
-            skill_id="macro",
-            target="openclaw",
-            previous_link_target="/mnt/old-openclaw",
-            previous_revision="sha-1",
-            updated_at="2026-09-21T08:00:00+00:00",
-        )
-    )
-    store.set_rollback_snapshot(
-        RollbackSnapshot(
-            skill_id="macro",
-            target="hermes",
-            previous_link_target="/mnt/old-hermes",
-            previous_revision="sha-2",
-            updated_at="2026-09-21T09:00:00+00:00",
-        )
-    )
-    store.set_rollback_snapshot(
-        RollbackSnapshot(
-            skill_id="other",
-            target="openclaw",
-            previous_link_target="/mnt/other",
-            previous_revision="sha-3",
-            updated_at="2026-09-21T10:00:00+00:00",
-        )
-    )
-
-    store.delete_rollback_snapshots("macro")
-
-    assert store.get_rollback_snapshot("macro", "openclaw") is None
-    assert store.get_rollback_snapshot("macro", "hermes") is None
-    assert store.get_rollback_snapshot("other", "openclaw") is not None
 
 
 def test_delete_github_check(tmp_path):

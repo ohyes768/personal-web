@@ -1,4 +1,4 @@
-"""安全发布、下架与回滚测试（design 6.1/6.2）。"""
+"""安全发布与下架测试（design 6.1/6.2）。"""
 
 import os
 from types import SimpleNamespace
@@ -13,7 +13,6 @@ from src.services.publisher import (
     PublishBlockedError,
     Publisher,
     PublisherError,
-    RollbackUnavailableError,
 )
 
 
@@ -105,18 +104,6 @@ def test_publish_refuses_to_overwrite_a_real_directory(
 
 
 @pytest.mark.requires_symlink
-def test_rollback_restores_the_previous_link(publisher, roots):
-    source_v1 = _make_skill(roots.source_root, "v1").resolve()
-    source_v2 = _make_skill(roots.source_root, "v2").resolve()
-    publisher.publish("research-skill", TargetKey.OPENCLAW, source_v1, "sha-1")
-    publisher.publish("research-skill", TargetKey.OPENCLAW, source_v2, "sha-2")
-
-    publisher.rollback("research-skill", TargetKey.OPENCLAW)
-
-    assert (roots.openclaw / "research-skill").resolve() == source_v1
-
-
-@pytest.mark.requires_symlink
 def test_batch_keeps_successful_item_when_another_target_is_blocked(
     publisher, source_dir, roots
 ):
@@ -186,7 +173,7 @@ def test_publish_cleans_up_temp_link_when_replace_fails(
 
 
 @pytest.mark.requires_symlink
-def test_publish_persists_deployment_snapshot_and_history(
+def test_publish_persists_deployment_record_and_history(
     publisher, store, source_dir, roots
 ):
     source_v2 = _make_skill(roots.source_root, "v2").resolve()
@@ -197,9 +184,6 @@ def test_publish_persists_deployment_snapshot_and_history(
     assert record.status == "active"
     assert record.source_revision == "sha-2"
     assert record.current_link_target == str(source_v2)
-
-    snapshot = store.get_rollback_snapshot("research-skill", "openclaw")
-    assert snapshot.previous_link_target == str(source_dir)
 
     history = store.list_history(skill_id="research-skill", target="openclaw")
     assert [entry.action for entry in history] == ["publish", "publish"]
@@ -228,26 +212,3 @@ def test_unpublish_refuses_ordinary_directory(publisher, openclaw_root):
     with pytest.raises(PublishBlockedError, match="ordinary directory"):
         publisher.unpublish("research-skill", TargetKey.OPENCLAW)
     assert ordinary.is_dir()
-
-
-# ---------- 回滚 ----------
-
-
-def test_rollback_without_snapshot_raises(publisher):
-    with pytest.raises(RollbackUnavailableError):
-        publisher.rollback("research-skill", TargetKey.OPENCLAW)
-
-
-@pytest.mark.requires_symlink
-def test_rollback_refuses_snapshot_target_that_vanished(publisher, roots):
-    source_v1 = _make_skill(roots.source_root, "v1")
-    source_v2 = _make_skill(roots.source_root, "v2").resolve()
-    publisher.publish("research-skill", TargetKey.OPENCLAW, source_v1.resolve(), "sha-1")
-    publisher.publish("research-skill", TargetKey.OPENCLAW, source_v2, "sha-2")
-    # 快照指向的 v1 目录随后被移除
-    import shutil
-
-    shutil.rmtree(source_v1)
-
-    with pytest.raises(RollbackUnavailableError, match="unavailable"):
-        publisher.rollback("research-skill", TargetKey.OPENCLAW)

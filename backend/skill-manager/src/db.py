@@ -53,15 +53,6 @@ CREATE TABLE IF NOT EXISTS deployment_history (
 CREATE INDEX IF NOT EXISTS idx_history_skill_target
     ON deployment_history (skill_id, target, id);
 
-CREATE TABLE IF NOT EXISTS rollback_snapshot (
-    skill_id             TEXT NOT NULL,
-    target               TEXT NOT NULL,
-    previous_link_target TEXT NOT NULL,
-    previous_revision    TEXT NOT NULL DEFAULT '',
-    updated_at           TEXT NOT NULL,
-    PRIMARY KEY (skill_id, target)
-);
-
 CREATE TABLE IF NOT EXISTS github_check (
     skill_id        TEXT PRIMARY KEY,
     repository      TEXT NOT NULL,
@@ -105,7 +96,7 @@ class DeploymentRecord:
 
 @dataclass(frozen=True)
 class HistoryEntry:
-    """`deployment_history` 行：一次发布/下架/回滚的审计记录（只追加）。"""
+    """`deployment_history` 行：一次发布/下架的审计记录（只追加）。"""
 
     skill_id: str
     target: str
@@ -116,17 +107,6 @@ class HistoryEntry:
     source_revision: str | None
     error: str | None
     created_at: str
-
-
-@dataclass(frozen=True)
-class RollbackSnapshot:
-    """`rollback_snapshot` 行：某 skill × target 上一次可恢复的链接目标。"""
-
-    skill_id: str
-    target: str
-    previous_link_target: str
-    previous_revision: str
-    updated_at: str
 
 
 @dataclass(frozen=True)
@@ -144,7 +124,7 @@ class GithubCheckRecord:
 
 
 class SkillStateStore:
-    """deployment / deployment_history / rollback_snapshot 的唯一读写入口。"""
+    """deployment / deployment_history / github_check 的唯一读写入口。"""
 
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
@@ -240,49 +220,6 @@ class SkillStateStore:
         with closing(self._connect()) as conn:
             rows = conn.execute(query, params).fetchall()
         return [_row_to_history(row) for row in rows]
-
-    # ---------- rollback_snapshot ----------
-
-    def set_rollback_snapshot(self, snapshot: RollbackSnapshot) -> None:
-        with closing(self._connect()) as conn, conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO rollback_snapshot
-                    (skill_id, target, previous_link_target, previous_revision,
-                     updated_at)
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    snapshot.skill_id,
-                    snapshot.target,
-                    snapshot.previous_link_target,
-                    snapshot.previous_revision,
-                    snapshot.updated_at,
-                ),
-            )
-
-    def get_rollback_snapshot(
-        self, skill_id: str, target: str
-    ) -> RollbackSnapshot | None:
-        with closing(self._connect()) as conn:
-            row = conn.execute(
-                "SELECT * FROM rollback_snapshot WHERE skill_id = ? AND target = ?",
-                (skill_id, target),
-            ).fetchone()
-        return _row_to_snapshot(row) if row is not None else None
-
-    def delete_rollback_snapshot(self, skill_id: str, target: str) -> None:
-        with closing(self._connect()) as conn, conn:
-            conn.execute(
-                "DELETE FROM rollback_snapshot WHERE skill_id = ? AND target = ?",
-                (skill_id, target),
-            )
-
-    def delete_rollback_snapshots(self, skill_id: str) -> None:
-        with closing(self._connect()) as conn, conn:
-            conn.execute(
-                "DELETE FROM rollback_snapshot WHERE skill_id = ?", (skill_id,)
-            )
 
     # ---------- github_check ----------
 
@@ -412,16 +349,6 @@ def _row_to_history(row: sqlite3.Row) -> HistoryEntry:
         source_revision=row["source_revision"],
         error=row["error"],
         created_at=row["created_at"],
-    )
-
-
-def _row_to_snapshot(row: sqlite3.Row) -> RollbackSnapshot:
-    return RollbackSnapshot(
-        skill_id=row["skill_id"],
-        target=row["target"],
-        previous_link_target=row["previous_link_target"],
-        previous_revision=row["previous_revision"],
-        updated_at=row["updated_at"],
     )
 
 

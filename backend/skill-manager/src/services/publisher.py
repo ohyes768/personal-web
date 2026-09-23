@@ -1,4 +1,4 @@
-"""受限目录内的安全发布、下架与回滚（design 6.1/6.2）。
+"""受限目录内的安全发布与下架（design 6.1）。
 
 发布算法（每一项 skill × target，见 design 6.1）：
 
@@ -7,10 +7,13 @@
 2. 目标链接固定为 `${TARGET_ROOT}/${skill-id}`；target 只能是 TargetKey
    枚举映射的固定目录；已有普通目录/文件或指向受控根之外的链接一律拒绝；
 3. 同目录创建临时 symlink `.{skill_id}.{uuid}.next`，验证其解析到源；
-4. 已有合法 symlink 先把当前目标写入 rollback_snapshot，再用
-   `os.replace` 原子替换正式链接（同目录 rename，原子生效）；
+4. 用 `os.replace` 原子替换正式链接（同目录 rename，原子生效）；
 5. 写 deployment / deployment_history。单项失败只记录该项，临时链接在
    finally 中清理，绝不触碰其他 Skill。
+
+注：回滚功能已整体移除（2026-09-23）——发布链接在两种来源下均指向稳定
+路径，快照机制对其声称的「退回旧版」场景无效，详见任务
+09-23-skill-manager-remove-rollback 的 PRD。
 """
 
 from __future__ import annotations
@@ -23,7 +26,7 @@ from pathlib import Path
 from typing import Sequence
 
 from src.config import Settings
-from src.db import DeploymentRecord, HistoryEntry, RollbackSnapshot, SkillStateStore
+from src.db import DeploymentRecord, HistoryEntry, SkillStateStore
 from src.models import (
     SKILL_ID_PATTERN,
     PublishBatchResult,
@@ -49,10 +52,6 @@ class InvalidSourceError(PublisherError):
 
 class PublishBlockedError(PublisherError):
     """目标侧阻止：普通目录占用、异常链接等；未做任何文件系统变更。"""
-
-
-class RollbackUnavailableError(PublisherError):
-    """无快照或快照目标已失效，无法回滚（409 语义）。"""
 
 
 def _utc_now_iso() -> str:
@@ -174,9 +173,6 @@ class Publisher:
             self._record_failure(skill_id, target, "unpublish", "blocked", exc)
             raise
         existing = self.store.get_deployment(skill_id, target.value)
-        self._snapshot_current(
-            skill_id, target, previous, existing.source_revision if existing else ""
-        )
         final_link.unlink()
         self.store.upsert_deployment(
             DeploymentRecord(
@@ -203,51 +199,6 @@ class Publisher:
             )
         )
 
-    # ---------- 回滚 ----------
-
-    def rollback(self, skill_id: str, target: TargetKey) -> PublishResultItem:
-        """恢复快照记录的上一次目标；重走临时链接 + 原子替换流程。"""
-        self._require_valid_id(skill_id)
-        snapshot = self.store.get_rollback_snapshot(skill_id, target.value)
-        if snapshot is None:
-            error = RollbackUnavailableError(
-                f"no rollback snapshot for skill {skill_id!r} on {target.value!r}"
-            )
-            self._record_failure(skill_id, target, "rollback", "blocked", error)
-            raise error
-        try:
-            restored = self._validated_source(snapshot.previous_link_target)
-        except InvalidSourceError as exc:
-            error = RollbackUnavailableError(
-                f"rollback snapshot target for skill {skill_id!r} is unavailable: {exc}"
-            )
-            self._record_failure(skill_id, target, "rollback", "blocked", error)
-            raise error from exc
-        try:
-            _, previous = self._atomic_swap(skill_id, target, restored)
-        except PublisherError as exc:
-            self._record_failure(
-                skill_id, target, "rollback", "error", exc, snapshot.previous_revision
-            )
-            raise
-        self._persist_active(skill_id, target, restored, snapshot.previous_revision)
-        self.store.append_history(
-            HistoryEntry(
-                skill_id=skill_id,
-                target=target.value,
-                action="rollback",
-                result="success",
-                previous_link_target=previous,
-                new_link_target=str(restored),
-                source_revision=snapshot.previous_revision,
-                error=None,
-                created_at=_utc_now_iso(),
-            )
-        )
-        return PublishResultItem(
-            skill_id=skill_id, target=target, status="success", action="rollback"
-        )
-
     # ---------- 内部：核心交换流程 ----------
 
     def _atomic_swap(
@@ -269,14 +220,6 @@ class Publisher:
                     raise PublisherError(
                         f"temporary link {temp_link} does not resolve to "
                         f"{resolved_source}"
-                    )
-                if previous is not None:
-                    existing = self.store.get_deployment(skill_id, target.value)
-                    self._snapshot_current(
-                        skill_id,
-                        target,
-                        previous,
-                        existing.source_revision if existing else "",
                     )
                 os.replace(temp_link, final_link)
             except OSError as exc:
@@ -323,19 +266,6 @@ class Publisher:
         return validated_source(self.settings, Path(source))
 
     # ---------- 内部：状态持久化 ----------
-
-    def _snapshot_current(
-        self, skill_id: str, target: TargetKey, link_target: str, revision: str
-    ) -> None:
-        self.store.set_rollback_snapshot(
-            RollbackSnapshot(
-                skill_id=skill_id,
-                target=target.value,
-                previous_link_target=link_target,
-                previous_revision=revision,
-                updated_at=_utc_now_iso(),
-            )
-        )
 
     def _persist_active(
         self, skill_id: str, target: TargetKey, resolved_source: Path, revision: str
