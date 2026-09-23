@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Skill 发布管理台 · 双 tab 设计原型</title>
+<!--
+  设计原型（仅用于设计讨论，非生产代码）
+  方案要点：
+  1. 全局 header 稳定，tab 切换主内容区；GitHub 专属操作按钮只在该 tab 显示
+  2. 每个 tab 三件套对称：Skill 列表 / 已部署视图 / 独立发布队列
+  3. ?tab=github 直达 + 刷新保持（原型里真实生效，可试）
+  4. 自研 tab 右上角灰字提示「由源库自动同步」，回应「自研零入口」的现状
+  视觉语言沿用现有产品：白底 / slate 边框 / slate-700 主按钮 / emerald-amber-rose 语义色
+-->
+<style>
+  :root {
+    --border: #cbd5e1;        /* slate-300 */
+    --border-soft: #e2e8f0;   /* slate-200 */
+    --ink: #1e293b;           /* slate-800 */
+    --ink-2: #334155;         /* slate-700 */
+    --ink-3: #64748b;         /* slate-500 */
+    --ink-4: #94a3b8;         /* slate-400 */
+    --accent: #0284c7;        /* sky-600 */
+    --bg-soft: #f8fafc;       /* slate-50 */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    color: var(--ink-2);
+    background: #fff;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  button { font: inherit; cursor: pointer; }
+  .mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+
+  main { max-width: 1400px; margin: 0 auto; padding: 16px 20px 0; height: 100vh; display: flex; flex-direction: column; }
+
+  /* ---------- header + tabs ---------- */
+  header { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; border-bottom: 1px solid var(--border-soft); }
+  h1 { font-size: 19px; font-weight: 600; color: var(--ink); padding-bottom: 12px; }
+  .header-right { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; }
+  .local-hint { color: var(--ink-4); font-size: 13px; font-style: italic; }
+  .source-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .source-actions { display: flex; align-items: center; gap: 10px; }
+  .tabbar { display: flex; gap: 4px; }
+  .tab {
+    border: none; background: none; padding: 10px 16px 12px;
+    color: var(--ink-3); border-bottom: 2px solid transparent; margin-bottom: -1px;
+    font-size: 14px; display: flex; align-items: center; gap: 7px;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { color: var(--ink); font-weight: 600; border-bottom-color: var(--accent); }
+  .tab .count {
+    background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--ink-3);
+    border-radius: 99px; font-size: 11px; padding: 0 7px; line-height: 17px; font-weight: 400;
+  }
+  .tab.active .count { background: #e0f2fe; border-color: #bae6fd; color: #0369a1; }
+
+  .btn {
+    border-radius: 4px; padding: 6px 14px; font-size: 13px;
+    border: 1px solid var(--border); background: #fff; color: var(--ink-2);
+  }
+  .btn:hover { background: var(--bg-soft); }
+  .btn.primary { background: #334155; border-color: #334155; color: #fff; }
+  .btn.primary:hover { background: #1e293b; }
+  .btn.small { padding: 3px 10px; font-size: 12px; }
+  .btn.ghost-danger { color: #be123c; border-color: #fecdd3; }
+  .btn.ghost-danger:hover { background: #fff1f2; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ---------- views（一级）与 panels（二级） ---------- */
+  .view { display: none; flex: 1; min-height: 0; flex-direction: column; gap: 12px; padding: 14px 0 16px; }
+  .view.active { display: flex; }
+  .board-list {
+    flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; align-content: start;
+  }
+  @media (max-width: 1100px) { .board-list { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 680px)  { .board-list { grid-template-columns: 1fr; } }
+  .panel { display: none; flex: 1; min-height: 0; }
+  .panel.active { display: grid; grid-template-columns: 3fr 2fr; gap: 18px; }
+  .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; overflow-y: auto; padding-right: 2px; }
+  .col::-webkit-scrollbar { width: 6px; } .col::-webkit-scrollbar-thumb { background: var(--border-soft); border-radius: 3px; }
+
+  .card { border: 1px solid var(--border-soft); border-radius: 6px; padding: 12px 14px; }
+  .card + .card { margin-top: 10px; }
+  .card.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+
+  /* skill 卡片 */
+  .skill-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .skill-name { font-weight: 600; color: var(--ink); font-size: 14px; }
+  .skill-id { color: var(--ink-4); }
+  .skill-repo { color: var(--ink-3); font-size: 12px; }
+  .skill-summary {
+    color: var(--ink-3); font-size: 13px; margin-top: 3px;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .tag {
+    background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--ink-3);
+    border-radius: 3px; font-size: 11px; padding: 0 6px; line-height: 18px;
+  }
+  .skill-mid { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .skill-actions { display: flex; gap: 6px; margin-top: auto; padding-top: 10px; align-items: center; flex-wrap: wrap; }
+
+  /* Skill 池 grid：自适应 3 → 2 → 1 列 */
+  .skill-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-top: 8px;
+  }
+  .skill-grid .card { display: flex; flex-direction: column; height: 100%; margin: 0; }
+  @media (max-width: 1100px) { .skill-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 680px)  { .skill-grid { grid-template-columns: 1fr; } }
+
+  .badge { border-radius: 3px; font-size: 11px; padding: 1px 7px; line-height: 18px; white-space: nowrap; }
+  .badge.ok      { background: #ecfdf5; color: #047857; }
+  .badge.warn    { background: #fffbeb; color: #b45309; }
+  .badge.err     { background: #fff1f2; color: #be123c; }
+  .badge.info    { background: #f0f9ff; color: #0369a1; }
+  .badge.muted   { background: var(--bg-soft); color: var(--ink-4); }
+  .badge.upd     { background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: 1px; }
+  .dot.on { background: #10b981; } .dot.off { background: var(--border); }
+
+  /* 筛选行 */
+  .filters { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  select, .filters input {
+    border: 1px solid var(--border); border-radius: 4px; padding: 5px 8px; font: inherit; font-size: 13px;
+    background: #fff; color: var(--ink-2);
+  }
+  .filters input { flex: 1; min-width: 140px; }
+
+  /* 区块标题 */
+  .sec-title { font-size: 12px; font-weight: 600; color: var(--ink-4); letter-spacing: .05em; display: flex; justify-content: space-between; align-items: center; }
+  .sec-title .n { font-weight: 400; }
+
+  /* 队列 */
+  .queue-empty { border: 1px dashed var(--border-soft); border-radius: 6px; padding: 18px; text-align: center; color: var(--ink-4); font-size: 13px; }
+  /* 队列卡片（完整技能卡风格） */
+  .queue-card {
+    border: 1px solid var(--border-soft); border-radius: 4px; padding: 10px 12px;
+    background: #fff; display: flex; flex-direction: column; gap: 8px;
+  }
+  .queue-card + .queue-card { margin-top: 8px; }
+  .queue-card-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .queue-card-name { font-weight: 600; color: var(--ink); font-size: 13px; }
+  .queue-card-id { color: var(--ink-4); font-size: 11px; }
+  .queue-card-targets { display: flex; gap: 4px; margin-left: auto; }
+  .queue-card-foot { display: flex; justify-content: space-between; align-items: center; }
+
+  /* 计划卡片（动作优先，徽章在左） */
+  .plan-card {
+    border: 1px solid var(--border-soft); border-radius: 4px; padding: 10px 12px;
+    background: #fff; display: flex; align-items: center; gap: 10px;
+  }
+  .plan-card + .plan-card { margin-top: 8px; }
+  .plan-card-name { font-weight: 600; color: var(--ink); font-size: 13px; }
+  .plan-card-target { color: var(--ink-3); font-size: 12px; margin-left: auto; }
+
+  .x { border: none; background: none; color: var(--ink-4); font-size: 15px; padding: 0 4px; }
+  .x:hover { color: #be123c; }
+
+  .empty-block { padding: 14px; text-align: center; color: var(--ink-4); font-size: 13px; border: 1px dashed var(--border-soft); border-radius: 6px; }
+
+  /* 二级分段（看板环境切换）：与一级下划线 tab 区分层级 */
+  .seg { display: inline-flex; background: var(--bg-soft); border: 1px solid var(--border-soft); border-radius: 6px; padding: 2px; }
+  .seg button { border: none; background: none; padding: 5px 18px; border-radius: 4px; font-size: 13px; color: var(--ink-3); }
+  .seg button.active { background: #fff; color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .seg-count {
+    background: var(--bg-soft); border: 1px solid var(--border-soft); color: var(--ink-3);
+    border-radius: 99px; font-size: 11px; padding: 0 7px; line-height: 17px; font-weight: 400; margin-left: 4px;
+  }
+  .seg button.active .seg-count { background: #e0f2fe; border-color: #bae6fd; color: #0369a1; }
+
+  /* 已部署卡片（与 Skill 池对称：grid 多列 + 完整技能卡） */
+  .deployed-card {
+    border: 1px solid var(--border-soft); border-radius: 6px; padding: 12px 14px;
+    background: #fff;
+    display: flex; flex-direction: column; gap: 6px; height: 100%;
+  }
+  .deployed-card-top { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .deployed-card-name { font-weight: 600; color: var(--ink); font-size: 14px; }
+  .deployed-card-id { color: var(--ink-4); font-size: 11px; }
+  .deployed-card-meta { color: var(--ink-4); font-size: 12px; }
+  .deployed-card-missing { color: #b45309; }
+  .deployed-card-foot { display: flex; justify-content: flex-end; margin-top: auto; padding-top: 8px; }
+
+  /* toast */
+  #toast {
+    position: fixed; top: 18px; right: 20px; z-index: 60; display: flex; flex-direction: column; gap: 8px;
+  }
+  .toast-msg { border-radius: 6px; padding: 9px 16px; font-size: 13px; box-shadow: 0 4px 14px rgba(0,0,0,.10); animation: slidein .18s ease-out; }
+  .toast-ok { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
+  .toast-err { background: #fff1f2; color: #be123c; border: 1px solid #fecdd3; }
+  @keyframes slidein { from { transform: translateX(16px); opacity: 0; } to { transform: none; opacity: 1; } }
+
+  /* modal */
+  #modalMask { position: fixed; inset: 0; background: rgba(15,23,42,.42); z-index: 50; display: none; align-items: center; justify-content: center; }
+  #modalMask.open { display: flex; }
+  .modal { background: #fff; border-radius: 8px; width: 460px; max-width: calc(100vw - 48px); max-height: 82vh; display: flex; flex-direction: column; box-shadow: 0 20px 50px rgba(0,0,0,.22); }
+  .modal h3 { font-size: 15px; color: var(--ink); padding: 16px 20px 10px; }
+  .modal .body { padding: 0 20px 14px; overflow-y: auto; font-size: 13px; color: var(--ink-2); }
+  .modal .body ul { padding-left: 18px; }
+  .modal .body li { margin: 2px 0; }
+  .modal .foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px 16px; border-top: 1px solid var(--border-soft); }
+  .modal input[type=text], .modal input[type=password] {
+    width: 100%; border: 1px solid var(--border); border-radius: 4px; padding: 7px 9px; font: inherit; font-size: 13px; margin-top: 4px;
+  }
+  .modal label { display: block; margin-top: 10px; font-size: 12px; color: var(--ink-3); }
+  .modal label:first-child { margin-top: 0; }
+  .field-err { color: #be123c; font-size: 12px; margin-top: 8px; min-height: 16px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div style="display:flex;align-items:flex-end;gap:22px;">
+      <h1>Skill 发布管理台</h1>
+      <nav class="tabbar" role="tablist">
+        <button class="tab active" data-view="manage" role="tab">管理看板</button>
+        <button class="tab" data-view="board" role="tab">部署看板</button>
+      </nav>
+    </div>
+    <div class="header-right" id="headerRight" hidden></div>
+  </header>
+
+  <div id="view-manage" class="view active">
+    <div class="source-toolbar">
+      <div class="seg" id="sourceSeg">
+        <button class="active" data-source="local">自研 Skill <span class="seg-count" id="countLocal">0</span></button>
+        <button data-source="github">GitHub Skill <span class="seg-count" id="countGithub">0</span></button>
+      </div>
+      <div class="source-actions" id="sourceActions">
+        <span class="local-hint" id="localHint" hidden>自研 Skill 由源库目录自动同步，无需登记</span>
+        <button class="btn" id="btnCheckUpdates" hidden>检查 GitHub 更新</button>
+        <button class="btn primary" id="btnRegister" hidden>新增 GitHub Skill</button>
+      </div>
+    </div>
+
+    <section class="panel active" id="panel-local" role="tabpanel">
+    <div class="col">
+      <div class="filters">
+        <input placeholder="搜索名称 / ID / 摘要…">
+        <select><option>部署状态：全部</option><option>已发布</option><option>未发布</option></select>
+      </div>
+      <div id="poolLocal"></div>
+    </div>
+    <div class="col">
+      <div>
+        <div class="sec-title">发布队列 <span class="n">独立 · 切 tab 保留</span></div>
+        <div class="card" id="queueLocal" style="margin-top:8px;"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="panel-github" role="tabpanel">
+    <div class="col">
+      <div class="filters">
+        <input placeholder="搜索名称 / ID / 摘要…">
+        <select><option>部署状态：全部</option><option>已发布</option><option>未发布</option></select>
+        <select id="filterUpdate"><option>更新状态：全部</option><option>有远端更新</option><option>无更新</option></select>
+      </div>
+      <div id="poolGithub"></div>
+    </div>
+    <div class="col">
+      <div>
+        <div class="sec-title">发布队列 <span class="n">独立 · 切 tab 保留</span></div>
+        <div class="card" id="queueGithub" style="margin-top:8px;"></div>
+      </div>
+    </div>
+  </section>
+  </div>
+
+  <div id="view-board" class="view">
+    <div class="filters" style="align-items:center;">
+      <div class="seg" id="boardSeg">
+        <button class="active" data-target="openclaw">OpenClaw</button>
+        <button data-target="hermes">Hermes</button>
+      </div>
+      <input id="boardSearch" placeholder="搜索名称 / ID…">
+      <select id="boardSource"><option value="all">来源：全部</option><option value="local">来源：自研</option><option value="github">来源：GitHub</option></select>
+      <select id="boardSort"><option value="time">排序：发布时间 ↓</option><option value="name">排序：名称</option></select>
+      <span class="sec-title" id="boardCount" style="margin-left:auto;"></span>
+    </div>
+    <div id="boardList" class="board-list"></div>
+  </div>
+</main>
+
+<div id="toast"></div>
+<div id="modalMask"><div class="modal" id="modalBox"></div></div>
+
+<script>
+/* ============ mock 数据（贴近真实场景，仅供设计讨论） ============ */
+const skills = [
+  { id:'graphify', name:'graphify', source:'local', repository:null,
+    tags:['知识图谱','代码分析'], summary:'任何输入 → 知识图谱 → 聚类社区 → HTML + JSON + 审计报告',
+    status:'active', cacheMissing:false,
+    deployments:{ openclaw:{status:'active',revision:'a1b2c3d9',publishedAt:'2026-09-20 10:12', linkMissing:false} } },
+  { id:'nuwa-skill', name:'nuwa-skill', source:'local', repository:null,
+    tags:['skill 制作'], summary:'输入人名/主题 → 深度调研 → 思维框架提炼 → 生成可运行的人物 Skill',
+    status:'active', cacheMissing:false,
+    deployments:{ openclaw:{status:'active',revision:'7f8e9d0c',publishedAt:'2026-09-18 21:40', linkMissing:false},
+                  hermes:{status:'active',revision:'7f8e9d0c',publishedAt:'2026-09-18 21:41', linkMissing:false} } },
+  { id:'cangjie-skill', name:'cangjie-skill', source:'local', repository:null,
+    tags:['skill 制作','阅读'], summary:'把一本书蒸馏成一组原子化、可执行的 Claude skills',
+    status:'active', cacheMissing:false, deployments:{} },
+  { id:'workorder-matcher', name:'workorder-matcher', source:'local', repository:null,
+    tags:['自动化'], summary:'工单 Excel 与知识库匹配分类的 5 阶段自动化流程',
+    status:'active', cacheMissing:false,
+    deployments:{ hermes:{status:'active',revision:'5b4a3c2d',publishedAt:'2026-09-12 09:05', linkMissing:true} } },
+  { id:'huashu-design', name:'huashu-design', source:'local', repository:null,
+    tags:['设计'], summary:'用 HTML 做高保真原型、交互 Demo、幻灯片与设计变体探索',
+    status:'active', cacheMissing:false, deployments:{} },
+
+  { id:'anthropic-docx', name:'docx', source:'github', repository:'anthropics/skills',
+    tags:['office','文档'], summary:'创建、编辑与分析 Word 文档，支持修订追踪与格式保留',
+    status:'active', cacheMissing:false, update:{hasUpdate:false},
+    deployments:{ openclaw:{status:'active',revision:'d4e5f6a7',publishedAt:'2026-09-15 14:22', linkMissing:false} } },
+  { id:'anthropic-pdf', name:'pdf', source:'github', repository:'anthropics/skills',
+    tags:['office','文档'], summary:'处理 PDF：表单填写、文本提取、合并拆分',
+    status:'active', cacheMissing:false, update:{hasUpdate:false}, deployments:{} },
+  { id:'anthropic-xlsx', name:'xlsx', source:'github', repository:'anthropics/skills',
+    tags:['office','数据'], summary:'创建与分析 Excel 表格，支持公式与图表',
+    status:'active', cacheMissing:false, update:{hasUpdate:false},
+    deployments:{ hermes:{status:'active',revision:'c3b2a1d0',publishedAt:'2026-09-14 11:30', linkMissing:false} } },
+  { id:'superpowers-tdd', name:'test-driven-development', source:'github', repository:'obra/superpowers',
+    tags:['工程实践','测试'], summary:'RED-GREEN-REFACTOR 纪律：先写会失败的测试再实现',
+    status:'active', cacheMissing:false, update:{hasUpdate:false},
+    deployments:{ openclaw:{status:'active',revision:'9a8b7c6d',publishedAt:'2026-09-19 16:48', linkMissing:false},
+                  hermes:{status:'active',revision:'9a8b7c6d',publishedAt:'2026-09-19 16:49', linkMissing:false} } },
+  { id:'superpowers-debug', name:'systematic-debugging', source:'github', repository:'obra/superpowers',
+    tags:['工程实践'], summary:'四阶段根因调查：先理解再修改，禁止盲改',
+    status:'active', cacheMissing:true, update:{hasUpdate:false}, deployments:{} },
+];
+
+/* 每 tab 独立的队列/计划状态：演示「切 tab 队列互不影响」 */
+const ws = {
+  local:  { queue: [], plan: null },
+  github: { queue: [], plan: null },
+};
+let activeView = 'manage';   // 一级：manage | board
+let activeSource = 'local';  // 管理看板二级：local | github
+let publishedFlash = null; // 刚发布的 skillId，用于高亮反馈
+
+/* ============ 工具 ============ */
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const hash = () => Math.random().toString(16).slice(2, 9);
+const TARGETS = [ ['openclaw','OpenClaw'], ['hermes','Hermes'] ];
+
+function toast(kind, text) {
+  const el = document.createElement('div');
+  el.className = 'toast-msg toast-' + kind;
+  el.textContent = text;
+  $('#toast').appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+}
+
+function showModal({ title, body, confirmLabel, danger, onConfirm, busyLabel }) {
+  const mask = $('#modalMask'), box = $('#modalBox');
+  box.innerHTML = `
+    <h3>${esc(title)}</h3>
+    <div class="body">${body}</div>
+    <div class="foot">
+      <button class="btn" id="mCancel">取消</button>
+      <button class="btn ${danger ? 'ghost-danger' : 'primary'}" id="mOk">${esc(confirmLabel || '确认')}</button>
+    </div>`;
+  mask.classList.add('open');
+  $('#mCancel').onclick = closeModal;
+  $('#mOk').onclick = async () => {
+    const btn = $('#mOk');
+    btn.disabled = true; btn.textContent = busyLabel || '执行中…';
+    try { await onConfirm?.(btn); } finally { closeModal(); }
+  };
+}
+function closeModal() { $('#modalMask').classList.remove('open'); }
+
+function passwordRow() {
+  return `<label>管理密码<input type="password" id="mPwd" placeholder="必填"></label><div class="field-err" id="mPwdErr"></div>`;
+}
+function requirePwd() {
+  const v = $('#mPwd')?.value.trim();
+  if (!v) { $('#mPwdErr').textContent = '请输入管理密码'; return null; }
+  return v;
+}
+
+/* ============ 渲染 ============ */
+function bySource(src) { return skills.filter((s) => s.source === src); }
+
+function deploymentBadges(skill) {
+  return TARGETS.map(([t, label]) => {
+    const d = skill.deployments[t];
+    if (!d || d.status !== 'active') return `<span class="badge muted">${label} 未发布</span>`;
+    if (d.linkMissing) return `<span class="badge warn" title="账本记录已发布，但目标目录链接不存在">⚠ ${label} 链接缺失</span>`.replace('⚠ ','');
+    return `<span class="badge ok">${label} 已发布 · ${d.revision.slice(0,7)}</span>`;
+  }).join('');
+}
+
+function skillCard(skill) {
+  const inQueue = ws[skill.source].queue.find((q) => q.id === skill.id);
+  const isGh = skill.source === 'github';
+  const upd = skill.update?.hasUpdate
+    ? `<span class="badge upd">有远端更新</span>` : '';
+  const cache = skill.cacheMissing
+    ? `<span class="badge warn">缓存缺失 · 需先 Clone</span>` : '';
+  const ghRepo = isGh ? `<span class="skill-repo mono">${esc(skill.repository)}</span>` : '';
+  const targetBtns = TARGETS.map(([t, label]) => {
+    const on = inQueue?.targets.includes(t);
+    return `<button class="btn small ${on ? 'primary' : ''}" data-act="queue" data-id="${skill.id}" data-target="${t}">${on ? '✓ ' : '+ '}${label}</button>`;
+  }).join('');
+  const ghBtns = isGh ? `
+    ${skill.cacheMissing ? `<button class="btn small" data-act="clone" data-id="${skill.id}">Clone 缓存</button>` : ''}
+    <button class="btn small ghost-danger" data-act="delete" data-id="${skill.id}">删除</button>` : '';
+  return `
+  <div class="card" style="${publishedFlash === skill.id ? 'border-color:#34d399; box-shadow:0 0 0 2px #a7f3d0;' : ''}">
+    <div class="skill-top">
+      <span class="skill-name">${esc(skill.name)}</span>
+      <span class="skill-id mono">${esc(skill.id)}</span>
+      ${ghRepo}${upd}${cache}
+    </div>
+    <div class="skill-summary">${esc(skill.summary)}</div>
+    <div class="skill-mid">
+      ${skill.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}
+      <span class="badge ${skill.status === 'active' ? 'muted' : 'err'}">${skill.status}</span>
+    </div>
+    <div class="skill-mid">${deploymentBadges(skill)}</div>
+    <div class="skill-actions">
+      ${targetBtns}
+      <span style="flex:1"></span>
+      ${ghBtns}
+    </div>
+  </div>`;
+}
+
+function renderPool(src) {
+  const el = $(src === 'local' ? '#poolLocal' : '#poolGithub');
+  const list = bySource(src);
+  el.innerHTML = `
+    <div class="sec-title">Skill 池 · ${src === 'local' ? '自研' : 'GitHub'} <span class="n">${list.length} 个</span></div>
+    <div class="skill-grid">${list.map(skillCard).join('')}</div>`;
+}
+
+/* ============ 部署看板（环境维度 · 纯账本视图） ============ */
+let boardTarget = 'openclaw';
+const boardFilters = { q: '', source: 'all', sort: 'time' };
+
+function renderBoard() {
+  const label = boardTarget === 'openclaw' ? 'OpenClaw' : 'Hermes';
+  const items = [];
+  for (const s of skills) {
+    const d = s.deployments[boardTarget];
+    if (d?.status === 'active') items.push({ s, d });
+  }
+  const q = boardFilters.q.trim().toLowerCase();
+  const list = items.filter(({ s }) => {
+    if (boardFilters.source !== 'all' && s.source !== boardFilters.source) return false;
+    if (q && !`${s.name} ${s.id}`.toLowerCase().includes(q)) return false;
+    return true;
+  });
+  list.sort((a, b) => boardFilters.sort === 'name'
+    ? a.s.name.localeCompare(b.s.name, 'zh-CN')
+    : String(b.d.publishedAt).localeCompare(String(a.d.publishedAt)));
+  $('#boardCount').textContent = `${label} · ${list.length} 个已部署`;
+  $('#boardList').innerHTML = list.length ? list.map(({ s, d }) => `
+    <div class="deployed-card">
+      <div class="deployed-card-top">
+        <span class="deployed-card-name">${esc(s.name)}</span>
+        <span class="badge ${s.source === 'github' ? 'info' : 'muted'}">${s.source === 'github' ? 'GitHub' : '自研'}</span>
+      </div>
+      <div class="deployed-card-id mono">${esc(s.id)}</div>
+      <div class="deployed-card-meta mono">${d.revision.slice(0,7)} · ${esc(d.publishedAt)}${d.linkMissing ? ' · <span class="deployed-card-missing">链接缺失</span>' : ''}</div>
+      <div class="deployed-card-foot">
+        <button class="btn small ghost-danger" data-act="unpublish" data-id="${s.id}" data-target="${boardTarget}">下架</button>
+      </div>
+    </div>`).join('')
+    : `<div class="empty-block">${esc(label)} 上暂无符合条件的已部署 Skill</div>`;
+}
+
+function renderQueue(src) {
+  const el = $(src === 'local' ? '#queueLocal' : '#queueGithub');
+  const w = ws[src];
+  const names = new Map(skills.map((s) => [s.id, s.name]));
+  if (!w.queue.length) {
+    el.innerHTML = `<div class="queue-empty">在左侧 Skill 卡片上点「+ OpenClaw / + Hermes」加入队列</div>`;
+    return;
+  }
+  const planRows = w.plan ? w.plan.map((p) => {
+    const cls = { add:'badge ok', update:'badge info', unchanged:'badge muted', blocked:'badge err' }[p.action];
+    const lbl = { add:'新增', update:'更新', unchanged:'无需操作', blocked:'已阻止' }[p.action];
+    return `<div class="plan-card">
+      <span class="${cls}">${lbl}</span>
+      <span class="plan-card-name">${esc(names.get(p.id) || p.id)}</span>
+      <span class="plan-card-target mono">→ ${p.target === 'openclaw' ? 'OpenClaw' : 'Hermes'}</span>
+    </div>`;
+  }).join('') : '';
+  el.innerHTML = `
+    ${w.queue.map((q) => `<div class="queue-card">
+      <div class="queue-card-top">
+        <span class="queue-card-name">${esc(names.get(q.id) || q.id)}</span>
+        <span class="queue-card-id mono">${esc(q.id)}</span>
+        <div class="queue-card-targets">
+          ${q.targets.map((t) => `<span class="badge ${t === 'openclaw' ? 'info' : 'muted'}">${t === 'openclaw' ? 'OpenClaw' : 'Hermes'}</span>`).join('')}
+        </div>
+      </div>
+      <div class="queue-card-foot">
+        <span style="color: var(--ink-4); font-size: 11px;">待发布</span>
+        <button class="x" data-act="dequeue" data-id="${q.id}" title="移出队列">×</button>
+      </div>
+    </div>`).join('')}
+    ${w.plan ? `<div style="border-top:1px solid var(--border-soft);margin-top:14px;padding-top:10px;"><div class="sec-title" style="margin-bottom:8px;">发布计划（只读预览）</div>${planRows}</div>` : ''}
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+      ${w.plan
+        ? `<button class="btn" data-act="replan">重新生成计划</button><button class="btn primary" data-act="publish">确认发布</button>`
+        : `<button class="btn primary" data-act="plan">生成发布计划</button>`}
+    </div>`;
+}
+
+function renderCounts() {
+  $('#countLocal').textContent = bySource('local').length;
+  $('#countGithub').textContent = bySource('github').length;
+}
+
+function renderAll() {
+  renderCounts();
+  for (const src of ['local', 'github']) {
+    renderPool(src); renderQueue(src);
+  }
+  renderBoard();
+  publishedFlash = null;
+}
+
+/* ============ 导航：一级 view + 二级 source/agent（含 URL 同步） ============ */
+function syncUrl() {
+  const p = new URLSearchParams();
+  p.set('view', activeView);
+  if (activeView === 'manage') p.set('tab', activeSource);
+  else p.set('agent', boardTarget);
+  history.replaceState(null, '', `${location.pathname}?${p}`);
+}
+
+function applyHeaderState() {
+  const isGh = activeView === 'manage' && activeSource === 'github';
+  const isLocal = activeView === 'manage' && activeSource === 'local';
+  $('#btnCheckUpdates').hidden = !isGh;
+  $('#btnRegister').hidden = !isGh;
+  $('#localHint').hidden = !isLocal;
+}
+
+function setView(view) {
+  activeView = view === 'board' ? 'board' : 'manage'; // 非法值回退 manage
+  $('#view-manage').classList.toggle('active', activeView === 'manage');
+  $('#view-board').classList.toggle('active', activeView === 'board');
+  for (const v of ['manage', 'board']) {
+    $(`.tab[data-view="${v}"]`).classList.toggle('active', v === activeView);
+  }
+  applyHeaderState();
+  syncUrl(); // 刷新保持
+}
+
+function setSourceTab(src) {
+  activeSource = src === 'github' ? 'github' : 'local'; // 非法值回退 local
+  for (const t of ['local', 'github']) {
+    $(`#panel-${t}`).classList.toggle('active', t === activeSource);
+    $(`#sourceSeg [data-source="${t}"]`).classList.toggle('active', t === activeSource);
+  }
+  applyHeaderState();
+  syncUrl();
+}
+
+function setAgent(target) {
+  boardTarget = target === 'hermes' ? 'hermes' : 'openclaw';
+  for (const t of ['openclaw', 'hermes']) {
+    $(`#boardSeg [data-target="${t}"]`).classList.toggle('active', t === boardTarget);
+  }
+  renderBoard();
+  syncUrl();
+}
+
+/* ============ 交互逻辑（模拟后端行为） ============ */
+function toggleQueue(id, target) {
+  const skill = skills.find((s) => s.id === id);
+  const q = ws[skill.source].queue;
+  const entry = q.find((e) => e.id === id);
+  if (!entry) q.push({ id, targets: [target] });
+  else if (entry.targets.includes(target)) {
+    entry.targets = entry.targets.filter((t) => t !== target);
+    if (!entry.targets.length) ws[skill.source].queue = q.filter((e) => e.id !== id);
+  } else entry.targets.push(target);
+  ws[skill.source].plan = null; // 队列变了，计划作废
+  renderAll();
+}
+
+function handlePlan(src) {
+  const q = ws[src].queue;
+  const actions = q.flatMap((e) => e.targets.map((t) => {
+    const s = skills.find((x) => x.id === e.id);
+    const deployed = s.deployments[t]?.status === 'active';
+    if (s.cacheMissing) return { id: e.id, target: t, action: 'blocked' };
+    return { id: e.id, target: t, action: deployed ? 'update' : 'add' };
+  }));
+  ws[src].plan = actions;
+  renderAll();
+}
+
+function handlePublish(src) {
+  const w = ws[src];
+  const items = w.plan.filter((p) => p.action === 'add' || p.action === 'update');
+  if (!items.length) { toast('err', '计划中没有可发布的项'); return; }
+  const names = new Map(skills.map((s) => [s.id, s.name]));
+  showModal({
+    title: '确认发布',
+    confirmLabel: '执行发布',
+    busyLabel: '发布中…',
+    body: `<p style="font-weight:600">新增 ${items.filter((i) => i.action === 'add').length} 项 · 更新 ${items.filter((i) => i.action === 'update').length} 项</p>
+      <ul style="margin-top:6px">${items.map((i) => `<li>${esc(names.get(i.id))} → ${i.target === 'openclaw' ? 'OpenClaw' : 'Hermes'}（${i.action === 'add' ? '新增' : '更新'}）</li>`).join('')}</ul>
+      ${passwordRow()}`,
+    onConfirm: (btn) => new Promise((resolve) => {
+      const pwd = requirePwd();
+      if (!pwd) { btn.disabled = false; btn.textContent = '执行发布'; resolve(); return; }
+      setTimeout(() => {
+        for (const i of items) {
+          const s = skills.find((x) => x.id === i.id);
+          const rev = hash();
+          s.deployments[i.target] = { status:'active', revision: rev, publishedAt: new Date().toLocaleString('zh-CN', { hour12: false }), linkMissing: false };
+          publishedFlash = i.id;
+        }
+        ws[src].queue = []; ws[src].plan = null;
+        renderAll();
+        toast('ok', `发布完成：${items.length} 项全部成功`);
+        resolve();
+      }, 700);
+    }),
+  });
+}
+
+function handleUnpublish(id, target) {
+  const s = skills.find((x) => x.id === id);
+  const label = target === 'openclaw' ? 'OpenClaw' : 'Hermes';
+  showModal({
+    title: '确认下架',
+    confirmLabel: '确认下架',
+    danger: true,
+    body: `<p>将从 ${label} 移除「${esc(s.name)}」的技能链接（不删除任何目录）。</p>${passwordRow()}`,
+    onConfirm: (btn) => new Promise((resolve) => {
+      if (!requirePwd()) { btn.disabled = false; btn.textContent = '确认下架'; resolve(); return; }
+      setTimeout(() => {
+        s.deployments[target].status = 'removed';
+        renderAll();
+        toast('ok', `${s.name} 已下架（${label}）`);
+        resolve();
+      }, 500);
+    }),
+  });
+}
+
+function handleClone(id) {
+  const s = skills.find((x) => x.id === id);
+  showModal({
+    title: '确认 Clone 缓存',
+    confirmLabel: '执行 Clone',
+    busyLabel: 'Clone 中…',
+    body: `<p>将从 GitHub 拉取「${esc(s.name)}」的仓库到本机缓存目录（只写缓存，不触碰已发布目标）。</p>${passwordRow()}`,
+    onConfirm: (btn) => new Promise((resolve) => {
+      if (!requirePwd()) { btn.disabled = false; btn.textContent = '执行 Clone'; resolve(); return; }
+      setTimeout(() => {
+        s.cacheMissing = false;
+        renderAll();
+        toast('ok', `「${s.name}」缓存已就绪`);
+        resolve();
+      }, 800);
+    }),
+  });
+}
+
+function handleDelete(id) {
+  const s = skills.find((x) => x.id === id);
+  showModal({
+    title: '确认删除 Skill',
+    confirmLabel: '确认删除',
+    danger: true,
+    body: `<p>将移除「${esc(s.name)}」的登记条目并删除本机缓存（不影响已发布目标；已有 active 部署时需先下架）。此操作通过 Git 提交全局生效。</p>${passwordRow()}`,
+    onConfirm: (btn) => new Promise((resolve) => {
+      if (!requirePwd()) { btn.disabled = false; btn.textContent = '确认删除'; resolve(); return; }
+      setTimeout(() => {
+        const idx = skills.indexOf(s);
+        skills.splice(idx, 1);
+        const q = ws[s.source].queue;
+        ws[s.source].queue = q.filter((e) => e.id !== id);
+        renderAll();
+        toast('ok', `已删除 GitHub Skill「${s.name}」`);
+        resolve();
+      }, 500);
+    }),
+  });
+}
+
+function handleCheckUpdates() {
+  const btn = $('#btnCheckUpdates');
+  btn.disabled = true; btn.textContent = '检查中…';
+  setTimeout(() => {
+    const updatedIds = ['anthropic-pdf', 'anthropic-xlsx'];
+    let n = 0;
+    for (const s of bySource('github')) {
+      if (updatedIds.includes(s.id) && !s.update.hasUpdate) {
+        s.update.hasUpdate = true;
+        n++;
+      }
+    }
+    renderAll();
+    btn.disabled = false; btn.textContent = '检查 GitHub 更新';
+    toast('ok', `检查完成：${n} 个 GitHub Skill 有远端更新`);
+  }, 800);
+}
+
+function handleRegister() {
+  showModal({
+    title: '新增 GitHub Skill',
+    confirmLabel: '登记',
+    body: `
+      <label>仓库（owner/repo）<input type="text" id="fRepo" placeholder="anthropics/skills"></label>
+      <label>仓库内路径<input type="text" id="fPath" placeholder="docx"></label>
+      <label>名称<input type="text" id="fName" placeholder="docx"></label>
+      <label>标签（逗号分隔）<input type="text" id="fTags" placeholder="文档, office"></label>
+      <label>摘要<input type="text" id="fSummary" placeholder="一句话说明"></label>
+      ${passwordRow()}`,
+    onConfirm: (btn) => new Promise((resolve) => {
+      if (!requirePwd()) { btn.disabled = false; btn.textContent = '登记'; resolve(); return; }
+      const name = $('#fName').value.trim() || 'new-skill';
+      skills.push({
+        id: 'gh-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        name, source: 'github', repository: $('#fRepo').value.trim() || 'owner/repo',
+        tags: $('#fTags').value.split(/[,，]/).map((t) => t.trim()).filter(Boolean),
+        summary: $('#fSummary').value.trim() || '（待补充）',
+        status: 'active', cacheMissing: true, update: { hasUpdate: false }, deployments: {},
+      });
+      renderAll();
+      toast('ok', `已登记 GitHub Skill「${name}」，缓存缺失，发布前需先 Clone`);
+      resolve();
+    }),
+  });
+}
+
+/* ============ 事件绑定 ============ */
+document.addEventListener('click', (e) => {
+  const viewTab = e.target.closest('.tab[data-view]');
+  if (viewTab) { setView(viewTab.dataset.view); return; }
+  const srcSeg = e.target.closest('#sourceSeg [data-source]');
+  if (srcSeg) { setSourceTab(srcSeg.dataset.source); return; }
+  const agentSeg = e.target.closest('#boardSeg [data-target]');
+  if (agentSeg) { setAgent(agentSeg.dataset.target); return; }
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const { act, id, target } = btn.dataset;
+  if (act === 'queue') toggleQueue(id, target);
+  else if (act === 'dequeue') {
+    const skill = skills.find((s) => s.id === id);
+    ws[skill.source].queue = ws[skill.source].queue.filter((q) => q.id !== id);
+    ws[skill.source].plan = null; renderAll();
+  }
+  else if (act === 'plan') handlePlan(activeSource);
+  else if (act === 'replan') { ws[activeSource].plan = null; renderAll(); }
+  else if (act === 'publish') handlePublish(activeSource);
+  else if (act === 'unpublish') handleUnpublish(id, target);
+  else if (act === 'clone') handleClone(id);
+  else if (act === 'delete') handleDelete(id);
+});
+$('#btnCheckUpdates').onclick = handleCheckUpdates;
+$('#btnRegister').onclick = handleRegister;
+$('#boardSearch').addEventListener('input', (e) => { boardFilters.q = e.target.value; renderBoard(); });
+$('#boardSource').addEventListener('change', (e) => { boardFilters.source = e.target.value; renderBoard(); });
+$('#boardSort').addEventListener('change', (e) => { boardFilters.sort = e.target.value; renderBoard(); });
+$('#modalMask').addEventListener('click', (e) => { if (e.target === e.currentTarget) closeModal(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+/* 初始：读 URL（?view=board&agent=hermes 直达，非法值回退） */
+const _p = new URLSearchParams(location.search);
+setView(_p.get('view'));
+if (_p.get('view') === 'board') setAgent(_p.get('agent'));
+else setSourceTab(_p.get('tab'));
+renderAll();
+</script>
+</body>
+</html>
