@@ -31,6 +31,7 @@ These guides help you **ask the right questions before coding**.
 | [Windows 测试环境契约](../backend/testing-environment.md) | Windows 开发机 pytest 硬约束（basetemp 重定向、requires_symlink marker、Windows/WSL 不共用 .pytest-tmp） | 在 Windows 上写/跑 Python 后端测试，或测试涉及 symlink/原子替换 |
 | [Skill Manager GitHub 缓存生命周期](./skill-manager-github-cache.md) | GitHub Skill 缓存何时 clone/fetch、缓存缺失死锁成因、Clone 端点契约、WinError 1314 坑 | 排查"源不可用：source directory does not exist"，或改 skill-manager 登记缓存发布流程 |
 | [Skill Manager 自研 Skill 登记与对账](./skill-manager-registry-sync.md) | 自研 Skill 的 sync_local() 对账契约、source_missing 语义、源库 sync 工具链废弃后的遗留状态 | 改 skill-manager 登记/列表流程，或排查"源缺失"徽章与 junction 兼容 |
+| [Skill Manager 前端契约](./skill-manager-frontend.md) | 两级导航 URL 契约（view/tab/agent、非法值回退）、Next basePath 下 router.replace 双拼陷阱、本机 symlink 特权限制 | 改 skill-manager 前端导航/视图结构，或在本机验证发布链路 |
 
 ---
 

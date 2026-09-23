@@ -15,7 +15,7 @@ interface SkillPoolProps {
   skills: SkillCard[];
   queue: QueueEntry[];
   onAddToQueue: (skillId: string, targets: TargetKey[]) => void;
-  onClone: (skillId: string) => void;
+  onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
 }
 
@@ -75,11 +75,11 @@ function SkillCardItem({
   }
 
   return (
-    <li className="rounded-lg border border-slate-200 bg-white p-3">
+    <li className="flex flex-col rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
-          <p className="text-xs text-slate-400">
+          <p className="truncate text-xs text-slate-400">
             {skill.id} · {skill.source === 'local' ? '自研' : skill.repository}
           </p>
         </div>
@@ -121,7 +121,7 @@ function SkillCardItem({
         </div>
       ) : null}
 
-      {/* 部署状态（只读，回滚/下架入口在右栏已部署视图） */}
+      {/* 部署状态（只读；下架入口在部署看板） */}
       <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
         {ALL_TARGETS.map((target) => (
           <div key={target} className="flex items-center gap-2 text-xs">
@@ -131,8 +131,8 @@ function SkillCardItem({
         ))}
       </div>
 
-      {/* 加入队列：target 多选 chips */}
-      <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2">
+      {/* 加入队列：target 多选 chips（贴卡片底部） */}
+      <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-2">
         {ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
           const selected = selectedTargets.includes(target);
@@ -206,7 +206,7 @@ function SkillCardItem({
           </span>
           <button
             type="button"
-            onClick={() => onClone(skill.id)}
+            onClick={() => onClone(skill.id, skill.name)}
             className="shrink-0 rounded bg-amber-600 px-2.5 py-1 text-xs text-white hover:bg-amber-700"
           >
             Clone
@@ -243,7 +243,7 @@ export default function SkillPool({
   }
 
   return (
-    <ul className="space-y-2">
+    <ul className="grid grid-cols-1 items-stretch gap-2.5 md:grid-cols-2 lg:grid-cols-3">
       {skills.map((skill) => (
         <SkillCardItem
           key={skill.id}

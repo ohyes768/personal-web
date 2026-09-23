@@ -142,17 +142,6 @@ export function publish(
   });
 }
 
-export function rollbackSkill(
-  skillId: string,
-  target: TargetKey,
-  password: string
-): Promise<unknown> {
-  return request<unknown>(`/${encodeURIComponent(skillId)}/targets/${target}/rollback`, {
-    method: 'POST',
-    body: jsonBody({ password }),
-  });
-}
-
 export function unpublishSkill(
   skillId: string,
   target: TargetKey,

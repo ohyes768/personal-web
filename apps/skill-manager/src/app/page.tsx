@@ -1,51 +1,34 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import DeployedView from '@/components/DeployedView';
-import PublishQueue from '@/components/PublishQueue';
-import RegisterGithubDialog from '@/components/RegisterGithubDialog';
+import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
-import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/SkillFilters';
-import SkillPool from '@/components/SkillPool';
+import DeployBoard from '@/components/DeployBoard';
+import RegisterGithubDialog from '@/components/RegisterGithubDialog';
+import SourceWorkspace, { type Notice } from '@/components/SourceWorkspace';
 import {
-  ApiClientError,
   checkUpdates,
   cloneGithubCache,
   deleteSkill,
   listSkills,
-  publish,
-  publishPlan,
   registerGithubSkill,
-  rollbackSkill,
   unpublishSkill,
 } from '@/lib/api';
-import {
-  addQueueTarget,
-  clearQueue,
-  removeQueueItem,
-  removeQueueTarget,
-  type QueueEntry,
-  type TargetKey,
-} from '@/lib/queue';
-import type {
-  PlanItem,
-  PublishResultItem,
-  RegisterGithubSkillInput,
-  SkillCard,
-} from '@/lib/types';
+import type { TargetKey } from '@/lib/queue';
+import type { RegisterGithubSkillInput, SkillCard } from '@/lib/types';
+
+type ViewKey = 'manage' | 'board';
+type SourceTab = 'local' | 'github';
 
 const TARGET_LABEL: Record<TargetKey, string> = {
   openclaw: 'OpenClaw',
   hermes: 'Hermes',
 };
 
-interface Notice {
-  kind: 'ok' | 'err';
-  text: string;
-}
+const SEG_BUTTON =
+  'rounded px-3 py-1.5 text-sm transition-colors data-[active=true]:bg-white data-[active=true]:font-medium data-[active=true]:text-slate-800 data-[active=true]:shadow-sm text-slate-500 hover:text-slate-700';
 
-interface PendingTargetOp {
-  kind: 'rollback' | 'unpublish';
+interface PendingUnpublish {
   skillId: string;
   skillName: string;
   target: TargetKey;
@@ -63,85 +46,42 @@ interface PendingDelete {
   skillName: string;
 }
 
-function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
-  const query = filters.query.trim().toLowerCase();
-  return skills.filter((skill) => {
-    if (query) {
-      const haystack = `${skill.name} ${skill.id} ${skill.summary}`.toLowerCase();
-      if (!haystack.includes(query)) {
-        return false;
-      }
-    }
-    if (filters.source !== 'all' && skill.source !== filters.source) {
-      return false;
-    }
-    if (filters.tags.some((tag) => !skill.tags.includes(tag))) {
-      return false;
-    }
-    // "已发布"只认 status=active 的部署记录；下架后记录仍在（status=removed）
-    const hasActiveDeployment = Object.values(skill.deployments).some(
-      (deployment) => deployment.status === 'active'
-    );
-    if (filters.deployment === 'published' && !hasActiveDeployment) {
-      return false;
-    }
-    if (filters.deployment === 'unpublished' && hasActiveDeployment) {
-      return false;
-    }
-    if (filters.update === 'has_update' && !skill.update?.has_update) {
-      return false;
-    }
-    if (filters.update === 'no_update' && skill.update?.has_update) {
-      return false;
-    }
-    if (filters.status !== 'all' && skill.status !== filters.status) {
-      return false;
-    }
-    return true;
-  });
-}
+function SkillManagerPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
-function publishableCount(items: PlanItem[]): number {
-  return items.filter((item) => item.action === 'add' || item.action === 'update').length;
-}
+  // 两级导航：URL 是唯一真源，非法值在派生时逐级回退
+  const view: ViewKey = searchParams.get('view') === 'board' ? 'board' : 'manage';
+  const sourceTab: SourceTab = searchParams.get('tab') === 'github' ? 'github' : 'local';
+  const agent: TargetKey = searchParams.get('agent') === 'hermes' ? 'hermes' : 'openclaw';
 
-/** 把计划中可发布的项（add/update）重新按 skill 分组为请求结构。 */
-function planToRequests(items: PlanItem[]): { skill_id: string; targets: TargetKey[] }[] {
-  const grouped = new Map<string, TargetKey[]>();
-  for (const item of items) {
-    if (item.action !== 'add' && item.action !== 'update') {
-      continue;
+  function navigate(next: { view?: ViewKey; tab?: SourceTab; agent?: TargetKey }) {
+    const p = new URLSearchParams(searchParams.toString());
+    const v = next.view ?? view;
+    p.set('view', v);
+    if (v === 'manage') {
+      p.set('tab', next.tab ?? (v === view ? sourceTab : 'local'));
+      p.delete('agent');
+    } else {
+      p.set('agent', next.agent ?? (v === view ? agent : 'openclaw'));
+      p.delete('tab');
     }
-    grouped.set(item.skill_id, [...(grouped.get(item.skill_id) ?? []), item.target]);
+    // router.push/replace 的路径不含 basePath（Next 自动前置 /skills）
+    router.replace(`/?${p.toString()}`, { scroll: false });
   }
-  return [...grouped].map(([skill_id, targets]) => ({ skill_id, targets }));
-}
 
-export default function Page() {
   const [skills, setSkills] = useState<SkillCard[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
 
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [queue, setQueue] = useState<QueueEntry[]>([]);
-  const [plan, setPlan] = useState<PlanItem[] | null>(null);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [results, setResults] = useState<PublishResultItem[] | null>(null);
-
-  const [showPublishConfirm, setShowPublishConfirm] = useState(false);
-  const [showRegister, setShowRegister] = useState(false);
-  const [pendingOp, setPendingOp] = useState<PendingTargetOp | null>(null);
+  const [pendingUnpublish, setPendingUnpublish] = useState<PendingUnpublish | null>(null);
   const [pendingClone, setPendingClone] = useState<PendingClone | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
-
-  const skillNames = useMemo(
-    () => new Map(skills.map((skill) => [skill.id, skill.name])),
-    [skills]
-  );
 
   const refreshSkills = useCallback(async () => {
     try {
@@ -157,22 +97,14 @@ export default function Page() {
     void refreshSkills().finally(() => setLoading(false));
   }, [refreshSkills]);
 
-  const allTags = useMemo(() => {
-    const tags = new Set<string>();
-    for (const skill of skills) {
-      for (const tag of skill.tags) {
-        tags.add(tag);
-      }
-    }
-    return [...tags].sort((a, b) => a.localeCompare(b, 'zh-CN'));
-  }, [skills]);
-
-  const filteredSkills = useMemo(() => applyFilters(skills, filters), [skills, filters]);
-
-  function handleAddToQueue(skillId: string, targets: TargetKey[]) {
-    setQueue((prev) => targets.reduce((acc, t) => addQueueTarget(acc, skillId, t), prev));
-    setNotice(null);
-  }
+  const localSkills = useMemo(
+    () => skills.filter((skill) => skill.source === 'local'),
+    [skills]
+  );
+  const githubSkills = useMemo(
+    () => skills.filter((skill) => skill.source === 'github'),
+    [skills]
+  );
 
   async function handleCheckUpdates() {
     setCheckingUpdates(true);
@@ -203,88 +135,19 @@ export default function Page() {
     }
   }
 
-  async function handleGeneratePlan() {
-    if (queue.length === 0 || planLoading) {
+  async function performUnpublish(password: string) {
+    if (!pendingUnpublish) {
       return;
     }
-    setPlanLoading(true);
-    setResults(null);
-    setNotice(null);
+    setActionBusy(true);
+    setActionError('');
     try {
-      const response = await publishPlan(
-        queue.map((entry) => ({ skill_id: entry.skillId, targets: entry.targets }))
-      );
-      setPlan(response.items);
-    } catch (err) {
+      await unpublishSkill(pendingUnpublish.skillId, pendingUnpublish.target, password);
       setNotice({
-        kind: 'err',
-        text: err instanceof Error ? err.message : '生成发布计划失败',
+        kind: 'ok',
+        text: `${pendingUnpublish.skillName} 已下架（${TARGET_LABEL[pendingUnpublish.target]}）`,
       });
-      setPlan(null);
-    } finally {
-      setPlanLoading(false);
-    }
-  }
-
-  function handleConfirmPublish() {
-    if (!plan || publishableCount(plan) === 0) {
-      return;
-    }
-    setActionError('');
-    setShowPublishConfirm(true);
-  }
-
-  async function performPublish(password: string) {
-    if (!plan) {
-      return;
-    }
-    setActionBusy(true);
-    setActionError('');
-    try {
-      const response = await publish(planToRequests(plan), password);
-      setResults(response.items);
-      setQueue([]);
-      setPlan([]);
-      setShowPublishConfirm(false);
-      const failed = response.items.filter((item) => item.status !== 'success');
-      setNotice(
-        failed.length === 0
-          ? { kind: 'ok', text: `发布完成：${response.items.length} 项全部成功` }
-          : { kind: 'err', text: `发布完成：${failed.length} 项失败，详见右栏结果` }
-      );
-      await refreshSkills();
-    } catch (err) {
-      setActionError(
-        err instanceof ApiClientError || err instanceof Error
-          ? err.message
-          : '发布失败'
-      );
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  async function performTargetOp(password: string) {
-    if (!pendingOp) {
-      return;
-    }
-    setActionBusy(true);
-    setActionError('');
-    try {
-      if (pendingOp.kind === 'rollback') {
-        await rollbackSkill(pendingOp.skillId, pendingOp.target, password);
-        setNotice({
-          kind: 'ok',
-          text: `${pendingOp.skillName} 已回滚（${TARGET_LABEL[pendingOp.target]}）`,
-        });
-      } else {
-        await unpublishSkill(pendingOp.skillId, pendingOp.target, password);
-        setNotice({
-          kind: 'ok',
-          text: `${pendingOp.skillName} 已下架（${TARGET_LABEL[pendingOp.target]}）`,
-        });
-      }
-      setPendingOp(null);
+      setPendingUnpublish(null);
       await refreshSkills();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '操作失败');
@@ -316,8 +179,8 @@ export default function Page() {
     setActionError('');
     try {
       await cloneGithubCache(pendingClone.skillId, password);
-      setPendingClone(null);
       setNotice({ kind: 'ok', text: `「${pendingClone.skillName}」缓存已就绪` });
+      setPendingClone(null);
       await refreshSkills();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Clone 失败');
@@ -334,10 +197,8 @@ export default function Page() {
     setActionError('');
     try {
       await deleteSkill(pendingDelete.skillId, password);
-      const { skillId, skillName } = pendingDelete;
       setPendingDelete(null);
-      setQueue((prev) => removeQueueItem(prev, skillId));
-      setNotice({ kind: 'ok', text: `已删除 GitHub Skill「${skillName}」` });
+      setNotice({ kind: 'ok', text: `已删除 GitHub Skill「${pendingDelete.skillName}」` });
       await refreshSkills();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '删除失败');
@@ -346,35 +207,29 @@ export default function Page() {
     }
   }
 
-  const publishableItems = plan?.filter(
-    (item) => item.action === 'add' || item.action === 'update'
-  );
-  const planAddCount = plan?.filter((item) => item.action === 'add').length ?? 0;
-  const planUpdateCount = plan?.filter((item) => item.action === 'update').length ?? 0;
-
   return (
     <main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
-      <header className="flex items-center justify-between gap-3">
-        <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={handleCheckUpdates}
-            disabled={checkingUpdates}
-            className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-          >
-            {checkingUpdates ? '检查中…' : '检查 GitHub 更新'}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setActionError('');
-              setShowRegister(true);
-            }}
-            className="rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
-          >
-            新增 GitHub Skill
-          </button>
+      <header className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1">
+        <div className="flex items-end gap-6">
+          <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
+          <nav className="flex gap-1" aria-label="视图切换">
+            <button
+              type="button"
+              data-active={view === 'manage'}
+              onClick={() => navigate({ view: 'manage' })}
+              className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800"
+            >
+              管理看板
+            </button>
+            <button
+              type="button"
+              data-active={view === 'board'}
+              onClick={() => navigate({ view: 'board' })}
+              className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800"
+            >
+              部署看板
+            </button>
+          </nav>
         </div>
       </header>
 
@@ -394,115 +249,132 @@ export default function Page() {
         </p>
       ) : null}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]">
-        {/* 左栏：可用 Skill 池 */}
-        <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-          <SkillFilters value={filters} allTags={allTags} onChange={setFilters} />
-          {loading ? (
-            <p className="p-6 text-center text-sm text-slate-400">加载中…</p>
-          ) : (
-            <SkillPool
-              skills={filteredSkills}
-              queue={queue}
-              onAddToQueue={handleAddToQueue}
-              onClone={(skillId) => {
-                setActionError('');
-                setPendingClone({
-                  skillId,
-                  skillName: skillNames.get(skillId) ?? skillId,
-                });
-              }}
-              onDelete={(skill) => {
-                setActionError('');
-                setPendingDelete({ skillId: skill.id, skillName: skill.name });
-              }}
-            />
-          )}
-        </section>
+      {/* 管理看板：来源子 segmented + 两个常驻挂载的来源工作区 */}
+      <div
+        className={
+          view === 'manage'
+            ? 'flex min-h-0 flex-1 flex-col gap-3'
+            : 'hidden'
+        }
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-0.5 rounded-md border border-slate-200 bg-slate-50 p-0.5">
+            <button
+              type="button"
+              data-active={sourceTab === 'local'}
+              onClick={() => navigate({ tab: 'local' })}
+              className={SEG_BUTTON}
+            >
+              自研 Skill
+              <span className="ml-1.5 rounded-full border border-slate-200 bg-slate-100 px-1.5 text-xs text-slate-500">
+                {localSkills.length}
+              </span>
+            </button>
+            <button
+              type="button"
+              data-active={sourceTab === 'github'}
+              onClick={() => navigate({ tab: 'github' })}
+              className={SEG_BUTTON}
+            >
+              GitHub Skill
+              <span className="ml-1.5 rounded-full border border-slate-200 bg-slate-100 px-1.5 text-xs text-slate-500">
+                {githubSkills.length}
+              </span>
+            </button>
+          </div>
+          <div className="flex items-center gap-2">
+            {sourceTab === 'local' ? (
+              <span className="text-xs italic text-slate-400">
+                自研 Skill 由源库目录自动同步，无需登记
+              </span>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  onClick={handleCheckUpdates}
+                  disabled={checkingUpdates}
+                  className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {checkingUpdates ? '检查中…' : '检查 GitHub 更新'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionError('');
+                    setShowRegister(true);
+                  }}
+                  className="rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+                >
+                  新增 GitHub Skill
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
-        {/* 右栏：已部署视图（主体）+ 发布队列（辅助） */}
-        <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-          <DeployedView
-            skills={skills}
-            onRollback={(skillId, target) => {
+        <div className={sourceTab === 'local' ? 'flex min-h-0 flex-1' : 'hidden'}>
+          <SourceWorkspace
+            source="local"
+            skills={localSkills}
+            loading={loading}
+            onRefresh={refreshSkills}
+            onNotify={setNotice}
+            onClone={(skillId, skillName) => {
               setActionError('');
-              setPendingOp({
-                kind: 'rollback',
-                skillId,
-                skillName: skillNames.get(skillId) ?? skillId,
-                target,
-              });
+              setPendingClone({ skillId, skillName });
             }}
-            onUnpublish={(skillId, target) => {
+            onDelete={(skill) => {
               setActionError('');
-              setPendingOp({
-                kind: 'unpublish',
-                skillId,
-                skillName: skillNames.get(skillId) ?? skillId,
-                target,
-              });
+              setPendingDelete({ skillId: skill.id, skillName: skill.name });
             }}
           />
-          <PublishQueue
-            queue={queue}
-            skillNames={skillNames}
-            plan={plan}
-            planLoading={planLoading}
-            publishing={actionBusy}
-            results={results}
-            onRemoveItem={(skillId) => setQueue((prev) => removeQueueItem(prev, skillId))}
-            onRemoveTarget={(skillId, target) =>
-              setQueue((prev) => removeQueueTarget(prev, skillId, target))
-            }
-            onClear={() => setQueue((prev) => clearQueue(prev))}
-            onGeneratePlan={() => void handleGeneratePlan()}
-            onConfirmPublish={handleConfirmPublish}
+        </div>
+        <div className={sourceTab === 'github' ? 'flex min-h-0 flex-1' : 'hidden'}>
+          <SourceWorkspace
+            source="github"
+            skills={githubSkills}
+            loading={loading}
+            onRefresh={refreshSkills}
+            onNotify={setNotice}
+            onClone={(skillId, skillName) => {
+              setActionError('');
+              setPendingClone({ skillId, skillName });
+            }}
+            onDelete={(skill) => {
+              setActionError('');
+              setPendingDelete({ skillId: skill.id, skillName: skill.name });
+            }}
           />
-        </section>
+        </div>
       </div>
 
-      {showPublishConfirm && publishableItems && publishableItems.length > 0 ? (
-        <ConfirmActionDialog
-          title="确认发布"
-          description={
-            <div className="space-y-1">
-              <p className="font-medium">
-                新增 {planAddCount} 项 · 更新 {planUpdateCount} 项
-              </p>
-              <ul className="list-disc space-y-0.5 pl-4">
-                {publishableItems.map((item) => (
-                  <li key={`${item.skill_id}-${item.target}`}>
-                    {skillNames.get(item.skill_id) ?? item.skill_id} →{' '}
-                    {TARGET_LABEL[item.target]}
-                    （{item.action === 'add' ? '新增' : '更新'}）
-                  </li>
-                ))}
-              </ul>
-            </div>
-          }
-          confirmLabel="执行发布"
-          busy={actionBusy}
-          error={actionError}
-          onConfirm={(password) => void performPublish(password)}
-          onCancel={() => setShowPublishConfirm(false)}
+      {/* 部署看板 */}
+      <div className={view === 'board' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
+        <DeployBoard
+          skills={skills}
+          agent={agent}
+          onAgentChange={(next) => navigate({ agent: next })}
+          onUnpublish={(skillId, skillName, target) => {
+            setActionError('');
+            setPendingUnpublish({ skillId, skillName, target });
+          }}
         />
-      ) : null}
+      </div>
 
-      {pendingOp ? (
+      {pendingUnpublish ? (
         <ConfirmActionDialog
-          title={pendingOp.kind === 'rollback' ? '确认回滚' : '确认下架'}
+          title="确认下架"
           description={
             <p>
-              {pendingOp.kind === 'rollback'
-                ? `将把「${pendingOp.skillName}」在 ${TARGET_LABEL[pendingOp.target]} 上回滚到上一次成功版本。`
-                : `将从 ${TARGET_LABEL[pendingOp.target]} 移除「${pendingOp.skillName}」的技能链接（不删除任何目录）。`}
+              将从 {TARGET_LABEL[pendingUnpublish.target]} 移除「
+              {pendingUnpublish.skillName}」的技能链接（不删除任何目录）。
             </p>
           }
-          confirmLabel={pendingOp.kind === 'rollback' ? '执行回滚' : '确认下架'}
+          confirmLabel="确认下架"
           busy={actionBusy}
           error={actionError}
-          onConfirm={(password) => void performTargetOp(password)}
-          onCancel={() => setPendingOp(null)}
+          onConfirm={(password) => void performUnpublish(password)}
+          onCancel={() => setPendingUnpublish(null)}
         />
       ) : null}
 
@@ -551,5 +423,14 @@ export default function Page() {
         />
       ) : null}
     </main>
+  );
+}
+
+/** useSearchParams 在静态渲染下要求 Suspense 边界（Next.js 15）。 */
+export default function Page() {
+  return (
+    <Suspense fallback={<main className="p-6 text-sm text-slate-400">加载中…</main>}>
+      <SkillManagerPage />
+    </Suspense>
   );
 }
