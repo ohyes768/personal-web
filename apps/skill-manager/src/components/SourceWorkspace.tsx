@@ -113,8 +113,11 @@ export default function SourceWorkspace({
 
   const filteredSkills = useMemo(() => applyFilters(skills, filters), [skills, filters]);
 
-  function handleAddToQueue(skillId: string, targets: TargetKey[]) {
-    setQueue((prev) => targets.reduce((acc, t) => addQueueTarget(acc, skillId, t), prev));
+  function handleToggleQueueTarget(skillId: string, target: TargetKey) {
+    const queued = queue.find((entry) => entry.skillId === skillId)?.targets.includes(target);
+    setQueue((prev) =>
+      queued ? removeQueueTarget(prev, skillId, target) : addQueueTarget(prev, skillId, target)
+    );
     onNotify(null);
   }
 
@@ -200,7 +203,7 @@ export default function SourceWorkspace({
           <SkillPool
             skills={filteredSkills}
             queue={queue}
-            onAddToQueue={handleAddToQueue}
+            onToggleQueueTarget={handleToggleQueueTarget}
             onClone={onClone}
             onDelete={onDelete}
             onUnpublish={onUnpublish}

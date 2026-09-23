@@ -1,6 +1,5 @@
 'use client';
 
-import { useState } from 'react';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { SkillCard, TargetDeployment } from '@/lib/types';
 
@@ -14,7 +13,7 @@ const TARGET_LABEL: Record<TargetKey, string> = {
 interface SkillPoolProps {
   skills: SkillCard[];
   queue: QueueEntry[];
-  onAddToQueue: (skillId: string, targets: TargetKey[]) => void;
+  onToggleQueueTarget: (skillId: string, target: TargetKey) => void;
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
@@ -48,37 +47,28 @@ function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
   );
 }
 
-/** 左栏单张 Skill 卡片：target 多选 chips + 加入队列；部署状态只读徽章。 */
+/** 左栏单张 Skill 卡片：target 点击即切换入队/出队；部署状态只读徽章。 */
 function SkillCardItem({
   skill,
   queuedTargets,
-  onAddToQueue,
+  onToggleQueueTarget,
   onClone,
   onDelete,
   onUnpublish,
 }: {
   skill: SkillCard;
   queuedTargets: TargetKey[];
-  onAddToQueue: SkillPoolProps['onAddToQueue'];
+  onToggleQueueTarget: SkillPoolProps['onToggleQueueTarget'];
   onClone: SkillPoolProps['onClone'];
   onDelete: SkillPoolProps['onDelete'];
   onUnpublish: SkillPoolProps['onUnpublish'];
 }) {
-  const [selectedTargets, setSelectedTargets] = useState<TargetKey[]>([]);
-  const [targetHint, setTargetHint] = useState(false);
   const cacheMissing = skill.cache_missing;
   const sourceMissing = skill.source_missing;
   const publishBlocked = cacheMissing || sourceMissing;
   const activeTargets = ALL_TARGETS.filter(
     (target) => skill.deployments[target]?.status === 'active'
   );
-
-  function toggleTarget(target: TargetKey) {
-    setTargetHint(false);
-    setSelectedTargets((prev) =>
-      prev.includes(target) ? prev.filter((t) => t !== target) : [...prev, target]
-    );
-  }
 
   return (
     <li className="flex flex-col rounded-lg border border-slate-200 bg-white p-3">
@@ -137,60 +127,35 @@ function SkillCardItem({
         ))}
       </div>
 
-      {/* 加入队列：target 多选 chips（贴卡片底部） */}
+      {/* 加入队列：target 点击即切换入队/出队（贴卡片底部） */}
       <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-2">
         {ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
-          const selected = selectedTargets.includes(target);
           return (
             <button
               key={target}
               type="button"
-              disabled={queued || publishBlocked}
-              onClick={() => toggleTarget(target)}
+              disabled={publishBlocked}
+              onClick={() => onToggleQueueTarget(skill.id, target)}
               className={`rounded px-2 py-0.5 text-xs ${
                 queued
                   ? 'bg-emerald-50 text-emerald-600'
-                  : selected
-                    ? 'bg-sky-600 text-white'
-                    : 'border border-slate-300 text-slate-600 hover:bg-slate-50'
+                  : 'border border-slate-300 text-slate-600 hover:bg-slate-50'
               } disabled:cursor-not-allowed disabled:opacity-50`}
               title={
-                queued
-                  ? '已在发布队列中'
-                  : sourceMissing
+                publishBlocked
+                  ? sourceMissing
                     ? '源库登记目录缺失，无法发布'
-                    : cacheMissing
-                      ? '请先 Clone 缓存'
-                      : undefined
+                    : '请先 Clone 缓存'
+                  : queued
+                    ? '点击移出发布队列'
+                    : `点击加入 ${TARGET_LABEL[target]} 发布队列`
               }
             >
-              {queued ? `${TARGET_LABEL[target]} 已在队列` : TARGET_LABEL[target]}
+              {queued ? `✓ ${TARGET_LABEL[target]}` : `+ ${TARGET_LABEL[target]}`}
             </button>
           );
         })}
-        <button
-          type="button"
-          disabled={publishBlocked}
-          onClick={() => {
-            if (selectedTargets.length === 0) {
-              setTargetHint(true);
-              return;
-            }
-            onAddToQueue(skill.id, selectedTargets);
-            setSelectedTargets([]);
-          }}
-          title={
-            sourceMissing
-              ? '源库登记目录缺失，无法发布'
-              : cacheMissing
-                ? '请先 Clone 缓存'
-                : undefined
-          }
-          className="ml-auto rounded bg-sky-600 px-2.5 py-1 text-xs text-white hover:bg-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          加入队列
-        </button>
         {activeTargets.length > 0 ? (
           <button
             type="button"
@@ -211,9 +176,6 @@ function SkillCardItem({
           </button>
         ) : null}
       </div>
-      {targetHint ? (
-        <p className="mt-1 text-xs text-rose-600">请先选择发布目标（OpenClaw / Hermes）</p>
-      ) : null}
       {cacheMissing ? (
         <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-100 pt-2">
           <span className="text-xs text-amber-700">
@@ -240,7 +202,7 @@ function SkillCardItem({
 export default function SkillPool({
   skills,
   queue,
-  onAddToQueue,
+  onToggleQueueTarget,
   onClone,
   onDelete,
   onUnpublish,
@@ -265,7 +227,7 @@ export default function SkillPool({
           key={skill.id}
           skill={skill}
           queuedTargets={queuedBySkill.get(skill.id) ?? []}
-          onAddToQueue={onAddToQueue}
+          onToggleQueueTarget={onToggleQueueTarget}
           onClone={onClone}
           onDelete={onDelete}
           onUnpublish={onUnpublish}
