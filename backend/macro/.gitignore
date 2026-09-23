@@ -27,3 +27,6 @@ logs/
 # 操作系统
 .DS_Store
 Thumbs.db
+
+# pytest basetemp(重定向到项目盘,避免 %TEMP% 上 os.replace 的 WinError 6)
+.pytest-tmp/

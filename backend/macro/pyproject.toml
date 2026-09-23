@@ -25,6 +25,7 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
+addopts = "--basetemp=.pytest-tmp"
 markers = [
     "unit: 单元测试（mock 外部依赖，速度快）",
     "integration: 集成测试",

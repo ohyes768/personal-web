@@ -157,6 +157,13 @@ export default function EconomicPage() {
               </a>
               <h1 className="text-4xl font-bold mt-4">宏观经济数据</h1>
             </div>
+            {/* 分析报告看板入口：Link href 是 app 内路径，basePath 自动补全 → /macro/reports */}
+            <Link
+              href="/reports"
+              className="text-sm px-3 py-1.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition-colors"
+            >
+              分析报告
+            </Link>
           </div>
         </header>
 

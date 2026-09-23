@@ -24,6 +24,7 @@ These guides help you **ask the right questions before coding**.
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |
 | [Cross-Layer Thinking Guide](./cross-layer-thinking-guide.md) | Think through data flow across layers | Features spanning multiple layers |
 | [Macro Signal Upload API](./macro-signal-upload.md) | agent 推送宏观信号 JSON 的接口契约（路径、token、白名单、payload、落盘） | 维护 macro-fin-skill 子 skill、对接 `/api/macro/signal/upload` |
+| [Macro Report Upload API](./macro-report-upload.md) | impact skill 推送 markdown 分析报告的契约（幂等键、snake_case 响应、失败隔离、前端 sanitize/safeHref） | 维护报告看板接口、改 impact skill 推送逻辑、改 /macro/reports 看板 |
 | [Macro Daily Snapshot API](./macro-daily-snapshot.md) | 信号首页 · 日频快照契约(15:00 规则、asof 回退、跨层 key 对齐、禁用 query_data_by_tab 的原因) | 改 3 维度指标清单、日频取数或前端 DAILY_GROUPS |
 | [PBC OMO 公告爬虫](./pbc-omo-crawler.md) | 央行公开市场操作公告爬虫的技术参考(栏目入口、URL 规律、HTML 结构、净投放本地计算、反爬、隐藏坑、schema 建议) | 启动净投放/利差定档任务前的预热阅读;与 `daily-liquidity-signal` 无关 |
 | [Fund Select Backend Contracts](../backend/fund-select/backend/contracts.md) | 债基筛选 API/DB/费率缓存契约、basePath 双前缀与代理 BOM 陷阱 | 维护 fund-select 后端或其前端代理 |

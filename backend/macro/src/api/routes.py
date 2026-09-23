@@ -65,6 +65,11 @@ from src.models import (
     MacroMonthsResponse,
     DailySnapshotResponse,
     AnalysisSnapshotResponse,
+    ReportDetailResponse,
+    ReportListResponse,
+    ReportUploadResponse,
+    ReportListData,
+    ReportUploadData,
 )
 from src.services.fred_service import get_fred_service
 from src.services.ecb_service import get_ecb_service
@@ -83,6 +88,7 @@ from src.services.update_registry import UPDATE_SPECS
 from src.services.index_service import get_index_service
 from src.services.exchange_rate_service import ExchangeRateService
 from src.services.macro_signal_service import get_macro_signal_service
+from src.services.report_board_service import get_report_board_service
 from src.services.daily_snapshot_service import get_daily_snapshot_service
 from src.services.analysis_snapshot_service import get_analysis_snapshot_service
 from src.utils.logger import setup_logger
@@ -2787,6 +2793,89 @@ async def upload_skill_json(
         "bytes": path.stat().st_size,
         "archived_month": archived_month,
     }
+
+
+# === 分析报告看板（agent 推送 + 查询）===
+
+class ReportUploadRequest(BaseModel):
+    """agent 推送分析报告的入参"""
+    title: str          # 约定开头为 YYYY-MM-DD(提取分析日期);≤200 字符
+    content: str        # markdown 正文,≤200_000 字符
+    source: str         # 来源 skill(白名单)
+    url: str = ""       # 原文链接(可选)
+
+
+def _verify_report_upload_token(token: str | None) -> None:
+    """constant-time 校验报告推送 token;未配置或错误 → 401。"""
+    expected = settings.macro_report_upload_token
+    if not expected:
+        raise HTTPException(status_code=401, detail="upload token 未配置（MACRO_REPORT_UPLOAD_TOKEN）")
+    if not token or not hmac.compare_digest(token, expected):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+
+@router.post("/reports/upload", response_model=ReportUploadResponse)
+def upload_report(
+    req: ReportUploadRequest,
+    x_upload_token: Optional[str] = Header(None, alias="X-Upload-Token"),
+):
+    """接收 impact skill 推送的 markdown 分析报告，落盘到 MACRO_REPORT_DATA_DIR。
+
+    鉴权：X-Upload-Token header（constant-time，未配置拒绝）。
+    幂等：同 (source, title) 重复推送不重复落盘，返回已有 id 与 duplicate=true。
+    对外路径：经 nginx 为 /api/macro/reports/upload。
+    """
+    _verify_report_upload_token(x_upload_token)
+    service = get_report_board_service()
+    try:
+        saved = service.save_report(req.title, req.content, req.source, req.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    logger.info(
+        f"agent 推送报告 source={req.source} report_id={saved.report_id} duplicate={saved.duplicate}"
+    )
+    return ReportUploadResponse(
+        success=True,
+        data=ReportUploadData(report_id=saved.report_id, duplicate=saved.duplicate),
+    )
+
+
+@router.get("/reports", response_model=ReportListResponse)
+def list_reports(
+    source: Optional[str] = Query(None, description="按来源筛选(白名单 skill 名)"),
+    limit: int = Query(100, ge=1, le=500, description="返回条数上限"),
+):
+    """分析报告列表（按分析日期倒序，再按推送时间倒序）。"""
+    try:
+        service = get_report_board_service()
+        metas = service.list_reports(source)
+        return ReportListResponse(
+            success=True,
+            data=ReportListData(reports=metas[:limit], total=len(metas)),
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"查询报告列表失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/reports/{report_id}", response_model=ReportDetailResponse)
+def get_report(report_id: str):
+    """单篇报告详情（含 markdown 正文）；未知 id → 404。"""
+    # report_id 拼入文件路径,非白名单字符直接 404(防路径穿越)
+    if not re.fullmatch(r"[0-9a-zA-Z-]+", report_id):
+        raise HTTPException(status_code=404, detail=f"报告不存在: {report_id}")
+    try:
+        detail = get_report_board_service().get_report(report_id)
+        if detail is None:
+            raise HTTPException(status_code=404, detail=f"报告不存在: {report_id}")
+        return ReportDetailResponse(success=True, data=detail)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"查询报告详情失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/fetch/dr007/history", response_model=UpdateResponse)

@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/macro-signal-upload.md", "reason": "现有 agent 推送接口契约（X-Upload-Token/白名单/原子写/响应 envelope），新 /api/reports/upload 必须对齐此模式"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 开发机 pytest 硬约束（basetemp 重定向等），backend/macro 新增测试必须遵守"}
+{"file": ".trellis/spec/guides/new-service-onboarding.md", "reason": "仅 Phase D 参考：nginx 前缀与 volume 约定（本任务零改动，仅确认 MACRO_REPORT_DATA_DIR 落点合规）"}

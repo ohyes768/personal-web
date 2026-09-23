@@ -539,3 +539,50 @@ class AnalysisSnapshotResponse(BaseModel):
     """GET /api/macro/analysis/snapshot 响应。"""
     success: bool = True
     data: AnalysisSnapshotData
+
+
+# === 分析报告看板数据模型 ===
+
+class ReportMeta(BaseModel):
+    """报告条目(列表用,不含正文)"""
+    report_id: str
+    title: str
+    source: str
+    url: str = ""
+    analyzed_at: str  # 'YYYY-MM-DD',分析日期
+    pushed_at: str    # ISO timestamp,推送时间
+
+
+class ReportDetail(ReportMeta):
+    """报告详情(含 markdown 正文)"""
+    content: str
+
+
+class ReportUploadData(BaseModel):
+    """POST /api/reports/upload 数据体"""
+    report_id: str
+    duplicate: bool = False
+
+
+class ReportUploadResponse(BaseModel):
+    """POST /api/reports/upload 响应"""
+    success: bool = True
+    data: ReportUploadData
+
+
+class ReportListData(BaseModel):
+    """GET /api/reports 数据体"""
+    reports: List[ReportMeta] = []
+    total: int = 0
+
+
+class ReportListResponse(BaseModel):
+    """GET /api/reports 响应"""
+    success: bool = True
+    data: ReportListData
+
+
+class ReportDetailResponse(BaseModel):
+    """GET /api/reports/{report_id} 响应"""
+    success: bool = True
+    data: ReportDetail

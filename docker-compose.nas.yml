@@ -233,6 +233,10 @@ services:
       - ALIYUN_API_APPCODE=${ALIYUN_API_APPCODE:-}
       - MACRO_SIGNAL_DATA_DIR=/app/data/macro-signals
       - MACRO_SIGNAL_UPLOAD_TOKEN=${MACRO_SIGNAL_UPLOAD_TOKEN:-}
+      # 报告看板: impact skill 推送 markdown 分析报告(POST /api/reports/upload, X-Upload-Token)
+      # 根 .env 需配 MACRO_REPORT_UPLOAD_TOKEN,skill 侧 finance-macro/.env 同步配置
+      - MACRO_REPORT_DATA_DIR=/app/data/reports
+      - MACRO_REPORT_UPLOAD_TOKEN=${MACRO_REPORT_UPLOAD_TOKEN:-}
     networks:
       - app-net
     healthcheck:

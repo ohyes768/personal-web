@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/macro-signal-upload.md", "reason": "一致性检查：新报告接口与现有推送接口的鉴权/白名单/原子写/envelope 是否同模式"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "检查 backend/macro 新测试是否符合 Windows pytest 硬约束"}

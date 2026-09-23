@@ -122,6 +122,14 @@ class Settings(BaseSettings):
     # 生产环境通过环境变量 MACRO_SIGNAL_UPLOAD_TOKEN 注入;未配置则写入接口拒绝(401)
     macro_signal_upload_token: str = ""
 
+    # 分析报告看板落盘目录(POST /api/reports/upload 写入、GET /api/reports* 读取)
+    # 默认本地开发相对路径,生产环境通过环境变量 MACRO_REPORT_DATA_DIR 覆盖
+    macro_report_data_dir: str = "./data/reports"
+
+    # agent 推送分析报告的鉴权 token(POST /api/reports/upload 的 X-Upload-Token,
+    # 与 MACRO_SIGNAL_UPLOAD_TOKEN 独立);未配置则写入接口拒绝(401)
+    macro_report_upload_token: str = ""
+
     class Config:
         env_file = ".env"
         case_sensitive = False
