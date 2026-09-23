@@ -18,13 +18,20 @@ interface SkillFiltersProps {
   value: FilterState;
   allTags: string[];
   onChange: (next: FilterState) => void;
+  /** 更新检查只对 GitHub 来源有意义（自研走 symlink，源目录改了自动生效）。 */
+  showUpdateFilter?: boolean;
 }
 
 const SELECT_CLASS =
   'rounded border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none';
 
 /** 左栏筛选器：名称、标签多选、部署状态、更新状态（来源由子 tab 承担）。 */
-export default function SkillFilters({ value, allTags, onChange }: SkillFiltersProps) {
+export default function SkillFilters({
+  value,
+  allTags,
+  onChange,
+  showUpdateFilter = false,
+}: SkillFiltersProps) {
   function toggleTag(tag: string) {
     const tags = value.tags.includes(tag)
       ? value.tags.filter((t) => t !== tag)
@@ -33,30 +40,30 @@ export default function SkillFilters({ value, allTags, onChange }: SkillFiltersP
   }
 
   return (
-    <div className="space-y-3 rounded-lg border border-slate-200 bg-white p-3">
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
       <input
         type="search"
         value={value.query}
         onChange={(event) => onChange({ ...value, query: event.target.value })}
         placeholder="按名称 / ID / 简介搜索"
-        className="w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+        className="min-w-40 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
       />
-      <div className="flex flex-wrap gap-2">
-        <select
-          value={value.deployment}
-          onChange={(event) =>
-            onChange({
-              ...value,
-              deployment: event.target.value as FilterState['deployment'],
-            })
-          }
-          className={SELECT_CLASS}
-          aria-label="部署状态筛选"
-        >
-          <option value="all">部署：全部</option>
-          <option value="published">已发布（任一目标）</option>
-          <option value="unpublished">未发布</option>
-        </select>
+      <select
+        value={value.deployment}
+        onChange={(event) =>
+          onChange({
+            ...value,
+            deployment: event.target.value as FilterState['deployment'],
+          })
+        }
+        className={SELECT_CLASS}
+        aria-label="部署状态筛选"
+      >
+        <option value="all">部署：全部</option>
+        <option value="published">已发布（任一目标）</option>
+        <option value="unpublished">未发布</option>
+      </select>
+      {showUpdateFilter ? (
         <select
           value={value.update}
           onChange={(event) =>
@@ -69,9 +76,9 @@ export default function SkillFilters({ value, allTags, onChange }: SkillFiltersP
           <option value="has_update">有待更新</option>
           <option value="no_update">无更新</option>
         </select>
-      </div>
+      ) : null}
       {allTags.length > 0 ? (
-        <div className="flex flex-wrap gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           {allTags.map((tag) => {
             const active = value.tags.includes(tag);
             return (

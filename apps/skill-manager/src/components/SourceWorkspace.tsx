@@ -196,7 +196,12 @@ export default function SourceWorkspace({
     >
       {/* 左：Skill 池 */}
       <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-        <SkillFilters value={filters} allTags={allTags} onChange={setFilters} />
+        <SkillFilters
+          value={filters}
+          allTags={allTags}
+          onChange={setFilters}
+          showUpdateFilter={source === 'github'}
+        />
         {loading ? (
           <p className="p-6 text-center text-sm text-slate-400">加载中…</p>
         ) : (
