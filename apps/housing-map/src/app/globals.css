@@ -38,6 +38,18 @@ body {
   padding: 0;
 }
 
+/* 返回首页链接 */
+.back-home {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.back-home:hover {
+  color: var(--text-primary);
+}
+
 /* 自定义滚动条 */
 ::-webkit-scrollbar {
   width: 6px;

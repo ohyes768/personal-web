@@ -2,6 +2,14 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "housing-map-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["exec", "next", "dev", "-p", "3007"],
+      "cwd": "apps/housing-map",
+      "port": 3007,
+      "url": "http://localhost:3007"
+    },
+    {
       "name": "skill-manager-web",
       "url": "http://localhost:3008",
       "port": 3008

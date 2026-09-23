@@ -940,6 +940,7 @@ function AppHeader({
       padding: '0 20px',
       gap: '24px',
     }}>
+      <a href="/" className="back-home">← 返回首页</a>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <div style={{
           width: '32px', height: '32px',
