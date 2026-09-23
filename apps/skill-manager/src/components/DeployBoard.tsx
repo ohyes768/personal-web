@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import type { TargetKey } from '@/lib/queue';
 import type { SkillCard } from '@/lib/types';
+import { UnlinkIcon } from '@/components/icons';
 
 const AGENTS: { key: TargetKey; label: string }[] = [
   { key: 'openclaw', label: 'OpenClaw' },
@@ -170,10 +171,12 @@ export default function DeployBoard({
               <div className="mt-auto flex justify-end border-t border-slate-100 pt-2">
                 <button
                   type="button"
+                  aria-label="下架"
+                  data-tip={`从 ${agent === 'openclaw' ? 'OpenClaw' : 'Hermes'} 下架`}
                   onClick={() => onUnpublish(skill.id, skill.name, agent)}
-                  className="rounded border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50"
+                  className="icon-btn tip-right icon-btn-danger rounded-md border border-rose-200"
                 >
-                  下架
+                  <UnlinkIcon />
                 </button>
               </div>
             </li>

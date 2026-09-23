@@ -1,7 +1,15 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { SkillCard, TargetDeployment } from '@/lib/types';
+import {
+  CrayfishIcon,
+  DownloadIcon,
+  HermesIcon,
+  TrashIcon,
+  UnlinkIcon,
+} from '@/components/icons';
 
 const ALL_TARGETS: TargetKey[] = ['openclaw', 'hermes'];
 
@@ -9,6 +17,17 @@ const TARGET_LABEL: Record<TargetKey, string> = {
   openclaw: 'OpenClaw',
   hermes: 'Hermes',
 };
+
+/** target 队列 chip 的品牌语义色：OpenClaw=螯红、Hermes=神使蓝。 */
+const TARGET_ICON: Record<TargetKey, { icon: ReactNode; hover: string }> = {
+  openclaw: { icon: <CrayfishIcon />, hover: 'hover:text-rose-600' },
+  hermes: { icon: <HermesIcon />, hover: 'hover:text-sky-600' },
+};
+
+/** 仓库 URL 缩短为 owner/repo；非 GitHub 地址原样返回。 */
+function shortRepo(repository: string): string {
+  return repository.replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '');
+}
 
 interface SkillPoolProps {
   skills: SkillCard[];
@@ -69,15 +88,24 @@ function SkillCardItem({
   const activeTargets = ALL_TARGETS.filter(
     (target) => skill.deployments[target]?.status === 'active'
   );
+  // 副标题只在有额外信息时出现：id 与 name 重复就不显示；GitHub 显示缩短仓库
+  const subtitle =
+    skill.source === 'github' && skill.repository
+      ? shortRepo(skill.repository)
+      : skill.id !== skill.name
+        ? skill.id
+        : '';
 
   return (
     <li className="flex flex-col rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
-          <p className="truncate text-xs text-slate-400">
-            {skill.id} · {skill.source === 'local' ? '自研' : skill.repository}
-          </p>
+          {subtitle ? (
+            <p className="truncate text-xs text-slate-400" title={subtitle}>
+              {subtitle}
+            </p>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1">
           <span
@@ -127,52 +155,67 @@ function SkillCardItem({
         ))}
       </div>
 
-      {/* 加入队列：target 点击即切换入队/出队（贴卡片底部） */}
+      {/* 加入队列：target 图标 chip，点击即切换入队/出队（贴卡片底部） */}
       <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-2">
         {ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
+          const { icon, hover } = TARGET_ICON[target];
           return (
             <button
               key={target}
               type="button"
-              disabled={publishBlocked}
-              onClick={() => onToggleQueueTarget(skill.id, target)}
-              className={`rounded px-2 py-0.5 text-xs ${
-                queued
-                  ? 'bg-emerald-50 text-emerald-600'
-                  : 'border border-slate-300 text-slate-600 hover:bg-slate-50'
-              } disabled:cursor-not-allowed disabled:opacity-50`}
+              aria-label={`${TARGET_LABEL[target]} ${queued ? '已在队列，点击移出' : '点击加入队列'}`}
+              data-tip={
+                publishBlocked
+                  ? sourceMissing
+                    ? '源缺失，无法发布'
+                    : '请先 Clone 缓存'
+                  : queued
+                    ? `移出 ${TARGET_LABEL[target]} 队列`
+                    : `加入 ${TARGET_LABEL[target]} 队列`
+              }
               title={
                 publishBlocked
                   ? sourceMissing
                     ? '源库登记目录缺失，无法发布'
                     : '请先 Clone 缓存'
                   : queued
-                    ? '点击移出发布队列'
+                    ? `点击移出 ${TARGET_LABEL[target]} 发布队列`
                     : `点击加入 ${TARGET_LABEL[target]} 发布队列`
               }
+              disabled={publishBlocked}
+              onClick={() => onToggleQueueTarget(skill.id, target)}
+              className={`icon-btn tip-left rounded-md border transition-colors ${
+                queued
+                  ? 'border-emerald-500 bg-emerald-500 text-white'
+                  : `border-slate-300 bg-white ${hover}`
+              }`}
             >
-              {queued ? `✓ ${TARGET_LABEL[target]}` : `+ ${TARGET_LABEL[target]}`}
+              {icon}
             </button>
           );
         })}
         {activeTargets.length > 0 ? (
           <button
             type="button"
-            onClick={() => onUnpublish(skill.id, skill.name, activeTargets)}
+            aria-label={`下架 ${TARGET_LABEL[activeTargets[0]]}${activeTargets.length > 1 ? ` 等 ${activeTargets.length} 个目标` : ''}`}
+            data-tip={`下架（${activeTargets.map((t) => TARGET_LABEL[t]).join('、')}）`}
             title="已发布目标需先下架，下架后才会出现删除按钮"
-            className="rounded border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50"
+            onClick={() => onUnpublish(skill.id, skill.name, activeTargets)}
+            className="icon-btn tip-right icon-btn-danger rounded-md border border-rose-200"
           >
-            下架{activeTargets.length > 1 ? `（${activeTargets.length} 个目标）` : ''}
+            <UnlinkIcon />
           </button>
         ) : (skill.source === 'github' || sourceMissing) ? (
           <button
             type="button"
-            onClick={() => onDelete(skill)}
+            aria-label="删除"
+            data-tip="删除登记与本机缓存"
             title="移除登记条目并删除本机缓存"
-            className="rounded border border-slate-300 px-2.5 py-1 text-xs text-slate-600 hover:bg-slate-50"
+            onClick={() => onDelete(skill)}
+            className="icon-btn tip-right icon-btn-danger rounded-md border border-slate-300"
           >
-            删除
+            <TrashIcon />
           </button>
         ) : null}
       </div>
@@ -183,10 +226,13 @@ function SkillCardItem({
           </span>
           <button
             type="button"
+            aria-label="Clone 缓存"
+            data-tip="Clone 缓存（发布前必做）"
+            title="从 GitHub 拉取仓库到本机缓存，发布前必做"
             onClick={() => onClone(skill.id, skill.name)}
-            className="shrink-0 rounded bg-amber-600 px-2.5 py-1 text-xs text-white hover:bg-amber-700"
+            className="icon-btn tip-right icon-btn-amber rounded-md bg-amber-600 text-white hover:text-white"
           >
-            Clone
+            <DownloadIcon />
           </button>
         </div>
       ) : null}
