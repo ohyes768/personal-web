@@ -29,6 +29,7 @@ interface SourceWorkspaceProps {
   onNotify: (notice: Notice | null) => void;
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
+  onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
 }
 
 function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
@@ -84,6 +85,7 @@ export default function SourceWorkspace({
   onNotify,
   onClone,
   onDelete,
+  onUnpublish,
 }: SourceWorkspaceProps) {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [queue, setQueue] = useState<QueueEntry[]>([]);
@@ -201,6 +203,7 @@ export default function SourceWorkspace({
             onAddToQueue={handleAddToQueue}
             onClone={onClone}
             onDelete={onDelete}
+            onUnpublish={onUnpublish}
           />
         )}
       </section>

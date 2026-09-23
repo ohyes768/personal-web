@@ -17,6 +17,7 @@ interface SkillPoolProps {
   onAddToQueue: (skillId: string, targets: TargetKey[]) => void;
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
+  onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
 }
 
 function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
@@ -54,18 +55,23 @@ function SkillCardItem({
   onAddToQueue,
   onClone,
   onDelete,
+  onUnpublish,
 }: {
   skill: SkillCard;
   queuedTargets: TargetKey[];
   onAddToQueue: SkillPoolProps['onAddToQueue'];
   onClone: SkillPoolProps['onClone'];
   onDelete: SkillPoolProps['onDelete'];
+  onUnpublish: SkillPoolProps['onUnpublish'];
 }) {
   const [selectedTargets, setSelectedTargets] = useState<TargetKey[]>([]);
   const [targetHint, setTargetHint] = useState(false);
   const cacheMissing = skill.cache_missing;
   const sourceMissing = skill.source_missing;
   const publishBlocked = cacheMissing || sourceMissing;
+  const activeTargets = ALL_TARGETS.filter(
+    (target) => skill.deployments[target]?.status === 'active'
+  );
 
   function toggleTarget(target: TargetKey) {
     setTargetHint(false);
@@ -121,7 +127,7 @@ function SkillCardItem({
         </div>
       ) : null}
 
-      {/* 部署状态（只读；下架入口在部署看板） */}
+      {/* 部署状态（只读徽章） */}
       <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
         {ALL_TARGETS.map((target) => (
           <div key={target} className="flex items-center gap-2 text-xs">
@@ -185,7 +191,16 @@ function SkillCardItem({
         >
           加入队列
         </button>
-        {(skill.source === 'github' || sourceMissing) ? (
+        {activeTargets.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => onUnpublish(skill.id, skill.name, activeTargets)}
+            title="已发布目标需先下架，下架后才会出现删除按钮"
+            className="rounded border border-rose-200 px-2.5 py-1 text-xs text-rose-600 hover:bg-rose-50"
+          >
+            下架{activeTargets.length > 1 ? `（${activeTargets.length} 个目标）` : ''}
+          </button>
+        ) : (skill.source === 'github' || sourceMissing) ? (
           <button
             type="button"
             onClick={() => onDelete(skill)}
@@ -228,6 +243,7 @@ export default function SkillPool({
   onAddToQueue,
   onClone,
   onDelete,
+  onUnpublish,
 }: SkillPoolProps) {
   const queuedBySkill = new Map<string, TargetKey[]>();
   for (const entry of queue) {
@@ -252,6 +268,7 @@ export default function SkillPool({
           onAddToQueue={onAddToQueue}
           onClone={onClone}
           onDelete={onDelete}
+          onUnpublish={onUnpublish}
         />
       ))}
     </ul>

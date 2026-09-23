@@ -41,7 +41,7 @@ function formatPublishedAt(value: string): string {
   return date.toLocaleString('zh-CN', { hour12: false });
 }
 
-/** 部署看板：agent 维度纯账本视图（下架唯一入口；回滚已移除，见任务 PRD R5）。 */
+/** 部署看板：agent 维度纯账本视图（回滚已移除，见任务 PRD R5）。 */
 export default function DeployBoard({
   skills,
   agent,

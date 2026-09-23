@@ -31,7 +31,8 @@ const SEG_BUTTON =
 interface PendingUnpublish {
   skillId: string;
   skillName: string;
-  target: TargetKey;
+  /** 待下架的 targets；每成功一个即移除，重试只针对剩余项 */
+  targets: TargetKey[];
 }
 
 /** 待 Clone 缓存的 GitHub Skill（缓存缺失，发布前必须先重建缓存）。 */
@@ -136,18 +137,24 @@ function SkillManagerPage() {
   }
 
   async function performUnpublish(password: string) {
-    if (!pendingUnpublish) {
+    if (!pendingUnpublish || pendingUnpublish.targets.length === 0) {
       return;
     }
     setActionBusy(true);
     setActionError('');
+    const { skillId, skillName, targets } = pendingUnpublish;
     try {
-      await unpublishSkill(pendingUnpublish.skillId, pendingUnpublish.target, password);
+      for (const target of targets) {
+        await unpublishSkill(skillId, target, password);
+        setPendingUnpublish((prev) =>
+          prev ? { ...prev, targets: prev.targets.filter((t) => t !== target) } : prev
+        );
+      }
+      setPendingUnpublish(null);
       setNotice({
         kind: 'ok',
-        text: `${pendingUnpublish.skillName} 已下架（${TARGET_LABEL[pendingUnpublish.target]}）`,
+        text: `${skillName} 已下架（${targets.map((t) => TARGET_LABEL[t]).join('、')}）`,
       });
-      setPendingUnpublish(null);
       await refreshSkills();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '操作失败');
@@ -327,6 +334,10 @@ function SkillManagerPage() {
               setActionError('');
               setPendingDelete({ skillId: skill.id, skillName: skill.name });
             }}
+            onUnpublish={(skillId, skillName, targets) => {
+              setActionError('');
+              setPendingUnpublish({ skillId, skillName, targets });
+            }}
           />
         </div>
         <div className={sourceTab === 'github' ? 'flex min-h-0 flex-1' : 'hidden'}>
@@ -344,6 +355,10 @@ function SkillManagerPage() {
               setActionError('');
               setPendingDelete({ skillId: skill.id, skillName: skill.name });
             }}
+            onUnpublish={(skillId, skillName, targets) => {
+              setActionError('');
+              setPendingUnpublish({ skillId, skillName, targets });
+            }}
           />
         </div>
       </div>
@@ -356,7 +371,7 @@ function SkillManagerPage() {
           onAgentChange={(next) => navigate({ agent: next })}
           onUnpublish={(skillId, skillName, target) => {
             setActionError('');
-            setPendingUnpublish({ skillId, skillName, target });
+            setPendingUnpublish({ skillId, skillName, targets: [target] });
           }}
         />
       </div>
@@ -366,7 +381,7 @@ function SkillManagerPage() {
           title="确认下架"
           description={
             <p>
-              将从 {TARGET_LABEL[pendingUnpublish.target]} 移除「
+              将从 {pendingUnpublish.targets.map((t) => TARGET_LABEL[t]).join('、')} 移除「
               {pendingUnpublish.skillName}」的技能链接（不删除任何目录）。
             </p>
           }
