@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "共享指南索引，无 skill-manager 专属 spec，实现前过一遍通用约定"}
+{"file": ".trellis/tasks/09-24-skill-tag-management/prd.md", "reason": "需求与实现契约（端点/service/组件要点都在 prd.md 设计要点节）"}

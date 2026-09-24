@@ -748,3 +748,60 @@ def test_delete_github_skill_requires_password(client, roots):
 
     assert response.status_code == 401
     assert response.json()["code"] == "invalid_password"
+
+
+# ---------- 单卡标签编辑 ----------
+
+
+def test_update_skill_tags_requires_password(client):
+    response = client.patch(
+        "/api/skills/alpha/tags", json={"password": "wrong", "tags": ["x"]}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["code"] == "invalid_password"
+
+
+def test_update_skill_tags_replaces_and_persists(client):
+    ok = client.patch(
+        "/api/skills/alpha/tags",
+        json={"password": PASSWORD, "tags": ["投资", "a", "投资"]},
+    )
+
+    assert ok.status_code == 200
+    # 排序去重后的全量替换结果
+    assert ok.json() == {"skill_id": "alpha", "tags": ["a", "投资"]}
+
+    cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
+    assert cards["alpha"]["tags"] == ["a", "投资"]
+
+
+def test_update_skill_tags_clears_and_restores(client):
+    client.patch(
+        "/api/skills/alpha/tags", json={"password": PASSWORD, "tags": ["old"]}
+    )
+    cleared = client.patch(
+        "/api/skills/alpha/tags", json={"password": PASSWORD, "tags": []}
+    )
+
+    assert cleared.status_code == 200
+    assert cleared.json()["tags"] == []
+
+
+def test_update_skill_tags_unknown_skill_returns_404(client):
+    response = client.patch(
+        "/api/skills/ghost/tags", json={"password": PASSWORD, "tags": []}
+    )
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "unknown_skill"
+
+
+def test_update_skill_tags_rejects_invalid_tag_length(client):
+    response = client.patch(
+        "/api/skills/alpha/tags", json={"password": PASSWORD, "tags": ["x" * 41]}
+    )
+
+    # main.py 把请求校验失败统一为 400 invalid_request
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_request"

@@ -16,6 +16,7 @@ import type {
   TargetKey,
   UnpublishResponse,
   UpdateCheckResponse,
+  UpdateSkillTagsResponse,
 } from './types';
 
 const BASE = '/api/skills';
@@ -161,4 +162,18 @@ export function deleteSkill(
     method: 'DELETE',
     body: jsonBody({ password }),
   });
+}
+
+export function updateSkillTags(
+  skillId: string,
+  tags: string[],
+  password: string
+): Promise<UpdateSkillTagsResponse> {
+  return request<UpdateSkillTagsResponse>(
+    `/${encodeURIComponent(skillId)}/tags`,
+    {
+      method: 'PATCH',
+      body: jsonBody({ tags, password }),
+    }
+  );
 }

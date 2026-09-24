@@ -239,6 +239,22 @@ class UnpublishResponse(BaseModel):
     status: Literal["removed"] = "removed"
 
 
+class UpdateSkillTagsRequest(BaseModel):
+    """`PATCH /api/skills/{skill_id}/tags`：单卡标签全量替换（密码保护）。
+
+    标签维护不依赖源目录存在（源缺失条目同样可编辑），路径校验在
+    RegistryService.update_skill_tags 中刻意绕过（见其 docstring）。
+    """
+
+    password: str
+    tags: list[Tag] = []
+
+
+class UpdateSkillTagsResponse(BaseModel):
+    skill_id: SkillId
+    tags: list[str] = []
+
+
 class DeleteSkillResponse(BaseModel):
     """`DELETE /api/skills/{skill_id}`：删除已登记 GitHub Skill。"""
 

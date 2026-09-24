@@ -2,10 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
+import EditSkillTagsDialog from '@/components/EditSkillTagsDialog';
 import PublishQueue from '@/components/PublishQueue';
 import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/SkillFilters';
 import SkillPool from '@/components/SkillPool';
-import { ApiClientError, publish, publishPlan } from '@/lib/api';
+import { ApiClientError, publish, publishPlan, updateSkillTags } from '@/lib/api';
 import {
   addQueueTarget,
   clearQueue,
@@ -93,6 +94,7 @@ export default function SourceWorkspace({
   const [planLoading, setPlanLoading] = useState(false);
   const [results, setResults] = useState<PublishResultItem[] | null>(null);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
+  const [editingTagsSkill, setEditingTagsSkill] = useState<SkillCard | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -183,6 +185,30 @@ export default function SourceWorkspace({
     }
   }
 
+  async function performSaveTags(tags: string[], password: string) {
+    if (!editingTagsSkill) {
+      return;
+    }
+    const skill = editingTagsSkill;
+    setActionBusy(true);
+    setActionError('');
+    try {
+      await updateSkillTags(skill.id, tags, password);
+      setEditingTagsSkill(null);
+      onNotify({
+        kind: 'ok',
+        text: `已保存「${skill.name}」的标签（${tags.length} 个）`,
+      });
+      await onRefresh();
+    } catch (err) {
+      setActionError(
+        err instanceof ApiClientError || err instanceof Error ? err.message : '保存失败'
+      );
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   const publishableItems = plan?.filter(
     (item) => item.action === 'add' || item.action === 'update'
   );
@@ -212,6 +238,10 @@ export default function SourceWorkspace({
             onClone={onClone}
             onDelete={onDelete}
             onUnpublish={onUnpublish}
+            onEditTags={(skill) => {
+              setActionError('');
+              setEditingTagsSkill(skill);
+            }}
           />
         )}
       </section>
@@ -234,6 +264,17 @@ export default function SourceWorkspace({
           onConfirmPublish={handleConfirmPublish}
         />
       </section>
+
+      {editingTagsSkill ? (
+        <EditSkillTagsDialog
+          skill={editingTagsSkill}
+          allTags={allTags}
+          busy={actionBusy}
+          error={actionError}
+          onSave={(tags, password) => void performSaveTags(tags, password)}
+          onClose={() => setEditingTagsSkill(null)}
+        />
+      ) : null}
 
       {showPublishConfirm && publishableItems && publishableItems.length > 0 ? (
         <ConfirmActionDialog

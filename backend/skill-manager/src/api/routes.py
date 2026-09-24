@@ -53,6 +53,8 @@ from src.models import (
     UpdateCheckItem,
     UpdateCheckResponse,
     UpdateInfo,
+    UpdateSkillTagsRequest,
+    UpdateSkillTagsResponse,
 )
 from src.services.git_cache import GitCacheError, GitCacheService
 from src.services.publisher import (
@@ -627,6 +629,37 @@ def delete_skill(
     except OSError as exc:
         logger.warning("delete cache failed: skill=%s error=%s", skill_id, exc)
     return DeleteSkillResponse(skill_id=skill_id)
+
+
+# ---------- 密码：编辑标签 ----------
+
+
+@router.patch("/skills/{skill_id}/tags", response_model=UpdateSkillTagsResponse)
+def update_skill_tags(
+    skill_id: str,
+    req: UpdateSkillTagsRequest,
+    settings: Settings = Depends(get_settings),
+    registry: RegistryService = Depends(get_registry),
+) -> UpdateSkillTagsResponse:
+    """单卡标签全量替换：排序去重后落库，返回替换结果。
+
+    源目录缺失的 local 条目同样可编辑（标签维护不依赖源存在），
+    故走 `update_skill_tags` 而非完整 `upsert()` 校验。
+    """
+    ensure_admin_password(settings, req.password)
+    _require_skill_id(skill_id)
+    try:
+        updated = registry.update_skill_tags(skill_id, req.tags)
+    except RegistryValidationError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "unknown_skill",
+                "message": f"未知 skill：{skill_id}",
+                "item_id": skill_id,
+            },
+        ) from exc
+    return UpdateSkillTagsResponse(skill_id=updated.id, tags=updated.tags)
 
 
 # ---------- 参数校验 helper ----------
