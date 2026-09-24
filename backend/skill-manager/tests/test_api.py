@@ -9,6 +9,7 @@ fixture 环境：tmp_path 构造全部受控根目录 + 源库 local skill 目�
 
 from __future__ import annotations
 
+import logging
 import os
 import subprocess
 from pathlib import Path
@@ -189,6 +190,29 @@ def test_scan_is_public_and_rejects_invalid_urls(client):
         assert bad.json()["code"] == "invalid_repository"
 
 
+def test_scan_logs_clone_failure_without_exposing_credentials(client, caplog, monkeypatch):
+    import src.services.git_cache as git_cache_module
+
+    def fail_with_secret(*args, **kwargs):
+        raise subprocess.CalledProcessError(
+            128, "git", stderr="fatal: https://user:secret-token@github.com/example/broken"
+        )
+
+    monkeypatch.setattr(git_cache_module.subprocess, "run", fail_with_secret)
+    bad_url = "https://github.com/example/broken"
+
+    with caplog.at_level(logging.INFO, logger="src.api.routes"):
+        response = client.post(
+            "/api/skills/github/scan", json={"repository": bad_url}
+        )
+
+    assert response.status_code == 400
+    assert "scan github start: repository=" + bad_url in caplog.text
+    assert "scan github failed: repository=" + bad_url in caplog.text
+    assert "error_type=GitOperationError" in caplog.text
+    assert "secret-token" not in caplog.text
+
+
 def test_wrong_password_leaves_filesystem_unchanged(client, publish_request, roots):
     before = sorted(str(p) for p in roots.openclaw.iterdir())
 
@@ -320,6 +344,16 @@ def test_register_github_skill_requires_password_and_persists(client, roots):
     card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
     assert card["id"] in card_ids
     assert (roots.github_cache / card["id"] / "skills" / "alpha" / "SKILL.md").is_file()
+
+
+def test_register_logs_stages_without_password(client, caplog):
+    with caplog.at_level(logging.INFO, logger="src.api.routes"):
+        response = client.post("/api/skills/github", json=_register_payload())
+
+    assert response.status_code == 200
+    for stage in ("start", "remote checked", "cache ready", "done"):
+        assert "register github " + stage + ": skill=" in caplog.text
+    assert PASSWORD not in caplog.text
 
 
 def test_register_github_skill_rejects_invalid_repository(client, roots):
@@ -549,6 +583,36 @@ def test_clone_returns_400_when_remote_unreachable(client, roots, upstream_repo)
     assert response.status_code == 400
     assert response.json()["code"] == "cache_failed"
     assert not any(roots.github_cache.iterdir())
+
+
+def test_clone_logs_failed_stage(client, roots, upstream_repo, caplog):
+    from src.main import app
+
+    _upsert_registry_entry(
+        roots, _missing_cache_skill("https://github.com/example/missing")
+    )
+    git_cache = app.dependency_overrides[get_git_cache]()
+    app.dependency_overrides[get_git_cache] = lambda: GitCacheService(
+        git_cache.settings,
+        git_cache.store,
+        remotes={
+            "https://github.com/example/missing": str(
+                upstream_repo.bare.parent / "missing.git"
+            )
+        },
+    )
+
+    with caplog.at_level(logging.INFO, logger="src.api.routes"):
+        response = client.post(
+            "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
+        )
+
+    assert response.status_code == 400
+    assert "clone cache start: skill=two-skills" in caplog.text
+    assert "clone cache failed: skill=two-skills stage=remote_check" in caplog.text
+    assert "error_type=GitOperationError" in caplog.text
+    assert str(upstream_repo.bare.parent / "missing.git") not in caplog.text
+    assert PASSWORD not in caplog.text
 
 
 def test_clone_returns_400_when_git_binary_missing(client, roots, monkeypatch):

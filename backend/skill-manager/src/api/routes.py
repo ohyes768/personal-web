@@ -171,14 +171,22 @@ def scan_github_repository(
     git_cache: GitCacheService = Depends(get_git_cache),
 ) -> ScanResponse:
     """临时 clone 扫描候选 `SKILL.md` 目录；失败以 400 表达非法仓库。"""
+    canonical = ""
     try:
         canonical = git_cache.normalize_repository(req.repository)
-        candidates = git_cache.scan(req.repository)
+        logger.info("scan github start: repository=%s", canonical)
+        candidates = git_cache.scan(canonical)
     except GitCacheError as exc:
+        logger.warning(
+            "scan github failed: repository=%s error_type=%s",
+            canonical or "<invalid>",
+            type(exc).__name__,
+        )
         raise HTTPException(
             status_code=400,
             detail={"code": "invalid_repository", "message": f"仓库地址无效或不可访问：{exc}"},
         ) from exc
+    logger.info("scan github done: repository=%s candidates=%d", canonical, len(candidates))
     return ScanResponse(repository=canonical, candidates=candidates)
 
 
@@ -201,6 +209,9 @@ def register_github_skill(
     try:
         canonical = git_cache.normalize_repository(req.repository)
     except GitCacheError as exc:
+        logger.warning(
+            "register github invalid repository: error=%s", type(exc).__name__
+        )
         raise HTTPException(
             status_code=400,
             detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
@@ -215,10 +226,28 @@ def register_github_skill(
         tags=req.tags,
         summary=req.summary,
     )
+    logger.info(
+        "register github start: skill=%s repository=%s path=%r",
+        skill_id, canonical, req.path,
+    )
+    stage = "remote_check"
     try:
         info = git_cache.check_update(skill)
+        logger.info(
+            "register github remote checked: skill=%s revision=%s",
+            skill_id, info.remote_revision,
+        )
+        stage = "cache_checkout"
         git_cache.ensure_cached(skill, info.remote_revision)
+        logger.info(
+            "register github cache ready: skill=%s revision=%s",
+            skill_id, info.remote_revision,
+        )
     except GitCacheError as exc:
+        logger.warning(
+            "register github failed: skill=%s stage=%s error_type=%s",
+            skill_id, stage, type(exc).__name__,
+        )
         raise HTTPException(
             status_code=400,
             detail={"code": "cache_failed", "message": f"GitHub 仓库缓存失败：{exc}"},
@@ -226,10 +255,15 @@ def register_github_skill(
     try:
         registry.upsert(skill)
     except RegistryValidationError as exc:
+        logger.warning(
+            "register github failed: skill=%s stage=registry error_type=%s",
+            skill_id, type(exc).__name__,
+        )
         raise HTTPException(
             status_code=409,
             detail={"code": "registry_conflict", "message": f"注册表写入被拒绝：{exc}"},
         ) from exc
+    logger.info("register github done: skill=%s", skill_id)
     return _build_card(settings, skill, {}, store.get_github_check(skill.id))
 
 
@@ -286,11 +320,19 @@ def clone_github_cache(
         )
     # clone 大仓库可能持续数分钟，主动打日志避免"请求期间无任何输出"
     logger.info("clone cache start: skill=%s repository=%s", skill.id, skill.repository)
+    stage = "remote_check"
     try:
         info = git_cache.check_update(skill)
+        logger.info(
+            "clone cache remote checked: skill=%s revision=%s", skill.id, info.remote_revision
+        )
+        stage = "cache_checkout"
         git_cache.ensure_cached(skill, info.remote_revision)
     except GitCacheError as exc:
-        logger.warning("clone cache failed: skill=%s error=%s", skill.id, exc)
+        logger.warning(
+            "clone cache failed: skill=%s stage=%s error_type=%s",
+            skill.id, stage, type(exc).__name__,
+        )
         raise HTTPException(
             status_code=400,
             detail={"code": "cache_failed", "message": f"GitHub 缓存更新失败：{exc}"},
