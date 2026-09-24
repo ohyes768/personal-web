@@ -35,6 +35,12 @@ export function ReportBoard() {
     setSelectedId(null);
   }, []);
 
+  /** 删除成功：清选中 + 刷新列表（被删项已不存在） */
+  const handleDeleted = useCallback(() => {
+    setSelectedId(null);
+    reload();
+  }, [reload]);
+
   return (
     <div className="lg:flex lg:gap-6 lg:items-start">
       {/* 列表栏：移动端未选中时显示；lg 常驻固定宽 */}
@@ -63,6 +69,7 @@ export function ReportBoard() {
           isLoading={detailLoading}
           error={detailError}
           onBack={handleBack}
+          onDeleted={handleDeleted}
         />
       </div>
     </div>

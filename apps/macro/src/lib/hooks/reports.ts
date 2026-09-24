@@ -113,3 +113,12 @@ export function useReportDetail(reportId: string | null): UseReportDetailResult 
 
   return { detail, isLoading, error };
 }
+
+/** 删除接口的管理 token 存 sessionStorage（仅当前标签页，不落代码/不进 bundle） */
+export const DELETE_TOKEN_STORAGE_KEY = 'macro-report-upload-token';
+
+export async function deleteReport(reportId: string, token: string): Promise<void> {
+  await apiClient.delete(`/api/macro/reports/${encodeURIComponent(reportId)}`, undefined, {
+    'X-Upload-Token': token,
+  });
+}

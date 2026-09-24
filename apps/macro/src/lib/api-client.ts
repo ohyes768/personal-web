@@ -109,7 +109,11 @@ class ApiClient {
     });
   }
 
-  async delete<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
+  async delete<T>(
+    endpoint: string,
+    params?: Record<string, any>,
+    headers?: Record<string, string>
+  ): Promise<T> {
     let url = `${this.baseUrl}${endpoint}`;
     if (params) {
       const searchParams = new URLSearchParams(params);
@@ -117,6 +121,7 @@ class ApiClient {
     }
     return this.request<T>(url, {
       method: 'DELETE',
+      headers,
     });
   }
 }

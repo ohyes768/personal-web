@@ -5,11 +5,13 @@
  */
 'use client';
 
+import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { ReportDetail } from '@/lib/types/reports';
 import { REPORT_SOURCE_LABELS } from '@/lib/types/reports';
+import { deleteReport, DELETE_TOKEN_STORAGE_KEY } from '@/lib/hooks/reports';
 
 /** 默认白名单基础上放行 a 链接的 target / rel（外链新窗口打开） */
 const sanitizeSchema = {
@@ -25,6 +27,8 @@ interface ReportViewerProps {
   isLoading: boolean;
   error: string | null;
   onBack: () => void;
+  /** 删除成功后回调（父层清选中 + 刷新列表） */
+  onDeleted: () => void;
 }
 
 /** url 只放行 http(s)（与 rehype-sanitize 协议白名单一致），杜绝 javascript: 等伪协议注入 */
@@ -32,8 +36,38 @@ function safeHref(url: string): string | null {
   return /^https?:\/\//i.test(url) ? url : null;
 }
 
-export function ReportViewer({ detail, isLoading, error, onBack }: ReportViewerProps) {
+export function ReportViewer({ detail, isLoading, error, onBack, onDeleted }: ReportViewerProps) {
   const reportHref = detail ? safeHref(detail.url) : null;
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  const handleDelete = async () => {
+    if (!detail) return;
+    if (!window.confirm(`确定删除该报告？\n${detail.title}`)) return;
+
+    let token = sessionStorage.getItem(DELETE_TOKEN_STORAGE_KEY) ?? '';
+    if (!token) {
+      const input = window.prompt('输入管理 token（MACRO_SIGNAL_UPLOAD_TOKEN）:');
+      if (input === null) return;
+      token = input.trim();
+      if (!token) return;
+    }
+
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteReport(detail.report_id, token);
+      sessionStorage.setItem(DELETE_TOKEN_STORAGE_KEY, token);
+      onDeleted();
+    } catch (err) {
+      sessionStorage.removeItem(DELETE_TOKEN_STORAGE_KEY);
+      const message = err instanceof Error ? err.message : '删除失败';
+      setDeleteError(message.includes('401') ? 'token 错误，请重试' : message);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <div className="h-full flex flex-col">
       {/* 移动端返回列表（lg 以上隐藏，两栏常驻无需返回） */}
@@ -59,7 +93,19 @@ export function ReportViewer({ detail, isLoading, error, onBack }: ReportViewerP
         <article className="min-w-0">
           {/* 报告元信息头 */}
           <header className="mb-6 pb-4 border-b border-gray-800">
-            <h2 className="text-2xl font-bold text-white mb-2">{detail.title}</h2>
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="text-2xl font-bold text-white mb-2">{detail.title}</h2>
+              {/* 删除：管理操作，token 走 sessionStorage，看板对访客保持只读 */}
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                className="shrink-0 text-xs text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? '删除中...' : '删除'}
+              </button>
+            </div>
+            {deleteError && <p className="text-red-400 text-xs mb-2">{deleteError}</p>}
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-400">
               <span className="px-2 py-0.5 rounded bg-gray-800 text-gray-300">
                 {REPORT_SOURCE_LABELS[detail.source] ?? detail.source}
