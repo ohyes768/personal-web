@@ -943,6 +943,8 @@ function AppHeader({
       padding: '0 20px',
       gap: '24px',
     }}>
+      {/* 站点首页在 basePath 之外，Next Link 会将 / 拼成 /map。 */}
+      {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
       <a href="/" className="back-home">← 返回首页</a>
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
         <div style={{
