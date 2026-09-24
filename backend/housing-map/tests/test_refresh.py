@@ -26,19 +26,15 @@ def _snapshot(community_id: str, price: int) -> PriceSnapshot:
     )
 
 
-def test_select_refresh_targets_keeps_only_verified_residential_communities():
+def test_select_refresh_targets_keeps_all_real_communities_and_drops_road_entries():
+    """采集目标按"是真实小区"准入：商办类要抓（展示靠前端类型筛选），仅排除道路等垃圾条目。"""
     communities = [
         {"community_id": "home", "community_name": "春江花园"},
         {"community_id": "office", "community_name": "通策广场"},
         {"community_id": "road", "community_name": "江南大道"},
     ]
-    property_types = {
-        "home": {"property_type": "住宅"},
-        "office": {"property_type": "写字楼"},
-        "road": {"property_type": "住宅"},
-    }
 
-    assert refresh.select_refresh_targets(communities, property_types) == ["home"]
+    assert refresh.select_refresh_targets(communities) == ["home", "office"]
 
 
 def test_in_process_refresh_merges_fresh_rows_without_starting_a_script(tmp_path):

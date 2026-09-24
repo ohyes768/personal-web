@@ -12,7 +12,7 @@ from fastapi.responses import JSONResponse
 from src.api.models import MOCK_COMMUNITIES, RefreshLimit, ScoreWeights
 from src.services import boundary_refresh
 from src.services import refresh as refresh_service
-from src.services.community_filters import is_residential_community
+from src.services.community_filters import is_real_community
 from src.services.market_reference import load_market_reference
 from src.services.data_loader import (
     get_data_paths,
@@ -174,7 +174,7 @@ async def get_communities():
     property_types = load_property_types()
     communities_list = [
         c for c in load_communities()
-        if is_residential_community(c, property_types)
+        if is_real_community(c)
         and c.get("community_id") not in MERGE_DROP_IDS
     ]
     coordinates = load_coordinates()
