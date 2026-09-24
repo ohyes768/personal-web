@@ -36,6 +36,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.registry = RegistryService(store, settings.skills_source_root)
     app.state.publisher = Publisher(settings, store)
     app.state.git_cache = GitCacheService(settings, store)
+    business_logger = logging.getLogger("src")
+    business_logger.setLevel(logging.INFO)
+    if not business_logger.handlers and not logging.getLogger().handlers:
+        handler = logging.StreamHandler()
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+        )
+        business_logger.addHandler(handler)
     yield
 
 
