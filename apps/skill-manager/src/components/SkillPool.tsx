@@ -7,6 +7,7 @@ import {
   CrayfishIcon,
   DownloadIcon,
   HermesIcon,
+  PencilIcon,
   TrashIcon,
   UnlinkIcon,
 } from '@/components/icons';
@@ -36,6 +37,7 @@ interface SkillPoolProps {
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
+  onEditTags: (skill: SkillCard) => void;
 }
 
 function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
@@ -74,6 +76,7 @@ function SkillCardItem({
   onClone,
   onDelete,
   onUnpublish,
+  onEditTags,
 }: {
   skill: SkillCard;
   queuedTargets: TargetKey[];
@@ -81,6 +84,7 @@ function SkillCardItem({
   onClone: SkillPoolProps['onClone'];
   onDelete: SkillPoolProps['onDelete'];
   onUnpublish: SkillPoolProps['onUnpublish'];
+  onEditTags: SkillPoolProps['onEditTags'];
 }) {
   const cacheMissing = skill.cache_missing;
   const sourceMissing = skill.source_missing;
@@ -136,14 +140,32 @@ function SkillCardItem({
         <p className="mt-1.5 line-clamp-2 text-sm text-slate-600">{skill.summary}</p>
       ) : null}
       {skill.tags.length > 0 ? (
-        <div className="mt-1.5 flex flex-wrap gap-1">
+        <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {skill.tags.map((tag) => (
             <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
               {tag}
             </span>
           ))}
+          <button
+            type="button"
+            aria-label="编辑标签"
+            data-tip="编辑标签"
+            title="编辑该 Skill 的标签"
+            onClick={() => onEditTags(skill)}
+            className="icon-btn tip-right rounded-md border border-slate-300"
+          >
+            <PencilIcon />
+          </button>
         </div>
-      ) : null}
+      ) : (
+        <button
+          type="button"
+          onClick={() => onEditTags(skill)}
+          className="mt-1.5 w-fit rounded-full bg-slate-50 px-2 py-0.5 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+        >
+          + 添加标签
+        </button>
+      )}
 
       {/* 部署状态（只读徽章） */}
       <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
@@ -252,6 +274,7 @@ export default function SkillPool({
   onClone,
   onDelete,
   onUnpublish,
+  onEditTags,
 }: SkillPoolProps) {
   const queuedBySkill = new Map<string, TargetKey[]>();
   for (const entry of queue) {
@@ -277,6 +300,7 @@ export default function SkillPool({
           onClone={onClone}
           onDelete={onDelete}
           onUnpublish={onUnpublish}
+          onEditTags={onEditTags}
         />
       ))}
     </ul>

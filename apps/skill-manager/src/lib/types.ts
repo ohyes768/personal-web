@@ -107,6 +107,12 @@ export interface UnpublishResponse {
   status: 'removed';
 }
 
+/** models.UpdateSkillTagsResponse：单卡标签全量替换结果 */
+export interface UpdateSkillTagsResponse {
+  skill_id: string;
+  tags: string[];
+}
+
 /** 请求体 */
 export interface QueueItemRequest {
   skill_id: string;

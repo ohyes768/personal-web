@@ -91,6 +91,19 @@ class RegistryService:
         if not self.store.delete_registry_skill(skill_id):
             raise RegistryValidationError(f"unknown skill id: {skill_id}")
 
+    def update_skill_tags(self, skill_id: str, tags: list[str]) -> RegistrySkill:
+        """全量替换单个条目的 tags（排序去重后落库）；未知 id 报错。
+
+        刻意绕过 `upsert()` 的 `_check_path`：标签维护不依赖源目录存在
+        （源缺失的 local 条目同样可编辑），且路径未变无需重校验。
+        """
+        skill = self.get(skill_id)
+        if skill is None:
+            raise RegistryValidationError(f"unknown skill id: {skill_id}")
+        updated = skill.model_copy(update={"tags": sorted(set(tags))})
+        self.store.upsert_registry_skill(updated)
+        return updated
+
     # ---------- 本地发现与对账 ----------
 
     def discover_local(self) -> list[RegistrySkill]:

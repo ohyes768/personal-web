@@ -55,6 +55,15 @@ export function PlusIcon() {
   );
 }
 
+export function PencilIcon() {
+  return (
+    <svg {...STROKE_PROPS}>
+      <path d="m14.5 5.5 4 4L8 20l-4.6.6L4 16z" />
+      <path d="m12.5 7.5 4 4" />
+    </svg>
+  );
+}
+
 export function DownloadIcon() {
   return (
     <svg {...STROKE_PROPS}>

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import shutil
 import sqlite3
 from contextlib import closing
 from pathlib import Path
@@ -210,6 +211,62 @@ def test_remove_unknown_id_raises(registry_service, source_root):
         registry_service.remove("ghost")
     # 报错时登记真源不变
     assert [s.id for s in registry_service.list_skills()] == ["alpha"]
+
+
+# ---------- update_skill_tags ----------
+
+
+def test_update_skill_tags_replaces_and_normalizes(registry_service, source_root):
+    make_local_skill_dir(source_root, "tagged")
+    registry_service.upsert(
+        RegistrySkill(id="tagged", name="t", source="local", path="tagged", tags=["b"])
+    )
+
+    updated = registry_service.update_skill_tags("tagged", ["新标签", "b", "新标签"])
+
+    # 排序去重，与 upsert 同口径
+    assert updated.tags == ["b", "新标签"]
+    assert registry_service.get("tagged").tags == ["b", "新标签"]
+
+
+def test_update_skill_tags_allows_missing_source_dir(registry_service, source_root):
+    """标签维护不依赖源目录存在：源缺失的 local 条目仍可编辑。"""
+    make_local_skill_dir(source_root, "vanish")
+    registry_service.upsert(
+        RegistrySkill(id="vanish", name="v", source="local", path="vanish")
+    )
+    shutil.rmtree(source_root / "vanish")
+
+    updated = registry_service.update_skill_tags("vanish", ["orphan"])
+
+    assert updated.tags == ["orphan"]
+    assert registry_service.get("vanish").tags == ["orphan"]
+
+
+def test_update_skill_tags_unknown_id_raises_and_keeps_state(
+    registry_service, source_root
+):
+    make_local_skill_dir(source_root, "alpha")
+    registry_service.upsert(
+        RegistrySkill(id="alpha", name="a", source="local", path="alpha", tags=["keep"])
+    )
+
+    with pytest.raises(RegistryValidationError, match="unknown skill id"):
+        registry_service.update_skill_tags("ghost", ["x"])
+    assert registry_service.get("alpha").tags == ["keep"]
+
+
+def test_update_skill_tags_empty_list_clears_tags(registry_service, source_root):
+    make_local_skill_dir(source_root, "clearable")
+    registry_service.upsert(
+        RegistrySkill(
+            id="clearable", name="c", source="local", path="clearable", tags=["old"]
+        )
+    )
+
+    updated = registry_service.update_skill_tags("clearable", [])
+
+    assert updated.tags == []
 
 
 # ---------- 登记真源持久化 ----------
