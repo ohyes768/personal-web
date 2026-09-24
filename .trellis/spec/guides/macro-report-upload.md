@@ -15,9 +15,10 @@
 ## 1. 接口（nginx 前缀后对外路径）
 
 ```
-POST /api/macro/reports/upload        # skill 推送
-GET  /api/macro/reports?source=&limit= # 列表（倒序）
-GET  /api/macro/reports/{report_id}    # 详情（含 content）
+POST   /api/macro/reports/upload        # skill 推送
+GET    /api/macro/reports?source=&limit= # 列表（倒序）
+GET    /api/macro/reports/{report_id}    # 详情（含 content）
+DELETE /api/macro/reports/{report_id}    # 删除（管理操作，X-Upload-Token 鉴权；看板前端只读，删除经 API 手工执行）
 ```
 
 nginx `/api/macro/` → 剥前缀 → 后端 `/api/reports*`。dev 模式由 apps/macro 的 Next rewrite 代理到 `MACRO_API_ORIGIN`（默认 localhost:8094）。
@@ -68,6 +69,7 @@ Header `X-Upload-Token`：constant-time 比对 `MACRO_SIGNAL_UPLOAD_TOKEN`（**�
 - 列表：`data: {reports: ReportMeta[], total}`，`analyzed_at` 倒序、再 `pushed_at` 倒序；`?source=` 筛选、`?limit=` 默认 100。
 - ReportMeta（**snake_case，前端类型必须对齐**）：`report_id / title / source / url / analyzed_at(YYYY-MM-DD) / pushed_at(ISO)`。
 - 详情 = ReportMeta + `content`；未知 id → 404。
+- 删除：成功 `{success, data: {deleted_id}}`；401 无/错 token；404 未知 id 或路径穿越形态 id。删除后文件移除并清索引缓存。
 
 ## 4. 存储（文件系统，无数据库）
 

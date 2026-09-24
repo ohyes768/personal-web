@@ -153,6 +153,19 @@ class ReportBoardService:
         fields, content = parsed
         return ReportDetail(report_id=report_id, **fields, content=content)
 
+    def delete_report(self, report_id: str) -> bool:
+        """删除单篇报告文件;id 非法或文件不存在返回 False(路由层转 404)"""
+        if not isinstance(report_id, str) or not report_id or SAFE_ID_PATTERN.search(report_id):
+            return False
+        path = self._data_dir / f"{report_id}.md"
+        try:
+            path.unlink()
+        except OSError:
+            return False
+        self.clear_cache()
+        logger.info(f"报告已删除: {path}")
+        return True
+
     def _get_index(self) -> List[ReportMeta]:
         """索引缓存:目录 mtime 变化才重扫"""
         try:

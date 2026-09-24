@@ -2878,6 +2878,31 @@ def get_report(report_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/reports/{report_id}")
+def delete_report(
+    report_id: str,
+    x_upload_token: Optional[str] = Header(None, alias="X-Upload-Token"),
+):
+    """删除单篇分析报告（管理操作，X-Upload-Token 鉴权）。
+
+    对外路径：经 nginx 为 DELETE /api/macro/reports/{report_id}。
+    看板前端保持只读，删除经 API 手工执行（如误推/测试数据清理）。
+    """
+    _verify_report_upload_token(x_upload_token)
+    # report_id 拼入文件路径,非白名单字符直接 404(与 GET 详情同款防护)
+    if not re.fullmatch(r"[0-9a-zA-Z-]+", report_id):
+        raise HTTPException(status_code=404, detail=f"报告不存在: {report_id}")
+    try:
+        if not get_report_board_service().delete_report(report_id):
+            raise HTTPException(status_code=404, detail=f"报告不存在: {report_id}")
+        return {"success": True, "data": {"deleted_id": report_id}}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"删除报告失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/fetch/dr007/history", response_model=UpdateResponse)
 async def fetch_dr007_history():
     """获取 DR007（中国货币网7天质押式回购加权利率）历史数据接口

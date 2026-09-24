@@ -158,3 +158,41 @@ def test_get_report_404_unknown(tmp_path, monkeypatch):
     client = make_client(tmp_path, monkeypatch)
     assert client.get("/api/reports/no-such-id-0000").status_code == 404
     assert client.get("/api/reports/..%2F..%2Fsecret").status_code == 404
+
+
+def test_delete_report_requires_token(tmp_path, monkeypatch):
+    """删除是管理操作:无 token/错 token → 401"""
+    client = make_client(tmp_path, monkeypatch)
+    client.post("/api/reports/upload", json=UPLOAD_BODY, headers=auth_header())
+    assert client.delete("/api/reports/2026-09-23-x").status_code == 401
+    assert (
+        client.delete("/api/reports/2026-09-23-x", headers=auth_header("wrong")).status_code
+        == 401
+    )
+
+
+def test_delete_report_lifecycle(tmp_path, monkeypatch):
+    """上传→删除→200 deleted_id,列表清空、详情 404;再删同 id → 404"""
+    client = make_client(tmp_path, monkeypatch)
+    report_id = client.post(
+        "/api/reports/upload", json=UPLOAD_BODY, headers=auth_header()
+    ).json()["data"]["report_id"]
+
+    resp = client.delete(f"/api/reports/{report_id}", headers=auth_header())
+    assert resp.status_code == 200
+    assert resp.json()["data"]["deleted_id"] == report_id
+
+    assert client.get("/api/reports").json()["data"]["total"] == 0
+    assert client.get(f"/api/reports/{report_id}").status_code == 404
+    assert (
+        client.delete(f"/api/reports/{report_id}", headers=auth_header()).status_code == 404
+    )
+
+
+def test_delete_report_404_unknown_or_unsafe_id(tmp_path, monkeypatch):
+    """未知 id 与路径穿越形态 id → 404"""
+    client = make_client(tmp_path, monkeypatch)
+    assert (
+        client.delete("/api/reports/no-such-id-0000", headers=auth_header()).status_code == 404
+    )
+    assert client.delete("/api/reports/..%2F..%2Fsecret", headers=auth_header()).status_code == 404
