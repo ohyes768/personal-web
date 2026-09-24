@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { SkillCard, TargetDeployment } from '@/lib/types';
+import { shortRepo } from '@/lib/format';
 import {
   CrayfishIcon,
   DownloadIcon,
@@ -23,11 +24,6 @@ const TARGET_ICON: Record<TargetKey, { icon: ReactNode; hover: string }> = {
   openclaw: { icon: <CrayfishIcon />, hover: 'hover:text-rose-600' },
   hermes: { icon: <HermesIcon />, hover: 'hover:text-sky-600' },
 };
-
-/** 仓库 URL 缩短为 owner/repo；非 GitHub 地址原样返回。 */
-function shortRepo(repository: string): string {
-  return repository.replace(/^https?:\/\/github\.com\//i, '').replace(/\/+$/, '');
-}
 
 interface SkillPoolProps {
   skills: SkillCard[];

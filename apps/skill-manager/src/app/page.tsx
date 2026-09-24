@@ -54,7 +54,7 @@ function SkillManagerPage() {
   // 两级导航：URL 是唯一真源，非法值在派生时逐级回退
   const view: ViewKey = searchParams.get('view') === 'board' ? 'board' : 'manage';
   const sourceTab: SourceTab = searchParams.get('tab') === 'github' ? 'github' : 'local';
-  const agent: TargetKey = searchParams.get('agent') === 'hermes' ? 'hermes' : 'openclaw';
+  const agent: TargetKey = searchParams.get('agent') === 'openclaw' ? 'openclaw' : 'hermes';
 
   function navigate(next: { view?: ViewKey; tab?: SourceTab; agent?: TargetKey }) {
     const p = new URLSearchParams(searchParams.toString());
@@ -64,7 +64,7 @@ function SkillManagerPage() {
       p.set('tab', next.tab ?? (v === view ? sourceTab : 'local'));
       p.delete('agent');
     } else {
-      p.set('agent', next.agent ?? (v === view ? agent : 'openclaw'));
+      p.set('agent', next.agent ?? (v === view ? agent : 'hermes'));
       p.delete('tab');
     }
     // router.push/replace 的路径不含 basePath（Next 自动前置 /skills）

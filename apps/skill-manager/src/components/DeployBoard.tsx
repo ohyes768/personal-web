@@ -3,11 +3,12 @@
 import { useMemo, useState } from 'react';
 import type { TargetKey } from '@/lib/queue';
 import type { SkillCard } from '@/lib/types';
+import { formatPublishedAt, shortRepo } from '@/lib/format';
 import { UnlinkIcon } from '@/components/icons';
 
 const AGENTS: { key: TargetKey; label: string }[] = [
-  { key: 'openclaw', label: 'OpenClaw' },
   { key: 'hermes', label: 'Hermes' },
+  { key: 'openclaw', label: 'OpenClaw' },
 ];
 
 const SOURCE_LABEL: Record<SkillCard['source'], string> = {
@@ -31,17 +32,6 @@ interface DeployBoardProps {
   onUnpublish: (skillId: string, skillName: string, target: TargetKey) => void;
 }
 
-function formatPublishedAt(value: string): string {
-  if (!value) {
-    return '';
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleString('zh-CN', { hour12: false });
-}
-
 /** 部署看板：agent 维度纯账本视图（回滚已移除，见任务 PRD R5）。 */
 export default function DeployBoard({
   skills,
@@ -52,6 +42,7 @@ export default function DeployBoard({
   const [query, setQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | SkillCard['source']>('all');
   const [sort, setSort] = useState<'time' | 'name'>('time');
+  const agentLabel = agent === 'openclaw' ? 'OpenClaw' : 'Hermes';
 
   const items = useMemo(() => {
     const deployed = skills
@@ -124,63 +115,103 @@ export default function DeployBoard({
           <option value="name">排序：名称</option>
         </select>
         <span className="text-xs font-semibold tracking-wide text-slate-400">
-          {agent === 'openclaw' ? 'OpenClaw' : 'Hermes'} · {items.length} 个已部署
+          {agentLabel} · {items.length} 个已部署
         </span>
       </div>
 
       {items.length === 0 ? (
         <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
           {totalCount === 0
-            ? `${agent === 'openclaw' ? 'OpenClaw' : 'Hermes'} 上暂无已部署的 Skill`
+            ? `${agentLabel} 上暂无已部署的 Skill`
             : '没有符合筛选条件的部署记录'}
         </p>
       ) : (
         <ul className="grid min-h-0 flex-1 grid-cols-1 content-start items-stretch gap-2.5 overflow-y-auto pr-1 md:grid-cols-2 lg:grid-cols-3">
-          {items.map(({ skill, deployment }) => (
-            <li
-              key={skill.id}
-              className="flex flex-col rounded-lg border border-slate-200 bg-white p-3"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
-                  <p className="truncate text-xs text-slate-400">{skill.id}</p>
-                </div>
-                <span
-                  className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${SOURCE_BADGE[skill.source]}`}
-                >
-                  {SOURCE_LABEL[skill.source]}
-                </span>
-              </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-slate-400">
-                {deployment.revision ? (
-                  <span className="font-mono">{deployment.revision.slice(0, 7)}</span>
-                ) : null}
-                {deployment.published_at ? (
-                  <span>· {formatPublishedAt(deployment.published_at)}</span>
-                ) : null}
-                {deployment.link_missing ? (
+          {items.map(({ skill, deployment }) => {
+            // 副标题逻辑与管理看板一致：GitHub 显示 owner/repo，id 与 name 重复则不显示
+            const subtitle =
+              skill.source === 'github' && skill.repository
+                ? shortRepo(skill.repository)
+                : skill.id !== skill.name
+                  ? skill.id
+                  : '';
+            return (
+              <li
+                key={skill.id}
+                className="flex flex-col rounded-lg border border-slate-200 bg-white p-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
+                    {subtitle ? (
+                      <p className="truncate text-xs text-slate-400" title={subtitle}>
+                        {subtitle}
+                      </p>
+                    ) : null}
+                  </div>
                   <span
-                    className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700"
-                    title="账本记录已发布，但目标目录的链接已不存在（可能被手动删除）"
+                    className={`shrink-0 rounded px-1.5 py-0.5 text-xs ${SOURCE_BADGE[skill.source]}`}
                   >
-                    链接缺失
+                    {SOURCE_LABEL[skill.source]}
                   </span>
+                </div>
+                {skill.summary ? (
+                  <p className="mt-1.5 line-clamp-2 text-sm text-slate-600">{skill.summary}</p>
                 ) : null}
-              </div>
-              <div className="mt-auto flex justify-end border-t border-slate-100 pt-2">
-                <button
-                  type="button"
-                  aria-label="下架"
-                  data-tip={`从 ${agent === 'openclaw' ? 'OpenClaw' : 'Hermes'} 下架`}
-                  onClick={() => onUnpublish(skill.id, skill.name, agent)}
-                  className="icon-btn tip-right icon-btn-danger rounded-md border border-rose-200"
-                >
-                  <UnlinkIcon />
-                </button>
-              </div>
-            </li>
-          ))}
+                {skill.tags.length > 0 ? (
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {skill.tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                {/* 本 agent 的安装信息 */}
+                <div className="mt-2 space-y-1 border-t border-slate-100 pt-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="w-16 shrink-0 text-slate-500">{agentLabel}</span>
+                    <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-emerald-700">
+                      已发布
+                      {deployment.revision ? ` · ${deployment.revision.slice(0, 7)}` : ''}
+                    </span>
+                    {deployment.link_missing ? (
+                      <span
+                        className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700"
+                        title="账本记录已发布，但目标目录的链接已不存在（可能被手动删除）"
+                      >
+                        链接缺失
+                      </span>
+                    ) : null}
+                  </div>
+                  {deployment.published_at ? (
+                    <div className="flex items-center gap-2">
+                      <span className="w-16 shrink-0 text-slate-500">安装时间</span>
+                      <span className="text-slate-400">
+                        {formatPublishedAt(deployment.published_at)}
+                      </span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="mt-auto flex justify-end border-t border-slate-100 pt-2">
+                  <button
+                    type="button"
+                    aria-label="下架"
+                    data-tip={`从 ${agentLabel} 下架`}
+                    onClick={() => onUnpublish(skill.id, skill.name, agent)}
+                    className="icon-btn tip-right icon-btn-danger rounded-md border border-rose-200"
+                  >
+                    <UnlinkIcon />
+                  </button>
+                </div>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

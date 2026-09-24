@@ -4,9 +4,9 @@
 
 ## 两级导航（2026-09-23 重构）
 
-- 一级按职责：`管理看板`（默认）/ `部署看板`；二级管理切来源（自研/GitHub）、看板切 agent（OpenClaw/Hermes）
-- URL 是唯一真源：`?view=manage&tab=local|github` / `?view=board&agent=openclaw|hermes`；
-  `useSearchParams` 派生 + `router.replace` 写；非法值逐级回退；需 `<Suspense>` 包裹（Next 15 静态渲染要求）
+- 一级按职责：`管理看板`（默认）/ `部署看板`；二级管理切来源（自研/GitHub）、看板切 agent（Hermes 在前且为默认，OpenClaw 在后）
+- URL 是唯一真源：`?view=manage&tab=local|github` / `?view=board&agent=hermes|openclaw`；
+  `useSearchParams` 派生 + `router.replace` 写；非法值逐级回退（view→manage，tab→local，agent→hermes）；需 `<Suspense>` 包裹（Next 15 静态渲染要求）
 - 视图常驻挂载（Tailwind `hidden` 切换显隐），队列/筛选状态跨切换保留
 - 下架唯一入口在部署看板；回滚已全面移除（后端 rollback 对核心场景无效，修复见独立任务）
 
