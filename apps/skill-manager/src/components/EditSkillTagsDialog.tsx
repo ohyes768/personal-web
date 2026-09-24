@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
-import ConfirmActionDialog from '@/components/ConfirmActionDialog';
+import { getTagCandidates } from '@/lib/tagCandidates';
 import type { SkillCard } from '@/lib/types';
 
 const MAX_TAG_LENGTH = 40;
@@ -11,15 +11,11 @@ interface EditSkillTagsDialogProps {
   allTags: string[];
   busy?: boolean;
   error?: string;
-  /** 保存 = 该 skill 标签的全量替换；密码只随本次请求传输 */
-  onSave: (tags: string[], password: string) => void;
+  onSave: (tags: string[]) => void;
   onClose: () => void;
 }
 
-/**
- * 单卡标签编辑弹窗：勾选已有标签 + 输入新标签，保存时经
- * ConfirmActionDialog 输入管理密码（密码不落盘，R5）。
- */
+/** 单卡标签编辑弹窗：勾选已有标签 + 输入新标签，直接保存。 */
 export default function EditSkillTagsDialog({
   skill,
   allTags,
@@ -31,10 +27,8 @@ export default function EditSkillTagsDialog({
   const [selected, setSelected] = useState<string[]>(skill.tags);
   const [draft, setDraft] = useState('');
   const [draftError, setDraftError] = useState('');
-  const [confirming, setConfirming] = useState(false);
 
-  // 候选全集 = 全局已有标签 ∪ 该 skill 现有标签，排序去重
-  const candidates = Array.from(new Set([...allTags, ...skill.tags])).sort();
+  const candidates = getTagCandidates(allTags, skill.tags, selected);
 
   function toggle(tag: string) {
     setSelected((prev) =>
@@ -72,30 +66,7 @@ export default function EditSkillTagsDialog({
     if (busy) {
       return;
     }
-    setConfirming(true);
-  }
-
-  if (confirming) {
-    return (
-      <ConfirmActionDialog
-        title="保存标签"
-        description={
-          <p>
-            将把「{skill.name}」的标签保存为：
-            {selected.length > 0 ? (
-              <span className="font-medium">{[...selected].sort().join('、')}</span>
-            ) : (
-              <span className="font-medium">（清空全部标签）</span>
-            )}
-          </p>
-        }
-        confirmLabel="保存"
-        busy={busy}
-        error={error}
-        onConfirm={(password) => onSave([...selected].sort(), password)}
-        onCancel={() => setConfirming(false)}
-      />
-    );
+    onSave([...selected].sort());
   }
 
   return (
@@ -165,11 +136,18 @@ export default function EditSkillTagsDialog({
           </p>
         ) : null}
 
+        {error ? (
+          <p className="mt-3 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+            {error}
+          </p>
+        ) : null}
+
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+            disabled={busy}
+            className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
           >
             取消
           </button>

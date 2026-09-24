@@ -166,14 +166,13 @@ export function deleteSkill(
 
 export function updateSkillTags(
   skillId: string,
-  tags: string[],
-  password: string
+  tags: string[]
 ): Promise<UpdateSkillTagsResponse> {
   return request<UpdateSkillTagsResponse>(
     `/${encodeURIComponent(skillId)}/tags`,
     {
       method: 'PATCH',
-      body: jsonBody({ tags, password }),
+      body: jsonBody({ tags }),
     }
   );
 }

@@ -631,14 +631,13 @@ def delete_skill(
     return DeleteSkillResponse(skill_id=skill_id)
 
 
-# ---------- 密码：编辑标签 ----------
+# ---------- 编辑标签 ----------
 
 
 @router.patch("/skills/{skill_id}/tags", response_model=UpdateSkillTagsResponse)
 def update_skill_tags(
     skill_id: str,
     req: UpdateSkillTagsRequest,
-    settings: Settings = Depends(get_settings),
     registry: RegistryService = Depends(get_registry),
 ) -> UpdateSkillTagsResponse:
     """单卡标签全量替换：排序去重后落库，返回替换结果。
@@ -646,7 +645,6 @@ def update_skill_tags(
     源目录缺失的 local 条目同样可编辑（标签维护不依赖源存在），
     故走 `update_skill_tags` 而非完整 `upsert()` 校验。
     """
-    ensure_admin_password(settings, req.password)
     _require_skill_id(skill_id)
     try:
         updated = registry.update_skill_tags(skill_id, req.tags)

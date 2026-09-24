@@ -185,7 +185,7 @@ export default function SourceWorkspace({
     }
   }
 
-  async function performSaveTags(tags: string[], password: string) {
+  async function performSaveTags(tags: string[]) {
     if (!editingTagsSkill) {
       return;
     }
@@ -193,7 +193,7 @@ export default function SourceWorkspace({
     setActionBusy(true);
     setActionError('');
     try {
-      await updateSkillTags(skill.id, tags, password);
+      await updateSkillTags(skill.id, tags);
       setEditingTagsSkill(null);
       onNotify({
         kind: 'ok',
@@ -271,7 +271,7 @@ export default function SourceWorkspace({
           allTags={allTags}
           busy={actionBusy}
           error={actionError}
-          onSave={(tags, password) => void performSaveTags(tags, password)}
+          onSave={(tags) => void performSaveTags(tags)}
           onClose={() => setEditingTagsSkill(null)}
         />
       ) : null}
