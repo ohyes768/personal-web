@@ -153,3 +153,4 @@ docker compose down
 - 不要在代码中硬编码端口号，使用环境变量
 - 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交
+- 同一个 app 同时只允许运行一个 dev server 实例（`next dev` 独占 `.next` 目录，多实例会互相清缓存）。第二个会话需要验证时，直接复用已有端口的 server，不要另起实例或改端口
