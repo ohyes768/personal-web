@@ -217,7 +217,10 @@ export default function BinjiangMapPage() {
     new Set(['primary', 'middle'] as SchoolLevel[])   // 默认只开小学+中学(学区房主场景)
   );
   const [searchQuery, setSearchQuery] = useState('');
-  const [propertyTypes, setPropertyTypes] = useState<Set<string>>(new Set(['全部']));
+  // 默认仅住宅类（与旧后端白名单口径一致，默认视野不变）；商办类需手动勾选类型或"全部"
+  const [propertyTypes, setPropertyTypes] = useState<Set<string>>(
+    new Set(['住宅', '别墅', '排屋'])
+  );
   const [priceMode, setPriceMode] = useState<'all' | 'deal' | 'listing'>('all');
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [communities, setCommunities] = useState<Community[]>([]);
@@ -599,7 +602,7 @@ export default function BinjiangMapPage() {
               <div className="panel-section">
                 <div className="panel-title">物业类型</div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '8px' }}>
-                  {['全部', '住宅', '写字楼', '公寓', '商贸', '其他'].map(type => (
+                  {['全部', '住宅', '别墅', '排屋', '写字楼', '公寓', '商贸', '其他'].map(type => (
                     <button
                       key={type}
                       className={`poi-toggle ${propertyTypes.has(type) ? 'active' : ''}`}

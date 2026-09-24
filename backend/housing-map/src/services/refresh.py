@@ -18,8 +18,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
-from src.services.community_filters import is_residential_community
-from src.services.data_loader import DATA_DIR, load_communities, load_property_types
+from src.services.community_filters import is_real_community
+from src.services.data_loader import DATA_DIR, load_communities
 from src.services.tmsf_fetcher import CommunityFetchResult, fetch_community_snapshots
 
 DEFAULT_FETCH_TIMEOUT = 20
@@ -114,11 +114,11 @@ def rewrite_csv(data_path: Path, rows: list[dict]) -> None:
     )
 
 
-def select_refresh_targets(communities: list[dict], property_types: dict[str, dict]) -> list[str]:
+def select_refresh_targets(communities: list[dict]) -> list[str]:
     return [
         str(community["community_id"])
         for community in communities
-        if community.get("community_id") and is_residential_community(community, property_types)
+        if community.get("community_id") and is_real_community(community)
     ]
 
 
@@ -186,7 +186,7 @@ async def start_refresh(limit: int) -> tuple[bool, int, dict]:
 
     limit = min(max(limit, 0), 500)
 
-    ids = select_refresh_targets(load_communities(), load_property_types())
+    ids = select_refresh_targets(load_communities())
     if len(ids) == 0:
         return False, 500, {"success": False, "error": "小区清单为空, 无法刷新"}
     targets = ids[:limit] if limit > 0 else ids

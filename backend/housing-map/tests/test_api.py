@@ -73,11 +73,12 @@ def test_communities_excludes_dirty_data():
     resp = client.get("/api/communities")
     data = resp.json()["data"]
     names = {c["community_name"] for c in data}
-    # 路名伪小区、个案脏数据与非住宅项目不返回
+    # 路名伪小区与个案脏数据不返回；商办类小区放行（展示差异交给前端类型筛选）
     assert "江南大道" not in names
     assert "新街镇北塘河" not in names
-    assert "通策广场" not in names
-    assert all(c.get("property_type") in {"住宅", "别墅", "排屋"} for c in data)
+    assert "通策广场" in names
+    # 回归锚点: 物业类型"其他"的逸天广场必须下发, 否则前端类型筛选永远看不到
+    assert "逸天广场" in names
     # 水电片区 4 个 drop 成员合并掉, 只留 primary
     assert "453982238" not in {c["community_id"] for c in data}
     assert "453982737" in {c["community_id"] for c in data}
