@@ -217,8 +217,15 @@ function SkillManagerPage() {
   return (
     <main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
       <header className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1">
-        <div className="flex items-end gap-6">
-          <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
+        <div className="flex flex-wrap items-end gap-x-6 gap-y-1">
+          <div className="flex flex-col gap-0.5">
+            {/* 站点首页在 basePath 之外，Next Link 会将 / 拼成 /skills。 */}
+            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+            <a href="/" className="text-xs text-slate-500 transition-colors hover:text-slate-800">
+              ← 返回首页
+            </a>
+            <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
+          </div>
           <nav className="flex gap-1" aria-label="视图切换">
             <button
               type="button"
