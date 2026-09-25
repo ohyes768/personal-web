@@ -1,9 +1,15 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { scanGithubRepository } from '@/lib/api';
 import type { RegisterGithubSkillInput, ScanResponse } from '@/lib/types';
 import ConfirmActionDialog from './ConfirmActionDialog';
+
+function formatElapsed(totalSeconds: number): string {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
 
 interface RegisterGithubDialogProps {
   busy: boolean;
@@ -25,12 +31,25 @@ export default function RegisterGithubDialog({
   const [repository, setRepository] = useState('');
   const [scan, setScan] = useState<ScanResponse | null>(null);
   const [scanning, setScanning] = useState(false);
+  const [scanSeconds, setScanSeconds] = useState(0);
   const [scanError, setScanError] = useState('');
   const [selectedPath, setSelectedPath] = useState('');
   const [name, setName] = useState('');
   const [tagsText, setTagsText] = useState('');
   const [summary, setSummary] = useState('');
   const [awaitPassword, setAwaitPassword] = useState(false);
+
+  useEffect(() => {
+    if (!scanning) {
+      return;
+    }
+    const startedAt = Date.now();
+    setScanSeconds(0);
+    const timer = setInterval(() => {
+      setScanSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [scanning]);
 
   async function handleScan() {
     const url = repository.trim();
@@ -108,10 +127,15 @@ export default function RegisterGithubDialog({
               disabled={!repository.trim() || scanning || busy}
               className="shrink-0 rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:opacity-40"
             >
-              {scanning ? '扫描中…' : '扫描'}
+              {scanning ? `扫描中 ${formatElapsed(scanSeconds)}…` : '扫描'}
             </button>
           </div>
         </label>
+        {scanning ? (
+          <p className="mt-1 text-xs text-slate-400">
+            扫描会临时克隆整个仓库；大仓库在慢速网络下可能需要几分钟
+          </p>
+        ) : null}
         {scanError ? (
           <p className="mt-2 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
             {scanError}
