@@ -36,6 +36,8 @@ from src.models import RegistrySkill, ScanCandidate, SkillSource, UpdateInfo
 # 单条 git 命令上限：大仓库经代理 clone 可能超过 1 分钟（生产 ui-ux-pro-max
 # 实测 60s 被杀留半成品缓存），与 nginx /api/skills 的 300s 代理超时对齐
 _GIT_TIMEOUT_SECONDS = 300
+# clone 前可达性预检上限：ls-remote 仅元数据请求，正常秒回，超 30s 视为不可达
+_REACHABILITY_TIMEOUT_SECONDS = 30
 _SKILL_MD = "SKILL.md"
 _SCAN_WORKSPACE_PARENT = "scan"
 
@@ -66,6 +68,15 @@ class CacheValidationError(GitCacheError):
 
 class GitOperationError(GitCacheError):
     """Git 命令执行失败（clone/fetch/checkout/ls-remote/rev-parse）。"""
+
+
+class GitTimeoutError(GitOperationError):
+    """Git 命令超时：仓库较大或网络较慢（API 层映射为 download_timeout）。"""
+
+
+class UnreachableRepositoryError(GitCacheError):
+    """clone 前可达性预检失败：仓库不存在或网络不可达（API 层映射为
+    unreachable，避免等满 clone 超时才暴露）。"""
 
 
 def _utc_now_iso() -> str:
@@ -115,6 +126,22 @@ class GitCacheService:
         return f"https://github.com/{match['owner']}/{match['repo']}"
 
     # ---------- 扫描 ----------
+
+    def verify_reachable(self, canonical_url: str) -> None:
+        """clone 前的快速可达性检查（ls-remote HEAD，≤30s）。
+
+        元数据请求正常秒回；失败或超时说明仓库不存在或网络不可达，
+        让调用方在发起全量 clone 之前就拿到明确错误。
+        """
+        try:
+            self._run_git(
+                ["ls-remote", self._remote_for(canonical_url), "HEAD"],
+                timeout=_REACHABILITY_TIMEOUT_SECONDS,
+            )
+        except GitOperationError as exc:
+            raise UnreachableRepositoryError(
+                f"repository {canonical_url} is unreachable: {exc}"
+            ) from exc
 
     def scan(self, repository_url: str) -> list[ScanCandidate]:
         """临时 clone 并扫描含 `SKILL.md` 的候选目录；工作区始终清理。"""
@@ -184,7 +211,12 @@ class GitCacheService:
 
     # ---------- 内部：git 执行 ----------
 
-    def _run_git(self, argv: list[str], cwd: Path | None = None) -> str:
+    def _run_git(
+        self,
+        argv: list[str],
+        cwd: Path | None = None,
+        timeout: int = _GIT_TIMEOUT_SECONDS,
+    ) -> str:
         """运行固定列表参数的 git 命令，返回 stdout；失败统一包装。"""
         try:
             completed = subprocess.run(
@@ -196,7 +228,7 @@ class GitCacheService:
                 text=True,
                 encoding="utf-8",
                 errors="replace",
-                timeout=_GIT_TIMEOUT_SECONDS,
+                timeout=timeout,
             )
         except subprocess.CalledProcessError as exc:
             detail = exc.stderr if isinstance(exc.stderr, str) else ""
@@ -211,7 +243,9 @@ class GitCacheService:
                 f"runtime environment"
             ) from exc
         except subprocess.TimeoutExpired as exc:
-            raise GitOperationError(f"git {argv[0]} timed out") from exc
+            raise GitTimeoutError(
+                f"git {argv[0]} timed out after {timeout} seconds"
+            ) from exc
         return completed.stdout
 
     def _remote_for(self, canonical_url: str) -> str:

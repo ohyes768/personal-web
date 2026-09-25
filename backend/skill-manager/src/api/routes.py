@@ -56,7 +56,13 @@ from src.models import (
     UpdateSkillTagsRequest,
     UpdateSkillTagsResponse,
 )
-from src.services.git_cache import GitCacheError, GitCacheService
+from src.services.git_cache import (
+    GitCacheError,
+    GitCacheService,
+    GitTimeoutError,
+    InvalidRepositoryError,
+    UnreachableRepositoryError,
+)
 from src.services.publisher import (
     InvalidSourceError,
     PublishBlockedError,
@@ -170,21 +176,52 @@ def scan_github_repository(
     req: ScanRequest,
     git_cache: GitCacheService = Depends(get_git_cache),
 ) -> ScanResponse:
-    """临时 clone 扫描候选 `SKILL.md` 目录；失败以 400 表达非法仓库。"""
+    """临时 clone 扫描候选 `SKILL.md` 目录；按失败阶段区分错误码。
+
+    先做 ≤30s 的 ls-remote 可达性预检（不可达快速失败），再全量 clone；
+    clone 超时以 download_timeout 表达"慢而未挂"，不再与"地址无效"混用。
+    """
     canonical = ""
     try:
         canonical = git_cache.normalize_repository(req.repository)
         logger.info("scan github start: repository=%s", canonical)
+        git_cache.verify_reachable(canonical)
         candidates = git_cache.scan(canonical)
+    except InvalidRepositoryError as exc:
+        logger.warning(
+            "scan github invalid repository: error_type=%s", type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
+        ) from exc
+    except UnreachableRepositoryError:
+        logger.warning("scan github unreachable: repository=%s", canonical)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unreachable",
+                "message": "仓库不存在或当前网络无法访问",
+            },
+        )
+    except GitTimeoutError:
+        logger.warning("scan github timeout: repository=%s", canonical)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "download_timeout",
+                "message": "下载超时：仓库较大或当前网络较慢，可稍后重试",
+            },
+        )
     except GitCacheError as exc:
         logger.warning(
             "scan github failed: repository=%s error_type=%s",
-            canonical or "<invalid>",
+            canonical,
             type(exc).__name__,
         )
         raise HTTPException(
             status_code=400,
-            detail={"code": "invalid_repository", "message": f"仓库地址无效或不可访问：{exc}"},
+            detail={"code": "scan_failed", "message": f"扫描失败：{exc}"},
         ) from exc
     logger.info("scan github done: repository=%s candidates=%d", canonical, len(candidates))
     return ScanResponse(repository=canonical, candidates=candidates)
@@ -242,6 +279,15 @@ def register_github_skill(
         logger.info(
             "register github cache ready: skill=%s revision=%s",
             skill_id, info.remote_revision,
+        )
+    except GitTimeoutError:
+        logger.warning("register github timeout: skill=%s stage=%s", skill_id, stage)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "download_timeout",
+                "message": "下载超时：仓库较大或当前网络较慢，可稍后重试",
+            },
         )
     except GitCacheError as exc:
         logger.warning(
@@ -328,6 +374,15 @@ def clone_github_cache(
         )
         stage = "cache_checkout"
         git_cache.ensure_cached(skill, info.remote_revision)
+    except GitTimeoutError:
+        logger.warning("clone cache timeout: skill=%s stage=%s", skill.id, stage)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "download_timeout",
+                "message": "下载超时：仓库较大或当前网络较慢，可稍后重试",
+            },
+        )
     except GitCacheError as exc:
         logger.warning(
             "clone cache failed: skill=%s stage=%s error_type=%s",

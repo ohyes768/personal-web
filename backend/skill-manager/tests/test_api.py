@@ -208,9 +208,54 @@ def test_scan_logs_clone_failure_without_exposing_credentials(client, caplog, mo
 
     assert response.status_code == 400
     assert "scan github start: repository=" + bad_url in caplog.text
-    assert "scan github failed: repository=" + bad_url in caplog.text
-    assert "error_type=GitOperationError" in caplog.text
+    assert "scan github unreachable: repository=" + bad_url in caplog.text
     assert "secret-token" not in caplog.text
+
+
+def test_scan_unreachable_fails_fast_with_dedicated_code(client):
+    """可达性预检失败（远端不存在/网络不通）：unreachable 快速失败，
+    而不是等 300s clone 超时后误报"地址无效"。"""
+    from src.main import app
+
+    bad_url = "https://github.com/example/broken"
+    git_cache = app.dependency_overrides[get_git_cache]()
+    app.dependency_overrides[get_git_cache] = lambda: GitCacheService(
+        git_cache.settings,
+        git_cache.store,
+        remotes={bad_url: str(git_cache.settings.state_dir / "missing.git")},
+    )
+
+    response = client.post("/api/skills/github/scan", json={"repository": bad_url})
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "unreachable"
+
+
+def _fail_clone_only(monkeypatch) -> None:
+    """ls-remote 走真实命令（本地 fixture 秒回），仅让 clone 超时。"""
+    import src.services.git_cache as git_cache_module
+
+    real_run = git_cache_module.subprocess.run
+
+    def fake_run(cmd, **kwargs):
+        if "clone" in cmd:
+            raise subprocess.TimeoutExpired(cmd, 300)
+        return real_run(cmd, **kwargs)
+
+    monkeypatch.setattr(git_cache_module.subprocess, "run", fake_run)
+
+
+def test_scan_clone_timeout_returns_download_timeout(client, monkeypatch):
+    """预检通过但 clone 超时：download_timeout 表达"慢而未挂"，
+    不再与"地址无效"混为一谈。"""
+    _fail_clone_only(monkeypatch)
+
+    response = client.post(
+        "/api/skills/github/scan", json={"repository": CANONICAL_URL}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "download_timeout"
 
 
 def test_wrong_password_leaves_filesystem_unchanged(client, publish_request, roots):
@@ -354,6 +399,16 @@ def test_register_logs_stages_without_password(client, caplog):
     for stage in ("start", "remote checked", "cache ready", "done"):
         assert "register github " + stage + ": skill=" in caplog.text
     assert PASSWORD not in caplog.text
+
+
+def test_register_clone_timeout_returns_download_timeout(client, monkeypatch):
+    """登记流程的缓存 clone 超时同样以 download_timeout 表达，可稍后重试。"""
+    _fail_clone_only(monkeypatch)
+
+    response = client.post("/api/skills/github", json=_register_payload())
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "download_timeout"
 
 
 def test_register_github_skill_rejects_invalid_repository(client, roots):
@@ -583,6 +638,19 @@ def test_clone_returns_400_when_remote_unreachable(client, roots, upstream_repo)
     assert response.status_code == 400
     assert response.json()["code"] == "cache_failed"
     assert not any(roots.github_cache.iterdir())
+
+
+def test_clone_timeout_returns_download_timeout(client, roots, monkeypatch):
+    """Clone 缓存按钮的超时同样返回 download_timeout，而非笼统 cache_failed。"""
+    _upsert_registry_entry(roots, _missing_cache_skill(CANONICAL_URL))
+    _fail_clone_only(monkeypatch)
+
+    response = client.post(
+        "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "download_timeout"
 
 
 def test_clone_logs_failed_stage(client, roots, upstream_repo, caplog):
