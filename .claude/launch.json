@@ -40,10 +40,10 @@
     },
     {
       "name": "skill-manager-api",
-      "runtimeExecutable": "bash",
+      "runtimeExecutable": "cmd",
       "runtimeArgs": [
-        "-c",
-        "export PATH=\"/c/Users/Administrator/.local/bin:$PATH\" SKILLS_SOURCE_ROOT=F:/personal-projects/skills GITHUB_SKILL_CACHE_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/github-cache SKILL_MANAGER_STATE_DIR=F:/personal-projects/personal-web/.skill-manager-dev/state OPENCLAW_SKILLS_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/targets/openclaw HERMES_SKILLS_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/targets/hermes SKILL_MANAGER_TARGETS_MOUNT_ROOT=F:/personal-projects/personal-web/.skill-manager-dev/targets SKILL_MANAGER_ADMIN_PASSWORD=dev-only-not-for-production && cd backend/skill-manager && uv run uvicorn src.main:app --reload --host 0.0.0.0 --port 8097"
+        "/c",
+        "cd /d backend\\skill-manager&& set SKILLS_SOURCE_ROOT=F:\\personal-projects\\skills&& set GITHUB_SKILL_CACHE_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\github-cache&& set SKILL_MANAGER_STATE_DIR=F:\\personal-projects\\personal-web\\.skill-manager-dev\\state&& set OPENCLAW_SKILLS_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\targets\\openclaw&& set HERMES_SKILLS_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\targets\\hermes&& set SKILL_MANAGER_TARGETS_MOUNT_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\targets&& set SKILL_MANAGER_ADMIN_PASSWORD=dev-only-not-for-production&& .venv\\Scripts\\python.exe -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8097"
       ],
       "port": 8097
     }
