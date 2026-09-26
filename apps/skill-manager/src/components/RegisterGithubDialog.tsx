@@ -1,15 +1,11 @@
 'use client';
 
 import { useEffect, useState, type FormEvent } from 'react';
-import { scanGithubRepository } from '@/lib/api';
-import type { RegisterGithubSkillInput, ScanResponse } from '@/lib/types';
+import { startGithubScan } from '@/lib/api';
+import { formatElapsed, formatProgressDetail, taskStageLabel } from '@/lib/format';
+import type { RegisterGithubSkillInput, TaskSnapshot } from '@/lib/types';
+import { useGithubTask } from '@/lib/useGithubTask';
 import ConfirmActionDialog from './ConfirmActionDialog';
-
-function formatElapsed(totalSeconds: number): string {
-  const minutes = Math.floor(totalSeconds / 60);
-  const seconds = totalSeconds % 60;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
-}
 
 interface RegisterGithubDialogProps {
   busy: boolean;
@@ -19,8 +15,9 @@ interface RegisterGithubDialogProps {
 }
 
 /**
- * 新增 GitHub Skill 登记流程（design 5）：
- * 仓库 URL → 临时 clone 扫描候选 → 选择目录 + 名称/标签 → 密码确认提交。
+ * 新增 GitHub Skill 登记流程（design 5/6）：
+ * 仓库 URL → 后台扫描任务（2s 轮询，进度/已用时）→ 选择目录 + 名称/标签
+ * → 密码确认提交（登记本体也是后台任务，进度由 TaskProgressDialog 接管）。
  */
 export default function RegisterGithubDialog({
   busy,
@@ -29,8 +26,7 @@ export default function RegisterGithubDialog({
   onCancel,
 }: RegisterGithubDialogProps) {
   const [repository, setRepository] = useState('');
-  const [scan, setScan] = useState<ScanResponse | null>(null);
-  const [scanning, setScanning] = useState(false);
+  const [scanTaskId, setScanTaskId] = useState('');
   const [scanSeconds, setScanSeconds] = useState(0);
   const [scanError, setScanError] = useState('');
   const [selectedPath, setSelectedPath] = useState('');
@@ -38,6 +34,13 @@ export default function RegisterGithubDialog({
   const [tagsText, setTagsText] = useState('');
   const [summary, setSummary] = useState('');
   const [awaitPassword, setAwaitPassword] = useState(false);
+
+  const { task: scanTask, error: pollError } = useGithubTask(scanTaskId);
+  // 只认当前 taskId 的快照：重新扫描换任务的瞬间不闪现旧结果
+  const activeScan: TaskSnapshot | null =
+    scanTask && scanTask.task_id === scanTaskId ? scanTask : null;
+  const scanning =
+    scanTaskId !== '' && (activeScan === null || activeScan.state === 'running');
 
   useEffect(() => {
     if (!scanning) {
@@ -51,25 +54,25 @@ export default function RegisterGithubDialog({
     return () => clearInterval(timer);
   }, [scanning]);
 
+  // 扫描完成且只有一个候选目录时自动选中
+  useEffect(() => {
+    if (activeScan?.state === 'done' && activeScan.candidates.length === 1) {
+      setSelectedPath((prev) => prev || activeScan.candidates[0]);
+    }
+  }, [activeScan]);
+
   async function handleScan() {
     const url = repository.trim();
     if (!url || scanning) {
       return;
     }
-    setScanning(true);
     setScanError('');
-    setScan(null);
     setSelectedPath('');
     try {
-      const response = await scanGithubRepository(url);
-      setScan(response);
-      if (response.candidates.length === 1) {
-        setSelectedPath(response.candidates[0].path);
-      }
+      const created = await startGithubScan(url);
+      setScanTaskId(created.task_id);
     } catch (err) {
       setScanError(err instanceof Error ? err.message : '扫描失败');
-    } finally {
-      setScanning(false);
     }
   }
 
@@ -83,7 +86,7 @@ export default function RegisterGithubDialog({
 
   function buildInput(): RegisterGithubSkillInput {
     return {
-      repository: scan?.repository ?? repository.trim(),
+      repository: activeScan?.repository ?? repository.trim(),
       path: selectedPath,
       name: name.trim(),
       tags: tagsText
@@ -93,6 +96,11 @@ export default function RegisterGithubDialog({
       summary: summary.trim(),
     };
   }
+
+  const scanFailed = activeScan?.state === 'error';
+  const scanDone = activeScan?.state === 'done';
+  const percent = activeScan?.progress_percent ?? null;
+  const detail = activeScan ? formatProgressDetail(activeScan.progress_detail) : '';
 
   return (
     <div
@@ -127,23 +135,33 @@ export default function RegisterGithubDialog({
               disabled={!repository.trim() || scanning || busy}
               className="shrink-0 rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:opacity-40"
             >
-              {scanning ? `扫描中 ${formatElapsed(scanSeconds)}…` : '扫描'}
+              {scanning
+                ? percent !== null
+                  ? `${taskStageLabel(activeScan?.stage ?? '')} ${percent}%`
+                  : `扫描中 ${formatElapsed(scanSeconds)}…`
+                : '扫描'}
             </button>
           </div>
         </label>
         {scanning ? (
           <p className="mt-1 text-xs text-slate-400">
-            扫描会临时克隆整个仓库；大仓库在慢速网络下可能需要几分钟
+            {percent !== null
+              ? `${taskStageLabel(activeScan?.stage ?? '')} ${percent}%${
+                  detail ? ` · ${detail}` : ''
+                }`
+              : '扫描会临时克隆整个仓库；大仓库在慢速网络下可能需要几分钟'}
           </p>
         ) : null}
-        {scanError ? (
+        {scanFailed || scanError || pollError ? (
           <p className="mt-2 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
-            {scanError}
+            {scanFailed
+              ? activeScan?.error_message ?? '扫描失败'
+              : scanError || pollError}
           </p>
         ) : null}
 
-        {scan ? (
-          scan.candidates.length === 0 ? (
+        {scanDone ? (
+          activeScan.candidates.length === 0 ? (
             <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-700">
               未在该仓库中找到包含 SKILL.md 的候选目录
             </p>
@@ -151,19 +169,19 @@ export default function RegisterGithubDialog({
             <>
               <fieldset className="mt-3">
                 <legend className="text-sm font-medium text-slate-700">
-                  候选目录（{scan.candidates.length}）
+                  候选目录（{activeScan.candidates.length}）
                 </legend>
                 <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded border border-slate-200 p-2">
-                  {scan.candidates.map((candidate) => (
-                    <label key={candidate.path} className="flex items-center gap-2 text-sm">
+                  {activeScan.candidates.map((path) => (
+                    <label key={path} className="flex items-center gap-2 text-sm">
                       <input
                         type="radio"
                         name="candidate"
-                        value={candidate.path}
-                        checked={selectedPath === candidate.path}
-                        onChange={() => setSelectedPath(candidate.path)}
+                        value={path}
+                        checked={selectedPath === path}
+                        onChange={() => setSelectedPath(path)}
                       />
-                      <span className="text-slate-700">{candidate.path}</span>
+                      <span className="text-slate-700">{path}</span>
                     </label>
                   ))}
                 </div>
@@ -226,8 +244,8 @@ export default function RegisterGithubDialog({
           title="确认登记 GitHub Skill"
           description={
             <p>
-              将登记 {scan?.repository} 中的 <code>{selectedPath}</code> 为「{name.trim()}」，
-              并缓存到 NAS 的 GitHub Skill 缓存目录。
+              将登记 {activeScan?.repository} 中的 <code>{selectedPath}</code> 为「
+              {name.trim()}」，并缓存到 NAS 的 GitHub Skill 缓存目录。
             </p>
           }
           confirmLabel="确认登记"
