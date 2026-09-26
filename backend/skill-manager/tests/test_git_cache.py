@@ -7,6 +7,7 @@ fixture 用本地 bare 仓库充当 GitHub 远端：通过 service 的 `remotes`
 
 from __future__ import annotations
 
+import io
 import subprocess
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,7 +22,11 @@ from src.services.git_cache import (
     GitCacheError,
     GitCacheService,
     GitOperationError,
+    GitProgress,
+    GitTimeoutError,
     InvalidRepositoryError,
+    _ProgressLineSplitter,
+    cleanup_stale_workspaces,
 )
 
 CANONICAL_URL = "https://github.com/example/two-skills"
@@ -117,13 +122,14 @@ def upstream_repo(tmp_path):
 
 @pytest.fixture()
 def git_cache(settings, store, upstream_repo, tmp_path):
-    """remotes 映射：规范化 URL → 本地 bare 仓库（离线）；broken URL 映射到
+    """remotes 映射：规范化 URL → 本地 bare 仓库的 file:// 地址（离线，且
+    强制走传输协议以产生真实 `--progress` 进度流）；broken URL 映射到
     不存在的本地路径，用于离线验证 clone 失败路径。"""
     return GitCacheService(
         settings,
         store,
         remotes={
-            CANONICAL_URL: str(upstream_repo.bare),
+            CANONICAL_URL: f"file:///{upstream_repo.bare.as_posix()}",
             BROKEN_URL: str(tmp_path / "missing.git"),
         },
     )
@@ -345,3 +351,319 @@ def test_ensure_cached_rejects_traversal_path(
 
 def test_current_revision_is_empty_without_cache(git_cache):
     assert git_cache.current_revision("never-cached") == ""
+
+
+# ---------- 流式 git 执行器（09-26 后台任务化 Task 1） ----------
+
+# 真实 `git clone --progress --depth 1 file://…` stderr 抓样（裁剪重复帧）：
+# 保留 \r 覆盖刷新、remote: 协商行、receiving 帧之间穿插 negotiating 行、
+# 行尾填充空格与 done 行等真实形态
+SAMPLE_CLONE_PROGRESS = (
+    "Cloning into 'dst'...\n"
+    "remote: Enumerating objects: 19, done.        \n"
+    "remote: Counting objects:   5% (1/19)        \r"
+    "remote: Counting objects:  52% (10/19)        \r"
+    "remote: Counting objects: 100% (19/19), done.        \n"
+    "remote: Compressing objects:  33% (3/9)        \r"
+    "remote: Compressing objects: 100% (9/9), done.        \n"
+    "Receiving objects:   5% (1/19)\r"
+    "Receiving objects:  15% (3/19)\r"
+    "remote: Total 19 (delta 0), reused 0 (delta 0), pack-reused 0 (from 0)        \n"
+    "Receiving objects:  42% (8/19)\r"
+    "Receiving objects: 100% (19/19)\r"
+    "Receiving objects: 100% (19/19), 22.27 KiB | 1.39 MiB/s, done.\n"
+    "Resolving deltas:   0% (0/9)\r"
+    "Resolving deltas:  55% (5/9)\r"
+    "Resolving deltas: 100% (9/9), done.\n"
+)
+
+
+class _FrameRecorder:
+    """收集进度帧的回调桩。"""
+
+    def __init__(self) -> None:
+        self.frames: list[GitProgress] = []
+
+    def __call__(self, frame: GitProgress) -> None:
+        self.frames.append(frame)
+
+
+def _feed_in_chunks(text: str, size: int = 37) -> list[GitProgress]:
+    """把完整流按固定块大小喂给 splitter，覆盖行被块边界切断的场景。"""
+    splitter = _ProgressLineSplitter()
+    frames: list[GitProgress] = []
+    for start in range(0, len(text), size):
+        frames.extend(splitter.feed(text[start : start + size]))
+    frames.extend(splitter.flush())
+    return frames
+
+
+class _FakeHangingGitPopen:
+    """假 git 进程（design/implement Task 1 超时测试）：ls-remote 秒回固定
+    HEAD；其余命令（clone）输出一帧 receiving 进度后挂死不退出。"""
+
+    def __init__(self, cmd: list[str], **kwargs: object) -> None:
+        self.cmd = cmd
+        self.killed = False
+        if "ls-remote" in cmd:
+            self.stdout = io.StringIO("1f2e3d4c5b6a\tHEAD\n")
+            self.stderr = io.StringIO("")
+            self._hang = False
+        else:
+            self.stdout = io.StringIO("")
+            self.stderr = io.StringIO(
+                "Receiving objects:  45% (1589/3531) | 51.00 KiB/s\r"
+            )
+            self._hang = True
+
+    def wait(self, timeout: float | None = None) -> int:
+        if self._hang:
+            raise subprocess.TimeoutExpired(self.cmd, timeout)
+        return 0
+
+    def kill(self) -> None:
+        self.killed = True
+
+
+def test_progress_splitter_classifies_real_clone_stream():
+    frames = _feed_in_chunks(SAMPLE_CLONE_PROGRESS)
+
+    assert frames, "真实进度流必须解析出帧"
+    assert {frame.phase for frame in frames} == {
+        "negotiating",
+        "receiving",
+        "resolving",
+    }
+    # negotiating 来自 remote: 行（远端枚举/计数/压缩）：无客户端侧百分比
+    assert all(
+        frame.percent is None
+        for frame in frames
+        if frame.phase == "negotiating"
+    )
+    assert [
+        frame.percent for frame in frames if frame.phase == "receiving"
+    ] == [5, 15, 42, 100, 100]
+    assert [
+        frame.percent for frame in frames if frame.phase == "resolving"
+    ] == [0, 55, 100]
+    final_receiving = [
+        frame for frame in frames if frame.phase == "receiving"
+    ][-1]
+    assert "1.39 MiB/s" in final_receiving.detail
+
+
+def test_progress_splitter_keeps_partial_line_until_flush():
+    splitter = _ProgressLineSplitter()
+
+    # 残尾（无 \r/\n 结尾）必须留在缓冲，等待后续块拼出完整行
+    assert splitter.feed("Receiving objects:  45% (1589/3531) | 51.0") == []
+    assert splitter.feed("0 KiB/s") == []
+
+    frames = splitter.flush()
+    assert [frame.percent for frame in frames] == [45]
+    assert frames[0].phase == "receiving"
+    assert "51.00 KiB/s" in frames[0].detail
+
+
+def test_progress_splitter_ignores_non_progress_lines():
+    splitter = _ProgressLineSplitter()
+
+    frames = splitter.feed("Cloning into 'dst'...\nwarning: lf will be\n\r\n")
+
+    assert frames == []
+
+
+def test_run_git_streaming_returns_stdout_and_emits_progress(
+    git_cache, upstream_repo, tmp_path
+):
+    destination = tmp_path / "stream-dst"
+    recorder = _FrameRecorder()
+
+    stdout = git_cache._run_git_streaming(
+        [
+            "clone",
+            "--depth",
+            "1",
+            "--progress",
+            f"file:///{upstream_repo.bare.as_posix()}",
+            str(destination),
+        ],
+        recorder,
+    )
+
+    assert stdout == ""  # clone 不产生 stdout 输出
+    assert (destination / ".git").is_dir()
+    assert any(frame.phase == "receiving" for frame in recorder.frames)
+    assert all(
+        frame.phase in {"negotiating", "receiving", "resolving"}
+        for frame in recorder.frames
+    )
+
+
+def test_run_git_streaming_timeout_kills_process_and_raises(
+    git_cache, tmp_path, monkeypatch
+):
+    created: list[_FakeHangingGitPopen] = []
+
+    class RecordingFakePopen(_FakeHangingGitPopen):
+        def __init__(self, cmd, **kwargs):
+            super().__init__(cmd, **kwargs)
+            created.append(self)
+
+    monkeypatch.setattr(subprocess, "Popen", RecordingFakePopen)
+    recorder = _FrameRecorder()
+
+    with pytest.raises(GitTimeoutError, match="timed out"):
+        git_cache._run_git_streaming(
+            ["clone", str(tmp_path / "irrelevant.git"), str(tmp_path / "dst")],
+            recorder,
+            timeout=0.2,
+        )
+
+    # kill 前进度帧已被读线程解析上报；假进程确实被 kill
+    assert [frame.percent for frame in recorder.frames] == [45]
+    assert created and created[0].killed is True
+
+
+def test_run_git_streaming_nonzero_exit_wraps_full_stderr(git_cache, tmp_path):
+    recorder = _FrameRecorder()
+
+    with pytest.raises(GitOperationError) as excinfo:
+        git_cache._run_git_streaming(
+            ["clone", str(tmp_path / "missing.git"), str(tmp_path / "dst")],
+            recorder,
+        )
+
+    # 与 _run_git 失败语义一致：message 以 "git <子命令> failed:" 起始并
+    # 拼接完整 stderr
+    assert str(excinfo.value).startswith("git clone failed:")
+    assert recorder.frames == []
+
+
+def test_scan_forwards_progress_callback(git_cache):
+    recorder = _FrameRecorder()
+
+    candidates = git_cache.scan(CANONICAL_URL, on_progress=recorder)
+
+    assert [candidate.path for candidate in candidates] == [
+        "skills/alpha",
+        "skills/beta",
+    ]
+    assert any(frame.phase == "receiving" for frame in recorder.frames)
+
+
+def test_ensure_cached_forwards_progress_callback(
+    git_cache, registered_github_skill, upstream_repo
+):
+    recorder = _FrameRecorder()
+
+    skill_dir = git_cache.ensure_cached(
+        registered_github_skill, upstream_repo.revision, on_progress=recorder
+    )
+
+    assert (skill_dir / "SKILL.md").is_file()
+    assert any(frame.phase == "receiving" for frame in recorder.frames)
+
+
+# ---------- 半成品缓存根治（09-26 后台任务化 Task 4 / design §3-§4） ----------
+
+
+class _FakeFailingGitPopen:
+    """假 git 进程：clone 输出一帧 receiving 进度后以非零码退出，
+    模拟下载中途失败（其余命令不会走到）。"""
+
+    def __init__(self, cmd: list[str], **kwargs: object) -> None:
+        self.cmd = cmd
+        self.stdout = io.StringIO("")
+        self.stderr = io.StringIO("Receiving objects:  45% (1589/3531)\r")
+
+    def wait(self, timeout: float | None = None) -> int:
+        return 128
+
+    def kill(self) -> None:
+        return None
+
+
+def test_ensure_cached_clone_failure_leaves_no_tmp_or_partial_cache(
+    git_cache, registered_github_skill, roots, monkeypatch
+):
+    """clone 中途失败：本次 .tmp 临时目录被清理，正式缓存目录不存在（AC6）；
+    进度帧确实经流式执行器上报，证明 clone 走的是 .tmp 流式路径。"""
+    frames: list[GitProgress] = []
+    monkeypatch.setattr(subprocess, "Popen", _FakeFailingGitPopen)
+
+    with pytest.raises(GitOperationError):
+        git_cache.ensure_cached(
+            registered_github_skill, "0f2e3d4", on_progress=frames.append
+        )
+
+    assert [frame.percent for frame in frames] == [45]
+    tmp_parent = roots.github_cache / ".tmp"
+    assert tmp_parent.is_dir()
+    assert not any(tmp_parent.iterdir())
+    assert not (roots.github_cache / "two-skills").exists()
+
+
+def test_ensure_cached_first_clone_lands_via_tmp_rename(
+    git_cache, registered_github_skill, roots, upstream_repo
+):
+    """首次 clone 落 .tmp 临时目录、校验通过后 rename 进正式目录；
+    成功后 .tmp 不留任何残留（R7）。"""
+    skill_dir = git_cache.ensure_cached(
+        registered_github_skill, upstream_repo.revision
+    )
+
+    assert (skill_dir / "SKILL.md").is_file()
+    assert (roots.github_cache / "two-skills" / ".git").is_dir()
+    assert git_cache.current_revision("two-skills") == upstream_repo.revision
+    tmp_parent = roots.github_cache / ".tmp"
+    assert tmp_parent.is_dir()
+    assert not any(tmp_parent.iterdir())
+
+
+def test_ensure_cached_keeps_existing_target_and_discards_tmp(
+    git_cache, registered_github_skill, roots, upstream_repo
+):
+    """rename 前发现正式目录已存在（并发 clone 任务先行落地）：弃本次
+    tmp、直接复用既有目录，绝不覆盖（design §3 双保险）。"""
+    existing = roots.github_cache / "two-skills"
+    skill_md_dir = existing / "skills" / "alpha"
+    skill_md_dir.mkdir(parents=True)
+    (skill_md_dir / "SKILL.md").write_text(
+        "---\nname: pre-existing\n---\n", encoding="utf-8"
+    )
+
+    skill_dir = git_cache.ensure_cached(
+        registered_github_skill, upstream_repo.revision
+    )
+
+    assert skill_dir == skill_md_dir.resolve()
+    assert "pre-existing" in (skill_dir / "SKILL.md").read_text(encoding="utf-8")
+    # 既有目录未被 clone 结果覆盖
+    assert not (existing / ".git").exists()
+    assert not any((roots.github_cache / ".tmp").iterdir())
+
+
+# ---------- 启动清理（PRD R8 / design §4，AC8） ----------
+
+
+def test_cleanup_stale_workspaces_clears_scan_and_tmp_residue(settings, roots):
+    """进程重启孤儿（扫描工作区 / clone 临时目录）在启动时被整体清空。"""
+    stale_scan = roots.state / "scan" / "orphan-workspace"
+    stale_scan.mkdir(parents=True)
+    (stale_scan / "marker.txt").write_text("x", encoding="utf-8")
+    stale_tmp = roots.github_cache / ".tmp" / "two-skills-deadbeef"
+    stale_tmp.mkdir(parents=True)
+    (stale_tmp / "marker.txt").write_text("x", encoding="utf-8")
+
+    removed_scan, removed_tmp = cleanup_stale_workspaces(settings)
+
+    assert (removed_scan, removed_tmp) == (1, 1)
+    assert not any((roots.state / "scan").iterdir())
+    assert not any((roots.github_cache / ".tmp").iterdir())
+
+
+def test_cleanup_stale_workspaces_tolerates_missing_parents(settings, roots):
+    """目录尚不存在（首次启动）时清理为 no-op，不报错。"""
+
+    assert cleanup_stale_workspaces(settings) == (0, 0)

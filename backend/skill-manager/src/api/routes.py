@@ -25,11 +25,13 @@ from src.api.dependencies import (
     get_registry,
     get_settings,
     get_store,
+    get_task_manager,
 )
 from src.config import Settings
 from src.db import GithubCheckRecord, SkillStateStore
 from src.models import (
     AdminPasswordRequest,
+    AsyncTaskCreatedResponse,
     CheckUpdatesRequest,
     DeleteSkillResponse,
     PlanItem,
@@ -41,7 +43,6 @@ from src.models import (
     RegisterGithubSkillRequest,
     RegistrySkill,
     ScanRequest,
-    ScanResponse,
     SkillCard,
     SkillId,
     SkillListResponse,
@@ -49,6 +50,7 @@ from src.models import (
     SKILL_ID_PATTERN,
     TargetDeployment,
     TargetKey,
+    TaskSnapshot,
     UnpublishResponse,
     UpdateCheckItem,
     UpdateCheckResponse,
@@ -56,7 +58,12 @@ from src.models import (
     UpdateSkillTagsRequest,
     UpdateSkillTagsResponse,
 )
-from src.services.git_cache import GitCacheError, GitCacheService
+from src.services.git_cache import (
+    GitCacheError,
+    GitCacheService,
+    InvalidRepositoryError,
+    UnreachableRepositoryError,
+)
 from src.services.publisher import (
     InvalidSourceError,
     PublishBlockedError,
@@ -65,6 +72,7 @@ from src.services.publisher import (
     resolve_registry_source,
 )
 from src.services.registry import RegistryService, RegistryValidationError
+from src.services.task_manager import GithubTaskManager
 
 router = APIRouter(prefix="/api")
 
@@ -165,45 +173,95 @@ def _build_card(
 # ---------- 公开：GitHub 扫描 ----------
 
 
-@router.post("/skills/github/scan", response_model=ScanResponse)
+@router.post(
+    "/skills/github/scan",
+    response_model=AsyncTaskCreatedResponse,
+    status_code=202,
+)
 def scan_github_repository(
     req: ScanRequest,
     git_cache: GitCacheService = Depends(get_git_cache),
-) -> ScanResponse:
-    """临时 clone 扫描候选 `SKILL.md` 目录；失败以 400 表达非法仓库。"""
+    task_manager: GithubTaskManager = Depends(get_task_manager),
+) -> AsyncTaskCreatedResponse:
+    """发起后台扫描任务：≤30s ls-remote 可达性预检同步完成（AC1）。
+
+    预检不可达快速 400，不创建任务；可达则启动后台 clone+扫描并立即
+    202（PRD R1），进度与候选列表经任务快照轮询获取（design §5）。
+    """
     canonical = ""
     try:
         canonical = git_cache.normalize_repository(req.repository)
         logger.info("scan github start: repository=%s", canonical)
-        candidates = git_cache.scan(canonical)
-    except GitCacheError as exc:
+        git_cache.verify_reachable(canonical)
+    except InvalidRepositoryError as exc:
         logger.warning(
-            "scan github failed: repository=%s error_type=%s",
-            canonical or "<invalid>",
-            type(exc).__name__,
+            "scan github invalid repository: error_type=%s", type(exc).__name__
         )
         raise HTTPException(
             status_code=400,
-            detail={"code": "invalid_repository", "message": f"仓库地址无效或不可访问：{exc}"},
+            detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
         ) from exc
-    logger.info("scan github done: repository=%s candidates=%d", canonical, len(candidates))
-    return ScanResponse(repository=canonical, candidates=candidates)
+    except UnreachableRepositoryError:
+        logger.warning("scan github unreachable: repository=%s", canonical)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unreachable",
+                "message": "仓库不存在或当前网络无法访问",
+            },
+        )
+    snapshot = task_manager.start_scan(req.repository)
+    logger.info(
+        "scan github task created: repository=%s task_id=%s",
+        canonical,
+        snapshot.task_id,
+    )
+    return AsyncTaskCreatedResponse(task_id=snapshot.task_id, kind="scan")
+
+
+@router.get("/skills/github/tasks/{task_id}", response_model=TaskSnapshot)
+def get_github_task(
+    task_id: str,
+    task_manager: GithubTaskManager = Depends(get_task_manager),
+) -> TaskSnapshot:
+    """三种 GitHub 任务共用的快照轮询端点（PRD R4 / design §5）。
+
+    不存在、已被回收（完结 30 分钟后惰性回收）或随服务重启丢失的任务
+    统一 404 `task_not_found`。
+    """
+    snapshot = task_manager.get(task_id)
+    if snapshot is None:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "code": "task_not_found",
+                "message": "任务不存在或已回收（服务重启会丢失进行中的任务）",
+            },
+        )
+    return TaskSnapshot.model_validate(snapshot, from_attributes=True)
 
 
 # ---------- 密码：登记 GitHub Skill ----------
 
 
-@router.post("/skills/github", response_model=SkillCard)
+@router.post(
+    "/skills/github",
+    response_model=AsyncTaskCreatedResponse,
+    status_code=202,
+)
 def register_github_skill(
     req: RegisterGithubSkillRequest,
     settings: Settings = Depends(get_settings),
     registry: RegistryService = Depends(get_registry),
     git_cache: GitCacheService = Depends(get_git_cache),
-    store: SkillStateStore = Depends(get_store),
-) -> SkillCard:
-    """登记候选目录：缓存落地 → 注册表 upsert → 返回新卡片（design 5）。
+    task_manager: GithubTaskManager = Depends(get_task_manager),
+) -> AsyncTaskCreatedResponse:
+    """登记候选目录：密码与可达性预检同步完成，clone/入库在后台任务执行。
 
-    skill id 由服务端从仓库与路径派生；重复 repository+path → 409。
+    skill id 由服务端从仓库与路径派生；缓存落地、注册表 upsert 及其错误
+    （download_timeout/cache_failed/registry_conflict 等）均经任务快照
+    表达（design §2/§5）。密码只在本次同步请求体内校验，任务上下文无
+    密码字段（AC5）。
     """
     ensure_admin_password(settings, req.password)
     try:
@@ -216,6 +274,17 @@ def register_github_skill(
             status_code=400,
             detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
         ) from exc
+    try:
+        git_cache.verify_reachable(canonical)
+    except UnreachableRepositoryError:
+        logger.warning("register github unreachable: repository=%s", canonical)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unreachable",
+                "message": "仓库不存在或当前网络无法访问",
+            },
+        )
     skill_id = _derive_skill_id(registry, canonical, req.path)
     skill = RegistrySkill(
         id=skill_id,
@@ -230,41 +299,13 @@ def register_github_skill(
         "register github start: skill=%s repository=%s path=%r",
         skill_id, canonical, req.path,
     )
-    stage = "remote_check"
-    try:
-        info = git_cache.check_update(skill)
-        logger.info(
-            "register github remote checked: skill=%s revision=%s",
-            skill_id, info.remote_revision,
-        )
-        stage = "cache_checkout"
-        git_cache.ensure_cached(skill, info.remote_revision)
-        logger.info(
-            "register github cache ready: skill=%s revision=%s",
-            skill_id, info.remote_revision,
-        )
-    except GitCacheError as exc:
-        logger.warning(
-            "register github failed: skill=%s stage=%s error_type=%s",
-            skill_id, stage, type(exc).__name__,
-        )
-        raise HTTPException(
-            status_code=400,
-            detail={"code": "cache_failed", "message": f"GitHub 仓库缓存失败：{exc}"},
-        ) from exc
-    try:
-        registry.upsert(skill)
-    except RegistryValidationError as exc:
-        logger.warning(
-            "register github failed: skill=%s stage=registry error_type=%s",
-            skill_id, type(exc).__name__,
-        )
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "registry_conflict", "message": f"注册表写入被拒绝：{exc}"},
-        ) from exc
-    logger.info("register github done: skill=%s", skill_id)
-    return _build_card(settings, skill, {}, store.get_github_check(skill.id))
+    snapshot = task_manager.start_register(skill)
+    logger.info(
+        "register github task created: skill=%s task_id=%s",
+        skill_id,
+        snapshot.task_id,
+    )
+    return AsyncTaskCreatedResponse(task_id=snapshot.task_id, kind="register")
 
 
 def _derive_skill_id(registry: RegistryService, canonical: str, path: str) -> str:
@@ -291,21 +332,25 @@ def _derive_skill_id(registry: RegistryService, canonical: str, path: str) -> st
 # ---------- 密码：重建 GitHub 缓存（Clone） ----------
 
 
-@router.post("/skills/github/{skill_id}/clone")
+@router.post(
+    "/skills/github/{skill_id}/clone",
+    response_model=AsyncTaskCreatedResponse,
+    status_code=202,
+)
 def clone_github_cache(
     skill_id: str,
     req: AdminPasswordRequest,
     settings: Settings = Depends(get_settings),
     registry: RegistryService = Depends(get_registry),
     git_cache: GitCacheService = Depends(get_git_cache),
-) -> dict[str, str]:
-    """重建本环境缺失的 GitHub 缓存，返回检出的 revision。
+    task_manager: GithubTaskManager = Depends(get_task_manager),
+) -> AsyncTaskCreatedResponse:
+    """重建本环境缺失的 GitHub 缓存：后台任务执行，202 返回任务 id。
 
-    语义与登记流程一致（design 5）：`check_update()` 只读 ls-remote 并刷新
-    检查记录 → `ensure_cached()` clone/fetch 并检出远端 revision。刻意不走
+    语义与登记流程一致（design 5）：任务内 `check_update()` 只读 ls-remote
+    → `ensure_cached()` clone/fetch 并检出远端 revision。刻意不走
     `_ensure_cached_at_recorded_revision`——它在无成功检查记录时是 no-op，
-    对"缓存根本不存在"的场景无效。只写 GITHUB_SKILL_CACHE_ROOT 之内，
-    不触碰源库与目标目录。
+    对"缓存根本不存在"的场景无效。只写 GITHUB_SKILL_CACHE_ROOT 之内。
     """
     ensure_admin_password(settings, req.password)
     skill = _require_known_skill(registry, _require_skill_id(skill_id))
@@ -318,29 +363,37 @@ def clone_github_cache(
                 "item_id": skill.id,
             },
         )
-    # clone 大仓库可能持续数分钟，主动打日志避免"请求期间无任何输出"
-    logger.info("clone cache start: skill=%s repository=%s", skill.id, skill.repository)
-    stage = "remote_check"
+    # 可达性预检同步完成（R3）：不可达快速 400，不创建任务
     try:
-        info = git_cache.check_update(skill)
-        logger.info(
-            "clone cache remote checked: skill=%s revision=%s", skill.id, info.remote_revision
-        )
-        stage = "cache_checkout"
-        git_cache.ensure_cached(skill, info.remote_revision)
-    except GitCacheError as exc:
+        canonical = git_cache.normalize_repository(str(skill.repository))
+        git_cache.verify_reachable(canonical)
+    except InvalidRepositoryError as exc:
         logger.warning(
-            "clone cache failed: skill=%s stage=%s error_type=%s",
-            skill.id, stage, type(exc).__name__,
+            "clone cache invalid repository: skill=%s error_type=%s",
+            skill.id,
+            type(exc).__name__,
         )
         raise HTTPException(
             status_code=400,
-            detail={"code": "cache_failed", "message": f"GitHub 缓存更新失败：{exc}"},
+            detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
         ) from exc
+    except UnreachableRepositoryError:
+        logger.warning("clone cache unreachable: skill=%s", skill.id)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unreachable",
+                "message": "仓库不存在或当前网络无法访问",
+            },
+        )
+    logger.info("clone cache start: skill=%s repository=%s", skill.id, skill.repository)
+    snapshot = task_manager.start_clone(skill)
     logger.info(
-        "clone cache done: skill=%s revision=%s", skill.id, info.remote_revision
+        "clone cache task created: skill=%s task_id=%s",
+        skill.id,
+        snapshot.task_id,
     )
-    return {"skill_id": skill.id, "revision": info.remote_revision}
+    return AsyncTaskCreatedResponse(task_id=snapshot.task_id, kind="clone_cache")
 
 
 # ---------- 公开：更新检查 ----------

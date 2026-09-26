@@ -20,6 +20,7 @@ from src.db import SkillStateStore
 from src.services.git_cache import GitCacheService
 from src.services.publisher import Publisher
 from src.services.registry import RegistryService
+from src.services.task_manager import GithubTaskManager
 
 
 def get_settings(request: Request) -> Settings:
@@ -40,6 +41,10 @@ def get_publisher(request: Request) -> Publisher:
 
 def get_git_cache(request: Request) -> GitCacheService:
     return request.app.state.git_cache
+
+
+def get_task_manager(request: Request) -> GithubTaskManager:
+    return request.app.state.task_manager
 
 
 def ensure_admin_password(settings: Settings, submitted: str) -> None:

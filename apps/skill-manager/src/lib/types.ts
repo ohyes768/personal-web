@@ -51,14 +51,33 @@ export interface SkillListResponse {
   items: SkillCard[];
 }
 
-/** models.ScanResponse */
-export interface ScanCandidate {
-  path: string;
+/** models.TaskKind / TaskState：GitHub 后台任务（PRD R1-R4） */
+export type TaskKind = 'scan' | 'register' | 'clone_cache';
+export type TaskState = 'running' | 'done' | 'error';
+
+/** models.AsyncTaskCreatedResponse：clone 类操作已转后台任务，202 返回 */
+export interface AsyncTaskCreated {
+  task_id: string;
+  kind: TaskKind;
 }
 
-export interface ScanResponse {
+/** models.TaskSnapshot：GET /api/skills/github/tasks/{task_id} 的轮询快照。
+ * candidates 仅 scan 任务 state=done 时非空；error_* 仅 state=error 时非空 */
+export interface TaskSnapshot {
+  task_id: string;
+  kind: TaskKind;
   repository: string;
-  candidates: ScanCandidate[];
+  skill_id: string | null;
+  state: TaskState;
+  /** remote_check / negotiating / receiving / resolving / discover / registry */
+  stage: string;
+  progress_percent: number | null;
+  progress_detail: string;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  candidates: string[];
 }
 
 /** models.UpdateCheckResponse */
