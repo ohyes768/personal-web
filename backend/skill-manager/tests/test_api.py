@@ -1,5 +1,6 @@
-"""API 层测试（design 7 / Task 5）：公开只读端点、密码守卫、发布计划
-无副作用、批量逐项结果与错误契约。
+"""API 层测试（design 7 / 09-26 后台任务化 Task 3）：公开只读端点、密码
+守卫、GitHub 任务契约（202 + 快照轮询 + task_not_found）、发布计划无副
+作用、批量逐项结果与错误契约。
 
 fixture 环境：tmp_path 构造全部受控根目录 + 源库 local skill 目录
 （首次 /api/skills 对账自动登记 SQLite）+ 本地 bare 仓库经 remotes
@@ -12,13 +13,14 @@ from __future__ import annotations
 import logging
 import os
 import subprocess
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.dependencies import get_git_cache
+from src.api.dependencies import get_git_cache, get_task_manager
 from src.config import Settings
 from src.db import (
     DeploymentRecord,
@@ -28,6 +30,7 @@ from src.db import (
 from src.models import RegistrySkill
 from src.services.git_cache import GitCacheService
 from src.services.registry import RegistryService
+from src.services.task_manager import GithubTaskManager
 
 PASSWORD = "test-password"
 CANONICAL_URL = "https://github.com/example/two-skills"
@@ -113,15 +116,46 @@ def client(env, source_repo, upstream_repo):
     with TestClient(app) as test_client:
         settings = Settings()
         store = SkillStateStore.from_settings(settings)
-        app.dependency_overrides[get_git_cache] = lambda: GitCacheService(
+        git_cache = GitCacheService(
             settings,
             store,
             remotes={CANONICAL_URL: str(upstream_repo.bare)},
         )
+        app.dependency_overrides[get_git_cache] = lambda: git_cache
+        # TaskManager 必须与上面的离线 git_cache 同源：lifespan 挂载的
+        # 生产实例持有无 remotes 的 GitCacheService，直接用会 clone 真实
+        # github.com（design §2：TaskManager 复用 GitCacheService 单例）。
+        # 预构建单例——override 每个请求调用一次，lambda 内新建会导致
+        # POST 建的任务在 GET 轮询时查不到
+        registry = RegistryService(store, settings.skills_source_root)
+        task_manager = GithubTaskManager(git_cache, registry)
+        app.dependency_overrides[get_task_manager] = lambda: task_manager
         # 预热：首次列表触发对账，登记源库自研 skill（替代原 registry.json 导入）
         test_client.get("/api/skills")
         yield test_client
     app.dependency_overrides.clear()
+
+
+def _await_task(client: TestClient, task_id: str, timeout: float = 30.0) -> dict:
+    """轮询任务快照直到离开 running 态（fixture 仓库秒级完成；0.1s 间隔）。"""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/skills/github/tasks/{task_id}")
+        assert response.status_code == 200
+        snapshot = response.json()
+        if snapshot["state"] != "running":
+            return snapshot
+        time.sleep(0.1)
+    raise AssertionError(f"task {task_id} still running after {timeout}s")
+
+
+def _register_via_task(client: TestClient) -> str:
+    """走 202 + 轮询完成登记，返回派生的 skill id（快照 skill_id 字段）。"""
+    created = client.post("/api/skills/github", json=_register_payload())
+    assert created.status_code == 202
+    snapshot = _await_task(client, created.json()["task_id"])
+    assert snapshot["state"] == "done", snapshot
+    return snapshot["skill_id"]
 
 
 @pytest.fixture()
@@ -176,18 +210,38 @@ def test_plan_does_not_mutate_links(client, plan_request, roots):
 # ---------- 公开端点与错误契约 ----------
 
 
-def test_scan_is_public_and_rejects_invalid_urls(client):
+def test_scan_is_public_and_creates_background_task(client):
+    """可达仓库：202 受理后台任务，轮询到 done 后候选目录与同步版一致（AC2）。"""
     ok = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
-    assert ok.status_code == 200
-    assert [c["path"] for c in ok.json()["candidates"]] == [
-        "skills/alpha",
-        "skills/beta",
-    ]
 
+    assert ok.status_code == 202
+    body = ok.json()
+    assert body["kind"] == "scan"
+    assert body["task_id"]
+
+    snapshot = _await_task(client, body["task_id"])
+
+    assert snapshot["state"] == "done"
+    assert snapshot["error_code"] is None
+    assert snapshot["repository"] == CANONICAL_URL
+    assert snapshot["skill_id"] is None
+    assert snapshot["candidates"] == ["skills/alpha", "skills/beta"]
+
+
+def test_scan_rejects_invalid_urls_synchronously(client):
+    """非法 URL 同步 400，不创建任务。"""
     for url in ("file:///tmp/skill", "https://gitlab.com/a/b", "not a url"):
         bad = client.post("/api/skills/github/scan", json={"repository": url})
         assert bad.status_code == 400, url
         assert bad.json()["code"] == "invalid_repository"
+
+
+def test_get_unknown_task_returns_task_not_found(client):
+    """查询不存在/已回收/随重启丢失的任务统一 404 task_not_found（R4）。"""
+    response = client.get("/api/skills/github/tasks/does-not-exist")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "task_not_found"
 
 
 def test_scan_logs_clone_failure_without_exposing_credentials(client, caplog, monkeypatch):
@@ -229,33 +283,6 @@ def test_scan_unreachable_fails_fast_with_dedicated_code(client):
 
     assert response.status_code == 400
     assert response.json()["code"] == "unreachable"
-
-
-def _fail_clone_only(monkeypatch) -> None:
-    """ls-remote 走真实命令（本地 fixture 秒回），仅让 clone 超时。"""
-    import src.services.git_cache as git_cache_module
-
-    real_run = git_cache_module.subprocess.run
-
-    def fake_run(cmd, **kwargs):
-        if "clone" in cmd:
-            raise subprocess.TimeoutExpired(cmd, 300)
-        return real_run(cmd, **kwargs)
-
-    monkeypatch.setattr(git_cache_module.subprocess, "run", fake_run)
-
-
-def test_scan_clone_timeout_returns_download_timeout(client, monkeypatch):
-    """预检通过但 clone 超时：download_timeout 表达"慢而未挂"，
-    不再与"地址无效"混为一谈。"""
-    _fail_clone_only(monkeypatch)
-
-    response = client.post(
-        "/api/skills/github/scan", json={"repository": CANONICAL_URL}
-    )
-
-    assert response.status_code == 400
-    assert response.json()["code"] == "download_timeout"
 
 
 def test_wrong_password_leaves_filesystem_unchanged(client, publish_request, roots):
@@ -373,42 +400,41 @@ def _register_payload(password: str = PASSWORD) -> dict:
 def test_register_github_skill_requires_password_and_persists(client, roots):
     denied = client.post("/api/skills/github", json=_register_payload("wrong"))
     assert denied.status_code == 401
+    assert denied.json()["code"] == "invalid_password"
     assert not any(roots.github_cache.iterdir())
 
     ok = client.post("/api/skills/github", json=_register_payload())
-    assert ok.status_code == 200
-    card = ok.json()
-    assert card["source"] == "github"
-    assert card["name"] == "Fixture"
-    assert card["tags"] == ["test"]
+    assert ok.status_code == 202
+    assert ok.json()["kind"] == "register"
+
+    snapshot = _await_task(client, ok.json()["task_id"])
+    assert snapshot["state"] == "done"
+    skill_id = snapshot["skill_id"]
+    assert skill_id
+    # AC5 哨兵：202 响应与任务快照均不携带管理密码
+    assert PASSWORD not in ok.text
+    assert PASSWORD not in str(snapshot)
 
     # 登记真源是 SQLite：新条目入库且列表可见
     store = SkillStateStore.from_settings(Settings())
     registry = RegistryService(store, roots.source_root)
-    assert registry.get(card["id"]) is not None
+    stored = registry.get(skill_id)
+    assert stored is not None
+    assert stored.name == "Fixture"
+    assert stored.tags == ["test"]
     card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
-    assert card["id"] in card_ids
-    assert (roots.github_cache / card["id"] / "skills" / "alpha" / "SKILL.md").is_file()
+    assert skill_id in card_ids
+    assert (roots.github_cache / skill_id / "skills" / "alpha" / "SKILL.md").is_file()
 
 
-def test_register_logs_stages_without_password(client, caplog):
-    with caplog.at_level(logging.INFO, logger="src.api.routes"):
+def test_register_logs_task_creation_without_password(client, caplog):
+    with caplog.at_level(logging.INFO, logger="src"):
         response = client.post("/api/skills/github", json=_register_payload())
 
-    assert response.status_code == 200
-    for stage in ("start", "remote checked", "cache ready", "done"):
-        assert "register github " + stage + ": skill=" in caplog.text
+    assert response.status_code == 202
+    assert "register github start: skill=" in caplog.text
+    assert "register github task created: skill=" in caplog.text
     assert PASSWORD not in caplog.text
-
-
-def test_register_clone_timeout_returns_download_timeout(client, monkeypatch):
-    """登记流程的缓存 clone 超时同样以 download_timeout 表达，可稍后重试。"""
-    _fail_clone_only(monkeypatch)
-
-    response = client.post("/api/skills/github", json=_register_payload())
-
-    assert response.status_code == 400
-    assert response.json()["code"] == "download_timeout"
 
 
 def test_register_github_skill_rejects_invalid_repository(client, roots):
@@ -423,13 +449,13 @@ def test_register_github_skill_rejects_invalid_repository(client, roots):
 
 
 def test_check_updates_reports_versions_without_publishing(client, roots):
-    registered = client.post("/api/skills/github", json=_register_payload()).json()
+    skill_id = _register_via_task(client)
 
     response = client.post("/api/skills/check-updates", json={})
 
     assert response.status_code == 200
     items = response.json()["items"]
-    assert [item["skill_id"] for item in items] == [registered["id"]]
+    assert [item["skill_id"] for item in items] == [skill_id]
     info = items[0]["info"]
     assert items[0]["result"] == "ok"
     assert info["remote_revision"]
@@ -446,8 +472,7 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
 ):
     """R3 / design 5：缓存更新仅随管理员确认的发布执行——检查发现远端
     更新后，发布动作把缓存 fetch/checkout 到受记录 revision，再创建链接。"""
-    registered = client.post("/api/skills/github", json=_register_payload()).json()
-    skill_id = registered["id"]
+    skill_id = _register_via_task(client)
     v1 = upstream_repo.revision
 
     # 远端前进一个 commit：只改 skills/alpha 的 SKILL.md
@@ -503,22 +528,26 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
 def test_registered_github_skill_can_be_planned_and_published(client, roots):
     """Task 8 端到端：扫描 → 登记（密码）→ 计划 → 发布（密码）→ symlink 落地。"""
     scanned = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
-    assert scanned.status_code == 200
-    candidates = scanned.json()["candidates"]
+    assert scanned.status_code == 202
+    scan_snapshot = _await_task(client, scanned.json()["task_id"])
+    assert scan_snapshot["state"] == "done"
+    candidates = scan_snapshot["candidates"]
     assert candidates
 
-    registered = client.post(
+    created = client.post(
         "/api/skills/github",
         json={
             "password": PASSWORD,
             "repository": CANONICAL_URL,
-            "path": candidates[0]["path"],
+            "path": candidates[0],
             "name": "Fixture",
             "tags": ["test"],
         },
     )
-    assert registered.status_code == 200
-    skill_id = registered.json()["id"]
+    assert created.status_code == 202
+    register_snapshot = _await_task(client, created.json()["task_id"])
+    assert register_snapshot["state"] == "done"
+    skill_id = register_snapshot["skill_id"]
 
     plan = client.post(
         "/api/skills/publish/plan",
@@ -538,7 +567,7 @@ def test_registered_github_skill_can_be_planned_and_published(client, roots):
     assert published.json()["items"][0]["status"] == "success"
     link = roots.openclaw / skill_id
     assert link.is_symlink()
-    assert link.resolve() == (roots.github_cache / skill_id / candidates[0]["path"]).resolve()
+    assert link.resolve() == (roots.github_cache / skill_id / candidates[0]).resolve()
 
 
 def test_check_updates_is_public_and_reports_unknown_ids(client):
@@ -571,23 +600,24 @@ def _missing_cache_skill(repository: str) -> dict:
     }
 
 
-def test_clone_rebuilds_missing_cache_and_reports_revision(client, roots, upstream_repo):
-    """缓存缺失的 GitHub skill：clone 重建缓存并返回检出 revision；local
-    来源卡片恒不缺失。"""
+def test_clone_rebuilds_missing_cache_via_background_task(client, roots):
+    """缓存缺失的 GitHub skill：clone 后台任务重建缓存；local 来源卡片恒
+    不缺失。revision 不再由 POST 同步返回，以缓存内容与卡片状态为准。"""
     _upsert_registry_entry(roots, _missing_cache_skill(CANONICAL_URL))
     cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
     assert cards["two-skills"]["cache_missing"] is True
     assert cards["alpha"]["cache_missing"] is False
 
-    response = client.post(
+    created = client.post(
         "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
     )
 
-    assert response.status_code == 200
-    assert response.json() == {
-        "skill_id": "two-skills",
-        "revision": upstream_repo.revision,
-    }
+    assert created.status_code == 202
+    assert created.json()["kind"] == "clone_cache"
+
+    snapshot = _await_task(client, created.json()["task_id"])
+    assert snapshot["state"] == "done"
+    assert snapshot["skill_id"] == "two-skills"
     assert (roots.github_cache / "two-skills" / "skills" / "alpha" / "SKILL.md").is_file()
     # clone 后卡片恢复可用
     cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
@@ -613,8 +643,8 @@ def test_clone_local_skill_returns_400(client):
 
 
 def test_clone_returns_400_when_remote_unreachable(client, roots, upstream_repo):
-    """ls-remote 失败（远端映射指向不存在的本地 bare 仓库，离线快速失败）
-    → 400 cache_failed，且缓存目录保持为空。"""
+    """可达性预检同步完成（R3）：远端不可达 → 400 unreachable，不创建
+    任务，缓存目录保持为空。"""
     from src.main import app
 
     _upsert_registry_entry(
@@ -636,56 +666,27 @@ def test_clone_returns_400_when_remote_unreachable(client, roots, upstream_repo)
     )
 
     assert response.status_code == 400
-    assert response.json()["code"] == "cache_failed"
+    assert response.json()["code"] == "unreachable"
     assert not any(roots.github_cache.iterdir())
 
 
-def test_clone_timeout_returns_download_timeout(client, roots, monkeypatch):
-    """Clone 缓存按钮的超时同样返回 download_timeout，而非笼统 cache_failed。"""
+def test_clone_logs_task_creation_without_password(client, roots, caplog):
     _upsert_registry_entry(roots, _missing_cache_skill(CANONICAL_URL))
-    _fail_clone_only(monkeypatch)
-
-    response = client.post(
-        "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
-    )
-
-    assert response.status_code == 400
-    assert response.json()["code"] == "download_timeout"
-
-
-def test_clone_logs_failed_stage(client, roots, upstream_repo, caplog):
-    from src.main import app
-
-    _upsert_registry_entry(
-        roots, _missing_cache_skill("https://github.com/example/missing")
-    )
-    git_cache = app.dependency_overrides[get_git_cache]()
-    app.dependency_overrides[get_git_cache] = lambda: GitCacheService(
-        git_cache.settings,
-        git_cache.store,
-        remotes={
-            "https://github.com/example/missing": str(
-                upstream_repo.bare.parent / "missing.git"
-            )
-        },
-    )
 
     with caplog.at_level(logging.INFO, logger="src.api.routes"):
-        response = client.post(
+        created = client.post(
             "/api/skills/github/two-skills/clone", json={"password": PASSWORD}
         )
 
-    assert response.status_code == 400
+    assert created.status_code == 202
     assert "clone cache start: skill=two-skills" in caplog.text
-    assert "clone cache failed: skill=two-skills stage=remote_check" in caplog.text
-    assert "error_type=GitOperationError" in caplog.text
-    assert str(upstream_repo.bare.parent / "missing.git") not in caplog.text
+    assert "clone cache task created: skill=two-skills" in caplog.text
     assert PASSWORD not in caplog.text
 
 
 def test_clone_returns_400_when_git_binary_missing(client, roots, monkeypatch):
     """运行环境没有 git 二进制：FileNotFoundError 被包装为域错误 →
-    400 cache_failed，而非未捕获异常的 500。"""
+    同步 400，而非未捕获异常的 500。"""
     import src.services.git_cache as git_cache_module
 
     def _raise_file_not_found(*args, **kwargs):
@@ -698,8 +699,7 @@ def test_clone_returns_400_when_git_binary_missing(client, roots, monkeypatch):
     )
 
     assert response.status_code == 400
-    assert response.json()["code"] == "cache_failed"
-    assert "git" in response.json()["message"]
+    assert response.json()["code"] == "unreachable"
 
 
 def test_clone_requires_password(client, roots):
@@ -837,9 +837,11 @@ def test_register_and_delete_spawn_no_registry_git_processes(client, monkeypatch
 
     monkeypatch.setattr(subprocess, "run", spy_run)
 
-    registered = client.post("/api/skills/github", json=_register_payload())
-    assert registered.status_code == 200
-    skill_id = registered.json()["id"]
+    created = client.post("/api/skills/github", json=_register_payload())
+    assert created.status_code == 202
+    snapshot = _await_task(client, created.json()["task_id"])
+    assert snapshot["state"] == "done"
+    skill_id = snapshot["skill_id"]
 
     git_calls = [argv for argv in calls if argv and argv[0] == "git"]
     assert not any(argv[:2] == ["git", "add"] for argv in git_calls)

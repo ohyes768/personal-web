@@ -122,9 +122,42 @@ class ScanRequest(BaseModel):
     repository: str
 
 
-class ScanResponse(BaseModel):
+TaskKind = Literal["scan", "register", "clone_cache"]
+TaskState = Literal["running", "done", "error"]
+
+
+class AsyncTaskCreatedResponse(BaseModel):
+    """`202` 响应：GitHub clone 类操作已转为后台任务（PRD R1-R3）。
+
+    scan / register / clone 三个 POST 共用；进度与结果经
+    `GET /api/skills/github/tasks/{task_id}` 轮询获取。
+    """
+
+    task_id: str
+    kind: TaskKind
+
+
+class TaskSnapshot(BaseModel):
+    """`GET /api/skills/github/tasks/{task_id}` 的任务快照（PRD R4）。
+
+    字段与 `src.services.task_manager.TaskSnapshot`（冻结 dataclass）一一
+    对应；`candidates` 仅 scan 任务 state=done 时非空。管理密码只存在于
+    同步请求体内，绝不进入快照（AC5）。
+    """
+
+    task_id: str
+    kind: TaskKind
     repository: str
-    candidates: list[ScanCandidate] = []
+    skill_id: str | None = None
+    state: TaskState
+    stage: str
+    progress_percent: int | None = None
+    progress_detail: str = ""
+    error_code: str | None = None
+    error_message: str | None = None
+    created_at: str
+    updated_at: str
+    candidates: list[str] = []
 
 
 class RegisterGithubSkillRequest(BaseModel):
