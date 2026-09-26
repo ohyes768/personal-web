@@ -30,7 +30,8 @@ These guides help you **ask the right questions before coding**.
 | [Fund Select Backend Contracts](../backend/fund-select/backend/contracts.md) | 债基筛选 API/DB/费率缓存契约、basePath 双前缀与代理 BOM 陷阱 | 维护 fund-select 后端或其前端代理 |
 | [New Service Onboarding Contract](./new-service-onboarding.md) | 新服务接入 monorepo 的 9 接入点契约（nginx 三件套、volume seed、纯前端无 BFF、NEXT_PUBLIC build args） | 新增/迁移任何一组前后端服务前必读 |
 | [Windows 测试环境契约](../backend/testing-environment.md) | Windows 开发机 pytest 硬约束（basetemp 重定向、requires_symlink marker、Windows/WSL 不共用 .pytest-tmp） | 在 Windows 上写/跑 Python 后端测试，或测试涉及 symlink/原子替换 |
-| [Skill Manager GitHub 缓存生命周期](./skill-manager-github-cache.md) | GitHub Skill 缓存何时 clone/fetch、缓存缺失死锁成因、Clone 端点契约、WinError 1314 坑 | 排查"源不可用：source directory does not exist"，或改 skill-manager 登记缓存发布流程 |
+| [Skill Manager GitHub 缓存生命周期](./skill-manager-github-cache.md) | GitHub Skill 缓存 clone/fetch 触发点、后台任务契约（202+轮询、`\r` 进度切行、.tmp 原子落地）、缓存缺失死锁成因、Clone 端点契约、WinError 1314 坑 | 排查"源不可用：source directory does not exist"，或改 skill-manager 克隆链路/任务管理器/前端轮询 UI |
+| [桌面预览启动器（launch.json）的坑](./preview-launcher-quirks.md) | preview_start 二次拆分含空格引号参数、export 传不进 Windows 子进程；launch.json 写法约束 | 修改 .claude/launch.json 预览启动命令，或排查"进程起来但环境变量全丢" |
 | [Skill Manager 自研 Skill 登记与对账](./skill-manager-registry-sync.md) | 自研 Skill 的 sync_local() 对账契约、source_missing 语义、源库 sync 工具链废弃后的遗留状态 | 改 skill-manager 登记/列表流程，或排查"源缺失"徽章与 junction 兼容 |
 | [Skill Manager 前端契约](./skill-manager-frontend.md) | 两级导航 URL 契约（view/tab/agent、非法值回退）、Next basePath 下 router.replace 双拼陷阱、本机 symlink 特权限制 | 改 skill-manager 前端导航/视图结构，或在本机验证发布链路 |
 | [Housing-Map 小区准入契约](./housing-map-admission.md) | 采集/展示全量（is_real_community 只排道路伪小区）、轮廓按住宅口径、前端默认筛选住宅类 | 改小区可见性/刷新范围，或排查"某小区数据没抓下来" |

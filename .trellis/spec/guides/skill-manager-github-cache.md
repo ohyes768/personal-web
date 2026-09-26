@@ -26,10 +26,29 @@ skill-manager **不读源库任何登记文件**：自研 Skill 经 `sync_local(
 
 | 环节 | 代码位置 | 行为 |
 |------|---------|------|
-| UI 登记 | `POST /skills/github` → `check_update` + `ensure_cached` | clone 一次 |
+| UI 登记 | `POST /skills/github` → 同步预检 + 后台任务 → `check_update` + `ensure_cached` | clone 一次 |
 | 卡片 Clone 按钮 | `POST /skills/github/{id}/clone` → 同上 | 缓存缺失时 clone，已有则 fetch |
+| UI 扫描 | `POST /skills/github/scan` → 同步预检 + 后台任务 → `scan()` | 临时 clone，用完即删 |
 | 发布执行 | `_ensure_cached_at_recorded_revision` | 有成功检查记录才 fetch/checkout |
 | 计划预览 / 检查更新 | `plan` / `check-updates` | **只读，绝不 fetch**（design 4.2/5） |
+
+三个写入口（登记/Clone/扫描）自 2026-09-26 起均为**后台任务**（`GithubTaskManager`，
+内存态、daemon 线程）：同步段只做密码校验 + ≤30s ls-remote 预检，202 返回
+`{task_id, kind}`，前端经 `GET /skills/github/tasks/{task_id}` 轮询。要点（勿回退）：
+
+- clone 统一走 `_run_git_streaming`（Popen + 读线程），`git --progress` 的
+  进度行以 **`\r` 而非 `\n`** 分隔，管道读取必须按 `[\r\n]` 双分隔符切行并
+  保留残尾缓冲（`_ProgressLineSplitter`），只按 `\n` 迭代会把整个进度当成一行；
+- 超时靠"stdout/stderr 各一条 drain 线程 + 主线程 `wait(remaining)` 到点
+  kill"实现——只 drain stderr 不 drain stdout 的话，git 挂死时 stdout 管道
+  永不关闭，`stderr.read()` 会永远阻塞，超时失效；
+- 后台 clone 超时 `_GIT_TIMEOUT_SECONDS = 1800`（nginx 300s 只约束单次 HTTP
+  往返，不再约束 git 时长）；`verify_reachable` 仍是独立 30s；
+- 首次 clone 落 `.tmp/<skill.id>-<uuid>` 校验后原子 `replace` 进正式目录，
+  失败不留半成品（根治"中断半成品导致快速失败"）；`state/scan/*` 与 `.tmp/*`
+  残留由 lifespan 启动时 `cleanup_stale_workspaces` 清理；
+- 任务是内存态，服务重启即丢（轮询得 404 `task_not_found`），完结任务 30
+  分钟后惰性回收；前端对 404 的提示文案依赖这一语义。
 
 ## 死锁的成因与打破方式（2026-09 修复）
 

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "缓存 clone/fetch 生命周期与 Clone 端点契约；ensure_cached 临时目录 rename 改动的前置背景"}
+{"file": ".trellis/spec/guides/skill-manager-registry-sync.md", "reason": "register 任务调用 registry.upsert 的对账语义与 source_missing 语义"}
+{"file": ".trellis/spec/guides/skill-manager-frontend.md", "reason": "前端两级导航与 basePath 陷阱；改 page.tsx/对话框前必读"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest 硬约束：--basetemp 重定向、requires_symlink marker"}
