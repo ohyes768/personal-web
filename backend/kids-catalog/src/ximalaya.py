@@ -29,6 +29,8 @@ AGE_PREFERENCES = ("0-1岁", "0-3岁")
 CONTENT_ATTRIBUTE_KEYWORDS = ("儿歌", "哄睡", "白噪音", "轻音乐", "安眠曲", "童谣")
 HOTTEST = "1"  # calc_dimension: 1-热门推荐 2-最新 3-最多播放
 MAX_ALBUMS_PER_ATTRIBUTE = 10
+# 平台整体保留上限（与 collector.PER_PLATFORM_LIMIT 对齐：两平台合计约 20 张）。
+MAX_ALBUMS_PER_PLATFORM = 10
 RATE_LIMIT_ERROR_NO = 104
 
 
@@ -183,4 +185,4 @@ def collect_ximalaya_official(client: XimalayaClient) -> list[dict]:
                 # is_paid 缺失时保持 None，前端显示「付费未知」而非猜测。
                 "sale_type": {True: 1, False: 0}.get(album.get("is_paid")),
             })
-    return rows
+    return rows[:MAX_ALBUMS_PER_PLATFORM]

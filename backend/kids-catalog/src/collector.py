@@ -1,7 +1,8 @@
-"""Collect strict 0-1-year-old album candidates: official OpenAPI first, public web pages as fallback."""
+"""Collect strict 0-1-year-old album candidates: official OpenAPI first, public web APIs as fallback."""
 import json
 import logging
 import re
+from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.robotparser import RobotFileParser
 
@@ -12,8 +13,21 @@ from src.ximalaya import CredentialsMissing, XimalayaClient, collect_ximalaya_of
 logger = logging.getLogger(__name__)
 
 QT_URL = "https://m.qingting.fm/categories/1599/attrs/4394/"
-XM_URL = "https://www.ximalaya.com/top/5/100092"
+XM_WEB_BASE = "https://www.ximalaya.com"
+# 喜马拉雅网页版公开 JSON 接口（频道元数据体系，免登录免签名）。
+XM_GROUP_ALL = f"{XM_WEB_BASE}/revision/metadata/v2/group/all"
+XM_GROUP_CHANNELS = f"{XM_WEB_BASE}/revision/metadata/v2/group/channels"
+XM_CHANNEL_ALBUMS = f"{XM_WEB_BASE}/revision/metadata/v2/channel/albums"
+XM_KIDS_GROUP = "儿童"
+# 只收儿歌/哄睡频道：其他儿童频道（故事/科普等）受众偏 3 岁以上。
+XM_WANTED_CHANNELS = ("儿歌", "哄睡")
+# 每个平台源保留的专辑上限（蜻蜓 + 喜马拉雅 = 共 20 张）。
+PER_PLATFORM_LIMIT = 10
 INFANT = re.compile(r"(?:0\s*[-~～至到]\s*1\s*岁|0\s*岁\s*(?:\+|以上)|婴儿|婴幼儿)")
+TODDLER = re.compile(r"0\s*[-~～至到]\s*[23]\s*岁")
+# 哄睡频道热门榜混有学龄故事与成人助眠节目，须含婴幼儿向词才按场景推断收录。
+INFANTISH = re.compile(r"宝宝|婴儿|婴幼|宝贝|摇篮|晚安|睡前故事|童话|幼儿")
+SCHOOL_AGE = re.compile(r"上学|小学|一年级|二年级|校园|笑话")
 
 
 def _read(url: str) -> str:
@@ -46,33 +60,57 @@ def collect_qingting() -> list[dict]:
                     "sale_type": item.get("sale_type", 0),
                 })
         if rows:
-            return rows[:15]
+            return rows[:PER_PLATFORM_LIMIT]
     raise RuntimeError("蜻蜓FM 0-1岁目录没有返回候选")
 
 
+def _get_json(url: str, **params: str) -> dict:
+    if params:
+        url = f"{url}?{urlencode(params)}"
+    request = Request(url, headers={"User-Agent": "KidsCatalog/1.0"})
+    with urlopen(request, timeout=30) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
 def collect_ximalaya_web() -> list[dict]:
-    soup = BeautifulSoup(_read(XM_URL), "html.parser")
-    rows = []
-    for item in soup.select(".album-item"):
-        category = item.select_one(".user-category_title")
-        anchor = item.select_one('a[href^="/album/"]')
-        title = item.select_one(".title")
-        description = item.select_one(".description")
-        if not category or category.get_text(strip=True) != "儿童" or not anchor or not title:
-            continue
-        declared = " ".join((title.get_text(" ", strip=True), description.get_text(" ", strip=True) if description else ""))
-        if not INFANT.search(declared):
-            continue
-        match = re.fullmatch(r"/album/(\d+)/?", anchor.get("href", ""))
-        if match:
+    """喜马拉雅网页版频道热门榜：儿童组下儿歌/哄睡频道的最多播放专辑。
+
+    平台对儿童内容不提供年龄元数据，年龄证据按三级判定：
+    标题/简介明确 0-1 岁（高）→ 低龄标注 0-2/0-3 岁推断（中）→ 哄睡场景推断（中）；
+    儿歌频道无年龄标注的不收，避免混入 3 岁以上内容。
+    """
+    groups = _get_json(XM_GROUP_ALL)["data"]["groups"]
+    kids_group = next((g for g in groups if g["name"] == XM_KIDS_GROUP), None)
+    if not kids_group:
+        raise RuntimeError("喜马拉雅网页版没有儿童分组")
+    channels = _get_json(XM_GROUP_CHANNELS, groupId=str(kids_group["id"]))["data"]["channels"]
+    wanted = {c["channelName"]: c["relationMetadataValueId"] for c in channels
+              if c["channelName"] in XM_WANTED_CHANNELS}
+    if not wanted:
+        raise RuntimeError("喜马拉雅儿童分组下没有儿歌/哄睡频道")
+
+    rows: list[dict] = []
+    for channel_name, metadata_value_id in wanted.items():
+        data = _get_json(XM_CHANNEL_ALBUMS, metadataValueId=str(metadata_value_id),
+                         page="1", perPage="30", sort="3")["data"]
+        for album in data.get("albums", []):
+            text = f"{album['albumTitle']} {album.get('intro') or ''}"
+            if INFANT.search(text):
+                evidence, confidence = f"喜马拉雅{channel_name}频道热门榜，标注 0-1 岁", "高"
+            elif TODDLER.search(text):
+                evidence, confidence = f"喜马拉雅{channel_name}频道热门榜，标注 0-2/0-3 岁低龄推断", "中"
+            elif channel_name == "哄睡" and INFANTISH.search(text) and not SCHOOL_AGE.search(text):
+                evidence, confidence = "喜马拉雅哄睡频道热门榜，婴幼儿向哄睡内容推断", "中"
+            else:
+                continue
             rows.append({
-                "platform": "喜马拉雅", "album_id": match.group(1),
-                "title": title.get_text(strip=True),
-                "url": f"https://www.ximalaya.com/album/{match.group(1)}",
-                "age_evidence": "详情简介明确年龄标注", "age_confidence": "中",
-                "sale_type": None,
+                "platform": "喜马拉雅", "album_id": str(album["albumId"]),
+                "title": album["albumTitle"],
+                "url": f"{XM_WEB_BASE}/album/{album['albumId']}",
+                "age_evidence": evidence, "age_confidence": confidence,
+                "sale_type": {True: 1, False: 0}.get(album.get("isPaid")),
             })
-    return rows[:15]
+    return rows[:PER_PLATFORM_LIMIT]
 
 
 def collect_latest() -> list[dict]:

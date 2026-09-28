@@ -135,6 +135,75 @@ def test_collect_latest_falls_back_to_web_when_official_empty(monkeypatch):
     assert rows == ALBUMS
 
 
+def web_api_response(channel_name: str, albums: list[dict]) -> dict:
+    return {"data": {"channels": [{"channelName": channel_name,
+                                   "relationMetadataValueId": 10}]}}
+
+
+def test_collect_ximalaya_web_ranks_age_evidence(monkeypatch):
+    from src import collector
+    responses = {
+        collector.XM_GROUP_ALL: {"data": {"groups": [{"id": 11, "name": "儿童"}]}},
+        collector.XM_GROUP_CHANNELS: web_api_response("儿歌", []),
+        collector.XM_CHANNEL_ALBUMS: {"data": {"albums": [
+            {"albumId": 1, "albumTitle": "宝宝儿歌 0-1岁", "intro": "", "isPaid": False},
+            {"albumId": 2, "albumTitle": "三字儿歌学说话 0-3岁早教", "intro": "", "isPaid": False},
+            {"albumId": 3, "albumTitle": "贝乐虎儿歌", "intro": "唱跳儿歌", "isPaid": False},
+        ]}},
+    }
+
+    def fake_get(url, **params):
+        return responses[url]
+
+    monkeypatch.setattr(collector, "_get_json", fake_get)
+    rows = collector.collect_ximalaya_web()
+    # 儿歌频道无年龄标注的不收，避免混入 3 岁以上内容。
+    assert [r["album_id"] for r in rows] == ["1", "2"]
+    assert rows[0]["age_confidence"] == "高" and "标注 0-1 岁" in rows[0]["age_evidence"]
+    assert rows[1]["age_confidence"] == "中" and "低龄推断" in rows[1]["age_evidence"]
+
+
+def test_collect_ximalaya_web_lullaby_channel_infers_from_scene(monkeypatch):
+    from src import collector
+    responses = {
+        collector.XM_GROUP_ALL: {"data": {"groups": [{"id": 11, "name": "儿童"}]}},
+        collector.XM_GROUP_CHANNELS: web_api_response("哄睡", []),
+        collector.XM_CHANNEL_ALBUMS: {"data": {"albums": [
+            {"albumId": 9, "albumTitle": "晚安妈妈睡前故事", "intro": "", "isPaid": True},
+        ]}},
+    }
+    monkeypatch.setattr(collector, "_get_json", lambda url, **p: responses[url])
+    rows = collector.collect_ximalaya_web()
+    assert rows[0]["age_confidence"] == "中"
+    assert "婴幼儿向哄睡内容" in rows[0]["age_evidence"]
+    assert rows[0]["sale_type"] == 1
+
+
+def test_collect_ximalaya_web_rejects_school_age_and_adult_lullabies(monkeypatch):
+    from src import collector
+    responses = {
+        collector.XM_GROUP_ALL: {"data": {"groups": [{"id": 11, "name": "儿童"}]}},
+        collector.XM_GROUP_CHANNELS: web_api_response("哄睡", []),
+        collector.XM_CHANNEL_ALBUMS: {"data": {"albums": [
+            {"albumId": 1, "albumTitle": "孙悟空上学记 | 睡前故事", "intro": "", "isPaid": False},
+            {"albumId": 2, "albumTitle": "失眠小姐，不要在深夜流浪", "intro": "", "isPaid": False},
+            {"albumId": 3, "albumTitle": "晚安妈妈睡前故事", "intro": "", "isPaid": False},
+        ]}},
+    }
+    monkeypatch.setattr(collector, "_get_json", lambda url, **p: responses[url])
+    rows = collector.collect_ximalaya_web()
+    # 学龄向与成人助眠节目都不收，只留婴幼儿向哄睡内容。
+    assert [r["album_id"] for r in rows] == ["3"]
+
+
+def test_collect_ximalaya_web_requires_kids_group(monkeypatch):
+    from src import collector
+    monkeypatch.setattr(collector, "_get_json",
+                        lambda url, **p: {"data": {"groups": [{"id": 1, "name": "小说"}]}})
+    with pytest.raises(RuntimeError):
+        collector.collect_ximalaya_web()
+
+
 def test_monthly_auto_refresh_persists_albums(tmp_path):
     def collector():
         return ALBUMS
