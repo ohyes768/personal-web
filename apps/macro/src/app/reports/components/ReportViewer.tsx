@@ -11,7 +11,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
 import type { ReportDetail } from '@/lib/types/reports';
 import { REPORT_SOURCE_LABELS } from '@/lib/types/reports';
-import { deleteReport, DELETE_TOKEN_STORAGE_KEY } from '@/lib/hooks/reports';
+import { deleteReport } from '@/lib/hooks/reports';
 
 /** 默认白名单基础上放行 a 链接的 target / rel（外链新窗口打开） */
 const sanitizeSchema = {
@@ -45,24 +45,14 @@ export function ReportViewer({ detail, isLoading, error, onBack, onDeleted }: Re
     if (!detail) return;
     if (!window.confirm(`确定删除该报告？\n${detail.title}`)) return;
 
-    let token = sessionStorage.getItem(DELETE_TOKEN_STORAGE_KEY) ?? '';
-    if (!token) {
-      const input = window.prompt('输入管理 token（MACRO_SIGNAL_UPLOAD_TOKEN）:');
-      if (input === null) return;
-      token = input.trim();
-      if (!token) return;
-    }
-
     setDeleting(true);
     setDeleteError(null);
     try {
-      await deleteReport(detail.report_id, token);
-      sessionStorage.setItem(DELETE_TOKEN_STORAGE_KEY, token);
+      await deleteReport(detail.report_id);
       onDeleted();
     } catch (err) {
-      sessionStorage.removeItem(DELETE_TOKEN_STORAGE_KEY);
       const message = err instanceof Error ? err.message : '删除失败';
-      setDeleteError(message.includes('401') ? 'token 错误，请重试' : message);
+      setDeleteError(message);
     } finally {
       setDeleting(false);
     }
@@ -95,14 +85,18 @@ export function ReportViewer({ detail, isLoading, error, onBack, onDeleted }: Re
           <header className="mb-6 pb-4 border-b border-gray-800">
             <div className="flex items-start justify-between gap-4">
               <h2 className="text-2xl font-bold text-white mb-2">{detail.title}</h2>
-              {/* 删除：管理操作，token 走 sessionStorage，看板对访客保持只读 */}
+              {/* 删除：管理操作，前端免 token（后端已放开鉴权） */}
               <button
                 type="button"
                 onClick={handleDelete}
                 disabled={deleting}
-                className="shrink-0 text-xs text-gray-500 hover:text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title="删除该报告"
+                className="shrink-0 inline-flex items-center gap-1.5 rounded-md border border-red-900/70 bg-red-950/40 px-2.5 py-1.5 text-xs font-medium text-red-400 transition-colors hover:border-red-700 hover:bg-red-900/50 hover:text-red-300 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {deleting ? '删除中...' : '删除'}
+                <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                </svg>
+                {deleting ? '删除中' : '删除'}
               </button>
             </div>
             {deleteError && <p className="text-red-400 text-xs mb-2">{deleteError}</p>}

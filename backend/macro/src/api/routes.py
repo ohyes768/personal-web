@@ -2881,14 +2881,11 @@ def get_report(report_id: str):
 @router.delete("/reports/{report_id}")
 def delete_report(
     report_id: str,
-    x_upload_token: Optional[str] = Header(None, alias="X-Upload-Token"),
 ):
-    """删除单篇分析报告（管理操作，X-Upload-Token 鉴权）。
+    """删除单篇分析报告（管理操作，无鉴权；误推/测试数据清理用）。
 
     对外路径：经 nginx 为 DELETE /api/macro/reports/{report_id}。
-    看板前端保持只读，删除经 API 手工执行（如误推/测试数据清理）。
     """
-    _verify_report_upload_token(x_upload_token)
     # report_id 拼入文件路径,非白名单字符直接 404(与 GET 详情同款防护)
     if not re.fullmatch(r"[0-9a-zA-Z-]+", report_id):
         raise HTTPException(status_code=404, detail=f"报告不存在: {report_id}")
