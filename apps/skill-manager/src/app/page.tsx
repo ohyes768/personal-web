@@ -6,6 +6,7 @@ import ConfirmActionDialog from '@/components/ConfirmActionDialog';
 import DeployBoard from '@/components/DeployBoard';
 import RegisterGithubDialog from '@/components/RegisterGithubDialog';
 import SourceWorkspace, { type Notice } from '@/components/SourceWorkspace';
+import TaskProgressDialog from '@/components/TaskProgressDialog';
 import {
   checkUpdates,
   cloneGithubCache,
@@ -47,6 +48,13 @@ interface PendingDelete {
   skillName: string;
 }
 
+/** 进行中的 GitHub 后台任务（登记/Clone，PRD R2/R3），进度弹窗展示其快照。 */
+interface ActiveGithubTask {
+  taskId: string;
+  title: string;
+  successNotice: string;
+}
+
 function SkillManagerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -81,6 +89,7 @@ function SkillManagerPage() {
   const [pendingClone, setPendingClone] = useState<PendingClone | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [showRegister, setShowRegister] = useState(false);
+  const [activeTask, setActiveTask] = useState<ActiveGithubTask | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -167,10 +176,15 @@ function SkillManagerPage() {
     setActionBusy(true);
     setActionError('');
     try {
-      await registerGithubSkill(input, password);
+      // 同步段只做密码/预检校验（401/400 走 actionError）；clone 与入库
+      // 在后台任务执行，进度交给 TaskProgressDialog 轮询（PRD R2）
+      const created = await registerGithubSkill(input, password);
       setShowRegister(false);
-      setNotice({ kind: 'ok', text: `已登记 GitHub Skill「${input.name}」` });
-      await refreshSkills();
+      setActiveTask({
+        taskId: created.task_id,
+        title: `登记 GitHub Skill「${input.name}」`,
+        successNotice: `已登记 GitHub Skill「${input.name}」`,
+      });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '登记失败');
     } finally {
@@ -184,11 +198,16 @@ function SkillManagerPage() {
     }
     setActionBusy(true);
     setActionError('');
+    const { skillId, skillName } = pendingClone;
     try {
-      await cloneGithubCache(pendingClone.skillId, password);
-      setNotice({ kind: 'ok', text: `「${pendingClone.skillName}」缓存已就绪` });
+      // 同步段只做密码/预检校验；clone 在后台任务执行（PRD R3）
+      const created = await cloneGithubCache(skillId, password);
       setPendingClone(null);
-      await refreshSkills();
+      setActiveTask({
+        taskId: created.task_id,
+        title: `Clone 缓存「${skillName}」`,
+        successNotice: `「${skillName}」缓存已就绪`,
+      });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : 'Clone 失败');
     } finally {
@@ -442,6 +461,19 @@ function SkillManagerPage() {
           error={actionError}
           onRegister={(input, password) => void performRegister(input, password)}
           onCancel={() => setShowRegister(false)}
+        />
+      ) : null}
+
+      {activeTask ? (
+        <TaskProgressDialog
+          taskId={activeTask.taskId}
+          title={activeTask.title}
+          onDone={() => {
+            setActiveTask(null);
+            setNotice({ kind: 'ok', text: activeTask.successNotice });
+            void refreshSkills();
+          }}
+          onClose={() => setActiveTask(null)}
         />
       ) : null}
     </main>

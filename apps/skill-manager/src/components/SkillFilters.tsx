@@ -40,45 +40,47 @@ export default function SkillFilters({
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white p-3">
-      <input
-        type="search"
-        value={value.query}
-        onChange={(event) => onChange({ ...value, query: event.target.value })}
-        placeholder="按名称 / ID / 简介搜索"
-        className="min-w-40 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
-      />
-      <select
-        value={value.deployment}
-        onChange={(event) =>
-          onChange({
-            ...value,
-            deployment: event.target.value as FilterState['deployment'],
-          })
-        }
-        className={SELECT_CLASS}
-        aria-label="部署状态筛选"
-      >
-        <option value="all">部署：全部</option>
-        <option value="published">已发布（任一目标）</option>
-        <option value="unpublished">未发布</option>
-      </select>
-      {showUpdateFilter ? (
+    <div className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <input
+          type="search"
+          value={value.query}
+          onChange={(event) => onChange({ ...value, query: event.target.value })}
+          placeholder="按名称 / ID / 简介搜索"
+          className="min-w-40 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+        />
         <select
-          value={value.update}
+          value={value.deployment}
           onChange={(event) =>
-            onChange({ ...value, update: event.target.value as FilterState['update'] })
+            onChange({
+              ...value,
+              deployment: event.target.value as FilterState['deployment'],
+            })
           }
           className={SELECT_CLASS}
-          aria-label="更新状态筛选"
+          aria-label="部署状态筛选"
         >
-          <option value="all">更新：全部</option>
-          <option value="has_update">有待更新</option>
-          <option value="no_update">无更新</option>
+          <option value="all">部署：全部</option>
+          <option value="published">已发布（任一目标）</option>
+          <option value="unpublished">未发布</option>
         </select>
-      ) : null}
+        {showUpdateFilter ? (
+          <select
+            value={value.update}
+            onChange={(event) =>
+              onChange({ ...value, update: event.target.value as FilterState['update'] })
+            }
+            className={SELECT_CLASS}
+            aria-label="更新状态筛选"
+          >
+            <option value="all">更新：全部</option>
+            <option value="has_update">有待更新</option>
+            <option value="no_update">无更新</option>
+          </select>
+        ) : null}
+      </div>
       {allTags.length > 0 ? (
-        <div className="flex flex-wrap items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5 border-t border-slate-100 pt-2">
           {allTags.map((tag) => {
             const active = value.tags.includes(tag);
             return (

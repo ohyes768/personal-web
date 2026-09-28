@@ -20,9 +20,10 @@ from fastapi.responses import JSONResponse
 from src.api.routes import router
 from src.config import Settings
 from src.db import SkillStateStore
-from src.services.git_cache import GitCacheService
+from src.services.git_cache import GitCacheService, cleanup_stale_workspaces
 from src.services.publisher import Publisher
 from src.services.registry import RegistryService
+from src.services.task_manager import GithubTaskManager
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +37,12 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.registry = RegistryService(store, settings.skills_source_root)
     app.state.publisher = Publisher(settings, store)
     app.state.git_cache = GitCacheService(settings, store)
+    # GitHub 后台任务表：与 git_cache 共享同一单例，测试对 get_git_cache
+    # / get_task_manager 做 dependency_overrides 时需一并注入同源实例
+    app.state.task_manager = GithubTaskManager(app.state.git_cache, app.state.registry)
+    # 进程重启遗留的扫描工作区 / clone 临时目录（孤儿）在启动时清空；
+    # 失败仅记日志，不阻断启动（PRD R8 / design §4）
+    cleanup_stale_workspaces(settings)
     business_logger = logging.getLogger("src")
     business_logger.setLevel(logging.INFO)
     if not business_logger.handlers and not logging.getLogger().handlers:

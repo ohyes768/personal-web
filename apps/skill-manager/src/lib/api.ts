@@ -7,13 +7,14 @@
  */
 import type {
   ApiError,
+  AsyncTaskCreated,
   PlanResponse,
   PublishBatchResult,
   QueueItemRequest,
   RegisterGithubSkillInput,
-  ScanResponse,
   SkillListResponse,
   TargetKey,
+  TaskSnapshot,
   UnpublishResponse,
   UpdateCheckResponse,
   UpdateSkillTagsResponse,
@@ -87,11 +88,17 @@ export function listSkills(): Promise<SkillListResponse> {
   return request<SkillListResponse>('');
 }
 
-export function scanGithubRepository(repository: string): Promise<ScanResponse> {
-  return request<ScanResponse>('/github/scan', {
+/** 发起后台扫描任务（PRD R1）：可达性预检失败同步 400，可达返回 202 任务 */
+export function startGithubScan(repository: string): Promise<AsyncTaskCreated> {
+  return request<AsyncTaskCreated>('/github/scan', {
     method: 'POST',
     body: jsonBody({ repository }),
   });
+}
+
+/** 轮询 GitHub 后台任务快照（PRD R4）；不存在/已回收 404 task_not_found */
+export function getGithubTask(taskId: string): Promise<TaskSnapshot> {
+  return request<TaskSnapshot>(`/github/tasks/${encodeURIComponent(taskId)}`);
 }
 
 export function checkUpdates(skillIds: string[] = []): Promise<UpdateCheckResponse> {
@@ -110,21 +117,23 @@ export function publishPlan(items: QueueItemRequest[]): Promise<PlanResponse> {
 
 // ---------- 密码保护端点 ----------
 
+/** 登记候选目录（PRD R2）：密码/预检同步校验，clone 与入库在后台任务执行 */
 export function registerGithubSkill(
   input: RegisterGithubSkillInput,
   password: string
-): Promise<{ id: string }> {
-  return request<{ id: string }>('/github', {
+): Promise<AsyncTaskCreated> {
+  return request<AsyncTaskCreated>('/github', {
     method: 'POST',
     body: jsonBody({ ...input, password }),
   });
 }
 
+/** 重建缺失的 GitHub 缓存（PRD R3）：clone 在后台任务执行 */
 export function cloneGithubCache(
   skillId: string,
   password: string
-): Promise<{ skill_id: string; revision: string }> {
-  return request<{ skill_id: string; revision: string }>(
+): Promise<AsyncTaskCreated> {
+  return request<AsyncTaskCreated>(
     `/github/${encodeURIComponent(skillId)}/clone`,
     {
       method: 'POST',
