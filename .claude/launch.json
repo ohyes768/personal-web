@@ -23,6 +23,14 @@
       "port": 3008
     },
     {
+      "name": "kids-catalog-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["exec", "next", "dev", "-p", "3009"],
+      "cwd": "apps/kids-catalog",
+      "port": 3009,
+      "url": "http://localhost:3009"
+    },
+    {
       "name": "skill-manager-web-alt",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["exec", "next", "dev", "-p", "3009"],

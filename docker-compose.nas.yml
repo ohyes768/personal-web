@@ -463,6 +463,7 @@ services:
     container_name: kids-catalog-frontend
     restart: unless-stopped
     ports: ["127.0.0.1:3009:3009"]
+    environment: [KIDS_BACKEND_URL=http://kids-catalog-backend:8098]
     networks: [app-net]
     depends_on:
       kids-catalog-backend: { condition: service_healthy }

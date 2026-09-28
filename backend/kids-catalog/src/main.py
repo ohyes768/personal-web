@@ -6,11 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from src.collector import collect_latest
 
-
-class RefreshRequest(BaseModel):
-    albums: list[dict[str, Any]]
 
 
 class Catalog:
@@ -73,7 +70,7 @@ class Catalog:
             return {'job_id': job_id, 'status': 'needs_authorization', 'reason': '未配置已授权的媒体地址'}
 
 
-def create_app(data_dir: Path | None = None, music_dir: Path | None = None):
+def create_app(data_dir: Path | None = None, music_dir: Path | None = None, collector=collect_latest):
     catalog = Catalog(data_dir or Path(os.getenv('KIDS_DATA_DIR', '/app/data')))
     app = FastAPI(title='Kids Catalog API')
     app.state.catalog = catalog
@@ -88,8 +85,9 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None):
         return {'albums': catalog.list()}
 
     @app.post('/api/refresh')
-    def refresh(body: RefreshRequest):
-        return {'count': catalog.refresh(body.albums)}
+    def refresh():
+        latest = collector()
+        return {'count': catalog.refresh(latest), 'albums': latest}
 
     @app.post('/api/albums/{album_id}/download')
     def download(album_id: int):
