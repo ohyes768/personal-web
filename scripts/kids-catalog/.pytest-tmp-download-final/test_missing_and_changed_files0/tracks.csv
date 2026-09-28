@@ -1,3 +1,0 @@
-﻿platform,id,album_id,title,url,duration,published,first_seen,last_seen,download_status,local_path,sha256
-qingting,10,1,同名儿歌,url1,,,1790241490.106958,1790241490.106958,missing,a.mp3,a7937b64b8caa58f03721bb6bacf5c78cb235febe0e70b1b84cd99541461a08e
-qingting,11,1,同名儿歌,url2,,,1790241490.106958,1790241490.106958,changed,b.mp3,16367aacb67a4a017c8da8ab95682ccb390863780f7114dda0a0e0c55644c7c4
