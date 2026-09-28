@@ -115,6 +115,28 @@ def test_partial_download_reports_skipped_counts(tmp_path: Path):
         assert "跳过受限 1" in listing["albums"][0]["reason"]
 
 
+def test_legacy_needs_authorization_job_can_requeue(tmp_path: Path):
+    """旧版占位状态的 job（NAS 数据库残留）点下载时重新排队真实下载。"""
+    downloader = FakeDownloader()
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    app.state.catalog.refresh(ALBUMS)
+    with app.state.catalog.db() as con:
+        album_pk = con.execute('select id from albums').fetchone()['id']
+        con.execute("insert into jobs(album_id,status,reason,created_at,updated_at)"
+                    " values(?,?,?,datetime('now'),datetime('now'))",
+                    (album_pk, 'needs_authorization', '未配置已授权的媒体地址'))
+    with TestClient(app) as client:
+        requeued = client.post(f"/api/albums/{album_pk}/download")
+        assert requeued.json()["status"] == "queued"
+        deadline = time.monotonic() + 10
+        listing = client.get("/api/albums").json()
+        while listing["albums"][0]["download_status"] not in ("done", "partial", "failed") and time.monotonic() < deadline:
+            time.sleep(0.05)
+            listing = client.get("/api/albums").json()
+        assert listing["albums"][0]["download_status"] == "done"
+    assert downloader.calls == [("蜻蜓FM", "1", "摇篮曲")]
+
+
 def test_duplicate_queue_is_idempotent(tmp_path: Path):
     downloader = FakeDownloader()
     app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)

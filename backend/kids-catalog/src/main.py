@@ -82,8 +82,8 @@ class Catalog:
                 raise KeyError(album_pk)
             job = con.execute('select id,status,reason from jobs where album_id=?', (album_pk,)).fetchone()
             if job:
-                # failed 允许重试，其余状态幂等返回，避免重复起线程。
-                if job['status'] != 'failed':
+                # failed 与旧版占位状态（needs_authorization）允许重试，其余幂等返回。
+                if job['status'] not in ('failed', 'needs_authorization'):
                     return dict(job, job_id=job['id'])
                 con.execute('delete from jobs where id=?', (job['id'],))
             if album['sale_type'] == 1:
