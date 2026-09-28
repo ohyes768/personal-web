@@ -1,0 +1,4 @@
+"use client";
+import {useEffect,useState} from "react";
+type A={id:number;platform:string;title:string;url:string;age_evidence:string;age_confidence:string;download_status:string;reason?:string};
+export default function Home(){const[a,setA]=useState<A[]>([]);const load=()=>fetch("/api/kids/albums").then(r=>r.json()).then(d=>setA(d.albums));useEffect(load,[]);const queue=async(id:number)=>{await fetch(`/api/kids/albums/${id}/download`,{method:"POST"});load()};return <main><header>宝宝音频库 · 0–1岁<h1>本月精选</h1><small>只显示平台明确年龄依据</small></header>{a.map(x=><article key={x.id}><div><b>{x.platform}</b><a href={x.url}>{x.title}</a><small>{x.age_evidence} · {x.age_confidence}可信</small></div><button disabled={x.download_status!=="not_downloaded"} onClick={()=>queue(x.id)}>{x.download_status==="not_downloaded"?"下载":x.download_status==="needs_authorization"?"需授权":"已下载"}</button></article>)}</main>}

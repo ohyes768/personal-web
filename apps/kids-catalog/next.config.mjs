@@ -1,0 +1,1 @@
+const nextConfig={output:"standalone",basePath:"/kids"};export default nextConfig;

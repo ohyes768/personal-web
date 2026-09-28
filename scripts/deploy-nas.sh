@@ -43,7 +43,7 @@ NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
   ./scripts/deploy-nas.sh <target> [side] [options]
 
 target:
-  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | nginx | all
+  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | nginx | all
   （nginx 只同步 nginx/web.conf 到 nginx 容器并 reload，不走 build/up，忽略 side）
 
 side:（默认 both）
@@ -165,7 +165,7 @@ sync_nginx() {
 get_services() {
     local target="$1" side="$2"
     case "$target" in
-        dividend|douyin|rss-relay|macro|fund-select|housing-map|skill-manager)
+        dividend|douyin|rss-relay|macro|fund-select|housing-map|skill-manager|kids-catalog)
             case "$side" in
                 backend)  echo "${target}-backend" ;;
                 frontend) echo "${target}-frontend" ;;
@@ -204,6 +204,7 @@ get_buildx_config() {
         fund-select-frontend) echo "apps/fund-select:apps/fund-select/Dockerfile:fund-select-frontend" ;;
         housing-map-frontend) echo "apps/housing-map:apps/housing-map/Dockerfile:housing-map-frontend:NEXT_PUBLIC_GAODE_MAP_KEY=${GAODE_MAP_KEY:-${NEXT_PUBLIC_GAODE_MAP_KEY:-}}|NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY=${GAODE_MAP_SECURITY_KEY:-${NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY:-}}" ;;
         skill-manager-frontend) echo "apps/skill-manager:apps/skill-manager/Dockerfile:skill-manager-frontend" ;;
+        kids-catalog-frontend) echo "apps/kids-catalog:apps/kids-catalog/Dockerfile:kids-catalog-frontend" ;;
         *) return 1 ;;
     esac
 }

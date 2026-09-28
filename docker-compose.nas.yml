@@ -440,6 +440,31 @@ services:
       skill-manager-backend:
         condition: service_healthy
 
+
+  kids-catalog-backend:
+    build: { context: ./backend/kids-catalog }
+    container_name: kids-catalog-backend
+    restart: unless-stopped
+    expose: ["8098"]
+    volumes:
+      - kids-catalog-data:/app/data
+      - ${KIDS_MUSIC_HOST_PATH:-/home/ohyes768/xiaomusic/music}:/music:rw
+    environment: [TZ=Asia/Shanghai, KIDS_DATA_DIR=/app/data, KIDS_MUSIC_DIR=/music]
+    networks: [app-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8098/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  kids-catalog-frontend:
+    build: { context: ./apps/kids-catalog }
+    container_name: kids-catalog-frontend
+    restart: unless-stopped
+    ports: ["127.0.0.1:3009:3009"]
+    networks: [app-net]
+    depends_on:
+      kids-catalog-backend: { condition: service_healthy }
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -480,3 +505,5 @@ volumes:
     name: housing-map-logs
   skill-manager-state:
     name: skill-manager-state
+  kids-catalog-data:
+    name: kids-catalog-data

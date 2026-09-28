@@ -1,0 +1,3 @@
+﻿platform,id,album_id,title,url,duration,published,first_seen,last_seen,download_status,local_path,sha256
+qingting,10,1,同名儿歌,url1,,,1790241490.528555,1790241490.528555,present,a.mp3,93f21d816fa4a092bd833d53755fc957754a489ed31587f4ad777a7cf520eb76
+qingting,11,1,同名儿歌,url2,,,1790241490.528555,1790241490.528555,not_registered,,
