@@ -1,10 +1,15 @@
-"""Collect strict 0-1-year-old album candidates from public catalogue pages."""
+"""Collect strict 0-1-year-old album candidates: official OpenAPI first, public web pages as fallback."""
 import json
+import logging
 import re
 from urllib.request import Request, urlopen
 from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
+
+from src.ximalaya import CredentialsMissing, XimalayaClient, collect_ximalaya_official
+
+logger = logging.getLogger(__name__)
 
 QT_URL = "https://m.qingting.fm/categories/1599/attrs/4394/"
 XM_URL = "https://www.ximalaya.com/top/5/100092"
@@ -38,13 +43,14 @@ def collect_qingting() -> list[dict]:
                     "title": item["title"],
                     "url": f"https://m.qingting.fm/vchannels/{item['id']}/",
                     "age_evidence": "蜻蜓FM年龄筛选", "age_confidence": "高",
+                    "sale_type": item.get("sale_type", 0),
                 })
         if rows:
             return rows[:15]
     raise RuntimeError("蜻蜓FM 0-1岁目录没有返回候选")
 
 
-def collect_ximalaya() -> list[dict]:
+def collect_ximalaya_web() -> list[dict]:
     soup = BeautifulSoup(_read(XM_URL), "html.parser")
     rows = []
     for item in soup.select(".album-item"):
@@ -64,16 +70,28 @@ def collect_ximalaya() -> list[dict]:
                 "title": title.get_text(strip=True),
                 "url": f"https://www.ximalaya.com/album/{match.group(1)}",
                 "age_evidence": "详情简介明确年龄标注", "age_confidence": "中",
+                "sale_type": None,
             })
     return rows[:15]
 
 
 def collect_latest() -> list[dict]:
-    rows = collect_qingting()
+    rows: list[dict] = []
+    # 优先官方开放平台（凭据未配置或平台无儿童内容时跳过，不视为错误）。
     try:
-        rows.extend(collect_ximalaya())
-    except Exception:
-        # Qingting remains a valid high-confidence result if Ximalaya is temporarily unavailable.
+        rows.extend(collect_ximalaya_official(XimalayaClient.from_env()))
+    except CredentialsMissing:
         pass
+    except Exception:
+        logger.warning("喜马拉雅开放平台采集不可用，回退网页采集", exc_info=True)
+    try:
+        rows.extend(collect_qingting())
+    except Exception:
+        logger.warning("蜻蜓FM采集不可用", exc_info=True)
+    try:
+        rows.extend(collect_ximalaya_web())
+    except Exception:
+        # Web scraping is best-effort; Qingting remains a valid high-confidence result.
+        logger.warning("喜马拉雅网页采集不可用", exc_info=True)
     unique = {(row["platform"], row["album_id"]): row for row in rows}
     return list(unique.values())

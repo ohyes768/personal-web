@@ -1,5 +1,8 @@
+import logging
 import os
 import sqlite3
+import threading
+import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -7,6 +10,9 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from src.collector import collect_latest
+
+logger = logging.getLogger(__name__)
+MONTHLY_SECONDS = 30 * 24 * 3600
 
 
 
@@ -19,13 +25,17 @@ class Catalog:
               create table if not exists albums (
                 id integer primary key, platform text not null, album_id text not null,
                 title text not null, url text not null, age_evidence text not null,
-                age_confidence text not null, last_seen text not null,
+                age_confidence text not null, sale_type integer, last_seen text not null,
                 unique(platform, album_id));
               create table if not exists jobs (
                 id integer primary key, album_id integer not null unique, status text not null,
                 reason text, created_at text not null, updated_at text not null,
                 foreign key(album_id) references albums(id));
             ''')
+            # Databases created before sale_type existed gain the column in place.
+            columns = {row['name'] for row in con.execute('pragma table_info(albums)')}
+            if 'sale_type' not in columns:
+                con.execute('alter table albums add column sale_type integer')
 
     @contextmanager
     def db(self):
@@ -41,12 +51,12 @@ class Catalog:
         now = datetime.now().isoformat()
         with self.db() as con:
             for row in albums:
-                con.execute('''insert into albums(platform,album_id,title,url,age_evidence,age_confidence,last_seen)
-                  values(?,?,?,?,?,?,?) on conflict(platform,album_id) do update set
+                con.execute('''insert into albums(platform,album_id,title,url,age_evidence,age_confidence,sale_type,last_seen)
+                  values(?,?,?,?,?,?,?,?) on conflict(platform,album_id) do update set
                   title=excluded.title,url=excluded.url,age_evidence=excluded.age_evidence,
-                  age_confidence=excluded.age_confidence,last_seen=excluded.last_seen''',
+                  age_confidence=excluded.age_confidence,sale_type=excluded.sale_type,last_seen=excluded.last_seen''',
                   (row['platform'], str(row['album_id']), row['title'], row['url'],
-                   row['age_evidence'], row['age_confidence'], now))
+                   row['age_evidence'], row['age_confidence'], row.get('sale_type'), now))
         return len(albums)
 
     def list(self):
@@ -70,11 +80,24 @@ class Catalog:
             return {'job_id': job_id, 'status': 'needs_authorization', 'reason': '未配置已授权的媒体地址'}
 
 
-def create_app(data_dir: Path | None = None, music_dir: Path | None = None, collector=collect_latest):
+def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
+               collector=collect_latest, auto_refresh_seconds: int | None = None):
     catalog = Catalog(data_dir or Path(os.getenv('KIDS_DATA_DIR', '/app/data')))
     app = FastAPI(title='Kids Catalog API')
     app.state.catalog = catalog
     app.state.music_dir = music_dir or Path(os.getenv('KIDS_MUSIC_DIR', '/music'))
+
+    if auto_refresh_seconds:
+        def _monthly_refresh():
+            while True:
+                try:
+                    count = catalog.refresh(collector())
+                    logger.info("月度自动刷新完成，共 %d 张专辑", count)
+                except Exception:
+                    logger.warning("月度自动刷新失败", exc_info=True)
+                time.sleep(auto_refresh_seconds)
+
+        threading.Thread(target=_monthly_refresh, daemon=True, name='monthly-refresh').start()
 
     @app.get('/health')
     def health():
@@ -99,4 +122,4 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None, coll
     return app
 
 
-app = create_app()
+app = create_app(auto_refresh_seconds=MONTHLY_SECONDS)
