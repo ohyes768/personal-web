@@ -81,6 +81,7 @@ options:
   ./scripts/deploy-nas.sh fund-select both
   ./scripts/deploy-nas.sh housing-map both
   ./scripts/deploy-nas.sh skill-manager both
+  ./scripts/deploy-nas.sh kids-catalog both
   ./scripts/deploy-nas.sh nginx              # 同步 nginx/web.conf + reload（忽略 side）
   ./scripts/deploy-nas.sh all
   ./scripts/deploy-nas.sh dividend frontend --no-pull
