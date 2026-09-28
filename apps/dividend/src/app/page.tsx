@@ -228,6 +228,79 @@ function IndexStatusPopover({
 }
 
 /**
+ * 数据更新抽屉里的任务行：左侧名称 + 状态副文案，右侧「更新」动作按钮。
+ * tone 决定左状态色条；传 onToggle 时整行可点（展开子列表）。
+ */
+function UpdateTaskRow({
+  label,
+  sub,
+  tone,
+  actionLabel = '更新',
+  onAction,
+  actionDisabled = false,
+  onToggle,
+  expanded = false,
+  children,
+}: {
+  label: string;
+  sub: React.ReactNode;
+  tone: 'idle' | 'pending' | 'loading' | 'ok';
+  actionLabel?: string;
+  onAction?: () => void;
+  actionDisabled?: boolean;
+  onToggle?: () => void;
+  expanded?: boolean;
+  children?: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div
+        onClick={onToggle}
+        className={`
+          flex items-center gap-3 px-3 pl-[13px] py-2.5 border-l-[3px] transition-colors
+          ${tone === 'loading'
+            ? 'border-l-info'
+            : tone === 'pending'
+              ? 'border-l-amber-400'
+              : tone === 'ok'
+                ? 'border-l-up'
+                : 'border-l-rule'}
+          ${onToggle ? 'cursor-pointer hover:bg-paper-tint' : ''}
+        `}
+      >
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[13px] font-medium text-ink">{label}</span>
+            {onToggle && (
+              <svg className={`w-3 h-3 text-ink-muted transition-transform ${expanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            )}
+          </div>
+          <div className="mt-0.5 text-[11px] text-ink-muted">{sub}</div>
+        </div>
+        {onAction && (
+          <button
+            type="button"
+            disabled={actionDisabled}
+            onClick={(e) => { e.stopPropagation(); onAction(); }}
+            className={`
+              flex-shrink-0 text-[11px] font-medium px-2.5 py-1 rounded border transition-colors
+              ${actionDisabled
+                ? 'border-rule text-ink-soft cursor-not-allowed'
+                : 'border-rule-strong text-ink hover:bg-accent hover:border-accent hover:text-white'}
+            `}
+          >
+            {actionLabel}
+          </button>
+        )}
+      </div>
+      {expanded && children}
+    </div>
+  );
+}
+
+/**
  * 把后端返回的 AlertStatusItem 转成 AlertSettingsModal 的 currentConfig 入参
  */
 function buildCurrentConfig(item: AlertStatusItem | undefined): AlertConfigRequest | null {
@@ -277,25 +350,21 @@ function DividendPageContent() {
   const [refreshKey, setRefreshKey] = useState(0);
 
   // 输出报告下拉菜单开关
-  const [reportOpen, setReportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
 
   // 更新辅助数据下拉菜单开关
   const [auxOpen, setAuxOpen] = useState(false);
   const [auxForce, setAuxForce] = useState(false);
   // 每行独立的"强制"开关：key = 'sw_industry' | 'financial' | 'shareholder' | 'board'
   const [auxForceMap, setAuxForceMap] = useState<Record<string, boolean>>({});
-  const auxMenuRef = useRef<HTMLDivElement>(null);
 
   // 红利指数状态 popover 开关
   const [indexPopoverOpen, setIndexPopoverOpen] = useState(false);
   const indexPopoverRef = useRef<HTMLDivElement>(null);
 
-  // 辅助数据菜单 + 指数 popover：点击外部 / Esc 关闭
+  // 指数 popover：点击外部 / Esc 关闭；辅助数据为内嵌展开，Esc 关闭即可
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (auxOpen && auxMenuRef.current && !auxMenuRef.current.contains(e.target as Node)) {
-        setAuxOpen(false);
-      }
       if (indexPopoverOpen && indexPopoverRef.current && !indexPopoverRef.current.contains(e.target as Node)) {
         setIndexPopoverOpen(false);
       }
@@ -318,7 +387,7 @@ function DividendPageContent() {
 
   // 下载报告（A4 一图版 / 手机竖版）
   const downloadReport = async (type: 'a4' | 'carousel') => {
-    setReportOpen(false);
+    setExportOpen(false);
     const config = type === 'a4'
       ? { endpoint: '/api/dividend/report/one-pager', prefix: 'dividend_one_pager' }
       : { endpoint: '/api/dividend/report/carousel', prefix: 'dividend_carousel' };
@@ -338,6 +407,62 @@ function DividendPageContent() {
       console.error('导出报告失败:', err);
       alert('导出报告失败，请稍后重试');
     }
+  };
+
+  // 导出 CSV 表格（当前筛选结果全字段）
+  const downloadCsv = () => {
+    setExportOpen(false);
+    const headers = [
+      '股票代码', '股票名称', '交易所', '申万一级行业', '申万二级行业', '申万三级行业',
+      '3年平均股息率(%)', '实时股息率(%)', '实时股息率TTM(%)',
+      'M120', '实时价格', '收盘价/M120',
+      '股东户数(万)', '股东人数增幅(%)', '人均持股',
+      '扣非净利润同比(%)', '3年复合增长率(%)',
+      '最近年报年度', 'EPS(元)', '分红比例(%)'
+    ];
+
+    const rows = stocksWithTechnical.map(stock => {
+      const tech = stock.technical;
+      const yield_3y = stock.avg_yield_3y ? stock.avg_yield_3y.toFixed(2) : '';
+      const realtime_yield = (stock.dividend_2025 && tech?.realtime)
+        ? (stock.dividend_2025 / tech.realtime * 100).toFixed(2) : '';
+      const yield_ttm = tech?.yield_ttm ? tech.yield_ttm.toFixed(2) : '';
+      const m120 = tech?.m120 ? tech.m120.toFixed(2) : '';
+      const realtime = tech?.realtime ? tech.realtime.toFixed(2) : '';
+      const deviation = tech?.realtimeDeviation ? tech.realtimeDeviation.toFixed(2) : '';
+      const shareholder_count = stock.shareholder_count
+        ? (stock.shareholder_count / 10000).toFixed(1) : '';
+      const shareholder_change = stock.shareholder_change_pct
+        ? stock.shareholder_change_pct.toFixed(2) : '';
+      const per_share = stock.per_share_holding
+        ? stock.per_share_holding.toFixed(0) : '';
+      const yoy = stock.net_profit_ex_non_recurring_yoy != null
+        ? stock.net_profit_ex_non_recurring_yoy.toFixed(2) : '无法计算';
+      const cagr = stock.net_profit_cagr_3y != null
+        ? stock.net_profit_cagr_3y.toFixed(2) : '无法计算';
+      const eps_year_csv = stock.eps_year ?? '';
+      const eps_csv = stock.eps != null ? stock.eps.toFixed(4) : '';
+      const payout_csv = stock.payout_ratio != null ? stock.payout_ratio.toFixed(2) : '';
+
+      return [
+        stock.code, stock.name, stock.exchange,
+        stock.sw_level1 || '', stock.sw_level2 || '', stock.sw_level3 || '',
+        yield_3y, realtime_yield, yield_ttm,
+        m120, realtime, deviation,
+        shareholder_count, shareholder_change, per_share,
+        yoy, cagr,
+        eps_year_csv, eps_csv, payout_csv
+      ].join(',');
+    });
+
+    const csv = [headers.join(','), ...rows].join('\n');
+    const blob = new Blob([String.fromCharCode(0xfeff) + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `dividend_export_${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   // 股票代码列表
@@ -364,6 +489,27 @@ function DividendPageContent() {
   const [alertOpen, setAlertOpen] = useState(false);
   const [schedulerOpen, setSchedulerOpen] = useState(false);
   const [dataUpdateOpen, setDataUpdateOpen] = useState(false);
+
+  // 数据更新抽屉：辅助数据子项与汇总状态
+  const auxItems: Array<{
+    key: 'sw_industry' | 'financial' | 'shareholder' | 'board';
+    label: string;
+    sub: string;
+    status: typeof auxStatuses.sw_industry;
+    updateFn: (force: boolean) => Promise<unknown>;
+    loadingKey: 'sw_industry' | 'financial' | 'shareholder' | 'board';
+  }> = [
+    { key: 'sw_industry', label: '申万行业', sub: '申万一级/二级/三级', status: auxStatuses.sw_industry, updateFn: updateSwIndustry, loadingKey: 'sw_industry' },
+    { key: 'financial', label: '财务指标', sub: '财报基础数据', status: auxStatuses.financial, updateFn: (force) => updateFinancial(financialMissingCodes.length > 0 ? financialMissingCodes : undefined, force), loadingKey: 'financial' },
+    { key: 'shareholder', label: '股东户数', sub: '披露日统计', status: auxStatuses.shareholder, updateFn: updateShareholder, loadingKey: 'shareholder' },
+    { key: 'board', label: '个股板块', sub: 'emweb 板块归属', status: auxStatuses.board, updateFn: (force) => updateBoard(boardMissingCodes.length > 0 ? boardMissingCodes : undefined, force), loadingKey: 'board' },
+  ];
+  const auxPendingCount = auxItems.filter(i => i.status?.needs_update).length;
+  const auxAnyLoading = auxItems.some(i => updateState[i.loadingKey] === 'loading');
+  const updateAllAux = async () => {
+    const toUpdate = auxItems.filter(i => i.status?.needs_update);
+    await Promise.all(toUpdate.map(i => i.updateFn(auxForceMap[i.key] ?? false)));
+  };
 
   const handleOpenAlertSettings = useCallback((code: string) => {
     const s = data.find(x => x.code === code);
@@ -578,9 +724,9 @@ function DividendPageContent() {
             <button
               type="button"
               onClick={() => setDataUpdateOpen(true)}
-              className="flex items-center gap-2 rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-indigo-500"
+              className="flex items-center gap-2 rounded border border-rule-strong bg-paper-card px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-accent hover:text-accent"
             >
-              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v18m9-9H3" /></svg>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
               数据更新
             </button>
             <DataUpdateDrawer
@@ -588,156 +734,78 @@ function DividendPageContent() {
               onClose={() => setDataUpdateOpen(false)}
               onOpenScheduler={() => setSchedulerOpen(true)}
             >
-            <div className="space-y-3 [&>button]:w-full [&>button]:justify-between [&>div]:w-full [&>div>button]:w-full [&>div>button]:justify-between [&>div>div>button]:w-full [&>div>div>button]:justify-between">
+            <div className="space-y-4">
             <p className="pt-1 text-xs font-semibold tracking-wide text-ink-muted">更新任务</p>
-            <div ref={indexPopoverRef}>
-              <IndexStatusPopover
-                results={indexResults}
-                holdingsStatus={holdingsStatus}
-                refreshing={indexRefreshing}
-                onRetry={refreshIndexHoldings}
-                open={indexPopoverOpen}
-                onToggle={() => setIndexPopoverOpen(!indexPopoverOpen)}
-                onClose={() => setIndexPopoverOpen(false)}
-              />
+            <div className="rounded-lg border border-rule bg-paper-card divide-y divide-rule">
+            <div className="flex items-center gap-3 px-3 py-2.5">
+              <div className="flex-1 min-w-0">
+                <div className="text-[13px] font-medium text-ink">红利指数持仓</div>
+                <div className="mt-0.5 text-[11px] text-ink-muted">指数成分股持仓 CSV 覆盖度</div>
+              </div>
+              <div ref={indexPopoverRef} className="flex-shrink-0">
+                <IndexStatusPopover
+                  results={indexResults}
+                  holdingsStatus={holdingsStatus}
+                  refreshing={indexRefreshing}
+                  onRetry={refreshIndexHoldings}
+                  open={indexPopoverOpen}
+                  onToggle={() => setIndexPopoverOpen(!indexPopoverOpen)}
+                  onClose={() => setIndexPopoverOpen(false)}
+                />
+              </div>
             </div>
 
-            <button
-              onClick={updateDividend}
-              disabled={!dividendNeedsUpdate || updateState.dividend === 'loading'}
-              title={dividendNeedsUpdate ? '本月数据待更新' : '本月数据已更新'}
-              className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
-                ${!dividendNeedsUpdate || updateState.dividend === 'loading'
-                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                }
-              `}
-            >
-              {updateState.dividend === 'loading' ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  刷新中...
-                </>
-              ) : updateState.dividend === 'success' && updateState.dividend_failed_count !== undefined ? (
-                updateState.dividend_failed_count > 0 ? (
-                  <>
-                    <span className="text-amber-400">⚠️</span>
-                    完成{updateState.dividend_completed_count}条，失败{updateState.dividend_failed_count}条
-                  </>
+            <UpdateTaskRow
+              label="股息率"
+              tone={updateState.dividend === 'loading'
+                ? 'loading'
+                : updateState.dividend === 'success' && updateState.dividend_failed_count !== undefined
+                  ? (updateState.dividend_failed_count > 0 ? 'pending' : 'ok')
+                  : dividendNeedsUpdate ? 'pending' : 'ok'}
+              sub={
+                updateState.dividend === 'loading' ? (
+                  <span className="text-blue-400">刷新中…</span>
+                ) : updateState.dividend === 'success' && updateState.dividend_failed_count !== undefined ? (
+                  updateState.dividend_failed_count > 0 ? (
+                    <span className="text-amber-400">完成 {updateState.dividend_completed_count} 条，失败 {updateState.dividend_failed_count} 条</span>
+                  ) : (
+                    <span className="text-green-400">已是最新</span>
+                  )
+                ) : dividendNeedsUpdate ? (
+                  updateState.dividend_target_count ? (
+                    <span className="text-amber-400">待完成 {updateState.dividend_target_count - (updateState.dividend_completed_count || 0)}/{updateState.dividend_target_count}</span>
+                  ) : (
+                    <span className="text-amber-400">本月数据待更新</span>
+                  )
                 ) : (
-                  <>
-                    <span className="text-green-400">✅</span>
-                    已是最新
-                  </>
+                  <span className="text-green-400">已是最新</span>
                 )
-              ) : dividendNeedsUpdate && updateState.dividend_target_count ? (
-                <>
-                  <span className="text-amber-400">📥</span>
-                  待完成（{updateState.dividend_target_count - (updateState.dividend_completed_count || 0)}/{updateState.dividend_target_count}）
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  股息率
-                </>
-              )}
-            </button>
+              }
+              actionLabel={updateState.dividend === 'loading' ? '更新中' : '更新'}
+              onAction={updateDividend}
+              actionDisabled={!dividendNeedsUpdate || updateState.dividend === 'loading'}
+            />
 
-            <div ref={auxMenuRef} className="relative">
-              {(() => {
-                const auxPendingCount =
-                  (auxStatuses.sw_industry?.needs_update ? 1 : 0) +
-                  (auxStatuses.financial?.needs_update ? 1 : 0) +
-                  (auxStatuses.shareholder?.needs_update ? 1 : 0) +
-                  (auxStatuses.board?.needs_update ? 1 : 0);
-                const auxAnyLoading =
-                  updateState.sw_industry === 'loading' ||
-                  updateState.financial === 'loading' ||
-                  updateState.shareholder === 'loading' ||
-                  updateState.board === 'loading';
-                return (
-                  <>
-                    <button
-                      onClick={() => setAuxOpen(!auxOpen)}
-                      disabled={auxAnyLoading}
-                      className={`
-                        px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
-                        ${auxAnyLoading
-                          ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                          : auxPendingCount > 0
-                            ? 'bg-indigo-600 text-white hover:bg-indigo-500 shadow-md shadow-indigo-500/20'
-                            : 'bg-paper-tint text-gray-400 border border-rule hover:text-ink-strong'
-                        }
-                      `}
-                    >
-                      {auxAnyLoading ? (
-                        <span className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      ) : auxPendingCount > 0 ? (
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                        </svg>
-                      ) : (
-                        <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                      辅助数据
-                      {auxPendingCount > 0 && (
-                        <span className="bg-white/25 text-white text-[11px] font-mono font-semibold rounded-full px-1.5 min-w-[18px] h-[18px] inline-flex items-center justify-center -ml-1">
-                          {auxPendingCount}
-                        </span>
-                      )}
-                      <svg className={`w-3 h-3 transition-transform ${auxOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                      </svg>
-                    </button>
-                    {auxOpen && (
-                      <div className="absolute right-0 mt-1 bg-paper-card border border-rule rounded-lg shadow-lg z-50 w-[340px] overflow-hidden">
-                        {(() => {
-                          const auxItems: Array<{
-                            key: 'sw_industry' | 'financial' | 'shareholder' | 'board';
-                            label: string;
-                            sub: string;
-                            status: typeof auxStatuses.sw_industry;
-                            updateFn: (force: boolean) => Promise<unknown>;
-                            loadingKey: 'sw_industry' | 'financial' | 'shareholder' | 'board';
-                          }> = [
-                            { key: 'sw_industry', label: '申万行业', sub: '申万一级/二级/三级', status: auxStatuses.sw_industry, updateFn: updateSwIndustry, loadingKey: 'sw_industry' },
-                            { key: 'financial', label: '财务指标', sub: '财报基础数据', status: auxStatuses.financial, updateFn: (force) => updateFinancial(financialMissingCodes.length > 0 ? financialMissingCodes : undefined, force), loadingKey: 'financial' },
-                            { key: 'shareholder', label: '股东户数', sub: '披露日统计', status: auxStatuses.shareholder, updateFn: updateShareholder, loadingKey: 'shareholder' },
-                            { key: 'board', label: '个股板块', sub: 'emweb 板块归属', status: auxStatuses.board, updateFn: (force) => updateBoard(boardMissingCodes.length > 0 ? boardMissingCodes : undefined, force), loadingKey: 'board' },
-                          ];
-                          return (
-                            <>
-                              {auxPendingCount > 0 && !auxAnyLoading && (
-                                <div className="p-2.5 bg-gradient-to-b from-indigo-500/10 to-transparent border-b border-rule">
-                                  <button
-                                    onClick={async () => {
-                                      const toUpdate = auxItems.filter(i => i.status?.needs_update);
-                                      await Promise.all(
-                                        toUpdate.map(i => i.updateFn(auxForceMap[i.key] ?? false))
-                                      );
-                                    }}
-                                    className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
-                                  >
-                                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                                    </svg>
-                                    全部更新
-                                    <span className="bg-white/25 text-white text-[11px] font-mono font-semibold rounded-full px-1.5 min-w-[18px] h-[16px] inline-flex items-center justify-center">
-                                      {auxPendingCount}
-                                    </span>
-                                    项
-                                  </button>
-                                </div>
-                              )}
-                              <div>
-                                {auxItems.map(item => {
+            <UpdateTaskRow
+              label="辅助数据"
+              tone={auxAnyLoading ? 'loading' : auxPendingCount > 0 ? 'pending' : 'ok'}
+              sub={
+                auxAnyLoading ? (
+                  <span className="text-blue-400">更新中…</span>
+                ) : auxPendingCount > 0 ? (
+                  <span className="text-amber-400">{auxPendingCount} 项待更新</span>
+                ) : (
+                  <span className="text-green-400">全部最新</span>
+                )
+              }
+              actionLabel={auxAnyLoading ? '更新中' : auxPendingCount > 0 ? '全部更新' : '更新'}
+              onAction={updateAllAux}
+              actionDisabled={auxAnyLoading || auxPendingCount === 0}
+              onToggle={() => setAuxOpen(!auxOpen)}
+              expanded={auxOpen}
+            >
+              <div>
+                {auxItems.map(item => {
                                   const isLoading = updateState[item.loadingKey] === 'loading';
                                   const daysAgo = item.status?.days_since_update != null ? item.status.days_since_update : null;
                                   const isCurrent = !isLoading && !item.status?.needs_update;
@@ -822,156 +890,72 @@ function DividendPageContent() {
                                       </div>
                                     </div>
                                   );
-                                })}
-                              </div>
-                            </>
-                          );
-                        })()}
-                      </div>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
+                })}
+              </div>
+            </UpdateTaskRow>
 
-            <button
-              onClick={() => {
+            <UpdateTaskRow
+              label="M120 均线"
+              tone={updateState.m120 === 'loading' ? 'loading' : m120NeedsUpdate ? 'pending' : 'ok'}
+              sub={
+                updateState.m120 === 'loading' ? (
+                  <span className="text-blue-400">刷新中…</span>
+                ) : m120NeedsUpdate ? (
+                  <span className="text-amber-400">有缺失数据</span>
+                ) : (
+                  <span className="text-green-400">已是最新</span>
+                )
+              }
+              actionLabel={updateState.m120 === 'loading' ? '更新中' : '更新'}
+              onAction={() => {
                 // 优先传 missing_codes（增量补缺），没有缺失才传全集
                 const codesToUpdate = m120MissingCodes.length > 0 ? m120MissingCodes : stockCodes;
                 updateM120(codesToUpdate);
                 setRefreshKey(k => k + 1);
               }}
-              disabled={!m120NeedsUpdate || updateState.m120 === 'loading'}
-              className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
-                ${!m120NeedsUpdate || updateState.m120 === 'loading'
-                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                }
-              `}
-              title={m120NeedsUpdate ? "更新 M120 均线（有缺失数据）" : "更新 M120 均线（已是最新）"}
-            >
-              <svg
-                className={`w-4 h-4 ${updateState.m120 === 'loading' ? 'animate-spin' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-              M120
-            </button>
+              actionDisabled={!m120NeedsUpdate || updateState.m120 === 'loading'}
+            />
 
-            <button
-              onClick={() => {
+            <UpdateTaskRow
+              label="实时价格"
+              tone={updateState.realtime === 'loading' ? 'loading' : 'idle'}
+              sub={
+                updateState.realtime === 'loading' ? (
+                  <span className="text-blue-400">拉取中…</span>
+                ) : (
+                  '每日更新一次'
+                )
+              }
+              actionLabel={updateState.realtime === 'loading' ? '更新中' : '更新'}
+              onAction={() => {
                 updateRealtimeInfo(stockCodes);
                 setRefreshKey(k => k + 1);
               }}
-              disabled={updateState.realtime === 'loading'}
-              className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
-                ${updateState.realtime === 'loading'
-                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                }
-              `}
-              title="更新实时价格（每日更新一次）"
-            >
-              <svg
-                className={`w-4 h-4 ${updateState.realtime === 'loading' ? 'animate-spin' : ''}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              实时价
-            </button>
-
+              actionDisabled={updateState.realtime === 'loading'}
+            />
+            </div>
             </div>
             </DataUpdateDrawer>
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => {
-                const headers = [
-                  '股票代码', '股票名称', '交易所', '申万一级行业', '申万二级行业', '申万三级行业',
-                  '3年平均股息率(%)', '实时股息率(%)', '实时股息率TTM(%)',
-                  'M120', '实时价格', '收盘价/M120',
-                  '股东户数(万)', '股东人数增幅(%)', '人均持股',
-                  '扣非净利润同比(%)', '3年复合增长率(%)',
-                  '最近年报年度', 'EPS(元)', '分红比例(%)'
-                ];
-
-                const rows = stocksWithTechnical.map(stock => {
-                  const tech = stock.technical;
-                  const yield_3y = stock.avg_yield_3y ? stock.avg_yield_3y.toFixed(2) : '';
-                  const realtime_yield = (stock.dividend_2025 && tech?.realtime)
-                    ? (stock.dividend_2025 / tech.realtime * 100).toFixed(2) : '';
-                  const yield_ttm = tech?.yield_ttm ? tech.yield_ttm.toFixed(2) : '';
-                  const m120 = tech?.m120 ? tech.m120.toFixed(2) : '';
-                  const realtime = tech?.realtime ? tech.realtime.toFixed(2) : '';
-                  const deviation = tech?.realtimeDeviation ? tech.realtimeDeviation.toFixed(2) : '';
-                  const shareholder_count = stock.shareholder_count
-                    ? (stock.shareholder_count / 10000).toFixed(1) : '';
-                  const shareholder_change = stock.shareholder_change_pct
-                    ? stock.shareholder_change_pct.toFixed(2) : '';
-                  const per_share = stock.per_share_holding
-                    ? stock.per_share_holding.toFixed(0) : '';
-                  const yoy = stock.net_profit_ex_non_recurring_yoy != null
-                    ? stock.net_profit_ex_non_recurring_yoy.toFixed(2) : '无法计算';
-                  const cagr = stock.net_profit_cagr_3y != null
-                    ? stock.net_profit_cagr_3y.toFixed(2) : '无法计算';
-                  const eps_year_csv = stock.eps_year ?? '';
-                  const eps_csv = stock.eps != null ? stock.eps.toFixed(4) : '';
-                  const payout_csv = stock.payout_ratio != null ? stock.payout_ratio.toFixed(2) : '';
-
-                  return [
-                    stock.code, stock.name, stock.exchange,
-                    stock.sw_level1 || '', stock.sw_level2 || '', stock.sw_level3 || '',
-                    yield_3y, realtime_yield, yield_ttm,
-                    m120, realtime, deviation,
-                    shareholder_count, shareholder_change, per_share,
-                    yoy, cagr,
-                    eps_year_csv, eps_csv, payout_csv
-                  ].join(',');
-                });
-
-                const csv = [headers.join(','), ...rows].join('\n');
-                const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `dividend_export_${new Date().toISOString().slice(0, 10)}.csv`;
-                a.click();
-                URL.revokeObjectURL(url);
-              }}
-              className="hidden px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-green-600 text-white hover:bg-green-500"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-              </svg>
-              CSV
-            </button>
-
             <div
               className="relative"
-              onMouseLeave={() => setReportOpen(false)}
+              onMouseLeave={() => setExportOpen(false)}
             >
               <button
-                onClick={() => setReportOpen(!reportOpen)}
-                className="px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap bg-blue-600 text-white hover:bg-blue-500"
+                onClick={() => setExportOpen(!exportOpen)}
+                className="flex items-center gap-2 rounded border border-rule-strong bg-paper-card px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-accent hover:text-accent"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                 </svg>
-                报告
-                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                导出
+                <svg className={`w-3 h-3 transition-transform ${exportOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                 </svg>
               </button>
-              {reportOpen && (
+              {exportOpen && (
                 <div className="absolute right-0 mt-1 bg-paper-card border border-rule rounded-lg shadow-lg z-50 min-w-[200px] overflow-hidden">
                   <button
                     onClick={() => downloadReport('a4')}
@@ -982,10 +966,17 @@ function DividendPageContent() {
                   </button>
                   <button
                     onClick={() => downloadReport('carousel')}
-                    className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint last:rounded-b border-t border-rule"
+                    className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint border-t border-rule"
                   >
                     <div className="font-medium">手机竖版（轮播）</div>
                     <div className="text-xs text-ink-muted mt-0.5">1080×1920 · 支持⬇下载原图</div>
+                  </button>
+                  <button
+                    onClick={downloadCsv}
+                    className="block w-full text-left px-4 py-2 text-sm text-ink hover:bg-paper-tint border-t border-rule"
+                  >
+                    <div className="font-medium">CSV 表格</div>
+                    <div className="text-xs text-ink-muted mt-0.5">当前筛选结果 · 全字段</div>
                   </button>
                 </div>
               )}
