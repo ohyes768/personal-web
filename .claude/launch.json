@@ -2,58 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "housing-map-web",
+      "name": "kids-catalog",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "next", "dev", "-p", "3007"],
-      "cwd": "apps/housing-map",
-      "port": 3007,
-      "url": "http://localhost:3007"
-    },
-    {
-      "name": "macro-web",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "next", "dev", "-p", "3012"],
-      "cwd": "apps/macro",
-      "port": 3012,
-      "url": "http://localhost:3012"
-    },
-    {
-      "name": "skill-manager-web",
-      "url": "http://localhost:3008",
-      "port": 3008
-    },
-    {
-      "name": "kids-catalog-web",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "next", "dev", "-p", "3009"],
-      "cwd": "apps/kids-catalog",
-      "port": 3009,
-      "url": "http://localhost:3009"
-    },
-    {
-      "name": "skill-manager-web-alt",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "next", "dev", "-p", "3009"],
-      "cwd": "apps/skill-manager",
-      "port": 3009,
-      "url": "http://localhost:3009"
-    },
-    {
-      "name": "skill-manager-web-test",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["exec", "next", "dev", "-p", "3010"],
-      "cwd": "apps/skill-manager",
-      "port": 3010,
-      "url": "http://localhost:3010"
-    },
-    {
-      "name": "skill-manager-api",
-      "runtimeExecutable": "cmd",
-      "runtimeArgs": [
-        "/c",
-        "cd /d backend\\skill-manager&& set SKILLS_SOURCE_ROOT=F:\\personal-projects\\skills&& set GITHUB_SKILL_CACHE_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\github-cache&& set SKILL_MANAGER_STATE_DIR=F:\\personal-projects\\personal-web\\.skill-manager-dev\\state&& set OPENCLAW_SKILLS_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\targets\\openclaw&& set HERMES_SKILLS_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\targets\\hermes&& set SKILL_MANAGER_TARGETS_MOUNT_ROOT=F:\\personal-projects\\personal-web\\.skill-manager-dev\\targets&& set SKILL_MANAGER_ADMIN_PASSWORD=dev-only-not-for-production&& .venv\\Scripts\\python.exe -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8097"
-      ],
-      "port": 8097
+      "runtimeArgs": ["-C", "apps/kids-catalog", "dev"],
+      "port": 3009
     }
   ]
 }
