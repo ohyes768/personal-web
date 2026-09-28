@@ -459,6 +459,7 @@ services:
 
   kids-catalog-frontend:
     build: { context: ./apps/kids-catalog }
+    image: kids-catalog-frontend:latest
     container_name: kids-catalog-frontend
     restart: unless-stopped
     ports: ["127.0.0.1:3009:3009"]
