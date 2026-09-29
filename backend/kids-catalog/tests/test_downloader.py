@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from src.downloader import (Downloader, Track, qingting_media_url,
-                            sanitize_filename)
+from src.downloader import (AlbumOfflineError, Downloader, Track,
+                            qingting_media_url, sanitize_filename)
 
 
 def test_sanitize_filename_strips_windows_invalid_chars():
@@ -142,7 +142,7 @@ def test_ximalaya_offline_album_error_is_surfaced(make_downloader):
         platform="喜马拉雅",
         pages=[("https://mobile.ximalaya.com/mobile/v1/album/track/",
                 {"ret": 924, "msg": "亲，该内容因故已下架，请您谅解"})])
-    with pytest.raises(RuntimeError, match="已下架"):
+    with pytest.raises(AlbumOfflineError, match="已下架"):
         downloader.list_tracks("喜马拉雅", "12263592")
 
 

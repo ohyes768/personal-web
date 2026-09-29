@@ -4,7 +4,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from src.downloader import DownloadReport
+from src.downloader import AlbumOfflineError, DownloadReport
 from src.main import create_app
 
 
@@ -135,6 +135,34 @@ def test_legacy_needs_authorization_job_can_requeue(tmp_path: Path):
             listing = client.get("/api/albums").json()
         assert listing["albums"][0]["download_status"] == "done"
     assert downloader.calls == [("蜻蜓FM", "1", "摇篮曲")]
+
+
+def test_offline_album_becomes_unavailable_and_cannot_retry(tmp_path: Path):
+    """下架专辑落 unavailable 状态：页面置灰展示，重试点击幂等返回不再起线程。"""
+
+    class OfflineDownloader:
+        calls = 0
+
+        def download_album(self, platform, album_id, title, on_progress=None):
+            type(self).calls += 1
+            raise AlbumOfflineError("亲，该内容因故已下架，请您谅解")
+
+    downloader = OfflineDownloader()
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    app.state.catalog.refresh(ALBUMS)
+    with TestClient(app) as client:
+        album_pk = client.get("/api/albums").json()["albums"][0]["id"]
+        first = client.post(f"/api/albums/{album_pk}/download").json()
+        deadline = time.monotonic() + 10
+        listing = client.get("/api/albums").json()
+        while listing["albums"][0]["download_status"] == "queued" and time.monotonic() < deadline:
+            time.sleep(0.05)
+            listing = client.get("/api/albums").json()
+        assert listing["albums"][0]["download_status"] == "unavailable"
+        assert "已下架" in listing["albums"][0]["reason"]
+        again = client.post(f"/api/albums/{album_pk}/download").json()
+        assert again["status"] == "unavailable"  # 不再重新排队
+    assert OfflineDownloader.calls == 1
 
 
 def test_duplicate_queue_is_idempotent(tmp_path: Path):

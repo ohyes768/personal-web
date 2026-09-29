@@ -48,6 +48,10 @@ class DownloadReport:
     failed: int = 0   # 网络或写盘失败
 
 
+class AlbumOfflineError(RuntimeError):
+    """专辑已被平台下架（如喜马拉雅 ret=924），重试也无法下载。"""
+
+
 def sanitize_filename(name: str) -> str:
     return INVALID_FILENAME.sub("", name)[:MAX_NAME_LENGTH].rstrip(". ")
 
@@ -150,7 +154,7 @@ class Downloader:
                                   referer=f"https://www.ximalaya.com/album/{album_id}")
             if "data" not in payload:
                 # 实测下架专辑返回 {"ret": 924, "msg": "该内容因故已下架"}，须透出真实原因。
-                raise RuntimeError(payload.get("msg") or f"喜马拉雅曲目接口异常: ret={payload.get('ret')}")
+                raise AlbumOfflineError(payload.get("msg") or f"喜马拉雅曲目接口异常: ret={payload.get('ret')}")
             data = payload["data"]
             for item in data.get("list", []):
                 tracks.append(Track(str(item["trackId"]), str(item["title"]), "m4a"))

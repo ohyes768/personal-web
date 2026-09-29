@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from src.collector import collect_latest
-from src.downloader import Downloader
+from src.downloader import AlbumOfflineError, Downloader
 
 logger = logging.getLogger(__name__)
 MONTHLY_SECONDS = 30 * 24 * 3600
@@ -110,6 +110,10 @@ class Catalog:
 
         try:
             report = self.downloader.download_album(platform, album_id, title, on_progress=on_progress)
+        except AlbumOfflineError as exc:
+            logger.info("专辑《%s》已被平台下架: %s", title, exc)
+            self._finish(job_id, 'unavailable', f'平台已下架: {exc}')
+            return
         except Exception as exc:
             logger.warning("专辑《%s》下载失败", title, exc_info=True)
             self._finish(job_id, 'failed', f'下载失败: {exc}')
