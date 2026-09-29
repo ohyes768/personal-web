@@ -169,6 +169,9 @@ def collect_ximalaya_official(client: XimalayaClient) -> list[dict]:
             album_id = str(album["id"])
             if album_id in seen:
                 continue
+            # 会员专辑下载环节只会被跳过，不占免费内容的名额。
+            if album.get("is_paid") is True:
+                continue
             seen.add(album_id)
             if age:
                 evidence = f"平台元数据精确年龄段 {age['display_name']}；内容属性 {content['display_name']}"

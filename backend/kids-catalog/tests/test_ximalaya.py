@@ -85,12 +85,13 @@ def test_pick_age_accepts_variant_writing():
 
 
 def test_collect_marks_exact_age_and_filters_request_by_it():
-    client = FakeClient(["0-1岁", "3-6岁"], [album(100, "宝宝儿歌", is_paid=True)])
+    client = FakeClient(["0-1岁", "3-6岁"], [album(100, "宝宝儿歌", is_paid=False), album(103, "会员专辑", is_paid=True)])
     rows = collect_ximalaya_official(client)
+    assert [r["album_id"] for r in rows] == ["100"]  # 会员专辑不占名额
     assert rows[0]["platform"] == "喜马拉雅开放平台"
     assert rows[0]["age_confidence"] == "高"
-    assert rows[0]["sale_type"] == 1
-    # is_paid 缺失时不得猜测付费状态。
+    assert rows[0]["sale_type"] == 0
+    # is_paid 缺失时不得猜测付费状态，也不得过滤。
     client_unknown = FakeClient(["0-1岁", "3-6岁"], [album(101, "免费缺失标记")])
     assert collect_ximalaya_official(client_unknown)[0]["sale_type"] is None
     assert "平台元数据精确年龄段 0-1岁" in rows[0]["age_evidence"]
@@ -149,6 +150,7 @@ def test_collect_ximalaya_web_ranks_age_evidence(monkeypatch):
             {"albumId": 1, "albumTitle": "宝宝儿歌 0-1岁", "intro": "", "isPaid": False},
             {"albumId": 2, "albumTitle": "三字儿歌学说话 0-3岁早教", "intro": "", "isPaid": False},
             {"albumId": 3, "albumTitle": "贝乐虎儿歌", "intro": "唱跳儿歌", "isPaid": False},
+            {"albumId": 4, "albumTitle": "会员儿歌 0-1岁", "intro": "", "isPaid": True},
         ]}},
     }
 
@@ -157,7 +159,7 @@ def test_collect_ximalaya_web_ranks_age_evidence(monkeypatch):
 
     monkeypatch.setattr(collector, "_get_json", fake_get)
     rows = collector.collect_ximalaya_web()
-    # 儿歌频道无年龄标注的不收，避免混入 3 岁以上内容。
+    # 儿歌频道无年龄标注的不收；会员专辑不占免费内容名额。
     assert [r["album_id"] for r in rows] == ["1", "2"]
     assert rows[0]["age_confidence"] == "高" and "标注 0-1 岁" in rows[0]["age_evidence"]
     assert rows[1]["age_confidence"] == "中" and "低龄推断" in rows[1]["age_evidence"]
@@ -169,14 +171,14 @@ def test_collect_ximalaya_web_lullaby_channel_infers_from_scene(monkeypatch):
         collector.XM_GROUP_ALL: {"data": {"groups": [{"id": 11, "name": "儿童"}]}},
         collector.XM_GROUP_CHANNELS: web_api_response("哄睡", []),
         collector.XM_CHANNEL_ALBUMS: {"data": {"albums": [
-            {"albumId": 9, "albumTitle": "晚安妈妈睡前故事", "intro": "", "isPaid": True},
+            {"albumId": 9, "albumTitle": "晚安妈妈睡前故事", "intro": "", "isPaid": False},
         ]}},
     }
     monkeypatch.setattr(collector, "_get_json", lambda url, **p: responses[url])
     rows = collector.collect_ximalaya_web()
     assert rows[0]["age_confidence"] == "中"
     assert "婴幼儿向哄睡内容" in rows[0]["age_evidence"]
-    assert rows[0]["sale_type"] == 1
+    assert rows[0]["sale_type"] == 0
 
 
 def test_collect_ximalaya_web_rejects_school_age_and_adult_lullabies(monkeypatch):

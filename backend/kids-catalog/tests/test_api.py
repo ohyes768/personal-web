@@ -51,6 +51,20 @@ def test_paid_album_keeps_its_sale_type(tmp_path: Path):
         assert albums["会员儿歌"]["sale_type"] == 1
 
 
+def test_refresh_retires_albums_dropped_from_latest_catalog(tmp_path: Path):
+    """本期榜单没有的历史专辑（含旧付费）连同下载记录清出目录，名额始终留给本期免费内容。"""
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music")
+    catalog = app.state.catalog
+    catalog.refresh([ALBUMS[0], {**ALBUMS[0], "album_id": "2", "title": "旧付费儿歌", "sale_type": 1}])
+    catalog.queue(2)  # 排一张旧付费专辑，留下 skipped_paid 记录（不起下载线程）
+    catalog.refresh([ALBUMS[0]])
+    with TestClient(app) as client:
+        titles = [a["title"] for a in client.get("/api/albums").json()["albums"]]
+    assert titles == ["摇篮曲"]
+    with catalog.db() as con:
+        assert con.execute('select count(*) from jobs').fetchone()[0] == 0
+
+
 def test_legacy_database_gains_sale_type_column(tmp_path: Path):
     data_dir = tmp_path / "data"
     data_dir.mkdir(parents=True)

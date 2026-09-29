@@ -21,7 +21,7 @@ XM_CHANNEL_ALBUMS = f"{XM_WEB_BASE}/revision/metadata/v2/channel/albums"
 XM_KIDS_GROUP = "儿童"
 # 只收儿歌/哄睡频道：其他儿童频道（故事/科普等）受众偏 3 岁以上。
 XM_WANTED_CHANNELS = ("儿歌", "哄睡")
-# 每个平台源保留的专辑上限（蜻蜓 + 喜马拉雅 = 共 20 张）。
+# 每个平台源保留的专辑上限（蜻蜓 + 喜马拉雅 = 共 20 张，全部免费内容）。
 PER_PLATFORM_LIMIT = 10
 INFANT = re.compile(r"(?:0\s*[-~～至到]\s*1\s*岁|0\s*岁\s*(?:\+|以上)|婴儿|婴幼儿)")
 TODDLER = re.compile(r"0\s*[-~～至到]\s*[23]\s*岁")
@@ -51,8 +51,12 @@ def collect_qingting() -> list[dict]:
         items = state.get("AttributeStore", {}).get("FilterList", [])
         rows = []
         for item in items:
-            if item.get("category_id") == 1599 and item.get("id") and item.get("title"):
-                rows.append({
+            if item.get("category_id") != 1599 or not item.get("id") or not item.get("title"):
+                continue
+            # 会员专辑下载环节只会被跳过，不占免费内容的 10 个名额。
+            if item.get("sale_type") == 1:
+                continue
+            rows.append({
                     "platform": "蜻蜓FM", "album_id": str(item["id"]),
                     "title": item["title"],
                     "url": f"https://m.qingting.fm/vchannels/{item['id']}/",
@@ -94,6 +98,9 @@ def collect_ximalaya_web() -> list[dict]:
         data = _get_json(XM_CHANNEL_ALBUMS, metadataValueId=str(metadata_value_id),
                          page="1", perPage="30", sort="3")["data"]
         for album in data.get("albums", []):
+            # 会员专辑下载环节只会被跳过，不占免费内容的名额。
+            if album.get("isPaid") is True:
+                continue
             text = f"{album['albumTitle']} {album.get('intro') or ''}"
             if INFANT.search(text):
                 evidence, confidence = f"喜马拉雅{channel_name}频道热门榜，标注 0-1 岁", "高"

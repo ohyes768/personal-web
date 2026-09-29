@@ -64,6 +64,9 @@ class Catalog:
                   age_confidence=excluded.age_confidence,sale_type=excluded.sale_type,last_seen=excluded.last_seen''',
                   (row['platform'], str(row['album_id']), row['title'], row['url'],
                    row['age_evidence'], row['age_confidence'], row.get('sale_type'), now))
+            # 本期榜单之外的历史专辑（旧付费、被淘汰的）连同下载记录一并清出目录。
+            con.execute('delete from jobs where album_id in (select id from albums where last_seen != ?)', (now,))
+            con.execute('delete from albums where last_seen != ?', (now,))
         return len(albums)
 
     def list(self):
