@@ -9,7 +9,7 @@ from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 
-from src.downloader import ximalaya_album_available
+from src.downloader import track_total, ximalaya_album_available
 from src.ximalaya import CredentialsMissing, XimalayaClient, collect_ximalaya_official
 
 logger = logging.getLogger(__name__)
@@ -151,4 +151,14 @@ def collect_latest() -> list[dict]:
         # Web scraping is best-effort; Qingting remains a valid high-confidence result.
         logger.warning("喜马拉雅网页采集不可用", exc_info=True)
     unique = {(row["platform"], row["album_id"]): row for row in rows}
-    return list(unique.values())
+    # 下载前成本提示：为每张候选附曲目总数；单张取数失败不阻塞采集（显示端留空）。
+    counted: list[dict] = []
+    for row in unique.values():
+        try:
+            total = track_total(row["platform"], row["album_id"])
+        except Exception:
+            logger.warning("曲目总数获取失败: %s %s", row["platform"], row["title"])
+            total = None
+        counted.append({**row, "track_count": total})
+        time.sleep(0.2)  # 与下架预检同款限速，避免触发平台风控。
+    return counted

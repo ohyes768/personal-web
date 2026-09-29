@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from src.downloader import (AlbumOfflineError, Downloader, Track,
-                            qingting_media_url, sanitize_filename)
+                            qingting_media_url, sanitize_filename, track_total)
 
 
 def test_sanitize_filename_strips_windows_invalid_chars():
@@ -160,3 +160,40 @@ def test_download_album_existing_file_is_resumed_not_redownloaded(make_downloade
     assert report.downloaded == 1
     assert http.download_urls == []  # 已存在的文件不重复下载
     assert existing.read_bytes() == b"already-here"
+
+
+def test_track_total_reads_platform_totals(make_downloader):
+    """下载前成本提示的数据源：喜马拉雅 totalCount、蜻蜓 programs total，一页即可。"""
+    make_downloader(
+        platform="喜马拉雅",
+        pages=[("https://mobile.ximalaya.com/mobile/v1/album/track/?albumId=4436043&pageSize=1&pageId=1",
+                {"data": {"maxPageId": 5, "totalCount": 148, "list": []}}),
+               ("https://i.qingting.fm/capi/v3/channel/326665", {"data": {"v": 9}}),
+               ("https://i.qingting.fm/capi/channel/326665/programs/9", {"data": {"total": 60, "programs": []}})])
+    assert track_total("喜马拉雅", "4436043") == 148
+    assert track_total("蜻蜓FM", "326665") == 60
+    assert track_total("未知平台", "1") is None
+
+
+def test_track_total_missing_field_returns_none(make_downloader):
+    make_downloader(
+        platform="喜马拉雅",
+        pages=[("https://mobile.ximalaya.com/mobile/v1/album/track/",
+                {"data": {"maxPageId": 1, "list": []}})])
+    assert track_total("喜马拉雅", "4436043") is None
+
+
+def test_download_album_reports_directory_size(make_downloader):
+    downloader, _ = make_downloader(
+        platform="喜马拉雅",
+        pages=[("https://mobile.ximalaya.com/mobile/v1/album/track/?albumId=4436043&pageSize=30&pageId=1",
+                xm_track_page(959103846, "白龙马")),
+               ("https://m.ximalaya.com/tracks/959103846.json",
+                {"play_path_64": "https://cdn.example/a.m4a"})])
+    report = downloader.download_album("喜马拉雅", "4436043", "大小专辑")
+    assert report.size_bytes == len(b"audio-bytes")
+
+
+def test_album_size_bytes_missing_directory_returns_none(tmp_path: Path):
+    downloader = Downloader(tmp_path / "music")
+    assert downloader.album_size_bytes("喜马拉雅", "从未下载") is None

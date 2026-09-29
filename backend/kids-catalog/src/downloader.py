@@ -46,6 +46,7 @@ class DownloadReport:
     downloaded: int = 0
     skipped: int = 0  # 平台未放行（付费/受限）曲目
     failed: int = 0   # 网络或写盘失败
+    size_bytes: int | None = None  # 专辑目录占用；未落盘/已清理时 None
 
 
 class AlbumOfflineError(RuntimeError):
@@ -79,6 +80,25 @@ def ximalaya_album_available(album_id: str) -> bool:
     """预检专辑在移动端接口是否仍可访问；网页热门榜会残留已下架专辑。"""
     payload = _fetch_json(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize=1&pageId=1")
     return payload.get("ret") != XM_OFFLINE_RET
+
+
+def track_total(platform: str, album_id: str) -> int | None:
+    """下载前曲目总数（成本提示）：喜马拉雅读 totalCount，蜻蜓读 programs total；取不到返回 None。"""
+    if "喜马拉雅" in platform:
+        payload = _fetch_json(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize=1&pageId=1")
+        total = (payload.get("data") or {}).get("totalCount")
+        return total if isinstance(total, int) else None
+    if "蜻蜓" in platform:
+        data = _fetch_json(f"{QT_PROGRAMS_URL.format(channel_id=album_id, version=_qingting_version(album_id))}"
+                           f"?curpage=1&pagesize=1&order=asc", referer=QT_REFERER).get("data", {})
+        total = data.get("total")
+        return total if isinstance(total, int) else None
+    return None
+
+
+def _qingting_version(channel_id: str) -> str:
+    return _fetch_json(QT_CHANNEL_URL.format(channel_id=channel_id),
+                       referer=QT_REFERER)["data"]["v"]
 
 
 def _download_file(url: str, dest: Path) -> None:
@@ -130,11 +150,21 @@ class Downloader:
             if on_progress:
                 on_progress(index, len(tracks))
             time.sleep(self.throttle_seconds)
-        return report
+        return replace(report, size_bytes=self.album_size_bytes(platform, album_title))
 
     def album_dir(self, platform: str, album_title: str) -> Path:
         # xiaomusic 按「目录=专辑」扫曲库，专辑直接平铺在 music 根目录下（不按平台分层）。
         return self.music_dir / sanitize_filename(album_title)
+
+    def album_size_bytes(self, platform: str, album_title: str) -> int | None:
+        """专辑目录占用字节数（含未清掉的 .part 残留，如实反映磁盘占用）；目录不存在返回 None。"""
+        album_dir = self.album_dir(platform, album_title)
+        if not album_dir.is_dir():
+            return None
+        try:
+            return sum(p.stat().st_size for p in album_dir.rglob("*") if p.is_file())
+        except OSError:
+            return None
 
     def _download_one(self, platform: str, album_id: str, track: Track, index: int,
                       album_dir: Path, report: DownloadReport) -> DownloadReport:
@@ -174,8 +204,7 @@ class Downloader:
         return tracks
 
     def _list_qingting(self, channel_id: str) -> list[Track]:
-        version = _fetch_json(QT_CHANNEL_URL.format(channel_id=channel_id),
-                              referer=QT_REFERER)["data"]["v"]
+        version = _qingting_version(channel_id)
         tracks: list[Track] = []
         page = 1
         while page <= MAX_PAGES:

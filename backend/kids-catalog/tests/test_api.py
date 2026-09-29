@@ -26,12 +26,15 @@ class FakeDownloader:
             on_progress(self.report.downloaded, self.report.downloaded + self.report.skipped)
         return self.report
 
+    def album_size_bytes(self, platform, title):
+        return 1024
+
 
 def test_refresh_collects_latest_albums_and_persists_them(tmp_path: Path):
     app = create_app(
         data_dir=tmp_path / "data",
         music_dir=tmp_path / "music",
-        collector=lambda: ALBUMS,
+        collector=lambda: [{**ALBUMS[0], "track_count": 148}],
     )
     with TestClient(app) as client:
         refresh = client.post("/api/refresh")
@@ -40,6 +43,46 @@ def test_refresh_collects_latest_albums_and_persists_them(tmp_path: Path):
         listing = client.get("/api/albums").json()
         assert listing["albums"][0]["title"] == "摇篮曲"
         assert listing["albums"][0]["sale_type"] == 0
+        assert listing["albums"][0]["track_count"] == 148  # 下载前就能看到曲目成本
+
+
+def test_finished_download_persists_size_bytes(tmp_path: Path):
+    """下载完成把专辑占用落库，前端据此显示多少 MB。"""
+    downloader = FakeDownloader(DownloadReport(downloaded=2, size_bytes=2048))
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    app.state.catalog.refresh(ALBUMS)
+    with TestClient(app) as client:
+        album_pk = client.get("/api/albums").json()["albums"][0]["id"]
+        client.post(f"/api/albums/{album_pk}/download")
+        deadline = time.monotonic() + 10
+        listing = client.get("/api/albums").json()
+        while listing["albums"][0]["download_status"] != "done" and time.monotonic() < deadline:
+            time.sleep(0.05)
+            listing = client.get("/api/albums").json()
+        assert listing["albums"][0]["size_bytes"] == 2048
+
+
+def test_legacy_done_job_backfills_size_from_disk_once(tmp_path: Path):
+    """旧版本下载完的任务没有 size：列表时扫目录补算一次并持久化，不重复扫。"""
+    downloader = FakeDownloader()
+    downloader.album_size_bytes = lambda platform, title: 4096
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    catalog = app.state.catalog
+    catalog.refresh(ALBUMS)
+    catalog.queue(1)
+    deadline = time.monotonic() + 10
+    while True:
+        with catalog.db() as con:
+            row = con.execute('select status from jobs').fetchone()
+        if row["status"] == "done" or time.monotonic() > deadline:
+            break
+        time.sleep(0.05)
+    with catalog.db() as con:  # 抹掉 size，模拟旧数据
+        con.execute('update jobs set size_bytes=null')
+    with TestClient(app) as client:
+        assert client.get("/api/albums").json()["albums"][0]["size_bytes"] == 4096
+    with catalog.db() as con:
+        assert con.execute('select size_bytes from jobs').fetchone()[0] == 4096
 
 
 def test_paid_album_keeps_its_sale_type(tmp_path: Path):

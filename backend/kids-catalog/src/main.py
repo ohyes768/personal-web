@@ -27,22 +27,27 @@ class Catalog:
               create table if not exists albums (
                 id integer primary key, platform text not null, album_id text not null,
                 title text not null, url text not null, age_evidence text not null,
-                age_confidence text not null, sale_type integer, last_seen text not null,
+                age_confidence text not null, sale_type integer, track_count integer,
+                last_seen text not null,
                 unique(platform, album_id));
               create table if not exists jobs (
                 id integer primary key, album_id integer not null unique, status text not null,
                 reason text, created_at text not null, updated_at text not null,
                 total_tracks integer default 0, downloaded_tracks integer default 0,
+                size_bytes integer,
                 foreign key(album_id) references albums(id));
             ''')
             # Databases created before sale_type existed gain the column in place.
             columns = {row['name'] for row in con.execute('pragma table_info(albums)')}
-            if 'sale_type' not in columns:
-                con.execute('alter table albums add column sale_type integer')
+            for column in ('sale_type', 'track_count'):
+                if column not in columns:
+                    con.execute(f'alter table albums add column {column} integer')
             job_columns = {row['name'] for row in con.execute('pragma table_info(jobs)')}
             for column in ('total_tracks', 'downloaded_tracks'):
                 if column not in job_columns:
                     con.execute(f'alter table jobs add column {column} integer default 0')
+            if 'size_bytes' not in job_columns:
+                con.execute('alter table jobs add column size_bytes integer')
 
     @contextmanager
     def db(self):
@@ -58,12 +63,14 @@ class Catalog:
         now = datetime.now().isoformat()
         with self.db() as con:
             for row in albums:
-                con.execute('''insert into albums(platform,album_id,title,url,age_evidence,age_confidence,sale_type,last_seen)
-                  values(?,?,?,?,?,?,?,?) on conflict(platform,album_id) do update set
+                con.execute('''insert into albums(platform,album_id,title,url,age_evidence,age_confidence,sale_type,track_count,last_seen)
+                  values(?,?,?,?,?,?,?,?,?) on conflict(platform,album_id) do update set
                   title=excluded.title,url=excluded.url,age_evidence=excluded.age_evidence,
-                  age_confidence=excluded.age_confidence,sale_type=excluded.sale_type,last_seen=excluded.last_seen''',
+                  age_confidence=excluded.age_confidence,sale_type=excluded.sale_type,
+                  track_count=excluded.track_count,last_seen=excluded.last_seen''',
                   (row['platform'], str(row['album_id']), row['title'], row['url'],
-                   row['age_evidence'], row['age_confidence'], row.get('sale_type'), now))
+                   row['age_evidence'], row['age_confidence'], row.get('sale_type'),
+                   row.get('track_count'), now))
             # 本期榜单之外的历史专辑（旧付费、被淘汰的）连同下载记录一并清出目录。
             con.execute('delete from jobs where album_id in (select id from albums where last_seen != ?)', (now,))
             con.execute('delete from albums where last_seen != ?', (now,))
@@ -71,9 +78,25 @@ class Catalog:
 
     def list(self):
         with self.db() as con:
-            return [dict(row) for row in con.execute('''select a.*, coalesce(j.status,'not_downloaded') download_status,
-              j.reason, coalesce(j.total_tracks,0) total_tracks, coalesce(j.downloaded_tracks,0) downloaded_tracks
+            rows = [dict(row) for row in con.execute('''select a.*, coalesce(j.status,'not_downloaded') download_status,
+              j.reason, coalesce(j.total_tracks,0) total_tracks, coalesce(j.downloaded_tracks,0) downloaded_tracks,
+              j.size_bytes
               from albums a left join jobs j on j.album_id=a.id order by a.platform,a.title''')]
+        self._backfill_sizes(rows)
+        return rows
+
+    def _backfill_sizes(self, rows: "list[dict[str, Any]]"):
+        """旧版本下载完的任务没有 size_bytes：扫一次目录补上并持久化，避免每次列表重扫。
+
+        目录已被清理的记 0（算过、无文件），前端对 0 不显示。
+        """
+        for row in rows:
+            if row['download_status'] not in ('done', 'partial') or row['size_bytes'] is not None:
+                continue
+            size = self.downloader.album_size_bytes(row['platform'], row['title'])
+            with self.db() as con:
+                con.execute('update jobs set size_bytes=? where album_id=?', (size or 0, row['id']))
+            row['size_bytes'] = size or 0
 
     def queue(self, album_pk: int):
         """把专辑加入下载队列；付费专辑整张跳过（策略 A），免费专辑后台线程下载。"""
@@ -123,18 +146,19 @@ class Catalog:
             return
         logger.info("专辑《%s》下载完成: 成功 %d 跳过 %d 失败 %d", title, report.downloaded, report.skipped, report.failed)
         if report.downloaded and not (report.skipped or report.failed):
-            self._finish(job_id, 'done', None)
+            self._finish(job_id, 'done', None, report.size_bytes)
         elif report.downloaded:
             self._finish(job_id, 'partial',
-                         f'完成 {report.downloaded}，跳过受限 {report.skipped}，失败 {report.failed}')
+                         f'完成 {report.downloaded}，跳过受限 {report.skipped}，失败 {report.failed}',
+                         report.size_bytes)
         else:
             self._finish(job_id, 'failed',
                          f'未能下载任何曲目（跳过受限 {report.skipped}，失败 {report.failed}）')
 
-    def _finish(self, job_id: int, status: str, reason: str | None):
+    def _finish(self, job_id: int, status: str, reason: str | None, size_bytes: int | None = None):
         with self.db() as con:
-            con.execute('update jobs set status=?,reason=?,updated_at=? where id=?',
-                        (status, reason, datetime.now().isoformat(), job_id))
+            con.execute('update jobs set status=?,reason=?,size_bytes=?,updated_at=? where id=?',
+                        (status, reason, size_bytes, datetime.now().isoformat(), job_id))
 
 
 def create_app(data_dir: Path | None = None, music_dir: Path | None = None,

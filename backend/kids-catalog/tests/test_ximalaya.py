@@ -132,8 +132,9 @@ def test_collect_latest_falls_back_to_web_when_official_empty(monkeypatch):
     monkeypatch.delenv("XM_APP_SECRET", raising=False)
     monkeypatch.setattr("src.collector.collect_qingting", lambda: ALBUMS)
     monkeypatch.setattr("src.collector.collect_ximalaya_web", lambda: [])
+    monkeypatch.setattr("src.collector.track_total", lambda platform, album_id: 148)
     rows = collect_latest()
-    assert rows == ALBUMS
+    assert rows == [{**album, "track_count": 148} for album in ALBUMS]
 
 
 def web_api_response(channel_name: str, albums: list[dict]) -> dict:
