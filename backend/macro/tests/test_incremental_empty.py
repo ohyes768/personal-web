@@ -81,6 +81,42 @@ def test_empty_increment_is_current():
     )
 
 
+def test_empty_increment_weekly_tga_wider_window():
+    """WTREGEN 周更（每周三一个点）：正常空窗可达 8 天，日度序列仍按 5 天判。"""
+    as_of = pd.Timestamp("2026-09-29")  # 周二
+    # 底库 09-23（上周三）：lag=6，周度正常空窗 → 已是最新
+    assert _empty_increment_is_current(
+        FakeDataService(pd.Timestamp("2026-09-23")), "tga", as_of=as_of
+    )
+    # lag=8 仍在周度节奏内（发布 T+1~T+2）
+    assert _empty_increment_is_current(
+        FakeDataService(pd.Timestamp("2026-09-21")), "tga", as_of=as_of
+    )
+    # lag=9 超过周度空窗 → 底库过期，必须报失败
+    assert not _empty_increment_is_current(
+        FakeDataService(pd.Timestamp("2026-09-20")), "tga", as_of=as_of
+    )
+    # 日度序列阈值不变：lag=7 仍判过期
+    assert not _empty_increment_is_current(
+        FakeDataService(pd.Timestamp("2026-09-22")), "vix", as_of=as_of
+    )
+
+
+def test_tga_weekly_empty_window_is_current(client, monkeypatch):
+    """复现 2026-09-29 线上误报：底库停在上周三（lag=6）+ FRED 增量空 → 应为已是最新。"""
+    ds = FakeDataService(pd.Timestamp.now().normalize() - pd.Timedelta(days=6))
+
+    monkeypatch.setattr(routes, "get_data_service", lambda: ds)
+    monkeypatch.setattr(routes, "get_fred_service", lambda: _FredEmpty())
+
+    res = client.post("/api/update/tga")
+    body = res.json()
+    assert res.status_code == 200
+    assert body["success"] is True
+    assert "已是最新" in body["message"]
+    assert ds.saved is False
+
+
 def test_us_treasuries_empty_window_is_current(client, monkeypatch):
     ds = FakeDataService(pd.Timestamp.now().normalize() - pd.Timedelta(days=2))
 

@@ -143,9 +143,14 @@ def _has_observations(data) -> bool:
     return False
 
 
-# 空窗「已是最新」只覆盖周末 + FRED/TGA 常见 T+1~T+2。
+# 空窗「已是最新」只覆盖周末 + 常见 T+1~T+2 发布延迟。
 # 超过该日历天数仍无观测 = 底库过期，不得标成 success。
 EMPTY_INCREMENT_MAX_LAG_DAYS = 5
+
+# 周度序列单独放宽：如 TGA/WTREGEN 每周三一个观测、发布 T+1~T+2，
+# 正常空窗最长约 8 天（周三观测后到次周四早仍未见数）。
+_WEEKLY_EMPTY_INCREMENT_MAX_LAG_DAYS = 8
+_EMPTY_INCREMENT_MAX_LAG_DAYS_BY_TYPE = {"tga": _WEEKLY_EMPTY_INCREMENT_MAX_LAG_DAYS}
 
 
 def _empty_increment_is_current(data_service, data_type: str, as_of=None) -> bool:
@@ -155,7 +160,10 @@ def _empty_increment_is_current(data_service, data_type: str, as_of=None) -> boo
         return False
     as_of_ts = pd.Timestamp(as_of) if as_of is not None else pd.Timestamp.now()
     lag = (as_of_ts.normalize() - pd.Timestamp(last_date).normalize()).days
-    return 0 <= lag <= EMPTY_INCREMENT_MAX_LAG_DAYS
+    max_lag = _EMPTY_INCREMENT_MAX_LAG_DAYS_BY_TYPE.get(
+        data_type, EMPTY_INCREMENT_MAX_LAG_DAYS
+    )
+    return 0 <= lag <= max_lag
 
 
 def _empty_increment_fail_message(data_service, data_type: str, label: str) -> str:
