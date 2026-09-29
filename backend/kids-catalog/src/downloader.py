@@ -72,6 +72,15 @@ def _fetch_json(url: str, referer: str | None = None) -> dict:
         return json.loads(response.read().decode("utf-8", "replace"))
 
 
+XM_OFFLINE_RET = 924  # 实测下架专辑 mobile 接口返回 {"ret": 924, "msg": "该内容因故已下架"}
+
+
+def ximalaya_album_available(album_id: str) -> bool:
+    """预检专辑在移动端接口是否仍可访问；网页热门榜会残留已下架专辑。"""
+    payload = _fetch_json(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize=1&pageId=1")
+    return payload.get("ret") != XM_OFFLINE_RET
+
+
 def _download_file(url: str, dest: Path) -> None:
     """流式下载到 .part 临时文件后原子改名，避免半截文件被当作已完成。"""
     request = urllib.request.Request(url, headers={"User-Agent": UA, "Referer": QT_REFERER})

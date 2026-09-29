@@ -2,12 +2,14 @@
 import json
 import logging
 import re
+import time
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from urllib.robotparser import RobotFileParser
 
 from bs4 import BeautifulSoup
 
+from src.downloader import ximalaya_album_available
 from src.ximalaya import CredentialsMissing, XimalayaClient, collect_ximalaya_official
 
 logger = logging.getLogger(__name__)
@@ -96,7 +98,7 @@ def collect_ximalaya_web() -> list[dict]:
     rows: list[dict] = []
     for channel_name, metadata_value_id in wanted.items():
         data = _get_json(XM_CHANNEL_ALBUMS, metadataValueId=str(metadata_value_id),
-                         page="1", perPage="30", sort="3")["data"]
+                         page="1", perPage="50", sort="3")["data"]
         for album in data.get("albums", []):
             # 会员专辑下载环节只会被跳过，不占免费内容的名额。
             if album.get("isPaid") is True:
@@ -110,8 +112,18 @@ def collect_ximalaya_web() -> list[dict]:
                 evidence, confidence = "喜马拉雅哄睡频道热门榜，婴幼儿向哄睡内容推断", "中"
             else:
                 continue
+            # 网页热门榜按历史播放量排序，会残留已下架专辑（榜单与曲库不同步）；
+            # 用下载同款移动端接口预检，下架的不占免费内容名额。
+            album_id = str(album["albumId"])
+            try:
+                alive = ximalaya_album_available(album_id)
+            except Exception:
+                alive = True  # 预检网络失败时保守收录，下载环节仍有 unavailable 兜底。
+            if not alive:
+                continue
+            time.sleep(0.2)  # 预检限速，避免连续请求触发移动端接口风控。
             rows.append({
-                "platform": "喜马拉雅", "album_id": str(album["albumId"]),
+                "platform": "喜马拉雅", "album_id": album_id,
                 "title": album["albumTitle"],
                 "url": f"{XM_WEB_BASE}/album/{album['albumId']}",
                 "age_evidence": evidence, "age_confidence": confidence,
