@@ -99,7 +99,7 @@ def test_download_album_writes_numbered_files_and_reports(make_downloader):
     report = downloader.download_album("喜马拉雅", "4436043", "宝宝巴士经典儿歌",
                                        on_progress=lambda done, total: progress.append((done, total)))
     assert report.downloaded == 1 and report.skipped == 0 and report.failed == 0
-    album_dir = downloader.music_dir / "喜马拉雅" / "宝宝巴士经典儿歌"
+    album_dir = downloader.music_dir / "宝宝巴士经典儿歌"
     assert (album_dir / "001-白龙马.m4a").read_bytes() == b"audio-bytes"
     assert http.download_urls == ["https://cdn.example/a.m4a"]
     assert progress == [(1, 1)]
@@ -118,7 +118,7 @@ def test_download_album_skips_unresolvable_and_rejects(make_downloader):
                 {"play_path_64": None, "play_path_32": None, "play_path": None})])
     report = downloader.download_album("喜马拉雅", "4436043", "专辑")
     assert report.downloaded == 1 and report.skipped == 1 and report.failed == 0
-    files = sorted(p.name for p in (downloader.music_dir / "喜马拉雅" / "专辑").iterdir())
+    files = sorted(p.name for p in (downloader.music_dir / "专辑").iterdir())
     assert files == ["001-免费曲目.m4a"]
 
 
@@ -153,7 +153,7 @@ def test_download_album_existing_file_is_resumed_not_redownloaded(make_downloade
                 xm_track_page(959103846, "白龙马")),
                ("https://m.ximalaya.com/tracks/959103846.json",
                 {"play_path_64": "https://cdn.example/a.m4a"})])
-    existing = downloader.music_dir / "喜马拉雅" / "重跑专辑" / "001-白龙马.m4a"
+    existing = downloader.music_dir / "重跑专辑" / "001-白龙马.m4a"
     existing.parent.mkdir(parents=True)
     existing.write_bytes(b"already-here")
     report = downloader.download_album("喜马拉雅", "4436043", "重跑专辑")

@@ -32,7 +32,6 @@ PAGE_SIZE = 30
 MAX_PAGES = 100
 INVALID_FILENAME = re.compile(r'[\\/:*?"<>|\r\n\t]')
 MAX_NAME_LENGTH = 60
-PLATFORM_DIRS = (("蜻蜓", "蜻蜓FM"), ("喜马拉雅", "喜马拉雅"))
 
 
 @dataclass(frozen=True)
@@ -121,8 +120,8 @@ class Downloader:
         return report
 
     def album_dir(self, platform: str, album_title: str) -> Path:
-        directory = next((target for keyword, target in PLATFORM_DIRS if keyword in platform), platform)
-        return self.music_dir / directory / sanitize_filename(album_title)
+        # xiaomusic 按「目录=专辑」扫曲库，专辑直接平铺在 music 根目录下（不按平台分层）。
+        return self.music_dir / sanitize_filename(album_title)
 
     def _download_one(self, platform: str, album_id: str, track: Track, index: int,
                       album_dir: Path, report: DownloadReport) -> DownloadReport:
