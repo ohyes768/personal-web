@@ -23,3 +23,12 @@
 2. 名称是否以道路后缀结尾 / 在排除名单
 3. 是否在 `MERGE_DROP_IDS`（合并组 drop 成员）
 4. 前端当前勾选的类型 chips
+
+## 定时刷新（2026-09-30 新增）
+
+`src/scheduler.py`（精简自 macro 的 src/scheduler/，无 API 管理/执行历史）：
+
+- **cron** `17 21 * * mon`（每周一 21:17 Asia/Shanghai），任务体调 `refresh.start_refresh(0)` 全量，目标集仍走 `select_refresh_targets`（上表 `is_real_community` 口径，即全量采集）。
+- **互斥**：与前端手动刷新共用 `refresh.py` 的 `job["running"]`；定时触发撞上运行中任务返回 409，scheduler 侧记 warning 跳过，不排队。
+- **陷阱**（继承 macro）：APScheduler 3.x dow 数字 0=周一（非 crontab 的周日），星期一律写英文缩写；`from_crontab` 必须显式传 `timezone="Asia/Shanghai"`，否则容器内按 UTC 触发偏移 8 小时。
+- 手动刷新 API（`POST /api/refresh`）与前端交互不变。

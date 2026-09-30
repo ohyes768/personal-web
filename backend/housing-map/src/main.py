@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
+from src.scheduler import shutdown_scheduler, start_scheduler
 
 logger = logging.getLogger("housing-map")
 
@@ -32,7 +33,9 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     logger.info("housing-map 服务启动中...")
     logger.info("=" * 50)
+    start_scheduler()
     yield
+    shutdown_scheduler()
     logger.info("housing-map 服务关闭中...")
 
 
