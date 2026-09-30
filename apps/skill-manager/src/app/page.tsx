@@ -12,11 +12,17 @@ import {
   cloneGithubCache,
   deleteSkill,
   listSkills,
+  registerGithubBatch,
   registerGithubSkill,
   unpublishSkill,
 } from '@/lib/api';
 import type { TargetKey } from '@/lib/queue';
-import type { RegisterGithubSkillInput, SkillCard } from '@/lib/types';
+import type {
+  RegisterGithubBatchInput,
+  RegisterGithubSkillInput,
+  SkillCard,
+  TaskSnapshot,
+} from '@/lib/types';
 
 type ViewKey = 'manage' | 'board';
 type SourceTab = 'local' | 'github';
@@ -187,6 +193,29 @@ function SkillManagerPage() {
       });
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '登记失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function performRegisterBatch(
+    input: RegisterGithubBatchInput,
+    password: string
+  ) {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      // 同步段只做密码/预检/路径校验；仓库级 clone 与逐项入库在后台任务执行，
+      // 逐项成败经任务快照 results 表达（TaskProgressDialog 停留展示）
+      const created = await registerGithubBatch(input, password);
+      setShowRegister(false);
+      setActiveTask({
+        taskId: created.task_id,
+        title: `批量登记 ${input.items.length} 个 GitHub Skill`,
+        successNotice: '',
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '批量登记失败');
     } finally {
       setActionBusy(false);
     }
@@ -460,6 +489,9 @@ function SkillManagerPage() {
           busy={actionBusy}
           error={actionError}
           onRegister={(input, password) => void performRegister(input, password)}
+          onRegisterBatch={(input, password) =>
+            void performRegisterBatch(input, password)
+          }
           onCancel={() => setShowRegister(false)}
         />
       ) : null}
@@ -468,9 +500,18 @@ function SkillManagerPage() {
         <TaskProgressDialog
           taskId={activeTask.taskId}
           title={activeTask.title}
-          onDone={() => {
+          onDone={(task: TaskSnapshot) => {
             setActiveTask(null);
-            setNotice({ kind: 'ok', text: activeTask.successNotice });
+            if (task.results.length > 0) {
+              // 批量登记：notice 按逐项成败统计（部分成功时提示 err 引导复查）
+              const ok = task.results.filter((item) => item.status === 'success').length;
+              setNotice({
+                kind: ok === task.results.length ? 'ok' : 'err',
+                text: `批量登记完成：${ok}/${task.results.length} 项成功`,
+              });
+            } else {
+              setNotice({ kind: 'ok', text: activeTask.successNotice });
+            }
             void refreshSkills();
           }}
           onClose={() => setActiveTask(null)}

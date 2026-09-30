@@ -2,16 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "kids-catalog",
+      "name": "skill-manager-web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["-C", "apps/kids-catalog", "dev"],
-      "port": 3009
-    },
-    {
-      "name": "macro",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["-C", "apps/macro", "dev"],
-      "port": 3001
+      "runtimeArgs": ["-C", "apps/skill-manager", "dev"],
+      "port": 3008
     }
   ]
 }

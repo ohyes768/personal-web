@@ -52,8 +52,28 @@ export interface SkillListResponse {
 }
 
 /** models.TaskKind / TaskState：GitHub 后台任务（PRD R1-R4） */
-export type TaskKind = 'scan' | 'register' | 'clone_cache';
+export type TaskKind = 'scan' | 'register' | 'register_batch' | 'clone_cache';
 export type TaskState = 'running' | 'done' | 'error';
+
+/** models.ScanCandidate：扫描候选目录（含 SKILL.md frontmatter 元数据） */
+export interface ScanCandidate {
+  path: string;
+  name: string;
+  description: string;
+}
+
+/** models.ScanTopLevelEntry：仓库根顶层清单项（随行共享资源勾选依据） */
+export interface ScanTopLevelEntry {
+  path: string;
+  is_dir: boolean;
+}
+
+/** models.RegisterBatchResultItem：批量登记任务逐项成败（部分成功语义） */
+export interface RegisterBatchResultItem {
+  skill_id: string;
+  status: 'success' | 'error';
+  error: string;
+}
 
 /** models.AsyncTaskCreatedResponse：clone 类操作已转后台任务，202 返回 */
 export interface AsyncTaskCreated {
@@ -62,7 +82,9 @@ export interface AsyncTaskCreated {
 }
 
 /** models.TaskSnapshot：GET /api/skills/github/tasks/{task_id} 的轮询快照。
- * candidates 仅 scan 任务 state=done 时非空；error_* 仅 state=error 时非空 */
+ * candidates/top_level/referenced_paths 仅 scan 任务 state=done 时非空；
+ * results 仅 register_batch 任务非空（running 中可见已处理项）；
+ * error_* 仅 state=error 时非空 */
 export interface TaskSnapshot {
   task_id: string;
   kind: TaskKind;
@@ -77,7 +99,10 @@ export interface TaskSnapshot {
   error_message: string | null;
   created_at: string;
   updated_at: string;
-  candidates: string[];
+  candidates: ScanCandidate[];
+  top_level: ScanTopLevelEntry[];
+  referenced_paths: string[];
+  results: RegisterBatchResultItem[];
 }
 
 /** models.UpdateCheckResponse */
@@ -144,6 +169,24 @@ export interface RegisterGithubSkillInput {
   name: string;
   tags: string[];
   summary: string;
+  /** 随行共享资源（仓库根相对路径）：发布时拷进 staging 快照 */
+  shared_paths: string[];
+}
+
+/** models.GithubRegisterItem：批量登记的单项候选 */
+export interface GithubRegisterItem {
+  path: string;
+  name: string;
+  tags: string[];
+  summary: string;
+}
+
+/** models.RegisterGithubBatchRequest：一次登记同一仓库的多个候选目录 */
+export interface RegisterGithubBatchInput {
+  repository: string;
+  /** 整批共享的随行资源（合集仓库根级共享资源通常不随候选变化） */
+  shared_paths: string[];
+  items: GithubRegisterItem[];
 }
 
 /** 统一错误契约：routes.py 的 detail {"code","message","item_id"?} */

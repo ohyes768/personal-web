@@ -11,6 +11,7 @@ import type {
   PlanResponse,
   PublishBatchResult,
   QueueItemRequest,
+  RegisterGithubBatchInput,
   RegisterGithubSkillInput,
   SkillListResponse,
   TargetKey,
@@ -123,6 +124,18 @@ export function registerGithubSkill(
   password: string
 ): Promise<AsyncTaskCreated> {
   return request<AsyncTaskCreated>('/github', {
+    method: 'POST',
+    body: jsonBody({ ...input, password }),
+  });
+}
+
+/** 批量登记同一仓库的多个候选目录（design §5.2）：仓库级 clone 一次，
+ * 逐项成败经任务快照 results 表达（部分成功语义） */
+export function registerGithubBatch(
+  input: RegisterGithubBatchInput,
+  password: string
+): Promise<AsyncTaskCreated> {
+  return request<AsyncTaskCreated>('/github/batch', {
     method: 'POST',
     body: jsonBody({ ...input, password }),
   });

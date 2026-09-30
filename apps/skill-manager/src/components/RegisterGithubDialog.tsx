@@ -3,7 +3,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { startGithubScan } from '@/lib/api';
 import { formatElapsed, formatProgressDetail, taskStageLabel } from '@/lib/format';
-import type { RegisterGithubSkillInput, TaskSnapshot } from '@/lib/types';
+import type {
+  RegisterGithubBatchInput,
+  RegisterGithubSkillInput,
+  TaskSnapshot,
+} from '@/lib/types';
 import { useGithubTask } from '@/lib/useGithubTask';
 import ConfirmActionDialog from './ConfirmActionDialog';
 
@@ -11,25 +15,29 @@ interface RegisterGithubDialogProps {
   busy: boolean;
   error?: string;
   onRegister: (input: RegisterGithubSkillInput, password: string) => void;
+  onRegisterBatch: (input: RegisterGithubBatchInput, password: string) => void;
   onCancel: () => void;
 }
 
 /**
- * 新增 GitHub Skill 登记流程（design 5/6）：
- * 仓库 URL → 后台扫描任务（2s 轮询，进度/已用时）→ 选择目录 + 名称/标签
- * → 密码确认提交（登记本体也是后台任务，进度由 TaskProgressDialog 接管）。
+ * 新增 GitHub Skill 登记流程（design 5/6 + 批量登记 design §5.2）：
+ * 仓库 URL → 后台扫描任务（2s 轮询，进度/已用时）→ 勾选候选目录 +
+ * 随行共享资源 → 密码确认提交。勾 1 项走单条登记（手填名称/标签/简介，
+ * 与改版前一致）；勾多项走批量登记（以各候选 SKILL.md 的 name 登记）。
  */
 export default function RegisterGithubDialog({
   busy,
   error,
   onRegister,
+  onRegisterBatch,
   onCancel,
 }: RegisterGithubDialogProps) {
   const [repository, setRepository] = useState('');
   const [scanTaskId, setScanTaskId] = useState('');
   const [scanSeconds, setScanSeconds] = useState(0);
   const [scanError, setScanError] = useState('');
-  const [selectedPath, setSelectedPath] = useState('');
+  const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
+  const [sharedPaths, setSharedPaths] = useState<string[]>([]);
   const [name, setName] = useState('');
   const [tagsText, setTagsText] = useState('');
   const [summary, setSummary] = useState('');
@@ -54,10 +62,27 @@ export default function RegisterGithubDialog({
     return () => clearInterval(timer);
   }, [scanning]);
 
-  // 扫描完成且只有一个候选目录时自动选中
+  // 扫描完成且只有一个候选目录时自动选中（与改版前一致）
   useEffect(() => {
     if (activeScan?.state === 'done' && activeScan.candidates.length === 1) {
-      setSelectedPath((prev) => prev || activeScan.candidates[0]);
+      const only = activeScan.candidates[0].path;
+      setSelectedPaths((prev) => (prev.length > 0 ? prev : [only]));
+    }
+  }, [activeScan]);
+
+  // 随行共享资源预选（design R4）：候选 SKILL.md 引用到的顶层路径，
+  // 排除候选目录的祖先目录（如 codex-skills/——勾上会把整棵候选树拷进快照）
+  useEffect(() => {
+    if (activeScan?.state === 'done') {
+      setSharedPaths(
+        activeScan.referenced_paths.filter(
+          (entry) =>
+            !activeScan.candidates.some(
+              (candidate) =>
+                candidate.path === entry || candidate.path.startsWith(`${entry}/`)
+            )
+        )
+      );
     }
   }, [activeScan]);
 
@@ -67,7 +92,7 @@ export default function RegisterGithubDialog({
       return;
     }
     setScanError('');
-    setSelectedPath('');
+    setSelectedPaths([]);
     try {
       const created = await startGithubScan(url);
       setScanTaskId(created.task_id);
@@ -76,9 +101,27 @@ export default function RegisterGithubDialog({
     }
   }
 
+  function togglePath(path: string, checked: boolean) {
+    setSelectedPaths((prev) =>
+      checked ? [...prev, path] : prev.filter((p) => p !== path)
+    );
+  }
+
+  function toggleShared(path: string, checked: boolean) {
+    setSharedPaths((prev) =>
+      checked ? [...prev, path] : prev.filter((p) => p !== path)
+    );
+  }
+
+  // 单选时勾选的候选对象（多选为 null，表单切换为只读预填列表）
+  const singleCandidate =
+    selectedPaths.length === 1
+      ? activeScan?.candidates.find((c) => c.path === selectedPaths[0]) ?? null
+      : null;
+
   function handleOpenPassword(event: FormEvent) {
     event.preventDefault();
-    if (!selectedPath || !name.trim() || busy) {
+    if (selectedPaths.length === 0 || (singleCandidate && !name.trim()) || busy) {
       return;
     }
     setAwaitPassword(true);
@@ -87,13 +130,31 @@ export default function RegisterGithubDialog({
   function buildInput(): RegisterGithubSkillInput {
     return {
       repository: activeScan?.repository ?? repository.trim(),
-      path: selectedPath,
+      path: selectedPaths[0],
       name: name.trim(),
       tags: tagsText
         .split(/[,,]/)
         .map((tag) => tag.trim())
         .filter(Boolean),
       summary: summary.trim(),
+      shared_paths: sharedPaths,
+    };
+  }
+
+  function buildBatchInput(): RegisterGithubBatchInput {
+    const candidates = activeScan?.candidates ?? [];
+    return {
+      repository: activeScan?.repository ?? repository.trim(),
+      shared_paths: sharedPaths,
+      items: selectedPaths.map((path) => {
+        const candidate = candidates.find((c) => c.path === path);
+        return {
+          path,
+          name: candidate?.name || path,
+          tags: [],
+          summary: candidate?.description ?? '',
+        };
+      }),
     };
   }
 
@@ -101,6 +162,8 @@ export default function RegisterGithubDialog({
   const scanDone = activeScan?.state === 'done';
   const percent = activeScan?.progress_percent ?? null;
   const detail = activeScan ? formatProgressDetail(activeScan.progress_detail) : '';
+  const allSelected =
+    scanDone && selectedPaths.length === activeScan.candidates.length;
 
   return (
     <div
@@ -168,54 +231,120 @@ export default function RegisterGithubDialog({
           ) : (
             <>
               <fieldset className="mt-3">
-                <legend className="text-sm font-medium text-slate-700">
-                  候选目录（{activeScan.candidates.length}）
+                <legend className="flex w-full items-center justify-between text-sm font-medium text-slate-700">
+                  候选目录（{selectedPaths.length}/{activeScan.candidates.length}）
+                  {activeScan.candidates.length > 1 ? (
+                    <span className="flex gap-2 text-xs font-normal">
+                      <button
+                        type="button"
+                        className="text-sky-600 hover:underline disabled:opacity-40"
+                        disabled={allSelected || busy}
+                        onClick={() =>
+                          setSelectedPaths(activeScan.candidates.map((c) => c.path))
+                        }
+                      >
+                        全选
+                      </button>
+                      <button
+                        type="button"
+                        className="text-slate-500 hover:underline disabled:opacity-40"
+                        disabled={selectedPaths.length === 0 || busy}
+                        onClick={() => setSelectedPaths([])}
+                      >
+                        清空
+                      </button>
+                    </span>
+                  ) : null}
                 </legend>
                 <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded border border-slate-200 p-2">
-                  {activeScan.candidates.map((path) => (
-                    <label key={path} className="flex items-center gap-2 text-sm">
+                  {activeScan.candidates.map((candidate) => (
+                    <label key={candidate.path} className="flex items-center gap-2 text-sm">
                       <input
-                        type="radio"
-                        name="candidate"
-                        value={path}
-                        checked={selectedPath === path}
-                        onChange={() => setSelectedPath(path)}
+                        type="checkbox"
+                        checked={selectedPaths.includes(candidate.path)}
+                        onChange={(event) =>
+                          togglePath(candidate.path, event.target.checked)
+                        }
+                        disabled={busy}
                       />
-                      <span className="text-slate-700">{path}</span>
+                      <span className="text-slate-700">{candidate.path}</span>
                     </label>
                   ))}
                 </div>
+                {selectedPaths.length > 1 ? (
+                  <p className="mt-1 text-xs text-slate-400">
+                    已勾选 {selectedPaths.length} 项：将按各候选 SKILL.md
+                    中的名称批量登记（名称/简介可在登记后逐个补充）
+                  </p>
+                ) : null}
               </fieldset>
 
-              <label className="mt-3 block text-sm font-medium text-slate-700">
-                显示名称
-                <input
-                  type="text"
-                  value={name}
-                  onChange={(event) => setName(event.target.value)}
-                  required
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
-                />
-              </label>
-              <label className="mt-2 block text-sm font-medium text-slate-700">
-                标签（逗号分隔）
-                <input
-                  type="text"
-                  value={tagsText}
-                  onChange={(event) => setTagsText(event.target.value)}
-                  placeholder="research, finance"
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
-                />
-              </label>
-              <label className="mt-2 block text-sm font-medium text-slate-700">
-                简介
-                <textarea
-                  value={summary}
-                  onChange={(event) => setSummary(event.target.value)}
-                  rows={2}
-                  className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
-                />
-              </label>
+              {activeScan.top_level.length > 0 ? (
+                <fieldset className="mt-3">
+                  <legend className="text-sm font-medium text-slate-700">
+                    随行共享资源（可选）
+                  </legend>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    发布时一并拷入快照的仓库根级目录/文件；默认勾选候选 SKILL.md
+                    中引用到的项
+                  </p>
+                  <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border border-slate-200 p-2">
+                    {activeScan.top_level.map((entry) => (
+                      <label key={entry.path} className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={sharedPaths.includes(entry.path)}
+                          onChange={(event) =>
+                            toggleShared(entry.path, event.target.checked)
+                          }
+                          disabled={busy}
+                        />
+                        <span className="text-slate-700">
+                          {entry.path}
+                          {entry.is_dir ? '/' : ''}
+                        </span>
+                        {activeScan.referenced_paths.includes(entry.path) ? (
+                          <span className="text-xs text-slate-400">被引用</span>
+                        ) : null}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+              ) : null}
+
+              {singleCandidate ? (
+                <>
+                  <label className="mt-3 block text-sm font-medium text-slate-700">
+                    显示名称
+                    <input
+                      type="text"
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      required
+                      className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+                    />
+                  </label>
+                  <label className="mt-2 block text-sm font-medium text-slate-700">
+                    标签（逗号分隔）
+                    <input
+                      type="text"
+                      value={tagsText}
+                      onChange={(event) => setTagsText(event.target.value)}
+                      placeholder="research, finance"
+                      className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+                    />
+                  </label>
+                  <label className="mt-2 block text-sm font-medium text-slate-700">
+                    简介
+                    <textarea
+                      value={summary}
+                      onChange={(event) => setSummary(event.target.value)}
+                      rows={2}
+                      className="mt-1 w-full rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+                    />
+                  </label>
+                </>
+              ) : null}
             </>
           )
         ) : null}
@@ -231,7 +360,11 @@ export default function RegisterGithubDialog({
           </button>
           <button
             type="submit"
-            disabled={!selectedPath || !name.trim() || busy}
+            disabled={
+              selectedPaths.length === 0 ||
+              (singleCandidate !== null && !name.trim()) ||
+              busy
+            }
             className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-40"
           >
             下一步：密码确认
@@ -240,20 +373,43 @@ export default function RegisterGithubDialog({
       </form>
 
       {awaitPassword ? (
-        <ConfirmActionDialog
-          title="确认登记 GitHub Skill"
-          description={
-            <p>
-              将登记 {activeScan?.repository} 中的 <code>{selectedPath}</code> 为「
-              {name.trim()}」，并缓存到 NAS 的 GitHub Skill 缓存目录。
-            </p>
-          }
-          confirmLabel="确认登记"
-          busy={busy}
-          error={error}
-          onConfirm={(password) => onRegister(buildInput(), password)}
-          onCancel={() => setAwaitPassword(false)}
-        />
+        singleCandidate ? (
+          <ConfirmActionDialog
+            title="确认登记 GitHub Skill"
+            description={
+              <p>
+                将登记 {activeScan?.repository} 中的 <code>{selectedPaths[0]}</code> 为「
+                {name.trim()}」，并缓存到 NAS 的 GitHub Skill 缓存目录。
+                {sharedPaths.length > 0
+                  ? `随行共享资源：${sharedPaths.join('、')}。`
+                  : ''}
+              </p>
+            }
+            confirmLabel="确认登记"
+            busy={busy}
+            error={error}
+            onConfirm={(password) => onRegister(buildInput(), password)}
+            onCancel={() => setAwaitPassword(false)}
+          />
+        ) : (
+          <ConfirmActionDialog
+            title={`确认批量登记 ${selectedPaths.length} 个 GitHub Skill`}
+            description={
+              <p>
+                将登记 {activeScan?.repository} 中的 {selectedPaths.length}{' '}
+                个候选目录（共享一份仓库缓存）。
+                {sharedPaths.length > 0
+                  ? `随行共享资源：${sharedPaths.join('、')}。`
+                  : ''}
+              </p>
+            }
+            confirmLabel="确认批量登记"
+            busy={busy}
+            error={error}
+            onConfirm={(password) => onRegisterBatch(buildBatchInput(), password)}
+            onCancel={() => setAwaitPassword(false)}
+          />
+        )
       ) : null}
     </div>
   );
