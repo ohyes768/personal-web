@@ -74,7 +74,7 @@ function buildMonthlyRowTitle(opts: {
   const parts: string[] = [];
   if (opts.canJump) parts.push(`查看 ${opts.label} 曲线`);
   if (opts.isPlaceholder) {
-    parts.push(opts.nextReleaseTitle ?? '暂未获取');
+    parts.push(opts.nextReleaseTitle ?? '数据待发布');
   } else if (!opts.dataDate) {
     parts.push('本月无数据');
   } else {
@@ -113,7 +113,7 @@ function IndicatorRow({
   const showMonthAvg = ind.frequency === 'daily' && !isCurrentMonth && ind.month_avg != null;
   // 月频数据时间只显到年月(日的精度无意义),相对时间也省略;悬停 title 保留完整日期
   const dataDateText = isMonthly && dataDate ? dataDate.slice(0, 7) : dataDate;
-  // 「暂未获取」占位态:该月无数据(value 空)但可推预期发布日
+  // 「数据待发布」占位态:该月无数据(value 空)但可推预期发布日
   const isPlaceholder = !hasValue && !!ind.next_release_at;
   const nextReleaseTitle = isMonthly && ind.next_release_at
     ? `下期预期 ${ind.next_release_at}${ind.next_release_note ? ` · ${ind.next_release_note}` : ''}`
@@ -185,10 +185,10 @@ export function GroupCard({ groupKey, group, selectedMonth, onJumpToTab }: Group
   const meta = GROUP_META[groupKey];
   const indicators = group.indicators ?? [];
   const isEmpty = indicators.length === 0;
-  // conclusion 为空时的兜底文案:组内有占位指标(可推预期发布)说明「暂未获取」,
+  // conclusion 为空时的兜底文案:组内有占位指标(可推预期发布)说明「数据待发布」,
   // 连占位都没有才是真「数据缺失」——与指标行口径一致
   const hasPlaceholder = indicators.some(i => i.value == null && i.next_release_at);
-  const conclusionText = group.conclusion ?? (hasPlaceholder ? '暂未获取' : '数据缺失');
+  const conclusionText = group.conclusion ?? (hasPlaceholder ? '数据待发布' : '数据缺失');
   // 当前档位:conclusion 文本匹配优先、total_score 区间兜底;刻度行内当前档大字染色突出
   const activeLevel = findActiveLevel(groupKey, group.conclusion, group.total_score);
   const scales = GROUP_SCALES[groupKey];

@@ -4,6 +4,7 @@
 断言口径见 prd.md 验收标准 1/2/3/5。
 """
 import json
+from pathlib import Path
 
 from tests.conftest import make_macro_signal, write_skill_json
 
@@ -118,3 +119,78 @@ class TestFallbackMonthFilter:
         assert "cpi_yoy" in keys
         cpi = {i.key: i for i in snap.groups["inflation"].indicators}["cpi_yoy"]
         assert cpi.value is None
+
+
+class TestArchiveFallback:
+    """归档路径下 skill 归档缺失的回退行为
+
+    背景:当月只要有任一 skill 归档过(如货币政策),archive/<当月>/ 即存在,
+    其余数据未发布的 skill 归档缺失 —— 不应退化成无信息的空 group,
+    而应回退平铺最新文件(占位+推送时间),让页面能区分
+    「skill 活着但数据未发布」和「skill 停推」。
+    """
+
+    def _archive(self, skill_dir: Path, month: str, skill: str, payload: dict) -> None:
+        """手写一个归档文件 archive/<month>/<skill>.json"""
+        archive = skill_dir / "archive" / month
+        archive.mkdir(parents=True, exist_ok=True)
+        (archive / f"{skill}.json").write_text(
+            json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    def test_current_month_missing_archive_falls_back_to_flat(self, skill_dir, service):
+        """当月归档缺失 → 回退平铺:占位指标 + 推送时间(平铺 mtime)"""
+        import os
+        from datetime import datetime, timezone
+
+        # 平铺:inflation 还是 7 月数据(CPI 8 月未发布),mtime=skill 最后推送
+        write_skill_json(
+            skill_dir, "inflation-skill", "macro_signal.json",
+            make_macro_signal("2026-07-09", conclusion="温和", details=INFLATION_JUL),
+        )
+        flat = skill_dir / "inflation-skill" / "macro_signal.json"
+        pushed = datetime(2026, 8, 16, 2, 32, 4, tzinfo=timezone.utc)
+        os.utime(flat, (pushed.timestamp(), pushed.timestamp()))
+
+        # 当月(2026-08)归档目录存在,但只有货币政策归档(其当月数据已发布)
+        self._archive(skill_dir, "2026-08", "monetary-policy-skill",
+                      make_macro_signal("2026-08-14", conclusion="偏宽松",
+                                        details={"dr007": 1.70, "lpr_1y": 3.0}))
+
+        snap = service.get_snapshot("2026-08")
+        assert snap is not None
+
+        # 归档在的维度:用归档数据
+        monetary = snap.groups["monetary_policy"]
+        assert {i.key: i.value for i in monetary.indicators}["dr007"] == 1.70
+
+        # 归档缺失的维度:回退平铺 → 占位 + 推送时间,而非空 group
+        inflation = snap.groups["inflation"]
+        cpi = {i.key: i for i in inflation.indicators}["cpi_yoy"]
+        assert cpi.value is None
+        assert cpi.next_release_at == "2026-09-09"
+        assert inflation.pushed_at == "2026-08-16T02:32:04Z"
+
+    def test_historical_month_missing_archive_stays_empty(self, skill_dir, service):
+        """历史月归档缺失 → 保持空 group(数据不会再补,占位预期是误导)"""
+        write_skill_json(
+            skill_dir, "inflation-skill", "macro_signal.json",
+            make_macro_signal("2026-07-09", details=INFLATION_JUL),
+        )
+        # 7 月归档目录存在,但只有货币政策归档
+        self._archive(skill_dir, "2026-07", "monetary-policy-skill",
+                      make_macro_signal("2026-07-20", details=MONETARY_JUL))
+
+        snap = service.get_snapshot("2026-07")
+        assert snap is not None
+        assert len(snap.groups["inflation"].indicators) == 0
+
+    def test_missing_archive_and_no_flat_file_stays_empty(self, skill_dir, service):
+        """当月归档缺失且平铺也无文件(skill 从未推送) → 空 group"""
+        self._archive(skill_dir, "2026-08", "monetary-policy-skill",
+                      make_macro_signal("2026-08-14", details={"dr007": 1.70}))
+
+        snap = service.get_snapshot("2026-08")
+        assert snap is not None
+        # exchange_rate 无归档无平铺 → 空 group(无从占位/推时间)
+        assert len(snap.groups["exchange_rate"].indicators) == 0
+        assert snap.groups["exchange_rate"].pushed_at is None

@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/kids-catalog", "dev"],
       "port": 3009
+    },
+    {
+      "name": "macro",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "apps/macro", "dev"],
+      "port": 3001
     }
   ]
 }

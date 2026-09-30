@@ -52,7 +52,7 @@ function emptySnapshot(month: string): MacroSignalSnapshot {
 
 /**
  * 月度默认月份:上个月;上个月无数据时回退到 availableMonths 中早于当月的最近月份,
- * 全部不满足再回退到最大月份(当月,看「暂未获取」占位)
+ * 全部不满足再回退到最大月份(当月,看「数据待发布」占位)
  */
 function pickDefaultMonth(availableMonths: string[], initialMonth?: string): string {
   if (initialMonth) return initialMonth;
@@ -73,7 +73,7 @@ export function MacroSignalTab({ loadSnapshot, initialMonth, onJumpToTab }: Macr
       .catch(() => { /* 后端未启动时保持空数组,MonthSwitcher 会 fallback 到当前月 */ });
   }, []);
 
-  // 当前自然月始终可选:当月尚无数据时也要能切进去看「暂未获取+预期发布」
+  // 当前自然月始终可选:当月尚无数据时也要能切进去看「数据待发布+预期发布」
   const monthsWithNow = useMemo(
     () => Array.from(new Set([...availableMonths, currentYearMonth()])).sort(),
     [availableMonths],

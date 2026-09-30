@@ -302,16 +302,33 @@ class MacroSignalService:
     def _read_archive_groups(self, month: str) -> Optional[Dict[str, MacroSignalGroup]]:
         """读 archive/<month>/ 下 6 个归档文件并转 shape;目录不存在返回 None。
 
-        目录存在但某 skill 归档缺失 → 该维度空 group(与平铺「维度缺失」语义一致)。
+        当月/未来月归档缺失的 skill → 回退读平铺最新文件(按月过滤:非请求月
+        指标转占位,平铺 mtime=最后推送时间),让「数据未发布」仍能展示占位+
+        推送时间,而不是退化成无任何信息的空 group(当月只要有任一 skill 归档
+        过,其余未发布维度不应丢失「占位+推送时间」语义)。
+        历史月归档缺失 → 空 group(数据不会再补,与「维度缺失」语义一致)。
         """
         archive_dir = Path(self.settings.macro_signal_data_dir) / "archive" / month
         if not archive_dir.is_dir():
             return None
 
+        # 回退仅对当月/未来月有意义(历史月数据不会再补,占位的「下期预期」是误导)
+        fallback_ok = month >= date.today().strftime("%Y-%m")
+
+        def _fallback_latest(dim_key: str) -> MacroSignalGroup:
+            """归档缺失 → 读平铺最新文件按月过滤(与无归档目录的兜底路径同语义)"""
+            if dim_key == "risk_appetite":
+                raw, mtime = self._read_json(RISK_APPETITE_FILE)
+                return self._convert_risk_appetite(raw, mtime, month)
+            raw, mtime = self._read_json(DIMENSION_FILES[dim_key])
+            return self._convert_dimension_from_macro_signal(raw, mtime, month)
+
         groups: Dict[str, MacroSignalGroup] = {}
         for dim_key, skill_dir in DIMENSION_SKILL_DIRS.items():
             raw, file_mtime = self._read_json(f"archive/{month}/{skill_dir}.json")
-            if dim_key == "risk_appetite":
+            if raw is None and fallback_ok:
+                groups[dim_key] = _fallback_latest(dim_key)
+            elif dim_key == "risk_appetite":
                 groups[dim_key] = self._convert_risk_appetite(raw, file_mtime)
             else:
                 groups[dim_key] = self._convert_dimension_from_macro_signal(raw, file_mtime)
