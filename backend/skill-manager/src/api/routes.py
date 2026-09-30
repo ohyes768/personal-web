@@ -12,9 +12,8 @@ from __future__ import annotations
 
 import logging
 import re
-import shutil
 import sqlite3
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException
 
@@ -40,6 +39,7 @@ from src.models import (
     PublishPlanRequest,
     PublishRequest,
     PublishResultItem,
+    RegisterGithubBatchRequest,
     RegisterGithubSkillRequest,
     RegistrySkill,
     ScanRequest,
@@ -69,6 +69,7 @@ from src.services.publisher import (
     PublishBlockedError,
     Publisher,
     PublisherError,
+    force_remove_tree,
     resolve_registry_source,
 )
 from src.services.registry import RegistryService, RegistryValidationError
@@ -89,6 +90,7 @@ def list_skills(
     registry: RegistryService = Depends(get_registry),
     store: SkillStateStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
+    git_cache: GitCacheService = Depends(get_git_cache),
 ) -> SkillListResponse:
     """左栏卡片：先对账自研目录再返回注册表 + 部署状态 + 更新检查。
 
@@ -122,10 +124,11 @@ def list_skills(
             skill,
             deployments.get(skill.id, {}),
             store.get_github_check(skill.id),
-            # 与 ensure_cached 决定 fetch/clone 的口径一致：纯文件系统判断，
-            # 零 git 子进程；注册表随源库同步而缓存环境本地，缺失属常态
+            # 与 ensure_cached 决定 fetch/clone 的口径一致：仓库维度共享缓存
+            # 的存在性（纯文件系统判断，零 git 子进程）；注册表随源库同步
+            # 而缓存环境本地，缺失属常态
             cache_missing=skill.source is SkillSource.GITHUB
-            and not (settings.github_skill_cache_root / skill.id / ".git").is_dir(),
+            and not git_cache.cache_present(str(skill.repository)),
         )
         for skill in skills
     ]
@@ -294,6 +297,7 @@ def register_github_skill(
         repository=canonical,
         tags=req.tags,
         summary=req.summary,
+        shared_paths=req.shared_paths,
     )
     logger.info(
         "register github start: skill=%s repository=%s path=%r",
@@ -308,9 +312,19 @@ def register_github_skill(
     return AsyncTaskCreatedResponse(task_id=snapshot.task_id, kind="register")
 
 
-def _derive_skill_id(registry: RegistryService, canonical: str, path: str) -> str:
-    """从仓库与路径派生稳定 slug；与现有条目冲突时追加序号。"""
+def _derive_skill_id(
+    registry: RegistryService,
+    canonical: str,
+    path: str,
+    reserved: set[str] | None = None,
+) -> str:
+    """从仓库与路径派生稳定 slug；与现有条目冲突时追加序号。
+
+    `reserved` 是本批已派生的 id 集合（批量登记批内冲突预防，design §5.2）。
+    """
     existing = {s.id for s in registry.list_skills()}
+    if reserved:
+        existing |= reserved
     repo_name = canonical.rstrip("/").rsplit("/", 1)[-1]
     parts = [repo_name]
     if path not in (".", ""):
@@ -327,6 +341,95 @@ def _derive_skill_id(registry: RegistryService, canonical: str, path: str) -> st
         candidate = f"{slug}-{counter}"
         counter += 1
     return candidate
+
+
+@router.post(
+    "/skills/github/batch",
+    response_model=AsyncTaskCreatedResponse,
+    status_code=202,
+)
+def register_github_batch(
+    req: RegisterGithubBatchRequest,
+    settings: Settings = Depends(get_settings),
+    registry: RegistryService = Depends(get_registry),
+    git_cache: GitCacheService = Depends(get_git_cache),
+    task_manager: GithubTaskManager = Depends(get_task_manager),
+) -> AsyncTaskCreatedResponse:
+    """批量登记同一仓库的多个候选目录（design §5.2）。
+
+    同步段：密码、地址规范化、可达性预检、items 预校验（path 相对、
+    批内去重）与 skill id 派生（批内冲突预防）。后台段仓库级 clone
+    一次 + 逐项校验/登记，逐项成败经任务快照 `results` 表达（部分成功
+    语义）；密码只在同步请求体内校验，任务上下文无密码字段（AC5）。
+    """
+    ensure_admin_password(settings, req.password)
+    try:
+        canonical = git_cache.normalize_repository(req.repository)
+    except GitCacheError as exc:
+        logger.warning(
+            "register github batch invalid repository: error=%s", type(exc).__name__
+        )
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
+        ) from exc
+    try:
+        git_cache.verify_reachable(canonical)
+    except UnreachableRepositoryError:
+        logger.warning("register github batch unreachable: repository=%s", canonical)
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "unreachable",
+                "message": "仓库不存在或当前网络无法访问",
+            },
+        )
+    seen_paths: set[str] = set()
+    derived: set[str] = set()
+    skills: list[RegistrySkill] = []
+    for item in req.items:
+        path = item.path.strip()
+        # github path 是仓库内 posix 相对路径：WindowsPath("/etc") 无盘符
+        # 不算绝对路径，必须用 PurePosixPath 判定（与 registry 同口径）
+        relative = PurePosixPath(path)
+        if path in seen_paths or relative.is_absolute() or ".." in relative.parts:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_path",
+                    "message": f"候选路径无效或重复：{item.path!r}",
+                },
+            )
+        seen_paths.add(path)
+        skill_id = _derive_skill_id(registry, canonical, path, reserved=derived)
+        derived.add(skill_id)
+        skills.append(
+            RegistrySkill(
+                id=skill_id,
+                name=item.name,
+                source=SkillSource.GITHUB,
+                path=path,
+                repository=canonical,
+                tags=item.tags,
+                summary=item.summary,
+                shared_paths=req.shared_paths,
+            )
+        )
+    logger.info(
+        "register github batch start: repository=%s items=%d shared_paths=%s",
+        canonical,
+        len(skills),
+        req.shared_paths,
+    )
+    snapshot = task_manager.start_register_batch(canonical, skills)
+    logger.info(
+        "register github batch task created: repository=%s task_id=%s",
+        canonical,
+        snapshot.task_id,
+    )
+    return AsyncTaskCreatedResponse(
+        task_id=snapshot.task_id, kind="register_batch"
+    )
 
 
 # ---------- 密码：重建 GitHub 缓存（Clone） ----------
@@ -443,6 +546,7 @@ def publish_plan(
     registry: RegistryService = Depends(get_registry),
     store: SkillStateStore = Depends(get_store),
     git_cache: GitCacheService = Depends(get_git_cache),
+    publisher: Publisher = Depends(get_publisher),
 ) -> PlanResponse:
     """右栏计划预览：逐项 add/update/unchanged/blocked；只读（design 4.2）。"""
     known = {skill.id: skill for skill in registry.list_skills()}
@@ -459,7 +563,9 @@ def publish_plan(
                 },
             )
         for target in queue_item.targets:
-            items.append(_plan_one(settings, store, git_cache, skill, target))
+            items.append(
+                _plan_one(settings, store, git_cache, publisher, skill, target)
+            )
     return PlanResponse(items=items)
 
 
@@ -467,13 +573,37 @@ def _plan_one(
     settings: Settings,
     store: SkillStateStore,
     git_cache: GitCacheService,
+    publisher: Publisher,
     skill: RegistrySkill,
     target: TargetKey,
 ) -> PlanItem:
-    """单项计划：解析受控源 + 检查目标现状，绝不写入文件系统。"""
+    """单项计划：解析受控源 + 检查目标现状，绝不写入文件系统。
+
+    github 条目的计划源是 staging 快照目录（design §4）：只读计算
+    `planned_staging_dir`，并校验共享缓存存在与登记路径有效
+    （`ensure_skill_path_cached` 纯文件系统读，零 git 子进程）。
+    """
+    planned_revision = ""
     try:
-        source = resolve_registry_source(settings, skill)
+        if skill.source is SkillSource.GITHUB:
+            canonical = git_cache.normalize_repository(str(skill.repository))
+            if not git_cache.cache_present(canonical):
+                raise InvalidSourceError(
+                    f"仓库缓存缺失（{canonical}），请先 Clone 后再发布"
+                )
+            git_cache.ensure_skill_path_cached(skill)
+            planned_revision = _planned_revision(store, git_cache, skill)
+            source = publisher.planned_staging_dir(
+                skill.id, planned_revision
+            ).resolve()
+        else:
+            source = resolve_registry_source(settings, skill)
     except InvalidSourceError as exc:
+        return PlanItem(
+            skill_id=skill.id, target=target, action="blocked",
+            reason=f"源不可用：{exc}",
+        )
+    except GitCacheError as exc:
         return PlanItem(
             skill_id=skill.id, target=target, action="blocked",
             reason=f"源不可用：{exc}",
@@ -495,7 +625,6 @@ def _plan_one(
     else:
         action = "add"
     deployment = store.get_deployment(skill.id, target.value)
-    planned_revision = _planned_revision(store, git_cache, skill)
     return PlanItem(
         skill_id=skill.id,
         target=target,
@@ -515,7 +644,7 @@ def _planned_revision(
     check = store.get_github_check(skill.id)
     if check is not None and check.result == "ok" and check.remote_revision:
         return check.remote_revision
-    return git_cache.current_revision(skill.id)
+    return git_cache.current_revision(skill)
 
 
 def _target_root(settings: Settings, target: TargetKey) -> Path:
@@ -576,12 +705,18 @@ def _publish_one(
     skill: RegistrySkill,
     target: TargetKey,
 ) -> PublishResultItem:
+    revision = ""
     try:
         if skill.source is SkillSource.GITHUB:
             # design 5 / R3：实际缓存更新仅随管理员确认的发布执行——
-            # 发布时才 fetch 并检出最近一次成功检查记录的远端 revision
+            # 发布时才 fetch 并检出最近一次成功检查记录的远端 revision；
+            # 发布源是 staging 快照（skill 子目录 + shared_paths 随行资源）
             _ensure_cached_at_recorded_revision(git_cache, store, skill)
-        source = resolve_registry_source(settings, skill)
+            revision = git_cache.current_revision(skill)
+            repo_dir = git_cache.repo_cache_dir(str(skill.repository))
+            source = publisher.stage_github_skill(skill, revision, repo_dir)
+        else:
+            source = resolve_registry_source(settings, skill)
     except GitCacheError as exc:
         return PublishResultItem(
             skill_id=skill.id, target=target, status="error",
@@ -592,11 +727,11 @@ def _publish_one(
             skill_id=skill.id, target=target, status="blocked",
             error=f"源不可用：{exc}",
         )
-    revision = (
-        git_cache.current_revision(skill.id)
-        if skill.source is SkillSource.GITHUB
-        else ""
-    )
+    except PublishBlockedError as exc:
+        return PublishResultItem(
+            skill_id=skill.id, target=target, status="blocked",
+            error=f"发布被拒绝：{exc}",
+        )
     try:
         return publisher.publish(skill.id, target, source, revision)
     except PublishBlockedError as exc:
@@ -666,10 +801,13 @@ def delete_skill(
     settings: Settings = Depends(get_settings),
     registry: RegistryService = Depends(get_registry),
     store: SkillStateStore = Depends(get_store),
+    git_cache: GitCacheService = Depends(get_git_cache),
+    publisher: Publisher = Depends(get_publisher),
 ) -> DeleteSkillResponse:
     """删除已登记的 Skill（design：任一 target active 时拒绝）。
 
-    - GitHub 来源：删除登记 + 清理本地缓存；
+    - GitHub 来源：删除登记 + 清理 staging 快照；仓库缓存是同仓库条目
+      共享的，仅当本条目是最后一个使用该仓库的登记时才一并删除；
     - 本地来源：仅删除数据库登记记录（源目录若存在则拒绝，移除目录后自动解除）。
 
     登记真源是 SQLite：先移除 DB 行，派生数据随后尽力清理。"""
@@ -719,10 +857,27 @@ def delete_skill(
     except sqlite3.Error as exc:
         # design：派生数据尽力清理，失败不改变响应（registry 真源已提交）
         logger.warning("delete derived state failed: skill=%s error=%s", skill_id, exc)
-    try:
-        shutil.rmtree(settings.github_skill_cache_root / skill_id)
-    except OSError as exc:
-        logger.warning("delete cache failed: skill=%s error=%s", skill_id, exc)
+    if skill.source is SkillSource.GITHUB:
+        try:
+            publisher.remove_staging(skill_id)
+        except OSError as exc:
+            logger.warning(
+                "delete staging failed: skill=%s error=%s", skill_id, exc
+            )
+        # 仓库缓存按仓库共享：仍有其他条目引用同一仓库时保留
+        same_repo = [
+            other.id
+            for other in registry.list_skills()
+            if other.source is SkillSource.GITHUB
+            and str(other.repository) == str(skill.repository)
+        ]
+        if not same_repo:
+            try:
+                force_remove_tree(git_cache.repo_cache_dir(str(skill.repository)))
+            except OSError as exc:
+                logger.warning(
+                    "delete repo cache failed: skill=%s error=%s", skill_id, exc
+                )
     return DeleteSkillResponse(skill_id=skill_id)
 
 

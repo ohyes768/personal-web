@@ -133,6 +133,70 @@ def test_upsert_rejects_github_path_traversal(registry_service):
         )
 
 
+# ---------- shared_paths（2026-09-30 批量登记任务） ----------
+
+
+def test_upsert_normalizes_shared_paths(registry_service):
+    """posix 化、去空/去点、去重排序（与 tags 同口径）。"""
+    registry_service.upsert(
+        RegistrySkill(
+            id="shared",
+            name="s",
+            source="github",
+            path="codex-skills/alpha",
+            repository="https://github.com/a/berkshire",
+            shared_paths=["tools\\lib.py", "tools", "", ".", "docs/"],
+        )
+    )
+
+    assert registry_service.get("shared").shared_paths == [
+        "docs",
+        "tools",
+        "tools/lib.py",
+    ]
+
+
+def test_upsert_rejects_shared_path_traversal(registry_service):
+    with pytest.raises(RegistryValidationError, match="relative path"):
+        registry_service.upsert(
+            RegistrySkill(
+                id="escape-shared",
+                name="s",
+                source="github",
+                path="skills/alpha",
+                repository="https://github.com/a/berkshire",
+                shared_paths=["../outside"],
+            )
+        )
+    # 绝对路径同样拒绝
+    with pytest.raises(RegistryValidationError, match="relative path"):
+        registry_service.upsert(
+            RegistrySkill(
+                id="abs-shared",
+                name="s",
+                source="github",
+                path="skills/alpha",
+                repository="https://github.com/a/berkshire",
+                shared_paths=["/etc"],
+            )
+        )
+
+
+def test_upsert_rejects_local_skill_with_shared_paths(registry_service, source_root):
+    """local 条目源目录直链，随行资源无意义，登记即拒。"""
+    make_local_skill_dir(source_root, "local-shared")
+    with pytest.raises(ValidationError, match="shared_paths"):
+        registry_service.upsert(
+            RegistrySkill(
+                id="local-shared",
+                name="l",
+                source="local",
+                path="local-shared",
+                shared_paths=["tools"],
+            )
+        )
+
+
 # ---------- github repository+path 唯一性 ----------
 
 

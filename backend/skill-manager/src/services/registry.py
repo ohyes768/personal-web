@@ -17,26 +17,46 @@ from __future__ import annotations
 
 import os
 import re
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from src.db import SkillStateStore
 from src.models import RegistrySkill, SKILL_ID_PATTERN, SkillSource
 
 _ID_RE = re.compile(SKILL_ID_PATTERN)
 
+
+def _normalized_shared_paths(paths: list[str]) -> list[str]:
+    """shared_paths 规范化：posix 化、去空、去重排序（与 tags 同口径）。
+
+    绝对路径在入口即拒（`strip("/")` 会把它洗白成相对路径，绕过
+    `_check_path` 的绝对性校验，故必须先于剥斜杠检查）。
+    """
+    normalized: set[str] = set()
+    for raw in paths:
+        posix = Path(raw).as_posix()
+        if posix.startswith("/"):
+            raise RegistryValidationError(
+                f"github skill shared path {raw!r} must be a relative "
+                f"path inside the repository"
+            )
+        cleaned = posix.strip("/")
+        if cleaned not in ("", "."):
+            normalized.add(cleaned)
+    return sorted(normalized)
+
 # 本地发现时按目录名排除的项（隐藏目录统一按 "." 前缀排除，无需逐个列出）
 _DISCOVERY_EXCLUDED_DIRS = {"scripts", "__pycache__", "node_modules", "logs", "output"}
 
-# frontmatter 只取文件头，防超大 SKILL.md 拖慢扫描
 _FRONTMATTER_READ_BYTES = 4096
 
 
-def _parse_skill_md_frontmatter(path: Path) -> dict[str, str]:
+def parse_skill_md_frontmatter(path: Path) -> dict[str, str]:
     """解析 SKILL.md 头部 YAML frontmatter 的 name/description。
 
     只识别文件第一行为 `---` 的围栏块内 `key: value` 单行标量（name/
     description 均为标量，无需完整 YAML 依赖）；无围栏、字段缺失或读取
     失败一律返回空 dict，调用方降级（name 退回目录 id、summary 留空）。
+    公开给 git_cache 的扫描增强复用（discover 与 GitHub scan 同一口径）。
     """
     try:
         head = path.read_bytes()[: _FRONTMATTER_READ_BYTES].decode(
@@ -127,7 +147,7 @@ class RegistryService:
             skill_id = skill_dir.name
             if not _ID_RE.match(skill_id):
                 continue
-            meta = _parse_skill_md_frontmatter(skill_dir / "SKILL.md")
+            meta = parse_skill_md_frontmatter(skill_dir / "SKILL.md")
             candidates.append(
                 RegistrySkill(
                     id=skill_id,
@@ -161,8 +181,13 @@ class RegistryService:
     # ---------- 内部工具 ----------
 
     def _validated(self, skill: RegistrySkill) -> RegistrySkill:
-        """返回 tags 排序去重后的新对象，并校验路径边界。"""
-        normalized = skill.model_copy(update={"tags": sorted(set(skill.tags))})
+        """返回 tags/shared_paths 规范化后的新对象，并校验路径边界。"""
+        normalized = skill.model_copy(
+            update={
+                "tags": sorted(set(skill.tags)),
+                "shared_paths": _normalized_shared_paths(skill.shared_paths),
+            }
+        )
         self._check_path(normalized)
         return normalized
 
@@ -179,12 +204,20 @@ class RegistryService:
                     f"local skill dir {skill.path!r} does not contain SKILL.md"
                 )
             return
-        # github skill 的 path 是仓库内相对目录（可为 "."），缓存校验在发布时进行
-        relative = Path(skill.path)
+        # github skill 的 path 是仓库内相对目录（可为 "."），缓存校验在发布时
+        # 进行；posix 判定避免 WindowsPath 把 "/etc" 视为相对路径
+        relative = PurePosixPath(skill.path)
         if relative.is_absolute() or ".." in relative.parts:
             raise RegistryValidationError(
                 f"github skill path {skill.path!r} must be a relative subdirectory"
             )
+        for shared in skill.shared_paths:
+            shared_path = Path(shared)
+            if shared_path.is_absolute() or ".." in shared_path.parts:
+                raise RegistryValidationError(
+                    f"github skill shared path {shared!r} must be a relative "
+                    f"path inside the repository"
+                )
 
     def _reject_duplicate_repo_path(self, skill: RegistrySkill) -> None:
         """github repository+path 组合唯一；同 id 视为更新，排除自身。"""

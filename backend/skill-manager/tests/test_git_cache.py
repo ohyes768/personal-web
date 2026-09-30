@@ -150,12 +150,19 @@ def registered_github_skill():
 
 
 def test_scan_returns_each_skill_md_directory(git_cache):
-    candidates = git_cache.scan(CANONICAL_URL)
+    outcome = git_cache.scan(CANONICAL_URL)
 
-    # .github/bots 与 node_modules 内的 SKILL.md 被忽略
-    assert [candidate.path for candidate in candidates] == [
+    # .github/bots 与 node_modules 内的 SKILL.md 被忽略；候选带
+    # frontmatter 元数据（name 取自 SKILL.md，description 缺失降级空串）
+    assert [candidate.path for candidate in outcome.candidates] == [
         "skills/alpha",
         "skills/beta",
+    ]
+    assert outcome.candidates[0].name == "skills/alpha"
+    assert outcome.candidates[0].description == ""
+    # 顶层清单供批量登记 UI 勾选 shared_paths（隐藏目录不在清单）
+    assert {"path": "skills", "is_dir": True} in [
+        {"path": entry.path, "is_dir": entry.is_dir} for entry in outcome.top_level
     ]
 
 
@@ -172,11 +179,11 @@ def test_scan_rejects_non_github_and_file_urls(git_cache):
 def test_check_updates_does_not_change_cache(
     git_cache, registered_github_skill, roots
 ):
-    before = git_cache.current_revision(registered_github_skill.id)
+    before = git_cache.current_revision(registered_github_skill)
 
     update = git_cache.check_update(registered_github_skill)
 
-    assert git_cache.current_revision(registered_github_skill.id) == before
+    assert git_cache.current_revision(registered_github_skill) == before
     assert update.remote_revision
     # 检查更新绝不下载：缓存根目录始终为空
     assert not any(roots.github_cache.iterdir())
@@ -321,11 +328,12 @@ def test_ensure_cached_clones_and_checks_out_requested_revision(
     )
 
     assert (skill_dir / "SKILL.md").is_file()
+    # 仓库维度共享缓存布局：repos/<owner>__<repo>
     expected = (
-        roots.github_cache / "two-skills" / "skills" / "alpha"
+        roots.github_cache / "repos" / "example__two-skills" / "skills" / "alpha"
     ).resolve()
     assert skill_dir == expected
-    assert git_cache.current_revision("two-skills") == upstream_repo.revision
+    assert git_cache.current_revision(registered_github_skill) == upstream_repo.revision
 
 
 def test_cache_checkout_rejects_missing_registered_subdirectory(
@@ -349,8 +357,8 @@ def test_ensure_cached_rejects_traversal_path(
     assert not any(roots.github_cache.iterdir())
 
 
-def test_current_revision_is_empty_without_cache(git_cache):
-    assert git_cache.current_revision("never-cached") == ""
+def test_current_revision_is_empty_without_cache(git_cache, registered_github_skill):
+    assert git_cache.current_revision(registered_github_skill) == ""
 
 
 # ---------- 流式 git 执行器（09-26 后台任务化 Task 1） ----------
@@ -543,9 +551,9 @@ def test_run_git_streaming_nonzero_exit_wraps_full_stderr(git_cache, tmp_path):
 def test_scan_forwards_progress_callback(git_cache):
     recorder = _FrameRecorder()
 
-    candidates = git_cache.scan(CANONICAL_URL, on_progress=recorder)
+    outcome = git_cache.scan(CANONICAL_URL, on_progress=recorder)
 
-    assert [candidate.path for candidate in candidates] == [
+    assert [candidate.path for candidate in outcome.candidates] == [
         "skills/alpha",
         "skills/beta",
     ]
@@ -601,7 +609,7 @@ def test_ensure_cached_clone_failure_leaves_no_tmp_or_partial_cache(
     tmp_parent = roots.github_cache / ".tmp"
     assert tmp_parent.is_dir()
     assert not any(tmp_parent.iterdir())
-    assert not (roots.github_cache / "two-skills").exists()
+    assert not (roots.github_cache / "repos" / "example__two-skills").exists()
 
 
 def test_ensure_cached_first_clone_lands_via_tmp_rename(
@@ -614,8 +622,10 @@ def test_ensure_cached_first_clone_lands_via_tmp_rename(
     )
 
     assert (skill_dir / "SKILL.md").is_file()
-    assert (roots.github_cache / "two-skills" / ".git").is_dir()
-    assert git_cache.current_revision("two-skills") == upstream_repo.revision
+    assert (roots.github_cache / "repos" / "example__two-skills" / ".git").is_dir()
+    assert (
+        git_cache.current_revision(registered_github_skill) == upstream_repo.revision
+    )
     tmp_parent = roots.github_cache / ".tmp"
     assert tmp_parent.is_dir()
     assert not any(tmp_parent.iterdir())
@@ -626,7 +636,7 @@ def test_ensure_cached_keeps_existing_target_and_discards_tmp(
 ):
     """rename 前发现正式目录已存在（并发 clone 任务先行落地）：弃本次
     tmp、直接复用既有目录，绝不覆盖（design §3 双保险）。"""
-    existing = roots.github_cache / "two-skills"
+    existing = roots.github_cache / "repos" / "example__two-skills"
     skill_md_dir = existing / "skills" / "alpha"
     skill_md_dir.mkdir(parents=True)
     (skill_md_dir / "SKILL.md").write_text(
@@ -661,6 +671,60 @@ def test_cleanup_stale_workspaces_clears_scan_and_tmp_residue(settings, roots):
     assert (removed_scan, removed_tmp) == (1, 1)
     assert not any((roots.state / "scan").iterdir())
     assert not any((roots.github_cache / ".tmp").iterdir())
+
+
+# ---------- 仓库维度共享缓存（2026-09-30 批量登记任务） ----------
+
+
+def test_repo_cache_dir_maps_canonical_url_and_rejects_unnormalized(git_cache, roots):
+    assert git_cache.repo_cache_dir(CANONICAL_URL) == (
+        roots.github_cache / "repos" / "example__two-skills"
+    )
+    # 非 github.com 形式（正则不匹配）直接拒绝；`.git` 后缀是等价形式，
+    # 正则可选组宽松接受并映射到同一目录
+    assert git_cache.repo_cache_dir(f"{CANONICAL_URL}.git") == (
+        roots.github_cache / "repos" / "example__two-skills"
+    )
+    with pytest.raises(InvalidRepositoryError):
+        git_cache.repo_cache_dir("https://gitlab.com/example/two-skills")
+
+
+def test_repo_cache_dir_separator_is_reversible(git_cache):
+    """owner 段（GitHub 规则）不含下划线：`__` 分隔无歧义且可逆解析。"""
+    directory = git_cache.repo_cache_dir("https://github.com/some-owner/re.po_name")
+
+    owner, _, repo = directory.name.partition("__")
+    assert (owner, repo) == ("some-owner", "re.po_name")
+
+
+def test_ensure_cached_shares_repo_cache_across_skills(
+    git_cache, registered_github_skill, roots, upstream_repo
+):
+    """同仓库两个登记条目共享一份 clone：仓库级目录只出现一次，
+    其余条目零额外 clone（fetch/checkout 复用既有 .git）。"""
+    beta = registered_github_skill.model_copy(
+        update={"id": "two-skills-beta", "path": "skills/beta"}
+    )
+
+    alpha_dir = git_cache.ensure_cached(registered_github_skill, upstream_repo.revision)
+    beta_dir = git_cache.ensure_cached(beta, upstream_repo.revision)
+
+    repos_parent = roots.github_cache / "repos"
+    assert sorted(p.name for p in repos_parent.iterdir()) == ["example__two-skills"]
+    assert alpha_dir.parent.parent == repos_parent / "example__two-skills"
+    assert beta_dir.parent.parent == repos_parent / "example__two-skills"
+    # 已有缓存下其余条目只需路径校验，零 git 操作即可通过
+    git_cache.ensure_skill_path_cached(beta)
+
+
+def test_ensure_skill_path_cached_requires_existing_repo_cache(
+    git_cache, registered_github_skill, upstream_repo
+):
+    with pytest.raises(CacheValidationError, match="does not exist"):
+        git_cache.ensure_skill_path_cached(registered_github_skill)
+
+    git_cache.ensure_cached(registered_github_skill, upstream_repo.revision)
+    git_cache.ensure_skill_path_cached(registered_github_skill)  # 不再抛错
 
 
 def test_cleanup_stale_workspaces_tolerates_missing_parents(settings, roots):

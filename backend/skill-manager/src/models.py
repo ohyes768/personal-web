@@ -29,7 +29,8 @@ class RegistrySkill(BaseModel):
     """SQLite 登记表 `registry_skill` 单条目。
 
     - `source=local`：`path` 是源库内相对目录，必须含 `SKILL.md`（目录级校验在 RegistryService）。
-    - `source=github`：`repository` 必填，`path` 是仓库内相对目录，可为 `.`。
+    - `source=github`：`repository` 必填，`path` 是仓库内相对目录，可为 `.`；
+      `shared_paths` 是随行共享资源（仓库根相对路径，发布时拷贝进 staging）。
     - 去重/排序 tags 与路径穿越拒绝由 RegistryService 负责，模型只守字段契约。
     """
 
@@ -43,6 +44,9 @@ class RegistrySkill(BaseModel):
     status: Literal["active", "deprecated"] = "active"
     # 编排型 skill 的依赖清单（skill id 列表）；design 3.1 之外的可选扩展字段
     depends_on: list[SkillId] = []
+    # github 条目专用：随行共享资源（仓库根相对路径）；local 条目必须为空。
+    # 相对性/穿越校验在 RegistryService（与 path 同口径），模型只守 source 归属
+    shared_paths: list[str] = []
 
     @model_validator(mode="after")
     def _validate_source_specific_fields(self) -> "RegistrySkill":
@@ -50,6 +54,8 @@ class RegistrySkill(BaseModel):
             raise ValueError("github skill requires repository")
         if self.source is SkillSource.LOCAL and self.repository is not None:
             raise ValueError("local skill must not carry repository")
+        if self.source is SkillSource.LOCAL and self.shared_paths:
+            raise ValueError("local skill must not carry shared_paths")
         return self
 
 
@@ -83,10 +89,33 @@ class PublishBatchResult(BaseModel):
 class ScanCandidate(BaseModel):
     """`POST /api/skills/github/scan` 返回的候选 Skill 目录。
 
-    `path` 是仓库内相对 posix 路径（仓库根为 "."）；是否登记由管理员决定。
+    `path` 是仓库内相对 posix 路径（仓库根为 "."）；`name`/`description`
+    取自候选 SKILL.md frontmatter（缺失降级：name 退回目录名、description
+    留空），供批量登记 UI 预填。是否登记由管理员决定。
     """
 
     path: Annotated[str, Field(min_length=1)]
+    name: str = ""
+    description: str = ""
+
+
+class ScanTopLevelEntry(BaseModel):
+    """仓库根顶层目录/文件清单项（scan 结果，供 shared_paths 勾选）。"""
+
+    path: str
+    is_dir: bool
+
+
+class ScanOutcome(BaseModel):
+    """`GitCacheService.scan()` 的结构化结果（design R4）。
+
+    `referenced_paths` 是候选 SKILL.md 文本中引用到的顶层路径（粗匹配，
+    仅作 UI 预选，不作登记校验）。
+    """
+
+    candidates: list[ScanCandidate] = []
+    top_level: list[ScanTopLevelEntry] = []
+    referenced_paths: list[str] = []
 
 
 class UpdateInfo(BaseModel):
@@ -122,14 +151,14 @@ class ScanRequest(BaseModel):
     repository: str
 
 
-TaskKind = Literal["scan", "register", "clone_cache"]
+TaskKind = Literal["scan", "register", "register_batch", "clone_cache"]
 TaskState = Literal["running", "done", "error"]
 
 
 class AsyncTaskCreatedResponse(BaseModel):
     """`202` 响应：GitHub clone 类操作已转为后台任务（PRD R1-R3）。
 
-    scan / register / clone 三个 POST 共用；进度与结果经
+    scan / register / register_batch / clone 四个 POST 共用；进度与结果经
     `GET /api/skills/github/tasks/{task_id}` 轮询获取。
     """
 
@@ -137,12 +166,21 @@ class AsyncTaskCreatedResponse(BaseModel):
     kind: TaskKind
 
 
+class RegisterBatchResultItem(BaseModel):
+    """批量登记任务快照的逐项结果（部分成功语义，design R1）。"""
+
+    skill_id: str
+    status: Literal["success", "error"]
+    error: str = ""
+
+
 class TaskSnapshot(BaseModel):
     """`GET /api/skills/github/tasks/{task_id}` 的任务快照（PRD R4）。
 
     字段与 `src.services.task_manager.TaskSnapshot`（冻结 dataclass）一一
-    对应；`candidates` 仅 scan 任务 state=done 时非空。管理密码只存在于
-    同步请求体内，绝不进入快照（AC5）。
+    对应；`candidates`/`top_level`/`referenced_paths` 仅 scan 任务
+    state=done 时非空；`results` 仅 register_batch 任务非空。管理密码只
+    存在于同步请求体内，绝不进入快照（AC5）。
     """
 
     task_id: str
@@ -157,7 +195,35 @@ class TaskSnapshot(BaseModel):
     error_message: str | None = None
     created_at: str
     updated_at: str
-    candidates: list[str] = []
+    candidates: list[ScanCandidate] = []
+    top_level: list[ScanTopLevelEntry] = []
+    referenced_paths: list[str] = []
+    results: list[RegisterBatchResultItem] = []
+
+
+class GithubRegisterItem(BaseModel):
+    """批量登记请求的单项候选（design R1）。
+
+    与单条登记请求字段一致；skill id 由服务端逐项派生。
+    """
+
+    path: Annotated[str, Field(min_length=1)]
+    name: Annotated[str, Field(min_length=1)]
+    tags: list[Tag] = []
+    summary: str = ""
+
+
+class RegisterGithubBatchRequest(BaseModel):
+    """`POST /api/skills/github/batch`：一次登记同一仓库的多个候选目录。
+
+    `shared_paths` 顶层共享，整批各条目一致（合集仓库的根级共享资源
+    通常不随候选变化）。
+    """
+
+    password: str
+    repository: str
+    shared_paths: list[str] = []
+    items: Annotated[list[GithubRegisterItem], Field(min_length=1)]
 
 
 class RegisterGithubSkillRequest(BaseModel):
@@ -172,6 +238,7 @@ class RegisterGithubSkillRequest(BaseModel):
     name: Annotated[str, Field(min_length=1)]
     tags: list[Tag] = []
     summary: str = ""
+    shared_paths: list[str] = []
 
 
 class CheckUpdatesRequest(BaseModel):

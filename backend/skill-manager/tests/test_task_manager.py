@@ -238,7 +238,12 @@ def test_scan_task_completes_with_sorted_candidates(manager):
 
     assert final.state == "done"
     assert final.error_code is None
-    assert final.candidates == ("skills/alpha", "skills/beta")
+    # R4 扫描增强：快照候选是 ScanCandidate 对象（path + frontmatter 元数据）
+    assert [candidate.path for candidate in final.candidates] == [
+        "skills/alpha",
+        "skills/beta",
+    ]
+    assert [entry.path for entry in final.top_level] == ["skills"]
     assert final.stage == "discover"
 
 
@@ -328,6 +333,119 @@ def test_password_never_appears_in_snapshot_or_internal_state(
     assert snapshot is not None
     assert sentinel_password not in repr(snapshot)
     assert sentinel_password not in repr(manager._tasks)
+
+
+# ---------- 批量登记（2026-09-30 批量登记任务 design §5.2） ----------
+
+
+def test_register_batch_task_completes_with_per_item_results(
+    manager, registry, store, upstream_repo
+):
+    skills = [
+        RegistrySkill(
+            id="two-skills",
+            name="Alpha",
+            source="github",
+            path="skills/alpha",
+            repository=CANONICAL_URL,
+        ),
+        RegistrySkill(
+            id="two-skills-beta",
+            name="Beta",
+            source="github",
+            path="skills/beta",
+            repository=CANONICAL_URL,
+        ),
+    ]
+
+    final = _finished(manager, manager.start_register_batch(CANONICAL_URL, skills).task_id)
+
+    assert final.state == "done"
+    assert final.kind == "register_batch"
+    assert [(r.skill_id, r.status) for r in final.results] == [
+        ("two-skills", "success"),
+        ("two-skills-beta", "success"),
+    ]
+    # 仓库级缓存只落一份，两个条目都完成登记
+    assert registry.get("two-skills") is not None
+    assert registry.get("two-skills-beta") is not None
+
+
+def test_register_batch_reports_item_failure_and_continues(
+    manager, registry, store, upstream_repo
+):
+    """批内 repository+path 冲突：先到项成功，后到项记 error，批整体 done。"""
+    skills = [
+        RegistrySkill(
+            id="two-skills",
+            name="Alpha",
+            source="github",
+            path="skills/alpha",
+            repository=CANONICAL_URL,
+        ),
+        RegistrySkill(
+            id="two-skills-alpha-2",
+            name="Alpha Again",
+            source="github",
+            path="skills/alpha",
+            repository=CANONICAL_URL,
+        ),
+    ]
+
+    final = _finished(manager, manager.start_register_batch(CANONICAL_URL, skills).task_id)
+
+    assert final.state == "done"
+    assert [(r.skill_id, r.status) for r in final.results] == [
+        ("two-skills", "success"),
+        ("two-skills-alpha-2", "error"),
+    ]
+    assert "duplicate" in final.results[1].error
+    assert registry.get("two-skills") is not None
+    assert registry.get("two-skills-alpha-2") is None
+
+
+def test_register_batch_all_failed_maps_to_error_with_results(
+    manager, registry, upstream_repo
+):
+    """逐项全部失败：整体 state=error（cache_failed），逐项 results 保留。"""
+    for skill_id, path in (("held-alpha", "skills/alpha"), ("held-beta", "skills/beta")):
+        registry.upsert(
+            RegistrySkill(
+                id=skill_id,
+                name=skill_id,
+                source="github",
+                path=path,
+                repository=CANONICAL_URL,
+            )
+        )
+    skills = [
+        RegistrySkill(
+            id="two-skills",
+            name="Alpha",
+            source="github",
+            path="skills/alpha",
+            repository=CANONICAL_URL,
+        ),
+        RegistrySkill(
+            id="two-skills-beta",
+            name="Beta",
+            source="github",
+            path="skills/beta",
+            repository=CANONICAL_URL,
+        ),
+    ]
+
+    final = _finished(manager, manager.start_register_batch(CANONICAL_URL, skills).task_id)
+
+    assert final.state == "error"
+    assert final.error_code == "cache_failed"
+    assert "全部失败" in final.error_message
+    assert [(r.skill_id, r.status) for r in final.results] == [
+        ("two-skills", "error"),
+        ("two-skills-beta", "error"),
+    ]
+    # 既有的占位登记不被批量任务覆盖
+    assert registry.get("held-alpha") is not None
 
 
 # ---------- 惰性回收（PRD R4） ----------

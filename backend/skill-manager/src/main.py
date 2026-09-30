@@ -21,6 +21,10 @@ from src.api.routes import router
 from src.config import Settings
 from src.db import SkillStateStore
 from src.services.git_cache import GitCacheService, cleanup_stale_workspaces
+from src.services.migration import (
+    migrate_legacy_cache,
+    republish_active_github_skills,
+)
 from src.services.publisher import Publisher
 from src.services.registry import RegistryService
 from src.services.task_manager import GithubTaskManager
@@ -43,6 +47,28 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     # 进程重启遗留的扫描工作区 / clone 临时目录（孤儿）在启动时清空；
     # 失败仅记日志，不阻断启动（PRD R8 / design §4）
     cleanup_stale_workspaces(settings)
+    # 共享缓存布局一次性迁移（旧 <cache>/<skill.id>/ → repos/<owner>__<repo>/，
+    # 2026-09-30 批量登记任务）+ active github 部署自动重发布（无网络，
+    # 失败逐条记 deployment_history，不阻断启动，design §5.3）
+    try:
+        moved, discarded = migrate_legacy_cache(
+            settings, app.state.registry.list_skills()
+        )
+        if moved or discarded:
+            logger.info(
+                "legacy cache migrated: moved=%d discarded=%d", moved, discarded
+            )
+        republished = republish_active_github_skills(
+            settings,
+            app.state.registry,
+            store,
+            app.state.publisher,
+            app.state.git_cache,
+        )
+        if republished:
+            logger.info("startup republished %d active github skills", republished)
+    except Exception:
+        logger.exception("startup migration failed; continuing boot")
     business_logger = logging.getLogger("src")
     business_logger.setLevel(logging.INFO)
     if not business_logger.handlers and not logging.getLogger().handlers:

@@ -225,7 +225,12 @@ def test_scan_is_public_and_creates_background_task(client):
     assert snapshot["error_code"] is None
     assert snapshot["repository"] == CANONICAL_URL
     assert snapshot["skill_id"] is None
-    assert snapshot["candidates"] == ["skills/alpha", "skills/beta"]
+    # R4 扫描增强：候选带 frontmatter 元数据 + 顶层清单（供 shared_paths 勾选）
+    assert snapshot["candidates"] == [
+        {"path": "skills/alpha", "name": "skills/alpha", "description": ""},
+        {"path": "skills/beta", "name": "skills/beta", "description": ""},
+    ]
+    assert {"path": "skills", "is_dir": True} in snapshot["top_level"]
 
 
 def test_scan_rejects_invalid_urls_synchronously(client):
@@ -424,7 +429,10 @@ def test_register_github_skill_requires_password_and_persists(client, roots):
     assert stored.tags == ["test"]
     card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
     assert skill_id in card_ids
-    assert (roots.github_cache / skill_id / "skills" / "alpha" / "SKILL.md").is_file()
+    # 共享缓存按仓库落位：repos/<owner>__<repo>
+    assert (
+        roots.github_cache / "repos" / "example__two-skills" / "skills" / "alpha" / "SKILL.md"
+    ).is_file()
 
 
 def test_register_logs_task_creation_without_password(client, caplog):
@@ -446,6 +454,94 @@ def test_register_github_skill_rejects_invalid_repository(client, roots):
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_repository"
     assert not any(roots.github_cache.iterdir())
+
+
+# ---------- 批量登记（2026-09-30 批量登记任务 design §5.2） ----------
+
+
+def _batch_payload(password: str = PASSWORD) -> dict:
+    return {
+        "password": password,
+        "repository": CANONICAL_URL,
+        "shared_paths": ["tools"],
+        "items": [
+            {"path": "skills/alpha", "name": "Alpha"},
+            {"path": "skills/beta", "name": "Beta"},
+        ],
+    }
+
+
+def test_register_github_batch_requires_password(client, roots):
+    denied = client.post("/api/skills/github/batch", json=_batch_payload("wrong"))
+
+    assert denied.status_code == 401
+    assert denied.json()["code"] == "invalid_password"
+    assert not any(roots.github_cache.iterdir())
+
+
+def test_register_github_batch_rejects_invalid_paths_synchronously(client, roots):
+    for items in (
+        [{"path": "/etc", "name": "abs"}],
+        [{"path": "../escape", "name": "traversal"}],
+        [
+            {"path": "skills/alpha", "name": "first"},
+            {"path": "skills/alpha", "name": "duplicate"},
+        ],
+    ):
+        payload = {**_batch_payload(), "items": items}
+        response = client.post("/api/skills/github/batch", json=payload)
+
+        assert response.status_code == 400
+        assert response.json()["code"] == "invalid_path"
+    # 同步拒绝后不产生任何缓存或任务副作用
+    assert not any(roots.github_cache.iterdir())
+
+
+def test_register_github_batch_registers_all_items_with_derived_ids(
+    client, roots
+):
+    """批量登记全流程：202 + 轮询 done，逐项 results 与登记真源一致；
+    与既有 id 冲突的项派生 -2 后缀（批内/存量冲突预防）。"""
+    store = SkillStateStore.from_settings(Settings())
+    registry = RegistryService(store, roots.source_root)
+    registry.upsert(
+        RegistrySkill(
+            id="two-skills-beta",
+            name="held",
+            source="github",
+            path="held-beta",
+            repository="https://github.com/example/held",
+        )
+    )
+
+    created = client.post("/api/skills/github/batch", json=_batch_payload())
+
+    assert created.status_code == 202
+    assert created.json()["kind"] == "register_batch"
+    assert PASSWORD not in created.text
+
+    snapshot = _await_task(client, created.json()["task_id"])
+    assert snapshot["state"] == "done", snapshot
+    assert PASSWORD not in str(snapshot)
+    assert [(r["skill_id"], r["status"]) for r in snapshot["results"]] == [
+        ("two-skills-alpha", "success"),
+        # beta 派生 id 撞既有条目，-2 后缀区分
+        ("two-skills-beta-2", "success"),
+    ]
+
+    stored_alpha = registry.get("two-skills-alpha")
+    stored_beta = registry.get("two-skills-beta-2")
+    assert stored_alpha is not None and stored_alpha.path == "skills/alpha"
+    assert stored_beta is not None and stored_beta.path == "skills/beta"
+    # shared_paths 整批共享，落库各条目一致
+    assert stored_alpha.shared_paths == ["tools"]
+    assert stored_beta.shared_paths == ["tools"]
+    card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
+    assert {"two-skills-alpha", "two-skills-beta-2"} <= set(card_ids)
+    # 仓库级共享缓存只落一份
+    assert (
+        roots.github_cache / "repos" / "example__two-skills" / "skills" / "beta" / "SKILL.md"
+    ).is_file()
 
 
 def test_check_updates_reports_versions_without_publishing(client, roots):
@@ -512,12 +608,16 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
     assert published.status_code == 200
     assert published.json()["items"][0]["status"] == "success"
 
-    # 缓存与目标链接都落在远端最新 revision
-    skill_dir = (roots.github_cache / skill_id / "skills/alpha").resolve()
+    # 共享缓存 fetch/checkout 到远端最新 revision；目标链接指向 staging 快照
+    repo_dir = roots.github_cache / "repos" / "example__two-skills"
+    skill_dir = (repo_dir / "skills/alpha").resolve()
     assert "alpha-v2" in (skill_dir / "SKILL.md").read_text(encoding="utf-8")
     link = roots.openclaw / skill_id
     assert link.is_symlink()
-    assert link.resolve() == skill_dir
+    assert link.resolve() == (
+        roots.github_cache / "staging" / skill_id / v2[:12]
+    ).resolve()
+    assert "alpha-v2" in (link / "SKILL.md").read_text(encoding="utf-8")
     card = next(
         item for item in client.get("/api/skills").json()["items"] if item["id"] == skill_id
     )
@@ -525,7 +625,9 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
 
 
 @pytest.mark.requires_symlink
-def test_registered_github_skill_can_be_planned_and_published(client, roots):
+def test_registered_github_skill_can_be_planned_and_published(
+    client, roots, upstream_repo
+):
     """Task 8 端到端：扫描 → 登记（密码）→ 计划 → 发布（密码）→ symlink 落地。"""
     scanned = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
     assert scanned.status_code == 202
@@ -539,7 +641,7 @@ def test_registered_github_skill_can_be_planned_and_published(client, roots):
         json={
             "password": PASSWORD,
             "repository": CANONICAL_URL,
-            "path": candidates[0],
+            "path": candidates[0]["path"],
             "name": "Fixture",
             "tags": ["test"],
         },
@@ -567,7 +669,11 @@ def test_registered_github_skill_can_be_planned_and_published(client, roots):
     assert published.json()["items"][0]["status"] == "success"
     link = roots.openclaw / skill_id
     assert link.is_symlink()
-    assert link.resolve() == (roots.github_cache / skill_id / candidates[0]).resolve()
+    # 发布源是 staging 快照：无检查记录时以缓存 HEAD（登记版本）组装
+    assert link.resolve() == (
+        roots.github_cache / "staging" / skill_id / upstream_repo.revision[:12]
+    ).resolve()
+    assert (link / "SKILL.md").is_file()
 
 
 def test_check_updates_is_public_and_reports_unknown_ids(client):
@@ -618,7 +724,9 @@ def test_clone_rebuilds_missing_cache_via_background_task(client, roots):
     snapshot = _await_task(client, created.json()["task_id"])
     assert snapshot["state"] == "done"
     assert snapshot["skill_id"] == "two-skills"
-    assert (roots.github_cache / "two-skills" / "skills" / "alpha" / "SKILL.md").is_file()
+    assert (
+        roots.github_cache / "repos" / "example__two-skills" / "skills" / "alpha" / "SKILL.md"
+    ).is_file()
     # clone 后卡片恢复可用
     cards = {c["id"]: c for c in client.get("/api/skills").json()["items"]}
     assert cards["two-skills"]["cache_missing"] is False
@@ -787,11 +895,14 @@ def _seed_derived_state(skill_id: str) -> SkillStateStore:
 
 def test_delete_github_skill_removes_registry_entry_and_derived_state(client, roots):
     """成功删除：DB 行移除且源库无需是 git 仓库（NAS git add 128 场景）；
-    github_check 清理；缓存目录移除；列表不再显示。"""
+    github_check 清理；仓库缓存与 staging 移除；列表不再显示。"""
     _seed_deletable_github_skill(roots)
     store = _seed_derived_state("two-skills")
-    cache_dir = roots.github_cache / "two-skills" / ".git"
-    cache_dir.mkdir(parents=True)
+    # 仓库维度共享缓存 + 该条目的 staging 快照
+    repo_cache = roots.github_cache / "repos" / "example__two-skills" / ".git"
+    repo_cache.mkdir(parents=True)
+    staging_dir = roots.github_cache / "staging" / "two-skills" / "abc123"
+    staging_dir.mkdir(parents=True)
     assert not (roots.source_root / ".git").exists()
 
     response = client.request(
@@ -803,7 +914,8 @@ def test_delete_github_skill_removes_registry_entry_and_derived_state(client, ro
     registry = RegistryService(store, roots.source_root)
     assert registry.get("two-skills") is None
     assert store.get_github_check("two-skills") is None
-    assert not (roots.github_cache / "two-skills").exists()
+    assert not (roots.github_cache / "repos" / "example__two-skills").exists()
+    assert not (roots.github_cache / "staging" / "two-skills").exists()
     card_ids = [c["id"] for c in client.get("/api/skills").json()["items"]]
     assert "two-skills" not in card_ids
 

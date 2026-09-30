@@ -11,6 +11,13 @@
 5. 写 deployment / deployment_history。单项失败只记录该项，临时链接在
    finally 中清理，绝不触碰其他 Skill。
 
+GitHub 条目的发布源是 **staging 目录**（2026-09-30 批量登记任务）：
+`stage_github_skill()` 在 `${GITHUB_SKILL_CACHE_ROOT}/staging/<skill-id>/
+<short-rev>/` 组装「skill 子目录 + shared_paths 随行资源」的拷贝快照，
+symlink 指向该 rev 目录。rev 目录使每次发布都是独立快照：后续共享缓存
+checkout 到其他 revision 不影响已发布内容，且 symlink 原子切换零悬空
+窗口；每个 skill 仅保留最新 2 个 rev 目录，更旧的自动清理。
+
 注：回滚功能已整体移除（2026-09-23）——发布链接在两种来源下均指向稳定
 路径，快照机制对其声称的「退回旧版」场景无效，详见任务
 09-23-skill-manager-remove-rollback 的 PRD。
@@ -20,6 +27,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import stat
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +49,14 @@ from src.models import (
 _ID_RE = re.compile(SKILL_ID_PATTERN)
 _SKILL_MD = "SKILL.md"
 _TEMP_LINK_SUFFIX = ".next"
+# staging 布局：cache_root/staging/<skill-id>/<short-rev>/
+_STAGING_PARENT = "staging"
+# short rev 目录名长度：git 默认短 sha 为 7+ 自适应，12 位碰撞概率可忽略
+_REV_DIR_LENGTH = 12
+# 每个 skill 保留的 staging rev 目录数（最新 N 份）
+_STAGING_KEEP_REVS = 2
+# 组装 staging 时忽略的目录（.git 绝不进发布产物）
+_STAGING_IGNORE = shutil.ignore_patterns(".git")
 
 
 class PublisherError(Exception):
@@ -80,18 +97,29 @@ def validated_source(settings: Settings, source: Path) -> Path:
 
 
 def resolve_registry_source(settings: Settings, skill: RegistrySkill) -> Path:
-    """把注册表条目解析为受控源目录；无效时抛 InvalidSourceError。
+    """把 local 注册表条目解析为受控源目录；无效时抛 InvalidSourceError。
 
-    local 条目 → `${SKILLS_SOURCE_ROOT}/${path}`；
-    github 条目 → `${GITHUB_SKILL_CACHE_ROOT}/${skill.id}/${path}`。
+    仅服务 local 条目（源库目录直链）；github 条目的发布源是 staging
+    快照（`Publisher.stage_github_skill`），计划预览用
+    `Publisher.planned_staging_dir` 只读计算。
     """
-    if skill.source is SkillSource.LOCAL:
-        candidate = (settings.skills_source_root / skill.path).resolve()
-    else:
-        candidate = (
-            settings.github_skill_cache_root / skill.id / skill.path
-        ).resolve()
+    if skill.source is not SkillSource.LOCAL:
+        raise InvalidSourceError(
+            f"github skill {skill.id!r} resolves via staging, not direct source"
+        )
+    candidate = (settings.skills_source_root / skill.path).resolve()
     return validated_source(settings, candidate)
+
+
+def _force_remove_tree(func, path, exc_info) -> None:
+    """`shutil.rmtree` onexc 处理器：Windows 上只读位文件先清位再删。"""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
+def force_remove_tree(path: Path) -> None:
+    """删除目录树（跨模块复用：routes 删缓存 / migration 搬旧缓存）。"""
+    shutil.rmtree(path, onexc=_force_remove_tree)
 
 
 def _inside_controlled_roots(settings: Settings, resolved: Path) -> bool:
@@ -106,6 +134,105 @@ class Publisher:
     def __init__(self, settings: Settings, store: SkillStateStore) -> None:
         self.settings = settings
         self.store = store
+
+    # ---------- staging（github 条目发布快照） ----------
+
+    def staging_root(self) -> Path:
+        """staging 根：cache root 下，天然落在受控根边界内（design §4.1）。"""
+        return self.settings.github_skill_cache_root / _STAGING_PARENT
+
+    def planned_staging_dir(self, skill_id: str, revision: str) -> Path:
+        """只读计算某 skill 在指定 revision 下的 staging 目录（不组装）。"""
+        rev_dir = revision[:_REV_DIR_LENGTH] if revision else "uncached"
+        return self.staging_root() / skill_id / rev_dir
+
+    def stage_github_skill(
+        self, skill: RegistrySkill, revision: str, repo_dir: Path
+    ) -> Path:
+        """组装 github 条目的 staging rev 目录，返回该目录作为发布链接目标。
+
+        - `repo_dir` 是共享缓存仓库目录（含 `.git` 与检出内容），必须在
+          GitHub 缓存根之内；skill 登记路径必须含 `SKILL.md`；
+        - 组装顺序：先 `shared_paths` 随行资源、后 skill 本体（本体覆盖
+          同名文件）；`.git` 永不进入产物；
+        - 组装落 `.tmp` 后原子 rename；同 rev 目录已存在（重复发布）直接
+          复用；完成后清理过期 rev，仅保留最新 `_STAGING_KEEP_REVS` 份。
+        """
+        resolved_repo = repo_dir.resolve()
+        if not resolved_repo.is_relative_to(self.settings.github_skill_cache_root):
+            raise InvalidSourceError(
+                f"repository cache {repo_dir} is outside the GitHub cache root"
+            )
+        skill_dir = (resolved_repo / skill.path).resolve()
+        if not (skill_dir / _SKILL_MD).is_file():
+            raise InvalidSourceError(
+                f"cached skill {skill.id!r} path {skill.path!r} does not "
+                f"contain SKILL.md"
+            )
+        rev_dir = revision[:_REV_DIR_LENGTH] if revision else "uncached"
+        final_dir = self.staging_root() / skill.id / rev_dir
+        if final_dir.is_dir():
+            self._cleanup_stale_revs(skill.id)
+            return final_dir
+        tmp_dir = (
+            self.staging_root()
+            / f".{skill.id}.{uuid.uuid4().hex}{_TEMP_LINK_SUFFIX}"
+        )
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        # rev 目录的父目录（staging/<skill-id>/）首次组装时创建
+        final_dir.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            for shared in skill.shared_paths:
+                shared_src = (resolved_repo / shared).resolve()
+                if not shared_src.exists():
+                    raise PublishBlockedError(
+                        f"shared path {shared!r} does not exist in repository "
+                        f"{str(skill.repository)}"
+                    )
+                if not shared_src.is_relative_to(resolved_repo):
+                    raise PublishBlockedError(
+                        f"shared path {shared!r} escapes the repository root"
+                    )
+                shared_dst = tmp_dir / shared
+                shared_dst.parent.mkdir(parents=True, exist_ok=True)
+                if shared_src.is_dir():
+                    shutil.copytree(
+                        shared_src, shared_dst, ignore=_STAGING_IGNORE
+                    )
+                else:
+                    shutil.copy2(shared_src, shared_dst)
+            shutil.copytree(
+                skill_dir, tmp_dir, ignore=_STAGING_IGNORE, dirs_exist_ok=True
+            )
+            if final_dir.exists():
+                # 并发组装先行落地：弃本次 tmp，复用既有目录
+                return final_dir
+            tmp_dir.replace(final_dir)
+        finally:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir, onexc=_force_remove_tree)
+        self._cleanup_stale_revs(skill.id)
+        return final_dir
+
+    def _cleanup_stale_revs(self, skill_id: str) -> None:
+        """删除超过保留数的旧 staging rev 目录（按 mtime 取最新 N 份）。
+
+        mtime 用 ns 精度（`st_mtime_ns`）；文件系统时间戳粒度更粗时同刻
+        目录的取舍不确定，但真实发布间隔远大于时间戳粒度，可忽略。
+        """
+        skill_staging = self.staging_root() / skill_id
+        if not skill_staging.is_dir():
+            return
+        rev_dirs = [d for d in skill_staging.iterdir() if d.is_dir()]
+        rev_dirs.sort(key=lambda d: d.stat().st_mtime_ns, reverse=True)
+        for stale in rev_dirs[_STAGING_KEEP_REVS:]:
+            shutil.rmtree(stale, onexc=_force_remove_tree)
+
+    def remove_staging(self, skill_id: str) -> None:
+        """删除某 skill 的全部 staging rev 目录（删除登记时清理，尽力而为）。"""
+        skill_staging = self.staging_root() / skill_id
+        if skill_staging.is_dir():
+            shutil.rmtree(skill_staging, onexc=_force_remove_tree)
 
     # ---------- 发布 ----------
 

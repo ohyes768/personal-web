@@ -75,10 +75,19 @@ CREATE TABLE IF NOT EXISTS registry_skill (
     status      TEXT NOT NULL DEFAULT 'active'
                 CHECK (status IN ('active','deprecated')),
     depends_on  TEXT NOT NULL DEFAULT '[]',
+    shared_paths TEXT NOT NULL DEFAULT '[]',
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
 """
+
+# 列级迁移（2026-09-30 批量登记任务）：CREATE TABLE IF NOT EXISTS 不会给
+# 旧库补新列，启动时按 PRAGMA 检测缺列则 ALTER TABLE ADD COLUMN（幂等）
+_COLUMN_MIGRATIONS: dict[str, list[str]] = {
+    "registry_skill": [
+        "ALTER TABLE registry_skill ADD COLUMN shared_paths TEXT NOT NULL DEFAULT '[]'",
+    ],
+}
 
 
 @dataclass(frozen=True)
@@ -131,6 +140,7 @@ class SkillStateStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn:
             conn.executescript(_SCHEMA)
+            _apply_column_migrations(conn)
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "SkillStateStore":
@@ -285,8 +295,8 @@ class SkillStateStore:
                 """
                 INSERT OR REPLACE INTO registry_skill
                     (id, name, source, path, repository, tags, summary, status,
-                     depends_on, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     depends_on, shared_paths, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     skill.id,
@@ -298,6 +308,7 @@ class SkillStateStore:
                     skill.summary,
                     skill.status,
                     json.dumps(skill.depends_on, ensure_ascii=False),
+                    json.dumps(skill.shared_paths, ensure_ascii=False),
                     created_at,
                     now,
                 ),
@@ -324,6 +335,17 @@ class SkillStateStore:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+
+def _apply_column_migrations(conn: sqlite3.Connection) -> None:
+    """对旧库补齐缺列（幂等）：PRAGMA table_info 检测，缺列则 ALTER TABLE。"""
+    for table, statements in _COLUMN_MIGRATIONS.items():
+        existing = {row["name"] for row in conn.execute(f"PRAGMA table_info({table})")}
+        for statement in statements:
+            # 语句形如 "ALTER TABLE <t> ADD COLUMN <col> ..."：取列名判存在性
+            column = statement.split("ADD COLUMN", 1)[1].split()[0]
+            if column not in existing:
+                conn.execute(statement)
 
 
 def _row_to_deployment(row: sqlite3.Row) -> DeploymentRecord:
@@ -376,6 +398,7 @@ def _row_to_registry_skill(row: sqlite3.Row) -> RegistrySkill:
         summary=row["summary"],
         status=row["status"],
         depends_on=json.loads(row["depends_on"]),
+        shared_paths=json.loads(row["shared_paths"]),
     )
 
 

@@ -2,14 +2,18 @@
 
 - URL 只接受规范化 `https://github.com/<owner>/<repo>`（可带 `.git` 后缀），
   file://、ssh://、其他主机（如 gitlab）一律 InvalidRepositoryError；
+- 缓存按**仓库维度共享**（2026-09-30 批量登记任务）：整仓 clone 落
+  `${GITHUB_SKILL_CACHE_ROOT}/repos/<owner>__<repo>/`，同仓库任意数量
+  登记条目共享一份 clone；owner 段（GitHub 规则）不含下划线，`__`
+  拼接无歧义且可逆解析；
 - `scan()` 以 `--depth 1` clone 到 `${SKILL_MANAGER_STATE_DIR}/scan/<uuid>`，
   递归扫描含 `SKILL.md` 的候选目录（忽略 `.git`、隐藏目录与工具目录），
-  `finally` 中始终删除扫描工作区；
+  同时返回候选 frontmatter 元数据、仓库根顶层清单与候选文本引用到的
+  顶层路径（预选）；`finally` 中始终删除扫描工作区；
 - `check_update()` 仅 `git ls-remote`（HEAD 与 `--tags --refs`），结果写
   github_check 记录（含失败记录），绝不 fetch/clone、绝不变更缓存内容；
-- `ensure_cached()` 将仓库 clone/fetch 到
-  `${GITHUB_SKILL_CACHE_ROOT}/<skill.id>` 并检出指定 revision，再校验登记
-  路径内 `SKILL.md` 存在（缺失抛 CacheValidationError）；
+- `ensure_cached()` 将仓库 clone/fetch 到共享缓存目录并检出指定 revision，
+  再校验登记路径内 `SKILL.md` 存在（缺失抛 CacheValidationError）；
 - 全部 Git 调用为固定列表参数（shell=False、不接受外部拼接的命令片段）；
   clone 走流式执行器（`subprocess.Popen` + 读线程解析 `--progress` 进度，
   超时 kill），其余命令用 `subprocess.run`（capture_output + timeout）。
@@ -32,12 +36,20 @@ import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from src.config import Settings
 from src.db import GithubCheckRecord, SkillStateStore
-from src.models import RegistrySkill, ScanCandidate, SkillSource, UpdateInfo
+from src.models import (
+    RegistrySkill,
+    ScanCandidate,
+    ScanOutcome,
+    ScanTopLevelEntry,
+    SkillSource,
+    UpdateInfo,
+)
+from src.services.registry import parse_skill_md_frontmatter
 
 # 单条 git 命令上限：clone 已全部改为后台任务（09-26 起），nginx 的 300s
 # 代理读超时不再约束 git 时长；慢速出口（FastGithub 实测 ~51 KiB/s）下
@@ -47,8 +59,12 @@ _GIT_TIMEOUT_SECONDS = 1800
 _REACHABILITY_TIMEOUT_SECONDS = 30
 _SKILL_MD = "SKILL.md"
 _SCAN_WORKSPACE_PARENT = "scan"
+# 共享缓存仓库目录父级：整仓 clone 落 `<root>/repos/<owner>__<repo>/`
+_REPOS_PARENT = "repos"
 # 首次 clone 的临时目录父级：成功后整体 rename 进正式缓存目录（PRD R7）
 _CLONE_TMP_PARENT = ".tmp"
+# 候选 SKILL.md 引用匹配的读取上限：截断超大文件即可，引用预选是粗匹配
+_SCAN_TEXT_READ_BYTES = 512 * 1024
 
 # 规范化 github.com HTTPS 地址：owner 仅字母数字与连字符（不以连字符开头），
 # repo 允许字母数字、连字符、下划线与点，`.git` 后缀与尾部斜杠被归一化
@@ -130,6 +146,15 @@ def _parse_progress_line(line: str) -> GitProgress | None:
     if (match := _RESOLVING_PROGRESS_RE.search(stripped)) is not None:
         return GitProgress("resolving", int(match[1]), match[2].strip())
     return None
+
+
+def _is_referenced(
+    entry: ScanTopLevelEntry, skill_texts: list[str]
+) -> bool:
+    """顶层条目是否被任一候选 SKILL.md 文本引用（目录匹配 `name/` 前缀，
+    文件匹配文件名本身；仅作 UI 预选，宁可多选不漏选）。"""
+    needle = f"{entry.path}/" if entry.is_dir else entry.path
+    return any(needle in text for text in skill_texts)
 
 
 class _ProgressLineSplitter:
@@ -275,7 +300,7 @@ class GitCacheService:
         # 仅测试注入的 URL→实际 Git URL 映射；生产恒等返回（见 _remote_for）
         self._remotes: Mapping[str, str] = dict(remotes or {})
 
-    # ---------- URL 规范化 ----------
+    # ---------- URL 规范化与共享缓存路径 ----------
 
     def normalize_repository(self, url: str) -> str:
         """把可接受的 GitHub HTTPS URL 规范化为 `https://github.com/<owner>/<repo>`。"""
@@ -287,6 +312,31 @@ class GitCacheService:
                 f"accepted, got: {url!r}"
             )
         return f"https://github.com/{match['owner']}/{match['repo']}"
+
+    def repo_cache_dir(self, canonical_url: str) -> Path:
+        """仓库维度的共享缓存目录：`<root>/repos/<owner>__<repo>`。
+
+        owner 段（GitHub 用户/组织名规则）不含下划线，`__` 分隔无歧义、
+        可逆解析；同仓库任意数量登记条目共享这一份 clone。
+        """
+        match = _GITHUB_HTTPS_RE.match(canonical_url)
+        if match is None:
+            raise InvalidRepositoryError(
+                f"not a normalized github.com repository URL: {canonical_url!r}"
+            )
+        return (
+            self.settings.github_skill_cache_root
+            / _REPOS_PARENT
+            / f"{match['owner']}__{match['repo']}"
+        )
+
+    def cache_present(self, canonical_url: str) -> bool:
+        """共享缓存是否已有该仓库的 clone（纯文件系统判断，零 git 子进程）。
+
+        供 SkillCard.cache_missing 与发布前置检查复用，与 ensure_cached
+        决定 fetch/clone 的口径一致。
+        """
+        return (self.repo_cache_dir(canonical_url) / ".git").is_dir()
 
     # ---------- 扫描 ----------
 
@@ -310,8 +360,8 @@ class GitCacheService:
         self,
         repository_url: str,
         on_progress: Callable[[GitProgress], None] | None = None,
-    ) -> list[ScanCandidate]:
-        """临时 clone 并扫描含 `SKILL.md` 的候选目录；工作区始终清理。
+    ) -> ScanOutcome:
+        """临时 clone 并扫描候选/顶层清单/引用预选；工作区始终清理。
 
         统一走流式执行器 + `--progress`（design §1）：有回调时进度实时
         上报，无回调时进度仅被丢弃。
@@ -332,7 +382,7 @@ class GitCacheService:
                 ],
                 on_progress or _ignore_progress,
             )
-            return self._discover_candidates(workspace)
+            return self._discover(workspace)
         finally:
             _remove_workspace(workspace)
 
@@ -348,7 +398,7 @@ class GitCacheService:
         except GitOperationError as exc:
             self._record_check_failure(skill, canonical, exc)
             raise
-        cached_revision = self.current_revision(skill.id)
+        cached_revision = self.current_revision(skill)
         info = UpdateInfo(
             skill_id=skill.id,
             repository=canonical,
@@ -369,28 +419,32 @@ class GitCacheService:
         revision: str,
         on_progress: Callable[[GitProgress], None] | None = None,
     ) -> Path:
-        """把仓库同步到缓存并检出指定 revision，返回含 `SKILL.md` 的登记目录。
+        """把仓库同步到共享缓存并检出指定 revision，返回含 `SKILL.md` 的登记目录。
 
-        已有缓存（含 `.git`）走 fetch 更新，路径不变；首次 clone 先落
-        `.tmp/<skill.id>-<uuid>` 临时目录，checkout 与 SKILL.md 校验通过后
-        原子 rename 进正式目录（PRD R7）：clone 中断/失败不留半成品缓存，
-        `finally` 始终清理本次 tmp，进程级残留由启动清理兜底（design §4）。
-        rename 前发现正式目录已存在（并发 clone 任务先行落地）则弃本次
-        tmp、直接复用既有目录（design §3 双保险）。clone 统一走流式执行器
-        以实时上报下载进度（design §1）。
+        缓存目录是仓库维度（`repos/<owner>__<repo>`），同仓库多个条目
+        共享：已 clone 只 fetch 更新，首个条目触发 clone。已有缓存（含
+        `.git`）路径不变；首次 clone 先落 `.tmp/<repo>-<uuid>` 临时目录，
+        checkout 与 SKILL.md 校验通过后原子 rename 进正式目录（PRD R7）：
+        clone 中断/失败不留半成品缓存，`finally` 始终清理本次 tmp，进程级
+        残留由启动清理兜底（design §4）。rename 前发现正式目录已存在
+        （并发 clone 任务先行落地）则弃本次 tmp、直接复用既有目录
+        （design §3 双保险）。clone 统一走流式执行器以实时上报下载进度
+        （design §1）。
         """
         canonical = self._require_github_skill(skill)
         self._require_safe_relative_path(skill)
-        cache_dir = self.settings.github_skill_cache_root / skill.id
+        repo_dir = self.repo_cache_dir(canonical)
         # 快速失败：缓存已存在但登记路径不含 SKILL.md，无需任何 Git 操作
-        self._check_registered_path_present(skill, cache_dir)
-        if (cache_dir / ".git").is_dir():
-            self._run_git(["fetch", "--force", "--tags"], cwd=cache_dir)
-            self._run_git(["checkout", "--force", revision], cwd=cache_dir)
-            return self._validated_skill_dir(skill, cache_dir)
+        self._check_registered_path_present(skill, repo_dir)
+        if (repo_dir / ".git").is_dir():
+            self._run_git(["fetch", "--force", "--tags"], cwd=repo_dir)
+            self._run_git(["checkout", "--force", revision], cwd=repo_dir)
+            return self._validated_skill_dir(skill, repo_dir)
         tmp_parent = self.settings.github_skill_cache_root / _CLONE_TMP_PARENT
         tmp_parent.mkdir(parents=True, exist_ok=True)
-        tmp_dir = tmp_parent / f"{skill.id}-{uuid.uuid4().hex}"
+        # 仓库维度布局的父目录（repos/）首次 clone 时一并创建
+        repo_dir.parent.mkdir(parents=True, exist_ok=True)
+        tmp_dir = tmp_parent / f"{repo_dir.name}-{uuid.uuid4().hex}"
         try:
             self._run_git_streaming(
                 [
@@ -403,22 +457,38 @@ class GitCacheService:
             )
             self._run_git(["checkout", "--force", revision], cwd=tmp_dir)
             self._validated_skill_dir(skill, tmp_dir)
-            if cache_dir.exists():
+            if repo_dir.exists():
                 # 并发双保险：另一 clone 任务在本次 clone 期间把正式目录
                 # 落了地（该方法开头已对既有目录做过 SKILL.md 校验）
-                return self._validated_skill_dir(skill, cache_dir)
+                return self._validated_skill_dir(skill, repo_dir)
             # 同盘 rename：要么完整落地要么不存在，无中间态
-            tmp_dir.replace(cache_dir)
+            tmp_dir.replace(repo_dir)
         finally:
             _remove_workspace(tmp_dir)
-        return self._validated_skill_dir(skill, cache_dir)
+        return self._validated_skill_dir(skill, repo_dir)
 
-    def current_revision(self, skill_id: str) -> str:
-        """读取缓存当前 HEAD；缓存不存在返回空串。"""
-        cache_dir = self.settings.github_skill_cache_root / skill_id
-        if not (cache_dir / ".git").is_dir():
+    def ensure_skill_path_cached(self, skill: RegistrySkill) -> None:
+        """校验共享缓存内该条目登记路径含 `SKILL.md`（不触发任何 Git 操作）。
+
+        批量登记任务在整仓 `ensure_cached` 之后对每个条目逐一调用——
+        仓库级 clone 只做一次，其余条目只需路径校验。
+        """
+        canonical = self._require_github_skill(skill)
+        self._require_safe_relative_path(skill)
+        repo_dir = self.repo_cache_dir(canonical)
+        if not (repo_dir / ".git").is_dir():
+            raise CacheValidationError(
+                f"repository cache for {canonical} does not exist"
+            )
+        self._validated_skill_dir(skill, repo_dir)
+
+    def current_revision(self, skill: RegistrySkill) -> str:
+        """读取共享缓存仓库当前 HEAD；缓存不存在返回空串。"""
+        canonical = self._require_github_skill(skill)
+        repo_dir = self.repo_cache_dir(canonical)
+        if not (repo_dir / ".git").is_dir():
             return ""
-        return self._run_git(["rev-parse", "HEAD"], cwd=cache_dir).strip()
+        return self._run_git(["rev-parse", "HEAD"], cwd=repo_dir).strip()
 
     # ---------- 内部：git 执行 ----------
 
@@ -560,7 +630,8 @@ class GitCacheService:
         return self.normalize_repository(str(skill.repository))
 
     def _require_safe_relative_path(self, skill: RegistrySkill) -> None:
-        relative = Path(skill.path)
+        # posix 判定：WindowsPath 把 "/etc" 视为无盘符相对路径（与 registry 同口径）
+        relative = PurePosixPath(skill.path)
         if relative.is_absolute() or ".." in relative.parts:
             raise CacheValidationError(
                 f"github skill path {skill.path!r} must be a relative subdirectory"
@@ -585,8 +656,16 @@ class GitCacheService:
 
     # ---------- 内部：扫描与记录 ----------
 
-    def _discover_candidates(self, workspace: Path) -> list[ScanCandidate]:
+    def _discover(self, workspace: Path) -> ScanOutcome:
+        """在扫描工作区内发现候选/顶层清单/引用预选（design R4）。"""
+        top_level = [
+            ScanTopLevelEntry(path=entry.name, is_dir=entry.is_dir())
+            for entry in sorted(workspace.iterdir(), key=lambda e: e.name)
+            if not entry.name.startswith(".")
+            and entry.name not in _SCAN_EXCLUDED_DIRS
+        ]
         candidates: list[ScanCandidate] = []
+        skill_texts: list[str] = []
         for dirpath, dirnames, filenames in os.walk(workspace):
             dirnames[:] = [
                 d
@@ -595,11 +674,37 @@ class GitCacheService:
             ]
             if _SKILL_MD not in filenames:
                 continue
+            skill_md = Path(dirpath) / _SKILL_MD
+            rel = Path(dirpath).relative_to(workspace).as_posix()
+            meta = parse_skill_md_frontmatter(skill_md)
             candidates.append(
-                ScanCandidate(path=Path(dirpath).relative_to(workspace).as_posix())
+                ScanCandidate(
+                    path=rel,
+                    name=meta.get("name") or rel,
+                    description=meta.get("description", ""),
+                )
             )
+            try:
+                skill_texts.append(
+                    skill_md.read_bytes()[: _SCAN_TEXT_READ_BYTES].decode(
+                        "utf-8", errors="replace"
+                    )
+                )
+            except OSError:
+                # 读取失败只影响引用预选，不影响候选列表本身
+                skill_texts.append("")
         candidates.sort(key=lambda candidate: candidate.path)
-        return candidates
+        # 引用预选（粗匹配）：顶层目录名以 "name/" 出现、顶层文件名直接出现
+        referenced = [
+            entry.path
+            for entry in top_level
+            if _is_referenced(entry, skill_texts)
+        ]
+        return ScanOutcome(
+            candidates=candidates,
+            top_level=top_level,
+            referenced_paths=referenced,
+        )
 
     def _record_check_success(
         self, skill: RegistrySkill, canonical: str, info: UpdateInfo

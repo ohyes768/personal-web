@@ -27,7 +27,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Callable, Literal
 
-from src.models import RegistrySkill
+from src.models import (
+    RegisterBatchResultItem,
+    RegistrySkill,
+    ScanOutcome,
+)
 from src.services.git_cache import (
     GitCacheError,
     GitCacheService,
@@ -39,7 +43,7 @@ from src.services.registry import RegistryService, RegistryValidationError
 
 logger = logging.getLogger(__name__)
 
-TaskKind = Literal["scan", "register", "clone_cache"]
+TaskKind = Literal["scan", "register", "register_batch", "clone_cache"]
 TaskState = Literal["running", "done", "error"]
 
 # 完结任务保留时长；超过后查询时惰性删除（PRD R4）
@@ -51,12 +55,21 @@ _UNREACHABLE_MESSAGE = "仓库不存在或当前网络无法访问"
 _DOWNLOAD_TIMEOUT_MESSAGE = "下载超时：仓库较大或当前网络较慢，可稍后重试"
 
 
+class _BatchAllFailed(Exception):
+    """批量登记逐项全部失败（design §5.2：整体 state=error）。
+
+    逐项成败已写入 task.results；抛出本异常让任务以 error 收尾，
+    快照同时携带 error 信息与逐项结果。
+    """
+
+
 @dataclass(frozen=True)
 class TaskSnapshot:
-    """任务快照：三种任务（scan/register/clone_cache）共用的只读视图。
+    """任务快照：四种任务（scan/register/register_batch/clone_cache）共用的只读视图。
 
-    `candidates` 仅 scan 且 state=done 时非空；`stage` 取值
-    remote_check / receiving / resolving / discover / registry。
+    `candidates`/`top_level`/`referenced_paths` 仅 scan 且 state=done 时
+    非空；`results` 仅 register_batch 非空（running 中可见已处理项）；
+    `stage` 取值 remote_check / receiving / resolving / discover / registry。
     """
 
     task_id: str
@@ -71,7 +84,10 @@ class TaskSnapshot:
     error_message: str | None
     created_at: str
     updated_at: str
-    candidates: tuple[str, ...] = ()
+    candidates: tuple = ()
+    top_level: tuple = ()
+    referenced_paths: tuple[str, ...] = ()
+    results: tuple = ()
 
 
 @dataclass
@@ -91,7 +107,11 @@ class _MutableTask:
     progress_detail: str = ""
     error_code: str | None = None
     error_message: str | None = None
-    candidates: tuple[str, ...] = ()
+    candidates: tuple = ()
+    top_level: tuple = ()
+    referenced_paths: tuple[str, ...] = ()
+    results: tuple = ()
+    skills: tuple[RegistrySkill, ...] = ()
 
 
 def _apply_progress(
@@ -131,6 +151,9 @@ def _snapshot_of(task: _MutableTask) -> TaskSnapshot:
         created_at=_iso(task.created_at),
         updated_at=_iso(task.updated_at),
         candidates=task.candidates,
+        top_level=task.top_level,
+        referenced_paths=task.referenced_paths,
+        results=task.results,
     )
 
 
@@ -144,6 +167,8 @@ def _cache_error_message(kind: TaskKind, exc: GitCacheError) -> str:
         return f"扫描失败：{exc}"
     if kind == "register":
         return f"GitHub 仓库缓存失败：{exc}"
+    if kind == "register_batch":
+        return f"批量登记缓存失败：{exc}"
     return f"GitHub 缓存更新失败：{exc}"
 
 
@@ -183,6 +208,19 @@ class GithubTaskManager:
             kind="clone_cache", repository=str(skill.repository), skill=skill
         )
 
+    def start_register_batch(
+        self, canonical_repository: str, skills: list[RegistrySkill]
+    ) -> TaskSnapshot:
+        """创建批量登记任务（仓库级 clone 一次 + 逐项校验/登记）。
+
+        `repository` 必须是 canonical URL（路由层已 normalize）。
+        """
+        return self._create(
+            kind="register_batch",
+            repository=canonical_repository,
+            skills=tuple(skills),
+        )
+
     # ---------- 查询 ----------
 
     def get(self, task_id: str) -> TaskSnapshot | None:
@@ -209,6 +247,7 @@ class GithubTaskManager:
         kind: TaskKind,
         repository: str,
         skill: RegistrySkill | None = None,
+        skills: tuple[RegistrySkill, ...] = (),
     ) -> TaskSnapshot:
         task_id = uuid.uuid4().hex
         now = self._clock()
@@ -218,6 +257,7 @@ class GithubTaskManager:
             repository=repository,
             skill=skill,
             skill_id=skill.id if skill is not None else None,
+            skills=skills,
             created_at=now,
             updated_at=now,
         )
@@ -245,7 +285,9 @@ class GithubTaskManager:
         if task is None:
             return
         try:
-            candidates = self._execute(task_id, task)
+            self._execute(task_id, task)
+        except _BatchAllFailed as exc:
+            self._fail(task_id, "cache_failed", str(exc))
         except GitTimeoutError:
             self._fail(task_id, "download_timeout", _DOWNLOAD_TIMEOUT_MESSAGE)
         except UnreachableRepositoryError:
@@ -262,29 +304,36 @@ class GithubTaskManager:
             logger.exception("task %s (%s) crashed unexpectedly", task_id, task.kind)
             self._fail(task_id, "internal_error", f"内部错误：{type(exc).__name__}")
         else:
-            self._complete(task_id, candidates)
+            self._complete(task_id)
 
-    # ---------- 内部：三种任务的执行体（design §2） ----------
+    # ---------- 内部：四种任务的执行体（design §2 / §5.2） ----------
 
-    def _execute(self, task_id: str, task: _MutableTask) -> tuple[str, ...]:
+    def _execute(self, task_id: str, task: _MutableTask) -> None:
+        """执行任务并把结果数据直接写入 task（持锁）；正常返回即视为 done。"""
         if task.kind == "scan":
-            return self._execute_scan(task_id, task)
-        if task.kind == "register":
+            self._execute_scan(task_id, task)
+        elif task.kind == "register":
             self._execute_register(task_id, task)
-            return ()
-        self._execute_clone(task_id, task)
-        return ()
+        elif task.kind == "register_batch":
+            self._execute_register_batch(task_id, task)
+        else:
+            self._execute_clone(task_id, task)
 
-    def _execute_scan(
-        self, task_id: str, task: _MutableTask
-    ) -> tuple[str, ...]:
+    def _execute_scan(self, task_id: str, task: _MutableTask) -> None:
         self._set_stage(task_id, "remote_check")
         self._git_cache.verify_reachable(task.repository)
         scanned = self._git_cache.scan(
             task.repository, on_progress=self._progress_sink(task_id)
         )
         self._set_stage(task_id, "discover")
-        return tuple(candidate.path for candidate in scanned)
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.state != "running":
+                return
+            task.candidates = tuple(scanned.candidates)
+            task.top_level = tuple(scanned.top_level)
+            task.referenced_paths = tuple(scanned.referenced_paths)
+            task.updated_at = self._clock()
 
     def _execute_register(self, task_id: str, task: _MutableTask) -> None:
         skill = self._require_skill(task_id, task)
@@ -298,6 +347,47 @@ class GithubTaskManager:
         )
         self._set_stage(task_id, "registry")
         self._registry.upsert(skill)
+
+    def _execute_register_batch(self, task_id: str, task: _MutableTask) -> None:
+        """仓库级 clone 一次，逐项校验路径 + 写注册表（design §5.2）。
+
+        逐项失败只记 results（running 中即可见），不中断批；全部失败时
+        抛 `_BatchAllFailed` 让任务整体 error（results 保留在快照中）。
+        """
+        if not task.skills:
+            raise RuntimeError(
+                f"task {task_id} ({task.kind}) is missing its skills"
+            )
+        first = task.skills[0]
+        self._set_stage(task_id, "remote_check")
+        self._git_cache.verify_reachable(task.repository)
+        info = self._git_cache.check_update(first)
+        self._git_cache.ensure_cached(
+            first,
+            info.remote_revision,
+            on_progress=self._progress_sink(task_id),
+        )
+        self._set_stage(task_id, "registry")
+        succeeded = 0
+        for skill in task.skills:
+            try:
+                self._git_cache.ensure_skill_path_cached(skill)
+                self._registry.upsert(skill)
+            except (RegistryValidationError, GitCacheError) as exc:
+                self._append_batch_result(task_id, skill.id, "error", str(exc))
+                logger.warning(
+                    "task %s batch item failed: skill=%s error=%s",
+                    task_id,
+                    skill.id,
+                    exc,
+                )
+                continue
+            self._append_batch_result(task_id, skill.id, "success")
+            succeeded += 1
+        if succeeded == 0:
+            raise _BatchAllFailed(
+                f"批量登记 {len(task.skills)} 项全部失败，逐项原因见结果列表"
+            )
 
     def _execute_clone(self, task_id: str, task: _MutableTask) -> None:
         skill = self._require_skill(task_id, task)
@@ -345,15 +435,27 @@ class GithubTaskManager:
             task.stage = stage
             task.updated_at = self._clock()
 
-    def _complete(self, task_id: str, candidates: tuple[str, ...]) -> None:
+    def _complete(self, task_id: str) -> None:
         with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
                 return
             task.state = "done"
-            task.candidates = candidates
             task.updated_at = self._clock()
-        logger.info("task %s done: kind=%s candidates=%d", task_id, task.kind, len(candidates))
+        logger.info("task %s done: kind=%s", task_id, task.kind)
+
+    def _append_batch_result(
+        self, task_id: str, skill_id: str, status: str, error: str = ""
+    ) -> None:
+        """把批量登记的逐项成败追加进任务快照（持锁，running 中可轮询到）。"""
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.state != "running":
+                return
+            task.results = (*task.results, RegisterBatchResultItem(
+                skill_id=skill_id, status=status, error=error
+            ))
+            task.updated_at = self._clock()
 
     def _fail(self, task_id: str, code: str, message: str) -> None:
         with self._lock:
