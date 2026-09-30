@@ -16,6 +16,20 @@
 写 `router.replace('/skills?x=1')` 会双拼成 `/skills/skills?x=1`（404）。
 正确写法：`router.replace('/?x=1')`，浏览器 URL 自动呈现为 `/skills?x=1`。
 
+## GitHub 登记对话框的批量交互（2026-09-30）
+
+`RegisterGithubDialog` 候选目录支持 checkbox 多选（>1 候选时有全选/清空）：
+
+- **恰 1 项勾选** → 手填表单（名称/标签/简介，与单条登记一致）；
+  **≥2 项** → 只读预填列表，按各候选 SKILL.md 的 `name` 批量登记
+  （`POST /skills/github/batch`），名称/简介登记后逐个补充；
+- 随行共享资源（shared_paths）默认预选扫描发现的 `referenced_paths`，但
+  **排除候选目录的祖先目录**——勾上 `codex-skills/` 这类祖先会把整棵
+  候选树拷进发布快照；
+- `TaskProgressDialog`：done 且 `results.length > 0`（批量任务）停留展示
+  逐项清单，"完成"按钮才触发 `onDone(task)` 关框+刷新；无 results 的单任务
+  保持 done 自动关。部分成功时通知用 err 样式引导复查。
+
 ## 本机 dev 环境限制（Windows）
 
 - **无 symlink 特权**（WinError 1314）：后端发布/下架的原子链接替换无法端到端运行，
