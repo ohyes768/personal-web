@@ -1,10 +1,11 @@
 """地铁线路几何裁剪
 
 移植自源项目 web/src/app/api/transit/route.ts (L49-153)。
-多段线裁剪到滨江区边界内: in-out 交替处在交点断开, 输出边界内连续子段。
+多段线裁剪到覆盖范围边界内 (滨江 + 萧山接壤板块): in-out 交替处在交点断开,
+输出边界内连续子段。
 """
 
-from src.core.boundary import BINJIANG_BOUNDARY, is_in_binjiang
+from src.core.boundary import BINJIANG_BOUNDARY, XIAOSHAN_BORDER_BOUNDARIES, is_in_scope
 
 
 def seg_boundary_intersect(
@@ -14,8 +15,8 @@ def seg_boundary_intersect(
 
     线段参数方程二分求解, 仅当两端一内一外时才计算, 排除端点恰在内的情况。
     """
-    inside1 = is_in_binjiang(x1, y1)
-    inside2 = is_in_binjiang(x2, y2)
+    inside1 = is_in_scope(x1, y1)
+    inside2 = is_in_scope(x2, y2)
     if inside1 == inside2:
         return None
 
@@ -25,7 +26,7 @@ def seg_boundary_intersect(
         mid = (lo + hi) / 2
         mx = x1 + (x2 - x1) * mid
         my = y1 + (y2 - y1) * mid
-        if is_in_binjiang(mx, my) == inside1:
+        if is_in_scope(mx, my) == inside1:
             lo = mid
         else:
             hi = mid
@@ -33,8 +34,8 @@ def seg_boundary_intersect(
     return [x1 + (x2 - x1) * t, y1 + (y2 - y1) * t]
 
 
-def clip_to_binjiang(coords: list) -> list:
-    """把多段线裁剪到滨江区边界内: 输出每一段在边界内的连续子段。
+def clip_to_scope(coords: list) -> list:
+    """把多段线裁剪到覆盖范围边界内: 输出每一段在边界内的连续子段。
 
     (in-out-in-out... 交替时, 每次切换都在交点处断开)
     整段都在边界内 -> 整段保留; 整段都在边界外 -> 丢弃。
@@ -43,14 +44,14 @@ def clip_to_binjiang(coords: list) -> list:
         return []
     segments: list[list] = []
     current: list | None = None
-    prev_inside = is_in_binjiang(coords[0][0], coords[0][1])
+    prev_inside = is_in_scope(coords[0][0], coords[0][1])
     if prev_inside:
         current = [[coords[0][0], coords[0][1]]]
 
     for i in range(1, len(coords)):
         x1, y1 = coords[i - 1][0], coords[i - 1][1]
         x2, y2 = coords[i][0], coords[i][1]
-        inside = is_in_binjiang(x2, y2)
+        inside = is_in_scope(x2, y2)
 
         if prev_inside and inside:
             # in -> in: 直接延伸
@@ -83,8 +84,9 @@ def build_subway_data(
     """从 transit GeoJSON 组装裁剪后的线路与站点数据
 
     线路: 只取 route === 'subway' 的 relation, 几何截断后展成多条子段
-          (id = "<osm_id>-<idx>", 过境线进出滨江各一次会裁成 1~2 段)。
-    站点: kind === 'subway' 且坐标严格在滨江内 (站名标错位置会误导)。
+          (id = "<osm_id>-<idx>", 过境线进出围栏各一次会裁成 1~2 段;
+          滨江/萧山板块不相邻的线路会出现多段)。
+    站点: kind === 'subway' 且坐标严格在覆盖范围内 (站名标错位置会误导)。
     """
     routes = (routes_geo or {}).get("features") or []
     stops = (stops_geo or {}).get("features") or []
@@ -94,7 +96,7 @@ def build_subway_data(
         props = f.get("properties") or {}
         if props.get("route") != "subway":
             continue
-        clips = clip_to_binjiang((f.get("geometry") or {}).get("coordinates") or [])
+        clips = clip_to_scope((f.get("geometry") or {}).get("coordinates") or [])
         if len(clips) == 0:  # 完全在边界外
             continue
         for idx, clip in enumerate(clips):
@@ -115,7 +117,7 @@ def build_subway_data(
         if len(coordinates) < 2:
             continue
         lng, lat = coordinates[0], coordinates[1]
-        if not is_in_binjiang(lng, lat):
+        if not is_in_scope(lng, lat):
             continue
         subway_stops.append({"name": props.get("name"), "lng": lng, "lat": lat})
 
@@ -123,5 +125,7 @@ def build_subway_data(
 
 
 def boundary_points() -> int:
-    """边界点数 (meta 用, 与源 BINJIANG_BOUNDARY.length 一致)"""
-    return len(BINJIANG_BOUNDARY)
+    """围栏集合总点数 (meta 用; 滨江 334 + 萧山三街道抽稀点数)"""
+    return len(BINJIANG_BOUNDARY) + sum(
+        len(p) for p in XIAOSHAN_BORDER_BOUNDARIES.values()
+    )

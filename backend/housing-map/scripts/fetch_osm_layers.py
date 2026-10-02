@@ -33,7 +33,9 @@ if sys.platform == 'win32':
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
-BBOX = '30.1387,120.1176,30.2390,120.2321'  # 滨江区
+# 覆盖范围 bbox: 滨江 + 萧山接壤板块 (盈丰/宁围/闻堰, 2026-10 扩展)
+# 西/南界沿用旧滨江 bbox 的外扩 (滨江最西 120.124), 北/东界扩到宁围北界
+BBOX = '30.0950,120.1176,30.2950,120.3700'
 OVERPASS_URL = 'https://overpass-api.de/api/interpreter'
 DATA_DIR = Path(__file__).parent.parent / 'data'
 

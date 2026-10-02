@@ -1,0 +1,30 @@
+{
+  "id": "housing-expand-xs-border",
+  "name": "housing-expand-xs-border",
+  "title": "购房地图扩展：滨江接壤的萧山板块",
+  "description": "把购房地图从滨江单区扩展为滨江+萧山接壤板块（闻堰/义桥/钱江世纪城一带），围栏多边形化、采集脚本扩展、前端双区化",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend/douyin-processor",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-02-housing-multi-boundary",
+    "10-02-housing-collect-xs",
+    "10-02-housing-frontend-dual-district"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

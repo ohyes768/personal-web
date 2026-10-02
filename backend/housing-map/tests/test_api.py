@@ -123,7 +123,8 @@ def test_transit_meta_and_structure():
     body = resp.json()
     assert body["success"] is True
     assert set(body["meta"].keys()) == {"route_count", "stop_count", "boundary_points"}
-    assert body["meta"]["boundary_points"] == 334
+    # 滨江 334 + 闻堰 200 + 宁围 100 + 盈丰 34 (2026-10 双围栏扩展)
+    assert body["meta"]["boundary_points"] == 668
     assert body["meta"]["route_count"] > 0
     assert body["meta"]["stop_count"] > 0
     # 线路已几何截断: 每段至少 2 点, 节点不出滨江 bbox 太远
