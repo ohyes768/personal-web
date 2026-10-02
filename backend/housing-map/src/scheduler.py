@@ -1,8 +1,11 @@
-"""定时任务：每周一 21:17 (Asia/Shanghai) 自动全量刷新价格快照。
+"""定时任务：每周一 21:17 (Asia/Shanghai) 触发, 双周执行一次全量刷新价格快照。
 
 精简自 macro 的 src/scheduler/ 模块（无 API 管理路由 / 执行历史 / cron 文案化）。
 任务体复用 services.refresh.start_refresh(0)，其 job["running"] 互斥保证
 定时触发与前端手动刷新不会并发跑两份采集。
+
+2026-10 扩萧山板块后全量 581 小区实测 29 分钟 (>15 分钟阈值), 降频为双周:
+cron 仍每周触发 (保持 misfire 补偿能力), job 内按 ISO 周奇偶跳过偶发周。
 
 两个从 macro 继承的陷阱：
 - 时区：from_crontab 不传 timezone 会落到系统默认时区（容器内为 UTC），
@@ -12,6 +15,9 @@
 """
 
 import logging
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
 
 from apscheduler.events import (
     EVENT_JOB_ERROR,
@@ -33,8 +39,18 @@ JOB_ID = "weekly_price_refresh"
 _scheduler: AsyncIOScheduler | None = None
 
 
+def _current_iso_week() -> int:
+    """当前 ISO 周数 (scheduler 时区)。独立成函数供测试注入。"""
+    return datetime.now(ZoneInfo(SCHEDULER_TIMEZONE)).isocalendar()[1]
+
+
 async def run_weekly_refresh() -> None:
-    """APScheduler 入口：全量刷新；已有刷新在跑时只记日志（409 不算错误）。"""
+    """APScheduler 入口：双周全量刷新；已有刷新在跑时只记日志（409 不算错误）。"""
+    # 双周节流: ISO 周为奇数时跳过 (cron 保持每周触发)
+    week = _current_iso_week()
+    if week % 2 == 1:
+        logger.info(f"[{JOB_ID}] 双周节奏: ISO 周 {week} 为奇数周, 本次跳过")
+        return
     ok, status, body = await refresh_service.start_refresh(0)
     if ok:
         logger.info(f"[{JOB_ID}] 定时刷新已启动: {body.get('data')}")

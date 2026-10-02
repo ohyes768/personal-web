@@ -25,7 +25,6 @@ from src.services.data_loader import (
     load_polygons,
     load_price_snapshots,
     load_property_types,
-    load_subway_stations,
     load_transit_routes,
     load_transit_stops,
 )
@@ -79,6 +78,15 @@ def _nearest_subway_of(coordinates: dict, cid, subway_stations: list) -> dict | 
     if coord and coord.get("latitude") and coord.get("longitude"):
         return find_nearest_station(subway_stations, coord["longitude"], coord["latitude"])
     return None
+
+
+def _station_list_for_scoring(transit_routes: dict, transit_stops: dict) -> list[dict]:
+    """build_subway_data 站点 (lng/lat) 转成 find_nearest_station 的字段口径 (longitude/latitude)"""
+    _, stops = build_subway_data(transit_routes, transit_stops)
+    return [
+        {"name": s["name"], "longitude": s["lng"], "latitude": s["lat"]}
+        for s in stops
+    ]
 
 
 def _assemble_community(
@@ -171,20 +179,28 @@ async def get_market_reference():
 
 @router.get("/communities")
 async def get_communities():
+    from src.core.boundary import is_in_scope
+
     property_types = load_property_types()
+    coordinates = load_coordinates()
+    # 展示口径 = 真实小区 + 未被合并 + 坐标在覆盖范围 (滨江∪萧山板块) 内。
+    # 围栏外多为地理编码失准或板块外 (tmsf"开发区"口径大于宁围街道), 地图渲染无意义。
     communities_list = [
         c for c in load_communities()
         if is_real_community(c)
         and c.get("community_id") not in MERGE_DROP_IDS
+        and (coord := coordinates.get(c.get("community_id")))
+        and is_in_scope(coord.get("longitude") or 0, coord.get("latitude") or 0)
     ]
-    coordinates = load_coordinates()
     pois_data = load_pois()
     polygons = load_polygons()
-    subway_stations = load_subway_stations()
     community_ages = load_community_ages()
     community_attrs = load_community_attrs()
     transit_routes = load_transit_routes()
     transit_stops = load_transit_stops()
+    # nearest_subway 用 /api/transit 同源的动态站点 (scope 裁剪版, 自动含萧山板块),
+    # 替代旧静态 binjiang_subway_stations.json (滨江口径 28 站, 无萧山站)
+    subway_stations = _station_list_for_scoring(transit_routes, transit_stops)
 
     # 合并组: 主条目缺价格时借用 fallback 成员的数据(不可变复制, 不污染加载结果)
     price_snapshots = dict(load_price_snapshots())
@@ -255,7 +271,7 @@ async def get_score(
     coordinates = load_coordinates()
     pois_data = load_pois()
     price_snapshots = load_price_snapshots()
-    subway_stations = load_subway_stations()
+    subway_stations = _station_list_for_scoring(load_transit_routes(), load_transit_stops())
     community_ages = load_community_ages()
     community_attrs = load_community_attrs()
 

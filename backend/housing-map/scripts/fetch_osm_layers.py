@@ -105,6 +105,18 @@ out geom;''',
 out center;''',
         'out': 'binjiang_osm_transit_stops_raw.json',
     },
+    'residential': {
+        'query': f'''[out:json][timeout:180];
+way({BBOX})[landuse=residential];
+out geom;''',
+        'out': 'binjiang_osm_residential_raw.json',
+    },
+    'named_buildings': {
+        'query': f'''[out:json][timeout:180];
+way({BBOX})[building][name];
+out geom;''',
+        'out': 'binjiang_osm_named_buildings_raw.json',
+    },
 }
 
 

@@ -60,8 +60,17 @@ HOSPITAL_ALIASES: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"^浙江大学医学院邵逸夫医院$"), "浙江大学医学院附属邵逸夫医院"),
 ]
 
-# POI 展示范围（高德抓取半径过大, 会带入主城区北部设施）
-POI_BOUNDS = {"lat_min": 30.12, "lat_max": 30.26, "lng_min": 120.09, "lng_max": 120.29}
+# POI 展示范围（高德抓取半径过大, 会带入远处设施）
+# = 覆盖范围 (滨江∪萧山板块) 围栏的外接框, 随 boundary.py 围栏集合自动扩展
+def _scope_bounds() -> dict[str, float]:
+    from src.core.boundary import BINJIANG_BOUNDARY, XIAOSHAN_BORDER_BOUNDARIES
+
+    pts = [p for poly in (BINJIANG_BOUNDARY, *XIAOSHAN_BORDER_BOUNDARIES.values()) for p in poly]
+    lngs, lats = [p[0] for p in pts], [p[1] for p in pts]
+    return {"lat_min": min(lats), "lat_max": max(lats), "lng_min": min(lngs), "lng_max": max(lngs)}
+
+
+POI_BOUNDS = _scope_bounds()
 
 
 def in_poi_bounds(lat: float, lng: float) -> bool:
@@ -234,13 +243,18 @@ def load_communities() -> list[dict]:
 
 def load_coordinates() -> dict[str, dict]:
     raw = load_json(get_data_paths()["coordinates"], {})
-    # 错区防护: 地理编码结果地址不含"滨江区"的坐标不可信
-    # (如湖头陈村社区匹配到萧山同名村, 且错位位置可能落在滨江坐标围栏内, 围栏挡不住)
+    # 错区防护: 地址不含"滨江区/萧山区"的坐标不可信 (跨市错配)。
+    # 萧山区地址还须落在萧山板块围栏内, 防"失准到萧山城区中心"的点混入。
+    # (滨江小区错配到萧山同名地名的情况仍由地址字符串挡, 见湖头陈村案例)
+    from src.core.boundary import is_in_xiaoshan_border
+
     result: dict[str, dict] = {}
     for cid, co in raw.items():
-        if co.get("formatted_address") and "滨江区" not in co["formatted_address"]:
-            continue
-        result[cid] = co
+        address = co.get("formatted_address") or ""
+        if "滨江区" in address:
+            result[cid] = co
+        elif "萧山区" in address and is_in_xiaoshan_border(co.get("longitude") or 0, co.get("latitude") or 0):
+            result[cid] = co
     return result
 
 

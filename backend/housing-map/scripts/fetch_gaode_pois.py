@@ -114,6 +114,12 @@ def main():
     types_to_fetch = {k: v for k, v in POI_TYPES.items() if not args.only or k in args.only}
 
     coordinates = load_coordinates()
+    # 只对覆盖范围 (滨江∪萧山板块) 内的小区抓 POI; 围栏外小区不下发, 抓了也浪费配额
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    from src.core.boundary import is_in_scope
+
+    coordinates = {cid: info for cid, info in coordinates.items()
+                   if is_in_scope(info.get("longitude") or 0, info.get("latitude") or 0)}
     output_file = Path(__file__).parent.parent / "data" / "binjiang_pois.json"
 
     all_pois = {}

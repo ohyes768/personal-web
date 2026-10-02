@@ -27,14 +27,23 @@ def _snapshot(community_id: str, price: int) -> PriceSnapshot:
 
 
 def test_select_refresh_targets_keeps_all_real_communities_and_drops_road_entries():
-    """采集目标按"是真实小区"准入：商办类要抓（展示靠前端类型筛选），仅排除道路等垃圾条目。"""
+    """采集目标按"是真实小区"准入：商办类要抓（展示靠前端类型筛选），仅排除道路等垃圾条目。
+    2026-10 扩展: 坐标不在覆盖范围 (滨江∪萧山板块) 内的也不抓, 与 /communities 展示口径一致。"""
     communities = [
         {"community_id": "home", "community_name": "春江花园"},
         {"community_id": "office", "community_name": "通策广场"},
         {"community_id": "road", "community_name": "江南大道"},
+        {"community_id": "outside", "community_name": "围栏外小区"},
     ]
+    coordinates = {
+        # 滨江腹地 / 盈丰板块腹地 / 远处
+        "home": {"longitude": 120.18, "latitude": 30.18},
+        "office": {"longitude": 120.25, "latitude": 30.235},
+        "road": {"longitude": 120.18, "latitude": 30.18},
+        "outside": {"longitude": 116.4, "latitude": 39.9},
+    }
 
-    assert refresh.select_refresh_targets(communities) == ["home", "office"]
+    assert refresh.select_refresh_targets(communities, coordinates) == ["home", "office"]
 
 
 def test_in_process_refresh_merges_fresh_rows_without_starting_a_script(tmp_path):

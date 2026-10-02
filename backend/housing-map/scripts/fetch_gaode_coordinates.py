@@ -43,8 +43,9 @@ def fetch_coordinates(communities: list) -> dict:
     for i, community in enumerate(communities):
         name = community.get("community_name") or community.get("name")
         community_id = community.get("community_id") or community.get("id")
-        # 构造地址：杭州市滨江区+小区名
-        address = f"杭州市滨江区{name}"
+        # 构造地址：按小区所属区 (滨江/萧山), 缺区字段回退滨江区
+        district = community.get("district") or "滨江"
+        address = f"杭州市{district}{name}"
 
         print(f"[{i+1}/{total}] {name}", flush=True)
 
@@ -98,22 +99,27 @@ def fetch_coordinates(communities: list) -> dict:
 
 def main():
     print("=" * 50)
-    print("滨江区小区坐标获取")
+    print("小区坐标获取 (增量: 只补无坐标小区)")
     print("=" * 50)
 
-    # 加载小区数据
+    # 加载小区数据与已有坐标, 只抓缺坐标的
     communities = load_communities()
-    print(f"共 {len(communities)} 个小区\n")
+    output_file = Path(__file__).parent.parent / "data" / "binjiang_coordinates.json"
+    existing: dict = {}
+    if output_file.exists():
+        with open(output_file, "r", encoding="utf-8") as f:
+            existing = json.load(f)
+    todo = [c for c in communities if (c.get("community_id") or c.get("id")) not in existing]
+    print(f"共 {len(communities)} 个小区, 已有坐标 {len(existing)}, 待抓 {len(todo)}\n")
 
     # 获取坐标
-    results = fetch_coordinates(communities)
+    results = fetch_coordinates(todo)
+    merged = {**existing, **results}
 
     # 保存结果
-    output_file = Path(__file__).parent.parent / "data" / "binjiang_coordinates.json"
     output_file.parent.mkdir(parents=True, exist_ok=True)
-
     with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(results, f, ensure_ascii=False, indent=2)
+        json.dump(merged, f, ensure_ascii=False, indent=2)
 
     print(f"\n结果已保存到: {output_file}")
 

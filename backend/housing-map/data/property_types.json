@@ -1159,7 +1159,7 @@
     "community_name": "中赢云际",
     "property_type": null,
     "url": "https://www.tmsf.com/esf/xq_indexnew_5002781.htm",
-    "elapsed_ms": 3071
+    "elapsed_ms": 284
   },
   "5002816": {
     "community_id": "5002816",
@@ -2945,5 +2945,2042 @@
     "property_type": "住宅",
     "url": "https://www.tmsf.com/esf/xq_indexnew_3157612036.htm",
     "elapsed_ms": 1951
+  },
+  "5000398": {
+    "community_id": "5000398",
+    "community_name": "东方一号",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000398.htm",
+    "elapsed_ms": 574
+  },
+  "2193669571": {
+    "community_id": "2193669571",
+    "community_name": "三盛大家·汝悦美境府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193669571.htm",
+    "elapsed_ms": 616
+  },
+  "20172045": {
+    "community_id": "20172045",
+    "community_name": "世纪汽车市场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20172045.htm",
+    "elapsed_ms": 786
+  },
+  "3236415836": {
+    "community_id": "3236415836",
+    "community_name": "中海璞翠云集",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3236415836.htm",
+    "elapsed_ms": 785
+  },
+  "20000333": {
+    "community_id": "20000333",
+    "community_name": "东方一品",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000333.htm",
+    "elapsed_ms": 789
+  },
+  "1175378441": {
+    "community_id": "1175378441",
+    "community_name": "东南·钱江蓝湾",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1175378441.htm",
+    "elapsed_ms": 846
+  },
+  "4001447": {
+    "community_id": "4001447",
+    "community_name": "中旅·名门府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4001447.htm",
+    "elapsed_ms": 845
+  },
+  "5001803": {
+    "community_id": "5001803",
+    "community_name": "世纪建材市场",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001803.htm",
+    "elapsed_ms": 913
+  },
+  "2851886009": {
+    "community_id": "2851886009",
+    "community_name": "中能建瞰奥府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2851886009.htm",
+    "elapsed_ms": 357
+  },
+  "20000815": {
+    "community_id": "20000815",
+    "community_name": "众安景海湾",
+    "property_type": "别墅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000815.htm",
+    "elapsed_ms": 371
+  },
+  "20000942": {
+    "community_id": "20000942",
+    "community_name": "华瑞中心",
+    "property_type": "写字楼",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000942.htm",
+    "elapsed_ms": 300
+  },
+  "20000997": {
+    "community_id": "20000997",
+    "community_name": "南岸明珠",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000997.htm",
+    "elapsed_ms": 327
+  },
+  "20001002": {
+    "community_id": "20001002",
+    "community_name": "凯丽晶座",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001002.htm",
+    "elapsed_ms": 505
+  },
+  "20174281": {
+    "community_id": "20174281",
+    "community_name": "保利潮起云上府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20174281.htm",
+    "elapsed_ms": 566
+  },
+  "4001382": {
+    "community_id": "4001382",
+    "community_name": "保利融信大国璟",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4001382.htm",
+    "elapsed_ms": 568
+  },
+  "20141518": {
+    "community_id": "20141518",
+    "community_name": "原野汽配五金市场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20141518.htm",
+    "elapsed_ms": 425
+  },
+  "20000384": {
+    "community_id": "20000384",
+    "community_name": "大成名座",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000384.htm",
+    "elapsed_ms": 242
+  },
+  "20000844": {
+    "community_id": "20000844",
+    "community_name": "嘉利公寓",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000844.htm",
+    "elapsed_ms": 598
+  },
+  "20000861": {
+    "community_id": "20000861",
+    "community_name": "天海阳光",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000861.htm",
+    "elapsed_ms": 346
+  },
+  "20037726": {
+    "community_id": "20037726",
+    "community_name": "华瑞晴庐",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20037726.htm",
+    "elapsed_ms": 783
+  },
+  "474467399": {
+    "community_id": "474467399",
+    "community_name": "宁围街道新意路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467399.htm",
+    "elapsed_ms": 405
+  },
+  "474466863": {
+    "community_id": "474466863",
+    "community_name": "宁围镇通惠北路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474466863.htm",
+    "elapsed_ms": 398
+  },
+  "20073561": {
+    "community_id": "20073561",
+    "community_name": "宁围镇新华村",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20073561.htm",
+    "elapsed_ms": 424
+  },
+  "474467247": {
+    "community_id": "474467247",
+    "community_name": "宁围镇集镇",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467247.htm",
+    "elapsed_ms": 420
+  },
+  "20000307": {
+    "community_id": "20000307",
+    "community_name": "宁安大厦",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000307.htm",
+    "elapsed_ms": 451
+  },
+  "20095820": {
+    "community_id": "20095820",
+    "community_name": "宁新村",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20095820.htm",
+    "elapsed_ms": 291
+  },
+  "20000980": {
+    "community_id": "20000980",
+    "community_name": "市北公寓",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000980.htm",
+    "elapsed_ms": 434
+  },
+  "4001462": {
+    "community_id": "4001462",
+    "community_name": "平澜商务中心",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4001462.htm",
+    "elapsed_ms": 429
+  },
+  "5000752": {
+    "community_id": "5000752",
+    "community_name": "恒源国际财富中心",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000752.htm",
+    "elapsed_ms": 283
+  },
+  "20000818": {
+    "community_id": "20000818",
+    "community_name": "恒泰御庭园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000818.htm",
+    "elapsed_ms": 293
+  },
+  "5002513": {
+    "community_id": "5002513",
+    "community_name": "御金台国际中心",
+    "property_type": "商贸",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5002513.htm",
+    "elapsed_ms": 380
+  },
+  "2574747981": {
+    "community_id": "2574747981",
+    "community_name": "恒大国玺悦龙府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2574747981.htm",
+    "elapsed_ms": 350
+  },
+  "20000820": {
+    "community_id": "20000820",
+    "community_name": "新世界柏丽轩",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000820.htm",
+    "elapsed_ms": 399
+  },
+  "20000702": {
+    "community_id": "20000702",
+    "community_name": "新世界财富中心",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000702.htm",
+    "elapsed_ms": 401
+  },
+  "20047740": {
+    "community_id": "20047740",
+    "community_name": "恒瑞名座",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20047740.htm",
+    "elapsed_ms": 590
+  },
+  "1163041611": {
+    "community_id": "1163041611",
+    "community_name": "新城璟隽·公馆",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1163041611.htm",
+    "elapsed_ms": 345
+  },
+  "20140977": {
+    "community_id": "20140977",
+    "community_name": "新华小区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20140977.htm",
+    "elapsed_ms": 508
+  },
+  "474467073": {
+    "community_id": "474467073",
+    "community_name": "新世纪市场园区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467073.htm",
+    "elapsed_ms": 627
+  },
+  "5002299": {
+    "community_id": "5002299",
+    "community_name": "新华缘",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5002299.htm",
+    "elapsed_ms": 610
+  },
+  "5002297": {
+    "community_id": "5002297",
+    "community_name": "新华文体大厦",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5002297.htm",
+    "elapsed_ms": 622
+  },
+  "20000865": {
+    "community_id": "20000865",
+    "community_name": "明华花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000865.htm",
+    "elapsed_ms": 448
+  },
+  "20000303": {
+    "community_id": "20000303",
+    "community_name": "明辉花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000303.htm",
+    "elapsed_ms": 394
+  },
+  "2193669719": {
+    "community_id": "2193669719",
+    "community_name": "景瑞·晴海",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193669719.htm",
+    "elapsed_ms": 385
+  },
+  "3238342881": {
+    "community_id": "3238342881",
+    "community_name": "桂月云翠园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3238342881.htm",
+    "elapsed_ms": 377
+  },
+  "20000272": {
+    "community_id": "20000272",
+    "community_name": "林之语嘉苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000272.htm",
+    "elapsed_ms": 529
+  },
+  "2580821787": {
+    "community_id": "2580821787",
+    "community_name": "沁桂轩",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2580821787.htm",
+    "elapsed_ms": 413
+  },
+  "20000364": {
+    "community_id": "20000364",
+    "community_name": "明江苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000364.htm",
+    "elapsed_ms": 738
+  },
+  "5001435": {
+    "community_id": "5001435",
+    "community_name": "梦公馆",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001435.htm",
+    "elapsed_ms": 488
+  },
+  "20000884": {
+    "community_id": "20000884",
+    "community_name": "永磁名扬阁",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000884.htm",
+    "elapsed_ms": 489
+  },
+  "20000994": {
+    "community_id": "20000994",
+    "community_name": "泰和天辰国际广场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000994.htm",
+    "elapsed_ms": 592
+  },
+  "474467045": {
+    "community_id": "474467045",
+    "community_name": "浙江世纪建材装饰市场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467045.htm",
+    "elapsed_ms": 587
+  },
+  "2566644943": {
+    "community_id": "2566644943",
+    "community_name": "滨心宁望府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2566644943.htm",
+    "elapsed_ms": 476
+  },
+  "2478583223": {
+    "community_id": "2478583223",
+    "community_name": "滨江滨涛映月",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2478583223.htm",
+    "elapsed_ms": 663
+  },
+  "2098503718": {
+    "community_id": "2098503718",
+    "community_name": "滨江·嘉品",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2098503718.htm",
+    "elapsed_ms": 968
+  },
+  "4004595": {
+    "community_id": "4004595",
+    "community_name": "滨江新城东方名府",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4004595.htm",
+    "elapsed_ms": 982
+  },
+  "2507727339": {
+    "community_id": "2507727339",
+    "community_name": "滨江望涛月明",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2507727339.htm",
+    "elapsed_ms": 1015
+  },
+  "3157611869": {
+    "community_id": "3157611869",
+    "community_name": "珹曜云府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3157611869.htm",
+    "elapsed_ms": 1098
+  },
+  "1164505094": {
+    "community_id": "1164505094",
+    "community_name": "滨江·江南名府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1164505094.htm",
+    "elapsed_ms": 1421
+  },
+  "5001208": {
+    "community_id": "5001208",
+    "community_name": "科尔世纪外滩",
+    "property_type": "别墅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001208.htm",
+    "elapsed_ms": 1214
+  },
+  "2672684156": {
+    "community_id": "2672684156",
+    "community_name": "绿城咏桂里",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2672684156.htm",
+    "elapsed_ms": 1098
+  },
+  "20174922": {
+    "community_id": "20174922",
+    "community_name": "盈和清机大厦",
+    "property_type": "商贸",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20174922.htm",
+    "elapsed_ms": 1524
+  },
+  "2710552113": {
+    "community_id": "2710552113",
+    "community_name": "融信滨望雅庭",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2710552113.htm",
+    "elapsed_ms": 1416
+  },
+  "2198855690": {
+    "community_id": "2198855690",
+    "community_name": "融泰云臻铭座",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2198855690.htm",
+    "elapsed_ms": 1115
+  },
+  "4002550": {
+    "community_id": "4002550",
+    "community_name": "融创时代奥城",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4002550.htm",
+    "elapsed_ms": 1479
+  },
+  "20000791": {
+    "community_id": "20000791",
+    "community_name": "通惠丽港",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000791.htm",
+    "elapsed_ms": 1153
+  },
+  "1164628994": {
+    "community_id": "1164628994",
+    "community_name": "融创·望海潮",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1164628994.htm",
+    "elapsed_ms": 1575
+  },
+  "1971507451": {
+    "community_id": "1971507451",
+    "community_name": "雅棠轩",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1971507451.htm",
+    "elapsed_ms": 1176
+  },
+  "20000932": {
+    "community_id": "20000932",
+    "community_name": "都市阳光",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000932.htm",
+    "elapsed_ms": 1331
+  },
+  "20102600": {
+    "community_id": "20102600",
+    "community_name": "通惠花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20102600.htm",
+    "elapsed_ms": 1538
+  },
+  "20000921": {
+    "community_id": "20000921",
+    "community_name": "雷迪森财富中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000921.htm",
+    "elapsed_ms": 1322
+  },
+  "20000386": {
+    "community_id": "20000386",
+    "community_name": "一方大厦",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000386.htm",
+    "elapsed_ms": 1132
+  },
+  "20170944": {
+    "community_id": "20170944",
+    "community_name": "万丰大厦",
+    "property_type": "写字楼",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20170944.htm",
+    "elapsed_ms": 1395
+  },
+  "2962532426": {
+    "community_id": "2962532426",
+    "community_name": "T-ONE潮博",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2962532426.htm",
+    "elapsed_ms": 1447
+  },
+  "20043844": {
+    "community_id": "20043844",
+    "community_name": "中国铁建青秀城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20043844.htm",
+    "elapsed_ms": 807
+  },
+  "20001085": {
+    "community_id": "20001085",
+    "community_name": "东方世纪中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001085.htm",
+    "elapsed_ms": 1408
+  },
+  "5002715": {
+    "community_id": "5002715",
+    "community_name": "中栋国际",
+    "property_type": "写字楼",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5002715.htm",
+    "elapsed_ms": 595
+  },
+  "297452029": {
+    "community_id": "297452029",
+    "community_name": "中国铁建德信君宸",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_297452029.htm",
+    "elapsed_ms": 1289
+  },
+  "1203313778": {
+    "community_id": "1203313778",
+    "community_name": "中旅名门府·新境",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1203313778.htm",
+    "elapsed_ms": 1358
+  },
+  "20153738": {
+    "community_id": "20153738",
+    "community_name": "保利霞飞郡(排屋）",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20153738.htm",
+    "elapsed_ms": 949
+  },
+  "20000330": {
+    "community_id": "20000330",
+    "community_name": "中誉万豪广场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000330.htm",
+    "elapsed_ms": 1284
+  },
+  "20158506": {
+    "community_id": "20158506",
+    "community_name": "义蓬街道义蓬中路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20158506.htm",
+    "elapsed_ms": 1047
+  },
+  "20036787": {
+    "community_id": "20036787",
+    "community_name": "保利霞飞郡",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20036787.htm",
+    "elapsed_ms": 1092
+  },
+  "20006278": {
+    "community_id": "20006278",
+    "community_name": "商贸公寓",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20006278.htm",
+    "elapsed_ms": 526
+  },
+  "2193669103": {
+    "community_id": "2193669103",
+    "community_name": "同进韵动城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193669103.htm",
+    "elapsed_ms": 766
+  },
+  "20158504": {
+    "community_id": "20158504",
+    "community_name": "义蓬街道街村商业路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20158504.htm",
+    "elapsed_ms": 1146
+  },
+  "2395306189": {
+    "community_id": "2395306189",
+    "community_name": "兴耀花曜里",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2395306189.htm",
+    "elapsed_ms": 824
+  },
+  "20000971": {
+    "community_id": "20000971",
+    "community_name": "天地墅园",
+    "property_type": "别墅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000971.htm",
+    "elapsed_ms": 720
+  },
+  "20000930": {
+    "community_id": "20000930",
+    "community_name": "德意中兴广场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000930.htm",
+    "elapsed_ms": 557
+  },
+  "474467260": {
+    "community_id": "474467260",
+    "community_name": "宁围镇商住楼",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467260.htm",
+    "elapsed_ms": 700
+  },
+  "474467000": {
+    "community_id": "474467000",
+    "community_name": "市心北路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467000.htm",
+    "elapsed_ms": 709
+  },
+  "453982192": {
+    "community_id": "453982192",
+    "community_name": "开元天域",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_453982192.htm",
+    "elapsed_ms": 728
+  },
+  "20001092": {
+    "community_id": "20001092",
+    "community_name": "开元城山休闲度假村",
+    "property_type": "别墅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001092.htm",
+    "elapsed_ms": 746
+  },
+  "20141126": {
+    "community_id": "20141126",
+    "community_name": "宝龙城市中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20141126.htm",
+    "elapsed_ms": 955
+  },
+  "2193648015": {
+    "community_id": "2193648015",
+    "community_name": "招商·博奥花宸里",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193648015.htm",
+    "elapsed_ms": 448
+  },
+  "20001030": {
+    "community_id": "20001030",
+    "community_name": "德圣博奥城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001030.htm",
+    "elapsed_ms": 992
+  },
+  "20000924": {
+    "community_id": "20000924",
+    "community_name": "明怡花苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000924.htm",
+    "elapsed_ms": 391
+  },
+  "410541465": {
+    "community_id": "410541465",
+    "community_name": "新城香悦奥府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_410541465.htm",
+    "elapsed_ms": 744
+  },
+  "4001119": {
+    "community_id": "4001119",
+    "community_name": "时代滨江·翡翠之星",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4001119.htm",
+    "elapsed_ms": 724
+  },
+  "1266400070": {
+    "community_id": "1266400070",
+    "community_name": "招商闻博花城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1266400070.htm",
+    "elapsed_ms": 1001
+  },
+  "2193669238": {
+    "community_id": "2193669238",
+    "community_name": "昱泊名府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193669238.htm",
+    "elapsed_ms": 713
+  },
+  "1378670318": {
+    "community_id": "1378670318",
+    "community_name": "新希望华发·锦粼云荟",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1378670318.htm",
+    "elapsed_ms": 911
+  },
+  "2243393400": {
+    "community_id": "2243393400",
+    "community_name": "杭州裕隆大厦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2243393400.htm",
+    "elapsed_ms": 604
+  },
+  "20141777": {
+    "community_id": "20141777",
+    "community_name": "杭州湾空中花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20141777.htm",
+    "elapsed_ms": 741
+  },
+  "474467171": {
+    "community_id": "474467171",
+    "community_name": "杭州生态园",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467171.htm",
+    "elapsed_ms": 792
+  },
+  "5002484": {
+    "community_id": "5002484",
+    "community_name": "永泰丰广场",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5002484.htm",
+    "elapsed_ms": 545
+  },
+  "2653825831": {
+    "community_id": "2653825831",
+    "community_name": "潮听映月府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2653825831.htm",
+    "elapsed_ms": 505
+  },
+  "20000889": {
+    "community_id": "20000889",
+    "community_name": "浦江苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000889.htm",
+    "elapsed_ms": 724
+  },
+  "2625621389": {
+    "community_id": "2625621389",
+    "community_name": "滨和印",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2625621389.htm",
+    "elapsed_ms": 569
+  },
+  "1275214604": {
+    "community_id": "1275214604",
+    "community_name": "海上明月澜庭",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1275214604.htm",
+    "elapsed_ms": 603
+  },
+  "20000306": {
+    "community_id": "20000306",
+    "community_name": "绿都百瑞广场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000306.htm",
+    "elapsed_ms": 482
+  },
+  "5002256": {
+    "community_id": "5002256",
+    "community_name": "萧山宝龙城市广场",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5002256.htm",
+    "elapsed_ms": 194
+  },
+  "2537234955": {
+    "community_id": "2537234955",
+    "community_name": "花屿观澜里",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2537234955.htm",
+    "elapsed_ms": 538
+  },
+  "20097264": {
+    "community_id": "20097264",
+    "community_name": "金一村",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20097264.htm",
+    "elapsed_ms": 334
+  },
+  "450489710": {
+    "community_id": "450489710",
+    "community_name": "英冠乐创城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_450489710.htm",
+    "elapsed_ms": 623
+  },
+  "474467197": {
+    "community_id": "474467197",
+    "community_name": "萧山经济技术开发区建设一路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467197.htm",
+    "elapsed_ms": 423
+  },
+  "4005722": {
+    "community_id": "4005722",
+    "community_name": "绿城九龙仓·桂语江南",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4005722.htm",
+    "elapsed_ms": 863
+  },
+  "5000490": {
+    "community_id": "5000490",
+    "community_name": "风情雅苑",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000490.htm",
+    "elapsed_ms": 477
+  },
+  "80142188": {
+    "community_id": "80142188",
+    "community_name": "高运莱茵传奇",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_80142188.htm",
+    "elapsed_ms": 520
+  },
+  "414141364": {
+    "community_id": "414141364",
+    "community_name": "长龙领航城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_414141364.htm",
+    "elapsed_ms": 684
+  },
+  "20043803": {
+    "community_id": "20043803",
+    "community_name": "顺发恒园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20043803.htm",
+    "elapsed_ms": 635
+  },
+  "2489814441": {
+    "community_id": "2489814441",
+    "community_name": "龙湖天誉",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2489814441.htm",
+    "elapsed_ms": 487
+  },
+  "3215021448": {
+    "community_id": "3215021448",
+    "community_name": "滨江揽晖美寓",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3215021448.htm",
+    "elapsed_ms": 403
+  },
+  "3215021796": {
+    "community_id": "3215021796",
+    "community_name": "赞滨望府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3215021796.htm",
+    "elapsed_ms": 589
+  },
+  "1175378552": {
+    "community_id": "1175378552",
+    "community_name": "龙湖春江天玺",
+    "property_type": "别墅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1175378552.htm",
+    "elapsed_ms": 900
+  },
+  "3303129602": {
+    "community_id": "3303129602",
+    "community_name": "滨月云府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3303129602.htm",
+    "elapsed_ms": 609
+  },
+  "474467370": {
+    "community_id": "474467370",
+    "community_name": "O纪元",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467370.htm",
+    "elapsed_ms": 703
+  },
+  "20081025": {
+    "community_id": "20081025",
+    "community_name": "龙湖春江悦茗",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20081025.htm",
+    "elapsed_ms": 1113
+  },
+  "3288069130": {
+    "community_id": "3288069130",
+    "community_name": "绿城晓风朗月",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3288069130.htm",
+    "elapsed_ms": 822
+  },
+  "20000996": {
+    "community_id": "20000996",
+    "community_name": "万和国际",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000996.htm",
+    "elapsed_ms": 717
+  },
+  "20042766": {
+    "community_id": "20042766",
+    "community_name": "万禹汇",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20042766.htm",
+    "elapsed_ms": 585
+  },
+  "2558227054": {
+    "community_id": "2558227054",
+    "community_name": "万科日耀之城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2558227054.htm",
+    "elapsed_ms": 443
+  },
+  "3153452314": {
+    "community_id": "3153452314",
+    "community_name": "万科星潮映象府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3153452314.htm",
+    "elapsed_ms": 745
+  },
+  "5001804": {
+    "community_id": "5001804",
+    "community_name": "世纪晶钻",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001804.htm",
+    "elapsed_ms": 689
+  },
+  "20079754": {
+    "community_id": "20079754",
+    "community_name": "万科大家世纪之光",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20079754.htm",
+    "elapsed_ms": 1071
+  },
+  "2253894908": {
+    "community_id": "2253894908",
+    "community_name": "万象世界中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2253894908.htm",
+    "elapsed_ms": 746
+  },
+  "1175378677": {
+    "community_id": "1175378677",
+    "community_name": "世华帝宝大厦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1175378677.htm",
+    "elapsed_ms": 889
+  },
+  "20055366": {
+    "community_id": "20055366",
+    "community_name": "万科金辰之光",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20055366.htm",
+    "elapsed_ms": 919
+  },
+  "2851885999": {
+    "community_id": "2851885999",
+    "community_name": "中天大家悦潮云望府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2851885999.htm",
+    "elapsed_ms": 762
+  },
+  "5001685": {
+    "community_id": "5001685",
+    "community_name": "三宏国际",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001685.htm",
+    "elapsed_ms": 921
+  },
+  "3128715802": {
+    "community_id": "3128715802",
+    "community_name": "中海潮展云起",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3128715802.htm",
+    "elapsed_ms": 1002
+  },
+  "20138182": {
+    "community_id": "20138182",
+    "community_name": "丰北二苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20138182.htm",
+    "elapsed_ms": 825
+  },
+  "20138508": {
+    "community_id": "20138508",
+    "community_name": "丰东花苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20138508.htm",
+    "elapsed_ms": 1006
+  },
+  "2848979702": {
+    "community_id": "2848979702",
+    "community_name": "中粮悦著云轩",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2848979702.htm",
+    "elapsed_ms": 1298
+  },
+  "5001107": {
+    "community_id": "5001107",
+    "community_name": "京港国际",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001107.htm",
+    "elapsed_ms": 433
+  },
+  "474466895": {
+    "community_id": "474466895",
+    "community_name": "中骏钱塘御景",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474466895.htm",
+    "elapsed_ms": 1567
+  },
+  "20138184": {
+    "community_id": "20138184",
+    "community_name": "丰北三苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20138184.htm",
+    "elapsed_ms": 1429
+  },
+  "5001262": {
+    "community_id": "5001262",
+    "community_name": "丽晶国际",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001262.htm",
+    "elapsed_ms": 1403
+  },
+  "20000966": {
+    "community_id": "20000966",
+    "community_name": "丰盛大厦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000966.htm",
+    "elapsed_ms": 1415
+  },
+  "2561261684": {
+    "community_id": "2561261684",
+    "community_name": "亚奥城北区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2561261684.htm",
+    "elapsed_ms": 1454
+  },
+  "2193669680": {
+    "community_id": "2193669680",
+    "community_name": "亚奥城南区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193669680.htm",
+    "elapsed_ms": 1287
+  },
+  "20000990": {
+    "community_id": "20000990",
+    "community_name": "众安嘉润公馆",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000990.htm",
+    "elapsed_ms": 1210
+  },
+  "3332922884": {
+    "community_id": "3332922884",
+    "community_name": "伟星·望奥",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3332922884.htm",
+    "elapsed_ms": 1095
+  },
+  "20000270": {
+    "community_id": "20000270",
+    "community_name": "佳境天城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000270.htm",
+    "elapsed_ms": 1145
+  },
+  "5000168": {
+    "community_id": "5000168",
+    "community_name": "保亿中心",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000168.htm",
+    "elapsed_ms": 1145
+  },
+  "1913551069": {
+    "community_id": "1913551069",
+    "community_name": "保利·澄品",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1913551069.htm",
+    "elapsed_ms": 490
+  },
+  "5000909": {
+    "community_id": "5000909",
+    "community_name": "佳丰北苑",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000909.htm",
+    "elapsed_ms": 1172
+  },
+  "4004960": {
+    "community_id": "4004960",
+    "community_name": "保亿绿城·奥邸国际",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4004960.htm",
+    "elapsed_ms": 1149
+  },
+  "20081035": {
+    "community_id": "20081035",
+    "community_name": "农业大厦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20081035.htm",
+    "elapsed_ms": 321
+  },
+  "20171660": {
+    "community_id": "20171660",
+    "community_name": "利一家园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20171660.htm",
+    "elapsed_ms": 461
+  },
+  "20140913": {
+    "community_id": "20140913",
+    "community_name": "利二花苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20140913.htm",
+    "elapsed_ms": 454
+  },
+  "5000213": {
+    "community_id": "5000213",
+    "community_name": "博地中心",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000213.htm",
+    "elapsed_ms": 740
+  },
+  "169522231": {
+    "community_id": "169522231",
+    "community_name": "利华路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_169522231.htm",
+    "elapsed_ms": 750
+  },
+  "474467231": {
+    "community_id": "474467231",
+    "community_name": "四海厅",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467231.htm",
+    "elapsed_ms": 714
+  },
+  "20140906": {
+    "community_id": "20140906",
+    "community_name": "和谐弄",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20140906.htm",
+    "elapsed_ms": 869
+  },
+  "20067084": {
+    "community_id": "20067084",
+    "community_name": "国丰大厦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20067084.htm",
+    "elapsed_ms": 616
+  },
+  "20000659": {
+    "community_id": "20000659",
+    "community_name": "和美家小区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000659.htm",
+    "elapsed_ms": 877
+  },
+  "5000614": {
+    "community_id": "5000614",
+    "community_name": "国泰科技大厦",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000614.htm",
+    "elapsed_ms": 589
+  },
+  "3209980717": {
+    "community_id": "3209980717",
+    "community_name": "傲世邸",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3209980717.htm",
+    "elapsed_ms": 1552
+  },
+  "1377378388": {
+    "community_id": "1377378388",
+    "community_name": "大家坤和·奥悦美筑|奥林美筑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1377378388.htm",
+    "elapsed_ms": 389
+  },
+  "5000328": {
+    "community_id": "5000328",
+    "community_name": "大象国际中心",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000328.htm",
+    "elapsed_ms": 466
+  },
+  "2239243575": {
+    "community_id": "2239243575",
+    "community_name": "奥体朝龙汇",
+    "property_type": "商贸",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2239243575.htm",
+    "elapsed_ms": 398
+  },
+  "169527412": {
+    "community_id": "169527412",
+    "community_name": "国金中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_169527412.htm",
+    "elapsed_ms": 540
+  },
+  "5001483": {
+    "community_id": "5001483",
+    "community_name": "宁东北苑",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001483.htm",
+    "elapsed_ms": 334
+  },
+  "20001001": {
+    "community_id": "20001001",
+    "community_name": "天林广场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001001.htm",
+    "elapsed_ms": 504
+  },
+  "20073628": {
+    "community_id": "20073628",
+    "community_name": "宁东村小区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20073628.htm",
+    "elapsed_ms": 298
+  },
+  "20171620": {
+    "community_id": "20171620",
+    "community_name": "奥体国际村",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20171620.htm",
+    "elapsed_ms": 519
+  },
+  "474467427": {
+    "community_id": "474467427",
+    "community_name": "宁围镇盈一村、丰东村",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467427.htm",
+    "elapsed_ms": 246
+  },
+  "20000967": {
+    "community_id": "20000967",
+    "community_name": "宁围二桥小区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000967.htm",
+    "elapsed_ms": 428
+  },
+  "5001485": {
+    "community_id": "5001485",
+    "community_name": "宁泰家园",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001485.htm",
+    "elapsed_ms": 605
+  },
+  "20151592": {
+    "community_id": "20151592",
+    "community_name": "宁围镇第二期",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20151592.htm",
+    "elapsed_ms": 638
+  },
+  "474467324": {
+    "community_id": "474467324",
+    "community_name": "宁围镇文明路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467324.htm",
+    "elapsed_ms": 1012
+  },
+  "20049142": {
+    "community_id": "20049142",
+    "community_name": "宁都花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20049142.htm",
+    "elapsed_ms": 764
+  },
+  "2625621522": {
+    "community_id": "2625621522",
+    "community_name": "宁巢美地公寓",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2625621522.htm",
+    "elapsed_ms": 999
+  },
+  "5001484": {
+    "community_id": "5001484",
+    "community_name": "宁牧村",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001484.htm",
+    "elapsed_ms": 977
+  },
+  "2198856503": {
+    "community_id": "2198856503",
+    "community_name": "宝德华悦商务中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2198856503.htm",
+    "elapsed_ms": 812
+  },
+  "474467490": {
+    "community_id": "474467490",
+    "community_name": "宁围镇振宁路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467490.htm",
+    "elapsed_ms": 1109
+  },
+  "5000152": {
+    "community_id": "5000152",
+    "community_name": "宝盛世纪中心",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000152.htm",
+    "elapsed_ms": 417
+  },
+  "1171862270": {
+    "community_id": "1171862270",
+    "community_name": "山水时代",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1171862270.htm",
+    "elapsed_ms": 561
+  },
+  "20141500": {
+    "community_id": "20141500",
+    "community_name": "左右世界",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20141500.htm",
+    "elapsed_ms": 423
+  },
+  "20000845": {
+    "community_id": "20000845",
+    "community_name": "幸福时代公寓",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000845.htm",
+    "elapsed_ms": 447
+  },
+  "20170945": {
+    "community_id": "20170945",
+    "community_name": "悦盛国际中心",
+    "property_type": "写字楼",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20170945.htm",
+    "elapsed_ms": 733
+  },
+  "20175841": {
+    "community_id": "20175841",
+    "community_name": "新世界翡郦中心",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20175841.htm",
+    "elapsed_ms": 882
+  },
+  "3043698839": {
+    "community_id": "3043698839",
+    "community_name": "拥奥府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3043698839.htm",
+    "elapsed_ms": 901
+  },
+  "4002220": {
+    "community_id": "4002220",
+    "community_name": "旭辉和昌都会山",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4002220.htm",
+    "elapsed_ms": 935
+  },
+  "20001023": {
+    "community_id": "20001023",
+    "community_name": "明星广场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001023.htm",
+    "elapsed_ms": 834
+  },
+  "20081698": {
+    "community_id": "20081698",
+    "community_name": "德信泊林春天",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20081698.htm",
+    "elapsed_ms": 1196
+  },
+  "1167984147": {
+    "community_id": "1167984147",
+    "community_name": "时代博地大厦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1167984147.htm",
+    "elapsed_ms": 1002
+  },
+  "2193669606": {
+    "community_id": "2193669606",
+    "community_name": "明华誉港城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193669606.htm",
+    "elapsed_ms": 987
+  },
+  "4003532": {
+    "community_id": "4003532",
+    "community_name": "春和闻莺院1",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4003532.htm",
+    "elapsed_ms": 587
+  },
+  "2347665466": {
+    "community_id": "2347665466",
+    "community_name": "星翠澜庭",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2347665466.htm",
+    "elapsed_ms": 750
+  },
+  "4004999": {
+    "community_id": "4004999",
+    "community_name": "景瑞天赋",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4004999.htm",
+    "elapsed_ms": 584
+  },
+  "2192753932": {
+    "community_id": "2192753932",
+    "community_name": "杭州国际办公中心南区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2192753932.htm",
+    "elapsed_ms": 293
+  },
+  "3127649491": {
+    "community_id": "3127649491",
+    "community_name": "月赋杭承府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3127649491.htm",
+    "elapsed_ms": 512
+  },
+  "20000387": {
+    "community_id": "20000387",
+    "community_name": "江南明城",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000387.htm",
+    "elapsed_ms": 296
+  },
+  "20170701": {
+    "community_id": "20170701",
+    "community_name": "浙江民营企业发展大厦",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20170701.htm",
+    "elapsed_ms": 388
+  },
+  "1182050419": {
+    "community_id": "1182050419",
+    "community_name": "海上明月",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1182050419.htm",
+    "elapsed_ms": 281
+  },
+  "402517726": {
+    "community_id": "402517726",
+    "community_name": "港汇中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_402517726.htm",
+    "elapsed_ms": 235
+  },
+  "20037688": {
+    "community_id": "20037688",
+    "community_name": "海杰德大厦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20037688.htm",
+    "elapsed_ms": 316
+  },
+  "20174280": {
+    "community_id": "20174280",
+    "community_name": "滨江君品名邸",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20174280.htm",
+    "elapsed_ms": 350
+  },
+  "2288281705": {
+    "community_id": "2288281705",
+    "community_name": "滨江·观品",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2288281705.htm",
+    "elapsed_ms": 368
+  },
+  "3215021391": {
+    "community_id": "3215021391",
+    "community_name": "滨江揽奥望座",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3215021391.htm",
+    "elapsed_ms": 469
+  },
+  "5000540": {
+    "community_id": "5000540",
+    "community_name": "港丽望京",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5000540.htm",
+    "elapsed_ms": 633
+  },
+  "1272430332": {
+    "community_id": "1272430332",
+    "community_name": "滨江新希望悦潮府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1272430332.htm",
+    "elapsed_ms": 606
+  },
+  "3101022059": {
+    "community_id": "3101022059",
+    "community_name": "滨江澄虹府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3101022059.htm",
+    "elapsed_ms": 493
+  },
+  "2008426342": {
+    "community_id": "2008426342",
+    "community_name": "滨江·御虹府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2008426342.htm",
+    "elapsed_ms": 782
+  },
+  "1171701936": {
+    "community_id": "1171701936",
+    "community_name": "滨江碧桂园·翡翠江南",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1171701936.htm",
+    "elapsed_ms": 482
+  },
+  "20140956": {
+    "community_id": "20140956",
+    "community_name": "生兴路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20140956.htm",
+    "elapsed_ms": 433
+  },
+  "169518499": {
+    "community_id": "169518499",
+    "community_name": "百富联合国际",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_169518499.htm",
+    "elapsed_ms": 473
+  },
+  "20055044": {
+    "community_id": "20055044",
+    "community_name": "滨江金色江南",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20055044.htm",
+    "elapsed_ms": 692
+  },
+  "20000973": {
+    "community_id": "20000973",
+    "community_name": "盈兴公寓",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000973.htm",
+    "elapsed_ms": 438
+  },
+  "20171661": {
+    "community_id": "20171661",
+    "community_name": "盈一佳苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20171661.htm",
+    "elapsed_ms": 568
+  },
+  "3258190607": {
+    "community_id": "3258190607",
+    "community_name": "绿城晓风明月轩",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3258190607.htm",
+    "elapsed_ms": 557
+  },
+  "410539354": {
+    "community_id": "410539354",
+    "community_name": "碧桂园深蓝国际中心",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_410539354.htm",
+    "elapsed_ms": 676
+  },
+  "2193669465": {
+    "community_id": "2193669465",
+    "community_name": "绿地宋都·杭州世纪中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2193669465.htm",
+    "elapsed_ms": 619
+  },
+  "297453624": {
+    "community_id": "297453624",
+    "community_name": "碧桂园珑悦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_297453624.htm",
+    "elapsed_ms": 704
+  },
+  "169521905": {
+    "community_id": "169521905",
+    "community_name": "联合中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_169521905.htm",
+    "elapsed_ms": 551
+  },
+  "2329131611": {
+    "community_id": "2329131611",
+    "community_name": "绿城桂冠东方",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2329131611.htm",
+    "elapsed_ms": 651
+  },
+  "20000264": {
+    "community_id": "20000264",
+    "community_name": "英冠水天城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000264.htm",
+    "elapsed_ms": 564
+  },
+  "20174160": {
+    "community_id": "20174160",
+    "community_name": "融信展望",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20174160.htm",
+    "elapsed_ms": 374
+  },
+  "2878941884": {
+    "community_id": "2878941884",
+    "community_name": "观奥宸府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2878941884.htm",
+    "elapsed_ms": 490
+  },
+  "5001499": {
+    "community_id": "5001499",
+    "community_name": "诺德财富中心",
+    "property_type": "写字楼",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001499.htm",
+    "elapsed_ms": 420
+  },
+  "2906991479": {
+    "community_id": "2906991479",
+    "community_name": "金帝咏颂轩",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2906991479.htm",
+    "elapsed_ms": 366
+  },
+  "20140952": {
+    "community_id": "20140952",
+    "community_name": "钱江世纪城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20140952.htm",
+    "elapsed_ms": 289
+  },
+  "2243393168": {
+    "community_id": "2243393168",
+    "community_name": "观雲钱塘城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2243393168.htm",
+    "elapsed_ms": 637
+  },
+  "20037062": {
+    "community_id": "20037062",
+    "community_name": "金昌春和钱塘",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20037062.htm",
+    "elapsed_ms": 842
+  },
+  "5001568": {
+    "community_id": "5001568",
+    "community_name": "钱江世纪城丰瑞北苑",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5001568.htm",
+    "elapsed_ms": 734
+  },
+  "4005402": {
+    "community_id": "4005402",
+    "community_name": "融信保利·创世纪",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4005402.htm",
+    "elapsed_ms": 1580
+  },
+  "20000632": {
+    "community_id": "20000632",
+    "community_name": "钱江新村",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000632.htm",
+    "elapsed_ms": 843
+  },
+  "1334867451": {
+    "community_id": "1334867451",
+    "community_name": "阳光城·檀悦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1334867451.htm",
+    "elapsed_ms": 781
+  },
+  "20001006": {
+    "community_id": "20001006",
+    "community_name": "顺丰家园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001006.htm",
+    "elapsed_ms": 772
+  },
+  "3215021409": {
+    "community_id": "3215021409",
+    "community_name": "钱斓安铂中心",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3215021409.htm",
+    "elapsed_ms": 1089
+  },
+  "20001022": {
+    "community_id": "20001022",
+    "community_name": "顺发康庄",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001022.htm",
+    "elapsed_ms": 282
+  },
+  "474466953": {
+    "community_id": "474466953",
+    "community_name": "钱江农场",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474466953.htm",
+    "elapsed_ms": 911
+  },
+  "2387091404": {
+    "community_id": "2387091404",
+    "community_name": "顺发美颂城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2387091404.htm",
+    "elapsed_ms": 250
+  },
+  "20079755": {
+    "community_id": "20079755",
+    "community_name": "顺发美哉美城",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20079755.htm",
+    "elapsed_ms": 531
+  },
+  "20056077": {
+    "community_id": "20056077",
+    "community_name": "顺发江南丽锦",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20056077.htm",
+    "elapsed_ms": 684
+  },
+  "3212406046": {
+    "community_id": "3212406046",
+    "community_name": "滨江平晖府",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_3212406046.htm",
+    "elapsed_ms": 501
+  },
+  "20139375": {
+    "community_id": "20139375",
+    "community_name": "黄龙御玺",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20139375.htm",
+    "elapsed_ms": 507
+  },
+  "4004972": {
+    "community_id": "4004972",
+    "community_name": "飞虹路",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4004972.htm",
+    "elapsed_ms": 569
+  },
+  "474467179": {
+    "community_id": "474467179",
+    "community_name": "万达中路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467179.htm",
+    "elapsed_ms": 409
+  },
+  "20001089": {
+    "community_id": "20001089",
+    "community_name": "云涛名苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20001089.htm",
+    "elapsed_ms": 670
+  },
+  "20000304": {
+    "community_id": "20000304",
+    "community_name": "三江新村",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000304.htm",
+    "elapsed_ms": 737
+  },
+  "1164500746": {
+    "community_id": "1164500746",
+    "community_name": "龙湖天璞",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_1164500746.htm",
+    "elapsed_ms": 1235
+  },
+  "20140955": {
+    "community_id": "20140955",
+    "community_name": "三江路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20140955.htm",
+    "elapsed_ms": 735
+  },
+  "10006242": {
+    "community_id": "10006242",
+    "community_name": "三江花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_10006242.htm",
+    "elapsed_ms": 745
+  },
+  "20000383": {
+    "community_id": "20000383",
+    "community_name": "众安启航社",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000383.htm",
+    "elapsed_ms": 596
+  },
+  "20000683": {
+    "community_id": "20000683",
+    "community_name": "中粮易筑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000683.htm",
+    "elapsed_ms": 742
+  },
+  "2096039934": {
+    "community_id": "2096039934",
+    "community_name": "保亿·湖风雅园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2096039934.htm",
+    "elapsed_ms": 339
+  },
+  "20000404": {
+    "community_id": "20000404",
+    "community_name": "戈雅卡斯提亚",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000404.htm",
+    "elapsed_ms": 479
+  },
+  "20044347": {
+    "community_id": "20044347",
+    "community_name": "博凡湘湖9号",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20044347.htm",
+    "elapsed_ms": 502
+  },
+  "20000220": {
+    "community_id": "20000220",
+    "community_name": "南岸花城",
+    "property_type": "别墅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000220.htm",
+    "elapsed_ms": 509
+  },
+  "10004440": {
+    "community_id": "10004440",
+    "community_name": "戈雅公寓",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_10004440.htm",
+    "elapsed_ms": 501
+  },
+  "20037444": {
+    "community_id": "20037444",
+    "community_name": "府尚别墅",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20037444.htm",
+    "elapsed_ms": 512
+  },
+  "4004483": {
+    "community_id": "4004483",
+    "community_name": "进士第",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_4004483.htm",
+    "elapsed_ms": 1830
+  },
+  "20166381": {
+    "community_id": "20166381",
+    "community_name": "时代湘湖",
+    "property_type": "商贸",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20166381.htm",
+    "elapsed_ms": 630
+  },
+  "10006243": {
+    "community_id": "10006243",
+    "community_name": "江南摩卡",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_10006243.htm",
+    "elapsed_ms": 519
+  },
+  "10005480": {
+    "community_id": "10005480",
+    "community_name": "湘湖人家",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_10005480.htm",
+    "elapsed_ms": 493
+  },
+  "20175824": {
+    "community_id": "20175824",
+    "community_name": "湘湖南苑",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20175824.htm",
+    "elapsed_ms": 548
+  },
+  "5002242": {
+    "community_id": "5002242",
+    "community_name": "湘湖壹号",
+    "property_type": "其他",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_5002242.htm",
+    "elapsed_ms": 549
+  },
+  "20000403": {
+    "community_id": "20000403",
+    "community_name": "湘墅花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000403.htm",
+    "elapsed_ms": 571
+  },
+  "20100261": {
+    "community_id": "20100261",
+    "community_name": "湘湖九号",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20100261.htm",
+    "elapsed_ms": 572
+  },
+  "2449038309": {
+    "community_id": "2449038309",
+    "community_name": "滨江盛元湘湖里",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2449038309.htm",
+    "elapsed_ms": 435
+  },
+  "20081026": {
+    "community_id": "20081026",
+    "community_name": "滨江东方海岸",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20081026.htm",
+    "elapsed_ms": 545
+  },
+  "10005881": {
+    "community_id": "10005881",
+    "community_name": "郁金香岸",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_10005881.htm",
+    "elapsed_ms": 260
+  },
+  "20050524": {
+    "community_id": "20050524",
+    "community_name": "相墅花园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20050524.htm",
+    "elapsed_ms": 342
+  },
+  "2794958696": {
+    "community_id": "2794958696",
+    "community_name": "滨江金帝叠潮雅庭",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_2794958696.htm",
+    "elapsed_ms": 492
+  },
+  "20172440": {
+    "community_id": "20172440",
+    "community_name": "聚望名座",
+    "property_type": "公寓",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20172440.htm",
+    "elapsed_ms": 286
+  },
+  "20138509": {
+    "community_id": "20138509",
+    "community_name": "通和府尚公馆",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20138509.htm",
+    "elapsed_ms": 349
+  },
+  "20000968": {
+    "community_id": "20000968",
+    "community_name": "蔚蓝海岸",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000968.htm",
+    "elapsed_ms": 387
+  },
+  "474466870": {
+    "community_id": "474466870",
+    "community_name": "闻堰街道戈雅街",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474466870.htm",
+    "elapsed_ms": 411
+  },
+  "20000415": {
+    "community_id": "20000415",
+    "community_name": "索菲特世外桃源别墅",
+    "property_type": "别墅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000415.htm",
+    "elapsed_ms": 513
+  },
+  "474467024": {
+    "community_id": "474467024",
+    "community_name": "闻堰镇街道居委会",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467024.htm",
+    "elapsed_ms": 293
+  },
+  "474467457": {
+    "community_id": "474467457",
+    "community_name": "闻堰镇闻兴村",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467457.htm",
+    "elapsed_ms": 492
+  },
+  "474466826": {
+    "community_id": "474466826",
+    "community_name": "闻堰镇闻兴路南纺织厂宿舍",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474466826.htm",
+    "elapsed_ms": 404
+  },
+  "474467382": {
+    "community_id": "474467382",
+    "community_name": "闻堰镇万达路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467382.htm",
+    "elapsed_ms": 599
+  },
+  "474467076": {
+    "community_id": "474467076",
+    "community_name": "闻堰镇三江口",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474467076.htm",
+    "elapsed_ms": 611
+  },
+  "474466940": {
+    "community_id": "474466940",
+    "community_name": "闻堰镇闻兴路",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_474466940.htm",
+    "elapsed_ms": 544
+  },
+  "20000784": {
+    "community_id": "20000784",
+    "community_name": "闻堰黄山新小区",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20000784.htm",
+    "elapsed_ms": 690
+  },
+  "20151595": {
+    "community_id": "20151595",
+    "community_name": "闻堰镇龙化西",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20151595.htm",
+    "elapsed_ms": 745
+  },
+  "20049606": {
+    "community_id": "20049606",
+    "community_name": "隐龙湾",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20049606.htm",
+    "elapsed_ms": 661
+  },
+  "20171664": {
+    "community_id": "20171664",
+    "community_name": "风情园",
+    "property_type": "住宅",
+    "url": "https://www.tmsf.com/esf/xq_indexnew_20171664.htm",
+    "elapsed_ms": 496
   }
 }

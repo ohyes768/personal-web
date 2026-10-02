@@ -114,11 +114,21 @@ def rewrite_csv(data_path: Path, rows: list[dict]) -> None:
     )
 
 
-def select_refresh_targets(communities: list[dict]) -> list[str]:
+def select_refresh_targets(communities: list[dict], coordinates: dict | None = None) -> list[str]:
+    from src.core.boundary import is_in_scope
+
+    if coordinates is None:
+        from src.services.data_loader import load_coordinates
+
+        coordinates = load_coordinates()
     return [
         str(community["community_id"])
         for community in communities
-        if community.get("community_id") and is_real_community(community)
+        if community.get("community_id")
+        and is_real_community(community)
+        # 与 /communities 展示口径一致: 坐标不在覆盖范围内的小区不刷 (省时长, 数据也不会下发)
+        and (coord := coordinates.get(community["community_id"]))
+        and is_in_scope(coord.get("longitude") or 0, coord.get("latitude") or 0)
     ]
 
 

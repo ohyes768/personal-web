@@ -27,7 +27,19 @@ from fetch_tmsf_price_snapshot import fetch_html
 
 
 COMMUNITY_LIST_URL = f"{BASE_URL}/include/hzweb/index_search_newCommunitylist.js"
-BINJIANG_PREFIX = "滨江"
+# 萧山接壤板块 (tmsf 口径; 行政"盈丰"街道在 tmsf 记作"钱江世纪城", "开发区"部分落宁围,
+# "湘湖"实测全在围栏外不取 — 见 .trellis/tasks/10-02-housing-collect-xs/research/tmsf-plate-mapping.md)
+XIAOSHAN_PLATES = {"钱江世纪城", "开发区", "宁围", "闻堰"}
+
+
+def in_collect_scope(area_remark: str) -> bool:
+    """采集范围: 滨江全区 + 萧山接壤板块"""
+    parts = area_remark.split()
+    district = parts[0] if parts else None
+    subdistrict = parts[1] if len(parts) > 1 else None
+    if district == "滨江":
+        return True
+    return district == "萧山" and subdistrict in XIAOSHAN_PLATES
 
 
 @dataclass
@@ -104,7 +116,7 @@ def fetch_binjiang_communities() -> list[Community]:
     seen_ids: set[str] = set()
     for row in parse_community_list_js(js_text):
         area_remark = clean_string(row.get("arearmk")) or ""
-        if not area_remark.startswith(BINJIANG_PREFIX):
+        if not area_remark or not in_collect_scope(area_remark):
             continue
         community = normalize_community(row, crawled_at)
         if community.community_id in seen_ids:

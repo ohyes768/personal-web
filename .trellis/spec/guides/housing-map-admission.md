@@ -24,14 +24,32 @@
 3. 是否在 `MERGE_DROP_IDS`（合并组 drop 成员）
 4. 前端当前勾选的类型 chips
 
-## 定时刷新（2026-09-30 新增）
+## 定时刷新（2026-09-30 新增，2026-10-02 双周化）
 
 `src/scheduler.py`（精简自 macro 的 src/scheduler/，无 API 管理/执行历史）：
 
-- **cron** `17 21 * * mon`（每周一 21:17 Asia/Shanghai），任务体调 `refresh.start_refresh(0)` 全量，目标集仍走 `select_refresh_targets`（上表 `is_real_community` 口径，即全量采集）。
+- **cron** `17 21 * * mon`（每周一 21:17 Asia/Shanghai）触发，**job 内 ISO 周奇偶节流双周执行**（扩萧山后 581 小区实测 29 分钟 > 15 分钟阈值；cron 保持每周触发以保留 misfire 补偿）。任务体调 `refresh.start_refresh(0)` 全量。
 - **互斥**：与前端手动刷新共用 `refresh.py` 的 `job["running"]`；定时触发撞上运行中任务返回 409，scheduler 侧记 warning 跳过，不排队。
 - **陷阱**（继承 macro）：APScheduler 3.x dow 数字 0=周一（非 crontab 的周日），星期一律写英文缩写；`from_crontab` 必须显式传 `timezone="Asia/Shanghai"`，否则容器内按 UTC 触发偏移 8 小时。
 - 手动刷新 API（`POST /api/refresh`）与前端交互不变。
+
+## 采集范围（2026-10-02 扩萧山接壤板块）
+
+**tmsf 板块口径 ≠ 行政街道**：行政「盈丰」街道在 tmsf 记作「钱江世纪城」，「开发区」部分落宁围街道，「湘湖」实测 100% 围栏外不取。板块清单（`fetch_tmsf_binjiang_communities.py` 的 `XIAOSHAN_PLATES`）= {钱江世纪城, 开发区, 宁围, 闻堰}，映射实测见 task 10-02-housing-collect-xs research/。
+
+**多层口径一致性**（同一小区集合流过全链路，改围栏/板块清单时四处同步）：
+
+| 层 | 位置 | 口径 |
+|----|------|------|
+| 展示 | routes.py `/communities` | `is_real_community` + 坐标 `is_in_scope`（围栏外不下发） |
+| 刷新目标 | refresh.py `select_refresh_targets` | 同上（省时长） |
+| 坐标装载 | data_loader.py `load_coordinates` | 地址含滨江区 ∪ (萧山区 且 萧山板块围栏内)——防跨区错配 |
+| POI 展示 | data_loader.py `POI_BOUNDS` | scope 围栏外接框（动态算，勿硬编码） |
+
+- `nearest_subway` 用 `/api/transit` 同源动态站点（`_station_list_for_scoring`），不再用旧静态 `binjiang_subway_stations.json`（该文件已无引用，保留仅为回滚）。
+- 地理编码对萧山小区失准率高（~20% 解析到城区中心）：`fix_mislocated_communities.py` 出界判定用 `is_in_scope` 多边形（bbox 会漏框内多边形外的失准点），重定位后 POI 自动清空待重抓。
+- **顺序依赖**：`fix_road_named_communities.py` 按价格记录判存废——新增小区必须先跑全量刷新再跑它，否则无价格的新小区会被误删。
+- `market_reference.json` 是人工校验的挂牌参考行情（安居客快照），scope 仍为滨江区，萧山部分待人工补录。
 
 ## 覆盖范围围栏（2026-10-02 扩展）
 

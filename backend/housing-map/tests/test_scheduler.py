@@ -71,8 +71,23 @@ def test_run_weekly_refresh_starts_job(monkeypatch):
         return True, 200, {"success": True, "data": {"total": 3}}
 
     monkeypatch.setattr(scheduler.refresh_service, "start_refresh", fake_start)
+    monkeypatch.setattr(scheduler, "_current_iso_week", lambda: 40)  # 偶数周: 执行
     asyncio.run(run_weekly_refresh())
     assert called == [0]  # 0 = 全量
+
+
+def test_run_weekly_refresh_skips_on_odd_iso_week(monkeypatch):
+    # 双周节奏 (2026-10 扩萧山后全量 29 分钟): 奇数周只记日志不启动
+    called = []
+
+    async def fake_start(limit):
+        called.append(limit)
+        return True, 200, {"success": True, "data": {"total": 3}}
+
+    monkeypatch.setattr(scheduler.refresh_service, "start_refresh", fake_start)
+    monkeypatch.setattr(scheduler, "_current_iso_week", lambda: 41)  # 奇数周: 跳过
+    asyncio.run(run_weekly_refresh())
+    assert called == []
 
 
 def test_start_scheduler_idempotent():

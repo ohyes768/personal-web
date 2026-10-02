@@ -6,7 +6,7 @@
 背景: fetch_gaode_coordinates.py 用的地理编码 API 会把部分小区定位到
 错误位置(甚至外市), 导致其 POI 搜索在错误位置周边进行, 带回大量区外 POI。
 本脚本用高德关键字搜索(place/text, citylimit=杭州)按小区名重新定位,
-校验新坐标落在滨江区附近后才写入, 并清空对应小区的 POI 数据。
+校验新坐标落在覆盖范围(滨江+萧山接壤板块)外接框内才写入, 并清空对应小区的 POI 数据。
 之后运行: python scripts/fetch_gaode_pois.py --only subway school hospital mall park bus
 即可只重抓这些小区(其余小区已有数据会被 --only 逻辑跳过)。
 """
@@ -30,9 +30,21 @@ try:
 except ImportError:
     GAODE_API_KEY = ""  # 未配置: 请创建 scripts/_gaode_config.py
 
-# 滨江区 bbox(Nominatim), 修正校验用放宽一点的框
-BINJIANG_BBOX = (30.1387, 30.2390, 120.1176, 120.2321)
-CHECK_BBOX = (30.13, 30.25, 120.10, 120.30)   # 新坐标必须落在此框内才接受
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.core.boundary import BINJIANG_BOUNDARY, XIAOSHAN_BORDER_BOUNDARIES, is_in_scope
+
+
+def _scope_bbox(pad: float) -> tuple[float, float, float, float]:
+    """覆盖范围 (滨江+萧山板块) 全部围栏的外接框, (lat0, lat1, lng0, lng1)"""
+    pts = [p for poly in (BINJIANG_BOUNDARY, *XIAOSHAN_BORDER_BOUNDARIES.values()) for p in poly]
+    lngs, lats = [p[0] for p in pts], [p[1] for p in pts]
+    return (min(lats) - pad, max(lats) + pad, min(lngs) - pad, max(lngs) + pad)
+
+
+CHECK_BBOX = _scope_bbox(0.02)   # 新坐标必须落在此框内才接受
 
 
 def search_poi(name: str) -> tuple[float, float] | None:
@@ -67,11 +79,11 @@ def main():
     coords = json.loads(coords_path.read_text(encoding="utf-8"))
     pois = json.loads(pois_path.read_text(encoding="utf-8"))
 
-    lat0, lat1, lng0, lng1 = BINJIANG_BBOX
     clat0, clat1, clng0, clng1 = CHECK_BBOX
 
+    # 出界 = 坐标不在 scope 多边形内 (外接框判定会漏掉"失准到萧山城区中心"这类框内多边形外的点)
     mislocated = [(cid, info) for cid, info in coords.items()
-                  if info.get("latitude") and not (lat0 <= info["latitude"] <= lat1 and lng0 <= info["longitude"] <= lng1)]
+                  if info.get("latitude") and not is_in_scope(info["longitude"], info["latitude"])]
     print(f"坐标出界的小区: {len(mislocated)} 个\n")
 
     fixed, failed = [], []
