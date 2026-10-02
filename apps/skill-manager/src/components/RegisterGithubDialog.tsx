@@ -258,7 +258,10 @@ export default function RegisterGithubDialog({
                 </legend>
                 <div className="mt-1 max-h-40 space-y-1 overflow-y-auto rounded border border-slate-200 p-2">
                   {activeScan.candidates.map((candidate) => (
-                    <label key={candidate.path} className="flex items-center gap-2 text-sm">
+                    <label
+                      key={candidate.path}
+                      className="flex items-start gap-2 text-sm"
+                    >
                       <input
                         type="checkbox"
                         checked={selectedPaths.includes(candidate.path)}
@@ -266,8 +269,26 @@ export default function RegisterGithubDialog({
                           togglePath(candidate.path, event.target.checked)
                         }
                         disabled={busy}
+                        className="mt-0.5"
                       />
-                      <span className="text-slate-700">{candidate.path}</span>
+                      <span className="min-w-0">
+                        <span className="text-slate-700">
+                          {candidate.name || candidate.path}
+                        </span>
+                        {candidate.name ? (
+                          <span className="ml-2 text-xs text-slate-400">
+                            {candidate.path}
+                          </span>
+                        ) : null}
+                        {candidate.description ? (
+                          <span
+                            className="block truncate text-xs text-slate-500"
+                            title={candidate.description}
+                          >
+                            {candidate.description}
+                          </span>
+                        ) : null}
+                      </span>
                     </label>
                   ))}
                 </div>
