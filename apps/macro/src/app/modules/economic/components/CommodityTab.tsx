@@ -12,6 +12,7 @@ import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
+import { lastDataDate } from '@/lib/utils/economicData';
 import { InitButton } from './InitButton';
 import { CommodityChart } from './CommodityChart';
 import { TabPanelLoading } from './TabPanelLoading';
@@ -54,6 +55,7 @@ export function CommodityTab({
           storageKey="last_updated_commodities_daily"
           cadence="daily"
           label="更新数据"
+          dataLastDate={lastDataDate(fullData)}
           onSuccess={onRefreshSuccess}
         />
       </div>

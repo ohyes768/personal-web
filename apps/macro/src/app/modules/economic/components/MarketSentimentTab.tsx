@@ -12,6 +12,7 @@ import { useFilteredEconomicData } from '@/lib/hooks/useFilteredEconomicData';
 import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { RefreshButton } from './RefreshButton';
+import { lastDataDate } from '@/lib/utils/economicData';
 import { InitButton } from './InitButton';
 import { MarketSentimentChart } from './MarketSentimentChart';
 import { HsgtFundFlowChart } from './HsgtFundFlowChart';
@@ -61,6 +62,7 @@ export function MarketSentimentTab({
           storageKey="last_updated_market_sentiment_daily"
           cadence="daily"
           label="更新数据"
+          dataLastDate={lastDataDate(fullData)}
           onSuccess={onRefreshSuccess}
         />
       </div>

@@ -2,20 +2,28 @@
 
 /**
  * 数据更新按钮
- * - monthly cadence: 更新后置灰到下个月 1 号 00:00（按钮文字显示"下次更新 YYYY-MM"）
- * - daily cadence: 更新后置灰到明天 00:00
- * - 通过 localStorage 持久化 lastUpdatedAt，刷新页面后保持置灰状态
+ * - 数据驱动（daily 且传了 dataLastDate 时优先）：数据最后日期距今天 ≤ 4 天
+ *   → 置灰显示「数据截至 MM-DD」（定时任务每天自动更新，无需手动点）；
+ *   停更超期 → 高亮可点，提示「数据停在 MM-DD」
+ *   （4 天容差覆盖周末 + 3 天小长假；长假后按钮亮一下属预期，点一次即恢复）
+ * - 旧逻辑兜底（monthly / 无 dataLastDate）：更新后置灰到下个月 1 号 / 明天 00:00，
+ *   通过 localStorage 持久化 lastUpdatedAt
  */
 import { useState, useEffect, useCallback } from 'react';
 import type { UpdateResponse } from '@/lib/modules/economic/api';
 
 export type RefreshCadence = 'monthly' | 'daily';
 
+/** daily 数据视为「新鲜」的最大天数间隔 */
+const FRESH_TOLERANCE_DAYS = 4;
+
 interface RefreshButtonProps {
   onRefresh: () => Promise<UpdateResponse>;
   storageKey: string;
   cadence: RefreshCadence;
   label: string;
+  /** 本 Tab 数据「最后有数据点」的日期 'YYYY-MM-DD'（数据驱动亮/灰的依据） */
+  dataLastDate?: string | null;
   onSuccess?: () => void;
 }
 
@@ -45,7 +53,16 @@ function formatDateForCadence(d: Date, cadence: RefreshCadence): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
-export function RefreshButton({ onRefresh, storageKey, cadence, label, onSuccess }: RefreshButtonProps) {
+/** 'YYYY-MM-DD' 距今天隔了几天（本地时间，负数=未来日期按 0 算） */
+function daysAgo(dateStr: string): number {
+  const d = new Date(dateStr + 'T00:00:00');
+  if (isNaN(d.getTime())) return Number.POSITIVE_INFINITY; // 非法日期视为停更
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.max(0, Math.round((today.getTime() - d.getTime()) / 86_400_000));
+}
+
+export function RefreshButton({ onRefresh, storageKey, cadence, label, dataLastDate, onSuccess }: RefreshButtonProps) {
   const [isUpdating, setIsUpdating] = useState(false);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,7 +85,13 @@ export function RefreshButton({ onRefresh, storageKey, cadence, label, onSuccess
   }, []);
 
   const next = lastUpdatedAt ? nextAvailableAt(new Date(lastUpdatedAt), cadence) : null;
-  const isAvailable = !next || now >= next;
+
+  // 数据驱动：daily 且拿到数据最后日期 → 数据新鲜即置灰（定时任务已覆盖，无需手点）
+  const dataDriven = cadence === 'daily' && dataLastDate != null;
+  const dataAge = dataDriven ? daysAgo(dataLastDate as string) : null;
+  const isDataFresh = dataAge != null && dataAge <= FRESH_TOLERANCE_DAYS;
+
+  const isAvailable = dataDriven ? !isDataFresh : (!next || now >= next);
 
   const handleClick = useCallback(async () => {
     if (isUpdating || !isAvailable) return;
@@ -96,19 +119,31 @@ export function RefreshButton({ onRefresh, storageKey, cadence, label, onSuccess
     }
   }, [isUpdating, isAvailable, onRefresh, storageKey, onSuccess]);
 
-  // 视觉：置灰且显示"下次更新 YYYY-MM"
-  if (!isAvailable && next) {
-    return (
-      <button
-        type="button"
-        disabled
-        className="px-4 py-2 rounded-lg bg-gray-800 text-gray-500 cursor-not-allowed flex items-center gap-2"
-        title={`下次可更新：${next.toISOString().slice(0, 10)}`}
-      >
+  // 视觉：置灰。数据驱动 → 「数据截至 MM-DD」；旧逻辑 → 「下次更新 YYYY-MM」
+  if (!isAvailable) {
+    const disabledContent = dataDriven ? (
+      <>
+        <span className="inline-block w-2 h-2 rounded-full bg-green-700" />
+        <span>数据截至 {(dataLastDate as string).slice(5)}</span>
+      </>
+    ) : next ? (
+      <>
         <span className="inline-block w-2 h-2 rounded-full bg-gray-600" />
         <span>下次更新：{formatDateForCadence(next, cadence)}</span>
-      </button>
-    );
+      </>
+    ) : null;
+    if (disabledContent) {
+      return (
+        <button
+          type="button"
+          disabled
+          className="px-4 py-2 rounded-lg bg-gray-800 text-gray-500 cursor-not-allowed flex items-center gap-2"
+          title={dataDriven ? '数据已是最新（定时任务每天自动更新），无需手动更新' : next ? `下次可更新：${formatDateForCadence(next, cadence)}` : ''}
+        >
+          {disabledContent}
+        </button>
+      );
+    }
   }
 
   return (
@@ -147,7 +182,10 @@ export function RefreshButton({ onRefresh, storageKey, cadence, label, onSuccess
         )}
       </button>
       {error && <span className="text-sm text-red-400">{error}</span>}
-      {lastUpdatedAt && !error && (
+      {!error && dataDriven && !isDataFresh && dataLastDate && (
+        <span className="text-xs text-amber-400/90">数据停在 {(dataLastDate as string).slice(5)} · 点击拉取</span>
+      )}
+      {!error && !(dataDriven && !isDataFresh) && lastUpdatedAt && (
         <span className="text-xs text-gray-500">
           上次更新：{new Date(lastUpdatedAt).toLocaleString('zh-CN', { hour12: false })}
         </span>

@@ -14,6 +14,7 @@ import { economicApi } from '@/lib/modules/economic/api';
 import { TimeRangeSelector } from './TimeRangeSelector';
 import { TabPanelLoading } from './TabPanelLoading';
 import { RefreshButton } from './RefreshButton';
+import { lastDataDate } from '@/lib/utils/economicData';
 import { InitButton } from './InitButton';
 import { EconomicChart } from './EconomicChart';
 
@@ -66,6 +67,7 @@ export function TreasuryExchangeTab({
           storageKey="last_updated_us_treasuries_and_rates_daily"
           cadence="daily"
           label="更新数据"
+          dataLastDate={lastDataDate(fullData)}
           onSuccess={handleRefreshSuccess}
         />
       </div>
