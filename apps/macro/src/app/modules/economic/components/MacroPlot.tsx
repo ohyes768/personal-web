@@ -12,6 +12,7 @@ import { usePlotlyAutoResize } from '@/lib/hooks/usePlotlyAutoResize';
 import {
   BASE_PLOT_CONFIG,
   chartHeightForSubplots,
+  lastValidDate,
 } from '@/lib/utils/plotlyTheme';
 
 interface MacroPlotProps {
@@ -63,6 +64,28 @@ export function MacroPlot({
     autosize: true,
     height: layout.height ?? resolvedHeight,
   };
+
+  // 右上角标注本图「最后有数据点」的日期（数据新鲜度一眼可见，不用悬浮）；
+  // 调用方自带 annotations 时（当前无）不注入
+  if (!layout.annotations) {
+    const lastDate = lastValidDate(data);
+    if (lastDate) {
+      mergedLayout.annotations = [
+        {
+          text: `截至 ${lastDate.slice(5)}`, // 'YYYY-MM-DD' → 'MM-DD'
+          xref: 'paper',
+          yref: 'paper',
+          x: 1,
+          y: 1,
+          xanchor: 'right',
+          yanchor: 'top',
+          showarrow: false,
+          font: { color: '#6b7280', size: 11 },
+          bgcolor: 'rgba(26,26,26,0.7)',
+        },
+      ];
+    }
+  }
 
   return (
     <div ref={containerRef} className={className} style={{ width: '100%' }}>

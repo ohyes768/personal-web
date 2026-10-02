@@ -9,7 +9,7 @@
  * 不包含业务指标元数据（label/color/unit 由调用方提供）。
  */
 
-import type { Layout, Config, Data } from 'plotly.js';
+import type { Layout, Config, Data, ScatterData } from 'plotly.js';
 
 /** 暗黑主题常量 */
 export const PLOTLY_DARK = {
@@ -157,6 +157,29 @@ export function hasValidPoints(values: Array<number | null | undefined> | undefi
 /** 有效点数量 */
 export function countValidPoints(values: Array<number | null | undefined>): number {
   return values.filter((v) => v != null && !Number.isNaN(v as number)).length;
+}
+
+/**
+ * 一组 traces 中「最后有数据点」的日期（各 trace 各自最后一个非 null 点的 x 最大者）。
+ * 日期字符串 'YYYY-MM-DD' 字典序即时间序；无可读 trace 返回 null。
+ */
+export function lastValidDate(traces: Data[]): string | null {
+  let last: string | null = null;
+  for (const t of traces) {
+    // Data 联合含 Pie/Ohlc 等无 x/y 的类型，按 Scatter 窄化取坐标
+    const scatter = t as Partial<ScatterData>;
+    const x = scatter.x;
+    const y = scatter.y;
+    if (!Array.isArray(x) || !Array.isArray(y)) continue;
+    for (let i = y.length - 1; i >= 0; i--) {
+      const v = y[i];
+      if (v == null || Number.isNaN(v as number)) continue;
+      const d = x[i];
+      if (typeof d === 'string' && (last === null || d > last)) last = d;
+      break; // 只看该 trace 的最后一个有效点
+    }
+  }
+  return last;
 }
 
 export function buildBaseLayout(opts?: {
