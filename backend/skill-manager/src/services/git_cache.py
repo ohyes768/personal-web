@@ -338,6 +338,44 @@ class GitCacheService:
         """
         return (self.repo_cache_dir(canonical_url) / ".git").is_dir()
 
+    def cached_scan_available(self, canonical_url: str) -> bool:
+        """仅将可读取 HEAD 且包含 SKILL.md 的 checkout 作为离线扫描源。"""
+        repo_dir = self.repo_cache_dir(canonical_url)
+        if not (repo_dir / ".git").is_dir():
+            return False
+        try:
+            self._run_git(["rev-parse", "--verify", "HEAD"], cwd=repo_dir)
+            return bool(self._discover(repo_dir).candidates)
+        except (GitOperationError, OSError):
+            return False
+
+    def cached_skill_available(self, skill: RegistrySkill) -> bool:
+        """判断指定登记路径能否直接使用已有 checkout。"""
+        canonical = self._require_github_skill(skill)
+        self._require_safe_relative_path(skill)
+        return self.cached_scan_available(canonical) and (
+            self.repo_cache_dir(canonical) / skill.path / _SKILL_MD
+        ).is_file()
+
+    def use_cached_skill(self, skill: RegistrySkill) -> Path:
+        """离线登记：校验本地版本并记录它，供后续发布使用。"""
+        if not self.cached_skill_available(skill):
+            raise CacheValidationError(f"valid cache for {skill.id!r} does not exist")
+        canonical = self._require_github_skill(skill)
+        repo_dir = self.repo_cache_dir(canonical)
+        revision = self.current_revision(skill)
+        info = UpdateInfo(
+            skill_id=skill.id,
+            repository=canonical,
+            remote_revision=revision,
+            remote_tags=[],
+            cached_revision=revision,
+            has_update=False,
+            checked_at=_utc_now_iso(),
+        )
+        self._record_check_success(skill, canonical, info)
+        return self._validated_skill_dir(skill, repo_dir)
+
     # ---------- 扫描 ----------
 
     def verify_reachable(self, canonical_url: str) -> None:
@@ -367,6 +405,9 @@ class GitCacheService:
         上报，无回调时进度仅被丢弃。
         """
         canonical = self.normalize_repository(repository_url)
+        cached_dir = self.repo_cache_dir(canonical)
+        if self.cached_scan_available(canonical):
+            return self._discover(cached_dir)
         workspace_parent = self.settings.state_dir / _SCAN_WORKSPACE_PARENT
         workspace_parent.mkdir(parents=True, exist_ok=True)
         workspace = workspace_parent / uuid.uuid4().hex

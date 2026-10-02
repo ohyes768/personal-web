@@ -321,7 +321,8 @@ class GithubTaskManager:
 
     def _execute_scan(self, task_id: str, task: _MutableTask) -> None:
         self._set_stage(task_id, "remote_check")
-        self._git_cache.verify_reachable(task.repository)
+        if not self._git_cache.cached_scan_available(task.repository):
+            self._git_cache.verify_reachable(task.repository)
         scanned = self._git_cache.scan(
             task.repository, on_progress=self._progress_sink(task_id)
         )
@@ -338,13 +339,16 @@ class GithubTaskManager:
     def _execute_register(self, task_id: str, task: _MutableTask) -> None:
         skill = self._require_skill(task_id, task)
         self._set_stage(task_id, "remote_check")
-        self._git_cache.verify_reachable(task.repository)
-        info = self._git_cache.check_update(skill)
-        self._git_cache.ensure_cached(
-            skill,
-            info.remote_revision,
-            on_progress=self._progress_sink(task_id),
-        )
+        if self._git_cache.cached_skill_available(skill):
+            self._git_cache.use_cached_skill(skill)
+        else:
+            self._git_cache.verify_reachable(task.repository)
+            info = self._git_cache.check_update(skill)
+            self._git_cache.ensure_cached(
+                skill,
+                info.remote_revision,
+                on_progress=self._progress_sink(task_id),
+            )
         self._set_stage(task_id, "registry")
         self._registry.upsert(skill)
 
@@ -360,18 +364,22 @@ class GithubTaskManager:
             )
         first = task.skills[0]
         self._set_stage(task_id, "remote_check")
-        self._git_cache.verify_reachable(task.repository)
-        info = self._git_cache.check_update(first)
-        self._git_cache.ensure_cached(
-            first,
-            info.remote_revision,
-            on_progress=self._progress_sink(task_id),
-        )
+        using_cache = self._git_cache.cached_scan_available(task.repository)
+        if not using_cache:
+            self._git_cache.verify_reachable(task.repository)
+            info = self._git_cache.check_update(first)
+            self._git_cache.ensure_cached(
+                first,
+                info.remote_revision,
+                on_progress=self._progress_sink(task_id),
+            )
         self._set_stage(task_id, "registry")
         succeeded = 0
         for skill in task.skills:
             try:
                 self._git_cache.ensure_skill_path_cached(skill)
+                if using_cache:
+                    self._git_cache.use_cached_skill(skill)
                 self._registry.upsert(skill)
             except (RegistryValidationError, GitCacheError) as exc:
                 self._append_batch_result(task_id, skill.id, "error", str(exc))

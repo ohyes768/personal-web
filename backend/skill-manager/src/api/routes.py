@@ -195,7 +195,8 @@ def scan_github_repository(
     try:
         canonical = git_cache.normalize_repository(req.repository)
         logger.info("scan github start: repository=%s", canonical)
-        git_cache.verify_reachable(canonical)
+        if not git_cache.cached_scan_available(canonical):
+            git_cache.verify_reachable(canonical)
     except InvalidRepositoryError as exc:
         logger.warning(
             "scan github invalid repository: error_type=%s", type(exc).__name__
@@ -278,7 +279,8 @@ def register_github_skill(
             detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
         ) from exc
     try:
-        git_cache.verify_reachable(canonical)
+        if not git_cache.cached_scan_available(canonical):
+            git_cache.verify_reachable(canonical)
     except UnreachableRepositoryError:
         logger.warning("register github unreachable: repository=%s", canonical)
         raise HTTPException(
@@ -374,7 +376,8 @@ def register_github_batch(
             detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
         ) from exc
     try:
-        git_cache.verify_reachable(canonical)
+        if not git_cache.cached_scan_available(canonical):
+            git_cache.verify_reachable(canonical)
     except UnreachableRepositoryError:
         logger.warning("register github batch unreachable: repository=%s", canonical)
         raise HTTPException(
@@ -753,6 +756,11 @@ def _ensure_cached_at_recorded_revision(
     """
     check = store.get_github_check(skill.id)
     if check is not None and check.result == "ok" and check.remote_revision:
+        if (
+            git_cache.cached_skill_available(skill)
+            and git_cache.current_revision(skill) == check.remote_revision
+        ):
+            return
         git_cache.ensure_cached(skill, check.remote_revision)
 
 

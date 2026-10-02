@@ -21,7 +21,11 @@ ${GITHUB_SKILL_CACHE_ROOT}/
 ├── .tmp/                          # 首次 clone 的临时目录，成功后原子 rename
 ```
 
-（扫描临时 clone 在 `${STATE_DIR}/scan/*`，用完即删，不落缓存根。）
+扫描优先读取已有完整仓库缓存（`.git`、有效 HEAD、至少一个 `SKILL.md`），
+无需连接 GitHub；没有有效缓存时临时 clone 到 `${STATE_DIR}/scan/*`，
+用完即删。登记优先使用对应路径含 `SKILL.md` 的缓存，记录当前 HEAD
+作为发布版本。发布时若缓存 HEAD 与记录版本一致，直接使用本地内容，
+无需 fetch。无有效缓存时仍按原流程联网预检、clone/fetch。
 
 - `repos/` 目录名 `<owner>__<repo>`：owner 段禁止下划线（URL 规范化正则
   保证），`__` 分隔可用 `partition("__")` 可逆解析回 (owner, repo)；
@@ -39,15 +43,16 @@ skill-manager **不读源库任何登记文件**：自研 Skill 经 `sync_local(
 
 | 环节 | 代码位置 | 行为 |
 |------|---------|------|
-| UI 登记 | `POST /skills/github` → 同步预检 + 后台任务 → `check_update` + `ensure_cached` | 缓存缺失 clone，已有 fetch |
-| UI 批量登记 | `POST /skills/github/batch` → 同步校验 + 后台 `register_batch` 任务 | 仓库级 ensure_cached 一次 + 逐项 ensure_skill_path_cached |
+| UI 登记 | `POST /skills/github` → 同步预检 + 后台任务 | 有效缓存直接登记；缺失时 `check_update` + `ensure_cached` |
+| UI 批量登记 | `POST /skills/github/batch` → 同步校验 + 后台 `register_batch` 任务 | 有效缓存直接登记；缺失时仓库级 ensure_cached 一次 + 逐项 ensure_skill_path_cached |
 | 卡片 Clone 按钮 | `POST /skills/github/{id}/clone` → 同上 | 缓存缺失时 clone，已有则 fetch |
-| UI 扫描 | `POST /skills/github/scan` → 同步预检 + 后台任务 → `scan()` | 临时 clone，用完即删 |
-| 发布执行 | `_ensure_cached_at_recorded_revision` | 有成功检查记录才 fetch/checkout |
+| UI 扫描 | `POST /skills/github/scan` → 同步预检 + 后台任务 → `scan()` | 有效缓存直接扫描；缺失时临时 clone，用完即删 |
+| 发布执行 | `_ensure_cached_at_recorded_revision` | 缓存版本已匹配时直接使用；其他情况按成功检查记录 fetch/checkout |
 | 计划预览 / 检查更新 | `plan` / `check-updates` | **只读，绝不 fetch**（design 4.2/5） |
 
 四个写入口（登记/批量登记/Clone/扫描）自 2026-09-26 起均为**后台任务**（`GithubTaskManager`，
-内存态、daemon 线程）：同步段只做密码校验 + ≤30s ls-remote 预检，202 返回
+内存态、daemon 线程）：同步段做密码校验；扫描/登记有有效缓存时跳过
+远端预检，缺失时执行 ≤30s ls-remote 预检。202 返回
 `{task_id, kind}`，前端经 `GET /skills/github/tasks/{task_id}` 轮询。要点（勿回退）：
 
 - clone 统一走 `_run_git_streaming`（Popen + 读线程），`git --progress` 的

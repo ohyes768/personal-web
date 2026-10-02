@@ -233,6 +233,93 @@ def test_scan_is_public_and_creates_background_task(client):
     assert {"path": "skills", "is_dir": True} in snapshot["top_level"]
 
 
+def test_scan_and_register_use_existing_cache_when_remote_is_unreachable(
+    client, roots, upstream_repo
+):
+    from src.main import app
+
+    cache = app.dependency_overrides[get_git_cache]()
+    repo_dir = cache.repo_cache_dir(CANONICAL_URL)
+    repo_dir.parent.mkdir(parents=True)
+    run_git("clone", str(upstream_repo.bare), str(repo_dir))
+    run_git("remote", "set-url", "origin", str(roots.state / "unreachable.git"), cwd=repo_dir)
+    cache._remotes = {CANONICAL_URL: str(roots.state / "unreachable.git")}
+
+    scan = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
+    assert scan.status_code == 202
+    scanned = _await_task(client, scan.json()["task_id"])
+    assert scanned["state"] == "done"
+    assert [item["path"] for item in scanned["candidates"]] == [
+        "skills/alpha", "skills/beta"
+    ]
+
+    registered = client.post(
+        "/api/skills/github",
+        json={
+            "password": PASSWORD,
+            "repository": CANONICAL_URL,
+            "path": "skills/alpha",
+            "name": "Alpha",
+        },
+    )
+    assert registered.status_code == 202
+    done = _await_task(client, registered.json()["task_id"])
+    assert done["state"] == "done"
+    assert done["error_code"] is None
+    store = SkillStateStore.from_settings(Settings())
+    check = store.get_github_check(done["skill_id"])
+    assert check is not None and check.remote_revision == upstream_repo.revision
+
+    from src.api.routes import _ensure_cached_at_recorded_revision
+
+    skill = store.get_registry_skill(done["skill_id"])
+    _ensure_cached_at_recorded_revision(cache, store, skill)
+
+    batch = client.post("/api/skills/github/batch", json=_batch_payload())
+    assert batch.status_code == 202
+    batch_done = _await_task(client, batch.json()["task_id"])
+    assert batch_done["state"] == "done"
+    assert [item["status"] for item in batch_done["results"]] == ["error", "success"]
+
+
+def test_invalid_local_cache_still_checks_remote(client, roots, upstream_repo):
+    from src.main import app
+
+    cache = app.dependency_overrides[get_git_cache]()
+    repo_dir = cache.repo_cache_dir(CANONICAL_URL)
+    repo_dir.parent.mkdir(parents=True)
+    run_git("clone", str(upstream_repo.bare), str(repo_dir))
+    (repo_dir / "skills/alpha/SKILL.md").unlink()
+    (repo_dir / "skills/beta/SKILL.md").unlink()
+    cache._remotes = {CANONICAL_URL: str(roots.state / "unreachable.git")}
+
+    response = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
+    assert response.status_code == 400
+    assert response.json()["code"] == "unreachable"
+
+
+def test_batch_offline_cache_keeps_valid_item_when_first_path_is_missing(
+    client, roots, upstream_repo
+):
+    from src.main import app
+
+    cache = app.dependency_overrides[get_git_cache]()
+    repo_dir = cache.repo_cache_dir(CANONICAL_URL)
+    repo_dir.parent.mkdir(parents=True)
+    run_git("clone", str(upstream_repo.bare), str(repo_dir))
+    cache._remotes = {CANONICAL_URL: str(roots.state / "unreachable.git")}
+
+    payload = _batch_payload()
+    payload["items"][0]["path"] = "skills/missing"
+    created = client.post("/api/skills/github/batch", json=payload)
+    assert created.status_code == 202
+    snapshot = _await_task(client, created.json()["task_id"])
+    assert snapshot["state"] == "done"
+    assert [item["status"] for item in snapshot["results"]] == [
+        "error", "success"
+    ]
+
+
 def test_scan_rejects_invalid_urls_synchronously(client):
     """非法 URL 同步 400，不创建任务。"""
     for url in ("file:///tmp/skill", "https://gitlab.com/a/b", "not a url"):
