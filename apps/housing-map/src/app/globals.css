@@ -670,6 +670,7 @@ body {
 }
 
 .tag-subway { background: rgba(91, 141, 239, 0.2); color: var(--metro); }
+.tag-xiaoshan { background: rgba(180, 95, 63, 0.16); color: var(--accent-warm); }
 .tag-school { background: rgba(123, 104, 238, 0.2); color: var(--school); }
 .tag-hospital { background: rgba(255, 107, 157, 0.2); color: var(--hospital); }
 .tag-mall { background: rgba(255, 179, 71, 0.2); color: var(--mall); }

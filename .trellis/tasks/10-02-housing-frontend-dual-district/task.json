@@ -3,7 +3,7 @@
   "name": "housing-frontend-dual-district",
   "title": "前端双区化：区筛选、围栏、默认视野与文案",
   "description": "前端双围栏POI绘制、区筛选chips（全部/滨江/萧山）、默认视野调整、标题与market_reference scope更新",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend/douyin-processor",

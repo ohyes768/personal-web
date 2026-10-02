@@ -2,8 +2,8 @@
 export interface Community {
   community_id: string;
   community_name: string;
-  district: string;       // 滨江区
-  subdistrict: string;   // 浦沿/长河/西兴
+  district: string;       // 滨江 / 萧山
+  subdistrict: string;   // 滨江: 浦沿/长河/西兴/滨盛; 萧山: 钱江世纪城/开发区/宁围/闻堰
   address: string;
   latitude: number;       // 高德坐标
   longitude: number;
@@ -132,7 +132,7 @@ export const MOCK_COMMUNITIES: Community[] = [
   {
     community_id: '20044031',
     community_name: '万科璞悦湾',
-    district: '滨江区',
+    district: '滨江',
     subdistrict: '浦沿',
     address: '滨文路与浦沿路交叉口',
     latitude: 30.1749,
@@ -154,7 +154,7 @@ export const MOCK_COMMUNITIES: Community[] = [
   {
     community_id: '10001734',
     community_name: '世茂之西湖',
-    district: '滨江区',
+    district: '滨江',
     subdistrict: '浦沿',
     address: '浦沿街道世茂之西湖小区',
     latitude: 30.1812,
@@ -176,7 +176,7 @@ export const MOCK_COMMUNITIES: Community[] = [
   {
     community_id: '10001735',
     community_name: '世茂之西湖茂御居',
-    district: '滨江区',
+    district: '滨江',
     subdistrict: '浦沿',
     address: '浦沿街道茂御居',
     latitude: 30.1820,

@@ -6,6 +6,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/skill-manager", "dev"],
       "port": 3008
+    },
+    {
+      "name": "housing-map-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "apps/housing-map", "dev"],
+      "port": 3007
     }
   ]
 }

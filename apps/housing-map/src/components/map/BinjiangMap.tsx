@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Community, MapPOI } from '@/lib/types';
 import { getDisplayPrice, getPriceColor, SCHOOL_LEVEL_COLORS, SCHOOL_LEVEL_LABELS } from '@/lib/types';
+import { scopeBounds } from '@/lib/binjiang-boundary';
 
 export interface TransitRoute {
   id: string;
@@ -29,7 +30,11 @@ interface BinjiangMapProps {
 }
 
 const GAODE_MAP_KEY = process.env.NEXT_PUBLIC_GAODE_MAP_KEY || '';
-const BINJIANG_CENTER: [number, number] = [120.17, 30.18];
+// 默认视野: 覆盖范围 (滨江 ∪ 萧山接壤板块) 围栏外接框, 中心由围栏集合推导;
+// zoom 11 实测刚好覆盖垂直方向紧约束 (双区 lat 跨度 ~21km, 600px 高容器);
+// 未用 map.setBounds —— JS API 2.0 实测 fit 结果不稳定 (同 bounds 多次调用 zoom 9.1-9.6 摆动)
+const SCOPE = scopeBounds();
+const SCOPE_CENTER: [number, number] = [(SCOPE.lngMin + SCOPE.lngMax) / 2, (SCOPE.latMin + SCOPE.latMax) / 2];
 
 // POI 圆点配色，与 page.tsx 的 POI_CONFIG 保持一致 (浅色底图上适当加深保证对比度)
 const POI_MARKER_COLORS: Record<string, string> = {
@@ -202,8 +207,8 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
     if (!mapLoaded || !mapRef.current || mapInstanceRef.current) return;
 
     const map = new window.AMap.Map(mapRef.current, {
-      zoom: 13,
-      center: BINJIANG_CENTER,
+      zoom: 11,
+      center: SCOPE_CENTER,
       mapStyle: 'amap://styles/whitesmoke',
       viewMode: '2D',
     });

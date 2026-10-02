@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
 import type { Community, MapPOI, MarketReference, SchoolLevel } from '@/lib/types';
 import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
-import { isInBinjiang } from '@/lib/binjiang-boundary';
+import { isInScope } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
 
 // 从 API 获取小区数据
@@ -217,6 +217,8 @@ export default function BinjiangMapPage() {
     new Set(['primary', 'middle'] as SchoolLevel[])   // 默认只开小学+中学(学区房主场景)
   );
   const [searchQuery, setSearchQuery] = useState('');
+  // 区筛选: 全部 / 滨江 / 萧山 (district 字段取值"滨江"/"萧山", 后端已按围栏过滤下发)
+  const [districtFilter, setDistrictFilter] = useState<'all' | '滨江' | '萧山'>('all');
   // 默认仅住宅类（与旧后端白名单口径一致，默认视野不变）；商办类需手动勾选类型或"全部"
   const [propertyTypes, setPropertyTypes] = useState<Set<string>>(
     new Set(['住宅', '别墅', '排屋'])
@@ -381,6 +383,7 @@ export default function BinjiangMapPage() {
 
   const filteredCommunities = communities.filter(c =>
     c.community_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
+    (districtFilter === 'all' || c.district === districtFilter) &&
     (propertyTypes.has('全部') || propertyTypes.has(c.property_type ?? ''))
   );
   const mapCommunities = marketSubdistrict
@@ -388,15 +391,15 @@ export default function BinjiangMapPage() {
     : filteredCommunities;
 
   // 跨小区去重后的可见 POI（同一地铁站/学校会出现在多个小区的周边列表里）
-  // 地图绘制以滨江区行政边界多边形为地理围栏(矩形 bbox 会误伤钱塘江北岸设施);
-  // 弹窗周边配套不受此限, 保留滨江周边宽框数据
+  // 地图绘制以覆盖范围围栏 (滨江 ∪ 萧山接壤板块多边形) 为地理围栏, 矩形 bbox 会误伤区外设施;
+  // 弹窗周边配套不受此限, 保留周边宽框数据
   const visiblePOIs = useMemo<MapPOI[]>(() => {
     const seen = new Map<string, MapPOI>();
     for (const c of communities) {
       for (const poi of c.pois) {
         const type = poi.type as MapPOI['type'];
         if (!poi.latitude || !poi.longitude) continue;
-        if (!isInBinjiang(poi.longitude, poi.latitude)) continue;
+        if (!isInScope(poi.longitude, poi.latitude)) continue;
 
         if (type === 'school') {
           // 学段多选: 培训机构类噪音(null)不绘制
@@ -543,6 +546,22 @@ export default function BinjiangMapPage() {
 
             {/* 右侧控制面板 */}
             <div className={`control-panel ${panelCollapsed ? 'collapsed' : ''}`}>
+              <div className="panel-section">
+                <div className="panel-title">区域</div>
+                <div style={{ display: 'flex', gap: '6px' }}>
+                  {(['all', '滨江', '萧山'] as const).map(d => (
+                    <button
+                      key={d}
+                      className={`poi-toggle ${districtFilter === d ? 'active' : ''}`}
+                      style={{ padding: '4px 10px', fontSize: '12px' }}
+                      onClick={() => setDistrictFilter(d)}
+                    >
+                      {d === 'all' ? '全部' : d}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               <div className="panel-section">
                 <div className="panel-title">POI 图层</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -700,18 +719,18 @@ function MarketOverviewPage({
       <section className="market-hero">
         <div>
           <div className="market-kicker">MARKET REFERENCE · {marketReference.scope}</div>
-          <h1>滨江市场行情 <span>挂牌参考</span></h1>
+          <h1>挂牌参考行情</h1>
           <p className="market-source">
             数据来源：<a href={marketReference.source.url} target="_blank" rel="noreferrer">{marketReference.source.name}</a>
             <span>快照日期：{marketReference.source.captured_at}</span>
           </p>
         </div>
-        <p className="market-disclaimer">挂牌参考价反映当前卖方报价，不是网签成交价。</p>
+        <p className="market-disclaimer">挂牌参考价反映当前卖方报价，不是网签成交价。当前快照仅覆盖滨江区，萧山板块待补录。</p>
       </section>
 
-      <section className="market-summary" aria-label="滨江挂牌参考概览">
+      <section className="market-summary" aria-label="挂牌参考概览">
         <article className="market-card market-price-card">
-          <div className="market-card-label">滨江挂牌参考均价</div>
+          <div className="market-card-label">挂牌参考均价（{marketReference.scope}）</div>
           <strong>{marketReference.overall.avg_price.toLocaleString()}</strong>
           <span>元 / ㎡</span>
         </article>
@@ -1171,9 +1190,18 @@ function DashboardPage({
       <div className="filter-bar">
         <select className="select-input" value={subdistrictFilter} onChange={e => { setSubdistrictFilter(e.target.value); setPage(1); }}>
           <option value="">全部板块</option>
-          <option value="浦沿">浦沿</option>
-          <option value="长河">长河</option>
-          <option value="西兴">西兴</option>
+          <optgroup label="滨江">
+            <option value="浦沿">浦沿</option>
+            <option value="长河">长河</option>
+            <option value="西兴">西兴</option>
+            <option value="滨盛">滨盛</option>
+          </optgroup>
+          <optgroup label="萧山">
+            <option value="钱江世纪城">钱江世纪城</option>
+            <option value="开发区">开发区</option>
+            <option value="宁围">宁围</option>
+            <option value="闻堰">闻堰</option>
+          </optgroup>
         </select>
         <select className="select-input" value={priceFilter} onChange={e => { setPriceFilter(e.target.value); setPage(1); }}>
           <option value="">价格区间</option>
@@ -1220,7 +1248,7 @@ function DashboardPage({
                 <tr key={community.community_id}>
                   <td style={{ fontWeight: '500' }}>{community.community_name}</td>
                   <td>
-                    <span className="tag tag-subway">{community.subdistrict}</span>
+                    <span className={`tag ${community.district === '萧山' ? 'tag-xiaoshan' : 'tag-subway'}`}>{community.subdistrict}</span>
                   </td>
                   <td>
                     <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>{community.property_type || '-'}</span>
