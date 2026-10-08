@@ -47,6 +47,23 @@ DIMENSION_ORDER = [
 # 归档月份格式 'YYYY-MM'(month 会拼入归档路径,严格校验防穿越)
 MONTH_PATTERN = re.compile(r"^\d{4}-\d{2}$")
 
+
+def _prev_month(month: str) -> str:
+    """上一个月 'YYYY-MM'(跨年正确:1 月 → 去年 12 月)"""
+    y, m = int(month[:4]), int(month[5:7])
+    if m == 1:
+        return f"{y - 1}-12"
+    return f"{y}-{m - 1:02d}"
+
+
+def _pending_floor(today: date) -> str:
+    """回退/占位仍适用的最旧请求月 = 上月。
+
+    月频数据源(社融/CPI/PMI 等)要到次月中旬才发布,上月视图在次月
+    上半月仍是「数据待发布」而非历史空洞,应保留占位+推送时间语义。
+    """
+    return _prev_month(today.strftime("%Y-%m"))
+
 # dimension key → skill 目录名(归档文件名 = <skill 目录名>.json)
 DIMENSION_SKILL_DIRS = {
     "monetary_policy": "monetary-policy-skill",
@@ -302,18 +319,19 @@ class MacroSignalService:
     def _read_archive_groups(self, month: str) -> Optional[Dict[str, MacroSignalGroup]]:
         """读 archive/<month>/ 下 6 个归档文件并转 shape;目录不存在返回 None。
 
-        当月/未来月归档缺失的 skill → 回退读平铺最新文件(按月过滤:非请求月
+        当月/上月归档缺失的 skill → 回退读平铺最新文件(按月过滤:非请求月
         指标转占位,平铺 mtime=最后推送时间),让「数据未发布」仍能展示占位+
         推送时间,而不是退化成无任何信息的空 group(当月只要有任一 skill 归档
         过,其余未发布维度不应丢失「占位+推送时间」语义)。
-        历史月归档缺失 → 空 group(数据不会再补,与「维度缺失」语义一致)。
+        更早的历史月归档缺失 → 空 group(数据不会再补,与「维度缺失」语义一致)。
         """
         archive_dir = Path(self.settings.macro_signal_data_dir) / "archive" / month
         if not archive_dir.is_dir():
             return None
 
-        # 回退仅对当月/未来月有意义(历史月数据不会再补,占位的「下期预期」是误导)
-        fallback_ok = month >= date.today().strftime("%Y-%m")
+        # 回退仅对当月/上月有意义(上月数据源次月中旬才发布;更早的历史月
+        # 数据不会再补,占位的「下期预期」是误导)
+        fallback_ok = month >= _pending_floor(date.today())
 
         def _fallback_latest(dim_key: str) -> MacroSignalGroup:
             """归档缺失 → 读平铺最新文件按月过滤(与无归档目录的兜底路径同语义)"""
@@ -376,9 +394,9 @@ class MacroSignalService:
                 for ind in group.indicators
             )
             if not any_match:
-                # 无任何指标落在请求月:当前/未来月返回全占位(暂未获取+预期发布),
-                # 历史月数据不会再补 → None
-                if month < date.today().strftime("%Y-%m"):
+                # 无任何指标落在请求月:当月/上月返回全占位(暂未获取+预期发布),
+                # 更早的历史月数据不会再补 → None
+                if month < _pending_floor(date.today()):
                     logger.info(f"月份 {month} 无数据(macro-fin-skill 暂无快照)")
                     return None
 

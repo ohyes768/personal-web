@@ -124,7 +124,7 @@ class TestFallbackMonthFilter:
 class TestArchiveFallback:
     """归档路径下 skill 归档缺失的回退行为
 
-    背景:当月只要有任一 skill 归档过(如货币政策),archive/<当月>/ 即存在,
+    背景:当月/上月只要有任一 skill 归档过(如货币政策),archive/<月>/ 即存在,
     其余数据未发布的 skill 归档缺失 —— 不应退化成无信息的空 group,
     而应回退平铺最新文件(占位+推送时间),让页面能区分
     「skill 活着但数据未发布」和「skill 停推」。
@@ -170,17 +170,48 @@ class TestArchiveFallback:
         assert cpi.next_release_at == "2026-09-09"
         assert inflation.pushed_at == "2026-08-16T02:32:04Z"
 
-    def test_historical_month_missing_archive_stays_empty(self, skill_dir, service):
-        """历史月归档缺失 → 保持空 group(数据不会再补,占位预期是误导)"""
+    def test_prev_month_missing_archive_falls_back_to_flat(self, skill_dir, service):
+        """上月归档缺失 → 仍回退平铺(月频数据源次月中旬才发布,上月视图
+        在次月上半月仍是「数据待发布」,正是 10 月看 9 月的线上场景)"""
+        import os
+        from datetime import datetime, timezone
+
+        # 平铺:inflation 还是 6 月数据(7 月 CPI 次月 9 日才发布),
+        # mtime = skill 最后一次推送(7 月中)
         write_skill_json(
             skill_dir, "inflation-skill", "macro_signal.json",
-            make_macro_signal("2026-07-09", details=INFLATION_JUL),
+            make_macro_signal("2026-06-09", conclusion="温和", details=INFLATION_JUL),
         )
-        # 7 月归档目录存在,但只有货币政策归档
+        flat = skill_dir / "inflation-skill" / "macro_signal.json"
+        pushed = datetime(2026, 7, 16, 2, 32, 4, tzinfo=timezone.utc)
+        os.utime(flat, (pushed.timestamp(), pushed.timestamp()))
+
+        # 上月(2026-07)归档目录存在,但只有货币政策归档
         self._archive(skill_dir, "2026-07", "monetary-policy-skill",
                       make_macro_signal("2026-07-20", details=MONETARY_JUL))
 
         snap = service.get_snapshot("2026-07")
+        assert snap is not None
+
+        # 归档缺失的维度:回退平铺 → 占位 + 推送时间
+        # (预期发布日以「今天 8-17」为锚 → 9-09,而非已过去的 8-09)
+        inflation = snap.groups["inflation"]
+        cpi = {i.key: i for i in inflation.indicators}["cpi_yoy"]
+        assert cpi.value is None
+        assert cpi.next_release_at == "2026-09-09"
+        assert inflation.pushed_at == "2026-07-16T02:32:04Z"
+
+    def test_historical_month_missing_archive_stays_empty(self, skill_dir, service):
+        """历史月(早于上月)归档缺失 → 保持空 group(数据不会再补,占位预期是误导)"""
+        write_skill_json(
+            skill_dir, "inflation-skill", "macro_signal.json",
+            make_macro_signal("2026-06-09", details=INFLATION_JUL),
+        )
+        # 6 月归档目录存在,但只有货币政策归档
+        self._archive(skill_dir, "2026-06", "monetary-policy-skill",
+                      make_macro_signal("2026-06-20", details=MONETARY_JUL))
+
+        snap = service.get_snapshot("2026-06")
         assert snap is not None
         assert len(snap.groups["inflation"].indicators) == 0
 
