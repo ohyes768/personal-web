@@ -15,8 +15,6 @@
   --text-3: #9b958b;
   --ok: #3a9a50;            /* 在线 */
   --bad: #c0453e;           /* 离线 */
-  --up: #c0453e;            /* A 股习惯：涨红 */
-  --down: #3a9a50;          /* 跌绿 */
   --shadow: rgba(60, 50, 35, .08);
 }
 @media (prefers-color-scheme: dark) {
@@ -30,8 +28,6 @@
     --text-3: #807a70;
     --ok: #66c17e;
     --bad: #e07a6b;
-    --up: #e07a6b;
-    --down: #66c17e;
     --shadow: rgba(0, 0, 0, .3);
   }
 }
@@ -55,7 +51,7 @@ h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: .5px; }
 
 .card {
   display: flex; flex-direction: column; gap: 10px;
-  min-height: 132px;
+  min-height: 96px;
   padding: 16px 18px;
   background: var(--card);
   border: 1px solid var(--border);
@@ -78,17 +74,8 @@ h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: .5px; }
 .status[data-state="online"] .dot { background: var(--ok); }
 .status[data-state="offline"] .dot { background: var(--bad); }
 
-.card-body { flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 3px; min-height: 56px; }
-.kpi-value { font-size: 26px; font-weight: 700; line-height: 1.15; letter-spacing: -.5px; font-variant-numeric: tabular-nums; }
-.kpi-value .unit { margin-left: 5px; font-size: 12px; font-weight: 400; letter-spacing: 0; color: var(--text-3); }
-.kpi-label { font-size: 12px; color: var(--text-2); }
-.kpi-extra { margin-top: 2px; font-size: 13px; color: var(--text-2); }
-.kpi-extra b { font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
-.kpi-extra b.up { color: var(--up); }
-.kpi-extra b.down { color: var(--down); }
-.kpi-na { font-size: 20px; color: var(--text-3); }
+.card-body { flex: 1; display: flex; align-items: center; }
 .desc { font-size: 13px; line-height: 1.55; color: var(--text-2); }
-.card-foot { min-height: 15px; font-size: 11px; color: var(--text-3); }
 
 footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
 .noscript-tip { margin: 12px 0 0; font-size: 12px; color: var(--bad); }
@@ -98,7 +85,7 @@ footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
 <div class="wrap">
   <header>
     <h1>个人资讯</h1>
-    <p class="sub">自用数据驾驶舱 · 8 个应用</p>
+    <p class="sub">8 个应用 · 状态实时探测</p>
   </header>
   <main class="grid">
     <a class="card" data-key="dividend" href="/dividend/">
@@ -106,83 +93,75 @@ footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
         <span class="card-title"><span class="icon">📈</span>股息率分析</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">红利指数成分股的股息率排行与 M120 均线偏离</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
     <a class="card" data-key="macro" href="/macro">
       <div class="card-head">
         <span class="card-title"><span class="icon">📊</span>宏观经济</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">利率 / 汇率 / 流动性 / 风险偏好日频快照</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
     <a class="card" data-key="map" href="/map">
       <div class="card-head">
         <span class="card-title"><span class="icon">🗺️</span>滨江购房地图</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">滨江区小区房价参考、评分与地铁通勤</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
     <a class="card" data-key="funds" href="/funds">
       <div class="card-head">
         <span class="card-title"><span class="icon">💰</span>基金筛选</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">债基多维筛选与表现跟踪</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
     <a class="card" data-key="rss" href="/rss">
       <div class="card-head">
         <span class="card-title"><span class="icon">📡</span>RSS 中转</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">agent 推送的内容聚合为 RSS 订阅源</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
     <a class="card" data-key="douyin" href="/douyin">
       <div class="card-head">
         <span class="card-title"><span class="icon">🎬</span>抖音视频文字稿</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">视频链接转文字稿，按发布时间浏览</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
     <a class="card" data-key="skills" href="/skills">
       <div class="card-head">
         <span class="card-title"><span class="icon">🧩</span>Skill 发布管理台</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">Skill 克隆、登记与发布到 OpenClaw / Hermes</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
     <a class="card" data-key="kids" href="/kids">
       <div class="card-head">
         <span class="card-title"><span class="icon">🧸</span>0–1岁音频管理</span>
         <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
       </div>
-      <div class="card-body" data-role="kpi">
+      <div class="card-body">
         <span class="desc">0–1 岁音频的预检与下载管理</span>
       </div>
-      <div class="card-foot" data-role="meta"></div>
     </a>
   </main>
-  <noscript><p class="noscript-tip">未启用 JavaScript：仅显示应用链接，无服务状态与数据。</p></noscript>
+  <noscript><p class="noscript-tip">未启用 JavaScript：仅显示应用链接，无服务状态。</p></noscript>
   <footer>各服务状态为浏览器实时探测，点击卡片进入应用 · <span id="probe-time"></span></footer>
 </div>
 <script>
@@ -190,74 +169,11 @@ footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
   'use strict';
   var FETCH_TIMEOUT = 5000;
 
-  /* ===== 工具：转义（label 含后端返回的名称等外部字符串）与数字格式化 ===== */
-  var ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
-  function esc(s) { return String(s).replace(/[&<>"']/g, function (c) { return ESC_MAP[c]; }); }
-  function isNum(v) { return typeof v === 'number' && Number.isFinite(v); }
-  function fmt2(v) { return isNum(v) ? v.toFixed(2) : '—'; }
-  function signedPct(v) { return isNum(v) ? (v > 0 ? '+' : '') + v.toFixed(2) + '%' : '—'; }
-  function fmtInt(v) { return isNum(v) ? Math.round(v).toLocaleString('en-US') : '—'; }
-  function pctDir(v) { return v > 0 ? 'up' : v < 0 ? 'down' : ''; }
-
-  function fetchJson(url) {
-    return fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT) })
-      .then(function (res) {
-        if (!res.ok) throw new Error('HTTP ' + res.status);
-        return res.json();
-      });
-  }
-
-  /* ===== KPI 抓取（响应形状已对照后端模型 / spec 确认），返回 null = 结构对但无数据 ===== */
-  function kpiDividend() {
-    // /stocks 无分页参数，默认 sort_by=avg_yield_3y & desc，items[0] 即 Top1
-    return fetchJson('/api/dividend/stocks?min_yield=5').then(function (d) {
-      var top = d && d.items && d.items[0];
-      if (!top) return null;
-      return {
-        value: fmt2(top.avg_yield_3y) + '%',
-        label: '3年平均股息率 Top1 · ' + (top.name || top.code || ''),
-        foot: isNum(d.total) ? '共 ' + d.total + ' 只 ≥5%' : ''
-      };
-    });
-  }
-
-  function kpiMacro() {
-    // 日频快照 exchange_rate 组：主 = 美元/人民币，副 = 中美利差（契约见 spec macro-daily-snapshot）
-    return fetchJson('/api/macro/daily-snapshot').then(function (d) {
-      var indicators = (d && d.data && d.data.groups && d.data.groups.exchange_rate && d.data.groups.exchange_rate.indicators) || [];
-      var by = {};
-      indicators.forEach(function (i) { by[i.key] = i; });
-      var usd = by.usd_cny, spread = by.cn_us_10y_spread;
-      if (!usd && !spread) return null;
-      return {
-        value: fmt2(usd && usd.value),
-        label: '美元/人民币',
-        extra: spread ? { label: '中美利差', text: signedPct(spread.value) } : null,
-        foot: usd && usd.data_date ? '数据 ' + usd.data_date : ''
-      };
-    });
-  }
-
-  function kpiMap() {
-    // 挂牌参考行情：mom_percent 已是百分数（0.41 = +0.41%）；快照时间在 data.source.captured_at
-    return fetchJson('/api/map/market-reference').then(function (d) {
-      var o = d && d.data && d.data.overall;
-      if (!o) return null;
-      var captured = d.data.source && d.data.source.captured_at;
-      return {
-        value: fmtInt(o.avg_price),
-        unit: '元/㎡',
-        extra: { label: '环比', text: signedPct(o.mom_percent), dir: pctDir(o.mom_percent) },
-        foot: captured ? '快照 ' + captured : ''
-      };
-    });
-  }
-
-  /* ===== 应用注册表（顺序即使用频率优先级；骨架静态写死，JS 只做增强） ===== */
+  /* ===== 应用注册表（顺序即使用频率优先级；骨架静态写死，JS 只做状态探测增强） ===== */
   var APPS = [
-    { key: 'dividend', health: '/api/dividend/health', kpi: kpiDividend },
-    { key: 'macro', health: '/api/macro/health', kpi: kpiMacro },
-    { key: 'map', health: '/api/map/health', kpi: kpiMap },
+    { key: 'dividend', health: '/api/dividend/health' },
+    { key: 'macro', health: '/api/macro/health' },
+    { key: 'map', health: '/api/map/health' },
     { key: 'funds', health: '/api/funds/health' },
     { key: 'rss', health: '/rss/api/rss-relay/health' },
     { key: 'douyin', health: '/api/douyin/health' },
@@ -278,37 +194,12 @@ footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
       .catch(function () { setStatus(card, 'offline', '离线'); });
   }
 
-  function renderKpi(card, k) {
-    var html = ['<div class="kpi-value">' + esc(k.value) + (k.unit ? '<span class="unit">' + esc(k.unit) + '</span>' : '') + '</div>'];
-    if (k.label) html.push('<div class="kpi-label">' + esc(k.label) + '</div>');
-    if (k.extra) {
-      var cls = k.extra.dir ? ' class="' + k.extra.dir + '"' : '';
-      html.push('<div class="kpi-extra">' + esc(k.extra.label) + ' <b' + cls + '>' + esc(k.extra.text) + '</b></div>');
-    }
-    card.querySelector('[data-role="kpi"]').innerHTML = html.join('');
-    card.querySelector('[data-role="meta"]').textContent = k.foot || '';
-  }
-
-  function renderKpiNa(card) {
-    card.querySelector('[data-role="kpi"]').innerHTML = '<div class="kpi-na">—</div>';
-    card.querySelector('[data-role="meta"]').textContent = '';
-  }
-
-  function fillKpi(card, fetcher) {
-    return fetcher()
-      .then(function (k) { if (k) renderKpi(card, k); else renderKpiNa(card); })
-      .catch(function () { renderKpiNa(card); });
-  }
-
   function enhance() {
     var tasks = APPS.map(function (app) {
       var card = document.querySelector('.card[data-key="' + app.key + '"]');
       if (!card) return Promise.resolve();
       setStatus(card, 'checking', '检测中');
-      // health 与 KPI 独立请求：KPI 失败不影响状态点，反之亦然
-      var jobs = [probe(card, app.health)];
-      if (app.kpi) jobs.push(fillKpi(card, app.kpi));
-      return Promise.all(jobs);
+      return probe(card, app.health);
     });
     Promise.allSettled(tasks).then(function () {
       var t = new Date().toTimeString().slice(0, 8);
