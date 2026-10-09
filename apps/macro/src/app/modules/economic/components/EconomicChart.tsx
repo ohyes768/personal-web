@@ -7,60 +7,64 @@
 'use client';
 
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
   hasValidPoints,
   type SubplotPanelSpec,
-} from '@/lib/utils/plotlyTheme';
+} from '@/lib/utils/chartTheme';
 import { LinkedSubplots } from './LinkedSubplots';
 
 interface EconomicChartProps {
+  onContextChange?: (context: ChartContext) => void;
   data: EconomicDataResponse;
   showAllData?: boolean;
 }
 
 function relativeChange(values: Array<number | null | undefined>): Array<number | null> {
   const base = values.find((v) => v != null && !Number.isNaN(v as number));
-  if (base == null) return values.map(() => null);
+  if (base == null || base === 0) return values.map(() => null);
   return values.map((v) => {
     if (v == null || Number.isNaN(v as number)) return null;
     return (((v as number) - (base as number)) / (base as number)) * 100;
   });
 }
 
-export function EconomicChart({ data }: EconomicChartProps) {
+export function EconomicChart({ data, onContextChange }: EconomicChartProps) {
   const subplots = useMemo<SubplotPanelSpec[]>(() => {
     const dates = data.dates ?? [];
     const us = data.us_treasuries;
     const china = data.china_bond;
     const fx = data.exchange_rates;
 
-    const rateTraces: Data[] = [];
+    const rateTraces: ChartSeries[] = [];
 
     const pushRate = (
+      id: string,
       label: string,
       color: string,
       series: Array<number | null | undefined> | undefined,
       dash: 'solid' | 'dash' | 'dot' = 'solid',
     ) => {
       const t = buildLineTrace(
-        { label, color, unit: '%', yaxis: 'y', xaxis: 'x', dash, valueFormat: '.3f' },
+        { id, label, color, unit: '%', yaxis: 'y', xaxis: 'x', dash, valueFormat: '.3f' },
         dates,
         series ?? [],
       );
       if (t) rateTraces.push(t);
     };
 
-    pushRate('美债3M', '#3b82f6', us?.['3m'], 'dot');
-    pushRate('美债2Y', '#10b981', us?.['2y'], 'dash');
-    pushRate('美债10Y', '#f59e0b', us?.['10y'], 'solid');
-    pushRate('中国10Y', '#fbbf24', china?.['10y'], 'dash');
+    pushRate('us_3m', '美债3M', '#3b82f6', us?.['3m'], 'dot');
+    pushRate('us_2y', '美债2Y', '#10b981', us?.['2y'], 'dash');
+    pushRate('us_10y', '美债10Y', '#f59e0b', us?.['10y'], 'solid');
+    pushRate('cn_10y', '中国10Y', '#fbbf24', china?.['10y'], 'dash');
 
-    const fxTraces: Data[] = [];
+    const fxTraces: ChartSeries[] = [];
 
     const pushFx = (
+      id: string,
       label: string,
       color: string,
       series: Array<number | null | undefined> | undefined,
@@ -70,28 +74,24 @@ export function EconomicChart({ data }: EconomicChartProps) {
       if (!hasValidPoints(raw)) return;
       const rel = relativeChange(raw);
       const t = buildLineTrace(
-        { label, color, unit: '%', yaxis: 'y2', xaxis: 'x2', dash, valueFormat: '.2f' },
+        { id, label, color, unit: '%', transform: 'relative', yaxis: 'y2', xaxis: 'x2', dash, valueFormat: '.2f' },
         dates,
         rel,
         {
-          customdata: raw as unknown[],
-          hovertemplate:
-            `<b>${label}</b><br>` +
-            `相对变化: %{y:.2f}%<br>` +
-            `原始值: %{customdata:.4f}` +
-            `<extra></extra>`,
+          details: [{ label: '原始值', values: raw.map((v) => v ?? null), decimals: 4 }],
         },
       );
       if (t) fxTraces.push(t);
     };
 
-    pushFx('美元指数', '#06b6d4', fx?.dollar_index, 'solid');
-    pushFx('USD/CNY', '#ec4899', fx?.usd_cny, 'dash');
-    pushFx('USD/JPY', '#a78bfa', fx?.usd_jpy, 'dot');
-    pushFx('USD/EUR', '#34d399', fx?.usd_eur, 'dash');
+    pushFx('dxy', '美元指数', '#06b6d4', fx?.dollar_index, 'solid');
+    pushFx('usd_cny', 'USD/CNY', '#ec4899', fx?.usd_cny, 'dash');
+    pushFx('usd_jpy', 'USD/JPY', '#a78bfa', fx?.usd_jpy, 'dot');
+    pushFx('usd_eur', 'USD/EUR', '#34d399', fx?.usd_eur, 'dash');
 
     return [
       {
+        id: 'treasury-exchange.yields',
         traces: rateTraces,
         spec: {
           xAxisKey: 'x',
@@ -102,6 +102,7 @@ export function EconomicChart({ data }: EconomicChartProps) {
         emptyMessage: '暂无收益率数据',
       },
       {
+        id: 'treasury-exchange.fx',
         traces: fxTraces,
         spec: {
           xAxisKey: 'x2',
@@ -123,5 +124,5 @@ export function EconomicChart({ data }: EconomicChartProps) {
     ];
   }, [data]);
 
-  return <LinkedSubplots subplots={subplots} />;
+  return <LinkedSubplots onContextChange={onContextChange} chartId="treasury-exchange" subplots={subplots} />;
 }

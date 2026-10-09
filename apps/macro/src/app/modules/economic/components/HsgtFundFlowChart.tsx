@@ -6,25 +6,28 @@
  * 右：南向净流入（含 0 线）
  */
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
   buildMultiAxisLayout,
-} from '@/lib/utils/plotlyTheme';
-import { MacroPlot } from './MacroPlot';
+} from '@/lib/utils/chartTheme';
+import { MacroEChart } from './MacroEChart';
 
 interface HsgtFundFlowChartProps {
+  onContextChange?: (context: ChartContext) => void;
   data: EconomicDataResponse;
 }
 
-export function HsgtFundFlowChart({ data }: HsgtFundFlowChartProps) {
+export function HsgtFundFlowChart({ data, onContextChange }: HsgtFundFlowChartProps) {
   const { traces, layout } = useMemo(() => {
     const dates = data.dates ?? [];
 
     const traces = [
       buildLineTrace(
         {
+          id: 'north_deal',
           label: '北向成交额',
           color: '#06b6d4',
           unit: '亿元',
@@ -36,6 +39,7 @@ export function HsgtFundFlowChart({ data }: HsgtFundFlowChartProps) {
       ),
       buildLineTrace(
         {
+          id: 'south_net',
           label: '南向净流入',
           color: '#ec4899',
           unit: '亿元',
@@ -46,7 +50,7 @@ export function HsgtFundFlowChart({ data }: HsgtFundFlowChartProps) {
         dates,
         data.fund_flow?.south_net_flow ?? [],
       ),
-    ].filter(Boolean) as Data[];
+    ].filter(Boolean) as ChartSeries[];
 
     const layout = buildMultiAxisLayout({
       axes: [
@@ -74,5 +78,5 @@ export function HsgtFundFlowChart({ data }: HsgtFundFlowChartProps) {
     return { traces, layout };
   }, [data]);
 
-  return <MacroPlot data={traces} layout={layout} subplotCount={1} emptyMessage="暂无沪深港通数据" />;
+  return <MacroEChart onContextChange={onContextChange} chartId="fund-flow" data={traces} layout={layout} subplotCount={1} emptyMessage="暂无沪深港通数据" />;
 }

@@ -1,6 +1,6 @@
 /**
  * 对比指标注册表（按数据源分组）
- * 颜色与现有 chartConfig.ts 的 CHART_COLORS 保持一致
+ * 颜色与各业务图表保持一致
  */
 import type { IndicatorId, IndicatorMeta } from './types';
 

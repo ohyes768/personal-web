@@ -6,15 +6,17 @@
  * 右轴：换手率（%）
  */
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
   buildMultiAxisLayout,
-} from '@/lib/utils/plotlyTheme';
-import { MacroPlot } from './MacroPlot';
+} from '@/lib/utils/chartTheme';
+import { MacroEChart } from './MacroEChart';
 
 interface MarketSentimentChartProps {
+  onContextChange?: (context: ChartContext) => void;
   data: EconomicDataResponse;
 }
 
@@ -24,13 +26,14 @@ const TRACES = [
   { label: '换手率', color: '#eab308', yaxis: 'y2' as const, unit: '%', dataKey: 'turnover' as const, dash: 'solid' as const },
 ];
 
-export function MarketSentimentChart({ data }: MarketSentimentChartProps) {
+export function MarketSentimentChart({ data, onContextChange }: MarketSentimentChartProps) {
   const { traces, layout } = useMemo(() => {
     const dates = data.dates ?? [];
 
     const traces = TRACES.map((meta) =>
       buildLineTrace(
         {
+          id: meta.dataKey,
           label: meta.label,
           color: meta.color,
           unit: meta.unit,
@@ -41,7 +44,7 @@ export function MarketSentimentChart({ data }: MarketSentimentChartProps) {
         dates,
         data[meta.dataKey] ?? [],
       ),
-    ).filter(Boolean) as Data[];
+    ).filter(Boolean) as ChartSeries[];
 
     const layout = buildMultiAxisLayout({
       axes: [
@@ -66,5 +69,5 @@ export function MarketSentimentChart({ data }: MarketSentimentChartProps) {
     return { traces, layout };
   }, [data]);
 
-  return <MacroPlot data={traces} layout={layout} subplotCount={1} emptyMessage="暂无市场情绪数据" />;
+  return <MacroEChart onContextChange={onContextChange} chartId="market-sentiment" data={traces} layout={layout} subplotCount={1} emptyMessage="暂无市场情绪数据" />;
 }

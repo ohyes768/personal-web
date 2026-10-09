@@ -9,17 +9,19 @@
  * 空序列不入图；trace 显式绑定 xaxis/yaxis。
  */
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
   type AxisKey,
   type SubplotPanelSpec,
   type XAxisKey,
-} from '@/lib/utils/plotlyTheme';
+} from '@/lib/utils/chartTheme';
 import { LinkedSubplots } from './LinkedSubplots';
 
 interface RatesChartProps {
+  onContextChange?: (context: ChartContext) => void;
   data: EconomicDataResponse;
 }
 
@@ -27,6 +29,7 @@ type NestedKey = [keyof EconomicDataResponse, string];
 type FlatKey = keyof EconomicDataResponse;
 
 interface TraceMeta {
+  id: string;
   label: string;
   color: string;
   yaxis: AxisKey;
@@ -36,12 +39,12 @@ interface TraceMeta {
 }
 
 const RATES_META: TraceMeta[] = [
-  { label: 'DR007', color: '#f97316', yaxis: 'y', xaxis: 'x', dash: 'solid', dataKey: 'dr007' },
-  { label: 'SOFR', color: '#3b82f6', yaxis: 'y', xaxis: 'x', dash: 'dash', dataKey: ['ted_spread', 'sofr'] },
-  { label: '美债3M', color: '#22c55e', yaxis: 'y', xaxis: 'x', dash: 'dot', dataKey: ['us_treasuries', '3m'] },
-  { label: 'TED利差', color: '#ec4899', yaxis: 'y2', xaxis: 'x2', dash: 'solid', dataKey: ['ted_spread', 'ted_spread'] },
-  { label: '中国10y', color: '#f87171', yaxis: 'y3', xaxis: 'x3', dash: 'solid', dataKey: ['china_bond', '10y'] },
-  { label: '中国10年-2年', color: '#a78bfa', yaxis: 'y4', xaxis: 'x3', dash: 'dash', dataKey: ['china_bond', 'spread_10y_2y'] },
+  { id: 'dr007', label: 'DR007', color: '#f97316', yaxis: 'y', xaxis: 'x', dash: 'solid', dataKey: 'dr007' },
+  { id: 'sofr', label: 'SOFR', color: '#3b82f6', yaxis: 'y', xaxis: 'x', dash: 'dash', dataKey: ['ted_spread', 'sofr'] },
+  { id: 'us_3m', label: '美债3M', color: '#22c55e', yaxis: 'y', xaxis: 'x', dash: 'dot', dataKey: ['us_treasuries', '3m'] },
+  { id: 'ted_spread', label: 'TED利差', color: '#ec4899', yaxis: 'y2', xaxis: 'x2', dash: 'solid', dataKey: ['ted_spread', 'ted_spread'] },
+  { id: 'cn_10y', label: '中国10y', color: '#f87171', yaxis: 'y3', xaxis: 'x3', dash: 'solid', dataKey: ['china_bond', '10y'] },
+  { id: 'cn_10y_2y', label: '中国10年-2年', color: '#a78bfa', yaxis: 'y4', xaxis: 'x3', dash: 'dash', dataKey: ['china_bond', 'spread_10y_2y'] },
 ];
 
 function pickSeries(data: EconomicDataResponse, dataKey: NestedKey | FlatKey): (number | null)[] {
@@ -58,11 +61,12 @@ function pickSeries(data: EconomicDataResponse, dataKey: NestedKey | FlatKey): (
   return [];
 }
 
-function tracesOf(dates: string[], data: EconomicDataResponse, metas: TraceMeta[]): Data[] {
+function tracesOf(dates: string[], data: EconomicDataResponse, metas: TraceMeta[]): ChartSeries[] {
   return metas
     .map((meta) =>
       buildLineTrace(
         {
+          id: meta.id,
           label: meta.label,
           color: meta.color,
           unit: '%',
@@ -75,15 +79,16 @@ function tracesOf(dates: string[], data: EconomicDataResponse, metas: TraceMeta[
         pickSeries(data, meta.dataKey),
       ),
     )
-    .filter((t): t is Data => t != null);
+    .filter((t): t is ChartSeries => t != null);
 }
 
-export function RatesChart({ data }: RatesChartProps) {
+export function RatesChart({ data, onContextChange }: RatesChartProps) {
   const subplots = useMemo<SubplotPanelSpec[]>(() => {
     const dates = data.dates ?? [];
 
     return [
       {
+        id: 'rates.short-rates',
         traces: tracesOf(dates, data, RATES_META.filter((m) => m.xaxis === 'x')),
         spec: {
           xAxisKey: 'x',
@@ -94,6 +99,7 @@ export function RatesChart({ data }: RatesChartProps) {
         emptyMessage: '暂无短端利率数据',
       },
       {
+        id: 'rates.ted',
         traces: tracesOf(dates, data, RATES_META.filter((m) => m.xaxis === 'x2')),
         spec: {
           xAxisKey: 'x2',
@@ -104,6 +110,7 @@ export function RatesChart({ data }: RatesChartProps) {
         emptyMessage: '暂无 TED 利差数据',
       },
       {
+        id: 'rates.china-bonds',
         traces: tracesOf(dates, data, RATES_META.filter((m) => m.xaxis === 'x3')),
         spec: {
           xAxisKey: 'x3',
@@ -117,5 +124,5 @@ export function RatesChart({ data }: RatesChartProps) {
     ];
   }, [data]);
 
-  return <LinkedSubplots subplots={subplots} />;
+  return <LinkedSubplots onContextChange={onContextChange} chartId="rates" subplots={subplots} />;
 }

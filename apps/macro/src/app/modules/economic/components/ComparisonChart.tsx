@@ -1,15 +1,16 @@
 'use client';
 
 /**
- * 对比模块 — Plotly 多模式图表
+ * 对比模块 — ECharts 多模式图表
  *
  * 1. minMax: 满幅百分位
- * 2. normalize: 起点归一 100（涨跌预计算到 customdata）
+ * 2. normalize: 起点归一 100（涨跌预计算为 tooltip 明细）
  * 3. dualAxis: 真实值；1-2 种单位双轴，3+ 种单位按单位拆子图
  * 4. dualAxisWithCorrelation: 双轴 + 下方滚动相关性（仅 2 指标）
  */
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import { INDICATORS } from '@/lib/modules/comparison/indicators';
 import { extractSeries, normalize, minMaxNormalize } from '@/lib/modules/comparison/normalize';
@@ -20,14 +21,16 @@ import {
   buildMultiAxisLayout,
   buildLineTrace,
   chartHeightForSubplots,
+  type ChartLayout,
   type AxisKey,
   type SubplotPanelSpec,
   type XAxisKey,
-} from '@/lib/utils/plotlyTheme';
+} from '@/lib/utils/chartTheme';
 import { LinkedSubplots } from './LinkedSubplots';
-import { MacroPlot } from './MacroPlot';
+import { MacroEChart } from './MacroEChart';
 
 interface ComparisonChartProps {
+  onContextChange?: (context: ChartContext) => void;
   selectedIds: IndicatorId[];
   data: EconomicDataResponse;
   viewMode: ViewMode;
@@ -40,8 +43,8 @@ const DASHES = ['solid', 'dash', 'dot', 'dashdot'] as const;
 type BuiltChart =
   | {
       kind: 'single';
-      traces: Data[];
-      layout: Record<string, unknown>;
+      traces: ChartSeries[];
+      layout: ChartLayout;
       subplotCount: number;
     }
   | {
@@ -49,7 +52,7 @@ type BuiltChart =
       subplots: SubplotPanelSpec[];
     };
 
-export function ComparisonChart({ selectedIds, data, viewMode }: ComparisonChartProps) {
+export function ComparisonChart({ selectedIds, data, viewMode, onContextChange }: ComparisonChartProps) {
   const chart = useMemo(
     () => buildByMode(selectedIds, data, viewMode),
     [selectedIds, data, viewMode],
@@ -57,9 +60,11 @@ export function ComparisonChart({ selectedIds, data, viewMode }: ComparisonChart
 
   if (selectedIds.length === 0) {
     return (
-      <MacroPlot
+      <MacroEChart
+        onContextChange={onContextChange}
+        chartId={`comparison.${viewMode}.${selectedIds.join('.')}`}
         data={[]}
-        layout={{}}
+        layout={{ axes: [] }}
         subplotCount={1}
         emptyMessage="请至少选择 1 个指标开始对比"
       />
@@ -67,11 +72,13 @@ export function ComparisonChart({ selectedIds, data, viewMode }: ComparisonChart
   }
 
   if (chart.kind === 'linked') {
-    return <LinkedSubplots subplots={chart.subplots} />;
+    return <LinkedSubplots onContextChange={onContextChange} chartId={`comparison.${viewMode}.${selectedIds.join('.')}`} subplots={chart.subplots} />;
   }
 
   return (
-    <MacroPlot
+    <MacroEChart
+        onContextChange={onContextChange}
+        chartId={`comparison.${viewMode}.${selectedIds.join('.')}`}
       data={chart.traces}
       layout={chart.layout}
       subplotCount={chart.subplotCount}
@@ -102,25 +109,22 @@ function buildMinMax(ids: IndicatorId[], data: EconomicDataResponse): BuiltChart
       const norm = minMaxNormalize(raw);
       return buildLineTrace(
         {
+          id,
           label: meta.label,
           color: meta.color,
           unit: '%',
+          transform: 'minMax',
           dash: DASHES[idx % DASHES.length],
           valueFormat: '.1f',
         },
         dates,
         norm,
         {
-          customdata: raw as unknown[],
-          hovertemplate:
-            `<b>${meta.label}</b><br>` +
-            `区间百分位: %{y:.1f}%<br>` +
-            `原始值: %{customdata}${meta.unit ? ' ' + meta.unit : ''}` +
-            `<extra></extra>`,
+          details: [{ label: '原始值', values: raw, unit: meta.unit }],
         },
       );
     })
-    .filter(Boolean) as Data[];
+    .filter(Boolean) as ChartSeries[];
 
   const layout = buildMultiAxisLayout({
     axes: [
@@ -137,7 +141,7 @@ function buildMinMax(ids: IndicatorId[], data: EconomicDataResponse): BuiltChart
     ],
   });
 
-  return { kind: 'single', traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
+  return { kind: 'single', traces, layout, subplotCount: 1 };
 }
 
 function buildNormalize(ids: IndicatorId[], data: EconomicDataResponse): BuiltChart {
@@ -150,7 +154,9 @@ function buildNormalize(ids: IndicatorId[], data: EconomicDataResponse): BuiltCh
       const delta = norm.map((v) => (v == null ? null : v - 100));
       return buildLineTrace(
         {
+          id,
           label: meta.label,
+          transform: 'normalize',
           color: meta.color,
           dash: DASHES[idx % DASHES.length],
           valueFormat: '.2f',
@@ -158,17 +164,14 @@ function buildNormalize(ids: IndicatorId[], data: EconomicDataResponse): BuiltCh
         dates,
         norm,
         {
-          customdata: delta.map((d, i) => [raw[i], d]) as unknown[],
-          hovertemplate:
-            `<b>${meta.label}</b><br>` +
-            `归一化: %{y:.2f}<br>` +
-            `涨跌: %{customdata[1]:+.2f}%<br>` +
-            `原始值: %{customdata[0]}${meta.unit ? ' ' + meta.unit : ''}` +
-            `<extra></extra>`,
+          details: [
+            { label: '涨跌', values: delta, unit: '%', decimals: 2 },
+            { label: '原始值', values: raw, unit: meta.unit },
+          ],
         },
       );
     })
-    .filter(Boolean) as Data[];
+    .filter(Boolean) as ChartSeries[];
 
   const layout = buildMultiAxisLayout({
     axes: [
@@ -184,7 +187,7 @@ function buildNormalize(ids: IndicatorId[], data: EconomicDataResponse): BuiltCh
     ],
   });
 
-  return { kind: 'single', traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
+  return { kind: 'single', traces, layout, subplotCount: 1 };
 }
 
 function groupByUnit(ids: IndicatorId[]): Array<{ unit: string; ids: IndicatorId[] }> {
@@ -236,6 +239,7 @@ function buildDualAxisSingle(ids: IndicatorId[], data: EconomicDataResponse): Bu
       const axisKey = assignment.axisByUnit.get(meta.unit || '数值') || 'y';
       return buildLineTrace(
         {
+          id,
           label: meta.label,
           color: meta.color,
           unit: meta.unit,
@@ -247,13 +251,13 @@ function buildDualAxisSingle(ids: IndicatorId[], data: EconomicDataResponse): Bu
         raw,
       );
     })
-    .filter(Boolean) as Data[];
+    .filter(Boolean) as ChartSeries[];
 
   const layout = buildMultiAxisLayout({
     axes: assignment.axes,
   });
 
-  return { kind: 'single', traces, layout: layout as Record<string, unknown>, subplotCount: 1 };
+  return { kind: 'single', traces, layout, subplotCount: 1 };
 }
 
 function buildDualAxisSubplots(
@@ -284,13 +288,14 @@ function buildDualAxisSubplots(
       };
     });
 
-    const traces: Data[] = [];
+    const traces: ChartSeries[] = [];
     slot.forEach((group, axisIdx) => {
       const yaxis = axisIdx === 0 ? leftKey : rightKey;
       group.ids.forEach((id, idx) => {
         const meta = INDICATORS[id];
         const t = buildLineTrace(
           {
+            id,
             label: meta.label,
             color: meta.color,
             unit: meta.unit,
@@ -324,6 +329,7 @@ function buildDualAxisWithCorrelation(ids: IndicatorId[], data: EconomicDataResp
       const axisKey = assignment.axisByUnit.get(meta.unit || '数值') || 'y';
       return buildLineTrace(
         {
+          id,
           label: meta.label,
           color: meta.color,
           unit: meta.unit,
@@ -336,14 +342,16 @@ function buildDualAxisWithCorrelation(ids: IndicatorId[], data: EconomicDataResp
         raw,
       );
     })
-    .filter(Boolean) as Data[];
+    .filter(Boolean) as ChartSeries[];
 
   const xs = extractSeries(data, a);
   const ys = extractSeries(data, b);
   const corr = rollingCorrelation(xs, ys, CORR_WINDOW, CORR_MIN_SAMPLES);
   const corrTrace = buildLineTrace(
     {
+      id: `correlation.${a}.${b}`,
       label: '滚动相关性',
+      transform: 'correlation',
       color: '#fbbf24',
       yaxis: 'y3',
       xaxis: 'x2',

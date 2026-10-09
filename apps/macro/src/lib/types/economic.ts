@@ -95,21 +95,6 @@ export interface EconomicDataResponse {
   margin?: (number | null)[];   // 单位：亿元（沪深两市合计融资余额）
 }
 
-/** 图表数据系列 */
-export interface ChartTrace {
-  x: string[];
-  y: number[];
-  name: string;
-  mode: 'lines' | 'lines+markers';
-  line?: {
-    color: string;
-    width: number;
-    dash?: string;
-  };
-  xaxis?: string;
-  yaxis?: string;
-}
-
 /** 缓存数据结构 */
 export interface CacheEntry {
   timeRange: TimeRange;
