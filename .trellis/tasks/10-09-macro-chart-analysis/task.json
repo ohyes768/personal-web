@@ -1,0 +1,29 @@
+{
+  "id": "macro-chart-analysis",
+  "name": "macro-chart-analysis",
+  "title": "日频曲线图分析助手：交互与可扩展架构规划",
+  "description": "规划以单个子图为入口的日频分析助手；中国国债试点，后续覆盖全部日频曲线图。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": "macro",
+  "package": "backend/global-macro-fin",
+  "priority": "P2",
+  "creator": "tang",
+  "assignee": "tang",
+  "createdAt": "2026-10-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/macro",
+    "backend/macro"
+  ],
+  "notes": "",
+  "meta": {}
+}
