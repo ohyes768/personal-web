@@ -6,9 +6,7 @@
  *
  * 为什么路径带 /rss 前缀：Next.js App Router 的 basePath 同时作用于 pages 和 API routes。
  *
- * 生产环境由 nginx 剥前缀（location /api/rss-relay/ { proxy_pass .../api/; }），
- * 前端访问的是 https://web.duomi77.cn:9443/rss/api/rss-relay/...，
- * nginx 会把 /rss 前缀剥掉成 /api/rss-relay/...，然后再剥 /api/ 转给后端。
+ * 生产环境 nginx 将 /rss/api/rss-relay/... 改写为 /api/... 并转发后端。
  * 此 BFF 路由只在本地开发（pnpm dev）时启用。
  */
 import { NextRequest } from 'next/server';
@@ -36,6 +34,13 @@ export async function DELETE(
   return proxy(request, await params, 'DELETE');
 }
 
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ slug: string[] }> }
+) {
+  return proxy(request, await params, 'PATCH');
+}
+
 async function proxy(
   request: NextRequest,
   resolved: { slug: string[] },
@@ -52,7 +57,7 @@ async function proxy(
       method,
       headers: { 'Content-Type': 'application/json' },
     };
-    if (method === 'POST' || method === 'PUT') {
+    if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
       init.body = await request.text();
     }
 

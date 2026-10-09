@@ -30,7 +30,7 @@ export default function HomePage() {
     <main className="min-h-screen">
       {/* Header */}
       <header className="border-b border-rule bg-paper-card/60 backdrop-blur-sm sticky top-0 z-30">
-        <div className="max-w-[960px] mx-auto px-6 py-4 flex items-center justify-between">
+        <div className="max-w-[960px] mx-auto px-4 sm:px-6 py-4 flex flex-wrap items-center justify-between gap-3">
           <div>
             <a
               href="/"

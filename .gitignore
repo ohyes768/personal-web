@@ -101,3 +101,9 @@ deploy/fastgithub-ca.pem
 
 # skill-manager 本机 dev scratch 目录（github-cache / state / targets 镜像）
 .skill-manager-dev/
+
+# rss-relay runtime and local verification
+backend/rss-relay/data/
+backend/rss-relay/.test-deps/
+backend/rss-relay/.pytest-tmp/
+backend/rss-relay/.pytest_cache/

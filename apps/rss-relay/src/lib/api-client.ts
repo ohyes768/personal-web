@@ -21,7 +21,8 @@ class ApiClient {
     });
 
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const body = await response.json().catch(() => null);
+      throw new Error(typeof body?.detail === 'string' ? body.detail : `请求失败（${response.status}）`);
     }
 
     // 204 No Content 等没有 body 的响应
@@ -70,6 +71,12 @@ class ApiClient {
       ? `${this.baseUrl}${endpoint}`
       : new URL(endpoint, this.baseUrl).toString();
     return this.request<void>(url, { method: 'DELETE' });
+  }
+
+  async mutate<T>(endpoint: string, method: 'POST' | 'PATCH', body: unknown): Promise<T> {
+    const url = !this.baseUrl || this.baseUrl.startsWith('/')
+      ? `${this.baseUrl}${endpoint}` : new URL(endpoint, this.baseUrl).toString();
+    return this.request<T>(url, { method, body: JSON.stringify(body) });
   }
 }
 

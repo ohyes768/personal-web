@@ -16,7 +16,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from .endpoints import router, set_storage_config, set_rss_config, set_rss_token
+from .endpoints import router, set_storage_config, set_rss_config, set_rss_token, set_channel_registry
+from .channels import ChannelRegistry
 from .cleanup import cleanup_old_posts
 
 
@@ -51,8 +52,15 @@ async def lifespan(app: FastAPI):
     set_storage_config(posts_dir, retention_days)
 
     rss = app_config.get("rss", {})
+    set_channel_registry(ChannelRegistry(
+        Path(storage.get("channels_file", str(posts_dir.parent / "channels.json"))),
+        rss.get("channels", {}),
+    ))
+    channel_meta = dict(rss.get("channel", {}))
+    if os.getenv("RSS_RELAY_PUBLIC_FEED_URL"):
+        channel_meta["self_url"] = os.environ["RSS_RELAY_PUBLIC_FEED_URL"]
     set_rss_config(
-        channel_meta=rss.get("channel", {}),
+        channel_meta=channel_meta,
         max_items=int(rss.get("max_items", 200)),
         default_limit=int(rss.get("default_limit", 50)),
     )
@@ -81,6 +89,7 @@ async def lifespan(app: FastAPI):
     logger.info("APScheduler 已启动（每天 03:03 清理过期 post）")
 
     yield
+    scheduler.shutdown(wait=False)
 
     logger.info("关闭服务...")
 
@@ -112,4 +121,5 @@ if __name__ == "__main__":
         host=server_config.get("host", "0.0.0.0"),
         port=int(server_config.get("port", 8095)),
         reload=True,
+        access_log=False,  # RSS subscription query contains its token.
     )

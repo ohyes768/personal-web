@@ -1,117 +1,74 @@
 'use client';
-
-/**
- * RssSubscribe 组件
- * rss-relay 模块的 RSS 订阅入口 — header 按钮 + 弹框（显示订阅 URL + 复制 + 已复制反馈）
- *
- * URL 是全站唯一的：用户把这个 URL 添加到 FreshRSS / Feedly / Inoreader 等 RSS reader。
- * 鉴权 token 来自 NEXT_PUBLIC_RSS_TOKEN 环境变量（build 时内联）。
- *
- * 弹窗用 React Portal 渲染到 document.body，避免父级 Header 的 backdrop-blur
- * 创建新的 containing block，导致 fixed 定位弹窗只相对 Header 显示（被裁掉）。
- */
-
-import { useState } from 'react';
-import { createPortal } from 'react-dom';
-
-const RSS_URL_BASE = 'https://web.duomi77.cn:9443/rss/api/rss-relay/rss.xml';
-
+import { useEffect, useState } from 'react';
+import { rssRelayApi } from '@/lib/api';
+import type { Channel } from '@/lib/types';
+import { feedUrl, pushExample } from '@/lib/rss-links';
+import { RelayDialog } from './RelayDialog';
+import { CopyText } from './CopyText';
+const button = 'rounded-md bg-paper-deep hover:bg-rule px-3 py-2 text-ink-muted disabled:opacity-40';
+const field = 'w-full min-w-0 mt-1 p-2 rounded-md border border-rule bg-paper-deep text-ink';
+function ChannelPanel({ onClose }: { onClose: () => void }) {
+  const [channels, setChannels] = useState<Channel[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [management, setManagement] = useState(false);
+  const [search, setSearch] = useState('');
+  const [editing, setEditing] = useState<Channel | 'new' | null>(null);
+  const [form, setForm] = useState({ id: '', title: '', description: '' });
+  const [saving, setSaving] = useState(false);
+  const [pendingDisable, setPendingDisable] = useState<Channel | null>(null);
+  const token = process.env.NEXT_PUBLIC_RSS_TOKEN || '';
+  const load = async () => {
+    setLoading(true); setError('');
+    try { setChannels((await rssRelayApi.getChannels(true)).channels); }
+    catch (e) { setError(e instanceof Error ? e.message : '加载失败'); }
+    finally { setLoading(false); }
+  };
+  useEffect(() => { void load(); }, []);
+  const startEdit = (channel: Channel | 'new') => {
+    setEditing(channel); setError(''); setNotice('');
+    setForm(channel === 'new' ? { id: '', title: '', description: '' } : channel);
+  };
+  const toggle = async (channel: Channel) => {
+    setSaving(true); setError('');
+    try { await rssRelayApi.updateChannel(channel.id, { enabled: !channel.enabled }); setPendingDisable(null); await load(); setNotice(channel.enabled ? '渠道已停用，原订阅链接仍可读取历史文章。' : '渠道已恢复。'); }
+    catch (e) { setError(e instanceof Error ? e.message : '保存失败'); }
+    finally { setSaving(false); }
+  };
+  const visible = channels.filter(c => (management || c.enabled) && `${c.title} ${c.id}`.toLowerCase().includes(search.toLowerCase()));
+  return <RelayDialog title={management ? '管理渠道' : '按渠道订阅'} onClose={onClose}>
+    <p className="text-ink-muted mb-5 leading-relaxed">{management ? '在这里维护服务名称。渠道标识创建后固定，订阅链接不会因改名改变。' : '复制到 RSS 阅读器，各渠道会单独显示。'}</p>
+    {management && <div className="flex gap-2 mb-4"><button className={button} onClick={() => { setManagement(false); setEditing(null); setPendingDisable(null); setSearch(''); }}>← 返回订阅</button><button className={button} disabled={saving} onClick={() => startEdit('new')}>＋ 新增渠道</button></div>}
+    {notice && <p role="status" className="mb-3 p-3 rounded border border-rule bg-paper-deep">{notice}</p>}
+    {error && <div role="alert" className="mb-3 text-danger">{error} <button className={button} onClick={load}>重新加载</button></div>}
+    {!token && !management && <p className="text-danger mb-3">未配置订阅 token，请联系服务维护者配置后再复制链接。</p>}
+    {editing && <form className="border border-rule rounded-lg p-4 mb-5 space-y-3" onSubmit={async e => {
+      e.preventDefault(); setSaving(true); setError('');
+      try {
+        if (editing === 'new') await rssRelayApi.createChannel(form);
+        else await rssRelayApi.updateChannel(editing.id, { title: form.title, description: form.description });
+        setEditing(null); await load(); setNotice('渠道已保存，订阅入口与对接示例已更新。');
+      } catch (e) { setError(e instanceof Error ? e.message : '保存失败'); }
+      finally { setSaving(false); }
+    }}>
+      <label className="block">服务名称<input required maxLength={100} value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} className={field} placeholder="例如：新闻联播服务" /></label>
+      <label className="block">渠道标识<input required pattern="[a-z0-9]+(?:-[a-z0-9]+)*" maxLength={64} disabled={editing !== 'new'} value={form.id} onChange={e => setForm({ ...form, id: e.target.value })} className={`${field} font-mono`} placeholder="例如：xinwen" /><span className="text-xs text-ink-muted">小写字母、数字或连字符，最多 64 位；保存后不可修改。</span></label>
+      <label className="block">说明<textarea maxLength={500} value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} className={field} /></label>
+      <div className="flex gap-2"><button disabled={saving} className={button}>{saving ? '保存中…' : '保存渠道'}</button><button type="button" disabled={saving} className={button} onClick={() => setEditing(null)}>取消</button></div>
+    </form>}
+    {channels.length > 8 && <input aria-label="搜索渠道" placeholder="搜索名称或标识" value={search} onChange={e => setSearch(e.target.value)} className={`${field} mb-4`} />}
+    {loading ? <div aria-label="加载渠道中" className="space-y-3">{[1,2,3].map(i => <div key={i} className="h-20 rounded bg-paper-deep animate-pulse" />)}</div> : <div className="divide-y divide-rule">{visible.map(channel => <div key={channel.id} className="py-4 first:pt-0">
+      <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><h3 className="font-serif-cn text-lg font-bold break-words">{channel.title}</h3><p className="text-xs text-ink-muted mt-1 break-words">{channel.description || '该渠道的独立订阅'}{management && ` · ${channel.id} · ${channel.enabled ? '启用' : '停用'}`}</p></div>
+        {management ? <div className="flex gap-2">{channel.id === 'unclassified' ? <span className="text-xs text-ink-muted py-2">系统渠道</span> : <><button disabled={saving} className={button} onClick={() => startEdit(channel)}>编辑</button><button disabled={saving} className={button} onClick={() => channel.enabled ? setPendingDisable(channel) : void toggle(channel)}>{channel.enabled ? '停用' : '恢复'}</button></>}</div> : <CopyText disabled={!token} text={feedUrl(channel.id)} />}
+      </div>
+      {!management && <details className="mt-2 text-xs text-ink-muted"><summary className="cursor-pointer py-1">查看链接与对接示例</summary><input readOnly aria-label={`${channel.title}订阅链接`} value={feedUrl(channel.id)} onFocus={e => e.currentTarget.select()} className={`${field} font-mono text-xs`} /><pre className="overflow-x-auto my-3 p-3 bg-paper-deep rounded text-xs">{pushExample(channel.id)}</pre><CopyText text={pushExample(channel.id)} label="复制推送 JSON" /></details>}
+      {pendingDisable?.id === channel.id && <div className="mt-3 p-3 bg-paper-deep rounded"><p>停用「{channel.title}」会暂停接收新推送，保留文章和原订阅链接。</p><div className="flex gap-2 mt-3"><button disabled={saving} className={button} onClick={() => void toggle(channel)}>确认停用</button><button disabled={saving} className={button} onClick={() => setPendingDisable(null)}>取消</button></div></div>}
+    </div>)}{!visible.length && <p className="py-4 text-ink-muted">{search ? '没有匹配的渠道。' : '暂无渠道，可以在管理渠道中新增。'}</p>}</div>}
+    {!management && <><div className="mt-5 border-t border-rule pt-5"><div className="flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-serif-cn text-lg font-bold">全部内容</h3><p className="text-xs text-ink-muted mt-1">包含所有渠道，与单渠道同时订阅可能重复。</p></div><CopyText disabled={!token} text={feedUrl()} /></div></div><div className="mt-6 flex justify-between gap-3 text-xs text-ink-muted"><p>订阅链接含 token，请妥善保管。</p><button className="underline shrink-0" onClick={() => { setManagement(true); setSearch(''); }}>管理渠道 →</button></div></>}
+  </RelayDialog>;
+}
 export function RssSubscribe() {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const token = process.env.NEXT_PUBLIC_RSS_TOKEN || '';
-  const url = `${RSS_URL_BASE}?token=${token}`;
-  const disabled = !token;
-
-  const handleCopy = async () => {
-    if (disabled) return;
-    try {
-      await navigator.clipboard.writeText(url);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('复制失败:', err);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') setOpen(false);
-  };
-
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        disabled={disabled}
-        className="font-ui text-[13px] px-3 py-1.5 rounded-[6px] cursor-pointer transition-colors inline-flex items-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed bg-paper-deep hover:bg-rule text-ink-muted hover:text-ink"
-        title={disabled ? '未配置 NEXT_PUBLIC_RSS_TOKEN' : '查看 RSS 订阅源 URL'}
-      >
-        <svg
-          className="w-4 h-4"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-            d="M6 5c7.18 0 13 5.82 13 13M6 11a7 7 0 017 7m-6 0a1 1 0 11-2 0 1 1 0 012 0z"
-          />
-        </svg>
-        RSS
-      </button>
-
-      {open && createPortal(
-        <div
-          className="fixed inset-0 z-50 bg-ink/45 backdrop-blur-md p-4 sm:p-6 flex items-start sm:items-center justify-center"
-          onClick={() => setOpen(false)}
-          onKeyDown={handleKeyDown}
-        >
-          <div
-            className="bg-paper rounded-lg shadow-2xl w-full max-w-[560px] p-6 sm:p-8"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <h2 className="font-serif-cn font-bold text-[20px] text-ink-strong mb-2 tracking-wide">
-              RSS 订阅源
-            </h2>
-            <p className="font-ui text-[13px] text-ink-muted mb-5 leading-relaxed">
-              把这个 URL 添加到 FreshRSS / Feedly / Inoreader 等 RSS 阅读器即可订阅。
-              订阅源会自动拉取 agent 推送的所有 markdown 内容。
-            </p>
-
-            <div className="flex items-stretch gap-2 mb-3">
-              <input
-                readOnly
-                value={url}
-                onClick={(e) => e.currentTarget.select()}
-                className="font-mono text-[12px] flex-1 px-3 py-2 border border-rule rounded-md bg-paper-deep text-ink focus:outline-none focus:border-accent"
-              />
-              <button
-                onClick={handleCopy}
-                disabled={disabled}
-                className="font-ui px-4 py-2 text-[13px] rounded-md border border-accent text-accent bg-accent/[0.04] hover:bg-accent hover:text-paper transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-              >
-                {copied ? '✓ 已复制' : '复制'}
-              </button>
-            </div>
-
-            <p className="font-ui text-[12px] text-ink-muted leading-relaxed">
-              ⚠️ URL 含鉴权 token，请勿公开分享给他人
-            </p>
-
-            <div className="mt-6 flex justify-end">
-              <button
-                onClick={() => setOpen(false)}
-                className="font-ui px-4 py-2 text-[13px] rounded-md border border-rule text-ink bg-paper hover:border-ink-soft transition-all"
-              >
-                关闭
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body,
-      )}
-    </>
-  );
+  return <><button className="font-ui text-[13px] px-3 py-1.5 rounded-md bg-paper-deep hover:bg-rule text-ink-muted" onClick={() => setOpen(true)}>订阅渠道</button>{open && <ChannelPanel onClose={() => setOpen(false)} />}</>;
 }

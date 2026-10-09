@@ -1,0 +1,32 @@
+{
+  "id": "rss-channel-feeds",
+  "name": "rss-channel-feeds",
+  "title": "RSS 中转按渠道独立订阅与便捷订阅入口",
+  "description": "独立渠道RSS订阅、网页新增/编辑/停用/恢复渠道、直接复制入口与动态对接文档；本地实现及验证完成，待提交发布。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "rss-relay",
+  "package": "backend/rss-relay",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/rss-relay/src/channels.py",
+    "backend/rss-relay/src/endpoints.py",
+    "backend/rss-relay/src/store.py",
+    "apps/rss-relay/src/components/RssSubscribe.tsx",
+    "apps/rss-relay/src/components/ApiGuideModal.tsx"
+  ],
+  "notes": "保留单一服务与旧全量订阅；渠道持久化到data/channels.json。未部署，外部推送端尚需添加channel。",
+  "meta": {}
+}

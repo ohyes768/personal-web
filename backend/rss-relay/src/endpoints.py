@@ -3,11 +3,14 @@
 import hmac
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
 import markdown
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from loguru import logger
 from pydantic import BaseModel, Field
+from pydantic import ValidationError
+from .channels import ChannelRegistry, ChannelCreate, ChannelUpdate, CHANNEL_PATTERN, UNCLASSIFIED
 
 from .rss_utils import build_rss_xml, truncate_for_summary
 from .store import generate_id, write_post, list_posts, delete_post as delete_post_file
@@ -24,6 +27,45 @@ _RSS_CHANNEL_META: dict = {}
 _RSS_MAX_ITEMS: int = 200
 _RSS_DEFAULT_LIMIT: int = 50
 _RSS_TOKEN: str = ""
+_CHANNELS: ChannelRegistry | None = None
+
+
+def set_channel_registry(registry: ChannelRegistry) -> None:
+    global _CHANNELS
+    _CHANNELS = registry
+
+
+def channel_registry() -> ChannelRegistry:
+    if _CHANNELS is None:
+        raise HTTPException(503, "Channel registry unavailable")
+    return _CHANNELS
+
+
+@router.get("/api/channels")
+async def get_channels(include_disabled: bool = False):
+    return {"channels": channel_registry().list(include_disabled)}
+
+
+@router.post("/api/channels", status_code=201)
+async def create_channel(req: ChannelCreate):
+    try:
+        return channel_registry().create(req.model_dump())
+    except FileExistsError:
+        raise HTTPException(409, "Channel already exists")
+    except OSError:
+        raise HTTPException(503, "Could not save channel")
+
+
+@router.patch("/api/channels/{channel_id}")
+async def update_channel(channel_id: str, req: ChannelUpdate):
+    try:
+        return channel_registry().update(channel_id, req.model_dump(exclude_unset=True))
+    except KeyError:
+        raise HTTPException(404, "Channel not found")
+    except (ValueError, ValidationError):
+        raise HTTPException(422, "Invalid channel update")
+    except OSError:
+        raise HTTPException(503, "Could not save channel")
 
 
 def set_storage_config(posts_dir: Path, retention_days: int) -> None:
@@ -63,6 +105,7 @@ class PostRequest(BaseModel):
     content: str = Field(..., min_length=1, description="Markdown 正文")
     url: str | None = Field(None, description="原文链接（可选）")
     source: str | None = Field(None, description="来源标识（可选，如 openclaw）")
+    channel: str | None = Field(None, max_length=64, pattern=CHANNEL_PATTERN, description="已登记的内容渠道，省略归未分类")
 
 
 @router.post("/api/post", status_code=201)
@@ -71,6 +114,12 @@ async def create_post(req: PostRequest):
 
     无鉴权（依赖内网隔离）。后续如需加 token，参考 douyin 的 ?token= 模式。
     """
+    channel_id = req.channel or UNCLASSIFIED
+    channel = channel_registry().get(channel_id)
+    if channel is None:
+        raise HTTPException(422, "Unknown channel; create it first")
+    if not channel["enabled"]:
+        raise HTTPException(409, "Channel is disabled")
     post_id = generate_id()
     created_at = datetime.now(EAST8)
     file_path = write_post(
@@ -81,6 +130,7 @@ async def create_post(req: PostRequest):
         url=req.url,
         source=req.source,
         created_at=created_at,
+        channel=channel_id,
     )
     logger.info(
         f"接收推送 id={post_id} title={req.title!r} source={req.source!r}"
@@ -97,6 +147,7 @@ async def rss_feed(
     request: Request,
     token: str = Query(..., description="RSS 订阅 token（RSS_RELAY_TOKEN）"),
     limit: int = Query(default=None, ge=1, le=200, description="返回条目数上限"),
+    channel: str | None = Query(default=None, description="渠道标识；省略返回全部"),
 ):
     """RSS 2.0 feed。
 
@@ -104,20 +155,35 @@ async def rss_feed(
     FreshRSS / Feedly 等阅读器在订阅 URL 里带 ?token=xxx 即可。
     """
     if not _verify_rss_token(token):
-        # 只记 token 前 4 字符（防日志泄漏）
-        prefix = token[:4] + "***" if token else "<empty>"
         client_ip = request.client.host if request.client else "unknown"
-        logger.warning(f"RSS 鉴权失败: token={prefix}, remote={client_ip}")
+        logger.warning(f"RSS 鉴权失败: remote={client_ip}")
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    channel_meta = dict(_RSS_CHANNEL_META)
+    if channel is not None:
+        record = channel_registry().get(channel)
+        if record is None:
+            raise HTTPException(404, "Channel not found")
+        channel_meta.update(title=record["title"], description=record["description"])
+
+    requested_limit = limit
     if limit is None:
         limit = _RSS_DEFAULT_LIMIT
     limit = min(limit, _RSS_MAX_ITEMS)
 
-    base_url = str(request.base_url).rstrip("/")
-    self_url = f"{base_url}/api/rss.xml"
+    public_url = channel_meta.get("self_url") or channel_meta.get("link")
+    if not public_url:
+        raise HTTPException(503, "Public RSS URL not configured")
+    parts = urlsplit(public_url)
+    query = [(key, value) for key, value in parse_qsl(parts.query) if key not in {"token", "channel", "limit"}]
+    query.append(("token", token))
+    if channel is not None:
+        query.append(("channel", channel))
+    if requested_limit is not None:
+        query.append(("limit", str(limit)))
+    self_url = urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))
 
-    posts = list_posts(_POSTS_DIR, limit=limit, max_age_days=_RETENTION_DAYS)
+    posts = list_posts(_POSTS_DIR, limit=limit, max_age_days=_RETENTION_DAYS, channel=channel)
 
     items = []
     for post in posts:
@@ -142,7 +208,7 @@ async def rss_feed(
     )
 
     xml = build_rss_xml(
-        channel_meta={**_RSS_CHANNEL_META, "self_url": self_url},
+        channel_meta={**channel_meta, "self_url": self_url},
         items=items,
         build_date=build_date,
     )
@@ -177,6 +243,7 @@ async def list_posts_json(
                 "title": p["title"],
                 "url": p["url"],
                 "source": p["source"],
+                "channel": p["channel"],
                 "created_at": p["created_at"].isoformat(),
                 "content": p["content"],
                 "preview": truncate_for_summary(p["content"], 200),

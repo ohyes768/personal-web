@@ -17,6 +17,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
 import yaml
+from .channels import UNCLASSIFIED
 
 EAST8 = timezone(timedelta(hours=8))
 
@@ -36,6 +37,7 @@ def write_post(
     url: str | None = None,
     source: str | None = None,
     created_at: datetime | None = None,
+    channel: str = UNCLASSIFIED,
 ) -> Path:
     """写一个 post 文件，返回路径。
 
@@ -49,6 +51,7 @@ def write_post(
         "title": title,
         "url": url or "",
         "source": source or "",
+        "channel": channel,
         "created_at": created_at.isoformat(),
     }
 
@@ -109,6 +112,7 @@ def parse_post(file_path: Path) -> dict | None:
         "title": meta.get("title", "") or "",
         "url": meta.get("url", "") or "",
         "source": meta.get("source", "") or "",
+        "channel": meta.get("channel") or UNCLASSIFIED,
         "created_at": created_at,
         "content": body,
     }
@@ -118,6 +122,7 @@ def list_posts(
     posts_dir: Path,
     limit: int = 50,
     max_age_days: int = 15,
+    channel: str | None = None,
 ) -> list[dict]:
     """列出最近 max_age_days 天内的 post，按 created_at 倒序，取前 limit 条。"""
     if not posts_dir.exists():
@@ -131,6 +136,8 @@ def list_posts(
         if post is None:
             continue
         if post["created_at"] < cutoff:
+            continue
+        if channel is not None and post["channel"] != channel:
             continue
         posts.append(post)
 

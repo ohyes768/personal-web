@@ -1,7 +1,13 @@
 import { directClient } from './api-client';
-import type { PostsResponse } from './types';
+import type { Channel, PostsResponse } from './types';
 
 export const rssRelayApi = {
+  getChannels: (includeDisabled = false) => directClient.get<{ channels: Channel[] }>(
+    '/rss/api/rss-relay/channels', includeDisabled ? { include_disabled: 'true' } : undefined),
+  createChannel: (channel: Pick<Channel, 'id' | 'title' | 'description'>) =>
+    directClient.mutate<Channel>('/rss/api/rss-relay/channels', 'POST', channel),
+  updateChannel: (id: string, updates: Partial<Pick<Channel, 'title' | 'description' | 'enabled'>>) =>
+    directClient.mutate<Channel>(`/rss/api/rss-relay/channels/${encodeURIComponent(id)}`, 'PATCH', updates),
   /** 拉取 post 列表（默认 50 条，最多 200）
    *
    * 注意：basePath='/rss' 时，浏览器调 `/api/...` 实际命中的是 `/rss/api/...`，

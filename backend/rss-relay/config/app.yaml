@@ -7,6 +7,7 @@ app:
   # 存储
   storage:
     posts_dir: "data/posts"
+    channels_file: "data/channels.json"
     retention_days: 15
 
   # RSS 订阅源
@@ -15,10 +16,16 @@ app:
     channel:
       title: "个人 RSS 中转"
       # freshrss 订阅者看到的频道主站（NAS 域名）
-      link: "https://web.duomi77.cn:9443/rss/personal.xml"
+      link: "https://web.duomi77.cn:9443/rss"
+      self_url: "https://web.duomi77.cn:9443/rss/api/rss-relay/rss.xml"
       description: "agent 采集推送的 markdown 内容中转站"
     max_items: 200
     default_limit: 50
+    # 仅首次启动使用；日常通过网页维护，数据持久化到 channels_file。
+    channels:
+      xinwen:
+        title: "新闻联播服务"
+        description: "新闻联播内容与分析"
 
   # 日志
   logging:

@@ -13,6 +13,7 @@ services:
     environment:
       - LOG_LEVEL=INFO
       - RSS_RELAY_TOKEN=${RSS_RELAY_TOKEN:-}
+      - RSS_RELAY_PUBLIC_FEED_URL=${RSS_RELAY_PUBLIC_FEED_URL:-https://web.duomi77.cn:9443/rss/api/rss-relay/rss.xml}
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8095/health"]
       interval: 30s
