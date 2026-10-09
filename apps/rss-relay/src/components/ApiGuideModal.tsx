@@ -5,18 +5,18 @@ import type { Channel } from '@/lib/types';
 import { PUBLIC_API, feedUrl, pushExample } from '@/lib/rss-links';
 import { RelayDialog } from './RelayDialog';
 import { CopyText } from './CopyText';
-interface Props { open: boolean; onClose: () => void; }
+interface Props { open: boolean; onClose: () => void; initialChannel?: string; }
 function Code({ text, label }: { text: string; label: string }) {
   return <div className="mt-3"><pre className="font-mono text-xs leading-relaxed bg-paper-deep border border-rule rounded-md p-4 overflow-x-auto mb-2"><code>{text}</code></pre><CopyText text={text} label={label} /></div>;
 }
-function Guide({ onClose }: { onClose: () => void }) {
+function Guide({ onClose, initialChannel }: { onClose: () => void; initialChannel?: string }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [selected, setSelected] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const load = async () => {
     setLoading(true); setError('');
-    try { const result = (await rssRelayApi.getChannels()).channels; setChannels(result); setSelected(result[0]?.id || ''); }
+    try { const result = (await rssRelayApi.getChannels()).channels; setChannels(result); setSelected(result.some(c => c.id === initialChannel) ? initialChannel! : result[0]?.id || ''); }
     catch (e) { setError(e instanceof Error ? e.message : '加载失败'); }
     finally { setLoading(false); }
   };
@@ -45,4 +45,4 @@ print(response.json())`;
     <section className="border-t border-rule pt-4"><h3 className="font-serif-cn font-bold text-lg">渠道维护</h3><p className="text-ink-muted mt-2">网页可新增渠道、修改名称与说明、停用或恢复；设置持久保存。改名不会改变链接，阅读器缓存名称可能需要手动刷新或改名。停用保留文章与旧链接，暂停接收新推送；「未分类」为固定系统渠道。</p></section>
   </div></RelayDialog>;
 }
-export default function ApiGuideModal({ open, onClose }: Props) { return open ? <Guide onClose={onClose} /> : null; }
+export default function ApiGuideModal({ open, onClose, initialChannel }: Props) { return open ? <Guide onClose={onClose} initialChannel={initialChannel} /> : null; }

@@ -93,3 +93,20 @@ def test_feed_filter_compatibility_auth_and_self_url(client, tmp_path):
     endpoints.set_rss_token("secret")
     assert client.post("/api/post", json={"title": "legacy", "content": "body"}).status_code == 201
     assert client.get("/api/posts").json()["posts"][0]["channel"] == "unclassified"
+
+
+def test_posts_filter_before_limit_and_disabled_history(client, tmp_path):
+    now = datetime.now(EAST8)
+    for i in range(5):
+        write_post(tmp_path / "posts", f"other-{i}", "other", "body", created_at=now)
+    write_post(tmp_path / "posts", "news-history", "news", "body", channel="xinwen",
+               created_at=now - timedelta(minutes=1))
+    response = client.get("/api/posts?channel=xinwen&limit=1")
+    assert response.status_code == 200
+    assert [post["id"] for post in response.json()["posts"]] == ["news-history"]
+    assert response.json()["total"] == 1
+    assert client.get("/api/posts?channel=missing").status_code == 404
+    assert client.patch("/api/channels/xinwen", json={"enabled": False}).status_code == 200
+    assert client.get("/api/posts?channel=xinwen").json()["posts"][0]["id"] == "news-history"
+    assert len(client.get("/api/posts").json()["posts"]) == 6
+    assert len(client.get("/api/posts?channel=unclassified").json()["posts"]) == 5

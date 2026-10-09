@@ -226,6 +226,7 @@ async def rss_feed(
 @router.get("/api/posts")
 async def list_posts_json(
     limit: int = Query(50, ge=1, le=200, description="返回条目数上限"),
+    channel: str | None = Query(None, description="渠道标识；省略返回全部，停用渠道仍可查看历史"),
 ):
     """JSON 列表（前端用，无需 token）。
 
@@ -234,7 +235,9 @@ async def list_posts_json(
     - 不要求 token（前端 BFF 内部调用，nginx 限制只能内网走）
     - 含完整 content（前端 Modal 直接渲染，省一次详情请求）
     """
-    posts = list_posts(_POSTS_DIR, limit=limit, max_age_days=_RETENTION_DAYS)
+    if channel is not None and channel_registry().get(channel) is None:
+        raise HTTPException(404, "Channel not found")
+    posts = list_posts(_POSTS_DIR, limit=limit, max_age_days=_RETENTION_DAYS, channel=channel)
     return {
         "total": len(posts),
         "posts": [

@@ -6,6 +6,7 @@
 ## Signatures
 - POST /api/post：{title,content,url?,source?,channel?}。
 - GET /api/rss.xml?token=...&channel=...&limit=50；省略channel为全量。
+- GET /api/posts?limit=50&channel=xinwen；省略channel为全量，未知渠道404，停用渠道历史可读。
 - GET /api/channels?include_disabled=true：{channels:[{id,title,description,enabled}]}。
 - POST /api/channels：{id,title,description}。
 - PATCH /api/channels/{id}：{title?,description?,enabled?}。
@@ -16,6 +17,7 @@
 channel为稳定内容频道，source记录推送工具，不可互相推断。缺失channel的旧文章和推送归unclassified。ID创建后不可更改，系统未分类不可停用。停用后拒绝新推送，已有feed仍返回历史文章。
 渠道登记保存在data/channels.json（现有持久卷覆盖），配置仅首次种子；重建不可覆盖用户设置。采用原子替换，失败不返回成功、不更新内存。
 筛选渠道必须先于排序和limit；GUID保持原文章ID。频道清单来源是登记，不是最近文章。
+网页分类以channel为准，名称从渠道登记读取，不用source作为渠道名。URL保存选中渠道，清单失败时不得误判为未知并重置；快速切换的旧文章请求不得覆盖新选择。total为当前返回条数，不是历史总数。
 RSS_RELAY_TOKEN继续保护所有feed；NEXT_PUBLIC_RSS_TOKEN供现有网页订阅链接。RSS_RELAY_PUBLIC_FEED_URL可覆盖后端公开self URL；对接示例与API一致，不日志输出完整带token链接。
 
 ## Validation & Error Matrix

@@ -13,8 +13,8 @@ export const rssRelayApi = {
    * 注意：basePath='/rss' 时，浏览器调 `/api/...` 实际命中的是 `/rss/api/...`，
    * 因为 Next.js App Router 把 basePath 同时作用于 pages 和 API routes。
    */
-  getPosts: (limit = 50) =>
-    directClient.get<PostsResponse>('/rss/api/rss-relay/posts', { limit }),
+  getPosts: (limit = 50, channel?: string) =>
+    directClient.get<PostsResponse>('/rss/api/rss-relay/posts', { limit, ...(channel ? { channel } : {}) }),
 
   /** 删除一篇 post。404 时 throw，调用方 catch。 */
   deletePost: (id: string) =>

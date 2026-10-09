@@ -1,0 +1,33 @@
+{
+  "id": "rss-channel-browser",
+  "name": "rss-channel-browser",
+  "title": "RSS 查看页按订阅渠道分类",
+  "description": "查看页按订阅渠道筛选，URL记忆、渠道标签、复制订阅与预选对接，兼容停用历史和空频道。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "rss-relay",
+  "package": "backend/rss-relay",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-09",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/rss-relay/src/app/page.tsx",
+    "apps/rss-relay/src/lib/channel-browser.ts",
+    "apps/rss-relay/src/lib/hooks.ts",
+    "apps/rss-relay/src/components/PostCard.tsx",
+    "backend/rss-relay/src/endpoints.py",
+    "backend/rss-relay/tests/test_channels.py"
+  ],
+  "notes": "实现与本地验收完成，未提交部署。验证见verification.md。",
+  "meta": {}
+}

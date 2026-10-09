@@ -1,0 +1,26 @@
+const {chromium}=require('C:/Users/Administrator/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright');
+const assert=require('node:assert/strict');
+(async()=>{
+ const b=await chromium.launch({executablePath:'C:/Users/Administrator/AppData/Local/ms-playwright/chromium-1243/chrome-win64/chrome.exe',headless:true});
+ const c=await b.newContext({viewport:{width:1280,height:900},permissions:['clipboard-read','clipboard-write']});const p=await c.newPage();const errors=[];p.on('pageerror',e=>errors.push(e.message));
+ await p.goto('http://localhost:3006/rss?keep=1');const filter=p.getByRole('region',{name:'渠道筛选'});await filter.getByRole('button',{name:'新闻联播服务',exact:true}).waitFor();await p.locator('article').first().waitFor();assert.equal(await p.locator('article').count(),50);
+ await p.locator('article').first().getByRole('button',{name:'未分类',exact:true}).click();await p.waitForURL('**channel=unclassified');assert.equal(await p.getByRole('dialog').count(),0);
+ await filter.getByRole('button',{name:'新闻联播服务',exact:true}).click();await p.getByRole('heading',{name:'新闻联播筛选验证',exact:true}).waitFor();assert.equal(await p.locator('article').count(),1);assert.equal(new URL(p.url()).searchParams.get('keep'),'1');assert.equal(new URL(p.url()).pathname,'/rss');
+ await p.getByRole('region',{name:'当前渠道'}).getByRole('button',{name:'复制链接',exact:true}).click();await p.getByRole('button',{name:'✓ 已复制',exact:true}).waitFor();assert.equal(new URL(await p.evaluate(()=>navigator.clipboard.readText())).searchParams.get('channel'),'xinwen');
+ await p.getByRole('button',{name:'推送示例',exact:true}).click();await p.getByLabel('选择推送渠道').locator('option[value="xinwen"]').waitFor({state:'attached'});assert.equal(await p.getByLabel('选择推送渠道').inputValue(),'xinwen');await p.keyboard.press('Escape');
+ await p.reload();await p.getByRole('heading',{name:'新闻联播筛选验证',exact:true}).waitFor();
+ await p.screenshot({path:'.trellis/tasks/10-09-rss-channel-browser/desktop.png',fullPage:true});
+ await filter.getByRole('button',{name:'空渠道',exact:true}).click();await p.getByText('这个渠道还没有内容',{exact:true}).waitFor();assert.equal(await p.locator('article').count(),0);
+ await p.goBack();await p.getByRole('heading',{name:'新闻联播筛选验证',exact:true}).waitFor();
+ await p.getByLabel('显示停用渠道历史').check();await filter.getByRole('button',{name:'停用频道 · 已停用',exact:true}).click();await p.getByRole('heading',{name:'停用历史验证',exact:true}).waitFor();assert.equal(await p.getByRole('button',{name:'推送示例',exact:true}).count(),0);
+ await p.goto('http://localhost:3006/rss?channel=does-not-exist&keep=1');await p.getByText('该渠道不存在，已返回全部内容。',{exact:true}).waitFor();assert.equal(new URL(p.url()).searchParams.get('channel'),null);assert.equal(new URL(p.url()).searchParams.get('keep'),'1');
+ await p.route('**/channels?**',route=>route.fulfill({status:503,contentType:'application/json',body:'{"detail":"test unavailable"}'}));await p.goto('http://localhost:3006/rss?channel=xinwen');await filter.getByRole('alert').waitFor();assert.equal(new URL(p.url()).searchParams.get('channel'),'xinwen');await p.unroute('**/channels?**');await p.getByRole('button',{name:'重试',exact:true}).click();await p.getByRole('heading',{name:'新闻联播筛选验证',exact:true}).waitFor();
+ // Hold the previous channel response until after the empty channel has loaded.
+ let release,seen;const gate=new Promise(r=>release=r),started=new Promise(r=>seen=r);
+ await p.route('**/posts?**',async route=>{if(new URL(route.request().url()).searchParams.get('channel')==='xinwen'){const response=await route.fetch();seen();await gate;await route.fulfill({response});}else await route.continue();});
+ await filter.getByRole('button',{name:'空渠道',exact:true}).click();await p.getByText('这个渠道还没有内容',{exact:true}).waitFor();await filter.getByRole('button',{name:'新闻联播服务',exact:true}).click();await started;await filter.getByRole('button',{name:'空渠道',exact:true}).click();await p.getByText('这个渠道还没有内容',{exact:true}).waitFor();release();await p.waitForResponse(r=>new URL(r.url()).searchParams.get('channel')==='xinwen');await p.waitForFunction(()=>document.querySelectorAll('article').length===0);await p.unroute('**/posts?**');
+ await filter.getByRole('button',{name:'新闻联播服务',exact:true}).click();await p.getByRole('heading',{name:'新闻联播筛选验证',exact:true}).waitFor();await p.setViewportSize({width:390,height:844});assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await p.screenshot({path:'.trellis/tasks/10-09-rss-channel-browser/mobile.png',fullPage:true});
+ for(let i=0;i<7;i++)await p.request.post('http://127.0.0.1:8095/api/channels',{data:{id:'extra-'+i,title:'扩展频道 '+i,description:''}});
+ await p.reload();await p.getByLabel('选择查看渠道').waitFor();await p.getByLabel('搜索渠道').fill('空渠道');await p.getByLabel('选择查看渠道').selectOption('empty');await p.getByText('这个渠道还没有内容',{exact:true}).waitFor();assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+ assert.deepEqual(errors,[]);console.log('PASS: all/channel/limit, card label, URL reload/back/preservation/invalid fallback, empty/disabled, direct copy, selected guide, channel API recovery, request race, mobile and many-channel search');await b.close();
+})().catch(e=>{console.error(e);process.exit(1)});

@@ -7,9 +7,11 @@ interface Props {
   onSelect: (post: PostInfo) => void;
   onDelete?: (post: PostInfo) => void;
   deleting?: boolean;
+  channelTitle?: string;
+  onChannelSelect?: (channel: string) => void;
 }
 
-export default function PostCard({ post, onSelect, onDelete, deleting }: Props) {
+export default function PostCard({ post, onSelect, onDelete, deleting, channelTitle, onChannelSelect }: Props) {
   const handleDelete = (e: React.MouseEvent) => {
     // 阻止冒泡，避免触发卡片的 onSelect 打开 Modal
     e.stopPropagation();
@@ -42,10 +44,11 @@ export default function PostCard({ post, onSelect, onDelete, deleting }: Props) 
       </h3>
 
       {/* 元信息 */}
-      <div className="flex items-center gap-3 font-ui text-[13px] text-ink-muted mb-3">
+      <div className="flex flex-wrap items-center gap-3 font-ui text-[13px] text-ink-muted mb-3">
+        <button onClick={e => { e.stopPropagation(); onChannelSelect?.(post.channel || 'unclassified'); }} className="px-2 py-0.5 rounded bg-accent/[0.08] text-accent hover:bg-accent/20 font-medium">{channelTitle || post.channel || '未分类'}</button>
         {post.source && (
           <span className="inline-flex items-center px-2 py-0.5 rounded-[4px] bg-accent/[0.08] text-accent font-medium">
-            {post.source}
+            工具：{post.source}
           </span>
         )}
         <time className="tnum">{formatTime(post.created_at)}</time>

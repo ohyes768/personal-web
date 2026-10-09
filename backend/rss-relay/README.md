@@ -16,7 +16,7 @@
 | GET | `/channels?include_disabled=true` | 管理视图完整清单 |
 | POST | `/channels` | 新增渠道 `{id,title,description?}`，201 返回渠道 |
 | PATCH | `/channels/{id}` | 修改 `{title?,description?,enabled?}`，200 返回渠道 |
-| GET | `/posts?limit=50` | 网页文章列表，包含 channel 和 source |
+| GET | `/posts?limit=50&channel=xinwen` | 网页文章列表，按渠道筛选；省略 channel 返回全部，包含 channel 和 source |
 | DELETE | `/posts/{id}` | 删除文章，204 成功，404 不存在 |
 
 先在网页创建渠道，再让推送工具使用对应标识：
@@ -52,6 +52,7 @@ curl -X POST 'https://web.duomi77.cn:9443/rss/api/rss-relay/post' \
 RSS token 来自环境变量 `RSS_RELAY_TOKEN`，所有 feed 均校验；无效或服务未配置 token 返回 401，缺少参数返回 422。
 鉴权通过后，未知渠道为 404。订阅链接不要公开分享。
 各渠道即使没有文章也可订阅；先按渠道筛选，再排序取 limit（默认 50，最多 200），文章 GUID 保持不变。
+网页列表同样先筛选再取 limit；未知渠道返回 404，停用渠道仍可查询历史文章。
 
 原来无 channel 的链接继续返回全部；推送端加入 channel 后，新文章进入对应渠道。
 阅读器先添加独立订阅，再取消全量订阅，避免重复。历史归属迁移需另行确认。
