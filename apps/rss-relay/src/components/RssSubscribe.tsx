@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { rssRelayApi } from '@/lib/api';
 import type { Channel } from '@/lib/types';
 import { PUBLIC_API, feedUrl, pushExample } from '@/lib/rss-links';
+import { unclassifiedLast } from '@/lib/channel-order';
 import { RelayDialog } from './RelayDialog';
 import { CopyText } from './CopyText';
 const button = 'rounded-md bg-paper-deep hover:bg-rule px-3 py-2 text-ink-muted disabled:opacity-40';
@@ -35,7 +36,7 @@ function ChannelPanel({ onClose, management = false }: { onClose: () => void; ma
     catch (e) { setError(e instanceof Error ? e.message : '保存失败'); }
     finally { setSaving(false); }
   };
-  const visible = channels.filter(c => (management || c.enabled) && `${c.title} ${c.id}`.toLowerCase().includes(search.toLowerCase()));
+  const visible = unclassifiedLast(channels.filter(c => (management || c.enabled) && `${c.title} ${c.id}`.toLowerCase().includes(search.toLowerCase())));
   return <RelayDialog title={management ? '管理渠道' : '按渠道订阅'} onClose={onClose}>
     <p className="text-ink-muted mb-5 leading-relaxed">{management ? '在这里维护服务名称。渠道标识创建后固定，订阅链接不会因改名改变。' : '复制到 RSS 阅读器，各渠道会单独显示。'}</p>
     {management && <div className="flex gap-2 mb-4"><button className={button} disabled={saving} onClick={() => startEdit('new')}>＋ 新增渠道</button></div>}

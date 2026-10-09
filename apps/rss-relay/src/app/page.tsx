@@ -7,6 +7,7 @@ import PostCard from '@/components/PostCard';
 import PostModal from '@/components/PostModal';
 import { RssSubscribe } from '@/components/RssSubscribe';
 import { useChannelBrowser } from '@/lib/channel-browser';
+import { unclassifiedLast } from '@/lib/channel-order';
 import { CopyText } from '@/components/CopyText';
 import { feedUrl } from '@/lib/rss-links';
 
@@ -21,7 +22,7 @@ export default function HomePage() {
   const browser = useChannelBrowser();
   const { posts, loading, error, refresh } = usePosts(50, browser.channel || undefined, browser.ready && (!browser.channel || (browser.loaded && !!browser.active)));
   const [channelSearch, setChannelSearch] = useState('');
-  const displayedChannels = browser.channels.filter(c => (browser.showDisabled || c.enabled));
+  const displayedChannels = unclassifiedLast(browser.channels.filter(c => (browser.showDisabled || c.enabled)));
   const searchedChannels = displayedChannels.filter(c => `${c.title} ${c.id}`.toLowerCase().includes(channelSearch.toLowerCase()));
   const refreshAll = () => { void browser.refreshChannels(); void refresh(); };
   const [selected, setSelected] = useState<PostInfo | null>(null);
