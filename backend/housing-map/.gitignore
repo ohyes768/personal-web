@@ -1,0 +1,4 @@
+.pytest-tmp-auction/
+data/auction_records.json
+data/auction_records.json.lock
+data/auction_records.json.*.tmp

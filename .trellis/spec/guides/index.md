@@ -36,6 +36,7 @@ These guides help you **ask the right questions before coding**.
 | [Skill Manager 自研 Skill 登记与对账](./skill-manager-registry-sync.md) | 自研 Skill 的 sync_local() 对账契约、source_missing 语义、源库 sync 工具链废弃后的遗留状态 | 改 skill-manager 登记/列表流程，或排查"源缺失"徽章与 junction 兼容 |
 | [Skill Manager 前端契约](./skill-manager-frontend.md) | 两级导航 URL 契约（view/tab/agent、非法值回退）、GitHub 登记批量多选/共享资源预选交互、Next basePath 下 router.replace 双拼陷阱、本机 symlink 特权限制 | 改 skill-manager 前端导航/视图结构/登记对话框，或在本机验证发布链路 |
 | [Housing-Map 小区准入契约](./housing-map-admission.md) | 采集/展示全量（is_real_community 只排道路伪小区）、轮廓按住宅口径、前端默认筛选住宅类、每周一 21:17 定时刷新（cron 时区/dow 陷阱、与手动刷新互斥） | 改小区可见性/刷新范围/定时任务，或排查"某小区数据没抓下来" |
+| [Housing-Map 法拍采集契约](./housing-map-auctions.md) | 来拍公开JSON来源、价格/状态口径、独立原子存储、CLI/API互斥及取消 | 修改法拍采集、查询或后续定时任务 |
 
 ---
 
