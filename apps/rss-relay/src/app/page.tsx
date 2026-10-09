@@ -5,11 +5,17 @@ import { rssRelayApi } from '@/lib/api';
 import type { PostInfo } from '@/lib/types';
 import PostCard from '@/components/PostCard';
 import PostModal from '@/components/PostModal';
-import ApiGuideModal from '@/components/ApiGuideModal';
 import { RssSubscribe } from '@/components/RssSubscribe';
 import { useChannelBrowser } from '@/lib/channel-browser';
 import { CopyText } from '@/components/CopyText';
 import { feedUrl } from '@/lib/rss-links';
+
+function FilterExtras({ channel, showDisabled, hasDisabled, onToggleDisabled }: { channel: string; showDisabled: boolean; hasDisabled: boolean; onToggleDisabled: (show: boolean) => void }) {
+  return <>
+    {channel && <CopyText text={feedUrl(channel)} label="订阅" disabled={!process.env.NEXT_PUBLIC_RSS_TOKEN} className="text-xs px-2 py-1 rounded-md border border-accent text-accent hover:bg-accent/10 disabled:opacity-40 whitespace-nowrap" />}
+    {hasDisabled && <button onClick={() => onToggleDisabled(!showDisabled)} className="text-xs text-ink-muted underline decoration-dotted underline-offset-2 hover:text-ink whitespace-nowrap" title="已停用渠道仅保留历史内容，可查看不可推送">{showDisabled ? '隐藏停用' : '显示停用'}</button>}
+  </>;
+}
 
 export default function HomePage() {
   const browser = useChannelBrowser();
@@ -19,7 +25,6 @@ export default function HomePage() {
   const searchedChannels = displayedChannels.filter(c => `${c.title} ${c.id}`.toLowerCase().includes(channelSearch.toLowerCase()));
   const refreshAll = () => { void browser.refreshChannels(); void refresh(); };
   const [selected, setSelected] = useState<PostInfo | null>(null);
-  const [apiOpen, setApiOpen] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const handleDelete = async (post: PostInfo) => {
@@ -62,13 +67,6 @@ export default function HomePage() {
             >
               {loading ? '加载中…' : '↻ 刷新'}
             </button>
-            <button
-              onClick={() => setApiOpen(true)}
-              className="text-[13px] px-3 py-1.5 rounded-[6px] bg-paper-deep hover:bg-rule text-ink-muted hover:text-ink transition-colors"
-              title="查看对接文档（怎么接入这个服务）"
-            >
-              🔌 对接
-            </button>
             <RssSubscribe />
           </div>
         </div>
@@ -76,14 +74,12 @@ export default function HomePage() {
 
       {/* 内容 */}
       <div className="max-w-[960px] mx-auto px-6 py-8">
-        <section aria-label="渠道筛选" className="mb-6 font-ui">
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-3"><h2 className="font-serif-cn text-lg font-bold text-ink-strong">按渠道查看</h2><label className="text-xs text-ink-muted flex items-center gap-2"><input type="checkbox" checked={browser.showDisabled} onChange={e => browser.toggleDisabled(e.target.checked)} />显示停用渠道历史</label></div>
+        <section aria-label="渠道筛选" className="mb-5 font-ui">
           {browser.error && <p role="alert" className="mb-3 text-sm text-danger">渠道加载失败：{browser.error} <button className="underline" onClick={browser.refreshChannels}>重试</button></p>}
           {!browser.loaded && !browser.error && <p className="text-sm text-ink-muted">加载渠道中…</p>}
-          {displayedChannels.length > 8 ? <div className="flex flex-col sm:flex-row gap-2"><input aria-label="搜索渠道" value={channelSearch} onChange={e => setChannelSearch(e.target.value)} placeholder="搜索渠道名称或标识" className="min-w-0 border border-rule rounded-md bg-paper-card px-3 py-2 text-sm" /><select aria-label="选择查看渠道" value={browser.channel} onChange={e => browser.choose(e.target.value)} className="min-w-0 flex-1 border border-rule rounded-md bg-paper-card px-3 py-2 text-sm"><option value="">全部内容</option>{searchedChannels.map(c => <option key={c.id} value={c.id}>{c.title}{!c.enabled ? '（已停用）' : ''}</option>)}{browser.active && !searchedChannels.some(c => c.id === browser.channel) && <option value={browser.channel}>{browser.active.title}</option>}</select></div> : <div className="flex flex-wrap gap-2"><button aria-pressed={!browser.channel} onClick={() => browser.choose('')} className={`text-sm px-3 py-2 rounded-md border ${!browser.channel ? 'border-accent bg-accent/10 text-accent' : 'border-rule text-ink-muted'}`}>全部内容</button>{displayedChannels.map(c => <button key={c.id} aria-pressed={browser.channel === c.id} onClick={() => browser.choose(c.id)} className={`max-w-full break-words text-sm px-3 py-2 rounded-md border ${browser.channel === c.id ? 'border-accent bg-accent/10 text-accent' : 'border-rule text-ink-muted'}`}>{c.title}{!c.enabled ? ' · 已停用' : ''}</button>)}</div>}
+          {displayedChannels.length > 8 ? <div className="flex flex-col sm:flex-row gap-2 sm:items-center"><input aria-label="搜索渠道" value={channelSearch} onChange={e => setChannelSearch(e.target.value)} placeholder="搜索渠道名称或标识" className="min-w-0 border border-rule rounded-md bg-paper-card px-2.5 py-1.5 text-[13px]" /><select aria-label="选择查看渠道" value={browser.channel} onChange={e => browser.choose(e.target.value)} className="min-w-0 flex-1 border border-rule rounded-md bg-paper-card px-2.5 py-1.5 text-[13px]"><option value="">全部内容</option>{searchedChannels.map(c => <option key={c.id} value={c.id}>{c.title}{!c.enabled ? '（已停用）' : ''}</option>)}{browser.active && !searchedChannels.some(c => c.id === browser.channel) && <option value={browser.channel}>{browser.active.title}</option>}</select><FilterExtras channel={browser.channel} showDisabled={browser.showDisabled} hasDisabled={browser.channels.some(c => !c.enabled)} onToggleDisabled={browser.toggleDisabled} /></div> : <div className="flex flex-wrap items-center gap-1.5"><button aria-pressed={!browser.channel} onClick={() => browser.choose('')} className={`text-[13px] px-2.5 py-1 rounded-md border ${!browser.channel ? 'border-accent bg-accent/10 text-accent' : 'border-rule text-ink-muted'}`}>全部内容</button>{displayedChannels.map(c => <button key={c.id} aria-pressed={browser.channel === c.id} onClick={() => browser.choose(c.id)} className={`max-w-full break-words text-[13px] px-2.5 py-1 rounded-md border ${browser.channel === c.id ? 'border-accent bg-accent/10 text-accent' : 'border-rule text-ink-muted'}`}>{c.title}{!c.enabled ? ' · 已停用' : ''}</button>)}<FilterExtras channel={browser.channel} showDisabled={browser.showDisabled} hasDisabled={browser.channels.some(c => !c.enabled)} onToggleDisabled={browser.toggleDisabled} /></div>}
           {browser.notice && <p role="status" className="text-sm text-ink-muted mt-3">{browser.notice}</p>}
         </section>
-        {browser.active && <section aria-label="当前渠道" className="mb-6 p-5 bg-paper-card border border-rule rounded-lg"><div className="flex flex-wrap justify-between gap-4"><div className="min-w-0"><h2 className="font-serif-cn text-xl font-bold break-words">{browser.active.title}</h2><p className="font-ui text-sm text-ink-muted mt-2 break-words">{browser.active.description || '该渠道的独立内容与订阅'}</p>{!browser.active.enabled && <p className="font-ui text-xs text-ink-muted mt-2">已停用：可查看历史内容，暂停接收新推送。</p>}</div><div className="flex flex-wrap gap-2 font-ui text-sm"><CopyText text={feedUrl(browser.channel)} disabled={!process.env.NEXT_PUBLIC_RSS_TOKEN} />{browser.active.enabled && <button onClick={() => setApiOpen(true)} className="px-3 py-2 rounded-md bg-paper-deep text-ink-muted">推送示例</button>}</div></div></section>}
         {error && (
           <div className="mb-4 p-4 bg-danger/[0.06] border border-danger/30 text-danger rounded-[8px] font-ui text-[14px]">
             ⚠️ 加载失败：{error}
@@ -132,9 +128,6 @@ export default function HomePage() {
       {selected && (
         <PostModal post={selected} onClose={() => setSelected(null)} />
       )}
-
-      {/* 对接文档 */}
-      <ApiGuideModal open={apiOpen} onClose={() => setApiOpen(false)} initialChannel={browser.active?.enabled ? browser.channel : undefined} />
     </main>
   );
 }

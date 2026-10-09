@@ -8,6 +8,12 @@
       "port": 3008
     },
     {
+      "name": "rss-relay-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "apps/rss-relay", "dev"],
+      "port": 3006
+    },
+    {
       "name": "housing-map-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/housing-map", "dev"],
