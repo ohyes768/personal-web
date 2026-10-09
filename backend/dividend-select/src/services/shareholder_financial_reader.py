@@ -1,6 +1,9 @@
 """
 CSV 数据读取服务 - 股东户数和财务指标
 """
+import json
+import math
+
 from pathlib import Path
 from typing import Optional
 
@@ -115,6 +118,29 @@ class FinancialReader:
             return str(sorted(quarters)[-1])
         return None
 
+    @staticmethod
+    def parse_roe_history(value) -> list[dict]:
+        """Old or malformed cache cells remain missing."""
+        if not isinstance(value, str):
+            return []
+        try:
+            items = json.loads(value)
+            if not isinstance(items, list):
+                return []
+            result = []
+            for item in items:
+                if not isinstance(item, dict) or not isinstance(item.get("year"), int):
+                    return []
+                number = item.get("value")
+                if number is not None:
+                    number = float(number)
+                    if not math.isfinite(number):
+                        return []
+                result.append({"year": item["year"], "value": number})
+            return result
+        except (ValueError, TypeError):
+            return []
+
     def get_stock_data(self, code: str) -> Optional[dict]:
         """获取单只股票的财务指标数据"""
         df = self.read_csv()
@@ -126,17 +152,37 @@ class FinancialReader:
         if row.empty:
             return None
 
-        row = row.iloc[0]
+        return self.row_to_data(row.iloc[0])
+
+    @staticmethod
+    def row_to_data(row) -> dict:
+        """Convert a cache row, preserving missing and invalid numbers as null."""
+        def number(column):
+            try:
+                value = float(row.get(column))
+                return value if math.isfinite(value) else None
+            except (ValueError, TypeError, OverflowError):
+                return None
+
+        def year(column):
+            value = number(column)
+            return int(value) if value is not None and value.is_integer() else None
+
         return {
-            "gross_profit_margin": float(row["主营业务利润率"]) if pd.notna(row.get("主营业务利润率")) else None,
-            "net_profit_margin": float(row["净利率"]) if pd.notna(row.get("净利率")) else None,
-            "roe": float(row["ROE"]) if pd.notna(row.get("ROE")) else None,
-            "debt_asset_ratio": float(row["资产负债率"]) if pd.notna(row.get("资产负债率")) else None,
-            "net_profit_ex_non_recurring_yoy": float(row["扣非净利润同比"]) if pd.notna(row.get("扣非净利润同比")) else None,
-            "net_profit_cagr_3y": float(row["3年复合增长率"]) if pd.notna(row.get("3年复合增长率")) else None,
-            "eps_year": int(row["最新EPS年度"]) if pd.notna(row.get("最新EPS年度")) else None,
-            "eps": float(row["最新EPS(元)"]) if pd.notna(row.get("最新EPS(元)")) else None,
-            "latest_quarter_net_profit_ex_non_recurring": float(row["最新季度扣非(元)"]) if pd.notna(row.get("最新季度扣非(元)")) else None,
-            "latest_quarter_yoy_pct": float(row["最新季度扣非同比(%)"]) if pd.notna(row.get("最新季度扣非同比(%)")) else None,
+            "gross_profit_margin": number("主营业务利润率"),
+            "net_profit_margin": number("净利率"),
+            "roe": number("ROE"),
+            "roe_year": year("ROE年度"),
+            "roe_avg_3y": number("近3年平均ROE"),
+            "roe_history": FinancialReader.parse_roe_history(row.get("近3年ROE历史")),
+            "previous_quarter_yoy_pct": number("前一季度扣非同比(%)"),
+            "previous_quarter_label": str(row["前一季度"]) if pd.notna(row.get("前一季度")) else None,
+            "debt_asset_ratio": number("资产负债率"),
+            "net_profit_ex_non_recurring_yoy": number("扣非净利润同比"),
+            "net_profit_cagr_3y": number("3年复合增长率"),
+            "eps_year": year("最新EPS年度"),
+            "eps": number("最新EPS(元)"),
+            "latest_quarter_net_profit_ex_non_recurring": number("最新季度扣非(元)"),
+            "latest_quarter_yoy_pct": number("最新季度扣非同比(%)"),
             "latest_quarter_label": str(row["数据季度"]) if pd.notna(row.get("数据季度")) and str(row["数据季度"]).strip() else None,
         }

@@ -248,3 +248,102 @@ class TestCalcQuarterlyYoy:
         result = fetcher._calc_quarterly_yoy(df)
         assert result["数据季度"] == "2026Q2"
 
+
+class TestScreeningFinancialHistory:
+    def test_roe_uses_three_consecutive_annual_reports(self):
+        import json
+        df = pd.DataFrame({
+            "日期": ["2023-12-31", "2024-12-31", "2025-12-31", "2026-03-31"],
+            "加权净资产收益率(%)": [9, 12, 15, 99],
+        })
+        result = FinancialFetcher()._calc_roe_history(df)
+        assert result["ROE年度"] == 2025
+        assert result["近3年平均ROE"] == 12
+        assert json.loads(result["近3年ROE历史"]) == [
+            {"year": 2023, "value": 9}, {"year": 2024, "value": 12}, {"year": 2025, "value": 15}]
+
+    @pytest.mark.parametrize("years,values", [([2022, 2024, 2025], [9, 12, 15]),
+                                              ([2023, 2024, 2025], [9, float('nan'), 15])])
+    def test_roe_history_gaps_do_not_get_average(self, years, values):
+        df = pd.DataFrame({"日期": [date(year, 12, 31) for year in years],
+                           "加权净资产收益率(%)": values})
+        assert FinancialFetcher()._calc_roe_history(df)["近3年平均ROE"] is None
+
+    def test_previous_q4_crosses_year_and_restores_single_quarter(self):
+        df = pd.DataFrame({
+            "日期": ["2026-03-31", "2025-12-31", "2025-09-30", "2024-12-31", "2024-09-30"],
+            "扣除非经常性损益后的净利润(元)": [20, 100, 70, 120, 80],
+        })
+        assert FinancialFetcher()._calc_previous_quarter_yoy(df) == {
+            "前一季度": "2025Q4", "前一季度扣非同比(%)": -25.0}
+
+    def test_missing_previous_quarter_does_not_skip_to_older_period(self):
+        df = pd.DataFrame({"日期": ["2026-09-30", "2026-03-31", "2025-03-31"],
+                           "扣除非经常性损益后的净利润(元)": [100, 30, 20]})
+        assert FinancialFetcher()._calc_previous_quarter_yoy(df) == {
+            "前一季度": "2026Q2", "前一季度扣非同比(%)": None}
+
+    @pytest.mark.parametrize("base,expected", [(-10, 150), (0, None)])
+    def test_previous_quarter_negative_and_zero_bases(self, base, expected):
+        df = pd.DataFrame({"日期": ["2026-06-30", "2026-03-31", "2025-03-31"],
+                           "扣除非经常性损益后的净利润(元)": [20, 5, base]})
+        assert FinancialFetcher()._calc_previous_quarter_yoy(df)["前一季度扣非同比(%)"] == expected
+
+    def test_annual_growth_missing_adjacent_year_stays_missing(self):
+        df = pd.DataFrame({"日期": ["2025-12-31", "2023-12-31"],
+                           "扣除非经常性损益后的净利润(元)": [100, 50]})
+        assert FinancialFetcher()._calc_growth_metrics(df)["扣非净利润同比"] is None
+
+    def test_reader_roundtrip_and_old_cache(self, tmp_path):
+        from src.services.shareholder_financial_reader import FinancialReader
+        df = pd.DataFrame({"日期": ["2023-12-31", "2024-12-31", "2025-12-31"],
+                           "加权净资产收益率(%)": [9, 12, 15]})
+        path = tmp_path / "financial.csv"
+        pd.DataFrame([{"股票代码": "000090", "ROE": 15,
+                       **FinancialFetcher()._calc_roe_history(df),
+                       "前一季度": "2025Q3", "前一季度扣非同比(%)": -5}]).to_csv(path, index=False)
+        reader = FinancialReader()
+        with patch.object(reader, "_get_file_path", return_value=path):
+            result = reader.get_stock_data("000090")
+        assert result["roe_avg_3y"] == 12
+        assert result["roe_history"][0] == {"year": 2023, "value": 9}
+        assert result["previous_quarter_yoy_pct"] == -5
+        pd.DataFrame([{"股票代码": "000090", "ROE": 15}]).to_csv(path, index=False)
+        with patch.object(reader, "_get_file_path", return_value=path):
+            old = reader.get_stock_data("000090")
+        assert old["roe_year"] is None
+        assert old["roe_avg_3y"] is None
+        assert old["roe_history"] == []
+        assert old["previous_quarter_yoy_pct"] is None
+
+    def test_latest_q3_restores_single_quarter(self):
+        df = pd.DataFrame({"日期": ["2026-09-30", "2026-06-30", "2025-09-30", "2025-06-30"],
+                           "扣除非经常性损益后的净利润(元)": [100, 60, 90, 60]})
+        result = FinancialFetcher()._calc_quarterly_yoy(df)
+        assert result["最新季度扣非(元)"] == 40
+        assert result["最新季度扣非同比(%)"] == 33.33
+
+    def test_previous_q2_missing_cumulative_remains_missing(self):
+        df = pd.DataFrame({"日期": ["2026-09-30", "2026-06-30", "2025-06-30", "2025-03-31"],
+                           "扣除非经常性损益后的净利润(元)": [100, 60, 50, 20]})
+        result = FinancialFetcher()._calc_previous_quarter_yoy(df)
+        assert result == {"前一季度": "2026Q2", "前一季度扣非同比(%)": None}
+
+    @pytest.mark.parametrize('value', [float('inf'), float('-inf'), float('nan'), 'NaN', '-', 'bad', None])
+    def test_reader_invalid_numeric_cache_cells_are_json_safe(self, value):
+        import json
+        from src.services.shareholder_financial_reader import FinancialReader
+        row = pd.Series({column: value for column in [
+            '主营业务利润率', '净利率', 'ROE', 'ROE年度', '近3年平均ROE',
+            '前一季度扣非同比(%)', '资产负债率', '扣非净利润同比', '3年复合增长率',
+            '最新EPS年度', '最新EPS(元)', '最新季度扣非(元)', '最新季度扣非同比(%)']})
+        result = FinancialReader.row_to_data(row)
+        assert result['roe'] is None
+        assert result['roe_year'] is None
+        assert result['latest_quarter_yoy_pct'] is None
+        json.dumps(result, allow_nan=False)
+
+    def test_reader_rejects_fractional_year_and_invalid_history(self):
+        from src.services.shareholder_financial_reader import FinancialReader
+        assert FinancialReader.row_to_data(pd.Series({'ROE年度': 2025.5}))['roe_year'] is None
+        assert FinancialReader.parse_roe_history('[{"year": 2025, "value": Infinity}]') == []

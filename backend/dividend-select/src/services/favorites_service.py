@@ -135,6 +135,41 @@ class FavoritesService:
             self._save()
             return copy.deepcopy(self._data)
 
+    def add_batch(self, codes: list[str]) -> tuple[list[dict], dict]:
+        """Add unique valid codes in one locked atomic write; preserve existing metadata."""
+        results, seen = [], set()
+        with self._lock:
+            before = copy.deepcopy(self._data)
+            now_iso = datetime.now().isoformat()
+            for raw_code in codes:
+                try:
+                    code = self._normalize_code(raw_code)
+                    if len(raw_code) != 6 or not raw_code.isascii():
+                        raise ValueError("股票代码必须为六位数字字符串")
+                except ValueError as exc:
+                    results.append({"code": raw_code, "status": "failed", "error": str(exc)})
+                    continue
+                if code in seen:
+                    continue
+                seen.add(code)
+                if code in self._data["codes"]:
+                    results.append({"code": code, "status": "already_exists"})
+                    continue
+                self._data["codes"].append(code)
+                self._data["items"].append({"code": code, "added_at": now_iso, "note": None})
+                results.append({"code": code, "status": "added"})
+            if any(item["status"] == "added" for item in results):
+                self._data["updated_at"] = now_iso
+                try:
+                    self._save()
+                except Exception:
+                    logger.exception("批量收藏保存失败")
+                    self._data = before
+                    for item in results:
+                        if item["status"] == "added":
+                            item.update(status="failed", error="收藏保存失败，请重试")
+            return results, copy.deepcopy(self._data)
+
     def remove(self, code: str) -> dict:
         """
         从收藏中移除（幂等：不存在也直接返回）

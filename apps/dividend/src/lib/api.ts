@@ -3,6 +3,7 @@
  * 所有股息率相关 API 调用必须通过此文件
  */
 import { directClient } from './api-client';
+import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse } from './screening';
 import type { FavoritesResponse } from './watchlist';
 import type {
   DividendListResponse,
@@ -27,6 +28,10 @@ import type {
 } from './types';
 
 export const dividendApi = {
+  screenStocks: (conditions: ScreeningConditions) =>
+    directClient.post<ScreeningResponse>('/api/dividend/stocks/screen', conditions),
+  addFavoritesBatch: (codes: string[]) =>
+    directClient.post<BatchFavoriteResponse>('/api/dividend/favorites/batch', { codes }),
   /**
    * 获取股票列表
    */

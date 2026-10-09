@@ -1,6 +1,8 @@
 """
 财务指标获取器 - 逐只获取股票财务指标数据
 """
+import json
+import math
 import time
 from datetime import date
 from typing import Optional
@@ -63,6 +65,8 @@ class FinancialFetcher:
                 "资产负债率": self._safe_float(latest.get("资产负债率(%)")),
             }
 
+            result.update(self._calc_roe_history(df))
+
             # 计算扣非净利润同比增速和3年复合增长率
             growth_metrics = self._calc_growth_metrics(df)
             result.update(growth_metrics)
@@ -74,6 +78,7 @@ class FinancialFetcher:
             # 计算最新季度扣非同比（前端 hover tooltip 用），并产出数据季度
             quarterly_metrics = self._calc_quarterly_yoy(df)
             result.update(quarterly_metrics)
+            result.update(self._calc_previous_quarter_yoy(df))
 
             return result
 
@@ -166,9 +171,43 @@ class FinancialFetcher:
         if value is None or (isinstance(value, float) and np.isnan(value)):
             return None
         try:
-            return float(value)
+            number = float(value)
+            return number if math.isfinite(number) else None
         except (ValueError, TypeError):
             return None
+
+    def _calc_roe_history(self, df: pd.DataFrame) -> dict:
+        """Use consecutive annual weighted ROEs; missing years remain missing."""
+        dates = pd.to_datetime(df["日期"], errors="coerce")
+        annual = df.loc[(dates.dt.month == 12) & (dates.dt.day == 31)].copy()
+        annual["_year"] = dates.loc[annual.index].dt.year
+        if annual.empty:
+            return {"ROE年度": None, "近3年平均ROE": None, "近3年ROE历史": "[]"}
+        latest_year = int(annual["_year"].max())
+        values = {int(row["_year"]): self._safe_float(row.get("加权净资产收益率(%)"))
+                  for _, row in annual.iterrows()}
+        history = [{"year": year, "value": values.get(year)}
+                   for year in range(latest_year - 2, latest_year + 1)]
+        complete = all(item["value"] is not None for item in history)
+        return {"ROE年度": latest_year,
+                "近3年平均ROE": sum(item["value"] for item in history) / 3 if complete else None,
+                "近3年ROE历史": json.dumps(history, ensure_ascii=False, allow_nan=False)}
+
+    def _calc_previous_quarter_yoy(self, df: pd.DataFrame) -> dict:
+        """Evaluate the exact adjacent report period, including Q1 -> prior-year Q4."""
+        empty = {"前一季度扣非同比(%)": None, "前一季度": None}
+        dates = pd.to_datetime(df["日期"], errors="coerce")
+        if dates.dropna().empty:
+            return empty
+        latest = dates.max().date()
+        q = (latest.month - 1) // 3 + 1
+        previous = (date(latest.year - 1, 12, 31) if q == 1 else
+                    date(latest.year, (q - 1) * 3, {2: 31, 3: 30, 4: 30}[q]))
+        label = f"{previous.year}Q{(previous.month - 1) // 3 + 1}"
+        if not (dates.dt.date == previous).any():
+            return {**empty, "前一季度": label}
+        result = self._calc_quarterly_yoy(df.loc[dates.dt.date <= previous])
+        return {"前一季度扣非同比(%)": result["最新季度扣非同比(%)"], "前一季度": label}
 
     def _calc_latest_eps(self, df: pd.DataFrame) -> dict:
         """
@@ -296,7 +335,8 @@ class FinancialFetcher:
 
         # 计算同比增速（当年 vs 上年）
         yoy_growth = None
-        if len(values) >= 2 and values[1] != 0:
+        annual_years = pd.to_datetime(year_end_df["日期"]).dt.year.tolist()
+        if latest_value is not None and annual_years[0] - annual_years[1] == 1:
             prev_value = self._safe_float(values[1])
             if prev_value is not None and prev_value != 0:
                 yoy_growth = (latest_value - prev_value) / abs(prev_value) * 100

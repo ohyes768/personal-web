@@ -8,6 +8,7 @@ import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'rea
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
+import { ScreeningTab } from '@/components/ScreeningTab';
 import { DividendTable } from '@/components/DividendTable';
 import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -24,7 +25,7 @@ import { dividendApi } from '@/lib/api';
 import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
-type TabKey = 'all' | 'alerts';
+type TabKey = 'all' | 'alerts' | 'screening';
 
 /**
  * 红利指数徽章白名单（与 fetcher.py 的 DIVIDEND_INDEXES + ALT_API_INDEXES 对齐）
@@ -483,6 +484,22 @@ function DividendPageContent() {
   // 收藏（watchlist）
   const watchlist = useWatchlist();
 
+  const [favoriteStocks, setFavoriteStocks] = useState<DividendStock[]>([]);
+  const [favoriteLoadError, setFavoriteLoadError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    if (watchlist.codes.size === 0) { setFavoriteStocks([]); return; }
+    dividendApi.getStocks({ min_yield: 0 }).then(response => {
+      if (!cancelled) { setFavoriteStocks(response.items); setFavoriteLoadError(''); }
+    }).catch(err => { if (!cancelled) setFavoriteLoadError(err instanceof Error ? err.message : '收藏资料加载失败'); });
+    return () => { cancelled = true; };
+  }, [watchlist.codes, refreshKey]);
+  const independentFavorites: DividendStockWithTechnical[] = useMemo(() => [...watchlist.codes].map(code => {
+    const stock = favoriteStocks.find(item => item.code === code) || data.find(item => item.code === code)
+      || { code, name: '资料待补', exchange: '' };
+    return { ...stock, technical: technicalData.get(code) };
+  }), [watchlist.codes, favoriteStocks, data, technicalData]);
+
   // 挡位监控状态
   const alertsStatus = useAlertsStatus();
   const [alertStock, setAlertStock] = useState<DividendStock | null>(null);
@@ -512,20 +529,20 @@ function DividendPageContent() {
   };
 
   const handleOpenAlertSettings = useCallback((code: string) => {
-    const s = data.find(x => x.code === code);
+    const s = independentFavorites.find(x => x.code === code) || data.find(x => x.code === code);
     if (s) {
       setAlertStock(s);
       setAlertOpen(true);
     } else {
       alert(`未找到股票 ${code}，请刷新页面后重试`);
     }
-  }, [data]);
+  }, [data, independentFavorites]);
 
   // URL query 同步 tab（?tab=alerts）+ 收藏过滤（?fav=1）
   const router = useRouter();
   const searchParams = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const activeTab: TabKey = tabParam === 'alerts' ? 'alerts' : 'all';
+  const activeTab: TabKey = tabParam === 'alerts' ? 'alerts' : tabParam === 'screening' ? 'screening' : 'all';
   // 兼容旧 ?tab=watchlist 书签 → 等价于 all + 只看收藏
   const favOnly = searchParams.get('fav') === '1' || tabParam === 'watchlist';
   const handleTabChange = useCallback((tab: TabKey) => {
@@ -537,7 +554,7 @@ function DividendPageContent() {
   }, [router, searchParams]);
   const handleToggleFav = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
-    if (favOnly) params.delete('fav');
+    if (favOnly) { params.delete('fav'); if (params.get('tab') === 'watchlist') params.delete('tab'); }
     else params.set('fav', '1');
     const qs = params.toString();
     router.replace(qs ? `?${qs}` : '?', { scroll: false });
@@ -557,10 +574,10 @@ function DividendPageContent() {
   // 按 tab + 收藏过滤显示数据（"只看收藏"仅在 all tab 生效）
   const displayData = useMemo(() => {
     if (activeTab === 'all' && favOnly) {
-      return stocksWithTechnical.filter(s => watchlist.has(s.code));
+      return independentFavorites;
     }
     return stocksWithTechnical;
-  }, [stocksWithTechnical, activeTab, favOnly, watchlist]);
+  }, [stocksWithTechnical, activeTab, favOnly, independentFavorites]);
 
   // 挡位监控 Tab：filter 已设 alerts 的收藏股票
   const alertStocks = useMemo(() => {
@@ -568,12 +585,12 @@ function DividendPageContent() {
     return items
       .filter(it => it.levels && Object.values(it.levels).some(lv => lv && lv.price))
       .map(it => {
-        const stock = stocksWithTechnical.find(s => s.code === it.code);
+        const stock = independentFavorites.find(s => s.code === it.code) || stocksWithTechnical.find(s => s.code === it.code);
         if (!stock) return null;
         return { stock, levels: it.levels as AlertLevels };
       })
       .filter((s): s is { stock: DividendStockWithTechnical; levels: AlertLevels } => s !== null);
-  }, [alertsStatus.status, stocksWithTechnical]);
+  }, [alertsStatus.status, stocksWithTechnical, independentFavorites]);
 
   // 挡位监控现价（独立于 M120：M120 缺失时仍能取现价，避免挡位 bar 空窗）
   const alertCodes = useMemo(() => alertStocks.map(s => s.stock.code), [alertStocks]);
@@ -590,7 +607,7 @@ function DividendPageContent() {
   }, [compare]);
 
   // 骨架屏
-  if (loading && data.length === 0) {
+  if (loading && data.length === 0 && activeTab === 'all' && !favOnly) {
     return (
       <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper">
         <div className="mb-6">
@@ -602,60 +619,6 @@ function DividendPageContent() {
     );
   }
 
-  // 空数据提示
-  if (!loading && data.length === 0 && !error) {
-    return (
-      <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper">
-        <div className="mb-6">
-          <div className="flex justify-between items-start">
-            <div>
-              <Link href="/" className="text-ink-muted hover:text-ink-strong transition-colors">
-                ← 返回首页
-              </Link>
-              <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
-            </div>
-            <button
-              onClick={updateDividend}
-              disabled={updateState.dividend === 'loading'}
-              className={`
-                px-4 py-2 rounded font-medium transition-all flex items-center gap-2 whitespace-nowrap
-                ${updateState.dividend === 'loading'
-                  ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                  : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                }
-              `}
-            >
-              {updateState.dividend === 'loading' ? (
-                <>
-                  <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                  </svg>
-                  刷新中...
-                </>
-              ) : (
-                <>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-                  </svg>
-                  更新股息率
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-        <div className="bg-paper-card rounded-lg p-8 text-center">
-          <div className="text-6xl mb-4">📊</div>
-          <h2 className="text-xl font-semibold text-ink mb-2">本月股息率数据未计算</h2>
-          <p className="text-ink-muted mb-6">请点击上方「更新股息率」按钮获取数据</p>
-          {updateState.message && (
-            <div className="bg-blue-900/50 border border-blue-700 text-blue-200 px-4 py-3 rounded inline-block">
-              {updateState.message}
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper">
@@ -668,12 +631,12 @@ function DividendPageContent() {
             </Link>
             <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             <p className="text-ink-muted mt-1">
-              {totalCollected !== null
+              {activeTab === 'screening' ? '按分红与经营质量筛选，收藏后持续关注' : totalCollected !== null
                 ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${minYieldInput}%`
                 : `共 ${total} 只股票 | 3年股息率 ≥ ${minYieldInput}%`}
             </p>
             {/* 筛选条件 */}
-            <div className="mt-2 flex items-center gap-3">
+            {activeTab !== 'screening' && <div className="mt-2 flex items-center gap-3">
               <label className="text-sm text-ink-muted">交易所:</label>
               <select
                 value={exchangeFilter}
@@ -718,7 +681,7 @@ function DividendPageContent() {
                 </svg>
                 查询
               </button>
-            </div>
+            </div>}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1026,6 +989,7 @@ function DividendPageContent() {
           挡位监控
           <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{alertStocks.length}</span>
         </button>
+        <button onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
         {/* 只看收藏 toggle：仅 all tab 显示，过滤当前列表 */}
         {activeTab === 'all' && (
           <button
@@ -1044,12 +1008,13 @@ function DividendPageContent() {
         )}
       </div>
 
+      {activeTab === 'all' && favOnly && favoriteLoadError && <p role="alert" className="mb-3 text-red-600">收藏资料加载失败：{favoriteLoadError}，暂显示已有资料。</p>}
       {/* 只看收藏 空状态 */}
       {activeTab === 'all' && favOnly && displayData.length === 0 && !loading && (
         <div className="bg-paper-card rounded-lg p-12 text-center">
           <StarIconOutline className="w-12 h-12 mx-auto mb-3 text-gray-500" />
           <p className="text-gray-400 mb-4">
-            {watchlist.total === 0 ? '还没有收藏的股票，在列表里点星标添加' : '本月筛选范围内暂无收藏的股票'}
+            {watchlist.total === 0 ? '还没有收藏的股票，在列表里点星标添加' : '收藏资料加载中'}
           </p>
           <button
             onClick={handleToggleFav}
@@ -1061,7 +1026,7 @@ function DividendPageContent() {
       )}
 
       {/* 表格 - 使用 refreshKey 作为 key 强制刷新；all+favOnly 用过滤后的 displayData */}
-      {activeTab === 'alerts' ? (
+      {activeTab === 'screening' ? <ScreeningTab watchlist={watchlist} /> : activeTab === 'alerts' ? (
         <div className="space-y-2">
           {alertStocks.length === 0 ? (
             <div className="bg-paper-card rounded-lg p-12 text-center">
