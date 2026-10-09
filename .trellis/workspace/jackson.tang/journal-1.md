@@ -679,3 +679,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 首页门户：nginx 内联 HTML 改静态统一卡片页
+
+**Date**: 2026-10-09
+**Task**: 首页门户：nginx 内联 HTML 改静态统一卡片页
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+根路径从 web.conf 内联 HTML 改为 nginx/html/index.html 静态页（nginx 容器挂 /var/www/personal，改 HTML 免 restart）。8 张应用卡统一为「图标+名称+状态点+一句话简介」，每卡独立 5s 超时探测 health、失败只红本卡；无 JS 仍有链接（渐进增强）、暗色/移动端适配。web.conf 补 5 条 health 精确匹配（funds/skills/douyin/kids/rss-relay，前缀 rewrite 会改坏路径），逐一对照后端真实路由。首版做过三卡 KPI 数字（股息率 Top1/美元人民币/滨江均价），用户部署后确认不要、整体移除。文档：DEPLOYMENT_FILES.md 挂载与新 location、CLAUDE.md 约定。NAS 已部署验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e126b34` | (see git log) |
+| `2cbb511` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
