@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 18
+- **Total Sessions**: 20
 - **Last Active**: 2026-10-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~716 | Active |
+| `journal-1.md` | ~782 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,8 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 20 | 2026-10-09 | 宏观更新管道补齐与归档 | `b201bcd` | `master` |
+| 19 | 2026-10-09 | 滨江法拍采集脚本与手动接口 | - | `master` |
 | 18 | 2026-10-09 | 首页门户：nginx 内联 HTML 改静态统一卡片页 | `e126b34`, `2cbb511` | `master` |
 | 17 | 2026-09-22 | skill 管理：自研对账登记 + 废弃源库 sync 工具链 | `c46aa14`, `b2b361d`, `555a500`, `20f0848` | `master` |
 | 16 | 2026-09-21 | skill-manager 登记真源迁移 SQLite | `a77e6ff` | `master` |

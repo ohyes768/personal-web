@@ -714,3 +714,69 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 19: 滨江法拍采集脚本与手动接口
+
+**Date**: 2026-10-09
+**Task**: 滨江法拍采集脚本与手动接口
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI和手动API；119项测试通过，真实采集3条及476万成交样本核验。未提交未部署，定时任务后续补。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 20: 宏观更新管道补齐与归档
+
+**Date**: 2026-10-09
+**Task**: 宏观更新管道补齐与归档
+**Package**: backend/global-macro-fin
+**Branch**: `master`
+
+### Summary
+
+实际后端目录backend/macro（Trellis包别名global-macro-fin）。补齐18个可执行更新注册项和统一锁及响应层；联合类型与实际契约用例完整性校验含变异验证。394项测试通过，18端点与迁移前完整响应和CSV一致；两组scheduler隔离HTTP/CSV/JSONL及现有网页刷新验收通过，任务已归档。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b201bcd` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
