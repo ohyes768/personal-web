@@ -16,6 +16,10 @@
   --ok: #3a9a50;            /* 在线 */
   --bad: #c0453e;           /* 离线 */
   --shadow: rgba(60, 50, 35, .08);
+  /* 分组色（去饱和、暖纸调）：投资=暖橘 / 生活=墨绿 / 工具=蓝灰 */
+  --chip-invest-bg: #f3e9d8; --chip-invest-fg: #96682a;
+  --chip-life-bg: #e6eee3;   --chip-life-fg: #4a7350;
+  --chip-tool-bg: #e6eaee;   --chip-tool-fg: #4e5f70;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -29,6 +33,9 @@
     --ok: #66c17e;
     --bad: #e07a6b;
     --shadow: rgba(0, 0, 0, .3);
+    --chip-invest-bg: rgba(211, 164, 92, .13); --chip-invest-fg: #d3a45c;
+    --chip-life-bg: rgba(124, 187, 138, .12);  --chip-life-fg: #7cbb8a;
+    --chip-tool-bg: rgba(143, 166, 189, .13);  --chip-tool-fg: #8fa6bd;
   }
 }
 * { box-sizing: border-box; }
@@ -41,9 +48,23 @@ body {
   line-height: 1.5;
 }
 .wrap { max-width: 880px; margin: 0 auto; padding: 36px 20px 24px; }
-header { margin-bottom: 18px; }
-h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: .5px; }
+header { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; margin-bottom: 26px; }
+h1 { margin: 0 0 4px; font-size: 21px; font-weight: 700; letter-spacing: .5px; }
 .sub { margin: 0; font-size: 12px; color: var(--text-3); }
+.agg { display: none; align-items: center; gap: 6px; font-size: 12px; color: var(--text-2); white-space: nowrap; }
+.agg[data-state="done"] { display: flex; }
+.agg .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+.agg[data-result="partial"] .dot { background: var(--bad); }
+.agg[data-result="partial"] { color: var(--bad); }
+
+/* ===== 分组 ===== */
+.group { margin-bottom: 26px; }
+.group:last-child { margin-bottom: 0; }
+.group-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.group-name { font-size: 12px; font-weight: 600; letter-spacing: 2px; color: var(--text-2); }
+.group-rule { flex: 1; height: 1px; background: var(--border); }
+.group-count { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.group-count.has-offline { color: var(--bad); }
 
 .grid { display: grid; grid-template-columns: 1fr; gap: 14px; }
 @media (min-width: 720px) { .grid { grid-template-columns: repeat(2, 1fr); } }
@@ -64,9 +85,16 @@ h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: .5px; }
   transform: translateY(-2px);
   box-shadow: 0 4px 14px var(--shadow);
 }
-.card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.card-title { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 15px; font-weight: 600; }
-.icon { font-size: 18px; line-height: 1; }
+.card-head { display: flex; align-items: center; gap: 10px; }
+.chip {
+  display: flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+}
+.chip svg { width: 19px; height: 19px; }
+.g-invest .chip { background: var(--chip-invest-bg); color: var(--chip-invest-fg); }
+.g-life   .chip { background: var(--chip-life-bg);   color: var(--chip-life-fg); }
+.g-tool   .chip { background: var(--chip-tool-bg);   color: var(--chip-tool-fg); }
+.card-title { flex: 1; min-width: 0; font-size: 15px; font-weight: 600; }
 
 .status { display: flex; align-items: center; gap: 5px; flex-shrink: 0; font-size: 10px; color: var(--text-3); }
 .status[data-state="unknown"] { display: none; }  /* 无 JS 时不显示占位 */
@@ -77,90 +105,114 @@ h1 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: .5px; }
 .card-body { flex: 1; display: flex; align-items: center; }
 .desc { font-size: 13px; line-height: 1.55; color: var(--text-2); }
 
-footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
+footer { margin-top: 26px; font-size: 11px; color: var(--text-3); }
 .noscript-tip { margin: 12px 0 0; font-size: 12px; color: var(--bad); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>个人资讯</h1>
-    <p class="sub">8 个应用 · 状态实时探测</p>
+    <div>
+      <h1>个人资讯</h1>
+      <p class="sub"><span id="date-line"></span>8 个应用 · 状态实时探测</p>
+    </div>
+    <span class="agg" id="agg" data-state="idle"><span class="dot"></span><span id="agg-text"></span></span>
   </header>
-  <main class="grid">
-    <a class="card" data-key="dividend" href="/dividend/">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">📈</span>股息率分析</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">红利指数成分股的股息率排行与 M120 均线偏离</span>
-      </div>
-    </a>
-    <a class="card" data-key="macro" href="/macro">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">📊</span>宏观经济</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">利率 / 汇率 / 流动性 / 风险偏好日频快照</span>
-      </div>
-    </a>
-    <a class="card" data-key="map" href="/map">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">🗺️</span>滨江购房地图</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">滨江区小区房价参考、评分与地铁通勤</span>
-      </div>
-    </a>
-    <a class="card" data-key="funds" href="/funds">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">💰</span>基金筛选</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">债基多维筛选与表现跟踪</span>
-      </div>
-    </a>
-    <a class="card" data-key="rss" href="/rss">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">📡</span>RSS 中转</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">agent 推送的内容聚合为 RSS 订阅源</span>
-      </div>
-    </a>
-    <a class="card" data-key="douyin" href="/douyin">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">🎬</span>抖音视频文字稿</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">视频链接转文字稿，按发布时间浏览</span>
-      </div>
-    </a>
-    <a class="card" data-key="skills" href="/skills">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">🧩</span>Skill 发布管理台</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">Skill 克隆、登记与发布到 OpenClaw / Hermes</span>
-      </div>
-    </a>
-    <a class="card" data-key="kids" href="/kids">
-      <div class="card-head">
-        <span class="card-title"><span class="icon">🧸</span>0–1岁音频管理</span>
-        <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
-      </div>
-      <div class="card-body">
-        <span class="desc">0–1 岁音频的预检与下载管理</span>
-      </div>
-    </a>
-  </main>
+
+  <section class="group g-invest" data-group="invest">
+    <div class="group-head">
+      <span class="group-name">投资研究</span>
+      <span class="group-rule"></span>
+      <span class="group-count"></span>
+    </div>
+    <main class="grid">
+      <a class="card" data-key="dividend" href="/dividend/">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg></span>
+          <span class="card-title">股息率分析</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">红利指数成分股的股息率排行与 M120 均线偏离</span></div>
+      </a>
+      <a class="card" data-key="macro" href="/macro">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg></span>
+          <span class="card-title">宏观经济</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">利率 / 汇率 / 流动性 / 风险偏好日频快照</span></div>
+      </a>
+      <a class="card" data-key="funds" href="/funds">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg></span>
+          <span class="card-title">基金筛选</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">债基多维筛选与表现跟踪</span></div>
+      </a>
+    </main>
+  </section>
+
+  <section class="group g-life" data-group="life">
+    <div class="group-head">
+      <span class="group-name">生活置业</span>
+      <span class="group-rule"></span>
+      <span class="group-count"></span>
+    </div>
+    <main class="grid">
+      <a class="card" data-key="map" href="/map">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M14.106 5.553a2 2 0 0 0 1.788 0l3.659-1.83A1 1 0 0 1 21 4.619v12.764a1 1 0 0 1-.553.894l-4.553 2.277a2 2 0 0 1-1.788 0l-4.212-2.106a2 2 0 0 0-1.788 0l-3.659 1.83A1 1 0 0 1 3 19.381V6.618a1 1 0 0 1 .553-.894l4.553-2.277a2 2 0 0 1 1.788 0z"/><path d="M15 5.764v15"/><path d="M9 3.236v15"/></svg></span>
+          <span class="card-title">滨江购房地图</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">滨江区小区房价参考、评分与地铁通勤</span></div>
+      </a>
+      <a class="card" data-key="kids" href="/kids">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+          <span class="card-title">0–1岁音频管理</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">0–1 岁音频的预检与下载管理</span></div>
+      </a>
+    </main>
+  </section>
+
+  <section class="group g-tool" data-group="tool">
+    <div class="group-head">
+      <span class="group-name">内容与工具</span>
+      <span class="group-rule"></span>
+      <span class="group-count"></span>
+    </div>
+    <main class="grid">
+      <a class="card" data-key="rss" href="/rss">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1"/></svg></span>
+          <span class="card-title">RSS 中转</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">agent 推送的内容聚合为 RSS 订阅源</span></div>
+      </a>
+      <a class="card" data-key="douyin" href="/douyin">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"/><rect x="2" y="6" width="14" height="12" rx="2"/></svg></span>
+          <span class="card-title">抖音视频文字稿</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">视频链接转文字稿，按发布时间浏览</span></div>
+      </a>
+      <a class="card" data-key="skills" href="/skills">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z"/><path d="M12 22V12"/><path d="m3.3 7 7.703 4.734a2 2 0 0 0 1.994 0L20.7 7"/></svg></span>
+          <span class="card-title">Skill 发布管理台</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">Skill 克隆、登记与发布到 OpenClaw / Hermes</span></div>
+      </a>
+    </main>
+  </section>
+
   <noscript><p class="noscript-tip">未启用 JavaScript：仅显示应用链接，无服务状态。</p></noscript>
   <footer>各服务状态为浏览器实时探测，点击卡片进入应用 · <span id="probe-time"></span></footer>
 </div>
@@ -169,17 +221,25 @@ footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
   'use strict';
   var FETCH_TIMEOUT = 5000;
 
-  /* ===== 应用注册表（顺序即使用频率优先级；骨架静态写死，JS 只做状态探测增强） ===== */
+  /* ===== 应用注册表（health 探测路径；分组与卡片在静态 HTML 里，JS 只做状态增强） ===== */
   var APPS = [
-    { key: 'dividend', health: '/api/dividend/health' },
-    { key: 'macro', health: '/api/macro/health' },
-    { key: 'map', health: '/api/map/health' },
-    { key: 'funds', health: '/api/funds/health' },
-    { key: 'rss', health: '/rss/api/rss-relay/health' },
-    { key: 'douyin', health: '/api/douyin/health' },
-    { key: 'skills', health: '/api/skills/health' },
-    { key: 'kids', health: '/api/kids/health' }
+    { key: 'dividend', health: '/api/dividend/health', group: 'invest' },
+    { key: 'macro', health: '/api/macro/health', group: 'invest' },
+    { key: 'map', health: '/api/map/health', group: 'life' },
+    { key: 'funds', health: '/api/funds/health', group: 'invest' },
+    { key: 'rss', health: '/rss/api/rss-relay/health', group: 'tool' },
+    { key: 'douyin', health: '/api/douyin/health', group: 'tool' },
+    { key: 'skills', health: '/api/skills/health', group: 'tool' },
+    { key: 'kids', health: '/api/kids/health', group: 'life' }
   ];
+
+  /* 页头日期（no-JS 时副标题只剩「状态实时探测」） */
+  (function () {
+    var d = new Date();
+    var wk = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'][d.getDay()];
+    document.getElementById('date-line').textContent =
+      (d.getMonth() + 1) + '月' + d.getDate() + '日 ' + wk + ' · ';
+  })();
 
   function setStatus(card, state, text) {
     var s = card.querySelector('.status');
@@ -191,17 +251,43 @@ footer { margin-top: 20px; font-size: 11px; color: var(--text-3); }
     // health 统一 GET（部分后端不一定支持 HEAD）；失败/超时只影响本卡
     return fetch(url, { cache: 'no-store', signal: AbortSignal.timeout(FETCH_TIMEOUT) })
       .then(function (res) { setStatus(card, res.ok ? 'online' : 'offline', res.ok ? '在线' : '离线'); })
-      .catch(function () { setStatus(card, 'offline', '离线'); });
+      .then(function () { return true; })
+      .catch(function () { setStatus(card, 'offline', '离线'); return false; });
+  }
+
+  /* 组内计数 + 页头聚合状态，全部探测结束后一次性更新 */
+  function summarize() {
+    var totalOnline = 0;
+    var sections = document.querySelectorAll('.group');
+    for (var i = 0; i < sections.length; i++) {
+      var sec = sections[i];
+      var cards = sec.querySelectorAll('.card');
+      var online = 0;
+      for (var j = 0; j < cards.length; j++) {
+        if (cards[j].querySelector('.status').dataset.state === 'online') online++;
+      }
+      totalOnline += online;
+      var count = sec.querySelector('.group-count');
+      count.textContent = online + '/' + cards.length;
+      if (online < cards.length) count.classList.add('has-offline');
+    }
+    var agg = document.getElementById('agg');
+    var all = APPS.length;
+    agg.dataset.result = totalOnline === all ? 'all' : 'partial';
+    document.getElementById('agg-text').textContent =
+      totalOnline === all ? '全部在线 ' + all + '/' + all : totalOnline + '/' + all + ' 在线';
+    agg.dataset.state = 'done';
   }
 
   function enhance() {
     var tasks = APPS.map(function (app) {
       var card = document.querySelector('.card[data-key="' + app.key + '"]');
-      if (!card) return Promise.resolve();
+      if (!card) return Promise.resolve(false);
       setStatus(card, 'checking', '检测中');
       return probe(card, app.health);
     });
     Promise.allSettled(tasks).then(function () {
+      summarize();
       var t = new Date().toTimeString().slice(0, 8);
       document.getElementById('probe-time').textContent = '探测于 ' + t;
     });
