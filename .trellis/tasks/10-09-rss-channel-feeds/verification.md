@@ -8,3 +8,9 @@
 
 ## 发布边界
 未修改NAS、阅读器订阅或外部推送工具；存量文章不推测频道归属。部署后推送工具需加channel字段，旧推送仍归未分类。
+
+## 2026-10-09 订阅 token 构建链路修复
+- 根因：deploy-nas.sh默认前端buildx直构建，rss-relay映射漏传NEXT_PUBLIC_RSS_TOKEN；compose build.args虽正确但此路径不读取。
+- 修复：buildx映射从同一个RSS_RELAY_TOKEN传入NEXT_PUBLIC_RSS_TOKEN。
+- 回归：scripts/tests/test_rss_build_args.py用真实构建函数及假docker执行，修复前缺少--build-arg而失败，修复后通过；bash -n通过。未连接NAS，不宣称已检查NAS根.env或线上镜像。
+- 当前修复尚未提交推送、未部署。需要修复版本重新构建前端后线上才生效。

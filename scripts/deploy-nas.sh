@@ -200,7 +200,7 @@ get_buildx_config() {
     case "$svc" in
         dividend-frontend)  echo "apps/dividend:apps/dividend/Dockerfile:dividend-frontend" ;;
         douyin-frontend)    echo "apps/douyin:apps/douyin/Dockerfile:douyin-frontend" ;;
-        rss-relay-frontend) echo "apps/rss-relay:apps/rss-relay/Dockerfile:rss-relay-frontend" ;;
+        rss-relay-frontend) echo "apps/rss-relay:apps/rss-relay/Dockerfile:rss-relay-frontend:NEXT_PUBLIC_RSS_TOKEN=${RSS_RELAY_TOKEN:-}" ;;
         macro-frontend) echo "apps/macro:apps/macro/Dockerfile:macro-frontend" ;;
         fund-select-frontend) echo "apps/fund-select:apps/fund-select/Dockerfile:fund-select-frontend" ;;
         housing-map-frontend) echo "apps/housing-map:apps/housing-map/Dockerfile:housing-map-frontend:NEXT_PUBLIC_GAODE_MAP_KEY=${GAODE_MAP_KEY:-${NEXT_PUBLIC_GAODE_MAP_KEY:-}}|NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY=${GAODE_MAP_SECURITY_KEY:-${NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY:-}}" ;;

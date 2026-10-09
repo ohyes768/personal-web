@@ -41,3 +41,6 @@ Wrong：list_posts(limit=50)之后按channel筛选。
 Correct：list_posts中先应用channel过滤，再排序并截取limit。
 Wrong：每次启动把app.yaml种子覆盖channels.json。
 Correct：只在登记文件不存在时初始化，已有文件是运行时来源。
+
+## 构建 token 链路
+前端Dockerfile的ARG/ENV和compose build.args之外，scripts/deploy-nas.sh默认buildx直构建也必须通过get_buildx_config显式传入NEXT_PUBLIC_RSS_TOKEN=${RSS_RELAY_TOKEN:-}，否则compose配置不会参与该构建。scripts/tests/test_rss_build_args.py执行真实build函数、用假docker断言构建收到共享token；测试无需真实Docker或密钥。修复后必须重建前端镜像，单纯restart不会改变已内联变量。
