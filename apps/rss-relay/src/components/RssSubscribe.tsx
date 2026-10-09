@@ -2,17 +2,16 @@
 import { useEffect, useState } from 'react';
 import { rssRelayApi } from '@/lib/api';
 import type { Channel } from '@/lib/types';
-import { feedUrl, pushExample } from '@/lib/rss-links';
+import { PUBLIC_API, feedUrl, pushExample } from '@/lib/rss-links';
 import { RelayDialog } from './RelayDialog';
 import { CopyText } from './CopyText';
 const button = 'rounded-md bg-paper-deep hover:bg-rule px-3 py-2 text-ink-muted disabled:opacity-40';
 const field = 'w-full min-w-0 mt-1 p-2 rounded-md border border-rule bg-paper-deep text-ink';
-function ChannelPanel({ onClose }: { onClose: () => void }) {
+function ChannelPanel({ onClose, management = false }: { onClose: () => void; management?: boolean }) {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  const [management, setManagement] = useState(false);
   const [search, setSearch] = useState('');
   const [editing, setEditing] = useState<Channel | 'new' | null>(null);
   const [form, setForm] = useState({ id: '', title: '', description: '' });
@@ -39,7 +38,7 @@ function ChannelPanel({ onClose }: { onClose: () => void }) {
   const visible = channels.filter(c => (management || c.enabled) && `${c.title} ${c.id}`.toLowerCase().includes(search.toLowerCase()));
   return <RelayDialog title={management ? '管理渠道' : '按渠道订阅'} onClose={onClose}>
     <p className="text-ink-muted mb-5 leading-relaxed">{management ? '在这里维护服务名称。渠道标识创建后固定，订阅链接不会因改名改变。' : '复制到 RSS 阅读器，各渠道会单独显示。'}</p>
-    {management && <div className="flex gap-2 mb-4"><button className={button} onClick={() => { setManagement(false); setEditing(null); setPendingDisable(null); setSearch(''); }}>← 返回订阅</button><button className={button} disabled={saving} onClick={() => startEdit('new')}>＋ 新增渠道</button></div>}
+    {management && <div className="flex gap-2 mb-4"><button className={button} disabled={saving} onClick={() => startEdit('new')}>＋ 新增渠道</button></div>}
     {notice && <p role="status" className="mb-3 p-3 rounded border border-rule bg-paper-deep">{notice}</p>}
     {error && <div role="alert" className="mb-3 text-danger">{error} <button className={button} onClick={load}>重新加载</button></div>}
     {!token && !management && <p className="text-danger mb-3">未配置订阅 token，请联系服务维护者配置后再复制链接。</p>}
@@ -48,7 +47,7 @@ function ChannelPanel({ onClose }: { onClose: () => void }) {
       try {
         if (editing === 'new') await rssRelayApi.createChannel(form);
         else await rssRelayApi.updateChannel(editing.id, { title: form.title, description: form.description });
-        setEditing(null); await load(); setNotice('渠道已保存，订阅入口与对接示例已更新。');
+        setEditing(null); await load(); setNotice('渠道已保存。');
       } catch (e) { setError(e instanceof Error ? e.message : '保存失败'); }
       finally { setSaving(false); }
     }}>
@@ -62,13 +61,13 @@ function ChannelPanel({ onClose }: { onClose: () => void }) {
       <div className="flex flex-wrap items-start justify-between gap-3"><div className="min-w-0 flex-1"><h3 className="font-serif-cn text-lg font-bold break-words">{channel.title}</h3><p className="text-xs text-ink-muted mt-1 break-words">{channel.description || '该渠道的独立订阅'}{management && ` · ${channel.id} · ${channel.enabled ? '启用' : '停用'}`}</p></div>
         {management ? <div className="flex gap-2">{channel.id === 'unclassified' ? <span className="text-xs text-ink-muted py-2">系统渠道</span> : <><button disabled={saving} className={button} onClick={() => startEdit(channel)}>编辑</button><button disabled={saving} className={button} onClick={() => channel.enabled ? setPendingDisable(channel) : void toggle(channel)}>{channel.enabled ? '停用' : '恢复'}</button></>}</div> : <CopyText disabled={!token} text={feedUrl(channel.id)} />}
       </div>
-      {!management && <details className="mt-2 text-xs text-ink-muted"><summary className="cursor-pointer py-1">查看链接与对接示例</summary><input readOnly aria-label={`${channel.title}订阅链接`} value={feedUrl(channel.id)} onFocus={e => e.currentTarget.select()} className={`${field} font-mono text-xs`} /><pre className="overflow-x-auto my-3 p-3 bg-paper-deep rounded text-xs">{pushExample(channel.id)}</pre><CopyText text={pushExample(channel.id)} label="复制推送 JSON" /></details>}
+      {!management && <details className="mt-2 text-xs text-ink-muted"><summary className="cursor-pointer py-1">推送示例</summary><p className="font-mono break-all mt-2">POST {PUBLIC_API}/post</p><pre className="overflow-x-auto my-3 p-3 bg-paper-deep rounded text-xs">{pushExample(channel.id)}</pre><CopyText text={pushExample(channel.id)} label="复制推送 JSON" /></details>}
       {pendingDisable?.id === channel.id && <div className="mt-3 p-3 bg-paper-deep rounded"><p>停用「{channel.title}」会暂停接收新推送，保留文章和原订阅链接。</p><div className="flex gap-2 mt-3"><button disabled={saving} className={button} onClick={() => void toggle(channel)}>确认停用</button><button disabled={saving} className={button} onClick={() => setPendingDisable(null)}>取消</button></div></div>}
     </div>)}{!visible.length && <p className="py-4 text-ink-muted">{search ? '没有匹配的渠道。' : '暂无渠道，可以在管理渠道中新增。'}</p>}</div>}
-    {!management && <><div className="mt-5 border-t border-rule pt-5"><div className="flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-serif-cn text-lg font-bold">全部内容</h3><p className="text-xs text-ink-muted mt-1">包含所有渠道，与单渠道同时订阅可能重复。</p></div><CopyText disabled={!token} text={feedUrl()} /></div></div><div className="mt-6 flex justify-between gap-3 text-xs text-ink-muted"><p>订阅链接含 token，请妥善保管。</p><button className="underline shrink-0" onClick={() => { setManagement(true); setSearch(''); }}>管理渠道 →</button></div></>}
+    {!management && <><div className="mt-5 border-t border-rule pt-5"><div className="flex flex-wrap justify-between items-center gap-3"><div><h3 className="font-serif-cn text-lg font-bold">全部内容</h3><p className="text-xs text-ink-muted mt-1">包含所有渠道，与单渠道同时订阅可能重复。</p></div><CopyText disabled={!token} text={feedUrl()} /></div></div><p className="mt-6 text-xs text-ink-muted">订阅链接含 token，请妥善保管。</p></>}
   </RelayDialog>;
 }
-export function RssSubscribe() {
+export function RssSubscribe({ manage = false }: { manage?: boolean }) {
   const [open, setOpen] = useState(false);
-  return <><button className="font-ui text-[13px] px-3 py-1.5 rounded-md bg-paper-deep hover:bg-rule text-ink-muted" onClick={() => setOpen(true)}>订阅渠道</button>{open && <ChannelPanel onClose={() => setOpen(false)} />}</>;
+  return <><button className="font-ui text-[13px] px-3 py-1.5 rounded-md bg-paper-deep hover:bg-rule text-ink-muted" onClick={() => setOpen(true)}>{manage ? '管理渠道' : '订阅渠道'}</button>{open && <ChannelPanel onClose={() => setOpen(false)} management={manage} />}</>;
 }

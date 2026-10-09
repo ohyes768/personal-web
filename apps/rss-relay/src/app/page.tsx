@@ -68,6 +68,7 @@ export default function HomePage() {
               {loading ? '加载中…' : '↻ 刷新'}
             </button>
             <RssSubscribe />
+            <RssSubscribe manage />
           </div>
         </div>
       </header>
