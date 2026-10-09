@@ -24,15 +24,21 @@ NAS 生产环境 Docker Compose 配置文件。
 
 **服务定义**: macro, dividend, douyin, news 四个前端
 
-### 3. nginx/web.conf
-NAS 上 nginx 容器的反向代理配置（source of truth，已纳入版本管理）。
-**位置**: `/nginx/web.conf`
+### 3. nginx/web.conf + nginx/html/
+NAS 上 nginx 容器的反向代理配置与静态首页（source of truth，已纳入版本管理）。
+**位置**: `/nginx/web.conf`、`/nginx/html/index.html`
 
 **说明**: NAS nginx 是独立容器（容器名 `nginx`），不在 docker-compose.nas.yml 内。
 启动时将仓库 `nginx/web.conf` **bind mount** 到容器内 `/etc/nginx/conf.d/web.conf`，
+`nginx/html/` 目录 bind mount 到 `/var/www/personal`（`location = /` 由它 serve 静态驾驶舱首页）。
 所以容器直接读宿主文件——改完 web.conf 后部署 `./scripts/deploy-nas.sh nginx`，
-脚本只做 `nginx -t` + `nginx -s reload`（不再 cp/mv，避免触发 nginx 持有的目录 inode 锁 EBUSY）。
+脚本只做 `nginx -t` + 容器 restart（不再 cp/mv，避免触发 nginx 持有的目录 inode 锁 EBUSY）。
+**改 index.html 不需要任何 nginx 操作**（git pull 即生效；conf 配了 no-cache 回源校验）。
 容器名可用环境变量覆盖：`NGINX_CONTAINER`（默认 `nginx`）。
+
+web.conf 另有 5 条 health 精确匹配 location（`/api/{funds,skills,douyin,kids}/health`、
+`/rss/api/rss-relay/health`），供首页状态点探测；不能删——对应前缀 location 的 rewrite
+会把 health 路径改坏导致 404。
 
 ## Dockerfiles
 

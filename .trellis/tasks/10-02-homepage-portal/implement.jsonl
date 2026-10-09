@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/guides/index.md", "reason": "共享指南索引（子代理实现前浏览）"}
+{"file": ".trellis/spec/guides/macro-daily-snapshot.md", "reason": "macro 卡 KPI 的接口契约：/daily-snapshot 响应 shape、indicator key 清单（usd_cny / cn_us_10y_spread）、15:00 规则"}

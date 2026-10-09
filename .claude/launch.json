@@ -12,6 +12,12 @@
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/housing-map", "dev"],
       "port": 3007
+    },
+    {
+      "name": "home-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "4010", "--directory", "nginx/html"],
+      "port": 4010
     }
   ]
 }

@@ -150,6 +150,7 @@ docker compose down
 
 ## 其他约定
 
+- 首页 `/` 是 `nginx/html/index.html` 静态驾驶舱（状态点 + KPI），由 nginx 容器从 `/var/www/personal`（仓库 `nginx/html/` 的 bind mount）serve；改它无需 restart nginx，改 `nginx/web.conf` 才需要 `./scripts/deploy-nas.sh nginx`
 - 不要在代码中硬编码端口号，使用环境变量
 - 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交
