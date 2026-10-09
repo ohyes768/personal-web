@@ -1,0 +1,309 @@
+{
+  "us_treasuries": {
+    "success": true,
+    "message": "美国国债数据增量更新成功",
+    "data": {
+      "us_treasuries": {
+        "m3": {
+          "date": "<source-date>",
+          "value": 4.2
+        },
+        "y2": {
+          "date": "<source-date>",
+          "value": 3.7
+        },
+        "y10": {
+          "date": "<source-date>",
+          "value": 4.1
+        }
+      }
+    },
+    "error_code": null
+  },
+  "exchange_rates": {
+    "success": true,
+    "message": "汇率数据增量更新成功",
+    "data": {
+      "exchange_rates": {
+        "dollar_index": {
+          "date": "<source-date>",
+          "value": 99.0
+        },
+        "usd_cny": {
+          "date": "<source-date>",
+          "value": 7.1
+        },
+        "usd_jpy": {
+          "date": "<source-date>",
+          "value": 150.0
+        },
+        "usd_eur": {
+          "date": "<source-date>",
+          "value": 0.9
+        }
+      }
+    },
+    "error_code": null
+  },
+  "eu_bonds": {
+    "success": true,
+    "message": "欧洲国债数据增量更新成功",
+    "data": {
+      "eu_treasuries": {
+        "m3": {
+          "date": "<source-date>",
+          "value": 2.1
+        },
+        "y2": {
+          "date": "<source-date>",
+          "value": 2.2
+        },
+        "y10": {
+          "date": "<source-date>",
+          "value": 2.5
+        }
+      }
+    },
+    "error_code": null
+  },
+  "jp_bonds": {
+    "success": true,
+    "message": "日本国债数据增量更新成功",
+    "data": {
+      "jp_treasuries": {
+        "m3": null,
+        "y2": null,
+        "y10": {
+          "date": "<source-date>",
+          "value": 1.1
+        }
+      }
+    },
+    "error_code": null
+  },
+  "legacy": {
+    "success": true,
+    "message": "数据更新成功",
+    "data": {
+      "us_treasuries": {
+        "m3": {
+          "date": "<source-date>",
+          "value": 4.2
+        },
+        "y2": {
+          "date": "<source-date>",
+          "value": 3.7
+        },
+        "y10": {
+          "date": "<source-date>",
+          "value": 4.1
+        }
+      },
+      "eu_treasuries": {
+        "m3": {
+          "date": "<source-date>",
+          "value": 2.1
+        },
+        "y2": {
+          "date": "<source-date>",
+          "value": 2.2
+        },
+        "y10": {
+          "date": "<source-date>",
+          "value": 2.5
+        }
+      },
+      "jp_treasuries": {
+        "m3": null,
+        "y2": null,
+        "y10": {
+          "date": "<source-date>",
+          "value": 1.1
+        }
+      },
+      "exchange_rates": {
+        "dollar_index": {
+          "date": "<source-date>",
+          "value": 99.0
+        },
+        "usd_cny": {
+          "date": "<source-date>",
+          "value": 7.1
+        },
+        "usd_jpy": {
+          "date": "<source-date>",
+          "value": 150.0
+        },
+        "usd_eur": {
+          "date": "<source-date>",
+          "value": 0.9
+        }
+      }
+    },
+    "error_code": null
+  },
+  "vix": {
+    "success": true,
+    "message": "VIX数据增量更新成功",
+    "data": {
+      "vix": {
+        "date": "<source-date>",
+        "value": 18.5
+      }
+    },
+    "error_code": null
+  },
+  "tga": {
+    "success": true,
+    "message": "TGA数据增量更新成功",
+    "data": {
+      "tga": {
+        "date": "<source-date>",
+        "value": 712000.0
+      }
+    },
+    "error_code": null
+  },
+  "hibor": {
+    "success": true,
+    "message": "HIBOR数据增量更新成功",
+    "data": {
+      "hibor": {
+        "date": "<source-date>",
+        "value": 2.3
+      }
+    },
+    "error_code": null
+  },
+  "fund_flow": {
+    "success": true,
+    "message": "资金流向数据增量更新成功",
+    "data": {
+      "fund_flow": {
+        "north": {
+          "date": "<source-date>",
+          "deal_amount": 1000.0,
+          "net_flow": null,
+          "buy": null,
+          "sell": null
+        },
+        "south": {
+          "date": "<source-date>",
+          "deal_amount": null,
+          "net_flow": 10.0,
+          "buy": 50.0,
+          "sell": 40.0
+        }
+      }
+    },
+    "error_code": null
+  },
+  "china_bonds": {
+    "success": true,
+    "message": "中国国债数据增量更新成功",
+    "data": {
+      "china_bond_10y": {
+        "date": "<source-date>",
+        "value": 1.8
+      }
+    },
+    "error_code": null
+  },
+  "ted_spread": {
+    "success": true,
+    "message": "TED利差数据增量更新成功",
+    "data": {
+      "ted_spread": {
+        "date": "<source-date>",
+        "sofr": 5.3,
+        "us_3m": 4.9,
+        "ted_spread": 0.39999999999999947
+      }
+    },
+    "error_code": null
+  },
+  "commodities": {
+    "success": true,
+    "message": "商品数据增量更新成功",
+    "data": {
+      "commodities": {
+        "date": "<today>",
+        "gold": 650.0,
+        "silver": 8.0,
+        "oil": 70.0,
+        "copper": 9000.0
+      }
+    },
+    "error_code": null
+  },
+  "indices": {
+    "success": true,
+    "message": "股指数据增量更新成功",
+    "data": {
+      "indices": {
+        "date": "<today>",
+        "HKHSI": 25000.0,
+        "SH000001": 3800.0,
+        "SPX": 6500.0,
+        "IXIC": 22000.0,
+        "DJI": 45000.0
+      }
+    },
+    "error_code": null
+  },
+  "dr007": {
+    "success": true,
+    "message": "DR007 数据增量更新成功",
+    "data": {
+      "dr007": {
+        "date": "<source-date>",
+        "value": 1.23
+      }
+    },
+    "error_code": null
+  },
+  "dr001": {
+    "success": true,
+    "message": "DR001 数据增量更新成功",
+    "data": {
+      "dr001": {
+        "date": "<source-date>",
+        "value": 1.23
+      }
+    },
+    "error_code": null
+  },
+  "volume": {
+    "success": true,
+    "message": "两市成交额更新成功",
+    "data": {
+      "volume": {
+        "date": "<source-date>",
+        "value": 12345.0
+      }
+    },
+    "error_code": null
+  },
+  "turnover": {
+    "success": true,
+    "message": "两市换手率更新成功",
+    "data": {
+      "turnover": {
+        "date": "<source-date>",
+        "value": 1.56
+      }
+    },
+    "error_code": null
+  },
+  "margin": {
+    "success": true,
+    "message": "融资余额更新成功",
+    "data": {
+      "margin": {
+        "date": "<source-date>",
+        "value": 18888.0
+      }
+    },
+    "error_code": null
+  }
+}

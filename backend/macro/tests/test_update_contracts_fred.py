@@ -1,4 +1,5 @@
 """批 1：FRED 更新端点的 HTTP / payload / 落库契约。"""
+
 import os
 
 os.environ.setdefault("FRED_API_KEY", "test-not-a-real-key")
@@ -68,7 +69,10 @@ def series(value):
     return pd.Series([value], index=[pd.Timestamp("2026-09-18")])
 
 
-def test_update_us_treasuries_persists_and_returns_treasury_payload(client, monkeypatch):
+@pytest.mark.update_contract("us_treasuries", "success")
+def test_update_us_treasuries_persists_and_returns_treasury_payload(
+    client, monkeypatch
+):
     data_service = RecordingDataService()
 
     async def fetch_us_treasuries(*_args):
@@ -85,6 +89,7 @@ def test_update_us_treasuries_persists_and_returns_treasury_payload(client, monk
     assert len(data_service.saved) == 1
 
 
+@pytest.mark.update_contract("us_treasuries", "failure")
 def test_update_us_treasuries_fetch_failure_does_not_persist(client, monkeypatch):
     data_service = RecordingDataService()
 
@@ -105,12 +110,29 @@ def test_update_us_treasuries_fetch_failure_does_not_persist(client, monkeypatch
 @pytest.mark.parametrize(
     ("path", "payload_key", "fred_values"),
     [
-        ("/api/update/vix", "vix", [18.5]),
-        ("/api/update/tga", "tga", [712.0]),
-        ("/api/update/ted-spread", "ted_spread", [5.3, 4.9]),
+        pytest.param(
+            "/api/update/vix",
+            "vix",
+            [18.5],
+            marks=pytest.mark.update_contract("vix", "success"),
+        ),
+        pytest.param(
+            "/api/update/tga",
+            "tga",
+            [712.0],
+            marks=pytest.mark.update_contract("tga", "success"),
+        ),
+        pytest.param(
+            "/api/update/ted-spread",
+            "ted_spread",
+            [5.3, 4.9],
+            marks=pytest.mark.update_contract("ted_spread", "success"),
+        ),
     ],
 )
-def test_fred_updates_persist_and_return_declared_payload(client, monkeypatch, path, payload_key, fred_values):
+def test_fred_updates_persist_and_return_declared_payload(
+    client, monkeypatch, path, payload_key, fred_values
+):
     data_service = RecordingDataService()
     values = iter(series(value) for value in fred_values)
     fred = FredSeries(values)
@@ -145,7 +167,11 @@ def test_fred_updates_use_the_shared_pipeline(client, monkeypatch, path, fred_va
         return await original_run(*args)
 
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
-    monkeypatch.setattr(routes, "get_fred_service", lambda: FredSeries(iter(series(value) for value in fred_values)))
+    monkeypatch.setattr(
+        routes,
+        "get_fred_service",
+        lambda: FredSeries(iter(series(value) for value in fred_values)),
+    )
     monkeypatch.setattr(routes, "get_vix_service", lambda: PassthroughVixService())
     monkeypatch.setattr(routes.UpdatePipeline, "run", recording_run)
 
@@ -155,7 +181,21 @@ def test_fred_updates_use_the_shared_pipeline(client, monkeypatch, path, fred_va
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("path", ["/api/update/vix", "/api/update/tga", "/api/update/ted-spread"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(
+            "/api/update/vix", marks=pytest.mark.update_contract("vix", "failure")
+        ),
+        pytest.param(
+            "/api/update/tga", marks=pytest.mark.update_contract("tga", "failure")
+        ),
+        pytest.param(
+            "/api/update/ted-spread",
+            marks=pytest.mark.update_contract("ted_spread", "failure"),
+        ),
+    ],
+)
 def test_fred_update_fetch_failure_does_not_persist(client, monkeypatch, path):
     data_service = RecordingDataService()
 

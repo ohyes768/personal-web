@@ -2,7 +2,7 @@
 
 > **Purpose**: 信号首页 · 日频区块的接口契约与跨层对齐约定。改动 3 维度指标清单、15:00 规则或回退语义前必读。
 >
-> **Last verified**: 2026-09-20
+> **Last verified**: 2026-10-09
 > 信号首页自 2026-08-31 起为单页双区块(月度 4 卡 + 日频 3 卡同屏,MacroSignalTab 挂载即并行请求,无模式切换/懒加载)
 > 2026-09-01:日频 monetary_policy 组加 DR001(隔夜),与 DR007(7 天)并列展示。前端组标题日频模式显示「流动性」(月度模式仍为「货币政策」,后端 dimension key 仍为 `monetary_policy`,API 无变更)。详见 §2.1。
 > 2026-09-15:修正 DR001 恒空 bug——`prr-md.json` 真实响应 `records` 在**顶层**(`data` 下仅 showDateCN/showDateEN),`extract_dr001` 此前按 `data.records` 解析导致自上线起解析永远失败、被失败隔离静默吞成 null;测试 mock 与代码同错,测试全绿但从未对过真实接口。详见 §2.1 响应结构小节。
@@ -115,66 +115,69 @@ GET /api/macro/daily-snapshot?date=YYYY-MM-DD   # date 可缺省
 
 `volume` 序列(A股交易日,每交易日必有值)近 60 个 ∪ 今日。以 volume 为交易日基准的原因:三张卡中 DR007/市场情绪均为 A股日历;美元/TED 指标在非美交易日的缺失由行级 asof 回退兜底。
 
-## 7. 更新端点注册表与共享管道契约（2026-09-22）
+## 7. 更新端点注册表与共享管道契约（2026-10-09）
 
 ### 1. Scope / Trigger
 
-- 触发：新增或修改任何返回 `UpdateResponse` 的 `/api/update*` 端点，或改变 fetch / validate / save / payload 任一阶段时。
+新增或修改任何返回 `UpdateResponse` 的 `/api/update*` 端点，或修改 fetch / validate / save / payload 阶段时适用。
 
-### 2. Signatures
+### 2. Signatures / Files
 
-- `src/services/update_pipeline.py::UpdatePipeline.run(fetch, validate, save, build_payload)` 是增量更新的唯一流程执行器。
-- `src/services/update_registry.py::UPDATE_SPECS` 为 18 条增量端点登记 `key`、相对路径、payload 类型与契约测试文件。
-- `UpdateResponse.data` 仍定义于 `backend/macro/src/models.py`，保持显式联合类型。
+- `update_pipeline.py::UpdatePipeline.execute(spec: UpdateSpec, context: UpdateContext) -> UpdateResponse` 是路由唯一执行入口，统一锁、成功/失败响应和 no-op 处理。
+- `UpdatePipeline.run_stages(UpdateStages)` 执行 `fetch → validate → save → build_payload`；`run(...)` 保留为四阶段通用执行器。
+- `update_registry.py::UPDATE_SPECS` 的 18 条 `UpdateSpec` 必须登记 key、endpoint、payload_type、contract_test_file、**可执行** `build_stages`、success_message、failure_message。
+- `update_sources/{fred,a_share,cross_source,final,market}.py` 按域声明 `build_*(context) -> UpdatePlan`。`UpdatePlan` 包含四阶段回调和可选 `on_no_data` 回调；阶段构造器不能自行落库。
+- `routes.py::_update_context()` 显式注入服务工厂、共享取数/增量辅助函数和锁回调。工厂必须惰性调用，构造 context 不打开无关源。服务层不得反向 import API。
+- 18 个更新路由仅保留说明和 `return await UpdatePipeline.execute(UPDATE_SPECS[key], _update_context())`，目前平均 3.6 行、最大 5 行（含签名/说明）。
 
 ### 3. Contracts
 
-- 路由保留锁、HTTP 状态及错误消息语义；数据流必须通过 `fetch → validate → save → build_payload`，使校验失败发生在落库之前。
-- `UpdateSpec.payload_type` 必须属于 `UpdateResponse.data` 联合类型，且登记的测试文件必须存在。
-- 注册表路径集合必须与 `APIRouter` 的 18 条 `/api/update*` 路径完全一致。新增端点时只补齐注册表与端点级契约测试，前端响应 shape 不变。
+- 历史回补路由与更新管道共用同一个 `_is_updating` 状态。锁被占用时不调用阶段构造器、不释放其他请求的锁；成功、失败、no-op 和取消执行均在持锁执行的 `finally` 中释放锁。
+- 校验失败必须发生在 save 前。`NoNewData` 仅供该源已有空窗语义使用，由 `UpdatePlan.on_no_data` 保留原成功响应；准备阶段发现已是最新则抛 `UpdateNoOp(response)`，不会 fetch/save。
+- 保留响应字段、消息、HTTP 200、`UPDATE_IN_PROGRESS` / `UPDATE_FAILED` 语义，存储方法与 CSV 路径不变。
+- `/update` 保留兼容入口：注册 `legacy` 的组合阶段依次获取美债、OECD、汇率，在同一次持锁管道内保存并构造 `MacroDataWithRates`；不能循环调用其他 HTTP 包装器导致锁重入。
+- `UpdateResponse.data` 继续使用显式联合类型。测试双向检查所有增量载荷必须有登记；额外仅允许两个历史回补载荷（`VolumeTurnoverHistoryUpdateData` / `MarginHistoryUpdateData`）和两个保留的旧公共 schema（`MacroData` / `MacroDataWithRatesAndVIX`）。例外固定列出理由，不因新增类型而自动放宽。
+- 注册表 key/path 不重复，路径集合与实际 18 条增量路由相同。每个源必须有成功与失败 HTTP 契约，使用 `pytest.mark.update_contract(key, outcome)` 在实际参数用例上登记；只检查文件存在不够。
 
 ### 4. Validation & Error Matrix
 
 | 条件 | 预期结果 |
 |---|---|
-| fetch 抛异常或 validate 失败 | 不执行 save，端点返回既有 `UPDATE_FAILED` 语义 |
-| 增量窗口无观测且底库近期 | 端点保留既有 `success=true` / “已是最新” no-op 响应 |
-| payload 类型漏入 `UpdateResponse.data` | `test_update_pipeline.py` 完整性测试失败，阻止 Pydantic 序列化失败进入运行期 |
-| 端点漏登记或注册路径错误 | 注册表路径与路由集合断言失败 |
+| fetch 抛异常或 validate 失败 | 不执行 save，返回既有 `UPDATE_FAILED` 语义 |
+| 增量窗口无观测且符合该源已有 no-op 规则 | 保留 `success=true` / “已是最新” 响应，不落库 |
+| payload 漏入 `UpdateResponse.data` | 正向联合类型测试失败 |
+| 注册条目删除/新增未登记的联合类型 | 反向联合类型或路由集合测试失败 |
+| 文件保留但对应参数用例删除 | pytest 实际 collection 的成功/失败覆盖检查失败 |
+| 注册项存在但路由绕过它 | 替换该项构造器的 HTTP 测试失败 |
 
-### 5. Good / Base / Bad Cases
+### 5. Adding a Source
 
-- Good：新增 `FooUpdateData` 同时进入 `UpdateResponse.data`、`UPDATE_SPECS` 和对应契约测试；路径与路由一致。
-- Base：底库近期但外部源无新观测，validate 发出 no-op，save 不被调用。
-- Bad：路由手写 fetch / save，或只新增模型却漏登记；测试在本地而非 scheduler 运行时失败。
+1. 定义 payload 并加入 `UpdateResponse.data`。
+2. 在对应域声明 `build_*(context) -> UpdatePlan`，复用已有 DataService 保存方法。
+3. 将可执行构造器、路径、载荷类型、测试文件及响应消息登记到 `UPDATE_SPECS`。
+4. 添加薄路由包装器；添加成功/失败 HTTP 用例，并在**对应参数项**标记 `update_contract(key, "success"/"failure")`。
+5. 运行契约、完整性和全套测试，再根据产品要求另行决定是否加入 scheduler；欧债/日债排班仍不在本任务范围。
 
-### 6. Tests Required
+### 6. Tests Required / Evidence
 
-- 对每个新增端点写成功与失败契约：mock fetcher 返回有效数据时断言 HTTP 200、`success=true`、payload shape 和 save 调用；fetch/validate 失败时断言不落库。
-- 在 `tests/test_update_pipeline.py` 断言 18 条注册、payload 联合类型、契约测试文件与实际路由路径相互一致。
-- 每次批量迁移后运行 `python -m pytest tests/ -q`；scheduler 仍通过 HTTP self-call 判定 `body.success`，无需修改 job 配置。
+- `tests/test_update_contracts_*.py`：18 个端点成功载荷与保存调用、失败不落库；`test_incremental_empty.py` 保留空窗/底库过期语义。
+- `tests/test_update_pipeline.py`：每项可执行、每条 HTTP 路由实际调用其注册构造器且失败释放锁、路径唯一与四阶段顺序。
+- `tests/test_update_registry.py`：联合类型双向校验；在子进程实际收集契约参数项，逐源验证成功/失败覆盖。自动变异验证删除任一注册项、漏任一联合类型成员、删除单个契约用例均能拦截。
+- `tests/test_update_integration.py`：18 个端点使用真实 DataService 写隔离 CSV；完整成功响应对照 `fixtures/update_success_responses.json`。fixture 来源于迁移前提交 `23ffeba`，只归一化请求时间和变化的日历日期。
+- 同一集成测试手动调用真实 `SchedulerManager._run_job_wrapper`，两组经 ASGI HTTP 调用实际端点，检查真实 CSV 日期与 JSONL 执行历史；**仅外部数据源替换为夹具**，无 NAS/真实第三方源可用性结论。
+- 2026-10-09 全套 `python -m pytest tests/ -q`：394 passed；Ruff F 检查和新模块 I 检查通过。浏览器现有“中美利差/汇率”刷新按钮串行三个 POST 成功、重载数据并记录成功时间；前端未改动。
 
 ### 7. Wrong vs Correct
 
-#### Wrong
-
 ```python
-# 路由内手写流程；新增 payload 时容易遗漏联合类型或契约测试
-data = await fetcher()
-save(data)
-return UpdateResponse(data=FooUpdateData(...))
+# Wrong: registry is only metadata, while routes own their stage callbacks.
+async def update_foo():
+    data = await fetcher()
+    save(data)
+    return UpdateResponse(data=FooUpdateData(...))
+
+# Correct: a registered source prepares all four stages; the shared executor
+# owns locks/errors/no-op responses and runs the same flow for every endpoint.
+async def update_foo():
+    return await UpdatePipeline.execute(UPDATE_SPECS["foo"], _update_context())
 ```
-
-#### Correct
-
-```python
-spec = UPDATE_SPECS["foo"]
-response_data = await UpdatePipeline.run(
-    fetch=spec_fetch,
-    validate=spec_validate,
-    save=spec_save,
-    build_payload=spec_build_payload,
-)
-```
-
-注册表完整性和端点级测试必须同时通过；不能只验证 save 已执行。

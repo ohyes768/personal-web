@@ -27,6 +27,7 @@ dev = [
 [tool.pytest.ini_options]
 addopts = "--basetemp=.pytest-tmp"
 markers = [
+    "update_contract(key, outcome): collected HTTP update success/failure coverage",
     "unit: 单元测试（mock 外部依赖，速度快）",
     "integration: 集成测试",
 ]

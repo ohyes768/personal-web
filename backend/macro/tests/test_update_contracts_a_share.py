@@ -1,4 +1,5 @@
 """批 1：A 股更新端点的 HTTP / payload / 落库契约。"""
+
 import os
 
 os.environ.setdefault("FRED_API_KEY", "test-not-a-real-key")
@@ -19,15 +20,26 @@ class RecordingDataService:
     def get_last_date(self, _key):
         return pd.Timestamp.now().normalize() - pd.Timedelta(days=2)
 
-    def save_dr007_data(self, data): self.saved.append(data)
-    def save_dr001_data(self, data): self.saved.append(data)
-    def save_volume_data(self, data): self.saved.append(data)
-    def save_turnover_data(self, data): self.saved.append(data)
-    def save_margin_data(self, data): self.saved.append(data)
+    def save_dr007_data(self, data):
+        self.saved.append(data)
+
+    def save_dr001_data(self, data):
+        self.saved.append(data)
+
+    def save_volume_data(self, data):
+        self.saved.append(data)
+
+    def save_turnover_data(self, data):
+        self.saved.append(data)
+
+    def save_margin_data(self, data):
+        self.saved.append(data)
 
 
 class RateService:
-    def __init__(self, key): self.key = key
+    def __init__(self, key):
+        self.key = key
+
     async def fetch_latest(self, *_args):
         return pd.DataFrame({"date": [pd.Timestamp("2026-09-18")], self.key: [1.23]})
 
@@ -38,12 +50,17 @@ class FailingRateService:
 
 
 class MarketService:
-    def __init__(self, failed=False): self.failed = failed
+    def __init__(self, failed=False):
+        self.failed = failed
+
     def fetch_today(self):
         return {
-            "status": "failed" if self.failed else "ok", "error": "source down",
-            "date": "2026-09-18", "total_amount_yi": 12345.0,
-            "turnover_rate": 1.56, "rzye": 18888.0,
+            "status": "failed" if self.failed else "ok",
+            "error": "source down",
+            "date": "2026-09-18",
+            "total_amount_yi": 12345.0,
+            "turnover_rate": 1.56,
+            "rzye": 18888.0,
             "volume": pd.DataFrame({"date": ["2026-09-18"]}),
             "turnover": pd.DataFrame({"date": ["2026-09-18"]}),
         }
@@ -63,11 +80,26 @@ def client():
     return TestClient(app)
 
 
-@pytest.mark.parametrize(("path", "key", "factory"), [
-    ("/api/update/dr007", "dr007", lambda: RateService("dr007")),
-    ("/api/update/dr001", "dr001", lambda: RateService("dr001")),
-])
-def test_rate_updates_persist_and_return_payload(client, monkeypatch, path, key, factory):
+@pytest.mark.parametrize(
+    ("path", "key", "factory"),
+    [
+        pytest.param(
+            "/api/update/dr007",
+            "dr007",
+            lambda: RateService("dr007"),
+            marks=pytest.mark.update_contract("dr007", "success"),
+        ),
+        pytest.param(
+            "/api/update/dr001",
+            "dr001",
+            lambda: RateService("dr001"),
+            marks=pytest.mark.update_contract("dr001", "success"),
+        ),
+    ],
+)
+def test_rate_updates_persist_and_return_payload(
+    client, monkeypatch, path, key, factory
+):
     data_service = RecordingDataService()
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, "get_dr007_service", factory)
@@ -102,7 +134,17 @@ def test_rate_updates_use_the_shared_pipeline(client, monkeypatch, path):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("path", ["/api/update/dr007", "/api/update/dr001"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(
+            "/api/update/dr007", marks=pytest.mark.update_contract("dr007", "failure")
+        ),
+        pytest.param(
+            "/api/update/dr001", marks=pytest.mark.update_contract("dr001", "failure")
+        ),
+    ],
+)
 def test_rate_update_fetch_failure_does_not_persist(client, monkeypatch, path):
     data_service = RecordingDataService()
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
@@ -117,11 +159,26 @@ def test_rate_update_fetch_failure_does_not_persist(client, monkeypatch, path):
     assert data_service.saved == []
 
 
-@pytest.mark.parametrize(("path", "key"), [
-    ("/api/update/volume", "volume"),
-    ("/api/update/turnover", "turnover"),
-    ("/api/update/margin", "margin"),
-])
+@pytest.mark.parametrize(
+    ("path", "key"),
+    [
+        pytest.param(
+            "/api/update/volume",
+            "volume",
+            marks=pytest.mark.update_contract("volume", "success"),
+        ),
+        pytest.param(
+            "/api/update/turnover",
+            "turnover",
+            marks=pytest.mark.update_contract("turnover", "success"),
+        ),
+        pytest.param(
+            "/api/update/margin",
+            "margin",
+            marks=pytest.mark.update_contract("margin", "success"),
+        ),
+    ],
+)
 def test_market_updates_persist_and_return_payload(client, monkeypatch, path, key):
     data_service = RecordingDataService()
     market = MarketService()
@@ -137,7 +194,9 @@ def test_market_updates_persist_and_return_payload(client, monkeypatch, path, ke
     assert len(data_service.saved) == 1
 
 
-@pytest.mark.parametrize("path", ["/api/update/volume", "/api/update/turnover", "/api/update/margin"])
+@pytest.mark.parametrize(
+    "path", ["/api/update/volume", "/api/update/turnover", "/api/update/margin"]
+)
 def test_market_updates_use_the_shared_pipeline(client, monkeypatch, path):
     data_service = RecordingDataService()
     calls = []
@@ -158,7 +217,21 @@ def test_market_updates_use_the_shared_pipeline(client, monkeypatch, path):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("path", ["/api/update/volume", "/api/update/turnover", "/api/update/margin"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(
+            "/api/update/volume", marks=pytest.mark.update_contract("volume", "failure")
+        ),
+        pytest.param(
+            "/api/update/turnover",
+            marks=pytest.mark.update_contract("turnover", "failure"),
+        ),
+        pytest.param(
+            "/api/update/margin", marks=pytest.mark.update_contract("margin", "failure")
+        ),
+    ],
+)
 def test_market_update_fetch_failure_does_not_persist(client, monkeypatch, path):
     data_service = RecordingDataService()
     market = MarketService(failed=True)

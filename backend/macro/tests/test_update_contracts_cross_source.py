@@ -1,4 +1,5 @@
 """批 1：跨源更新端点的 HTTP / payload / 落库契约。"""
+
 import os
 
 os.environ.setdefault("FRED_API_KEY", "test-not-a-real-key")
@@ -13,39 +14,65 @@ from src.api.routes import router
 
 
 class RecordingDataService:
-    def __init__(self): self.saved = []
-    def get_last_date(self, _key): return pd.Timestamp.now().normalize() - pd.Timedelta(days=2)
-    def exchange_rates_need_aliyun_rebuild(self): return False
-    def save_fred_data(self, *args, **kwargs): self.saved.append((args, kwargs))
-    def save_fund_flow(self, data): self.saved.append(data)
-    def save_china_bond_data(self, data): self.saved.append(data)
+    def __init__(self):
+        self.saved = []
+
+    def get_last_date(self, _key):
+        return pd.Timestamp.now().normalize() - pd.Timedelta(days=2)
+
+    def exchange_rates_need_aliyun_rebuild(self):
+        return False
+
+    def save_fred_data(self, *args, **kwargs):
+        self.saved.append((args, kwargs))
+
+    def save_fund_flow(self, data):
+        self.saved.append(data)
+
+    def save_china_bond_data(self, data):
+        self.saved.append(data)
 
 
 class HiborService:
-    def __init__(self, failed=False): self.failed = failed
+    def __init__(self, failed=False):
+        self.failed = failed
+
     async def fetch_series(self, *_args):
-        if self.failed: raise RuntimeError("HIBOR unavailable")
+        if self.failed:
+            raise RuntimeError("HIBOR unavailable")
         return pd.Series([1.45], index=[pd.Timestamp("2026-09-18")])
 
 
 class FundFlowService:
-    def __init__(self, failed=False): self.failed = failed
+    def __init__(self, failed=False):
+        self.failed = failed
+
     def fetch_recent(self, **_kwargs):
-        if self.failed: raise RuntimeError("fund flow unavailable")
+        if self.failed:
+            raise RuntimeError("fund flow unavailable")
         index = pd.DatetimeIndex(["2026-09-18"])
         return {
             "north": pd.DataFrame({"北向成交额": [123.0]}, index=index),
-            "south": pd.DataFrame({"南向净流入": [4.0], "南向买入": [8.0], "南向卖出": [4.0]}, index=index),
+            "south": pd.DataFrame(
+                {"南向净流入": [4.0], "南向买入": [8.0], "南向卖出": [4.0]}, index=index
+            ),
         }
 
 
 class ChinaBondService:
-    def __init__(self, failed=False): self.failed = failed
+    def __init__(self, failed=False):
+        self.failed = failed
+
     def fetch_china_bond_yield(self, *_args):
-        if self.failed: raise RuntimeError("bond source unavailable")
-        return pd.DataFrame({
-            "中国国债收益率10年": [2.1], "中国国债收益率10年-2年": [0.3],
-        }, index=pd.DatetimeIndex(["2026-09-18"]))
+        if self.failed:
+            raise RuntimeError("bond source unavailable")
+        return pd.DataFrame(
+            {
+                "中国国债收益率10年": [2.1],
+                "中国国债收益率10年-2年": [0.3],
+            },
+            index=pd.DatetimeIndex(["2026-09-18"]),
+        )
 
 
 @pytest.fixture(autouse=True)
@@ -62,12 +89,21 @@ def client():
     return TestClient(app)
 
 
+@pytest.mark.update_contract("exchange_rates", "success")
 def test_exchange_rates_persists_and_returns_exchange_payload(client, monkeypatch):
     data_service = RecordingDataService()
+
     async def fetch_exchange(*_args):
-        return {key: pd.Series([value], index=[pd.Timestamp("2026-09-18")]) for key, value in {
-            "dollar_index": 99.0, "usd_cny": 7.1, "usd_jpy": 150.0, "usd_eur": 0.9,
-        }.items()}
+        return {
+            key: pd.Series([value], index=[pd.Timestamp("2026-09-18")])
+            for key, value in {
+                "dollar_index": 99.0,
+                "usd_cny": 7.1,
+                "usd_jpy": 150.0,
+                "usd_eur": 0.9,
+            }.items()
+        }
+
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, "_fetch_exchange_rates", fetch_exchange)
 
@@ -99,10 +135,18 @@ def test_single_series_cross_source_updates_use_the_shared_pipeline(
 
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     if path.endswith("exchange-rates"):
+
         async def fetch_exchange(*_args):
-            return {key: pd.Series([value], index=[pd.Timestamp("2026-09-18")]) for key, value in {
-                "dollar_index": 99.0, "usd_cny": 7.1, "usd_jpy": 150.0, "usd_eur": 0.9,
-            }.items()}
+            return {
+                key: pd.Series([value], index=[pd.Timestamp("2026-09-18")])
+                for key, value in {
+                    "dollar_index": 99.0,
+                    "usd_cny": 7.1,
+                    "usd_jpy": 150.0,
+                    "usd_eur": 0.9,
+                }.items()
+            }
+
         monkeypatch.setattr(routes, "_fetch_exchange_rates", fetch_exchange)
     else:
         monkeypatch.setattr(routes, service_name, lambda: service)
@@ -114,9 +158,13 @@ def test_single_series_cross_source_updates_use_the_shared_pipeline(
     assert len(calls) == 1
 
 
+@pytest.mark.update_contract("exchange_rates", "failure")
 def test_exchange_rates_fetch_failure_does_not_persist(client, monkeypatch):
     data_service = RecordingDataService()
-    async def fail_exchange(*_args): raise RuntimeError("exchange source unavailable")
+
+    async def fail_exchange(*_args):
+        raise RuntimeError("exchange source unavailable")
+
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, "_fetch_exchange_rates", fail_exchange)
 
@@ -128,12 +176,35 @@ def test_exchange_rates_fetch_failure_does_not_persist(client, monkeypatch):
     assert data_service.saved == []
 
 
-@pytest.mark.parametrize(("path", "key", "service_name", "service"), [
-    ("/api/update/hibor", "hibor", "get_hibor_service", HiborService()),
-    ("/api/update/fund-flow", "fund_flow", "get_fund_flow_service", FundFlowService()),
-    ("/api/update/china-bonds", "china_bond_10y", "get_china_bond_service", ChinaBondService()),
-])
-def test_cross_source_updates_persist_and_return_payload(client, monkeypatch, path, key, service_name, service):
+@pytest.mark.parametrize(
+    ("path", "key", "service_name", "service"),
+    [
+        pytest.param(
+            "/api/update/hibor",
+            "hibor",
+            "get_hibor_service",
+            HiborService(),
+            marks=pytest.mark.update_contract("hibor", "success"),
+        ),
+        pytest.param(
+            "/api/update/fund-flow",
+            "fund_flow",
+            "get_fund_flow_service",
+            FundFlowService(),
+            marks=pytest.mark.update_contract("fund_flow", "success"),
+        ),
+        pytest.param(
+            "/api/update/china-bonds",
+            "china_bond_10y",
+            "get_china_bond_service",
+            ChinaBondService(),
+            marks=pytest.mark.update_contract("china_bonds", "success"),
+        ),
+    ],
+)
+def test_cross_source_updates_persist_and_return_payload(
+    client, monkeypatch, path, key, service_name, service
+):
     data_service = RecordingDataService()
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, service_name, lambda: service)
@@ -184,12 +255,32 @@ def test_china_bonds_update_uses_the_shared_pipeline(client, monkeypatch):
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize(("path", "service_name", "service"), [
-    ("/api/update/hibor", "get_hibor_service", HiborService(failed=True)),
-    ("/api/update/fund-flow", "get_fund_flow_service", FundFlowService(failed=True)),
-    ("/api/update/china-bonds", "get_china_bond_service", ChinaBondService(failed=True)),
-])
-def test_cross_source_fetch_failure_does_not_persist(client, monkeypatch, path, service_name, service):
+@pytest.mark.parametrize(
+    ("path", "service_name", "service"),
+    [
+        pytest.param(
+            "/api/update/hibor",
+            "get_hibor_service",
+            HiborService(failed=True),
+            marks=pytest.mark.update_contract("hibor", "failure"),
+        ),
+        pytest.param(
+            "/api/update/fund-flow",
+            "get_fund_flow_service",
+            FundFlowService(failed=True),
+            marks=pytest.mark.update_contract("fund_flow", "failure"),
+        ),
+        pytest.param(
+            "/api/update/china-bonds",
+            "get_china_bond_service",
+            ChinaBondService(failed=True),
+            marks=pytest.mark.update_contract("china_bonds", "failure"),
+        ),
+    ],
+)
+def test_cross_source_fetch_failure_does_not_persist(
+    client, monkeypatch, path, service_name, service
+):
     data_service = RecordingDataService()
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, service_name, lambda: service)

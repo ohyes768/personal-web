@@ -1,5 +1,7 @@
 """批 1：债券、行情与遗留总更新端点契约。"""
+
 import os
+
 os.environ.setdefault("FRED_API_KEY", "test-not-a-real-key")
 
 import pandas as pd
@@ -12,18 +14,32 @@ from src.api.routes import router
 
 
 class DataService:
-    def __init__(self): self.saved = []
-    def get_last_date(self, _key): return pd.Timestamp.now().normalize() - pd.Timedelta(days=2)
-    def save_fred_data(self, *args, **kwargs): self.saved.append((args, kwargs))
-    def save_commodities(self, data): self.saved.append(data)
-    def save_indices(self, data): self.saved.append(data)
-    def exchange_rates_need_aliyun_rebuild(self): return False
+    def __init__(self):
+        self.saved = []
+
+    def get_last_date(self, _key):
+        return pd.Timestamp.now().normalize() - pd.Timedelta(days=2)
+
+    def save_fred_data(self, *args, **kwargs):
+        self.saved.append((args, kwargs))
+
+    def save_commodities(self, data):
+        self.saved.append(data)
+
+    def save_indices(self, data):
+        self.saved.append(data)
+
+    def exchange_rates_need_aliyun_rebuild(self):
+        return False
 
 
 class KlineService:
-    def __init__(self, value, failed=False): self.value, self.failed = value, failed
+    def __init__(self, value, failed=False):
+        self.value, self.failed = value, failed
+
     async def fetch_all(self, *_args):
-        if self.failed: raise RuntimeError("market source unavailable")
+        if self.failed:
+            raise RuntimeError("market source unavailable")
         return {"gold": pd.Series([self.value], index=[pd.Timestamp("2026-09-18")])}
 
 
@@ -41,14 +57,31 @@ def client():
     return TestClient(app)
 
 
-@pytest.mark.parametrize(("path", "key", "prefix"), [
-    ("/api/update/eu-bonds", "eu_treasuries", "eu_"),
-    ("/api/update/jp-bonds", "jp_treasuries", "jp_"),
-])
-def test_oecd_update_persists_and_returns_payload(client, monkeypatch, path, key, prefix):
+@pytest.mark.parametrize(
+    ("path", "key", "prefix"),
+    [
+        pytest.param(
+            "/api/update/eu-bonds",
+            "eu_treasuries",
+            "eu_",
+            marks=pytest.mark.update_contract("eu_bonds", "success"),
+        ),
+        pytest.param(
+            "/api/update/jp-bonds",
+            "jp_treasuries",
+            "jp_",
+            marks=pytest.mark.update_contract("jp_bonds", "success"),
+        ),
+    ],
+)
+def test_oecd_update_persists_and_returns_payload(
+    client, monkeypatch, path, key, prefix
+):
     data_service = DataService()
+
     async def fetch_oecd(*_args):
         return {f"{prefix}10y": pd.Series([2.5], index=[pd.Timestamp("2026-09-18")])}
+
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, "_fetch_oecd_bonds", fetch_oecd)
 
@@ -60,10 +93,13 @@ def test_oecd_update_persists_and_returns_payload(client, monkeypatch, path, key
     assert len(data_service.saved) == 1
 
 
-@pytest.mark.parametrize(("path", "prefix"), [
-    ("/api/update/eu-bonds", "eu_"),
-    ("/api/update/jp-bonds", "jp_"),
-])
+@pytest.mark.parametrize(
+    ("path", "prefix"),
+    [
+        ("/api/update/eu-bonds", "eu_"),
+        ("/api/update/jp-bonds", "jp_"),
+    ],
+)
 def test_oecd_updates_use_the_shared_pipeline(client, monkeypatch, path, prefix):
     data_service = DataService()
     calls = []
@@ -86,10 +122,25 @@ def test_oecd_updates_use_the_shared_pipeline(client, monkeypatch, path, prefix)
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize("path", ["/api/update/eu-bonds", "/api/update/jp-bonds"])
+@pytest.mark.parametrize(
+    "path",
+    [
+        pytest.param(
+            "/api/update/eu-bonds",
+            marks=pytest.mark.update_contract("eu_bonds", "failure"),
+        ),
+        pytest.param(
+            "/api/update/jp-bonds",
+            marks=pytest.mark.update_contract("jp_bonds", "failure"),
+        ),
+    ],
+)
 def test_oecd_fetch_failure_does_not_persist(client, monkeypatch, path):
     data_service = DataService()
-    async def fail_oecd(*_args): raise RuntimeError("OECD unavailable")
+
+    async def fail_oecd(*_args):
+        raise RuntimeError("OECD unavailable")
+
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, "_fetch_oecd_bonds", fail_oecd)
 
@@ -101,11 +152,26 @@ def test_oecd_fetch_failure_does_not_persist(client, monkeypatch, path):
     assert data_service.saved == []
 
 
-@pytest.mark.parametrize(("path", "key", "service_name"), [
-    ("/api/update/commodities", "commodities", "get_commodity_service"),
-    ("/api/update/indices", "indices", "get_index_service"),
-])
-def test_kline_update_persists_and_returns_payload(client, monkeypatch, path, key, service_name):
+@pytest.mark.parametrize(
+    ("path", "key", "service_name"),
+    [
+        pytest.param(
+            "/api/update/commodities",
+            "commodities",
+            "get_commodity_service",
+            marks=pytest.mark.update_contract("commodities", "success"),
+        ),
+        pytest.param(
+            "/api/update/indices",
+            "indices",
+            "get_index_service",
+            marks=pytest.mark.update_contract("indices", "success"),
+        ),
+    ],
+)
+def test_kline_update_persists_and_returns_payload(
+    client, monkeypatch, path, key, service_name
+):
     data_service = DataService()
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, service_name, lambda: KlineService(100.0))
@@ -118,10 +184,13 @@ def test_kline_update_persists_and_returns_payload(client, monkeypatch, path, ke
     assert len(data_service.saved) == 1
 
 
-@pytest.mark.parametrize(("path", "service_name"), [
-    ("/api/update/commodities", "get_commodity_service"),
-    ("/api/update/indices", "get_index_service"),
-])
+@pytest.mark.parametrize(
+    ("path", "service_name"),
+    [
+        ("/api/update/commodities", "get_commodity_service"),
+        ("/api/update/indices", "get_index_service"),
+    ],
+)
 def test_kline_updates_use_the_shared_pipeline(client, monkeypatch, path, service_name):
     data_service = DataService()
     calls = []
@@ -141,10 +210,21 @@ def test_kline_updates_use_the_shared_pipeline(client, monkeypatch, path, servic
     assert len(calls) == 1
 
 
-@pytest.mark.parametrize(("path", "service_name"), [
-    ("/api/update/commodities", "get_commodity_service"),
-    ("/api/update/indices", "get_index_service"),
-])
+@pytest.mark.parametrize(
+    ("path", "service_name"),
+    [
+        pytest.param(
+            "/api/update/commodities",
+            "get_commodity_service",
+            marks=pytest.mark.update_contract("commodities", "failure"),
+        ),
+        pytest.param(
+            "/api/update/indices",
+            "get_index_service",
+            marks=pytest.mark.update_contract("indices", "failure"),
+        ),
+    ],
+)
 def test_kline_fetch_failure_does_not_persist(client, monkeypatch, path, service_name):
     data_service = DataService()
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
@@ -158,11 +238,19 @@ def test_kline_fetch_failure_does_not_persist(client, monkeypatch, path, service
     assert data_service.saved == []
 
 
+@pytest.mark.update_contract("legacy", "success")
 def test_legacy_update_persists_fetched_data_and_returns_payload(client, monkeypatch):
     data_service = DataService()
-    async def fetch_us(*_args): return {"us_3m": pd.Series([4.2], index=[pd.Timestamp("2026-09-18")])}
-    async def fetch_oecd(*_args): return {"eu_10y": pd.Series([2.5], index=[pd.Timestamp("2026-09-18")])}
-    async def fetch_exchange(*_args): return {"dollar_index": pd.Series([99.0], index=[pd.Timestamp("2026-09-18")])}
+
+    async def fetch_us(*_args):
+        return {"us_3m": pd.Series([4.2], index=[pd.Timestamp("2026-09-18")])}
+
+    async def fetch_oecd(*_args):
+        return {"eu_10y": pd.Series([2.5], index=[pd.Timestamp("2026-09-18")])}
+
+    async def fetch_exchange(*_args):
+        return {"dollar_index": pd.Series([99.0], index=[pd.Timestamp("2026-09-18")])}
+
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, "_fetch_us_treasuries", fetch_us)
     monkeypatch.setattr(routes, "_fetch_oecd_bonds", fetch_oecd)
@@ -206,9 +294,13 @@ def test_legacy_update_uses_the_shared_pipeline(client, monkeypatch):
     assert len(calls) == 1
 
 
+@pytest.mark.update_contract("legacy", "failure")
 def test_legacy_update_fetch_failure_does_not_persist(client, monkeypatch):
     data_service = DataService()
-    async def fail_us(*_args): raise RuntimeError("FRED unavailable")
+
+    async def fail_us(*_args):
+        raise RuntimeError("FRED unavailable")
+
     monkeypatch.setattr(routes, "get_data_service", lambda: data_service)
     monkeypatch.setattr(routes, "_fetch_us_treasuries", fail_us)
 

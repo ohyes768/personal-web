@@ -15,7 +15,6 @@ from src.models import (
     HealthResponse,
     MacroData,
     MacroDataWithRates,
-    MacroDataWithRatesAndVIX,
     TreasuryData,
     USTreasuries,
     EUTreasuries,
@@ -34,14 +33,6 @@ from src.models import (
     HIBORUpdateData,
     DR007Data,
     DR007UpdateData,
-    DR001Data,
-    DR001UpdateData,
-    VolumeData,
-    VolumeUpdateData,
-    TurnoverData,
-    TurnoverUpdateData,
-    MarginData,
-    MarginUpdateData,
     VolumeTurnoverHistoryData,
     VolumeTurnoverHistoryUpdateData,
     MarginHistoryData,
@@ -83,7 +74,7 @@ from src.services.margin_service import get_margin_service
 from src.services.fund_flow_service import get_fund_flow_service
 from src.services.china_bond_service import get_china_bond_service
 from src.services.commodity_service import get_commodity_service
-from src.services.update_pipeline import UpdatePipeline
+from src.services.update_pipeline import UpdateContext, UpdatePipeline
 from src.services.update_registry import UPDATE_SPECS
 from src.services.index_service import get_index_service
 from src.services.exchange_rate_service import ExchangeRateService
@@ -102,10 +93,6 @@ router = APIRouter(prefix="/api", tags=["macro"])
 # 并发控制锁
 _update_lock = None
 _is_updating = False
-
-
-class _NoNewData(Exception):
-    """Signals the existing successful no-op update response."""
 
 
 async def acquire_update_lock():
@@ -383,6 +370,37 @@ def _build_response_data_with_rates(
     )
 
 
+def _update_context() -> UpdateContext:
+    return UpdateContext(
+        settings=settings,
+        logger=logger,
+        is_updating=is_updating,
+        acquire_update_lock=acquire_update_lock,
+        release_update_lock=release_update_lock,
+        get_data_service=get_data_service,
+        get_fred_service=get_fred_service,
+        get_vix_service=get_vix_service,
+        get_hibor_service=get_hibor_service,
+        get_dr007_service=get_dr007_service,
+        get_dr001_service=get_dr001_service,
+        get_fund_flow_service=get_fund_flow_service,
+        get_china_bond_service=get_china_bond_service,
+        get_commodity_service=get_commodity_service,
+        get_index_service=get_index_service,
+        get_baostock_service=get_baostock_service,
+        get_margin_service=get_margin_service,
+        fetch_us_treasuries=_fetch_us_treasuries,
+        fetch_oecd_bonds=_fetch_oecd_bonds,
+        fetch_exchange_rates=_fetch_exchange_rates,
+        compute_incremental_start=_compute_incremental_start,
+        has_observations=_has_observations,
+        empty_increment_is_current=_empty_increment_is_current,
+        empty_increment_fail_message=_empty_increment_fail_message,
+        build_response_data_with_rates=_build_response_data_with_rates,
+        exchange_rebuild_msg=_EXCHANGE_REBUILD_MSG,
+    )
+
+
 @router.post("/fetch/us-treasuries/history", response_model=UpdateResponse)
 async def fetch_us_treasuries_history():
     """获取美国国债历史数据接口 - 从 2000 年开始获取全部历史数据"""
@@ -452,101 +470,7 @@ async def fetch_us_treasuries_history():
 @router.post("/update/us-treasuries", response_model=UpdateResponse)
 async def update_us_treasuries():
     """更新美国国债数据接口 - 增量更新（从 CSV last_date+1 到今天，补齐中间缺失日期）"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新美国国债数据...")
-        fred_service = get_fred_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        us_start = _compute_incremental_start(data_service, "us_treasuries", latest_end)
-
-        if us_start is None:
-            # 数据已是最新，直接返回 success（无需拉取/保存）
-            logger.info("美债数据已是最新，跳过本次更新")
-            response_data = USTreasuriesUpdateData(
-                us_treasuries=USTreasuries(
-                    m3=TreasuryData(date=latest_end.date(), value=None),
-                    y2=TreasuryData(date=latest_end.date(), value=None),
-                    y10=TreasuryData(date=latest_end.date(), value=None),
-                )
-            )
-            return UpdateResponse(
-                success=True,
-                message="美债数据已是最新，无需更新",
-                data=response_data,
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新美债数据，从 {us_start} 到 {latest_end}")
-
-        async def fetch():
-            return await _fetch_us_treasuries(fred_service, us_start, latest_end)
-
-        def validate(new_data):
-            if not _has_observations(new_data):
-                if _empty_increment_is_current(data_service, "us_treasuries"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "us_treasuries", "美债"))
-            return new_data
-
-        def build_payload(new_data):
-            latest = {}
-            for name, series in new_data.items():
-                if not series.empty:
-                    last_idx = series.last_valid_index()
-                    if last_idx is not None:
-                        latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
-            return USTreasuriesUpdateData(
-                us_treasuries=USTreasuries(
-                    m3=latest.get("us_3m", TreasuryData(date=latest_end.date(), value=None)),
-                    y2=latest.get("us_2y", TreasuryData(date=latest_end.date(), value=None)),
-                    y10=latest.get("us_10y", TreasuryData(date=latest_end.date(), value=None)),
-                )
-            )
-
-        try:
-            response_data = await UpdatePipeline.run(
-                fetch, validate, data_service.save_fred_data, build_payload
-            )
-        except _NoNewData:
-            logger.info("美债增量区间无新观测，底库已有 last_date，视为已是最新")
-            response_data = USTreasuriesUpdateData(
-                us_treasuries=USTreasuries(
-                    m3=TreasuryData(date=latest_end.date(), value=None),
-                    y2=TreasuryData(date=latest_end.date(), value=None),
-                    y10=TreasuryData(date=latest_end.date(), value=None),
-                )
-            )
-            return UpdateResponse(success=True, message="美债数据已是最新，无需更新", data=response_data, updated_at=datetime.now().isoformat())
-
-        logger.info("美国国债数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="美国国债数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"美国国债数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"美国国债数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["us_treasuries"], _update_context())
 
 
 @router.post("/fetch/exchange-rates/history", response_model=UpdateResponse)
@@ -627,109 +551,7 @@ async def fetch_exchange_rates_history():
 @router.post("/update/exchange-rates", response_model=UpdateResponse)
 async def update_exchange_rates():
     """更新汇率数据接口 - 增量更新（从 CSV last_date+1 到今天，补齐中间缺失日期）"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新汇率数据...")
-        fred_service = get_fred_service()
-        data_service = get_data_service()
-
-        if data_service.exchange_rates_need_aliyun_rebuild():
-            raise Exception(_EXCHANGE_REBUILD_MSG)
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "exchange_rates", latest_end)
-
-        if start_date is None:
-            # 数据已是最新，直接返回 success
-            logger.info("汇率数据已是最新，跳过本次更新")
-            response_data = ExchangeRatesUpdateData(
-                exchange_rates=ExchangeRates(
-                    dollar_index=ExchangeRateData(date=latest_end.date(), value=None),
-                    usd_cny=ExchangeRateData(date=latest_end.date(), value=None),
-                    usd_jpy=ExchangeRateData(date=latest_end.date(), value=None),
-                    usd_eur=ExchangeRateData(date=latest_end.date(), value=None),
-                )
-            )
-            return UpdateResponse(
-                success=True,
-                message="汇率数据已是最新，无需更新",
-                data=response_data,
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新汇率数据，从 {start_date} 到 {latest_end}")
-
-        async def fetch():
-            return await _fetch_exchange_rates(fred_service, start_date, latest_end)
-
-        def validate(exchange_data):
-            if not _has_observations(exchange_data):
-                if _empty_increment_is_current(data_service, "exchange_rates"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "exchange_rates", "汇率"))
-            return exchange_data
-
-        def save(exchange_data):
-            data_service.save_fred_data(exchange_data, key="exchange_rates")
-
-        def build_payload(exchange_data):
-            latest_rates = {}
-            for name, series in exchange_data.items():
-                if not series.empty:
-                    last_idx = series.last_valid_index()
-                    if last_idx is not None:
-                        latest_rates[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
-            return ExchangeRatesUpdateData(exchange_rates=ExchangeRates(
-                dollar_index=latest_rates.get("dollar_index", ExchangeRateData(date=latest_end.date(), value=None)),
-                usd_cny=latest_rates.get("usd_cny", ExchangeRateData(date=latest_end.date(), value=None)),
-                usd_jpy=latest_rates.get("usd_jpy", ExchangeRateData(date=latest_end.date(), value=None)),
-                usd_eur=latest_rates.get("usd_eur", ExchangeRateData(date=latest_end.date(), value=None)),
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
-        except _NoNewData:
-            logger.info("汇率增量区间无新观测，底库已有 last_date，视为已是最新")
-            response_data = ExchangeRatesUpdateData(exchange_rates=ExchangeRates(
-                dollar_index=ExchangeRateData(date=latest_end.date(), value=None),
-                usd_cny=ExchangeRateData(date=latest_end.date(), value=None),
-                usd_jpy=ExchangeRateData(date=latest_end.date(), value=None),
-                usd_eur=ExchangeRateData(date=latest_end.date(), value=None),
-            ))
-            return UpdateResponse(
-                success=True,
-                message="汇率数据已是最新，无需更新",
-                data=response_data,
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("汇率数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="汇率数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"汇率数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"汇率数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["exchange_rates"], _update_context())
 
 
 
@@ -803,73 +625,7 @@ async def fetch_eu_bonds_history():
 @router.post("/update/eu-bonds", response_model=UpdateResponse)
 async def update_eu_bonds():
     """更新欧洲国债数据接口 - 增量更新最近 365 天的数据"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新欧洲国债数据...")
-        fred_service = get_fred_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = (latest_end - pd.Timedelta(days=365)).normalize()
-
-        logger.info(f"增量更新欧债数据，从 {start_date} 到 {latest_end}")
-
-        async def fetch():
-            return {
-                key: series for key, series in (
-                    await _fetch_oecd_bonds(fred_service, start_date, latest_end)
-                ).items() if key.startswith("eu_")
-            }
-
-        def validate(eu_only):
-            if not any(not series.empty for series in eu_only.values()):
-                raise Exception("未能获取到任何欧债新数据")
-            return eu_only
-
-        def build_payload(eu_only):
-            latest = {}
-            for name, series in eu_only.items():
-                if not series.empty:
-                    last_idx = series.last_valid_index()
-                    if last_idx is not None:
-                        latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
-            return EUTreasuriesUpdateData(eu_treasuries=EUTreasuries(
-                m3=latest.get("eu_3m", TreasuryData(date=latest_end.date(), value=None)),
-                y2=latest.get("eu_2y_ecb", TreasuryData(date=latest_end.date(), value=None)),
-                y10=latest.get("eu_10y", TreasuryData(date=latest_end.date(), value=None)),
-            ))
-
-        response_data = await UpdatePipeline.run(
-            fetch, validate, data_service.save_fred_data, build_payload
-        )
-
-        logger.info("欧洲国债数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="欧洲国债数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"欧洲国债数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"欧洲国债数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["eu_bonds"], _update_context())
 
 
 @router.post("/fetch/jp-bonds/history", response_model=UpdateResponse)
@@ -939,160 +695,12 @@ async def fetch_jp_bonds_history():
 @router.post("/update/jp-bonds", response_model=UpdateResponse)
 async def update_jp_bonds():
     """更新日本国债数据接口 - 增量更新最近 365 天的数据"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新日本国债数据...")
-        fred_service = get_fred_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = (latest_end - pd.Timedelta(days=365)).normalize()
-
-        logger.info(f"增量更新日债数据，从 {start_date} 到 {latest_end}")
-
-        async def fetch():
-            return {
-                key: series for key, series in (
-                    await _fetch_oecd_bonds(fred_service, start_date, latest_end)
-                ).items() if key.startswith("jp_")
-            }
-
-        def validate(jp_only):
-            if not any(not series.empty for series in jp_only.values()):
-                raise Exception("未能获取到任何日债新数据")
-            return jp_only
-
-        def build_payload(jp_only):
-            latest = {}
-            for name, series in jp_only.items():
-                if not series.empty:
-                    last_idx = series.last_valid_index()
-                    if last_idx is not None:
-                        latest[name] = {"date": last_idx.strftime("%Y-%m-%d"), "value": float(series[last_idx])}
-            return JPTreasuriesUpdateData(jp_treasuries=JPTreasuries(
-                y10=latest.get("jp_10y", TreasuryData(date=latest_end.date(), value=None))
-            ))
-
-        response_data = await UpdatePipeline.run(
-            fetch, validate, data_service.save_fred_data, build_payload
-        )
-
-        logger.info("日本国债数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="日本国债数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"日本国债数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"日本国债数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["jp_bonds"], _update_context())
 
 @router.post("/update", response_model=UpdateResponse)
 async def update_data():
     """更新数据接口 - n8n 调用此接口触发数据更新（美债 + OECD债券 + 汇率）"""
-    global _is_updating
-
-    # 检查是否正在更新
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始更新数据...")
-        fred_service = get_fred_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-
-        # 检查美债数据的最后日期
-        us_start = _compute_incremental_start(data_service, "us_treasuries", latest_end)
-        if us_start is None:
-            logger.info(f"美债数据已是最新，无需更新（last_date={data_service.get_last_date('us_treasuries').strftime('%Y-%m-%d')}）")
-        else:
-            logger.info(f"美债增量更新，从 {us_start} 到 {latest_end}")
-
-        # OECD 数据使用 365 天范围
-        oecd_start = (latest_end - pd.Timedelta(days=365)).normalize()
-        logger.info(f"获取 OECD 债券数据范围: {oecd_start} 到 {latest_end}")
-
-        # 汇率数据也使用增量更新策略
-        er_start = _compute_incremental_start(data_service, "exchange_rates", latest_end)
-        if er_start is None:
-            logger.info(f"汇率数据已是最新，无需更新（last_date={data_service.get_last_date('exchange_rates').strftime('%Y-%m-%d')}）")
-        else:
-            logger.info(f"汇率增量更新，从 {er_start} 到 {latest_end}")
-
-        async def fetch():
-            new_data = {}
-            exchange_data = {}
-            if us_start is not None:
-                new_data.update(await _fetch_us_treasuries(fred_service, us_start, latest_end))
-            new_data.update(await _fetch_oecd_bonds(fred_service, oecd_start, latest_end))
-            if er_start is not None:
-                if data_service.exchange_rates_need_aliyun_rebuild():
-                    raise Exception(_EXCHANGE_REBUILD_MSG)
-                exchange_data = await _fetch_exchange_rates(fred_service, er_start, latest_end)
-            return new_data, exchange_data
-
-        def validate(update_data):
-            new_data, exchange_data = update_data
-            if not new_data and not exchange_data:
-                raise Exception("未能获取到任何新数据")
-            return update_data
-
-        def save(update_data):
-            new_data, exchange_data = update_data
-            if new_data:
-                data_service.save_fred_data(new_data)
-            if exchange_data:
-                data_service.save_fred_data(exchange_data, key="exchange_rates")
-
-        def build_payload(update_data):
-            new_data, exchange_data = update_data
-            return _build_response_data_with_rates(new_data, exchange_data, latest_end)
-
-        response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
-
-        logger.info("数据更新成功")
-        return UpdateResponse(
-            success=True,
-            message="数据更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"数据更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"数据更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["legacy"], _update_context())
 
 
 @router.get("/data", response_model=DataResponse)
@@ -1302,89 +910,7 @@ async def fetch_vix_history():
 @router.post("/update/vix", response_model=UpdateResponse)
 async def update_vix():
     """更新VIX数据接口 - 增量更新最近 7 天的数据"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新VIX数据...")
-        fred_service = get_fred_service()
-        vix_service = get_vix_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "vix", latest_end)
-
-        if start_date is None or start_date > latest_end:
-            # 数据已是最新（或 CSV 已含今天数据），跳过本次更新
-            logger.info("VIX数据已是最新，无需更新")
-            return UpdateResponse(
-                success=True,
-                message="VIX数据已是最新，无需更新",
-                data=VIXUpdateData(vix=VIXData(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新VIX数据，从 {start_date} 到 {latest_end}")
-
-        vix_code = settings.fred_codes.get("vix", "VIXCLS")
-        async def fetch():
-            return await fred_service.fetch_series(vix_code, start_date, latest_end)
-
-        def validate(vix_series):
-            if not _has_observations(vix_series):
-                if _empty_increment_is_current(data_service, "vix"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "vix", "VIX"))
-            vix_series = vix_service.convert_timezone(vix_series)
-            vix_series = vix_service.validate_data(vix_series)
-            return vix_service.normalize_data(vix_series)
-
-        def save(vix_series):
-            data_service.save_fred_data({"vix": vix_series}, key="vix")
-
-        def build_payload(vix_series):
-            last_idx = vix_series.last_valid_index()
-            return VIXUpdateData(vix=VIXData(
-                date=last_idx.date() if last_idx is not None else latest_end.date(),
-                value=float(vix_series[last_idx]) if last_idx is not None else None,
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
-        except _NoNewData:
-            logger.info("VIX增量区间无新观测，底库已有 last_date，视为已是最新")
-            return UpdateResponse(
-                success=True,
-                message="VIX数据已是最新，无需更新",
-                data=VIXUpdateData(vix=VIXData(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("VIX数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="VIX数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"VIX数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"VIX数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["vix"], _update_context())
 
 
 @router.post("/fetch/tga/history", response_model=UpdateResponse)
@@ -1453,87 +979,7 @@ async def fetch_tga_history():
 @router.post("/update/tga", response_model=UpdateResponse)
 async def update_tga():
     """增量更新 TGA 账户余额数据 - 最近 7 天"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新TGA数据...")
-        fred_service = get_fred_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "tga", latest_end)
-
-        if start_date is None or start_date > latest_end:
-            # 数据已是最新（或 CSV 已含今天数据），跳过本次更新
-            logger.info("TGA数据已是最新，无需更新")
-            return UpdateResponse(
-                success=True,
-                message="TGA数据已是最新，无需更新",
-                data=TGAUpdateData(tga=TGAData(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新TGA数据，从 {start_date} 到 {latest_end}")
-
-        tga_code = settings.fred_codes.get("tga", "WTREGEN")
-
-        async def fetch():
-            return await fred_service.fetch_series(tga_code, start_date, latest_end)
-
-        def validate(tga_series):
-            if not _has_observations(tga_series):
-                if _empty_increment_is_current(data_service, "tga"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "tga", "TGA"))
-            return tga_series
-
-        def save(tga_series):
-            data_service.save_fred_data({"tga": tga_series}, key="tga")
-
-        def build_payload(tga_series):
-            last_idx = tga_series.last_valid_index()
-            return TGAUpdateData(tga=TGAData(
-                date=last_idx.date() if last_idx is not None else latest_end.date(),
-                value=float(tga_series[last_idx]) if last_idx is not None else None,
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
-        except _NoNewData:
-            logger.info("TGA增量区间无新观测，底库已有 last_date，视为已是最新")
-            return UpdateResponse(
-                success=True,
-                message="TGA数据已是最新，无需更新",
-                data=TGAUpdateData(tga=TGAData(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("TGA数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="TGA数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"TGA数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"TGA数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["tga"], _update_context())
 
 
 @router.post("/fetch/hibor/history", response_model=UpdateResponse)
@@ -1601,85 +1047,7 @@ async def fetch_hibor_history():
 @router.post("/update/hibor", response_model=UpdateResponse)
 async def update_hibor():
     """增量更新 HIBOR 隔夜拆息数据 - 最近 7 天"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新HIBOR数据...")
-        hibor_service = get_hibor_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "hibor", latest_end)
-
-        if start_date is None or start_date > latest_end:
-            # 数据已是最新（或 CSV 已含今天数据），跳过本次更新
-            logger.info("HIBOR数据已是最新，无需更新")
-            return UpdateResponse(
-                success=True,
-                message="HIBOR数据已是最新，无需更新",
-                data=HIBORUpdateData(hibor=HIBORData(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新HIBOR数据，从 {start_date} 到 {latest_end}")
-
-        async def fetch():
-            return await hibor_service.fetch_series(start_date, latest_end)
-
-        def validate(hibor_series):
-            if not _has_observations(hibor_series):
-                if _empty_increment_is_current(data_service, "hibor"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "hibor", "HIBOR"))
-            return hibor_series
-
-        def save(hibor_series):
-            data_service.save_fred_data({"hibor": hibor_series}, key="hibor")
-
-        def build_payload(hibor_series):
-            last_idx = hibor_series.last_valid_index()
-            return HIBORUpdateData(hibor=HIBORData(
-                date=last_idx.date() if last_idx is not None else latest_end.date(),
-                value=float(hibor_series[last_idx]) if last_idx is not None else None,
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
-        except _NoNewData:
-            logger.info("HIBOR增量区间无新观测，底库已有 last_date，视为已是最新")
-            return UpdateResponse(
-                success=True,
-                message="HIBOR数据已是最新，无需更新",
-                data=HIBORUpdateData(hibor=HIBORData(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("HIBOR数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="HIBOR数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"HIBOR数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"HIBOR数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["hibor"], _update_context())
 
 
 @router.post("/fetch/fund-flow/history", response_model=UpdateResponse)
@@ -1783,79 +1151,7 @@ async def fetch_fund_flow_history():
 @router.post("/update/fund-flow", response_model=UpdateResponse)
 async def update_fund_flow():
     """更新沪深港通资金数据 - 增量拉取近 10 个自然日（缺口自愈，keep=last 幂等）"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新沪深港通资金数据...")
-        fund_flow_service = get_fund_flow_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-
-        async def fetch():
-            return fund_flow_service.fetch_recent(days=10)
-
-        def validate(fund_flow_data):
-            if not any(not df.empty for df in fund_flow_data.values()):
-                raise Exception("未能获取到任何资金流向新数据")
-            return fund_flow_data
-
-        def build_payload(fund_flow_data):
-            latest_north = None
-            latest_south = None
-            if "north" in fund_flow_data and not fund_flow_data["north"].empty:
-                last_idx = fund_flow_data["north"].last_valid_index()
-                if last_idx is not None:
-                    row = fund_flow_data["north"].loc[last_idx]
-                    latest_north = FundFlowData(
-                        date=last_idx.date(),
-                        deal_amount=float(row["北向成交额"]) if pd.notna(row["北向成交额"]) else None,
-                    )
-            if "south" in fund_flow_data and not fund_flow_data["south"].empty:
-                last_idx = fund_flow_data["south"].last_valid_index()
-                if last_idx is not None:
-                    row = fund_flow_data["south"].loc[last_idx]
-                    latest_south = FundFlowData(
-                        date=last_idx.date(),
-                        net_flow=float(row["南向净流入"]) if pd.notna(row["南向净流入"]) else None,
-                        buy=float(row["南向买入"]) if pd.notna(row["南向买入"]) else None,
-                        sell=float(row["南向卖出"]) if pd.notna(row["南向卖出"]) else None,
-                    )
-            return FundFlowUpdateData(fund_flow=FundFlow(
-                north=latest_north or FundFlowData(date=latest_end.date()),
-                south=latest_south or FundFlowData(date=latest_end.date()),
-            ))
-
-        response_data = await UpdatePipeline.run(
-            fetch, validate, data_service.save_fund_flow, build_payload
-        )
-
-        logger.info("资金流向数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="资金流向数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"资金流向数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"资金流向数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["fund_flow"], _update_context())
 
 
 @router.get("/fund-flow/cumulative", response_model=FundFlowCumulativeResponse)
@@ -2029,98 +1325,7 @@ async def fetch_china_bonds_history():
 @router.post("/update/china-bonds", response_model=UpdateResponse)
 async def update_china_bonds():
     """更新中国国债数据接口 - 增量更新最近 7 天的数据"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新中国国债数据...")
-        china_bond_service = get_china_bond_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        # 复用现有 helper：跟 us_treasuries / exchange_rates 一致，避免数据落后超过 7 天时出 gap
-        start_date = _compute_incremental_start(data_service, "china_bond", latest_end)
-
-        if start_date is None or start_date >= latest_end:
-            # 数据已是最新（或 last_date+1 == today 但 ak 接口今天还没发数据），跳过本次更新
-            logger.info("中国国债数据已是最新，跳过本次更新")
-            response_data = ChinaBondUpdateData(
-                china_bond_10y=ChinaBondData(date=latest_end.date(), value=None)
-            )
-            return UpdateResponse(
-                success=True,
-                message="中国国债数据已是最新，无需更新",
-                data=response_data,
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新中国国债数据，从 {start_date} 到 {latest_end}")
-
-        async def fetch():
-            return china_bond_service.fetch_china_bond_yield(
-                start_date.strftime("%Y-%m-%d"), latest_end.strftime("%Y-%m-%d")
-            )
-
-        def validate(bond_df):
-            if not _has_observations(bond_df):
-                if _empty_increment_is_current(data_service, "china_bond"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "china_bond", "中国国债"))
-            return bond_df
-
-        def save(bond_df):
-            data_service.save_china_bond_data({
-                "10y": bond_df["中国国债收益率10年"],
-                "10年-2年": bond_df["中国国债收益率10年-2年"],
-            })
-
-        def build_payload(bond_df):
-            col_10y = "中国国债收益率10年"
-            last_idx = bond_df.index[-1]
-            return ChinaBondUpdateData(china_bond_10y=ChinaBondData(
-                date=last_idx.date(),
-                value=float(bond_df[col_10y].iloc[-1]) if pd.notna(bond_df[col_10y].iloc[-1]) else None,
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
-        except _NoNewData:
-            logger.info("中国国债增量区间无新观测，底库已有 last_date，视为已是最新")
-            response_data = ChinaBondUpdateData(
-                china_bond_10y=ChinaBondData(date=latest_end.date(), value=None)
-            )
-            return UpdateResponse(
-                success=True,
-                message="中国国债数据已是最新，无需更新",
-                data=response_data,
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("中国国债数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="中国国债数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"中国国债数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"中国国债数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["china_bonds"], _update_context())
 
 
 @router.post("/fetch/ted-spread/history", response_model=UpdateResponse)
@@ -2207,105 +1412,7 @@ async def fetch_ted_spread_history():
 @router.post("/update/ted-spread", response_model=UpdateResponse)
 async def update_ted_spread():
     """更新TED利差数据接口 - 增量更新最近 7 天的数据"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新TED利差数据...")
-        fred_service = get_fred_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "ted_spread", latest_end)
-
-        if start_date is None or start_date > latest_end:
-            # 数据已是最新（或 CSV 已含今天数据），跳过本次更新
-            logger.info("TED利差数据已是最新，无需更新")
-            return UpdateResponse(
-                success=True,
-                message="TED利差数据已是最新，无需更新",
-                data=TedSpreadUpdateData(
-                    ted_spread=TedSpreadData(date=latest_end.date(), sofr=None, us_3m=None, ted_spread=None)
-                ),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新TED利差数据，从 {start_date} 到 {latest_end}")
-
-        sofr_code = settings.fred_codes.get("sofr", "SOFR")
-        us_3m_code = settings.fred_codes.get("us_3m", "DGS3MO")
-
-        async def fetch():
-            return {
-                "sofr": await fred_service.fetch_series(sofr_code, start_date, latest_end),
-                "us_3m": await fred_service.fetch_series(us_3m_code, start_date, latest_end),
-            }
-
-        def validate(ted_payload):
-            if not _has_observations(ted_payload):
-                if _empty_increment_is_current(data_service, "ted_spread"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "ted_spread", "TED利差"))
-            return ted_payload
-
-        def save(ted_payload):
-            data_service.save_ted_spread_data(ted_payload["sofr"], ted_payload["us_3m"])
-
-        def build_payload(ted_payload):
-            sofr_series = ted_payload["sofr"]
-            us_3m_series = ted_payload["us_3m"]
-            sofr_last_idx = sofr_series.last_valid_index() if not sofr_series.empty else None
-            us_3m_last_idx = us_3m_series.last_valid_index() if not us_3m_series.empty else None
-            if sofr_last_idx is None and us_3m_last_idx is None:
-                raise Exception("未能获取到任何有效TED利差数据")
-            last_idx = sofr_last_idx if sofr_last_idx else us_3m_last_idx
-            sofr_val = float(sofr_series[last_idx]) if sofr_last_idx and pd.notna(sofr_series[sofr_last_idx]) else None
-            us_3m_val = float(us_3m_series[last_idx]) if us_3m_last_idx and pd.notna(us_3m_series[us_3m_last_idx]) else None
-            return TedSpreadUpdateData(ted_spread=TedSpreadData(
-                date=last_idx.date() if last_idx else latest_end.date(),
-                sofr=sofr_val,
-                us_3m=us_3m_val,
-                ted_spread=(sofr_val - us_3m_val) if sofr_val is not None and us_3m_val is not None else None,
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(fetch, validate, save, build_payload)
-        except _NoNewData:
-            logger.info("TED利差增量区间无新观测，底库已有 last_date，视为已是最新")
-            return UpdateResponse(
-                success=True,
-                message="TED利差数据已是最新，无需更新",
-                data=TedSpreadUpdateData(ted_spread=TedSpreadData(
-                    date=latest_end.date(), sofr=None, us_3m=None, ted_spread=None,
-                )),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("TED利差数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="TED利差数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"TED利差数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"TED利差数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["ted_spread"], _update_context())
 
 
 @router.post("/fetch/commodities/history", response_model=UpdateResponse)
@@ -2389,102 +1496,8 @@ async def fetch_commodities_history():
 async def update_commodities():
     """增量更新商品日 K 线 - 从 CSV last_date+1 拉到今天
 
-    配合 /fetch/commodities/history 做日常 daily 增量更新。
-    """
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新商品 K 线...")
-        commodity_service = get_commodity_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "commodities", latest_end)
-
-        if start_date is None:
-            logger.info("商品数据已是最新")
-            today = latest_end.date()
-            return UpdateResponse(
-                success=True,
-                message="商品数据已是最新",
-                data=CommoditiesUpdateData(
-                    commodities=CommoditiesData(
-                        date=today,
-                        gold=None, silver=None, oil=None, copper=None,
-                    )
-                ),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(
-            f"增量更新商品，从 {start_date.strftime('%Y-%m-%d')} 到 {latest_end.strftime('%Y-%m-%d')}"
-        )
-        async def fetch():
-            return await commodity_service.fetch_all(start_date.date(), latest_end.date())
-
-        def validate(new_data):
-            if not _has_observations(new_data):
-                if _empty_increment_is_current(data_service, "commodities"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "commodities", "商品"))
-            return new_data
-
-        def build_payload(new_data):
-            latest_per_commodity = {}
-            for name, series in new_data.items():
-                if not series.empty:
-                    last_idx = series.last_valid_index()
-                    if last_idx is not None:
-                        latest_per_commodity[name] = float(series[last_idx])
-            return CommoditiesUpdateData(commodities=CommoditiesData(
-                date=latest_end.date(),
-                gold=latest_per_commodity.get("gold"),
-                silver=latest_per_commodity.get("silver"),
-                oil=latest_per_commodity.get("oil"),
-                copper=latest_per_commodity.get("copper"),
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(
-                fetch, validate, data_service.save_commodities, build_payload
-            )
-        except _NoNewData:
-            logger.info("商品增量区间无新观测，底库已有 last_date，视为已是最新")
-            return UpdateResponse(
-                success=True,
-                message="商品数据已是最新",
-                data=CommoditiesUpdateData(commodities=CommoditiesData(
-                    date=latest_end.date(), gold=None, silver=None, oil=None, copper=None,
-                )),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("商品数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="商品数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"商品数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"商品数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+配合 /fetch/commodities/history 做日常 daily 增量更新。"""
+    return await UpdatePipeline.execute(UPDATE_SPECS["commodities"], _update_context())
 
 
 @router.post("/fetch/indices/history", response_model=UpdateResponse)
@@ -2567,95 +1580,8 @@ async def fetch_indices_history():
 async def update_indices():
     """增量更新股指 K 线 - 从 CSV last_date+1 拉到今天
 
-    配合 /fetch/indices/history 做日常 daily 增量更新。
-    """
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新股指 K 线...")
-        index_service = get_index_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "indices", latest_end)
-
-        if start_date is None:
-            logger.info("股指数据已是最新")
-            return UpdateResponse(
-                success=True,
-                message="股指数据已是最新",
-                data=IndicesUpdateData(indices=IndicesData(date=latest_end.date())),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(
-            f"增量更新股指，从 {start_date.strftime('%Y-%m-%d')} 到 {latest_end.strftime('%Y-%m-%d')}"
-        )
-        async def fetch():
-            return await index_service.fetch_all(start_date.date(), latest_end.date())
-
-        def validate(new_data):
-            if not _has_observations(new_data):
-                if _empty_increment_is_current(data_service, "indices"):
-                    raise _NoNewData()
-                raise Exception(_empty_increment_fail_message(data_service, "indices", "股指"))
-            return new_data
-
-        def build_payload(new_data):
-            latest_per_idx = {}
-            for name, series in new_data.items():
-                if not series.empty:
-                    last_idx = series.last_valid_index()
-                    if last_idx is not None:
-                        latest_per_idx[name] = float(series[last_idx])
-            return IndicesUpdateData(indices=IndicesData(
-                date=latest_end.date(),
-                HKHSI=latest_per_idx.get("HKHSI"),
-                SH000001=latest_per_idx.get("SH000001"),
-                SPX=latest_per_idx.get("SPX"),
-                IXIC=latest_per_idx.get("IXIC"),
-                DJI=latest_per_idx.get("DJI"),
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(
-                fetch, validate, data_service.save_indices, build_payload
-            )
-        except _NoNewData:
-            logger.info("股指增量区间无新观测，底库已有 last_date，视为已是最新")
-            return UpdateResponse(
-                success=True,
-                message="股指数据已是最新",
-                data=IndicesUpdateData(indices=IndicesData(date=latest_end.date())),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("股指数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="股指数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"股指数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"股指数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+配合 /fetch/indices/history 做日常 daily 增量更新。"""
+    return await UpdatePipeline.execute(UPDATE_SPECS["indices"], _update_context())
 
 
 # === 宏观信号 API ===
@@ -2975,259 +1901,30 @@ async def fetch_dr007_history():
 async def update_dr007():
     """增量更新 DR007 数据 - 拉取 CSV 最后一行的下一天到今天
 
-    数据源 prr-chrt.csv 同一文件亦含 DR001/DR014 列，DR001 由 /update/dr001 独立入库。
-    """
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新 DR007 数据...")
-        dr007_service = get_dr007_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "dr007", latest_end)
-
-        if start_date is None or start_date > latest_end:
-            logger.info("DR007 数据已是最新，无需更新")
-            return UpdateResponse(
-                success=True,
-                message="DR007 数据已是最新，无需更新",
-                data=DR007UpdateData(dr007=DR007Data(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新 DR007 数据，从 {start_date} 到 {latest_end}")
-
-        async def fetch():
-            return await dr007_service.fetch_latest(start_date, latest_end)
-
-        def validate(dr007_df):
-            if dr007_df.empty:
-                raise _NoNewData()
-            return dr007_df
-
-        def build_payload(dr007_df):
-            last_idx = dr007_df["date"].iloc[-1]
-            last_val = dr007_df["dr007"].iloc[-1]
-            return DR007UpdateData(dr007=DR007Data(
-                date=last_idx.date() if last_idx is not None else latest_end.date(),
-                value=float(last_val) if last_val is not None else None,
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(
-                fetch, validate, data_service.save_dr007_data, build_payload
-            )
-        except _NoNewData:
-            logger.info(f"DR007 区间 [{start_date}, {latest_end}] 无新数据，跳过")
-            return UpdateResponse(
-                success=True,
-                message="DR007 数据已是最新，无需更新",
-                data=DR007UpdateData(dr007=DR007Data(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("DR007 数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="DR007 数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"DR007 数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"DR007 数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+数据源 prr-chrt.csv 同一文件亦含 DR001/DR014 列，DR001 由 /update/dr001 独立入库。"""
+    return await UpdatePipeline.execute(UPDATE_SPECS["dr007"], _update_context())
 
 
 @router.post("/update/dr001", response_model=UpdateResponse)
 async def update_dr001():
     """增量更新 DR001 数据 - 拉取 CSV 最后一行的下一天到今天
 
-    与 /update/dr007 同源（prr-chrt.csv），取 DR001 加权利率列，独立落库到 dr001.csv。
-    """
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS"
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始增量更新 DR001 数据...")
-        dr001_service = get_dr001_service()
-        data_service = get_data_service()
-
-        latest_end = pd.Timestamp.now().normalize()
-        start_date = _compute_incremental_start(data_service, "dr001", latest_end)
-
-        if start_date is None or start_date > latest_end:
-            logger.info("DR001 数据已是最新，无需更新")
-            return UpdateResponse(
-                success=True,
-                message="DR001 数据已是最新，无需更新",
-                data=DR001UpdateData(dr001=DR001Data(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info(f"增量更新 DR001 数据，从 {start_date} 到 {latest_end}")
-
-        async def fetch():
-            return await dr001_service.fetch_latest(start_date, latest_end)
-
-        def validate(dr001_df):
-            if dr001_df.empty:
-                raise _NoNewData()
-            return dr001_df
-
-        def build_payload(dr001_df):
-            last_idx = dr001_df["date"].iloc[-1]
-            last_val = dr001_df["dr001"].iloc[-1]
-            return DR001UpdateData(dr001=DR001Data(
-                date=last_idx.date() if last_idx is not None else latest_end.date(),
-                value=float(last_val) if last_val is not None else None,
-            ))
-
-        try:
-            response_data = await UpdatePipeline.run(
-                fetch, validate, data_service.save_dr001_data, build_payload
-            )
-        except _NoNewData:
-            logger.info(f"DR001 区间 [{start_date}, {latest_end}] 无新数据，跳过")
-            return UpdateResponse(
-                success=True,
-                message="DR001 数据已是最新，无需更新",
-                data=DR001UpdateData(dr001=DR001Data(date=latest_end.date(), value=None)),
-                updated_at=datetime.now().isoformat(),
-            )
-
-        logger.info("DR001 数据增量更新成功")
-        return UpdateResponse(
-            success=True,
-            message="DR001 数据增量更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"DR001 数据增量更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"DR001 数据增量更新失败: {str(e)}",
-            error_code="UPDATE_FAILED"
-        )
-    finally:
-        release_update_lock()
+与 /update/dr007 同源（prr-chrt.csv），取 DR001 加权利率列，独立落库到 dr001.csv。"""
+    return await UpdatePipeline.execute(UPDATE_SPECS["dr001"], _update_context())
 
 
 @router.post("/update/volume", response_model=UpdateResponse)
 async def update_volume():
     """当日更新两市成交额（BaoStock 上证+深证综指日线）
 
-    适用调度：每个交易日盘后 16:30 触发。拉近 10 个自然日窗口，自动补节假日缺口。
-    """
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS",
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始当日更新两市成交额...")
-        baostock_service = get_baostock_service()
-        data_service = get_data_service()
-
-        stages = UPDATE_SPECS["volume"].build_stages(data_service, baostock_service)
-        response_data = await UpdatePipeline.run_stages(stages)
-
-        logger.info(
-            "两市成交额当日更新成功: date=%s, total=%.2f亿",
-            response_data.volume.date, response_data.volume.value or 0,
-        )
-        return UpdateResponse(
-            success=True,
-            message="两市成交额更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"两市成交额更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"两市成交额更新失败: {str(e)}",
-            error_code="UPDATE_FAILED",
-        )
-    finally:
-        release_update_lock()
+适用调度：每个交易日盘后 16:30 触发。拉近 10 个自然日窗口，自动补节假日缺口。"""
+    return await UpdatePipeline.execute(UPDATE_SPECS["volume"], _update_context())
 
 
 @router.post("/update/turnover", response_model=UpdateResponse)
 async def update_turnover():
     """当日更新两市换手率（BaoStock 上证+深证综指日线，成交额加权）"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS",
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始当日更新两市换手率...")
-        baostock_service = get_baostock_service()
-        data_service = get_data_service()
-
-        stages = UPDATE_SPECS["turnover"].build_stages(data_service, baostock_service)
-        response_data = await UpdatePipeline.run_stages(stages)
-
-        logger.info(
-            "两市换手率当日更新成功: date=%s, rate=%.4f%%",
-            response_data.turnover.date, response_data.turnover.value or 0,
-        )
-        return UpdateResponse(
-            success=True,
-            message="两市换手率更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"两市换手率更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"两市换手率更新失败: {str(e)}",
-            error_code="UPDATE_FAILED",
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["turnover"], _update_context())
 
 
 @router.post("/fetch/volume-turnover/history", response_model=UpdateResponse)
@@ -3361,42 +2058,4 @@ async def fetch_margin_history():
 @router.post("/update/margin", response_model=UpdateResponse)
 async def update_margin():
     """当日更新融资余额（akshare 当日点，T-1 数据 09:45+ 可用）"""
-    global _is_updating
-
-    if _is_updating:
-        return UpdateResponse(
-            success=False,
-            message="数据更新正在进行中，请稍后再试",
-            error_code="UPDATE_IN_PROGRESS",
-        )
-
-    await acquire_update_lock()
-
-    try:
-        logger.info("开始当日更新融资余额...")
-        margin_service = get_margin_service()
-        data_service = get_data_service()
-
-        stages = UPDATE_SPECS["margin"].build_stages(data_service, margin_service)
-        response_data = await UpdatePipeline.run_stages(stages)
-
-        logger.info(
-            "融资余额当日更新成功: date=%s, balance=%.2f亿",
-            response_data.margin.date, response_data.margin.value or 0,
-        )
-        return UpdateResponse(
-            success=True,
-            message="融资余额更新成功",
-            data=response_data,
-            updated_at=datetime.now().isoformat(),
-        )
-
-    except Exception as e:
-        logger.error(f"融资余额更新失败: {str(e)}")
-        return UpdateResponse(
-            success=False,
-            message=f"融资余额更新失败: {str(e)}",
-            error_code="UPDATE_FAILED",
-        )
-    finally:
-        release_update_lock()
+    return await UpdatePipeline.execute(UPDATE_SPECS["margin"], _update_context())
