@@ -41,4 +41,3 @@ Wrong：list_posts(limit=50)之后按channel筛选。
 Correct：list_posts中先应用channel过滤，再排序并截取limit。
 Wrong：每次启动把app.yaml种子覆盖channels.json。
 Correct：只在登记文件不存在时初始化，已有文件是运行时来源。
-
