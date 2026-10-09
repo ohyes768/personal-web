@@ -147,6 +147,32 @@ class DataService:
             df.to_csv(file_path)
             logger.info(f"创建新文件: {file_path}")
 
+    def load_analysis_observations(self, stores: list[str]) -> dict[str, pd.DataFrame]:
+        """Read unfilled observations consistently; corruption is never an empty store.
+
+        Capture file signatures around the complete read so a concurrent CSV update
+        is a retryable error rather than a mixed-version economic snapshot.
+        """
+        def signature(path):
+            if not path.exists():
+                return None
+            stat = path.stat()
+            return (stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+
+        paths = {store: self.files[store] for store in set(stores)}
+        before = {store: signature(path) for store, path in paths.items()}
+        result = {}
+        for store, path in paths.items():
+            if before[store] is None:
+                result[store] = pd.DataFrame()
+                continue
+            frame = pd.read_csv(path, index_col=0)
+            frame.index = pd.to_datetime(frame.index, errors="raise").normalize()
+            result[store] = frame[~frame.index.duplicated(keep="last")].sort_index()
+        if before != {store: signature(path) for store, path in paths.items()}:
+            raise RuntimeError("数据更新中，请稍后重新分析")
+        return result
+
     def load_data(self, data_type: str) -> pd.DataFrame:
         """加载 CSV 数据
 

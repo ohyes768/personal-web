@@ -1,5 +1,6 @@
 'use client';
 
+import { useChartAnalysis } from './analysis/AnalysisProvider';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { init, use, type EChartsType } from 'echarts/core';
 import { LineChart } from 'echarts/charts';
@@ -19,6 +20,15 @@ export function MacroEChart({
   data, layout, chartId, subplotCount = 1, height, className,
   emptyMessage = '暂无可用数据', range, onRangeChange, onContextChange,
 }: MacroEChartProps) {
+  const analysis = useChartAnalysis();
+  const analysisDefinition = analysis?.definitions.find(definition => definition.id === chartId);
+  const registerAnalysis = analysis?.register;
+  const revision = useMemo(() => {
+    let hash = 2166136261;
+    const text = JSON.stringify(data.map(line => [line.id, line.dates, line.values, line.transform, line.scaleFactor, line.details]));
+    for (let i = 0; i < text.length; i++) hash = Math.imul(hash ^ text.charCodeAt(i), 16777619);
+    return (hash >>> 0).toString(16);
+  }, [data]);
   const container = useRef<HTMLDivElement>(null);
   const instance = useRef<EChartsType | null>(null);
   const [localRange, setLocalRange] = useState<DateRange>(null);
@@ -44,11 +54,13 @@ export function MacroEChart({
     setLocalRange(null);
   }, [data]);
   useEffect(() => {
-    callbacks.current.onContextChange?.({
+    const context: ChartContext = {
       chartId, series: data.map((line) => ({ id: line.id, label: line.name, unit: line.unit, transform: line.transform, ...(line.scaleFactor ? { scaleFactor: line.scaleFactor } : {}) })),
       dateRange: clampRange(dates, resolvedRange) ?? (dates.length ? [dates[0], dates[dates.length - 1]] : null),
-    });
-  }, [chartId, data, dates, resolvedRange]);
+    };
+    callbacks.current.onContextChange?.(context);
+    registerAnalysis?.(context, revision);
+  }, [chartId, data, dates, resolvedRange, registerAnalysis, revision]);
 
   useEffect(() => {
     const element = container.current;
@@ -89,6 +101,13 @@ export function MacroEChart({
   const latest = lastValidDate(data);
   return (
     <section className={className} data-chart-id={chartId} data-range={JSON.stringify(resolvedRange)}>
+      {analysisDefinition && <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
+        <h3 className="text-sm font-medium text-gray-200">{analysisDefinition.title}</h3>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => analysis?.open(chartId, true)} className="text-xs text-gray-400 border border-gray-700 rounded px-3 py-2">指标说明</button>
+          <button type="button" disabled={!hasData} onClick={() => analysis?.open(chartId)} className="text-xs text-sky-200 bg-sky-950 border border-sky-800 rounded px-3 py-2 disabled:opacity-40">帮我分析</button>
+        </div>
+      </div>}
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2 text-xs">
         <div className="flex flex-wrap gap-x-3 gap-y-2" aria-label="曲线图例">
           {data.map((line) => (

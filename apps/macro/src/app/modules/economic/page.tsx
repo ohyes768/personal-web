@@ -12,6 +12,7 @@ import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
 import { economicApi } from '@/lib/modules/economic/api';
 import { useTabEconomicData } from '@/lib/hooks/useTabEconomicData';
+import { AnalysisProvider } from './components/analysis/AnalysisProvider';
 import { Tabs } from './components/Tabs';
 
 // 动态导入各 Tab 子组件（每个 Tab 自己的 hooks / 按钮 / 图表都在子组件里）
@@ -142,6 +143,7 @@ export default function EconomicPage() {
   ];
 
   return (
+    <AnalysisProvider dataRevision={refreshKey}>
     <main className="min-h-screen bg-black text-white p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* 头部 */}
@@ -289,5 +291,6 @@ export default function EconomicPage() {
         </svg>
       </Link>
     </main>
+    </AnalysisProvider>
   );
 }

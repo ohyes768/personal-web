@@ -1,9 +1,9 @@
 {
   "id": "macro-chart-analysis",
   "name": "macro-chart-analysis",
-  "title": "日频曲线图分析助手：交互与可扩展架构规划",
-  "description": "规划以单个子图为入口的日频分析助手；中国国债试点，后续覆盖全部日频曲线图。",
-  "status": "planning",
+  "title": "日频曲线图分析助手：中国国债试点与通用接入",
+  "description": "实现DeepSeek图表分析公共能力与中国国债试点，预留全部日频曲线图扩展。",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "macro",
   "package": "backend/global-macro-fin",
@@ -24,6 +24,6 @@
     "apps/macro",
     "backend/macro"
   ],
-  "notes": "",
+  "notes": "首期实现与本地验收完成，待提交确认；真实模型/生产代理验收及其余日频图接入待后续。",
   "meta": {}
 }

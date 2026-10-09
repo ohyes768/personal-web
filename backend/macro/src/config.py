@@ -127,6 +127,15 @@ class Settings(BaseSettings):
     # 鉴权复用 macro_signal_upload_token(MACRO_SIGNAL_UPLOAD_TOKEN),不单设变量
     macro_report_data_dir: str = "./data/reports"
 
+    # Optional chart-analysis feature; secrets are server-side only.
+    analysis_password: str = ""
+    analysis_signing_secret: str = ""
+    analysis_cookie_secure: bool = True
+    deepseek_api_key: str = ""
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-flash"
+    analysis_timeout_seconds: float = 90
+
     class Config:
         env_file = ".env"
         case_sensitive = False
