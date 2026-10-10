@@ -816,3 +816,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 22: Skill 导出目标管理
+
+**Date**: 2026-10-10
+**Task**: Skill 导出目标管理
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+完成动态 ZIP 导出目标管理、旧台账迁移与启停删除规则；前端 13 项测试通过，后端 187 passed/13 skipped，3 项既有失败已复现；浏览器完整流程与窄屏验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5fbbea6` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

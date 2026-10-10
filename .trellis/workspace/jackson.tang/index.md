@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 21
+- **Total Sessions**: 22
 - **Last Active**: 2026-10-10
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~818 | Active |
+| `journal-1.md` | ~852 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 22 | 2026-10-10 | Skill 导出目标管理 | `5fbbea6` | `master` |
 | 21 | 2026-10-10 | Skill Manager 外部导出目标与版本台账 | `307c7d0`, `7d77b94`, `675a39d` | `master` |
 | 20 | 2026-10-09 | 宏观更新管道补齐与归档 | `b201bcd` | `master` |
 | 19 | 2026-10-09 | 滨江法拍采集脚本与手动接口 | - | `master` |
