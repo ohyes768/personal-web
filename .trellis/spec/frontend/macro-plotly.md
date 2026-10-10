@@ -1,3 +1,5 @@
+> Historical contract: apps/macro migrated to ECharts on 2026-10-09. Current rendering rules: [macro-echarts.md](./macro-echarts.md). Preserve this document for archived task context.
+
 # Macro 前端 Plotly 契约(apps/macro)
 
 > 来源:2026-08-31 联动子图拆分与两次线上全空白故障的实战结论。

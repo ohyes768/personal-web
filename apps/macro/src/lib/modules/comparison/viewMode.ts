@@ -8,7 +8,7 @@
  *
  * 轴标题颜色 = 该 unit 组下第 1 条曲线的颜色（视觉上把轴和曲线绑定）
  */
-import type { AxisSpec, AxisKey } from '@/lib/utils/plotlyTheme';
+import type { AxisSpec, AxisKey } from '@/lib/utils/chartTheme';
 import type { IndicatorId, IndicatorMeta } from './types';
 import { INDICATORS } from './indicators';
 

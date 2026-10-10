@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from src.api.routes import router
+from src.analysis.routes import router as analysis_router
 from src.scheduler.manager import SchedulerManager
 from src.scheduler.routes import router as scheduler_router
 from src.utils.logger import setup_logger
@@ -37,6 +38,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # 注册路由
 app.include_router(router)
+app.include_router(analysis_router)
 # scheduler 管理 API（最终路径 /api/scheduler/*）
 app.include_router(scheduler_router, prefix="/api")
 

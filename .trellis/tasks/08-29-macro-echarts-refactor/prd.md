@@ -6,9 +6,9 @@
 
 ## Status
 
-**后续待办，暂不实施。**
+**用户于 2026-10-09 明确要求开始实施。**
 
-前置条件：`08-29-macro-chart-readability` 完成并稳定使用一段时间。
+前置优化已落地于现有联动子图；本轮以当前实现为行为基线。
 
 ## Background
 
@@ -35,18 +35,17 @@
 
 - 先抽 ECharts 共享主题与 `MacroEChart` 包装组件。
 - 按 Tab 逐个迁移，允许过渡期 Plotly / ECharts 并存。
-- 迁移完成后移除 `react-plotly.js` 与无用 Plotly 工具函数。
+- 迁移完成后移除 `react-plotly.js`、类型依赖、shim、resize hook 与无用 Plotly 工具函数。
 
 ## Acceptance Criteria
 
-- [ ] 7 个图表 Tab 全部迁移到 ECharts，行为与当前 Plotly 优化版对等。
-- [ ] 包体积与首屏加载相对 Plotly 版有可测量改善或明确取舍说明。
-- [ ] 桌面 1440px 与手机 375px 图表可读，无轴标签裁切。
-- [ ] 旧 Plotly 依赖与死代码已清理。
+- [x] 7 个图表 Tab 全部迁移到 ECharts，行为与当前 Plotly 优化版对等。
+- [x] 包体积与首屏加载相对 Plotly 版有可测量改善或明确取舍说明。
+- [x] 桌面 1440px 与手机 375px 图表可读，无轴标签裁切。
+- [x] 旧 Plotly 依赖与死代码已清理。
 
 ## Out of Scope
 
-- 现在立刻开始实现。
 - 改后端数据契约。
 - 信号首页重构。
 
@@ -54,3 +53,8 @@
 
 - 创建原因：用户确认“先优化 Plotly，后面再建 TODO 使用 ECharts 重构”。
 - 依赖任务：`08-29-macro-chart-readability`
+
+### R4 后续分析助手上下文
+- 每个子图有稳定图表标识、曲线标识和当前可视日期范围；预留回调，不展示尚不可用的Agent按钮。
+- 图表描述与上下文独立于ECharts实例；图例隐藏不改变默认分析范围。
+- 本任务不接入模型或分析聊天。

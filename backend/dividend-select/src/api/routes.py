@@ -2,6 +2,7 @@
 API 路由定义
 """
 import os
+import math
 import secrets
 from datetime import datetime
 from typing import Optional
@@ -10,6 +11,8 @@ import pandas as pd
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
 
 from src.api.models import (
+    ScreeningRequest, ScreeningResponse,
+    FavoritesBatchRequest, FavoritesBatchResponse,
     BoardInfo,
     BoardInfoResponse,
     DividendStock,
@@ -55,6 +58,7 @@ from src.api.models import (
 from src.services.data_reader import DataReader
 from src.services.favorites_service import FavoritesService
 from src.services.filter_service import FilterService
+from src.services.screening_service import evaluate_stock, DIVIDEND_YEARS
 from src.services.m120_service import M120Service
 from src.services.pe_service import PEDataService
 from src.services.realtime_service import get_realtime_service
@@ -76,6 +80,8 @@ from src.api.helpers.aux_data import (
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+
+SCREENING_FINANCIAL_COLUMNS = {"ROE年度", "近3年平均ROE", "近3年ROE历史", "前一季度扣非同比(%)", "前一季度"}
 
 
 def _compute_yield_ttm(row, realtime_price, calculator) -> Optional[float]:
@@ -201,7 +207,8 @@ def _row_to_stock_model(row: pd.Series, info: Optional[dict] = None,
         if pd.isna(val) or val == "-":
             return None
         try:
-            return float(val)
+            value = float(val)
+            return value if math.isfinite(value) else None
         except (ValueError, TypeError):
             return None
 
@@ -275,6 +282,11 @@ def _row_to_stock_model(row: pd.Series, info: Optional[dict] = None,
         gross_profit_margin=financial_data.get("gross_profit_margin") if financial_data else None,
         net_profit_margin=financial_data.get("net_profit_margin") if financial_data else None,
         roe=financial_data.get("roe") if financial_data else None,
+        roe_year=financial_data.get("roe_year", None) if financial_data else None,
+        roe_avg_3y=financial_data.get("roe_avg_3y", None) if financial_data else None,
+        roe_history=financial_data.get("roe_history", []) if financial_data else [],
+        previous_quarter_yoy_pct=financial_data.get("previous_quarter_yoy_pct", None) if financial_data else None,
+        previous_quarter_label=financial_data.get("previous_quarter_label", None) if financial_data else None,
         debt_asset_ratio=financial_data.get("debt_asset_ratio") if financial_data else None,
         net_profit_ex_non_recurring_yoy=financial_data.get("net_profit_ex_non_recurring_yoy") if financial_data else None,
         net_profit_cagr_3y=financial_data.get("net_profit_cagr_3y") if financial_data else None,
@@ -451,19 +463,7 @@ async def get_stocks(
         if not fi_df.empty:
             for _, fi_row in fi_df.iterrows():
                 code = str(fi_row["股票代码"]).zfill(6)
-                financial_map[code] = {
-                    "gross_profit_margin": float(fi_row["主营业务利润率"]) if pd.notna(fi_row.get("主营业务利润率")) else None,
-                    "net_profit_margin": float(fi_row["净利率"]) if pd.notna(fi_row.get("净利率")) else None,
-                    "roe": float(fi_row["ROE"]) if pd.notna(fi_row.get("ROE")) else None,
-                    "debt_asset_ratio": float(fi_row["资产负债率"]) if pd.notna(fi_row.get("资产负债率")) else None,
-                    "net_profit_ex_non_recurring_yoy": float(fi_row["扣非净利润同比"]) if pd.notna(fi_row.get("扣非净利润同比")) else None,
-                    "net_profit_cagr_3y": float(fi_row["3年复合增长率"]) if pd.notna(fi_row.get("3年复合增长率")) else None,
-                    "eps": float(fi_row["最新EPS(元)"]) if pd.notna(fi_row.get("最新EPS(元)")) else None,
-                    "eps_year": int(fi_row["最新EPS年度"]) if pd.notna(fi_row.get("最新EPS年度")) else None,
-                    "latest_quarter_net_profit_ex_non_recurring": float(fi_row["最新季度扣非(元)"]) if pd.notna(fi_row.get("最新季度扣非(元)")) else None,
-                    "latest_quarter_yoy_pct": float(fi_row["最新季度扣非同比(%)"]) if pd.notna(fi_row.get("最新季度扣非同比(%)")) else None,
-                    "latest_quarter_label": str(fi_row["数据季度"]) if pd.notna(fi_row.get("数据季度")) and str(fi_row["数据季度"]).strip() else None,
-                }
+                financial_map[code] = financial_reader.row_to_data(fi_row)
 
     # 无分页，返回所有数据
     items = [_row_to_stock_model(
@@ -484,6 +484,22 @@ async def get_stocks(
         items=items,
         last_updated=last_updated
     )
+
+
+@router.post("/stocks/screen", response_model=ScreeningResponse)
+async def screen_stocks(body: ScreeningRequest):
+    stocks = await get_stocks(
+        min_yield=0, max_yield=None, exchange=body.exchange, industry=None,
+        index=None, sort_by="avg_yield_3y", sort_order="desc",
+    )
+    items = [evaluate_stock(stock, body) for stock in stocks.items]
+    counts = {status: sum(item.status == status for item in items)
+              for status in ("eligible", "excluded", "insufficient_data")}
+    financial_path = find_latest_aux_file("财务指标汇总")
+    return ScreeningResponse(items=items, counts=counts, conditions=body,
+                             financial_last_updated=file_mtime_iso(financial_path) if financial_path else None,
+                             last_updated=stocks.last_updated, total=len(items),
+                             dividend_years=list(DIVIDEND_YEARS))
 
 
 @router.get("/stocks/{code}", response_model=StockDetailResponse)
@@ -911,6 +927,7 @@ async def get_financial_status():
     quarter = financial_reader.get_quarter() or current_quarter()
     data_date = None
     missing_codes: list[str] = []
+    missing_schema_columns = sorted(SCREENING_FINANCIAL_COLUMNS)
 
     # 提前计算 filtered_codes（file_exists 真假都需要用到）
     df = data_reader.read_csv()
@@ -919,6 +936,7 @@ async def get_financial_status():
 
     if file_exists:
         fi_df = financial_reader.read_csv()
+        missing_schema_columns = sorted(SCREENING_FINANCIAL_COLUMNS - set(fi_df.columns))
         if not fi_df.empty:
             dates = fi_df["数据日期"].dropna().unique()
             if len(dates) > 0:
@@ -934,7 +952,8 @@ async def get_financial_status():
         "data_date": data_date,
         "days_since_update": days,
         "quarter": quarter,
-        "needs_update": (days is None) or (days > REFRESH_INTERVAL_DAYS),
+        "needs_update": bool(missing_schema_columns) or (days is None) or (days > REFRESH_INTERVAL_DAYS),
+        "missing_schema_columns": missing_schema_columns,
         "missing_count": len(missing_codes),
         "missing_codes": missing_codes,
     }
@@ -948,7 +967,7 @@ async def refresh_financial_data(
     """
     刷新财务指标数据
 
-    只更新根据股息率筛选出来的股票（3年平均股息率 >= 3%）。
+    更新已采集股票池；force=true 会重新采集指定代码或整个股票池。
     如果某只股票当季度数据还没有，则跳过（返回时会标记为缺失）。
 
     查询参数：
@@ -3279,6 +3298,14 @@ async def get_favorites():
     if favorites_service is None:
         raise HTTPException(status_code=500, detail="收藏服务未初始化")
     return _to_favorites_response(favorites_service.get_all())
+
+
+@router.post("/favorites/batch", response_model=FavoritesBatchResponse)
+async def add_favorites_batch(body: FavoritesBatchRequest):
+    if favorites_service is None:
+        raise HTTPException(status_code=500, detail="收藏服务未初始化")
+    items, data = favorites_service.add_batch(body.codes)
+    return FavoritesBatchResponse(items=items, favorites=_to_favorites_response(data))
 
 
 @router.post("/favorites/{code}", response_model=FavoritesResponse)

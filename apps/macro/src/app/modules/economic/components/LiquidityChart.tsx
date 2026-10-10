@@ -7,15 +7,17 @@
  * 下：TGA 余额（百万美元 → 千亿美元）
  */
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
   type SubplotPanelSpec,
-} from '@/lib/utils/plotlyTheme';
+} from '@/lib/utils/chartTheme';
 import { LinkedSubplots } from './LinkedSubplots';
 
 interface LiquidityChartProps {
+  onContextChange?: (context: ChartContext) => void;
   data: EconomicDataResponse;
 }
 
@@ -25,11 +27,11 @@ const META = {
   tga:   { label: 'TGA余额',     color: '#f97316', unit: '千亿美元', factor: 1e-5 },
 } as const;
 
-function tracesOf(...items: Array<Data | null>): Data[] {
-  return items.filter((t): t is Data => t != null);
+function tracesOf(...items: Array<ChartSeries | null>): ChartSeries[] {
+  return items.filter((t): t is ChartSeries => t != null);
 }
 
-export function LiquidityChart({ data }: LiquidityChartProps) {
+export function LiquidityChart({ data, onContextChange }: LiquidityChartProps) {
   const subplots = useMemo<SubplotPanelSpec[]>(() => {
     const dates = data.dates ?? [];
 
@@ -38,9 +40,10 @@ export function LiquidityChart({ data }: LiquidityChartProps) {
 
     return [
       {
+        id: 'liquidity.vix',
         traces: tracesOf(
           buildLineTrace(
-            { label: META.vix.label, color: META.vix.color, unit: META.vix.unit, yaxis: 'y', xaxis: 'x' },
+            { id: 'vix', label: META.vix.label, color: META.vix.color, unit: META.vix.unit, yaxis: 'y', xaxis: 'x' },
             dates,
             scale(data.vix, META.vix.factor),
           ),
@@ -54,9 +57,10 @@ export function LiquidityChart({ data }: LiquidityChartProps) {
         emptyMessage: '暂无 VIX 数据',
       },
       {
+        id: 'liquidity.hibor',
         traces: tracesOf(
           buildLineTrace(
-            { label: META.hibor.label, color: META.hibor.color, unit: META.hibor.unit, yaxis: 'y2', xaxis: 'x2', valueFormat: '.3f' },
+            { id: 'hibor', label: META.hibor.label, color: META.hibor.color, unit: META.hibor.unit, yaxis: 'y2', xaxis: 'x2', valueFormat: '.3f' },
             dates,
             scale(data.hibor, META.hibor.factor),
           ),
@@ -70,9 +74,10 @@ export function LiquidityChart({ data }: LiquidityChartProps) {
         emptyMessage: '暂无 HIBOR 数据',
       },
       {
+        id: 'liquidity.tga',
         traces: tracesOf(
           buildLineTrace(
-            { label: META.tga.label, color: META.tga.color, unit: META.tga.unit, yaxis: 'y3', xaxis: 'x3' },
+            { id: 'tga', transform: 'scaled', scaleFactor: META.tga.factor, label: META.tga.label, color: META.tga.color, unit: META.tga.unit, yaxis: 'y3', xaxis: 'x3' },
             dates,
             scale(data.tga, META.tga.factor),
           ),
@@ -88,5 +93,5 @@ export function LiquidityChart({ data }: LiquidityChartProps) {
     ];
   }, [data]);
 
-  return <LinkedSubplots subplots={subplots} />;
+  return <LinkedSubplots onContextChange={onContextChange} chartId="liquidity" subplots={subplots} />;
 }

@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/index.md", "reason": "Backend conventions"}
+{"file": ".trellis/spec/backend/dividend-select/backend/financial-quarterly-contract.md", "reason": "Adjacent quarters and single-quarter calculations"}
+{"file": ".trellis/spec/backend/dividend-select/backend/code-type-guidelines.md", "reason": "Preserve stock code strings"}
+{"file": ".trellis/tasks/10-09-dividend-screening-watchlist/research/current-state.md", "reason": "Existing capabilities and data gaps"}

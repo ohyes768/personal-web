@@ -7,15 +7,17 @@
  * 下：道琼斯
  */
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
   type SubplotPanelSpec,
-} from '@/lib/utils/plotlyTheme';
+} from '@/lib/utils/chartTheme';
 import { LinkedSubplots } from './LinkedSubplots';
 
 interface StockIndexChartProps {
+  onContextChange?: (context: ChartContext) => void;
   data: EconomicDataResponse;
 }
 
@@ -27,11 +29,11 @@ const META = {
   DJI:      { label: '道琼斯',   color: '#a855f7', dash: 'solid' as const },
 } as const;
 
-function tracesOf(...items: Array<Data | null>): Data[] {
-  return items.filter((t): t is Data => t != null);
+function tracesOf(...items: Array<ChartSeries | null>): ChartSeries[] {
+  return items.filter((t): t is ChartSeries => t != null);
 }
 
-export function StockIndexChart({ data }: StockIndexChartProps) {
+export function StockIndexChart({ data, onContextChange }: StockIndexChartProps) {
   const subplots = useMemo<SubplotPanelSpec[]>(() => {
     const dates = data.dates ?? [];
     const indices = data.indices;
@@ -43,6 +45,7 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
     ) =>
       buildLineTrace(
         {
+          id: { HKHSI: 'hk_hsi', SH000001: 'sh_000001', SPX: 'spx', IXIC: 'ixic', DJI: 'dji' }[key],
           label: META[key].label,
           color: META[key].color,
           unit: '点',
@@ -57,6 +60,7 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
 
     return [
       {
+        id: 'stock-indices.cn-hk',
         traces: tracesOf(line('HKHSI', 'y', 'x'), line('SH000001', 'y2', 'x')),
         spec: {
           xAxisKey: 'x',
@@ -68,6 +72,7 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
         emptyMessage: '暂无港股/A 股指数',
       },
       {
+        id: 'stock-indices.us-growth',
         traces: tracesOf(line('SPX', 'y3', 'x2'), line('IXIC', 'y4', 'x2')),
         spec: {
           xAxisKey: 'x2',
@@ -79,6 +84,7 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
         emptyMessage: '暂无美股成长指数',
       },
       {
+        id: 'stock-indices.dow',
         traces: tracesOf(line('DJI', 'y5', 'x3')),
         spec: {
           xAxisKey: 'x3',
@@ -91,5 +97,5 @@ export function StockIndexChart({ data }: StockIndexChartProps) {
     ];
   }, [data]);
 
-  return <LinkedSubplots subplots={subplots} />;
+  return <LinkedSubplots onContextChange={onContextChange} chartId="stock-indices" subplots={subplots} />;
 }

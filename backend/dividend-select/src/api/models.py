@@ -2,7 +2,7 @@
 API 数据模型
 定义请求和响应的 Pydantic 模型
 """
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -38,6 +38,11 @@ class DividendHistoryItem(BaseModel):
     ex_date: str = Field(..., description="除权除息日 (YYYY-MM-DD)")
     ratio: float = Field(..., description="派息比例 (元/股)")
     fiscal_year: int = Field(..., description="财年")
+
+
+class ROEHistoryItem(BaseModel):
+    year: int
+    value: Optional[float] = None
 
 
 class DividendStock(BaseModel):
@@ -95,6 +100,11 @@ class DividendStock(BaseModel):
     gross_profit_margin: Optional[float] = Field(None, description="主营业务利润率(%)")
     net_profit_margin: Optional[float] = Field(None, description="净利率(%)")
     roe: Optional[float] = Field(None, description="加权净资产收益率(%)")
+    roe_year: Optional[int] = None
+    roe_avg_3y: Optional[float] = None
+    roe_history: list[ROEHistoryItem] = Field(default_factory=list)
+    previous_quarter_yoy_pct: Optional[float] = None
+    previous_quarter_label: Optional[str] = None
     debt_asset_ratio: Optional[float] = Field(None, description="资产负债率(%)")
     net_profit_ex_non_recurring_yoy: Optional[float] = Field(None, description="扣非净利润同比增速(%)")
     net_profit_cagr_3y: Optional[float] = Field(None, description="扣非净利润3年复合增长率(%)")
@@ -533,3 +543,41 @@ class AlertBatchResponse(BaseModel):
     results: list[AlertBatchResultItem]
     success_count: int
     fail_count: int
+
+class ScreeningRequest(BaseModel):
+    min_yield: float = Field(3.5, ge=0, le=100, allow_inf_nan=False)
+    min_roe: float = Field(10, ge=0, le=100, allow_inf_nan=False)
+    min_roe_avg_3y: float = Field(10, ge=0, le=100, allow_inf_nan=False)
+    exchange: Optional[str] = None
+
+
+class ScreeningItem(BaseModel):
+    stock: DividendStock
+    status: Literal["eligible", "excluded", "insufficient_data"]
+    reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ScreeningResponse(BaseModel):
+    items: list[ScreeningItem]
+    counts: dict[str, int]
+    conditions: ScreeningRequest
+    last_updated: Optional[str] = None
+    financial_last_updated: Optional[str] = None
+    dividend_years: list[int] = Field(default_factory=lambda: [2023, 2024, 2025])
+    total: int
+
+
+class FavoritesBatchRequest(BaseModel):
+    codes: list[str] = Field(..., min_length=1, max_length=1000)
+
+
+class FavoritesBatchItem(BaseModel):
+    code: str
+    status: Literal["added", "already_exists", "failed"]
+    error: Optional[str] = None
+
+
+class FavoritesBatchResponse(BaseModel):
+    items: list[FavoritesBatchItem]
+    favorites: FavoritesResponse

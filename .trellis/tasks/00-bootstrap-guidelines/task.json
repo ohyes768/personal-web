@@ -25,6 +25,6 @@
     ".trellis/spec/backend/global-macro-fin/",
     ".trellis/spec/backend/dividend-select/"
   ],
-  "notes": "First-time setup task created by trellis init (fullstack project)",
+  "notes": "2026-10-10 核对未完成：三个后端包的 directory/database/error/quality/logging 通用规范仍有 To be filled by the team 模板；保留进行中。",
   "meta": {}
 }

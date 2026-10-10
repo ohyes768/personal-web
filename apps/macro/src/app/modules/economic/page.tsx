@@ -1,7 +1,7 @@
 /**
  * 宏观经济数据页面 — 路由层
  * 数据获取：按 activeTab 用 useTabEconomicData 拉该 Tab 全历史并缓存；切时间周期仅本地切片
- * 渲染：各 Tab 始终挂载，用 hidden 控制显隐（state 持久、Plotly 不重建）
+ * 渲染：各 Tab 始终挂载，用 hidden 控制显隐（state 持久、图表实例不重建）
  * 子组件：按 timeRange + tabType 用 useFilteredEconomicData 拿自己需要的 data
  */
 'use client';
@@ -12,6 +12,7 @@ import Link from 'next/link';
 import type { TabType, TimeRange } from '@/lib/types/economic';
 import { economicApi } from '@/lib/modules/economic/api';
 import { useTabEconomicData } from '@/lib/hooks/useTabEconomicData';
+import { AnalysisProvider } from './components/analysis/AnalysisProvider';
 import { Tabs } from './components/Tabs';
 
 // 动态导入各 Tab 子组件（每个 Tab 自己的 hooks / 按钮 / 图表都在子组件里）
@@ -107,7 +108,7 @@ export default function EconomicPage() {
     {
       id: 'rates',
       label: '利率利差',
-      description: 'SOFR + 美债3M + TED利差 + 中国10y + 中国10年-2年（同图 4 轴叠加，日级）'
+      description: '短端利率、TED 利差、中国国债，三张联动日频图'
     },
     {
       id: 'treasury-exchange',
@@ -122,12 +123,12 @@ export default function EconomicPage() {
     {
       id: 'commodities',
       label: '商品',
-      description: '黄金/白银/原油/铜价格曲线（黄金白银左轴，原油铜右轴）'
+      description: '黄金/白银、原油/铜，两张双轴价格曲线图'
     },
     {
       id: 'stock-indices',
       label: '股指',
-      description: '恒生+上证 / 标普500+纳指 / 道琼斯，三子图日 K 线'
+      description: '恒生+上证 / 标普500+纳指 / 道琼斯，三张联动日频曲线图'
     },
     {
       id: 'market-sentiment',
@@ -142,6 +143,7 @@ export default function EconomicPage() {
   ];
 
   return (
+    <AnalysisProvider dataRevision={refreshKey}>
     <main className="min-h-screen bg-black text-white p-4 sm:p-6 lg:p-8">
       <div className="max-w-7xl mx-auto">
         {/* 头部 */}
@@ -186,7 +188,7 @@ export default function EconomicPage() {
           </div>
         )}
 
-        {/* 各 Tab 子组件：始终挂载，仅用 hidden 控制显隐 — state 持久，Plotly 不重建 */}
+        {/* 各 Tab 子组件：始终挂载，仅用 hidden 控制显隐 — state 持久，图表实例不重建 */}
         <div hidden={activeTab !== 'treasury-exchange'}>
           <TreasuryExchangeTab
             timeRange={timeRange}
@@ -289,5 +291,6 @@ export default function EconomicPage() {
         </svg>
       </Link>
     </main>
+    </AnalysisProvider>
   );
 }

@@ -236,6 +236,11 @@ services:
       # 报告看板: impact skill 推送 markdown 分析报告(POST /api/reports/upload, X-Upload-Token)
       # 鉴权复用 MACRO_SIGNAL_UPLOAD_TOKEN;MACRO_REPORT_DATA_DIR 挂 macro-data volume
       - MACRO_REPORT_DATA_DIR=/app/data/reports
+      - ANALYSIS_PASSWORD=${ANALYSIS_PASSWORD:-}
+      - ANALYSIS_SIGNING_SECRET=${ANALYSIS_SIGNING_SECRET:-}
+      - ANALYSIS_COOKIE_SECURE=true
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY:-}
+      - DEEPSEEK_MODEL=${DEEPSEEK_MODEL:-deepseek-flash}
     networks:
       - app-net
     healthcheck:

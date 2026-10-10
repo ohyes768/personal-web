@@ -6,15 +6,17 @@
  * 下图：原油（左）+ 铜（右）
  */
 import { useMemo } from 'react';
-import type { Data } from 'plotly.js';
+import type { ChartContext } from '@/lib/utils/chartTheme';
+import type { ChartSeries } from '@/lib/utils/chartTheme';
 import type { EconomicDataResponse } from '@/lib/types/economic';
 import {
   buildLineTrace,
   type SubplotPanelSpec,
-} from '@/lib/utils/plotlyTheme';
+} from '@/lib/utils/chartTheme';
 import { LinkedSubplots } from './LinkedSubplots';
 
 interface CommodityChartProps {
+  onContextChange?: (context: ChartContext) => void;
   data: EconomicDataResponse;
 }
 
@@ -25,11 +27,11 @@ const META = {
   copper: { label: '铜',   color: '#f97316', unit: '$/吨',  dash: 'dash' as const },
 } as const;
 
-function tracesOf(...items: Array<Data | null>): Data[] {
-  return items.filter((t): t is Data => t != null);
+function tracesOf(...items: Array<ChartSeries | null>): ChartSeries[] {
+  return items.filter((t): t is ChartSeries => t != null);
 }
 
-export function CommodityChart({ data }: CommodityChartProps) {
+export function CommodityChart({ data, onContextChange }: CommodityChartProps) {
   const subplots = useMemo<SubplotPanelSpec[]>(() => {
     const dates = data.dates ?? [];
     const commodities = data.commodities;
@@ -41,6 +43,7 @@ export function CommodityChart({ data }: CommodityChartProps) {
     ) =>
       buildLineTrace(
         {
+          id: key,
           label: META[key].label,
           color: META[key].color,
           unit: META[key].unit,
@@ -54,6 +57,7 @@ export function CommodityChart({ data }: CommodityChartProps) {
 
     return [
       {
+        id: 'commodities.precious',
         traces: tracesOf(line('gold', 'y', 'x'), line('silver', 'y2', 'x')),
         spec: {
           xAxisKey: 'x',
@@ -65,6 +69,7 @@ export function CommodityChart({ data }: CommodityChartProps) {
         emptyMessage: '暂无贵金属数据',
       },
       {
+        id: 'commodities.industrial',
         traces: tracesOf(line('oil', 'y3', 'x2'), line('copper', 'y4', 'x2')),
         spec: {
           xAxisKey: 'x2',
@@ -78,5 +83,5 @@ export function CommodityChart({ data }: CommodityChartProps) {
     ];
   }, [data]);
 
-  return <LinkedSubplots subplots={subplots} />;
+  return <LinkedSubplots onContextChange={onContextChange} chartId="commodities" subplots={subplots} />;
 }

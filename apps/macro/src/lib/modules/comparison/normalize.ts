@@ -45,7 +45,7 @@ export function extractSeries(
 
 /**
  * 归一化：每条线独立，第一个非 null 值 = 100，其他值按比例换算
- * - 所有 null 保留为 null（Plotly 会跳过，不画虚线）
+ * - 所有 null 保留为 null（空值断线，不跨越缺失观测连线）
  * - 范围内无任何有效值时返回原 series（前端会显示空 trace）
  */
 export function normalize(series: (number | null)[]): (number | null)[] {
