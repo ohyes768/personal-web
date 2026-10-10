@@ -44,6 +44,7 @@ from src.models import (
     RegistrySkill,
     SkillSource,
     TargetKey,
+    target_kind,
 )
 
 _ID_RE = re.compile(SKILL_ID_PATTERN)
@@ -379,6 +380,8 @@ class Publisher:
     # ---------- 内部：校验与边界 ----------
 
     def _target_root(self, target: TargetKey) -> Path:
+        if target_kind(target) != "link":
+            raise PublishBlockedError("外部目标用导出，不走发布")
         roots = {
             TargetKey.OPENCLAW: self.settings.openclaw_skills_root,
             TargetKey.HERMES: self.settings.hermes_skills_root,

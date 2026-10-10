@@ -13,9 +13,12 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import subprocess
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 
 from src.api.dependencies import (
     ensure_admin_password,
@@ -27,12 +30,13 @@ from src.api.dependencies import (
     get_task_manager,
 )
 from src.config import Settings
-from src.db import GithubCheckRecord, SkillStateStore
+from src.db import DeploymentRecord, GithubCheckRecord, HistoryEntry, SkillStateStore
 from src.models import (
     AdminPasswordRequest,
     AsyncTaskCreatedResponse,
     CheckUpdatesRequest,
     DeleteSkillResponse,
+    ExportRequest,
     PlanItem,
     PlanResponse,
     PublishBatchResult,
@@ -50,6 +54,7 @@ from src.models import (
     SKILL_ID_PATTERN,
     TargetDeployment,
     TargetKey,
+    target_kind,
     TaskSnapshot,
     UnpublishResponse,
     UpdateCheckItem,
@@ -71,7 +76,9 @@ from src.services.publisher import (
     PublisherError,
     force_remove_tree,
     resolve_registry_source,
+    validated_source,
 )
+from src.services.exporting import build_zip, content_hash, dir_hash, snapshot_files
 from src.services.registry import RegistryService, RegistryValidationError
 from src.services.task_manager import GithubTaskManager
 
@@ -105,10 +112,22 @@ def list_skills(
         logger.warning("local sync failed, falling back to existing registry: %s", exc)
     skills = registry.list_skills()
     deployments: dict[str, dict[str, TargetDeployment]] = {}
+    known = {skill.id: skill for skill in skills}
+    hashes: dict[str, str | None] = {}
     for record in store.list_deployments():
         # 账实核对：active 记录对目标链接做 lstat 存在性检查（纯 lstat，
         # 每条一次，零子进程）；removed 记录不出徽章，不检查
-        link_missing = record.status == "active" and not (
+        is_export = target_kind(TargetKey(record.target)) == "export"
+        stale = False
+        if is_export and record.content_hash and record.status == "active":
+            if record.skill_id not in hashes:
+                try:
+                    skill = known.get(record.skill_id)
+                    hashes[record.skill_id] = dir_hash(_export_source(settings, git_cache, skill)) if skill else None
+                except (OSError, HTTPException, InvalidSourceError):
+                    hashes[record.skill_id] = None
+            stale = hashes[record.skill_id] != record.content_hash
+        link_missing = not is_export and record.status == "active" and not (
             _target_root(settings, TargetKey(record.target)) / record.skill_id
         ).is_symlink()
         deployments.setdefault(record.skill_id, {})[record.target] = TargetDeployment(
@@ -117,6 +136,8 @@ def list_skills(
             published_at=record.published_at,
             link_target=record.current_link_target,
             link_missing=link_missing,
+            stale=stale,
+            content_hash=record.content_hash,
         )
     cards = [
         _build_card(
@@ -133,6 +154,82 @@ def list_skills(
         for skill in skills
     ]
     return SkillListResponse(items=cards)
+
+
+def _require_target_kind(target: TargetKey, kind: str) -> None:
+    if target_kind(target) != kind:
+        raise HTTPException(status_code=400, detail={
+            "code": "invalid_target_kind",
+            "message": "外部目标请在卡片上导出，不走发布" if kind == "link" else "只有外部 Windows 目标支持导出；NAS 目标请使用发布",
+        })
+
+
+def _export_source(settings: Settings, git_cache: GitCacheService, skill: RegistrySkill) -> Path:
+    if skill.source is SkillSource.LOCAL:
+        return resolve_registry_source(settings, skill)
+    if not git_cache.cache_present(str(skill.repository)):
+        raise HTTPException(status_code=400, detail={"code": "cache_missing_export", "message": "缓存缺失，请先 Clone 再导出"})
+    repo = git_cache.repo_cache_dir(str(skill.repository)).resolve()
+    source = (repo / skill.path).resolve()
+    if not source.is_relative_to(repo):
+        raise InvalidSourceError("skill path is outside repository cache")
+    return validated_source(settings, source)
+
+
+@router.post("/skills/{skill_id}/export")
+def export_skill(
+    skill_id: str,
+    req: ExportRequest,
+    settings: Settings = Depends(get_settings),
+    registry: RegistryService = Depends(get_registry),
+    store: SkillStateStore = Depends(get_store),
+    git_cache: GitCacheService = Depends(get_git_cache),
+) -> Response:
+    _require_target_kind(req.target, "export")
+    skill = _require_known_skill(registry, _require_skill_id(skill_id))
+    try:
+        source = _export_source(settings, git_cache, skill)
+        files = snapshot_files(source)
+        digest = content_hash(files)
+        archive = build_zip(files)
+    except (InvalidSourceError, OSError) as exc:
+        raise HTTPException(status_code=400, detail={"code": "source_unavailable", "message": f"源目录不可用：{exc}"}) from exc
+    revision = ""
+    try:
+        if skill.source is SkillSource.GITHUB:
+            revision = git_cache.current_revision(skill)
+        else:
+            result = subprocess.run(["git", "-C", str(settings.skills_source_root), "rev-parse", "HEAD"], capture_output=True, text=True, timeout=10, check=False)
+            revision = result.stdout.strip() if result.returncode == 0 else ""
+    except (OSError, subprocess.TimeoutExpired, GitCacheError):
+        pass
+    now = datetime.now(UTC).isoformat()
+    store.upsert_deployment(DeploymentRecord(
+        skill_id=skill.id, target=req.target.value, source_revision=revision,
+        source_path=skill.path, current_link_target="export", status="active",
+        published_at=now, content_hash=digest,
+    ))
+    store.append_history(HistoryEntry(
+        skill_id=skill.id, target=req.target.value, action="export", result="ok",
+        previous_link_target=None, new_link_target="export", source_revision=revision,
+        error=None, created_at=now,
+    ))
+    return Response(archive, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{skill.id}-{digest[:12]}.zip"',
+    })
+
+
+@router.delete("/skills/{skill_id}/exports/{target}")
+def delete_export(
+    skill_id: str, target: str,
+    registry: RegistryService = Depends(get_registry),
+    store: SkillStateStore = Depends(get_store),
+) -> dict[str, str]:
+    key = _require_target(target)
+    _require_target_kind(key, "export")
+    _require_known_skill(registry, _require_skill_id(skill_id))
+    store.delete_deployments(skill_id, key.value)
+    return {"skill_id": skill_id, "target": key.value, "status": "removed"}
 
 
 def _build_card(
@@ -552,6 +649,9 @@ def publish_plan(
     publisher: Publisher = Depends(get_publisher),
 ) -> PlanResponse:
     """右栏计划预览：逐项 add/update/unchanged/blocked；只读（design 4.2）。"""
+    for item in req.items:
+        for target in item.targets:
+            _require_target_kind(target, "link")
     known = {skill.id: skill for skill in registry.list_skills()}
     items: list[PlanItem] = []
     for queue_item in req.items:
@@ -651,6 +751,7 @@ def _planned_revision(
 
 
 def _target_root(settings: Settings, target: TargetKey) -> Path:
+    _require_target_kind(target, "link")
     roots = {
         TargetKey.OPENCLAW: settings.openclaw_skills_root,
         TargetKey.HERMES: settings.hermes_skills_root,
@@ -679,6 +780,9 @@ def publish(
     """执行发布：逐项独立事务，单项失败只记录该项（design 6.1 / 7）。"""
     ensure_admin_password(settings, req.password)
     known = {skill.id: skill for skill in registry.list_skills()}
+    for item in req.items:
+        for target in item.targets:
+            _require_target_kind(target, "link")
     results: list[PublishResultItem] = []
     for queue_item in req.items:
         skill = known.get(queue_item.skill_id)
@@ -787,6 +891,7 @@ def unpublish(
     ensure_admin_password(settings, req.password)
     _require_known_skill(registry, _require_skill_id(skill_id))
     target_key = _require_target(target)
+    _require_target_kind(target_key, "link")
     try:
         publisher.unpublish(skill_id, target_key)
     except PublishBlockedError as exc:
@@ -838,6 +943,7 @@ def delete_skill(
         record
         for record in store.list_deployments()
         if record.skill_id == skill_id and record.status == "active"
+        and target_kind(TargetKey(record.target)) == "link"
     ]
     if active:
         targets = ", ".join(record.target for record in active)
@@ -862,6 +968,7 @@ def delete_skill(
         ) from exc
     try:
         store.delete_github_check(skill_id)
+        store.delete_deployments(skill_id)
     except sqlite3.Error as exc:
         # design：派生数据尽力清理，失败不改变响应（registry 真源已提交）
         logger.warning("delete derived state failed: skill=%s error=%s", skill_id, exc)
@@ -941,7 +1048,7 @@ def _require_target(target: str) -> TargetKey:
             status_code=400,
             detail={
                 "code": "invalid_target",
-                "message": f"未知发布目标：{target!r}（只支持 openclaw / hermes）",
+                "message": f"未知目标：{target!r}（支持 openclaw / hermes / windows-codex / windows-claude）",
             },
         ) from exc
 

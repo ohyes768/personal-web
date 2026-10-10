@@ -23,6 +23,25 @@ class SkillSource(StrEnum):
 class TargetKey(StrEnum):
     OPENCLAW = "openclaw"
     HERMES = "hermes"
+    WINDOWS_CODEX = "windows-codex"
+    WINDOWS_CLAUDE = "windows-claude"
+
+
+TargetKind = Literal["link", "export"]
+TARGET_KINDS: dict[TargetKey, TargetKind] = {
+    TargetKey.OPENCLAW: "link",
+    TargetKey.HERMES: "link",
+    TargetKey.WINDOWS_CODEX: "export",
+    TargetKey.WINDOWS_CLAUDE: "export",
+}
+
+
+def target_kind(target: TargetKey) -> TargetKind:
+    return TARGET_KINDS[target]
+
+
+class ExportRequest(BaseModel):
+    target: TargetKey
 
 
 class RegistrySkill(BaseModel):
@@ -269,6 +288,8 @@ class TargetDeployment(BaseModel):
     link_target: str = ""
     # 账实核对：账本 active 但目标链接不存在；真实动作以计划预览目录扫描为准
     link_missing: bool = False
+    stale: bool = False
+    content_hash: str = ""
 
 
 class SkillCard(BaseModel):

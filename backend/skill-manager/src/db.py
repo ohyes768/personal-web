@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS deployment (
     current_link_target TEXT NOT NULL,
     status              TEXT NOT NULL,
     published_at        TEXT NOT NULL,
+    content_hash        TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (skill_id, target)
 );
 
@@ -84,6 +85,9 @@ CREATE TABLE IF NOT EXISTS registry_skill (
 # 列级迁移（2026-09-30 批量登记任务）：CREATE TABLE IF NOT EXISTS 不会给
 # 旧库补新列，启动时按 PRAGMA 检测缺列则 ALTER TABLE ADD COLUMN（幂等）
 _COLUMN_MIGRATIONS: dict[str, list[str]] = {
+    "deployment": [
+        "ALTER TABLE deployment ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''",
+    ],
     "registry_skill": [
         "ALTER TABLE registry_skill ADD COLUMN shared_paths TEXT NOT NULL DEFAULT '[]'",
     ],
@@ -101,6 +105,7 @@ class DeploymentRecord:
     current_link_target: str
     status: str
     published_at: str
+    content_hash: str = ""
 
 
 @dataclass(frozen=True)
@@ -155,8 +160,8 @@ class SkillStateStore:
                 """
                 INSERT OR REPLACE INTO deployment
                     (skill_id, target, source_revision, source_path,
-                     current_link_target, status, published_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                     current_link_target, status, published_at, content_hash)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     record.skill_id,
@@ -166,6 +171,7 @@ class SkillStateStore:
                     record.current_link_target,
                     record.status,
                     record.published_at,
+                    record.content_hash,
                 ),
             )
 
@@ -176,6 +182,15 @@ class SkillStateStore:
                 (skill_id, target),
             ).fetchone()
         return _row_to_deployment(row) if row is not None else None
+
+    def delete_deployments(self, skill_id: str, target: str | None = None) -> None:
+        query = "DELETE FROM deployment WHERE skill_id = ?"
+        params = [skill_id]
+        if target is not None:
+            query += " AND target = ?"
+            params.append(target)
+        with closing(self._connect()) as conn, conn:
+            conn.execute(query, params)
 
     def list_deployments(self) -> list[DeploymentRecord]:
         with closing(self._connect()) as conn:
@@ -357,6 +372,7 @@ def _row_to_deployment(row: sqlite3.Row) -> DeploymentRecord:
         current_link_target=row["current_link_target"],
         status=row["status"],
         published_at=row["published_at"],
+        content_hash=row["content_hash"],
     )
 
 

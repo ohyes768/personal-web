@@ -36,6 +36,86 @@ PASSWORD = "test-password"
 CANONICAL_URL = "https://github.com/example/two-skills"
 
 
+def test_export_local_tracks_content_and_staleness(client, roots):
+    import io
+    import zipfile
+
+    endpoint = "/api/skills/alpha/export"
+    response = client.post(endpoint, json={"target": "windows-codex"})
+    assert response.status_code == 200
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert archive.read("SKILL.md") == (roots.source_root / "alpha/SKILL.md").read_bytes()
+    assert client.post(endpoint, json={"target": "windows-codex"}).content == response.content
+    deployment = client.get("/api/skills").json()["items"][0]["deployments"]["windows-codex"]
+    assert not deployment["stale"] and not deployment["link_missing"]
+    (roots.source_root / "alpha/SKILL.md").write_text("changed", encoding="utf-8")
+    assert client.get("/api/skills").json()["items"][0]["deployments"]["windows-codex"]["stale"]
+    assert client.post(endpoint, json={"target": "windows-codex"}).status_code == 200
+    assert not client.get("/api/skills").json()["items"][0]["deployments"]["windows-codex"]["stale"]
+    assert client.delete("/api/skills/alpha/exports/windows-codex").status_code == 200
+    assert "windows-codex" not in client.get("/api/skills").json()["items"][0]["deployments"]
+
+
+@pytest.mark.parametrize("endpoint", ["plan", "publish"])
+def test_export_target_rejected_by_publish(client, endpoint):
+    path = "/api/skills/publish/plan" if endpoint == "plan" else "/api/skills/publish"
+    response = client.post(path, json={"password": PASSWORD, "items": [{"skill_id": "alpha", "targets": ["windows-codex"]}]})
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_target_kind"
+
+
+def test_export_rejects_link_target(client):
+    assert client.post("/api/skills/alpha/export", json={"target": "hermes"}).status_code == 400
+    assert client.delete("/api/skills/alpha/exports/hermes").status_code == 400
+    assert client.request("DELETE", "/api/skills/alpha/targets/windows-codex", json={"password": PASSWORD}).status_code == 400
+
+
+def test_export_legacy_unknown_hash_does_not_report_stale(client):
+    store = SkillStateStore.from_settings(Settings())
+    store.upsert_deployment(DeploymentRecord('alpha', 'windows-codex', '', 'alpha', 'export', 'active', ''))
+    card = client.get('/api/skills').json()['items'][0]
+    assert not card['deployments']['windows-codex']['stale']
+
+
+def test_export_does_not_bypass_publish_password_or_touch_targets(client, roots):
+    assert client.post('/api/skills/publish', json={'password': 'wrong', 'items': [{'skill_id': 'alpha', 'targets': ['hermes']}]}).status_code == 401
+    assert client.post('/api/skills/alpha/export', json={'target': 'windows-codex'}).status_code == 200
+    assert not list(roots.hermes.iterdir()) and not list(roots.openclaw.iterdir())
+    mixed = [{'skill_id': 'alpha', 'targets': ['hermes', 'windows-codex']}]
+    assert client.post('/api/skills/publish', json={'password': PASSWORD, 'items': mixed}).status_code == 400
+    assert not list(roots.hermes.iterdir())
+
+
+def test_delete_missing_local_cascades_export_record(client, roots):
+    assert client.post('/api/skills/alpha/export', json={'target': 'windows-codex'}).status_code == 200
+    from src.services.publisher import force_remove_tree
+    force_remove_tree(roots.source_root / 'alpha')
+    card = client.get('/api/skills').json()['items'][0]
+    assert card['deployments']['windows-codex']['stale']
+    assert client.request('DELETE', '/api/skills/alpha', json={'password': PASSWORD}).status_code == 200
+    assert not SkillStateStore.from_settings(Settings()).list_deployments()
+
+
+def test_export_github_uses_current_cache(client, roots):
+    skill_id = _register_via_task(client)
+    endpoint = f"/api/skills/{skill_id}/export"
+    response = client.post(endpoint, json={"target": "windows-claude"})
+    assert response.status_code == 200
+    store = SkillStateStore.from_settings(Settings())
+    record = store.get_deployment(skill_id, "windows-claude")
+    assert record.content_hash and record.source_revision
+    skill = store.get_registry_skill(skill_id)
+    cache = roots.github_cache / "repos/example__two-skills"
+    (cache / skill.path / "SKILL.md").write_text("updated", encoding="utf-8")
+    card = next(item for item in client.get("/api/skills").json()["items"] if item["id"] == skill_id)
+    assert card["deployments"]["windows-claude"]["stale"]
+    assert client.post(endpoint, json={"target": "windows-claude"}).status_code == 200
+    from src.services.publisher import force_remove_tree
+    force_remove_tree(cache)
+    response = client.post(endpoint, json={"target": "windows-claude"})
+    assert response.status_code == 400 and "Clone" in response.json()["message"]
+
+
 def run_git(*argv: str, cwd: Path | None = None) -> str:
     completed = subprocess.run(
         ["git", *argv],

@@ -24,7 +24,7 @@ from pathlib import Path
 
 from src.config import Settings
 from src.db import HistoryEntry, SkillStateStore
-from src.models import RegistrySkill, SkillSource, TargetKey
+from src.models import RegistrySkill, SkillSource, TargetKey, target_kind
 from src.services.git_cache import GitCacheService
 from src.services.publisher import (
     Publisher,
@@ -108,6 +108,8 @@ def republish_active_github_skills(
                 record.skill_id,
                 record.target,
             )
+            continue
+        if target_kind(target) != "link":
             continue
         skill = registry.get(record.skill_id)
         if skill is None or skill.source is not SkillSource.GITHUB:
