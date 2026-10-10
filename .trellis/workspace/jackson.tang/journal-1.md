@@ -884,3 +884,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 24: 红利扣非利润筛选增强
+
+**Date**: 2026-10-10
+**Task**: 红利扣非利润筛选增强
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+新增单季扣非降幅阈值及最近年报扣非盈利门槛，贯通年度金额/年度缓存与API，旧存储补默认30。后端93项、前端存储4项、浏览器5项及类型检查通过；旧财务缓存需全量强制刷新。仅提交本任务，未推送。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3d2bc66` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
