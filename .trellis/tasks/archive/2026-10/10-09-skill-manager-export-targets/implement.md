@@ -44,7 +44,7 @@
 - [x] docs/skill-manager-nas-setup.md 增 export 目标段落；spec 沉淀
   （目标两类模型进 skill-manager-github-cache.md 或 frontend 契约）。
 - [x] trellis-check 全量审查完成（3 项既有部署配置漂移单列）。
-- [ ] 提交（后端/前端/docs 分 commit）：2026-10-10 用户已授权，执行中。
+- [x] 提交：307c7d0（后端）、7d77b94（前端）、675a39d（文档）。
 - [ ] 推送：2026-10-10 用户已授权，提交与归档后执行；不创建 PR。
 
 ## 回滚点
