@@ -780,3 +780,39 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 21: Skill Manager 外部导出目标与版本台账
+
+**Date**: 2026-10-10
+**Task**: Skill Manager 外部导出目标与版本台账
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+新增 Windows Codex/Claude ZIP 导出、版本台账、内容哈希过期检测与清除记录；完成 link/export 守卫、旧库迁移、启动迁移跳过 export 和前端交互。验收：后端分批 180 passed/13 skipped，3 项既有部署配置漂移单列；前端 tsc/lint/9 tests 通过，浏览器下载/过期/重新导出/删除台账闭环验证。用户 2026-10-10 已授权提交并推送，三笔工作提交与任务归档完成，推送 origin/master。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `307c7d0` | (see git log) |
+| `7d77b94` | (see git log) |
+| `675a39d` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

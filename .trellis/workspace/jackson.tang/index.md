@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 20
-- **Last Active**: 2026-10-09
+- **Total Sessions**: 21
+- **Last Active**: 2026-10-10
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~782 | Active |
+| `journal-1.md` | ~818 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 21 | 2026-10-10 | Skill Manager 外部导出目标与版本台账 | `307c7d0`, `7d77b94`, `675a39d` | `master` |
 | 20 | 2026-10-09 | 宏观更新管道补齐与归档 | `b201bcd` | `master` |
 | 19 | 2026-10-09 | 滨江法拍采集脚本与手动接口 | - | `master` |
 | 18 | 2026-10-09 | 首页门户：nginx 内联 HTML 改静态统一卡片页 | `e126b34`, `2cbb511` | `master` |
