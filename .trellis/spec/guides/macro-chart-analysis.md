@@ -51,3 +51,12 @@ Backend `tests/test_chart_analysis.py`: unlock expiry/password change/origin/rev
 ## Wrong vs Correct
 Wrong: calculate cn_2y on independently filled dates or choose analysis target from the most recent linked callback.
 Correct: derive cn_2y on joint raw dates; keep Map<chartId,context>, activate the user's clicked chart explicitly.
+
+## Fixed daily chart expansion (2026-10-10)
+The registry now covers all 15 fixed daily panels (rates, treasury/FX, liquidity, commodities, stock indices, sentiment and fund flow). Dynamic ComparisonChart and monthly panels are not registered. MacroEChart discovers actions from the server list; do not duplicate per-Tab assistant integrations. Shortcut questions must use the active definition's series, with DR007 reference prompts only on China bonds.
+
+`SeriesDefinition.is_rate` gates bp (turnover uses pp only); `relative_change` permits interval percentage changes for FX/prices/stock indices only with positive observations. Flows and balances are not returns. Each primary evidence item declares raw store/column and source_as_of; interval end and latest source date are distinct. Common-date summaries align all expected primary curves without forward filling; disclose short/missing common windows.
+
+FX evidence remains raw: interval percentage changes start at each series' first interval observation and may differ from the renderer's pre-zoom baseline. Never label them chart-axis values. TGA source is million USD; displayed hundred-billion USD uses 1e-5. The TED-labelled stored spread is SOFR minus Treasury 3M, not traditional LIBOR TED. Northbound turnover is not net buying.
+
+Regression checks verify every registered panel against CSV data, exact frontend panel IDs, missing expected members, independent calendars, turnover pp/bp, relative-change baselines, source freshness and first-turn input budget.

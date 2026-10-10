@@ -261,3 +261,81 @@ def test_origin_requires_public_port(settings):
     with pytest.raises(HTTPException) as exc:
         auth.check_origin(stripped)
     assert exc.value.status_code == 403
+
+
+@pytest.mark.parametrize('chart_id', list(CHARTS))
+def test_fixed_panels_raw_csv_units_and_missing(settings, chart_id):
+    definition = CHARTS[chart_id]
+    days = pd.date_range('2026-01-01', periods=6)
+    columns = {}
+    service = data_service.DataService()
+    for item in (*definition.series, *definition.references):
+        columns.setdefault(item.store, {})[item.column] = [10, 11, None, 13, 14, 15]
+    for store, values in columns.items():
+        pd.DataFrame(values, index=days).to_csv(service.files[store])
+    snap = build_snapshot(definition, date(2026, 1, 1), date(2026, 1, 6), service)
+    assert snap['common_dates']['count'] == 5
+    assert [s['evidence_id'] for s in snap['primary']] == [s.id for s in definition.series]
+    for item, evidence in zip(definition.series, snap['primary']):
+        assert evidence['unit'] == item.unit
+        assert evidence['statistics']['count'] == 5
+        assert evidence['statistics']['change_bp'] == (500 if item.unit == '%' and item.is_rate else None)
+    missing = definition.series[-1]
+    frame = pd.read_csv(service.files[missing.store], index_col=0).drop(columns=missing.column)
+    frame.to_csv(service.files[missing.store])
+    if len(definition.series) > 1:
+        partial = build_snapshot(definition, date(2026, 1, 1), date(2026, 1, 6), service)
+        assert partial['primary'][-1]['status'] == 'missing'
+        assert partial['quality'] == 'partial'
+
+
+def test_market_dual_axes_distinct_calendars(settings):
+    service = data_service.DataService()
+    days = pd.date_range('2026-01-01', periods=6)
+    pd.DataFrame({'total_amount_yi': [100, 200, 300, 400, 500, 600]}, index=days).to_csv(service.files['volume'])
+    pd.DataFrame({'margin_balance_yi': [1000, 1100, 1200]}, index=days[::2]).to_csv(service.files['margin'])
+    pd.DataFrame({'turnover_rate': [1, 2, 3, 4, 5, 6]}, index=days).to_csv(service.files['turnover'])
+    snap = build_snapshot(CHARTS['market-sentiment'], date(2026, 1, 1), date(2026, 1, 6), service)
+    assert snap['primary'][1]['statistics']['count'] == 3
+    assert snap['primary'][2]['statistics']['change_pp'] == 5
+    assert snap['primary'][2]['statistics']['change_bp'] is None
+    assert snap['common_dates']['count'] == 3
+    assert snap['common_dates']['series'][0]['statistics']['end']['date'] == '2026-01-05'
+    assert snap['primary'][0]['statistics']['end']['date'] == '2026-01-06'
+
+
+def test_registry_matches_frontend_panels():
+    from pathlib import Path
+    import re
+    root = Path(__file__).resolve().parents[3] / 'apps/macro/src/app/modules/economic/components'
+    ids = {'market-sentiment', 'fund-flow'}
+    for name in ('RatesChart', 'EconomicChart', 'LiquidityChart', 'CommodityChart', 'StockIndexChart'):
+        ids.update(re.findall(r"id: '([a-z-]+\.[a-z-]+)'", (root / (name + '.tsx')).read_text()))
+    assert ids == set(CHARTS)
+
+
+def test_relative_changes_nonpositive_baselines():
+    from src.analysis.snapshot import summarize
+    days = pd.date_range('2026-01-01', periods=2)
+    result = summarize('fx', '汇率', pd.Series([7, 7.7], index=days), unit='人民币/美元', relative_change=True)
+    assert result['statistics']['change_percent'] == 10
+    assert result['statistics']['change_bp'] is None
+    for values in ([0, 1], [-1, 1], [1, -1]):
+        result = summarize('oil', '原油', pd.Series(values, index=days), unit='美元/桶', relative_change=True)
+        assert result['statistics']['change_percent'] is None
+
+
+def test_long_multicurve_snapshot_fits_first_turn_budget(settings):
+    from src.analysis.registry import DAILY_SERIES
+    service = data_service.DataService()
+    days = pd.bdate_range('2020-01-01', '2026-01-06')
+    columns = {}
+    for item in DAILY_SERIES.values():
+        columns.setdefault(item.store, {})[item.column] = [100.123456789 + i * .0123456789 for i in range(len(days))]
+    for store, values in columns.items():
+        pd.DataFrame(values, index=days).to_csv(service.files[store])
+    for definition in CHARTS.values():
+        snap = build_snapshot(definition, date(2020, 1, 1), date(2026, 1, 5), service)
+        assert all(item['source_as_of'] == '2026-01-06' for item in snap['primary'])
+        assert all(item['statistics']['end']['date'] == '2026-01-05' for item in snap['primary'])
+        assert len(json.dumps(snap, ensure_ascii=False)) + len(deepseek.SYSTEM) + len(definition.strategy) + 100 < 32000

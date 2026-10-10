@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from src.analysis.registry import ChartDefinition
 
 
-def summarize(key: str, label: str, series: pd.Series, derived: bool = False, unit: str = "%") -> dict:
+def summarize(key: str, label: str, series: pd.Series, derived: bool = False, unit: str = "%", is_rate: bool = True, relative_change: bool = False) -> dict:
     series = series.dropna()
     points = [{"date": day.strftime("%Y-%m-%d"), "value": float(value)} for day, value in series.items()]
     stats = None
@@ -16,7 +16,9 @@ def summarize(key: str, label: str, series: pd.Series, derived: bool = False, un
         change = points[-1]["value"] - points[0]["value"]
         stats = {"start": points[0], "end": points[-1], "change_value": round(change, 6),
                  "change_pp": round(change, 6) if unit == "%" else None,
-                 "change_bp": round(change * 100, 4) if unit == "%" else None, "min": min(p["value"] for p in points),
+                 "change_bp": round(change * 100, 4) if unit == "%" and is_rate else None,
+                 "change_percent": round(change / points[0]["value"] * 100, 6)
+                 if relative_change and points[0]["value"] > 0 and all(p["value"] > 0 for p in points) else None, "min": min(p["value"] for p in points),
                  "max": max(p["value"] for p in points), "count": len(points)}
     # Full-observation statistics; explicit sampling only for model context size.
     stride = max(1, (len(points) + 59) // 60)
@@ -36,16 +38,21 @@ def build_snapshot(definition: ChartDefinition, start: date, end: date, service)
     except Exception:
         raise HTTPException(503, "原始数据暂时不可读或正在更新，请稍后重试") from None
     values = {}
+    latest = {}
     for item in (*definition.series, *definition.references):
         frame = frames[item.store]
         raw = pd.to_numeric(frame[item.column], errors="coerce") if item.column in frame else pd.Series(dtype=float)
         raw = raw.replace([float("inf"), -float("inf")], float("nan"))
+        latest[item.id] = raw.dropna().index[-1].strftime("%Y-%m-%d") if not raw.dropna().empty else None
         if not raw.empty:
             raw = raw[(raw.index >= pd.Timestamp(start)) & (raw.index <= pd.Timestamp(end))]
         values[item.id] = raw
     if not any(not values[s.id].dropna().empty for s in definition.series):
         raise HTTPException(422, "这段时间没有可分析的原始观测，请调整时间范围")
-    main = [summarize(s.id, s.label, values[s.id], unit=s.unit) for s in definition.series]
+    main = [summarize(s.id, s.label, values[s.id], unit=s.unit, is_rate=s.is_rate, relative_change=s.relative_change) for s in definition.series]
+    for item, evidence in zip(definition.series, main):
+        evidence["source_as_of"] = latest[item.id]
+        evidence["source"] = {"store": item.store, "column": item.column}
     derived = []
     common = pd.concat([values[s.id] for s in definition.series], axis=1).dropna()
     decomposition = None
@@ -60,7 +67,12 @@ def build_snapshot(definition: ChartDefinition, start: date, end: date, service)
                          "cn_2y_change_bp": round(float(two.iloc[-1] - two.iloc[0]) * 100, 4)}
     evidence = {"chart_id": definition.id, "title": definition.title, "definition_version": definition.version,
                 "range": [start.isoformat(), end.isoformat()], "primary": main, "derived": derived,
-                "references": [summarize(s.id, s.label, values[s.id], unit=s.unit) for s in definition.references],
+                "description": definition.description,
+                "common_dates": {"count": len(common),
+                    "series": [summarize(s.id, s.label, common.iloc[:, i], unit=s.unit,
+                        is_rate=s.is_rate, relative_change=s.relative_change)
+                        for i, s in enumerate(definition.series)]},
+                "references": [summarize(s.id, s.label, values[s.id], unit=s.unit, is_rate=s.is_rate, relative_change=s.relative_change) for s in definition.references],
                 "decomposition": decomposition,
                 "quality": "partial" if any(s["status"] != "ok" for s in main) or len(common) < 5 else "ok"}
     evidence["snapshot_id"] = hashlib.sha256(json.dumps(evidence, sort_keys=True, ensure_ascii=False).encode()).hexdigest()

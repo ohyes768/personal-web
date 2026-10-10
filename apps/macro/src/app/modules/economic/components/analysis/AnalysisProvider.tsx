@@ -223,12 +223,12 @@ export function AnalysisProvider({ children, dataRevision = 0 }: { children: Rea
               <button disabled={!reading?.chart.dateRange || !auth.model_ready} onClick={() => void run('请用大白话分析这张图的走势。', true)} className="rounded bg-sky-700 px-3 py-2 disabled:opacity-40">{conversation.session ? '按当前范围重新分析' : '分析当前走势'}</button>}
             {conversation.error && !conversation.busy && <button disabled={!auth.model_ready} onClick={() => void run(conversation.turns.at(-1)?.question ?? '请用大白话分析这张图的走势。', !conversation.session)} className="rounded border border-gray-500 px-3 py-2">重试</button>}
           </div>
-          {conversation.session && <div className="flex gap-2 flex-wrap">{['讲简单点', '只解释利差', '结合DR007看看'].map(text => <button key={text} disabled={conversation.busy} onClick={() => void run(text)} className="text-xs rounded-full border border-gray-700 px-3 py-2 disabled:opacity-40">{text}</button>)}</div>}
+          {conversation.session && <div className="flex gap-2 flex-wrap">{['讲简单点', ...(definition?.series.map(series => `只解释${series.label}`) ?? []), ...(active === 'rates.china-bonds' ? ['结合DR007看看'] : [])].map(text => <button key={text} disabled={conversation.busy} onClick={() => void run(text)} className="text-xs rounded-full border border-gray-700 px-3 py-2 disabled:opacity-40">{text}</button>)}</div>}
         </>}
       </div>
       {auth?.unlocked && <form onSubmit={e => { e.preventDefault(); const text = question.trim(); if (text) { setQuestion(''); void run(text); } }} className="p-4 border-t border-gray-800 flex gap-2">
         <label htmlFor="analysis-question" className="sr-only">继续追问</label>
-        <textarea id="analysis-question" rows={2} maxLength={2000} value={question} onChange={e => setQuestion(e.target.value)} placeholder="继续问，比如：利差扩大是什么意思？" disabled={conversation.busy || !conversation.session} className="flex-1 min-w-0 bg-gray-900 rounded p-2 text-sm disabled:opacity-40" />
+        <textarea id="analysis-question" rows={2} maxLength={2000} value={question} onChange={e => setQuestion(e.target.value)} placeholder="继续问，比如：这些变化可能说明什么？" disabled={conversation.busy || !conversation.session} className="flex-1 min-w-0 bg-gray-900 rounded p-2 text-sm disabled:opacity-40" />
         <button disabled={conversation.busy || !conversation.session || !question.trim()} className="rounded bg-sky-700 px-3 disabled:opacity-40">发送</button>
       </form>}
     </aside>}
