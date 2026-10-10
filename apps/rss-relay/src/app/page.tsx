@@ -68,8 +68,7 @@ export default function HomePage() {
             >
               {loading ? '加载中…' : '↻ 刷新'}
             </button>
-            <RssSubscribe />
-            <RssSubscribe manage />
+            <RssSubscribe onChannelsChange={() => { void browser.refreshChannels(); }} />
           </div>
         </div>
       </header>
