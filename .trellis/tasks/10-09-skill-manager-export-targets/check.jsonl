@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "核对 link 流程零回归（发布/Clone/cache_missing/账实核对）"}
+{"file": ".trellis/spec/guides/skill-manager-frontend.md", "reason": "核对前端卡片与弹窗改动符合既有契约"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "目标模型跨 DB/API/前端三层，字段（kind/stale/content_hash）需逐层对照"}

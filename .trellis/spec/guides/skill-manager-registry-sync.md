@@ -62,8 +62,8 @@ GET /api/skills (routes.list_skills)
   tag 版本快照（`.cache/github-versions.json`）语义一并废弃；
 - github 发布**固定检出远端 HEAD**（非 tag）——`remote_tags` 仅展示不选用；
 - **遗留 junction**：`~/.claude/skills/git-commit-push`、`~/.codex/skills/git-commit-push`
-  是工具链产物，继续存在由 claudecode/codex 使用，但 skill-manager 无
-  `claudecode`/`codex` target，**不归其维护**。
+  是工具链产物，继续存在由 claudecode/codex 使用，**不归 skill-manager 维护**。
+  新增的 `windows-codex/windows-claude` 是 ZIP 导出与台账目标，不管理这些 junction。
 
 ## 相关坑
 
@@ -73,7 +73,7 @@ GET /api/skills (routes.list_skills)
   要移除只能走登记表清理（当前无此 API）；
 - **新增自研 skill 零操作**：在源库建 `<skill>/SKILL.md`（frontmatter 写
   name/description），刷新管理台即自动登记；git-commit-push 这类已有 junction
-  不在管理台发布能力内（claudecode/codex 目标不支持）；
+  不在管理台 symlink 发布能力内；Windows agent 可通过卡片导出 ZIP 并手工安装；
 - **junction vs symlink**：`Publisher` 用 `path.is_symlink()` 判定受管链接，
   junction 返回 False → 视为普通目录 → 拒绝覆盖/下架。若目标位置残留工具链
   junction，发布会 `blocked`，需先移除 junction 再让 Publisher 建 symlink。

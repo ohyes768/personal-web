@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "link 目标发布/Clone 契约与缓存生命周期；export 守卫不得破坏既有语义"}
+{"file": ".trellis/spec/guides/skill-manager-frontend.md", "reason": "前端卡片/导航契约与 basePath 陷阱"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest 硬约束（basetemp、requires_symlink）"}
+{"file": ".trellis/spec/guides/skill-manager-registry-sync.md", "reason": "自研 skill 登记对账语义；export stale 判定基于源目录"}

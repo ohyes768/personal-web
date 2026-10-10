@@ -100,7 +100,7 @@ GitHub 条目的 symlink 不再指向缓存子目录，而是指向 **staging �
    同仓库多份旧缓存只保留先落地的一份（发布时按各条目记录 revision 重新
    fetch/checkout，无数据损失），多余副本直接删除；单项失败只记日志不阻断启动；
 2. `republish_active_github_skills`：迁移后旧 symlink target 失效，对
-   deployment 中 status=active 的 github 条目用缓存当前 checkout 状态重组
+   deployment 中 status=active 且 target_kind=link 的 github 条目用缓存当前 checkout 状态重组
    staging 并替换链接（等价自动重发布）。失败逐条记 deployment_history
    （result=error）+ warning 日志不阻断启动——缓存缺失的条目由 UI 的
    `link_missing` 暴露，管理员经 Clone 重建后再手动发布。

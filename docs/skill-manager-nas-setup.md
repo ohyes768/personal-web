@@ -2,6 +2,24 @@
 
 Skill 发布管理台（`apps/skill-manager` 前端 + `backend/skill-manager` 后端）在 NAS 上的部署与回滚说明。架构与安全边界见任务设计文档：后端是唯一允许执行 Git、扫描与 symlink 发布的组件；前端不持有任何管理密码。
 
+## Windows 外部目标导出
+
+OpenClaw / Hermes 继续使用 NAS symlink 发布。Windows Codex / Claude Code
+是外部导出目标，无需添加 Windows 路径、网络挂载或本地 CLI。
+
+1. 在自研或 GitHub Skill 卡片点击「导出」，选择 Windows Codex 或 Windows Claude Code。
+2. 下载 ZIP 后，新建本地 `<skill-id>` 目录并解压到其中：Codex 放在
+   `%USERPROFILE%\.codex\skills\<skill-id>`，Claude Code 放在
+   `%USERPROFILE%\.claude\skills\<skill-id>`。ZIP 根目录直接包含 `SKILL.md`，没有外层目录。
+3. 导出成功即记录版本、内容哈希与时间；这表示已下载，管理台无法确认本地是否已经解压安装。
+4. 源目录变化后，刷新列表显示黄色「源已更新」。点击该记录重新导出，台账更新为当前版本。
+   本地覆盖安装时应替换整个 Skill 目录，以清除新版本已移除的旧文件。
+5. 记录旁的垃圾桶仅清除台账，不删除 Windows 文件。删除 Skill 登记时，export 台账一并清理。
+
+导出与清除台账免密；NAS 发布与下架仍需管理密码。GitHub 缓存缺失时需先 Clone；
+导出使用缓存当前检出的登记子目录，不联网更新，也不包含仓库根的 `shared_paths`。
+库启动时自动为 `deployment` 补 `content_hash` 列，旧空哈希记录不误报过期。
+
 ## 前置条件
 
 ### 1. 克隆 Skills 源库
