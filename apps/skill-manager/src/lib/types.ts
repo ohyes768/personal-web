@@ -4,7 +4,8 @@
  */
 
 export type SkillSource = 'local' | 'github';
-export type TargetKey = 'openclaw' | 'hermes';
+import type { LinkTargetKey } from './targets';
+export type { TargetKey } from './targets';
 export type PlanAction = 'add' | 'update' | 'unchanged' | 'blocked';
 
 /** models.TargetDeployment */
@@ -15,6 +16,8 @@ export interface TargetDeployment {
   link_target: string;
   /** 账实核对：账本 active 但目标链接不存在；真实动作以计划预览为准 */
   link_missing: boolean;
+  stale: boolean;
+  content_hash: string;
 }
 
 /** models.UpdateInfo */
@@ -120,7 +123,7 @@ export interface UpdateCheckResponse {
 /** models.PlanItem / PlanResponse */
 export interface PlanItem {
   skill_id: string;
-  target: TargetKey;
+  target: LinkTargetKey;
   action: PlanAction;
   reason: string;
   current_revision: string;
@@ -134,7 +137,7 @@ export interface PlanResponse {
 /** models.PublishResultItem / PublishBatchResult */
 export interface PublishResultItem {
   skill_id: string;
-  target: TargetKey;
+  target: LinkTargetKey;
   status: 'success' | 'blocked' | 'error';
   action: 'add' | 'update' | 'rollback' | 'none';
   error: string;
@@ -147,7 +150,7 @@ export interface PublishBatchResult {
 /** models.UnpublishResponse */
 export interface UnpublishResponse {
   skill_id: string;
-  target: TargetKey;
+  target: LinkTargetKey;
   status: 'removed';
 }
 
@@ -160,7 +163,7 @@ export interface UpdateSkillTagsResponse {
 /** 请求体 */
 export interface QueueItemRequest {
   skill_id: string;
-  targets: TargetKey[];
+  targets: LinkTargetKey[];
 }
 
 export interface RegisterGithubSkillInput {

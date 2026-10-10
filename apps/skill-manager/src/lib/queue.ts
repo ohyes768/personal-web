@@ -5,7 +5,8 @@
  * 绝不修改传入数组（不可变更新），更不影响已部署 Skill。
  */
 
-export type TargetKey = 'openclaw' | 'hermes';
+import type { LinkTargetKey as TargetKey } from './targets';
+export type { LinkTargetKey as TargetKey } from './targets';
 
 export interface QueueEntry {
   skillId: string;

@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { SkillCard, TargetDeployment } from '@/lib/types';
 import { shortRepo } from '@/lib/format';
+import { EXPORT_TARGETS, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
 import {
   CrayfishIcon,
   DownloadIcon,
@@ -13,12 +14,7 @@ import {
   UnlinkIcon,
 } from '@/components/icons';
 
-const ALL_TARGETS: TargetKey[] = ['openclaw', 'hermes'];
-
-const TARGET_LABEL: Record<TargetKey, string> = {
-  openclaw: 'OpenClaw',
-  hermes: 'Hermes',
-};
+const ALL_TARGETS = LINK_TARGETS;
 
 /** target 队列 chip 的品牌语义色：OpenClaw=螯红、Hermes=神使蓝。 */
 const TARGET_ICON: Record<TargetKey, { icon: ReactNode; hover: string }> = {
@@ -34,6 +30,8 @@ interface SkillPoolProps {
   onDelete: (skill: SkillCard) => void;
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
   onEditTags: (skill: SkillCard) => void;
+  onExport: (skill: SkillCard, target?: ExportTargetKey) => void;
+  onDeleteExport: (skill: SkillCard, target: ExportTargetKey) => void;
 }
 
 function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
@@ -73,6 +71,8 @@ function SkillCardItem({
   onDelete,
   onUnpublish,
   onEditTags,
+  onExport,
+  onDeleteExport,
 }: {
   skill: SkillCard;
   queuedTargets: TargetKey[];
@@ -81,6 +81,8 @@ function SkillCardItem({
   onDelete: SkillPoolProps['onDelete'];
   onUnpublish: SkillPoolProps['onUnpublish'];
   onEditTags: SkillPoolProps['onEditTags'];
+  onExport: SkillPoolProps['onExport'];
+  onDeleteExport: SkillPoolProps['onDeleteExport'];
 }) {
   const cacheMissing = skill.cache_missing;
   const sourceMissing = skill.source_missing;
@@ -171,10 +173,21 @@ function SkillCardItem({
             <DeploymentBadge deployment={skill.deployments[target]} />
           </div>
         ))}
+        {EXPORT_TARGETS.map((target) => {
+          const deployment = skill.deployments[target];
+          if (!deployment || deployment.status !== 'active') return null;
+          return <div key={target} className="flex items-center gap-1 text-xs">
+            <button type="button" disabled={publishBlocked} onClick={() => onExport(skill, target)} title="点击重新导出" className={`min-w-0 flex-1 rounded px-1.5 py-1 text-left ${deployment.stale ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              {TARGET_LABEL[target]} · {(deployment.revision || deployment.content_hash)?.slice(0, 7) || '未知版本'} · {deployment.published_at.slice(5, 10)} · {deployment.stale ? '● 源已更新' : '最新'}
+            </button>
+            <button type="button" aria-label={`清除 ${TARGET_LABEL[target]} 导出记录`} onClick={() => onDeleteExport(skill, target)} className="icon-btn rounded border border-slate-200"><TrashIcon /></button>
+          </div>;
+        })}
       </div>
 
       {/* 加入队列：target 图标 chip，点击即切换入队/出队（贴卡片底部） */}
       <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-2">
+        <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="导出到 Windows Codex / Claude Code" disabled={publishBlocked} onClick={() => onExport(skill)} className="icon-btn rounded-md border border-slate-300"><DownloadIcon /></button>
         {ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
           const { icon, hover } = TARGET_ICON[target];
@@ -271,6 +284,8 @@ export default function SkillPool({
   onDelete,
   onUnpublish,
   onEditTags,
+  onExport,
+  onDeleteExport,
 }: SkillPoolProps) {
   const queuedBySkill = new Map<string, TargetKey[]>();
   for (const entry of queue) {
@@ -297,6 +312,8 @@ export default function SkillPool({
           onDelete={onDelete}
           onUnpublish={onUnpublish}
           onEditTags={onEditTags}
+          onExport={onExport}
+          onDeleteExport={onDeleteExport}
         />
       ))}
     </ul>

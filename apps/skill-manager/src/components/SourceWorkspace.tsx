@@ -3,10 +3,12 @@
 import { useMemo, useState } from 'react';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
 import EditSkillTagsDialog from '@/components/EditSkillTagsDialog';
+import ExportDialog from '@/components/ExportDialog';
 import PublishQueue from '@/components/PublishQueue';
 import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/SkillFilters';
 import SkillPool from '@/components/SkillPool';
-import { ApiClientError, publish, publishPlan, updateSkillTags } from '@/lib/api';
+import { ApiClientError, deleteExport, exportSkill, publish, publishPlan, updateSkillTags } from '@/lib/api';
+import { LINK_TARGETS, type ExportTargetKey } from '@/lib/targets';
 import {
   addQueueTarget,
   clearQueue,
@@ -46,8 +48,8 @@ function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
       return false;
     }
     // "已发布"只认 status=active 的部署记录；下架后记录仍在（status=removed）
-    const hasActiveDeployment = Object.values(skill.deployments).some(
-      (deployment) => deployment.status === 'active'
+    const hasActiveDeployment = LINK_TARGETS.some(
+      (target) => skill.deployments[target]?.status === 'active'
     );
     if (filters.deployment === 'published' && !hasActiveDeployment) {
       return false;
@@ -95,6 +97,7 @@ export default function SourceWorkspace({
   const [results, setResults] = useState<PublishResultItem[] | null>(null);
   const [showPublishConfirm, setShowPublishConfirm] = useState(false);
   const [editingTagsSkill, setEditingTagsSkill] = useState<SkillCard | null>(null);
+  const [exportAction, setExportAction] = useState<{ skill: SkillCard; removing?: ExportTargetKey; initialTarget?: ExportTargetKey } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
@@ -209,6 +212,23 @@ export default function SourceWorkspace({
     }
   }
 
+  async function performExport(target: ExportTargetKey) {
+    if (!exportAction) return;
+    setActionBusy(true);
+    setActionError('');
+    try {
+      if (exportAction.removing) await deleteExport(exportAction.skill.id, target);
+      else await exportSkill(exportAction.skill.id, target);
+      onNotify({ kind: 'ok', text: exportAction.removing ? '已清除导出记录，本地文件保留' : `已导出「${exportAction.skill.name}」，台账已记录` });
+      setExportAction(null);
+      await onRefresh();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '导出操作失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
   const publishableItems = plan?.filter(
     (item) => item.action === 'add' || item.action === 'update'
   );
@@ -238,6 +258,8 @@ export default function SourceWorkspace({
             onClone={onClone}
             onDelete={onDelete}
             onUnpublish={onUnpublish}
+            onExport={(skill, initialTarget) => { setActionError(''); setExportAction({ skill, initialTarget }); }}
+            onDeleteExport={(skill, removing) => { setActionError(''); setExportAction({ skill, removing }); }}
             onEditTags={(skill) => {
               setActionError('');
               setEditingTagsSkill(skill);
@@ -275,6 +297,8 @@ export default function SourceWorkspace({
           onClose={() => setEditingTagsSkill(null)}
         />
       ) : null}
+
+      {exportAction ? <ExportDialog skill={exportAction.skill} removing={exportAction.removing} initialTarget={exportAction.initialTarget} busy={actionBusy} error={actionError} onConfirm={(target) => void performExport(target)} onClose={() => setExportAction(null)} /> : null}
 
       {showPublishConfirm && publishableItems && publishableItems.length > 0 ? (
         <ConfirmActionDialog

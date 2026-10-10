@@ -27,10 +27,7 @@ import type {
 type ViewKey = 'manage' | 'board';
 type SourceTab = 'local' | 'github';
 
-const TARGET_LABEL: Record<TargetKey, string> = {
-  openclaw: 'OpenClaw',
-  hermes: 'Hermes',
-};
+import { TARGET_LABEL } from '@/lib/targets';
 
 const SEG_BUTTON =
   'rounded px-3 py-1.5 text-sm transition-colors data-[active=true]:bg-white data-[active=true]:font-medium data-[active=true]:text-slate-800 data-[active=true]:shadow-sm text-slate-500 hover:text-slate-700';

@@ -3,10 +3,7 @@
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { PlanItem, PublishResultItem } from '@/lib/types';
 
-const TARGET_LABEL: Record<TargetKey, string> = {
-  openclaw: 'OpenClaw',
-  hermes: 'Hermes',
-};
+import { TARGET_LABEL } from '@/lib/targets';
 
 const ACTION_META: Record<PlanItem['action'], { label: string; className: string }> = {
   add: { label: '新增', className: 'bg-emerald-600 text-white' },

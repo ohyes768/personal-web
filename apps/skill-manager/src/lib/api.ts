@@ -83,6 +83,26 @@ function jsonBody(payload: unknown): string {
   return JSON.stringify(payload);
 }
 
+export async function exportSkill(skillId: string, target: import('./targets').ExportTargetKey): Promise<void> {
+  const response = await fetch(`${BASE}/${encodeURIComponent(skillId)}/export`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonBody({ target }),
+  });
+  if (!response.ok) throw new ApiClientError(await parseErrorBody(response));
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ?? `${skillId}.zip`;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+export function deleteExport(skillId: string, target: import('./targets').ExportTargetKey): Promise<unknown> {
+  return request(`/${encodeURIComponent(skillId)}/exports/${target}`, { method: 'DELETE' });
+}
+
 // ---------- 公开只读端点 ----------
 
 export function listSkills(): Promise<SkillListResponse> {
