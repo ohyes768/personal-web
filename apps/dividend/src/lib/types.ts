@@ -82,6 +82,8 @@ export interface DividendStock {
 
   // 财务指标 - 成长能力
   net_profit_ex_non_recurring_yoy?: number | null; // 扣非净利润同比(%)
+  annual_net_profit_ex_non_recurring?: number | null; // 最近年报扣非净利润(元)
+  annual_profit_year?: number | null; // 最近年报年度
   net_profit_cagr_3y?: number | null;             // 3年复合增长率(%)
   eps?: number | null;                            // 最近一期年报基本每股收益(元)
   eps_year?: number | null;                       // 最近一期年报年度

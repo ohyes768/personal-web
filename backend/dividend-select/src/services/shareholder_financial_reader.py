@@ -173,6 +173,8 @@ class FinancialReader:
             "net_profit_margin": number("净利率"),
             "roe": number("ROE"),
             "roe_year": year("ROE年度"),
+            "annual_net_profit_ex_non_recurring": number("最近年度扣非净利润(元)"),
+            "annual_profit_year": year("扣非利润年度"),
             "roe_avg_3y": number("近3年平均ROE"),
             "roe_history": FinancialReader.parse_roe_history(row.get("近3年ROE历史")),
             "previous_quarter_yoy_pct": number("前一季度扣非同比(%)"),

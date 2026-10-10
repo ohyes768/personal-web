@@ -100,6 +100,8 @@ class DividendStock(BaseModel):
     gross_profit_margin: Optional[float] = Field(None, description="主营业务利润率(%)")
     net_profit_margin: Optional[float] = Field(None, description="净利率(%)")
     roe: Optional[float] = Field(None, description="加权净资产收益率(%)")
+    annual_net_profit_ex_non_recurring: Optional[float] = Field(None, description="最近年度扣非净利润(元)，全年年报口径")
+    annual_profit_year: Optional[int] = None
     roe_year: Optional[int] = None
     roe_avg_3y: Optional[float] = None
     roe_history: list[ROEHistoryItem] = Field(default_factory=list)
@@ -545,6 +547,7 @@ class AlertBatchResponse(BaseModel):
     fail_count: int
 
 class ScreeningRequest(BaseModel):
+    max_quarter_profit_decline_pct: float = Field(30, gt=0, le=100, allow_inf_nan=False)
     min_yield: float = Field(3.5, ge=0, le=100, allow_inf_nan=False)
     min_roe: float = Field(10, ge=0, le=100, allow_inf_nan=False)
     min_roe_avg_3y: float = Field(10, ge=0, le=100, allow_inf_nan=False)

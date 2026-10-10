@@ -59,6 +59,8 @@ class FinancialFetcher:
             result = {
                 "股票代码": code,
                 "数据日期": str(latest.get("日期", "")),
+                "扣非利润年度": pd.to_datetime(latest["日期"]).year,
+                "最近年度扣非净利润(元)": self._safe_float(latest.get("扣除非经常性损益后的净利润(元)")),
                 "主营业务利润率": self._safe_float(latest.get("主营业务利润率(%)")),
                 "净利率": self._safe_float(latest.get("净利率(%)")),
                 "ROE": self._safe_float(latest.get("加权净资产收益率(%)")),

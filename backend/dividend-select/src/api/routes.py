@@ -81,7 +81,7 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-SCREENING_FINANCIAL_COLUMNS = {"ROE年度", "近3年平均ROE", "近3年ROE历史", "前一季度扣非同比(%)", "前一季度"}
+SCREENING_FINANCIAL_COLUMNS = {"最近年度扣非净利润(元)", "扣非利润年度", "ROE年度", "近3年平均ROE", "近3年ROE历史", "前一季度扣非同比(%)", "前一季度"}
 
 
 def _compute_yield_ttm(row, realtime_price, calculator) -> Optional[float]:
@@ -282,6 +282,8 @@ def _row_to_stock_model(row: pd.Series, info: Optional[dict] = None,
         gross_profit_margin=financial_data.get("gross_profit_margin") if financial_data else None,
         net_profit_margin=financial_data.get("net_profit_margin") if financial_data else None,
         roe=financial_data.get("roe") if financial_data else None,
+        annual_net_profit_ex_non_recurring=financial_data.get("annual_net_profit_ex_non_recurring") if financial_data else None,
+        annual_profit_year=financial_data.get("annual_profit_year") if financial_data else None,
         roe_year=financial_data.get("roe_year", None) if financial_data else None,
         roe_avg_3y=financial_data.get("roe_avg_3y", None) if financial_data else None,
         roe_history=financial_data.get("roe_history", []) if financial_data else [],

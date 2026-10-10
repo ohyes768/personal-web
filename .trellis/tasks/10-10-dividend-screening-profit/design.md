@@ -1,0 +1,2 @@
+# Design
+Add max_quarter_profit_decline_pct to screening conditions (finite >0 <=100, default30). Evaluate finite quarter values independently when adjacent labels identify the pair; retain completeness requirement and failure precedence. Add annual_net_profit_ex_non_recurring and annual_profit_year from latest year-end cumulative row, never single-quarter. Extend required cache schema and existing update notice. Decode legacy frontend conditions by defaulting only absent new key.

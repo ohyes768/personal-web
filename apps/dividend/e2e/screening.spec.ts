@@ -5,6 +5,7 @@ const stock = {
   dividend_2023: 1, dividend_2024: 1, dividend_2025: 1,
   roe: 12, roe_year: 2025, roe_avg_3y: 11,
   roe_history: [{ year: 2023, value: 10 }, { year: 2024, value: 11 }, { year: 2025, value: 12 }],
+  annual_net_profit_ex_non_recurring: 120000000, annual_profit_year: 2025,
   net_profit_ex_non_recurring_yoy: 2, latest_quarter_label: '2026Q2', latest_quarter_yoy_pct: -1,
   previous_quarter_label: '2026Q1', previous_quarter_yoy_pct: 2,
 };
@@ -42,7 +43,6 @@ test('screening remains accessible with no stocks in old filter, allows retrying
   await expect(page.getByRole('heading', { name: '选出值得持续关注的公司' })).toBeVisible();
   await expect(page.getByRole('spinbutton', { name: '近三年平均 ROE ≥' })).toHaveValue('10');
   await expect(page.getByText('一个季度扣非利润同比下降，建议持续关注')).toBeVisible();
-  await page.screenshot({ path: '/private/tmp/dividend-screening.png', fullPage: true });
   await page.getByRole('button', { name: '收藏全部符合条件' }).click();
   await expect(page.getByRole('status')).toContainText('失败 1 只');
   await page.getByRole('button', { name: '重试失败项' }).click();
@@ -74,4 +74,37 @@ test('legacy watchlist link displays favorites outside current dividend filter',
   await expect(page.getByRole('cell', { name: /测试公司/ }).first()).toBeVisible();
   await page.getByRole('button', { name: '选股关注', exact: true }).click();
   await expect(page).toHaveURL(/tab=screening/);
+});
+
+
+test('legacy saved conditions default decline to 30 and keep previous thresholds', async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => localStorage.setItem('dividend-screening-conditions-v1', JSON.stringify({ min_yield: 4.5, min_roe: 13, min_roe_avg_3y: 12, exchange: '沪市主板' })));
+  const request = page.waitForRequest(req => req.url().endsWith('/stocks/screen') && req.method() === 'POST');
+  await page.goto('/?tab=screening');
+  expect((await request).postDataJSON()).toMatchObject({ min_yield: 4.5, min_roe: 13, min_roe_avg_3y: 12, exchange: '沪市主板', max_quarter_profit_decline_pct: 30 });
+  await expect(page.getByRole('spinbutton', { name: '单季扣非利润最大降幅' })).toHaveValue('30');
+});
+
+test('decline threshold marks changed snapshot, persists, rejects zero, and resets', async ({ page }) => {
+  await setup(page);
+  await page.goto('/?tab=screening');
+  await expect(page.getByRole('button', { name: '符合条件 1' })).toBeVisible();
+  const decline = page.getByRole('spinbutton', { name: '单季扣非利润最大降幅' });
+  await decline.fill('20');
+  await expect(page.getByText('条件已修改，当前仍显示上次查询结果，请点击「查询候选」。')).toBeVisible();
+  const request = page.waitForRequest(req => req.url().endsWith('/stocks/screen') && req.method() === 'POST' && req.postDataJSON().max_quarter_profit_decline_pct === 20);
+  await page.getByRole('button', { name: '查询候选' }).click();
+  expect((await request).postDataJSON().max_quarter_profit_decline_pct).toBe(20);
+  await expect(page.getByText('条件已修改，当前仍显示上次查询结果，请点击「查询候选」。')).toHaveCount(0);
+  await page.reload();
+  await expect(decline).toHaveValue('20');
+  await decline.fill('0');
+  await expect(page.getByRole('button', { name: '查询候选' })).toBeDisabled();
+  await decline.fill('50');
+  const resetRequest = page.waitForRequest(req => req.url().endsWith('/stocks/screen') && req.method() === 'POST' && req.postDataJSON().max_quarter_profit_decline_pct === 30);
+  await page.getByRole('button', { name: '恢复默认' }).click();
+  await resetRequest;
+  await expect(decline).toHaveValue('30');
+  expect(await page.evaluate(() => localStorage.getItem('dividend-screening-conditions-v1'))).toBeNull();
 });

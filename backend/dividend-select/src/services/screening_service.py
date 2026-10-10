@@ -39,15 +39,28 @@ def evaluate_stock(stock: DividendStock, conditions: ScreeningRequest) -> Screen
         for year in range((stock.roe_year or 0) - 2, (stock.roe_year or 0) + 1)
     ):
         missing.append("连续三年年度 ROE 数据缺失")
+    annual_title = f"{stock.annual_profit_year} 年扣非净利润" if stock.annual_profit_year else "最近年度扣非净利润"
+    annual_profit = stock.annual_net_profit_ex_non_recurring
+    if annual_profit is None or not math.isfinite(annual_profit):
+        missing.append(f"{annual_title}缺失")
+    elif annual_profit <= 0:
+        failures.append(f"{annual_title}必须大于 0 元")
+    if stock.annual_profit_year is None:
+        missing.append("年度扣非净利润报告年度缺失")
     check(stock.net_profit_ex_non_recurring_yoy, 0, "最近年度扣非利润同比")
     latest, previous = stock.latest_quarter_yoy_pct, stock.previous_quarter_yoy_pct
+    for value, label in ((previous, stock.previous_quarter_label), (latest, stock.latest_quarter_label)):
+        if (adjacent_quarters(stock.previous_quarter_label, stock.latest_quarter_label)
+                and value is not None and math.isfinite(value)
+                and value <= -conditions.max_quarter_profit_decline_pct):
+            failures.append(f"{label or '季度未知'} 单季扣非利润同比 {value:g}%，达到最大降幅 {conditions.max_quarter_profit_decline_pct:g}%（同比 ≤ -{conditions.max_quarter_profit_decline_pct:g}%）")
     if (latest is None or previous is None or not math.isfinite(latest)
             or not math.isfinite(previous)
             or not adjacent_quarters(stock.previous_quarter_label, stock.latest_quarter_label)):
         missing.append("连续两个相邻季度扣非同比数据缺失")
     elif latest < 0 and previous < 0:
         failures.append("连续两个季度扣非利润同比下降")
-    elif latest < 0 or previous < 0:
+    elif (latest < 0 or previous < 0) and min(latest, previous) > -conditions.max_quarter_profit_decline_pct:
         warnings.append("一个季度扣非利润同比下降，建议持续关注")
     status = "excluded" if failures else "insufficient_data" if missing else "eligible"
     return ScreeningItem(stock=stock, status=status, reasons=failures + missing, warnings=warnings)

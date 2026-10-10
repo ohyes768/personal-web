@@ -22,6 +22,12 @@ def test_old_schema_requires_refresh_but_real_gaps_do_not_loop(monkeypatch):
     result = asyncio.run(routes.get_financial_status())
     assert result['needs_update'] is True
     assert set(result['missing_schema_columns']) == routes.SCREENING_FINANCIAL_COLUMNS
+    assert {"最近年度扣非净利润(元)", "扣非利润年度"} <= set(result['missing_schema_columns'])
+    for column in routes.SCREENING_FINANCIAL_COLUMNS - {"最近年度扣非净利润(元)", "扣非利润年度"}:
+        fi.read_csv.return_value[column] = None
+    result = asyncio.run(routes.get_financial_status())
+    assert result['needs_update'] is True
+    assert set(result['missing_schema_columns']) == {"最近年度扣非净利润(元)", "扣非利润年度"}
     for column in routes.SCREENING_FINANCIAL_COLUMNS:
         fi.read_csv.return_value[column] = None
     result = asyncio.run(routes.get_financial_status())

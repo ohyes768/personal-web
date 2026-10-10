@@ -347,3 +347,41 @@ class TestScreeningFinancialHistory:
         from src.services.shareholder_financial_reader import FinancialReader
         assert FinancialReader.row_to_data(pd.Series({'ROE年度': 2025.5}))['roe_year'] is None
         assert FinancialReader.parse_roe_history('[{"year": 2025, "value": Infinity}]') == []
+
+
+@pytest.mark.parametrize("amount", [100, 0, -50, None, float("inf")])
+def test_fetch_annual_profit_uses_latest_year_end(amount):
+    df = pd.DataFrame({"日期": [date(2026, 3, 31), date(2025, 12, 31)],
+                       "扣除非经常性损益后的净利润(元)": [999, amount]})
+    with patch("src.data.financial_fetcher.ak.stock_financial_analysis_indicator", return_value=df):
+        result = FinancialFetcher().fetch_one("000090")
+    assert result is not None
+    assert result["扣非利润年度"] == 2025
+    assert result["最近年度扣非净利润(元)"] == (amount if amount is not None and amount != float("inf") else None)
+    assert result["扣非净利润同比"] is None
+
+
+def test_annual_profit_csv_reader_api_roundtrip_and_legacy(tmp_path, monkeypatch):
+    from src.services.shareholder_financial_reader import FinancialReader
+    from src.api import routes
+    path = tmp_path / "annual.csv"
+    pd.DataFrame([{"股票代码": "000090", "扣非利润年度": 2025, "最近年度扣非净利润(元)": -50}]).to_csv(path, index=False)
+    reader = FinancialReader()
+    monkeypatch.setattr(reader, "_get_file_path", lambda: path)
+    financial = reader.get_stock_data("000090")
+    assert financial["annual_net_profit_ex_non_recurring"] == -50
+    assert financial["annual_profit_year"] == 2025
+    model = routes._row_to_stock_model(pd.Series({"股票代码": "000090", "股票名称": "样本"}), financial_data=financial)
+    assert model.annual_net_profit_ex_non_recurring == -50
+    assert model.annual_profit_year == 2025
+    old = FinancialReader.row_to_data(pd.Series({"数据日期": "2025-12-31", "最新季度扣非(元)": 100}))
+    assert old["annual_net_profit_ex_non_recurring"] is None
+    assert old["annual_profit_year"] is None
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf"), "bad"])
+def test_annual_profit_invalid_csv_is_missing(value):
+    from src.services.shareholder_financial_reader import FinancialReader
+    result = FinancialReader.row_to_data(pd.Series({"扣非利润年度": value, "最近年度扣非净利润(元)": value}))
+    assert result["annual_profit_year"] is None
+    assert result["annual_net_profit_ex_non_recurring"] is None
