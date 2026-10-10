@@ -24,7 +24,7 @@ from pathlib import Path
 
 from src.config import Settings
 from src.db import HistoryEntry, SkillStateStore
-from src.models import RegistrySkill, SkillSource, TargetKey, target_kind
+from src.models import LINK_TARGET_IDS, RegistrySkill, SkillSource, TargetKey
 from src.services.git_cache import GitCacheService
 from src.services.publisher import (
     Publisher,
@@ -100,17 +100,9 @@ def republish_active_github_skills(
     for record in store.list_deployments():
         if record.status != "active":
             continue
-        try:
-            target = TargetKey(record.target)
-        except ValueError:
-            logger.warning(
-                "republish skip: skill=%s unknown target=%s",
-                record.skill_id,
-                record.target,
-            )
+        if record.target not in LINK_TARGET_IDS:
             continue
-        if target_kind(target) != "link":
-            continue
+        target = TargetKey(record.target)
         skill = registry.get(record.skill_id)
         if skill is None or skill.source is not SkillSource.GITHUB:
             continue

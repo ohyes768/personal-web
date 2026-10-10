@@ -4,6 +4,15 @@
  */
 
 export type SkillSource = 'local' | 'github';
+export interface ExportTarget {
+  id: string;
+  name: string;
+  install_path: string;
+  notes: string;
+  enabled: boolean;
+  deployment_count: number;
+}
+export type ExportTargetInput = Omit<ExportTarget, 'deployment_count'>;
 import type { LinkTargetKey } from './targets';
 export type { TargetKey } from './targets';
 export type PlanAction = 'add' | 'update' | 'unchanged' | 'blocked';

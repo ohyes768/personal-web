@@ -37,6 +37,11 @@ from src.models import (
     CheckUpdatesRequest,
     DeleteSkillResponse,
     ExportRequest,
+    CreateExportTarget,
+    ExportTarget,
+    ExportTargetList,
+    UpdateExportTarget,
+    LINK_TARGET_IDS,
     PlanItem,
     PlanResponse,
     PublishBatchResult,
@@ -117,7 +122,7 @@ def list_skills(
     for record in store.list_deployments():
         # 账实核对：active 记录对目标链接做 lstat 存在性检查（纯 lstat，
         # 每条一次，零子进程）；removed 记录不出徽章，不检查
-        is_export = target_kind(TargetKey(record.target)) == "export"
+        is_export = record.target not in LINK_TARGET_IDS
         stale = False
         if is_export and record.content_hash and record.status == "active":
             if record.skill_id not in hashes:
@@ -164,6 +169,51 @@ def _require_target_kind(target: TargetKey, kind: str) -> None:
         })
 
 
+def _require_export_target(store: SkillStateStore, target: str, *, active: bool = False) -> ExportTarget:
+    if target in LINK_TARGET_IDS:
+        _require_target_kind(TargetKey(target), "export")
+    item = store.get_export_target(target)
+    if item is None:
+        raise HTTPException(400, detail={"code": "invalid_target", "message": "导出目标不存在，请刷新目标列表"})
+    if active and not item.enabled:
+        raise HTTPException(400, detail={"code": "target_disabled", "message": "导出目标已停用"})
+    return item
+
+
+@router.get("/export-targets", response_model=ExportTargetList)
+def list_export_targets(store: SkillStateStore = Depends(get_store)) -> ExportTargetList:
+    return ExportTargetList(items=store.list_export_targets())
+
+
+@router.post("/export-targets", response_model=ExportTarget, status_code=201)
+def create_export_target(req: CreateExportTarget, store: SkillStateStore = Depends(get_store)) -> ExportTarget:
+    if req.id in LINK_TARGET_IDS:
+        raise HTTPException(400, detail={"code": "reserved_target", "message": "此 ID 已保留给 NAS 发布目标"})
+    try:
+        return store.create_export_target(req)
+    except sqlite3.IntegrityError as exc:
+        raise HTTPException(409, detail={"code": "target_exists", "message": "目标 ID 已存在，请使用其他 ID"}) from exc
+
+
+@router.patch("/export-targets/{target}", response_model=ExportTarget)
+def update_export_target(target: str, req: UpdateExportTarget, store: SkillStateStore = Depends(get_store)) -> ExportTarget:
+    updated = store.update_export_target(target, req)
+    if updated is None:
+        raise HTTPException(404, detail={"code": "target_not_found", "message": "导出目标不存在"})
+    return updated
+
+
+@router.delete("/export-targets/{target}")
+def delete_export_target(target: str, store: SkillStateStore = Depends(get_store)) -> dict[str, str]:
+    try:
+        removed = store.delete_export_target(target)
+    except ValueError as exc:
+        raise HTTPException(409, detail={"code": "target_in_use", "message": "此目标仍有导出记录，请先在 Skill 卡片清除全部记录"}) from exc
+    if not removed:
+        raise HTTPException(404, detail={"code": "target_not_found", "message": "导出目标不存在"})
+    return {"id": target, "status": "removed"}
+
+
 def _export_source(settings: Settings, git_cache: GitCacheService, skill: RegistrySkill) -> Path:
     if skill.source is SkillSource.LOCAL:
         return resolve_registry_source(settings, skill)
@@ -185,7 +235,7 @@ def export_skill(
     store: SkillStateStore = Depends(get_store),
     git_cache: GitCacheService = Depends(get_git_cache),
 ) -> Response:
-    _require_target_kind(req.target, "export")
+    _require_export_target(store, req.target, active=True)
     skill = _require_known_skill(registry, _require_skill_id(skill_id))
     try:
         source = _export_source(settings, git_cache, skill)
@@ -204,16 +254,20 @@ def export_skill(
     except (OSError, subprocess.TimeoutExpired, GitCacheError):
         pass
     now = datetime.now(UTC).isoformat()
-    store.upsert_deployment(DeploymentRecord(
-        skill_id=skill.id, target=req.target.value, source_revision=revision,
+    record = DeploymentRecord(
+        skill_id=skill.id, target=req.target, source_revision=revision,
         source_path=skill.path, current_link_target="export", status="active",
         published_at=now, content_hash=digest,
-    ))
-    store.append_history(HistoryEntry(
-        skill_id=skill.id, target=req.target.value, action="export", result="ok",
+    )
+    entry = HistoryEntry(
+        skill_id=skill.id, target=req.target, action="export", result="ok",
         previous_link_target=None, new_link_target="export", source_revision=revision,
         error=None, created_at=now,
-    ))
+    )
+    try:
+        store.record_export(record, entry)
+    except ValueError as exc:
+        raise HTTPException(400, detail={"code": str(exc), "message": "导出目标已删除或停用，请刷新后重试"}) from exc
     return Response(archive, media_type="application/zip", headers={
         "Content-Disposition": f'attachment; filename="{skill.id}-{digest[:12]}.zip"',
     })
@@ -225,11 +279,10 @@ def delete_export(
     registry: RegistryService = Depends(get_registry),
     store: SkillStateStore = Depends(get_store),
 ) -> dict[str, str]:
-    key = _require_target(target)
-    _require_target_kind(key, "export")
+    _require_export_target(store, target)
     _require_known_skill(registry, _require_skill_id(skill_id))
-    store.delete_deployments(skill_id, key.value)
-    return {"skill_id": skill_id, "target": key.value, "status": "removed"}
+    store.delete_deployments(skill_id, target)
+    return {"skill_id": skill_id, "target": target, "status": "removed"}
 
 
 def _build_card(
@@ -943,7 +996,7 @@ def delete_skill(
         record
         for record in store.list_deployments()
         if record.skill_id == skill_id and record.status == "active"
-        and target_kind(TargetKey(record.target)) == "link"
+        and record.target in LINK_TARGET_IDS
     ]
     if active:
         targets = ", ".join(record.target for record in active)
@@ -1048,7 +1101,7 @@ def _require_target(target: str) -> TargetKey:
             status_code=400,
             detail={
                 "code": "invalid_target",
-                "message": f"未知目标：{target!r}（支持 openclaw / hermes / windows-codex / windows-claude）",
+                "message": f"未知发布目标：{target!r}；NAS 发布仅支持 OpenClaw / Hermes，外部目标请使用导出",
             },
         ) from exc
 

@@ -2,9 +2,9 @@
 
 import type { ReactNode } from 'react';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
-import type { SkillCard, TargetDeployment } from '@/lib/types';
+import type { ExportTarget, SkillCard, TargetDeployment } from '@/lib/types';
 import { shortRepo } from '@/lib/format';
-import { EXPORT_TARGETS, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
+import { exportTargetLabel, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
 import {
   CrayfishIcon,
   DownloadIcon,
@@ -23,6 +23,7 @@ const TARGET_ICON: Record<TargetKey, { icon: ReactNode; hover: string }> = {
 };
 
 interface SkillPoolProps {
+  exportTargets: ExportTarget[];
   skills: SkillCard[];
   queue: QueueEntry[];
   onToggleQueueTarget: (skillId: string, target: TargetKey) => void;
@@ -65,6 +66,7 @@ function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
 /** 左栏单张 Skill 卡片：target 点击即切换入队/出队；部署状态只读徽章。 */
 function SkillCardItem({
   skill,
+  exportTargets,
   queuedTargets,
   onToggleQueueTarget,
   onClone,
@@ -75,6 +77,7 @@ function SkillCardItem({
   onDeleteExport,
 }: {
   skill: SkillCard;
+  exportTargets: ExportTarget[];
   queuedTargets: TargetKey[];
   onToggleQueueTarget: SkillPoolProps['onToggleQueueTarget'];
   onClone: SkillPoolProps['onClone'];
@@ -173,21 +176,23 @@ function SkillCardItem({
             <DeploymentBadge deployment={skill.deployments[target]} />
           </div>
         ))}
-        {EXPORT_TARGETS.map((target) => {
+        {Object.keys(skill.deployments).filter((target) => !LINK_TARGETS.includes(target as TargetKey)).map((target) => {
+          const config = exportTargets.find((item) => item.id === target);
+          const label = exportTargetLabel(exportTargets, target);
           const deployment = skill.deployments[target];
           if (!deployment || deployment.status !== 'active') return null;
           return <div key={target} className="flex items-center gap-1 text-xs">
-            <button type="button" disabled={publishBlocked} onClick={() => onExport(skill, target)} title="点击重新导出" className={`min-w-0 flex-1 rounded px-1.5 py-1 text-left ${deployment.stale ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
-              {TARGET_LABEL[target]} · {(deployment.revision || deployment.content_hash)?.slice(0, 7) || '未知版本'} · {deployment.published_at.slice(5, 10)} · {deployment.stale ? '● 源已更新' : '最新'}
+            <button type="button" disabled={publishBlocked || !config?.enabled} onClick={() => onExport(skill, target)} title="点击重新导出" className={`min-w-0 flex-1 rounded px-1.5 py-1 text-left ${deployment.stale ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+              {label}{!config?.enabled ? '（已停用）' : ''} · {(deployment.revision || deployment.content_hash)?.slice(0, 7) || '未知版本'} · {deployment.published_at.slice(5, 10)} · {deployment.stale ? '● 源已更新' : '最新'}
             </button>
-            <button type="button" aria-label={`清除 ${TARGET_LABEL[target]} 导出记录`} onClick={() => onDeleteExport(skill, target)} className="icon-btn rounded border border-slate-200"><TrashIcon /></button>
+            <button type="button" aria-label={`清除 ${label} 导出记录`} onClick={() => onDeleteExport(skill, target)} className="icon-btn rounded border border-slate-200"><TrashIcon /></button>
           </div>;
         })}
       </div>
 
       {/* 加入队列：target 图标 chip，点击即切换入队/出队（贴卡片底部） */}
       <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-2">
-        <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="导出到 Windows Codex / Claude Code" disabled={publishBlocked} onClick={() => onExport(skill)} className="icon-btn rounded-md border border-slate-300"><DownloadIcon /></button>
+        <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="选择目标并导出 ZIP" disabled={publishBlocked} onClick={() => onExport(skill)} className="icon-btn rounded-md border border-slate-300"><DownloadIcon /></button>
         {ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
           const { icon, hover } = TARGET_ICON[target];
@@ -278,6 +283,7 @@ function SkillCardItem({
 
 export default function SkillPool({
   skills,
+  exportTargets,
   queue,
   onToggleQueueTarget,
   onClone,
@@ -306,6 +312,7 @@ export default function SkillPool({
         <SkillCardItem
           key={skill.id}
           skill={skill}
+          exportTargets={exportTargets}
           queuedTargets={queuedBySkill.get(skill.id) ?? []}
           onToggleQueueTarget={onToggleQueueTarget}
           onClone={onClone}

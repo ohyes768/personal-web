@@ -36,6 +36,40 @@ PASSWORD = "test-password"
 CANONICAL_URL = "https://github.com/example/two-skills"
 
 
+def test_export_target_management(client, roots):
+    targets = client.get('/api/export-targets').json()['items']
+    assert {item['id'] for item in targets} == {'windows-codex', 'windows-claude'}
+    payload = {'id': 'laptop-codex', 'name': '我的笔记本', 'install_path': '~/.codex/skills', 'notes': '离线安装'}
+    assert client.post('/api/export-targets', json=payload).status_code == 201
+    assert client.post('/api/export-targets', json=payload).status_code == 409
+    assert client.post('/api/export-targets', json={**payload, 'id': 'hermes'}).status_code == 400
+    assert client.post('/api/skills/alpha/export', json={'target': payload['id']}).status_code == 200
+    assert client.delete('/api/export-targets/laptop-codex').status_code == 409
+    updated = client.patch('/api/export-targets/laptop-codex', json={'name': '新名称', 'enabled': False})
+    assert updated.status_code == 200 and updated.json()['deployment_count'] == 1
+    assert client.post('/api/skills/alpha/export', json={'target': payload['id']}).status_code == 400
+    store = SkillStateStore.from_settings(Settings())
+    assert store.get_export_target('laptop-codex').name == '新名称'
+    (roots.source_root / 'alpha/SKILL.md').write_text('changed', encoding='utf-8')
+    assert client.get('/api/skills').json()['items'][0]['deployments']['laptop-codex']['stale']
+    assert client.delete('/api/skills/alpha/exports/laptop-codex').status_code == 200
+    assert client.delete('/api/export-targets/laptop-codex').status_code == 200
+    assert client.delete('/api/export-targets/windows-codex').status_code == 200
+    assert SkillStateStore.from_settings(Settings()).get_export_target('windows-codex') is None
+    assert store.list_history(target='laptop-codex')[0].action == 'export'
+
+
+def test_custom_export_target_stays_out_of_publish(client):
+    assert client.post('/api/export-targets', json={'id': 'tablet', 'name': '平板'}).status_code == 201
+    for path in ['/api/skills/publish/plan', '/api/skills/publish']:
+        response = client.post(path, json={'password': PASSWORD, 'items': [{'skill_id': 'alpha', 'targets': ['tablet']}]})
+        assert response.status_code == 400
+    assert client.request('DELETE', '/api/skills/alpha/targets/tablet', json={'password': PASSWORD}).status_code == 400
+    assert client.post('/api/skills/alpha/export', json={'target': 'unknown'}).status_code == 400
+    assert client.patch('/api/export-targets/tablet', json={'id': 'new-id'}).status_code == 400
+    assert client.patch('/api/export-targets/tablet', json={'name': '   '}).status_code == 400
+
+
 def test_export_local_tracks_content_and_staleness(client, roots):
     import io
     import zipfile

@@ -10,6 +10,7 @@ def test_old_deployment_database_migrates(tmp_path):
         conn.execute("INSERT INTO deployment VALUES ('alpha', 'windows-codex', '', 'alpha', 'export', 'active', '')")
     store = SkillStateStore(database)
     assert store.get_deployment('alpha', 'windows-codex').content_hash == ''
+    assert store.get_export_target('windows-codex').deployment_count == 1
     assert SkillStateStore(database).get_deployment('alpha', 'windows-codex').content_hash == ''
 
 
@@ -36,6 +37,7 @@ def test_startup_republish_skips_export_records(tmp_path):
 
     store = SkillStateStore(tmp_path / 'state.sqlite3')
     store.upsert_deployment(DeploymentRecord('alpha', 'windows-codex', '', 'alpha', 'export', 'active', '', 'hash'))
+    store.upsert_deployment(DeploymentRecord('alpha', 'custom-device', '', 'alpha', 'export', 'active', '', 'hash'))
     registry = Mock()
     publisher = Mock()
     assert republish_active_github_skills(Mock(), registry, store, publisher, Mock()) == 0

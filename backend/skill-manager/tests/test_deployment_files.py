@@ -148,6 +148,15 @@ def test_nginx_routes_skill_manager(nginx_text: str):
     assert 'href="/skills/"' in nginx_text
 
 
+def test_nginx_routes_export_target_collection_and_items(nginx_text: str):
+    # Collection uses no trailing slash; item CRUD must reach the same backend.
+    for location in ("location = /api/export-targets {", "location /api/export-targets/ {"):
+        assert location in nginx_text
+        block = nginx_text.split(location, 1)[1].split("}", 1)[0]
+        assert "proxy_pass http://skill_manager_backend;" in block
+        assert "rewrite" not in block
+
+
 def test_deploy_script_maps_skill_manager(deploy_text: str):
     # target 校验与 get_services 分支
     assert "fund-select|housing-map|skill-manager" in deploy_text

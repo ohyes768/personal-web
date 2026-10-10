@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
 import DeployBoard from '@/components/DeployBoard';
+import ExportTargetManager from '@/components/ExportTargetManager';
 import RegisterGithubDialog from '@/components/RegisterGithubDialog';
 import SourceWorkspace, { type Notice } from '@/components/SourceWorkspace';
 import TaskProgressDialog from '@/components/TaskProgressDialog';
@@ -12,19 +13,21 @@ import {
   cloneGithubCache,
   deleteSkill,
   listSkills,
+  listExportTargets,
   registerGithubBatch,
   registerGithubSkill,
   unpublishSkill,
 } from '@/lib/api';
 import type { TargetKey } from '@/lib/queue';
 import type {
+  ExportTarget,
   RegisterGithubBatchInput,
   RegisterGithubSkillInput,
   SkillCard,
   TaskSnapshot,
 } from '@/lib/types';
 
-type ViewKey = 'manage' | 'board';
+type ViewKey = 'manage' | 'board' | 'targets';
 type SourceTab = 'local' | 'github';
 
 import { TARGET_LABEL } from '@/lib/targets';
@@ -63,7 +66,7 @@ function SkillManagerPage() {
   const searchParams = useSearchParams();
 
   // 两级导航：URL 是唯一真源，非法值在派生时逐级回退
-  const view: ViewKey = searchParams.get('view') === 'board' ? 'board' : 'manage';
+  const view: ViewKey = searchParams.get('view') === 'board' ? 'board' : searchParams.get('view') === 'targets' ? 'targets' : 'manage';
   const sourceTab: SourceTab = searchParams.get('tab') === 'github' ? 'github' : 'local';
   const agent: TargetKey = searchParams.get('agent') === 'openclaw' ? 'openclaw' : 'hermes';
 
@@ -74,15 +77,21 @@ function SkillManagerPage() {
     if (v === 'manage') {
       p.set('tab', next.tab ?? (v === view ? sourceTab : 'local'));
       p.delete('agent');
-    } else {
+    } else if (v === 'board') {
       p.set('agent', next.agent ?? (v === view ? agent : 'hermes'));
       p.delete('tab');
+    } else {
+      p.delete('tab');
+      p.delete('agent');
     }
     // router.push/replace 的路径不含 basePath（Next 自动前置 /skills）
     router.replace(`/?${p.toString()}`, { scroll: false });
   }
 
   const [skills, setSkills] = useState<SkillCard[]>([]);
+  const [exportTargets, setExportTargets] = useState<ExportTarget[]>([]);
+  const [targetsError, setTargetsError] = useState('');
+  const [targetsLoading, setTargetsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [checkingUpdates, setCheckingUpdates] = useState(false);
@@ -96,6 +105,16 @@ function SkillManagerPage() {
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
 
+  const refreshTargets = useCallback(async () => {
+    setTargetsLoading(true);
+    try {
+      setExportTargets((await listExportTargets()).items);
+      setTargetsError('');
+    } catch (err) {
+      setTargetsError(err instanceof Error ? err.message : '加载导出目标失败');
+    } finally { setTargetsLoading(false); }
+  }, []);
+
   const refreshSkills = useCallback(async () => {
     try {
       const response = await listSkills();
@@ -108,7 +127,10 @@ function SkillManagerPage() {
 
   useEffect(() => {
     void refreshSkills().finally(() => setLoading(false));
-  }, [refreshSkills]);
+    void refreshTargets();
+  }, [refreshSkills, refreshTargets]);
+
+  const refreshAll = useCallback(async () => { await Promise.all([refreshSkills(), refreshTargets()]); }, [refreshSkills, refreshTargets]);
 
   const localSkills = useMemo(
     () => skills.filter((skill) => skill.source === 'local'),
@@ -167,7 +189,7 @@ function SkillManagerPage() {
         kind: 'ok',
         text: `${skillName} 已下架（${targets.map((t) => TARGET_LABEL[t]).join('、')}）`,
       });
-      await refreshSkills();
+      await refreshAll();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '操作失败');
     } finally {
@@ -251,7 +273,7 @@ function SkillManagerPage() {
       await deleteSkill(pendingDelete.skillId, password);
       setPendingDelete(null);
       setNotice({ kind: 'ok', text: `已删除 GitHub Skill「${pendingDelete.skillName}」` });
-      await refreshSkills();
+      await refreshAll();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '删除失败');
     } finally {
@@ -288,6 +310,7 @@ function SkillManagerPage() {
             >
               部署看板
             </button>
+            <button type="button" data-active={view === 'targets'} onClick={() => navigate({ view: 'targets' })} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">导出目标</button>
           </nav>
         </div>
       </header>
@@ -307,6 +330,9 @@ function SkillManagerPage() {
           {notice.text}
         </p>
       ) : null}
+
+      <div className={view === 'targets' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><ExportTargetManager targets={exportTargets} loading={targetsLoading} error={targetsError} onRefresh={refreshTargets} /></div>
+      {view !== 'targets' && targetsError ? <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">{targetsError}<button type="button" onClick={() => void refreshTargets()} className="ml-3 underline">重试</button></p> : null}
 
       {/* 管理看板：来源子 segmented + 两个常驻挂载的来源工作区 */}
       <div
@@ -376,7 +402,10 @@ function SkillManagerPage() {
             source="local"
             skills={localSkills}
             loading={loading}
-            onRefresh={refreshSkills}
+            onRefresh={refreshAll}
+            exportTargets={exportTargets}
+            targetsError={targetsLoading ? '导出目标加载中…' : targetsError}
+            onManageTargets={() => navigate({ view: 'targets' })}
             onNotify={setNotice}
             onClone={(skillId, skillName) => {
               setActionError('');
@@ -397,7 +426,10 @@ function SkillManagerPage() {
             source="github"
             skills={githubSkills}
             loading={loading}
-            onRefresh={refreshSkills}
+            onRefresh={refreshAll}
+            exportTargets={exportTargets}
+            targetsError={targetsLoading ? '导出目标加载中…' : targetsError}
+            onManageTargets={() => navigate({ view: 'targets' })}
             onNotify={setNotice}
             onClone={(skillId, skillName) => {
               setActionError('');

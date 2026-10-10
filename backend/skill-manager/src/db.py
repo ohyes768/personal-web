@@ -21,11 +21,19 @@ from pathlib import Path
 from typing import Any
 
 from src.config import Settings
-from src.models import RegistrySkill
+from src.models import CreateExportTarget, ExportTarget, RegistrySkill, UpdateExportTarget
 
 DEFAULT_DB_FILENAME = "skill-manager.sqlite3"
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS state_migration (id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS export_target (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    install_path TEXT NOT NULL DEFAULT '',
+    notes TEXT NOT NULL DEFAULT '',
+    enabled INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS deployment (
     skill_id            TEXT NOT NULL,
     target              TEXT NOT NULL,
@@ -143,9 +151,75 @@ class SkillStateStore:
     def __init__(self, db_path: Path) -> None:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        with closing(self._connect()) as conn:
+        with closing(self._connect()) as conn, conn:
             conn.executescript(_SCHEMA)
             _apply_column_migrations(conn)
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM state_migration WHERE id = 'export_targets_v1'").fetchone():
+                conn.executemany(
+                    "INSERT OR IGNORE INTO export_target (id,name,install_path) VALUES (?,?,?)",
+                    [("windows-codex", "Windows Codex", "~/.codex/skills"),
+                     ("windows-claude", "Windows Claude Code", "~/.claude/skills")],
+                )
+                conn.execute("INSERT INTO state_migration VALUES ('export_targets_v1')")
+
+    # Configuration writes and export recording use the same SQLite write lock:
+    # a deleted or disabled target cannot receive a late export deployment.
+    def list_export_targets(self) -> list[ExportTarget]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute("""SELECT t.*, COUNT(d.target) AS deployment_count
+                FROM export_target t LEFT JOIN deployment d ON d.target=t.id
+                GROUP BY t.id ORDER BY t.rowid""").fetchall()
+        return [ExportTarget(**dict(row)) for row in rows]
+
+    def get_export_target(self, target_id: str) -> ExportTarget | None:
+        return next((target for target in self.list_export_targets() if target.id == target_id), None)
+
+    def create_export_target(self, target: CreateExportTarget) -> ExportTarget:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("INSERT INTO export_target (id,name,install_path,notes,enabled) VALUES (?,?,?,?,?)",
+                         (target.id, target.name, target.install_path, target.notes, target.enabled))
+        return ExportTarget(**target.model_dump())
+
+    def update_export_target(self, target_id: str, patch: UpdateExportTarget) -> ExportTarget | None:
+        fields = patch.model_dump(exclude_unset=True)
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM export_target WHERE id=?", (target_id,)).fetchone():
+                return None
+            if fields:
+                conn.execute("UPDATE export_target SET " + ",".join(f"{key}=?" for key in fields) + " WHERE id=?",
+                             (*fields.values(), target_id))
+            row = conn.execute("""SELECT t.*, (SELECT COUNT(*) FROM deployment WHERE target=t.id) AS deployment_count
+                FROM export_target t WHERE t.id=?""", (target_id,)).fetchone()
+            return ExportTarget(**dict(row))
+
+    def delete_export_target(self, target_id: str) -> bool:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not conn.execute("SELECT 1 FROM export_target WHERE id=?", (target_id,)).fetchone():
+                return False
+            if conn.execute("SELECT 1 FROM deployment WHERE target=?", (target_id,)).fetchone():
+                raise ValueError("target_in_use")
+            conn.execute("DELETE FROM export_target WHERE id=?", (target_id,))
+        return True
+
+    def record_export(self, record: DeploymentRecord, entry: HistoryEntry) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            target = conn.execute("SELECT enabled FROM export_target WHERE id=?", (record.target,)).fetchone()
+            if target is None:
+                raise ValueError("invalid_target")
+            if not target["enabled"]:
+                raise ValueError("target_disabled")
+            conn.execute("""INSERT OR REPLACE INTO deployment
+                (skill_id,target,source_revision,source_path,current_link_target,status,published_at,content_hash)
+                VALUES (?,?,?,?,?,?,?,?)""", (record.skill_id, record.target, record.source_revision,
+                    record.source_path, record.current_link_target, record.status, record.published_at, record.content_hash))
+            conn.execute("""INSERT INTO deployment_history
+                (skill_id,target,action,result,previous_link_target,new_link_target,source_revision,error,created_at)
+                VALUES (?,?,?,?,?,?,?,?,?)""", (entry.skill_id, entry.target, entry.action, entry.result,
+                    entry.previous_link_target, entry.new_link_target, entry.source_revision, entry.error, entry.created_at))
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "SkillStateStore":

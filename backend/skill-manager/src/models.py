@@ -7,7 +7,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 # discover_local 等非 Pydantic 场景复用同一 pattern，避免两处正则漂移
 SKILL_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
@@ -40,8 +40,46 @@ def target_kind(target: TargetKey) -> TargetKind:
     return TARGET_KINDS[target]
 
 
+LINK_TARGET_IDS = frozenset({"openclaw", "hermes"})
+
+
+class ExportTargetFields(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    name: Annotated[str, Field(min_length=1, max_length=100)]
+    install_path: Annotated[str, Field(max_length=500)] = ""
+    notes: Annotated[str, Field(max_length=2000)] = ""
+    enabled: bool = True
+
+
+class ExportTarget(ExportTargetFields):
+    id: SkillId
+    deployment_count: int = 0
+
+
+class CreateExportTarget(ExportTargetFields):
+    id: SkillId
+
+
+class UpdateExportTarget(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True, extra="forbid")
+    name: Annotated[str | None, Field(min_length=1, max_length=100)] = None
+    install_path: Annotated[str | None, Field(max_length=500)] = None
+    notes: Annotated[str | None, Field(max_length=2000)] = None
+    enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def reject_null(self) -> "UpdateExportTarget":
+        if any(getattr(self, key) is None for key in self.model_fields_set):
+            raise ValueError("target fields cannot be null")
+        return self
+
+
+class ExportTargetList(BaseModel):
+    items: list[ExportTarget] = []
+
+
 class ExportRequest(BaseModel):
-    target: TargetKey
+    target: SkillId
 
 
 class RegistrySkill(BaseModel):

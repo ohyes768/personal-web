@@ -17,7 +17,7 @@ import {
   type QueueEntry,
   type TargetKey,
 } from '@/lib/queue';
-import type { PlanItem, PublishResultItem, SkillCard } from '@/lib/types';
+import type { ExportTarget, PlanItem, PublishResultItem, SkillCard } from '@/lib/types';
 
 export interface Notice {
   kind: 'ok' | 'err';
@@ -25,6 +25,9 @@ export interface Notice {
 }
 
 interface SourceWorkspaceProps {
+  exportTargets: ExportTarget[];
+  targetsError: string;
+  onManageTargets: () => void;
   source: SkillCard['source'];
   skills: SkillCard[];
   loading: boolean;
@@ -82,6 +85,9 @@ function planToRequests(items: PlanItem[]): { skill_id: string; targets: TargetK
 /** 单来源管理两件套：Skill 池 + 独立发布队列（自包含状态与发布确认弹窗）。 */
 export default function SourceWorkspace({
   source,
+  exportTargets,
+  targetsError,
+  onManageTargets,
   skills,
   loading,
   onRefresh,
@@ -253,6 +259,7 @@ export default function SourceWorkspace({
         ) : (
           <SkillPool
             skills={filteredSkills}
+            exportTargets={exportTargets}
             queue={queue}
             onToggleQueueTarget={handleToggleQueueTarget}
             onClone={onClone}
@@ -298,7 +305,7 @@ export default function SourceWorkspace({
         />
       ) : null}
 
-      {exportAction ? <ExportDialog skill={exportAction.skill} removing={exportAction.removing} initialTarget={exportAction.initialTarget} busy={actionBusy} error={actionError} onConfirm={(target) => void performExport(target)} onClose={() => setExportAction(null)} /> : null}
+      {exportAction ? <ExportDialog targets={exportTargets} targetsError={targetsError} onManageTargets={() => { setExportAction(null); onManageTargets(); }} skill={exportAction.skill} removing={exportAction.removing} initialTarget={exportAction.initialTarget} busy={actionBusy} error={actionError} onConfirm={(target) => void performExport(target)} onClose={() => setExportAction(null)} /> : null}
 
       {showPublishConfirm && publishableItems && publishableItems.length > 0 ? (
         <ConfirmActionDialog

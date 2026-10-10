@@ -39,6 +39,7 @@
 #   /api/map/*     → housing-map-backend:8096/api/*  (nginx 直转后端)
 #   /skills/*      → skill-manager-frontend:3008  (basePath = /skills，apps/skill-manager/)
 #   /api/skills/*  → skill-manager-backend:8097/api/skills/*  (nginx 原样直转后端)
+#   /api/export-targets/* → skill-manager-backend:8097/api/export-targets/*
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config

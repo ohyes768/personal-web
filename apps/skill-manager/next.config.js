@@ -9,6 +9,11 @@ const nextConfig = {
     }
     return [
       {
+        source: '/api/export-targets/:path*',
+        destination: 'http://localhost:8097/api/export-targets/:path*',
+        basePath: false,
+      },
+      {
         source: '/api/skills/:path*',
         destination: 'http://localhost:8097/api/skills/:path*',
         basePath: false,

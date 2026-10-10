@@ -65,8 +65,8 @@ async function parseErrorBody(response: Response): Promise<ApiError> {
   return { code: `http_${response.status}`, message: `请求失败（HTTP ${response.status}）` };
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
+async function request<T>(path: string, init?: RequestInit, base = BASE): Promise<T> {
+  const response = await fetch(`${base}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
@@ -78,6 +78,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await response.json()) as T;
 }
+
+const TARGET_BASE = '/api/export-targets';
+export const listExportTargets = () => request<{ items: import('./types').ExportTarget[] }>('', undefined, TARGET_BASE);
+export const createExportTarget = (input: import('./types').ExportTargetInput) => request<import('./types').ExportTarget>('', { method: 'POST', body: JSON.stringify(input) }, TARGET_BASE);
+export const updateExportTarget = (id: string, input: Partial<Omit<import('./types').ExportTargetInput, 'id'>>) => request<import('./types').ExportTarget>(`/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(input) }, TARGET_BASE);
+export const deleteExportTarget = (id: string) => request<{ id: string }>(`/${encodeURIComponent(id)}`, { method: 'DELETE' }, TARGET_BASE);
 
 function jsonBody(payload: unknown): string {
   return JSON.stringify(payload);

@@ -154,3 +154,14 @@ ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
 - 管理密码仅存在于 NAS `.env` 与后端进程环境；前端镜像与构建参数中不出现。
 - 浏览、筛选、检查更新、发布计划预览无需密码；登记、发布、下架、回滚必须输入管理密码。
 - 后端容器的文件系统写入被限制在上述四个 bind mount 与 `skill-manager-state` volume 内。
+
+
+## ZIP 导出目标管理
+
+打开技能管理器的一级“导出目标”页，可为不同工具或设备新增目标、编辑名称/安装目录说明/备注、启用/停用或删除。ID 创建后不可修改，名称可改；同一 ID 的既有台账保留。安装目录只是手动解压说明，不会自动写入 Windows 或其他设备目录。
+
+现有 Windows Codex、Windows Claude Code 会一次性迁移为默认配置。配置保存在 `skill-manager-state` 卷内 SQLite `export_target` 表；用户修改会保留，删除默认目标后重启不会重新添加。
+
+在“管理看板”中点击 Skill 卡片的下载按钮，选择启用目标下载 ZIP。下载成功后卡片显示目标名称、导出版本与日期；源更新后可重新导出。停用目标仍显示历史记录，允许清除记录，但不能重新导出。删除目标前须在相关 Skill 卡片清除所有导出记录；历史审计保留。
+
+本次更新需要部署技能管理器前后端，并执行 `./scripts/deploy-nas.sh nginx` 下发和 reload 新路由：`/api/export-targets` 与 `/api/export-targets/`。否则页面会报告目标加载失败。此配置管理及 ZIP 导出免密，OpenClaw/Hermes 的 NAS 发布路径与管理密码边界保持原样。
