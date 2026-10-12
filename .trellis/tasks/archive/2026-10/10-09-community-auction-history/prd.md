@@ -2,7 +2,7 @@
 
 ## 目标与背景
 用户已认可小区详情的法拍成交页签、统计卡片、成交列表和风险展开，并于2026-10-12要求开始实施。
-前置任务：../archive/2026-10/10-09-binjiang-auction-collection/。已有独立auction_records.json、CLI及/api/auctions；仅限量实测，不保证全区覆盖。来源为来拍辅助数据。
+前置任务：../10-09-binjiang-auction-collection/。已有独立auction_records.json、CLI及/api/auctions；仅限量实测，不保证全区覆盖。来源为来拍辅助数据。
 现有入口是apps/housing-map/src/app/page.tsx中的CommunityPopup；普通价格有挂牌/签约口径及快照日期。
 
 ## 需求

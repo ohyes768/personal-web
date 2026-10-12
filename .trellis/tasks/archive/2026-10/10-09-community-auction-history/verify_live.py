@@ -3,7 +3,8 @@ import json
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = next(parent for parent in Path(__file__).resolve().parents
+            if (parent / 'backend/housing-map/src').is_dir())
 sys.path.insert(0, str(ROOT / 'backend/housing-map'))
 from src.services.auction_fetcher import AuctionClient, normalize_auction, now_iso
 from src.services.auction_store import AUCTION_PATH, StoreLock, write_store
