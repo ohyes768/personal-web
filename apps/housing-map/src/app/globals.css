@@ -1076,3 +1076,40 @@ body {
 @media (max-width: 700px) { .auction-list-records { grid-template-columns: 1fr; } .auction-data-page { padding: 20px 14px 36px; } .auction-list-heading { align-items: start; flex-direction: column; } .auction-list-card { padding: 16px; } .auction-list-filters label:first-child { flex-basis: 100%; } }
 .community-detail-tabs button:focus-visible, .auction-history summary:focus-visible { outline: 2px solid #2c6c69; outline-offset: 3px; }
 @media (max-width: 480px) { .auction-stats strong { font-size: 25px; } .auction-facts > div { grid-template-columns: 80px minmax(0, 1fr); } }
+
+/* 租金与收益标签 */
+.rental-reference { padding: 4px 0 12px; }
+.rental-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.rental-filters label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 150px; }
+.rental-filters select { width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+.rental-note { border-left: 3px solid #b58b3a; padding: 8px 10px; background: #faf5e9; color: #745728; font-size: 12px; line-height: 1.6; margin: 10px 0; }
+.rental-note-warning { border-left-color: #a05a2c; }
+.rental-groups { display: grid; gap: 14px; margin: 14px 0; }
+.rental-group { border-top: 1px solid var(--border); padding-top: 14px; }
+.rental-group-heading { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; }
+.rental-group-heading h4 { margin: 0; font-size: 14px; }
+.rental-group-heading > span { white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.rental-group-metrics { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; padding: 10px 0; }
+.rental-group-metrics > div { display: grid; gap: 6px; }
+.rental-group-metrics span { color: var(--text-muted); font-size: 12px; }
+.rental-group-metrics strong { font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+.rental-yield { border-top: 1px dashed var(--border); padding-top: 10px; display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+.rental-yield > div { display: grid; gap: 6px; }
+.rental-yield span { color: var(--text-muted); font-size: 12px; }
+.rental-yield strong { font-size: 20px; color: #285d59; font-variant-numeric: tabular-nums; }
+.rental-yield .rental-meta { grid-column: 1 / -1; }
+.rental-meta { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin: 8px 0; }
+.rental-meta a { color: #285d59; text-decoration: underline; text-underline-offset: 3px; }
+.rental-samples-heading { margin: 18px 0 8px; font-size: 13px; }
+.rental-sample-list { list-style: none; margin: 0; padding: 0; }
+.rental-sample { border-top: 1px solid var(--border); padding: 12px 0; }
+.rental-sample-main { display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline; font-size: 13px; }
+.rental-sample-rent { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rental-exclude-reason { margin: 6px 0 0; font-size: 12px; color: #745728; background: #faf5e9; padding: 6px 8px; border-radius: 4px; }
+.rental-empty { padding: 28px 0; color: var(--text-muted); text-align: center; font-size: 13px; }
+.rental-empty button, .rental-view-switch button, .rental-pagination button { padding: 7px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-surface); cursor: pointer; font-size: 12px; }
+.rental-pagination button:disabled { opacity: .4; cursor: default; }
+.rental-view-switch { display: flex; gap: 8px; margin-top: 14px; }
+.rental-view-switch button[aria-pressed="true"] { border-color: #2c6c69; color: #2c6c69; font-weight: 600; }
+.rental-pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 12px; }
+@media (max-width: 480px) { .rental-group-metrics { grid-template-columns: 1fr 1fr; } .rental-yield { grid-template-columns: 1fr 1fr; } }

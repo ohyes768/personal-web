@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
 from src.api.auction_routes import router as auction_router
+from src.api.rental_routes import router as rental_router, shutdown_rental_refresh
 from src.services.auction_refresh import shutdown_refresh
 from src.scheduler import shutdown_scheduler, start_scheduler
 
@@ -39,6 +40,7 @@ async def lifespan(app: FastAPI):
     yield
     shutdown_scheduler()
     await shutdown_refresh()
+    await shutdown_rental_refresh()
     logger.info("housing-map 服务关闭中...")
 
 
@@ -60,6 +62,7 @@ app.add_middleware(
 # nginx 将 /api/map/* 剥前缀转成 /api/* 直转本服务，故 prefix 固定为 /api
 app.include_router(router, prefix="/api")
 app.include_router(auction_router, prefix="/api")
+app.include_router(rental_router, prefix="/api")
 
 
 if __name__ == "__main__":

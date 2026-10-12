@@ -1153,3 +1153,16 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+## 2026-10-12 房价页面接入租金参考与租售比（10-12-housing-rental-integration）
+
+实施完成（8 个子任务 + 全量验证）。后端 261 tests、前端 26 tests 全绿；浏览器端到端联调通过（真实采集 3 小区 31s 发布，看板三列 61.8 元/㎡/月 + 2.12%参考 + 缺失沉底排序，取消不切指针）。
+
+关键契约沉淀 → .trellis/spec/guides/housing-map-rental-reference.md（台账 version 字段、availability 优先级、口径不可混排、混合发布语义）。
+
+遗留（不阻塞）：
+- 风雅钱塘世纪花园 tmsf 源数据 property_type='商贸'（address 空串），看板默认住宅筛选下不可见；入口=地图 tab 物业类型勾"商贸/全部"。是否修正源数据另议。
+- fang_rentals.py 的旧 crawl() 与新 crawl_runs() 双循环并存（crawl 是上一任务交付物），建议后续合并为薄壳。
+- pyproject 未固化 pytest basetemp addopts（现行约定 CLI 显式传参）；.gitignore 已补 .pytest-tmp*/。
+- 一次"后端内存 job 态丢失"（GET data:null）重启后未复现，疑 preview_stop 半关闭干扰；已记入 spec 坑位。
+- spec 未提交、代码未 commit（等用户指令）。

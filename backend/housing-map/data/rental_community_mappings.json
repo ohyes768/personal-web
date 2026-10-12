@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "mappings": [
+    {
+      "source": "fang",
+      "source_community_id": "2010067741",
+      "community_id": "10001039",
+      "source_name": "风雅钱塘世纪花园",
+      "source_address": "月明路1076号",
+      "verified_at": "2026-10-12T00:00:00+00:00",
+      "status": "verified",
+      "notes": "小区租房页 https://zu.fang.com/hz/house-xm2010067741/ 标题「杭州风雅钱塘租房信息_滨江长河房屋出租」，结构化小区链接名「风雅钱塘世纪花园」（与内部名称逐字一致，部分房源链接作简称「风雅钱塘」）；房源详情 https://zu.fang.com/hz/chuzu/3_265860917_1.htm 地址原文「月明路1076号」，列表页原文「距6号线江汉路站约252米」，多条房源标题含「江汉路风雅钱塘」。名称逐字一致加滨江月明路地址确认同一物理小区。差异记录：房天下板块标注「滨江长河」为商圈口径，透明售房网行政街道为西兴；tmsf 同片区小区（星耀城、星光国际广场、欣盛东方郡）均归西兴，tmsf 口径自洽。"
+    },
+    {
+      "source": "fang",
+      "source_community_id": "2011095896",
+      "community_id": "20044031",
+      "source_name": "璞悦湾",
+      "source_address": "杭州滨江区滨文路与西浦路交叉口",
+      "verified_at": "2026-10-12T00:00:00+00:00",
+      "status": "verified",
+      "notes": "小区租房页 https://zu.fang.com/hz/house-xm2011095896/ 标题「杭州璞悦湾租房信息_滨江浦沿房屋出租」，结构化小区链接名「璞悦湾」（与内部别名一致，内部全称万科璞悦湾）；房源详情 https://zu.fang.com/hz/chuzu/1_52045467_1.htm 地址原文「杭州滨江区滨文路与西浦路交叉口」，物业类型「住宅」。名称、滨江浦沿板块、滨江区地址均与内部一致。"
+    },
+    {
+      "source": "fang",
+      "source_community_id": "2010356262",
+      "community_id": "10004141",
+      "source_name": "东方郡",
+      "source_address": null,
+      "verified_at": "2026-10-12T00:00:00+00:00",
+      "status": "verified",
+      "notes": "小区租房页 https://zu.fang.com/hz/house-xm2010356262/ 标题「杭州东方郡租房信息_滨江西兴房屋出租」，结构化小区链接名「东方郡」（内部名称欣盛东方郡的通行简称，杭州无重名小区）；列表页原文「距1号线(下沙江滨-湘湖)滨和路站约322米」。滨江西兴板块与滨和路站位置均与内部一致。缺口：采样房源详情 https://zu.fang.com/hz/chuzu/8_1002765854_1.htm 未含门牌地址字段，source_address 暂为 null，后续采集时补录门牌地址。"
+    }
+  ]
+}

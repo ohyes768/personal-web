@@ -39,6 +39,7 @@ These guides help you **ask the right questions before coding**.
 | [Skill Manager 外部导出目标](./skill-manager-export-targets.md) | link/export 目标分类、ZIP 与哈希同源、台账迁移、stale 检测和启动重发布边界 | 修改目标/导出/台账/过期检测 |
 | [Housing-Map 小区准入契约](./housing-map-admission.md) | 采集/展示全量（is_real_community 只排道路伪小区）、轮廓按住宅口径、前端默认筛选住宅类、每周一 21:17 定时刷新（cron 时区/dow 陷阱、与手动刷新互斥） | 改小区可见性/刷新范围/定时任务，或排查"某小区数据没抓下来" |
 | [Housing-Map 法拍采集契约](./housing-map-auctions.md) | 来拍公开JSON来源、价格/状态口径、独立原子存储、CLI/API互斥及取消 | 修改法拍采集、查询或后续定时任务 |
+| [Housing-Map 租金参考与租售比契约](./housing-map-rental-reference.md) | 映射台账(version字段!)、availability优先级、统计口径(<3不出参考/缺失沉底)、原子发布、6条API、看板三列与跨tab物业类型联动 | 改租金统计/映射台账/刷新任务/看板租金列前必读 |
 
 ---
 

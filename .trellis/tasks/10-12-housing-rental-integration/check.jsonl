@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/guides/housing-map-fang-rentals.md", "reason": "核对租金集成与采集器既有发布/口径语义一致，不复制解析器"}
+{"file": ".trellis/spec/guides/housing-map-auctions.md", "reason": "核对互斥409、取消语义、原子指针切换、失败保留旧版本等实现与既有模式一致"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "核对测试在 Windows 约束下运行（basetemp 重定向），测试覆盖分页截断/取消/部分失败等场景"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "检查统计组件、刷新hook、进度模式是否复用既有实现而非重复造轮子"}

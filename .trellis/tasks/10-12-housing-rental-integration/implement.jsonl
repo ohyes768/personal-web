@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/guides/housing-map-fang-rentals.md", "reason": "房天下租金采集器契约（CLI、样本格式、已知限制），本任务在其输出之上做映射/聚合/发布集成"}
+{"file": ".trellis/spec/guides/housing-map-auctions.md", "reason": "法拍采集的后台任务、CLI/API互斥、取消、原子存储模式，rental_refresh 服务复用该模式但锁与job字段独立"}
+{"file": ".trellis/spec/guides/housing-map-admission.md", "reason": "小区准入与合并别名归属规则，租金映射台账需按内部展示ID归属避免dropIds丢数据"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 开发机 pytest 硬约束（basetemp 重定向、symlink marker），后端测试必须遵守"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "租金数据流跨采集/存储/API/详情组件/看板多层，且详情与看板共用同一统计契约"}
