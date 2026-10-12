@@ -77,3 +77,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: 租金来源管理与顶部更新入口
+
+**Date**: 2026-10-12
+**Task**: 租金来源管理与顶部更新入口
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+完成 SQLite 租金来源关联管理、顶部更新入口、旧数据卷 seed 兼容与来源变更后的快照隔离。自动关键词搜索受来源限制，链接导入已验证可用。后端 278 项、前端 33 项测试及 lint、build、浏览器验收通过。任务已归档，未推送、未部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e6c6c7e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
