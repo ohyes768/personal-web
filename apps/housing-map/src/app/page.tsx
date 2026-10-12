@@ -6,6 +6,7 @@ import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, SCH
 import { isInScope } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
 import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
+import LatestAuctionCard from '@/components/community/LatestAuctionCard';
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 
@@ -61,10 +62,12 @@ function CommunityPopup({
   community,
   onClose,
   auctionCount,
+  auctionRefreshVersion,
 }: {
   community: Community;
   onClose: () => void;
   auctionCount?: number;
+  auctionRefreshVersion: number;
 }) {
   const poiGroups = community.pois.reduce((acc, poi) => {
     const type = poi.type as POIType;
@@ -109,7 +112,7 @@ function CommunityPopup({
 
       <CommunityDetailTabs communityId={community.community_id} auctionCount={auctionCount}>
       <p className="auction-meta">普通房价快照：{community.price.snapshot_date || '未知'} · 均价单位：元/㎡</p>
-      {/* 房价 4 项: 一行紧凑数字条 */}
+      {/* 普通房价指标与最近法拍参考 */}
       <div className="popup-price-row">
         <div className="stat-cell">
           <div className="stat-label">挂牌均价</div>
@@ -127,6 +130,7 @@ function CommunityPopup({
           <div className="stat-label">近月签约</div>
           <div className="stat-value">{community.price.deal_count ?? '-'}</div>
         </div>
+        <LatestAuctionCard communityId={community.community_id} refreshVersion={auctionRefreshVersion} />
       </div>
 
       {/* 评分维度 2×2 大卡: 可点击翻转看明细, 宽度翻倍解决明细显示不下 */}
@@ -766,6 +770,7 @@ export default function BinjiangMapPage() {
                 key={selectedCommunity.community_id}
                 community={selectedCommunity}
                 auctionCount={auctionCounts[selectedCommunity.community_id]}
+                auctionRefreshVersion={auctionRefreshVersion}
                 onClose={() => setSelectedCommunity(null)}
               />
             )}
