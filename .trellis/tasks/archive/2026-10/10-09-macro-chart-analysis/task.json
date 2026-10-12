@@ -2,8 +2,8 @@
   "id": "macro-chart-analysis",
   "name": "macro-chart-analysis",
   "title": "日频曲线图分析助手：中国国债试点与通用接入",
-  "description": "实现DeepSeek图表分析公共能力与中国国债试点，预留全部日频曲线图扩展。",
-  "status": "in_progress",
+  "description": "已实现 DeepSeek 图表分析公共能力、中国国债试点及15个固定日频子图接入。",
+  "status": "completed",
   "dev_type": null,
   "scope": "macro",
   "package": "backend/global-macro-fin",
@@ -11,11 +11,11 @@
   "creator": "tang",
   "assignee": "tang",
   "createdAt": "2026-10-09",
-  "completedAt": null,
+  "completedAt": "2026-10-12",
   "branch": null,
   "base_branch": "main",
   "worktree_path": null,
-  "commit": null,
+  "commit": "f062178",
   "pr_url": null,
   "subtasks": [],
   "children": [],
@@ -24,6 +24,6 @@
     "apps/macro",
     "backend/macro"
   ],
-  "notes": "首期实现与本地验收完成，待提交确认；真实模型/生产代理验收及其余日频图接入待后续。",
+  "notes": "2026-10-12 用户明确确认验证完成并要求收尾。实现提交 1d5f1d0、f062178。按已交付固定日频图范围归档；动态自选对比、月频分析和教学框架改进仍是后续范围，不声明已实现。",
   "meta": {}
 }
