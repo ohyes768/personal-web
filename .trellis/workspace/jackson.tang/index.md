@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 25
+- **Total Sessions**: 26
 - **Last Active**: 2026-10-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~952 | Active |
+| `journal-1.md` | ~987 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 26 | 2026-10-12 | 归档调度设置页与 ECharts 重构 | `ae9019c`, `4ca4648` | `master` |
 | 25 | 2026-10-12 | RSS 渠道操作按钮直接显示 | - | `master` |
 | 24 | 2026-10-10 | 红利扣非利润筛选增强 | `3d2bc66` | `master` |
 | 23 | 2026-10-10 | RSS 渠道统一紧凑弹窗 | `c27f871` | `master` |

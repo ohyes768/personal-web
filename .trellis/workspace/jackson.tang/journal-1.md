@@ -950,3 +950,38 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 26: 归档调度设置页与 ECharts 重构
+
+**Date**: 2026-10-12
+**Task**: 归档调度设置页与 ECharts 重构
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+核对 ECharts 已有验收记录并归档；按用户要求收尾 dividend 调度主体，优雅关闭缺陷与 n8n 迁移验收转为 10-12-scheduler-shutdown-migration，未宣称残留项通过。保留并行 M120 等改动。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ae9019c` | (see git log) |
+| `4ca4648` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
