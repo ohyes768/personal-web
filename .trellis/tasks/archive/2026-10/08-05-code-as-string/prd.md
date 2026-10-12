@@ -70,3 +70,7 @@
 - `pd.read_csv(dtype={...})` 对 CSV 中**不存在的列静默忽略**，不报错 → 可用单一全局常量。
 - `astype(str).str.zfill(6)` 对已是 str 的列**幂等** → 加 dtype 不会破坏现存 25 处补偿。
 - `helpers.load_csv_data()` **已有** `dtype` 参数且 docstring 已写明正确用法，只是调用方没都用上。
+
+## 2026-10-12 收尾
+
+依据既有 completed 状态及代码/规范提交归档。原实现提交 5a9f3d7，主仓落地 4754ea0，规范补充 c6a344c；当前保留 CODE_DTYPE 契约。此前本会话后端全量 226 passed, 3 skipped。此次仅归档，不执行线上字段验收或部署。

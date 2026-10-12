@@ -11,7 +11,7 @@
   "creator": "ohyes768",
   "assignee": "ohyes768",
   "createdAt": "2026-08-05",
-  "completedAt": "2026-08-05",
+  "completedAt": "2026-10-12",
   "branch": null,
   "base_branch": "master",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-10-12 按用户要求归档已完成任务。原代码提交 5a9f3d7（当时 dividend 子模块），主仓落地提交 4754ea0，规范补充 c6a344c。当前 CODE_DTYPE 与规范均保留；本会话此前后端全量复核 226 passed, 3 skipped。历史 PRD 未勾选条目保留，不新增声称线上验收。",
   "meta": {}
 }
