@@ -64,7 +64,7 @@ test('unmapped availability explains missing mapping', () => {
   const html = renderToStaticMarkup(React.createElement(RentalReferenceContent, {
     data: availableData({ availability: 'unmapped', groups: [], samples: [], source_links: [] }),
   }));
-  assert.match(html, /尚未核验租金来源映射/);
+  assert.match(html, /尚未关联租金来源/);
   assert.doesNotMatch(html, /粗略估算/);
 });
 

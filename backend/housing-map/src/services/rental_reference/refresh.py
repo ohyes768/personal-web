@@ -65,6 +65,20 @@ class MappingFileError(RuntimeError):
 
 
 def load_verified_mappings(path: Path) -> list[tuple[str, str]]:
+    from src.services.rental_reference.sources import database_path, confirmed_pairs, connection
+    db_path = database_path(path)
+    if db_path.exists():
+        try:
+            with connection(db_path) as db:
+                initialized = db.execute("SELECT 1 FROM meta WHERE key='imported'").fetchone()
+            if initialized:
+                return confirmed_pairs(db_path)
+        except Exception as exc:
+            raise MappingFileError(f'unreadable rental source database: {exc}') from exc
+    return load_legacy_mappings(path)
+
+
+def load_legacy_mappings(path: Path) -> list[tuple[str, str]]:
     """Verified (source_community_id, internal community_id) pairs in file order.
 
     A missing file means zero mappings (the caller maps that to 422). A present
@@ -200,6 +214,18 @@ class RentalRefreshService:
             self._thread = thread
             thread.start()
             return self._snapshot()
+
+    def change_sources(self, action):
+        """Serialize source edits with web start and CLI publishing."""
+        from src.services.rental_reference.storage import RentalPublishLock
+        with self._mutex:
+            if self._has_active_thread():
+                raise RefreshAlreadyRunning('请等待租金更新结束后修改关联')
+            try:
+                with RentalPublishLock(self.rentals_dir / 'rental_publish'):
+                    return action()
+            except BlockingIOError as exc:
+                raise RefreshAlreadyRunning('租金发布正在进行，请稍后修改关联') from exc
 
     def cancel(self) -> dict:
         """Request cancellation; the phase stays cancelling until the worker stops."""

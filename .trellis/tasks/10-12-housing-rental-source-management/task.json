@@ -1,0 +1,30 @@
+{
+  "id": "housing-rental-source-management",
+  "name": "housing-rental-source-management",
+  "title": "租金来源关联管理与顶部更新入口",
+  "description": "减少手工映射维护，提供来源候选查找、页面确认关联和全局租金更新入口",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "housing-map",
+  "package": null,
+  "priority": "P2",
+  "creator": "tang",
+  "assignee": "tang",
+  "createdAt": "2026-10-12",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/housing-map/",
+    "backend/housing-map/",
+    "docker-compose.nas.yml"
+  ],
+  "notes": "本地实施与验收完成；自动关键词查找受房天下当前接口限制，链接导入/人工确认可用，限制已记录。278 后端测试、33 前端测试、lint/生产构建及浏览器验收通过。等待提交确认，未部署。",
+  "meta": {}
+}

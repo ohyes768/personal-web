@@ -24,6 +24,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import router
 from src.api.auction_routes import router as auction_router
 from src.api.rental_routes import router as rental_router, shutdown_rental_refresh
+from src.api.rental_source_routes import router as rental_source_router
 from src.services.auction_refresh import shutdown_refresh
 from src.scheduler import shutdown_scheduler, start_scheduler
 
@@ -63,6 +64,7 @@ app.add_middleware(
 app.include_router(router, prefix="/api")
 app.include_router(auction_router, prefix="/api")
 app.include_router(rental_router, prefix="/api")
+app.include_router(rental_source_router, prefix="/api")
 
 
 if __name__ == "__main__":

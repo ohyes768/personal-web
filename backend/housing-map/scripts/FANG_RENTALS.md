@@ -35,3 +35,9 @@
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests/test_fang_rentals.py -q --basetemp=.pytest-tmp-fang
 ```
+
+## 网页来源管理
+
+地图/看板顶部“租金来源”可选择小区、查看和解除关联。查找候选后需核对地址和分期，再确认。当前房天下关键词搜索存在忽略筛选的问题；自动查找失败时，打开房天下搜索小区，复制 `https://zu.fang.com/hz/house-xm编号/` 到链接框读取候选。排除的候选可通过再次导入链接恢复核对。确认后点顶部“更新租金”，更新全部已关联小区。
+
+关联保存在 `data/rental_sources.sqlite3`，不要再通过编辑 JSON 修改运行时关联。首次从旧 JSON 导入；Docker 旧数据卷缺文件时使用镜像 seed。初始化后不覆盖用户关联。备份数据卷时应包含 SQLite 文件和 `rentals/` 快照目录。

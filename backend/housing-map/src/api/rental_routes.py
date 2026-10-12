@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import datetime as dt
 import math
+import sqlite3
 import threading
 from typing import Literal
 from urllib.parse import urlparse
@@ -111,8 +112,10 @@ def _verified_source_ids() -> dict[str, str]:
     台账损坏是服务端数据错误（503），与"未映射"（200 + availability）严格区分。
     """
     try:
+        from src.services.rental_reference.sources import SourceStore
+        SourceStore(_mappings_path)
         pairs = load_verified_mappings(_mappings_path)
-    except MappingFileError as exc:
+    except (MappingFileError, sqlite3.Error, OSError, ValueError) as exc:
         raise HTTPException(503, "rental mapping file unavailable") from exc
     return {community_id: source_id for source_id, community_id in pairs}
 
@@ -318,6 +321,15 @@ def _entry_of(current: dict | None, community_id: str) -> dict | None:
     return entry if isinstance(entry, dict) else None
 
 
+def _mapped_entry(current: dict | None, community_id: str, source_ids: dict) -> dict | None:
+    entry = _entry_of(current, community_id)
+    if community_id not in source_ids:
+        return None
+    if entry and entry.get('source_community_id') != source_ids[community_id]:
+        return None
+    return entry
+
+
 def _excluded_rows(valid_audit: dict) -> list[dict]:
     """排除明细 = 过滤排除（带理由）+ 疑似重复（可追踪、默认不计样本数）。"""
     rows = list(valid_audit["excluded"])
@@ -349,7 +361,7 @@ def rentals_summary(area_band: AreaBandParam = "all",
         community_id = community.get("community_id")
         if not isinstance(community_id, str) or not community_id:
             continue
-        entry = _entry_of(current, community_id)
+        entry = _mapped_entry(current, community_id, source_ids)
         stale = is_stale(entry.get("captured_at"), now=now) if entry else False
         valid_count = 0
         unit_rent = None
@@ -409,7 +421,7 @@ def community_rentals(
     last_refresh = _last_refresh_of(_current_job_snapshot())
     now = dt.datetime.now(dt.UTC)
 
-    entry = _entry_of(current, community_id)
+    entry = _mapped_entry(current, community_id, source_ids)
     stale = is_stale(entry.get("captured_at"), now=now) if entry else False
     valid: list[dict] = []
     excluded: list[dict] = []
@@ -495,6 +507,7 @@ async def rental_refresh_status():
 async def start_rental_refresh():
     """启动租金刷新（范围由已核验台账决定，无任意 URL 参数）。"""
     try:
+        await asyncio.to_thread(_verified_source_ids)
         snapshot = await asyncio.to_thread(_get_service().start)
     except RefreshAlreadyRunning:
         return JSONResponse({"success": False, "error": "rental refresh job already running"},

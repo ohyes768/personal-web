@@ -72,6 +72,8 @@ export function useRentalRefresh(onSettled?: () => void): UseRentalRefreshResult
       setJob(await startRentalRefresh());
     } catch (error) {
       setActionError(error instanceof Error ? error.message : '启动租金更新失败');
+      // A conflicting start may come from another browser; recover its progress.
+      try { setJob(await fetchRentalRefreshJob()); } catch { /* Keep the actionable start error. */ }
     }
   }, []);
 

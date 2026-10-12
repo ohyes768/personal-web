@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { RENTAL_DATA_CHANGED } from './rental-sources';
 import {
   buildRentalSummaryPath,
   fetchRentalData,
@@ -33,7 +34,13 @@ export function useRentalSummary(
     data?: Record<string, RentalSummaryEntry>;
     error?: string;
   } | null>(null);
-  const key = `${areaBand}|${bedrooms}|${reloadKey}`;
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const reload = () => setRevision(v => v + 1);
+    window.addEventListener(RENTAL_DATA_CHANGED, reload);
+    return () => window.removeEventListener(RENTAL_DATA_CHANGED, reload);
+  }, []);
+  const key = `${areaBand}|${bedrooms}|${reloadKey}|${revision}`;
 
   useEffect(() => {
     const controller = new AbortController();

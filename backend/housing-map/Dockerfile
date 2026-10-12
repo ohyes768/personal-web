@@ -28,6 +28,7 @@ COPY data ./data
 # 已存在的 named volume 会遮住 /app/data；保留缺失时需要补齐的只读种子副本。
 COPY data/binjiang_osm_residential.geojson ./seed-data/binjiang_osm_residential.geojson
 COPY data/market_reference.json ./seed-data/market_reference.json
+COPY data/rental_community_mappings.json ./seed-data/rental_community_mappings.json
 
 # 安装依赖（uv sync 从 lock 文件精确安装）
 RUN uv sync --frozen --no-dev

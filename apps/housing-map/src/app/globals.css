@@ -1113,3 +1113,36 @@ body {
 .rental-view-switch button[aria-pressed="true"] { border-color: #2c6c69; color: #2c6c69; font-weight: 600; }
 .rental-pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 12px; }
 @media (max-width: 480px) { .rental-group-metrics { grid-template-columns: 1fr 1fr; } .rental-yield { grid-template-columns: 1fr 1fr; } }
+
+/* Rental source review: one management view shared by map and dashboard. */
+.rental-source-dialog { margin: auto; width: min(1000px, calc(100vw - 32px)); max-height: 88vh; padding: 24px; border: 1px solid var(--border); border-radius: 16px; background: var(--bg-surface); color: var(--text-primary); overflow: auto; }
+.rental-source-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.rental-source-dialog-header, .rental-source-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.rental-source-actions { justify-content: flex-start; margin: 12px 0; }
+.rental-source-browser { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 24px; }
+.rental-source-browser aside { min-width: 0; }
+.rental-source-browser aside > input, .rental-source-association input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); margin: 6px 0 12px; }
+.rental-source-browser aside > label { display: block; margin: 8px 0; }
+.rental-source-list { max-height: 55vh; overflow-y: auto; display: grid; gap: 6px; }
+.rental-source-list button { display: flex; justify-content: space-between; gap: 10px; text-align: left; padding: 10px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.rental-source-list button[aria-pressed="true"] { border-color: var(--accent-warm); }
+.rental-source-list small { white-space: nowrap; color: var(--text-muted); }
+.rental-source-association { min-width: 0; margin: 12px 0; }
+.rental-source-association h3 { margin-bottom: 12px; }
+.rental-source-association form { margin: 16px 0; }
+.rental-source-association label { display: block; font-size: 13px; }
+.rental-source-current, .rental-source-candidate, .rental-source-confirm { padding: 12px; border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; overflow-wrap: anywhere; }
+.rental-source-candidate p, .rental-source-current p { margin: 8px 0; font-size: 13px; }
+.rental-source-confirm { border-color: var(--accent-warm); }
+.rental-source-confirm button { margin: 8px 8px 0 0; }
+.rental-source-notice { padding: 10px; color: var(--accent-warm); overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .rental-source-dialog { padding: 16px; }
+  .rental-source-browser { grid-template-columns: 1fr; gap: 12px; }
+  .rental-source-list { max-height: 160px; }
+  .housing-app-header { padding-left: 12px !important; padding-right: 12px !important; }
+  .housing-header-actions { width: 100%; margin-left: 0 !important; }
+}
+
+.rental-source-dialog-header { position: sticky; top: -24px; z-index: 2; background: var(--bg-surface); padding: 8px 0; }
+@media (max-width: 700px) { .rental-source-dialog-header { top: -16px; } }

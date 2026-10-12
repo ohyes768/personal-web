@@ -30,7 +30,11 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 
 ## 3. Contracts
 
-### 3.1 台账 `data/rental_community_mappings.json`（踩过坑）
+### 3.1 关联数据库与旧台账（踩过坑）
+
+运行时关联以 `data/rental_sources.sqlite3` 为准，JSON 仅一次性迁移；页面确认/改绑/解除契约见 [租金来源管理](../backend/housing-map/backend/rental-sources.md)。旧数据卷缺 JSON 时从镜像 seed 导入，不能每次启动覆盖用户关联。
+
+旧 JSON 格式：
 
 ```json
 { "version": 1, "mappings": [ { "source": "fang", "source_community_id": "...",

@@ -248,7 +248,7 @@ export async function fetchRentalRefreshJob(signal?: AbortSignal): Promise<Renta
 export async function startRentalRefresh(signal?: AbortSignal): Promise<RentalRefreshJob> {
   const response = await fetch('/api/map/rentals/refresh', { method: 'POST', signal });
   if (response.status === 409) throw new Error('已有租金更新任务在运行，请稍后再试');
-  if (response.status === 422) throw new Error('暂无已核验映射的小区可采集租金');
+  if (response.status === 422) throw new Error('还没有关联租金来源，请先选择小区并确认来源');
   if (!response.ok) throw new Error('租金更新服务暂时不可用');
   const payload: unknown = await response.json();
   if (!isRefreshEnvelope(payload) || payload.data === null) throw new Error('租金更新响应异常');

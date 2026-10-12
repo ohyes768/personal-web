@@ -10,6 +10,8 @@ import LatestAuctionCard from '@/components/community/LatestAuctionCard';
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import { RentalScopeSelect, RentalSummaryCells, type RentalScope } from '@/components/dashboard/RentalDashboardWidgets';
 import { RentalRefreshButton } from '@/components/rental/RentalRefreshButton';
+import { RentalSourceManager } from '@/components/rental/RentalSourceManager';
+import { rentalDataChanged } from '@/lib/rental-sources';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 import { useRentalSummary } from '@/lib/use-rental-summary';
 import {
@@ -1074,15 +1076,16 @@ function AppHeader({
   boundaryState: { running: boolean; phase: string; error: string | null } | null;
   onBoundaryRebuild: () => void;
 }) {
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   return (
-    <header style={{
-      height: '64px',
+    <><header className="housing-app-header" style={{
+      minHeight: '64px',
       background: 'var(--bg-surface)',
       borderBottom: '1px solid var(--border)',
       display: 'flex',
       alignItems: 'center',
       padding: '0 20px',
-      gap: '24px',
+      gap: '16px', flexWrap: 'wrap', paddingTop: '10px', paddingBottom: '10px',
     }}>
       {/* 站点首页在 basePath 之外，Next Link 会将 / 拼成 /map。 */}
       {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
@@ -1108,7 +1111,7 @@ function AppHeader({
         onChange={e => onSearchChange(e.target.value)}
       />
 
-      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+      <div className="housing-header-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
           价格数据: {latestSnapshot || '—'}
           {refreshState?.running && (
@@ -1175,6 +1178,8 @@ function AppHeader({
             <span>⚖️</span> 法拍刷新
           </button>
         )}
+        <RentalRefreshButton onSettled={rentalDataChanged} onManageSources={() => setSourcesOpen(true)} />
+        <button className="btn btn-secondary" onClick={() => setSourcesOpen(true)}>租金来源</button>
         <button
           className="btn btn-secondary"
           style={{ whiteSpace: 'nowrap' }}
@@ -1186,6 +1191,8 @@ function AppHeader({
         </button>
       </div>
     </header>
+    {sourcesOpen && <RentalSourceManager onClose={() => setSourcesOpen(false)} />}
+    </>
   );
 }
 
@@ -1241,8 +1248,7 @@ function DashboardPage({
   const pageSize = 50;
 
   // 租金摘要：只加载当前口径一份数据，失败/加载中展示层降级为全 '—'，不影响其他列
-  const [rentalRetry, setRentalRetry] = useState(0);
-  const rental = useRentalSummary(rentalScope.areaBand, rentalScope.bedrooms, rentalRetry);
+  const rental = useRentalSummary(rentalScope.areaBand, rentalScope.bedrooms);
   const rentalById: Record<string, RentalSummaryEntry> = rental.summaries ?? {};
 
   const toggleSort = (key: DashSortKey) => {
@@ -1374,7 +1380,7 @@ function DashboardPage({
           <option value="0-60">60分以下</option>
         </select>
         <RentalScopeSelect scope={rentalScope} onChange={onRentalScopeChange} />
-        <RentalRefreshButton onSettled={() => setRentalRetry(v => v + 1)} />
+
         {rental.error && (
           <span role="alert" style={{ fontSize: '12px', color: 'var(--price-up)' }}>
             租金数据暂不可用，租金三列暂显示为 —，其余功能不受影响

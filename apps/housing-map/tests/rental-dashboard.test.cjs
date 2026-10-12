@@ -150,7 +150,7 @@ test('refresh control idle state shows start button with scope hint, no cancel',
     job: null, running: false, actionError: null, start: () => {}, cancel: () => {},
   }));
   assert.match(html, /更新租金/);
-  assert.match(html, /更新全部已映射小区的租金数据/);
+  assert.match(html, /更新全部已关联小区的租金数据/);
   assert.doesNotMatch(html, /取消/);
 });
 

@@ -165,6 +165,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
   const transitLinesRef = useRef<AMapOverlay[]>([]);
   const transitStopsRef = useRef<AMapMarker[]>([]);
   const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(GAODE_MAP_KEY ? null : '地图服务尚未配置，数据看板和租金来源管理仍可使用。');
 
   // 供轮廓事件回调读取最新选中态, 避免闭包过期
   useEffect(() => {
@@ -182,7 +183,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
 
   // 加载高德地图 JS API
   useEffect(() => {
-    if (!mapRef.current || mapInstanceRef.current) return;
+    if (!GAODE_MAP_KEY || !mapRef.current || mapInstanceRef.current) return;
 
     if (process.env.NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY) {
       window._amapSecurityConfig = {
@@ -193,13 +194,19 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
     const script = document.createElement('script');
     script.src = `https://webapi.amap.com/maps?v=2.0&key=${GAODE_MAP_KEY}&plugin=AMap.Scale,AMap.ToolBar`;
     script.async = true;
-    script.onload = () => setMapLoaded(true);
-    script.onerror = () => console.error('Failed to load Gaode Maps API');
+    script.onload = () => {
+      if (window.AMap?.Map) setMapLoaded(true);
+      else setMapError('地图服务暂不可用，数据看板和租金来源管理仍可使用。');
+    };
+    script.onerror = () => setMapError('地图服务加载失败，数据看板和租金来源管理仍可使用。');
     document.head.appendChild(script);
 
     return () => {
       mapInstanceRef.current?.destroy();
       mapInstanceRef.current = null;
+      script.onload = null;
+      script.onerror = null;
+      script.remove();
     };
   }, []);
 
@@ -544,6 +551,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
           inset: 0,
         }}
       />
+      {mapError && <p role="status" className="rental-empty" style={{ position: 'absolute', top: '20px', left: '20px', right: '20px' }}>{mapError}</p>}
       {/* 轮廓悬停提示 (跟随鼠标, 不拦截事件) */}
       <div ref={tooltipRef} className="map-tooltip" />
     </>

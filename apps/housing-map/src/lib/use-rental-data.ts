@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { RENTAL_DATA_CHANGED } from './rental-sources';
 import {
   buildRentalDetailPath,
   fetchRentalData,
@@ -27,7 +28,13 @@ export interface UseRentalDataResult extends RentalDataState {
 export function useRentalData(communityId: string, query: RentalDetailQuery, reloadKey = 0): UseRentalDataResult {
   const { areaBand, bedrooms, page, view } = query;
   const [state, setState] = useState<(RentalDataState & { key: string }) | null>(null);
-  const key = `${communityId}|${areaBand}|${bedrooms}|${page}|${view}|${reloadKey}`;
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    const reload = () => setRevision(v => v + 1);
+    window.addEventListener(RENTAL_DATA_CHANGED, reload);
+    return () => window.removeEventListener(RENTAL_DATA_CHANGED, reload);
+  }, []);
+  const key = `${communityId}|${areaBand}|${bedrooms}|${page}|${view}|${reloadKey}|${revision}`;
 
   useEffect(() => {
     const controller = new AbortController();
