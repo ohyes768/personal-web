@@ -8,6 +8,7 @@ import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 
 const STORAGE_KEY = 'dividend-screening-conditions-v1';
 const pct = (value?: number | null) => value == null || !Number.isFinite(value) ? '待补' : `${value.toFixed(2)}%`;
+const isDeclining = (value?: number | null) => value != null && Number.isFinite(value) && value < 0;
 const statusNames: Record<ScreeningStatus, string> = { eligible: '符合条件', excluded: '未符合', insufficient_data: '待补数据' };
 const buttonClass = 'rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent disabled:opacity-40';
 
@@ -73,7 +74,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
 
   const eligibleCodes = result?.items.filter(item => item.status === 'eligible').map(item => item.stock.code) || [];
   const { priceMap } = useRealtimePrices(eligibleCodes);
-  const rows = result?.items.filter(item => item.status === view) || [];
+  const activeView = view === 'insufficient_data' && result?.counts.insufficient_data === 0 ? 'eligible' : view;
+  const rows = result?.items.filter(item => item.status === activeView) || [];
   const valid = [conditions.min_yield, conditions.min_roe, conditions.min_roe_avg_3y].every(value => Number.isFinite(value) && value >= 0 && value <= 100) && Number.isFinite(conditions.max_quarter_profit_decline_pct) && conditions.max_quarter_profit_decline_pct > 0 && conditions.max_quarter_profit_decline_pct <= 100;
   const changed = result && (['min_yield', 'min_roe', 'min_roe_avg_3y', 'max_quarter_profit_decline_pct'] as const).some(key => result.conditions[key] !== conditions[key]) || !!result && (result.conditions.exchange || '') !== (conditions.exchange || '');
   const selectCode = (code: string) => setSelected(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
@@ -98,16 +100,16 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       <p className="text-sm text-ink-muted">已采集股票池 {result.total} 只 · 分红年度 {result.dividend_years.join(' / ')} · 分红数据更新 {result.last_updated || '暂无记录'} · 财务更新 {result.financial_last_updated || '暂无记录'}（报告期见各行）</p>
       {changed && <p className="text-sm text-amber-700">条件已修改，当前仍显示上次查询结果，请点击「查询候选」。</p>}
       <div className="flex flex-wrap items-center gap-2">
-        {(Object.keys(statusNames) as ScreeningStatus[]).map(status => <button key={status} className={`${buttonClass} ${view === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
+        {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
       </div>
       {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}</p>}
-      {view === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
+      {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
         <table className="w-full text-sm text-ink whitespace-nowrap"><thead className="bg-paper-deep text-left"><tr>
-          <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={view !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>
-          {['股票', '三年股息率', '当前股息率（参考）', '三年平均 ROE', '年度 ROE', '年度扣非净利润', '年度扣非同比', '上季扣非同比', '最新季度扣非同比', '入选指标 / 原因', '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
+          <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={activeView !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>
+          {['股票', '三年股息率', '当前股息率（参考）', '三年平均 ROE', '年度 ROE', '年度扣非净利润', '年度扣非同比', '上季扣非同比', '最新季度扣非同比', '提示', '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
         </tr></thead><tbody>
           {rows.map(({ stock, status, reasons, warnings }) => <tr key={stock.code} className="border-t border-rule">
             <td className="p-3"><input aria-label={`勾选 ${stock.name}`} type="checkbox" disabled={status !== 'eligible' || saving} checked={selected.has(stock.code)} onChange={() => selectCode(stock.code)} /></td>
@@ -118,12 +120,16 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
             <td className="p-3">{pct(stock.roe)}<span className="block text-xs text-ink-muted">{stock.roe_year || '年度待补'}</span></td>
             <td className="p-3">{stock.annual_net_profit_ex_non_recurring == null || !Number.isFinite(stock.annual_net_profit_ex_non_recurring) ? '待补' : `${(stock.annual_net_profit_ex_non_recurring / 1e8).toFixed(2)} 亿`}<span className="block text-xs text-ink-muted">{stock.annual_profit_year || '年度待补'}</span></td>
             <td className="p-3">{pct(stock.net_profit_ex_non_recurring_yoy)}</td>
-            <td className="p-3">{pct(stock.previous_quarter_yoy_pct)}<span className="block text-xs text-ink-muted">{stock.previous_quarter_label}</span></td>
-            <td className="p-3">{pct(stock.latest_quarter_yoy_pct)}<span className="block text-xs text-ink-muted">{stock.latest_quarter_label}</span></td>
-            <td className="p-3 whitespace-normal min-w-56 max-w-sm">{reasons.join('；') || '分红连续、ROE 达标、年度扣非利润为正且未下降、季度规则通过'}{warnings.length > 0 && <span className="block text-amber-700">{warnings.join('；')}</span>}</td>
+            <td className="p-3"><span className={isDeclining(stock.previous_quarter_yoy_pct) ? 'font-medium text-amber-700' : undefined}>{pct(stock.previous_quarter_yoy_pct)}</span><span className="block text-xs text-ink-muted">{stock.previous_quarter_label}</span></td>
+            <td className="p-3"><span className={isDeclining(stock.latest_quarter_yoy_pct) ? 'font-medium text-amber-700' : undefined}>{pct(stock.latest_quarter_yoy_pct)}</span><span className="block text-xs text-ink-muted">{stock.latest_quarter_label}</span></td>
+            <td className="p-3 whitespace-normal max-w-sm">{status === 'eligible'
+              ? isDeclining(stock.previous_quarter_yoy_pct) || isDeclining(stock.latest_quarter_yoy_pct)
+                ? <span className="text-amber-700">季度扣非利润同比下降</span>
+                : <span className="text-ink-muted">—</span>
+              : <>{reasons.join('；') || '—'}{warnings.length > 0 && <span className="block text-amber-700">{warnings.join('；')}</span>}</>}</td>
             <td className="p-3">{watchlist.has(stock.code) ? '已收藏' : <button className={buttonClass} disabled={saving || status !== 'eligible'} onClick={() => void save([stock.code])}>加入收藏</button>}</td>
           </tr>)}
-          {rows.length === 0 && <tr><td colSpan={12} className="p-10 text-center text-ink-muted">{view === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={12} className="p-10 text-center text-ink-muted">{activeView === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
         </tbody></table>
       </div>
     </>}
