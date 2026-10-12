@@ -1019,3 +1019,38 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 28: 股票与指数代码 string 规范归档
+
+**Date**: 2026-10-12
+**Task**: 股票与指数代码 string 规范归档
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+按用户要求归档已完成的08-05-code-as-string，核对既有代码dtype契约和规范提交，保留原完成日期及历史验收记录。无代码更改、无部署，其他任务工作区改动保留。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4754ea0` | (see git log) |
+| `c6a344c` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
