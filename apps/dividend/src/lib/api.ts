@@ -1,3 +1,4 @@
+import type { RefreshJob, RefreshKind } from './types';
 /**
  * 股息率模块 API 封装
  * 所有股息率相关 API 调用必须通过此文件
@@ -148,6 +149,8 @@ export const dividendApi = {
  * 数据更新 API
  */
 export const dividendUpdateApi = {
+  getRefreshJob: (id: string) => directClient.get<RefreshJob>(`/api/dividend/refresh/jobs/${id}`),
+  getLatestRefreshJob: (kind: RefreshKind) => directClient.get<RefreshJob | null>(`/api/dividend/refresh/jobs?kind=${kind}`),
   /**
    * 更新股息率核心数据
    * 从红利指数获取股票列表，调用 akshare 计算股息率
@@ -167,7 +170,7 @@ export const dividendUpdateApi = {
    * 获取指定股票的 120 日均线数据
    */
   refreshM120: (codes?: string[]) =>
-    directClient.post<{ success: boolean; message: string; count?: number }>(
+    directClient.post<RefreshJob>(
       '/api/dividend/m120/refresh',
       codes ? { codes } : undefined
     ),
@@ -186,7 +189,7 @@ export const dividendUpdateApi = {
    * 更新财务指标数据
    */
   refreshFinancial: (codes?: string[], force = false) =>
-    directClient.post<{ success: boolean; message: string; count?: number; missing_count?: number }>(
+    directClient.post<RefreshJob>(
       `/api/dividend/financial/refresh${force ? '?force=true' : ''}`,
       codes ? { codes } : undefined
     ),

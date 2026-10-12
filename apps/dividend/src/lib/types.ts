@@ -604,7 +604,10 @@ export type LevelKey = keyof typeof LEVEL_META;
 export interface SchedulerJobRun {
   start: string;
   end?: string | null;
-  status: 'success' | 'skipped' | 'failed';
+  status: 'success' | 'skipped' | 'failed' | 'partial_failed' | 'interrupted';
+  refresh_job_id?: string;
+  failed?: number;
+  remaining?: number;
   count?: number | null;
   reason?: string | null;
   error?: string | null;
@@ -631,4 +634,21 @@ export interface SchedulerJob {
 export interface SchedulerTriggerResponse {
   job_id: string;
   triggered_at: string;
+}
+export type RefreshKind = 'm120' | 'financial';
+export interface RefreshJob {
+  job_id: string;
+  kind: RefreshKind;
+  status: 'queued' | 'running' | 'succeeded' | 'partial_failed' | 'failed' | 'interrupted';
+  total: number;
+  processed: number;
+  succeeded: number;
+  failed: number;
+  remaining: number;
+  failed_codes: string[];
+  retry_codes: string[];
+  error: string | null;
+  finished_at: string | null;
+  message: string;
+  reused?: boolean;
 }

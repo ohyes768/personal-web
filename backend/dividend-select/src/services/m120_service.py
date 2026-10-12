@@ -21,6 +21,7 @@ from pydantic import validate_call
 from src.utils.config import AppConfig, PROJECT_ROOT
 from src.utils.logger import setup_logger
 from src.utils.helpers import get_current_date_dir, DATA_DIR, CODE_DTYPE
+from src.utils.atomic_file import atomic_csv
 from src.services.base import CsvPathService, current_week_suffix
 
 logger = setup_logger(__name__)
@@ -336,7 +337,7 @@ class M120Service(CsvPathService):
 
         return len(results)
 
-    def update_m120_data(self, codes: list[str], show_progress: bool = True) -> int:
+    def update_m120_data(self, codes: list[str], show_progress: bool = True, on_progress=None) -> int:
         """
         批量更新 M120 数据（每周调用一次）
 
@@ -349,8 +350,10 @@ class M120Service(CsvPathService):
         Returns:
             成功更新的数量
         """
-        global _consecutive_failures
-
+        global _consecutive_failures, _rate_limited
+        _consecutive_failures = 0
+        _rate_limited = False
+        write_path = self.M120_CSV_FILE
 
         results = []
         total = len(codes)
@@ -364,7 +367,17 @@ class M120Service(CsvPathService):
             if is_rate_limited():
                 break
 
-            m120_data = self._get_m120_from_aliyun(code)
+            try:
+                m120_data = self._get_m120_from_aliyun(code)
+            except Exception:
+                logger.exception("M120 单股获取失败 %s", code)
+                m120_data = None
+            if m120_data is not None:
+                value = m120_data.get('m120')
+                if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+                    m120_data = None
+            if on_progress:
+                on_progress(code, m120_data is not None)
             if m120_data is not None:
                 results.append({
                     "日期": date_value,
@@ -388,14 +401,15 @@ class M120Service(CsvPathService):
         if results:
             # 读取已有数据
             existing_data = {}
-            if self.M120_CSV_FILE.exists():
+            if write_path.exists():
                 try:
-                    existing_df = pd.read_csv(self.M120_CSV_FILE, encoding="utf-8-sig", dtype=CODE_DTYPE)
+                    existing_df = pd.read_csv(write_path, encoding="utf-8-sig", dtype=CODE_DTYPE)
                     for _, row in existing_df.iterrows():
                         code = str(row["股票代码"]).zfill(6)
                         existing_data[code] = {"日期": row["日期"], "股票代码": code, "M120": row["M120"]}
                 except Exception:
-                    existing_data = {}
+                    logger.exception("已有 M120 文件不可读，保留文件并停止发布")
+                    raise
 
             # 合并：用新数据覆盖已有数据
             for r in results:
@@ -404,8 +418,8 @@ class M120Service(CsvPathService):
 
             # 写回 CSV
             merged_df = pd.DataFrame(list(existing_data.values()))
-            merged_df.to_csv(self.M120_CSV_FILE, index=False, encoding="utf-8-sig")
-            logger.info(f"M120 均线已保存到 {self.M120_CSV_FILE}，共 {len(merged_df)} 条")
+            atomic_csv(merged_df, write_path)
+            logger.info(f"M120 均线已保存到 {write_path}，共 {len(merged_df)} 条")
 
         return len(results)
 

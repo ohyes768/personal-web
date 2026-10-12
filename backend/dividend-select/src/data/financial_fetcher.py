@@ -88,7 +88,7 @@ class FinancialFetcher:
             logger.debug(f"获取 {code} 财务指标失败: {e}")
             return None
 
-    def fetch_batch(self, codes: list[str], delay: float = 0.5, show_progress: bool = True, batch_size: int = 10, on_batch: Optional[callable] = None) -> pd.DataFrame:
+    def fetch_batch(self, codes: list[str], delay: float = 0.5, show_progress: bool = True, batch_size: int = 10, on_batch: Optional[callable] = None, on_progress: Optional[callable] = None) -> pd.DataFrame:
         """
         批量获取指定股票的财务指标
 
@@ -107,7 +107,13 @@ class FinancialFetcher:
 
         for i, code in enumerate(codes):
             code = str(code).zfill(6)
-            result = self.fetch_one(code)
+            try:
+                result = self.fetch_one(code)
+            except Exception:
+                logger.exception("财务单股获取失败 %s", code)
+                result = None
+            if on_progress:
+                on_progress(code, bool(result))
 
             if result:
                 results.append(result)

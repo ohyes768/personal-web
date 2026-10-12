@@ -1,5 +1,7 @@
 """scheduler job 业务实现：HTTP self-call 到本地 /api/dividend/* 接口"""
 
+import asyncio
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +79,23 @@ async def _self_call(
     try:
         async with httpx.AsyncClient(timeout=600) as client:
             resp = await client.post(url, json=body)
+            if resp.status_code == 202:
+                data = resp.json()
+                record = {'start': start.isoformat(), 'refresh_job_id': data['job_id']}
+                if data.get('reused'):
+                    return {**record, 'status': 'skipped', 'reason': 'already_running', 'end': datetime.now().isoformat()}
+                deadline = time.monotonic() + 3600
+                while time.monotonic() < deadline:
+                    query = await client.get(f"http://127.0.0.1:{ctx.port}/api/dividend/refresh/jobs/{data['job_id']}", timeout=15)
+                    query.raise_for_status()
+                    job = query.json()
+                    if job['status'] not in ('queued', 'running'):
+                        return {**record, 'status': 'success' if job['status'] == 'succeeded' else job['status'],
+                                'count': job.get('succeeded'), 'failed': job.get('failed'),
+                                'remaining': job.get('remaining'), 'error': job.get('error'),
+                                'end': datetime.now().isoformat()}
+                    await asyncio.sleep(2)
+                raise TimeoutError('等待后台刷新超时；采集可能仍在运行')
     except Exception as e:
         logger.error(f"[{job_id}] self-call 网络异常: {e}")
         return {

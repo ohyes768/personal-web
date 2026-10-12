@@ -15,6 +15,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Code Type Guidelines](./code-type-guidelines.md) | 股票代码/指数代码全链路 str 契约、CSV dtype 规范 | Active |
+| [Background Refresh Jobs](./refresh-jobs-contract.md) | M120/financial 202 jobs, progress, persistence, atomic publication and scheduler results | Active |
 | [M120 Snapshot Continuity](./m120-snapshot-contract.md) | 跨周读取、历史文件保留、状态时间与周六调度 | Active |
 | [Scheduler Lifecycle](./scheduler-lifecycle.md) | 调度器有界关闭、在跑任务等待与取消 | Active |
 | [Screening / Watchlist Contract](./screening-watchlist-contract.md) | 筛选三态、历史 ROE、批量收藏与旧缓存迁移 | Active |

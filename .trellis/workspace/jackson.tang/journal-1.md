@@ -1121,3 +1121,35 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 31: 红利数据刷新后台任务与进度反馈
+
+**Date**: 2026-10-12
+**Task**: 红利数据刷新后台任务与进度反馈
+**Package**: backend/dividend-select
+**Branch**: `master`
+
+### Summary
+
+完成M120及财务后台202任务、真实进度、防重、原子保存、重启中断、失败重试与定时终态；后端244通过3跳过、浏览器8通过、类型检查通过。未提交或部署，ESLint未配置。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

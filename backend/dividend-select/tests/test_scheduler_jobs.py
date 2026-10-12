@@ -62,3 +62,28 @@ def test_refresh_realtime_and_m120_keep_single_prefix_paths():
     _run_self_call(refresh_m120, "weekly_m120", _Ctx(), mock_post)
     url, = mock_post.await_args.args
     assert url == "http://127.0.0.1:8092/api/dividend/m120/refresh"
+
+
+def test_m120_202_waits_for_real_result_and_collision_skips():
+    async def scenario(reused):
+        accepted = _ok_response({'job_id': 'refresh-1', 'reused': reused})
+        accepted.status_code = 202
+        client = AsyncMock()
+        client.__aenter__.return_value = client
+        client.post.return_value = accepted
+        client.get.side_effect = [
+            _ok_response({'status': 'running'}),
+            _ok_response({'status': 'partial_failed', 'succeeded': 2, 'failed': 1, 'remaining': 3, 'error': 'rate limit'}),
+        ]
+        with patch('src.scheduler.jobs.httpx.AsyncClient', return_value=client), patch('src.scheduler.jobs.asyncio.sleep', new=AsyncMock()):
+            result = await refresh_m120(_Ctx(), 'weekly_m120')
+        if reused:
+            assert result['status'] == 'skipped'
+            client.get.assert_not_awaited()
+        else:
+            assert result['status'] == 'partial_failed'
+            assert result['count'] == 2
+            assert result['remaining'] == 3
+            assert client.get.await_count == 2
+    asyncio.run(scenario(False))
+    asyncio.run(scenario(True))

@@ -10,6 +10,10 @@ export interface ApiResponse<T = any> {
 
 type ApiClientMode = 'wrapped' | 'direct';
 
+export class ApiHttpError extends Error {
+  constructor(message: string, public status: number) { super(message); }
+}
+
 class ApiClient {
   private baseUrl: string;
   private mode: ApiClientMode;
@@ -36,7 +40,7 @@ class ApiClient {
         } catch {
           // 响应体不是 JSON 时忽略
         }
-        throw new Error(serverMsg || `请求失败 (HTTP ${response.status})`);
+        throw new ApiHttpError(serverMsg || `请求失败 (HTTP ${response.status})`, response.status);
       }
 
       if (this.mode === 'direct') return response.json() as Promise<T>;

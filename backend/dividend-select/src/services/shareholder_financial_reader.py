@@ -93,7 +93,7 @@ class FinancialReader:
         path = self._get_file_path()
         return path is not None and path.exists()
 
-    def read_csv(self) -> pd.DataFrame:
+    def read_csv(self, strict: bool = False) -> pd.DataFrame:
         """读取财务指标数据"""
         filepath = self._get_file_path()
         if filepath is None or not filepath.exists():
@@ -106,6 +106,8 @@ class FinancialReader:
             return df
         except Exception as e:
             logger.error(f"读取财务指标数据失败: {e}")
+            if strict:
+                raise
             return pd.DataFrame()
 
     def get_quarter(self) -> Optional[str]:

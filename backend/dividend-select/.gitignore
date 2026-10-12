@@ -54,6 +54,7 @@ data/.alert_history.json.corrupt-*
 data/scheduler_runs.jsonl
 data/scheduler_runs.*.jsonl
 data/trading_calendar_cache.json
+data/refresh_jobs/
 # 本地测试目录 + 用户收藏（不应进 git）
 data/_test/
 data/favorites.json

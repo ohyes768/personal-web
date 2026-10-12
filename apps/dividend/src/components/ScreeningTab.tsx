@@ -11,7 +11,7 @@ const pct = (value?: number | null) => value == null || !Number.isFinite(value) 
 const statusNames: Record<ScreeningStatus, string> = { eligible: '符合条件', excluded: '未符合', insufficient_data: '待补数据' };
 const buttonClass = 'rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent disabled:opacity-40';
 
-export function ScreeningTab({ watchlist }: { watchlist: UseWatchlistResult }) {
+export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: UseWatchlistResult; refreshRevision?: number }) {
   const [conditions, setConditions] = useState<ScreeningConditions>(DEFAULT_SCREENING);
   const [result, setResult] = useState<ScreeningResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -22,7 +22,10 @@ export function ScreeningTab({ watchlist }: { watchlist: UseWatchlistResult }) {
   const [message, setMessage] = useState('');
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
   const requestId = useRef(0);
+  const appliedConditions = useRef(DEFAULT_SCREENING);
+  const previousRevision = useRef(refreshRevision);
   const query = useCallback(async (next: ScreeningConditions) => {
+    appliedConditions.current = next;
     const id = ++requestId.current;
     setLoading(true); setError(''); setSelected(new Set()); setResult(null); setMessage(''); setFailedCodes([]);
     try {
@@ -43,6 +46,13 @@ export function ScreeningTab({ watchlist }: { watchlist: UseWatchlistResult }) {
     setConditions(next); void query(next);
     return () => { requestId.current++; };
   }, [query]);
+
+  useEffect(() => {
+    if (previousRevision.current !== refreshRevision) {
+      previousRevision.current = refreshRevision;
+      void query(appliedConditions.current);
+    }
+  }, [refreshRevision, query]);
 
   async function save(codes: string[]) {
     if (!codes.length) return;

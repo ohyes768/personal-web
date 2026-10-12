@@ -145,6 +145,9 @@ def build_record(
     count: int | None = None,
     reason: str | None = None,
     error: str | None = None,
+    refresh_job_id: str | None = None,
+    failed: int | None = None,
+    remaining: int | None = None,
 ) -> dict[str, Any]:
     """统一构造历史记录字段，保证 schema 稳定"""
     rec: dict[str, Any] = {
@@ -159,4 +162,7 @@ def build_record(
         rec["count"] = count
     if reason is not None:
         rec["reason"] = reason
+    for key, value in {"refresh_job_id": refresh_job_id, "failed": failed, "remaining": remaining}.items():
+        if value is not None:
+            rec[key] = value
     return rec

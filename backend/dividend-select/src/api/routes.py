@@ -77,9 +77,38 @@ from src.api.helpers.aux_data import (
     file_mtime_iso,
     find_latest_aux_file,
 )
+from src.utils.atomic_file import atomic_csv
+from src.services.refresh_jobs import RefreshJobManager
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
+refresh_jobs: Optional[RefreshJobManager] = None
+
+
+def set_refresh_jobs(manager):
+    global refresh_jobs
+    refresh_jobs = manager
+
+
+def require_refresh_jobs():
+    if refresh_jobs is None:
+        raise HTTPException(503, "刷新任务服务未初始化")
+    return refresh_jobs
+
+
+def accept_job(manager, kind, codes, work, params=None):
+    job = manager.submit(kind, codes, work, params)
+    if job is None:
+        raise HTTPException(503, "服务关闭中，请稍后重试")
+    return job
+
+
+def normalize_refresh_codes(codes: list[str]) -> list[str]:
+    normalized = list(dict.fromkeys(str(code).zfill(6) for code in codes))
+    if any(len(code) != 6 or not code.isascii() or not code.isdigit() for code in normalized):
+        raise HTTPException(422, "股票代码须为六位数字")
+    return normalized
+
 
 SCREENING_FINANCIAL_COLUMNS = {"最近年度扣非净利润(元)", "扣非利润年度", "ROE年度", "近3年平均ROE", "近3年ROE历史", "前一季度扣非同比(%)", "前一季度"}
 
@@ -791,52 +820,34 @@ async def get_m120_status(
     }
 
 
-@router.post("/m120/refresh")
-async def refresh_m120_data(body: CodesRequest):
-    """
-    刷新 M120 数据
+@router.get("/refresh/jobs")
+def latest_refresh_job(kind: str = Query(..., pattern="^(m120|financial)$")):
+    return require_refresh_jobs().latest(kind)
 
-    获取指定股票的 120 日均线数据。
-    该接口耗时较长，建议在非高峰期调用。
 
-    请求参数：
-    - codes: 股票代码列表
+@router.get("/refresh/jobs/{job_id}")
+def get_refresh_job(job_id: str):
+    job = require_refresh_jobs().get(job_id)
+    if job is None:
+        raise HTTPException(404, "刷新任务不存在")
+    return job
 
-    返回：
-    - success: 是否成功
-    - message: 处理结果信息
-    - count: 更新的股票数量
-    """
+
+@router.post("/m120/refresh", status_code=202)
+def refresh_m120_data(body: CodesRequest):
     if data_reader is None or m120_service is None:
-        raise HTTPException(status_code=500, detail="服务未初始化")
-
-    try:
-        codes = [str(c).zfill(6) for c in body.codes]
-
-        logger.info(f"开始刷新 M120 数据，共 {len(codes)} 只股票: {codes[:5]}...")
-
-        # 更新 M120 数据
-        count = m120_service.update_m120_data(codes, show_progress=True)
-
-        return {
-            "success": True,
-            "message": f"M120 数据刷新完成，成功更新 {count} 只股票",
-            "count": count
-        }
-
-    except Exception as e:
-        logger.error(f"刷新 M120 数据失败: {e}")
-        raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
-
-
-# ========== 财务指标刷新接口 ==========
+        raise HTTPException(500, "服务未初始化")
+    manager = require_refresh_jobs()
+    codes = normalize_refresh_codes(body.codes)
+    return accept_job(manager, 'm120', codes,
+                      lambda progress: m120_service.update_m120_data(codes, show_progress=True, on_progress=progress))
 
 
 _financial_fetcher: FinancialFetcher | None = None
 
 
 def get_financial_fetcher() -> FinancialFetcher:
-    """获取或创建 FinancialFetcher 实例"""
+    """Get the existing stateless collector (only one financial job owns writes)."""
     global _financial_fetcher
     if _financial_fetcher is None:
         _financial_fetcher = FinancialFetcher()
@@ -959,8 +970,8 @@ async def get_financial_status():
     }
 
 
-@router.post("/financial/refresh")
-async def refresh_financial_data(
+@router.post("/financial/refresh", status_code=202)
+def refresh_financial_data(
     body: Optional[CodesRequest] = None,
     force: bool = Query(False),
 ):
@@ -968,7 +979,7 @@ async def refresh_financial_data(
     刷新财务指标数据
 
     更新已采集股票池；force=true 会重新采集指定代码或整个股票池。
-    如果某只股票当季度数据还没有，则跳过（返回时会标记为缺失）。
+    接口只受理，逐股采集与分批保存由后台任务负责。
 
     查询参数：
     - force: 是否强制刷新（忽略90天节流）
@@ -977,15 +988,16 @@ async def refresh_financial_data(
     - codes: 股票代码列表（可选，如果不传则刷新所有缺失的股票）
 
     返回：
-    - success: 是否成功
-    - count: 更新的股票数量
-    - missing_count: 缺失数据的股票数量
-    - message: 处理结果信息
+    - HTTP 202: job_id、status、进度计数及 reused
+    - 通过 /refresh/jobs/{job_id} 查询实际完成结果
     """
-    global _financial_fetcher
-
     if data_reader is None or financial_reader is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
+
+    manager = require_refresh_jobs()
+    active = manager.active('financial')
+    if active:
+        return active
 
     fi_path = find_latest_aux_file("财务指标汇总")
     days = days_since_update(fi_path) if fi_path else None
@@ -1020,57 +1032,37 @@ async def refresh_financial_data(
 
                 codes = [c for c in all_codes if c not in existing_codes]
 
-        logger.info(f"开始刷新财务指标数据，共 {len(codes)} 只股票")
+        codes = normalize_refresh_codes(codes)
+        return accept_job(manager, 'financial', codes,
+                          lambda progress: _run_financial_refresh(codes, force, progress), {'force': force})
 
-        # 创建 fetcher 并获取数据（每10个一批保存）
-        fetcher = get_financial_fetcher()
-        _financial_fetcher = fetcher
-
-        # 写入路径：当前季度后缀文件（同季度刷新幂等，跨季度自动新建）
-        write_path = aux_file_path("财务指标汇总")
-
-        # 追加模式保存：读取已存在数据，追加新数据
-        existing_df = pd.DataFrame()
-        if financial_reader.check_exists():
-            existing_df = financial_reader.read_csv()
-
-        def on_batch(df_batch: pd.DataFrame):
-            nonlocal existing_df
-            # 强制刷新：去掉本批新 code 对应的旧行，避免一只股票 2 行
-            if force and not existing_df.empty and "股票代码" in existing_df.columns:
-                new_codes = set(df_batch["股票代码"].astype(str).str.zfill(6))
-                existing_df = existing_df[~existing_df["股票代码"].astype(str).str.zfill(6).isin(new_codes)]
-            existing_df = pd.concat([existing_df, df_batch], ignore_index=True)
-            write_path.parent.mkdir(parents=True, exist_ok=True)
-            existing_df.to_csv(write_path, index=False, encoding="utf-8-sig")
-            logger.info(f"已保存 {len(existing_df)} 条财务指标数据")
-
-        results_df = fetcher.fetch_batch(codes, delay=0.3, show_progress=True, batch_size=10, on_batch=on_batch)
-
-        # 最终保存
-        if not results_df.empty:
-            logger.info(f"财务指标数据已保存到 {write_path}")
-
-        # 检查当季度是否有数据（数据日期不是最新季度则为缺失）
-        current_quarter_date = f"{datetime.now().year}-03-31" if datetime.now().month <= 4 else \
-                               f"{datetime.now().year}-06-30" if datetime.now().month <= 7 else \
-                               f"{datetime.now().year}-09-30" if datetime.now().month <= 10 else \
-                               f"{datetime.now().year}-12-31"
-
-        missing_count = 0
-        if not results_df.empty:
-            missing_count = len(results_df[results_df["数据日期"] != current_quarter_date])
-
-        return {
-            "success": True,
-            "count": len(results_df),
-            "missing_count": missing_count,
-            "message": f"财务指标刷新完成，成功更新 {len(results_df)} 只股票"
-        }
+    except HTTPException:
+        raise
 
     except Exception as e:
         logger.error(f"刷新财务指标数据失败: {e}")
         raise HTTPException(status_code=500, detail=f"刷新失败: {str(e)}")
+
+
+def _run_financial_refresh(codes, force, progress):
+    fetcher = get_financial_fetcher()
+    write_path = aux_file_path("财务指标汇总")
+    existing_df = financial_reader.read_csv(strict=True) if financial_reader.check_exists() else pd.DataFrame()
+
+    def on_batch(df_batch):
+        nonlocal existing_df
+        # Replace any matching code, including explicit non-force refreshes.
+        if not existing_df.empty and "股票代码" in existing_df.columns:
+            new_codes = set(df_batch["股票代码"].astype(str).str.zfill(6))
+            existing_df = existing_df[~existing_df["股票代码"].astype(str).str.zfill(6).isin(new_codes)]
+        merged = pd.concat([existing_df, df_batch], ignore_index=True)
+        merged["股票代码"] = merged["股票代码"].astype(str).str.zfill(6)
+        merged = merged.drop_duplicates("股票代码", keep="last")
+        atomic_csv(merged, write_path)
+        existing_df = merged
+
+    fetcher.fetch_batch(codes, delay=0.3, show_progress=True, batch_size=10,
+                        on_batch=on_batch, on_progress=progress)
 
 
 # ========== 股东户数刷新接口 ==========

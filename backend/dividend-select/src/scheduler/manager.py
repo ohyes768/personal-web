@@ -274,6 +274,9 @@ class SchedulerManager:
                 count=result.get("count"),
                 reason=result.get("reason"),
                 error=result.get("error"),
+                refresh_job_id=result.get("refresh_job_id"),
+                failed=result.get("failed"),
+                remaining=result.get("remaining"),
             )
             await self._history.append(record)
             logger.info(

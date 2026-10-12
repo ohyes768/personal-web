@@ -25,6 +25,8 @@ export interface SchedulerSettingsModalProps {
 }
 
 const STATUS_META: Record<SchedulerJobRun['status'], { label: string; cls: string }> = {
+  partial_failed: { label: '部分失败', cls: 'bg-yellow-900/50 text-yellow-300 border-yellow-700' },
+  interrupted: { label: '已中断', cls: 'bg-red-900/50 text-red-300 border-red-700' },
   success: { label: '成功', cls: 'bg-green-900/50 text-green-300 border-green-700' },
   skipped: { label: '跳过', cls: 'bg-yellow-900/50 text-yellow-300 border-yellow-700' },
   failed: { label: '失败', cls: 'bg-red-900/50 text-red-300 border-red-700' },
@@ -341,6 +343,7 @@ function JobCard({
                   {r.count != null && (
                     <span className="text-gray-300">{r.count} 只</span>
                   )}
+                  {r.failed != null && <span className="text-amber-300">失败 {r.failed}，未处理 {r.remaining ?? 0}</span>}
                   {r.reason && (
                     <span className="text-gray-500">({r.reason})</span>
                   )}

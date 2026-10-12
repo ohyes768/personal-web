@@ -4,6 +4,8 @@
  */
 'use client';
 
+import { RefreshJobProgress } from '@/components/RefreshJobProgress';
+
 import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -479,7 +481,13 @@ function DividendPageContent() {
   const compare = useCompare(MAX_COMPARE_SELECT);
 
   // 数据更新功能
-  const { state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard, indexResults, indexRefreshing, refreshIndexHoldings, holdingsStatus } = useDataUpdate();
+  const { refreshJobs, state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard, indexResults, indexRefreshing, refreshIndexHoldings, holdingsStatus } = useDataUpdate();
+  useEffect(() => {
+    if (!refreshJobs.revision) return;
+    setRefreshKey(k => k + 1);
+    void refetch({ min_yield: parseFloat(minYieldInput) || 0, sort_by: 'avg_yield_3y', sort_order: 'desc' });
+  }, [refreshJobs.revision, refetch]);
+
 
   // 收藏（watchlist）
   const watchlist = useWatchlist();
@@ -802,6 +810,7 @@ function DividendPageContent() {
                                           {item.sub}
                                           {item.status?.quarter ? ` · ${item.status.quarter}` : ''}
                                         </div>
+                                        {item.key === 'financial' && <RefreshJobProgress job={refreshJobs.jobs.financial} error={refreshJobs.errors.financial} onRetry={codes => { void updateFinancial(codes, true); }} />}
                                         {isLoading && (
                                           <div className="absolute bottom-0 left-0 right-0 h-[2px] overflow-hidden">
                                             <div
@@ -857,6 +866,7 @@ function DividendPageContent() {
               </div>
             </UpdateTaskRow>
 
+            <RefreshJobProgress job={refreshJobs.jobs.m120} error={refreshJobs.errors.m120} onRetry={codes => { void updateM120(codes); }} />
             <UpdateTaskRow
               label="M120 均线"
               tone={updateState.m120 === 'loading' ? 'loading' : m120NeedsUpdate ? 'pending' : 'ok'}
@@ -873,8 +883,7 @@ function DividendPageContent() {
               onAction={() => {
                 // 优先传 missing_codes（增量补缺），没有缺失才传全集
                 const codesToUpdate = m120MissingCodes.length > 0 ? m120MissingCodes : stockCodes;
-                updateM120(codesToUpdate);
-                setRefreshKey(k => k + 1);
+                void updateM120(codesToUpdate);
               }}
               actionDisabled={!m120NeedsUpdate || updateState.m120 === 'loading'}
             />
@@ -1026,7 +1035,7 @@ function DividendPageContent() {
       )}
 
       {/* 表格 - 使用 refreshKey 作为 key 强制刷新；all+favOnly 用过滤后的 displayData */}
-      {activeTab === 'screening' ? <ScreeningTab watchlist={watchlist} /> : activeTab === 'alerts' ? (
+      {activeTab === 'screening' ? <ScreeningTab watchlist={watchlist} refreshRevision={refreshJobs.revision} /> : activeTab === 'alerts' ? (
         <div className="space-y-2">
           {alertStocks.length === 0 ? (
             <div className="bg-paper-card rounded-lg p-12 text-center">

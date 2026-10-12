@@ -1,3 +1,4 @@
+import { useRefreshJobs, isRefreshActive } from './hooks/useRefreshJobs';
 /**
  * 股息率模块自定义 Hooks
  * 封装组件中可复用的状态逻辑
@@ -566,6 +567,11 @@ export function useDataUpdate() {
     setBoardMissingCodes(boardStatus?.missing_codes || []);
   }, []);
 
+  const refreshJobs = useRefreshJobs((kind) => {
+    if (kind === 'm120') void checkM120Status();
+    else { void checkFinancialStatus(); void checkAuxStatus(); }
+  });
+
   // 初始化时检查状态
   useEffect(() => {
     checkM120Status();
@@ -651,16 +657,15 @@ export function useDataUpdate() {
     setState(prev => ({ ...prev, m120: 'loading', message: undefined }));
     try {
       const result = await dividendUpdateApi.refreshM120(codes);
-      setState(prev => ({ ...prev, m120: 'success', message: result.message }));
-      // 更新成功后重新检查状态
-      await checkM120Status();
+      refreshJobs.accept(result);
+      setState(prev => ({ ...prev, m120: 'idle' }));
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : '更新失败';
       setState(prev => ({ ...prev, m120: 'error', message }));
       return false;
     }
-  }, []);
+  }, [refreshJobs.accept]);
 
   /**
    * 更新实时价格
@@ -685,20 +690,15 @@ export function useDataUpdate() {
     setState(prev => ({ ...prev, financial: 'loading', message: undefined }));
     try {
       const result = await dividendUpdateApi.refreshFinancial(codes, force);
-      setState(prev => ({
-        ...prev,
-        financial: 'success',
-        message: result.message,
-      }));
-      // 更新完成后重新检查状态
-      await checkFinancialStatus();
+      refreshJobs.accept(result);
+      setState(prev => ({ ...prev, financial: 'idle' }));
       return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : '更新失败';
       setState(prev => ({ ...prev, financial: 'error', message }));
       return false;
     }
-  }, [checkFinancialStatus]);
+  }, [refreshJobs.accept]);
 
   /**
    * 更新申万行业数据
@@ -766,7 +766,12 @@ export function useDataUpdate() {
   }, [checkAuxStatus]);
 
   return {
-    state,
+    state: {
+      ...state,
+      m120: isRefreshActive(refreshJobs.jobs.m120) ? 'loading' as const : state.m120,
+      financial: isRefreshActive(refreshJobs.jobs.financial) ? 'loading' as const : state.financial,
+    },
+    refreshJobs,
     m120NeedsUpdate,
     m120MissingCodes,
     dividendNeedsUpdate,
