@@ -985,3 +985,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 27: M120 与调度器关闭提交收尾
+
+**Date**: 2026-10-12
+**Task**: M120 与调度器关闭提交收尾
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+确认两个修复已提交，复核后端全量226通过3跳过，归档M120跨周读取与周六调度及调度器优雅关闭任务；当前部署不涉及n8n。未部署，保留其他任务改动。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7f9b2ee` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
