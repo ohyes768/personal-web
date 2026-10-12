@@ -101,8 +101,10 @@ def normalize_auction(data, communities):
         raise RuntimeError("missing auction identity")
     title = plain_text(data.get("object_title"))
     address = plain_text(data.get("object_address")) or title
+    # 地址写法不规范（如"XX小区"不含"滨江区"全称）是单条数据质量问题：
+    # 跳过该标的即可，不能终止整个采集任务。
     if not title or ("区" in address and "滨江区" not in address):
-        raise RuntimeError("auction address conflicts with district")
+        return None
     status = data.get("auction_status")
     known = {"todo", "doing", "done", "pause", "failure", "break", "revocation", "debt"}
     status = status if isinstance(status, str) and status in known else "unknown"

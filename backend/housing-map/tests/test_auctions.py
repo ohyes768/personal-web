@@ -46,6 +46,13 @@ def test_normalize_price_area_and_private_data():
     assert normalize_auction({**detail(), "area_code": 330106}, []) is None
 
 
+def test_conflicting_address_skips_record_instead_of_aborting():
+    # 地址含"区"但无"滨江区"全称（法院自由文本，如"XX小区"的"区"）:
+    # 该标的应被跳过（return None），此前 raise 会终止整个采集任务。
+    assert normalize_auction({**detail(), "object_title": "康悦名郡小区3幢302室",
+                              "object_address": "杭州市西兴街道康悦名郡小区"}, []) is None
+
+
 def test_collect_paginates_filters_and_keeps_old_rounds(tmp_path):
     path = tmp_path / "records.json"
     pages = [{"count": 3, "list": [{"auction_id": 1, "area_code": 330108}, {"auction_id": 2, "area_code": 330106}]},
