@@ -34,17 +34,33 @@ def community_history(community_id: str, period: Literal['12m', '24m', 'all'] = 
 
 @router.get("/auctions")
 def list_auctions(page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100),
-                  status: str | None = None, community_id: str | None = None):
+                  status: str | None = None, community_id: str | None = None,
+                  q: str = Query('', max_length=200),
+                  association: Literal['all', 'matched', 'unmatched'] = 'all'):
     try:
         store = read_store(AUCTION_PATH)
+        communities = auction_history.load_communities()
+        mappings = auction_history.load_mappings(auction_history.MAPPING_PATH, communities)
+        rows = auction_history.associate_records(store['records'], communities, mappings, keep_unmatched=True)
     except (ValueError, OSError) as exc:
         raise HTTPException(503, "auction store unavailable") from exc
-    rows = [r for r in store["records"] if (status is None or r["status"] == status)
-            and (community_id is None or r.get("community_id") == community_id)]
-    rows.sort(key=lambda r: (r.get("end_at") or "", r["auction_id"]), reverse=True)
+    names = {str(c['community_id']): c['community_name'] for c in communities}
+    overall_total = len(rows)
+    keyword = q.strip().casefold()
+    for row in rows:
+        row['community_display_name'] = names.get(row['community_id'])
+        row['association_status'] = 'matched' if row['community_id'] else 'unmatched'
+    rows = [r for r in rows if (status is None or r['status'] == status)
+            and (community_id is None or r['community_id'] == community_id)
+            and (association == 'all' or r['association_status'] == association)
+            and (not keyword or any(keyword in str(r.get(k) or '').casefold()
+                 for k in ('title', 'address', 'community_name', 'community_display_name')))]
+    rows.sort(key=lambda r: ((auction_history.parse_date(r.get('end_at')).timestamp()
+                             if auction_history.parse_date(r.get('end_at')) else float('-inf')),
+                            r['source'], r['auction_id']), reverse=True)
     start = (page - 1) * page_size
     return {"success": True, "data": {"records": rows[start:start + page_size], "total": len(rows),
-            "page": page, "page_size": page_size, "last_run": store.get("last_run"),
+            "overall_total": overall_total, "page": page, "page_size": page_size, "last_run": store.get("last_run"),
             "available": AUCTION_PATH.exists(), "source": "laipai"}}
 
 

@@ -3,19 +3,19 @@
 import { useEffect, useState } from 'react';
 import { fetchAuctionData, type AuctionHistory, type AuctionPeriod, type AuctionAreaBand, type AuctionRecord } from '../../lib/auction-types';
 
-const riskLabels: Record<string, string> = {
+export const riskLabels: Record<string, string> = {
   is_empty: '腾空情况', rent_desc: '租赁情况', transfer_desc: '过户情况',
   other_fee_desc: '欠费及其他事实', tax_desc: '税费情况',
 };
 const areaSources: Record<string, string> = { structured: '结构化建筑面积', investigation_table: '调查表建筑面积', announcement: '公告建筑面积' };
-const statuses: Record<string, string> = { done: '来源标记成交', failure: '流拍', todo: '待开拍', doing: '在拍', pause: '暂停', break: '中止', revocation: '撤回', debt: '抵债' };
-function date(value?: string | null) {
+export const statuses: Record<string, string> = { done: '来源标记成交', failure: '流拍', todo: '待开拍', doing: '在拍', pause: '暂停', break: '中止', revocation: '撤回', debt: '抵债' };
+export function date(value?: string | null) {
   if (!value) return '未知';
   const parsed = new Date(value.includes('T') ? value : `${value.replace(' ', 'T')}${value.length > 10 ? '+08:00' : 'T00:00:00+08:00'}`);
   return Number.isNaN(parsed.getTime()) ? '未知' : parsed.toLocaleDateString('zh-CN', { timeZone: 'Asia/Shanghai' });
 }
-function amount(value?: number | null) { return value == null ? '暂无' : `${(value / 10000).toFixed(2)}万`; }
-function SafeLink({ url, children }: { url?: string | null; children: React.ReactNode }) {
+export function amount(value?: number | null) { return value == null ? '暂无' : `${(value / 10000).toFixed(2)}万`; }
+export function SafeLink({ url, children }: { url?: string | null; children: React.ReactNode }) {
   let safe = false;
   try {
     safe = Boolean(url && ['http:', 'https:'].includes(new URL(url).protocol));

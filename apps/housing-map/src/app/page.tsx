@@ -6,6 +6,7 @@ import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, SCH
 import { isInScope } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
 import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
+import AuctionDataList from '@/components/auction/AuctionDataList';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 
 // 从 API 获取小区数据
@@ -227,7 +228,9 @@ export default function BinjiangMapPage() {
       .catch(() => {});
     return () => controller.abort();
   }, []);
-  const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market' | 'auction'>('map');
+  const [auctionRefreshVersion, setAuctionRefreshVersion] = useState(0);
+  const [auctionMapError, setAuctionMapError] = useState<string | null>(null);
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   // 数据看板"查看"触发的地图定位信号 (key 用时间戳, 同一小区重复点击也能再次触发)
   const [mapFocus, setMapFocus] = useState<{ lng: number; lat: number; key: number } | null>(null);
@@ -378,7 +381,10 @@ export default function BinjiangMapPage() {
         setAuctionRefreshState({
           running: j.running, phase: j.phase, processed: j.processed, matched: j.matched, error: j.error,
         });
-        if (j.phase === 'done') loadAuctionCounts();
+        if (j.phase === 'done') {
+          loadAuctionCounts();
+          setAuctionRefreshVersion(v => v + 1);
+        }
       } catch { /* 网络抖动, 下个周期重试 */ }
     }, 3000);
     return () => clearInterval(timer);
@@ -513,11 +519,31 @@ export default function BinjiangMapPage() {
           <button className={`tab-btn ${activeTab === 'market' ? 'active' : ''}`} onClick={() => setActiveTab('market')}>
             市场行情
           </button>
+          <button className={`tab-btn ${activeTab === 'auction' ? 'active' : ''}`} onClick={() => setActiveTab('auction')}>
+            法拍数据
+          </button>
         </div>
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-        {activeTab === 'market' ? (
+        {activeTab === 'auction' ? (
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {auctionMapError && <p role="alert" className="auction-note">{auctionMapError}</p>}
+            <AuctionDataList refreshVersion={auctionRefreshVersion} onView={(id) => {
+              const community = communities.find(c => String(c.community_id) === id);
+              if (!community) { setAuctionMapError('该小区暂未在地图名录中，仍可查看法拍记录。'); return; }
+              setAuctionMapError(null);
+              setSearchQuery('');
+              setDistrictFilter('all');
+              setPropertyTypes(new Set(['全部']));
+              setMarketSubdistrict(null);
+              setCameFromDashboard(false);
+              setSelectedCommunity(community);
+              setActiveTab('map');
+              if (community.latitude && community.longitude) setMapFocus({ lng: community.longitude, lat: community.latitude, key: Date.now() });
+            }} />
+          </div>
+        ) : activeTab === 'market' ? (
           <MarketOverviewPage
             marketReference={marketReference}
             onViewSubdistrict={(subdistrict) => {
@@ -1090,7 +1116,7 @@ function AppHeader({
           {auctionRefreshState?.running && (
             <span style={{ marginLeft: '8px', color: 'var(--accent-warm)' }}
               title={`已扫描 ${auctionRefreshState.processed} 条`}>
-              法拍采集中 命中 {auctionRefreshState.matched} 套…
+              法拍采集中 本次命中 {auctionRefreshState.matched} 条…
             </span>
           )}
           {auctionRefreshState && !auctionRefreshState.running && auctionRefreshState.phase === 'done' && (

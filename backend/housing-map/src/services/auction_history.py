@@ -52,7 +52,7 @@ def load_mappings(path, communities):
     return result
 
 
-def associate_records(rows, communities, mappings):
+def associate_records(rows, communities, mappings, *, keep_unmatched=False):
     names = community_name_index(communities)
     associated = []
     for row in rows:
@@ -62,7 +62,7 @@ def associate_records(rows, communities, mappings):
         if not cid:
             matches = names.get(row.get('community_name'), set())
             cid = next(iter(matches)) if len(matches) == 1 else None
-        if cid:
+        if cid or keep_unmatched:
             associated.append({**row, 'community_id': cid})
     return associated
 

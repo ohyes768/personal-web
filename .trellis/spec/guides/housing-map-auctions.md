@@ -26,3 +26,28 @@
 - GET /api/auctions/community-summary批量counts；GET /api/communities/{id}/auction-history返回stats/records/total/page/as_of/available/last_run。404未知小区、422参数、503坏数据。前端路径仍/api/map。
 - 页面独立详情页签，打开才请求，AbortController及请求key阻止旧响应覆盖；切小区以community_id重挂载。地图一次批量请求，失败不影响普通地图；风险按文本、外链仅http(s)。
 - 检查：tests/test_auction_history.py；前端node --test tests/auction-history.test.cjs、pnpm lint/build。真实样本454711→10001742：476万元/149.3㎡=31882元/㎡，样本1、非全量。
+
+## 法拍数据列表（2026-10-12）
+
+### Scope / Trigger
+修改独立法拍列表、筛选、计数或地图联动时适用。
+
+### Signatures
+GET /api/auctions?page=1&page_size=20&status=todo&community_id=ID&q=关键词&association=all；前端/api/map/auctions。
+
+### Contracts
+association为all/matched/unmatched，q最多200字、去首尾空格后不区分大小写匹配标题/地址/来源及关联小区名。响应新增overall_total（累计轮次条数）、记录community_display_name/association_status；total为筛选后条数。查询时按历史规则重算community_id，keep_unmatched=True保留未关联记录；不修改存储。有效结束时间降序，无效排末尾，source+auction_id稳定排序；先过滤后分页。
+列表成交价仅done+正值显示，缺值不转0。成功采集驱动列表/汇总刷新，失败取消不清空。列表小区定位使用完整名录并清除遮蔽目标的地图条件。
+
+### Validation & Error Matrix
+非法association、q超过200字或非法页码→422；存储或映射坏数据→503；未采集→available=false；筛选空→total=0但overall_total保留。
+
+### Good / Base / Bad Cases
+Good：人工映射修改即时体现在列表和历史；Base：未关联照常展示，无地图按钮；Bad：坏映射报503，禁止回退旧community_id。
+
+### Tests Required
+test_auction_list.py断言未关联保留、映射即时生效、组合过滤分页及累计计数/参数错误；auction-list.test.cjs断言非成交隐藏成交价、缺面积、纯文本、安全外链和空状态。回归历史聚合测试及地图定位。
+
+### Wrong vs Correct
+Wrong：把matched称为去重房产套数，或用历史成交过滤器生成全局列表。
+Correct：本次命中N条、累计N条拍卖记录；列表保留轮次和非成交记录，地图按既有有效成交房产规则去重。
