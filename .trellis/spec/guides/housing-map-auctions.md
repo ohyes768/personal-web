@@ -15,3 +15,14 @@
 - 测试：tests/test_auctions.py，Windows pytest --basetemp=.pytest-tmp-auction。无浏览器依赖，复用curl_cffi；定时采集未接入scheduler。
 
 说明：backend/housing-map/docs/auctions.md。实测2026-10-09：CLI和API均限量采集3条；454711成交价4760000、面积149.3。分页列表会变化，complete只代表当前遍历完成，不保证区域全量覆盖。
+
+## 小区历史成交查询（2026-10-12）
+
+- auction_history.py 查询时重算关联：与采集共用community_name_index，唯一精确名称/别名才自动匹配；显式映射按source+asset_id优先，其次source+auction_id。不信任旧community_id替代名称证据。
+- auction_community_mappings.json受版本管理（version=1、mappings数组），每条只允许一个身份字段；非法小区ID/重复键报503，缺文件视为空配置。修改后历史记录即时生效。
+- 先全局按source+asset_id取最近有效done成交，再筛选community_id和日期/面积，防止小区归属变化造成汇总和详情不一致。缺asset_id按auction_id退化，并标识无法跨轮次去重；不按地址合并。
+- period=12m/24m/all，默认12m；上海时区，向前日历月截断月底，排除无效/未来日期。面积档lt90/90to144/gte144分别<90、[90,144)、>=144；all保留缺面积房源。
+- 单价由正成交总价/正有限建筑面积重算，中位数用未取整数值，偶数取中间均值，展示ROUND_HALF_UP。缺面积不计单价样本，但计成交房源；统计不受分页影响。
+- GET /api/auctions/community-summary批量counts；GET /api/communities/{id}/auction-history返回stats/records/total/page/as_of/available/last_run。404未知小区、422参数、503坏数据。前端路径仍/api/map。
+- 页面独立详情页签，打开才请求，AbortController及请求key阻止旧响应覆盖；切小区以community_id重挂载。地图一次批量请求，失败不影响普通地图；风险按文本、外链仅http(s)。
+- 检查：tests/test_auction_history.py；前端node --test tests/auction-history.test.cjs、pnpm lint/build。真实样本454711→10001742：476万元/149.3㎡=31882元/㎡，样本1、非全量。

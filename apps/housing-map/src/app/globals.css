@@ -1005,3 +1005,44 @@ body {
   .market-card { min-height: 118px; }
   .market-map-filter { top: 62px; max-width: calc(100% - 32px); }
 }
+
+/* 法拍成交：价格、样本与来源分层展示 */
+.community-detail-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--border); margin: 18px 0; }
+.community-detail-tabs button { padding: 10px 0; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; font-weight: 600; }
+.community-detail-tabs button[aria-selected=true] { color: var(--text-primary); border-color: #2c6c69; }
+.community-detail-tabs button span { margin-left: 7px; padding: 2px 6px; border-radius: 4px; background: #e7f1ef; color: #285d59; font-size: 11px; }
+.auction-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.auction-filters label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 150px; }
+.auction-filters select { width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+.auction-stats { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; padding: 20px 0 14px; border-top: 2px solid #2c6c69; }
+.auction-stats > div { display: grid; gap: 8px; }
+.auction-stats span { color: var(--text-muted); font-size: 12px; }
+.auction-stats strong { font-size: 29px; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.auction-median strong { color: #285d59; }
+.auction-stats small { font-size: 12px; font-weight: 400; margin-left: 5px; letter-spacing: 0; }
+.auction-meta { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin: 8px 0; }
+.auction-note { border-left: 3px solid #b58b3a; padding: 8px 10px; background: #faf5e9; color: #745728; font-size: 12px; line-height: 1.6; margin: 12px 0; }
+.auction-disclosure { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+.auction-record { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 18px; }
+.auction-record-heading { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; }
+.auction-record-heading h4 { margin: 0; font-size: 14px; line-height: 1.7; }
+.auction-record-heading > span { white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.auction-record-price { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; margin-top: 8px; }
+.auction-record-price strong { font-size: 23px; font-variant-numeric: tabular-nums; }
+.auction-record-price small { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.auction-record-price > span { font-size: 13px; color: #285d59; }
+.auction-record summary { cursor: pointer; font-size: 12px; padding: 8px 0; color: #285d59; }
+.auction-facts { font-size: 12px; margin: 8px 0; }
+.auction-facts > div { display: grid; grid-template-columns: 95px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.auction-facts dt { color: var(--text-muted); }
+.auction-facts dd { margin: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.auction-rounds { padding-left: 20px; font-size: 12px; line-height: 1.9; }
+.auction-links { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12px; }
+.auction-links a { color: #285d59; text-decoration: underline; text-underline-offset: 3px; }
+.auction-empty { padding: 32px 0; color: var(--text-muted); text-align: center; font-size: 13px; }
+.auction-pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; font-size: 12px; }
+.auction-pagination button, .auction-empty button { padding: 7px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-surface); cursor: pointer; }
+.auction-pagination button:disabled { opacity: .4; cursor: default; }
+.auction-map-badge { display: block; font-size: 11px; margin-top: 6px; color: #285d59; }
+.community-detail-tabs button:focus-visible, .auction-history summary:focus-visible { outline: 2px solid #2c6c69; outline-offset: 3px; }
+@media (max-width: 480px) { .auction-stats strong { font-size: 25px; } .auction-facts > div { grid-template-columns: 80px minmax(0, 1fr); } }

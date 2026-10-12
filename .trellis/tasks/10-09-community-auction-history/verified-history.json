@@ -1,0 +1,101 @@
+{
+  "community_id": "10001742",
+  "as_of": "2026-10-12T11:19:36.845294+08:00",
+  "period": "12m",
+  "area_band": "all",
+  "stats": {
+    "deal_property_count": 1,
+    "unit_price_sample_count": 1,
+    "median_unit_price_yuan": 31882,
+    "min_unit_price_yuan": 31882,
+    "max_unit_price_yuan": 31882,
+    "latest_end_at": "2026-09-29T10:37:33+08:00",
+    "sample_warning": "参考样本较少"
+  },
+  "records": [
+    {
+      "source": "laipai",
+      "auction_id": "454711",
+      "asset_id": "440291",
+      "title": "杭州市滨江区长河街道倾城之恋花园19幢1单元1901室",
+      "address": "杭州市滨江区长河街道倾城之恋花园",
+      "district": "滨江区",
+      "property_use": "residence",
+      "community_name": "倾城之恋",
+      "community_id": "10001742",
+      "match_confidence": 0,
+      "status": "done",
+      "source_status": "done",
+      "round": 2,
+      "start_price_yuan": 3680000,
+      "appraisal_price_yuan": 6290000,
+      "deal_price_yuan": 4760000,
+      "area_m2": 149.3,
+      "area_source": "investigation_table",
+      "deal_unit_price": 31882,
+      "start_at": "2026-09-28 10:00:00",
+      "end_at": "2026-09-29T10:37:33+08:00",
+      "court": "杭州市西湖区人民法院",
+      "auction_platform": "taobao",
+      "original_url": "https://sf-item.taobao.com/sf_item/1081604286800.htm?spm=a213w.7398554.paiList.1.1e0925dd3x3VbI",
+      "source_url": "https://www.laipaiya.com/entrust_detail/454711",
+      "risk_notes": {
+        "is_empty": "已腾空，买受人缴纳尾款后一个月内办证，办证后一个月内交付房产",
+        "rent_desc": "否",
+        "other_fee_desc": "欠缴2026年01月至2026年05月物业管理费共计人民币1866.25元，欠缴2024年11月至2026年05月公共能耗费共计人民币446.52元。其他费用请竞买人自行了解。此次拍卖不包含车库、车位。"
+      },
+      "captured_at": "2026-10-12T03:19:36+00:00",
+      "identity_warning": null,
+      "rounds": [
+        {
+          "source": "laipai",
+          "auction_id": "454711",
+          "asset_id": "440291",
+          "title": "杭州市滨江区长河街道倾城之恋花园19幢1单元1901室",
+          "address": "杭州市滨江区长河街道倾城之恋花园",
+          "district": "滨江区",
+          "property_use": "residence",
+          "community_name": "倾城之恋",
+          "community_id": "10001742",
+          "match_confidence": 0,
+          "status": "done",
+          "source_status": "done",
+          "round": 2,
+          "start_price_yuan": 3680000,
+          "appraisal_price_yuan": 6290000,
+          "deal_price_yuan": 4760000,
+          "area_m2": 149.3,
+          "area_source": "investigation_table",
+          "deal_unit_price": 31882,
+          "start_at": "2026-09-28 10:00:00",
+          "end_at": "2026-09-29 10:37:33",
+          "court": "杭州市西湖区人民法院",
+          "auction_platform": "taobao",
+          "original_url": "https://sf-item.taobao.com/sf_item/1081604286800.htm?spm=a213w.7398554.paiList.1.1e0925dd3x3VbI",
+          "source_url": "https://www.laipaiya.com/entrust_detail/454711",
+          "risk_notes": {
+            "is_empty": "已腾空，买受人缴纳尾款后一个月内办证，办证后一个月内交付房产",
+            "rent_desc": "否",
+            "other_fee_desc": "欠缴2026年01月至2026年05月物业管理费共计人民币1866.25元，欠缴2024年11月至2026年05月公共能耗费共计人民币446.52元。其他费用请竞买人自行了解。此次拍卖不包含车库、车位。"
+          },
+          "captured_at": "2026-10-12T03:19:36+00:00"
+        }
+      ]
+    }
+  ],
+  "total": 1,
+  "page": 1,
+  "page_size": 20,
+  "available": true,
+  "last_run": {
+    "complete": false,
+    "pages": 0,
+    "processed": 1,
+    "matched": 1,
+    "saved": 1,
+    "finished_at": "2026-10-12T03:19:36+00:00",
+    "dry_run": false,
+    "scope": "单条已知成交详情复核，非列表遍历"
+  },
+  "source": "laipai"
+}

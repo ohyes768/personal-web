@@ -82,6 +82,18 @@ def plain_text(value):
     return re.sub(r"\s+", " ", html.unescape(re.sub(r"<[^>]+>", " ", str(value or "")))).strip()
 
 
+def community_name_index(communities):
+    """采集与历史查询共用唯一精确名称/别名匹配。"""
+    names = {}
+    for community in communities:
+        if not community.get('community_id'):
+            continue
+        for field in ('community_name', 'community_alias'):
+            if community.get(field):
+                names.setdefault(community[field], set()).add(str(community['community_id']))
+    return names
+
+
 def normalize_auction(data, communities):
     if str(data.get("area_code")) != str(BINJIANG_CODE) or data.get("second_class") != "residence":
         return None
@@ -113,11 +125,7 @@ def normalize_auction(data, communities):
         area = positive_number(match.group(1)) if match else None
         area_source = "announcement" if area else None
     name = plain_text(data.get("cell_name"))
-    matches = set()
-    for community in communities:
-        names = {community.get("community_name"), community.get("community_alias")}
-        if name and name in names and community.get("community_id"):
-            matches.add(str(community["community_id"]))
+    matches = community_name_index(communities).get(name, set())
     community_id = next(iter(matches)) if len(matches) == 1 else None
     deal_price = money(data.get("deal_price")) if status == "done" else None
     url = data.get("from_where_url")

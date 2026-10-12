@@ -1054,3 +1054,35 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 29: 小区历史法拍成交集成
+
+**Date**: 2026-10-12
+**Task**: 小区历史法拍成交集成
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+实现查询时小区匹配、房源去重统计、详情法拍页签及地图数量；真实454711记录链路和390px移动端验收通过。后端127项通过（排除其他工作流尚缺模块的租房测试），前端2项展示测试及lint/typecheck/build通过。未提交部署，未新增定时任务。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

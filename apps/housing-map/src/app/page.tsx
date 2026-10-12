@@ -5,6 +5,8 @@ import type { Community, MapPOI, MarketReference, SchoolLevel } from '@/lib/type
 import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
 import { isInScope } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
+import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
+import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 
 // 从 API 获取小区数据
 async function fetchCommunities(): Promise<Community[]> {
@@ -57,9 +59,11 @@ function fmtCompact(value: number | null): string {
 function CommunityPopup({
   community,
   onClose,
+  auctionCount,
 }: {
   community: Community;
   onClose: () => void;
+  auctionCount?: number;
 }) {
   const poiGroups = community.pois.reduce((acc, poi) => {
     const type = poi.type as POIType;
@@ -102,6 +106,8 @@ function CommunityPopup({
         <button className="close-btn" onClick={onClose}>×</button>
       </div>
 
+      <CommunityDetailTabs communityId={community.community_id} auctionCount={auctionCount}>
+      <p className="auction-meta">普通房价快照：{community.price.snapshot_date || '未知'} · 均价单位：元/㎡</p>
       {/* 房价 4 项: 一行紧凑数字条 */}
       <div className="popup-price-row">
         <div className="stat-cell">
@@ -200,12 +206,21 @@ function CommunityPopup({
           暂无周边设施数据
         </div>
       )}
+      </CommunityDetailTabs>
     </div>
   );
 }
 
 // 主页面组件
 export default function BinjiangMapPage() {
+  const [auctionCounts, setAuctionCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchAuctionData<AuctionSummary>('auctions/community-summary', controller.signal)
+      .then(data => { if (!controller.signal.aborted) setAuctionCounts(data.counts); })
+      .catch(() => {});
+    return () => controller.abort();
+  }, []);
   const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market'>('map');
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
   // 数据看板"查看"触发的地图定位信号 (key 用时间戳, 同一小区重复点击也能再次触发)
@@ -532,6 +547,7 @@ export default function BinjiangMapPage() {
                 selectedCommunity={selectedCommunity}
                 focus={mapFocus}
                 priceMode={priceMode}
+                auctionCounts={auctionCounts}
               />
             )}
 
@@ -675,6 +691,7 @@ export default function BinjiangMapPage() {
               <CommunityPopup
                 key={selectedCommunity.community_id}
                 community={selectedCommunity}
+                auctionCount={auctionCounts[selectedCommunity.community_id]}
                 onClose={() => setSelectedCommunity(null)}
               />
             )}

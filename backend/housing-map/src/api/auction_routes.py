@@ -1,11 +1,35 @@
 """独立法拍查询及手动刷新路由。"""
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
+from typing import Literal
 
 from src.services import auction_refresh
+from src.services import auction_history
 from src.services.auction_store import AUCTION_PATH, read_store
 
 router = APIRouter(tags=["auctions"])
+
+
+@router.get('/auctions/community-summary')
+def community_summary():
+    try:
+        return {'success': True, 'data': auction_history.get_summary()}
+    except (ValueError, OSError) as exc:
+        raise HTTPException(503, 'auction history unavailable') from exc
+
+
+@router.get('/communities/{community_id}/auction-history')
+def community_history(community_id: str, period: Literal['12m', '24m', 'all'] = '12m',
+                      area_band: Literal['all', 'lt90', '90to144', 'gte144'] = 'all',
+                      page: int = Query(1, ge=1), page_size: int = Query(20, ge=1, le=100)):
+    try:
+        data = auction_history.get_history(community_id, period=period, area_band=area_band,
+                                           page=page, page_size=page_size)
+        return {'success': True, 'data': data}
+    except KeyError as exc:
+        raise HTTPException(404, 'community not found') from exc
+    except (ValueError, OSError) as exc:
+        raise HTTPException(503, 'auction history unavailable') from exc
 
 
 @router.get("/auctions")

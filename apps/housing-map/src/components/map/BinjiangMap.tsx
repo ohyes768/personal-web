@@ -20,6 +20,7 @@ export interface TransitStop {
 }
 
 interface BinjiangMapProps {
+  auctionCounts?: Record<string, number>;
   communities: Community[];
   pois?: MapPOI[];
   transit?: { routes: TransitRoute[]; stops: TransitStop[] };
@@ -148,7 +149,7 @@ declare global {
   }
 }
 
-export default function BinjiangMap({ communities, pois, transit, onCommunityClick, selectedCommunity, focus, priceMode = 'all' }: BinjiangMapProps) {
+export default function BinjiangMap({ communities, pois, transit, onCommunityClick, selectedCommunity, focus, priceMode = 'all', auctionCounts }: BinjiangMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<AMapMap | null>(null);
   const markersRef = useRef<AMapMarker[]>([]);
@@ -262,6 +263,13 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         ? `${price.toLocaleString()} 元/㎡<span class="tt-tag">${priceTag}</span>`
         : '暂无价格';
       el.innerHTML = `<span class="tt-name">${community.community_name}</span><span class="tt-price">${priceHtml}</span>`;
+      const count = auctionCounts?.[community.community_id];
+      if (count) {
+        const badge = document.createElement('span');
+        badge.className = 'auction-map-badge';
+        badge.textContent = `历史法拍成交${count}套`;
+        el.appendChild(badge);
+      }
       el.style.display = 'block';
       if (pixel) moveTooltip(pixel);
     };
@@ -354,7 +362,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         markersRef.current.push(questionMark);
       }
     });
-  }, [communities, mapLoaded, onCommunityClick, priceMode]);
+  }, [communities, mapLoaded, onCommunityClick, priceMode, auctionCounts]);
 
   // 地铁路线 + 地铁站 (在小区轮廓之下)
   useEffect(() => {

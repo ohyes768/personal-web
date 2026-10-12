@@ -3,7 +3,7 @@
   "name": "community-auction-history",
   "title": "小区历史法拍成交价格参考",
   "description": "小区详情展示历史法拍成交统计、房源记录及风险事实，支持可靠关联和去重",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "fullstack",
   "scope": "community-auction-history",
   "package": "housing-map",
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "2026-10-12实现与验收完成；后端127项（排除并行租房缺模块测试）、前端2项+lint/typecheck/build通过。真实454711→10001742链路、移动端、错误重试验收。未提交/部署，保留in_progress待提交收尾。",
   "meta": {}
 }

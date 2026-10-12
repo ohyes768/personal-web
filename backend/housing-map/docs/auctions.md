@@ -42,3 +42,14 @@ area_m2为建筑面积，依次取结构字段、调查表、公告中的明确�
 公开前端确认BASE=https://api.faeping.com/api/webV1，client: PC。GET /searchObject筛organization_type=1、province=330000、city=330100、second_class=residence；count可为整数或数字字符串。只按area_code=330108取详情GET /auction/{auction_id}，再次校验用途/区县/ID；业务status必须200。依赖现有curl_cffi，无新增浏览器依赖。
 
 API变化、错误页、分页重复与解析异常将使该批失败，不覆盖有效快照。侧车锁由OS在进程退出时释放，不要删除运行中锁文件。
+# 小区成交历史（2026-10-12）
+
+外部入口仍使用 `/api/map`，以下为后端 `/api` 路径：
+
+- `GET /api/auctions/community-summary`：所有可靠匹配小区的全部历史去重成交数量，`data.counts` 为小区ID到套数的映射。
+- `GET /api/communities/{community_id}/auction-history`：默认 `period=12m&area_band=all&page=1&page_size=20`。时间可选 `12m/24m/all`，面积可选 `all/lt90/90to144/gte144`；面积边界为90包含、144不包含中间档。
+- `data.stats` 为全部筛选结果的总价/建筑面积单价中位数、最小/最大值、成交房源与有效单价样本量；`records` 才分页。未知小区404、参数错误422、存储或人工映射损坏503。
+- 先按 `source+asset_id` 选最近有效成交，再筛选小区/时间/面积；缺房源ID退化为拍卖轮次身份并附警示。单价按未取整数值计算，中位数展示四舍五入至整数元。
+- 名称/别名只有唯一精确匹配才关联。`data/auction_community_mappings.json` 为版本1、`mappings` 数组，每条含 `source`、`asset_id` 或 `auction_id`（二选一）、`community_id`、可选 `note`。资产映射优先；查询实时读取，修改配置无需重新采集。非法小区ID或重复键视为配置错误。
+- 名录10001742及坐标地址与454711标的地址核对后，已登记资产440291的映射。源名称“倾城之恋”与名录别名“倾城之恋花园”不同，不扩大为模糊匹配。
+- `done` 是辅助来源标记成交，不证明付款/过户；`last_run.complete` 仅表示当次列表遍历，不能证明区域全量。成交参考与普通挂牌/签约快照及评分独立。
