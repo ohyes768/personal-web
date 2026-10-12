@@ -8,3 +8,7 @@
 - Implementation and source review complete. Git commit, push and production deployment have not been performed in this turn.
 - Deployment must rebuild/restart dividend backend and verify `/api/dividend/scheduler/jobs` next weekly run is Saturday 02:00 Shanghai. Confirm `/api/dividend/m120/status` and preserved historical snapshot timestamps.
 - Unrelated nginx, housing-map and RSS changes are untouched.
+
+## 收尾复核（2026-10-12）
+
+代码已提交 `7f9b2ee`。后端全量复核：226 passed, 3 skipped（pytest tests，独立 basetemp）。早期记录中的待提交状态已被本记录取代。未执行部署。
