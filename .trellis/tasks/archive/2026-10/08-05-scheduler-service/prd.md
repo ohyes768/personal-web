@@ -88,7 +88,6 @@ dividend-select 当前的定时刷新由外部 n8n 触发，调后端的 `POST /
 ### 部署/迁移
 
 - [ ] NAS 部署文档（`docker-compose.nas.yml` 注释或 README）明示 scheduler 模块需 `--workers 1`
-- [ ] 旧 n8n 任务保留至少 1 周双跑对照期，验证内建 scheduler 触发结果与 n8n 一致后再下线 n8n
 
 ## 风险与已知约束
 
@@ -109,4 +108,6 @@ dividend-select 当前的定时刷新由外部 n8n 触发，调后端的 `POST /
 
 ## 2026-10-12 收尾记录
 
-2026-10-12 按用户要求归档已实现的调度与设置页主体；未完成的优雅关闭及 n8n 双跑/停用验收转入 10-12-scheduler-shutdown-migration，原未勾选项不宣称通过。
+2026-10-12 按用户要求归档已实现的调度与设置页主体；未完成的优雅关闭转入 10-12-scheduler-shutdown-migration，原未勾选项不宣称通过。
+
+2026-10-12 更正：用户确认当前部署不涉及 n8n，删除旧双跑迁移验收要求；历史背景不代表当前部署方式。

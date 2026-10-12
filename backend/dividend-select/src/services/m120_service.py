@@ -3,6 +3,7 @@ M120 服务
 负责获取和计算120日均线数据
 """
 import json
+import math
 import os
 import time
 from datetime import datetime, timedelta
@@ -408,6 +409,47 @@ class M120Service(CsvPathService):
 
         return len(results)
 
+    def _read_latest_m120_snapshot(self) -> tuple[Optional[Path], pd.DataFrame]:
+        """Read the newest usable week, while refresh writes stay in this week.
+
+        Sort by snapshot week rather than mtime (copying old backups must not
+        make them current). Search month directories too, including year rollover.
+        """
+        current = self.M120_CSV_FILE
+
+        def week_start(path: Path) -> datetime:
+            year, directory_month = map(int, path.parent.name.split("-"))
+            month, day, _, _ = map(int, path.stem.removeprefix("M120均线_").split("-"))
+            # January files may describe a week beginning in December.
+            if month > directory_month:
+                year -= 1
+            return datetime(year, month, day)
+
+        latest_week = week_start(current)
+        candidates = []
+        for path in DATA_DIR.glob("????-??/M120均线_*.csv"):
+            try:
+                week = week_start(path)
+                if path.parent.name <= current.parent.name and week <= latest_week:
+                    candidates.append((week, path.parent.name, path))
+            except ValueError:
+                continue
+
+        for _, _, path in sorted(candidates, reverse=True):
+            try:
+                df = pd.read_csv(path, encoding="utf-8-sig", dtype=CODE_DTYPE)
+                if df.empty or not {"股票代码", "M120"}.issubset(df.columns):
+                    continue
+                values = pd.to_numeric(df["M120"], errors="coerce")
+                if not values.map(lambda value: math.isfinite(value) and value > 0).all():
+                    continue
+                if not df["股票代码"].str.fullmatch(r"\d{6}", na=False).all():
+                    continue
+                return path, df
+            except (OSError, ValueError, pd.errors.ParserError):
+                continue
+        return None, pd.DataFrame()
+
     def _read_price_csv(self) -> dict[str, dict]:
         """
         只读实时价格 CSV，返回 {code: {close, realtime, pe, pb}}。
@@ -481,14 +523,9 @@ class M120Service(CsvPathService):
         """
 
         # 读取 M120 数据
-        if not self.M120_CSV_FILE.exists():
+        snapshot_path, m120_df = self._read_latest_m120_snapshot()
+        if snapshot_path is None:
             logger.warning(f"M120 数据文件不存在: {self.M120_CSV_FILE}")
-            return {}
-
-        try:
-            m120_df = pd.read_csv(self.M120_CSV_FILE, encoding="utf-8-sig", dtype=CODE_DTYPE)
-        except Exception as e:
-            logger.error(f"读取 M120 数据失败: {e}")
             return {}
 
         # 读取实时价格数据（包含昨日收盘和实时价格）
@@ -535,12 +572,12 @@ class M120Service(CsvPathService):
             {股票代码: {"m120": float}} 字典
         """
 
-        if not self.M120_CSV_FILE.exists():
+        snapshot_path, df = self._read_latest_m120_snapshot()
+        if snapshot_path is None:
             logger.warning(f"M120 数据文件不存在: {self.M120_CSV_FILE}")
             return {}
 
         try:
-            df = pd.read_csv(self.M120_CSV_FILE, encoding="utf-8-sig", dtype=CODE_DTYPE)
             result = {}
             for _, row in df.iterrows():
                 code = str(row["股票代码"]).zfill(6)
@@ -554,8 +591,9 @@ class M120Service(CsvPathService):
 
     def get_m120_file_mtime(self) -> Optional[float]:
         """获取 M120 数据文件的修改时间"""
-        if self.M120_CSV_FILE.exists():
-            return self.M120_CSV_FILE.stat().st_mtime
+        path, _ = self._read_latest_m120_snapshot()
+        if path is not None:
+            return path.stat().st_mtime
         return None
 
     def get_realtime_price_file_mtime(self) -> Optional[float]:
@@ -566,7 +604,8 @@ class M120Service(CsvPathService):
 
     def check_m120_file_exists(self) -> bool:
         """检查 M120 数据文件是否存在"""
-        return self.M120_CSV_FILE.exists()
+        path, _ = self._read_latest_m120_snapshot()
+        return path is not None
 
     def check_realtime_price_file_exists(self) -> bool:
         """检查实时价格数据文件是否存在"""

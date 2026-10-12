@@ -336,9 +336,8 @@ app/settings/scheduler/page.tsx
 
 ## 兼容性 & 回滚
 
-- 旧 n8n 任务保留至少 1 周，与内建 scheduler 双跑对照
-- 前端调度页与 n8n 独立，互不影响
-- 若需紧急回滚：禁用所有 scheduler 任务（PATCH enabled=false 或编辑 config/scheduler.json），重启服务，回退到 n8n 触发
+- 当前部署不涉及 n8n，旧双跑与迁移要求已删除（2026-10-12 用户确认）。
+- 若需紧急停调度：禁用所有 scheduler 任务（PATCH enabled=false 或编辑 config/scheduler.json）。
 - scheduler_runs.jsonl 不删，作为审计日志保留
 
 ## 已知风险

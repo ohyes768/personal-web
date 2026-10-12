@@ -175,14 +175,9 @@ docker compose -f docker-compose.nas.yml logs -f dividend-backend | grep -i sche
 
 验证：启动日志含 3 个任务注册 + `Scheduler 已启动`；`curl` 4 个 API 都通。
 
-### D3. 双跑对照期（1 周）
+### D3. 当前部署验收
 
-- n8n 任务保留不动
-- 内建 scheduler 启用
-- 每天看 scheduler_runs.jsonl 的执行结果 vs n8n 触发的结果（通过应用日志 / 数据文件 mtime 对照）
-- 一致后停掉 n8n 任务
-
-**🚦 Final Gate**：双跑 7 天无异常 → n8n 停用 → 任务完成。
+当前部署不涉及 n8n，双跑对照与停用要求已删除（2026-10-12 用户确认）。按内建调度日志及历史核查执行结果。
 
 ---
 
@@ -200,6 +195,5 @@ docker compose -f docker-compose.nas.yml logs -f dividend-backend | grep -i sche
 
 ## 注意事项
 
-- 不要在 Phase A/B 期间下线 n8n，否则会出现"无定时刷新"窗口期
 - 数据文件 `config/scheduler.json` 和 `data/scheduler_runs.jsonl` 都不能进 .gitignore（前者是代码配置需提交，后者是运行时数据按现有 data/ 目录规则处理）
 - 任何阶段卡住先回到上一个 🚦 Review Gate，不要硬推下一步

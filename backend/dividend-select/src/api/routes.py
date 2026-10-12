@@ -764,11 +764,9 @@ async def get_m120_status(
     last_updated = None
 
     if file_exists:
-        m120_file = m120_service.M120_CSV_FILE
-        if m120_file.exists():
-            timestamp = m120_service.get_m120_file_mtime()
-            if timestamp:
-                last_updated = fromtimestamp_shanghai_iso(timestamp)
+        timestamp = m120_service.get_m120_file_mtime()
+        if timestamp is not None:
+            last_updated = fromtimestamp_shanghai_iso(timestamp)
 
     # 读取当前股票列表 + 按 min_yield 筛（与前端展示口径对齐）
     all_stocks_df = data_reader.read_csv()

@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from apscheduler.events import EVENT_SCHEDULER_SHUTDOWN
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -51,6 +52,10 @@ class SchedulerManager:
         self.jobs_meta: dict[str, dict] = {}
         # job_id → asyncio.Lock（防 trigger_now 与 cron 重入）
         self._run_locks: dict[str, asyncio.Lock] = {}
+        self._running_tasks: set[asyncio.Task] = set()
+        self._closing = False
+        self._shutdown_lock = asyncio.Lock()
+        self._probe_task: asyncio.Task | None = None
 
     # === lifecycle ===
 
@@ -61,7 +66,8 @@ class SchedulerManager:
             return
         self._assert_single_worker()
         # 延迟到 server serve 后再探活：lifespan 阶段 uvicorn 尚未 bind socket
-        asyncio.create_task(self._delayed_self_port_probe())
+        self._closing = False
+        self._probe_task = asyncio.create_task(self._delayed_self_port_probe())
 
         self._services = services
         config = self._load_config()
@@ -105,14 +111,35 @@ class SchedulerManager:
         logger.info(f"scheduler 启动完成，{len(self.jobs_meta)} 个任务")
 
     async def shutdown(self, wait: bool = True, timeout: int = 30) -> None:
-        if self._scheduler is None:
-            return
-        logger.info(f"scheduler 关闭中（wait={wait}, timeout={timeout}s）...")
-        try:
-            self._scheduler.shutdown(wait=wait, timeout=timeout)  # type: ignore[arg-type]
-        except Exception as e:
-            logger.warning(f"scheduler shutdown 异常: {e}")
-        finally:
+        """Stop admission, drain jobs within the deadline, then stop APScheduler.
+
+        APScheduler 3.x's asyncio executor cancels jobs even with wait=True;
+        draining must happen before calling its shutdown method.
+        """
+        async with self._shutdown_lock:
+            scheduler = self._scheduler
+            if scheduler is None:
+                return
+            self._closing = True
+            scheduler.pause()
+            if self._probe_task is not None:
+                self._probe_task.cancel()
+            logger.info(f"scheduler 关闭中（wait={wait}, timeout={timeout}s）...")
+            stopped = asyncio.Event()
+            scheduler.add_listener(lambda event: stopped.set(), EVENT_SCHEDULER_SHUTDOWN)
+            try:
+                pending = set(self._running_tasks)
+                if wait and pending:
+                    _, pending = await asyncio.wait(pending, timeout=max(0, timeout))
+                    if pending:
+                        logger.warning(f"scheduler drain 超时，取消 {len(pending)} 个任务")
+            finally:
+                # This also cancels executor submissions that have not entered
+                # the wrapper yet. Await the scheduled shutdown callback.
+                scheduler.shutdown(wait=False)
+                await stopped.wait()
+                await asyncio.sleep(0)  # let cooperative cancellation release locks
+            self._probe_task = None
             self._scheduler = None
 
     # === API ===
@@ -148,7 +175,7 @@ class SchedulerManager:
     def set_enabled(self, job_id: str, enabled: bool) -> dict[str, Any]:
         if job_id not in self.jobs_meta:
             raise KeyError(job_id)
-        if self._scheduler is None:
+        if self._scheduler is None or self._closing:
             raise RuntimeError("scheduler 未启动")
         self.jobs_meta[job_id]["enabled"] = enabled
         self._write_config()
@@ -164,7 +191,7 @@ class SchedulerManager:
     async def trigger_now(self, job_id: str) -> dict[str, Any]:
         if job_id not in self.jobs_meta:
             raise KeyError(job_id)
-        if self._scheduler is None:
+        if self._scheduler is None or self._closing:
             raise RuntimeError("scheduler 未启动")
         triggered_at = datetime.now().isoformat()
         # 一次性任务：用 DateTrigger 立即触发；id 加后缀避免与 cron job 冲突
@@ -199,6 +226,17 @@ class SchedulerManager:
 
     async def _run_job_wrapper(self, job_id: str) -> None:
         """APScheduler 调用入口：查 target → 调 jobs.{target} → 写历史。"""
+        if self._closing:
+            return
+        task = asyncio.current_task()
+        assert task is not None
+        self._running_tasks.add(task)
+        try:
+            await self._execute_job(job_id)
+        finally:
+            self._running_tasks.discard(task)
+
+    async def _execute_job(self, job_id: str) -> None:
         spec = self.jobs_meta.get(job_id)
         if spec is None:
             logger.warning(f"未知 job_id: {job_id}")
@@ -211,6 +249,8 @@ class SchedulerManager:
         # 防重入：cron 触发 vs trigger_now 同时进来时串行化
         lock = self._run_locks.setdefault(job_id, asyncio.Lock())
         async with lock:
+            if self._closing:
+                return
             logger.info(f"[{job_id}] 开始执行 target={target_name}")
             try:
                 result = await target_fn(self, job_id)
