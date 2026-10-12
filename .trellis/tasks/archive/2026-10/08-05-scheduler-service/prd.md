@@ -106,3 +106,7 @@ dividend-select 当前的定时刷新由外部 n8n 触发，调后端的 `POST /
 ## 备注
 
 - 技术设计见 `design.md`，执行计划见 `implement.md`
+
+## 2026-10-12 收尾记录
+
+2026-10-12 按用户要求归档已实现的调度与设置页主体；未完成的优雅关闭及 n8n 双跑/停用验收转入 10-12-scheduler-shutdown-migration，原未勾选项不宣称通过。
