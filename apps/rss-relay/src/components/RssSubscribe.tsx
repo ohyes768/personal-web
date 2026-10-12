@@ -16,7 +16,6 @@ function ChannelPanel({ onClose, onChannelsChange }: { onClose: () => void; onCh
   const [notice, setNotice] = useState('');
   const [search, setSearch] = useState('');
   const [showDisabled, setShowDisabled] = useState(false);
-  const [actions, setActions] = useState<string | null>(null);
   const [example, setExample] = useState<string | null>(null);
   const [editing, setEditing] = useState<Channel | 'new' | null>(null);
   const [form, setForm] = useState({ id: '', title: '', description: '' });
@@ -31,7 +30,7 @@ function ChannelPanel({ onClose, onChannelsChange }: { onClose: () => void; onCh
   };
   useEffect(() => { void load(); }, []);
   const startEdit = (channel: Channel | 'new') => {
-    setEditing(channel); setActions(null); setPendingDisable(null); setError(''); setNotice('');
+    setEditing(channel); setPendingDisable(null); setError(''); setNotice('');
     setForm(channel === 'new' ? { id: '', title: '', description: '' } : channel);
     if (channel === 'new') setSearch('');
   };
@@ -41,7 +40,7 @@ function ChannelPanel({ onClose, onChannelsChange }: { onClose: () => void; onCh
   };
   const toggle = async (channel: Channel) => {
     setSaving(true); setError('');
-    try { applyChannel(await rssRelayApi.updateChannel(channel.id, { enabled: !channel.enabled })); setPendingDisable(null); setActions(null); setNotice(channel.enabled ? '渠道已停用，原订阅链接仍可读取历史文章。' : '渠道已恢复。'); }
+    try { applyChannel(await rssRelayApi.updateChannel(channel.id, { enabled: !channel.enabled })); setPendingDisable(null); setNotice(channel.enabled ? '渠道已停用，原订阅链接仍可读取历史文章。' : '渠道已恢复。'); }
     catch (e) { setError(e instanceof Error ? e.message : '保存失败'); }
     finally { setSaving(false); }
   };
@@ -61,20 +60,22 @@ function ChannelPanel({ onClose, onChannelsChange }: { onClose: () => void; onCh
     </form>;
   return <RelayDialog title="渠道" onClose={onClose}>
     <div className="flex gap-2 mb-3"><input aria-label="搜索渠道" placeholder="搜索名称或标识" value={search} disabled={!!editing} onChange={e => setSearch(e.target.value)} className="min-w-0 flex-1 px-2.5 py-1.5 rounded-md border border-rule bg-paper-deep text-xs" /><button className={button} disabled={loading || saving || !!editing} onClick={() => startEdit('new')}>＋ 新增</button></div>
-    <div className="flex items-center justify-between gap-2 mb-2 text-xs text-ink-muted"><span>复制链接到 RSS 阅读器</span><label className="flex items-center gap-1.5 whitespace-nowrap"><input type="checkbox" checked={showDisabled} disabled={!!editing || saving} onChange={e => { setShowDisabled(e.target.checked); setActions(null); setPendingDisable(null); }} />显示已停用</label></div>
+    <div className="flex items-center justify-between gap-2 mb-2 text-xs text-ink-muted"><span>复制链接到 RSS 阅读器</span><label className="flex items-center gap-1.5 whitespace-nowrap"><input type="checkbox" checked={showDisabled} disabled={!!editing || saving} onChange={e => { setShowDisabled(e.target.checked); setPendingDisable(null); }} />显示已停用</label></div>
     {notice && <p role="status" className="mb-3 p-3 rounded border border-rule bg-paper-deep">{notice}</p>}
     {error && <div role="alert" className="mb-3 text-danger">{error} <button className={button} onClick={load}>重新加载</button></div>}
     {!token && <p className="text-danger mb-2 text-xs">未配置订阅 token，请联系服务维护者配置后再复制链接。</p>}
     {editing === 'new' && editForm}
     <div className="flex items-center justify-between gap-2 border-b border-rule py-2.5 mb-1"><div className="min-w-0"><h3 className="font-serif-cn font-bold">全部内容</h3><p className="text-xs text-ink-muted mt-0.5">与单渠道同时订阅可能重复</p></div><div className="shrink-0"><CopyText disabled={!token} text={feedUrl()} className={copyButton} /></div></div>
     {loading ? <div aria-label="加载渠道中" className="space-y-2">{[1,2,3].map(i => <div key={i} className="h-14 rounded bg-paper-deep animate-pulse" />)}</div> : <div className="divide-y divide-rule">{visible.map(channel => <div key={channel.id} data-channel-row={channel.id} className="py-2.5">
-      <div className="flex items-center gap-2"><h3 title={channel.title} className="min-w-0 flex-1 truncate font-serif-cn font-bold">{channel.title}</h3>
-        {!channel.enabled && <span className="shrink-0 text-[11px] text-ink-muted">已停用</span>}
-        <div className="shrink-0"><CopyText disabled={!token} text={feedUrl(channel.id)} className={copyButton} /></div>
-        {channel.id !== 'unclassified' && <button aria-label={`管理${channel.title}`} aria-expanded={actions === channel.id} aria-controls={`channel-actions-${channel.id}`} disabled={saving || !!editing} className={`${button} w-8 px-0`} onClick={() => { setActions(actions === channel.id ? null : channel.id); setPendingDisable(null); }}>⋯</button>}
+      <div className="grid grid-cols-[minmax(0,1fr)_auto] sm:grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-x-2 gap-y-0.5">
+        <div className="min-w-0 flex items-center gap-1.5"><h3 title={channel.title} className="min-w-0 flex-1 truncate font-serif-cn font-bold">{channel.title}</h3>{!channel.enabled && <span className="shrink-0 text-[11px] text-ink-muted">已停用</span>}</div>
+        <CopyText disabled={!token} text={feedUrl(channel.id)} className={copyButton} />
+        {channel.id !== 'unclassified' && <div className="col-start-2 row-start-2 sm:col-start-3 sm:row-start-1 flex justify-end gap-1">
+          <button disabled={saving || !!editing} className="rounded px-1.5 py-0.5 sm:px-2.5 sm:py-1.5 text-xs text-ink-muted bg-paper-deep hover:bg-rule disabled:opacity-40 whitespace-nowrap" onClick={() => startEdit(channel)}>编辑</button>
+          <button disabled={saving || !!editing} className="rounded px-1.5 py-0.5 sm:px-2.5 sm:py-1.5 text-xs text-ink-muted bg-paper-deep hover:bg-rule disabled:opacity-40 whitespace-nowrap" onClick={() => channel.enabled ? setPendingDisable(channel) : void toggle(channel)}>{channel.enabled ? '停用' : '恢复'}</button>
+        </div>}
+        <div className="col-start-1 row-start-2 sm:col-span-3 min-w-0 flex items-center gap-2 text-xs text-ink-muted"><p title={channel.description || channel.id} className="min-w-0 flex-1 truncate">{channel.description || channel.id}{channel.id === 'unclassified' ? ' · 系统渠道' : ''}</p><button aria-expanded={example === channel.id} aria-controls={`channel-example-${channel.id}`} className="shrink-0 text-[11px] hover:text-ink py-0.5" onClick={() => setExample(example === channel.id ? null : channel.id)}>{example === channel.id ? '▾' : '▸'} 推送示例</button></div>
       </div>
-      <div className="flex items-center gap-2 mt-0.5 text-xs text-ink-muted"><p title={channel.description || channel.id} className="min-w-0 flex-1 truncate">{channel.description || channel.id}{channel.id === 'unclassified' ? ' · 系统渠道' : ''}</p><button aria-expanded={example === channel.id} aria-controls={`channel-example-${channel.id}`} className="shrink-0 text-[11px] hover:text-ink py-0.5" onClick={() => setExample(example === channel.id ? null : channel.id)}>{example === channel.id ? '▾' : '▸'} 推送示例</button></div>
-      {actions === channel.id && <div id={`channel-actions-${channel.id}`} className="flex items-center gap-2 mt-2 p-2 rounded bg-paper-deep"><span title={channel.id} className="min-w-0 flex-1 truncate font-mono text-xs text-ink-muted">{channel.id}</span><button disabled={saving} className={button} onClick={() => startEdit(channel)}>编辑</button><button disabled={saving} className={button} onClick={() => channel.enabled ? setPendingDisable(channel) : void toggle(channel)}>{channel.enabled ? '停用' : '恢复'}</button></div>}
       {editing && editing !== 'new' && editing.id === channel.id && editForm}
       {example === channel.id && <div id={`channel-example-${channel.id}`} className="mt-2 text-xs text-ink-muted"><p className="font-mono break-all">POST {PUBLIC_API}/post</p><pre className="overflow-x-auto my-2 p-2 bg-paper-deep rounded text-xs">{pushExample(channel.id)}</pre><CopyText text={pushExample(channel.id)} label="复制推送 JSON" className={button} /></div>}
       {pendingDisable?.id === channel.id && <div className="mt-3 p-3 bg-paper-deep rounded"><p>停用「{channel.title}」会暂停接收新推送，保留文章和原订阅链接。</p><div className="flex gap-2 mt-3"><button disabled={saving} className={button} onClick={() => void toggle(channel)}>确认停用</button><button disabled={saving} className={button} onClick={() => setPendingDisable(null)}>取消</button></div></div>}

@@ -918,3 +918,35 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 25: RSS 渠道操作按钮直接显示
+
+**Date**: 2026-10-12
+**Task**: RSS 渠道操作按钮直接显示
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+移除渠道管理折叠菜单，桌面操作同排，手机操作位于说明行，行高73px。TypeScript、生产构建、375px及1440px模拟交互验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
