@@ -48,6 +48,75 @@ def test_pages_are_exhausted_within_each_cell():
     assert rows[-1]['_coverage']['requests'] == 2
 
 
+def test_eight_short_pages_subdivide_and_discover_missing_records():
+    root = None
+    calls = []
+    def search(box, page):
+        nonlocal root
+        root = root or box
+        calls.append((box, page))
+        if box == root:
+            return [poi(str(page))], 9
+        return [poi('1'), poi('missing', '补充花园')], 2
+    client = Client(search)
+    rows = list(amap.discover(Cancel(), lambda *_: False, client=client))
+    records = [r for r in rows if 'source_id' in r]
+    assert len(records) == 9 and records[-1]['source_id'] == 'missing'
+    assert [page for box, page in calls if box == root] == list(range(1, 9))
+    children = [box for box, page in calls if box != root]
+    assert len(set(children)) == 4
+    assert all(box[2] - box[0] < root[2] - root[0] for box in children)
+    assert rows[-1]['_coverage']['complete'] is True and client.closed
+    assert rows[-1]['_coverage']['requests'] == 12
+
+
+def test_page_limit_at_max_depth_keeps_scanning_sibling_regions():
+    root = None
+    stuck = None
+    calls = []
+    def search(box, page):
+        nonlocal root, stuck
+        root = root or box
+        calls.append((box, page))
+        if box == root:
+            return [poi('root')], 200
+        stuck = stuck or box
+        if box == stuck:
+            return [poi(f'stuck-{page}')], 9
+        return [poi(str(box))], 1
+    client = Client(search)
+    rows = []
+    with pytest.raises(amap.AmapIncomplete, match='1 个区域'):
+        rows.extend(amap.discover(Cancel(), lambda *_: False, client=client, max_depth=1))
+    # The unresolved first child must not hide the other three children.
+    assert len({box for box, page in calls}) == 5
+    assert len([r for r in rows if 'source_id' in r]) == 12
+    assert rows[-1]['_coverage']['incomplete_cells'] == 1
+    assert rows[-1]['_coverage']['complete'] is False and client.closed
+
+
+def test_subdivision_after_page_limit_still_respects_request_budget():
+    client = Client(lambda box, page: ([poi(str(page))], 9))
+    rows = []
+    with pytest.raises(amap.AmapIncomplete, match='请求预算'):
+        rows.extend(amap.discover(Cancel(), lambda *_: False, client=client, max_requests=8))
+    assert rows[-1]['_coverage']['requests'] == 8 and client.closed
+
+
+def test_cancel_before_subdivided_cell_prevents_more_requests():
+    cancel = Cancel()
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        return [poi(str(page))], 9
+    client = Client(search)
+    with pytest.raises(InterruptedError):
+        for row in amap.discover(cancel, lambda *_: False, client=client):
+            if row.get('_coverage', {}).get('requests') == 8:
+                cancel.cancelled = True
+    assert calls == list(range(1, 9)) and client.closed
+
+
 @pytest.mark.parametrize('mode', ['empty', 'repeated', 'budget', 'depth'])
 def test_incomplete_queries_raise_and_preserve_already_yielded_records(mode):
     if mode == 'empty':

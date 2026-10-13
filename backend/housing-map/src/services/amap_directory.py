@@ -90,6 +90,19 @@ def discover(cancel, ignored, *, client=None, max_requests=256, max_depth=8):
     root = (min(p[0] for p in points), min(p[1] for p in points),
             max(p[0] for p in points), max(p[1] for p in points))
     stack = [(root, 0)]
+    incomplete_cells = 0
+
+    def subdivide(box, depth):
+        nonlocal incomplete_cells
+        if depth >= max_depth:
+            incomplete_cells += 1
+            return
+        west, south, east, north = box
+        midx, midy = (west + east) / 2, (south + north) / 2
+        stack.extend((cell, depth + 1) for cell in (
+            (west, south, midx, midy), (midx, south, east, midy),
+            (west, midy, midx, north), (midx, midy, east, north)))
+
     try:
         while stack:
             box, depth = stack.pop()
@@ -127,19 +140,20 @@ def discover(cancel, ignored, *, client=None, max_requests=256, max_depth=8):
                                         complete=False, scope='滨江住宅区 POI')}
                 # A saturated result may be capped by the upstream search service.
                 if count >= 200:
-                    if depth >= max_depth:
-                        raise AmapIncomplete('高德密集区域仍达到搜索上限，住宅目录覆盖不完整')
-                    west, south, east, north = box
-                    midx, midy = (west + east) / 2, (south + north) / 2
-                    stack.extend((cell, depth + 1) for cell in (
-                        (west, south, midx, midy), (midx, south, east, midy),
-                        (west, midy, midx, north), (midx, midy, east, north)))
+                    subdivide(box, depth)
                     break
                 if scanned >= count:
                     break
             else:
-                raise AmapIncomplete('高德分页达到安全上限，住宅目录覆盖不完整')
+                # Short pages/count discrepancies can exhaust eight pages even
+                # below the advertised 200-result threshold. Query smaller boxes
+                # rather than terminating discovery of all remaining regions.
+                subdivide(box, depth)
         yield {'_coverage': dict(requests=requests, cells=cells, unique=len(seen), filtered=filtered,
-                                duplicates=duplicates, complete=True, scope='滨江住宅区 POI')}
+                                duplicates=duplicates, complete=not incomplete_cells,
+                                incomplete_cells=incomplete_cells, scope='滨江住宅区 POI')}
+        if incomplete_cells:
+            raise AmapIncomplete(f'高德有 {incomplete_cells} 个区域切分到深度上限仍未查完，'
+                                 '其他区域已继续查询；住宅目录覆盖不完整')
     finally:
         client.close()
