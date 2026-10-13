@@ -64,7 +64,7 @@ export interface SkillListResponse {
 }
 
 /** models.TaskKind / TaskState：GitHub 后台任务（PRD R1-R4） */
-export type TaskKind = 'scan' | 'register' | 'register_batch' | 'clone_cache';
+export type TaskKind = 'scan' | 'register' | 'register_batch' | 'clone_cache' | 'prepare_pack' | 'update_pack' | 'install_pack';
 export type TaskState = 'running' | 'done' | 'error';
 
 /** models.ScanCandidate：扫描候选目录（含 SKILL.md frontmatter 元数据） */
@@ -115,6 +115,7 @@ export interface TaskSnapshot {
   top_level: ScanTopLevelEntry[];
   referenced_paths: string[];
   results: RegisterBatchResultItem[];
+  result?: { pack?: GithubPack; items?: PackInstallResult[] };
 }
 
 /** models.UpdateCheckResponse */
@@ -206,4 +207,42 @@ export interface ApiError {
   code: string;
   message: string;
   item_id?: string;
+}
+
+export interface PackDeployment {
+  status: 'active' | 'removed' | 'legacy_pending';
+  link_target: string;
+  link_missing: boolean;
+  verified: boolean;
+  diagnostic: string;
+}
+export interface GithubPack {
+  id: string;
+  name: string;
+  repository: string;
+  summary: string;
+  tags: string[];
+  tracking_branch: string;
+  current_revision: string;
+  last_checked_revision: string;
+  has_update: boolean;
+  source_missing: boolean;
+  skill_count: number;
+  inventory: ScanCandidate[];
+  deployments: Partial<Record<LinkTargetKey, PackDeployment>>;
+  diagnostics: string[];
+}
+export interface PackPlan {
+  items: { target: LinkTargetKey; action: 'install' | 'convert' | 'none' | 'blocked'; message: string; legacy_skill_ids: string[] }[];
+}
+export interface PackInstallResult {
+  target: LinkTargetKey;
+  status: 'success' | 'blocked' | 'error';
+  message: string;
+}
+export interface GithubPackInput {
+  repository: string;
+  name?: string;
+  summary?: string;
+  tags?: string[];
 }

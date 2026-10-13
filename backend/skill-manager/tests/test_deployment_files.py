@@ -5,6 +5,7 @@
 """
 
 from pathlib import Path
+import re
 
 import pytest
 
@@ -16,11 +17,12 @@ DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-nas.sh"
 # skill-manager-backend 允许的完整挂载清单（design 2.2 / R6：仅五类目录；
 # 同路径挂载——两侧同一宿主路径，保证 symlink target 宿主机可解析）
 BACKEND_ALLOWED_MOUNTS = {
-    "${SKILLS_SOURCE_HOST_PATH:?}:${SKILLS_SOURCE_HOST_PATH:?}:rw",
-    "${GITHUB_SKILL_CACHE_HOST_PATH:?}:${GITHUB_SKILL_CACHE_HOST_PATH:?}:rw",
-    "${OPENCLAW_SKILLS_HOST_PATH:?}:${OPENCLAW_SKILLS_HOST_PATH:?}:rw",
-    "${HERMES_SKILLS_HOST_PATH:?}:${HERMES_SKILLS_HOST_PATH:?}:rw",
+    "${SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH}:rw",
+    "${GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH}:rw",
+    "${OPENCLAW_SKILLS_HOST_PATH}:${OPENCLAW_SKILLS_HOST_PATH}:rw",
+    "${HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH}:rw",
     "skill-manager-state:/app/state",
+    "./deploy/fastgithub-ca.pem:/etc/ssl/fastgithub-ca.pem:ro",
 }
 
 
@@ -96,17 +98,18 @@ def test_skill_manager_services_in_base_compose(compose_text: str):
 
 def test_skill_manager_exposes_required_mounts(compose_text: str):
     # 验证必要的挂载路径变量
-    assert "${SKILLS_SOURCE_HOST_PATH}:" in compose_text
-    assert "${GITHUB_SKILL_CACHE_HOST_PATH}:" in compose_text
-    assert "${OPENCLAW_SKILLS_HOST_PATH}:" in compose_text
-    assert "${HERMES_SKILLS_HOST_PATH}:" in compose_text
+    normalized = re.sub(r"\$\{([A-Z_]+)(?::[^}]*)?\}", r"${\1}", compose_text)
+    for variable in ("SKILLS_SOURCE_HOST_PATH", "GITHUB_SKILL_CACHE_HOST_PATH",
+                     "OPENCLAW_SKILLS_HOST_PATH", "HERMES_SKILLS_HOST_PATH"):
+        assert "${" + variable + "}:" in normalized
 
 
 def test_skill_manager_backend_has_only_allowed_mounts(compose_text: str):
     section = _service_section(compose_text, "skill-manager-backend")
     actual_mounts = set(_volume_lines(section))
     # 过滤掉 `?:` 语法差异（允许 `?:` 或 `:-`）
-    normalized = {m.replace(":?:", ":-").replace("?}:", ":-}") for m in actual_mounts}
+    normalized = {re.sub(r"\$\{([A-Z_]+)(?::[^}]*)?\}", r"${\1}", m)
+                  for m in actual_mounts}
     assert normalized == BACKEND_ALLOWED_MOUNTS
 
 
@@ -145,7 +148,8 @@ def test_nginx_routes_skill_manager(nginx_text: str):
     assert "proxy_pass http://skill_manager_backend;" in api_block
     assert "rewrite ^/api/skills/" not in api_block
     # 根聚合页有 /skills 导航链接
-    assert 'href="/skills/"' in nginx_text
+    home = (REPO_ROOT / "nginx/html/index.html").read_text(encoding="utf-8")
+    assert re.search(r'href="/skills/?"', home)
 
 
 def test_nginx_routes_export_target_collection_and_items(nginx_text: str):
@@ -155,6 +159,20 @@ def test_nginx_routes_export_target_collection_and_items(nginx_text: str):
         block = nginx_text.split(location, 1)[1].split("}", 1)[0]
         assert "proxy_pass http://skill_manager_backend;" in block
         assert "rewrite" not in block
+
+
+def test_pack_collection_and_actions_reach_backend(nginx_text: str):
+    for location in ("location = /api/github-packs {", "location /api/github-packs/ {"):
+        block = nginx_text.split(location, 1)[1].split("}", 1)[0]
+        assert "proxy_pass http://skill_manager_backend;" in block
+        assert "rewrite" not in block
+
+
+def test_openclaw_pack_override_mounts_only_existing_config_file():
+    text = (REPO_ROOT / "deploy/docker-compose.skill-packs.yml").read_text(encoding="utf-8")
+    assert "create_host_path: false" in text
+    assert "target: /agent-config/openclaw.json" in text
+    assert "OPENCLAW_CONFIG_PATH: /agent-config/openclaw.json" in text
 
 
 def test_deploy_script_maps_skill_manager(deploy_text: str):

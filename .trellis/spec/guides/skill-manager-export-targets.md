@@ -1,5 +1,8 @@
 # Skill Manager 外部导出目标契约
 
+> GitHub 整包直链不复用子技能 ZIP 格式。此文保留用于自研与旧导出记录/API；
+> 包卡片不提供未实现的整包 ZIP，包删除须检查 active 导出引用。
+
 ## Scope / Trigger
 
 修改目标枚举、部署台账、ZIP 导出或列表过期检测时必读。

@@ -5,9 +5,11 @@ const nextConfig = {
   async rewrites() {
     // 仅开发环境代理到本地 FastAPI（8097）；生产由 Nginx 反代 /api/skills
     if (process.env.NODE_ENV !== 'development') {
-      return [];
+      return [
+      { source: '/api/github-packs/:path*', destination: 'http://localhost:8097/api/github-packs/:path*', basePath: false },];
     }
     return [
+      { source: '/api/github-packs/:path*', destination: 'http://localhost:8097/api/github-packs/:path*', basePath: false },
       {
         source: '/api/export-targets/:path*',
         destination: 'http://localhost:8097/api/export-targets/:path*',

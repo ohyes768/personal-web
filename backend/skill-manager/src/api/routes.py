@@ -94,6 +94,25 @@ logger = logging.getLogger(__name__)
 _ID_RE = re.compile(SKILL_ID_PATTERN)
 
 
+def _require_unmanaged_repository(store: SkillStateStore, repository: str) -> None:
+    pack = next((item for item in store.list_packs()
+                 if item.repository.lower() == repository.lower()), None)
+    if pack is not None:
+        raise HTTPException(409, {"code": "pack_managed",
+            "message": "此仓库已按整包管理，请在 GitHub 仓库包卡片操作",
+            "pack_id": pack.id})
+
+
+def _require_unmanaged_skill(store: SkillStateStore, skill: RegistrySkill) -> None:
+    if skill.source is SkillSource.GITHUB:
+        pack_id = store.get_pack_for_skill(skill.id)
+        if pack_id is not None:
+            raise HTTPException(409, {"code": "pack_managed",
+                "message": "旧技能记录仅用于历史和导出，请使用仓库包入口",
+                "pack_id": pack_id})
+        _require_unmanaged_repository(store, str(skill.repository))
+
+
 # ---------- 公开：Skill 列表 ----------
 
 
@@ -409,6 +428,7 @@ def register_github_skill(
     registry: RegistryService = Depends(get_registry),
     git_cache: GitCacheService = Depends(get_git_cache),
     task_manager: GithubTaskManager = Depends(get_task_manager),
+    store: SkillStateStore = Depends(get_store),
 ) -> AsyncTaskCreatedResponse:
     """登记候选目录：密码与可达性预检同步完成，clone/入库在后台任务执行。
 
@@ -428,6 +448,7 @@ def register_github_skill(
             status_code=400,
             detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
         ) from exc
+    _require_unmanaged_repository(store, canonical)
     try:
         if not git_cache.cached_scan_available(canonical):
             git_cache.verify_reachable(canonical)
@@ -506,6 +527,7 @@ def register_github_batch(
     registry: RegistryService = Depends(get_registry),
     git_cache: GitCacheService = Depends(get_git_cache),
     task_manager: GithubTaskManager = Depends(get_task_manager),
+    store: SkillStateStore = Depends(get_store),
 ) -> AsyncTaskCreatedResponse:
     """批量登记同一仓库的多个候选目录（design §5.2）。
 
@@ -525,6 +547,7 @@ def register_github_batch(
             status_code=400,
             detail={"code": "invalid_repository", "message": f"仓库地址无效：{exc}"},
         ) from exc
+    _require_unmanaged_repository(store, canonical)
     try:
         if not git_cache.cached_scan_available(canonical):
             git_cache.verify_reachable(canonical)
@@ -600,6 +623,7 @@ def clone_github_cache(
     registry: RegistryService = Depends(get_registry),
     git_cache: GitCacheService = Depends(get_git_cache),
     task_manager: GithubTaskManager = Depends(get_task_manager),
+    store: SkillStateStore = Depends(get_store),
 ) -> AsyncTaskCreatedResponse:
     """重建本环境缺失的 GitHub 缓存：后台任务执行，202 返回任务 id。
 
@@ -610,6 +634,7 @@ def clone_github_cache(
     """
     ensure_admin_password(settings, req.password)
     skill = _require_known_skill(registry, _require_skill_id(skill_id))
+    _require_unmanaged_skill(store, skill)
     if skill.source is not SkillSource.GITHUB:
         raise HTTPException(
             status_code=400,
@@ -740,6 +765,13 @@ def _plan_one(
     （`ensure_skill_path_cached` 纯文件系统读，零 git 子进程）。
     """
     planned_revision = ""
+    if skill.source is SkillSource.GITHUB and any(
+        pack.repository.lower() == str(skill.repository).lower()
+        for pack in store.list_packs()
+    ):
+        return PlanItem(skill_id=skill.id, target=target, action="blocked",
+            reason="此仓库已按整包管理，请使用仓库包安装入口",
+            current_revision="", planned_revision="")
     try:
         if skill.source is SkillSource.GITHUB:
             canonical = git_cache.normalize_repository(str(skill.repository))
@@ -866,6 +898,12 @@ def _publish_one(
     target: TargetKey,
 ) -> PublishResultItem:
     revision = ""
+    if skill.source is SkillSource.GITHUB and any(
+        pack.repository.lower() == str(skill.repository).lower()
+        for pack in store.list_packs()
+    ):
+        return PublishResultItem(skill_id=skill.id, target=target,
+            status="blocked", error="此仓库已按整包管理，请使用仓库包安装入口")
     try:
         if skill.source is SkillSource.GITHUB:
             # design 5 / R3：实际缓存更新仅随管理员确认的发布执行——
@@ -935,6 +973,7 @@ def unpublish(
     settings: Settings = Depends(get_settings),
     registry: RegistryService = Depends(get_registry),
     publisher: Publisher = Depends(get_publisher),
+    store: SkillStateStore = Depends(get_store),
 ) -> UnpublishResponse:
     """下架：仅删除受管 symlink 本身，绝不递归删除目录（design 6.2）。
 
@@ -942,7 +981,8 @@ def unpublish(
     编码与代理日志差异）；下架与“移出发布队列”无关。
     """
     ensure_admin_password(settings, req.password)
-    _require_known_skill(registry, _require_skill_id(skill_id))
+    skill = _require_known_skill(registry, _require_skill_id(skill_id))
+    _require_unmanaged_skill(store, skill)
     target_key = _require_target(target)
     _require_target_kind(target_key, "link")
     try:
@@ -980,6 +1020,7 @@ def delete_skill(
     ensure_admin_password(settings, req.password)
     _require_skill_id(skill_id)
     skill = _require_known_skill(registry, skill_id, code="unknown_skill")
+    _require_unmanaged_skill(store, skill)
     if skill.source is SkillSource.LOCAL:
         source_dir = settings.skills_source_root / skill.path
         if source_dir.exists():

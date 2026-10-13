@@ -47,3 +47,12 @@ cat ~/.hermes/skills/<id>/SKILL.md       # 可读即通
 revert 相关 commit 并把 compose 恢复 `/mnt` 挂载重建即可；但**已按新路径
 发布的链接在回滚后的容器内不可解析**（plan 会 blocked），需再执行一遍
 上面第 2 步的 find 清理。
+# 整包直链补充（2026-10-13）
+
+GitHub 包链接指向稳定 repos/<owner>__<repo> 仓库根，不再指 staging；
+容器、宿主 Agent 及工具执行环境仍须看到同一条路径。每个目标每包一条链，
+更新 Git 不换链接。旧安装目录不能在启动时搬移/删除，需显式转换。
+
+旧 OpenClaw 的嵌套扫描通过本包软链下的分组 extraDirs 适配；
+配置单文件挂载方法见 docs/skill-manager-nas-setup.md 与
+deploy/docker-compose.skill-packs.yml。

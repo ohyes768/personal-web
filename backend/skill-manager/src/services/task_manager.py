@@ -31,6 +31,7 @@ from src.models import (
     RegisterBatchResultItem,
     RegistrySkill,
     ScanOutcome,
+    TaskKind,
 )
 from src.services.git_cache import (
     GitCacheError,
@@ -43,7 +44,6 @@ from src.services.registry import RegistryService, RegistryValidationError
 
 logger = logging.getLogger(__name__)
 
-TaskKind = Literal["scan", "register", "register_batch", "clone_cache"]
 TaskState = Literal["running", "done", "error"]
 
 # 完结任务保留时长；超过后查询时惰性删除（PRD R4）
@@ -88,6 +88,7 @@ class TaskSnapshot:
     top_level: tuple = ()
     referenced_paths: tuple[str, ...] = ()
     results: tuple = ()
+    result: dict | None = None
 
 
 @dataclass
@@ -112,6 +113,8 @@ class _MutableTask:
     referenced_paths: tuple[str, ...] = ()
     results: tuple = ()
     skills: tuple[RegistrySkill, ...] = ()
+    operation: Callable | None = None
+    result: dict | None = None
 
 
 def _apply_progress(
@@ -154,6 +157,7 @@ def _snapshot_of(task: _MutableTask) -> TaskSnapshot:
         top_level=task.top_level,
         referenced_paths=task.referenced_paths,
         results=task.results,
+        result=task.result,
     )
 
 
@@ -223,6 +227,20 @@ class GithubTaskManager:
 
     # ---------- 查询 ----------
 
+    def start_operation(
+        self,
+        kind: TaskKind,
+        repository: str,
+        operation: Callable[[Callable[[GitProgress], None]], dict],
+    ) -> TaskSnapshot:
+        """Use the existing progress/lifetime machinery for whole-pack actions.
+
+        Callers pass an operation after authentication; never capture passwords.
+        """
+        if kind not in ("prepare_pack", "update_pack", "install_pack"):
+            raise ValueError("Unsupported pack task kind")
+        return self._create(kind=kind, repository=repository, operation=operation)
+
     def get(self, task_id: str) -> TaskSnapshot | None:
         """返回任务快照；完结任务超过保留窗口后惰性回收（返回 None）。
 
@@ -248,6 +266,7 @@ class GithubTaskManager:
         repository: str,
         skill: RegistrySkill | None = None,
         skills: tuple[RegistrySkill, ...] = (),
+        operation: Callable | None = None,
     ) -> TaskSnapshot:
         task_id = uuid.uuid4().hex
         now = self._clock()
@@ -258,6 +277,7 @@ class GithubTaskManager:
             skill=skill,
             skill_id=skill.id if skill is not None else None,
             skills=skills,
+            operation=operation,
             created_at=now,
             updated_at=now,
         )
@@ -280,6 +300,7 @@ class GithubTaskManager:
         return snapshot
 
     def _run(self, task_id: str) -> None:
+        from src.services.packs import PackError
         with self._lock:
             task = self._tasks.get(task_id)
         if task is None:
@@ -288,6 +309,8 @@ class GithubTaskManager:
             self._execute(task_id, task)
         except _BatchAllFailed as exc:
             self._fail(task_id, "cache_failed", str(exc))
+        except PackError as exc:
+            self._fail(task_id, exc.code, exc.message)
         except GitTimeoutError:
             self._fail(task_id, "download_timeout", _DOWNLOAD_TIMEOUT_MESSAGE)
         except UnreachableRepositoryError:
@@ -310,7 +333,12 @@ class GithubTaskManager:
 
     def _execute(self, task_id: str, task: _MutableTask) -> None:
         """执行任务并把结果数据直接写入 task（持锁）；正常返回即视为 done。"""
-        if task.kind == "scan":
+        if task.operation is not None:
+            result = task.operation(self._progress_sink(task_id))
+            with self._lock:
+                task.result = result
+                task.updated_at = self._clock()
+        elif task.kind == "scan":
             self._execute_scan(task_id, task)
         elif task.kind == "register":
             self._execute_register(task_id, task)

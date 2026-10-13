@@ -18,14 +18,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from src.api.routes import router
+from src.api.packs import router as packs_router
 from src.config import Settings
 from src.db import SkillStateStore
 from src.services.git_cache import GitCacheService, cleanup_stale_workspaces
-from src.services.migration import (
-    migrate_legacy_cache,
-    republish_active_github_skills,
-)
 from src.services.publisher import Publisher
+from src.services.packs import PackError, PackService
 from src.services.registry import RegistryService
 from src.services.task_manager import GithubTaskManager
 
@@ -41,32 +39,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.registry = RegistryService(store, settings.skills_source_root)
     app.state.publisher = Publisher(settings, store)
     app.state.git_cache = GitCacheService(settings, store)
+    app.state.packs = PackService(settings, store, app.state.git_cache)
     # GitHub 后台任务表：与 git_cache 共享同一单例，测试对 get_git_cache
     # / get_task_manager 做 dependency_overrides 时需一并注入同源实例
     app.state.task_manager = GithubTaskManager(app.state.git_cache, app.state.registry)
     # 进程重启遗留的扫描工作区 / clone 临时目录（孤儿）在启动时清空；
     # 失败仅记日志，不阻断启动（PRD R8 / design §4）
     cleanup_stale_workspaces(settings)
-    # 共享缓存布局一次性迁移（旧 <cache>/<skill.id>/ → repos/<owner>__<repo>/，
-    # 2026-09-30 批量登记任务）+ active github 部署自动重发布（无网络，
-    # 失败逐条记 deployment_history，不阻断启动，design §5.3）
+    # Data-only aggregation leaves legacy checkouts/links intact until explicit
+    # whole-pack conversion. Moving old caches here would break existing links.
     try:
-        moved, discarded = migrate_legacy_cache(
-            settings, app.state.registry.list_skills()
-        )
-        if moved or discarded:
-            logger.info(
-                "legacy cache migrated: moved=%d discarded=%d", moved, discarded
-            )
-        republished = republish_active_github_skills(
-            settings,
-            app.state.registry,
-            store,
-            app.state.publisher,
-            app.state.git_cache,
-        )
-        if republished:
-            logger.info("startup republished %d active github skills", republished)
+        app.state.packs.migrate_legacy()
+        app.state.packs.recover_conversions()
     except Exception:
         logger.exception("startup migration failed; continuing boot")
     business_logger = logging.getLogger("src")
@@ -82,6 +66,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(title="skill-manager", lifespan=lifespan)
 app.include_router(router)
+app.include_router(packs_router)
+
+
+@app.exception_handler(PackError)
+async def pack_exception_handler(request: Request, exc: PackError) -> JSONResponse:
+    return JSONResponse(status_code=exc.status,
+                        content={"code": exc.code, "message": exc.message})
 
 
 @app.exception_handler(HTTPException)

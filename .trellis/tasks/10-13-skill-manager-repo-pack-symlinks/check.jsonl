@@ -1,0 +1,6 @@
+{"file":".trellis/spec/guides/skill-manager-github-cache.md","reason":"替代子技能登记/staging 契约，复用仓库缓存和后台 Git 进度"}
+{"file":".trellis/spec/guides/skill-manager-frontend.md","reason":"整包入口、导航、轮询和 Windows 验证约束"}
+{"file":".trellis/spec/guides/skill-manager-registry-sync.md","reason":"自研对账保留与登记真源边界"}
+{"file":".trellis/spec/guides/skill-manager-export-targets.md","reason":"link/export 分类和旧 ZIP/台账兼容"}
+{"file":".trellis/spec/backend/testing-environment.md","reason":"真实 symlink 与分盘 basetemp 验证"}
+{"file":".trellis/tasks/10-13-skill-manager-repo-pack-symlinks/research/findings.md","reason":"用户明确决策、历史来源、两个 Agent 目录发现与部署验证门槛"}

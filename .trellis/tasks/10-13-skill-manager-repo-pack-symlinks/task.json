@@ -1,0 +1,31 @@
+{
+  "id": "skill-manager-repo-pack-symlinks",
+  "name": "skill-manager-repo-pack-symlinks",
+  "title": "Skill Manager 整包仓库软链安装与更新",
+  "description": "GitHub 技能按仓库整包管理；Hermes/OpenClaw 每包一条软链直指共享仓库，手动 Git 更新即时生效；规划存量登记与快照迁移。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "skill-manager",
+  "package": "backend/skill-manager",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-13",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "prd.md",
+    "design.md",
+    "implement.md",
+    "research/findings.md"
+  ],
+  "notes": "整包直链实现完成；Windows关键后端31通过/3权限跳过、配置20通过、前端27测试/typecheck/lint通过。生产build打包受Windows软链权限限制。按用户要求停止WSL；未提交/推送/部署。详见verification.md。",
+  "meta": {}
+}

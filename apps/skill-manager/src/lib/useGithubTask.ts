@@ -17,7 +17,7 @@ export interface GithubTaskPoll {
   error: string;
 }
 
-export function useGithubTask(taskId: string): GithubTaskPoll {
+export function useGithubTask(taskId: string, fetchTask = getGithubTask): GithubTaskPoll {
   const [task, setTask] = useState<TaskSnapshot | null>(null);
   const [error, setError] = useState('');
 
@@ -39,7 +39,7 @@ export function useGithubTask(taskId: string): GithubTaskPoll {
 
     async function poll() {
       try {
-        const snapshot = await getGithubTask(taskId);
+        const snapshot = await fetchTask(taskId);
         if (stopped) {
           return;
         }
@@ -63,7 +63,7 @@ export function useGithubTask(taskId: string): GithubTaskPoll {
       stopped = true;
       stopTimer();
     };
-  }, [taskId]);
+  }, [taskId, fetchTask]);
 
   return { task, error };
 }

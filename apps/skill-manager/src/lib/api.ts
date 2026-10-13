@@ -224,3 +224,15 @@ export function updateSkillTags(
     }
   );
 }
+
+const PACK_BASE = '/api/github-packs';
+export const listGithubPacks = () => request<{ items: import('./types').GithubPack[] }>('', undefined, PACK_BASE);
+export const getGithubPack = (id: string) => request<import('./types').GithubPack>(`/${encodeURIComponent(id)}`, undefined, PACK_BASE);
+export const addGithubPack = (input: import('./types').GithubPackInput, password: string) => request<AsyncTaskCreated>('', { method: 'POST', body: jsonBody({ ...input, password }) }, PACK_BASE);
+export const getGithubPackTask = (id: string) => request<TaskSnapshot>(`/tasks/${encodeURIComponent(id)}`, undefined, PACK_BASE);
+export const checkGithubPack = (id: string) => request<import('./types').GithubPack>(`/${encodeURIComponent(id)}/check-update`, { method: 'POST' }, PACK_BASE);
+export const updateGithubPack = (id: string, password: string) => request<AsyncTaskCreated>(`/${encodeURIComponent(id)}/update`, { method: 'POST', body: jsonBody({ password }) }, PACK_BASE);
+export const planGithubPack = (id: string, targets: TargetKey[]) => request<import('./types').PackPlan>(`/${encodeURIComponent(id)}/plan`, { method: 'POST', body: jsonBody({ targets }) }, PACK_BASE);
+export const installGithubPack = (id: string, targets: TargetKey[], password: string) => request<AsyncTaskCreated>(`/${encodeURIComponent(id)}/install`, { method: 'POST', body: jsonBody({ targets, password }) }, PACK_BASE);
+export const uninstallGithubPack = (id: string, target: TargetKey, password: string) => request<unknown>(`/${encodeURIComponent(id)}/targets/${target}`, { method: 'DELETE', body: jsonBody({ password }) }, PACK_BASE);
+export const deleteGithubPack = (id: string, password: string) => request<unknown>(`/${encodeURIComponent(id)}`, { method: 'DELETE', body: jsonBody({ password }) }, PACK_BASE);

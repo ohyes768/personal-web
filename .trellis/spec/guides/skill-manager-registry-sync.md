@@ -1,5 +1,9 @@
 # Skill Manager 自研 Skill 登记与对账（sync_local）
 
+> GitHub 新入口使用 github_pack；registry_skill/sync_local 继续用于自研和
+> 旧记录兼容。映射到包的旧 GitHub 写入口不能改变共享仓库或误删其缓存。
+> 详见 [整包协议](../backend/skill-manager/backend/repo-packs.md)。
+
 > **Purpose**: 讲清自研（`source: local`）Skill 如何进入登记真源、`source_missing`
 > 语义，以及 2026-09-22 源库 sync 工具链废弃后的遗留状态。改 skill-manager
 > 登记/列表流程前必读。

@@ -153,6 +153,11 @@ class SkillStateStore:
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn, conn:
             conn.executescript(_SCHEMA)
+            conn.executescript("""
+                CREATE TABLE IF NOT EXISTS github_pack(id TEXT PRIMARY KEY, repository TEXT NOT NULL UNIQUE, payload TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS legacy_github_pack_member(skill_id TEXT PRIMARY KEY, pack_id TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS github_pack_history(id INTEGER PRIMARY KEY AUTOINCREMENT, pack_id TEXT NOT NULL, action TEXT NOT NULL, result TEXT NOT NULL, detail TEXT NOT NULL, created_at TEXT NOT NULL);
+            """)
             _apply_column_migrations(conn)
             conn.execute("BEGIN IMMEDIATE")
             if not conn.execute("SELECT 1 FROM state_migration WHERE id = 'export_targets_v1'").fetchone():
@@ -424,6 +429,56 @@ class SkillStateStore:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
         return conn
+
+    def list_packs(self):
+        from src.models import GithubPack
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT payload FROM github_pack ORDER BY id").fetchall()
+        return [GithubPack.model_validate_json(row["payload"]) for row in rows]
+
+    def get_pack(self, pack_id: str):
+        return next((pack for pack in self.list_packs() if pack.id == pack_id), None)
+
+    def upsert_pack(self, pack) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("INSERT INTO github_pack(id,repository,payload) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (pack.id, pack.repository, pack.model_dump_json()))
+
+    def persist_pack_conversion(self, pack, records: list[DeploymentRecord]) -> None:
+        """Commit the pack state and legacy link states in one SQLite transaction."""
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("UPDATE github_pack SET payload=? WHERE id=?", (pack.model_dump_json(), pack.id))
+            for record in records:
+                conn.execute("UPDATE deployment SET status=? WHERE skill_id=? AND target=?", (record.status, record.skill_id, record.target))
+
+    def delete_pack(self, pack_id: str) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("DELETE FROM github_pack WHERE id=?", (pack_id,))
+
+    def map_pack_member(self, skill_id: str, pack_id: str) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("INSERT OR IGNORE INTO legacy_github_pack_member VALUES(?,?)", (skill_id, pack_id))
+
+    def migrate_pack_member(self, pack, skill_id: str) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if conn.execute("SELECT 1 FROM legacy_github_pack_member WHERE skill_id=?", (skill_id,)).fetchone():
+                return
+            conn.execute("INSERT INTO github_pack(id,repository,payload) VALUES(?,?,?) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload", (pack.id, pack.repository, pack.model_dump_json()))
+            conn.execute("INSERT INTO legacy_github_pack_member VALUES(?,?)", (skill_id, pack.id))
+
+    def get_pack_for_skill(self, skill_id: str) -> str | None:
+        with closing(self._connect()) as conn:
+            row = conn.execute("SELECT pack_id FROM legacy_github_pack_member WHERE skill_id=?", (skill_id,)).fetchone()
+        return row["pack_id"] if row else None
+
+    def list_pack_members(self, pack_id: str) -> list[str]:
+        with closing(self._connect()) as conn:
+            return [row["skill_id"] for row in conn.execute("SELECT skill_id FROM legacy_github_pack_member WHERE pack_id=? ORDER BY skill_id", (pack_id,))]
+
+    def append_pack_history(self, pack_id: str, action: str, result: str, detail: str = "") -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("INSERT INTO github_pack_history(pack_id,action,result,detail,created_at) VALUES(?,?,?,?,?)", (pack_id,action,result,detail,_utcnow_iso()))
 
 
 def _apply_column_migrations(conn: sqlite3.Connection) -> None:
