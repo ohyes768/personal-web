@@ -26,8 +26,8 @@ Applies to community_registry.py, community_directory.py, directory_collection.p
 
 ## 4. API / Validation & Error Matrix
 External /api/map/directory, backend /api/directory. Envelope success/data.
-- GET communities?q&district&deleted&page&page_size → items,total,page; POST communities {name,aliases,district,address}; GET/PUT/DELETE communities/{cid}; POST .../restore and .../merge {community_id}.
-- GET sources?q&district&source&status&page&page_size; GET sources/{rid} → candidates,possible_deleted,sample_count (raw samples omitted); POST .../associate {community_id}; DELETE .../associate?community_id (reject target or unlink current); DELETE sources/{rid}; POST .../restore and .../create-community {name,aliases,district,address}.
+- GET communities?q&district&deleted&residential_state&page&page_size → items,total,page; GET/PUT/DELETE communities/{cid}; POST .../restore and .../merge {community_id}. Manual community creation is no longer exposed; new entries only arrive via /directory/collection → CommunityRegistry.create_from_source.
+- GET sources?q&district&source&status&page&page_size; GET sources/{rid} → candidates,possible_deleted,sample_count (raw samples omitted); POST .../associate {community_id}; DELETE .../associate?community_id (reject target or unlink current); DELETE sources/{rid}; POST .../restore.
 - POST auto-associate → matched; GET/POST/DELETE collection. POST accepts sources from tmsf/fang/laipai; starts202.
 - Invalid parameters422; unknown detail404; invalid/deleted target, duplicate Fang binding, active collection or invalid restore409; SQLite/filesystem failures503. Upstream errors are per-source reports. Corrupt directory must not silently fall back to JSON.
 

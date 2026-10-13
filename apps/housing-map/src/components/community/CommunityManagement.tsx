@@ -73,7 +73,6 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
   const [targetQuery, setTargetQuery] = useState('');
   const [targets, setTargets] = useState<Community[]>([]);
   const [targetId, setTargetId] = useState('');
-  const [newForm, setNewForm] = useState(false);
   const [confirm, setConfirm] = useState<{ path: string; method: string; body?: object; text: string } | null>(null);
   const confirmationDialog = useRef<HTMLDialogElement>(null);
   const [report, setReport] = useState<Report | null>(null);
@@ -143,17 +142,8 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
     } catch (e) { setError(e instanceof Error ? e.message : '操作失败'); }
     finally { setBusy(false); }
   }
-  async function create() {
-    setBusy(true); setError('');
-    try {
-      const path = selected?.kind === 'sources' ? `/sources/${selected.id}/create-community` : '/communities';
-      const c = await request<Community>(path, 'POST', { name, aliases: aliases.split(/[、,，]/).filter(Boolean), district, address });
-      setNewForm(false); setSelected({ kind: 'communities', id: c.community_id }); setDetail(null); setRevision(v => v + 1); onChanged();
-    } catch (e) { setError(e instanceof Error ? e.message : '创建失败'); }
-    finally { setBusy(false); }
-  }
   function choose(kind: 'communities' | 'sources', id: string) {
-    setSelected({ kind, id }); setDetail(null); setTargetId(''); setTargetQuery(''); setNewForm(false); setConfirm(null);
+    setSelected({ kind, id }); setDetail(null); setTargetId(''); setTargetQuery(''); setConfirm(null);
   }
   const c = detail && 'community_name' in detail ? detail : null;
   const s = detail && 'source_id' in detail ? detail : null;
@@ -167,7 +157,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
   return <section className="directory-page">
     <header className="directory-header"><div><p className="directory-kicker">COMMUNITY DIRECTORY</p><h2>小区数据管理</h2>
       <p className="directory-muted">三个名称采集来源，一份目录。保留原始名称，集中处理关联与删除。</p></div>
-      <button className="btn btn-secondary" disabled={busy} onClick={() => { setSelected(null); setDetail(null); setName(''); setAliases(''); setAddress(''); setDistrict('滨江'); setNewForm(true); }}>新增小区</button></header>
+</header>
     <div className="directory-collection">
       <div className="directory-actions">{Object.entries(labels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
         <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length} onClick={() => void act('/collection', 'POST', { sources: collectionSources })}>采集名称</button>
@@ -210,18 +200,17 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       </tbody></table></div>{!rows.length && <p className="directory-empty">没有符合条件的记录。</p>}</>}
       <div className="directory-actions"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => setPage(v => v - 1)}>上一页</button><span className="directory-muted">共 {total} 条 · 每页 30 条 · 第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => setPage(v => v + 1)}>下一页</button></div>
     </div>
-    {(selected || newForm) && <aside className="directory-detail"><div className="directory-source-heading"><h3>{c?.community_name || s?.name || (newForm ? '新增小区' : '加载详情…')}</h3><button className="btn btn-secondary" onClick={() => { setSelected(null); setDetail(null); setNewForm(false); }}>关闭</button></div>
+    {selected && <aside className="directory-detail"><div className="directory-source-heading"><h3>{c?.community_name || s?.name || '加载详情…'}</h3><button className="btn btn-secondary" onClick={() => { setSelected(null); setDetail(null); }}>关闭</button></div>
       {c && !c.deleted && <>{inputForm}<button className="btn btn-primary" disabled={busy} onClick={() => void act(`/communities/${c.community_id}`, 'PUT', { name, aliases: aliases.split(/[、,，]/).filter(Boolean), address, district })}>保存名称与别名</button>
         <p className="directory-muted">中心点：{c.longitude && c.latitude ? `${c.longitude}, ${c.latitude}` : '待补充'} · 边界：{c.has_boundary ? '已关联' : '未关联'}</p></>}
       {c?.sources?.map(r => <DirectorySourceCard key={r.id} item={r}>{!c.deleted && <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirm({ path: `/sources/${r.id}/associate`, method: 'DELETE', text: `解除“${r.name}”与当前小区的关联？解除后原来源租金或法拍不再归到这个小区。` })}>解除关联</button>}</DirectorySourceCard>)}
       {s && <DirectorySourceCard item={s}><p>已保存租房样本 {s.sample_count || 0} 条</p>{s.status === 'matched' && <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirm({ path: `/sources/${s.id}/associate`, method: 'DELETE', text: '解除当前关联？已有数据将按新的关联关系展示。' })}>解除当前关联</button>}</DirectorySourceCard>}
-      {s?.status === 'pending' && <>{!!s.possible_deleted?.length && <p className="directory-warning">与已删除小区同名：{s.possible_deleted.join('、')}。请核对是否来源换了 ID，避免重复建立。</p>}<h4>关联候选</h4>{s.candidates?.length ? s.candidates.map(candidate => <div className="directory-candidate" key={candidate.community_id}><strong>{candidate.community_name}</strong><p>{candidate.address || '地址未知'}</p>{candidate.evidence?.map(e => <small key={e}>{e}</small>)}<div className="directory-actions"><button className="btn btn-primary" disabled={busy} onClick={() => setConfirm({ path: `/sources/${s.id}/associate`, method: 'POST', body: { community_id: candidate.community_id }, text: `确认“${s.name}”与“${candidate.community_name}”是同一小区、同一分期？` })}>确认关联</button><button className="btn btn-secondary" disabled={busy} onClick={() => void act(`/sources/${s.id}/associate?community_id=${candidate.community_id}`, 'DELETE')}>不是此小区</button></div></div>) : <p className="directory-muted">没有名称候选，可搜索已有目录或建立新小区。</p>}</>}
+      {s?.status === 'pending' && <>{!!s.possible_deleted?.length && <p className="directory-warning">与已删除小区同名：{s.possible_deleted.join('、')}。请核对是否来源换了 ID，避免重复建立。</p>}<h4>关联候选</h4>{s.candidates?.length ? s.candidates.map(candidate => <div className="directory-candidate" key={candidate.community_id}><strong>{candidate.community_name}</strong><p>{candidate.address || '地址未知'}</p>{candidate.evidence?.map(e => <small key={e}>{e}</small>)}<div className="directory-actions"><button className="btn btn-primary" disabled={busy} onClick={() => setConfirm({ path: `/sources/${s.id}/associate`, method: 'POST', body: { community_id: candidate.community_id }, text: `确认“${s.name}”与“${candidate.community_name}”是同一小区、同一分期？` })}>确认关联</button><button className="btn btn-secondary" disabled={busy} onClick={() => void act(`/sources/${s.id}/associate?community_id=${candidate.community_id}`, 'DELETE')}>不是此小区</button></div></div>) : <p className="directory-muted">没有名称候选，可搜索已有目录，下次采集会补齐。</p>}</>}
       {((s && s.status !== 'ignored') || (c && !c.deleted)) && <div className="directory-linker"><h4>{s ? '手动选择小区' : '合并到已有小区'}</h4>
         <input aria-label="搜索关联目标" placeholder="搜索目标小区" value={targetQuery} onChange={e => { setTargetQuery(e.target.value); setTargetId(''); }} />
         <select aria-label="目标小区" value={targetId} onChange={e => setTargetId(e.target.value)}><option value="">选择目标小区</option>{targets.filter(t => t.community_id !== c?.community_id).map(t => <option key={t.community_id} value={t.community_id}>{t.community_name} · {t.district} · {t.address}</option>)}</select>
         <button className="btn btn-secondary" disabled={busy || !targetId} onClick={() => setConfirm({ path: s ? `/sources/${s.id}/associate` : `/communities/${c!.community_id}/merge`, method: 'POST', body: { community_id: targetId }, text: s ? '确认关联到选定小区？请核对地址和分期。' : '确认合并？来源与历史归到目标小区，原名称保留为别名。' })}>{s ? '关联所选小区' : '合并至所选小区'}</button>
-        {s?.status === 'pending' && <button className="btn btn-secondary" disabled={busy} onClick={() => setNewForm(v => !v)}>作为新小区建立</button>}</div>}
-      {newForm && <>{inputForm}<button className="btn btn-primary" disabled={busy || !name.trim()} onClick={() => void create()}>创建{s ? '并关联' : ''}</button></>}
+</div>}
       {(c || s) && <div className="directory-danger">{c?.deleted || s?.status === 'ignored' ? <button className="btn btn-secondary" disabled={busy} onClick={() => { if (s?.community_id) choose('communities', s.community_id); else void act(c ? `/communities/${c.community_id}/restore` : `/sources/${s!.id}/restore`, 'POST'); }}>恢复{c || s?.community_id ? '整个小区' : '来源候选'}</button> : <><p>删除会排除整个小区及所有已关联来源，后续采集跳过；历史保留。</p><button className="btn btn-secondary" disabled={busy} onClick={() => setConfirm({ path: c ? `/communities/${c.community_id}` : `/sources/${s!.id}`, method: 'DELETE', text: s && !s.community_id ? '此来源尚未关联小区，删除会记住该来源身份，下次采集跳过。' : '确认删除整个小区及所有已关联来源？将停止详情采集和业务展示，历史保留且可恢复。' })}>删除{c || s?.community_id ? '整个小区' : '未关联候选'}</button></>}</div>}
       {c?.events && <details><summary>操作记录（最近 {c.events.length} 条）</summary>{c.events.map(e => <p className="directory-muted" key={e.seq}>{e.created_at.slice(0, 19).replace('T', ' ')} UTC · {e.action}{e.payload.reason ? ` · ${e.payload.reason}` : ''}</p>)}</details>}
     </aside>}</div>
