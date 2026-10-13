@@ -408,8 +408,8 @@ services:
       - OPENCLAW_SKILLS_ROOT=${OPENCLAW_SKILLS_HOST_PATH:-}
       - HERMES_SKILLS_ROOT=${HERMES_SKILLS_HOST_PATH:-}
       - SKILL_MANAGER_STATE_DIR=/app/state
-      - HTTPS_PROXY=http://host.docker.internal:38457
-      - HTTP_PROXY=http://host.docker.internal:38457
+      - HTTPS_PROXY=http://host.docker.internal:38458
+      - HTTP_PROXY=http://host.docker.internal:38458
       - NO_PROXY=localhost,127.0.0.1
       - GIT_SSL_CAINFO=/etc/ssl/fastgithub-ca.pem
       - SKILL_MANAGER_ADMIN_PASSWORD=${SKILL_MANAGER_ADMIN_PASSWORD:-}

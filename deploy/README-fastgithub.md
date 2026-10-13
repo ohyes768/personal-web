@@ -1,7 +1,7 @@
 # skill-manager 后端容器访问 GitHub（FastGithub 代理）部署说明
 
 容器内 `git ls-remote/clone` github.com 依赖宿主机 FastGithub 代理
-（直连被墙，GnuTLS -110）。FastGithub 只监听 `127.0.0.1:38457` 且为
+（直连被墙，GnuTLS -110）。FastGithub 只监听 `127.0.0.1:38458` 且为
 MITM 模式（issuer=CN=FastGithub），因此需要以下三步一次性配置。
 
 ## 1. 放置 CA 证书
@@ -35,7 +35,7 @@ Description=Forward docker0 to FastGithub loopback proxy
 After=network-online.target docker.service
 
 [Service]
-ExecStart=/usr/bin/socat TCP-LISTEN:38457,bind=172.17.0.1,fork,reuseaddr TCP:127.0.0.1:38457
+ExecStart=/usr/bin/socat TCP-LISTEN:38458,bind=172.17.0.1,fork,reuseaddr TCP:127.0.0.1:38458
 Restart=always
 RestartSec=3
 
