@@ -6,6 +6,7 @@
  */
 
 import type { LinkTargetKey as TargetKey } from './targets';
+import type { PlanItem, PublishResultItem } from './types';
 export type { LinkTargetKey as TargetKey } from './targets';
 
 export interface QueueEntry {
@@ -52,4 +53,13 @@ export function removeQueueTarget(
 
 export function clearQueue(_items: QueueEntry[]): QueueEntry[] {
   return [];
+}
+
+export function queueAfterPublish(items: QueueEntry[], results: PublishResultItem[], plan: PlanItem[]): QueueEntry[] {
+  const completed = new Set([
+    ...results.filter(item => item.status === 'success').map(item => `${item.skill_id}:${item.target}`),
+    ...plan.filter(item => item.action === 'unchanged').map(item => `${item.skill_id}:${item.target}`),
+  ]);
+  return items.map(item => ({ ...item, targets: item.targets.filter(target => !completed.has(`${item.skillId}:${target}`)) }))
+    .filter(item => item.targets.length > 0);
 }

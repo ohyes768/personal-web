@@ -36,6 +36,7 @@ export default function RegisterGithubDialog({
   const [scanTaskId, setScanTaskId] = useState('');
   const [scanStarting, setScanStarting] = useState(false);
   const scanRequestPending = useRef(false);
+  const initializedScan = useRef('');
   const [scanSeconds, setScanSeconds] = useState(0);
   const [scanError, setScanError] = useState('');
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
@@ -67,18 +68,12 @@ export default function RegisterGithubDialog({
     return () => clearInterval(timer);
   }, [scanning]);
 
-  // 扫描完成且只有一个候选目录时自动选中（与改版前一致）
+  // 每轮完成时仅初始化一次，用户清空或调整后不得被轮询重新全选。
   useEffect(() => {
-    if (activeScan?.state === 'done' && activeScan.candidates.length === 1) {
-      const only = activeScan.candidates[0].path;
-      setSelectedPaths((prev) => (prev.length > 0 ? prev : [only]));
-    }
-  }, [activeScan]);
-
-  // 随行共享资源预选（design R4）：候选 SKILL.md 引用到的顶层路径，
-  // 排除候选目录的祖先目录（如 codex-skills/——勾上会把整棵候选树拷进快照）
-  useEffect(() => {
-    if (activeScan?.state === 'done') {
+    if (activeScan?.state === 'done' && initializedScan.current !== activeScan.task_id) {
+      initializedScan.current = activeScan.task_id;
+      setSelectedPaths(activeScan.candidates.map(candidate => candidate.path));
+      // 排除候选目录的祖先；用户调整后不再覆盖共享资源选项。
       setSharedPaths(
         activeScan.referenced_paths.filter(
           (entry) =>
@@ -102,6 +97,10 @@ export default function RegisterGithubDialog({
     setScanError('');
     setSelectedPaths([]);
     setSharedPaths([]);
+    initializedScan.current = '';
+    setName('');
+    setSummary('');
+    setTagsText('');
     try {
       const created = await startGithubScan(url);
       setScanTaskId(created.task_id);
@@ -130,6 +129,12 @@ export default function RegisterGithubDialog({
     selectedPaths.length === 1
       ? activeScan?.candidates.find((c) => c.path === selectedPaths[0]) ?? null
       : null;
+
+  useEffect(() => {
+    setName(singleCandidate?.name || singleCandidate?.path || '');
+    setSummary(singleCandidate?.description ?? '');
+    setTagsText('');
+  }, [singleCandidate]);
 
   function handleOpenPassword(event: FormEvent) {
     event.preventDefault();
@@ -258,7 +263,9 @@ export default function RegisterGithubDialog({
             </p>
           ) : (
             <>
-              <fieldset className="mt-3">
+              <details className="mt-3">
+                <summary className="cursor-pointer text-sm text-slate-700">已选择 {selectedPaths.length}/{activeScan.candidates.length} 个 Skill · 展开调整</summary>
+              <fieldset className="mt-2">
                 <legend className="flex w-full items-center justify-between text-sm font-medium text-slate-700">
                   候选目录（{selectedPaths.length}/{activeScan.candidates.length}）
                   {activeScan.candidates.length > 1 ? (
@@ -327,6 +334,7 @@ export default function RegisterGithubDialog({
                   </p>
                 ) : null}
               </fieldset>
+              </details>
 
               {activeScan.top_level.length > 0 ? (
                 <fieldset className="mt-3">

@@ -8,6 +8,7 @@ interface ConfirmActionDialogProps {
   confirmLabel?: string;
   busy?: boolean;
   error?: string;
+  completed?: boolean;
   onConfirm: (password: string) => void;
   onCancel: () => void;
 }
@@ -24,6 +25,7 @@ export default function ConfirmActionDialog({
   confirmLabel = '确认执行',
   busy = false,
   error,
+  completed = false,
   onConfirm,
   onCancel,
 }: ConfirmActionDialogProps) {
@@ -56,7 +58,7 @@ export default function ConfirmActionDialog({
             {description}
           </div>
         ) : null}
-        <label className="mt-4 block text-sm font-medium text-slate-700">
+        {!completed ? <label className="mt-4 block text-sm font-medium text-slate-700">
           管理密码
           <input
             type="password"
@@ -67,7 +69,7 @@ export default function ConfirmActionDialog({
             className="mt-1 w-full rounded border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none disabled:bg-slate-100"
             placeholder="NAS 管理密码（不保存、不回显）"
           />
-        </label>
+        </label> : null}
         {error ? (
           <p className="mt-2 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
             {error}
@@ -80,15 +82,15 @@ export default function ConfirmActionDialog({
             disabled={busy}
             className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
           >
-            取消
+            {completed ? '完成' : '取消'}
           </button>
-          <button
+          {!completed ? <button
             type="submit"
             disabled={busy || password.length === 0}
             className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
           >
             {busy ? '执行中…' : confirmLabel}
-          </button>
+          </button> : null}
         </div>
       </form>
     </div>

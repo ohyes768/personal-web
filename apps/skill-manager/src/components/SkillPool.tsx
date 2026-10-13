@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { ExportTarget, SkillCard, TargetDeployment } from '@/lib/types';
 import { shortRepo } from '@/lib/format';
+import { collectionStats, groupCollections, type SkillCollection } from '@/lib/collections';
 import { exportTargetLabel, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
 import {
   CrayfishIcon,
@@ -25,6 +26,10 @@ const TARGET_ICON: Record<TargetKey, { icon: ReactNode; hover: string }> = {
 interface SkillPoolProps {
   exportTargets: ExportTarget[];
   skills: SkillCard[];
+  allSkills?: SkillCard[];
+  onAddCollection?: (collection: SkillCollection, target: TargetKey) => void;
+  onCheckCollection?: (collection: SkillCollection) => void;
+  checkingUpdates?: boolean;
   queue: QueueEntry[];
   onToggleQueueTarget: (skillId: string, target: TargetKey) => void;
   onClone: (skillId: string, skillName: string) => void;
@@ -283,6 +288,10 @@ function SkillCardItem({
 
 export default function SkillPool({
   skills,
+  allSkills = skills,
+  onAddCollection,
+  onCheckCollection,
+  checkingUpdates,
   exportTargets,
   queue,
   onToggleQueueTarget,
@@ -306,9 +315,8 @@ export default function SkillPool({
     );
   }
 
-  return (
-    <ul className="grid grid-cols-1 items-stretch gap-2.5 md:grid-cols-2 lg:grid-cols-3">
-      {skills.map((skill) => (
+  function renderSkill(skill: SkillCard) {
+    return (
         <SkillCardItem
           key={skill.id}
           skill={skill}
@@ -322,7 +330,61 @@ export default function SkillPool({
           onExport={onExport}
           onDeleteExport={onDeleteExport}
         />
-      ))}
+    );
+  }
+
+  if (allSkills.some(skill => skill.source === 'github')) {
+    return (
+      <ul className="space-y-3">
+        {groupCollections(allSkills, skills).map(collection => {
+          const stats = collectionStats(collection.members);
+          const missingCache = collection.members.find(s => s.cache_missing);
+          return (
+            <li key={collection.key} className="rounded-lg border border-slate-200 bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <h3 className="text-base font-semibold text-slate-800">{collection.name}</h3>
+                  <p className="break-all text-xs text-slate-500">{collection.repository ?? '仓库地址异常，请展开检查'}</p>
+                </div>
+                <span className="rounded bg-sky-50 px-2 py-1 text-xs text-sky-700">GitHub 合集</span>
+              </div>
+              <p className="mt-2 text-sm text-slate-600">
+                已登记 {collection.members.length} 个 Skill
+                {collection.visibleMembers.length !== collection.members.length ? ` · 匹配 ${collection.visibleMembers.length} 个` : ''}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                {ALL_TARGETS.map(target => <span key={target}>{TARGET_LABEL[target]}：已发布 {stats.published[target]}/{collection.members.length}</span>)}
+                {stats.abnormal > 0 ? <span className="text-amber-700">异常 {stats.abnormal} 项</span> : null}
+                {stats.hasUpdate ? <span className="text-sky-700">有远端更新</span> : null}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {ALL_TARGETS.map(target => (
+                  <button key={target} type="button" onClick={() => onAddCollection?.(collection, target)}
+                    className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50">
+                    全部发布到 {TARGET_LABEL[target]}（{collection.members.length} 项）
+                  </button>
+                ))}
+                <button type="button" disabled={checkingUpdates || !collection.repository}
+                  onClick={() => onCheckCollection?.(collection)} className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 disabled:opacity-50">
+                  {checkingUpdates ? '检查中…' : '检查更新'}
+                </button>
+                {missingCache ? <button type="button" onClick={() => onClone(missingCache.id, collection.name)}
+                  className="rounded border border-amber-300 px-2 py-1 text-xs text-amber-700">恢复仓库缓存</button> : null}
+              </div>
+              <details className="mt-3 border-t border-slate-100 pt-2">
+                <summary className="cursor-pointer text-sm text-slate-600">成员详情（{collection.visibleMembers.length}）</summary>
+                <ul className="mt-2 grid grid-cols-1 gap-2 md:grid-cols-2">{collection.visibleMembers.map(renderSkill)}</ul>
+              </details>
+            </li>
+          );
+        })}
+      </ul>
+    );
+  }
+
+  return (
+    <ul className="grid grid-cols-1 items-stretch gap-2.5 md:grid-cols-2 lg:grid-cols-3">
+      {skills.map(renderSkill)}
     </ul>
   );
 }

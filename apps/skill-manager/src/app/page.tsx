@@ -19,6 +19,8 @@ import {
   unpublishSkill,
 } from '@/lib/api';
 import type { TargetKey } from '@/lib/queue';
+import { runUnpublishBatch, type UnpublishItem, type UnpublishResult } from '@/lib/batchActions';
+import { groupCollections } from '@/lib/collections';
 import type {
   ExportTarget,
   RegisterGithubBatchInput,
@@ -36,10 +38,9 @@ const SEG_BUTTON =
   'rounded px-3 py-1.5 text-sm transition-colors data-[active=true]:bg-white data-[active=true]:font-medium data-[active=true]:text-slate-800 data-[active=true]:shadow-sm text-slate-500 hover:text-slate-700';
 
 interface PendingUnpublish {
-  skillId: string;
-  skillName: string;
-  /** 待下架的 targets；每成功一个即移除，重试只针对剩余项 */
-  targets: TargetKey[];
+  name: string;
+  items: UnpublishItem[];
+  results: UnpublishResult[];
 }
 
 /** 待 Clone 缓存的 GitHub Skill（缓存缺失，发布前必须先重建缓存）。 */
@@ -141,11 +142,12 @@ function SkillManagerPage() {
     [skills]
   );
 
-  async function handleCheckUpdates() {
+  async function handleCheckUpdates(skillIds: string[] = []) {
+    if (checkingUpdates) return;
     setCheckingUpdates(true);
     setNotice(null);
     try {
-      const response = await checkUpdates([]);
+      const response = await checkUpdates(skillIds);
       // check-updates 是只读端点，检查结果由前端合并进卡片
       setSkills((prev) =>
         prev.map((skill) => {
@@ -157,8 +159,8 @@ function SkillManagerPage() {
       );
       const updatable = response.items.filter((i) => i.result === 'ok' && i.info?.has_update);
       setNotice({
-        kind: 'ok',
-        text: `检查完成：${updatable.length} 个 GitHub Skill 有远端更新`,
+        kind: response.items.some(i => i.result !== 'ok') ? 'err' : 'ok',
+        text: `检查完成：${updatable.length} 个 Skill 有远端更新${response.items.some(i => i.result !== 'ok') ? `；检查失败：${response.items.filter(i => i.result !== 'ok').map(i => `${i.skill_id}：${i.error}`).join('；')}` : ''}`,
       });
     } catch (err) {
       setNotice({
@@ -171,27 +173,17 @@ function SkillManagerPage() {
   }
 
   async function performUnpublish(password: string) {
-    if (!pendingUnpublish || pendingUnpublish.targets.length === 0) {
-      return;
-    }
+    if (!pendingUnpublish || pendingUnpublish.items.length === 0 || actionBusy) return;
     setActionBusy(true);
     setActionError('');
-    const { skillId, skillName, targets } = pendingUnpublish;
     try {
-      for (const target of targets) {
-        await unpublishSkill(skillId, target, password);
-        setPendingUnpublish((prev) =>
-          prev ? { ...prev, targets: prev.targets.filter((t) => t !== target) } : prev
-        );
-      }
-      setPendingUnpublish(null);
-      setNotice({
-        kind: 'ok',
-        text: `${skillName} 已下架（${targets.map((t) => TARGET_LABEL[t]).join('、')}）`,
-      });
+      const results = await runUnpublishBatch(pendingUnpublish.items, item => unpublishSkill(item.skillId, item.target, password));
+      const failed = results.filter(item => item.status === 'error');
+      setPendingUnpublish(prev => prev ? { ...prev, items: failed,
+        results: [...prev.results.filter(old => !results.some(item => item.skillId === old.skillId && item.target === old.target)), ...results] } : null);
+      if (failed.length > 0) setActionError(`${failed.length} 项失败，重新确认仅重试失败项`);
+      setNotice({ kind: failed.length ? 'err' : 'ok', text: `下架完成：${results.length - failed.length} 项成功，${failed.length} 项失败` });
       await refreshAll();
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : '操作失败');
     } finally {
       setActionBusy(false);
     }
@@ -361,9 +353,9 @@ function SkillManagerPage() {
               onClick={() => navigate({ tab: 'github' })}
               className={SEG_BUTTON}
             >
-              GitHub Skill
+              GitHub 合集
               <span className="ml-1.5 rounded-full border border-slate-200 bg-slate-100 px-1.5 text-xs text-slate-500">
-                {githubSkills.length}
+                {groupCollections(githubSkills).length}
               </span>
             </button>
           </div>
@@ -376,7 +368,7 @@ function SkillManagerPage() {
               <>
                 <button
                   type="button"
-                  onClick={handleCheckUpdates}
+                  onClick={() => void handleCheckUpdates()}
                   disabled={checkingUpdates}
                   className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                 >
@@ -417,13 +409,15 @@ function SkillManagerPage() {
             }}
             onUnpublish={(skillId, skillName, targets) => {
               setActionError('');
-              setPendingUnpublish({ skillId, skillName, targets });
+              setPendingUnpublish({ name: skillName, items: targets.map(target => ({ skillId, skillName, target })), results: [] });
             }}
           />
         </div>
         <div className={sourceTab === 'github' ? 'flex min-h-0 flex-1' : 'hidden'}>
           <SourceWorkspace
             source="github"
+            checkingUpdates={checkingUpdates}
+            onCheckUpdates={handleCheckUpdates}
             skills={githubSkills}
             loading={loading}
             onRefresh={refreshAll}
@@ -441,7 +435,7 @@ function SkillManagerPage() {
             }}
             onUnpublish={(skillId, skillName, targets) => {
               setActionError('');
-              setPendingUnpublish({ skillId, skillName, targets });
+              setPendingUnpublish({ name: skillName, items: targets.map(target => ({ skillId, skillName, target })), results: [] });
             }}
           />
         </div>
@@ -453,23 +447,33 @@ function SkillManagerPage() {
           skills={skills}
           agent={agent}
           onAgentChange={(next) => navigate({ agent: next })}
+          onUnpublishCollection={(name, members, target) => {
+            setActionError('');
+            setPendingUnpublish({ name, items: members.map(skill => ({ skillId: skill.id, skillName: skill.name, target })), results: [] });
+          }}
           onUnpublish={(skillId, skillName, target) => {
             setActionError('');
-            setPendingUnpublish({ skillId, skillName, targets: [target] });
+            setPendingUnpublish({ name: skillName, items: [{ skillId, skillName, target }], results: [] });
           }}
         />
       </div>
 
       {pendingUnpublish ? (
         <ConfirmActionDialog
-          title="确认下架"
+          title={pendingUnpublish.items.length ? '确认下架' : '下架结果'}
           description={
-            <p>
-              将从 {pendingUnpublish.targets.map((t) => TARGET_LABEL[t]).join('、')} 移除「
-              {pendingUnpublish.skillName}」的技能链接（不删除任何目录）。
-            </p>
+            <div className="space-y-2">
+              <p>「{pendingUnpublish.name}」：待下架 {pendingUnpublish.items.length} 项，只移除所列 Agent 的技能链接。</p>
+              <ul className="space-y-1 text-xs">{pendingUnpublish.items.map(item => <li key={`${item.skillId}-${item.target}`}>{item.skillName} → {TARGET_LABEL[item.target]}</li>)}</ul>
+              {pendingUnpublish.results.length ? <ul className="space-y-1 text-xs">{pendingUnpublish.results.map(item => (
+                <li key={`${item.skillId}-${item.target}`} className={item.status === 'error' ? 'text-rose-700' : 'text-emerald-700'}>
+                  {item.skillName} → {TARGET_LABEL[item.target]}：{item.status === 'success' ? '成功' : item.error}
+                </li>
+              ))}</ul> : null}
+            </div>
           }
-          confirmLabel="确认下架"
+          confirmLabel={pendingUnpublish.results.length ? '重试失败项' : '确认下架'}
+          completed={pendingUnpublish.items.length === 0}
           busy={actionBusy}
           error={actionError}
           onConfirm={(password) => void performUnpublish(password)}

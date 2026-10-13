@@ -46,7 +46,7 @@ export default function SkillFilters({
           type="search"
           value={value.query}
           onChange={(event) => onChange({ ...value, query: event.target.value })}
-          placeholder="按名称 / ID / 简介搜索"
+          placeholder={showUpdateFilter ? '按仓库 / 名称 / ID / 简介搜索' : '按名称 / ID / 简介搜索'}
           className="min-w-40 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
         />
         <select

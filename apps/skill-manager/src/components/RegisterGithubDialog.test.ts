@@ -1,5 +1,5 @@
 import { isValidElement, type ReactNode, type ReactElement } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskSnapshot } from '../lib/types';
 
 // Node 测试环境无 DOM；保留实际 JSX 树，以状态容器驱动重渲染并调用真实事件处理器。
@@ -7,6 +7,8 @@ const hooks = vi.hoisted(() => ({
   values: [] as unknown[], refs: [] as { current: unknown }[], index: 0, refIndex: 0,
   poll: { task: null as TaskSnapshot | null, error: '' },
   start: vi.fn(),
+  register: vi.fn(), batch: vi.fn(),
+  effects: [] as { deps: readonly unknown[]; cleanup?: () => void }[], effectIndex: 0,
 }));
 vi.mock('react', async (original) => ({
   ...await original<typeof import('react')>(),
@@ -22,14 +24,24 @@ vi.mock('react', async (original) => ({
     const index = hooks.refIndex++;
     return hooks.refs[index] ?? (hooks.refs[index] = { current: initial });
   },
-  useEffect() {},
+  useEffect(effect: () => void | (() => void), deps: readonly unknown[]) {
+    const index = hooks.effectIndex++;
+    const old = hooks.effects[index];
+    if (!old || deps.some((dep, i) => !Object.is(dep, old.deps[i]))) {
+      old?.cleanup?.();
+      const cleanup = effect();
+      hooks.effects[index] = { deps, cleanup: typeof cleanup === 'function' ? cleanup : undefined };
+    }
+  },
 }));
 vi.mock('@/lib/api', () => ({ startGithubScan: hooks.start }));
 vi.mock('@/lib/useGithubTask', () => ({ useGithubTask: () => hooks.poll }));
 import RegisterGithubDialog from './RegisterGithubDialog';
 
 type NodeProps = { children?: ReactNode; type?: string; onClick?: () => Promise<void>;
-  onChange?: (event: { target: { value: string } }) => void; disabled?: boolean;
+  onChange?: (event: { target: { value: string; checked?: boolean } }) => void; disabled?: boolean;
+  checked?: boolean; value?: string; onSubmit?: (event: { preventDefault(): void }) => void;
+  onConfirm?: (password: string) => void;
   role?: string; 'aria-busy'?: boolean; className?: string };
 function nodes(node: ReactNode): ReactElement<NodeProps>[] {
   if (Array.isArray(node)) return node.flatMap(nodes);
@@ -42,9 +54,15 @@ function text(node: ReactNode): string {
   return typeof node === 'string' || typeof node === 'number' ? String(node) : '';
 }
 function render() {
-  hooks.index = 0;
-  hooks.refIndex = 0;
-  return RegisterGithubDialog({ busy: false, onRegister() {}, onRegisterBatch() {}, onCancel() {} });
+  function pass() {
+    hooks.index = 0;
+    hooks.refIndex = 0;
+    hooks.effectIndex = 0;
+    return RegisterGithubDialog({ busy: false, onRegister: hooks.register, onRegisterBatch: hooks.batch, onCancel() {} });
+  }
+  pass();
+  pass();
+  return pass();
 }
 function scanButton(tree: ReactNode) {
   return nodes(tree).find((node) => node.type === 'button' && node.props.onClick)!;
@@ -65,11 +83,16 @@ function snapshot(overrides: Partial<TaskSnapshot> = {}): TaskSnapshot {
   };
 }
 beforeEach(() => {
+  vi.useFakeTimers();
   hooks.values = [];
   hooks.refs = [];
+  hooks.effects = [];
   hooks.poll = { task: null, error: '' };
   hooks.start.mockReset();
+  hooks.register.mockReset();
+  hooks.batch.mockReset();
 });
+afterEach(() => { hooks.effects.forEach(effect => effect.cleanup?.()); vi.useRealTimers(); });
 describe('GitHub scan loading', () => {
   it('shows immediate loading and blocks repeat clicks before the request resolves', async () => {
     let finish!: (value: { task_id: string; kind: string }) => void;
@@ -127,5 +150,38 @@ describe('GitHub scan loading', () => {
     expect(text(render())).toContain('准备扫描');
     finish({ task_id: 'next-task', kind: 'scan' });
     await pending;
+  });
+});
+
+describe('collection registration defaults', () => {
+  it('selects every candidate, submits batch, and preserves a user clearing the selection', async () => {
+    hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
+    await scanButton(enterRepository()).props.onClick!();
+    hooks.poll.task = snapshot({ state: 'done', candidates: [
+      { path: 'skills/a', name: 'Alpha', description: 'a' },
+      { path: 'skills/b', name: 'Beta', description: 'b' },
+    ] });
+    let tree = render();
+    expect(text(tree)).toContain('已选择 2/2');
+    expect(nodes(tree).find(n => n.type === 'details')?.props).not.toHaveProperty('open');
+    nodes(tree).find(n => n.type === 'form')!.props.onSubmit!({ preventDefault() {} });
+    nodes(render()).find(n => n.props.onConfirm)!.props.onConfirm!('test-password');
+    expect(hooks.batch.mock.calls[0][0].items.map((item: { path: string }) => item.path)).toEqual(['skills/a', 'skills/b']);
+    nodes(tree).find(n => n.type === 'button' && text(n) === '清空')!.props.onClick!();
+    hooks.poll.task = { ...hooks.poll.task };
+    tree = render();
+    expect(text(tree)).toContain('已选择 0/2');
+    hooks.start.mockResolvedValueOnce({ task_id: 'next-task', kind: 'scan' });
+    await scanButton(tree).props.onClick!();
+    expect(text(render())).not.toContain('已选择');
+  });
+  it('prefills a single candidate so registration needs no manual name entry', async () => {
+    hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
+    await scanButton(enterRepository()).props.onClick!();
+    hooks.poll.task = snapshot({ state: 'done', candidates: [{ path: '.', name: 'Only skill', description: 'Description' }] });
+    const tree = render();
+    nodes(tree).find(n => n.type === 'form')!.props.onSubmit!({ preventDefault() {} });
+    nodes(render()).find(n => n.props.onConfirm)!.props.onConfirm!('test-password');
+    expect(hooks.register.mock.calls[0][0]).toMatchObject({ path: '.', name: 'Only skill', summary: 'Description' });
   });
 });

@@ -4,10 +4,21 @@ import {
   clearQueue,
   removeQueueItem,
   removeQueueTarget,
+  queueAfterPublish,
   type QueueEntry,
 } from './queue';
 
 describe('queue 纯函数', () => {
+  it('keeps failed or blocked targets for retry and removes successful or unchanged targets', () => {
+    const initial: QueueEntry[] = [{ skillId: 'a', targets: ['hermes'] }, { skillId: 'b', targets: ['hermes', 'openclaw'] }, { skillId: 'c', targets: ['hermes'] }];
+    expect(queueAfterPublish(initial, [
+      { skill_id: 'a', target: 'hermes', status: 'success', action: 'add', error: '' },
+      { skill_id: 'b', target: 'hermes', status: 'error', action: 'none', error: 'failed' },
+    ], [{ skill_id: 'c', target: 'hermes', action: 'unchanged', reason: '', current_revision: '', planned_revision: '' }])).toEqual([
+      { skillId: 'b', targets: ['hermes', 'openclaw'] },
+    ]);
+    expect(initial).toHaveLength(3);
+  });
   it('removing an item from the queue never changes deployment state', () => {
     const initial: QueueEntry[] = [
       { skillId: 'macro', targets: ['openclaw'], deployment: 'published' },

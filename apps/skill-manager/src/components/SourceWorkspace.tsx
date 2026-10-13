@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
 import EditSkillTagsDialog from '@/components/EditSkillTagsDialog';
 import ExportDialog from '@/components/ExportDialog';
 import PublishQueue from '@/components/PublishQueue';
 import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/SkillFilters';
 import SkillPool from '@/components/SkillPool';
+import { addCollectionToQueue, type SkillCollection } from '@/lib/collections';
 import { ApiClientError, deleteExport, exportSkill, publish, publishPlan, updateSkillTags } from '@/lib/api';
 import { LINK_TARGETS, type ExportTargetKey } from '@/lib/targets';
 import {
@@ -14,6 +15,7 @@ import {
   clearQueue,
   removeQueueItem,
   removeQueueTarget,
+  queueAfterPublish,
   type QueueEntry,
   type TargetKey,
 } from '@/lib/queue';
@@ -36,13 +38,15 @@ interface SourceWorkspaceProps {
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
+  onCheckUpdates?: (skillIds: string[]) => Promise<void>;
+  checkingUpdates?: boolean;
 }
 
 function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
   const query = filters.query.trim().toLowerCase();
   return skills.filter((skill) => {
     if (query) {
-      const haystack = `${skill.name} ${skill.id} ${skill.summary}`.toLowerCase();
+      const haystack = `${skill.name} ${skill.id} ${skill.summary} ${skill.repository ?? ''}`.toLowerCase();
       if (!haystack.includes(query)) {
         return false;
       }
@@ -95,9 +99,13 @@ export default function SourceWorkspace({
   onClone,
   onDelete,
   onUnpublish,
+  onCheckUpdates,
+  checkingUpdates,
 }: SourceWorkspaceProps) {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [queue, setQueue] = useState<QueueEntry[]>([]);
+  const queueRef = useRef(queue);
+  queueRef.current = queue;
   const [plan, setPlan] = useState<PlanItem[] | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [results, setResults] = useState<PublishResultItem[] | null>(null);
@@ -130,6 +138,14 @@ export default function SourceWorkspace({
       queued ? removeQueueTarget(prev, skillId, target) : addQueueTarget(prev, skillId, target)
     );
     onNotify(null);
+    setPlan(null);
+  }
+
+  function handleAddCollection(collection: SkillCollection, target: TargetKey) {
+    setQueue(prev => addCollectionToQueue(prev, collection, target));
+    setPlan(null);
+    setResults(null);
+    onNotify({ kind: 'ok', text: `已将「${collection.name}」全部 ${collection.members.length} 项加入发布队列；生成计划后确认发布` });
   }
 
   async function handleGeneratePlan() {
@@ -139,10 +155,16 @@ export default function SourceWorkspace({
     setPlanLoading(true);
     setResults(null);
     onNotify(null);
+    const requestedQueue = queue;
     try {
       const response = await publishPlan(
         queue.map((entry) => ({ skill_id: entry.skillId, targets: entry.targets }))
       );
+      if (queueRef.current !== requestedQueue) {
+        setPlan(null);
+        onNotify({ kind: 'err', text: '发布队列已改变，请重新生成计划' });
+        return;
+      }
       setPlan(response.items);
     } catch (err) {
       onNotify({
@@ -175,8 +197,9 @@ export default function SourceWorkspace({
     try {
       const response = await publish(planToRequests(plan), password);
       setResults(response.items);
-      setQueue([]);
-      setPlan([]);
+      // 成功项退出队列，失败项保留；重试不重复发布已成功目标。
+      setQueue(prev => queueAfterPublish(prev, response.items, plan));
+      setPlan(plan.filter(item => item.action === 'blocked' || item.action === 'unchanged'));
       setShowPublishConfirm(false);
       const failed = response.items.filter((item) => item.status !== 'success');
       onNotify(
@@ -259,6 +282,10 @@ export default function SourceWorkspace({
         ) : (
           <SkillPool
             skills={filteredSkills}
+            allSkills={skills}
+            onAddCollection={handleAddCollection}
+            onCheckCollection={(collection) => void onCheckUpdates?.(collection.members.map(s => s.id))}
+            checkingUpdates={checkingUpdates}
             exportTargets={exportTargets}
             queue={queue}
             onToggleQueueTarget={handleToggleQueueTarget}
@@ -284,11 +311,12 @@ export default function SourceWorkspace({
           planLoading={planLoading}
           publishing={actionBusy}
           results={results}
-          onRemoveItem={(skillId) => setQueue((prev) => removeQueueItem(prev, skillId))}
-          onRemoveTarget={(skillId, target) =>
-            setQueue((prev) => removeQueueTarget(prev, skillId, target))
-          }
-          onClear={() => setQueue((prev) => clearQueue(prev))}
+          onRemoveItem={(skillId) => { setPlan(null); setQueue((prev) => removeQueueItem(prev, skillId)); }}
+          onRemoveTarget={(skillId, target) => {
+            setPlan(null);
+            setQueue((prev) => removeQueueTarget(prev, skillId, target));
+          }}
+          onClear={() => { setPlan(null); setQueue((prev) => clearQueue(prev)); }}
           onGeneratePlan={() => void handleGeneratePlan()}
           onConfirmPublish={handleConfirmPublish}
         />
