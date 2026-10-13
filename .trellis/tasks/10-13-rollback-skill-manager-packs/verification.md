@@ -1,3 +1,7 @@
+## 2026-10-13 后续调整
+
+NAS 清理未执行。按用户要求移除 clean_nas.py、路径模板和部署文档中的清理步骤；下文保留历史记录，其中脚本执行与恢复指引已失效。
+
 # Verification - skill-manager Pack 体系撤销
 
 ## 本地完成（commit hash ac73d99 + d36650b on master）
