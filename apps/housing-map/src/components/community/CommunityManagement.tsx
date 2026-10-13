@@ -69,7 +69,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
   const confirmationDialog = useRef<HTMLDialogElement>(null);
   const [report, setReport] = useState<Report | null>(null);
   const previouslyRunning = useRef(false);
-  const [collectionSources, setCollectionSources] = useState(Object.keys(labels));
+  const [collectionSources, setCollectionSources] = useState(['tmsf', 'fang', 'laipai']);
   const [maxPages, setMaxPages] = useState(10);
   useEffect(() => { if (confirm) confirmationDialog.current?.showModal(); }, [confirm]);
 
@@ -157,10 +157,10 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
 
   return <section className="directory-page">
     <header className="directory-header"><div><p className="directory-kicker">COMMUNITY DIRECTORY</p><h2>小区数据管理</h2>
-      <p className="directory-muted">四个来源，一份目录。保留原始名称，集中处理关联与删除。</p></div>
+      <p className="directory-muted">三个名称采集来源，一份目录。保留原始名称，集中处理关联与删除。</p></div>
       <button className="btn btn-secondary" disabled={busy} onClick={() => { setSelected(null); setDetail(null); setName(''); setAliases(''); setAddress(''); setDistrict('滨江'); setNewForm(true); }}>新增小区</button></header>
     <div className="directory-collection">
-      <div className="directory-actions">{Object.entries(labels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
+      <div className="directory-actions">{Object.entries(labels).filter(([key]) => key !== 'amap').map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
         <label>每来源最多页数<input type="number" min={1} max={100} value={maxPages} onChange={e => setMaxPages(Number(e.target.value))} /></label>
         <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length || maxPages < 1 || maxPages > 100} onClick={() => void act('/collection', 'POST', { sources: collectionSources, max_pages: maxPages })}>采集名称</button>
         {report?.running && <button className="btn btn-secondary" onClick={() => void act('/collection', 'DELETE')}>取消采集</button>}

@@ -57,7 +57,7 @@ class AssociationInput(BaseModel):
 
 
 class DiscoveryInput(BaseModel):
-    sources: list[Literal['tmsf', 'fang', 'amap', 'laipai']] = Field(default_factory=lambda: ['tmsf', 'fang', 'amap', 'laipai'], min_length=1, max_length=4)
+    sources: list[Literal['tmsf', 'fang', 'laipai']] = Field(default_factory=lambda: ['tmsf', 'fang', 'laipai'], min_length=1, max_length=3)
     max_pages: int = Field(10, ge=1, le=100)
 
 

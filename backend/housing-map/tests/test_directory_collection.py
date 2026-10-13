@@ -15,8 +15,8 @@ def test_collection_report_ignored_and_partial_failures(tmp_path):
     def good(cancel, limit, ignored):
         yield row
         yield {**row, 'source_id': 'f2'}
-    report = collect_names(store, ['fang', 'amap'], max_pages=1,
-                           adapters={'fang': good, 'amap': broken})
+    report = collect_names(store, ['fang', 'tmsf'], max_pages=1,
+                           adapters={'fang': good, 'tmsf': broken})
     assert report['ignored'] == 1 and report['new'] == 1
     assert report['phase'] == 'partial_failed'
     assert report['pending'] == 1

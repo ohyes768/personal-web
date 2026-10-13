@@ -22,3 +22,14 @@ def test_management_lifecycle(tmp_path, monkeypatch):
     assert client.get('/api/directory/sources?status=ignored').json()['data']['total'] == 1
     assert client.post(f'/api/directory/communities/{cid}/restore').status_code == 200
     assert client.get('/api/directory/communities?page=0').status_code == 422
+
+
+def test_name_collection_has_only_three_sources():
+    from pydantic import ValidationError
+    import pytest
+    from src.services.directory_collection import ADAPTERS
+
+    assert directory_routes.DiscoveryInput().sources == ['tmsf', 'fang', 'laipai']
+    assert set(ADAPTERS) == {'tmsf', 'fang', 'laipai'}
+    with pytest.raises(ValidationError):
+        directory_routes.DiscoveryInput(sources=['amap'])

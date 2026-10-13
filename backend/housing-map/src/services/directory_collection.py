@@ -1,8 +1,6 @@
 """Bounded public name discovery. Source failures are independent and visible."""
 import json
-import os
 import threading
-from urllib.parse import quote
 
 from src.services.community_registry import now, dump
 
@@ -68,46 +66,6 @@ def fang_names(cancel, limit, ignored):
         client.close()
 
 
-def amap_names(cancel, limit, ignored):
-    from curl_cffi.requests import Session
-    key = os.getenv('AMAP_WEB_SERVICE_KEY') or os.getenv('GAODE_API_KEY')
-    if not key:
-        try:
-            from scripts._gaode_config import GAODE_API_KEY
-            key = GAODE_API_KEY
-        except ImportError:
-            pass
-    if not key:
-        raise ValueError('未配置高德 Web 服务 Key（AMAP_WEB_SERVICE_KEY 或 GAODE_API_KEY）')
-    scanned = 0
-    with Session() as session:
-        for page in range(1, min(limit, 8) + 1):
-            check(cancel)
-            response = session.get('https://restapi.amap.com/v3/place/text', params={
-                'key': key, 'city': '330108', 'citylimit': 'true', 'types': '120302',
-                'offset': 25, 'page': page, 'extensions': 'base'}, timeout=20)
-            response.raise_for_status()
-            data = response.json()
-            if data.get('status') != '1' or not isinstance(data.get('pois'), list):
-                raise ValueError('高德名称采集不可用，请检查 Key 和配额')
-            pois = data['pois']
-            for p in pois:
-                if p.get('adname') != '滨江区' or any(t in p.get('name', '') for t in ('出入口', '停车场', '幢', '栋')):
-                    continue
-                lng, lat = map(float, p['location'].split(','))
-                yield dict(source='amap', source_kind='poi', source_id=p['id'], name=p['name'],
-                           district='滨江', address=p.get('address') if isinstance(p.get('address'), str) else '',
-                           longitude=lng, latitude=lat, coordinate_system='gcj02',
-                           source_url='https://www.amap.com/search?query=' + quote(p['name']))
-            scanned += len(pois)
-            if not pois and scanned < int(data.get('count', 0)):
-                raise DiscoveryTruncated('高德搜索结果受上游数量限制，目录覆盖不完整')
-            if not pois or scanned >= int(data.get('count', 0)):
-                return
-            pause(cancel)
-    raise DiscoveryTruncated('高德分页达到上限，目录覆盖不完整')
-
-
 def laipai_names(cancel, limit, ignored):
     from src.services.auction_fetcher import AuctionClient, normalize_auction
     client = AuctionClient()
@@ -141,7 +99,7 @@ def laipai_names(cancel, limit, ignored):
         client.close()
 
 
-ADAPTERS = {'tmsf': tmsf_names, 'fang': fang_names, 'amap': amap_names, 'laipai': laipai_names}
+ADAPTERS = {'tmsf': tmsf_names, 'fang': fang_names, 'laipai': laipai_names}
 
 
 def collect_names(store, sources, *, max_pages=10, cancel=None, adapters=None, progress=None):
