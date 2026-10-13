@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from src.services.community_directory import prepare_directory
 from src.services.data_loader import DATA_DIR
 from src.services.directory_collection import DirectoryJob
+import json as _json
 
 router = APIRouter(tags=['community-directory'])
 _job = None
@@ -29,6 +30,17 @@ def job():
         if _job is None:
             _job = DirectoryJob(store())
     return _job
+
+
+def _load_classification():
+    path = DATA_DIR / 'residential_classification.json'
+    if not path.exists():
+        return {}
+    try:
+        report = _json.loads(path.read_text(encoding='utf-8-sig'))
+    except (OSError, ValueError):
+        return {}
+    return {entry['community_id']: entry['state'] for entry in report.get('entries', []) if entry.get('community_id')}
 
 
 async def shutdown_directory():
@@ -66,15 +78,20 @@ def page_data(rows, page, page_size):
 
 @router.get('/directory/communities')
 def communities(q: str = Query('', max_length=200), district: str = '', deleted: bool = False,
+                residential_state: Literal['', 'residential', 'pending', 'non_residential'] = '',
                 page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     registry = store()
     sources = registry.sources()
+    classification = _load_classification()
     rows = []
     for c in registry.communities(deleted):
         records = [r for r in sources if r['community_id'] == c['community_id']]
         text = ' '.join([c['community_name'], c.get('address') or '', *c.get('aliases', []), *[r['name'] for r in records]])
         if (not district or c.get('district') == district) and q.casefold() in text.casefold():
-            rows.append({**c, 'sources': [{k: v for k, v in r.items() if k != 'samples'} for r in records]})
+            state = classification.get(c['community_id'], 'pending') if not deleted else 'deleted'
+            if residential_state and state != residential_state:
+                continue
+            rows.append({**c, 'sources': [{k: v for k, v in r.items() if k != 'samples'} for r in records], 'residential_state': state})
     rows.sort(key=lambda c: c['community_name'])
     return {'success': True, 'data': page_data(rows, page, page_size)}
 

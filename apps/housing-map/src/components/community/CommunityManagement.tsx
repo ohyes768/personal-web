@@ -46,6 +46,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('active');
   const [source, setSource] = useState('');
+  const [residentialState, setResidentialState] = useState('all');
   const [districtFilter, setDistrictFilter] = useState('滨江');
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<(Community | Source)[]>([]);
@@ -77,6 +78,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
     const timer = setTimeout(() => {
       setLoading(true); setError('');
       const params = new URLSearchParams({ q, page: String(page), page_size: '30', district: districtFilter });
+      if (mode === 'communities' && residentialState !== 'all') params.set('residential_state', residentialState);
       if (mode === 'communities') params.set('deleted', String(status === 'deleted'));
       else { params.set('status', status === 'deleted' ? 'ignored' : status === 'active' ? '' : status); params.set('source', source); }
       request<{ items: (Community | Source)[]; total: number }>(`/${mode}?${params}`, 'GET', undefined, controller.signal)
@@ -85,7 +87,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
         .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, q, status, source, districtFilter, page, revision]);
+  }, [mode, q, status, source, residentialState, districtFilter, page, revision]);
 
   useEffect(() => {
     if (!selected) return;
@@ -174,7 +176,8 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       <input aria-label="搜索小区名称" placeholder="搜索标准名、别名或来源名称" value={q} onChange={e => { setQ(e.target.value); setPage(1); }} />
       <select aria-label="目录区域" value={districtFilter} onChange={e => { setDistrictFilter(e.target.value); setPage(1); }}><option value="滨江">滨江区</option><option value="萧山">萧山接壤目录</option><option value="">全部区域</option></select>
       <select aria-label="记录状态" value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="active">{mode === 'communities' ? '有效小区' : '所有来源'}</option>{mode === 'sources' && <><option value="pending">待关联</option><option value="matched">已关联</option></>}<option value="deleted">已删除</option></select>
-      {mode === 'sources' && <select aria-label="数据来源" value={source} onChange={e => { setSource(e.target.value); setPage(1); }}><option value="">全部来源</option>{Object.entries(labels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>}</div>
+      {mode === 'sources' && <select aria-label="数据来源" value={source} onChange={e => { setSource(e.target.value); setPage(1); }}><option value="">全部来源</option>{Object.entries(labels).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select>}
+      {mode === 'communities' && <select aria-label="住宅状态" value={residentialState} onChange={e => { setResidentialState(e.target.value); setPage(1); }}><option value="all">住宅/非住宅/待核实</option><option value="residential">住宅</option><option value="pending">待核实</option><option value="non_residential">非住宅</option></select>}</div>
     <div className="directory-workspace"><div className="directory-list-panel">
       <p className="directory-muted">共 {total} 条 · 第 {page} 页</p>
       {loading ? <p role="status">正在加载目录…</p> : <><div className="directory-table-wrap"><table><thead><tr><th>小区名称</th><th>区域 / 地址</th><th>来源与关联</th><th>操作</th></tr></thead><tbody>
