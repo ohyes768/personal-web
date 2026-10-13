@@ -80,7 +80,7 @@ class AssociationInput(BaseModel):
 
 
 class DiscoveryInput(BaseModel):
-    sources: list[Literal['tmsf', 'fang', 'laipai']] = Field(default_factory=lambda: ['tmsf', 'fang', 'laipai'], min_length=1, max_length=3)
+    sources: list[Literal['tmsf', 'amap']] = Field(default_factory=lambda: ['tmsf', 'amap'], min_length=1, max_length=2)
 
 
 def page_data(rows, page, page_size):

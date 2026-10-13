@@ -6,6 +6,7 @@ type Source = { id: string; source: string; source_kind: string; source_id: stri
   address?: string; district?: string; community_id?: string; status: string; method?: string;
   evidence?: string[]; source_url?: string; sample_count?: number; candidates?: Community[]; possible_deleted?: string[];
   residential_state?: ResidentialState; property_type?: string; property_type_url?: string;
+  poi_type?: string; poi_typecode?: string; residential_hint?: boolean;
   property_type_captured_at?: string; property_type_error?: string };
 type Community = { community_id: string; community_name: string; aliases?: string[]; district?: string;
   address?: string; deleted?: boolean; sources?: Source[]; eligible?: boolean; evidence?: string[];
@@ -14,8 +15,10 @@ type Community = { community_id: string; community_name: string; aliases?: strin
 type Report = { running: boolean; phase: string; source?: string; new?: number; existing?: number;
   matched?: number; pending?: number; ignored?: number; stage?: string; property_types?: number;
   property_types_failed?: number; property_types_cached?: number; errors?: { source: string; message: string }[];
-  truncated?: { source: string; message: string }[] };
-const labels: Record<string, string> = { tmsf: '透明售房网', fang: '房天下', laipai: '来拍 ya' };
+  truncated?: { source: string; message: string }[];
+  coverage?: Record<string, { requests: number; cells: number; unique: number; filtered: number; duplicates: number; complete: boolean }> };
+const labels: Record<string, string> = { tmsf: '透明售房网', amap: '高德地图', fang: '房天下', laipai: '来拍 ya' };
+const collectionLabels = { tmsf: '透明售房网', amap: '高德地图' };
 const phaseLabels: Record<string, string> = { running: '正在采集', succeeded: '采集结束', partial_failed: '部分完成',
   failed: '采集失败', cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
 const root = '/api/map/directory';
@@ -51,6 +54,7 @@ export function DirectorySourceCard({ item, children }: { item: Source; children
     {item.property_type_captured_at && <p className="directory-muted">类型采集时间：{item.property_type_captured_at}</p>}
     {item.property_type_error && <p className="directory-warning">{item.property_type_error}；保留上次类型，待核实。</p>}
     {propertyLink && <p><a href={propertyLink} target="_blank" rel="noopener noreferrer">查看物业类型来源 ↗</a></p>}
+    {item.source === 'amap' && <p className="directory-evidence">地图分类：{item.poi_type || '暂无分类'}；仅作住宅线索，房屋用途待核实。</p>}
     {item.evidence?.map((e, i) => <p className="directory-evidence" key={i}>{e}</p>)}
     {link && <a href={link} target="_blank" rel="noopener noreferrer">打开原始来源 ↗</a>}
     {children}
@@ -85,7 +89,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
   const confirmationDialog = useRef<HTMLDialogElement>(null);
   const [report, setReport] = useState<Report | null>(null);
   const previouslyRunning = useRef(false);
-  const [collectionSources, setCollectionSources] = useState(['tmsf', 'fang', 'laipai']);
+  const [collectionSources, setCollectionSources] = useState(['tmsf', 'amap']);
   useEffect(() => { if (confirm) confirmationDialog.current?.showModal(); }, [confirm]);
 
   useEffect(() => {
@@ -162,21 +166,19 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
     <label>地址<input value={address} onChange={e => setAddress(e.target.value)} maxLength={300} /></label>
   </div>;
 
-  return <section className="directory-page">
-    <header className="directory-header"><div><p className="directory-kicker">COMMUNITY DIRECTORY</p><h2>小区数据管理</h2>
-      <p className="directory-muted">三个名称采集来源，一份目录。保留原始名称，集中处理关联与删除。</p></div>
-</header>
+  return <section className="directory-page" aria-label="小区数据管理">
     <div className="directory-collection">
-      <div className="directory-actions">{Object.entries(labels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
+      <div className="directory-actions">{Object.entries(collectionLabels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
         <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length} onClick={() => void act('/collection', 'POST', { sources: collectionSources })}>采集名称与物业类型</button>
         {report?.running && <button className="btn btn-secondary" onClick={() => void act('/collection', 'DELETE')}>取消采集</button>}
         <button className="btn btn-secondary" disabled={busy} onClick={() => void act('/auto-associate', 'POST')}>运行自动关联</button></div>
-      <p className="directory-muted">名称采集范围：滨江区；自动翻页至来源数据结束，可随时取消。删除的小区及已关联来源会跳过后续详情采集。</p>
+      <p className="directory-muted">采集滨江区小区目录：透明售房网获取名称与物业类型，高德按区域补充住宅小区。只有地图住宅标签的保留待核实；失败或截断不代表采全。删除的小区及已关联来源会跳过。</p>
       <p className="directory-muted">透明售房网同时补充物业类型，30天内成功获取的类型直接复用；获取失败或类型有歧义时保留待核实。</p>
       {report && <div role="status"><strong>{phaseLabels[report.phase] || report.phase}{report.source ? ` · ${(labels[report.source] || '采集服务')}` : ''}{report.running && report.stage === 'property_type' ? ' · 获取物业类型' : ''}</strong>
         <p>新发现 {report.new || 0} · 已存在 {report.existing || 0} · 已关联 {report.matched || 0} · 待确认 {report.pending || 0} · 已跳过 {report.ignored || 0}</p>
         <p>透明售房网类型：已获取 {report.property_types || 0} · 已复用 {report.property_types_cached || 0} · 获取失败 {report.property_types_failed || 0}</p>
-        {[...(report.errors || []), ...(report.truncated || [])].filter(item => item.source !== 'amap').map((item, i) => <p className="directory-warning" key={i}>{labels[item.source] || '历史来源'}：{item.message}</p>)}</div>}
+        {report.coverage?.amap && <p>高德：发现 {report.coverage.amap.unique} 个地点 · 过滤 {report.coverage.amap.filtered} 条区外/附属记录 · 去重 {report.coverage.amap.duplicates} 条 · {report.coverage.amap.complete ? '区域查询结束，仍需核对实际覆盖' : '区域查询尚未全部完成'}</p>}
+        {[...(report.errors || []), ...(report.truncated || [])].map((item, i) => <p className="directory-warning" key={i}>{labels[item.source] || '历史来源'}：{item.message}</p>)}</div>}
     </div>
     {error && <p role="alert" className="directory-warning">{error} <button className="btn btn-secondary" onClick={() => setRevision(v => v + 1)}>重试</button></p>}
     {notice && <p role="status">{notice}</p>}
@@ -191,7 +193,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       {loading ? <p role="status">正在加载目录…</p> : <><div className="directory-table-wrap"><table><thead><tr><th>小区名称</th><th>区域 / 地址</th><th>住宅</th><th>来源</th><th>关联</th><th>操作</th></tr></thead><tbody>
         {rows.map(row => { const master = 'community_name' in row; const id = master ? row.community_id : row.id;
           return <tr key={id} className={selected?.id === id ? 'selected' : ''}><td><strong>{master ? row.community_name : row.name}</strong><small>{master ? (row.aliases || []).join(' / ') : `${labels[row.source] || '历史来源'} · ${row.source_id}`}</small></td>
-            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td><td><ResidentialStateBadge state={row.residential_state} />{!master && <small>{row.property_type || '类型待补充'}</small>}</td>
+            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td><td><ResidentialStateBadge state={row.residential_state} />{!master && <small>{row.property_type || (row.source === 'amap' ? '地图住宅线索' : '类型待补充')}</small>}</td>
             <td>{master ? (row.sources || []).filter(r => labels[r.source]).map(r => <span className="directory-badge" key={r.id}>{labels[r.source]}</span>) : (<span className="directory-badge">{labels[row.source] || '历史来源'}</span>)}</td>
             <td>{(() => {
               if (!master) {
@@ -221,6 +223,10 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
         <select aria-label="目标小区" value={targetId} onChange={e => setTargetId(e.target.value)}><option value="">选择目标小区</option>{targets.filter(t => t.community_id !== c?.community_id).map(t => <option key={t.community_id} value={t.community_id}>{t.community_name} · {t.district} · {t.address}</option>)}</select>
         <button className="btn btn-secondary" disabled={busy || !targetId} onClick={() => setConfirm({ path: s ? `/sources/${s.id}/associate` : `/communities/${c!.community_id}/merge`, method: 'POST', body: { community_id: targetId }, text: s ? '确认关联到选定小区？请核对地址和分期。' : '确认合并？来源与历史归到目标小区，原名称保留为别名。' })}>{s ? '关联所选小区' : '合并至所选小区'}</button>
 </div>}
+      {s?.status === 'pending' && ['tmsf', 'amap'].includes(s.source) && <details className="directory-linker"><summary>确认是目录中没有的新小区</summary>
+        <p className="directory-muted">请先核对已有小区和分期。建立后保留原始来源、位置和住宅判断，不会将待核实改成住宅。</p>
+        {inputForm}<button className="btn btn-secondary" disabled={busy || !name.trim()} onClick={() => setConfirm({ path: `/sources/${s.id}/create-community`, method: 'POST', body: { name, aliases: aliases.split(/[、,，]/).filter(Boolean), address, district }, text: `确认“${name}”是尚未收录的独立小区，而不是已有小区的别名或同一分期？将建立并绑定当前来源。` })}>从此来源建立小区</button>
+      </details>}
       {(c || s) && <div className="directory-danger">{c?.deleted || s?.status === 'ignored' ? <button className="btn btn-secondary" disabled={busy} onClick={() => { if (s?.community_id) choose('communities', s.community_id); else void act(c ? `/communities/${c.community_id}/restore` : `/sources/${s!.id}/restore`, 'POST'); }}>恢复{c || s?.community_id ? '整个小区' : '来源候选'}</button> : <><p>删除会排除整个小区及所有已关联来源，后续采集跳过；历史保留。</p><button className="btn btn-secondary" disabled={busy} onClick={() => setConfirm({ path: c ? `/communities/${c.community_id}` : `/sources/${s!.id}`, method: 'DELETE', text: s && !s.community_id ? '此来源尚未关联小区，删除会记住该来源身份，下次采集跳过。' : '确认删除整个小区及所有已关联来源？将停止详情采集和业务展示，历史保留且可恢复。' })}>删除{c || s?.community_id ? '整个小区' : '未关联候选'}</button></>}</div>}
       {c?.events && <details><summary>操作记录（最近 {c.events.length} 条）</summary>{c.events.map(e => <p className="directory-muted" key={e.seq}>{e.created_at.slice(0, 19).replace('T', ' ')} UTC · {e.action}{e.payload.reason ? ` · ${e.payload.reason}` : ''}</p>)}</details>}
     </aside>}</div>

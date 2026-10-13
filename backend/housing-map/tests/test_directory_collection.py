@@ -53,7 +53,7 @@ def test_laipai_known_ignored_auction_skips_detail(monkeypatch):
     assert len(list(directory_collection.laipai_names(threading.Event(), lambda *_: True))) == 1
 
 
-def test_restart_removes_persisted_amap_messages_only(tmp_path):
+def test_restart_preserves_amap_failures(tmp_path):
     from src.services.directory_collection import DirectoryJob
     from src.services.community_registry import dump
     import json
@@ -66,8 +66,8 @@ def test_restart_removes_persisted_amap_messages_only(tmp_path):
     with store.db() as db:
         db.execute("INSERT INTO meta VALUES ('collection_job',?)", (dump(report),))
     job = DirectoryJob(store)
-    assert job.state['errors'] == [report['errors'][1]]
-    assert job.state['truncated'] == []
+    assert job.state['errors'] == report['errors']
+    assert job.state['truncated'] == report['truncated']
     assert job.state['new'] == 3
     assert job.state['phase'] == 'partial_failed'
     with store.db() as db:

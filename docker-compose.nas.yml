@@ -342,6 +342,7 @@ services:
       - housing-map-data:/app/data
       - housing-map-logs:/app/logs
     environment:
+      - AMAP_WEB_SERVICE_KEY=${AMAP_WEB_SERVICE_KEY:-${GAODE_API_KEY:-}}
       - TZ=Asia/Shanghai
       - HOUSING_PORT=8096
       - LOG_LEVEL=INFO

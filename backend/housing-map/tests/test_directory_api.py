@@ -24,15 +24,15 @@ def test_management_lifecycle(tmp_path, monkeypatch):
     assert client.get('/api/directory/communities?page=0').status_code == 422
 
 
-def test_name_collection_has_only_three_sources():
+def test_name_collection_uses_tmsf_and_amap():
     from pydantic import ValidationError
     import pytest
     from src.services.directory_collection import ADAPTERS
 
-    assert directory_routes.DiscoveryInput().sources == ['tmsf', 'fang', 'laipai']
-    assert set(ADAPTERS) == {'tmsf', 'fang', 'laipai'}
+    assert directory_routes.DiscoveryInput().sources == ['tmsf', 'amap']
+    assert set(ADAPTERS) == {'tmsf', 'amap', 'fang', 'laipai'}
     with pytest.raises(ValidationError):
-        directory_routes.DiscoveryInput(sources=['amap'])
+        directory_routes.DiscoveryInput(sources=['fang'])
 
 
 def test_community_filter_by_residential_state(tmp_path, monkeypatch):
@@ -108,3 +108,26 @@ def test_collected_types_filter_sources_and_follow_current_association(tmp_path,
     assert residential_ids() == {'local-b'}
     registry.unlink(item['id'])
     assert not residential_ids()
+
+
+def test_amap_source_classification_and_binding(tmp_path, monkeypatch):
+    from src.services.amap_directory import normalize_poi
+    registry = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    monkeypatch.setattr(directory_routes, 'store', lambda: registry)
+    monkeypatch.setattr(directory_routes, '_load_property_types', lambda: {})
+    app = FastAPI(); app.include_router(directory_routes.router, prefix='/api')
+    client = TestClient(app)
+    row = registry.ingest(normalize_poi(dict(id='B1', name='花园西区', typecode='120302',
+        type='商务住宅;住宅区;住宅小区', adname='滨江区', address='测试路1号', location='120.207490,30.202261')))
+    assert client.get('/api/directory/sources?source=amap&residential_state=pending').json()['data']['total'] == 1
+    detail = client.get('/api/directory/sources/' + row['id']).json()['data']
+    assert detail['residential_hint'] and detail['residential_state'] == 'pending'
+    response = client.post('/api/directory/sources/' + row['id'] + '/create-community',
+                           json={'name': '花园西区', 'district': '滨江', 'address': '测试路1号'})
+    cid = response.json()['data']['community_id']
+    assert response.json()['data']['longitude'] == 120.207490
+    registry.ingest(dict(source='tmsf', source_id='t1', name='花园西区', district='滨江',
+                         address='测试路1号', property_type='住宅'))
+    assert client.get('/api/directory/communities?residential_state=residential').json()['data']['total'] == 1
+    assert client.delete('/api/directory/communities/' + cid).status_code == 200
+    assert client.get('/api/directory/sources?source=amap&status=ignored').json()['data']['total'] == 1

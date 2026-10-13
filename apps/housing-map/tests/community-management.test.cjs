@@ -54,3 +54,20 @@ test('residential badge shows ✅ for residential, ❓ for pending, ❌ for non_
   const empty = renderToStaticMarkup(React.createElement(ResidentialStateBadge, { state: undefined }));
   assert.match(empty, /—/);
 });
+test('amap source shows geographic classification as a hint, not property use', () => {
+  const html = renderToStaticMarkup(React.createElement(DirectorySourceCard, { item: {
+    id: 'a1', source: 'amap', source_kind: 'poi', source_id: 'B1', name: '测试花园西区', status: 'pending',
+    residential_state: 'pending', poi_type: '商务住宅;住宅区;住宅小区', residential_hint: true,
+    source_url: 'https://www.amap.com/search?query=test',
+  }}));
+  assert.match(html, /高德地图/); assert.match(html, /住宅小区/);
+  assert.match(html, /仅作住宅线索/); assert.match(html, /待核实/); assert.match(html, /测试花园西区/);
+});
+test('directory collection defaults to tmsf and amap only', () => {
+  const Management = require('../src/components/community/CommunityManagement.tsx').default;
+  const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
+  const controls = html.slice(html.indexOf('directory-collection'), html.indexOf('directory-toolbar'));
+  assert.equal((controls.match(/type="checkbox"/g) || []).length, 2);
+  assert.match(controls, /透明售房网/); assert.match(controls, /高德地图/);
+  assert.doesNotMatch(controls, /房天下|来拍/); assert.match(controls, /失败或截断不代表采全/);
+});

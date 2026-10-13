@@ -114,6 +114,9 @@ def classify_sources(records, property_types=None):
             if record.get('property_type_error') or state == RESIDENTIAL_STATE_UNKNOWN:
                 state = RESIDENTIAL_STATE_PENDING
             states.append(state)
+        elif record['source'] == 'amap':
+            # Map categories are a discovery hint, not legal residential-use evidence.
+            continue
         elif record['source'] == 'fang':
             states.append(classify(community_id='', fang_samples=record.get('samples', []))['state'])
     meaningful = set(states) - {RESIDENTIAL_STATE_UNKNOWN}

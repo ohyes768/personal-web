@@ -162,7 +162,15 @@ def laipai_names(cancel, ignored):
         client.close()
 
 
-ADAPTERS = {'tmsf': tmsf_names, 'fang': fang_names, 'laipai': laipai_names}
+def amap_names(cancel, ignored):
+    from src.services.amap_directory import discover, AmapIncomplete
+    try:
+        yield from discover(cancel, ignored)
+    except AmapIncomplete as exc:
+        raise DiscoveryTruncated(str(exc)) from None
+
+
+ADAPTERS = {'tmsf': tmsf_names, 'amap': amap_names, 'fang': fang_names, 'laipai': laipai_names}
 
 
 def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
@@ -170,7 +178,7 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
     adapters = adapters or ADAPTERS
     report = dict(phase='running', running=True, started_at=now(), source=None,
                   stage='names', property_types=0, property_types_failed=0, property_types_cached=0,
-                  new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[])
+                  new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[], coverage={})
     handled = set()
     counted_status = {}
     failed_sources = set()
@@ -202,6 +210,11 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                     kwargs['existing'] = existing
                 for row in adapter(cancel, store.is_ignored, **kwargs):
                     check(cancel)
+                    if '_coverage' in row:
+                        report['coverage'][source] = row['_coverage']
+                        if progress:
+                            progress(report)
+                        continue
                     report['stage'] = row.pop('_stage', 'names')
                     type_result = row.pop('_property_type_result', None)
                     key = (source, row.get('source_kind', 'community'), str(row['source_id']))
@@ -257,14 +270,6 @@ class DirectoryJob:
         self.cancel = threading.Event()
         self.worker = None
         self.state = self._read()
-        if self.state:
-            cleaned = dict(self.state)
-            for field in ('errors', 'truncated'):
-                cleaned[field] = [item for item in cleaned.get(field, []) if item.get('source') != 'amap']
-            if cleaned.get('source') == 'amap':
-                cleaned['source'] = None
-            if cleaned != self.state:
-                self._save(cleaned)
         if self.state and self.state.get('running'):
             self.state.update(running=False, phase='interrupted')
             self._save(self.state)
