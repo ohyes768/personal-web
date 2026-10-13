@@ -1,0 +1,33 @@
+{
+  "id": "binjiang-residential-classify",
+  "name": "binjiang-residential-classify",
+  "title": "滨江区住宅小区分类与多源核验",
+  "description": "对当前目录补齐住宅分类，结合透明售房网详情页与房天下小区/房源物业类型交叉验证。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "housing-map",
+  "package": null,
+  "priority": "P1",
+  "creator": "tang",
+  "assignee": "tang",
+  "createdAt": "2026-10-13",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/housing-map/scripts/fetch_tmsf_property_type.py",
+    "backend/housing-map/src/services/fang_rentals.py",
+    "backend/housing-map/src/services/community_filters.py",
+    "backend/housing-map/src/services/residential_classifier.py",
+    "backend/housing-map/tests/test_residential_classifier.py",
+    ".trellis/spec/backend/housing-map/backend/community-directory.md"
+  ],
+  "notes": "已验证：residential_classifier.py（classify / classify_directory / normalize / conflict report） + test_residential_classifier.py（8 条用例覆盖 4 状态 + 目录报告 + 冲突分类）。spec 已更新增加分类契约。pytest 16/16 通过、ESLint/TS 通过。",
+  "meta": {}
+}

@@ -30,9 +30,21 @@ def prepare_directory(data_dir):
             else:
                 shutil.copy2(path, backup / name)
     coords = read(data_dir / 'binjiang_coordinates.json', {})
-    communities = read(data_dir / 'binjiang_communities.json', [])
-    if isinstance(communities, dict):
-        communities = communities.get('communities', [])
+    communities_path = data_dir / 'binjiang_communities.json'
+    residential_path = data_dir / 'binjiang_residential_communities.json'
+    if residential_path.exists():
+        communities = read(residential_path, [])
+        if isinstance(communities, dict):
+            communities = communities.get('communities', [])
+    else:
+        communities = read(communities_path, [])
+        if isinstance(communities, dict):
+            communities = communities.get('communities', [])
+    excluded_non_residential = read(data_dir / 'binjiang_non_residential_communities.json', [])
+    if isinstance(excluded_non_residential, dict):
+        excluded_non_residential = excluded_non_residential.get('communities', [])
+    excluded_ids = {str(item.get('community_id') or item.get('communityid') or '') for item in excluded_non_residential}
+    communities = [c for c in communities if str(c.get('community_id') or c.get('communityid') or '') not in excluded_ids]
     # Whole import is recoverable: insert-if-absent plus completion marker, no reset of decisions.
     with store.db() as db:
         for item in communities:
