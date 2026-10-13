@@ -23,9 +23,9 @@ describe('repository collections', () => {
     const [group] = groupCollections(members, [members[1]]);
     expect(group.members.map(s => s.id)).toEqual(['a', 'b']);
     expect(group.visibleMembers.map(s => s.id)).toEqual(['b']);
-    const queue = addCollectionToQueue([{ skillId: 'other', targets: ['hermes'] }], group, 'openclaw');
+    const queue = addCollectionToQueue([{ skillId: 'other', targets: ['hermes'] }], group, 'hermes');
     expect(queue.map(i => i.skillId)).toEqual(['other', 'a', 'b']);
-    expect(addCollectionToQueue(queue, group, 'openclaw')).toEqual(queue);
+    expect(addCollectionToQueue(queue, group, 'hermes')).toEqual(queue);
   });
   it('does not count missing links as published and reports blocked members', () => {
     const deployed = { target: 'hermes', status: 'active', revision: '', published_at: '',
@@ -33,6 +33,6 @@ describe('repository collections', () => {
     const members = [skill('a', { deployments: { hermes: deployed } }),
       skill('b', { deployments: { hermes: { ...deployed, link_missing: true } } }),
       skill('c', { cache_missing: true })];
-    expect(collectionStats(members)).toMatchObject({ published: { hermes: 1, openclaw: 0 }, abnormal: 2 });
+    expect(collectionStats(members)).toMatchObject({ published: { hermes: 1 }, abnormal: 2 });
   });
 });

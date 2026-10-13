@@ -14,8 +14,6 @@ import {
   deleteSkill,
   listSkills,
   listExportTargets,
-  registerGithubBatch,
-  registerGithubSkill,
   unpublishSkill,
 } from '@/lib/api';
 import type { TargetKey } from '@/lib/queue';
@@ -23,8 +21,6 @@ import { runUnpublishBatch, type UnpublishItem, type UnpublishResult } from '@/l
 import { groupCollections } from '@/lib/collections';
 import type {
   ExportTarget,
-  RegisterGithubBatchInput,
-  RegisterGithubSkillInput,
   SkillCard,
   TaskSnapshot,
 } from '@/lib/types';
@@ -69,7 +65,7 @@ function SkillManagerPage() {
   // 两级导航：URL 是唯一真源，非法值在派生时逐级回退
   const view: ViewKey = searchParams.get('view') === 'board' ? 'board' : searchParams.get('view') === 'targets' ? 'targets' : 'manage';
   const sourceTab: SourceTab = searchParams.get('tab') === 'github' ? 'github' : 'local';
-  const agent: TargetKey = searchParams.get('agent') === 'openclaw' ? 'openclaw' : 'hermes';
+  const agent: TargetKey = 'hermes';
 
   function navigate(next: { view?: ViewKey; tab?: SourceTab; agent?: TargetKey }) {
     const p = new URLSearchParams(searchParams.toString());
@@ -184,49 +180,6 @@ function SkillManagerPage() {
       if (failed.length > 0) setActionError(`${failed.length} 项失败，重新确认仅重试失败项`);
       setNotice({ kind: failed.length ? 'err' : 'ok', text: `下架完成：${results.length - failed.length} 项成功，${failed.length} 项失败` });
       await refreshAll();
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  async function performRegister(input: RegisterGithubSkillInput, password: string) {
-    setActionBusy(true);
-    setActionError('');
-    try {
-      // 同步段只做密码/预检校验（401/400 走 actionError）；clone 与入库
-      // 在后台任务执行，进度交给 TaskProgressDialog 轮询（PRD R2）
-      const created = await registerGithubSkill(input, password);
-      setShowRegister(false);
-      setActiveTask({
-        taskId: created.task_id,
-        title: `登记 GitHub Skill「${input.name}」`,
-        successNotice: `已登记 GitHub Skill「${input.name}」`,
-      });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : '登记失败');
-    } finally {
-      setActionBusy(false);
-    }
-  }
-
-  async function performRegisterBatch(
-    input: RegisterGithubBatchInput,
-    password: string
-  ) {
-    setActionBusy(true);
-    setActionError('');
-    try {
-      // 同步段只做密码/预检/路径校验；仓库级 clone 与逐项入库在后台任务执行，
-      // 逐项成败经任务快照 results 表达（TaskProgressDialog 停留展示）
-      const created = await registerGithubBatch(input, password);
-      setShowRegister(false);
-      setActiveTask({
-        taskId: created.task_id,
-        title: `批量登记 ${input.items.length} 个 GitHub Skill`,
-        successNotice: '',
-      });
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : '批量登记失败');
     } finally {
       setActionBusy(false);
     }
@@ -519,12 +472,9 @@ function SkillManagerPage() {
 
       {showRegister ? (
         <RegisterGithubDialog
+          onRefresh={refreshAll}
           busy={actionBusy}
           error={actionError}
-          onRegister={(input, password) => void performRegister(input, password)}
-          onRegisterBatch={(input, password) =>
-            void performRegisterBatch(input, password)
-          }
           onCancel={() => setShowRegister(false)}
         />
       ) : null}

@@ -224,3 +224,21 @@ export function updateSkillTags(
     }
   );
 }
+
+export interface InstallInput {
+  skill_ids?: string[];
+  scan_task_id?: string;
+  candidates?: { path: string; name: string; tags: string[]; summary: string }[];
+  shared_paths?: string[];
+}
+export interface InstallPlan {
+  plan_id: string;
+  items: { skill_id: string; name: string; path?: string; action: string; reason?: string; planned_revision?: string }[];
+}
+export interface InstallTask {
+  task_id: string; state: 'running' | 'done'; stage: string;
+  results: { skill_id: string; name: string; status: string; registered: boolean; error: string }[];
+}
+export const previewInstall = (input: InstallInput) => request<InstallPlan>('/install/preview', {method: 'POST', body: jsonBody(input)});
+export const executeInstall = (planId: string, requestId: string, password: string) => request<{task_id: string}>('/install', {method: 'POST', body: jsonBody({plan_id: planId, request_id: requestId, password})});
+export const getInstallTask = (id: string) => request<InstallTask>(`/install/tasks/${encodeURIComponent(id)}`);

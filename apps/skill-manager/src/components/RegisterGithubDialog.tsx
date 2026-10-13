@@ -5,18 +5,16 @@ import { startGithubScan } from '@/lib/api';
 import { formatElapsed, formatProgressDetail, taskStageLabel } from '@/lib/format';
 import type {
   RegisterGithubBatchInput,
-  RegisterGithubSkillInput,
   TaskSnapshot,
 } from '@/lib/types';
 import { useGithubTask } from '@/lib/useGithubTask';
-import ConfirmActionDialog from './ConfirmActionDialog';
+import InstallDialog from './InstallDialog';
 
 interface RegisterGithubDialogProps {
   busy: boolean;
   error?: string;
-  onRegister: (input: RegisterGithubSkillInput, password: string) => void;
-  onRegisterBatch: (input: RegisterGithubBatchInput, password: string) => void;
   onCancel: () => void;
+  onRefresh: () => Promise<void>;
 }
 
 /**
@@ -27,10 +25,8 @@ interface RegisterGithubDialogProps {
  */
 export default function RegisterGithubDialog({
   busy,
-  error,
-  onRegister,
-  onRegisterBatch,
   onCancel,
+  onRefresh,
 }: RegisterGithubDialogProps) {
   const [repository, setRepository] = useState('');
   const [scanTaskId, setScanTaskId] = useState('');
@@ -147,20 +143,6 @@ export default function RegisterGithubDialog({
       return;
     }
     setAwaitPassword(true);
-  }
-
-  function buildInput(): RegisterGithubSkillInput {
-    return {
-      repository: activeScan?.repository ?? repository.trim(),
-      path: selectedPaths[0],
-      name: name.trim(),
-      tags: tagsText
-        .split(/[,,]/)
-        .map((tag) => tag.trim())
-        .filter(Boolean),
-      summary: summary.trim(),
-      shared_paths: sharedPaths,
-    };
   }
 
   function buildBatchInput(): RegisterGithubBatchInput {
@@ -330,19 +312,20 @@ export default function RegisterGithubDialog({
                 {selectedPaths.length > 1 ? (
                   <p className="mt-1 text-xs text-slate-400">
                     已勾选 {selectedPaths.length} 项：将按各候选 SKILL.md
-                    中的名称批量登记（名称/简介可在登记后逐个补充）
+                    中的名称安装到 Hermes
                   </p>
                 ) : null}
               </fieldset>
               </details>
 
+              <details className="mt-3"><summary className="cursor-pointer text-sm text-slate-600">高级选项：名称、标签与共享资源</summary>
               {activeScan.top_level.length > 0 ? (
                 <fieldset className="mt-3">
                   <legend className="text-sm font-medium text-slate-700">
                     随行共享资源（可选）
                   </legend>
                   <p className="mt-0.5 text-xs text-slate-400">
-                    发布时一并拷入快照的仓库根级目录/文件；默认勾选候选 SKILL.md
+                    安装时一并拷入快照的仓库根级目录/文件；默认勾选候选 SKILL.md
                     中引用到的项
                   </p>
                   <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border border-slate-200 p-2">
@@ -402,6 +385,7 @@ export default function RegisterGithubDialog({
                   </label>
                 </>
               ) : null}
+              </details>
             </>
           )
         ) : null}
@@ -425,50 +409,13 @@ export default function RegisterGithubDialog({
             }
             className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-40"
           >
-            下一步：密码确认
+            安装到 Hermes
           </button>
         </div>
       </form>
 
-      {awaitPassword ? (
-        singleCandidate ? (
-          <ConfirmActionDialog
-            title="确认登记 GitHub Skill"
-            description={
-              <p>
-                将登记 {activeScan?.repository} 中的 <code>{selectedPaths[0]}</code> 为「
-                {name.trim()}」，并缓存到 NAS 的 GitHub Skill 缓存目录。
-                {sharedPaths.length > 0
-                  ? `随行共享资源：${sharedPaths.join('、')}。`
-                  : ''}
-              </p>
-            }
-            confirmLabel="确认登记"
-            busy={busy}
-            error={error}
-            onConfirm={(password) => onRegister(buildInput(), password)}
-            onCancel={() => setAwaitPassword(false)}
-          />
-        ) : (
-          <ConfirmActionDialog
-            title={`确认批量登记 ${selectedPaths.length} 个 GitHub Skill`}
-            description={
-              <p>
-                将登记 {activeScan?.repository} 中的 {selectedPaths.length}{' '}
-                个候选目录（共享一份仓库缓存）。
-                {sharedPaths.length > 0
-                  ? `随行共享资源：${sharedPaths.join('、')}。`
-                  : ''}
-              </p>
-            }
-            confirmLabel="确认批量登记"
-            busy={busy}
-            error={error}
-            onConfirm={(password) => onRegisterBatch(buildBatchInput(), password)}
-            onCancel={() => setAwaitPassword(false)}
-          />
-        )
-      ) : null}
+      {awaitPassword ? <InstallDialog input={{scan_task_id: scanTaskId, candidates: singleCandidate ? [{path: selectedPaths[0], name: name.trim(), tags: tagsText.split(',').map(t => t.trim()).filter(Boolean), summary: summary.trim()}] : buildBatchInput().items.map(i => ({...i, tags: i.tags ?? [], summary: i.summary ?? ''})), shared_paths: sharedPaths}}
+        onRefresh={onRefresh} onClose={() => { setAwaitPassword(false); onCancel(); }} /> : null}
     </div>
   );
 }

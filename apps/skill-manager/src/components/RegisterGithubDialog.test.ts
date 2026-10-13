@@ -42,6 +42,7 @@ type NodeProps = { children?: ReactNode; type?: string; onClick?: () => Promise<
   onChange?: (event: { target: { value: string; checked?: boolean } }) => void; disabled?: boolean;
   checked?: boolean; value?: string; onSubmit?: (event: { preventDefault(): void }) => void;
   onConfirm?: (password: string) => void;
+  input?: { candidates: {path: string; name: string; summary: string}[] };
   role?: string; 'aria-busy'?: boolean; className?: string };
 function nodes(node: ReactNode): ReactElement<NodeProps>[] {
   if (Array.isArray(node)) return node.flatMap(nodes);
@@ -58,7 +59,7 @@ function render() {
     hooks.index = 0;
     hooks.refIndex = 0;
     hooks.effectIndex = 0;
-    return RegisterGithubDialog({ busy: false, onRegister: hooks.register, onRegisterBatch: hooks.batch, onCancel() {} });
+    return RegisterGithubDialog({ busy: false, onRefresh: async () => {}, onCancel() {} });
   }
   pass();
   pass();
@@ -165,8 +166,7 @@ describe('collection registration defaults', () => {
     expect(text(tree)).toContain('已选择 2/2');
     expect(nodes(tree).find(n => n.type === 'details')?.props).not.toHaveProperty('open');
     nodes(tree).find(n => n.type === 'form')!.props.onSubmit!({ preventDefault() {} });
-    nodes(render()).find(n => n.props.onConfirm)!.props.onConfirm!('test-password');
-    expect(hooks.batch.mock.calls[0][0].items.map((item: { path: string }) => item.path)).toEqual(['skills/a', 'skills/b']);
+    expect(nodes(render()).find(n => n.props.input)?.props.input?.candidates.map(i => i.path)).toEqual(['skills/a', 'skills/b']);
     nodes(tree).find(n => n.type === 'button' && text(n) === '清空')!.props.onClick!();
     hooks.poll.task = { ...hooks.poll.task };
     tree = render();
@@ -181,7 +181,6 @@ describe('collection registration defaults', () => {
     hooks.poll.task = snapshot({ state: 'done', candidates: [{ path: '.', name: 'Only skill', description: 'Description' }] });
     const tree = render();
     nodes(tree).find(n => n.type === 'form')!.props.onSubmit!({ preventDefault() {} });
-    nodes(render()).find(n => n.props.onConfirm)!.props.onConfirm!('test-password');
-    expect(hooks.register.mock.calls[0][0]).toMatchObject({ path: '.', name: 'Only skill', summary: 'Description' });
+    expect(nodes(render()).find(n => n.props.input)?.props.input?.candidates[0]).toMatchObject({ path: '.', name: 'Only skill', summary: 'Description' });
   });
 });

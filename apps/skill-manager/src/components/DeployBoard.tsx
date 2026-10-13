@@ -7,11 +7,6 @@ import { formatPublishedAt, shortRepo } from '@/lib/format';
 import { groupCollections } from '@/lib/collections';
 import { UnlinkIcon } from '@/components/icons';
 
-const AGENTS: { key: TargetKey; label: string }[] = [
-  { key: 'hermes', label: 'Hermes' },
-  { key: 'openclaw', label: 'OpenClaw' },
-];
-
 const SOURCE_LABEL: Record<SkillCard['source'], string> = {
   local: '自研',
   github: 'GitHub',
@@ -21,9 +16,6 @@ const SOURCE_BADGE: Record<SkillCard['source'], string> = {
   local: 'bg-violet-50 text-violet-700',
   github: 'bg-sky-50 text-sky-700',
 };
-
-const SEG_BUTTON =
-  'rounded px-3 py-1 text-sm transition-colors data-[active=true]:bg-white data-[active=true]:font-medium data-[active=true]:text-slate-800 data-[active=true]:shadow-sm text-slate-500 hover:text-slate-700';
 
 interface DeployBoardProps {
   skills: SkillCard[];
@@ -38,14 +30,13 @@ interface DeployBoardProps {
 export default function DeployBoard({
   skills,
   agent,
-  onAgentChange,
   onUnpublish,
   onUnpublishCollection,
 }: DeployBoardProps) {
   const [query, setQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | SkillCard['source']>('all');
   const [sort, setSort] = useState<'time' | 'name'>('time');
-  const agentLabel = agent === 'openclaw' ? 'OpenClaw' : 'Hermes';
+  const agentLabel = 'Hermes';
 
   const items = useMemo(() => {
     const deployed = skills
@@ -169,20 +160,7 @@ export default function DeployBoard({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        {/* 二级 segmented：agent 类型 */}
-        <div className="flex gap-0.5 rounded-md border border-slate-200 bg-slate-50 p-0.5">
-          {AGENTS.map(({ key, label }) => (
-            <button
-              key={key}
-              type="button"
-              data-active={agent === key}
-              onClick={() => onAgentChange(key)}
-              className={SEG_BUTTON}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <span className="text-sm font-medium">Hermes 安装</span>
         <input
           type="search"
           value={query}

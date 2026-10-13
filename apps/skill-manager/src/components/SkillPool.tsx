@@ -7,7 +7,6 @@ import { shortRepo } from '@/lib/format';
 import { collectionStats, groupCollections, type SkillCollection } from '@/lib/collections';
 import { exportTargetLabel, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
 import {
-  CrayfishIcon,
   DownloadIcon,
   HermesIcon,
   PencilIcon,
@@ -17,9 +16,8 @@ import {
 
 const ALL_TARGETS = LINK_TARGETS;
 
-/** target 队列 chip 的品牌语义色：OpenClaw=螯红、Hermes=神使蓝。 */
+/** target 队列 chip 的品牌语义色：Hermes=神使蓝。 */
 const TARGET_ICON: Record<TargetKey, { icon: ReactNode; hover: string }> = {
-  openclaw: { icon: <CrayfishIcon />, hover: 'hover:text-rose-600' },
   hermes: { icon: <HermesIcon />, hover: 'hover:text-sky-600' },
 };
 
@@ -31,6 +29,8 @@ interface SkillPoolProps {
   onCheckCollection?: (collection: SkillCollection) => void;
   checkingUpdates?: boolean;
   queue: QueueEntry[];
+  selectedIds?: string[];
+  onSelect?: (id: string, selected: boolean) => void;
   onToggleQueueTarget: (skillId: string, target: TargetKey) => void;
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
@@ -73,6 +73,8 @@ function SkillCardItem({
   skill,
   exportTargets,
   queuedTargets,
+  selected,
+  onSelect,
   onToggleQueueTarget,
   onClone,
   onDelete,
@@ -84,6 +86,8 @@ function SkillCardItem({
   skill: SkillCard;
   exportTargets: ExportTarget[];
   queuedTargets: TargetKey[];
+  selected?: boolean;
+  onSelect?: (selected: boolean) => void;
   onToggleQueueTarget: SkillPoolProps['onToggleQueueTarget'];
   onClone: SkillPoolProps['onClone'];
   onDelete: SkillPoolProps['onDelete'];
@@ -108,6 +112,7 @@ function SkillCardItem({
 
   return (
     <li className="flex flex-col rounded-lg border border-slate-200 bg-white p-3">
+      {onSelect && <label className="mb-2 text-xs text-slate-600"><input type="checkbox" checked={!!selected} disabled={publishBlocked} onChange={e => onSelect(e.target.checked)} /> 选择 {skill.name}</label>}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
@@ -205,24 +210,24 @@ function SkillCardItem({
             <button
               key={target}
               type="button"
-              aria-label={`${TARGET_LABEL[target]} ${queued ? '已在队列，点击移出' : '点击加入队列'}`}
+              aria-label={`${TARGET_LABEL[target]} ${queued ? '安装到 Hermes' : '安装到 Hermes'}`}
               data-tip={
                 publishBlocked
                   ? sourceMissing
-                    ? '源缺失，无法发布'
+                    ? '源缺失，无法安装'
                     : '请先 Clone 缓存'
                   : queued
-                    ? `移出 ${TARGET_LABEL[target]} 队列`
-                    : `加入 ${TARGET_LABEL[target]} 队列`
+                    ? `安装到 ${TARGET_LABEL[target]}`
+                    : `安装到 ${TARGET_LABEL[target]}`
               }
               title={
                 publishBlocked
                   ? sourceMissing
-                    ? '源库登记目录缺失，无法发布'
+                    ? '源库登记目录缺失，无法安装'
                     : '请先 Clone 缓存'
                   : queued
-                    ? `点击移出 ${TARGET_LABEL[target]} 发布队列`
-                    : `点击加入 ${TARGET_LABEL[target]} 发布队列`
+                    ? `安装到 ${TARGET_LABEL[target]}`
+                    : `安装到 ${TARGET_LABEL[target]}`
               }
               disabled={publishBlocked}
               onClick={() => onToggleQueueTarget(skill.id, target)}
@@ -232,7 +237,7 @@ function SkillCardItem({
                   : `border-slate-300 bg-white ${hover}`
               }`}
             >
-              {icon}
+              {icon}<span className="ml-1 text-xs">{skill.deployments.hermes?.status === 'active' ? '更新' : '安装'}</span>
             </button>
           );
         })}
@@ -268,8 +273,8 @@ function SkillCardItem({
           <button
             type="button"
             aria-label="Clone 缓存"
-            data-tip="Clone 缓存（发布前必做）"
-            title="从 GitHub 拉取仓库到本机缓存，发布前必做"
+            data-tip="Clone 缓存（安装前必做）"
+            title="从 GitHub 拉取仓库到本机缓存，安装前必做"
             onClick={() => onClone(skill.id, skill.name)}
             className="icon-btn tip-right icon-btn-amber rounded-md bg-amber-600 text-white hover:text-white"
           >
@@ -294,6 +299,8 @@ export default function SkillPool({
   checkingUpdates,
   exportTargets,
   queue,
+  selectedIds,
+  onSelect,
   onToggleQueueTarget,
   onClone,
   onDelete,
@@ -320,6 +327,8 @@ export default function SkillPool({
         <SkillCardItem
           key={skill.id}
           skill={skill}
+          selected={selectedIds?.includes(skill.id)}
+          onSelect={onSelect ? selected => onSelect(skill.id, selected) : undefined}
           exportTargets={exportTargets}
           queuedTargets={queuedBySkill.get(skill.id) ?? []}
           onToggleQueueTarget={onToggleQueueTarget}
@@ -361,7 +370,7 @@ export default function SkillPool({
                 {ALL_TARGETS.map(target => (
                   <button key={target} type="button" onClick={() => onAddCollection?.(collection, target)}
                     className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50">
-                    全部发布到 {TARGET_LABEL[target]}（{collection.members.length} 项）
+                    全部安装到 {TARGET_LABEL[target]}（{collection.members.length} 项）
                   </button>
                 ))}
                 <button type="button" disabled={checkingUpdates || !collection.repository}

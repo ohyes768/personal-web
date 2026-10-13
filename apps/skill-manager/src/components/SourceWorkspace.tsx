@@ -1,25 +1,16 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
-import ConfirmActionDialog from '@/components/ConfirmActionDialog';
+import { useMemo, useState } from 'react';
+import InstallDialog from '@/components/InstallDialog';
 import EditSkillTagsDialog from '@/components/EditSkillTagsDialog';
 import ExportDialog from '@/components/ExportDialog';
-import PublishQueue from '@/components/PublishQueue';
 import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/SkillFilters';
 import SkillPool from '@/components/SkillPool';
-import { addCollectionToQueue, type SkillCollection } from '@/lib/collections';
-import { ApiClientError, deleteExport, exportSkill, publish, publishPlan, updateSkillTags } from '@/lib/api';
+import { type SkillCollection } from '@/lib/collections';
+import { ApiClientError, deleteExport, exportSkill, updateSkillTags } from '@/lib/api';
 import { LINK_TARGETS, type ExportTargetKey } from '@/lib/targets';
-import {
-  addQueueTarget,
-  clearQueue,
-  removeQueueItem,
-  removeQueueTarget,
-  queueAfterPublish,
-  type QueueEntry,
-  type TargetKey,
-} from '@/lib/queue';
-import type { ExportTarget, PlanItem, PublishResultItem, SkillCard } from '@/lib/types';
+import type { TargetKey } from '@/lib/queue';
+import type { ExportTarget, SkillCard } from '@/lib/types';
 
 export interface Notice {
   kind: 'ok' | 'err';
@@ -74,18 +65,6 @@ function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
   });
 }
 
-/** 把计划中可发布的项（add/update）重新按 skill 分组为请求结构。 */
-function planToRequests(items: PlanItem[]): { skill_id: string; targets: TargetKey[] }[] {
-  const grouped = new Map<string, TargetKey[]>();
-  for (const item of items) {
-    if (item.action !== 'add' && item.action !== 'update') {
-      continue;
-    }
-    grouped.set(item.skill_id, [...(grouped.get(item.skill_id) ?? []), item.target]);
-  }
-  return [...grouped].map(([skill_id, targets]) => ({ skill_id, targets }));
-}
-
 /** 单来源管理两件套：Skill 池 + 独立发布队列（自包含状态与发布确认弹窗）。 */
 export default function SourceWorkspace({
   source,
@@ -103,22 +82,12 @@ export default function SourceWorkspace({
   checkingUpdates,
 }: SourceWorkspaceProps) {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
-  const [queue, setQueue] = useState<QueueEntry[]>([]);
-  const queueRef = useRef(queue);
-  queueRef.current = queue;
-  const [plan, setPlan] = useState<PlanItem[] | null>(null);
-  const [planLoading, setPlanLoading] = useState(false);
-  const [results, setResults] = useState<PublishResultItem[] | null>(null);
-  const [showPublishConfirm, setShowPublishConfirm] = useState(false);
+  const [installIds, setInstallIds] = useState<string[] | null>(null);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingTagsSkill, setEditingTagsSkill] = useState<SkillCard | null>(null);
   const [exportAction, setExportAction] = useState<{ skill: SkillCard; removing?: ExportTargetKey; initialTarget?: ExportTargetKey } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
-
-  const skillNames = useMemo(
-    () => new Map(skills.map((skill) => [skill.id, skill.name])),
-    [skills]
-  );
 
   const allTags = useMemo(() => {
     const tags = new Set<string>();
@@ -132,90 +101,8 @@ export default function SourceWorkspace({
 
   const filteredSkills = useMemo(() => applyFilters(skills, filters), [skills, filters]);
 
-  function handleToggleQueueTarget(skillId: string, target: TargetKey) {
-    const queued = queue.find((entry) => entry.skillId === skillId)?.targets.includes(target);
-    setQueue((prev) =>
-      queued ? removeQueueTarget(prev, skillId, target) : addQueueTarget(prev, skillId, target)
-    );
-    onNotify(null);
-    setPlan(null);
-  }
-
-  function handleAddCollection(collection: SkillCollection, target: TargetKey) {
-    setQueue(prev => addCollectionToQueue(prev, collection, target));
-    setPlan(null);
-    setResults(null);
-    onNotify({ kind: 'ok', text: `已将「${collection.name}」全部 ${collection.members.length} 项加入发布队列；生成计划后确认发布` });
-  }
-
-  async function handleGeneratePlan() {
-    if (queue.length === 0 || planLoading) {
-      return;
-    }
-    setPlanLoading(true);
-    setResults(null);
-    onNotify(null);
-    const requestedQueue = queue;
-    try {
-      const response = await publishPlan(
-        queue.map((entry) => ({ skill_id: entry.skillId, targets: entry.targets }))
-      );
-      if (queueRef.current !== requestedQueue) {
-        setPlan(null);
-        onNotify({ kind: 'err', text: '发布队列已改变，请重新生成计划' });
-        return;
-      }
-      setPlan(response.items);
-    } catch (err) {
-      onNotify({
-        kind: 'err',
-        text: err instanceof Error ? err.message : '生成发布计划失败',
-      });
-      setPlan(null);
-    } finally {
-      setPlanLoading(false);
-    }
-  }
-
-  function handleConfirmPublish() {
-    const publishable = plan?.filter(
-      (item) => item.action === 'add' || item.action === 'update'
-    );
-    if (!plan || !publishable || publishable.length === 0) {
-      return;
-    }
-    setActionError('');
-    setShowPublishConfirm(true);
-  }
-
-  async function performPublish(password: string) {
-    if (!plan) {
-      return;
-    }
-    setActionBusy(true);
-    setActionError('');
-    try {
-      const response = await publish(planToRequests(plan), password);
-      setResults(response.items);
-      // 成功项退出队列，失败项保留；重试不重复发布已成功目标。
-      setQueue(prev => queueAfterPublish(prev, response.items, plan));
-      setPlan(plan.filter(item => item.action === 'blocked' || item.action === 'unchanged'));
-      setShowPublishConfirm(false);
-      const failed = response.items.filter((item) => item.status !== 'success');
-      onNotify(
-        failed.length === 0
-          ? { kind: 'ok', text: `发布完成：${response.items.length} 项全部成功` }
-          : { kind: 'err', text: `发布完成：${failed.length} 项失败，详见结果列表` }
-      );
-      await onRefresh();
-    } catch (err) {
-      setActionError(
-        err instanceof ApiClientError || err instanceof Error ? err.message : '发布失败'
-      );
-    } finally {
-      setActionBusy(false);
-    }
-  }
+  function handleToggleQueueTarget(skillId: string) { setInstallIds([skillId]); }
+  function handleAddCollection(collection: SkillCollection) { setInstallIds(collection.members.map(s => s.id)); }
 
   async function performSaveTags(tags: string[]) {
     if (!editingTagsSkill) {
@@ -258,16 +145,10 @@ export default function SourceWorkspace({
     }
   }
 
-  const publishableItems = plan?.filter(
-    (item) => item.action === 'add' || item.action === 'update'
-  );
-  const planAddCount = plan?.filter((item) => item.action === 'add').length ?? 0;
-  const planUpdateCount = plan?.filter((item) => item.action === 'update').length ?? 0;
-
   return (
     <div
       data-source={source}
-      className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-[3fr_2fr]"
+      className="grid min-h-0 flex-1 grid-cols-1 gap-4 "
     >
       {/* 左：Skill 池 */}
       <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
@@ -277,6 +158,11 @@ export default function SourceWorkspace({
           onChange={setFilters}
           showUpdateFilter={source === 'github'}
         />
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setSelectedIds(filteredSkills.filter(s => !s.cache_missing && !s.source_missing).map(s => s.id))} className="rounded border px-3 py-2 text-sm">选择当前结果</button>
+          <button type="button" onClick={() => setSelectedIds([])} className="rounded border px-3 py-2 text-sm">清空选择</button>
+          <button type="button" disabled={!selectedIds.length} onClick={() => setInstallIds(selectedIds)} className="rounded bg-sky-600 px-3 py-2 text-sm text-white disabled:opacity-40">安装到 Hermes（{selectedIds.length}）</button>
+        </div>
         {loading ? (
           <p className="p-6 text-center text-sm text-slate-400">加载中…</p>
         ) : (
@@ -287,7 +173,9 @@ export default function SourceWorkspace({
             onCheckCollection={(collection) => void onCheckUpdates?.(collection.members.map(s => s.id))}
             checkingUpdates={checkingUpdates}
             exportTargets={exportTargets}
-            queue={queue}
+            queue={[]}
+            selectedIds={selectedIds}
+            onSelect={(id, selected) => setSelectedIds(prev => selected ? [...new Set([...prev,id])] : prev.filter(item => item !== id))}
             onToggleQueueTarget={handleToggleQueueTarget}
             onClone={onClone}
             onDelete={onDelete}
@@ -300,26 +188,6 @@ export default function SourceWorkspace({
             }}
           />
         )}
-      </section>
-
-      {/* 右：发布队列（每来源独立） */}
-      <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
-        <PublishQueue
-          queue={queue}
-          skillNames={skillNames}
-          plan={plan}
-          planLoading={planLoading}
-          publishing={actionBusy}
-          results={results}
-          onRemoveItem={(skillId) => { setPlan(null); setQueue((prev) => removeQueueItem(prev, skillId)); }}
-          onRemoveTarget={(skillId, target) => {
-            setPlan(null);
-            setQueue((prev) => removeQueueTarget(prev, skillId, target));
-          }}
-          onClear={() => { setPlan(null); setQueue((prev) => clearQueue(prev)); }}
-          onGeneratePlan={() => void handleGeneratePlan()}
-          onConfirmPublish={handleConfirmPublish}
-        />
       </section>
 
       {editingTagsSkill ? (
@@ -335,32 +203,7 @@ export default function SourceWorkspace({
 
       {exportAction ? <ExportDialog targets={exportTargets} targetsError={targetsError} onManageTargets={() => { setExportAction(null); onManageTargets(); }} skill={exportAction.skill} removing={exportAction.removing} initialTarget={exportAction.initialTarget} busy={actionBusy} error={actionError} onConfirm={(target) => void performExport(target)} onClose={() => setExportAction(null)} /> : null}
 
-      {showPublishConfirm && publishableItems && publishableItems.length > 0 ? (
-        <ConfirmActionDialog
-          title="确认发布"
-          description={
-            <div className="space-y-1">
-              <p className="font-medium">
-                新增 {planAddCount} 项 · 更新 {planUpdateCount} 项
-              </p>
-              <ul className="list-disc space-y-0.5 pl-4">
-                {publishableItems.map((item) => (
-                  <li key={`${item.skill_id}-${item.target}`}>
-                    {skillNames.get(item.skill_id) ?? item.skill_id} →{' '}
-                    {item.target === 'openclaw' ? 'OpenClaw' : 'Hermes'}
-                    （{item.action === 'add' ? '新增' : '更新'}）
-                  </li>
-                ))}
-              </ul>
-            </div>
-          }
-          confirmLabel="执行发布"
-          busy={actionBusy}
-          error={actionError}
-          onConfirm={(password) => void performPublish(password)}
-          onCancel={() => setShowPublishConfirm(false)}
-        />
-      ) : null}
+      {installIds && <InstallDialog input={{skill_ids: installIds}} onClose={() => setInstallIds(null)} onRefresh={onRefresh} />}
     </div>
   );
 }

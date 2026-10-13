@@ -1,14 +1,13 @@
-export type LinkTargetKey = 'openclaw' | 'hermes';
+export type LinkTargetKey = 'hermes';
 import type { ExportTarget } from './types';
 export type ExportTargetKey = string;
 export type TargetKey = LinkTargetKey;
 
 export const TARGETS = {
-  openclaw: { kind: 'link', label: 'OpenClaw' },
   hermes: { kind: 'link', label: 'Hermes' },
 } as const;
 
-export const LINK_TARGETS: LinkTargetKey[] = ['openclaw', 'hermes'];
+export const LINK_TARGETS: LinkTargetKey[] = ['hermes'];
 // HTML pattern uses the Unicode v flag; a literal hyphen must be escaped.
 export const EXPORT_TARGET_ID_PATTERN = '[a-z0-9][a-z0-9\\-]{0,62}';
 export const TARGET_LABEL: Record<TargetKey, string> = Object.fromEntries(

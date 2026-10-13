@@ -1,7 +1,7 @@
 /**
  * 管理台手绘线性图标集（24 viewBox，stroke 1.8，随 currentColor 着色）。
  *
- * OpenClaw = 小龙虾（claw 螯），Hermes = 双翼 + 闪电（神使速度），
+ * Hermes = 双翼 + 闪电（神使速度），
  * 其余为操作语义：加入队列 / Clone / 下架（断链）/ 删除。
  */
 
@@ -17,23 +17,6 @@ const STROKE_PROPS = {
   'aria-hidden': true,
 };
 
-export function CrayfishIcon() {
-  return (
-    <svg {...STROKE_PROPS}>
-      {/* 双螯 */}
-      <circle cx="6" cy="5.8" r="2.5" />
-      <circle cx="18" cy="5.8" r="2.5" />
-      {/* 螯-身连接 */}
-      <path d="M8.1 7.3 10 9.6M15.9 7.3 14 9.6" />
-      {/* 身体 */}
-      <ellipse cx="12" cy="13.4" rx="3.9" ry="4.6" />
-      {/* 触须 */}
-      <path d="M10.6 8.9c-.3-2.2.4-3.8 1.4-5.1M13.4 8.9c.3-2.2-.4-3.8-1.4-5.1" />
-      {/* 尾扇 */}
-      <path d="M9.4 17.7 8.4 21.2M14.6 17.7l1 3.5M12 18.1v3.4" />
-    </svg>
-  );
-}
 
 export function HermesIcon() {
   return (

@@ -38,7 +38,7 @@ export function groupCollections(skills: SkillCard[], visibleSkills: SkillCard[]
 }
 
 export function collectionStats(members: SkillCard[]) {
-  const published = { hermes: 0, openclaw: 0 };
+  const published = { hermes: 0 };
   for (const target of LINK_TARGETS) {
     published[target] = members.filter(s => s.deployments[target]?.status === 'active' && !s.deployments[target]?.link_missing).length;
   }
