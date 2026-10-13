@@ -122,3 +122,73 @@ def test_laipai_repeated_page_reports_incomplete(monkeypatch):
     monkeypatch.setattr(directory_collection, 'pause', lambda cancel: None)
     with pytest.raises(directory_collection.DiscoveryTruncated, match='分页重复'):
         list(directory_collection.laipai_names(threading.Event(), lambda *_: True))
+
+
+def test_fang_detail_failures_are_reported_without_losing_candidates(tmp_path, monkeypatch):
+    from src.services import fang_rentals, directory_collection
+    closed = []
+    class Client:
+        def __init__(self, **kwargs): pass
+        def fetch(self, url):
+            if '/chuzu/' in url:
+                raise ValueError('challenge URL with private query')
+            return 'listing'
+        def close(self): closed.append(True)
+    samples = [dict(source_community_id='f1', community_name='测试花园',
+                    source_listing_id=f'l{i}', source_url=f'https://zu.fang.com/hz/chuzu/3_{i}_1.htm',
+                    quality_flags=[]) for i in range(2)]
+    monkeypatch.setattr(fang_rentals, 'FangClient', Client)
+    monkeypatch.setattr(fang_rentals, 'parse_listing_page', lambda *_: (samples, None))
+    monkeypatch.setattr(directory_collection, 'pause', lambda _: None)
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    report = collect_names(store, ['fang'])
+    assert report['phase'] == 'partial_failed' and report['running'] is False
+    assert report['new'] == report['pending'] == 1
+    assert len(report['errors']) == 2
+    assert {e['listing_id'] for e in report['errors']} == {'l0', 'l1'}
+    assert all(e['stage'] == 'detail' and e['source_id'] == 'f1' for e in report['errors'])
+    assert 'private query' not in str(report)
+    item = store.sources()[0]
+    assert len(item['samples']) == 2 and item['status'] == 'pending'
+    assert all('detail_fetch_failed' in s['quality_flags'] for s in item['samples'])
+    assert '_collection_errors' not in item
+    assert all('_collection_error' not in s for s in item['samples'])
+    assert closed
+
+
+def test_directory_job_initialization_failure_finishes_and_can_restart(tmp_path, monkeypatch):
+    import sqlite3
+    from src.services import directory_collection
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    job = directory_collection.DirectoryJob(store)
+    original = store.sources
+    def broken():
+        raise sqlite3.OperationalError('unavailable')
+    monkeypatch.setattr(store, 'sources', broken)
+    job.start(['tmsf'])
+    job.worker.join(timeout=5)
+    assert not job.worker.is_alive()
+    assert job.state['phase'] == 'failed' and job.state['running'] is False
+    assert job.state['finished_at'] and job.state['errors'][0]['stage'] == 'task'
+    assert directory_collection.DirectoryJob(store).state == job.state
+    monkeypatch.setattr(store, 'sources', original)
+    monkeypatch.setitem(directory_collection.ADAPTERS, 'tmsf', lambda *_: iter([]))
+    job.start(['tmsf'])
+    job.worker.join(timeout=5)
+    assert job.state['phase'] == 'succeeded' and job.state['running'] is False
+
+
+def test_directory_job_save_failure_finishes_in_memory(tmp_path, monkeypatch, caplog):
+    import sqlite3
+    from src.services import directory_collection
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    job = directory_collection.DirectoryJob(store)
+    def broken():
+        raise sqlite3.OperationalError('unavailable')
+    monkeypatch.setattr(store, 'sources', broken)
+    monkeypatch.setattr(store, 'db', broken)
+    report = collect_names(store, ['tmsf'], progress=job._save)
+    assert report['phase'] == 'failed' and report['running'] is False
+    assert job.state['phase'] == 'failed' and job.state['running'] is False
+    assert any(e['stage'] == 'save' for e in job.state['errors'])
+    assert 'Could not persist community collection report' in caplog.text

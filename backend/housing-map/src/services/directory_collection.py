@@ -1,8 +1,12 @@
 """Public name discovery through the end of each source. Source failures are independent and visible."""
 import json
+import logging
+import sqlite3
 import threading
 
 from src.services.community_registry import now, dump
+
+logger = logging.getLogger(__name__)
 
 
 class DiscoveryTruncated(Exception):
@@ -49,14 +53,20 @@ def fang_names(cancel, ignored):
                     pause(cancel)
                     try:
                         enrich_detail(row, client.fetch(row['source_url']))
-                    except Exception:
+                    except InterruptedError:
+                        raise
+                    except Exception as exc:
                         row['quality_flags'].append('detail_fetch_failed')
+                        row['_collection_error'] = dict(source='fang', stage='detail',
+                            source_id=sid, listing_id=row['source_listing_id'],
+                            message=f"房源 {row['source_listing_id']} 详情采集失败（{type(exc).__name__}）")
                 grouped.setdefault(sid, []).append(row)
             for sid, samples in grouped.items():
                 yield dict(source='fang', source_kind='community', source_id=sid,
                            name=samples[0]['community_name'], district='滨江',
                            address=next((s.get('address') for s in samples if s.get('address')), ''),
-                           source_url=f'https://zu.fang.com/hz/house-xm{sid}/', samples=samples)
+                           source_url=f'https://zu.fang.com/hz/house-xm{sid}/', samples=samples,
+                           _collection_errors=[s.pop('_collection_error') for s in samples if '_collection_error' in s])
             if not next_url:
                 return
             if next_url in visited:
@@ -118,9 +128,10 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
     adapters = adapters or ADAPTERS
     report = dict(phase='running', running=True, started_at=now(), source=None,
                   new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[])
-    seen = {(r['source'], r['source_kind'], r['source_id']) for r in store.sources()}
     handled = set()
+    failed_sources = set()
     try:
+        seen = {(r['source'], r['source_kind'], r['source_id']) for r in store.sources()}
         for source in sources:
             check(cancel)
             report['source'] = source
@@ -134,6 +145,7 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                         if key not in handled:
                             report['ignored'] += 1
                     else:
+                        report['errors'].extend(row.pop('_collection_errors', []))
                         item = store.ingest(row)
                         if key not in handled:
                             report['existing' if key in seen else 'new'] += 1
@@ -146,13 +158,19 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
             except InterruptedError:
                 raise
             except Exception as exc:
+                failed_sources.add(source)
                 # Never include request URLs (Amap keys) in reports.
                 report['errors'].append({'source': source, 'message': str(exc) if isinstance(exc, ValueError) else f'{type(exc).__name__}：来源请求失败'})
         report['phase'] = 'partial_failed' if report['errors'] or report['truncated'] else 'succeeded'
-        if len(report['errors']) == len(sources):
+        if len(failed_sources) == len(sources):
             report['phase'] = 'failed'
     except InterruptedError:
         report['phase'] = 'cancelled'
+    except Exception as exc:
+        logger.exception('Community name collection failed')
+        report['phase'] = 'failed'
+        report['errors'].append(dict(source='directory', stage='task',
+                                    message=f'{type(exc).__name__}：采集任务失败'))
     finally:
         report.update(running=False, source=None, finished_at=now())
         if progress:
@@ -185,9 +203,16 @@ class DirectoryJob:
             return json.loads(r[0]) if r else None
 
     def _save(self, state):
-        self.state = dict(state)
-        with self.store.db() as db:
-            db.execute("INSERT INTO meta VALUES ('collection_job',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (dump(state),))
+        self.state = json.loads(dump(state))
+        try:
+            with self.store.db() as db:
+                db.execute("INSERT INTO meta VALUES ('collection_job',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (dump(state),))
+        except (sqlite3.Error, OSError):
+            self.state.update(running=False, phase='failed', finished_at=now())
+            self.state.setdefault('errors', []).append(dict(source='directory', stage='save', message='采集报告保存失败'))
+            logger.exception('Could not persist community collection report')
+            if state.get('running'):
+                raise
 
     def start(self, sources):
         with self.lock:
