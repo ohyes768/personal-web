@@ -41,7 +41,7 @@ DETAIL_DATA_KEYS = {'availability', 'last_refresh', 'sample_count', 'excluded_co
                     'page', 'page_size', 'total', 'source_links'}
 GROUP_KEYS = {'bedrooms', 'area_band', 'sample_count', 'rent_reference',
               'sale_reference', 'yield_estimate'}
-JOB_KEYS = {'job_id', 'running', 'phase', 'total_communities',
+JOB_KEYS = {'stage', 'association', 'job_id', 'running', 'phase', 'total_communities',
             'processed_communities', 'current_community_id', 'pages_fetched',
             'details_fetched', 'success_count', 'failed_count', 'started_at',
             'finished_at', 'last_success_at', 'errors', 'result'}

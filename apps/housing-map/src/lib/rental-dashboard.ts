@@ -76,6 +76,9 @@ export function formatSampleCountCell(value: number | undefined): string {
 export function rentalRefreshProgressText(job: RentalRefreshJob | null): string | null {
   if (!job) return null;
   if (job.phase === 'cancelling') return '正在取消…';
+  if (job.stage === 'checking') return '正在检查租金来源…';
+  if (job.stage === 'discovering' && job.association) return `正在查找来源 ${job.association.checked}/${job.association.targets} 小区`;
+  if (job.stage === 'publishing') return '正在保存租金数据…';
   if (job.total_communities > 0) {
     return `已处理 ${job.processed_communities}/${job.total_communities} 小区`;
   }
@@ -89,7 +92,9 @@ export function rentalRefreshTerminalNote(job: RentalRefreshJob | null): string 
   if (job.phase === 'cancelled') return '上次更新已取消，数据未改动';
   if (job.phase === 'interrupted') return '上次更新被中断，数据未改动';
   if (job.result) {
-    return `上次更新：成功 ${job.result.success_count} / 失败 ${job.result.failed_count}`;
+    const a = job.association;
+    return `上次更新：成功 ${job.result.success_count} / 失败 ${job.result.failed_count}` + (a ?
+      ` · 待选择 ${a.pending} · 暂无来源 ${a.missing} · 查找失败 ${a.failed} · 已跳过 ${a.skipped} · 排除 ${a.excluded}` : '');
   }
   if (job.phase === 'failed') return '上次更新失败，数据未改动';
   return null;

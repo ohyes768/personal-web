@@ -125,7 +125,13 @@ export interface RentalRefreshResult {
   failed_count: number;
 }
 
+export interface RentalAssociationProgress {
+  targets: number; excluded: number; checked: number; matched: number; pending: number; skipped: number; missing: number; failed: number;
+}
+
 export interface RentalRefreshJob {
+  stage?: string | null;
+  association?: RentalAssociationProgress | null;
   job_id: string;
   running: boolean;
   phase: RentalRefreshPhase;

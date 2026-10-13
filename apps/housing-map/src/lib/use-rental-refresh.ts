@@ -37,12 +37,14 @@ export function useRentalRefresh(onSettled?: () => void): UseRentalRefreshResult
   // 挂载恢复：无任务/网络异常都保持"无任务"展示，不阻塞页面
   useEffect(() => {
     const controller = new AbortController();
-    fetchRentalRefreshJob(controller.signal)
+    const restore = () => fetchRentalRefreshJob(controller.signal)
       .then(restored => {
         if (!controller.signal.aborted) setJob(restored);
       })
       .catch(() => { /* 恢复失败按无任务处理 */ });
-    return () => controller.abort();
+    void restore();
+    window.addEventListener('housing-rental-refresh-changed', restore);
+    return () => { controller.abort(); window.removeEventListener('housing-rental-refresh-changed', restore); };
   }, []);
 
   const running = job !== null && !isTerminalPhase(job.phase);
@@ -70,6 +72,7 @@ export function useRentalRefresh(onSettled?: () => void): UseRentalRefreshResult
     setActionError(null);
     try {
       setJob(await startRentalRefresh());
+      window.dispatchEvent(new Event('housing-rental-refresh-changed'));
     } catch (error) {
       setActionError(error instanceof Error ? error.message : '启动租金更新失败');
       // A conflicting start may come from another browser; recover its progress.
@@ -81,6 +84,7 @@ export function useRentalRefresh(onSettled?: () => void): UseRentalRefreshResult
     setActionError(null);
     try {
       setJob(await cancelRentalRefresh());
+      window.dispatchEvent(new Event('housing-rental-refresh-changed'));
     } catch (error) {
       setActionError(error instanceof Error ? error.message : '取消租金更新失败');
     }

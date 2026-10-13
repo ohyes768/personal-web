@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -112,3 +113,40 @@ def reject(community_id: str, source_id: str):
     source_store = store()
     source_store.reject(community_id, source_id)
     return {'success': True, 'data': source_store.get(community_id)}
+
+
+class ReviewDecision(BaseModel):
+    action: Literal['bind', 'skip', 'reopen']
+    candidate_id: str | None = Field(None, max_length=100)
+
+
+def review_registry():
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(rental_routes._mappings_path.parent)
+    if not registry:
+        raise HTTPException(503, '小区目录尚未准备好')
+    return registry
+
+
+@router.get('/rentals/association-tasks')
+def association_tasks():
+    from src.services.rental_reference.association import reviews
+    try:
+        return {'success': True, 'data': {'items': reviews(review_registry())}}
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(503, '租金待处理清单暂不可用') from exc
+
+
+@router.post('/rentals/association-tasks/{cid}')
+def association_decision(cid: str, request: ReviewDecision):
+    from src.services.rental_reference.association import decide
+    try:
+        rental_routes._get_service().change_sources(
+            lambda: decide(review_registry(), cid, request.action, request.candidate_id))
+    except RefreshAlreadyRunning as exc:
+        raise HTTPException(409, '租金正在更新，请结束后处理') from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '处理结果保存失败，请重试') from exc
+    return {'success': True, 'data': {'saved': True}}

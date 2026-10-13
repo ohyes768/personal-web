@@ -134,3 +134,6 @@ compareNumericMissingLast(a, b, order)       # null 一律 > 任何数值
    疑似状态丢失先重启后端再下结论。
 3. **detail 的 `bedrooms` 字段**：4plus 合并口径后端输出 `bedrooms: 4` +
    `bedrooms_filter: '4plus'`；前端如需"4居及以上"文案用后者渲染。
+
+### Unified source check before web refresh (2026-10-14)
+The directory-backed web flow now includes source checking/discovery before crawling. It retains the existing phase enum and adds `stage` plus optional `association` counts. No mappings is not a 422 when a directory is available: checking can finish with review tasks without publishing any data. Discovery/review cannot change asking-rent statistics or make stale/rebound snapshots valid. The legacy standalone mapping-only caller retains its no-mappings error.

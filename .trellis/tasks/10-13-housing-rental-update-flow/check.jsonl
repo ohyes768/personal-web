@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/housing-map/backend/index.md", "reason": "后端规范与全范围质量检查"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-directory.md", "reason": "统一身份台账、证据与删除决定"}
+{"file": ".trellis/spec/backend/housing-map/backend/rental-sources.md", "reason": "来源检查、人工单选和跳过"}
+{"file": ".trellis/spec/guides/housing-map-rental-reference.md", "reason": "刷新任务与旧快照隔离"}
+{"file": ".trellis/spec/guides/housing-map-fang-rentals.md", "reason": "低频请求、关键词证明、验证失败"}

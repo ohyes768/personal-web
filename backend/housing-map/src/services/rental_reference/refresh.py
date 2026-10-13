@@ -197,7 +197,9 @@ class RentalRefreshService:
             if self._has_active_thread():
                 raise RefreshAlreadyRunning('rental refresh job is already running')
             mappings = load_verified_mappings(self.mappings_path)
-            if not mappings:
+            from src.services.community_registry import existing_registry
+            registry = existing_registry(self.mappings_path.parent)
+            if not mappings and not registry:
                 raise NoVerifiedMappings('no verified rental community mappings')
             plans = [_SeedPlan(seed=f'{BASE_URL}/hz/house-xm{source_id}/',
                                community_id=community_id,
@@ -281,10 +283,35 @@ class RentalRefreshService:
             if not registry:
                 return False
             plan = plans[seed]
+            if registry:
+                from src.services.rental_reference.association import eligible_communities
+                if plan.community_id not in {c['community_id'] for c in eligible_communities(registry)[0]}:
+                    return True
             return not any(r['source'] == 'fang' and r['source_id'] == plan.source_community_id
                            and r['community_id'] == plan.community_id and r['status'] == 'matched'
                            for r in registry.sources())
         try:
+            from src.services.community_registry import existing_registry
+            registry = existing_registry(self.mappings_path.parent)
+            if registry:
+                from src.services.rental_reference.association import prepare_sources
+                from src.services.rental_reference.sources import discover
+                self._update_job(stage='checking')
+                pairs, association = prepare_sources(registry, self._cancel_event,
+                    lambda values: self._update_job(stage='discovering', association=values),
+                    lambda community: discover(community, client_factory=self._fetch_factory), delay=self._delay)
+                ordered = [_SeedPlan(f'{BASE_URL}/hz/house-xm{sid}/', cid, sid) for sid, cid in pairs]
+                plans = {plan.seed: plan for plan in ordered}
+                progress = CrawlProgress(total_seeds=len(plans))
+                self._update_job(stage='crawling', total_communities=len(plans), association=association)
+                if not plans:
+                    if self._cancel_event.is_set():
+                        outcome_phase = 'cancelled'
+                    else:
+                        outcome_phase = 'done'
+                    result_summary = {'published': False, 'reason': 'no_sources'}
+                    return
+            self._update_job(stage='crawling')
             client = self._fetch_factory(timeout=self._timeout)
             for index, seed_result in enumerate(crawl_runs(
                     [plan.seed for plan in ordered], fetch=client.fetch,
@@ -336,7 +363,7 @@ class RentalRefreshService:
                             errors['items'].append(
                                 {'community_id': plan.community_id, **error})
                     self._write_job_file()
-            self._update_job(phase='publishing', current_community_id=None)
+            self._update_job(phase='publishing', stage='publishing', current_community_id=None)
             report = {'seeds': [plan.seed for plan in ordered],
                       'errors': crawl_errors,
                       'truncated_seeds': truncated_seeds,
@@ -344,6 +371,11 @@ class RentalRefreshService:
                       'details_fetched': progress.details_fetched}
             batches = [batch for batch in batches if not skip_seed(next(
                 plan.seed for plan in ordered if plan.community_id == batch.community_id))]
+            if not batches:
+                result_summary = {'published': False, 'reason': 'sources_changed'}
+                self._update_job(success_count=0, failed_count=len(ordered))
+                self._add_error({'stage': 'publish', 'error': '小区或来源关联已变更，本次未发布，保留原数据'})
+                return
             publish = publish_run(self.rentals_dir, batches, report=report,
                                   cancel_event=self._cancel_event)
             result_summary = {

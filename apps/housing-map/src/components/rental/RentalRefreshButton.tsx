@@ -37,7 +37,7 @@ export function RentalRefreshControl({ job, running, actionError, start, cancel,
           className="btn btn-secondary"
           style={{ padding: '4px 12px', fontSize: '12px' }}
           onClick={start}
-          title="更新全部已关联小区的租金数据"
+          title="检查滨江住宅小区来源并更新租金，拿不准的可单选或跳过"
         >
           更新租金
         </button>
@@ -46,6 +46,9 @@ export function RentalRefreshControl({ job, running, actionError, start, cancel,
         <span style={{ fontSize: '12px', color: terminalFailed ? 'var(--price-up)' : 'var(--text-muted)' }}>
           {terminalNote}
         </span>
+      )}
+      {!running && job?.association && job.association.pending + job.association.missing + job.association.failed > 0 && onManageSources && (
+        <button type="button" className="btn btn-secondary" onClick={onManageSources}>处理租金来源</button>
       )}
       {actionError === '还没有关联租金来源，请先选择小区并确认来源' && onManageSources && (
         <button type="button" className="btn btn-secondary" onClick={onManageSources}>查找租金来源</button>

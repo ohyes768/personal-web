@@ -150,7 +150,7 @@ test('refresh control idle state shows start button with scope hint, no cancel',
     job: null, running: false, actionError: null, start: () => {}, cancel: () => {},
   }));
   assert.match(html, /更新租金/);
-  assert.match(html, /更新全部已关联小区的租金数据/);
+  assert.match(html, /检查滨江住宅小区来源并更新租金/);
   assert.doesNotMatch(html, /取消/);
 });
 
@@ -187,4 +187,34 @@ test('refresh control surfaces action errors like 409/422 feedback', () => {
   }));
   assert.match(html, /role="alert"/);
   assert.match(html, /已有租金更新任务在运行，请稍后再试/);
+});
+
+test('rental source checks use stage progress and honest pending counts', () => {
+  assert.equal(rentalRefreshProgressText(job({ stage: 'checking' })), '正在检查租金来源…');
+  const association = { targets: 20, checked: 3, excluded: 2, matched: 1, pending: 2, skipped: 4, missing: 5, failed: 6 };
+  assert.equal(rentalRefreshProgressText(job({ stage: 'discovering', association })), '正在查找来源 3/20 小区');
+  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
+    job: job({ running: false, phase: 'partial_failed', association, result: { published: false, success_count: 0, failed_count: 0 } }),
+    running: false, actionError: null, start() {}, cancel() {}, onManageSources() {},
+  }));
+  assert.match(html, /处理租金来源/);
+  assert.match(html, /暂无来源 5/);
+  assert.match(html, /查找失败 6/);
+});
+
+test('rental candidates are single-choice, bind requires selection, skip can reopen', () => {
+  const { RentalCandidateChoice } = require('../src/components/rental/RentalAssociationReview.tsx');
+  const item = { community_id: 'c1', community_name: '东方郡', reason: 'needs_selection', candidates: [
+    { id: 'east', name: '东方郡东区', address: '东区地址' }, { id: 'west', name: '东方郡西区' },
+  ] };
+  const render = (selected, reason = item.reason) => renderToStaticMarkup(React.createElement(RentalCandidateChoice, {
+    item: { ...item, reason }, selected, busy: false, onSelect() {}, onDecide() {},
+  }));
+  const empty = render('');
+  assert.equal((empty.match(/type="radio"/g) || []).length, 2);
+  assert.match(empty, /disabled=""[^>]*>绑定所选小区/);
+  assert.match(empty, /暂时跳过/);
+  assert.doesNotMatch(empty, /type="checkbox"|贴链接|粘贴/);
+  assert.match(render('east'), /checked=""/);
+  assert.match(render('', 'skipped'), /重新处理/);
 });

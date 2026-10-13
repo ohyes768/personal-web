@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import RentalAssociationReview from '../rental/RentalAssociationReview';
 
 type Source = { id: string; source: string; source_kind: string; source_id: string; name: string;
   address?: string; district?: string; community_id?: string; status: string; method?: string;
@@ -167,6 +168,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
   </div>;
 
   return <section className="directory-page" aria-label="小区数据管理">
+    <RentalAssociationReview onChanged={() => { setRevision(v => v + 1); onChanged(); }} />
     <div className="directory-collection">
       <div className="directory-actions">{Object.entries(collectionLabels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
         <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length} onClick={() => void act('/collection', 'POST', { sources: collectionSources })}>采集名称与物业类型</button>
