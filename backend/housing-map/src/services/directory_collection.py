@@ -156,6 +156,14 @@ class DirectoryJob:
         self.cancel = threading.Event()
         self.worker = None
         self.state = self._read()
+        if self.state:
+            cleaned = dict(self.state)
+            for field in ('errors', 'truncated'):
+                cleaned[field] = [item for item in cleaned.get(field, []) if item.get('source') != 'amap']
+            if cleaned.get('source') == 'amap':
+                cleaned['source'] = None
+            if cleaned != self.state:
+                self._save(cleaned)
         if self.state and self.state.get('running'):
             self.state.update(running=False, phase='interrupted')
             self._save(self.state)

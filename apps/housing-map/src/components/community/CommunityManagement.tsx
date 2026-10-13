@@ -168,7 +168,7 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       <p className="directory-muted">名称采集范围：滨江区；列表分页可能截断。删除的小区及已关联来源会跳过后续详情采集。</p>
       {report && <div role="status"><strong>{phaseLabels[report.phase] || report.phase}{report.source ? ` · ${labels[report.source]}` : ''}</strong>
         <p>新发现 {report.new || 0} · 已存在 {report.existing || 0} · 已关联 {report.matched || 0} · 待确认 {report.pending || 0} · 已跳过 {report.ignored || 0}</p>
-        {[...(report.errors || []), ...(report.truncated || [])].map((item, i) => <p className="directory-warning" key={i}>{labels[item.source]}：{item.message}</p>)}</div>}
+        {[...(report.errors || []), ...(report.truncated || [])].filter(item => item.source !== 'amap').map((item, i) => <p className="directory-warning" key={i}>{labels[item.source]}：{item.message}</p>)}</div>}
     </div>
     {error && <p role="alert" className="directory-warning">{error} <button className="btn btn-secondary" onClick={() => setRevision(v => v + 1)}>重试</button></p>}
     {notice && <p role="status">{notice}</p>}
