@@ -4,7 +4,7 @@ Skill 发布管理台（`apps/skill-manager` 前端 + `backend/skill-manager` �
 
 ## Windows 外部目标导出
 
-OpenClaw / Hermes 继续使用 NAS symlink 发布。Windows Codex / Claude Code
+Hermes 继续使用 NAS symlink 发布。Windows Codex / Claude Code
 是外部导出目标，无需添加 Windows 路径、网络挂载或本地 CLI。
 
 1. 在自研或 GitHub Skill 卡片点击「导出」，选择 Windows Codex 或 Windows Claude Code。
@@ -36,10 +36,10 @@ git clone https://github.com/ohyes768/skills.git ~/skills
 mkdir -p ~/skill-manager/github-cache ~/skill-manager/state
 ```
 
-目录属主须为运行 `docker compose` 的用户（后端容器以该 uid 通过 bind mount 读写）。`OPENCLAW_SKILLS_HOST_PATH` 与 `HERMES_SKILLS_HOST_PATH` 指向 NAS 上 OpenClaw / Hermes 实际生效的技能目录，须真实存在：
+目录属主须为运行 `docker compose` 的用户（后端容器以该 uid 通过 bind mount 读写）。`HERMES_SKILLS_HOST_PATH` 指向 NAS 上 Hermes 实际生效的技能目录，须真实存在：
 
 ```bash
-mkdir -p ~/openclaw/skills ~/hermes/skills   # 按实际部署路径调整
+mkdir -p ~/hermes/skills   # 按实际部署路径调整
 ```
 
 ### 3. 在 .env 中填写变量（.env 已被 .gitignore 忽略，勿提交）
@@ -48,7 +48,6 @@ mkdir -p ~/openclaw/skills ~/hermes/skills   # 按实际部署路径调整
 |---|---|
 | `SKILLS_SOURCE_HOST_PATH` | NAS 上 `ohyes768/skills` clone 的绝对路径 |
 | `GITHUB_SKILL_CACHE_HOST_PATH` | GitHub 仓库缓存目录的绝对路径 |
-| `OPENCLAW_SKILLS_HOST_PATH` | OpenClaw 生效技能目录的绝对路径 |
 | `HERMES_SKILLS_HOST_PATH` | Hermes 生效技能目录的绝对路径 |
 | `SKILL_MANAGER_ADMIN_PASSWORD` | 管理密码。发布/下架/回滚/登记时在确认窗口输入；缺失时 compose 拒绝启动后端 |
 
@@ -107,30 +106,30 @@ docker run --rm -v "${PWD}/nginx/web.conf:/etc/nginx/conf.d/web.conf:ro" nginx n
 在界面上把任一 Skill 加入右栏并执行"发布计划"预览；随后在 NAS 上确认目标目录未新增任何条目（预览是只读操作）：
 
 ```bash
-ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
+ls -la "$HERMES_SKILLS_HOST_PATH"           # 应无新增链接
 ```
 
 ### 6. 一次真实发布（测试目录）
 
 建议先指向一个临时目标目录做冒烟验证，再切换到真实 Agent 目录：
 
-1. 在 `.env` 中把 `OPENCLAW_SKILLS_HOST_PATH` 临时指向测试目录（如 `~/skill-manager/smoke-target`）并 `mkdir -p` 该目录。
+1. 在 `.env` 中把 `HERMES_SKILLS_HOST_PATH` 临时指向测试目录（如 `~/skill-manager/smoke-target`）并 `mkdir -p` 该目录。
 2. `./scripts/deploy-nas.sh skill-manager both --no-pull` 重建后端。
-3. 在界面登记一个 GitHub Skill（或选用现有 local Skill），加入右栏、选择 openclaw、执行发布并输入管理密码。
+3. GitHub 输入仓库并扫描、选择候选、确认安装到 Hermes；自研直接选择 Skill 并确认安装。一次管理密码即可完成。
 4. 验证链接落在目标根内且指向受控源：
 
    ```bash
-   ls -la "$OPENCLAW_SKILLS_HOST_PATH/<skill-id>"     # 应为 symlink
-   readlink -f "$OPENCLAW_SKILLS_HOST_PATH/<skill-id>" # 应位于 SKILLS_SOURCE_HOST_PATH 或 GITHUB_SKILL_CACHE_HOST_PATH 指向的宿主目录内
+   ls -la "$HERMES_SKILLS_HOST_PATH/<skill-id>"     # 应为 symlink
+   readlink -f "$HERMES_SKILLS_HOST_PATH/<skill-id>" # 应位于 SKILLS_SOURCE_HOST_PATH 或 GITHUB_SKILL_CACHE_HOST_PATH 指向的宿主目录内
    ```
 
-5. 在界面对同一项执行"回滚"验证快照链路；再执行"下架"确认只删除链接本身：
+5. 在安装看板执行"下架"，确认只删除链接本身：
 
    ```bash
-   ls "$OPENCLAW_SKILLS_HOST_PATH/"                   # 该 skill 链接应消失，目录仍在
+   ls "$HERMES_SKILLS_HOST_PATH/"                   # 该 skill 链接应消失，目录仍在
    ```
 
-6. 验证完毕后把 `OPENCLAW_SKILLS_HOST_PATH` 改回真实路径并重建后端。
+6. 验证完毕后把 `HERMES_SKILLS_HOST_PATH` 改回真实路径并重建后端。
 
 ### 7. 错误密码不产生副作用
 
@@ -164,4 +163,12 @@ ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
 
 在“管理看板”中点击 Skill 卡片的下载按钮，选择启用目标下载 ZIP。下载成功后卡片显示目标名称、导出版本与日期；源更新后可重新导出。停用目标仍显示历史记录，允许清除记录，但不能重新导出。删除目标前须在相关 Skill 卡片清除所有导出记录；历史审计保留。
 
-本次更新需要部署技能管理器前后端，并执行 `./scripts/deploy-nas.sh nginx` 下发和 reload 新路由：`/api/export-targets` 与 `/api/export-targets/`。否则页面会报告目标加载失败。此配置管理及 ZIP 导出免密，OpenClaw/Hermes 的 NAS 发布路径与管理密码边界保持原样。
+本次更新需要部署技能管理器前后端，并执行 `./scripts/deploy-nas.sh nginx` 下发和 reload 新路由：`/api/export-targets` 与 `/api/export-targets/`。否则页面会报告目标加载失败。此配置管理及 ZIP 导出免密，Hermes 的 NAS 发布路径与管理密码边界保持原样。
+
+## Hermes 单目标升级（2026-10-13）
+升级前停止旧后端并备份状态库。若需清理旧目标链接，在旧目录仍可访问时先运行：
+```bash
+python scripts/cleanup_retired_target.py --db /path/skill-manager.sqlite3 --root /path/old-target
+# 复核报告后加 --execute；仅删除账本一致的受管链接，不跟随链接删除源文件。
+```
+新版本移除旧目标挂载与环境变量。首次启动将旧目标记录归档到 retired_deployment / retired_deployment_history，保留 before-hermes-only 备份；不会自动删除宿主机链接。备份已存在且迁移未完成时启动失败，请先核查备份，不自动覆盖。保留独立 ZIP 导出。安装计划有效10分钟，结果保留30分钟；任务在服务重启后丢失，请先刷新安装实况再重试。运行单 backend worker。

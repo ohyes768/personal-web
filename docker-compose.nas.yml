@@ -14,7 +14,6 @@
 #        GAODE_MAP_SECURITY_KEY=高德地图安全密钥（housing-map 前端 build arg）
 #        SKILLS_SOURCE_HOST_PATH=NAS 上 skills 仓库路径
 #        GITHUB_SKILL_CACHE_HOST_PATH=GitHub 缓存目录路径
-#        OPENCLAW_SKILLS_HOST_PATH=OpenClaw 技能目录路径
 #        HERMES_SKILLS_HOST_PATH=Hermes 技能目录路径
 #        SKILL_MANAGER_ADMIN_PASSWORD=skill-manager 管理密码
 #        EOF
@@ -397,7 +396,6 @@ services:
     volumes:
       - ${SKILLS_SOURCE_HOST_PATH:?skill-manager requires SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH:?}:rw
       - ${GITHUB_SKILL_CACHE_HOST_PATH:?skill-manager requires GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH:?}:rw
-      - ${OPENCLAW_SKILLS_HOST_PATH:?skill-manager requires OPENCLAW_SKILLS_HOST_PATH}:${OPENCLAW_SKILLS_HOST_PATH:?}:rw
       - ${HERMES_SKILLS_HOST_PATH:?skill-manager requires HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH:?}:rw
       - skill-manager-state:/app/state
       - ./deploy/fastgithub-ca.pem:/etc/ssl/fastgithub-ca.pem:ro
@@ -405,7 +403,6 @@ services:
       - TZ=Asia/Shanghai
       - SKILLS_SOURCE_ROOT=${SKILLS_SOURCE_HOST_PATH:-}
       - GITHUB_SKILL_CACHE_ROOT=${GITHUB_SKILL_CACHE_HOST_PATH:-}
-      - OPENCLAW_SKILLS_ROOT=${OPENCLAW_SKILLS_HOST_PATH:-}
       - HERMES_SKILLS_ROOT=${HERMES_SKILLS_HOST_PATH:-}
       - SKILL_MANAGER_STATE_DIR=/app/state
       - HTTPS_PROXY=http://host.docker.internal:38458

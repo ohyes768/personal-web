@@ -25,7 +25,7 @@ docker compose -f docker-compose.nas.yml -f docker-compose.skill-manager.nas.yml
 
 ```bash
 find ~/.hermes/skills -maxdepth 1 -type l ! -exec test -e {} \; -delete
-find ~/.openclaw/workspace/skills -maxdepth 1 -type l ! -exec test -e {} \; -delete
+find ~/.hermes/skills -maxdepth 1 -type l ! -exec test -e {} \; -delete
 ```
 
 不清理直接走 plan 也能自愈发现（旧链接 resolve 不到受控根 → blocked
