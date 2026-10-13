@@ -1166,3 +1166,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 - pyproject 未固化 pytest basetemp addopts（现行约定 CLI 显式传参）；.gitignore 已补 .pytest-tmp*/。
 - 一次"后端内存 job 态丢失"（GET data:null）重启后未复现，疑 preview_stop 半关闭干扰；已记入 spec 坑位。
 - spec 未提交、代码未 commit（等用户指令）。
+
+
+## Session 32: 小区数据管理与统一目录
+
+**Date**: 2026-10-13
+**Task**: 小区数据管理与统一目录
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+完成四来源名称管理、自动及手动关联、整小区删除与重采跳过；291项后端、36项前端测试和生产构建通过，桌面手机闭环验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ab9ab74` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
