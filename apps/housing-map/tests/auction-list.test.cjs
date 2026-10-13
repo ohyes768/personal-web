@@ -5,7 +5,18 @@ const fs = require('node:fs');
 const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
+require.extensions['.css'] = module => { module.exports = {}; };
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText, filename);
+test('association mutations accept null success and retain actionable API errors', async () => {
+  const { fetchAuctionData } = require('../src/lib/auction-types.ts');
+  const original = global.fetch;
+  try {
+    global.fetch = async () => ({ ok: true, json: async () => ({ success: true, data: null }) });
+    assert.equal(await fetchAuctionData('directory/sources/s/associate', undefined, { method: 'POST' }), null);
+    global.fetch = async () => ({ ok: false, json: async () => ({ detail: '目标已删除' }) });
+    await assert.rejects(fetchAuctionData('directory/sources/s/associate'), /目标已删除/);
+  } finally { global.fetch = original; }
+});
 test('list preserves unmatched rounds and hides non-deal prices and unsafe links', () => {
   const { AuctionListContent } = require('../src/components/auction/AuctionDataList.tsx');
   const html = renderToStaticMarkup(React.createElement(AuctionListContent, { onView: () => {}, data: {

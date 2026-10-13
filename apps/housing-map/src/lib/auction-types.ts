@@ -64,10 +64,10 @@ export interface AuctionListData {
   page_size: number;
   last_run: { complete: boolean; finished_at: string } | null;
 }
-export async function fetchAuctionData<T>(path: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(`/api/map/${path}`, { signal });
-  if (!response.ok) throw new Error('法拍数据暂时不可用');
+export async function fetchAuctionData<T>(path: string, signal?: AbortSignal, options: RequestInit = {}): Promise<T> {
+  const response = await fetch(`/api/map/${path}`, { ...options, signal });
   const payload = await response.json();
-  if (!payload.success || !payload.data) throw new Error('法拍数据响应异常');
+  if (!response.ok) throw new Error(typeof payload.detail === 'string' ? payload.detail : '法拍数据暂时不可用');
+  if (!payload.success || !('data' in payload)) throw new Error('法拍数据响应异常');
   return payload.data;
 }

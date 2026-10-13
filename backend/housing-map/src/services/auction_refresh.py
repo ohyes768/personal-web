@@ -79,6 +79,12 @@ def collect_auctions(path=AUCTION_PATH, *, client=None, communities=None, max_pa
                       "finished_at": now_iso(), "dry_run": dry_run}
             if not dry_run:
                 write_store(path, rows, result)
+                from src.services.auction_association import sync_records
+                try:
+                    result['association'] = sync_records(path)
+                except Exception:
+                    # Auction JSON is already durable; a directory fault must not hide that success.
+                    result['association'] = {'error': '法拍已保存，关联同步未完成，请重试同步'}
             return result
         finally:
             if owned:
@@ -115,6 +121,7 @@ async def start_refresh(max_pages=100, limit=0):
         try:
             job["result"] = await asyncio.shield(worker)
             job["phase"] = "done"
+            job['error'] = job['result'].get('association', {}).get('error')
         except asyncio.CancelledError:
             # to_thread keeps running after task cancellation: retain the file lock until it exits.
             _cancel.set()

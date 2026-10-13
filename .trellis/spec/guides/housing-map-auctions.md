@@ -57,3 +57,30 @@ Correct：本次命中N条、累计N条拍卖记录；列表保留轮次和非�
 - 主值成交单价（万元/㎡，两位小数），辅值结束日期与建筑面积；最新记录缺面积时显示单价空值及面积未知，禁止退回更早有面积的成交。无记录、未采集、加载/错误分别显示，切小区及成功采集刷新遵循请求key/取消规则。
 - 本轮仅展示卡片，不添加法拍卡片或签约均价跳转。桌面五列、480px以下三列，卡片价格单位需完整可读。
 - tests/auction-card.test.cjs断言最近值不取中位数、缺面积/空状态、无导航链接；复验倾城之恋31882元/㎡、2026-09-29、149.3㎡。pnpm lint/tsc/build。
+
+## 法拍手工待关联（2026-10-14）
+
+### Scope / Trigger
+适用于auction_association.py、采集发布、统一目录身份升级及AuctionPendingAssociations。
+
+### Signatures
+- sync_records(Path) → records/identities/matched/automatic/pending/ignored；调用方持有StoreLock。
+- POST /api/auctions/associations/sync → success/data同步报告，无上游请求。
+- GET /api/auctions/associations/pending?q&page&page_size → items,total,page,needs_sync；每项record_id/name/address/source_kind/source_id/reason/candidates/rounds。
+- CommunityRegistry.promote_auction_source(asset_id,auction_ids)保留单个旧auction来源记录的id、绑定和拒绝关系。
+
+### Contracts
+成功写入累计法拍JSON后同步统一目录；source+asset_id归组，无asset_id退化source+auction_id。同名不同房产不合并。已有目录人工绑定/拒绝/解绑/忽略优先，空小区名仅以标题显示且auto_association_disabled阻止自动关联。多个旧轮次身份有独立决定时禁止自动归一，association_identity_conflict持续待人工核对。普通GET不写来源目录。旧数据通过显式sync补入，已同步身份缺新轮次ID时needs_sync=true。
+前端法拍“手工待关联”显示按房产归组列表、候选证据、目标搜索和确认绑定；复用/directory/sources/{rid}/associate，允许null成功响应。成功刷新法拍列表、地图汇总和详情，空页回退到有效页。
+
+### Validation & Error Matrix
+同步与采集互斥409；非法分页/过长搜索422；数据、SQLite或文件故障503。法拍JSON与SQLite不共享事务：同步失败保留已保存法拍并返回association.error；job.phase仍done、job.error提示关联未完成，支持只重试同步。
+
+### Good / Base / Bad Cases
+Good：两轮同asset只显示一处待关联，绑定后两轮均归入目标。Base：缺名/缺证据保留待处理，缺asset仅绑定已知轮次。Bad：数据库故障不能宣称关联成功，反复同步不能复活删除项。
+
+### Tests Required
+测试轮次归组、重复同步、人工绑定/拒绝/删除、无名标题禁止自动绑定、身份升级、多旧身份冲突、API绑定即时生效/互斥、同步失败后法拍保留；前端验证null成功与错误消息、桌面/390px历史同步和绑定闭环。
+
+### Wrong vs Correct
+Wrong：法拍按名字猜测归属或要求额外重新采名称才能手工绑定。Correct：已保存法拍直接同步目录，充分证据自动关联，其他按持久来源身份人工确认。

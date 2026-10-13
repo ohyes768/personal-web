@@ -560,7 +560,7 @@ export default function BinjiangMapPage() {
         }} /> : activeTab === 'auction' ? (
           <div style={{ flex: 1, minWidth: 0 }}>
             {auctionMapError && <p role="alert" className="auction-note">{auctionMapError}</p>}
-            <AuctionDataList refreshVersion={auctionRefreshVersion} onView={(id) => {
+            <AuctionDataList refreshVersion={auctionRefreshVersion} onChanged={() => { setAuctionRefreshVersion(v => v + 1); void loadAuctionCounts(); }} onView={(id) => {
               const community = communities.find(c => String(c.community_id) === id);
               if (!community) { setAuctionMapError('该小区暂未在地图名录中，仍可查看法拍记录。'); return; }
               setAuctionMapError(null);
@@ -1156,7 +1156,9 @@ function AppHeader({
             </span>
           )}
           {auctionRefreshState && !auctionRefreshState.running && auctionRefreshState.phase === 'done' && (
-            <span style={{ marginLeft: '8px', color: 'var(--price-down)' }}>法拍已更新</span>
+            <span style={{ marginLeft: '8px', color: auctionRefreshState.error ? 'var(--price-up)' : 'var(--price-down)' }}>
+              {auctionRefreshState.error || '法拍已更新'}
+            </span>
           )}
           {auctionRefreshState && !auctionRefreshState.running && auctionRefreshState.phase === 'cancelled' && (
             <span style={{ marginLeft: '8px' }}>法拍已停止</span>

@@ -183,7 +183,7 @@ class CommunityRegistry:
     def auto_associate(self, rid=None):
         count = 0
         for item in self.sources():
-            if (rid and item['id'] != rid) or item['status'] != 'pending':
+            if (rid and item['id'] != rid) or item['status'] != 'pending' or item.get('auto_association_disabled'):
                 continue
             candidates = self.candidates(item)
             # Full names must resolve uniquely, even if only one duplicate has address evidence.
@@ -196,6 +196,19 @@ class CommunityRegistry:
                 except ValueError:
                     pass  # a concurrent manual decision supersedes discovery
         return count
+
+    def promote_auction_source(self, asset_id, auction_ids):
+        """Keep a single legacy round's decisions when its asset identity becomes known."""
+        with self.db() as db:
+            current = db.execute("SELECT status,payload FROM sources WHERE source='laipai' AND kind='asset' AND sid=?", (asset_id,)).fetchone()
+            if current:
+                return current['status'] == 'matched' or not json.loads(current['payload']).get('association_identity_conflict')
+            legacy = [r for r in db.execute("SELECT id,sid FROM sources WHERE source='laipai' AND kind='auction'")
+                      if r['sid'] in auction_ids]
+            # Multiple independent decisions need manual reconciliation, never pick one arbitrarily.
+            if len(legacy) == 1:
+                db.execute("UPDATE sources SET kind='asset',sid=? WHERE id=?", (asset_id, legacy[0]['id']))
+            return len(legacy) <= 1
 
     def associate(self, rid, cid, *, method='manual', evidence=None):
         with self.db() as db:

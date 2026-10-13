@@ -2,12 +2,40 @@
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import JSONResponse
 from typing import Literal
+import sqlite3
 
 from src.services import auction_refresh
 from src.services import auction_history
-from src.services.auction_store import AUCTION_PATH, read_store
+from src.services.auction_store import AUCTION_PATH, read_store, StoreLock
+from src.services import auction_association
 
 router = APIRouter(tags=["auctions"])
+
+
+@router.post('/auctions/associations/sync')
+def sync_associations():
+    try:
+        with StoreLock(AUCTION_PATH):
+            data = auction_association.sync_records(AUCTION_PATH)
+        return {'success': True, 'data': data}
+    except BlockingIOError as exc:
+        raise HTTPException(409, '法拍正在采集或同步，请稍后重试') from exc
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '法拍关联同步失败，已有记录保留，请重试') from exc
+
+
+@router.get('/auctions/associations/pending')
+def pending_associations(q: str = Query('', max_length=200), page: int = Query(1, ge=1),
+                         page_size: int = Query(20, ge=1, le=100)):
+    try:
+        rows, needs_sync = auction_association.pending_records(AUCTION_PATH)
+        keyword = q.strip().casefold()
+        rows = [r for r in rows if not keyword or keyword in (r['name'] + ' ' + (r['address'] or '')).casefold()]
+        start = (page - 1) * page_size
+        return {'success': True, 'data': {'items': rows[start:start + page_size], 'total': len(rows),
+                                         'page': page, 'needs_sync': needs_sync}}
+    except (ValueError, OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '法拍待关联列表暂不可用') from exc
 
 
 @router.get('/auctions/community-summary')
