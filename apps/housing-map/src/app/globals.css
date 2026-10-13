@@ -1173,6 +1173,9 @@ body {
 .directory-list-panel td small { display:block; color:var(--text-muted); font-size:11px; margin-top:5px; max-width:240px; overflow-wrap:anywhere; }
 .directory-list-panel tr.selected { background:#fbf3ed; }
 .directory-badge { display:inline-block; padding:3px 7px; border-radius:4px; background:var(--bg-elevated); font-size:10px; margin:2px; white-space:nowrap; }
+.directory-residential { background:#e8f4ea; color:#1f6b3a; border:1px solid #b6dcc1; }
+.directory-pending { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
+.directory-non-residential { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
 .directory-detail { width:390px; flex-shrink:0; padding:20px; background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; overflow-wrap:anywhere; }
 .directory-detail h3 { font-size:19px; margin:0 0 12px; }
 .directory-edit-grid { display:grid; gap:12px; margin:12px 0 16px; }

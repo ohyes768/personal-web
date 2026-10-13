@@ -7,7 +7,7 @@ type Source = { id: string; source: string; source_kind: string; source_id: stri
   evidence?: string[]; source_url?: string; sample_count?: number; candidates?: Community[]; possible_deleted?: string[] };
 type Community = { community_id: string; community_name: string; aliases?: string[]; district?: string;
   address?: string; deleted?: boolean; sources?: Source[]; eligible?: boolean; evidence?: string[];
-  longitude?: number; latitude?: number; has_boundary?: boolean;
+  longitude?: number; latitude?: number; has_boundary?: boolean; residential_state?: 'residential' | 'pending' | 'non_residential' | 'deleted' | 'unknown';
   events?: { seq: number; action: string; created_at: string; payload: { reason?: string } }[] };
 type Report = { running: boolean; phase: string; source?: string; new?: number; existing?: number;
   matched?: number; pending?: number; ignored?: number; errors?: { source: string; message: string }[];
@@ -27,6 +27,14 @@ async function request<T>(path: string, method = 'GET', body?: object, signal?: 
 export function safeDirectoryLink(url?: string): string | undefined {
   try { const u = new URL(url || ''); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? url : undefined; }
   catch { return undefined; }
+}
+export type ResidentialState = 'residential' | 'pending' | 'non_residential' | 'deleted' | 'unknown' | undefined;
+export function ResidentialStateBadge({ state }: { state: ResidentialState }) {
+  if (state === 'residential') return <span className="directory-badge directory-residential" title="住宅小区">✅ 住宅</span>;
+  if (state === 'pending') return <span className="directory-badge directory-pending" title="物业类型待核实">❓ 待核实</span>;
+  if (state === 'non_residential') return <span className="directory-badge directory-non-residential" title="非住宅记录">❌ 非住宅</span>;
+  if (state === 'deleted') return <span className="directory-muted" title="已删除">—</span>;
+  return <span className="directory-muted" title="尚未分类">—</span>;
 }
 export function DirectorySourceCard({ item, children }: { item: Source; children?: React.ReactNode }) {
   const link = safeDirectoryLink(item.source_url);
@@ -180,10 +188,10 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       {mode === 'communities' && <select aria-label="住宅状态" value={residentialState} onChange={e => { setResidentialState(e.target.value); setPage(1); }}><option value="all">住宅/非住宅/待核实</option><option value="residential">住宅</option><option value="pending">待核实</option><option value="non_residential">非住宅</option></select>}</div>
     <div className="directory-workspace"><div className="directory-list-panel">
       <p className="directory-muted">共 {total} 条 · 第 {page} 页</p>
-      {loading ? <p role="status">正在加载目录…</p> : <><div className="directory-table-wrap"><table><thead><tr><th>小区名称</th><th>区域 / 地址</th><th>来源</th><th>关联</th><th>操作</th></tr></thead><tbody>
+      {loading ? <p role="status">正在加载目录…</p> : <><div className="directory-table-wrap"><table><thead><tr><th>小区名称</th><th>区域 / 地址</th>{mode === 'communities' && <th>住宅</th>}<th>来源</th><th>关联</th><th>操作</th></tr></thead><tbody>
         {rows.map(row => { const master = 'community_name' in row; const id = master ? row.community_id : row.id;
           return <tr key={id} className={selected?.id === id ? 'selected' : ''}><td><strong>{master ? row.community_name : row.name}</strong><small>{master ? (row.aliases || []).join(' / ') : `${labels[row.source] || '历史来源'} · ${row.source_id}`}</small></td>
-            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td>
+            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td>{master && <td><ResidentialStateBadge state={row.residential_state} /></td>}
             <td>{master ? (row.sources || []).filter(r => labels[r.source]).map(r => <span className="directory-badge" key={r.id}>{labels[r.source]}</span>) : (<span className="directory-badge">{labels[row.source] || '历史来源'}</span>)}</td>
             <td>{(() => {
               if (!master) {
