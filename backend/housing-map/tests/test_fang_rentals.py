@@ -72,3 +72,18 @@ def test_detail_and_partial_failure():
 def test_only_expected_public_rental_urls(url):
     with pytest.raises(ValueError):
         validate_url(url)
+
+def test_offpage_pagination_anchor_ends_collection():
+    html = page(listing(), '<a href="https://example.com/loupan/c33/">下一页</a>')
+    rows, next_url = parse_listing_page(html, URL)
+    assert len(rows) == 1
+    assert next_url is None  # bad pagination anchor → stop, not raise
+
+
+def test_offpage_detail_anchor_is_skipped():
+    # Detail anchor pointing to a city subdomain other than Hangzhou → skip the row.
+    ads_row = '<dl><dt><a href="https://sh.zu.fang.com/hz/chuzu/3_123_1.htm">\u56fe\u7247</a></dt><dd><p class="title"><a href="https://sh.zu.fang.com/hz/chuzu/3_123_1.htm">\u4e09\u623f\u51fa\u79df</a></p><p class="font15">\u6574\u79df | 3\u5ba42\u5385 | 89\u33a1 | \u671d\u5357</p><p><a>\u6ee8\u6c5f</a>-<a>\u957f\u6cb3</a>-<a href="/hz/house-xm2010067741/">\u98ce\u96c5\u94b1\u5858</a></p><div class="moreInfo"><p><b>6,400</b> \u5143/\u6708</p></div></dd></dl>'
+    html = page(listing(), '') + ads_row
+    rows, _ = parse_listing_page(html, URL)
+    assert len(rows) == 1
+    assert rows[0]['source_listing_id'] == '3_123_1'  # only the good listing() row

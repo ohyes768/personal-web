@@ -55,8 +55,14 @@ def parse_listing_page(html: str, url: str) -> tuple[list[dict], str | None]:
         if not detail:
             continue
         text = strip_tags(block)
-        source_url = validate_url(urljoin(url, detail[0][0]))
-        listing_id = re.search(r'/chuzu/(\d+_\d+_\d+)\.htm', source_url).group(1)
+        # A listing occasionally anchors a non-rental destination (e.g. an ad slot
+        # or a detail link that has been moved off `zu.fang.com/hz/...`). Skip
+        # such rows instead of failing the whole page.
+        try:
+            source_url = validate_url(urljoin(url, detail[0][0]))
+            listing_id = re.search(r'/chuzu/(\d+_\d+_\d+)\.htm', source_url).group(1)
+        except ValueError:
+            continue
         title = next((label for _, label in detail if label and label != '图片'), '')
         community = next(((href, label) for href, label in links
                           if re.search(r'/house-xm\d+', href) and label), None)
@@ -91,9 +97,16 @@ def parse_listing_page(html: str, url: str) -> tuple[list[dict], str | None]:
         })
     next_url = next((urljoin(url, href) for href, label in _links(html) if label == '下一页'), None)
     if next_url:
-        validate_url(next_url)
-        if '/chuzu/' in next_url:
-            raise ValueError('Unexpected detail URL in pagination')
+        try:
+            validate_url(next_url)
+        except ValueError:
+            # Pagination anchor doesn't reach a recognized rental list — stop
+            # following pages instead of failing the whole batch. Details on
+            # the current page were already captured above.
+            next_url = None
+        else:
+            if '/chuzu/' in next_url:
+                raise ValueError('Unexpected detail URL in pagination')
     if not rows:
         text = strip_tags(html)
         if not ('房天下' in text and re.search(r'暂无房源|没有找到|0\s*套|未找到', text)):
