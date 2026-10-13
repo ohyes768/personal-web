@@ -1,4 +1,4 @@
-"""Bounded public name discovery. Source failures are independent and visible."""
+"""Public name discovery through the end of each source. Source failures are independent and visible."""
 import json
 import threading
 
@@ -19,7 +19,7 @@ def pause(cancel):
         raise InterruptedError('采集已取消')
 
 
-def tmsf_names(cancel, limit, ignored):
+def tmsf_names(cancel, ignored):
     from scripts.fetch_tmsf_binjiang_communities import fetch_binjiang_communities
     for c in fetch_binjiang_communities():
         check(cancel)
@@ -29,13 +29,13 @@ def tmsf_names(cancel, limit, ignored):
                        district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
 
 
-def fang_names(cancel, limit, ignored):
+def fang_names(cancel, ignored):
     from src.services.fang_rentals import FangClient, parse_listing_page, enrich_detail
     client = FangClient(timeout=20)
     url = 'https://zu.fang.com/hz/house-a0154/n31/'
     visited = set()
     try:
-        for _ in range(limit):
+        while True:
             check(cancel)
             visited.add(url)
             rows, next_url = parse_listing_page(client.fetch(url), url)
@@ -57,23 +57,30 @@ def fang_names(cancel, limit, ignored):
                            name=samples[0]['community_name'], district='滨江',
                            address=next((s.get('address') for s in samples if s.get('address')), ''),
                            source_url=f'https://zu.fang.com/hz/house-xm{sid}/', samples=samples)
-            if not next_url or next_url in visited:
+            if not next_url:
                 return
+            if next_url in visited:
+                raise DiscoveryTruncated('房天下分页重复，名称覆盖不完整')
             url = next_url
             pause(cancel)
-        raise DiscoveryTruncated('房天下分页达到上限，名称与样本覆盖不完整')
     finally:
         client.close()
 
 
-def laipai_names(cancel, limit, ignored):
+def laipai_names(cancel, ignored):
     from src.services.auction_fetcher import AuctionClient, normalize_auction
     client = AuctionClient()
     scanned = 0
+    page = 1
+    visited = set()
     try:
-        for page in range(1, limit + 1):
+        while True:
             check(cancel)
             data = client.list_page(page)
+            identities = tuple(sorted(str(item.get('auction_id')) for item in data['list']))
+            if identities and identities in visited:
+                raise DiscoveryTruncated('来拍分页重复，滨江名称覆盖不完整')
+            visited.add(identities)
             for item in data['list']:
                 if str(item.get('area_code')) != '330108':
                     continue
@@ -91,10 +98,14 @@ def laipai_names(cancel, limit, ignored):
                                name=row['community_name'], district='滨江', address=row['address'],
                                source_url=row['source_url'])
             scanned += len(data['list'])
-            if not data['list'] or scanned >= data['count']:
+            if not data['list']:
+                if scanned < data['count']:
+                    raise DiscoveryTruncated('来拍列表提前结束，滨江名称覆盖不完整')
                 return
+            if scanned >= data['count']:
+                return
+            page += 1
             pause(cancel)
-        raise DiscoveryTruncated('来拍杭州列表达到分页上限，滨江名称覆盖不完整')
     finally:
         client.close()
 
@@ -102,7 +113,7 @@ def laipai_names(cancel, limit, ignored):
 ADAPTERS = {'tmsf': tmsf_names, 'fang': fang_names, 'laipai': laipai_names}
 
 
-def collect_names(store, sources, *, max_pages=10, cancel=None, adapters=None, progress=None):
+def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
     cancel = cancel or threading.Event()
     adapters = adapters or ADAPTERS
     report = dict(phase='running', running=True, started_at=now(), source=None,
@@ -116,7 +127,7 @@ def collect_names(store, sources, *, max_pages=10, cancel=None, adapters=None, p
             if progress:
                 progress(report)
             try:
-                for row in adapters[source](cancel, max_pages, store.is_ignored):
+                for row in adapters[source](cancel, store.is_ignored):
                     check(cancel)
                     key = (source, row.get('source_kind', 'community'), str(row['source_id']))
                     if store.is_ignored(*key):
@@ -178,14 +189,14 @@ class DirectoryJob:
         with self.store.db() as db:
             db.execute("INSERT INTO meta VALUES ('collection_job',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", (dump(state),))
 
-    def start(self, sources, max_pages):
+    def start(self, sources):
         with self.lock:
             if self.worker and self.worker.is_alive():
                 raise ValueError('名称采集正在运行')
             self.cancel.clear()
             self._save({'running': True, 'phase': 'running', 'started_at': now()})
             self.worker = threading.Thread(target=collect_names, args=(self.store, sources),
-                kwargs={'max_pages': max_pages, 'cancel': self.cancel, 'progress': self._save}, daemon=True)
+                kwargs={'cancel': self.cancel, 'progress': self._save}, daemon=True)
             self.worker.start()
         return self.state
 

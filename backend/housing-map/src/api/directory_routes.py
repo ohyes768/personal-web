@@ -58,7 +58,6 @@ class AssociationInput(BaseModel):
 
 class DiscoveryInput(BaseModel):
     sources: list[Literal['tmsf', 'fang', 'laipai']] = Field(default_factory=lambda: ['tmsf', 'fang', 'laipai'], min_length=1, max_length=3)
-    max_pages: int = Field(10, ge=1, le=100)
 
 
 def page_data(rows, page, page_size):
@@ -178,7 +177,7 @@ def collection_status():
 
 @router.post('/directory/collection', status_code=202)
 def collect(request: DiscoveryInput):
-    return result(lambda: job().start(list(dict.fromkeys(request.sources)), request.max_pages))
+    return result(lambda: job().start(list(dict.fromkeys(request.sources))))
 
 
 @router.delete('/directory/collection')

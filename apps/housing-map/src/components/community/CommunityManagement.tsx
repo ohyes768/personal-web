@@ -12,7 +12,7 @@ type Community = { community_id: string; community_name: string; aliases?: strin
 type Report = { running: boolean; phase: string; source?: string; new?: number; existing?: number;
   matched?: number; pending?: number; ignored?: number; errors?: { source: string; message: string }[];
   truncated?: { source: string; message: string }[] };
-const labels: Record<string, string> = { tmsf: '透明售房网', fang: '房天下', amap: '高德', laipai: '来拍 ya' };
+const labels: Record<string, string> = { tmsf: '透明售房网', fang: '房天下', laipai: '来拍 ya' };
 const phaseLabels: Record<string, string> = { running: '正在采集', succeeded: '采集结束', partial_failed: '部分完成',
   failed: '采集失败', cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
 const root = '/api/map/directory';
@@ -31,7 +31,7 @@ export function safeDirectoryLink(url?: string): string | undefined {
 export function DirectorySourceCard({ item, children }: { item: Source; children?: React.ReactNode }) {
   const link = safeDirectoryLink(item.source_url);
   return <article className="directory-source-card">
-    <div className="directory-source-heading"><span className="directory-badge">{labels[item.source] || item.source}</span>
+    <div className="directory-source-heading"><span className="directory-badge">{labels[item.source] || '历史来源'}</span>
       <strong>{item.name}</strong><span className="directory-muted">{item.status === 'ignored' ? '已删除' : item.status === 'pending' ? '待关联' : item.method === 'auto' ? '自动关联' : '人工关联'}</span></div>
     <p className="directory-muted">{item.source_kind} · ID {item.source_id}</p>
     <p>{item.address || '地址尚未取得'} · {item.district || '区域未知'}</p>
@@ -70,7 +70,6 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
   const [report, setReport] = useState<Report | null>(null);
   const previouslyRunning = useRef(false);
   const [collectionSources, setCollectionSources] = useState(['tmsf', 'fang', 'laipai']);
-  const [maxPages, setMaxPages] = useState(10);
   useEffect(() => { if (confirm) confirmationDialog.current?.showModal(); }, [confirm]);
 
   useEffect(() => {
@@ -160,15 +159,14 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       <p className="directory-muted">三个名称采集来源，一份目录。保留原始名称，集中处理关联与删除。</p></div>
       <button className="btn btn-secondary" disabled={busy} onClick={() => { setSelected(null); setDetail(null); setName(''); setAliases(''); setAddress(''); setDistrict('滨江'); setNewForm(true); }}>新增小区</button></header>
     <div className="directory-collection">
-      <div className="directory-actions">{Object.entries(labels).filter(([key]) => key !== 'amap').map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
-        <label>每来源最多页数<input type="number" min={1} max={100} value={maxPages} onChange={e => setMaxPages(Number(e.target.value))} /></label>
-        <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length || maxPages < 1 || maxPages > 100} onClick={() => void act('/collection', 'POST', { sources: collectionSources, max_pages: maxPages })}>采集名称</button>
+      <div className="directory-actions">{Object.entries(labels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
+        <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length} onClick={() => void act('/collection', 'POST', { sources: collectionSources })}>采集名称</button>
         {report?.running && <button className="btn btn-secondary" onClick={() => void act('/collection', 'DELETE')}>取消采集</button>}
         <button className="btn btn-secondary" disabled={busy} onClick={() => void act('/auto-associate', 'POST')}>运行自动关联</button></div>
-      <p className="directory-muted">名称采集范围：滨江区；列表分页可能截断。删除的小区及已关联来源会跳过后续详情采集。</p>
-      {report && <div role="status"><strong>{phaseLabels[report.phase] || report.phase}{report.source ? ` · ${labels[report.source]}` : ''}</strong>
+      <p className="directory-muted">名称采集范围：滨江区；自动翻页至来源数据结束，可随时取消。删除的小区及已关联来源会跳过后续详情采集。</p>
+      {report && <div role="status"><strong>{phaseLabels[report.phase] || report.phase}{report.source ? ` · ${(labels[report.source] || '历史来源')}` : ''}</strong>
         <p>新发现 {report.new || 0} · 已存在 {report.existing || 0} · 已关联 {report.matched || 0} · 待确认 {report.pending || 0} · 已跳过 {report.ignored || 0}</p>
-        {[...(report.errors || []), ...(report.truncated || [])].filter(item => item.source !== 'amap').map((item, i) => <p className="directory-warning" key={i}>{labels[item.source]}：{item.message}</p>)}</div>}
+        {[...(report.errors || []), ...(report.truncated || [])].filter(item => item.source !== 'amap').map((item, i) => <p className="directory-warning" key={i}>{labels[item.source] || '历史来源'}：{item.message}</p>)}</div>}
     </div>
     {error && <p role="alert" className="directory-warning">{error} <button className="btn btn-secondary" onClick={() => setRevision(v => v + 1)}>重试</button></p>}
     {notice && <p role="status">{notice}</p>}
@@ -181,11 +179,11 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       <p className="directory-muted">共 {total} 条 · 第 {page} 页</p>
       {loading ? <p role="status">正在加载目录…</p> : <><div className="directory-table-wrap"><table><thead><tr><th>小区名称</th><th>区域 / 地址</th><th>来源与关联</th><th>操作</th></tr></thead><tbody>
         {rows.map(row => { const master = 'community_name' in row; const id = master ? row.community_id : row.id;
-          return <tr key={id} className={selected?.id === id ? 'selected' : ''}><td><strong>{master ? row.community_name : row.name}</strong><small>{master ? (row.aliases || []).join(' / ') : `${labels[row.source]} · ${row.source_id}`}</small></td>
-            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td><td>{master ? (row.sources || []).map(r => <span className="directory-badge" key={r.id}>{labels[r.source]}</span>) : row.status === 'pending' ? '待关联' : row.status === 'ignored' ? '已删除' : row.method === 'auto' ? '自动关联' : '人工关联'}</td>
+          return <tr key={id} className={selected?.id === id ? 'selected' : ''}><td><strong>{master ? row.community_name : row.name}</strong><small>{master ? (row.aliases || []).join(' / ') : `${labels[row.source] || '历史来源'} · ${row.source_id}`}</small></td>
+            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td><td>{master ? (row.sources || []).filter(r => labels[r.source]).map(r => <span className="directory-badge" key={r.id}>{labels[r.source]}</span>) : row.status === 'pending' ? '待关联' : row.status === 'ignored' ? '已删除' : row.method === 'auto' ? '自动关联' : '人工关联'}</td>
             <td><button className="btn btn-secondary" onClick={() => choose(master ? 'communities' : 'sources', id)}>管理</button></td></tr>; })}
       </tbody></table></div>{!rows.length && <p className="directory-empty">没有符合条件的记录。</p>}</>}
-      <div className="directory-actions"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => setPage(v => v - 1)}>上一页</button><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => setPage(v => v + 1)}>下一页</button></div>
+      <div className="directory-actions"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => setPage(v => v - 1)}>上一页</button><span className="directory-muted">共 {total} 条 · 每页 30 条 · 第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => setPage(v => v + 1)}>下一页</button></div>
     </div>
     {(selected || newForm) && <aside className="directory-detail"><div className="directory-source-heading"><h3>{c?.community_name || s?.name || (newForm ? '新增小区' : '加载详情…')}</h3><button className="btn btn-secondary" onClick={() => { setSelected(null); setDetail(null); setNewForm(false); }}>关闭</button></div>
       {c && !c.deleted && <>{inputForm}<button className="btn btn-primary" disabled={busy} onClick={() => void act(`/communities/${c.community_id}`, 'PUT', { name, aliases: aliases.split(/[、,，]/).filter(Boolean), address, district })}>保存名称与别名</button>
