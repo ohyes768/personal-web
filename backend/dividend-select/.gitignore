@@ -42,6 +42,8 @@ screenshot_*.png
 kami_data.json
 failed_stocks.txt
 dividend_export_*.csv
+# pytest basetemp 目录（本机 %TEMP% 上 os.replace 报 WinError 6，重定向到仓库内）
+.pytest-tmp*/
 
 # 运行时数据 / 爬取快照（不应进 git，由脚本运行时重新生成）
 data/snapshots/
