@@ -136,7 +136,10 @@
 
 | Hash | Message |
 |------|---------|
-| (pending) | (see commit plan) |
+| e9b9926 | feat(skill-manager): add Hermes-only install orchestration backend |
+| a49ab4d | feat(skill-manager): replace publish queue with Hermes InstallDialog |
+| 51cf74d | chore(skill-manager): retire OpenClaw from deployment and docs |
+| 2f1cbcf | docs(skill-manager): record hermes-only install in spec and journal |
 
 ### Testing
 
@@ -151,5 +154,4 @@
 
 ### Next Steps
 
-- 提交并按计划推送到 master
-- NAS 实机验证 Hermes 一键安装与旧链接清理脚本
+- NAS 实机验证 Hermes 一键安装与旧链接清理脚本（仓库内清理脚本需在挂载旧 OpenClaw 目录时执行）
