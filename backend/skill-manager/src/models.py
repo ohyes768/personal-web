@@ -9,81 +9,6 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
-
-class PackInventoryItem(BaseModel):
-    path: str
-    name: str
-    description: str = ""
-
-
-class PackDeployment(BaseModel):
-    status: Literal["active", "removed", "legacy_pending"] = "removed"
-    link_target: str = ""
-    link_missing: bool = False
-    verified: bool = False
-    diagnostic: str = "Agent 识别尚未验证"
-
-
-class GithubPack(BaseModel):
-    id: str
-    name: str
-    repository: str
-    summary: str = ""
-    tags: list[str] = Field(default_factory=list)
-    tracking_branch: str = ""
-    current_revision: str = ""
-    last_checked_revision: str = ""
-    has_update: bool = False
-    source_missing: bool = False
-    skill_count: int = 0
-    inventory: list[PackInventoryItem] = Field(default_factory=list)
-    deployments: dict[str, PackDeployment] = Field(default_factory=dict)
-    diagnostics: list[str] = Field(default_factory=list)
-
-
-class PackPlanItem(BaseModel):
-    target: Literal["hermes", "openclaw"]
-    action: Literal["install", "convert", "none", "blocked"]
-    message: str = ""
-    legacy_skill_ids: list[str] = Field(default_factory=list)
-
-
-class PackPlan(BaseModel):
-    items: list[PackPlanItem] = Field(default_factory=list)
-
-
-class PackInstallItem(BaseModel):
-    target: Literal["hermes", "openclaw"]
-    status: Literal["success", "blocked", "error"]
-    message: str = ""
-
-
-class PackInstallResult(BaseModel):
-    items: list[PackInstallItem] = Field(default_factory=list)
-
-
-class PackTargetsRequest(BaseModel):
-    targets: list[Literal["hermes", "openclaw"]] = Field(min_length=1)
-
-
-class PackAdminRequest(BaseModel):
-    password: str
-
-
-class PackInstallRequest(PackTargetsRequest, PackAdminRequest):
-    pass
-
-
-class PackWriteRequest(PackAdminRequest):
-    model_config = ConfigDict(extra="forbid")
-    repository: str
-    name: str = ""
-    tags: list[Annotated[str, Field(min_length=1, max_length=40)]] = Field(default_factory=list)
-    summary: str = ""
-
-
-PackAddRequest = PackWriteRequest
-
 # discover_local 等非 Pydantic 场景复用同一 pattern，避免两处正则漂移
 SKILL_ID_PATTERN = r"^[a-z0-9][a-z0-9-]{0,62}$"
 SkillId = Annotated[str, Field(pattern=SKILL_ID_PATTERN)]
@@ -283,7 +208,7 @@ class ScanRequest(BaseModel):
     repository: str
 
 
-TaskKind = Literal["scan", "register", "register_batch", "clone_cache", "prepare_pack", "update_pack", "install_pack"]
+TaskKind = Literal["scan", "register", "register_batch", "clone_cache"]
 TaskState = Literal["running", "done", "error"]
 
 
@@ -331,7 +256,6 @@ class TaskSnapshot(BaseModel):
     top_level: list[ScanTopLevelEntry] = []
     referenced_paths: list[str] = []
     results: list[RegisterBatchResultItem] = []
-    result: dict | None = None
 
 
 class GithubRegisterItem(BaseModel):
@@ -493,8 +417,3 @@ class DeleteSkillResponse(BaseModel):
     """`DELETE /api/skills/{skill_id}`：删除已登记 GitHub Skill。"""
 
     skill_id: str
-
-
-PackTaskCreated = AsyncTaskCreatedResponse
-PackTaskSnapshot = TaskSnapshot
-PackTaskKind = TaskKind

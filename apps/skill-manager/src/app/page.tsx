@@ -5,12 +5,27 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
 import DeployBoard from '@/components/DeployBoard';
 import ExportTargetManager from '@/components/ExportTargetManager';
-import PackWorkspace from '@/components/PackWorkspace';
+import RegisterGithubDialog from '@/components/RegisterGithubDialog';
 import SourceWorkspace, { type Notice } from '@/components/SourceWorkspace';
-
-import { listGithubPacks, listSkills, listExportTargets, unpublishSkill } from '@/lib/api';
+import TaskProgressDialog from '@/components/TaskProgressDialog';
+import {
+  checkUpdates,
+  cloneGithubCache,
+  deleteSkill,
+  listSkills,
+  listExportTargets,
+  registerGithubBatch,
+  registerGithubSkill,
+  unpublishSkill,
+} from '@/lib/api';
 import type { TargetKey } from '@/lib/queue';
-import type { ExportTarget, GithubPack, SkillCard } from '@/lib/types';
+import type {
+  ExportTarget,
+  RegisterGithubBatchInput,
+  RegisterGithubSkillInput,
+  SkillCard,
+  TaskSnapshot,
+} from '@/lib/types';
 
 type ViewKey = 'manage' | 'board' | 'targets';
 type SourceTab = 'local' | 'github';
@@ -25,6 +40,25 @@ interface PendingUnpublish {
   skillName: string;
   /** 待下架的 targets；每成功一个即移除，重试只针对剩余项 */
   targets: TargetKey[];
+}
+
+/** 待 Clone 缓存的 GitHub Skill（缓存缺失，发布前必须先重建缓存）。 */
+interface PendingClone {
+  skillId: string;
+  skillName: string;
+}
+
+/** 待删除登记的 GitHub Skill（移除 registry 条目并清理本机缓存）。 */
+interface PendingDelete {
+  skillId: string;
+  skillName: string;
+}
+
+/** 进行中的 GitHub 后台任务（登记/Clone，PRD R2/R3），进度弹窗展示其快照。 */
+interface ActiveGithubTask {
+  taskId: string;
+  title: string;
+  successNotice: string;
 }
 
 function SkillManagerPage() {
@@ -60,19 +94,17 @@ function SkillManagerPage() {
   const [targetsLoading, setTargetsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
   const [notice, setNotice] = useState<Notice | null>(null);
-  const [packs, setPacks] = useState<GithubPack[]>([]);
-  const [packsLoading, setPacksLoading] = useState(true);
-  const [packsError, setPacksError] = useState('');
+
   const [pendingUnpublish, setPendingUnpublish] = useState<PendingUnpublish | null>(null);
+  const [pendingClone, setPendingClone] = useState<PendingClone | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [showRegister, setShowRegister] = useState(false);
+  const [activeTask, setActiveTask] = useState<ActiveGithubTask | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
-  const refreshPacks = useCallback(async () => {
-    setPacksLoading(true);
-    try { setPacks((await listGithubPacks()).items); setPacksError(''); }
-    catch (err) { setPacksError(err instanceof Error ? err.message : '加载仓库包失败'); }
-    finally { setPacksLoading(false); }
-  }, []);
+
   const refreshTargets = useCallback(async () => {
     setTargetsLoading(true);
     try {
@@ -96,15 +128,48 @@ function SkillManagerPage() {
   useEffect(() => {
     void refreshSkills().finally(() => setLoading(false));
     void refreshTargets();
-    void refreshPacks();
-  }, [refreshSkills, refreshTargets, refreshPacks]);
+  }, [refreshSkills, refreshTargets]);
 
-  const refreshAll = useCallback(async () => { await Promise.all([refreshSkills(), refreshTargets(), refreshPacks()]); }, [refreshSkills, refreshTargets, refreshPacks]);
+  const refreshAll = useCallback(async () => { await Promise.all([refreshSkills(), refreshTargets()]); }, [refreshSkills, refreshTargets]);
 
   const localSkills = useMemo(
     () => skills.filter((skill) => skill.source === 'local'),
     [skills]
   );
+  const githubSkills = useMemo(
+    () => skills.filter((skill) => skill.source === 'github'),
+    [skills]
+  );
+
+  async function handleCheckUpdates() {
+    setCheckingUpdates(true);
+    setNotice(null);
+    try {
+      const response = await checkUpdates([]);
+      // check-updates 是只读端点，检查结果由前端合并进卡片
+      setSkills((prev) =>
+        prev.map((skill) => {
+          const item = response.items.find((i) => i.skill_id === skill.id);
+          return item && item.result === 'ok' && item.info
+            ? { ...skill, update: item.info }
+            : skill;
+        })
+      );
+      const updatable = response.items.filter((i) => i.result === 'ok' && i.info?.has_update);
+      setNotice({
+        kind: 'ok',
+        text: `检查完成：${updatable.length} 个 GitHub Skill 有远端更新`,
+      });
+    } catch (err) {
+      setNotice({
+        kind: 'err',
+        text: err instanceof Error ? err.message : '检查更新失败',
+      });
+    } finally {
+      setCheckingUpdates(false);
+    }
+  }
+
   async function performUnpublish(password: string) {
     if (!pendingUnpublish || pendingUnpublish.targets.length === 0) {
       return;
@@ -127,6 +192,90 @@ function SkillManagerPage() {
       await refreshAll();
     } catch (err) {
       setActionError(err instanceof Error ? err.message : '操作失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function performRegister(input: RegisterGithubSkillInput, password: string) {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      // 同步段只做密码/预检校验（401/400 走 actionError）；clone 与入库
+      // 在后台任务执行，进度交给 TaskProgressDialog 轮询（PRD R2）
+      const created = await registerGithubSkill(input, password);
+      setShowRegister(false);
+      setActiveTask({
+        taskId: created.task_id,
+        title: `登记 GitHub Skill「${input.name}」`,
+        successNotice: `已登记 GitHub Skill「${input.name}」`,
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '登记失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function performRegisterBatch(
+    input: RegisterGithubBatchInput,
+    password: string
+  ) {
+    setActionBusy(true);
+    setActionError('');
+    try {
+      // 同步段只做密码/预检/路径校验；仓库级 clone 与逐项入库在后台任务执行，
+      // 逐项成败经任务快照 results 表达（TaskProgressDialog 停留展示）
+      const created = await registerGithubBatch(input, password);
+      setShowRegister(false);
+      setActiveTask({
+        taskId: created.task_id,
+        title: `批量登记 ${input.items.length} 个 GitHub Skill`,
+        successNotice: '',
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '批量登记失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function performClone(password: string) {
+    if (!pendingClone) {
+      return;
+    }
+    setActionBusy(true);
+    setActionError('');
+    const { skillId, skillName } = pendingClone;
+    try {
+      // 同步段只做密码/预检校验；clone 在后台任务执行（PRD R3）
+      const created = await cloneGithubCache(skillId, password);
+      setPendingClone(null);
+      setActiveTask({
+        taskId: created.task_id,
+        title: `Clone 缓存「${skillName}」`,
+        successNotice: `「${skillName}」缓存已就绪`,
+      });
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Clone 失败');
+    } finally {
+      setActionBusy(false);
+    }
+  }
+
+  async function performDelete(password: string) {
+    if (!pendingDelete) {
+      return;
+    }
+    setActionBusy(true);
+    setActionError('');
+    try {
+      await deleteSkill(pendingDelete.skillId, password);
+      setPendingDelete(null);
+      setNotice({ kind: 'ok', text: `已删除 GitHub Skill「${pendingDelete.skillName}」` });
+      await refreshAll();
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : '删除失败');
     } finally {
       setActionBusy(false);
     }
@@ -212,9 +361,9 @@ function SkillManagerPage() {
               onClick={() => navigate({ tab: 'github' })}
               className={SEG_BUTTON}
             >
-              GitHub 仓库包
+              GitHub Skill
               <span className="ml-1.5 rounded-full border border-slate-200 bg-slate-100 px-1.5 text-xs text-slate-500">
-                {packs.length}
+                {githubSkills.length}
               </span>
             </button>
           </div>
@@ -224,7 +373,26 @@ function SkillManagerPage() {
                 自研 Skill 由源库目录自动同步，无需登记
               </span>
             ) : (
-              <span className="text-xs text-slate-400">按仓库整包添加、安装和更新</span>
+              <>
+                <button
+                  type="button"
+                  onClick={handleCheckUpdates}
+                  disabled={checkingUpdates}
+                  className="rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {checkingUpdates ? '检查中…' : '检查 GitHub 更新'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActionError('');
+                    setShowRegister(true);
+                  }}
+                  className="rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
+                >
+                  新增 GitHub Skill
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -239,8 +407,14 @@ function SkillManagerPage() {
             targetsError={targetsLoading ? '导出目标加载中…' : targetsError}
             onManageTargets={() => navigate({ view: 'targets' })}
             onNotify={setNotice}
-            onClone={() => {}}
-            onDelete={() => {}}
+            onClone={(skillId, skillName) => {
+              setActionError('');
+              setPendingClone({ skillId, skillName });
+            }}
+            onDelete={(skill) => {
+              setActionError('');
+              setPendingDelete({ skillId: skill.id, skillName: skill.name });
+            }}
             onUnpublish={(skillId, skillName, targets) => {
               setActionError('');
               setPendingUnpublish({ skillId, skillName, targets });
@@ -248,14 +422,35 @@ function SkillManagerPage() {
           />
         </div>
         <div className={sourceTab === 'github' ? 'flex min-h-0 flex-1' : 'hidden'}>
-          <PackWorkspace packs={packs} loading={packsLoading} error={packsError} onRefresh={refreshPacks} />
+          <SourceWorkspace
+            source="github"
+            skills={githubSkills}
+            loading={loading}
+            onRefresh={refreshAll}
+            exportTargets={exportTargets}
+            targetsError={targetsLoading ? '导出目标加载中…' : targetsError}
+            onManageTargets={() => navigate({ view: 'targets' })}
+            onNotify={setNotice}
+            onClone={(skillId, skillName) => {
+              setActionError('');
+              setPendingClone({ skillId, skillName });
+            }}
+            onDelete={(skill) => {
+              setActionError('');
+              setPendingDelete({ skillId: skill.id, skillName: skill.name });
+            }}
+            onUnpublish={(skillId, skillName, targets) => {
+              setActionError('');
+              setPendingUnpublish({ skillId, skillName, targets });
+            }}
+          />
         </div>
       </div>
 
       {/* 部署看板 */}
       <div className={view === 'board' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}>
         <DeployBoard
-          skills={localSkills}
+          skills={skills}
           agent={agent}
           onAgentChange={(next) => navigate({ agent: next })}
           onUnpublish={(skillId, skillName, target) => {
@@ -263,7 +458,6 @@ function SkillManagerPage() {
             setPendingUnpublish({ skillId, skillName, targets: [target] });
           }}
         />
-        <div className="mt-4 flex min-h-0 flex-1 flex-col border-t border-slate-200 pt-3"><PackWorkspace packs={packs} loading={packsLoading} error={packsError} onRefresh={refreshPacks} agent={agent} /></div>
       </div>
 
       {pendingUnpublish ? (
@@ -283,6 +477,75 @@ function SkillManagerPage() {
         />
       ) : null}
 
+      {pendingClone ? (
+        <ConfirmActionDialog
+          title="确认 Clone 缓存"
+          description={
+            <p>
+              将从 GitHub 拉取「{pendingClone.skillName}
+              」的仓库到本机缓存目录（只写缓存，不触碰已发布目标）。
+              大仓库经代理可能需要数分钟，请耐心等待。
+            </p>
+          }
+          confirmLabel="执行 Clone"
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={(password) => void performClone(password)}
+          onCancel={() => setPendingClone(null)}
+        />
+      ) : null}
+
+      {pendingDelete ? (
+        <ConfirmActionDialog
+          title="确认删除 Skill"
+          description={
+            <p>
+              将移除「{pendingDelete.skillName}
+              」的登记条目并删除本机缓存（不影响已发布目标；已有
+              active 部署时需先下架）。此操作通过 Git 提交全局生效。
+            </p>
+          }
+          confirmLabel="确认删除"
+          busy={actionBusy}
+          error={actionError}
+          onConfirm={(password) => void performDelete(password)}
+          onCancel={() => setPendingDelete(null)}
+        />
+      ) : null}
+
+      {showRegister ? (
+        <RegisterGithubDialog
+          busy={actionBusy}
+          error={actionError}
+          onRegister={(input, password) => void performRegister(input, password)}
+          onRegisterBatch={(input, password) =>
+            void performRegisterBatch(input, password)
+          }
+          onCancel={() => setShowRegister(false)}
+        />
+      ) : null}
+
+      {activeTask ? (
+        <TaskProgressDialog
+          taskId={activeTask.taskId}
+          title={activeTask.title}
+          onDone={(task: TaskSnapshot) => {
+            setActiveTask(null);
+            if (task.results.length > 0) {
+              // 批量登记：notice 按逐项成败统计（部分成功时提示 err 引导复查）
+              const ok = task.results.filter((item) => item.status === 'success').length;
+              setNotice({
+                kind: ok === task.results.length ? 'ok' : 'err',
+                text: `批量登记完成：${ok}/${task.results.length} 项成功`,
+              });
+            } else {
+              setNotice({ kind: 'ok', text: activeTask.successNotice });
+            }
+            void refreshSkills();
+          }}
+          onClose={() => setActiveTask(null)}
+        />
+      ) : null}
     </main>
   );
 }

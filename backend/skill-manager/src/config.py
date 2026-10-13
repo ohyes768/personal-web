@@ -29,8 +29,6 @@ class Settings(BaseSettings):
     github_skill_cache_root: Path
     openclaw_skills_root: Path
     hermes_skills_root: Path
-    # Optional single-file mount; needed for grouped discovery on older OpenClaw.
-    openclaw_config_path: Path | None = None
     state_dir: Path = Field(
         validation_alias=AliasChoices("SKILL_MANAGER_STATE_DIR", "state_dir")
     )

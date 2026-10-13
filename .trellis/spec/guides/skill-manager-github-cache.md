@@ -1,10 +1,5 @@
 # Skill Manager GitHub 缓存生命周期
 
-> **2026-10-13 当前入口改为整包直链。** 先读
-> [Repository Packs](../backend/skill-manager/backend/repo-packs.md)。
-> 下文 staging、子技能登记和自动启动重发布仅说明历史实现与兼容测试；
-> 当前包更新不生成快照，启动不搬动仍被旧安装引用的缓存。
-
 > **Purpose**: 讲清 GitHub 来源 Skill 的发布源（本环境缓存）何时被 clone/fetch、
 > 仓库共享缓存与 staging 发布模型（2026-09-30）如何工作、缓存缺失为什么会
 > 导致"已阻止"死锁、以及 Clone 端点如何打破死锁。

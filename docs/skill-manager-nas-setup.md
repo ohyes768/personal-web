@@ -165,28 +165,3 @@ ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
 在“管理看板”中点击 Skill 卡片的下载按钮，选择启用目标下载 ZIP。下载成功后卡片显示目标名称、导出版本与日期；源更新后可重新导出。停用目标仍显示历史记录，允许清除记录，但不能重新导出。删除目标前须在相关 Skill 卡片清除所有导出记录；历史审计保留。
 
 本次更新需要部署技能管理器前后端，并执行 `./scripts/deploy-nas.sh nginx` 下发和 reload 新路由：`/api/export-targets` 与 `/api/export-targets/`。否则页面会报告目标加载失败。此配置管理及 ZIP 导出免密，OpenClaw/Hermes 的 NAS 发布路径与管理密码边界保持原样。
-# GitHub 整包软链（2026-10-13）
-
-当前 GitHub 入口以一个仓库包添加/安装。Hermes 与 OpenClaw 各一条根软链
-指向共享 checkout，用户手动更新仓库后无需再次发布。旧登记自动归并，
-旧链接和快照保持原样直到显式“整包转换”。
-
-NAS 实测 Hermes loader 通过根软链发现22个 ai-berkshire 技能。OpenClaw
-2026.4.11 包装层不能仅靠仓库根链接发现嵌套技能，需自动登记分组搜索路径。
-后台通过 OPENCLAW_CONFIG_PATH 读取/维护实际 openclaw.json 的
-skills.load.extraDirs，只添加本包链接下的分组目录；卸载只移除自己添加的项。
-
-为 OpenClaw 启用配置适配，设置 OPENCLAW_CONFIG_HOST_PATH 为实际存在的
-JSON 文件绝对路径，然后合并可选 compose override：
-
-    docker compose -f docker-compose.nas.yml -f deploy/docker-compose.skill-packs.yml up -d --build skill-manager-backend skill-manager-frontend
-
-新 /api/github-packs 集合与子路径也需下发 nginx/web.conf 后 reload Nginx。
-override 只挂载该配置文件，配置备份/所有权台账存放应用 state；写配置保留
-inode，以兼容单文件 bind mount。未启用适配时 OpenClaw 计划显示阻止原因，
-Hermes 不受影响。不要将 HOME 或整个凭据目录挂给应用。
-
-更新共享仓库会同时影响所有已安装目标；运行中读文件可能与就地更新交错。
-脏工作树、分叉、默认分支变化或候选冲突会拒绝更新，不做 reset/clean。
-“链接已安装”与“Agent 已验证”分别展示；上线后分别检查两个 Agent 的真实清单、
-技能全文和 tools 执行路径。此节是部署步骤，不代表本次已执行生产部署。

@@ -7,7 +7,6 @@ import { useGithubTask } from '@/lib/useGithubTask';
 
 interface TaskProgressDialogProps {
   taskId: string;
-  fetchTask?: (id: string) => Promise<TaskSnapshot>;
   title: string;
   /** 快照 state=done 时回调一次（关框 + 刷新列表 + notice 由调用方处理）。
    * 批量登记任务（results 非空）done 后弹窗停留展示逐项结果，由「完成」
@@ -44,12 +43,11 @@ function ResultsList({ results }: { results: RegisterBatchResultItem[] }) {
  */
 export default function TaskProgressDialog({
   taskId,
-  fetchTask,
   title,
   onDone,
   onClose,
 }: TaskProgressDialogProps) {
-  const { task, error } = useGithubTask(taskId, fetchTask);
+  const { task, error } = useGithubTask(taskId);
   const [seconds, setSeconds] = useState(0);
   const doneFired = useRef(false);
 
@@ -57,8 +55,7 @@ export default function TaskProgressDialog({
   const failed = taskFailed || error !== '';
   const running = !failed && (task === null || task.state === 'running');
   const batchResults = task?.results ?? [];
-  const packResults = task?.result?.items ?? [];
-  const doneWithResults = task?.state === 'done' && (batchResults.length > 0 || packResults.length > 0 || !!task.result?.pack);
+  const doneWithResults = task?.state === 'done' && batchResults.length > 0;
 
   useEffect(() => {
     if (!running) {
@@ -74,7 +71,7 @@ export default function TaskProgressDialog({
 
   // 无逐项结果的 done（登记/Clone 单任务）自动收尾；批量任务走「完成」按钮
   useEffect(() => {
-    if (task?.state === 'done' && task.results.length === 0 && !task.result?.pack && !task.result?.items?.length && !doneFired.current) {
+    if (task?.state === 'done' && task.results.length === 0 && !doneFired.current) {
       doneFired.current = true;
       onDone(task);
     }
@@ -120,10 +117,9 @@ export default function TaskProgressDialog({
         {doneWithResults ? (
           <>
             <p className="mt-3 text-sm text-slate-600">
-              {task.result?.pack ? `仓库包已就绪：${task.result.pack.name}（${task.result.pack.skill_count} 个技能）` : packResults.length ? '安装任务完成，请检查各目标结果' : `批量登记完成：${succeeded}/${batchResults.length} 项成功`}
+              批量登记完成：{succeeded}/{batchResults.length} 项成功
             </p>
-            {batchResults.length ? <ResultsList results={batchResults} /> : null}
-            {packResults.length ? <ul className="mt-2 space-y-2 text-sm">{packResults.map((item) => <li key={item.target} className={item.status === 'success' ? 'text-emerald-700' : 'text-rose-700'}>{item.target} · {item.status === 'success' ? '成功' : '未完成'} · {item.message}</li>)}</ul> : null}
+            <ResultsList results={batchResults} />
             <div className="mt-4 flex justify-end">
               <button
                 type="button"

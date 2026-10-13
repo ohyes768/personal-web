@@ -473,11 +473,6 @@ class GitCacheService:
         （design §1）。
         """
         canonical = self._require_github_skill(skill)
-        if any(pack.repository.lower() == canonical.lower()
-               for pack in self.store.list_packs()):
-            raise CacheValidationError(
-                "此仓库已按整包管理，不允许逐技能强制 checkout；请更新仓库包"
-            )
         self._require_safe_relative_path(skill)
         repo_dir = self.repo_cache_dir(canonical)
         # 快速失败：缓存已存在但登记路径不含 SKILL.md，无需任何 Git 操作

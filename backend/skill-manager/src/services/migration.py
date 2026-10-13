@@ -106,10 +106,6 @@ def republish_active_github_skills(
         skill = registry.get(record.skill_id)
         if skill is None or skill.source is not SkillSource.GITHUB:
             continue
-        if store.get_pack_for_skill(skill.id) is not None:
-            # Whole-pack migration preserves the existing links until explicit
-            # conversion; never restage or re-checkout a live pack on restart.
-            continue
         try:
             repo_dir = _repo_dir_for(settings, skill)
             if not (repo_dir / ".git").is_dir():

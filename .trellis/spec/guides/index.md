@@ -19,10 +19,6 @@ These guides help you **ask the right questions before coding**.
 
 ## Available Guides
 
-Skill Manager 的当前 GitHub 协议见
-[Repository Packs](../backend/skill-manager/backend/repo-packs.md)；
-旧缓存/前端指南中的逐子技能与 staging 部分仅为历史兼容说明。
-
 | Guide | Purpose | When to Use |
 |-------|---------|-------------|
 | [Code Reuse Thinking Guide](./code-reuse-thinking-guide.md) | Identify patterns and reduce duplication | When you notice repeated patterns |

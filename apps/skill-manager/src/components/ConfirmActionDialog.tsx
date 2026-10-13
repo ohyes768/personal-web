@@ -7,7 +7,6 @@ interface ConfirmActionDialogProps {
   description?: ReactNode;
   confirmLabel?: string;
   busy?: boolean;
-  confirmDisabled?: boolean;
   error?: string;
   onConfirm: (password: string) => void;
   onCancel: () => void;
@@ -24,7 +23,6 @@ export default function ConfirmActionDialog({
   description,
   confirmLabel = '确认执行',
   busy = false,
-  confirmDisabled = false,
   error,
   onConfirm,
   onCancel,
@@ -33,7 +31,7 @@ export default function ConfirmActionDialog({
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!password || busy || confirmDisabled) {
+    if (!password || busy) {
       return;
     }
     const submitted = password;
@@ -86,10 +84,10 @@ export default function ConfirmActionDialog({
           </button>
           <button
             type="submit"
-            disabled={busy || confirmDisabled || password.length === 0}
+            disabled={busy || password.length === 0}
             className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
           >
-            {busy ? <span className="flex items-center gap-2"><span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border-2 border-white/40 border-t-white" />执行中…</span> : confirmLabel}
+            {busy ? '执行中…' : confirmLabel}
           </button>
         </div>
       </form>
