@@ -44,22 +44,17 @@ def test_community_filter_by_residential_state(tmp_path, monkeypatch):
 
     data = tmp_path / "data"
     data.mkdir(parents=True, exist_ok=True)
-    classification = {
-        "entries": [
-            {"community_id": "1", "state": "residential"},
-            {"community_id": "2", "state": "non_residential"},
-            {"community_id": "3", "state": "pending"},
-        ]
-    }
-    (data / "residential_classification.json").write_text(_json.dumps(classification, ensure_ascii=False), encoding="utf-8")
+    property_types = {"t1": {"property_type": "住宅"}, "t2": {"property_type": "写字楼"}, "t3": {"property_type": "其他"}}
+    (data / "property_types.json").write_text(_json.dumps(property_types, ensure_ascii=False), encoding="utf-8")
 
     monkeypatch.setattr(directory_routes, "DATA_DIR", data)
     monkeypatch.setattr(directory_routes, "store", lambda: CommunityRegistry(data / "registry.sqlite3"))
-    monkeypatch.setattr(directory_routes, "_load_classification", lambda: {entry["community_id"]: entry["state"] for entry in classification["entries"]})
 
     store = CommunityRegistry(data / "registry.sqlite3")
     for cid, name in [("1", "住宅A"), ("2", "写字楼B"), ("3", "待核实C")]:
         store.create(name, district="滨江", community_id=cid)
+        source = store.ingest(dict(source='tmsf', source_id='t' + cid, name=name, district='滨江'))
+        store.associate(source['id'], cid)
 
     app = FastAPI()
     app.include_router(directory_routes.router, prefix="/api")
@@ -77,3 +72,39 @@ def test_community_filter_by_residential_state(tmp_path, monkeypatch):
 
     bad_resp = client.get("/api/directory/communities?residential_state=unknown")
     assert bad_resp.status_code == 422
+
+
+def test_collected_types_filter_sources_and_follow_current_association(tmp_path, monkeypatch):
+    import json
+    monkeypatch.setattr(directory_routes, 'DATA_DIR', tmp_path)
+    # A stale summary must not determine the state of a local community.
+    (tmp_path / 'residential_classification.json').write_text(json.dumps({'entries': [
+        {'community_id': 'local-a', 'state': 'non_residential'}]}))
+    registry = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    monkeypatch.setattr(directory_routes, 'store', lambda: registry)
+    registry.create('花园A', district='滨江', community_id='local-a')
+    registry.create('花园B', district='滨江', community_id='local-b')
+    item = registry.ingest(dict(source='tmsf', source_id='11', name='花园A', district='滨江',
+                                property_type='住宅', property_type_checked_at='2026-10-13'))
+    registry.associate(item['id'], 'local-a')
+    app = FastAPI()
+    app.include_router(directory_routes.router, prefix='/api')
+    client = TestClient(app)
+    def residential_ids():
+        return {c['community_id'] for c in client.get('/api/directory/communities?residential_state=residential').json()['data']['items']}
+    assert residential_ids() == {'local-a'}
+    assert client.get('/api/directory/sources?residential_state=residential').json()['data']['total'] == 1
+    registry.associate(item['id'], 'local-b')
+    assert residential_ids() == {'local-b'}
+    registry.ingest(dict(source='tmsf', source_id='11', name='花园A', property_type_error='获取失败'))
+    assert not residential_ids()
+    assert client.get('/api/directory/sources?residential_state=pending').json()['data']['items'][0]['property_type'] == '住宅'
+    registry.ingest(dict(source='tmsf', source_id='11', name='花园A', property_type='住宅', property_type_error=None))
+    fang = registry.ingest(dict(source='fang', source_id='f1', name='花园B', samples=[
+        {'source_listing_id': 'l1', 'property_type': '写字楼'}]))
+    registry.associate(fang['id'], 'local-b')
+    assert not residential_ids()  # Source conflict remains pending.
+    registry.unlink(fang['id'])
+    assert residential_ids() == {'local-b'}
+    registry.unlink(item['id'])
+    assert not residential_ids()

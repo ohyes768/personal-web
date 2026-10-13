@@ -1,5 +1,6 @@
 """Public name discovery through the end of each source. Source failures are independent and visible."""
 import json
+import datetime as dt
 import logging
 import sqlite3
 import threading
@@ -23,14 +24,55 @@ def pause(cancel):
         raise InterruptedError('采集已取消')
 
 
-def tmsf_names(cancel, ignored):
+def tmsf_names(cancel, ignored, existing=None):
     from scripts.fetch_tmsf_binjiang_communities import fetch_binjiang_communities
-    for c in fetch_binjiang_communities():
-        check(cancel)
-        if c.district == '滨江':
-            yield dict(source='tmsf', source_kind='community', source_id=c.community_id,
+    from src.services.tmsf_fetcher import TmsfClient
+    from src.services.tmsf_property_type import fetch_property_facts
+    existing = existing or {}
+    client = TmsfClient()
+    try:
+        for c in fetch_binjiang_communities():
+            check(cancel)
+            if c.district != '滨江':
+                continue
+            row = dict(source='tmsf', source_kind='community', source_id=c.community_id,
                        name=c.community_name, aliases=[c.community_alias] if c.community_alias else [],
                        district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
+            previous = existing.get(str(c.community_id), {})
+            for field in ('property_type', 'property_type_url', 'property_type_captured_at'):
+                if previous.get(field):
+                    row[field] = previous[field]
+            # Publish the name before requesting details, including when cancelled later.
+            yield {**row, '_stage': 'names'}
+            if ignored('tmsf', 'community', c.community_id):
+                continue
+            if previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
+                try:
+                    age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(previous['property_type_captured_at'])
+                    if dt.timedelta(0) <= age < dt.timedelta(days=30):
+                        yield {**row, '_stage': 'property_type', '_property_type_result': 'cached'}
+                        continue
+                except (KeyError, ValueError, TypeError):
+                    pass
+            yield {**row, '_stage': 'property_type'}
+            pause(cancel)
+            if ignored('tmsf', 'community', c.community_id):
+                continue
+            row.update(_stage='property_type', property_type_checked_at=now())
+            try:
+                row.update(fetch_property_facts(client, c.community_id, [c.community_name, c.community_alias]))
+                row.update(property_type_captured_at=now(), property_type_error=None,
+                           _property_type_result='succeeded')
+            except InterruptedError:
+                raise
+            except Exception as exc:
+                message = f'{c.community_name} 物业类型获取失败（{type(exc).__name__}）'
+                row.update(property_type_error=message, _property_type_result='failed',
+                           _collection_errors=[dict(source='tmsf', stage='property_type',
+                                                    source_id=c.community_id, message=message)])
+            yield row
+    finally:
+        client.close()
 
 
 def fang_names(cancel, ignored):
@@ -127,29 +169,59 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
     cancel = cancel or threading.Event()
     adapters = adapters or ADAPTERS
     report = dict(phase='running', running=True, started_at=now(), source=None,
+                  stage='names', property_types=0, property_types_failed=0, property_types_cached=0,
                   new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[])
     handled = set()
+    counted_status = {}
     failed_sources = set()
     try:
-        seen = {(r['source'], r['source_kind'], r['source_id']) for r in store.sources()}
+        initial = store.sources()
+        seen = {(r['source'], r['source_kind'], r['source_id']) for r in initial}
         for source in sources:
             check(cancel)
             report['source'] = source
+            report['stage'] = 'names'
             if progress:
                 progress(report)
             try:
-                for row in adapters[source](cancel, store.is_ignored):
+                adapter = adapters[source]
+                kwargs = {}
+                if adapter is tmsf_names:
+                    from src.services.residential_classifier import _load_property_types
+                    legacy = _load_property_types(store.path.parent / 'property_types.json')
+                    existing = {}
+                    for record in initial:
+                        if record['source'] != 'tmsf':
+                            continue
+                        previous = dict(record)
+                        if not record.get('property_type') and not record.get('property_type_checked_at'):
+                            old = legacy.get(record['source_id'], {})
+                            previous.update(property_type=old.get('property_type'), property_type_url=old.get('url'),
+                                            property_type_captured_at=old.get('captured_at'))
+                        existing[record['source_id']] = previous
+                    kwargs['existing'] = existing
+                for row in adapter(cancel, store.is_ignored, **kwargs):
                     check(cancel)
+                    report['stage'] = row.pop('_stage', 'names')
+                    type_result = row.pop('_property_type_result', None)
                     key = (source, row.get('source_kind', 'community'), str(row['source_id']))
                     if store.is_ignored(*key):
                         if key not in handled:
                             report['ignored'] += 1
                     else:
+                        if type_result:
+                            counter = {'succeeded': 'property_types', 'failed': 'property_types_failed', 'cached': 'property_types_cached'}[type_result]
+                            report[counter] += 1
                         report['errors'].extend(row.pop('_collection_errors', []))
                         item = store.ingest(row)
+                        status = 'matched' if item['status'] == 'matched' else 'pending'
                         if key not in handled:
                             report['existing' if key in seen else 'new'] += 1
-                            report['matched' if item['status'] == 'matched' else 'pending'] += 1
+                            report[status] += 1
+                        elif key in counted_status and counted_status[key] != status:
+                            report[counted_status[key]] -= 1
+                            report[status] += 1
+                        counted_status[key] = status
                     handled.add(key)
                     if progress:
                         progress(report)

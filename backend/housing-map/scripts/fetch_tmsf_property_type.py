@@ -3,20 +3,23 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
 
-from fetch_tmsf_price_snapshot import BASE_URL, fetch_html, input_value_by_id, strip_tags
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from src.services.tmsf_fetcher import BASE_URL, TmsfClient
+from src.services.tmsf_property_type import extract_property_type, normalize_property_type, fetch_property_facts
 
 
 DEFAULT_INPUT = "data/binjiang_communities.json"
 DEFAULT_OUTPUT = "data/property_types.json"
 DEFAULT_TIMEOUT = 15
-PROPERTY_TYPES = {"住宅", "公寓", "商贸", "写字楼", "别墅", "排屋", "车位", "其他"}
 
 
 def load_communities(path: Path) -> list[dict[str, Any]]:
@@ -39,43 +42,21 @@ def load_existing(path: Path) -> dict[str, dict[str, Any]]:
     return {str(key): value for key, value in data.items() if isinstance(value, dict)}
 
 
-def extract_property_type(html: str) -> str | None:
-    property_type = input_value_by_id(html, "managetypename_auto")
-    if property_type:
-        return normalize_property_type(property_type)
-
-    text = strip_tags(html)
-    match = re.search(r"物业类型\s*([^\s]+)", text)
-    if match:
-        return normalize_property_type(match.group(1))
-    return None
-
-
-def normalize_property_type(value: str | None) -> str | None:
-    if not value:
-        return None
-    value = strip_tags(value).strip()
-    value = re.split(r"[\s|/、,，;；]", value, maxsplit=1)[0].strip()
-    if not value:
-        return None
-    for property_type in PROPERTY_TYPES:
-        if property_type in value:
-            return property_type
-    return value if len(value) <= 10 else None
-
-
 def fetch_one(community: dict[str, Any], timeout: int) -> dict[str, Any]:
     community_id = str(community.get("community_id") or community.get("communityid") or "")
     community_name = community.get("community_name") or community.get("communityname") or ""
     url = f"{BASE_URL}/esf/xq_indexnew_{community_id}.htm"
     started = time.perf_counter()
+    client = TmsfClient()
     try:
-        html = fetch_html(url, timeout)
-        property_type = extract_property_type(html)
+        facts = fetch_property_facts(client, community_id,
+                                     [community_name, community.get('community_alias')], timeout=timeout)
+        from src.services.community_registry import now
         return {
             "community_id": community_id,
             "community_name": community_name,
-            "property_type": property_type,
+            **facts,
+            "captured_at": now(),
             "url": url,
             "elapsed_ms": round((time.perf_counter() - started) * 1000),
         }
@@ -88,6 +69,8 @@ def fetch_one(community: dict[str, Any], timeout: int) -> dict[str, Any]:
             "error": str(error),
             "elapsed_ms": round((time.perf_counter() - started) * 1000),
         }
+    finally:
+        client.close()
 
 
 def merge_property_types_into_communities(
@@ -170,6 +153,8 @@ def main() -> int:
         for index, future in enumerate(as_completed(futures), start=1):
             result = future.result()
             community_id = result["community_id"]
+            if result.get('error') and results.get(community_id, {}).get('property_type'):
+                result = {**results[community_id], **{k: v for k, v in result.items() if k != 'property_type'}}
             results[community_id] = result
             status = result.get("property_type") or ("ERROR" if result.get("error") else "NOT_FOUND")
             print(f"[{index}/{len(communities)}] {community_id} {result['community_name']} -> {status} ({result['elapsed_ms']}ms)")

@@ -91,6 +91,11 @@ class TmsfClient:
             self._session = factory(**self.session_options)
         return self._session
 
+    def close(self) -> None:
+        if self._session is not None:
+            self._session.close()
+            self._session = None
+
 
 def _curl_cffi_session(**options: Any) -> Any:
     try:

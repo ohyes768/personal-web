@@ -31,8 +31,8 @@ def test_split_buckets_by_state():
     }
     result = split_communities(communities=communities, property_types=property_types, fang_samples_by_community=fang_samples)
     buckets = result["buckets"]
-    assert {c["community_id"] for c in buckets[RESIDENTIAL_STATE_RESIDENTIAL]} == {"1", "3"}
-    assert {c["community_id"] for c in buckets[RESIDENTIAL_STATE_PENDING]} == {"4"}
+    assert {c["community_id"] for c in buckets[RESIDENTIAL_STATE_RESIDENTIAL]} == {"1"}
+    assert {c["community_id"] for c in buckets[RESIDENTIAL_STATE_PENDING]} == {"3", "4"}
     assert {c["community_id"] for c in buckets[RESIDENTIAL_STATE_NON_RESIDENTIAL]} == {"2"}
     for entries in buckets.values():
         for entry in entries:

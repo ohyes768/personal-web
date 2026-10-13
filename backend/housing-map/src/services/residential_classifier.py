@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
 from collections import Counter
 from pathlib import Path
 from typing import Any, Iterable
@@ -26,13 +25,10 @@ RESIDENTIAL_STATE_NON_RESIDENTIAL = "non_residential"
 RESIDENTIAL_STATE_PENDING = "pending"
 RESIDENTIAL_STATE_UNKNOWN = "unknown"
 
-_PROPERTY_NORMALIZE = re.compile(r"[\s|/、,，;；]+")
-
-
 def normalize_property_type(value):
     if value is None:
         return None
-    text = _PROPERTY_NORMALIZE.split(str(value).strip(), maxsplit=1)[0].strip()
+    text = str(value).strip()
     if not text:
         return None
     if text in RESIDENTIAL_TYPES:
@@ -43,7 +39,7 @@ def normalize_property_type(value):
         return text
     if text in {"公寓", "其他"}:
         return text
-    return (text[:10] or None)
+    return (text[:100] or None)
 
 
 def _fang_property_from_samples(samples):
@@ -69,17 +65,15 @@ def classify(*, community_id, tmsf_property_type=None, fang_samples=None, name="
         "fang": dict(fang_counter),
     }
 
-    if tmsf in RESIDENTIAL_TYPES:
-        state = RESIDENTIAL_STATE_RESIDENTIAL
+    fang_ambiguous = any(prop not in FANG_RESIDENTIAL_TYPES | NON_RESIDENTIAL_TYPES for prop in fang_counter)
+    if (fang_residential and fang_non_residential) or fang_ambiguous:
+        state = RESIDENTIAL_STATE_PENDING
+    elif tmsf in RESIDENTIAL_TYPES:
+        state = RESIDENTIAL_STATE_PENDING if fang_non_residential else RESIDENTIAL_STATE_RESIDENTIAL
     elif tmsf in NON_RESIDENTIAL_TYPES:
-        state = RESIDENTIAL_STATE_NON_RESIDENTIAL
-    elif tmsf in {"公寓", "其他"}:
-        if fang_residential and not fang_non_residential:
-            state = RESIDENTIAL_STATE_RESIDENTIAL
-        elif fang_non_residential and not fang_residential:
-            state = RESIDENTIAL_STATE_NON_RESIDENTIAL
-        else:
-            state = RESIDENTIAL_STATE_PENDING
+        state = RESIDENTIAL_STATE_PENDING if fang_residential else RESIDENTIAL_STATE_NON_RESIDENTIAL
+    elif tmsf:
+        state = RESIDENTIAL_STATE_PENDING
     else:
         if fang_residential and not fang_non_residential:
             state = RESIDENTIAL_STATE_RESIDENTIAL
@@ -99,6 +93,31 @@ def classify(*, community_id, tmsf_property_type=None, fang_samples=None, name="
         "fang_dominant": fang_dominant,
         "evidence": evidence,
     }
+
+
+def classify_sources(records, property_types=None):
+    """Compute directory state from current effective source associations.
+
+    Existing standalone results are looked up by TMSF identity, never by local ID.
+    A new attempt (including a failure) supersedes those legacy file results.
+    """
+    property_types = property_types or {}
+    states = []
+    for record in records:
+        if record.get('status') == 'ignored':
+            continue
+        if record['source'] == 'tmsf':
+            prop = record.get('property_type')
+            if not record.get('property_type_checked_at') and not prop:
+                prop = property_types.get(record['source_id'], {}).get('property_type')
+            state = classify(community_id='', tmsf_property_type=prop)['state']
+            if record.get('property_type_error') or state == RESIDENTIAL_STATE_UNKNOWN:
+                state = RESIDENTIAL_STATE_PENDING
+            states.append(state)
+        elif record['source'] == 'fang':
+            states.append(classify(community_id='', fang_samples=record.get('samples', []))['state'])
+    meaningful = set(states) - {RESIDENTIAL_STATE_UNKNOWN}
+    return next(iter(meaningful)) if len(meaningful) == 1 else RESIDENTIAL_STATE_PENDING
 
 
 def classify_directory(*, communities, property_types, fang_samples_by_community=None):

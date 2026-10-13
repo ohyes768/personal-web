@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from src.services.community_directory import prepare_directory
 from src.services.data_loader import DATA_DIR
 from src.services.directory_collection import DirectoryJob
+from src.services.residential_classifier import classify_sources
 import json as _json
 
 router = APIRouter(tags=['community-directory'])
@@ -32,15 +33,25 @@ def job():
     return _job
 
 
-def _load_classification():
-    path = DATA_DIR / 'residential_classification.json'
+def _load_property_types():
+    path = DATA_DIR / 'property_types.json'
     if not path.exists():
         return {}
     try:
         report = _json.loads(path.read_text(encoding='utf-8-sig'))
     except (OSError, ValueError):
         return {}
-    return {entry['community_id']: entry['state'] for entry in report.get('entries', []) if entry.get('community_id')}
+    return {str(k): v for k, v in report.items() if isinstance(v, dict)} if isinstance(report, dict) else {}
+
+
+def source_view(item, property_types):
+    view = {k: v for k, v in item.items() if k != 'samples'}
+    if item['source'] == 'tmsf' and not item.get('property_type_checked_at') and not item.get('property_type'):
+        legacy = property_types.get(item['source_id'], {})
+        view.update(property_type=legacy.get('property_type'), property_type_url=legacy.get('url'),
+                    property_type_captured_at=legacy.get('captured_at'))
+    view['residential_state'] = classify_sources([item], property_types)
+    return view
 
 
 async def shutdown_directory():
@@ -82,16 +93,16 @@ def communities(q: str = Query('', max_length=200), district: str = '', deleted:
                 page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     registry = store()
     sources = registry.sources()
-    classification = _load_classification()
+    property_types = _load_property_types()
     rows = []
     for c in registry.communities(deleted):
         records = [r for r in sources if r['community_id'] == c['community_id']]
         text = ' '.join([c['community_name'], c.get('address') or '', *c.get('aliases', []), *[r['name'] for r in records]])
         if (not district or c.get('district') == district) and q.casefold() in text.casefold():
-            state = classification.get(c['community_id'], 'pending') if not deleted else 'deleted'
+            state = classify_sources(records, property_types) if not deleted else 'deleted'
             if residential_state and state != residential_state:
                 continue
-            rows.append({**c, 'sources': [{k: v for k, v in r.items() if k != 'samples'} for r in records], 'residential_state': state})
+            rows.append({**c, 'sources': [source_view(r, property_types) for r in records], 'residential_state': state})
     rows.sort(key=lambda c: c['community_name'])
     return {'success': True, 'data': page_data(rows, page, page_size)}
 
@@ -108,7 +119,10 @@ def detail(cid: str):
     if not item:
         raise HTTPException(404, '小区不存在')
     from src.services.data_loader import load_polygons
-    return {'success': True, 'data': {**item, 'sources': [{k: v for k, v in s.items() if k != 'samples'} for s in registry.sources() if s['community_id'] == cid],
+    records = [s for s in registry.sources() if s['community_id'] == cid]
+    property_types = _load_property_types()
+    return {'success': True, 'data': {**item, 'sources': [source_view(s, property_types) for s in records],
+                                    'residential_state': 'deleted' if item['deleted'] else classify_sources(records, property_types),
                                     'events': registry.events(cid), 'has_boundary': cid in load_polygons()}}
 
 
@@ -135,12 +149,16 @@ def merge(cid: str, request: AssociationInput):
 @router.get('/directory/sources')
 def sources(q: str = Query('', max_length=200), source: Literal['', 'tmsf', 'fang', 'amap', 'laipai'] = '', district: str = '',
             status: Literal['', 'pending', 'matched', 'ignored'] = '',
+            residential_state: Literal['', 'residential', 'pending', 'non_residential'] = '',
             page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     rows = [r for r in store().sources() if (not source or r['source'] == source)
             and (not district or (r.get('district') or '').removesuffix('区') == district)
             and (not status or r['status'] == status) and q.casefold() in (r['name'] + r['source_id']).casefold()]
     # Raw rental samples stay in storage, not in a name table's API payload.
-    rows = [{k: v for k, v in r.items() if k != 'samples'} for r in rows]
+    property_types = _load_property_types()
+    rows = [source_view(r, property_types) for r in rows]
+    if residential_state:
+        rows = [r for r in rows if r['residential_state'] == residential_state]
     return {'success': True, 'data': page_data(rows, page, page_size)}
 
 
@@ -150,7 +168,7 @@ def source_detail(rid: str):
     item = next((s for s in registry.sources() if s['id'] == rid), None)
     if not item:
         raise HTTPException(404, '来源不存在')
-    return {'success': True, 'data': {**{k: v for k, v in item.items() if k != 'samples'},
+    return {'success': True, 'data': {**source_view(item, _load_property_types()),
                                     'candidates': registry.candidates(item), 'sample_count': len(item.get('samples', [])),
                                     'possible_deleted': [c['community_name'] for c in registry.communities(True)
                                                          if c['community_name'] == item['name'] or item['name'] in c.get('aliases', [])]}}
