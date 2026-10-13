@@ -91,6 +91,8 @@ def community_name_index(communities):
         for field in ('community_name', 'community_alias'):
             if community.get(field):
                 names.setdefault(community[field], set()).add(str(community['community_id']))
+        for alias in community.get('aliases', []):
+            names.setdefault(alias, set()).add(str(community['community_id']))
     return names
 
 

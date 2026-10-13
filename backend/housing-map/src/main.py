@@ -25,6 +25,9 @@ from src.api.routes import router
 from src.api.auction_routes import router as auction_router
 from src.api.rental_routes import router as rental_router, shutdown_rental_refresh
 from src.api.rental_source_routes import router as rental_source_router
+from src.api.directory_routes import router as directory_router, shutdown_directory
+from src.services.community_directory import prepare_directory
+from src.services.data_loader import DATA_DIR
 from src.services.auction_refresh import shutdown_refresh
 from src.scheduler import shutdown_scheduler, start_scheduler
 
@@ -37,9 +40,11 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 50)
     logger.info("housing-map 服务启动中...")
     logger.info("=" * 50)
+    prepare_directory(DATA_DIR)
     start_scheduler()
     yield
     shutdown_scheduler()
+    await shutdown_directory()
     await shutdown_refresh()
     await shutdown_rental_refresh()
     logger.info("housing-map 服务关闭中...")
@@ -65,6 +70,7 @@ app.include_router(router, prefix="/api")
 app.include_router(auction_router, prefix="/api")
 app.include_router(rental_router, prefix="/api")
 app.include_router(rental_source_router, prefix="/api")
+app.include_router(directory_router, prefix="/api")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ import LatestAuctionCard from '@/components/community/LatestAuctionCard';
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import { RentalScopeSelect, RentalSummaryCells, type RentalScope } from '@/components/dashboard/RentalDashboardWidgets';
 import { RentalRefreshButton } from '@/components/rental/RentalRefreshButton';
-import { RentalSourceManager } from '@/components/rental/RentalSourceManager';
+import CommunityManagement from '@/components/community/CommunityManagement';
 import { rentalDataChanged } from '@/lib/rental-sources';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 import { useRentalSummary } from '@/lib/use-rental-summary';
@@ -243,7 +243,7 @@ export default function BinjiangMapPage() {
       .catch(() => {});
     return () => controller.abort();
   }, []);
-  const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market' | 'auction'>('map');
+  const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market' | 'auction' | 'management'>('map');
   const [auctionRefreshVersion, setAuctionRefreshVersion] = useState(0);
   const [auctionMapError, setAuctionMapError] = useState<string | null>(null);
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
@@ -529,6 +529,7 @@ export default function BinjiangMapPage() {
         onAuctionStopRefresh={stopAuctionRefresh}
         boundaryState={boundaryState}
         onBoundaryRebuild={startBoundaryRebuild}
+        onManageCommunities={() => setActiveTab('management')}
       />
 
       {/* Tab 导航 */}
@@ -546,11 +547,17 @@ export default function BinjiangMapPage() {
           <button className={`tab-btn ${activeTab === 'auction' ? 'active' : ''}`} onClick={() => setActiveTab('auction')}>
             法拍数据
           </button>
+          <button className={`tab-btn ${activeTab === 'management' ? 'active' : ''}`} onClick={() => setActiveTab('management')}>小区数据管理</button>
         </div>
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-        {activeTab === 'auction' ? (
+        {activeTab === 'management' ? <CommunityManagement onChanged={() => {
+          setSelectedCommunity(null);
+          void fetchCommunities().then(setCommunities);
+          window.dispatchEvent(new Event('housing-rental-data-changed'));
+          setAuctionRefreshVersion(v => v + 1);
+        }} /> : activeTab === 'auction' ? (
           <div style={{ flex: 1, minWidth: 0 }}>
             {auctionMapError && <p role="alert" className="auction-note">{auctionMapError}</p>}
             <AuctionDataList refreshVersion={auctionRefreshVersion} onView={(id) => {
@@ -1063,6 +1070,7 @@ function AppHeader({
   onAuctionStopRefresh,
   boundaryState,
   onBoundaryRebuild,
+  onManageCommunities,
 }: {
   searchQuery: string;
   onSearchChange: (v: string) => void;
@@ -1075,8 +1083,8 @@ function AppHeader({
   onAuctionStopRefresh: () => void;
   boundaryState: { running: boolean; phase: string; error: string | null } | null;
   onBoundaryRebuild: () => void;
+  onManageCommunities: () => void;
 }) {
-  const [sourcesOpen, setSourcesOpen] = useState(false);
   return (
     <><header className="housing-app-header" style={{
       minHeight: '64px',
@@ -1178,8 +1186,7 @@ function AppHeader({
             <span>⚖️</span> 法拍刷新
           </button>
         )}
-        <RentalRefreshButton onSettled={rentalDataChanged} onManageSources={() => setSourcesOpen(true)} />
-        <button className="btn btn-secondary" onClick={() => setSourcesOpen(true)}>租金来源</button>
+        <RentalRefreshButton onSettled={rentalDataChanged} onManageSources={onManageCommunities} />
         <button
           className="btn btn-secondary"
           style={{ whiteSpace: 'nowrap' }}
@@ -1191,7 +1198,6 @@ function AppHeader({
         </button>
       </div>
     </header>
-    {sourcesOpen && <RentalSourceManager onClose={() => setSourcesOpen(false)} />}
     </>
   );
 }

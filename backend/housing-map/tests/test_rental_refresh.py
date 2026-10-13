@@ -64,8 +64,10 @@ class FakeClient:
         self.gate_urls = gate_urls
         self.timeout = timeout
         self.closed = False
+        self.entered = threading.Event()
 
     def fetch(self, url):
+        self.entered.set()
         if (self.gate is not None
                 and (self.gate_urls is None or url in self.gate_urls)
                 and not self.gate.wait(self.timeout if self.timeout is not None else 5)):
@@ -344,6 +346,7 @@ def test_shutdown_reports_join_timeout_instead_of_blocking(tmp_path):
                                     client_timeout=60.0)
     service.start()
     try:
+        wait_until(lambda: clients and clients[0].entered.is_set())
         assert service.shutdown(timeout=0.2) is False
         assert service._thread.is_alive()
     finally:

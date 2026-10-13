@@ -99,6 +99,7 @@ export function RentalReferenceContent({ data, view = 'valid' }: { data: RentalD
   }
 
   const notices: string[] = [];
+  if (data.regional_sample) notices.push('来自区域采集的租房样本，尚未覆盖该小区全部房源；关联后按已保存样本计算参考。');
   if (data.availability === 'insufficient_samples') {
     notices.push('有效样本不足 3 条，仅展示明细，不输出租金参考与收益估算。');
   }

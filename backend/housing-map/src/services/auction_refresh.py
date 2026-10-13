@@ -47,6 +47,11 @@ def collect_auctions(path=AUCTION_PATH, *, client=None, communities=None, max_pa
                     seen.add(aid)
                     if str(item.get("area_code")) != "330108":
                         continue
+                    from src.services.community_registry import existing_registry
+                    registry = existing_registry(path.parent)
+                    if registry and (registry.is_ignored('laipai', 'auction', aid)
+                            or registry.is_ignored('laipai', 'asset', str(item.get('object_id')))):
+                        continue
                     if delay:
                         time.sleep(delay)
                     check()

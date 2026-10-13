@@ -37,7 +37,7 @@ SUMMARY_ENTRY_KEYS = {'community_id', 'availability', 'last_refresh', 'sample_co
                       'captured_at', 'unit_rent_yuan_m2_month',
                       'annualized_gross_yield_pct'}
 DETAIL_DATA_KEYS = {'availability', 'last_refresh', 'sample_count', 'excluded_count',
-                    'captured_at', 'groups', 'bedrooms_distribution', 'samples',
+                    'captured_at', 'regional_sample', 'groups', 'bedrooms_distribution', 'samples',
                     'page', 'page_size', 'total', 'source_links'}
 GROUP_KEYS = {'bedrooms', 'area_band', 'sample_count', 'rent_reference',
               'sale_reference', 'yield_estimate'}

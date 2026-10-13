@@ -6,3 +6,5 @@ data/auction_records.json.*.tmp
 
 # Runtime rental source associations
 data/rental_sources.sqlite3*
+data/community_registry.sqlite3*
+data/directory-backup/

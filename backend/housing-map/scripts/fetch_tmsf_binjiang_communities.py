@@ -23,7 +23,7 @@ from src.services.tmsf_fetcher import (
     parse_tendency_page,
     write_outputs,
 )
-from fetch_tmsf_price_snapshot import fetch_html
+from scripts.fetch_tmsf_price_snapshot import fetch_html
 
 
 COMMUNITY_LIST_URL = f"{BASE_URL}/include/hzweb/index_search_newCommunitylist.js"
@@ -149,6 +149,12 @@ def fetch_price_snapshots_for_communities(
     price_mode: str,
     concurrency: int,
 ) -> list[Any]:
+    from src.services.community_registry import existing_registry
+    from src.services.data_loader import DATA_DIR
+    registry = existing_registry(DATA_DIR)
+    if registry:
+        active = {r['source_id'] for r in registry.sources() if r['source'] == 'tmsf' and r['status'] == 'matched'}
+        communities = [c for c in communities if c.community_id in active]
     snapshots = []
     if concurrency <= 1:
         for index, community in enumerate(communities, start=1):

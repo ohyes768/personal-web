@@ -5,12 +5,13 @@
 """
 
 import json
+import os
 import re
 from datetime import date
 from pathlib import Path
 
 # 数据目录: backend/housing-map/data (src/services/data_loader.py -> parents[2] = 服务根)
-DATA_DIR = Path(__file__).resolve().parents[2] / "data"
+DATA_DIR = Path(os.environ['HOUSING_DATA_DIR']) if os.environ.get('HOUSING_DATA_DIR') else Path(__file__).resolve().parents[2] / "data"
 
 
 def get_data_paths() -> dict[str, Path]:
@@ -233,6 +234,12 @@ def load_json(path: Path, fallback):
 
 
 def load_communities() -> list[dict]:
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(get_data_paths()["communities"].parent)
+    if registry:
+        tmsf = {r['community_id']: r['source_id'] for r in registry.sources()
+                if r['source'] == 'tmsf' and r['status'] == 'matched'}
+        return [{**c, 'tmsf_id': tmsf.get(c['community_id'])} for c in registry.communities()]
     data = load_json(get_data_paths()["communities"], [])
     if isinstance(data, list):
         return data
@@ -243,6 +250,13 @@ def load_communities() -> list[dict]:
 
 def load_coordinates() -> dict[str, dict]:
     raw = load_json(get_data_paths()["coordinates"], {})
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(get_data_paths()["communities"].parent)
+    if registry:
+        for c in registry.communities():
+            if c.get('longitude') and c.get('latitude'):
+                raw[c['community_id']] = {'longitude': c['longitude'], 'latitude': c['latitude'],
+                                          'formatted_address': c.get('address', '')}
     # 错区防护: 地址不含"滨江区/萧山区"的坐标不可信 (跨市错配)。
     # 萧山区地址还须落在萧山板块围栏内, 防"失准到萧山城区中心"的点混入。
     # (滨江小区错配到萧山同名地名的情况仍由地址字符串挡, 见湖头陈村案例)
@@ -373,4 +387,17 @@ def load_price_snapshots(path: Path | None = None) -> dict[str, dict]:
     except OSError as exc:
         print(f"加载价格快照失败: {exc}")
 
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(path.parent)
+    if registry:
+        mappings = {r['source_id']: r['community_id'] for r in registry.sources()
+                    if r['source'] == 'tmsf' and r['status'] == 'matched'}
+        associated = {}
+        for sid, snapshot in result.items():
+            cid = mappings.get(sid)
+            if cid and registry.resolve(cid):
+                previous = associated.get(cid)
+                if not previous or (snapshot['price_type'] == 'monthly_deal_avg_latest', snapshot['date']) > (previous['price_type'] == 'monthly_deal_avg_latest', previous['date']):
+                    associated[cid] = snapshot
+        return associated
     return result

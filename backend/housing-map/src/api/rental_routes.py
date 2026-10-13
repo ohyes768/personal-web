@@ -326,7 +326,20 @@ def _mapped_entry(current: dict | None, community_id: str, source_ids: dict) -> 
     if community_id not in source_ids:
         return None
     if entry and entry.get('source_community_id') != source_ids[community_id]:
-        return None
+        entry = None
+    if not entry:
+        from src.services.community_registry import existing_registry
+        registry = existing_registry(_mappings_path.parent)
+        if registry:
+            entry = next((e for e in (current or {}).get('communities', {}).values()
+                          if e.get('source_community_id') == source_ids[community_id]), None)
+            r = next((r for r in registry.sources() if r['source'] == 'fang'
+                      and r['source_id'] == source_ids[community_id] and r['status'] == 'matched'), None)
+            if not entry and r and r.get('samples'):
+                # Explicitly a regional sample, not a claim of a complete community crawl.
+                entry = {'source_community_id': r['source_id'], 'samples': r['samples'],
+                         'captured_at': min(s.get('captured_at') or r['updated_at'] for s in r['samples']),
+                         'quality': {'regional_sample': True}}
     return entry
 
 
@@ -481,6 +494,7 @@ def community_rentals(
         "sample_count": sample_count,
         "excluded_count": len(excluded),
         "captured_at": entry.get("captured_at") if entry else None,
+        "regional_sample": bool(entry and entry.get('quality', {}).get('regional_sample')),
         "groups": groups,
         "bedrooms_distribution": distribution,
         "samples": rows[start:start + page_size],

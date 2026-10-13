@@ -20,6 +20,15 @@ from src.services.tmsf_fetcher import DEFAULT_HEADERS, decode_response_bytes, st
 BASE_URL = 'https://zu.fang.com'
 
 
+def ignored_community(sid):
+    if not sid:
+        return False
+    from src.services.data_loader import DATA_DIR
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(DATA_DIR)
+    return bool(registry and registry.is_ignored('fang', 'community', sid))
+
+
 def validate_url(url: str) -> str:
     parts = urlsplit(url)
     if (parts.scheme != 'https' or parts.hostname not in {'zu.fang.com', 'hz.zu.fang.com'}
@@ -134,7 +143,7 @@ def crawl(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
         raise ValueError('max_pages must be positive and delay nonnegative')
     captured_at = dt.datetime.now(dt.UTC).isoformat()
     report = {'captured_at': captured_at, 'pages_succeeded': 0, 'duplicate_ids': 0,
-              'errors': [], 'truncated_seeds': [], 'seeds': seeds}
+              'errors': [], 'truncated_seeds': [], 'seeds': seeds, 'ignored': 0}
     records: dict[str, dict] = {}
     visited = set()
     requests_made = 0
@@ -147,6 +156,10 @@ def crawl(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
         return fetch(url)
 
     for seed in seeds:
+        seed_id = re.search(r'house-xm(\d+)', seed)
+        if seed_id and ignored_community(seed_id[1]):
+            report['ignored'] += 1
+            continue
         url = seed
         for _ in range(max_pages):
             if url in visited:
@@ -159,6 +172,9 @@ def crawl(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
                 report['errors'].append({'url': url, 'stage': 'list', 'error': str(error)})
                 break
             for row in rows:
+                if ignored_community(row.get('source_community_id')):
+                    report['ignored'] += 1
+                    continue
                 key = row['source_listing_id']
                 if key in records:
                     report['duplicate_ids'] += 1
@@ -229,7 +245,8 @@ class CrawlProgress:
 def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
                delay: float = 2, details: bool = False,
                cancel_event: threading.Event | None = None,
-               progress: CrawlProgress | None = None) -> Iterator[SeedRunResult]:
+               progress: CrawlProgress | None = None,
+               skip_seed: Callable[[str], bool] | None = None) -> Iterator[SeedRunResult]:
     """Crawl seed by seed, yielding one SeedRunResult per seed.
 
     Cancellation is checked before every request and inside every delay wait
@@ -264,6 +281,13 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
         if progress is not None:
             progress.current_seed = seed
         result = SeedRunResult(seed=seed)
+        if skip_seed and skip_seed(seed):
+            result.status = 'list_failed'
+            result.errors.append({'url': seed, 'stage': 'directory', 'error': '来源已删除或关联已改变，跳过采集'})
+            if progress is not None:
+                progress.processed_seeds += 1
+            yield result
+            continue
         url = seed
         raw_rows = 0
         list_failed = False
@@ -290,6 +314,8 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
                     continue
                 seen_ids.add(key)
                 row['captured_at'] = captured_at
+                if skip_seed and skip_seed(seed):
+                    continue
                 if details:
                     try:
                         enrich_detail(row, request(row['source_url'], result))

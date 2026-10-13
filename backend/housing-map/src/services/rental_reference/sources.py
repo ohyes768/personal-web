@@ -31,7 +31,11 @@ def confirmed_pairs(path: Path) -> list[tuple[str, str]]:
 
 class SourceStore:
     def __init__(self, mappings_path: Path):
+        from src.services.community_registry import existing_registry
+        self.registry = existing_registry(mappings_path.parent)
         self.path = database_path(mappings_path)
+        if self.registry:
+            return
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with connection(self.path) as db:
             db.executescript('''
@@ -61,6 +65,10 @@ class SourceStore:
                 db.execute("INSERT INTO meta VALUES ('imported', '1')")
 
     def get(self, community_id: str) -> dict:
+        if self.registry:
+            candidates = [r for r in self.registry.sources() if r['source'] == 'fang' and r['status'] == 'pending'
+                          and any(c['community_id'] == community_id for c in self.registry.candidates(r))]
+            return {'mapping': self.all_mappings().get(community_id), 'candidates': [self._rental(r) for r in candidates]}
         with connection(self.path) as db:
             row = db.execute('SELECT payload FROM mappings WHERE community_id=?', (community_id,)).fetchone()
             candidates = db.execute('SELECT payload FROM candidates WHERE community_id=? AND rejected=0', (community_id,)).fetchall()
@@ -68,15 +76,26 @@ class SourceStore:
                     'candidates': [json.loads(r[0]) for r in candidates]}
 
     def all_mappings(self) -> dict:
+        if self.registry:
+            return {r['community_id']: self._rental(r) for r in self.registry.sources()
+                    if r['source'] == 'fang' and r['status'] == 'matched'}
         with connection(self.path) as db:
             return {r['community_id']: json.loads(r['payload']) for r in db.execute('SELECT * FROM mappings')}
 
     def pending_counts(self) -> dict:
+        if self.registry:
+            return {}
         with connection(self.path) as db:
             return {r['community_id']: r['count'] for r in db.execute(
                 'SELECT community_id, COUNT(*) AS count FROM candidates WHERE rejected=0 GROUP BY community_id')}
 
     def save_candidates(self, community_id: str, candidates: list[dict], *, restore: bool = False) -> None:
+        if self.registry:
+            for c in candidates:
+                self.registry.ingest({'source': 'fang', 'source_kind': 'community',
+                    'source_id': c['source_community_id'], 'name': c['source_name'],
+                    'address': c.get('source_address'), 'district': '滨江', 'source_url': c['source_url']})
+            return
         with connection(self.path) as db:
             for candidate in candidates:
                 # Rejected candidates stay rejected on repeat searches.
@@ -86,6 +105,12 @@ class SourceStore:
                            (community_id, candidate['source_community_id'], json.dumps(candidate, ensure_ascii=False), restore))
 
     def confirm(self, community_id: str, source_id: str) -> dict:
+        if self.registry:
+            r = next((r for r in self.registry.sources() if r['source'] == 'fang' and r['source_id'] == source_id), None)
+            if not r:
+                raise ValueError('请先查找来源')
+            self.registry.associate(r['id'], community_id)
+            return self.all_mappings()[community_id]
         with connection(self.path) as db:
             db.execute('BEGIN IMMEDIATE')
             row = db.execute('SELECT payload FROM candidates WHERE community_id=? AND source_id=? AND rejected=0',
@@ -103,12 +128,27 @@ class SourceStore:
             return item
 
     def remove(self, community_id: str) -> None:
+        if self.registry:
+            for r in self.registry.sources():
+                if r['source'] == 'fang' and r['community_id'] == community_id and r['status'] == 'matched':
+                    self.registry.unlink(r['id'])
+            return
         with connection(self.path) as db:
             db.execute('DELETE FROM mappings WHERE community_id=?', (community_id,))
 
     def reject(self, community_id: str, source_id: str) -> None:
+        if self.registry:
+            r = next((r for r in self.registry.sources() if r['source'] == 'fang' and r['source_id'] == source_id), None)
+            if r:
+                self.registry.unlink(r['id'], community_id)
+            return
         with connection(self.path) as db:
             db.execute('UPDATE candidates SET rejected=1 WHERE community_id=? AND source_id=?', (community_id, source_id))
+
+    @staticmethod
+    def _rental(r):
+        return {**r, 'source_community_id': r['source_id'], 'source_name': r['name'],
+                'source_address': r.get('address'), 'status': 'verified', 'verified_at': r.get('associated_at')}
 
 
 def source_page(url: str) -> str:

@@ -65,6 +65,11 @@ class MappingFileError(RuntimeError):
 
 
 def load_verified_mappings(path: Path) -> list[tuple[str, str]]:
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(path.parent)
+    if registry:
+        return [(r['source_id'], r['community_id']) for r in registry.sources()
+                if r['source'] == 'fang' and r['status'] == 'matched' and registry.resolve(r['community_id'])]
     from src.services.rental_reference.sources import database_path, confirmed_pairs, connection
     db_path = database_path(path)
     if db_path.exists():
@@ -270,13 +275,22 @@ class RentalRefreshService:
         client = None
         outcome_phase = 'failed'
         result_summary: dict | None = None
+        def skip_seed(seed):
+            from src.services.community_registry import existing_registry
+            registry = existing_registry(self.mappings_path.parent)
+            if not registry:
+                return False
+            plan = plans[seed]
+            return not any(r['source'] == 'fang' and r['source_id'] == plan.source_community_id
+                           and r['community_id'] == plan.community_id and r['status'] == 'matched'
+                           for r in registry.sources())
         try:
             client = self._fetch_factory(timeout=self._timeout)
             for index, seed_result in enumerate(crawl_runs(
                     [plan.seed for plan in ordered], fetch=client.fetch,
                     max_pages=self._max_pages, delay=self._delay,
                     details=self._details, cancel_event=self._cancel_event,
-                    progress=progress)):
+                    progress=progress, skip_seed=skip_seed)):
                 plan = plans[seed_result.seed]
                 next_plan = ordered[index + 1] if index + 1 < len(ordered) else None
                 captured_at = (seed_result.samples[0]['captured_at']
@@ -328,6 +342,8 @@ class RentalRefreshService:
                       'truncated_seeds': truncated_seeds,
                       'pages_fetched': progress.pages_fetched,
                       'details_fetched': progress.details_fetched}
+            batches = [batch for batch in batches if not skip_seed(next(
+                plan.seed for plan in ordered if plan.community_id == batch.community_id))]
             publish = publish_run(self.rentals_dir, batches, report=report,
                                   cancel_event=self._cancel_event)
             result_summary = {

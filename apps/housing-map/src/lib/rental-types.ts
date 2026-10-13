@@ -81,6 +81,7 @@ export interface RentalLastRefresh {
 }
 
 export interface RentalDetailData {
+  regional_sample?: boolean;
   availability: RentalAvailability;
   /** 最近一次采集任务结果；允许"旧数据可用 + 最近抓取失败"并存 */
   last_refresh: RentalLastRefresh | null;

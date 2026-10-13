@@ -122,9 +122,10 @@ def select_refresh_targets(communities: list[dict], coordinates: dict | None = N
 
         coordinates = load_coordinates()
     return [
-        str(community["community_id"])
+        str(community.get('tmsf_id') or community["community_id"])
         for community in communities
         if community.get("community_id")
+        and (community.get('tmsf_id') or not str(community['community_id']).startswith('local-'))
         and is_real_community(community)
         # 与 /communities 展示口径一致: 坐标不在覆盖范围内的小区不刷 (省时长, 数据也不会下发)
         and (coord := coordinates.get(community["community_id"]))
@@ -147,6 +148,11 @@ async def run_refresh_once(
     for index, community_id in enumerate(targets):
         if _cancel_requested:
             raise asyncio.CancelledError
+        from src.services.community_registry import existing_registry
+        registry = existing_registry(data_path)
+        if registry and not any(r['source'] == 'tmsf' and r['source_id'] == community_id and r['status'] == 'matched'
+                                for r in registry.sources()):
+            continue
         result = await asyncio.to_thread(fetcher, community_id, timeout=DEFAULT_FETCH_TIMEOUT)
         job["processed"] += 1
         if result.snapshots:

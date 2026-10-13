@@ -1,5 +1,7 @@
 # Rental source management contract
 
+> Current deployment now uses [Community directory](./community-directory.md) as the authoritative editable store. This document describes the older fallback/standalone SourceStore contracts. With a directory present, SourceStore delegates to it; automatic evidence-based association is allowed and the header CTA opens the management Tab. Do not add a second writable mapping store or override directory deletion decisions.
+
 ## 1. Scope / Trigger
 Applies to `rental_reference/sources.py`, `rental_source_routes.py`, source membership in `refresh.py`, rental query snapshot selection and the frontend source manager.
 

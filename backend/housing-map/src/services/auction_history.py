@@ -31,6 +31,11 @@ def parse_date(value):
 
 
 def load_mappings(path, communities):
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(path.parent)
+    if registry:
+        return {(r['source'], r['source_kind'] + '_id', r['source_id']): r['community_id']
+                for r in registry.sources() if r['source'] == 'laipai' and r['status'] == 'matched'}
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding='utf-8-sig'))
@@ -53,13 +58,19 @@ def load_mappings(path, communities):
 
 
 def associate_records(rows, communities, mappings, *, keep_unmatched=False):
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(MAPPING_PATH.parent)
     names = community_name_index(communities)
     associated = []
     for row in rows:
         source = row['source']
+        if registry:
+            identities = [('asset', str(row.get('asset_id'))), ('auction', str(row['auction_id']))]
+            if any(registry.is_ignored(source, kind, sid) for kind, sid in identities):
+                continue
         cid = mappings.get((source, 'asset_id', str(row.get('asset_id'))))
         cid = cid or mappings.get((source, 'auction_id', str(row['auction_id'])))
-        if not cid:
+        if not cid and not registry:
             matches = names.get(row.get('community_name'), set())
             cid = next(iter(matches)) if len(matches) == 1 else None
         if cid or keep_unmatched:
