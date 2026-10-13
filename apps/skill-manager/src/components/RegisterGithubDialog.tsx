@@ -200,7 +200,7 @@ export default function RegisterGithubDialog({
       >
         <h2 className="text-lg font-semibold text-slate-800">新增 GitHub Skill</h2>
         <p className="mt-1 text-xs text-slate-400">
-          仅支持 https://github.com/&lt;owner&gt;/&lt;repo&gt;；优先扫描已有缓存，无缓存时临时 clone 并查找 SKILL.md
+          仅支持 https://github.com/&lt;owner&gt;/&lt;repo&gt;；优先使用已有缓存，首次扫描需下载仓库，登记时复用扫描结果
         </p>
 
         <label className="mt-3 block text-sm font-medium text-slate-700">

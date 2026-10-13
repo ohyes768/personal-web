@@ -203,7 +203,7 @@ class AdminPasswordRequest(BaseModel):
 
 
 class ScanRequest(BaseModel):
-    """`POST /api/skills/github/scan`：临时 clone 扫描候选目录。"""
+    """`POST /api/skills/github/scan`：扫描候选目录并保留可复用仓库缓存。"""
 
     repository: str
 

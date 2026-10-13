@@ -6,10 +6,10 @@
   `${GITHUB_SKILL_CACHE_ROOT}/repos/<owner>__<repo>/`，同仓库任意数量
   登记条目共享一份 clone；owner 段（GitHub 规则）不含下划线，`__`
   拼接无歧义且可逆解析；
-- `scan()` 以 `--depth 1` clone 到 `${SKILL_MANAGER_STATE_DIR}/scan/<uuid>`，
+- `scan()` 以 `--depth 1` clone 到共享缓存根 `.tmp/<repo>-scan-<uuid>`，
   递归扫描含 `SKILL.md` 的候选目录（忽略 `.git`、隐藏目录与工具目录），
   同时返回候选 frontmatter 元数据、仓库根顶层清单与候选文本引用到的
-  顶层路径（预选）；`finally` 中始终删除扫描工作区；
+  顶层路径（预选）；有效结果原子移入 repos，供扫描/登记复用，失败清理临时目录；
 - `check_update()` 仅 `git ls-remote`（HEAD 与 `--tags --refs`），结果写
   github_check 记录（含失败记录），绝不 fetch/clone、绝不变更缓存内容；
 - `ensure_cached()` 将仓库 clone/fetch 到共享缓存目录并检出指定 revision，
@@ -399,7 +399,7 @@ class GitCacheService:
         repository_url: str,
         on_progress: Callable[[GitProgress], None] | None = None,
     ) -> ScanOutcome:
-        """临时 clone 并扫描候选/顶层清单/引用预选；工作区始终清理。
+        """扫描并保留有效共享缓存，避免登记再次下载同一仓库。
 
         统一走流式执行器 + `--progress`（design §1）：有回调时进度实时
         上报，无回调时进度仅被丢弃。
@@ -408,9 +408,16 @@ class GitCacheService:
         cached_dir = self.repo_cache_dir(canonical)
         if self.cached_scan_available(canonical):
             return self._discover(cached_dir)
-        workspace_parent = self.settings.state_dir / _SCAN_WORKSPACE_PARENT
+        if cached_dir.exists():
+            raise CacheValidationError(
+                f"repository cache for {canonical} exists but is invalid; "
+                "refusing to overwrite it"
+            )
+        # 与 repos 同盘，完成前只写 .tmp，避免中断留下正式半成品。
+        workspace_parent = self.settings.github_skill_cache_root / _CLONE_TMP_PARENT
         workspace_parent.mkdir(parents=True, exist_ok=True)
-        workspace = workspace_parent / uuid.uuid4().hex
+        cached_dir.parent.mkdir(parents=True, exist_ok=True)
+        workspace = workspace_parent / f"{cached_dir.name}-scan-{uuid.uuid4().hex}"
         try:
             self._run_git_streaming(
                 [
@@ -423,7 +430,24 @@ class GitCacheService:
                 ],
                 on_progress or _ignore_progress,
             )
-            return self._discover(workspace)
+            outcome = self._discover(workspace)
+            if not outcome.candidates:
+                return outcome
+            self._run_git(["rev-parse", "--verify", "HEAD"], cwd=workspace)
+            # 并发扫描/登记可能先完成；返回实际保留下来的缓存内容。
+            if cached_dir.exists():
+                if self.cached_scan_available(canonical):
+                    return self._discover(cached_dir)
+                raise CacheValidationError(
+                    f"repository cache for {canonical} exists but is invalid"
+                )
+            try:
+                workspace.rename(cached_dir)
+            except OSError:
+                if self.cached_scan_available(canonical):
+                    return self._discover(cached_dir)
+                raise
+            return outcome
         finally:
             _remove_workspace(workspace)
 

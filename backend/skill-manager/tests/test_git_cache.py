@@ -166,6 +166,26 @@ def test_scan_returns_each_skill_md_directory(git_cache):
     ]
 
 
+def test_scan_retains_cache_for_offline_registration(
+    git_cache, registered_github_skill, upstream_repo, monkeypatch, settings
+):
+    git_cache.scan(CANONICAL_URL)
+    cached = git_cache.repo_cache_dir(CANONICAL_URL)
+    assert (cached / ".git").is_dir()
+    assert run_git("rev-parse", "HEAD", cwd=cached).strip() == upstream_repo.revision
+    cleanup_stale_workspaces(settings)
+
+    def no_network(*args, **kwargs):
+        pytest.fail("second scan or registration must not download again")
+
+    monkeypatch.setattr(git_cache, "_run_git_streaming", no_network)
+    monkeypatch.setattr(git_cache, "verify_reachable", no_network)
+    monkeypatch.setattr(git_cache, "check_update", no_network)
+    assert len(git_cache.scan(CANONICAL_URL).candidates) == 2
+    assert git_cache.use_cached_skill(registered_github_skill) == (cached / "skills/alpha").resolve()
+    assert git_cache.store.get_github_check(registered_github_skill.id).remote_revision == upstream_repo.revision
+
+
 def test_scan_rejects_non_github_and_file_urls(git_cache):
     for url in (
         "file:///tmp/skill",
@@ -225,9 +245,10 @@ def test_normalize_repository_rejects_non_canonical_urls(git_cache, url):
 def test_scan_workspace_is_cleaned_after_success(git_cache, roots):
     git_cache.scan(CANONICAL_URL)
 
-    scan_parent = roots.state / "scan"
-    assert scan_parent.is_dir()
-    assert not any(scan_parent.iterdir())
+    tmp_parent = roots.github_cache / ".tmp"
+    assert tmp_parent.is_dir()
+    assert not any(tmp_parent.iterdir())
+    assert git_cache.cached_scan_available(CANONICAL_URL)
 
 
 def test_scan_workspace_is_cleaned_after_clone_failure(git_cache, roots):
@@ -235,8 +256,60 @@ def test_scan_workspace_is_cleaned_after_clone_failure(git_cache, roots):
     with pytest.raises(GitCacheError):
         git_cache.scan(BROKEN_URL)
 
-    scan_parent = roots.state / "scan"
-    assert not any(scan_parent.iterdir())
+    assert not any((roots.github_cache / ".tmp").iterdir())
+    assert not git_cache.repo_cache_dir(BROKEN_URL).exists()
+
+
+def test_scan_does_not_retain_repository_without_candidates(git_cache, upstream_repo):
+    work = upstream_repo.bare.parent / "upstream-work"
+    run_git("rm", "-r", "skills", cwd=work)
+    run_git("commit", "-m", "remove skills", cwd=work)
+    run_git("push", str(upstream_repo.bare), "HEAD", cwd=work)
+    outcome = git_cache.scan(CANONICAL_URL)
+    assert not outcome.candidates
+    assert not git_cache.repo_cache_dir(CANONICAL_URL).exists()
+    assert not any((git_cache.settings.github_skill_cache_root / ".tmp").iterdir())
+
+
+def test_scan_reuses_concurrent_valid_cache_without_overwriting(git_cache, upstream_repo, monkeypatch):
+    original = git_cache._run_git_streaming
+    cached = git_cache.repo_cache_dir(CANONICAL_URL)
+
+    def clone_and_create_winner(*args, **kwargs):
+        original(*args, **kwargs)
+        run_git("clone", str(upstream_repo.bare), str(cached))
+        winner = cached / "skills/winner"
+        winner.mkdir()
+        (winner / "SKILL.md").write_text("winner", encoding="utf-8")
+
+    monkeypatch.setattr(git_cache, "_run_git_streaming", clone_and_create_winner)
+    outcome = git_cache.scan(CANONICAL_URL)
+    assert "skills/winner" in [item.path for item in outcome.candidates]
+    assert (cached / "skills/winner/SKILL.md").read_text(encoding="utf-8") == "winner"
+    assert not any((git_cache.settings.github_skill_cache_root / ".tmp").iterdir())
+
+
+def test_scan_refuses_to_overwrite_invalid_existing_cache(git_cache):
+    cached = git_cache.repo_cache_dir(CANONICAL_URL)
+    cached.mkdir(parents=True)
+    marker = cached / "keep.txt"
+    marker.write_text("keep", encoding="utf-8")
+    with pytest.raises(CacheValidationError, match="refusing to overwrite"):
+        git_cache.scan(CANONICAL_URL)
+    assert marker.read_text(encoding="utf-8") == "keep"
+
+
+def test_scan_shallow_cache_can_fetch_later_revision(git_cache, upstream_repo, registered_github_skill):
+    git_cache.scan(CANONICAL_URL)
+    work = upstream_repo.bare.parent / "upstream-work"
+    (work / "skills/alpha/SKILL.md").write_text("updated", encoding="utf-8")
+    run_git("add", "-A", cwd=work)
+    run_git("commit", "-m", "update alpha", cwd=work)
+    run_git("push", str(upstream_repo.bare), "HEAD", cwd=work)
+    revision = run_git("rev-parse", "HEAD", cwd=work).strip()
+    directory = git_cache.ensure_cached(registered_github_skill, revision)
+    assert (directory / "SKILL.md").read_text(encoding="utf-8") == "updated"
+    assert git_cache.current_revision(registered_github_skill) == revision
 
 
 # ---------- 更新检查 ----------

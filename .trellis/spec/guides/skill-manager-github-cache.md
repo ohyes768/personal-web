@@ -22,8 +22,9 @@ ${GITHUB_SKILL_CACHE_ROOT}/
 ```
 
 扫描优先读取已有完整仓库缓存（`.git`、有效 HEAD、至少一个 `SKILL.md`），
-无需连接 GitHub；没有有效缓存时临时 clone 到 `${STATE_DIR}/scan/*`，
-用完即删。登记优先使用对应路径含 `SKILL.md` 的缓存，记录当前 HEAD
+无需连接 GitHub；没有有效缓存时以 `--depth 1` clone 到共享缓存根 `.tmp/*`，
+校验 HEAD 与非空候选后原子移入 `repos/` 保留。登记优先使用扫描留下的
+对应路径含 `SKILL.md` 的缓存，记录当前 HEAD
 作为发布版本。发布时若缓存 HEAD 与记录版本一致，直接使用本地内容，
 无需 fetch。无有效缓存时仍按原流程联网预检、clone/fetch。
 
@@ -46,7 +47,7 @@ skill-manager **不读源库任何登记文件**：自研 Skill 经 `sync_local(
 | UI 登记 | `POST /skills/github` → 同步预检 + 后台任务 | 有效缓存直接登记；缺失时 `check_update` + `ensure_cached` |
 | UI 批量登记 | `POST /skills/github/batch` → 同步校验 + 后台 `register_batch` 任务 | 有效缓存直接登记；缺失时仓库级 ensure_cached 一次 + 逐项 ensure_skill_path_cached |
 | 卡片 Clone 按钮 | `POST /skills/github/{id}/clone` → 同上 | 缓存缺失时 clone，已有则 fetch |
-| UI 扫描 | `POST /skills/github/scan` → 同步预检 + 后台任务 → `scan()` | 有效缓存直接扫描；缺失时临时 clone，用完即删 |
+| UI 扫描 | `POST /skills/github/scan` → 同步预检 + 后台任务 → `scan()` | 有效缓存直接扫描；缺失时浅克隆并保留有效共享缓存，登记不再二次下载 |
 | 发布执行 | `_ensure_cached_at_recorded_revision` | 缓存版本已匹配时直接使用；其他情况按成功检查记录 fetch/checkout |
 | 计划预览 / 检查更新 | `plan` / `check-updates` | **只读，绝不 fetch**（design 4.2/5） |
 
@@ -168,3 +169,12 @@ GitHub 条目的 symlink 不再指向缓存子目录，而是指向 **staging �
   报错"（NAS `git add` 128 等）一类问题已随迁移根除；
 - 删除已登记 GitHub 条目只影响**本环境**的 DB、状态库与缓存；源库已无
   registry.json（工具链废弃），不存在"管理台操作要回写源库"的桥。
+
+## 扫描缓存保留（2026-10-13）
+
+- 扫描浅克隆落 `.tmp/<repo>-scan-<uuid>`，扫描有候选且 HEAD 有效后同盘原子 rename 进 `repos`；成功后保留，登记直接使用已有离线分支。
+- 空候选、失败或中断不产生正式缓存；本次临时目录 finally 清理，进程中断残留由启动清理兜底。旧 `state/scan/*` 清理逻辑继续保留以兼容历史残留。
+- 并发已有有效缓存时弃自己的临时 clone，重新读取胜出缓存的候选，绝不覆盖；既有目录无效时明确失败，不覆盖已有文件。
+- 单项/批量登记复用缓存，不调用 verify_reachable/check_update/ensure_cached；逐项记录本地 HEAD，发布 staging 语义不变。
+- shallow 缓存仍可通过原有 fetch/checkout 更新到后续 revision；不为了登记额外拉取历史。
+- 尚未登记或用户取消添加也保留扫描缓存，下一次扫描可复用；本变更不新增定时清理或删除仓库的脚本。

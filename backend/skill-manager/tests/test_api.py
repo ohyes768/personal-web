@@ -396,6 +396,36 @@ def test_scan_and_register_use_existing_cache_when_remote_is_unreachable(
     assert [item["status"] for item in batch_done["results"]] == ["error", "success"]
 
 
+@pytest.mark.parametrize("batch", [False, True])
+def test_first_scan_cache_is_reused_for_registration(client, upstream_repo, monkeypatch, batch):
+    from src.main import app
+
+    cache = app.dependency_overrides[get_git_cache]()
+    created = client.post("/api/skills/github/scan", json={"repository": CANONICAL_URL})
+    assert created.status_code == 202
+    assert _await_task(client, created.json()["task_id"])["state"] == "done"
+    assert cache.cached_scan_available(CANONICAL_URL)
+
+    def no_download(*args, **kwargs):
+        pytest.fail("registration after scan must not invoke network operations")
+
+    for name in ("verify_reachable", "check_update", "ensure_cached", "_run_git_streaming"):
+        monkeypatch.setattr(cache, name, no_download)
+    request = _batch_payload() if batch else {
+        "password": PASSWORD, "repository": CANONICAL_URL,
+        "path": "skills/alpha", "name": "Alpha",
+    }
+    registered = client.post("/api/skills/github/batch" if batch else "/api/skills/github", json=request)
+    assert registered.status_code == 202
+    done = _await_task(client, registered.json()["task_id"])
+    assert done["state"] == "done"
+    if batch:
+        assert [item["status"] for item in done["results"]] == ["success", "success"]
+    ids = [item["skill_id"] for item in done["results"]] if batch else [done["skill_id"]]
+    for skill_id in ids:
+        assert cache.store.get_github_check(skill_id).remote_revision == upstream_repo.revision
+
+
 def test_invalid_local_cache_still_checks_remote(client, roots, upstream_repo):
     from src.main import app
 
