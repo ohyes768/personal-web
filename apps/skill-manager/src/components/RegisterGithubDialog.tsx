@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { startGithubScan } from '@/lib/api';
 import { formatElapsed, formatProgressDetail, taskStageLabel } from '@/lib/format';
 import type {
@@ -34,6 +34,8 @@ export default function RegisterGithubDialog({
 }: RegisterGithubDialogProps) {
   const [repository, setRepository] = useState('');
   const [scanTaskId, setScanTaskId] = useState('');
+  const [scanStarting, setScanStarting] = useState(false);
+  const scanRequestPending = useRef(false);
   const [scanSeconds, setScanSeconds] = useState(0);
   const [scanError, setScanError] = useState('');
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
@@ -48,7 +50,10 @@ export default function RegisterGithubDialog({
   const activeScan: TaskSnapshot | null =
     scanTask && scanTask.task_id === scanTaskId ? scanTask : null;
   const scanning =
-    scanTaskId !== '' && (activeScan === null || activeScan.state === 'running');
+    scanStarting ||
+    (scanTaskId !== '' &&
+      !pollError &&
+      (activeScan === null || activeScan.state === 'running'));
 
   useEffect(() => {
     if (!scanning) {
@@ -88,16 +93,23 @@ export default function RegisterGithubDialog({
 
   async function handleScan() {
     const url = repository.trim();
-    if (!url || scanning) {
+    if (!url || scanning || busy || scanRequestPending.current) {
       return;
     }
+    scanRequestPending.current = true;
+    setScanStarting(true);
+    setScanTaskId('');
     setScanError('');
     setSelectedPaths([]);
+    setSharedPaths([]);
     try {
       const created = await startGithubScan(url);
       setScanTaskId(created.task_id);
     } catch (err) {
       setScanError(err instanceof Error ? err.message : '扫描失败');
+    } finally {
+      scanRequestPending.current = false;
+      setScanStarting(false);
     }
   }
 
@@ -121,7 +133,12 @@ export default function RegisterGithubDialog({
 
   function handleOpenPassword(event: FormEvent) {
     event.preventDefault();
-    if (selectedPaths.length === 0 || (singleCandidate && !name.trim()) || busy) {
+    if (
+      selectedPaths.length === 0 ||
+      (singleCandidate && !name.trim()) ||
+      busy ||
+      scanning
+    ) {
       return;
     }
     setAwaitPassword(true);
@@ -196,9 +213,18 @@ export default function RegisterGithubDialog({
               type="button"
               onClick={handleScan}
               disabled={!repository.trim() || scanning || busy}
-              className="shrink-0 rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:opacity-40"
+              aria-busy={scanning}
+              className="flex shrink-0 items-center gap-2 rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:opacity-40"
             >
-              {scanning
+              {scanning ? (
+                <span
+                  aria-hidden="true"
+                  className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
+                />
+              ) : null}
+              {scanStarting
+                ? '准备扫描…'
+                : scanning
                 ? percent !== null
                   ? `${taskStageLabel(activeScan?.stage ?? '')} ${percent}%`
                   : `扫描中 ${formatElapsed(scanSeconds)}…`
@@ -207,15 +233,17 @@ export default function RegisterGithubDialog({
           </div>
         </label>
         {scanning ? (
-          <p className="mt-1 text-xs text-slate-400">
-            {percent !== null
-              ? `${taskStageLabel(activeScan?.stage ?? '')} ${percent}%${
+          <p className="mt-1 text-xs text-slate-500" role="status">
+            {scanStarting
+              ? `正在准备扫描，请稍候 · 已用时 ${formatElapsed(scanSeconds)}`
+              : percent !== null
+              ? `${taskStageLabel(activeScan?.stage ?? '')} ${percent}% · 已用时 ${formatElapsed(scanSeconds)}${
                   detail ? ` · ${detail}` : ''
                 }`
-              : '扫描会临时克隆整个仓库；大仓库在慢速网络下可能需要几分钟'}
+              : `${taskStageLabel(activeScan?.stage ?? '') || '扫描中'} · 已用时 ${formatElapsed(scanSeconds)}；首次扫描可能需要几分钟`}
           </p>
         ) : null}
-        {scanFailed || scanError || pollError ? (
+        {scanFailed || scanError || (!scanStarting && pollError) ? (
           <p className="mt-2 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
             {scanFailed
               ? activeScan?.error_message ?? '扫描失败'
@@ -384,7 +412,8 @@ export default function RegisterGithubDialog({
             disabled={
               selectedPaths.length === 0 ||
               (singleCandidate !== null && !name.trim()) ||
-              busy
+              busy ||
+              scanning
             }
             className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-40"
           >
