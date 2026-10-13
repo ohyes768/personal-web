@@ -178,3 +178,9 @@ GitHub 条目的 symlink 不再指向缓存子目录，而是指向 **staging �
 - 单项/批量登记复用缓存，不调用 verify_reachable/check_update/ensure_cached；逐项记录本地 HEAD，发布 staging 语义不变。
 - shallow 缓存仍可通过原有 fetch/checkout 更新到后续 revision；不为了登记额外拉取历史。
 - 尚未登记或用户取消添加也保留扫描缓存，下一次扫描可复用；本变更不新增定时清理或删除仓库的脚本。
+
+## Hermes 单目标与版本固定（2026-10-13）
+
+- 安装预览把仓库 HEAD 与候选路径绑定到 `plan_id`；密码确认后才 fetch 并把 staging 快照固定到该 revision。检查更新不能静默改写已确认的版本。
+- 已登记条目的安装复用 staging 快照；缓存缺失必须先准备缓存再生成新计划。
+- OpenClaw 标识不再写入 registry_skill 或 deployment；旧记录在启动时迁移到 `retired_deployment` 并备份，target=`openclaw` 永久视为已停用。

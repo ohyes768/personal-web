@@ -1,0 +1,31 @@
+{
+  "id": "skill-manager-hermes-install",
+  "name": "skill-manager-hermes-install",
+  "title": "Skill Manager 仅保留 Hermes 并简化 GitHub 与自研安装流程",
+  "description": "规划Hermes单目标、GitHub登记安装合并、自研直接安装及OpenClaw移除；本轮仅规划",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "skill-manager",
+  "package": null,
+  "priority": "P2",
+  "creator": "tang",
+  "assignee": "tang",
+  "createdAt": "2026-10-13",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/skill-manager",
+    "backend/skill-manager",
+    "docker-compose.nas.yml",
+    "docs/skill-manager-nas-setup.md"
+  ],
+  "notes": "仅规划；PRD/design/implement已完成，待用户审阅。Hermes唯一安装目标；保留独立静态导出；OpenClaw运行支持退出并设计受限迁移清理。",
+  "meta": {}
+}

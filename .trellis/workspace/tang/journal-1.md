@@ -111,3 +111,45 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session: Skill Manager Hermes-only install
+
+**Date**: 2026-10-13
+**Task**: Skill Manager 仅保留 Hermes 并简化 GitHub 与自研安装流程
+**Package**: skill-manager
+
+### Summary
+
+新增 Hermes 单目标安装编排：共享 InstallDialog、自动取计划、一次密码确认；OpenClaw 标识、配置、UI 全部退出，旧数据迁移到 `retired_deployment` 备份并提供受限的旧链接清理脚本。后端 218 项、前端 28 项（vitest）测试通过；tsc、eslint、next build 干净。规划文档 PRD/design/implement 已就位；未推送未部署。
+
+### Main Changes
+
+- 后端：新增 `install.py`（计划/任务编排、版本固定、错误分类）、`operation_lock.py`（仓库与目标互斥）；`models/db/config/migration` 清理 OpenClaw 枚举，保留退役 `openclaw` 字面量以阻止新增。
+- 后端路由：新增 `/api/skills/install/preview`、`/api/skills/install`、`/api/skills/install/tasks/{id}`；移除 /publish/plan 与 /publish 写路径；保留导出目标路由。
+- 前端：`InstallDialog` 统一 GitHub 与自研流程；删除 `PublishQueue`，简化 `SourceWorkspace`、`RegisterGithubDialog`、`SkillPool`、`DeployBoard`、`page.tsx`；二级导航去掉 agent 切换；静态导出独立视图保留。
+- 部署：`docker-compose.nas.yml` 去掉 OpenClaw 挂载与变量；`docs/skill-manager-nas-setup.md`、`deploy/README-same-path-mounts.md` 同步。
+- 脚本：`scripts/cleanup_retired_target.py` 默认 dry-run，仅匹配未变更、归管理器拥有的旧链接，文件和外部链接保持原样。
+- 规范：`.trellis/spec/guides/skill-manager-frontend.md`、`skill-manager-github-cache.md` 增补 Hermes 单目标与版本固定章节。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| (pending) | (see commit plan) |
+
+### Testing
+
+- Backend `pytest`: 218 passed
+- Frontend `vitest`: 28 passed
+- `tsc --noEmit`, `eslint src`, `next build`: clean
+- 浏览器端到端 + 真 NAS 安装未在本次会话执行
+
+### Status
+
+[OK] **Completed（待用户确认提交；未推送未部署）**
+
+### Next Steps
+
+- 提交并按计划推送到 master
+- NAS 实机验证 Hermes 一键安装与旧链接清理脚本

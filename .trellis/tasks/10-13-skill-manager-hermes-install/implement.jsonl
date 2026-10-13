@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/skill-manager-frontend.md", "reason": "Frontend flows and collection contracts"}
+{"file": ".trellis/spec/guides/skill-manager-github-cache.md", "reason": "Cache, staging and revision semantics"}
+{"file": ".trellis/tasks/10-13-skill-manager-hermes-install/research/findings.md", "reason": "Current implementation boundaries and migration pitfalls"}
