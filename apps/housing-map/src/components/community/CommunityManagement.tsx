@@ -180,10 +180,24 @@ export default function CommunityManagement({ onChanged }: { onChanged: () => vo
       {mode === 'communities' && <select aria-label="住宅状态" value={residentialState} onChange={e => { setResidentialState(e.target.value); setPage(1); }}><option value="all">住宅/非住宅/待核实</option><option value="residential">住宅</option><option value="pending">待核实</option><option value="non_residential">非住宅</option></select>}</div>
     <div className="directory-workspace"><div className="directory-list-panel">
       <p className="directory-muted">共 {total} 条 · 第 {page} 页</p>
-      {loading ? <p role="status">正在加载目录…</p> : <><div className="directory-table-wrap"><table><thead><tr><th>小区名称</th><th>区域 / 地址</th><th>来源与关联</th><th>操作</th></tr></thead><tbody>
+      {loading ? <p role="status">正在加载目录…</p> : <><div className="directory-table-wrap"><table><thead><tr><th>小区名称</th><th>区域 / 地址</th><th>来源</th><th>关联</th><th>操作</th></tr></thead><tbody>
         {rows.map(row => { const master = 'community_name' in row; const id = master ? row.community_id : row.id;
           return <tr key={id} className={selected?.id === id ? 'selected' : ''}><td><strong>{master ? row.community_name : row.name}</strong><small>{master ? (row.aliases || []).join(' / ') : `${labels[row.source] || '历史来源'} · ${row.source_id}`}</small></td>
-            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td><td>{master ? (row.sources || []).filter(r => labels[r.source]).map(r => <span className="directory-badge" key={r.id}>{labels[r.source]}</span>) : row.status === 'pending' ? '待关联' : row.status === 'ignored' ? '已删除' : row.method === 'auto' ? '自动关联' : '人工关联'}</td>
+            <td>{row.district || '未知'}<small>{row.address || '地址待补充'}</small></td>
+            <td>{master ? (row.sources || []).filter(r => labels[r.source]).map(r => <span className="directory-badge" key={r.id}>{labels[r.source]}</span>) : (<span className="directory-badge">{labels[row.source] || '历史来源'}</span>)}</td>
+            <td>{(() => {
+              if (!master) {
+                return row.status === 'pending' ? '待关联' : row.status === 'ignored' ? '已删除' : row.method === 'auto' ? '自动关联' : '人工关联';
+              }
+              const sources = (row.sources || []).filter(r => labels[r.source]);
+              if (!sources.length) return <span className="directory-muted">—</span>;
+              const methods = sources.reduce<Record<string, number>>((acc, r) => {
+                const key = r.method === 'auto' ? '自动关联' : r.method === 'manual' ? '人工关联' : '未记录';
+                acc[key] = (acc[key] || 0) + 1;
+                return acc;
+              }, {});
+              return Object.entries(methods).map(([label, count]) => <span className="directory-badge" key={label}>{label}{count > 1 ? ` ×${count}` : ''}</span>);
+            })()}</td>
             <td><button className="btn btn-secondary" onClick={() => choose(master ? 'communities' : 'sources', id)}>管理</button></td></tr>; })}
       </tbody></table></div>{!rows.length && <p className="directory-empty">没有符合条件的记录。</p>}</>}
       <div className="directory-actions"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => setPage(v => v - 1)}>上一页</button><span className="directory-muted">共 {total} 条 · 每页 30 条 · 第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => setPage(v => v + 1)}>下一页</button></div>
