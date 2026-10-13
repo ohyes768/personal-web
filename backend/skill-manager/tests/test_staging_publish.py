@@ -59,7 +59,7 @@ def roots(tmp_path):
     github_cache = tmp_path / "cache"
     state = tmp_path / "state"
     targets = tmp_path / "targets"
-    openclaw = targets / "openclaw"
+    openclaw = targets / "retired-test-root"
     hermes = targets / "hermes"
     for directory in (source_root, github_cache, state, openclaw, hermes):
         directory.mkdir(parents=True)
@@ -68,7 +68,6 @@ def roots(tmp_path):
         github_cache=github_cache,
         state=state,
         targets=targets,
-        openclaw=openclaw,
         hermes=hermes,
     )
 
@@ -78,7 +77,6 @@ def settings(roots):
     return Settings(
         skills_source_root=roots.source_root,
         github_skill_cache_root=roots.github_cache,
-        openclaw_skills_root=roots.openclaw,
         hermes_skills_root=roots.hermes,
         state_dir=roots.state,
         admin_password="test-password",
@@ -236,15 +234,15 @@ def test_unpublish_removes_link_but_keeps_staging(
 ):
     staged = publisher.stage_github_skill(github_skill, "c" * 40, shared_repo_cache)
     publisher.publish(
-        github_skill.id, TargetKey.OPENCLAW, staged, "c" * 40
+        github_skill.id, TargetKey.HERMES, staged, "c" * 40
     )
 
-    publisher.unpublish(github_skill.id, TargetKey.OPENCLAW)
+    publisher.unpublish(github_skill.id, TargetKey.HERMES)
 
-    assert not (roots.openclaw / github_skill.id).is_symlink()
+    assert not (roots.hermes / github_skill.id).is_symlink()
     # staging 快照与 deployment removed 记录保留
     assert staged.is_dir()
-    record = store.get_deployment(github_skill.id, "openclaw")
+    record = store.get_deployment(github_skill.id, "hermes")
     assert record is not None and record.status == "removed"
 
 
@@ -360,7 +358,7 @@ def test_republish_active_github_skills_rebuilds_link_via_staging(
     roots, settings, store, publisher, git_cache, registry
 ):
     """迁移后旧 symlink target 失效：启动重发布组装 staging 并替换链接。"""
-    revision = _init_real_git_repo(roots.github_cache / "repos" / "example__rep")
+    revision = _init_real_git_repo(roots.github_cache / "repos" / "example__example-rep")
     skill = RegistrySkill(
         id="example-rep",
         name="rep",
@@ -371,12 +369,12 @@ def test_republish_active_github_skills_rebuilds_link_via_staging(
     registry.upsert(skill)
     # 迁移前的旧链接（指向已不存在的旧布局路径）+ active 记录
     stale_target = roots.github_cache / "example-rep"
-    link = roots.openclaw / skill.id
+    link = roots.hermes / skill.id
     link.symlink_to(stale_target, target_is_directory=True)
     store.upsert_deployment(
         DeploymentRecord(
             skill_id=skill.id,
-            target="openclaw",
+            target="hermes",
             source_revision=revision,
             source_path=str(stale_target),
             current_link_target=str(stale_target),
@@ -397,7 +395,7 @@ def test_republish_active_github_skills_rebuilds_link_via_staging(
         roots.github_cache / "staging" / skill.id / revision[:12]
     ).resolve()
     assert (resolved / "SKILL.md").is_file()
-    record = store.get_deployment(skill.id, "openclaw")
+    record = store.get_deployment(skill.id, "hermes")
     assert record is not None and record.status == "active"
     assert record.current_link_target == str(resolved)
 

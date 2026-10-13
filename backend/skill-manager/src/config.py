@@ -16,7 +16,6 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _MOUNT_ROOT_FIELDS = (
     "skills_source_root",
     "github_skill_cache_root",
-    "openclaw_skills_root",
     "hermes_skills_root",
     "state_dir",
 )
@@ -27,7 +26,6 @@ class Settings(BaseSettings):
 
     skills_source_root: Path
     github_skill_cache_root: Path
-    openclaw_skills_root: Path
     hermes_skills_root: Path
     state_dir: Path = Field(
         validation_alias=AliasChoices("SKILL_MANAGER_STATE_DIR", "state_dir")
@@ -71,7 +69,7 @@ class Settings(BaseSettings):
                     f"{resolved}"
                 )
             self.targets_mount_root = resolved
-            for target_name in ("openclaw_skills_root", "hermes_skills_root"):
+            for target_name in ("hermes_skills_root",):
                 target = getattr(self, target_name)
                 if not target.is_relative_to(self.targets_mount_root):
                     raise ValueError(

@@ -11,6 +11,7 @@ fixture 环境：tmp_path 构造全部受控根目录 + 源库 local skill 目�
 from __future__ import annotations
 
 import logging
+import json
 import os
 import subprocess
 import time
@@ -114,7 +115,7 @@ def test_export_legacy_unknown_hash_does_not_report_stale(client):
 def test_export_does_not_bypass_publish_password_or_touch_targets(client, roots):
     assert client.post('/api/skills/publish', json={'password': 'wrong', 'items': [{'skill_id': 'alpha', 'targets': ['hermes']}]}).status_code == 401
     assert client.post('/api/skills/alpha/export', json={'target': 'windows-codex'}).status_code == 200
-    assert not list(roots.hermes.iterdir()) and not list(roots.openclaw.iterdir())
+    assert not list(roots.hermes.iterdir()) and not list(roots.hermes.iterdir())
     mixed = [{'skill_id': 'alpha', 'targets': ['hermes', 'windows-codex']}]
     assert client.post('/api/skills/publish', json={'password': PASSWORD, 'items': mixed}).status_code == 400
     assert not list(roots.hermes.iterdir())
@@ -170,7 +171,7 @@ def roots(tmp_path):
     github_cache = tmp_path / "cache"
     state = tmp_path / "state"
     targets = tmp_path / "targets"
-    openclaw = targets / "openclaw"
+    openclaw = targets / "retired-test-root"
     hermes = targets / "hermes"
     for directory in (source_root, github_cache, state, openclaw, hermes):
         directory.mkdir(parents=True)
@@ -179,7 +180,6 @@ def roots(tmp_path):
         github_cache=github_cache,
         state=state,
         targets=targets,
-        openclaw=openclaw,
         hermes=hermes,
     )
 
@@ -188,7 +188,6 @@ def roots(tmp_path):
 def env(roots, monkeypatch):
     monkeypatch.setenv("SKILLS_SOURCE_ROOT", str(roots.source_root))
     monkeypatch.setenv("GITHUB_SKILL_CACHE_ROOT", str(roots.github_cache))
-    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(roots.openclaw))
     monkeypatch.setenv("HERMES_SKILLS_ROOT", str(roots.hermes))
     monkeypatch.setenv("SKILL_MANAGER_STATE_DIR", str(roots.state))
     monkeypatch.setenv("SKILL_MANAGER_TARGETS_MOUNT_ROOT", str(roots.targets))
@@ -276,13 +275,13 @@ def _register_via_task(client: TestClient) -> str:
 def publish_request():
     return {
         "password": PASSWORD,
-        "items": [{"skill_id": "alpha", "targets": ["openclaw"]}],
+        "items": [{"skill_id": "alpha", "targets": ["hermes"]}],
     }
 
 
 @pytest.fixture()
 def plan_request():
-    return {"items": [{"skill_id": "alpha", "targets": ["openclaw"]}]}
+    return {"items": [{"skill_id": "alpha", "targets": ["hermes"]}]}
 
 
 # ---------- implement.md 给定用例 ----------
@@ -318,7 +317,7 @@ def test_plan_does_not_mutate_links(client, plan_request, roots):
 
     assert response.status_code == 200
     assert response.json()["items"][0]["action"] == "add"
-    assert not any(roots.openclaw.iterdir())
+    assert not any(roots.hermes.iterdir())
 
 
 # ---------- 公开端点与错误契约 ----------
@@ -522,27 +521,27 @@ def test_scan_unreachable_fails_fast_with_dedicated_code(client):
 
 
 def test_wrong_password_leaves_filesystem_unchanged(client, publish_request, roots):
-    before = sorted(str(p) for p in roots.openclaw.iterdir())
+    before = sorted(str(p) for p in roots.hermes.iterdir())
 
     response = client.post(
         "/api/skills/publish", json={**publish_request, "password": "nope"}
     )
 
     assert response.status_code == 401
-    after = sorted(str(p) for p in roots.openclaw.iterdir())
+    after = sorted(str(p) for p in roots.hermes.iterdir())
     assert before == after
 
 
 def test_unknown_skill_returns_404(client):
     plan = client.post(
         "/api/skills/publish/plan",
-        json={"items": [{"skill_id": "ghost", "targets": ["openclaw"]}]},
+        json={"items": [{"skill_id": "ghost", "targets": ["hermes"]}]},
     )
     assert plan.status_code == 404
     assert plan.json()["code"] == "skill_not_found"
 
     unpublish = client.request(
-        "DELETE", "/api/skills/ghost/targets/openclaw", json={"password": PASSWORD}
+        "DELETE", "/api/skills/ghost/targets/hermes", json={"password": PASSWORD}
     )
     assert unpublish.status_code == 404
 
@@ -550,7 +549,7 @@ def test_unknown_skill_returns_404(client):
 def test_invalid_skill_id_and_target_return_400(client):
     bad_id = client.post(
         "/api/skills/publish/plan",
-        json={"items": [{"skill_id": "BAD_ID", "targets": ["openclaw"]}]},
+        json={"items": [{"skill_id": "BAD_ID", "targets": ["hermes"]}]},
     )
     assert bad_id.status_code == 400
 
@@ -572,31 +571,22 @@ def test_publish_creates_symlink_in_target_root(client, publish_request, roots):
     item = response.json()["items"][0]
     assert item["status"] == "success"
     assert item["action"] == "add"
-    link = roots.openclaw / "alpha"
+    link = roots.hermes / "alpha"
     assert link.is_symlink()
     assert link.resolve() == (roots.source_root / "alpha").resolve()
 
 
 @pytest.mark.requires_symlink
-def test_batch_keeps_successful_item_when_another_target_is_blocked(
-    client, publish_request, roots
-):
-    (roots.hermes / "alpha").mkdir()
-
-    response = client.post(
-        "/api/skills/publish",
-        json={
-            "password": PASSWORD,
-            "items": [{"skill_id": "alpha", "targets": ["openclaw", "hermes"]}],
-        },
-    )
-
+def test_batch_keeps_successful_skill_when_another_is_blocked(client, publish_request, roots):
+    beta = roots.source_root / 'beta'
+    beta.mkdir(); (beta / 'SKILL.md').write_text('---\nname: beta\n---\n')
+    client.get('/api/skills')
+    (roots.hermes / 'beta').mkdir()
+    response = client.post('/api/skills/publish', json={'password': PASSWORD,
+        'items': [{'skill_id': 'alpha', 'targets': ['hermes']}, {'skill_id': 'beta', 'targets': ['hermes']}]})
     assert response.status_code == 200
-    statuses = {
-        item["target"]: item["status"] for item in response.json()["items"]
-    }
-    assert statuses == {"openclaw": "success", "hermes": "blocked"}
-    assert (roots.openclaw / "alpha").is_symlink()
+    assert [i['status'] for i in response.json()['items']] == ['success', 'blocked']
+    assert (roots.hermes / 'alpha').is_symlink()
 
 
 @pytest.mark.requires_symlink
@@ -606,17 +596,17 @@ def test_unpublish_requires_password_then_removes_only_the_link(
     client.post("/api/skills/publish", json=publish_request)
 
     denied = client.request(
-        "DELETE", "/api/skills/alpha/targets/openclaw", json={"password": "wrong"}
+        "DELETE", "/api/skills/alpha/targets/hermes", json={"password": "wrong"}
     )
     assert denied.status_code == 401
-    assert (roots.openclaw / "alpha").is_symlink()
+    assert (roots.hermes / "alpha").is_symlink()
 
     ok = client.request(
-        "DELETE", "/api/skills/alpha/targets/openclaw", json={"password": PASSWORD}
+        "DELETE", "/api/skills/alpha/targets/hermes", json={"password": PASSWORD}
     )
     assert ok.status_code == 200
     assert ok.json()["status"] == "removed"
-    assert not (roots.openclaw / "alpha").exists()
+    assert not (roots.hermes / "alpha").exists()
 
 
 # ---------- GitHub 登记与更新检查 ----------
@@ -789,7 +779,7 @@ def test_check_updates_reports_versions_without_publishing(client, roots):
     assert info["cached_revision"] == info["remote_revision"]
     assert info["has_update"] is False
     # 检查动作绝不发布：目标根保持为空
-    assert not any(roots.openclaw.iterdir())
+    assert not any(roots.hermes.iterdir())
     assert not any(roots.hermes.iterdir())
 
 
@@ -824,7 +814,7 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
     # 计划展示的待发布版本 = 受记录的远端 revision
     plan = client.post(
         "/api/skills/publish/plan",
-        json={"items": [{"skill_id": skill_id, "targets": ["openclaw"]}]},
+        json={"items": [{"skill_id": skill_id, "targets": ["hermes"]}]},
     ).json()
     assert plan["items"][0]["action"] == "add"
     assert plan["items"][0]["planned_revision"] == v2
@@ -833,7 +823,7 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
         "/api/skills/publish",
         json={
             "password": PASSWORD,
-            "items": [{"skill_id": skill_id, "targets": ["openclaw"]}],
+            "items": [{"skill_id": skill_id, "targets": ["hermes"]}],
         },
     )
     assert published.status_code == 200
@@ -843,7 +833,7 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
     repo_dir = roots.github_cache / "repos" / "example__two-skills"
     skill_dir = (repo_dir / "skills/alpha").resolve()
     assert "alpha-v2" in (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    link = roots.openclaw / skill_id
+    link = roots.hermes / skill_id
     assert link.is_symlink()
     assert link.resolve() == (
         roots.github_cache / "staging" / skill_id / v2[:12]
@@ -852,7 +842,7 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
     card = next(
         item for item in client.get("/api/skills").json()["items"] if item["id"] == skill_id
     )
-    assert card["deployments"]["openclaw"]["revision"] == v2
+    assert card["deployments"]["hermes"]["revision"] == v2
 
 
 @pytest.mark.requires_symlink
@@ -884,7 +874,7 @@ def test_registered_github_skill_can_be_planned_and_published(
 
     plan = client.post(
         "/api/skills/publish/plan",
-        json={"items": [{"skill_id": skill_id, "targets": ["openclaw"]}]},
+        json={"items": [{"skill_id": skill_id, "targets": ["hermes"]}]},
     )
     assert plan.status_code == 200
     assert plan.json()["items"][0]["action"] == "add"
@@ -893,12 +883,12 @@ def test_registered_github_skill_can_be_planned_and_published(
         "/api/skills/publish",
         json={
             "password": PASSWORD,
-            "items": [{"skill_id": skill_id, "targets": ["openclaw"]}],
+            "items": [{"skill_id": skill_id, "targets": ["hermes"]}],
         },
     )
     assert published.status_code == 200
     assert published.json()["items"][0]["status"] == "success"
-    link = roots.openclaw / skill_id
+    link = roots.hermes / skill_id
     assert link.is_symlink()
     # 发布源是 staging 快照：无检查记录时以缓存 HEAD（登记版本）组装
     assert link.resolve() == (
@@ -1155,7 +1145,7 @@ def test_delete_github_skill_with_active_deployment_returns_409(client, roots):
     """任一 target 存在 active 部署 → 409，登记真源与派生数据均无变化。"""
     _seed_deletable_github_skill(roots)
     store = _seed_derived_state("two-skills")
-    _insert_active_deployment(roots, "two-skills", "openclaw")
+    _insert_active_deployment(roots, "two-skills", "hermes")
 
     response = client.request(
         "DELETE", "/api/skills/two-skills", json={"password": PASSWORD}
@@ -1291,3 +1281,118 @@ def test_update_skill_tags_rejects_invalid_tag_length(client):
     # main.py 把请求校验失败统一为 400 invalid_request
     assert response.status_code == 400
     assert response.json()["code"] == "invalid_request"
+
+
+def _await_install(client, task_id):
+    deadline = time.monotonic() + 15
+    while time.monotonic() < deadline:
+        response = client.get('/api/skills/install/tasks/' + task_id)
+        assert response.status_code == 200
+        task = response.json()
+        if task['state'] == 'done':
+            return task
+        time.sleep(.02)
+    raise AssertionError('installation did not finish')
+
+
+def test_hermes_install_preview_password_and_idempotence(client, roots):
+    preview = client.post('/api/skills/install/preview', json={'skill_ids': ['alpha']})
+    assert preview.status_code == 200
+    plan = preview.json()
+    assert plan['items'][0]['action'] == 'add'
+    assert not (roots.hermes / 'alpha').exists()
+    body = {'plan_id': plan['plan_id'], 'request_id': 'one', 'password': 'wrong'}
+    assert client.post('/api/skills/install', json=body).status_code == 401
+    body['password'] = PASSWORD
+    created = client.post('/api/skills/install', json=body)
+    assert created.status_code == 202
+    assert client.post('/api/skills/install', json=body).json() == created.json()
+    body['request_id'] = 'different'
+    assert client.post('/api/skills/install', json=body).status_code == 409
+    done = _await_install(client, created.json()['task_id'])
+    assert done['results'][0]['status'] == 'success'
+    assert (roots.hermes / 'alpha').is_symlink()
+    assert PASSWORD not in json.dumps(done)
+    assert client.post('/api/skills/install/preview', json={'skill_ids': ['alpha']}).json()['items'][0]['action'] == 'unchanged'
+
+
+def test_install_rejects_source_changes_and_expired_plan(client, roots):
+    plan = client.post('/api/skills/install/preview', json={'skill_ids': ['alpha']}).json()
+    (roots.source_root / 'alpha/SKILL.md').write_text('changed')
+    body = {'plan_id': plan['plan_id'], 'request_id': 'one', 'password': PASSWORD}
+    assert client.post('/api/skills/install', json=body).json()['code'] == 'stale_plan'
+    from src.main import app
+    app.state.install_manager.plans[plan['plan_id']].expires = 0
+    assert client.post('/api/skills/install', json=body).status_code == 410
+    assert not (roots.hermes / 'alpha').exists()
+
+
+def test_new_github_candidates_register_and_install_once(client, roots):
+    created = client.post('/api/skills/github/scan', json={'repository': CANONICAL_URL})
+    scan = _await_task(client, created.json()['task_id'])
+    request = {'scan_task_id': scan['task_id'], 'candidates': [
+        {'path': 'skills/alpha', 'name': 'Alpha'}, {'path': 'skills/beta', 'name': 'Beta'}]}
+    plan = client.post('/api/skills/install/preview', json=request)
+    assert plan.status_code == 200, plan.text
+    assert len(client.get('/api/skills').json()['items']) == 1  # preview never registers
+    body = {'plan_id': plan.json()['plan_id'], 'request_id': 'github', 'password': PASSWORD}
+    assert client.post('/api/skills/install', json={**body, 'password': 'wrong'}).status_code == 401
+    assert len(client.get('/api/skills').json()['items']) == 1
+    task = client.post('/api/skills/install', json=body).json()
+    done = _await_install(client, task['task_id'])
+    assert all(r['status'] == 'success' and r['registered'] for r in done['results']), done
+    assert len(client.get('/api/skills').json()['items']) == 3
+    again = client.post('/api/skills/install/preview', json=request)
+    assert again.status_code == 200
+    assert all(i['action'] == 'unchanged' for i in again.json()['items'])
+    assert [i['skill_id'] for i in again.json()['items']] == [i['skill_id'] for i in plan.json()['items']]
+
+
+def test_retired_target_rejected_and_not_exported(client):
+    assert client.post('/api/skills/publish', json={'password': PASSWORD,
+        'items': [{'skill_id': 'alpha', 'targets': ['openclaw']}]}).status_code == 400
+    assert client.post('/api/export-targets', json={'id': 'openclaw', 'name': 'retired'}).status_code == 400
+
+
+def test_install_partial_success_keeps_registered_failure(client, roots, monkeypatch):
+    from src.main import app
+    from src.services.publisher import PublisherError
+    beta = roots.source_root / 'beta'
+    beta.mkdir(); (beta / 'SKILL.md').write_text('---\nname: beta\n---')
+    client.get('/api/skills')
+    plan = client.post('/api/skills/install/preview', json={'skill_ids': ['alpha', 'beta']}).json()
+    original = app.state.publisher.publish
+    def fail_beta(skill_id, *args):
+        if skill_id == 'beta': raise PublisherError('fixture failure')
+        return original(skill_id, *args)
+    monkeypatch.setattr(app.state.publisher, 'publish', fail_beta)
+    task = client.post('/api/skills/install', json={'plan_id': plan['plan_id'], 'request_id': 'partial', 'password': PASSWORD}).json()
+    result = _await_install(client, task['task_id'])
+    assert [r['status'] for r in result['results']] == ['success', 'error']
+    assert result['results'][1]['registered'] is True
+    assert (roots.hermes / 'alpha').is_symlink()
+    assert not (roots.hermes / 'beta').exists()
+
+
+def test_install_updates_multiple_members_at_confirmed_revision(client, roots, upstream_repo, tmp_path):
+    created = client.post('/api/skills/github/scan', json={'repository': CANONICAL_URL}).json()
+    scan = _await_task(client, created['task_id'])
+    preview = client.post('/api/skills/install/preview', json={'scan_task_id': scan['task_id'], 'candidates': [
+        {'path': 'skills/alpha', 'name': 'Alpha'}, {'path': 'skills/beta', 'name': 'Beta'}]}).json()
+    ids = [i['skill_id'] for i in preview['items']]
+    first = client.post('/api/skills/install', json={'plan_id': preview['plan_id'], 'request_id': 'first', 'password': PASSWORD}).json()
+    assert all(r['status'] == 'success' for r in _await_install(client, first['task_id'])['results'])
+    work = tmp_path / 'later'; run_git('clone', str(upstream_repo.bare), str(work))
+    run_git('config', 'user.name', 'Fixture', cwd=work); run_git('config', 'user.email', 'fixture@example.com', cwd=work)
+    for name in ('alpha','beta'):
+        (work/'skills'/name/'SKILL.md').write_text(f'---\nname: {name}-v2\n---')
+    run_git('commit', '-am', 'v2', cwd=work); run_git('push', cwd=work)
+    revision = run_git('rev-parse', 'HEAD', cwd=work).strip()
+    client.post('/api/skills/check-updates', json={'skill_ids': ids})
+    plan = client.post('/api/skills/install/preview', json={'skill_ids': ids}).json()
+    assert all(i['planned_revision'] == revision for i in plan['items'])
+    task = client.post('/api/skills/install', json={'plan_id': plan['plan_id'], 'request_id': 'update', 'password': PASSWORD}).json()
+    done = _await_install(client, task['task_id'])
+    assert all(r['status'] == 'success' for r in done['results']), done
+    for skill_id in ids:
+        assert '-v2' in (roots.hermes/skill_id/'SKILL.md').read_text()

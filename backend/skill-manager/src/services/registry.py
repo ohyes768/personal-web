@@ -19,6 +19,7 @@ import os
 import re
 from pathlib import Path, PurePosixPath
 
+from src.services.operation_lock import serialized
 from src.db import SkillStateStore
 from src.models import RegistrySkill, SKILL_ID_PATTERN, SkillSource
 
@@ -33,7 +34,7 @@ def _normalized_shared_paths(paths: list[str]) -> list[str]:
     """
     normalized: set[str] = set()
     for raw in paths:
-        posix = Path(raw).as_posix()
+        posix = raw.replace("\\", "/")
         if posix.startswith("/"):
             raise RegistryValidationError(
                 f"github skill shared path {raw!r} must be a relative "
@@ -100,17 +101,20 @@ class RegistryService:
 
     # ---------- 写入 ----------
 
+    @serialized
     def upsert(self, skill: RegistrySkill) -> None:
         """校验并写入单个条目（同 id 替换）。"""
         normalized = self._validated(skill)
         self._reject_duplicate_repo_path(normalized)
         self.store.upsert_registry_skill(normalized)
 
+    @serialized
     def remove(self, skill_id: str) -> None:
         """移除单个条目；id 不存在时报错。"""
         if not self.store.delete_registry_skill(skill_id):
             raise RegistryValidationError(f"unknown skill id: {skill_id}")
 
+    @serialized
     def update_skill_tags(self, skill_id: str, tags: list[str]) -> RegistrySkill:
         """全量替换单个条目的 tags（排序去重后落库）；未知 id 报错。
 
@@ -160,6 +164,7 @@ class RegistryService:
         candidates.sort(key=lambda skill: skill.path)
         return candidates
 
+    @serialized
     def sync_local(self) -> int:
         """把源库目录与登记表对账：仅登记新出现的自研 skill，返回新增数。
 

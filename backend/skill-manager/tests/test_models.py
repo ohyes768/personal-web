@@ -9,7 +9,8 @@ from src.models import RegistrySkill, SkillSource, TargetKey
 def test_enum_values_match_design():
     assert SkillSource.LOCAL == "local"
     assert SkillSource.GITHUB == "github"
-    assert TargetKey.OPENCLAW == "openclaw"
+    with pytest.raises(ValueError):
+        TargetKey("openclaw")
     assert TargetKey.HERMES == "hermes"
 
 

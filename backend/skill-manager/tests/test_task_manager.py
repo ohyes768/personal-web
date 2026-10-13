@@ -53,7 +53,7 @@ def roots(tmp_path):
     github_cache = tmp_path / "cache"
     state = tmp_path / "state"
     targets = tmp_path / "targets"
-    openclaw = targets / "openclaw"
+    openclaw = targets / "retired-test-root"
     hermes = targets / "hermes"
     for directory in (source_root, github_cache, state, openclaw, hermes):
         directory.mkdir(parents=True)
@@ -62,7 +62,6 @@ def roots(tmp_path):
         github_cache=github_cache,
         state=state,
         targets=targets,
-        openclaw=openclaw,
         hermes=hermes,
     )
 
@@ -72,7 +71,6 @@ def settings(roots):
     return Settings(
         skills_source_root=roots.source_root,
         github_skill_cache_root=roots.github_cache,
-        openclaw_skills_root=roots.openclaw,
         hermes_skills_root=roots.hermes,
         state_dir=roots.state,
         admin_password="test-password",

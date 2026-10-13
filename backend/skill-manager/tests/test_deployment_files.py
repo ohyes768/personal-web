@@ -20,7 +20,6 @@ DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-nas.sh"
 BACKEND_ALLOWED_MOUNTS = {
     "${SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH}:rw",
     "${GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH}:rw",
-    "${OPENCLAW_SKILLS_HOST_PATH}:${OPENCLAW_SKILLS_HOST_PATH}:rw",
     "${HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH}:rw",
     "skill-manager-state:/app/state",
     "./deploy/fastgithub-ca.pem:/etc/ssl/fastgithub-ca.pem:ro",
@@ -107,7 +106,7 @@ def test_skill_manager_exposes_required_mounts(compose_text: str):
     # 验证必要的挂载路径变量（兼容 compose 中的 `${VAR:?…}` 防御性写法）
     normalized = re.sub(r"\$\{([A-Z_]+)(?::[^}]*)?\}", r"${\1}", compose_text)
     for variable in ("SKILLS_SOURCE_HOST_PATH", "GITHUB_SKILL_CACHE_HOST_PATH",
-                     "OPENCLAW_SKILLS_HOST_PATH", "HERMES_SKILLS_HOST_PATH"):
+                     "HERMES_SKILLS_HOST_PATH"):
         assert "${" + variable + "}:" in normalized
 
 

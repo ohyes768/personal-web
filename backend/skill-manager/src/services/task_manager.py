@@ -27,9 +27,11 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Callable, Literal
 
+from src.services.operation_lock import serialized
 from src.models import (
     RegisterBatchResultItem,
     RegistrySkill,
+    SkillSource,
     ScanOutcome,
 )
 from src.services.git_cache import (
@@ -84,6 +86,7 @@ class TaskSnapshot:
     error_message: str | None
     created_at: str
     updated_at: str
+    revision: str = ""
     candidates: tuple = ()
     top_level: tuple = ()
     referenced_paths: tuple[str, ...] = ()
@@ -107,6 +110,7 @@ class _MutableTask:
     progress_detail: str = ""
     error_code: str | None = None
     error_message: str | None = None
+    revision: str = ""
     candidates: tuple = ()
     top_level: tuple = ()
     referenced_paths: tuple[str, ...] = ()
@@ -150,6 +154,7 @@ def _snapshot_of(task: _MutableTask) -> TaskSnapshot:
         error_message=task.error_message,
         created_at=_iso(task.created_at),
         updated_at=_iso(task.updated_at),
+        revision=task.revision,
         candidates=task.candidates,
         top_level=task.top_level,
         referenced_paths=task.referenced_paths,
@@ -319,6 +324,7 @@ class GithubTaskManager:
         else:
             self._execute_clone(task_id, task)
 
+    @serialized
     def _execute_scan(self, task_id: str, task: _MutableTask) -> None:
         self._set_stage(task_id, "remote_check")
         if not self._git_cache.cached_scan_available(task.repository):
@@ -331,6 +337,10 @@ class GithubTaskManager:
             task = self._tasks.get(task_id)
             if task is None or task.state != "running":
                 return
+            if scanned.candidates:
+                probe = RegistrySkill(id='scan-probe', name='scan', source=SkillSource.GITHUB,
+                    repository=task.repository, path=scanned.candidates[0].path)
+                task.revision = self._git_cache.current_revision(probe)
             task.candidates = tuple(scanned.candidates)
             task.top_level = tuple(scanned.top_level)
             task.referenced_paths = tuple(scanned.referenced_paths)

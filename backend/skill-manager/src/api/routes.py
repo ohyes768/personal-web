@@ -187,7 +187,7 @@ def list_export_targets(store: SkillStateStore = Depends(get_store)) -> ExportTa
 
 @router.post("/export-targets", response_model=ExportTarget, status_code=201)
 def create_export_target(req: CreateExportTarget, store: SkillStateStore = Depends(get_store)) -> ExportTarget:
-    if req.id in LINK_TARGET_IDS:
+    if req.id in LINK_TARGET_IDS or req.id == "openclaw":
         raise HTTPException(400, detail={"code": "reserved_target", "message": "此 ID 已保留给 NAS 发布目标"})
     try:
         return store.create_export_target(req)
@@ -806,7 +806,6 @@ def _planned_revision(
 def _target_root(settings: Settings, target: TargetKey) -> Path:
     _require_target_kind(target, "link")
     roots = {
-        TargetKey.OPENCLAW: settings.openclaw_skills_root,
         TargetKey.HERMES: settings.hermes_skills_root,
     }
     return roots[target]
@@ -1101,7 +1100,7 @@ def _require_target(target: str) -> TargetKey:
             status_code=400,
             detail={
                 "code": "invalid_target",
-                "message": f"未知发布目标：{target!r}；NAS 发布仅支持 OpenClaw / Hermes，外部目标请使用导出",
+                "message": f"未知发布目标：{target!r}；NAS 发布仅支持 Hermes，外部目标请使用导出",
             },
         ) from exc
 
@@ -1120,3 +1119,74 @@ def _require_known_skill(
             "item_id": skill_id,
         },
     )
+
+# Unified Hermes install orchestrates existing registration, staging and link services.
+from threading import Lock
+from fastapi import Request
+from src.services.install import InstallManager
+from src.models import InstallCandidate, InstallPreviewRequest, InstallRequest
+
+_install_init_lock = Lock()
+
+
+def get_install_manager(request: Request) -> InstallManager:
+    with _install_init_lock:
+        if not hasattr(request.app.state, 'install_manager'):
+            request.app.state.install_manager = InstallManager()
+        return request.app.state.install_manager
+
+
+@router.post('/skills/install/preview')
+def install_preview(req: InstallPreviewRequest, settings: Settings = Depends(get_settings),
+                    registry: RegistryService = Depends(get_registry), store: SkillStateStore = Depends(get_store),
+                    cache: GitCacheService = Depends(get_git_cache), publisher: Publisher = Depends(get_publisher),
+                    tasks: GithubTaskManager = Depends(get_task_manager), manager: InstallManager = Depends(get_install_manager)):
+    if bool(req.skill_ids) == bool(req.candidates) or len(set(req.skill_ids)) != len(req.skill_ids):
+        raise HTTPException(400, detail={'code': 'invalid_request', 'message': '请选择已登记项或扫描候选之一'})
+    skills = []
+    if req.skill_ids:
+        for skill_id in req.skill_ids:
+            skills.append(_require_known_skill(registry, skill_id))
+    else:
+        scan = tasks.get(req.scan_task_id or '')
+        if not scan or scan.state != 'done' or scan.kind != 'scan':
+            raise HTTPException(410, detail={'code': 'scan_expired', 'message': '扫描结果已失效，请重新扫描'})
+        canonical = cache.normalize_repository(scan.repository)
+        allowed = {candidate.path for candidate in scan.candidates}
+        seen, reserved = set(), set()
+        for candidate in req.candidates:
+            if candidate.path not in allowed or candidate.path in seen:
+                raise HTTPException(400, detail={'code': 'invalid_path', 'message': '候选未扫描或重复'})
+            seen.add(candidate.path)
+            existing = next((s for s in registry.list_skills() if s.source == SkillSource.GITHUB and cache.normalize_repository(str(s.repository)).lower() == canonical.lower() and s.path == candidate.path), None)
+            if existing:
+                if sorted(existing.shared_paths) != sorted(req.shared_paths):
+                    raise HTTPException(409, detail={'code': 'resource_conflict', 'message': '已登记项共享资源与选择不同，请沿用原配置'})
+                skill = existing
+            else:
+                skill_id = _derive_skill_id(registry, canonical, candidate.path, reserved)
+                reserved.add(skill_id)
+                skill = RegistrySkill(id=skill_id, name=candidate.name, source=SkillSource.GITHUB,
+                    repository=canonical, path=candidate.path, tags=candidate.tags, summary=candidate.summary, shared_paths=req.shared_paths)
+                try:
+                    skill = registry._validated(skill)
+                except ValueError as exc:
+                    raise HTTPException(400, detail={'code': 'invalid_source', 'message': str(exc)}) from exc
+            if not scan.revision or cache.current_revision(skill) != scan.revision:
+                raise HTTPException(409, detail={'code': 'stale_scan', 'message': '扫描后缓存版本已变化，请重新扫描'})
+            skills.append(skill)
+    return manager.preview(skills, settings, registry, cache, publisher,
+        lambda skill: _plan_one(settings, store, cache, publisher, skill, TargetKey.HERMES))
+
+
+@router.post('/skills/install', status_code=202)
+def install_execute(req: InstallRequest, settings: Settings = Depends(get_settings),
+                    registry: RegistryService = Depends(get_registry), cache: GitCacheService = Depends(get_git_cache),
+                    publisher: Publisher = Depends(get_publisher), manager: InstallManager = Depends(get_install_manager)):
+    ensure_admin_password(settings, req.password)
+    return manager.start(req.plan_id, req.request_id, settings, registry, cache, publisher)
+
+
+@router.get('/skills/install/tasks/{task_id}')
+def install_task(task_id: str, manager: InstallManager = Depends(get_install_manager)):
+    return manager.get(task_id)

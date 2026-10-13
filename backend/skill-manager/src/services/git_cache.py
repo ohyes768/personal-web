@@ -33,6 +33,8 @@ import subprocess
 import threading
 import time
 import uuid
+from src.services.operation_lock import serialized
+
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -357,6 +359,7 @@ class GitCacheService:
             self.repo_cache_dir(canonical) / skill.path / _SKILL_MD
         ).is_file()
 
+    @serialized
     def use_cached_skill(self, skill: RegistrySkill) -> Path:
         """离线登记：校验本地版本并记录它，供后续发布使用。"""
         if not self.cached_skill_available(skill):
@@ -394,6 +397,7 @@ class GitCacheService:
                 f"repository {canonical_url} is unreachable: {exc}"
             ) from exc
 
+    @serialized
     def scan(
         self,
         repository_url: str,
@@ -453,6 +457,7 @@ class GitCacheService:
 
     # ---------- 更新检查（只读） ----------
 
+    @serialized
     def check_update(self, skill: RegistrySkill) -> UpdateInfo:
         """仅 ls-remote 获取远端 HEAD 与 tags，写 github_check，不动缓存。"""
         canonical = self._require_github_skill(skill)
@@ -478,6 +483,7 @@ class GitCacheService:
 
     # ---------- 缓存 checkout ----------
 
+    @serialized
     def ensure_cached(
         self,
         skill: RegistrySkill,

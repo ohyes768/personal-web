@@ -30,6 +30,8 @@ import re
 import shutil
 import stat
 import uuid
+from src.services.operation_lock import serialized
+
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Sequence
@@ -147,6 +149,7 @@ class Publisher:
         rev_dir = revision[:_REV_DIR_LENGTH] if revision else "uncached"
         return self.staging_root() / skill_id / rev_dir
 
+    @serialized
     def stage_github_skill(
         self, skill: RegistrySkill, revision: str, repo_dir: Path
     ) -> Path:
@@ -237,6 +240,7 @@ class Publisher:
 
     # ---------- 发布 ----------
 
+    @serialized
     def publish(
         self, skill_id: str, target: TargetKey, source: Path, revision: str = ""
     ) -> PublishResultItem:
@@ -274,6 +278,7 @@ class Publisher:
 
     # ---------- 下架 ----------
 
+    @serialized
     def unpublish(self, skill_id: str, target: TargetKey) -> None:
         """只删除受管 symlink 本身；普通目录、越界链接一律拒绝，绝不 rmtree。"""
         self._require_valid_id(skill_id)
@@ -383,7 +388,6 @@ class Publisher:
         if target_kind(target) != "link":
             raise PublishBlockedError("外部目标用导出，不走发布")
         roots = {
-            TargetKey.OPENCLAW: self.settings.openclaw_skills_root,
             TargetKey.HERMES: self.settings.hermes_skills_root,
         }
         return roots[target]

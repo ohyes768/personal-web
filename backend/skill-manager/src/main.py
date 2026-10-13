@@ -36,6 +36,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = Settings()
     store = SkillStateStore.from_settings(settings)
+    from src.services.install import InstallManager
+    app.state.install_manager = InstallManager()
     app.state.settings = settings
     app.state.store = store
     app.state.registry = RegistryService(store, settings.skills_source_root)

@@ -130,7 +130,7 @@ def roots(tmp_path: Path) -> SimpleNamespace:
     github_cache = tmp_path / "cache"
     state = tmp_path / "state"
     targets = tmp_path / "targets"
-    openclaw = targets / "openclaw"
+    openclaw = targets / "retired-test-root"
     hermes = targets / "hermes"
     for directory in (source_root, github_cache, state, openclaw, hermes):
         directory.mkdir(parents=True)
@@ -139,7 +139,6 @@ def roots(tmp_path: Path) -> SimpleNamespace:
         github_cache=github_cache,
         state=state,
         targets=targets,
-        openclaw=openclaw,
         hermes=hermes,
     )
 
@@ -148,7 +147,6 @@ def roots(tmp_path: Path) -> SimpleNamespace:
 def env(roots: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLS_SOURCE_ROOT", str(roots.source_root))
     monkeypatch.setenv("GITHUB_SKILL_CACHE_ROOT", str(roots.github_cache))
-    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(roots.openclaw))
     monkeypatch.setenv("HERMES_SKILLS_ROOT", str(roots.hermes))
     monkeypatch.setenv("SKILL_MANAGER_STATE_DIR", str(roots.state))
     monkeypatch.setenv("SKILL_MANAGER_TARGETS_MOUNT_ROOT", str(roots.targets))

@@ -1,7 +1,7 @@
 [project]
 name = "skill-manager"
 version = "0.1.0"
-description = "Skill 发布管理台后端（FastAPI，受限 NAS 目录内安全发布自研与 GitHub Skill 到 OpenClaw/Hermes）"
+description = "Skill 发布管理台后端（FastAPI，受限 NAS 目录内安全发布自研与 GitHub Skill 到 Hermes）"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

@@ -14,7 +14,7 @@ from src.db import (
 def _deployment(**overrides) -> DeploymentRecord:
     values = dict(
         skill_id="macro",
-        target="openclaw",
+        target="hermes",
         source_revision="sha-1",
         source_path="/mnt/skills-source/macro",
         current_link_target="/mnt/skills-source/macro",
@@ -28,7 +28,7 @@ def _deployment(**overrides) -> DeploymentRecord:
 def _history(**overrides) -> HistoryEntry:
     values = dict(
         skill_id="macro",
-        target="openclaw",
+        target="hermes",
         action="publish",
         result="success",
         previous_link_target=None,
@@ -61,13 +61,13 @@ def test_upsert_and_get_deployment(tmp_path):
 
     store.upsert_deployment(record)
 
-    assert store.get_deployment("macro", "openclaw") == record
+    assert store.get_deployment("macro", "hermes") == record
 
 
 def test_get_deployment_returns_none_for_unknown_pair(tmp_path):
     store = SkillStateStore(tmp_path / "state" / "skills.sqlite3")
 
-    assert store.get_deployment("nope", "openclaw") is None
+    assert store.get_deployment("nope", "hermes") is None
 
 
 def test_upsert_deployment_replaces_same_primary_key(tmp_path):
@@ -79,18 +79,18 @@ def test_upsert_deployment_replaces_same_primary_key(tmp_path):
 
     store.upsert_deployment(updated)
 
-    assert store.get_deployment("macro", "openclaw") == updated
+    assert store.get_deployment("macro", "hermes") == updated
     assert store.list_deployments() == [updated]
 
 
 def test_list_deployments_covers_all_targets(tmp_path):
     store = SkillStateStore(tmp_path / "state" / "skills.sqlite3")
-    store.upsert_deployment(_deployment(target="openclaw"))
+    store.upsert_deployment(_deployment(target="hermes"))
     store.upsert_deployment(_deployment(target="hermes", source_revision="sha-9"))
 
     records = store.list_deployments()
 
-    assert {record.target for record in records} == {"openclaw", "hermes"}
+    assert {record.target for record in records} == {"hermes", "hermes"}
 
 
 def test_append_history_and_list_with_filter(tmp_path):
@@ -103,7 +103,7 @@ def test_append_history_and_list_with_filter(tmp_path):
     store.append_history(second)
     store.append_history(other)
 
-    assert store.list_history(skill_id="macro", target="openclaw") == [first, second]
+    assert store.list_history(skill_id="macro", target="hermes") == [first, second]
 
 
 def test_delete_github_check(tmp_path):

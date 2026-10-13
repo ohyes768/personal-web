@@ -11,7 +11,7 @@ def _prepare_roots(tmp_path):
     cache = tmp_path / "cache"
     state = tmp_path / "state"
     targets = tmp_path / "targets"
-    for directory in (source, cache, state, targets / "openclaw", targets / "hermes"):
+    for directory in (source, cache, state, targets / "hermes", targets / "hermes"):
         directory.mkdir(parents=True, exist_ok=True)
     return source, cache, state, targets
 
@@ -29,7 +29,7 @@ def test_settings_rejects_target_outside_its_mount(monkeypatch, tmp_path):
     _set_base_env(monkeypatch, tmp_path, source, cache, state, targets)
     outside = tmp_path / "outside"
     outside.mkdir()
-    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(outside))
+    monkeypatch.setenv("HERMES_SKILLS_ROOT", str(outside))
 
     with pytest.raises(ValueError, match="target root"):
         Settings(targets_mount_root=targets)
@@ -38,7 +38,7 @@ def test_settings_rejects_target_outside_its_mount(monkeypatch, tmp_path):
 def test_settings_rejects_missing_root_directory(monkeypatch, tmp_path):
     source, cache, state, targets = _prepare_roots(tmp_path)
     _set_base_env(monkeypatch, tmp_path, source, cache, state, targets)
-    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(targets / "openclaw"))
+    monkeypatch.setenv("HERMES_SKILLS_ROOT", str(targets / "hermes"))
     monkeypatch.setenv("GITHUB_SKILL_CACHE_ROOT", str(tmp_path / "not-created"))
 
     with pytest.raises(ValueError, match="must exist"):
@@ -48,14 +48,13 @@ def test_settings_rejects_missing_root_directory(monkeypatch, tmp_path):
 def test_settings_accepts_valid_configuration(monkeypatch, tmp_path):
     source, cache, state, targets = _prepare_roots(tmp_path)
     _set_base_env(monkeypatch, tmp_path, source, cache, state, targets)
-    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(targets / "openclaw"))
+    monkeypatch.setenv("HERMES_SKILLS_ROOT", str(targets / "hermes"))
 
     settings = Settings(targets_mount_root=targets)
 
     assert settings.skills_source_root == source.resolve()
     assert settings.github_skill_cache_root == cache.resolve()
     assert settings.state_dir == state.resolve()
-    assert settings.openclaw_skills_root == (targets / "openclaw").resolve()
     assert settings.hermes_skills_root == (targets / "hermes").resolve()
     assert settings.admin_password.get_secret_value() == "test-password"
     assert settings.service_port == 8097
@@ -64,7 +63,7 @@ def test_settings_accepts_valid_configuration(monkeypatch, tmp_path):
 def test_settings_resolves_relative_roots(monkeypatch, tmp_path):
     source, cache, state, targets = _prepare_roots(tmp_path)
     _set_base_env(monkeypatch, tmp_path, source, cache, state, targets)
-    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(targets / "openclaw"))
+    monkeypatch.setenv("HERMES_SKILLS_ROOT", str(targets / "hermes"))
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("SKILLS_SOURCE_ROOT", "source")
 
@@ -85,11 +84,10 @@ def test_settings_accepts_absent_targets_mount_root(monkeypatch, tmp_path):
     hermes = tmp_path / "hermes-standalone" / "skills"
     openclaw.mkdir(parents=True)
     hermes.mkdir(parents=True)
-    monkeypatch.setenv("OPENCLAW_SKILLS_ROOT", str(openclaw))
+    monkeypatch.setenv("HERMES_SKILLS_ROOT", str(openclaw))
     monkeypatch.setenv("HERMES_SKILLS_ROOT", str(hermes))
 
     settings = Settings()
 
     assert settings.targets_mount_root is None
-    assert settings.openclaw_skills_root == openclaw.resolve()
     assert settings.hermes_skills_root == hermes.resolve()

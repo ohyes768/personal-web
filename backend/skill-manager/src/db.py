@@ -162,6 +162,30 @@ class SkillStateStore:
                      ("windows-claude", "Windows Claude Code", "~/.claude/skills")],
                 )
                 conn.execute("INSERT INTO state_migration VALUES ('export_targets_v1')")
+        self.retire_openclaw()
+
+    def retire_openclaw(self) -> None:
+        """Archive retired target rows before any typed deployment reads."""
+        with closing(self._connect()) as conn:
+            if conn.execute("SELECT 1 FROM state_migration WHERE id='hermes_only_v1'").fetchone():
+                return
+            has_rows = conn.execute("SELECT 1 FROM deployment WHERE target='openclaw'").fetchone() or conn.execute("SELECT 1 FROM deployment_history WHERE target='openclaw'").fetchone()
+            if has_rows:
+                backup = self.db_path.with_name(self.db_path.name + '.before-hermes-only')
+                if backup.exists():
+                    raise RuntimeError('Migration backup already exists; inspect before retrying')
+                with sqlite3.connect(backup) as destination:
+                    conn.backup(destination)
+            with conn:
+                conn.execute('BEGIN IMMEDIATE')
+                conn.execute("CREATE TABLE IF NOT EXISTS retired_deployment AS SELECT * FROM deployment WHERE 0")
+                conn.execute("CREATE TABLE IF NOT EXISTS retired_deployment_history AS SELECT * FROM deployment_history WHERE 0")
+                conn.execute("INSERT INTO retired_deployment SELECT * FROM deployment WHERE target='openclaw'")
+                conn.execute("INSERT INTO retired_deployment_history SELECT * FROM deployment_history WHERE target='openclaw'")
+                conn.execute("DELETE FROM deployment WHERE target='openclaw'")
+                conn.execute("DELETE FROM deployment_history WHERE target='openclaw'")
+                conn.execute("DELETE FROM export_target WHERE id='openclaw'")
+                conn.execute("INSERT INTO state_migration VALUES ('hermes_only_v1')")
 
     # Configuration writes and export recording use the same SQLite write lock:
     # a deleted or disabled target cannot receive a late export deployment.

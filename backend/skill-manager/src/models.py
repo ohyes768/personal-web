@@ -21,7 +21,6 @@ class SkillSource(StrEnum):
 
 
 class TargetKey(StrEnum):
-    OPENCLAW = "openclaw"
     HERMES = "hermes"
     WINDOWS_CODEX = "windows-codex"
     WINDOWS_CLAUDE = "windows-claude"
@@ -29,7 +28,6 @@ class TargetKey(StrEnum):
 
 TargetKind = Literal["link", "export"]
 TARGET_KINDS: dict[TargetKey, TargetKind] = {
-    TargetKey.OPENCLAW: "link",
     TargetKey.HERMES: "link",
     TargetKey.WINDOWS_CODEX: "export",
     TargetKey.WINDOWS_CLAUDE: "export",
@@ -40,7 +38,7 @@ def target_kind(target: TargetKey) -> TargetKind:
     return TARGET_KINDS[target]
 
 
-LINK_TARGET_IDS = frozenset({"openclaw", "hermes"})
+LINK_TARGET_IDS = frozenset({"hermes"})
 
 
 class ExportTargetFields(BaseModel):
@@ -170,6 +168,7 @@ class ScanOutcome(BaseModel):
     仅作 UI 预选，不作登记校验）。
     """
 
+    revision: str = ""
     candidates: list[ScanCandidate] = []
     top_level: list[ScanTopLevelEntry] = []
     referenced_paths: list[str] = []
@@ -252,6 +251,7 @@ class TaskSnapshot(BaseModel):
     error_message: str | None = None
     created_at: str
     updated_at: str
+    revision: str = ""
     candidates: list[ScanCandidate] = []
     top_level: list[ScanTopLevelEntry] = []
     referenced_paths: list[str] = []
@@ -356,7 +356,7 @@ class SkillListResponse(BaseModel):
 
 
 class QueueItemRequest(BaseModel):
-    """右栏发布队列单项：skill + 选定目标（OpenClaw/Hermes/两者）。"""
+    """右栏发布队列单项：skill + 选定目标（Hermes）。"""
 
     skill_id: SkillId
     targets: Annotated[list[TargetKey], Field(min_length=1)]
@@ -417,3 +417,25 @@ class DeleteSkillResponse(BaseModel):
     """`DELETE /api/skills/{skill_id}`：删除已登记 GitHub Skill。"""
 
     skill_id: str
+
+
+class InstallCandidate(BaseModel):
+    path: str
+    name: str
+    tags: list[str] = []
+    summary: str = ''
+
+
+class InstallPreviewRequest(BaseModel):
+    skill_ids: list[str] = Field(default_factory=list, max_length=100)
+    scan_task_id: str | None = None
+    candidates: list[InstallCandidate] = Field(default_factory=list, max_length=100)
+    shared_paths: list[str] = Field(default_factory=list, max_length=100)
+
+
+class InstallRequest(BaseModel):
+    plan_id: str
+    request_id: str = Field(min_length=1, max_length=100)
+    password: str
+
+
