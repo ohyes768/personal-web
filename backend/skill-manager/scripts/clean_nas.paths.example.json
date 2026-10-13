@@ -1,0 +1,8 @@
+{
+  "state_db": "/home/<user>/skill-manager/state/skill-manager.sqlite3",
+  "openclaw_root": "/home/<user>/.openclaw/workspace/skills",
+  "hermes_root": "/home/<user>/.hermes/skills",
+  "openclaw_config": "/home/<user>/.openclaw/openclaw.json",
+  "github_cache_root": "/home/<user>/skill-manager/github-cache",
+  "pack_discovery_state_dir": "/home/<user>/skill-manager/state"
+}

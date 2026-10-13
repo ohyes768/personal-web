@@ -149,6 +149,62 @@ ls -la "$OPENCLAW_SKILLS_HOST_PATH"           # 应无新增链接
 - **登记数据错误**：登记真源在 `skill-manager-state` volume 内的 SQLite 库（`registry_skill` 表），从该卷的备份恢复；源库 `registry.json` 不承载管理台登记内容，不要用它恢复。
 - **已发布项错误**：从管理台回滚；或按"管理台自身下线"处理后手工修复目标目录中的符号链接（只删链接本身，不删目录）。
 
+## 一次性撤销整包仓库软链（NAS 清理）
+
+仅在通过管理台完成 `revert: feat(skill-manager): GitHub 仓库整包发布与根软链部署` 提交（commit `a20ee65` 等）后，**一次性**清理 NAS 上 pack 体系的遗留状态。该脚本不挂入 CI / cron，用完即弃。
+
+1. 在 NAS 主用户的 `.env` 更新已部署的代码（pull 后 docker compose 重启后端）：
+
+   ```bash
+   cd ~/personal-web
+   git pull origin master
+   docker compose -f docker-compose.nas.yml up -d --build skill-manager-backend skill-manager-frontend
+   ```
+
+2. 复制 paths 模板并按实际 NAS 路径填字段：
+
+   ```bash
+   cp ~/personal-web/backend/skill-manager/scripts/clean_nas.paths.example.json \
+      ~/clean_nas.paths.json
+   $EDITOR ~/clean_nas.paths.json   # 填 6 个绝对路径
+   ```
+
+3. 干跑（**默认就是 dry-run**，必须显式 `--apply` 才落盘）：
+
+   ```bash
+   cd ~/personal-web/backend/skill-manager
+   .venv/bin/python -m scripts.clean_nas --paths ~/clean_nas.paths.json --dry-run
+   ```
+
+   按打印计划与用户核对：将被 DROP 的表行数、删除的台账文件、移除的 `extraDirs` 项、删除的 pack 软链条数、清理的缓存目录数。
+
+4. 应用：
+
+   ```bash
+   .venv/bin/python -m scripts.clean_nas --paths ~/clean_nas.paths.json --apply
+   ```
+
+   每个破坏性操作写回前对原文件做时间戳备份（`skill-manager.sqlite3.bak.<ts>` / `openclaw.json.bak.<ts>` 等）。
+
+5. 现场自检：
+
+   ```bash
+   sqlite3 ~/skill-manager/state/skill-manager.sqlite3 ".tables" \
+     | grep -E "github_pack|legacy_github_pack_member|github_pack_history"
+   # 零结果
+
+   ls -la ~/.hermes/skills | grep -E 'github-'
+   ls -la ~/.openclaw/workspace/skills | grep -E 'github-'
+   # 两者都零结果
+
+   python -c "import json; print(len(json.load(open('/home/<user>/.openclaw/openclaw.json'))['skills']['load']['extraDirs']))"
+   # 与清理前对比应减少 N（N = 删除的 pack 注入项数）
+   ```
+
+6. 在管理台对若干 skill 重新"发布计划 → 发布"，验证旧链路工作（每包独立软链、realpath 指向受控源）。
+
+回滚：脚本不自动回退现场；如 apply 后发现错误，从 `openclaw.json.bak.<ts>` 手工恢复 + 管理台回滚目标链接；sqlite3 备份可直接 `cp` 回 `state/` 目录。
+
 ## 安全要点
 
 - 管理密码仅存在于 NAS `.env` 与后端进程环境；前端镜像与构建参数中不出现。
