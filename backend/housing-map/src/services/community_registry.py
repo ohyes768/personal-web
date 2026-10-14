@@ -43,6 +43,11 @@ class CommunityRegistry:
                     PRIMARY KEY(rid,cid));
                 CREATE TABLE IF NOT EXISTS events (seq INTEGER PRIMARY KEY, cid TEXT,
                     action TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS community_admission (
+                    cid TEXT PRIMARY KEY REFERENCES communities(id), payload TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS review_candidates (id TEXT PRIMARY KEY, payload TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS review_members (
+                    rid TEXT PRIMARY KEY REFERENCES sources(id), candidate_id TEXT NOT NULL REFERENCES review_candidates(id));
             ''')
 
     @contextmanager
@@ -56,6 +61,53 @@ class CommunityRegistry:
     def _event(self, db, cid, action, payload):
         db.execute('INSERT INTO events(cid,action,payload,created_at) VALUES (?,?,?,?)',
                    (cid, action, dump(payload), now()))
+
+    @staticmethod
+    def pending_admission():
+        return dict(state='pending', decision_kind='unreviewed', property_type=None,
+                    revision=1, auto_review_locked=False, reason='尚未确认住宅用途', decided_at=None)
+
+    def admission(self, cid):
+        with self.db() as db:
+            row = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
+            return json.loads(row[0]) if row else self.pending_admission()
+
+    def decide_admission(self, cid, action, *, revision, reason='', property_type=None):
+        with self.db() as db:
+            return self._decide_admission(db, cid, action, revision=revision, reason=reason, property_type=property_type)
+
+    def _decide_admission(self, db, cid, action, *, revision, reason='', property_type=None, automatic=None):
+        from src.services.residential_classifier import RESIDENTIAL_TYPES
+        if action not in {'admit', 'review', 'exclude', 'restore-admission', 'allow-auto-review'}:
+            raise ValueError('未知住宅审核操作')
+        if action == 'exclude' and not reason.strip():
+            raise ValueError('排除必须填写原因')
+        if action == 'admit' and property_type not in RESIDENTIAL_TYPES:
+            raise ValueError('请确认住宅、别墅或排屋类型')
+        if not db.execute('SELECT 1 FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone():
+            raise ValueError('小区不存在或已删除/合并')
+        row = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
+        previous = json.loads(row[0]) if row else self.pending_admission()
+        if revision != previous['revision']:
+            raise ValueError('审核版本已变化，请刷新后重新核对')
+        if automatic and (previous.get('auto_review_locked') or previous['state'] == 'excluded'):
+            raise ValueError('人工审核锁或排除优先')
+        if action == 'restore-admission' and previous['state'] != 'excluded':
+            raise ValueError('只有已排除小区可以恢复待审核')
+        if action == 'allow-auto-review' and previous['state'] != 'pending':
+            raise ValueError('请先移到待审核再允许自动审核')
+        locked = action in {'review', 'exclude', 'restore-admission'}
+        decided_at = now()
+        value = dict(state='admitted' if action == 'admit' else 'excluded' if action == 'exclude' else 'pending',
+                     decision_kind='manual', property_type=property_type if action == 'admit' else None,
+                     revision=revision + 1, auto_review_locked=locked, reason=reason.strip(),
+                     lock_reason=(reason.strip() or '人工决定，禁止自动收录') if locked else None,
+                     locked_at=decided_at if locked else None, decided_at=decided_at)
+        if automatic:
+            value.update(decision_kind='automatic', **automatic)
+        db.execute('INSERT OR REPLACE INTO community_admission VALUES (?,?)', (cid, dump(value)))
+        self._event(db, cid, 'admission_' + action, {'previous': previous, 'admission': value, 'reason': reason.strip()})
+        return value
 
     @staticmethod
     def _community(row):
@@ -85,6 +137,7 @@ class CommunityRegistry:
                 'district': district, 'address': address, 'aliases': aliases or [], 'updated_at': now()}
         with self.db() as db:
             db.execute('INSERT INTO communities(id,payload) VALUES (?,?)', (cid, dump(item)))
+            db.execute('INSERT INTO community_admission VALUES (?,?)', (cid, dump(self.pending_admission())))
             self._event(db, cid, 'create', item)
         return item
 
@@ -108,6 +161,8 @@ class CommunityRegistry:
         if not name.strip():
             raise ValueError('小区名称不能为空')
         with self.db() as db:
+            if self._review_locked(db, rid):
+                raise ValueError('请在统一待审核小区中处理人工审核决定')
             row = db.execute("SELECT * FROM sources WHERE id=? AND status='pending'", (rid,)).fetchone()
             if not row:
                 raise ValueError('来源已关联或删除，请刷新后重试')
@@ -117,20 +172,22 @@ class CommunityRegistry:
                     'district': district, 'address': address, 'updated_at': now(),
                     **{k: source[k] for k in ('longitude', 'latitude', 'coordinate_system') if k in source}}
             db.execute('INSERT INTO communities(id,payload) VALUES (?,?)', (cid, dump(item)))
+            db.execute('INSERT INTO community_admission VALUES (?,?)', (cid, dump(self.pending_admission())))
             source['associated_at'] = now()
             db.execute("UPDATE sources SET cid=?,status='matched',method='manual',evidence=?,payload=? WHERE id=?",
                        (cid, dump(['人工确认建立新小区']), dump(source), rid))
             self._event(db, cid, 'create_from_source', {'record_id': rid, 'community': item})
             return item
 
-    def candidates(self, record):
+    def candidates(self, record, *, communities=None, rejected=None):
         name = normalized(record.get('name'))
         if not name:
             return []
-        with self.db() as db:
-            rejected = {r[0] for r in db.execute('SELECT cid FROM rejected WHERE rid=?', (record.get('id', ''),))}
+        if rejected is None:
+            with self.db() as db:
+                rejected = {r[0] for r in db.execute('SELECT cid FROM rejected WHERE rid=?', (record.get('id', ''),))}
         result = []
-        for c in self.communities():
+        for c in communities if communities is not None else self.communities():
             if c['community_id'] in rejected:
                 continue
             names = [c['community_name'], c.get('community_alias'), *c.get('aliases', [])]
@@ -212,22 +269,50 @@ class CommunityRegistry:
 
     def associate(self, rid, cid, *, method='manual', evidence=None):
         with self.db() as db:
-            c = db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone()
-            r = db.execute('SELECT * FROM sources WHERE id=?', (rid,)).fetchone()
-            if not c or not r or r['status'] == 'ignored':
-                raise ValueError('来源或目标小区不存在，或已删除')
-            if method == 'auto' and (r['status'] != 'pending' or db.execute(
-                    'SELECT 1 FROM rejected WHERE rid=? AND cid=?', (rid, cid)).fetchone()):
-                raise ValueError('人工决策优先')
-            # Current rental snapshots are one-source-per-community; avoid silently hiding another source.
-            if r['source'] == 'fang' and db.execute(
-                    "SELECT 1 FROM sources WHERE source='fang' AND cid=? AND status='matched' AND id<>?", (cid, rid)).fetchone():
-                raise ValueError('该小区已有房天下关联，请先解除原关联')
-            payload = json.loads(r['payload'])
-            payload['associated_at'] = now()
-            db.execute("UPDATE sources SET cid=?,status='matched',method=?,evidence=?,payload=? WHERE id=?",
-                       (cid, method, dump(evidence or ['人工确认']), dump(payload), rid))
-            self._event(db, cid, 'associate', {'record_id': rid, 'method': method, 'previous_id': r['cid']})
+            return self._associate(db, rid, cid, method=method, evidence=evidence)
+
+    @staticmethod
+    def _review_locked(db, rid):
+        row = db.execute('SELECT c.payload FROM review_candidates c JOIN review_members m ON m.candidate_id=c.id WHERE m.rid=?', (rid,)).fetchone()
+        if not row:
+            return False
+        review = json.loads(row[0])
+        return review.get('state') in {'pending', 'excluded'} and (review.get('auto_review_locked') or review.get('state') == 'excluded')
+
+    def _associate(self, db, rid, cid, *, method='manual', evidence=None, review_override=False):
+        c = db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone()
+        r = db.execute('SELECT * FROM sources WHERE id=?', (rid,)).fetchone()
+        if not c or not r or r['status'] == 'ignored':
+            raise ValueError('来源或目标小区不存在，或已删除')
+        if not review_override and self._review_locked(db, rid):
+            raise ValueError('人工审核决定优先，请到待审核小区处理')
+        if method == 'auto' and (r['status'] != 'pending' or db.execute(
+                'SELECT 1 FROM rejected WHERE rid=? AND cid=?', (rid, cid)).fetchone()):
+            raise ValueError('人工决策优先')
+        if method == 'auto':
+            admission = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
+            if admission and (json.loads(admission[0]).get('auto_review_locked') or json.loads(admission[0]).get('state') == 'excluded'):
+                raise ValueError('目标小区人工排除或审核锁优先')
+            record, community = self._source(r), self._community(c)
+            from src.services.community_review import same_community
+            for veto in db.execute('SELECT c.payload AS decision,s.* FROM review_candidates c JOIN review_members m ON m.candidate_id=c.id JOIN sources s ON s.id=m.rid'):
+                decision = json.loads(veto['decision'])
+                if (decision.get('auto_review_locked') or decision.get('state') == 'excluded') and same_community(record, self._source(veto)):
+                    raise ValueError('同一小区身份已有人工审核决定')
+            for veto in db.execute('SELECT s.* FROM sources s JOIN rejected r ON r.rid=s.id WHERE r.cid=?', (cid,)):
+                if same_community(record, self._source(veto)):
+                    raise ValueError('同一小区身份已有人工拒绝关联')
+            if record.get('address') and community.get('address') and normalized(record['address']) != normalized(community['address']):
+                raise ValueError('同名异址需要人工确认')
+        # Current rental snapshots are one-source-per-community; avoid silently hiding another source.
+        if r['source'] == 'fang' and db.execute(
+                "SELECT 1 FROM sources WHERE source='fang' AND cid=? AND status='matched' AND id<>?", (cid, rid)).fetchone():
+            raise ValueError('该小区已有房天下关联，请先解除原关联')
+        payload = json.loads(r['payload'])
+        payload['associated_at'] = now()
+        db.execute("UPDATE sources SET cid=?,status='matched',method=?,evidence=?,payload=? WHERE id=?",
+                   (cid, method, dump(evidence or ['人工确认']), dump(payload), rid))
+        self._event(db, cid, 'associate', {'record_id': rid, 'method': method, 'previous_id': r['cid']})
 
     def unlink(self, rid, cid=None):
         with self.db() as db:
@@ -279,24 +364,27 @@ class CommunityRegistry:
             self._event(db, None, 'restore_source', {'record_id': rid})
 
     def merge(self, cid, target):
+        with self.db() as db:
+            return self._merge(db, cid, target)
+
+    def _merge(self, db, cid, target):
         if cid == target:
             raise ValueError('不能合并到自己')
-        with self.db() as db:
-            rows = [db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (key,)).fetchone() for key in (cid, target)]
-            if not all(rows):
-                raise ValueError('小区不存在或已删除')
-            fang = db.execute("SELECT COUNT(*) FROM sources WHERE source='fang' AND status='matched' AND cid IN (?,?)", (cid, target)).fetchone()[0]
-            if fang > 1:
-                raise ValueError('两个小区都有租金来源，请先解除错误来源再合并')
-            old, keep = [json.loads(r['payload']) for r in rows]
-            keep['aliases'] = list(dict.fromkeys([*keep.get('aliases', []), old['community_name'], *old.get('aliases', [])]))
-            for key in ('address', 'district', 'longitude', 'latitude', 'coordinate_system'):
-                if not keep.get(key) and old.get(key):
-                    keep[key] = old[key]
-            db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(keep), target))
-            db.execute('UPDATE communities SET merged_to=? WHERE id=?', (target, cid))
-            db.execute('UPDATE sources SET cid=? WHERE cid=?', (target, cid))
-            self._event(db, target, 'merge', {'from_id': cid, 'previous': old})
+        rows = [db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (key,)).fetchone() for key in (cid, target)]
+        if not all(rows):
+            raise ValueError('小区不存在或已删除')
+        fang = db.execute("SELECT COUNT(*) FROM sources WHERE source='fang' AND status='matched' AND cid IN (?,?)", (cid, target)).fetchone()[0]
+        if fang > 1:
+            raise ValueError('两个小区都有租金来源，请先解除错误来源再合并')
+        old, keep = [json.loads(r['payload']) for r in rows]
+        keep['aliases'] = list(dict.fromkeys([*keep.get('aliases', []), old['community_name'], *old.get('aliases', [])]))
+        for key in ('address', 'district', 'longitude', 'latitude', 'coordinate_system'):
+            if not keep.get(key) and old.get(key):
+                keep[key] = old[key]
+        db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(keep), target))
+        db.execute('UPDATE communities SET merged_to=? WHERE id=?', (target, cid))
+        db.execute('UPDATE sources SET cid=? WHERE cid=?', (target, cid))
+        self._event(db, target, 'merge', {'from_id': cid, 'previous': old})
 
     def resolve(self, cid):
         with self.db() as db:

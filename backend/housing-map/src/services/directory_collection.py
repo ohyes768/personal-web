@@ -257,6 +257,22 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
         report['errors'].append(dict(source='directory', stage='task',
                                     message=f'{type(exc).__name__}：采集任务失败'))
     finally:
+        if report.get('new') or report.get('existing'):
+            try:
+                from src.services.community_review import ReviewWorkspace
+                ReviewWorkspace(store, store.path.parent).refresh()
+            except Exception:
+                report['errors'].append(dict(source='directory', stage='review', message='资料已保存，审核队列同步未完成，请刷新或重试同步'))
+                if report['phase'] == 'succeeded':
+                    report['phase'] = 'partial_failed'
+            else:
+                try:
+                    from src.services.community_auto_review import AutoReview
+                    report['auto_review'] = AutoReview(store, store.path.parent).after_collection()
+                except Exception:
+                    report['errors'].append(dict(source='directory', stage='auto_review', message='资料和审核队列已保存，自动审核未完成，请重新预演'))
+                    if report['phase'] == 'succeeded':
+                        report['phase'] = 'partial_failed'
         report.update(running=False, source=None, finished_at=now())
         if progress:
             progress(report)

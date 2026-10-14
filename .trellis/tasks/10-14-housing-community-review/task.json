@@ -1,0 +1,45 @@
+{
+  "id": "housing-community-review",
+  "name": "housing-community-review",
+  "title": "Housing Map 住宅小区与待审核小区管理重构",
+  "description": "将管理页重构为住宅小区与待审核小区，明确住宅无疑点自动收录，统一多来源/来拍候选审核、地图取数及数量口径；本轮仅规划。",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": "housing-map",
+  "package": "backend/housing-map",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-14",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-14-housing-residential-admission",
+    "10-14-housing-review-workspace",
+    "10-14-housing-auto-review"
+  ],
+  "parent": null,
+  "relatedFiles": [
+    "apps/housing-map/src/components/community/CommunityManagement.tsx",
+    "backend/housing-map/src/services/community_registry.py",
+    "backend/housing-map/src/services/residential_classifier.py",
+    "backend/housing-map/src/services/auction_association.py",
+    "backend/housing-map/src/services/data_loader.py",
+    "backend/housing-map/src/api/directory_routes.py",
+    "backend/housing-map/src/api/routes.py"
+  ],
+  "notes": "总需求/任务地图/跨子任务验收入口，不是第四个实施任务。三个子任务按1→2→3验收推进；本轮仅规划，全部planning。",
+  "meta": {
+    "role": "coordination",
+    "implementation_order": [
+      "10-14-housing-residential-admission",
+      "10-14-housing-review-workspace",
+      "10-14-housing-auto-review"
+    ]
+  }
+}

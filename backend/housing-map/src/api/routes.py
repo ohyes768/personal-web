@@ -16,7 +16,7 @@ from src.services.community_filters import is_real_community
 from src.services.market_reference import load_market_reference
 from src.services.data_loader import (
     get_data_paths,
-    load_communities,
+    load_display_communities,
     load_community_attrs,
     load_community_ages,
     load_coordinates,
@@ -183,10 +183,10 @@ async def get_communities():
 
     property_types = load_property_types()
     coordinates = load_coordinates()
-    # 展示口径 = 真实小区 + 未被合并 + 坐标在覆盖范围 (滨江∪萧山板块) 内。
+    # 展示口径 = 有效住宅收录 + 真实小区 + 未被合并 + 坐标在覆盖范围内。
     # 围栏外多为地理编码失准或板块外 (tmsf"开发区"口径大于宁围街道), 地图渲染无意义。
     communities_list = [
-        c for c in load_communities()
+        c for c in load_display_communities(drop_ids=MERGE_DROP_IDS)
         if is_real_community(c)
         and c.get("community_id") not in MERGE_DROP_IDS
         and (coord := coordinates.get(c.get("community_id")))
@@ -217,6 +217,9 @@ async def get_communities():
         return {"pois": {}}
 
     if len(communities_list) == 0:
+        from src.services.community_registry import existing_registry
+        if existing_registry(get_data_paths()['communities'].parent):
+            return {'success': True, 'data': [], 'total': 0, 'source': 'real'}
         return {
             "success": True,
             "data": MOCK_COMMUNITIES,
@@ -224,6 +227,8 @@ async def get_communities():
             "source": "mock",
         }
 
+    property_types = {**property_types, **{c['community_id']: {'property_type': c['effective_property_type']}
+                      for c in communities_list if c.get('effective_property_type')}}
     data = [
         _assemble_community(
             c,
@@ -267,7 +272,7 @@ async def get_score(
     ).model_dump()
 
     # 加载数据
-    communities = load_communities()
+    communities = load_display_communities(drop_ids=MERGE_DROP_IDS)
     coordinates = load_coordinates()
     pois_data = load_pois()
     price_snapshots = load_price_snapshots()

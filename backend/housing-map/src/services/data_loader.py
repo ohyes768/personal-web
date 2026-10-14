@@ -248,6 +248,20 @@ def load_communities() -> list[dict]:
     return []
 
 
+def load_display_communities(*, drop_ids=()) -> list[dict]:
+    """Display projection only; load_communities remains the historical/collection identity set."""
+    from src.services.community_registry import existing_registry
+    from src.services.community_directory import prepare_directory
+    from src.services.community_admission import community_views
+    data_dir = get_data_paths()['communities'].parent
+    if not existing_registry(data_dir):
+        return load_communities()
+    registry = prepare_directory(data_dir)
+    identities = {c['community_id']: c for c in load_communities()}
+    return [{**identities[c['community_id']], **c} for c in community_views(registry, data_dir, drop_ids=drop_ids)
+            if c['map_status'] == 'displayed']
+
+
 def load_coordinates() -> dict[str, dict]:
     raw = load_json(get_data_paths()["coordinates"], {})
     from src.services.community_registry import existing_registry

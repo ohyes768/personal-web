@@ -1,5 +1,7 @@
 # Housing-Map 法拍采集合同
 
+> 2026-10-14：未关联法拍小区进入 [统一小区审核](../backend/housing-map/backend/community-review.md)。旧入口跳到管理页来拍筛选；原始轮次记录仍独立保存。
+
 适用：法拍脚本、查询API、手动采集job，未来新增定时任务也须复用collect_auctions。
 
 - 来源是来拍公开辅助数据，source=laipai，auction_platform单独保存。不得标为阿里直接采集。

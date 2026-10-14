@@ -1,6 +1,9 @@
 # Housing-map backend
 
 ## Pre-Development Checklist
+- Read [Automatic residential review](./community-auto-review.md) for read-only snapshots, explicit enablement, automatic decisions and manual vetoes.
+- Read [Unified community review](./community-review.md) for candidate aggregation, member transactions, synchronization and the two management lists.
+- Read [Community admission](./community-admission.md) when changing residential status, human withdrawal, migration or map membership; it supersedes the earlier display scope.
 - Read [Community directory](./community-directory.md) for names, multi-source identity, automatic/manual association, deletion and discovery. It supersedes the original human-only rental-source model in the current deployment.
 - Read [Rental sources](./rental-sources.md) when changing source discovery, confirmation, migration or refresh membership.
 - Read [Rental reference](../../../guides/housing-map-rental-reference.md) when changing statistics, snapshots, availability or dashboard columns.

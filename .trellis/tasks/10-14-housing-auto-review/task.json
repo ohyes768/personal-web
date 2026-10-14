@@ -1,0 +1,39 @@
+{
+  "id": "housing-auto-review",
+  "name": "housing-auto-review",
+  "title": "Housing Map 自动审核与住宅自动收录",
+  "description": "实现可解释的住宅和重复判断，先预演后启用，人工撤销/排除优先；依赖准入和统一候选子任务。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "housing-map",
+  "package": "backend/housing-map",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-14",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": "10-14-housing-community-review",
+  "relatedFiles": [
+    "backend/housing-map/src/services/residential_classifier.py",
+    "backend/housing-map/src/services/directory_collection.py",
+    "backend/housing-map/src/services/community_registry.py",
+    "backend/housing-map/src/services/auction_association.py",
+    "apps/housing-map/src/components/community/CommunityManagement.tsx"
+  ],
+  "notes": "任务1/2前置验收已完成；任务3本地实施和验收通过。未提交、部署或开启生产自动审核。保留in_progress直到提交归档。",
+  "meta": {
+    "planning_dependencies": [
+      "10-14-housing-residential-admission",
+      "10-14-housing-review-workspace"
+    ],
+    "implementation_status": "verified",
+    "verification_file": "verification.md"
+  }
+}

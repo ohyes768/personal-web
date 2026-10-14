@@ -24,7 +24,8 @@ def test_sync_groups_rounds_and_preserves_manual_decisions(tmp_path):
     store.create('测试花园', district='滨江', address='测试路1号', community_id='local-test')
     save(path, [row(), row('2'), row('3', 'b', '不同小区')])
     report = auction_association.sync_records(path)
-    assert report == dict(records=3, identities=2, matched=1, automatic=1, pending=1, ignored=0)
+    assert {k: v for k, v in report.items() if k != 'auto_review'} == dict(records=3, identities=2, matched=1, automatic=1, pending=1, ignored=0)
+    assert report['auto_review']['counts']['admit'] == 0  # Publication now includes a separate read-only review report.
     assert len(store.sources()) == 2
     source = next(r for r in store.sources() if r['source_id'] == 'a')
     assert source['auction_ids'] == ['1', '2']

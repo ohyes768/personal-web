@@ -244,6 +244,12 @@ export default function BinjiangMapPage() {
     return () => controller.abort();
   }, []);
   const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market' | 'auction' | 'management'>('map');
+  const [managementSource, setManagementSource] = useState('');
+  useEffect(() => {
+    const open = () => { setManagementSource('laipai'); setActiveTab('management'); };
+    window.addEventListener('housing-open-community-review', open);
+    return () => window.removeEventListener('housing-open-community-review', open);
+  }, []);
   const [auctionRefreshVersion, setAuctionRefreshVersion] = useState(0);
   const [auctionMapError, setAuctionMapError] = useState<string | null>(null);
   const [selectedCommunity, setSelectedCommunity] = useState<Community | null>(null);
@@ -529,7 +535,7 @@ export default function BinjiangMapPage() {
         onAuctionStopRefresh={stopAuctionRefresh}
         boundaryState={boundaryState}
         onBoundaryRebuild={startBoundaryRebuild}
-        onManageCommunities={() => setActiveTab('management')}
+        onManageCommunities={() => { setManagementSource(''); setActiveTab('management'); }}
       />
 
       {/* Tab 导航 */}
@@ -547,12 +553,12 @@ export default function BinjiangMapPage() {
           <button className={`tab-btn ${activeTab === 'auction' ? 'active' : ''}`} onClick={() => setActiveTab('auction')}>
             法拍数据
           </button>
-          <button className={`tab-btn ${activeTab === 'management' ? 'active' : ''}`} onClick={() => setActiveTab('management')}>小区数据管理</button>
+          <button className={`tab-btn ${activeTab === 'management' ? 'active' : ''}`} onClick={() => { setManagementSource(''); setActiveTab('management'); }}>小区数据管理</button>
         </div>
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-        {activeTab === 'management' ? <CommunityManagement onChanged={() => {
+        {activeTab === 'management' ? <CommunityManagement key={managementSource} initialSource={managementSource} onChanged={() => {
           setSelectedCommunity(null);
           void fetchCommunities().then(setCommunities);
           window.dispatchEvent(new Event('housing-rental-data-changed'));

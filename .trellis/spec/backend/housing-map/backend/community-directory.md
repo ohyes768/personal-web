@@ -1,5 +1,9 @@
 # Community directory contract
 
+Residential visibility now follows [Community admission](./community-admission.md). Source matched/pending/ignored still describes identity association; residential review/exclusion must never call whole-community deletion.
+
+The UI and candidate operations now follow [Unified community review](./community-review.md). The raw source tab and separate auction binding panel are replaced by residential/review lists; legacy identity APIs cannot bypass human review locks.
+
 ## 1. Scope / Trigger
 Applies to community_registry.py, community_directory.py, directory_collection.py, directory_routes.py, CommunityManagement.tsx and community identities consumed by map/price/rental/auction code. User requested one maintained directory in the existing deployment, without fresh-deployment seed or multi-version compatibility design.
 

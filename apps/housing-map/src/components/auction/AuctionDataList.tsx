@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { fetchAuctionData, type AuctionListData } from '../../lib/auction-types';
 import { amount, date, riskLabels, SafeLink, statuses } from '../community/CommunityAuctionHistory';
-import AuctionPendingAssociations from './AuctionPendingAssociations';
+import AuctionPendingAssociations, { openAuctionCommunityReview } from './AuctionPendingAssociations';
 
 export function AuctionListContent({ data, onView }: { data: AuctionListData; onView: (id: string) => void }) {
   if (!data.available) return <div className="auction-empty">尚未采集法拍数据，可点击顶部「法拍刷新」。</div>;
@@ -36,7 +36,7 @@ export function AuctionListContent({ data, onView }: { data: AuctionListData; on
   </>;
 }
 
-export default function AuctionDataList({ refreshVersion, onView, onChanged }: { refreshVersion: number; onView: (id: string) => void; onChanged: () => void }) {
+export default function AuctionDataList({ refreshVersion, onView }: { refreshVersion: number; onView: (id: string) => void; onChanged: () => void }) {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [association, setAssociation] = useState('all');
@@ -66,9 +66,9 @@ export default function AuctionDataList({ refreshVersion, onView, onChanged }: {
       <label>拍卖状态<select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }}><option value="">全部状态</option>{Object.entries(statuses).map(([value, label]) => <option key={value} value={value}>{label}</option>)}<option value="unknown">状态未知</option></select></label>
       <label>小区关联<select value={association} onChange={e => { setAssociation(e.target.value); setPage(1); }}><option value="all">全部记录</option><option value="matched">已关联小区</option><option value="unmatched">未关联小区</option></select></label>
       <button className="btn btn-secondary" onClick={() => { setQ(''); setStatus(''); setAssociation('all'); setPage(1); }}>清空筛选</button>
-      <button className="btn btn-secondary" onClick={() => { setAssociation('unmatched'); setPage(1); }}>手工待关联</button>
+      <button className="btn btn-secondary" onClick={openAuctionCommunityReview}>待审核小区</button>
     </div>
-    {association === 'unmatched' && <AuctionPendingAssociations refreshVersion={refreshVersion} onChanged={onChanged} />}
+    {association === 'unmatched' && <AuctionPendingAssociations />}
     {!current && <p className="auction-empty" role="status">正在加载法拍记录…</p>}
     {current?.error && <div className="auction-empty" role="alert">{current.error} <button onClick={() => setRetry(v => v + 1)}>重试</button></div>}
     {current?.data && <><AuctionListContent data={current.data} onView={onView} />{current.data.total > 20 && <nav className="auction-pagination" aria-label="法拍记录分页"><button disabled={page === 1} onClick={() => setPage(v => v - 1)}>上一页</button><span>{page} / {Math.ceil(current.data.total / 20)}</span><button disabled={page * 20 >= current.data.total} onClick={() => setPage(v => v + 1)}>下一页</button></nav>}</>}

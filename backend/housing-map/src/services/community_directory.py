@@ -17,6 +17,8 @@ def prepare_directory(data_dir):
     with store.db() as db:
         ready = db.execute("SELECT 1 FROM meta WHERE key='prepared'").fetchone()
     if ready:
+        from src.services.community_admission import migrate_admission
+        migrate_admission(store, data_dir)
         return store
     # Backup existing editable files; startup never seeds/overwrites an established directory.
     backup = data_dir / 'directory-backup'
@@ -96,6 +98,8 @@ def prepare_directory(data_dir):
             db.execute('UPDATE sources SET payload=? WHERE id=?', (dump(previous), old['id']))
         db.execute("INSERT INTO meta VALUES ('prepared','1')")
     store.auto_associate()
+    from src.services.community_admission import migrate_admission
+    migrate_admission(store, data_dir)
     return store
 
 

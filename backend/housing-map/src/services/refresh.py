@@ -127,7 +127,7 @@ def select_refresh_targets(communities: list[dict], coordinates: dict | None = N
         if community.get("community_id")
         and (community.get('tmsf_id') or not str(community['community_id']).startswith('local-'))
         and is_real_community(community)
-        # 与 /communities 展示口径一致: 坐标不在覆盖范围内的小区不刷 (省时长, 数据也不会下发)
+        # 独立采集只沿用真实身份和覆盖范围，不因住宅撤销/排除而缩小。
         and (coord := coordinates.get(community["community_id"]))
         and is_in_scope(coord.get("longitude") or 0, coord.get("latitude") or 0)
     ]

@@ -1,5 +1,6 @@
 """Bridge saved auction rounds to durable directory decisions, without upstream calls."""
 from collections import defaultdict
+import sqlite3
 
 from src.services.auction_store import read_store
 from src.services.community_directory import prepare_directory
@@ -36,6 +37,7 @@ def sync_records(path):
         name_row = max(named, key=lambda r: (r.get('captured_at') or '', str(r['auction_id']))) if named else latest
         item = store.ingest(dict(source=source, source_kind=kind, source_id=sid,
             name=name_row.get('community_name') or latest.get('title') or '小区名称缺失',
+            community_name_missing=not bool(named), auction_title=latest.get('title'),
             auto_association_disabled=not bool(named) or not decisions_consistent,
             association_identity_conflict=not decisions_consistent, district='滨江',
             address=latest.get('address') or '', source_url=latest.get('source_url'),
@@ -43,6 +45,13 @@ def sync_records(path):
         report[item['status'] if item['status'] in ('matched', 'ignored') else 'pending'] += 1
         if item['status'] == 'matched' and item['method'] == 'auto':
             report['automatic'] += 1
+    from src.services.community_review import ReviewWorkspace
+    ReviewWorkspace(store, path.parent).refresh()
+    from src.services.community_auto_review import AutoReview
+    try:
+        report['auto_review'] = AutoReview(store, path.parent).after_collection()
+    except (ValueError, OSError, sqlite3.Error):
+        report['auto_review_error'] = '资料和审核队列已保存，自动审核未完成，请重新预演'
     return report
 
 
