@@ -35,6 +35,22 @@ function groups(root: ReactNode) {
 }
 
 describe('collection-scoped controls', () => {
+  it('uses equally sized overview cards with explicit type labels and disclosure-scoped bulk actions', () => {
+    const p = props([skill('a'), skill('b'), skill('single', 'https://github.com/owner/single')]);
+    const tree = SkillPool(p);
+    const [group] = groups(tree);
+    expect(group.props).not.toMatchObject({ className: 'col-span-full' });
+    const markup = renderToStaticMarkup(tree);
+    expect(markup).toContain('合集 · 2 项');
+    expect(markup).toContain('独立 Skill');
+    expect(markup).toContain('has-[details[open]]:col-span-full');
+    const details = nodes(group).find(n => n.type === 'details')!;
+    expect(details.props).not.toHaveProperty('open');
+    expect(text(nodes(details).find(n => n.type === 'summary'))).toContain('查看成员');
+    expect(text(nodes(details).find(n => n.type === 'summary'))).not.toContain('安装所选');
+    expect(nodes(details).some(n => n.type === 'button' && text(n) === '安装所选（0）')).toBe(true);
+  });
+
   it('opens member registration for the collection repository', () => {
     const onAddMembers = vi.fn();
     const [group] = groups(SkillPool({ ...props([skill('a'), skill('b')]), onAddMembers }));
@@ -119,7 +135,7 @@ describe('collection-scoped controls', () => {
 
   it('shows repository identity once and keeps member selection accessible', () => {
     const markup = renderToStaticMarkup(SkillPool(props([skill('a'), skill('b')])));
-    expect(markup.split('owner/first')).toHaveLength(2);
+    expect(text(SkillPool(props([skill('a'), skill('b')]))).split('owner/first')).toHaveLength(2);
     expect(markup).not.toContain('>GitHub<');
     expect(markup).toContain('aria-label="选择 a"');
     expect(markup).toContain('aria-label="选择 b"');

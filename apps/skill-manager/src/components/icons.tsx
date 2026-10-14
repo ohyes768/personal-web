@@ -38,6 +38,24 @@ export function PlusIcon() {
   );
 }
 
+export function CollectionIcon() {
+  return (
+    <svg {...STROKE_PROPS}>
+      <path d="m12 3 9 5-9 5-9-5 9-5Z" />
+      <path d="m3 12 9 5 9-5M3 16l9 5 9-5" />
+    </svg>
+  );
+}
+
+export function SkillDocumentIcon() {
+  return (
+    <svg {...STROKE_PROPS}>
+      <path d="M13 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V10l-7-7Z" />
+      <path d="M13 3v7h7M8 14h8M8 17h5" />
+    </svg>
+  );
+}
+
 export function PencilIcon() {
   return (
     <svg {...STROKE_PROPS}>

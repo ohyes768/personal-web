@@ -13,6 +13,10 @@ body {
     sans-serif;
 }
 
+.collection-summary::-webkit-details-marker {
+  display: none;
+}
+
 /* 图标按钮 + 悬停提示（tooltip 朝上：操作行位于卡片下部，不会越出滚动容器） */
 .icon-btn {
   position: relative;

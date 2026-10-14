@@ -8,10 +8,12 @@ import {
   DownloadIcon,
   PencilIcon,
   TrashIcon,
+  CollectionIcon,
+  SkillDocumentIcon,
 } from '@/components/icons';
 
 const ALL_TARGETS = LINK_TARGETS;
-const SKILL_GRID_CLASS = 'grid grid-cols-1 items-stretch gap-2.5 md:grid-cols-2 lg:grid-cols-3';
+const SKILL_GRID_CLASS = 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2 lg:grid-cols-3';
 
 interface SkillPoolProps {
   exportTargets: ExportTarget[];
@@ -117,7 +119,14 @@ function SkillCardItem({
     : skill.id !== skill.name ? skill.id : '';
 
   return (
-    <li className="flex flex-col rounded-lg border border-slate-200 bg-white p-3">
+    <li className={`flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white ${skill.source === 'github' && !inCollection ? 'min-h-56 p-4 shadow-sm' : 'p-3'}`}>
+      {skill.source === 'github' && !inCollection ? (
+        <div className="mb-3">
+          <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
+            <SkillDocumentIcon />独立 Skill
+          </span>
+        </div>
+      ) : null}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
@@ -198,8 +207,8 @@ function SkillCardItem({
       </div> : null}
 
       {/* 安装为文字主按钮，其余操作保留图标 */}
-      <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-2">
-        <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="选择目标并导出 ZIP" disabled={publishBlocked} onClick={() => onExport(skill)} className="icon-btn rounded-md border border-slate-300"><DownloadIcon /></button>
+      <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-3">
+        <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="选择目标并导出 ZIP" disabled={publishBlocked} onClick={() => onExport(skill)} className="icon-btn tip-left rounded-md border border-slate-300"><DownloadIcon /></button>
         {!(skill.source === 'local' && installed) && ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
           return (
@@ -227,7 +236,7 @@ function SkillCardItem({
               }
               disabled={publishBlocked}
               onClick={() => onToggleQueueTarget(skill.id, target)}
-              className={`ml-auto inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
+              className={`tip-right ml-auto inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
                 installed && !hasPendingUpdate
                   ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
                   : queued
@@ -246,7 +255,7 @@ function SkillCardItem({
             data-tip={`下架（${activeTargets.map((t) => TARGET_LABEL[t]).join('、')}）`}
             title="已发布目标需先下架，下架后才会出现删除按钮"
             onClick={() => onUnpublish(skill.id, skill.name, activeTargets)}
-            className="inline-flex h-8 items-center justify-center rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+            className="tip-right inline-flex h-8 items-center justify-center rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
           >
             下架
           </button>
@@ -355,50 +364,77 @@ export default function SkillPool({
           const visibleIds = new Set(collection.visibleMembers.map(s => s.id));
           const hiddenSelected = selectedMembers.filter(s => !visibleIds.has(s.id)).length;
           return (
-            <li key={collection.key} aria-label={`${collection.name} 合集`} className="col-span-full rounded-lg border border-slate-200 bg-white p-3">
-              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
-                <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
-                  <h3 className="break-all text-sm font-semibold text-slate-800">{collection.repository ?? collection.name}</h3>
-                  <span className="text-xs text-slate-500">已登记 {collection.members.length} 个 Skill · 已安装 {stats.published.hermes}</span>
-                  {collection.visibleMembers.length !== collection.members.length ? <span className="text-xs text-slate-500">匹配 {collection.visibleMembers.length} 个</span> : null}
-                  {stats.abnormal > 0 ? <span className="text-xs text-amber-700">异常 {stats.abnormal} 项</span> : null}
-                  {stats.hasUpdate ? <span className="text-xs text-sky-700">有远端更新</span> : null}
+            <li key={collection.key} aria-label={`${collection.name} 合集`}
+              className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm transition-colors has-[details[open]]:col-span-full has-[details[open]]:border-sky-200">
+              <details className="group h-full open:h-auto">
+                <summary className="collection-summary flex h-full min-h-56 cursor-pointer list-none flex-col p-4 outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-500 group-open:h-auto group-open:min-h-0">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">
+                      <CollectionIcon />{`合集 · ${collection.members.length} 项`}
+                    </span>
+                    <span className={`text-xs font-medium ${stats.published.hermes === collection.members.length ? 'text-emerald-700' : 'text-slate-500'}`}>
+                      已安装 {stats.published.hermes}/{collection.members.length}
+                    </span>
+                  </div>
+                  <h3 className="truncate font-semibold text-slate-900" title={collection.name}>{collection.name}</h3>
+                  <p className="mt-0.5 truncate text-xs text-slate-400" title={collection.repository ?? '仓库地址异常'}>
+                    {collection.repository ?? '仓库地址异常，请展开检查'}
+                  </p>
+                  <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-500 group-open:hidden">
+                    {collection.members.slice(0, 3).map(s => s.name).join('、')}
+                    {collection.members.length > 3 ? ` 等 ${collection.members.length} 个 Skill` : ''}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                    {collection.visibleMembers.length !== collection.members.length ? <span className="text-slate-500">匹配 {collection.visibleMembers.length} 个</span> : null}
+                    {stats.abnormal > 0 ? <span className="rounded bg-amber-50 px-1.5 py-0.5 text-amber-700">异常 {stats.abnormal} 项</span> : null}
+                    {stats.hasUpdate ? <span className="rounded bg-sky-50 px-1.5 py-0.5 text-sky-700">有远端更新</span> : null}
+                  </div>
+                  <div className="mt-auto flex items-center justify-between gap-3 pt-4 text-xs group-open:mt-0 group-open:pt-3">
+                    <span className="text-slate-400">已登记 {collection.members.length} 个 Skill</span>
+                    <span className="inline-flex items-center gap-1 font-medium text-sky-700">
+                      <span className="group-open:hidden">查看成员</span>
+                      <span className="hidden group-open:inline">收起成员</span>
+                      <svg aria-hidden="true" className="h-3.5 w-3.5 transition-transform group-open:rotate-90 motion-reduce:transition-none" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="m6 3 5 5-5 5" /></svg>
+                    </span>
+                  </div>
+                </summary>
+                <div className="border-t border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+                  <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
+                    {onSelect ? <>
+                      <button type="button" disabled={!selectable.length}
+                        onClick={() => selectable.forEach(s => onSelect(s.id, true))}
+                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40">
+                        {collection.visibleMembers.length === collection.members.length ? '全选' : '全选匹配项'}
+                      </button>
+                      <button type="button" disabled={!selectedMembers.length}
+                        onClick={() => collection.members.forEach(s => onSelect(s.id, false))}
+                        className="rounded-md px-2 py-1.5 text-slate-500 hover:bg-slate-100 disabled:opacity-40">清空选择</button>
+                      <span className="text-slate-500">已选 {selectedMembers.length} 项{hiddenSelected ? `（含 ${hiddenSelected} 个隐藏项）` : ''}</span>
+                    </> : null}
+                    <div className="ml-auto flex flex-wrap items-center gap-2">
+                      {onAddMembers && collection.repository ? <button type="button"
+                        aria-label={`为 ${collection.repository} 添加成员`}
+                        onClick={() => onAddMembers(`https://github.com/${collection.repository}`)}
+                        title="重新扫描此仓库，补充未登记的 Skill"
+                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 hover:bg-slate-50">
+                        ＋ 添加成员
+                      </button> : null}
+                      <button type="button" disabled={checkingUpdates || !collection.repository}
+                        onClick={() => onCheckCollection?.(collection)}
+                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                        {checkingUpdates ? '检查中…' : '检查更新'}
+                      </button>
+                      {missingCache ? <button type="button" onClick={() => onClone(missingCache.id, collection.name)}
+                        className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1.5 text-amber-700">恢复仓库缓存</button> : null}
+                      {onSelect ? <button type="button" disabled={!selectedMembers.length || !onInstallSelection}
+                        onClick={() => onInstallSelection?.(selectedMembers.map(s => s.id))}
+                        className="rounded-md bg-sky-600 px-3 py-1.5 font-medium text-white hover:bg-sky-700 disabled:opacity-40">
+                        安装所选（{selectedMembers.length}）
+                      </button> : null}
+                    </div>
+                  </div>
+                  <ul className={SKILL_GRID_CLASS}>{collection.visibleMembers.map(skill => renderSkill(skill, true))}</ul>
                 </div>
-                <div className="flex shrink-0 flex-wrap items-center gap-2">
-                {onAddMembers && collection.repository ? <button type="button"
-                  aria-label={`为 ${collection.repository} 添加成员`}
-                  onClick={() => onAddMembers(`https://github.com/${collection.repository}`)}
-                  title="重新扫描此仓库，补充未登记的 Skill"
-                  className="rounded border border-sky-200 px-2 py-1 text-xs text-sky-700 hover:bg-sky-50">
-                  ＋ 添加成员
-                </button> : null}
-                <button type="button" disabled={checkingUpdates || !collection.repository}
-                  onClick={() => onCheckCollection?.(collection)} className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 disabled:opacity-50">
-                  {checkingUpdates ? '检查中…' : '检查更新'}
-                </button>
-                {missingCache ? <button type="button" onClick={() => onClone(missingCache.id, collection.name)}
-                  className="rounded border border-amber-300 px-2 py-1 text-xs text-amber-700">恢复仓库缓存</button> : null}
-                </div>
-              </div>
-              {onSelect ? <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <button type="button" disabled={!selectable.length}
-                  onClick={() => selectable.forEach(s => onSelect(s.id, true))}
-                  className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40">
-                  {collection.visibleMembers.length === collection.members.length ? '全选' : '全选匹配项'}
-                </button>
-                <button type="button" disabled={!selectedMembers.length}
-                  onClick={() => collection.members.forEach(s => onSelect(s.id, false))}
-                  className="rounded px-2 py-1 text-slate-600 hover:bg-slate-100 disabled:opacity-40">清空选择</button>
-                <span className="text-slate-500">已选 {selectedMembers.length} 项{hiddenSelected ? `（含 ${hiddenSelected} 个隐藏项）` : ''}</span>
-                <button type="button" disabled={!selectedMembers.length || !onInstallSelection}
-                  onClick={() => onInstallSelection?.(selectedMembers.map(s => s.id))}
-                  className="ml-auto rounded bg-sky-600 px-3 py-1.5 font-medium text-white hover:bg-sky-700 disabled:opacity-40">
-                  安装所选（{selectedMembers.length}）
-                </button>
-              </div> : null}
-              <details className="mt-2 border-t border-slate-100 pt-2">
-                <summary className="cursor-pointer text-sm text-slate-600">成员详情（{collection.visibleMembers.length}）</summary>
-                <ul className={`mt-2 ${SKILL_GRID_CLASS}`}>{collection.visibleMembers.map(skill => renderSkill(skill, true))}</ul>
               </details>
             </li>
           );
