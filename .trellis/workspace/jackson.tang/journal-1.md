@@ -1234,3 +1234,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 34: Housing Map 管理页切换性能优化
+
+**Date**: 2026-10-14
+**Task**: Housing Map 管理页切换性能优化
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+只加载当前页、复用60秒缓存、统计独立加载。汇总一次聚合无匹配建议、分页后匹配本页。432后端和51前端测试、lint/类型检查/build通过；浏览器缓存切换0请求约67ms，统计延迟/失败不阻塞、审核/过期/快速采集完成正确刷新。旧副本汇总中位2.598降0.243秒。用户授权提交推送，未部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f430113` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
