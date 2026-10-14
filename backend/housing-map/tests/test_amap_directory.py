@@ -48,6 +48,199 @@ def test_pages_are_exhausted_within_each_cell():
     assert rows[-1]['_coverage']['requests'] == 2
 
 
+@pytest.mark.parametrize('filtered', [False, True])
+def test_overlapping_pages_count_raw_unique_ids_before_completion(filtered):
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        pages = {1: ['a', 'b'], 2: ['b', 'c'], 3: ['d']}
+        rows = [poi(sid) for sid in pages[page]]
+        if filtered:
+            for row in rows:
+                if row['id'] in {'b', 'd'}:
+                    row['adname'] = '萧山区'
+        return rows, 4
+    client = Client(search)
+    rows = list(amap.discover(Cancel(), lambda *_: False, client=client))
+    assert calls == [1, 2, 3]
+    assert rows[-1]['_coverage']['unique'] == (2 if filtered else 4)
+    assert rows[-1]['_coverage']['complete'] is True and client.closed
+
+
+def test_duplicate_ids_within_a_page_do_not_exhaust_count():
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        return ([poi('a'), poi('a')] if page == 1 else [poi('b')]), 2
+    rows = list(amap.discover(Cancel(), lambda *_: False, client=Client(search)))
+    assert calls == [1, 2]
+    assert rows[-1]['_coverage']['unique'] == 2
+
+
+def test_decreasing_reported_count_does_not_hide_missing_records():
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        return [poi(str(page))], (3 if page == 1 else 1)
+    rows = list(amap.discover(Cancel(), lambda *_: False, client=Client(search)))
+    assert calls == [1, 2, 3]
+    assert rows[-1]['_coverage']['unique'] == 3
+
+
+def test_saturated_terminal_cell_reads_all_accessible_pages():
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        return [poi(str(i)) for i in range((page - 1) * 25, page * 25)], 200
+    client = Client(search)
+    rows = []
+    with pytest.raises(amap.AmapIncomplete):
+        rows.extend(amap.discover(Cancel(), lambda *_: False, client=client, max_depth=0))
+    assert calls == list(range(1, 9))
+    assert len([r for r in rows if 'source_id' in r]) == 200
+    assert rows[-1]['_coverage']['incomplete_cells'] == 1
+    assert rows[-1]['_coverage']['complete'] is False and client.closed
+
+
+@pytest.mark.parametrize('mode', ['repeated', 'empty'])
+def test_abnormal_pages_subdivide_and_recover(mode):
+    root = None
+    calls = []
+    def search(box, page):
+        nonlocal root
+        root = root or box
+        calls.append((box, page))
+        if box == root:
+            return ([poi('a')] if page == 1 or mode == 'repeated' else []), 2
+        return [poi('a'), poi('b')], 2
+    client = Client(search)
+    rows = list(amap.discover(Cancel(), lambda *_: False, client=client))
+    assert len(set(box for box, _ in calls)) == 5
+    assert rows[-1]['_coverage']['unique'] == 2
+    assert rows[-1]['_coverage']['complete'] is True and client.closed
+
+
+@pytest.mark.parametrize('mode', ['repeated', 'empty'])
+def test_unrecoverable_abnormal_cell_does_not_skip_siblings(mode):
+    root = None
+    stuck = None
+    calls = []
+    def search(box, page):
+        nonlocal root, stuck
+        root = root or box
+        calls.append((box, page))
+        if box == root:
+            return [poi('root')], 200
+        stuck = stuck or box
+        if box == stuck:
+            return ([poi('stuck')] if page == 1 or mode == 'repeated' else []), 2
+        return [poi(str(box))], 1
+    client = Client(search)
+    rows = []
+    with pytest.raises(amap.AmapIncomplete, match='1 个区域'):
+        rows.extend(amap.discover(Cancel(), lambda *_: False, client=client, max_depth=1))
+    assert len(set(box for box, _ in calls)) == 5
+    assert len([r for r in rows if 'source_id' in r]) == 5
+    assert rows[-1]['_coverage']['incomplete_cells'] == 1
+    assert client.closed
+
+
+@pytest.mark.parametrize('recoverable', [True, False])
+def test_recovery_report_and_discovered_records_survive_restart(tmp_path, monkeypatch, recoverable):
+    root = None
+    stuck = None
+    def search(box, page):
+        nonlocal root, stuck
+        root = root or box
+        if box == root:
+            return [poi('root')], 200
+        stuck = stuck or box
+        if box == stuck:
+            return [poi('stuck')], 2
+        return [poi(str(box))], 1
+    client = Client(search)
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    discover = amap.discover
+    monkeypatch.setattr(amap, 'discover', lambda cancel, ignored: discover(
+        cancel, ignored, client=client, max_depth=2 if recoverable else 1))
+    # At depth2 the stuck box is split into four successful boxes. At depth1
+    # it remains incomplete; the other three siblings still enter the registry.
+    report = collect_names(store, ['amap'], cancel=Cancel())
+    assert report['phase'] == ('succeeded' if recoverable else 'partial_failed')
+    assert report['coverage']['amap']['complete'] is recoverable
+    assert report['coverage']['amap']['incomplete_cells'] == (0 if recoverable else 1)
+    assert len(store.sources()) == (9 if recoverable else 5)
+    assert bool(report['truncated']) is not recoverable
+    job = DirectoryJob(store)
+    job._save(report)
+    assert DirectoryJob(CommunityRegistry(store.path)).state == report
+    assert client.closed
+
+
+def test_terminal_pagination_stops_at_global_budget():
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        return [poi(str(i)) for i in range((page - 1) * 25, page * 25)], 200
+    client = Client(search)
+    rows = []
+    with pytest.raises(amap.AmapIncomplete, match='请求预算'):
+        rows.extend(amap.discover(Cancel(), lambda *_: False, client=client,
+                                  max_depth=0, max_requests=2))
+    assert calls == [1, 2] and client.closed
+    assert rows[-1]['_coverage']['unique'] == 50
+    assert rows[-1]['_coverage']['complete'] is False
+
+
+def test_terminal_pagination_can_be_cancelled_between_pages():
+    cancel = Cancel()
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        return [poi(str(i)) for i in range((page - 1) * 25, page * 25)], 200
+    client = Client(search)
+    with pytest.raises(InterruptedError):
+        for row in amap.discover(cancel, lambda *_: False, client=client, max_depth=0):
+            if row.get('_coverage', {}).get('requests') == 2:
+                cancel.cancelled = True
+    assert calls == [1, 2] and client.closed
+
+
+@pytest.mark.parametrize('mode', ['repeated', 'empty'])
+def test_budget_after_abnormal_page_keeps_current_coverage_counters(mode):
+    calls = []
+    def search(box, page):
+        calls.append(page)
+        return ([poi('a')] if page == 1 or mode == 'repeated' else []), 2
+    client = Client(search)
+    rows = []
+    with pytest.raises(amap.AmapIncomplete, match='请求预算'):
+        rows.extend(amap.discover(Cancel(), lambda *_: False, client=client, max_requests=2))
+    assert calls == [1, 2] and client.closed
+    assert rows[-1]['_coverage']['requests'] == 2
+    assert rows[-1]['_coverage']['cells'] == 1
+    assert rows[-1]['_coverage']['complete'] is False
+
+
+@pytest.mark.parametrize('saturated', [True, False])
+def test_budget_after_terminal_cell_keeps_incomplete_count(saturated):
+    root = None
+    def search(box, page):
+        nonlocal root
+        root = root or box
+        if box == root:
+            return [poi('root')], 200
+        if saturated:
+            return [poi(str(i)) for i in range((page - 1) * 25, page * 25)], 200
+        return [poi(str(page))], 9
+    rows = []
+    with pytest.raises(amap.AmapIncomplete, match='请求预算'):
+        rows.extend(amap.discover(Cancel(), lambda *_: False, client=Client(search),
+                                  max_depth=1, max_requests=9))
+    assert rows[-1]['_coverage']['requests'] == 9
+    assert rows[-1]['_coverage']['incomplete_cells'] == 1
+
+
 def test_eight_short_pages_subdivide_and_discover_missing_records():
     root = None
     calls = []
