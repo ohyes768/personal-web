@@ -26,7 +26,7 @@ function skill(id: string, repository = 'https://github.com/owner/first', extra:
 }
 function props(skills: SkillCard[]): ComponentProps<typeof SkillPool> {
   return { skills, queue: [], exportTargets: [], selectedIds: [], onSelect: vi.fn(),
-    onInstallSelection: vi.fn(), onAddCollection: vi.fn(), onToggleQueueTarget: vi.fn(),
+    onInstallSelection: vi.fn(), onToggleQueueTarget: vi.fn(),
     onClone: vi.fn(), onDelete: vi.fn(), onUnpublish: vi.fn(), onEditTags: vi.fn(),
     onExport: vi.fn(), onDeleteExport: vi.fn() };
 }
@@ -35,6 +35,52 @@ function groups(root: ReactNode) {
 }
 
 describe('collection-scoped controls', () => {
+  it('renders a single registered GitHub skill directly without collection controls', () => {
+    const markup = renderToStaticMarkup(SkillPool(props([
+      skill('luopan', 'https://github.com/zhangxiaoqiang1991/luopan'),
+    ])));
+    expect(markup).toContain('zhangxiaoqiang1991/luopan');
+    expect(markup).toContain('aria-label="安装 luopan"');
+    expect(markup).not.toContain('type="checkbox"');
+    expect(markup).not.toContain('<details');
+    expect(markup).not.toContain('安装所选');
+    expect(markup).not.toContain('安装整个合集');
+  });
+
+  it('mixes independent cards and collections without turning filtered members into standalone cards', () => {
+    const a = skill('a');
+    const b = skill('b');
+    const single = skill('single', 'https://github.com/owner/single');
+    const p = { ...props([a, single]), allSkills: [a, b, single] };
+    expect(groups(SkillPool(p))).toHaveLength(1);
+    const markup = renderToStaticMarkup(SkillPool(p));
+    expect(markup).not.toContain('安装整个合集');
+    expect(markup).toContain('全选匹配项');
+    expect(markup).toContain('aria-label="选择 a"');
+    expect(markup).not.toContain('aria-label="选择 single"');
+    expect(markup).toContain('owner/single');
+    expect(markup.match(/<details/g)).toHaveLength(1);
+  });
+
+  it('emphasizes installation and pending updates, but not an installed current version', () => {
+    const deployment = { status: 'active', revision: 'abc', published_at: '', link_target: '',
+      content_hash: '', stale: false, link_missing: false };
+    const update = { skill_id: 'a', repository: 'https://github.com/owner/first', remote_revision: 'abc',
+      remote_tags: [], cached_revision: 'abc', has_update: false, checked_at: '2026-10-14' };
+    const cases = [
+      { extra: {}, label: '安装 a', primary: true },
+      { extra: { deployments: { hermes: deployment }, update }, label: '更新 a', primary: false },
+      { extra: { deployments: { hermes: deployment }, update: { ...update, has_update: true } }, label: '更新 a', primary: true },
+      { extra: { deployments: { hermes: { ...deployment, stale: true } }, update }, label: '更新 a', primary: true },
+    ];
+    for (const { extra, label, primary } of cases) {
+      const markup = renderToStaticMarkup(SkillPool(props([skill('a', undefined, extra)])));
+      const action = markup.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))?.[0];
+      expect(action).toBeDefined();
+      expect(action?.includes('bg-sky-600')).toBe(primary);
+    }
+  });
+
   it('selects and installs only this collection, skipping unavailable members', () => {
     const p = props([skill('a'), skill('blocked', undefined, { cache_missing: true }),
       skill('b', 'https://github.com/owner/second')]);
@@ -51,7 +97,7 @@ describe('collection-scoped controls', () => {
     expect(p.onSelect).not.toHaveBeenCalledWith('b', false);
   });
 
-  it('makes hidden selections explicit and keeps whole-collection installation intact', () => {
+  it('makes hidden selections explicit and installs only selected members', () => {
     const a = skill('a');
     const hidden = skill('hidden');
     const p = { ...props([a]), allSkills: [a, hidden], selectedIds: ['hidden'] };
@@ -61,8 +107,7 @@ describe('collection-scoped controls', () => {
     expect(p.onSelect).toHaveBeenCalledExactlyOnceWith('a', true);
     button(group, '安装所选（1）').props.onClick!();
     expect(p.onInstallSelection).toHaveBeenCalledWith(['hidden']);
-    button(group, '安装整个合集（2）').props.onClick!();
-    expect(vi.mocked(p.onAddCollection!).mock.calls[0][0].members.map(s => s.id)).toEqual(['a', 'hidden']);
+    expect(text(group)).not.toContain('安装整个合集');
   });
 
   it('shows repository identity once and keeps member selection accessible', () => {

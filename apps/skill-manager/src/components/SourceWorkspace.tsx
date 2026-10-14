@@ -6,7 +6,6 @@ import EditSkillTagsDialog from '@/components/EditSkillTagsDialog';
 import ExportDialog from '@/components/ExportDialog';
 import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/SkillFilters';
 import SkillPool from '@/components/SkillPool';
-import { type SkillCollection } from '@/lib/collections';
 import { ApiClientError, deleteExport, exportSkill, updateSkillTags } from '@/lib/api';
 import type { ExportTargetKey } from '@/lib/targets';
 import type { TargetKey } from '@/lib/queue';
@@ -31,6 +30,7 @@ interface SourceWorkspaceProps {
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
   onCheckUpdates?: (skillIds: string[]) => Promise<void>;
   checkingUpdates?: boolean;
+  onAddMembers?: (repository: string) => void;
 }
 
 function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
@@ -76,6 +76,7 @@ export default function SourceWorkspace({
   onUnpublish,
   onCheckUpdates,
   checkingUpdates,
+  onAddMembers,
 }: SourceWorkspaceProps) {
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [installIds, setInstallIds] = useState<string[] | null>(null);
@@ -98,7 +99,6 @@ export default function SourceWorkspace({
   const filteredSkills = useMemo(() => applyFilters(skills, filters), [skills, filters]);
 
   function handleToggleQueueTarget(skillId: string) { setInstallIds([skillId]); }
-  function handleAddCollection(collection: SkillCollection) { setInstallIds(collection.members.map(s => s.id)); }
 
   async function performSaveTags(tags: string[]) {
     if (!editingTagsSkill) {
@@ -163,8 +163,8 @@ export default function SourceWorkspace({
           <SkillPool
             skills={filteredSkills}
             allSkills={skills}
-            onAddCollection={handleAddCollection}
             onInstallSelection={setInstallIds}
+            onAddMembers={onAddMembers}
             onCheckCollection={(collection) => void onCheckUpdates?.(collection.members.map(s => s.id))}
             checkingUpdates={checkingUpdates}
             exportTargets={exportTargets}

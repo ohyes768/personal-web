@@ -98,6 +98,7 @@ function SkillManagerPage() {
   const [pendingClone, setPendingClone] = useState<PendingClone | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [showRegister, setShowRegister] = useState(false);
+  const [registerRepository, setRegisterRepository] = useState('');
   const [activeTask, setActiveTask] = useState<ActiveGithubTask | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
@@ -306,7 +307,7 @@ function SkillManagerPage() {
               onClick={() => navigate({ tab: 'github' })}
               className={SEG_BUTTON}
             >
-              GitHub 合集
+              GitHub Skill
               <span className="ml-1.5 rounded-full border border-slate-200 bg-slate-100 px-1.5 text-xs text-slate-500">
                 {groupCollections(githubSkills).length}
               </span>
@@ -331,6 +332,7 @@ function SkillManagerPage() {
                   type="button"
                   onClick={() => {
                     setActionError('');
+                    setRegisterRepository('');
                     setShowRegister(true);
                   }}
                   className="rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800"
@@ -369,6 +371,11 @@ function SkillManagerPage() {
         <div className={sourceTab === 'github' ? 'flex min-h-0 flex-1' : 'hidden'}>
           <SourceWorkspace
             source="github"
+            onAddMembers={(repository) => {
+              setActionError('');
+              setRegisterRepository(repository);
+              setShowRegister(true);
+            }}
             checkingUpdates={checkingUpdates}
             onCheckUpdates={handleCheckUpdates}
             skills={githubSkills}
@@ -472,6 +479,8 @@ function SkillManagerPage() {
 
       {showRegister ? (
         <RegisterGithubDialog
+          initialRepository={registerRepository}
+          existingSkills={githubSkills}
           onRefresh={refreshAll}
           busy={actionBusy}
           error={actionError}

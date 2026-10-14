@@ -2,7 +2,7 @@
 
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { ExportTarget, SkillCard, TargetDeployment } from '@/lib/types';
-import { collectionStats, groupCollections, type SkillCollection } from '@/lib/collections';
+import { collectionStats, groupCollections, repositoryKey, type SkillCollection } from '@/lib/collections';
 import { exportTargetLabel, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
 import {
   DownloadIcon,
@@ -17,8 +17,8 @@ interface SkillPoolProps {
   exportTargets: ExportTarget[];
   skills: SkillCard[];
   allSkills?: SkillCard[];
-  onAddCollection?: (collection: SkillCollection, target: TargetKey) => void;
   onInstallSelection?: (skillIds: string[]) => void;
+  onAddMembers?: (repository: string) => void;
   onCheckCollection?: (collection: SkillCollection) => void;
   checkingUpdates?: boolean;
   queue: QueueEntry[];
@@ -77,6 +77,7 @@ function SkillCardItem({
   queuedTargets,
   selected,
   onSelect,
+  inCollection = false,
   onToggleQueueTarget,
   onClone,
   onDelete,
@@ -90,6 +91,7 @@ function SkillCardItem({
   queuedTargets: TargetKey[];
   selected?: boolean;
   onSelect?: (selected: boolean) => void;
+  inCollection?: boolean;
   onToggleQueueTarget: SkillPoolProps['onToggleQueueTarget'];
   onClone: SkillPoolProps['onClone'];
   onDelete: SkillPoolProps['onDelete'];
@@ -102,21 +104,24 @@ function SkillCardItem({
   const sourceMissing = skill.source_missing;
   const publishBlocked = cacheMissing || sourceMissing;
   const installed = skill.deployments.hermes?.status === 'active' && !skill.deployments.hermes.link_missing;
+  const hasPendingUpdate = !!skill.update?.has_update || !!skill.deployments.hermes?.stale;
   const exportEntries = Object.entries(skill.deployments).filter(
     ([target, deployment]) => !LINK_TARGETS.includes(target as TargetKey) && deployment.status === 'active'
   );
   const activeTargets = ALL_TARGETS.filter(
     (target) => skill.deployments[target]?.status === 'active'
   );
-  // 仓库身份由合集头部承载；自研卡片仅在 ID 不同于名称时显示副标题。
-  const subtitle = skill.source === 'local' && skill.id !== skill.name ? skill.id : '';
+  // 合集成员共用头部仓库身份；独立 GitHub 卡片自行展示仓库。
+  const subtitle = skill.source === 'github'
+    ? inCollection ? '' : repositoryKey(skill.repository) ?? skill.repository ?? '仓库地址缺失'
+    : skill.id !== skill.name ? skill.id : '';
 
   return (
     <li className="flex flex-col rounded-lg border border-slate-200 bg-white p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            {skill.source === 'github' && onSelect ? (
+            {inCollection && onSelect ? (
               <input type="checkbox" aria-label={`选择 ${skill.name}`} checked={!!selected}
                 disabled={publishBlocked} onChange={e => onSelect(e.target.checked)}
                 className="h-4 w-4 shrink-0 accent-sky-600" />
@@ -223,7 +228,9 @@ function SkillCardItem({
               disabled={publishBlocked}
               onClick={() => onToggleQueueTarget(skill.id, target)}
               className={`ml-auto inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
-                queued
+                installed && !hasPendingUpdate
+                  ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
+                  : queued
                   ? 'border-emerald-500 bg-emerald-500 text-white'
                   : 'border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700'
               }`}
@@ -285,8 +292,8 @@ function SkillCardItem({
 export default function SkillPool({
   skills,
   allSkills = skills,
-  onAddCollection,
   onInstallSelection,
+  onAddMembers,
   onCheckCollection,
   checkingUpdates,
   exportTargets,
@@ -314,13 +321,14 @@ export default function SkillPool({
     );
   }
 
-  function renderSkill(skill: SkillCard) {
+  function renderSkill(skill: SkillCard, inCollection = false) {
     return (
         <SkillCardItem
           key={skill.id}
           skill={skill}
+          inCollection={inCollection}
           selected={selectedIds?.includes(skill.id)}
-          onSelect={onSelect ? selected => onSelect(skill.id, selected) : undefined}
+          onSelect={inCollection && onSelect ? selected => onSelect(skill.id, selected) : undefined}
           exportTargets={exportTargets}
           queuedTargets={queuedBySkill.get(skill.id) ?? []}
           onToggleQueueTarget={onToggleQueueTarget}
@@ -336,8 +344,10 @@ export default function SkillPool({
 
   if (allSkills.some(skill => skill.source === 'github')) {
     return (
-      <ul className="space-y-3">
+      <ul className={SKILL_GRID_CLASS}>
         {groupCollections(allSkills, skills).map(collection => {
+          // 按完整登记成员数判断，筛选为单个结果时仍保留原合集。
+          if (collection.members.length === 1) return renderSkill(collection.visibleMembers[0]);
           const stats = collectionStats(collection.members);
           const missingCache = collection.members.find(s => s.cache_missing);
           const selectable = collection.visibleMembers.filter(s => !s.cache_missing && !s.source_missing);
@@ -345,24 +355,26 @@ export default function SkillPool({
           const visibleIds = new Set(collection.visibleMembers.map(s => s.id));
           const hiddenSelected = selectedMembers.filter(s => !visibleIds.has(s.id)).length;
           return (
-            <li key={collection.key} aria-label={`${collection.name} 合集`} className="rounded-lg border border-slate-200 bg-white p-3">
+            <li key={collection.key} aria-label={`${collection.name} 合集`} className="col-span-full rounded-lg border border-slate-200 bg-white p-3">
               <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
                 <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
                   <h3 className="break-all text-sm font-semibold text-slate-800">{collection.repository ?? collection.name}</h3>
-                  <span className="text-xs text-slate-500">{collection.members.length} 个 Skill · 已安装 {stats.published.hermes}</span>
+                  <span className="text-xs text-slate-500">已登记 {collection.members.length} 个 Skill · 已安装 {stats.published.hermes}</span>
                   {collection.visibleMembers.length !== collection.members.length ? <span className="text-xs text-slate-500">匹配 {collection.visibleMembers.length} 个</span> : null}
                   {stats.abnormal > 0 ? <span className="text-xs text-amber-700">异常 {stats.abnormal} 项</span> : null}
                   {stats.hasUpdate ? <span className="text-xs text-sky-700">有远端更新</span> : null}
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-2">
+                {onAddMembers && collection.repository ? <button type="button"
+                  aria-label={`为 ${collection.repository} 添加成员`}
+                  onClick={() => onAddMembers(`https://github.com/${collection.repository}`)}
+                  title="重新扫描此仓库，补充未登记的 Skill"
+                  className="rounded border border-sky-200 px-2 py-1 text-xs text-sky-700 hover:bg-sky-50">
+                  ＋ 添加成员
+                </button> : null}
                 <button type="button" disabled={checkingUpdates || !collection.repository}
                   onClick={() => onCheckCollection?.(collection)} className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-600 disabled:opacity-50">
                   {checkingUpdates ? '检查中…' : '检查更新'}
-                </button>
-                <button type="button" onClick={() => onAddCollection?.(collection, 'hermes')}
-                  title="安装此合集的全部成员，不受当前筛选影响"
-                  className="rounded border border-slate-300 px-2 py-1 text-xs text-slate-700 hover:bg-slate-50">
-                  安装整个合集（{collection.members.length}）
                 </button>
                 {missingCache ? <button type="button" onClick={() => onClone(missingCache.id, collection.name)}
                   className="rounded border border-amber-300 px-2 py-1 text-xs text-amber-700">恢复仓库缓存</button> : null}
@@ -386,7 +398,7 @@ export default function SkillPool({
               </div> : null}
               <details className="mt-2 border-t border-slate-100 pt-2">
                 <summary className="cursor-pointer text-sm text-slate-600">成员详情（{collection.visibleMembers.length}）</summary>
-                <ul className={`mt-2 ${SKILL_GRID_CLASS}`}>{collection.visibleMembers.map(renderSkill)}</ul>
+                <ul className={`mt-2 ${SKILL_GRID_CLASS}`}>{collection.visibleMembers.map(skill => renderSkill(skill, true))}</ul>
               </details>
             </li>
           );
@@ -397,7 +409,7 @@ export default function SkillPool({
 
   return (
     <ul className={SKILL_GRID_CLASS}>
-      {skills.map(renderSkill)}
+      {skills.map(skill => renderSkill(skill))}
     </ul>
   );
 }
