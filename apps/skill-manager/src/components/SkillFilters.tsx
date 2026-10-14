@@ -3,14 +3,14 @@
 export interface FilterState {
   query: string;
   tags: string[];
-  deployment: 'all' | 'published' | 'unpublished';
+  deployment: 'installed' | 'uninstalled';
   update: 'all' | 'has_update' | 'no_update';
 }
 
 export const DEFAULT_FILTERS: FilterState = {
   query: '',
   tags: [],
-  deployment: 'all',
+  deployment: 'installed',
   update: 'all',
 };
 
@@ -25,7 +25,7 @@ interface SkillFiltersProps {
 const SELECT_CLASS =
   'rounded border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none';
 
-/** 左栏筛选器：名称、标签多选、部署状态、更新状态（来源由子 tab 承担）。 */
+/** 左栏筛选器：名称、标签多选、安装状态、更新状态（来源由子 tab 承担）。 */
 export default function SkillFilters({
   value,
   allTags,
@@ -58,11 +58,10 @@ export default function SkillFilters({
             })
           }
           className={SELECT_CLASS}
-          aria-label="部署状态筛选"
+          aria-label="安装状态筛选"
         >
-          <option value="all">部署：全部</option>
-          <option value="published">已发布（任一目标）</option>
-          <option value="unpublished">未发布</option>
+          <option value="installed">已安装</option>
+          <option value="uninstalled">未安装</option>
         </select>
         {showUpdateFilter ? (
           <select

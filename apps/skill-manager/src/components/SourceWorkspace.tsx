@@ -8,7 +8,7 @@ import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/Sk
 import SkillPool from '@/components/SkillPool';
 import { type SkillCollection } from '@/lib/collections';
 import { ApiClientError, deleteExport, exportSkill, updateSkillTags } from '@/lib/api';
-import { LINK_TARGETS, type ExportTargetKey } from '@/lib/targets';
+import type { ExportTargetKey } from '@/lib/targets';
 import type { TargetKey } from '@/lib/queue';
 import type { ExportTarget, SkillCard } from '@/lib/types';
 
@@ -45,14 +45,10 @@ function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
     if (filters.tags.some((tag) => !skill.tags.includes(tag))) {
       return false;
     }
-    // "已发布"只认 status=active 的部署记录；下架后记录仍在（status=removed）
-    const hasActiveDeployment = LINK_TARGETS.some(
-      (target) => skill.deployments[target]?.status === 'active'
-    );
-    if (filters.deployment === 'published' && !hasActiveDeployment) {
-      return false;
-    }
-    if (filters.deployment === 'unpublished' && hasActiveDeployment) {
+    // Hermes 安装记录有效且链接存在才算已安装；下架和链接缺失归入未安装。
+    const deployment = skill.deployments.hermes;
+    const installed = deployment?.status === 'active' && !deployment.link_missing;
+    if ((filters.deployment === 'installed') !== installed) {
       return false;
     }
     if (filters.update === 'has_update' && !skill.update?.has_update) {
