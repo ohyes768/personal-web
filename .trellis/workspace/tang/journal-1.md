@@ -155,3 +155,37 @@
 ### Next Steps
 
 - NAS 实机验证 Hermes 一键安装与旧链接清理脚本（仓库内清理脚本需在挂载旧 OpenClaw 目录时执行）
+
+
+## Session 4: Housing-map 新房住宅证据与位置补全
+
+**Date**: 2026-10-14
+**Task**: Housing-map 新房住宅证据与位置补全
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+支持独立新房项目身份、住宅证据失败保留与冲突待审；新增单条用途和位置补全、历史坐标来源与地图投影；新房价格隔离。后端483、前端54测试及lint/build通过，真实案例隔离桌面和移动验收通过。自动规则v5需重新预演启用；新房详情验证页独立报错，本机未配置高德服务Key，历史位置标明来源。未部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `11ffafc` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
