@@ -3,7 +3,7 @@
   "name": "housing-community-review",
   "title": "Housing Map 住宅小区与待审核小区管理重构",
   "description": "将管理页重构为住宅小区与待审核小区，明确住宅无疑点自动收录，统一多来源/来拍候选审核、地图取数及数量口径；本轮仅规划。",
-  "status": "planning",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "housing-map",
   "package": "backend/housing-map",
@@ -11,11 +11,11 @@
   "creator": "jackson.tang",
   "assignee": "jackson.tang",
   "createdAt": "2026-10-14",
-  "completedAt": null,
-  "branch": null,
+  "completedAt": "2026-10-14",
+  "branch": "master",
   "base_branch": "master",
   "worktree_path": null,
-  "commit": null,
+  "commit": "3f9fb68",
   "pr_url": null,
   "subtasks": [],
   "children": [
@@ -33,7 +33,7 @@
     "backend/housing-map/src/api/directory_routes.py",
     "backend/housing-map/src/api/routes.py"
   ],
-  "notes": "总需求/任务地图/跨子任务验收入口，不是第四个实施任务。三个子任务按1→2→3验收推进；本轮仅规划，全部planning。",
+  "notes": "本地实施和验收已通过，已提交3f9fb68；未部署或启用生产自动审核。",
   "meta": {
     "role": "coordination",
     "implementation_order": [

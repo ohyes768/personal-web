@@ -1200,3 +1200,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 33: Housing Map 住宅收录与统一审核重构完成
+
+**Date**: 2026-10-14
+**Task**: Housing Map 住宅收录与统一审核重构完成
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+完成住宅准入与人工撤销、统一待审核小区及来拍入口、只读预演与显式启用自动审核。后端430、前端50测试通过，lint/type-check/build及桌面手机/旧数据副本验收通过。未部署或开启生产自动审核；三个子任务和总任务已归档。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3f9fb68` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
