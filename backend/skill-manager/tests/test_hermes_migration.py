@@ -2,6 +2,8 @@ import importlib.util
 from pathlib import Path
 import sqlite3
 
+import pytest
+
 from src.db import SkillStateStore
 
 
@@ -22,6 +24,7 @@ def test_retired_rows_archived_with_backup_and_idempotence(tmp_path):
         assert conn.execute('SELECT COUNT(*) FROM retired_deployment').fetchone()[0] == 1
 
 
+@pytest.mark.requires_symlink
 def test_cleanup_only_unchanged_owned_links(tmp_path):
     spec = importlib.util.spec_from_file_location('cleanup', Path(__file__).parents[1] / 'scripts/cleanup_retired_target.py')
     module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)

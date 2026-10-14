@@ -374,6 +374,15 @@ class SkillStateStore:
             ).fetchone()
         return _row_to_github_check(row) if row is not None else None
 
+    def latest_repository_check(self, repository: str) -> GithubCheckRecord | None:
+        """同仓库共享缓存，也共享最近一次成功获取的远端版本。"""
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT * FROM github_check WHERE repository = ? AND result = 'ok' "
+                "ORDER BY checked_at DESC LIMIT 1", (repository,),
+            ).fetchone()
+        return _row_to_github_check(row) if row is not None else None
+
     def delete_github_check(self, skill_id: str) -> None:
         with closing(self._connect()) as conn, conn:
             conn.execute(

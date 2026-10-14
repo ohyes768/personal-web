@@ -1,17 +1,8 @@
-"""staging 发布与存量迁移测试（2026-09-30 批量登记任务 design §4/§5.3/§8）。
-
-- Publisher.stage_github_skill：快照组装（本体 + shared_paths 随行资源、
-  .git 排除）、资源缺失 blocked、同 rev 复用、过期 rev 清理保留 2 份；
-- unpublish 只删链接不动 staging；
-- migration.migrate_legacy_cache 三分支（移动/多余副本删除/双缺失）与
-  republish_active_github_skills（无网络重发布、缓存缺失记 history error）。
-"""
+"""仓库缓存直链、旧缓存布局迁移与 active 旧链接自动迁移测试。"""
 
 from __future__ import annotations
 
-import os
 import subprocess
-import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -31,7 +22,6 @@ from src.services.migration import (
 )
 from src.services.publisher import (
     InvalidSourceError,
-    PublishBlockedError,
     Publisher,
 )
 from src.services.registry import RegistryService
@@ -135,113 +125,22 @@ def github_skill() -> RegistrySkill:
     )
 
 
-# ---------- staging 组装 ----------
-
-
-def test_stage_copies_skill_body_and_shared_paths(
-    publisher, shared_repo_cache, github_skill, roots
-):
-    staged = publisher.stage_github_skill(github_skill, "a" * 40, shared_repo_cache)
-
-    assert staged == roots.github_cache / "staging" / "two-skills-alpha" / ("a" * 12)
-    # 本体（含 SKILL.md）与 shared_paths 随行资源都进快照
-    assert (staged / "SKILL.md").is_file()
-    assert (staged / "run.md").is_file()
-    assert (staged / "tools" / "lib.py").read_text(encoding="utf-8") == "LIB\n"
-    # 仓库内但未被引用的内容与 .git 绝不进入产物
-    assert not (staged / "README.md").exists()
-    assert not (staged / ".git").exists()
-    assert not (staged / "skills").exists()
-
-
-def test_stage_rejects_missing_shared_path(publisher, shared_repo_cache, github_skill):
-    broken = github_skill.model_copy(update={"shared_paths": ["gone"]})
-    with pytest.raises(PublishBlockedError, match="gone"):
-        publisher.stage_github_skill(broken, "a" * 40, shared_repo_cache)
-
-
-def test_stage_rejects_repo_dir_outside_cache_root(
-    publisher, tmp_path, github_skill
-):
-    outside = tmp_path / "outside-repo"
-    skill_dir = outside / "skills" / "alpha"
-    skill_dir.mkdir(parents=True)
-    (skill_dir / "SKILL.md").write_text("x", encoding="utf-8")
-    with pytest.raises(InvalidSourceError, match="outside the GitHub cache root"):
-        publisher.stage_github_skill(github_skill, "a" * 40, outside)
-
-
-def test_stage_reuses_existing_rev_dir_and_drops_tmp(
-    publisher, shared_repo_cache, github_skill
-):
-    first = publisher.stage_github_skill(github_skill, "b" * 40, shared_repo_cache)
-    sentinel = first / "SKILL.md"
-    before = sentinel.read_text(encoding="utf-8")
-
-    second = publisher.stage_github_skill(github_skill, "b" * 40, shared_repo_cache)
-
-    assert second == first
-    # 复用不重组：既有内容原样保留（未被重写）
-    assert sentinel.read_text(encoding="utf-8") == before
-    # 不留组装临时目录
-    assert not any(
-        p.name.startswith(".") and p.name.endswith(".next")
-        for p in publisher.staging_root().iterdir()
-    )
-
-
-def test_stage_keeps_only_two_latest_revs(
-    publisher, shared_repo_cache, github_skill
-):
-    # 显式设置各 rev 目录 mtime 模拟不同发布时刻：规避平台时钟粒度
-    # （Windows ~15.6ms）导致同刻目录排序不确定。给已建 rev 设递增的
-    # 过去时间，最新 stage 的真实 mtime 自然最大。
-    base = time.time()
-    for i, revision in enumerate(("1" * 40, "2" * 40, "3" * 40)):
-        publisher.stage_github_skill(github_skill, revision, shared_repo_cache)
-        os.utime(
-            publisher.staging_root() / "two-skills-alpha" / revision[:12],
-            (base - 30 + i * 10, base - 30 + i * 10),
-        )
-
-    rev_dirs = sorted(
-        p.name for p in (publisher.staging_root() / "two-skills-alpha").iterdir()
-    )
-    assert rev_dirs == ["2" * 12, "3" * 12]
-
-
-def test_planned_staging_dir_is_read_only_computation(publisher):
-    planned = publisher.planned_staging_dir("some-skill", "abcdef1234567890")
-    assert planned.name == "abcdef123456"
-    assert not planned.exists()  # 只读计算，不创建目录
-    assert publisher.planned_staging_dir("some-skill", "") .name == "uncached"
-
-
-def test_resolve_registry_source_rejects_github_entries(settings, github_skill):
-    """github 条目的发布源是 staging（stage_github_skill），直链解析即拒。"""
-    from src.services.publisher import resolve_registry_source
-
-    with pytest.raises(InvalidSourceError, match="staging"):
-        resolve_registry_source(settings, github_skill)
-
-
-# ---------- unpublish 不动 staging ----------
+# ---------- 下架只删除链接，保留仓库缓存 ----------
 
 
 @pytest.mark.requires_symlink
-def test_unpublish_removes_link_but_keeps_staging(
-    publisher, shared_repo_cache, github_skill, store, roots
+def test_unpublish_removes_link_but_keeps_repository(
+    publisher, shared_repo_cache, github_skill, store, roots, settings
 ):
-    staged = publisher.stage_github_skill(github_skill, "c" * 40, shared_repo_cache)
-    publisher.publish(
-        github_skill.id, TargetKey.HERMES, staged, "c" * 40
-    )
+    from src.services.publisher import resolve_github_source
 
+    source = resolve_github_source(settings, github_skill, shared_repo_cache)
+    publisher.publish(github_skill.id, TargetKey.HERMES, source, "c" * 40)
     publisher.unpublish(github_skill.id, TargetKey.HERMES)
-
     assert not (roots.hermes / github_skill.id).is_symlink()
-    # staging 快照与 deployment removed 记录保留
-    assert staged.is_dir()
+    assert source.is_dir()
+    assert (shared_repo_cache / "tools" / "lib.py").is_file()
+    assert not (roots.github_cache / "staging").exists()
     record = store.get_deployment(github_skill.id, "hermes")
     assert record is not None and record.status == "removed"
 
@@ -354,10 +253,10 @@ def _init_real_git_repo(path: Path) -> str:
 
 
 @pytest.mark.requires_symlink
-def test_republish_active_github_skills_rebuilds_link_via_staging(
+def test_republish_active_github_skills_rebuilds_link_to_repository(
     roots, settings, store, publisher, git_cache, registry
 ):
-    """迁移后旧 symlink target 失效：启动重发布组装 staging 并替换链接。"""
+    """旧快照链接启动时直接迁移到仓库根目录，不创建新快照。"""
     revision = _init_real_git_repo(roots.github_cache / "repos" / "example__example-rep")
     skill = RegistrySkill(
         id="example-rep",
@@ -368,7 +267,9 @@ def test_republish_active_github_skills_rebuilds_link_via_staging(
     )
     registry.upsert(skill)
     # 迁移前的旧链接（指向已不存在的旧布局路径）+ active 记录
-    stale_target = roots.github_cache / "example-rep"
+    stale_target = roots.github_cache / "staging" / skill.id / revision[:12]
+    stale_target.mkdir(parents=True)
+    (stale_target / "SKILL.md").write_text("old snapshot", encoding="utf-8")
     link = roots.hermes / skill.id
     link.symlink_to(stale_target, target_is_directory=True)
     store.upsert_deployment(
@@ -388,16 +289,18 @@ def test_republish_active_github_skills_rebuilds_link_via_staging(
     )
 
     assert republished == 1
-    # 链接被替换到 staging rev 目录，内容可用
+    # 链接被替换到缓存仓库根目录，内容可用；旧快照保留，不做破坏性清理
     assert link.is_symlink()
     resolved = link.resolve()
     assert resolved == (
-        roots.github_cache / "staging" / skill.id / revision[:12]
+        roots.github_cache / "repos" / "example__example-rep"
     ).resolve()
     assert (resolved / "SKILL.md").is_file()
     record = store.get_deployment(skill.id, "hermes")
     assert record is not None and record.status == "active"
     assert record.current_link_target == str(resolved)
+    assert (stale_target / "SKILL.md").read_text() == "old snapshot"
+    assert republish_active_github_skills(settings, registry, store, publisher, git_cache) == 0
 
 
 def test_republish_records_history_error_when_cache_missing(

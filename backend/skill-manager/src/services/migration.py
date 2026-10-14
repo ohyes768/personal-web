@@ -9,10 +9,10 @@
    无数据损失），多余副本直接删除。
 2. `republish_active_github_skills`：迁移后原 symlink target（旧缓存
    子目录路径）失效，对 deployment 记录中 status=active 的 github 条目
-   自动重组 staging 并替换链接——等价自动重发布，让账实重新一致。
+   替换为仓库缓存登记目录的直链；已是正确直链则跳过。
 
 两者都**不依赖网络**（绝不 fetch/clone）：重发布用缓存当前 checkout
-状态组装 staging；缓存缺失的条目记 history error 交由 UI 的
+状态解析源目录；缓存缺失的条目记 history error 交由 UI 的
 link_missing 暴露，不阻断启动。
 """
 
@@ -25,11 +25,12 @@ from pathlib import Path
 from src.config import Settings
 from src.db import HistoryEntry, SkillStateStore
 from src.models import LINK_TARGET_IDS, RegistrySkill, SkillSource, TargetKey
-from src.services.git_cache import GitCacheService
+from src.services.git_cache import GitCacheError, GitCacheService
 from src.services.publisher import (
     Publisher,
     PublisherError,
     force_remove_tree,
+    resolve_github_source,
 )
 from src.services.registry import RegistryService
 
@@ -90,7 +91,7 @@ def republish_active_github_skills(
     publisher: Publisher,
     git_cache: GitCacheService,
 ) -> int:
-    """对 active 的 github 部署重组 staging 并替换 symlink（无网络）。
+    """把 active 的 GitHub 旧链接改到缓存登记目录（无网络）。
 
     返回成功重发布的数量；失败逐条记 deployment_history（result=error）
     与 warning 日志，不阻断启动——缓存缺失的条目由 UI 的 link_missing
@@ -113,9 +114,12 @@ def republish_active_github_skills(
                     f"repository cache for {skill.repository} does not exist"
                 )
             revision = git_cache.current_revision(skill)
-            source = publisher.stage_github_skill(skill, revision, repo_dir)
+            source = resolve_github_source(settings, skill, repo_dir)
+            link = settings.hermes_skills_root / skill.id
+            if link.is_symlink() and link.resolve() == source:
+                continue
             publisher.publish(skill.id, target, source, revision)
-        except PublisherError as exc:
+        except (PublisherError, GitCacheError, OSError) as exc:
             store.append_history(
                 HistoryEntry(
                     skill_id=skill.id,

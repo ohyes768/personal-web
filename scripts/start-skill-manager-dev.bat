@@ -20,7 +20,6 @@ REM 已在环境中设置过的变量（如真实密码）不会被覆盖
 if not defined SKILLS_SOURCE_ROOT set "SKILLS_SOURCE_ROOT=F:\personal-projects\skills"
 if not defined GITHUB_SKILL_CACHE_ROOT set "GITHUB_SKILL_CACHE_ROOT=%~dp0..\.skill-manager-dev\github-cache"
 if not defined SKILL_MANAGER_STATE_DIR set "SKILL_MANAGER_STATE_DIR=%~dp0..\.skill-manager-dev\state"
-if not defined OPENCLAW_SKILLS_ROOT set "OPENCLAW_SKILLS_ROOT=%~dp0..\.skill-manager-dev\targets\openclaw"
 if not defined HERMES_SKILLS_ROOT set "HERMES_SKILLS_ROOT=%~dp0..\.skill-manager-dev\targets\hermes"
 if not defined SKILL_MANAGER_TARGETS_MOUNT_ROOT set "SKILL_MANAGER_TARGETS_MOUNT_ROOT=%~dp0..\.skill-manager-dev\targets"
 REM 仅本地开发占位密码；真实密码通过环境变量注入，绝不写入本脚本
@@ -29,7 +28,6 @@ if not defined SKILL_MANAGER_ADMIN_PASSWORD set "SKILL_MANAGER_ADMIN_PASSWORD=de
 REM Ensure required directories exist (config.py 启动时要求目录已存在)
 if not exist "%GITHUB_SKILL_CACHE_ROOT%" mkdir "%GITHUB_SKILL_CACHE_ROOT%"
 if not exist "%SKILL_MANAGER_STATE_DIR%" mkdir "%SKILL_MANAGER_STATE_DIR%"
-if not exist "%OPENCLAW_SKILLS_ROOT%" mkdir "%OPENCLAW_SKILLS_ROOT%"
 if not exist "%HERMES_SKILLS_ROOT%" mkdir "%HERMES_SKILLS_ROOT%"
 
 REM [1/2] Start skill-manager backend

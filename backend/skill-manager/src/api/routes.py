@@ -80,6 +80,7 @@ from src.services.publisher import (
     Publisher,
     PublisherError,
     force_remove_tree,
+    resolve_github_source,
     resolve_registry_source,
     validated_source,
 )
@@ -118,10 +119,18 @@ def list_skills(
     skills = registry.list_skills()
     deployments: dict[str, dict[str, TargetDeployment]] = {}
     known = {skill.id: skill for skill in skills}
+    cache_revisions: dict[str, str] = {}
+    for skill in skills:
+        if skill.source is SkillSource.GITHUB:
+            repository = str(skill.repository)
+            if repository not in cache_revisions:
+                try:
+                    cache_revisions[repository] = git_cache.current_revision(skill)
+                except (GitCacheError, OSError):
+                    cache_revisions[repository] = ""
     hashes: dict[str, str | None] = {}
     for record in store.list_deployments():
-        # 账实核对：active 记录对目标链接做 lstat 存在性检查（纯 lstat，
-        # 每条一次，零子进程）；removed 记录不出徽章，不检查
+        # 账实核对：active 链接必须能解析到目录；直链版本反映共享缓存 HEAD。
         is_export = record.target not in LINK_TARGET_IDS
         stale = False
         if is_export and record.content_hash and record.status == "active":
@@ -132,14 +141,28 @@ def list_skills(
                 except (OSError, HTTPException, InvalidSourceError):
                     hashes[record.skill_id] = None
             stale = hashes[record.skill_id] != record.content_hash
-        link_missing = not is_export and record.status == "active" and not (
-            _target_root(settings, TargetKey(record.target)) / record.skill_id
-        ).is_symlink()
+        link_missing = False
+        revision = record.source_revision
+        link_target = record.current_link_target
+        if not is_export and record.status == "active":
+            link = _target_root(settings, TargetKey(record.target)) / record.skill_id
+            link_missing = not (link.is_symlink() and link.is_dir())
+            skill = known.get(record.skill_id)
+            if not link_missing and skill and skill.source is SkillSource.GITHUB:
+                try:
+                    source = resolve_github_source(settings, skill, git_cache.repo_cache_dir(str(skill.repository)))
+                    if link.resolve() == source:
+                        revision = cache_revisions.get(str(skill.repository), "")
+                        link_target = str(source)
+                    else:
+                        stale = True
+                except InvalidSourceError:
+                    link_missing = True
         deployments.setdefault(record.skill_id, {})[record.target] = TargetDeployment(
             status=record.status,
-            revision=record.source_revision,
+            revision=revision,
             published_at=record.published_at,
-            link_target=record.current_link_target,
+            link_target=link_target,
             link_missing=link_missing,
             stale=stale,
             content_hash=record.content_hash,
@@ -149,12 +172,13 @@ def list_skills(
             settings,
             skill,
             deployments.get(skill.id, {}),
-            store.get_github_check(skill.id),
+            store.latest_repository_check(str(skill.repository)) if skill.source is SkillSource.GITHUB else None,
             # 与 ensure_cached 决定 fetch/clone 的口径一致：仓库维度共享缓存
             # 的存在性（纯文件系统判断，零 git 子进程）；注册表随源库同步
             # 而缓存环境本地，缺失属常态
             cache_missing=skill.source is SkillSource.GITHUB
             and not git_cache.cache_present(str(skill.repository)),
+            cached_revision=cache_revisions.get(str(skill.repository)),
         )
         for skill in skills
     ]
@@ -291,16 +315,17 @@ def _build_card(
     deployments: dict[str, TargetDeployment],
     check: GithubCheckRecord | None,
     cache_missing: bool = False,
+    cached_revision: str | None = None,
 ) -> SkillCard:
     update: UpdateInfo | None = None
     if check is not None and check.result == "ok":
         update = UpdateInfo(
-            skill_id=check.skill_id,
+            skill_id=skill.id,
             repository=check.repository,
             remote_revision=check.remote_revision,
             remote_tags=[tag for tag in check.remote_tags.split(",") if tag],
-            cached_revision=check.cached_revision,
-            has_update=check.remote_revision != check.cached_revision,
+            cached_revision=check.cached_revision if cached_revision is None else cached_revision,
+            has_update=check.remote_revision != (check.cached_revision if cached_revision is None else cached_revision),
             checked_at=check.checked_at,
         )
     source_missing = (
@@ -735,9 +760,8 @@ def _plan_one(
 ) -> PlanItem:
     """单项计划：解析受控源 + 检查目标现状，绝不写入文件系统。
 
-    github 条目的计划源是 staging 快照目录（design §4）：只读计算
-    `planned_staging_dir`，并校验共享缓存存在与登记路径有效
-    （`ensure_skill_path_cached` 纯文件系统读，零 git 子进程）。
+    GitHub 使用仓库缓存的登记目录；同一链接路径下仍须比较缓存版本，
+    防止有待更新内容时被误判 unchanged。预览不 fetch、不写文件。
     """
     planned_revision = ""
     try:
@@ -749,9 +773,7 @@ def _plan_one(
                 )
             git_cache.ensure_skill_path_cached(skill)
             planned_revision = _planned_revision(store, git_cache, skill)
-            source = publisher.planned_staging_dir(
-                skill.id, planned_revision
-            ).resolve()
+            source = resolve_github_source(settings, skill, git_cache.repo_cache_dir(canonical))
         else:
             source = resolve_registry_source(settings, skill)
     except InvalidSourceError as exc:
@@ -773,6 +795,8 @@ def _plan_one(
                 reason=f"现有链接指向受控目录之外：{resolved_link}",
             )
         action = "unchanged" if resolved_link == source else "update"
+        if skill.source is SkillSource.GITHUB and planned_revision != git_cache.current_revision(skill):
+            action = "update"
     elif final_link.exists():
         return PlanItem(
             skill_id=skill.id, target=target, action="blocked",
@@ -781,11 +805,14 @@ def _plan_one(
     else:
         action = "add"
     deployment = store.get_deployment(skill.id, target.value)
+    current_revision = deployment.source_revision if deployment else ""
+    if skill.source is SkillSource.GITHUB and final_link.is_symlink() and final_link.resolve() == source:
+        current_revision = git_cache.current_revision(skill)
     return PlanItem(
         skill_id=skill.id,
         target=target,
         action=action,
-        current_revision=deployment.source_revision if deployment else "",
+        current_revision=current_revision,
         planned_revision=planned_revision,
     )
 
@@ -797,7 +824,7 @@ def _planned_revision(
     无记录时退回缓存 HEAD。全程只读，绝不 fetch（design 4.2/5）。"""
     if skill.source is not SkillSource.GITHUB:
         return ""
-    check = store.get_github_check(skill.id)
+    check = store.latest_repository_check(str(skill.repository))
     if check is not None and check.result == "ok" and check.remote_revision:
         return check.remote_revision
     return git_cache.current_revision(skill)
@@ -869,11 +896,11 @@ def _publish_one(
         if skill.source is SkillSource.GITHUB:
             # design 5 / R3：实际缓存更新仅随管理员确认的发布执行——
             # 发布时才 fetch 并检出最近一次成功检查记录的远端 revision；
-            # 发布源是 staging 快照（skill 子目录 + shared_paths 随行资源）
+            # 缓存更新同时作用于同仓库其他已安装的直链成员。
             _ensure_cached_at_recorded_revision(git_cache, store, skill)
             revision = git_cache.current_revision(skill)
             repo_dir = git_cache.repo_cache_dir(str(skill.repository))
-            source = publisher.stage_github_skill(skill, revision, repo_dir)
+            source = resolve_github_source(settings, skill, repo_dir)
         else:
             source = resolve_registry_source(settings, skill)
     except GitCacheError as exc:
@@ -910,7 +937,7 @@ def _ensure_cached_at_recorded_revision(
 
     无成功检查记录时保持缓存现状（登记后从未检查过的场景，缓存即登记版本）。
     """
-    check = store.get_github_check(skill.id)
+    check = store.latest_repository_check(str(skill.repository))
     if check is not None and check.result == "ok" and check.remote_revision:
         if (
             git_cache.cached_skill_available(skill)
@@ -971,7 +998,7 @@ def delete_skill(
 ) -> DeleteSkillResponse:
     """删除已登记的 Skill（design：任一 target active 时拒绝）。
 
-    - GitHub 来源：删除登记 + 清理 staging 快照；仓库缓存是同仓库条目
+    - GitHub 来源：删除登记 + 清理旧 staging 残留；仓库缓存是同仓库条目
       共享的，仅当本条目是最后一个使用该仓库的登记时才一并删除；
     - 本地来源：仅删除数据库登记记录（源目录若存在则拒绝，移除目录后自动解除）。
 
@@ -1120,7 +1147,7 @@ def _require_known_skill(
         },
     )
 
-# Unified Hermes install orchestrates existing registration, staging and link services.
+# Unified Hermes install orchestrates registration, repository caching and direct links.
 from threading import Lock
 from fastapi import Request
 from src.services.install import InstallManager

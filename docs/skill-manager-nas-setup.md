@@ -2,6 +2,14 @@
 
 Skill 发布管理台（`apps/skill-manager` 前端 + `backend/skill-manager` 后端）在 NAS 上的部署与回滚说明。架构与安全边界见任务设计文档：后端是唯一允许执行 Git、扫描与 symlink 发布的组件；前端不持有任何管理密码。
 
+## Hermes GitHub 目录直链
+
+GitHub 安装不生成版本快照：`Hermes/skill-id` 直接软链到共享仓库缓存的登记目录。
+合集成员分别指向各自子目录；单项根 Skill 指向仓库根。更新仓库缓存后，同仓库已安装成员同步读取新内容，无需重新创建各个软链。
+检查更新只查询远端，实际 fetch/checkout 在确认安装/更新或显式 Clone 时执行。
+共享资源保留仓库原始结构，不再另行拷入快照。其他目标仍走下述 ZIP 导出。
+服务启动时离线把已安装的旧快照链接迁移到缓存目录；正常直链不重复改写，旧快照目录保留。
+
 ## Windows 外部目标导出
 
 Hermes 继续使用 NAS symlink 发布。Windows Codex / Claude Code

@@ -1,5 +1,4 @@
 """Hermes install plans and bounded, credential-free background execution."""
-from pathlib import Path
 from copy import deepcopy
 from dataclasses import dataclass
 import os
@@ -11,7 +10,7 @@ from fastapi import HTTPException
 from src.models import RegistrySkill, SkillSource, TargetKey
 from src.services.exporting import dir_hash
 from src.services.operation_lock import operation_lock
-from src.services.publisher import resolve_registry_source
+from src.services.publisher import resolve_github_source, resolve_registry_source
 
 
 def error(code, message, status=409):
@@ -47,22 +46,11 @@ class InstallManager:
         if skill.source == SkillSource.GITHUB:
             cache.ensure_skill_path_cached(skill)
             root = cache.repo_cache_dir(str(skill.repository)).resolve()
-            paths = [skill.path, *skill.shared_paths]
-            if any('.git' in Path(path).parts for path in paths):
-                error('invalid_source', 'Git内部数据不能作为共享资源', 400)
-            hashes = []
-            for path in paths:
-                source = (root / path).resolve()
-                if not source.is_relative_to(root) or not source.exists():
-                    error('invalid_source', 'Skill或共享资源路径不可用', 400)
-                if source.is_dir():
-                    if any(p.is_symlink() for p in source.rglob('*') if '.git' not in p.relative_to(source).parts):
-                        error('invalid_source', '源目录含符号链接，请改为受控普通文件', 400)
-                    hashes.append((path, dir_hash(source)))
-                else:
-                    import hashlib
-                    hashes.append((path, hashlib.sha256(source.read_bytes()).hexdigest()))
-            check = cache.store.get_github_check(skill.id)
+            source = resolve_github_source(settings, skill, root)
+            if any(p.is_symlink() for p in source.rglob('*') if '.git' not in p.relative_to(source).parts):
+                error('invalid_source', '源目录含符号链接，请改为受控普通文件', 400)
+            hashes = [(skill.path, dir_hash(source))]
+            check = cache.store.latest_repository_check(str(skill.repository))
             revision = check.remote_revision if current and check and check.result == 'ok' else cache.current_revision(skill)
             return {'target': target_state, 'registered': registered, 'revision': revision, 'cache_revision': cache.current_revision(skill), 'hashes': hashes}
         return {'target': target_state, 'registered': registered, 'revision': '', 'hashes': dir_hash(resolve_registry_source(settings, skill))}
@@ -80,7 +68,7 @@ class InstallManager:
                     item.planned_revision = state['revision']
                     # Candidate plans must not use unrelated ID check records.
                     if skill.source == SkillSource.GITHUB and not state['registered']:
-                        source = publisher.planned_staging_dir(skill.id, state['revision']).resolve()
+                        source = resolve_github_source(settings, skill, cache.repo_cache_dir(str(skill.repository)))
                         link = settings.hermes_skills_root / skill.id
                         if item.action != 'blocked':
                             item.action = 'unchanged' if link.is_symlink() and link.resolve() == source else 'update' if link.is_symlink() else 'add'
@@ -135,15 +123,23 @@ class InstallManager:
                             raise ValueError('来源或登记已变化，请重新预览')
                         if skill.source == SkillSource.GITHUB:
                             if cache.current_revision(skill) != state['revision']:
-                                cache.ensure_cached(skill, state['revision'])
-                                for other, expected in zip(plan.skills, plan.states):
-                                    if other.id != skill.id and expected is not None and other.repository == skill.repository:
-                                        prepared = self.source_state(other, settings, registry, cache)
-                                        expected['cache_revision'] = prepared['cache_revision']
-                                        expected['hashes'] = prepared['hashes']
+                                try:
+                                    cache.ensure_cached(skill, state['revision'])
+                                finally:
+                                    # checkout 可能已成功，但当前成员在新版本中被删除。
+                                    # 仍需刷新其他成员的缓存指纹，避免正常成员被连带拒绝。
+                                    if cache.current_revision(skill) != state['cache_revision']:
+                                        for index, (other, expected) in enumerate(zip(plan.skills, plan.states)):
+                                            if other.id != skill.id and expected is not None and other.repository == skill.repository:
+                                                try:
+                                                    prepared = self.source_state(other, settings, registry, cache)
+                                                    expected['cache_revision'] = prepared['cache_revision']
+                                                    expected['hashes'] = prepared['hashes']
+                                                except Exception as exc:
+                                                    plan.items[index].update(action='blocked', reason=str(exc))
                             if cache.current_revision(skill) != state['revision']:
                                 raise ValueError('缓存未取得确认版本，请重新预览')
-                            source = publisher.stage_github_skill(skill, state['revision'], cache.repo_cache_dir(str(skill.repository)))
+                            source = resolve_github_source(settings, skill, cache.repo_cache_dir(str(skill.repository)))
                         else:
                             source = resolve_registry_source(settings, skill)
                         self._stage(plan.task_id, 'registering')

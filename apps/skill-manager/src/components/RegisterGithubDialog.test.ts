@@ -155,6 +155,16 @@ describe('GitHub scan loading', () => {
 });
 
 describe('collection registration defaults', () => {
+  it('does not offer snapshot resource copying for direct-link installs', async () => {
+    hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
+    await scanButton(enterRepository()).props.onClick!();
+    hooks.poll.task = snapshot({ state: 'done', candidates: [{ path: '.', name: 'Root', description: '' }],
+      top_level: [{ path: 'tools', is_dir: true }], referenced_paths: ['tools'] });
+    const tree = render();
+    expect(text(tree)).not.toContain('共享资源');
+    expect(nodes(tree).filter(n => n.props.type === 'checkbox')).toHaveLength(1);
+  });
+
   it('prefills a collection repository and selects only unregistered paths', async () => {
     const options = { initialRepository: 'https://github.com/owner/repo', existingSkills: [{
       id: 'existing', name: 'Existing', source: 'github' as const,

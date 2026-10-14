@@ -1,7 +1,7 @@
 # Skill Manager GitHub 缓存生命周期
 
 > **Purpose**: 讲清 GitHub 来源 Skill 的发布源（本环境缓存）何时被 clone/fetch、
-> 仓库共享缓存与 staging 发布模型（2026-09-30）如何工作、缓存缺失为什么会
+> 仓库共享缓存与登记目录直链（2026-10-14）如何工作、缓存缺失为什么会
 > 导致"已阻止"死锁、以及 Clone 端点如何打破死锁。
 > 排查"源不可用：source directory does not exist"报错前必读。
 
@@ -10,14 +10,12 @@
 ## 缓存是什么
 
 GitHub 来源 Skill 的发布源不在源库，而在本环境缓存目录。自 2026-09-30 起
-缓存是**仓库维度共享**的，发布经 **staging 快照**落地：
+缓存是**仓库维度共享**的，Hermes 直接软链到登记目录：
 
 ```
 ${GITHUB_SKILL_CACHE_ROOT}/
 ├── repos/<owner>__<repo>/        # 整仓 clone，同仓库所有条目共享一份
 │   └── <registry.path>/SKILL.md  # path 为 "." 时即仓库根
-├── staging/<skill-id>/<rev12>/   # 发布快照：skill 子目录 + shared_paths
-│   └── (rev12 = full sha 前 12 位；缓存缺失时为 "uncached")
 ├── .tmp/                          # 首次 clone 的临时目录，成功后原子 rename
 ```
 
@@ -71,26 +69,15 @@ skill-manager **不读源库任何登记文件**：自研 Skill 经 `sync_local(
 - 任务是内存态，服务重启即丢（轮询得 404 `task_not_found`），完结任务 30
   分钟后惰性回收；前端对 404 的提示文案依赖这一语义。
 
-## staging 发布模型（2026-09-30）
+## 仓库缓存直链（2026-10-14）
 
-GitHub 条目的 symlink 不再指向缓存子目录，而是指向 **staging 快照**
-（`Publisher.stage_github_skill`，publisher.py）：
-
-- 路径 `staging/<skill-id>/<rev12>/`，rev12 = full sha 前 12 位；
-  组装内容 = `shared_paths` 随行资源（仓库根级目录/文件，如 `tools/`）先拷 +
-  skill 本体子目录后拷（本体覆盖同名）；`.git` 永不进产物；
-- 每次 rev 一个独立快照目录：共享缓存后续 fetch/checkout 到其他 revision
-  不影响已发布内容，symlink 原子切换零悬空窗口；
-- 同 rev 目录已存在（重复发布同版本）直接复用；组装落 `.tmp` 后原子 rename；
-- 每个 skill 只保留最新 **2** 个 rev 目录（`st_mtime_ns` 倒序清理），
-  回滚意义上够用且控磁盘；
-- 计划预览用 `planned_staging_dir` 只读计算，不组装；
-- 删除登记时 `remove_staging` 清掉该 skill 全部 rev（尽力而为）。
-
-**shared_paths 的语义**：登记/批量登记时随条目落库（`registry_skill.shared_paths`），
-发布时从共享缓存仓库根拷进快照，解决合集仓库根级共享资源（如 ai-berkshire
-的 `tools/` 断链）问题。前端默认预选候选 SKILL.md 引用到的顶层路径，且
-**排除候选目录的祖先目录**（勾上 `codex-skills/` 会把整棵候选树拷进快照）。
+- GitHub 源统一由 `resolve_github_source(settings, skill, repo_dir)` 解析：仓库根或登记子目录必须在仓库/缓存边界内，含 SKILL.md；拒绝绝对路径、`..`、`.git` 与逃逸软链。
+- 单项（`path="."`）链接仓库根，合集成员分别链接其登记子目录。没有整仓额外根软链，不生成逐 Skill 快照。
+- 缓存 checkout 会立即影响同仓库所有已安装直链成员；它们共享一个仓库版本，不再隔离版本。检查更新只读，缓存更新仍需安装确认，或显式 Clone 操作。
+- 预览仍绑定远端确认版本、缓存 HEAD、源哈希和现有目标状态；链接路径未变但缓存版本落后时必须计划为 update，不能误判 unchanged。同仓库安装计划使用最近一次成功的仓库级检查记录，避免旧成员检查结果使缓存倒退。
+- 列表每仓库读一次当前 HEAD；正确直链的安装版本显示当前 HEAD，更新提示比较最近成功远端检查与当前 HEAD，不再使用检查时的旧 cached_revision。源目录失效或悬空链接视为异常。
+- `shared_paths` 仅保留旧登记字段兼容；直链保留仓库本身目录结构，不复制资源，安装预览不再要求这些旧路径存在。前端移除资源拷贝选项；导出保持原契约。
+- 旧 staging 目录不会生成新内容，也不在迁移时删除；删除对应 Skill 登记时仍尽力清理旧目录，避免破坏尚未迁移的链接。
 
 ## 启动迁移（2026-09-30 一次性兼容）
 
@@ -101,8 +88,7 @@ GitHub 条目的 symlink 不再指向缓存子目录，而是指向 **staging �
    同仓库多份旧缓存只保留先落地的一份（发布时按各条目记录 revision 重新
    fetch/checkout，无数据损失），多余副本直接删除；单项失败只记日志不阻断启动；
 2. `republish_active_github_skills`：迁移后旧 symlink target 失效，对
-   deployment 中 status=active 且 target_kind=link 的 github 条目用缓存当前 checkout 状态重组
-   staging 并替换链接（等价自动重发布）。失败逐条记 deployment_history
+   deployment 中 status=active 且 target_kind=link 的 github 条目用缓存当前 checkout 的登记目录替换旧布局或旧快照链接；正确直链跳过。失败逐条记 deployment_history
    （result=error）+ warning 日志不阻断启动——缓存缺失的条目由 UI 的
    `link_missing` 暴露，管理员经 Clone 重建后再手动发布。
 
@@ -138,8 +124,7 @@ GitHub 条目的 symlink 不再指向缓存子目录，而是指向 **staging �
 
 ## 相关坑
 
-- **symlink 全命名空间一致**：symlink target 是写入时的字面路径。Hermes/
-  OpenClaw 跑在宿主机，所以 NAS 部署必须用**同路径 bind mount**
+- **symlink 全命名空间一致**：symlink target 是写入时的字面路径。Hermes 跑在宿主机，所以 NAS 部署必须用**同路径 bind mount**
   （`${VAR}:${VAR}`，env 根 = 宿主路径，`SKILL_MANAGER_TARGETS_MOUNT_ROOT`
   不传）——容器内写的路径即宿主机路径，两侧解析一致。任何"容器 A 路径 +
   宿主机消费"的组合都会断链（2026-09 生产实锤：`~/.hermes/skills/<id>` →
@@ -175,12 +160,12 @@ GitHub 条目的 symlink 不再指向缓存子目录，而是指向 **staging �
 - 扫描浅克隆落 `.tmp/<repo>-scan-<uuid>`，扫描有候选且 HEAD 有效后同盘原子 rename 进 `repos`；成功后保留，登记直接使用已有离线分支。
 - 空候选、失败或中断不产生正式缓存；本次临时目录 finally 清理，进程中断残留由启动清理兜底。旧 `state/scan/*` 清理逻辑继续保留以兼容历史残留。
 - 并发已有有效缓存时弃自己的临时 clone，重新读取胜出缓存的候选，绝不覆盖；既有目录无效时明确失败，不覆盖已有文件。
-- 单项/批量登记复用缓存，不调用 verify_reachable/check_update/ensure_cached；逐项记录本地 HEAD，发布 staging 语义不变。
+- 单项/批量登记复用缓存，不调用 verify_reachable/check_update/ensure_cached；逐项记录本地 HEAD，安装时使用缓存登记目录的直链。
 - shallow 缓存仍可通过原有 fetch/checkout 更新到后续 revision；不为了登记额外拉取历史。
 - 尚未登记或用户取消添加也保留扫描缓存，下一次扫描可复用；本变更不新增定时清理或删除仓库的脚本。
 
-## Hermes 单目标与版本固定（2026-10-13）
+## Hermes 单目标与确认版本
 
-- 安装预览把仓库 HEAD 与候选路径绑定到 `plan_id`；密码确认后才 fetch 并把 staging 快照固定到该 revision。检查更新不能静默改写已确认的版本。
-- 已登记条目的安装复用 staging 快照；缓存缺失必须先准备缓存再生成新计划。
-- OpenClaw 标识不再写入 registry_skill 或 deployment；旧记录在启动时迁移到 `retired_deployment` 并备份，target=`openclaw` 永久视为已停用。
+- 安装预览绑定仓库版本与候选路径到 plan_id；密码确认后才 fetch 到确认版本。检查更新不能静默改写已确认计划。
+- 已登记条目安装直接链接缓存登记目录；缓存缺失必须先准备缓存再生成新计划。更新任一成员的共享缓存，其他已安装直链成员同时读取新版本。
+- OpenClaw 不再作为管理目标；旧记录在启动时迁移到 retired_deployment 并备份，target=openclaw 永久停用。开发启动脚本只初始化 Hermes 目标目录。

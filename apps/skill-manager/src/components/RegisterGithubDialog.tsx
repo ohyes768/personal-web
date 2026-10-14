@@ -29,8 +29,7 @@ function registeredPathsFor(skills: SkillCard[], repository: string): Set<string
 
 /**
  * 新增 GitHub Skill 登记流程（design 5/6 + 批量登记 design §5.2）：
- * 仓库 URL → 后台扫描任务（2s 轮询，进度/已用时）→ 勾选候选目录 +
- * 随行共享资源 → 密码确认提交。勾 1 项走单条登记（手填名称/标签/简介，
+ * 仓库 URL → 后台扫描任务（2s 轮询，进度/已用时）→ 勾选候选目录 → 密码确认直链安装。勾 1 项走单条登记（手填名称/标签/简介，
  * 与改版前一致）；勾多项走批量登记（以各候选 SKILL.md 的 name 登记）。
  */
 export default function RegisterGithubDialog({
@@ -48,7 +47,6 @@ export default function RegisterGithubDialog({
   const [scanSeconds, setScanSeconds] = useState(0);
   const [scanError, setScanError] = useState('');
   const [selectedPaths, setSelectedPaths] = useState<string[]>([]);
-  const [sharedPaths, setSharedPaths] = useState<string[]>([]);
   const [name, setName] = useState('');
   const [tagsText, setTagsText] = useState('');
   const [summary, setSummary] = useState('');
@@ -84,16 +82,7 @@ export default function RegisterGithubDialog({
       initializedScan.current = activeScan.task_id;
       const registered = registeredPathsFor(existingSkills, activeScan.repository);
       setSelectedPaths(activeScan.candidates.filter(candidate => !registered.has(candidate.path)).map(candidate => candidate.path));
-      // 排除候选目录的祖先；用户调整后不再覆盖共享资源选项。
-      setSharedPaths(
-        activeScan.referenced_paths.filter(
-          (entry) =>
-            !activeScan.candidates.some(
-              (candidate) =>
-                candidate.path === entry || candidate.path.startsWith(`${entry}/`)
-            )
-        )
-      );
+
     }
   }, [activeScan, existingSkills]);
 
@@ -107,7 +96,6 @@ export default function RegisterGithubDialog({
     setScanTaskId('');
     setScanError('');
     setSelectedPaths([]);
-    setSharedPaths([]);
     initializedScan.current = '';
     setName('');
     setSummary('');
@@ -125,12 +113,6 @@ export default function RegisterGithubDialog({
 
   function togglePath(path: string, checked: boolean) {
     setSelectedPaths((prev) =>
-      checked ? [...prev, path] : prev.filter((p) => p !== path)
-    );
-  }
-
-  function toggleShared(path: string, checked: boolean) {
-    setSharedPaths((prev) =>
       checked ? [...prev, path] : prev.filter((p) => p !== path)
     );
   }
@@ -164,7 +146,7 @@ export default function RegisterGithubDialog({
     const candidates = activeScan?.candidates ?? [];
     return {
       repository: activeScan?.repository ?? repository.trim(),
-      shared_paths: sharedPaths,
+      shared_paths: [],
       items: selectedPaths.map((path) => {
         const candidate = candidates.find((c) => c.path === path);
         return {
@@ -339,40 +321,7 @@ export default function RegisterGithubDialog({
               </fieldset>
               </details>
 
-              <details className="mt-3"><summary className="cursor-pointer text-sm text-slate-600">高级选项：名称、标签与共享资源</summary>
-              {activeScan.top_level.length > 0 ? (
-                <fieldset className="mt-3">
-                  <legend className="text-sm font-medium text-slate-700">
-                    随行共享资源（可选）
-                  </legend>
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    安装时一并拷入快照的仓库根级目录/文件；默认勾选候选 SKILL.md
-                    中引用到的项
-                  </p>
-                  <div className="mt-1 max-h-32 space-y-1 overflow-y-auto rounded border border-slate-200 p-2">
-                    {activeScan.top_level.map((entry) => (
-                      <label key={entry.path} className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={sharedPaths.includes(entry.path)}
-                          onChange={(event) =>
-                            toggleShared(entry.path, event.target.checked)
-                          }
-                          disabled={busy}
-                        />
-                        <span className="text-slate-700">
-                          {entry.path}
-                          {entry.is_dir ? '/' : ''}
-                        </span>
-                        {activeScan.referenced_paths.includes(entry.path) ? (
-                          <span className="text-xs text-slate-400">被引用</span>
-                        ) : null}
-                      </label>
-                    ))}
-                  </div>
-                </fieldset>
-              ) : null}
-
+              <details className="mt-3"><summary className="cursor-pointer text-sm text-slate-600">高级选项：名称、标签与简介</summary>
               {singleCandidate ? (
                 <>
                   <label className="mt-3 block text-sm font-medium text-slate-700">
@@ -435,7 +384,7 @@ export default function RegisterGithubDialog({
         </div>
       </form>
 
-      {awaitPassword ? <InstallDialog input={{scan_task_id: scanTaskId, candidates: singleCandidate ? [{path: selectedPaths[0], name: name.trim(), tags: tagsText.split(',').map(t => t.trim()).filter(Boolean), summary: summary.trim()}] : buildBatchInput().items.map(i => ({...i, tags: i.tags ?? [], summary: i.summary ?? ''})), shared_paths: sharedPaths}}
+      {awaitPassword ? <InstallDialog input={{scan_task_id: scanTaskId, candidates: singleCandidate ? [{path: selectedPaths[0], name: name.trim(), tags: tagsText.split(',').map(t => t.trim()).filter(Boolean), summary: summary.trim()}] : buildBatchInput().items.map(i => ({...i, tags: i.tags ?? [], summary: i.summary ?? ''}))}}
         onRefresh={onRefresh} onClose={() => { setAwaitPassword(false); onCancel(); }} /> : null}
     </div>
   );

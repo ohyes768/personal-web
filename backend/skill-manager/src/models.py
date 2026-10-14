@@ -85,7 +85,7 @@ class RegistrySkill(BaseModel):
 
     - `source=local`：`path` 是源库内相对目录，必须含 `SKILL.md`（目录级校验在 RegistryService）。
     - `source=github`：`repository` 必填，`path` 是仓库内相对目录，可为 `.`；
-      `shared_paths` 是随行共享资源（仓库根相对路径，发布时拷贝进 staging）。
+      `shared_paths` 为旧登记兼容字段，直链安装不拷贝这些资源。
     - 去重/排序 tags 与路径穿越拒绝由 RegistryService 负责，模型只守字段契约。
     """
 

@@ -60,6 +60,7 @@ export default function InstallDialog({input, onClose, onRefresh}: {input: Insta
     onConfirm={password => void confirm(password)} onCancel={onClose} description={<div className="space-y-2">
       {preparing ? <p>正在准备安装计划…</p> : <p>新增 {plan?.items.filter(i => i.action === 'add').length ?? 0} · 更新 {plan?.items.filter(i => i.action === 'update').length ?? 0} · 跳过 {plan?.items.filter(i => i.action === 'unchanged').length ?? 0} · 无法安装 {plan?.items.filter(i => i.action === 'blocked').length ?? 0}</p>}
       {plan?.items.map(i => <p key={i.skill_id}>{i.name}：{labels[i.action]} {i.planned_revision?.slice(0,7)} {i.reason}</p>)}
+      {plan?.items.some(i => i.planned_revision) && <p className="text-xs text-slate-500">GitHub 仓库更新后，同仓库已安装的 Skill 会同步更新。</p>}
       {busy && task && <p role="status">{({preparing:'准备中', registering:'登记中', installing:'安装中'} as Record<string,string>)[task.stage] ?? task.stage} · 已处理 {task.results.length}/{plan?.items.length}</p>}
       {task?.results.map(r => <p key={r.skill_id}>{r.name}：{r.status === 'success' ? '安装成功' : `${r.registered ? '已登记、未安装' : '未安装'} — ${r.error}`}</p>)}
       {done && task.results.some(r => r.status !== 'success') && <button type="button" onClick={retry} className="text-sky-700 underline">仅重试失败项</button>}

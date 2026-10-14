@@ -829,14 +829,14 @@ def test_publish_fetches_recorded_remote_revision_before_linking(
     assert published.status_code == 200
     assert published.json()["items"][0]["status"] == "success"
 
-    # 共享缓存 fetch/checkout 到远端最新 revision；目标链接指向 staging 快照
+    # 共享缓存更新到远端版本；目标链接直接指向登记子目录
     repo_dir = roots.github_cache / "repos" / "example__two-skills"
     skill_dir = (repo_dir / "skills/alpha").resolve()
     assert "alpha-v2" in (skill_dir / "SKILL.md").read_text(encoding="utf-8")
     link = roots.hermes / skill_id
     assert link.is_symlink()
     assert link.resolve() == (
-        roots.github_cache / "staging" / skill_id / v2[:12]
+        roots.github_cache / "repos" / "example__two-skills" / "skills" / "alpha"
     ).resolve()
     assert "alpha-v2" in (link / "SKILL.md").read_text(encoding="utf-8")
     card = next(
@@ -890,9 +890,9 @@ def test_registered_github_skill_can_be_planned_and_published(
     assert published.json()["items"][0]["status"] == "success"
     link = roots.hermes / skill_id
     assert link.is_symlink()
-    # 发布源是 staging 快照：无检查记录时以缓存 HEAD（登记版本）组装
+    # 发布源是缓存登记子目录：单成员也不创建快照
     assert link.resolve() == (
-        roots.github_cache / "staging" / skill_id / upstream_repo.revision[:12]
+        roots.github_cache / "repos" / "example__two-skills" / "skills" / "alpha"
     ).resolve()
     assert (link / "SKILL.md").is_file()
 
@@ -1295,6 +1295,7 @@ def _await_install(client, task_id):
     raise AssertionError('installation did not finish')
 
 
+@pytest.mark.requires_symlink
 def test_hermes_install_preview_password_and_idempotence(client, roots):
     preview = client.post('/api/skills/install/preview', json={'skill_ids': ['alpha']})
     assert preview.status_code == 200
@@ -1327,6 +1328,7 @@ def test_install_rejects_source_changes_and_expired_plan(client, roots):
     assert not (roots.hermes / 'alpha').exists()
 
 
+@pytest.mark.requires_symlink
 def test_new_github_candidates_register_and_install_once(client, roots):
     created = client.post('/api/skills/github/scan', json={'repository': CANONICAL_URL})
     scan = _await_task(client, created.json()['task_id'])
@@ -1354,6 +1356,7 @@ def test_retired_target_rejected_and_not_exported(client):
     assert client.post('/api/export-targets', json={'id': 'openclaw', 'name': 'retired'}).status_code == 400
 
 
+@pytest.mark.requires_symlink
 def test_install_partial_success_keeps_registered_failure(client, roots, monkeypatch):
     from src.main import app
     from src.services.publisher import PublisherError
@@ -1374,7 +1377,8 @@ def test_install_partial_success_keeps_registered_failure(client, roots, monkeyp
     assert not (roots.hermes / 'beta').exists()
 
 
-def test_install_updates_multiple_members_at_confirmed_revision(client, roots, upstream_repo, tmp_path):
+@pytest.mark.requires_symlink
+def test_install_updates_shared_repository_for_all_linked_members(client, roots, upstream_repo, tmp_path):
     created = client.post('/api/skills/github/scan', json={'repository': CANONICAL_URL}).json()
     scan = _await_task(client, created['task_id'])
     preview = client.post('/api/skills/install/preview', json={'scan_task_id': scan['task_id'], 'candidates': [
@@ -1389,10 +1393,17 @@ def test_install_updates_multiple_members_at_confirmed_revision(client, roots, u
     run_git('commit', '-am', 'v2', cwd=work); run_git('push', cwd=work)
     revision = run_git('rev-parse', 'HEAD', cwd=work).strip()
     client.post('/api/skills/check-updates', json={'skill_ids': ids})
-    plan = client.post('/api/skills/install/preview', json={'skill_ids': ids}).json()
+    # 只更新第一个成员；第二个已安装直链应随共享缓存更新，无需重装。
+    plan = client.post('/api/skills/install/preview', json={'skill_ids': ids[:1]}).json()
+    assert plan['items'][0]['action'] == 'update'
     assert all(i['planned_revision'] == revision for i in plan['items'])
     task = client.post('/api/skills/install', json={'plan_id': plan['plan_id'], 'request_id': 'update', 'password': PASSWORD}).json()
     done = _await_install(client, task['task_id'])
     assert all(r['status'] == 'success' for r in done['results']), done
     for skill_id in ids:
         assert '-v2' in (roots.hermes/skill_id/'SKILL.md').read_text()
+    assert not (roots.github_cache/'staging').exists()
+    cards = {s['id']: s for s in client.get('/api/skills').json()['items']}
+    for skill_id in ids:
+        assert cards[skill_id]['deployments']['hermes']['revision'] == revision
+        assert cards[skill_id]['update']['has_update'] is False
