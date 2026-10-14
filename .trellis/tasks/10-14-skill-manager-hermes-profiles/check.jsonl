@@ -1,0 +1,5 @@
+{"file":".trellis/spec/guides/skill-manager-registry-sync.md","reason":"单份登记真源、自研对账与源缺失"}
+{"file":".trellis/spec/guides/skill-manager-github-cache.md","reason":"共享缓存直链版本、安装指纹及启动迁移"}
+{"file":".trellis/spec/guides/skill-manager-frontend.md","reason":"统一安装、合集范围、URL 与失败恢复"}
+{"file":".trellis/spec/guides/skill-manager-export-targets.md","reason":"动态安装目标不得混入 ZIP 导出与台账清理"}
+{"file":".trellis/tasks/10-14-skill-manager-hermes-profiles/research/findings.md","reason":"当前目标硬编码消费者、配置登记决定与 Hermes 兼容验收"}
