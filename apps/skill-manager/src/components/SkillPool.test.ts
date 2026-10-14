@@ -35,6 +35,13 @@ function groups(root: ReactNode) {
 }
 
 describe('collection-scoped controls', () => {
+  it('opens member registration for the collection repository', () => {
+    const onAddMembers = vi.fn();
+    const [group] = groups(SkillPool({ ...props([skill('a'), skill('b')]), onAddMembers }));
+    button(group, '＋ 添加成员').props.onClick!();
+    expect(onAddMembers).toHaveBeenCalledExactlyOnceWith('https://github.com/owner/first');
+    expect(text(group)).toContain('已登记 2 个 Skill');
+  });
   it('renders a single registered GitHub skill directly without collection controls', () => {
     const markup = renderToStaticMarkup(SkillPool(props([
       skill('luopan', 'https://github.com/zhangxiaoqiang1991/luopan'),

@@ -1,4 +1,4 @@
-import { isValidElement, type ReactNode, type ReactElement } from 'react';
+import { isValidElement, type ReactNode, type ReactElement, type ComponentProps } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TaskSnapshot } from '../lib/types';
 
@@ -54,12 +54,12 @@ function text(node: ReactNode): string {
   if (isValidElement<NodeProps>(node)) return text(node.props.children);
   return typeof node === 'string' || typeof node === 'number' ? String(node) : '';
 }
-function render() {
+function render(overrides: Partial<ComponentProps<typeof RegisterGithubDialog>> = {}) {
   function pass() {
     hooks.index = 0;
     hooks.refIndex = 0;
     hooks.effectIndex = 0;
-    return RegisterGithubDialog({ busy: false, onRefresh: async () => {}, onCancel() {} });
+    return RegisterGithubDialog({ busy: false, onRefresh: async () => {}, onCancel() {}, ...overrides });
   }
   pass();
   pass();
@@ -155,6 +155,30 @@ describe('GitHub scan loading', () => {
 });
 
 describe('collection registration defaults', () => {
+  it('prefills a collection repository and selects only unregistered paths', async () => {
+    const options = { initialRepository: 'https://github.com/owner/repo', existingSkills: [{
+      id: 'existing', name: 'Existing', source: 'github' as const,
+      repository: 'https://github.com/OWNER/REPO.git', path: 'skills/a', tags: [], summary: '',
+      status: 'active', deployments: {}, update: null, cache_missing: false, source_missing: false,
+    }] };
+    const initial = render(options);
+    expect(nodes(initial).find(n => n.props.type === 'url')?.props.value).toBe(options.initialRepository);
+    expect(text(initial)).toContain('添加合集成员');
+    hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
+    await scanButton(initial).props.onClick!();
+    hooks.poll.task = snapshot({ state: 'done', candidates: [
+      { path: 'skills/a', name: 'Existing', description: '' },
+      { path: 'skills/b', name: 'New', description: '' },
+    ] });
+    const tree = render(options);
+    expect(text(tree)).toContain('扫描到 2 项 · 已登记 1 项 · 可添加 1 项');
+    const checkboxes = nodes(tree).filter(n => n.props.type === 'checkbox');
+    expect(checkboxes[0].props).toMatchObject({ disabled: true, checked: false });
+    expect(checkboxes[1].props).toMatchObject({ disabled: false, checked: true });
+    nodes(tree).find(n => n.type === 'form')!.props.onSubmit!({ preventDefault() {} });
+    expect(nodes(render(options)).find(n => n.props.input)?.props.input?.candidates.map(c => c.path)).toEqual(['skills/b']);
+  });
+
   it('selects every candidate, submits batch, and preserves a user clearing the selection', async () => {
     hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
     await scanButton(enterRepository()).props.onClick!();

@@ -8,6 +8,8 @@ import type {
   TaskSnapshot,
 } from '@/lib/types';
 import { useGithubTask } from '@/lib/useGithubTask';
+import { repositoryKey } from '@/lib/collections';
+import type { SkillCard } from '@/lib/types';
 import InstallDialog from './InstallDialog';
 
 interface RegisterGithubDialogProps {
@@ -15,6 +17,14 @@ interface RegisterGithubDialogProps {
   error?: string;
   onCancel: () => void;
   onRefresh: () => Promise<void>;
+  initialRepository?: string;
+  existingSkills?: SkillCard[];
+}
+
+const EMPTY_SKILLS: SkillCard[] = [];
+function registeredPathsFor(skills: SkillCard[], repository: string): Set<string> {
+  const key = repositoryKey(repository);
+  return new Set(skills.filter(s => s.source === 'github' && key && repositoryKey(s.repository) === key).map(s => s.path));
 }
 
 /**
@@ -27,8 +37,10 @@ export default function RegisterGithubDialog({
   busy,
   onCancel,
   onRefresh,
+  initialRepository = '',
+  existingSkills = EMPTY_SKILLS,
 }: RegisterGithubDialogProps) {
-  const [repository, setRepository] = useState('');
+  const [repository, setRepository] = useState(initialRepository);
   const [scanTaskId, setScanTaskId] = useState('');
   const [scanStarting, setScanStarting] = useState(false);
   const scanRequestPending = useRef(false);
@@ -46,6 +58,8 @@ export default function RegisterGithubDialog({
   // 只认当前 taskId 的快照：重新扫描换任务的瞬间不闪现旧结果
   const activeScan: TaskSnapshot | null =
     scanTask && scanTask.task_id === scanTaskId ? scanTask : null;
+  const registeredPaths = registeredPathsFor(existingSkills, activeScan?.repository ?? repository);
+  const newCandidates = activeScan?.candidates.filter(candidate => !registeredPaths.has(candidate.path)) ?? [];
   const scanning =
     scanStarting ||
     (scanTaskId !== '' &&
@@ -68,7 +82,8 @@ export default function RegisterGithubDialog({
   useEffect(() => {
     if (activeScan?.state === 'done' && initializedScan.current !== activeScan.task_id) {
       initializedScan.current = activeScan.task_id;
-      setSelectedPaths(activeScan.candidates.map(candidate => candidate.path));
+      const registered = registeredPathsFor(existingSkills, activeScan.repository);
+      setSelectedPaths(activeScan.candidates.filter(candidate => !registered.has(candidate.path)).map(candidate => candidate.path));
       // 排除候选目录的祖先；用户调整后不再覆盖共享资源选项。
       setSharedPaths(
         activeScan.referenced_paths.filter(
@@ -80,7 +95,7 @@ export default function RegisterGithubDialog({
         )
       );
     }
-  }, [activeScan]);
+  }, [activeScan, existingSkills]);
 
   async function handleScan() {
     const url = repository.trim();
@@ -167,20 +182,21 @@ export default function RegisterGithubDialog({
   const percent = activeScan?.progress_percent ?? null;
   const detail = activeScan ? formatProgressDetail(activeScan.progress_detail) : '';
   const allSelected =
-    scanDone && selectedPaths.length === activeScan.candidates.length;
+    scanDone && selectedPaths.length === newCandidates.length;
+  const dialogTitle = initialRepository ? '添加合集成员' : '新增 GitHub Skill';
 
   return (
     <div
       className="fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="新增 GitHub Skill"
+      aria-label={dialogTitle}
     >
       <form
         className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-lg bg-white p-5 shadow-xl"
         onSubmit={handleOpenPassword}
       >
-        <h2 className="text-lg font-semibold text-slate-800">新增 GitHub Skill</h2>
+        <h2 className="text-lg font-semibold text-slate-800">{dialogTitle}</h2>
         <p className="mt-1 text-xs text-slate-400">
           仅支持 https://github.com/&lt;owner&gt;/&lt;repo&gt;；优先使用已有缓存，首次扫描需下载仓库，登记时复用扫描结果
         </p>
@@ -245,11 +261,15 @@ export default function RegisterGithubDialog({
             </p>
           ) : (
             <>
+              <p className="mt-3 text-xs text-slate-500" role="status">
+                扫描到 {activeScan.candidates.length} 项 · 已登记 {activeScan.candidates.length - newCandidates.length} 项 · 可添加 {newCandidates.length} 项
+                {newCandidates.length === 0 ? '，当前扫描结果已全部登记' : ''}
+              </p>
               <details className="mt-3">
-                <summary className="cursor-pointer text-sm text-slate-700">已选择 {selectedPaths.length}/{activeScan.candidates.length} 个 Skill · 展开调整</summary>
+                <summary className="cursor-pointer text-sm text-slate-700">已选择 {selectedPaths.length}/{newCandidates.length} 个可添加 Skill · 展开调整</summary>
               <fieldset className="mt-2">
                 <legend className="flex w-full items-center justify-between text-sm font-medium text-slate-700">
-                  候选目录（{selectedPaths.length}/{activeScan.candidates.length}）
+                  候选目录（{selectedPaths.length}/{newCandidates.length}）
                   {activeScan.candidates.length > 1 ? (
                     <span className="flex gap-2 text-xs font-normal">
                       <button
@@ -257,7 +277,7 @@ export default function RegisterGithubDialog({
                         className="text-sky-600 hover:underline disabled:opacity-40"
                         disabled={allSelected || busy}
                         onClick={() =>
-                          setSelectedPaths(activeScan.candidates.map((c) => c.path))
+                          setSelectedPaths(newCandidates.map((c) => c.path))
                         }
                       >
                         全选
@@ -285,12 +305,13 @@ export default function RegisterGithubDialog({
                         onChange={(event) =>
                           togglePath(candidate.path, event.target.checked)
                         }
-                        disabled={busy}
+                        disabled={busy || registeredPaths.has(candidate.path)}
                         className="mt-0.5"
                       />
                       <span className="min-w-0">
                         <span className="text-slate-700">
                           {candidate.name || candidate.path}
+                          {registeredPaths.has(candidate.path) ? <span className="ml-2 text-xs text-slate-400">已登记</span> : null}
                         </span>
                         {candidate.name ? (
                           <span className="ml-2 text-xs text-slate-400">
