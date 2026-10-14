@@ -99,7 +99,8 @@ def classify_sources(records, property_types=None):
     """Compute directory state from current effective source associations.
 
     Existing standalone results are looked up by TMSF identity, never by local ID.
-    A new attempt (including a failure) supersedes those legacy file results.
+    Integrated facts supersede legacy file results; a failed attempt retains an
+    already recorded fact. Enrichment copies the last legacy fact before an attempt.
     """
     property_types = property_types or {}
     states = []
@@ -111,7 +112,7 @@ def classify_sources(records, property_types=None):
             if not record.get('property_type_checked_at') and not prop:
                 prop = property_types.get(record['source_id'], {}).get('property_type')
             state = classify(community_id='', tmsf_property_type=prop)['state']
-            if record.get('property_type_error') or state == RESIDENTIAL_STATE_UNKNOWN:
+            if record.get('property_type_conflict') or state == RESIDENTIAL_STATE_UNKNOWN:
                 state = RESIDENTIAL_STATE_PENDING
             states.append(state)
         elif record['source'] == 'amap':

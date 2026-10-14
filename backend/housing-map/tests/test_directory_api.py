@@ -97,8 +97,8 @@ def test_collected_types_filter_sources_and_follow_current_association(tmp_path,
     registry.associate(item['id'], 'local-b')
     assert residential_ids() == {'local-b'}
     registry.ingest(dict(source='tmsf', source_id='11', name='花园A', property_type_error='获取失败'))
-    assert not residential_ids()
-    assert client.get('/api/directory/sources?residential_state=pending').json()['data']['items'][0]['property_type'] == '住宅'
+    assert residential_ids() == {'local-b'}  # Failed attempts preserve the last effective fact.
+    assert client.get('/api/directory/sources?residential_state=residential').json()['data']['items'][0]['property_type'] == '住宅'
     registry.ingest(dict(source='tmsf', source_id='11', name='花园A', property_type='住宅', property_type_error=None))
     fang = registry.ingest(dict(source='fang', source_id='f1', name='花园B', samples=[
         {'source_listing_id': 'l1', 'property_type': '写字楼'}]))

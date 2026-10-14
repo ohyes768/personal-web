@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import AutoReviewPanel, { AutoEvidence, AutoReport } from './AutoReviewPanel';
 import { WorkspacePageCache } from './WorkspacePageCache';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
-import { AdmissionControls, Community, Source, Report, DirectorySourceCard, labels, collectionLabels, phaseLabels, mapLabels, request, safeDirectoryLink } from './DirectoryCards';
+import { AdmissionControls, Community, Source, Report, DirectorySourceCard, labels, collectionLabels, phaseLabels, mapLabels, marketLabels, request, safeDirectoryLink } from './DirectoryCards';
 
 type Review = { id: string; name: string; district?: string; address?: string; revision: number; state: string;
   address_missing?: boolean; existing_cid?: string; members: Source[]; sources: string[]; reasons: string[]; suggestions: Community[];
@@ -20,7 +20,7 @@ function Sites({ sites }: { sites: string[] }) { return <>{sites.map(site => <sp
 export function CommunityTable({ items, onSelect }: { items: Community[]; onSelect: (id: string) => void }) {
   return <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>名称 / 别名</th><th>区域 / 地址</th><th>物业类型 / 确认方式</th><th>资料来源</th><th>地图状态</th><th>操作</th></tr></thead><tbody>
     {items.map(c => <tr key={c.community_id}><td data-label="名称 / 别名"><strong>{c.community_name}</strong><small>{c.aliases?.join(' / ')}</small></td><td data-label="区域 / 地址">{c.district || '区域待核对'}<small>{c.address || '地址待补充'}</small></td>
-      <td data-label="物业类型 / 确认方式">{c.effective_property_type}<small>{c.admission?.decision_kind === 'manual' ? '人工确认' : c.admission?.decision_kind === 'automatic' ? '自动收录' : '来源证据确认'}</small>{c.admission_conflict && <small className="directory-warning">新资料有疑点</small>}</td>
+      <td data-label="物业类型 / 确认方式">{c.effective_property_type}<small>{marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</small><small>{c.admission?.decision_kind === 'manual' ? '人工确认' : c.admission?.decision_kind === 'automatic' ? '自动收录' : '来源证据确认'}</small>{c.market_state_conflict && <small className="directory-warning">新房 / 二手房来源状态不同</small>}{c.admission_conflict && <small className="directory-warning">新资料有疑点</small>}</td>
       <td data-label="资料来源"><Sites sites={[...new Set(c.sources?.map(r => r.source))]} /></td><td data-label="地图状态">{mapLabels[c.map_status || ''] || '待核对'}</td>
       <td data-label="操作"><button className="btn btn-secondary" onClick={() => onSelect(c.community_id)}>详情 / 管理</button></td></tr>)}
   </tbody></table></div>;
@@ -35,7 +35,11 @@ export function ReviewTable({ items, onSelect, removal, onToggle }: { items: Rev
   </tbody></table></div>;
 }
 
-function ReviewPanel({ review: r, busy, confirm }: { review: Review; busy: boolean; confirm: (value: Confirmation) => void }) {
+function EnrichSourceButton({ item, busy, changed }: { item: Source; busy: boolean; changed: (path: string) => Promise<void> }) {
+  return <button className="btn btn-secondary" disabled={busy} onClick={() => void changed(`/sources/${encodeURIComponent(item.id)}/enrich`)}>补全用途与位置</button>;
+}
+
+function ReviewPanel({ review: r, busy, confirm, changed }: { review: Review; busy: boolean; confirm: (value: Confirmation) => void; changed: (path: string) => Promise<void> }) {
   const [name, setName] = useState(r.name.includes('名称缺失') ? '' : r.name);
   const [reason, setReason] = useState('');
   const [type, setType] = useState('住宅');
@@ -71,7 +75,7 @@ function ReviewPanel({ review: r, busy, confirm }: { review: Review; busy: boole
       {error && <p role="alert">{error}</p>}
     </>}
     <h4>原始来源与证据</h4>
-    {r.members.map(m => <div key={m.id}>{r.state !== 'excluded' && <label className="review-member"><input type="checkbox" checked={members.includes(m.id)} onChange={e => setMembers(v => e.target.checked ? [...v, m.id] : v.filter(id => id !== m.id))} />一起审核：{labels[m.source]} · {m.name}</label>}<DirectorySourceCard item={m} /></div>)}
+    {r.members.map(m => <div key={m.id}>{r.state !== 'excluded' && <label className="review-member"><input type="checkbox" checked={members.includes(m.id)} onChange={e => setMembers(v => e.target.checked ? [...v, m.id] : v.filter(id => id !== m.id))} />一起审核：{labels[m.source]} · {m.name}</label>}<DirectorySourceCard item={m}>{m.source === 'tmsf' && m.status !== 'ignored' && <EnrichSourceButton item={m} busy={busy} changed={changed} />}</DirectorySourceCard></div>)}
     {!!r.rounds?.length && <details><summary>法拍记录（{r.rounds.length} 条轮次）</summary>{r.rounds.map(round => <p key={round.auction_id}>{round.title} · 第{round.round || '?'}轮 {safeDirectoryLink(round.source_url) && <a href={round.source_url} target="_blank" rel="noopener noreferrer">原始法拍资料 ↗</a>}</p>)}</details>}
   </div>;
 }
@@ -85,7 +89,7 @@ function MasterPanel({ community: c, busy, changed, confirm }: { community: Comm
     <button className="btn btn-secondary" disabled={busy || !name.trim()} onClick={() => void changed(`/communities/${c.community_id}`, 'PUT', { name, aliases: aliases.split(/[、,，]/).filter(Boolean), address, district: c.district })}>保存名称与资料</button>
     <AdmissionControls community={c} busy={busy} onDecision={(action, body, text) => confirm({ path: `/communities/${c.community_id}/${action}`, body, text })} />
     {c.admission?.decision_kind === 'automatic' && <details><summary>自动收录依据（可用上方“移到待审核”撤销）</summary><p>{c.admission.reason} · {c.admission.decided_at}</p><p>规则：{c.admission.rule_version}</p><AutoEvidence evidence={c.admission.evidence || []} /></details>}
-    <details><summary>原始来源与关联管理</summary>{c.sources?.map(m => <DirectorySourceCard key={m.id} item={m}><button className="btn btn-secondary" disabled={busy} onClick={() => void changed(`/sources/${m.id}/associate`, 'DELETE')}>解除此来源关联</button></DirectorySourceCard>)}</details>
+    <details><summary>原始来源与关联管理</summary>{c.sources?.map(m => <DirectorySourceCard key={m.id} item={m}>{m.source === 'tmsf' && m.status !== 'ignored' && <EnrichSourceButton item={m} busy={busy} changed={path => changed(path, 'POST')} />}<button className="btn btn-secondary" disabled={busy} onClick={() => void changed(`/sources/${m.id}/associate`, 'DELETE')}>解除此来源关联</button></DirectorySourceCard>)}</details>
     <details><summary>合并重复小区</summary><p>先“移到待审核”，在审核详情中选择已有住宅合并，保留历史身份和别名。</p></details>
     <details><summary>操作记录</summary>{c.events?.map(e => <p key={e.seq} className="directory-muted">{e.created_at.slice(0, 19)} · {e.action} · {e.payload.reason}</p>)}</details></>;
 }
@@ -187,7 +191,9 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
   async function act(path: string, method = 'POST', body?: object) {
     setBusy(true); setError('');
     try {
-      await request(path, method, body); setRemoval([]); setConfirmation(null); setSelected(null); setDetail(null); setRevision(v => v + 1); onChanged(); setNotice('操作已保存，住宅名单、审核队列和地图已更新。');
+      const outcome = await request<{ errors?: string[] } | null>(path, method, body);
+      setRemoval([]); setConfirmation(null); setSelected(null); setDetail(null); setRevision(v => v + 1); onChanged();
+      setNotice(path.endsWith('/enrich') && outcome?.errors?.length ? `补全结果已保存：${outcome.errors.join('；')}` : '操作已保存，住宅名单、审核队列和地图已更新。');
     } catch (e) { setConfirmation(null); setRevision(v => v + 1); setError(e instanceof Error ? e.message : '操作失败'); }
     finally { setBusy(false); }
   }
@@ -235,7 +241,7 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
       <nav className="directory-actions" aria-label="小区名单分页"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => { setRemoval([]); setPage(v => v - 1); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页 · 共 {total} 个</span><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => { setRemoval([]); setPage(v => v + 1); }}>下一页</button></nav>
     </div>{selected && <aside className="directory-detail"><div className="directory-source-heading"><h3>{master?.community_name || review?.name || '加载详情…'}</h3><button className="btn btn-secondary" onClick={() => { setSelected(null); setDetail(null); }}>关闭</button></div>
       {master && <MasterPanel key={`${master.community_id}-${master.admission?.revision}`} community={master} busy={busy} changed={act} confirm={setConfirmation} />}
-      {review && <ReviewPanel key={`${review.id}-${review.revision}`} review={review} busy={busy} confirm={setConfirmation} />}</aside>}</div>
+      {review && <ReviewPanel key={`${review.id}-${review.revision}`} review={review} busy={busy} confirm={setConfirmation} changed={act} />}</aside>}</div>
     <details className="review-rental"><summary>租金来源待处理（独立业务清单）</summary><p className="directory-muted">这里处理已收录小区缺少租金来源的问题，不计入待审核小区库存。</p><RentalAssociationReview onChanged={() => { setRevision(v => v + 1); onChanged(); }} /></details>
     {confirmation && <dialog ref={dialog} className="directory-confirm" aria-label="确认审核操作" onCancel={() => setConfirmation(null)}><p>{confirmation.text}</p><div className="directory-actions"><button autoFocus className="btn btn-primary" disabled={busy} onClick={() => void act(confirmation.path, 'POST', confirmation.body)}>确认操作</button><button className="btn btn-secondary" disabled={busy} onClick={() => setConfirmation(null)}>返回核对</button></div></dialog>}
   </section>;

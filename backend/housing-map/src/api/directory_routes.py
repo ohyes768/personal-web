@@ -236,6 +236,12 @@ def source_detail(rid: str):
                                                          if c['community_name'] == item['name'] or item['name'] in c.get('aliases', [])]}}
 
 
+@router.post('/directory/sources/{rid}/enrich')
+def enrich(rid: str):
+    from src.services.community_enrichment import enrich_source
+    return result(lambda: enrich_source(store(), DATA_DIR, rid))
+
+
 @router.post('/directory/sources/{rid}/associate')
 def associate(rid: str, request: AssociationInput):
     return result(lambda: store().associate(rid, request.community_id))

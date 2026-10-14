@@ -8,6 +8,11 @@ export type AutoReviewReport = { snapshot_id: string; rule_version: string; exec
 
 export type Source = { id: string; source: string; source_kind: string; source_id: string; name: string;
   address?: string; district?: string; community_id?: string; status: string; method?: string;
+  market_state?: string; market_state_url?: string; project_sale_status?: string; market_state_error?: string;
+  project_name?: string; project_id?: string; project_property_type?: string; project_property_type_url?: string;
+  longitude?: number; latitude?: number; coordinate_error?: string;
+  coordinate_evidence?: { source: string; source_id?: string; source_url?: string; captured_at?: string };
+  market_state_captured_at?: string;
   evidence?: string[]; source_url?: string; sample_count?: number; candidates?: Community[]; possible_deleted?: string[];
   residential_state?: ResidentialState; property_type?: string; property_type_url?: string;
   poi_type?: string; poi_typecode?: string; residential_hint?: boolean;
@@ -18,7 +23,7 @@ export type Community = { community_id: string; community_name: string; aliases?
   longitude?: number; latitude?: number; has_boundary?: boolean; residential_state?: 'residential' | 'pending' | 'non_residential' | 'deleted' | 'unknown';
   admission?: { state: string; revision: number; decision_kind: string; auto_review_locked: boolean; reason?: string; decided_at?: string;
     rule_version?: string; batch_id?: string; evidence?: AutoReviewEvidence[] };
-  admission_state?: string; admission_conflict?: boolean; effective_property_type?: string; map_status?: string;
+  market_state?: string; market_state_conflict?: boolean; admission_state?: string; admission_conflict?: boolean; effective_property_type?: string; map_status?: string;
   events?: { seq: number; action: string; created_at: string; payload: { reason?: string } }[] };
 export type Report = { running: boolean; phase: string; source?: string; started_at?: string; finished_at?: string; new?: number; existing?: number;
   auto_review?: AutoReviewReport;
@@ -27,6 +32,7 @@ export type Report = { running: boolean; phase: string; source?: string; started
   truncated?: { source: string; message: string }[];
   coverage?: Record<string, { requests: number; cells: number; unique: number; filtered: number; duplicates: number; complete: boolean }> };
 export const labels: Record<string, string> = { tmsf: '透明售房网', amap: '高德地图', fang: '房天下', laipai: '来拍 ya' };
+export const marketLabels: Record<string, string> = { new_house: '新房项目', second_hand: '二手房', unknown: '新房 / 二手房状态未知' };
 export const collectionLabels = { tmsf: '透明售房网', amap: '高德地图' };
 export const phaseLabels: Record<string, string> = { running: '正在采集', succeeded: '采集结束', partial_failed: '部分完成',
   failed: '采集失败', cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
@@ -47,7 +53,7 @@ export function AdmissionControls({ community, busy, onDecision }: { community: 
     { revision: admission.revision, reason, ...(action === 'admit' ? { property_type: propertyType } : {}) }, text);
   return <section className="directory-linker" aria-label="住宅收录管理">
     <h4>{admissionLabels[state] || '待审核'} · {mapLabels[community.map_status || ''] || '地图状态待确认'}</h4>
-    <p className="directory-muted">{admission.decision_kind === 'manual' ? '人工确认' : admission.decision_kind === 'migration' ? '旧资料初始化' : '尚未审核'}
+    <p className="directory-muted">{admission.decision_kind === 'manual' ? '人工确认' : admission.decision_kind === 'migration' ? '旧资料初始化' : admission.decision_kind === 'automatic' ? '自动收录' : '尚未审核'}
       {admission.reason ? ` · ${admission.reason}` : ''}</p>
     {admission.auto_review_locked && <p className="directory-warning">自动审核已锁定：重新采集和更新资料不会自动收录。</p>}
     {community.admission_conflict && <p className="directory-warning">当前来源用途证据有变化，请核对；人工确认保留。</p>}
@@ -94,7 +100,15 @@ export function DirectorySourceCard({ item, children }: { item: Source; children
     <p>{item.address || '地址尚未取得'} · {item.district || '区域未知'}</p>
     <p>物业类型：{item.property_type || '尚未获取'} · <ResidentialStateBadge state={item.residential_state} /></p>
     {item.property_type_captured_at && <p className="directory-muted">类型采集时间：{item.property_type_captured_at}</p>}
-    {item.property_type_error && <p className="directory-warning">{item.property_type_error}；保留上次类型，待核实。</p>}
+    {item.property_type_error && <p className="directory-warning">{item.property_type_error}；保留上次有效用途证据。</p>}
+    <p>{marketLabels[item.market_state || 'unknown'] || marketLabels.unknown}{item.project_sale_status && ` · ${item.project_sale_status}`}</p>
+    {item.market_state_captured_at && <p className="directory-muted">项目身份核验时间：{item.market_state_captured_at}</p>}
+    {item.project_id && <p className="directory-muted">新房项目：{item.project_name} · ID {item.project_id}</p>}
+    {safeDirectoryLink(item.project_property_type_url || item.market_state_url) && <p><a href={item.project_property_type_url || item.market_state_url} target="_blank" rel="noopener noreferrer">查看新房项目证据 ↗</a>{item.project_property_type && ` · ${item.project_property_type}`}</p>}
+    {item.market_state_error && <p className="directory-warning">{item.market_state_error}</p>}
+    {item.coordinate_error && <p className="directory-warning">{item.coordinate_error}</p>}
+    {item.longitude != null && item.latitude != null && <p className="directory-muted">位置：{item.longitude}, {item.latitude}</p>}
+    {item.coordinate_evidence && <p className="directory-muted">位置来源：{item.coordinate_evidence.source === 'historical_amap' ? '历史高德地理编码' : '高德地点'} · ID {item.coordinate_evidence.source_id}{safeDirectoryLink(item.coordinate_evidence.source_url) && <> · <a href={item.coordinate_evidence.source_url} target="_blank" rel="noopener noreferrer">查看位置来源 ↗</a></>}</p>}
     {propertyLink && <p><a href={propertyLink} target="_blank" rel="noopener noreferrer">查看物业类型来源 ↗</a></p>}
     {item.source === 'amap' && <p className="directory-evidence">地图分类：{item.poi_type || '暂无分类'}；仅作住宅线索，房屋用途待核实。</p>}
     {item.evidence?.map((e, i) => <p className="directory-evidence" key={i}>{e}</p>)}

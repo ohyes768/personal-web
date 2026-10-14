@@ -45,7 +45,7 @@ def test_preview_readonly_reproducible_and_execution_explicit(tmp_path):
 @pytest.mark.parametrize('patch', [
     {'source': 'amap', 'name': '江汉路小区'}, {'source': 'laipai', 'auction_title': '住宅拍卖'},
     {'property_type': '公寓'}, {'property_type': '其他'}, {'property_type': '住宅/商贸'},
-    {'property_type_error': '最新获取失败'}, {'address': ''}, {'district': '上城'},
+    {'property_type_conflict': True}, {'address': ''}, {'district': '上城'},
     {'name': '清河花园停车场'}, {'auto_association_disabled': True},
 ])
 def test_uncertain_evidence_never_admitted(tmp_path, patch):

@@ -83,7 +83,7 @@ def test_type_failure_preserves_old_fact_and_retries_on_next_collection(tmp_path
     assert source['property_type'] == '住宅' and source['property_type_error']
     assert source['property_type_captured_at'].startswith('2020')
     directory_collection.collect_names(store, ['tmsf'])
-    assert len(calls) == 2
+    assert len(calls) == 4
 
 
 def test_deleted_tmsf_source_never_requests_property_details(tmp_path, monkeypatch):

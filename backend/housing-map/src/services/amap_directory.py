@@ -4,7 +4,7 @@ import os
 import re
 from urllib.parse import quote
 
-from src.core.boundary import BINJIANG_BOUNDARY, is_in_binjiang
+from src.core.boundary import BINJIANG_BOUNDARY, is_in_binjiang, is_in_xiaoshan_border
 from src.services.community_registry import now
 
 
@@ -50,15 +50,28 @@ class AmapClient:
             raise ValueError('高德返回数据格式异常')
         return data['pois'], int(data['count'])
 
+    def search_name(self, name, district):
+        try:
+            response = self.session.get('https://restapi.amap.com/v3/place/text', params={
+                'key': self.key, 'keywords': name, 'city': '杭州', 'citylimit': 'true',
+                'types': '120300', 'offset': 25, 'page': 1, 'extensions': 'base'}, timeout=20)
+            response.raise_for_status()
+            data = response.json()
+        except Exception:
+            raise ValueError('高德位置补全请求失败') from None
+        if data.get('status') != '1' or not isinstance(data.get('pois'), list) or not str(data.get('count', '')).isdigit():
+            raise ValueError('高德位置补全返回异常')
+        return data['pois'], int(data['count'])
+
     def close(self):
         self.session.close()
 
 
-def normalize_poi(poi):
+def normalize_poi(poi, *, district='滨江'):
     sid, name = poi.get('id'), poi.get('name')
     if not isinstance(sid, str) or not sid or not isinstance(name, str) or not name.strip():
         return None
-    if poi.get('adname') != '滨江区' or str(poi.get('typecode')) not in {'120300', '120301', '120302', '120303', '120304'}:
+    if district not in {'滨江', '萧山'} or poi.get('adname') != district + '区' or str(poi.get('typecode')) not in {'120300', '120301', '120302', '120303', '120304'}:
         return None
     # Keep phase/directional names. Exclude subordinate entrances, buildings and facilities.
     if re.search(r'(?:出入口|停车场|地下车库|物业服务中心|售楼处|[东西南北](?:门|出入口)|\d+\s*(?:幢|栋|号楼))$', name):
@@ -69,9 +82,9 @@ def normalize_poi(poi):
         raise ValueError('高德住宅地点缺少有效坐标') from None
     if not all(math.isfinite(v) for v in (lng, lat)):
         raise ValueError('高德住宅地点坐标无效')
-    if not is_in_binjiang(lng, lat):
+    if not (is_in_binjiang(lng, lat) if district == '滨江' else is_in_xiaoshan_border(lng, lat)):
         return None
-    return dict(source='amap', source_kind='poi', source_id=sid, name=name.strip(), district='滨江',
+    return dict(source='amap', source_kind='poi', source_id=sid, name=name.strip(), district=district,
                 address=poi.get('address') if isinstance(poi.get('address'), str) else '',
                 longitude=lng, latitude=lat, coordinate_system='gcj02',
                 poi_type=poi.get('type') if isinstance(poi.get('type'), str) else '',

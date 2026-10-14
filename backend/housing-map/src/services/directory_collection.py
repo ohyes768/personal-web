@@ -28,9 +28,11 @@ def pause(cancel):
 def tmsf_names(cancel, ignored, existing=None):
     from scripts.fetch_tmsf_binjiang_communities import fetch_binjiang_communities
     from src.services.tmsf_fetcher import TmsfClient
-    from src.services.tmsf_property_type import fetch_property_facts
+    from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, PROJECT_INDEX_URL
     existing = existing or {}
     client = TmsfClient()
+    projects = None
+    project_index_error = False
     try:
         discovered = list(fetch_binjiang_communities())
         discovered_ids = {str(c.community_id) for c in discovered}
@@ -49,7 +51,9 @@ def tmsf_names(cancel, ignored, existing=None):
                        district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
             previous = existing.get(str(c.community_id), {})
             for field in ('property_type', 'property_type_url', 'property_type_captured_at', 'address', 'address_origin', 'address_checked_at', 'address_verification_pending',
-                          'market_state', 'listing_count', 'listing_count_checked_at', 'listing_count_error'):
+                          'market_state', 'market_state_url', 'market_state_captured_at',
+                          'listing_count', 'listing_count_checked_at', 'listing_count_error',
+                          'project_id', 'project_name', 'project_sale_status', 'project_aliases', 'property_type_conflict'):
                 if field in previous:
                     row[field] = previous[field]
             # Publish the name before requesting details, including when cancelled later.
@@ -70,8 +74,49 @@ def tmsf_names(cancel, ignored, existing=None):
                 continue
             row.update(_stage='property_type', property_type_checked_at=now())
             try:
-                row.update(fetch_property_facts(client, c.community_id, [c.community_name, c.community_alias]))
-                row['listing_count_checked_at'] = now()
+                try:
+                    detail = fetch_community_facts(client, c.community_id, [c.community_name, c.community_alias])
+                except Exception:
+                    check(cancel)
+                    if projects is None and not project_index_error:
+                        pause(cancel)
+                        try:
+                            projects = parse_project_index(client.fetch_text(PROJECT_INDEX_URL, 15))
+                        except Exception:
+                            project_index_error = True
+                    if project_index_error:
+                        raise ValueError('新房索引获取失败')
+                    pause(cancel)
+                    if ignored('tmsf', 'community', c.community_id):
+                        continue
+                    row.update(project_identity(find_project(projects, [c.community_name, c.community_alias], c.district)),
+                               market_state_captured_at=now())
+                    detail = fetch_project_facts(client, [c.community_name, c.community_alias], c.district, projects=projects)
+                    detail['market_state_captured_at'] = now()
+                # An ESF page also exists for many new projects; low listings are
+                # not evidence that the project belongs only to the second-hand market.
+                count = detail.get('listing_count')
+                if detail.get('market_state') == 'second_hand' and (previous.get('market_state') == 'new_house' or
+                        (isinstance(count, int) and not isinstance(count, bool) and count < 3)):
+                    if projects is None and not project_index_error:
+                        pause(cancel)
+                        try:
+                            projects = parse_project_index(client.fetch_text(PROJECT_INDEX_URL, 15))
+                        except Exception:
+                            project_index_error = True
+                    check(cancel)
+                    if ignored('tmsf', 'community', c.community_id):
+                        continue
+                    try:
+                        detail.update(project_identity(find_project(projects or [], [c.community_name, c.community_alias], c.district)),
+                                      market_state_captured_at=now(), market_state_error=None)
+                    except ValueError:
+                        if previous.get('market_state') == 'new_house':
+                            detail.pop('market_state', None)
+                            detail['market_state_error'] = '新房项目身份更新失败，保留已有证据'
+                row.update(detail)
+                if detail.get('market_state') == 'second_hand':
+                    row['listing_count_checked_at'] = now()
                 row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False,
                            property_type_captured_at=now(), property_type_error=None,
                            _property_type_result='succeeded')

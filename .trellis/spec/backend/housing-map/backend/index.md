@@ -1,6 +1,7 @@
 # Housing-map backend
 
 ## Pre-Development Checklist
+- Read [New residential projects and enrichment](./community-enrichment.md) for newhouse identity/use evidence, bounded position repair and price isolation.
 - Read [Automatic residential review](./community-auto-review.md) for read-only snapshots, explicit enablement, automatic decisions and manual vetoes.
 - Read [Unified community review](./community-review.md) for candidate aggregation, member transactions, synchronization and the two management lists.
 - Read [Community admission](./community-admission.md) when changing residential status, human withdrawal, migration or map membership; it supersedes the earlier display scope.

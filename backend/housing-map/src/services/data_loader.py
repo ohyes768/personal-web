@@ -267,10 +267,13 @@ def load_coordinates() -> dict[str, dict]:
     from src.services.community_registry import existing_registry
     registry = existing_registry(get_data_paths()["communities"].parent)
     if registry:
-        for c in registry.communities():
+        from src.services.community_admission import community_views
+        for c in community_views(registry, get_data_paths()['communities'].parent):
+            if c.get('coordinate_system', 'gcj02') != 'gcj02':
+                continue
             if c.get('longitude') and c.get('latitude'):
                 raw[c['community_id']] = {'longitude': c['longitude'], 'latitude': c['latitude'],
-                                          'formatted_address': c.get('address', '')}
+                                          'formatted_address': c.get('position_formatted_address', c.get('address', ''))}
     # 错区防护: 地址不含"滨江区/萧山区"的坐标不可信 (跨市错配)。
     # 萧山区地址还须落在萧山板块围栏内, 防"失准到萧山城区中心"的点混入。
     # (滨江小区错配到萧山同名地名的情况仍由地址字符串挡, 见湖头陈村案例)
@@ -378,6 +381,8 @@ def load_price_snapshots(path: Path | None = None) -> dict[str, dict]:
             for record in records:
                 price_type = record.get("price_type")
                 if not record.get("community_id") or not isinstance(record.get("avg_price"), (int, float)) or record["avg_price"] <= 0:
+                    continue
+                if record.get('market_state') == 'new_house' or '/newhouse/' in (record.get('source_url') or ''):
                     continue
                 if price_type == "monthly_deal_avg_latest":
                     if not _monthly_deal_is_recent(record):

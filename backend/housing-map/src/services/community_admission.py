@@ -6,6 +6,7 @@ from pathlib import Path
 
 from src.services.community_address import effective_address
 from src.services.community_listing import listing_gate
+from src.services.community_enrichment import source_position, qualified_address
 
 from src.core.boundary import is_in_scope, is_in_xiaoshan_border
 from src.services.community_filters import is_real_community
@@ -72,6 +73,8 @@ def map_status(community, admission, coordinate=None, *, drop_ids=()):
     if not is_real_community(community):
         return 'check_name'
     coordinate = coordinate or community
+    if coordinate.get('coordinate_conflict'):
+        return 'check_coordinates'
     lng, lat = coordinate.get('longitude'), coordinate.get('latitude')
     if lng is None or lat is None:
         return 'missing_coordinates'
@@ -87,7 +90,7 @@ def map_status(community, admission, coordinate=None, *, drop_ids=()):
         return 'check_coordinates'
     if '滨江区' not in address and '萧山区' not in address:
         return 'check_coordinates'
-    if community.get('coordinate_system', 'gcj02') != 'gcj02':
+    if coordinate.get('coordinate_system', community.get('coordinate_system', 'gcj02')) != 'gcj02':
         return 'check_coordinates'
     return 'displayed' if is_in_scope(lng, lat) else 'outside_scope'
 
@@ -109,6 +112,22 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
         if community.get('longitude') is not None and community.get('latitude') is not None:
             coordinate = {**community, 'formatted_address': community.get('address', '')}
         records = [r for r in sources if r['community_id'] == cid and r['status'] == 'matched']
+        if community.get('longitude') is None and community.get('latitude') is None:
+            point = source_position(community, records)
+            if point:
+                community = {**community, **point}
+                coordinate = {**point, 'formatted_address': qualified_address(effective_address(community.get('address'), records), (community.get('district') or '').removesuffix('区'))}
+                community['position_formatted_address'] = coordinate['formatted_address']
+        # Detail pages often give street text without repeating the district. A
+        # separately parsed district from that same page can qualify the position.
+        actual_address = effective_address(community.get('address'), records)
+        district = (community.get('district') or '').removesuffix('区')
+        if coordinate and any(r.get('address_district') == district and
+                              r.get('address') == actual_address for r in records):
+            coordinate = {**coordinate, 'formatted_address': qualified_address(actual_address, district)}
+            community['position_formatted_address'] = coordinate['formatted_address']
+        markets = {r['market_state'] for r in records if r.get('market_state') in {'new_house', 'second_hand'}}
+        market = next(iter(markets)) if len(markets) == 1 else 'unknown'
         admission = admissions.get(cid, store.pending_admission())
         classification = classify_sources(records, facts)
         # Existing migrated/automatic admissions lose display eligibility on new conflicting evidence.
@@ -128,5 +147,6 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
         result.append({**community, 'address': address, 'address_missing': not bool(address), 'exclusion_reason': '缺少有效地址' if not address else listing_reason, 'admission': admission, 'admission_state': effective_admission['state'],
                        'admission_conflict': conflict, 'residential_state': classification,
                        'effective_property_type': prop,
+                       'market_state': market, 'market_state_conflict': len(markets) > 1,
                        'map_status': map_status(community, effective_admission, coordinate, drop_ids=drop_ids)})
     return result
