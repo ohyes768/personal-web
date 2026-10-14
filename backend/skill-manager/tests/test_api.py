@@ -151,6 +151,75 @@ def test_export_github_uses_current_cache(client, roots):
     assert response.status_code == 400 and "Clone" in response.json()["message"]
 
 
+def test_download_collection_preserves_repository_structure(client, roots, monkeypatch):
+    import io
+    import zipfile
+
+    skill_id = _register_via_task(client)
+    cache = roots.github_cache / "repos/example__two-skills"
+    extra = {
+        "README.md": "Collection instructions",
+        "SKILL.md": "Route requests to skills/alpha and skills/beta",
+        "AGENTS.md": "Routing rules",
+        "shared/reference.md": "Shared context",
+        ".github/instructions.md": "Repository instructions",
+    }
+    for name, content in extra.items():
+        path = cache / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(GitCacheService, "_run_git", lambda *a, **kw: pytest.fail("download must be offline"))
+    endpoint = f"/api/skills/{skill_id}/collection/download"
+    response = client.get(endpoint)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/zip"
+    assert "example__two-skills-collection-" in response.headers["content-disposition"]
+    with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+        assert set(archive.namelist()) == set(extra) | {"skills/alpha/SKILL.md", "skills/beta/SKILL.md"}
+        for name, content in extra.items():
+            assert archive.read(name).decode("utf-8") == content
+    assert client.get(endpoint).content == response.content
+    assert not SkillStateStore.from_settings(Settings()).list_deployments()
+    assert not list(roots.hermes.iterdir())
+
+
+def test_download_collection_does_not_require_root_skill_or_registered_member_path(client, roots):
+    skill_id = _register_via_task(client)
+    cache = roots.github_cache / "repos/example__two-skills"
+    (cache / "skills/alpha/SKILL.md").unlink()
+    assert not (cache / "SKILL.md").exists()
+    assert client.get(f"/api/skills/{skill_id}/collection/download").status_code == 200
+    from src.services.publisher import force_remove_tree
+    force_remove_tree(cache)
+    response = client.get(f"/api/skills/{skill_id}/collection/download")
+    assert response.status_code == 400 and response.json()["code"] == "cache_missing_export"
+
+
+def test_download_collection_rejects_unknown_and_local_skills(client):
+    assert client.get("/api/skills/unknown/collection/download").status_code == 404
+    response = client.get("/api/skills/alpha/collection/download")
+    assert response.status_code == 400 and response.json()["code"] == "invalid_source"
+
+
+@pytest.mark.parametrize("failure", ["outside_cache", "empty", "read_error"])
+def test_download_collection_rejects_unavailable_repository(client, roots, monkeypatch, failure):
+    from src.api import routes
+
+    skill_id = _register_via_task(client)
+    if failure == "outside_cache":
+        monkeypatch.setattr(GitCacheService, "repo_cache_dir", lambda *args: roots.source_root)
+    elif failure == "empty":
+        monkeypatch.setattr(routes, "snapshot_files", lambda root: [])
+    else:
+        def cannot_read(root):
+            raise OSError("unreadable repository")
+        monkeypatch.setattr(routes, "snapshot_files", cannot_read)
+    response = client.get(f"/api/skills/{skill_id}/collection/download")
+    assert response.status_code == 400
+    assert response.json()["code"] == "source_unavailable"
+    assert not SkillStateStore.from_settings(Settings()).list_deployments()
+
+
 def run_git(*argv: str, cwd: Path | None = None) -> str:
     completed = subprocess.run(
         ["git", *argv],

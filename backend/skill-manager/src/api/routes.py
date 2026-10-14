@@ -85,6 +85,7 @@ from src.services.publisher import (
     validated_source,
 )
 from src.services.exporting import build_zip, content_hash, dir_hash, snapshot_files
+from src.services.operation_lock import operation_lock
 from src.services.registry import RegistryService, RegistryValidationError
 from src.services.task_manager import GithubTaskManager
 
@@ -248,6 +249,38 @@ def _export_source(settings: Settings, git_cache: GitCacheService, skill: Regist
     if not source.is_relative_to(repo):
         raise InvalidSourceError("skill path is outside repository cache")
     return validated_source(settings, source)
+
+
+@router.get("/skills/{skill_id}/collection/download")
+def download_collection(
+    skill_id: str,
+    settings: Settings = Depends(get_settings),
+    registry: RegistryService = Depends(get_registry),
+    git_cache: GitCacheService = Depends(get_git_cache),
+) -> Response:
+    """Download the complete cached repository, independent of member registration."""
+    skill = _require_known_skill(registry, _require_skill_id(skill_id))
+    if skill.source is not SkillSource.GITHUB:
+        raise HTTPException(400, detail={"code": "invalid_source", "message": "合集下载仅支持 GitHub 仓库"})
+    try:
+        # Keep checkout from changing the repository while its bytes are read.
+        with operation_lock:
+            canonical = git_cache.normalize_repository(str(skill.repository))
+            repo = git_cache.repo_cache_dir(canonical).resolve()
+            if not repo.is_relative_to(settings.github_skill_cache_root.resolve()):
+                raise InvalidSourceError("repository is outside the GitHub cache root")
+            if not git_cache.cache_present(canonical):
+                raise HTTPException(400, detail={"code": "cache_missing_export", "message": "缓存缺失，请先恢复仓库缓存再下载合集"})
+            files = snapshot_files(repo)
+            if not files:
+                raise InvalidSourceError("repository contains no downloadable files")
+        digest = content_hash(files)
+        archive = build_zip(files)
+    except (InvalidSourceError, GitCacheError, OSError) as exc:
+        raise HTTPException(400, detail={"code": "source_unavailable", "message": f"合集仓库不可用：{exc}"}) from exc
+    return Response(archive, media_type="application/zip", headers={
+        "Content-Disposition": f'attachment; filename="{git_cache.repo_cache_dir(canonical).name}-collection-{digest[:12]}.zip"',
+    })
 
 
 @router.post("/skills/{skill_id}/export")

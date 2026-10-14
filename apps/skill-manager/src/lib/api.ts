@@ -93,12 +93,21 @@ export async function exportSkill(skillId: string, target: import('./targets').E
   const response = await fetch(`${BASE}/${encodeURIComponent(skillId)}/export`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: jsonBody({ target }),
   });
+  await downloadZip(response, `${skillId}.zip`);
+}
+
+export async function downloadCollection(skillId: string): Promise<void> {
+  const response = await fetch(`${BASE}/${encodeURIComponent(skillId)}/collection/download`);
+  await downloadZip(response, `${skillId}-collection.zip`);
+}
+
+async function downloadZip(response: Response, fallbackName: string): Promise<void> {
   if (!response.ok) throw new ApiClientError(await parseErrorBody(response));
   const blob = await response.blob();
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ?? `${skillId}.zip`;
+  anchor.download = response.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1] ?? fallbackName;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();

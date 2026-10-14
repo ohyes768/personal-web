@@ -22,6 +22,8 @@ interface SkillPoolProps {
   onInstallSelection?: (skillIds: string[]) => void;
   onAddMembers?: (repository: string) => void;
   onCheckCollection?: (collection: SkillCollection) => void;
+  onDownloadCollection?: (collection: SkillCollection) => void;
+  downloadingCollection?: string | null;
   checkingUpdates?: boolean;
   queue: QueueEntry[];
   selectedIds?: string[];
@@ -304,6 +306,8 @@ export default function SkillPool({
   onInstallSelection,
   onAddMembers,
   onCheckCollection,
+  onDownloadCollection,
+  downloadingCollection,
   checkingUpdates,
   exportTargets,
   queue,
@@ -412,6 +416,13 @@ export default function SkillPool({
                       <span className="text-slate-500">已选 {selectedMembers.length} 项{hiddenSelected ? `（含 ${hiddenSelected} 个隐藏项）` : ''}</span>
                     </> : null}
                     <div className="ml-auto flex flex-wrap items-center gap-2">
+                      {onDownloadCollection ? <button type="button"
+                        disabled={!!missingCache || !collection.repository || !!downloadingCollection}
+                        onClick={() => onDownloadCollection(collection)}
+                        title="下载完整仓库，保留入口说明、路由、全部成员和公共文件；不受筛选或勾选影响"
+                        className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                        {downloadingCollection === collection.key ? '打包中…' : '下载合集'}
+                      </button> : null}
                       {onAddMembers && collection.repository ? <button type="button"
                         aria-label={`为 ${collection.repository} 添加成员`}
                         onClick={() => onAddMembers(`https://github.com/${collection.repository}`)}

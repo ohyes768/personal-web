@@ -69,3 +69,11 @@ Correct：先判断 `record.target in LINK_TARGET_IDS`，只有固定 link ID �
 - 一级导航 `?view=targets`；导出/清除/删除 Skill 后刷新技能与目标计数。动态目标不进入发布队列、link_missing 计算或启动重发布。
 - 本地 Next rewrite 与生产 Nginx 都必须代理 `/api/export-targets`（精确集合）及 `/api/export-targets/`（子路径）；NAS 上前后端更新后还须下发 Nginx 并 reload。
 - 测试：API 目标 CRUD/自定义 stale/清除/发布边界，`test_targets.py` 的默认配置持久化、removed 行阻止删除与写台账前并发状态复验；前端动态选择、空列表、加载失败及停用清除渲染。
+
+## 完整合集下载（2026-10-14）
+
+- `GET /api/skills/{skill_id}/collection/download` 通过已登记 GitHub Skill 定位共享仓库缓存，仅下载当前缓存，不联网。未知 Skill 返回 404，自研条目返回 400 `invalid_source`，缓存缺失返回 400 `cache_missing_export`，越界或空仓库返回 400 `source_unavailable`。
+- ZIP 从仓库根打包，保持相对目录结构，无外层目录，包含根说明/路由、所有子 Skill（含未登记成员）、公共文件和 `.github` 等说明目录；沿用快照规则排除 `.git` 与软链。仓库根不必存在 `SKILL.md`，下载也不依赖某个已登记子目录仍然有效。
+- 读取快照持有 `operation_lock`，避免缓存 checkout 与读文件交错；ZIP 与文件名哈希来自同一快照，压缩在锁外完成。
+- 合集展开后的仓库操作区提供「下载合集」文字按钮，下载范围与搜索、筛选、勾选完全独立。打包中显示忙碌状态并阻止重复请求，错误用页面通知展示并可重试；缓存缺失时禁用，沿用「恢复仓库缓存」。
+- 合集下载不选择导出目标、不写逐 Skill 的部署/导出台账，不声称已安装到外部工具；单卡「导出 Skill」继续复用原有目标选择、单目录 ZIP 与内容哈希台账。

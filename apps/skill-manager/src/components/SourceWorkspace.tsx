@@ -1,12 +1,13 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import InstallDialog from '@/components/InstallDialog';
 import EditSkillTagsDialog from '@/components/EditSkillTagsDialog';
 import ExportDialog from '@/components/ExportDialog';
 import SkillFilters, { DEFAULT_FILTERS, type FilterState } from '@/components/SkillFilters';
 import SkillPool from '@/components/SkillPool';
-import { ApiClientError, deleteExport, exportSkill, updateSkillTags } from '@/lib/api';
+import { ApiClientError, deleteExport, downloadCollection, exportSkill, updateSkillTags } from '@/lib/api';
+import type { SkillCollection } from '@/lib/collections';
 import type { ExportTargetKey } from '@/lib/targets';
 import type { TargetKey } from '@/lib/queue';
 import type { ExportTarget, SkillCard } from '@/lib/types';
@@ -85,6 +86,8 @@ export default function SourceWorkspace({
   const [exportAction, setExportAction] = useState<{ skill: SkillCard; removing?: ExportTargetKey; initialTarget?: ExportTargetKey } | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [downloadingCollection, setDownloadingCollection] = useState<string | null>(null);
+  const downloadInFlight = useRef(false);
 
   const allTags = useMemo(() => {
     const tags = new Set<string>();
@@ -141,6 +144,21 @@ export default function SourceWorkspace({
     }
   }
 
+  async function handleDownloadCollection(collection: SkillCollection) {
+    if (downloadInFlight.current) return;
+    downloadInFlight.current = true;
+    setDownloadingCollection(collection.key);
+    try {
+      await downloadCollection(collection.members[0].id);
+      onNotify({ kind: 'ok', text: `已下载「${collection.name}」完整合集，包含原仓库说明、路由和公共文件` });
+    } catch (err) {
+      onNotify({ kind: 'err', text: err instanceof Error ? err.message : '合集下载失败，请重试' });
+    } finally {
+      downloadInFlight.current = false;
+      setDownloadingCollection(null);
+    }
+  }
+
   return (
     <div
       data-source={source}
@@ -167,6 +185,8 @@ export default function SourceWorkspace({
             onAddMembers={onAddMembers}
             onCheckCollection={(collection) => void onCheckUpdates?.(collection.members.map(s => s.id))}
             checkingUpdates={checkingUpdates}
+            onDownloadCollection={(collection) => void handleDownloadCollection(collection)}
+            downloadingCollection={downloadingCollection}
             exportTargets={exportTargets}
             queue={[]}
             selectedIds={source === 'github' ? selectedIds : undefined}

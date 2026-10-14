@@ -35,6 +35,24 @@ function groups(root: ReactNode) {
 }
 
 describe('collection-scoped controls', () => {
+  it('downloads the full collection independently of selection and visible members', () => {
+    const a = skill('a');
+    const b = skill('b');
+    const onDownloadCollection = vi.fn();
+    const p = { ...props([b]), allSkills: [a, b], onDownloadCollection };
+    const [group] = groups(SkillPool(p));
+    const download = button(group, '下载合集');
+    expect(download.props.disabled).toBe(false);
+    download.props.onClick!();
+    expect(onDownloadCollection).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ members: [a, b] }));
+    expect(text(SkillPool({ ...props([a]), onDownloadCollection }))).not.toContain('下载合集');
+    const [busyGroup] = groups(SkillPool({ ...p, downloadingCollection: 'github:owner/first' }));
+    expect(button(busyGroup, '打包中…').props.disabled).toBe(true);
+    const missing = skill('missing', undefined, { cache_missing: true });
+    const [missingGroup] = groups(SkillPool({ ...props([a, missing]), onDownloadCollection }));
+    expect(button(missingGroup, '下载合集').props.disabled).toBe(true);
+  });
+
   it('uses equally sized overview cards with explicit type labels and disclosure-scoped bulk actions', () => {
     const p = props([skill('a'), skill('b'), skill('single', 'https://github.com/owner/single')]);
     const tree = SkillPool(p);
