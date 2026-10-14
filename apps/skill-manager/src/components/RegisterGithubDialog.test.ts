@@ -34,14 +34,15 @@ vi.mock('react', async (original) => ({
     }
   },
 }));
-vi.mock('@/lib/api', () => ({ startGithubScan: hooks.start }));
+vi.mock('@/lib/api', () => ({ startGithubScan: hooks.start, registerGithubSkill: hooks.register, registerGithubBatch: hooks.batch }));
 vi.mock('@/lib/useGithubTask', () => ({ useGithubTask: () => hooks.poll }));
 import RegisterGithubDialog from './RegisterGithubDialog';
 
 type NodeProps = { children?: ReactNode; type?: string; onClick?: () => Promise<void>;
   onChange?: (event: { target: { value: string; checked?: boolean } }) => void; disabled?: boolean;
   checked?: boolean; value?: string; onSubmit?: (event: { preventDefault(): void }) => void;
-  onConfirm?: (password: string) => void;
+  onConfirm?: (password: string) => void | Promise<void>;
+  taskId?: string; error?: string;
   input?: { candidates: {path: string; name: string; summary: string}[] };
   role?: string; 'aria-busy'?: boolean; className?: string };
 function nodes(node: ReactNode): ReactElement<NodeProps>[] {
@@ -155,6 +156,44 @@ describe('GitHub scan loading', () => {
 });
 
 describe('collection registration defaults', () => {
+  it('registers a single skill without opening the Hermes installation flow', async () => {
+    hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
+    await scanButton(enterRepository()).props.onClick!();
+    hooks.poll.task = snapshot({ state: 'done', candidates: [{path: 'skills/a', name: 'Alpha', description: 'Description'}] });
+    let tree = render();
+    nodes(tree).find(n => n.type === 'button' && text(n) === '仅登记')!.props.onClick!();
+    tree = render();
+    expect(nodes(tree).some(n => n.props.input)).toBe(false);
+    hooks.register.mockResolvedValue({ task_id: 'register-task', kind: 'register' });
+    const confirm = nodes(tree).find(n => n.props.onConfirm)!.props.onConfirm!;
+    const pending = confirm('password');
+    await confirm('password');
+    await pending;
+    expect(hooks.register).toHaveBeenCalledExactlyOnceWith({repository: 'https://github.com/owner/repo',
+      path: 'skills/a', name: 'Alpha', summary: 'Description', tags: [], shared_paths: []}, 'password');
+    expect(hooks.batch).not.toHaveBeenCalled();
+    expect(nodes(render()).some(n => n.props.taskId === 'register-task')).toBe(true);
+    expect(nodes(render()).some(n => n.props.input)).toBe(false);
+  });
+
+  it('keeps a failed registration retryable and submits multiple skills to registration only', async () => {
+    hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
+    await scanButton(enterRepository()).props.onClick!();
+    hooks.poll.task = snapshot({ state: 'done', candidates: [
+      {path: 'skills/a', name: 'Alpha', description: 'a'}, {path: 'skills/b', name: 'Beta', description: 'b'},
+    ] });
+    nodes(render()).find(n => n.type === 'button' && text(n) === '仅登记')!.props.onClick!();
+    hooks.batch.mockRejectedValueOnce(new Error('密码错误'));
+    await nodes(render()).find(n => n.props.onConfirm)!.props.onConfirm!('wrong');
+    expect(nodes(render()).find(n => n.props.onConfirm)?.props.error).toBe('密码错误');
+    expect(nodes(render()).some(n => n.props.input)).toBe(false);
+    hooks.batch.mockResolvedValueOnce({task_id: 'batch-task', kind: 'register_batch'});
+    await nodes(render()).find(n => n.props.onConfirm)!.props.onConfirm!('password');
+    expect(hooks.batch.mock.calls[1][0].items.map((i: {path: string}) => i.path)).toEqual(['skills/a', 'skills/b']);
+    expect(hooks.register).not.toHaveBeenCalled();
+    expect(nodes(render()).some(n => n.props.taskId === 'batch-task')).toBe(true);
+  });
+
   it('does not offer snapshot resource copying for direct-link installs', async () => {
     hooks.start.mockResolvedValue({ task_id: 'scan-task', kind: 'scan' });
     await scanButton(enterRepository()).props.onClick!();

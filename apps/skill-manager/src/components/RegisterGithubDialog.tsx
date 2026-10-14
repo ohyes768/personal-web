@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { startGithubScan } from '@/lib/api';
+import { registerGithubBatch, registerGithubSkill, startGithubScan } from '@/lib/api';
 import { formatElapsed, formatProgressDetail, taskStageLabel } from '@/lib/format';
 import type {
   RegisterGithubBatchInput,
@@ -11,6 +11,8 @@ import { useGithubTask } from '@/lib/useGithubTask';
 import { repositoryKey } from '@/lib/collections';
 import type { SkillCard } from '@/lib/types';
 import InstallDialog from './InstallDialog';
+import ConfirmActionDialog from './ConfirmActionDialog';
+import TaskProgressDialog from './TaskProgressDialog';
 
 interface RegisterGithubDialogProps {
   busy: boolean;
@@ -29,7 +31,7 @@ function registeredPathsFor(skills: SkillCard[], repository: string): Set<string
 
 /**
  * 新增 GitHub Skill 登记流程（design 5/6 + 批量登记 design §5.2）：
- * 仓库 URL → 后台扫描任务（2s 轮询，进度/已用时）→ 勾选候选目录 → 密码确认直链安装。勾 1 项走单条登记（手填名称/标签/简介，
+ * 仓库 URL → 后台扫描任务（2s 轮询，进度/已用时）→ 勾选候选目录 → 仅登记或登记并安装。勾 1 项走单条登记（手填名称/标签/简介，
  * 与改版前一致）；勾多项走批量登记（以各候选 SKILL.md 的 name 登记）。
  */
 export default function RegisterGithubDialog({
@@ -51,6 +53,11 @@ export default function RegisterGithubDialog({
   const [tagsText, setTagsText] = useState('');
   const [summary, setSummary] = useState('');
   const [awaitPassword, setAwaitPassword] = useState(false);
+  const [registerConfirm, setRegisterConfirm] = useState(false);
+  const [registerBusy, setRegisterBusy] = useState(false);
+  const [registerError, setRegisterError] = useState('');
+  const [registerTaskId, setRegisterTaskId] = useState('');
+  const registrationPending = useRef(false);
 
   const { task: scanTask, error: pollError } = useGithubTask(scanTaskId);
   // 只认当前 taskId 的快照：重新扫描换任务的瞬间不闪现旧结果
@@ -132,7 +139,7 @@ export default function RegisterGithubDialog({
   function handleOpenPassword(event: FormEvent) {
     event.preventDefault();
     if (
-      selectedPaths.length === 0 ||
+      activeScan?.state !== 'done' || selectedPaths.length === 0 ||
       (singleCandidate && !name.trim()) ||
       busy ||
       scanning
@@ -140,6 +147,45 @@ export default function RegisterGithubDialog({
       return;
     }
     setAwaitPassword(true);
+  }
+
+  function openRegistration() {
+    if (activeScan?.state !== 'done' || !selectedPaths.length ||
+      (singleCandidate && !name.trim()) || busy || scanning || registrationPending.current) return;
+    setRegisterError('');
+    setRegisterConfirm(true);
+  }
+
+  async function performRegistration(password: string) {
+    if (registrationPending.current) return;
+    registrationPending.current = true;
+    setRegisterBusy(true);
+    setRegisterError('');
+    try {
+      const batch = buildBatchInput();
+      const created = singleCandidate
+        ? await registerGithubSkill({ repository: batch.repository, path: selectedPaths[0],
+            name: name.trim(), tags: tagsText.split(',').map(tag => tag.trim()).filter(Boolean),
+            summary: summary.trim(), shared_paths: [] }, password)
+        : await registerGithubBatch(batch, password);
+      setRegisterTaskId(created.task_id);
+      setRegisterConfirm(false);
+    } catch (err) {
+      setRegisterError(err instanceof Error ? err.message : '登记失败');
+    } finally {
+      registrationPending.current = false;
+      setRegisterBusy(false);
+    }
+  }
+
+  async function finishRegistration() {
+    setRegisterTaskId('');
+    try {
+      await onRefresh();
+      onCancel();
+    } catch (err) {
+      setRegisterError(err instanceof Error ? err.message : '刷新失败，请重新加载列表');
+    }
   }
 
   function buildBatchInput(): RegisterGithubBatchInput {
@@ -166,6 +212,8 @@ export default function RegisterGithubDialog({
   const allSelected =
     scanDone && selectedPaths.length === newCandidates.length;
   const dialogTitle = initialRepository ? '添加合集成员' : '新增 GitHub Skill';
+  const actionDisabled = !scanDone || selectedPaths.length === 0 ||
+    (singleCandidate !== null && !name.trim()) || busy || scanning || registerBusy;
 
   return (
     <div
@@ -360,7 +408,9 @@ export default function RegisterGithubDialog({
           )
         ) : null}
 
-        <div className="mt-4 flex justify-end gap-2">
+        <p className="mt-4 text-xs text-slate-500">仅登记可用于管理和导出；登记并安装会同时添加到 Hermes。</p>
+        {registerError && !registerConfirm ? <p role="alert" className="mt-2 text-sm text-rose-700">{registerError}</p> : null}
+        <div className="mt-3 flex flex-wrap justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
@@ -369,20 +419,26 @@ export default function RegisterGithubDialog({
           >
             取消
           </button>
+          <button type="button" onClick={openRegistration} disabled={actionDisabled}
+            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+            仅登记
+          </button>
           <button
             type="submit"
-            disabled={
-              selectedPaths.length === 0 ||
-              (singleCandidate !== null && !name.trim()) ||
-              busy ||
-              scanning
-            }
+            disabled={actionDisabled}
             className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-40"
           >
-            安装到 Hermes
+            登记并安装到 Hermes
           </button>
         </div>
       </form>
+
+      {registerConfirm ? <ConfirmActionDialog title="仅登记 GitHub Skill" confirmLabel="确认登记"
+        description={`登记所选 ${selectedPaths.length} 个 Skill，登记后可在页面管理和导出。`}
+        busy={registerBusy} error={registerError} onConfirm={performRegistration}
+        onCancel={() => setRegisterConfirm(false)} /> : null}
+      {registerTaskId ? <TaskProgressDialog taskId={registerTaskId} title="GitHub Skill 登记"
+        onDone={finishRegistration} onClose={finishRegistration} /> : null}
 
       {awaitPassword ? <InstallDialog input={{scan_task_id: scanTaskId, candidates: singleCandidate ? [{path: selectedPaths[0], name: name.trim(), tags: tagsText.split(',').map(t => t.trim()).filter(Boolean), summary: summary.trim()}] : buildBatchInput().items.map(i => ({...i, tags: i.tags ?? [], summary: i.summary ?? ''}))}}
         onRefresh={onRefresh} onClose={() => { setAwaitPassword(false); onCancel(); }} /> : null}
