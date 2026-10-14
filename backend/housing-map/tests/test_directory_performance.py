@@ -40,7 +40,7 @@ def test_paged_review_matches_only_returned_members_and_filtered_counts_agree(tm
     calls.clear()
     summary = client.get('/api/directory/summary?q=候选花园1&district=滨江&source=amap').json()['data']
     assert summary['pending'] == 3 and summary['residential'] == 1
-    assert summary['filtered'] == {'residential': 0, 'pending': 1}
+    assert summary['filtered'] == {'residential': 0, 'pending': 1, 'excluded': 0}
     assert calls == []
     summary = client.get('/api/directory/summary?q=居民别名&property_type=住宅').json()['data']
-    assert summary['filtered'] == {'residential': 1, 'pending': 0}
+    assert summary['filtered'] == {'residential': 1, 'pending': 0, 'excluded': 0}

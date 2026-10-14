@@ -1,4 +1,6 @@
 """Explainable local-only review. Preview projects into memory; execution is opt-in."""
+from src.services.community_address import effective_address
+
 import hashlib
 import json
 import math
@@ -14,7 +16,7 @@ from src.services.community_registry import CommunityRegistry, dump, normalized,
 from src.services.community_review import ReviewWorkspace, same_community
 from src.services.residential_classifier import classify_sources
 
-RULE_VERSION = 'community-auto-v1'
+RULE_VERSION = 'community-auto-v2'
 TABLES = ('communities', 'sources', 'community_admission', 'rejected', 'review_candidates', 'review_members')
 SUSPICIOUS_NAME = re.compile(r'(?:大道|路|街|巷)(?:小区)?$|(?:停车场|车库|售楼处|出入口|门岗|物业服务中心)$')
 
@@ -63,10 +65,12 @@ def decide(group, members, *, groups, sources, masters, admissions, rejected, fa
         return result('pending', '人工锁或已有排除决定优先')
     if not members or any(m.get('auto_association_disabled') or m.get('community_name_missing') for m in members):
         return result('pending', '小区名称或身份不可靠')
+    if not effective_address(group.get('address'), members):
+        return result('exclude', '缺少有效地址，不收录')
     if SUSPICIOUS_NAME.search(group['name']):
         return result('pending', '名称疑似道路或附属设施，须人工核对')
     district = normalized(group.get('district')).removesuffix('区')
-    address = group.get('address') or ''
+    address = effective_address(group.get('address'), members)
     if district not in {'滨江', '萧山'}:
         return result('exclude', '区域不在住宅目录范围；建议人工排除')
     if not address or district + '区' not in address:

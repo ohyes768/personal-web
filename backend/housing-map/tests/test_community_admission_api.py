@@ -48,7 +48,7 @@ def test_missing_or_invalid_coordinates_are_explained(tmp_path):
     from src.services.community_admission import community_views
     from src.services.community_registry import CommunityRegistry
     store = CommunityRegistry(tmp_path / 'community_registry.sqlite3')
-    store.create('测试花园', community_id='local-one', district='滨江')
+    store.create('测试花园', community_id='local-one', district='滨江', address='滨江区测试路1号')
     store.decide_admission('local-one', 'admit', revision=1, property_type='住宅')
     assert community_views(store, tmp_path)[0]['map_status'] == 'missing_coordinates'
     from src.services.refresh import select_refresh_targets

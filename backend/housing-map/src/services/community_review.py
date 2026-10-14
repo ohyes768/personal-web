@@ -5,6 +5,7 @@ import math
 import uuid
 from pathlib import Path
 
+from src.services.community_address import effective_address
 from src.services.community_admission import community_views, property_facts
 from src.services.community_registry import dump, normalized, now
 
@@ -17,8 +18,10 @@ def same_community(a, b):
     district = normalized(a.get('district')).removesuffix('区')
     if not district or district != normalized(b.get('district')).removesuffix('区'):
         return False
-    if a.get('address') and b.get('address'):
-        return normalized(a['address']) == normalized(b['address'])
+    a_address = effective_address(a.get('address'))
+    b_address = effective_address(b.get('address'))
+    if a_address and b_address:
+        return normalized(a_address) == normalized(b_address)
     if a.get('coordinate_system') != 'gcj02' or b.get('coordinate_system') != 'gcj02':
         return False
     values = [a.get('longitude'), a.get('latitude'), b.get('longitude'), b.get('latitude')]
@@ -89,7 +92,7 @@ class ReviewWorkspace:
                 group = dict(saved) if saved else dict(id=rid, revision=0, existing_cid=cid, created_at=now())
                 group.update(state='excluded' if state == 'excluded' else 'pending', name=community['community_name'],
                              district=community.get('district', ''), address=community.get('address', ''),
-                             auto_review_locked=current_admission['auto_review_locked'], reason=current_admission.get('reason', ''),
+                             auto_review_locked=current_admission['auto_review_locked'], reason=community.get('exclusion_reason') or current_admission.get('reason', ''),
                              admission_revision=current_admission['revision'])
                 group['fingerprint'] = fingerprint(members, [current_admission, community['community_name'], community.get('address'), state])
                 group['member_fingerprint'] = fingerprint(members)
@@ -132,6 +135,7 @@ class ReviewWorkspace:
                     group['state'] = 'resolved'
                 elif group['state'] == 'resolved':
                     group['state'] = 'pending'
+                group['address'] = effective_address('', members)
                 new_fingerprint = fingerprint(members)
                 if group.get('fingerprint') != new_fingerprint:
                     group['revision'] += 1
@@ -150,10 +154,15 @@ class ReviewWorkspace:
             membership = list(db.execute('SELECT * FROM review_members'))
         result = []
         for group in groups.values():
-            if group['state'] != state:
+            if group['state'] not in {'pending', 'excluded'}:
                 continue
             members = [sources[r['rid']] for r in membership if r['candidate_id'] == group['id'] and
                        (sources[r['rid']]['status'] == 'pending' or sources[r['rid']]['community_id'] == group.get('existing_cid'))]
+            address = effective_address(group.get('address'), members)
+            address_missing = not bool(address)
+            effective_state = 'excluded' if address_missing else group['state']
+            if effective_state != state:
+                continue
             public_members = []
             from src.services.residential_classifier import classify_sources
             for member in members:
@@ -164,12 +173,12 @@ class ReviewWorkspace:
                 m['residential_state'] = classify_sources([member], facts)
                 public_members.append(m)
             auctions = [r for r in members if r['source'] == 'laipai']
-            reasons = [group['reason']] if group.get('reason') else ['用途或小区身份需要人工确认']
+            reasons = (['缺少有效地址，不收录'] if address_missing else []) + ([group['reason']] if group.get('reason') else [] if address_missing else ['用途或小区身份需要人工确认'])
             if any(m.get('auto_association_disabled') for m in members):
                 reasons.append('缺少可靠小区名称或法拍身份存在冲突')
             if group.get('auto_review_locked'):
                 reasons.append('人工自动审核锁已生效')
-            result.append({**group, 'members': public_members, 'reasons': reasons,
+            result.append({**group, 'state': effective_state, 'address': address, 'address_missing': address_missing, 'members': public_members, 'reasons': reasons,
                            'suggestions': [], 'sources': sorted({m['source'] for m in members}),
                            'auction_assets': len({a['source_id'] for a in auctions if a['source_kind'] == 'asset'}),
                            'auction_identity_uncertain': any(a['source_kind'] != 'asset' for a in auctions),
@@ -198,8 +207,8 @@ class ReviewWorkspace:
     def summary(self, *, q='', district='', source='', property_type=''):
         communities = self.refresh()
         pending = self.reviews(refresh=False, include_suggestions=False)
-        with self.store.db() as db:
-            excluded = sum(g['state'] == 'excluded' for g in self._all(db).values())
+        excluded_rows = self.reviews(state='excluded', refresh=False, include_suggestions=False)
+        excluded = len(excluded_rows)
         sources = self.store.sources()
         members = {}
         for record in sources:
@@ -208,7 +217,8 @@ class ReviewWorkspace:
         return dict(residential=len(residential), pending=len(pending), excluded=excluded,
                     filtered=dict(residential=sum(community_matches(c, members.get(c['community_id'], []), q=q,
                                   district=district, source=source, property_type=property_type) for c in residential),
-                                  pending=sum(review_matches(r, q=q, district=district, source=source) for r in pending)))
+                                  pending=sum(review_matches(r, q=q, district=district, source=source) for r in pending),
+                                  excluded=sum(review_matches(r, q=q, district=district, source=source) for r in excluded_rows)))
 
     def _validated(self, db, candidate_id, revision):
         row = db.execute('SELECT payload FROM review_candidates WHERE id=?', (candidate_id,)).fetchone()
@@ -250,6 +260,7 @@ class ReviewWorkspace:
                 db.execute('INSERT OR IGNORE INTO rejected VALUES (?,?)', (m['id'], group['existing_cid']))
                 db.execute("UPDATE sources SET cid=NULL,status='pending',method=NULL,evidence='[]' WHERE id=?", (m['id'],))
                 m.update(community_id=None, status='pending', method=None, evidence=[])
+        new['address'] = effective_address('', chosen)
         new['fingerprint'] = fingerprint(chosen)
         self._save(db, new)
         for m in chosen:
@@ -258,6 +269,8 @@ class ReviewWorkspace:
             admission = self.store._decide_admission(db, group['existing_cid'], 'review',
                 revision=group['admission_revision'], reason='人工拆分，原小区成员需独立核对')
             group['admission_revision'] = admission['revision']
+        if not group.get('existing_cid'):
+            group['address'] = effective_address('', [m for m in members if m['id'] not in member_ids])
         group.update(revision=revision + 1, manual_group=True, auto_review_locked=True,
                      fingerprint=fingerprint([m for m in members if m['id'] not in member_ids]))
         self._save(db, group)
@@ -266,7 +279,9 @@ class ReviewWorkspace:
 
     def restore(self, candidate_id, *, revision):
         with self.store.db() as db:
-            group, _ = self._validated(db, candidate_id, revision)
+            group, members = self._validated(db, candidate_id, revision)
+            if not effective_address(group.get('address'), members):
+                raise ValueError('请先补充有效地址，再重新审核')
             if group['state'] != 'excluded':
                 raise ValueError('只有已排除候选可以恢复')
             if group.get('existing_cid'):
@@ -316,6 +331,8 @@ class ReviewWorkspace:
                 self.store._decide_admission(db, cid, 'exclude', revision=group['admission_revision'], reason=reason)
             group.update(state='excluded', auto_review_locked=True, reason=reason.strip())
         elif action in {'admit', 'merge'}:
+            if not effective_address(group.get('address'), members):
+                raise ValueError('缺少有效地址，不能收录；请先补充地址')
             if action == 'merge':
                 target = db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (target_id,)).fetchone()
                 admitted = db.execute('SELECT payload FROM community_admission WHERE cid=?', (target_id,)).fetchone()
@@ -355,3 +372,26 @@ class ReviewWorkspace:
         self._save(db, group)
         self.store._event(db, cid, 'review_' + action, {'candidate_id': candidate_id, 'member_ids': [m['id'] for m in members], 'reason': reason, **(automatic or {})})
         return group
+
+
+    def remove_excluded(self, items):
+        if not items or len({item['id'] for item in items}) != len(items):
+            raise ValueError('请选择不同的不收录记录')
+        self.refresh()
+        with self.store.db() as db:
+            validated = [self._validated(db, item['id'], item['revision']) for item in items]
+            for group, members in validated:
+                if group['state'] != 'excluded' and effective_address(group.get('address'), members):
+                    raise ValueError('只能移除不收录记录，请刷新')
+            for group, members in validated:
+                cid = group.get('existing_cid')
+                if cid:
+                    db.execute('UPDATE communities SET deleted=1 WHERE id=?', (cid,))
+                    db.execute("UPDATE sources SET status='ignored',ignored_by=? WHERE cid=? AND status<>'ignored'", (cid, cid))
+                else:
+                    for member in members:
+                        db.execute("UPDATE sources SET status='ignored',ignored_by='source' WHERE id=?", (member['id'],))
+                group.update(state='removed', revision=group['revision'] + 1)
+                self._save(db, group)
+                self.store._event(db, cid, 'review_remove', {'candidate_id': group['id'], 'reason': '移除不收录记录', 'member_ids': [m['id'] for m in members]})
+            return {'removed': len(validated)}

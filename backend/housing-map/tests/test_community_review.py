@@ -86,7 +86,7 @@ def test_position_groups_require_all_pair_evidence_not_distance_chain(tmp_path):
     work = workspace(tmp_path)
     for sid, lng in [('1', 120.207), ('2', 120.2079), ('3', 120.2088)]:
         source(work.store, sid, address='', longitude=lng, latitude=30.2, coordinate_system='gcj02')
-    assert sorted(len(r['members']) for r in work.reviews()) == [1, 2]
+    assert sorted(len(r['members']) for r in work.reviews(state='excluded')) == [1, 2]
 
 
 def test_excluded_source_cannot_auto_bind_and_unlinked_member_requeues(tmp_path):

@@ -68,8 +68,12 @@ def load_verified_mappings(path: Path) -> list[tuple[str, str]]:
     from src.services.community_registry import existing_registry
     registry = existing_registry(path.parent)
     if registry:
-        return [(r['source_id'], r['community_id']) for r in registry.sources()
-                if r['source'] == 'fang' and r['status'] == 'matched' and registry.resolve(r['community_id'])]
+        from src.services.community_address import effective_address
+        sources = registry.sources()
+        valid_ids = {c['community_id'] for c in registry.communities() if effective_address(c.get('address'),
+                     [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched'])}
+        return [(r['source_id'], r['community_id']) for r in sources
+                if r['source'] == 'fang' and r['status'] == 'matched' and r['community_id'] in valid_ids and registry.resolve(r['community_id'])]
     from src.services.rental_reference.sources import database_path, confirmed_pairs, connection
     db_path = database_path(path)
     if db_path.exists():
@@ -256,13 +260,14 @@ class RentalRefreshService:
         """
         with self._mutex:
             thread = self._thread
-            active = self._has_active_thread()
-            running = bool(self._job.get('running'))
-        if not active or thread is None:
-            return True
-        self._cancel_event.set()
-        if running:
-            self._update_job(phase='cancelling')
+            if not self._has_active_thread() or thread is None:
+                return True
+            self._cancel_event.set()
+            # The worker finalizes under this same mutex. Never overwrite its
+            # terminal phase with a stale "running" snapshot after releasing it.
+            if self._job.get('running'):
+                self._job['phase'] = 'cancelling'
+                self._write_job_file()
         thread.join(timeout)
         return not thread.is_alive()
 

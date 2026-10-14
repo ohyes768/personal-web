@@ -30,10 +30,11 @@ test('review table counts communities with separate asset and round clues', () =
   assert.match(html, /用途待核实/); assert.match(html, /审核/);
 });
 
-test('management has exactly residential and review tabs and labels collection separately', () => {
+test('management has separate residential, review and excluded tabs', () => {
   const Management = require('../src/components/community/CommunityManagement.tsx').default;
   const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
-  assert.match(html, /住宅小区/); assert.match(html, /待审核小区/);
+  assert.match(html, /住宅小区/); assert.match(html, /待审核小区/); assert.match(html, /不收录/);
+  assert.doesNotMatch(html, /审核状态/);
   assert.doesNotMatch(html, /统一小区|来源名称 \/ 待关联/);
   assert.match(html, /最近一次来源采集/); assert.match(html, /小区库存/);
 });
@@ -43,4 +44,16 @@ test('auction review entry sends users to the shared community workspace', () =>
   const html = renderToStaticMarkup(React.createElement(Entry, { refreshVersion: 0, onChanged() {} }));
   assert.match(html, /前往待审核小区/); assert.match(html, /来拍/);
   assert.doesNotMatch(html, /确认绑定|搜索目标小区/);
+});
+
+
+test('excluded records have selectable rows for batch removal', () => {
+  const { ReviewTable } = require('../src/components/community/CommunityWorkspace.tsx');
+  const html = renderToStaticMarkup(React.createElement(ReviewTable, { items: [{
+    id: 'review-noaddr', name: '襄七房', state: 'excluded', members: [], sources: ['tmsf'],
+    reasons: ['缺少有效地址，不收录'], suggestions: [], auction_assets: 0, auction_rounds: 0,
+  }], onSelect() {}, removal: ['review-noaddr'], onToggle() {} }));
+  assert.match(html, /type="checkbox"/); assert.match(html, /checked=""/);
+  assert.match(html, /选择移除襄七房/); assert.match(html, /查看原因/);
+  assert.match(html, /缺少有效地址/);
 });

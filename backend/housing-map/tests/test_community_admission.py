@@ -8,9 +8,12 @@ from src.services.community_registry import CommunityRegistry
 
 def seeded(tmp_path):
     (tmp_path / 'binjiang_communities.json').write_text(json.dumps([
-        {'community_id': '100', 'community_name': '江汉路小区', 'district': '滨江'},
-        {'community_id': '200', 'community_name': '未知花园', 'district': '滨江'}]), encoding='utf-8')
+        {'community_id': '100', 'community_name': '江汉路小区', 'district': '滨江', 'address': '滨江区江汉路1号'},
+        {'community_id': '200', 'community_name': '未知花园', 'district': '滨江', 'address': '滨江区测试路2号'}]), encoding='utf-8')
     (tmp_path / 'property_types.json').write_text(json.dumps({'100': {'property_type': '住宅'}}), encoding='utf-8')
+    (tmp_path / 'binjiang_coordinates.json').write_text(json.dumps({
+        '100': {'formatted_address': '滨江区江汉路1号'},
+        '200': {'formatted_address': '滨江区测试路2号'}}), encoding='utf-8')
     return prepare_directory(tmp_path)
 
 

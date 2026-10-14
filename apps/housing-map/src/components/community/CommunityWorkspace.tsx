@@ -7,12 +7,12 @@ import RentalAssociationReview from '../rental/RentalAssociationReview';
 import { AdmissionControls, Community, Source, Report, DirectorySourceCard, labels, collectionLabels, phaseLabels, mapLabels, request, safeDirectoryLink } from './DirectoryCards';
 
 type Review = { id: string; name: string; district?: string; address?: string; revision: number; state: string;
-  existing_cid?: string; members: Source[]; sources: string[]; reasons: string[]; suggestions: Community[];
+  address_missing?: boolean; existing_cid?: string; members: Source[]; sources: string[]; reasons: string[]; suggestions: Community[];
   auto_review_locked?: boolean; auction_assets: number; auction_rounds: number; auction_identity_uncertain: boolean;
   rounds?: { auction_id: string; title?: string; source_url?: string; round?: number }[] };
 type Page<T> = { items: T[]; total: number };
 type Summary = { residential: number; pending: number; excluded: number; auction_needs_sync: boolean;
-  filtered: { residential: number; pending: number } };
+  filtered: { residential: number; pending: number; excluded: number } };
 type CachedPage = { kind: 'residential'; data: Page<Community> } | { kind: 'reviews'; data: Page<Review> };
 type Confirmation = { path: string; body: object; text: string };
 
@@ -25,13 +25,13 @@ export function CommunityTable({ items, onSelect }: { items: Community[]; onSele
       <td data-label="操作"><button className="btn btn-secondary" onClick={() => onSelect(c.community_id)}>详情 / 管理</button></td></tr>)}
   </tbody></table></div>;
 }
-export function ReviewTable({ items, onSelect }: { items: Review[]; onSelect: (id: string) => void }) {
-  return <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>候选小区</th><th>区域 / 地址</th><th>类型线索</th><th>资料来源</th><th>待审核原因</th><th>疑似已有小区</th><th>操作</th></tr></thead><tbody>
-    {items.map(r => <tr key={r.id}><td data-label="候选小区"><strong>{r.name}</strong><small>{r.members.length} 条来源资料</small></td><td data-label="区域 / 地址">{r.district || '未知'}<small>{r.address || '地址待核对'}</small></td>
+export function ReviewTable({ items, onSelect, removal, onToggle }: { items: Review[]; onSelect: (id: string) => void; removal?: string[]; onToggle?: (id: string) => void }) {
+  return <div className="directory-table-wrap"><table className="review-table"><thead><tr>{removal && <th>选择</th>}<th>候选小区</th><th>区域 / 地址</th><th>类型线索</th><th>资料来源</th><th>{removal ? '不收录原因' : '待审核原因'}</th><th>疑似已有小区</th><th>操作</th></tr></thead><tbody>
+    {items.map(r => <tr key={r.id}>{removal && <td data-label="选择"><input type="checkbox" aria-label={`选择移除${r.name}`} checked={removal.includes(r.id)} onChange={() => onToggle?.(r.id)} /></td>}<td data-label="候选小区"><strong>{r.name}</strong><small>{r.members.length} 条来源资料</small></td><td data-label="区域 / 地址">{r.district || '未知'}<small>{r.address || (r.address_missing ? '无有效地址' : '地址待核对')}</small></td>
       <td data-label="类型线索">{[...new Set(r.members.map(m => m.property_type).filter(Boolean))].join(' / ') || '用途待核实'}{r.members.some(m => m.source === 'amap') && <small>地图分类仅作线索</small>}</td>
       <td data-label="资料来源"><Sites sites={r.sources} />{r.sources.includes('laipai') && <small>{r.auction_assets} 个已知资产 · {r.auction_rounds} 条轮次{r.auction_identity_uncertain && ' · 资产编号缺失，总套数不确定'}</small>}</td>
-      <td data-label="待审核原因">{r.reasons.join('；')}</td><td data-label="疑似已有小区">{r.suggestions.map(c => c.community_name).join(' / ') || '暂无建议'}</td>
-      <td data-label="操作"><button className="btn btn-secondary" onClick={() => onSelect(r.id)}>{r.state === 'excluded' ? '查看 / 恢复' : '审核'}</button></td></tr>)}
+      <td data-label={removal ? '不收录原因' : '待审核原因'}>{r.reasons.join('；')}</td><td data-label="疑似已有小区">{r.suggestions.map(c => c.community_name).join(' / ') || '暂无建议'}</td>
+      <td data-label="操作"><button className="btn btn-secondary" onClick={() => onSelect(r.id)}>{r.state === 'excluded' ? '查看原因' : '审核'}</button></td></tr>)}
   </tbody></table></div>;
 }
 
@@ -57,7 +57,7 @@ function ReviewPanel({ review: r, busy, confirm }: { review: Review; busy: boole
     <p className="directory-warning">{r.reasons.join('；')}</p>
     {r.auto_review_locked && <p className="directory-warning">人工审核锁已保留，更新资料不会自动收录。</p>}
     {r.auto_review_locked && r.state === 'pending' && <button className="btn btn-secondary" disabled={busy} onClick={() => confirm({ path: `/reviews/${r.id}/allow-auto-review`, body: { revision: r.revision }, text: '明确解除此候选的人工审核锁？只允许重新按规则判断，不立即收录。' })}>允许重新自动审核</button>}
-    {r.state === 'excluded' ? <button className="btn btn-secondary" disabled={busy} onClick={() => confirm({ path: `/reviews/${r.id}/restore`, body: { revision: r.revision }, text: '恢复到待审核？仍保留人工审核锁，不直接进入住宅名单。' })}>恢复到待审核</button> : <>
+    {r.state === 'excluded' ? r.address_missing ? <p>缺少有效地址，不收录。来源补充有效地址后会重新判断；也可在“不收录”Tab勾选移除。</p> : <button className="btn btn-secondary" disabled={busy} onClick={() => confirm({ path: `/reviews/${r.id}/restore`, body: { revision: r.revision }, text: '恢复到待审核？仍保留人工审核锁，不直接进入住宅名单。' })}>恢复到待审核</button> : <>
       <div className="directory-edit-grid"><label>确认小区名称<input aria-label="确认小区名称" value={name} maxLength={100} onChange={e => setName(e.target.value)} /></label>
         <label>确认物业类型<select aria-label="确认物业类型" value={type} onChange={e => setType(e.target.value)}>{['住宅', '别墅', '排屋'].map(t => <option key={t}>{t}</option>)}</select></label>
         <label>审核理由<input aria-label="审核理由" value={reason} maxLength={300} placeholder="排除必填；其他操作可记录依据" onChange={e => setReason(e.target.value)} /></label></div>
@@ -93,12 +93,14 @@ function MasterPanel({ community: c, busy, changed, confirm }: { community: Comm
 export default function CommunityWorkspace({ onChanged, initialSource = '' }: { onChanged: () => void; initialSource?: string }) {
   const [mode, setMode] = useState(initialSource ? 'reviews' : 'residential');
   const [q, setQ] = useState(''); const [district, setDistrict] = useState('滨江');
-  const [source, setSource] = useState(initialSource); const [state, setState] = useState('pending');
+  const [source, setSource] = useState(initialSource);
+  const state = mode === 'excluded' ? 'excluded' : 'pending';
+  const [removal, setRemoval] = useState<string[]>([]);
   const [propertyType, setPropertyType] = useState('');
   const [search, setSearch] = useState('');
   const [page, setPage] = useState(1); const [revision, setRevision] = useState(0);
   const [masters, setMasters] = useState<Community[]>([]); const [reviews, setReviews] = useState<Review[]>([]);
-  const [total, setTotal] = useState(0); const [counts, setCounts] = useState({ residential: 0, pending: 0 });
+  const [total, setTotal] = useState(0); const [counts, setCounts] = useState({ residential: 0, pending: 0, excluded: 0 });
   const [summary, setSummary] = useState<Summary | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);
   const [countsError, setCountsError] = useState('');
@@ -185,17 +187,18 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
   async function act(path: string, method = 'POST', body?: object) {
     setBusy(true); setError('');
     try {
-      await request(path, method, body); setConfirmation(null); setSelected(null); setDetail(null); setRevision(v => v + 1); onChanged(); setNotice('操作已保存，住宅名单、审核队列和地图已更新。');
+      await request(path, method, body); setRemoval([]); setConfirmation(null); setSelected(null); setDetail(null); setRevision(v => v + 1); onChanged(); setNotice('操作已保存，住宅名单、审核队列和地图已更新。');
     } catch (e) { setConfirmation(null); setRevision(v => v + 1); setError(e instanceof Error ? e.message : '操作失败'); }
     finally { setBusy(false); }
   }
   const select = (kind: string, id: string) => { setSelected({ kind, id }); setDetail(null); };
+  const removalItems = reviews.filter(r => removal.includes(r.id));
   const master = detail && 'community_name' in detail ? detail : null;
   const review = detail && 'members' in detail ? detail : null;
-  const filterChanged = () => { setLoading(true); setError(''); setPage(1); setSelected(null); setDetail(null); };
+  const filterChanged = () => { setRemoval([]); setLoading(true); setError(''); setPage(1); setSelected(null); setDetail(null); };
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
     <header className="review-heading"><div><p className="review-eyebrow">小区库存</p><h2>住宅名单与人工审核</h2><p className="directory-muted">住宅是地图的数据来源；有疑点的候选在审核后收录、合并或排除。</p></div>
-      <p className="review-inventory">全部区域：住宅 <strong>{summary?.residential ?? '—'}</strong> · 待审核 <strong>{summary?.pending ?? '—'}</strong> · 已排除 {summary?.excluded ?? '—'}</p></header>
+      <p className="review-inventory">全部区域：住宅 <strong>{summary?.residential ?? '—'}</strong> · 待审核 <strong>{summary?.pending ?? '—'}</strong> · 不收录 {summary?.excluded ?? '—'}</p></header>
     <details className="review-collection" open={report?.running || undefined}><summary>最近一次来源采集{report && ` · ${phaseLabels[report.phase] || report.phase}`}</summary><div className="directory-collection">
       <div className="directory-actions">{Object.entries(collectionLabels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
         <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length} onClick={() => void act('/collection', 'POST', { sources: collectionSources })}>采集名称与物业类型</button>
@@ -208,20 +211,28 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
       {report?.auto_review && <details><summary>本轮自动审核（单独统计）</summary><AutoReport report={report.auto_review} /></details>}
     </div></details>
     <AutoReviewPanel refreshVersion={revision} onChanged={() => { setRevision(v => v + 1); onChanged(); }} />
-    <div className="review-tabs"><button aria-pressed={mode === 'residential'} onClick={() => { if (mode !== 'residential') { setMode('residential'); filterChanged(); } }}>住宅小区（{countsLoading ? '…' : countsError ? '—' : counts.residential}）</button><button aria-pressed={mode === 'reviews'} onClick={() => { if (mode !== 'reviews') { setMode('reviews'); filterChanged(); } }}>待审核小区（{countsLoading ? '…' : countsError ? '—' : counts.pending}）</button></div>
+    <div className="review-tabs"><button aria-pressed={mode === 'residential'} onClick={() => { if (mode !== 'residential') { setMode('residential'); filterChanged(); } }}>住宅小区（{countsLoading ? '…' : countsError ? '—' : counts.residential}）</button><button aria-pressed={mode === 'reviews'} onClick={() => { if (mode !== 'reviews') { setMode('reviews'); filterChanged(); } }}>待审核小区（{countsLoading ? '…' : countsError ? '—' : counts.pending}）</button><button aria-pressed={mode === 'excluded'} onClick={() => { if (mode !== 'excluded') { setMode('excluded'); filterChanged(); } }}>不收录（{countsLoading ? '…' : countsError ? '—' : counts.excluded}）</button></div>
     <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索名称、别名、地址" value={q} onChange={e => { setQ(e.target.value); filterChanged(); }} />
       <select aria-label="目录区域" value={district} onChange={e => { setDistrict(e.target.value); filterChanged(); }}><option value="滨江">滨江区</option><option value="萧山">萧山接壤目录</option><option value="">全部区域</option></select>
       <select aria-label="数据来源" value={source} onChange={e => { setSource(e.target.value); filterChanged(); }}><option value="">全部来源</option>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
-      {mode === 'reviews' && <select aria-label="审核状态" value={state} onChange={e => { setState(e.target.value); filterChanged(); }}><option value="pending">待审核</option><option value="excluded">已排除（可恢复）</option></select>}
       {mode === 'residential' && <select aria-label="住宅物业类型" value={propertyType} onChange={e => { setPropertyType(e.target.value); filterChanged(); }}><option value="">全部住宅类型</option>{['住宅', '别墅', '排屋'].map(t => <option key={t}>{t}</option>)}</select>}
       <button className="btn btn-secondary" disabled={busy} onClick={() => { setLoading(true); setRevision(v => v + 1); }}>刷新名单</button>
       <button className="btn btn-secondary" disabled={busy} onClick={() => void act('/reviews/sync')}>同步历史法拍 / 重试</button></div>
     {summary?.auction_needs_sync && <p className="directory-warning">有已保存法拍尚未同步到审核目录，可点击“同步历史法拍 / 重试”。</p>}
     {(error || countsError) && <p role="alert" className="directory-warning">{error || countsError} <button onClick={() => { setError(''); setRevision(v => v + 1); }}>刷新重试</button></p>}{notice && <p role="status">{notice}</p>}
-    <div className="directory-workspace"><div className="directory-list-panel">{!loading && <p className="directory-muted">当前筛选：{total} 个{mode === 'residential' ? '住宅小区' : state === 'excluded' ? '已排除候选' : '待审核小区'}；每个小区候选一行。</p>}
-      {loading ? <p role="status">加载小区名单…</p> : mode === 'residential' ? <CommunityTable items={masters} onSelect={id => select('communities', id)} /> : <ReviewTable items={reviews} onSelect={id => select('reviews', id)} />}
+    {mode === 'excluded' && <div className="directory-actions">
+      <p className="directory-muted">缺少有效地址及已排除的记录不进入正式住宅名单。移除会保留历史并跳过已知来源，避免重采复活。</p>
+      <button className="btn btn-secondary" disabled={busy || loading || !reviews.length} onClick={() => setRemoval(reviews.map(r => r.id))}>选择本页</button>
+      <button className="btn btn-secondary" disabled={busy || !removal.length} onClick={() => setRemoval([])}>取消选择</button>
+      <button className="btn btn-secondary" disabled={busy || loading || !removalItems.length} onClick={() => setConfirmation({
+        path: '/reviews/remove', body: { items: removalItems.map(r => ({ id: r.id, revision: r.revision })) },
+        text: `移除所选 ${removalItems.length} 条不收录记录？保留历史，但已知来源会被忽略，后续采集不会重新加入。`,
+      })}>移除所选（{removalItems.length}）</button>
+    </div>}
+    <div className="directory-workspace"><div className="directory-list-panel">{!loading && <p className="directory-muted">当前筛选：{total} 个{mode === 'residential' ? '住宅小区' : state === 'excluded' ? '不收录记录' : '待审核小区'}；每个小区候选一行。</p>}
+      {loading ? <p role="status">加载小区名单…</p> : mode === 'residential' ? <CommunityTable items={masters} onSelect={id => select('communities', id)} /> : <ReviewTable items={reviews} onSelect={id => select('reviews', id)} removal={mode === 'excluded' ? removal : undefined} onToggle={id => setRemoval(v => v.includes(id) ? v.filter(k => k !== id) : [...v, id])} />}
       {!loading && total === 0 && <p className="directory-empty">没有符合条件的小区。</p>}
-      <nav className="directory-actions" aria-label="小区名单分页"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => setPage(v => v - 1)}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页 · 共 {total} 个</span><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => setPage(v => v + 1)}>下一页</button></nav>
+      <nav className="directory-actions" aria-label="小区名单分页"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => { setRemoval([]); setPage(v => v - 1); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页 · 共 {total} 个</span><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => { setRemoval([]); setPage(v => v + 1); }}>下一页</button></nav>
     </div>{selected && <aside className="directory-detail"><div className="directory-source-heading"><h3>{master?.community_name || review?.name || '加载详情…'}</h3><button className="btn btn-secondary" onClick={() => { setSelected(null); setDetail(null); }}>关闭</button></div>
       {master && <MasterPanel key={`${master.community_id}-${master.admission?.revision}`} community={master} busy={busy} changed={act} confirm={setConfirmation} />}
       {review && <ReviewPanel key={`${review.id}-${review.revision}`} review={review} busy={busy} confirm={setConfirmation} />}</aside>}</div>

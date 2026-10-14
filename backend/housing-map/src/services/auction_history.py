@@ -34,8 +34,12 @@ def load_mappings(path, communities):
     from src.services.community_registry import existing_registry
     registry = existing_registry(path.parent)
     if registry:
+        from src.services.community_address import effective_address
+        sources = registry.sources()
+        valid_ids = {c['community_id'] for c in registry.communities() if effective_address(c.get('address'),
+                     [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched'])}
         return {(r['source'], r['source_kind'] + '_id', r['source_id']): r['community_id']
-                for r in registry.sources() if r['source'] == 'laipai' and r['status'] == 'matched'}
+                for r in sources if r['source'] == 'laipai' and r['status'] == 'matched' and r['community_id'] in valid_ids}
     if not path.exists():
         return {}
     payload = json.loads(path.read_text(encoding='utf-8-sig'))

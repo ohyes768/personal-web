@@ -390,3 +390,17 @@ def review_sync():
         except BlockingIOError as exc:
             raise HTTPException(409, '法拍更新正在进行，请稍后同步') from exc
     return review_read(sync)
+
+
+class RemoveReviewItem(BaseModel):
+    id: str = Field(min_length=1, max_length=100)
+    revision: int = Field(ge=1)
+
+
+class RemoveReviewsInput(BaseModel):
+    items: list[RemoveReviewItem] = Field(min_length=1, max_length=100)
+
+
+@router.post('/directory/reviews/remove')
+def remove_reviews(request: RemoveReviewsInput):
+    return result(lambda: workspace().remove_excluded([item.model_dump() for item in request.items]))
