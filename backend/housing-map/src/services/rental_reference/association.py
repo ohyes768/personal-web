@@ -6,6 +6,7 @@ import json
 from src.services.community_registry import dump, now, normalized
 from src.services.residential_classifier import classify_sources
 from src.services.community_address import effective_address
+from src.services.community_listing import listing_gate
 
 PREFIX = 'rental_review:'
 
@@ -17,6 +18,8 @@ def eligible_communities(registry):
     communities = registry.communities()
     return [c for c in communities if effective_address(c.get('address'),
             [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched']) and (c.get('district') or '').removesuffix('区') == '滨江'
+            and listing_gate([r for r in sources if r['community_id'] == c['community_id']
+                               and r['status'] == 'matched'], c)[0] is None
             and classify_sources([r for r in sources if r['community_id'] == c['community_id']
                                   and r['status'] == 'matched'], properties) == 'residential'], len(communities)
 

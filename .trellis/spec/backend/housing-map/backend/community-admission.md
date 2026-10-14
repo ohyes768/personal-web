@@ -36,3 +36,8 @@ Bad: use whole-community delete for residential exclusion; clear lock on restore
 ## 7. Wrong vs Correct
 Wrong: `store.delete(cid)` when the user excludes a nonresidential record; it ignores all linked identities and stops independent detail collection.
 Correct: `store.decide_admission(cid, 'exclude', revision=current_revision, reason='非住宅')`; the residential projection changes while source identities and history remain intact.
+
+## Second-hand listing threshold (2026-10-14)
+`community_listing.listing_gate(records, master=None)` is the shared admission gate: verified TMSF second-hand listing_count 0..2 projects to excluded with an explicit reason; >=3 continues ordinary residential checks. Missing/invalid counts and latest listing_count_error return pending, never zero. New-house source evidence is exempt. Legacy unknown market evidence without listing fields does not establish second-hand eligibility; a same-master historical listing_count can supply the initial count for one TMSF identity until its first detail check.
+Projection does not delete sources or rewrite durable human decisions/history. Candidate and direct master admit/merge operations enforce the same gate under the writer transaction; candidates appear in 不收录 and can use existing removal. A fresh sufficient count removes only the derived gate, never a durable manual exclusion. TMSF second-hand detail counts refresh each collection (no 30-day property-fact cache); new-house property evidence may still cache. Auto-review version v4 requires a fresh reviewed enablement.
+Tests: test_community_listing covers 0/1/2/3 boundary, missing/invalid/failed counts, new-house exemption, existing-master withdrawal/recovery, and manual bypass rejection.

@@ -34,4 +34,5 @@ def fetch_property_facts(client, community_id, names, *, timeout=15):
     if not property_type:
         raise ValueError('详情页面缺少物业类型')
     return dict(property_type=property_type, property_type_url=url,
-                address=info.get('address') or '')
+                address=info.get('address') or '', market_state='second_hand',
+                listing_count=info.get('listing_count'), listing_count_error=None)

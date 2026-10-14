@@ -1,5 +1,6 @@
 """Explainable local-only review. Preview projects into memory; execution is opt-in."""
 from src.services.community_address import effective_address
+from src.services.community_listing import listing_gate
 
 import hashlib
 import json
@@ -16,7 +17,7 @@ from src.services.community_registry import CommunityRegistry, dump, normalized,
 from src.services.community_review import ReviewWorkspace, same_community
 from src.services.residential_classifier import classify_sources
 
-RULE_VERSION = 'community-auto-v2'
+RULE_VERSION = 'community-auto-v4'
 TABLES = ('communities', 'sources', 'community_admission', 'rejected', 'review_candidates', 'review_members')
 SUSPICIOUS_NAME = re.compile(r'(?:大道|路|街|巷)(?:小区)?$|(?:停车场|车库|售楼处|出入口|门岗|物业服务中心)$')
 
@@ -44,7 +45,8 @@ def identity(master):
 
 def evidence(record, facts):
     fields = ('id', 'source', 'source_id', 'name', 'district', 'address', 'property_type', 'property_type_error',
-              'property_type_checked_at', 'property_type_url', 'samples', 'source_url')
+              'property_type_checked_at', 'property_type_url', 'samples', 'source_url',
+              'market_state', 'listing_count', 'listing_count_checked_at', 'listing_count_error')
     value = {k: record.get(k) for k in fields}
     if record['source'] == 'tmsf' and not record.get('property_type_checked_at') and not record.get('property_type'):
         legacy = facts.get(record['source_id'], {})
@@ -67,6 +69,9 @@ def decide(group, members, *, groups, sources, masters, admissions, rejected, fa
         return result('pending', '小区名称或身份不可靠')
     if not effective_address(group.get('address'), members):
         return result('exclude', '缺少有效地址，不收录')
+    listing_state, listing_reason = listing_gate(members)
+    if listing_state:
+        return result('exclude' if listing_state == 'excluded' else 'pending', listing_reason)
     if SUSPICIOUS_NAME.search(group['name']):
         return result('pending', '名称疑似道路或附属设施，须人工核对')
     district = normalized(group.get('district')).removesuffix('区')

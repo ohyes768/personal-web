@@ -86,6 +86,13 @@ class CommunityRegistry:
             raise ValueError('请确认住宅、别墅或排屋类型')
         if not db.execute('SELECT 1 FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone():
             raise ValueError('小区不存在或已删除/合并')
+        if action == 'admit':
+            from src.services.community_listing import listing_gate
+            master = self._community(db.execute('SELECT * FROM communities WHERE id=?', (cid,)).fetchone())
+            members = [self._source(r) for r in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
+            listing_state, listing_reason = listing_gate(members, master)
+            if listing_state:
+                raise ValueError(listing_reason)
         row = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
         previous = json.loads(row[0]) if row else self.pending_admission()
         if revision != previous['revision']:

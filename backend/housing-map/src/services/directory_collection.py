@@ -48,14 +48,15 @@ def tmsf_names(cancel, ignored, existing=None):
                        name=c.community_name, aliases=[c.community_alias] if c.community_alias else [],
                        district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
             previous = existing.get(str(c.community_id), {})
-            for field in ('property_type', 'property_type_url', 'property_type_captured_at', 'address', 'address_origin', 'address_checked_at', 'address_verification_pending'):
+            for field in ('property_type', 'property_type_url', 'property_type_captured_at', 'address', 'address_origin', 'address_checked_at', 'address_verification_pending',
+                          'market_state', 'listing_count', 'listing_count_checked_at', 'listing_count_error'):
                 if field in previous:
                     row[field] = previous[field]
             # Publish the name before requesting details, including when cancelled later.
             yield {**row, '_stage': 'names'}
             if ignored('tmsf', 'community', c.community_id):
                 continue
-            if previous.get('address_checked_at') and not previous.get('address_verification_pending') and previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
+            if previous.get('market_state') == 'new_house' and previous.get('address_checked_at') and not previous.get('address_verification_pending') and previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
                 try:
                     age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(previous['property_type_captured_at'])
                     if dt.timedelta(0) <= age < dt.timedelta(days=30):
@@ -70,6 +71,7 @@ def tmsf_names(cancel, ignored, existing=None):
             row.update(_stage='property_type', property_type_checked_at=now())
             try:
                 row.update(fetch_property_facts(client, c.community_id, [c.community_name, c.community_alias]))
+                row['listing_count_checked_at'] = now()
                 row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False,
                            property_type_captured_at=now(), property_type_error=None,
                            _property_type_result='succeeded')
@@ -77,7 +79,7 @@ def tmsf_names(cancel, ignored, existing=None):
                 raise
             except Exception as exc:
                 message = f'{c.community_name} 物业类型获取失败（{type(exc).__name__}）'
-                row.update(property_type_error=message, _property_type_result='failed',
+                row.update(listing_count_error=message, listing_count_checked_at=now(), property_type_error=message, _property_type_result='failed',
                            _collection_errors=[dict(source='tmsf', stage='property_type',
                                                     source_id=c.community_id, message=message)])
             yield row

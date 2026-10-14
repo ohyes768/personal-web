@@ -55,7 +55,7 @@ def setup_collection(monkeypatch, response):
     return calls, closed
 
 
-def test_integrated_types_survive_restart_and_fresh_cache_avoids_request(tmp_path, monkeypatch):
+def test_integrated_types_survive_restart_and_second_hand_counts_refresh(tmp_path, monkeypatch):
     calls, closed = setup_collection(monkeypatch, page())
     path = tmp_path / 'registry.sqlite3'
     store = CommunityRegistry(path)
@@ -67,8 +67,8 @@ def test_integrated_types_survive_restart_and_fresh_cache_avoids_request(tmp_pat
     assert source['property_type_url'].endswith('xq_indexnew_1.htm')
     assert not any(k.startswith('_') for k in source)
     again = directory_collection.collect_names(CommunityRegistry(path), ['tmsf'])
-    assert again['property_types_cached'] == 1 and again['existing'] == 1
-    assert len(calls) == 1 and len(closed) == 2
+    assert again['property_types'] == 1 and again['existing'] == 1
+    assert len(calls) == 2 and len(closed) == 2
 
 
 def test_type_failure_preserves_old_fact_and_retries_on_next_collection(tmp_path, monkeypatch):

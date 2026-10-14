@@ -6,6 +6,7 @@ import uuid
 from pathlib import Path
 
 from src.services.community_address import effective_address
+from src.services.community_listing import listing_gate
 from src.services.community_admission import community_views, property_facts
 from src.services.community_registry import dump, normalized, now
 
@@ -160,7 +161,8 @@ class ReviewWorkspace:
                        (sources[r['rid']]['status'] == 'pending' or sources[r['rid']]['community_id'] == group.get('existing_cid'))]
             address = effective_address(group.get('address'), members)
             address_missing = not bool(address)
-            effective_state = 'excluded' if address_missing else group['state']
+            listing_state, listing_reason = listing_gate(members)
+            effective_state = 'excluded' if address_missing or listing_state == 'excluded' else group['state']
             if effective_state != state:
                 continue
             public_members = []
@@ -173,7 +175,7 @@ class ReviewWorkspace:
                 m['residential_state'] = classify_sources([member], facts)
                 public_members.append(m)
             auctions = [r for r in members if r['source'] == 'laipai']
-            reasons = (['缺少有效地址，不收录'] if address_missing else []) + ([group['reason']] if group.get('reason') else [] if address_missing else ['用途或小区身份需要人工确认'])
+            reasons = ([listing_reason] if listing_reason else []) + (['缺少有效地址，不收录'] if address_missing else []) + ([group['reason']] if group.get('reason') else [] if address_missing else ['用途或小区身份需要人工确认'])
             if any(m.get('auto_association_disabled') for m in members):
                 reasons.append('缺少可靠小区名称或法拍身份存在冲突')
             if group.get('auto_review_locked'):
@@ -331,6 +333,9 @@ class ReviewWorkspace:
                 self.store._decide_admission(db, cid, 'exclude', revision=group['admission_revision'], reason=reason)
             group.update(state='excluded', auto_review_locked=True, reason=reason.strip())
         elif action in {'admit', 'merge'}:
+            listing_state, listing_reason = listing_gate(members)
+            if listing_state:
+                raise ValueError(listing_reason)
             if not effective_address(group.get('address'), members):
                 raise ValueError('缺少有效地址，不能收录；请先补充地址')
             if action == 'merge':
@@ -340,6 +345,8 @@ class ReviewWorkspace:
                     raise ValueError('目标必须是已收录住宅')
                 admission = json.loads(admitted[0])
                 target_members = [self.store._source(r) for r in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (target_id,))]
+                if listing_gate(target_members, self.store._community(target))[0]:
+                    raise ValueError('目标挂牌数量未达到收录要求')
                 if admission['state'] != 'admitted' or (admission['decision_kind'] != 'manual' and classify_sources(target_members, facts) != 'residential'):
                     raise ValueError('目标必须是有效已收录住宅')
                 if cid:
@@ -381,7 +388,7 @@ class ReviewWorkspace:
         with self.store.db() as db:
             validated = [self._validated(db, item['id'], item['revision']) for item in items]
             for group, members in validated:
-                if group['state'] != 'excluded' and effective_address(group.get('address'), members):
+                if group['state'] != 'excluded' and listing_gate(members)[0] != 'excluded' and effective_address(group.get('address'), members):
                     raise ValueError('只能移除不收录记录，请刷新')
             for group, members in validated:
                 cid = group.get('existing_cid')

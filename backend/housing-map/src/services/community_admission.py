@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from src.services.community_address import effective_address
+from src.services.community_listing import listing_gate
 
 from src.core.boundary import is_in_scope, is_in_xiaoshan_border
 from src.services.community_filters import is_real_community
@@ -116,12 +117,15 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
         if conflict and admission['decision_kind'] != 'manual':
             effective_admission = {**admission, 'state': 'pending'}
         address = effective_address(community.get('address'), records)
+        listing_state, listing_reason = listing_gate(records, community)
+        if listing_state and admission['state'] != 'excluded':
+            effective_admission = {**effective_admission, 'state': listing_state}
         if not address:
             effective_admission = {**effective_admission, 'state': 'excluded'}
         prop = None
         if effective_admission['state'] == 'admitted':
             prop = admission.get('property_type') if admission['decision_kind'] == 'manual' else effective_type(records, facts)
-        result.append({**community, 'address': address, 'address_missing': not bool(address), 'exclusion_reason': '缺少有效地址' if not address else '', 'admission': admission, 'admission_state': effective_admission['state'],
+        result.append({**community, 'address': address, 'address_missing': not bool(address), 'exclusion_reason': '缺少有效地址' if not address else listing_reason, 'admission': admission, 'admission_state': effective_admission['state'],
                        'admission_conflict': conflict, 'residential_state': classification,
                        'effective_property_type': prop,
                        'map_status': map_status(community, effective_admission, coordinate, drop_ids=drop_ids)})
