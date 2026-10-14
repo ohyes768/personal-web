@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import AutoReviewPanel, { AutoEvidence, AutoReport } from './AutoReviewPanel';
+import { WorkspacePageCache } from './WorkspacePageCache';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import { AdmissionControls, Community, Source, Report, DirectorySourceCard, labels, collectionLabels, phaseLabels, mapLabels, request, safeDirectoryLink } from './DirectoryCards';
 
@@ -10,7 +11,9 @@ type Review = { id: string; name: string; district?: string; address?: string; r
   auto_review_locked?: boolean; auction_assets: number; auction_rounds: number; auction_identity_uncertain: boolean;
   rounds?: { auction_id: string; title?: string; source_url?: string; round?: number }[] };
 type Page<T> = { items: T[]; total: number };
-type Summary = { residential: number; pending: number; excluded: number; auction_needs_sync: boolean };
+type Summary = { residential: number; pending: number; excluded: number; auction_needs_sync: boolean;
+  filtered: { residential: number; pending: number } };
+type CachedPage = { kind: 'residential'; data: Page<Community> } | { kind: 'reviews'; data: Page<Review> };
 type Confirmation = { path: string; body: object; text: string };
 
 function Sites({ sites }: { sites: string[] }) { return <>{sites.map(site => <span className="directory-badge" key={site}>{labels[site] || site}</span>)}</>; }
@@ -92,11 +95,19 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
   const [q, setQ] = useState(''); const [district, setDistrict] = useState('滨江');
   const [source, setSource] = useState(initialSource); const [state, setState] = useState('pending');
   const [propertyType, setPropertyType] = useState('');
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1); const [revision, setRevision] = useState(0);
   const [masters, setMasters] = useState<Community[]>([]); const [reviews, setReviews] = useState<Review[]>([]);
   const [total, setTotal] = useState(0); const [counts, setCounts] = useState({ residential: 0, pending: 0 });
   const [summary, setSummary] = useState<Summary | null>(null);
+  const [countsLoading, setCountsLoading] = useState(true);
+  const [countsError, setCountsError] = useState('');
+  const [statsRevision, setStatsRevision] = useState(0);
+  const statsBusy = useRef(false);
+  const pageCache = useRef(new WorkspacePageCache<CachedPage>());
+  const summaryCache = useRef(new WorkspacePageCache<Summary>());
   const [report, setReport] = useState<Report | null>(null); const previousRunning = useRef(false);
+  const lastCollectionFinish = useRef<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(true); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [notice, setNotice] = useState('');
   const [selected, setSelected] = useState<{ kind: string; id: string } | null>(null);
   const [detail, setDetail] = useState<Community | Review | null>(null);
@@ -104,26 +115,49 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
   const [collectionSources, setCollectionSources] = useState(['tmsf', 'amap']);
   useEffect(() => { if (confirmation) dialog.current?.showModal(); }, [confirmation]);
   useEffect(() => {
+    const timer = setTimeout(() => setSearch(q), 200);
+    return () => clearTimeout(timer);
+  }, [q]);
+  useEffect(() => { pageCache.current.clear(); summaryCache.current.clear(); }, [revision]);
+  useEffect(() => {
+    // Search alone is debounced; tabs and structured filters load immediately.
+    if (q !== search) return;
+    const filter = new URLSearchParams({ q: search, district, source, page: String(page), page_size: '30' });
+    const path = mode === 'residential' ? `/communities?${filter}&admission_state=admitted&property_type=${encodeURIComponent(propertyType)}` : `/reviews?${filter}&state=${state}`;
+    const show = (packet: CachedPage) => {
+      if (page > 1 && (page - 1) * 30 >= packet.data.total) { setPage(Math.max(1, Math.ceil(packet.data.total / 30))); return; }
+      if (packet.kind === 'residential') setMasters(packet.data.items); else setReviews(packet.data.items);
+      setTotal(packet.data.total); setLoading(false);
+    };
+    const cached = pageCache.current.get(path);
+    if (cached) { show(cached); return; }
     const controller = new AbortController();
-    const timer = setTimeout(async () => {
-      setLoading(true);
-      const filter = new URLSearchParams({ q, district, source, page: String(page), page_size: '30' });
+    setLoading(true);
+    async function load() {
       try {
-        const [res, rev, pending, inventory] = await Promise.all([
-          request<Page<Community>>(`/communities?${filter}&admission_state=admitted&property_type=${encodeURIComponent(propertyType)}`, 'GET', undefined, controller.signal),
-          request<Page<Review>>(`/reviews?${filter}&state=${state}`, 'GET', undefined, controller.signal),
-          state === 'pending' ? Promise.resolve(null) : request<Page<Review>>(`/reviews?${filter}&state=pending`, 'GET', undefined, controller.signal),
-          request<Summary>('/summary', 'GET', undefined, controller.signal),
-        ]);
+        const packet: CachedPage = mode === 'residential'
+          ? { kind: 'residential', data: await request<Page<Community>>(path, 'GET', undefined, controller.signal) }
+          : { kind: 'reviews', data: await request<Page<Review>>(path, 'GET', undefined, controller.signal) };
         if (controller.signal.aborted) return;
-        const currentTotal = mode === 'residential' ? res.total : rev.total;
-        if (page > 1 && (page - 1) * 30 >= currentTotal) { setPage(Math.max(1, Math.ceil(currentTotal / 30))); return; }
-        setMasters(res.items); setReviews(rev.items); setTotal(currentTotal); setCounts({ residential: res.total, pending: pending?.total ?? rev.total }); setSummary(inventory); setError('');
-      } catch (e) { if (!controller.signal.aborted) setError(e instanceof Error ? e.message : '列表加载失败'); }
-      finally { if (!controller.signal.aborted) setLoading(false); }
-    }, 200);
-    return () => { clearTimeout(timer); controller.abort(); };
-  }, [q, district, source, state, propertyType, page, mode, revision]);
+        pageCache.current.set(path, packet); show(packet);
+        const statsPath = `/summary?${new URLSearchParams({ q: search, district, source, property_type: propertyType })}`;
+        if (!statsBusy.current && !summaryCache.current.get(statsPath)) setStatsRevision(v => v + 1);
+      } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '列表加载失败'); setLoading(false); } }
+    }
+    void load(); return () => controller.abort();
+  }, [q, search, district, source, state, propertyType, page, mode, revision]);
+  useEffect(() => {
+    if (q !== search) return;
+    const path = `/summary?${new URLSearchParams({ q: search, district, source, property_type: propertyType })}`;
+    const apply = (value: Summary) => { statsBusy.current = false; setSummary(value); setCounts(value.filtered); setCountsLoading(false); setCountsError(''); };
+    const cached = summaryCache.current.get(path);
+    if (cached) { apply(cached); return; }
+    const controller = new AbortController(); statsBusy.current = true; setCountsLoading(true);
+    request<Summary>(path, 'GET', undefined, controller.signal).then(value => {
+      if (!controller.signal.aborted) { summaryCache.current.set(path, value); apply(value); }
+    }).catch(e => { if (!controller.signal.aborted) { statsBusy.current = false; setCountsError(e.message || '数量统计暂不可用'); setCountsLoading(false); } });
+    return () => controller.abort();
+  }, [q, search, district, source, propertyType, revision, statsRevision]);
   useEffect(() => {
     if (!selected) return;
     const controller = new AbortController();
@@ -138,7 +172,10 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
       try {
         const next = await request<Report | null>('/collection', 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
-        if (previousRunning.current && !next?.running) setRevision(v => v + 1);
+        const finished = next?.finished_at || null;
+        if ((previousRunning.current && !next?.running) ||
+            (!next?.running && finished && lastCollectionFinish.current !== undefined && finished !== lastCollectionFinish.current)) setRevision(v => v + 1);
+        lastCollectionFinish.current = finished;
         previousRunning.current = !!next?.running; setReport(next);
       } catch { /* List actions surface errors; polling never masks the working directory. */ }
       if (!controller.signal.aborted) timer = setTimeout(poll, 3000);
@@ -155,7 +192,7 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
   const select = (kind: string, id: string) => { setSelected({ kind, id }); setDetail(null); };
   const master = detail && 'community_name' in detail ? detail : null;
   const review = detail && 'members' in detail ? detail : null;
-  const filterChanged = () => { setLoading(true); setPage(1); setSelected(null); setDetail(null); };
+  const filterChanged = () => { setLoading(true); setError(''); setPage(1); setSelected(null); setDetail(null); };
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
     <header className="review-heading"><div><p className="review-eyebrow">小区库存</p><h2>住宅名单与人工审核</h2><p className="directory-muted">住宅是地图的数据来源；有疑点的候选在审核后收录、合并或排除。</p></div>
       <p className="review-inventory">全部区域：住宅 <strong>{summary?.residential ?? '—'}</strong> · 待审核 <strong>{summary?.pending ?? '—'}</strong> · 已排除 {summary?.excluded ?? '—'}</p></header>
@@ -171,16 +208,17 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
       {report?.auto_review && <details><summary>本轮自动审核（单独统计）</summary><AutoReport report={report.auto_review} /></details>}
     </div></details>
     <AutoReviewPanel refreshVersion={revision} onChanged={() => { setRevision(v => v + 1); onChanged(); }} />
-    <div className="review-tabs"><button aria-pressed={mode === 'residential'} onClick={() => { if (mode !== 'residential') { setMode('residential'); filterChanged(); } }}>住宅小区（{counts.residential}）</button><button aria-pressed={mode === 'reviews'} onClick={() => { if (mode !== 'reviews') { setMode('reviews'); filterChanged(); } }}>待审核小区（{counts.pending}）</button></div>
+    <div className="review-tabs"><button aria-pressed={mode === 'residential'} onClick={() => { if (mode !== 'residential') { setMode('residential'); filterChanged(); } }}>住宅小区（{countsLoading ? '…' : countsError ? '—' : counts.residential}）</button><button aria-pressed={mode === 'reviews'} onClick={() => { if (mode !== 'reviews') { setMode('reviews'); filterChanged(); } }}>待审核小区（{countsLoading ? '…' : countsError ? '—' : counts.pending}）</button></div>
     <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索名称、别名、地址" value={q} onChange={e => { setQ(e.target.value); filterChanged(); }} />
       <select aria-label="目录区域" value={district} onChange={e => { setDistrict(e.target.value); filterChanged(); }}><option value="滨江">滨江区</option><option value="萧山">萧山接壤目录</option><option value="">全部区域</option></select>
       <select aria-label="数据来源" value={source} onChange={e => { setSource(e.target.value); filterChanged(); }}><option value="">全部来源</option>{Object.entries(labels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>
       {mode === 'reviews' && <select aria-label="审核状态" value={state} onChange={e => { setState(e.target.value); filterChanged(); }}><option value="pending">待审核</option><option value="excluded">已排除（可恢复）</option></select>}
       {mode === 'residential' && <select aria-label="住宅物业类型" value={propertyType} onChange={e => { setPropertyType(e.target.value); filterChanged(); }}><option value="">全部住宅类型</option>{['住宅', '别墅', '排屋'].map(t => <option key={t}>{t}</option>)}</select>}
+      <button className="btn btn-secondary" disabled={busy} onClick={() => { setLoading(true); setRevision(v => v + 1); }}>刷新名单</button>
       <button className="btn btn-secondary" disabled={busy} onClick={() => void act('/reviews/sync')}>同步历史法拍 / 重试</button></div>
     {summary?.auction_needs_sync && <p className="directory-warning">有已保存法拍尚未同步到审核目录，可点击“同步历史法拍 / 重试”。</p>}
-    {error && <p role="alert" className="directory-warning">{error} <button onClick={() => setRevision(v => v + 1)}>刷新重试</button></p>}{notice && <p role="status">{notice}</p>}
-    <div className="directory-workspace"><div className="directory-list-panel"><p className="directory-muted">{loading ? '正在更新当前筛选…' : <>当前筛选：{total} 个{mode === 'residential' ? '住宅小区' : state === 'excluded' ? '已排除候选' : '待审核小区'}；每个小区候选一行。</>}</p>
+    {(error || countsError) && <p role="alert" className="directory-warning">{error || countsError} <button onClick={() => { setError(''); setRevision(v => v + 1); }}>刷新重试</button></p>}{notice && <p role="status">{notice}</p>}
+    <div className="directory-workspace"><div className="directory-list-panel">{!loading && <p className="directory-muted">当前筛选：{total} 个{mode === 'residential' ? '住宅小区' : state === 'excluded' ? '已排除候选' : '待审核小区'}；每个小区候选一行。</p>}
       {loading ? <p role="status">加载小区名单…</p> : mode === 'residential' ? <CommunityTable items={masters} onSelect={id => select('communities', id)} /> : <ReviewTable items={reviews} onSelect={id => select('reviews', id)} />}
       {!loading && total === 0 && <p className="directory-empty">没有符合条件的小区。</p>}
       <nav className="directory-actions" aria-label="小区名单分页"><button className="btn btn-secondary" disabled={page === 1 || loading} onClick={() => setPage(v => v - 1)}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页 · 共 {total} 个</span><button className="btn btn-secondary" disabled={page * 30 >= total || loading} onClick={() => setPage(v => v + 1)}>下一页</button></nav>

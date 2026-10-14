@@ -12,6 +12,7 @@ from src.services.data_loader import DATA_DIR
 from src.services.directory_collection import DirectoryJob
 from src.services.residential_classifier import classify_sources
 from src.services.community_admission import community_views
+from src.services.community_review import community_matches, review_matches
 import json as _json
 
 router = APIRouter(tags=['community-directory'])
@@ -156,14 +157,12 @@ def communities(q: str = Query('', max_length=200), district: str = '', deleted:
         if admission_state and c['admission_state'] != admission_state:
             continue
         records = [r for r in sources if r['community_id'] == c['community_id']]
-        if (source and not any(r['source'] == source for r in records)) or (property_type and c['effective_property_type'] != property_type):
+        if not community_matches(c, records, q=q, district=district, source=source, property_type=property_type):
             continue
-        text = ' '.join([c['community_name'], c.get('address') or '', *c.get('aliases', []), *[r['name'] for r in records]])
-        if (not district or c.get('district') == district) and q.casefold() in text.casefold():
-            state = classify_sources(records, property_types) if not deleted else 'deleted'
-            if residential_state and state != residential_state:
-                continue
-            rows.append({**c, 'sources': [source_view(r, property_types) for r in records], 'residential_state': state})
+        state = classify_sources(records, property_types) if not deleted else 'deleted'
+        if residential_state and state != residential_state:
+            continue
+        rows.append({**c, 'sources': [source_view(r, property_types) for r in records], 'residential_state': state})
     rows.sort(key=lambda c: c['community_name'])
     return {'success': True, 'data': page_data(rows, page, page_size)}
 
@@ -321,11 +320,12 @@ def reviews(q: str = Query('', max_length=200), district: str = '',
             source: Literal['', 'tmsf', 'amap', 'fang', 'laipai'] = '', state: Literal['pending', 'excluded'] = 'pending',
             page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     def read():
-        rows = [r for r in workspace().reviews(state=state) if
-                (not district or (r.get('district') or '').removesuffix('区') == district)
-                and (not source or source in r['sources'])
-                and q.casefold() in ' '.join([r['name'], r.get('address') or '', *[m['name'] for m in r['members']]]).casefold()]
-        return page_data(rows, page, page_size)
+        work = workspace()
+        rows = [r for r in work.reviews(state=state, include_suggestions=False)
+                if review_matches(r, q=q, district=district, source=source)]
+        data = page_data(rows, page, page_size)
+        data['items'] = work.add_suggestions(data['items'])
+        return data
     return review_read(read)
 
 
@@ -333,9 +333,12 @@ def reviews(q: str = Query('', max_length=200), district: str = '',
 def review_detail(candidate_id: str):
     def read():
         work = workspace()
-        item = next((r for r in work.reviews() + work.reviews(state='excluded') if r['id'] == candidate_id), None)
+        work.refresh()
+        rows = work.reviews(refresh=False, include_suggestions=False) + work.reviews(state='excluded', refresh=False, include_suggestions=False)
+        item = next((r for r in rows if r['id'] == candidate_id), None)
         if not item:
             raise HTTPException(404, '候选已处理或不存在，请刷新')
+        work.add_suggestions([item])
         from src.services.auction_store import read_store
         aids = {aid for m in item['members'] if m['source'] == 'laipai' for aid in m.get('auction_ids', [])}
         item['rounds'] = [{k: r.get(k) for k in ('auction_id', 'asset_id', 'title', 'round', 'status', 'source_url')}
@@ -345,10 +348,12 @@ def review_detail(candidate_id: str):
 
 
 @router.get('/directory/summary')
-def directory_summary():
+def directory_summary(q: str = Query('', max_length=200), district: str = '',
+                      source: Literal['', 'tmsf', 'amap', 'fang', 'laipai'] = '',
+                      property_type: Literal['', '住宅', '别墅', '排屋'] = ''):
     def read():
         work = workspace()
-        data = work.summary()
+        data = work.summary(q=q, district=district, source=source, property_type=property_type)
         with work.store.db() as db:
             row = db.execute("SELECT value FROM meta WHERE key='collection_job'").fetchone()
             data['collection'] = _json.loads(row[0]) if row else None

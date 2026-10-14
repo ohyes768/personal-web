@@ -34,6 +34,24 @@ def fingerprint(records, admission=None):
     return hashlib.sha256(dump([payload, admission]).encode()).hexdigest()
 
 
+def matches_filters(name, address, district, members, *, q='', area='', source='', aliases=()):
+    text = ' '.join([name, address or '', *aliases, *[m['name'] for m in members]])
+    return ((not area or (district or '').removesuffix('区') == area.removesuffix('区'))
+            and (not source or any(m['source'] == source for m in members))
+            and q.casefold() in text.casefold())
+
+
+def community_matches(community, members, *, q='', district='', source='', property_type=''):
+    return ((not property_type or community.get('effective_property_type') == property_type)
+            and matches_filters(community['community_name'], community.get('address'), community.get('district'),
+                                members, q=q, area=district, source=source, aliases=community.get('aliases', [])))
+
+
+def review_matches(review, *, q='', district='', source=''):
+    return matches_filters(review['name'], review.get('address'), review.get('district'), review['members'],
+                           q=q, area=district, source=source)
+
+
 class ReviewWorkspace:
     def __init__(self, store, data_dir):
         self.store, self.data_dir = store, Path(data_dir)
@@ -120,15 +138,16 @@ class ReviewWorkspace:
                     group['fingerprint'] = new_fingerprint
                 self._save(db, group)
 
-    def reviews(self, *, state='pending'):
-        self.refresh()
+        return views
+
+    def reviews(self, *, state='pending', refresh=True, include_suggestions=True):
+        if refresh:
+            self.refresh()
         sources = {r['id']: r for r in self.store.sources()}
         facts = property_facts(self.data_dir)
         with self.store.db() as db:
             groups = self._all(db)
             membership = list(db.execute('SELECT * FROM review_members'))
-            rejected = list(db.execute('SELECT rid,cid FROM rejected'))
-        communities = self.store.communities()
         result = []
         for group in groups.values():
             if group['state'] != state:
@@ -150,23 +169,46 @@ class ReviewWorkspace:
                 reasons.append('缺少可靠小区名称或法拍身份存在冲突')
             if group.get('auto_review_locked'):
                 reasons.append('人工自动审核锁已生效')
-            suggested = {}
-            for m in members:
-                for c in self.store.candidates(m, communities=communities, rejected={r['cid'] for r in rejected if r['rid'] == m['id']}):
-                    if c['community_id'] != group.get('existing_cid'):
-                        suggested[c['community_id']] = c
             result.append({**group, 'members': public_members, 'reasons': reasons,
-                           'suggestions': list(suggested.values()), 'sources': sorted({m['source'] for m in members}),
+                           'suggestions': [], 'sources': sorted({m['source'] for m in members}),
                            'auction_assets': len({a['source_id'] for a in auctions if a['source_kind'] == 'asset'}),
                            'auction_identity_uncertain': any(a['source_kind'] != 'asset' for a in auctions),
                            'auction_rounds': len({aid for a in auctions for aid in a.get('auction_ids', [])}),
                            'name': '小区名称缺失，需按地址核对' if members and all(m.get('community_name_missing') for m in members) else group['name']})
-        return sorted(result, key=lambda r: (r['name'], r['id']))
+        result.sort(key=lambda r: (r['name'], r['id']))
+        return self.add_suggestions(result) if include_suggestions else result
 
-    def summary(self):
-        reviews = self.reviews()
-        return dict(residential=sum(c['admission_state'] == 'admitted' for c in community_views(self.store, self.data_dir)),
-                    pending=len(reviews), excluded=len(self.reviews(state='excluded')))
+    def add_suggestions(self, rows):
+        if not rows:
+            return rows
+        communities = self.store.communities()
+        with self.store.db() as db:
+            rejected = {}
+            for r in db.execute('SELECT rid,cid FROM rejected'):
+                rejected.setdefault(r['rid'], set()).add(r['cid'])
+        for row in rows:
+            suggested = {}
+            for member in row['members']:
+                for c in self.store.candidates(member, communities=communities, rejected=rejected.get(member['id'], set())):
+                    if c['community_id'] != row.get('existing_cid'):
+                        suggested[c['community_id']] = c
+            row['suggestions'] = list(suggested.values())
+        return rows
+
+    def summary(self, *, q='', district='', source='', property_type=''):
+        communities = self.refresh()
+        pending = self.reviews(refresh=False, include_suggestions=False)
+        with self.store.db() as db:
+            excluded = sum(g['state'] == 'excluded' for g in self._all(db).values())
+        sources = self.store.sources()
+        members = {}
+        for record in sources:
+            members.setdefault(record['community_id'], []).append(record)
+        residential = [c for c in communities if c['admission_state'] == 'admitted']
+        return dict(residential=len(residential), pending=len(pending), excluded=excluded,
+                    filtered=dict(residential=sum(community_matches(c, members.get(c['community_id'], []), q=q,
+                                  district=district, source=source, property_type=property_type) for c in residential),
+                                  pending=sum(review_matches(r, q=q, district=district, source=source) for r in pending)))
 
     def _validated(self, db, candidate_id, revision):
         row = db.execute('SELECT payload FROM review_candidates WHERE id=?', (candidate_id,)).fetchone()
