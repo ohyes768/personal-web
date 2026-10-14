@@ -13,6 +13,7 @@ import {
   cloneGithubCache,
   deleteSkill,
   listSkills,
+  listInstallTargets,
   listExportTargets,
   unpublishSkill,
 } from '@/lib/api';
@@ -28,7 +29,7 @@ import type {
 type ViewKey = 'manage' | 'board' | 'targets';
 type SourceTab = 'local' | 'github';
 
-import { TARGET_LABEL } from '@/lib/targets';
+import { InstallTargetsContext, installTargetLabel, type InstallTarget } from '@/lib/installTargets';
 
 const SEG_BUTTON =
   'rounded px-3 py-1.5 text-sm transition-colors data-[active=true]:bg-white data-[active=true]:font-medium data-[active=true]:text-slate-800 data-[active=true]:shadow-sm text-slate-500 hover:text-slate-700';
@@ -65,17 +66,23 @@ function SkillManagerPage() {
   // 两级导航：URL 是唯一真源，非法值在派生时逐级回退
   const view: ViewKey = searchParams.get('view') === 'board' ? 'board' : searchParams.get('view') === 'targets' ? 'targets' : 'manage';
   const sourceTab: SourceTab = searchParams.get('tab') === 'github' ? 'github' : 'local';
-  const agent: TargetKey = 'hermes';
+  const agent = (searchParams.get('target') ?? 'hermes') as TargetKey;
+  const [installTargets, setInstallTargets] = useState<InstallTarget[]>([]);
+  const [installTargetsError, setInstallTargetsError] = useState('');
+  const [installTargetsLoading, setInstallTargetsLoading] = useState(true);
+  const label = (id: string) => installTargetLabel(installTargets, id);
+  const selectedTarget = installTargets.find(t => t.id === agent);
 
   function navigate(next: { view?: ViewKey; tab?: SourceTab; agent?: TargetKey }) {
     const p = new URLSearchParams(searchParams.toString());
     const v = next.view ?? view;
     p.set('view', v);
+    p.set('target', next.agent ?? agent);
     if (v === 'manage') {
       p.set('tab', next.tab ?? (v === view ? sourceTab : 'local'));
       p.delete('agent');
     } else if (v === 'board') {
-      p.set('agent', next.agent ?? (v === view ? agent : 'hermes'));
+      p.delete('agent');
       p.delete('tab');
     } else {
       p.delete('tab');
@@ -113,6 +120,13 @@ function SkillManagerPage() {
     } finally { setTargetsLoading(false); }
   }, []);
 
+  const refreshInstallTargets = useCallback(async () => {
+    setInstallTargetsLoading(true);
+    try { setInstallTargets((await listInstallTargets()).items); setInstallTargetsError(''); }
+    catch (err) { setInstallTargetsError(err instanceof Error ? err.message : '加载安装目标失败'); }
+    finally { setInstallTargetsLoading(false); }
+  }, []);
+
   const refreshSkills = useCallback(async () => {
     try {
       const response = await listSkills();
@@ -126,9 +140,10 @@ function SkillManagerPage() {
   useEffect(() => {
     void refreshSkills().finally(() => setLoading(false));
     void refreshTargets();
-  }, [refreshSkills, refreshTargets]);
+    void refreshInstallTargets();
+  }, [refreshSkills, refreshTargets, refreshInstallTargets]);
 
-  const refreshAll = useCallback(async () => { await Promise.all([refreshSkills(), refreshTargets()]); }, [refreshSkills, refreshTargets]);
+  const refreshAll = useCallback(async () => { await Promise.all([refreshSkills(), refreshTargets(), refreshInstallTargets()]); }, [refreshSkills, refreshTargets, refreshInstallTargets]);
 
   const localSkills = useMemo(
     () => skills.filter((skill) => skill.source === 'local'),
@@ -228,7 +243,7 @@ function SkillManagerPage() {
   }
 
   return (
-    <main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
+    <InstallTargetsContext.Provider value={{current: agent, targets: installTargets, error: installTargetsError, loading: installTargetsLoading}}><main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
       <header className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1">
         <div className="flex flex-wrap items-end gap-x-6 gap-y-1">
           <div className="flex flex-col gap-0.5">
@@ -260,6 +275,16 @@ function SkillManagerPage() {
           </nav>
         </div>
       </header>
+
+      {view !== 'targets' && <div className="flex flex-wrap items-center gap-2 text-sm">
+        <label htmlFor="install-profile">Hermes profile</label>
+        <select id="install-profile" value={agent} disabled={installTargetsLoading} onChange={e => navigate({agent: e.target.value as TargetKey})} className="rounded border border-slate-300 px-2 py-1.5">
+          {!selectedTarget && <option value={agent}>{agent}（不可用）</option>}
+          {installTargets.map(t => <option key={t.id} value={t.id}>{t.name}{t.available ? '' : '（不可用）'}</option>)}
+        </select>
+        <span className="break-all text-xs text-slate-500">{selectedTarget?.install_path}</span>
+        {(installTargetsError || (!installTargetsLoading && !selectedTarget) || selectedTarget?.unavailable_reason) && <p role="alert" className="text-amber-700">{installTargetsError || selectedTarget?.unavailable_reason || '目标未配置，请选择可用 profile'}{installTargetsError && <button type="button" onClick={() => void refreshInstallTargets()} className="ml-2 underline">重试</button>}</p>}
+      </div>}
 
       {loadError ? (
         <p className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
@@ -423,11 +448,11 @@ function SkillManagerPage() {
           title={pendingUnpublish.items.length ? '确认下架' : '下架结果'}
           description={
             <div className="space-y-2">
-              <p>「{pendingUnpublish.name}」：待下架 {pendingUnpublish.items.length} 项，只移除所列 Agent 的技能链接。</p>
-              <ul className="space-y-1 text-xs">{pendingUnpublish.items.map(item => <li key={`${item.skillId}-${item.target}`}>{item.skillName} → {TARGET_LABEL[item.target]}</li>)}</ul>
+              <p>「{pendingUnpublish.name}」：待下架 {pendingUnpublish.items.length} 项，只移除所列 profile 的技能链接。</p>
+              <ul className="space-y-1 text-xs">{pendingUnpublish.items.map(item => <li key={`${item.skillId}-${item.target}`}>{item.skillName} → {label(item.target)}</li>)}</ul>
               {pendingUnpublish.results.length ? <ul className="space-y-1 text-xs">{pendingUnpublish.results.map(item => (
                 <li key={`${item.skillId}-${item.target}`} className={item.status === 'error' ? 'text-rose-700' : 'text-emerald-700'}>
-                  {item.skillName} → {TARGET_LABEL[item.target]}：{item.status === 'success' ? '成功' : item.error}
+                  {item.skillName} → {label(item.target)}：{item.status === 'success' ? '成功' : item.error}
                 </li>
               ))}</ul> : null}
             </div>
@@ -445,11 +470,11 @@ function SkillManagerPage() {
         <ConfirmActionDialog
           title="确认 Clone 缓存"
           description={
-            <p>
+            <div><p>
               将从 GitHub 拉取「{pendingClone.skillName}
-              」的仓库到本机缓存目录（只写缓存，不触碰已发布目标）。
+              」的仓库到本机缓存目录（共享缓存更新会影响同仓库所有已安装 profile 的内容）。
               大仓库经代理可能需要数分钟，请耐心等待。
-            </p>
+            </p><ul className="mt-2 text-xs text-amber-700">{skills.filter(s => s.repository === skills.find(s => s.id === pendingClone.skillId)?.repository).flatMap(s => Object.entries(s.deployments).filter(([target,d]) => (target === 'hermes' || target.startsWith('hermes:profile:')) && d.status === 'active').map(([target]) => <li key={`${s.id}:${target}`}>共享缓存影响：{s.name} → {label(target)}</li>))}</ul></div>
           }
           confirmLabel="执行 Clone"
           busy={actionBusy}
@@ -509,7 +534,7 @@ function SkillManagerPage() {
           onClose={() => setActiveTask(null)}
         />
       ) : null}
-    </main>
+    </main></InstallTargetsContext.Provider>
   );
 }
 

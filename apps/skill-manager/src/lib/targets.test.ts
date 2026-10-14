@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { enabledExportTargets, exportTargetLabel, EXPORT_TARGET_ID_PATTERN, LINK_TARGETS, selectedExportTarget } from './targets';
+import { enabledExportTargets, exportTargetLabel, EXPORT_TARGET_ID_PATTERN, isInstallTarget, selectedExportTarget } from './targets';
 
 describe('target boundaries', () => {
   it('validates IDs using the HTML Unicode v pattern semantics', () => {
@@ -11,7 +11,10 @@ describe('target boundaries', () => {
     }
   });
   it('keeps Windows exports out of publishing targets', () => {
-    expect(LINK_TARGETS).toEqual(['hermes']);
+    expect(isInstallTarget('hermes')).toBe(true);
+    expect(isInstallTarget('hermes:profile:ohyes768')).toBe(true);
+    expect(isInstallTarget('windows-codex')).toBe(false);
+    expect(isInstallTarget('laptop')).toBe(false);
     const targets = [{ id: 'laptop', name: '笔记本', install_path: '', notes: '', enabled: true, deployment_count: 1 }, { id: 'tablet', name: '平板', install_path: '', notes: '', enabled: false, deployment_count: 1 }];
     expect(enabledExportTargets(targets).map((item) => item.id)).toEqual(['laptop']);
     expect(selectedExportTarget(targets, 'tablet')).toBe('laptop');

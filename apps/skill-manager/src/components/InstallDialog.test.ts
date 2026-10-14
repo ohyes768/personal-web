@@ -8,16 +8,17 @@ vi.mock('react', async original => ({...await original<typeof import('react')>()
   useEffect(effect: () => void | (() => void), deps: unknown[]) { const i = hooks.effectIndex++; const old = hooks.effects[i]; if (!old || deps.some((d,j) => !Object.is(d,old.deps[j]))) { old?.cleanup?.(); const cleanup = effect(); hooks.effects[i] = {deps, cleanup: typeof cleanup === 'function' ? cleanup : undefined}; } }
 }));
 vi.mock('@/lib/api', () => ({previewInstall: hooks.preview, executeInstall: hooks.execute, getInstallTask: hooks.get}));
+vi.mock('@/lib/installTargets', async original => ({...await original<typeof import('@/lib/installTargets')>(), useInstallTargets: () => ({current:'hermes', targets:[{id:'hermes',name:'默认环境',available:true,profile_name:'default',install_path:'/targets/default'},{id:'hermes:profile:ohyes768',name:'ohyes768',available:true,profile_name:'ohyes768',install_path:'/targets/ohyes768'}],error:'',loading:false})}));
 import InstallDialog from './InstallDialog';
-type Props = { children?: ReactNode; description?: ReactNode; busy?: boolean; completed?: boolean; onConfirm?: (password: string) => Promise<void>; onClick?: () => void; error?: string };
+type Props = { checked?: boolean; children?: ReactNode; description?: ReactNode; busy?: boolean; completed?: boolean; onConfirm?: (password: string) => Promise<void>; onClick?: () => void; error?: string };
 function nodes(node: ReactNode): ReactElement<Props>[] { if (Array.isArray(node)) return node.flatMap(nodes); if (!isValidElement<Props>(node)) return []; return [node,...nodes(node.props.description),...nodes(node.props.children)]; }
-function render() { hooks.index=0; hooks.refIndex=0; hooks.effectIndex=0; return InstallDialog({input:{skill_ids:['a','b']},onClose(){},onRefresh:hooks.refresh}); }
+function render() { hooks.index=0; hooks.refIndex=0; hooks.effectIndex=0; return InstallDialog({input:{skill_ids:['a','b'],target_ids:['hermes']},onClose(){},onRefresh:hooks.refresh}); }
 const flush = async () => { await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); };
-beforeEach(() => { hooks.effects.forEach(e => e.cleanup?.()); hooks.values=[]; hooks.refs=[]; hooks.effects=[]; vi.clearAllMocks(); hooks.preview.mockResolvedValue({plan_id:'p',items:[{skill_id:'a',name:'A',action:'add'},{skill_id:'b',name:'B',action:'update'}]}); hooks.execute.mockResolvedValue({task_id:'t'}); hooks.get.mockResolvedValue({task_id:'t',state:'done',stage:'done',results:[{skill_id:'a',name:'A',status:'success',registered:true,error:''},{skill_id:'b',name:'B',status:'error',registered:true,error:'failed'}]}); hooks.refresh.mockResolvedValue(undefined); });
+beforeEach(() => { hooks.effects.forEach(e => e.cleanup?.()); hooks.values=[]; hooks.refs=[]; hooks.effects=[]; vi.clearAllMocks(); hooks.preview.mockResolvedValue({plan_id:'p',items:[{skill_id:'a',target:'hermes',name:'A',action:'add'},{skill_id:'b',target:'hermes:profile:ohyes768',name:'B',action:'update'}]}); hooks.execute.mockResolvedValue({task_id:'t'}); hooks.get.mockResolvedValue({task_id:'t',state:'done',stage:'done',results:[{skill_id:'a',target:'hermes',name:'A',status:'success',registered:true,error:''},{skill_id:'b',target:'hermes:profile:ohyes768',name:'B',status:'error',registered:true,error:'failed'}]}); hooks.refresh.mockResolvedValue(undefined); });
 describe('Hermes unified install', () => {
   it('previews automatically, confirms once and retries only failures', async () => {
     render(); await flush(); const dialog=render();
-    expect(hooks.preview).toHaveBeenCalledWith({skill_ids:['a','b']});
+    expect(hooks.preview).toHaveBeenCalledWith({skill_ids:['a','b'],target_ids:['hermes']});
     expect(dialog.props.busy).toBe(false);
     dialog.props.onConfirm!('password'); dialog.props.onConfirm!('password'); await flush();
     expect(hooks.execute).toHaveBeenCalledTimes(1);
@@ -27,7 +28,8 @@ describe('Hermes unified install', () => {
     expect(finished.props.completed).toBe(true);
     nodes(finished).find(n => n.type === 'button')!.props.onClick!();
     render(); await flush(); render();
-    expect(hooks.preview).toHaveBeenLastCalledWith({skill_ids:['b']});
+    expect(hooks.preview).toHaveBeenLastCalledWith({items:[{skill_id:'b',targets:['hermes:profile:ohyes768']}]});
+    expect(nodes(render()).filter(n => n.type === 'input').map(n => n.props.checked)).toEqual([false,true]);
     expect(hooks.refresh).toHaveBeenCalledTimes(1);
   });
   it('reports lost task without automatically executing another install', async () => {
@@ -37,10 +39,23 @@ describe('Hermes unified install', () => {
     expect(hooks.execute).toHaveBeenCalledTimes(1);
   });
   it('all unchanged or blocked results allow closing without another password', async () => {
-    hooks.preview.mockResolvedValue({plan_id:'p',items:[{skill_id:'a',name:'A',action:'unchanged'}]});
+    hooks.preview.mockResolvedValue({plan_id:'p',items:[{skill_id:'a',target:'hermes',name:'A',action:'unchanged'}]});
     render(); await flush(); const dialog=render();
     expect(dialog.props.completed).toBe(true);
     expect(dialog.props.busy).toBe(false);
     expect(hooks.execute).not.toHaveBeenCalled();
   });
+});
+
+it('regenerates a multi-target preview and ignores the late previous response', async () => {
+  let resolveOld!: (value: unknown) => void;
+  hooks.preview.mockReturnValueOnce(new Promise(resolve => {resolveOld = resolve;}));
+  const initial = render();
+  const checkbox = nodes(initial).filter(n => n.type === 'input')[1];
+  (checkbox.props as unknown as {onChange: (e: {target:{checked:boolean}}) => void}).onChange({target:{checked:true}});
+  render(); await flush();
+  expect(hooks.preview).toHaveBeenLastCalledWith({skill_ids:['a','b'],target_ids:['hermes','hermes:profile:ohyes768']});
+  resolveOld({plan_id:'obsolete',items:[]}); await flush();
+  render().props.onConfirm!('password'); await flush();
+  expect(hooks.execute.mock.calls[0][0]).toBe('p');
 });

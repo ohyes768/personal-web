@@ -42,6 +42,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.store = store
     app.state.registry = RegistryService(store, settings.skills_source_root)
     app.state.publisher = Publisher(settings, store)
+    app.state.target_resolver = app.state.publisher.targets
     app.state.git_cache = GitCacheService(settings, store)
     # GitHub 后台任务表：与 git_cache 共享同一单例，测试对 get_git_cache
     # / get_task_manager 做 dependency_overrides 时需一并注入同源实例

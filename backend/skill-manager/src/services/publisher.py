@@ -4,8 +4,8 @@
 
 1. 校验 skill id 与源目录（存在、含 `SKILL.md`、resolve 后位于受控源根
    ——源库根或 GitHub 缓存根——之内）；
-2. 目标链接固定为 `${TARGET_ROOT}/${skill-id}`；target 只能是 TargetKey
-   枚举映射的固定目录；已有普通目录/文件或指向受控根之外的链接一律拒绝；
+2. 目标链接固定为 `${TARGET_ROOT}/${skill-id}`；target 只能由配置的 TargetResolver
+   解析目录；已有普通目录/文件或指向受控根之外的链接一律拒绝；
 3. 同目录创建临时 symlink `.{skill_id}.{uuid}.next`，验证其解析到源；
 4. 用 `os.replace` 原子替换正式链接（同目录 rename，原子生效）；
 5. 写 deployment / deployment_history。单项失败只记录该项，临时链接在
@@ -23,6 +23,7 @@ import shutil
 import stat
 import uuid
 from src.services.operation_lock import serialized
+from src.services.targets import TargetResolver, TargetUnavailable
 
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -37,7 +38,6 @@ from src.models import (
     PublishResultItem,
     RegistrySkill,
     SkillSource,
-    TargetKey,
     target_kind,
 )
 
@@ -130,11 +130,12 @@ def _inside_controlled_roots(settings: Settings, resolved: Path) -> bool:
 
 
 class Publisher:
-    """以 Settings 中固定目标目录为唯一写入边界的发布服务。"""
+    """以配置的 profile 目录为唯一写入边界的发布服务。"""
 
     def __init__(self, settings: Settings, store: SkillStateStore) -> None:
         self.settings = settings
         self.store = store
+        self.targets = TargetResolver(settings, store)
 
     # ---------- 旧快照的兼容清理（不再生成新快照） ----------
 
@@ -148,7 +149,7 @@ class Publisher:
 
     @serialized
     def publish(
-        self, skill_id: str, target: TargetKey, source: Path, revision: str = ""
+        self, skill_id: str, target: str, source: Path, revision: str = ""
     ) -> PublishResultItem:
         self._require_valid_id(skill_id)
         resolved_source = self._validated_source(source)
@@ -164,7 +165,7 @@ class Publisher:
         self.store.append_history(
             HistoryEntry(
                 skill_id=skill_id,
-                target=target.value,
+                target=str(target),
                 action="publish",
                 result="success",
                 previous_link_target=previous,
@@ -185,7 +186,7 @@ class Publisher:
     # ---------- 下架 ----------
 
     @serialized
-    def unpublish(self, skill_id: str, target: TargetKey) -> None:
+    def unpublish(self, skill_id: str, target: str) -> None:
         """只删除受管 symlink 本身；普通目录、越界链接一律拒绝，绝不 rmtree。"""
         self._require_valid_id(skill_id)
         final_link = self._target_root(target) / skill_id
@@ -206,17 +207,17 @@ class Publisher:
                 )
             else:
                 raise PublishBlockedError(
-                    f"no managed symlink for skill {skill_id!r} on {target.value!r}"
+                    f"no managed symlink for skill {skill_id!r} on {str(target)!r}"
                 )
         except PublishBlockedError as exc:
             self._record_failure(skill_id, target, "unpublish", "blocked", exc)
             raise
-        existing = self.store.get_deployment(skill_id, target.value)
+        existing = self.store.get_deployment(skill_id, str(target))
         final_link.unlink()
         self.store.upsert_deployment(
             DeploymentRecord(
                 skill_id=skill_id,
-                target=target.value,
+                target=str(target),
                 source_revision=existing.source_revision if existing else "",
                 source_path=existing.source_path if existing else "",
                 current_link_target="",
@@ -227,7 +228,7 @@ class Publisher:
         self.store.append_history(
             HistoryEntry(
                 skill_id=skill_id,
-                target=target.value,
+                target=str(target),
                 action="unpublish",
                 result="success",
                 previous_link_target=previous,
@@ -241,7 +242,7 @@ class Publisher:
     # ---------- 内部：核心交换流程 ----------
 
     def _atomic_swap(
-        self, skill_id: str, target: TargetKey, resolved_source: Path
+        self, skill_id: str, target: str, resolved_source: Path
     ) -> tuple[str, str | None]:
         """design 6.1 第 2-4 步：检查现有链接 → 临时链接验证 → 原子替换。
 
@@ -290,13 +291,13 @@ class Publisher:
 
     # ---------- 内部：校验与边界 ----------
 
-    def _target_root(self, target: TargetKey) -> Path:
+    def _target_root(self, target: str) -> Path:
         if target_kind(target) != "link":
             raise PublishBlockedError("外部目标用导出，不走发布")
-        roots = {
-            TargetKey.HERMES: self.settings.hermes_skills_root,
-        }
-        return roots[target]
+        try:
+            return self.targets.root(str(target))
+        except TargetUnavailable as exc:
+            raise PublishBlockedError(str(exc)) from exc
 
     def _require_valid_id(self, skill_id: str) -> None:
         if not _ID_RE.match(skill_id):
@@ -308,12 +309,12 @@ class Publisher:
     # ---------- 内部：状态持久化 ----------
 
     def _persist_active(
-        self, skill_id: str, target: TargetKey, resolved_source: Path, revision: str
+        self, skill_id: str, target: str, resolved_source: Path, revision: str
     ) -> None:
         self.store.upsert_deployment(
             DeploymentRecord(
                 skill_id=skill_id,
-                target=target.value,
+                target=str(target),
                 source_revision=revision,
                 source_path=str(resolved_source),
                 current_link_target=str(resolved_source),
@@ -325,7 +326,7 @@ class Publisher:
     def _record_failure(
         self,
         skill_id: str,
-        target: TargetKey,
+        target: str,
         action: str,
         result: str,
         exc: PublisherError,
@@ -334,7 +335,7 @@ class Publisher:
         self.store.append_history(
             HistoryEntry(
                 skill_id=skill_id,
-                target=target.value,
+                target=str(target),
                 action=action,
                 result=result,
                 previous_link_target=None,

@@ -1,5 +1,4 @@
 import { addQueueTarget, type QueueEntry, type TargetKey } from './queue';
-import { LINK_TARGETS } from './targets';
 import type { SkillCard } from './types';
 
 export interface SkillCollection {
@@ -37,14 +36,15 @@ export function groupCollections(skills: SkillCard[], visibleSkills: SkillCard[]
   return [...groups.values()].filter(g => g.visibleMembers.length > 0);
 }
 
-export function collectionStats(members: SkillCard[]) {
-  const published = { hermes: 0 };
-  for (const target of LINK_TARGETS) {
+export function collectionStats(members: SkillCard[], current: TargetKey = 'hermes') {
+  const targets = [current];
+  const published: Record<string, number> = {};
+  for (const target of targets) {
     published[target] = members.filter(s => s.deployments[target]?.status === 'active' && !s.deployments[target]?.link_missing).length;
   }
   return {
     published,
-    abnormal: members.filter(s => s.cache_missing || s.source_missing || LINK_TARGETS.some(t => {
+    abnormal: members.filter(s => s.cache_missing || s.source_missing || targets.some(t => {
       const deployment = s.deployments[t];
       return deployment?.link_missing || (deployment && !['active', 'removed'].includes(deployment.status));
     })).length,

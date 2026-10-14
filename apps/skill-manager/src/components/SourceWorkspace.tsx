@@ -1,5 +1,6 @@
 'use client';
 
+import { useInstallTargets } from '@/lib/installTargets';
 import { useMemo, useRef, useState } from 'react';
 import InstallDialog from '@/components/InstallDialog';
 import EditSkillTagsDialog from '@/components/EditSkillTagsDialog';
@@ -34,7 +35,7 @@ interface SourceWorkspaceProps {
   onAddMembers?: (repository: string) => void;
 }
 
-function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
+function applyFilters(skills: SkillCard[], filters: FilterState, target: TargetKey): SkillCard[] {
   const query = filters.query.trim().toLowerCase();
   return skills.filter((skill) => {
     if (query) {
@@ -47,7 +48,7 @@ function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
       return false;
     }
     // Hermes 安装记录有效且链接存在才算已安装；下架和链接缺失归入未安装。
-    const deployment = skill.deployments.hermes;
+    const deployment = skill.deployments[target];
     const installed = deployment?.status === 'active' && !deployment.link_missing;
     if (filters.deployment !== 'all' && (filters.deployment === 'installed') !== installed) {
       return false;
@@ -79,6 +80,7 @@ export default function SourceWorkspace({
   checkingUpdates,
   onAddMembers,
 }: SourceWorkspaceProps) {
+  const {current} = useInstallTargets();
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [installIds, setInstallIds] = useState<string[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -99,7 +101,7 @@ export default function SourceWorkspace({
     return [...tags].sort((a, b) => a.localeCompare(b, 'zh-CN'));
   }, [skills]);
 
-  const filteredSkills = useMemo(() => applyFilters(skills, filters), [skills, filters]);
+  const filteredSkills = useMemo(() => applyFilters(skills, filters, current), [skills, filters, current]);
 
   function handleToggleQueueTarget(skillId: string) { setInstallIds([skillId]); }
 

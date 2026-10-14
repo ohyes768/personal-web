@@ -52,7 +52,7 @@ registry + shared cache ─┼─> InstallManager（来源一次准备、skill �
 统一预览支持三种互斥输入：
 
 1. 新已登记安装：`items: [{skill_id, targets:[target_id]}]`，复用现有队列单项形状，以便精确重试失败组合。
-2. 新候选安装：已有 scan_task_id/candidates 加 `target_ids`，服务分配 Skill 身份后展开组合。
+2. 新候选安装：已有 scan_task_id/candidates 加 `target_ids`，服务分配 Skill 身份后展开组合。候选可带可选 `targets`，仅用于精确失败组合重试；已登记候选按仓库/path 复用身份，不重复登记。
 3. 旧兼容：原 `skill_ids` 或未带 target_ids 的候选，目标仅为 `hermes`；默认目标不可用时明确报错，不静默转向某个 named profile。
 
 所有目标合法性/配置状态在来源准备和任何登记副作用前校验。空目标列表不得隐式默认；无效组合、重复项去重与容量限制统一定义。建议每计划最多 100 Skill、20 目标、500 个组合，超过同步拒绝。

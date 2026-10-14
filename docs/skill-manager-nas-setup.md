@@ -180,3 +180,28 @@ python scripts/cleanup_retired_target.py --db /path/skill-manager.sqlite3 --root
 # 复核报告后加 --execute；仅删除账本一致的受管链接，不跟随链接删除源文件。
 ```
 新版本移除旧目标挂载与环境变量。首次启动将旧目标记录归档到 retired_deployment / retired_deployment_history，保留 before-hermes-only 备份；不会自动删除宿主机链接。备份已存在且迁移未完成时启动失败，请先核查备份，不自动覆盖。保留独立 ZIP 导出。安装计划有效10分钟，结果保留30分钟；任务在服务重启后丢失，请先刷新安装实况再重试。运行单 backend worker。
+
+## Hermes 多 profile 安装目标
+
+`hermes` 是存量安装身份，始终沿用原 `HERMES_SKILLS_HOST_PATH`，不要因显示名改为“默认环境”就挪目录。上线前核对它实际对应的 Hermes 环境。新增 profile 不会自动获得任何安装。
+
+服务配置 `SKILL_MANAGER_HERMES_TARGETS` 是 JSON 数组，路径必须是实际绝对路径。下面 `/home/user` 仅是占位，需换成 NAS 用户 home：
+
+```dotenv
+HERMES_OHYES768_SKILLS_HOST_PATH=/home/user/.hermes/profiles/ohyes768/skills
+SKILL_MANAGER_HERMES_TARGETS='[{"id":"hermes","name":"默认环境","profile_name":"default","skills_root":"/home/user/.hermes/skills"},{"id":"hermes:profile:ohyes768","name":"ohyes768","profile_name":"ohyes768","skills_root":"/home/user/.hermes/profiles/ohyes768/skills"}]'
+```
+
+未设置 JSON 时兼容旧 `HERMES_SKILLS_ROOT` 单目标；设置后以数组为准。新增第三个目标同样增加 `hermes:profile:<slug>` 配置，无需改业务源码。ID 创建后保持稳定，名称可修改。
+
+每个 profile 的 skills 必须同路径挂入管理容器。复制 `deploy/docker-compose.skill-manager-profiles.example.yml` 作为 override，修改实际路径和环境变量，用两个 compose 文件启动。增加其他 profile 时增加各自 skills-only bind mount；不要挂载整个 `.hermes`、profile home 或凭据目录。缺失目录不自动创建，目标只显示不可用，其他目标与 ZIP 导出仍可用。
+
+管理和部署看板共用当前 profile，URL `target` 保存选择。安装弹窗默认只选当前目标，可勾选多个目标；预览逐 Skill/profile 显示结果。密码确认一次，部分失败只重试失败组合；下架仅移除所选 profile 的受管链接。
+
+各 profile 共享一份自研源和 GitHub 缓存内容，无法独立固定版本。仓库更新预览列出同仓库其他已安装 profile，包括本次未选择的目标；Clone 同样可能改变其共享内容。Hermes 对可写源的修改也会被其他 profile 看到。
+
+移除配置不会清除安装台账，也不会赋予旧目录写权限。仍有 active 安装时禁止同 ID 更换规范目录，源删除也被这些记录阻止；应恢复原配置并明确下架。目录替换或链接变化会使已有计划失效，需重新预览。
+
+升级前备份 SQLite；首次旧库追加 install_target 表时自动创建 `.before-hermes-profiles` 备份。先上线后端兼容接口，再上线前端。后端回退必须恢复升级前数据库和配置，旧单目标后端不能安全读取包含 profile 的新台账。已创建的链接需要继续保留源和缓存挂载。
+
+部署验收另行执行：记录实际 Hermes 版本和各 profile home，在两个环境各发现并读取同一 Skill；核对源路径可达、运行权限和同名 Skill 遮蔽。管理台显示安装成功只表示已验证目标链接，不表示完成 Hermes 运行验收。本任务不操作真实 NAS。

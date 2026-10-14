@@ -41,7 +41,7 @@ from src.models import (
     ExportTarget,
     ExportTargetList,
     UpdateExportTarget,
-    LINK_TARGET_IDS,
+    is_install_target,
     PlanItem,
     PlanResponse,
     PublishBatchResult,
@@ -58,7 +58,6 @@ from src.models import (
     SkillSource,
     SKILL_ID_PATTERN,
     TargetDeployment,
-    TargetKey,
     target_kind,
     TaskSnapshot,
     UnpublishResponse,
@@ -88,6 +87,7 @@ from src.services.exporting import build_zip, content_hash, dir_hash, snapshot_f
 from src.services.operation_lock import operation_lock
 from src.services.registry import RegistryService, RegistryValidationError
 from src.services.task_manager import GithubTaskManager
+from src.services.targets import TargetUnavailable
 
 router = APIRouter(prefix="/api")
 
@@ -99,12 +99,18 @@ _ID_RE = re.compile(SKILL_ID_PATTERN)
 # ---------- 公开：Skill 列表 ----------
 
 
+@router.get("/skills/install-targets")
+def install_targets(publisher: Publisher = Depends(get_publisher)):
+    return {"items": publisher.targets.catalog()}
+
+
 @router.get("/skills", response_model=SkillListResponse)
 def list_skills(
     registry: RegistryService = Depends(get_registry),
     store: SkillStateStore = Depends(get_store),
     settings: Settings = Depends(get_settings),
     git_cache: GitCacheService = Depends(get_git_cache),
+    publisher: Publisher = Depends(get_publisher),
 ) -> SkillListResponse:
     """左栏卡片：先对账自研目录再返回注册表 + 部署状态 + 更新检查。
 
@@ -129,10 +135,11 @@ def list_skills(
                     cache_revisions[repository] = git_cache.current_revision(skill)
                 except (GitCacheError, OSError):
                     cache_revisions[repository] = ""
+    resolver = publisher.targets
     hashes: dict[str, str | None] = {}
     for record in store.list_deployments():
         # 账实核对：active 链接必须能解析到目录；直链版本反映共享缓存 HEAD。
-        is_export = record.target not in LINK_TARGET_IDS
+        is_export = not is_install_target(record.target)
         stale = False
         if is_export and record.content_hash and record.status == "active":
             if record.skill_id not in hashes:
@@ -146,9 +153,18 @@ def list_skills(
         revision = record.source_revision
         link_target = record.current_link_target
         if not is_export and record.status == "active":
-            link = _target_root(settings, TargetKey(record.target)) / record.skill_id
-            link_missing = not (link.is_symlink() and link.is_dir())
+            try:
+                link = resolver.root(record.target) / record.skill_id
+                link_missing = not (link.is_symlink() and link.is_dir())
+            except TargetUnavailable:
+                link_missing = True
+                link = None
             skill = known.get(record.skill_id)
+            if not link_missing and skill and skill.source is SkillSource.LOCAL:
+                try:
+                    link_missing = link.resolve() != resolve_registry_source(settings, skill)
+                except InvalidSourceError:
+                    link_missing = True
             if not link_missing and skill and skill.source is SkillSource.GITHUB:
                 try:
                     source = resolve_github_source(settings, skill, git_cache.repo_cache_dir(str(skill.repository)))
@@ -157,6 +173,7 @@ def list_skills(
                         link_target = str(source)
                     else:
                         stale = True
+                        link_missing = True
                 except InvalidSourceError:
                     link_missing = True
         deployments.setdefault(record.skill_id, {})[record.target] = TargetDeployment(
@@ -186,7 +203,7 @@ def list_skills(
     return SkillListResponse(items=cards)
 
 
-def _require_target_kind(target: TargetKey, kind: str) -> None:
+def _require_target_kind(target: str, kind: str) -> None:
     if target_kind(target) != kind:
         raise HTTPException(status_code=400, detail={
             "code": "invalid_target_kind",
@@ -195,8 +212,8 @@ def _require_target_kind(target: TargetKey, kind: str) -> None:
 
 
 def _require_export_target(store: SkillStateStore, target: str, *, active: bool = False) -> ExportTarget:
-    if target in LINK_TARGET_IDS:
-        _require_target_kind(TargetKey(target), "export")
+    if is_install_target(target):
+        _require_target_kind(target, "export")
     item = store.get_export_target(target)
     if item is None:
         raise HTTPException(400, detail={"code": "invalid_target", "message": "导出目标不存在，请刷新目标列表"})
@@ -212,7 +229,7 @@ def list_export_targets(store: SkillStateStore = Depends(get_store)) -> ExportTa
 
 @router.post("/export-targets", response_model=ExportTarget, status_code=201)
 def create_export_target(req: CreateExportTarget, store: SkillStateStore = Depends(get_store)) -> ExportTarget:
-    if req.id in LINK_TARGET_IDS or req.id == "openclaw":
+    if is_install_target(req.id) or req.id == "openclaw":
         raise HTTPException(400, detail={"code": "reserved_target", "message": "此 ID 已保留给 NAS 发布目标"})
     try:
         return store.create_export_target(req)
@@ -763,6 +780,10 @@ def publish_plan(
     for item in req.items:
         for target in item.targets:
             _require_target_kind(target, "link")
+            try:
+                publisher.targets.root(target)
+            except TargetUnavailable as exc:
+                raise HTTPException(400, detail={"code": "target_unavailable", "message": str(exc)}) from exc
     known = {skill.id: skill for skill in registry.list_skills()}
     items: list[PlanItem] = []
     for queue_item in req.items:
@@ -789,7 +810,7 @@ def _plan_one(
     git_cache: GitCacheService,
     publisher: Publisher,
     skill: RegistrySkill,
-    target: TargetKey,
+    target: str,
 ) -> PlanItem:
     """单项计划：解析受控源 + 检查目标现状，绝不写入文件系统。
 
@@ -819,7 +840,10 @@ def _plan_one(
             skill_id=skill.id, target=target, action="blocked",
             reason=f"源不可用：{exc}",
         )
-    final_link = _target_root(settings, target) / skill.id
+    try:
+        final_link = publisher._target_root(target) / skill.id
+    except PublishBlockedError as exc:
+        return PlanItem(skill_id=skill.id, target=target, action="blocked", reason=str(exc))
     if final_link.is_symlink():
         resolved_link = final_link.resolve()
         if not _inside_controlled_roots(settings, resolved_link):
@@ -837,7 +861,7 @@ def _plan_one(
         )
     else:
         action = "add"
-    deployment = store.get_deployment(skill.id, target.value)
+    deployment = store.get_deployment(skill.id, str(target))
     current_revision = deployment.source_revision if deployment else ""
     if skill.source is SkillSource.GITHUB and final_link.is_symlink() and final_link.resolve() == source:
         current_revision = git_cache.current_revision(skill)
@@ -861,14 +885,6 @@ def _planned_revision(
     if check is not None and check.result == "ok" and check.remote_revision:
         return check.remote_revision
     return git_cache.current_revision(skill)
-
-
-def _target_root(settings: Settings, target: TargetKey) -> Path:
-    _require_target_kind(target, "link")
-    roots = {
-        TargetKey.HERMES: settings.hermes_skills_root,
-    }
-    return roots[target]
 
 
 def _inside_controlled_roots(settings: Settings, resolved: Path) -> bool:
@@ -895,6 +911,10 @@ def publish(
     for item in req.items:
         for target in item.targets:
             _require_target_kind(target, "link")
+            try:
+                publisher.targets.root(target)
+            except TargetUnavailable as exc:
+                raise HTTPException(400, detail={"code": "target_unavailable", "message": str(exc)}) from exc
     results: list[PublishResultItem] = []
     for queue_item in req.items:
         skill = known.get(queue_item.skill_id)
@@ -922,7 +942,7 @@ def _publish_one(
     git_cache: GitCacheService,
     store: SkillStateStore,
     skill: RegistrySkill,
-    target: TargetKey,
+    target: str,
 ) -> PublishResultItem:
     revision = ""
     try:
@@ -1055,7 +1075,7 @@ def delete_skill(
         record
         for record in store.list_deployments()
         if record.skill_id == skill_id and record.status == "active"
-        and record.target in LINK_TARGET_IDS
+        and is_install_target(record.target)
     ]
     if active:
         targets = ", ".join(record.target for record in active)
@@ -1152,9 +1172,11 @@ def _require_skill_id(skill_id: str) -> str:
     return skill_id
 
 
-def _require_target(target: str) -> TargetKey:
+def _require_target(target: str) -> str:
     try:
-        return TargetKey(target)
+        from pydantic import TypeAdapter
+        from src.models import PublishTargetId
+        return TypeAdapter(PublishTargetId).validate_python(target)
     except ValueError as exc:
         raise HTTPException(
             status_code=400,
@@ -1201,11 +1223,36 @@ def install_preview(req: InstallPreviewRequest, settings: Settings = Depends(get
                     registry: RegistryService = Depends(get_registry), store: SkillStateStore = Depends(get_store),
                     cache: GitCacheService = Depends(get_git_cache), publisher: Publisher = Depends(get_publisher),
                     tasks: GithubTaskManager = Depends(get_task_manager), manager: InstallManager = Depends(get_install_manager)):
-    if bool(req.skill_ids) == bool(req.candidates) or len(set(req.skill_ids)) != len(req.skill_ids):
-        raise HTTPException(400, detail={'code': 'invalid_request', 'message': '请选择已登记项或扫描候选之一'})
+    modes = sum([bool(req.skill_ids), bool(req.candidates), req.items is not None])
+    if modes != 1 or (req.items is not None and not req.items) or len(set(req.skill_ids)) != len(req.skill_ids):
+        raise HTTPException(400, detail={'code': 'invalid_request', 'message': '请选择已登记项、组合或扫描候选之一'})
+    if req.items is not None and req.target_ids is not None:
+        raise HTTPException(400, detail={'code': 'invalid_request', 'message': '组合不能同时指定 target_ids'})
+    pairs = {}
+    if req.items is not None:
+        for item in req.items:
+            pairs.setdefault(item.skill_id, [])
+            pairs[item.skill_id] = list(dict.fromkeys(pairs[item.skill_id] + item.targets))
+        skill_ids = list(pairs)
+    else:
+        skill_ids = req.skill_ids
+    targets = list(dict.fromkeys(req.target_ids if req.target_ids is not None else ['hermes']))
+    candidate_targets = [list(dict.fromkeys(c.targets if c.targets is not None else targets)) for c in req.candidates]
+    all_targets = set(t for ts in (list(pairs.values()) if pairs else candidate_targets if req.candidates else [targets]) for t in ts)
+    combinations = sum(map(len, pairs.values())) if pairs else sum(map(len, candidate_targets)) if req.candidates else len(skill_ids) * len(targets)
+    if len(all_targets) > 20 or combinations > 500:
+        raise HTTPException(400, detail={'code': 'invalid_request', 'message': '安装组合超出限制'})
+    # Reject unknown/unavailable targets before scanning or resolving any source.
+    resolver = publisher.targets
+    for target in all_targets:
+        _require_target_kind(target, 'link')
+        try:
+            resolver.root(target)
+        except TargetUnavailable as exc:
+            raise HTTPException(400, detail={'code': 'target_unavailable', 'message': str(exc)}) from exc
     skills = []
-    if req.skill_ids:
-        for skill_id in req.skill_ids:
+    if skill_ids:
+        for skill_id in skill_ids:
             skills.append(_require_known_skill(registry, skill_id))
     else:
         scan = tasks.get(req.scan_task_id or '')
@@ -1214,7 +1261,7 @@ def install_preview(req: InstallPreviewRequest, settings: Settings = Depends(get
         canonical = cache.normalize_repository(scan.repository)
         allowed = {candidate.path for candidate in scan.candidates}
         seen, reserved = set(), set()
-        for candidate in req.candidates:
+        for candidate, selected_targets in zip(req.candidates, candidate_targets):
             if candidate.path not in allowed or candidate.path in seen:
                 raise HTTPException(400, detail={'code': 'invalid_path', 'message': '候选未扫描或重复'})
             seen.add(candidate.path)
@@ -1235,8 +1282,10 @@ def install_preview(req: InstallPreviewRequest, settings: Settings = Depends(get
             if not scan.revision or cache.current_revision(skill) != scan.revision:
                 raise HTTPException(409, detail={'code': 'stale_scan', 'message': '扫描后缓存版本已变化，请重新扫描'})
             skills.append(skill)
+            pairs[skill.id] = selected_targets
     return manager.preview(skills, settings, registry, cache, publisher,
-        lambda skill: _plan_one(settings, store, cache, publisher, skill, TargetKey.HERMES))
+        lambda skill, target: _plan_one(settings, store, cache, publisher, skill, target),
+        pairs or {skill.id: targets for skill in skills})
 
 
 @router.post('/skills/install', status_code=202)

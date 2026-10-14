@@ -27,18 +27,37 @@ class TargetKey(StrEnum):
 
 
 TargetKind = Literal["link", "export"]
-TARGET_KINDS: dict[TargetKey, TargetKind] = {
-    TargetKey.HERMES: "link",
-    TargetKey.WINDOWS_CODEX: "export",
-    TargetKey.WINDOWS_CLAUDE: "export",
-}
+INSTALL_TARGET_PATTERN = r"^hermes(?::profile:[a-z0-9][a-z0-9-]{0,62})?$"
+InstallTargetId = Annotated[str, Field(pattern=INSTALL_TARGET_PATTERN)]
+PublishTargetId = Annotated[str, Field(pattern=r"^(hermes(?::profile:[a-z0-9][a-z0-9-]{0,62})?|windows-codex|windows-claude)$")]
 
 
-def target_kind(target: TargetKey) -> TargetKind:
-    return TARGET_KINDS[target]
+def is_install_target(target: str) -> bool:
+    return target == "hermes" or target.startswith("hermes:profile:")
 
 
-LINK_TARGET_IDS = frozenset({"hermes"})
+class InstallTargetConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: InstallTargetId
+    name: str = Field(min_length=1, max_length=100)
+    profile_name: str = Field(min_length=1, max_length=100)
+    skills_root: Path
+
+
+class InstallTarget(BaseModel):
+    id: str
+    provider: Literal["hermes"] = "hermes"
+    profile_name: str
+    name: str
+    install_path: str
+    configured: bool
+    available: bool
+    unavailable_reason: str = ""
+
+
+def target_kind(target: str) -> TargetKind:
+    return "link" if is_install_target(target) else "export"
+
 
 
 class ExportTargetFields(BaseModel):
@@ -122,7 +141,7 @@ class PublishItem(BaseModel):
     """
 
     skill_id: SkillId
-    target: TargetKey
+    target: PublishTargetId
     source: Path
     revision: str = ""
 
@@ -131,7 +150,7 @@ class PublishResultItem(BaseModel):
     """单项发布/回滚结果；批量接口以逐项结果表达部分成功（design 7）。"""
 
     skill_id: str
-    target: TargetKey
+    target: PublishTargetId
     status: Literal["success", "blocked", "error"]
     action: Literal["add", "update", "none"] = "none"
     error: str = ""
@@ -359,7 +378,7 @@ class QueueItemRequest(BaseModel):
     """右栏发布队列单项：skill + 选定目标（Hermes）。"""
 
     skill_id: SkillId
-    targets: Annotated[list[TargetKey], Field(min_length=1)]
+    targets: Annotated[list[PublishTargetId], Field(min_length=1)]
 
 
 class PublishPlanRequest(BaseModel):
@@ -381,7 +400,7 @@ class PlanItem(BaseModel):
     """发布计划单项：action 分类与原因（design 4.2）。"""
 
     skill_id: str
-    target: TargetKey
+    target: PublishTargetId
     action: PlanAction
     reason: str = ""
     current_revision: str = ""
@@ -394,7 +413,7 @@ class PlanResponse(BaseModel):
 
 class UnpublishResponse(BaseModel):
     skill_id: str
-    target: TargetKey
+    target: PublishTargetId
     status: Literal["removed"] = "removed"
 
 
@@ -420,6 +439,7 @@ class DeleteSkillResponse(BaseModel):
 
 
 class InstallCandidate(BaseModel):
+    targets: list[InstallTargetId] | None = Field(default=None, min_length=1, max_length=20)
     path: str
     name: str
     tags: list[str] = []
@@ -427,6 +447,8 @@ class InstallCandidate(BaseModel):
 
 
 class InstallPreviewRequest(BaseModel):
+    items: list[QueueItemRequest] | None = Field(default=None, max_length=100)
+    target_ids: list[InstallTargetId] | None = Field(default=None, min_length=1, max_length=20)
     skill_ids: list[str] = Field(default_factory=list, max_length=100)
     scan_task_id: str | None = None
     candidates: list[InstallCandidate] = Field(default_factory=list, max_length=100)

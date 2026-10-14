@@ -7,8 +7,9 @@
 """
 
 from pathlib import Path
+from src.models import InstallTargetConfig
 
-from pydantic import AliasChoices, Field, SecretStr, model_validator
+from pydantic import AliasChoices, Field, PrivateAttr, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 需要存在性校验并 resolve 的必填挂载根字段
@@ -16,17 +17,19 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 _MOUNT_ROOT_FIELDS = (
     "skills_source_root",
     "github_skill_cache_root",
-    "hermes_skills_root",
     "state_dir",
 )
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(populate_by_name=True)
+    model_config = SettingsConfigDict(populate_by_name=True, env_ignore_empty=True)
+
+    _legacy_hermes_root: Path | None = PrivateAttr(default=None)
 
     skills_source_root: Path
     github_skill_cache_root: Path
-    hermes_skills_root: Path
+    hermes_skills_root: Path | None = None
+    hermes_targets: list[InstallTargetConfig] | None = Field(default=None, validation_alias=AliasChoices("SKILL_MANAGER_HERMES_TARGETS", "hermes_targets"))
     state_dir: Path = Field(
         validation_alias=AliasChoices("SKILL_MANAGER_STATE_DIR", "state_dir")
     )
@@ -69,11 +72,30 @@ class Settings(BaseSettings):
                     f"{resolved}"
                 )
             self.targets_mount_root = resolved
-            for target_name in ("hermes_skills_root",):
-                target = getattr(self, target_name)
-                if not target.is_relative_to(self.targets_mount_root):
-                    raise ValueError(
-                        f"target root {target_name} ({target}) must be inside "
-                        f"targets_mount_root ({self.targets_mount_root})"
-                    )
+        if self.hermes_targets is None:
+            if self.hermes_skills_root is None:
+                raise ValueError("HERMES_SKILLS_ROOT or SKILL_MANAGER_HERMES_TARGETS is required")
+            self.hermes_targets = [InstallTargetConfig(id="hermes", name="默认环境", profile_name="default", skills_root=self.hermes_skills_root)]
+        if not self.hermes_targets:
+            raise ValueError("Hermes targets cannot be empty")
+        roots, ids = [], set()
+        for target in self.hermes_targets:
+            if target.id in ids:
+                raise ValueError("duplicate Hermes target ID")
+            ids.add(target.id)
+            if not target.skills_root.is_absolute():
+                raise ValueError("Hermes target root must be absolute")
+            resolved = target.skills_root.resolve()
+            if any(resolved.is_relative_to(other) or other.is_relative_to(resolved) for other in roots):
+                raise ValueError("Hermes target roots cannot overlap")
+            if any(resolved.is_relative_to(getattr(self, name)) or getattr(self, name).is_relative_to(resolved) for name in _MOUNT_ROOT_FIELDS):
+                raise ValueError("Hermes target root overlaps a source, cache or state root")
+            if self.targets_mount_root and not resolved.is_relative_to(self.targets_mount_root):
+                raise ValueError("target root must be inside targets_mount_root")
+            # Preserve configured path to detect later symlink redirection.
+            target.skills_root = target.skills_root.absolute()
+            roots.append(resolved)
+        self._legacy_hermes_root = self.hermes_skills_root
+        default = next((t for t in self.hermes_targets if t.id == "hermes"), None)
+        self.hermes_skills_root = default.skills_root if default else None
         return self

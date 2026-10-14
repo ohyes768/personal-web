@@ -1,16 +1,16 @@
-"""Hermes install plans and bounded, credential-free background execution."""
+"""One source snapshot per Skill and filesystem identity per target pair."""
 from copy import deepcopy
 from dataclasses import dataclass
-import os
 import secrets
 import threading
 import time
 
 from fastapi import HTTPException
-from src.models import RegistrySkill, SkillSource, TargetKey
+from src.models import RegistrySkill, SkillSource, is_install_target
 from src.services.exporting import dir_hash
 from src.services.operation_lock import operation_lock
 from src.services.publisher import resolve_github_source, resolve_registry_source
+from src.services.targets import TargetUnavailable
 
 
 def error(code, message, status=409):
@@ -20,8 +20,10 @@ def error(code, message, status=409):
 @dataclass
 class Plan:
     skills: list[RegistrySkill]
-    states: list[dict | None]
+    states: dict
+    targets: dict
     items: list[dict]
+    affected: list[dict]
     expires: float
     task_id: str = ""
     request_id: str = ""
@@ -39,47 +41,65 @@ class InstallManager:
         self.tasks = {k: t for k, t in self.tasks.items() if t['state'] == 'running' or t['_expires'] > now}
 
     def source_state(self, skill, settings, registry, cache):
-        link = settings.hermes_skills_root / skill.id
-        target_state = ('link', os.readlink(link)) if link.is_symlink() else ('occupied', link.stat().st_mtime_ns) if link.exists() else ('missing',)
         current = registry.get(skill.id)
         registered = current.model_dump(mode='json') if current else None
         if skill.source == SkillSource.GITHUB:
             cache.ensure_skill_path_cached(skill)
-            root = cache.repo_cache_dir(str(skill.repository)).resolve()
-            source = resolve_github_source(settings, skill, root)
+            source = resolve_github_source(settings, skill, cache.repo_cache_dir(str(skill.repository)))
             if any(p.is_symlink() for p in source.rglob('*') if '.git' not in p.relative_to(source).parts):
                 error('invalid_source', '源目录含符号链接，请改为受控普通文件', 400)
-            hashes = [(skill.path, dir_hash(source))]
             check = cache.store.latest_repository_check(str(skill.repository))
             revision = check.remote_revision if current and check and check.result == 'ok' else cache.current_revision(skill)
-            return {'target': target_state, 'registered': registered, 'revision': revision, 'cache_revision': cache.current_revision(skill), 'hashes': hashes}
-        return {'target': target_state, 'registered': registered, 'revision': '', 'hashes': dir_hash(resolve_registry_source(settings, skill))}
+            return {'registered': registered, 'revision': revision, 'cache_revision': cache.current_revision(skill), 'hashes': [(skill.path, dir_hash(source))]}
+        return {'registered': registered, 'revision': '', 'hashes': dir_hash(resolve_registry_source(settings, skill))}
 
-    def preview(self, skills, settings, registry, cache, publisher, planner):
+    def affected_installations(self, skills, states, registry, cache, publisher):
+        repositories = {cache.normalize_repository(str(s.repository)).lower() for s in skills if s.source == SkillSource.GITHUB and states.get(s.id) and states[s.id]['revision'] != states[s.id]['cache_revision']}
+        known = {s.id: s for s in registry.list_skills()}
+        rows = []
+        for record in publisher.store.list_deployments():
+            skill = known.get(record.skill_id)
+            if record.status != 'active' or not is_install_target(record.target) or not skill or skill.source != SkillSource.GITHUB:
+                continue
+            if cache.normalize_repository(str(skill.repository)).lower() not in repositories:
+                continue
+            try:
+                fingerprint = publisher.targets.fingerprint(record.target, skill.id)
+            except TargetUnavailable:
+                fingerprint = None
+            rows.append({'skill_id': skill.id, 'name': skill.name, 'target': record.target, 'fingerprint': fingerprint})
+        return sorted(rows, key=lambda row: (row['skill_id'], row['target']))
+
+    def preview(self, skills, settings, registry, cache, publisher, planner, pairs=None):
+        pairs = pairs or {s.id: ['hermes'] for s in skills}
         with operation_lock, self.lock:
             self._prune()
             if len(self.plans) >= 100:
                 error('capacity', '安装服务繁忙，请稍后重试', 429)
-            items, states = [], []
+            items, states, targets = [], {}, {}
             for skill in skills:
+                source_error = ''
                 try:
-                    state = self.source_state(skill, settings, registry, cache)
-                    item = planner(skill)
-                    item.planned_revision = state['revision']
-                    # Candidate plans must not use unrelated ID check records.
-                    if skill.source == SkillSource.GITHUB and not state['registered']:
-                        source = resolve_github_source(settings, skill, cache.repo_cache_dir(str(skill.repository)))
-                        link = settings.hermes_skills_root / skill.id
-                        if item.action != 'blocked':
-                            item.action = 'unchanged' if link.is_symlink() and link.resolve() == source else 'update' if link.is_symlink() else 'add'
-                    states.append(state)
-                    items.append(item.model_dump(mode='json') | {'name': skill.name, 'path': skill.path})
+                    states[skill.id] = self.source_state(skill, settings, registry, cache)
                 except Exception as exc:
-                    states.append(None)
-                    items.append({'skill_id': skill.id, 'name': skill.name, 'path': skill.path, 'target': 'hermes', 'action': 'blocked', 'reason': str(exc.detail.get('message', '来源不可用')) if isinstance(exc, HTTPException) and isinstance(exc.detail, dict) else str(exc), 'planned_revision': ''})
+                    states[skill.id] = None
+                    source_error = str(exc.detail.get('message', '来源不可用')) if isinstance(exc, HTTPException) and isinstance(exc.detail, dict) else str(exc)
+                for target in pairs[skill.id]:
+                    state = states[skill.id]
+                    try:
+                        targets[skill.id, target] = publisher.targets.fingerprint(target, skill.id)
+                        if not state:
+                            raise ValueError(source_error)
+                        item = planner(skill, target)
+                        item.planned_revision = state['revision']
+                        items.append(item.model_dump(mode='json') | {'name': skill.name, 'path': skill.path})
+                    except Exception as exc:
+                        targets.setdefault((skill.id, target), None)
+                        items.append({'skill_id': skill.id, 'name': skill.name, 'path': skill.path, 'target': target, 'action': 'blocked', 'reason': str(exc), 'planned_revision': ''})
+            affected = self.affected_installations(skills, states, registry, cache, publisher)
             plan_id = secrets.token_urlsafe(24)
-            self.plans[plan_id] = Plan(skills, states, items, time.monotonic() + 600)
-            return {'plan_id': plan_id, 'items': items, 'expires_in': 600}
+            self.plans[plan_id] = Plan(skills, states, targets, items, affected, time.monotonic() + 600)
+            return {'plan_id': plan_id, 'items': items, 'affected_installations': [{k: v for k, v in row.items() if k != 'fingerprint'} for row in affected], 'expires_in': 600}
 
     def start(self, plan_id, request_id, settings, registry, cache, publisher):
         with operation_lock, self.lock:
@@ -91,16 +111,20 @@ class InstallManager:
                 if plan.request_id != request_id:
                     error('already_submitted', '此安装计划已提交')
                 return {'task_id': plan.task_id}
-            with operation_lock:
-                for skill, state in zip(plan.skills, plan.states):
-                    if state is not None:
-                        try:
-                            if state != self.source_state(skill, settings, registry, cache):
-                                error('stale_plan', '来源或登记已变化，请重新预览')
-                        except HTTPException:
-                            raise
-                        except Exception:
-                            error('stale_plan', '来源已不可用，请重新预览')
+            try:
+                for skill in plan.skills:
+                    state = plan.states[skill.id]
+                    if state is not None and state != self.source_state(skill, settings, registry, cache):
+                        error('stale_plan', '来源或登记已变化，请重新预览')
+                for (skill_id, target), state in plan.targets.items():
+                    if state is not None and state != publisher.targets.fingerprint(target, skill_id):
+                        error('stale_plan', '目标目录或链接已变化，请重新预览')
+                if plan.affected != self.affected_installations(plan.skills, plan.states, registry, cache, publisher):
+                    error('stale_plan', '共享仓库影响范围已变化，请重新预览')
+            except HTTPException:
+                raise
+            except Exception:
+                error('stale_plan', '来源或目标已不可用，请重新预览')
             task_id = secrets.token_urlsafe(24)
             plan.task_id, plan.request_id = task_id, request_id
             self.tasks[task_id] = {'task_id': task_id, 'state': 'running', 'stage': 'preparing', 'results': [], '_expires': time.monotonic() + 1800}
@@ -109,52 +133,66 @@ class InstallManager:
 
     def _execute(self, plan, settings, registry, cache, publisher):
         try:
-            for skill, state, item in zip(plan.skills, plan.states, plan.items):
-                registered = state is not None and state['registered'] is not None
-                result = {'skill_id': skill.id, 'name': skill.name, 'registered': registered, 'status': 'blocked', 'error': item.get('reason', '')}
-                try:
-                    if state is None or item['action'] == 'blocked':
-                        continue
-                    with operation_lock:
-                        if registered and item['action'] == 'unchanged':
-                            result.update(status='success', action='unchanged', error='')
-                            continue
-                        if state != self.source_state(skill, settings, registry, cache):
-                            raise ValueError('来源或登记已变化，请重新预览')
-                        if skill.source == SkillSource.GITHUB:
-                            if cache.current_revision(skill) != state['revision']:
-                                try:
-                                    cache.ensure_cached(skill, state['revision'])
-                                finally:
-                                    # checkout 可能已成功，但当前成员在新版本中被删除。
-                                    # 仍需刷新其他成员的缓存指纹，避免正常成员被连带拒绝。
-                                    if cache.current_revision(skill) != state['cache_revision']:
-                                        for index, (other, expected) in enumerate(zip(plan.skills, plan.states)):
-                                            if other.id != skill.id and expected is not None and other.repository == skill.repository:
-                                                try:
-                                                    prepared = self.source_state(other, settings, registry, cache)
-                                                    expected['cache_revision'] = prepared['cache_revision']
-                                                    expected['hashes'] = prepared['hashes']
-                                                except Exception as exc:
-                                                    plan.items[index].update(action='blocked', reason=str(exc))
-                            if cache.current_revision(skill) != state['revision']:
-                                raise ValueError('缓存未取得确认版本，请重新预览')
-                            source = resolve_github_source(settings, skill, cache.repo_cache_dir(str(skill.repository)))
-                        else:
-                            source = resolve_registry_source(settings, skill)
-                        self._stage(plan.task_id, 'registering')
-                        if not registered:
-                            registry.upsert(skill)
-                            registered = True
-                        self._stage(plan.task_id, 'installing')
-                        outcome = publisher.publish(skill.id, TargetKey.HERMES, source, state['revision'])
-                        result.update(status='success', action=outcome.action, error='')
-                except Exception as exc:
-                    result.update(status='error', error=str(exc))
-                finally:
-                    result['registered'] = registered
-                    with self.lock:
-                        self.tasks[plan.task_id]['results'].append(result)
+            with operation_lock:
+                for skill in plan.skills:
+                    state = plan.states[skill.id]
+                    items = [i for i in plan.items if i['skill_id'] == skill.id]
+                    registered = bool(state and state['registered'])
+                    source, source_error = None, ''
+                    try:
+                        if state and any(i['action'] != 'blocked' and (not registered or i['action'] != 'unchanged') for i in items):
+                            if state != self.source_state(skill, settings, registry, cache):
+                                raise ValueError('来源或登记已变化，请重新预览')
+                            if skill.source == SkillSource.GITHUB:
+                                if cache.current_revision(skill) != state['revision']:
+                                    try:
+                                        cache.ensure_cached(skill, state['revision'])
+                                    finally:
+                                        if cache.current_revision(skill) != state['cache_revision']:
+                                            if cache.current_revision(skill) != state['revision']:
+                                                raise ValueError('缓存未取得确认版本，请重新预览')
+                                            # Only the confirmed checkout's content changes are accepted.
+                                            for other in plan.skills:
+                                                expected = plan.states[other.id]
+                                                if expected and other.repository == skill.repository:
+                                                    try:
+                                                        prepared = self.source_state(other, settings, registry, cache)
+                                                        expected['cache_revision'] = prepared['cache_revision']
+                                                        expected['hashes'] = prepared['hashes']
+                                                    except Exception as exc:
+                                                        for item in plan.items:
+                                                            if item['skill_id'] == other.id:
+                                                                item.update(action='blocked', reason=str(exc))
+                                source = resolve_github_source(settings, skill, cache.repo_cache_dir(str(skill.repository)))
+                            else:
+                                source = resolve_registry_source(settings, skill)
+                            self._stage(plan.task_id, 'registering')
+                            if not registered:
+                                registry.upsert(skill)
+                                registered = True
+                    except Exception as exc:
+                        source_error = str(exc)
+                    for item in items:
+                        target = item['target']
+                        result = {'skill_id': skill.id, 'target': target, 'name': skill.name, 'registered': registered, 'status': 'blocked', 'action': 'none', 'error': item.get('reason', '')}
+                        try:
+                            if not state or item['action'] == 'blocked':
+                                continue
+                            if source_error:
+                                raise ValueError(source_error)
+                            if plan.targets[skill.id, target] != publisher.targets.fingerprint(target, skill.id):
+                                raise ValueError('目标目录或链接已变化，请重新预览')
+                            if item['action'] == 'unchanged':
+                                result.update(status='success', action='unchanged', error='')
+                                continue
+                            self._stage(plan.task_id, 'installing')
+                            outcome = publisher.publish(skill.id, target, source, state['revision'])
+                            result.update(status='success', action=outcome.action, error='')
+                        except Exception as exc:
+                            result.update(status='error', error=str(exc))
+                        finally:
+                            with self.lock:
+                                self.tasks[plan.task_id]['results'].append(result)
         finally:
             with self.lock:
                 self.tasks[plan.task_id].update(state='done', stage='done', _expires=time.monotonic() + 1800)

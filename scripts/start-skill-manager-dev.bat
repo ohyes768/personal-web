@@ -30,6 +30,13 @@ if not exist "%GITHUB_SKILL_CACHE_ROOT%" mkdir "%GITHUB_SKILL_CACHE_ROOT%"
 if not exist "%SKILL_MANAGER_STATE_DIR%" mkdir "%SKILL_MANAGER_STATE_DIR%"
 if not exist "%HERMES_SKILLS_ROOT%" mkdir "%HERMES_SKILLS_ROOT%"
 
+REM Simulated named profile; preserve explicit target JSON supplied by the user.
+if not defined SKILL_MANAGER_HERMES_TARGETS (
+    set "SKILL_DEV_PROFILE_ROOT=%~dp0..\.skill-manager-dev\targets\hermes-ohyes768"
+    if not exist "!SKILL_DEV_PROFILE_ROOT!" mkdir "!SKILL_DEV_PROFILE_ROOT!"
+    for /f "delims=" %%J in ('python -c "import json,os; print(json.dumps([dict(id='hermes',name='Default dev',profile_name='default',skills_root=os.path.abspath(os.environ['HERMES_SKILLS_ROOT'])),dict(id='hermes:profile:ohyes768',name='ohyes768 dev',profile_name='ohyes768',skills_root=os.path.abspath(os.environ['SKILL_DEV_PROFILE_ROOT']))]))"') do set "SKILL_MANAGER_HERMES_TARGETS=%%J"
+)
+
 REM [1/2] Start skill-manager backend
 echo [1/2] Starting skill-manager backend (port %SKILL_API_PORT%)...
 cd /d "%~dp0..\backend\skill-manager"

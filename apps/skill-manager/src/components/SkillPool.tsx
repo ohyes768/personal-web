@@ -1,9 +1,10 @@
 'use client';
 
+import { useInstallTargets, installTargetLabel } from '@/lib/installTargets';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { ExportTarget, SkillCard, TargetDeployment } from '@/lib/types';
 import { collectionStats, groupCollections, repositoryKey, type SkillCollection } from '@/lib/collections';
-import { exportTargetLabel, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
+import { exportTargetLabel, isInstallTarget, type ExportTargetKey } from '@/lib/targets';
 import {
   DownloadIcon,
   PencilIcon,
@@ -12,7 +13,7 @@ import {
   SkillDocumentIcon,
 } from '@/components/icons';
 
-const ALL_TARGETS = LINK_TARGETS;
+
 const SKILL_GRID_CLASS = 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2 lg:grid-cols-3';
 
 interface SkillPoolProps {
@@ -104,13 +105,19 @@ function SkillCardItem({
   onExport: SkillPoolProps['onExport'];
   onDeleteExport: SkillPoolProps['onDeleteExport'];
 }) {
+  const {current, targets, loading, error} = useInstallTargets();
+  const ALL_TARGETS = [current];
+  const label = (id: string) => installTargetLabel(targets, id);
+  const unavailable = loading || !!error || (targets.length > 0 && !targets.find(t => t.id === current)?.available);
   const cacheMissing = skill.cache_missing;
   const sourceMissing = skill.source_missing;
-  const publishBlocked = cacheMissing || sourceMissing;
-  const installed = skill.deployments.hermes?.status === 'active' && !skill.deployments.hermes.link_missing;
-  const hasPendingUpdate = !!skill.update?.has_update || !!skill.deployments.hermes?.stale;
+  const sourceBlocked = cacheMissing || sourceMissing;
+  const publishBlocked = sourceBlocked || unavailable;
+  const targetReason = loading ? '安装目标加载中…' : error || targets.find(t => t.id === current)?.unavailable_reason || '当前 profile 不可用';
+  const installed = skill.deployments[current]?.status === 'active' && !skill.deployments[current].link_missing;
+  const hasPendingUpdate = !!skill.update?.has_update || !!skill.deployments[current]?.stale;
   const exportEntries = Object.entries(skill.deployments).filter(
-    ([target, deployment]) => !LINK_TARGETS.includes(target as TargetKey) && deployment.status === 'active'
+    ([target, deployment]) => !isInstallTarget(target) && deployment.status === 'active'
   );
   const activeTargets = ALL_TARGETS.filter(
     (target) => skill.deployments[target]?.status === 'active'
@@ -138,7 +145,7 @@ function SkillCardItem({
                 className="h-4 w-4 shrink-0 accent-sky-600" />
             ) : null}
             <h3 className="min-w-0 truncate font-medium text-slate-800" title={skill.name}>{skill.name}</h3>
-            <InstallationBadge deployment={skill.deployments.hermes} />
+            <InstallationBadge deployment={skill.deployments[current]} />
           </div>
           {subtitle ? (
             <p className="truncate text-xs text-slate-400" title={subtitle}>
@@ -200,7 +207,7 @@ function SkillCardItem({
           const config = exportTargets.find((item) => item.id === target);
           const label = exportTargetLabel(exportTargets, target);
           return <div key={target} className="flex items-center gap-1 text-xs">
-            <button type="button" disabled={publishBlocked || !config?.enabled} onClick={() => onExport(skill, target)} title="点击重新导出" className={`min-w-0 flex-1 rounded px-1.5 py-1 text-left ${deployment.stale ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+            <button type="button" disabled={sourceBlocked || !config?.enabled} onClick={() => onExport(skill, target)} title="点击重新导出" className={`min-w-0 flex-1 rounded px-1.5 py-1 text-left ${deployment.stale ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
               {label}{!config?.enabled ? '（已停用）' : ''} · {(deployment.revision || deployment.content_hash)?.slice(0, 7) || '未知版本'} · {deployment.published_at.slice(5, 10)} · {deployment.stale ? '● 源已更新' : '最新'}
             </button>
             <button type="button" aria-label={`清除 ${label} 导出记录`} onClick={() => onDeleteExport(skill, target)} className="icon-btn rounded border border-slate-200"><TrashIcon /></button>
@@ -210,7 +217,7 @@ function SkillCardItem({
 
       {/* 安装为文字主按钮，其余操作保留图标 */}
       <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-3">
-        <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="选择目标并导出 ZIP" disabled={publishBlocked} onClick={() => onExport(skill)} className="icon-btn tip-left rounded-md border border-slate-300"><DownloadIcon /></button>
+        <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="选择目标并导出 ZIP" disabled={sourceBlocked} onClick={() => onExport(skill)} className="icon-btn tip-left rounded-md border border-slate-300"><DownloadIcon /></button>
         {!(skill.source === 'local' && installed) && ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
           return (
@@ -220,21 +227,21 @@ function SkillCardItem({
               aria-label={`${installed ? '更新' : '安装'} ${skill.name}`}
               data-tip={
                 publishBlocked
-                  ? sourceMissing
+                  ? unavailable ? targetReason : sourceMissing
                     ? '源缺失，无法安装'
                     : '请先 Clone 缓存'
                   : queued
-                    ? `安装到 ${TARGET_LABEL[target]}`
-                    : `安装到 ${TARGET_LABEL[target]}`
+                    ? `安装到 ${label(target)}`
+                    : `安装到 ${label(target)}`
               }
               title={
                 publishBlocked
-                  ? sourceMissing
+                  ? unavailable ? targetReason : sourceMissing
                     ? '源库登记目录缺失，无法安装'
                     : '请先 Clone 缓存'
                   : queued
-                    ? `安装到 ${TARGET_LABEL[target]}`
-                    : `安装到 ${TARGET_LABEL[target]}`
+                    ? `安装到 ${label(target)}`
+                    : `安装到 ${label(target)}`
               }
               disabled={publishBlocked}
               onClick={() => onToggleQueueTarget(skill.id, target)}
@@ -253,8 +260,8 @@ function SkillCardItem({
         {activeTargets.length > 0 ? (
           <button
             type="button"
-            aria-label={`下架 ${TARGET_LABEL[activeTargets[0]]}${activeTargets.length > 1 ? ` 等 ${activeTargets.length} 个目标` : ''}`}
-            data-tip={`下架（${activeTargets.map((t) => TARGET_LABEL[t]).join('、')}）`}
+            aria-label={`下架 ${label(activeTargets[0])}${activeTargets.length > 1 ? ` 等 ${activeTargets.length} 个目标` : ''}`}
+            data-tip={`下架（${activeTargets.map((t) => label(t)).join('、')}）`}
             title="已发布目标需先下架，下架后才会出现删除按钮"
             onClick={() => onUnpublish(skill.id, skill.name, activeTargets)}
             className="tip-right inline-flex h-8 items-center justify-center rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
@@ -321,6 +328,7 @@ export default function SkillPool({
   onExport,
   onDeleteExport,
 }: SkillPoolProps) {
+  const {current} = useInstallTargets();
   const queuedBySkill = new Map<string, TargetKey[]>();
   for (const entry of queue) {
     queuedBySkill.set(entry.skillId, entry.targets);
@@ -361,7 +369,7 @@ export default function SkillPool({
         {groupCollections(allSkills, skills).map(collection => {
           // 按完整登记成员数判断，筛选为单个结果时仍保留原合集。
           if (collection.members.length === 1) return renderSkill(collection.visibleMembers[0]);
-          const stats = collectionStats(collection.members);
+          const stats = collectionStats(collection.members, current);
           const missingCache = collection.members.find(s => s.cache_missing);
           const selectable = collection.visibleMembers.filter(s => !s.cache_missing && !s.source_missing);
           const selectedMembers = collection.members.filter(s => selectedIds?.includes(s.id) && !s.cache_missing && !s.source_missing);
@@ -376,8 +384,8 @@ export default function SkillPool({
                     <span className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">
                       <CollectionIcon />{`合集 · ${collection.members.length} 项`}
                     </span>
-                    <span className={`text-xs font-medium ${stats.published.hermes === collection.members.length ? 'text-emerald-700' : 'text-slate-500'}`}>
-                      已安装 {stats.published.hermes}/{collection.members.length}
+                    <span className={`text-xs font-medium ${stats.published[current] === collection.members.length ? 'text-emerald-700' : 'text-slate-500'}`}>
+                      已安装 {stats.published[current]}/{collection.members.length}
                     </span>
                   </div>
                   <h3 className="truncate font-semibold text-slate-900" title={collection.name}>{collection.name}</h3>

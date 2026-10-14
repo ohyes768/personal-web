@@ -26,6 +26,10 @@ from src.models import CreateExportTarget, ExportTarget, RegistrySkill, UpdateEx
 DEFAULT_DB_FILENAME = "skill-manager.sqlite3"
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS install_target (
+    id TEXT PRIMARY KEY, provider TEXT NOT NULL DEFAULT 'hermes',
+    profile_name TEXT NOT NULL, name TEXT NOT NULL, last_root TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS state_migration (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS export_target (
     id TEXT PRIMARY KEY,
@@ -152,6 +156,12 @@ class SkillStateStore:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with closing(self._connect()) as conn, conn:
+            if conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='deployment'").fetchone() and not conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='install_target'").fetchone():
+                backup = self.db_path.with_name(self.db_path.name + '.before-hermes-profiles')
+                if backup.exists():
+                    raise RuntimeError('Profile migration backup already exists; inspect before retrying')
+                with sqlite3.connect(backup) as destination:
+                    conn.backup(destination)
             conn.executescript(_SCHEMA)
             _apply_column_migrations(conn)
             conn.execute("BEGIN IMMEDIATE")
@@ -163,6 +173,23 @@ class SkillStateStore:
                 )
                 conn.execute("INSERT INTO state_migration VALUES ('export_targets_v1')")
         self.retire_openclaw()
+
+    def sync_install_targets(self, targets, legacy_root=None) -> None:
+        with closing(self._connect()) as conn, conn:
+            conn.execute("BEGIN IMMEDIATE")
+            for target in targets:
+                root = str(target.skills_root.resolve())
+                previous = conn.execute("SELECT last_root FROM install_target WHERE id=?", (target.id,)).fetchone()
+                if not previous and target.id == 'hermes' and conn.execute("SELECT 1 FROM deployment WHERE target='hermes' AND status='active'").fetchone():
+                    if legacy_root is None or str(legacy_root.resolve()) != root:
+                        raise ValueError("legacy hermes has active installations; retain its original HERMES_SKILLS_ROOT")
+                if previous and previous["last_root"] != root and conn.execute("SELECT 1 FROM deployment WHERE target=? AND status='active'", (target.id,)).fetchone():
+                    raise ValueError(f"target {target.id} has active installations at {previous['last_root']}; restore its original root")
+                conn.execute("INSERT INTO install_target (id,profile_name,name,last_root) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET profile_name=excluded.profile_name,name=excluded.name,last_root=excluded.last_root", (target.id, target.profile_name, target.name, root))
+
+    def list_install_targets(self):
+        with closing(self._connect()) as conn:
+            return [dict(row) for row in conn.execute("SELECT * FROM install_target ORDER BY id")]
 
     def retire_openclaw(self) -> None:
         """Archive retired target rows before any typed deployment reads."""

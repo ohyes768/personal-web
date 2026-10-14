@@ -32,10 +32,10 @@ These guides help you **ask the right questions before coding**.
 | [New Service Onboarding Contract](./new-service-onboarding.md) | 新服务接入 monorepo 的 9 接入点契约（nginx 三件套、volume seed、纯前端无 BFF、NEXT_PUBLIC build args） | 新增/迁移任何一组前后端服务前必读 |
 | [Windows 测试环境契约](../backend/testing-environment.md) | Windows 开发机 pytest 硬约束（basetemp 重定向、requires_symlink marker、Windows/WSL 不共用 .pytest-tmp） | 在 Windows 上写/跑 Python 后端测试，或测试涉及 symlink/原子替换 |
 | [RSS Relay 渠道契约](../backend/rss-relay/backend/contracts.md) | 渠道管理持久化、独立 feed、旧推送兼容、网页对接示例 | 修改 RSS 中转推送、渠道管理或订阅入口 |
-| [Skill Manager GitHub 缓存生命周期](./skill-manager-github-cache.md) | 仓库共享缓存布局（repos/<owner>__<repo>）、staging 发布快照（rev12/保留 2 份）、启动迁移与自动重发布、批量登记部分成功语义、后台任务契约（202+轮询、`\r` 进度切行、.tmp 原子落地）、缓存缺失死锁与 Clone 端点、WinError 1314 / PurePosixPath 坑 | 排查"源不可用：source directory does not exist"，或改 skill-manager 克隆/发布/批量登记链路、任务管理器、前端轮询 UI |
+| [Skill Manager GitHub 缓存生命周期](./skill-manager-github-cache.md) | 仓库共享缓存布局（repos/<owner>__<repo>）、登记目录直链、多 profile 共享 HEAD、启动迁移与自动重发布、批量登记部分成功语义、后台任务契约（202+轮询、`\r` 进度切行、.tmp 原子落地）、缓存缺失死锁与 Clone 端点、WinError 1314 / PurePosixPath 坑 | 排查"源不可用：source directory does not exist"，或改 skill-manager 克隆/发布/批量登记链路、任务管理器、前端轮询 UI |
 | [桌面预览启动器（launch.json）的坑](./preview-launcher-quirks.md) | preview_start 二次拆分含空格引号参数、export 传不进 Windows 子进程；launch.json 写法约束 | 修改 .claude/launch.json 预览启动命令，或排查"进程起来但环境变量全丢" |
 | [Skill Manager 自研 Skill 登记与对账](./skill-manager-registry-sync.md) | 自研 Skill 的 sync_local() 对账契约、source_missing 语义、源库 sync 工具链废弃后的遗留状态 | 改 skill-manager 登记/列表流程，或排查"源缺失"徽章与 junction 兼容 |
-| [Skill Manager 前端契约](./skill-manager-frontend.md) | 两级导航 URL 契约（view/tab/agent、非法值回退）、GitHub 登记批量多选/共享资源预选交互、Next basePath 下 router.replace 双拼陷阱、本机 symlink 特权限制 | 改 skill-manager 前端导航/视图结构/登记对话框，或在本机验证发布链路 |
+| [Skill Manager 前端契约](./skill-manager-frontend.md) | 两级导航 URL 契约（view/tab/target、不可用目标保留）、GitHub 登记批量多选/多目标确认与精确失败重试、Next basePath 下 router.replace 双拼陷阱、本机 symlink 特权限制 | 改 skill-manager 前端导航/视图结构/登记对话框，或在本机验证发布链路 |
 | [Skill Manager 外部导出目标](./skill-manager-export-targets.md) | link/export 目标分类、ZIP 与哈希同源、台账迁移、stale 检测和启动重发布边界 | 修改目标/导出/台账/过期检测 |
 | [Housing-Map 小区准入契约](./housing-map-admission.md) | 采集/展示全量（is_real_community 只排道路伪小区）、轮廓按住宅口径、前端默认筛选住宅类、每周一 21:17 定时刷新（cron 时区/dow 陷阱、与手动刷新互斥） | 改小区可见性/刷新范围/定时任务，或排查"某小区数据没抓下来" |
 | [Housing-Map 法拍采集契约](./housing-map-auctions.md) | 来拍公开JSON来源、价格/状态口径、独立原子存储、CLI/API互斥及取消 | 修改法拍采集、查询或后续定时任务 |

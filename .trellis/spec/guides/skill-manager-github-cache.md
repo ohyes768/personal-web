@@ -164,8 +164,12 @@ skill-manager **不读源库任何登记文件**：自研 Skill 经 `sync_local(
 - shallow 缓存仍可通过原有 fetch/checkout 更新到后续 revision；不为了登记额外拉取历史。
 - 尚未登记或用户取消添加也保留扫描缓存，下一次扫描可复用；本变更不新增定时清理或删除仓库的脚本。
 
-## Hermes 单目标与确认版本
+## Hermes profile 与共享确认版本
 
 - 安装预览绑定仓库版本与候选路径到 plan_id；密码确认后才 fetch 到确认版本。检查更新不能静默改写已确认计划。
 - 已登记条目安装直接链接缓存登记目录；缓存缺失必须先准备缓存再生成新计划。更新任一成员的共享缓存，其他已安装直链成员同时读取新版本。
 - OpenClaw 不再作为管理目标；旧记录在启动时迁移到 retired_deployment 并备份，target=openclaw 永久停用。开发启动脚本只初始化 Hermes 目标目录。
+
+## 多 profile 共享缓存（2026-10-14）
+
+所有 Hermes profile 链接共用仓库 HEAD。安装来源状态按 Skill/仓库准备，目录身份和占位按 Skill/profile 保存。更新预览必须列出所有 active profile（包括未配置/不可达记录）；影响集合变化要求重新确认。启动迁移按 resolver 只处理可用、已记录目标，新增 profile 不自动建链。具体接口及失败恢复见 [profile contracts](../backend/skill-manager/backend/profiles.md)。

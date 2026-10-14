@@ -24,7 +24,8 @@ from pathlib import Path
 
 from src.config import Settings
 from src.db import HistoryEntry, SkillStateStore
-from src.models import LINK_TARGET_IDS, RegistrySkill, SkillSource, TargetKey
+from src.models import is_install_target, RegistrySkill, SkillSource
+from src.services.targets import TargetUnavailable
 from src.services.git_cache import GitCacheError, GitCacheService
 from src.services.publisher import (
     Publisher,
@@ -101,9 +102,9 @@ def republish_active_github_skills(
     for record in store.list_deployments():
         if record.status != "active":
             continue
-        if record.target not in LINK_TARGET_IDS:
+        if not is_install_target(record.target):
             continue
-        target = TargetKey(record.target)
+        target = record.target
         skill = registry.get(record.skill_id)
         if skill is None or skill.source is not SkillSource.GITHUB:
             continue
@@ -115,15 +116,15 @@ def republish_active_github_skills(
                 )
             revision = git_cache.current_revision(skill)
             source = resolve_github_source(settings, skill, repo_dir)
-            link = settings.hermes_skills_root / skill.id
+            link = publisher.targets.root(target) / skill.id
             if link.is_symlink() and link.resolve() == source:
                 continue
             publisher.publish(skill.id, target, source, revision)
-        except (PublisherError, GitCacheError, OSError) as exc:
+        except (PublisherError, GitCacheError, OSError, TargetUnavailable) as exc:
             store.append_history(
                 HistoryEntry(
                     skill_id=skill.id,
-                    target=target.value,
+                    target=str(target),
                     action="publish",
                     result="error",
                     previous_link_target=None,
@@ -136,7 +137,7 @@ def republish_active_github_skills(
             logger.warning(
                 "startup republish failed: skill=%s target=%s error=%s",
                 skill.id,
-                target.value,
+                str(target),
                 exc,
             )
             continue

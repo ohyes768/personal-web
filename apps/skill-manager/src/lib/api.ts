@@ -205,7 +205,7 @@ export function unpublishSkill(
   target: TargetKey,
   password: string
 ): Promise<UnpublishResponse> {
-  return request<UnpublishResponse>(`/${encodeURIComponent(skillId)}/targets/${target}`, {
+  return request<UnpublishResponse>(`/${encodeURIComponent(skillId)}/targets/${encodeURIComponent(target)}`, {
     method: 'DELETE',
     body: jsonBody({ password }),
   });
@@ -234,19 +234,24 @@ export function updateSkillTags(
   );
 }
 
+export const listInstallTargets = () => request<{items: import('./installTargets').InstallTarget[]}>('/install-targets');
+
 export interface InstallInput {
+  items?: {skill_id: string; targets: string[]}[];
+  target_ids?: string[];
   skill_ids?: string[];
   scan_task_id?: string;
-  candidates?: { path: string; name: string; tags: string[]; summary: string }[];
+  candidates?: { targets?: string[]; path: string; name: string; tags: string[]; summary: string }[];
   shared_paths?: string[];
 }
 export interface InstallPlan {
   plan_id: string;
-  items: { skill_id: string; name: string; path?: string; action: string; reason?: string; planned_revision?: string }[];
+  affected_installations?: {skill_id: string; name: string; target: string}[];
+  items: { skill_id: string; target: string; name: string; path?: string; action: string; reason?: string; planned_revision?: string }[];
 }
 export interface InstallTask {
   task_id: string; state: 'running' | 'done'; stage: string;
-  results: { skill_id: string; name: string; status: string; registered: boolean; error: string }[];
+  results: { skill_id: string; target: string; name: string; status: string; registered: boolean; error: string }[];
 }
 export const previewInstall = (input: InstallInput) => request<InstallPlan>('/install/preview', {method: 'POST', body: jsonBody(input)});
 export const executeInstall = (planId: string, requestId: string, password: string) => request<{task_id: string}>('/install', {method: 'POST', body: jsonBody({plan_id: planId, request_id: requestId, password})});

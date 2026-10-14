@@ -1,5 +1,6 @@
 'use client';
 
+import { useInstallTargets, installTargetLabel } from '@/lib/installTargets';
 import { useMemo, useState } from 'react';
 import type { TargetKey } from '@/lib/queue';
 import type { SkillCard } from '@/lib/types';
@@ -36,7 +37,9 @@ export default function DeployBoard({
   const [query, setQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | SkillCard['source']>('all');
   const [sort, setSort] = useState<'time' | 'name'>('time');
-  const agentLabel = 'Hermes';
+  const {targets} = useInstallTargets();
+  const agentLabel = installTargetLabel(targets, agent);
+  const unavailable = !targets.find(t => t.id === agent)?.available;
 
   const items = useMemo(() => {
     const deployed = skills
@@ -145,6 +148,7 @@ export default function DeployBoard({
           <button
             type="button"
             aria-label="下架"
+            disabled={unavailable}
             data-tip={`从 ${agentLabel} 下架`}
             onClick={() => onUnpublish(skill.id, skill.name, agent)}
             className="icon-btn tip-right icon-btn-danger rounded-md border border-rose-200"
@@ -160,7 +164,7 @@ export default function DeployBoard({
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">Hermes 安装</span>
+        <span className="text-sm font-medium">{agentLabel} 安装</span>
         <input
           type="search"
           value={query}
@@ -210,7 +214,8 @@ export default function DeployBoard({
                 {group.members.some(s => s.deployments[agent].link_missing) ? ' · 有链接缺失' : ''}
                 {group.visibleMembers.length !== group.members.length ? ` · 匹配 ${group.visibleMembers.length} 项` : ''}
               </p>
-              <button type="button" onClick={() => onUnpublishCollection(group.name, group.members, agent)}
+              <button type="button" disabled={unavailable}
+                      onClick={() => onUnpublishCollection(group.name, group.members, agent)}
                 className="mt-3 rounded border border-rose-200 px-3 py-1 text-xs text-rose-700 hover:bg-rose-50">
                 从 {agentLabel} 全部下架（{group.members.length} 项）
               </button>

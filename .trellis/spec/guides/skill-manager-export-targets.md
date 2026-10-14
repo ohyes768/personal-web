@@ -3,8 +3,8 @@
 ## Scope / Trigger
 
 修改目标枚举、部署台账、ZIP 导出或列表过期检测时必读。
-`models.LINK_TARGET_IDS` 为固定发布集合；导出目标配置来自 SQLite `export_target`。
-前端 `lib/targets.ts` 只保留固定 link 标签；动态导出名称由页面加载并下传。
+`models.is_install_target` 按 Hermes 命名空间分类；导出目标配置来自 SQLite `export_target`。动态 profile 契约见 [profile contracts](../backend/skill-manager/backend/profiles.md)。
+前端安装目标名单及名称来自 install-targets catalog；动态导出名称由导出配置列表加载并下传。安装目标不可用不阻止离线 ZIP 导出。
 `windows-codex/windows-claude` 是一次性迁移的默认导出配置，不是完整目标集合。
 
 ## Signatures
@@ -55,7 +55,7 @@ revision 尽力读取自研源库/缓存 HEAD，失败为空；UI 空 revision �
 ## Wrong vs Correct
 
 Wrong：循环每条 deployment 都调用 `_target_root()` 或启动重发布。
-Correct：先判断 `record.target in LINK_TARGET_IDS`，只有固定 link ID 才转 `TargetKey` 并检查/更新 symlink。
+Correct：先判断 `is_install_target(record.target)`，安装目标按配置 resolver 核对/更新；不可用的历史 profile 仍保留为安装记录。
 
 ## 动态目标管理（2026-10-10）
 

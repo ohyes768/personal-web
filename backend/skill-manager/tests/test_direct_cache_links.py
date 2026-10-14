@@ -74,7 +74,7 @@ def test_install_execution_passes_cached_subdirectory_to_publisher(context):
     s = skill()
     manager = InstallManager()
     preview = manager.preview([s], context.settings, context.registry, context.cache, context.publisher,
-        lambda s: _plan_one(context.settings, context.store, context.cache, context.publisher, s, TargetKey.HERMES))
+        lambda s, target: _plan_one(context.settings, context.store, context.cache, context.publisher, s, target))
     plan = manager.plans[preview['plan_id']]
     plan.task_id = 'unit-test'
     manager.tasks[plan.task_id] = {'results': []}
@@ -94,7 +94,7 @@ def test_member_removed_by_repository_update_does_not_fail_other_installs(contex
         remote_revision='v2', remote_tags='', cached_revision='v1', result='ok', error=None, checked_at='now'))
     manager = InstallManager()
     preview = manager.preview(members, context.settings, context.registry, context.cache, context.publisher,
-        lambda s: _plan_one(context.settings, context.store, context.cache, context.publisher, s, TargetKey.HERMES))
+        lambda s, target: _plan_one(context.settings, context.store, context.cache, context.publisher, s, target))
     plan = manager.plans[preview['plan_id']]
     plan.task_id = 'removed-member'
     manager.tasks[plan.task_id] = {'results': []}
@@ -122,7 +122,7 @@ def test_listing_refreshes_sibling_update_badges_from_current_cache_head(context
         context.store.upsert_github_check(GithubCheckRecord(skill_id=name, repository=str(s.repository),
             remote_revision='v2', remote_tags='', cached_revision='v1', result='ok', error=None, checked_at='now'))
     context.cache.current_revision.return_value = 'v2'
-    response = list_skills(context.registry, context.store, context.settings, context.cache)
+    response = list_skills(context.registry, context.store, context.settings, context.cache, context.publisher)
     assert all(not card.update.has_update and card.update.cached_revision == 'v2' for card in response.items)
     # A shared repository is inspected only once for this list response.
     context.cache.current_revision.assert_called_once()
@@ -136,7 +136,7 @@ def test_sibling_with_older_check_uses_latest_repository_check(context):
         context.store.upsert_github_check(GithubCheckRecord(skill_id=name, repository=str(s.repository),
             remote_revision=revision, remote_tags='', cached_revision='v1', result='ok', error=None, checked_at=checked))
     context.cache.current_revision.return_value = 'v2'
-    cards = list_skills(context.registry, context.store, context.settings, context.cache).items
+    cards = list_skills(context.registry, context.store, context.settings, context.cache, context.publisher).items
     assert all(card.update.remote_revision == 'v2' and not card.update.has_update for card in cards)
     assert {card.update.skill_id for card in cards} == {'alpha', 'beta'}
 
@@ -164,7 +164,7 @@ def test_retained_snapshot_link_is_stale_until_migrated(context):
     (old/'SKILL.md').write_text('old')
     context.publisher.publish(s.id, TargetKey.HERMES, old, 'v1')
     context.cache.current_revision.return_value = 'v2'
-    card = list_skills(context.registry, context.store, context.settings, context.cache).items[0]
+    card = list_skills(context.registry, context.store, context.settings, context.cache, context.publisher).items[0]
     assert card.deployments['hermes'].stale is True
     assert card.deployments['hermes'].revision == 'v1'
 

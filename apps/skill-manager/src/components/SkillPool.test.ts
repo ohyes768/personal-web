@@ -1,6 +1,7 @@
 import { isValidElement, type ComponentProps, type ReactElement, type ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+vi.mock('@/lib/installTargets', async original => ({...await original<typeof import('@/lib/installTargets')>(), useInstallTargets: () => ({current:'hermes',targets:[],error:'',loading:false})}));
 import SkillPool from './SkillPool';
 import type { SkillCard } from '@/lib/types';
 
