@@ -147,18 +147,16 @@ export default function SourceWorkspace({
       className="grid min-h-0 flex-1 grid-cols-1 gap-4 "
     >
       {/* 左：Skill 池 */}
-      <section className="flex min-h-0 flex-col gap-3 overflow-y-auto pr-1">
+      <section className="flex min-h-0 flex-col gap-3 overflow-hidden">
+        <div className="flex shrink-0 flex-col gap-3">
         <SkillFilters
           value={filters}
           allTags={allTags}
           onChange={setFilters}
           showUpdateFilter={source === 'github'}
         />
-        {source === 'github' ? <div className="flex flex-wrap items-center gap-2">
-          <button type="button" onClick={() => setSelectedIds(filteredSkills.filter(s => !s.cache_missing && !s.source_missing).map(s => s.id))} className="rounded border px-3 py-2 text-sm">选择当前结果</button>
-          <button type="button" onClick={() => setSelectedIds([])} className="rounded border px-3 py-2 text-sm">清空选择</button>
-          <button type="button" disabled={!selectedIds.length} onClick={() => setInstallIds(selectedIds)} className="rounded bg-sky-600 px-3 py-2 text-sm text-white disabled:opacity-40">安装到 Hermes（{selectedIds.length}）</button>
-        </div> : null}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         {loading ? (
           <p className="p-6 text-center text-sm text-slate-400">加载中…</p>
         ) : (
@@ -166,6 +164,7 @@ export default function SourceWorkspace({
             skills={filteredSkills}
             allSkills={skills}
             onAddCollection={handleAddCollection}
+            onInstallSelection={setInstallIds}
             onCheckCollection={(collection) => void onCheckUpdates?.(collection.members.map(s => s.id))}
             checkingUpdates={checkingUpdates}
             exportTargets={exportTargets}
@@ -184,6 +183,7 @@ export default function SourceWorkspace({
             }}
           />
         )}
+        </div>
       </section>
 
       {editingTagsSkill ? (
