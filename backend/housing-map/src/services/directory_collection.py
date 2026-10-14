@@ -4,6 +4,7 @@ import datetime as dt
 import logging
 import sqlite3
 import threading
+from types import SimpleNamespace
 
 from src.services.community_registry import now, dump
 
@@ -31,7 +32,15 @@ def tmsf_names(cancel, ignored, existing=None):
     existing = existing or {}
     client = TmsfClient()
     try:
-        for c in fetch_binjiang_communities():
+        discovered = list(fetch_binjiang_communities())
+        discovered_ids = {str(c.community_id) for c in discovered}
+        # Previously imported identities may disappear from the current name list.
+        for sid, previous in existing.items():
+            if previous.get('address_verification_pending') and sid not in discovered_ids:
+                discovered.append(SimpleNamespace(community_id=sid, community_name=previous['name'],
+                    community_alias='', district=previous.get('district'), subdistrict=previous.get('subdistrict', ''),
+                    source_url=previous.get('source_url')))
+        for c in discovered:
             check(cancel)
             if c.district != '滨江':
                 continue
@@ -39,14 +48,14 @@ def tmsf_names(cancel, ignored, existing=None):
                        name=c.community_name, aliases=[c.community_alias] if c.community_alias else [],
                        district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
             previous = existing.get(str(c.community_id), {})
-            for field in ('property_type', 'property_type_url', 'property_type_captured_at'):
-                if previous.get(field):
+            for field in ('property_type', 'property_type_url', 'property_type_captured_at', 'address', 'address_origin', 'address_checked_at', 'address_verification_pending'):
+                if field in previous:
                     row[field] = previous[field]
             # Publish the name before requesting details, including when cancelled later.
             yield {**row, '_stage': 'names'}
             if ignored('tmsf', 'community', c.community_id):
                 continue
-            if previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
+            if previous.get('address_checked_at') and not previous.get('address_verification_pending') and previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
                 try:
                     age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(previous['property_type_captured_at'])
                     if dt.timedelta(0) <= age < dt.timedelta(days=30):
@@ -61,7 +70,8 @@ def tmsf_names(cancel, ignored, existing=None):
             row.update(_stage='property_type', property_type_checked_at=now())
             try:
                 row.update(fetch_property_facts(client, c.community_id, [c.community_name, c.community_alias]))
-                row.update(property_type_captured_at=now(), property_type_error=None,
+                row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False,
+                           property_type_captured_at=now(), property_type_error=None,
                            _property_type_result='succeeded')
             except InterruptedError:
                 raise

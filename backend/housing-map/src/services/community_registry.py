@@ -152,6 +152,7 @@ class CommunityRegistry:
             item.update(community_name=name.strip(), aliases=list(dict.fromkeys(a.strip() for a in aliases if a.strip())), updated_at=now())
             if address is not None:
                 item['address'] = address
+                item['address_origin'] = 'manual'
             if district is not None:
                 item['district'] = district
             db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(item), cid))
@@ -230,12 +231,28 @@ class CommunityRegistry:
                     samples = {s['source_listing_id']: s for s in previous.get('samples', [])}
                     samples.update({s['source_listing_id']: s for s in record['samples']})
                     payload['samples'] = list(samples.values())
+                self._correct_source_address(db, row, record)
                 db.execute('UPDATE sources SET payload=? WHERE id=?', (dump(payload), rid))
             else:
                 db.execute('INSERT INTO sources(id,source,kind,sid,payload) VALUES (?,?,?,?,?)',
                            (rid, record['source'], kind, str(record['source_id']), dump(payload)))
         self.auto_associate(rid)
         return next(s for s in self.sources() if s['id'] == rid)
+
+    def _correct_source_address(self, db, row, record):
+        """Shared transactional correction; manual addresses remain authoritative."""
+        if record.get('address_origin') != 'source_detail' or not record.get('address_checked_at') or not row['cid']:
+            return
+        master_row = db.execute('SELECT payload FROM communities WHERE id=?', (row['cid'],)).fetchone()
+        if not master_row:
+            return
+        master = json.loads(master_row['payload'])
+        if master.get('address_origin') == 'legacy_geocoder' and master.get('address') == master.get('geographic_address'):
+            previous_address = master.get('address')
+            master.update(address=record.get('address') or '', address_origin='source_detail',
+                          address_checked_at=record['address_checked_at'])
+            db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(master), row['cid']))
+            self._event(db, row['cid'], 'address_corrected', {'record_id': row['id'], 'previous_address': previous_address, 'address': master['address']})
 
     def auto_associate(self, rid=None):
         count = 0

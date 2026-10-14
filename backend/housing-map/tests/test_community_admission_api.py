@@ -11,7 +11,7 @@ from src.services.community_directory import prepare_directory
 
 def test_admission_api_and_map_share_state_but_keep_collection_identity(tmp_path, monkeypatch):
     (tmp_path / 'binjiang_communities.json').write_text(json.dumps([
-        dict(community_id='100', community_name='江汉路小区', district='滨江')]), encoding='utf-8')
+        dict(community_id='100', community_name='江汉路小区', district='滨江', address='杭州市滨江区江汉路')]), encoding='utf-8')
     (tmp_path / 'property_types.json').write_text(json.dumps({'100': {'property_type': '住宅'}}))
     (tmp_path / 'binjiang_coordinates.json').write_text(json.dumps({'100': dict(
         longitude=120.207490, latitude=30.202261, formatted_address='杭州市滨江区江汉路')}))

@@ -19,6 +19,7 @@ def prepare_directory(data_dir):
     if ready:
         from src.services.community_admission import migrate_admission
         migrate_admission(store, data_dir)
+        mark_legacy_addresses(store, data_dir)
         return store
     # Backup existing editable files; startup never seeds/overwrites an established directory.
     backup = data_dir / 'directory-backup'
@@ -53,7 +54,7 @@ def prepare_directory(data_dir):
             cid = str(item['community_id'])
             coord = coords.get(cid, {})
             payload = {**item, 'aliases': [item['community_alias']] if item.get('community_alias') else [],
-                       'address': coord.get('formatted_address', ''), 'coordinate_system': 'gcj02',
+                       'address': item.get('address') or '', 'geographic_address': coord.get('formatted_address', ''), 'coordinate_system': 'gcj02',
                        'longitude': coord.get('longitude'), 'latitude': coord.get('latitude')}
             db.execute('INSERT OR IGNORE INTO communities(id,payload) VALUES (?,?)', (cid, dump(payload)))
             source_payload = {'source': 'tmsf', 'source_kind': 'community', 'source_id': cid,
@@ -112,3 +113,29 @@ def _import_fang(db, item, cid, status):
     db.execute("INSERT OR IGNORE INTO sources(id,source,kind,sid,payload,cid,status,method) VALUES (?,'fang','community',?,?,?,?,?)",
                (rid, sid, dump(payload), cid, status, 'manual' if cid else None))
     return rid
+
+
+def mark_legacy_addresses(store, data_dir):
+    """Mark only identifiable imported geocoder addresses; defer correction to verified fetches."""
+    coords = read(Path(data_dir) / 'binjiang_coordinates.json', {})
+    with store.db() as db:
+        if db.execute("SELECT 1 FROM meta WHERE key='source_address_provenance_v1'").fetchone():
+            return
+        for row in db.execute("SELECT * FROM sources WHERE source='tmsf' AND method='import'").fetchall():
+            source = json.loads(row['payload'])
+            coord = coords.get(row['sid'], {})
+            legacy = coord.get('formatted_address')
+            if not legacy or source.get('address') != legacy or source.get('address_checked_at'):
+                continue
+            source.update(address_origin='legacy_geocoder', address_verification_pending=True,
+                          geographic_address=legacy)
+            db.execute('UPDATE sources SET payload=? WHERE id=?', (dump(source), row['id']))
+            master_row = db.execute('SELECT payload FROM communities WHERE id=?', (row['cid'],)).fetchone()
+            if master_row:
+                master = json.loads(master_row['payload'])
+                manually_edited = db.execute("SELECT 1 FROM events WHERE cid=? AND action='edit' LIMIT 1", (row['cid'],)).fetchone()
+                if master.get('address') == legacy and master.get('address_origin') != 'manual' and not manually_edited:
+                    master.update(address_origin='legacy_geocoder', geographic_address=legacy)
+                    db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(master), row['cid']))
+            store._event(db, row['cid'], 'address_verification_pending', {'record_id': row['id'], 'legacy_address': legacy})
+        db.execute("INSERT INTO meta VALUES ('source_address_provenance_v1','1')")

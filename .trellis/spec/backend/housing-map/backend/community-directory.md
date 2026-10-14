@@ -33,6 +33,14 @@ Applies to community_registry.py, community_directory.py, directory_collection.p
 - Filter pipeline: scripts/filter_residential_communities.py consumes the classification report and writes binjiang_residential_communities.json / binjiang_pending_communities.json / binjiang_non_residential_communities.json. The import (prepare_directory) prefers the residential list and excludes the non_residential ids, while leaving sources for non_residential rows untouched. Original inputs are snapshotted to data/diagnostics/pre-residential/ before any rewrite.
 - New management Tab fetches independently of map/property filters; default district滨江, existing萧山 records remain selectable. Old header rental-management CTA navigates to this Tab.
 
+### Source address provenance
+- New imports keep `address=item.address` and `geographic_address=coordinates.formatted_address`; coordinates never seed a TMSF source address.
+- Prepared directories run idempotent `mark_legacy_addresses(store,data_dir)` using `meta.source_address_provenance_v1`. Only imported TMSF sources whose address exactly matches saved geocoder output and have no recorded detail check are marked `address_origin=legacy_geocoder,address_verification_pending=true`. Preserve current address until a successful detail response; no startup upstream calls.
+- TMSF details publish `address_origin=source_detail,address_checked_at,address_verification_pending=false` even for blank/暂无/未知. Type caches require address_checked_at and no verification pending. Marked identities absent from the name list are still retried. Failure/cancellation retains prior address and pending status, reports errors and retries next collection.
+- Verified detail ingestion atomically replaces only a matched master's marked legacy address that still equals geographic_address; manual edits set address_origin=manual and are preserved. Save address_corrected audit with previous address. IDs, decisions, associations and histories remain unchanged. Current address gate reevaluates after correction.
+- Good: legacy 襄七房 geocoder address → verified 暂无 → 不收录. Base: timeout → keep current record and retry. Bad: clear all addresses at startup or overwrite a manual address.
+- Tests: `test_address_provenance.py` asserts new import separation, once-only marking, failure retention, actual missing-address correction, manual protection and cache bypass. Malformed/upstream detail failures use existing partial_failed reports, never successful empty-address updates.
+
 ## 4. API / Validation & Error Matrix
 External /api/map/directory, backend /api/directory. Envelope success/data.
 - GET communities?q&district&deleted&residential_state&page&page_size → items,total,page; GET/PUT/DELETE communities/{cid}; POST .../restore and .../merge {community_id}. Manual community creation is no longer exposed; new entries only arrive via /directory/collection → CommunityRegistry.create_from_source.
