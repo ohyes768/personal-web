@@ -1,6 +1,5 @@
 'use client';
 
-import type { ReactNode } from 'react';
 import type { QueueEntry, TargetKey } from '@/lib/queue';
 import type { ExportTarget, SkillCard, TargetDeployment } from '@/lib/types';
 import { shortRepo } from '@/lib/format';
@@ -8,18 +7,12 @@ import { collectionStats, groupCollections, type SkillCollection } from '@/lib/c
 import { exportTargetLabel, LINK_TARGETS, TARGET_LABEL, type ExportTargetKey } from '@/lib/targets';
 import {
   DownloadIcon,
-  HermesIcon,
   PencilIcon,
   TrashIcon,
   UnlinkIcon,
 } from '@/components/icons';
 
 const ALL_TARGETS = LINK_TARGETS;
-
-/** target 队列 chip 的品牌语义色：Hermes=神使蓝。 */
-const TARGET_ICON: Record<TargetKey, { icon: ReactNode; hover: string }> = {
-  hermes: { icon: <HermesIcon />, hover: 'hover:text-sky-600' },
-};
 
 interface SkillPoolProps {
   exportTargets: ExportTarget[];
@@ -108,6 +101,10 @@ function SkillCardItem({
   const cacheMissing = skill.cache_missing;
   const sourceMissing = skill.source_missing;
   const publishBlocked = cacheMissing || sourceMissing;
+  const installed = skill.deployments.hermes?.status === 'active' && !skill.deployments.hermes.link_missing;
+  const exportEntries = Object.entries(skill.deployments).filter(
+    ([target, deployment]) => !LINK_TARGETS.includes(target as TargetKey) && deployment.status === 'active'
+  );
   const activeTargets = ALL_TARGETS.filter(
     (target) => skill.deployments[target]?.status === 'active'
   );
@@ -124,7 +121,10 @@ function SkillCardItem({
       {skill.source === 'github' && onSelect && <label className="mb-2 text-xs text-slate-600"><input type="checkbox" checked={!!selected} disabled={publishBlocked} onChange={e => onSelect(e.target.checked)} /> 选择 {skill.name}</label>}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <h3 className="min-w-0 truncate font-medium text-slate-800" title={skill.name}>{skill.name}</h3>
+            <InstallationBadge deployment={skill.deployments.hermes} />
+          </div>
           {subtitle ? (
             <p className="truncate text-xs text-slate-400" title={subtitle}>
               {subtitle}
@@ -187,14 +187,11 @@ function SkillCardItem({
         </button>
       )}
 
-      {/* Hermes 安装状态与外部导出记录 */}
-      <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-        <InstallationBadge deployment={skill.deployments.hermes} />
-        {Object.keys(skill.deployments).filter((target) => !LINK_TARGETS.includes(target as TargetKey)).map((target) => {
+      {/* 有外部导出记录时才占用额外一行 */}
+      {exportEntries.length > 0 ? <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
+        {exportEntries.map(([target, deployment]) => {
           const config = exportTargets.find((item) => item.id === target);
           const label = exportTargetLabel(exportTargets, target);
-          const deployment = skill.deployments[target];
-          if (!deployment || deployment.status !== 'active') return null;
           return <div key={target} className="flex items-center gap-1 text-xs">
             <button type="button" disabled={publishBlocked || !config?.enabled} onClick={() => onExport(skill, target)} title="点击重新导出" className={`min-w-0 flex-1 rounded px-1.5 py-1 text-left ${deployment.stale ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
               {label}{!config?.enabled ? '（已停用）' : ''} · {(deployment.revision || deployment.content_hash)?.slice(0, 7) || '未知版本'} · {deployment.published_at.slice(5, 10)} · {deployment.stale ? '● 源已更新' : '最新'}
@@ -202,19 +199,18 @@ function SkillCardItem({
             <button type="button" aria-label={`清除 ${label} 导出记录`} onClick={() => onDeleteExport(skill, target)} className="icon-btn rounded border border-slate-200"><TrashIcon /></button>
           </div>;
         })}
-      </div>
+      </div> : null}
 
-      {/* 加入队列：target 图标 chip，点击即切换入队/出队（贴卡片底部） */}
+      {/* 安装为文字主按钮，其余操作保留图标 */}
       <div className="mt-auto flex items-center gap-2 border-t border-slate-100 pt-2">
         <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="选择目标并导出 ZIP" disabled={publishBlocked} onClick={() => onExport(skill)} className="icon-btn rounded-md border border-slate-300"><DownloadIcon /></button>
         {ALL_TARGETS.map((target) => {
           const queued = queuedTargets.includes(target);
-          const { icon, hover } = TARGET_ICON[target];
           return (
             <button
               key={target}
               type="button"
-              aria-label={`${TARGET_LABEL[target]} ${queued ? '安装到 Hermes' : '安装到 Hermes'}`}
+              aria-label={`${installed ? '更新' : '安装'} ${skill.name}`}
               data-tip={
                 publishBlocked
                   ? sourceMissing
@@ -235,13 +231,13 @@ function SkillCardItem({
               }
               disabled={publishBlocked}
               onClick={() => onToggleQueueTarget(skill.id, target)}
-              className={`icon-btn tip-left rounded-md border transition-colors ${
+              className={`ml-auto inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
                 queued
                   ? 'border-emerald-500 bg-emerald-500 text-white'
-                  : `border-slate-300 bg-white ${hover}`
+                  : 'border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700'
               }`}
             >
-              {icon}<span className="ml-1 text-xs">{skill.deployments.hermes?.status === 'active' ? '更新' : '安装'}</span>
+              {installed ? '更新' : '安装'}
             </button>
           );
         })}

@@ -3,14 +3,14 @@
 export interface FilterState {
   query: string;
   tags: string[];
-  deployment: 'installed' | 'uninstalled';
+  deployment: 'all' | 'installed' | 'uninstalled';
   update: 'all' | 'has_update' | 'no_update';
 }
 
 export const DEFAULT_FILTERS: FilterState = {
   query: '',
   tags: [],
-  deployment: 'installed',
+  deployment: 'all',
   update: 'all',
 };
 
@@ -60,6 +60,7 @@ export default function SkillFilters({
           className={SELECT_CLASS}
           aria-label="安装状态筛选"
         >
+          <option value="all">全部</option>
           <option value="installed">已安装</option>
           <option value="uninstalled">未安装</option>
         </select>

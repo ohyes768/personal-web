@@ -48,7 +48,7 @@ function applyFilters(skills: SkillCard[], filters: FilterState): SkillCard[] {
     // Hermes 安装记录有效且链接存在才算已安装；下架和链接缺失归入未安装。
     const deployment = skill.deployments.hermes;
     const installed = deployment?.status === 'active' && !deployment.link_missing;
-    if ((filters.deployment === 'installed') !== installed) {
+    if (filters.deployment !== 'all' && (filters.deployment === 'installed') !== installed) {
       return false;
     }
     if (filters.update === 'has_update' && !skill.update?.has_update) {
