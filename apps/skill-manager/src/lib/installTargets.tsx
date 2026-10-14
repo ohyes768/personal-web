@@ -11,6 +11,11 @@ export interface InstallTarget {
   configured: boolean;
   available: boolean;
   unavailable_reason: string;
+  editable?: boolean;
+  deletable?: boolean;
+  removed?: boolean;
+  active_installation_count?: number;
+  config_revision?: number;
 }
 export const InstallTargetsContext = createContext<{
   current: LinkTargetKey; targets: InstallTarget[]; error: string; loading: boolean;

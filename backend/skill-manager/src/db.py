@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS install_target (
     id TEXT PRIMARY KEY, provider TEXT NOT NULL DEFAULT 'hermes',
     profile_name TEXT NOT NULL, name TEXT NOT NULL, last_root TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS target_config_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT, target TEXT NOT NULL,
+    action TEXT NOT NULL, previous TEXT NOT NULL, current TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS state_migration (id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS export_target (
     id TEXT PRIMARY KEY,
@@ -97,6 +102,11 @@ CREATE TABLE IF NOT EXISTS registry_skill (
 # 列级迁移（2026-09-30 批量登记任务）：CREATE TABLE IF NOT EXISTS 不会给
 # 旧库补新列，启动时按 PRAGMA 检测缺列则 ALTER TABLE ADD COLUMN（幂等）
 _COLUMN_MIGRATIONS: dict[str, list[str]] = {
+    "install_target": [
+        "ALTER TABLE install_target ADD COLUMN managed INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE install_target ADD COLUMN removed_at TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE install_target ADD COLUMN config_revision INTEGER NOT NULL DEFAULT 1",
+    ],
     "deployment": [
         "ALTER TABLE deployment ADD COLUMN content_hash TEXT NOT NULL DEFAULT ''",
     ],
@@ -162,6 +172,13 @@ class SkillStateStore:
                     raise RuntimeError('Profile migration backup already exists; inspect before retrying')
                 with sqlite3.connect(backup) as destination:
                     conn.backup(destination)
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(install_target)")}
+            if columns and 'managed' not in columns:
+                backup = self.db_path.with_name(self.db_path.name + '.before-target-ui')
+                if backup.exists():
+                    raise RuntimeError('Target UI backup already exists; inspect before retrying')
+                with sqlite3.connect(backup) as destination:
+                    conn.backup(destination)
             conn.executescript(_SCHEMA)
             _apply_column_migrations(conn)
             conn.execute("BEGIN IMMEDIATE")
@@ -176,20 +193,82 @@ class SkillStateStore:
 
     def sync_install_targets(self, targets, legacy_root=None) -> None:
         with closing(self._connect()) as conn, conn:
-            conn.execute("BEGIN IMMEDIATE")
-            for target in targets:
-                root = str(target.skills_root.resolve())
-                previous = conn.execute("SELECT last_root FROM install_target WHERE id=?", (target.id,)).fetchone()
-                if not previous and target.id == 'hermes' and conn.execute("SELECT 1 FROM deployment WHERE target='hermes' AND status='active'").fetchone():
-                    if legacy_root is None or str(legacy_root.resolve()) != root:
-                        raise ValueError("legacy hermes has active installations; retain its original HERMES_SKILLS_ROOT")
-                if previous and previous["last_root"] != root and conn.execute("SELECT 1 FROM deployment WHERE target=? AND status='active'", (target.id,)).fetchone():
-                    raise ValueError(f"target {target.id} has active installations at {previous['last_root']}; restore its original root")
-                conn.execute("INSERT INTO install_target (id,profile_name,name,last_root) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET profile_name=excluded.profile_name,name=excluded.name,last_root=excluded.last_root", (target.id, target.profile_name, target.name, root))
+            conn.execute('BEGIN IMMEDIATE')
+            self._sync_install_targets(conn,targets,legacy_root)
+
+    @staticmethod
+    def _sync_install_targets(conn,targets,legacy_root):
+        for target in targets:
+            root = str(target.skills_root.resolve())
+            previous = conn.execute("SELECT last_root FROM install_target WHERE id=?", (target.id,)).fetchone()
+            if not previous and target.id == 'hermes' and conn.execute("SELECT 1 FROM deployment WHERE target='hermes' AND status='active'").fetchone():
+                if legacy_root is None or str(legacy_root.resolve()) != root:
+                    raise ValueError("legacy hermes has active installations; retain its original HERMES_SKILLS_ROOT")
+            if previous and previous["last_root"] != root and conn.execute("SELECT 1 FROM deployment WHERE target=? AND status='active'", (target.id,)).fetchone():
+                raise ValueError(f"target {target.id} has active installations at {previous['last_root']}; restore its original root")
+            conn.execute("INSERT INTO install_target (id,profile_name,name,last_root) VALUES (?,?,?,?) ON CONFLICT(id) DO UPDATE SET profile_name=excluded.profile_name,name=excluded.name,last_root=excluded.last_root", (target.id, target.profile_name, target.name, root))
+
 
     def list_install_targets(self):
         with closing(self._connect()) as conn:
             return [dict(row) for row in conn.execute("SELECT * FROM install_target ORDER BY id")]
+
+    def get_install_target(self, target):
+        return next((row for row in self.list_install_targets() if row['id'] == target), None)
+
+    def initialize_install_targets(self, targets, authorized_ids, legacy_root):
+        with closing(self._connect()) as conn, conn:
+            conn.execute('BEGIN IMMEDIATE')
+            if conn.execute("SELECT 1 FROM state_migration WHERE id='install_targets_ui_v1'").fetchone():
+                return
+            self._sync_install_targets(conn,targets,legacy_root)
+            for target in authorized_ids:
+                conn.execute('UPDATE install_target SET managed=1 WHERE id=?', (target,))
+            conn.execute("INSERT INTO state_migration VALUES ('install_targets_ui_v1')")
+
+    @staticmethod
+    def _target_audit(conn, target, action, previous, current):
+        conn.execute('INSERT INTO target_config_history (target,action,previous,current,created_at) VALUES (?,?,?,?,?)',
+            (target, action, json.dumps(previous, ensure_ascii=False), json.dumps(current, ensure_ascii=False), datetime.now(UTC).isoformat()))
+
+    def create_install_target(self, target, profile_name, name, root):
+        with closing(self._connect()) as conn, conn:
+            conn.execute('BEGIN IMMEDIATE')
+            previous = conn.execute('SELECT * FROM install_target WHERE profile_name=? OR last_root=? OR id=?', (profile_name, root, target)).fetchone()
+            if previous:
+                previous = dict(previous)
+                if previous['last_root'] != root or previous['profile_name'] != profile_name:
+                    raise ValueError('target_identity_conflict')
+                if previous['managed'] and not previous['removed_at']:
+                    raise ValueError('target_exists')
+                if conn.execute("SELECT 1 FROM deployment WHERE target=? AND status='active'", (previous['id'],)).fetchone():
+                    raise ValueError('target_in_use')
+                target = previous['id']
+                conn.execute("UPDATE install_target SET managed=1,removed_at='',name=?,config_revision=config_revision+1 WHERE id=?", (name, target))
+            else:
+                conn.execute('INSERT INTO install_target (id,profile_name,name,last_root,managed) VALUES (?,?,?,?,1)', (target,profile_name,name,root))
+            current = dict(conn.execute('SELECT * FROM install_target WHERE id=?', (target,)).fetchone())
+            self._target_audit(conn,target,'restore' if previous else 'create',previous,current)
+            return current
+
+    def mutate_install_target(self, target, revision, name=None):
+        with closing(self._connect()) as conn, conn:
+            conn.execute('BEGIN IMMEDIATE')
+            row = conn.execute('SELECT * FROM install_target WHERE id=?', (target,)).fetchone()
+            if not row or not row['managed'] or row['removed_at']:
+                raise ValueError('target_not_found')
+            previous = dict(row)
+            if row['config_revision'] != revision:
+                raise ValueError('target_changed')
+            if name is None:
+                if conn.execute("SELECT 1 FROM deployment WHERE target=? AND status='active'", (target,)).fetchone():
+                    raise ValueError('target_in_use')
+                conn.execute('UPDATE install_target SET removed_at=?,config_revision=config_revision+1 WHERE id=?', (datetime.now(UTC).isoformat(),target))
+            else:
+                conn.execute('UPDATE install_target SET name=?,config_revision=config_revision+1 WHERE id=?', (name,target))
+            current = dict(conn.execute('SELECT * FROM install_target WHERE id=?', (target,)).fetchone())
+            self._target_audit(conn,target,'delete' if name is None else 'rename',previous,current)
+            return current
 
     def retire_openclaw(self) -> None:
         """Archive retired target rows before any typed deployment reads."""

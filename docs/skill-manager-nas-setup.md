@@ -47,7 +47,8 @@ mkdir -p ~/skill-manager/github-cache ~/skill-manager/state
 目录属主须为运行 `docker compose` 的用户（后端容器以该 uid 通过 bind mount 读写）。`HERMES_SKILLS_HOST_PATH` 指向 NAS 上 Hermes 实际生效的技能目录，须真实存在：
 
 ```bash
-mkdir -p ~/hermes/skills   # 按实际部署路径调整
+ls -ld /home/ohyes768/.hermes/skills /home/ohyes768/.hermes/profiles
+# 使用已有 Hermes 目录；bind mount 不自动创建宿主目录。
 ```
 
 ### 3. 在 .env 中填写变量（.env 已被 .gitignore 忽略，勿提交）
@@ -56,10 +57,11 @@ mkdir -p ~/hermes/skills   # 按实际部署路径调整
 |---|---|
 | `SKILLS_SOURCE_HOST_PATH` | NAS 上 `ohyes768/skills` clone 的绝对路径 |
 | `GITHUB_SKILL_CACHE_HOST_PATH` | GitHub 仓库缓存目录的绝对路径 |
-| `HERMES_SKILLS_HOST_PATH` | Hermes 生效技能目录的绝对路径 |
+| `HERMES_SKILLS_HOST_PATH` | 默认 skills 的绝对路径；缺省 `/home/ohyes768/.hermes/skills`，存量配置保持原值 |
+| `HERMES_PROFILES_HOST_PATH` | profiles 父目录的绝对路径；缺省 `/home/ohyes768/.hermes/profiles` |
 | `SKILL_MANAGER_ADMIN_PASSWORD` | 管理密码。发布/下架/回滚/登记时在确认窗口输入；缺失时 compose 拒绝启动后端 |
 
-四个 `*_HOST_PATH` 以读写方式 bind mount 进后端容器，容器内路径与宿主机路径完全一致（同路径挂载）——发布的 symlink target 是宿主机真实路径，宿主机上的 Agent 可直接解析。除此之外后端没有其他挂载，也没有 docker.sock。
+源库、缓存、默认 skills 和 profiles 父目录以读写方式同路径 bind mount 进后端容器，发布的 symlink target 在宿主机同样可解析。2026-10-14 用户确认一次性挂载 profiles 父目录，新增 profile 不再逐项增加挂载；容器因此也能访问父目录内其他 profile 文件，应用功能仅管理 skills。容器没有 docker.sock。
 
 登记/删除不再产生任何 git 操作；源库无需配置任何写凭据。
 
@@ -185,16 +187,17 @@ python scripts/cleanup_retired_target.py --db /path/skill-manager.sqlite3 --root
 
 `hermes` 是存量安装身份，始终沿用原 `HERMES_SKILLS_HOST_PATH`，不要因显示名改为“默认环境”就挪目录。上线前核对它实际对应的 Hermes 环境。新增 profile 不会自动获得任何安装。
 
-服务配置 `SKILL_MANAGER_HERMES_TARGETS` 是 JSON 数组，路径必须是实际绝对路径。下面 `/home/user` 仅是占位，需换成 NAS 用户 home：
+升级前已有的 `SKILL_MANAGER_HERMES_TARGETS` JSON 仅用于首次受信任导入；升级后 profile 配置由管理台 SQLite 持久保存，后续新增、改名和删除通过“安装目标”页完成。下面使用已确认的 NAS 用户路径；其他部署按实际 home 调整：
 
 ```dotenv
-HERMES_OHYES768_SKILLS_HOST_PATH=/home/user/.hermes/profiles/ohyes768/skills
-SKILL_MANAGER_HERMES_TARGETS='[{"id":"hermes","name":"默认环境","profile_name":"default","skills_root":"/home/user/.hermes/skills"},{"id":"hermes:profile:ohyes768","name":"ohyes768","profile_name":"ohyes768","skills_root":"/home/user/.hermes/profiles/ohyes768/skills"}]'
+HERMES_SKILLS_HOST_PATH=/home/ohyes768/.hermes/skills
+HERMES_PROFILES_HOST_PATH=/home/ohyes768/.hermes/profiles
+SKILL_MANAGER_HERMES_TARGETS='[{"id":"hermes","name":"默认环境","profile_name":"default","skills_root":"/home/ohyes768/.hermes/skills"},{"id":"hermes:profile:ohyes768","name":"ohyes768","profile_name":"ohyes768","skills_root":"/home/ohyes768/.hermes/profiles/ohyes768/skills"}]'
 ```
 
-未设置 JSON 时兼容旧 `HERMES_SKILLS_ROOT` 单目标；设置后以数组为准。新增第三个目标同样增加 `hermes:profile:<slug>` 配置，无需改业务源码。ID 创建后保持稳定，名称可修改。
+默认 `hermes` 使用原 `HERMES_SKILLS_ROOT`，网页只读，不可改目录或删除。首次迁移保留旧 named profile ID；新目标由服务端生成身份，页面只选择已有 profile 并填写显示名称。之后 env 不覆盖网页改名，也不复活已删除目标。
 
-每个 profile 的 skills 必须同路径挂入管理容器。复制 `deploy/docker-compose.skill-manager-profiles.example.yml` 作为 override，修改实际路径和环境变量，用两个 compose 文件启动。增加其他 profile 时增加各自 skills-only bind mount；不要挂载整个 `.hermes`、profile home 或凭据目录。缺失目录不自动创建，目标只显示不可用，其他目标与 ZIP 导出仍可用。
+`docker-compose.nas.yml` 已默认同路径挂载 `/home/ohyes768/.hermes/skills` 和 `/home/ohyes768/.hermes/profiles`，无需额外 override。需要其他 home 时设置上述两个 HOST_PATH。profiles 父目录下新增环境无需修改 Docker 挂载；不要把整个 `.hermes` 挂入容器。首次启用新挂载需重建后端容器；两个宿主目录必须已存在，否则启动明确失败，不自动创建空目录。后端 `SKILL_MANAGER_HERMES_PROFILES_ROOT` 与 profiles 挂载源/目标使用同一环境变量。挂载本身不登记目标或自动安装 Skill。
 
 管理和部署看板共用当前 profile，URL `target` 保存选择。安装弹窗默认只选当前目标，可勾选多个目标；预览逐 Skill/profile 显示结果。密码确认一次，部分失败只重试失败组合；下架仅移除所选 profile 的受管链接。
 
@@ -205,3 +208,13 @@ SKILL_MANAGER_HERMES_TARGETS='[{"id":"hermes","name":"默认环境","profile_nam
 升级前备份 SQLite；首次旧库追加 install_target 表时自动创建 `.before-hermes-profiles` 备份。先上线后端兼容接口，再上线前端。后端回退必须恢复升级前数据库和配置，旧单目标后端不能安全读取包含 profile 的新台账。已创建的链接需要继续保留源和缓存挂载。
 
 部署验收另行执行：记录实际 Hermes 版本和各 profile home，在两个环境各发现并读取同一 Skill；核对源路径可达、运行权限和同名 Skill 遮蔽。管理台显示安装成功只表示已验证目标链接，不表示完成 Hermes 运行验收。本任务不操作真实 NAS。
+
+### 网页维护 profile 安装目标
+
+打开“安装目标”页 → “新增 profile 目标” → 选择已存在且 skills 子目录可用的环境 → 填写显示名称 → 管理密码确认。保存后立即出现在管理/部署选择器和安装弹窗，不需要修改 `.env`、Docker 挂载或重启。
+
+默认行固定只读。profile 目标仅能改显示名称，不能换 ID、profile 或目录；改变实际环境应先下架后移除旧目标，再登记另一环境。active 安装即使链接缺失/目录不可达也阻止删除；弹窗提供进入对应部署看板下架的入口。没有 active 后可密码确认移除配置，磁盘目录、源 Skill 和历史保留。再次登记同一 profile 恢复原身份。
+
+候选发现只检查 profiles 直接子目录的 skills；目录缺失/无权限/符号链接重定向会提示不可用，不创建 Hermes profile 或 skills 目录，不读取 auth/config/.env。原 configured named 目标在授权父根外的，保留异常台账且不自动迁移；未配置父根的旧部署仅保留明确配置的旧安装操作，网页新增不可用。
+
+旧库 UI schema 升级前创建 `.before-target-ui` 备份，一次性导入只信任当时明确配置的目标，不给历史 catalog 路径恢复权限。父目录授权、默认目录变动或目标配置版本变化要求重新预览；并发安装/删除被同一操作锁和数据库事务保护。回退到旧后端必须恢复升级前备份与旧配置，不能让旧 env sync 覆盖新持久设置。

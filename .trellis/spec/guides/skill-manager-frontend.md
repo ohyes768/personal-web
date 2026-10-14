@@ -88,3 +88,7 @@
 - InstallDialog 捕获打开时当前目标，默认单选，可勾选多个可用目标并重取预览。目标变化立即清旧计划，cleanup 忽略旧响应；结果按 skill_id/target 组合显示。catalog 加载失败不得确认安装。
 - 已登记失败项重试发送 items 精确组合；扫描候选失败项保留 scan_task_id/path，并附 candidate.targets 精确失败组合，已登记候选由服务端复用身份。成功组合不重试。
 - 共享更新影响列表含本次未选 profile；Clone 同样展示已安装的共享成员/目标。安装成功仅验证链接，真实 Hermes 发现另做部署验收。
+
+## 网页安装目标管理
+
+`view=install-targets` 与原 ZIP `view=targets` 分开。默认行只读，named profile新增/改名/删除由密码确认，active删除只提示并跳当前target部署看板。候选选择不输入任意路径。catalog removed行保留管理页历史摘要，选择器和安装弹窗排除removed；当前URL被删后保留未知提示，不自动换目标。CRUD成功刷新catalog，异步候选发现使用generation/mounted避免旧响应；revision冲突需刷新/重新打开确认，不保留密码。

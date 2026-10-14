@@ -53,6 +53,31 @@ class InstallTarget(BaseModel):
     configured: bool
     available: bool
     unavailable_reason: str = ""
+    editable: bool = False
+    deletable: bool = False
+    removed: bool = False
+    active_installation_count: int = 0
+    config_revision: int = 1
+
+
+class CreateInstallTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    profile_name: str = Field(min_length=1, max_length=100)
+    name: str = Field(min_length=1, max_length=100)
+    password: str
+
+
+class RenameInstallTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=100)
+    expected_revision: int = Field(ge=1)
+    password: str
+
+
+class RemoveInstallTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_revision: int = Field(ge=1)
+    password: str
 
 
 def target_kind(target: str) -> TargetKind:

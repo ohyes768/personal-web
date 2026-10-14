@@ -1,0 +1,42 @@
+{
+  "id": "skill-manager-profile-ui",
+  "name": "skill-manager-profile-ui",
+  "title": "Skill Manager 界面管理 Hermes profile 安装目标",
+  "description": "将 profile 安装目标登记与维护搬到界面，规划持久配置、路径授权、存量迁移与安装台账保护。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "skill-manager",
+  "package": null,
+  "priority": "P2",
+  "creator": "tang",
+  "assignee": "tang",
+  "createdAt": "2026-10-14",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "用户批准实施。网页 profile 新增/改名/删除、默认只读、active 删除保护、一次性 seed/持久化/live resolver 与父挂载全部实现验证；待最终提交确认，无真实 NAS 部署。",
+  "meta": {
+    "profile_addition": "web_only_after_initial_setup",
+    "deployment_model": "same_path_profiles_parent_mount",
+    "mount_prerequisite": "validated_local_compose_config",
+    "planning_status": "approved",
+    "target_delete_policy": "block_while_active",
+    "implementation_status": "verified_awaiting_commit",
+    "verification": {
+      "backend_passed": 275,
+      "frontend_passed": 52,
+      "typecheck": "passed",
+      "lint": "passed",
+      "build": "passed",
+      "browser": "real_temporary_backend_passed",
+      "nas": "not_run"
+    }
+  }
+}

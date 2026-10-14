@@ -256,3 +256,9 @@ export interface InstallTask {
 export const previewInstall = (input: InstallInput) => request<InstallPlan>('/install/preview', {method: 'POST', body: jsonBody(input)});
 export const executeInstall = (planId: string, requestId: string, password: string) => request<{task_id: string}>('/install', {method: 'POST', body: jsonBody({plan_id: planId, request_id: requestId, password})});
 export const getInstallTask = (id: string) => request<InstallTask>(`/install/tasks/${encodeURIComponent(id)}`);
+
+export interface ProfileCandidate {profile_name: string; skills_path: string; available: boolean; unavailable_reason: string; existing_target_id: string | null}
+export const listProfileCandidates = () => request<{items: ProfileCandidate[]}>('/install-targets/profiles');
+export const createInstallTarget = (profile_name: string, name: string, password: string) => request<import('./installTargets').InstallTarget>('/install-targets', {method:'POST',body:jsonBody({profile_name,name,password})});
+export const renameInstallTarget = (id: string, name: string, expected_revision: number, password: string) => request<import('./installTargets').InstallTarget>(`/install-targets/${encodeURIComponent(id)}`, {method:'PATCH',body:jsonBody({name,expected_revision,password})});
+export const removeInstallTarget = (id: string, expected_revision: number, password: string) => request(`/install-targets/${encodeURIComponent(id)}`, {method:'DELETE',body:jsonBody({expected_revision,password})});

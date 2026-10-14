@@ -87,7 +87,7 @@ from src.services.exporting import build_zip, content_hash, dir_hash, snapshot_f
 from src.services.operation_lock import operation_lock
 from src.services.registry import RegistryService, RegistryValidationError
 from src.services.task_manager import GithubTaskManager
-from src.services.targets import TargetUnavailable
+from src.services.targets import TargetUnavailable, TargetConfigError
 
 router = APIRouter(prefix="/api")
 
@@ -102,6 +102,57 @@ _ID_RE = re.compile(SKILL_ID_PATTERN)
 @router.get("/skills/install-targets")
 def install_targets(publisher: Publisher = Depends(get_publisher)):
     return {"items": publisher.targets.catalog()}
+
+
+# Target writes share the installation lock, and DB methods recheck inside transactions.
+from src.models import CreateInstallTarget, RenameInstallTarget, RemoveInstallTarget
+
+
+def _target_config_response(action, target=None, store=None):
+    try:
+        return action()
+    except TargetConfigError as exc:
+        raise HTTPException(400 if exc.code != 'target_not_found' else 404, detail={"code":exc.code,"message":str(exc)}) from exc
+    except (TargetUnavailable,OSError,RuntimeError) as exc:
+        raise HTTPException(400,detail={"code":"target_unavailable","message":str(exc)}) from exc
+    except ValueError as exc:
+        code = str(exc)
+        messages = {"target_exists":"此 profile 已登记", "target_changed":"目标已变化，请刷新后重试", "target_in_use":"此目标仍有已安装 Skill，请先下架", "target_identity_conflict":"目标身份或目录冲突，请保留原映射", "target_not_found":"目标不存在"}
+        detail = {"code":code,"message":messages.get(code,code)}
+        if code=='target_in_use' and target and store:
+            active = [r.skill_id for r in store.list_deployments() if r.target==target and r.status=='active']
+            detail.update(active_installation_count=len(active),skill_ids=active)
+        raise HTTPException(404 if code=='target_not_found' else 409,detail=detail) from exc
+
+
+@router.get('/skills/install-targets/profiles')
+def available_profiles(publisher: Publisher = Depends(get_publisher)):
+    with operation_lock:
+        return {"items":_target_config_response(publisher.targets.profiles)}
+
+
+@router.post('/skills/install-targets', status_code=201)
+def create_install_target(req: CreateInstallTarget, settings: Settings = Depends(get_settings), publisher: Publisher = Depends(get_publisher)):
+    ensure_admin_password(settings,req.password)
+    with operation_lock:
+        row = _target_config_response(lambda: publisher.targets.create(req.profile_name,req.name))
+        return next(item for item in publisher.targets.catalog() if item.id==row['id'])
+
+
+@router.patch('/skills/install-targets/{target}')
+def rename_install_target(target: str, req: RenameInstallTarget, settings: Settings = Depends(get_settings), publisher: Publisher = Depends(get_publisher)):
+    ensure_admin_password(settings,req.password)
+    with operation_lock:
+        _target_config_response(lambda: publisher.targets.mutate(target,req.expected_revision,req.name),target,publisher.store)
+        return next(item for item in publisher.targets.catalog() if item.id==target)
+
+
+@router.delete('/skills/install-targets/{target}')
+def remove_install_target(target: str, req: RemoveInstallTarget, settings: Settings = Depends(get_settings), publisher: Publisher = Depends(get_publisher)):
+    ensure_admin_password(settings,req.password)
+    with operation_lock:
+        _target_config_response(lambda: publisher.targets.mutate(target,req.expected_revision),target,publisher.store)
+        return {"id":target,"status":"removed"}
 
 
 @router.get("/skills", response_model=SkillListResponse)

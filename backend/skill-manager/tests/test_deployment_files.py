@@ -14,13 +14,14 @@ COMPOSE_FILE = REPO_ROOT / "docker-compose.nas.yml"
 NGINX_CONF = REPO_ROOT / "nginx" / "web.conf"
 DEPLOY_SCRIPT = REPO_ROOT / "scripts" / "deploy-nas.sh"
 
-# skill-manager-backend 允许的完整挂载清单（design 2.2 / R6：仅五类目录；
+# skill-manager-backend 允许的完整挂载清单（design 2.2 / R6：仅已授权目录；
 # 同路径挂载——两侧同一宿主路径，保证 symlink target 宿主机可解析）。
 # 同时支持 compose 文件中的 `${VAR:?…}` 默认值防御语法（3f9d6b5 之前已引入）。
 BACKEND_ALLOWED_MOUNTS = {
     "${SKILLS_SOURCE_HOST_PATH}:${SKILLS_SOURCE_HOST_PATH}:rw",
     "${GITHUB_SKILL_CACHE_HOST_PATH}:${GITHUB_SKILL_CACHE_HOST_PATH}:rw",
     "${HERMES_SKILLS_HOST_PATH}:${HERMES_SKILLS_HOST_PATH}:rw",
+    "${HERMES_PROFILES_HOST_PATH}:${HERMES_PROFILES_HOST_PATH}:rw",
     "skill-manager-state:/app/state",
     "./deploy/fastgithub-ca.pem:/etc/ssl/fastgithub-ca.pem:ro",
 }
@@ -76,18 +77,20 @@ def _service_section(compose_text: str, service: str) -> str:
 
 def _volume_lines(section: str) -> list[str]:
     """提取服务段落中 volumes: 块内的挂载行（去掉缩进与 '- ' 前缀）。"""
-    in_volumes = False
-    result: list[str] = []
-    for line in section.splitlines():
-        stripped = line.strip()
-        if stripped == "volumes:":
-            in_volumes = True
-            continue
-        if in_volumes:
-            if stripped.startswith("- "):
-                result.append(stripped[2:])
-            elif stripped:
-                in_volumes = False
+    block = re.search(r"^    volumes:\n(.*?)(?=^    [a-z_]+:|\Z)",section,re.M|re.S)
+    if not block:
+        return []
+    result = []
+    entries = re.split(r"^      - ",block.group(1),flags=re.M)[1:]
+    for entry in entries:
+        if entry.startswith('type: bind'):
+            source = re.search(r'^        source: (.+)$',entry,re.M).group(1)
+            target = re.search(r'^        target: (.+)$',entry,re.M).group(1)
+            assert 'create_host_path: false' in entry
+            mode = 'ro' if re.search(r'^        read_only: true$',entry,re.M) else 'rw'
+            result.append(f'{source}:{target}:{mode}')
+        else:
+            result.append(entry.splitlines()[0].strip())
     return result
 
 
@@ -106,8 +109,9 @@ def test_skill_manager_exposes_required_mounts(compose_text: str):
     # 验证必要的挂载路径变量（兼容 compose 中的 `${VAR:?…}` 防御性写法）
     normalized = re.sub(r"\$\{([A-Z_]+)(?::[^}]*)?\}", r"${\1}", compose_text)
     for variable in ("SKILLS_SOURCE_HOST_PATH", "GITHUB_SKILL_CACHE_HOST_PATH",
-                     "HERMES_SKILLS_HOST_PATH"):
-        assert "${" + variable + "}:" in normalized
+                     "HERMES_SKILLS_HOST_PATH", "HERMES_PROFILES_HOST_PATH"):
+        mounts = _volume_lines(_service_section(normalized,"skill-manager-backend"))
+        assert any("${"+variable+"}:" in line for line in mounts)
 
 
 def test_skill_manager_backend_has_only_allowed_mounts(compose_text: str):

@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import ConfirmActionDialog from '@/components/ConfirmActionDialog';
 import DeployBoard from '@/components/DeployBoard';
+import InstallTargetManager from '@/components/InstallTargetManager';
 import ExportTargetManager from '@/components/ExportTargetManager';
 import RegisterGithubDialog from '@/components/RegisterGithubDialog';
 import SourceWorkspace, { type Notice } from '@/components/SourceWorkspace';
@@ -26,7 +27,7 @@ import type {
   TaskSnapshot,
 } from '@/lib/types';
 
-type ViewKey = 'manage' | 'board' | 'targets';
+type ViewKey = 'manage' | 'board' | 'targets' | 'install-targets';
 type SourceTab = 'local' | 'github';
 
 import { InstallTargetsContext, installTargetLabel, type InstallTarget } from '@/lib/installTargets';
@@ -64,14 +65,14 @@ function SkillManagerPage() {
   const searchParams = useSearchParams();
 
   // 两级导航：URL 是唯一真源，非法值在派生时逐级回退
-  const view: ViewKey = searchParams.get('view') === 'board' ? 'board' : searchParams.get('view') === 'targets' ? 'targets' : 'manage';
+  const view: ViewKey = searchParams.get('view') === 'install-targets' ? 'install-targets' : searchParams.get('view') === 'board' ? 'board' : searchParams.get('view') === 'targets' ? 'targets' : 'manage';
   const sourceTab: SourceTab = searchParams.get('tab') === 'github' ? 'github' : 'local';
   const agent = (searchParams.get('target') ?? 'hermes') as TargetKey;
   const [installTargets, setInstallTargets] = useState<InstallTarget[]>([]);
   const [installTargetsError, setInstallTargetsError] = useState('');
   const [installTargetsLoading, setInstallTargetsLoading] = useState(true);
   const label = (id: string) => installTargetLabel(installTargets, id);
-  const selectedTarget = installTargets.find(t => t.id === agent);
+  const selectedTarget = installTargets.find(t => t.id === agent && !t.removed);
 
   function navigate(next: { view?: ViewKey; tab?: SourceTab; agent?: TargetKey }) {
     const p = new URLSearchParams(searchParams.toString());
@@ -243,7 +244,7 @@ function SkillManagerPage() {
   }
 
   return (
-    <InstallTargetsContext.Provider value={{current: agent, targets: installTargets, error: installTargetsError, loading: installTargetsLoading}}><main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
+    <InstallTargetsContext.Provider value={{current: agent, targets: installTargets.filter(t=>!t.removed), error: installTargetsError, loading: installTargetsLoading}}><main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
       <header className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1">
         <div className="flex flex-wrap items-end gap-x-6 gap-y-1">
           <div className="flex flex-col gap-0.5">
@@ -271,18 +272,20 @@ function SkillManagerPage() {
             >
               部署看板
             </button>
+            <button type="button" data-active={view === 'install-targets'} onClick={() => navigate({view:'install-targets'})} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">安装目标</button>
             <button type="button" data-active={view === 'targets'} onClick={() => navigate({ view: 'targets' })} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">导出目标</button>
           </nav>
         </div>
       </header>
 
-      {view !== 'targets' && <div className="flex flex-wrap items-center gap-2 text-sm">
+      {(view === 'manage' || view === 'board') && <div className="flex flex-wrap items-center gap-2 text-sm">
         <label htmlFor="install-profile">Hermes profile</label>
         <select id="install-profile" value={agent} disabled={installTargetsLoading} onChange={e => navigate({agent: e.target.value as TargetKey})} className="rounded border border-slate-300 px-2 py-1.5">
           {!selectedTarget && <option value={agent}>{agent}（不可用）</option>}
-          {installTargets.map(t => <option key={t.id} value={t.id}>{t.name}{t.available ? '' : '（不可用）'}</option>)}
+          {installTargets.filter(t=>!t.removed).map(t => <option key={t.id} value={t.id}>{t.name}{t.available ? '' : '（不可用）'}</option>)}
         </select>
         <span className="break-all text-xs text-slate-500">{selectedTarget?.install_path}</span>
+        <button type="button" onClick={()=>navigate({view:'install-targets'})} className="text-xs text-sky-700 underline">管理安装目标</button>
         {(installTargetsError || (!installTargetsLoading && !selectedTarget) || selectedTarget?.unavailable_reason) && <p role="alert" className="text-amber-700">{installTargetsError || selectedTarget?.unavailable_reason || '目标未配置，请选择可用 profile'}{installTargetsError && <button type="button" onClick={() => void refreshInstallTargets()} className="ml-2 underline">重试</button>}</p>}
       </div>}
 
@@ -302,6 +305,7 @@ function SkillManagerPage() {
         </p>
       ) : null}
 
+      <div className={view === 'install-targets' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><InstallTargetManager active={view==='install-targets'} targets={installTargets} loading={installTargetsLoading} error={installTargetsError} onRefresh={refreshInstallTargets} onBoard={id=>navigate({view:'board',agent:id})} /></div>
       <div className={view === 'targets' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><ExportTargetManager targets={exportTargets} loading={targetsLoading} error={targetsError} onRefresh={refreshTargets} /></div>
       {view !== 'targets' && targetsError ? <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">{targetsError}<button type="button" onClick={() => void refreshTargets()} className="ml-3 underline">重试</button></p> : null}
 

@@ -1,11 +1,16 @@
-# Copy as a compose override; set BOTH target JSON and actual same-path mounts.
-# docker compose -f docker-compose.nas.yml -f <your-override>.yml up -d --build skill-manager-backend skill-manager-frontend
+# These mounts are now included in docker-compose.nas.yml by default.
+# Optional reference for deployments with a separate compose file.
+# No per-profile skills mount is needed under the mounted profiles root.
 services:
   skill-manager-backend:
     volumes:
       - type: bind
-        source: ${HERMES_OHYES768_SKILLS_HOST_PATH:?set actual profile skills directory}
-        target: ${HERMES_OHYES768_SKILLS_HOST_PATH:?}
+        source: ${HERMES_SKILLS_HOST_PATH:-/home/ohyes768/.hermes/skills}
+        target: ${HERMES_SKILLS_HOST_PATH:-/home/ohyes768/.hermes/skills}
         bind:
           create_host_path: false
-    # Additional profiles require another explicit skills-only bind mount here.
+      - type: bind
+        source: ${HERMES_PROFILES_HOST_PATH:-/home/ohyes768/.hermes/profiles}
+        target: ${HERMES_PROFILES_HOST_PATH:-/home/ohyes768/.hermes/profiles}
+        bind:
+          create_host_path: false

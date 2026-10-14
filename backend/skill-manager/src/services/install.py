@@ -137,6 +137,16 @@ class InstallManager:
                 for skill in plan.skills:
                     state = plan.states[skill.id]
                     items = [i for i in plan.items if i['skill_id'] == skill.id]
+                    # A target mutation can win the lock between start() and
+                    # this worker. Recheck before checkout or registration.
+                    for item in items:
+                        if item['action'] == 'blocked':
+                            continue
+                        try:
+                            if plan.targets[skill.id,item['target']] != publisher.targets.fingerprint(item['target'],skill.id):
+                                raise ValueError('目标配置或链接已变化，请重新预览')
+                        except Exception as exc:
+                            item.update(action='blocked',reason=str(exc))
                     registered = bool(state and state['registered'])
                     source, source_error = None, ''
                     try:

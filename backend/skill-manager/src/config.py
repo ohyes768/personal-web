@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     skills_source_root: Path
     github_skill_cache_root: Path
     hermes_skills_root: Path | None = None
+    hermes_profiles_root: Path | None = Field(default=None, validation_alias=AliasChoices("SKILL_MANAGER_HERMES_PROFILES_ROOT", "hermes_profiles_root"))
     hermes_targets: list[InstallTargetConfig] | None = Field(default=None, validation_alias=AliasChoices("SKILL_MANAGER_HERMES_TARGETS", "hermes_targets"))
     state_dir: Path = Field(
         validation_alias=AliasChoices("SKILL_MANAGER_STATE_DIR", "state_dir")
@@ -95,6 +96,17 @@ class Settings(BaseSettings):
             # Preserve configured path to detect later symlink redirection.
             target.skills_root = target.skills_root.absolute()
             roots.append(resolved)
+        if self.hermes_profiles_root is not None:
+            if not self.hermes_profiles_root.is_absolute():
+                raise ValueError("profiles root must be absolute")
+            resolved = self.hermes_profiles_root.resolve()
+            if any(resolved.is_relative_to(getattr(self, name)) or getattr(self, name).is_relative_to(resolved) for name in _MOUNT_ROOT_FIELDS):
+                raise ValueError("profiles root overlaps source, cache or state")
+            if self.targets_mount_root and not resolved.is_relative_to(self.targets_mount_root):
+                raise ValueError("profiles root must be inside targets_mount_root")
+            if any(t.id == 'hermes' and (resolved.is_relative_to(t.skills_root.resolve()) or t.skills_root.resolve().is_relative_to(resolved)) for t in self.hermes_targets):
+                raise ValueError("default skills root overlaps profiles root")
+            self.hermes_profiles_root = self.hermes_profiles_root.absolute()
         self._legacy_hermes_root = self.hermes_skills_root
         default = next((t for t in self.hermes_targets if t.id == "hermes"), None)
         self.hermes_skills_root = default.skills_root if default else None

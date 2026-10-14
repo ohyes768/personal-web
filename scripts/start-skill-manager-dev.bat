@@ -30,9 +30,11 @@ if not exist "%GITHUB_SKILL_CACHE_ROOT%" mkdir "%GITHUB_SKILL_CACHE_ROOT%"
 if not exist "%SKILL_MANAGER_STATE_DIR%" mkdir "%SKILL_MANAGER_STATE_DIR%"
 if not exist "%HERMES_SKILLS_ROOT%" mkdir "%HERMES_SKILLS_ROOT%"
 
+if not defined SKILL_MANAGER_HERMES_PROFILES_ROOT set "SKILL_MANAGER_HERMES_PROFILES_ROOT=%~dp0..\.skill-manager-dev\targets\profiles"
+
 REM Simulated named profile; preserve explicit target JSON supplied by the user.
 if not defined SKILL_MANAGER_HERMES_TARGETS (
-    set "SKILL_DEV_PROFILE_ROOT=%~dp0..\.skill-manager-dev\targets\hermes-ohyes768"
+    set "SKILL_DEV_PROFILE_ROOT=!SKILL_MANAGER_HERMES_PROFILES_ROOT!\ohyes768\skills"
     if not exist "!SKILL_DEV_PROFILE_ROOT!" mkdir "!SKILL_DEV_PROFILE_ROOT!"
     for /f "delims=" %%J in ('python -c "import json,os; print(json.dumps([dict(id='hermes',name='Default dev',profile_name='default',skills_root=os.path.abspath(os.environ['HERMES_SKILLS_ROOT'])),dict(id='hermes:profile:ohyes768',name='ohyes768 dev',profile_name='ohyes768',skills_root=os.path.abspath(os.environ['SKILL_DEV_PROFILE_ROOT']))]))"') do set "SKILL_MANAGER_HERMES_TARGETS=%%J"
 )

@@ -17,8 +17,10 @@ PROFILE = 'hermes:profile:ohyes768'
 
 @pytest.fixture
 def env(base_env, roots, monkeypatch):
-    roots.profile = roots.targets / 'hermes-ohyes768'
-    roots.profile.mkdir()
+    roots.profiles = roots.targets / 'profiles'
+    roots.profile = roots.profiles / 'ohyes768' / 'skills'
+    roots.profile.mkdir(parents=True)
+    monkeypatch.setenv('SKILL_MANAGER_HERMES_PROFILES_ROOT',str(roots.profiles))
     monkeypatch.setenv('SKILL_MANAGER_HERMES_TARGETS', json.dumps([
         dict(id='hermes', name='默认环境', profile_name='default', skills_root=str(roots.hermes)),
         dict(id=PROFILE, name='ohyes768', profile_name='ohyes768', skills_root=str(roots.profile)),
@@ -49,12 +51,11 @@ def test_catalog_two_and_three_targets_without_source_changes(client, roots):
     items = client.get('/api/skills/install-targets').json()['items']
     assert {i['id'] for i in items} == {'hermes', PROFILE}
     assert all(i['available'] and i['configured'] for i in items)
-    settings = Settings()
-    extra = roots.targets / 'third'
-    extra.mkdir()
-    from src.models import InstallTargetConfig
-    settings.hermes_targets.append(InstallTargetConfig(id='hermes:profile:third', name='Third', profile_name='third', skills_root=extra))
-    assert len(TargetResolver(settings, client.app.state.store).catalog()) == 3
+    extra = roots.profiles / 'third' / 'skills'
+    extra.mkdir(parents=True)
+    response = client.post('/api/skills/install-targets',json={'profile_name':'third','name':'Third','password':PASSWORD})
+    assert response.status_code==201
+    assert len(client.get('/api/skills/install-targets').json()['items']) == 3
 
 
 @pytest.mark.requires_symlink
@@ -111,7 +112,7 @@ def test_changes_invalidate_plan(client, roots, change):
         roots.profile.rename(roots.targets/'old-profile')
         roots.profile.mkdir()
     elif change == 'config':
-        client.app.state.settings.hermes_targets[1].name = 'renamed'
+        client.app.state.store.mutate_install_target(PROFILE,1,'renamed')
     elif change == 'occupy_link':
         (roots.profile/'alpha').mkdir()
     else:
@@ -148,12 +149,13 @@ def test_active_target_cannot_change_root_and_offline_records_protect_source(cli
     settings = Settings()
     settings.hermes_targets[1].skills_root = roots.targets/'replacement'
     settings.hermes_targets[1].skills_root.mkdir()
-    with pytest.raises(ValueError, match='active installations'):
-        TargetResolver(settings, store)
-    settings.hermes_targets = settings.hermes_targets[:1]
+    # Env named targets no longer override the persistent identity after seed.
+    assert TargetResolver(settings,store).root(PROFILE)==roots.profile
+    settings.hermes_profiles_root = roots.targets/'unavailable-profiles'
+    settings.hermes_profiles_root.mkdir()
     resolver = TargetResolver(settings, store)
     unavailable = next(i for i in resolver.catalog() if i.id == PROFILE)
-    assert not unavailable.configured and not unavailable.available
+    assert unavailable.configured and not unavailable.available
     # A historical profile is still a link installation, never an export.
     client.app.state.settings = settings
     client.app.state.publisher.targets = resolver
@@ -260,6 +262,7 @@ def test_first_catalog_does_not_redirect_legacy_hermes(env, roots):
     # Simulate the pre-profile schema and ensure the additive migration backs up.
     with closing(store._connect()) as conn, conn:
         conn.execute('DROP TABLE install_target')
+        conn.execute("DELETE FROM state_migration WHERE id='install_targets_ui_v1'")
     upgraded = SkillStateStore(store.db_path)
     assert store.db_path.with_name(store.db_path.name+'.before-hermes-profiles').exists()
     assert upgraded.get_deployment('alpha','hermes').source_revision == 'v1'
