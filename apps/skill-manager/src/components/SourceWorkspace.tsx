@@ -154,11 +154,11 @@ export default function SourceWorkspace({
           onChange={setFilters}
           showUpdateFilter={source === 'github'}
         />
-        <div className="flex flex-wrap items-center gap-2">
+        {source === 'github' ? <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setSelectedIds(filteredSkills.filter(s => !s.cache_missing && !s.source_missing).map(s => s.id))} className="rounded border px-3 py-2 text-sm">选择当前结果</button>
           <button type="button" onClick={() => setSelectedIds([])} className="rounded border px-3 py-2 text-sm">清空选择</button>
           <button type="button" disabled={!selectedIds.length} onClick={() => setInstallIds(selectedIds)} className="rounded bg-sky-600 px-3 py-2 text-sm text-white disabled:opacity-40">安装到 Hermes（{selectedIds.length}）</button>
-        </div>
+        </div> : null}
         {loading ? (
           <p className="p-6 text-center text-sm text-slate-400">加载中…</p>
         ) : (
@@ -170,8 +170,8 @@ export default function SourceWorkspace({
             checkingUpdates={checkingUpdates}
             exportTargets={exportTargets}
             queue={[]}
-            selectedIds={selectedIds}
-            onSelect={(id, selected) => setSelectedIds(prev => selected ? [...new Set([...prev,id])] : prev.filter(item => item !== id))}
+            selectedIds={source === 'github' ? selectedIds : undefined}
+            onSelect={source === 'github' ? (id, selected) => setSelectedIds(prev => selected ? [...new Set([...prev,id])] : prev.filter(item => item !== id)) : undefined}
             onToggleQueueTarget={handleToggleQueueTarget}
             onClone={onClone}
             onDelete={onDelete}

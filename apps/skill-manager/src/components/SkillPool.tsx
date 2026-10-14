@@ -40,29 +40,38 @@ interface SkillPoolProps {
   onDeleteExport: (skill: SkillCard, target: ExportTargetKey) => void;
 }
 
-function DeploymentBadge({ deployment }: { deployment?: TargetDeployment }) {
-  if (!deployment) {
-    return <span className="text-xs text-slate-400">未发布</span>;
+function InstallationBadge({ deployment }: { deployment?: TargetDeployment }) {
+  const badgeClass = 'inline-flex h-6 items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 text-xs font-medium leading-none';
+  if (!deployment || deployment.status === 'removed') {
+    return (
+      <span className={`${badgeClass} border-slate-200 bg-slate-50 text-slate-600`}>
+        <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-slate-400" />
+        未安装
+      </span>
+    );
   }
   if (deployment.status === 'active' && deployment.link_missing) {
     return (
       <span
-        className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700"
-        title="账本记录已发布，但目标目录的链接已不存在（可能被手动删除）；生成发布计划会按实况判定动作"
+        className={`${badgeClass} border-amber-200 bg-amber-50 text-amber-800`}
+        title="安装记录仍在，但 Hermes 目录中的链接已不存在，可重新安装恢复"
       >
-        已发布 · 链接缺失
+        <span aria-hidden="true" className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-amber-600 text-[10px] font-bold text-white">!</span>
+        未安装 · 链接缺失
       </span>
     );
   }
   if (deployment.status === 'active') {
     return (
-      <span className="rounded bg-emerald-50 px-1.5 py-0.5 text-xs text-emerald-700">
-        已发布{deployment.revision ? ` · ${deployment.revision.slice(0, 7)}` : ''}
+      <span className={`${badgeClass} border-emerald-200 bg-emerald-50 text-emerald-800`}
+        title={deployment.revision ? `安装版本：${deployment.revision}` : undefined}>
+        <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3.5 8 3 3 6-6" /></svg>
+        已安装
       </span>
     );
   }
   return (
-    <span className="rounded bg-amber-50 px-1.5 py-0.5 text-xs text-amber-700">
+    <span className={`${badgeClass} border-amber-200 bg-amber-50 text-amber-800`}>
       {deployment.status}
     </span>
   );
@@ -112,7 +121,7 @@ function SkillCardItem({
 
   return (
     <li className="flex flex-col rounded-lg border border-slate-200 bg-white p-3">
-      {onSelect && <label className="mb-2 text-xs text-slate-600"><input type="checkbox" checked={!!selected} disabled={publishBlocked} onChange={e => onSelect(e.target.checked)} /> 选择 {skill.name}</label>}
+      {skill.source === 'github' && onSelect && <label className="mb-2 text-xs text-slate-600"><input type="checkbox" checked={!!selected} disabled={publishBlocked} onChange={e => onSelect(e.target.checked)} /> 选择 {skill.name}</label>}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
@@ -178,14 +187,9 @@ function SkillCardItem({
         </button>
       )}
 
-      {/* 部署状态（只读徽章） */}
+      {/* Hermes 安装状态与外部导出记录 */}
       <div className="mt-2 space-y-1 border-t border-slate-100 pt-2">
-        {ALL_TARGETS.map((target) => (
-          <div key={target} className="flex items-center gap-2 text-xs">
-            <span className="w-16 text-slate-500">{TARGET_LABEL[target]}</span>
-            <DeploymentBadge deployment={skill.deployments[target]} />
-          </div>
-        ))}
+        <InstallationBadge deployment={skill.deployments.hermes} />
         {Object.keys(skill.deployments).filter((target) => !LINK_TARGETS.includes(target as TargetKey)).map((target) => {
           const config = exportTargets.find((item) => item.id === target);
           const label = exportTargetLabel(exportTargets, target);
@@ -362,7 +366,7 @@ export default function SkillPool({
                 {collection.visibleMembers.length !== collection.members.length ? ` · 匹配 ${collection.visibleMembers.length} 个` : ''}
               </p>
               <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
-                {ALL_TARGETS.map(target => <span key={target}>{TARGET_LABEL[target]}：已发布 {stats.published[target]}/{collection.members.length}</span>)}
+                <span>已安装 {stats.published.hermes}/{collection.members.length}</span>
                 {stats.abnormal > 0 ? <span className="text-amber-700">异常 {stats.abnormal} 项</span> : null}
                 {stats.hasUpdate ? <span className="text-sky-700">有远端更新</span> : null}
               </div>
