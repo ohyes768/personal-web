@@ -245,46 +245,46 @@ function SkillManagerPage() {
 
   return (
     <InstallTargetsContext.Provider value={{current: agent, targets: installTargets.filter(t=>!t.removed), error: installTargetsError, loading: installTargetsLoading}}><main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
-      <header className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1">
+      <header className="flex flex-col gap-2 border-b border-slate-100 pb-3">
         <div className="flex flex-col gap-0.5">
           {/* 站点首页在 basePath 之外，Next Link 会将 / 拼成 /skills。 */}
           {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
           <a href="/" className="text-xs text-slate-500 transition-colors hover:text-slate-800">
             ← 返回首页
           </a>
-          <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
+          <div className="flex items-baseline gap-3">
+            <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
+            <ProfileScopePicker
+              current={agent}
+              allTargets={installTargets}
+              loading={installTargetsLoading}
+              error={installTargetsError}
+              onSelect={(id) => navigate({ agent: id as TargetKey })}
+              onManage={() => navigate({ view: 'install-targets' })}
+              onRefresh={() => void refreshInstallTargets()}
+            />
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          <nav className="flex gap-1" aria-label="视图切换">
-            <button
-              type="button"
-              data-active={view === 'manage'}
-              onClick={() => navigate({ view: 'manage' })}
-              className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800"
-            >
-              管理看板
-            </button>
-            <button
-              type="button"
-              data-active={view === 'board'}
-              onClick={() => navigate({ view: 'board' })}
-              className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800"
-            >
-              部署看板
-            </button>
-            <button type="button" data-active={view === 'install-targets'} onClick={() => navigate({view:'install-targets'})} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">安装目标</button>
-            <button type="button" data-active={view === 'targets'} onClick={() => navigate({ view: 'targets' })} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">导出目标</button>
-          </nav>
-          <ProfileScopePicker
-            current={agent}
-            allTargets={installTargets}
-            loading={installTargetsLoading}
-            error={installTargetsError}
-            onSelect={(id) => navigate({ agent: id as TargetKey })}
-            onManage={() => navigate({ view: 'install-targets' })}
-            onRefresh={() => void refreshInstallTargets()}
-          />
-        </div>
+        <nav className="flex gap-1" aria-label="视图切换">
+          <button
+            type="button"
+            data-active={view === 'manage'}
+            onClick={() => navigate({ view: 'manage' })}
+            className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800"
+          >
+            管理看板
+          </button>
+          <button
+            type="button"
+            data-active={view === 'board'}
+            onClick={() => navigate({ view: 'board' })}
+            className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800"
+          >
+            部署看板
+          </button>
+          <button type="button" data-active={view === 'install-targets'} onClick={() => navigate({view:'install-targets'})} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">安装目标</button>
+          <button type="button" data-active={view === 'targets'} onClick={() => navigate({ view: 'targets' })} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">导出目标</button>
+        </nav>
       </header>
 
       {loadError ? (

@@ -102,6 +102,7 @@ UI 形态由 header 下方裸 `<select>` 升级为**应用级 scope bar**（`Pro
 - `ProfileScopePicker` 必须挂在 `<header>` 内、四个视图（`view ∈ {manage, board, install-targets, targets}`）外层共享。
 - **绝不要**把 picker 包在 `{view === 'manage' || view === 'board' && ...}` 这种视图条件里——install-targets 视图下用户改完 profile 配置后必须能立刻看到当前 scope。
 - 这是 operate-mode 工具的标配模式（GitHub org、Vercel team、AWS region、Slack workspace、Linear workspace）。
+- **位置选择**：放在 `<h1>` 同行右侧（`flex items-baseline gap-3`），不放在 header 右侧跟 tabs 挤一行；tabs 自己占独立一行。理由：title + picker 是"identity 块"，tabs 是"navigation 块"，两个语义层级不该共用一行。GitHub/Vercel/Linear 都把 team/workspace 切换器紧贴 logo/title 放左侧，不放远端右侧。
 
 ### Provider · profile_name 渲染格式
 
