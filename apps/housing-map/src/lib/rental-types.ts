@@ -127,6 +127,7 @@ export interface RentalRefreshResult {
 
 export interface RentalAssociationProgress {
   targets: number; excluded: number; checked: number; matched: number; pending: number; skipped: number; missing: number; failed: number;
+  deferred?: number;
 }
 
 export interface RentalRefreshJob {

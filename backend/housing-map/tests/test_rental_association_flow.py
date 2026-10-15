@@ -98,11 +98,43 @@ def test_unique_complete_evidence_auto_associates(tmp_path):
 def test_budget_cancellation_and_empty_search_distinct(tmp_path):
     registry = setup(tmp_path)
     pairs, report = prepare_sources(registry, threading.Event(), lambda _: None, lambda _: [], delay=0, budget=1)
-    assert not pairs and report['missing']==1 and report['failed']==1
+    assert not pairs and report['missing']==1 and report['failed']==0 and report['deferred']==1
+    task = next(r for r in reviews(registry) if r['reason']=='search_deferred')
+    assert task['searched_at'] is None and '额度已用完' in task['message']
+    calls = []
+    prepare_sources(registry, threading.Event(), lambda _: None,
+                    lambda c: calls.append(c['community_id']) or [], delay=0, budget=1)
+    assert calls == [task['community_id']]
     cancel = threading.Event(); cancel.set()
     from src.services.fang_rentals import RentalCrawlCancelled
     with pytest.raises(RentalCrawlCancelled):
         prepare_sources(registry, cancel, lambda _: None, lambda _: [], delay=0)
+
+
+def test_search_pause_logs_trigger_and_deferred_count(tmp_path, caplog):
+    registry = setup(tmp_path)
+    calls = []
+    def broken(c):
+        calls.append(c['community_id'])
+        raise ValueError('搜索未应用关键词')
+    with caplog.at_level('INFO'):
+        _, report = prepare_sources(registry, threading.Event(), lambda _: None, broken, delay=0)
+    assert calls == ['c1'] and report['failed'] == 1 and report['deferred'] == 1
+    tasks = {r['community_id']: r for r in reviews(registry)}
+    assert tasks['c1']['reason'] == 'search_failed'
+    assert tasks['c2']['reason'] == 'search_deferred' and tasks['c2']['searched_at'] is None
+    assert '尚未查询' in tasks['c2']['message']
+    assert report['checked'] == sum(report[k] for k in ('matched','pending','skipped','missing','failed','deferred'))
+    assert 'Rental source search paused community_id=c1' in caplog.text
+    assert '搜索未应用关键词' in caplog.text
+    assert 'requests=1 deferred=1' in caplog.text
+    assert sum(bool(r.exc_info) for r in caplog.records) == 1
+
+
+def test_deferred_only_job_is_partial_not_succeeded():
+    from src.api.rental_routes import _external_phase
+    assert _external_phase({'phase':'done', 'association':{'deferred':2}}) == 'partial_failed'
+    assert _external_phase({'phase':'done', 'association':{'deferred':0}}) == 'succeeded'
 
 
 def test_found_candidate_with_different_name_remains_selectable(tmp_path):

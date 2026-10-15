@@ -94,14 +94,37 @@ def test_discovery_uses_structured_community_and_missing_address(monkeypatch):
     assert '分期' in found[0]['evidence'][-1]
 
 
-def test_search_rejects_ignored_keyword_and_closes_client():
+def test_search_rejects_ignored_keyword_and_closes_client(caplog):
     class Ignored(Client):
         instance = None
         def __init__(self, timeout): super().__init__(timeout); Ignored.instance = self
-        def fetch(self, url): return page().replace("keyword='测试花园'", "keyword=''")
+        def fetch(self, url):
+            return '<title>杭州租房</title>' + page().replace("keyword='测试花园'", "keyword=''") + '<p>private-body-marker</p>'
     with pytest.raises(ValueError, match='未应用关键词'):
         discover({'community_name': '测试花园'}, client_factory=Ignored)
     assert Ignored.instance.closed
+    assert 'stage=keyword_validation' in caplog.text
+    assert "actual_keyword=''" in caplog.text
+    assert "title='杭州租房'" in caplog.text
+    assert 'error_type=ValueError' in caplog.text
+    assert 'private-body-marker' not in caplog.text
+    assert any(r.exc_info for r in caplog.records)
+
+
+def test_discovery_request_failure_logs_stage_and_closes(caplog):
+    class Broken(Client):
+        instance = None
+        def __init__(self, timeout):
+            super().__init__(timeout)
+            Broken.instance = self
+        def fetch(self, url):
+            raise TimeoutError('upstream timeout')
+    with pytest.raises(TimeoutError):
+        discover({'community_id': 'c1', 'community_name': '测试花园'}, client_factory=Broken)
+    assert Broken.instance.closed
+    assert 'community_id=c1' in caplog.text
+    assert 'stage=fetch' in caplog.text
+    assert 'error_type=TimeoutError' in caplog.text
 
 
 def test_source_edits_block_active_worker_and_cli(tmp_path, monkeypatch):

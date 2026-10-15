@@ -47,7 +47,7 @@ export function RentalRefreshControl({ job, running, actionError, start, cancel,
           {terminalNote}
         </span>
       )}
-      {!running && job?.association && job.association.pending + job.association.missing + job.association.failed > 0 && onManageSources && (
+      {!running && job?.association && job.association.pending + job.association.missing + job.association.failed + (job.association.deferred ?? 0) > 0 && onManageSources && (
         <button type="button" className="btn btn-secondary" onClick={onManageSources}>处理租金来源</button>
       )}
       {actionError === '还没有关联租金来源，请先选择小区并确认来源' && onManageSources && (

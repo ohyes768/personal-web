@@ -2,6 +2,7 @@
 import hashlib
 import datetime as dt
 import json
+import logging
 
 from src.services.community_registry import dump, now, normalized
 from src.services.residential_classifier import classify_sources
@@ -9,6 +10,7 @@ from src.services.community_address import effective_address
 from src.services.community_listing import listing_gate
 
 PREFIX = 'rental_review:'
+logger = logging.getLogger(__name__)
 
 
 def eligible_communities(registry):
@@ -139,13 +141,15 @@ def decide(registry, cid, action, candidate_id=None):
 def prepare_sources(registry, cancel, progress, discover, *, delay=2, budget=20):
     communities, total = eligible_communities(registry)
     report = dict(targets=len(communities), excluded=total-len(communities), checked=0,
-                  matched=0, pending=0, skipped=0, missing=0, failed=0)
+                  matched=0, pending=0, skipped=0, missing=0, failed=0, deferred=0)
     search_unavailable = None
     requests = 0
+    logger.info('Rental source check start targets=%s search_budget=%s', len(communities), budget)
     # Continue deferred searches first instead of retrying the same first 20
     # empty communities on every run.
     communities.sort(key=lambda c: (
-        read_review(registry, c['community_id']).get('message') != '本轮来源查找额度已用完，下次更新继续',
+        not (read_review(registry, c['community_id']).get('reason') == 'search_deferred' or
+             read_review(registry, c['community_id']).get('message') == '本轮来源查找额度已用完，下次更新继续'),
         c['community_id']))
     for community in communities:
         if cancel.is_set():
@@ -175,7 +179,9 @@ def prepare_sources(registry, cancel, progress, discover, *, delay=2, budget=20)
                     if recent_empty:
                         reason = 'missing'
                     elif search_unavailable or requests >= budget:
-                        reason, message = 'search_failed', search_unavailable or '本轮来源查找额度已用完，下次更新继续'
+                        reason = 'search_deferred'
+                        message = ('房天下来源查找已暂停，本小区尚未查询，下次更新继续' if search_unavailable else
+                                   '本轮来源查找额度已用完，本小区尚未查询，下次更新继续')
                     else:
                         try:
                             if cancel.wait(delay):
@@ -208,12 +214,16 @@ def prepare_sources(registry, cancel, progress, discover, *, delay=2, budget=20)
                                     discovered.append({k: record.get(k) for k in ('id','source_id','name','address','district','evidence','source_url')})
                             candidates = list({r['id']: r for r in [*candidates_for(registry, community), *discovered]}.values())
                         except ValueError:
+                            logger.exception('Rental source search paused community_id=%s name=%r requests=%s',
+                                             cid, community['community_name'], requests)
                             search_unavailable = '房天下搜索未生效或要求验证，本轮暂停来源查找'
                             reason, message = 'search_failed', search_unavailable
                         except Exception as exc:
                             from src.services.fang_rentals import RentalCrawlCancelled
                             if isinstance(exc, RentalCrawlCancelled):
                                 raise
+                            logger.exception('Rental source search paused community_id=%s name=%r requests=%s',
+                                             cid, community['community_name'], requests)
                             search_unavailable = '房天下暂时无法访问，本轮暂停来源查找'
                             reason, message = 'search_failed', search_unavailable
                 for candidate in candidates:
@@ -222,16 +232,20 @@ def prepare_sources(registry, cancel, progress, discover, *, delay=2, budget=20)
                              for r in registry.sources())
                 if mapped:
                     reason = 'matched'
-                elif reason != 'search_failed':
+                elif reason not in {'search_failed', 'search_deferred'}:
                     reason = 'needs_selection' if candidates else 'missing'
             if not mapped:
                 save_review(registry, community, reason, candidates, message, searched=searched)
             report[{'matched':'matched', 'needs_selection':'pending', 'skipped':'skipped',
-                    'missing':'missing', 'search_failed':'failed'}[reason]] += 1
+                    'missing':'missing', 'search_failed':'failed', 'search_deferred':'deferred'}[reason]] += 1
         else:
             report['matched'] += 1
         report['checked'] += 1
         progress(dict(report))
     effective = {c['community_id'] for c in eligible_communities(registry)[0]}
+    logger.info('Rental source check complete checked=%s matched=%s pending=%s missing=%s '
+                'failed=%s requests=%s deferred=%s pause_reason=%r',
+                report['checked'], report['matched'], report['pending'], report['missing'],
+                report['failed'], requests, report['deferred'], search_unavailable)
     return [(r['source_id'], r['community_id']) for r in registry.sources()
             if r['source']=='fang' and r['status']=='matched' and r['community_id'] in effective], report

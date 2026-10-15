@@ -191,7 +191,7 @@ test('refresh control surfaces action errors like 409/422 feedback', () => {
 
 test('rental source checks use stage progress and honest pending counts', () => {
   assert.equal(rentalRefreshProgressText(job({ stage: 'checking' })), '正在检查租金来源…');
-  const association = { targets: 20, checked: 3, excluded: 2, matched: 1, pending: 2, skipped: 4, missing: 5, failed: 6 };
+  const association = { targets: 20, checked: 3, excluded: 2, matched: 1, pending: 2, skipped: 4, missing: 5, failed: 6, deferred: 7 };
   assert.equal(rentalRefreshProgressText(job({ stage: 'discovering', association })), '正在查找来源 3/20 小区');
   const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
     job: job({ running: false, phase: 'partial_failed', association, result: { published: false, success_count: 0, failed_count: 0 } }),
@@ -200,6 +200,25 @@ test('rental source checks use stage progress and honest pending counts', () => 
   assert.match(html, /处理租金来源/);
   assert.match(html, /暂无来源 5/);
   assert.match(html, /查找失败 6/);
+  assert.match(html, /未查询 7/);
+});
+
+test('deferred-only rentals remain actionable without counting them as failed', () => {
+  const association = { targets: 4, checked: 4, excluded: 0, matched: 0, pending: 0, skipped: 0, missing: 0, failed: 0, deferred: 4 };
+  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
+    job: job({ running: false, phase: 'partial_failed', association, result: { published: false, success_count: 0, failed_count: 0 } }),
+    running: false, actionError: null, start() {}, cancel() {}, onManageSources() {},
+  }));
+  assert.match(html, /查找失败 0/);
+  assert.match(html, /未查询 4/);
+  assert.match(html, /处理租金来源/);
+  const { RentalCandidateChoice } = require('../src/components/rental/RentalAssociationReview.tsx');
+  const review = renderToStaticMarkup(React.createElement(RentalCandidateChoice, {
+    item: { community_id: 'c1', community_name: '测试花园', reason: 'search_deferred', candidates: [] },
+    selected: '', busy: false, onSelect() {}, onDecide() {},
+  }));
+  assert.match(review, /尚未查询，下次更新继续/);
+  assert.doesNotMatch(review, /来源查找失败/);
 });
 
 test('rental candidates are single-choice, bind requires selection, skip can reopen', () => {

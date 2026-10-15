@@ -12,7 +12,7 @@ type Summary = { active: boolean; admitted: number; excluded: number; auction_pe
 type Page<T> = { items: T[]; total: number; page: number };
 type Job = { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; error?: string;
-  stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number }; errors?: { message: string; name?: string }[]; truncated?: { message: string }[] };
+  stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string }[]; truncated?: { message: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
   errors?: Job['errors'] | { items?: { message: string }[]; total?: number } };
 export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
@@ -48,7 +48,7 @@ export function CollectionControls({ active, jobs, errors, busy, action }: { act
         onClick={() => action(t.path, 'POST', t.body)}>{job?.running ? '正在采集…' : t.label}</button>
         {job?.running && <button className="btn btn-secondary" disabled={busy} onClick={() => action(t.path, 'DELETE')}>取消采集</button>}</div>
       {job?.stage && <p className="directory-muted">{({ checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源', publishing: '发布租金统计', names: '更新小区名录', property_types: '补充用途资料' } as Record<string, string>)[job.stage] || '更新来源资料'}</p>}
-      {job?.association && <p className="directory-muted">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 失败 {job.association.failed || 0}</p>}
+      {job?.association && <p className="directory-muted">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
       {job && <p role="status">{phases[job.phase] || job.phase}
         {job.processed !== undefined && ` · 已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`}
         {job.new !== undefined && ` · 新来源 ${job.new} · 已有 ${job.existing || 0}`}

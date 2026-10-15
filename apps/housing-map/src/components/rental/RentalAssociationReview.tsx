@@ -7,7 +7,7 @@ type Candidate = { id: string; name: string; address?: string; district?: string
 export type RentalReview = { community_id: string; community_name: string; reason: string;
   message?: string; candidates: Candidate[] };
 const reasons: Record<string, string> = { needs_selection: '请选择对应小区', missing: '暂无租金来源',
-  search_failed: '来源查找失败', skipped: '已跳过' };
+  search_failed: '来源查找失败', search_deferred: '尚未查询，下次更新继续', skipped: '已跳过' };
 
 export function RentalCandidateChoice({ item, selected, busy, onSelect, onDecide }: {
   item: RentalReview; selected: string; busy: boolean; onSelect: (id: string) => void;

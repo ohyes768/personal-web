@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import datetime as dt
 import json
+import logging
 import re
 import sqlite3
 from contextlib import contextmanager
@@ -10,6 +11,8 @@ from pathlib import Path
 from urllib.parse import quote, urlsplit
 
 from src.services.fang_rentals import BASE_URL, FangClient, _links, enrich_detail, parse_listing_page, validate_url
+
+logger = logging.getLogger(__name__)
 
 
 def database_path(mappings_path: Path) -> Path:
@@ -165,13 +168,21 @@ def discover(community: dict, *, keyword: str = '', source_url: str = '', client
     name = keyword.strip() or community.get('community_alias') or community['community_name']
     url = source_page(source_url) if source_url else f'{BASE_URL}/hz/house/?keyword={quote(name)}'
     client = client_factory(timeout=15)
+    stage = 'fetch'
+    html = ''
+    actual_keyword = None
+    logger.info('Rental discovery start community_id=%s name=%r url=%s',
+                community.get('community_id'), name, url)
     try:
         html = client.fetch(url)
+        stage = 'keyword_validation'
         if not source_url:
             keyword_match = re.search(r"pageConfig\.keyword\s*=\s*['\"]([^'\"]*)", html)
             from urllib.parse import unquote
-            if not keyword_match or unquote(keyword_match.group(1)).strip() != name:
+            actual_keyword = unquote(keyword_match.group(1)).strip() if keyword_match else None
+            if actual_keyword != name:
                 raise ValueError('来源搜索未应用关键词，拒绝使用全市房源作为候选')
+        stage = 'parse_listing'
         rows, _ = parse_listing_page(html, url)  # challenge/changed HTML must fail explicitly
         found: dict[str, dict] = {}
         for row in rows:
@@ -207,7 +218,8 @@ def discover(community: dict, *, keyword: str = '', source_url: str = '', client
                 if candidate:
                     candidate['source_address'] = row.get('address')
             except Exception:
-                pass  # candidate remains reviewable with explicit missing-address evidence
+                logger.warning('Rental discovery detail unavailable community_id=%s url=%s; candidate address remains missing',
+                               community.get('community_id'), row['source_url'], exc_info=True)
         for item in found.values():
             names = [community.get('community_name', ''), community.get('community_alias', '')]
             item['evidence'] = [
@@ -216,6 +228,18 @@ def discover(community: dict, *, keyword: str = '', source_url: str = '', client
                 '来源地址可供人工核对' if item['source_address'] else '来源地址尚不可得，需打开来源核对位置',
                 '尚未核对坐标与分期；确认前请核对是否同一小区',
             ]
+        logger.info('Rental discovery complete community_id=%s name=%r candidates=%s',
+                    community.get('community_id'), name, min(len(found), 10))
         return list(found.values())[:10]
+    except Exception as exc:
+        # Log bounded metadata only: never dump response HTML, headers or cookies.
+        title = re.search(r'<title[^>]*>(.*?)</title>', html, re.I | re.S)
+        logger.warning('Rental discovery failed community_id=%s name=%r url=%s stage=%s '
+                       'html_chars=%s title=%r actual_keyword=%r error_type=%s',
+                       community.get('community_id'), name, url, stage, len(html),
+                       re.sub(r'\s+', ' ', title.group(1))[:160] if title else None,
+                       actual_keyword[:160] if actual_keyword is not None else None,
+                       type(exc).__name__, exc_info=True)
+        raise
     finally:
         client.close()

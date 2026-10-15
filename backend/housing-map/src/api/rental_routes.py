@@ -158,7 +158,7 @@ def _external_phase(job: dict) -> str:
     if phase == "done":
         result = job.get("result") or {}
         if (result.get("carried_over") or result.get("absent")
-                or any((job.get("association") or {}).get(k) for k in ("pending", "missing", "failed"))):
+                or any((job.get("association") or {}).get(k) for k in ("pending", "missing", "failed", "deferred"))):
             return "partial_failed"
         return "succeeded"
     return phase if isinstance(phase, str) else "failed"

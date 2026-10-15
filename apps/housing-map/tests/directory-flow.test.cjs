@@ -20,6 +20,13 @@ test('collection status preserves rental units and nested errors', () => {
   assert.match(html, /部分完成.*已处理 2 \/ 5/); assert.match(html, /来源未应用关键词/);
   assert.match(html, /取消采集/); assert.match(html, /仅已收录住宅/); assert.doesNotMatch(html, /%/);
 });
+test('rental task separates actual failures from unqueried communities', () => {
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false,
+    errors: {}, jobs: { rent: { running: false, phase: 'partial_failed',
+      association: { checked: 100, failed: 1, deferred: 99 } } }, action() {} }));
+  assert.match(html, /查询失败 1 · 未查询 99/);
+  assert.doesNotMatch(html, /查询失败 100/);
+});
 test('excluded catalog distinguishes insufficient facts from nonresidential conditions', () => {
   const html = renderToStaticMarkup(React.createElement(CatalogTable, { excluded: true, busy: false, select() {}, retry() {},
     items: [{ community_id: '1', community_name: '资料缺失小区', sources: [], facts_state: 'incomplete', exclusion_reason: '用途资料缺失，待补充' },
