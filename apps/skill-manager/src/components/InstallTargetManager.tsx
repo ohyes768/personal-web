@@ -206,12 +206,12 @@ export default function InstallTargetManager({
                       {target.name}
                     </h3>
                     {target.id === 'hermes' ? (
-                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+                      <span className="rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
                         默认 · 只读
                       </span>
                     ) : null}
                     <span
-                      className={`rounded px-2 py-0.5 text-xs ${target.removed ? 'bg-slate-100 text-slate-500' : target.available ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
+                      className={`rounded px-2 py-0.5 text-xs ${target.removed ? 'bg-slate-100 text-slate-600' : target.available ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}
                     >
                       {target.removed
                         ? '已移除'

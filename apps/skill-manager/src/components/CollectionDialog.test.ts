@@ -107,11 +107,11 @@ function propsFor(collection: Parameters<typeof CollectionDialog>[0]['collection
     downloadingCollection: null,
     checkingUpdates: undefined,
     targets: [],
-    queue: [],
-    onToggleQueueTarget: vi.fn(),
+        onToggleQueueTarget: vi.fn(),
     onClone: vi.fn(),
     onDelete: vi.fn(),
     onUnpublish: vi.fn(),
+    onUnpublishCollection: vi.fn(),
     onEditTags: vi.fn(),
     onExport: vi.fn(),
     onDeleteExport: vi.fn(),
@@ -197,6 +197,26 @@ describe('collection modal', () => {
     buttonByAriaLabel(tree2, '下架 installed').props.onClick?.();
     expect(onUnpublish2).toHaveBeenCalledExactlyOnceWith('installed', 'installed', ['hermes']);
     expect(onClose2).toHaveBeenCalled();
+  });
+
+  it('T9: unpublish-all goes through the collection-level callback once, carrying only members active on the current target', () => {
+    const a = skill('a', { deployments: { hermes: { status: 'active', revision: 'r', published_at: '', link_target: '', content_hash: '', stale: false, link_missing: false } } });
+    const b = skill('b', { deployments: { hermes: { status: 'active', revision: 'r', published_at: '', link_target: '', content_hash: '', stale: false, link_missing: false } } });
+    const c = skill('c');
+    // 仅导出目标有记录：不属于合集批量下架范围（旧实现会误把它算进下架名单）
+    const d = skill('d', { deployments: { export1: { status: 'active', revision: 'r', published_at: '', link_target: '', content_hash: '', stale: false, link_missing: false } } });
+    const collection = groupCollections([a, b, c, d], [a, b, c, d])[0];
+    const onUnpublish = vi.fn();
+    const onUnpublishCollection = vi.fn();
+    const tree = CollectionDialog({ ...propsFor(collection), onUnpublish, onUnpublishCollection });
+    const btn = button(tree, '下架整个');
+    expect(btn.props.disabled).toBe(false);
+    btn.props.onClick?.();
+    // 一次调用携带完整名单（循环单对象回调会被 React 批处理互相覆盖，只留最后一项）
+    expect(onUnpublishCollection).toHaveBeenCalledExactlyOnceWith(collection.name, [a, b], 'hermes');
+    expect(onUnpublish).not.toHaveBeenCalled();
+    // 旧的自研批量确认覆盖层不复存在，统一走 page 层 ConfirmActionDialog
+    expect(text(tree)).not.toContain('确认批量下架');
   });
 
   it('T6: status chips (📦 / 🆕 / ⚠) only render when their count > 0', () => {

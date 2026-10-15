@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { formatElapsed, formatProgressDetail, taskStageLabel } from '@/lib/format';
+import { dialogGhostButton, dialogPrimaryButton, errorBlockClass } from '@/lib/ui';
 import type { RegisterBatchResultItem, TaskSnapshot } from '@/lib/types';
 import { useGithubTask } from '@/lib/useGithubTask';
 
@@ -99,14 +100,14 @@ export default function TaskProgressDialog({
               {percent !== null ? `${stageText} ${percent}%` : `${stageText}…`}
               {percent !== null && detail ? ` · ${detail}` : ''}
             </p>
-            <p className="mt-1 text-xs text-slate-400">
+            <p className="mt-1 text-xs text-slate-500">
               已用时 {formatElapsed(seconds)}；关闭窗口不会中断后台任务
             </p>
             <div className="mt-4 flex justify-end">
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                className={dialogGhostButton}
               >
                 后台运行
               </button>
@@ -124,7 +125,7 @@ export default function TaskProgressDialog({
               <button
                 type="button"
                 onClick={() => onDone(task)}
-                className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700"
+                className={dialogPrimaryButton}
               >
                 完成
               </button>
@@ -134,7 +135,7 @@ export default function TaskProgressDialog({
 
         {failed ? (
           <>
-            <p className="mt-3 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+            <p className={`mt-3 ${errorBlockClass}`} role="alert">
               {failText}
             </p>
             {batchResults.length > 0 ? <ResultsList results={batchResults} /> : null}
@@ -142,7 +143,7 @@ export default function TaskProgressDialog({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                className={dialogGhostButton}
               >
                 关闭
               </button>

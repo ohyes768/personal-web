@@ -9,6 +9,7 @@ import type {
 } from '@/lib/types';
 import { useGithubTask } from '@/lib/useGithubTask';
 import { repositoryKey } from '@/lib/collections';
+import { dialogGhostButton, dialogPrimaryButton, errorBlockClass, solidSecondaryButton } from '@/lib/ui';
 import type { SkillCard } from '@/lib/types';
 import InstallDialog from './InstallDialog';
 import ConfirmActionDialog from './ConfirmActionDialog';
@@ -227,7 +228,7 @@ export default function RegisterGithubDialog({
         onSubmit={handleOpenPassword}
       >
         <h2 className="text-lg font-semibold text-slate-800">{dialogTitle}</h2>
-        <p className="mt-1 text-xs text-slate-400">
+        <p className="mt-1 text-xs text-slate-500">
           仅支持 https://github.com/&lt;owner&gt;/&lt;repo&gt;；优先使用已有缓存，首次扫描需下载仓库，登记时复用扫描结果
         </p>
 
@@ -247,7 +248,7 @@ export default function RegisterGithubDialog({
               onClick={handleScan}
               disabled={!repository.trim() || scanning || busy}
               aria-busy={scanning}
-              className="flex shrink-0 items-center gap-2 rounded bg-slate-700 px-3 py-1.5 text-sm text-white hover:bg-slate-800 disabled:opacity-40"
+              className={`flex shrink-0 items-center gap-2 ${solidSecondaryButton}`}
             >
               {scanning ? (
                 <span
@@ -277,7 +278,7 @@ export default function RegisterGithubDialog({
           </p>
         ) : null}
         {scanFailed || scanError || (!scanStarting && pollError) ? (
-          <p className="mt-2 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+          <p className={`mt-2 ${errorBlockClass}`} role="alert">
             {scanFailed
               ? activeScan?.error_message ?? '扫描失败'
               : scanError || pollError}
@@ -286,7 +287,7 @@ export default function RegisterGithubDialog({
 
         {scanDone ? (
           activeScan.candidates.length === 0 ? (
-            <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            <p className="mt-3 rounded bg-amber-50 p-3 text-sm text-amber-700">
               未在该仓库中找到包含 SKILL.md 的候选目录
             </p>
           ) : (
@@ -341,10 +342,10 @@ export default function RegisterGithubDialog({
                       <span className="min-w-0">
                         <span className="text-slate-700">
                           {candidate.name || candidate.path}
-                          {registeredPaths.has(candidate.path) ? <span className="ml-2 text-xs text-slate-400">已登记</span> : null}
+                          {registeredPaths.has(candidate.path) ? <span className="ml-2 text-xs text-slate-500">已登记</span> : null}
                         </span>
                         {candidate.name ? (
-                          <span className="ml-2 text-xs text-slate-400">
+                          <span className="ml-2 text-xs text-slate-500">
                             {candidate.path}
                           </span>
                         ) : null}
@@ -361,7 +362,7 @@ export default function RegisterGithubDialog({
                   ))}
                 </div>
                 {selectedPaths.length > 1 ? (
-                  <p className="mt-1 text-xs text-slate-400">
+                  <p className="mt-1 text-xs text-slate-500">
                     已勾选 {selectedPaths.length} 项：将按各候选 SKILL.md
                     中的名称安装到 Hermes
                   </p>
@@ -415,18 +416,18 @@ export default function RegisterGithubDialog({
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className={dialogGhostButton}
           >
             取消
           </button>
           <button type="button" onClick={openRegistration} disabled={actionDisabled}
-            className="rounded border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-40">
+            className={dialogGhostButton}>
             仅登记
           </button>
           <button
             type="submit"
             disabled={actionDisabled}
-            className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-40"
+            className={dialogPrimaryButton}
           >
             登记并安装到 Hermes
           </button>

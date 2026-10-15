@@ -30,6 +30,8 @@ interface SourceWorkspaceProps {
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
+  /** 合集级批量下架，透传给 SkillPool → CollectionDialog。 */
+  onUnpublishCollection: (name: string, members: SkillCard[], target: TargetKey) => void;
   onCheckUpdates?: (skillIds: string[]) => Promise<void>;
   checkingUpdates?: boolean;
   onAddMembers?: (repository: string) => void;
@@ -78,6 +80,7 @@ export default function SourceWorkspace({
   onClone,
   onDelete,
   onUnpublish,
+  onUnpublishCollection,
   onCheckUpdates,
   checkingUpdates,
   onAddMembers,
@@ -181,7 +184,7 @@ export default function SourceWorkspace({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto pr-1">
         {loading ? (
-          <p className="p-6 text-center text-sm text-slate-400">加载中…</p>
+          <p className="p-6 text-center text-sm text-slate-500">加载中…</p>
         ) : (
           <SkillPool
             skills={filteredSkills}
@@ -193,13 +196,13 @@ export default function SourceWorkspace({
             onDownloadCollection={(collection) => void handleDownloadCollection(collection)}
             downloadingCollection={downloadingCollection}
             exportTargets={exportTargets}
-            queue={[]}
             selectedIds={source === 'github' ? selectedIds : undefined}
             onSelect={source === 'github' ? (id, selected) => setSelectedIds(prev => selected ? [...new Set([...prev,id])] : prev.filter(item => item !== id)) : undefined}
             onToggleQueueTarget={handleToggleQueueTarget}
             onClone={onClone}
             onDelete={onDelete}
             onUnpublish={onUnpublish}
+            onUnpublishCollection={onUnpublishCollection}
             onExport={(skill, initialTarget) => { setActionError(''); setExportAction({ skill, initialTarget }); }}
             onDeleteExport={(skill, removing) => { setActionError(''); setExportAction({ skill, removing }); }}
             onEditTags={(skill) => {

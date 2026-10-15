@@ -2,6 +2,7 @@
 
 import { useState, type FormEvent } from 'react';
 import { getTagCandidates } from '@/lib/tagCandidates';
+import { dialogGhostButton, dialogPrimaryButton, errorBlockClass, ghostButton } from '@/lib/ui';
 import type { SkillCard } from '@/lib/types';
 
 const MAX_TAG_LENGTH = 40;
@@ -95,7 +96,7 @@ export default function EditSkillTagsDialog({
                   onClick={() => toggle(tag)}
                   className={`rounded-full px-2.5 py-0.5 text-xs ${
                     active
-                      ? 'bg-sky-600 text-white'
+                      ? 'bg-sky-700 text-white'
                       : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
@@ -105,7 +106,7 @@ export default function EditSkillTagsDialog({
             })}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-slate-400">暂无任何标签，输入新标签创建</p>
+          <p className="mt-3 text-sm text-slate-500">暂无任何标签，输入新标签创建</p>
         )}
 
         <div className="mt-3 flex gap-2">
@@ -125,7 +126,7 @@ export default function EditSkillTagsDialog({
             type="button"
             onClick={addDraft}
             disabled={!draft.trim()}
-            className="rounded border border-slate-300 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className={ghostButton}
           >
             添加
           </button>
@@ -137,7 +138,7 @@ export default function EditSkillTagsDialog({
         ) : null}
 
         {error ? (
-          <p className="mt-3 rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
+          <p className={`mt-3 ${errorBlockClass}`} role="alert">
             {error}
           </p>
         ) : null}
@@ -147,14 +148,14 @@ export default function EditSkillTagsDialog({
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+            className={dialogGhostButton}
           >
             取消
           </button>
           <button
             type="submit"
             disabled={busy}
-            className="rounded bg-sky-600 px-4 py-2 text-sm text-white hover:bg-sky-700 disabled:opacity-50"
+            className={dialogPrimaryButton}
           >
             保存
           </button>

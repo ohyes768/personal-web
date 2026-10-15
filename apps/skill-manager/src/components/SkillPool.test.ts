@@ -71,9 +71,9 @@ function skill(id: string, repository = 'https://github.com/owner/first', extra:
 }
 function props(skills: SkillCard[]): ComponentProps<typeof SkillPool> {
   return {
-    skills, queue: [], exportTargets: [], selectedIds: [], onSelect: vi.fn(),
+    skills, exportTargets: [], selectedIds: [], onSelect: vi.fn(),
     onInstallSelection: vi.fn(), onToggleQueueTarget: vi.fn(),
-    onClone: vi.fn(), onDelete: vi.fn(), onUnpublish: vi.fn(), onEditTags: vi.fn(),
+    onClone: vi.fn(), onDelete: vi.fn(), onUnpublish: vi.fn(), onUnpublishCollection: vi.fn(), onEditTags: vi.fn(),
     onExport: vi.fn(), onDeleteExport: vi.fn(),
   };
 }
@@ -166,7 +166,7 @@ describe('collection-scoped controls', () => {
       const markup = renderToStaticMarkup(SkillPool(props([skill('a', undefined, extra)])));
       const action = markup.match(new RegExp(`<button[^>]*aria-label="${label}"[^>]*>`))?.[0];
       expect(action).toBeDefined();
-      expect(action?.includes('bg-sky-600')).toBe(primary);
+      expect(action?.includes('bg-sky-700')).toBe(primary);
     }
   });
 

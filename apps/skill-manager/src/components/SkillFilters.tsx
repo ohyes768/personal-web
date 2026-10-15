@@ -22,8 +22,7 @@ interface SkillFiltersProps {
   showUpdateFilter?: boolean;
 }
 
-const SELECT_CLASS =
-  'rounded border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none';
+import { toolbarInput, toolbarSelect } from '@/lib/ui';
 
 /** 左栏筛选器：名称、标签多选、安装状态、更新状态（来源由子 tab 承担）。 */
 export default function SkillFilters({
@@ -47,7 +46,7 @@ export default function SkillFilters({
           value={value.query}
           onChange={(event) => onChange({ ...value, query: event.target.value })}
           placeholder={showUpdateFilter ? '按仓库 / 名称 / ID / 简介搜索' : '按名称 / ID / 简介搜索'}
-          className="min-w-40 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+          className={`min-w-40 flex-1 ${toolbarInput}`}
         />
         <select
           value={value.deployment}
@@ -57,7 +56,7 @@ export default function SkillFilters({
               deployment: event.target.value as FilterState['deployment'],
             })
           }
-          className={SELECT_CLASS}
+          className={toolbarSelect}
           aria-label="安装状态筛选"
         >
           <option value="all">全部</option>
@@ -70,7 +69,7 @@ export default function SkillFilters({
             onChange={(event) =>
               onChange({ ...value, update: event.target.value as FilterState['update'] })
             }
-            className={SELECT_CLASS}
+            className={toolbarSelect}
             aria-label="更新状态筛选"
           >
             <option value="all">更新：全部</option>
@@ -90,7 +89,7 @@ export default function SkillFilters({
                 onClick={() => toggleTag(tag)}
                 className={`rounded-full px-2.5 py-0.5 text-xs ${
                   active
-                    ? 'bg-sky-600 text-white'
+                    ? 'bg-sky-700 text-white'
                     : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                 }`}
               >
@@ -102,7 +101,7 @@ export default function SkillFilters({
             <button
               type="button"
               onClick={() => onChange({ ...value, tags: [] })}
-              className="text-xs text-slate-400 underline hover:text-slate-600"
+              className="text-xs text-slate-500 underline hover:text-slate-700"
             >
               清除标签
             </button>

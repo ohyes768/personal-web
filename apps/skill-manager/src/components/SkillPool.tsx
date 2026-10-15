@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useInstallTargets, installTargetLabel } from '@/lib/installTargets';
-import type { QueueEntry, TargetKey } from '@/lib/queue';
+import type { TargetKey } from '@/lib/queue';
 import type { ExportTarget, SkillCard, TargetDeployment } from '@/lib/types';
 import { collectionStats, groupCollections, repositoryKey, type SkillCollection } from '@/lib/collections';
 import { isInstallTarget, type ExportTargetKey } from '@/lib/targets';
@@ -15,6 +15,7 @@ import {
 } from '@/components/icons';
 import CollectionDialog from '@/components/CollectionDialog';
 import ExportStatus from '@/components/ExportStatus';
+import { cardClass, emptyStateClass, ghostDangerButton } from '@/lib/ui';
 
 
 const SKILL_GRID_CLASS = 'grid grid-cols-1 items-stretch gap-3 md:grid-cols-2 lg:grid-cols-3';
@@ -29,13 +30,14 @@ interface SkillPoolProps {
   onDownloadCollection?: (collection: SkillCollection) => void;
   downloadingCollection?: string | null;
   checkingUpdates?: boolean;
-  queue: QueueEntry[];
   selectedIds?: string[];
   onSelect?: (id: string, selected: boolean) => void;
   onToggleQueueTarget: (skillId: string, target: TargetKey) => void;
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
+  /** 合集级批量下架，透传给 CollectionDialog。 */
+  onUnpublishCollection: (name: string, members: SkillCard[], target: TargetKey) => void;
   onEditTags: (skill: SkillCard) => void;
   onExport: (skill: SkillCard, target?: ExportTargetKey) => void;
   onDeleteExport: (skill: SkillCard, target: ExportTargetKey) => void;
@@ -84,7 +86,6 @@ function InstallationBadge({ deployment }: { deployment?: TargetDeployment }) {
 function SkillCardItem({
   skill,
   exportTargets,
-  queuedTargets,
   selected,
   onSelect,
   inCollection = false,
@@ -98,7 +99,6 @@ function SkillCardItem({
 }: {
   skill: SkillCard;
   exportTargets: ExportTarget[];
-  queuedTargets: TargetKey[];
   selected?: boolean;
   onSelect?: (selected: boolean) => void;
   inCollection?: boolean;
@@ -130,7 +130,7 @@ function SkillCardItem({
     : skill.id !== skill.name ? skill.id : '';
 
   return (
-    <li className={`flex min-w-0 flex-col rounded-xl border border-slate-200 bg-white ${skill.source === 'github' && !inCollection ? 'min-h-56 p-4 shadow-sm' : 'p-3'}`}>
+    <li className={`flex min-w-0 flex-col ${cardClass}`}>
       {skill.source === 'github' && !inCollection ? (
         <div className="mb-3">
           <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-xs font-semibold text-slate-600">
@@ -150,7 +150,7 @@ function SkillCardItem({
             <InstallationBadge deployment={skill.deployments[current]} />
           </div>
           {subtitle ? (
-            <p className="truncate text-xs text-slate-400" title={subtitle}>
+            <p className="truncate text-xs text-slate-500" title={subtitle}>
               {subtitle}
             </p>
           ) : null}
@@ -188,7 +188,7 @@ function SkillCardItem({
       {skill.tags.length > 0 ? (
         <div className="mt-1.5 flex flex-wrap items-center gap-1">
           {skill.tags.map((tag) => (
-            <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
+            <span key={tag} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600">
               {tag}
             </span>
           ))}
@@ -207,7 +207,7 @@ function SkillCardItem({
         <button
           type="button"
           onClick={() => onEditTags(skill)}
-          className="mt-1.5 w-fit rounded-full bg-slate-50 px-2 py-0.5 text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+          className="mt-1.5 w-fit rounded-full bg-slate-50 px-2 py-0.5 text-xs text-slate-600 hover:bg-slate-100 hover:text-slate-700"
         >
           + 添加标签
         </button>
@@ -218,7 +218,6 @@ function SkillCardItem({
         <button type="button" aria-label="导出 Skill" data-tip="导出 ZIP" title="选择目标并导出 ZIP" disabled={sourceBlocked} onClick={() => onExport(skill)} className="icon-btn tip-left rounded-md border border-slate-300"><DownloadIcon /></button>
         <ExportStatus skill={skill} targets={exportTargets} onExport={onExport} onDeleteExport={onDeleteExport} />
         {!(skill.source === 'local' && installed) && ALL_TARGETS.map((target) => {
-          const queued = queuedTargets.includes(target);
           return (
             <button
               key={target}
@@ -229,27 +228,21 @@ function SkillCardItem({
                   ? unavailable ? targetReason : sourceMissing
                     ? '源缺失，无法安装'
                     : '请先 Clone 缓存'
-                  : queued
-                    ? `安装到 ${label(target)}`
-                    : `安装到 ${label(target)}`
+                  : `安装到 ${label(target)}`
               }
               title={
                 publishBlocked
                   ? unavailable ? targetReason : sourceMissing
                     ? '源库登记目录缺失，无法安装'
                     : '请先 Clone 缓存'
-                  : queued
-                    ? `安装到 ${label(target)}`
-                    : `安装到 ${label(target)}`
+                  : `安装到 ${label(target)}`
               }
               disabled={publishBlocked}
               onClick={() => onToggleQueueTarget(skill.id, target)}
               className={`tip-right ml-auto inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-500 disabled:cursor-not-allowed disabled:opacity-40 ${
                 installed && !hasPendingUpdate
                   ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
-                  : queued
-                  ? 'border-emerald-500 bg-emerald-500 text-white'
-                  : 'border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700'
+                  : 'border-sky-700 bg-sky-700 text-white hover:border-sky-800 hover:bg-sky-800'
               }`}
             >
               {installed ? '更新' : '安装'}
@@ -263,7 +256,7 @@ function SkillCardItem({
             data-tip={`下架（${activeTargets.map((t) => label(t)).join('、')}）`}
             title="已发布目标需先下架，下架后才会出现删除按钮"
             onClick={() => onUnpublish(skill.id, skill.name, activeTargets)}
-            className="tip-right inline-flex h-8 items-center justify-center rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-600 transition-colors hover:border-rose-300 hover:bg-rose-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500"
+            className={`tip-right inline-flex h-8 items-center justify-center rounded-md border px-3 text-xs font-medium transition-colors hover:border-rose-300 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-rose-500 ${ghostDangerButton}`}
           >
             下架
           </button>
@@ -291,7 +284,7 @@ function SkillCardItem({
             data-tip="Clone 缓存（安装前必做）"
             title="从 GitHub 拉取仓库到本机缓存，安装前必做"
             onClick={() => onClone(skill.id, skill.name)}
-            className="icon-btn tip-right icon-btn-amber rounded-md bg-amber-600 text-white hover:text-white"
+            className="icon-btn tip-right rounded-md border border-amber-300 bg-white text-amber-700 hover:bg-amber-50"
           >
             <DownloadIcon />
           </button>
@@ -316,23 +309,19 @@ export default function SkillPool({
   downloadingCollection,
   checkingUpdates,
   exportTargets,
-  queue,
   selectedIds,
   onSelect,
   onToggleQueueTarget,
   onClone,
   onDelete,
   onUnpublish,
+  onUnpublishCollection,
   onEditTags,
   onExport,
   onDeleteExport,
   currentView,
 }: SkillPoolProps) {
   const {current, targets} = useInstallTargets();
-  const queuedBySkill = new Map<string, TargetKey[]>();
-  for (const entry of queue) {
-    queuedBySkill.set(entry.skillId, entry.targets);
-  }
 
   const [openCollection, setOpenCollection] = useState<SkillCollection | null>(null);
   const triggerRefs = useRef(new Map<string, HTMLButtonElement | null>());
@@ -354,7 +343,7 @@ export default function SkillPool({
 
   if (skills.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
+      <p className={`${emptyStateClass} p-6 text-sm text-slate-600`}>
         没有符合筛选条件的 Skill
       </p>
     );
@@ -369,7 +358,6 @@ export default function SkillPool({
           selected={selectedIds?.includes(skill.id)}
           onSelect={inCollection && onSelect ? selected => onSelect(skill.id, selected) : undefined}
           exportTargets={exportTargets}
-          queuedTargets={queuedBySkill.get(skill.id) ?? []}
           onToggleQueueTarget={onToggleQueueTarget}
           onClone={onClone}
           onDelete={onDelete}
@@ -401,7 +389,7 @@ export default function SkillPool({
             return (
               <li key={collection.key}
                 aria-label={`${collection.name} 合集`}
-                className="flex min-w-0 min-h-56 flex-col rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                className={`flex min-w-0 min-h-56 flex-col ${cardClass}`}
               >
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 rounded-md bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-700">
@@ -414,7 +402,7 @@ export default function SkillPool({
                   </span>
                 </div>
                 <h3 className="truncate font-semibold text-slate-900" title={collection.name}>{collection.name}</h3>
-                <p className="mt-0.5 truncate text-xs text-slate-400" title={collection.repository ?? '仓库地址异常'}>
+                <p className="mt-0.5 truncate text-xs text-slate-500" title={collection.repository ?? '仓库地址异常'}>
                   {collection.repository ?? '仓库地址异常，请联系管理员'}
                 </p>
                 <p className="mt-3 line-clamp-2 text-sm leading-6 text-slate-500">
@@ -469,11 +457,11 @@ export default function SkillPool({
             downloadingCollection={downloadingCollection}
             checkingUpdates={checkingUpdates}
             targets={targets}
-            queue={queue}
             onToggleQueueTarget={onToggleQueueTarget}
             onClone={onClone}
             onDelete={onDelete}
             onUnpublish={onUnpublish}
+            onUnpublishCollection={onUnpublishCollection}
             onEditTags={onEditTags}
             onExport={onExport}
             onDeleteExport={onDeleteExport}

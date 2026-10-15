@@ -7,6 +7,7 @@ import {
   selectedExportTarget,
   type ExportTargetKey,
 } from '@/lib/targets';
+import { dialogGhostButton, dialogPrimaryButton } from '@/lib/ui';
 import type { ExportTarget, SkillCard } from '@/lib/types';
 
 interface Props {
@@ -123,14 +124,14 @@ export default function ExportDialog({
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="rounded border border-slate-300 px-3 py-2 text-sm"
+            className={dialogGhostButton}
           >
             取消
           </button>
           <button
             type="submit"
             disabled={busy || !canSubmit}
-            className="rounded bg-sky-600 px-3 py-2 text-sm text-white disabled:opacity-50"
+            className={dialogPrimaryButton}
           >
             {busy ? '处理中…' : removing ? '清除记录' : '下载 ZIP'}
           </button>

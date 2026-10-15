@@ -7,6 +7,7 @@ import type { SkillCard } from '@/lib/types';
 import { formatPublishedAt, shortRepo } from '@/lib/format';
 import { groupCollections } from '@/lib/collections';
 import { UnlinkIcon } from '@/components/icons';
+import { cardClass, emptyStateClass, ghostDangerButton, toolbarInput, toolbarSelect } from '@/lib/ui';
 
 const SOURCE_LABEL: Record<SkillCard['source'], string> = {
   local: '自研',
@@ -84,13 +85,13 @@ export default function DeployBoard({
     return (
       <li
         key={skill.id}
-        className="flex flex-col rounded-lg border border-slate-200 bg-white p-3"
+        className={`flex flex-col ${cardClass}`}
       >
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <h3 className="truncate font-medium text-slate-800">{skill.name}</h3>
             {subtitle ? (
-              <p className="truncate text-xs text-slate-400" title={subtitle}>
+              <p className="truncate text-xs text-slate-500" title={subtitle}>
                 {subtitle}
               </p>
             ) : null}
@@ -109,7 +110,7 @@ export default function DeployBoard({
             {skill.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500"
+                className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-600"
               >
                 {tag}
               </span>
@@ -137,7 +138,7 @@ export default function DeployBoard({
           {deployment.published_at ? (
             <div className="flex items-center gap-2">
               <span className="w-16 shrink-0 text-slate-500">安装时间</span>
-              <span className="text-slate-400">
+              <span className="text-slate-500">
                 {formatPublishedAt(deployment.published_at)}
               </span>
             </div>
@@ -170,14 +171,14 @@ export default function DeployBoard({
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           placeholder="按仓库 / 名称 / ID 搜索"
-          className="min-w-40 flex-1 rounded border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+          className={`min-w-40 flex-1 ${toolbarInput}`}
         />
         <select
           value={sourceFilter}
           onChange={(event) =>
             setSourceFilter(event.target.value as 'all' | SkillCard['source'])
           }
-          className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+          className={toolbarSelect}
           aria-label="来源筛选"
         >
           <option value="all">来源：全部</option>
@@ -187,19 +188,19 @@ export default function DeployBoard({
         <select
           value={sort}
           onChange={(event) => setSort(event.target.value as 'time' | 'name')}
-          className="rounded border border-slate-300 bg-white px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+          className={toolbarSelect}
           aria-label="排序方式"
         >
           <option value="time">排序：发布时间 ↓</option>
           <option value="name">排序：名称</option>
         </select>
-        <span className="text-xs font-semibold tracking-wide text-slate-400">
+        <span className="text-xs font-semibold tracking-wide text-slate-600">
           {agentLabel} · {items.length} 个已部署
         </span>
       </div>
 
       {items.length === 0 ? (
-        <p className="rounded-lg border border-dashed border-slate-300 p-6 text-center text-sm text-slate-400">
+        <p className={`${emptyStateClass} p-6 text-sm text-slate-600`}>
           {totalCount === 0
             ? `${agentLabel} 上暂无已部署的 Skill`
             : '没有符合筛选条件的部署记录'}
@@ -207,7 +208,7 @@ export default function DeployBoard({
       ) : (
         <ul className="grid min-h-0 flex-1 grid-cols-1 content-start items-stretch gap-2.5 overflow-y-auto pr-1 md:grid-cols-2 lg:grid-cols-3">
           {groups.map(group => group.members[0].source === 'local' ? renderMember(group.members[0]) : (
-            <li key={group.key} className="rounded-lg border border-slate-200 bg-white p-4">
+            <li key={group.key} className={cardClass}>
               <h3 className="font-semibold text-slate-800">{group.name}</h3>
               <p className="break-all text-xs text-slate-500">{group.repository ?? '仓库地址异常'}</p>
               <p className="mt-2 text-sm text-slate-600">{agentLabel} · 已发布 {group.members.filter(s => !s.deployments[agent].link_missing).length}/{group.members.length}
@@ -216,7 +217,7 @@ export default function DeployBoard({
               </p>
               <button type="button" disabled={unavailable}
                       onClick={() => onUnpublishCollection(group.name, group.members, agent)}
-                className="mt-3 rounded border border-rose-200 px-3 py-1 text-xs text-rose-700 hover:bg-rose-50">
+                className={`mt-3 ${ghostDangerButton}`}>
                 从 {agentLabel} 全部下架（{group.members.length} 项）
               </button>
               <details className="mt-3 border-t border-slate-100 pt-2">

@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useInstallTargets, installTargetLabel, type InstallTarget } from '@/lib/installTargets';
+import { useInstallTargets, type InstallTarget } from '@/lib/installTargets';
 import { collectionStats, type SkillCollection } from '@/lib/collections';
 import { isInstallTarget, type ExportTargetKey } from '@/lib/targets';
-import type { QueueEntry, TargetKey } from '@/lib/queue';
+import type { TargetKey } from '@/lib/queue';
 import type { SkillCard, TargetDeployment } from '@/lib/types';
 import { CollectionIcon } from '@/components/icons';
 
@@ -19,11 +19,12 @@ interface CollectionDialogProps {
   downloadingCollection?: string | null;
   checkingUpdates?: boolean;
   targets: InstallTarget[];
-  queue: QueueEntry[];
   onToggleQueueTarget: (skillId: string, target: TargetKey) => void;
   onClone: (skillId: string, skillName: string) => void;
   onDelete: (skill: SkillCard) => void;
   onUnpublish: (skillId: string, skillName: string, targets: TargetKey[]) => void;
+  /** 合集级批量下架：一次携带全部待下架成员，由 page 层统一确认弹窗接手。 */
+  onUnpublishCollection: (name: string, members: SkillCard[], target: TargetKey) => void;
   onEditTags: (skill: SkillCard) => void;
   onExport: (skill: SkillCard, target?: ExportTargetKey) => void;
   onDeleteExport: (skill: SkillCard, target: ExportTargetKey) => void;
@@ -84,14 +85,12 @@ export default function CollectionDialog({
   onDownloadCollection,
   downloadingCollection,
   checkingUpdates,
-  targets,
-  queue,
   onToggleQueueTarget,
   onClone,
   onUnpublish,
+  onUnpublishCollection,
 }: CollectionDialogProps) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [confirmBatchUnpublish, setConfirmBatchUnpublish] = useState(false);
   const { current } = useInstallTargets();
 
   // Esc 键关闭
@@ -122,16 +121,11 @@ export default function CollectionDialog({
   const total = collection.members.length;
   const complete = installed === total;
   const missingCache = collection.members.find(m => m.cache_missing);
-  const label = (id: string) => installTargetLabel(targets, id);
   const exportCount = collection.members.reduce((sum, m) => {
     return sum + Object.entries(m.deployments).filter(
       ([target, deployment]) => !isInstallTarget(target) && deployment.status === 'active'
     ).length;
   }, 0);
-  const queuedBySkill = new Map<string, TargetKey[]>();
-  for (const entry of queue) {
-    queuedBySkill.set(entry.skillId, entry.targets);
-  }
 
   function handleSelectAll() {
     const selectable = collection.members
@@ -160,18 +154,14 @@ export default function CollectionDialog({
     onInstallSelection?.(collection.members.map(s => s.id));
     onClose();
   }
+  // 合集级批量下架：一次携带 current 目标上全部 active 成员，
+  // 走 page 层统一确认弹窗（逐项列出 + 密码 + 部分失败重试）。
+  // 不在此处循环调用单对象 onUnpublish —— React 批处理下会互相覆盖，只留最后一项。
   function handleUnpublishAll() {
-    setConfirmBatchUnpublish(true);
-  }
-  function confirmUnpublishAll() {
-    const targets: TargetKey[] = [current];
-    for (const skill of collection.members) {
-      if (Object.values(skill.deployments).some(d => d.status === 'active')) {
-        onUnpublish(skill.id, skill.name, targets);
-      }
-    }
-    setConfirmBatchUnpublish(false);
-    onClose();
+    const members = collection.members.filter(
+      s => s.deployments[current]?.status === 'active'
+    );
+    if (members.length) onUnpublishCollection(collection.name, members, current);
   }
 
   return (
@@ -200,7 +190,7 @@ export default function CollectionDialog({
               </span>
             </div>
             <h2 className="truncate text-xl font-semibold text-slate-900" title={collection.name}>{collection.name}</h2>
-            <p className="mt-0.5 truncate text-xs text-slate-400" title={collection.repository ?? '仓库地址异常'}>
+            <p className="mt-0.5 truncate text-xs text-slate-500" title={collection.repository ?? '仓库地址异常'}>
               {collection.repository ?? '仓库地址异常，请联系管理员'}
             </p>
           </div>
@@ -209,7 +199,7 @@ export default function CollectionDialog({
             onClick={onClose}
             aria-label="关闭"
             data-dialog-close="true"
-            className="shrink-0 rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+            className="shrink-0 rounded-md p-1 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
           >
             <svg aria-hidden="true" className="h-5 w-5" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="m3 3 10 10M13 3 3 13" /></svg>
           </button>
@@ -222,7 +212,7 @@ export default function CollectionDialog({
               type="button"
               onClick={handleSelectAll}
               disabled={!collection.members.some(s => !s.cache_missing && !s.source_missing)}
-              className="rounded-md border border-slate-200 bg-white px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-40"
+              className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-slate-600 hover:bg-slate-50 disabled:opacity-50"
             >
               全选
             </button>
@@ -242,7 +232,7 @@ export default function CollectionDialog({
               disabled={!selectedIds.size || !onInstallSelection}
               onClick={handleInstallSelection}
               data-action="install-selected"
-              className="rounded-md bg-sky-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-40"
+              className="rounded-md bg-sky-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-sky-800 disabled:opacity-40"
             >
               安装所选 ({selectedIds.size})
             </button>
@@ -257,7 +247,7 @@ export default function CollectionDialog({
             </button>
             <button
               type="button"
-              disabled={installed === 0}
+              disabled={!collection.members.some(s => s.deployments[current]?.status === 'active')}
               onClick={handleUnpublishAll}
               title="下架合集内所有已安装成员"
               className="rounded-md border border-rose-300 bg-white px-2.5 py-1.5 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-40"
@@ -310,13 +300,12 @@ export default function CollectionDialog({
 
         {/* body: 单列 row list */}
         {collection.members.length === 0 ? (
-          <div className="flex-1 overflow-y-auto px-5 py-12 text-center text-sm text-slate-400">
+          <div className="flex-1 overflow-y-auto px-5 py-12 text-center text-sm text-slate-500">
             暂无成员
           </div>
         ) : (
           <ul className="flex-1 overflow-y-auto divide-y divide-slate-100">
             {collection.members.map(skill => {
-              const queued = queuedBySkill.get(skill.id) ?? [];
               const memberInstalled = skill.deployments[current]?.status === 'active' && !skill.deployments[current].link_missing;
               const activeTargets = Object.entries(skill.deployments)
                 .filter(([target, deployment]) => isInstallTarget(target) && deployment.status === 'active')
@@ -381,9 +370,7 @@ export default function CollectionDialog({
                       className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-40 ${
                         memberInstalled
                           ? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50'
-                          : queued.length
-                          ? 'border-emerald-500 bg-emerald-500 text-white'
-                          : 'border-sky-600 bg-sky-600 text-white hover:border-sky-700 hover:bg-sky-700'
+                          : 'border-sky-700 bg-sky-700 text-white hover:border-sky-800 hover:bg-sky-800'
                       }`}
                     >
                       {memberInstalled ? '更新' : '安装'}
@@ -393,7 +380,7 @@ export default function CollectionDialog({
                         type="button"
                         aria-label={`下架 ${skill.name}`}
                         onClick={() => { onUnpublish(skill.id, skill.name, activeTargets); onClose(); }}
-                        className="rounded-md border border-rose-200 bg-white px-2.5 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50"
+                        className="rounded-md border border-slate-300 bg-white px-2.5 py-1 text-xs font-medium text-rose-700 hover:bg-rose-50"
                       >
                         下架
                       </button>
@@ -404,43 +391,6 @@ export default function CollectionDialog({
             })}
           </ul>
         )}
-
-        {/* 批量下架确认（覆盖在内容区上方） */}
-        {confirmBatchUnpublish ? (
-          <div
-            className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-slate-900/40"
-            role="dialog"
-            aria-modal="true"
-            aria-label="确认批量下架"
-            onClick={() => setConfirmBatchUnpublish(false)}
-          >
-            <div
-              className="w-full max-w-sm rounded-lg bg-white p-5 shadow-xl"
-              onClick={e => e.stopPropagation()}
-            >
-              <h3 className="text-lg font-semibold text-slate-800">确认批量下架</h3>
-              <p className="mt-2 text-sm text-slate-600">
-                将下架「{collection.name}」中 {installed} 个已安装成员（目标 {label(current)}）。下架后可在主 grid 重新安装。
-              </p>
-              <div className="mt-4 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setConfirmBatchUnpublish(false)}
-                  className="rounded border border-slate-300 px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
-                  onClick={confirmUnpublishAll}
-                  className="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700"
-                >
-                  确认下架
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );

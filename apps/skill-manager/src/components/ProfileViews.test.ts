@@ -9,7 +9,7 @@ import type { SkillCard } from '@/lib/types';
 const named = 'hermes:profile:ohyes768' as const;
 const targets: InstallTarget[] = ['hermes', named].map(id => ({id:id as InstallTarget['id'],provider:'hermes',name:id,profile_name:id,install_path:`/targets/${id}`,available:true,configured:true,unavailable_reason:''}));
 const skill: SkillCard = {id:'alpha',name:'Alpha',source:'local',path:'alpha',repository:null,tags:[],summary:'',status:'active',update:null,cache_missing:false,source_missing:false,deployments:{hermes:{status:'active',revision:'v1',published_at:'now',link_target:'/source/alpha',link_missing:false,stale:false,content_hash:''}}};
-const workspaceProps = {source:'local' as const,skills:[skill],loading:false,exportTargets:[],targetsError:'',onManageTargets:vi.fn(),onRefresh:vi.fn(),onNotify:vi.fn(),onClone:vi.fn(),onDelete:vi.fn(),onUnpublish:vi.fn()};
+const workspaceProps = {source:'local' as const,skills:[skill],loading:false,exportTargets:[],targetsError:'',onManageTargets:vi.fn(),onRefresh:vi.fn(),onNotify:vi.fn(),onClone:vi.fn(),onDelete:vi.fn(),onUnpublish:vi.fn(),onUnpublishCollection:vi.fn()};
 function render(current: InstallTarget['id'], content: ReturnType<typeof createElement>, error='') {
   return renderToStaticMarkup(createElement(InstallTargetsContext.Provider,{value:{current,targets,error,loading:false}},content));
 }

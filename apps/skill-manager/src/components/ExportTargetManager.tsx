@@ -193,7 +193,7 @@ export default function ExportTargetManager({
                       {target.name}
                     </h3>
                     <span
-                      className={`rounded px-2 py-0.5 text-xs ${target.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}
+                      className={`rounded px-2 py-0.5 text-xs ${target.enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}
                     >
                       {target.enabled ? '已启用' : '已停用'}
                     </span>
