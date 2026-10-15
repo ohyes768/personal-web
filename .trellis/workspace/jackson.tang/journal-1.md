@@ -1370,3 +1370,37 @@ Skill Manager：移除安装弹框环境复选框，固定使用打开时当前�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 38: skill-manager git 同步提速：ls-remote 合并 + 浅拉取
+
+**Date**: 2026-10-15
+**Task**: skill-manager git 同步提速：ls-remote 合并 + 浅拉取
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+慢速出口（NAS 容器 ~51KiB/s）下「同步缓存」网络往返 5→3：check_update 合并为单次 ls-remote（HEAD + refs/tags/* pattern，坑：显式 pattern 下 --tags/--refs flags 不生效）；删除 register/register_batch/clone_cache 任务内冗余 verify_reachable（routes 同步预检与 scan 保留）；ensure_cached clone/fetch 均 --depth 1 浅拉取；check_update 失败映射 unreachable。248 测试全绿，契约沉淀至 skill-manager-github-cache.md
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8ccf3d6` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
