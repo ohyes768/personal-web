@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 36
+- **Total Sessions**: 37
 - **Last Active**: 2026-10-15
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1338 | Active |
+| `journal-1.md` | ~1372 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 37 | 2026-10-15 | Skill Manager GitHub 合集卡片改为 modal 入口 | `366d82e` | `master` |
 | 36 | 2026-10-15 | 安装弹框沿用当前环境 | `53e8e75` | `master` |
 | 35 | 2026-10-15 | Skill Manager profile scope switcher 重设计 | `53e08ab` | `master` |
 | 34 | 2026-10-14 | Housing Map 管理页切换性能优化 | `f430113` | `master` |

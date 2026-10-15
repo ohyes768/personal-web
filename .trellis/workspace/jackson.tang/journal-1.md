@@ -1336,3 +1336,37 @@ Skill Manager：移除安装弹框环境复选框，固定使用打开时当前�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 37: Skill Manager GitHub 合集卡片改为 modal 入口
+
+**Date**: 2026-10-15
+**Task**: Skill Manager GitHub 合集卡片改为 modal 入口
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+把 apps/skill-manager 的 GitHub 合集卡片从 inline <details> 折叠展开改为入口卡 + 全屏 modal 模型：单成员合集保持独立卡不变，多成员合集点击 [查看成员 →] 打开 CollectionDialog modal（header + toolbar + chip摘要 + row list 成员）。统一 '单 = inline 卡，多 = modal' 操作语义。新增 CollectionDialog.tsx + 11 项 vitest 测试；typecheck/lint/vitest 89/15 文件全过；currentView prop 从 page.tsx 串到 SkillPool 让 modal 在 tab 切换时自动关闭。spec 同步记录 single-vs-multi 操作模型 + modal 自写约定 + toolbar 视觉权重分层 + 跨层 prop 透传审计清单。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `366d82e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
