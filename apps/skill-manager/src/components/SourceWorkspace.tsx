@@ -33,6 +33,8 @@ interface SourceWorkspaceProps {
   onCheckUpdates?: (skillIds: string[]) => Promise<void>;
   checkingUpdates?: boolean;
   onAddMembers?: (repository: string) => void;
+  /** 当前 view（manage / board / …），URL 变化时通知 SkillPool 关闭 modal */
+  currentView?: string;
 }
 
 function applyFilters(skills: SkillCard[], filters: FilterState, target: TargetKey): SkillCard[] {
@@ -79,6 +81,7 @@ export default function SourceWorkspace({
   onCheckUpdates,
   checkingUpdates,
   onAddMembers,
+  currentView,
 }: SourceWorkspaceProps) {
   const {current} = useInstallTargets();
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
@@ -203,6 +206,7 @@ export default function SourceWorkspace({
               setActionError('');
               setEditingTagsSkill(skill);
             }}
+            currentView={currentView}
           />
         )}
         </div>

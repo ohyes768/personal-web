@@ -74,7 +74,7 @@
 - GitHub 已安装且没有待更新内容时，更新按钮使用中性描边；仅未安装或存在 `update.has_update` / Hermes `stale` 时突出主操作，仓库缓存 HEAD 更新后同步刷新所有成员的更新提示。
 - 卡片安装徽章与合集安装计数省略单目标 Hermes 前缀，使用「已安装 / 未安装」；下架显示未安装，链接缺失显示「未安装 · 链接缺失」。
 - 安装徽章统一为 24px 高圆角胶囊：绿色勾号表示已安装、灰色圆点表示未安装、橙色感叹号表示链接缺失；版本号放入已安装徽章的悬停提示。
-- 安装徽章紧邻标题，窄卡片允许换行；无外部导出记录时不保留独立状态行。底部安装/更新用文字主按钮，下架用同高度的红色文字按钮；导出、编辑、删除用带提示的图标。
+- 安装徽章紧邻标题，窄卡片允许换行；外部导出记录统一由底部操作行的 ExportStatus 汇总，不按目标增加状态行。底部安装/更新用文字主按钮，下架用同高度的红色文字按钮；导出、编辑、删除用带提示的图标。
 - 自研卡片列表与 GitHub 合集成员详情复用同一网格样式：小屏一列、md 两列、lg 三列，间距和卡片拉伸方式一致。
 - 管理列表的检索与筛选固定在卡片滚动区上方；仅卡片列表使用 `min-h-0 flex-1 overflow-y-auto`，筛选区不随列表滚动。
 - GitHub 勾选、全选、清空与安装所选仅作用于所在合集，页面顶部不提供跨合集批量栏。全选只选当前可见且源/缓存可用的成员；安装所选排除不可用成员，隐藏的已选成员明确显示数量。不提供「安装整个合集」入口，批量安装统一通过显式选择完成。
@@ -161,4 +161,78 @@ T14 空 catalog：`暂无 profile` 空态
 T15 active 列表项：`data-active` + sky class
 
 测试用 `renderToStaticMarkup` + `InstallTargetsContext.Provider`（参考 `ProfileViews.test.ts`），不引入 jsdom。
+
+## 合集 modal 入口卡（2026-10-15）
+
+GitHub 合集卡由 inline `<details>` 折叠展开改为「入口卡 + 全屏 modal」模型。统一操作语义：**操作 1 个 Skill = 独立卡就地操作；操作 N 个 Skill = 合集卡 → modal**。
+
+### 单 vs 多 操作模型
+
+- 单成员合集（1 个 member）走 `renderSkill(visibleMembers[0])` 直接渲染为独立卡（与一般独立卡完全相同的 `SkillCardItem`），**不进 modal**
+- 多成员合集（≥2 members）走 modal：合集卡只承担入口角色（高度对齐独立卡，差距 ≤ 50px），所有成员操作 + 批量操作在 modal 内统一 toolbar 完成
+- 入口卡结构：徽章（合集 · N 项）+ 完成态计数（`✓ N/N 已全部安装` 绿 / `已安装 N/M` slate）+ 仓库 + 成员摘要 + 状态 chip（📦 已导出 N 目标 / 🆕 有更新 / ⚠ 异常 N 项，仅 N>0 显示）+「[查看成员 →]」主按钮
+
+### Modal 自写约定（沿用 `ProfileScopePicker` / `ConfirmActionDialog` 风格）
+
+不引入 Headless UI / Radix 等 modal 库——单点使用不值得加依赖；当前 dialog 都是自写，保持一致。
+
+- 背景遮罩：`fixed inset-0 z-40 flex items-center justify-center bg-slate-900/50 p-4`
+- 内容容器：`max-h-[85vh] w-full max-w-[960px] flex flex-col rounded-xl border border-slate-200 bg-white shadow-xl`
+- 三种关闭方式必须都触发同一个 `onClose`：
+  - 右上 `[X 关闭]` 按钮
+  - Esc 键（`document.addEventListener('keydown', ...)` + `typeof document === 'undefined'` SSR 守卫）
+  - 背景点击（背景 div `onClick={onClose}` + 内容 div `onClick={e => e.stopPropagation()}`）
+- 路由变化时强制关闭 modal：SkillPool 内 `useEffect(() => { setOpenCollection(null); }, [currentView])`；`currentView` prop 必须从 `page.tsx` 透传到 `SourceWorkspace` 再到 `SkillPool`，**任何一环漏掉都会让 modal 在切换 tab 后仍覆盖在新视图上方**
+- 焦点回退：modal 打开时记录触发卡 ref（`triggerRef.current`），关闭时 `.focus()`
+
+### Modal 内单成员操作精简
+
+modal 内的成员行（row list 形态）只暴露以下操作：
+
+| 操作 | 在 modal 内 | 替代入口 |
+|---|---|---|
+| 安装/更新 | ✅ 行内按钮 | — |
+| 下架 | ✅ 行内按钮 | — |
+| 恢复缓存（cache_missing 时） | ✅ 琥珀色按钮 | — |
+| 删除 | ❌ 不暴露 | 主 grid 入口卡视角 |
+| 编辑标签 | ❌ 不暴露 | 主 grid 入口卡视角 |
+| 导出 ZIP | ❌ 不暴露 | 主 grid 入口卡视角 |
+
+理由：modal 的核心价值是批量，单成员操作的精细管理应该让用户**先回到主 grid**。
+
+### Toolbar 视觉权重分层
+
+modal 顶部 toolbar 同时承载多种操作类型，必须按视觉权重分清：
+
+| 层级 | 样式 | 用例 |
+|---|---|---|
+| 主操作 | `bg-sky-600 text-white` filled | 「安装所选 (N)」（仅 N>0 启用） |
+| 次级主操作 | `border-sky-300 text-sky-700` outline | 「更新整个」「下架整个」 |
+| 次级操作 | `border-slate-200 text-slate-600` outline | 「下载合集」「＋ 添加成员」「检查更新」 |
+
+### Row list 替代 grid（modal 内）
+
+- modal 宽 960px，3 列 grid 会塞 12 张卡 → 4 行 → 视觉密度大
+- 单列 row list（一行一个 member）更扫读名字、更省垂直空间
+- 「合集 = 一组相关项」用 row 比 card 更表达语义
+- row list 用 `divide-y divide-slate-100` 分隔，每行 `flex items-start gap-3 px-5 py-3 hover:bg-slate-50/60`
+
+### 多层 prop 透传审计
+
+像 `currentView` 这种路由信号需要 `page.tsx → SourceWorkspace → SkillPool → CollectionDialog` 4 层透传，每一层都不能漏。**新增跨层 prop 时必须同步审计所有链路文件**：
+
+1. 类型定义（`SourceWorkspaceProps`）
+2. 调用点（`<SourceWorkspace currentView={view}>` 两处）
+3. 中间层 props（`SourceWorkspace → SkillPool`）
+4. 最深消费者（`SkillPool → useEffect(currentView)`）
+
+每加一个跨层 prop，4 个文件都要 grep 检查一致。
+
+### 测试用 Playwright 注入 fixture
+
+后端只有 3 个独立 github skill 时无法触发 modal（modal 需要 ≥2 成员合集）。可在 Playwright 里用 `page.route('**/api/skills**', route => route.fulfill({ body: fixture }))` 注入多成员合集 fixture 做 live 截图验证；生产路径不变（不动 API、不动后端 fixture 数据）。
+
+### 合集 modal 入口卡的 commit 节奏
+
+`CollectionDialog.tsx` 新增 + `SkillPool.tsx` 改 collection 渲染块 + `SkillPool.test.ts` 改 mock 模式 + 可能 touch `SourceWorkspace.tsx` / `page.tsx`（透传路由 prop）。共 4-5 个文件，单 commit 完成。
 

@@ -393,6 +393,7 @@ function SkillManagerPage() {
               setActionError('');
               setPendingUnpublish({ name: skillName, items: targets.map(target => ({ skillId, skillName, target })), results: [] });
             }}
+            currentView={view}
           />
         </div>
         <div className={sourceTab === 'github' ? 'flex min-h-0 flex-1' : 'hidden'}>
@@ -424,6 +425,7 @@ function SkillManagerPage() {
               setActionError('');
               setPendingUnpublish({ name: skillName, items: targets.map(target => ({ skillId, skillName, target })), results: [] });
             }}
+            currentView={view}
           />
         </div>
       </div>
