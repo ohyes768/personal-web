@@ -1,0 +1,3 @@
+# 设计
+inventory新增只读property_types投影，取TMSF来源及同ID历史用途，兼容现有资格规则。catalog增加market/property_type参数及property_types选项数组，分页前过滤。前端分类下拉按tab显示，独立保留每个tab筛选值，状态变更触发重取和回到第一页；表格复用同一用途投影。
+边界：directory_workflow.py、directory_workflow_routes.py、DirectoryFlowWorkspace.tsx、独立测试及接口规范；不修改采集、地图定位、住宅准入、生产数据。

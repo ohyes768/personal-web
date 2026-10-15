@@ -64,12 +64,19 @@ def summary(q: str = Query('', max_length=200), district: str = ''):
 
 @router.get('/catalog')
 def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query('', max_length=200),
-            district: str = '', page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
+            district: str = '', market: Literal['', 'new_house', 'second_hand'] = '',
+            property_type: str = Query('', max_length=100),
+            page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     def read():
         registry = require_store()
         rows = filtered(flow.inventory(registry, registry.path.parent), q, district)
         rows = [r for r in rows if r['admission_state'] == state]
-        return {'items': rows[(page - 1) * page_size:page * page_size], 'total': len(rows), 'page': page}
+        property_types = sorted({prop for r in rows for prop in r.get('property_types', [])})
+        if market:
+            rows = [r for r in rows if r.get('market_state') == market]
+        if property_type:
+            rows = [r for r in rows if not r.get('property_types')] if property_type == '__missing__' else [r for r in rows if property_type in r.get('property_types', [])]
+        return {'items': rows[(page - 1) * page_size:page * page_size], 'total': len(rows), 'page': page, 'property_types': property_types}
     return result(read)
 
 

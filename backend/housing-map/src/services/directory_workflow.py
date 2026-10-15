@@ -51,6 +51,20 @@ def materialize(store, db, facts):
     return created
 
 
+def catalog_property_types(row, facts):
+    """Use the same TMSF evidence as the visible catalog, including legacy facts."""
+    types = set()
+    for record in row.get('sources', []):
+        if record.get('source') != 'tmsf':
+            continue
+        prop = record.get('property_type')
+        if not prop and not record.get('property_type_checked_at'):
+            prop = facts.get(str(record['source_id']), {}).get('property_type')
+        if prop:
+            types.add(prop)
+    return sorted(types)
+
+
 def inventory(store, data_dir):
     """Unlinked TMSF records are visible as incomplete/excluded entries, never auctions."""
     facts = property_facts(data_dir)
@@ -78,6 +92,8 @@ def inventory(store, data_dir):
             status.update(admission_state='excluded', qualification='identity_pending', facts_state='incomplete',
                           exclusion_reason='小区身份存在重复或人工关联限制，待补资料')
         output.append({**c, **status, 'sources': [{k: v for k, v in r.items() if k != 'samples'}], 'map_status': 'not_admitted'})
+    for row in output:
+        row['property_types'] = catalog_property_types(row, facts)
     return sorted(output, key=lambda c: (c['community_name'], c['community_id']))
 
 

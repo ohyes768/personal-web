@@ -12,7 +12,7 @@ All map views, rental start/discovery/publication membership and auction associa
 ## APIs
 External prefix `/api/map`, backend `/api`; all return success/data. New base `/directory/workflow`:
 - GET `/summary?q&district` → active/admitted/excluded/auction_pending. Inactive is readable; other new endpoints reject409 until migration.
-- GET `/catalog?state=admitted|excluded&q&district&page&page_size` → items,total,page; page>=1,size<=100.
+- GET `/catalog?state=admitted|excluded&q&district&page&page_size&market&property_type` → items,total,page,property_types; page>=1,size<=100. Market is empty/new_house/second_hand; property_type matches exact current TMSF uses (same-ID legacy type fallback only before any attempt), `__missing__` selects absent use facts. property_types lists available uses for the state/search/district before classification/position filtering and paging. Market/use/position filters all apply before total and pagination. Admitted UI shows 全部/新房/二手房; excluded UI shows actual use choices plus common 住宅/其他/写字楼 and 用途资料缺失. Changing filters resets page1; filters affect browsing only, not admission or collection targets.
 - GET `/catalog/{cid}` → full catalog row, sources without raw rental samples, historical events.
 - POST `/catalog/{cid}/retry` → TMSF-only evidence update, errors and reclassification; never calls Amap. Refuses active directory collection; full-source stale publish check remains in enrich_source.
 - GET/POST/DELETE `/positions` → persistent high-level job/start202/cancel. Error or conflicting startup409, storage503. Status may be null before first run.
