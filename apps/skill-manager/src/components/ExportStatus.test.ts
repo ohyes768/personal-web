@@ -83,3 +83,11 @@ it('does not label legacy records without content hashes as matching',()=>{
   expect(text(render(item))).toContain('旧记录，无法核验');
   expect(text(render(item))).not.toContain('与当前源一致');
 });
+it('does not claim consistency while the cached source lags behind GitHub',()=>{
+  const item={...skill,update:{skill_id:'test',repository:'owner/repo',remote_revision:'newrev',remote_tags:[],cached_revision:'oldrev',has_update:true,checked_at:'2026-10-15'},deployments:{claude:deployment,codex:deployment}};
+  button(render(item),'已导出 · 2').props.onFocus!();
+  const tree=render(item);
+  expect(text(tree)).toContain('GitHub 已有新版本，同步缓存后需重新导出');
+  expect(text(tree)).not.toContain('与当前源一致');
+  expect(nodes(tree).find(n=>n.type==='p'&&text(n)==='GitHub 已有新版本，同步缓存后需重新导出')!.props.className).toContain('text-amber-800');
+});

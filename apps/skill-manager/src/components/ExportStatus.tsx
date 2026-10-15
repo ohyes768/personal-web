@@ -14,7 +14,10 @@ interface Props {
 function sourceStatus(skill: SkillCard, deployment: TargetDeployment) {
   if (skill.cache_missing || skill.source_missing) return '源不可用，无法核验';
   if (!deployment.content_hash) return '旧记录，无法核验';
-  return deployment.stale ? '源已更新，建议重新导出' : '与当前源一致';
+  if (deployment.stale) return '源已更新，建议重新导出';
+  // 缓存落后 GitHub 时导出仍与旧缓存一致，不能声称「一致」误导用户
+  if (skill.update?.has_update) return 'GitHub 已有新版本，同步缓存后需重新导出';
+  return '与当前源一致';
 }
 
 export default function ExportStatus({skill, targets, onExport, onDeleteExport}: Props) {
@@ -94,7 +97,7 @@ export default function ExportStatus({skill, targets, onExport, onDeleteExport}:
             const status = sourceStatus(skill, item);
             return <li key={target} className="py-3">
               <p className="break-words text-xs font-medium">{name}{!config?.enabled ? '（已停用）' : ''}</p>
-              <p className={`mt-1 text-xs ${item.stale || sourceBlocked || !item.content_hash ? 'text-amber-800' : 'text-slate-600'}`}>{status}</p>
+              <p className={`mt-1 text-xs ${item.stale || skill.update?.has_update || sourceBlocked || !item.content_hash ? 'text-amber-800' : 'text-slate-600'}`}>{status}</p>
               {open ? <>
                 <p className="mt-2 break-words text-xs text-slate-500">导出时间：{item.published_at ? item.published_at.replace('T', ' ').slice(0, 16) : '未知'}</p>
                 <p className="mt-1 text-xs text-slate-500">版本：<span className="font-mono" title={item.revision || item.content_hash}>{(item.revision || item.content_hash)?.slice(0, 7) || '未知版本'}</span></p>
