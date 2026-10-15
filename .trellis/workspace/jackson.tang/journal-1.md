@@ -1302,3 +1302,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 36: 安装弹框沿用当前环境
+
+**Date**: 2026-10-15
+**Task**: 安装弹框沿用当前环境
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+Skill Manager：移除安装弹框环境复选框，固定使用打开时当前环境并只读显示名称与路径；保留共享更新影响及精确失败重试。70 项前端测试、lint、tsc 和 diff 检查通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `53e8e75` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
