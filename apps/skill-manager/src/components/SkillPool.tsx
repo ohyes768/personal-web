@@ -163,11 +163,21 @@ function SkillCardItem({
             </span>
           ) : null}
           {skill.update?.has_update ? (
-            <span
-              className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800"
-              title={`缓存 ${skill.update.cached_revision.slice(0, 7) || '无'} → 远端 ${skill.update.remote_revision.slice(0, 7)}`}
-            >
-              有更新 · {skill.update.remote_revision.slice(0, 7)}
+            <span className="inline-flex items-center gap-1.5">
+              <span
+                className="rounded bg-amber-100 px-1.5 py-0.5 text-xs text-amber-800"
+                title={`缓存 ${skill.update.cached_revision.slice(0, 7) || '无'} → 远端 ${skill.update.remote_revision.slice(0, 7)}`}
+              >
+                有更新 · {skill.update.remote_revision.slice(0, 7)}
+              </span>
+              <button
+                type="button"
+                onClick={() => onClone(skill.id, skill.name)}
+                className="rounded-md border border-amber-300 bg-white px-2 py-0.5 text-xs text-amber-700 hover:bg-amber-50"
+                title="从 GitHub 拉取最新版本到本机缓存"
+              >
+                同步缓存
+              </button>
             </span>
           ) : null}
         </div>
