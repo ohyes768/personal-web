@@ -1,6 +1,7 @@
 # Frontend guidelines
 
 ## Pre-development checklist
+- For apps/skill-manager UI work, read [skill-manager control language](./skill-manager-ui.md); use `lib/ui.ts` constants, never hand-rolled button/input classes.
 - For apps/macro time-series charts, read [ECharts contracts](./macro-echarts.md).
 - Preserve API units, null observations, display transformations, independent calendars, and Tab lazy loading.
 - Read shared code-reuse guidance before adding wrappers or chart utilities.

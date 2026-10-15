@@ -303,8 +303,8 @@ function SkillManagerPage() {
         </p>
       ) : null}
 
-      <div className={view === 'install-targets' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><InstallTargetManager active={view==='install-targets'} targets={installTargets} loading={installTargetsLoading} error={installTargetsError} onRefresh={refreshInstallTargets} onBoard={id=>navigate({view:'board',agent:id})} /></div>
-      <div className={view === 'targets' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><ExportTargetManager targets={exportTargets} loading={targetsLoading} error={targetsError} onRefresh={refreshTargets} /></div>
+      <div className={view === 'install-targets' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><InstallTargetManager active={view==='install-targets'} targets={installTargets} loading={installTargetsLoading} error={installTargetsError} onRefresh={refreshInstallTargets} onBoard={id=>navigate({view:'board',agent:id})} onNotify={setNotice} /></div>
+      <div className={view === 'targets' ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}><ExportTargetManager targets={exportTargets} loading={targetsLoading} error={targetsError} onRefresh={refreshTargets} onNotify={setNotice} onManage={()=>navigate({view:'manage'})} /></div>
       {view !== 'targets' && targetsError ? <p role="alert" className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700">{targetsError}<button type="button" onClick={() => void refreshTargets()} className="ml-3 underline">重试</button></p> : null}
 
       {/* 管理看板：来源子 segmented + 两个常驻挂载的来源工作区 */}
@@ -499,6 +499,7 @@ function SkillManagerPage() {
             </p>
           }
           confirmLabel="确认删除"
+          danger
           busy={actionBusy}
           error={actionError}
           onConfirm={(password) => void performDelete(password)}
