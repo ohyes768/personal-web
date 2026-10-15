@@ -199,6 +199,9 @@ class AutoReview:
                     rule_version=RULE_VERSION, last_report=saved.get('auto_review_report'))
 
     def configure(self, enabled, reviewed_snapshot=None):
+        from src.services.directory_workflow import is_enabled
+        if enabled and is_enabled(self.store):
+            raise ValueError('旧自动审核已停用，住宅名单按透明售房网资料分类')
         if enabled and self.preview()['snapshot_id'] != reviewed_snapshot:
             raise ValueError('请先预演并核对最新结果，资料已变化时需要重新预演')
         with self.store.db() as db:
@@ -210,6 +213,9 @@ class AutoReview:
         return self.status()
 
     def execute(self, reviewed_snapshot):
+        from src.services.directory_workflow import is_enabled
+        if is_enabled(self.store):
+            raise ValueError('住宅名单已按透明售房网自动分类，旧自动审核已停用')
         report, projection, facts = self._preview()
         if report['snapshot_id'] != reviewed_snapshot:
             raise ValueError('资料已变化，请重新预演')
@@ -247,6 +253,9 @@ class AutoReview:
         return report
 
     def after_collection(self):
+        from src.services.directory_workflow import is_enabled, synchronize
+        if is_enabled(self.store):
+            return {'mode': 'tmsf_directory', 'created': synchronize(self.store, self.data_dir)}
         preview = self.preview()
         return self.execute(preview['snapshot_id']) if self.status()['enabled'] else preview
 

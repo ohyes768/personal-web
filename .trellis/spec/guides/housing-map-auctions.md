@@ -86,3 +86,5 @@ Good：两轮同asset只显示一处待关联，绑定后两轮均归入目标�
 
 ### Wrong vs Correct
 Wrong：法拍按名字猜测归属或要求额外重新采名称才能手工绑定。Correct：已保存法拍直接同步目录，充分证据自动关联，其他按持久来源身份人工确认。
+
+After explicit `tmsf-directory-v1` migration, new and manual auction associations target only current TMSF-qualified admitted communities; unmatched rounds remain independent regional observations and use [the auction-only workflow queue](../backend/housing-map/backend/directory-flow.md). Losing eligibility hides effective business association without deleting stored manual bindings/history.

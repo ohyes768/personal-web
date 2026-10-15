@@ -80,7 +80,7 @@ def source_position(community, records):
     return {k: first[k] for k in ('longitude', 'latitude', 'coordinate_system')}
 
 
-def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None):
+def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None, include_position=True):
     from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, PROJECT_INDEX_URL
     from src.services.tmsf_fetcher import TmsfClient
     from src.services.amap_directory import AmapClient, normalize_poi
@@ -134,7 +134,7 @@ def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None):
         if tmsf_client is None:
             client.close()
     effective = {**record, **update}
-    if not valid_position(effective, district):
+    if include_position and not valid_position(effective, district):
         client = amap_client
         try:
             client = client or AmapClient()

@@ -1,5 +1,8 @@
 # New residential projects and source enrichment
 
+> After explicit `tmsf-directory-v1` migration, [TMSF directory workflow](./directory-flow.md) supersedes multi-source admission/review and defines task eligibility. Stored history and pre-migration behavior remain readable.
+
+
 ## 1. Scope / Trigger
 Use for `tmsf_property_type`, `community_enrichment`, directory collection, residential classification, map coordinates, price isolation and management source details. Existing newhouse projects are eligible residential candidates even without ESF listings; this does not promise discovery of every new project.
 

@@ -1,5 +1,8 @@
 # Automatic residential review
 
+> After explicit `tmsf-directory-v1` migration, [TMSF directory workflow](./directory-flow.md) supersedes multi-source admission/review and defines task eligibility. Stored history and pre-migration behavior remain readable.
+
+
 ## 1. Scope / Trigger
 Task3 builds on community-admission.md/community-review.md. AutoReview owns rules, local snapshots, explicit enablement, execution and publication reports. Source identity association remains separate from residential admission.
 

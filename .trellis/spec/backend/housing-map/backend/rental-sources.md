@@ -1,5 +1,8 @@
 # Rental source management contract
 
+> After explicit `tmsf-directory-v1` migration, [TMSF directory workflow](./directory-flow.md) supersedes multi-source admission/review and defines task eligibility. Stored history and pre-migration behavior remain readable.
+
+
 > Current deployment now uses [Community directory](./community-directory.md) as the authoritative editable store. This document describes the older fallback/standalone SourceStore contracts. With a directory present, SourceStore delegates to it; automatic evidence-based association is allowed and the header CTA opens the management Tab. Do not add a second writable mapping store or override directory deletion decisions.
 
 ## 1. Scope / Trigger

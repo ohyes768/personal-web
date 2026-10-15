@@ -1,5 +1,8 @@
 # Unified community review workspace
 
+> After explicit `tmsf-directory-v1` migration, [TMSF directory workflow](./directory-flow.md) supersedes multi-source admission/review and defines task eligibility. Stored history and pre-migration behavior remain readable.
+
+
 ## 1. Scope / Trigger
 ReviewWorkspace, review routes, directory/auction publication and CommunityWorkspace UI build on community-admission.md. A review row is a community candidate; sources remain evidence and identity records.
 

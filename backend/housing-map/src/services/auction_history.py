@@ -38,6 +38,9 @@ def load_mappings(path, communities):
         sources = registry.sources()
         valid_ids = {c['community_id'] for c in registry.communities() if effective_address(c.get('address'),
                      [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched'])}
+        from src.services.directory_workflow import is_enabled, admitted
+        if is_enabled(registry):
+            valid_ids = {c['community_id'] for c in admitted(registry, path.parent)}
         return {(r['source'], r['source_kind'] + '_id', r['source_id']): r['community_id']
                 for r in sources if r['source'] == 'laipai' and r['status'] == 'matched' and r['community_id'] in valid_ids}
     if not path.exists():

@@ -1,5 +1,8 @@
 # Residential admission and manual veto
 
+> After explicit `tmsf-directory-v1` migration, [TMSF directory workflow](./directory-flow.md) supersedes multi-source admission/review and defines task eligibility. Stored history and pre-migration behavior remain readable.
+
+
 ## 1. Scope / Trigger
 Applies to registry admission, management actions, map/score visibility and migration. This contract supersedes the old full-directory display rule; independent collection and historical identity lookup retain their existing scope.
 

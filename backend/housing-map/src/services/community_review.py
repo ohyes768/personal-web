@@ -314,6 +314,9 @@ class ReviewWorkspace:
     def _decide(self, db, candidate_id, action, *, revision, name='', property_type=None, target_id=None,
                 reason='', member_ids=None, facts=None, automatic=None):
         from src.services.residential_classifier import RESIDENTIAL_TYPES, classify_sources
+        from src.services.directory_policy import enabled
+        if enabled(db):
+            raise ValueError('住宅名单已改为透明售房网自动分类，请使用法拍待关联或租金处理入口')
         if facts is None:
             facts = property_facts(self.data_dir)
         # The caller owns the same writer transaction as candidate/admission/association writes.

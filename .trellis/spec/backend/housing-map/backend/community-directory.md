@@ -1,5 +1,8 @@
 # Community directory contract
 
+> After explicit `tmsf-directory-v1` migration, [TMSF directory workflow](./directory-flow.md) supersedes multi-source admission/review and defines task eligibility. Stored history and pre-migration behavior remain readable.
+
+
 Residential visibility now follows [Community admission](./community-admission.md). Source matched/pending/ignored still describes identity association; residential review/exclusion must never call whole-community deletion.
 
 The UI and candidate operations now follow [Unified community review](./community-review.md). The raw source tab and separate auction binding panel are replaced by residential/review lists; legacy identity APIs cannot bypass human review locks.

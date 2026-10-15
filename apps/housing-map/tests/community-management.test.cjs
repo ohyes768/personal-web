@@ -79,17 +79,10 @@ test('amap source shows geographic classification as a hint, not property use', 
   assert.match(html, /高德地图/); assert.match(html, /住宅小区/);
   assert.match(html, /仅作住宅线索/); assert.match(html, /待核实/); assert.match(html, /测试花园西区/);
 });
-test('directory collection uses TMSF only without a source selector', () => {
+test('management offers independent collection tasks without a discovery source selector', () => {
   const Management = require('../src/components/community/CommunityManagement.tsx').default;
   const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
-  const controls = html.slice(html.indexOf('directory-collection'), html.indexOf('directory-toolbar'));
-  assert.equal((controls.match(/type="checkbox"/g) || []).length, 0);
-  assert.match(controls, /透明售房网/); assert.doesNotMatch(controls, /高德地图/);
-  assert.doesNotMatch(controls, /房天下|来拍/); assert.match(controls, /失败或截断不代表采全/);
-  const sourceFilter = html.match(/<select aria-label="数据来源"[^>]*>(.*?)<\/select>/)?.[1];
-  assert.ok(sourceFilter);
-  assert.doesNotMatch(sourceFilter, /高德地图|value="amap"/);
-  assert.match(sourceFilter, /透明售房网/);
-  assert.match(sourceFilter, /房天下/);
-  assert.match(sourceFilter, /来拍/);
+  for (const label of ['采集透明售房网', '高德信息采集', '租金信息采集', '法拍数据采集']) assert.match(html, new RegExp(label));
+  assert.match(html, /仅已收录住宅/);
+  assert.doesNotMatch(html, /采集来源|数据来源|自动审核启用|待审核小区/);
 });

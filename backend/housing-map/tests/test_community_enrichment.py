@@ -202,8 +202,8 @@ def test_enrichment_api_exposes_partial_failure_without_admission_mutation(tmp_p
     admission = store.admission(cid)
     upstream, _ = client(project='<html>请验证</html>')
     original = enrich_source
-    monkeypatch.setattr(community_enrichment, 'enrich_source', lambda store, data, rid: original(
-        store, data, rid, tmsf_client=upstream))
+    monkeypatch.setattr(community_enrichment, 'enrich_source', lambda store, data, rid, **kwargs: original(
+        store, data, rid, tmsf_client=upstream, **kwargs))
     monkeypatch.setattr(directory_routes, 'store', lambda: store)
     monkeypatch.setattr(directory_routes, 'DATA_DIR', tmp_path)
     app = FastAPI(); app.include_router(directory_routes.router, prefix='/api')

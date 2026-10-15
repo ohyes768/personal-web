@@ -57,6 +57,8 @@ def source_view(item, property_types):
 
 
 async def shutdown_directory():
+    from src.api.directory_workflow_routes import shutdown
+    await shutdown()
     if _job:
         await asyncio.to_thread(_job.shutdown)
 
@@ -159,7 +161,7 @@ def communities(q: str = Query('', max_length=200), district: str = '', deleted:
         records = [r for r in sources if r['community_id'] == c['community_id']]
         if not community_matches(c, records, q=q, district=district, source=source, property_type=property_type):
             continue
-        state = classify_sources(records, property_types) if not deleted else 'deleted'
+        state = c['residential_state'] if not deleted else 'deleted'
         if residential_state and state != residential_state:
             continue
         rows.append({**c, 'sources': [source_view(r, property_types) for r in records], 'residential_state': state})
@@ -169,6 +171,9 @@ def communities(q: str = Query('', max_length=200), district: str = '', deleted:
 
 @router.post('/directory/communities')
 def create(request: CommunityInput):
+    from src.services.directory_workflow import is_enabled
+    if is_enabled(store()):
+        raise HTTPException(409, '住宅名单来自透明售房网，不能手工新增')
     return result(lambda: store().create(request.name, district=request.district, address=request.address, aliases=request.aliases))
 
 
@@ -184,7 +189,7 @@ def detail(cid: str):
     records = [s for s in registry.sources() if s['community_id'] == cid]
     property_types = _load_property_types()
     return {'success': True, 'data': {**item, 'sources': [source_view(s, property_types) for s in records],
-                                    'residential_state': 'deleted' if item['deleted'] else classify_sources(records, property_types),
+                                    'residential_state': 'deleted' if item['deleted'] else item['residential_state'],
                                     'events': registry.events(cid), 'has_boundary': cid in load_polygons()}}
 
 
@@ -239,7 +244,13 @@ def source_detail(rid: str):
 @router.post('/directory/sources/{rid}/enrich')
 def enrich(rid: str):
     from src.services.community_enrichment import enrich_source
-    return result(lambda: enrich_source(store(), DATA_DIR, rid))
+    def action():
+        from src.services.directory_workflow import is_enabled, synchronize
+        registry = store()
+        outcome = enrich_source(registry, DATA_DIR, rid, include_position=not is_enabled(registry))
+        synchronize(registry, DATA_DIR)
+        return outcome
+    return result(action)
 
 
 @router.post('/directory/sources/{rid}/associate')
@@ -410,3 +421,7 @@ class RemoveReviewsInput(BaseModel):
 @router.post('/directory/reviews/remove')
 def remove_reviews(request: RemoveReviewsInput):
     return result(lambda: workspace().remove_excluded([item.model_dump() for item in request.items]))
+
+
+from src.api.directory_workflow_routes import router as workflow_router
+router.include_router(workflow_router)

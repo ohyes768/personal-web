@@ -30,13 +30,11 @@ test('review table counts communities with separate asset and round clues', () =
   assert.match(html, /用途待核实/); assert.match(html, /审核/);
 });
 
-test('management has separate residential, review and excluded tabs', () => {
+test('management separates TMSF admission from auction association', () => {
   const Management = require('../src/components/community/CommunityManagement.tsx').default;
   const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
-  assert.match(html, /住宅小区/); assert.match(html, /待审核小区/); assert.match(html, /不收录/);
-  assert.doesNotMatch(html, /审核状态/);
-  assert.doesNotMatch(html, /统一小区|来源名称 \/ 待关联/);
-  assert.match(html, /最近一次来源采集/); assert.match(html, /小区库存/);
+  assert.match(html, /已收录/); assert.match(html, /不收录/); assert.match(html, /法拍待关联/);
+  assert.doesNotMatch(html, /待审核小区|先预演|启用自动审核/);
 });
 
 test('auction review entry sends users to the shared community workspace', () => {

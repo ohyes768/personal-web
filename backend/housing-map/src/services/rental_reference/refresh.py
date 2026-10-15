@@ -72,6 +72,9 @@ def load_verified_mappings(path: Path) -> list[tuple[str, str]]:
         sources = registry.sources()
         valid_ids = {c['community_id'] for c in registry.communities() if effective_address(c.get('address'),
                      [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched'])}
+        from src.services.directory_workflow import is_enabled, admitted
+        if is_enabled(registry):
+            valid_ids = {c['community_id'] for c in admitted(registry, path.parent)}
         return [(r['source_id'], r['community_id']) for r in sources
                 if r['source'] == 'fang' and r['status'] == 'matched' and r['community_id'] in valid_ids and registry.resolve(r['community_id'])]
     from src.services.rental_reference.sources import database_path, confirmed_pairs, connection

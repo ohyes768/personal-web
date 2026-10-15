@@ -87,6 +87,9 @@ class CommunityRegistry:
         if not db.execute('SELECT 1 FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone():
             raise ValueError('小区不存在或已删除/合并')
         if action == 'admit':
+            from src.services.directory_policy import enabled
+            if enabled(db):
+                raise ValueError('住宅名单按透明售房网资料自动分类，不能手工绕过条件')
             from src.services.community_listing import listing_gate
             master = self._community(db.execute('SELECT * FROM communities WHERE id=?', (cid,)).fetchone())
             members = [self._source(r) for r in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
@@ -169,6 +172,9 @@ class CommunityRegistry:
         if not name.strip():
             raise ValueError('小区名称不能为空')
         with self.db() as db:
+            from src.services.directory_policy import enabled
+            if enabled(db):
+                raise ValueError('不能从外部来源创建住宅，请采集透明售房网名单')
             if self._review_locked(db, rid):
                 raise ValueError('请在统一待审核小区中处理人工审核决定')
             row = db.execute("SELECT * FROM sources WHERE id=? AND status='pending'", (rid,)).fetchone()
@@ -308,6 +314,14 @@ class CommunityRegistry:
         r = db.execute('SELECT * FROM sources WHERE id=?', (rid,)).fetchone()
         if not c or not r or r['status'] == 'ignored':
             raise ValueError('来源或目标小区不存在，或已删除')
+        from src.services.directory_policy import enabled, eligibility
+        directory_mode = enabled(db)
+        if directory_mode and r['source'] in {'laipai', 'fang'}:
+            from src.services.community_admission import property_facts
+            members = [self._source(s) for s in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
+            a = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
+            if eligibility(self._community(c), members, property_facts(self.path.parent), json.loads(a[0]) if a else {})['admission_state'] != 'admitted':
+                raise ValueError('目标必须是当前已收录住宅')
         if not review_override and self._review_locked(db, rid):
             raise ValueError('人工审核决定优先，请到待审核小区处理')
         if method == 'auto' and (r['status'] != 'pending' or db.execute(
@@ -315,7 +329,7 @@ class CommunityRegistry:
             raise ValueError('人工决策优先')
         if method == 'auto':
             admission = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
-            if admission and (json.loads(admission[0]).get('auto_review_locked') or json.loads(admission[0]).get('state') == 'excluded'):
+            if not directory_mode and admission and (json.loads(admission[0]).get('auto_review_locked') or json.loads(admission[0]).get('state') == 'excluded'):
                 raise ValueError('目标小区人工排除或审核锁优先')
             record, community = self._source(r), self._community(c)
             from src.services.community_review import same_community

@@ -12,6 +12,9 @@ PREFIX = 'rental_review:'
 
 
 def eligible_communities(registry):
+    from src.services.directory_workflow import is_enabled, admitted
+    if is_enabled(registry):
+        return [c for c in admitted(registry, registry.path.parent) if (c.get('district') or '').removesuffix('区') == '滨江'], len(registry.communities())
     path = registry.path.parent / 'property_types.json'
     properties = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
     sources = registry.sources()
@@ -110,6 +113,14 @@ def decide(registry, cid, action, candidate_id=None):
             rejected = db.execute('SELECT 1 FROM rejected WHERE rid=? AND cid=?', (candidate_id, cid)).fetchone()
             if not source or not target or already or rejected:
                 raise ValueError('来源或小区已变更，请刷新后重试')
+            from src.services.directory_policy import enabled, eligibility
+            if enabled(db):
+                from src.services.community_admission import property_facts
+                master = db.execute('SELECT * FROM communities WHERE id=?', (cid,)).fetchone()
+                members = [registry._source(r) for r in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
+                a = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
+                if eligibility(registry._community(master), members, property_facts(registry.path.parent), json.loads(a[0]) if a else {})['admission_state'] != 'admitted':
+                    raise ValueError('小区已不符合住宅条件，请刷新')
             payload = json.loads(source['payload'])
             payload['associated_at'] = now()
             db.execute("UPDATE sources SET cid=?,status='matched',method='manual',evidence=?,payload=? WHERE id=?",

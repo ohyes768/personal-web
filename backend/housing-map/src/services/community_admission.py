@@ -104,13 +104,15 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
     with store.db() as db:
         sources = [store._source(r) for r in db.execute('SELECT * FROM sources ORDER BY source,sid')]
         communities = [store._community(r) for r in db.execute('SELECT * FROM communities WHERE deleted=? AND merged_to IS NULL ORDER BY id', (int(deleted),))]
+        from src.services.directory_policy import enabled
+        directory_mode = enabled(db)
         admissions = {r['cid']: json.loads(r['payload']) for r in db.execute('SELECT * FROM community_admission')}
     result = []
     for community in communities:
         cid = community['community_id']
         coordinate = coordinates.get(cid)
         if community.get('longitude') is not None and community.get('latitude') is not None:
-            coordinate = {**community, 'formatted_address': community.get('address', '')}
+            coordinate = {**community, 'formatted_address': community.get('geographic_address') or community.get('address', '')}
         records = [r for r in sources if r['community_id'] == cid and r['status'] == 'matched']
         if community.get('longitude') is None and community.get('latitude') is None:
             point = source_position(community, records)
@@ -129,7 +131,7 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
         markets = {r['market_state'] for r in records if r.get('market_state') in {'new_house', 'second_hand'}}
         market = next(iter(markets)) if len(markets) == 1 else 'unknown'
         admission = admissions.get(cid, store.pending_admission())
-        classification = classify_sources(records, facts)
+        classification = classify_sources([r for r in records if r['source'] == 'tmsf'] if directory_mode else records, facts)
         # Existing migrated/automatic admissions lose display eligibility on new conflicting evidence.
         conflict = admission['state'] == 'admitted' and classification != 'residential'
         effective_admission = admission
@@ -144,9 +146,15 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
         prop = None
         if effective_admission['state'] == 'admitted':
             prop = admission.get('property_type') if admission['decision_kind'] == 'manual' else effective_type(records, facts)
+        policy = {}
+        if directory_mode:
+            from src.services.directory_policy import eligibility
+            policy = eligibility(community, records, facts, admission)
+            effective_admission = {**effective_admission, 'state': policy['admission_state']}
+            prop = policy['effective_property_type']
         result.append({**community, 'address': address, 'address_missing': not bool(address), 'exclusion_reason': '缺少有效地址' if not address else listing_reason, 'admission': admission, 'admission_state': effective_admission['state'],
                        'admission_conflict': conflict, 'residential_state': classification,
                        'effective_property_type': prop,
                        'market_state': market, 'market_state_conflict': len(markets) > 1,
-                       'map_status': map_status(community, effective_admission, coordinate, drop_ids=drop_ids)})
+                       'map_status': map_status(community, effective_admission, coordinate, drop_ids=drop_ids), **policy})
     return result
