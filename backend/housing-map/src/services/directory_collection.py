@@ -28,7 +28,7 @@ def pause(cancel):
 def tmsf_names(cancel, ignored, existing=None):
     from scripts.fetch_tmsf_binjiang_communities import fetch_binjiang_communities
     from src.services.tmsf_fetcher import TmsfClient
-    from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, PROJECT_INDEX_URL
+    from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, effective_market_state, PROJECT_INDEX_URL
     existing = existing or {}
     client = TmsfClient()
     projects = None
@@ -60,7 +60,7 @@ def tmsf_names(cancel, ignored, existing=None):
             yield {**row, '_stage': 'names'}
             if ignored('tmsf', 'community', c.community_id):
                 continue
-            if previous.get('market_state') == 'new_house' and previous.get('address_checked_at') and not previous.get('address_verification_pending') and previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
+            if effective_market_state(previous) == 'new_house' and previous.get('address_checked_at') and not previous.get('address_verification_pending') and previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
                 try:
                     age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(previous['property_type_captured_at'])
                     if dt.timedelta(0) <= age < dt.timedelta(days=30):
@@ -108,10 +108,12 @@ def tmsf_names(cancel, ignored, existing=None):
                     if ignored('tmsf', 'community', c.community_id):
                         continue
                     try:
-                        detail.update(project_identity(find_project(projects or [], [c.community_name, c.community_alias], c.district)),
-                                      market_state_captured_at=now(), market_state_error=None)
+                        identity = project_identity(find_project(projects or [], [c.community_name, c.community_alias], c.district))
+                        if identity['market_state'] == 'unknown':
+                            identity.pop('market_state')
+                        detail.update(identity, market_state_captured_at=now(), market_state_error=None)
                     except ValueError:
-                        if previous.get('market_state') == 'new_house':
+                        if effective_market_state(previous) == 'new_house':
                             detail.pop('market_state', None)
                             detail['market_state_error'] = '新房项目身份更新失败，保留已有证据'
                 row.update(detail)

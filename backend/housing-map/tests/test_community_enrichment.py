@@ -12,12 +12,12 @@ from src.services.tmsf_property_type import (parse_project_index, find_project, 
 
 NAME = '万科朗拾滨屿府'
 ADDRESS = '信诚南路与博研弄交叉口西侧(硅谷小学北)'
-PROJECT = dict(propertyid=2313460053, siteid=33, propertyname='万科朗拾滨屿府(朗拾滨屿府)', districtname='滨江', propertystateid=4)
+PROJECT = dict(propertyid=2313460053, siteid=33, propertyname='万科朗拾滨屿府(朗拾滨屿府)', districtname='滨江', propertystateid=2)
 INDEX = 'var data_auto = ' + json.dumps([PROJECT], ensure_ascii=False) + '; var other = []'
 # Reduced fixture using fields inspected in the actual public newhouse DOM.
 NEW_PAGE = f'''<div class="house_float_name_title">朗拾滨屿府</div>
 <a id="districtname">滨江楼盘</a><div class="house_float_name_tips_grey">住宅</div>
-<div class="house_float_name_tips_grey999">售完</div>
+<div class="house_float_name_tips_grey999">在售</div>
 <div class="house_information_list_mian_left">楼盘地址</div>
 <div class="house_information_list_mian_right house_information_list_mian_dw">{ADDRESS}</div>'''
 COMMUNITY_PAGE = f'<input id="communityname_auto" value="{NAME}"><input id="managetypename_auto" value="住宅">'
@@ -38,7 +38,7 @@ def test_newhouse_fallback_resolves_independent_project_id():
     facts = fetch_property_facts(upstream, '3017629894', [NAME])
     assert facts['property_type'] == '住宅'
     assert facts['project_id'] == '2313460053'
-    assert facts['address'] == ADDRESS and facts['project_sale_status'] == '售完'
+    assert facts['address'] == ADDRESS and facts['project_sale_status'] == '在售'
     assert facts['market_state'] == 'new_house'
     assert calls[-1].endswith('property_33_2313460053_infoUpgrade.htm')
     assert all('property_33_3017629894' not in url for url in calls)
@@ -228,7 +228,7 @@ def test_newhouse_zero_esf_listings_keeps_identity_on_collection(tmp_path, monke
         district='滨江', subdistrict='浦沿', source_url='https://www.tmsf.com/list.js')])
     rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False))
     assert rows[-1]['market_state'] == 'new_house' and rows[-1]['listing_count'] == 0
-    assert rows[-1]['project_id'] == '2313460053' and rows[-1]['project_sale_status'] == '售完'
+    assert rows[-1]['project_id'] == '2313460053' and rows[-1]['project_sale_status'] == '在售'
     from src.services.community_listing import listing_gate
     assert listing_gate([rows[-1]])[0] is None
 
@@ -279,3 +279,59 @@ def test_conflicting_newhouse_use_and_retained_community_fact_requires_review(tm
     assert store.sources()[0]['property_type'] == '住宅'
     assert store.sources()[0]['property_type_conflict']
     assert community_views(store, tmp_path)[0]['residential_state'] == 'pending'
+
+
+@pytest.mark.parametrize('count, expected', [(0, 'excluded'), (2, 'excluded'), (3, None)])
+def test_legacy_sold_out_project_uses_esf_gate_and_label(tmp_path, count, expected):
+    from src.services.community_listing import listing_gate
+    store, source, _ = seed(tmp_path)
+    store.ingest(dict(source='tmsf', source_id='3017629894', name=NAME,
+        market_state='new_house', project_sale_status='售完', property_type='住宅',
+        listing_count=count))
+    assert listing_gate(store.sources())[0] == expected
+    assert community_views(store, tmp_path)[0]['market_state'] == 'second_hand'
+
+
+def test_sold_out_project_collection_refreshes_legacy_cache(tmp_path, monkeypatch):
+    import threading
+    from src.services import directory_collection, tmsf_fetcher
+    from src.services.community_registry import now
+    from src.services.community_listing import listing_gate
+    from scripts import fetch_tmsf_binjiang_communities as listing
+    sold_index = 'var data_auto = ' + json.dumps([{**PROJECT, 'propertystateid': 4}])
+    upstream, calls = client(community=COMMUNITY_PAGE + '<div>挂牌房源数<span class="bold">0 套</span></div>')
+    original = upstream.fetch_text
+    upstream.fetch_text = lambda url, timeout: sold_index if url == PROJECT_INDEX_URL else original(url, timeout)
+    upstream.close = lambda: None
+    monkeypatch.setattr(tmsf_fetcher, 'TmsfClient', lambda: upstream)
+    monkeypatch.setattr(directory_collection, 'pause', lambda _: None)
+    monkeypatch.setattr(listing, 'fetch_binjiang_communities', lambda: [SimpleNamespace(
+        community_id='3017629894', community_name=NAME, community_alias=NAME,
+        district='滨江', subdistrict='浦沿', source_url='https://www.tmsf.com/list.js')])
+    previous = dict(name=NAME, market_state='new_house', project_sale_status='售完',
+        address_checked_at=now(), property_type='住宅', property_type_captured_at=now())
+    rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False,
+        existing={'3017629894': previous}))
+    assert rows[-1]['market_state'] == 'second_hand'
+    assert rows[-1]['project_sale_status'] == '售完'
+    assert rows[-1]['listing_count_checked_at']
+    assert listing_gate([rows[-1]])[0] == 'excluded'
+
+
+def test_sold_out_enrichment_corrects_old_flag(tmp_path):
+    store, source, _ = seed(tmp_path)
+    store.ingest(dict(source='tmsf', source_id='3017629894', name=NAME,
+        market_state='new_house', project_sale_status='售完'))
+    upstream, _ = client(community=COMMUNITY_PAGE + '<div>挂牌房源数<span class="bold">0 套</span></div>',
+                         project=NEW_PAGE.replace('在售', '售完'))
+    original = upstream.fetch_text
+    upstream.fetch_text = lambda url, timeout: ('var data_auto = ' + json.dumps([
+        {**PROJECT, 'propertystateid': 4}])) if url == PROJECT_INDEX_URL else original(url, timeout)
+    enrich_source(store, tmp_path, source['id'], tmsf_client=upstream, include_position=False)
+    assert store.sources()[0]['market_state'] == 'second_hand'
+    assert store.sources()[0]['listing_count'] == 0
+
+
+def test_unknown_project_status_does_not_establish_newhouse():
+    from src.services.tmsf_property_type import project_identity
+    assert project_identity({**PROJECT, 'propertystateid': 99})['market_state'] == 'unknown'

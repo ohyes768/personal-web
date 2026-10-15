@@ -1,10 +1,12 @@
 """TMSF second-hand listing admission gate; unknown counts are never zero."""
+from src.services.tmsf_property_type import effective_market_state
+
 MIN_LISTINGS = 3
 
 
 def listing_gate(records, master=None):
-    relevant = [r for r in records if r.get('source') == 'tmsf' and r.get('market_state') != 'new_house'
-                and (r.get('market_state') == 'second_hand' or 'listing_count' in r
+    relevant = [r for r in records if r.get('source') == 'tmsf' and effective_market_state(r) != 'new_house'
+                and (effective_market_state(r) == 'second_hand' or 'listing_count' in r
                      or r.get('listing_count_checked_at') or (master and 'listing_count' in master))]
     if not relevant:
         return None, ''

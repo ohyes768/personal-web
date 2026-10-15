@@ -70,13 +70,25 @@ def find_project(rows, names, district):
     return project
 
 
+def project_market_state(status):
+    return 'new_house' if status in {'在售', '尾盘', '待售'} else 'second_hand' if status == '售完' else 'unknown'
+
+
+def effective_market_state(record):
+    # Repair legacy sold-out promotions at read time without changing audit history.
+    if record.get('market_state') == 'new_house' and record.get('project_sale_status') == '售完':
+        return 'second_hand'
+    return record.get('market_state')
+
+
 def project_identity(project):
     url = f"{BASE_URL}/newhouse/property_{project['siteid']}_{project['propertyid']}_infoUpgrade.htm"
-    return dict(market_state='new_house', market_state_url=PROJECT_INDEX_URL,
+    status = {2: '在售', 3: '尾盘', 4: '售完', 5: '待售'}.get(project.get('propertystateid'), '未知')
+    return dict(market_state=project_market_state(status), market_state_url=PROJECT_INDEX_URL,
                 project_id=str(project['propertyid']), project_name=project_names(project.get('propertyname'))[-1],
                 project_aliases=project_names(project.get('propertyname')),
                 project_url=url,
-                project_sale_status={2: '在售', 3: '尾盘', 4: '售完', 5: '待售'}.get(project.get('propertystateid'), '未知'))
+                project_sale_status=status)
 
 
 def class_text(html, class_name):
@@ -100,11 +112,12 @@ def fetch_project_facts(client, names, district, *, projects=None, timeout=15):
     address = strip_tags(match.group(1)).strip() if match else ''
     if not prop or not address:
         raise ValueError('新房详情缺少用途或实际地址')
+    status = class_text(html, 'house_float_name_tips_grey999') or project_identity(project)['project_sale_status']
     return dict(property_type=prop, property_type_url=url, address=address, address_district=observed_district,
-                market_state='new_house', market_state_url=url,
+                market_state=project_market_state(status), market_state_url=url,
                 project_id=str(project['propertyid']), project_name=observed_name,
                 project_aliases=project_names(project.get('propertyname')),
-                project_sale_status=class_text(html, 'house_float_name_tips_grey999') or '未知')
+                project_sale_status=status)
 
 
 def fetch_property_facts(client, community_id, names, *, timeout=15, projects=None, district='滨江'):

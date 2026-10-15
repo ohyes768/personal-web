@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from src.services.community_address import effective_address
+from src.services.tmsf_property_type import effective_market_state
 from src.services.community_listing import listing_gate
 from src.services.community_enrichment import source_position, qualified_address
 
@@ -128,7 +129,7 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
                               r.get('address') == actual_address for r in records):
             coordinate = {**coordinate, 'formatted_address': qualified_address(actual_address, district)}
             community['position_formatted_address'] = coordinate['formatted_address']
-        markets = {r['market_state'] for r in records if r.get('market_state') in {'new_house', 'second_hand'}}
+        markets = {effective_market_state(r) for r in records if effective_market_state(r) in {'new_house', 'second_hand'}}
         market = next(iter(markets)) if len(markets) == 1 else 'unknown'
         admission = admissions.get(cid, store.pending_admission())
         classification = classify_sources([r for r in records if r['source'] == 'tmsf'] if directory_mode else records, facts)

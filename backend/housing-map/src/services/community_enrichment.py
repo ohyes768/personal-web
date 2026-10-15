@@ -81,7 +81,7 @@ def source_position(community, records):
 
 
 def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None, include_position=True):
-    from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, PROJECT_INDEX_URL
+    from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, effective_market_state, PROJECT_INDEX_URL
     from src.services.tmsf_fetcher import TmsfClient
     from src.services.amap_directory import AmapClient, normalize_poi
     record = next((r for r in store.sources() if r['id'] == rid), None)
@@ -99,7 +99,7 @@ def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None, i
     try:
         try:
             community_facts = fetch_community_facts(client, record['source_id'], names)
-            if record.get('market_state') == 'new_house':
+            if effective_market_state(record) == 'new_house':
                 community_facts.pop('market_state', None)
             update.update(community_facts, property_type_captured_at=now(), property_type_error=None,
                           address_origin='source_detail', address_checked_at=now(), address_verification_pending=False,
@@ -111,6 +111,8 @@ def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None, i
         try:
             projects = parse_project_index(client.fetch_text(PROJECT_INDEX_URL, 15))
             identity = project_identity(find_project(projects, names, district))
+            if identity['market_state'] == 'unknown' and community_facts:
+                identity.pop('market_state')
             update.update(identity, market_state_captured_at=now())
             project = fetch_project_facts(client, names, district, projects=projects)
             actual_address = (community_facts or record).get('address')

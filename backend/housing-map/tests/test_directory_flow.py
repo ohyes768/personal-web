@@ -257,3 +257,17 @@ def test_same_name_different_district_is_not_a_global_name_blacklist(store,tmp_p
     activate(store);store.ingest(facts())
     assert synchronize(store,tmp_path)==1
     assert len(admitted(store,tmp_path))==1
+
+
+@pytest.mark.parametrize('count,state', [(0, 'excluded'), (2, 'excluded'), (3, 'admitted')])
+def test_sold_out_legacy_project_reclassified_in_active_directory(store, tmp_path, count, state):
+    record = facts(count=count)
+    record.update(market_state='new_house', project_id='812', project_sale_status='售完')
+    master(store, record)
+    activate(store)
+    item = inventory(store, tmp_path)[0]
+    assert item['market_state'] == 'second_hand'
+    assert item['admission_state'] == state
+    if state == 'excluded':
+        assert item['qualification'] == 'listing_low'
+        assert admitted(store, tmp_path) == []
