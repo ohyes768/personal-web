@@ -8,7 +8,8 @@ export default function InstallDialog({input, onClose, onRefresh}: {input: Insta
   const refresh = useRef(onRefresh); refresh.current = onRefresh;
   const [generation, setGeneration] = useState(0);
   const {current, targets, error: targetsError, loading: targetsLoading} = useInstallTargets();
-  const [chosenTargets, setChosenTargets] = useState<string[]>(input.target_ids ?? [current]);
+  const [installTargetId] = useState(current);
+  const installTarget = targets.find(target => target.id === installTargetId);
   const initial = JSON.stringify(input);
   const label = (id: string) => installTargetLabel(targets, id);
   const [selection, setSelection] = useState(initial);
@@ -26,11 +27,10 @@ export default function InstallDialog({input, onClose, onRefresh}: {input: Insta
     let valid = true;
     setPreparing(true); setError(''); setPlan(undefined); setTask(undefined); setRequestId(crypto.randomUUID());
     const selected: InstallInput = JSON.parse(selection);
-    if (!selected.items) selected.target_ids = chosenTargets;
-    if (!chosenTargets.length && !selected.items) { setError('请选择至少一个 profile'); setPreparing(false); return; }
+    if (!selected.items) selected.target_ids = [installTargetId];
     previewInstall(selected).then(result => { if (valid) setPlan(result); }).catch(e => { if(valid) setError(e.message); }).finally(() => { if(valid) setPreparing(false); });
     return () => { valid = false; };
-  }, [selection, generation, chosenTargets]);
+  }, [selection, generation, installTargetId]);
   const [taskId, setTaskId] = useState('');
   useEffect(() => {
     if (!taskId) return;
@@ -65,25 +65,17 @@ export default function InstallDialog({input, onClose, onRefresh}: {input: Insta
         return targets.length ? [{...candidate, targets}] : [];
       }),
     } : {items: failures.map(r => ({skill_id: r.skill_id, targets: [r.target]}))};
-    setChosenTargets([...new Set(failures.map(r => r.target))]);
     setTaskId(''); setTask(undefined); setSelection(JSON.stringify(selected)); setGeneration(g => g + 1);
   };
   const done = task?.state === 'done';
   const labels: Record<string, string> = {add:'新增', update:'更新', unchanged:'跳过', blocked:'无法安装'};
   return <ConfirmActionDialog title="安装到 Hermes profile" confirmLabel="确认安装" completed={!!targetsError || done || (!preparing && !!plan && !plan.items.some(i => i.action === 'add' || i.action === 'update'))} busy={busy || preparing || targetsLoading} error={error || targetsError}
     onConfirm={password => void confirm(password)} onCancel={onClose} description={<div className="space-y-2">
-      <fieldset disabled={busy || targetsLoading || !!taskId} className="space-y-1">
-        <legend>安装目标（共享同一份源内容）</legend>
-        {chosenTargets.filter(id => !targets.some(t => t.id === id)).map(id => <label key={id} className="block text-amber-700">
-          <input type="checkbox" checked onChange={() => { setPlan(undefined); setPreparing(true); setChosenTargets(prev => prev.filter(t => t !== id)); }} /> {id}（目标未配置，请取消选择）
-        </label>)}
-        {targets.map(target => <label key={target.id} className="block text-sm">
-          <input type="checkbox" checked={chosenTargets.includes(target.id)} disabled={(!target.available && !chosenTargets.includes(target.id)) || !!JSON.parse(selection).items || !!JSON.parse(selection).candidates?.some((c: {targets?: string[]}) => c.targets)}
-            onChange={e => { setTaskId(''); setPlan(undefined); setPreparing(true); setChosenTargets(prev => e.target.checked ? [...prev, target.id] : prev.filter(id => id !== target.id)); }} />
-          {' '}{target.name} · {target.profile_name}
-          <span className="block break-all text-xs text-slate-500">{target.install_path} {target.unavailable_reason}</span>
-        </label>)}
-      </fieldset>
+      <div className="space-y-1">
+        <p className="text-sm">安装到 {label(installTargetId)}{installTarget && ` · ${installTarget.profile_name}`}</p>
+        {installTarget ? <p className="break-all font-mono text-xs text-slate-500">{installTarget.install_path} {installTarget.unavailable_reason}</p>
+          : <p className="text-xs text-amber-700">{targetsLoading ? '正在加载安装目标…' : '目标未配置，请关闭弹框后切换环境。'}</p>}
+      </div>
       {preparing ? <p>正在准备安装计划…</p> : <p>新增 {plan?.items.filter(i => i.action === 'add').length ?? 0} · 更新 {plan?.items.filter(i => i.action === 'update').length ?? 0} · 跳过 {plan?.items.filter(i => i.action === 'unchanged').length ?? 0} · 无法安装 {plan?.items.filter(i => i.action === 'blocked').length ?? 0}</p>}
       {plan?.items.map(i => <p key={`${i.skill_id}:${i.target}`}>{i.name} → {label(i.target)}：{labels[i.action]} {i.planned_revision?.slice(0,7)} {i.reason}</p>)}
       {plan?.affected_installations?.map(item => <p key={`${item.skill_id}:${item.target}`} className="text-xs text-amber-700">共享更新影响：{item.name} → {label(item.target)}</p>)}

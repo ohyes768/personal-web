@@ -85,7 +85,7 @@
 
 - URL `target=<ID>` 是管理/部署看板共同目标，缺省回到 legacy hermes。未知/不可用目标提示并保留，不静默转到其他目标。名单来自 `/api/skills/install-targets`，ZIP 配置仍独立。
 - InstallTargetsContext 提供当前目标、catalog 和加载/错误状态。SourceWorkspace 筛选、SkillPool 徽章/合集计数和 DeployBoard 下架均消费当前 ID；外部导出分类用 isInstallTarget，不能把未选中 profile 当导出。
-- InstallDialog 捕获打开时当前目标，默认单选，可勾选多个可用目标并重取预览。目标变化立即清旧计划，cleanup 忽略旧响应；结果按 skill_id/target 组合显示。catalog 加载失败不得确认安装。
+- InstallDialog 捕获打开时当前目标，固定沿用标题旁的环境选择；仅只读显示该目标名称、profile 和安装路径，不提供环境复选框。首次预览的 target_ids 固定为该目标，不采用调用方传入的其他默认目标。输入变化立即清旧计划，cleanup 忽略旧响应；结果按 skill_id/target 组合显示。catalog 加载失败不得确认安装。
 - 已登记失败项重试发送 items 精确组合；扫描候选失败项保留 scan_task_id/path，并附 candidate.targets 精确失败组合，已登记候选由服务端复用身份。成功组合不重试。
 - 共享更新影响列表含本次未选 profile；Clone 同样展示已安装的共享成员/目标。安装成功仅验证链接，真实 Hermes 发现另做部署验收。
 
