@@ -1404,3 +1404,37 @@ Skill Manager：移除安装弹框环境复选框，固定使用打开时当前�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 39: Housing Map 移除高德小区名单采集
+
+**Date**: 2026-10-15
+**Task**: Housing Map 移除高德小区名单采集
+**Package**: housing-map
+**Branch**: `master`
+
+### Summary
+
+名单采集固定TMSF并拒绝amap请求，删除区域扫描及UI选项，保留历史来源、地图与已知小区位置补全。后端456项、前端54项测试及生产构建通过。未部署、未改生产数据。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `f64b135` | (see git log) |
+
+### Testing
+
+- 后端456项、前端54项测试通过；lint、TypeScript与生产构建通过，git diff --check通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
