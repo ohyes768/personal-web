@@ -92,3 +92,72 @@
 ## 网页安装目标管理
 
 `view=install-targets` 与原 ZIP `view=targets` 分开。默认行只读，named profile新增/改名/删除由密码确认，active删除只提示并跳当前target部署看板。候选选择不输入任意路径。catalog removed行保留管理页历史摘要，选择器和安装弹窗排除removed；当前URL被删后保留未知提示，不自动换目标。CRUD成功刷新catalog，异步候选发现使用generation/mounted避免旧响应；revision冲突需刷新/重新打开确认，不保留密码。
+
+## Profile scope picker（2026-10-15）
+
+UI 形态由 header 下方裸 `<select>` 升级为**应用级 scope bar**（`ProfileScopePicker` 组件），跨视图常驻在 `<header>` 右侧。这是所有多 profile 工具应遵循的模式，未来若新增 provider（OpenClaw 之外）也走同一组件。
+
+### 跨视图常驻：scope picker 是 scope 不是 navigation
+
+- `ProfileScopePicker` 必须挂在 `<header>` 内、四个视图（`view ∈ {manage, board, install-targets, targets}`）外层共享。
+- **绝不要**把 picker 包在 `{view === 'manage' || view === 'board' && ...}` 这种视图条件里——install-targets 视图下用户改完 profile 配置后必须能立刻看到当前 scope。
+- 这是 operate-mode 工具的标配模式（GitHub org、Vercel team、AWS region、Slack workspace、Linear workspace）。
+
+### Provider · profile_name 渲染格式
+
+- 触发器 button 与 popover 列表项统一显示 `<provider_label> · <profile_name>`（如 `Hermes · ohyes768`）。
+- 数据 `provider` 字段是小写 `hermes`；通过组件内 `PROVIDER_LABEL` map 渲染大写 `Hermes`。新增 provider 时只需扩 map，无需改其它逻辑。
+- **不要直接用 `name` 字段**——`name` 是用户起的显示名（如 "Default dev"），`profile_name` 是真实身份（如 "default"）；显示真实身份让用户知道操作的目标。
+
+### install_path 永远不进 header
+
+- header 中**不渲染** `install_path`——路径会撑宽 row、视觉上压过 picker 本身。
+- `install_path` 只在 popover 列表项里以 `font-mono` chip + `title` attr 显示完整路径。
+- header 唯一允许的信息是 `provider · profile_name` + 色点状态指示 + chevron。
+
+### 状态色点映射
+
+| 状态 | 色点 class | trigger 边框 | trigger 文字 |
+|---|---|---|---|
+| `available && !removed` | `bg-emerald-500` | 默认 | `Hermes · <name>` |
+| `!available && !removed` | `bg-amber-500` | `border-amber-400` | `目标不可用：<reason>` |
+| `removed`（仅当前选中） | `bg-slate-300` | `border-slate-200` | `<name>（已移除）` |
+| `loading` | `bg-slate-300 animate-pulse` | `border-slate-200` | `加载中…` |
+| `error` | `bg-rose-500` | `border-rose-400` | `加载失败` |
+| URL `target` 不在 catalog | 同 unavailable | `border-amber-400` | `<id>（不可用）` |
+
+- 不可用态 `unavailable_reason` 取第一行（`.split('\n')[0]`），避免 button 内文字过长。
+- 已移除态：trigger 仍显示当前已移除的 target（色点灰），但 popover 默认列表过滤掉——用户可通过 `管理安装目标 →` 跳到 install-targets 页恢复。
+
+### popover 自写约定
+
+- 不引入 Headless UI / Radix 等 popover 库——单点使用不值得加依赖；当前页面其它 dialog（`ConfirmActionDialog` / `RegisterGithubDialog` / `TaskProgressDialog`）都是自写，保持一致。
+- 触发器 button 加 `aria-haspopup="dialog"` `aria-expanded`；popover 加 `role="dialog"` `aria-label`。
+- 外点击 / Esc 关闭用 `useEffect` 挂 `mousedown` + `keydown` listener，cleanup 移除；SSR/测试环境必须有 `typeof document === 'undefined'` 守卫，否则 server render / `renderToStaticMarkup` 会炸。
+- popover 绝对定位：`absolute right-0 top-full mt-1 z-30 w-[360px]`，列表 `max-h-72 overflow-y-auto`，列表项 `data-active="true"` 用 sky 背景 + 左侧 2px sky border。
+
+### 数据复用：不要为 picker 单独建 store/context
+
+- picker 完全消费 `InstallTargetsContext` 已有的 `targets` / `current` / `loading` / `error`——单一数据源，picker 永远反映后端最新 catalog。
+- 切换 scope 仍走 `navigate({ agent: id })` → URL `?target=<id>` 变化 → useSearchParams 触发 re-render → 子组件（SourceWorkspace / DeployBoard）行为不变。
+- picker 的 `targets` prop 应传**完整 catalog（含 removed）**，让 picker 内部按需过滤——这样 trigger 能显示当前已移除 target 的灰态，popover 列表过滤掉。
+
+### `pnpm build` 与 dev server 共存陷阱
+
+- 同目录同时跑 `pnpm dev` 和 `pnpm build` 会冲突：`pnpm build` 改写 `.next/` 产物（特别是 `.next/server/app/<id>.js`），正在跑的 `pnpm dev` 下一次请求会 `Cannot find module './<id>.js'`。
+- 验证流程 `pnpm build` 后**必须 kill dev server 再重启**（同端口，因为 `pnpm dev` 锁 3008）；不要并行起第二个 dev server（CLAUDE.md 硬规则）。
+- Windows + pnpm standalone trace copy 报 `EPERM: symlink`（react / client-only / @swc/helpers / @next/env）是已知环境限制，**只影响 `.next/standalone`，不影响 dev 与常规 build**——验证时跳过 standalone 步骤即可。
+
+### 单测覆盖矩阵（`ProfileScopePicker.test.ts`，15 项）
+
+T1-T5 状态矩阵：available / unavailable / loading / error / invalid-id
+T6-T9 交互矩阵：开 popover / 选 item + 关 / 点管理 + 关 / 点刷新
+T10 popover 内容：path chip + active count
+T11 unavailable_reason 第一行展示
+T12 已移除态：trigger 显示 + popover 过滤
+T13 toggle：再次点 trigger 关闭
+T14 空 catalog：`暂无 profile` 空态
+T15 active 列表项：`data-active` + sky class
+
+测试用 `renderToStaticMarkup` + `InstallTargetsContext.Provider`（参考 `ProfileViews.test.ts`），不引入 jsdom。
+

@@ -6,6 +6,7 @@ import ConfirmActionDialog from '@/components/ConfirmActionDialog';
 import DeployBoard from '@/components/DeployBoard';
 import InstallTargetManager from '@/components/InstallTargetManager';
 import ExportTargetManager from '@/components/ExportTargetManager';
+import ProfileScopePicker from '@/components/ProfileScopePicker';
 import RegisterGithubDialog from '@/components/RegisterGithubDialog';
 import SourceWorkspace, { type Notice } from '@/components/SourceWorkspace';
 import TaskProgressDialog from '@/components/TaskProgressDialog';
@@ -72,7 +73,6 @@ function SkillManagerPage() {
   const [installTargetsError, setInstallTargetsError] = useState('');
   const [installTargetsLoading, setInstallTargetsLoading] = useState(true);
   const label = (id: string) => installTargetLabel(installTargets, id);
-  const selectedTarget = installTargets.find(t => t.id === agent && !t.removed);
 
   function navigate(next: { view?: ViewKey; tab?: SourceTab; agent?: TargetKey }) {
     const p = new URLSearchParams(searchParams.toString());
@@ -246,15 +246,15 @@ function SkillManagerPage() {
   return (
     <InstallTargetsContext.Provider value={{current: agent, targets: installTargets.filter(t=>!t.removed), error: installTargetsError, loading: installTargetsLoading}}><main className="mx-auto flex h-screen max-w-7xl flex-col gap-3 p-4">
       <header className="flex items-center justify-between gap-3 border-b border-slate-100 pb-1">
-        <div className="flex flex-wrap items-end gap-x-6 gap-y-1">
-          <div className="flex flex-col gap-0.5">
-            {/* 站点首页在 basePath 之外，Next Link 会将 / 拼成 /skills。 */}
-            {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
-            <a href="/" className="text-xs text-slate-500 transition-colors hover:text-slate-800">
-              ← 返回首页
-            </a>
-            <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
-          </div>
+        <div className="flex flex-col gap-0.5">
+          {/* 站点首页在 basePath 之外，Next Link 会将 / 拼成 /skills。 */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/" className="text-xs text-slate-500 transition-colors hover:text-slate-800">
+            ← 返回首页
+          </a>
+          <h1 className="text-xl font-semibold text-slate-800">Skill 发布管理台</h1>
+        </div>
+        <div className="flex items-center gap-3">
           <nav className="flex gap-1" aria-label="视图切换">
             <button
               type="button"
@@ -275,19 +275,17 @@ function SkillManagerPage() {
             <button type="button" data-active={view === 'install-targets'} onClick={() => navigate({view:'install-targets'})} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">安装目标</button>
             <button type="button" data-active={view === 'targets'} onClick={() => navigate({ view: 'targets' })} className="border-b-2 border-transparent px-3 pb-2 pt-2.5 text-sm text-slate-500 hover:text-slate-800 data-[active=true]:border-sky-600 data-[active=true]:font-medium data-[active=true]:text-slate-800">导出目标</button>
           </nav>
+          <ProfileScopePicker
+            current={agent}
+            allTargets={installTargets}
+            loading={installTargetsLoading}
+            error={installTargetsError}
+            onSelect={(id) => navigate({ agent: id as TargetKey })}
+            onManage={() => navigate({ view: 'install-targets' })}
+            onRefresh={() => void refreshInstallTargets()}
+          />
         </div>
       </header>
-
-      {(view === 'manage' || view === 'board') && <div className="flex flex-wrap items-center gap-2 text-sm">
-        <label htmlFor="install-profile">Hermes profile</label>
-        <select id="install-profile" value={agent} disabled={installTargetsLoading} onChange={e => navigate({agent: e.target.value as TargetKey})} className="rounded border border-slate-300 px-2 py-1.5">
-          {!selectedTarget && <option value={agent}>{agent}（不可用）</option>}
-          {installTargets.filter(t=>!t.removed).map(t => <option key={t.id} value={t.id}>{t.name}{t.available ? '' : '（不可用）'}</option>)}
-        </select>
-        <span className="break-all text-xs text-slate-500">{selectedTarget?.install_path}</span>
-        <button type="button" onClick={()=>navigate({view:'install-targets'})} className="text-xs text-sky-700 underline">管理安装目标</button>
-        {(installTargetsError || (!installTargetsLoading && !selectedTarget) || selectedTarget?.unavailable_reason) && <p role="alert" className="text-amber-700">{installTargetsError || selectedTarget?.unavailable_reason || '目标未配置，请选择可用 profile'}{installTargetsError && <button type="button" onClick={() => void refreshInstallTargets()} className="ml-2 underline">重试</button>}</p>}
-      </div>}
 
       {loadError ? (
         <p className="rounded bg-rose-50 px-3 py-2 text-sm text-rose-700" role="alert">
