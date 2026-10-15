@@ -1268,3 +1268,37 @@ housing-map：实现来拍JSON采集、独立原子存储、跨进程锁、CLI�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 35: Skill Manager profile scope switcher 重设计
+
+**Date**: 2026-10-15
+**Task**: Skill Manager profile scope switcher 重设计
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+把 apps/skill-manager 的 profile 切换器从 header 下方裸 <select> 升级为应用级 scope bar（ProfileScopePicker 组件，button + 自写 popover），跨四个视图常驻在 header 右侧，色点状态指示 + provider · profile_name 格式 + install_path 折进 popover chip。新增 15 项 vitest 单测；typecheck/lint/vitest 67/67/Next build 全过；spec/guides/skill-manager-frontend.md 同步记录新模式与 pnpm build/dev 共存陷阱。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `53e08ab` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
