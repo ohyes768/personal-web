@@ -138,8 +138,8 @@ def test_collection_completion_materializes_review_without_admitting(tmp_path):
     from src.services.directory_collection import collect_names
     work = workspace(tmp_path)
     def discovered(cancel, ignored):
-        yield dict(source='amap', source_id='1', name='采集花园', district='滨江')
-    report = collect_names(work.store, ['amap'], adapters={'amap': discovered})
+        yield dict(source='tmsf', source_id='1', name='采集花园', district='滨江')
+    report = collect_names(work.store, ['tmsf'], adapters={'tmsf': discovered})
     assert report['phase'] == 'succeeded'
     with work.store.db() as db:
         assert db.execute('SELECT COUNT(*) FROM review_candidates').fetchone()[0] == 1

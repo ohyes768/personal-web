@@ -29,11 +29,9 @@ export type Report = { running: boolean; phase: string; source?: string; started
   auto_review?: AutoReviewReport;
   matched?: number; pending?: number; ignored?: number; stage?: string; property_types?: number;
   property_types_failed?: number; property_types_cached?: number; errors?: { source: string; message: string }[];
-  truncated?: { source: string; message: string }[];
-  coverage?: Record<string, { requests: number; cells: number; unique: number; filtered: number; duplicates: number; complete: boolean }> };
+  truncated?: { source: string; message: string }[] };
 export const labels: Record<string, string> = { tmsf: '透明售房网', amap: '高德地图', fang: '房天下', laipai: '来拍 ya' };
 export const marketLabels: Record<string, string> = { new_house: '新房项目', second_hand: '二手房', unknown: '新房 / 二手房状态未知' };
-export const collectionLabels = { tmsf: '透明售房网', amap: '高德地图' };
 export const phaseLabels: Record<string, string> = { running: '正在采集', succeeded: '采集结束', partial_failed: '部分完成',
   failed: '采集失败', cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
 const root = '/api/map/directory';

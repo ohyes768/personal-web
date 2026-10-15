@@ -24,15 +24,33 @@ def test_management_lifecycle(tmp_path, monkeypatch):
     assert client.get('/api/directory/communities?page=0').status_code == 422
 
 
-def test_name_collection_uses_tmsf_and_amap():
+def test_name_collection_uses_only_tmsf_and_rejects_amap():
     from pydantic import ValidationError
     import pytest
     from src.services.directory_collection import ADAPTERS
 
-    assert directory_routes.DiscoveryInput().sources == ['tmsf', 'amap']
-    assert set(ADAPTERS) == {'tmsf', 'amap', 'fang', 'laipai'}
+    assert directory_routes.DiscoveryInput().sources == ['tmsf']
+    assert set(ADAPTERS) == {'tmsf', 'fang', 'laipai'}
     with pytest.raises(ValidationError):
         directory_routes.DiscoveryInput(sources=['fang'])
+    with pytest.raises(ValidationError):
+        directory_routes.DiscoveryInput(sources=['amap'])
+
+
+def test_collection_http_rejects_removed_source_without_starting_job(monkeypatch):
+    calls = []
+    class Job:
+        def start(self, sources):
+            calls.append(sources)
+            return {'running': True}
+    monkeypatch.setattr(directory_routes, 'job', lambda: Job())
+    app = FastAPI(); app.include_router(directory_routes.router, prefix='/api')
+    client = TestClient(app)
+    assert client.post('/api/directory/collection', json={'sources': ['amap']}).status_code == 422
+    assert client.post('/api/directory/collection', json={'sources': ['tmsf', 'amap']}).status_code == 422
+    assert calls == []
+    assert client.post('/api/directory/collection', json={}).status_code == 202
+    assert calls == [['tmsf']]
 
 
 def test_community_filter_by_residential_state(tmp_path, monkeypatch):

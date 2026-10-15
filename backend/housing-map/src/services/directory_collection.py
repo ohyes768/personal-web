@@ -219,23 +219,21 @@ def laipai_names(cancel, ignored):
         client.close()
 
 
-def amap_names(cancel, ignored):
-    from src.services.amap_directory import discover, AmapIncomplete
-    try:
-        yield from discover(cancel, ignored)
-    except AmapIncomplete as exc:
-        raise DiscoveryTruncated(str(exc)) from None
+ADAPTERS = {'tmsf': tmsf_names, 'fang': fang_names, 'laipai': laipai_names}
 
 
-ADAPTERS = {'tmsf': tmsf_names, 'amap': amap_names, 'fang': fang_names, 'laipai': laipai_names}
+def _check_sources(sources):
+    if 'amap' in sources:
+        raise ValueError('高德小区名单采集已停止，请使用透明售房网')
 
 
 def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
+    _check_sources(sources)
     cancel = cancel or threading.Event()
     adapters = adapters or ADAPTERS
     report = dict(phase='running', running=True, started_at=now(), source=None,
                   stage='names', property_types=0, property_types_failed=0, property_types_cached=0,
-                  new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[], coverage={})
+                  new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[])
     handled = set()
     counted_status = {}
     failed_sources = set()
@@ -267,11 +265,6 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                     kwargs['existing'] = existing
                 for row in adapter(cancel, store.is_ignored, **kwargs):
                     check(cancel)
-                    if '_coverage' in row:
-                        report['coverage'][source] = row['_coverage']
-                        if progress:
-                            progress(report)
-                        continue
                     report['stage'] = row.pop('_stage', 'names')
                     type_result = row.pop('_property_type_result', None)
                     key = (source, row.get('source_kind', 'community'), str(row['source_id']))
@@ -301,7 +294,7 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                 raise
             except Exception as exc:
                 failed_sources.add(source)
-                # Never include request URLs (Amap keys) in reports.
+                # Upstream clients redact request URLs and credentials before reporting errors.
                 report['errors'].append({'source': source, 'message': str(exc) if isinstance(exc, ValueError) else f'{type(exc).__name__}：来源请求失败'})
         report['phase'] = 'partial_failed' if report['errors'] or report['truncated'] else 'succeeded'
         if len(failed_sources) == len(sources):
@@ -365,6 +358,7 @@ class DirectoryJob:
                 raise
 
     def start(self, sources):
+        _check_sources(sources)
         with self.lock:
             if self.worker and self.worker.is_alive():
                 raise ValueError('名称采集正在运行')

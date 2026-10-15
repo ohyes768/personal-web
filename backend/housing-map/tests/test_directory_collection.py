@@ -2,6 +2,22 @@ from src.services.community_registry import CommunityRegistry
 from src.services.directory_collection import collect_names
 import threading
 
+import pytest
+
+
+def test_removed_amap_cannot_run_even_with_injected_adapter(tmp_path):
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    def forbidden(*args):
+        raise AssertionError('Removed Amap adapter must never run')
+    with pytest.raises(ValueError, match='高德.*停止'):
+        collect_names(store, ['tmsf', 'amap'], adapters={'tmsf': forbidden, 'amap': forbidden})
+    assert store.sources() == []
+    from src.services.directory_collection import DirectoryJob
+    job = DirectoryJob(store)
+    with pytest.raises(ValueError, match='高德.*停止'):
+        job.start(['amap'])
+    assert job.worker is None and job.state is None
+
 
 def test_collection_report_ignored_and_partial_failures(tmp_path):
     store = CommunityRegistry(tmp_path / 'registry.sqlite3')
@@ -62,7 +78,7 @@ def test_restart_preserves_amap_failures(tmp_path):
     report = dict(phase='partial_failed', running=False, new=3, errors=[
         {'source': 'amap', 'message': '未配置高德 Web 服务 Key'},
         {'source': 'fang', 'message': 'upstream failed'},
-    ], truncated=[{'source': 'amap', 'message': '旧分页限制'}])
+    ], truncated=[{'source': 'amap', 'message': '旧分页限制'}], coverage={'amap': {'complete': False, 'unique': 376}})
     with store.db() as db:
         db.execute("INSERT INTO meta VALUES ('collection_job',?)", (dump(report),))
     job = DirectoryJob(store)

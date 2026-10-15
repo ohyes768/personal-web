@@ -82,7 +82,7 @@ class AssociationInput(BaseModel):
 
 
 class DiscoveryInput(BaseModel):
-    sources: list[Literal['tmsf', 'amap']] = Field(default_factory=lambda: ['tmsf', 'amap'], min_length=1, max_length=2)
+    sources: list[Literal['tmsf']] = Field(default_factory=lambda: ['tmsf'], min_length=1, max_length=1)
 
 
 class AdmissionInput(BaseModel):

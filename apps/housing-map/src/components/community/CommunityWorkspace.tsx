@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import AutoReviewPanel, { AutoEvidence, AutoReport } from './AutoReviewPanel';
 import { WorkspacePageCache } from './WorkspacePageCache';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
-import { AdmissionControls, Community, Source, Report, DirectorySourceCard, labels, collectionLabels, phaseLabels, mapLabels, marketLabels, request, safeDirectoryLink } from './DirectoryCards';
+import { AdmissionControls, Community, Source, Report, DirectorySourceCard, labels, phaseLabels, mapLabels, marketLabels, request, safeDirectoryLink } from './DirectoryCards';
 
 type Review = { id: string; name: string; district?: string; address?: string; revision: number; state: string;
   address_missing?: boolean; existing_cid?: string; members: Source[]; sources: string[]; reasons: string[]; suggestions: Community[];
@@ -118,7 +118,6 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
   const [selected, setSelected] = useState<{ kind: string; id: string } | null>(null);
   const [detail, setDetail] = useState<Community | Review | null>(null);
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null); const dialog = useRef<HTMLDialogElement>(null);
-  const [collectionSources, setCollectionSources] = useState(['tmsf', 'amap']);
   useEffect(() => { if (confirmation) dialog.current?.showModal(); }, [confirmation]);
   useEffect(() => {
     const timer = setTimeout(() => setSearch(q), 200);
@@ -206,13 +205,12 @@ export default function CommunityWorkspace({ onChanged, initialSource = '' }: { 
     <header className="review-heading"><div><p className="review-eyebrow">小区库存</p><h2>住宅名单与人工审核</h2><p className="directory-muted">住宅是地图的数据来源；有疑点的候选在审核后收录、合并或排除。</p></div>
       <p className="review-inventory">全部区域：住宅 <strong>{summary?.residential ?? '—'}</strong> · 待审核 <strong>{summary?.pending ?? '—'}</strong> · 不收录 {summary?.excluded ?? '—'}</p></header>
     <details className="review-collection" open={report?.running || undefined}><summary>最近一次来源采集{report && ` · ${phaseLabels[report.phase] || report.phase}`}</summary><div className="directory-collection">
-      <div className="directory-actions">{Object.entries(collectionLabels).map(([key, label]) => <label key={key}><input type="checkbox" checked={collectionSources.includes(key)} onChange={e => setCollectionSources(v => e.target.checked ? [...v, key] : v.filter(k => k !== key))} />{label}</label>)}
-        <button className="btn btn-primary" disabled={busy || report?.running || !collectionSources.length} onClick={() => void act('/collection', 'POST', { sources: collectionSources })}>采集名称与物业类型</button>
+      <div className="directory-actions"><span>采集来源：透明售房网</span>
+        <button className="btn btn-primary" disabled={busy || report?.running} onClick={() => void act('/collection', 'POST', { sources: ['tmsf'] })}>采集名称与物业类型</button>
         {report?.running && <button className="btn btn-secondary" onClick={() => void act('/collection', 'DELETE')}>取消采集</button>}</div>
       <p className="directory-muted">下方是本次来源记录条数，不是小区库存。失败或截断不代表采全。自动收录需先预演、核对并明确启用。</p>
       {report ? <div><p>采集时间：{report.finished_at || report.started_at || '暂无'}（来源报告时间）</p><p>{phaseLabels[report.phase]} · 新来源 {report.new || 0} · 已有来源 {report.existing || 0} · 已关联 {report.matched || 0} · 待关联 {report.pending || 0} · 跳过 {report.ignored || 0}</p>
         <p>透明售房网类型：获取 {report.property_types || 0} · 复用 {report.property_types_cached || 0} · 失败 {report.property_types_failed || 0}</p>
-        {report.coverage?.amap && <p>高德：{report.coverage.amap.unique} 个地点 · 过滤 {report.coverage.amap.filtered} · 去重 {report.coverage.amap.duplicates} · {report.coverage.amap.complete ? '区域查询结束' : '区域查询未全部完成'}</p>}
         {[...(report.errors || []), ...(report.truncated || [])].map((e, i) => <p className="directory-warning" key={i}>{labels[e.source]}：{e.message}</p>)}</div> : <p>暂无来源采集记录。</p>}
       {report?.auto_review && <details><summary>本轮自动审核（单独统计）</summary><AutoReport report={report.auto_review} /></details>}
     </div></details>
