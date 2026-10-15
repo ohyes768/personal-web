@@ -86,4 +86,10 @@ test('directory collection uses TMSF only without a source selector', () => {
   assert.equal((controls.match(/type="checkbox"/g) || []).length, 0);
   assert.match(controls, /透明售房网/); assert.doesNotMatch(controls, /高德地图/);
   assert.doesNotMatch(controls, /房天下|来拍/); assert.match(controls, /失败或截断不代表采全/);
+  const sourceFilter = html.match(/<select aria-label="数据来源"[^>]*>(.*?)<\/select>/)?.[1];
+  assert.ok(sourceFilter);
+  assert.doesNotMatch(sourceFilter, /高德地图|value="amap"/);
+  assert.match(sourceFilter, /透明售房网/);
+  assert.match(sourceFilter, /房天下/);
+  assert.match(sourceFilter, /来拍/);
 });
