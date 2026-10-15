@@ -113,3 +113,23 @@ def test_legacy_master_count_and_manual_exclusion_remain(tmp_path):
     store.decide_admission(c['community_id'],'exclude',revision=1,reason='人工不收录')
     store.ingest(record(3))
     assert community_views(store,tmp_path)[0]['admission_state']=='excluded'
+
+
+@pytest.mark.parametrize('manual_reason', [None, '人工核实暂不收录'])
+def test_exclusion_reasons_are_unique_and_preserve_manual_notes(tmp_path, manual_reason):
+    store = CommunityRegistry(tmp_path / 'community_registry.sqlite3')
+    source = store.ingest(record(1))
+    work = ReviewWorkspace(store, tmp_path)
+    if manual_reason:
+        row = work.reviews(state='excluded')[0]
+        work.decide(row['id'], 'exclude', revision=row['revision'], reason=manual_reason)
+    else:
+        master = store.create('测试花园', district='滨江', address='滨江区测试路1号')
+        store.associate(source['id'], master['community_id'])
+    row = work.reviews(state='excluded')[0]
+    listing_reason = listing_gate([record(1)])[1]
+    assert row['reasons'].count(listing_reason) == 1
+    assert len(row['reasons']) == len(set(row['reasons']))
+    if manual_reason:
+        assert manual_reason in row['reasons']
+    assert work.reviews(state='excluded')[0]['reasons'] == row['reasons']

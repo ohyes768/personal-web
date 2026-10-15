@@ -180,6 +180,7 @@ class ReviewWorkspace:
                 reasons.append('缺少可靠小区名称或法拍身份存在冲突')
             if group.get('auto_review_locked'):
                 reasons.append('人工自动审核锁已生效')
+            reasons = list(dict.fromkeys(reasons))
             result.append({**group, 'state': effective_state, 'address': address, 'address_missing': address_missing, 'members': public_members, 'reasons': reasons,
                            'suggestions': [], 'sources': sorted({m['source'] for m in members}),
                            'auction_assets': len({a['source_id'] for a in auctions if a['source_kind'] == 'asset'}),
