@@ -62,6 +62,22 @@ skill-manager **不读源库任何登记文件**：自研 Skill 经 `sync_local(
   永不关闭，`stderr.read()` 会永远阻塞，超时失效；
 - 后台 clone 超时 `_GIT_TIMEOUT_SECONDS = 1800`（nginx 300s 只约束单次 HTTP
   往返，不再约束 git 时长）；`verify_reachable` 仍是独立 30s；
+- **慢速出口往返数契约（2026-10-15）**：NAS 容器出口到 github.com 实测
+  ~51 KiB/s，每次 ls-remote 都是全新 TCP+TLS 握手（单次 5-10s），网络往返
+  按"预算"管理：
+  - `check_update` **只发一次** `git ls-remote <url> HEAD "refs/tags/*"`
+    （30s 超时），同请求解析 HEAD SHA 与 tags。**坑：git 存在显式 pattern
+    时 `--tags`/`--refs` flags 不生效**（只返回 HEAD 行拿不到 tags），
+    不能写回 `HEAD --tags --refs`；peeled `refs/tags/x^{}` 行解析时跳过
+    （等价旧 `--refs` 过滤）。失败/超时/HEAD 缺失一律
+    `UnreachableRepositoryError`（先写 github_check error 记录再抛）。
+  - 任务内（register/register_batch/clone_cache）**不调
+    `verify_reachable`**——check_update 的 ls-remote 本身就是可达性判定；
+    只有 routes 同步预检（快速 400 语义）与 `_execute_scan` 保留独立预检。
+  - `ensure_cached` 的 clone 与 fetch 均带 `--depth 1`（浅拉取只传最新快照
+    层；缓存仅用于 checkout 工作区，历史无用）。`fetch --depth 1 origin
+    <sha>` 依赖 GitHub 端 SHA-in-want（uploadpack.allowReachableSHA1InWant
+    家族），本地已有该对象时零传输；浅边界对缓存仓库无破坏性。
 - 首次 clone 落 `.tmp/<repo>-<uuid>` 校验后原子 `replace` 进 `repos/<owner>__<repo>`，
   失败不留半成品（根治"中断半成品导致快速失败"）；rename 前发现正式目录已存在
   （并发 clone 先行落地）则弃本次 tmp 直接复用；`state/scan/*` 与 `.tmp/*`

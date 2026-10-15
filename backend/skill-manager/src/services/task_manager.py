@@ -352,7 +352,6 @@ class GithubTaskManager:
         if self._git_cache.cached_skill_available(skill):
             self._git_cache.use_cached_skill(skill)
         else:
-            self._git_cache.verify_reachable(task.repository)
             info = self._git_cache.check_update(skill)
             self._git_cache.ensure_cached(
                 skill,
@@ -376,7 +375,6 @@ class GithubTaskManager:
         self._set_stage(task_id, "remote_check")
         using_cache = self._git_cache.cached_scan_available(task.repository)
         if not using_cache:
-            self._git_cache.verify_reachable(task.repository)
             info = self._git_cache.check_update(first)
             self._git_cache.ensure_cached(
                 first,
@@ -410,7 +408,6 @@ class GithubTaskManager:
     def _execute_clone(self, task_id: str, task: _MutableTask) -> None:
         skill = self._require_skill(task_id, task)
         self._set_stage(task_id, "remote_check")
-        self._git_cache.verify_reachable(task.repository)
         info = self._git_cache.check_update(skill)
         self._git_cache.ensure_cached(
             skill,

@@ -25,7 +25,9 @@ from src.services.git_cache import (
     GitProgress,
     GitTimeoutError,
     InvalidRepositoryError,
+    UnreachableRepositoryError,
     _ProgressLineSplitter,
+    _REACHABILITY_TIMEOUT_SECONDS,
     cleanup_stale_workspaces,
 )
 
@@ -362,6 +364,66 @@ def test_check_update_rejects_non_github_url(git_cache, registered_github_skill)
         git_cache.check_update(moved)
 
 
+def test_check_update_issues_single_ls_remote_for_head_and_tags(
+    git_cache, registered_github_skill, monkeypatch
+):
+    """R1 合并 ls-remote：HEAD 与 tags 同一次请求返回，全程仅 1 次
+    `_run_git` 调用（慢速出口下省掉一次 TCP+TLS 握手），且超时走
+    可达性口径（30s 元数据请求快速失败）。"""
+    calls: list[tuple[list[str], dict]] = []
+    original = git_cache._run_git
+
+    def recording_run_git(argv, **kwargs):
+        calls.append((list(argv), kwargs))
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(git_cache, "_run_git", recording_run_git)
+
+    update = git_cache.check_update(registered_github_skill)
+
+    assert update.remote_revision
+    assert update.remote_tags == ["v1.0"]
+    remote = git_cache._remote_for(CANONICAL_URL)
+    assert calls == [
+        (
+            ["ls-remote", remote, "HEAD", "refs/tags/*"],
+            {"timeout": _REACHABILITY_TIMEOUT_SECONDS},
+        )
+    ]
+
+
+def test_check_update_missing_head_maps_to_unreachable(
+    git_cache, registered_github_skill, store, monkeypatch
+):
+    """远端未报告 HEAD：按 R2 语义抛 UnreachableRepositoryError（而非
+    GitOperationError），且失败仍写入 github_check 记录。"""
+    monkeypatch.setattr(git_cache, "_run_git", lambda argv, **kwargs: "")
+
+    with pytest.raises(UnreachableRepositoryError):
+        git_cache.check_update(registered_github_skill)
+
+    record = store.get_github_check(registered_github_skill.id)
+    assert record is not None
+    assert record.result == "error"
+    assert record.error
+
+
+def test_check_update_skips_annotated_tag_peeled_lines(
+    git_cache, registered_github_skill, upstream_repo
+):
+    """R1 订正：`refs/tags/*` pattern 会带回 annotated tag 的 peeled
+    `^{}` 行，解析时必须跳过（等价旧 `--refs` 的过滤），tags 列表
+    只含真实 tag 名。"""
+    work = upstream_repo.bare.parent / "upstream-work"
+    run_git("tag", "-a", "v2.0", "-m", "release", cwd=work)
+    run_git("push", str(upstream_repo.bare), "refs/tags/v2.0", cwd=work)
+
+    update = git_cache.check_update(registered_github_skill)
+
+    assert update.remote_tags == ["v1.0", "v2.0"]
+    assert all("^{}" not in tag for tag in update.remote_tags)
+
+
 def test_check_update_failure_is_isolated_and_recorded(
     settings, store, upstream_repo, tmp_path
 ):
@@ -379,7 +441,8 @@ def test_check_update_failure_is_isolated_and_recorded(
         repository=UNRELATED_URL,
     )
 
-    with pytest.raises(GitOperationError):
+    # ls-remote 失败按 R2 语义包装为 UnreachableRepositoryError 抛出
+    with pytest.raises(UnreachableRepositoryError):
         offline.check_update(skill)
 
     record = store.get_github_check(skill.id)
@@ -405,6 +468,50 @@ def test_ensure_cached_clones_and_checks_out_requested_revision(
     ).resolve()
     assert skill_dir == expected
     assert git_cache.current_revision(registered_github_skill) == upstream_repo.revision
+
+
+def test_ensure_cached_first_clone_is_shallow(
+    git_cache, registered_github_skill, roots, upstream_repo, monkeypatch
+):
+    """R3 浅拉取：首次 clone 带 `--depth 1`（与 scan() 对齐，只传最新
+    快照层），且全程仅这一次流式 clone 调用。"""
+    calls: list[list[str]] = []
+    original = git_cache._run_git_streaming
+
+    def recording_streaming(argv, *args, **kwargs):
+        calls.append(list(argv))
+        return original(argv, *args, **kwargs)
+
+    monkeypatch.setattr(git_cache, "_run_git_streaming", recording_streaming)
+    git_cache.ensure_cached(registered_github_skill, upstream_repo.revision)
+
+    assert len(calls) == 1
+    remote = git_cache._remote_for(CANONICAL_URL)
+    assert calls[0][:5] == ["clone", "--depth", "1", "--progress", remote]
+    assert (roots.github_cache / "repos" / "example__two-skills" / ".git").is_dir()
+
+
+def test_ensure_cached_existing_cache_fetches_shallow(
+    git_cache, registered_github_skill, upstream_repo, monkeypatch
+):
+    """R3 浅拉取：已有缓存走 `fetch --depth 1 origin <sha>`，只拉目标
+    SHA 的快照层，不补全中间历史；checkout 参数不变。"""
+    git_cache.ensure_cached(registered_github_skill, upstream_repo.revision)
+
+    calls: list[list[str]] = []
+    original = git_cache._run_git
+
+    def recording_run_git(argv, **kwargs):
+        calls.append(list(argv))
+        return original(argv, **kwargs)
+
+    monkeypatch.setattr(git_cache, "_run_git", recording_run_git)
+    git_cache.ensure_cached(registered_github_skill, upstream_repo.revision)
+
+    assert calls == [
+        ["fetch", "--depth", "1", "origin", upstream_repo.revision],
+        ["checkout", "--force", upstream_repo.revision],
+    ]
 
 
 def test_cache_checkout_rejects_missing_registered_subdirectory(

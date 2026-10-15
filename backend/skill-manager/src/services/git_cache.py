@@ -10,7 +10,7 @@
   递归扫描含 `SKILL.md` 的候选目录（忽略 `.git`、隐藏目录与工具目录），
   同时返回候选 frontmatter 元数据、仓库根顶层清单与候选文本引用到的
   顶层路径（预选）；有效结果原子移入 repos，供扫描/登记复用，失败清理临时目录；
-- `check_update()` 仅 `git ls-remote`（HEAD 与 `--tags --refs`），结果写
+- `check_update()` 仅一次 `git ls-remote`（同请求取 HEAD 与 tags），结果写
   github_check 记录（含失败记录），绝不 fetch/clone、绝不变更缓存内容；
 - `ensure_cached()` 将仓库 clone/fetch 到共享缓存目录并检出指定 revision，
   再校验登记路径内 `SKILL.md` 存在（缺失抛 CacheValidationError）；
@@ -459,13 +459,12 @@ class GitCacheService:
 
     @serialized
     def check_update(self, skill: RegistrySkill) -> UpdateInfo:
-        """仅 ls-remote 获取远端 HEAD 与 tags，写 github_check，不动缓存。"""
+        """一次 ls-remote 同请求取远端 HEAD 与 tags，写 github_check，不动缓存。"""
         canonical = self._require_github_skill(skill)
         remote = self._remote_for(canonical)
         try:
-            head = self._ls_remote_head(remote)
-            tags = self._ls_remote_tags(remote)
-        except GitOperationError as exc:
+            head, tags = self._ls_remote_refs(remote)
+        except UnreachableRepositoryError as exc:
             self._record_check_failure(skill, canonical, exc)
             raise
         cached_revision = self.current_revision(skill)
@@ -508,7 +507,13 @@ class GitCacheService:
         # 快速失败：缓存已存在但登记路径不含 SKILL.md，无需任何 Git 操作
         self._check_registered_path_present(skill, repo_dir)
         if (repo_dir / ".git").is_dir():
-            self._run_git(["fetch", "--force", "--tags"], cwd=repo_dir)
+            # 浅拉取目标 SHA 的最新快照层（--depth 1），跳过中间历史、
+            # refs/tags 与未引用对象：目标 SHA 即 check_update 拿到的
+            # 远端 HEAD，`fetch --depth 1 origin <sha>` 比 `fetch --tags`
+            # 小几个数量级（11+ 秒 → 通常 < 2 秒），本地已有该对象时无传输。
+            self._run_git(
+                ["fetch", "--depth", "1", "origin", revision], cwd=repo_dir
+            )
             self._run_git(["checkout", "--force", revision], cwd=repo_dir)
             return self._validated_skill_dir(skill, repo_dir)
         tmp_parent = self.settings.github_skill_cache_root / _CLONE_TMP_PARENT
@@ -520,6 +525,8 @@ class GitCacheService:
             self._run_git_streaming(
                 [
                     "clone",
+                    "--depth",
+                    "1",
                     "--progress",
                     self._remote_for(canonical),
                     str(tmp_dir),
@@ -674,22 +681,39 @@ class GitCacheService:
         """生产恒等返回规范化 URL；测试经 remotes 映射指向离线 fixture 仓库。"""
         return self._remotes.get(canonical_url, canonical_url)
 
-    def _ls_remote_head(self, remote: str) -> str:
-        output = self._run_git(["ls-remote", remote, "HEAD"])
+    def _ls_remote_refs(self, remote: str) -> tuple[str, list[str]]:
+        """一次 `ls-remote <remote> HEAD refs/tags/*` 同时解析 HEAD SHA 与
+        tags 列表，慢速出口下省掉第二次 TCP+TLS 握手（HEAD 与 tags 同请求）。
+
+        超时用可达性口径（30s 元数据请求快速失败）；命令失败、超时或远端
+        未报告 HEAD 均抛 UnreachableRepositoryError，复用 verify_reachable
+        的错误语义（task_manager 既有映射 unreachable 不变）。附注 tag 的
+        peeled `^{}` 行在解析时跳过（等价旧 `--refs` 的过滤效果）。
+        """
+        try:
+            output = self._run_git(
+                ["ls-remote", remote, "HEAD", "refs/tags/*"],
+                timeout=_REACHABILITY_TIMEOUT_SECONDS,
+            )
+        except GitOperationError as exc:
+            # GitTimeoutError 是 GitOperationError 子类，超时同样视为不可达
+            raise UnreachableRepositoryError(
+                f"repository {remote} is unreachable: {exc}"
+            ) from exc
+        head: str | None = None
+        tags: list[str] = []
         for line in output.splitlines():
             sha, _, ref = line.partition("\t")
-            if ref.strip() == "HEAD":
-                return sha.strip()
-        raise GitOperationError(f"remote {remote} did not report HEAD")
-
-    def _ls_remote_tags(self, remote: str) -> list[str]:
-        output = self._run_git(["ls-remote", "--tags", "--refs", remote])
-        tags = [
-            ref.strip().removeprefix("refs/tags/")
-            for line in output.splitlines()
-            if (ref := line.partition("\t")[2]).strip().startswith("refs/tags/")
-        ]
-        return sorted(tags)
+            ref = ref.strip()
+            if ref == "HEAD":
+                head = sha.strip()
+            elif ref.startswith("refs/tags/") and not ref.endswith("^{}"):
+                tags.append(ref.removeprefix("refs/tags/"))
+        if head is None:
+            raise UnreachableRepositoryError(
+                f"remote {remote} did not report HEAD"
+            )
+        return head, sorted(tags)
 
     # ---------- 内部：校验 ----------
 
@@ -794,7 +818,7 @@ class GitCacheService:
         )
 
     def _record_check_failure(
-        self, skill: RegistrySkill, canonical: str, exc: GitOperationError
+        self, skill: RegistrySkill, canonical: str, exc: GitCacheError
     ) -> None:
         self.store.upsert_github_check(
             GithubCheckRecord(

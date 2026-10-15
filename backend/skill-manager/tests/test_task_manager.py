@@ -265,6 +265,45 @@ def test_register_task_completes_and_upserts_registry(
     assert str(stored.repository) == CANONICAL_URL
 
 
+# ---------- 任务内冗余预检删除（git 同步提速 R2） ----------
+
+
+def test_register_batch_clone_tasks_skip_in_task_verify_reachable(
+    manager, git_cache, registered_github_skill, monkeypatch
+):
+    """R2：register / register_batch / clone_cache 任务内不再调用
+    verify_reachable（可达性由 routes 同步预检 + check_update 的一次
+    ls-remote 覆盖，慢速出口下每次预检都是一次网络往返）。scan 路径无
+    check_update，其任务内预检保留，不在本测试范围。"""
+    calls: list[str] = []
+
+    def recording_verify(*args, **kwargs):
+        calls.append("called")
+        return None
+
+    monkeypatch.setattr(git_cache, "verify_reachable", recording_verify)
+
+    register_final = _finished(
+        manager, manager.start_register(registered_github_skill).task_id
+    )
+    assert register_final.state == "done"
+
+    clone_final = _finished(
+        manager, manager.start_clone(registered_github_skill).task_id
+    )
+    assert clone_final.state == "done"
+
+    beta = registered_github_skill.model_copy(
+        update={"id": "two-skills-beta", "path": "skills/beta"}
+    )
+    batch_final = _finished(
+        manager, manager.start_register_batch(CANONICAL_URL, [beta]).task_id
+    )
+    assert batch_final.state == "done"
+
+    assert calls == []
+
+
 # ---------- 错误映射 ----------
 
 
