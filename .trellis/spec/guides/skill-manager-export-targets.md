@@ -70,6 +70,14 @@ Correct：先判断 `is_install_target(record.target)`，安装目标按配置 r
 - 本地 Next rewrite 与生产 Nginx 都必须代理 `/api/export-targets`（精确集合）及 `/api/export-targets/`（子路径）；NAS 上前后端更新后还须下发 Nginx 并 reload。
 - 测试：API 目标 CRUD/自定义 stale/清除/发布边界，`test_targets.py` 的默认配置持久化、removed 行阻止删除与写台账前并发状态复验；前端动态选择、空列表、加载失败及停用清除渲染。
 
+## 卡片导出状态（2026-10-15）
+
+- ExportStatus 只统计 active 的外部导出记录，排除所有 Hermes profile；无记录时不显示。底部下载按钮旁用单个 24px 标签显示「已导出 · N」；存在 stale 记录则用橙色「待更新 · N」，N 为 stale 数量。导出记录不增加卡片高度。
+- 悬停或聚焦展示各目标状态，点击打开非模态详情浮层。浮层通过 portal 挂到 body，固定定位并跟随滚动/resize，避免卡片滚动区裁切；窄屏约束宽高，内容过多可内部滚动。
+- 与当前源的内容哈希一致才显示「与当前源一致」；stale 显示「源已更新，建议重新导出」，源缺失/缓存缺失显示无法核验；无哈希旧记录同样不声称一致。不使用「最新」暗示远端新旧或外部电脑实际安装状态。
+- 详情显示导出时间与版本（revision 回退 content_hash），提供重新导出和清除记录，复用原确认流程；停用/缺少配置或源不可用时禁用重新导出，保留历史和清除能力。
+- 支持键盘聚焦提示、点击打开后焦点进入关闭按钮、Escape 关闭并归还焦点、外点击/焦点移出关闭。浮层关闭后才打开导出/清除确认。
+
 ## 完整合集下载（2026-10-14）
 
 - `GET /api/skills/{skill_id}/collection/download` 通过已登记 GitHub Skill 定位共享仓库缓存，仅下载当前缓存，不联网。未知 Skill 返回 404，自研条目返回 400 `invalid_source`，缓存缺失返回 400 `cache_missing_export`，越界或空仓库返回 400 `source_unavailable`。
