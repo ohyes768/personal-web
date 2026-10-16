@@ -1,6 +1,7 @@
 # Housing-map backend
 
 ## Pre-Development Checklist
+- Read [Amap position status](./directory-position.md) for catalog POI states, per-community query/confirmation, historical coordinates and manual position protection.
 - Read [TMSF directory workflow](./directory-flow.md) for TMSF-only admission, four collection tasks, auction-only association and explicit offline migration; it supersedes the legacy multi-source review flow after activation.
 - Read [New residential projects and enrichment](./community-enrichment.md) for newhouse identity/use evidence, bounded position repair and price isolation.
 - Read [Automatic residential review](./community-auto-review.md) for read-only snapshots, explicit enablement, automatic decisions and manual vetoes.

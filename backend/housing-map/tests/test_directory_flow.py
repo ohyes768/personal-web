@@ -119,6 +119,8 @@ def test_position_stale_or_cancelled_never_publishes(store,tmp_path,kind):
 def test_position_budget_ambiguity_restart(store,tmp_path):
     c,_=master(store);activate(store)
     with pytest.raises(ValueError,match='唯一'): position_one(store,tmp_path,c['community_id'],Client(count=30))
+    # Ambiguous results await manual confirmation; budget applies to pending targets.
+    master(store,facts('budget-target','A待补全'))
     job=PositionJob(store);job.state=dict(running=True,phase='running',total=0,processed=0,updated=0,skipped=0,errors=[])
     job._run(client=Client(),delay=0,budget=0)
     assert job.snapshot()['phase']=='partial_failed' and job.snapshot()['processed']==0

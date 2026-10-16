@@ -5,6 +5,7 @@ import uuid
 from src.services.community_registry import dump, normalized, now
 from src.services.community_admission import community_views, property_facts
 from src.services.directory_policy import enabled, eligibility, VERSION
+from src.services.directory_position_state import position_view
 
 
 def is_enabled(store):
@@ -79,7 +80,7 @@ def inventory(store, data_dir):
         # Old non-TMSF identities stay in history, not the new TMSF catalog.
         if not any(r['source'] == 'tmsf' for r in records):
             continue
-        output.append({**c, 'sources': [{k: v for k, v in r.items() if k != 'samples'} for r in records]})
+        output.append({**c, 'position': position_view(c, records), 'sources': [{k: v for k, v in r.items() if k != 'samples'} for r in records]})
     for r in sources:
         if r['source'] != 'tmsf' or r['status'] != 'pending' or r['community_id']:
             continue

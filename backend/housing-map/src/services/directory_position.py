@@ -1,11 +1,14 @@
 """Bounded Amap enrichment for admitted identities, independent of TMSF collection."""
 import copy
+import hashlib
 import json
 import threading
 
 from src.services.community_registry import dump, normalized, now
+from src.services.community_address import valid_address
+from src.services.directory_position_state import identity, position_view
 from src.services.community_admission import property_facts
-from src.services.community_enrichment import valid_position, qualified_address
+from src.services.community_enrichment import valid_position, qualified_address, read_json
 from src.services.directory_policy import enabled, eligibility
 from src.services.directory_workflow import admitted
 from src.services.amap_directory import AmapClient, normalize_poi
@@ -13,59 +16,156 @@ from src.services.amap_directory import AmapClient, normalize_poi
 KEY = 'directory_position_job'
 
 
+class PositionOutcome(ValueError):
+    """A query finished and its review/failure outcome was durably saved."""
+
+
 def keep_position(target):
-    district = (target.get('district') or '').removesuffix('区')
-    return (target.get('coordinate_evidence', {}).get('source') == 'manual' or target.get('coordinate_origin') == 'manual'
-            or (valid_position(target, district) and not target.get('coordinate_conflict')))
+    return position_view(target, target.get('sources', [])).get('state') not in {'pending', 'error'}
 
 
-def position_one(store, data_dir, cid, client, *, cancelled=lambda: False):
-    """Publish only if the entire identity and its admission still match the read snapshot."""
+def _snapshot(store, cid):
+    with store.db() as db:
+        return _read_snapshot(db, cid)
+
+
+def _read_snapshot(db, cid):
+    master = db.execute('SELECT * FROM communities WHERE id=?', (cid,)).fetchone()
+    if not master:
+        raise ValueError('小区不存在')
+    members = [dict(r) for r in db.execute('SELECT * FROM sources WHERE cid=? ORDER BY id', (cid,))]
+    admission = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
+    return dict(master=dict(master), members=members, admission=admission[0] if admission else None)
+
+
+def _revision(snapshot):
+    return hashlib.sha256(dump(snapshot).encode()).hexdigest()
+
+
+def _target(store, data_dir, cid):
     target = next((c for c in admitted(store, data_dir) if c['community_id'] == cid), None)
     if not target:
         raise ValueError('小区已不符合收录条件')
-    district = (target.get('district') or '').removesuffix('区')
-    if keep_position(target):
-        return 'skipped'
-    with store.db() as db:
-        master = dict(db.execute('SELECT * FROM communities WHERE id=?', (cid,)).fetchone())
-        members = [dict(r) for r in db.execute("SELECT * FROM sources WHERE cid=? ORDER BY id", (cid,))]
-        admission = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
-        admission_payload = admission[0] if admission else None
-    names = {normalized(n) for n in [target['community_name'], *target.get('aliases', [])] if n}
-    pois, count = client.search_name(target['community_name'], district)
-    matches = {}
-    for raw in pois:
-        p = normalize_poi(raw, district=district)
-        if not p or normalized(p['name']) not in names:
-            continue
-        actual = target.get('address')
-        if actual and normalized(qualified_address(actual, district)) != normalized(qualified_address(p.get('address'), district)):
-            continue
-        matches[p['source_id']] = p
-    if count > 25 or len(matches) != 1:
-        raise ValueError('未找到唯一可靠位置，请核对名称、地址或分期')
-    point = next(iter(matches.values()))
-    if cancelled():
-        raise InterruptedError()
+    return target
+
+
+def _publish(store, data_dir, cid, snapshot, values, point=None, *, replace=False, cancelled=lambda: False):
     facts = property_facts(data_dir)
+    historical = read_json(store.path.parent / 'binjiang_coordinates.json').get(cid, {})
     with store.db() as db:
-        current = db.execute('SELECT * FROM communities WHERE id=?', (cid,)).fetchone()
-        current_members = [dict(r) for r in db.execute('SELECT * FROM sources WHERE cid=? ORDER BY id', (cid,))]
-        a = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
-        if not current or dict(current) != master or current_members != members or (a[0] if a else None) != admission_payload:
+        if cancelled():
+            raise InterruptedError()
+        current = _read_snapshot(db, cid)
+        if current != snapshot:
             raise ValueError('小区资料或人工位置已变化，请重试')
-        records = [store._source(r) for r in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
-        if eligibility(store._community(current), records, facts, json.loads(a[0]) if a else {})['admission_state'] != 'admitted':
+        records = [store._source(r) for r in current['members'] if r['status'] == 'matched']
+        if eligibility(store._community(current['master']), records, facts,
+                       json.loads(current['admission']) if current['admission'] else {})['admission_state'] != 'admitted':
             raise ValueError('小区已不符合收录条件')
-        payload = json.loads(current['payload'])
-        payload.update({k: point[k] for k in ('longitude', 'latitude', 'coordinate_system')})
-        payload.update(geographic_address=qualified_address(point.get('address'), district), coordinate_evidence={
-            'source': 'amap', 'source_id': point['source_id'], 'source_url': point['source_url'], 'captured_at': now()},
-            coordinate_error=None)
+        payload = json.loads(current['master']['payload'])
+        target = store._community(current['master'])
+        payload['amap_position'] = values
+        district = (target.get('district') or '').removesuffix('区')
+        # POI evidence can be completed without overwriting an existing map point.
+        positioned = valid_position(target, district) or any(valid_position(r, district) for r in records) or valid_position({**historical, 'coordinate_system': historical.get('coordinate_system', 'gcj02')}, district)
+        if point and (replace or not positioned):
+            payload.update({k: point[k] for k in ('longitude', 'latitude', 'coordinate_system')})
+            payload.update(geographic_address=qualified_address(point.get('address'), district),
+                           coordinate_evidence=dict(source='manual' if values['state'] == 'manual' else 'amap',
+                               source_id=point.get('source_id'), source_url=point.get('source_url'), captured_at=now()),
+                           coordinate_error=None)
         db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(payload), cid))
-        store._event(db, cid, 'amap_position', {'poi_id': point['source_id']})
+        store._event(db, cid, 'amap_position', {'state': values['state'], 'poi_id': (point or {}).get('source_id')})
+
+
+def position_detail(store, data_dir, cid):
+    snapshot = _snapshot(store, cid)
+    target = _target(store, data_dir, cid)
+    if _snapshot(store, cid) != snapshot:
+        raise ValueError('小区资料已变化，请刷新')
+    records = [store._source(r) for r in snapshot['members'] if r['status'] == 'matched']
+    return {**position_view(target, records), 'revision': _revision(snapshot)}
+
+
+def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False):
+    snapshot = _snapshot(store, cid)
+    target = _target(store, data_dir, cid)
+    records = [store._source(r) for r in snapshot['members'] if r['status'] == 'matched']
+    previous = position_view(target, records)
+    if previous['state'] == 'manual' or (not force and previous['state'] not in {'pending', 'error'}):
+        return 'skipped'
+    district = (target.get('district') or '').removesuffix('区')
+    names = {normalized(n) for n in [target['community_name'], *target.get('aliases', [])] if n}
+    values = dict(identity=identity(target), checked_at=now(), candidates=[])
+    point = None
+    error = None
+    owned = client is None
+    try:
+        client = client or AmapClient()
+        pois, count = client.search_name(target['community_name'], district)
+        matches = {}
+        for raw in pois:
+            p = normalize_poi(raw, district=district)
+            if not p or normalized(p['name']) not in names:
+                continue
+            matches[p['source_id']] = p
+        candidates = list(matches.values())
+        exact = [p for p in candidates if normalized(qualified_address(target.get('address'), district)) ==
+                 normalized(qualified_address(p.get('address'), district))]
+        # Conflicting addresses are review candidates, never silent automatic matches.
+        if count <= 25 and len(candidates) == 1 and len(exact) == 1:
+            point = exact[0]
+            values.update(state='matched', selected=point, candidates=candidates)
+        elif candidates or count > 25:
+            values.update(state='review', candidates=candidates,
+                          error='未找到唯一可靠位置：候选有歧义、地址不同或结果未完整返回，请核对后确认')
+        else:
+            values.update(state='not_found', error='未找到名称、区域及分类可靠的高德地点')
+    except Exception as exc:
+        if isinstance(exc, InterruptedError):
+            raise
+        error = str(exc) if isinstance(exc, ValueError) else '高德位置查询失败，请重试'
+        values.update(state='error', error=error)
+    finally:
+        if owned and client:
+            client.close()
+    if previous['state'] == 'matched' and values['state'] != 'matched':
+        values.update(state='matched', selected=previous['selected'], error=values.get('error') or '本次未匹配，保留已有结果')
+    _publish(store, data_dir, cid, snapshot, values, point, cancelled=cancelled)
+    if error:
+        raise PositionOutcome(error)
+    if values['state'] in {'review', 'not_found'}:
+        raise PositionOutcome(values['error'])
     return 'updated'
+
+
+def confirm_position(store, data_dir, cid, *, revision, poi_id=None, longitude=None, latitude=None, address=None):
+    snapshot = _snapshot(store, cid)
+    if _revision(snapshot) != revision:
+        raise ValueError('定位资料已变化，请刷新后确认')
+    target = _target(store, data_dir, cid)
+    state = position_view(target)
+    district = (target.get('district') or '').removesuffix('区')
+    if poi_id:
+        point = next((p for p in state.get('candidates', []) if p['source_id'] == poi_id), None)
+        if not point:
+            raise ValueError('候选已失效，请重新查询')
+        if not valid_address(point.get('address')):
+            raise ValueError('候选缺少地图地址，请核对后使用手动定位')
+    else:
+        point = dict(longitude=longitude, latitude=latitude, coordinate_system='gcj02', address=address)
+        if not valid_address(address) or not valid_position(point, district) or not in_district(point, district):
+            raise ValueError('请填写有效地图地址与区域内GCJ02坐标')
+    values = dict(identity=identity(target), state='manual', checked_at=state.get('checked_at'), selected=point,
+                  candidates=state.get('candidates', []), confirmed_at=now())
+    _publish(store, data_dir, cid, snapshot, values, point, replace=True)
+    return position_detail(store, data_dir, cid)
+
+
+def in_district(point, district):
+    from src.core.boundary import is_in_binjiang, is_in_xiaoshan_border
+    return is_in_binjiang(point['longitude'], point['latitude']) if district == '滨江' else (
+        district == '萧山' and is_in_xiaoshan_border(point['longitude'], point['latitude']))
 
 
 class PositionJob:
@@ -107,7 +207,8 @@ class PositionJob:
     def _run(self, *, client=None, delay=2, budget=256):
         owned = client is None
         try:
-            targets = admitted(self.store, self.store.path.parent)
+            from src.services.directory_workflow import inventory
+            targets = [c for c in inventory(self.store, self.store.path.parent) if c['admission_state'] == 'admitted']
             with self.lock:
                 self.state['total'] = len(targets)
             requests = 0
@@ -126,7 +227,6 @@ class PositionJob:
                         raise InterruptedError()
                     requests += 1
                     try:
-                        client = client or AmapClient()
                         outcome = position_one(self.store, self.store.path.parent, cid, client, cancelled=self.cancel.is_set)
                     except InterruptedError:
                         raise

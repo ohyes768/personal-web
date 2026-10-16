@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from src.services import directory_workflow as flow
 from src.services.community_review import community_matches
-from src.services.directory_position import PositionJob
+from src.services.directory_position import PositionJob, position_detail, position_one, confirm_position, PositionOutcome
 
 router = APIRouter(prefix='/directory/workflow', tags=['directory-workflow'])
 _position = None
@@ -64,7 +64,8 @@ def summary(q: str = Query('', max_length=200), district: str = ''):
 
 @router.get('/catalog')
 def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query('', max_length=200),
-            district: str = '', market: Literal['', 'new_house', 'second_hand'] = '',
+            district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual'] = '',
+            market: Literal['', 'new_house', 'second_hand'] = '',
             property_type: str = Query('', max_length=100),
             page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     def read():
@@ -76,6 +77,8 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
             rows = [r for r in rows if r.get('market_state') == market]
         if property_type:
             rows = [r for r in rows if not r.get('property_types')] if property_type == '__missing__' else [r for r in rows if property_type in r.get('property_types', [])]
+        if position:
+            rows = [r for r in rows if r.get('position', {}).get('state') == position]
         return {'items': rows[(page - 1) * page_size:page * page_size], 'total': len(rows), 'page': page, 'property_types': property_types}
     return result(read)
 
@@ -126,6 +129,49 @@ def position_cancel():
         raise HTTPException(409, '当前没有高德采集任务')
     worker.cancel.set()
     return {'success': True, 'data': {'phase': 'cancelling'}}
+
+
+class PositionDecision(BaseModel):
+    revision: str = Field(pattern='^[a-f0-9]{64}$')
+    poi_id: str | None = Field(None, min_length=1, max_length=100)
+    longitude: float | None = Field(None, ge=-180, le=180, allow_inf_nan=False)
+    latitude: float | None = Field(None, ge=-90, le=90, allow_inf_nan=False)
+    address: str | None = Field(None, max_length=300)
+
+
+def position_write(action):
+    def run():
+        worker = position_job()
+        with worker.lock:
+            if (worker.snapshot() or {}).get('running'):
+                raise ValueError('高德批量补全正在进行，请完成后再操作单个小区')
+            return action()
+    return result(run)
+
+
+@router.get('/catalog/{cid}/position')
+def read_position(cid: str):
+    registry = require_store()
+    return result(lambda: position_detail(registry, registry.path.parent, cid))
+
+
+@router.post('/catalog/{cid}/position/query')
+def query_position(cid: str):
+    registry = require_store()
+    def run():
+        errors = []
+        try:
+            position_one(registry, registry.path.parent, cid, force=True)
+        except PositionOutcome as exc:
+            errors.append(str(exc))
+        return {**position_detail(registry, registry.path.parent, cid), 'errors': errors}
+    return position_write(run)
+
+
+@router.post('/catalog/{cid}/position/confirm')
+def choose_position(cid: str, body: PositionDecision):
+    registry = require_store()
+    return position_write(lambda: confirm_position(registry, registry.path.parent, cid, **body.model_dump()))
 
 
 @router.get('/auctions')
