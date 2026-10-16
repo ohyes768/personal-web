@@ -31,7 +31,7 @@ class AmapClient:
         try:
             response = self.session.get('https://restapi.amap.com/v3/place/text', params={
                 'key': self.key, 'keywords': name, 'city': '杭州', 'citylimit': 'true',
-                'types': '120300', 'offset': 25, 'page': 1, 'extensions': 'base'}, timeout=20)
+                'types': '120300|120203', 'offset': 25, 'page': 1, 'extensions': 'base'}, timeout=20)
             response.raise_for_status()
             data = response.json()
         except Exception:
@@ -48,7 +48,8 @@ def normalize_poi(poi, *, district='滨江'):
     sid, name = poi.get('id'), poi.get('name')
     if not isinstance(sid, str) or not sid or not isinstance(name, str) or not name.strip():
         return None
-    if district not in {'滨江', '萧山'} or poi.get('adname') != district + '区' or str(poi.get('typecode')) not in {'120300', '120301', '120302', '120303', '120304'}:
+    # 120203 商住两用楼宇: TMSF 住宅项目（公馆/公寓）在高德常落在商住楼宇分类下。
+    if district not in {'滨江', '萧山'} or poi.get('adname') != district + '区' or str(poi.get('typecode')) not in {'120300', '120301', '120302', '120303', '120304', '120203'}:
         return None
     # Keep phase/directional names. Exclude subordinate entrances, buildings and facilities.
     if re.search(r'(?:出入口|停车场|地下车库|物业服务中心|售楼处|[东西南北](?:门|出入口)|\d+\s*(?:幢|栋|号楼))$', name):

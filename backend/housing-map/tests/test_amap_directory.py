@@ -15,6 +15,9 @@ def test_filters_district_bounds_and_subordinate_pois():
         row = poi(); row[field] = value
         assert amap.normalize_poi(row) is None
     assert amap.normalize_poi(poi(name='测试花园西区'))['name'] == '测试花园西区'
+    # 商住两用楼宇是合法定位候选（TMSF 住宅项目常挂此分类），写字楼仍拒绝。
+    mixed = poi(); mixed['typecode'] = '120203'; mixed['type'] = '商务住宅;楼宇;商住两用楼宇'
+    assert amap.normalize_poi(mixed)['poi_typecode'] == '120203'
     row = poi(); row['location'] = 'NaN,30.2'
     with pytest.raises(ValueError): amap.normalize_poi(row)
 
