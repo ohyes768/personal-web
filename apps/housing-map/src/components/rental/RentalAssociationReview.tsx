@@ -3,11 +3,12 @@
 import { useCallback, useEffect, useState } from 'react';
 import { rentalDataChanged } from '../../lib/rental-sources';
 
-type Candidate = { id: string; name: string; address?: string; district?: string };
+type Candidate = { id: string; name: string; address?: string; district?: string; similarity?: number };
 export type RentalReview = { community_id: string; community_name: string; reason: string;
   message?: string; candidates: Candidate[] };
 const reasons: Record<string, string> = { needs_selection: '请选择对应小区', missing: '暂无租金来源',
   search_failed: '来源查找失败', search_deferred: '尚未查询，下次更新继续', skipped: '已跳过' };
+const pct = (value?: number) => value == null ? '' : ` · 相似度 ${Math.round(value * 100)}%`;
 const filterLabels: Record<string, string> = { needs_selection: '待选择', missing: '未找到',
   search_failed: '查找失败', search_deferred: '未查询', skipped: '已跳过' };
 const filterHints: Record<string, string> = {
@@ -30,7 +31,7 @@ export function RentalCandidateChoice({ item, selected, busy, onSelect, onDecide
       <legend>房天下候选（单选）</legend>
       {item.candidates.map(candidate => <label key={candidate.id} style={{ display: 'block', margin: '8px 0' }}>
         <input type="radio" name={`rental-${item.community_id}`} checked={selected === candidate.id}
-          onChange={() => onSelect(candidate.id)} /> {candidate.name}
+          onChange={() => onSelect(candidate.id)} /> {candidate.name}{pct(candidate.similarity)}
         <small style={{ display: 'block', marginLeft: 24 }}>{candidate.address || '地址暂无'} · {candidate.district || '区域待核对'}</small>
       </label>)}
     </fieldset> : <p>暂时没有可选来源，不影响其他小区更新。</p>}
@@ -99,10 +100,13 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
     {notice && <p role="status">{notice}</p>}
     <p className="directory-muted">{filterHints[reasonFilter] || ''}</p>
     {visible.length ? <div className="directory-workspace"><div className="directory-list-panel">
-      <div className="rental-source-list">{visible.map(entry => <button key={entry.community_id} type="button"
-        aria-pressed={selectedCommunity === entry.community_id}
-        onClick={() => { setSelectedCommunity(entry.community_id === selectedCommunity ? '' : entry.community_id); setCandidate(''); }}>
-        <span>{entry.community_name}</span><small>{filterLabels[entry.reason] || entry.reason}</small></button>)}</div>
+      <div className="rental-source-list">{visible.map(entry => {
+        const top = Math.max(0, ...entry.candidates.map(c => c.similarity ?? 0));
+        return <button key={entry.community_id} type="button"
+          aria-pressed={selectedCommunity === entry.community_id}
+          onClick={() => { setSelectedCommunity(entry.community_id === selectedCommunity ? '' : entry.community_id); setCandidate(''); }}>
+          <span>{entry.community_name}</span><small>{filterLabels[entry.reason] || entry.reason}{top > 0 ? ` · ${Math.round(top * 100)}%` : ''}</small></button>;
+      })}</div>
     </div>
       {item && <aside className="directory-detail"><div className="directory-source-heading"><h3>{item.community_name}</h3>
         <button className="btn btn-secondary" onClick={() => { setSelectedCommunity(''); setCandidate(''); }}>关闭</button></div>

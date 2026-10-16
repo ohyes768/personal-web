@@ -38,6 +38,44 @@ def test_mapping_reused_and_unreliable_search_stopped(tmp_path):
     assert reviews(registry)[0]['reason'] == 'search_failed'
 
 
+def test_single_candidate_auto_binds_on_high_similarity(tmp_path):
+    registry = setup(tmp_path)
+    # 名字不完全一致（通名差异）的唯一候选：分数达标在入库时即自动绑，且带 auto 证据
+    source = registry.ingest(dict(source='fang', source_id='f1', name='测试花园小区', district='滨江', address='测试路1号'))
+    assert source['status'] == 'matched' and source['community_id'] == 'c1' and source['method'] == 'auto'
+    assert any('相似度' in line for line in source['evidence'])
+
+
+def test_single_low_similarity_candidate_stays_pending(tmp_path):
+    registry = setup(tmp_path)
+    # 分期冲突：字面像但不是一家，绝不自动绑
+    registry.ingest(dict(source='fang', source_id='f1', name='测试花园一期', district='滨江', address='测试路1号'))
+    registry.ingest(dict(source='fang', source_id='f2', name='测试花园二期', district='滨江', address='测试路1号'))
+    assert registry.auto_associate() == 0
+    assert not [r for r in registry.sources() if r['source'] == 'fang' and r['status'] == 'matched']
+
+
+def test_multiple_candidates_stay_pending(tmp_path):
+    registry = setup(tmp_path)
+    registry.create('测试花园', district='滨江', community_id='c3')  # 重名小区：候选不再唯一
+    registry.ingest(dict(source='fang', source_id='f1', name='测试花园小区', district='滨江', address='测试路1号'))
+    assert registry.auto_associate() == 0
+    assert not [r for r in registry.sources() if r['source'] == 'fang' and r['status'] == 'matched']
+
+
+def test_review_candidates_carry_sorted_similarity(tmp_path):
+    registry = setup(tmp_path)
+    registry.create('测试花园', district='滨江', community_id='c3')  # 重名：来源保持 pending 进人工清单
+    found = [dict(source_community_id='xm1', source_name='测试花园小区', source_url='https://zu.fang.com/hz/house-xm1/'),
+             dict(source_community_id='xm2', source_name='测试花园西区', source_url='https://zu.fang.com/hz/house-xm2/')]
+    prepare_sources(registry, threading.Event(), lambda _: None, lambda c: found, delay=0)
+    items = reviews(registry)
+    entry = next(i for i in items if i['community_id'] == 'c1')
+    assert entry['reason'] == 'needs_selection'
+    scores = [c['similarity'] for c in entry['candidates']]
+    assert scores == sorted(scores, reverse=True) and scores[0] >= 0.92
+
+
 def test_skip_restart_reopen_bind_without_deleting(tmp_path):
     registry = setup(tmp_path)
     source = registry.ingest(dict(source='fang', source_id='f1', name='测试花园'))

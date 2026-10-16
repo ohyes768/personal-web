@@ -268,6 +268,7 @@ class CommunityRegistry:
             self._event(db, row['cid'], 'address_corrected', {'record_id': row['id'], 'previous_address': previous_address, 'address': master['address']})
 
     def auto_associate(self, rid=None):
+        from src.services.name_similarity import AUTO_THRESHOLD, best_similarity
         count = 0
         for item in self.sources():
             if (rid and item['id'] != rid) or item['status'] != 'pending' or item.get('auto_association_disabled'):
@@ -277,11 +278,22 @@ class CommunityRegistry:
             exact = [c for c in candidates if normalized(item['name']) in
                      {normalized(n) for n in [c['community_name'], c.get('community_alias'), *c.get('aliases', [])] if n}]
             if len(exact) == 1 and exact[0]['eligible']:
-                try:
-                    self.associate(item['id'], exact[0]['community_id'], method='auto', evidence=exact[0]['evidence'])
-                    count += 1
-                except ValueError:
-                    pass  # a concurrent manual decision supersedes discovery
+                target, evidence = exact[0], exact[0]['evidence']
+            elif len(candidates) == 1 and not exact:
+                # Single candidate with a fused similarity score high enough to act
+                # as evidence on its own; anything weaker stays in manual review.
+                target = candidates[0]
+                score = best_similarity(item['name'], target)
+                if score < AUTO_THRESHOLD:
+                    continue
+                evidence = [f'唯一候选，名称相似度 {score:.2f}', *target['evidence']]
+            else:
+                continue
+            try:
+                self.associate(item['id'], target['community_id'], method='auto', evidence=evidence)
+                count += 1
+            except ValueError:
+                pass  # a concurrent manual decision supersedes discovery
         return count
 
     def promote_auction_source(self, asset_id, auction_ids):

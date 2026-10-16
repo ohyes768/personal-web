@@ -30,6 +30,7 @@ def eligible_communities(registry):
 
 
 def candidates_for(registry, community):
+    from src.services.name_similarity import name_similarity
     cid = community['community_id']
     names = {normalized(n) for n in [community['community_name'], community.get('community_alias'),
                                     *community.get('aliases', [])] if n}
@@ -44,7 +45,9 @@ def candidates_for(registry, community):
         if row['id'] not in previous_ids and not any(
                 source_name and (source_name in name or name in source_name) for name in names):
             continue
-        result.append({k: row.get(k) for k in ('id', 'source_id', 'name', 'address', 'district', 'evidence', 'source_url')})
+        result.append({**{k: row.get(k) for k in ('id', 'source_id', 'name', 'address', 'district', 'evidence', 'source_url')},
+                       'similarity': name_similarity(community['community_name'], row.get('name'))})
+    result.sort(key=lambda r: (-r['similarity'], r['id']))
     return result
 
 
@@ -92,6 +95,8 @@ def reviews(registry):
             save_review(registry, community, 'needs_selection' if candidates else 'missing', candidates)
             review = read_review(registry, cid)
         items.append({**review, 'candidates': candidates})
+    # Strongest matches first so the review list reads best-evidence-first.
+    items.sort(key=lambda r: max((c.get('similarity', 0) for c in r['candidates']), default=0), reverse=True)
     return items
 
 
