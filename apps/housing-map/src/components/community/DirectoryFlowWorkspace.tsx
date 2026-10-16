@@ -23,10 +23,10 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
     errors: Array.isArray(value.errors) ? value.errors : value.errors?.items || [] };
 }
 const tasks = [
-  { id: 'tmsf', label: '采集透明售房网', short: '透明售房网', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
-  { id: 'amap', label: '补全高德定位', short: '高德定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
-  { id: 'rent', label: '采集租金', short: '租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新房天下租金' },
-  { id: 'auction', label: '采集法拍', short: '法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
+  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止名称采集', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
+  { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
+  { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新房天下租金' },
+  { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
 const restPhases = ['idle', 'succeeded', 'done'];
 const stageLabels: Record<string, string> = { checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源',
@@ -57,7 +57,7 @@ export function CollectionControls({ active, jobs, errors, busy, action }: { act
       const lastRun = job?.finished_at ? `\n上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
       return <button key={t.id} className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
         title={t.hint + lastRun} onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.body))}>
-        {running && <span className="directory-task-dot" aria-hidden="true" />}{running ? `取消${t.short}` : t.label}
+        {running && <span className="directory-task-dot" aria-hidden="true" />}{running ? t.stop : t.label}
       </button>;
     })}</div>
     {lines.length > 0 && <div className="directory-task-status">{tasks.map(t => {
@@ -162,6 +162,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
   const detailVersion = useRef(0);
   const finishes = useRef<Record<string, string>>({});
+  const optimistic = useRef<string | null>(null);
   const changed = () => { detailVersion.current += 1; setRevision(v => v + 1); setDetail(null); setAuction(null); onChanged(); };
   useEffect(() => {
     const controller = new AbortController();
@@ -192,7 +193,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         try {
           const next = normalizeCollectionJob(await workflowRequest<IncomingJob | null>(t.path, 'GET', undefined, controller.signal));
           if (controller.signal.aborted) return;
-          setJobs(v => ({ ...v, [t.id]: next })); setJobErrors(v => ({ ...v, [t.id]: '' }));
+          setJobs(v => optimistic.current === t.id ? v : { ...v, [t.id]: next }); setJobErrors(v => ({ ...v, [t.id]: '' }));
           const mark = next?.finished_at || '';
           if (mark && finishes.current[t.id] !== undefined && finishes.current[t.id] !== mark) {
             setRevision(v => v + 1); onChanged();
@@ -207,17 +208,25 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   }, [summary?.active, onChanged]);
   async function action(path: string, method: string, body?: object) {
     setBusy(true); setError(''); setNotice('');
+    const task = tasks.find(t => t.path === path);
+    const prev = task ? jobs[task.id] : null;
+    if (task && method === 'POST') {
+      optimistic.current = task.id;
+      setJobs(v => ({ ...v, [task.id]: { ...(prev || { running: false, phase: 'idle' }), running: true, phase: 'running' } }));
+    }
     try {
       const outcome = await workflowRequest<{ errors?: string[] } | null>(path, method, body);
       setNotice(outcome?.errors?.length ? `部分资料已保存：${outcome.errors.join('；')}` : path.endsWith('/retry') ? '资料已更新，名单已重新分类。' : '操作已受理，采集结果请查看对应进度。');
       changed();
-      const task = tasks.find(t => t.path === path);
       if (task) {
         const next = normalizeCollectionJob(await workflowRequest<IncomingJob | null>(path));
         setJobs(v => ({ ...v, [task.id]: next }));
       }
-    } catch (e) { setError(e instanceof Error ? e.message : '操作失败'); setRevision(v => v + 1); }
-    finally { setBusy(false); }
+    } catch (e) {
+      if (task && method === 'POST') setJobs(v => ({ ...v, [task.id]: prev }));
+      setError(e instanceof Error ? e.message : '操作失败'); setRevision(v => v + 1);
+    }
+    finally { optimistic.current = null; setBusy(false); }
   }
   function changeMode(value: string) { setMode(value); setPage(1); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
