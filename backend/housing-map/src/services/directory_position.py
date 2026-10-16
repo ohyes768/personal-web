@@ -87,6 +87,22 @@ def position_detail(store, data_dir, cid):
     return {**position_view(target, records), 'revision': _revision(snapshot)}
 
 
+def _name_matches(pois, names, district):
+    """Exact full-name hits plus containment hits; loose (containment) hits never auto-match."""
+    matches, exact_ids = {}, set()
+    for raw in pois:
+        p = normalize_poi(raw, district=district)
+        if not p:
+            continue
+        name = normalized(p['name'])
+        if name in names:
+            matches[p['source_id']] = p
+            exact_ids.add(p['source_id'])
+        elif any((len(n) >= 3 and n in name) or (len(name) >= 3 and name in n) for n in names):
+            matches[p['source_id']] = p
+    return matches, exact_ids
+
+
 def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False):
     snapshot = _snapshot(store, cid)
     target = _target(store, data_dir, cid)
@@ -103,17 +119,26 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
     try:
         client = client or AmapClient()
         pois, count = client.search_name(target['community_name'], district)
-        matches = {}
-        for raw in pois:
-            p = normalize_poi(raw, district=district)
-            if not p or normalized(p['name']) not in names:
-                continue
-            matches[p['source_id']] = p
+        matches, exact_ids = _name_matches(pois, names, district)
+        # Alias retry only when the primary name yields nothing and the result is not truncated.
+        if not matches and count <= 25:
+            aliases, seen = [], {normalized(target['community_name'])}
+            for alias in target.get('aliases', []):
+                key = normalized(alias)
+                if key and key not in seen:
+                    seen.add(key)
+                    aliases.append(alias)
+            for alias in aliases[:3]:
+                alias_pois, alias_count = client.search_name(alias, district)
+                alias_matches, alias_ids = _name_matches(alias_pois, names, district)
+                if alias_matches:
+                    matches, exact_ids, count = alias_matches, alias_ids, alias_count
+                    break
         candidates = list(matches.values())
         exact = [p for p in candidates if normalized(qualified_address(target.get('address'), district)) ==
                  normalized(qualified_address(p.get('address'), district))]
         # Conflicting addresses are review candidates, never silent automatic matches.
-        if count <= 25 and len(candidates) == 1 and len(exact) == 1:
+        if count <= 25 and len(candidates) == 1 and len(exact) == 1 and candidates[0]['source_id'] in exact_ids:
             point = exact[0]
             values.update(state='matched', selected=point, candidates=candidates)
         elif candidates or count > 25:

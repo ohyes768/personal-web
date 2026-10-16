@@ -23,23 +23,27 @@ def setup(tmp_path):
     return store, c['community_id'], tmp_path
 
 
-def poi(sid='B1', address='月明路1076号'):
-    return dict(id=sid, name='风雅钱塘', adname='滨江区', address=address,
+def poi(sid='B1', address='月明路1076号', name='风雅钱塘'):
+    return dict(id=sid, name=name, adname='滨江区', address=address,
                 typecode='120302', type='住宅小区', location='120.20749,30.20226')
 
 
 class Client:
-    def __init__(self, rows=None, error=None, callback=None):
+    def __init__(self, rows=None, error=None, callback=None, by_name=None, count=None):
         self.rows = [poi()] if rows is None else rows
         self.error, self.callback = error, callback
+        self.by_name, self.count = by_name or {}, count
         self.calls = 0
-    def search_name(self, *_):
+        self.queries = []
+    def search_name(self, name, *_):
         self.calls += 1
+        self.queries.append(name)
         if self.callback:
             self.callback()
         if self.error:
             raise self.error
-        return self.rows, len(self.rows)
+        rows = self.by_name.get(name, self.rows)
+        return rows, self.count if self.count is not None else len(rows)
     def close(self): pass
 
 
@@ -205,3 +209,111 @@ def test_addressless_candidate_needs_verified_manual_input(setup):
     with pytest.raises(ValueError, match='地图地址'):
         confirm_position(store, data, cid, revision=detail['revision'], poi_id='B1')
     assert position_detail(store, data, cid)['state'] == 'review'
+
+
+def with_alias(store, cid):
+    store.update(cid, name='风雅钱塘', aliases=['茂御居'], address='月明路1076号', district='滨江')
+
+
+@pytest.mark.parametrize('alias_rows,state', [
+    ([poi()], 'matched'),
+    ([poi(address='江南大道100号')], 'review'),
+    ([poi('B1'), poi('B2')], 'review'),
+])
+def test_alias_retry_after_empty_primary_name(setup, alias_rows, state):
+    store, cid, data = setup
+    with_alias(store, cid)
+    client = Client(rows=[], by_name={'茂御居': alias_rows})
+    if state == 'matched':
+        assert position_one(store, data, cid, client) == 'updated'
+    else:
+        with pytest.raises(ValueError):
+            position_one(store, data, cid, client)
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == state and len(detail['candidates']) == len(alias_rows)
+    assert client.queries == ['风雅钱塘', '茂御居']
+
+
+def test_alias_retry_exhausted_stays_not_found(setup):
+    store, cid, data = setup
+    with_alias(store, cid)
+    client = Client(rows=[])
+    with pytest.raises(ValueError, match='未找到名称、区域及分类可靠的高德地点'):
+        position_one(store, data, cid, client)
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'not_found' and not detail['candidates']
+    assert client.queries == ['风雅钱塘', '茂御居']
+
+
+def test_containment_hit_never_auto_matches_and_stops_retry(setup):
+    store, cid, data = setup
+    with_alias(store, cid)
+    client = Client([poi(name='风雅钱塘御涛轩')])  # 唯一宽松候选，地址精确相等也不得自动 matched
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, client)
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review' and len(detail['candidates']) == 1
+    assert client.queries == ['风雅钱塘']  # 主名已有候选（宽松也算命中），不发起别名重查
+
+
+def test_exact_and_containment_candidates_merge_into_review(setup):
+    store, cid, data = setup
+    rows = [poi('B1'), poi('B2', name='风雅钱塘公馆')]
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, Client(rows))
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review'
+    assert [c['source_id'] for c in detail['candidates']] == ['B1', 'B2']
+
+
+def test_short_names_do_not_participate_in_containment(setup):
+    store, cid, data = setup
+    store.update(cid, name='风雅钱塘', aliases=['西湖'], address='月明路1076号', district='滨江')
+    client = Client([poi(name='西湖大院')])  # 「西湖」归一化长度 < 3，包含匹配不生效
+    with pytest.raises(ValueError, match='未找到名称、区域及分类可靠的高德地点'):
+        position_one(store, data, cid, client)
+    assert position_detail(store, data, cid)['state'] == 'not_found'
+    assert client.queries == ['风雅钱塘', '西湖']
+
+
+def test_alias_identical_to_primary_is_not_requeried(setup):
+    store, cid, data = setup
+    store.update(cid, name='风雅钱塘', aliases=['风雅钱塘', '风雅 钱塘'], address='月明路1076号', district='滨江')
+    client = Client(rows=[])
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, client)
+    assert client.queries == ['风雅钱塘'] and client.calls == 1
+    assert position_detail(store, data, cid)['state'] == 'not_found'
+
+
+def test_alias_retry_is_capped_at_three_queries(setup):
+    store, cid, data = setup
+    store.update(cid, name='风雅钱塘', aliases=['别名一号楼', '别名二号楼', '别名三号楼', '别名四号楼'],
+                 address='月明路1076号', district='滨江')
+    client = Client(rows=[])
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, client)
+    assert client.queries == ['风雅钱塘', '别名一号楼', '别名二号楼', '别名三号楼']
+    assert client.calls == 4
+
+
+def test_primary_exact_candidates_skip_alias_retry(setup):
+    store, cid, data = setup
+    with_alias(store, cid)
+    client = Client([poi(), poi('B2')])  # 主名已有精确候选 → review，不重查别名
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, client)
+    assert client.calls == 1 and position_detail(store, data, cid)['state'] == 'review'
+    client = Client()  # force 重查：主名唯一精确候选 → matched，同样不重查
+    assert position_one(store, data, cid, client, force=True) == 'updated' and client.calls == 1
+
+
+def test_truncated_result_without_candidates_is_review_without_retry(setup):
+    store, cid, data = setup
+    with_alias(store, cid)
+    client = Client(rows=[], count=26)  # 疑似截断：维持 review 文案，不发起别名重查
+    with pytest.raises(ValueError, match='未找到唯一可靠位置'):
+        position_one(store, data, cid, client)
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review' and not detail['candidates']
+    assert client.calls == 1
