@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { safeDirectoryLink } from './DirectoryCards';
 
 export type PositionPoint = { source_id?: string; name?: string; address?: string; longitude?: number; latitude?: number;
-  source_url?: string; captured_at?: string; geographic_address?: string };
+  source_url?: string; captured_at?: string; geographic_address?: string; name_similarity?: number };
 export type Position = { state: string; has_coordinates: boolean; revision?: string; candidates: PositionPoint[];
   selected?: PositionPoint; checked_at?: string; confirmed_at?: string; error?: string };
 export const positionLabels: Record<string, string> = { matched: '已匹配', pending: '待补全', review: '待确认',
@@ -39,7 +39,7 @@ export default function PositionPanel({ position, busy, query, confirm }: { posi
     {!!position.candidates.length && <fieldset disabled={busy || !position.revision}><legend>核对高德候选</legend>
       {position.candidates.map(p => <label className="directory-source-card" key={p.source_id}>
         <input type="radio" name="position-poi" checked={poi === p.source_id} onChange={() => setPoi(p.source_id || '')} />
-        <strong>{p.name}</strong><p>{p.address || '地图地址缺失'}</p><small>{p.longitude}, {p.latitude} · POI {p.source_id}</small>
+        <strong>{p.name}</strong><p>{p.address || '地图地址缺失'}</p><small>{p.longitude}, {p.latitude} · POI {p.source_id}{p.name_similarity != null ? ` · 相似度 ${p.name_similarity.toFixed(2)}` : ''}</small>
         {safeDirectoryLink(p.source_url) && <p><a href={p.source_url} target="_blank" rel="noopener noreferrer">查看候选位置 ↗</a></p>}
       </label>)}
       <p className="directory-muted">确认前请核对地址与分期；确认后以所选地点更新地图位置。</p>

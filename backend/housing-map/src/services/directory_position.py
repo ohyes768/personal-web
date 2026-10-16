@@ -154,6 +154,15 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
                     matches, count = alias_matches, alias_count
                     break
         candidates = list(matches.values())
+        if len(candidates) > 1:
+            # Review queue renders most-similar first; the score is evidence for the
+            # human, never an auto-bind (single-candidate trust rule is unchanged).
+            from src.services.name_similarity import name_similarity
+            names_for_score = [n for n in [target['community_name'], *target.get('aliases', [])] if n]
+            for point in candidates:
+                point['name_similarity'] = round(max(
+                    (name_similarity(n, point.get('name') or '') for n in names_for_score), default=0.0), 4)
+            candidates.sort(key=lambda p: -p['name_similarity'])
         # A single untruncated candidate is trusted even when the name is a containment hit
         # or the address differs; multiple candidates and truncation stay review.
         if count <= 25 and len(candidates) == 1:

@@ -333,6 +333,19 @@ def test_exact_and_containment_candidates_merge_into_review(setup):
     assert [c['source_id'] for c in detail['candidates']] == ['B1', 'B2']
 
 
+def test_review_candidates_sorted_by_name_similarity(setup):
+    store, cid, data = setup
+    # 名称准入(精确/包含)的候选在流水线下通常都是满分;分数作为证据随候选持久化,
+    # 同分保持原返回顺序(stable),排序只在两套通名词表差异产生分差时生效。
+    rows = [poi('W', name='风雅钱塘庭院'), poi('P', name='风雅钱塘公馆')]
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, Client(rows))
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review'
+    assert [c['source_id'] for c in detail['candidates']] == ['W', 'P']
+    assert all(c['name_similarity'] == 1.0 for c in detail['candidates'])
+
+
 def test_short_names_do_not_participate_in_containment(setup):
     store, cid, data = setup
     store.update(cid, name='风雅钱塘', aliases=['西湖'], address='月明路1076号', district='滨江')
