@@ -9,9 +9,7 @@ import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
 import LatestAuctionCard from '@/components/community/LatestAuctionCard';
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import { RentalScopeSelect, RentalSummaryCells, type RentalScope } from '@/components/dashboard/RentalDashboardWidgets';
-import { RentalRefreshButton } from '@/components/rental/RentalRefreshButton';
 import CommunityManagement from '@/components/community/CommunityManagement';
-import { rentalDataChanged } from '@/lib/rental-sources';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 import { useRentalSummary } from '@/lib/use-rental-summary';
 import {
@@ -378,67 +376,6 @@ export default function BinjiangMapPage() {
     try { await fetch('/api/map/refresh', { method: 'DELETE' }); } catch { /* 轮询会拿到终态 */ }
   }, []);
 
-  // —— 法拍数据刷新: 触发后台采集 -> 轮询进度 -> 完成后重拉小区法拍计数 ——
-  const [auctionRefreshState, setAuctionRefreshState] = useState<{
-    running: boolean; phase: string; processed: number; matched: number; error: string | null;
-  } | null>(null);
-
-  const startAuctionRefresh = useCallback(async () => {
-    try {
-      const res = await fetch('/api/map/auctions/refresh', { method: 'POST' });
-      const d = await res.json();
-      if (!d.success) {
-        setAuctionRefreshState({ running: false, phase: 'error', processed: 0, matched: 0, error: d.error });
-        return;
-      }
-      setAuctionRefreshState({ running: true, phase: 'fetching', processed: 0, matched: 0, error: null });
-    } catch {
-      setAuctionRefreshState({ running: false, phase: 'error', processed: 0, matched: 0, error: '触发法拍刷新失败' });
-    }
-  }, []);
-
-  const stopAuctionRefresh = useCallback(async () => {
-    try { await fetch('/api/map/auctions/refresh', { method: 'DELETE' }); } catch { /* 轮询会拿到终态 */ }
-  }, []);
-
-  useEffect(() => {
-    if (!auctionRefreshState?.running) return;
-    const timer = setInterval(async () => {
-      try {
-        const res = await fetch('/api/map/auctions/refresh');
-        const d = await res.json();
-        const j = d.data;
-        setAuctionRefreshState({
-          running: j.running, phase: j.phase, processed: j.processed, matched: j.matched, error: j.error,
-        });
-        if (j.phase === 'done') {
-          loadAuctionCounts();
-          setAuctionRefreshVersion(v => v + 1);
-        }
-      } catch { /* 网络抖动, 下个周期重试 */ }
-    }, 3000);
-    return () => clearInterval(timer);
-  }, [auctionRefreshState?.running, loadAuctionCounts]);
-
-  // —— 小区轮廓重建: 只按当前 OSM 数据重新匹配，不触发房价采集 ——
-  const [boundaryState, setBoundaryState] = useState<{
-    running: boolean; phase: string; error: string | null;
-  } | null>(null);
-
-  const startBoundaryRebuild = useCallback(async () => {
-    try {
-      const res = await fetch('/api/map/boundaries/rebuild', { method: 'POST' });
-      const d = await res.json();
-      if (!d.success) {
-        setBoundaryState({ running: false, phase: 'error', error: d.error });
-        return;
-      }
-      setBoundaryState({ running: true, phase: 'rebuilding', error: null });
-    } catch {
-      setBoundaryState({ running: false, phase: 'error', error: '触发轮廓重建失败' });
-    }
-  }, []);
-
   useEffect(() => {
     if (!refreshState?.running) return;
     const timer = setInterval(async () => {
@@ -458,24 +395,6 @@ export default function BinjiangMapPage() {
     }, 3000);
     return () => clearInterval(timer);
   }, [refreshState?.running]);
-
-  useEffect(() => {
-    if (!boundaryState?.running) return;
-    const timer = setInterval(async () => {
-      try {
-        const res = await fetch('/api/map/boundaries/rebuild');
-        const d = await res.json();
-        const j = d.data;
-        setBoundaryState({ running: j.running, phase: j.phase, error: j.error });
-        if (j.phase === 'done') {
-          const data = await fetchCommunities();
-          setCommunities(data);
-          setLoading(false);
-        }
-      } catch { /* 网络抖动, 下个周期重试 */ }
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [boundaryState?.running]);
 
   const filteredCommunities = communities.filter(c =>
     c.community_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
@@ -530,12 +449,6 @@ export default function BinjiangMapPage() {
         refreshState={refreshState}
         onRefresh={startRefresh}
         onStopRefresh={stopRefresh}
-        auctionRefreshState={auctionRefreshState}
-        onAuctionRefresh={startAuctionRefresh}
-        onAuctionStopRefresh={stopAuctionRefresh}
-        boundaryState={boundaryState}
-        onBoundaryRebuild={startBoundaryRebuild}
-        onManageCommunities={() => { setManagementSource(''); setActiveTab('management'); }}
       />
 
       {/* Tab 导航 */}
@@ -1071,12 +984,6 @@ function AppHeader({
   refreshState,
   onRefresh,
   onStopRefresh,
-  auctionRefreshState,
-  onAuctionRefresh,
-  onAuctionStopRefresh,
-  boundaryState,
-  onBoundaryRebuild,
-  onManageCommunities,
 }: {
   searchQuery: string;
   onSearchChange: (v: string) => void;
@@ -1084,12 +991,6 @@ function AppHeader({
   refreshState: { running: boolean; phase: string; processed: number; total: number; error: string | null } | null;
   onRefresh: () => void;
   onStopRefresh: () => void;
-  auctionRefreshState: { running: boolean; phase: string; processed: number; matched: number; error: string | null } | null;
-  onAuctionRefresh: () => void;
-  onAuctionStopRefresh: () => void;
-  boundaryState: { running: boolean; phase: string; error: string | null } | null;
-  onBoundaryRebuild: () => void;
-  onManageCommunities: () => void;
 }) {
   return (
     <><header className="housing-app-header" style={{
@@ -1144,36 +1045,7 @@ function AppHeader({
               刷新失败
             </span>
           )}
-          {boundaryState?.running && (
-            <span style={{ marginLeft: '8px', color: 'var(--accent-warm)' }}>轮廓重建中…</span>
-          )}
-          {boundaryState && !boundaryState.running && boundaryState.phase === 'done' && (
-            <span style={{ marginLeft: '8px', color: 'var(--price-down)' }}>轮廓已更新</span>
-          )}
-          {boundaryState && !boundaryState.running && boundaryState.phase === 'error' && (
-            <span style={{ marginLeft: '8px', color: 'var(--price-up)' }} title={boundaryState.error ?? ''}>
-              轮廓重建失败
-            </span>
-          )}
-          {auctionRefreshState?.running && (
-            <span style={{ marginLeft: '8px', color: 'var(--accent-warm)' }}
-              title={`已扫描 ${auctionRefreshState.processed} 条`}>
-              法拍采集中 本次命中 {auctionRefreshState.matched} 条…
-            </span>
-          )}
-          {auctionRefreshState && !auctionRefreshState.running && auctionRefreshState.phase === 'done' && (
-            <span style={{ marginLeft: '8px', color: auctionRefreshState.error ? 'var(--price-up)' : 'var(--price-down)' }}>
-              {auctionRefreshState.error || '法拍已更新'}
-            </span>
-          )}
-          {auctionRefreshState && !auctionRefreshState.running && auctionRefreshState.phase === 'cancelled' && (
-            <span style={{ marginLeft: '8px' }}>法拍已停止</span>
-          )}
-          {auctionRefreshState && !auctionRefreshState.running && auctionRefreshState.phase === 'error' && (
-            <span style={{ marginLeft: '8px', color: 'var(--price-up)' }} title={auctionRefreshState.error ?? ''}>
-              法拍刷新失败
-            </span>
-          )}
+
         </span>
         {refreshState?.running ? (
           <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={onStopRefresh}>
@@ -1184,26 +1056,7 @@ function AppHeader({
             <span>🔄</span> 刷新
           </button>
         )}
-        {auctionRefreshState?.running ? (
-          <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={onAuctionStopRefresh}>
-            <span>⏹</span> 停止法拍
-          </button>
-        ) : (
-          <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={onAuctionRefresh}
-            title="采集滨江区在拍/已拍住宅（来源：法拍聚合接口），逐条限速，约需数分钟">
-            <span>⚖️</span> 法拍刷新
-          </button>
-        )}
-        <RentalRefreshButton onSettled={rentalDataChanged} onManageSources={onManageCommunities} />
-        <button
-          className="btn btn-secondary"
-          style={{ whiteSpace: 'nowrap' }}
-          onClick={onBoundaryRebuild}
-          disabled={boundaryState?.running}
-          title="按当前 OSM 数据重新匹配小区轮廓，不更新房价"
-        >
-          <span>🗺️</span> {boundaryState?.running ? '重建中' : '重建轮廓'}
-        </button>
+
       </div>
     </header>
     </>

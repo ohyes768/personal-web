@@ -18,7 +18,7 @@ test('collection status preserves rental units and nested errors', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false,
     errors: {}, jobs: { rent: value, amap: { running: true, phase: 'running', processed: 1, total: 3 } }, action() {} }));
   assert.match(html, /部分完成.*已处理 2 \/ 5/); assert.match(html, /来源未应用关键词/);
-  assert.match(html, /取消采集/); assert.match(html, /仅已收录住宅/); assert.doesNotMatch(html, /%/);
+  assert.match(html, /停止补全定位/); assert.match(html, /仅已收录住宅/); assert.doesNotMatch(html, /%/);
 });
 test('rental task separates actual failures from unqueried communities', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false,

@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import DirectoryDialog from '../community/DirectoryDialog';
 import { rentalDataChanged } from '../../lib/rental-sources';
 
 type Candidate = { id: string; name: string; address?: string; district?: string; similarity?: number };
@@ -96,7 +97,7 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
         onClick={() => pickFilter(reason)}>{filterLabels[reason]} {counts[reason] || 0}</button>)}
       <button className="btn btn-secondary" disabled={busy} onClick={() => void load()}>刷新清单</button>
     </div>
-    {error && <p role="alert" className="directory-warning">{error}</p>}
+    {error && !item && <p role="alert" className="directory-warning">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     <p className="directory-muted">{filterHints[reasonFilter] || ''}</p>
     {visible.length ? <div className="directory-workspace"><div className="directory-list-panel">
@@ -108,10 +109,10 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
           <span>{entry.community_name}</span><small>{filterLabels[entry.reason] || entry.reason}{top > 0 ? ` · ${Math.round(top * 100)}%` : ''}</small></button>;
       })}</div>
     </div>
-      {item && <aside className="directory-detail"><div className="directory-source-heading"><h3>{item.community_name}</h3>
-        <button className="btn btn-secondary" onClick={() => { setSelectedCommunity(''); setCandidate(''); }}>关闭</button></div>
+      {item && <DirectoryDialog title={item.community_name} onClose={() => { setSelectedCommunity(''); setCandidate(''); }}>
+        {error && <p role="alert" className="directory-warning">{error}</p>}
         <RentalCandidateChoice item={item} selected={candidate} busy={busy} onSelect={setCandidate} onDecide={action => void decide(action)} />
-      </aside>}</div>
+      </DirectoryDialog>}</div>
       : <p className="directory-empty">{filterLabels[reasonFilter] || '该类别'}下暂无小区。</p>}
   </section>;
 }

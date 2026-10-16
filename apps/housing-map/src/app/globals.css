@@ -1245,3 +1245,33 @@ body {
 @media (prefers-reduced-motion: reduce) { .directory-task-dot { animation: none; } }
 .directory-detail label { display: block; margin: 12px 0; }
 .directory-detail label input, .directory-detail label select { display: block; width: 100%; margin-top: 6px; }
+
+/* 名单详情弹窗：覆盖旧侧栏宽度，列表保持原有布局和滚动位置。 */
+.review-workspace .directory-detail-dialog,
+.directory-detail-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(860px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: 88dvh;
+  padding: 0;
+  color: var(--text-primary);
+  overflow: auto;
+  box-shadow: 0 15px 70px #0003;
+}
+.directory-detail-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.directory-dialog-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 16px 20px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+.directory-dialog-heading h3 { margin: 0; }
+.directory-dialog-content { padding: 4px 20px 20px; }
+@media (max-width: 700px) {
+  .directory-dialog-heading { padding: 12px 16px; }
+  .directory-dialog-content { padding: 4px 16px 16px; }
+}

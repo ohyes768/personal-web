@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Community, Source, DirectorySourceCard, marketLabels, mapLabels, safeDirectoryLink } from './DirectoryCards';
 import PositionPanel, { Position, PositionBadge, positionLabels } from './PositionPanel';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
+import DirectoryDialog from './DirectoryDialog';
 
 type CatalogRow = Community & { property_types?: string[]; position?: Position; qualification: string; facts_state: string; exclusion_reason: string;
   source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string } };
@@ -232,14 +233,14 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   function changeMode(value: string) { setMode(value); setPage(1); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
-    setDetail(row); setAuction(null); setExcluding(false); setExcludeReason('');
+    setError(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason('');
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
       const value = await workflowRequest<CatalogRow>(path);
       if (value.admission_state === 'admitted') value.position = await workflowRequest<Position>(path + '/position');
       if (detailVersion.current === version) setDetail(value);
     }
-    catch (e) { setError(e instanceof Error ? e.message : '详情加载失败'); }
+    catch (e) { if (detailVersion.current === version) setError(e instanceof Error ? e.message : '详情加载失败'); }
   }
   async function positionAction(kind: 'query' | 'confirm', body?: object) {
     if (!detail) return;
@@ -280,7 +281,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
       <button className="btn btn-secondary" onClick={() => { setLoading(true); setRevision(v => v + 1); }}>刷新名单</button>
       {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}</div>}
-    {error && <p role="alert" className="directory-warning">{error}</p>}{notice && <p role="status">{notice}</p>}
+    {error && !detail && !auction && <p role="alert" className="directory-warning">{error}</p>}{notice && <p role="status">{notice}</p>}
     {mode === 'rental' ? (summary?.active ? <RentalAssociationReview onChanged={changed} /> :
       <p role="status" className="directory-muted">名单流程尚未启用，暂无租金待处理清单。</p>) :
     <div className="directory-workspace"><div className="directory-list-panel">
@@ -289,10 +290,11 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
           retry={row => void action(`/directory/workflow/catalog/${encodeURIComponent(row.community_id)}/retry`, 'POST')} busy={busy || !!jobs.amap?.running} position={row => void select(row)} />
           : <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>法拍房产</th><th>地址</th><th>待关联原因</th><th>操作</th></tr></thead><tbody>{auctions.map(r => <tr key={r.id}>
             <td data-label="法拍房产">{r.name}<small>{r.auction_ids?.length || 0} 条轮次{r.skipped ? ' · 已跳过' : ''}</small></td><td data-label="地址">{r.address || '暂无地址'}</td><td data-label="待关联原因">{r.reason}</td>
-            <td data-label="操作"><button className="btn btn-secondary" onClick={() => { setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
+            <td data-label="操作"><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setError(''); setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
         {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
         <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); }}>下一页</button></nav></>}
-    </div>{(detail || auction) && <aside className="directory-detail"><div className="directory-source-heading"><h3>{detail?.community_name || auction?.name}</h3><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>关闭</button></div>
+    </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
+      {error && <p role="alert" className="directory-warning">{error}</p>}
       {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} busy={busy} action={(...args) => void action(...args)} />}
       {detail && <><p>透明售房网实际地址：{detail.address || '待补充'}</p><p>高德地图地址：{detail.position?.selected?.address || detail.geographic_address || '待补全'}</p>
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
@@ -308,6 +310,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         {detail.sources?.map(s => <DirectorySourceCard key={s.id} item={s} />)}
         {detail.admission && <details><summary>历史审核记录</summary><p>{detail.admission.decision_kind === 'migration' ? '历史资料初始化' : detail.admission.decision_kind === 'manual' ? '历史人工决定' : '历史收录决定'}</p><p>{detail.admission.reason}</p><p className="directory-muted">当前名单按透明售房网有效资料计算，上述内容仅为历史记录。</p></details>}
         <details><summary>历史操作</summary>{detail.events?.map(e => <p key={e.seq}>{e.created_at.slice(0, 19)} · {e.action}{e.payload.reason ? ` · ${e.payload.reason}` : ''}</p>)}</details></>}
-    </aside>}</div>}
+    </DirectoryDialog>}</div>}
   </section>;
 }
