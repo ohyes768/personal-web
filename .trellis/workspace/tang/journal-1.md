@@ -189,3 +189,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 5: Housing Map 高德定位状态与人工确认
+
+**Date**: 2026-10-16
+**Task**: Housing Map 高德定位状态与人工确认
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+已收录目录增加高德POI状态与筛选、单条及批量补全、候选确认和手动定位，历史坐标及人工位置受保护。后端519、前端64个测试、lint、类型检查、构建与隔离浏览器验证通过。用户授权提交并推送；未部署或修改生产数据。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1d03e9b` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
