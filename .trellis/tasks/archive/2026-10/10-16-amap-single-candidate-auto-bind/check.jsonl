@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "验收对照契约：放宽后的匹配规则与不变式"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 下 pytest 运行约束检查"}
