@@ -68,8 +68,7 @@ def test_history_is_pending_and_query_preserves_existing_point(setup):
     assert after['address'] == '月明路1076号' and len(store.sources()) == 1
 
 
-@pytest.mark.parametrize('rows,state', [([], 'not_found'), ([poi(), poi('B2')], 'review'),
-                                       ([poi(address='其他路1号')], 'review')])
+@pytest.mark.parametrize('rows,state', [([], 'not_found'), ([poi(), poi('B2')], 'review')])
 def test_review_and_empty_results_are_persisted(setup, rows, state):
     store, cid, data = setup
     with pytest.raises(ValueError):
@@ -77,6 +76,16 @@ def test_review_and_empty_results_are_persisted(setup, rows, state):
     detail = position_detail(store, data, cid)
     assert detail['state'] == state and len(detail['candidates']) == len(rows)
     assert detail['checked_at'] and detail['revision']
+
+
+def test_single_exact_candidate_with_differing_address_matches(setup):
+    store, cid, data = setup
+    client = Client([poi(address='江南大道100号')])  # 唯一精确候选，地址不一致不再阻断自动匹配
+    assert position_one(store, data, cid, client) == 'updated'
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'matched' and detail['selected']['source_id'] == 'B1'
+    assert detail['selected']['address'] == '江南大道100号'
+    assert store.communities()[0]['longitude'] == 120.20749
 
 
 def test_manual_candidate_protected_and_stale_confirmation_rejected(setup):
@@ -202,13 +211,15 @@ def test_manual_edit_overrides_previous_automatic_status(setup):
     assert not detail['candidates']
 
 
-def test_addressless_candidate_needs_verified_manual_input(setup):
+def test_addressless_candidate_auto_matches_but_confirm_requires_address(setup):
     store, cid, data = setup
-    with pytest.raises(ValueError): position_one(store, data, cid, Client([poi(address='')]))
+    client = Client([poi(address='')])  # 唯一候选不再因地址为空进 review，自动 matched
+    assert position_one(store, data, cid, client) == 'updated'
     detail = position_detail(store, data, cid)
+    assert detail['state'] == 'matched' and detail['selected']['source_id'] == 'B1'
     with pytest.raises(ValueError, match='地图地址'):
-        confirm_position(store, data, cid, revision=detail['revision'], poi_id='B1')
-    assert position_detail(store, data, cid)['state'] == 'review'
+        confirm_position(store, data, cid, revision=detail['revision'], poi_id='B1')  # 人工确认仍拒绝无地址候选
+    assert position_detail(store, data, cid)['state'] == 'matched'
 
 
 def with_alias(store, cid):
@@ -217,7 +228,7 @@ def with_alias(store, cid):
 
 @pytest.mark.parametrize('alias_rows,state', [
     ([poi()], 'matched'),
-    ([poi(address='江南大道100号')], 'review'),
+    ([poi(address='江南大道100号')], 'matched'),
     ([poi('B1'), poi('B2')], 'review'),
 ])
 def test_alias_retry_after_empty_primary_name(setup, alias_rows, state):
@@ -245,14 +256,13 @@ def test_alias_retry_exhausted_stays_not_found(setup):
     assert client.queries == ['风雅钱塘', '茂御居']
 
 
-def test_containment_hit_never_auto_matches_and_stops_retry(setup):
+def test_single_containment_candidate_matches_and_stops_retry(setup):
     store, cid, data = setup
     with_alias(store, cid)
-    client = Client([poi(name='风雅钱塘御涛轩')])  # 唯一宽松候选，地址精确相等也不得自动 matched
-    with pytest.raises(ValueError):
-        position_one(store, data, cid, client)
+    client = Client([poi(name='风雅钱塘御涛轩', address='江南大道100号')])  # 唯一宽松候选（名字包含、地址不同）也自动 matched
+    assert position_one(store, data, cid, client) == 'updated'
     detail = position_detail(store, data, cid)
-    assert detail['state'] == 'review' and len(detail['candidates']) == 1
+    assert detail['state'] == 'matched' and detail['selected']['source_id'] == 'B1'
     assert client.queries == ['风雅钱塘']  # 主名已有候选（宽松也算命中），不发起别名重查
 
 
@@ -308,12 +318,13 @@ def test_primary_exact_candidates_skip_alias_retry(setup):
     assert position_one(store, data, cid, client, force=True) == 'updated' and client.calls == 1
 
 
-def test_truncated_result_without_candidates_is_review_without_retry(setup):
+@pytest.mark.parametrize('rows', [[], [poi()]])
+def test_truncated_result_stays_review_without_retry(setup, rows):
     store, cid, data = setup
     with_alias(store, cid)
-    client = Client(rows=[], count=26)  # 疑似截断：维持 review 文案，不发起别名重查
+    client = Client(rows=rows, count=26)  # 疑似截断：即使唯一候选也维持 review 文案，不发起别名重查
     with pytest.raises(ValueError, match='未找到唯一可靠位置'):
         position_one(store, data, cid, client)
     detail = position_detail(store, data, cid)
-    assert detail['state'] == 'review' and not detail['candidates']
+    assert detail['state'] == 'review' and len(detail['candidates']) == len(rows)
     assert client.calls == 1
