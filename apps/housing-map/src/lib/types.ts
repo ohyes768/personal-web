@@ -12,7 +12,7 @@ export interface Community {
   score: ScoreResult;    // 综合评分
   property_type?: string; // 物业类型：住宅/写字楼/公寓/商贸/其他
   boundary?: number[][][]; // 小区边界轮廓 (GCJ-02): [环][点][lng,lat]
-  boundary_source?: 'shp' | 'osm'; // 轮廓来源: shp=本地Shapefile, osm=OpenStreetMap
+  boundary_source?: 'shp' | 'osm' | 'osm-building'; // 轮廓来源: shp=本地Shapefile, osm=OpenStreetMap快照, osm-building=OSM建筑聚类估算
   build_year?: number | null;   // 建成年代(透明售房网), null=无数据
   parking_ratio?: number | null;  // 车位比 = 车位数/总户数, null=数据不足
   property_fee?: number | null;   // 物业费 元/㎡/月, null=无数据

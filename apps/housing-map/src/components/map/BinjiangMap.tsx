@@ -312,10 +312,10 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
       const color = getPriceColor(modePrice);
       commByCidRef.current.set(community.community_id, community);
 
-      // 仅展示 OSM 来源轮廓; Shapefile 来源暂不展示（数据管线保留, boundary_source==='shp'）
+      // 展示 OSM 快照与建筑聚类估算轮廓; Shapefile 来源暂不展示（数据管线保留, boundary_source==='shp'）
       const hasVisiblePolygon = !!(community.boundary && community.boundary.length > 0 && community.boundary_source !== 'shp');
       if (hasVisiblePolygon) {
-        const isOSM = community.boundary_source === 'osm';
+        const isOSM = community.boundary_source === 'osm' || community.boundary_source === 'osm-building';
         const polygon = new window.AMap.Polygon({
           path: community.boundary,
           fillColor: color,

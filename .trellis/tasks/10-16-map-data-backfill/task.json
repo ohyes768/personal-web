@@ -1,0 +1,29 @@
+{
+  "id": "map-data-backfill",
+  "name": "map-data-backfill",
+  "title": "地图页无数据小区补齐:定位一键重查 + OSM 建筑轮廓估算",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend/douyin-processor",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-16",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-16-boundary-estimate-script",
+    "10-16-boundary-upload-api"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

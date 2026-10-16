@@ -23,6 +23,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from src.api.routes import router
 from src.api.auction_routes import router as auction_router
+from src.api.boundary_import_routes import router as boundary_import_router
 from src.api.rental_routes import router as rental_router, shutdown_rental_refresh
 from src.api.rental_source_routes import router as rental_source_router
 from src.api.directory_routes import router as directory_router, shutdown_directory
@@ -71,6 +72,7 @@ app.include_router(auction_router, prefix="/api")
 app.include_router(rental_router, prefix="/api")
 app.include_router(rental_source_router, prefix="/api")
 app.include_router(directory_router, prefix="/api")
+app.include_router(boundary_import_router, prefix="/api")
 
 
 if __name__ == "__main__":

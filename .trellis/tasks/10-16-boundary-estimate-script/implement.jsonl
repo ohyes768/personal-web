@@ -1,0 +1,2 @@
+{"file": ".trellis/tasks/10-16-map-data-backfill/research/overpass-recon.md", "reason": "Overpass 限流/镜像/覆盖摸底,是 Overpass 客户端串行+缓存+fallback 设计的直接依据"}
+{"file": ".trellis/tasks/10-16-map-data-backfill/research/no-boundary.json", "reason": "12 个目标小区 id/名称/坐标清单,第 2 步名单验证的对照基准"}
