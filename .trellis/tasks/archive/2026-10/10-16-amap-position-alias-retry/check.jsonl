@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "验收对照契约：预算/暂停/状态保护不变式与测试清单"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 下 pytest 运行约束检查"}

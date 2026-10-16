@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "被修改模块的契约；R1/R2 必须在其约束内实现，完成后需同步更新第 3/6 节"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 开发机 pytest 硬约束（basetemp 重定向等），跑 tests/ 前必读"}
