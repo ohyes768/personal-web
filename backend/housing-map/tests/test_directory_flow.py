@@ -121,7 +121,7 @@ def test_position_budget_ambiguity_restart(store,tmp_path):
     with pytest.raises(ValueError,match='唯一'): position_one(store,tmp_path,c['community_id'],Client(count=30))
     # Ambiguous results await manual confirmation; budget applies to pending targets.
     master(store,facts('budget-target','A待补全'))
-    job=PositionJob(store);job.state=dict(running=True,phase='running',total=0,processed=0,updated=0,skipped=0,errors=[])
+    job=PositionJob(store);job.state=dict(running=True,phase='running',total=0,processed=0,updated=0,skipped=0,review=0,not_found=0,failed=0,skipped_by_state={},errors=[])
     job._run(client=Client(),delay=0,budget=0)
     assert job.snapshot()['phase']=='partial_failed' and job.snapshot()['processed']==0
     job.state.update(running=True,phase='running');job._save()
@@ -220,7 +220,7 @@ def test_position_skip_needs_no_key_or_network(store,tmp_path,monkeypatch):
     position_one(store,tmp_path,c['community_id'],Client())
     def unexpected(): raise AssertionError('valid position must not initialize an upstream client')
     monkeypatch.setattr(directory_position,'AmapClient',unexpected)
-    job=PositionJob(store);job.state=dict(running=True,phase='running',total=0,processed=0,updated=0,skipped=0,errors=[])
+    job=PositionJob(store);job.state=dict(running=True,phase='running',total=0,processed=0,updated=0,skipped=0,review=0,not_found=0,failed=0,skipped_by_state={},errors=[])
     job._run(delay=0)
     assert job.snapshot()['phase']=='succeeded' and job.snapshot()['skipped']==1
 

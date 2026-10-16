@@ -19,9 +19,9 @@ KEY = 'directory_position_job'
 class PositionOutcome(ValueError):
     """A query finished and its review/failure outcome was durably saved."""
 
-
-def keep_position(target):
-    return position_view(target, target.get('sources', [])).get('state') not in {'pending', 'error'}
+    def __init__(self, message, state=None):
+        super().__init__(message)
+        self.state = state
 
 
 def _snapshot(store, cid):
@@ -156,7 +156,7 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
     if error:
         raise PositionOutcome(error)
     if values['state'] in {'review', 'not_found'}:
-        raise PositionOutcome(values['error'])
+        raise PositionOutcome(values['error'], state=values['state'])
     return 'updated'
 
 
@@ -219,6 +219,7 @@ class PositionJob:
                 raise ValueError('高德信息正在采集')
             self.cancel.clear()
             self.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
+                              review=0, not_found=0, failed=0, skipped_by_state={},
                               errors=[], started_at=now(), finished_at=None)
             self._save()
             self.worker = threading.Thread(target=self._run, daemon=True)
@@ -233,16 +234,22 @@ class PositionJob:
             with self.lock:
                 self.state['total'] = len(targets)
             requests = 0
+            budget_stopped = False
             for target in targets:
                 if self.cancel.is_set():
                     raise InterruptedError()
                 cid = target['community_id']
-                if keep_position(target):
+                current_state = position_view(target, target.get('sources', [])).get('state')
+                if current_state not in {'pending', 'error'}:
                     outcome = 'skipped'
+                    with self.lock:
+                        by = self.state['skipped_by_state']
+                        by[current_state] = by.get(current_state, 0) + 1
                 else:
                     if requests >= budget:
                         with self.lock:
                             self.state['errors'].append({'message': '达到本轮请求预算，未完成目标可下次重试'})
+                        budget_stopped = True
                         break
                     if requests and self.cancel.wait(delay):
                         raise InterruptedError()
@@ -254,7 +261,12 @@ class PositionJob:
                     except Exception as exc:
                         message = str(exc) if isinstance(exc, ValueError) else '地图查询失败，已有位置保留'
                         with self.lock:
-                            self.state['errors'].append({'community_id': cid, 'name': target['community_name'], 'message': message})
+                            if isinstance(exc, PositionOutcome) and exc.state:
+                                self.state[exc.state] += 1
+                            else:
+                                self.state['failed'] += 1
+                            self.state['errors'].append({'community_id': cid, 'name': target['community_name'],
+                                                         'message': message, 'state': getattr(exc, 'state', None) or 'error'})
                         outcome = None
                 with self.lock:
                     self.state['processed'] += 1
@@ -262,7 +274,7 @@ class PositionJob:
                         self.state[outcome] += 1
                 self._save()
             with self.lock:
-                self.state['phase'] = 'partial_failed' if self.state['errors'] else 'succeeded'
+                self.state['phase'] = 'partial_failed' if (self.state['failed'] or budget_stopped) else 'succeeded'
         except InterruptedError:
             with self.lock:
                 self.state['phase'] = 'cancelled'

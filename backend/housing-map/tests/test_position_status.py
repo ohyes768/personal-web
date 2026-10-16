@@ -149,13 +149,54 @@ def test_batch_queries_history_but_skips_review_and_manual(setup):
     store, cid, data = setup
     update_master(store, cid, longitude=120.207, latitude=30.202, coordinate_system='gcj02')
     job = PositionJob(store)
-    job.state = dict(running=True, phase='running', total=0, processed=0, updated=0, skipped=0, errors=[])
+    job.state = dict(running=True, phase='running', total=0, processed=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
     client = Client()
     job._run(client=client, delay=0)
     assert client.calls == 1 and job.snapshot()['updated'] == 1
     client.calls = 0
     job._run(client=client, delay=0)
-    assert client.calls == 0
+    assert client.calls == 0 and job.snapshot()['skipped_by_state'] == {'matched': 1}
+
+
+def add_admitted(store, name, source_id):
+    c = store.create(name, district='滨江', address='月明路1076号')
+    s = store.ingest(dict(source='tmsf', source_id=source_id, name=name, district='滨江',
+                          address='月明路1076号', property_type='住宅', listing_count=3, market_state='second_hand'))
+    store.associate(s['id'], c['community_id'])
+    return c['community_id']
+
+
+def test_batch_reports_outcome_counts_and_skipped_states(setup):
+    store, cid, data = setup
+    add_admitted(store, '确认花园', 't2')
+    add_admitted(store, '荒地苑', 't3')
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', total=0, processed=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
+    client = Client(by_name={'确认花园': [poi('B1', name='确认花园'), poi('B2', name='确认花园')],
+                             '荒地苑': []})
+    job._run(client=client, delay=0)
+    snap = job.snapshot()
+    assert snap['updated'] == 1 and snap['review'] == 1 and snap['not_found'] == 1 and snap['failed'] == 0
+    assert snap['phase'] == 'succeeded'  # review/not_found 是预期结果，不算失败
+    assert {e['state'] for e in snap['errors']} == {'review', 'not_found'}
+    client.calls = 0
+    job._run(client=client, delay=0)
+    snap = job.snapshot()
+    assert client.calls == 0 and snap['skipped'] == 3
+    assert snap['skipped_by_state'] == {'matched': 1, 'review': 1, 'not_found': 1}
+
+
+def test_batch_marks_genuine_failures_and_partial_phase(setup):
+    store, cid, data = setup
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', total=0, processed=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={},
+                     errors=[], started_at=None, finished_at=None)
+    job._run(client=Client(error=RuntimeError('boom')), delay=0)
+    snap = job.snapshot()
+    assert snap['failed'] == 1 and snap['phase'] == 'partial_failed' and snap['errors'][0]['state'] == 'error'
 
 
 def test_api_filters_before_pagination_and_snapshot_write_rules(setup, monkeypatch):

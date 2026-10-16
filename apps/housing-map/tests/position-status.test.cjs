@@ -9,7 +9,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
 }).outputText, filename);
 const { PositionBadge, default: PositionPanel } = require('../src/components/community/PositionPanel.tsx');
-const { CatalogTable } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+const { CatalogTable, CollectionControls } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 
 test('history coordinates are distinct from a matched POI and missing coordinates', () => {
   const html = render(React.createElement(PositionBadge, { position: { state: 'pending', has_coordinates: true, candidates: [] } }));
@@ -34,4 +34,21 @@ test('candidate panel preserves evidence, stale-write revision and manual protec
     state: 'manual', revision: 'abc', has_coordinates: true, candidates: [], selected: { longitude: 120.207, latitude: 30.202 }
   } }));
   assert.match(manual, /人工结果已保护/); assert.match(manual, /人工坐标，无 POI ID/); assert.doesNotMatch(manual, /重新匹配/);
+});
+test('amap job summary reports per-outcome states instead of skip counts', () => {
+  const html = render(React.createElement(CollectionControls, { active: true, busy: false, action() {}, errors: {}, jobs: { amap: {
+    running: false, phase: 'succeeded', processed: 155, total: 155, updated: 1, skipped: 102,
+    review: 24, not_found: 29, failed: 0, skipped_by_state: { manual: 2, review: 71, not_found: 29 } } } }));
+  assert.match(html, /采集完成/);
+  assert.match(html, /补全 1 · 转待确认 24 · 高德无此地点 29/);
+  assert.match(html, /已处理 155 \/ 155/);
+  assert.match(html, /未参与本轮 102/);
+  assert.match(html, /人工已确认 2 · 待确认 71 · 未找到 29/);
+  assert.doesNotMatch(html, /跳过/);
+});
+test('legacy amap job without outcome fields keeps the old wording', () => {
+  const html = render(React.createElement(CollectionControls, { active: true, busy: false, action() {}, errors: {}, jobs: { amap: {
+    running: false, phase: 'partial_failed', processed: 155, total: 155, updated: 0, skipped: 155 } } }));
+  assert.match(html, /部分完成/);
+  assert.match(html, /补全 0 · 跳过 155/);
 });

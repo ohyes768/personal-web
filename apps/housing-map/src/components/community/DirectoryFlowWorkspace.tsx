@@ -12,7 +12,8 @@ type Auction = Source & { revision: string; skipped: boolean; candidates: Commun
 type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number };
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
-  matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; error?: string;
+  matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
+  failed?: number; skipped_by_state?: Record<string, number>; error?: string;
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string }[]; truncated?: { message: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
   errors?: Job['errors'] | { items?: { message: string }[]; total?: number } };
@@ -46,7 +47,8 @@ export function CollectionControls({ active, jobs, errors, busy, action }: { act
   errors: Record<string, string>; busy: boolean; action: (path: string, method: string, body?: object) => void }) {
   const lines = tasks.filter(t => {
     const job = jobs[t.id];
-    return !!errors[t.id] || !!job?.running || !!job?.error || (!!job && !restPhases.includes(job.phase));
+    return !!errors[t.id] || !!job?.running || !!job?.error ||
+      (!!job && (t.id === 'amap' ? job.processed !== undefined : !restPhases.includes(job.phase)));
   });
   return <>
     <div className="directory-task-strip" role="group" aria-label="数据采集任务">{tasks.map(t => {
@@ -65,7 +67,9 @@ export function CollectionControls({ active, jobs, errors, busy, action }: { act
       const counts = job ? [job.stage && stageLabels[job.stage],
         job.processed !== undefined && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
         job.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
-        job.updated !== undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
+        job.updated !== undefined && job.review !== undefined &&
+          `补全 ${job.updated || 0} · 转待确认 ${job.review} · 高德无此地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
+        job.updated !== undefined && job.review === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
         job.matched !== undefined && t.id === 'auction' && `本次法拍 ${job.matched} 条`].filter(Boolean).join(' · ') : '';
       const message = job ? [phases[job.phase] || job.phase, counts].filter(Boolean).join(' · ') : '';
       const issues = [...(job?.errors || []), ...(job?.truncated || [])];
@@ -76,6 +80,8 @@ export function CollectionControls({ active, jobs, errors, busy, action }: { act
           {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
         </p>
         {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
+        {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
+          <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
         {issues.length > 0 && <details className="directory-task-sub"><summary>本轮未完成事项（可重试）</summary>
           {issues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
       </div>;
