@@ -49,7 +49,9 @@ def normalize_poi(poi, *, district='滨江'):
     if not isinstance(sid, str) or not sid or not isinstance(name, str) or not name.strip():
         return None
     # 120203 商住两用楼宇: TMSF 住宅项目（公馆/公寓）在高德常落在商住楼宇分类下。
-    if district not in {'滨江', '萧山'} or poi.get('adname') != district + '区' or str(poi.get('typecode')) not in {'120300', '120301', '120302', '120303', '120304', '120203'}:
+    # 高德可能返回复合分类码（如 "120302|120203"），任一段命中白名单即接受。
+    typecodes = set(str(poi.get('typecode') or '').split('|'))
+    if district not in {'滨江', '萧山'} or poi.get('adname') != district + '区' or not typecodes & {'120300', '120301', '120302', '120303', '120304', '120203'}:
         return None
     # Keep phase/directional names. Exclude subordinate entrances, buildings and facilities.
     if re.search(r'(?:出入口|停车场|地下车库|物业服务中心|售楼处|[东西南北](?:门|出入口)|\d+\s*(?:幢|栋|号楼))$', name):

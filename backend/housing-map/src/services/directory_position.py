@@ -2,6 +2,7 @@
 import copy
 import hashlib
 import json
+import re
 import threading
 
 from src.services.community_registry import dump, normalized, now
@@ -87,15 +88,36 @@ def position_detail(store, data_dir, cid):
     return {**position_view(target, records), 'revision': _revision(snapshot)}
 
 
+_DOT = str.maketrans('', '', '·・･')
+_GENERIC_SUFFIX = ('小区', '花园', '公寓', '大厦', '公馆', '邸', '苑', '院', '府')
+
+
+def _flat_name(value):
+    """Flatten an estate name for matching: drop parenthetical notes, middle dots and
+    generic suffixes, so 中海·钱塘山水 matches 中海钱塘山水 and 积家 matches 积家小区."""
+    stem = re.sub(r'[（(][^（）()]*[)）]', '', str(value or ''))
+    stem = normalized(stem).translate(_DOT)
+    changed = True
+    while changed:
+        changed = False
+        for suffix in _GENERIC_SUFFIX:
+            if stem.endswith(suffix) and len(stem) > len(suffix):
+                stem = stem[:-len(suffix)]
+                changed = True
+    return stem
+
+
 def _name_matches(pois, names, district):
-    """POIs whose normalized name equals or contains a community name/alias (shorter side length >= 3)."""
+    """POIs whose flattened name equals or contains a flattened community name/alias
+    (shorter side length >= 3); comparison ignores dots, suffixes and parentheticals."""
+    flats = {_flat_name(n) for n in names}
     matches = {}
     for raw in pois:
         p = normalize_poi(raw, district=district)
         if not p:
             continue
-        name = normalized(p['name'])
-        if name in names or any((len(n) >= 3 and n in name) or (len(name) >= 3 and name in n) for n in names):
+        name = _flat_name(p['name'])
+        if name in flats or any((len(n) >= 3 and n in name) or (len(name) >= 3 and name in n) for n in flats):
             matches[p['source_id']] = p
     return matches
 

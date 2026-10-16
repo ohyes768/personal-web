@@ -18,6 +18,9 @@ def test_filters_district_bounds_and_subordinate_pois():
     # 商住两用楼宇是合法定位候选（TMSF 住宅项目常挂此分类），写字楼仍拒绝。
     mixed = poi(); mixed['typecode'] = '120203'; mixed['type'] = '商务住宅;楼宇;商住两用楼宇'
     assert amap.normalize_poi(mixed)['poi_typecode'] == '120203'
+    # 复合分类码任一段命中白名单即接受。
+    compound = poi(); compound['typecode'] = '120302|120203'
+    assert amap.normalize_poi(compound)['poi_typecode'] == '120302|120203'
     row = poi(); row['location'] = 'NaN,30.2'
     with pytest.raises(ValueError): amap.normalize_poi(row)
 

@@ -199,6 +199,22 @@ def test_batch_marks_genuine_failures_and_partial_phase(setup):
     assert snap['failed'] == 1 and snap['phase'] == 'partial_failed' and snap['errors'][0]['state'] == 'error'
 
 
+def test_flat_name_strips_dots_suffixes_and_parens():
+    from src.services.directory_position import _flat_name
+    assert _flat_name('中海·钱塘山水') == _flat_name('中海钱塘山水') == '中海钱塘山水'
+    assert _flat_name('积家') == _flat_name('积家小区')
+    assert _flat_name('中天官河锦庭（排屋）') == '中天官河锦庭'
+    assert _flat_name('金成滨玺云著邸') == '金成滨玺云著'
+    assert _flat_name('绿城·晓风印月') == '绿城晓风印月'
+
+
+def test_dot_and_suffix_names_still_match_candidates(setup):
+    store, cid, data = setup
+    client = Client([poi('B1', name='风雅·钱塘')])
+    assert position_one(store, data, cid, client) == 'updated'
+    assert position_detail(store, data, cid)['selected']['name'] == '风雅·钱塘'
+
+
 def test_api_filters_before_pagination_and_snapshot_write_rules(setup, monkeypatch):
     from src.api import directory_routes, directory_workflow_routes as routes
     store, cid, data = setup
