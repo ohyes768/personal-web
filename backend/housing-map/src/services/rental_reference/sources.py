@@ -166,7 +166,7 @@ def source_page(url: str) -> str:
 def discover(community: dict, *, keyword: str = '', source_url: str = '', client_factory=FangClient) -> list[dict]:
     """One public list request and at most one detail request; never auto-confirm."""
     name = keyword.strip() or community.get('community_alias') or community['community_name']
-    url = source_page(source_url) if source_url else f'{BASE_URL}/hz/house/?keyword={quote(name)}'
+    url = source_page(source_url) if source_url else f'{BASE_URL}/hz/house/kw{quote(name, safe="")}/'
     client = client_factory(timeout=15)
     stage = 'fetch'
     html = ''
@@ -177,11 +177,18 @@ def discover(community: dict, *, keyword: str = '', source_url: str = '', client
         html = client.fetch(url)
         stage = 'keyword_validation'
         if not source_url:
-            keyword_match = re.search(r"pageConfig\.keyword\s*=\s*['\"]([^'\"]*)", html)
-            from urllib.parse import unquote
-            actual_keyword = unquote(keyword_match.group(1)).strip() if keyword_match else None
+            # Fang dropped the ?keyword= query; the kw path term counts as
+            # applied only when the selected-conditions bar echoes the name.
+            applied = re.search(r'class="term">关键字：([^<]*)<', html)
+            actual_keyword = applied.group(1).strip() if applied else None
             if actual_keyword != name:
                 raise ValueError('来源搜索未应用关键词，拒绝使用全市房源作为候选')
+            if '没有找到相符的房源' in html:
+                # Zero rentals: the remaining page is city-wide recommendations,
+                # never candidates.
+                logger.info('Rental discovery no-match community_id=%s name=%r',
+                            community.get('community_id'), name)
+                return []
         stage = 'parse_listing'
         rows, _ = parse_listing_page(html, url)  # challenge/changed HTML must fail explicitly
         found: dict[str, dict] = {}

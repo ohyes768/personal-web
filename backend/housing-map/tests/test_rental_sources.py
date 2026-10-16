@@ -71,7 +71,7 @@ def test_import_url_is_limited(url):
 
 
 def page(name='测试花园'):
-    return f'''房天下 <script>pageConfig.keyword='测试花园';</script>
+    return f'''房天下 <span class="selestfinds" id="list_103"><a true href="/hz/house/" class="term">关键字：{name}</a></span>
     <a href='/hz/house-xm999/'>无关推荐</a>
     <dl><a href='/hz/chuzu/3_123_1.htm'>整租两房</a><a href='/hz/house-xm123/'>{name}</a>
     <p>整租|2室1厅|80㎡</p>4000元/月</dl>'''
@@ -94,21 +94,40 @@ def test_discovery_uses_structured_community_and_missing_address(monkeypatch):
     assert '分期' in found[0]['evidence'][-1]
 
 
+def test_search_returns_candidates_when_keyword_applied(monkeypatch):
+    monkeypatch.setattr('time.sleep', lambda _: None)
+    found = discover({'community_name': '测试花园'}, client_factory=Client)
+    assert [c['source_community_id'] for c in found] == ['123']
+    assert found[0]['source_address'] == '滨江区测试路1号'
+
+
 def test_search_rejects_ignored_keyword_and_closes_client(caplog):
     class Ignored(Client):
         instance = None
         def __init__(self, timeout): super().__init__(timeout); Ignored.instance = self
         def fetch(self, url):
-            return '<title>杭州租房</title>' + page().replace("keyword='测试花园'", "keyword=''") + '<p>private-body-marker</p>'
+            # Site ignored the search term: no selected-condition echo, city-wide page.
+            return ('<title>杭州租房</title>'
+                    + page().replace('class="term">关键字：测试花园<', '')
+                    + '<p>private-body-marker</p>')
     with pytest.raises(ValueError, match='未应用关键词'):
         discover({'community_name': '测试花园'}, client_factory=Ignored)
     assert Ignored.instance.closed
     assert 'stage=keyword_validation' in caplog.text
-    assert "actual_keyword=''" in caplog.text
+    assert 'actual_keyword=None' in caplog.text
     assert "title='杭州租房'" in caplog.text
     assert 'error_type=ValueError' in caplog.text
     assert 'private-body-marker' not in caplog.text
     assert any(r.exc_info for r in caplog.records)
+
+
+def test_search_zero_results_yields_no_citywide_recommendations(caplog):
+    class NoMatch(Client):
+        def fetch(self, url):
+            return page() + '很抱歉，没有找到相符的房源，您可能对以下房源感兴趣。'
+    with caplog.at_level('INFO'):
+        assert discover({'community_name': '测试花园'}, client_factory=NoMatch) == []
+    assert 'Rental discovery no-match' in caplog.text
 
 
 def test_discovery_request_failure_logs_stage_and_closes(caplog):
