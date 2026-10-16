@@ -8,3 +8,8 @@ data/auction_records.json.*.tmp
 data/rental_sources.sqlite3*
 data/community_registry.sqlite3*
 data/directory-backup/
+data/rentals/
+
+# Regenerable script captures (Overpass dumps, TMSF CSV export)
+data/binjiang_osm_*_raw.json
+data/binjiang_communities.csv
