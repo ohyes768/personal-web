@@ -1229,8 +1229,19 @@ body {
 }
 
 /* Independent collection tasks share the directory's existing palette. */
-.directory-task-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 12px; margin: 16px 0; }
-.directory-task-card { padding: 16px; border: 1px solid var(--border, #d8dee8); border-radius: 12px; min-width: 0; overflow-wrap: anywhere; }
-.directory-task-card p { margin: 10px 0; }
+.directory-task-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 14px 0 0; }
+.directory-task-strip .btn { padding: 6px 14px; font-size: 12.5px; }
+.directory-task-status { display: grid; gap: 3px; margin: 10px 0 0; font-size: 12px; line-height: 1.6; }
+.directory-task-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0; color: var(--text-muted); }
+.directory-task-line strong { color: var(--text-primary); font-weight: 600; }
+.directory-task-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: none; align-self: center; }
+.directory-task-line[data-state="running"] .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
+.directory-task-line[data-state="failed"] { color: #a74325; }
+.directory-task-line[data-state="failed"] .directory-task-dot { background: #a74325; }
+.directory-task-line[data-state="failed"] strong { color: #a74325; }
+.directory-task-sub { margin: 0; padding-left: 16px; color: var(--text-muted); font-size: 12px; }
+.directory-task-sub summary { cursor: pointer; }
+@keyframes directory-task-pulse { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .directory-task-dot { animation: none; } }
 .directory-detail label { display: block; margin: 12px 0; }
 .directory-detail label input, .directory-detail label select { display: block; width: 100%; margin-top: 6px; }

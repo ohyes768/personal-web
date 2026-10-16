@@ -22,11 +22,14 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
     errors: Array.isArray(value.errors) ? value.errors : value.errors?.items || [] };
 }
 const tasks = [
-  { id: 'tmsf', label: '采集透明售房网', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
-  { id: 'amap', label: '高德信息采集', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
-  { id: 'rent', label: '租金信息采集', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新房天下租金' },
-  { id: 'auction', label: '法拍数据采集', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
+  { id: 'tmsf', label: '采集透明售房网', short: '透明售房网', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
+  { id: 'amap', label: '补全高德定位', short: '高德定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
+  { id: 'rent', label: '采集租金', short: '租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新房天下租金' },
+  { id: 'auction', label: '采集法拍', short: '法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
+const restPhases = ['idle', 'succeeded', 'done'];
+const stageLabels: Record<string, string> = { checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源',
+  publishing: '发布租金统计', names: '更新小区名录', property_types: '补充用途资料' };
 const phases: Record<string, string> = { running: '正在采集', crawling: '正在采集', publishing: '正在发布', checking_sources: '检查来源', idle: '尚未采集',
   succeeded: '采集完成', done: '采集完成', failed: '采集失败', error: '采集失败', partial_failed: '部分完成',
   cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
@@ -41,26 +44,43 @@ export async function workflowRequest<T>(path: string, method = 'GET', body?: ob
 
 export function CollectionControls({ active, jobs, errors, busy, action }: { active: boolean; jobs: Record<string, Job | null>;
   errors: Record<string, string>; busy: boolean; action: (path: string, method: string, body?: object) => void }) {
-  return <div className="directory-task-grid">{tasks.map(t => {
+  const lines = tasks.filter(t => {
     const job = jobs[t.id];
-    return <article className="directory-task-card" key={t.id}>
-      <strong>{t.label}</strong><p className="directory-muted">{t.hint}</p>
-      <div className="directory-actions"><button className="btn btn-primary" disabled={!active || busy || job?.running}
-        onClick={() => action(t.path, 'POST', t.body)}>{job?.running ? '正在采集…' : t.id === 'amap' ? '批量补全高德定位' : t.label}</button>
-        {job?.running && <button className="btn btn-secondary" disabled={busy} onClick={() => action(t.path, 'DELETE')}>取消采集</button>}</div>
-      {job?.stage && <p className="directory-muted">{({ checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源', publishing: '发布租金统计', names: '更新小区名录', property_types: '补充用途资料' } as Record<string, string>)[job.stage] || '更新来源资料'}</p>}
-      {job?.association && <p className="directory-muted">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
-      {job && <p role="status">{phases[job.phase] || job.phase}
-        {job.processed !== undefined && ` · 已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`}
-        {job.new !== undefined && ` · 新来源 ${job.new} · 已有 ${job.existing || 0}`}
-        {job.updated !== undefined && ` · 补全 ${job.updated} · 跳过 ${job.skipped || 0}`}
-        {job.matched !== undefined && t.id === 'auction' && ` · 本次法拍 ${job.matched} 条`}</p>}
-      {job?.finished_at && <small>上次结束：{job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）</small>}
-      {(errors[t.id] || job?.error) && <p role="alert" className="directory-warning">{errors[t.id] || job?.error}</p>}
-      {!!(job?.errors?.length || job?.truncated?.length) && <details><summary>本轮未完成事项（可重试）</summary>
-        {[...(job?.errors || []), ...(job?.truncated || [])].map((e, i) => <p className="directory-warning" key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
-    </article>;
-  })}</div>;
+    return !!errors[t.id] || !!job?.running || !!job?.error || (!!job && !restPhases.includes(job.phase));
+  });
+  return <>
+    <div className="directory-task-strip" role="group" aria-label="数据采集任务">{tasks.map(t => {
+      const job = jobs[t.id];
+      const running = !!job?.running;
+      const lastRun = job?.finished_at ? `\n上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
+      return <button key={t.id} className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
+        title={t.hint + lastRun} onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.body))}>
+        {running && <span className="directory-task-dot" aria-hidden="true" />}{running ? `取消${t.short}` : t.label}
+      </button>;
+    })}</div>
+    {lines.length > 0 && <div className="directory-task-status">{tasks.map(t => {
+      const job = jobs[t.id];
+      const problem = errors[t.id] || job?.error || '';
+      const state = job?.running ? 'running' : problem ? 'failed' : 'info';
+      const counts = job ? [job.stage && stageLabels[job.stage],
+        job.processed !== undefined && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
+        job.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
+        job.updated !== undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
+        job.matched !== undefined && t.id === 'auction' && `本次法拍 ${job.matched} 条`].filter(Boolean).join(' · ') : '';
+      const message = job ? [phases[job.phase] || job.phase, counts].filter(Boolean).join(' · ') : '';
+      const issues = [...(job?.errors || []), ...(job?.truncated || [])];
+      return <div key={t.id}>
+        <p className="directory-task-line" data-state={state}>
+          <span className="directory-task-dot" aria-hidden="true" />
+          <strong>{t.short}</strong>
+          {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
+        </p>
+        {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
+        {issues.length > 0 && <details className="directory-task-sub"><summary>本轮未完成事项（可重试）</summary>
+          {issues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
+      </div>;
+    })}</div>}
+  </>;
 }
 
 export function CatalogClassificationFilter({ mode, value, propertyTypes, onChange }: {
@@ -169,6 +189,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
           const mark = next?.finished_at || '';
           if (mark && finishes.current[t.id] !== undefined && finishes.current[t.id] !== mark) {
             setRevision(v => v + 1); onChanged();
+            setNotice(`${t.short}：${phases[next?.phase || ''] || '已结束'}`);
           }
           finishes.current[t.id] = mark;
         } catch (e) { if (!controller.signal.aborted) setJobErrors(v => ({ ...v, [t.id]: e instanceof Error ? e.message : '状态查询失败' })); }
