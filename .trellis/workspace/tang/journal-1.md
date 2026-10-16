@@ -223,3 +223,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 6: Housing-map 顶栏精简与管理弹窗部署
+
+**Date**: 2026-10-16
+**Task**: Housing-map 顶栏精简与管理弹窗部署
+**Package**: backend/douyin-processor
+
+### Summary
+
+顶栏仅保留价格日期和房价刷新；资料、定位、法拍与租金来源详情复用原生 dialog。TypeScript、ESLint、7项相关测试及生产构建通过。NAS 仅重建 housing-map-frontend；线上确认顶栏、资料弹窗与 Esc 关闭，未修改业务数据。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `dcc6f57` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

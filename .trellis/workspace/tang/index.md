@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 5
+- **Total Sessions**: 6
 - **Last Active**: 2026-10-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~225 | Active |
+| `journal-1.md` | ~258 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 6 | 2026-10-16 | Housing-map 顶栏精简与管理弹窗部署 | `dcc6f57` | `-` |
 | 5 | 2026-10-16 | Housing Map 高德定位状态与人工确认 | `1d03e9b` | `master` |
 | 4 | 2026-10-14 | Housing-map 新房住宅证据与位置补全 | `11ffafc` | `master` |
 | 3 | 2026-10-12 | 租金来源管理与顶部更新入口 | `e6c6c7e` | `master` |
