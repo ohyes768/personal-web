@@ -165,6 +165,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         if (controller.signal.aborted) return;
         setSummary(counts);
         if (!counts.active) { setLoading(false); return; }
+        if (mode === 'rental') { setLoading(false); return; }
         const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q, page: String(page), include_skipped: String(showSkipped) })}`
           : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '' })}`;
         const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
@@ -241,17 +242,19 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       <p className="directory-muted">先采集透明售房网并自动分类，再按需补全定位和租金；法拍无法匹配时人工关联。</p></div></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
     <CollectionControls active={!!summary?.active} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} />
-    <div className="review-tabs">{[['admitted', '已收录', summary?.admitted], ['excluded', '不收录', summary?.excluded], ['auctions', '法拍待关联', summary?.auction_pending]].map(([key, label, count]) =>
-      <button key={key} aria-pressed={mode === key} onClick={() => changeMode(String(key))}>{label}（{count ?? '—'}）</button>)}</div>
-    <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索小区名称、地址" value={q} onChange={e => { setQ(e.target.value); setPage(1); setLoading(true); }} />
+    <div className="review-tabs">{[['admitted', '已收录', summary?.admitted], ['excluded', '不收录', summary?.excluded], ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]].map(([key, label, count]) =>
+      <button key={key} aria-pressed={mode === key} onClick={() => changeMode(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>
+    {mode !== 'rental' && <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索小区名称、地址" value={q} onChange={e => { setQ(e.target.value); setPage(1); setLoading(true); }} />
       {mode !== 'auctions' && <select aria-label="目录区域" value={district} onChange={e => { setDistrict(e.target.value); setPage(1); setLoading(true); }}><option value="滨江">滨江区</option><option value="萧山">萧山接壤目录</option><option value="">全部区域</option></select>}
       <CatalogClassificationFilter mode={mode} value={mode === 'admitted' ? marketFilter : propertyFilter} propertyTypes={propertyTypes}
         onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
       {mode === 'admitted' && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
       {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
       <button className="btn btn-secondary" onClick={() => { setLoading(true); setRevision(v => v + 1); }}>刷新名单</button>
-      {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}</div>
+      {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}</div>}
     {error && <p role="alert" className="directory-warning">{error}</p>}{notice && <p role="status">{notice}</p>}
+    {mode === 'rental' ? (summary?.active ? <RentalAssociationReview onChanged={changed} /> :
+      <p role="status" className="directory-muted">名单流程尚未启用，暂无租金待处理清单。</p>) :
     <div className="directory-workspace"><div className="directory-list-panel">
       {loading ? <p role="status">加载名单…</p> : summary?.active && <><p className="directory-muted">当前筛选：{total} 条</p>
         {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode === 'excluded'} select={row => void select(row)}
@@ -270,7 +273,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         {detail.sources?.map(s => <DirectorySourceCard key={s.id} item={s} />)}
         {detail.admission && <details><summary>历史审核记录</summary><p>{detail.admission.decision_kind === 'migration' ? '历史资料初始化' : detail.admission.decision_kind === 'manual' ? '历史人工决定' : '历史收录决定'}</p><p>{detail.admission.reason}</p><p className="directory-muted">当前名单按透明售房网有效资料计算，上述内容仅为历史记录。</p></details>}
         <details><summary>历史操作</summary>{detail.events?.map(e => <p key={e.seq}>{e.created_at.slice(0, 19)} · {e.action}{e.payload.reason ? ` · ${e.payload.reason}` : ''}</p>)}</details></>}
-    </aside>}</div>
-    {summary?.active && <details className="review-rental"><summary>租金来源待处理</summary><p className="directory-muted">查不到或有多个候选的房天下来源在这里处理，不影响住宅名单。</p><RentalAssociationReview onChanged={changed} /></details>}
+    </aside>}</div>}
   </section>;
 }
