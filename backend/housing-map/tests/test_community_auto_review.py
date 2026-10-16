@@ -137,6 +137,29 @@ def test_alias_changed_address_does_not_match_by_position(tmp_path):
     assert auto.preview()['counts']['merge'] == 0
 
 
+def test_similar_name_without_substring_still_suspicious(tmp_path):
+    # "清河雅苑"与"清河花园"互不为子串,旧的包含判定会放行;通名剥离后专名相同,
+    # name_similarity 兜底转人工,不再静默 admit 成两个小区。
+    store, auto = setup(tmp_path)
+    add(store)
+    store.create('清河花园', district='滨江', address='滨江区清河路1号')
+    add(store, '2', name='清河雅苑', address='滨江区清河路2号')
+    preview = auto.preview()
+    assert preview['counts'].get('admit', 0) == 0
+    assert any('人工核对' in reason for i in preview['items'] for reason in i.get('reasons', []))
+
+
+def test_phase_conflict_names_not_flagged_by_similarity(tmp_path):
+    # 分期不同(一期/二期)字面像但不是一家:相似度短路为 0,不因分数额外拦截。
+    store, auto = setup(tmp_path)
+    add(store)
+    add(store, '2', name='清河花园一期', address='滨江区清河路9号')
+    add(store, '3', name='清河花园二期', address='滨江区清河路10号')
+    preview = auto.preview()
+    reasons = [reason for i in preview['items'] for reason in i.get('reasons', [])]
+    assert not any('相似' in reason for reason in reasons)
+
+
 def test_preview_cli_diagnostic_report_has_no_business_writes(tmp_path, monkeypatch):
     from src.services.community_auto_review import main
     store, _ = setup(tmp_path); add(store)

@@ -15,11 +15,14 @@ from src.core.boundary import is_in_scope, is_in_xiaoshan_border
 from src.services.community_admission import effective_type, property_facts
 from src.services.community_registry import CommunityRegistry, dump, normalized, now
 from src.services.community_review import ReviewWorkspace, same_community
+from src.services.name_similarity import name_similarity
 from src.services.residential_classifier import classify_sources
 
 RULE_VERSION = 'community-auto-v5'
 TABLES = ('communities', 'sources', 'community_admission', 'rejected', 'review_candidates', 'review_members')
 SUSPICIOUS_NAME = re.compile(r'(?:大道|路|街|巷)(?:小区)?$|(?:停车场|车库|售楼处|出入口|门岗|物业服务中心)$')
+# 审核是保守门:判定只决定"转人工",多转不出错,少转才出错,阈值低于租金自动绑的 0.92。
+REVIEW_SIMILARITY = 0.85
 
 
 def rows(db, table):
@@ -116,8 +119,11 @@ def decide(group, members, *, groups, sources, masters, admissions, rejected, fa
     for master in masters:
         if master['community_id'] == cid:
             continue
-        names = {normalized(n) for n in [master['community_name'], master.get('community_alias'), *master.get('aliases', [])] if n}
-        suspicious = any(normalized(m['name']) in n or n in normalized(m['name']) for m in members for n in names)
+        name_texts = [n for n in [master['community_name'], master.get('community_alias'), *master.get('aliases', [])] if n]
+        names = {normalized(n) for n in name_texts}
+        suspicious = any(normalized(m['name']) in normalized(text) or normalized(text) in normalized(m['name'])
+                         or name_similarity(m['name'], text) >= REVIEW_SIMILARITY
+                         for m in members for text in name_texts)
         if not suspicious:
             continue
         if master.get('deleted') or master.get('merged_to') or admissions.get(master['community_id'], {}).get('auto_review_locked') or admissions.get(master['community_id'], {}).get('state') == 'excluded':
@@ -143,7 +149,10 @@ def decide(group, members, *, groups, sources, masters, admissions, rejected, fa
             return result('merge', '完整名称/别名、区域与地址或位置一致，补充已有住宅来源', target_id=target_id)
         return result('pending', '已有同名、分期或相似小区，须人工核对')
     for other in groups:
-        if other['id'] != group['id'] and other['state'] == 'pending' and (normalized(group['name']) in normalized(other['name']) or normalized(other['name']) in normalized(group['name'])):
+        if other['id'] != group['id'] and other['state'] == 'pending' and (
+                normalized(group['name']) in normalized(other['name'])
+                or normalized(other['name']) in normalized(group['name'])
+                or name_similarity(group['name'], other['name']) >= REVIEW_SIMILARITY):
             return result('pending', '另有同名候选，地址或分期仍有疑点')
     if any(rid in {m['id'] for m in members} for rid, _ in rejected):
         return result('pending', '来源有人工拒绝关联记录')
