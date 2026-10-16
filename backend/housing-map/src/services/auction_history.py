@@ -79,7 +79,11 @@ def associate_records(rows, communities, mappings, *, keep_unmatched=False):
         cid = cid or mappings.get((source, 'auction_id', str(row['auction_id'])))
         if not cid and not registry:
             matches = names.get(row.get('community_name'), set())
-            cid = next(iter(matches)) if len(matches) == 1 else None
+            if len(matches) == 1:
+                cid = next(iter(matches))
+            else:
+                from src.services.auction_fetcher import fuzzy_community_match
+                cid = (fuzzy_community_match(row.get('community_name') or '', communities) or {}).get('community_id')
         if cid or keep_unmatched:
             associated.append({**row, 'community_id': cid})
     return associated

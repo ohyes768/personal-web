@@ -13,6 +13,13 @@ NOW = datetime(2026, 10, 12, 12, tzinfo=ZoneInfo('Asia/Shanghai'))
 COMMUNITIES = [{'community_id': 'c', 'community_name': '小区', 'community_alias': '花园'}]
 
 
+@pytest.fixture(autouse=True)
+def isolated_registry(monkeypatch, tmp_path):
+    # 名称匹配只在没有 registry 的 legacy 路径生效;真实 data 目录已存在
+    # community_registry.sqlite3,不隔离会让本文件所有匹配断言失效。
+    monkeypatch.setattr(history, 'MAPPING_PATH', tmp_path / 'auction_community_mappings.json')
+
+
 def row(aid, **changes):
     return dict(source='laipai', auction_id=str(aid), asset_id=str(aid),
                 community_name='花园', status='done', deal_price_yuan=3000000,
@@ -61,6 +68,18 @@ def test_unique_names_conflicts_and_explicit_mapping(tmp_path):
         path.write_text(json.dumps({'version': 1, 'mappings': entries}))
         with pytest.raises(ValueError):
             history.load_mappings(path, communities)
+
+
+def test_associate_records_legacy_fuzzy_unique_only(tmp_path):
+    sole = [{'community_id': 'c', 'community_name': '白金海岸花园'}]
+    rows = [{**row(1), 'community_name': '白金海岸花园'}, {**row(2), 'community_name': '白金海岸花园3幢'},
+            {**row(3), 'community_name': '康悦名郡3幢'}]
+    out = history.associate_records(rows, sole, {}, keep_unmatched=True)
+    got = {r['auction_id']: r['community_id'] for r in out}
+    assert got['1'] == 'c' and got['2'] == 'c' and got['3'] is None
+    ambiguous = sole + [{'community_id': 'd', 'community_name': '白金海岸雅苑'}]
+    out = history.associate_records([row(2)], ambiguous, {}, keep_unmatched=True)
+    assert out[0]['community_id'] is None
 
 
 def test_missing_identity_and_invalid_numbers_are_explicit():

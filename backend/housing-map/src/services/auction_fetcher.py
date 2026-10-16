@@ -96,6 +96,26 @@ def community_name_index(communities):
     return names
 
 
+def fuzzy_community_match(name, communities):
+    """精确名未命中时的唯一高分候选;并列或低分一律交人工。
+
+    标的名称通常是小区名的超集(小区名+幢号房号),partial_ratio 吃包含关系;
+    两个小区同时过线说明身份有歧义,绝不自动选边。
+    """
+    from src.services.name_similarity import AUTO_THRESHOLD, best_similarity
+    scored = []
+    for community in communities:
+        if not community.get('community_id'):
+            continue
+        score = best_similarity(name, community)
+        if score >= AUTO_THRESHOLD:
+            scored.append((score, str(community['community_id'])))
+    if len(scored) != 1:
+        return None
+    score, community_id = scored[0]
+    return {'community_id': community_id, 'similarity': score}
+
+
 def normalize_auction(data, communities):
     if str(data.get("area_code")) != str(BINJIANG_CODE) or data.get("second_class") != "residence":
         return None
@@ -130,7 +150,8 @@ def normalize_auction(data, communities):
         area_source = "announcement" if area else None
     name = plain_text(data.get("cell_name"))
     matches = community_name_index(communities).get(name, set())
-    community_id = next(iter(matches)) if len(matches) == 1 else None
+    fuzzy = fuzzy_community_match(name, communities) if not matches else None
+    community_id = next(iter(matches)) if len(matches) == 1 else (fuzzy or {}).get('community_id')
     deal_price = money(data.get("deal_price")) if status == "done" else None
     url = data.get("from_where_url")
     url = url if isinstance(url, str) and urlparse(url).scheme in {"https", "http"} and urlparse(url).hostname else None

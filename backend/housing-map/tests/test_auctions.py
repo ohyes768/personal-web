@@ -53,6 +53,29 @@ def test_conflicting_address_skips_record_instead_of_aborting():
                               "object_address": "杭州市西兴街道康悦名郡小区"}, []) is None
 
 
+def test_fuzzy_match_binds_unique_high_score_and_refuses_ambiguous():
+    from src.services.auction_fetcher import fuzzy_community_match
+    sole = [{"community_id": "c", "community_name": "倾城之恋花园", "community_alias": "倾城之恋"}]
+    # 标的名是小区名+幢号房号的超集:唯一候选高分自动关联
+    hit = fuzzy_community_match("倾城之恋花园19幢1901室", sole)
+    assert hit == {"community_id": "c", "similarity": hit["similarity"]} and hit["similarity"] >= 0.92
+    # 无关名称低分不绑
+    assert fuzzy_community_match("康悦名郡3幢302室", sole) is None
+    # 两个小区共享专名(去通名后同为"倾城之恋"):身份歧义,不选边
+    both = sole + [{"community_id": "d", "community_name": "倾城之恋雅苑"}]
+    assert fuzzy_community_match("倾城之恋19幢", both) is None
+    # 分期冲突(一期 vs 二期)零分不绑
+    assert fuzzy_community_match("倾城之恋花园一期19幢",
+                                 [{"community_id": "d", "community_name": "倾城之恋花园二期"}]) is None
+
+
+def test_normalize_auction_falls_back_to_fuzzy_when_name_not_exact():
+    communities = [{"community_id": "c", "community_name": "倾城之恋花园", "community_alias": "倾城之恋"}]
+    # cell_name 带幢号,精确索引 miss,唯一高分候选兜底
+    assert normalize_auction({**detail(), "cell_name": "倾城之恋花园19幢"}, communities)["community_id"] == "c"
+    assert normalize_auction({**detail(), "cell_name": "康悦名郡3幢"}, communities)["community_id"] is None
+
+
 def test_collect_paginates_filters_and_keeps_old_rounds(tmp_path):
     path = tmp_path / "records.json"
     pages = [{"count": 3, "list": [{"auction_id": 1, "area_code": 330108}, {"auction_id": 2, "area_code": 330106}]},
