@@ -4,7 +4,8 @@
 修改 backend/rss-relay 或 apps/rss-relay 的渠道推送、管理、订阅和对接文档时读取本文件。
 
 ## Signatures
-- POST /api/post：{title,content,url?,source?,channel?}。
+- POST /api/post：{title,content,url?,source?,channel?}；201 返回 {id,created_at,file,detail_url}。
+- GET /api/post/{id}：单篇文章，响应体字段与 /api/posts 列表项一致；未知/非法/已过期（>15天）id 均 404。无鉴权，id 即凭证（{时间戳}-{6位hex}，不可枚举）。
 - GET /api/rss.xml?token=...&channel=...&limit=50；省略channel为全量。
 - GET /api/posts?limit=50&channel=xinwen；省略channel为全量，未知渠道404，停用渠道历史可读。
 - GET /api/channels?include_disabled=true：{channels:[{id,title,description,enabled}]}。
@@ -21,10 +22,13 @@ channel为稳定内容频道，source记录推送工具，不可互相推断。�
 网页“渠道”入口使用统一紧凑弹窗，复制订阅与管理共用列表；名称和说明单行截断，编辑和停用/恢复按钮直接显示，桌面位于名称行右侧，手机位于说明行右侧。编辑表单和推送示例按需展开。停用默认隐藏，显示后仍可复制历史订阅链接；系统渠道不可编辑或停用。变更成功使用API响应更新弹窗并刷新主页渠道清单，不整表加载以免丢失滚动位置。
 RSS_RELAY_TOKEN继续保护所有feed；NEXT_PUBLIC_RSS_TOKEN供现有网页订阅链接。RSS_RELAY_PUBLIC_FEED_URL可覆盖后端公开self URL；对接示例与API一致，不日志输出完整带token链接。
 
+详情页契约：detail_url 基址取 app.rss.channel.link（rstrip("/") 后拼 /view/{id}），不新增配置项，反代路径变化时只改这一处；后端不校验该 URL 可达。前端详情页路由 src/app/view/[id]/page.tsx（basePath=/rss），三态：加载骨架 / 404（"文章不存在或已过期"+保留期说明）/ 错误重试。store.find_post 的 id 校验（_validate_post_id 防路径穿越）必须先于任何文件系统访问；过期判断内置 max_age_days=15，与 list_posts 语义一致。
+
 ## Validation & Error Matrix
 | 行为 | 状态 |
 |---|---|
 | 未知推送channel / 非法字段 | 422 |
+| 未知/非法/过期 post id（单篇读取） | 404 |
 | 重复channel ID / 已停用渠道推送 | 409 |
 | 未知渠道feed或编辑目标 | 404 |
 | 无效RSS token | 401 |
@@ -42,6 +46,10 @@ Bad：使用source=openclaw自动分到新闻联播；用截断后的50篇推导
 ## Wrong vs Correct
 Wrong：list_posts(limit=50)之后按channel筛选。
 Correct：list_posts中先应用channel过滤，再排序并截取limit。
+Wrong：前端按 `e.message.includes('404')` 判断单篇不存在——后端 404 detail 是 "Post not found"，消息不含 "404"，判断永不成立。
+Correct：api-client 抛带 status 的 ApiError，按 `e.status === 404` 分支。
+Wrong：basePath=/rss 下原生 `<a href="/">` 当"返回列表"——原生 a 不补 basePath 前缀，实际跳驾驶舱首页。
+Correct：写 `href="/rss"`（Next `<Link>` 才自动补 basePath）。
 Wrong：每次启动把app.yaml种子覆盖channels.json。
 Correct：只在登记文件不存在时初始化，已有文件是运行时来源。
 

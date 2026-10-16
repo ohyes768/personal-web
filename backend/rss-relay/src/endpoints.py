@@ -13,7 +13,7 @@ from pydantic import ValidationError
 from .channels import ChannelRegistry, ChannelCreate, ChannelUpdate, CHANNEL_PATTERN, UNCLASSIFIED
 
 from .rss_utils import build_rss_xml, truncate_for_summary
-from .store import generate_id, write_post, list_posts, delete_post as delete_post_file
+from .store import generate_id, write_post, list_posts, find_post as find_post_file, delete_post as delete_post_file
 
 
 EAST8 = timezone(timedelta(hours=8))
@@ -132,6 +132,7 @@ async def create_post(req: PostRequest):
         created_at=created_at,
         channel=channel_id,
     )
+    channel_link = (_RSS_CHANNEL_META.get("link") or "").rstrip("/")
     logger.info(
         f"接收推送 id={post_id} title={req.title!r} source={req.source!r}"
     )
@@ -139,6 +140,7 @@ async def create_post(req: PostRequest):
         "id": post_id,
         "created_at": created_at.isoformat(),
         "file": str(file_path).replace("\\", "/"),
+        "detail_url": f"{channel_link}/view/{post_id}",
     }
 
 
@@ -253,6 +255,27 @@ async def list_posts_json(
             }
             for p in posts
         ],
+    }
+
+
+@router.get("/api/post/{post_id}")
+async def get_post(post_id: str):
+    """读取单篇 post（详情页用，id 即凭证，无独立鉴权）。
+
+    响应体与 /api/posts 列表项一致；id 非法、不存在或已过保留期为 404。
+    """
+    post = find_post_file(_POSTS_DIR, post_id, max_age_days=_RETENTION_DAYS)
+    if post is None:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return {
+        "id": post["id"],
+        "title": post["title"],
+        "url": post["url"],
+        "source": post["source"],
+        "channel": post["channel"],
+        "created_at": post["created_at"].isoformat(),
+        "content": post["content"],
+        "preview": truncate_for_summary(post["content"], 200),
     }
 
 

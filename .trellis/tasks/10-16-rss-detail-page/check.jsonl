@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/rss-relay/backend/contracts.md", "reason": "检查新增 GET /api/post/{id}、detail_url 与详情页是否符合既有契约：错误矩阵、channel/source 语义、无鉴权边界声明"}

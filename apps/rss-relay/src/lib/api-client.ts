@@ -3,6 +3,17 @@
  * 复制自 apps/douyin/src/lib/api-client.ts，去掉 wrapped 模式（rss-relay 后端不走 {success, data} 包裹）
  */
 
+/** 带 HTTP 状态码的错误；调用方可按 status 区分 404 等场景 */
+class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 class ApiClient {
   private baseUrl: string;
 
@@ -22,7 +33,8 @@ class ApiClient {
 
     if (!response.ok) {
       const body = await response.json().catch(() => null);
-      throw new Error(typeof body?.detail === 'string' ? body.detail : `请求失败（${response.status}）`);
+      const message = typeof body?.detail === 'string' ? body.detail : `请求失败（${response.status}）`;
+      throw new ApiError(message, response.status);
     }
 
     // 204 No Content 等没有 body 的响应
@@ -80,5 +92,5 @@ class ApiClient {
   }
 }
 
-export { ApiClient };
+export { ApiClient, ApiError };
 export const directClient = new ApiClient();

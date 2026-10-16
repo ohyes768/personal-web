@@ -10,7 +10,8 @@
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/post` | 接收 Markdown 推送 |
+| POST | `/post` | 接收 Markdown 推送，201 返回 `{id,created_at,file,detail_url}` |
+| GET | `/post/{id}` | 读取单篇文章，字段与 `/posts` 列表项一致；不存在或已过保留期为 404 |
 | GET | `/rss.xml?token=…&channel=xinwen&limit=50` | 新闻联播订阅；省略 channel 返回全部 |
 | GET | `/channels` | 启用渠道清单 `{channels:[{id,title,description,enabled}]}` |
 | GET | `/channels?include_disabled=true` | 管理视图完整清单 |
@@ -34,6 +35,7 @@ curl -X POST 'https://web.duomi77.cn:9443/rss/api/rss-relay/post' \
 ```
 
 - `title`、`content` 必填且非空；`url` 可选。
+- 推送成功返回 `detail_url`，即文章详情页（浏览器/手机可直接打开），由 `app.rss.channel.link` 拼接生成。
 - `channel` 是内容渠道，例如 `xinwen`；`source` 是推送工具来源，例如 `openclaw`，两者独立。
 - 省略 channel 或传 null 归系统渠道 `unclassified`（未分类）；旧文章缺少字段也归未分类，不自动猜测历史来源。
 - 渠道 ID 为 1–64 个小写字母、数字或分隔用连字符（例如 `xinwen`、`bilibili-subtitle`），创建后不可修改。名称去首尾空格后 1–100 字，说明最多 500 字。
@@ -53,6 +55,7 @@ RSS token 来自环境变量 `RSS_RELAY_TOKEN`，所有 feed 均校验；无效�
 鉴权通过后，未知渠道为 404。订阅链接不要公开分享。
 各渠道即使没有文章也可订阅；先按渠道筛选，再排序取 limit（默认 50，最多 200），文章 GUID 保持不变。
 网页列表同样先筛选再取 limit；未知渠道返回 404，停用渠道仍可查询历史文章。
+每篇文章有公开详情页 `https://web.duomi77.cn:9443/rss/view/{id}`（即推送返回的 `detail_url`），无需 token，id 即凭证；文章不存在或超过 15 天保留期为 404。
 
 原来无 channel 的链接继续返回全部；推送端加入 channel 后，新文章进入对应渠道。
 阅读器先添加独立订阅，再取消全量订阅，避免重复。历史归属迁移需另行确认。

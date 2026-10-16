@@ -161,6 +161,26 @@ def _validate_post_id(post_id: str) -> bool:
     return True
 
 
+def find_post(posts_dir: Path, post_id: str, max_age_days: int = 15) -> dict | None:
+    """按 id 读取单篇 post。
+
+    id 非法、文件不存在、解析失败或超过保留期返回 None（调用方转 404）。
+    过期语义与 list_posts 一致：详情链接随文章保留期失效。
+    """
+    if not _validate_post_id(post_id):
+        return None
+    file_path = posts_dir / f"{post_id}.md"
+    if not file_path.exists():
+        return None
+    post = parse_post(file_path)
+    if post is None:
+        return None
+    cutoff = datetime.now(EAST8) - timedelta(days=max_age_days)
+    if post["created_at"] < cutoff:
+        return None
+    return post
+
+
 def delete_post(posts_dir: Path, post_id: str) -> bool:
     """删除一个 post 文件。返回是否真的删了一个文件。
 

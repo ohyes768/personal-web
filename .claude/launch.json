@@ -14,6 +14,12 @@
       "port": 3006
     },
     {
+      "name": "rss-relay-api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "--directory", "backend/rss-relay", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8095", "--no-access-log"],
+      "port": 8095
+    },
+    {
       "name": "housing-map-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/housing-map", "dev"],

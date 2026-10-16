@@ -1,5 +1,5 @@
-import { directClient } from './api-client';
-import type { Channel, PostsResponse } from './types';
+import { directClient, ApiError } from './api-client';
+import type { Channel, PostInfo, PostsResponse } from './types';
 
 export const rssRelayApi = {
   getChannels: (includeDisabled = false) => directClient.get<{ channels: Channel[] }>(
@@ -15,6 +15,16 @@ export const rssRelayApi = {
    */
   getPosts: (limit = 50, channel?: string) =>
     directClient.get<PostsResponse>('/rss/api/rss-relay/posts', { limit, ...(channel ? { channel } : {}) }),
+
+  /** 读取单篇 post（详情页用）。404 返回 null；其他错误 throw。 */
+  getPost: async (id: string): Promise<PostInfo | null> => {
+    try {
+      return await directClient.get<PostInfo>(`/rss/api/rss-relay/post/${encodeURIComponent(id)}`);
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 404) return null;
+      throw e;
+    }
+  },
 
   /** 删除一篇 post。404 时 throw，调用方 catch。 */
   deletePost: (id: string) =>

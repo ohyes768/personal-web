@@ -1,0 +1,1 @@
+{"file": ".trellis/spec/backend/rss-relay/backend/contracts.md", "reason": "rss-relay 后端与网页契约：API 签名、channel/source 语义、错误状态矩阵、原子写入约束，新增接口与详情页必须遵守"}
