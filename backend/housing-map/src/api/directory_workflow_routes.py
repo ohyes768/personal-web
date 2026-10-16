@@ -112,6 +112,36 @@ def retry(cid: str):
     return result(action)
 
 
+class AdmissionDecision(BaseModel):
+    revision: int = Field(ge=1)
+    reason: str = Field('', max_length=300)
+
+
+@router.post('/catalog/{cid}/exclude')
+def exclude_catalog(cid: str, body: AdmissionDecision):
+    registry = require_store()
+    def action():
+        row = next((c for c in flow.inventory(registry, registry.path.parent) if c['community_id'] == cid), None)
+        if not row or row.get('source_record_id'):
+            raise ValueError('小区不存在或已删除')
+        registry.decide_admission(cid, 'exclude', revision=body.revision, reason=body.reason)
+        return registry.admission(cid)
+    return result(action)
+
+
+@router.post('/catalog/{cid}/resume')
+def resume_catalog(cid: str, body: AdmissionDecision):
+    registry = require_store()
+    def action():
+        current = registry.admission(cid)
+        if current.get('decision_kind') != 'manual' or not (current.get('state') == 'excluded' or current.get('auto_review_locked')):
+            raise ValueError('只有人工排除的小区可以恢复自动分类')
+        registry.decide_admission(cid, 'restore-admission', revision=body.revision)
+        registry.decide_admission(cid, 'allow-auto-review', revision=body.revision + 1)
+        return registry.admission(cid)
+    return result(action)
+
+
 @router.get('/positions')
 def position_status():
     return result(lambda: position_job().snapshot())

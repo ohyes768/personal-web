@@ -71,6 +71,20 @@ def test_manual_exclusion_and_deleted_sources_survive(store,tmp_path):
     assert synchronize(store,tmp_path)==0 and store.sources()[0]['status']=='ignored'
 
 
+def test_directory_auto_admit_manual_exclude_and_resume(store,tmp_path):
+    activate(store);store.ingest(facts());assert synchronize(store,tmp_path)==1
+    c=admitted(store,tmp_path)[0]
+    with pytest.raises(ValueError):store.decide_admission(c['community_id'],'exclude',revision=1)
+    store.decide_admission(c['community_id'],'exclude',revision=1,reason='高德未找到')
+    assert admitted(store,tmp_path)==[]
+    row=inventory(store,tmp_path)[0]
+    assert row['admission_state']=='excluded' and row['qualification']=='manual_exclusion' and row['exclusion_reason']=='高德未找到'
+    assert synchronize(store,tmp_path)==0 and not admitted(store,tmp_path)
+    store.decide_admission(c['community_id'],'restore-admission',revision=2)
+    store.decide_admission(c['community_id'],'allow-auto-review',revision=3)
+    assert admitted(store,tmp_path) and inventory(store,tmp_path)[0]['qualification']=='eligible'
+
+
 def test_materialize_complete_only_no_duplicates_or_rejected_identity(store,tmp_path):
     activate(store);s=store.ingest(facts());assert synchronize(store,tmp_path)==1
     assert synchronize(store,tmp_path)==0 and len(admitted(store,tmp_path))==1

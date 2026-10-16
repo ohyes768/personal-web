@@ -160,6 +160,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0);
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
+  const [excluding, setExcluding] = useState(false); const [excludeReason, setExcludeReason] = useState('');
   const detailVersion = useRef(0);
   const finishes = useRef<Record<string, string>>({});
   const optimistic = useRef<string | null>(null);
@@ -231,7 +232,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   function changeMode(value: string) { setMode(value); setPage(1); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
-    setDetail(row); setAuction(null);
+    setDetail(row); setAuction(null); setExcluding(false); setExcludeReason('');
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
       const value = await workflowRequest<CatalogRow>(path);
@@ -250,6 +251,18 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       if (detailVersion.current === version) setDetail({ ...fresh, position });
       setRevision(v => v + 1); onChanged();
     } catch (e) { setError(e instanceof Error ? e.message : '定位操作失败，请刷新'); }
+    finally { setBusy(false); }
+  }
+  async function admissionAction(kind: 'exclude' | 'resume', reason = '') {
+    if (!detail) return;
+    const rev = detail.admission?.revision;
+    if (!rev) { setError('缺少审核版本，请刷新后重试'); return; }
+    setBusy(true); setError('');
+    try {
+      await workflowRequest(`/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}/${kind}`, 'POST', { revision: rev, reason });
+      setNotice(kind === 'exclude' ? '已转为不收录，自动流程不会再收录；可在不收录列表恢复。' : '已恢复自动分类，是否符合收录条件由透明售房网资料重新判定。');
+      changed();
+    } catch (e) { setError(e instanceof Error ? e.message : '操作失败，请刷新'); }
     finally { setBusy(false); }
   }
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
@@ -283,6 +296,13 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} busy={busy} action={(...args) => void action(...args)} />}
       {detail && <><p>透明售房网实际地址：{detail.address || '待补充'}</p><p>高德地图地址：{detail.position?.selected?.address || detail.geographic_address || '待补全'}</p>
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
+        {!detail.source_record_id && detail.qualification === 'manual_exclusion' && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
+        {detail.admission_state === 'admitted' && (excluding ? <div className="directory-actions">
+          <label>不收录原因<input value={excludeReason} maxLength={300} placeholder="例如：高德地图未找到该小区" onChange={e => setExcludeReason(e.target.value)} /></label>
+          <div><button className="btn btn-primary" disabled={busy || !excludeReason.trim()} onClick={() => void admissionAction('exclude', excludeReason)}>确认不收录</button>
+            <button className="btn btn-secondary" disabled={busy} onClick={() => { setExcluding(false); setExcludeReason(''); }}>取消</button></div>
+          <p className="directory-muted">转为不收录后将移出地图、租金和法拍名单，自动流程不会再收录；之后可在不收录列表恢复自动分类。</p>
+        </div> : <button className="btn btn-secondary" disabled={busy} title="需要填写不收录原因" onClick={() => setExcluding(true)}>转为不收录</button>)}
         {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} query={() => void positionAction('query')} confirm={body => void positionAction('confirm', body)} />}
         <button className="btn btn-secondary" disabled={busy} onClick={() => void action(`/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}/retry`, 'POST')}>更新透明售房网资料</button>
         {detail.sources?.map(s => <DirectorySourceCard key={s.id} item={s} />)}
