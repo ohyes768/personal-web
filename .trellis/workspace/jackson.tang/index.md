@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 40
+- **Total Sessions**: 41
 - **Last Active**: 2026-10-16
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1474 | Active |
+| `journal-1.md` | ~1508 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 41 | 2026-10-16 | 高德补全唯一候选自动绑定与存量迁移 | `1eeb165` | `master` |
 | 40 | 2026-10-16 | 高德位置补全别名重查与包含匹配 | `6eca0a3` | `master` |
 | 39 | 2026-10-15 | Housing Map 移除高德小区名单采集 | `f64b135` | `master` |
 | 38 | 2026-10-15 | skill-manager git 同步提速：ls-remote 合并 + 浅拉取 | `8ccf3d6` | `master` |

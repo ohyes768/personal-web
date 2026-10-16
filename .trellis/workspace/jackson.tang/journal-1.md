@@ -1472,3 +1472,37 @@ Skill Manager：移除安装弹框环境复选框，固定使用打开时当前�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 41: 高德补全唯一候选自动绑定与存量迁移
+
+**Date**: 2026-10-16
+**Task**: 高德补全唯一候选自动绑定与存量迁移
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+用户拍板放宽自动匹配：结果未截断且候选唯一即 matched（含包含命中与地址不一致），多候选/截断仍 review。部署 NAS 后两次迁移：先重置 53 个 not_found 重查（得 24 个新候选），再按新规则重置 113 个单一候选 review 重跑批量，自动绑定 98 个。最终分布：manual 2 / matched 98 / review 26 / not_found 29。人工工作量从 124 降到 26（多候选或查询截断）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1eeb165` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
