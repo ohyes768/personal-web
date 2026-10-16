@@ -1438,3 +1438,37 @@ Skill Manager：移除安装弹框环境复选框，固定使用打开时当前�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 40: 高德位置补全别名重查与包含匹配
+
+**Date**: 2026-10-16
+**Task**: 高德位置补全别名重查与包含匹配
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+排查高德 POI 补全 not_found 误报：实测世茂之西湖系三个小区，确认缺口是搜索只用主名而匹配集合已含别名。position_one 新增别名重查（无候选且未截断时触发，归一化去重、上限 3 个、命中即停）与名称包含匹配（短侧 >=3 字互为子串记宽松候选，仅进 review 绝不自动定位；自动匹配收紧为唯一精确命中+地址相等+未截断）。26 个模块测试、532 全量通过；同步更新 directory-position.md 契约与测试清单。世茂智慧之门在高德无住宅 POI，仍需人工定位。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `6eca0a3` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
