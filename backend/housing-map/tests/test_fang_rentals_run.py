@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from src.services.fang_rentals import CrawlProgress, RentalCrawlCancelled, crawl_runs
+from src.services.fang_rentals import CHALLENGE_PAUSE_MESSAGE, CrawlProgress, FangChallenge, RentalCrawlCancelled, crawl_runs
 
 URL = 'https://zu.fang.com/hz/house-xm2010067741/'
 NEXT_URL = 'https://zu.fang.com/hz/house-xm2010067741/i32/'
@@ -196,3 +196,31 @@ def test_invalid_limits_rejected():
         collect([URL], fetch=lambda u: page(listing()), max_pages=0, delay=0)
     with pytest.raises(ValueError):
         collect([URL], fetch=lambda u: page(listing()), delay=-1)
+
+
+def test_challenge_streak_pauses_remaining_seeds():
+    calls = []
+
+    def fetch(url):
+        calls.append(url)
+        raise FangChallenge('房天下要求滑块验证（IP 被风控），请稍后重试')
+
+    seeds = [URL, SECOND, 'https://zu.fang.com/hz/house-xm997/', 'https://zu.fang.com/hz/house-xm996/']
+    results = collect(seeds, fetch=fetch, delay=0)
+    assert len(results) == 4
+    assert [r.status for r in results] == ['list_failed'] * 4
+    assert results[0].errors[0]['error'].startswith('房天下要求滑块验证')
+    assert results[2].errors[0]['error'] == CHALLENGE_PAUSE_MESSAGE
+    assert results[3].errors[0]['error'] == CHALLENGE_PAUSE_MESSAGE
+    assert len(calls) == 2  # paused seeds never hit the network
+
+
+def test_isolated_challenge_does_not_pause_next_seed():
+    def fetch(url):
+        if url == URL:
+            raise FangChallenge('房天下要求滑块验证（IP 被风控），请稍后重试')
+        return page(listing())
+
+    results = collect([URL, SECOND], fetch=fetch, delay=0)
+    assert results[0].status == 'list_failed'
+    assert results[1].status == 'complete'  # isolated challenge: next seed still crawled

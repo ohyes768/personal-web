@@ -1,6 +1,6 @@
 import json
 import pytest
-from src.services.fang_rentals import crawl, enrich_detail, parse_listing_page, validate_url, write_run
+from src.services.fang_rentals import FangChallenge, FangClient, crawl, enrich_detail, parse_listing_page, validate_url, write_run
 
 URL = 'https://zu.fang.com/hz/house-xm2010067741/'
 
@@ -78,6 +78,30 @@ def test_offpage_pagination_anchor_ends_collection():
     rows, next_url = parse_listing_page(html, URL)
     assert len(rows) == 1
     assert next_url is None  # bad pagination anchor → stop, not raise
+
+
+class _Response:
+    def __init__(self, status, headers):
+        self.status_code = status
+        self.headers = headers
+
+
+class _Session:
+    def __init__(self, responses):
+        self.responses = list(responses)
+        self.calls = []
+
+    def get(self, url, **kwargs):
+        self.calls.append(url)
+        return self.responses.pop(0)
+
+
+def test_fetch_raises_challenge_on_slider_redirect():
+    client = FangClient(timeout=5)
+    client.session = _Session([_Response(302, {'Location': 'https://check.3g.fang.com/check.html?backurl=https%3A%2F%2Fzu.fang.com%2Fhz%2Fhouse-xm1%2F'})])
+    with pytest.raises(FangChallenge, match='滑块'):
+        client.fetch(URL)
+    assert client.session.calls == [URL]  # challenge page is never requested
 
 
 def test_offpage_detail_anchor_is_skipped():

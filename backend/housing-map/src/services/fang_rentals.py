@@ -18,6 +18,13 @@ from urllib.parse import urljoin, urlsplit
 from src.services.tmsf_fetcher import DEFAULT_HEADERS, decode_response_bytes, strip_tags
 
 BASE_URL = 'https://zu.fang.com'
+CHALLENGE_HOST = 'check.3g.fang.com'
+CHALLENGE_PAUSE_SEEDS = 2
+CHALLENGE_PAUSE_MESSAGE = '房天下要求滑块验证（IP 被风控），本轮暂停剩余来源采集，稍后重试'
+
+
+class FangChallenge(ValueError):
+    """Fang redirected to its slider challenge (check.3g.fang.com): IP-level risk control."""
 
 
 def ignored_community(sid):
@@ -140,7 +147,12 @@ class FangClient:
             response = self.session.get(url, headers=DEFAULT_HEADERS,
                                         timeout=self.timeout, allow_redirects=False)
             if response.status_code in {301, 302, 303, 307, 308}:
-                url = validate_url(urljoin(url, response.headers['Location']))
+                target = urljoin(url, response.headers['Location'])
+                if urlsplit(target).hostname == CHALLENGE_HOST:
+                    # Slider challenge: the IP is risk-controlled; retrying just
+                    # burns requests, so fail with an explicit human-readable cause.
+                    raise FangChallenge('房天下要求滑块验证（IP 被风控），请稍后重试')
+                url = validate_url(target)
                 continue
             response.raise_for_status()
             return decode_response_bytes(response.content, response.encoding)
@@ -273,6 +285,7 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
     seen_ids: set[str] = set()
     visited: set[str] = set()
     requests_made = 0
+    challenge_streak = 0
     completed: list[SeedRunResult] = []
 
     def cancelled(partial: SeedRunResult | None) -> RentalCrawlCancelled:
@@ -301,9 +314,20 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
                 progress.processed_seeds += 1
             yield result
             continue
+        if challenge_streak >= CHALLENGE_PAUSE_SEEDS:
+            # Consecutive seeds all hit the slider challenge: remaining seeds
+            # would only repeat it, so pause them without another request.
+            result.status = 'list_failed'
+            result.errors.append({'url': seed, 'stage': 'list', 'error': CHALLENGE_PAUSE_MESSAGE})
+            if progress is not None:
+                progress.processed_seeds += 1
+                progress.current_seed = None
+            yield result
+            continue
         url = seed
         raw_rows = 0
         list_failed = False
+        challenge_hit = False
         for _ in range(max_pages):
             if url in visited:
                 break
@@ -312,6 +336,11 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
                 rows, next_url = parse_listing_page(request(validate_url(url), result), url)
             except RentalCrawlCancelled:
                 raise
+            except FangChallenge as error:
+                challenge_hit = True
+                result.errors.append({'url': url, 'stage': 'list', 'error': str(error)})
+                list_failed = True
+                break
             except Exception as error:
                 result.errors.append({'url': url, 'stage': 'list', 'error': str(error)})
                 list_failed = True
@@ -356,6 +385,7 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
             result.status = 'partial_detail'
         elif raw_rows == 0:
             result.status = 'empty_ok'
+        challenge_streak = challenge_streak + 1 if challenge_hit else 0
         completed.append(result)
         if progress is not None:
             progress.processed_seeds += 1

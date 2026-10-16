@@ -38,6 +38,17 @@ def test_mapping_reused_and_unreliable_search_stopped(tmp_path):
     assert reviews(registry)[0]['reason'] == 'search_failed'
 
 
+def test_slider_challenge_pause_carries_plain_cause(tmp_path):
+    from src.services.fang_rentals import FangChallenge
+    registry = setup(tmp_path)
+    def challenged(c):
+        raise FangChallenge('房天下要求滑块验证（IP 被风控），请稍后重试')
+    pairs, report = prepare_sources(registry, threading.Event(), lambda _: None, challenged, delay=0)
+    assert pairs == [] and report['failed'] == 1
+    entry = reviews(registry)[0]
+    assert entry['reason'] == 'search_failed' and '滑块' in entry['message']
+
+
 def test_single_candidate_auto_binds_on_high_similarity(tmp_path):
     registry = setup(tmp_path)
     # 名字不完全一致（通名差异）的唯一候选：分数达标在入库时即自动绑，且带 auto 证据

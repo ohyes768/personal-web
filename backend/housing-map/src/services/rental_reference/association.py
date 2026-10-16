@@ -218,10 +218,14 @@ def prepare_sources(registry, cancel, progress, discover, *, delay=2, budget=20)
                                 if record['status'] == 'pending':
                                     discovered.append({k: record.get(k) for k in ('id','source_id','name','address','district','evidence','source_url')})
                             candidates = list({r['id']: r for r in [*candidates_for(registry, community), *discovered]}.values())
-                        except ValueError:
+                        except ValueError as exc:
+                            from src.services.fang_rentals import FangChallenge
                             logger.exception('Rental source search paused community_id=%s name=%r requests=%s',
                                              cid, community['community_name'], requests)
-                            search_unavailable = '房天下搜索未生效或要求验证，本轮暂停来源查找'
+                            if isinstance(exc, FangChallenge):
+                                search_unavailable = f'{exc}，本轮暂停来源查找'
+                            else:
+                                search_unavailable = '房天下搜索未生效或要求验证，本轮暂停来源查找'
                             reason, message = 'search_failed', search_unavailable
                         except Exception as exc:
                             from src.services.fang_rentals import RentalCrawlCancelled
