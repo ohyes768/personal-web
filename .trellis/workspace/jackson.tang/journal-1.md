@@ -1506,3 +1506,37 @@ Skill Manager：移除安装弹框环境复选框，固定使用打开时当前�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 42: RSS 详情页与推送返回 detail_url
+
+**Date**: 2026-10-16
+**Task**: RSS 详情页与推送返回 detail_url
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_post 防路径穿越+15天过期404）、POST /api/post 返回体追加 detail_url（基址复用 app.rss.channel.link）；前端 /rss/view/[id] 详情页（markdown 渲染、404 友好提示、移动端适配），api-client 新增携带 status 的 ApiError。无鉴权依赖 id 不可枚举（用户拍板）。pytest 10 通过、build 通过、浏览器端到端验证通过；spec contracts.md 已补契约与 Wrong/Correct 两条。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `187a7b1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
