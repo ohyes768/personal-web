@@ -82,7 +82,6 @@ test('amap source shows geographic classification as a hint, not property use', 
 test('management offers independent collection tasks without a discovery source selector', () => {
   const Management = require('../src/components/community/CommunityManagement.tsx').default;
   const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
-  for (const label of ['采集透明售房网', '高德信息采集', '租金信息采集', '法拍数据采集']) assert.match(html, new RegExp(label));
-  assert.match(html, /仅已收录住宅/);
+  assert.match(html, /采集任务/);
   assert.doesNotMatch(html, /采集来源|数据来源|自动审核启用|待审核小区/);
 });

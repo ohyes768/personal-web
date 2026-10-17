@@ -44,50 +44,88 @@ export async function workflowRequest<T>(path: string, method = 'GET', body?: ob
   return packet.data as T;
 }
 
-export function CollectionControls({ active, jobs, errors, busy, action }: { active: boolean; jobs: Record<string, Job | null>;
-  errors: Record<string, string>; busy: boolean; action: (path: string, method: string, body?: object) => void }) {
-  const lines = tasks.filter(t => {
-    const job = jobs[t.id];
-    return !!errors[t.id] || !!job?.running || !!job?.error ||
-      (!!job && (t.id === 'amap' ? job.processed !== undefined : !restPhases.includes(job.phase)));
-  });
+function taskCounts(t: (typeof tasks)[number], job: Job | null): string {
+  return [job?.stage && stageLabels[job.stage],
+    job?.processed !== undefined && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
+    job?.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
+    job?.updated !== undefined && job.review !== undefined &&
+      `补全 ${job.updated || 0} · 转待确认 ${job.review} · 高德无此地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
+    job?.updated !== undefined && job.review === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
+    job?.matched !== undefined && t.id === 'auction' && `本次法拍 ${job.matched} 条`].filter(Boolean).join(' · ');
+}
+function taskStateOf(t: (typeof tasks)[number], jobs: Record<string, Job | null>, errors: Record<string, string>): 'running' | 'failed' | 'info' {
+  const job = jobs[t.id];
+  return job?.running ? 'running' : (errors[t.id] || job?.error) ? 'failed' : 'info';
+}
+function taskRelevant(t: (typeof tasks)[number], jobs: Record<string, Job | null>, errors: Record<string, string>): boolean {
+  const job = jobs[t.id];
+  return !!errors[t.id] || !!job?.running || !!job?.error ||
+    (!!job && (t.id === 'amap' ? job.processed !== undefined : !restPhases.includes(job.phase)));
+}
+
+/** 采集任务弹层：触发/停止/完整进度都收在弹层里；运行中另有单行状态条常驻（CollectionControls 返回的 summary）。 */
+export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {} }: {
+  active: boolean; jobs: Record<string, Job | null>; errors: Record<string, string>; busy: boolean;
+  action: (path: string, method: string, body?: object) => void; open?: boolean; onOpenChange?: (open: boolean) => void }) {
+  const relevant = tasks.filter(t => taskRelevant(t, jobs, errors));
+  const anyRunning = relevant.some(t => taskStateOf(t, jobs, errors) === 'running');
+  const anyFailed = relevant.some(t => taskStateOf(t, jobs, errors) === 'failed');
   return <>
-    <div className="directory-task-strip" role="group" aria-label="数据采集任务">{tasks.map(t => {
-      const job = jobs[t.id];
-      const running = !!job?.running;
-      const lastRun = job?.finished_at ? `\n上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
-      return <button key={t.id} className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
-        title={t.hint + lastRun} onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.body))}>
-        {running && <span className="directory-task-dot" aria-hidden="true" />}{running ? t.stop : t.label}
-      </button>;
-    })}</div>
-    {lines.length > 0 && <div className="directory-task-status">{tasks.map(t => {
-      const job = jobs[t.id];
-      const problem = errors[t.id] || job?.error || '';
-      const state = job?.running ? 'running' : problem ? 'failed' : 'info';
-      const counts = job ? [job.stage && stageLabels[job.stage],
-        job.processed !== undefined && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
-        job.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
-        job.updated !== undefined && job.review !== undefined &&
-          `补全 ${job.updated || 0} · 转待确认 ${job.review} · 高德无此地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
-        job.updated !== undefined && job.review === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
-        job.matched !== undefined && t.id === 'auction' && `本次法拍 ${job.matched} 条`].filter(Boolean).join(' · ') : '';
-      const message = job ? [phases[job.phase] || job.phase, counts].filter(Boolean).join(' · ') : '';
-      const issues = [...(job?.errors || []), ...(job?.truncated || [])];
-      return <div key={t.id}>
-        <p className="directory-task-line" data-state={state}>
-          <span className="directory-task-dot" aria-hidden="true" />
-          <strong>{t.short}</strong>
-          {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
-        </p>
-        {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
-        {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
-          <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
-        {issues.length > 0 && <details className="directory-task-sub"><summary>本轮未完成事项（可重试）</summary>
-          {issues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
-      </div>;
-    })}</div>}
+    {relevant.length > 0 && <button type="button" className="directory-task-summary"
+      data-state={anyFailed ? 'failed' : anyRunning ? 'running' : 'info'}
+      aria-haspopup="dialog" onClick={() => onOpenChange(true)}>
+      <span className="directory-task-dot" aria-hidden="true" />
+      {relevant.map(t => {
+        const job = jobs[t.id];
+        const problem = errors[t.id] || job?.error || '';
+        const message = job ? [phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+        return <span key={t.id}><strong>{t.short}</strong> {problem || message}</span>;
+      })}
+      <span className="directory-task-more">详情</span>
+    </button>}
+    {open && <DirectoryDialog title="采集任务" onClose={() => onOpenChange(false)}>
+      {!active && <p className="directory-warning">名单流程尚未启用，采集暂不可用。</p>}
+      {tasks.map(t => {
+        const job = jobs[t.id];
+        const running = !!job?.running;
+        const state = taskStateOf(t, jobs, errors);
+        const problem = errors[t.id] || job?.error || '';
+        const message = job ? [phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+        const lastRun = job?.finished_at ? ` · 上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
+        const issues = [...(job?.errors || []), ...(job?.truncated || [])];
+        return <div key={t.id} className="directory-task-row" data-state={state}>
+          <div className="directory-task-row-head">
+            <span className="directory-task-dot" aria-hidden="true" />
+            <strong>{t.label}</strong>
+            <button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
+              onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.body))}>
+              {running ? t.stop : '开始'}</button>
+          </div>
+          <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
+          {(problem || message) && <p className="directory-task-line" data-state={state}>
+            {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
+          </p>}
+          {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
+          {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
+            <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
+          {issues.length > 0 && <details className="directory-task-sub"><summary>本轮未完成事项（可重试）</summary>
+            {issues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
+        </div>;
+      })}
+    </DirectoryDialog>}
   </>;
+}
+
+/** 标题行右端的采集任务入口：齿轮空闲，运行/失败时以状态点替换并高亮。 */
+export function CollectionTasksButton({ jobs, errors, onOpen }: {
+  jobs: Record<string, Job | null>; errors: Record<string, string>; onOpen: () => void }) {
+  const running = tasks.some(t => jobs[t.id]?.running);
+  const failed = tasks.some(t => errors[t.id] || jobs[t.id]?.error);
+  const state = running ? 'running' : failed ? 'failed' : 'idle';
+  return <button type="button" className="btn btn-secondary directory-task-gear" data-state={state} aria-haspopup="dialog"
+    title={running ? '有采集任务运行中' : failed ? '有采集任务失败' : '采集任务'} onClick={onOpen}>
+    {state === 'idle' ? <span aria-hidden="true">⚙️</span> : <span className="directory-task-dot" aria-hidden="true" />}采集任务
+  </button>;
 }
 
 export function CatalogClassificationFilter({ mode, value, propertyTypes, onChange }: {
@@ -160,6 +198,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [jobs, setJobs] = useState<Record<string, Job | null>>({}); const [jobErrors, setJobErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0);
+  const [tasksOpen, setTasksOpen] = useState(false);
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
   const [excluding, setExcluding] = useState(false); const [excludeReason, setExcludeReason] = useState('');
   const detailVersion = useRef(0);
@@ -267,10 +306,10 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     finally { setBusy(false); }
   }
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
-    <header className="review-heading"><div><p className="review-eyebrow">小区数据管理</p><h2>住宅名单与数据采集</h2>
-      <p className="directory-muted">先采集透明售房网并自动分类，再按需补全定位和租金；法拍无法匹配时人工关联。</p></div></header>
+    <header className="review-heading"><h2>住宅名单与数据采集</h2>
+      <CollectionTasksButton jobs={jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
-    <CollectionControls active={!!summary?.active} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} />
+    <CollectionControls active={!!summary?.active} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
     <div className="review-tabs">{[['admitted', '已收录', summary?.admitted], ['excluded', '不收录', summary?.excluded], ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]].map(([key, label, count]) =>
       <button key={key} aria-pressed={mode === key} onClick={() => changeMode(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>
     {mode !== 'rental' && <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索小区名称、地址" value={q} onChange={e => { setQ(e.target.value); setPage(1); setLoading(true); }} />
@@ -279,7 +318,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
       {mode === 'admitted' && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
       {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
-      <button className="btn btn-secondary" onClick={() => { setLoading(true); setRevision(v => v + 1); }}>刷新名单</button>
+      <button type="button" className="btn btn-secondary directory-refresh" aria-label="刷新名单" title="刷新名单" onClick={() => { setLoading(true); setRevision(v => v + 1); }}>↻</button>
       {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}</div>}
     {error && !detail && !auction && <p role="alert" className="directory-warning">{error}</p>}{notice && <p role="status">{notice}</p>}
     {mode === 'rental' ? (summary?.active ? <RentalAssociationReview onChanged={changed} /> :

@@ -1053,7 +1053,7 @@ function AppHeader({
           </button>
         ) : (
           <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={onRefresh}>
-            <span>🔄</span> 刷新
+            <span>🔄</span> 刷新价格
           </button>
         )}
 

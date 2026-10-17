@@ -36,7 +36,7 @@ test('candidate panel preserves evidence, stale-write revision and manual protec
   assert.match(manual, /人工结果已保护/); assert.match(manual, /人工坐标，无 POI ID/); assert.doesNotMatch(manual, /重新匹配/);
 });
 test('amap job summary reports per-outcome states instead of skip counts', () => {
-  const html = render(React.createElement(CollectionControls, { active: true, busy: false, action() {}, errors: {}, jobs: { amap: {
+  const html = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, action() {}, errors: {}, jobs: { amap: {
     running: false, phase: 'succeeded', processed: 155, total: 155, updated: 1, skipped: 102,
     review: 24, not_found: 29, failed: 0, skipped_by_state: { manual: 2, review: 71, not_found: 29 } } } }));
   assert.match(html, /采集完成/);
@@ -47,7 +47,7 @@ test('amap job summary reports per-outcome states instead of skip counts', () =>
   assert.doesNotMatch(html, /跳过/);
 });
 test('legacy amap job without outcome fields keeps the old wording', () => {
-  const html = render(React.createElement(CollectionControls, { active: true, busy: false, action() {}, errors: {}, jobs: { amap: {
+  const html = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, action() {}, errors: {}, jobs: { amap: {
     running: false, phase: 'partial_failed', processed: 155, total: 155, updated: 0, skipped: 155 } } }));
   assert.match(html, /部分完成/);
   assert.match(html, /补全 0 · 跳过 155/);

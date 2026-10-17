@@ -15,13 +15,13 @@ test('collection status preserves rental units and nested errors', () => {
     total_communities: 5, errors: { total: 1, items: [{ message: '来源未应用关键词' }] } });
   assert.equal(value.processed, 2); assert.equal(value.total, 5);
   assert.equal(value.errors[0].message, '来源未应用关键词');
-  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false,
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
     errors: {}, jobs: { rent: value, amap: { running: true, phase: 'running', processed: 1, total: 3 } }, action() {} }));
   assert.match(html, /部分完成.*已处理 2 \/ 5/); assert.match(html, /来源未应用关键词/);
   assert.match(html, /停止补全定位/); assert.match(html, /仅已收录住宅/); assert.doesNotMatch(html, /%/);
 });
 test('rental task separates actual failures from unqueried communities', () => {
-  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false,
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
     errors: {}, jobs: { rent: { running: false, phase: 'partial_failed',
       association: { checked: 100, failed: 1, deferred: 99 } } }, action() {} }));
   assert.match(html, /查询失败 1 · 未查询 99/);
