@@ -85,7 +85,7 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
       if (!response.ok || !payload.success) throw new Error(payload.detail || '保存失败，请重试');
       setSelectedCommunity('');
       setCandidate('');
-      setNotice(action === 'bind' ? '已绑定，下次更新租金会采集这个小区。' : action === 'skip' ? '已跳过，以后可在“已跳过”中重新处理。' : '已恢复处理，可选择候选或再次更新租金查找来源。');
+      setNotice(action === 'bind' ? '已绑定，下次租金采集会包含这个小区。' : action === 'skip' ? '已跳过，以后可在“已跳过”中重新处理。' : '已恢复处理，可选择候选或再次采集查找来源。');
       await load(); rentalDataChanged(); onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : '操作失败'); }
     finally { setBusy(false); }

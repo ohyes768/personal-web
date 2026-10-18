@@ -184,7 +184,7 @@ function AuctionPanel({ row, busy, action }: { row: Auction; busy: boolean;
     <label>搜索已收录小区<input value={keyword} onChange={e => { setKeyword(e.target.value); setTarget(''); }} /></label>
     <label>关联到<select value={target} onChange={e => setTarget(e.target.value)}><option value="">请选择已收录小区</option>
       {targets.map(c => <option value={c.community_id} key={c.community_id}>{c.community_name} · {c.address || '地址待核对'}</option>)}</select></label>
-    <p className="directory-muted">这里只建立法拍关联；找不到目标时可先跳过，不会新增住宅。</p>
+    <p className="directory-muted">这里只建立法拍关联；找不到目标时可先跳过，不会新增住宅。绑定后可在已收录小区的资料弹框中解除，解除后会回到待关联列表重新核对。</p>
     {error && <p role="alert">{error}</p>}
     <div className="directory-actions"><button className="btn btn-primary" disabled={busy || !target} onClick={() => send('bind')}>确认关联</button>
       <button className="btn btn-secondary" disabled={busy} onClick={() => send(row.skipped ? 'reopen' : 'skip')}>{row.skipped ? '重新处理' : '暂时跳过'}</button></div></>;
@@ -332,6 +332,19 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     } catch (e) { setError(e instanceof Error ? e.message : '操作失败，请刷新'); }
     finally { setBusy(false); }
   }
+  async function unlinkAuctionSource(sourceId: string) {
+    if (!detail) return;
+    const cid = detail.community_id; const version = detailVersion.current;
+    setBusy(true); setError('');
+    try {
+      await workflowRequest(`/directory/sources/${encodeURIComponent(sourceId)}/associate?community_id=${encodeURIComponent(cid)}`, 'DELETE');
+      const fresh = await workflowRequest<CatalogRow>(`/directory/workflow/catalog/${encodeURIComponent(cid)}`);
+      if (detailVersion.current === version) setDetail(fresh);
+      setNotice('已解除法拍关联，该记录回到法拍待关联列表。');
+      setRevision(v => v + 1); onChanged();
+    } catch (e) { setError(e instanceof Error ? e.message : '解除失败，请重试'); }
+    finally { setBusy(false); }
+  }
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
     <header className="review-heading"><h2>住宅名单与数据采集</h2>
       <CollectionTasksButton jobs={jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
@@ -384,7 +397,9 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         <section className="directory-source-section" aria-label="来源资料">
           <div className="directory-source-section-heading"><h4>来源资料</h4><button className="btn btn-secondary" disabled={busy} onClick={() => void refreshDetail()}>{busy ? '处理中…' : '更新资料'}</button></div>
           {notice && <p role="status" className="directory-muted">{notice}</p>}
-          {detail.sources?.length ? detail.sources.map(s => <DirectorySourceCard key={s.id} item={s} compact />) : <p className="directory-muted">暂无来源资料。</p>}
+          {detail.sources?.length ? detail.sources.map(s => <DirectorySourceCard key={s.id} item={s} compact>
+            {s.source === 'laipai' && s.status === 'matched' && <button className="btn btn-secondary" disabled={busy} title="解除后这条法拍记录回到待关联列表，可重新核对" onClick={() => void unlinkAuctionSource(s.id)}>解除法拍关联</button>}
+          </DirectorySourceCard>) : <p className="directory-muted">暂无来源资料。</p>}
         </section>
       </>}
     </DirectoryDialog>}</div>}
