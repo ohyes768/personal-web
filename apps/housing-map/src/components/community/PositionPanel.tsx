@@ -9,17 +9,27 @@ export type Position = { state: string; has_coordinates: boolean; revision?: str
   selected?: PositionPoint; checked_at?: string; confirmed_at?: string; error?: string };
 export const positionLabels: Record<string, string> = { matched: '已匹配', pending: '待补全', review: '待确认',
   not_found: '未找到', error: '查询失败', manual: '人工已确认' };
+export const positionBucketLabels: Record<string, string> = { done: '已定位', review: '待确认', todo: '待处理' };
 
-export function PositionBadge({ position }: { position?: Position }) {
-  return <><span className="directory-badge">{positionLabels[position?.state || 'pending'] || '待补全'}</span>
-    <small>{position?.has_coordinates ? '已有地图坐标' : '缺少地图坐标'}</small>
-    {position?.state === 'pending' && position.has_coordinates && <small>历史坐标不代表已匹配 POI</small>}</>;
+export function positionBucket(state?: string): 'done' | 'review' | 'todo' {
+  return state === 'matched' || state === 'manual' ? 'done' : state === 'review' ? 'review' : 'todo';
+}
+
+export function PositionBadge({ position, compact = false }: { position?: Position; compact?: boolean }) {
+  const state = position?.state || 'pending';
+  const bucket = positionBucket(state);
+  if (compact) return <span className={`directory-badge directory-position-${bucket}`}
+    title={`${positionLabels[state] || '待补全'} · ${position?.has_coordinates ? '已有地图坐标' : '缺少地图坐标'}${state === 'pending' && position?.has_coordinates ? ' · 历史坐标不代表已匹配 POI' : ''}`}>
+    {positionLabels[state] || '待补全'}</span>;
+  return <><span className={`directory-badge directory-position-${bucket}`}>{positionBucketLabels[bucket]}</span>
+    <small>{positionLabels[state] || '待补全'}</small>
+    {bucket !== 'done' && <small>{position?.has_coordinates ? '已有地图坐标' : '缺少地图坐标'}</small>}
+    {state === 'pending' && position?.has_coordinates && <small>历史坐标不代表已匹配 POI</small>}</>;
 }
 
 export default function PositionPanel({ position, busy, query, confirm }: { position: Position; busy: boolean;
   query: () => void; confirm: (body: object) => void }) {
   const [poi, setPoi] = useState('');
-  const [lng, setLng] = useState(''); const [lat, setLat] = useState(''); const [address, setAddress] = useState('');
   const selected = position.selected;
   return <section className="directory-linker" aria-label="高德定位详情">
     <h4>高德定位 · {positionLabels[position.state] || '待补全'}</h4>

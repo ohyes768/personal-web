@@ -1176,6 +1176,9 @@ body {
 .directory-residential { background:#e8f4ea; color:#1f6b3a; border:1px solid #b6dcc1; }
 .directory-pending { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
 .directory-non-residential { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
+.directory-position-done { background:#e8f4ea; color:#1f6b3a; border:1px solid #b6dcc1; }
+.directory-position-review { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
+.directory-position-todo { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
 .directory-detail { width:390px; flex-shrink:0; padding:20px; background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; overflow-wrap:anywhere; }
 .directory-detail h3 { font-size:19px; margin:0 0 12px; }
 .directory-edit-grid { display:grid; gap:12px; margin:12px 0 16px; }
@@ -1208,6 +1211,19 @@ body {
 .review-table { font-size: 13px; }
 .review-table td { max-width: 220px; overflow-wrap: anywhere; }
 .review-table small { display: block; margin-top: 5px; line-height: 1.6; }
+.directory-list-panel .catalog-table { table-layout: fixed; }
+.directory-list-panel .catalog-table td,.directory-list-panel .catalog-table th { padding: 8px 12px; vertical-align: middle; }
+.catalog-table th:nth-child(1) { width: 20%; }
+.catalog-table th:nth-child(2) { width: 24%; }
+.catalog-table th:nth-child(3) { width: 12%; }
+.catalog-table th:nth-child(4) { width: 14%; }
+.catalog-table th:nth-child(5) { width: 20%; }
+.catalog-table th:last-child { width: 10%; }
+.catalog-table .catalog-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directory-list-panel .catalog-table small { margin-top: 2px; line-height: 1.4; }
+.catalog-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.catalog-inline .directory-badge { margin: 0; }
+.catalog-table .btn { min-height: 28px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
 .review-member { display: flex; gap: 8px; align-items: flex-start; padding: 12px 0 6px; font-size: 13px; }
 .review-panel h4 { margin-top: 20px; }
 .review-panel select, .review-panel input:not([type=checkbox]) { max-width: 100%; }
@@ -1224,6 +1240,8 @@ body {
   .review-workspace .review-table tr { display: block; margin: 8px; padding: 8px 0; border: 1px solid #dce3ec; border-radius: 6px; }
   .review-workspace .review-table td { display: block; max-width: none; width: 100%; border: 0; padding: 8px 12px; white-space: normal; }
   .review-workspace .review-table td::before { content: attr(data-label); display: block; font-size: 11px; color: #718198; margin-bottom: 4px; }
+  .review-workspace .catalog-table .catalog-text { white-space: normal; overflow-wrap: anywhere; }
+  .review-workspace .catalog-table .btn { min-height: 36px; }
 }
 
 /* Independent collection tasks share the directory's existing palette. */
