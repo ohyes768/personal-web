@@ -30,6 +30,7 @@ export function PositionBadge({ position, compact = false }: { position?: Positi
 export default function PositionPanel({ position, busy, query, confirm }: { position: Position; busy: boolean;
   query: () => void; confirm: (body: object) => void }) {
   const [poi, setPoi] = useState('');
+  const [lng, setLng] = useState(''); const [lat, setLat] = useState(''); const [address, setAddress] = useState('');
   const selected = position.selected;
   return <section className="directory-linker" aria-label="高德定位详情">
     <h4>高德定位 · {positionLabels[position.state] || '待补全'}</h4>
