@@ -49,7 +49,7 @@ test('candidate panel preserves evidence, stale-write revision and manual protec
     state: 'review', revision: 'abc', has_coordinates: true, checked_at: '2026-10-16T01:00:00Z', error: '候选地址不同，请核对',
     candidates: [{ source_id: 'B1', name: '风雅钱塘', address: '月明路1076号', longitude: 120.207, latitude: 30.202, source_url: 'https://www.amap.com/search?query=test' }]
   } }));
-  assert.match(html, /高德定位 · 待确认/); assert.match(html, /<option value="B1">风雅钱塘 · 月明路1076号<\/option>/);
+  assert.match(html, /<h4>高德定位<\/h4>/); assert.match(html, />待确认<\/span>/); assert.match(html, /<option value="B1">风雅钱塘 · 月明路1076号<\/option>/);
   assert.match(html, /<select aria-label="选择高德候选位置"/);
   assert.match(html, /<button[^>]*disabled="">确认位置/);
   assert.doesNotMatch(html, /手动定位|手动地图地址|手动经度|手动纬度|填写坐标|type="radio"|重新匹配|补全高德 POI/); assert.match(html, /候选地址不同/);
@@ -57,6 +57,9 @@ test('candidate panel preserves evidence, stale-write revision and manual protec
     state: 'manual', revision: 'abc', has_coordinates: true, candidates: [], selected: { longitude: 120.207, latitude: 30.202 }
   } }));
   assert.match(manual, /人工结果已保护/); assert.match(manual, /人工坐标，无 POI ID/); assert.doesNotMatch(manual, /重新匹配/);
+  assert.match(manual, /<h4>高德定位<\/h4>[^]*>已定位<\/span>/);
+  assert.doesNotMatch(manual.split('<details>')[0].replace(/<[^>]*>/g, ''), /人工已确认|人工结果已保护/);
+  assert.match(manual, /<details><summary>定位详情<\/summary>[^]*人工已确认[^]*人工结果已保护/);
 });
 
 test('only review positions expose candidate selection; other states have no single retry action', () => {

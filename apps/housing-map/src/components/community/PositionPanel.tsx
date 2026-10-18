@@ -33,12 +33,11 @@ export default function PositionPanel({ position, busy, confirm, address }: { po
   const selected = position.selected;
   const candidate = position.candidates.find(p => p.source_id === poi);
   return <section className="directory-position-panel" aria-label="高德定位详情">
-    <h4>高德定位 · {positionLabels[position.state] || '待补全'}</h4>
-    {selected && <p>{selected.name || '已确认位置'} · {selected.address || selected.geographic_address || '地址暂无'}</p>}
+    <div className="directory-position-heading"><h4>高德定位</h4><PositionBadge position={position} compact /></div>
+    {selected && <><p>{selected.name || '已确认位置'}</p><p>{selected.address || selected.geographic_address || '地址暂无'}</p></>}
     {!selected && <p className="directory-muted">{position.has_coordinates ? '已有地图坐标' : '暂无地图坐标'}</p>}
     {!selected && address && <p>高德地图地址：{address}</p>}
     {position.error && <p role="status" className="directory-warning">{position.error}</p>}
-    {position.state === 'manual' && <p className="directory-muted">人工结果已保护，批量补全不会覆盖。</p>}
     {position.state === 'review' && (position.candidates.length ? <>
       <div className="directory-position-choice">
         <select aria-label="选择高德候选位置" value={poi} disabled={busy || !position.revision} onChange={e => setPoi(e.target.value)}>
@@ -53,7 +52,9 @@ export default function PositionPanel({ position, busy, confirm, address }: { po
         {safeDirectoryLink(candidate.source_url) && <> · <a href={candidate.source_url} target="_blank" rel="noopener noreferrer">核对高德位置 ↗</a></>}</p>}
       <p className="directory-muted">核对地址与分期后确认，将更新地图位置。</p>
     </> : <p className="directory-muted">暂无可确认的候选位置。</p>)}
-    {(selected || position.checked_at || position.confirmed_at) && <details><summary>定位详情</summary>
+    {(selected || position.checked_at || position.confirmed_at || position.state === 'manual') && <details><summary>定位详情</summary>
+      <p className="directory-muted">定位状态：{positionLabels[position.state] || '待补全'}</p>
+      {position.state === 'manual' && <p className="directory-muted">人工结果已保护，批量补全不会覆盖。</p>}
       {selected && <><p>{selected.source_id ? `POI ID：${selected.source_id}` : '人工坐标，无 POI ID'}</p><p>GCJ02：{selected.longitude}, {selected.latitude}</p>
         {safeDirectoryLink(selected.source_url) && <p><a href={selected.source_url} target="_blank" rel="noopener noreferrer">高德来源 ↗</a></p>}</>}
       {position.checked_at && <p className="directory-muted">最近查询：{position.checked_at.slice(0, 19).replace('T', ' ')}（UTC）</p>}

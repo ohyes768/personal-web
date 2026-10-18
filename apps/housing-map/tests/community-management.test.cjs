@@ -10,6 +10,34 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 }).outputText, filename);
 const { DirectorySourceCard, ResidentialStateBadge, safeDirectoryLink } = require('../src/components/community/CommunityManagement.tsx');
 
+test('compact TMSF source keeps readable evidence and folds collection metadata', () => {
+  const html = renderToStaticMarkup(React.createElement(DirectorySourceCard, { compact: true, item: {
+    id: 't1', source: 'tmsf', source_kind: 'community', source_id: '170413978', name: '世茂之西湖',
+    method: 'manual', status: 'matched', address: '滨江区一桥南侧', district: '滨江', property_type: '住宅', market_state: 'second_hand',
+    property_type_captured_at: '2026-10-16T07:57:26.217682+00:00',
+    property_type_url: 'https://www.tmsf.com/esf/xq_indexnew_170413978.htm',
+    source_url: 'https://www.tmsf.com/include/hzweb/index_search_newCommunitylist.js'
+  } }));
+  assert.match(html, /住宅 · 二手房/);
+  assert.match(html, /href="https:\/\/www.tmsf.com\/esf\/xq_indexnew_170413978.htm"[^>]*>查看来源/);
+  assert.doesNotMatch(html, /index_search_newCommunitylist|打开原始来源|物业类型：|—/);
+  const [summary, metadata] = html.split('<details>');
+  assert.doesNotMatch(summary, /人工关联|来源 ID|滨江区一桥南侧|采集时间/);
+  assert.match(metadata, /<summary>采集详情<\/summary>/);
+  assert.match(metadata, /人工关联/); assert.match(metadata, /170413978/);
+  assert.match(metadata, /15:57:26（北京时间）/);
+});
+
+test('compact source never falls back to a TMSF script and rental source omits unrelated unknowns', () => {
+  const render = item => renderToStaticMarkup(React.createElement(DirectorySourceCard, { compact: true, item: {
+    id: 's', source_kind: 'community', source_id: '1', name: '测试小区', status: 'matched', ...item
+  } }));
+  assert.doesNotMatch(render({ source: 'tmsf', source_url: 'https://www.tmsf.com/list.js?x=1' }), /<a\s|list\.js/);
+  const rental = render({ source: 'fang', market_state: 'unknown', source_url: 'https://zu.fang.com/hz/house-xm1/' });
+  assert.match(rental, /租金来源/); assert.match(rental, /查看来源/);
+  assert.doesNotMatch(rental, /物业类型|尚未获取|新房 \/ 二手房状态未知/);
+});
+
 test('admission controls distinguish reversible review/exclusion from whole deletion', () => {
   const { AdmissionControls } = require('../src/components/community/CommunityManagement.tsx');
   const render = state => renderToStaticMarkup(React.createElement(AdmissionControls, {

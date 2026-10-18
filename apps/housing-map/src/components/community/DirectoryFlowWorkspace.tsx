@@ -277,7 +277,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   function changeMode(value: string) { setMode(value); setPage(1); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
-    setError(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason('');
+    setError(''); setNotice(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason('');
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
       const value = await workflowRequest<CatalogRow>(path);
@@ -297,6 +297,28 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       setRevision(v => v + 1); onChanged();
     } catch (e) { setError(e instanceof Error ? e.message : '定位操作失败，请刷新'); }
     finally { setBusy(false); }
+  }
+  async function refreshDetail() {
+    if (!detail || busy) return;
+    const version = detailVersion.current;
+    const path = `/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}`;
+    setBusy(true); setError(''); setNotice('');
+    let saved = false;
+    try {
+      const outcome = await workflowRequest<{ errors?: string[] } | null>(path + '/retry', 'POST');
+      saved = true;
+      const fresh = await workflowRequest<CatalogRow>(path);
+      if (fresh.admission_state === 'admitted') fresh.position = await workflowRequest<Position>(path + '/position');
+      if (detailVersion.current === version) {
+        setDetail(fresh);
+        setNotice(outcome?.errors?.length ? `部分资料已更新：${outcome.errors.join('；')}` : '资料已更新，名单已重新分类。');
+      }
+    } catch (e) {
+      if (detailVersion.current === version) setError(saved ? '资料已更新，但刷新详情失败，请关闭后重新打开。' : e instanceof Error ? e.message : '更新失败，请重试');
+    } finally {
+      if (saved) { setRevision(v => v + 1); onChanged(); }
+      setBusy(false);
+    }
   }
   async function admissionAction(kind: 'exclude' | 'resume', reason = '') {
     if (!detail) return;
@@ -355,12 +377,15 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
           <div className="directory-info-wide"><dt>实际地址</dt><dd>{detail.address || '待补充'}</dd></div>
         </dl>
       </section>
-        {detail.admission_state === 'admitted' && <p className="directory-muted">地图显示状态：{mapLabels[detail.map_status || ''] || '待核对'}</p>}
+        {detail.admission_state === 'admitted' && detail.map_status !== 'displayed' && <p className="directory-warning" role="status">地图暂未展示：{mapLabels[detail.map_status || ''] || '待核对'}</p>}
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
         {!detail.source_record_id && detail.qualification === 'manual_exclusion' && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
         {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} confirm={body => void positionAction(body)} />}
-        <button className="btn btn-secondary" disabled={busy} onClick={() => void action(`/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}/retry`, 'POST')}>更新透明售房网资料</button>
-        {detail.sources?.map(s => <DirectorySourceCard key={s.id} item={s} />)}
+        <section className="directory-source-section" aria-label="来源资料">
+          <div className="directory-source-section-heading"><h4>来源资料</h4><button className="btn btn-secondary" disabled={busy} onClick={() => void refreshDetail()}>{busy ? '处理中…' : '更新资料'}</button></div>
+          {notice && <p role="status" className="directory-muted">{notice}</p>}
+          {detail.sources?.length ? detail.sources.map(s => <DirectorySourceCard key={s.id} item={s} compact />) : <p className="directory-muted">暂无来源资料。</p>}
+        </section>
         {detail.admission && <details><summary>历史审核记录</summary><p>{detail.admission.decision_kind === 'migration' ? '历史资料初始化' : detail.admission.decision_kind === 'manual' ? '历史人工决定' : '历史收录决定'}</p><p>{detail.admission.reason}</p><p className="directory-muted">当前名单按透明售房网有效资料计算，上述内容仅为历史记录。</p></details>}
         <details><summary>历史操作</summary>{detail.events?.map(e => <p key={e.seq}>{e.created_at.slice(0, 19)} · {e.action}{e.payload.reason ? ` · ${e.payload.reason}` : ''}</p>)}</details></>}
     </DirectoryDialog>}</div>}

@@ -87,9 +87,40 @@ export function ResidentialStateBadge({ state }: { state: ResidentialState }) {
   if (state === 'deleted') return <span className="directory-muted" title="已删除">—</span>;
   return <span className="directory-muted" title="尚未分类">—</span>;
 }
-export function DirectorySourceCard({ item, children }: { item: Source; children?: React.ReactNode }) {
+function sourceTime(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '时间未知' : `${date.toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', hour12: false })}（北京时间）`;
+}
+
+export function DirectorySourceCard({ item, children, compact = false }: { item: Source; children?: React.ReactNode; compact?: boolean }) {
   const link = safeDirectoryLink(item.source_url);
   const propertyLink = safeDirectoryLink(item.property_type_url);
+  if (compact) {
+    const readableLink = item.source === 'tmsf'
+      ? propertyLink || safeDirectoryLink(item.project_property_type_url) || safeDirectoryLink(item.market_state_url) || (link && !/\.js(?:[?#]|$)/i.test(new URL(link).pathname) ? link : undefined)
+      : link;
+    const description = item.source === 'fang' ? '租金来源' : [item.property_type,
+      item.market_state && item.market_state !== 'unknown' && marketLabels[item.market_state], item.project_sale_status].filter(Boolean).join(' · ') || '资料待补充';
+    return <article className="directory-source-summary">
+      <p><span>{labels[item.source] || '历史来源'}</span> · <strong>{item.community_name_missing ? '来源未提供小区名称' : item.name}</strong></p>
+      <div className="directory-source-summary-line"><span>{description}</span>{readableLink && <a href={readableLink} target="_blank" rel="noopener noreferrer">查看来源 ↗</a>}</div>
+      {item.property_type_error && <p className="directory-warning">{item.property_type_error}；保留上次有效用途证据。</p>}
+      {item.market_state_error && <p className="directory-warning">{item.market_state_error}</p>}
+      {item.coordinate_error && <p className="directory-warning">{item.coordinate_error}</p>}
+      <details><summary>采集详情</summary>
+        <p>关联方式：{item.status === 'ignored' ? '已删除' : item.status === 'pending' ? '待关联' : item.method === 'auto' ? '自动关联' : '人工关联'}</p>
+        <p>来源 ID：{item.source_id}</p>
+        <p>来源地址：{item.address || '尚未取得'}{item.district && ` · ${item.district}`}</p>
+        {item.property_type_captured_at && <p>类型采集时间：{sourceTime(item.property_type_captured_at)}</p>}
+        {item.market_state_captured_at && <p>项目核验时间：{sourceTime(item.market_state_captured_at)}</p>}
+        {item.project_id && <p>新房项目：{item.project_name} · ID {item.project_id}</p>}
+        {item.community_name_missing && <p>原始法拍标题：{item.auction_title || item.name}</p>}
+        {item.longitude != null && item.latitude != null && <p>来源坐标：{item.longitude}, {item.latitude}</p>}
+        {item.coordinate_evidence && <p>位置来源：{item.coordinate_evidence.source} · ID {item.coordinate_evidence.source_id}</p>}
+        {item.evidence?.map((e, i) => <p key={i}>{e}</p>)}
+      </details>{children}
+    </article>;
+  }
   return <article className="directory-source-card">
     <div className="directory-source-heading"><span className="directory-badge">{labels[item.source] || '历史来源'}</span>
       <strong>{item.community_name_missing ? '来源未提供小区名称' : item.name}</strong><span className="directory-muted">{item.status === 'ignored' ? '已删除' : item.status === 'pending' ? '待关联' : item.method === 'auto' ? '自动关联' : '人工关联'}</span></div>
