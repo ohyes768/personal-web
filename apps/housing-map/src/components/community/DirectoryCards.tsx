@@ -107,7 +107,7 @@ export function DirectorySourceCard({ item, children, compact = false }: { item:
       {item.property_type_error && <p className="directory-warning">{item.property_type_error}；保留上次有效用途证据。</p>}
       {item.market_state_error && <p className="directory-warning">{item.market_state_error}</p>}
       {item.coordinate_error && <p className="directory-warning">{item.coordinate_error}</p>}
-      <details><summary>采集详情</summary>
+      <div className="directory-muted">
         <p>关联方式：{item.status === 'ignored' ? '已删除' : item.status === 'pending' ? '待关联' : item.method === 'auto' ? '自动关联' : '人工关联'}</p>
         <p>来源 ID：{item.source_id}</p>
         <p>来源地址：{item.address || '尚未取得'}{item.district && ` · ${item.district}`}</p>
@@ -118,7 +118,7 @@ export function DirectorySourceCard({ item, children, compact = false }: { item:
         {item.longitude != null && item.latitude != null && <p>来源坐标：{item.longitude}, {item.latitude}</p>}
         {item.coordinate_evidence && <p>位置来源：{item.coordinate_evidence.source} · ID {item.coordinate_evidence.source_id}</p>}
         {item.evidence?.map((e, i) => <p key={i}>{e}</p>)}
-      </details>{children}
+      </div>{children}
     </article>;
   }
   return <article className="directory-source-card">

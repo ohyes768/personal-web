@@ -10,7 +10,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 }).outputText, filename);
 const { DirectorySourceCard, ResidentialStateBadge, safeDirectoryLink } = require('../src/components/community/CommunityManagement.tsx');
 
-test('compact TMSF source keeps readable evidence and folds collection metadata', () => {
+test('compact TMSF source shows evidence and collection metadata without expanding', () => {
   const html = renderToStaticMarkup(React.createElement(DirectorySourceCard, { compact: true, item: {
     id: 't1', source: 'tmsf', source_kind: 'community', source_id: '170413978', name: '世茂之西湖',
     method: 'manual', status: 'matched', address: '滨江区一桥南侧', district: '滨江', property_type: '住宅', market_state: 'second_hand',
@@ -21,11 +21,10 @@ test('compact TMSF source keeps readable evidence and folds collection metadata'
   assert.match(html, /住宅 · 二手房/);
   assert.match(html, /href="https:\/\/www.tmsf.com\/esf\/xq_indexnew_170413978.htm"[^>]*>查看来源/);
   assert.doesNotMatch(html, /index_search_newCommunitylist|打开原始来源|物业类型：|—/);
-  const [summary, metadata] = html.split('<details>');
-  assert.doesNotMatch(summary, /人工关联|来源 ID|滨江区一桥南侧|采集时间/);
-  assert.match(metadata, /<summary>采集详情<\/summary>/);
-  assert.match(metadata, /人工关联/); assert.match(metadata, /170413978/);
-  assert.match(metadata, /15:57:26（北京时间）/);
+  assert.doesNotMatch(html, /<details|<summary|采集详情/);
+  assert.match(html, /人工关联/); assert.match(html, /来源 ID：170413978/);
+  assert.match(html, /来源地址：滨江区一桥南侧/);
+  assert.match(html, /15:57:26（北京时间）/);
 });
 
 test('compact source never falls back to a TMSF script and rental source omits unrelated unknowns', () => {

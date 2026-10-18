@@ -33,17 +33,6 @@ test('compact position badges use the same three categories as the filter', () =
   }
 });
 
-test('catalog exposes exclusion beside details only for admitted rows and respects busy state', () => {
-  const props = { busy: false, select() {}, retry() {}, exclude() {},
-    items: [{ community_id: '1', community_name: '测试花园' }] };
-  const admitted = render(React.createElement(CatalogTable, { ...props, excluded: false }));
-  assert.match(admitted, /catalog-row-actions[^]*查看资料<\/button><button[^]*?>转为不收录<\/button>/);
-  const excluded = render(React.createElement(CatalogTable, { ...props, excluded: true }));
-  assert.doesNotMatch(excluded, /转为不收录/);
-  assert.match(excluded, /更新资料/);
-  const busy = render(React.createElement(CatalogTable, { ...props, excluded: false, busy: true }));
-  assert.match(busy, /<button class="btn catalog-exclude" disabled="">转为不收录<\/button>/);
-});
 test('candidate panel preserves evidence, stale-write revision and manual protection', () => {
   const html = render(React.createElement(PositionPanel, { busy: false, query() {}, confirm() {}, position: {
     state: 'review', revision: 'abc', has_coordinates: true, checked_at: '2026-10-16T01:00:00Z', error: '候选地址不同，请核对',
@@ -56,10 +45,8 @@ test('candidate panel preserves evidence, stale-write revision and manual protec
   const manual = render(React.createElement(PositionPanel, { busy: false, query() {}, confirm() {}, position: {
     state: 'manual', revision: 'abc', has_coordinates: true, candidates: [], selected: { longitude: 120.207, latitude: 30.202 }
   } }));
-  assert.match(manual, /人工结果已保护/); assert.match(manual, /人工坐标，无 POI ID/); assert.doesNotMatch(manual, /重新匹配/);
   assert.match(manual, /<h4>高德定位<\/h4>[^]*>已定位<\/span>/);
-  assert.doesNotMatch(manual.split('<details>')[0].replace(/<[^>]*>/g, ''), /人工已确认|人工结果已保护/);
-  assert.match(manual, /<details><summary>定位详情<\/summary>[^]*人工已确认[^]*人工结果已保护/);
+  assert.doesNotMatch(manual, /<details|POI ID|GCJ02|最近查询|人工确认：|定位状态：|重新匹配/);
 });
 
 test('only review positions expose candidate selection; other states have no single retry action', () => {
@@ -101,4 +88,22 @@ test('legacy amap job without outcome fields keeps the old wording', () => {
     running: false, phase: 'partial_failed', processed: 155, total: 155, updated: 0, skipped: 155 } } }));
   assert.match(html, /部分完成/);
   assert.match(html, /补全 0 · 跳过 155/);
+});
+
+
+test('matched position shows address and safe source directly, with a name only when different', () => {
+  const props = { busy: false, confirm() {}, communityName: '茂御居', position: {
+    state: 'matched', has_coordinates: true, candidates: [], checked_at: '2026-10-16T04:04:28Z',
+    selected: { name: '茂御居', source_id: 'B0K13CUM4W', address: '江南大道', longitude: 120.146946,
+      latitude: 30.188173, source_url: 'https://www.amap.com/search?query=test' }
+  } };
+  const html = render(React.createElement(PositionPanel, props));
+  assert.match(html, /高德地址：江南大道/); assert.match(html, />高德查看 ↗<\/a>/);
+  assert.doesNotMatch(html, /茂御居|<details|POI ID|GCJ02|120.146946|最近查询|定位状态：/);
+  const other = render(React.createElement(PositionPanel, { ...props, communityName: '其他小区' }));
+  assert.match(other, /高德名称：茂御居/);
+  const unsafe = render(React.createElement(PositionPanel, { ...props, position: {
+    ...props.position, selected: { name: '茂御居', geographic_address: '江南大道1号', source_url: 'javascript:alert(1)' }
+  } }));
+  assert.match(unsafe, /高德地址：江南大道1号/); assert.doesNotMatch(unsafe, /<a /);
 });

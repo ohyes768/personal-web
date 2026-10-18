@@ -27,16 +27,17 @@ export function PositionBadge({ position, compact = false }: { position?: Positi
     {state === 'pending' && position?.has_coordinates && <small>历史坐标不代表已匹配 POI</small>}</>;
 }
 
-export default function PositionPanel({ position, busy, confirm, address }: { position: Position; busy: boolean; address?: string;
+export default function PositionPanel({ position, busy, confirm, address, communityName }: { position: Position; busy: boolean; address?: string; communityName?: string;
   confirm: (body: object) => void }) {
   const [poi, setPoi] = useState('');
   const selected = position.selected;
   const candidate = position.candidates.find(p => p.source_id === poi);
   return <section className="directory-position-panel" aria-label="高德定位详情">
     <div className="directory-position-heading"><h4>高德定位</h4><PositionBadge position={position} compact /></div>
-    {selected && <><p>{selected.name || '已确认位置'}</p><p>{selected.address || selected.geographic_address || '地址暂无'}</p></>}
+    {selected?.name && selected.name.trim() !== communityName?.trim() && <p>高德名称：{selected.name}</p>}
+    {(selected?.address || selected?.geographic_address || address) && <p>高德地址：{selected?.address || selected?.geographic_address || address}</p>}
+    {safeDirectoryLink(selected?.source_url) && <p><a href={selected?.source_url} target="_blank" rel="noopener noreferrer">高德查看 ↗</a></p>}
     {!selected && <p className="directory-muted">{position.has_coordinates ? '已有地图坐标' : '暂无地图坐标'}</p>}
-    {!selected && address && <p>高德地图地址：{address}</p>}
     {position.error && <p role="status" className="directory-warning">{position.error}</p>}
     {position.state === 'review' && (position.candidates.length ? <>
       <div className="directory-position-choice">
@@ -52,13 +53,5 @@ export default function PositionPanel({ position, busy, confirm, address }: { po
         {safeDirectoryLink(candidate.source_url) && <> · <a href={candidate.source_url} target="_blank" rel="noopener noreferrer">核对高德位置 ↗</a></>}</p>}
       <p className="directory-muted">核对地址与分期后确认，将更新地图位置。</p>
     </> : <p className="directory-muted">暂无可确认的候选位置。</p>)}
-    {(selected || position.checked_at || position.confirmed_at || position.state === 'manual') && <details><summary>定位详情</summary>
-      <p className="directory-muted">定位状态：{positionLabels[position.state] || '待补全'}</p>
-      {position.state === 'manual' && <p className="directory-muted">人工结果已保护，批量补全不会覆盖。</p>}
-      {selected && <><p>{selected.source_id ? `POI ID：${selected.source_id}` : '人工坐标，无 POI ID'}</p><p>GCJ02：{selected.longitude}, {selected.latitude}</p>
-        {safeDirectoryLink(selected.source_url) && <p><a href={selected.source_url} target="_blank" rel="noopener noreferrer">高德来源 ↗</a></p>}</>}
-      {position.checked_at && <p className="directory-muted">最近查询：{position.checked_at.slice(0, 19).replace('T', ' ')}（UTC）</p>}
-      {position.confirmed_at && <p className="directory-muted">人工确认：{position.confirmed_at.slice(0, 19).replace('T', ' ')}（UTC）</p>}
-    </details>}
   </section>;
 }

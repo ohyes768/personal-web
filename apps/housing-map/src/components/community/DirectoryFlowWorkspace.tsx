@@ -380,7 +380,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         {detail.admission_state === 'admitted' && detail.map_status !== 'displayed' && <p className="directory-warning" role="status">地图暂未展示：{mapLabels[detail.map_status || ''] || '待核对'}</p>}
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
         {!detail.source_record_id && detail.qualification === 'manual_exclusion' && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
-        {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} confirm={body => void positionAction(body)} />}
+        {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} />}
         <section className="directory-source-section" aria-label="来源资料">
           <div className="directory-source-section-heading"><h4>来源资料</h4><button className="btn btn-secondary" disabled={busy} onClick={() => void refreshDetail()}>{busy ? '处理中…' : '更新资料'}</button></div>
           {notice && <p role="status" className="directory-muted">{notice}</p>}
