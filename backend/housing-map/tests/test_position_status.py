@@ -224,11 +224,14 @@ def test_api_filters_before_pagination_and_snapshot_write_rules(setup, monkeypat
     app = FastAPI(); app.include_router(routes.router, prefix='/api')
     client = TestClient(app); base = '/api/directory/workflow'
     assert client.get(base + '/catalog?position=pending&page_size=1').json()['data']['total'] == 1
+    assert client.get(base + '/catalog?position=todo&page_size=1').json()['data']['total'] == 1
     response = client.post(base + f'/catalog/{cid}/position/query')
     assert response.status_code == 200, response.text
     assert response.json()['data']['state'] == 'matched'
     assert client.get(base + '/catalog?position=pending&page_size=1').json()['data']['total'] == 0
     assert client.get(base + '/catalog?position=matched&page_size=1').json()['data']['total'] == 1
+    assert client.get(base + '/catalog?position=done&page_size=1').json()['data']['total'] == 1
+    assert client.get(base + '/catalog?position=todo&page_size=1').json()['data']['total'] == 0
     assert client.get(base + '/catalog?position=bogus').status_code == 422
     detail = client.get(base + f'/catalog/{cid}/position').json()['data']
     update_master(store, cid, note='stale')

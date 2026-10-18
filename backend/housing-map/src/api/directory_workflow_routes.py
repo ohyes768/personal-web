@@ -62,9 +62,13 @@ def summary(q: str = Query('', max_length=200), district: str = ''):
     return result(read)
 
 
+# UI 分桶：done=已定位（含人工确认），review=待确认队列，todo=批量或手动可处理。
+POSITION_BUCKETS = {'done': {'matched', 'manual'}, 'review': {'review'}, 'todo': {'pending', 'not_found', 'error'}}
+
+
 @router.get('/catalog')
 def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query('', max_length=200),
-            district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual'] = '',
+            district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual', 'done', 'todo'] = '',
             market: Literal['', 'new_house', 'second_hand'] = '',
             property_type: str = Query('', max_length=100),
             page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
@@ -78,7 +82,8 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
         if property_type:
             rows = [r for r in rows if not r.get('property_types')] if property_type == '__missing__' else [r for r in rows if property_type in r.get('property_types', [])]
         if position:
-            rows = [r for r in rows if r.get('position', {}).get('state') == position]
+            states = POSITION_BUCKETS.get(position, {position})
+            rows = [r for r in rows if r.get('position', {}).get('state') in states]
         return {'items': rows[(page - 1) * page_size:page * page_size], 'total': len(rows), 'page': page, 'property_types': property_types}
     return result(read)
 
