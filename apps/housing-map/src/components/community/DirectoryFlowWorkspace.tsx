@@ -5,6 +5,8 @@ import { Community, Source, DirectorySourceCard, marketLabels, mapLabels, safeDi
 import PositionPanel, { Position, PositionBadge, positionLabels, positionBucketLabels } from './PositionPanel';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
+import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
+import type { RentalRequestDiagnostics } from '../../lib/rental-types';
 
 type CatalogRow = Community & { property_types?: string[]; position?: Position; qualification: string; facts_state: string; exclusion_reason: string;
   source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string } };
@@ -12,7 +14,7 @@ type Auction = Source & { revision: string; skipped: boolean; candidates: Commun
   auction_ids?: string[]; rounds?: { auction_id: string; title?: string; source_url?: string; round?: number }[] };
 type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number };
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
-type Job = { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
+type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; skipped_by_state?: Record<string, number>; error?: string;
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string }[]; truncated?: { message: string }[] };
@@ -106,6 +108,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
             {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
           </p>}
           {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
+          {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
           {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
             <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
           {issues.length > 0 && <details className="directory-task-sub"><summary>本轮未完成事项（可重试）</summary>

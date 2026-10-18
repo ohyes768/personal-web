@@ -210,12 +210,11 @@ def test_challenge_streak_pauses_remaining_seeds():
     assert len(results) == 4
     assert [r.status for r in results] == ['list_failed'] * 4
     assert results[0].errors[0]['error'].startswith('房天下要求滑块验证')
-    assert results[2].errors[0]['error'] == CHALLENGE_PAUSE_MESSAGE
-    assert results[3].errors[0]['error'] == CHALLENGE_PAUSE_MESSAGE
-    assert len(calls) == 2  # paused seeds never hit the network
+    assert results[2].deferred and results[3].deferred
+    assert len(calls) == 1  # first challenge pauses every subsequent seed
 
 
-def test_isolated_challenge_does_not_pause_next_seed():
+def test_first_challenge_pauses_next_seed():
     def fetch(url):
         if url == URL:
             raise FangChallenge('房天下要求滑块验证（IP 被风控），请稍后重试')
@@ -223,4 +222,5 @@ def test_isolated_challenge_does_not_pause_next_seed():
 
     results = collect([URL, SECOND], fetch=fetch, delay=0)
     assert results[0].status == 'list_failed'
-    assert results[1].status == 'complete'  # isolated challenge: next seed still crawled
+    assert results[1].status == 'list_failed'
+    assert results[1].deferred

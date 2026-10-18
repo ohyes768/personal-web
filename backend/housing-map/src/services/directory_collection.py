@@ -135,8 +135,8 @@ def tmsf_names(cancel, ignored, existing=None):
 
 
 def fang_names(cancel, ignored):
-    from src.services.fang_rentals import FangClient, parse_listing_page, enrich_detail
-    client = FangClient(timeout=20)
+    from src.services.fang_rentals import FangClient, parse_listing_page
+    client = FangClient(timeout=20, cancel_event=cancel)
     url = 'https://zu.fang.com/hz/house-a0154/n31/'
     visited = set()
     try:
@@ -153,10 +153,14 @@ def fang_names(cancel, ignored):
                 if not ignored('fang', 'community', sid):
                     pause(cancel)
                     try:
-                        enrich_detail(row, client.fetch(row['source_url']))
+                        from src.services.fang_detail_cache import enrich_cached
+                        enrich_cached(row, client.fetch, getattr(client, 'detail_cache', None))
                     except InterruptedError:
                         raise
                     except Exception as exc:
+                        from src.services.fang_request_policy import FangChallenge, FangTemporarilyUnavailable
+                        if isinstance(exc, (FangChallenge, FangTemporarilyUnavailable)):
+                            raise
                         row['quality_flags'].append('detail_fetch_failed')
                         row['_collection_error'] = dict(source='fang', stage='detail',
                             source_id=sid, listing_id=row['source_listing_id'],

@@ -39,11 +39,14 @@ from src.services.rental_reference.storage import (
     ADOPTABLE_STATUSES,
     CommunityBatch,
     publish_run,
+    load_current,
 )
+from src.services.fang_detail_cache import FangDetailCache
+from src.services.fang_request_policy import FangRequestPolicy, FangRequestCancelled
 
 JOB_FILE_NAME = 'refresh_job.json'
 DEFAULT_MAX_PAGES = 10
-DEFAULT_DELAY_SECONDS = 2.0
+DEFAULT_DELAY_SECONDS = 5.0
 DEFAULT_TIMEOUT_SECONDS = 20.0
 MAX_ERRORS_KEPT = 20
 
@@ -135,6 +138,8 @@ def _initial_job() -> dict:
         'total_communities': 0, 'processed_communities': 0,
         'current_community_id': None, 'pages_fetched': 0, 'details_fetched': 0,
         'success_count': 0, 'failed_count': 0,
+        'request_count': 0, 'detail_cache_hits': 0, 'reused_communities': 0,
+        'deferred_count': 0, 'cooldown_until': None, 'new_sources_deferred': 0,
         'started_at': None, 'finished_at': None, 'last_success_at': None,
         'errors': {'total': 0, 'items': []}, 'result': None,
     }
@@ -175,6 +180,7 @@ class RentalRefreshService:
                  delay: float = DEFAULT_DELAY_SECONDS,
                  timeout: float = DEFAULT_TIMEOUT_SECONDS,
                  details: bool = True,
+                 reuse_hours: float = 6,
                  max_errors_kept: int = MAX_ERRORS_KEPT):
         self.rentals_dir = Path(rentals_dir)
         self.mappings_path = Path(mappings_path)
@@ -183,6 +189,7 @@ class RentalRefreshService:
         self._delay = delay
         self._timeout = timeout
         self._details = details
+        self._reuse_hours = reuse_hours
         self._max_errors_kept = max_errors_kept
         self._mutex = threading.RLock()
         self._cancel_event = threading.Event()
@@ -285,6 +292,12 @@ class RentalRefreshService:
         client = None
         outcome_phase = 'failed'
         result_summary: dict | None = None
+        reused = {}
+        policy = None
+        request_count = 0
+        crawl_paused = None
+        cache = FangDetailCache(self.rentals_dir)
+        cache.prune()
         def skip_seed(seed):
             from src.services.community_registry import existing_registry
             registry = existing_registry(self.mappings_path.parent)
@@ -302,31 +315,49 @@ class RentalRefreshService:
             from src.services.community_registry import existing_registry
             registry = existing_registry(self.mappings_path.parent)
             if registry:
-                from src.services.rental_reference.association import prepare_sources
-                from src.services.rental_reference.sources import discover
+                from src.services.rental_reference.association import eligible_communities
                 self._update_job(stage='checking')
-                pairs, association = prepare_sources(registry, self._cancel_event,
-                    lambda values: self._update_job(stage='discovering', association=values),
-                    lambda community: discover(community, client_factory=self._fetch_factory), delay=self._delay)
+                eligible = {c['community_id'] for c in eligible_communities(registry)[0]}
+                pairs = [(r['source_id'], r['community_id']) for r in registry.sources()
+                         if r['source'] == 'fang' and r['status'] == 'matched' and r['community_id'] in eligible]
                 ordered = [_SeedPlan(f'{BASE_URL}/hz/house-xm{sid}/', cid, sid) for sid, cid in pairs]
                 plans = {plan.seed: plan for plan in ordered}
                 progress = CrawlProgress(total_seeds=len(plans))
-                self._update_job(stage='crawling', total_communities=len(plans), association=association)
-                if not plans:
-                    if self._cancel_event.is_set():
-                        outcome_phase = 'cancelled'
-                    else:
-                        outcome_phase = 'done'
-                    result_summary = {'published': False, 'reason': 'no_sources'}
-                    return
+                self._update_job(stage='crawling', total_communities=len(plans))
             self._update_job(stage='crawling')
-            client = self._fetch_factory(timeout=self._timeout)
+            previous = load_current(self.rentals_dir)
+            now = dt.datetime.now(dt.UTC)
+            for plan in ordered:
+                entry = (previous or {}).get('communities', {}).get(plan.community_id)
+                if (not entry or entry.get('source_community_id') != plan.source_community_id
+                        or entry.get('status') not in ADOPTABLE_STATUSES or skip_seed(plan.seed)):
+                    continue
+                try:
+                    age = (now - dt.datetime.fromisoformat(entry['captured_at'])).total_seconds()
+                except (KeyError, TypeError, ValueError):
+                    continue
+                if 0 <= age < self._reuse_hours * 3600:
+                    reused[plan.community_id] = plan.source_community_id
+            ordered = [plan for plan in ordered if plan.community_id not in reused]
+            progress.processed_seeds = len(reused)
+            self._update_job(reused_communities=len(reused), processed_communities=len(reused))
+            if ordered or registry:
+                client = self._fetch_factory(timeout=self._timeout)
+                if isinstance(client, FangClient):
+                    policy = FangRequestPolicy(self.rentals_dir, cancel_event=self._cancel_event)
+                    client.policy = policy
+                    client.detail_cache = cache
+            def fetch(url):
+                nonlocal request_count
+                request_count += 1
+                return client.fetch(url)
             for index, seed_result in enumerate(crawl_runs(
-                    [plan.seed for plan in ordered], fetch=client.fetch,
+                    [plan.seed for plan in ordered], fetch=fetch,
                     max_pages=self._max_pages, delay=self._delay,
                     details=self._details, cancel_event=self._cancel_event,
-                    progress=progress, skip_seed=skip_seed)):
+                    progress=progress, skip_seed=skip_seed, detail_cache=cache)):
                 plan = plans[seed_result.seed]
+                crawl_paused = crawl_paused or seed_result.pause_reason
                 next_plan = ordered[index + 1] if index + 1 < len(ordered) else None
                 captured_at = (seed_result.samples[0]['captured_at']
                                if seed_result.samples else _utc_now())
@@ -362,7 +393,10 @@ class RentalRefreshService:
                         'success_count':
                             self._job['success_count'] + (1 if succeeded else 0),
                         'failed_count':
-                            self._job['failed_count'] + (0 if succeeded else 1),
+                            self._job['failed_count'] + (0 if succeeded or seed_result.deferred else 1),
+                        'deferred_count': self._job['deferred_count'] + int(seed_result.deferred),
+                        'detail_cache_hits': self._job['detail_cache_hits'] + seed_result.detail_cache_hits,
+                        'request_count': policy.request_count if policy else request_count,
                     })
                     errors = self._job['errors']
                     for error in seed_result.errors:
@@ -371,6 +405,18 @@ class RentalRefreshService:
                             errors['items'].append(
                                 {'community_id': plan.community_id, **error})
                     self._write_job_file()
+            if registry:
+                from src.services.rental_reference.association import prepare_sources
+                from src.services.rental_reference.sources import discover
+                # A paused crawl must not immediately start searching via another client.
+                pairs, association = prepare_sources(registry, self._cancel_event,
+                    lambda values: self._update_job(stage='discovering', association=values),
+                    lambda community: discover(community, client_factory=self._fetch_factory, client=client),
+                    delay=self._delay, budget=5, paused_reason=crawl_paused)
+                self._update_job(association=association,
+                    new_sources_deferred=sum(cid not in {p.community_id for p in plans.values()} for _, cid in pairs))
+            if self._cancel_event.is_set():
+                raise RentalCrawlCancelled([], None)
             self._update_job(phase='publishing', stage='publishing', current_community_id=None)
             report = {'seeds': [plan.seed for plan in ordered],
                       'errors': crawl_errors,
@@ -379,13 +425,19 @@ class RentalRefreshService:
                       'details_fetched': progress.details_fetched}
             batches = [batch for batch in batches if not skip_seed(next(
                 plan.seed for plan in ordered if plan.community_id == batch.community_id))]
+            reused = {cid: sid for cid, sid in reused.items()
+                      if not skip_seed(next(p.seed for p in plans.values() if p.community_id == cid))}
             if not batches:
+                if reused or not plans:
+                    outcome_phase = 'done'
+                    result_summary = {'published': False, 'reason': 'cached' if reused else 'no_sources'}
+                    return
                 result_summary = {'published': False, 'reason': 'sources_changed'}
                 self._update_job(success_count=0, failed_count=len(ordered))
                 self._add_error({'stage': 'publish', 'error': '小区或来源关联已变更，本次未发布，保留原数据'})
                 return
             publish = publish_run(self.rentals_dir, batches, report=report,
-                                  cancel_event=self._cancel_event)
+                                  cancel_event=self._cancel_event, preserved_sources=reused)
             result_summary = {
                 'published': publish.published, 'run_id': publish.run_id,
                 'reason': publish.reason, 'published_at': publish.published_at,
@@ -396,13 +448,15 @@ class RentalRefreshService:
             if publish.published:
                 outcome_phase = 'done'
                 self._update_job(last_success_at=publish.published_at)
+                if policy and self._details and ordered and all(b.status in ADOPTABLE_STATUSES for b in batches):
+                    policy.mark_complete()
             elif publish.reason == 'cancelled':
                 outcome_phase = 'cancelled'
             # all_failed keeps outcome_phase 'failed'; the pointer never moved.
-        except RentalCrawlCancelled as cancelled:
+        except (RentalCrawlCancelled, FangRequestCancelled) as cancelled:
             outcome_phase = 'cancelled'
             result_summary = {'published': False, 'reason': 'cancelled',
-                              'completed_communities': len(cancelled.completed)}
+                              'completed_communities': len(getattr(cancelled, 'completed', []))}
         except BlockingIOError as exc:
             outcome_phase = 'failed'
             self._add_error({'stage': 'publish', 'error': str(exc)})
@@ -411,6 +465,16 @@ class RentalRefreshService:
             self._add_error({'stage': 'worker',
                              'error': f'{type(exc).__name__}: {exc}'})
         finally:
+            self._update_job(detail_cache_hits=cache.hits)
+            if policy is not None:
+                # status uses a fresh uncancelled reader after worker cancellation.
+                try:
+                    state = FangRequestPolicy(self.rentals_dir).status()
+                    until = state['cooldown_until']
+                    self._update_job(request_count=policy.request_count,
+                        cooldown_until=dt.datetime.fromtimestamp(until, dt.UTC).isoformat() if until > dt.datetime.now(dt.UTC).timestamp() else None)
+                except Exception as exc:
+                    self._add_error({'stage': 'request_state', 'error': str(exc)})
             if client is not None:
                 try:
                     client.close()

@@ -157,7 +157,8 @@ def _external_phase(job: dict) -> str:
         return "cancelling"
     if phase == "done":
         result = job.get("result") or {}
-        if (result.get("carried_over") or result.get("absent")
+        if (result.get("carried_over") or result.get("absent") or job.get('deferred_count')
+                or job.get('new_sources_deferred')
                 or any((job.get("association") or {}).get(k) for k in ("pending", "missing", "failed", "deferred"))):
             return "partial_failed"
         return "succeeded"
@@ -187,6 +188,12 @@ def _external_job(job: dict) -> dict:
         "current_community_id": job.get("current_community_id"),
         "pages_fetched": job.get("pages_fetched") or 0,
         "details_fetched": job.get("details_fetched") or 0,
+        "request_count": job.get("request_count") or 0,
+        "detail_cache_hits": job.get("detail_cache_hits") or 0,
+        "reused_communities": job.get("reused_communities") or 0,
+        "deferred_count": job.get("deferred_count") or 0,
+        "cooldown_until": job.get("cooldown_until"),
+        "new_sources_deferred": job.get("new_sources_deferred") or 0,
         "success_count": success_count,
         "failed_count": failed_count,
         "started_at": job.get("started_at"),

@@ -143,11 +143,11 @@ def decide(registry, cid, action, candidate_id=None):
         registry._event(db, cid, 'rental_' + action, {'record_id': candidate_id})
 
 
-def prepare_sources(registry, cancel, progress, discover, *, delay=2, budget=20):
+def prepare_sources(registry, cancel, progress, discover, *, delay=5, budget=5, paused_reason=None):
     communities, total = eligible_communities(registry)
     report = dict(targets=len(communities), excluded=total-len(communities), checked=0,
                   matched=0, pending=0, skipped=0, missing=0, failed=0, deferred=0)
-    search_unavailable = None
+    search_unavailable = paused_reason
     requests = 0
     logger.info('Rental source check start targets=%s search_budget=%s', len(communities), budget)
     # Continue deferred searches first instead of retrying the same first 20
@@ -219,14 +219,18 @@ def prepare_sources(registry, cancel, progress, discover, *, delay=2, budget=20)
                                     discovered.append({k: record.get(k) for k in ('id','source_id','name','address','district','evidence','source_url')})
                             candidates = list({r['id']: r for r in [*candidates_for(registry, community), *discovered]}.values())
                         except ValueError as exc:
-                            from src.services.fang_rentals import FangChallenge
+                            from src.services.fang_request_policy import FangChallenge, FangCoolingDown
                             logger.exception('Rental source search paused community_id=%s name=%r requests=%s',
                                              cid, community['community_name'], requests)
                             if isinstance(exc, FangChallenge):
                                 search_unavailable = f'{exc}，本轮暂停来源查找'
                             else:
                                 search_unavailable = '房天下搜索未生效或要求验证，本轮暂停来源查找'
-                            reason, message = 'search_failed', search_unavailable
+                            if isinstance(exc, FangCoolingDown):
+                                reason, message, searched = 'search_deferred', search_unavailable, False
+                                requests -= 1
+                            else:
+                                reason, message = 'search_failed', search_unavailable
                         except Exception as exc:
                             from src.services.fang_rentals import RentalCrawlCancelled
                             if isinstance(exc, RentalCrawlCancelled):

@@ -49,6 +49,36 @@ def test_slider_challenge_pause_carries_plain_cause(tmp_path):
     assert entry['reason'] == 'search_failed' and '滑块' in entry['message']
 
 
+def test_existing_cooldown_defers_without_recording_search_failure(tmp_path):
+    from src.services.fang_request_policy import FangCoolingDown
+    registry = setup(tmp_path)
+    def cooling(_):
+        raise FangCoolingDown(2000000000)
+    _, report = prepare_sources(registry, threading.Event(), lambda _: None, cooling, delay=0)
+    assert report['failed'] == 0 and report['deferred'] == 2
+    assert all(r.get('searched_at') is None for r in reviews(registry))
+
+
+def test_existing_sources_collected_before_missing_source_search(tmp_path, monkeypatch):
+    from src.services.rental_reference import sources
+    registry = setup(tmp_path)
+    registry.ingest(dict(source='fang', source_id='123', name='测试花园', district='滨江', address='测试路1号'))
+    calls = []
+    class Client:
+        def __init__(self, **kw): pass
+        def fetch(self, url):
+            calls.append('list')
+            return '房天下 暂无房源'
+        def close(self): pass
+    monkeypatch.setattr(sources, 'discover', lambda *a, **kw: calls.append('search') or [])
+    service = RentalRefreshService(tmp_path/'rentals', tmp_path/'rental_community_mappings.json',
+                                   fetch_factory=Client, delay=0)
+    service.start()
+    service._thread.join(5)
+    assert not service.status()['running']
+    assert calls == ['list', 'search']
+
+
 def test_single_candidate_auto_binds_on_high_similarity(tmp_path):
     registry = setup(tmp_path)
     # 名字不完全一致（通名差异）的唯一候选：分数达标在入库时即自动绑，且带 auto 证据

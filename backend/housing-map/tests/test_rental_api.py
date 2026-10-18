@@ -44,7 +44,15 @@ GROUP_KEYS = {'bedrooms', 'area_band', 'sample_count', 'rent_reference',
 JOB_KEYS = {'stage', 'association', 'job_id', 'running', 'phase', 'total_communities',
             'processed_communities', 'current_community_id', 'pages_fetched',
             'details_fetched', 'success_count', 'failed_count', 'started_at',
-            'finished_at', 'last_success_at', 'errors', 'result'}
+            'finished_at', 'last_success_at', 'errors', 'result', 'request_count',
+            'detail_cache_hits', 'reused_communities', 'deferred_count', 'cooldown_until', 'new_sources_deferred'}
+
+
+def test_request_diagnostics_old_jobs_and_new_pause_state():
+    old = _external_job({'phase': 'done'})
+    assert old['request_count'] == 0 and old['cooldown_until'] is None
+    new = _external_job({'phase': 'done', 'deferred_count': 3, 'cooldown_until': '2026-10-18T10:00:00+00:00'})
+    assert new['deferred_count'] == 3 and new['phase'] == 'partial_failed'
 
 
 def now_iso(days=0):

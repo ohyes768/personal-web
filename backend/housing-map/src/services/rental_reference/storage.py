@@ -160,7 +160,8 @@ def _cancelled(cancel_event: threading.Event | None) -> bool:
 def publish_run(rentals_dir: Path, batches: Sequence[CommunityBatch], *,
                 run_id: str | None = None,
                 report: Mapping[str, object] | None = None,
-                cancel_event: threading.Event | None = None) -> PublishResult:
+                cancel_event: threading.Event | None = None,
+                preserved_sources: Mapping[str, str] | None = None) -> PublishResult:
     """Write a new batch and atomically switch the current pointer.
 
     Communities with complete/empty_ok status are adopted; failed communities
@@ -187,6 +188,12 @@ def publish_run(rentals_dir: Path, batches: Sequence[CommunityBatch], *,
         previous = load_current(rentals_dir)
         previous_communities = previous['communities'] if previous else {}
         communities: dict[str, dict] = {}
+        # Explicitly retain eligible cache hits. Omitted/removed sources must not
+        # be resurrected from the previous snapshot.
+        for cid, sid in (preserved_sources or {}).items():
+            entry = previous_communities.get(cid)
+            if entry and entry.get('source_community_id') == sid:
+                communities[cid] = {**entry, 'origin': 'cached'}
         adopted: list[str] = []
         carried_over: list[str] = []
         absent: list[str] = []
@@ -195,7 +202,7 @@ def publish_run(rentals_dir: Path, batches: Sequence[CommunityBatch], *,
             adopted.append(batch.community_id)
         for batch in failed:
             kept = previous_communities.get(batch.community_id)
-            if kept is None:
+            if kept is None or kept.get('source_community_id') != batch.source_community_id:
                 absent.append(batch.community_id)
                 continue
             communities[batch.community_id] = {**kept, 'origin': 'carried_over',

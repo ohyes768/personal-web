@@ -130,7 +130,16 @@ export interface RentalAssociationProgress {
   deferred?: number;
 }
 
-export interface RentalRefreshJob {
+export interface RentalRequestDiagnostics {
+  request_count?: number;
+  detail_cache_hits?: number;
+  reused_communities?: number;
+  deferred_count?: number;
+  cooldown_until?: string | null;
+  new_sources_deferred?: number;
+}
+
+export interface RentalRefreshJob extends RentalRequestDiagnostics {
   stage?: string | null;
   association?: RentalAssociationProgress | null;
   job_id: string;

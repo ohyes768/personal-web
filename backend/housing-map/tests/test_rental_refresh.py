@@ -108,12 +108,85 @@ def make_service(tmp_path, pages, gate=None, gate_urls=None, mappings=None,
     mappings_path = (write_mappings(tmp_path) if mappings is None
                      else write_mappings(tmp_path, mappings))
     service = RentalRefreshService(tmp_path / 'rentals', mappings_path,
-                                   fetch_factory=factory, delay=0, **kwargs)
+                                   fetch_factory=factory, delay=0, reuse_hours=kwargs.pop('reuse_hours', 0), **kwargs)
     return service, clients
 
 
 def read_job_file(service):
     return json.loads((service.rentals_dir / JOB_FILE_NAME).read_text(encoding='utf-8'))
+
+
+def test_recent_snapshot_reused_without_network_or_new_publish(tmp_path):
+    pages = {SEED_A: page(listing()), SEED_B: page('', '<p>暂无房源</p>'), DETAIL_1: DETAIL_HTML}
+    service, _ = make_service(tmp_path, pages, reuse_hours=6)
+    service.start()
+    assert wait_until(lambda: not service.status()['running'])
+    first = load_current(service.rentals_dir)
+    second, clients = make_service(tmp_path, {}, reuse_hours=6)
+    second.start()
+    assert wait_until(lambda: not second.status()['running'])
+    job = second.status()
+    assert job['reused_communities'] == 2
+    assert job['success_count'] == 0 and job['failed_count'] == 0
+    assert job['result']['published'] is False
+    assert job['last_success_at'] == service.status()['last_success_at']
+    assert load_current(service.rentals_dir) == first
+    assert not clients or not clients[0].entered.is_set()
+
+
+def test_mixed_snapshot_reuse_preserves_old_time_and_source(tmp_path):
+    pages = {SEED_A: page(listing()), SEED_B: page('', '<p>暂无房源</p>'), DETAIL_1: DETAIL_HTML}
+    service, _ = make_service(tmp_path, pages, reuse_hours=6)
+    service.start()
+    assert wait_until(lambda: not service.status()['running'])
+    previous = load_current(service.rentals_dir)
+    batch_path = service.rentals_dir / 'runs' / previous['run_id'] / 'batch.json'
+    batch = json.loads(batch_path.read_text(encoding='utf-8'))
+    batch['communities']['20044031']['captured_at'] = '2020-01-01T00:00:00+00:00'
+    batch_path.write_text(json.dumps(batch), encoding='utf-8')
+    second, _ = make_service(tmp_path, {SEED_B: page('', '<p>暂无房源</p>')}, reuse_hours=6)
+    second.start()
+    assert wait_until(lambda: not second.status()['running'])
+    job = second.status()
+    assert job['reused_communities'] == 1 and job['success_count'] == 1
+    current = load_current(second.rentals_dir)
+    assert len(current['communities']) == 2
+    assert current['communities']['10001039']['captured_at'] == previous['communities']['10001039']['captured_at']
+
+
+def test_challenge_then_restart_has_zero_network_and_no_fake_failures(tmp_path, monkeypatch):
+    from src.services.fang_rentals import FangClient, FangChallenge
+    calls = []
+    def blocked(self, url):
+        calls.append(url)
+        raise FangChallenge('滑块验证')
+    monkeypatch.setattr(FangClient, '_get', blocked)
+    mappings = write_mappings(tmp_path)
+    def service():
+        return RentalRefreshService(tmp_path/'rentals', mappings, delay=0,
+            fetch_factory=lambda timeout: FangClient(timeout=timeout, directory=tmp_path/'rentals'))
+    first = service()
+    first.start()
+    assert wait_until(lambda: not first.status()['running'])
+    assert first.status()['request_count'] == 1 and first.status()['failed_count'] == 1
+    assert first.status()['deferred_count'] == 1 and first.status()['cooldown_until']
+    second = service()
+    second.start()
+    assert wait_until(lambda: not second.status()['running'])
+    assert len(calls) == 1
+    job = second.status()
+    assert job['request_count'] == 0 and job['failed_count'] == 0
+    assert job['deferred_count'] == 2 and job['cooldown_until'] == first.status()['cooldown_until']
+
+
+def test_failed_rebound_source_does_not_carry_old_source_samples(tmp_path):
+    rentals = tmp_path/'rentals'
+    publish_run(rentals, [CommunityBatch('c1', 'fang', 'old', 'complete', '2020-01-01T00:00:00+00:00')])
+    result = publish_run(rentals, [
+        CommunityBatch('c1', 'fang', 'new', 'list_failed', '2026-01-01T00:00:00+00:00'),
+        CommunityBatch('c2', 'fang', 'other', 'empty_ok', '2026-01-01T00:00:00+00:00')])
+    assert result.absent == ('c1',) and not result.carried_over
+    assert set(load_current(rentals)['communities']) == {'c2'}
 
 
 def wait_until(predicate, timeout=5.0):

@@ -16,15 +16,14 @@ from pathlib import Path
 from urllib.parse import urljoin, urlsplit
 
 from src.services.tmsf_fetcher import DEFAULT_HEADERS, decode_response_bytes, strip_tags
+from src.services.fang_request_policy import (FangChallenge, FangCoolingDown, FangRequestPolicy,
+    FangRequestCancelled, FangTemporarilyUnavailable)
+from src.services.fang_detail_cache import FangDetailCache, enrich_cached
 
 BASE_URL = 'https://zu.fang.com'
 CHALLENGE_HOST = 'check.3g.fang.com'
-CHALLENGE_PAUSE_SEEDS = 2
+CHALLENGE_PAUSE_SEEDS = 1
 CHALLENGE_PAUSE_MESSAGE = '房天下要求滑块验证（IP 被风控），本轮暂停剩余来源采集，稍后重试'
-
-
-class FangChallenge(ValueError):
-    """Fang redirected to its slider challenge (check.3g.fang.com): IP-level risk control."""
 
 
 def ignored_community(sid):
@@ -135,17 +134,40 @@ def enrich_detail(row: dict, html: str) -> None:
 
 
 class FangClient:
-    def __init__(self, timeout: int = 20):
+    def __init__(self, timeout: int = 20, *, policy=None, directory=None, cancel_event=None):
         from curl_cffi import requests
+        from src.services.data_loader import DATA_DIR
         self.session = requests.Session(impersonate='chrome')
         self.timeout = timeout
+        directory = Path(directory) if directory is not None else DATA_DIR / 'rentals'
+        self.policy = policy or FangRequestPolicy(directory, cancel_event=cancel_event)
+        self.detail_cache = FangDetailCache(directory)
+        self.detail_cache.prune()
+
+    def _get(self, url):
+        response = self.session.get(url, headers=DEFAULT_HEADERS,
+                                    timeout=self.timeout, allow_redirects=False)
+        if response.status_code in {301, 302, 303, 307, 308}:
+            target = urljoin(url, response.headers['Location'])
+            if urlsplit(target).hostname == CHALLENGE_HOST:
+                raise FangChallenge('房天下要求滑块验证（IP 被风控），请稍后重试')
+            try:
+                validate_url(target)
+            except ValueError as exc:
+                parts = urlsplit(target)
+                raise ValueError(f'房天下跳转地址不受支持：{parts.hostname}{parts.path}') from exc
+        else:
+            response.raise_for_status()
+            text = decode_response_bytes(response.content, response.encoding)
+            if re.search(r'滑块验证|拖动滑块|验证您的身份', strip_tags(text)):
+                raise FangChallenge('房天下要求滑块验证，请稍后重试')
+        return response
 
     def fetch(self, url: str) -> str:
         validate_url(url)
         # Redirects are followed explicitly so unexpected destinations are never requested.
         for _ in range(4):
-            response = self.session.get(url, headers=DEFAULT_HEADERS,
-                                        timeout=self.timeout, allow_redirects=False)
+            response = self.policy.perform(lambda: self._get(url))
             if response.status_code in {301, 302, 303, 307, 308}:
                 target = urljoin(url, response.headers['Location'])
                 if urlsplit(target).hostname == CHALLENGE_HOST:
@@ -180,7 +202,12 @@ def crawl(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
         requests_made += 1
         return fetch(url)
 
+    paused = False
+    detail_cache = getattr(getattr(fetch, '__self__', None), 'detail_cache', None)
     for seed in seeds:
+        if paused:
+            report['errors'].append({'url': seed, 'stage': 'deferred', 'error': CHALLENGE_PAUSE_MESSAGE})
+            continue
         seed_id = re.search(r'house-xm(\d+)', seed)
         if seed_id and ignored_community(seed_id[1]):
             report['ignored'] += 1
@@ -194,6 +221,8 @@ def crawl(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
                 rows, next_url = parse_listing_page(request(validate_url(url)), url)
                 report['pages_succeeded'] += 1
             except Exception as error:
+                if isinstance(error, (FangChallenge, FangTemporarilyUnavailable)):
+                    paused = True
                 report['errors'].append({'url': url, 'stage': 'list', 'error': str(error)})
                 break
             for row in rows:
@@ -207,11 +236,17 @@ def crawl(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
                 row['captured_at'] = captured_at
                 if details:
                     try:
-                        enrich_detail(row, request(row['source_url']))
+                        enrich_cached(row, request, detail_cache)
                     except Exception as error:
+                        if isinstance(error, (FangChallenge, FangTemporarilyUnavailable)):
+                            paused = True
                         row['quality_flags'].append('detail_fetch_failed')
                         report['errors'].append({'url': row['source_url'], 'stage': 'detail', 'error': str(error)})
                 records[key] = row
+                if paused:
+                    break
+            if paused:
+                break
             if not next_url:
                 break
             url = next_url
@@ -220,6 +255,9 @@ def crawl(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int = 3,
                 report['truncated_seeds'].append(seed)
     report['requests_made'] = requests_made
     report['listing_count'] = len(records)
+    policy = getattr(getattr(fetch, '__self__', None), 'policy', None)
+    if policy and details and report['pages_succeeded'] and not report['errors'] and not report['truncated_seeds']:
+        policy.mark_complete()
     return list(records.values()), report
 
 
@@ -240,6 +278,9 @@ class SeedRunResult:
     duplicate_ids: int = 0
     status: str = 'complete'
     errors: list[dict] = field(default_factory=list)
+    detail_cache_hits: int = 0
+    deferred: bool = False
+    pause_reason: str | None = None
 
 
 class RentalCrawlCancelled(Exception):
@@ -271,7 +312,8 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
                delay: float = 2, details: bool = False,
                cancel_event: threading.Event | None = None,
                progress: CrawlProgress | None = None,
-               skip_seed: Callable[[str], bool] | None = None) -> Iterator[SeedRunResult]:
+               skip_seed: Callable[[str], bool] | None = None,
+               detail_cache=None) -> Iterator[SeedRunResult]:
     """Crawl seed by seed, yielding one SeedRunResult per seed.
 
     Cancellation is checked before every request and inside every delay wait
@@ -287,6 +329,8 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
     requests_made = 0
     challenge_streak = 0
     completed: list[SeedRunResult] = []
+    detail_cache = detail_cache or getattr(getattr(fetch, '__self__', None), 'detail_cache', None)
+    pause_message = CHALLENGE_PAUSE_MESSAGE
 
     def cancelled(partial: SeedRunResult | None) -> RentalCrawlCancelled:
         return RentalCrawlCancelled(list(completed), partial)
@@ -301,7 +345,10 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
         elif requests_made:
             time.sleep(delay)
         requests_made += 1
-        return fetch(url)
+        try:
+            return fetch(url)
+        except FangRequestCancelled:
+            raise cancelled(partial)
 
     for seed in seeds:
         if progress is not None:
@@ -318,7 +365,9 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
             # Consecutive seeds all hit the slider challenge: remaining seeds
             # would only repeat it, so pause them without another request.
             result.status = 'list_failed'
-            result.errors.append({'url': seed, 'stage': 'list', 'error': CHALLENGE_PAUSE_MESSAGE})
+            result.deferred = True
+            result.pause_reason = pause_message
+            result.errors.append({'url': seed, 'stage': 'deferred', 'error': pause_message})
             if progress is not None:
                 progress.processed_seeds += 1
                 progress.current_seed = None
@@ -336,8 +385,12 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
                 rows, next_url = parse_listing_page(request(validate_url(url), result), url)
             except RentalCrawlCancelled:
                 raise
-            except FangChallenge as error:
+            except (FangChallenge, FangTemporarilyUnavailable) as error:
                 challenge_hit = True
+                pause_message = str(error)
+                result.pause_reason = pause_message
+                if isinstance(error, FangCoolingDown):
+                    result.deferred = True
                 result.errors.append({'url': url, 'stage': 'list', 'error': str(error)})
                 list_failed = True
                 break
@@ -360,9 +413,10 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
                     continue
                 if details:
                     try:
-                        enrich_detail(row, request(row['source_url'], result))
+                        hit = enrich_cached(row, lambda u: request(u, result), detail_cache)
+                        result.detail_cache_hits += int(hit)
                         result.detail_success += 1
-                        if progress is not None:
+                        if progress is not None and not hit:
                             progress.details_fetched += 1
                     except RentalCrawlCancelled:
                         raise
@@ -370,7 +424,15 @@ def crawl_runs(seeds: list[str], *, fetch: Callable[[str], str], max_pages: int 
                         row['quality_flags'].append('detail_fetch_failed')
                         result.detail_failed += 1
                         result.errors.append({'url': row['source_url'], 'stage': 'detail', 'error': str(error)})
+                        if isinstance(error, (FangChallenge, FangTemporarilyUnavailable)):
+                            challenge_hit = True
+                            pause_message = str(error)
+                            result.pause_reason = pause_message
                 result.samples.append(row)
+                if challenge_hit:
+                    break
+            if challenge_hit:
+                break
             if not next_url:
                 break
             url = next_url

@@ -1,6 +1,6 @@
 // 数据看板租金三列的排序、索引与展示纯函数。
 // 全部无副作用、可被 node:test 直接覆盖（tests/rental-dashboard.test.cjs）。
-import type { RentalRefreshJob, RentalSummaryEntry } from './rental-types';
+import type { RentalRefreshJob, RentalSummaryEntry, RentalRequestDiagnostics } from './rental-types';
 
 /** 看板租金三列对应的排序键（并入看板 DashSortKey 使用） */
 export type RentalSortKey = 'rent_unit' | 'rent_yield' | 'rent_samples';
@@ -91,6 +91,7 @@ export function rentalRefreshTerminalNote(job: RentalRefreshJob | null): string 
   // 取消/中断从不发布，优先于 result 计数（后端取消任务仍带 result，不能显示成"成功 X/失败 Y"）
   if (job.phase === 'cancelled') return '上次更新已取消，数据未改动';
   if (job.phase === 'interrupted') return '上次更新被中断，数据未改动';
+  if (job.reused_communities && !job.request_count && !job.result?.published) return '本轮复用已有租金，采集时间未变';
   if (job.result) {
     const a = job.association;
     return `上次更新：成功 ${job.result.success_count} / 失败 ${job.result.failed_count}` + (a ?
@@ -98,4 +99,20 @@ export function rentalRefreshTerminalNote(job: RentalRefreshJob | null): string 
   }
   if (job.phase === 'failed') return '上次更新失败，数据未改动';
   return null;
+}
+
+/** Reused data and deferred requests must not appear as fresh collection. */
+export function rentalRefreshDiagnostics(job: RentalRequestDiagnostics | null): string | null {
+  if (!job) return null;
+  const notes: string[] = [];
+  if (job.request_count != null) notes.push(`请求 ${job.request_count} 次`);
+  if (job.detail_cache_hits) notes.push(`详情复用 ${job.detail_cache_hits} 条`);
+  if (job.reused_communities) notes.push(`快照复用 ${job.reused_communities} 个小区`);
+  if (job.deferred_count) notes.push(`未采集 ${job.deferred_count} 个小区`);
+  if (job.new_sources_deferred) notes.push(`新关联 ${job.new_sources_deferred} 个，下轮采集`);
+  if (job.cooldown_until) {
+    const until = new Date(job.cooldown_until);
+    if (!Number.isNaN(until.getTime())) notes.push(`冷却至 ${until.toLocaleString('zh-CN', { hour12: false })}`);
+  }
+  return notes.join(' · ') || null;
 }

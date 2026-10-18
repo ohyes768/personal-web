@@ -21,7 +21,7 @@ RentalPublishLock   # OS 文件锁 rentals_dir/rental_publish.lock；锁文件�
 
 # refresh.py（后台任务；线程内生命周期自管理，FastAPI 侧 asyncio.to_thread 包装）
 RentalRefreshService(rentals_dir, mappings_path, *, fetch_factory=FangClient,
-                     max_pages=10, delay=2.0, timeout=20.0, details=True, max_errors_kept=20)
+                     max_pages=10, delay=5.0, timeout=20.0, details=True, reuse_hours=6, max_errors_kept=20)
     .start() -> dict   # RefreshAlreadyRunning→409 / NoVerifiedMappings→422 / MappingFileError→503
     .cancel() -> dict  # RefreshNotRunning→409；cancelling 直到线程退出→cancelled
     .status() -> dict / .shutdown(timeout=30) -> bool
@@ -29,6 +29,13 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 ```
 
 ## 3. Contracts
+
+### Incremental collection and cooling (2026-10-18)
+- Existing eligible matched Fang sources are collected before bounded discovery (5 searches per round). New associations are eligible for the next round, counted in new_sources_deferred; do not silently claim they were crawled this round.
+- Only complete/empty_ok snapshots captured less than 6 hours ago and matching the current source may be reused. Do not use failed/truncated/partial-detail results as cache entries. All-cache rounds keep the current pointer and last_success_at unchanged.
+- Mixed publication passes an explicit preserved_sources mapping to publish_run; under the publish lock it preserves only matching prior source entries and their original captured_at. Failed sources may carry old samples only when source IDs match. Never restore removed/rebound sources by copying the entire old snapshot.
+- Job/API optional diagnostics are request_count (actual HTTP hops including retries), detail_cache_hits, reused_communities, deferred_count (unattempted crawl targets), cooldown_until (UTC ISO string or null), new_sources_deferred. Missing legacy fields default to zero/null. Cache reuse is not a new crawl success; pending/deferred targets keep the external result partial_failed.
+- Both header controls and management collection dialog show the shared diagnostic formatter. Cooldown is enforced at the backend across entry points, even when users repeat the start action.
 
 ### 3.1 关联数据库与旧台账（踩过坑）
 

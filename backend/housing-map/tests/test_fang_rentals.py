@@ -96,8 +96,8 @@ class _Session:
         return self.responses.pop(0)
 
 
-def test_fetch_raises_challenge_on_slider_redirect():
-    client = FangClient(timeout=5)
+def test_fetch_raises_challenge_on_slider_redirect(tmp_path):
+    client = FangClient(timeout=5, directory=tmp_path)
     client.session = _Session([_Response(302, {'Location': 'https://check.3g.fang.com/check.html?backurl=https%3A%2F%2Fzu.fang.com%2Fhz%2Fhouse-xm1%2F'})])
     with pytest.raises(FangChallenge, match='滑块'):
         client.fetch(URL)

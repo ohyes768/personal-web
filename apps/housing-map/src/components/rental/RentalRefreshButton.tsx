@@ -1,7 +1,7 @@
 'use client';
 
 import type { RentalRefreshJob } from '../../lib/rental-types';
-import { rentalRefreshProgressText, rentalRefreshTerminalNote } from '../../lib/rental-dashboard';
+import { rentalRefreshProgressText, rentalRefreshTerminalNote, rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
 import { useRentalRefresh } from '../../lib/use-rental-refresh';
 
 interface RentalRefreshControlProps {
@@ -21,6 +21,7 @@ interface RentalRefreshControlProps {
 export function RentalRefreshControl({ job, running, actionError, start, cancel, onManageSources }: RentalRefreshControlProps) {
   const progress = rentalRefreshProgressText(running ? job : null);
   const terminalNote = rentalRefreshTerminalNote(running ? null : job);
+  const diagnostics = rentalRefreshDiagnostics(job);
   const terminalFailed = Boolean(job?.result && job.result.failed_count > 0);
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -47,6 +48,7 @@ export function RentalRefreshControl({ job, running, actionError, start, cancel,
           {terminalNote}
         </span>
       )}
+      {diagnostics && <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>{diagnostics}</span>}
       {!running && job?.association && job.association.pending + job.association.missing + job.association.failed + (job.association.deferred ?? 0) > 0 && onManageSources && (
         <button type="button" className="btn btn-secondary" onClick={onManageSources}>处理租金来源</button>
       )}

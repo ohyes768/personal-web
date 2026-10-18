@@ -163,11 +163,13 @@ def source_page(url: str) -> str:
     return f'{BASE_URL}/hz/house-xm{match[1]}/'
 
 
-def discover(community: dict, *, keyword: str = '', source_url: str = '', client_factory=FangClient) -> list[dict]:
+def discover(community: dict, *, keyword: str = '', source_url: str = '', client_factory=FangClient,
+             client=None) -> list[dict]:
     """One public list request and at most one detail request; never auto-confirm."""
     name = keyword.strip() or community.get('community_alias') or community['community_name']
     url = source_page(source_url) if source_url else f'{BASE_URL}/hz/house/kw{quote(name, safe="")}/'
-    client = client_factory(timeout=15)
+    owned = client is None
+    client = client if client is not None else client_factory(timeout=15)
     stage = 'fetch'
     html = ''
     actual_keyword = None
@@ -220,11 +222,15 @@ def discover(community: dict, *, keyword: str = '', source_url: str = '', client
             try:
                 import time
                 time.sleep(2)
-                enrich_detail(row, client.fetch(row['source_url']))
+                from src.services.fang_detail_cache import enrich_cached
+                enrich_cached(row, client.fetch, getattr(client, 'detail_cache', None))
                 candidate = found.get(row.get('source_community_id'))
                 if candidate:
                     candidate['source_address'] = row.get('address')
-            except Exception:
+            except Exception as exc:
+                from src.services.fang_request_policy import FangChallenge, FangRequestCancelled, FangTemporarilyUnavailable
+                if isinstance(exc, (FangChallenge, FangRequestCancelled, FangTemporarilyUnavailable)):
+                    raise
                 logger.warning('Rental discovery detail unavailable community_id=%s url=%s; candidate address remains missing',
                                community.get('community_id'), row['source_url'], exc_info=True)
         for item in found.values():
@@ -249,4 +255,5 @@ def discover(community: dict, *, keyword: str = '', source_url: str = '', client
                        type(exc).__name__, exc_info=True)
         raise
     finally:
-        client.close()
+        if owned:
+            client.close()

@@ -18,7 +18,20 @@ const {
   indexSummaries, isRentalSortKey,
   formatUnitRentCell, formatYieldCell, formatSampleCountCell,
   rentalRefreshProgressText, rentalRefreshTerminalNote,
+  rentalRefreshDiagnostics,
 } = require('../src/lib/rental-dashboard.ts');
+
+test('rental diagnostics distinguish reused data and cooldown from fresh success', () => {
+  assert.equal(rentalRefreshDiagnostics({}), null);
+  const note = rentalRefreshDiagnostics({ request_count: 1, detail_cache_hits: 5, reused_communities: 2,
+    deferred_count: 3, cooldown_until: '2026-10-18T10:00:00+00:00', new_sources_deferred: 1 });
+  assert.match(note, /请求 1 次/);
+  assert.match(note, /详情复用 5 条/);
+  assert.match(note, /快照复用 2 个小区/);
+  assert.match(note, /未采集 3 个小区/);
+  assert.match(note, /冷却至/);
+  assert.match(note, /新关联 1 个，下轮采集/);
+});
 const { RentalScopeSelect, RentalSummaryCells } = require('../src/components/dashboard/RentalDashboardWidgets.tsx');
 const { RentalRefreshControl } = require('../src/components/rental/RentalRefreshButton.tsx');
 
