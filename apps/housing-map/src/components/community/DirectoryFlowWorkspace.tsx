@@ -146,11 +146,13 @@ export function CatalogTable({ items, excluded, select, retry, busy, position, e
   select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void;
   exclude?: (row: CatalogRow) => void }) {
   return <div className="directory-table-wrap"><table className="review-table catalog-table"><thead><tr>
-    <th>小区名称</th><th>区域 / 实际地址</th><th>用途 / 市场</th><th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th><th>操作</th>
+    <th>小区名称</th><th>区域 / 实际地址</th><th>{excluded ? '房屋用途' : '新房 / 二手房'}</th><th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th><th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
     <td data-label="小区名称"><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}</td>
     <td data-label="区域 / 实际地址">{c.district || '区域待补'}<small className="catalog-text" title={c.address || '实际地址待补充'}>{c.address || '实际地址待补充'}</small></td>
-    <td data-label="用途 / 市场">{c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'}<small>{marketLabels[c.market_state || 'unknown']}</small></td>
+    <td data-label={excluded ? '房屋用途' : '新房 / 二手房'}>{excluded
+      ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
+      : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
     {excluded && <td data-label="不收录原因 / 资料状态">{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : '条件不符'}</small></td>}
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}
     <td data-label="操作"><div className="catalog-inline catalog-row-actions"><button className="btn btn-secondary" onClick={() => select(c)}>查看资料</button>{!excluded && exclude && <button className="btn catalog-exclude" disabled={busy} onClick={() => exclude(c)}>转为不收录</button>}{excluded && <button className="btn btn-secondary" disabled={busy} onClick={() => retry(c)}>更新资料</button>}</div></td>
