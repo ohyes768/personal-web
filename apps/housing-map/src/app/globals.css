@@ -1327,3 +1327,13 @@ body {
   .directory-dialog-heading { padding: 12px 16px; }
   .directory-dialog-content { padding: 4px 16px 16px; }
 }
+
+.directory-dialog-footer { position: sticky; bottom: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 16px 20px; background: var(--bg-surface); border-top: 1px solid var(--border); }
+.directory-detail-actions { min-width: 0; flex: 1; }
+.directory-exclude-action { color: #a74325; background: transparent; border-color: transparent; }
+.directory-exclude-action:hover:not(:disabled) { background: #fff5f2; }
+.directory-exclusion-confirm { display: grid; gap: 8px; }
+.directory-exclusion-confirm label { display: grid; gap: 4px; }
+.directory-exclusion-confirm input { width: 100%; min-width: 0; }
+.directory-exclusion-confirm p { margin: 0; }
+@media (max-width: 640px) { .directory-dialog-footer { padding: 12px 16px; gap: 8px; } }
