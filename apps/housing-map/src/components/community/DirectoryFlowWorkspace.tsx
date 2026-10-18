@@ -386,8 +386,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
           {notice && <p role="status" className="directory-muted">{notice}</p>}
           {detail.sources?.length ? detail.sources.map(s => <DirectorySourceCard key={s.id} item={s} compact />) : <p className="directory-muted">暂无来源资料。</p>}
         </section>
-        {detail.admission && <details><summary>历史审核记录</summary><p>{detail.admission.decision_kind === 'migration' ? '历史资料初始化' : detail.admission.decision_kind === 'manual' ? '历史人工决定' : '历史收录决定'}</p><p>{detail.admission.reason}</p><p className="directory-muted">当前名单按透明售房网有效资料计算，上述内容仅为历史记录。</p></details>}
-        <details><summary>历史操作</summary>{detail.events?.map(e => <p key={e.seq}>{e.created_at.slice(0, 19)} · {e.action}{e.payload.reason ? ` · ${e.payload.reason}` : ''}</p>)}</details></>}
+      </>}
     </DirectoryDialog>}</div>}
   </section>;
 }
