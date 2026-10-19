@@ -120,4 +120,8 @@ packages:
   backend/dividend-select:
     path: backend/dividend-select
     type: submodule
+  backend/kids-catalog:
+    path: backend/kids-catalog
+  apps/kids-catalog:
+    path: apps/kids-catalog
 default_package: backend/douyin-processor

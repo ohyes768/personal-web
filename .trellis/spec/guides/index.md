@@ -119,3 +119,4 @@ Found a new "didn't think of that" moment? Add it to the relevant guide.
 ## Kids catalog
 
 - [历史音频标签整理](./kids-audio-tags.md)：只补缺失、冲突跳过、备份恢复和 Windows 验证约束。
+- [设备合集目录](../backend/kids-catalog/backend/device-directory.md)：手动生成、曲目数排序、独立完成记录、MA 精确专辑匹配及版本编号解析。

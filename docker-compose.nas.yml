@@ -468,7 +468,9 @@ services:
       - ${KIDS_MUSIC_HOST_PATH:-/home/ohyes768/xiaomusic/music}:/music:rw
     # XM_* 喜马拉雅开放平台凭据（根目录 .env 提供）；缺失时回退网页采集，不影响启动
     environment: [TZ=Asia/Shanghai, KIDS_DATA_DIR=/app/data, KIDS_MUSIC_DIR=/music,
-                  "XM_APP_KEY=${XM_APP_KEY:-}", "XM_APP_SECRET=${XM_APP_SECRET:-}"]
+                  "XM_APP_KEY=${XM_APP_KEY:-}", "XM_APP_SECRET=${XM_APP_SECRET:-}",
+                  "KIDS_MA_URL=${KIDS_MA_URL:-}", "KIDS_MA_TOKEN=${KIDS_MA_TOKEN:-}",
+                  "KIDS_MA_MUSIC_ROOT=${KIDS_MA_MUSIC_ROOT:-/music}"]
     networks: [app-net]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8098/health"]

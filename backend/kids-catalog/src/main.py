@@ -9,8 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
 from src.collector import collect_latest
-from src.downloader import AlbumOfflineError, Downloader
+from src.downloader import AlbumOfflineError, Downloader, sanitize_filename
+from src.device_collections import CollectionError, DeviceCollections
+from src.music_assistant import MusicAssistant
 
 logger = logging.getLogger(__name__)
 MONTHLY_SECONDS = 30 * 24 * 3600
@@ -120,6 +123,8 @@ class Catalog:
                         (album_pk, status, reason, now, now))
             job_id = con.execute('select last_insert_rowid()').fetchone()[0]
             result = {'job_id': job_id, 'status': status, 'reason': reason}
+            if status == 'queued' and hasattr(self, 'collections'):
+                self.collections.mark_downloading(sanitize_filename(album['title']))
         if status == 'queued':
             threading.Thread(target=self._run_download, daemon=True,
                              args=(job_id, album['platform'], album['album_id'], album['title']),
@@ -139,14 +144,22 @@ class Catalog:
         except AlbumOfflineError as exc:
             logger.info("专辑《%s》已被平台下架: %s", title, exc)
             self._finish(job_id, 'unavailable', f'平台已下架: {exc}')
+            self.collections.mark_failed(sanitize_filename(title))
             return
         except Exception as exc:
             logger.warning("专辑《%s》下载失败", title, exc_info=True)
             self._finish(job_id, 'failed', f'下载失败: {exc}')
+            self.collections.mark_failed(sanitize_filename(title))
             return
         logger.info("专辑《%s》下载完成: 成功 %d 跳过 %d 失败 %d", title, report.downloaded, report.skipped, report.failed)
         if report.downloaded and not (report.skipped or report.failed):
             self._finish(job_id, 'done', None, report.size_bytes)
+            if hasattr(self, 'collections'):
+                try:
+                    self.collections.confirm(sanitize_filename(title), expected=report.downloaded)
+                except (ValueError, OSError):
+                    self.collections.mark_failed(sanitize_filename(title))
+                    logger.warning('下载完成，但设备合集文件校验未通过')
         elif report.downloaded:
             self._finish(job_id, 'partial',
                          f'完成 {report.downloaded}，跳过受限 {report.skipped}，失败 {report.failed}',
@@ -154,6 +167,8 @@ class Catalog:
         else:
             self._finish(job_id, 'failed',
                          f'未能下载任何曲目（跳过受限 {report.skipped}，失败 {report.failed}）')
+        if (report.skipped or report.failed or not report.downloaded) and hasattr(self, 'collections'):
+            self.collections.mark_failed(sanitize_filename(title))
 
     def _finish(self, job_id: int, status: str, reason: str | None, size_bytes: int | None = None):
         with self.db() as con:
@@ -161,14 +176,46 @@ class Catalog:
                         (status, reason, size_bytes, datetime.now().isoformat(), job_id))
 
 
+class ConfirmCollection(BaseModel):
+    folder: str = Field(min_length=1, max_length=256)
+
+
 def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
                collector=collect_latest, downloader: Downloader | None = None,
-               auto_refresh_seconds: int | None = None):
+               auto_refresh_seconds: int | None = None, ma_client=None):
     catalog = Catalog(data_dir or Path(os.getenv('KIDS_DATA_DIR', '/app/data')))
     app = FastAPI(title='Kids Catalog API')
     app.state.catalog = catalog
     app.state.music_dir = music_dir or Path(os.getenv('KIDS_MUSIC_DIR', '/music'))
     catalog.downloader = downloader or Downloader(app.state.music_dir)
+    collections = DeviceCollections(catalog.path.parent, app.state.music_dir, ma_client or MusicAssistant())
+    app.state.collections = collections
+    catalog.collections = collections
+
+    def import_completed_downloads():
+        # Old done jobs are evidence only when counts match actual valid files.
+        # Never overwrite an existing ledger entry, including incomplete downloads.
+        with catalog.db() as con:
+            rows = con.execute("select a.platform,a.title,j.downloaded_tracks,j.total_tracks "
+                               "from albums a join jobs j on a.id=j.album_id where j.status='done'").fetchall()
+        with collections.db() as con:
+            known = {row['folder'] for row in con.execute('select folder from completions')}
+        for row in rows:
+            folder = sanitize_filename(row['title'])
+            if folder in known or not row['total_tracks'] or row['downloaded_tracks'] != row['total_tracks']:
+                continue
+            try:
+                collections.confirm(folder, expected=row['total_tracks'], only_missing=True)
+            except (ValueError, OSError):
+                pass
+
+    # Preserve legacy completion evidence before monthly refresh can retire jobs.
+    # Only stat the file manifest here; expensive audio validation happens at generation.
+    with catalog.db() as con:
+        legacy = con.execute("select a.title,j.total_tracks from albums a join jobs j on a.id=j.album_id "
+                             "where j.status='done' and j.total_tracks>0 and j.downloaded_tracks=j.total_tracks").fetchall()
+    for row in legacy:
+        collections.record_legacy(sanitize_filename(row['title']), row['total_tracks'])
 
     if auto_refresh_seconds:
         def _monthly_refresh():
@@ -201,6 +248,38 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
             return catalog.queue(album_id)
         except KeyError:
             raise HTTPException(status_code=404, detail='专辑不存在')
+
+    @app.get('/api/collections')
+    def collection_status():
+        return collections.read()
+
+    @app.post('/api/collections/generate', status_code=202)
+    def generate_collections():
+        if not collections.start(import_completed_downloads):
+            raise HTTPException(409, detail={'code': 'generation_running', 'message': '正在生成歌单，请稍候'})
+        return {'status': 'running'}
+
+    @app.post('/api/collections/confirm')
+    def confirm_collection(body: ConfirmCollection):
+        try:
+            return {'track_count': collections.confirm(body.folder)}
+        except (ValueError, OSError) as exc:
+            message = str(exc) if isinstance(exc, CollectionError) else '目录不可读取或路径无效'
+            raise HTTPException(422, detail=message) from None
+
+    @app.get('/api/device/v1/collections')
+    def device_directory():
+        snapshot = collections.read()['snapshot']
+        if snapshot is None:
+            raise HTTPException(404, detail={'code': 'directory_missing', 'message': '尚未生成歌单'})
+        return snapshot
+
+    @app.get('/api/device/v1/collections/by-number/{number}')
+    def device_target(number: int, revision: str):
+        status, result = collections.resolve(number, revision)
+        if status != 200:
+            raise HTTPException(status, detail=result)
+        return result
 
     return app
 
