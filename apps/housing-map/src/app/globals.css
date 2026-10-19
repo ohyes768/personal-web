@@ -1309,7 +1309,7 @@ body {
 .directory-source-summary { padding: 12px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .directory-source-summary p { margin: 0 0 6px; line-height: 1.6; }
 .directory-source-summary-line { color: var(--text-muted); line-height: 1.6; }
-.directory-source-summary a { color: var(--accent-warm); }
+.directory-source-summary a, .directory-position-panel a { color: var(--accent-warm); }
 .directory-source-summary summary { margin-top: 8px; color: var(--text-muted); cursor: pointer; font-size: 12px; }
 .directory-source-summary details p { margin: 6px 0; color: var(--text-muted); font-size: 12px; }
 .directory-position-panel p { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; }

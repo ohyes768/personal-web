@@ -32,11 +32,13 @@ export default function PositionPanel({ position, busy, confirm, address, commun
   const [poi, setPoi] = useState('');
   const selected = position.selected;
   const candidate = position.candidates.find(p => p.source_id === poi);
+  const addr = selected?.address || selected?.geographic_address || address;
+  const mapLink = safeDirectoryLink(selected?.source_url);
   return <section className="directory-position-panel" aria-label="高德定位详情">
     <div className="directory-position-heading"><h4>高德定位</h4><PositionBadge position={position} compact /></div>
     {selected?.name && selected.name.trim() !== communityName?.trim() && <p>高德名称：{selected.name}</p>}
-    {(selected?.address || selected?.geographic_address || address) && <p>高德地址：{selected?.address || selected?.geographic_address || address}</p>}
-    {safeDirectoryLink(selected?.source_url) && <p><a href={selected?.source_url} target="_blank" rel="noopener noreferrer">高德查看 ↗</a></p>}
+    {addr ? <p className="directory-source-summary-line"><span>高德地址：{addr}</span>{mapLink && <a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a>}</p>
+      : mapLink && <p><a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a></p>}
     {!selected && <p className="directory-muted">{position.has_coordinates ? '已有地图坐标' : '暂无地图坐标'}</p>}
     {position.error && <p role="status" className="directory-warning">{position.error}</p>}
     {position.state === 'review' && (position.candidates.length ? <>
