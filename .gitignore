@@ -111,3 +111,7 @@ backend/rss-relay/data/
 backend/rss-relay/.test-deps/
 backend/rss-relay/.pytest-tmp/
 backend/rss-relay/.pytest_cache/
+
+# kids-catalog metadata tool test scratch
+backend/kids-catalog/.pytest-tmp*/
+backend/kids-catalog/.test-deps-linux/

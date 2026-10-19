@@ -2,7 +2,13 @@
 name = "kids-catalog"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115", "uvicorn[standard]>=0.32", "pydantic>=2", "beautifulsoup4>=4.12"]
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "pydantic>=2",
+    "beautifulsoup4>=4.12",
+    "mutagen>=1.47,<2",
+]
 
 [dependency-groups]
 dev = [
@@ -16,3 +22,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "--basetemp=.pytest-tmp"
+markers = ["requires_symlink: needs native symlink privileges"]

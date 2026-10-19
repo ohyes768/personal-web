@@ -115,3 +115,7 @@ Found a new "didn't think of that" moment? Add it to the relevant guide.
 ---
 
 **Core Principle**: 30 minutes of thinking saves 3 hours of debugging.
+
+## Kids catalog
+
+- [历史音频标签整理](./kids-audio-tags.md)：只补缺失、冲突跳过、备份恢复和 Windows 验证约束。
