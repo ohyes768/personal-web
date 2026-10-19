@@ -22,7 +22,7 @@ test('admitted rows show one position column matching the filter and review acti
   const html = render(React.createElement(CatalogTable, { excluded: false, busy: false, select() {}, retry() {},
     items: [{ community_id: '1', community_name: '测试花园', map_status: 'displayed', position: { state: 'review', has_coordinates: true, candidates: [] } }] }));
   assert.match(html, /高德定位/); assert.doesNotMatch(html, /地图定位|地图显示/); assert.match(html, /待确认/); assert.match(html, /确认位置/);
-  assert.equal((html.match(/<th>/g) || []).length, 5);
+  assert.equal((html.match(/<th>高德定位<\/th>/g) || []).length, 1);
 });
 
 test('compact position badges use the same three categories as the filter', () => {

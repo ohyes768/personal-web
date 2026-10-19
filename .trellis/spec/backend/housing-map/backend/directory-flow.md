@@ -31,3 +31,28 @@ Receipt contains after_snapshot. Offline rollback restores registry tables trans
 
 ## Validation
 `test_directory_flow.py` covers gates, source separation, newhouse/no-position, manual/deleted/rejected protection, materialization/idempotence, source-only human notes, position query budget/ambiguity/staleness/cancel/client laziness/restart, rental membership withdrawal, auction skip/reopen/bind/stale target, disabled legacy auto-review, API migration gate, read-only migration bytes, plan staleness, simulated IDs and rollback refusal after new data. Frontend directory-flow tests cover job-unit normalization/nested errors, reasons, null success/conflict responses; management tests cover four entries and separated tabs. Browser QA must use disposable DATA_DIR and fake upstream clients, desktop plus390px; production rollout/real upstream coverage is independent.
+
+## Catalog data coverage (2026-10-19)
+
+### Scope / Trigger
+Admitted management rows show data coverage. Keep the read-only projection in `directory_coverage.attach_coverage`, called only by catalog/detail routes, outside inventory/admitted to avoid recursive business membership queries.
+
+### Signatures
+`GET /catalog` adds `auction=''|has|none`, `rental=''|data|pending|unmapped|source_missing|no_samples|failed`. Apply to admitted rows before total/paging; excluded rows ignore these filters. Detail adds `auction_records` (whitelisted public facts, no full upstream announcement).
+
+### Contracts
+`coverage.auction={property_count,round_count,unidentified_round_count}` counts all statuses and dates under current registry associations. Same source+asset counts once; missing asset only counts unidentified rounds, never a known property. Current asset decision precedes round decision; ignored on either identity vetoes. No name guessing or persisted old community_id fallback. `auction=has` includes unidentified rounds.
+
+`coverage.rental={state,sample_count,captured_at,stale,update_failed,error}` uses shared select_valid and is_stale. Match published snapshots to the current matched Fang source ID, including legacy community IDs with that same source. No mapping/rebound old source means no current samples. Data with valid samples takes precedence over latest error. Empty published snapshot is no_samples; mapped but unpublished is pending. Review needs_selection/skipped→unmapped, missing→source_missing, search_failed→failed, no review/deferred→pending. Only job errors for this community with job.started_at >= source.associated_at can mark a mapped source failed; never assign a whole-job failure to every community.
+
+### Validation / Error Matrix
+Invalid filter→422. Business read errors propagate through the existing directory result envelope rather than fabricate zero. Existing load_current corruption fallback remains unchanged. Missing coverage on old frontend payloads displays 状态未知. No admission/collection/association mutation on GET.
+
+### Good / Base / Bad
+Good: two rounds of asset A count one property; old valid rentals plus per-community failure remain data with update_failed. Base: no snapshot is pending, a verified empty snapshot is no_samples. Bad: count rounds as 套, use another source's snapshot after rebinding, or label all communities failed from global job status.
+
+### Tests Required
+test_directory_flow covers actual registry + raw rounds + publish_run, sample dedup/exclusion, legacy ID source reuse, rebinding isolation, review states and filtered paging/422. directory-flow.test.cjs covers SSR columns, missing coverage, failed/stale alongside data, escaped public records and safe links. Browser checks use intercepted examples on desktop/390px, page2→filter page1, combined filters, detail and excluded tab.
+
+### Wrong vs Correct
+Wrong: `property_count=len(auction_rounds)` or `sample_count=source.sample_count`. Correct: unique known asset identity; missing-asset rounds separate; rental count from select_valid on the current confirmed source snapshot.

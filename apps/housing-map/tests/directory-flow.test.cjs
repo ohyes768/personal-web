@@ -34,6 +34,41 @@ test('excluded catalog distinguishes insufficient facts from nonresidential cond
   assert.match(html, /资料待补，可重新获取/); assert.match(html, /条件不符/); assert.match(html, /更新资料/);
   assert.doesNotMatch(html, /确认收录|旧主档用途证据初始化/);
 });
+test('admitted catalog shows asset counts and preserves usable rental data after refresh failure', () => {
+  const html = renderToStaticMarkup(React.createElement(CatalogTable, { excluded: false, busy: false, select() {}, retry() {},
+    items: [{ community_id: '1', community_name: '测试花园', district: '滨江', address: '月明路1号',
+      coverage: { auction: { property_count: 2, round_count: 4, unidentified_round_count: 1 },
+        rental: { state: 'data', sample_count: 12, captured_at: '2026-10-01T00:00:00Z', stale: true, update_failed: true } } },
+      { community_id: '2', community_name: '待采集花园', coverage: {
+        auction: { property_count: 0, round_count: 0, unidentified_round_count: 0 }, rental: { state: 'pending', sample_count: 0 } } }] }));
+  assert.match(html, /<th>法拍<\/th>/); assert.match(html, /<th>租金<\/th>/);
+  assert.match(html, /2套/); assert.match(html, /另1轮无法去重/);
+  assert.match(html, /有数据 · 12条/); assert.match(html, /更新失败/); assert.match(html, /数据较旧/);
+  assert.match(html, /待采集/); assert.match(html, /暂无记录/);
+  assert.match(html, /滨江 · 月明路1号/);
+  assert.doesNotMatch(html, /<th>区域 \/ 实际地址<\/th>/);
+});
+test('catalog distinguishes all rental empty states and unknown payloads', () => {
+  const states = ['unmapped', 'source_missing', 'no_samples', 'failed'];
+  const html = renderToStaticMarkup(React.createElement(CatalogTable, { excluded: false, busy: false, select() {}, retry() {},
+    items: [...states.map((state, i) => ({ community_id: String(i), community_name: state, coverage: {
+      auction: { property_count: 0, round_count: 0, unidentified_round_count: 0 }, rental: { state, sample_count: 0 } } })),
+      { community_id: 'unknown', community_name: '旧接口未返回覆盖' }] }));
+  for (const label of ['待关联来源', '未找到来源', '暂无样本', '采集失败', '状态未知']) assert.match(html, new RegExp(label));
+});
+test('catalog detail exposes rental date and safe public auction records', () => {
+  const { CatalogAuctionRecords, CatalogRentalDetails } = require('../src/components/community/CatalogCoverage.tsx');
+  const rental = { state: 'data', sample_count: 1, captured_at: '2026-10-01T00:00:00Z', error: '更新失败，保留旧样本' };
+  const html = renderToStaticMarkup(React.createElement(React.Fragment, {},
+    React.createElement(CatalogRentalDetails, { value: rental }),
+    React.createElement(CatalogAuctionRecords, { coverage: { rental, auction: { property_count: 1, round_count: 2, unidentified_round_count: 1 } },
+      records: [{ source: 'laipai', auction_id: 'a', title: '<img onerror=1>', status: 'todo', source_url: 'javascript:alert(1)' },
+        { source: 'laipai', auction_id: 'b', asset_id: 'asset', title: '测试房产', status: 'done', source_url: 'https://example.com/auction' }] })));
+  assert.match(html, /采集时间：2026\/10\/1/); assert.match(html, /有效样本不足3条/);
+  assert.match(html, /更新失败，保留旧样本/); assert.match(html, /&lt;img onerror=1&gt;/);
+  assert.match(html, /待开拍/); assert.match(html, /https:\/\/example.com\/auction/);
+  assert.doesNotMatch(html, /href="javascript:|<img /);
+});
 test('request keeps null successes and exposes API conflict instead of claiming success', async () => {
   const previous = global.fetch;
   try {

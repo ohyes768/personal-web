@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from src.services import directory_workflow as flow
 from src.services.community_review import community_matches
+from src.services.directory_coverage import attach_coverage
 from src.services.directory_position import PositionJob, position_detail, position_one, confirm_position, PositionOutcome
 
 router = APIRouter(prefix='/directory/workflow', tags=['directory-workflow'])
@@ -71,6 +72,8 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
             district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual', 'done', 'todo'] = '',
             market: Literal['', 'new_house', 'second_hand'] = '',
             property_type: str = Query('', max_length=100),
+            auction: Literal['', 'has', 'none'] = '',
+            rental: Literal['', 'data', 'pending', 'unmapped', 'source_missing', 'no_samples', 'failed'] = '',
             page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     def read():
         registry = require_store()
@@ -84,6 +87,12 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
         if position:
             states = POSITION_BUCKETS.get(position, {position})
             rows = [r for r in rows if r.get('position', {}).get('state') in states]
+        if state == 'admitted':
+            rows = attach_coverage(rows, registry, registry.path.parent)
+            if auction:
+                rows = [r for r in rows if bool(r['coverage']['auction']['round_count']) == (auction == 'has')]
+            if rental:
+                rows = [r for r in rows if r['coverage']['rental']['state'] == rental]
         return {'items': rows[(page - 1) * page_size:page * page_size], 'total': len(rows), 'page': page, 'property_types': property_types}
     return result(read)
 
@@ -95,6 +104,8 @@ def detail(cid: str):
         row = next((c for c in flow.inventory(registry, registry.path.parent) if c['community_id'] == cid), None)
         if not row:
             raise HTTPException(404, '小区不存在或已删除')
+        if row['admission_state'] == 'admitted':
+            row = attach_coverage([row], registry, registry.path.parent, include_records=True)[0]
         return {**row, 'events': registry.events(cid) if not row.get('source_record_id') else []}
     return result(read)
 

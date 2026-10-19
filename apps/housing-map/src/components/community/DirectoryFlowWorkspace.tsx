@@ -7,9 +7,11 @@ import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
 import type { RentalRequestDiagnostics } from '../../lib/rental-types';
+import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, rentalCoverageLabels, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
 
 type CatalogRow = Community & { property_types?: string[]; position?: Position; qualification: string; facts_state: string; exclusion_reason: string;
-  source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string } };
+  source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string };
+  coverage?: CatalogCoverage; auction_records?: CatalogAuctionRecord[] };
 type Auction = Source & { revision: string; skipped: boolean; candidates: Community[]; reason: string;
   auction_ids?: string[]; rounds?: { auction_id: string; title?: string; source_url?: string; round?: number }[] };
 type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number };
@@ -147,16 +149,19 @@ export function CatalogClassificationFilter({ mode, value, propertyTypes, onChan
 
 export function CatalogTable({ items, excluded, select, retry, busy, position }: { items: CatalogRow[]; excluded: boolean;
   select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; }) {
-  return <div className="directory-table-wrap"><table className="review-table catalog-table"><thead><tr>
-    <th>小区名称</th><th>区域 / 实际地址</th><th>{excluded ? '房屋用途' : '新房 / 二手房'}</th><th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th><th>操作</th>
+  return <div className="directory-table-wrap"><table className={`review-table catalog-table${excluded ? '' : ' catalog-admitted'}`}><thead><tr>
+    <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th><th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
-    <td data-label="小区名称"><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}</td>
-    <td data-label="区域 / 实际地址">{c.district || '区域待补'}<small className="catalog-text" title={c.address || '实际地址待补充'}>{c.address || '实际地址待补充'}</small></td>
+    <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
+      {!excluded && <small className="catalog-text directory-muted" title={c.address || '实际地址待补充'}>{c.district || '区域待补'} · {c.address || '实际地址待补充'}</small>}</td>
+    {excluded && <td data-label="区域 / 实际地址">{c.district || '区域待补'}<small className="catalog-text" title={c.address || '实际地址待补充'}>{c.address || '实际地址待补充'}</small></td>}
     <td data-label={excluded ? '房屋用途' : '新房 / 二手房'}>{excluded
       ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
       : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
     {excluded && <td data-label="不收录原因 / 资料状态">{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : '条件不符'}</small></td>}
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}
+    {!excluded && <><td data-label="法拍"><AuctionCoverage value={c.coverage?.auction} onView={() => select(c)} /></td>
+      <td data-label="租金"><RentalCoverage value={c.coverage?.rental} /></td></>}
     <td data-label="操作"><div className="catalog-inline catalog-row-actions"><button className="btn btn-secondary" onClick={() => select(c)}>查看资料</button>{excluded && <button className="btn btn-secondary" disabled={busy} onClick={() => retry(c)}>更新资料</button>}</div></td>
   </tr>)}</tbody></table></div>;
 }
@@ -195,6 +200,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [q, setQ] = useState(''); const [district, setDistrict] = useState('滨江'); const [page, setPage] = useState(1);
   const [positionFilter, setPositionFilter] = useState('');
   const [marketFilter, setMarketFilter] = useState('');
+  const [auctionFilter, setAuctionFilter] = useState('');
+  const [rentalFilter, setRentalFilter] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
   const [propertyTypes, setPropertyTypes] = useState<string[]>([]);
   const [showSkipped, setShowSkipped] = useState(false);
@@ -222,7 +229,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         if (!counts.active) { setLoading(false); return; }
         if (mode === 'rental') { setLoading(false); return; }
         const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q, page: String(page), include_skipped: String(showSkipped) })}`
-          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '' })}`;
+          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '', auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
         const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         if (page > 1 && (page - 1) * 30 >= packet.total) { setPage(Math.max(1, Math.ceil(packet.total / 30))); return; }
@@ -232,7 +239,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '名单加载失败'); setLoading(false); } }
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter]);
+  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter]);
   useEffect(() => {
     if (!summary?.active) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -359,6 +366,11 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       <CatalogClassificationFilter mode={mode} value={mode === 'admitted' ? marketFilter : propertyFilter} propertyTypes={propertyTypes}
         onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
       {mode === 'admitted' && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionBucketLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
+      {mode === 'admitted' && <><select aria-label="法拍数据筛选" value={auctionFilter} onChange={e => { setAuctionFilter(e.target.value); setPage(1); setLoading(true); }}>
+        <option value="">全部法拍覆盖</option><option value="has">有法拍记录</option><option value="none">暂无法拍记录</option>
+      </select><select aria-label="租金状态筛选" value={rentalFilter} onChange={e => { setRentalFilter(e.target.value); setPage(1); setLoading(true); }}>
+        <option value="">全部租金状态</option>{Object.entries(rentalCoverageLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></>}
       {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
       <button type="button" className="btn btn-secondary directory-refresh" aria-label="刷新名单" title="刷新名单" onClick={() => { setLoading(true); setRevision(v => v + 1); }}>↻</button>
       {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}</div>}
@@ -387,7 +399,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         </div> : <button className="btn directory-exclude-action" disabled={busy} title="需要选择不收录原因" onClick={() => setExcluding(true)}>转为不收录</button>)}</div><button type="button" className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>关闭</button></>} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
       {error && <p role="alert" className="directory-warning">{error}</p>}
       {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} busy={busy} action={(...args) => void action(...args)} />}
-      {detail && <><section className="directory-basic-info" aria-label="基本信息">
+      {detail && <><CatalogAuctionRecords coverage={detail.coverage} records={detail.auction_records} /><CatalogRentalDetails value={detail.coverage?.rental} /><section className="directory-basic-info" aria-label="基本信息">
         <h4>基本信息</h4>
         <dl>
           <div className="directory-info-wide"><dt>小区名称</dt><dd>{detail.community_name}</dd></div>

@@ -28,6 +28,89 @@ def activate(store):
     with store.db() as db: db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)',(KEY,VERSION))
 
 
+def coverage_client(store, monkeypatch):
+    from src.api import directory_routes
+    monkeypatch.setattr(directory_routes, 'store', lambda: store)
+    app = FastAPI()
+    app.include_router(directory_routes.router, prefix='/api')
+    return TestClient(app)
+
+
+def test_catalog_coverage_auction_assets_not_rounds(store, tmp_path, monkeypatch):
+    c, _ = master(store); activate(store)
+    rows = [dict(source='laipai', auction_id=sid, asset_id=asset, title=sid, status='todo')
+            for sid, asset in [('1', 'a'), ('2', 'a'), ('3', None), ('4', 'ignored'), ('5', 'pending')]]
+    (tmp_path/'auction_records.json').write_text(json.dumps(dict(version=1, records=rows)), encoding='utf-8')
+    for sid, kind, ids in [('a', 'asset', ['1', '2']), ('3', 'auction', ['3']), ('ignored', 'asset', ['4'])]:
+        s = store.ingest(dict(source='laipai', source_kind=kind, source_id=sid,
+                              name='未知花园', district='滨江', auction_ids=ids))
+        store.associate(s['id'], c['community_id'])
+        if sid == 'ignored':
+            with store.db() as db:
+                db.execute("UPDATE sources SET status='ignored' WHERE id=?", (s['id'],))
+    client = coverage_client(store, monkeypatch)
+    value = client.get('/api/directory/workflow/catalog').json()['data']['items'][0]['coverage']['auction']
+    assert value == dict(property_count=1, round_count=3, unidentified_round_count=1)
+    detail = client.get('/api/directory/workflow/catalog/'+c['community_id']).json()['data']
+    assert {r['auction_id'] for r in detail['auction_records']} == {'1', '2', '3'}
+    assert client.get('/api/directory/workflow/catalog?auction=none').json()['data']['total'] == 0
+    assert client.get('/api/directory/workflow/catalog?auction=has').json()['data']['total'] == 1
+
+
+def test_catalog_rental_coverage_samples_failure_and_rebind(store, tmp_path, monkeypatch):
+    from src.services.rental_reference.storage import CommunityBatch, publish_run
+    c, _ = master(store); activate(store)
+    s = store.ingest(dict(source='fang', source_id='f1', name='租金来源', district='滨江'))
+    store.associate(s['id'], c['community_id'])
+    client = coverage_client(store, monkeypatch)
+    def read():
+        return client.get('/api/directory/workflow/catalog').json()['data']['items'][0]['coverage']['rental']
+    assert read()['state'] == 'pending'
+    sample = dict(source_listing_id='r1', rental_mode='whole', monthly_rent_yuan=6000,
+                  area_m2=90, detail_fetched=True, property_type='住宅')
+    publish_run(tmp_path/'rentals', [CommunityBatch(community_id='legacy-id', source='fang',
+        source_community_id='f1', status='complete', captured_at='2020-01-01T00:00:00+00:00',
+        samples=[sample, sample, {**sample, 'source_listing_id':'r2', 'rental_mode':'shared'}])])
+    (tmp_path/'rentals'/'refresh_job.json').write_text(json.dumps(dict(phase='done',
+        started_at='2099-01-01T00:00:00+00:00', finished_at='2099-01-02T00:00:00+00:00',
+        errors={'items':[dict(community_id=c['community_id'], error='来源更新失败')]})), encoding='utf-8')
+    value = read()
+    assert value['state'] == 'data' and value['sample_count'] == 1
+    assert value['stale'] and value['update_failed'] and value['captured_at'].startswith('2020')
+    store.unlink(s['id'])
+    assert read()['state'] != 'data'
+    other = store.ingest(dict(source='fang', source_id='f2', name='新来源', district='滨江'))
+    store.associate(other['id'], c['community_id'])
+    # An error from before the new association cannot mark its never-attempted source failed.
+    job_path = tmp_path/'rentals'/'refresh_job.json'
+    job = json.loads(job_path.read_text()); job['started_at'] = '2020-01-01T00:00:00+00:00'
+    job_path.write_text(json.dumps(job), encoding='utf-8')
+    assert read()['state'] == 'pending' and read()['sample_count'] == 0
+    publish_run(tmp_path/'rentals', [CommunityBatch(community_id=c['community_id'], source='fang',
+        source_community_id='f2', status='empty_ok', captured_at='2026-10-19T00:00:00+00:00', samples=[])])
+    assert read()['state'] == 'no_samples'
+
+
+def test_catalog_rental_states_and_filter_before_pagination(store, tmp_path, monkeypatch):
+    activate(store)
+    expected = {}
+    for index, reason, state in [(1, None, 'pending'), (2, 'needs_selection', 'unmapped'),
+                                 (3, 'missing', 'source_missing'), (4, 'search_failed', 'failed')]:
+        c, _ = master(store, facts(str(index), '花园'+str(index)))
+        expected[c['community_id']] = state
+        if reason:
+            with store.db() as db:
+                db.execute('INSERT INTO meta VALUES (?,?)', ('rental_review:'+c['community_id'], dump(dict(reason=reason))))
+    client = coverage_client(store, monkeypatch)
+    rows = client.get('/api/directory/workflow/catalog').json()['data']['items']
+    assert {r['community_id']:r['coverage']['rental']['state'] for r in rows} == expected
+    packet = client.get('/api/directory/workflow/catalog?rental=failed&auction=none&page_size=1').json()['data']
+    assert packet['total'] == 1 and packet['items'][0]['coverage']['rental']['state'] == 'failed'
+    assert client.get('/api/directory/workflow/catalog?rental=failed&page_size=1&page=2').json()['data']['items'] == []
+    for query in ('rental=bogus', 'auction=bogus'):
+        assert client.get('/api/directory/workflow/catalog?'+query).status_code == 422
+
+
 @pytest.fixture
 def store(tmp_path): return CommunityRegistry(tmp_path/'community_registry.sqlite3')
 
