@@ -206,6 +206,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [tasksOpen, setTasksOpen] = useState(false);
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
   const [excluding, setExcluding] = useState(false); const [excludeReason, setExcludeReason] = useState('');
+  const [customExcludeReason, setCustomExcludeReason] = useState('');
+  const exclusionReason = excludeReason === 'other' ? customExcludeReason.trim() : excludeReason;
   const detailVersion = useRef(0);
   const finishes = useRef<Record<string, string>>({});
   const optimistic = useRef<string | null>(null);
@@ -277,7 +279,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   function changeMode(value: string) { setMode(value); setPage(1); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
-    setError(''); setNotice(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason('');
+    setError(''); setNotice(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason(''); setCustomExcludeReason('');
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
       const value = await workflowRequest<CatalogRow>(path);
@@ -373,11 +375,16 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
         <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); }}>下一页</button></nav></>}
     </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'} footer={detail && <><div className="directory-detail-actions">{detail.admission_state === 'admitted' && (excluding ? <div className="directory-exclusion-confirm">
-          <label>不收录原因<input value={excludeReason} maxLength={300} placeholder="例如：高德地图未找到该小区" onChange={e => setExcludeReason(e.target.value)} /></label>
-          <div><button className="btn btn-primary" disabled={busy || !excludeReason.trim()} onClick={() => void admissionAction('exclude', excludeReason)}>确认不收录</button>
-            <button className="btn btn-secondary" disabled={busy} onClick={() => { setExcluding(false); setExcludeReason(''); }}>取消</button></div>
+          <label>不收录原因<select value={excludeReason} disabled={busy} onChange={e => { setExcludeReason(e.target.value); setCustomExcludeReason(''); }}>
+            <option value="">请选择不收录原因</option>
+            {['非住宅用途', '非真实小区（道路、楼栋或附属设施）', '不在管理区域内', '与其他小区重复', '名称、地址或位置存疑，暂不收录'].map(reason => <option key={reason} value={reason}>{reason}</option>)}
+            <option value="other">其他原因</option>
+          </select></label>
+          {excludeReason === 'other' && <label>具体原因<input value={customExcludeReason} disabled={busy} maxLength={300} placeholder="请填写具体原因" onChange={e => setCustomExcludeReason(e.target.value)} /></label>}
+          <div><button className="btn btn-primary" disabled={busy || !exclusionReason} onClick={() => void admissionAction('exclude', exclusionReason)}>确认不收录</button>
+            <button className="btn btn-secondary" disabled={busy} onClick={() => { setExcluding(false); setExcludeReason(''); setCustomExcludeReason(''); }}>取消</button></div>
           <p className="directory-muted">转为不收录后将移出地图、租金和法拍名单，自动流程不会再收录；之后可在不收录列表恢复自动分类。</p>
-        </div> : <button className="btn directory-exclude-action" disabled={busy} title="需要填写不收录原因" onClick={() => setExcluding(true)}>转为不收录</button>)}</div><button type="button" className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>关闭</button></>} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
+        </div> : <button className="btn directory-exclude-action" disabled={busy} title="需要选择不收录原因" onClick={() => setExcluding(true)}>转为不收录</button>)}</div><button type="button" className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>关闭</button></>} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
       {error && <p role="alert" className="directory-warning">{error}</p>}
       {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} busy={busy} action={(...args) => void action(...args)} />}
       {detail && <><section className="directory-basic-info" aria-label="基本信息">
