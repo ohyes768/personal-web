@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { safeDirectoryLink } from './DirectoryCards';
 
 export type PositionPoint = { source_id?: string; name?: string; address?: string; longitude?: number; latitude?: number;
-  source_url?: string; captured_at?: string; geographic_address?: string; name_similarity?: number };
+  source_url?: string; captured_at?: string; geographic_address?: string; name_similarity?: number; name_matched?: boolean };
 export type Position = { state: string; has_coordinates: boolean; revision?: string; candidates: PositionPoint[];
   selected?: PositionPoint; checked_at?: string; confirmed_at?: string; error?: string };
 export const positionLabels: Record<string, string> = { matched: '已匹配', pending: '待补全', review: '待确认',
@@ -46,14 +46,15 @@ export default function PositionPanel({ position, busy, confirm, address, commun
         <select aria-label="选择高德候选位置" value={poi} disabled={busy || !position.revision} onChange={e => setPoi(e.target.value)}>
           <option value="">请选择候选位置（{position.candidates.length} 个）</option>
           {position.candidates.map((p, i) => <option key={p.source_id || i} value={p.source_id || ''} disabled={!p.source_id || !(p.address || p.geographic_address)}>
-            {p.name || '未命名地点'} · {p.address || p.geographic_address || '地址缺失，无法确认'}
+            {p.name || '未命名地点'} · {p.address || p.geographic_address || '地址缺失，无法确认'}{p.name_matched === false ? '（名称不匹配，请人工核对）' : ''}
           </option>)}
         </select>
         <button className="btn btn-primary" disabled={busy || !position.revision || !candidate || !(candidate.address || candidate.geographic_address)} onClick={() => confirm({ revision: position.revision, poi_id: poi })}>确认位置</button>
       </div>
       {candidate && <p>{candidate.name} · {candidate.address || candidate.geographic_address}
+        {candidate.name_matched === false && <span>（名称不匹配，请人工核对）</span>}
         {safeDirectoryLink(candidate.source_url) && <> · <a href={candidate.source_url} target="_blank" rel="noopener noreferrer">核对高德位置 ↗</a></>}</p>}
       <p className="directory-muted">核对地址与分期后确认，将更新地图位置。</p>
-    </> : <p className="directory-muted">暂无可确认的候选位置。</p>)}
+    </> : <p className="directory-muted">区内未找到相关地点，结果可能不完整，待高德数据完善后重新查询。</p>)}
   </section>;
 }

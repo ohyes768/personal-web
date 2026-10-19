@@ -107,19 +107,22 @@ def _flat_name(value):
     return stem
 
 
-def _name_matches(pois, names, district):
-    """POIs whose flattened name equals or contains a flattened community name/alias
-    (shorter side length >= 3); comparison ignores dots, suffixes and parentheticals."""
-    flats = {_flat_name(n) for n in names}
-    matches = {}
+def _valid_pois(pois, district):
+    """All in-district, category-whitelisted, non-attached POIs keyed by source_id."""
+    valid = {}
     for raw in pois:
         p = normalize_poi(raw, district=district)
-        if not p:
-            continue
-        name = _flat_name(p['name'])
-        if name in flats or any((len(n) >= 3 and n in name) or (len(name) >= 3 and name in n) for n in flats):
-            matches[p['source_id']] = p
-    return matches
+        if p:
+            valid[p['source_id']] = p
+    return valid
+
+
+def _name_hit(p, flats):
+    """Whether a normalized POI's flattened name equals or contains a flattened
+    community name/alias (shorter side length >= 3); comparison ignores dots,
+    suffixes and parentheticals."""
+    name = _flat_name(p['name'])
+    return name in flats or any((len(n) >= 3 and n in name) or (len(name) >= 3 and name in n) for n in flats)
 
 
 def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False):
@@ -138,7 +141,9 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
     try:
         client = client or AmapClient()
         pois, count = client.search_name(target['community_name'], district)
-        matches = _name_matches(pois, names, district)
+        valid = _valid_pois(pois, district)
+        flats = {_flat_name(n) for n in names}
+        matches = {k: p for k, p in valid.items() if _name_hit(p, flats)}
         # Alias retry only when the primary name yields nothing and the result is not truncated.
         if not matches and count <= 25:
             aliases, seen = [], {normalized(target['community_name'])}
@@ -149,11 +154,19 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
                     aliases.append(alias)
             for alias in aliases[:3]:
                 alias_pois, alias_count = client.search_name(alias, district)
-                alias_matches = _name_matches(alias_pois, names, district)
+                alias_valid = _valid_pois(alias_pois, district)
+                alias_matches = {k: p for k, p in alias_valid.items() if _name_hit(p, flats)}
                 if alias_matches:
-                    matches, count = alias_matches, alias_count
+                    valid, matches, count = alias_valid, alias_matches, alias_count
                     break
-        candidates = list(matches.values())
+        # In-district POIs failing the name check stay visible as suspect candidates
+        # for human confirmation; they never qualify for auto-binding.
+        suspects = {k: p for k, p in valid.items() if k not in matches}
+        for p in matches.values():
+            p['name_matched'] = True
+        for p in suspects.values():
+            p['name_matched'] = False
+        candidates = [*matches.values(), *suspects.values()]
         if len(candidates) > 1:
             # Review queue renders most-similar first; the score is evidence for the
             # human, never an auto-bind (single-candidate trust rule is unchanged).
@@ -163,11 +176,12 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
                 point['name_similarity'] = round(max(
                     (name_similarity(n, point.get('name') or '') for n in names_for_score), default=0.0), 4)
             candidates.sort(key=lambda p: -p['name_similarity'])
-        # A single untruncated candidate is trusted even when the name is a containment hit
-        # or the address differs; multiple candidates and truncation stay review.
-        if count <= 25 and len(candidates) == 1:
-            point = candidates[0]
-            values.update(state='matched', selected=point, candidates=candidates)
+        # A single untruncated name-matched candidate is trusted even when the name is a
+        # containment hit or the address differs; suspects never count toward auto-binding,
+        # and truncation stays review.
+        if count <= 25 and len(matches) == 1:
+            point = next(iter(matches.values()))
+            values.update(state='matched', selected=point, candidates=list(matches.values()))
         elif candidates or count > 25:
             values.update(state='review', candidates=candidates,
                           error='未找到唯一可靠位置：候选有歧义、地址不同或结果未完整返回，请核对后确认')

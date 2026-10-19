@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "POI 状态机(matched/review/not_found/manual)与单候选绑定规则的定义,修改 position_one 候选收集必须遵守"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-directory.md", "reason": "小区名称/别名/多源身份规则,名称匹配与别名重试逻辑的依据"}

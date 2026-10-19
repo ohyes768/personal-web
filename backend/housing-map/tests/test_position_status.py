@@ -353,9 +353,11 @@ def test_short_names_do_not_participate_in_containment(setup):
     store, cid, data = setup
     store.update(cid, name='风雅钱塘', aliases=['西湖'], address='月明路1076号', district='滨江')
     client = Client([poi(name='西湖大院')])  # 「西湖」归一化长度 < 3，包含匹配不生效
-    with pytest.raises(ValueError, match='未找到名称、区域及分类可靠的高德地点'):
+    with pytest.raises(ValueError):
         position_one(store, data, cid, client)
-    assert position_detail(store, data, cid)['state'] == 'not_found'
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review'  # 名称不匹配的区内 POI 现以疑似候选留待人工，不再静默丢弃
+    assert [c['name_matched'] for c in detail['candidates']] == [False]
     assert client.queries == ['风雅钱塘', '西湖']
 
 
@@ -401,3 +403,48 @@ def test_truncated_result_stays_review_without_retry(setup, rows):
     detail = position_detail(store, data, cid)
     assert detail['state'] == 'review' and len(detail['candidates']) == len(rows)
     assert client.calls == 1
+
+
+def test_truncated_out_of_name_poi_becomes_suspect_candidate(setup):
+    """银泰场景：截断结果里区内名称不匹配的 POI 以疑似候选进入 review，供人工确认。"""
+    store, cid, data = setup
+    client = Client([poi('B9', name='银泰·海威国际')], count=42)
+    with pytest.raises(ValueError, match='未找到唯一可靠位置'):
+        position_one(store, data, cid, client)
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review'
+    assert [c['source_id'] for c in detail['candidates']] == ['B9']
+    assert detail['candidates'][0]['name_matched'] is False
+    assert client.calls == 1  # 截断结果不发起别名重查
+
+
+def test_single_suspect_never_auto_matches(setup):
+    """红线：唯一疑似候选即使未截断也必须 review，不得自动绑定。"""
+    store, cid, data = setup
+    client = Client([poi('B9', name='银泰·海威国际')])  # count=1，未截断
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, client)
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review' and len(detail['candidates']) == 1
+    assert detail['candidates'][0]['name_matched'] is False
+    assert not detail.get('selected')
+
+
+def test_truncated_result_without_in_district_pois_keeps_empty_review(setup):
+    """截断且区内无任何有效 POI：review + 空候选（前端引导手动定位）。"""
+    store, cid, data = setup
+    client = Client([], count=26)
+    with pytest.raises(ValueError, match='未找到唯一可靠位置'):
+        position_one(store, data, cid, client)
+    detail = position_detail(store, data, cid)
+    assert detail['state'] == 'review' and not detail['candidates']
+
+
+def test_suspect_candidate_confirmable_via_existing_flow(setup):
+    """疑似候选走既有 confirm_position 人工确认，无需新接口。"""
+    store, cid, data = setup
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, Client([poi('B9', name='银泰·海威国际')]))
+    detail = position_detail(store, data, cid)
+    result = confirm_position(store, data, cid, revision=detail['revision'], poi_id='B9')
+    assert result['state'] == 'manual' and result['selected']['source_id'] == 'B9'

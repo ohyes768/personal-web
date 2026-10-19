@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "检查项:状态机分支与单候选自动绑定红线(疑似候选不得触发 matched)是否被破坏"}
+{"file": ".trellis/spec/backend/housing-map/backend/index.md", "reason": "Quality Check 清单:pytest 与前端 lint/build 的标准命令"}
