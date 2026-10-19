@@ -354,6 +354,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     } catch (e) { setError(e instanceof Error ? e.message : '解除失败，请重试'); }
     finally { setBusy(false); }
   }
+  const resumeAdmission = !!detail && detail.admission_state !== 'admitted' && !detail.source_record_id && detail.qualification === 'manual_exclusion';
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
     <header className="review-heading"><h2>住宅名单与数据采集</h2>
       <CollectionTasksButton jobs={jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
@@ -386,7 +387,10 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
             <td data-label="操作"><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setError(''); setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
         {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
         <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); }}>下一页</button></nav></>}
-    </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'} footer={detail && <><div className="directory-detail-actions">{detail.admission_state === 'admitted' && (excluding ? <div className="directory-exclusion-confirm">
+    </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
+      actions={detail && <button type="button" className="btn btn-secondary" disabled={busy} aria-label="更新资料" title={busy ? '正在更新资料…' : '更新资料：重新拉取透明售房网等来源，并重新判定收录'} onClick={() => void refreshDetail()}>↻</button>}
+      footer={detail && (detail.admission_state === 'admitted' || resumeAdmission) ? <div className="directory-detail-actions">
+        {detail.admission_state === 'admitted' && (excluding ? <div className="directory-exclusion-confirm">
           <label>不收录原因<select value={excludeReason} disabled={busy} onChange={e => { setExcludeReason(e.target.value); setCustomExcludeReason(''); }}>
             <option value="">请选择不收录原因</option>
             {['非住宅用途', '非真实小区（道路、楼栋或附属设施）', '不在管理区域内', '与其他小区重复', '名称、地址或位置存疑，暂不收录'].map(reason => <option key={reason} value={reason}>{reason}</option>)}
@@ -396,7 +400,9 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
           <div><button className="btn btn-primary" disabled={busy || !exclusionReason} onClick={() => void admissionAction('exclude', exclusionReason)}>确认不收录</button>
             <button className="btn btn-secondary" disabled={busy} onClick={() => { setExcluding(false); setExcludeReason(''); setCustomExcludeReason(''); }}>取消</button></div>
           <p className="directory-muted">转为不收录后将移出地图、租金和法拍名单，自动流程不会再收录；之后可在不收录列表恢复自动分类。</p>
-        </div> : <button className="btn directory-exclude-action" disabled={busy} title="需要选择不收录原因" onClick={() => setExcluding(true)}>转为不收录</button>)}</div><button type="button" className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>关闭</button></>} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
+        </div> : <button className="btn directory-exclude-action" disabled={busy} title="需要选择不收录原因" onClick={() => setExcluding(true)}>转为不收录</button>)}
+        {resumeAdmission && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
+      </div> : undefined} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
       {error && <p role="alert" className="directory-warning">{error}</p>}
       {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} busy={busy} action={(...args) => void action(...args)} />}
       {detail && <><CatalogAuctionRecords coverage={detail.coverage} records={detail.auction_records} /><CatalogRentalDetails value={detail.coverage?.rental} /><section className="directory-basic-info" aria-label="基本信息">
@@ -408,13 +414,12 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
           <div><dt>新房 / 二手房</dt><dd>{marketLabels[detail.market_state || 'unknown'] || marketLabels.unknown}</dd></div>
           <div className="directory-info-wide"><dt>实际地址</dt><dd>{detail.address || '待补充'}</dd></div>
         </dl>
-      </section>
         {detail.admission_state === 'admitted' && detail.map_status !== 'displayed' && <p className="directory-warning" role="status">地图暂未展示：{mapLabels[detail.map_status || ''] || '待核对'}</p>}
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
-        {!detail.source_record_id && detail.qualification === 'manual_exclusion' && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
+      </section>
         {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} />}
         <section className="directory-source-section" aria-label="来源资料">
-          <div className="directory-source-section-heading"><h4>来源资料</h4><button className="btn btn-secondary" disabled={busy} onClick={() => void refreshDetail()}>{busy ? '处理中…' : '更新资料'}</button></div>
+          <div className="directory-source-section-heading"><h4>来源资料</h4></div>
           {notice && <p role="status" className="directory-muted">{notice}</p>}
           {detail.sources?.length ? detail.sources.map(s => <DirectorySourceCard key={s.id} item={s} compact>
             {s.source === 'laipai' && s.status === 'matched' && <button className="btn btn-secondary" disabled={busy} title="解除后这条法拍记录回到待关联列表，可重新核对" onClick={() => void unlinkAuctionSource(s.id)}>解除法拍关联</button>}

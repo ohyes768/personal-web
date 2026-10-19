@@ -3,8 +3,8 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 
 /** 名单详情共用弹窗；原生 dialog 管理焦点约束及关闭后的焦点恢复。 */
-export default function DirectoryDialog({ title, onClose, children, footer }: {
-  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode;
+export default function DirectoryDialog({ title, onClose, children, footer, actions }: {
+  title: string; onClose: () => void; children: ReactNode; footer?: ReactNode; actions?: ReactNode;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -20,7 +20,8 @@ export default function DirectoryDialog({ title, onClose, children, footer }: {
   return <dialog ref={dialog} className="directory-detail directory-detail-dialog" aria-label={title}
     onCancel={event => { event.preventDefault(); onClose(); }}>
     <div className="directory-source-heading directory-dialog-heading"><h3>{title}</h3>
-      <button autoFocus type="button" className="btn btn-secondary" onClick={onClose}>关闭</button></div>
+      <div className="directory-dialog-heading-actions">{actions}
+        <button autoFocus type="button" className="btn btn-secondary" onClick={onClose}>关闭</button></div></div>
     <div className="directory-dialog-content">{children}</div>
     {footer && <footer className="directory-dialog-footer">{footer}</footer>}
   </dialog>;
