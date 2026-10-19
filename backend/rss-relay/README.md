@@ -4,7 +4,7 @@
 
 ## 路由与对接
 
-本地后端基址：`http://localhost:8095/api`。
+本地后端基址：`http://localhost:8099/api`。
 生产 nginx 基址：`https://web.duomi77.cn:9443/rss/api/rss-relay`。
 下表均为基址后的相对路径；健康检查本地为 `/health`，生产为 `/rss/api/rss-relay/health`。
 
@@ -78,7 +78,7 @@ RSS 读取有 token；文章及渠道管理接口沿用现有受限网络部署�
 ```bash
 cd backend/rss-relay
 uv sync --dev
-uv run uvicorn src.main:app --reload --host 127.0.0.1 --port 8095 --no-access-log
+uv run uvicorn src.main:app --reload --host 127.0.0.1 --port 8099 --no-access-log
 uv run pytest tests -q
 ```
 

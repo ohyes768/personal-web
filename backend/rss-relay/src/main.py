@@ -1,7 +1,7 @@
 """FastAPI 服务主入口。
 
 启动方式：
-    uvicorn src.main:app --host 0.0.0.0 --port 8095 --reload
+    uvicorn src.main:app --host 0.0.0.0 --port 8099 --reload
 """
 
 import os
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     uvicorn.run(
         "src.main:app",
         host=server_config.get("host", "0.0.0.0"),
-        port=int(server_config.get("port", 8095)),
+        port=int(server_config.get("port", 8099)),
         reload=True,
         access_log=False,  # RSS subscription query contains its token.
     )

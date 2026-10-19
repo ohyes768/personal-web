@@ -16,8 +16,8 @@
     {
       "name": "rss-relay-api",
       "runtimeExecutable": "uv",
-      "runtimeArgs": ["run", "--directory", "backend/rss-relay", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8095", "--no-access-log"],
-      "port": 8095
+      "runtimeArgs": ["run", "--directory", "backend/rss-relay", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8099", "--no-access-log"],
+      "port": 8099
     },
     {
       "name": "housing-map-web",

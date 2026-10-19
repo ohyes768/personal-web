@@ -1203,7 +1203,6 @@ interface EconomicDataResponse {
 | `/api/dividend/*` | `http://localhost:8092/api/*` | 股息率筛选服务 |
 | `/api/macro/*` | `http://localhost:8094/api/macro/*` | 宏观经济数据服务 |
 | `/api/douyin/*` | `http://localhost:8093/api/*` | 抖音视频处理服务 |
-| `/api/news/*` | 外部新闻 API | 新闻数据聚合 |
 
 ### 数据格式变更说明
 

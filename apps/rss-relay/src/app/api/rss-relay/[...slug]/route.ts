@@ -1,8 +1,8 @@
 /**
- * BFF catch-all：把 /rss/api/rss-relay/<slug> 转发到后端 http://localhost:8095/api/<slug>
+ * BFF catch-all：把 /rss/api/rss-relay/<slug> 转发到后端 http://localhost:8099/api/<slug>
  *
  * 后端真实路由：/api/posts、/api/post、/api/rss.xml、/health（无 /api/rss-relay/ 这一层）
- * 例：前端调 /rss/api/rss-relay/posts?limit=50 → 转发到 http://localhost:8095/api/posts?limit=50
+ * 例：前端调 /rss/api/rss-relay/posts?limit=50 → 转发到 http://localhost:8099/api/posts?limit=50
  *
  * 为什么路径带 /rss 前缀：Next.js App Router 的 basePath 同时作用于 pages 和 API routes。
  *
@@ -11,7 +11,7 @@
  */
 import { NextRequest } from 'next/server';
 
-const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:8095/api').replace(/\/?$/, '/');
+const BACKEND_URL = (process.env.BACKEND_URL || 'http://localhost:8099/api').replace(/\/?$/, '/');
 
 export async function GET(
   request: NextRequest,

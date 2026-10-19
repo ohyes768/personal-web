@@ -29,7 +29,7 @@
 #   /douyin/*       → douyin-frontend:3004
 #   /api/douyin/*   → douyin-backend:8093
 #   /rss/*                    → rss-relay-frontend:3006  (列表页)
-#   /rss/api/rss-relay/*      → rss-relay-backend:8095/api/*  (freshrss 订阅 + agent 推送)
+#   /rss/api/rss-relay/*      → rss-relay-backend:8099/api/*  (freshrss 订阅 + agent 推送)
 #   前端 BFF /rss/api/rss-relay/<slug> 已废弃，nginx 直转后端
 #   /macro/*     → macro-frontend:3001   (basePath = /macro)
 #   /api/macro/*    → macro-backend:8094/api/*  (nginx 直转后端；macro 前端 BFF 已删除)
@@ -170,7 +170,7 @@ services:
     container_name: rss-relay-backend
     restart: unless-stopped
     expose:
-      - "8095"
+      - "8099"
     volumes:
       - rss-relay-data:/app/data
     environment:
@@ -179,7 +179,7 @@ services:
     networks:
       - app-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8095/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8099/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -203,8 +203,8 @@ services:
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_BASE_URL=/
-      # BFF 用：把 /api/rss-relay/<path> 转到 http://rss-relay-backend:8095/api/<path>
-      - BACKEND_URL=http://rss-relay-backend:8095/api
+      # BFF 用：把 /api/rss-relay/<path> 转到 http://rss-relay-backend:8099/api/<path>
+      - BACKEND_URL=http://rss-relay-backend:8099/api
     networks:
       - app-net
     depends_on:

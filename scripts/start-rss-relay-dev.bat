@@ -1,7 +1,7 @@
 @echo off
 REM ============================================
 REM personal-web - rss-relay Development Start
-REM Start rss-relay backend (8095) + frontend (3006)
+REM Start rss-relay backend (8099) + frontend (3006)
 REM ============================================
 
 setlocal enabledelayedexpansion
@@ -12,7 +12,7 @@ echo   rss-relay Dev Environment Start
 echo ========================================
 echo.
 
-set "RSS_RELAY_PORT=8095"
+set "RSS_RELAY_PORT=8099"
 set "RSS_RELAY_WEB_PORT=3006"
 
 REM [1/2] Start rss-relay backend

@@ -10,7 +10,6 @@ apps/
 ├── dividend/      # A 股高股息分析（Next.js 15, React 19, Tailwind CSS v4）
 ├── douyin/         # 抖音视频文字转写
 ├── macro/       # 宏观经济
-├── news/           # 新闻联播分析
 ├── fund-select/  # 债基筛选平台
 ├── housing-map/  # 滨江区购房地图（Next.js 16, basePath /map）
 └── skill-manager/  # Skill 发布管理台（Next.js 15, basePath /skills）
@@ -86,7 +85,6 @@ pnpm dev          # 端口 3008，访问 /skills
 ```bash
 scripts\start-dividend-dev.bat   # 启动股息率前后端
 scripts\stop-dividend-dev.bat   # 停止
-scripts\start-news-dev.bat     # 新闻
 scripts\start-macro-dev.bat    # 宏观经济
 scripts\start-douyin-dev.bat    # 抖音
 scripts\start-housing-dev.bat   # 滨江购房地图

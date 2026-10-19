@@ -25,11 +25,11 @@ RUN uv pip install --system -e .
 RUN mkdir -p data/posts logs
 
 # 暴露端口
-EXPOSE 8095
+EXPOSE 8099
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8095/health || exit 1
+    CMD curl -f http://localhost:8099/health || exit 1
 
 # 启动命令
-CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8095", "--no-access-log"]
+CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8099", "--no-access-log"]

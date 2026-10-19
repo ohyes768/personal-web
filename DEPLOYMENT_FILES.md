@@ -18,11 +18,9 @@ NAS 生产环境 Docker Compose 配置文件。
 
 **网络**: 连接外部 Nginx 网桥 `nginx_nginx-bridge`
 
-### 2. docker-compose.yml
-本地开发用 Docker Compose 配置文件。
-**位置**: `/docker-compose.yml`
+### 2. 本地开发
 
-**服务定义**: macro, dividend, douyin, news 四个前端
+本地使用 `scripts/start-*-dev.bat` 启动各服务；当前仓库没有根目录 `docker-compose.yml`。NAS 部署使用 `docker-compose.nas.yml`。
 
 ### 3. nginx/web.conf + nginx/html/
 NAS 上 nginx 容器的反向代理配置与静态首页（source of truth，已纳入版本管理）。
@@ -50,7 +48,6 @@ web.conf 另有 5 条 health 精确匹配 location（`/api/{funds,skills,douyin,
 | dividend | `apps/dividend/Dockerfile` | 3003 | /dividend |
 | douyin | `apps/douyin/Dockerfile` | 3004 | /douyin |
 | macro | `apps/macro/Dockerfile` | 3001 | /macro |
-| news | `apps/news/Dockerfile` | 3005 | 无 |
 
 构建方式: standalone，三阶段（deps → builder → runner）
 

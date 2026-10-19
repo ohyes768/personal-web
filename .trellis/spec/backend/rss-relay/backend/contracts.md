@@ -14,6 +14,7 @@
 - 对外代理前缀 /rss/api/rss-relay/；不能沿用未配置的 /rss/personal.xml 路径。
 
 ## Contracts
+后端统一监听 8099；本地 BFF 默认基址为 http://localhost:8099/api，NAS nginx 直转 rss-relay-backend:8099。启动/停止脚本、预览配置、Dockerfile、两份 Compose 和健康检查必须同步，避免占用债基后端 8095。
 渠道名称去除首尾空白后非空且最多100字符，说明最多500字符；标识为小写字母数字和分段连字符，最多64字符。PATCH字段省略表示不修改，显式null拒绝。
 channel为稳定内容频道，source记录推送工具，不可互相推断。缺失channel的旧文章和推送归unclassified。ID创建后不可更改，系统未分类不可停用。停用后拒绝新推送，已有feed仍返回历史文章。
 渠道登记保存在data/channels.json（现有持久卷覆盖），配置仅首次种子；重建不可覆盖用户设置。采用原子替换，失败不返回成功、不更新内存。
