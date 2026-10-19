@@ -1540,3 +1540,37 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 43: 修复高德定位review空候选死角
+
+**Date**: 2026-10-19
+**Task**: 修复高德定位review空候选死角
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+排查银泰国际定位无下拉候选问题:高德截断结果(count>25)中区内名称不匹配POI曾被静默丢弃。重构position_one候选收集,区内疑似候选以name_matched=False进review供人工确认,自动绑定只认名称匹配候选(单测锁死);前端疑似标注+review空候选改为状态陈述(手动定位已被1212bfc移除,不得引导)。后端596测过、前端lint/build/组件测试全绿。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4354259` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 42
-- **Last Active**: 2026-10-16
+- **Total Sessions**: 43
+- **Last Active**: 2026-10-19
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~1542 | Active |
+| `journal-1.md` | ~1576 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 43 | 2026-10-19 | 修复高德定位review空候选死角 | `4354259` | `master` |
 | 42 | 2026-10-16 | RSS 详情页与推送返回 detail_url | `187a7b1` | `master` |
 | 41 | 2026-10-16 | 高德补全唯一候选自动绑定与存量迁移 | `1eeb165` | `master` |
 | 40 | 2026-10-16 | 高德位置补全别名重查与包含匹配 | `6eca0a3` | `master` |
