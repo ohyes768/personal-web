@@ -38,6 +38,9 @@ Thumbs.db
 coverage
 .nyc_output
 backend/housing-map/.tmp_pytest/
+
+# Tool workdirs
+.impeccable/
 backend/housing-map/.uv-tmp/
 
 # Misc
