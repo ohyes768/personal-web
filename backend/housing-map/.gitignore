@@ -13,3 +13,6 @@ data/rentals/
 # Regenerable script captures (Overpass dumps, TMSF CSV export)
 data/binjiang_osm_*_raw.json
 data/binjiang_communities.csv
+
+# Boundary estimation outputs (task 10-16-boundary-estimate-script)
+estimate_out/

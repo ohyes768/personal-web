@@ -36,6 +36,12 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "4010", "--directory", "nginx/html"],
       "port": 4010
+    },
+    {
+      "name": "boundary-preview",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "8917", "--directory", "backend/housing-map/estimate_out"],
+      "port": 8917
     }
   ]
 }

@@ -3,7 +3,7 @@
   "name": "boundary-estimate-script",
   "title": "脚本估算小区轮廓(OSM 建筑+预览)",
   "description": "本机脚本:取无轮廓小区,Overpass 抓建筑聚类生成外轮廓,输出预览 HTML",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend/douyin-processor",

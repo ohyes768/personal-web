@@ -12,6 +12,7 @@ dependencies = [
     "python-dotenv>=1.0.0",
     "rapidfuzz>=3.14.6",
     "pypinyin>=0.55.0",
+    "shapely>=2.2.0",
 ]
 
 [project.optional-dependencies]
