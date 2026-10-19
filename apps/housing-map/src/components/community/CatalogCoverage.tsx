@@ -25,12 +25,12 @@ export function AuctionCoverage({ value, onView }: { value?: CatalogCoverage['au
   </small>}</div>;
 }
 
-export function RentalCoverage({ value }: { value?: CatalogCoverage['rental'] }) {
+export function RentalCoverage({ value, showTip = true }: { value?: CatalogCoverage['rental']; showTip?: boolean }) {
   if (!value) return <span className="directory-muted">状态未知</span>;
   const label = rentalCoverageLabels[value.state] || '状态未知';
   const title = [value.captured_at && `采集时间：${date(value.captured_at)}（北京时间）`,
     value.stale && '采集超过30天或日期无效', value.error].filter(Boolean).join('；');
-  return <div className="catalog-coverage" title={title || undefined}>
+  return <div className="catalog-coverage" title={showTip ? title || undefined : undefined}>
     <span className={value.state === 'data' ? 'catalog-data-value' : value.state === 'failed' || value.state === 'unmapped' ? 'catalog-data-note' : 'directory-muted'}>
       {value.state === 'data' ? `${label} · ${value.sample_count}条` : label}
     </span>{(value.stale || value.update_failed && value.state === 'data') && <small className="catalog-data-note">
@@ -42,10 +42,11 @@ export function RentalCoverage({ value }: { value?: CatalogCoverage['rental'] })
 export function CatalogAuctionRecords({ coverage, records }: { coverage?: CatalogCoverage; records?: CatalogAuctionRecord[] }) {
   if (!coverage) return null;
   const value = coverage.auction;
+  if (!value.round_count) return null;
   return <section className="catalog-auction-records" aria-label="关联法拍记录">
     <h4>法拍数据</h4>
     <p className="directory-muted">{value.property_count}套已识别房产 · {value.round_count}条拍卖轮次{value.unidentified_round_count > 0 && ` · ${value.unidentified_round_count}轮缺房产身份，无法跨轮次去重`}</p>
-    {!value.round_count ? <p className="directory-muted">暂无已关联的法拍记录。</p> : !records ? <p role="status">加载法拍记录…</p> :
+    {!records ? <p role="status">加载法拍记录…</p> :
       <ul className="catalog-auction-list">{records.map(record => <li key={`${record.source}-${record.auction_id}`}>
         <strong>{record.title || `拍卖记录 ${record.auction_id}`}</strong>
         <small>{statuses[record.status || ''] || '状态未知'} · {record.round ? `${record.round}拍` : '轮次未知'}
@@ -57,8 +58,8 @@ export function CatalogAuctionRecords({ coverage, records }: { coverage?: Catalo
 
 export function CatalogRentalDetails({ value }: { value?: CatalogCoverage['rental'] }) {
   if (!value) return null;
-  return <section aria-label="租金覆盖信息">
-    <h4>租金信息</h4><RentalCoverage value={value} />
+  return <section className="catalog-rental-details" aria-label="租金覆盖信息">
+    <h4>租金信息</h4><RentalCoverage value={value} showTip={false} />
     {value.captured_at && <p className="directory-muted">采集时间：{date(value.captured_at)}（北京时间）</p>}
     {value.state === 'data' && value.sample_count < 3 && <p className="directory-muted">有效样本不足3条，仅供查看明细，暂不形成租金参考。</p>}
     {value.error && <p className="directory-warning">{value.error}</p>}

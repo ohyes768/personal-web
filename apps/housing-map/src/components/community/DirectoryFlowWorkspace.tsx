@@ -405,7 +405,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       </div> : undefined} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
       {error && <p role="alert" className="directory-warning">{error}</p>}
       {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} busy={busy} action={(...args) => void action(...args)} />}
-      {detail && <><CatalogAuctionRecords coverage={detail.coverage} records={detail.auction_records} /><CatalogRentalDetails value={detail.coverage?.rental} /><section className="directory-basic-info" aria-label="基本信息">
+      {detail && <><section className="directory-basic-info" aria-label="基本信息">
         <h4>基本信息</h4>
         <dl>
           <div className="directory-info-wide"><dt>小区名称</dt><dd>{detail.community_name}</dd></div>
@@ -418,6 +418,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
       </section>
         {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} />}
+        <CatalogAuctionRecords coverage={detail.coverage} records={detail.auction_records} />
+        <CatalogRentalDetails value={detail.coverage?.rental} />
         <section className="directory-source-section" aria-label="来源资料">
           <div className="directory-source-section-heading"><h4>来源资料</h4></div>
           {notice && <p role="status" className="directory-muted">{notice}</p>}
