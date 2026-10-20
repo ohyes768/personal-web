@@ -13,7 +13,6 @@ from pydantic import BaseModel, Field
 from src.collector import collect_latest
 from src.downloader import AlbumOfflineError, Downloader, sanitize_filename
 from src.device_collections import CollectionError, DeviceCollections
-from src.music_assistant import MusicAssistant
 
 logger = logging.getLogger(__name__)
 MONTHLY_SECONDS = 30 * 24 * 3600
@@ -195,14 +194,13 @@ class ConfirmCollection(BaseModel):
 
 def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
                collector=collect_latest, downloader: Downloader | None = None,
-               auto_refresh_seconds: int | None = None, ma_client=None):
+               auto_refresh_seconds: int | None = None):
     catalog = Catalog(data_dir or Path(os.getenv('KIDS_DATA_DIR', '/app/data')))
     app = FastAPI(title='Kids Catalog API')
     app.state.catalog = catalog
     app.state.music_dir = music_dir or Path(os.getenv('KIDS_MUSIC_DIR', '/music'))
     catalog.downloader = downloader or Downloader(app.state.music_dir)
-    collections = DeviceCollections(catalog.path.parent, app.state.music_dir,
-                                    ma_client or MusicAssistant(), catalog.device_candidates)
+    collections = DeviceCollections(catalog.path.parent, app.state.music_dir, catalog.device_candidates)
     app.state.collections = collections
     catalog.collections = collections
 

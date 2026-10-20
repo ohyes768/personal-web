@@ -2,18 +2,15 @@
 import hashlib
 import json
 import logging
-import re
 import sqlite3
 import threading
 import time
 import uuid
-from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
 from src.audio_tags import open_audio, safe_child
-from src.music_assistant import MAError, relative_ma_path
 
 logger = logging.getLogger(__name__)
 MAX_ITEMS = 500
@@ -29,16 +26,23 @@ def encoded(value):
     return json.dumps(value, ensure_ascii=False, separators=(',', ':'))
 
 
+def file_order(row):
+    """Retain old numbered manifests while accepting ordinary audio filenames."""
+    prefix, separator, _ = row[0].partition('-')
+    return (0, int(prefix), row[0]) if separator and prefix.isdecimal() else (1, 0, row[0])
+
+
 class DeviceCollections:
-    def __init__(self, data_dir, music_dir, ma, candidate_source):
+    def __init__(self, data_dir, music_dir, candidate_source):
         self.path = Path(data_dir) / 'device_collections.sqlite3'
         self.root = Path(music_dir)
-        self.ma = ma
         self.candidate_source = candidate_source
         with self.db() as con:
             con.executescript('''
                 create table if not exists completions (
                     folder text primary key, manifest text, status text not null);
+                -- targets is retained for compatibility with existing databases;
+                -- new publications store an empty object and never read MA targets.
                 create table if not exists publication (
                     id integer primary key check(id=1), snapshot text not null, targets text not null);
                 create table if not exists generation (
@@ -64,7 +68,6 @@ class DeviceCollections:
         if not directory.is_dir():
             raise CollectionError('合集目录不存在')
         files = []
-        numbers = []
         for path in sorted(directory.iterdir()):
             if path.name.endswith(('.part', '.tmp')):
                 raise CollectionError('存在未完成的临时下载')
@@ -74,9 +77,6 @@ class DeviceCollections:
                 raise CollectionError('合集包含子目录，需整理后再生成')
             if path.suffix.lower() not in ('.mp3', '.m4a'):
                 continue
-            match = re.fullmatch(r'(\d+)-.+', path.stem)
-            if not match or int(match[1]) < 1:
-                raise CollectionError('音频文件缺少有效曲序')
             try:
                 before = path.stat()
                 audio = open_audio(path)
@@ -89,12 +89,9 @@ class DeviceCollections:
                 # Parser exceptions vary by codec; never leak local paths to clients.
                 raise CollectionError('音频损坏、不可读取或正在变化') from exc
             files.append([path.name, after.st_size, after.st_mtime_ns])
-            numbers.append(int(match[1]))
         if not files:
             raise CollectionError('没有有效音频文件')
-        if len(set(numbers)) != len(numbers):
-            raise CollectionError('存在重复曲序')
-        return sorted(files, key=lambda row: int(row[0].split('-', 1)[0]))
+        return sorted(files, key=file_order)
 
     def record_legacy(self, folder, expected):
         try:
@@ -103,7 +100,7 @@ class DeviceCollections:
                      for p in directory.iterdir() if p.suffix.lower() in ('.mp3', '.m4a')]
             if len(files) != expected:
                 return
-            files.sort(key=lambda row: int(row[0].split('-', 1)[0]))
+            files.sort(key=file_order)
             with self.db() as con:
                 con.execute("insert or ignore into completions values(?,?,'complete')", (folder, encoded(files)))
         except (OSError, ValueError):
@@ -137,6 +134,7 @@ class DeviceCollections:
 
     def read(self):
         with self.db() as con:
+            con.execute('begin')
             row = con.execute('select snapshot from publication where id=1').fetchone()
             job = dict(con.execute('select status,error,skipped,started from generation where id=1').fetchone())
         job['skipped'] = json.loads(job['skipped'])
@@ -156,28 +154,6 @@ class DeviceCollections:
         threading.Thread(target=self._generate, args=(token, prepare), daemon=True, name='device-directory').start()
         return True
 
-    def _matches(self, tracks):
-        groups = defaultdict(dict)
-        paths = defaultdict(set)
-        for track in tracks:
-            album = track.get('album') or {}
-            uri = album.get('uri', '')
-            if not uri.startswith('library://album/'):
-                continue
-            if not track.get('available', True):
-                continue
-            for mapping in track.get('provider_mappings', []):
-                if mapping.get('provider_domain') != 'filesystem_local' or not mapping.get('available', True):
-                    continue
-                path = relative_ma_path(mapping.get('item_id', ''), getattr(self.ma, 'root', '/music'))
-                if not path:
-                    continue
-                paths[path].add(uri)
-                if path in groups[uri]:
-                    raise CollectionError('MA 存在重复文件映射，需检查曲库')
-                groups[uri][path] = (track.get('disc_number', 1), track.get('track_number', 0))
-        return groups, paths
-
     def _generate(self, token, prepare):
         skipped = []
         try:
@@ -188,8 +164,7 @@ class DeviceCollections:
             with self.candidate_source() as sources:
                 if not sources:
                     raise CollectionError('本月暂无已下载完成的合集，请先下载；已保留原歌单')
-            groups, paths = self._matches(self.ma.library_tracks())
-            items, targets, manifests = [], {}, {}
+            items, manifests = [], {}
             with self.db() as con:
                 completed = {r['folder']: dict(r) for r in con.execute('select * from completions')}
             for source in sources:
@@ -203,32 +178,10 @@ class DeviceCollections:
                         raise CollectionError('未确认下载完整' if not record else '下载未完成，请等待完成后重试')
                     if record['manifest'] != encoded(manifest):
                         raise CollectionError('文件已变化，请核对完成情况')
-                    ordered_paths = [f'{folder}/{row[0]}' for row in manifest]
-                    expected_paths = set(ordered_paths)
-                    candidates = set.intersection(*(paths.get(p, set()) for p in expected_paths))
-                    candidates = {uri for uri in candidates if set(groups[uri]) == expected_paths}
-                    if len(candidates) != 1:
-                        raise CollectionError('MA 专辑缺失、匹配不完整或存在歧义')
-                    uri = candidates.pop()
-                    # MA may expand library albums with provider tracks that aren't
-                    # in the library listing. Validate the actual playback expansion.
-                    full_tracks = self.ma.album_tracks(uri)
-                    full_groups, _ = self._matches(full_tracks)
-                    if len(full_tracks) != len(manifest):
-                        raise CollectionError(f'MA 专辑返回 {len(full_tracks)} 首，本地 {len(manifest)} 首，暂不能完整播放')
-                    if set(full_groups.get(uri, {})) != expected_paths:
-                        raise CollectionError('MA 整张专辑包含额外曲目或缺少本地曲目')
-                    if list(full_groups[uri]) != ordered_paths:
-                        raise CollectionError('MA 实际播放顺序与文件曲序不一致')
-                    order = [full_groups[uri][path] for path in ordered_paths]
-                    if any(disc not in (0, 1) or number != int(row[0].split('-', 1)[0])
-                           for (disc, number), row in zip(order, manifest)):
-                        raise CollectionError('MA 曲序与文件顺序不一致，请整理标签并重扫')
                     if len(title.encode('utf-8')) > 256:
                         raise CollectionError('合集名称超过设备长度限制')
                     stable_id = hashlib.sha256(folder.encode()).hexdigest()
                     items.append({'title': title, 'track_count': len(manifest), '_id': stable_id})
-                    targets[stable_id] = uri
                     manifests[folder] = manifest
                 except (CollectionError, ValueError, OSError) as error:
                     # Human-readable reasons are controlled local messages only.
@@ -239,9 +192,8 @@ class DeviceCollections:
             if len(items) > MAX_ITEMS:
                 raise CollectionError('合集超过 500 项，未发布新歌单')
             items.sort(key=lambda item: (item['track_count'], item['_id']))
-            playback = {}
             for number, item in enumerate(items, 1):
-                playback[str(number)] = targets[item.pop('_id')]
+                item.pop('_id')
                 item['number'] = number
             snapshot = {'schema_version': 1, 'revision': token,
                         'generated_at': datetime.now(timezone.utc).isoformat(), 'items': items}
@@ -265,10 +217,10 @@ class DeviceCollections:
                         if not row or row['status'] != 'complete' or row['manifest'] != encoded(manifest):
                             raise CollectionError('生成期间下载状态发生变化，请重新生成')
                     con.execute('insert into publication values(1,?,?) on conflict(id) do update '
-                                'set snapshot=excluded.snapshot,targets=excluded.targets', (encoded(snapshot), encoded(playback)))
+                                'set snapshot=excluded.snapshot,targets=excluded.targets', (encoded(snapshot), '{}'))
                     con.execute("update generation set status='done',skipped=? where id=1", (encoded(skipped),))
         except Exception as exc:
-            message = str(exc) if isinstance(exc, (CollectionError, MAError)) else '生成失败，请检查 NAS 与 MA 连接'
+            message = str(exc) if isinstance(exc, CollectionError) else '生成失败，请检查 NAS 音频目录'
             logger.warning('Device directory generation failed (%s)', type(exc).__name__)
             with self.db() as con:
                 con.execute("update generation set status='failed',error=?,skipped=? where token=?",
@@ -276,7 +228,7 @@ class DeviceCollections:
 
     def resolve(self, number, revision):
         with self.db() as con:
-            row = con.execute('select * from publication where id=1').fetchone()
+            row = con.execute('select snapshot from publication where id=1').fetchone()
         if not row:
             return 404, {'code': 'directory_missing', 'message': '尚未生成歌单'}
         snapshot = json.loads(row['snapshot'])
@@ -285,11 +237,4 @@ class DeviceCollections:
         item = next((item for item in snapshot['items'] if item['number'] == number), None)
         if not item:
             return 404, {'code': 'number_missing', 'message': '编号不存在'}
-        uri = json.loads(row['targets'])[str(number)]
-        try:
-            available = self.ma.album_available(uri)
-        except Exception:
-            available = False
-        if not available:
-            return 503, {'code': 'target_unavailable', 'message': 'MA 播放目标暂不可用'}
-        return 200, {**item, 'revision': revision, 'media_type': 'album', 'ma_media_uri': uri}
+        return 200, {**item, 'revision': revision}

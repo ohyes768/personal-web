@@ -104,12 +104,12 @@ export default function DevicePlaylist() {
         {submitting || running ? "正在生成…" : "生成歌单"}
       </button>
     </div>
-    <p className="playlist-note">重新生成后，编号可能调整，屏幕和播放映射会一起更新。</p>
+    <p className="playlist-note">重新生成后，编号可能调整。设备按同一版本的编号查询专辑名称。</p>
     {loading && <p role="status">正在读取设备歌单…</p>}
     {message && <p className="message" role="status">{message}</p>}
     {!loading && !state && <button className="secondary" onClick={() => load().then(() => setMessage("")).catch(() => setMessage("歌单读取失败，请稍后重试"))}>重新读取</button>}
     {state?.generation.error && <p className="message" role="alert">{state.generation.error}</p>}
-    {running && <p role="status">正在核对 NAS 合集与 MA 专辑，完成前继续使用上一份歌单。</p>}
+    {running && <p role="status">正在检查本月已下载音频并统计曲目数，完成前继续使用上一份歌单。</p>}
     {snapshot ? <>
       <div className="playlist-stamp">{snapshot.items.length} 个合集 · 生成于 {new Date(snapshot.generated_at).toLocaleString("zh-CN")}</div>
       <div className="playlist-table-wrap"><table className="playlist-table">

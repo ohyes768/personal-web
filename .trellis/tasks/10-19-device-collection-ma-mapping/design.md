@@ -1,29 +1,31 @@
-# 设备合集目录设计
+# 设备目录简化设计
 
-沿用已确认 PRD：下载 → 手动生成 → 曲目数升序编号 → 版本与编号解析。不做定时发布、历史快照或播放列表。
+## 职责与数据流
 
-## 数据与边界
+Catalog 当月 done 来源 → NAS 正式音频校验与计数 → 曲目数排序 → 当前 revision 目录 → 设备显示 / 编号名称查询。生成与查询不连接 MA。MA 独立负责播放方后续按名称查找和播放。
 
-新增 device_collections.py，接收 Catalog.device_candidates 提供的当月 albums JOIN jobs(status=done) 白名单，仅扫描白名单对应目录，不遍历整个音频根目录；显示名称沿用 albums.title，目录使用下载器相同的 sanitize_filename。candidate_source 为上下文管理器：初次读取后释放；生成结束前重新获取 Catalog 的 BEGIN IMMEDIATE 锁，复核来源未变化并保持到设备快照提交。锁顺序统一为 Catalog → device DB，防止榜单刷新穿越最终核对与发布。负责正式 MP3/M4A 扫描、完成清单、排序和 SQLite 当前快照。稳定内部 ID 从直属目录相对路径生成；同曲数按 ID 排序。NAS 文件只读，复用 audio_tags.open_audio 验证，拒绝链接、嵌套音频、临时或损坏文件。完成清单保存文件名、size、mtime_ns，变化后须重新完成下载或人工确认。
+## 存储与兼容
 
-Catalog 下载开始登记独立状态，成功后保存完成清单；生成前迁移现存 done jobs（数量必须与实际一致），不随候选清理。仅当月来源内缺少独立完成记录的合集可在明确确认后纳入，不能通过确认旧目录绕过来源限制。
+DeviceCollections(data_dir, music_dir, candidate_source) 保留独立 SQLite 的 completions、publication、generation 表。旧 publication.targets 非空约束保留避免清库或破坏旧部署；新发布将其写成空对象，查询从不读取该字段。旧版本目录的 items 本来就包含编号、名称与曲目数，可直接返回名称，无需迁移 MA URI。
 
-MA 使用环境变量 KIDS_MA_URL、KIDS_MA_TOKEN 与 KIDS_MA_MUSIC_ROOT，经 POST /api 读取 music/tracks/library_items 的分页结果。通过 album_tracks(in_library_only=false) 复核整张专辑实际展开，避免额外云端曲目。只使用 filesystem_local 映射，按规范化后的相对文件路径与 track.album 分组，要求精确文件集合、唯一专辑、有效 URI 和正确曲序，不以名称猜测。网络与认证错误不回显密钥或原始响应。
+文件清单仍保存 filename/size/mtime_ns。file_order 对既有 NNN-文件名沿用数值顺序以兼容持久化完成依据；普通文件名按名称排序。不再把文件名曲序、标签、MA album/track 字段当作准入条件。
+
+## 并发与错误
+
+初次通过 candidate_source 上下文获取当月 done 白名单后释放锁；扫描不持有 Catalog 写锁。发布前重新获取 Catalog BEGIN IMMEDIATE 锁复核来源，保持到 device DB 提交。统一 Catalog → device 锁序，与下载入队一致。
+
+read() 在显式读事务内获取 publication 和 generation，避免两个 SELECT 跨越一次发布，造成 done 配合旧快照。其余租约、整体替换、失败保留与容量边界沿用现有实现。
 
 ## 接口
 
-- GET /api/collections：当前公开快照、最近生成状态、跳过报告。
-- POST /api/collections/generate：后台生成，202；已有生成任务则 409。
-- POST /api/collections/confirm：请求 folder，明确确认历史合集已完整，验证后保存文件清单；不修改音频。
-- GET /api/device/v1/collections：schema_version、revision、generated_at、items[number,title,track_count]，无服务器路径/凭据。
-- GET /api/device/v1/collections/by-number/{number}?revision=...：返回 media_type=album 与 ma_media_uri；旧版本 409、未知编号 404、MA 目标不可用 503。
+GET /api/device/v1/collections 的 schema_version=1、revision、generated_at、items[number,title,track_count] 不变。
 
-SQLite 独立表存储完成依据、生成租约和当前快照。构建在事务外，发布为单事务；generation 状态跨进程互斥并对中断任务超时恢复。无可发布合集/整体失败不覆盖旧快照。文件、完成状态在发布前复核；最大 500 项、标题 256 UTF-8 字节、目录响应 128 KiB，超限失败不截断。
+GET /api/device/v1/collections/by-number/{number}?revision=... 仅返回 revision、number、title、track_count。移除 media_type、ma_media_uri 和503 target_unavailable。未知目录/编号404、旧revision409。该响应是名称映射，不表示可播放性。
 
-## 页面
+管理接口继续 GET /api/collections、POST /generate、POST /confirm。跳过报告只保留 NAS/下载完成/容量类原因，前端生成中提示改为本地音频检查。
 
-沿用现有暖色样式和下载列表，新增设备歌单区、生成按钮、编号/名称/曲目数列表、跳过原因和历史完整确认。轮询仅生成过程中启用，错误保留旧内容。Next 现有 /api/kids/:path* 代理复用。
+## 配置与边界
 
-## 环境事实与部署
+main.py 不再导入、构造或注入 MusicAssistant 客户端。现有独立 music_assistant.py 工具及部署环境配置保留给后续独立播放接入；它们不参与目录生成/查询。用户的真实 .env 不作修改。
 
-NAS MA 实际镜像为 2.8.2；两个容器均挂载同一音频目录到 /music。MA 地址与 token 已配置并认证成功；只读现场验证发现部分合集未完成 MA 专辑关联，部分大合集的 album_tracks 仅返回 500 首，需要明确报告实际与期望数量。禁止凭本地测试宣称设备播放验收完成。固件及 HA 在关联工程协作，本轮不修改。回滚代码后原 albums/jobs 保持兼容，新增表可保留。
+不部署或维护 MA。本轮只完成当前仓库代码、测试和文档；之前的 MA 修复研究保留为历史，并标记暂停，不能当作当前执行清单。

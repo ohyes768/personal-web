@@ -1,8 +1,8 @@
 {
   "id": "device-collection-ma-mapping",
   "name": "device-collection-ma-mapping",
-  "title": "设备合集目录与 MA 播放映射",
-  "description": "下载后手动生成 kids 当月已下载合集歌单，仅读取这些合集的 NAS 目录并匹配 MA 专辑，按曲目数升序生成 1-N 版本编号；不扫描其他 NAS 历史或缓存目录。",
+  "title": "设备合集目录与编号名称映射",
+  "description": "下载后手动生成 kids 当月已下载合集目录，仅从 NAS 计数并按曲目数升序生成 1-N 版本编号，对外提供编号与专辑名称关系；目录生成和名称查询不依赖 MA。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -29,6 +29,6 @@
     "docker-compose.nas.yml",
     "docs/设备合集歌单.md"
   ],
-  "notes": "MA 配置已接通；本地当月来源修正完成，89 passed / 1 skipped，TypeScript 与构建通过。上传修正源码到 NAS 试跑被自动审批拒绝，待用户明确部署授权；本轮尚未部署。",
+  "notes": "用户已批准目录与 MA 解耦：web 提供当月已下载合集的编号名称映射，停止 MA 关联维护；当前完成本地实现，最终验证记录见 validation.md。尚未部署，设备与 HA 联调待进行。",
   "meta": {}
 }

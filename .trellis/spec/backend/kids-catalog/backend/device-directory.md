@@ -2,55 +2,53 @@
 
 ## 1. Scope / Trigger
 
-Applies to device_collections.py, music_assistant.py, download lifecycle hooks in main.py, and the /kids device-playlist component. Read before changing numbering, completion tracking, generation or MA matching.
+Applies to device_collections.py, main.py lifecycle hooks and app/device-playlist.tsx. This is a local number-to-album-name directory, independent of MA connectivity, indexing and playback readiness. Do not reintroduce MA calls as publication or resolution gates.
 
 ## 2. Signatures / Storage
 
-- `DeviceCollections(data_dir, music_dir, ma, candidate_source)` owns `/app/data/device_collections.sqlite3`.
-- `completions(folder PK, manifest, status)` survives candidate cleanup. Manifest is ordered `[filename,size,mtime_ns]` records; status is downloading/incomplete/complete.
-- `publication(id=1,snapshot,targets)` contains only the current published snapshot and number-to-MA-URI mapping.
-- `generation(id=1,token,started,status,error,skipped)` provides a SQLite cross-process lease. Acquire with `BEGIN IMMEDIATE`; an expired 15-minute lease permits a new worker. Only the matching token may publish or finish.
-- `POST /api/collections/generate` → 202; `GET /api/collections` → `{snapshot,generation}`; `POST /api/collections/confirm` accepts `{folder}`.
-- Device endpoints: `GET /api/device/v1/collections` and `GET /api/device/v1/collections/by-number/{number}?revision=...`.
+- DeviceCollections(data_dir, music_dir, candidate_source) owns device_collections.sqlite3.
+- completions(folder PK,manifest,status) stores filename/size/mtime_ns evidence, independent of disposable candidates.
+- publication(id=1,snapshot,targets) keeps the old schema. New writes set targets to '{}'; queries never read targets. No database reset is needed.
+- generation(id=1,token,started,status,error,skipped) provides a 15-minute cross-process lease.
+- GET /api/collections returns snapshot and generation in one explicit read transaction. Two independent SELECTs can otherwise combine done with a snapshot read before publication.
+- POST /api/collections/generate →202/409; POST /api/collections/confirm accepts folder.
 
-## 3. Contracts / Environment
+## 3. Request / Response / Environment Contracts
 
-- Public snapshot: `schema_version=1,revision,generated_at,items[{number,title,track_count}]`.
-- Successful resolution also includes `media_type=album,ma_media_uri`. Check current revision before resolving; never reinterpret an old number against a new snapshot.
-- Generation sources are exactly the list yielded by the Catalog.device_candidates() context manager: current albums joined with jobs.status=done, matching the current /api/albums list. Scan only the sanitized folders in this allowlist; never enumerate music root as an alternative. Preserve original album titles for display and return a separate folder in skip reports for confirmation. Empty eligible lists preserve the old snapshot and prompt download. Reacquire this guard before publication with BEGIN IMMEDIATE on the catalog DB, compare the source list, and hold it through the device DB commit. Always lock catalog then device DB, matching download queueing; an unlocked check followed by publication allows a monthly refresh to race past the check.
-- Generate only on a manual request. Sort `(track_count,stable_path_hash)` then number 1-N. Download success does not publish.
-- Candidate albums/jobs are disposable; migrate legacy done rows with matching totals before candidate refresh. Never overwrite a newer ledger entry during migration.
-- Validate direct MP3/M4A files with Mutagen, reject temporary files, links, directories and invalid/duplicate filename numbers. Generation does not write tags or audio.
-- Complete manifests must still match at generation and immediately before publication. Recheck ledger status in the publication transaction. Zero valid collections and global failures preserve the prior snapshot.
-- MA variables: `KIDS_MA_URL`, `KIDS_MA_TOKEN`, `KIDS_MA_MUSIC_ROOT` (default `/music`). Only backend receives the token. Music root converts MA absolute paths into relative NAS identities.
-- MA 2.8.2 JSON-RPC: `music/tracks/library_items` paginated by limit/offset; `music/albums/album_tracks` with `in_library_only=false` validates actual full playback expansion; `music/item_by_uri` checks target availability on resolution. Use available filesystem_local provider mappings and require an exact file set, unique album, correct filename-derived track numbers and a single disc. Similar titles alone are never proof.
-- Maximum 500 published collections, 256 UTF-8 bytes per title, 128 KiB compact snapshot JSON. No silent truncation. Skipped reasons are visible.
-- nginx and Next map `/api/kids/:path*` to backend `/api/:path*`. Never add the frontend `/kids` basePath to those API requests.
+- GET /api/device/v1/collections → schema_version=1,revision,generated_at,items[number,title,track_count].
+- GET /api/device/v1/collections/by-number/{number}?revision=... → revision,number,title,track_count. No media_type, MA URI, MA availability checks or playback side effects.
+- Candidate source is the Catalog.device_candidates() context manager: current albums JOIN jobs.status=done. Only scan these sanitized folders, retain original titles, never enumerate the whole NAS root. Empty eligible lists preserve the prior snapshot.
+- Acquire/release the source guard to read inputs. Reacquire BEGIN IMMEDIATE on Catalog for the final comparison and hold through the device DB commit; always lock Catalog then device DB, matching queueing.
+- Validate actual readable nonempty MP3/M4A and stable manifests. Reject temporary downloads, damaged files, links and nested folders. No filename tracknumber or tag/MA requirement. file_order preserves old numeric filename ordering for stored manifests and supports ordinary names.
+- Sort by track_count and stable path hash, then number1-N. Only manual successful generation publishes. Refreshing candidates does not delete publication/completions.
+- Maximum500 collections,256 UTF-8 bytes/title,128 KiB compact public snapshot JSON; never silently truncate. Individual collection file counts are independent of MA query limits.
+- Directory uses only KIDS_DATA_DIR and KIDS_MUSIC_DIR. Existing MA environment variables are irrelevant to generation and lookup. No MA credentials or filesystem paths in public responses.
+- nginx/Next maps /api/kids/* to backend /api/*; avoid frontend /kids basePath for API requests.
 
 ## 4. Validation & Error Matrix
 
 | Condition | Result |
 | --- | --- |
 | No snapshot / unknown number | 404 directory_missing / number_missing |
-| Old revision | 409 revision_expired; refresh and reselect |
-| MA target unavailable | 503 target_unavailable |
-| Generation already running | 409 generation_running |
-| Invalid manual completion / running download | 422, no completion change |
-| Unconfirmed / incomplete / mismatched files | Skip with reason, no guessed mapping |
-| MA auth/network/format failure, capacity overflow, file mutation during generation | Failed generation, old snapshot retained |
+| Old revision | 409 revision_expired, refresh and reselect |
+| Already generating | 409 generation_running |
+| Invalid completion confirmation / running download | 422 |
+| Unconfirmed or changed local files | Skip with explicit reason |
+| NAS/global failure, zero valid items, overflow | Failed generation, prior snapshot retained |
+| MA offline, unconfigured, missing associations or500-track limit | No effect on directory generation or name lookup |
 
-## 5. Good / Base / Bad Cases
+## 5. Base / Good / Bad Cases
 
-- Base: current-month downloaded 30/8/15-track folders publish as 8/15/30, numbered 1/2/3.
-- Good: a newly downloaded 5-track folder leaves current numbering untouched until generation; new generation puts it first and invalidates prior revision lookups.
-- Bad: a one-file local album expands to two MA tracks because a remote provider added an extra track. Reject this album rather than publishing a misleading one-track mapping.
+- Base: downloaded30/8/15-file collections publish8/15/30, numbered1/2/3.
+- Good: valid NAS collections with501/1106/3000 files are counted without contacting MA; ordinary filenames are supported.
+- Bad: refusing a directory item because MA has album=null, trying to repair MA from directory generation, or resolving old numbers against new snapshots.
 
 ## 6. Tests Required
 
-Run `.venv/Scripts/python -m pytest -q` inside backend/kids-catalog. Assert actual publication and counts, old-revision rejection, durable completion migration, failure preservation, generation mutual exclusion, file changes during generation, overflow, and actual album expansion. Adapter tests verify Bearer auth, pagination, path mapping and sanitization of upstream failures. Frontend checks: `pnpm exec tsc --noEmit`, `pnpm build`, desktop/mobile UI and generation action. Real NAS/MA/ESP32 validation remains distinct from fixtures.
+Backend pytest must cover no-network/no-MA generation and lookup, full long-collection counts, current-month filtering, sorting, completion migration, file validation, ordinary filenames, stable numeric manifest compatibility, concurrency, candidate mutation, consistent status reads, overflow, failure preservation and legacy targets being ignored. Frontend: TypeScript and production build. Device/HA playback is a separate integration test.
 
 ## 7. Wrong vs Correct
 
-Wrong: reuse albums/jobs IDs as stable device IDs, publish on every downloaded file, resolve old number using the newest snapshot, match albums by title, or enumerate the NAS root to discover generation candidates.
+Wrong: couple metadata publication to MA album/track matching, expose a stored MA URI on number lookup, or reuse candidate IDs as permanent screen numbers.
 
-Correct: independent completion ledger and publication, manual whole-snapshot replacement, revision plus number resolution, and exact file/track/album matching.
+Correct: manual durable number/name snapshots, revision-aware metadata lookup and separate playback integration. MA repair work is paused under the user's revised scope.

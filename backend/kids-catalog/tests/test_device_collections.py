@@ -1,5 +1,6 @@
 import shutil
 import threading
+import urllib.request
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -12,39 +13,14 @@ from src.main import create_app
 FIXTURE = Path(__file__).parent / 'fixtures/tone.mp3'
 
 
-class FakeMA:
-    def __init__(self):
-        self.tracks = []
-        self.fail = False
-
-    def library_tracks(self):
-        if self.fail:
-            raise RuntimeError('offline')
-        return self.tracks
-
-    def album_available(self, uri):
-        return not self.fail and any(t['album']['uri'] == uri for t in self.tracks)
-
-    def album_tracks(self, uri):
-        return [t for t in self.tracks if t['album']['uri'] == uri]
-
-
-def add_album(root, ma, title, count, *, monthly=True):
+def add_album(root, catalog, title, count, *, monthly=True):
     folder = root / title
     folder.mkdir(parents=True)
-    for n in range(1, count + 1):
-        name = f'{n:03d}-曲目.mp3'
-        shutil.copyfile(FIXTURE, folder / name)
-        ma.tracks.append({
-            'item_id': f'{title}-{n}', 'track_number': n, 'disc_number': 1,
-            'album': {'uri': f'library://album/{title}', 'item_id': title},
-            'provider_mappings': [{'provider_domain': 'filesystem_local',
-                                   'provider_instance': 'local', 'available': True,
-                                   'item_id': f'{title}/{name}'}],
-        })
-    if monthly and hasattr(ma, 'catalog'):
-        # Tests control completion evidence separately; legacy totals stay unknown.
-        with ma.catalog.db() as con:
+    for number in range(1, count + 1):
+        shutil.copyfile(FIXTURE, folder / f'{number:03d}-曲目.mp3')
+    if monthly:
+        # Completion evidence is controlled separately by each test.
+        with catalog.db() as con:
             con.execute("insert into albums(platform,album_id,title,url,age_evidence,age_confidence,last_seen) "
                         "values('蜻蜓FM',?,?, '', '', '', 'current')", (title, title))
             album_id = con.execute('select last_insert_rowid()').fetchone()[0]
@@ -55,19 +31,15 @@ def add_album(root, ma, title, count, *, monthly=True):
 
 @pytest.fixture
 def setup(tmp_path):
-    ma = FakeMA()
     root = tmp_path / 'music'
     root.mkdir()
-    app = create_app(data_dir=tmp_path / 'data', music_dir=root, ma_client=ma)
-    ma.catalog = app.state.catalog
-    return TestClient(app), app, ma, root
+    app = create_app(data_dir=tmp_path / 'data', music_dir=root)
+    return TestClient(app), app, app.state.catalog, root
 
 
-def generate(client):
-    response = client.post('/api/collections/generate')
-    assert response.status_code == 202
+def wait_for_generation(client):
     import time
-    deadline = time.monotonic() + 5
+    deadline = time.monotonic() + 20
     while time.monotonic() < deadline:
         result = client.get('/api/collections').json()
         if result['generation']['status'] != 'running':
@@ -76,21 +48,26 @@ def generate(client):
     pytest.fail('generation did not finish')
 
 
+def generate(client):
+    assert client.post('/api/collections/generate').status_code == 202
+    return wait_for_generation(client)
+
+
 def confirm(client, folder):
     assert client.post('/api/collections/confirm', json={'folder': folder}).status_code == 200
 
 
 def test_counts_sort_rebuild_and_old_revision_never_plays_new_number(setup):
-    client, app, ma, root = setup
+    client, app, catalog, root = setup
     for title, count in [('长篇', 30), ('儿歌', 8), ('故事', 15)]:
-        add_album(root, ma, title, count)
+        add_album(root, catalog, title, count)
         confirm(client, title)
     first = generate(client)['snapshot']
     assert [(x['number'], x['track_count']) for x in first['items']] == [(1, 8), (2, 15), (3, 30)]
     assert client.get('/api/device/v1/collections').json() == first
     target = client.get('/api/device/v1/collections/by-number/1', params={'revision': first['revision']})
-    assert target.json()['ma_media_uri'] == 'library://album/儿歌'
-    add_album(root, ma, '短歌', 5)
+    assert target.json() == {'revision': first['revision'], 'number': 1, 'title': '儿歌', 'track_count': 8}
+    add_album(root, catalog, '短歌', 5)
     confirm(client, '短歌')
     assert client.get('/api/device/v1/collections').json() == first
     second = generate(client)['snapshot']
@@ -101,15 +78,15 @@ def test_counts_sort_rebuild_and_old_revision_never_plays_new_number(setup):
     assert repeated['items'] == second['items']
 
 
-def test_skips_unconfirmed_partial_corrupt_and_ambiguous(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '未确认', 1)
-    add_album(root, ma, '正常', 2)
+def test_skips_unconfirmed_partial_and_corrupt_audio(setup):
+    client, app, catalog, root = setup
+    add_album(root, catalog, '未确认', 1)
+    add_album(root, catalog, '正常', 2)
     confirm(client, '正常')
-    add_album(root, ma, '下载中', 3)
+    add_album(root, catalog, '下载中', 3)
     confirm(client, '下载中')
     (root / '下载中/004.mp3.part').write_bytes(b'pending')
-    add_album(root, ma, '损坏', 1)
+    add_album(root, catalog, '损坏', 1)
     (root / '损坏/001-曲目.mp3').write_bytes(b'not audio')
     assert client.post('/api/collections/confirm', json={'folder': '损坏'}).status_code == 422
     result = generate(client)
@@ -119,62 +96,65 @@ def test_skips_unconfirmed_partial_corrupt_and_ambiguous(setup):
     assert 'provider_mappings' not in public and '/music/' not in public
 
 
-def test_failed_generation_and_removed_target_keep_snapshot(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '合集', 1)
+def test_unavailable_nas_keeps_previous_snapshot_and_name_lookup(setup):
+    client, app, catalog, root = setup
+    folder = add_album(root, catalog, '合集', 1)
     confirm(client, '合集')
     first = generate(client)['snapshot']
-    ma.fail = True
+    (folder / '001-曲目.mp3').unlink()
+    folder.rmdir()
     result = generate(client)
     assert result['snapshot'] == first
     assert result['generation']['status'] == 'failed'
-    assert client.get('/api/device/v1/collections/by-number/1', params={'revision': first['revision']}).status_code == 503
+    response = client.get('/api/device/v1/collections/by-number/1', params={'revision': first['revision']})
+    assert response.status_code == 200
+    assert response.json()['title'] == '合集'
 
 
 def test_snapshot_and_completion_survive_refresh_but_next_generation_is_current_only(setup, tmp_path):
-    client, app, ma, root = setup
-    add_album(root, ma, '旧合集', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '旧合集', 1)
     confirm(client, '旧合集')
     first = generate(client)['snapshot']
     app.state.catalog.refresh([])
     assert client.get('/api/device/v1/collections').json() == first
     assert generate(client)['snapshot'] == first
-    restarted = TestClient(create_app(data_dir=tmp_path / 'data', music_dir=root, ma_client=ma))
+    restarted = TestClient(create_app(data_dir=tmp_path / 'data', music_dir=root))
     assert generate(restarted)['snapshot'] == first
-    ma.catalog = restarted.app.state.catalog
-    add_album(root, ma, '新合集', 2)
+    catalog = restarted.app.state.catalog
+    add_album(root, catalog, '新合集', 2)
     confirm(restarted, '新合集')
     assert [i['title'] for i in generate(restarted)['snapshot']['items']] == ['新合集']
     with restarted.app.state.collections.db() as con:
         assert con.execute("select status from completions where folder='旧合集'").fetchone()[0] == 'complete'
 
 
-def test_exact_path_match_rejects_wrong_album_and_incomplete_tracks(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '正确', 2)
-    confirm(client, '正确')
-    ma.tracks.pop()
+def test_counting_audio_does_not_require_filename_track_numbers(setup):
+    client, app, catalog, root = setup
+    folder = add_album(root, catalog, '儿歌', 2)
+    (folder / '001-曲目.mp3').rename(folder / '摇篮曲.mp3')
+    (folder / '002-曲目.mp3').rename(folder / '²-晚安.mp3')
+    confirm(client, '儿歌')
     result = generate(client)
-    assert result['snapshot'] is None
-    assert result['generation']['skipped'][0]['reason']
-    assert client.get('/api/device/v1/collections').status_code == 404
+    assert result['generation']['status'] == 'done'
+    assert result['snapshot']['items'] == [{'number': 1, 'title': '儿歌', 'track_count': 2}]
     assert client.post('/api/collections/confirm', json={'folder': '../outside'}).status_code == 422
 
 
 def test_parallel_generation_rejected_and_old_snapshot_stays_readable(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '合集', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '合集', 1)
     confirm(client, '合集')
     first = generate(client)['snapshot']
     entered, release = threading.Event(), threading.Event()
-    original = ma.library_tracks
+    original = app.state.collections.scan
 
-    def slow():
+    def slow(folder):
         entered.set()
         assert release.wait(5)
-        return original()
+        return original(folder)
 
-    ma.library_tracks = slow
+    app.state.collections.scan = slow
     try:
         assert client.post('/api/collections/generate').status_code == 202
         assert entered.wait(2)
@@ -182,27 +162,16 @@ def test_parallel_generation_rejected_and_old_snapshot_stays_readable(setup):
         assert client.get('/api/device/v1/collections').json() == first
     finally:
         release.set()
-
-
-def test_album_with_extra_remote_track_is_not_published(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '合集', 1)
-    confirm(client, '合集')
-    ma.tracks.append({'item_id': 'remote-extra', 'track_number': 2,
-                      'album': {'uri': 'library://album/合集'},
-                      'provider_mappings': [{'provider_domain': 'spotify', 'item_id': 'remote'}]})
-    result = generate(client)
-    assert result['snapshot'] is None
-    assert result['generation']['status'] == 'failed'
+        wait_for_generation(client)
 
 
 def test_capacity_failure_keeps_previous_and_ties_are_stable(setup, monkeypatch):
     from src import device_collections
-    client, app, ma, root = setup
-    add_album(root, ma, '甲', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '甲', 1)
     confirm(client, '甲')
     first = generate(client)['snapshot']
-    add_album(root, ma, '乙', 1)
+    add_album(root, catalog, '乙', 1)
     confirm(client, '乙')
     monkeypatch.setattr(device_collections, 'MAX_ITEMS', 1)
     result = generate(client)
@@ -219,35 +188,40 @@ def test_capacity_failure_keeps_previous_and_ties_are_stable(setup, monkeypatch)
 
 
 def test_manual_confirmation_cannot_override_running_download(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '下载中', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '下载中', 1)
     app.state.collections.mark_downloading('下载中')
     assert client.post('/api/collections/confirm', json={'folder': '下载中'}).status_code == 422
 
 
 def test_generation_rechecks_files_before_publication(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '合集', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '合集', 1)
     confirm(client, '合集')
     first = generate(client)['snapshot']
-    original = ma.album_tracks
+    original = app.state.collections.scan
+    mutated = False
 
-    def changed(uri):
-        (root / '合集/001-曲目.mp3').touch()
-        return original(uri)
+    def changed(folder):
+        nonlocal mutated
+        manifest = original(folder)
+        if not mutated:
+            (root / '合集/001-曲目.mp3').touch()
+            mutated = True
+        return manifest
 
-    ma.album_tracks = changed
+    app.state.collections.scan = changed
     result = generate(client)
     assert result['snapshot'] == first
     assert result['generation']['status'] == 'failed'
 
 
 def test_downloaded_jobs_are_migrated_before_candidate_refresh(setup, tmp_path):
-    client, app, ma, root = setup
-    add_album(root, ma, '历史下载', 2)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '历史下载', 2)
     with app.state.catalog.db() as con:
         con.execute("update jobs set total_tracks=2,downloaded_tracks=2")
-    restarted = create_app(data_dir=tmp_path / 'data', music_dir=root, ma_client=ma)
+    restarted = create_app(data_dir=tmp_path / 'data', music_dir=root)
     first = generate(TestClient(restarted))['snapshot']
     assert first['items'][0]['track_count'] == 2
     restarted.state.catalog.refresh([])
@@ -257,8 +231,8 @@ def test_downloaded_jobs_are_migrated_before_candidate_refresh(setup, tmp_path):
 
 
 def test_expired_generation_lease_can_be_retried(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '合集', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '合集', 1)
     confirm(client, '合集')
     with app.state.collections.db() as con:
         con.execute("update generation set status='running',started=0,token='dead-worker' where id=1")
@@ -266,30 +240,11 @@ def test_expired_generation_lease_can_be_retried(setup):
     assert generate(client)['generation']['status'] == 'done'
 
 
-@pytest.mark.parametrize('wrong_order', [False, True])
-def test_actual_playback_expansion_must_preserve_file_order(setup, wrong_order):
-    client, app, ma, root = setup
-    add_album(root, ma, '合集', 2)
-    confirm(client, '合集')
-    original = ma.album_tracks
-
-    def expansion(uri):
-        tracks = original(uri)
-        if wrong_order:
-            return list(reversed(tracks))
-        return [{**track, 'track_number': 3 - track['track_number']} for track in tracks]
-
-    ma.album_tracks = expansion
-    result = generate(client)
-    assert result['snapshot'] is None
-    assert result['generation']['status'] == 'failed'
-
-
 def test_generate_only_downloaded_current_kids_albums_not_all_nas_folders(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '本月儿歌', 2)
-    add_album(root, ma, 'NAS历史专辑', 1)
-    add_album(root, ma, '本月未下载', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '本月儿歌', 2)
+    add_album(root, catalog, 'NAS历史专辑', 1)
+    add_album(root, catalog, '本月未下载', 1)
     confirm(client, '本月儿歌')
     confirm(client, 'NAS历史专辑')
     (root / 'cache').mkdir()
@@ -308,8 +263,8 @@ def test_generate_only_downloaded_current_kids_albums_not_all_nas_folders(setup)
 
 
 def test_no_current_downloads_never_falls_back_to_all_nas(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '历史专辑', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '历史专辑', 1)
     confirm(client, '历史专辑')
     app.state.catalog.refresh([])
     result = generate(client)
@@ -319,17 +274,18 @@ def test_no_current_downloads_never_falls_back_to_all_nas(setup):
 
 
 def test_monthly_source_change_during_generation_keeps_old_snapshot(setup):
-    client, app, ma, root = setup
-    add_album(root, ma, '本月合集', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '本月合集', 1)
     confirm(client, '本月合集')
     first = generate(client)['snapshot']
-    original = ma.album_tracks
+    original = app.state.collections.scan
 
-    def refresh_during_match(uri):
+    def refresh_during_scan(folder):
+        manifest = original(folder)
         app.state.catalog.refresh([])
-        return original(uri)
+        return manifest
 
-    ma.album_tracks = refresh_during_match
+    app.state.collections.scan = refresh_during_scan
     result = generate(client)
     assert result['generation']['status'] == 'failed'
     assert '本月合集列表发生变化' in result['generation']['error']
@@ -337,8 +293,8 @@ def test_monthly_source_change_during_generation_keeps_old_snapshot(setup):
 
 
 def test_refresh_after_final_source_check_waits_until_publication(setup, monkeypatch):
-    client, app, ma, root = setup
-    add_album(root, ma, '本月合集', 1)
+    client, app, catalog, root = setup
+    add_album(root, catalog, '本月合集', 1)
     confirm(client, '本月合集')
     original_db = app.state.collections.db
     attempted, finished = threading.Event(), threading.Event()
@@ -376,3 +332,107 @@ def test_refresh_after_final_source_check_waits_until_publication(setup, monkeyp
         for worker in workers:
             worker.join(3)
     assert finished.is_set()
+
+
+def test_directory_and_number_lookup_work_without_ma_configuration(tmp_path, monkeypatch):
+    for key in ('KIDS_MA_URL', 'KIDS_MA_TOKEN', 'KIDS_MA_MUSIC_ROOT'):
+        monkeypatch.delenv(key, raising=False)
+
+    original_urlopen = urllib.request.urlopen
+
+    def no_network(*args, **kwargs):
+        # The module-level app has its own unrelated monthly collector thread.
+        if threading.current_thread().name == 'monthly-refresh':
+            return original_urlopen(*args, **kwargs)
+        raise AssertionError('Directory generation and name lookup must never contact MA')
+
+    monkeypatch.setattr('urllib.request.urlopen', no_network)
+    root = tmp_path / 'music'
+    folder = root / '本月儿歌'
+    folder.mkdir(parents=True)
+    shutil.copyfile(FIXTURE, folder / '001-儿歌.mp3')
+    app = create_app(data_dir=tmp_path / 'data', music_dir=root)
+    app.state.catalog.refresh([{'platform': '蜻蜓FM', 'album_id': '1', 'title': '本月儿歌',
+                               'url': '', 'age_evidence': '', 'age_confidence': ''}])
+    with app.state.catalog.db() as con:
+        con.execute("insert into jobs(album_id,status,created_at,updated_at,total_tracks,downloaded_tracks) "
+                    "values(1,'done','now','now',1,1)")
+    client = TestClient(app)
+    result = generate(client)
+    assert result['generation']['status'] == 'done'
+    snapshot = result['snapshot']
+    response = client.get('/api/device/v1/collections/by-number/1', params={'revision': snapshot['revision']})
+    assert response.status_code == 200
+    assert response.json() == {'revision': snapshot['revision'], 'number': 1,
+                               'title': '本月儿歌', 'track_count': 1}
+
+
+@pytest.mark.parametrize('count', [501, 1106, 3000])
+def test_long_collections_are_counted_from_nas_without_ma_limit(setup, count):
+    client, app, catalog, root = setup
+    add_album(root, catalog, '长合集', count)
+    confirm(client, '长合集')
+    result = generate(client)
+    assert result['generation']['status'] == 'done'
+    assert result['snapshot']['items'] == [{'number': 1, 'title': '长合集', 'track_count': count}]
+
+
+def test_old_ma_targets_do_not_affect_name_lookup_or_new_publications(setup):
+    client, app, catalog, root = setup
+    add_album(root, catalog, '儿歌', 1)
+    confirm(client, '儿歌')
+    first = generate(client)['snapshot']
+    with app.state.collections.db() as con:
+        con.execute("update publication set targets='obsolete-invalid-ma-json' where id=1")
+    response = client.get('/api/device/v1/collections/by-number/1', params={'revision': first['revision']})
+    assert response.status_code == 200
+    assert response.json() == {'revision': first['revision'], 'number': 1, 'title': '儿歌', 'track_count': 1}
+    assert generate(client)['generation']['status'] == 'done'
+    with app.state.collections.db() as con:
+        assert con.execute('select targets from publication where id=1').fetchone()[0] == '{}'
+
+
+def test_status_and_directory_are_read_from_one_database_snapshot(setup, monkeypatch):
+    import json
+    import time
+    client, app, catalog, root = setup
+    store = app.state.collections
+    original_db = store.db
+    ready, committed = threading.Event(), threading.Event()
+    workers = []
+    snapshot = {'schema_version': 1, 'revision': 'test-revision', 'generated_at': 'now',
+                'items': [{'number': 1, 'title': '儿歌', 'track_count': 1}]}
+    with original_db() as con:
+        con.execute("update generation set status='running',started=? where id=1", (time.time(),))
+
+    def publish():
+        with original_db() as con:
+            con.execute('insert into publication values(1,?,?)', (json.dumps(snapshot), '{}'))
+            con.execute("update generation set status='done' where id=1")
+            ready.set()
+        committed.set()
+
+    class Connection:
+        def __init__(self, con):
+            self.con = con
+
+        def execute(self, sql, *args):
+            if sql.startswith('select status,error,skipped,started'):
+                worker = threading.Thread(target=publish)
+                workers.append(worker)
+                worker.start()
+                assert ready.wait(2)
+                committed.wait(.15)
+            return self.con.execute(sql, *args)
+
+    @contextmanager
+    def observed_db():
+        with original_db() as con:
+            yield Connection(con)
+
+    monkeypatch.setattr(store, 'db', observed_db)
+    result = store.read()
+    for worker in workers:
+        worker.join(3)
+    assert committed.is_set()
+    assert result['generation']['status'] != 'done' or result['snapshot'] == snapshot
