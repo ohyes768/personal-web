@@ -30,10 +30,11 @@ def encoded(value):
 
 
 class DeviceCollections:
-    def __init__(self, data_dir, music_dir, ma):
+    def __init__(self, data_dir, music_dir, ma, candidate_source):
         self.path = Path(data_dir) / 'device_collections.sqlite3'
         self.root = Path(music_dir)
         self.ma = ma
+        self.candidate_source = candidate_source
         with self.db() as con:
             con.executescript('''
                 create table if not exists completions (
@@ -184,14 +185,15 @@ class DeviceCollections:
                 prepare()
             if not self.root.is_dir():
                 raise CollectionError('NAS 音频根目录不可用')
+            with self.candidate_source() as sources:
+                if not sources:
+                    raise CollectionError('本月暂无已下载完成的合集，请先下载；已保留原歌单')
             groups, paths = self._matches(self.ma.library_tracks())
             items, targets, manifests = [], {}, {}
             with self.db() as con:
                 completed = {r['folder']: dict(r) for r in con.execute('select * from completions')}
-            for directory in sorted(self.root.iterdir()):
-                if not directory.is_dir() and not directory.is_symlink():
-                    continue
-                folder = directory.name
+            for source in sources:
+                folder, title = source['folder'], source['title']
                 reason_code = 'invalid'
                 try:
                     manifest = self.scan(folder)
@@ -212,7 +214,9 @@ class DeviceCollections:
                     # in the library listing. Validate the actual playback expansion.
                     full_tracks = self.ma.album_tracks(uri)
                     full_groups, _ = self._matches(full_tracks)
-                    if len(full_tracks) != len(manifest) or set(full_groups.get(uri, {})) != expected_paths:
+                    if len(full_tracks) != len(manifest):
+                        raise CollectionError(f'MA 专辑返回 {len(full_tracks)} 首，本地 {len(manifest)} 首，暂不能完整播放')
+                    if set(full_groups.get(uri, {})) != expected_paths:
                         raise CollectionError('MA 整张专辑包含额外曲目或缺少本地曲目')
                     if list(full_groups[uri]) != ordered_paths:
                         raise CollectionError('MA 实际播放顺序与文件曲序不一致')
@@ -220,16 +224,16 @@ class DeviceCollections:
                     if any(disc not in (0, 1) or number != int(row[0].split('-', 1)[0])
                            for (disc, number), row in zip(order, manifest)):
                         raise CollectionError('MA 曲序与文件顺序不一致，请整理标签并重扫')
-                    if len(folder.encode('utf-8')) > 256:
+                    if len(title.encode('utf-8')) > 256:
                         raise CollectionError('合集名称超过设备长度限制')
                     stable_id = hashlib.sha256(folder.encode()).hexdigest()
-                    items.append({'title': folder, 'track_count': len(manifest), '_id': stable_id})
+                    items.append({'title': title, 'track_count': len(manifest), '_id': stable_id})
                     targets[stable_id] = uri
                     manifests[folder] = manifest
                 except (CollectionError, ValueError, OSError) as error:
                     # Human-readable reasons are controlled local messages only.
                     reason = str(error) if isinstance(error, CollectionError) else '合集无法读取'
-                    skipped.append({'title': folder, 'reason': reason, 'code': reason_code})
+                    skipped.append({'title': title, 'folder': folder, 'reason': reason, 'code': reason_code})
             if not items:
                 raise CollectionError('没有可发布的合集，请查看跳过原因；已保留原歌单')
             if len(items) > MAX_ITEMS:
@@ -246,18 +250,23 @@ class DeviceCollections:
             for folder, manifest in manifests.items():
                 if self.scan(folder) != manifest:
                     raise CollectionError('生成期间音频发生变化，请重新生成')
-            with self.db() as con:
-                con.execute('begin immediate')
-                current = con.execute('select token from generation where id=1').fetchone()
-                if current['token'] != token:
-                    return
-                for folder, manifest in manifests.items():
-                    row = con.execute('select * from completions where folder=?', (folder,)).fetchone()
-                    if not row or row['status'] != 'complete' or row['manifest'] != encoded(manifest):
-                        raise CollectionError('生成期间下载状态发生变化，请重新生成')
-                con.execute('insert into publication values(1,?,?) on conflict(id) do update '
-                            'set snapshot=excluded.snapshot,targets=excluded.targets', (encoded(snapshot), encoded(playback)))
-                con.execute("update generation set status='done',skipped=? where id=1", (encoded(skipped),))
+            # Lock order matches download queueing: catalog first, device DB second.
+            # Hold the source guard through commit so refresh cannot race publication.
+            with self.candidate_source() as current_sources:
+                if current_sources != sources:
+                    raise CollectionError('生成期间本月合集列表发生变化，请重新生成')
+                with self.db() as con:
+                    con.execute('begin immediate')
+                    current = con.execute('select token from generation where id=1').fetchone()
+                    if current['token'] != token:
+                        return
+                    for folder, manifest in manifests.items():
+                        row = con.execute('select * from completions where folder=?', (folder,)).fetchone()
+                        if not row or row['status'] != 'complete' or row['manifest'] != encoded(manifest):
+                            raise CollectionError('生成期间下载状态发生变化，请重新生成')
+                    con.execute('insert into publication values(1,?,?) on conflict(id) do update '
+                                'set snapshot=excluded.snapshot,targets=excluded.targets', (encoded(snapshot), encoded(playback)))
+                    con.execute("update generation set status='done',skipped=? where id=1", (encoded(skipped),))
         except Exception as exc:
             message = str(exc) if isinstance(exc, (CollectionError, MAError)) else '生成失败，请检查 NAS 与 MA 连接'
             logger.warning('Device directory generation failed (%s)', type(exc).__name__)

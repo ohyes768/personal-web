@@ -88,6 +88,19 @@ class Catalog:
         self._backfill_sizes(rows)
         return rows
 
+    @contextmanager
+    def device_candidates(self):
+        """Hold catalog mutations while checking/publishing the current done list."""
+        with self.db() as con:
+            con.execute('begin immediate')
+            rows = con.execute("select a.platform,a.album_id,a.title from albums a join jobs j "
+                               "on a.id=j.album_id where j.status='done' order by a.platform,a.album_id").fetchall()
+            candidates = [{'folder': sanitize_filename(row['title']), 'title': row['title'],
+                           'source_id': f"{row['platform']}:{row['album_id']}"} for row in rows]
+            if len({item['folder'] for item in candidates}) != len(candidates):
+                raise CollectionError('本月多个合集对应同一下载目录，请核对合集名称')
+            yield candidates
+
     def _backfill_sizes(self, rows: "list[dict[str, Any]]"):
         """旧版本下载完的任务没有 size_bytes：扫一次目录补上并持久化，避免每次列表重扫。
 
@@ -188,7 +201,8 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
     app.state.catalog = catalog
     app.state.music_dir = music_dir or Path(os.getenv('KIDS_MUSIC_DIR', '/music'))
     catalog.downloader = downloader or Downloader(app.state.music_dir)
-    collections = DeviceCollections(catalog.path.parent, app.state.music_dir, ma_client or MusicAssistant())
+    collections = DeviceCollections(catalog.path.parent, app.state.music_dir,
+                                    ma_client or MusicAssistant(), catalog.device_candidates)
     app.state.collections = collections
     catalog.collections = collections
 

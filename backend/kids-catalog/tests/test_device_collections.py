@@ -1,5 +1,6 @@
 import shutil
 import threading
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -28,7 +29,7 @@ class FakeMA:
         return [t for t in self.tracks if t['album']['uri'] == uri]
 
 
-def add_album(root, ma, title, count):
+def add_album(root, ma, title, count, *, monthly=True):
     folder = root / title
     folder.mkdir(parents=True)
     for n in range(1, count + 1):
@@ -41,6 +42,14 @@ def add_album(root, ma, title, count):
                                    'provider_instance': 'local', 'available': True,
                                    'item_id': f'{title}/{name}'}],
         })
+    if monthly and hasattr(ma, 'catalog'):
+        # Tests control completion evidence separately; legacy totals stay unknown.
+        with ma.catalog.db() as con:
+            con.execute("insert into albums(platform,album_id,title,url,age_evidence,age_confidence,last_seen) "
+                        "values('蜻蜓FM',?,?, '', '', '', 'current')", (title, title))
+            album_id = con.execute('select last_insert_rowid()').fetchone()[0]
+            con.execute("insert into jobs(album_id,status,created_at,updated_at) values(?,'done','now','now')",
+                        (album_id,))
     return folder
 
 
@@ -50,6 +59,7 @@ def setup(tmp_path):
     root = tmp_path / 'music'
     root.mkdir()
     app = create_app(data_dir=tmp_path / 'data', music_dir=root, ma_client=ma)
+    ma.catalog = app.state.catalog
     return TestClient(app), app, ma, root
 
 
@@ -121,18 +131,22 @@ def test_failed_generation_and_removed_target_keep_snapshot(setup):
     assert client.get('/api/device/v1/collections/by-number/1', params={'revision': first['revision']}).status_code == 503
 
 
-def test_completion_survives_candidate_refresh_and_process_restart(setup, tmp_path):
+def test_snapshot_and_completion_survive_refresh_but_next_generation_is_current_only(setup, tmp_path):
     client, app, ma, root = setup
     add_album(root, ma, '旧合集', 1)
     confirm(client, '旧合集')
+    first = generate(client)['snapshot']
     app.state.catalog.refresh([])
-    assert generate(client)['snapshot']['items'][0]['title'] == '旧合集'
+    assert client.get('/api/device/v1/collections').json() == first
+    assert generate(client)['snapshot'] == first
     restarted = TestClient(create_app(data_dir=tmp_path / 'data', music_dir=root, ma_client=ma))
-    assert generate(restarted)['snapshot']['items'][0]['title'] == '旧合集'
-    (root / '旧合集/001-曲目.mp3').touch()
-    result = generate(restarted)
-    assert result['generation']['status'] == 'failed'
-    assert result['snapshot']['items'][0]['title'] == '旧合集'
+    assert generate(restarted)['snapshot'] == first
+    ma.catalog = restarted.app.state.catalog
+    add_album(root, ma, '新合集', 2)
+    confirm(restarted, '新合集')
+    assert [i['title'] for i in generate(restarted)['snapshot']['items']] == ['新合集']
+    with restarted.app.state.collections.db() as con:
+        assert con.execute("select status from completions where folder='旧合集'").fetchone()[0] == 'complete'
 
 
 def test_exact_path_match_rejects_wrong_album_and_incomplete_tracks(setup):
@@ -232,13 +246,14 @@ def test_downloaded_jobs_are_migrated_before_candidate_refresh(setup, tmp_path):
     client, app, ma, root = setup
     add_album(root, ma, '历史下载', 2)
     with app.state.catalog.db() as con:
-        con.execute("insert into albums(platform,album_id,title,url,age_evidence,age_confidence,last_seen) "
-                    "values('蜻蜓FM','1','历史下载','','','','old')")
-        con.execute("insert into jobs(album_id,status,created_at,updated_at,total_tracks,downloaded_tracks) "
-                    "values(1,'done','old','old',2,2)")
+        con.execute("update jobs set total_tracks=2,downloaded_tracks=2")
     restarted = create_app(data_dir=tmp_path / 'data', music_dir=root, ma_client=ma)
+    first = generate(TestClient(restarted))['snapshot']
+    assert first['items'][0]['track_count'] == 2
     restarted.state.catalog.refresh([])
-    assert generate(TestClient(restarted))['snapshot']['items'][0]['track_count'] == 2
+    assert generate(TestClient(restarted))['snapshot'] == first
+    with restarted.state.collections.db() as con:
+        assert con.execute("select status from completions where folder='历史下载'").fetchone()[0] == 'complete'
 
 
 def test_expired_generation_lease_can_be_retried(setup):
@@ -268,3 +283,96 @@ def test_actual_playback_expansion_must_preserve_file_order(setup, wrong_order):
     result = generate(client)
     assert result['snapshot'] is None
     assert result['generation']['status'] == 'failed'
+
+
+def test_generate_only_downloaded_current_kids_albums_not_all_nas_folders(setup):
+    client, app, ma, root = setup
+    add_album(root, ma, '本月儿歌', 2)
+    add_album(root, ma, 'NAS历史专辑', 1)
+    add_album(root, ma, '本月未下载', 1)
+    confirm(client, '本月儿歌')
+    confirm(client, 'NAS历史专辑')
+    (root / 'cache').mkdir()
+    (root / 'cache' / 'temporary.mp3').write_bytes(b'not audio')
+    app.state.catalog.refresh([
+        {'platform': '蜻蜓FM', 'album_id': '1', 'title': '本月|儿歌', 'url': '', 'age_evidence': '', 'age_confidence': ''},
+        {'platform': '蜻蜓FM', 'album_id': '2', 'title': '本月未下载', 'url': '', 'age_evidence': '', 'age_confidence': ''},
+    ])
+    with app.state.catalog.db() as con:
+        album_id = con.execute("select id from albums where album_id='1'").fetchone()[0]
+        con.execute("insert into jobs(album_id,status,created_at,updated_at,total_tracks,downloaded_tracks) "
+                    "values(?,'done','now','now',2,2)", (album_id,))
+    result = generate(client)
+    assert [(item['title'], item['track_count']) for item in result['snapshot']['items']] == [('本月|儿歌', 2)]
+    assert result['generation']['skipped'] == []
+
+
+def test_no_current_downloads_never_falls_back_to_all_nas(setup):
+    client, app, ma, root = setup
+    add_album(root, ma, '历史专辑', 1)
+    confirm(client, '历史专辑')
+    app.state.catalog.refresh([])
+    result = generate(client)
+    assert result['snapshot'] is None
+    assert result['generation']['status'] == 'failed'
+    assert result['generation']['skipped'] == []
+
+
+def test_monthly_source_change_during_generation_keeps_old_snapshot(setup):
+    client, app, ma, root = setup
+    add_album(root, ma, '本月合集', 1)
+    confirm(client, '本月合集')
+    first = generate(client)['snapshot']
+    original = ma.album_tracks
+
+    def refresh_during_match(uri):
+        app.state.catalog.refresh([])
+        return original(uri)
+
+    ma.album_tracks = refresh_during_match
+    result = generate(client)
+    assert result['generation']['status'] == 'failed'
+    assert '本月合集列表发生变化' in result['generation']['error']
+    assert result['snapshot'] == first
+
+
+def test_refresh_after_final_source_check_waits_until_publication(setup, monkeypatch):
+    client, app, ma, root = setup
+    add_album(root, ma, '本月合集', 1)
+    confirm(client, '本月合集')
+    original_db = app.state.collections.db
+    attempted, finished = threading.Event(), threading.Event()
+    workers = []
+
+    def refresh():
+        attempted.set()
+        app.state.catalog.refresh([])
+        finished.set()
+
+    class Connection:
+        def __init__(self, con):
+            self.con = con
+
+        def execute(self, sql, *args):
+            if sql.startswith('insert into publication'):
+                worker = threading.Thread(target=refresh)
+                workers.append(worker)
+                worker.start()
+                assert attempted.wait(2)
+                assert not finished.wait(.15), 'refresh raced past final source check'
+            return self.con.execute(sql, *args)
+
+    @contextmanager
+    def observed_db():
+        with original_db() as con:
+            yield Connection(con)
+
+    monkeypatch.setattr(app.state.collections, 'db', observed_db)
+    try:
+        result = generate(client)
+        assert result['generation']['status'] == 'done'
+        assert result['snapshot']['items'][0]['title'] == '本月合集'
+    finally:
+        for worker in workers:
+            worker.join(3)
+    assert finished.is_set()

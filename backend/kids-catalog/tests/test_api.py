@@ -165,7 +165,7 @@ def test_partial_download_reports_skipped_counts(tmp_path: Path):
         client.post(f"/api/albums/{album_pk}/download")
         deadline = time.monotonic() + 10
         listing = client.get("/api/albums").json()
-        while listing["albums"][0]["download_status"] == "queued" and time.monotonic() < deadline:
+        while listing["albums"][0]["download_status"] in ("queued", "running") and time.monotonic() < deadline:
             time.sleep(0.05)
             listing = client.get("/api/albums").json()
         assert listing["albums"][0]["download_status"] == "partial"

@@ -4,9 +4,9 @@
 
 ## 数据与边界
 
-新增 device_collections.py，负责正式 MP3/M4A 扫描、完成清单、排序和 SQLite 当前快照。稳定内部 ID 从直属目录相对路径生成；同曲数按 ID 排序。NAS 文件只读，复用 audio_tags.open_audio 验证，拒绝链接、嵌套音频、临时或损坏文件。完成清单保存文件名、size、mtime_ns，变化后须重新完成下载或人工确认。
+新增 device_collections.py，接收 Catalog.device_candidates 提供的当月 albums JOIN jobs(status=done) 白名单，仅扫描白名单对应目录，不遍历整个音频根目录；显示名称沿用 albums.title，目录使用下载器相同的 sanitize_filename。candidate_source 为上下文管理器：初次读取后释放；生成结束前重新获取 Catalog 的 BEGIN IMMEDIATE 锁，复核来源未变化并保持到设备快照提交。锁顺序统一为 Catalog → device DB，防止榜单刷新穿越最终核对与发布。负责正式 MP3/M4A 扫描、完成清单、排序和 SQLite 当前快照。稳定内部 ID 从直属目录相对路径生成；同曲数按 ID 排序。NAS 文件只读，复用 audio_tags.open_audio 验证，拒绝链接、嵌套音频、临时或损坏文件。完成清单保存文件名、size、mtime_ns，变化后须重新完成下载或人工确认。
 
-Catalog 下载开始登记独立状态，成功后保存完成清单；生成前迁移现存 done jobs（数量必须与实际一致），不随候选清理。历史无记录目录以单次明确确认操作纳入，不自动猜测完成。
+Catalog 下载开始登记独立状态，成功后保存完成清单；生成前迁移现存 done jobs（数量必须与实际一致），不随候选清理。仅当月来源内缺少独立完成记录的合集可在明确确认后纳入，不能通过确认旧目录绕过来源限制。
 
 MA 使用环境变量 KIDS_MA_URL、KIDS_MA_TOKEN 与 KIDS_MA_MUSIC_ROOT，经 POST /api 读取 music/tracks/library_items 的分页结果。通过 album_tracks(in_library_only=false) 复核整张专辑实际展开，避免额外云端曲目。只使用 filesystem_local 映射，按规范化后的相对文件路径与 track.album 分组，要求精确文件集合、唯一专辑、有效 URI 和正确曲序，不以名称猜测。网络与认证错误不回显密钥或原始响应。
 
@@ -26,4 +26,4 @@ SQLite 独立表存储完成依据、生成租约和当前快照。构建在事�
 
 ## 环境事实与部署
 
-NAS MA 实际镜像为 2.8.2；两个容器均挂载同一音频目录到 /music。MA API 实测返回 401，尚缺连接凭据，禁止凭本地测试宣称真实 MA/设备验收完成。固件及 HA 在关联工程协作，本轮不修改。回滚代码后原 albums/jobs 保持兼容，新增表可保留。
+NAS MA 实际镜像为 2.8.2；两个容器均挂载同一音频目录到 /music。MA 地址与 token 已配置并认证成功；只读现场验证发现部分合集未完成 MA 专辑关联，部分大合集的 album_tracks 仅返回 500 首，需要明确报告实际与期望数量。禁止凭本地测试宣称设备播放验收完成。固件及 HA 在关联工程协作，本轮不修改。回滚代码后原 albums/jobs 保持兼容，新增表可保留。

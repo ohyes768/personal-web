@@ -2,7 +2,7 @@
   "id": "device-collection-ma-mapping",
   "name": "device-collection-ma-mapping",
   "title": "设备合集目录与 MA 播放映射",
-  "description": "下载后手动点击生成歌单，扫描 NAS 已完成合集并匹配 MA 专辑，按曲目数升序生成 1-N 编号；提供 ESP32 真实目录及带 revision 的编号播放查询。仅保存当前清单，失败保留旧结果，不做月度自动编排及 MA 播放列表维护。",
+  "description": "下载后手动生成 kids 当月已下载合集歌单，仅读取这些合集的 NAS 目录并匹配 MA 专辑，按曲目数升序生成 1-N 版本编号；不扫描其他 NAS 历史或缓存目录。",
   "status": "in_progress",
   "dev_type": null,
   "scope": null,
@@ -29,6 +29,6 @@
     "docker-compose.nas.yml",
     "docs/设备合集歌单.md"
   ],
-  "notes": "本地实现与验证完成：85 passed / 1 skipped，TypeScript 与生产构建通过，桌面/手机 UI 和生成按钮已验证。用户已告知 env 配置完成，待真实 NAS/MA/ESP32/HA 联调；尚未部署。详见 validation.md。",
+  "notes": "MA 配置已接通；本地当月来源修正完成，89 passed / 1 skipped，TypeScript 与构建通过。上传修正源码到 NAS 试跑被自动审批拒绝，待用户明确部署授权；本轮尚未部署。",
   "meta": {}
 }

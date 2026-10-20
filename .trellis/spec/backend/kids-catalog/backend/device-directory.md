@@ -6,7 +6,7 @@ Applies to device_collections.py, music_assistant.py, download lifecycle hooks i
 
 ## 2. Signatures / Storage
 
-- `DeviceCollections(data_dir, music_dir, ma)` owns `/app/data/device_collections.sqlite3`.
+- `DeviceCollections(data_dir, music_dir, ma, candidate_source)` owns `/app/data/device_collections.sqlite3`.
 - `completions(folder PK, manifest, status)` survives candidate cleanup. Manifest is ordered `[filename,size,mtime_ns]` records; status is downloading/incomplete/complete.
 - `publication(id=1,snapshot,targets)` contains only the current published snapshot and number-to-MA-URI mapping.
 - `generation(id=1,token,started,status,error,skipped)` provides a SQLite cross-process lease. Acquire with `BEGIN IMMEDIATE`; an expired 15-minute lease permits a new worker. Only the matching token may publish or finish.
@@ -17,6 +17,7 @@ Applies to device_collections.py, music_assistant.py, download lifecycle hooks i
 
 - Public snapshot: `schema_version=1,revision,generated_at,items[{number,title,track_count}]`.
 - Successful resolution also includes `media_type=album,ma_media_uri`. Check current revision before resolving; never reinterpret an old number against a new snapshot.
+- Generation sources are exactly the list yielded by the Catalog.device_candidates() context manager: current albums joined with jobs.status=done, matching the current /api/albums list. Scan only the sanitized folders in this allowlist; never enumerate music root as an alternative. Preserve original album titles for display and return a separate folder in skip reports for confirmation. Empty eligible lists preserve the old snapshot and prompt download. Reacquire this guard before publication with BEGIN IMMEDIATE on the catalog DB, compare the source list, and hold it through the device DB commit. Always lock catalog then device DB, matching download queueing; an unlocked check followed by publication allows a monthly refresh to race past the check.
 - Generate only on a manual request. Sort `(track_count,stable_path_hash)` then number 1-N. Download success does not publish.
 - Candidate albums/jobs are disposable; migrate legacy done rows with matching totals before candidate refresh. Never overwrite a newer ledger entry during migration.
 - Validate direct MP3/M4A files with Mutagen, reject temporary files, links, directories and invalid/duplicate filename numbers. Generation does not write tags or audio.
@@ -40,7 +41,7 @@ Applies to device_collections.py, music_assistant.py, download lifecycle hooks i
 
 ## 5. Good / Base / Bad Cases
 
-- Base: completed 30/8/15-track folders publish as 8/15/30, numbered 1/2/3.
+- Base: current-month downloaded 30/8/15-track folders publish as 8/15/30, numbered 1/2/3.
 - Good: a newly downloaded 5-track folder leaves current numbering untouched until generation; new generation puts it first and invalidates prior revision lookups.
 - Bad: a one-file local album expands to two MA tracks because a remote provider added an extra track. Reject this album rather than publishing a misleading one-track mapping.
 
@@ -50,6 +51,6 @@ Run `.venv/Scripts/python -m pytest -q` inside backend/kids-catalog. Assert actu
 
 ## 7. Wrong vs Correct
 
-Wrong: reuse albums/jobs IDs as stable device IDs, publish on every downloaded file, resolve old number using the newest snapshot, or match albums by title.
+Wrong: reuse albums/jobs IDs as stable device IDs, publish on every downloaded file, resolve old number using the newest snapshot, match albums by title, or enumerate the NAS root to discover generation candidates.
 
 Correct: independent completion ledger and publication, manual whole-snapshot replacement, revision plus number resolution, and exact file/track/album matching.
