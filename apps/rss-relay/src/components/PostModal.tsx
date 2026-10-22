@@ -81,8 +81,14 @@ export default function PostModal({ post, onClose }: Props) {
           </div>
         </div>
 
-        {/* 底部 */}
-        <footer className="px-6 sm:px-8 py-4 border-t border-rule flex justify-end">
+        {/* 底部：左侧全屏阅读（跳公开详情页），右侧关闭 */}
+        <footer className="px-6 sm:px-8 py-4 border-t border-rule flex items-center justify-between gap-4">
+          <a
+            href={`/rss/view/${post.id}`}
+            className="font-ui text-[14px] px-4 py-2 rounded-[6px] bg-paper-deep hover:bg-rule text-ink-muted hover:text-ink transition-colors"
+          >
+            全屏阅读
+          </a>
           <button
             onClick={onClose}
             className="font-ui text-[14px] px-4 py-2 rounded-[6px] bg-paper-deep hover:bg-rule text-ink-muted hover:text-ink transition-colors"
