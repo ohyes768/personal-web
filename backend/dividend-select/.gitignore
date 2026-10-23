@@ -60,6 +60,8 @@ data/refresh_jobs/
 # 本地测试目录 + 用户收藏（不应进 git）
 data/_test/
 data/favorites.json
+# 基本面评级落盘（运行时产物）
+data/quality_scores.json
 
 # 本地配置
 .env.local

@@ -6,6 +6,7 @@ import type { RefreshJob, RefreshKind } from './types';
 import { directClient } from './api-client';
 import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse } from './screening';
 import type { FavoritesResponse } from './watchlist';
+import type { QualityJob, QualityScoresResponse } from './quality';
 import type {
   DividendListResponse,
   DividendDetailResponse,
@@ -33,6 +34,15 @@ export const dividendApi = {
     directClient.post<ScreeningResponse>('/api/dividend/stocks/screen', conditions),
   addFavoritesBatch: (codes: string[]) =>
     directClient.post<BatchFavoriteResponse>('/api/dividend/favorites/batch', { codes }),
+  /** 提交五维基本面评级（异步 job；Hermes 未配置返回 503） */
+  analyzeQuality: (codes: string[]) =>
+    directClient.post<QualityJob>('/api/dividend/quality/analyze', { codes }),
+  /** 查询评级任务进度 */
+  getQualityJob: (jobId: string) =>
+    directClient.get<QualityJob>(`/api/dividend/quality/jobs/${jobId}`),
+  /** 获取全部已落盘评级 */
+  getQualityScores: () =>
+    directClient.get<QualityScoresResponse>('/api/dividend/quality'),
   /**
    * 获取股票列表
    */

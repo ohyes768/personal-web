@@ -13,7 +13,7 @@ export function useRefreshJobs(onComplete: (kind: RefreshKind) => void) {
   const complete = useRef(onComplete);
   complete.current = onComplete;
   const delivered = useRef(new Set<string>());
-  const generations = useRef({ m120: 0, financial: 0 });
+  const generations = useRef({ m120: 0, financial: 0, quality: 0 });
 
   const track = useCallback((job: RefreshJob) => {
     current.current[job.kind] = job;

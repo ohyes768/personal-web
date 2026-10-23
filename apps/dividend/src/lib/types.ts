@@ -635,7 +635,7 @@ export interface SchedulerTriggerResponse {
   job_id: string;
   triggered_at: string;
 }
-export type RefreshKind = 'm120' | 'financial';
+export type RefreshKind = 'm120' | 'financial' | 'quality';
 export interface RefreshJob {
   job_id: string;
   kind: RefreshKind;

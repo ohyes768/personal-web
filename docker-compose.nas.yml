@@ -74,6 +74,13 @@ services:
       - ALIYUN_API_APPCODE=${ALIYUN_API_APPCODE:-}
       - PYWENCAI_COOKIE=${PYWENCAI_COOKIE:-}
       - AGENT_API_TOKEN=${AGENT_API_TOKEN:-}
+      # 基本面评级（Hermes Runs API）；留空则 /quality/analyze 返回 503，其余功能不受影响
+      - HERMES_BASE_URL=${HERMES_BASE_URL:-}
+      - HERMES_API_KEY=${HERMES_API_KEY:-}
+      - HERMES_PROFILE=${HERMES_PROFILE:-ohyes768}
+      - HERMES_POLL_INTERVAL=${HERMES_POLL_INTERVAL:-30}
+      - HERMES_TIMEOUT=${HERMES_TIMEOUT:-1800}
+      - HERMES_MAX_CONCURRENT=${HERMES_MAX_CONCURRENT:-4}
     networks:
       - app-net
     healthcheck:

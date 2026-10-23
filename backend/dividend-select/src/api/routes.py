@@ -79,6 +79,8 @@ from src.api.helpers.aux_data import (
 )
 from src.utils.atomic_file import atomic_csv
 from src.services.refresh_jobs import RefreshJobManager
+from src.services.hermes_client import HermesConfig, poll_run, submit_run
+from src.services.quality_service import QualityService
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -94,6 +96,14 @@ def require_refresh_jobs():
     if refresh_jobs is None:
         raise HTTPException(503, "刷新任务服务未初始化")
     return refresh_jobs
+
+
+quality_service: QualityService | None = None
+
+
+def set_quality_service(service: QualityService | None):
+    global quality_service
+    quality_service = service
 
 
 def accept_job(manager, kind, codes, work, params=None):
@@ -3579,3 +3589,69 @@ async def batch_set_alerts(
         success_count=sum(1 for r in results if r.ok),
         fail_count=sum(1 for r in results if not r.ok),
     )
+
+
+# ========== 基本面评级（quality）路由 ==========
+
+
+def _quality_data_date() -> str:
+    """幂等键用数据日期：财务汇总文件最后修改日期（YYYY-MM-DD），无文件则当天。"""
+    path = find_latest_aux_file("财务指标汇总")
+    if path:
+        return file_mtime_iso(path)[:10]
+    return datetime.now().strftime("%Y-%m-%d")
+
+
+@router.post("/quality/analyze", status_code=202)
+async def analyze_quality(body: CodesRequest):
+    """
+    对勾选股票提交五维基本面评级（异步任务）
+
+    - 每股一个 Hermes run（点名 dividend-quality-scoring skill），并发受 HERMES_MAX_CONCURRENT 限制
+    - 已有进行中的 quality 任务时复用该任务（reused=true）
+    - Hermes 未配置（HERMES_BASE_URL / HERMES_API_KEY 缺失）返回 503
+    """
+    if quality_service is None:
+        raise HTTPException(status_code=500, detail="评级服务未初始化")
+    codes = normalize_refresh_codes(body.codes)
+    if not codes:
+        raise HTTPException(status_code=422, detail="codes 不能为空")
+    cfg = HermesConfig.from_env()
+    if not cfg.is_configured:
+        raise HTTPException(status_code=503, detail="Hermes 未配置（需设置 HERMES_BASE_URL 与 HERMES_API_KEY）")
+    stocks_list = await get_stocks(
+        min_yield=0, max_yield=None, exchange=None, industry=None,
+        index=None, sort_by="avg_yield_3y", sort_order="desc",
+    )
+    stocks = {s.code: s for s in stocks_list.items}
+    missing = [c for c in codes if c not in stocks]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"以下股票不在采集池：{','.join(missing)}")
+    try:
+        job = quality_service.submit_analysis(
+            codes, cfg, stocks, _quality_data_date(), require_refresh_jobs(),
+            submit_run_fn=submit_run, poll_run_fn=poll_run)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if job is None:
+        raise HTTPException(status_code=503, detail="服务关闭中，请稍后重试")
+    return job
+
+
+@router.get("/quality/jobs/{job_id}")
+async def get_quality_job(job_id: str):
+    """查询单个评级任务进度（含逐股状态与失败原因）"""
+    job = require_refresh_jobs().get(job_id)
+    if job is None or job.get("kind") != "quality":
+        raise HTTPException(status_code=404, detail=f"评级任务 {job_id} 不存在")
+    return job
+
+
+@router.get("/quality")
+async def get_quality_scores():
+    """返回全部已落盘评级（code → 评分记录，含五维分/星级/report_md）与 Hermes 配置状态"""
+    if quality_service is None:
+        raise HTTPException(status_code=500, detail="评级服务未初始化")
+    scores = quality_service.get_all()
+    hermes_configured = HermesConfig.from_env().is_configured
+    return {"total": len(scores), "scores": scores, "hermes_configured": hermes_configured}

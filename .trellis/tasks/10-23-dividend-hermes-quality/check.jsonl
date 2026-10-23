@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/refresh-jobs-contract.md", "reason": "复用 RefreshJobManager 异步任务模式（kind=quality），必须遵循其断电恢复/进度/去重契约"}
+{"file": ".trellis/spec/backend/dividend-select/backend/screening-watchlist-contract.md", "reason": "质量评分作用于筛选 eligible 股票，前端入口在选股关注 tab，需对齐现有筛选/收藏契约"}
+{"file": ".trellis/spec/backend/dividend-select/backend/error-handling.md", "reason": "hermes_client/quality_service 异常分层与日志规范"}
+{"file": ".trellis/spec/backend/dividend-select/backend/logging-guidelines.md", "reason": "新增服务的日志规范"}

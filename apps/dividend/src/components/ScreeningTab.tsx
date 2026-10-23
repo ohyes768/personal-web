@@ -4,7 +4,9 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { dividendApi } from '@/lib/api';
 import { DEFAULT_SCREENING, restoreScreeningConditions, type ScreeningConditions, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
+import { dimensionShorthand, qualityJobActive, qualityFinishMessage, starBadgeClass, type QualityJob, type QualityScore, type QualityScoresResponse } from '@/lib/quality';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
+import { QualityReportModal } from './QualityReportModal';
 
 const STORAGE_KEY = 'dividend-screening-conditions-v1';
 const pct = (value?: number | null) => value == null || !Number.isFinite(value) ? '待补' : `${value.toFixed(2)}%`;
@@ -22,6 +24,14 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
+  const [qualityScores, setQualityScores] = useState<QualityScoresResponse['scores']>({});
+  const [qualityConfigured, setQualityConfigured] = useState(true);
+  const [qualityJob, setQualityJob] = useState<QualityJob | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [qualityMessage, setQualityMessage] = useState('');
+  const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
+  const qualityRequestId = useRef(0);
+  const qualityPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestId = useRef(0);
   const appliedConditions = useRef(DEFAULT_SCREENING);
   const previousRevision = useRef(refreshRevision);
@@ -54,6 +64,66 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       void query(appliedConditions.current);
     }
   }, [refreshRevision, query]);
+
+  const refreshQualityScores = useCallback(async (id: number) => {
+    try {
+      const response = await dividendApi.getQualityScores();
+      if (id === qualityRequestId.current) {
+        setQualityScores(response.scores);
+        setQualityConfigured(response.hermes_configured);
+      }
+    } catch { /* 拉取失败保持现状，表格列显示「待分析」，点分析时会得到明确报错 */ }
+  }, []);
+
+  // 首屏并行加载评级（与筛选结果互不阻塞）
+  useEffect(() => {
+    void refreshQualityScores(qualityRequestId.current);
+    return () => {
+      qualityRequestId.current++;
+      if (qualityPollTimer.current) clearTimeout(qualityPollTimer.current);
+    };
+  }, [refreshQualityScores]);
+
+  async function analyze(codes: string[]) {
+    if (!codes.length) return;
+    const id = ++qualityRequestId.current;
+    setAnalyzing(true);
+    setQualityMessage('');
+    try {
+      const job = await dividendApi.analyzeQuality(codes);
+      if (id !== qualityRequestId.current) return;
+      setQualityJob(job);
+      const poll = async () => {
+        if (id !== qualityRequestId.current) return;
+        let latest: QualityJob;
+        try {
+          latest = await dividendApi.getQualityJob(job.job_id);
+        } catch (err) {
+          if (id === qualityRequestId.current) {
+            setAnalyzing(false);
+            setQualityMessage(err instanceof Error ? err.message : '查询评级进度失败');
+          }
+          return;
+        }
+        if (id !== qualityRequestId.current) return;
+        setQualityJob(latest);
+        if (qualityJobActive(latest)) {
+          qualityPollTimer.current = setTimeout(() => void poll(), 3000);
+          return;
+        }
+        setAnalyzing(false);
+        await refreshQualityScores(id);
+        setQualityMessage(qualityFinishMessage(latest));
+      };
+      void poll();
+    } catch (err) {
+      if (id === qualityRequestId.current) {
+        setAnalyzing(false);
+        setQualityJob(null);
+        setQualityMessage(err instanceof Error ? err.message : '提交评级失败');
+      }
+    }
+  }
 
   async function save(codes: string[]) {
     if (!codes.length) return;
@@ -103,17 +173,30 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
         {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
+        <button className={`${buttonClass} bg-indigo-600 text-white`} disabled={!qualityConfigured || analyzing || saving || selected.size === 0} title={qualityConfigured ? '对勾选股票调用 AI 五维基本面评级（每只约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([...selected])}>{analyzing ? qualityJob ? `分析中 ${qualityJob.processed}/${qualityJob.total}…` : '提交中…' : `分析基本面 (${selected.size})`}</button>
+        {!analyzing && qualityJob && qualityJob.failed_codes.length > 0 && <button className={buttonClass} onClick={() => void analyze(qualityJob.failed_codes)}>重试失败 {qualityJob.failed_codes.length} 只</button>}
       </div>
+      {qualityMessage && <p role="status" className="text-sm text-ink">{qualityMessage}</p>}
       {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}</p>}
       {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
         <table className="w-full text-sm text-ink whitespace-nowrap"><thead className="bg-paper-deep text-left"><tr>
           <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={activeView !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>
-          {['股票', '三年股息率', '当前股息率（参考）', '三年平均 ROE', '年度 ROE', '年度扣非净利润', '年度扣非同比', '上季扣非同比', '最新季度扣非同比', '提示', '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
+          {['股票', '基本面', '三年股息率', '当前股息率（参考）', '三年平均 ROE', '年度 ROE', '年度扣非净利润', '年度扣非同比', '上季扣非同比', '最新季度扣非同比', '提示', '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
         </tr></thead><tbody>
           {rows.map(({ stock, status, reasons, warnings }) => <tr key={stock.code} className="border-t border-rule">
             <td className="p-3"><input aria-label={`勾选 ${stock.name}`} type="checkbox" disabled={status !== 'eligible' || saving} checked={selected.has(stock.code)} onChange={() => selectCode(stock.code)} /></td>
             <td className="p-3 font-medium">{stock.name}<span className="block text-xs text-ink-muted">{stock.code}</span></td>
+            <td className="p-3">{(() => {
+              const score: QualityScore | undefined = qualityScores[stock.code];
+              const short = dimensionShorthand(score?.dimensions);
+              if (!score || !short) return <span className="text-ink-muted">待分析</span>;
+              return <button className="text-left hover:underline" title="查看基本面评级详情" onClick={() => setQualityModalCode(stock.code)}>
+                <span className={`font-medium ${starBadgeClass(score.stars)}`}>{'⭐'.repeat(score.stars)}<span className="ml-0.5 text-xs">{score.stars}</span></span>
+                <span className="ml-2 text-xs text-ink-muted">{short}</span>
+                {score.boundary && <span className="ml-1 text-xs text-amber-700" title={score.boundary}>⚠️</span>}
+              </button>;
+            })()}</td>
             <td className="p-3">{pct(stock.avg_yield_3y)}</td>
             <td className="p-3">{pct(priceMap.get(stock.code)?.yield_ttm)}</td>
             <td className="p-3" title={stock.roe_history?.map(item => `${item.year}: ${pct(item.value)}`).join('；')}>{pct(stock.roe_avg_3y)}</td>
@@ -129,9 +212,10 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
               : <>{reasons.join('；') || '—'}{warnings.length > 0 && <span className="block text-amber-700">{warnings.join('；')}</span>}</>}</td>
             <td className="p-3">{watchlist.has(stock.code) ? '已收藏' : <button className={buttonClass} disabled={saving || status !== 'eligible'} onClick={() => void save([stock.code])}>加入收藏</button>}</td>
           </tr>)}
-          {rows.length === 0 && <tr><td colSpan={12} className="p-10 text-center text-ink-muted">{activeView === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={13} className="p-10 text-center text-ink-muted">{activeView === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
         </tbody></table>
       </div>
     </>}
+    <QualityReportModal score={qualityModalCode ? qualityScores[qualityModalCode] ?? null : null} onClose={() => setQualityModalCode(null)} />
   </section>;
 }

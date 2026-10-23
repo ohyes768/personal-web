@@ -48,7 +48,7 @@ class RefreshJobManager:
         self._last_save[job['job_id']] = time.monotonic()
 
     def _prune(self):
-        for kind in ('m120', 'financial'):
+        for kind in ('m120', 'financial', 'quality'):
             jobs = sorted((j for j in self._jobs.values() if j['kind'] == kind), key=lambda j: j['created_at'], reverse=True)
             for job in jobs[20:]:
                 if job['status'] not in ACTIVE:

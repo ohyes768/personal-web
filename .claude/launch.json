@@ -32,6 +32,12 @@
       "port": 8096
     },
     {
+      "name": "dividend-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "apps/dividend", "dev"],
+      "port": 3003
+    },
+    {
       "name": "home-preview",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "4010", "--directory", "nginx/html"],

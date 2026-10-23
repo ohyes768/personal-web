@@ -1,0 +1,193 @@
+"""quality_service 编排测试（假 Hermes：注入 submit/poll 双函数，不真连）。"""
+import asyncio
+import json
+
+import pytest
+
+from src.api.models import DividendStock
+from src.services.hermes_client import HermesConfig, HermesRunFailed
+from src.services.quality_service import (
+    QualityService,
+    build_prompt,
+    build_stock_payload,
+    parse_quality_output,
+)
+from src.services.refresh_jobs import RefreshJobManager
+
+CFG = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="ohyes768",
+                   poll_interval=0, timeout=5, max_concurrent=4)
+
+
+def stock(**updates):
+    fields = dict(code="000001", name="样本", exchange="深市主板", avg_yield_3y=4.2,
+                  roe=12.5, roe_avg_3y=13, roe_year=2025,
+                  roe_history=[dict(year=y, value=13) for y in [2023, 2024, 2025]])
+    fields.update(updates)
+    return DividendStock(**fields)
+
+
+def fake_output(code, name, b=4, m=5, i=3, mg=3, f=5, *, bad_weighted=False, bad_stars=False):
+    weighted = round(b * 0.25 + m * 0.25 + i * 0.20 + mg * 0.15 + f * 0.15, 2)
+    stars = 4
+    if bad_weighted:
+        weighted = round(weighted + 0.5, 2)
+    if bad_stars:
+        stars = 5
+    return json.dumps({
+        "code": code, "name": name,
+        "dimensions": {"business": b, "moat": m, "industry": i, "management": mg, "financial": f},
+        "weighted_score": weighted, "stars": stars, "boundary": None,
+        "summary": "质量尚可", "risks": ["风险一"], "watch_points": [],
+        "report_md": "# 基本面评级\n\n## 五维评分\n内容完整",
+    }, ensure_ascii=False)
+
+
+def run_service(tmp_path, codes, stocks, submit_fn, poll_fn, data_date="2026-09-30"):
+    async def scenario():
+        service = QualityService(tmp_path / "quality_scores.json")
+        manager = RefreshJobManager(tmp_path / "jobs")
+        job = service.submit_analysis(codes, CFG, stocks, data_date, manager, submit_fn, poll_fn)
+        await manager.close(timeout=5)
+        return service, manager.get(job["job_id"])
+    return asyncio.run(scenario())
+
+
+class TestParse:
+    def test_plain_json(self):
+        score = parse_quality_output(fake_output("000001", "样本"), "000001", "样本")
+        assert score.stars == 4
+        assert score.weighted_score == 4.05
+        assert set(score.dimensions) == {"business", "moat", "industry", "management", "financial"}
+
+    def test_fenced_json_parses(self):
+        raw = "```json\n" + fake_output("000001", "样本") + "\n```"
+        assert parse_quality_output(raw, "000001", "样本").code == "000001"
+
+    def test_prefixed_json_parses(self):
+        raw = "评估结果如下：\n" + fake_output("000001", "样本") + "\n以上。"
+        assert parse_quality_output(raw, "000001", "样本").stars == 4
+
+    def test_garbage_raises(self):
+        with pytest.raises(ValueError):
+            parse_quality_output("抱歉，我无法完成该任务。", "000001", "样本")
+
+    def test_weighted_score_mismatch_rejected(self):
+        with pytest.raises(ValueError):
+            parse_quality_output(fake_output("000001", "样本", bad_weighted=True), "000001", "样本")
+
+    def test_stars_mismatch_rejected(self):
+        with pytest.raises(ValueError):
+            parse_quality_output(fake_output("000001", "样本", bad_stars=True), "000001", "样本")
+
+    def test_dimension_out_of_range_rejected(self):
+        raw = fake_output("000001", "样本", b=6)
+        with pytest.raises(ValueError):
+            parse_quality_output(raw, "000001", "样本")
+
+
+class TestPayloadAndPrompt:
+    def test_payload_fields_match_skill_contract(self):
+        payload = build_stock_payload(stock(sw_level1="银行"))
+        assert payload["code"] == "000001"
+        assert payload["avg_yield_3y"] == 4.2
+        assert payload["sw_level1"] == "银行"
+        assert payload["debt_asset_ratio"] is None  # 缺失传 null 由 skill 降档
+        assert payload["roe_history"] == [{"year": 2023, "value": 13}, {"year": 2024, "value": 13}, {"year": 2025, "value": 13}]
+
+    def test_prompt_names_skill_and_requires_json(self):
+        prompt = build_prompt(build_stock_payload(stock()))
+        assert "dividend-quality-scoring" in prompt
+        assert "JSON" in prompt
+        assert '"avg_yield_3y": 4.2' in prompt
+
+
+class TestSubmitAnalysis:
+    def test_two_stocks_complete(self, tmp_path):
+        submitted, polls = [], []
+        captured = {}
+
+        def submit_fn(cfg, prompt, key):
+            submitted.append(key)
+            return f"run-{len(submitted)}"
+
+        def poll_fn(cfg, run_id):
+            polls.append(run_id)
+            code = "000001" if run_id == "run-1" else "600000"
+            return fake_output(code, "样本")
+
+        stocks = {"000001": stock(), "600000": stock(code="600000")}
+        service, job = run_service(tmp_path, ["000001", "600000"], stocks, submit_fn, poll_fn)
+
+        assert job["status"] == "succeeded"
+        assert (job["processed"], job["succeeded"], job["failed"]) == (2, 2, 0)
+        assert submitted == ["quality-000001-2026-09-30", "quality-600000-2026-09-30"]
+        saved = service.get_all()
+        assert set(saved) == {"000001", "600000"}
+        record = saved["000001"]
+        assert record["stars"] == 4
+        assert record["weighted_score"] == 4.05
+        assert record["dimensions"]["moat"] == 5
+        assert record["data_date"] == "2026-09-30"
+        assert record["scored_at"]
+        assert record["report_md"].startswith("# 基本面评级")
+
+    def test_one_failure_does_not_block_other(self, tmp_path):
+        def submit_fn(cfg, prompt, key):
+            return key  # 直接用幂等键当 run_id，便于 poll 按股票区分
+
+        def poll_fn(cfg, run_id):
+            if run_id.startswith("quality-600000"):
+                raise HermesRunFailed("run xx 终态 failed")
+            return fake_output("000001", "样本")
+
+        stocks = {"000001": stock(), "600000": stock(code="600000")}
+        service, job = run_service(tmp_path, ["000001", "600000"], stocks, submit_fn, poll_fn)
+
+        assert job["status"] == "partial_failed"
+        assert job["failed_codes"] == ["600000"]
+        assert set(service.get_all()) == {"000001"}
+
+    def test_garbage_output_marks_stock_failed(self, tmp_path):
+        service, job = run_service(
+            tmp_path, ["000001"], {"000001": stock()},
+            lambda cfg, prompt, key: "run-1",
+            lambda cfg, run_id: "我无法评估该股票。",
+        )
+        assert job["status"] == "failed"
+        assert job["failed_codes"] == ["000001"]
+        assert service.get_all() == {}
+
+    def test_unconfigured_rejected_before_job(self, tmp_path):
+        from src.services.hermes_client import HermesConfig as C
+        bad = C(base_url="", api_key="", profile="p", poll_interval=0, timeout=5, max_concurrent=1)
+        service = QualityService(tmp_path / "quality_scores.json")
+        manager = RefreshJobManager(tmp_path / "jobs")
+        with pytest.raises(ValueError, match="Hermes 未配置"):
+            service.submit_analysis(["000001"], bad, {"000001": stock()}, "2026-09-30", manager,
+                                    lambda *a: "r", lambda *a: "{}")
+
+    def test_missing_stock_rejected_before_job(self, tmp_path):
+        service = QualityService(tmp_path / "quality_scores.json")
+        manager = RefreshJobManager(tmp_path / "jobs")
+        with pytest.raises(ValueError, match="不在采集池"):
+            service.submit_analysis(["999999"], CFG, {"000001": stock()}, "2026-09-30", manager,
+                                    lambda *a: "r", lambda *a: "{}")
+
+    def test_active_job_reused(self, tmp_path):
+        import threading
+        async def scenario():
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            gate = threading.Event()
+            job1 = service.submit_analysis(
+                ["000001"], CFG, {"000001": stock()}, "2026-09-30", manager,
+                lambda cfg, prompt, key: (gate.wait(120), "run-1")[1],
+                lambda cfg, run_id: fake_output("000001", "样本"))
+            job2 = service.submit_analysis(
+                ["000001"], CFG, {"000001": stock()}, "2026-09-30", manager,
+                lambda cfg, prompt, key: "run-2", lambda cfg, run_id: fake_output("000001", "样本"))
+            assert job2["job_id"] == job1["job_id"]
+            assert job2["reused"] is True
+            gate.set()
+            await manager.close(timeout=5)
+        asyncio.run(scenario())

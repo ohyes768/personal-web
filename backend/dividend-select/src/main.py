@@ -22,10 +22,11 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import router, set_services, set_refresh_jobs
+from src.api.routes import router, set_services, set_refresh_jobs, set_quality_service
 from src.scheduler.manager import SchedulerManager
 from src.scheduler.routes import router as scheduler_router
 from src.services.refresh_jobs import RefreshJobManager
+from src.services.quality_service import QualityService
 from src.services.alert_service import init_alert_service
 from src.services.data_reader import DataReader
 from src.services.favorites_service import FavoritesService
@@ -73,6 +74,9 @@ async def lifespan(app: FastAPI):
     refresh_jobs = RefreshJobManager(PROJECT_ROOT / 'data' / 'refresh_jobs')
     set_refresh_jobs(refresh_jobs)
     app.state.refresh_jobs = refresh_jobs
+
+    quality_service = QualityService(PROJECT_ROOT / 'data' / 'quality_scores.json')
+    set_quality_service(quality_service)
 
     # 设置服务到路由
     set_services(data_reader, filter_service, sort_service, m120_service, pe_service,
