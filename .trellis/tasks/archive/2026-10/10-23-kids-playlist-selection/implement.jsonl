@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/kids-catalog/backend/device-directory.md", "reason": "设备目录核心契约：编号语义、快照 schema、生成事务与候选来源边界，本任务不得破坏"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/index.md", "reason": "kids-catalog 后端预开发清单与质量检查（pytest 命令、路径约束）"}
+{"file": ".trellis/spec/apps/kids-catalog/frontend/index.md", "reason": "前端预开发清单与质量检查（tsc/build、轮询与失败态可见性要求）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "GET /api/collections 响应新增 candidates 与前端消费需跨层对齐，避免字段形态漂移"}
+{"file": ".trellis/spec/guides/kids-audio-tags.md", "reason": "确认本任务不触碰标签链路，仅需避免误伤目录生成行为"}
