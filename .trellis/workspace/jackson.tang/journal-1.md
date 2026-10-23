@@ -1574,3 +1574,69 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 44: 住宅目录高德分类复核与冲突审核
+
+**Date**: 2026-10-23
+**Task**: 住宅目录高德分类复核与冲突审核
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+透明售房网错标用途不再一票否决：高德第二来源复核制造待审核冲突，人工带证据确认后收录；复核永不自动收录或排除。
+
+### Main Changes
+
+### Main Changes
+
+- 新增 `use_review_policy.py`（纯函数层）：高德分类码映射、TMSF↔高德决策矩阵、证据选择、身份指纹与目录行投影。
+- 新增 `poi_names.py`：把定位任务的名称拉平/别名/包含匹配抽成共用实现，定位与用途复核不再各写一套。
+- `amap_directory.py`：`search_name` 支持 `types=None`（不限类型），新增不限分类的 `normalize_poi_category`。
+- 新增 `directory_use_review.py`：单小区复核 `review_one` + 批量任务 `UseReviewJob`（256 请求预算、2 秒间隔、取消与中断续跑、按结果计数、空跑无 key）。
+- `community_registry.confirm_use`：受控的人工用途确认通道（证据链接必填、理由、revision 乐观锁、事件审计）。
+- `directory_policy.eligibility`：接入决策矩阵，新增 `use_conflict`/`use_uncertain` 资格码；无证据路径与现状逐项一致。
+- API：`/catalog/{cid}/use-review`、`/use-review/confirm`、`/use-reviews` 任务端点、`/catalog?use=` 过滤。
+- 前端：新增 `UseReviewPanel`，不收录表加「高德用途复核」列与筛选，确认表单与复核任务卡。
+- spec：新增 `use-review.md`，改写 `directory-flow.md` 的资格规则与任务口径，补 `directory-position.md` 边界说明。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0c27715` | feat(housing-map): 住宅目录高德用途复核与人工确认 |
+
+### Testing
+
+- 后端：待提交快照独立 worktree `pytest tests/` → 711 passed；真实仓库 730 passed + 5 个 `test_api` 存量失败（stash 前后对比确认与本任务无关）。
+- 前端：`tsc --noEmit`、`eslint`、`node --test`、`npm run build` 全通过；存量 3 个失败属 xingfuli 任务在途改动（stash 前后对比确认）。
+- 浏览器（一次性数据目录 + 生产构建 + Playwright）：390×844 与 1440×900 两档，待审核队列、复核证据、确认表单可用，无横向溢出、无控制台错误；并修掉新增列导致的不收录表列宽塌陷。
+- 端到端：`test_use_review_scenario.py` 覆盖 商贸 → 复核冲突 → 人工确认 → admitted 并进入租金/法拍目标集合。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 生产启用需用户显式操作：部署后在管理页发起批量复核，再逐个审阅冲突项并人工确认；本任务未触碰生产数据。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `0c27715` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
