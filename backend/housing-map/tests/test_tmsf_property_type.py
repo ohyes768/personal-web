@@ -39,6 +39,7 @@ def test_facts_reject_wrong_community_challenge_and_missing_type(html):
 
 def setup_collection(monkeypatch, response):
     from scripts import fetch_tmsf_binjiang_communities as listing
+    from src.services.tmsf_property_type import PROJECT_INDEX_URL
     community = SimpleNamespace(community_id='1', community_name='测试花园', community_alias=None,
                                 district='滨江', subdistrict='长河', source_url='https://www.tmsf.com/list.js')
     monkeypatch.setattr(listing, 'fetch_binjiang_communities', lambda: [community])
@@ -46,6 +47,8 @@ def setup_collection(monkeypatch, response):
     class Client:
         def fetch_text(self, url, timeout):
             calls.append(url)
+            if url == PROJECT_INDEX_URL:
+                return 'var data_auto = []'
             if isinstance(response, Exception):
                 raise response
             return response
@@ -61,14 +64,14 @@ def test_integrated_types_survive_restart_and_second_hand_counts_refresh(tmp_pat
     store = CommunityRegistry(path)
     report = directory_collection.collect_names(store, ['tmsf'])
     assert report['phase'] == 'succeeded' and report['new'] == 1 and report['pending'] == 1
-    assert report['property_types'] == 1 and len(calls) == 1
+    assert report['property_types'] == 1 and len(calls) == 2  # 1 ESF detail + 1 newhouse index
     source = CommunityRegistry(path).sources()[0]
     assert source['property_type'] == '住宅' and source['property_type_captured_at']
     assert source['property_type_url'].endswith('xq_indexnew_1.htm')
     assert not any(k.startswith('_') for k in source)
     again = directory_collection.collect_names(CommunityRegistry(path), ['tmsf'])
     assert again['property_types'] == 1 and again['existing'] == 1
-    assert len(calls) == 2 and len(closed) == 2
+    assert len(calls) == 4 and len(closed) == 2  # second round: cached facts + index only
 
 
 def test_type_failure_preserves_old_fact_and_retries_on_next_collection(tmp_path, monkeypatch):
@@ -87,12 +90,14 @@ def test_type_failure_preserves_old_fact_and_retries_on_next_collection(tmp_path
 
 
 def test_deleted_tmsf_source_never_requests_property_details(tmp_path, monkeypatch):
+    from src.services.tmsf_property_type import PROJECT_INDEX_URL
     calls, _ = setup_collection(monkeypatch, page())
     store = CommunityRegistry(tmp_path / 'registry.sqlite3')
     item = store.ingest(dict(source='tmsf', source_id='1', name='测试花园', district='滨江'))
     store.ignore_source(item['id'])
     report = directory_collection.collect_names(store, ['tmsf'])
-    assert report['ignored'] == 1 and report['property_types'] == 0 and not calls
+    assert report['ignored'] == 1 and report['property_types'] == 0
+    assert calls == [PROJECT_INDEX_URL], '被忽略的来源不发详情请求，仅新房索引可访问'
 
 
 def test_failed_refresh_preserves_existing_standalone_type(tmp_path, monkeypatch):

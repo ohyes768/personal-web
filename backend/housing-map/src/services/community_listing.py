@@ -5,7 +5,14 @@ MIN_LISTINGS = 3
 
 
 def listing_gate(records, master=None):
-    relevant = [r for r in records if r.get('source') == 'tmsf' and effective_market_state(r) != 'new_house'
+    # Stored new_house evidence keeps its listing exemption (write paths are gated);
+    # sold-out falls back to ESF rules via effective_market_state (R5). Project
+    # records without listing fields never contribute unknown counts.
+    if any(r.get('source') == 'tmsf' and effective_market_state(r) == 'new_house' for r in records):
+        return None, ''
+    relevant = [r for r in records if r.get('source') == 'tmsf' and r.get('status') != 'ignored'
+                and effective_market_state(r) != 'new_house'
+                and (r.get('source_kind') != 'project' or 'listing_count' in r or r.get('listing_count_checked_at'))
                 and (effective_market_state(r) == 'second_hand' or 'listing_count' in r
                      or r.get('listing_count_checked_at') or (master and 'listing_count' in master))]
     if not relevant:

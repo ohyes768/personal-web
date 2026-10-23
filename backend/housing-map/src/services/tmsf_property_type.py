@@ -12,6 +12,19 @@ def normalize_property_type(value):
     return text if text and len(text) <= 100 else None
 
 
+class ProjectDetailError(ValueError):
+    """Coded newhouse detail failures: challenge/identity_mismatch/missing_facts."""
+
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
+def looks_truncated(address):
+    # Index/basicinfo pages render long addresses with a literal ellipsis (Q1: never admitted).
+    return '…' in address or '..' in address
+
+
 def extract_property_type(html):
     value = input_value_by_id(html, 'managetypename_auto')
     if value:
@@ -97,27 +110,63 @@ def class_text(html, class_name):
     return strip_tags(match.group(1)).strip() if match else ''
 
 
-def fetch_project_facts(client, names, district, *, projects=None, timeout=15):
-    projects = projects if projects is not None else parse_project_index(client.fetch_text(PROJECT_INDEX_URL, timeout))
-    project = find_project(projects, names, district)
-    url = project_identity(project)['project_url']
-    html = client.fetch_text(url, timeout)
+def _project_use(html):
+    # Inspected pages carry the use in the price/residence block; the legacy grey
+    # class stays first so older snapshots keep parsing. Never pick promo fields.
+    for candidate in (class_text(html, 'house_float_name_tips_grey'),
+                      class_text(html, 'house_information_price_residence')):
+        if candidate:
+            return normalize_property_type(candidate)
+    match = re.search(r'物业类型\s*(?:</div>\s*<div\b[^>]*>|[:：])\s*([^<]{1,100})', html, re.S | re.I)
+    return normalize_property_type(match.group(1)) if match else None
+
+
+def _parse_project_detail(html, known_names, district, url, fallback_status=None):
     observed_name = class_text(html, 'house_float_name_title')
     district_match = re.search(r'<a\b[^>]*id=["\']districtname["\'][^>]*>(.*?)</a>', html, re.S)
     observed_district = strip_tags(district_match.group(1)).removesuffix('楼盘').removesuffix('区') if district_match else ''
-    if normalized(observed_name) not in {normalized(n) for n in project_names(project.get('propertyname'))} or observed_district != district.removesuffix('区'):
-        raise ValueError('新房详情页面无法确认目标项目和区域')
-    prop = normalize_property_type(class_text(html, 'house_float_name_tips_grey'))
+    if not observed_name:
+        raise ProjectDetailError('challenge', '新房详情页返回验证页或空页面')
+    if normalized(observed_name) not in {normalized(n) for n in known_names if n} or observed_district != (district or '').removesuffix('区'):
+        raise ProjectDetailError('identity_mismatch', '新房详情页面无法确认目标项目和区域')
+    prop = _project_use(html)
+    if not prop:
+        raise ProjectDetailError('missing_facts', '新房详情缺少物业用途')
+    status = (class_text(html, 'house_float_name_tips_grey999')
+              or class_text(html, 'house_float_name_tips_greenlight')
+              or fallback_status or '')
     match = re.search(r'楼盘地址\s*</div>\s*<div\b[^>]*>(.*?)</div>', html, re.S)
     address = strip_tags(match.group(1)).strip() if match else ''
-    if not prop or not address:
-        raise ValueError('新房详情缺少用途或实际地址')
-    status = class_text(html, 'house_float_name_tips_grey999') or project_identity(project)['project_sale_status']
-    return dict(property_type=prop, property_type_url=url, address=address, address_district=observed_district,
-                market_state=project_market_state(status), market_state_url=url,
-                project_id=str(project['propertyid']), project_name=observed_name,
-                project_aliases=project_names(project.get('propertyname')),
-                project_sale_status=status)
+    facts = dict(property_type=prop, property_type_url=url, address='', address_district=observed_district,
+                 market_state=project_market_state(status), market_state_url=url,
+                 project_name=observed_name, project_sale_status=status)
+    if not address:
+        raise ProjectDetailError('missing_facts', '新房详情缺少实际地址')
+    if looks_truncated(address):
+        facts['address_error'] = '新房详情地址显示不完整（截断），需补完整实际地址'
+        return facts
+    facts['address'] = address
+    return facts
+
+
+def fetch_project_facts_by_id(client, *, siteid, propertyid, names, district, timeout=15):
+    """Fetch a known project detail directly; never resolves via the ESF name list."""
+    if not str(siteid).isdigit() or not str(propertyid).isdigit():
+        raise ValueError('无效的新房项目编号')
+    url = f'{BASE_URL}/newhouse/property_{siteid}_{propertyid}_infoUpgrade.htm'
+    return _parse_project_detail(client.fetch_text(url, timeout), names, district, url)
+
+
+def fetch_project_facts(client, names, district, *, projects=None, timeout=15):
+    projects = projects if projects is not None else parse_project_index(client.fetch_text(PROJECT_INDEX_URL, timeout))
+    project = find_project(projects, names, district)
+    identity = project_identity(project)
+    html = client.fetch_text(identity['project_url'], timeout)
+    detail = _parse_project_detail(html, project_names(project.get('propertyname')), district,
+                                   identity['project_url'], fallback_status=identity['project_sale_status'])
+    detail.update(project_id=str(project['propertyid']),
+                  project_aliases=project_names(project.get('propertyname')))
+    return detail
 
 
 def fetch_property_facts(client, community_id, names, *, timeout=15, projects=None, district='滨江'):

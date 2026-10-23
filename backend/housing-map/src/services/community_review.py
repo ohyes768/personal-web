@@ -169,7 +169,8 @@ class ReviewWorkspace:
             from src.services.residential_classifier import classify_sources
             for member in members:
                 m = {k: v for k, v in member.items() if k != 'samples'}
-                if m['source'] == 'tmsf' and not m.get('property_type_checked_at') and not m.get('property_type'):
+                if m['source'] == 'tmsf' and m.get('source_kind') != 'project' \
+                        and not m.get('property_type_checked_at') and not m.get('property_type'):
                     m['property_type'] = facts.get(m['source_id'], {}).get('property_type')
                 m['sample_count'] = len(member.get('samples', []))
                 m['residential_state'] = classify_sources([member], facts)

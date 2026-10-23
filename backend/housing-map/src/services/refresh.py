@@ -150,7 +150,8 @@ async def run_refresh_once(
             raise asyncio.CancelledError
         from src.services.community_registry import existing_registry
         registry = existing_registry(data_path)
-        if registry and not any(r['source'] == 'tmsf' and r['source_id'] == community_id and r['status'] == 'matched'
+        if registry and not any(r['source'] == 'tmsf' and r.get('source_kind') == 'community'
+                                and r['source_id'] == community_id and r['status'] == 'matched'
                                 for r in registry.sources()):
             continue
         result = await asyncio.to_thread(fetcher, community_id, timeout=DEFAULT_FETCH_TIMEOUT)

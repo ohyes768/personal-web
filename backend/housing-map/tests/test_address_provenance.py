@@ -64,17 +64,19 @@ def test_type_cache_cannot_skip_address_verification(monkeypatch):
     monkeypatch.setattr(tmsf_property_type, 'fetch_community_facts', fetch, raising=False)
     monkeypatch.setattr(tmsf_property_type, 'fetch_property_facts', fetch)
     previous = dict(name='襄七房', address='旧定位', property_type='住宅', property_type_captured_at=now())
-    rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False, {'123': previous}))
-    assert calls and rows[-1]['address'] == '未知'
-    assert rows[-1]['address_origin'] == 'source_detail' and rows[-1]['address_checked_at']
+    rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False, {('community', '123'): previous}))
+    facts_rows = [r for r in rows if not r.get('_errors_only')]
+    assert calls and facts_rows[-1]['address'] == '未知'
+    assert facts_rows[-1]['address_origin'] == 'source_detail' and facts_rows[-1]['address_checked_at']
 
     # A legacy identity absent from today's directory must still be checked.
     monkeypatch.setattr(fetch_tmsf_binjiang_communities, 'fetch_binjiang_communities', lambda: [])
     previous.update(address_verification_pending=True, district='滨江')
-    rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False, {'123': previous}))
-    assert len(calls) == 2 and rows[-1]['address'] == '未知'
+    rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False, {('community', '123'): previous}))
+    facts_rows = [r for r in rows if not r.get('_errors_only')]
+    assert len(calls) == 2 and facts_rows[-1]['address'] == '未知'
     # Verified empty addresses are cached without resurrecting an old address.
-    cached = rows[-1]
+    cached = facts_rows[-1]
     cached['address'] = ''
-    rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False, {'123': cached}))
-    assert not rows  # only pending legacy identities supplement an absent directory
+    rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False, {('community', '123'): cached}))
+    assert not [r for r in rows if not r.get('_errors_only')]  # only pending legacy identities supplement an absent directory

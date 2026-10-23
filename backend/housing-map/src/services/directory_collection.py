@@ -28,7 +28,8 @@ def pause(cancel):
 def tmsf_names(cancel, ignored, existing=None):
     from scripts.fetch_tmsf_binjiang_communities import fetch_binjiang_communities
     from src.services.tmsf_fetcher import TmsfClient
-    from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, effective_market_state, PROJECT_INDEX_URL
+    from src.services.community_registry import normalized
+    from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, fetch_project_facts_by_id, parse_project_index, find_project, project_identity, effective_market_state, PROJECT_INDEX_URL
     existing = existing or {}
     client = TmsfClient()
     projects = None
@@ -37,8 +38,8 @@ def tmsf_names(cancel, ignored, existing=None):
         discovered = list(fetch_binjiang_communities())
         discovered_ids = {str(c.community_id) for c in discovered}
         # Previously imported identities may disappear from the current name list.
-        for sid, previous in existing.items():
-            if previous.get('address_verification_pending') and sid not in discovered_ids:
+        for (kind, sid), previous in existing.items():
+            if kind == 'community' and previous.get('address_verification_pending') and sid not in discovered_ids:
                 discovered.append(SimpleNamespace(community_id=sid, community_name=previous['name'],
                     community_alias='', district=previous.get('district'), subdistrict=previous.get('subdistrict', ''),
                     source_url=previous.get('source_url')))
@@ -49,7 +50,7 @@ def tmsf_names(cancel, ignored, existing=None):
             row = dict(source='tmsf', source_kind='community', source_id=c.community_id,
                        name=c.community_name, aliases=[c.community_alias] if c.community_alias else [],
                        district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
-            previous = existing.get(str(c.community_id), {})
+            previous = existing.get(('community', str(c.community_id)), {})
             for field in ('property_type', 'property_type_url', 'property_type_captured_at', 'address', 'address_origin', 'address_checked_at', 'address_verification_pending',
                           'market_state', 'market_state_url', 'market_state_captured_at',
                           'listing_count', 'listing_count_checked_at', 'listing_count_error',
@@ -129,6 +130,89 @@ def tmsf_names(cancel, ignored, existing=None):
                 row.update(listing_count_error=message, listing_count_checked_at=now(), property_type_error=message, _property_type_result='failed',
                            _collection_errors=[dict(source='tmsf', stage='property_type',
                                                     source_id=c.community_id, message=message)])
+            yield row
+        # Independent discovery: sellable newhouse projects absent from the ESF name list.
+        # Candidates publish before their details; a failed detail never drops the name.
+        check(cancel)
+        if projects is None and not project_index_error:
+            pause(cancel)
+            try:
+                projects = parse_project_index(client.fetch_text(PROJECT_INDEX_URL, 15))
+            except Exception:
+                project_index_error = True
+        if project_index_error:
+            yield dict(source='tmsf', source_kind='project', _errors_only=True, _stage='newhouse_index',
+                       _collection_errors=[dict(source='tmsf', stage='newhouse_index', source_id='index',
+                                                message='新房项目索引获取失败，本轮未发现新房候选')])
+            return
+        esf_names = {normalized(n) for c in discovered for n in [c.community_name, c.community_alias] if n}
+        esf_names |= {normalized(n) for (kind, _), prev in existing.items() if kind == 'community'
+                      for n in [prev.get('name'), *prev.get('aliases', [])] if n}
+        for project in projects:
+            check(cancel)
+            if normalized(project.get('districtname')).removesuffix('区') != '滨江':
+                continue
+            status = {2: '在售', 3: '尾盘', 4: '售完', 5: '待售'}.get(project.get('propertystateid'), '未知')
+            if status not in {'在售', '尾盘', '待售'}:
+                continue  # 首期只发现未售完项目；售完项目由既有条目继续跟踪状态。
+            try:
+                identity = project_identity(project)
+            except (KeyError, TypeError, ValueError):
+                continue
+            pid = str(project['propertyid'])
+            names = identity['project_aliases']
+            if {normalized(n) for n in names if n} & esf_names:
+                continue  # 名录已覆盖的项目走既有补充匹配，不产生重复候选。
+            if ignored('tmsf', 'project', pid):
+                continue
+            row = dict(source='tmsf', source_kind='project', source_id=pid, name=identity['project_name'],
+                       aliases=names, district='滨江', source_url=identity['project_url'],
+                       market_state=identity['market_state'], market_state_url=identity['market_state_url'],
+                       market_state_captured_at=now(), project_sale_status=status, project_id=pid,
+                       project_siteid=str(project['siteid']), project_name=identity['project_name'],
+                       project_aliases=names)
+            previous = existing.get(('project', pid), {})
+            for field in ('property_type', 'property_type_url', 'property_type_captured_at',
+                          'property_type_checked_at', 'address', 'address_origin', 'address_checked_at',
+                          'address_error', 'property_type_error'):
+                if field in previous:
+                    row[field] = previous[field]
+            yield {**row, '_stage': 'names'}
+            if previous.get('property_type') and previous.get('address') and previous.get('address_checked_at') \
+                    and not previous.get('property_type_error') and not previous.get('address_error'):
+                try:
+                    age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(previous['property_type_captured_at'])
+                    if dt.timedelta(0) <= age < dt.timedelta(days=30):
+                        yield {**row, '_stage': 'property_type', '_property_type_result': 'cached'}
+                        continue
+                except (KeyError, ValueError, TypeError):
+                    pass
+            yield {**row, '_stage': 'property_type'}
+            pause(cancel)
+            if ignored('tmsf', 'project', pid):
+                continue
+            row.update(_stage='property_type', property_type_checked_at=now())
+            try:
+                detail = fetch_project_facts_by_id(client, siteid=project['siteid'], propertyid=project['propertyid'],
+                                                   names=[identity['project_name'], *names], district='滨江')
+            except InterruptedError:
+                raise
+            except Exception as exc:
+                code = getattr(exc, 'code', None)
+                message = f'{identity["project_name"]} 新房详情获取失败（{code or type(exc).__name__}）'
+                row.update(property_type_error=message, _property_type_result='failed',
+                           _collection_errors=[dict(source='tmsf', stage='newhouse_detail', source_id=pid, message=message)])
+            else:
+                address_error = detail.pop('address_error', None)
+                if address_error:
+                    detail.pop('address', None)  # Q1: a truncated address never lands on the row.
+                row.update(detail, property_type_captured_at=now(), property_type_error=None,
+                           address_error=address_error, _property_type_result='succeeded')
+                if address_error:
+                    row['_collection_errors'] = [dict(source='tmsf', stage='newhouse_detail', source_id=pid,
+                                                      message=f'{identity["project_name"]} {address_error}')]
+                else:
+                    row.update(address_origin='source_detail', address_checked_at=now())
             yield row
     finally:
         client.close()
@@ -263,14 +347,20 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                         if record['source'] != 'tmsf':
                             continue
                         previous = dict(record)
-                        if not record.get('property_type') and not record.get('property_type_checked_at'):
+                        if record.get('source_kind') != 'project' and not record.get('property_type') and not record.get('property_type_checked_at'):
                             old = legacy.get(record['source_id'], {})
                             previous.update(property_type=old.get('property_type'), property_type_url=old.get('url'),
                                             property_type_captured_at=old.get('captured_at'))
-                        existing[record['source_id']] = previous
+                        existing[(record.get('source_kind', 'community'), str(record['source_id']))] = previous
                     kwargs['existing'] = existing
                 for row in adapter(cancel, store.is_ignored, **kwargs):
                     check(cancel)
+                    if row.pop('_errors_only', False):
+                        report['stage'] = row.pop('_stage', 'names')
+                        report['errors'].extend(row.pop('_collection_errors', []))
+                        if progress:
+                            progress(report)
+                        continue
                     report['stage'] = row.pop('_stage', 'names')
                     type_result = row.pop('_property_type_result', None)
                     key = (source, row.get('source_kind', 'community'), str(row['source_id']))

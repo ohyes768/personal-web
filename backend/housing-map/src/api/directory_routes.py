@@ -48,7 +48,8 @@ def _load_property_types():
 
 def source_view(item, property_types):
     view = {k: v for k, v in item.items() if k != 'samples'}
-    if item['source'] == 'tmsf' and not item.get('property_type_checked_at') and not item.get('property_type'):
+    if item['source'] == 'tmsf' and item.get('source_kind') != 'project' \
+            and not item.get('property_type_checked_at') and not item.get('property_type'):
         legacy = property_types.get(item['source_id'], {})
         view.update(property_type=legacy.get('property_type'), property_type_url=legacy.get('url'),
                     property_type_captured_at=legacy.get('captured_at'))

@@ -1,1 +1,5 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-flow.md", "reason": "TMSF 目录工作流：eligibility 纯函数、synchronize 物化、/directory/workflow API、四任务与离线迁移契约"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-enrichment.md", "reason": "新房身份/用途证据契约：project 索引解析、fetch_project_facts、market_state 规则、新房价格隔离、30 天缓存边界"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-directory.md", "reason": "社区名录契约：sources UNIQUE(source,kind,sid)、create_from_source、名称采集分页/取消/报告、地址来源"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-admission.md", "reason": "收录与人工否决：listing_gate 二手房 0..2 排除与新房豁免、有效实际地址门槛、revision 事务"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "缺坐标新房走现有独立定位任务，不在本任务内自动定位"}

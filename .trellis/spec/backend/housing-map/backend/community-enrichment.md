@@ -8,7 +8,7 @@ Use for `tmsf_property_type`, `community_enrichment`, directory collection, resi
 
 ## 2. Signatures
 - `fetch_community_facts(client, community_id, names, *, timeout=15)` validates ESF name identity and extracts type, actual address, separately observed `address_district` and listing count.
-- `parse_project_index(script)`, `find_project(rows,names,district)`, `project_identity(project)`, `fetch_project_facts(client,names,district,*,projects=None,timeout=15)` read the public project index and independently validate newhouse detail.
+- `parse_project_index(script)`, `find_project(rows,names,district)`, `project_identity(project)`, `fetch_project_facts(client,names,district,*,projects=None,timeout=15)` read the public project index and independently validate newhouse detail. `fetch_project_facts_by_id(client,*,siteid,propertyid,names,district,timeout=15)` fetches a known project directly (discovery/enrich path); `_parse_project_detail` validates the observed name against the project's own index name set and raises coded `ProjectDetailError` (challenge/identity_mismatch/missing_facts); a truncated address returns `address_error` instead of a usable address.
 - `fetch_property_facts(...)` remains the CLI-compatible ESF-first/newhouse-fallback wrapper.
 - `enrich_source(store,data_dir,rid,*,tmsf_client=None,amap_client=None)` repairs one unignored TMSF source. POST `/api/directory/sources/{rid}/enrich` (external `/api/map/directory/...`) accepts no body and returns `success/data={source_id,errors,updated_at}`.
 - Evidence is additive JSON in existing source payloads; no table migration or startup network calls. `source_enrichment` records the update and per-stage errors.

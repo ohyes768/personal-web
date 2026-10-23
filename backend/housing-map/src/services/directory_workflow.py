@@ -6,6 +6,7 @@ from src.services.community_registry import dump, normalized, now
 from src.services.community_admission import community_views, property_facts
 from src.services.directory_policy import enabled, eligibility, VERSION
 from src.services.directory_position_state import position_view
+from src.services.tmsf_property_type import effective_market_state
 
 
 def is_enabled(store):
@@ -59,7 +60,7 @@ def catalog_property_types(row, facts):
         if record.get('source') != 'tmsf':
             continue
         prop = record.get('property_type')
-        if not prop and not record.get('property_type_checked_at'):
+        if not prop and not record.get('property_type_checked_at') and record.get('source_kind') != 'project':
             prop = facts.get(str(record['source_id']), {}).get('property_type')
         if prop:
             types.add(prop)
@@ -92,7 +93,8 @@ def inventory(store, data_dir):
         if status['admission_state'] == 'admitted':
             status.update(admission_state='excluded', qualification='identity_pending', facts_state='incomplete',
                           exclusion_reason='小区身份存在重复或人工关联限制，待补资料')
-        output.append({**c, **status, 'sources': [{k: v for k, v in r.items() if k != 'samples'}], 'map_status': 'not_admitted'})
+        output.append({**c, **status, 'market_state': effective_market_state(r),
+                       'sources': [{k: v for k, v in r.items() if k != 'samples'}], 'map_status': 'not_admitted'})
     for row in output:
         row['property_types'] = catalog_property_types(row, facts)
     return sorted(output, key=lambda c: (c['community_name'], c['community_id']))

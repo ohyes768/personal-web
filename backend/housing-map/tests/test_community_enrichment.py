@@ -311,7 +311,7 @@ def test_sold_out_project_collection_refreshes_legacy_cache(tmp_path, monkeypatc
     previous = dict(name=NAME, market_state='new_house', project_sale_status='售完',
         address_checked_at=now(), property_type='住宅', property_type_captured_at=now())
     rows = list(directory_collection.tmsf_names(threading.Event(), lambda *_: False,
-        existing={'3017629894': previous}))
+        existing={('community', '3017629894'): previous}))
     assert rows[-1]['market_state'] == 'second_hand'
     assert rows[-1]['project_sale_status'] == '售完'
     assert rows[-1]['listing_count_checked_at']

@@ -24,6 +24,8 @@ def valid_position(record, district):
 def historical_evidence(record, data_dir):
     if record['source'] != 'tmsf':
         return {}
+    if record.get('source_kind') == 'project':
+        return {}  # Newhouse projects share numeric IDs with ESF entries; no legacy lookup.
     data_dir = Path(data_dir)
     sid = str(record['source_id'])
     names = {normalized(n) for n in [record['name'], *record.get('aliases', [])] if n}
@@ -80,6 +82,47 @@ def source_position(community, records):
     return {k: first[k] for k in ('longitude', 'latitude', 'coordinate_system')}
 
 
+def _enrich_project_source(store, data_dir, record, tmsf_client):
+    """Newhouse-only repair: direct project detail, no ESF page and no Amap position."""
+    from src.services.tmsf_fetcher import TmsfClient
+    from src.services.tmsf_property_type import fetch_project_facts_by_id
+    names = [record['name'], *record.get('aliases', [])]
+    district = (record.get('district') or '').removesuffix('区')
+    if district not in {'滨江', '萧山'}:
+        raise ValueError('来源区域不在目录范围')
+    update = dict(property_type_checked_at=now())
+    errors = []
+    client = tmsf_client or TmsfClient()
+    try:
+        detail = fetch_project_facts_by_id(client, siteid=record.get('project_siteid'),
+                                           propertyid=record.get('project_id'), names=names, district=district)
+        address_error = detail.pop('address_error', None)
+        if address_error:
+            detail.pop('address', None)  # Q1: a truncated address never lands on the row.
+        update.update(detail, property_type_captured_at=now(), property_type_error=None,
+                      address_error=address_error, market_state_captured_at=now())
+        if not address_error:
+            update.update(address_origin='source_detail', address_checked_at=now(), address_verification_pending=False)
+    except Exception as exc:
+        code = getattr(exc, 'code', None)
+        errors.append(f'新房详情获取失败（{code or type(exc).__name__}），保留已有证据')
+        update['property_type_error'] = errors[-1]
+    finally:
+        if tmsf_client is None:
+            client.close()
+    # Network work is outside the writer; compare current identity before publication.
+    with store.db() as db:
+        current = db.execute('SELECT * FROM sources WHERE id=?', (record['id'],)).fetchone()
+        if not current or store._source(current) != record:
+            raise ValueError('来源已变化，请刷新后重试补全')
+        payload = json.loads(current['payload'])
+        db.execute('UPDATE sources SET payload=? WHERE id=?', (json.dumps({**payload, **update}, ensure_ascii=False), record['id']))
+        store._event(db, current['cid'], 'source_enrichment', {'source_id': record['id'], 'evidence': update, 'errors': errors})
+    from src.services.community_review import ReviewWorkspace
+    ReviewWorkspace(store, data_dir).refresh()
+    return dict(source_id=record['id'], errors=errors, updated_at=now())
+
+
 def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None, include_position=True):
     from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, parse_project_index, find_project, project_identity, effective_market_state, PROJECT_INDEX_URL
     from src.services.tmsf_fetcher import TmsfClient
@@ -87,6 +130,8 @@ def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None, i
     record = next((r for r in store.sources() if r['id'] == rid), None)
     if not record or record['status'] == 'ignored' or record['source'] != 'tmsf':
         raise ValueError('只能补全未忽略的透明售房网来源')
+    if record.get('source_kind') == 'project':
+        return _enrich_project_source(store, data_dir, record, tmsf_client)
     names = [record['name'], *record.get('aliases', [])]
     district = (record.get('district') or '').removesuffix('区')
     if district not in {'滨江', '萧山'}:

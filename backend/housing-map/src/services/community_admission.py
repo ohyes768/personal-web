@@ -27,7 +27,7 @@ def effective_type(records, facts):
     for record in records:
         if record['source'] == 'tmsf':
             prop = record.get('property_type')
-            if not record.get('property_type_checked_at') and not prop:
+            if not record.get('property_type_checked_at') and not prop and record.get('source_kind') != 'project':
                 prop = facts.get(record['source_id'], {}).get('property_type')
             if prop in RESIDENTIAL_TYPES:
                 return prop
@@ -130,7 +130,14 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
             coordinate = {**coordinate, 'formatted_address': qualified_address(actual_address, district)}
             community['position_formatted_address'] = coordinate['formatted_address']
         markets = {effective_market_state(r) for r in records if effective_market_state(r) in {'new_house', 'second_hand'}}
-        market = next(iter(markets)) if len(markets) == 1 else 'unknown'
+        # Newhouse evidence dominates the single-value projection; sold-out projects
+        # re-enter second_hand through effective_market_state. Conflict stays visible.
+        if 'new_house' in markets:
+            market = 'new_house'
+        elif 'second_hand' in markets:
+            market = 'second_hand'
+        else:
+            market = 'unknown'
         admission = admissions.get(cid, store.pending_admission())
         classification = classify_sources([r for r in records if r['source'] == 'tmsf'] if directory_mode else records, facts)
         # Existing migrated/automatic admissions lose display eligibility on new conflicting evidence.

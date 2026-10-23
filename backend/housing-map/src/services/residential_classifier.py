@@ -109,7 +109,7 @@ def classify_sources(records, property_types=None):
             continue
         if record['source'] == 'tmsf':
             prop = record.get('property_type')
-            if not record.get('property_type_checked_at') and not prop:
+            if not record.get('property_type_checked_at') and not prop and record.get('source_kind') != 'project':
                 prop = property_types.get(record['source_id'], {}).get('property_type')
             state = classify(community_id='', tmsf_property_type=prop)['state']
             if record.get('property_type_conflict') or state == RESIDENTIAL_STATE_UNKNOWN:

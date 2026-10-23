@@ -36,7 +36,7 @@ def eligibility(community, records, facts=None, admission=None):
     types = set()
     for record in records:
         prop = record.get('property_type')
-        if not prop and not record.get('property_type_checked_at'):
+        if not prop and not record.get('property_type_checked_at') and record.get('source_kind') != 'project':
             prop = facts.get(str(record['source_id']), {}).get('property_type')
         if record.get('property_type_conflict'):
             return result('type_conflict', '透明售房网用途证据冲突，待补资料', incomplete=True)
