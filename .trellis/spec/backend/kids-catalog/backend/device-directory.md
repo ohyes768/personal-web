@@ -10,8 +10,9 @@ Applies to device_collections.py, main.py lifecycle hooks and app/device-playlis
 - completions(folder PK,manifest,status) stores filename/size/mtime_ns evidence, independent of disposable candidates.
 - publication(id=1,snapshot,targets) keeps the old schema. New writes set targets to '{}'; queries never read targets. No database reset is needed.
 - generation(id=1,token,started,status,error,skipped) provides a 15-minute cross-process lease.
-- GET /api/collections returns snapshot and generation in one explicit read transaction. Two independent SELECTs can otherwise combine done with a snapshot read before publication.
-- POST /api/collections/generate →202/409; POST /api/collections/confirm accepts folder.
+- GET /api/collections returns snapshot and generation in one explicit read transaction. Two independent SELECTs can otherwise combine done with a snapshot read before publication. It also returns `candidates` — this month's done albums as `{folder,title,confirmed}` — read from the catalog without the write lock; `confirmed` means the completion ledger holds a `complete` record, not that the files were validated.
+- POST /api/collections/generate →202/409; body is optional: `{"folders":[...]}`. Missing body or `folders:null` = every candidate; `folders:[]` → 422; unknown folder → 422 with the unknown names. POST /api/collections/confirm accepts folder.
+- Generation filters candidates by the selected folders. Unselected albums enter neither `items` nor `skipped`, and the end-of-run source-consistency check compares only the selected set, so unrelated changes in unselected albums do not fail the publication.
 
 ## 3. Request / Response / Environment Contracts
 
@@ -32,6 +33,7 @@ Applies to device_collections.py, main.py lifecycle hooks and app/device-playlis
 | No snapshot / unknown number | 404 directory_missing / number_missing |
 | Old revision | 409 revision_expired, refresh and reselect |
 | Already generating | 409 generation_running |
+| Empty folder selection / unknown folder | 422, no generation started, previous snapshot retained |
 | Invalid completion confirmation / running download | 422 |
 | Unconfirmed or changed local files | Skip with explicit reason |
 | NAS/global failure, zero valid items, overflow | Failed generation, prior snapshot retained |
@@ -45,7 +47,7 @@ Applies to device_collections.py, main.py lifecycle hooks and app/device-playlis
 
 ## 6. Tests Required
 
-Backend pytest must cover no-network/no-MA generation and lookup, full long-collection counts, current-month filtering, sorting, completion migration, file validation, ordinary filenames, stable numeric manifest compatibility, concurrency, candidate mutation, consistent status reads, overflow, failure preservation and legacy targets being ignored. Frontend: TypeScript and production build. Device/HA playback is a separate integration test.
+Backend pytest must cover no-network/no-MA generation and lookup, full long-collection counts, current-month filtering, sorting, completion migration, file validation, ordinary filenames, stable numeric manifest compatibility, concurrency, candidate mutation, consistent status reads, overflow, failure preservation and legacy targets being ignored. Folder selection must be covered too: filtering to a subset, empty selection rejected, unknown folder rejected, default full generation, and the candidates payload with its confirmation flag. Frontend: TypeScript and production build. Device/HA playback is a separate integration test.
 
 ## 7. Wrong vs Correct
 

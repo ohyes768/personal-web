@@ -53,6 +53,11 @@ def generate(client):
     return wait_for_generation(client)
 
 
+def generate_selected(client, folders):
+    assert client.post('/api/collections/generate', json={'folders': folders}).status_code == 202
+    return wait_for_generation(client)
+
+
 def confirm(client, folder):
     assert client.post('/api/collections/confirm', json={'folder': folder}).status_code == 200
 
@@ -390,6 +395,96 @@ def test_old_ma_targets_do_not_affect_name_lookup_or_new_publications(setup):
     assert generate(client)['generation']['status'] == 'done'
     with app.state.collections.db() as con:
         assert con.execute('select targets from publication where id=1').fetchone()[0] == '{}'
+
+
+def test_selected_folders_only_publish_those_collections(setup):
+    """手动选择：歌单只含勾选的合集，未勾选的不进歌单也不进 skipped。"""
+    client, app, catalog, root = setup
+    for title, count in [('甲', 1), ('乙', 3), ('丙', 2)]:
+        add_album(root, catalog, title, count)
+        confirm(client, title)
+    result = generate_selected(client, ['甲', '丙'])
+    assert result['generation']['status'] == 'done'
+    assert [(x['number'], x['title'], x['track_count']) for x in result['snapshot']['items']] == [(1, '甲', 1), (2, '丙', 2)]
+    assert result['generation']['skipped'] == []
+
+
+def test_unselected_collections_still_appear_in_candidates(setup):
+    """候选清单列出全部已下载合集，选哪几个由界面决定。"""
+    client, app, catalog, root = setup
+    for title in ['甲', '乙']:
+        add_album(root, catalog, title, 1)
+        confirm(client, title)
+    candidates = client.get('/api/collections').json()['candidates']
+    assert {row['folder'] for row in candidates} == {'甲', '乙'}
+    assert all(row['confirmed'] for row in candidates)
+    assert all(row['title'] == row['folder'] for row in candidates)
+
+
+def test_candidates_mark_unconfirmed_collections(setup):
+    client, app, catalog, root = setup
+    add_album(root, catalog, '已确认', 1)
+    add_album(root, catalog, '未确认', 1)
+    confirm(client, '已确认')
+    candidates = {row['folder']: row for row in client.get('/api/collections').json()['candidates']}
+    assert candidates['已确认']['confirmed'] is True
+    assert candidates['未确认']['confirmed'] is False
+
+
+def test_generation_without_folders_keeps_publishing_everything(setup):
+    """兼容旧调用方：不传 folders 仍然全量生成。"""
+    client, app, catalog, root = setup
+    for title in ['甲', '乙']:
+        add_album(root, catalog, title, 1)
+        confirm(client, title)
+    assert client.post('/api/collections/generate').status_code == 202
+    result = wait_for_generation(client)
+    assert {x['title'] for x in result['snapshot']['items']} == {'甲', '乙'}
+
+
+def test_empty_selection_is_rejected(setup):
+    client, app, catalog, root = setup
+    add_album(root, catalog, '甲', 1)
+    confirm(client, '甲')
+    response = client.post('/api/collections/generate', json={'folders': []})
+    assert response.status_code == 422
+    assert '至少选择一个合集' in response.json()['detail']
+    assert client.get('/api/collections').json()['generation']['status'] == 'idle'
+
+
+def test_unknown_folder_is_rejected(setup):
+    """显式失败优于静默忽略：旧勾选状态撞上候选轮换时不要生成错位歌单。"""
+    client, app, catalog, root = setup
+    add_album(root, catalog, '甲', 1)
+    confirm(client, '甲')
+    response = client.post('/api/collections/generate', json={'folders': ['甲', '不存在的合集']})
+    assert response.status_code == 422
+    assert '不存在的合集' in response.json()['detail']['message']
+    assert client.get('/api/collections').json()['generation']['status'] == 'idle'
+
+
+def test_unselected_collection_changes_do_not_fail_generation(setup):
+    """一致性检查只比对选中的合集：未选合集新增不影响本次发布。"""
+    client, app, catalog, root = setup
+    add_album(root, catalog, '选中', 1)
+    add_album(root, catalog, '未选', 1)
+    confirm(client, '选中')
+    confirm(client, '未选')
+    original = app.state.collections.scan
+    added = False
+
+    def add_during_scan(folder):
+        nonlocal added
+        manifest = original(folder)
+        if not added:
+            added = True
+            add_album(root, catalog, '新增未选', 1)
+        return manifest
+
+    app.state.collections.scan = add_during_scan
+    result = generate_selected(client, ['选中'])
+    assert result['generation']['status'] == 'done'
+    assert [x['title'] for x in result['snapshot']['items']] == ['选中']
 
 
 def test_status_and_directory_are_read_from_one_database_snapshot(setup, monkeypatch):

@@ -142,7 +142,11 @@ class DeviceCollections:
             job.update(status='failed', error='上次生成已中断或超时，可以重新生成')
         return {'snapshot': json.loads(row['snapshot']) if row else None, 'generation': job}
 
-    def start(self, prepare=None):
+    def completion_status(self):
+        with self.db() as con:
+            return {row['folder']: row['status'] for row in con.execute('select folder,status from completions')}
+
+    def start(self, prepare=None, selected_folders=None):
         token = uuid.uuid4().hex
         with self.db() as con:
             con.execute('begin immediate')
@@ -151,18 +155,25 @@ class DeviceCollections:
                 return False
             con.execute("update generation set token=?,started=?,status='running',error=null,skipped='[]' where id=1",
                         (token, time.time()))
-        threading.Thread(target=self._generate, args=(token, prepare), daemon=True, name='device-directory').start()
+        threading.Thread(target=self._generate, args=(token, prepare, selected_folders),
+                         daemon=True, name='device-directory').start()
         return True
 
-    def _generate(self, token, prepare):
+    def _generate(self, token, prepare, selected_folders=None):
         skipped = []
+        # None = 全部候选；给定时只保留选中的合集，未选者不进歌单也不进 skipped。
+        selected = set(selected_folders) if selected_folders is not None else None
         try:
             if prepare:
                 prepare()
             if not self.root.is_dir():
                 raise CollectionError('NAS 音频根目录不可用')
-            with self.candidate_source() as sources:
+            with self.candidate_source() as candidates:
+                sources = candidates if selected is None else [
+                    item for item in candidates if item['folder'] in selected]
                 if not sources:
+                    if selected is not None:
+                        raise CollectionError('选中的合集已不在本月候选中，请重新生成；已保留原歌单')
                     raise CollectionError('本月暂无已下载完成的合集，请先下载；已保留原歌单')
             items, manifests = [], {}
             with self.db() as con:
@@ -204,7 +215,10 @@ class DeviceCollections:
                     raise CollectionError('生成期间音频发生变化，请重新生成')
             # Lock order matches download queueing: catalog first, device DB second.
             # Hold the source guard through commit so refresh cannot race publication.
-            with self.candidate_source() as current_sources:
+            with self.candidate_source() as current_candidates:
+                # 只比较选中的合集：未选合集的增减与本次发布无关。
+                current_sources = current_candidates if selected is None else [
+                    item for item in current_candidates if item['folder'] in selected]
                 if current_sources != sources:
                     raise CollectionError('生成期间本月合集列表发生变化，请重新生成')
                 with self.db() as con:

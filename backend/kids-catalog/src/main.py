@@ -87,18 +87,33 @@ class Catalog:
         self._backfill_sizes(rows)
         return rows
 
+    def _device_candidate_rows(self, con):
+        rows = con.execute("select a.platform,a.album_id,a.title from albums a join jobs j "
+                           "on a.id=j.album_id where j.status='done' order by a.platform,a.album_id").fetchall()
+        return [{'folder': sanitize_filename(row['title']), 'title': row['title'],
+                 'source_id': f"{row['platform']}:{row['album_id']}"} for row in rows]
+
     @contextmanager
     def device_candidates(self):
         """Hold catalog mutations while checking/publishing the current done list."""
         with self.db() as con:
             con.execute('begin immediate')
-            rows = con.execute("select a.platform,a.album_id,a.title from albums a join jobs j "
-                               "on a.id=j.album_id where j.status='done' order by a.platform,a.album_id").fetchall()
-            candidates = [{'folder': sanitize_filename(row['title']), 'title': row['title'],
-                           'source_id': f"{row['platform']}:{row['album_id']}"} for row in rows]
+            candidates = self._device_candidate_rows(con)
             if len({item['folder'] for item in candidates}) != len(candidates):
                 raise CollectionError('本月多个合集对应同一下载目录，请核对合集名称')
             yield candidates
+
+    def device_candidate_rows(self):
+        """只读候选清单：与生成同源同序，供界面勾选，不加写锁。"""
+        with self.db() as con:
+            candidates = self._device_candidate_rows(con)
+        unique, seen = [], set()
+        for item in candidates:
+            if item['folder'] in seen:
+                continue
+            seen.add(item['folder'])
+            unique.append(item)
+        return unique
 
     def _backfill_sizes(self, rows: "list[dict[str, Any]]"):
         """旧版本下载完的任务没有 size_bytes：扫一次目录补上并持久化，避免每次列表重扫。
@@ -192,6 +207,11 @@ class ConfirmCollection(BaseModel):
     folder: str = Field(min_length=1, max_length=256)
 
 
+class GenerateCollections(BaseModel):
+    # 缺省（不传 folders）= 全部候选，保持旧调用方行为；空列表视为非法选择。
+    folders: list[str] | None = Field(default=None, max_length=500)
+
+
 def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
                collector=collect_latest, downloader: Downloader | None = None,
                auto_refresh_seconds: int | None = None):
@@ -263,11 +283,25 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
 
     @app.get('/api/collections')
     def collection_status():
-        return collections.read()
+        state = collections.read()
+        completion = collections.completion_status()
+        candidates = [{'folder': row['folder'], 'title': row['title'],
+                       'confirmed': completion.get(row['folder']) == 'complete'}
+                      for row in catalog.device_candidate_rows()]
+        return {**state, 'candidates': candidates}
 
     @app.post('/api/collections/generate', status_code=202)
-    def generate_collections():
-        if not collections.start(import_completed_downloads):
+    def generate_collections(body: GenerateCollections | None = None):
+        folders = body.folders if body else None
+        if folders is not None:
+            if not folders:
+                raise HTTPException(422, detail='请至少选择一个合集')
+            known = {row['folder'] for row in catalog.device_candidate_rows()}
+            unknown = [folder for folder in folders if folder not in known]
+            if unknown:
+                raise HTTPException(422, detail={'code': 'unknown_folders',
+                                                'message': f'未知合集：{"、".join(unknown)}'})
+        if not collections.start(import_completed_downloads, folders):
             raise HTTPException(409, detail={'code': 'generation_running', 'message': '正在生成歌单，请稍候'})
         return {'status': 'running'}
 
