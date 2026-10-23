@@ -1,0 +1,113 @@
+'use client';
+
+import { useState } from 'react';
+import { safeDirectoryLink } from './DirectoryCards';
+
+export type UseReviewEvidence = { poi_id?: string; name?: string; typecode?: string; type_text?: string;
+  address?: string; longitude?: number; latitude?: number; district?: string; matched_by?: string };
+export type UseReviewHuman = { decision?: string; decided_at?: string; reason?: string;
+  evidence?: { source?: string; url?: string; note?: string }[] };
+export type UseReview = { state?: string; category?: string; result?: string; checked_at?: string; error?: string;
+  evidence?: UseReviewEvidence | null; candidates_count?: number; human?: UseReviewHuman | null; re_review?: boolean };
+
+export type UseReviewBucket = 'review' | 'done' | 'todo' | 'none';
+
+export const useReviewStateLabels: Record<string, string> = { checked: '已复核', not_found: '未找到地点',
+  error: '查询失败', uncertain: '匹配不确定' };
+export const useReviewResultLabels: Record<string, string> = { conflict: '分类冲突', uncertain: '用途待确认',
+  agree_residential: '一致（住宅）', agree_non_residential: '一致（非住宅）', pending_retry: '待复核' };
+export const useReviewBucketLabels: Record<UseReviewBucket, string> = { review: '待审核', done: '已一致',
+  todo: '待复核', none: '未复核' };
+export const useReviewFilterLabels: Record<string, string> = { conflict: '分类冲突', uncertain: '用途待确认',
+  agree: '一致', pending_retry: '待复核', none: '未复核' };
+export const useReviewSourceLabels: Record<string, string> = { kerui: '克而瑞', fang: '房天下', amap: '高德', other: '其他' };
+
+/** 高德分类只是第二来源证据：冲突与待确认都要人工看，其他情况不打扰。 */
+export function useReviewBucket(review?: UseReview): UseReviewBucket {
+  const result = review?.result;
+  if (result === 'conflict' || result === 'uncertain') return 'review';
+  if (result === 'agree_residential' || result === 'agree_non_residential') return 'done';
+  if (review?.state) return 'todo';
+  return 'none';
+}
+
+export function UseReviewBadge({ review, compact = false }: { review?: UseReview; compact?: boolean }) {
+  const bucket = useReviewBucket(review);
+  const title = `${useReviewBucketLabels[bucket]} · ${useReviewResultLabels[review?.result || ''] || '待复核'}` +
+    `${review?.re_review ? ' · 有新证据待复审' : ''}${review?.checked_at ? ` · 最近复核 ${review.checked_at.slice(0, 10)}` : ''}`;
+  if (compact) return <span className={`directory-badge directory-use-${bucket}`} title={title}>{useReviewBucketLabels[bucket]}</span>;
+  return <><span className={`directory-badge directory-use-${bucket}`}>{useReviewBucketLabels[bucket]}</span>
+    <small>{useReviewResultLabels[review?.result || ''] || '待复核'}</small>
+    {review?.re_review && <small>有新证据待复审</small>}</>;
+}
+
+export default function UseReviewPanel({ review, busy, revision, open, canConfirm = true, onToggle, onRecheck, onConfirm }: {
+  review?: UseReview; busy: boolean; revision?: number; open?: boolean; canConfirm?: boolean;
+  onToggle?: (open: boolean) => void; onRecheck: () => void;
+  onConfirm: (body: object) => void }) {
+  const [decision, setDecision] = useState<'residential' | 'non_residential'>('residential');
+  const [propertyType, setPropertyType] = useState('住宅');
+  const [source, setSource] = useState('kerui');
+  const [url, setUrl] = useState('');
+  const [note, setNote] = useState('');
+  const [reason, setReason] = useState('');
+  const evidence = review?.evidence;
+  const human = review?.human;
+  const ready = !!url.trim() && (decision === 'residential' || !!reason.trim());
+  const submit = () => {
+    if (!ready) return;
+    onConfirm({ revision, decision, property_type: decision === 'residential' ? propertyType : null,
+      use_evidence: [{ source, url: url.trim(), note: note.trim() }], reason: reason.trim() });
+  };
+  return <section className="directory-use-review-panel" aria-label="高德用途复核">
+    <div className="directory-use-review-heading"><h4>高德用途复核</h4><UseReviewBadge review={review} compact /></div>
+    {review?.re_review && <p role="alert" className="directory-warning">复核后出现与人工结论相反的证据，请重新核对后再确认。</p>}
+    <p className="directory-muted">{useReviewResultLabels[review?.result || ''] || '待复核'}
+      {review?.checked_at ? ` · 最近复核 ${review.checked_at.slice(0, 10)}` : ' · 尚未复核'}</p>
+    {evidence ? <p className="directory-source-summary-line">
+      <span>高德地点：{evidence.name || '未命名'} · {evidence.type_text || evidence.typecode || '类型未知'}</span>
+      {evidence.address && <span> · {evidence.address}</span>}
+      {safeDirectoryLink(evidence.poi_id ? `https://www.amap.com/search?query=${encodeURIComponent(evidence.name || '')}` : '') &&
+        <a href={`https://www.amap.com/search?query=${encodeURIComponent(evidence.name || '')}`} target="_blank" rel="noopener noreferrer">高德查看 ↗</a>}
+    </p> : review?.state && <p className="directory-muted">{useReviewStateLabels[review.state] || '待复核'}</p>}
+    {review?.error && <p role="status" className="directory-warning">{review.error}</p>}
+    {human && <div className="directory-use-review-decision">
+      <p>人工结论：{human.decision === 'residential' ? '确认住宅' : '确认非住宅'}{human.decided_at ? ` · ${human.decided_at.slice(0, 10)}` : ''}</p>
+      {human.reason && <p>理由：{human.reason}</p>}
+      {(human.evidence || []).map((item, i) => <p key={i}>{useReviewSourceLabels[item.source || ''] || item.source}
+        {item.note ? ` · ${item.note}` : ''}
+        {safeDirectoryLink(item.url || '') && <> · <a href={item.url} target="_blank" rel="noopener noreferrer">查看证据 ↗</a></>}</p>)}
+    </div>}
+    <div className="directory-actions">
+      <button className="btn btn-secondary" disabled={busy} onClick={onRecheck}>重新复核</button>
+      {canConfirm && !open && <button className="btn btn-secondary" disabled={busy || !revision} onClick={() => onToggle?.(true)}>确认用途</button>}
+    </div>
+    {open && canConfirm && <div className="directory-use-review-confirm">
+      <fieldset>
+        <legend>人工确认用途</legend>
+        <label><input type="radio" name="use-decision" checked={decision === 'residential'}
+          onChange={() => setDecision('residential')} />确认是住宅</label>
+        <label><input type="radio" name="use-decision" checked={decision === 'non_residential'}
+          onChange={() => setDecision('non_residential')} />确认不是住宅</label>
+      </fieldset>
+      {decision === 'residential' && <label>住宅类型<select aria-label="住宅类型" value={propertyType} disabled={busy}
+        onChange={e => setPropertyType(e.target.value)}>
+        {['住宅', '别墅', '排屋'].map(value => <option key={value} value={value}>{value}</option>)}
+      </select></label>}
+      <label>证据来源<select aria-label="证据来源" value={source} disabled={busy} onChange={e => setSource(e.target.value)}>
+        {Object.entries(useReviewSourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+      </select></label>
+      <label>证据链接<input aria-label="证据链接" value={url} disabled={busy} maxLength={500}
+        placeholder="如克而瑞、房天下或高德详情页链接" onChange={e => setUrl(e.target.value)} /></label>
+      <label>证据说明<input aria-label="证据说明" value={note} disabled={busy} maxLength={300}
+        placeholder="如：克而瑞标注为住宅" onChange={e => setNote(e.target.value)} /></label>
+      <label>理由<textarea aria-label="确认理由" value={reason} disabled={busy} maxLength={300} rows={2}
+        placeholder={decision === 'non_residential' ? '确认为非住宅必填' : '可选'} onChange={e => setReason(e.target.value)} /></label>
+      <div className="directory-actions">
+        <button className="btn btn-primary" disabled={busy || !ready} onClick={submit}>提交确认</button>
+        <button className="btn btn-secondary" disabled={busy} onClick={() => onToggle?.(false)}>取消</button>
+      </div>
+      <p className="directory-muted">确认结果独立保存，采集刷新与复核重跑都不会覆盖；出现相反证据会回到待审核。</p>
+    </div>}
+  </section>;
+}

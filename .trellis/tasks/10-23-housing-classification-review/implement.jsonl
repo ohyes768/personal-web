@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/10-23-housing-classification-review/research/findings.md", "reason": "需求来源、用户拍板的决策矩阵、来源选型实测、现有代码落点与受影响契约清单"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-flow.md", "reason": "目录流总体契约：eligibility 单一资格规则、四任务、API 前缀、迁移边界；本任务改写其类型门槛与排除页无人工确认两条"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "定位任务的名称拉平/别名/包含匹配、批量预算/取消/原子发布模式与 amap_position 存储模式，复核任务与存储直接对齐复用"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-admission.md", "reason": "住宅收录状态、人工决定权威性与 revision/事件机制；confirm_use 复用该权威通道"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-auto-review.md", "reason": "自动复核的保守证据边界（Amap 不建立用途）；本任务维持该边界只开人工确认口"}

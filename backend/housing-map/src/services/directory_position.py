@@ -2,7 +2,6 @@
 import copy
 import hashlib
 import json
-import re
 import threading
 
 from src.services.community_registry import dump, normalized, now
@@ -13,6 +12,7 @@ from src.services.community_enrichment import valid_position, qualified_address,
 from src.services.directory_policy import enabled, eligibility
 from src.services.directory_workflow import admitted
 from src.services.amap_directory import AmapClient, normalize_poi
+from src.services.poi_names import flat_name, name_hit
 
 KEY = 'directory_position_job'
 
@@ -88,23 +88,7 @@ def position_detail(store, data_dir, cid):
     return {**position_view(target, records), 'revision': _revision(snapshot)}
 
 
-_DOT = str.maketrans('', '', '·・･')
-_GENERIC_SUFFIX = ('小区', '花园', '公寓', '大厦', '公馆', '邸', '苑', '院', '府')
-
-
-def _flat_name(value):
-    """Flatten an estate name for matching: drop parenthetical notes, middle dots and
-    generic suffixes, so 中海·钱塘山水 matches 中海钱塘山水 and 积家 matches 积家小区."""
-    stem = re.sub(r'[（(][^（）()]*[)）]', '', str(value or ''))
-    stem = normalized(stem).translate(_DOT)
-    changed = True
-    while changed:
-        changed = False
-        for suffix in _GENERIC_SUFFIX:
-            if stem.endswith(suffix) and len(stem) > len(suffix):
-                stem = stem[:-len(suffix)]
-                changed = True
-    return stem
+_flat_name = flat_name
 
 
 def _valid_pois(pois, district):
@@ -121,8 +105,7 @@ def _name_hit(p, flats):
     """Whether a normalized POI's flattened name equals or contains a flattened
     community name/alias (shorter side length >= 3); comparison ignores dots,
     suffixes and parentheticals."""
-    name = _flat_name(p['name'])
-    return name in flats or any((len(n) >= 3 and n in name) or (len(name) >= 3 and name in n) for n in flats)
+    return name_hit(p['name'], flats)
 
 
 def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False):

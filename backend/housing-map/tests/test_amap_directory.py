@@ -33,6 +33,29 @@ def test_map_hint_never_overrides_property_use():
     assert classify_sources([hint, {'source': 'tmsf', 'source_id': 't', 'property_type': '公寓'}]) == 'pending'
 
 
+def test_unrestricted_search_omits_the_category_filter(monkeypatch):
+    monkeypatch.setenv('AMAP_WEB_SERVICE_KEY', 'private-key')
+    client = amap.AmapClient()
+    captured = {}
+
+    class Response:
+        def raise_for_status(self): pass
+        def json(self): return {'status': '1', 'count': '0', 'pois': []}
+
+    def fake_get(url, params=None, **kwargs):
+        captured.clear(); captured.update(params or {})
+        return Response()
+
+    monkeypatch.setattr(client.session, 'get', fake_get)
+    try:
+        client.search_name('风雅钱塘', '滨江', types=None)
+        assert 'types' not in captured
+        client.search_name('风雅钱塘', '滨江')
+        assert captured['types'] == '120300|120203'
+    finally:
+        client.close()
+
+
 def test_transport_error_cannot_leak_key(monkeypatch):
     monkeypatch.setenv('AMAP_WEB_SERVICE_KEY', 'private-key')
     client = amap.AmapClient()

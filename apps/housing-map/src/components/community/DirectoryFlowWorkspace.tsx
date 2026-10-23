@@ -3,13 +3,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Community, Source, DirectorySourceCard, marketLabels, mapLabels, safeDirectoryLink } from './DirectoryCards';
 import PositionPanel, { Position, PositionBadge, positionLabels, positionBucketLabels } from './PositionPanel';
+import UseReviewPanel, { UseReview, UseReviewBadge, useReviewFilterLabels } from './UseReviewPanel';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
 import type { RentalRequestDiagnostics } from '../../lib/rental-types';
 import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, rentalCoverageLabels, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
 
-type CatalogRow = Community & { property_types?: string[]; position?: Position; qualification: string; facts_state: string; exclusion_reason: string;
+type CatalogRow = Community & { property_types?: string[]; position?: Position; use_review?: UseReview;
+  qualification: string; facts_state: string; exclusion_reason: string;
   source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string };
   coverage?: CatalogCoverage; auction_records?: CatalogAuctionRecord[] };
 type Auction = Source & { revision: string; skipped: boolean; candidates: Community[]; reason: string;
@@ -18,7 +20,7 @@ type Summary = { active: boolean; admitted: number; excluded: number; auction_pe
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
-  failed?: number; skipped_by_state?: Record<string, number>; error?: string;
+  failed?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string }[]; truncated?: { message: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
   errors?: Job['errors'] | { items?: { message: string }[]; total?: number } };
@@ -30,6 +32,7 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
 const tasks = [
   { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止名称采集', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
+  { id: 'use', label: '复核高德用途', short: '用途复核', stop: '停止用途复核', path: '/directory/workflow/use-reviews', hint: '按小区名复核高德用途分类；只产生待审核线索，不会自动收录或排除' },
   { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新房天下租金' },
   { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
@@ -54,7 +57,9 @@ function taskCounts(t: (typeof tasks)[number], job: Job | null): string {
     job?.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
     job?.updated !== undefined && job.review !== undefined &&
       `补全 ${job.updated || 0} · 转待确认 ${job.review} · 高德无此地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
-    job?.updated !== undefined && job.review === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
+    job?.updated !== undefined && job.review === undefined && job.conflict === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
+    job?.conflict !== undefined &&
+      `已复核 ${job.updated || 0} · 待审核 ${job.conflict} · 待复核 ${job.not_found || 0}${job.uncertain ? ` · 匹配不确定 ${job.uncertain}` : ''}${job.error ? ` · 查询失败 ${job.error}` : ''} · 跳过 ${job.skipped || 0}`,
     job?.matched !== undefined && t.id === 'auction' && `本次法拍 ${job.matched} 条`].filter(Boolean).join(' · ');
 }
 function taskStateOf(t: (typeof tasks)[number], jobs: Record<string, Job | null>, errors: Record<string, string>): 'running' | 'failed' | 'info' {
@@ -149,8 +154,9 @@ export function CatalogClassificationFilter({ mode, value, propertyTypes, onChan
 
 export function CatalogTable({ items, excluded, select, retry, busy, position }: { items: CatalogRow[]; excluded: boolean;
   select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; }) {
-  return <div className="directory-table-wrap"><table className={`review-table catalog-table${excluded ? '' : ' catalog-admitted'}`}><thead><tr>
-    <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th><th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
+  return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}`}><thead><tr>
+    <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
+    {excluded && <th>高德用途复核</th>}<th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
     <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
       {!excluded && <small className="catalog-text directory-muted" title={c.address || '实际地址待补充'}>{c.district || '区域待补'} · {c.address || '实际地址待补充'}</small>}</td>
@@ -158,6 +164,8 @@ export function CatalogTable({ items, excluded, select, retry, busy, position }:
     <td data-label={excluded ? '房屋用途' : '新房 / 二手房'}>{excluded
       ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
       : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
+    {excluded && <td data-label="高德用途复核"><div className="catalog-inline"><UseReviewBadge review={c.use_review} compact />
+      {c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
     {excluded && <td data-label="不收录原因 / 资料状态">{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : '条件不符'}</small></td>}
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}
     {!excluded && <><td data-label="法拍"><AuctionCoverage value={c.coverage?.auction} onView={() => select(c)} /></td>
@@ -203,6 +211,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [auctionFilter, setAuctionFilter] = useState('');
   const [rentalFilter, setRentalFilter] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
+  const [useFilter, setUseFilter] = useState('');
+  const [useConfirmOpen, setUseConfirmOpen] = useState(false);
   const [propertyTypes, setPropertyTypes] = useState<string[]>([]);
   const [showSkipped, setShowSkipped] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null); const [items, setItems] = useState<CatalogRow[]>([]);
@@ -229,7 +239,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         if (!counts.active) { setLoading(false); return; }
         if (mode === 'rental') { setLoading(false); return; }
         const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q, page: String(page), include_skipped: String(showSkipped) })}`
-          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '', auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
+          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '', use: mode === 'auctions' ? '' : useFilter, auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
         const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         if (page > 1 && (page - 1) * 30 >= packet.total) { setPage(Math.max(1, Math.ceil(packet.total / 30))); return; }
@@ -239,7 +249,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '名单加载失败'); setLoading(false); } }
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter]);
+  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter, useFilter]);
   useEffect(() => {
     if (!summary?.active) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -287,6 +297,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
     setError(''); setNotice(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason(''); setCustomExcludeReason('');
+    setUseConfirmOpen(row.qualification === 'use_conflict' || row.qualification === 'use_uncertain');
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
       const value = await workflowRequest<CatalogRow>(path);
@@ -329,6 +340,25 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       setBusy(false);
     }
   }
+  async function reviewAction(kind: 'recheck' | 'confirm', body?: object) {
+    if (!detail) return;
+    const cid = detail.community_id; const version = detailVersion.current;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      if (kind === 'recheck') {
+        const outcome = await workflowRequest<{ errors?: string[] }>(`/directory/workflow/catalog/${encodeURIComponent(cid)}/use-review`, 'POST');
+        setNotice(outcome?.errors?.length ? `复核完成：${outcome.errors.join('；')}` : '复核完成，名单已重新分类。');
+      } else {
+        await workflowRequest(`/directory/workflow/catalog/${encodeURIComponent(cid)}/use-review/confirm`, 'POST', body);
+        setNotice('用途已确认，名单已重新分类。');
+        setUseConfirmOpen(false);
+      }
+      const fresh = await workflowRequest<CatalogRow>(`/directory/workflow/catalog/${encodeURIComponent(cid)}`);
+      if (detailVersion.current === version) setDetail(fresh);
+      setRevision(v => v + 1); onChanged();
+    } catch (e) { setError(e instanceof Error ? e.message : '用途操作失败，请刷新'); }
+    finally { setBusy(false); }
+  }
   async function admissionAction(kind: 'exclude' | 'resume', reason = '') {
     if (!detail) return;
     const rev = detail.admission?.revision;
@@ -367,6 +397,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       <CatalogClassificationFilter mode={mode} value={mode === 'admitted' ? marketFilter : propertyFilter} propertyTypes={propertyTypes}
         onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
       {mode === 'admitted' && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionBucketLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
+      {mode !== 'auctions' && <select aria-label="高德用途复核状态" value={useFilter} onChange={e => { setUseFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部复核状态</option>{Object.entries(useReviewFilterLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
       {mode === 'admitted' && <><select aria-label="法拍数据筛选" value={auctionFilter} onChange={e => { setAuctionFilter(e.target.value); setPage(1); setLoading(true); }}>
         <option value="">全部法拍覆盖</option><option value="has">有法拍记录</option><option value="none">暂无法拍记录</option>
       </select><select aria-label="租金状态筛选" value={rentalFilter} onChange={e => { setRentalFilter(e.target.value); setPage(1); setLoading(true); }}>
@@ -418,6 +449,10 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
       </section>
         {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} />}
+        {detail.use_review && <UseReviewPanel review={detail.use_review} busy={busy || !!jobs.use?.running}
+          revision={detail.admission?.revision} open={useConfirmOpen} canConfirm={detail.admission_state !== 'admitted'}
+          onToggle={setUseConfirmOpen} onRecheck={() => void reviewAction('recheck')}
+          onConfirm={body => void reviewAction('confirm', body)} />}
         <CatalogAuctionRecords coverage={detail.coverage} records={detail.auction_records} />
         <CatalogRentalDetails value={detail.coverage?.rental} />
         <section className="directory-source-section" aria-label="来源资料">

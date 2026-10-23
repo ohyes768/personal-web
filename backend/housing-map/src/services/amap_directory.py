@@ -27,11 +27,15 @@ class AmapClient:
         self.key = web_service_key()
         self.session = Session()
 
-    def search_name(self, name, district):
+    def search_name(self, name, district, types='120300|120203'):
+        """Search POIs by name. `types=None` searches every category (use review);
+        the default keeps the residential whitelist so position lookups stay narrow."""
+        params = {'key': self.key, 'keywords': name, 'city': '杭州', 'citylimit': 'true',
+                  'offset': 25, 'page': 1, 'extensions': 'base'}
+        if types is not None:
+            params['types'] = types
         try:
-            response = self.session.get('https://restapi.amap.com/v3/place/text', params={
-                'key': self.key, 'keywords': name, 'city': '杭州', 'citylimit': 'true',
-                'types': '120300|120203', 'offset': 25, 'page': 1, 'extensions': 'base'}, timeout=20)
+            response = self.session.get('https://restapi.amap.com/v3/place/text', params=params, timeout=20)
             response.raise_for_status()
             data = response.json()
         except Exception:
@@ -44,6 +48,10 @@ class AmapClient:
         self.session.close()
 
 
+# 出入口、停车场等附属设施不是小区本身，定位与用途复核都排除。
+_ATTACHED_PLACE = re.compile(r'(?:出入口|停车场|地下车库|物业服务中心|售楼处|[东西南北](?:门|出入口)|\d+\s*(?:幢|栋|号楼))$')
+
+
 def normalize_poi(poi, *, district='滨江'):
     sid, name = poi.get('id'), poi.get('name')
     if not isinstance(sid, str) or not sid or not isinstance(name, str) or not name.strip():
@@ -54,7 +62,7 @@ def normalize_poi(poi, *, district='滨江'):
     if district not in {'滨江', '萧山'} or poi.get('adname') != district + '区' or not typecodes & {'120300', '120301', '120302', '120303', '120304', '120203'}:
         return None
     # Keep phase/directional names. Exclude subordinate entrances, buildings and facilities.
-    if re.search(r'(?:出入口|停车场|地下车库|物业服务中心|售楼处|[东西南北](?:门|出入口)|\d+\s*(?:幢|栋|号楼))$', name):
+    if _ATTACHED_PLACE.search(name):
         return None
     try:
         lng, lat = map(float, str(poi.get('location', '')).split(','))
@@ -69,4 +77,31 @@ def normalize_poi(poi, *, district='滨江'):
                 longitude=lng, latitude=lat, coordinate_system='gcj02',
                 poi_type=poi.get('type') if isinstance(poi.get('type'), str) else '',
                 poi_typecode=str(poi['typecode']), residential_hint=True, captured_at=now(),
+                source_url='https://www.amap.com/search?query=' + quote(name))
+
+
+def normalize_poi_category(poi, *, district='滨江'):
+    """Unfiltered Amap POI: any category, kept for use-category review.
+
+    Unlike `normalize_poi` it accepts non-residential categories and does not
+    require coordinates — a review judges the recorded use, not the map point.
+    """
+    sid, name = poi.get('id'), poi.get('name')
+    if not isinstance(sid, str) or not sid or not isinstance(name, str) or not name.strip():
+        return None
+    if poi.get('adname') != district + '区' or _ATTACHED_PLACE.search(name):
+        return None
+    longitude = latitude = None
+    try:
+        longitude, latitude = map(float, str(poi.get('location', '')).split(','))
+    except (ValueError, TypeError):
+        longitude = latitude = None
+    else:
+        if not all(math.isfinite(v) for v in (longitude, latitude)):
+            longitude = latitude = None
+    return dict(source='amap', source_kind='poi', source_id=sid, name=name.strip(), district=district,
+                address=poi.get('address') if isinstance(poi.get('address'), str) else '',
+                longitude=longitude, latitude=latitude, coordinate_system='gcj02',
+                poi_type=poi.get('type') if isinstance(poi.get('type'), str) else '',
+                poi_typecode=str(poi.get('typecode') or ''), captured_at=now(),
                 source_url='https://www.amap.com/search?query=' + quote(name))

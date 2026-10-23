@@ -119,6 +119,52 @@ class CommunityRegistry:
         self._event(db, cid, 'admission_' + action, {'previous': previous, 'admission': value, 'reason': reason.strip()})
         return value
 
+    def confirm_use(self, cid, *, revision, decision, property_type=None, use_evidence=(), reason=''):
+        """人工确认用途：目录模式下的受控纠错出口。
+
+        决定独立存放在 community_admission，采集刷新与复核重跑都不覆盖它；
+        已有人工排除或审核锁仍然优先，不能被本通道绕过。
+        """
+        with self.db() as db:
+            return self._confirm_use(db, cid, revision=revision, decision=decision,
+                                     property_type=property_type, use_evidence=use_evidence, reason=reason)
+
+    def _confirm_use(self, db, cid, *, revision, decision, property_type=None, use_evidence=(), reason=''):
+        from src.services.directory_policy import enabled
+        from src.services.residential_classifier import RESIDENTIAL_TYPES
+        from src.services.use_review_policy import RULE_VERSION
+        if not enabled(db):
+            raise ValueError('请先完成名单流程迁移')
+        if decision not in {'residential', 'non_residential'}:
+            raise ValueError('请选择确认住宅或非住宅')
+        evidence = [{'source': str(item.get('source') or ''), 'url': str(item.get('url') or ''),
+                     'note': str(item.get('note') or '')} for item in use_evidence]
+        if not evidence or not all(item['source'] and item['url'] for item in evidence):
+            raise ValueError('人工确认必须填写来源与证据链接')
+        reason = str(reason or '').strip()
+        if decision == 'non_residential' and not reason:
+            raise ValueError('确认非住宅必须填写理由')
+        if decision == 'residential' and property_type not in RESIDENTIAL_TYPES:
+            raise ValueError('请确认住宅、别墅或排屋类型')
+        if not db.execute('SELECT 1 FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone():
+            raise ValueError('小区不存在或已删除/合并')
+        row = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
+        previous = json.loads(row[0]) if row else self.pending_admission()
+        if revision != previous['revision']:
+            raise ValueError('审核版本已变化，请刷新后重新核对')
+        if (previous.get('decision_kind') == 'manual' and previous.get('use_rule') != RULE_VERSION
+                and (previous.get('state') == 'excluded' or previous.get('auto_review_locked'))):
+            raise ValueError('人工排除或审核锁优先，不能改写')
+        value = dict(state='admitted' if decision == 'residential' else 'excluded',
+                     decision_kind='manual', use_rule=RULE_VERSION, use_decision=decision,
+                     property_type=property_type if decision == 'residential' else None,
+                     use_evidence=evidence, reason=reason,
+                     revision=revision + 1, auto_review_locked=False, decided_at=now())
+        db.execute('INSERT OR REPLACE INTO community_admission VALUES (?,?)', (cid, dump(value)))
+        self._event(db, cid, 'admission_use_confirm',
+                    {'previous': previous, 'admission': value, 'reason': reason})
+        return value
+
     @staticmethod
     def _community(row):
         return {**json.loads(row['payload']), 'community_id': row['id'],

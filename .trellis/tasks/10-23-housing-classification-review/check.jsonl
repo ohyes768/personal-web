@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/10-23-housing-classification-review/prd.md", "reason": "验收标准 AC1-AC7 与决策矩阵是检查基准"}
+{"file": ".trellis/tasks/10-23-housing-classification-review/design.md", "reason": "检查实现是否守住设计边界：高德证据永不自动收录/排除、人工决定权威、无证据等价性"}
+{"file": ".trellis/spec/backend/housing-map/backend/index.md", "reason": "包级质量检查口径：pytest 独立 basetemp、前端 lint/tsc/node test/build、存量迁移与隔离验证要求"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-flow.md", "reason": "对照目录流契约检查未越界：不动迁移边界、不破坏既有 eligibility 语义（无证据路径等价）"}

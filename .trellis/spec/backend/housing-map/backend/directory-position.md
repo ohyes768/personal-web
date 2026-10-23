@@ -43,3 +43,7 @@ Correct: `position_view(c, matched_sources)` requires Amap POI evidence, preserv
 
 ## Catalog position presentation
 - The catalog has a single 高德定位 column using the same labels as the filter: done=已定位 (matched/manual), review=待确认, todo=待处理 (pending/not_found/error). Compact badges retain the specific state in their title. Map visibility (map_status) is shown separately in the detail dialog as 地图显示状态, not as a second position column.
+
+## Boundary with the use-category review
+- The position lookup and the [Amap use-category review](./use-review.md) share the name matching rules in `poi_names.py` but run independent requests: position keeps the residential whitelist and stores a POI identity, the review drops the `types` filter entirely to see every category and stores a use verdict. Position evidence never establishes residential use and use-review evidence never establishes a map point.
+- `amap_position` and `use_review` are separate additive payloads with separate identity fingerprints; neither invalidates the other and neither rewrites the other when it is refreshed.

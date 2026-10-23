@@ -7,6 +7,7 @@ from src.services.community_admission import community_views, property_facts
 from src.services.directory_policy import enabled, eligibility, VERSION
 from src.services.directory_position_state import position_view
 from src.services.tmsf_property_type import effective_market_state
+from src.services.use_review_policy import use_review_projection
 
 
 def is_enabled(store):
@@ -81,7 +82,9 @@ def inventory(store, data_dir):
         # Old non-TMSF identities stay in history, not the new TMSF catalog.
         if not any(r['source'] == 'tmsf' for r in records):
             continue
-        output.append({**c, 'position': position_view(c, records), 'sources': [{k: v for k, v in r.items() if k != 'samples'} for r in records]})
+        output.append({**c, 'position': position_view(c, records),
+                       'use_review': use_review_projection(c, records, c.get('admission'), facts),
+                       'sources': [{k: v for k, v in r.items() if k != 'samples'} for r in records]})
     for r in sources:
         if r['source'] != 'tmsf' or r['status'] != 'pending' or r['community_id']:
             continue
@@ -94,6 +97,7 @@ def inventory(store, data_dir):
             status.update(admission_state='excluded', qualification='identity_pending', facts_state='incomplete',
                           exclusion_reason='小区身份存在重复或人工关联限制，待补资料')
         output.append({**c, **status, 'market_state': effective_market_state(r),
+                       'use_review': use_review_projection(c, [r], manual, facts),
                        'sources': [{k: v for k, v in r.items() if k != 'samples'}], 'map_status': 'not_admitted'})
     for row in output:
         row['property_types'] = catalog_property_types(row, facts)

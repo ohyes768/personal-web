@@ -10,9 +10,13 @@ from src.services import directory_workflow as flow
 from src.services.community_review import community_matches
 from src.services.directory_coverage import attach_coverage
 from src.services.directory_position import PositionJob, position_detail, position_one, confirm_position, PositionOutcome
+from src.services.directory_use_review import (
+    UseReviewJob, UseReviewOutcome, review_one, use_review_detail,
+)
 
 router = APIRouter(prefix='/directory/workflow', tags=['directory-workflow'])
 _position = None
+_use_review = None
 _lock = threading.Lock()
 
 
@@ -41,9 +45,19 @@ def position_job():
         return _position
 
 
+def use_review_job():
+    global _use_review
+    with _lock:
+        if _use_review is None:
+            _use_review = UseReviewJob(require_store())
+        return _use_review
+
+
 async def shutdown():
     if _position:
         await asyncio.to_thread(_position.shutdown)
+    if _use_review:
+        await asyncio.to_thread(_use_review.shutdown)
 
 
 def filtered(rows, q, district):
@@ -65,11 +79,20 @@ def summary(q: str = Query('', max_length=200), district: str = ''):
 
 # UI 分桶：done=已定位（含人工确认），review=待确认队列，todo=批量或手动可处理。
 POSITION_BUCKETS = {'done': {'matched', 'manual'}, 'review': {'review'}, 'todo': {'pending', 'not_found', 'error'}}
+# 复核视角：冲突/待确认/一致/无结论/从未复核。
+USE_FILTERS = {
+    'conflict': lambda p: p.get('result') == 'conflict',
+    'uncertain': lambda p: p.get('result') == 'uncertain',
+    'agree': lambda p: p.get('result') in {'agree_residential', 'agree_non_residential'},
+    'pending_retry': lambda p: p.get('result') == 'pending_retry' and p.get('state') is not None,
+    'none': lambda p: p.get('state') is None,
+}
 
 
 @router.get('/catalog')
 def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query('', max_length=200),
             district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual', 'done', 'todo'] = '',
+            use: Literal['', 'conflict', 'uncertain', 'pending_retry', 'agree', 'none'] = '',
             market: Literal['', 'new_house', 'second_hand'] = '',
             property_type: str = Query('', max_length=100),
             auction: Literal['', 'has', 'none'] = '',
@@ -87,6 +110,8 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
         if position:
             states = POSITION_BUCKETS.get(position, {position})
             rows = [r for r in rows if r.get('position', {}).get('state') in states]
+        if use:
+            rows = [r for r in rows if USE_FILTERS[use](r.get('use_review') or {})]
         if state == 'admitted':
             rows = attach_coverage(rows, registry, registry.path.parent)
             if auction:
@@ -218,6 +243,86 @@ def query_position(cid: str):
 def choose_position(cid: str, body: PositionDecision):
     registry = require_store()
     return position_write(lambda: confirm_position(registry, registry.path.parent, cid, **body.model_dump()))
+
+
+@router.get('/use-reviews')
+def use_review_status():
+    return result(lambda: use_review_job().snapshot())
+
+
+@router.post('/use-reviews', status_code=202)
+def use_review_start():
+    return result(lambda: use_review_job().start())
+
+
+@router.delete('/use-reviews')
+def use_review_cancel():
+    worker = use_review_job()
+    if not (worker.snapshot() or {}).get('running'):
+        raise HTTPException(409, '当前没有用途复核任务')
+    worker.cancel.set()
+    return {'success': True, 'data': {'phase': 'cancelling'}}
+
+
+class UseEvidence(BaseModel):
+    source: str = Field(min_length=1, max_length=30)
+    url: str = Field(min_length=1, max_length=500)
+    note: str = Field('', max_length=300)
+
+
+class UseConfirm(BaseModel):
+    revision: int = Field(ge=1)
+    decision: Literal['residential', 'non_residential']
+    property_type: Literal['住宅', '别墅', '排屋'] | None = None
+    use_evidence: list[UseEvidence] = Field(min_length=1, max_length=10)
+    reason: str = Field('', max_length=300)
+
+
+def use_review_write(action):
+    def run():
+        worker = use_review_job()
+        with worker.lock:
+            if (worker.snapshot() or {}).get('running'):
+                raise ValueError('高德用途复核正在进行，请完成后再操作单个小区')
+            return action()
+    return result(run)
+
+
+@router.get('/catalog/{cid}/use-review')
+def read_use_review(cid: str):
+    registry = require_store()
+    return result(lambda: use_review_detail(registry, registry.path.parent, cid))
+
+
+@router.post('/catalog/{cid}/use-review')
+def query_use_review(cid: str):
+    registry = require_store()
+
+    def run():
+        errors = []
+        try:
+            review_one(registry, registry.path.parent, cid, force=True)
+        except UseReviewOutcome as exc:
+            errors.append(str(exc))
+        return {**use_review_detail(registry, registry.path.parent, cid), 'errors': errors}
+    return use_review_write(run)
+
+
+@router.post('/catalog/{cid}/use-review/confirm')
+def confirm_use_review(cid: str, body: UseConfirm):
+    registry = require_store()
+
+    def run():
+        if body.decision == 'residential' and not body.property_type:
+            raise HTTPException(422, '确认住宅必须选择住宅、别墅或排屋类型')
+        if body.decision == 'non_residential' and not body.reason.strip():
+            raise HTTPException(422, '确认非住宅必须填写理由')
+        registry.confirm_use(cid, revision=body.revision, decision=body.decision,
+                             property_type=body.property_type,
+                             use_evidence=[item.model_dump() for item in body.use_evidence],
+                             reason=body.reason)
+        return registry.admission(cid)
+    return use_review_write(run)
 
 
 @router.get('/auctions')
