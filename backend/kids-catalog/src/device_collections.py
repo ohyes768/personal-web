@@ -143,8 +143,11 @@ class DeviceCollections:
         return {'snapshot': json.loads(row['snapshot']) if row else None, 'generation': job}
 
     def completion_status(self):
+        """完成台账：{folder: (status, manifest 记录的曲目数)}，manifest 未写时曲目数为 None。"""
         with self.db() as con:
-            return {row['folder']: row['status'] for row in con.execute('select folder,status from completions')}
+            return {row['folder']: (row['status'],
+                    len(json.loads(row['manifest'])) if row['manifest'] else None)
+                    for row in con.execute('select folder,status,manifest from completions')}
 
     def start(self, prepare=None, selected_folders=None):
         token = uuid.uuid4().hex

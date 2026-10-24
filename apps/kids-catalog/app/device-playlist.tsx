@@ -1,11 +1,11 @@
 "use client";
 
 import {useCallback, useEffect, useState} from "react";
+import CandidatePicker, {type Candidate} from "./candidate-picker";
 
 type Entry = {number: number; title: string; track_count: number};
 type Snapshot = {revision: string; generated_at: string; items: Entry[]};
 type Skipped = {title: string; folder?: string; reason: string; code: string};
-type Candidate = {folder: string; title: string; confirmed: boolean};
 type DirectoryState = {
   snapshot: Snapshot | null;
   generation: {status: "idle" | "running" | "done" | "failed"; error: string | null; skipped: Skipped[]};
@@ -71,6 +71,8 @@ export default function DevicePlaylist() {
       return next;
     });
   };
+  const setAll = (checked: boolean) =>
+    setUnchecked(checked ? new Set() : new Set(candidates.map(row => row.folder)));
 
   const generate = async () => {
     if (selection.length === 0) {
@@ -131,21 +133,8 @@ export default function DevicePlaylist() {
     {!loading && !state && <button className="secondary" onClick={() => load().then(() => setMessage("")).catch(() => setMessage("歌单读取失败，请稍后重试"))}>重新读取</button>}
     {state?.generation.error && <p className="message" role="alert">{state.generation.error}</p>}
     {running && <p role="status">正在检查本月已下载音频并统计曲目数，完成前继续使用上一份歌单。</p>}
-    {!loading && <section className="playlist-candidates" aria-labelledby="candidate-heading">
-      <h3 id="candidate-heading">选择要加入歌单的合集（{selection.length}/{candidates.length}）</h3>
-      {candidates.length === 0 && <p className="playlist-empty">本月还没有已下载完成的合集，先到“本月精选”下载。</p>}
-      {candidates.some(row => !row.confirmed) && <p className="playlist-note">标为“未确认”的合集还没核对过下载是否完整，勾选后生成时仍可能被跳过。</p>}
-      <ul className="candidate-list">
-        {candidates.map(row => <li key={row.folder} className="candidate-row">
-          <label>
-            <input type="checkbox" checked={!unchecked.has(row.folder)} disabled={running || submitting}
-              onChange={() => toggle(row.folder)} />
-            <span className="candidate-title">{row.title}</span>
-          </label>
-          {!row.confirmed && <span className="badge unconfirmed" title="完成台账里还没有确认记录，生成时以实际文件校验为准">未确认</span>}
-        </li>)}
-      </ul>
-    </section>}
+    {!loading && <CandidatePicker candidates={candidates} unchecked={unchecked}
+      disabled={running || submitting} onToggle={toggle} onSetAll={setAll} />}
     {snapshot ? <>
       <h3 className="playlist-subheading">当前设备歌单</h3>
       <div className="playlist-stamp">{snapshot.items.length} 个合集 · 生成于 {new Date(snapshot.generated_at).toLocaleString("zh-CN")}</div>

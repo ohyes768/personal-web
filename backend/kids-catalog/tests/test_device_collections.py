@@ -412,23 +412,31 @@ def test_selected_folders_only_publish_those_collections(setup):
 def test_unselected_collections_still_appear_in_candidates(setup):
     """候选清单列出全部已下载合集，选哪几个由界面决定。"""
     client, app, catalog, root = setup
-    for title in ['甲', '乙']:
-        add_album(root, catalog, title, 1)
+    for title, count in [('甲', 1), ('乙', 4)]:
+        add_album(root, catalog, title, count)
         confirm(client, title)
     candidates = client.get('/api/collections').json()['candidates']
     assert {row['folder'] for row in candidates} == {'甲', '乙'}
     assert all(row['confirmed'] for row in candidates)
     assert all(row['title'] == row['folder'] for row in candidates)
+    # 曲目数取完成台账 manifest 的长度（生成即按此发布）。
+    assert {row['folder']: row['track_count'] for row in candidates} == {'甲': 1, '乙': 4}
 
 
 def test_candidates_mark_unconfirmed_collections(setup):
     client, app, catalog, root = setup
     add_album(root, catalog, '已确认', 1)
-    add_album(root, catalog, '未确认', 1)
+    add_album(root, catalog, '未确认', 3)
     confirm(client, '已确认')
+    with catalog.db() as con:
+        con.execute("update jobs set downloaded_tracks=3 where album_id in "
+                    "(select id from albums where title='未确认')")
     candidates = {row['folder']: row for row in client.get('/api/collections').json()['candidates']}
     assert candidates['已确认']['confirmed'] is True
     assert candidates['未确认']['confirmed'] is False
+    # 未确认合集没有台账 manifest，曲目数退回下载数估计。
+    assert candidates['已确认']['track_count'] == 1
+    assert candidates['未确认']['track_count'] == 3
 
 
 def test_generation_without_folders_keeps_publishing_everything(setup):
