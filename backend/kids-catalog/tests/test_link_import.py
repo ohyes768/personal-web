@@ -30,6 +30,32 @@ def test_parse_ximalaya_album_link(url):
     assert parse_album_link(url) == ("喜马拉雅", "4436043")
 
 
+@pytest.mark.parametrize("url,album_id", [
+    ("https://m.ximalaya.com/selfshare/albumnew/16350309", "16350309"),
+    ("https://m.ximalaya.com/selfshare/album/3715099", "3715099"),
+    ("m.ximalaya.com/selfshare/albumnew/16350309", "16350309"),
+    ("https://m.ximalaya.com/selfshare/albumnew/16350309/", "16350309"),
+    ("https://m.ximalaya.com/selfshare/albumnew/16350309?cId=6&srcId=16350309&tpName=weixin", "16350309"),
+])
+def test_parse_ximalaya_selfshare_link(url, album_id):
+    """微信分享的 selfshare/album(new) 路径与标准 album/{id} 指向同一专辑。"""
+    assert parse_album_link(url) == ("喜马拉雅", album_id)
+
+
+def test_parse_real_wechat_share_links():
+    """两条真实分享链接（2026-10-24 用户提供）作回归锚点。"""
+    u1 = ("https://m.ximalaya.com/selfshare/albumnew/16350309?cId=6&uid=72626596"
+          "&shrdv=XICzu1Lac649xvIRiMla8G_6lC7giqDxX90&shrh5=iphone&shrid=1a16912037b9ffa"
+          "&shrdh=1&shrpid=1a16912037b9002&srcType=6&subType=1010&srcId=16350309&tpName=weixin"
+          "&commandShareId=75e49d7bfb85001886f897ebb5d0d4b9&shareTime=1792764150651&shareLevel=1")
+    u2 = ("https://m.ximalaya.com/selfshare/album/3715099?cId=6&uid=72626596"
+          "&shrdv=XICzu1Lac649xvIRiMla8G_6lC7giqDxX90&shrh5=iphone&shrid=1a1691247791331d"
+          "&shrdh=1&shrpid=1a169124779ca1&srcType=6&subType=1010&srcId=3715099&tpName=weixin"
+          "&commandShareId=e7596f85275246ffbd3dbf6117f1bf5b&shareTime=1792764168057&shareLevel=1")
+    assert parse_album_link(u1) == ("喜马拉雅", "16350309")
+    assert parse_album_link(u2) == ("喜马拉雅", "3715099")
+
+
 @pytest.mark.parametrize("url", [
     "https://www.qingting.fm/vchannels/326665",
     "https://m.qingting.fm/vchannels/326665",
@@ -91,10 +117,49 @@ def test_probe_ximalaya_paid_first_page_but_free_last_page_is_allowed(monkeypatc
 
 
 def test_probe_ximalaya_offline_album_is_rejected(monkeypatch):
+    """新旧接口都报 924 才判真下架。"""
     monkeypatch.setattr(link_import, "_fetch_json",
-                        lambda url, referer=None: xm_page([], ret=924, msg="亲，该内容因故已下架，请您谅解"))
+                        lambda url, referer=None: {"ret": 924, "msg": "亲，该内容因故已下架，请您谅解"})
     with pytest.raises(LinkImportError, match="已下架"):
         probe_album("喜马拉雅", "999")
+
+
+def xm_single_page(album_title, tracks, total=None, max_page=1):
+    """旧接口 album/single 的响应形状（2026-10-24 实测）。"""
+    return {"ret": 0, "msg": "0", "data": {
+        "album": {"title": album_title},
+        "tracks": {"list": tracks, "pageId": 1, "pageSize": 30,
+                   "totalCount": len(tracks) if total is None else total,
+                   "maxPageId": max_page}}}
+
+
+def test_probe_ximalaya_offline_album_falls_back_to_single_api(monkeypatch):
+    """新版接口报下架(ret=924)、旧接口仍在服务（2026-10-24 实测）：预检取到专辑信息，不误报下架。"""
+
+    def fake(url, referer=None):
+        if "album/single" in url:
+            return xm_single_page("听，小蜗牛艾玛",
+                                  [{"trackId": 98082355, "title": "完整版", "isPaid": False}], total=18)
+        return {"ret": 924, "msg": "亲，该内容因故已下架，请您谅解"}
+
+    monkeypatch.setattr(link_import, "_fetch_json", fake)
+    result = probe_album("喜马拉雅", "16350309")
+    assert result["title"] == "听，小蜗牛艾玛"
+    assert result["track_count"] == 18
+    assert result["sale_type"] == 0
+
+
+def test_probe_ximalaya_whole_paid_via_single_fallback_is_rejected(monkeypatch):
+    """兜底路径同样执行付费判定：旧接口全付费 → 拒绝导入。"""
+
+    def fake(url, referer=None):
+        if "album/single" in url:
+            return xm_single_page("付费专辑", [{"trackId": 1, "title": "某集", "isPaid": True}])
+        return {"ret": 924, "msg": "已下架"}
+
+    monkeypatch.setattr(link_import, "_fetch_json", fake)
+    with pytest.raises(LinkImportError, match="付费专辑不支持下载"):
+        probe_album("喜马拉雅", "1")
 
 
 def test_probe_ximalaya_network_failure_is_reported(monkeypatch):

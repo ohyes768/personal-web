@@ -5,13 +5,17 @@
   付费标记在曲目级 isPaid，专辑级没有付费字段（data 只有 list/maxPageId/pageId/pageSize/totalCount）。
 - 蜻蜓 capi 接口的付费标记在专辑级 vip_label（"会员畅听"，等价网页榜单侧 sale_type=1）；
   曲目级 isfree=true 标记的是 VIP 专辑里的免费集，不能当付费信号用。
+- 2026-10-24 补充：新版曲目接口 mobile/v1/album/track 对一批专辑返回 924（"已下架"），
+  但旧接口 mobile/v1/album/single 仍在服务且曲目项字段兼容；曲目列表统一经
+  downloader.xm_tracks_page 获取，自动回退。微信分享链接 selfshare/album(new)/{id}
+  与 album/{id} 同一专辑号，解析等价。
 """
 import re
 import time
 import urllib.error
 
-from src.downloader import (PAGE_SIZE, QT_CHANNEL_URL, QT_PROGRAMS_URL, QT_REFERER,
-                            XM_OFFLINE_RET, XM_TRACKS_URL, _fetch_json)
+from src.downloader import (QT_CHANNEL_URL, QT_PROGRAMS_URL, QT_REFERER,
+                            XM_OFFLINE_RET, _fetch_json, xm_tracks_page)
 
 XM_PLATFORM = "喜马拉雅"
 QT_PLATFORM = "蜻蜓FM"
@@ -19,11 +23,14 @@ VIP_KEYWORD = "会员"
 # 预检限速，与采集器的下架预检同款，避免连续请求触发平台风控。
 PROBE_PAUSE_SECONDS = 0.2
 
-_XM_ALBUM = re.compile(r'^https?://(?:[\w-]+\.)*ximalaya\.com/album/(\d+)(?:[/?#]|$)', re.I)
+_XM_ALBUM = re.compile(
+    r'^https?://(?:[\w-]+\.)*ximalaya\.com/(?:selfshare/)?album(?:new)?/(\d+)(?:[/?#]|$)', re.I)
 _QT_VCHANNEL = re.compile(r'^https?://(?:[\w-]+\.)*qingting\.fm/vchannels/(\d+)(?:[/?#]|$)', re.I)
 _XM_SINGLE = re.compile(r'ximalaya\.com/(?:sound|radio|album_sound)/', re.I)
 _QT_SINGLE = re.compile(r'qingting\.fm/(?:album|channels)/\d+/(?:audio|\d+)', re.I)
-_SUPPORTED = "仅支持专辑链接：喜马拉雅 ximalaya.com/album/{id} 或蜻蜓 qingting.fm/vchannels/{id}"
+_SUPPORTED = ("仅支持专辑链接：喜马拉雅 ximalaya.com/album/{id}"
+              "（含微信分享 m.ximalaya.com/selfshare/albumnew/{id}）"
+              "或蜻蜓 qingting.fm/vchannels/{id}")
 
 
 class LinkImportError(ValueError):
@@ -70,9 +77,13 @@ def _fetch(url: str, referer: str | None = None, label: str = "平台接口") ->
         raise LinkImportError(f"网络请求失败：{exc}") from None
 
 
+def _fetch_xm(url: str, referer: str | None = None) -> dict:
+    return _fetch(url, referer=referer, label="喜马拉雅接口")
+
+
 def _probe_ximalaya(album_id: str) -> dict:
-    payload = _fetch(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize={PAGE_SIZE}&pageId=1",
-                     referer=f"https://www.ximalaya.com/album/{album_id}", label="喜马拉雅接口")
+    referer = f"https://www.ximalaya.com/album/{album_id}"
+    payload = xm_tracks_page(_fetch_xm, album_id, 1, referer=referer)
     if payload.get("ret") == XM_OFFLINE_RET:
         raise LinkImportError(f"该专辑已被平台下架：{payload.get('msg') or '内容不可访问'}")
     data = payload.get("data") or {}
@@ -92,8 +103,7 @@ def _probe_ximalaya(album_id: str) -> dict:
             max_page = 1
         if max_page > 1:
             time.sleep(PROBE_PAUSE_SECONDS)
-            last = _fetch(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize={PAGE_SIZE}&pageId={max_page}",
-                          referer=f"https://www.ximalaya.com/album/{album_id}", label="喜马拉雅接口")
+            last = xm_tracks_page(_fetch_xm, album_id, max_page, referer=referer)
             last_tracks = ((last.get("data") or {}).get("list") or [])
             whole_paid = not last_tracks or all(bool(item.get("isPaid")) for item in last_tracks)
         else:

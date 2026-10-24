@@ -4,7 +4,8 @@
 平台不下发地址（喜马拉雅 play_path=None、蜻蜓 401 未购买），逐条跳过。
 
 接口来源（2026-09 实测，与 RSSHub/musicdl 现役实现一致，均免登录）：
-- 喜马拉雅曲目列表 mobile.ximalaya.com/mobile/v1/album/track/（maxPageId 翻页）
+- 喜马拉雅曲目列表 mobile.ximalaya.com/mobile/v1/album/track/（maxPageId 翻页；
+  ret=924 时回退旧接口 mobile/v1/album/single，实测一批"下架"专辑旧接口仍在服务）
 - 喜马拉雅直链 m.ximalaya.com/tracks/{id}.json → play_path_64（m4a）
 - 蜻蜓专辑/曲目 i.qingting.fm/capi/v3/channel/{id} + .../programs/{v}（一页全量）
 - 蜻蜓直链 audio.qingting.fm/audiostream/redirect/... + HMAC-MD5 签名（密钥在蜻蜓网页 JS 公开）
@@ -21,6 +22,7 @@ from pathlib import Path
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 XM_TRACKS_URL = "https://mobile.ximalaya.com/mobile/v1/album/track/"
+XM_SINGLE_URL = "https://mobile.ximalaya.com/mobile/v1/album/single"
 XM_TRACK_URL = "https://m.ximalaya.com/tracks/{track_id}.json"
 QT_CHANNEL_URL = "https://i.qingting.fm/capi/v3/channel/{channel_id}"
 QT_PROGRAMS_URL = "https://i.qingting.fm/capi/channel/{channel_id}/programs/{version}"
@@ -80,6 +82,31 @@ def ximalaya_album_available(album_id: str) -> bool:
     """预检专辑在移动端接口是否仍可访问；网页热门榜会残留已下架专辑。"""
     payload = _fetch_json(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize=1&pageId=1")
     return payload.get("ret") != XM_OFFLINE_RET
+
+
+def xm_tracks_page(fetch, album_id: str, page: int, referer: str | None = None) -> dict:
+    """取一页曲目列表；新版接口 ret=924 时回退旧接口 single 并归一化其响应。
+
+    实测（2026-10-24）平台把一批专辑从新版接口下架（ret=924），旧接口
+    mobile/v1/album/single 仍在服务：data 为 {album:{...}, tracks:{list,maxPageId,
+    totalCount}}，曲目项字段（trackId/title/isPaid）与新版一致。归一化时把专辑名
+    注入每条曲目项的 albumTitle，调用方按新版响应形状消费；两个接口都不可用时
+    原样返回 924 payload，由调用方决定报错方式。
+    """
+    payload = fetch(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize={PAGE_SIZE}&pageId={page}", referer=referer)
+    if payload.get("ret") != XM_OFFLINE_RET:
+        return payload
+    single = fetch(f"{XM_SINGLE_URL}?albumId={album_id}&pageSize={PAGE_SIZE}&pageId={page}", referer=referer)
+    data = single.get("data") or {}
+    tracks = data.get("tracks") or {}
+    if not tracks.get("list"):
+        return payload
+    album = data.get("album") or {}
+    items = [dict(item, albumTitle=album.get("title")) for item in tracks["list"]]
+    return {"ret": single.get("ret"), "msg": single.get("msg"),
+            "data": {"list": items, "totalCount": tracks.get("totalCount"),
+                     "maxPageId": tracks.get("maxPageId"),
+                     "pageId": tracks.get("pageId"), "pageSize": tracks.get("pageSize")}}
 
 
 def track_total(platform: str, album_id: str) -> int | None:
@@ -189,8 +216,8 @@ class Downloader:
         tracks: list[Track] = []
         page = 1
         while page <= MAX_PAGES:
-            payload = _fetch_json(f"{XM_TRACKS_URL}?albumId={album_id}&pageSize={PAGE_SIZE}&pageId={page}",
-                                  referer=f"https://www.ximalaya.com/album/{album_id}")
+            payload = xm_tracks_page(_fetch_json, album_id, page,
+                                     referer=f"https://www.ximalaya.com/album/{album_id}")
             if "data" not in payload:
                 # 实测下架专辑返回 {"ret": 924, "msg": "该内容因故已下架"}，须透出真实原因。
                 raise AlbumOfflineError(payload.get("msg") or f"喜马拉雅曲目接口异常: ret={payload.get('ret')}")

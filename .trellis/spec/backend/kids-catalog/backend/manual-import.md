@@ -12,7 +12,8 @@ collection pipeline; it does not introduce a second downloader or a second catal
 
 - `parse_album_link(url) -> (platform, album_id)`; platform is `喜马拉雅` or `蜻蜓FM`, matching the
   strings `Downloader.list_tracks` dispatches on. Accepts missing scheme, www/m/no subdomain,
-  trailing slash and query string. Single-track links are rejected.
+  trailing slash and query string. WeChat share paths `selfshare/albumnew/{id}` and
+  `selfshare/album/{id}` parse to the same album id. Single-track links are rejected.
 - `probe_album(platform, album_id) -> dict` with `title`, `url`, `track_count`, `sale_type`;
   raises `LinkImportError` for paid, offline, missing and network failures.
 - `POST /api/albums/import` body `{"url": str}` → 200 `{album_pk, title, job_id, status, reason}`;
@@ -25,7 +26,15 @@ collection pipeline; it does not introduce a second downloader or a second catal
 - Ximalaya mobile track API: paid state lives on the **track** (`isPaid`); the album payload has no
   paid field. Sample page 1; if every sampled track is paid, re-check the last page before
   rejecting, so an album whose first page happens to be free is not misread as wholly paid.
-  `ret == 924` means offline **or** nonexistent.
+  `ret == 924` means offline **or** nonexistent — but since 2026-10 the platform retires albums
+  from this new track API while the legacy `mobile/v1/album/single` endpoint still serves them
+  (album metadata, track list, and `tracks/{id}.json` direct links all stay live; verified on
+  2026-10-24 with albums 16350309 / 3715099). Track listing therefore goes through
+  `downloader.xm_tracks_page`, which falls back to the legacy endpoint on 924 and normalizes its
+  response to the new shape (album title injected into each track's `albumTitle`). Only when both
+  endpoints return 924 is the album treated as truly offline. Chart-side
+  `ximalaya_album_available` stays strict on the new API: the chart must not collect retired
+  albums.
 - Qingting capi: paid state lives on the **channel** (`vip_label == "会员畅听"`, equivalent to the
   web chart's `sale_type == 1` — 9/9 paid and 5/5 free channels matched). Track-level `isfree` is
   NOT a paid signal: it marks the free episodes inside a member album, and those are the ones that

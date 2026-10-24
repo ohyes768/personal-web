@@ -27,6 +27,13 @@ def xm_track_page(track_id: int, title: str, max_page: int = 1) -> dict:
         {"trackId": track_id, "title": title, "isPaid": False}]}}
 
 
+def xm_single_payload(track_id: int, title: str, max_page: int = 1) -> dict:
+    """旧接口 album/single 的响应形状（2026-10-24 实测）。"""
+    return {"ret": 0, "data": {"album": {"title": "听，小蜗牛艾玛"}, "tracks": {
+        "list": [{"trackId": track_id, "title": title, "isPaid": False}],
+        "pageId": 1, "pageSize": 30, "totalCount": 1, "maxPageId": max_page}}}
+
+
 class FakeHttp:
     """按 URL 前缀路由的假网络层。"""
 
@@ -137,10 +144,26 @@ def test_download_album_counts_download_rejection_as_skipped(make_downloader, mo
     assert report.downloaded == 0 and report.skipped == 1 and report.failed == 0
 
 
-def test_ximalaya_offline_album_error_is_surfaced(make_downloader):
+def test_ximalaya_lists_tracks_via_single_api_fallback(make_downloader):
+    """新版接口下架(ret=924)、旧接口仍在服务（2026-10-24 实测）：下载列表自动回退旧接口。"""
     downloader, _ = make_downloader(
         platform="喜马拉雅",
-        pages=[("https://mobile.ximalaya.com/mobile/v1/album/track/",
+        pages=[("https://mobile.ximalaya.com/mobile/v1/album/track/?albumId=16350309&pageSize=30&pageId=1",
+                {"ret": 924, "msg": "亲，该内容因故已下架，请您谅解"}),
+               ("https://mobile.ximalaya.com/mobile/v1/album/single?albumId=16350309&pageSize=30&pageId=1",
+                xm_single_payload(98082355, "听，小蜗牛艾玛——完整版"))])
+    tracks = downloader.list_tracks("喜马拉雅", "16350309")
+    assert [(t.track_id, t.title, t.ext) for t in tracks] == [
+        ("98082355", "听，小蜗牛艾玛——完整版", "m4a")]
+
+
+def test_ximalaya_offline_album_error_is_surfaced(make_downloader):
+    """新旧接口都报 924 才抛 AlbumOfflineError。"""
+    downloader, _ = make_downloader(
+        platform="喜马拉雅",
+        pages=[("https://mobile.ximalaya.com/mobile/v1/album/track/?albumId=12263592&pageSize=30&pageId=1",
+                {"ret": 924, "msg": "亲，该内容因故已下架，请您谅解"}),
+               ("https://mobile.ximalaya.com/mobile/v1/album/single?albumId=12263592&pageSize=30&pageId=1",
                 {"ret": 924, "msg": "亲，该内容因故已下架，请您谅解"})])
     with pytest.raises(AlbumOfflineError, match="已下架"):
         downloader.list_tracks("喜马拉雅", "12263592")
