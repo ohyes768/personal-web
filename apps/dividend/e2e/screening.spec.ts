@@ -118,7 +118,7 @@ test('decline threshold marks changed snapshot, persists, rejects zero, and rese
   expect(await page.evaluate(() => localStorage.getItem('dividend-screening-conditions-v1'))).toBeNull();
 });
 
-test('rating column shows weighted score, row click opens detail, quality entry swaps to rating modal', async ({ page }) => {
+test('rating column shows weighted score, row click opens detail without rating entry', async ({ page }) => {
   await setup(page);
   await page.goto('/?tab=screening');
   await expect(page.getByRole('button', { name: '符合条件 1' })).toBeVisible();
@@ -130,10 +130,8 @@ test('rating column shows weighted score, row click opens detail, quality entry 
   for (const block of ['筛选状态', '股息率', '盈利质量', '买点参考', '筹码']) {
     await expect(page.getByRole('heading', { level: 3, name: new RegExp(block) })).toBeVisible();
   }
-  // 详情内的评级入口：先关详情再开评级，两弹层互斥
-  await page.getByRole('button', { name: /基本面评级/ }).click();
-  await expect(page.getByRole('heading', { name: '基本面评级 · 测试公司（000001）' })).toBeVisible();
-  await expect(page.getByRole('heading', { name: '测试公司（000001）', exact: true })).toHaveCount(0);
+  // 详情弹层内不提供基本面评级入口（后续统一加）
+  await expect(page.getByRole('button', { name: /基本面评级/ })).toHaveCount(0);
 });
 
 test('reanalyze inside rating modal shows progress and rating modal stays open', async ({ page }) => {

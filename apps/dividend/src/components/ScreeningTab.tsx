@@ -177,9 +177,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
     <ScreeningStockDetailModal
       item={detailItem}
       price={detailItem ? priceMap.get(detailItem.stock.code) : undefined}
-      quality={detailItem ? qualityScores[detailItem.stock.code] ?? null : null}
       dataDate={result?.financial_last_updated ?? null}
-      onOpenQuality={openQuality}
       onClose={() => setDetailItem(null)}
     />
     <QualityReportModal

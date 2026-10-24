@@ -10,8 +10,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { dividendApi } from '@/lib/api';
 import type { ScreeningItem } from '@/lib/screening';
-import type { QualityScore } from '@/lib/quality';
-import { starBadgeClass } from '@/lib/quality';
 import type { BoardInfo, DividendHistoryItem, DividendStock, M120Stock, PriceItem } from '@/lib/types';
 import { Modal } from './shared-ui/Modal';
 
@@ -20,12 +18,8 @@ export interface ScreeningStockDetailModalProps {
   item: ScreeningItem | null;
   /** 列表同源的现价数据；缺失时组件自行补拉 */
   price?: PriceItem;
-  /** 已落盘评级（用于头部「基本面评级」入口） */
-  quality: QualityScore | null;
-  /** 数据日期（无评级时回退到财务数据更新时间） */
+  /** 数据日期（财务数据更新时间） */
   dataDate?: string | null;
-  /** 打开评级弹框：由外层先关详情再开评级，保证两个弹层互斥 */
-  onOpenQuality: (code: string) => void;
   onClose: () => void;
 }
 
@@ -81,7 +75,7 @@ function Kpis({ items, columns = 3 }: { items: { label: string; value: string; s
   </div>;
 }
 
-export function ScreeningStockDetailModal({ item, price, quality, dataDate, onOpenQuality, onClose }: ScreeningStockDetailModalProps) {
+export function ScreeningStockDetailModal({ item, price, dataDate, onClose }: ScreeningStockDetailModalProps) {
   const [history, setHistory] = useState<DividendHistoryItem[] | null>(null);
   const [historyError, setHistoryError] = useState('');
   const [board, setBoard] = useState<BoardInfo | null>(null);
@@ -175,30 +169,19 @@ export function ScreeningStockDetailModal({ item, price, quality, dataDate, onOp
   return <Modal isOpen={!!item} onClose={handleClose} title={`${stock.name}（${stock.code}）`} size="xl">
     <div className="space-y-4">
       {/* 头部条 */}
-      <div className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-rule bg-paper-card p-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-baseline gap-2">
-            <span className="text-lg font-semibold text-ink">{stock.name}</span>
-            <span className="font-mono text-sm text-ink-muted">{stock.code}</span>
-          </div>
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
-            <span>申万行业：{swChain.length ? swChain.join(' › ') : '待补'}</span>
-            {industryBoards.length > 0 && <span>行业板块：{industryBoards.join('、')}</span>}
-            {conceptBoards.length > 0 && <span>概念板块：{conceptBoards.join('、')}</span>}
-            <span>来源指数：{stock.source_index || '待补'}</span>
-            <span>数据日期：{quality?.data_date || dataDate || '待补'}</span>
-            {boardError && <span className="text-amber-700">板块加载失败</span>}
-          </div>
+      <div className="rounded-lg border border-rule bg-paper-card p-4">
+        <div className="flex flex-wrap items-baseline gap-2">
+          <span className="text-lg font-semibold text-ink">{stock.name}</span>
+          <span className="font-mono text-sm text-ink-muted">{stock.code}</span>
         </div>
-        <button
-          className="rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent"
-          onClick={() => onOpenQuality(stock.code)}
-        >
-          基本面评级{' '}
-          {quality
-            ? <span className={`font-medium ${starBadgeClass(quality.stars)}`}>{'⭐'.repeat(quality.stars)}</span>
-            : <span className="text-ink-muted">未评级</span>}
-        </button>
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-ink-muted">
+          <span>申万行业：{swChain.length ? swChain.join(' › ') : '待补'}</span>
+          {industryBoards.length > 0 && <span>行业板块：{industryBoards.join('、')}</span>}
+          {conceptBoards.length > 0 && <span>概念板块：{conceptBoards.join('、')}</span>}
+          <span>来源指数：{stock.source_index || '待补'}</span>
+          <span>数据日期：{dataDate || '待补'}</span>
+          {boardError && <span className="text-amber-700">板块加载失败</span>}
+        </div>
       </div>
 
       {/* 状态与提示 */}
