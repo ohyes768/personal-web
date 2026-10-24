@@ -114,10 +114,14 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
         {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
-        <button className={`${buttonClass} bg-indigo-600 text-white`} disabled={!qualityConfigured || analyzing || saving || selected.size === 0} title={qualityConfigured ? '对勾选股票调用 AI 五维基本面评级（每只约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([...selected])}>{analyzing ? qualityJob ? `分析中 ${qualityJob.processed}/${qualityJob.total}…` : '提交中…' : `分析基本面 (${selected.size})`}</button>
-        {!analyzing && qualityJob && qualityJob.failed_codes.length > 0 && <button className={buttonClass} onClick={() => void analyze(qualityJob.failed_codes)}>重试失败 {qualityJob.failed_codes.length} 只</button>}
       </div>
-      {qualityMessage && <p role="status" className="text-sm text-ink">{qualityMessage}</p>}
+      {analyzing && <p aria-live="polite" className="text-sm text-ink-muted">
+        {qualityJob ? `评级进行中 ${qualityJob.processed}/${qualityJob.total} · 失败 ${qualityJob.failed}` : '评级提交中…'}
+      </p>}
+      {qualityMessage && <p role="status" className="text-sm text-ink">
+        {qualityMessage}
+        {!analyzing && qualityJob && qualityJob.failed_codes.length > 0 && <button className={`${buttonClass} ml-2`} onClick={() => void analyze(qualityJob.failed_codes)}>重试失败 {qualityJob.failed_codes.length} 只</button>}
+      </p>}
       {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}</p>}
       {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
