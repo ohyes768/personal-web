@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/kids-catalog/backend/index.md", "reason": "质量检查基准：pytest 命令、fixture 真实性要求、前端 build 检查"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/device-directory.md", "reason": "校验导入链路未破坏设备目录契约"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/manual-import.md", "reason": "校验导入契约：付费判定口径、source 生命周期、端点与前端约定"}

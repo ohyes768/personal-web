@@ -4,7 +4,7 @@ This file provides guidance to Claude Code when working with code in this reposi
 
 ## 项目概述
 
-个人财富网站，7 个独立 Next.js 前端 + 5 个 Python 后端。
+个人财富网站，8 个独立 Next.js 前端 + 8 个 Python 后端。
 ```
 apps/
 ├── dividend/      # A 股高股息分析（Next.js 15, React 19, Tailwind CSS v4）
@@ -12,7 +12,9 @@ apps/
 ├── macro/       # 宏观经济
 ├── fund-select/  # 债基筛选平台
 ├── housing-map/  # 滨江区购房地图（Next.js 16, basePath /map）
-└── skill-manager/  # Skill 发布管理台（Next.js 15, basePath /skills）
+├── skill-manager/  # Skill 发布管理台（Next.js 15, basePath /skills）
+├── kids-catalog/  # 宝宝音频库（Next.js 15, basePath /kids）
+└── rss-relay/   # RSS 转发
 
 backend/
 ├── dividend-select/  # 股息率后端（FastAPI, akshare, 阿里云行情 API）
@@ -20,7 +22,9 @@ backend/
 ├── macro/ # 宏观金融后端
 ├── fund-select/  # 债基筛选后端
 ├── housing-map/  # 滨江购房地图后端（FastAPI + 透明售房网采集脚本）
-└── skill-manager/  # Skill 发布管理台后端（FastAPI，受限 NAS 目录内发布 Skill 到 OpenClaw/Hermes）
+├── skill-manager/  # Skill 发布管理台后端（FastAPI，受限 NAS 目录内发布 Skill 到 OpenClaw/Hermes）
+├── kids-catalog/  # 宝宝音频库后端（FastAPI，月度榜单采集 + 喜马拉雅/蜻蜓免费专辑下载 + 设备歌单编号）
+└── rss-relay/   # RSS 转发后端
 ```
 
 ## 常用命令
@@ -79,6 +83,14 @@ python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8097
 # skill-manager 前端
 cd apps/skill-manager
 pnpm dev          # 端口 3008，访问 /skills
+
+# kids-catalog（宝宝音频库，已在 monorepo 内）
+cd backend/kids-catalog
+.venv/Scripts/python -m pytest -q          # Windows 用 .venv/Scripts，Linux 用 .venv/bin
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8098
+# kids-catalog 前端
+cd apps/kids-catalog
+pnpm dev          # 端口 3009，访问 /kids
 ```
 
 ### Windows 开发脚本
@@ -150,6 +162,6 @@ docker compose down
 
 - 首页 `/` 是 `nginx/html/index.html` 静态驾驶舱（状态点 + KPI），由 nginx 容器从 `/var/www/personal`（仓库 `nginx/html/` 的 bind mount）serve；改它无需 restart nginx，改 `nginx/web.conf` 才需要 `./scripts/deploy-nas.sh nginx`
 - 不要在代码中硬编码端口号，使用环境变量
-- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，其他无 basePath
+- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，kids-catalog 用 `/kids`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交
 - 同一个 app 同时只允许运行一个 dev server 实例（`next dev` 独占 `.next` 目录，多实例会互相清缓存）。第二个会话需要验证时，直接复用已有端口的 server，不要另起实例或改端口

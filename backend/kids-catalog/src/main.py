@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 from src.collector import collect_latest
 from src.downloader import AlbumOfflineError, Downloader, sanitize_filename
 from src.device_collections import CollectionError, DeviceCollections
+from src.link_import import LinkImportError, parse_album_link, probe_album
 
 logger = logging.getLogger(__name__)
 MONTHLY_SECONDS = 30 * 24 * 3600
@@ -30,6 +31,7 @@ class Catalog:
                 id integer primary key, platform text not null, album_id text not null,
                 title text not null, url text not null, age_evidence text not null,
                 age_confidence text not null, sale_type integer, track_count integer,
+                source text not null default 'chart',
                 last_seen text not null,
                 unique(platform, album_id));
               create table if not exists jobs (
@@ -44,6 +46,9 @@ class Catalog:
             for column in ('sale_type', 'track_count'):
                 if column not in columns:
                     con.execute(f'alter table albums add column {column} integer')
+            # 手动导入的专辑要跨月保留，来源标记区分榜单与手动。
+            if 'source' not in columns:
+                con.execute("alter table albums add column source text not null default 'chart'")
             job_columns = {row['name'] for row in con.execute('pragma table_info(jobs)')}
             for column in ('total_tracks', 'downloaded_tracks'):
                 if column not in job_columns:
@@ -65,17 +70,19 @@ class Catalog:
         now = datetime.now().isoformat()
         with self.db() as con:
             for row in albums:
-                con.execute('''insert into albums(platform,album_id,title,url,age_evidence,age_confidence,sale_type,track_count,last_seen)
-                  values(?,?,?,?,?,?,?,?,?) on conflict(platform,album_id) do update set
+                # source 不在 update 集合里：手动导入过的专辑即便出现在榜单中也不翻回 chart，跨月保留。
+                con.execute('''insert into albums(platform,album_id,title,url,age_evidence,age_confidence,sale_type,track_count,source,last_seen)
+                  values(?,?,?,?,?,?,?,?,'chart',?) on conflict(platform,album_id) do update set
                   title=excluded.title,url=excluded.url,age_evidence=excluded.age_evidence,
                   age_confidence=excluded.age_confidence,sale_type=excluded.sale_type,
                   track_count=excluded.track_count,last_seen=excluded.last_seen''',
                   (row['platform'], str(row['album_id']), row['title'], row['url'],
                    row['age_evidence'], row['age_confidence'], row.get('sale_type'),
                    row.get('track_count'), now))
-            # 本期榜单之外的历史专辑（旧付费、被淘汰的）连同下载记录一并清出目录。
-            con.execute('delete from jobs where album_id in (select id from albums where last_seen != ?)', (now,))
-            con.execute('delete from albums where last_seen != ?', (now,))
+            # 本期榜单之外的历史专辑（旧付费、被淘汰的）连同下载记录一并清出目录；手动导入的不清理。
+            con.execute("delete from jobs where album_id in "
+                        "(select id from albums where source='chart' and last_seen != ?)", (now,))
+            con.execute("delete from albums where source='chart' and last_seen != ?", (now,))
         return len(albums)
 
     def list(self):
@@ -158,6 +165,32 @@ class Catalog:
                              name=f'download-{album_pk}').start()
         return result
 
+    def import_album(self, row: dict[str, Any]) -> dict[str, Any]:
+        """写入手动导入的专辑并触发下载；已在目录则幂等返回现状。
+
+        复用 queue() 的排队语义（已有 job 不重复下载、failed 可重试），
+        避免与榜单下载维护两份逻辑。
+        """
+        now = datetime.now().isoformat()
+        platform, album_id = row['platform'], str(row['album_id'])
+        sale_type = row.get('sale_type', 0)
+        with self.db() as con:
+            # 冲突时不覆盖 age_evidence：手动专辑若本就是榜单专辑，保留平台给的年龄依据更有信息量。
+            con.execute('''insert into albums(platform,album_id,title,url,age_evidence,age_confidence,sale_type,track_count,source,last_seen)
+              values(?,?,?,?,'手动添加','高',?,?,'manual',?) on conflict(platform,album_id) do update set
+              title=excluded.title,url=excluded.url,sale_type=excluded.sale_type,
+              track_count=excluded.track_count,source='manual',last_seen=excluded.last_seen''',
+              (platform, album_id, row['title'], row['url'], sale_type,
+               row.get('track_count'), now))
+            album_pk = con.execute('select id from albums where platform=? and album_id=?',
+                                    (platform, album_id)).fetchone()['id']
+            # 旧的「整张付费跳过」任务与本次预检结论矛盾（预检已确认可下载），清掉让下载真正跑起来。
+            if sale_type != 1:
+                con.execute("delete from jobs where album_id=? and status='skipped_paid'", (album_pk,))
+        queued = self.queue(album_pk)
+        return {'album_pk': album_pk, 'title': row['title'], 'job_id': queued['job_id'],
+                'status': queued['status'], 'reason': queued.get('reason')}
+
     def _run_download(self, job_id: int, platform: str, album_id: str, title: str):
         logger.info("开始下载专辑 %s《%s》", platform, title)
 
@@ -201,6 +234,10 @@ class Catalog:
         with self.db() as con:
             con.execute('update jobs set status=?,reason=?,size_bytes=?,updated_at=? where id=?',
                         (status, reason, size_bytes, datetime.now().isoformat(), job_id))
+
+
+class ImportAlbumBody(BaseModel):
+    url: str = Field(min_length=8, max_length=512)
 
 
 class ConfirmCollection(BaseModel):
@@ -280,6 +317,16 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
             return catalog.queue(album_id)
         except KeyError:
             raise HTTPException(status_code=404, detail='专辑不存在')
+
+    @app.post('/api/albums/import')
+    def import_album(body: ImportAlbumBody):
+        """粘贴专辑链接导入：解析 → 预检 → 入目录 → 自动开始下载，一步到位。"""
+        try:
+            platform, album_id = parse_album_link(body.url)
+            info = probe_album(platform, album_id)
+        except LinkImportError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        return catalog.import_album(info)
 
     @app.get('/api/collections')
     def collection_status():

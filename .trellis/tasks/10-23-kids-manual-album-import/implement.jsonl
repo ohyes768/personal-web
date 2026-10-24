@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/kids-catalog/backend/index.md", "reason": "kids-catalog 后端开发前置清单：同步路由+后台线程、SQLite 连接作用域、pytest 运行方式"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/device-directory.md", "reason": "设备合集持久层契约：本任务假设 DeviceCollections 零改动，实现时核对候选与校验语义"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/manual-import.md", "reason": "手动导入契约（新增）：平台付费判定口径、source 生命周期、导入端点与前端约定"}
+{"file": ".trellis/spec/guides/kids-audio-tags.md", "reason": "音频标签规则：下载落盘文件命名/标签约定，导入不新增规则但不得违背"}
