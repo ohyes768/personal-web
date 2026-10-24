@@ -1,5 +1,6 @@
 import sqlite3
 import time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -413,3 +414,101 @@ def test_refresh_does_not_revert_manual_album_that_is_also_in_chart(tmp_path: Pa
         albums = client.get("/api/albums").json()["albums"]
         assert len(albums) == 1
         assert albums[0]["source"] == "manual"
+
+
+def make_downloaded_app(tmp_path: Path, files: list[str], *, status: str = "done"):
+    """构造一张已下载 2 曲的专辑：磁盘文件真实存在，job 直接落库（不经下载线程）。"""
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=FakeDownloader())
+    catalog = app.state.catalog
+    catalog.refresh(ALBUMS)
+    folder = tmp_path / "music" / "摇篮曲"
+    folder.mkdir(parents=True)
+    for name in files:
+        (folder / name).write_bytes(b"x" * 100)
+    now = datetime.now().isoformat()
+    with catalog.db() as con:
+        con.execute("insert into jobs(album_id,status,created_at,updated_at,total_tracks,"
+                    "downloaded_tracks,size_bytes) values(1,?,?,?,?,?,?)",
+                    (status, now, now, 2, len(files), 100 * len(files)))
+    return app
+
+
+def test_list_tracks_returns_sorted_titles_and_sizes(tmp_path: Path):
+    app = make_downloaded_app(tmp_path, ["002-采蘑菇的小姑娘.mp3", "001-白龙马.m4a"])
+    with TestClient(app) as client:
+        data = client.get("/api/albums/1/tracks").json()
+        assert [(t["file"], t["title"], t["size"]) for t in data["tracks"]] == [
+            ("001-白龙马.m4a", "白龙马", 100), ("002-采蘑菇的小姑娘.mp3", "采蘑菇的小姑娘", 100)]
+
+
+def test_list_tracks_empty_when_never_downloaded(tmp_path: Path):
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=FakeDownloader())
+    app.state.catalog.refresh(ALBUMS)
+    with TestClient(app) as client:
+        assert client.get("/api/albums/1/tracks").json() == {"tracks": []}
+
+
+def test_list_tracks_unknown_album_is_404(tmp_path: Path):
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=FakeDownloader())
+    with TestClient(app) as client:
+        assert client.get("/api/albums/999/tracks").status_code == 404
+
+
+def test_delete_track_removes_file_and_updates_job(tmp_path: Path):
+    """删一首：文件消失、剩余数/大小/状态同步为 partial，已确认合集的完成态失效。"""
+    app = make_downloaded_app(tmp_path, ["001-白龙马.m4a", "002-采蘑菇的小姑娘.mp3"])
+    with app.state.collections.db() as con:
+        con.execute("insert or replace into completions values('摇篮曲','[\"x\"]','complete')")
+    with TestClient(app) as client:
+        response = client.request("DELETE", "/api/albums/1/tracks", json={"file": "001-白龙马.m4a"})
+        assert response.status_code == 200
+        assert response.json() == {"downloaded_tracks": 1, "size_bytes": 100, "status": "partial"}
+        assert not (tmp_path / "music" / "摇篮曲" / "001-白龙马.m4a").exists()
+        listing = client.get("/api/albums").json()["albums"][0]
+        assert listing["download_status"] == "partial" and listing["downloaded_tracks"] == 1
+        assert listing["size_bytes"] == 100 and "用户删除" in (listing["reason"] or "")
+    with app.state.collections.db() as con:
+        row = con.execute("select status from completions where folder='摇篮曲'").fetchone()
+    assert row is not None and row["status"] == "incomplete"  # 已发布合集的完成态随删除失效
+
+
+def test_delete_last_track_resets_album_to_not_downloaded(tmp_path: Path):
+    """删最后一首：job 清掉，专辑回到未下载，重新排队可整张重下。"""
+    app = make_downloaded_app(tmp_path, ["001-白龙马.m4a"])
+    with TestClient(app) as client:
+        response = client.request("DELETE", "/api/albums/1/tracks", json={"file": "001-白龙马.m4a"})
+        assert response.json()["status"] == "not_downloaded"
+        listing = client.get("/api/albums").json()["albums"][0]
+        assert listing["download_status"] == "not_downloaded"
+        queued = client.post("/api/albums/1/download")
+        assert queued.status_code == 200 and queued.json()["status"] == "queued"
+
+
+def test_delete_track_rejects_bad_filenames(tmp_path: Path):
+    app = make_downloaded_app(tmp_path, ["001-白龙马.m4a"])
+    with TestClient(app) as client:
+        for bad in ["../逃逸.m4a", "a/b.m4a", "a\\b.m4a", "..", "封面.txt"]:
+            response = client.request("DELETE", "/api/albums/1/tracks", json={"file": bad})
+            assert response.status_code == 422, bad
+        assert client.request("DELETE", "/api/albums/1/tracks", json={"file": "009-不存在.m4a"}).status_code == 404
+        assert (tmp_path / "music" / "摇篮曲" / "001-白龙马.m4a").exists()
+
+
+def test_delete_track_rejected_while_download_running(tmp_path: Path):
+    """下载进行中拒绝管理曲目，避免与下载线程互踩文件。"""
+    app = make_downloaded_app(tmp_path, ["001-白龙马.m4a"], status="running")
+    with TestClient(app) as client:
+        response = client.request("DELETE", "/api/albums/1/tracks", json={"file": "001-白龙马.m4a"})
+        assert response.status_code == 409
+        assert (tmp_path / "music" / "摇篮曲" / "001-白龙马.m4a").exists()
+
+
+def test_partial_job_requeues_for_completion(tmp_path: Path):
+    """partial（含用户删曲后的缺曲状态）允许重排队，补全下载找回被删曲目。"""
+    app = make_downloaded_app(tmp_path, ["001-白龙马.m4a"], status="partial")
+    with TestClient(app) as client:
+        response = client.post("/api/albums/1/download")
+        assert response.status_code == 200 and response.json()["status"] == "queued"
+        with app.state.catalog.db() as con:
+            jobs = con.execute("select status from jobs").fetchall()
+        assert len(jobs) == 1 and jobs[0]["status"] == "queued"

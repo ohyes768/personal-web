@@ -2,7 +2,7 @@
 
 ## Pre-Development Checklist
 
-Read main.py, downloader.py, [device directory contracts](./device-directory.md), [manual import contracts](./manual-import.md), [audio tag rules](../../../guides/kids-audio-tags.md) and [Windows testing](../../testing-environment.md). FastAPI routes are synchronous with background threads for slow work; SQLite connections are operation-scoped. Never use candidate albums/jobs as the sole durable device library. Reuse Mutagen validation, and do not mutate existing audio tags from directory generation.
+Read main.py, downloader.py, [device directory contracts](./device-directory.md), [manual import contracts](./manual-import.md), [track management contracts](./track-management.md), [audio tag rules](../../../guides/kids-audio-tags.md) and [Windows testing](../../testing-environment.md). FastAPI routes are synchronous with background threads for slow work; SQLite connections are operation-scoped. Never use candidate albums/jobs as the sole durable device library. Reuse Mutagen validation, and do not mutate existing audio tags from directory generation.
 
 ## Quality Check
 

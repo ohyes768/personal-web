@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -18,6 +19,8 @@ from src.link_import import LinkImportError, parse_album_link, probe_album
 logger = logging.getLogger(__name__)
 MONTHLY_SECONDS = 30 * 24 * 3600
 PAID_SKIP_REASON = "付费专辑不下载（整张跳过）"
+# 目录里认作曲目的音频扩展名，与设备合集 scan() 的口径一致。
+AUDIO_SUFFIXES = ('.mp3', '.m4a')
 
 
 
@@ -136,6 +139,65 @@ class Catalog:
                 con.execute('update jobs set size_bytes=? where album_id=?', (size or 0, row['id']))
             row['size_bytes'] = size or 0
 
+    def audio_files(self, folder: str, music_dir: Path) -> "list[Path]":
+        """专辑目录下的音频文件，按文件名排序；目录不存在返回空。"""
+        directory = Path(music_dir) / folder
+        if not directory.is_dir():
+            return []
+        return sorted(p for p in directory.iterdir() if p.is_file() and p.suffix.lower() in AUDIO_SUFFIXES)
+
+    def list_tracks(self, album_pk: int, music_dir: Path) -> "list[dict[str, Any]]":
+        """已下载曲目清单（曲目管理弹窗数据源）；文件名即曲目身份，目录是事实源。"""
+        with self.db() as con:
+            row = con.execute('select title from albums where id=?', (album_pk,)).fetchone()
+            if not row:
+                raise KeyError(album_pk)
+            files = self.audio_files(sanitize_filename(row['title']), music_dir)
+        tracks = []
+        for path in files:
+            # 去掉下载时加的「NNN-」序号前缀，还原曲目名；无前缀文件原样展示。
+            title = re.sub(r'^\d+-', '', path.stem)
+            tracks.append({'file': path.name, 'title': title or path.stem, 'size': path.stat().st_size})
+        return tracks
+
+    def delete_track(self, album_pk: int, music_dir: Path, filename: str) -> dict[str, Any]:
+        """删除一首已下载曲目并同步 job：剩余>0 → partial，剩余=0 → 清 job 回到未下载。
+
+        已确认的设备合集完成态随删除失效（mark_failed），提示用户重新生成歌单。
+        """
+        if ('/' in filename or '\\' in filename or filename in ('.', '..')
+                or Path(filename).suffix.lower() not in AUDIO_SUFFIXES):
+            raise ValueError('文件名不合法')
+        with self.db() as con:
+            row = con.execute('select title from albums where id=?', (album_pk,)).fetchone()
+            if not row:
+                raise KeyError(album_pk)
+            folder = sanitize_filename(row['title'])
+            job = con.execute('select status from jobs where album_id=?', (album_pk,)).fetchone()
+            if job and job['status'] in ('queued', 'running'):
+                raise RuntimeError('正在下载中，请等下载完成后再管理曲目')
+            target = Path(music_dir) / folder / filename
+            if not target.is_file():
+                raise FileNotFoundError(filename)
+            target.unlink()
+            remaining = self.audio_files(folder, music_dir)
+            size = sum(p.stat().st_size for p in remaining)
+            if remaining:
+                con.execute('update jobs set status=?,downloaded_tracks=?,size_bytes=?,reason=?,updated_at=? '
+                            'where album_id=?',
+                            ('partial', len(remaining), size, f'用户删除曲目，剩余 {len(remaining)} 首',
+                             datetime.now().isoformat(), album_pk))
+                status = 'partial'
+            else:
+                con.execute('delete from jobs where album_id=?', (album_pk,))
+                status = 'not_downloaded'
+        if hasattr(self, 'collections'):
+            try:
+                self.collections.mark_failed(folder)
+            except (ValueError, OSError):
+                logger.warning('曲目删除后完成台账失效失败：%s', folder, exc_info=True)
+        return {'downloaded_tracks': len(remaining), 'size_bytes': size, 'status': status}
+
     def queue(self, album_pk: int):
         """把专辑加入下载队列；付费专辑整张跳过（策略 A），免费专辑后台线程下载。"""
         now = datetime.now().isoformat()
@@ -146,8 +208,9 @@ class Catalog:
                 raise KeyError(album_pk)
             job = con.execute('select id,status,reason from jobs where album_id=?', (album_pk,)).fetchone()
             if job:
-                # failed 与旧版占位状态（needs_authorization）允许重试，其余幂等返回。
-                if job['status'] not in ('failed', 'needs_authorization'):
+                # failed / 旧版占位（needs_authorization）/ partial（受限曲目或用户删曲后的缺曲态）
+                # 允许重试补全：download_album 对已存在文件跳过，重跑只补缺的曲目。其余幂等返回。
+                if job['status'] not in ('failed', 'needs_authorization', 'partial'):
                     return dict(job, job_id=job['id'])
                 con.execute('delete from jobs where id=?', (job['id'],))
             if album['sale_type'] == 1:
@@ -241,6 +304,10 @@ class ImportAlbumBody(BaseModel):
     url: str = Field(min_length=8, max_length=512)
 
 
+class DeleteTrackBody(BaseModel):
+    file: str = Field(min_length=1, max_length=256)
+
+
 class ConfirmCollection(BaseModel):
     folder: str = Field(min_length=1, max_length=256)
 
@@ -318,6 +385,27 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
             return catalog.queue(album_id)
         except KeyError:
             raise HTTPException(status_code=404, detail='专辑不存在')
+
+    @app.get('/api/albums/{album_id}/tracks')
+    def album_tracks(album_id: int):
+        try:
+            return {'tracks': catalog.list_tracks(album_id, app.state.music_dir)}
+        except KeyError:
+            raise HTTPException(status_code=404, detail='专辑不存在') from None
+
+    @app.delete('/api/albums/{album_id}/tracks')
+    def delete_track(album_id: int, body: DeleteTrackBody):
+        """删除一首已下载曲目：磁盘文件与下载台账同步，合集完成态失效。"""
+        try:
+            return catalog.delete_track(album_id, app.state.music_dir, body.file)
+        except KeyError:
+            raise HTTPException(status_code=404, detail='专辑不存在') from None
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail='未找到该曲目文件') from None
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from None
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
 
     @app.post('/api/albums/import')
     def import_album(body: ImportAlbumBody):

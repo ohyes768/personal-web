@@ -12,3 +12,17 @@ article.offline{opacity:.45}article.offline a{text-decoration:line-through}
 .playlist-table-wrap{overflow-x:auto}.playlist-table{border-collapse:collapse;width:100%;text-align:left;font-size:16px}.playlist-table th{font-size:13px;color:#76664f;font-weight:normal;border-bottom:2px solid #dfccad;padding:12px 8px}.playlist-table td{border-bottom:1px solid #eee4d4;padding:14px 8px;overflow-wrap:anywhere}.playlist-table th:first-child{width:52px}.playlist-table th:last-child{width:76px}.playlist-table td:last-child{white-space:nowrap;color:#76664f}.playlist-number{color:#c56722;font-variant-numeric:tabular-nums}
 .playlist-skipped{margin-top:24px;border-top:1px solid #eadcc9;padding-top:18px}.playlist-skipped summary{cursor:pointer;color:#8c6847}.playlist-skipped ul{list-style:none;padding:0;margin:8px 0 0}.playlist-skipped li{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 0;border-bottom:1px solid #eee4d4}.playlist-skipped strong{font-weight:normal;overflow-wrap:anywhere}.playlist-skipped small{line-height:1.7;margin-top:5px}.secondary{background:transparent;color:#365642;border:1px solid #b8c3b3;font-size:14px}.secondary:disabled{color:#fff}.visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}button{cursor:pointer}button:disabled{cursor:default}button:focus-visible,summary:focus-visible{outline:3px solid #3d6a85;outline-offset:4px}
 @media(max-width:640px){.device-playlist{padding:20px 16px}.playlist-heading{align-items:flex-start;flex-direction:column}.playlist-skipped li{align-items:flex-start;flex-direction:column}.playlist-table td{font-size:14px}}
+/* 曲目管理弹窗：暖纸基调与卡片一致，遮罩点击关闭 */
+.modal-overlay{position:fixed;inset:0;background:#26332959;display:flex;align-items:center;justify-content:center;padding:20px;z-index:50}
+.modal{background:#fffdf8;border:1px solid #eadcc9;border-radius:18px;box-shadow:0 18px 48px #26332933;max-width:560px;width:100%;max-height:80vh;display:flex;flex-direction:column;padding:22px 24px}
+.modal-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-bottom:12px;border-bottom:1px solid #eee4d4}
+.modal-head b{color:#263329}
+.modal-close{background:transparent;color:#8c6847;font-size:22px;line-height:1;padding:2px 10px;border-radius:10px}
+.modal-close:hover{color:#c56722}
+.track-list{list-style:none;margin:6px 0 0;padding:0;overflow-y:auto}
+.track-list li{display:flex;align-items:center;gap:14px;padding:11px 2px;border-bottom:1px solid #eee4d4}
+.track-title{flex:1;overflow-wrap:anywhere}
+.track-size{color:#8c6847;font-size:14px;flex-shrink:0}
+.track-delete{flex-shrink:0;font-size:14px;padding:6px 14px}
+.modal-tip{color:#8c6847;line-height:1.7;margin:12px 0 0}
+.modal footer{border-top:1px solid #eee4d4;margin-top:4px}
