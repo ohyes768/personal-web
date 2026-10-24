@@ -128,3 +128,40 @@ input[type="number"] {
   0% { transform: translateX(-100%); }
   100% { transform: translateX(350%); }
 }
+
+/* === 评级报告 Markdown 正文（QualityReportModal）=== */
+/* react-markdown 输出的是裸 h2/table/ul，Tailwind preflight 会全部重置成普通文本，这里按暖白纸感补回结构 */
+.md-body h1, .md-body h2, .md-body h3 {
+  margin: 1.25em 0 0.5em;
+  font-weight: 600;
+  color: var(--color-ink-strong);
+  line-height: 1.4;
+}
+.md-body h1:first-child, .md-body h2:first-child, .md-body h3:first-child {
+  margin-top: 0;
+}
+.md-body h1 { font-size: 1.15rem; }
+.md-body h2 { font-size: 1.05rem; }
+.md-body h3 { font-size: 1rem; }
+.md-body p { margin: 0.5em 0; }
+.md-body strong { color: var(--color-ink-strong); }
+.md-body a { color: var(--color-info); text-decoration: underline; text-underline-offset: 2px; overflow-wrap: anywhere; }
+.md-body ul, .md-body ol { margin: 0.5em 0; padding-left: 1.4em; }
+.md-body ul { list-style: disc; }
+.md-body ol { list-style: decimal; }
+.md-body li { margin: 0.25em 0; }
+.md-body table {
+  margin: 0.75em 0;
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+.md-body th, .md-body td {
+  border: 1px solid var(--color-rule);
+  padding: 0.4em 0.6em;
+  text-align: left;
+  vertical-align: top;
+}
+.md-body th { background: var(--color-paper-deep); font-weight: 600; color: var(--color-ink-strong); }
+.md-body tr:nth-child(even) td { background: var(--color-paper-tint); }
+.md-body hr { margin: 1em 0; border: 0; border-top: 1px solid var(--color-rule); }

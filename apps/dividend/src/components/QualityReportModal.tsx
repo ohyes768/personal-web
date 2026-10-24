@@ -5,6 +5,8 @@
 
 import { Modal } from './shared-ui/Modal';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import remarkBreaks from 'remark-breaks';
 import {
   QUALITY_DIMENSION_LABELS,
   QUALITY_DIMENSION_ORDER,
@@ -76,8 +78,8 @@ export function QualityReportModal({ score, onClose }: QualityReportModalProps) 
           </div>
         )}
 
-        <div className="max-w-none text-sm text-ink">
-          <ReactMarkdown>{score.report_md}</ReactMarkdown>
+        <div className="md-body max-w-none text-sm text-ink">
+          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{score.report_md}</ReactMarkdown>
         </div>
       </div>
     </Modal>
