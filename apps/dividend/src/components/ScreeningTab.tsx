@@ -70,7 +70,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       const response = await dividendApi.getQualityScores();
       if (id === qualityRequestId.current) {
         setQualityScores(response.scores);
-        setQualityConfigured(response.hermes_configured);
+        // 旧后端缺 hermes_configured 字段时不置灰：点了会得到明确 503 提示，好过莫名禁用
+        setQualityConfigured(response.hermes_configured !== false);
       }
     } catch { /* 拉取失败保持现状，表格列显示「待分析」，点分析时会得到明确报错 */ }
   }, []);
@@ -190,12 +191,17 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
             <td className="p-3">{(() => {
               const score: QualityScore | undefined = qualityScores[stock.code];
               const short = dimensionShorthand(score?.dimensions);
-              if (!score || !short) return <span className="text-ink-muted">待分析</span>;
-              return <button className="text-left hover:underline" title="查看基本面评级详情" onClick={() => setQualityModalCode(stock.code)}>
-                <span className={`font-medium ${starBadgeClass(score.stars)}`}>{'⭐'.repeat(score.stars)}<span className="ml-0.5 text-xs">{score.stars}</span></span>
-                <span className="ml-2 text-xs text-ink-muted">{short}</span>
-                {score.boundary && <span className="ml-1 text-xs text-amber-700" title={score.boundary}>⚠️</span>}
-              </button>;
+              if (!score || !short) return status === 'eligible'
+                ? <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>{analyzing ? '分析中…' : '分析'}</button>
+                : <span className="text-ink-muted">待分析</span>;
+              return <span className="inline-flex items-center gap-2">
+                <button className="text-left hover:underline" title="查看基本面评级详情" onClick={() => setQualityModalCode(stock.code)}>
+                  <span className={`font-medium ${starBadgeClass(score.stars)}`}>{'⭐'.repeat(score.stars)}<span className="ml-0.5 text-xs">{score.stars}</span></span>
+                  <span className="ml-2 text-xs text-ink-muted">{short}</span>
+                  {score.boundary && <span className="ml-1 text-xs text-amber-700" title={score.boundary}>⚠️</span>}
+                </button>
+                <button className="text-xs text-ink-muted hover:text-ink hover:underline disabled:opacity-40" disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
+              </span>;
             })()}</td>
             <td className="p-3">{pct(stock.avg_yield_3y)}</td>
             <td className="p-3">{pct(priceMap.get(stock.code)?.yield_ttm)}</td>
