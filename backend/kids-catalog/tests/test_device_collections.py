@@ -39,7 +39,8 @@ def setup(tmp_path):
 
 def wait_for_generation(client):
     import time
-    deadline = time.monotonic() + 20
+    # Generation now includes real tag fsync + per-file manifest checkpoints.
+    deadline = time.monotonic() + 120
     while time.monotonic() < deadline:
         result = client.get('/api/collections').json()
         if result['generation']['status'] != 'running':

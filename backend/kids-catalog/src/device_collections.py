@@ -11,6 +11,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.audio_tags import open_audio, safe_child
+from src.collection_metadata import MetadataError, prepare_collection, recover_manifest
+from src.music_assistant import MAError, MusicAssistant
 
 logger = logging.getLogger(__name__)
 MAX_ITEMS = 500
@@ -19,6 +21,10 @@ LEASE_SECONDS = 15 * 60
 
 
 class CollectionError(ValueError):
+    pass
+
+
+class GenerationChanged(RuntimeError):
     pass
 
 
@@ -37,6 +43,7 @@ class DeviceCollections:
         self.path = Path(data_dir) / 'device_collections.sqlite3'
         self.root = Path(music_dir)
         self.candidate_source = candidate_source
+        self.ma = MusicAssistant()
         with self.db() as con:
             con.executescript('''
                 create table if not exists completions (
@@ -50,6 +57,9 @@ class DeviceCollections:
                     status text not null, error text, skipped text not null default '[]');
                 insert or ignore into generation(id,status) values(1,'idle');
             ''')
+            columns = {r[1] for r in con.execute('pragma table_info(generation)')}
+            if 'integration' not in columns:
+                con.execute("alter table generation add column integration text not null default '{}'")
 
     @contextmanager
     def db(self):
@@ -136,8 +146,9 @@ class DeviceCollections:
         with self.db() as con:
             con.execute('begin')
             row = con.execute('select snapshot from publication where id=1').fetchone()
-            job = dict(con.execute('select status,error,skipped,started from generation where id=1').fetchone())
+            job = dict(con.execute('select status,error,skipped,started,integration from generation where id=1').fetchone())
         job['skipped'] = json.loads(job['skipped'])
+        job['integration'] = json.loads(job['integration'])
         if job['status'] == 'running' and time.time() - job['started'] > LEASE_SECONDS:
             job.update(status='failed', error='上次生成已中断或超时，可以重新生成')
         return {'snapshot': json.loads(row['snapshot']) if row else None, 'generation': job}
@@ -156,14 +167,130 @@ class DeviceCollections:
             row = con.execute('select * from generation where id=1').fetchone()
             if row['status'] == 'running' and time.time() - row['started'] < LEASE_SECONDS:
                 return False
-            con.execute("update generation set token=?,started=?,status='running',error=null,skipped='[]' where id=1",
+            con.execute("update generation set token=?,started=?,status='running',error=null,skipped='[]',integration='{}' where id=1",
                         (token, time.time()))
         threading.Thread(target=self._generate, args=(token, prepare, selected_folders),
                          daemon=True, name='device-directory').start()
         return True
 
+    def is_current(self, token):
+        with self.db() as con:
+            row = con.execute('select token,status from generation where id=1').fetchone()
+        return row['token'] == token and row['status'] == 'running'
+
+    def update_integration(self, token, state):
+        with self.db() as con:
+            return bool(con.execute("update generation set integration=? where token=? and status='running'",
+                                    (encoded(state), token)).rowcount)
+
+    def _prepare_metadata(self, token, source, observed, state):
+        folder = source['folder']
+        audit_dir = self.path.parent / 'collection-tag-audit'
+        # Catalog first: block queue/delete/refresh for this collection while
+        # acknowledging only our own writes. Network I/O never happens here.
+        with self.candidate_source() as candidates:
+            if source not in candidates:
+                raise GenerationChanged('生成期间本月合集列表发生变化，请重新生成')
+            with self.db() as con:
+                con.execute('begin immediate')
+                job = con.execute('select token,status from generation where id=1').fetchone()
+                row = con.execute('select * from completions where folder=?', (folder,)).fetchone()
+                if job['token'] != token or job['status'] != 'running':
+                    raise CollectionError('生成任务已过期')
+                if not row or row['status'] != 'complete':
+                    raise CollectionError('生成期间下载状态发生变化，请重新生成')
+                old = json.loads(row['manifest'])
+                try:
+                    known = recover_manifest(self.root, folder, old, observed, audit_dir)
+                except MetadataError as exc:
+                    raise CollectionError(str(exc)) from None
+                if known != old:
+                    con.execute('update completions set manifest=? where folder=?', (encoded(known), folder))
+            last = [list(r) for r in known]
+            active = [None]
+
+            @contextmanager
+            def guard():
+                with self.db() as con:
+                    con.execute('begin immediate')
+                    job = con.execute('select token,status from generation where id=1').fetchone()
+                    row = con.execute('select * from completions where folder=?', (folder,)).fetchone()
+                    if job['token'] != token or job['status'] != 'running':
+                        raise CollectionError('生成任务已过期')
+                    if not row or row['status'] != 'complete' or row['manifest'] != encoded(last):
+                        raise CollectionError('生成期间下载状态发生变化，请重新生成')
+                    active[0] = con
+                    try:
+                        yield
+                    finally:
+                        active[0] = None
+
+            def checkpoint(updated):
+                active[0].execute('update completions set manifest=? where folder=?', (encoded(updated), folder))
+                last[:] = updated
+                state['tags_updated'] += 1
+                active[0].execute('update generation set integration=? where token=?', (encoded(state), token))
+
+            try:
+                prepared, _ = prepare_collection(self.root, folder, source['title'], last,
+                                                  audit_dir, checkpoint, guard=guard)
+                last[:] = prepared
+            except MetadataError as exc:
+                state['metadata_errors'].append({'title': source['title'], 'message': str(exc)})
+            if self.scan(folder) != last:
+                raise CollectionError('生成期间音频发生变化，请重新生成')
+        return last
+
+    def _sync_ma(self, token, sources, selected, manifests, state):
+        state['phase'] = 'syncing'
+        if state['metadata_errors']:
+            state['ma'] = {'status': 'failed', 'message': '部分合集标签未就绪，请查看音频信息提示后重新生成'}
+        elif not self.ma.configured:
+            state['ma'] = {'status': 'not_configured', 'message': '设备歌单已生成；请配置 MA 地址和 API token 后重新生成'}
+        else:
+            def progress(value):
+                state['ma'] = value
+                if not self.update_integration(token, state):
+                    raise MAError('生成任务已过期')
+            try:
+                expected = {source['folder']: {'title': source['title'],
+                            'files': [r[0] for r in manifests[source['folder']]]}
+                            for source in sources if source['folder'] in manifests}
+                state['ma'] = self.ma.sync_collections(expected, progress=progress,
+                                                       cancelled=lambda: not self.is_current(token))
+                # A library scan must not bless a collection deleted or queued
+                # for download while MA was doing its own background work.
+                with self.candidate_source() as current:
+                    current_sources = current if selected is None else [x for x in current if x['folder'] in selected]
+                    if current_sources != sources:
+                        raise MAError('生成后合集或下载状态发生变化，请重新生成')
+                    with self.db() as con:
+                        con.execute('begin immediate')
+                        for folder, manifest in manifests.items():
+                            row = con.execute('select * from completions where folder=?', (folder,)).fetchone()
+                            if not row or row['status'] != 'complete' or row['manifest'] != encoded(manifest):
+                                raise MAError('生成后文件或下载状态发生变化，请重新生成')
+                            if self.scan(folder) != manifest:
+                                raise MAError('生成后音频发生变化，请重新生成')
+                        state['phase'] = 'finished'
+                        con.execute("update generation set status='done',integration=? where token=? and status='running'",
+                                    (encoded(state), token))
+                        return
+            except MAError as exc:
+                state['ma'] = {'status': 'failed', 'message': str(exc)}
+            except Exception:
+                logger.warning('MA integration failed without exposing upstream content')
+                state['ma'] = {'status': 'failed', 'message': 'MA 同步或文件核对失败，请稍后重新生成'}
+        state['phase'] = 'finished'
+        with self.db() as con:
+            con.execute("update generation set status='done',integration=? where token=? and status='running'",
+                        (encoded(state), token))
+
     def _generate(self, token, prepare, selected_folders=None):
         skipped = []
+        state = {'phase': 'tagging', 'tags_updated': 0, 'metadata_errors': [], 'ma': {'status': 'pending'}}
+        if not self.update_integration(token, state):
+            return
         # None = 全部候选；给定时只保留选中的合集，未选者不进歌单也不进 skipped。
         selected = set(selected_folders) if selected_folders is not None else None
         try:
@@ -190,10 +317,11 @@ class DeviceCollections:
                     if not record or record['status'] != 'complete':
                         reason_code = 'unconfirmed' if not record else 'incomplete'
                         raise CollectionError('未确认下载完整' if not record else '下载未完成，请等待完成后重试')
-                    if record['manifest'] != encoded(manifest):
-                        raise CollectionError('文件已变化，请核对完成情况')
                     if len(title.encode('utf-8')) > 256:
                         raise CollectionError('合集名称超过设备长度限制')
+                    manifest = self._prepare_metadata(token, source, manifest, state)
+                    if not self.update_integration(token, state):
+                        return
                     stable_id = hashlib.sha256(folder.encode()).hexdigest()
                     items.append({'title': title, 'track_count': len(manifest), '_id': stable_id})
                     manifests[folder] = manifest
@@ -235,9 +363,12 @@ class DeviceCollections:
                             raise CollectionError('生成期间下载状态发生变化，请重新生成')
                     con.execute('insert into publication values(1,?,?) on conflict(id) do update '
                                 'set snapshot=excluded.snapshot,targets=excluded.targets', (encoded(snapshot), '{}'))
-                    con.execute("update generation set status='done',skipped=? where id=1", (encoded(skipped),))
+                    state['phase'] = 'syncing'
+                    state['device_published'] = True
+                    con.execute("update generation set skipped=?,integration=? where id=1", (encoded(skipped), encoded(state)))
+            self._sync_ma(token, sources, selected, manifests, state)
         except Exception as exc:
-            message = str(exc) if isinstance(exc, CollectionError) else '生成失败，请检查 NAS 音频目录'
+            message = str(exc) if isinstance(exc, (CollectionError, GenerationChanged)) else '生成失败，请检查 NAS 音频目录'
             logger.warning('Device directory generation failed (%s)', type(exc).__name__)
             with self.db() as con:
                 con.execute("update generation set status='failed',error=?,skipped=? where token=?",

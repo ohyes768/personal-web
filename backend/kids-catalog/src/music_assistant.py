@@ -1,6 +1,7 @@
-"""Read-only MA JSON-RPC adapter; never return upstream errors or credentials."""
+"""MA JSON-RPC adapter; never return upstream errors or credentials."""
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from pathlib import PurePosixPath
@@ -17,7 +18,15 @@ class MusicAssistant:
         self.token = os.getenv('KIDS_MA_TOKEN', '')
         self.root = os.getenv('KIDS_MA_MUSIC_ROOT', '/music').rstrip('/')
 
-    def call(self, command, **args):
+    @property
+    def configured(self):
+        return bool(self.url and self.token)
+
+    def sync_collections(self, expected, **kwargs):
+        from src.ma_sync import synchronize
+        return synchronize(self, expected, **kwargs)
+
+    def call(self, command, *, request_timeout=30, **args):
         if not self.url or not self.token:
             raise MAError('请配置 MA 连接地址和 API token')
         request = urllib.request.Request(
@@ -26,7 +35,7 @@ class MusicAssistant:
             headers={'Content-Type': 'application/json', 'Authorization': f'Bearer {self.token}'},
         )
         try:
-            with urllib.request.urlopen(request, timeout=30) as response:
+            with urllib.request.urlopen(request, timeout=max(.01, min(30, request_timeout))) as response:
                 data = json.load(response)
         except urllib.error.HTTPError as exc:
             if exc.code in (401, 403):
@@ -38,10 +47,13 @@ class MusicAssistant:
             raise MAError('MA 拒绝查询，请检查权限和 API 版本')
         return data.get('result', data) if isinstance(data, dict) else data
 
-    def library_tracks(self):
+    def library_tracks(self, *, deadline=None):
         tracks = []
         for offset in range(0, 100000, 500):
-            page = self.call('music/tracks/library_items', limit=500, offset=offset)
+            remaining = deadline - time.monotonic() if deadline is not None else 30
+            if remaining <= 0:
+                raise MAError('MA 曲库核对超时，请重新生成')
+            page = self.call('music/tracks/library_items', limit=500, offset=offset, request_timeout=remaining)
             if not isinstance(page, list):
                 raise MAError('MA 曲库响应格式异常')
             tracks.extend(page)
@@ -56,9 +68,12 @@ class MusicAssistant:
         except MAError:
             return False
 
-    def album_tracks(self, uri):
+    def album_tracks(self, uri, *, deadline=None):
+        remaining = deadline - time.monotonic() if deadline is not None else 30
+        if remaining <= 0:
+            raise MAError('MA 曲库核对超时，请重新生成')
         tracks = self.call('music/albums/album_tracks', item_id=uri.rsplit('/', 1)[-1],
-                           provider_instance_id_or_domain='library', in_library_only=False)
+                           provider_instance_id_or_domain='library', in_library_only=False, request_timeout=remaining)
         if not isinstance(tracks, list):
             raise MAError('MA 专辑曲目响应格式异常')
         return tracks

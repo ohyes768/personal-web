@@ -12,3 +12,7 @@
 - NAS/MA 实际扫描与喇叭验收不能用本地标签测试代替。操作步骤见 docs/已下载音频补标签.md。
 
 - 合集 artist 来源必须包含可读的未编号音频；重复曲序统计必须包含损坏音频的有效文件名编号。二者独立收集，避免提前 continue 丢失信息。Linux 需同步备份目录项及发布后的音频父目录；Windows 不具备该 POSIX 接口。
+
+## 生成设备歌单自动补标签
+
+历史 CLI 仍按本文件的默认备份规则；设备歌单生成使用单独 collection_metadata 服务，按用户明确确认不保存完整备份、只补缺失并记录审计。下载器自身仍不直接写标签。新流程及 MA 就绪验证详见 [playlist-ma-sync](../backend/kids-catalog/backend/playlist-ma-sync.md)。

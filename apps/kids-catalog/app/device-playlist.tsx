@@ -2,13 +2,14 @@
 
 import {useCallback, useEffect, useState} from "react";
 import CandidatePicker, {type Candidate} from "./candidate-picker";
+import {describeGeneration, type IntegrationState} from "./generation-progress";
 
 type Entry = {number: number; title: string; track_count: number};
 type Snapshot = {revision: string; generated_at: string; items: Entry[]};
 type Skipped = {title: string; folder?: string; reason: string; code: string};
 type DirectoryState = {
   snapshot: Snapshot | null;
-  generation: {status: "idle" | "running" | "done" | "failed"; error: string | null; skipped: Skipped[]};
+  generation: {status: "idle" | "running" | "done" | "failed"; error: string | null; skipped: Skipped[]; integration?: IntegrationState};
   candidates?: Candidate[];
 };
 
@@ -49,6 +50,7 @@ export default function DevicePlaylist() {
   }, []);
 
   const running = state?.generation.status === "running";
+  const progress = describeGeneration(state?.generation);
   useEffect(() => {
     if (!running) return;
     let active = true;
@@ -131,8 +133,10 @@ export default function DevicePlaylist() {
     {loading && <p role="status">正在读取设备歌单…</p>}
     {message && <p className="message" role="status">{message}</p>}
     {!loading && !state && <button className="secondary" onClick={() => load().then(() => setMessage("")).catch(() => setMessage("歌单读取失败，请稍后重试"))}>重新读取</button>}
-    {state?.generation.error && <p className="message" role="alert">{state.generation.error}</p>}
-    {running && <p role="status">正在检查本月已下载音频并统计曲目数，完成前继续使用上一份歌单。</p>}
+    {progress && <p className="message" role={progress.tone === "warning" ? "alert" : "status"}>{progress.message}</p>}
+    {!!state?.generation.integration?.metadata_errors?.length && <ul aria-label="音频信息处理提示">
+      {state.generation.integration.metadata_errors.map(item => <li key={item.title}>{item.title}：{item.message}</li>)}
+    </ul>}
     {!loading && <CandidatePicker candidates={candidates} unchecked={unchecked}
       disabled={running || submitting} onToggle={toggle} onSetAll={setAll} />}
     {snapshot ? <>
