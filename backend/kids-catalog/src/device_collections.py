@@ -316,7 +316,8 @@ class DeviceCollections:
                     record = completed.get(folder)
                     if not record or record['status'] != 'complete':
                         reason_code = 'unconfirmed' if not record else 'incomplete'
-                        raise CollectionError('未确认下载完整' if not record else '下载未完成，请等待完成后重试')
+                        raise CollectionError('请先确认当前保留曲目' if not record or record['status'] == 'incomplete'
+                                              else '下载未完成，请等待完成后重试')
                     if len(title.encode('utf-8')) > 256:
                         raise CollectionError('合集名称超过设备长度限制')
                     manifest = self._prepare_metadata(token, source, manifest, state)

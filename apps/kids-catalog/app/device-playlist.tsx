@@ -98,7 +98,7 @@ export default function DevicePlaylist() {
     }
   };
 
-  const confirm = async (item: Skipped) => {
+  const confirm = async (item: {folder?: string; title: string}) => {
     const folder = item.folder ?? item.title;
     setConfirming(folder);
     setMessage("");
@@ -107,7 +107,7 @@ export default function DevicePlaylist() {
         body: JSON.stringify({folder})});
       // 确认只写完成台账，重新读取让候选清单的“未确认”标记跟上；跳过项仍在服务端记录里。
       await load().catch(() => {});
-      setMessage(`已确认“${item.title}”下载完整。点击“生成歌单”更新设备清单。`);
+      setMessage(`已确认“${item.title}”当前保留曲目。点击“生成歌单”更新设备清单。`);
       setState(previous => previous ? {...previous, generation: {...previous.generation,
         skipped: previous.generation.skipped.filter(row => row.title !== item.title)}} : previous);
     } catch (error) {
@@ -123,7 +123,7 @@ export default function DevicePlaylist() {
       <div>
         <span className="eyebrow">屏幕上的播放清单</span>
         <h2 id="device-playlist-heading">生成设备歌单</h2>
-        <p>勾选本月已下载完成的合集，曲目少的排在前面。</p>
+        <p>勾选已下载或主动精简的合集，曲目少的排在前面。</p>
       </div>
       <button disabled={loading || submitting || running || confirming !== null} onClick={generate}>
         {submitting || running ? "正在生成…" : "生成歌单"}
@@ -138,7 +138,8 @@ export default function DevicePlaylist() {
       {state.generation.integration.metadata_errors.map(item => <li key={item.title}>{item.title}：{item.message}</li>)}
     </ul>}
     {!loading && <CandidatePicker candidates={candidates} unchecked={unchecked}
-      disabled={running || submitting} onToggle={toggle} onSetAll={setAll} />}
+      disabled={running || submitting} onToggle={toggle} onSetAll={setAll}
+      onConfirm={confirm} confirming={confirming} />}
     {snapshot ? <>
       <h3 className="playlist-subheading">当前设备歌单</h3>
       <div className="playlist-stamp">{snapshot.items.length} 个合集 · 生成于 {new Date(snapshot.generated_at).toLocaleString("zh-CN")}</div>
@@ -154,8 +155,8 @@ export default function DevicePlaylist() {
       <summary>未加入歌单的合集（{state.generation.skipped.length}）</summary>
       <ul>{state.generation.skipped.map(item => <li key={item.title}>
         <div><strong>{item.title}</strong><small>{item.reason}</small></div>
-        {item.code === "unconfirmed" && <button className="secondary" disabled={running || submitting || confirming !== null}
-          onClick={() => confirm(item)}>{confirming === (item.folder ?? item.title) ? "正在核对…" : "确认此合集已下载完整"}</button>}
+        {(item.code === "unconfirmed" || item.code === "incomplete") && <button className="secondary" disabled={running || submitting || confirming !== null}
+          onClick={() => confirm(item)}>{confirming === (item.folder ?? item.title) ? "正在核对…" : "确认当前保留曲目"}</button>}
       </li>)}</ul>
     </details>}
   </section>;

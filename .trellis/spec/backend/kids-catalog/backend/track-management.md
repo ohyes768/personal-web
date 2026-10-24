@@ -21,11 +21,11 @@ manually imported albums are often collections where the user keeps only a few e
   `queued/running` → 409 (never race the download thread). Success → `{'downloaded_tracks',
   'size_bytes', 'status'}`.
 - Job sync after delete: remaining > 0 → `status='partial'`, `downloaded_tracks`/`size_bytes`
-  recomputed, reason `用户删除曲目，剩余 N 首`; remaining = 0 → **job row deleted**, album falls
+  recomputed, reason `用户删除曲目，剩余 N 首`, `user_trimmed=1`; remaining = 0 → **job row deleted**, album falls
   back to `not_downloaded`. `_backfill_sizes` never overwrites this (it only fills NULL sizes).
 - Completion ledger invalidation: `completions.mark_failed(folder)` sets `incomplete` — it is
   **update-only**, so albums never confirmed in the ledger are untouched. Generation re-scans the
-  folder anyway (manifest drift detection), regeneration is the fix.
+  folder anyway (manifest drift detection). The user must confirm the retained files, then regenerate.
 - `queue()` retryable statuses are `('failed', 'needs_authorization', 'partial')`: a thinned
   album can be re-queued via 补全下载; `download_album` skips existing files, so a re-run only
   fetches what was deleted. Statuses `done/queued/running` stay idempotent.
@@ -44,3 +44,12 @@ pytest must cover: track listing (sorted, prefix-stripped, empty, unknown album)
 (file gone, job partial with recomputed counts, ledger invalidated), delete-last-track job
 removal + re-download path, bad filename variants (traversal, separators, suffix, missing,
 running-download 409), and partial requeue. Frontend: TypeScript and production build.
+
+## 5. Curated collection candidates (2026-10-24 bug fix)
+
+- `jobs.user_trimmed` integer default 0 is independent of download completeness. Candidate predicate: done OR (partial AND user_trimmed=1 AND downloaded_tracks>0). Never expose all partial downloads or let a completed ledger alone bypass this predicate.
+- Migration only when adding the column: recover the exact legacy service reason `用户删除曲目，剩余 {downloaded_tracks} 首` on nonempty partial jobs. It restores visibility, never confirms files. Column detection, ALTER and backfill run in one explicit BEGIN IMMEDIATE transaction so interrupted startup can retry safely.
+- Deletion holds catalog BEGIN IMMEDIATE before touching files, invalidates the completion ledger before unlink, then updates the remaining count/flag. Manual confirmation holds the same catalog guard around scan and completion write. Lock order remains catalog → collections, as in generation.
+- New queue jobs default user_trimmed=0, so failed/partial replenishment does not reuse old curated approval. Last-track deletion removes the job and candidate.
+- Unconfirmed candidates use job downloaded_tracks rather than obsolete ledger counts; confirmed candidates use the current manifest. Candidate UI has an explicit confirmation action; both unconfirmed/incomplete skipped reasons offer confirmation.
+- Regression: 18→1 kept files, explicit confirmation + generation/idempotency, normal partial exclusion, legacy migration, requeue flag reset, final-track deletion, external drift rejection and catalog lock scope.

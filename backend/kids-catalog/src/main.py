@@ -44,6 +44,8 @@ class Catalog:
                 size_bytes integer,
                 foreign key(album_id) references albums(id));
             ''')
+            # Keep schema changes and legacy backfills atomic, including restart recovery.
+            con.execute('begin immediate')
             # Databases created before sale_type existed gain the column in place.
             columns = {row['name'] for row in con.execute('pragma table_info(albums)')}
             for column in ('sale_type', 'track_count'):
@@ -58,6 +60,12 @@ class Catalog:
                     con.execute(f'alter table jobs add column {column} integer default 0')
             if 'size_bytes' not in job_columns:
                 con.execute('alter table jobs add column size_bytes integer')
+            if 'user_trimmed' not in job_columns:
+                con.execute('alter table jobs add column user_trimmed integer not null default 0')
+                # Legacy deletions carry this exact service-generated reason.
+                # Restore visibility only; the completion ledger still needs confirmation.
+                con.execute("update jobs set user_trimmed=1 where status='partial' and downloaded_tracks>0 "
+                            "and reason='用户删除曲目，剩余 ' || downloaded_tracks || ' 首'")
 
     @contextmanager
     def db(self):
@@ -99,14 +107,16 @@ class Catalog:
 
     def _device_candidate_rows(self, con):
         rows = con.execute("select a.platform,a.album_id,a.title,j.downloaded_tracks from albums a join jobs j "
-                           "on a.id=j.album_id where j.status='done' order by a.platform,a.album_id").fetchall()
+                           "on a.id=j.album_id where (j.status='done' or "
+                           "(j.status='partial' and j.user_trimmed=1 and j.downloaded_tracks>0)) "
+                           "order by a.platform,a.album_id").fetchall()
         return [{'folder': sanitize_filename(row['title']), 'title': row['title'],
                  'source_id': f"{row['platform']}:{row['album_id']}",
                  'downloaded_tracks': row['downloaded_tracks'] or 0} for row in rows]
 
     @contextmanager
     def device_candidates(self):
-        """Hold catalog mutations while checking/publishing the current done list."""
+        """Hold catalog mutations while checking/publishing eligible local collections."""
         with self.db() as con:
             con.execute('begin immediate')
             candidates = self._device_candidate_rows(con)
@@ -163,12 +173,14 @@ class Catalog:
     def delete_track(self, album_pk: int, music_dir: Path, filename: str) -> dict[str, Any]:
         """删除一首已下载曲目并同步 job：剩余>0 → partial，剩余=0 → 清 job 回到未下载。
 
-        已确认的设备合集完成态随删除失效（mark_failed），提示用户重新生成歌单。
+        主动删曲保留候选资格，但完成态仍失效，需确认当前保留曲目后再生成。
         """
         if ('/' in filename or '\\' in filename or filename in ('.', '..')
                 or Path(filename).suffix.lower() not in AUDIO_SUFFIXES):
             raise ValueError('文件名不合法')
         with self.db() as con:
+            # Same catalog -> completion lock order as generation and confirmation.
+            con.execute('begin immediate')
             row = con.execute('select title from albums where id=?', (album_pk,)).fetchone()
             if not row:
                 raise KeyError(album_pk)
@@ -179,11 +191,13 @@ class Catalog:
             target = Path(music_dir) / folder / filename
             if not target.is_file():
                 raise FileNotFoundError(filename)
+            if hasattr(self, 'collections'):
+                self.collections.mark_failed(folder)
             target.unlink()
             remaining = self.audio_files(folder, music_dir)
             size = sum(p.stat().st_size for p in remaining)
             if remaining:
-                con.execute('update jobs set status=?,downloaded_tracks=?,size_bytes=?,reason=?,updated_at=? '
+                con.execute('update jobs set status=?,downloaded_tracks=?,size_bytes=?,reason=?,updated_at=?,user_trimmed=1 '
                             'where album_id=?',
                             ('partial', len(remaining), size, f'用户删除曲目，剩余 {len(remaining)} 首',
                              datetime.now().isoformat(), album_pk))
@@ -191,11 +205,6 @@ class Catalog:
             else:
                 con.execute('delete from jobs where album_id=?', (album_pk,))
                 status = 'not_downloaded'
-        if hasattr(self, 'collections'):
-            try:
-                self.collections.mark_failed(folder)
-            except (ValueError, OSError):
-                logger.warning('曲目删除后完成台账失效失败：%s', folder, exc_info=True)
         return {'downloaded_tracks': len(remaining), 'size_bytes': size, 'status': status}
 
     def queue(self, album_pk: int):
@@ -427,7 +436,7 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
             status, ledger_tracks = completion.get(row['folder'], (None, None))
             candidates.append({'folder': row['folder'], 'title': row['title'],
                                'confirmed': status == 'complete',
-                               'track_count': ledger_tracks or row['downloaded_tracks'] or 0})
+                               'track_count': (ledger_tracks if status == 'complete' else row['downloaded_tracks']) or 0})
         return {**state, 'candidates': candidates}
 
     @app.post('/api/collections/generate', status_code=202)
@@ -448,7 +457,9 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
     @app.post('/api/collections/confirm')
     def confirm_collection(body: ConfirmCollection):
         try:
-            return {'track_count': collections.confirm(body.folder)}
+            with catalog.db() as con:
+                con.execute('begin immediate')
+                return {'track_count': collections.confirm(body.folder)}
         except (ValueError, OSError) as exc:
             message = str(exc) if isinstance(exc, CollectionError) else '目录不可读取或路径无效'
             raise HTTPException(422, detail=message) from None
