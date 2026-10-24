@@ -4,12 +4,18 @@ WORKDIR /app
 
 # curl：healthcheck 探针；vim：进容器改 JSON / 排障（slim 默认都不带）
 # tzdata：slim 镜像不带 zoneinfo，不装的话 ENV TZ 不生效（datetime.now() 会停在 UTC）
-RUN apt-get update && \
+# 配置国内镜像源，与其他后端一致（slim 直连 deb.debian.org 构建极慢）
+RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    sed -i 's|http://security.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    apt-get update && \
     apt-get install -y --no-install-recommends curl vim tzdata && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # 容器时区设为北京时间，保证 date.today() / 文件 mtime 与调度落盘一致
 ENV TZ=Asia/Shanghai
+
+# 配置 pip 国内镜像源
+RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple
 
 # 安装 uv
 RUN pip install --no-cache-dir uv
