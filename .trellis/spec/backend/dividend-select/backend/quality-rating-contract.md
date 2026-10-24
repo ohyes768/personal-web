@@ -2,10 +2,12 @@
 
 ## 1. Scope / Trigger
 Applies to the dividend-select fundamental-rating pipeline: the bundled
-`dividend-quality-scoring` skill, `hermes_client`, `quality_service`,
-the `/quality/*` routes, and the ScreeningTab quality UI. Triggered whenever
-the skill output JSON contract, star mapping, idempotency scheme, or Hermes
-delivery mode changes.
+`basic-quality-rating` skill (automation JSON mode), `hermes_client`,
+`quality_service`, the `/quality/*` routes, and the ScreeningTab quality UI.
+Triggered whenever the skill output JSON contract, star mapping, idempotency
+scheme, or Hermes delivery mode changes. The former standalone
+`dividend-quality-scoring` skill was removed on 2026-10-24; its JSON contract
+now lives inside `basic-quality-rating` v2.2+.
 
 ## 2. Signatures
 - `POST /api/dividend/quality/analyze`: `{codes: string[]}` → 202 job; 503 when
@@ -55,7 +57,7 @@ Hermes config comes from env only: `HERMES_BASE_URL`, `HERMES_API_KEY`,
 `HERMES_PROFILE` (default `ohyes768`), `HERMES_POLL_INTERVAL` (30s),
 `HERMES_TIMEOUT` (1800s), `HERMES_MAX_CONCURRENT` (4). Unset base/key keeps
 every other feature unchanged (analyze returns 503). The skill source lives
-at `backend/dividend-select/skills/dividend-quality-scoring/SKILL.md` and is
+at `backend/dividend-select/skills/basic-quality-rating/SKILL.md` and is
 published to the Hermes profile out-of-band (copy to skills source root, then
 install via skill-manager); the skill must never embed dividend backend URLs
 or schema details. Frontend mirrors the contract in `lib/quality.ts`

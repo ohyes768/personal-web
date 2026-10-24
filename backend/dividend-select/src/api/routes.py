@@ -3607,7 +3607,7 @@ async def analyze_quality(body: CodesRequest):
     """
     对勾选股票提交五维基本面评级（异步任务）
 
-    - 每股一个 Hermes run（点名 dividend-quality-scoring skill），并发受 HERMES_MAX_CONCURRENT 限制
+    - 每股一个 Hermes run（点名 basic-quality-rating skill 的自动化 JSON 模式），并发受 HERMES_MAX_CONCURRENT 限制
     - 已有进行中的 quality 任务时复用该任务（reused=true）
     - Hermes 未配置（HERMES_BASE_URL / HERMES_API_KEY 缺失）返回 503
     """

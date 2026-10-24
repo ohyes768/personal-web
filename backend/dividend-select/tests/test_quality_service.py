@@ -96,7 +96,7 @@ class TestPayloadAndPrompt:
 
     def test_prompt_names_skill_and_requires_json(self):
         prompt = build_prompt(build_stock_payload(stock()))
-        assert "dividend-quality-scoring" in prompt
+        assert "basic-quality-rating" in prompt
         assert "JSON" in prompt
         assert '"avg_yield_3y": 4.2' in prompt
 

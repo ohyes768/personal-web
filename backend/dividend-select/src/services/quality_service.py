@@ -1,6 +1,6 @@
 """基本面评级编排服务：组装数据 → 提交 Hermes → 解析校验 → 落盘。
 
-评分契约见 skills/dividend-quality-scoring/SKILL.md（五维 1-5 分 + 星级 + report_md）。
+评分契约见 skills/basic-quality-rating/SKILL.md「自动化 JSON 输出模式」（五维 1-5 分 + 星级 + report_md）。
 批量异步复用 RefreshJobManager（kind='quality'），逐股完成即回调 progress 并合并落盘。
 """
 from __future__ import annotations
@@ -22,7 +22,7 @@ from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-SKILL_NAME = "dividend-quality-scoring"
+SKILL_NAME = "basic-quality-rating"
 QUALITY_FILE = "quality_scores.json"
 
 DIMENSION_WEIGHTS = {"business": 0.25, "moat": 0.25, "industry": 0.20, "management": 0.15, "financial": 0.15}

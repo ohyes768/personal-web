@@ -1,6 +1,6 @@
 /**
  * 基本面评级（Hermes 五维评分）类型与工具
- * 评分契约见 backend/dividend-select/skills/dividend-quality-scoring/SKILL.md
+ * 评分契约见 backend/dividend-select/skills/basic-quality-rating/SKILL.md（自动化 JSON 输出模式）
  */
 import type { RefreshJob } from './types';
 
