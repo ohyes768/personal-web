@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
+import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
 import { dividendApi } from '@/lib/api';
-import { DEFAULT_SCREENING, restoreScreeningConditions, type ScreeningConditions, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
-import { dimensionShorthand, qualityJobActive, qualityFinishMessage, starBadgeClass, type QualityJob, type QualityScore, type QualityScoresResponse } from '@/lib/quality';
+import { DEFAULT_SCREENING, restoreScreeningConditions, type ScreeningConditions, type ScreeningItem, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityReportModal } from './QualityReportModal';
+import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
 
 const STORAGE_KEY = 'dividend-screening-conditions-v1';
 const pct = (value?: number | null) => value == null || !Number.isFinite(value) ? '待补' : `${value.toFixed(2)}%`;
@@ -24,14 +25,9 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
-  const [qualityScores, setQualityScores] = useState<QualityScoresResponse['scores']>({});
-  const [qualityConfigured, setQualityConfigured] = useState(true);
-  const [qualityJob, setQualityJob] = useState<QualityJob | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
-  const [qualityMessage, setQualityMessage] = useState('');
   const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
-  const qualityRequestId = useRef(0);
-  const qualityPollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [detailItem, setDetailItem] = useState<ScreeningItem | null>(null);
+  const { qualityScores, qualityConfigured, analyzing, qualityJob, qualityMessage, analyze } = useQualityAnalysis();
   const requestId = useRef(0);
   const appliedConditions = useRef(DEFAULT_SCREENING);
   const previousRevision = useRef(refreshRevision);
@@ -65,67 +61,6 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
     }
   }, [refreshRevision, query]);
 
-  const refreshQualityScores = useCallback(async (id: number) => {
-    try {
-      const response = await dividendApi.getQualityScores();
-      if (id === qualityRequestId.current) {
-        setQualityScores(response.scores);
-        // 旧后端缺 hermes_configured 字段时不置灰：点了会得到明确 503 提示，好过莫名禁用
-        setQualityConfigured(response.hermes_configured !== false);
-      }
-    } catch { /* 拉取失败保持现状，表格列显示「待分析」，点分析时会得到明确报错 */ }
-  }, []);
-
-  // 首屏并行加载评级（与筛选结果互不阻塞）
-  useEffect(() => {
-    void refreshQualityScores(qualityRequestId.current);
-    return () => {
-      qualityRequestId.current++;
-      if (qualityPollTimer.current) clearTimeout(qualityPollTimer.current);
-    };
-  }, [refreshQualityScores]);
-
-  async function analyze(codes: string[]) {
-    if (!codes.length) return;
-    const id = ++qualityRequestId.current;
-    setAnalyzing(true);
-    setQualityMessage('');
-    try {
-      const job = await dividendApi.analyzeQuality(codes);
-      if (id !== qualityRequestId.current) return;
-      setQualityJob(job);
-      const poll = async () => {
-        if (id !== qualityRequestId.current) return;
-        let latest: QualityJob;
-        try {
-          latest = await dividendApi.getQualityJob(job.job_id);
-        } catch (err) {
-          if (id === qualityRequestId.current) {
-            setAnalyzing(false);
-            setQualityMessage(err instanceof Error ? err.message : '查询评级进度失败');
-          }
-          return;
-        }
-        if (id !== qualityRequestId.current) return;
-        setQualityJob(latest);
-        if (qualityJobActive(latest)) {
-          qualityPollTimer.current = setTimeout(() => void poll(), 3000);
-          return;
-        }
-        setAnalyzing(false);
-        await refreshQualityScores(id);
-        setQualityMessage(qualityFinishMessage(latest));
-      };
-      void poll();
-    } catch (err) {
-      if (id === qualityRequestId.current) {
-        setAnalyzing(false);
-        setQualityJob(null);
-        setQualityMessage(err instanceof Error ? err.message : '提交评级失败');
-      }
-    }
-  }
-
   async function save(codes: string[]) {
     if (!codes.length) return;
     setSaving(true); setMessage(''); setFailedCodes([]);
@@ -150,6 +85,11 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const valid = [conditions.min_yield, conditions.min_roe, conditions.min_roe_avg_3y].every(value => Number.isFinite(value) && value >= 0 && value <= 100) && Number.isFinite(conditions.max_quarter_profit_decline_pct) && conditions.max_quarter_profit_decline_pct > 0 && conditions.max_quarter_profit_decline_pct <= 100;
   const changed = result && (['min_yield', 'min_roe', 'min_roe_avg_3y', 'max_quarter_profit_decline_pct'] as const).some(key => result.conditions[key] !== conditions[key]) || !!result && (result.conditions.exchange || '') !== (conditions.exchange || '');
   const selectCode = (code: string) => setSelected(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
+  // 未符合/待补视图多一列「原因」；符合条件视图为 8 列
+  const showReason = activeView !== 'eligible';
+  // 评级弹框与详情弹框互斥：开一个先关另一个
+  const openDetail = (item: ScreeningItem) => { setQualityModalCode(null); setDetailItem(item); };
+  const openQuality = (code: string) => { setDetailItem(null); setQualityModalCode(code); };
 
   return <section aria-label="选股关注" className="space-y-4">
     <form onSubmit={event => { event.preventDefault(); if (!valid) return; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conditions)); } catch {} void query(conditions); }} className="rounded-xl border border-rule bg-paper-card p-5">
@@ -183,45 +123,72 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
         <table className="w-full text-sm text-ink whitespace-nowrap"><thead className="bg-paper-deep text-left"><tr>
           <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={activeView !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>
-          {['股票', '基本面', '三年股息率', '当前股息率（参考）', '三年平均 ROE', '年度 ROE', '年度扣非净利润', '年度扣非同比', '上季扣非同比', '最新季度扣非同比', '提示', '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
+          {['股票', '基本面操作', '评级结果', '三年股息率', '当前股息率（TTM）', '最新季扣非同比', ...(showReason ? ['原因'] : []), '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
         </tr></thead><tbody>
-          {rows.map(({ stock, status, reasons, warnings }) => <tr key={stock.code} className="border-t border-rule">
-            <td className="p-3"><input aria-label={`勾选 ${stock.name}`} type="checkbox" disabled={status !== 'eligible' || saving} checked={selected.has(stock.code)} onChange={() => selectCode(stock.code)} /></td>
-            <td className="p-3 font-medium">{stock.name}<span className="block text-xs text-ink-muted">{stock.code}</span></td>
-            <td className="p-3">{(() => {
-              const score: QualityScore | undefined = qualityScores[stock.code];
-              const short = dimensionShorthand(score?.dimensions);
-              if (!score || !short) return status === 'eligible'
-                ? <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>{analyzing ? '分析中…' : '分析'}</button>
-                : <span className="text-ink-muted">待分析</span>;
-              return <span className="inline-flex items-center gap-2">
-                <button className="text-left hover:underline" title="查看基本面评级详情" onClick={() => setQualityModalCode(stock.code)}>
-                  <span className={`font-medium ${starBadgeClass(score.stars)}`}>{'⭐'.repeat(score.stars)}<span className="ml-0.5 text-xs">{score.stars}</span></span>
-                  <span className="ml-2 text-xs text-ink-muted">{short}</span>
-                  {score.boundary && <span className="ml-1 text-xs text-amber-700" title={score.boundary}>⚠️</span>}
+          {rows.map(item => {
+            const { stock, status, reasons, warnings } = item;
+            const score = qualityScores[stock.code];
+            return <tr key={stock.code} className="border-t border-rule cursor-pointer hover:bg-paper-tint" onClick={() => openDetail(item)}>
+              <td className="p-3" onClick={event => event.stopPropagation()}><input aria-label={`勾选 ${stock.name}`} type="checkbox" disabled={status !== 'eligible' || saving} checked={selected.has(stock.code)} onChange={() => selectCode(stock.code)} /></td>
+              <td className="p-3">
+                <button className="text-left font-medium text-ink hover:text-accent-hover hover:underline" onClick={event => { event.stopPropagation(); openDetail(item); }}>
+                  {stock.name}
+                  <span className="block text-xs font-normal text-ink-muted">{stock.code} · {stock.sw_level1 || '—'}</span>
                 </button>
-                <button className="text-xs text-ink-muted hover:text-ink hover:underline disabled:opacity-40" disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
-              </span>;
-            })()}</td>
-            <td className="p-3">{pct(stock.avg_yield_3y)}</td>
-            <td className="p-3">{pct(priceMap.get(stock.code)?.yield_ttm)}</td>
-            <td className="p-3" title={stock.roe_history?.map(item => `${item.year}: ${pct(item.value)}`).join('；')}>{pct(stock.roe_avg_3y)}</td>
-            <td className="p-3">{pct(stock.roe)}<span className="block text-xs text-ink-muted">{stock.roe_year || '年度待补'}</span></td>
-            <td className="p-3">{stock.annual_net_profit_ex_non_recurring == null || !Number.isFinite(stock.annual_net_profit_ex_non_recurring) ? '待补' : `${(stock.annual_net_profit_ex_non_recurring / 1e8).toFixed(2)} 亿`}<span className="block text-xs text-ink-muted">{stock.annual_profit_year || '年度待补'}</span></td>
-            <td className="p-3">{pct(stock.net_profit_ex_non_recurring_yoy)}</td>
-            <td className="p-3"><span className={isDeclining(stock.previous_quarter_yoy_pct) ? 'font-medium text-amber-700' : undefined}>{pct(stock.previous_quarter_yoy_pct)}</span><span className="block text-xs text-ink-muted">{stock.previous_quarter_label}</span></td>
-            <td className="p-3"><span className={isDeclining(stock.latest_quarter_yoy_pct) ? 'font-medium text-amber-700' : undefined}>{pct(stock.latest_quarter_yoy_pct)}</span><span className="block text-xs text-ink-muted">{stock.latest_quarter_label}</span></td>
-            <td className="p-3 whitespace-normal max-w-sm">{status === 'eligible'
-              ? isDeclining(stock.previous_quarter_yoy_pct) || isDeclining(stock.latest_quarter_yoy_pct)
-                ? <span className="text-amber-700">季度扣非利润同比下降</span>
-                : <span className="text-ink-muted">—</span>
-              : <>{reasons.join('；') || '—'}{warnings.length > 0 && <span className="block text-amber-700">{warnings.join('；')}</span>}</>}</td>
-            <td className="p-3">{watchlist.has(stock.code) ? '已收藏' : <button className={buttonClass} disabled={saving || status !== 'eligible'} onClick={() => void save([stock.code])}>加入收藏</button>}</td>
-          </tr>)}
-          {rows.length === 0 && <tr><td colSpan={13} className="p-10 text-center text-ink-muted">{activeView === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
+              </td>
+              <td className="p-3" onClick={event => event.stopPropagation()}>
+                {status !== 'eligible'
+                  ? <span className="text-ink-muted">待分析</span>
+                  : score
+                    ? <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
+                    : <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>分析</button>}
+              </td>
+              <td className="p-3" onClick={event => event.stopPropagation()}>
+                {score
+                  ? <button className="font-mono tabular-nums text-ink hover:underline" title="查看基本面评级详情" onClick={() => openQuality(stock.code)}>
+                      {score.weighted_score.toFixed(1)}
+                      {score.boundary && <span className="ml-1 text-xs text-amber-700" title={score.boundary}>⚠️</span>}
+                    </button>
+                  : <span className="text-ink-muted">-</span>}
+              </td>
+              <td className="p-3 font-mono tabular-nums">{pct(stock.avg_yield_3y)}</td>
+              <td className="p-3 font-mono tabular-nums">{pct(priceMap.get(stock.code)?.yield_ttm)}</td>
+              <td className="p-3">
+                <span className={`font-mono tabular-nums ${isDeclining(stock.latest_quarter_yoy_pct) ? 'font-medium text-amber-700' : ''}`}>{pct(stock.latest_quarter_yoy_pct)}</span>
+                <span className="block text-xs text-ink-muted">{stock.latest_quarter_label}</span>
+              </td>
+              {showReason && <td className="p-3 whitespace-normal max-w-sm">
+                {reasons.join('；') || '—'}
+                {warnings.length > 0 && <span className="block text-amber-700">{warnings.join('；')}</span>}
+              </td>}
+              <td className="p-3" onClick={event => event.stopPropagation()}>
+                {watchlist.has(stock.code)
+                  ? <span className="text-ink-muted">已收藏</span>
+                  : status === 'eligible'
+                    ? <button className={buttonClass} disabled={saving} onClick={() => void save([stock.code])}>加入收藏</button>
+                    : <span className="text-ink-muted">—</span>}
+              </td>
+            </tr>;
+          })}
+          {rows.length === 0 && <tr><td colSpan={showReason ? 9 : 8} className="p-10 text-center text-ink-muted">{activeView === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
         </tbody></table>
       </div>
     </>}
-    <QualityReportModal score={qualityModalCode ? qualityScores[qualityModalCode] ?? null : null} onClose={() => setQualityModalCode(null)} />
+    <ScreeningStockDetailModal
+      item={detailItem}
+      price={detailItem ? priceMap.get(detailItem.stock.code) : undefined}
+      quality={detailItem ? qualityScores[detailItem.stock.code] ?? null : null}
+      dataDate={result?.financial_last_updated ?? null}
+      onOpenQuality={openQuality}
+      onClose={() => setDetailItem(null)}
+    />
+    <QualityReportModal
+      score={qualityModalCode ? qualityScores[qualityModalCode] ?? null : null}
+      onClose={() => setQualityModalCode(null)}
+      onReanalyze={code => void analyze([code])}
+      analyzing={analyzing}
+      progress={qualityJob ? { processed: qualityJob.processed, total: qualityJob.total } : null}
+      reanalyzeDisabled={!qualityConfigured}
+    />
   </section>;
 }

@@ -44,7 +44,11 @@ int), `weighted_score` (= dimensions × 0.25/0.25/0.20/0.15/0.15, tolerance
 `watch_points`, `report_md` (non-empty Chinese markdown). Parsing tolerates
 ```json fences and stray prose around the object; pydantic rejects
 weight/star/report mismatches as a per-stock failure. `weighted_score` is
-never shown to users (ordinal false precision) — UI shows stars + dimensions.
+shown to users in the screening list's 「评级结果」column as a 1-decimal
+number (e.g. `3.4`) alongside the `boundary` flag; stocks without a score
+show `-`. The rating report modal itself still shows stars + dimensions and
+no weighted score. (Changed 2026-10-24: the previous "never shown to
+users — ordinal false precision" rule is superseded.)
 
 Bulk analysis reuses `RefreshJobManager` with `kind='quality'` (included in
 `_prune` kinds). Each stock is one worker thread bounded by a semaphore

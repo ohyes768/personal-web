@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>选股关注 · 列表精简 + 个股详情弹层 · 设计稿</title>
+<style>
+:root{
+  --paper:#FBFAF6; --paper-deep:#F2EDE3; --paper-card:#FFFFFF; --paper-tint:#FAF8F3;
+  --ink:#2B2A28; --ink-strong:#1F1E1B; --ink-muted:#6B6864; --ink-soft:#9C958A;
+  --rule:#E8E3D8; --rule-strong:#C5BFB0;
+  --up:#3F7D58; --up-tint:#E8F0E5;
+  --down:#A8453A; --down-tint:#F5E8E5;
+  --star:#C9951F;
+  --accent:#B85C38; --accent-hover:#C56A45;
+  --info:#4A6B8A; --info-tint:#E8EEF3;
+  --sans:"Inter",-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;
+  --mono:"JetBrains Mono","SF Mono",Menlo,Consolas,monospace;
+  --serif:"Source Serif 4","Noto Serif SC",Charter,serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--paper); color:var(--ink); font-family:var(--sans);
+  font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:var(--mono); font-variant-numeric:tabular-nums}
+.serif{font-family:var(--serif)}
+.wrap{max-width:1240px;margin:0 auto;padding:28px 24px 80px}
+
+/* ---------- 设计稿说明条 ---------- */
+.notice{
+  display:flex;gap:14px;align-items:flex-start;flex-wrap:wrap;
+  background:#fff;border:1px solid var(--rule);border-left:3px solid var(--accent);
+  border-radius:10px;padding:12px 16px;margin-bottom:22px;font-size:12.5px;color:var(--ink-muted);
+}
+.notice b{color:var(--ink-strong);font-weight:600}
+.notice .k{
+  font-family:var(--mono);font-size:11px;background:var(--paper-deep);color:var(--ink);
+  border-radius:4px;padding:1px 6px;margin-right:6px;
+}
+.protobar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  margin-bottom:18px;padding-bottom:16px;border-bottom:1px solid var(--rule);
+}
+.protobar h1{font-size:17px;margin:0;font-weight:600;letter-spacing:.01em}
+.protobar .sp{flex:1}
+.tabbtn{
+  border:1px solid var(--rule-strong);background:#fff;color:var(--ink);
+  padding:5px 13px;border-radius:999px;font-size:13px;cursor:pointer;font-family:var(--sans);
+}
+.tabbtn:hover{border-color:var(--accent)}
+.tabbtn[aria-selected="true"]{background:var(--paper-deep);border-color:var(--accent);color:var(--accent-hover)}
+.protobar .hint{font-size:12px;color:var(--ink-soft)}
+
+/* ---------- 卡片 ---------- */
+.card{background:var(--paper-card);border:1px solid var(--rule);border-radius:12px}
+.pad{padding:18px 20px}
+
+/* ---------- 表单区 ---------- */
+.filters{padding:18px 20px;margin-bottom:16px}
+.filters h2{font-size:16px;margin:0 0 4px;font-weight:600}
+.filters p.lede{margin:0 0 14px;font-size:12.5px;color:var(--ink-muted);max-width:78ch}
+.frow{display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end}
+.flabel{display:flex;flex-direction:column;gap:5px;font-size:12px;color:var(--ink-muted)}
+.flabel input,.flabel select{
+  width:92px;border:1px solid var(--rule-strong);background:var(--paper);
+  border-radius:7px;padding:6px 9px;font-family:var(--mono);font-size:13px;color:var(--ink);
+}
+.flabel select{width:118px;font-family:var(--sans)}
+.btn{
+  border:1px solid var(--rule-strong);background:#fff;color:var(--ink);
+  border-radius:8px;padding:7px 13px;font-size:13px;cursor:pointer;font-family:var(--sans);
+}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent-hover)}
+.btn[disabled]{opacity:.4;cursor:default}
+.btn.sm{padding:4px 10px;font-size:12px}
+.fixednote{margin:12px 0 0;font-size:11.5px;color:var(--ink-soft)}
+
+/* ---------- 工具条 ---------- */
+.toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:10px}
+.toolbar .sp{flex:1}
+.meta{font-size:12.5px;color:var(--ink-muted);margin:0 0 10px}
+
+/* ---------- 表格 ---------- */
+.tablecard{background:var(--paper-card);border:1px solid var(--rule);border-radius:12px;overflow:hidden}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+thead th{
+  background:var(--paper-deep);text-align:left;font-weight:600;font-size:12px;
+  color:var(--ink-muted);padding:9px 12px;white-space:nowrap;
+  border-bottom:1px solid var(--rule);
+}
+tbody td{padding:11px 12px;border-top:1px solid var(--rule);vertical-align:middle}
+tbody tr:hover{background:var(--paper-tint)}
+td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.stockbtn{
+  background:none;border:0;padding:0;font:inherit;color:var(--ink);text-align:left;cursor:pointer;
+  font-weight:600;
+}
+.stockbtn:hover{color:var(--accent-hover);text-decoration:underline;text-underline-offset:3px}
+tbody tr.clickable{cursor:pointer}
+tbody tr.clickable:hover{box-shadow:inset 3px 0 0 var(--accent)}
+.stocksub{display:block;font-size:11.5px;color:var(--ink-soft);font-weight:400;margin-top:2px}
+.stocksub .sw{color:var(--ink-muted)}
+.ratebtn{
+  background:none;border:0;padding:2px 0;font:inherit;cursor:pointer;display:inline-flex;
+  align-items:center;gap:5px;color:inherit;
+}
+.ratebtn:hover .stars{text-decoration:underline;text-underline-offset:3px}
+.stars{font-size:14px;letter-spacing:.5px}
+.s4{color:var(--up)} .s3{color:#B07A0F} .s2{color:var(--down)}
+.ratebtn .n{font-family:var(--mono);font-size:12px;color:var(--ink-muted)}
+.warnflag{font-size:12px}
+.pending{color:var(--ink-soft);font-size:12.5px}
+.decline{color:#B45309;font-weight:600}
+.flat{color:var(--ink-muted)}
+.tag-soft{
+  display:inline-block;font-size:11px;padding:1px 7px;border-radius:999px;
+  background:var(--paper-deep);color:var(--ink-muted);border:1px solid var(--rule);
+}
+.tag-warn{background:#FDF3E3;color:#B45309;border-color:#F0DFC0}
+.tag-ok{background:var(--up-tint);color:var(--up);border-color:#D5E4D0}
+.tag-info{background:var(--info-tint);color:var(--info);border-color:#D5E1EA}
+.reason{color:var(--ink);font-size:12.5px;line-height:1.5;white-space:normal}
+.reason .w{display:block;color:#B45309;margin-top:2px}
+
+/* ---------- 弹层 ---------- */
+.overlay{
+  position:fixed;inset:0;background:rgba(31,30,27,.55);backdrop-filter:blur(3px);
+  display:none;align-items:center;justify-content:center;padding:20px;z-index:60;
+}
+.overlay.open{display:flex}
+.modal{
+  background:var(--paper);border:1px solid var(--rule-strong);border-radius:14px;
+  width:100%;max-width:1152px;max-height:88vh;display:flex;flex-direction:column;
+  box-shadow:0 24px 60px rgba(31,30,27,.28);overflow:hidden;
+}
+.modal.narrow{max-width:896px}
+.modalhead{
+  display:flex;align-items:flex-start;gap:16px;padding:16px 20px;
+  border-bottom:1px solid var(--rule);background:var(--paper-card);
+}
+.modalhead .ttl{font-size:18px;font-weight:600;margin:0}
+.modalhead .sub{font-size:12px;color:var(--ink-muted);margin:3px 0 0}
+.modalhead .acts{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.iconbtn{
+  width:34px;height:34px;border:1px solid var(--rule);background:#fff;border-radius:8px;
+  cursor:pointer;color:var(--ink-muted);font-size:16px;line-height:1;flex:none;
+}
+.iconbtn:hover{border-color:var(--accent);color:var(--accent)}
+.modalbody{overflow-y:auto;padding:18px 20px 24px;display:flex;flex-direction:column;gap:14px}
+.block{background:var(--paper-card);border:1px solid var(--rule);border-radius:11px;padding:15px 17px}
+.block h3{
+  font-size:13px;margin:0 0 12px;font-weight:600;color:var(--ink-strong);
+  display:flex;align-items:center;gap:8px;
+}
+.block h3 .hint{font-weight:400;font-size:11.5px;color:var(--ink-soft)}
+.block h3::before{content:"";width:3px;height:13px;border-radius:2px;background:var(--accent);opacity:.75}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+@media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}
+
+/* 头部条 */
+.hbar{display:flex;gap:20px;flex-wrap:wrap;align-items:flex-start}
+.hbar .name{font-size:19px;font-weight:600}
+.hbar .code{font-family:var(--mono);font-size:13px;color:var(--ink-muted);margin-left:8px}
+.hbar .chain{font-size:12.5px;color:var(--ink-muted);margin-top:4px}
+.hbar .chain b{color:var(--ink);font-weight:500}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}
+.chip{
+  font-size:11.5px;padding:2px 9px;border-radius:999px;border:1px solid var(--rule);
+  background:var(--paper-tint);color:var(--ink-muted);
+}
+.chip.src{background:var(--paper-deep)}
+
+/* 指标卡 */
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:10px}
+.kpi{border:1px solid var(--rule);border-radius:9px;padding:10px 12px;background:var(--paper-tint)}
+.kpi .k{font-size:11px;color:var(--ink-soft);letter-spacing:.02em}
+.kpi .v{font-family:var(--mono);font-size:17px;margin-top:3px;color:var(--ink-strong);font-variant-numeric:tabular-nums}
+.kpi .v.pos{color:var(--up)} .kpi .v.neg{color:var(--down)} .kpi .v.warn{color:#B45309}
+.kpi .v.small{font-size:14px}
+.kpi .u{font-size:11px;color:var(--ink-soft);margin-left:2px}
+
+/* 年份表 */
+.years{width:100%;font-size:12.5px;border-collapse:collapse}
+.years th{background:var(--paper-tint);font-size:11.5px;color:var(--ink-muted);font-weight:600;padding:7px 10px;text-align:right;border-bottom:1px solid var(--rule)}
+.years th:first-child{text-align:left}
+.years td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--rule);font-family:var(--mono);font-variant-numeric:tabular-nums}
+.years td:first-child{text-align:left;font-family:var(--sans);color:var(--ink-muted)}
+.years tr:last-child td{border-bottom:0}
+.years .cur{background:#FDF6F1}
+.years .cur td:first-child{color:var(--accent);font-weight:600}
+
+/* 对比条 */
+.compare{display:flex;align-items:center;gap:14px;padding:12px 15px;background:var(--paper-tint);border:1px dashed var(--rule-strong);border-radius:10px}
+.compare .big{font-family:var(--mono);font-size:19px;color:var(--ink-strong)}
+.compare .arrow{font-size:13px;color:var(--ink-muted)}
+
+/* ROE 条 */
+.roebar{display:flex;align-items:flex-end;gap:10px;height:74px;padding-top:6px}
+.roebar .col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.roebar .bar{width:26px;background:var(--up-tint);border:1px solid #CFE0C9;border-radius:4px 4px 0 0;border-bottom:0}
+.roebar .bar span{font-family:var(--mono);font-size:11px;color:var(--ink-muted)}
+.roebar .yr{font-size:11px;color:var(--ink-soft)}
+
+/* 状态提示块 */
+.statusline{display:flex;align-items:center;gap:9px;flex-wrap:wrap;font-size:12.5px}
+.divider{height:1px;background:var(--rule);margin:12px 0}
+
+/* 评级弹层（嵌套预览） */
+.ratebox .starsbig{font-size:30px;letter-spacing:2px;line-height:1}
+.dimrow{display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--rule)}
+.dimrow:last-child{border-bottom:0}
+.dimrow .dn{width:82px;font-size:12.5px}
+.dimrow .w{width:38px;font-size:11px;color:var(--ink-soft);font-family:var(--mono)}
+.dimrow .dots{display:flex;gap:3px}
+.dimrow .dot{width:9px;height:9px;border-radius:2px;background:var(--paper-deep);border:1px solid var(--rule-strong)}
+.dimrow .dot.on{background:var(--star);border-color:var(--star)}
+.dimrow .sc{margin-left:auto;font-family:var(--mono);font-size:12px;color:var(--ink-muted)}
+.note{font-size:11.5px;color:var(--ink-soft);margin-top:10px}
+.loading{font-size:11.5px;color:var(--ink-soft);font-style:italic}
+</style>
+</head>
+<body>
+
+<div class="wrap">
+
+  <div class="notice">
+    <div><b>设计稿</b> · 股息率「选股关注」列表精简 + 个股详情弹层 · 任务 10-24-dividend-screening-detail</div>
+    <div style="flex:1"></div>
+    <div>
+      <span class="k">交互</span>顶部切换三个视图；<b>点行内任意处进入个股详情弹框</b>（勾选框/基本面操作/评级结果/收藏按钮除外）；「基本面操作」列未分析时是<b>分析</b>、已分析时是<b>重评</b>；「评级结果」列显示<b>加权分</b>（3.4 这样，未分析显示 -）；详情弹框里的「基本面评级」会<b>关掉详情、另开评级弹框</b>——两者互斥，重评在评级弹框里
+    </div>
+  </div>
+
+  <div class="protobar">
+    <h1>选股关注 <span class="serif" style="color:var(--ink-muted);font-weight:400">· 精简后</span></h1>
+    <div class="sp"></div>
+    <button class="tabbtn" id="tab-eligible" aria-selected="true" onclick="setView('eligible')">符合条件 12</button>
+    <button class="tabbtn" id="tab-excluded" aria-selected="false" onclick="setView('excluded')">未符合 7</button>
+    <button class="tabbtn" id="tab-insufficient" aria-selected="false" onclick="setView('insufficient_data')">待补数据 3</button>
+    <span class="hint">视图切换 = R1 / R2</span>
+  </div>
+
+  <!-- ===== 筛选条件 ===== -->
+  <div class="card filters">
+    <h2>选出值得持续关注的公司</h2>
+    <p class="lede">分红稳定、ROE 达标、最近年度扣非净利润为正且同比不下滑；连续两季扣非同比为负或任一季降幅达到所设阈值时排除。当前股息率由你人工判断。</p>
+    <div class="frow">
+      <label class="flabel">近三年平均股息率 ≥<input value="3.5"></label>
+      <label class="flabel">近三年平均 ROE ≥<input value="10"></label>
+      <label class="flabel">最近年度 ROE ≥<input value="10"></label>
+      <label class="flabel">单季扣非利润最大降幅<input value="30"></label>
+      <label class="flabel">交易所<select><option>全部</option><option>沪市主板</option><option>深市主板</option></select></label>
+      <button class="btn primary">查询候选</button>
+      <button class="btn">恢复默认</button>
+    </div>
+    <p class="fixednote">固定条件：近三年每年分红、最近年度扣非净利润 &gt; 0、年度扣非同比 ≥ 0、不能连续两季单季扣非同比为负。单季同比 ≤ −所设降幅时排除。条件在此浏览器保存。</p>
+  </div>
+
+  <!-- ===== 列表 ===== -->
+  <p class="meta">已采集股票池 240 只 · 分红年度 2023 / 2024 / 2025 · 分红数据更新 2026-10-22 · 财务更新 2026-10-20（报告期见各行）</p>
+
+  <div class="toolbar">
+    <button class="btn sm">收藏所选 (0)</button>
+    <button class="btn sm">收藏全部符合条件</button>
+    <button class="btn sm primary">分析基本面 (0)</button>
+    <div class="sp"></div>
+    <span class="hint" style="font-size:12px;color:var(--ink-soft)">「分析基本面」为批量入口，单只重评移入详情页</span>
+  </div>
+
+  <!-- ===== eligible：7 列 ===== -->
+  <div class="tablecard" id="view-eligible">
+    <table>
+      <colgroup>
+        <col style="width:38px"><col style="width:20%"><col style="width:9%"><col style="width:8%">
+        <col style="width:11%"><col style="width:13%"><col style="width:15%"><col style="width:10%">
+      </colgroup>
+      <thead><tr>
+        <th><input type="checkbox"></th>
+        <th>股票</th>
+        <th>基本面操作</th>
+        <th>评级结果</th>
+        <th>三年股息率</th>
+        <th>当前股息率(TTM)</th>
+        <th>最新季扣非同比</th>
+        <th>收藏</th>
+      </tr></thead>
+      <tbody id="rows-eligible"></tbody>
+    </table>
+  </div>
+
+  <!-- ===== excluded / insufficient：+ 原因列 ===== -->
+  <div class="tablecard" id="view-excluded" style="display:none">
+    <table>
+      <colgroup>
+        <col style="width:38px"><col style="width:18%"><col style="width:9%"><col style="width:8%">
+        <col style="width:10%"><col style="width:12%"><col style="width:13%"><col style="width:21%"><col style="width:9%">
+      </colgroup>
+      <thead><tr>
+        <th><input type="checkbox" disabled></th>
+        <th>股票</th>
+        <th>基本面操作</th>
+        <th>评级结果</th>
+        <th>三年股息率</th>
+        <th>当前股息率(TTM)</th>
+        <th>最新季扣非同比</th>
+        <th>原因</th>
+        <th>收藏</th>
+      </tr></thead>
+      <tbody id="rows-excluded"></tbody>
+    </table>
+  </div>
+
+</div>
+
+<!-- ===== 个股详情弹层 ===== -->
+<div class="overlay" id="overlay-detail">
+  <div class="modal">
+    <div class="modalhead">
+      <div style="min-width:0">
+        <div class="hbar">
+          <div>
+            <span class="name" id="d-name">长江电力</span><span class="code" id="d-code">600900</span>
+            <div class="chain" id="d-chain"></div>
+            <div class="chips" id="d-chips"></div>
+          </div>
+        </div>
+      </div>
+      <div class="acts">
+        <button class="btn sm" onclick="openRateFromDetail()">基本面评级 <span id="d-stars-inline" class="mono">3.4</span></button>
+        <button class="iconbtn" onclick="closeDetail()">✕</button>
+      </div>
+    </div>
+
+    <div class="modalbody">
+
+      <!-- 状态与提示 -->
+      <div class="block">
+        <h3>筛选状态 <span class="hint">reason = 失败事实，warning = 单季下滑</span></h3>
+        <div class="statusline" id="d-status"></div>
+      </div>
+
+      <!-- 股息率块 -->
+      <div class="block">
+        <h3>股息率 <span class="hint">分红窗口固定 2023–2025</span></h3>
+        <div class="compare" id="d-compare" style="margin-bottom:14px">
+          <div>
+            <div style="font-size:11px;color:var(--ink-soft)">三年均值</div>
+            <div class="big">5.12%</div>
+          </div>
+          <div class="arrow">→</div>
+          <div>
+            <div style="font-size:11px;color:var(--ink-soft)">当前股息率 TTM</div>
+            <div class="big" style="color:var(--up)">5.63%</div>
+          </div>
+          <div class="arrow">=</div>
+          <div>
+            <div style="font-size:11px;color:var(--ink-soft)">当前相对三年均值</div>
+            <div class="big" style="color:var(--up)">+0.51 pct</div>
+          </div>
+          <div style="margin-left:auto;text-align:right">
+            <div style="font-size:11px;color:var(--ink-soft)">数据日期</div>
+            <div class="mono" style="font-size:13px">2026-10-20</div>
+          </div>
+        </div>
+        <table class="years">
+          <thead><tr><th>年度</th><th>每股分红</th><th>分红次数</th><th>年度均价</th><th>股息率</th></tr></thead>
+          <tbody>
+            <tr><td>2025</td><td>0.94</td><td>1</td><td>22.30</td><td>4.22%</td></tr>
+            <tr><td>2024</td><td>0.92</td><td>1</td><td>21.05</td><td>4.37%</td></tr>
+            <tr><td>2023</td><td>0.82</td><td>1</td><td>20.11</td><td>4.08%</td></tr>
+          </tbody>
+        </table>
+        <div class="divider"></div>
+        <div style="font-size:12px;color:var(--ink-muted);margin-bottom:7px">分红明细 <span class="loading" id="d-div-loading">加载中…</span></div>
+        <table class="years" id="d-dividend">
+          <thead><tr><th>除权除息日</th><th>财年</th><th>派息(元/股)</th><th>单次股息率</th><th>年度股息率</th></tr></thead>
+          <tbody>
+            <tr><td>2025-07-11</td><td>2025</td><td>0.47</td><td>2.11%</td><td>4.22%</td></tr>
+            <tr><td>2024-07-12</td><td>2024</td><td>0.92</td><td>4.37%</td><td>4.37%</td></tr>
+            <tr><td>2023-07-14</td><td>2023</td><td>0.82</td><td>4.08%</td><td>4.08%</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- 盈利质量块 -->
+      <div class="block">
+        <h3>盈利质量 <span class="hint">年度口径为最近 12-31 累计报表</span></h3>
+        <div class="grid2">
+          <div>
+            <div style="font-size:11.5px;color:var(--ink-muted);margin-bottom:4px">ROE 历史（加权年度）</div>
+            <div class="roebar">
+              <div class="col"><div class="bar" style="height:56px"><span>14.2%</span></div><div class="yr">2023</div></div>
+              <div class="col"><div class="bar" style="height:60px"><span>15.1%</span></div><div class="yr">2024</div></div>
+              <div class="col"><div class="bar" style="height:63px"><span>16.0%</span></div><div class="yr">2025</div></div>
+            </div>
+            <div style="font-size:11.5px;color:var(--ink-soft);margin-top:8px">近三年平均 ROE <span class="mono" style="color:var(--ink)">15.10%</span></div>
+          </div>
+          <div class="kpis">
+            <div class="kpi"><div class="k">年度扣非净利润</div><div class="v small">245.6<span class="u">亿</span></div><div style="font-size:11px;color:var(--ink-soft)">2025 年报</div></div>
+            <div class="kpi"><div class="k">年度扣非同比</div><div class="v small pos">+8.2%</div></div>
+            <div class="kpi"><div class="k">3 年 CAGR</div><div class="v small">9.4%</div></div>
+            <div class="kpi"><div class="k">EPS</div><div class="v small">1.12<span class="u">元</span></div><div style="font-size:11px;color:var(--ink-soft)">2025 年报</div></div>
+            <div class="kpi"><div class="k">分红比例</div><div class="v small">63.4%</div></div>
+          </div>
+        </div>
+        <div class="divider"></div>
+        <div style="font-size:11.5px;color:var(--ink-muted);margin-bottom:6px">最近两季单季扣非同比</div>
+        <div class="kpis" style="grid-template-columns:repeat(2,1fr)">
+          <div class="kpi"><div class="k">上季 <span class="mono">2026Q1</span></div><div class="v warn">−3.21%</div></div>
+          <div class="kpi"><div class="k">最新季 <span class="mono">2026Q2</span></div><div class="v pos">+5.08%</div></div>
+        </div>
+      </div>
+
+      <!-- 买点参考块 -->
+      <div class="block">
+        <h3>买点参考 <span class="hint">现价/PE/PB 取列表同源数据，M120 与偏离度按需补拉</span></h3>
+        <div class="kpis">
+          <div class="kpi"><div class="k">现价</div><div class="v">24.16</div></div>
+          <div class="kpi"><div class="k">PE(静态)</div><div class="v">21.5</div></div>
+          <div class="kpi"><div class="k">PB</div><div class="v">2.81</div></div>
+          <div class="kpi"><div class="k">M120</div><div class="v">23.05</div></div>
+          <div class="kpi"><div class="k">偏离度</div><div class="v warn">+4.8%</div></div>
+          <div class="kpi"><div class="k">2025 最高</div><div class="v small">25.30</div><div style="font-size:11px;color:var(--up)">+2.53%</div></div>
+          <div class="kpi"><div class="k">2025 最低</div><div class="v small">18.70</div><div style="font-size:11px;color:var(--down)">−8.61%</div></div>
+        </div>
+      </div>
+
+      <!-- 筹码块 -->
+      <div class="block">
+        <h3>筹码</h3>
+        <div class="kpis" style="grid-template-columns:repeat(3,1fr)">
+          <div class="kpi"><div class="k">股东户数</div><div class="v">24.3<span class="u">万</span></div></div>
+          <div class="kpi"><div class="k">户数增幅</div><div class="v pos">−4.1%</div></div>
+          <div class="kpi"><div class="k">人均持股</div><div class="v">12,800<span class="u">股</span></div></div>
+        </div>
+      </div>
+
+      <p class="note" style="margin:0">缺数据字段显示「待补」，与列表口径一致；单个接口失败只影响所在块，不阻塞弹层打开。<br>原型内除列表外的数值均为示意，实际取自行内 stock 字段与各接口返回。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 评级弹层（独立，非内嵌） ===== -->
+<div class="overlay" id="overlay-rate" style="z-index:70">
+  <div class="modal narrow ratebox">
+    <div class="modalhead">
+      <div>
+        <div class="ttl" id="r-title">基本面评级 · 长江电力（600900）</div>
+        <div class="sub">独立弹框（现有 QualityReportModal）· 与股票详情弹框互斥，同一时刻只开一个</div>
+      </div>
+      <div class="acts">
+        <button class="btn sm" id="r-reanalyze" onclick="runReanalyzeRate()">重评</button>
+        <button class="iconbtn" onclick="closeRate()">✕</button>
+      </div>
+    </div>
+    <div class="modalbody">
+      <input type="hidden" id="r-code" value="">
+
+      <!-- 重评进度（AC4：触发重评后进度可见，完成后星级与本弹框内容刷新，列表评级列同步） -->
+      <div id="r-progress" class="block" style="display:none;padding:11px 15px">
+        <div style="display:flex;align-items:center;gap:10px;font-size:12.5px">
+          <span class="loading" id="r-progress-text">评级分析中…</span>
+          <span class="mono" id="r-progress-num">0/1</span>
+          <span style="margin-left:auto" class="loading">每只约几分钟</span>
+        </div>
+      </div>
+      <div class="block">
+        <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap">
+          <span class="starsbig s4">★★★★</span>
+          <span style="font-size:13px;color:var(--ink-muted)">(4/5)</span>
+          <span style="font-size:12.5px;color:#B45309">⚠️ 距档位边界不足 0.25 分</span>
+          <span style="font-size:11.5px;color:var(--ink-soft);margin-left:auto">数据日期 2026-10-20 · 评分时间 2026-10-21 09:14</span>
+        </div>
+        <p style="font-size:13px;margin:14px 0 0" id="r-summary">长江电力以流域梯级电站为核心资产，盈利与现金流高度稳定，类债属性突出；主要不确定性来自来水波动与电价机制调整。</p>
+      </div>
+      <div class="block">
+        <h3>五维得分 <span class="hint">加权总分不对用户展示</span></h3>
+        <div id="r-dims"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const ELIGIBLE = [
+  {n:'长江电力',c:'600900',sw:'公用事业 › 电力 › 水力发电',stars:4,score:3.4,bdg:true,y3:'5.12%',ttm:'5.63%',q:'+5.08%',ql:'2026Q2',fav:true},
+  {n:'中国神华',c:'601088',sw:'煤炭 › 煤炭开采 › 动力煤',stars:5,score:4.6,bdg:false,y3:'6.04%',ttm:'6.31%',q:'−2.40%',ql:'2026Q2',fav:false},
+  {n:'陕西煤业',c:'601225',sw:'煤炭 › 煤炭开采 › 焦炭',stars:4,score:4.1,bdg:false,y3:'7.15%',ttm:'6.88%',q:'+11.30%',ql:'2026Q2',fav:false},
+  {n:'大秦铁路',c:'601006',sw:'交通运输 › 铁路公路 › 铁路运输',stars:null,score:null,bdg:false,y3:'5.78%',ttm:'5.94%',q:'+1.20%',ql:'2026Q2',fav:true},
+  {n:'宁沪高速',c:'600377',sw:'交通运输 › 铁路公路 › 高速公路',stars:3,score:3.2,bdg:true,y3:'4.96%',ttm:'5.21%',q:'−0.80%',ql:'2026Q2',fav:false},
+  {n:'工商银行',c:'601398',sw:'银行 › 国有大型银行 II',stars:4,score:3.9,bdg:false,y3:'5.34%',ttm:'5.52%',q:'+0.60%',ql:'2026Q2',fav:true},
+  {n:'农业银行',c:'601288',sw:'银行 › 国有大型银行 II',stars:4,score:3.8,bdg:false,y3:'5.41%',ttm:'5.60%',q:'+0.90%',ql:'2026Q2',fav:false},
+  {n:'中国建筑',c:'601668',sw:'建筑装饰 › 房屋建设 II',stars:3,score:3.0,bdg:false,y3:'4.31%',ttm:'4.44%',q:'−4.70%',ql:'2026Q2',fav:false},
+  {n:'格力电器',c:'000651',sw:'家用电器 › 白色家电',stars:3,score:3.3,bdg:false,y3:'4.88%',ttm:'4.95%',q:'+3.40%',ql:'2026Q2',fav:false},
+  {n:'双汇发展',c:'000895',sw:'食品饮料 › 食品加工',stars:null,score:null,bdg:false,y3:'5.22%',ttm:'4.80%',q:'−8.10%',ql:'2026Q2',fav:false},
+  {n:'皖能电力',c:'000543',sw:'公用事业 › 电力 › 火力发电',stars:2,score:2.4,bdg:false,y3:'4.10%',ttm:'4.35%',q:'+2.10%',ql:'2026Q2',fav:false},
+  {n:'兖矿能源',c:'600188',sw:'煤炭 › 煤炭开采 › 动力煤',stars:3,score:3.1,bdg:true,y3:'6.02%',ttm:'5.44%',q:'−12.30%',ql:'2026Q2',fav:false},
+];
+const REJECTED = [
+  {n:'华能水电',c:'600025',sw:'公用事业 › 电力 › 水力发电',stars:null,score:null,y3:'2.84%',ttm:'2.91%',q:'−3.10%',ql:'2026Q2',r:['近三年平均股息率 2.84% 低于阈值 3.5%']},
+  {n:'宝钢股份',c:'600019',sw:'钢铁 › 普钢',stars:null,score:null,y3:'3.92%',ttm:'3.55%',q:'−38.20%',ql:'2026Q2',r:['最近季度单季扣非同比 −38.20% 达到排除阈值 −30%'],w:['2026Q2 单季扣非同比下滑']},
+  {n:'中国石化',c:'600028',sw:'石油石化 › 炼化贸易',stars:3,score:2.9,y3:'5.10%',ttm:'5.02%',q:'−5.60%',ql:'2026Q2',r:['最近年度扣非净利润为负（−42.8 亿）']},
+  {n:'万科A',c:'000002',sw:'房地产 › 房地产开发',stars:1,score:1.8,y3:'1.20%',ttm:'0.94%',q:'−41.50%',ql:'2026Q2',r:['近三年平均股息率 1.20% 低于阈值 3.5%','最近年度 ROE 3.2% 低于阈值 10%','最近季度单季扣非同比 −41.50% 达到排除阈值 −30%']},
+  {n:'上汽集团',c:'600104',sw:'汽车 › 乘用车',stars:null,score:null,y3:'3.66%',ttm:'3.71%',q:'−0.50%',ql:'2026Q2',r:['近三年平均 ROE 8.9% 低于阈值 10%']},
+  {n:'中国铝业',c:'601600',sw:'有色金属 › 工业金属',stars:2,score:2.3,y3:'3.10%',ttm:'3.28%',q:'+6.70%',ql:'2026Q2',r:['连续两季单季扣非同比为负']},
+  {n:'海螺水泥',c:'600585',sw:'建筑材料 › 水泥',stars:3,score:2.8,y3:'4.02%',ttm:'3.88%',q:'−9.30%',ql:'2026Q2',r:['最近年度扣非净利润同比 −4.2% 低于 0']},
+];
+const INSUFFICIENT = [
+  {n:'唐山港',c:'601000',sw:'交通运输 › 港口',stars:null,score:null,y3:'待补',ttm:'3.90%',q:'待补',ql:'—',r:['缺少最近年度扣非净利润','缺少 2023–2025 连续三年 ROE']},
+  {n:'淮北矿业',c:'600985',sw:'煤炭 › 煤炭开采 › 焦炭',stars:null,score:null,y3:'4.55%',ttm:'4.61%',q:'待补',ql:'—',r:['缺少最近季度扣非同比','缺少前一季度扣非同比']},
+  {n:'苏泊尔',c:'002032',sw:'家用电器 › 小家电',stars:null,score:null,y3:'5.10%',ttm:'5.22%',q:'+1.10%',ql:'2026Q2',r:['缺少最近年度扣非净利润同比']},
+];
+
+const esc = s => String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const starCls = s => s>=4?'s4':(s===3?'s3':'s2');
+/** 基本面操作列：未分析 → 分析；已分析 → 重评 */
+const opCell = (r, eligible) => {
+  if (r.stars == null) return eligible
+    ? `<button class="btn sm" title="对这只股票调用 AI 五维基本面评级（约几分钟）">分析</button>`
+    : `<span class="pending">待分析</span>`;
+  return `<button class="btn sm" title="用当前数据重新评级">重评</button>`;
+};
+/** 评级结果列：加权分（1 位小数）+ 边界标记；未分析显示 - */
+const resultCell = r => r.stars == null
+  ? `<span class="pending">-</span>`
+  : `<span class="mono">${r.score.toFixed(1)}</span>${r.bdg?'<span class="warnflag" title="距档位边界不足 0.25 分"> ⚠️</span>':''}`;
+const qCell = q => {
+  if (!q || q==='待补') return `<span class="pending">待补</span>`;
+  const v = parseFloat(String(q).replace('−','-'));
+  if (!Number.isFinite(v)) return `<span class="pending">待补</span>`;
+  const cls = v<0?'decline':'flat';
+  return `<span class="mono ${cls}">${v<0?'−':'+'}${Math.abs(v).toFixed(2)}%</span>`;
+};
+const favCell = (r, eligible) => eligible
+  ? (r.fav ? `<span class="tag-ok">已收藏</span>` : `<button class="btn sm">加入收藏</button>`)
+  : `<span class="pending">—</span>`;
+
+function renderEligible(){
+  document.getElementById('rows-eligible').innerHTML = ELIGIBLE.map(r=>`<tr class="clickable" onclick="openDetail('${r.c}')">
+    <td onclick="event.stopPropagation()"><input type="checkbox"></td>
+    <td><button class="stockbtn">${esc(r.n)}<span class="stocksub mono">${r.c} · <span class="sw">${esc(r.sw.split(' › ')[0])}</span></span></button></td>
+    <td onclick="event.stopPropagation()">${opCell(r,true)}</td>
+    <td onclick="event.stopPropagation()">${resultCell(r)}</td>
+    <td class="num">${r.y3}</td>
+    <td class="num">${r.ttm}</td>
+    <td>${qCell(r.q)}<span class="stocksub mono">${r.ql}</span></td>
+    <td onclick="event.stopPropagation()">${favCell(r,true)}</td>
+  </tr>`).join('');
+}
+function renderRejected(rows, target){
+  document.getElementById(target).innerHTML = rows.map(r=>`<tr class="clickable" onclick="openDetail('${r.c}')">
+    <td onclick="event.stopPropagation()"><input type="checkbox" disabled></td>
+    <td><button class="stockbtn">${esc(r.n)}<span class="stocksub mono">${r.c} · <span class="sw">${esc(r.sw.split(' › ')[0])}</span></span></button></td>
+    <td onclick="event.stopPropagation()">${opCell(r,false)}</td>
+    <td onclick="event.stopPropagation()">${resultCell(r)}</td>
+    <td class="num">${r.y3}</td>
+    <td class="num">${r.ttm}</td>
+    <td>${qCell(r.q)}<span class="stocksub mono">${r.ql}</span></td>
+    <td><div class="reason">${r.r.map(x=>esc(x)).join('<br>')}${r.w?`<span class="w">${r.w.map(esc).join('；')}</span>`:''}</div></td>
+    <td onclick="event.stopPropagation()">${favCell(r,false)}</td>
+  </tr>`).join('');
+}
+renderEligible();
+renderRejected(REJECTED,'rows-excluded');
+renderRejected(INSUFFICIENT,'rows-excluded');   // 占位，随后按视图切换
+
+function setView(v){
+  document.getElementById('tab-eligible').setAttribute('aria-selected', v==='eligible');
+  document.getElementById('tab-excluded').setAttribute('aria-selected', v==='excluded');
+  document.getElementById('tab-insufficient').setAttribute('aria-selected', v==='insufficient_data');
+  const el = document.getElementById('view-eligible');
+  const ex = document.getElementById('view-excluded');
+  if (v==='eligible'){ el.style.display=''; ex.style.display='none'; }
+  else {
+    el.style.display='none'; ex.style.display='';
+    renderRejected(v==='excluded'?REJECTED:INSUFFICIENT,'rows-excluded');
+  }
+}
+
+const ALL = [...ELIGIBLE.map(r=>({...r,view:'eligible'})), ...REJECTED.map(r=>({...r,view:'excluded'})), ...INSUFFICIENT.map(r=>({...r,view:'insufficient_data'}))];
+const BY_CODE = Object.fromEntries(ALL.map(r=>[r.c,r]));
+
+function openDetail(code){
+  const r = BY_CODE[code];
+  if (!r) return;
+  document.getElementById('d-name').textContent = r.n;
+  document.getElementById('d-code').textContent = r.c;
+  const chain = r.sw.split(' › ').map((x,i)=> i===0 ? `申万一级 <b>${esc(x)}</b>` : `<b>${esc(x)}</b>`).join(' › ');
+  document.getElementById('d-chain').innerHTML = chain;
+  document.getElementById('d-chips').innerHTML = [
+    '概念板块：' + r.sw.split(' › ').slice(-1)[0],
+    '来源指数：红利指数',
+    '数据日期：2026-10-20',
+  ].map(c=>`<span class="chip${c.includes('来源指数')?' src':''}">${esc(c)}</span>`).join('');
+
+  const st = document.getElementById('d-status');
+  const tag = r.view==='eligible' ? '<span class="tag-ok">符合条件</span>'
+    : r.view==='excluded' ? '<span class="tag-warn">未符合</span>'
+    : '<span class="tag-info">待补数据</span>';
+  const warn = (r.view==='eligible' && parseFloat(String(r.q).replace('−','-'))<0)
+    ? '<span class="tag-warn">最近一季度单季扣非同比下滑，需留意</span>' : '';
+  const reasons = (r.r||[]).map(x=>`<div style="margin-top:6px">${esc(x)}</div>`).join('');
+  st.innerHTML = tag + warn + reasons;
+
+  document.getElementById('d-stars-inline').textContent = r.stars ? r.score.toFixed(1) : '未评级';
+
+  // 三年均值 vs TTM 随行变化
+  const p = s => parseFloat(String(s).replace('−','-'));
+  const y3 = p(r.y3), ttm = p(r.ttm);
+  const cmp = document.getElementById('d-compare');
+  cmp.innerHTML = `
+    <div><div style="font-size:11px;color:var(--ink-soft)">三年均值</div><div class="big">${Number.isFinite(y3)? y3.toFixed(2)+'%':'待补'}</div></div>
+    <div class="arrow">→</div>
+    <div><div style="font-size:11px;color:var(--ink-soft)">当前股息率 TTM</div><div class="big" style="color:${Number.isFinite(ttm)?'var(--up)':'var(--ink-soft)'}">${Number.isFinite(ttm)? ttm.toFixed(2)+'%':'待补'}</div></div>
+    <div class="arrow">=</div>
+    <div><div style="font-size:11px;color:var(--ink-soft)">当前相对三年均值</div><div class="big" style="color:${ttm>=y3?'var(--up)':'var(--down)'}">${Number.isFinite(y3)&&Number.isFinite(ttm)? (ttm>=y3?'+':'−')+Math.abs(ttm-y3).toFixed(2)+' pct':'待补'}</div></div>
+    <div style="margin-left:auto;text-align:right"><div style="font-size:11px;color:var(--ink-soft)">数据日期</div><div class="mono" style="font-size:13px">2026-10-20</div></div>`;
+
+  document.getElementById('overlay-detail').classList.add('open');
+}
+function closeDetail(){ document.getElementById('overlay-detail').classList.remove('open'); }
+/** 重评：只在评级弹框里触发，进度显示在弹框内，完成后星级/五维刷新、列表评级列同步 */
+function runReanalyzeRate(){
+  const code = document.getElementById('r-code').value;
+  const r = BY_CODE[code];
+  const box = document.getElementById('r-progress');
+  const btn = document.getElementById('r-reanalyze');
+  box.style.display='';
+  document.getElementById('r-progress-text').textContent = '评级分析中…';
+  document.getElementById('r-progress-num').textContent = '0/1';
+  btn.disabled = true; btn.textContent = '重评中…';
+  let n = 0;
+  const t = setInterval(()=>{ n = Math.min(n+1, 1); document.getElementById('r-progress-num').textContent = `${n}/1`; }, 500);
+  setTimeout(()=>{
+    clearInterval(t);
+    document.getElementById('r-progress-text').textContent = '评级完成：成功 1 只';
+    btn.disabled = false; btn.textContent = '重评';
+    if (r) {
+      r.stars = 4; r.bdg = false;
+      // 星级与五维就地刷新
+      const stars = document.querySelector('#overlay-rate .starsbig');
+      stars.textContent = '★'.repeat(4); stars.className = 'starsbig s4';
+      const dims = pseudoDims(code).map((v,i)=>Math.min(5, v+1));
+      document.getElementById('r-dims').innerHTML = DIMS.map(([label,w],i)=>{
+        const dots = Array.from({length:5},(_,k)=>`<i class="dot${k<dims[i]?' on':''}"></i>`).join('');
+        return `<div class="dimrow"><span class="dn">${label}</span><span class="w">${w}</span><span class="dots">${dots}</span><span class="sc">${dims[i]} / 5</span></div>`;
+      }).join('');
+    }
+    renderEligible();   // 列表评级列同步
+  }, 1500);
+}
+const DIMS = [['业务模式','25%'],['护城河','25%'],['行业前景','20%'],['管理层','15%'],['财务质量','15%']];
+function pseudoDims(code){
+  let h = 0; for (const ch of code) h = (h*31 + ch.charCodeAt(0)) >>> 0;
+  return DIMS.map((_,i)=> 1 + ((h >> (i*3)) % 5));
+}
+/** 评级弹框 = 现有 QualityReportModal，独立于股票详情弹框（互斥，同一时刻只开一个） */
+function openRate(code){
+  const r = BY_CODE[code];
+  if (!r) return;
+  document.getElementById('r-code').value = code;
+  document.getElementById('r-title').textContent = `基本面评级 · ${r.n}（${r.c}）`;
+  const stars = document.querySelector('#overlay-rate .starsbig');
+  stars.textContent = r.stars ? '★'.repeat(r.stars) : '未评级';
+  stars.className = 'starsbig ' + (r.stars>=4?'s4':(r.stars===3?'s3':'s2'));
+  const dims = pseudoDims(code);
+  document.getElementById('r-dims').innerHTML = DIMS.map(([label,w],i)=>{
+    const n = dims[i];
+    const dots = Array.from({length:5},(_,k)=>`<i class="dot${k<n?' on':''}"></i>`).join('');
+    return `<div class="dimrow"><span class="dn">${label}</span><span class="w">${w}</span><span class="dots">${dots}</span><span class="sc">${n} / 5</span></div>`;
+  }).join('');
+  document.getElementById('r-summary').textContent =
+    `${r.n}（${r.c}）属${r.sw.split(' › ')[0]}行业，近三年平均股息率 ${r.y3}，盈利与现金流表现${r.stars>=4?'稳健':'中性'}，主要风险与关注点见下方完整报告。`;
+  document.getElementById('overlay-rate').classList.add('open');
+}
+/** 详情弹框里的「基本面评级」入口：先关详情，再开评级（互斥） */
+function openRateFromDetail(){
+  const code = document.getElementById('d-code').textContent;
+  closeDetail();
+  openRate(code);
+}
+function closeRate(){ document.getElementById('overlay-rate').classList.remove('open'); }
+document.getElementById('overlay-detail').addEventListener('click',e=>{ if(e.target.id==='overlay-detail') closeDetail(); });
+document.getElementById('overlay-rate').addEventListener('click',e=>{ if(e.target.id==='overlay-rate') closeRate(); });
+</script>
+</body>
+</html>

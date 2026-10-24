@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/screening-watchlist-contract.md", "reason": "筛选状态/原因警告语义、股息率窗口固定 2023–2025、收藏契约；列表精简不得破坏"}
+{"file": ".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md", "reason": "评级 UI 契约：星级映射、加权分不对用户展示、hermes 未配置置灰"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端通用检查项（API 单位与 null 口径、复用优先）"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "抽 hook/新弹层前先读复用指引，避免重复包装"}
