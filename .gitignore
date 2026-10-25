@@ -87,6 +87,7 @@ backend/fund-select/.coverage
 backend/fund-select/.pytest_cache/
 backend/skill-manager/.pytest_cache/
 # pytest basetemp 重定向到仓库内（本机 %TEMP% 上 os.replace 报 WinError 6）
+/.pytest-tmp/
 backend/skill-manager/.pytest-tmp*/
 backend/skill-manager/.uvcache/
 
