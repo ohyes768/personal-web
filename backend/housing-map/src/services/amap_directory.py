@@ -27,11 +27,13 @@ class AmapClient:
         self.key = web_service_key()
         self.session = Session()
 
-    def search_name(self, name, district, types='120300|120203'):
+    def search_name(self, name, district, types='120300|120203', *, page=1):
         """Search POIs by name. `types=None` searches every category (use review);
-        the default keeps the residential whitelist so position lookups stay narrow."""
-        params = {'key': self.key, 'keywords': name, 'city': '杭州', 'citylimit': 'true',
-                  'offset': 25, 'page': 1, 'extensions': 'base'}
+        the default keeps the residential whitelist so position lookups stay narrow.
+        Use district adcodes to restrict upstream results before the 25-result limit."""
+        city = {'滨江': '330108', '萧山': '330109'}.get(district, '杭州')
+        params = {'key': self.key, 'keywords': name, 'city': city, 'citylimit': 'true',
+                  'offset': 25, 'page': page, 'extensions': 'base'}
         if types is not None:
             params['types'] = types
         try:

@@ -22,7 +22,7 @@ class Client:
         self.queries = []
         self.types = []
 
-    def search_name(self, name, district, types='120300|120203'):
+    def search_name(self, name, district, types='120300|120203', *, page=1):
         self.calls += 1
         self.queries.append(name)
         self.types.append(types)
@@ -115,6 +115,148 @@ def test_review_marks_a_truncated_result_uncertain(setup):
     assert exc.value.state == 'uncertain'
     saved = saved_review(store, cid)
     assert saved['state'] == 'uncertain' and saved['category'] is None
+
+
+@pytest.fixture
+def paged_client(monkeypatch):
+    from src.services.amap_directory import AmapClient
+    monkeypatch.setenv('AMAP_WEB_SERVICE_KEY', 'test-key')
+    clients = []
+
+    def make(pages, count, *, callback=None):
+        client = AmapClient()
+        clients.append(client)
+        calls = []
+
+        def get(url, params, **kwargs):
+            page = params['page']
+            calls.append(dict(params))
+            if callback:
+                callback(page)
+            rows = pages[page - 1] if page <= len(pages) else []
+            if isinstance(rows, Exception):
+                raise rows
+
+            class Response:
+                def raise_for_status(self): pass
+                def json(self):
+                    total = count[page - 1] if isinstance(count, list) else count
+                    return {'status': '1', 'count': str(total), 'pois': rows}
+
+            return Response()
+
+        monkeypatch.setattr(client.session, 'get', get)
+        return client, calls
+
+    yield make
+    for client in clients:
+        client.close()
+
+
+def unrelated(start, stop):
+    return [poi(sid=str(i), name=f'无关商店{i}') for i in range(start, stop)]
+
+
+def test_review_finds_the_match_after_the_first_page(setup, paged_client):
+    store, cid, data = setup
+    client, calls = paged_client([unrelated(0, 25), unrelated(25, 50),
+                                 unrelated(50, 59) + [poi()]], 60)
+    assert review_one(store, data, cid, client) == 'updated'
+    assert saved_review(store, cid)['evidence']['poi_id'] == 'B1'
+    assert [c['page'] for c in calls] == [1, 2, 3]
+    assert all(c['city'] == '330108' and 'types' not in c for c in calls)
+
+
+def test_review_checks_later_pages_for_conflicting_categories(setup, paged_client):
+    store, cid, data = setup
+    client, calls = paged_client([[poi()] + unrelated(0, 24),
+                                 [poi(sid='B2', typecode='120101')]], 26)
+    with pytest.raises(UseReviewOutcome) as exc:
+        review_one(store, data, cid, client)
+    assert exc.value.state == 'uncertain'
+    assert saved_review(store, cid)['candidates_count'] == 2
+    assert len(calls) == 2
+
+
+@pytest.mark.parametrize('kind', ['empty', 'duplicate', 'overlap', 'cap', 'changed_count'])
+def test_incomplete_paging_never_publishes_evidence(setup, paged_client, kind):
+    store, cid, data = setup
+    first = [poi()] + unrelated(0, 24)
+    pages, count = {
+        'empty': ([first, []], 26),
+        'duplicate': ([first, first], 26),
+        # Raw row count reaches 26 but there are only 25 distinct POIs.
+        'overlap': ([first, [first[0]], []], 26),
+        'cap': ([first] + [unrelated(i * 25, (i + 1) * 25) for i in range(1, 9)], 201),
+        'changed_count': ([first, unrelated(24, 26)], [26, 27]),
+    }[kind]
+    client, calls = paged_client(pages, count)
+    with pytest.raises(UseReviewOutcome) as exc:
+        review_one(store, data, cid, client)
+    assert exc.value.state == 'uncertain'
+    assert saved_review(store, cid)['evidence'] is None
+    assert len(calls) == (8 if kind == 'cap' else 2)
+
+
+def test_overlapping_pages_continue_until_unique_poi_count_is_complete(setup, paged_client):
+    store, cid, data = setup
+    first = unrelated(0, 25)
+    client, calls = paged_client([first, first[20:] + unrelated(25, 45),
+                                 unrelated(45, 49) + [poi()]], 50)
+    assert review_one(store, data, cid, client) == 'updated'
+    assert len(calls) == 3
+    assert saved_review(store, cid)['state'] == 'checked'
+
+
+def test_exactly_200_results_can_complete_on_page_eight(setup, paged_client):
+    store, cid, data = setup
+    pages = [unrelated(i * 25, (i + 1) * 25) for i in range(8)]
+    pages[-1][-1] = poi()
+    client, calls = paged_client(pages, 200)
+    assert review_one(store, data, cid, client) == 'updated'
+    assert len(calls) == 8
+
+
+def test_alias_search_also_paginates(setup, paged_client):
+    store, cid, data = setup
+    update_master(store, cid, community_name='风雅钱塘世纪花园', aliases=['风雅钱塘'])
+    client, calls = paged_client([unrelated(0, 25), [poi()]], 26)
+    original_get = client.session.get
+
+    def get(url, params, **kwargs):
+        if params['keywords'] == '风雅钱塘世纪花园':
+            class Response:
+                def raise_for_status(self): pass
+                def json(self): return {'status': '1', 'count': '0', 'pois': []}
+            return Response()
+        return original_get(url, params, **kwargs)
+
+    client.session.get = get
+    assert review_one(store, data, cid, client) == 'updated'
+    assert [c['page'] for c in calls] == [1, 2]
+    assert all(c['keywords'] == '风雅钱塘' for c in calls)
+    assert saved_review(store, cid)['evidence']['matched_by'] == 'alias'
+
+
+def test_page_failure_does_not_publish_first_page_match(setup, paged_client):
+    store, cid, data = setup
+    client, calls = paged_client([[poi()] + unrelated(0, 24), RuntimeError('secret')], 26)
+    with pytest.raises(UseReviewOutcome) as exc:
+        review_one(store, data, cid, client)
+    assert exc.value.state == 'error'
+    assert saved_review(store, cid)['evidence'] is None
+    assert len(calls) == 2
+
+
+def test_cancel_between_pages_stops_requests_and_publication(setup, paged_client):
+    store, cid, data = setup
+    cancelled = []
+    client, calls = paged_client([[poi()] + unrelated(0, 24)], 26,
+                                 callback=lambda page: cancelled.append(True))
+    with pytest.raises(InterruptedError):
+        review_one(store, data, cid, client, cancelled=lambda: bool(cancelled))
+    assert len(calls) == 1
+    assert saved_review(store, cid) is None
 
 
 def test_review_does_not_write_when_cancelled(setup):

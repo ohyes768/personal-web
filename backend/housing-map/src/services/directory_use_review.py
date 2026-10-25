@@ -16,8 +16,8 @@ from src.services.use_review_policy import (
     select_evidence, tmsf_property_types, use_identity, use_review_projection, use_review_view,
 )
 
-# 高德每页 25 条；结果被截断时无法确认名称匹配候选，保守按不确定处理。
-PAGE_SIZE = 25
+# 高德每页 25 条，最多可翻页取 200 条；未取完整时不采用用途证据。
+MAX_PAGES = 8
 # 主名没有名称匹配时，用别名重试查询的上限。
 ALIAS_RETRIES = 3
 # 批量任务的持久状态键与请求预算。
@@ -71,6 +71,36 @@ def _retry_aliases(target):
             seen.add(key)
             aliases.append(alias)
     return aliases[:ALIAS_RETRIES]
+
+
+def _search_review(client, name, district, *, cancelled):
+    """按原始 POI ID 核对分页完整性，再交给用途匹配过滤。"""
+    pois = {}
+    total = None
+    for page in range(1, MAX_PAGES + 1):
+        if cancelled():
+            raise InterruptedError()
+        options = {'types': None}
+        if page > 1:
+            options['page'] = page
+        rows, count = client.search_name(name, district, **options)
+        if cancelled():
+            raise InterruptedError()
+        if total is None:
+            total = count
+        elif count != total:
+            return list(pois.values()), False
+        before = len(pois)
+        for row in rows:
+            sid = row.get('id')
+            if not isinstance(sid, str) or not sid:
+                return list(pois.values()), False
+            pois[sid] = row
+        if len(pois) == total:
+            return list(pois.values()), True
+        if len(pois) > total or len(pois) == before:
+            break
+    return list(pois.values()), False
 
 
 def _publish(store, cid, snapshot, values, *, cancelled=lambda: False):
@@ -142,17 +172,17 @@ def review_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, fo
     owned = client is None
     try:
         client = client or AmapClient()
-        pois, count = client.search_name(target['community_name'], district, types=None)
+        pois, complete = _search_review(client, target['community_name'], district, cancelled=cancelled)
         selected = select_evidence(pois, target)
-        if selected['state'] == NOT_FOUND and count <= PAGE_SIZE:
+        if selected['state'] == NOT_FOUND and complete:
             # 主名没有名称匹配时按别名重试；别名命中才改用别名结果。
             for alias in _retry_aliases(target):
-                alias_pois, alias_count = client.search_name(alias, district, types=None)
+                alias_pois, alias_complete = _search_review(client, alias, district, cancelled=cancelled)
                 alias_selected = select_evidence(alias_pois, target)
-                if alias_selected['state'] != NOT_FOUND:
-                    pois, count, selected = alias_pois, alias_count, alias_selected
+                if not alias_complete or alias_selected['state'] != NOT_FOUND:
+                    complete, selected = alias_complete, alias_selected
                     break
-        if count > PAGE_SIZE:
+        if not complete:
             # 结果被截断，名称匹配候选无法确认，不作为任何方向的证据。
             values.update(state=UNCERTAIN, error='高德返回结果未完整，匹配不确定，待复核')
         else:

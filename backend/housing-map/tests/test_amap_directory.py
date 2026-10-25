@@ -33,7 +33,8 @@ def test_map_hint_never_overrides_property_use():
     assert classify_sources([hint, {'source': 'tmsf', 'source_id': 't', 'property_type': '公寓'}]) == 'pending'
 
 
-def test_unrestricted_search_omits_the_category_filter(monkeypatch):
+@pytest.mark.parametrize(('district', 'adcode'), [('滨江', '330108'), ('萧山', '330109')])
+def test_search_limits_results_to_target_district_with_optional_category_filter(monkeypatch, district, adcode):
     monkeypatch.setenv('AMAP_WEB_SERVICE_KEY', 'private-key')
     client = amap.AmapClient()
     captured = {}
@@ -48,10 +49,14 @@ def test_unrestricted_search_omits_the_category_filter(monkeypatch):
 
     monkeypatch.setattr(client.session, 'get', fake_get)
     try:
-        client.search_name('风雅钱塘', '滨江', types=None)
+        client.search_name('风雅钱塘', district, types=None)
         assert 'types' not in captured
-        client.search_name('风雅钱塘', '滨江')
+        assert captured['city'] == adcode
+        assert captured['citylimit'] == 'true'
+        client.search_name('风雅钱塘', district)
         assert captured['types'] == '120300|120203'
+        assert captured['city'] == adcode
+        assert captured['citylimit'] == 'true'
     finally:
         client.close()
 
