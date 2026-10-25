@@ -1,4 +1,5 @@
 export interface RentalSource {
+  source?: 'fang' | 'xingfuli';
   source_community_id: string;
   source_name: string;
   source_url: string;
@@ -30,8 +31,12 @@ export function sourcePath(communityId: string) {
 export function safeSourceLink(url: string): string | undefined {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'https:' && ['zu.fang.com', 'hz.zu.fang.com'].includes(parsed.hostname)
-      && !parsed.username && !parsed.password && (!parsed.port || parsed.port === '443') ? url : undefined;
+    const sourceAllowed = ['zu.fang.com', 'hz.zu.fang.com'].includes(parsed.hostname)
+      || (parsed.hostname === 'm.xflapp.com'
+        && /^\/zufang\/(?:neighbor-house-list\/)?hz-\d+\.html$/.test(parsed.pathname)
+        && !parsed.search && !parsed.hash);
+    return parsed.protocol === 'https:' && sourceAllowed && !parsed.username && !parsed.password
+      && (!parsed.port || parsed.port === '443') ? url : undefined;
   } catch { return undefined; }
 }
 export async function sourceRequest<T>(url: string, init?: RequestInit): Promise<T> {

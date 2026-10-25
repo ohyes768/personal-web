@@ -374,7 +374,7 @@ class CommunityRegistry:
             raise ValueError('来源或目标小区不存在，或已删除')
         from src.services.directory_policy import enabled, eligibility
         directory_mode = enabled(db)
-        if directory_mode and r['source'] in {'laipai', 'fang'}:
+        if directory_mode and r['source'] in {'laipai', 'fang', 'xingfuli'}:
             from src.services.community_admission import property_facts
             members = [self._source(s) for s in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
             a = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
@@ -401,9 +401,10 @@ class CommunityRegistry:
             if record.get('address') and community.get('address') and normalized(record['address']) != normalized(community['address']):
                 raise ValueError('同名异址需要人工确认')
         # Current rental snapshots are one-source-per-community; avoid silently hiding another source.
-        if r['source'] == 'fang' and db.execute(
-                "SELECT 1 FROM sources WHERE source='fang' AND cid=? AND status='matched' AND id<>?", (cid, rid)).fetchone():
-            raise ValueError('该小区已有房天下关联，请先解除原关联')
+        if r['source'] in {'fang', 'xingfuli'} and db.execute(
+                "SELECT 1 FROM sources WHERE source=? AND cid=? AND status='matched' AND id<>?", (r['source'], cid, rid)).fetchone():
+            label = '幸福里' if r['source'] == 'xingfuli' else '房天下'
+            raise ValueError(f'该小区已有{label}关联，请先解除原关联')
         payload = json.loads(r['payload'])
         payload['associated_at'] = now()
         db.execute("UPDATE sources SET cid=?,status='matched',method=?,evidence=?,payload=? WHERE id=?",
@@ -469,9 +470,10 @@ class CommunityRegistry:
         rows = [db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (key,)).fetchone() for key in (cid, target)]
         if not all(rows):
             raise ValueError('小区不存在或已删除')
-        fang = db.execute("SELECT COUNT(*) FROM sources WHERE source='fang' AND status='matched' AND cid IN (?,?)", (cid, target)).fetchone()[0]
-        if fang > 1:
-            raise ValueError('两个小区都有租金来源，请先解除错误来源再合并')
+        for provider in ('fang', 'xingfuli'):
+            count = db.execute("SELECT COUNT(*) FROM sources WHERE source=? AND status='matched' AND cid IN (?,?)", (provider, cid, target)).fetchone()[0]
+            if count > 1:
+                raise ValueError('两个小区都有租金来源，请先解除错误来源再合并')
         old, keep = [json.loads(r['payload']) for r in rows]
         keep['aliases'] = list(dict.fromkeys([*keep.get('aliases', []), old['community_name'], *old.get('aliases', [])]))
         for key in ('address', 'district', 'longitude', 'latitude', 'coordinate_system'):

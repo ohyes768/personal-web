@@ -8,7 +8,7 @@
 - phase 对外映射：crawling/publishing→running；cancelling→cancelling；
   done 且全部 adopted→succeeded；done 但 carried_over/absent 非空→partial_failed；
   failed/cancelled/interrupted 原样透出；无任务（job_id 为空）→ data:null。
-- 样本链接只允许 https://zu.fang.com 精确域，其他域过滤为 null。
+- 样本链接只允许已知来源的 HTTPS 精确域，其他域过滤为 null。
 - 售价参考只消费 load_price_snapshots 的输出（单价/口径/日期），过期签约价
   的排除规则由该加载器负责，这里不重复实现。
 """
@@ -46,6 +46,7 @@ from src.services.rental_reference.statistics import (
     select_valid,
 )
 from src.services.rental_reference.storage import load_current
+from src.services.rental_reference.providers import active_sources, same_source, source_url
 
 router = APIRouter(tags=["rentals"])
 
@@ -94,14 +95,23 @@ def _num(value: object) -> float | None:
 
 
 def _safe_source_url(url: object) -> str | None:
-    """样本链接只允许 https://zu.fang.com 精确域，其余过滤为 None。"""
+    """Public rental links only; credentials and other cities are rejected."""
     if not isinstance(url, str):
         return None
     try:
         parts = urlparse(url)
     except ValueError:
         return None
-    if parts.scheme != "https" or parts.hostname != ALLOWED_SOURCE_HOST:
+    if parts.scheme != "https" or parts.username or parts.password:
+        return None
+    if parts.hostname == 'm.xflapp.com':
+        from src.services.xingfuli_rentals import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return None
+        return url if parts.path.startswith('/zufang/') else None
+    if parts.hostname != ALLOWED_SOURCE_HOST:
         return None
     return url
 
@@ -335,15 +345,17 @@ def _mapped_entry(current: dict | None, community_id: str, source_ids: dict) -> 
     entry = _entry_of(current, community_id)
     if community_id not in source_ids:
         return None
-    if entry and entry.get('source_community_id') != source_ids[community_id]:
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(_mappings_path.parent)
+    mapping = active_sources(registry).get(community_id) if registry else None
+    provider = mapping['source'] if mapping else 'fang'
+    if entry and not same_source(entry, provider, source_ids[community_id]):
         entry = None
     if not entry:
-        from src.services.community_registry import existing_registry
-        registry = existing_registry(_mappings_path.parent)
         if registry:
             entry = next((e for e in (current or {}).get('communities', {}).values()
-                          if e.get('source_community_id') == source_ids[community_id]), None)
-            r = next((r for r in registry.sources() if r['source'] == 'fang'
+                          if same_source(e, provider, source_ids[community_id])), None)
+            r = next((r for r in registry.sources() if provider == 'fang' and r['source'] == 'fang'
                       and r['source_id'] == source_ids[community_id] and r['status'] == 'matched'), None)
             if not entry and r and r.get('samples'):
                 # Explicitly a regional sample, not a claim of a complete community crawl.
@@ -351,6 +363,17 @@ def _mapped_entry(current: dict | None, community_id: str, source_ids: dict) -> 
                          'captured_at': min(s.get('captured_at') or r['updated_at'] for s in r['samples']),
                          'quality': {'regional_sample': True}}
     return entry
+
+
+def _source_links(community_id, source_id):
+    if not source_id:
+        return []
+    from src.services.community_registry import existing_registry
+    registry = existing_registry(_mappings_path.parent)
+    record = active_sources(registry).get(community_id) if registry else None
+    link = source_url(record) if record else f'https://{ALLOWED_SOURCE_HOST}/hz/house-xm{source_id}/'
+    safe = _safe_source_url(link)
+    return [safe] if safe else []
 
 
 def _excluded_rows(valid_audit: dict) -> list[dict]:
@@ -511,8 +534,7 @@ def community_rentals(
         "page": page,
         "page_size": page_size,
         "total": total,
-        "source_links": ([f"https://{ALLOWED_SOURCE_HOST}/hz/house-xm{source_id}/"]
-                         if source_id else []),
+        "source_links": _source_links(community_id, source_id),
     }}
 
 

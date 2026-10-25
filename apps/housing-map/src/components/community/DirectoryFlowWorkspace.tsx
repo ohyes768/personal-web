@@ -33,7 +33,7 @@ const tasks = [
   { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止名称采集', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
   { id: 'use', label: '复核高德用途', short: '用途复核', stop: '停止用途复核', path: '/directory/workflow/use-reviews', hint: '按小区名复核高德用途分类；只产生待审核线索，不会自动收录或排除' },
-  { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新房天下租金' },
+  { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新幸福里或房天下租金' },
   { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
 const restPhases = ['idle', 'succeeded', 'done'];

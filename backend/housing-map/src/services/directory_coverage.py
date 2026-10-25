@@ -7,6 +7,7 @@ from src.services.auction_history import property_key
 from src.services.auction_store import read_store
 from src.services.rental_reference.statistics import is_stale, parse_utc, select_valid
 from src.services.rental_reference.storage import load_current
+from src.services.rental_reference.providers import active_sources
 
 
 def attach_coverage(rows, registry, data_dir, *, include_records=False):
@@ -17,8 +18,9 @@ def attach_coverage(rows, registry, data_dir, *, include_records=False):
                    for r in db.execute("SELECT key,value FROM meta WHERE key LIKE 'rental_review:%'")}
     auctions = auction_records(sources, read_store(data_dir / 'auction_records.json')['records'])
     current = load_current(data_dir / 'rentals')
-    entries = {e.get('source_community_id'): e for e in (current or {}).get('communities', {}).values()}
-    mappings = {s['community_id']: s for s in sources if s['source'] == 'fang' and s['status'] == 'matched'}
+    entries = {(e.get('source', 'fang'), e.get('source_community_id')): e
+               for e in (current or {}).get('communities', {}).values()}
+    mappings = active_sources(registry)
     job_path = data_dir / 'rentals' / 'refresh_job.json'
     job = json.loads(job_path.read_text(encoding='utf-8')) if job_path.exists() else {}
     clock = dt.datetime.now(dt.UTC)
@@ -62,7 +64,7 @@ def auction_records(sources, records):
 
 
 def rental_coverage(mapping, entries, review, job, *, now):
-    entry = entries.get(mapping['source_id']) if mapping else None
+    entry = entries.get((mapping['source'], mapping['source_id'])) if mapping else None
     valid = select_valid(entry.get('samples') or [])[0] if entry else []
     error = None
     if mapping:

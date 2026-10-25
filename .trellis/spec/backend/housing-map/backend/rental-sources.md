@@ -1,5 +1,7 @@
 # Rental source management contract
 
+> 2026-10-23: matched Xingfuli pilots take precedence over Fang for that community. See [Xingfuli rentals](./xingfuli-rentals.md). Confirmed source selection/removal uses `providers.active_sources`; candidate discovery remains Fang-only. Unlink removes the active provider, allowing an existing Fang association to become effective. Snapshots must match provider as well as ID.
+
 > After explicit `tmsf-directory-v1` migration, [TMSF directory workflow](./directory-flow.md) supersedes multi-source admission/review and defines task eligibility. Stored history and pre-migration behavior remain readable.
 
 

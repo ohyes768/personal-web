@@ -11,7 +11,7 @@ export function SourceCandidate({ candidate, busy, onConfirm, onReject }: {
     <p>来源地址：{candidate.source_address || '尚不可得，请打开来源核对位置'}</p>
     {candidate.evidence?.map(line => <p className="rental-meta" key={line}>{line}</p>)}
     <div className="rental-source-actions">
-      <a href={safeSourceLink(candidate.source_url)} target="_blank" rel="noopener noreferrer">查看房天下来源 ↗</a>
+      <a href={safeSourceLink(candidate.source_url)} target="_blank" rel="noopener noreferrer">查看{candidate.source === 'xingfuli' ? '幸福里' : '房天下'}来源 ↗</a>
       <button className="btn btn-primary" disabled={busy} onClick={onConfirm}>确认是这个小区</button>
       <button className="btn btn-secondary" disabled={busy} onClick={onReject}>不是这个小区</button>
     </div>
@@ -66,7 +66,7 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
     {data && <>
       <p className="rental-meta">地图小区：{data.community?.community_name} · {data.community?.district} {data.community?.subdistrict}</p>
       {data.mapping ? <div className="rental-source-current">
-        <strong>已关联：{data.mapping.source_name}</strong>
+        <strong>已关联：{data.mapping.source_name} · {data.mapping.source === 'xingfuli' ? '幸福里' : '房天下'}</strong>
         <p>{data.mapping.source_address || '地址未记录'} · 确认时间 {data.mapping.verified_at?.slice(0, 10) || '—'}</p>
         <div className="rental-source-actions"><a href={safeSourceLink(data.mapping.source_url)} target="_blank" rel="noopener noreferrer">查看来源 ↗</a>
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirming('remove')}>解除关联</button></div>

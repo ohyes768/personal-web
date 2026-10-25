@@ -491,6 +491,15 @@ def test_detail_source_url_domain_whitelist(api_env):
     assert all(link.startswith('https://zu.fang.com/') for link in data['source_links'])
 
 
+def test_xingfuli_links_are_exact_host_and_hangzhou_only():
+    safe = 'https://m.xflapp.com/zufang/hz-7660466810168328198.html'
+    assert rental_routes._safe_source_url(safe) == safe
+    for bad in ['https://m.xflapp.com.evil/zufang/hz-1.html',
+                'https://user@m.xflapp.com/zufang/hz-1.html',
+                'https://m.xflapp.com/zufang/bj-1.html']:
+        assert rental_routes._safe_source_url(bad) is None
+
+
 def test_detail_stale_returns_details_without_yield(api_env, monkeypatch):
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, valid3(),
                                         captured=now_iso(-40))})

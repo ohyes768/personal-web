@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRentalData } from '../../lib/use-rental-data';
 import { RentalSourceAssociation } from '../rental/RentalSourceManager';
+import { safeSourceLink } from '../../lib/rental-sources';
 import {
   RENTAL_DETAIL_PAGE_SIZE,
   type RentalAreaBand,
@@ -19,13 +20,8 @@ const areaBandLabels: Record<string, string> = {
   gte144: '144㎡及以上',
 };
 
-/** 来源链接只允许预期 https 来源域（zu.fang.com） */
 function RentalSourceLink({ url, children }: { url?: string | null; children: React.ReactNode }) {
-  let safe = false;
-  try {
-    const parsed = url ? new URL(url) : null;
-    safe = Boolean(parsed && parsed.protocol === 'https:' && parsed.hostname === 'zu.fang.com');
-  } catch { safe = false; }
+  const safe = url ? safeSourceLink(url) : undefined;
   return safe && url ? <a href={url} target="_blank" rel="noopener noreferrer">{children} ↗</a> : null;
 }
 

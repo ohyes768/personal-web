@@ -9,7 +9,8 @@ def setup(tmp_path):
     registry = CommunityRegistry(tmp_path / 'community_registry.sqlite3')
     for cid, name in [('c1', '测试花园'), ('c2', '其他花园')]:
         registry.create(name, district='滨江', address='测试路1号', community_id=cid)
-        record = registry.ingest(dict(source='tmsf', source_id=cid, name=name, district='滨江', property_type='住宅'))
+        record = registry.ingest(dict(source='tmsf', source_id=cid, name=name, district='滨江',
+                                      property_type='住宅', market_state='second_hand', listing_count=3))
         registry.associate(record['id'], cid)
     return registry
 

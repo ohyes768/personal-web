@@ -43,6 +43,8 @@ from src.services.rental_reference.storage import (
 )
 from src.services.fang_detail_cache import FangDetailCache
 from src.services.fang_request_policy import FangRequestPolicy, FangRequestCancelled
+from src.services.rental_reference.providers import active_sources, same_source, source_url
+from src.services.xingfuli_rentals import XingfuliClient
 
 JOB_FILE_NAME = 'refresh_job.json'
 DEFAULT_MAX_PAGES = 10
@@ -78,8 +80,7 @@ def load_verified_mappings(path: Path) -> list[tuple[str, str]]:
         from src.services.directory_workflow import is_enabled, admitted
         if is_enabled(registry):
             valid_ids = {c['community_id'] for c in admitted(registry, path.parent)}
-        return [(r['source_id'], r['community_id']) for r in sources
-                if r['source'] == 'fang' and r['status'] == 'matched' and r['community_id'] in valid_ids and registry.resolve(r['community_id'])]
+        return [(r['source_id'], cid) for cid, r in active_sources(registry).items() if cid in valid_ids]
     from src.services.rental_reference.sources import database_path, confirmed_pairs, connection
     db_path = database_path(path)
     if db_path.exists():
@@ -164,6 +165,10 @@ class _SeedPlan:
     seed: str
     community_id: str
     source_community_id: str
+    source: str = 'fang'
+    seed_listing_id: str | None = None
+    community_name: str = ''
+    property_type: str = '住宅'
 
 
 class RentalRefreshService:
@@ -176,6 +181,7 @@ class RentalRefreshService:
 
     def __init__(self, rentals_dir: Path, mappings_path: Path, *,
                  fetch_factory: Callable[..., object] = FangClient,
+                 xingfuli_factory: Callable[..., object] = XingfuliClient,
                  max_pages: int = DEFAULT_MAX_PAGES,
                  delay: float = DEFAULT_DELAY_SECONDS,
                  timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -185,6 +191,7 @@ class RentalRefreshService:
         self.rentals_dir = Path(rentals_dir)
         self.mappings_path = Path(mappings_path)
         self._fetch_factory = fetch_factory
+        self._xingfuli_factory = xingfuli_factory
         self._max_pages = max_pages
         self._delay = delay
         self._timeout = timeout
@@ -290,6 +297,7 @@ class RentalRefreshService:
         crawl_errors: list[dict] = []
         truncated_seeds: list[str] = []
         client = None
+        xingfuli_client = None
         outcome_phase = 'failed'
         result_summary: dict | None = None
         reused = {}
@@ -308,19 +316,21 @@ class RentalRefreshService:
                 from src.services.rental_reference.association import eligible_communities
                 if plan.community_id not in {c['community_id'] for c in eligible_communities(registry)[0]}:
                     return True
-            return not any(r['source'] == 'fang' and r['source_id'] == plan.source_community_id
-                           and r['community_id'] == plan.community_id and r['status'] == 'matched'
-                           for r in registry.sources())
+            current = active_sources(registry).get(plan.community_id)
+            return not current or (current['source'], current['source_id']) != (plan.source, plan.source_community_id)
         try:
             from src.services.community_registry import existing_registry
             registry = existing_registry(self.mappings_path.parent)
             if registry:
                 from src.services.rental_reference.association import eligible_communities
                 self._update_job(stage='checking')
-                eligible = {c['community_id'] for c in eligible_communities(registry)[0]}
-                pairs = [(r['source_id'], r['community_id']) for r in registry.sources()
-                         if r['source'] == 'fang' and r['status'] == 'matched' and r['community_id'] in eligible]
-                ordered = [_SeedPlan(f'{BASE_URL}/hz/house-xm{sid}/', cid, sid) for sid, cid in pairs]
+                eligible = {c['community_id']: c for c in eligible_communities(registry)[0]}
+                selected = active_sources(registry)
+                ordered = [_SeedPlan(source_url(r), cid, r['source_id'], r['source'],
+                                     r.get('seed_listing_id'), eligible[cid]['community_name'],
+                                     eligible[cid].get('effective_property_type') or eligible[cid].get('property_type') or '住宅')
+                           for cid, r in selected.items() if cid in eligible]
+                ordered.sort(key=lambda p: p.source == 'fang')
                 plans = {plan.seed: plan for plan in ordered}
                 progress = CrawlProgress(total_seeds=len(plans))
                 self._update_job(stage='crawling', total_communities=len(plans))
@@ -329,7 +339,7 @@ class RentalRefreshService:
             now = dt.datetime.now(dt.UTC)
             for plan in ordered:
                 entry = (previous or {}).get('communities', {}).get(plan.community_id)
-                if (not entry or entry.get('source_community_id') != plan.source_community_id
+                if (not same_source(entry, plan.source, plan.source_community_id)
                         or entry.get('status') not in ADOPTABLE_STATUSES or skip_seed(plan.seed)):
                     continue
                 try:
@@ -337,11 +347,12 @@ class RentalRefreshService:
                 except (KeyError, TypeError, ValueError):
                     continue
                 if 0 <= age < self._reuse_hours * 3600:
-                    reused[plan.community_id] = plan.source_community_id
+                    reused[plan.community_id] = (plan.source, plan.source_community_id)
             ordered = [plan for plan in ordered if plan.community_id not in reused]
             progress.processed_seeds = len(reused)
             self._update_job(reused_communities=len(reused), processed_communities=len(reused))
-            if ordered or registry:
+            needs_discovery = registry and any(cid not in selected for cid in eligible)
+            if any(p.source == 'fang' for p in ordered) or needs_discovery:
                 client = self._fetch_factory(timeout=self._timeout)
                 if isinstance(client, FangClient):
                     policy = FangRequestPolicy(self.rentals_dir, cancel_event=self._cancel_event)
@@ -351,11 +362,28 @@ class RentalRefreshService:
                 nonlocal request_count
                 request_count += 1
                 return client.fetch(url)
-            for index, seed_result in enumerate(crawl_runs(
-                    [plan.seed for plan in ordered], fetch=fetch,
-                    max_pages=self._max_pages, delay=self._delay,
-                    details=self._details, cancel_event=self._cancel_event,
-                    progress=progress, skip_seed=skip_seed, detail_cache=cache)):
+            def results():
+                nonlocal xingfuli_client
+                for plan in ordered:
+                    if plan.source != 'xingfuli':
+                        continue
+                    if skip_seed(plan.seed):
+                        continue
+                    self._update_job(current_community_id=plan.community_id)
+                    if xingfuli_client is None:
+                        xingfuli_client = self._xingfuli_factory(timeout=self._timeout, directory=self.rentals_dir,
+                            cancel_event=self._cancel_event, delay=self._delay)
+                    result = xingfuli_client.crawl(plan.source_community_id, plan.seed_listing_id,
+                        community_name=plan.community_name, property_type=plan.property_type,
+                        max_pages=self._max_pages, details=self._details, cancel_event=self._cancel_event)
+                    progress.processed_seeds += 1
+                    progress.pages_fetched += result.pages_fetched
+                    progress.details_fetched += result.detail_success + result.detail_failed
+                    yield result
+                yield from crawl_runs([p.seed for p in ordered if p.source == 'fang'], fetch=fetch,
+                        max_pages=self._max_pages, delay=self._delay, details=self._details,
+                        cancel_event=self._cancel_event, progress=progress, skip_seed=skip_seed, detail_cache=cache)
+            for index, seed_result in enumerate(results()):
                 plan = plans[seed_result.seed]
                 crawl_paused = crawl_paused or seed_result.pause_reason
                 next_plan = ordered[index + 1] if index + 1 < len(ordered) else None
@@ -365,7 +393,7 @@ class RentalRefreshService:
                 # them to publish_run with a failed status is what triggers the
                 # carried_over/absent logic instead of dropping the community.
                 batches.append(CommunityBatch(
-                    community_id=plan.community_id, source='fang',
+                    community_id=plan.community_id, source=plan.source,
                     source_community_id=plan.source_community_id,
                     status=seed_result.status, captured_at=captured_at,
                     samples=seed_result.samples,
@@ -396,7 +424,8 @@ class RentalRefreshService:
                             self._job['failed_count'] + (0 if succeeded or seed_result.deferred else 1),
                         'deferred_count': self._job['deferred_count'] + int(seed_result.deferred),
                         'detail_cache_hits': self._job['detail_cache_hits'] + seed_result.detail_cache_hits,
-                        'request_count': policy.request_count if policy else request_count,
+                        'request_count': (policy.request_count if policy else request_count)
+                                         + (xingfuli_client.request_count if xingfuli_client else 0),
                     })
                     errors = self._job['errors']
                     for error in seed_result.errors:
@@ -471,10 +500,19 @@ class RentalRefreshService:
                 try:
                     state = FangRequestPolicy(self.rentals_dir).status()
                     until = state['cooldown_until']
-                    self._update_job(request_count=policy.request_count,
+                    self._update_job(request_count=policy.request_count + (xingfuli_client.request_count if xingfuli_client else 0),
                         cooldown_until=dt.datetime.fromtimestamp(until, dt.UTC).isoformat() if until > dt.datetime.now(dt.UTC).timestamp() else None)
                 except Exception as exc:
                     self._add_error({'stage': 'request_state', 'error': str(exc)})
+            if xingfuli_client is not None:
+                if policy is None:
+                    self._update_job(request_count=request_count + xingfuli_client.request_count)
+                if xingfuli_client.cooldown_until:
+                    self._update_job(cooldown_until=max(filter(None, [self._job.get('cooldown_until'), xingfuli_client.cooldown_until])))
+                try:
+                    xingfuli_client.close()
+                except Exception:
+                    pass
             if client is not None:
                 try:
                     client.close()

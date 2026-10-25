@@ -30,7 +30,7 @@ export type Report = { running: boolean; phase: string; source?: string; started
   matched?: number; pending?: number; ignored?: number; stage?: string; property_types?: number;
   property_types_failed?: number; property_types_cached?: number; errors?: { source: string; message: string }[];
   truncated?: { source: string; message: string }[] };
-export const labels: Record<string, string> = { tmsf: '透明售房网', amap: '高德地图', fang: '房天下', laipai: '来拍 ya' };
+export const labels: Record<string, string> = { tmsf: '透明售房网', amap: '高德地图', fang: '房天下', xingfuli: '幸福里', laipai: '来拍 ya' };
 export const marketLabels: Record<string, string> = { new_house: '新房项目', second_hand: '二手房', unknown: '新房 / 二手房状态未知' };
 export const phaseLabels: Record<string, string> = { running: '正在采集', succeeded: '采集结束', partial_failed: '部分完成',
   failed: '采集失败', cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
@@ -99,7 +99,7 @@ export function DirectorySourceCard({ item, children, compact = false }: { item:
     const readableLink = item.source === 'tmsf'
       ? propertyLink || safeDirectoryLink(item.project_property_type_url) || safeDirectoryLink(item.market_state_url) || (link && !/\.js(?:[?#]|$)/i.test(new URL(link).pathname) ? link : undefined)
       : link;
-    const description = item.source === 'fang' ? '租金来源' : [item.property_type,
+    const description = ['fang', 'xingfuli'].includes(item.source) ? '租金来源' : [item.property_type,
       item.market_state && item.market_state !== 'unknown' && marketLabels[item.market_state], item.project_sale_status].filter(Boolean).join(' · ') || '资料待补充';
     const methodLabel = item.status === 'ignored' ? '已删除' : item.status === 'pending' ? '待关联' : item.method === 'auto' ? '自动关联' : '人工关联';
     return <article className="directory-source-summary">

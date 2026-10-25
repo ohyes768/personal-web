@@ -8,6 +8,7 @@ from src.services.community_registry import dump, now, normalized
 from src.services.residential_classifier import classify_sources
 from src.services.community_address import effective_address
 from src.services.community_listing import listing_gate
+from src.services.rental_reference.providers import active_sources
 
 PREFIX = 'rental_review:'
 logger = logging.getLogger(__name__)
@@ -81,7 +82,7 @@ def save_review(registry, community, reason, candidates, message='', *, searched
 
 def reviews(registry):
     communities, _ = eligible_communities(registry)
-    mapped = {r['community_id'] for r in registry.sources() if r['source'] == 'fang' and r['status'] == 'matched'}
+    mapped = set(active_sources(registry))
     items = []
     for community in communities:
         cid = community['community_id']
@@ -105,7 +106,7 @@ def decide(registry, cid, action, candidate_id=None):
     community = next((c for c in communities if c['community_id'] == cid), None)
     if not community:
         raise ValueError('小区已删除或不是有效滨江住宅，请刷新')
-    if any(r['source'] == 'fang' and r['status'] == 'matched' and r['community_id'] == cid for r in registry.sources()):
+    if cid in active_sources(registry):
         raise ValueError('小区已绑定租金来源，请刷新')
     candidates = candidates_for(registry, community)
     if action == 'bind':
@@ -161,8 +162,7 @@ def prepare_sources(registry, cancel, progress, discover, *, delay=5, budget=5, 
             from src.services.fang_rentals import RentalCrawlCancelled
             raise RentalCrawlCancelled([], None)
         cid = community['community_id']
-        mapped = any(r['source'] == 'fang' and r['status'] == 'matched' and r['community_id'] == cid
-                     for r in registry.sources())
+        mapped = cid in active_sources(registry)
         reason, message = 'matched', ''
         searched = False
         if not mapped:

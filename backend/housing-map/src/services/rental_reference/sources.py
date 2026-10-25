@@ -80,8 +80,8 @@ class SourceStore:
 
     def all_mappings(self) -> dict:
         if self.registry:
-            return {r['community_id']: self._rental(r) for r in self.registry.sources()
-                    if r['source'] == 'fang' and r['status'] == 'matched'}
+            from src.services.rental_reference.providers import active_sources
+            return {cid: self._rental(r) for cid, r in active_sources(self.registry).items()}
         with connection(self.path) as db:
             return {r['community_id']: json.loads(r['payload']) for r in db.execute('SELECT * FROM mappings')}
 
@@ -109,6 +109,10 @@ class SourceStore:
 
     def confirm(self, community_id: str, source_id: str) -> dict:
         if self.registry:
+            from src.services.rental_reference.providers import active_sources
+            current = active_sources(self.registry).get(community_id)
+            if current and current['source'] == 'xingfuli':
+                raise ValueError('请先解除当前幸福里关联，再确认房天下来源')
             r = next((r for r in self.registry.sources() if r['source'] == 'fang' and r['source_id'] == source_id), None)
             if not r:
                 raise ValueError('请先查找来源')
@@ -132,9 +136,10 @@ class SourceStore:
 
     def remove(self, community_id: str) -> None:
         if self.registry:
-            for r in self.registry.sources():
-                if r['source'] == 'fang' and r['community_id'] == community_id and r['status'] == 'matched':
-                    self.registry.unlink(r['id'])
+            from src.services.rental_reference.providers import active_sources
+            r = active_sources(self.registry).get(community_id)
+            if r:
+                self.registry.unlink(r['id'])
             return
         with connection(self.path) as db:
             db.execute('DELETE FROM mappings WHERE community_id=?', (community_id,))
