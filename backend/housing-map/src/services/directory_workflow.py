@@ -8,6 +8,7 @@ from src.services.directory_policy import enabled, eligibility, VERSION
 from src.services.directory_position_state import position_view
 from src.services.tmsf_property_type import effective_market_state
 from src.services.use_review_policy import use_review_projection
+from src.services.use_review_scope import auto_review_skip_reason
 
 
 def is_enabled(store):
@@ -101,6 +102,7 @@ def inventory(store, data_dir):
                        'sources': [{k: v for k, v in r.items() if k != 'samples'}], 'map_status': 'not_admitted'})
     for row in output:
         row['property_types'] = catalog_property_types(row, facts)
+        row['use_review']['auto_skip_reason'] = auto_review_skip_reason(row)
     return sorted(output, key=lambda c: (c['community_name'], c['community_id']))
 
 

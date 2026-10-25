@@ -3,7 +3,7 @@ import pytest
 
 from src.services.community_registry import CommunityRegistry
 from src.services.directory_policy import KEY, VERSION
-from src.services.directory_use_review import UseReviewJob
+from src.services.directory_use_review import UseReviewJob, review_one
 from src.services.directory_workflow import admitted, inventory
 
 
@@ -46,7 +46,8 @@ def test_a_mislabelled_community_goes_through_review_into_the_catalog(scenario):
 
     job = UseReviewJob(store)
     job._run(client=Client(), delay=0)
-    assert job.snapshot()['conflict'] == 1
+    assert job.snapshot()['total'] == 0  # 明确非住宅不再自动查询，手动复核仍可纠正误标。
+    review_one(store, data, cid, Client(), force=True)
 
     row = next(r for r in inventory(store, data) if r['community_id'] == cid)
     assert row['qualification'] == 'use_conflict'
@@ -74,8 +75,7 @@ def test_a_mislabelled_community_goes_through_review_into_the_catalog(scenario):
 
 def test_a_review_does_not_change_the_verdict_without_a_human_decision(scenario):
     store, cid, data = scenario
-    job = UseReviewJob(store)
-    job._run(client=Client(), delay=0)
+    review_one(store, data, cid, Client(), force=True)
     row = next(r for r in inventory(store, data) if r['community_id'] == cid)
     assert row['qualification'] == 'use_conflict'
     assert row['admission_state'] == 'excluded'
@@ -91,6 +91,8 @@ def test_new_contrary_evidence_sends_a_confirmed_community_back_to_review(scenar
 
     job = UseReviewJob(store)
     job._run(client=Client([poi(typecode='120101', type_text='写字楼')]), delay=0)
+    assert job.snapshot()['total'] == 0  # 人工决定不自动重查；显式查询仍会发现相反证据。
+    review_one(store, data, cid, Client([poi(typecode='120101', type_text='写字楼')]), force=True)
     row = next(r for r in inventory(store, data) if r['community_id'] == cid)
     assert row['use_review']['re_review'] is True
     assert row['qualification'] == 'use_conflict'

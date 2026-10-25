@@ -51,6 +51,8 @@ EVIDENCE = [{'source': 'kerui', 'url': 'https://www.cihud.com/x/1', 'note': '住
 
 def test_a_single_review_returns_the_projection(setup):
     client, store, cid = setup
+    before = client.get(f'{BASE}/catalog/{cid}/use-review').json()['data']
+    assert '非住宅' in before['auto_skip_reason']
     response = client.post(f'{BASE}/catalog/{cid}/use-review')
     assert response.status_code == 200, response.text
     data = response.json()['data']
@@ -59,6 +61,17 @@ def test_a_single_review_returns_the_projection(setup):
     assert data['evidence']['poi_id'] == 'B1'
     assert data['human'] is None and data['re_review'] is False
     assert data['errors'] == []
+
+
+def test_skipped_filter_separates_automatic_skips_from_unresolved_work(setup):
+    client, store, cid = setup
+    result = client.get(f'{BASE}/catalog?state=excluded&use=skipped').json()['data']
+    assert result['total'] == 1 and result['items'][0]['community_id'] == cid
+    assert client.get(f'{BASE}/catalog?state=excluded&use=none').json()['data']['total'] == 0
+    client.post(f'{BASE}/catalog/{cid}/use-review')
+    # A manually discovered conflict stays in the conflict queue even if auto queries skip it.
+    assert client.get(f'{BASE}/catalog?state=excluded&use=skipped').json()['data']['total'] == 0
+    assert client.get(f'{BASE}/catalog?state=excluded&use=conflict').json()['data']['total'] == 1
 
 
 def test_a_review_that_finds_nothing_reports_the_error(setup, monkeypatch):
@@ -125,10 +138,12 @@ def test_the_use_filter_applies_before_pagination(setup):
     assert client.get(f'{BASE}/catalog?state=excluded&use=bogus').status_code == 422
 
 
-def test_the_batch_job_is_persistent_and_cancellable(setup):
+def test_the_batch_job_is_persistent_and_cancellable(setup, monkeypatch):
     client, store, cid = setup
     from src.api import directory_workflow_routes as routes
     assert client.get(f'{BASE}/use-reviews').json()['data'] is None
+    # Test the lifecycle endpoints without a worker racing the cancellation request.
+    monkeypatch.setattr(routes.use_review_job(), '_run', lambda: None)
     started = client.post(f'{BASE}/use-reviews')
     assert started.status_code == 202, started.text
     routes.use_review_job().state = dict(routes.use_review_job()._initial_state(), total=1)

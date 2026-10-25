@@ -32,7 +32,7 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
 const tasks = [
   { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止名称采集', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
-  { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '将高德用途与透明售房网资料比较；发现冲突后由你确认，原有收录结果不会自动改变。' },
+  { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '仅核对用途缺失、冲突、公寓商住等需核实项目及已定位住宅；人工决定、明确非住宅、区域异常和未收录的其他用途可按需手动查询，发现冲突后由你确认。' },
   { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新幸福里或房天下租金' },
   { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
@@ -165,6 +165,7 @@ export function CatalogTable({ items, excluded, select, retry, busy, position }:
       ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
       : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
     {excluded && <td data-label="住宅用途核对"><div className="catalog-inline"><UseReviewBadge review={c.use_review} compact />
+      {c.use_review?.auto_skip_reason && <small className="catalog-text directory-muted">{c.use_review.auto_skip_reason}</small>}
       {c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
     {excluded && <td data-label="不收录原因 / 资料状态">{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : '条件不符'}</small></td>}
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}

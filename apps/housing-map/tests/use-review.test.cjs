@@ -22,6 +22,19 @@ test('review buckets separate conflicts from agreement and untried rows', () => 
   assert.equal(useReviewBucket(undefined), 'none');
 });
 
+test('automatic skips explain why and preserve manual querying and existing conflicts', () => {
+  const review = { state: 'uncertain', result: 'pending_retry', auto_skip_reason: '区域异常：地址标注拱墅区' };
+  assert.equal(useReviewBucket(review), 'skipped');
+  const badge = render(React.createElement(UseReviewBadge, { compact: true, review }));
+  assert.match(badge, /不自动核对/);
+  assert.match(badge, /区域异常/);
+  const panel = render(React.createElement(UseReviewPanel, { review, busy: false, onRecheck() {}, onConfirm() {} }));
+  assert.match(panel, /区域异常/);
+  assert.match(panel, /重新查询高德/);
+  assert.equal(useReviewBucket({ ...conflict, auto_skip_reason: '明确非住宅' }), 'review');
+  assert.equal(useReviewBucket({ state: 'checked', result: 'agree_non_residential', auto_skip_reason: '明确非住宅' }), 'done');
+});
+
 test('compact badges name the same buckets as the filter labels', () => {
   for (const [review, label] of [[conflict, '待人工确认'], [{ state: 'checked', result: 'agree_residential' }, '已一致'],
     [{ state: 'not_found', result: 'pending_retry' }, '未取得明确结果'], [{ result: 'pending_retry' }, '尚未核对']]) {

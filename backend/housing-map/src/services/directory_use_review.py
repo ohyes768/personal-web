@@ -10,7 +10,9 @@ import threading
 from src.services.amap_directory import AmapClient
 from src.services.community_admission import property_facts
 from src.services.community_registry import dump, normalized, now
-from src.services.directory_policy import enabled
+from src.services.directory_policy import enabled, eligibility
+from src.services.directory_position_state import position_view
+from src.services.use_review_scope import auto_review_skip_reason
 from src.services.use_review_policy import (
     CHECKED, CONFLICT, ERROR, NOT_FOUND, RULE_VERSION, UNCERTAIN, compare, contrary_evidence,
     select_evidence, tmsf_property_types, use_identity, use_review_projection, use_review_view,
@@ -50,8 +52,7 @@ def _snapshot(store, cid):
 def _target(store, snapshot):
     """复核对象：未删除未合并、且有透明售房网资料的小区。
 
-    已收录与未收录的小区都在范围内——「住宅×非住宅」的冲突只能从
-    透明售房网判为非住宅的一侧发现。
+    手动查询保留全部真实身份；批量查询另按自动复核范围筛选。
     """
     master = snapshot['master']
     if master['deleted'] or master['merged_to']:
@@ -130,9 +131,10 @@ def stored_review(store, cid):
 
 
 def review_targets(store, data_dir):
-    """全部未删除未合并、且有透明售房网资料的小区：已收录与未收录都要复核。"""
+    """只把需要自动核对用途的真实目录身份纳入批量查询。"""
     from src.services.directory_workflow import inventory
-    return [c for c in inventory(store, data_dir) if not c.get('source_record_id')]
+    return [c for c in inventory(store, data_dir) if not c.get('source_record_id')
+            and not c['use_review'].get('auto_skip_reason')]
 
 
 def use_review_detail(store, data_dir, cid):
@@ -144,8 +146,18 @@ def use_review_detail(store, data_dir, cid):
         records = [store._source(r) for r in db.execute(
             "SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
         admission = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
-    return use_review_projection(store._community(row), records,
-                                 json.loads(admission[0]) if admission else {}, property_facts(data_dir))
+    target = store._community(row)
+    admission = json.loads(admission[0]) if admission else {}
+    facts = property_facts(data_dir)
+    review = use_review_projection(target, records, admission, facts)
+    review['auto_skip_reason'] = _auto_skip_reason(target, records, admission, facts)
+    return review
+
+
+def _auto_skip_reason(target, records, admission, facts):
+    return auto_review_skip_reason({**target, **eligibility(target, records, facts, admission),
+        'admission': admission, 'sources': records, 'position': position_view(target, records),
+        'property_types': [t for t in tmsf_property_types(records, facts) if t]})
 
 
 def review_outcome(target, facts, review):
@@ -159,10 +171,13 @@ def review_outcome(target, facts, review):
     return 'conflict' if compare(types, category) == CONFLICT else 'updated'
 
 
-def review_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False):
+def review_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False, automatic=False):
     """对单个小区做一次高德用途分类复核并保存证据。"""
     snapshot = _snapshot(store, cid)
-    target, _records = _target(store, snapshot)
+    target, records = _target(store, snapshot)
+    if automatic and _auto_skip_reason(target, records,
+            json.loads(snapshot['admission']) if snapshot['admission'] else {}, property_facts(data_dir)):
+        return 'skipped'
     previous = use_review_view(target)
     if not force and previous['state'] == CHECKED:
         return 'skipped'
@@ -282,7 +297,8 @@ class UseReviewJob:
                         # 空跑不构造客户端，因此没有 key 也能跑完。
                         client = AmapClient()
                     try:
-                        review_one(self.store, self.store.path.parent, cid, client, cancelled=self.cancel.is_set)
+                        result = review_one(self.store, self.store.path.parent, cid, client,
+                                            cancelled=self.cancel.is_set, automatic=True)
                     except InterruptedError:
                         raise
                     except UseReviewOutcome as exc:
@@ -299,7 +315,7 @@ class UseReviewJob:
                                                          'message': message, 'state': ERROR})
                         outcome = None
                     else:
-                        outcome = review_outcome(target, facts, stored_review(self.store, cid))
+                        outcome = 'skipped' if result == 'skipped' else review_outcome(target, facts, stored_review(self.store, cid))
                 with self.lock:
                     self.state['processed'] += 1
                     self.state['requests'] = requests

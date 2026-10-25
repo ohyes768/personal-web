@@ -84,15 +84,16 @@ USE_FILTERS = {
     'conflict': lambda p: p.get('result') == 'conflict',
     'uncertain': lambda p: p.get('result') == 'uncertain',
     'agree': lambda p: p.get('result') in {'agree_residential', 'agree_non_residential'},
-    'pending_retry': lambda p: p.get('result') == 'pending_retry' and p.get('state') is not None,
-    'none': lambda p: p.get('state') is None,
+    'pending_retry': lambda p: p.get('result') == 'pending_retry' and p.get('state') is not None and not p.get('auto_skip_reason'),
+    'none': lambda p: p.get('state') is None and not p.get('auto_skip_reason'),
+    'skipped': lambda p: bool(p.get('auto_skip_reason')) and p.get('result') in {None, 'pending_retry'},
 }
 
 
 @router.get('/catalog')
 def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query('', max_length=200),
             district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual', 'done', 'todo'] = '',
-            use: Literal['', 'conflict', 'uncertain', 'pending_retry', 'agree', 'none'] = '',
+            use: Literal['', 'conflict', 'uncertain', 'pending_retry', 'agree', 'none', 'skipped'] = '',
             market: Literal['', 'new_house', 'second_hand'] = '',
             property_type: str = Query('', max_length=100),
             auction: Literal['', 'has', 'none'] = '',

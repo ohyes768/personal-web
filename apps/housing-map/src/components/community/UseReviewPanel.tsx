@@ -8,18 +8,19 @@ export type UseReviewEvidence = { poi_id?: string; name?: string; typecode?: str
 export type UseReviewHuman = { decision?: string; decided_at?: string; reason?: string;
   evidence?: { source?: string; url?: string; note?: string }[] };
 export type UseReview = { state?: string; category?: string; result?: string; checked_at?: string; error?: string;
-  evidence?: UseReviewEvidence | null; candidates_count?: number; human?: UseReviewHuman | null; re_review?: boolean };
+  evidence?: UseReviewEvidence | null; candidates_count?: number; human?: UseReviewHuman | null; re_review?: boolean;
+  auto_skip_reason?: string | null };
 
-export type UseReviewBucket = 'review' | 'done' | 'todo' | 'none';
+export type UseReviewBucket = 'review' | 'done' | 'todo' | 'none' | 'skipped';
 
 export const useReviewStateLabels: Record<string, string> = { checked: '已完成用途核对', not_found: '未找到高德地点',
   error: '查询失败', uncertain: '高德地点匹配不明确' };
 export const useReviewResultLabels: Record<string, string> = { conflict: '用途冲突', uncertain: '用途待人工确认',
   agree_residential: '一致（住宅）', agree_non_residential: '一致（非住宅）', pending_retry: '未取得明确结果' };
 export const useReviewBucketLabels: Record<UseReviewBucket, string> = { review: '待人工确认', done: '已一致',
-  todo: '未取得明确结果', none: '尚未核对' };
+  todo: '未取得明确结果', none: '尚未核对', skipped: '不自动核对' };
 export const useReviewFilterLabels: Record<string, string> = { conflict: '用途冲突，待人工确认', uncertain: '用途待人工确认',
-  agree: '用途一致', pending_retry: '未取得明确结果', none: '尚未核对' };
+  agree: '用途一致', pending_retry: '未取得明确结果', none: '尚未核对', skipped: '不自动核对' };
 export const useReviewSourceLabels: Record<string, string> = { kerui: '克而瑞', fang: '房天下', amap: '高德', other: '其他' };
 
 // 旧任务和证据保存了提示原文；统一转换显示，无需重新查询高德。
@@ -37,17 +38,18 @@ export function useReviewBucket(review?: UseReview): UseReviewBucket {
   const result = review?.result;
   if (result === 'conflict' || result === 'uncertain') return 'review';
   if (result === 'agree_residential' || result === 'agree_non_residential') return 'done';
+  if (review?.auto_skip_reason) return 'skipped';
   if (review?.state) return 'todo';
   return 'none';
 }
 
 export function UseReviewBadge({ review, compact = false }: { review?: UseReview; compact?: boolean }) {
   const bucket = useReviewBucket(review);
-  const title = `${useReviewBucketLabels[bucket]} · ${useReviewResultLabels[review?.result || ''] || '尚未核对'}` +
+  const title = `${useReviewBucketLabels[bucket]} · ${review?.auto_skip_reason || useReviewResultLabels[review?.result || ''] || '尚未核对'}` +
     `${review?.re_review ? ' · 有新证据，待人工重新确认' : ''}${review?.checked_at ? ` · 最近核对 ${review.checked_at.slice(0, 10)}` : ''}`;
   if (compact) return <span className={`directory-badge directory-use-${bucket}`} title={title}>{useReviewBucketLabels[bucket]}</span>;
   return <><span className={`directory-badge directory-use-${bucket}`}>{useReviewBucketLabels[bucket]}</span>
-    <small>{useReviewResultLabels[review?.result || ''] || '尚未核对'}</small>
+    <small>{review?.auto_skip_reason || useReviewResultLabels[review?.result || ''] || '尚未核对'}</small>
     {review?.re_review && <small>有新证据，待人工重新确认</small>}</>;
 }
 
@@ -71,6 +73,7 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
   };
   return <section className="directory-use-review-panel" aria-label="住宅用途核对">
     <div className="directory-use-review-heading"><h4>住宅用途核对</h4><UseReviewBadge review={review} compact /></div>
+    {review?.auto_skip_reason && <p className="directory-muted">{review.auto_skip_reason}。仍可手动查询高德。</p>}
     {review?.re_review && <p role="alert" className="directory-warning">出现与人工结论相反的证据，请重新核对后再确认。</p>}
     <p className="directory-muted">{useReviewResultLabels[review?.result || ''] || '尚未核对'}
       {review?.checked_at ? ` · 最近核对 ${review.checked_at.slice(0, 10)}` : ''}</p>

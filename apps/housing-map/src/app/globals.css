@@ -1171,7 +1171,7 @@ body {
 .directory-use-done { background:#e8f4ea; color:#1f6b3a; border:1px solid #b6dcc1; }
 .directory-use-review { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
 .directory-use-todo { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
-.directory-use-none { background:var(--bg-elevated); color:var(--text-muted); border:1px solid var(--border); }
+.directory-use-none, .directory-use-skipped { background:var(--bg-elevated); color:var(--text-muted); border:1px solid var(--border); }
 .directory-detail { width:390px; flex-shrink:0; padding:20px; background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; overflow-wrap:anywhere; }
 .directory-detail h3 { font-size:19px; margin:0 0 12px; }
 .directory-edit-grid { display:grid; gap:12px; margin:12px 0 16px; }
