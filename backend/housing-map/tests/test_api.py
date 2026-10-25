@@ -1,13 +1,63 @@
 """API 集成测试: health / communities / score / transit / refresh 状态
 
-依赖 backend/housing-map/data/ 下的运行时数据文件（随服务分发）。
+communities/score 用例通过 seeded_data_dir 在 tmp 目录自造最小数据集，不再依赖
+data/ 快照的鲜活度：快照里的 registry 与 admission 契约演进脱节后在当前代码下
+全部 not_admitted（生产行为正确，NAS 数据是运行时演化的），不适合再当集成
+fixture。无 registry 时展示链走 load_communities 原始 JSON 回退路径。
+transit / refresh 等用例继续使用随服务分发的 data/ 快照。
 """
 
+import json
+
+import pytest
 from fastapi.testclient import TestClient
 
 from src.main import app
 
 client = TestClient(app)
+
+
+@pytest.fixture()
+def seeded_data_dir(tmp_path, monkeypatch):
+    """无 registry 的最小数据集: 展示链走 raw JSON 回退，坐标满足错区防护与 is_in_scope。"""
+    # 名称/id 取自真实脏数据回归锚点: 路名伪小区、个案脏数据、merge drop/primary
+    communities = [
+        {"community_id": "10001742", "community_name": "倾城之恋花园"},
+        {"community_id": "20044031", "community_name": "万科璞悦湾"},
+        {"community_id": "50019001", "community_name": "通策广场"},
+        {"community_id": "50019002", "community_name": "逸天广场"},
+        {"community_id": "50019003", "community_name": "江南大道"},
+        {"community_id": "50019004", "community_name": "新街镇北塘河"},
+        {"community_id": "453982238", "community_name": "西兴镇水电社区"},
+        {"community_id": "453982737", "community_name": "水电社区"},
+    ]
+    coordinates = {
+        c["community_id"]: {
+            "longitude": 120.208265,
+            "latitude": 30.199576,
+            "formatted_address": "杭州市滨江区长河街道",
+        }
+        for c in communities
+    }
+    files = {
+        "binjiang_communities.json": communities,
+        "binjiang_coordinates.json": coordinates,
+        "binjiang_pois.json": {},
+        "property_types.json": {},
+        "binjiang_polygons_merged.json": {},
+        "community_ages.json": {},
+        "community_attrs.json": {},
+        "binjiang_transit_routes.geojson": {"type": "FeatureCollection", "features": []},
+        "binjiang_transit_stops.geojson": {"type": "FeatureCollection", "features": []},
+    }
+    for name, payload in files.items():
+        (tmp_path / name).write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    # price_snapshots.jsonl 缺失 -> load_price_snapshots 返回空 dict，价格字段为 null
+
+    import src.services.data_loader as data_loader
+
+    monkeypatch.setattr(data_loader, "DATA_DIR", tmp_path)
+    return tmp_path
 
 
 def test_health_returns_ok():
@@ -37,7 +87,7 @@ def test_market_reference_endpoint_returns_listing_reference_snapshot():
     assert body["data"]["source"]["captured_at"]
 
 
-def test_communities_structure():
+def test_communities_structure(seeded_data_dir):
     resp = client.get("/api/communities")
     assert resp.status_code == 200
     body = resp.json()
@@ -69,7 +119,7 @@ def test_communities_structure():
     assert "features" in body["transit"]["stops"]
 
 
-def test_communities_excludes_dirty_data():
+def test_communities_excludes_dirty_data(seeded_data_dir):
     resp = client.get("/api/communities")
     data = resp.json()["data"]
     names = {c["community_name"] for c in data}
@@ -84,7 +134,7 @@ def test_communities_excludes_dirty_data():
     assert "453982737" in {c["community_id"] for c in data}
 
 
-def test_score_single_community():
+def test_score_single_community(seeded_data_dir):
     resp = client.get("/api/communities")
     first_id = resp.json()["data"][0]["community_id"]
 
@@ -100,13 +150,13 @@ def test_score_single_community():
     assert "property_type" not in body["data"]
 
 
-def test_score_single_not_found():
+def test_score_single_not_found(seeded_data_dir):
     resp = client.get("/api/score?id=nonexistent-id")
     assert resp.status_code == 200
     assert resp.json() == {"success": False, "error": "找不到指定的小区"}
 
 
-def test_score_batch_sorted_desc():
+def test_score_batch_sorted_desc(seeded_data_dir):
     resp = client.get("/api/score?locationWeight=30&amenityWeight=30&productWeight=25&marketWeight=15")
     assert resp.status_code == 200
     body = resp.json()
