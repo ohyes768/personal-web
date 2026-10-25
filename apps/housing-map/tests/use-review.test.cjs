@@ -23,8 +23,8 @@ test('review buckets separate conflicts from agreement and untried rows', () => 
 });
 
 test('compact badges name the same buckets as the filter labels', () => {
-  for (const [review, label] of [[conflict, '待审核'], [{ state: 'checked', result: 'agree_residential' }, '已一致'],
-    [{ state: 'not_found', result: 'pending_retry' }, '待复核'], [{ result: 'pending_retry' }, '未复核']]) {
+  for (const [review, label] of [[conflict, '待人工确认'], [{ state: 'checked', result: 'agree_residential' }, '已一致'],
+    [{ state: 'not_found', result: 'pending_retry' }, '未取得明确结果'], [{ result: 'pending_retry' }, '尚未核对']]) {
     const html = render(React.createElement(UseReviewBadge, { compact: true, review }));
     assert.ok(html.includes(`>${label}</span>`), `${label} should be shown`);
   }
@@ -34,17 +34,21 @@ test('excluded rows show the review badge and keep the reason column', () => {
   const html = render(React.createElement(CatalogTable, { excluded: true, busy: false, select() {}, retry() {},
     items: [{ community_id: '1', community_name: '风雅钱塘世纪花园', sources: [], facts_state: 'incomplete',
       exclusion_reason: '透明售房网与高德用途分类冲突，待人工审核', use_review: conflict }] }));
-  assert.match(html, /<th>高德用途复核<\/th>/); assert.match(html, /待审核/);
+  assert.match(html, /<th>住宅用途核对<\/th>/); assert.match(html, /待人工确认/);
   assert.match(html, /分类冲突，待人工审核/); assert.match(html, /资料待补，可重新获取/);
 });
 
 test('the panel shows evidence, the conflict and the pending re-review warning', () => {
   const html = render(React.createElement(UseReviewPanel, { review: { ...conflict, re_review: true },
     busy: false, revision: 3, onRecheck() {}, onConfirm() {} }));
-  assert.match(html, /<h4>高德用途复核<\/h4>/); assert.match(html, /分类冲突/);
+  assert.match(html, /<h4>住宅用途核对<\/h4>/); assert.match(html, /用途冲突/);
   assert.match(html, /风雅钱塘世纪花园/); assert.match(html, /住宅小区/); assert.match(html, /月明路1076号/);
   assert.match(html, /出现与人工结论相反的证据/);
-  assert.match(html, /重新复核/); assert.match(html, /确认用途/);
+  assert.match(html, /重新查询高德/); assert.match(html, /人工确认用途/);
+  const incomplete = render(React.createElement(UseReviewPanel, { review: { state: 'uncertain', result: 'pending_retry',
+    error: '高德返回结果未完整，匹配不确定，待复核' }, busy: false, onRecheck() {}, onConfirm() {} }));
+  assert.match(incomplete, /高德搜索结果未取完整，暂时无法确认匹配地点。/);
+  assert.doesNotMatch(incomplete, /待复核/);
 });
 
 test('the confirm form requires an evidence link and a reason for non-residential', () => {
@@ -75,15 +79,18 @@ test('the human decision and its evidence stay visible after confirming', () => 
 
 test('the use review job card reports outcomes by result and falls back to the legacy wording', () => {
   const html = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, errors: {},
-    jobs: { use: { running: false, phase: 'succeeded', processed: 3, total: 3, updated: 1, conflict: 1,
-      not_found: 0, uncertain: 1, error: 0, skipped: 0 } }, action() {} }));
-  assert.match(html, /复核高德用途/); assert.match(html, /只产生待审核线索/);
-  assert.match(html, /已复核 1 · 待审核 1 · 待复核 0 · 匹配不确定 1/);
+    jobs: { use: { running: false, phase: 'succeeded', processed: 10, total: 10, updated: 1, conflict: 1,
+      not_found: 7, uncertain: 1, error: 0, skipped: 0,
+      errors: [{ name: '测试小区', message: '高德候选用途不一致，匹配不确定，待复核' }] } }, action() {} }));
+  assert.match(html, /核对住宅用途/); assert.match(html, /发现冲突后由你确认/);
+  assert.match(html, /已完成用途核对 1 · 用途冲突，待人工确认 1 · 未找到高德地点 7 · 高德地点匹配不明确 1/);
+  assert.match(html, /高德候选地点的用途分类不一致或缺失，需人工核对。/);
+  assert.doesNotMatch(html, /待审核|待复核|已复核|匹配不确定/);
   const running = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, errors: {},
     jobs: { use: { running: true, phase: 'running', processed: 1, total: 3 } }, action() {} }));
-  assert.match(running, /停止用途复核/);
+  assert.match(running, /停止用途核对/);
   const legacy = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, errors: {},
     jobs: { use: { running: false, phase: 'succeeded', processed: 2, total: 2, updated: 2, skipped: 0 } }, action() {} }));
   assert.match(legacy, /已处理 2 \/ 2/);
-  assert.doesNotMatch(legacy, /待审核 1/);
+  assert.doesNotMatch(legacy, /待人工确认 1/);
 });

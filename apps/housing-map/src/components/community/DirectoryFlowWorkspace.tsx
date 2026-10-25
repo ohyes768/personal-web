@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Community, Source, DirectorySourceCard, marketLabels, mapLabels, safeDirectoryLink } from './DirectoryCards';
 import PositionPanel, { Position, PositionBadge, positionLabels, positionBucketLabels } from './PositionPanel';
-import UseReviewPanel, { UseReview, UseReviewBadge, useReviewFilterLabels } from './UseReviewPanel';
+import UseReviewPanel, { UseReview, UseReviewBadge, useReviewFilterLabels, formatUseReviewMessage } from './UseReviewPanel';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
@@ -32,7 +32,7 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
 const tasks = [
   { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止名称采集', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
-  { id: 'use', label: '复核高德用途', short: '用途复核', stop: '停止用途复核', path: '/directory/workflow/use-reviews', hint: '按小区名复核高德用途分类；只产生待审核线索，不会自动收录或排除' },
+  { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '将高德用途与透明售房网资料比较；发现冲突后由你确认，原有收录结果不会自动改变。' },
   { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新幸福里或房天下租金' },
   { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
@@ -59,7 +59,7 @@ function taskCounts(t: (typeof tasks)[number], job: Job | null): string {
       `补全 ${job.updated || 0} · 转待确认 ${job.review} · 高德无此地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
     job?.updated !== undefined && job.review === undefined && job.conflict === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
     job?.conflict !== undefined &&
-      `已复核 ${job.updated || 0} · 待审核 ${job.conflict} · 待复核 ${job.not_found || 0}${job.uncertain ? ` · 匹配不确定 ${job.uncertain}` : ''}${job.error ? ` · 查询失败 ${job.error}` : ''} · 跳过 ${job.skipped || 0}`,
+      `已完成用途核对 ${job.updated || 0} · 用途冲突，待人工确认 ${job.conflict} · 未找到高德地点 ${job.not_found || 0}${job.uncertain ? ` · 高德地点匹配不明确 ${job.uncertain}` : ''}${job.error ? ` · 查询失败 ${job.error}` : ''} · 跳过 ${job.skipped || 0}`,
     job?.matched !== undefined && t.id === 'auction' && `本次法拍 ${job.matched} 条`].filter(Boolean).join(' · ');
 }
 function taskStateOf(t: (typeof tasks)[number], jobs: Record<string, Job | null>, errors: Record<string, string>): 'running' | 'failed' | 'info' {
@@ -119,7 +119,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
           {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
             <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
           {issues.length > 0 && <details className="directory-task-sub"><summary>本轮未完成事项（可重试）</summary>
-            {issues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
+            {issues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{t.id === 'use' ? formatUseReviewMessage(e.message) : e.message}</p>)}</details>}
         </div>;
       })}
     </DirectoryDialog>}
@@ -156,7 +156,7 @@ export function CatalogTable({ items, excluded, select, retry, busy, position }:
   select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; }) {
   return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}`}><thead><tr>
     <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
-    {excluded && <th>高德用途复核</th>}<th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
+    {excluded && <th>住宅用途核对</th>}<th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
     <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
       {!excluded && <small className="catalog-text directory-muted" title={c.address || '实际地址待补充'}>{c.district || '区域待补'} · {c.address || '实际地址待补充'}</small>}</td>
@@ -164,7 +164,7 @@ export function CatalogTable({ items, excluded, select, retry, busy, position }:
     <td data-label={excluded ? '房屋用途' : '新房 / 二手房'}>{excluded
       ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
       : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
-    {excluded && <td data-label="高德用途复核"><div className="catalog-inline"><UseReviewBadge review={c.use_review} compact />
+    {excluded && <td data-label="住宅用途核对"><div className="catalog-inline"><UseReviewBadge review={c.use_review} compact />
       {c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
     {excluded && <td data-label="不收录原因 / 资料状态">{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : '条件不符'}</small></td>}
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}
@@ -347,7 +347,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     try {
       if (kind === 'recheck') {
         const outcome = await workflowRequest<{ errors?: string[] }>(`/directory/workflow/catalog/${encodeURIComponent(cid)}/use-review`, 'POST');
-        setNotice(outcome?.errors?.length ? `复核完成：${outcome.errors.join('；')}` : '复核完成，名单已重新分类。');
+        setNotice(outcome?.errors?.length ? `查询完成：${outcome.errors.map(formatUseReviewMessage).join('；')}` : '用途核对完成，名单已重新分类。');
       } else {
         await workflowRequest(`/directory/workflow/catalog/${encodeURIComponent(cid)}/use-review/confirm`, 'POST', body);
         setNotice('用途已确认，名单已重新分类。');
@@ -397,7 +397,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       <CatalogClassificationFilter mode={mode} value={mode === 'admitted' ? marketFilter : propertyFilter} propertyTypes={propertyTypes}
         onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
       {mode === 'admitted' && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionBucketLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
-      {mode !== 'auctions' && <select aria-label="高德用途复核状态" value={useFilter} onChange={e => { setUseFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部复核状态</option>{Object.entries(useReviewFilterLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
+      {mode !== 'auctions' && <select aria-label="住宅用途核对状态" value={useFilter} onChange={e => { setUseFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部用途核对状态</option>{Object.entries(useReviewFilterLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
       {mode === 'admitted' && <><select aria-label="法拍数据筛选" value={auctionFilter} onChange={e => { setAuctionFilter(e.target.value); setPage(1); setLoading(true); }}>
         <option value="">全部法拍覆盖</option><option value="has">有法拍记录</option><option value="none">暂无法拍记录</option>
       </select><select aria-label="租金状态筛选" value={rentalFilter} onChange={e => { setRentalFilter(e.target.value); setPage(1); setLoading(true); }}>
