@@ -2,6 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "kids-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "apps/kids-catalog", "dev"],
+      "port": 3009
+    },
+    {
       "name": "skill-manager-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/skill-manager", "dev"],
