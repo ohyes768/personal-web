@@ -64,7 +64,7 @@ written via `atomic_write` after each stock completes.
 
 Hermes config comes from env only: `HERMES_BASE_URL`, `HERMES_API_KEY`,
 `HERMES_PROFILE` (default `ohyes768`), `HERMES_POLL_INTERVAL` (30s),
-`HERMES_TIMEOUT` (1800s), `HERMES_MAX_CONCURRENT` (4). Unset base/key keeps
+`HERMES_TIMEOUT` (3600s), `HERMES_MAX_CONCURRENT` (4). Unset base/key keeps
 every other feature unchanged (analyze returns 503). The skill source lives
 at `backend/dividend-select/skills/basic-quality-rating/SKILL.md` and is
 published to the Hermes profile out-of-band (copy to skills source root, then

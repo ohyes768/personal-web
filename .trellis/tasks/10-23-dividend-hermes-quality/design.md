@@ -115,7 +115,7 @@ ScreeningTab 勾选 eligible → POST /api/dividend/quality/analyze {codes}
 | `HERMES_API_KEY` | 无 | Bearer key（profile 对应） |
 | `HERMES_PROFILE` | `ohyes768` | Runs API 前缀 `/p/<profile>/` |
 | `HERMES_POLL_INTERVAL` | `30` | 秒 |
-| `HERMES_TIMEOUT` | `1800` | 单 run 总超时（秒） |
+| `HERMES_TIMEOUT` | `3600` | 单 run 总超时（秒） |
 | `HERMES_MAX_CONCURRENT` | `4` | 同时在飞 run 数上限 |
 
 ## 关键决策与理由

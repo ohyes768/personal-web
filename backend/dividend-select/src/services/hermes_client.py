@@ -54,7 +54,7 @@ class HermesConfig:
             api_key=os.environ.get("HERMES_API_KEY", ""),
             profile=os.environ.get("HERMES_PROFILE", "ohyes768"),
             poll_interval=int(os.environ.get("HERMES_POLL_INTERVAL", "30")),
-            timeout=int(os.environ.get("HERMES_TIMEOUT", "1800")),
+            timeout=int(os.environ.get("HERMES_TIMEOUT", "3600")),
             max_concurrent=int(os.environ.get("HERMES_MAX_CONCURRENT", "4")),
         )
 

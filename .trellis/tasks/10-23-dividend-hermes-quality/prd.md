@@ -39,7 +39,7 @@
   - `POST /api/dividend/quality/analyze`，body `{codes: [...]}`，202 返回 job 信息；
   - `GET /api/dividend/quality/jobs/{job_id}`，查询单个任务进度（含每股状态）；
   - `GET /api/dividend/quality`，返回全部已落盘评分。
-- 环境变量（未配置时 analyze 返回 503）：`HERMES_BASE_URL`、`HERMES_API_KEY`、`HERMES_PROFILE`（默认 ohyes768）、`HERMES_POLL_INTERVAL`（30s）、`HERMES_TIMEOUT`（1800s）、`HERMES_MAX_CONCURRENT`（默认 4）。
+- 环境变量（未配置时 analyze 返回 503）：`HERMES_BASE_URL`、`HERMES_API_KEY`、`HERMES_PROFILE`（默认 ohyes768）、`HERMES_POLL_INTERVAL`（30s）、`HERMES_TIMEOUT`（3600s）、`HERMES_MAX_CONCURRENT`（默认 4）。
 
 ### R3 前端：apps/dividend 选股关注 tab
 - eligible 表格新增「基本面」列：星级 badge（⭐×N）+ 五维分简写（如 4/5/3/3/5）+ 边界 ⚠️；未分析显示占位；点击「查看基本面」弹层展示五维得分、星级与边界、summary/risks/watch_points、scored_at 与完整 markdown 报告（react-markdown 渲染）。

@@ -36,7 +36,7 @@ class TestConfig:
         assert cfg.is_configured is False
         assert cfg.profile == "ohyes768"
         assert cfg.poll_interval == 30
-        assert cfg.timeout == 1800
+        assert cfg.timeout == 3600
         assert cfg.max_concurrent == 4
 
     def test_from_env_configured(self, monkeypatch):
