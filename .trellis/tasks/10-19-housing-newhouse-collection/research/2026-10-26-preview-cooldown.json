@@ -1,0 +1,164 @@
+{
+  "captured_at": "2026-10-25T16:17:45.311216+00:00",
+  "mode": "read_only_source_evidence",
+  "candidates": 19,
+  "inspected": 19,
+  "counts": {
+    "deferred": 19
+  },
+  "items": [
+    {
+      "name": "世茂栖棠誉湾",
+      "source_id": "1266434254",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "领界大厦",
+      "source_id": "1404301782",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "潮上中南银座",
+      "source_id": "1692606918",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "浦乐单元共有产权房项目地块",
+      "source_id": "2018993016",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "江一云境商业中心",
+      "source_id": "2164645388",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "水晶城水晶澜轩",
+      "source_id": "22069137",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "建发一桥南2023145号地块",
+      "source_id": "2353013953",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "潮起江南城",
+      "source_id": "2554377463",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "春来晴翠园",
+      "source_id": "2946115152",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "中海万潮玖序",
+      "source_id": "3172973427",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "滨江兴耀锦川源府",
+      "source_id": "3200067546",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "望天际公寓",
+      "source_id": "3254195728",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "观序尚府",
+      "source_id": "3258190220",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "月澜雅颂里",
+      "source_id": "3277058158",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "雯月隽庐",
+      "source_id": "3278891231",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "泊玺骏庐",
+      "source_id": "3304038073",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "超级星期天公寓",
+      "source_id": "521",
+      "existing_community_id": "10005080",
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "彩虹城",
+      "source_id": "552",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    },
+    {
+      "name": "龙禧硅谷广场",
+      "source_id": "618",
+      "existing_community_id": null,
+      "category": "deferred",
+      "error": "本轮新房详情已暂停：新房浏览器验证暂停中，请稍后重试，已有资料保留",
+      "error_code": "paused"
+    }
+  ],
+  "note": "仅预览来源证据及可能关联，不执行收录、物化、定位或生产写入；实际收录仍按当前规则判定。"
+}

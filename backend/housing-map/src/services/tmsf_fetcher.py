@@ -11,6 +11,7 @@ import csv
 import datetime as dt
 import html
 import json
+import os
 import re
 import time
 from dataclasses import asdict, dataclass
@@ -61,11 +62,23 @@ class TmsfClient:
         *,
         max_attempts: int = 2,
         retry_delay_seconds: float = 0.5,
+        cancelled: Callable[[], bool] = lambda: False,
     ):
         self._session_factory = session_factory
         self._session: Any | None = None
         self._max_attempts = max(1, max_attempts)
         self._retry_delay_seconds = max(0, retry_delay_seconds)
+        self.cancelled = cancelled
+        self._browser = None
+
+    def fetch_project_text(self, url: str, timeout: int) -> str:
+        endpoint = os.getenv('HOUSING_TMSF_BROWSER_URL', '').strip()
+        if not endpoint:
+            return self.fetch_text(url, timeout)
+        if self._browser is None:
+            from src.services.tmsf_browser import BrowserClient
+            self._browser = BrowserClient(endpoint, cancelled=self.cancelled)
+        return self._browser.fetch_text(url, timeout)
 
     def fetch_text(self, url: str, timeout: int) -> str:
         last_error: Exception | None = None
@@ -92,6 +105,9 @@ class TmsfClient:
         return self._session
 
     def close(self) -> None:
+        if self._browser is not None:
+            self._browser.close()
+            self._browser = None
         if self._session is not None:
             self._session.close()
             self._session = None

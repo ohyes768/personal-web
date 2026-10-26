@@ -5,6 +5,7 @@
 - Read [TMSF directory workflow](./directory-flow.md) for TMSF-only admission, five collection tasks, auction-only association and explicit offline migration; it supersedes the legacy multi-source review flow after activation.
 - Read [Amap use-category review](./use-review.md) when changing the second-source use evidence, the conflict matrix, the batch review job or the human use confirmation.
 - Read [New residential projects and enrichment](./community-enrichment.md) for newhouse identity/use evidence, bounded position repair and price isolation.
+- Read [TMSF newhouse browser](./tmsf-browser.md) for the independent Playwright worker, session/pause protocol, presell location evidence and read-only preview.
 - Read [Automatic residential review](./community-auto-review.md) for read-only snapshots, explicit enablement, automatic decisions and manual vetoes.
 - Read [Unified community review](./community-review.md) for candidate aggregation, member transactions, synchronization and the two management lists.
 - Read [Community admission](./community-admission.md) when changing residential status, human withdrawal, migration or map membership; it supersedes the earlier display scope.

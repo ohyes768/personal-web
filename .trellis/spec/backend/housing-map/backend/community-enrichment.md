@@ -6,6 +6,8 @@
 ## 1. Scope / Trigger
 Use for `tmsf_property_type`, `community_enrichment`, directory collection, residential classification, map coordinates, price isolation and management source details. Existing newhouse projects are eligible residential candidates even without ESF listings; this does not promise discovery of every new project.
 
+For browser acquisition, presell full-location supplement, 24h partial-detail cache and pause/defer semantics, follow [TMSF newhouse browser](./tmsf-browser.md). Missing/truncated address preserves verified type/status as partial evidence and cannot satisfy admission until independently supplemented.
+
 ## 2. Signatures
 - `fetch_community_facts(client, community_id, names, *, timeout=15)` validates ESF name identity and extracts type, actual address, separately observed `address_district` and listing count.
 - `parse_project_index(script)`, `find_project(rows,names,district)`, `project_identity(project)`, `fetch_project_facts(client,names,district,*,projects=None,timeout=15)` read the public project index and independently validate newhouse detail. `fetch_project_facts_by_id(client,*,siteid,propertyid,names,district,timeout=15)` fetches a known project directly (discovery/enrich path); `_parse_project_detail` validates the observed name against the project's own index name set and raises coded `ProjectDetailError` (challenge/identity_mismatch/missing_facts); a truncated address returns `address_error` instead of a usable address.

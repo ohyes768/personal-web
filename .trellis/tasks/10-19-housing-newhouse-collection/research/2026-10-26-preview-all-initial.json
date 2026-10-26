@@ -1,0 +1,191 @@
+{
+  "captured_at": "2026-10-25T16:10:12.944209+00:00",
+  "mode": "read_only_source_evidence",
+  "candidates": 19,
+  "inspected": 19,
+  "counts": {
+    "fetch_failed": 17,
+    "needs_evidence": 2
+  },
+  "items": [
+    {
+      "name": "世茂栖棠誉湾",
+      "source_id": "1266434254",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "新房详情页面无法确认目标项目和区域",
+      "error_code": "identity_mismatch"
+    },
+    {
+      "name": "领界大厦",
+      "source_id": "1404301782",
+      "existing_community_id": null,
+      "facts": {
+        "property_type": "非住宅",
+        "property_type_url": "https://www.tmsf.com/newhouse/property_33_1404301782_infoUpgrade.htm",
+        "address": "杭州市滨江区东信大道1188号（东信大道与江南大道交汇处）",
+        "address_district": "滨江",
+        "market_state": "new_house",
+        "market_state_url": "https://www.tmsf.com/newhouse/property_33_1404301782_infoUpgrade.htm",
+        "project_name": "领界大厦",
+        "project_sale_status": "在售",
+        "address_error": null,
+        "address_evidence_url": "https://www.tmsf.com/newhouse/presell_33_1404301782_1640067349.htm",
+        "address_evidence_kind": "tmsf_presell_location",
+        "address_certificate_number": "2021004007",
+        "address_evidence_captured_at": "2026-10-25T16:09:58.209908+00:00"
+      },
+      "category": "needs_evidence",
+      "matching_community_ids": [],
+      "association": "new_candidate"
+    },
+    {
+      "name": "潮上中南银座",
+      "source_id": "1692606918",
+      "existing_community_id": null,
+      "facts": {
+        "property_type": "非住宅",
+        "property_type_url": "https://www.tmsf.com/newhouse/property_33_1692606918_infoUpgrade.htm",
+        "address": "",
+        "address_district": "滨江",
+        "market_state": "new_house",
+        "market_state_url": "https://www.tmsf.com/newhouse/property_33_1692606918_infoUpgrade.htm",
+        "project_name": "潮上中南银座",
+        "project_sale_status": "尾盘",
+        "address_error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料"
+      },
+      "category": "needs_evidence",
+      "matching_community_ids": [],
+      "association": "new_candidate"
+    },
+    {
+      "name": "浦乐单元共有产权房项目地块",
+      "source_id": "2018993016",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "江一云境商业中心",
+      "source_id": "2164645388",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "水晶城水晶澜轩",
+      "source_id": "22069137",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "建发一桥南2023145号地块",
+      "source_id": "2353013953",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "潮起江南城",
+      "source_id": "2554377463",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "春来晴翠园",
+      "source_id": "2946115152",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "中海万潮玖序",
+      "source_id": "3172973427",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "滨江兴耀锦川源府",
+      "source_id": "3200067546",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "望天际公寓",
+      "source_id": "3254195728",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "观序尚府",
+      "source_id": "3258190220",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "月澜雅颂里",
+      "source_id": "3277058158",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "雯月隽庐",
+      "source_id": "3278891231",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "泊玺骏庐",
+      "source_id": "3304038073",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "超级星期天公寓",
+      "source_id": "521",
+      "existing_community_id": "10005080",
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "彩虹城",
+      "source_id": "552",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    },
+    {
+      "name": "龙禧硅谷广场",
+      "source_id": "618",
+      "existing_community_id": null,
+      "category": "fetch_failed",
+      "error": "透明售房网需要人工验证，已暂停新房采集，保留已有资料",
+      "error_code": "manual_verification"
+    }
+  ],
+  "note": "仅预览来源证据及可能关联，不执行收录、物化、定位或生产写入；实际收录仍按当前规则判定。"
+}

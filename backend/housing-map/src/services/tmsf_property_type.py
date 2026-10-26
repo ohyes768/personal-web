@@ -1,8 +1,12 @@
 """Property facts shared by directory collection and the maintenance CLI."""
 import json
 import re
+import datetime as dt
+from html import unescape
+from urllib.parse import urljoin, urlsplit
 
-from src.services.community_registry import normalized
+from src.services.community_registry import normalized, now
+from src.services.community_address import valid_address
 from src.services.tmsf_fetcher import BASE_URL, input_value_by_id, parse_index_page, strip_tags
 
 
@@ -140,30 +144,96 @@ def _parse_project_detail(html, known_names, district, url, fallback_status=None
     facts = dict(property_type=prop, property_type_url=url, address='', address_district=observed_district,
                  market_state=project_market_state(status), market_state_url=url,
                  project_name=observed_name, project_sale_status=status)
-    if not address:
-        raise ProjectDetailError('missing_facts', '新房详情缺少实际地址')
-    if looks_truncated(address):
-        facts['address_error'] = '新房详情地址显示不完整（截断），需补完整实际地址'
+    if not valid_address(address) or looks_truncated(address):
+        facts['address_error'] = ('新房详情缺少实际地址，需补完整实际地址' if not valid_address(address)
+                                  else '新房详情地址显示不完整（截断），需补完整实际地址')
         return facts
     facts['address'] = address
     return facts
 
 
-def fetch_project_facts_by_id(client, *, siteid, propertyid, names, district, timeout=15):
+def _id_text(html, element_id):
+    match = re.search(r'<td\b[^>]*\bid=["\']' + re.escape(element_id) +
+                      r'["\'][^>]*>(.*?)</td>', html, re.I | re.S)
+    return strip_tags(match.group(1)) if match else ''
+
+
+def _project_detail(client, url, names, district, timeout, fallback_status=None, previous=None):
+    fetch = getattr(client, 'fetch_project_text', client.fetch_text)
+    cache = (previous or {}).get('newhouse_detail_cache') or {}
+    cached = cache.get('facts') or {}
+    try:
+        age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(cache.get('checked_at', ''))
+        fresh = dt.timedelta(0) <= age < dt.timedelta(days=1)
+    except (TypeError, ValueError):
+        fresh = False
+    fresh = (fresh and cached.get('property_type_url') == url and cached.get('property_type')
+             and cached.get('address_district') == district.removesuffix('区')
+             and normalized(cached.get('project_name')) in {normalized(n) for n in names if n})
+    if fresh:
+        detail = dict(cached)
+        links = cache.get('links', [])
+    else:
+        html = fetch(url, timeout)
+        detail = _parse_project_detail(html, names, district, url, fallback_status)
+        links = re.findall(r'<a\b[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)</a>', html, re.I | re.S)
+        # Keep only bounded certificate candidates, never an upstream HTML snapshot.
+        links = [(href, strip_tags(label)) for href, label in links if '/presell_' in href][:1]
+        cache = dict(checked_at=now(), facts=dict(detail), links=links)
+    if fresh and fallback_status:
+        detail.update(project_sale_status=fallback_status, market_state=project_market_state(fallback_status))
+    if not detail.get('address_error'):
+        detail.update(address_evidence_url=url, address_evidence_kind='tmsf_project_detail')
+        return detail
+    detail['newhouse_detail_cache'] = cache
+    # Only a link belonging to this exact site/project can supply address evidence.
+    identity = re.fullmatch(r'/newhouse/property_(\d+)_(\d+)_infoUpgrade.htm', urlsplit(url).path)
+    if not identity:
+        return detail
+    site, pid = identity.groups()
+    for href, label in links:
+        certificate_url = urljoin(url, unescape(href))
+        parts = urlsplit(certificate_url)
+        if (parts.scheme != 'https' or parts.netloc != 'www.tmsf.com' or parts.query or parts.fragment or
+                not re.fullmatch(rf'/newhouse/presell_{site}_{pid}_\d+.htm', parts.path)):
+            continue
+        number = strip_tags(label)
+        if not re.fullmatch(r'\d{6,20}', number):
+            continue
+        try:
+            certificate = fetch(certificate_url, timeout)
+            observed_names = project_names(_id_text(certificate, 'propertynamerr'))
+            if (not {normalized(n) for n in observed_names} & {normalized(n) for n in names if n}
+                    or _id_text(certificate, 'persellnorr') != number):
+                raise ProjectDetailError('identity_mismatch', '预售证项目或证号不一致，保留地址待补')
+            address = _id_text(certificate, 'locatedrr')
+            if not valid_address(address) or looks_truncated(address):
+                raise ProjectDetailError('missing_facts', '预售证未取得完整楼盘坐落，保留地址待补')
+            detail.update(address=address, address_error=None, address_evidence_url=certificate_url,
+                          address_evidence_kind='tmsf_presell_location', address_certificate_number=number,
+                          address_evidence_captured_at=now())
+        except InterruptedError:
+            raise
+        except Exception as exc:
+            detail['address_error'] = str(exc) if getattr(exc, 'code', None) else '完整实际地址获取失败，保留已核验用途，可重试'
+        break  # One certificate per project; no traversal of prices or other certificates.
+    return detail
+
+
+def fetch_project_facts_by_id(client, *, siteid, propertyid, names, district, timeout=15, previous=None):
     """Fetch a known project detail directly; never resolves via the ESF name list."""
     if not str(siteid).isdigit() or not str(propertyid).isdigit():
         raise ValueError('无效的新房项目编号')
     url = f'{BASE_URL}/newhouse/property_{siteid}_{propertyid}_infoUpgrade.htm'
-    return _parse_project_detail(client.fetch_text(url, timeout), names, district, url)
+    return _project_detail(client, url, names, district, timeout, previous=previous)
 
 
-def fetch_project_facts(client, names, district, *, projects=None, timeout=15):
+def fetch_project_facts(client, names, district, *, projects=None, timeout=15, previous=None):
     projects = projects if projects is not None else parse_project_index(client.fetch_text(PROJECT_INDEX_URL, timeout))
     project = find_project(projects, names, district)
     identity = project_identity(project)
-    html = client.fetch_text(identity['project_url'], timeout)
-    detail = _parse_project_detail(html, project_names(project.get('propertyname')), district,
-                                   identity['project_url'], fallback_status=identity['project_sale_status'])
+    detail = _project_detail(client, identity['project_url'], project_names(project.get('propertyname')),
+                             district, timeout, fallback_status=identity['project_sale_status'], previous=previous)
     detail.update(project_id=str(project['propertyid']),
                   project_aliases=project_names(project.get('propertyname')))
     return detail

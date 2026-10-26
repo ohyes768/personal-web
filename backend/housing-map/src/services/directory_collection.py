@@ -32,6 +32,7 @@ def tmsf_names(cancel, ignored, existing=None):
     from src.services.tmsf_property_type import fetch_community_facts, fetch_project_facts, fetch_project_facts_by_id, parse_project_index, find_project, project_identity, effective_market_state, PROJECT_INDEX_URL
     existing = existing or {}
     client = TmsfClient()
+    client.cancelled = cancel.is_set
     projects = None
     project_index_error = False
     try:
@@ -92,7 +93,7 @@ def tmsf_names(cancel, ignored, existing=None):
                         continue
                     row.update(project_identity(find_project(projects, [c.community_name, c.community_alias], c.district)),
                                market_state_captured_at=now())
-                    detail = fetch_project_facts(client, [c.community_name, c.community_alias], c.district, projects=projects)
+                    detail = fetch_project_facts(client, [c.community_name, c.community_alias], c.district, projects=projects, previous=previous)
                     detail['market_state_captured_at'] = now()
                 # An ESF page also exists for many new projects; low listings are
                 # not evidence that the project belongs only to the second-hand market.
@@ -117,16 +118,23 @@ def tmsf_names(cancel, ignored, existing=None):
                         if effective_market_state(previous) == 'new_house':
                             detail.pop('market_state', None)
                             detail['market_state_error'] = '新房项目身份更新失败，保留已有证据'
+                address_error = detail.get('address_error')
+                if address_error:
+                    detail.pop('address', None)
                 row.update(detail)
                 if detail.get('market_state') == 'second_hand':
                     row['listing_count_checked_at'] = now()
-                row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False,
-                           property_type_captured_at=now(), property_type_error=None,
+                if not address_error:
+                    row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False)
+                else:
+                    row['_collection_errors'] = [dict(source='tmsf', stage='newhouse_address',
+                        source_id=c.community_id, message=f'{c.community_name} {address_error}')]
+                row.update(property_type_captured_at=now(), property_type_error=None,
                            _property_type_result='succeeded')
             except InterruptedError:
                 raise
             except Exception as exc:
-                message = f'{c.community_name} 物业类型获取失败（{type(exc).__name__}）'
+                message = f'{c.community_name} 物业类型获取失败（{getattr(exc, "code", type(exc).__name__)}）：{exc}'
                 row.update(listing_count_error=message, listing_count_checked_at=now(), property_type_error=message, _property_type_result='failed',
                            _collection_errors=[dict(source='tmsf', stage='property_type',
                                                     source_id=c.community_id, message=message)])
@@ -194,14 +202,15 @@ def tmsf_names(cancel, ignored, existing=None):
             row.update(_stage='property_type', property_type_checked_at=now())
             try:
                 detail = fetch_project_facts_by_id(client, siteid=project['siteid'], propertyid=project['propertyid'],
-                                                   names=[identity['project_name'], *names], district='滨江')
+                                                   names=[identity['project_name'], *names], district='滨江', previous=previous)
             except InterruptedError:
                 raise
             except Exception as exc:
                 code = getattr(exc, 'code', None)
-                message = f'{identity["project_name"]} 新房详情获取失败（{code or type(exc).__name__}）'
-                row.update(property_type_error=message, _property_type_result='failed',
-                           _collection_errors=[dict(source='tmsf', stage='newhouse_detail', source_id=pid, message=message)])
+                message = f'{identity["project_name"]} 新房详情获取失败（{code or type(exc).__name__}）：{exc}'
+                deferred = code in {'paused', 'busy'}
+                row.update(property_type_error=message, _property_type_result='deferred' if deferred else 'failed',
+                           _collection_errors=[] if deferred else [dict(source='tmsf', stage='newhouse_detail', source_id=pid, message=message)])
             else:
                 address_error = detail.pop('address_error', None)
                 if address_error:
@@ -212,7 +221,7 @@ def tmsf_names(cancel, ignored, existing=None):
                     row['_collection_errors'] = [dict(source='tmsf', stage='newhouse_detail', source_id=pid,
                                                       message=f'{identity["project_name"]} {address_error}')]
                 else:
-                    row.update(address_origin='source_detail', address_checked_at=now())
+                    row.update(address_origin='source_detail', address_checked_at=now(), address_verification_pending=False)
             yield row
     finally:
         client.close()
@@ -322,7 +331,7 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
     cancel = cancel or threading.Event()
     adapters = adapters or ADAPTERS
     report = dict(phase='running', running=True, started_at=now(), source=None,
-                  stage='names', property_types=0, property_types_failed=0, property_types_cached=0,
+                  stage='names', property_types=0, property_types_failed=0, property_types_cached=0, property_types_deferred=0,
                   new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[])
     handled = set()
     counted_status = {}
@@ -369,7 +378,8 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                             report['ignored'] += 1
                     else:
                         if type_result:
-                            counter = {'succeeded': 'property_types', 'failed': 'property_types_failed', 'cached': 'property_types_cached'}[type_result]
+                            counter = {'succeeded': 'property_types', 'failed': 'property_types_failed', 'cached': 'property_types_cached',
+                                       'deferred': 'property_types_deferred'}[type_result]
                             report[counter] += 1
                         report['errors'].extend(row.pop('_collection_errors', []))
                         item = store.ingest(row)
@@ -392,6 +402,9 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                 failed_sources.add(source)
                 # Upstream clients redact request URLs and credentials before reporting errors.
                 report['errors'].append({'source': source, 'message': str(exc) if isinstance(exc, ValueError) else f'{type(exc).__name__}：来源请求失败'})
+        if report['property_types_deferred']:
+            report['truncated'].append(dict(source='tmsf', stage='newhouse_detail',
+                message=f'新房详情已暂停，本轮暂缓 {report["property_types_deferred"]} 个项目，名单已保留；请在验证冷却结束后重试'))
         report['phase'] = 'partial_failed' if report['errors'] or report['truncated'] else 'succeeded'
         if len(failed_sources) == len(sources):
             report['phase'] = 'failed'

@@ -354,6 +354,7 @@ services:
       - TZ=Asia/Shanghai
       - HOUSING_PORT=8096
       - LOG_LEVEL=INFO
+      - HOUSING_TMSF_BROWSER_URL=http://housing-map-browser:8097
     networks:
       - app-net
     healthcheck:
@@ -364,6 +365,25 @@ services:
       start_period: 40s
 
   # ---------------------------------------------------------------------------
+  # Independent, lazy TMSF browser. Internal only; no business volume or public port.
+  # No depends_on: a browser outage must not prevent ESF/API service startup.
+  housing-map-browser:
+    build:
+      context: ./backend/housing-map
+      dockerfile: Dockerfile.browser
+    container_name: housing-map-browser
+    restart: unless-stopped
+    init: true
+    shm_size: '256mb'
+    mem_limit: 1g
+    cpus: 1.0
+    expose:
+      - "8097"
+    environment:
+      - TZ=Asia/Shanghai
+    networks:
+      - app-net
+
   # housing-map 前端（Next.js 16，basePath='/map'，apps/housing-map/）
   # API 请求不经前端：nginx 把 /api/map/* 直转 housing-map-backend（见 nginx/web.conf）
   # 高德 key 是 build-time inline，必须在 build 阶段经 args 传入（根 .env 提供）

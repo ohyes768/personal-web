@@ -95,17 +95,20 @@ def _enrich_project_source(store, data_dir, record, tmsf_client):
     client = tmsf_client or TmsfClient()
     try:
         detail = fetch_project_facts_by_id(client, siteid=record.get('project_siteid'),
-                                           propertyid=record.get('project_id'), names=names, district=district)
+                                           propertyid=record.get('project_id'), names=names, district=district, previous=record)
         address_error = detail.pop('address_error', None)
         if address_error:
             detail.pop('address', None)  # Q1: a truncated address never lands on the row.
+            errors.append(address_error)
         update.update(detail, property_type_captured_at=now(), property_type_error=None,
                       address_error=address_error, market_state_captured_at=now())
         if not address_error:
             update.update(address_origin='source_detail', address_checked_at=now(), address_verification_pending=False)
+    except InterruptedError:
+        raise
     except Exception as exc:
         code = getattr(exc, 'code', None)
-        errors.append(f'新房详情获取失败（{code or type(exc).__name__}），保留已有证据')
+        errors.append(f'新房详情获取失败（{code or type(exc).__name__}）：{exc}，保留已有证据')
         update['property_type_error'] = errors[-1]
     finally:
         if tmsf_client is None:
@@ -159,15 +162,20 @@ def enrich_source(store, data_dir, rid, *, tmsf_client=None, amap_client=None, i
             if identity['market_state'] == 'unknown' and community_facts:
                 identity.pop('market_state')
             update.update(identity, market_state_captured_at=now())
-            project = fetch_project_facts(client, names, district, projects=projects)
+            project = fetch_project_facts(client, names, district, projects=projects, previous=record)
             actual_address = (community_facts or record).get('address')
-            if valid_address(actual_address) and normalized(actual_address) != normalized(project['address']):
+            if project.get('address') and valid_address(actual_address) and normalized(actual_address) != normalized(project['address']):
                 raise ValueError('新房与小区地址冲突')
+            address_error = project.get('address_error')
+            if address_error:
+                project.pop('address', None)
+                errors.append(address_error)
             update.update({k: v for k, v in project.items() if k not in {'property_type', 'property_type_url'}})
             update['project_property_type_url'] = project['property_type_url']
             update.update(market_state_captured_at=now(), market_state_error=None,
-                          address_origin='source_detail', address_checked_at=now(), address_verification_pending=False,
                           project_property_type=project['property_type'])
+            if not address_error:
+                update.update(address_origin='source_detail', address_checked_at=now(), address_verification_pending=False)
             previous_type = (community_facts or {**record, **update}).get('property_type')
             if previous_type and previous_type != project['property_type']:
                 update.update(property_type=previous_type, property_type_conflict=True)

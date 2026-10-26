@@ -1,0 +1,24 @@
+FROM python:3.12-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 TMSF_BROWSER_EXECUTABLE=/opt/chrome/chrome-linux64/chrome
+WORKDIR /app
+# Browser dependencies are deliberately isolated from the FastAPI image.
+RUN sed -i 's|http://deb.debian.org|https://mirrors.aliyun.com|g; s|http://security.debian.org|https://mirrors.aliyun.com|g' /etc/apt/sources.list.d/debian.sources && \
+    pip install --no-cache-dir --timeout 60 --retries 2 -i https://pypi.tuna.tsinghua.edu.cn/simple playwright==1.59.0 && \
+    python -m playwright install-deps chromium && \
+    rm -rf /var/lib/apt/lists/* && \
+    useradd --create-home --uid 10001 browser
+# Same Chrome for Testing version bundled by Playwright 1.59.0. Use the regional
+# mirror for this large public artifact; override the root for another network.
+ARG CHROME_VERSION=147.0.7727.15
+ARG CHROME_DOWNLOAD_ROOT=https://registry.npmmirror.com/-/binary/chrome-for-testing
+RUN CHROME_URL="${CHROME_DOWNLOAD_ROOT}/${CHROME_VERSION}/linux64/chrome-linux64.zip" \
+    python -c "import os,urllib.request,zipfile; urllib.request.urlretrieve(os.environ['CHROME_URL'],'/tmp/chrome.zip'); zipfile.ZipFile('/tmp/chrome.zip').extractall('/opt/chrome'); os.remove('/tmp/chrome.zip')" && \
+    chmod -R a+rX /opt/chrome && \
+    chmod a+rx /opt/chrome/chrome-linux64/chrome /opt/chrome/chrome-linux64/chrome_crashpad_handler
+COPY src/browser_worker.py ./src/browser_worker.py
+USER browser
+EXPOSE 8097
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8097/health',timeout=4)"
+CMD ["python", "-m", "src.browser_worker"]

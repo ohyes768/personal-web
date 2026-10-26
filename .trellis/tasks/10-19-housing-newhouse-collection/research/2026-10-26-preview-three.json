@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-10-25T16:08:39.942387+00:00",
+  "mode": "read_only_source_evidence",
+  "candidates": 3,
+  "inspected": 3,
+  "counts": {
+    "residential_evidence_ready": 3
+  },
+  "items": [
+    {
+      "name": "春来晴翠园",
+      "source_id": "2946115152",
+      "existing_community_id": null,
+      "facts": {
+        "property_type": "住宅",
+        "property_type_url": "https://www.tmsf.com/newhouse/property_33_2946115152_infoUpgrade.htm",
+        "address": "东至规划道路，南至零磁谷街绿化，西至浦沿路绿化，北至回龙庵街。",
+        "address_district": "滨江",
+        "market_state": "new_house",
+        "market_state_url": "https://www.tmsf.com/newhouse/property_33_2946115152_infoUpgrade.htm",
+        "project_name": "春来晴翠园",
+        "project_sale_status": "在售",
+        "address_error": null,
+        "address_evidence_url": "https://www.tmsf.com/newhouse/presell_33_2946115152_3333500499.htm",
+        "address_evidence_kind": "tmsf_presell_location",
+        "address_certificate_number": "202600601",
+        "address_evidence_captured_at": "2026-10-25T16:08:26.552824+00:00"
+      },
+      "category": "residential_evidence_ready",
+      "matching_community_ids": [],
+      "association": "new_candidate"
+    },
+    {
+      "name": "月澜雅颂里",
+      "source_id": "3277058158",
+      "existing_community_id": null,
+      "facts": {
+        "property_type": "住宅",
+        "property_type_url": "https://www.tmsf.com/newhouse/property_33_3277058158_infoUpgrade.htm",
+        "address": "东至文水河规划绿化，南至生地街，西至浦沿路绿化，北至规划绿化",
+        "address_district": "滨江",
+        "market_state": "new_house",
+        "market_state_url": "https://www.tmsf.com/newhouse/property_33_3277058158_infoUpgrade.htm",
+        "project_name": "月澜雅颂里",
+        "project_sale_status": "在售",
+        "address_error": null,
+        "address_evidence_url": "https://www.tmsf.com/newhouse/presell_33_3277058158_3326674227.htm",
+        "address_evidence_kind": "tmsf_presell_location",
+        "address_certificate_number": "202600583",
+        "address_evidence_captured_at": "2026-10-25T16:08:31.220444+00:00"
+      },
+      "category": "residential_evidence_ready",
+      "matching_community_ids": [],
+      "association": "new_candidate"
+    },
+    {
+      "name": "泊玺骏庐",
+      "source_id": "3304038073",
+      "existing_community_id": null,
+      "facts": {
+        "property_type": "住宅",
+        "property_type_url": "https://www.tmsf.com/newhouse/property_33_3304038073_infoUpgrade.htm",
+        "address": "东至规划占家湖路，南至最葵园南侧支 路，西至空地，北至孔家里",
+        "address_district": "滨江",
+        "market_state": "new_house",
+        "market_state_url": "https://www.tmsf.com/newhouse/property_33_3304038073_infoUpgrade.htm",
+        "project_name": "泊玺骏庐",
+        "project_sale_status": "在售",
+        "address_error": null,
+        "address_evidence_url": "https://www.tmsf.com/newhouse/presell_33_3304038073_3332714241.htm",
+        "address_evidence_kind": "tmsf_presell_location",
+        "address_certificate_number": "202600599",
+        "address_evidence_captured_at": "2026-10-25T16:08:39.424033+00:00"
+      },
+      "category": "residential_evidence_ready",
+      "matching_community_ids": [],
+      "association": "new_candidate"
+    }
+  ],
+  "note": "仅预览来源证据及可能关联，不执行收录、物化、定位或生产写入；实际收录仍按当前规则判定。"
+}

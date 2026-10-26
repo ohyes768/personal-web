@@ -1,0 +1,38 @@
+# TMSF newhouse browser
+
+## 1. Scope / Trigger
+Read when changing newhouse acquisition, Playwright deployment, source address evidence or batch cancellation/pause behavior. Admission, project/community identity and price isolation remain in community-enrichment.md and directory-flow.md.
+
+## 2. Signatures
+- `TmsfClient(..., cancelled=lambda:False).fetch_project_text(url,timeout)` uses `BrowserClient` only when `HOUSING_TMSF_BROWSER_URL` is set. `fetch_text` stays HTTP for ESF/index/price. `close()` releases both clients.
+- `fetch_project_facts_by_id(..., previous=None)` / `fetch_project_facts(..., previous=None)` share `_project_detail`. Missing/truncated actual address returns partial verified type/status plus address_error, not an empty successful address.
+- Worker: `python -m src.browser_worker`, port `TMSF_BROWSER_PORT` default8097. Internal `POST /page {session_id,siteid,propertyid,presellid?}` → `{url,html}`. All IDs are decimal strings (1–20 chars), session_id is lowercase UUID hex (32 chars); unknown fields are rejected. `POST /close {session_id}` is idempotent and never closes another session. `GET /health` is local health only, with no upstream call.
+- Read-only CLI: `scripts/preview_newhouse_browser.py --registry PATH --output PATH [--limit 1..20] [--name NAME ...]`. Registry opens mode=ro and backs up to a disposable copy; output must be outside production data directory. No ingest, enrichment, materialize, admission, position or production mutation is invoked.
+
+## 3. Contracts
+- Worker fixes origin to `https://www.tmsf.com` and builds only `/newhouse/property_<site>_<project>_infoUpgrade.htm` or `/newhouse/presell_<site>_<project>_<presell>.htm`. The client verifies returned final URL against the requested identity. Cookie values never cross this boundary or enter JSON evidence.
+- One lazily created browser/context per task; worker HTTP loop and Playwright share a thread. Other sessions return busy. Navigation start spacing>=3s; launch<=15s, goto<=25s, fact readiness<=10s, client per-page timeout60s. Close at task end or reap after120s idle; main API/ESF startup does not depend on worker availability.
+- Visible `.captcha`, `.captcha_cover` or `#nc_1_wrapper` means manual_verification: close session, pause worker for900s. Hidden widgets are not challenges. JS readiness timeout means challenge and same cooldown. A client remembers its first failure and returns paused for later pages without requests. Failure never retries across the whole candidate list.
+- Collection retains all discovered names. Initial failure counts as property_types_failed; paused/busy projects count as property_types_deferred. Persist per-source pause reasons, emit one `truncated` summary with deferred count, and mark partial_failed even if a new run begins during cooldown. Do not show repeated errors for projects never requested.
+- Parse name/district/use first. Address supplement follows at most one explicit same-origin/site/project presell link, compares link certificate number with `#persellnorr` and `#propertynamerr` with complete known legal/marketing aliases, and reads only `#locatedrr` (楼盘坐落). Never use `#selladdressrr` or geocoder address. Do not click through or solve captcha.
+- Store `address_evidence_url`, `address_evidence_kind=tmsf_presell_location|tmsf_project_detail`, optional `address_certificate_number`, `address_evidence_captured_at`. Existing write paths still compare source snapshots and protect human decisions; failed supplements retain previous valid address and new verified type/status and report address_error.
+- `newhouse_detail_cache={checked_at,facts,links}` stores bounded primary facts plus one certificate candidate (no HTML/cookies). Address retry may reuse it for<24h only with matching URL/name/district and explicit type. Cache time does not renew on failed address attempts. Complete successful sources keep existing30-day cache. Observed fresh page sale status wins over index fallback.
+- Dockerfile.browser pins Playwright1.59.0 and matching Chrome for Testing147.0.7727.15, using regional mirrors for public dependencies/artifacts. Browser runs as nonroot uid10001. Compose service `housing-map-browser` has internal expose8097 only, no business/profile volumes, init=true, shm256MiB, memory1GiB and CPU1; these are limits, not measured peak guarantees. Main backend env connects by internal DNS; no depends_on blocker.
+
+## 4. Validation & Error Matrix
+Malformed JSON/length (max4096 bytes)→400; bad IDs/session/target→409; unknown route→404. Worker error JSON is `{error:{code,message}}`. busy/paused→defer, manual_verification/challenge→pause, identity_mismatch→reject identity, transport/invalid response→stop client for this task. Browser HTML is capped at2MB. Cancellation is checked before/after each request and again by collection before publication; close is best effort (3s), idle cleanup remains the fallback.
+
+Preview categories are source evidence, not admission decisions: residential_evidence_ready, non_residential (including explicit 非住宅), needs_evidence, fetch_failed, deferred. A deferred row was not requested after pause and must not be reported as a fresh acquisition failure.
+
+## 5. Good / Base / Bad Cases
+Good: three NAS container samples return verified residential type/status and full certificate locations without login. Base: missing certificate or visible captcha keeps verified type and previous address, marks address pending and defers the rest. Bad: accepting another phase's certificate, overwriting address with `..`, treating sales office as actual address, looping through captcha, or claiming source evidence preview already admitted communities.
+
+## 6. Tests Required
+`test_newhouse_browser.py`: same-project certificate identity/number/location, wrong phase/number, missing/truncated address, timeout/cancellation, recent/expired cache, original status precedence, enrichment partial notice and previous-address preservation.
+`test_tmsf_browser_protocol.py`: real local HTTP protocol, session reuse/close, redirect identity rejection, no requests after cancellation/pause, disabled legacy path, worker exclusivity/idle cleanup/fixed target checks/global cooldown, all-deferred runs remain partial_failed.
+`test_newhouse_preview.py`: input registry hash unchanged, no new master/source facts, public evidence and candidate association summary only. Windows network/asyncio tests may require outside-sandbox local sockets; use isolated snapshot seed data and F: basetemp.
+Live tests use disposable containers and a read-only production volume. Keep raw report separate from later reporting corrections. No production rollout/batch write is implied by a successful preview.
+
+## 7. Wrong vs Correct
+Wrong: `.captcha` exists → challenge; every subsequent project fails after another network call; `#selladdressrr` fills actual address.
+Correct: only visible challenge pauses, later projects defer with no upstream requests, and full actual address comes from independently verified `#locatedrr` evidence.
