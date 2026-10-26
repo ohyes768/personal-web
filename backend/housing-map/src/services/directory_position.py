@@ -44,6 +44,13 @@ def _revision(snapshot):
 
 
 def _target(store, data_dir, cid):
+    from src.services.collection_pipeline import active
+    with store.db() as db:
+        row = db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone()
+        if row and active(store._community(row)):
+            records = [store._source(r) for r in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
+            if any(r['source'] == 'tmsf' for r in records):
+                return store._community(row)
     target = next((c for c in admitted(store, data_dir) if c['community_id'] == cid), None)
     if not target:
         raise ValueError('小区已不符合收录条件')
@@ -60,7 +67,8 @@ def _publish(store, data_dir, cid, snapshot, values, point=None, *, replace=Fals
         if current != snapshot:
             raise ValueError('小区资料或人工位置已变化，请重试')
         records = [store._source(r) for r in current['members'] if r['status'] == 'matched']
-        if eligibility(store._community(current['master']), records, facts,
+        from src.services.collection_pipeline import active
+        if not active(store._community(current['master'])) and eligibility(store._community(current['master']), records, facts,
                        json.loads(current['admission']) if current['admission'] else {})['admission_state'] != 'admitted':
             raise ValueError('小区已不符合收录条件')
         payload = json.loads(current['master']['payload'])
@@ -69,7 +77,8 @@ def _publish(store, data_dir, cid, snapshot, values, point=None, *, replace=Fals
         district = (target.get('district') or '').removesuffix('区')
         # POI evidence can be completed without overwriting an existing map point.
         positioned = valid_position(target, district) or any(valid_position(r, district) for r in records) or valid_position({**historical, 'coordinate_system': historical.get('coordinate_system', 'gcj02')}, district)
-        if point and (replace or not positioned):
+        replace_automatic = active(target) and target.get('coordinate_origin') != 'manual' and (target.get('coordinate_evidence') or {}).get('source') != 'manual'
+        if point and (replace or not positioned or replace_automatic):
             payload.update({k: point[k] for k in ('longitude', 'latitude', 'coordinate_system')})
             payload.update(geographic_address=qualified_address(point.get('address'), district),
                            coordinate_evidence=dict(source='manual' if values['state'] == 'manual' else 'amap',
@@ -111,9 +120,13 @@ def _name_hit(p, flats):
 def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False):
     snapshot = _snapshot(store, cid)
     target = _target(store, data_dir, cid)
+    from src.services.collection_pipeline import active, subject_name, subject_pois
+    pipeline = active(target)
     records = [store._source(r) for r in snapshot['members'] if r['status'] == 'matched']
     previous = position_view(target, records)
-    if previous['state'] == 'manual' or (not force and previous['state'] not in {'pending', 'error'}):
+    from src.services.collection_pipeline import selected_review
+    needs_subject_type = pipeline and previous['state'] == 'matched' and not selected_review(target, records)['state']
+    if previous['state'] == 'manual' or (not force and previous['state'] not in {'pending', 'error'} and not needs_subject_type):
         return 'skipped'
     district = (target.get('district') or '').removesuffix('区')
     names = {normalized(n) for n in [target['community_name'], *target.get('aliases', [])] if n}
@@ -123,12 +136,22 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
     owned = client is None
     try:
         client = client or AmapClient()
-        pois, count = client.search_name(target['community_name'], district)
-        valid = _valid_pois(pois, district)
+        def lookup(name):
+            if pipeline:
+                from src.services.directory_use_review import _search_review
+                rows, complete = _search_review(client, name, district, cancelled=cancelled)
+                return rows, len(rows) if complete else max(26, len(rows)), complete
+            rows, total = client.search_name(name, district)
+            return rows, total, total <= 25
+        pois, count, complete = lookup(target['community_name'])
+        valid = subject_pois(pois, district) if pipeline else _valid_pois(pois, district)
         flats = {_flat_name(n) for n in names}
-        matches = {k: p for k, p in valid.items() if _name_hit(p, flats)}
+        precise_names = {subject_name(n) for n in names}
+        def is_match(p):
+            return subject_name(p['name']) in precise_names if pipeline else _name_hit(p, flats)
+        matches = {k: p for k, p in valid.items() if is_match(p)}
         # Alias retry only when the primary name yields nothing and the result is not truncated.
-        if not matches and count <= 25:
+        if not matches and complete:
             aliases, seen = [], {normalized(target['community_name'])}
             for alias in target.get('aliases', []):
                 key = normalized(alias)
@@ -136,11 +159,11 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
                     seen.add(key)
                     aliases.append(alias)
             for alias in aliases[:3]:
-                alias_pois, alias_count = client.search_name(alias, district)
-                alias_valid = _valid_pois(alias_pois, district)
-                alias_matches = {k: p for k, p in alias_valid.items() if _name_hit(p, flats)}
+                alias_pois, alias_count, alias_complete = lookup(alias)
+                alias_valid = subject_pois(alias_pois, district) if pipeline else _valid_pois(alias_pois, district)
+                alias_matches = {k: p for k, p in alias_valid.items() if is_match(p)}
                 if alias_matches:
-                    valid, matches, count = alias_valid, alias_matches, alias_count
+                    valid, matches, count, complete = alias_valid, alias_matches, alias_count, alias_complete
                     break
         # In-district POIs failing the name check stay visible as suspect candidates
         # for human confirmation; they never qualify for auto-binding.
@@ -155,17 +178,21 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
             # human, never an auto-bind (single-candidate trust rule is unchanged).
             from src.services.name_similarity import name_similarity
             names_for_score = [n for n in [target['community_name'], *target.get('aliases', [])] if n]
-            for point in candidates:
-                point['name_similarity'] = round(max(
-                    (name_similarity(n, point.get('name') or '') for n in names_for_score), default=0.0), 4)
+            for candidate in candidates:
+                candidate['name_similarity'] = round(max(
+                    (name_similarity(n, candidate.get('name') or '') for n in names_for_score), default=0.0), 4)
             candidates.sort(key=lambda p: -p['name_similarity'])
         # A single untruncated name-matched candidate is trusted even when the name is a
         # containment hit or the address differs; suspects never count toward auto-binding,
         # and truncation stays review.
-        if count <= 25 and len(matches) == 1:
+        auto_subject = complete and len(matches) == 1
+        if pipeline and auto_subject:
+            from src.services.collection_pipeline import auto_subject_reliable
+            auto_subject = auto_subject_reliable(target, next(iter(matches.values())), records)
+        if auto_subject:
             point = next(iter(matches.values()))
             values.update(state='matched', selected=point, candidates=list(matches.values()))
-        elif candidates or count > 25:
+        elif candidates or not complete:
             values.update(state='review', candidates=candidates,
                           error='未找到唯一可靠位置：候选有歧义、地址不同或结果未完整返回，请核对后确认')
         else:
@@ -258,7 +285,17 @@ class PositionJob:
         owned = client is None
         try:
             from src.services.directory_workflow import inventory
-            targets = [c for c in inventory(self.store, self.store.path.parent) if c['admission_state'] == 'admitted']
+            from src.services.collection_pipeline import active
+            targets = [c for c in inventory(self.store, self.store.path.parent)
+                       if (c['admission_state'] == 'admitted' or active(c)) and not c.get('source_record_id')
+                       and (not active(c) or (c['qualification'] not in {'non_residential', 'manual_exclusion', 'region_conflict'}
+                                             and not (c.get('use_review') or {}).get('auto_skip_reason')))]
+            from src.services.collection_pipeline import RequestBudgetClient
+            page_client = None
+            if any(active(c) for c in targets):
+                supplied = client
+                page_client = RequestBudgetClient(lambda: supplied or AmapClient(), limit=budget, delay=delay, cancel=self.cancel)
+                client = page_client
             with self.lock:
                 self.state['total'] = len(targets)
             requests = 0
@@ -268,18 +305,19 @@ class PositionJob:
                     raise InterruptedError()
                 cid = target['community_id']
                 current_state = position_view(target, target.get('sources', [])).get('state')
-                if current_state not in {'pending', 'error'}:
+                needs_subject_type = active(target) and current_state == 'matched' and not (target.get('use_review') or {}).get('state')
+                if current_state not in {'pending', 'error'} and not needs_subject_type:
                     outcome = 'skipped'
                     with self.lock:
                         by = self.state['skipped_by_state']
                         by[current_state] = by.get(current_state, 0) + 1
                 else:
-                    if requests >= budget:
+                    if (page_client.used if page_client else requests) >= budget:
                         with self.lock:
                             self.state['errors'].append({'message': '达到本轮请求预算，未完成目标可下次重试'})
                         budget_stopped = True
                         break
-                    if requests and self.cancel.wait(delay):
+                    if not page_client and requests and self.cancel.wait(delay):
                         raise InterruptedError()
                     requests += 1
                     try:
@@ -297,6 +335,9 @@ class PositionJob:
                                                          'message': message, 'state': getattr(exc, 'state', None) or 'error'})
                         outcome = None
                 with self.lock:
+                    if page_client:
+                        requests = page_client.used
+                        self.state['requests'] = requests
                     self.state['processed'] += 1
                     if outcome:
                         self.state[outcome] += 1

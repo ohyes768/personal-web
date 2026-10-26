@@ -53,7 +53,8 @@ export function UseReviewBadge({ review, compact = false }: { review?: UseReview
     {review?.re_review && <small>有新证据，待人工重新确认</small>}</>;
 }
 
-export default function UseReviewPanel({ review, busy, revision, open, canConfirm = true, onToggle, onRecheck, onConfirm }: {
+export default function UseReviewPanel({ review, busy, revision, open, canConfirm = true, onToggle, onRecheck, onConfirm, pipeline = false }: {
+  pipeline?: boolean;
   review?: UseReview; busy: boolean; revision?: number; open?: boolean; canConfirm?: boolean;
   onToggle?: (open: boolean) => void; onRecheck: () => void;
   onConfirm: (body: object) => void }) {
@@ -73,6 +74,7 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
   };
   return <section className="directory-use-review-panel" aria-label="住宅用途核对">
     <div className="directory-use-review-heading"><h4>住宅用途核对</h4><UseReviewBadge review={review} compact /></div>
+    {pipeline && <p className="directory-muted">使用上方已确认地点的高德类型与透明售房网用途比较。确认位置后自动分类；有冲突再人工确认用途。</p>}
     {review?.auto_skip_reason && <p className="directory-muted">{review.auto_skip_reason}。仍可手动查询高德。</p>}
     {review?.re_review && <p role="alert" className="directory-warning">出现与人工结论相反的证据，请重新核对后再确认。</p>}
     <p className="directory-muted">{useReviewResultLabels[review?.result || ''] || '尚未核对'}
@@ -92,7 +94,7 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
         {safeDirectoryLink(item.url || '') && <> · <a href={item.url} target="_blank" rel="noopener noreferrer">查看证据 ↗</a></>}</p>)}
     </div>}
     <div className="directory-actions">
-      <button className="btn btn-secondary" disabled={busy} onClick={onRecheck}>重新查询高德</button>
+      <button className="btn btn-secondary" disabled={busy} onClick={onRecheck}>{pipeline ? '核对已选主体类型' : '重新查询高德'}</button>
       {canConfirm && !open && <button className="btn btn-secondary" disabled={busy || !revision} onClick={() => onToggle?.(true)}>人工确认用途</button>}
     </div>
     {open && canConfirm && <div className="directory-use-review-confirm">

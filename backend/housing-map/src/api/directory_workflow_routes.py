@@ -72,8 +72,12 @@ def summary(q: str = Query('', max_length=200), district: str = ''):
             return {'active': False, 'admitted': 0, 'excluded': 0, 'auction_pending': 0}
         rows = filtered(flow.inventory(registry, registry.path.parent), q, district)
         tasks = flow.auction_tasks(registry, registry.path.parent)
+        from src.services.collection_pipeline import enabled as pipeline_enabled
+        with registry.db() as db:
+            pipeline = pipeline_enabled(db)
         return {'active': True, 'admitted': sum(r['admission_state'] == 'admitted' for r in rows),
-                'excluded': sum(r['admission_state'] != 'admitted' for r in rows), 'auction_pending': len(tasks)}
+                'excluded': sum(r['admission_state'] != 'admitted' for r in rows), 'auction_pending': len(tasks),
+                'pipeline': pipeline, 'pending': sum(r.get('workflow_state') == 'pending' for r in rows)}
     return result(read)
 
 
@@ -94,6 +98,7 @@ USE_FILTERS = {
 def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query('', max_length=200),
             district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual', 'done', 'todo'] = '',
             use: Literal['', 'conflict', 'uncertain', 'pending_retry', 'agree', 'none', 'skipped'] = '',
+            workflow: Literal['', 'pending', 'admitted', 'excluded'] = '',
             market: Literal['', 'new_house', 'second_hand'] = '',
             property_type: str = Query('', max_length=100),
             auction: Literal['', 'has', 'none'] = '',
@@ -103,6 +108,8 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
         registry = require_store()
         rows = filtered(flow.inventory(registry, registry.path.parent), q, district)
         rows = [r for r in rows if r['admission_state'] == state]
+        if workflow:
+            rows = [r for r in rows if r.get('workflow_state', r['admission_state']) == workflow]
         property_types = sorted({prop for r in rows for prop in r.get('property_types', [])})
         if market:
             rows = [r for r in rows if r.get('market_state') == market]

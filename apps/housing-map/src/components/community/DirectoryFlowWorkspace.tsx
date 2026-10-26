@@ -11,12 +11,13 @@ import type { RentalRequestDiagnostics } from '../../lib/rental-types';
 import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, rentalCoverageLabels, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
 
 type CatalogRow = Community & { property_types?: string[]; position?: Position; use_review?: UseReview;
+  collection_pipeline_version?: string; workflow_state?: 'pending' | 'admitted' | 'excluded';
   qualification: string; facts_state: string; exclusion_reason: string;
   source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string };
   coverage?: CatalogCoverage; auction_records?: CatalogAuctionRecord[] };
 type Auction = Source & { revision: string; skipped: boolean; candidates: Community[]; reason: string;
   auction_ids?: string[]; rounds?: { auction_id: string; title?: string; source_url?: string; round?: number }[] };
-type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number };
+type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number; pipeline?: boolean; pending?: number };
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
@@ -73,10 +74,14 @@ function taskRelevant(t: (typeof tasks)[number], jobs: Record<string, Job | null
 }
 
 /** 采集任务弹层：触发/停止/完整进度都收在弹层里；运行中另有单行状态条常驻（CollectionControls 返回的 summary）。 */
-export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {} }: {
+export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {}, pipeline = false }: {
+  pipeline?: boolean;
   active: boolean; jobs: Record<string, Job | null>; errors: Record<string, string>; busy: boolean;
   action: (path: string, method: string, body?: object) => void; open?: boolean; onOpenChange?: (open: boolean) => void }) {
-  const relevant = tasks.filter(t => taskRelevant(t, jobs, errors));
+  const availableTasks = tasks.filter(t => !pipeline || t.id !== 'use').map(t => pipeline && t.id === 'amap'
+    ? { ...t, label: '匹配楼盘地点与类型', hint: '候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类；多个主体由你选择。' }
+    : pipeline && t.id === 'tmsf' ? { ...t, label: '采集楼盘名单与资料' } : t);
+  const relevant = availableTasks.filter(t => taskRelevant(t, jobs, errors));
   const anyRunning = relevant.some(t => taskStateOf(t, jobs, errors) === 'running');
   const anyFailed = relevant.some(t => taskStateOf(t, jobs, errors) === 'failed');
   return <>
@@ -94,7 +99,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
     </button>}
     {open && <DirectoryDialog title="采集任务" onClose={() => onOpenChange(false)}>
       {!active && <p className="directory-warning">名单流程尚未启用，采集暂不可用。</p>}
-      {tasks.map(t => {
+      {availableTasks.map(t => {
         const job = jobs[t.id];
         const running = !!job?.running;
         const state = taskStateOf(t, jobs, errors);
@@ -152,6 +157,14 @@ export function CatalogClassificationFilter({ mode, value, propertyTypes, onChan
   </select>;
 }
 
+export function pipelineStageLabel(row: Pick<CatalogRow, 'workflow_state' | 'qualification'>): string {
+  if (row.workflow_state === 'admitted') return '已收录';
+  if (row.workflow_state === 'excluded') return '明确不收录';
+  return ({ position_pending: '待匹配地点', position_review: '待确认地点', position_type_missing: '待补主体类型',
+    use_conflict: '待确认用途', use_uncertain: '待确认用途', type_uncertain: '待确认用途',
+    type_missing: '待补用途资料', type_conflict: '待核实用途', region_conflict: '待核实区域' } as Record<string, string>)[row.qualification] || '待补资料';
+}
+
 export function CatalogTable({ items, excluded, select, retry, busy, position }: { items: CatalogRow[]; excluded: boolean;
   select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; }) {
   return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}`}><thead><tr>
@@ -165,6 +178,7 @@ export function CatalogTable({ items, excluded, select, retry, busy, position }:
       ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
       : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
     {excluded && <td data-label="住宅用途核对"><div className="catalog-inline"><UseReviewBadge review={c.use_review} compact />
+      {c.collection_pipeline_version && <small className="catalog-text">{pipelineStageLabel(c)}</small>}
       {c.use_review?.auto_skip_reason && <small className="catalog-text directory-muted">{c.use_review.auto_skip_reason}</small>}
       {c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
     {excluded && <td data-label="不收录原因 / 资料状态">{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : '条件不符'}</small></td>}
@@ -213,6 +227,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [rentalFilter, setRentalFilter] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
   const [useFilter, setUseFilter] = useState('');
+  const [workflowFilter, setWorkflowFilter] = useState('');
   const [useConfirmOpen, setUseConfirmOpen] = useState(false);
   const [propertyTypes, setPropertyTypes] = useState<string[]>([]);
   const [showSkipped, setShowSkipped] = useState(false);
@@ -240,7 +255,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         if (!counts.active) { setLoading(false); return; }
         if (mode === 'rental') { setLoading(false); return; }
         const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q, page: String(page), include_skipped: String(showSkipped) })}`
-          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '', use: mode === 'auctions' ? '' : useFilter, auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
+          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), workflow: mode === 'excluded' ? workflowFilter : '', position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '', use: mode === 'auctions' ? '' : useFilter, auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
         const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         if (page > 1 && (page - 1) * 30 >= packet.total) { setPage(Math.max(1, Math.ceil(packet.total / 30))); return; }
@@ -250,7 +265,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '名单加载失败'); setLoading(false); } }
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter, useFilter]);
+  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter, useFilter, workflowFilter]);
   useEffect(() => {
     if (!summary?.active) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -302,7 +317,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
       const value = await workflowRequest<CatalogRow>(path);
-      if (value.admission_state === 'admitted') value.position = await workflowRequest<Position>(path + '/position');
+      if (value.admission_state === 'admitted' || (value.collection_pipeline_version && !value.source_record_id)) value.position = await workflowRequest<Position>(path + '/position');
       if (detailVersion.current === version) setDetail(value);
     }
     catch (e) { if (detailVersion.current === version) setError(e instanceof Error ? e.message : '详情加载失败'); }
@@ -329,7 +344,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       const outcome = await workflowRequest<{ errors?: string[] } | null>(path + '/retry', 'POST');
       saved = true;
       const fresh = await workflowRequest<CatalogRow>(path);
-      if (fresh.admission_state === 'admitted') fresh.position = await workflowRequest<Position>(path + '/position');
+      if (fresh.admission_state === 'admitted' || (fresh.collection_pipeline_version && !fresh.source_record_id)) fresh.position = await workflowRequest<Position>(path + '/position');
       if (detailVersion.current === version) {
         setDetail(fresh);
         setNotice(outcome?.errors?.length ? `部分资料已更新：${outcome.errors.join('；')}` : '资料已更新，名单已重新分类。');
@@ -340,6 +355,22 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       if (saved) { setRevision(v => v + 1); onChanged(); }
       setBusy(false);
     }
+  }
+  async function queryDetailPosition() {
+    if (!detail || busy) return;
+    const version = detailVersion.current;
+    const path = `/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}`;
+    setBusy(true); setError(''); setNotice('');
+    try {
+      const position = await workflowRequest<Position & { errors?: string[] }>(path + '/position/query', 'POST');
+      const fresh = await workflowRequest<CatalogRow>(path);
+      if (detailVersion.current === version) {
+        setDetail({ ...fresh, position });
+        setNotice(position.errors?.length ? position.errors.join('；') : '地点与类型已保存，收录状态已重新计算。');
+      }
+      setRevision(v => v + 1); onChanged();
+    } catch (e) { setError(e instanceof Error ? e.message : '地点匹配失败'); }
+    finally { setBusy(false); }
   }
   async function reviewAction(kind: 'recheck' | 'confirm', body?: object) {
     if (!detail) return;
@@ -355,6 +386,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         setUseConfirmOpen(false);
       }
       const fresh = await workflowRequest<CatalogRow>(`/directory/workflow/catalog/${encodeURIComponent(cid)}`);
+      if (fresh.collection_pipeline_version && !fresh.source_record_id) fresh.position = await workflowRequest<Position>(`/directory/workflow/catalog/${encodeURIComponent(cid)}/position`);
       if (detailVersion.current === version) setDetail(fresh);
       setRevision(v => v + 1); onChanged();
     } catch (e) { setError(e instanceof Error ? e.message : '用途操作失败，请刷新'); }
@@ -388,13 +420,15 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const resumeAdmission = !!detail && detail.admission_state !== 'admitted' && !detail.source_record_id && detail.qualification === 'manual_exclusion';
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
     <header className="review-heading"><h2>住宅名单与数据采集</h2>
-      <CollectionTasksButton jobs={jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
+      <CollectionTasksButton jobs={summary?.pipeline ? Object.fromEntries(Object.entries(jobs).filter(([id]) => id !== 'use')) : jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
-    <CollectionControls active={!!summary?.active} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
-    <div className="review-tabs">{[['admitted', '已收录', summary?.admitted], ['excluded', '不收录', summary?.excluded], ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]].map(([key, label, count]) =>
+    <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
+    <div className="review-tabs">{[['admitted', '已收录', summary?.admitted], ['excluded', summary?.pipeline ? '待处理 / 不收录' : '不收录', summary?.excluded], ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]].map(([key, label, count]) =>
       <button key={key} aria-pressed={mode === key} onClick={() => changeMode(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>
     {mode !== 'rental' && <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索小区名称、地址" value={q} onChange={e => { setQ(e.target.value); setPage(1); setLoading(true); }} />
       {mode !== 'auctions' && <select aria-label="目录区域" value={district} onChange={e => { setDistrict(e.target.value); setPage(1); setLoading(true); }}><option value="滨江">滨江区</option><option value="萧山">萧山接壤目录</option><option value="">全部区域</option></select>}
+      {mode === 'excluded' && summary?.pipeline && <select aria-label="收录处理状态" value={workflowFilter} onChange={e => { setWorkflowFilter(e.target.value); setPage(1); setLoading(true); }}>
+        <option value="">待处理及不收录</option><option value="pending">待处理</option><option value="excluded">明确不收录</option></select>}
       <CatalogClassificationFilter mode={mode} value={mode === 'admitted' ? marketFilter : propertyFilter} propertyTypes={propertyTypes}
         onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
       {mode === 'admitted' && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionBucketLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
@@ -442,15 +476,16 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         <dl>
           <div className="directory-info-wide"><dt>小区名称</dt><dd>{detail.community_name}</dd></div>
           <div><dt>区域</dt><dd>{detail.district || '待补充'}</dd></div>
-          <div><dt>用途</dt><dd>{detail.property_types?.join(' / ') || detail.effective_property_type || [...new Set(detail.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'}</dd></div>
+          <div><dt>{detail.collection_pipeline_version ? '透明售房网用途' : '用途'}</dt><dd>{detail.property_types?.join(' / ') || detail.effective_property_type || [...new Set(detail.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'}</dd></div>
+          {detail.collection_pipeline_version && <div><dt>处理状态</dt><dd>{pipelineStageLabel(detail)}</dd></div>}
           <div><dt>新房 / 二手房</dt><dd>{marketLabels[detail.market_state || 'unknown'] || marketLabels.unknown}</dd></div>
           <div className="directory-info-wide"><dt>实际地址</dt><dd>{detail.address || '待补充'}</dd></div>
         </dl>
         {detail.admission_state === 'admitted' && detail.map_status !== 'displayed' && <p className="directory-warning" role="status">地图暂未展示：{mapLabels[detail.map_status || ''] || '待核对'}</p>}
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
       </section>
-        {detail.admission_state === 'admitted' && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} />}
-        {detail.use_review && <UseReviewPanel review={detail.use_review} busy={busy || !!jobs.use?.running}
+        {(detail.admission_state === 'admitted' || (detail.collection_pipeline_version && !detail.source_record_id)) && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} onQuery={detail.collection_pipeline_version ? () => void queryDetailPosition() : undefined} />}
+        {detail.use_review && <UseReviewPanel review={detail.use_review} pipeline={!!detail.collection_pipeline_version} busy={busy || !!jobs.use?.running}
           revision={detail.admission?.revision} open={useConfirmOpen} canConfirm={detail.admission_state !== 'admitted'}
           onToggle={setUseConfirmOpen} onRecheck={() => void reviewAction('recheck')}
           onConfirm={body => void reviewAction('confirm', body)} />}

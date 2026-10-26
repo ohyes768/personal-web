@@ -7,7 +7,7 @@ from src.services.use_review_policy import RULE_VERSION
 
 _ADDRESS_DISTRICT = re.compile(r'(上城|下城|江干|拱墅|西湖|滨江|萧山|余杭|临平|钱塘|富阳|临安)区')
 # These extra types only affect automatic queries, never admission rules.
-_EXPLICIT_NON_RESIDENTIAL = NON_RESIDENTIAL_TYPES | {'商铺', '厂房'}
+EXPLICIT_NON_RESIDENTIAL_TYPES = NON_RESIDENTIAL_TYPES | {'商铺', '厂房'}
 
 
 def auto_review_skip_reason(row):
@@ -29,7 +29,7 @@ def auto_review_skip_reason(row):
             or any(r.get('property_type_conflict') for r in row.get('sources', []) if r.get('source') == 'tmsf')):
         return None
     types = set(row.get('property_types') or [])
-    if types and types <= _EXPLICIT_NON_RESIDENTIAL:
+    if types and types <= EXPLICIT_NON_RESIDENTIAL_TYPES:
         return '透明售房网用途明确为非住宅，按需手动查询'
     if types == {'其他'} and row.get('admission_state') != 'admitted':
         return '尚未收录且用途仅标注其他，按需手动查询'

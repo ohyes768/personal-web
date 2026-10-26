@@ -1,5 +1,7 @@
 # TMSF directory and independent collection workflow
 
+For explicitly activated collection-pipeline-v2 instances, [the unified pipeline contract](./collection-pipeline.md) supersedes the v1 admission-before-position order and independent text-search use review below. Unmigrated instances retain this document's v1 behavior.
+
 ## Scope and rollout
 The new management page is DirectoryFlowWorkspace. `directory_flow_version=tmsf-directory-v1` in registry meta is an explicit migration boundary, not a user-configurable auto-review toggle. Until offline migration is applied, the new page reports inactive and disables its tasks; existing map/admission behavior remains unchanged. Never silently enable this flag on startup, ordinary GETs, or a deployment. The old multi-source review implementation remains for historical records and pre-migration reads; its decision/auto-execute paths reject writes after activation.
 

@@ -75,7 +75,7 @@ def _retry_aliases(target):
 
 
 def _search_review(client, name, district, *, cancelled):
-    """按原始 POI ID 核对分页完整性，再交给用途匹配过滤。"""
+    """遍历可返回的分页；高德 count 可能大于实际可返回数量。"""
     pois = {}
     total = None
     for page in range(1, MAX_PAGES + 1):
@@ -87,10 +87,11 @@ def _search_review(client, name, district, *, cancelled):
         rows, count = client.search_name(name, district, **options)
         if cancelled():
             raise InterruptedError()
-        if total is None:
-            total = count
-        elif count != total:
-            return list(pois.values()), False
+        # Real Amap responses can report 53 results but return 25 + 14 + an
+        # empty page whose count becomes 0. That is a terminal page, not failure.
+        if not rows:
+            return list(pois.values()), bool(pois) or count == 0
+        total = max(total or 0, count)
         before = len(pois)
         for row in rows:
             sid = row.get('id')
@@ -99,7 +100,7 @@ def _search_review(client, name, district, *, cancelled):
             pois[sid] = row
         if len(pois) == total:
             return list(pois.values()), True
-        if len(pois) > total or len(pois) == before:
+        if len(pois) == before:
             break
     return list(pois.values()), False
 
@@ -175,6 +176,14 @@ def review_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, fo
     """对单个小区做一次高德用途分类复核并保存证据。"""
     snapshot = _snapshot(store, cid)
     target, records = _target(store, snapshot)
+    from src.services.collection_pipeline import active, selected_review
+    if active(target):
+        if cancelled():
+            raise InterruptedError()
+        if not selected_review(target, records)['state']:
+            raise ValueError('请先匹配并确认高德主体地点及类型，或人工确认用途')
+        # New flow classifies from the selected POI, never a second text search.
+        return 'updated'
     if automatic and _auto_skip_reason(target, records,
             json.loads(snapshot['admission']) if snapshot['admission'] else {}, property_facts(data_dir)):
         return 'skipped'

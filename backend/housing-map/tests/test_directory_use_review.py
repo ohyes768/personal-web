@@ -178,17 +178,15 @@ def test_review_checks_later_pages_for_conflicting_categories(setup, paged_clien
     assert len(calls) == 2
 
 
-@pytest.mark.parametrize('kind', ['empty', 'duplicate', 'overlap', 'cap', 'changed_count'])
+@pytest.mark.parametrize('kind', ['duplicate', 'overlap', 'cap'])
 def test_incomplete_paging_never_publishes_evidence(setup, paged_client, kind):
     store, cid, data = setup
     first = [poi()] + unrelated(0, 24)
     pages, count = {
-        'empty': ([first, []], 26),
         'duplicate': ([first, first], 26),
         # Raw row count reaches 26 but there are only 25 distinct POIs.
         'overlap': ([first, [first[0]], []], 26),
         'cap': ([first] + [unrelated(i * 25, (i + 1) * 25) for i in range(1, 9)], 201),
-        'changed_count': ([first, unrelated(24, 26)], [26, 27]),
     }[kind]
     client, calls = paged_client(pages, count)
     with pytest.raises(UseReviewOutcome) as exc:
@@ -196,6 +194,23 @@ def test_incomplete_paging_never_publishes_evidence(setup, paged_client, kind):
     assert exc.value.state == 'uncertain'
     assert saved_review(store, cid)['evidence'] is None
     assert len(calls) == (8 if kind == 'cap' else 2)
+
+
+@pytest.mark.parametrize(('sizes', 'counts'), [([25, 14, 0], [53, 53, 0]),
+                                             ([20, 0], [30, 0]),
+                                             ([25, 2], [26, 27])])
+def test_real_world_totals_are_hints_and_terminal_empty_page_completes(setup, paged_client, sizes, counts):
+    store, cid, data = setup
+    pages = []
+    offset = 0
+    for size in sizes:
+        pages.append(unrelated(offset, offset + size))
+        offset += size
+    pages[0][0] = poi()
+    client, calls = paged_client(pages, counts)
+    assert review_one(store, data, cid, client) == 'updated'
+    assert saved_review(store, cid)['evidence']['poi_id'] == 'B1'
+    assert len(calls) == len(sizes)
 
 
 def test_overlapping_pages_continue_until_unique_poi_count_is_complete(setup, paged_client):

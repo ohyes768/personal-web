@@ -35,6 +35,31 @@ test('automatic skips explain why and preserve manual querying and existing conf
   assert.equal(useReviewBucket({ state: 'checked', result: 'agree_non_residential', auto_skip_reason: '明确非住宅' }), 'done');
 });
 
+test('pipeline collects subject location and type together without a second bulk use search', () => {
+  const html = render(React.createElement(CollectionControls, { active: true, pipeline: true,
+    busy: false, open: true, errors: {}, jobs: {}, action() {} }));
+  assert.match(html, /匹配楼盘地点与类型/);
+  assert.match(html, /候选楼盘先确认主体地点/);
+  assert.doesNotMatch(html, /<strong>核对住宅用途<\/strong>/);
+  const panel = render(React.createElement(UseReviewPanel, { review: conflict, pipeline: true,
+    busy: false, onRecheck() {}, onConfirm() {} }));
+  assert.match(panel, /核对已选主体类型/);
+  assert.doesNotMatch(panel, /重新查询高德/);
+});
+
+test('pipeline renders the selected subject type and unfinished admission stage', () => {
+  const { default: PositionPanel } = require('../src/components/community/PositionPanel.tsx');
+  const html = render(React.createElement(PositionPanel, { busy: false, confirm() {}, onQuery() {}, position: {
+    state: 'matched', has_coordinates: true, candidates: [], selected: { source_id: 'P1', name: '测试住宅',
+      poi_type: '住宅小区', poi_typecode: '120302', address: '月明路1076号' } } }));
+  assert.match(html, /高德主体类型：住宅小区/);
+  assert.match(html, /匹配楼盘地点与类型/);
+  const row = render(React.createElement(CatalogTable, { excluded: true, busy: false, select() {}, retry() {},
+    items: [{ community_id: 'c', community_name: '测试住宅', sources: [], collection_pipeline_version: 'collection-pipeline-v2',
+      workflow_state: 'pending', qualification: 'position_review', facts_state: 'incomplete', exclusion_reason: '请选择主体地点' }] }));
+  assert.match(row, /待确认地点/);
+});
+
 test('compact badges name the same buckets as the filter labels', () => {
   for (const [review, label] of [[conflict, '待人工确认'], [{ state: 'checked', result: 'agree_residential' }, '已一致'],
     [{ state: 'not_found', result: 'pending_retry' }, '未取得明确结果'], [{ result: 'pending_retry' }, '尚未核对']]) {

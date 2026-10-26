@@ -27,13 +27,17 @@ def synchronize(store, data_dir):
 def materialize(store, db, facts):
     """Create only proven TMSF residential identities; preserve manual identity vetoes."""
     created = 0
+    from src.services.collection_pipeline import enabled as pipeline_enabled, KEY as PIPELINE_KEY, RULE
+    pipeline = pipeline_enabled(db)
     for row in db.execute("SELECT * FROM sources WHERE source='tmsf' AND status='pending' AND cid IS NULL").fetchall():
         record = store._source(row)
         if store._review_locked(db, row['id']) or db.execute('SELECT 1 FROM rejected WHERE rid=?', (row['id'],)).fetchone():
             continue
         c = dict(community_name=record['name'], district=record.get('district'), address=record.get('address'),
                  aliases=record.get('aliases', []))
-        if eligibility(c, [record], facts)['admission_state'] != 'admitted':
+        if pipeline:
+            c[PIPELINE_KEY] = RULE
+        if not pipeline and eligibility(c, [record], facts)['admission_state'] != 'admitted':
             continue
         # A plausible existing identity needs association evidence, not another master.
         existing = [store._community(r) for r in db.execute('SELECT * FROM communities')]
@@ -44,9 +48,9 @@ def materialize(store, db, facts):
         cid = 'local-' + uuid.uuid5(uuid.NAMESPACE_URL, VERSION + ':' + row['id']).hex[:16]
         c.update(community_id=cid, updated_at=now())
         db.execute('INSERT INTO communities(id,payload) VALUES (?,?)', (cid, dump(c)))
-        admission = dict(state='admitted', decision_kind='automatic', revision=1, auto_review_locked=False,
+        admission = dict(state='pending' if pipeline else 'admitted', decision_kind='automatic', revision=1, auto_review_locked=False,
                          property_type=eligibility(c, [record], facts)['effective_property_type'],
-                         reason='透明售房网资料符合住宅收录条件', rule_version=VERSION, decided_at=now())
+                         reason='透明售房网候选身份，待地点与用途核验' if pipeline else '透明售房网资料符合住宅收录条件', rule_version=VERSION, decided_at=now())
         db.execute('INSERT INTO community_admission VALUES (?,?)', (cid, dump(admission)))
         db.execute("UPDATE sources SET cid=?,status='matched',method='auto',evidence=? WHERE id=? AND status='pending'",
                    (cid, dump(['透明售房网完整住宅资料']), row['id']))
@@ -72,9 +76,11 @@ def catalog_property_types(row, facts):
 def inventory(store, data_dir):
     """Unlinked TMSF records are visible as incomplete/excluded entries, never auctions."""
     facts = property_facts(data_dir)
+    from src.services.collection_pipeline import enabled as pipeline_enabled, KEY as PIPELINE_KEY, RULE
     sources = store.sources()
     views = community_views(store, data_dir)
     with store.db() as db:
+        pipeline = pipeline_enabled(db)
         protected = {r['rid']: json.loads(r['payload']) for r in db.execute(
             'SELECT m.rid,c.payload FROM review_members m JOIN review_candidates c ON c.id=m.candidate_id')}
     output = []
@@ -91,6 +97,8 @@ def inventory(store, data_dir):
             continue
         c = dict(community_id='source-' + r['id'], community_name=r['name'], district=r.get('district'),
                  address=r.get('address') or '', aliases=r.get('aliases', []), source_record_id=r['id'])
+        if pipeline:
+            c[PIPELINE_KEY] = RULE
         decision = protected.get(r['id'], {})
         manual = {'decision_kind': 'manual', 'state': decision.get('state'), 'auto_review_locked': True, 'reason': decision.get('reason')} if decision.get('auto_review_locked') else {}
         status = eligibility(c, [r], facts, manual)

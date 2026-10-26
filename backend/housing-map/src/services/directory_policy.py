@@ -18,19 +18,24 @@ def enabled(db):
 
 
 def eligibility(community, records, facts=None, admission=None):
+    from src.services.collection_pipeline import active, position_gate, selected_review
+    pipeline = active(community)
     facts = facts or {}
     admission = admission or {}
     def result(code, reason, *, incomplete=False, prop=None):
-        return dict(admission_state='admitted' if code == 'eligible' else 'excluded',
+        status = dict(admission_state='admitted' if code == 'eligible' else 'excluded',
                     qualification=code, exclusion_reason=reason, effective_property_type=prop,
                     facts_state='incomplete' if incomplete else 'complete')
+        if pipeline:
+            status['workflow_state'] = 'admitted' if code == 'eligible' else 'pending' if incomplete else 'excluded'
+        return status
     if community.get('deleted') or community.get('merged_to'):
         return result('inactive', '小区已删除或合并')
     records = [r for r in records if r['source'] == 'tmsf' and r.get('status') != 'ignored']
     # 高德分类只是第二来源证据：人工用途决定优先，出现新的相反证据才回到待审核。
     use_decision = admission.get('use_rule') == RULE_VERSION and admission.get('use_decision')
     if use_decision:
-        contrary = contrary_evidence(admission, records, use_review_view(community))
+        contrary = contrary_evidence(admission, records, selected_review(community, records) if pipeline else use_review_view(community))
         if contrary:
             return result('use_conflict', f'用途分类冲突待人工审核：{contrary}', incomplete=True)
         if admission['use_decision'] != 'residential':
@@ -46,6 +51,11 @@ def eligibility(community, records, facts=None, admission=None):
     area = normalized(community.get('district')).removesuffix('区')
     if not area or any(normalized(r.get('district')).removesuffix('区') != area for r in records):
         return result('district_missing', '区域资料缺失或不一致，待补充', incomplete=True)
+    if pipeline:
+        from src.services.use_review_scope import auto_review_skip_reason
+        region = auto_review_skip_reason({**community, 'sources': records, 'admission': {}, 'qualification': None})
+        if area not in {'滨江', '萧山'} or (region and region.startswith('区域异常')):
+            return result('region_conflict', region or '楼盘不在支持的区域内', incomplete=True)
     human_prop = None
     if use_decision:
         # 人工确认只覆盖用途门槛，区域、地址、挂牌等门槛照常执行。
@@ -60,7 +70,7 @@ def eligibility(community, records, facts=None, admission=None):
                 return result('type_missing', '透明售房网用途资料缺失，待补充', incomplete=True)
             types.add(prop)
         # 高德证据永不自动收录或排除：只制造待审核冲突。
-        review = use_review_view(community)
+        review = selected_review(community, records) if pipeline else use_review_view(community)
         outcome = compare(types, review.get('category') if review.get('state') == CHECKED else None)
         if outcome == CONFLICT:
             return result('use_conflict', '透明售房网与高德用途分类冲突，待人工审核', incomplete=True)
@@ -68,9 +78,14 @@ def eligibility(community, records, facts=None, admission=None):
             return result('use_uncertain', '住宅用途待确认，暂不收录', incomplete=True)
         if not types <= RESIDENTIAL_TYPES:
             text = ' / '.join(sorted(types))
-            if types <= NON_RESIDENTIAL_TYPES:
+            from src.services.use_review_scope import EXPLICIT_NON_RESIDENTIAL_TYPES
+            if types <= (EXPLICIT_NON_RESIDENTIAL_TYPES if pipeline else NON_RESIDENTIAL_TYPES):
                 return result('non_residential', f'透明售房网用途为{text}，不收录')
             return result('type_uncertain', f'透明售房网用途为{text}，住宅用途不明确，暂不收录', incomplete=True)
+    if pipeline:
+        gate = position_gate(community, records, human_use=bool(use_decision))
+        if gate:
+            return result(*gate, incomplete=True)
     verified = [r for r in records if not r.get('address_verification_pending')]
     actual_address = community.get('address') if community.get('address_origin') == 'manual' else ''
     if not effective_address(actual_address, verified):

@@ -1,6 +1,7 @@
 # Housing-map backend
 
 ## Pre-Development Checklist
+- Read [Candidate-to-admission pipeline v2](./collection-pipeline.md) before changing the versioned candidate identity, selected-POI use evidence, strict admission or full re-review migration. It supersedes v1 position/use behavior only after explicit activation.
 - Read [Amap position status](./directory-position.md) for catalog POI states, per-community query/confirmation, historical coordinates and manual position protection.
 - Read [TMSF directory workflow](./directory-flow.md) for TMSF-only admission, five collection tasks, auction-only association and explicit offline migration; it supersedes the legacy multi-source review flow after activation.
 - Read [Amap use-category review](./use-review.md) when changing the second-source use evidence, the conflict matrix, the batch review job or the human use confirmation.

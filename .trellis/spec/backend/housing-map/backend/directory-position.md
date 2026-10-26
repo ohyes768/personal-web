@@ -1,5 +1,7 @@
 # Known-community Amap position status
 
+Explicit collection-pipeline-v2 activation extends positioning to candidate identities, accepts nonresidential building subjects and classifies from the selected POI. See [the v2 contract](./collection-pipeline.md); legacy instances retain the rules below.
+
 ## 1. Scope / Trigger
 Applies to directory_position.py, directory_position_state.py, directory_workflow inventory/API, DirectoryFlowWorkspace and PositionPanel. Runs only after explicit directory-flow migration. Position evidence never creates sources/masters, establishes residential use, changes actual addresses, or reactivates ignored Amap discovery records.
 

@@ -124,6 +124,9 @@ def use_identity(target):
 
 def use_review_view(target):
     """复核证据投影。身份指纹或规则版本变化即视为无证据。"""
+    from src.services.collection_pipeline import active, selected_review
+    if active(target):
+        return selected_review(target)
     saved = target.get('use_review') or {}
     if not saved or saved.get('identity') != use_identity(target) or saved.get('rule_version') != RULE_VERSION:
         return dict(state=None, category=None, checked_at=None, error=None, evidence=None, candidates_count=0)
@@ -135,7 +138,8 @@ def use_review_view(target):
 def use_review_projection(community, records=(), admission=None, facts=None):
     """目录行的高德用途复核投影：证据、矩阵结论与人工决定。"""
     admission = admission if admission is not None else (community.get('admission') or {})
-    review = use_review_view(community)
+    from src.services.collection_pipeline import active, selected_review
+    review = selected_review(community, records) if active(community) else use_review_view(community)
     records = [record for record in records or [] if record.get('source') == 'tmsf']
     types = {value for value in tmsf_property_types(records, facts) if value}
     category = review.get('category') if review.get('state') == CHECKED else None

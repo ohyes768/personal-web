@@ -1,0 +1,38 @@
+# Candidate → confirmed POI → residential admission (v2)
+
+## Activation and scope
+
+This contract supersedes the v1 directory/position/use-review rules only after explicit `collection_pipeline_version=collection-pipeline-v2` migration. The marker is stored both in registry meta and on every community; future materialization stamps the same marker. Never enable on startup/GET or deploy alone. Every historical master is re-evaluated; no old automatic admission exemption. Existing manual decisions, rejected/ignored identities, source IDs and history are retained.
+
+## Identity, location and use
+
+- `directory_workflow.materialize` may create a pending TMSF candidate before use/address/listing/location gates pass. Keep deterministic IDs, duplicate checks, manual locks and rejection guards. Virtual source rows still represent identities that cannot safely materialize.
+- Position queries and confirmation accept materialized candidates with matched TMSF source membership, not just admitted communities. Batch omits explicit nonresidential/manual/region/other automatic skips, and does not follow list filters.
+- Search sees all categories upstream, then `collection_pipeline.subject_pois` keeps only in-district building/estate/park subjects with valid coordinates. Shops, attached places and unsupported subject categories cannot vote on use. Strict names use Unicode/space/dot normalization; preserve phases and parentheses. Generic suffix/containment logic can rank human candidates but cannot auto-bind.
+- One exact primary/explicit-alias subject with complete results and no explicit numbered-address conflict can auto-match; multiple exact subjects, only loose hits or contradictory doorplates require a human selection. An intersection description does not conflict with a doorplate merely because the strings differ. Missing POI address requires review.
+- A selected POI stores source_id, name, typecode/type text, district, coordinates, address and capture time in the same position evidence. Do not write an arbitrary candidate coordinate while scoring/sorting a review list. New automatic confirmations replace historical automatic coordinates with the selected subject point; manual coordinates remain protected unless explicitly confirmed for replacement.
+- Old automatically selected POIs are revalidated against strict subject rules; loose phase matches become review candidates. Human-selected POIs remain identity evidence. Manual coordinates without a POI ID never manufacture an Amap use category.
+
+## Classification
+
+- `use_review_view` / projection for v2 derive Amap evidence solely from the confirmed selected position. Legacy name-search use_review payloads are retained but ignored as v2 evidence. An explicit use-review action recomputes the selected evidence, without another text search; missing selected type instructs the user to confirm a subject or provide manual use evidence.
+- TMSF residential + selected Amap residential passes the use gate. Disagreement or mixed Amap type requires human use confirmation. Missing/ambiguous TMSF use never becomes residential merely because Amap says residential. Clear TMSF nonresidential remains excluded without a request; 商铺/厂房 are explicit nonresidential types for v2 only.
+- Manual use decisions override the use gate only. They do not bypass region, a valid confirmed location, actual source/manual address or listing gates. A manual coordinate can satisfy location only with valid manual residential-use evidence. Newly contrary evidence keeps the existing re-review behavior.
+- All consumers still use `eligibility(...).admission_state=='admitted'`. Existing newhouse listing exemption and ESF >=3 gate are unchanged. Unknown counts, upstream errors and missing locations are pending, never fabricated nonresidential verdicts.
+
+## States, API and interface
+
+- Retain `admission_state=admitted|excluded` as the compatibility view; add `workflow_state=pending|admitted|excluded` to distinguish unfinished work from a final negative decision. Reason codes include position_pending, position_review, position_type_missing, region_conflict and existing use/data/listing reasons.
+- GET catalog accepts additive `workflow=pending|admitted|excluded`, filtered before total/pagination. GET summary reports `pipeline` and `pending`. Candidate position detail/query/confirm uses the same endpoints and snapshot revisions as existing admitted positions.
+- The v2 UI offers source collection → subject location/type matching → automatic classification and human exceptions. Hide the second bulk name-based use job. Detail shows TMSF use, selected subject type and workflow stage; existing explicit manual-use evidence remains available.
+- `RequestBudgetClient` enforces the batch budget on real HTTP pages across aliases and communities, with cancellation and delay per request. Empty/skipped runs remain lazy and need no key. Errors never publish a partial selected use verdict.
+
+## Migration
+
+`scripts/migrate_collection_pipeline.py --data-dir ... --plan ... --action preview|apply|rollback` defaults to preview. Reports and backups must be outside the data directory. Preview backs up the registry to memory, fingerprints business tables/schema/files, simulates full re-evaluation and candidate materialization, and reports withdrawals from map/rental/auction target sets and preserved associations. It does not query Amap or write business files.
+
+Apply requires maintenance, matching reviewed snapshot, a new external backup directory, no active collection/position/use/rental task and existing v1 directory migration. It keeps the writer lock through snapshot validation and activation. Backup includes registry and related business snapshots. Receipt records the post-migration fingerprint; rollback reuses transactional restore and refuses after new business writes. A fresh preview/apply of an already active flow is a no-op. No production apply was performed as part of implementation.
+
+## Verification
+
+`test_collection_pipeline.py` covers matrix and version isolation, candidates before admission, same-ID location/use evidence, merchant exclusion, exact/loose/phase/doorplate cases, no coordinate write during ambiguity, old automatic revalidation, manual evidence, actual page budget, candidate API promotion, newhouse/listing behavior, read-only preview, full re-review, stale apply rejection, idempotence and protected rollback. Run existing directory, position, use, manual confirmation and downstream target tests as well. Frontend tests cover combined task controls, selected type display, candidate interaction contracts and existing list filters.

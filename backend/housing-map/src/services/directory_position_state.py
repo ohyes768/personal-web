@@ -23,6 +23,12 @@ def position_view(target, records=()):
             return dict(state='manual', has_coordinates=has_coordinates, candidates=[], selected={
                 k: manual.get(k) for k in ('longitude', 'latitude', 'geographic_address')})
     if saved and saved.get('identity') == identity(target):
+        from src.services.collection_pipeline import active, auto_subject_reliable
+        if active(target) and saved.get('state') == 'matched' and not auto_subject_reliable(target, saved.get('selected') or {}, records):
+            point = saved.get('selected') or {}
+            candidates = {p['source_id']: p for p in [point, *saved.get('candidates', [])] if p.get('source_id')}
+            return dict(state='review', has_coordinates=has_coordinates, candidates=list(candidates.values()),
+                        checked_at=saved.get('checked_at'), error='旧自动匹配不满足新主体规则，请核对地址与分期后确认')
         return {**{k: v for k, v in saved.items() if k != 'identity'}, 'has_coordinates': has_coordinates}
     if saved:
         return dict(state='pending', has_coordinates=has_coordinates, candidates=[],

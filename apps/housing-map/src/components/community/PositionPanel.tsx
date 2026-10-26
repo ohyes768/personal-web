@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { safeDirectoryLink } from './DirectoryCards';
 
 export type PositionPoint = { source_id?: string; name?: string; address?: string; longitude?: number; latitude?: number;
-  source_url?: string; captured_at?: string; geographic_address?: string; name_similarity?: number; name_matched?: boolean };
+  source_url?: string; captured_at?: string; geographic_address?: string; name_similarity?: number; name_matched?: boolean;
+  poi_typecode?: string; poi_type?: string };
 export type Position = { state: string; has_coordinates: boolean; revision?: string; candidates: PositionPoint[];
   selected?: PositionPoint; checked_at?: string; confirmed_at?: string; error?: string };
 export const positionLabels: Record<string, string> = { matched: '已匹配', pending: '待补全', review: '待确认',
@@ -27,7 +28,8 @@ export function PositionBadge({ position, compact = false }: { position?: Positi
     {state === 'pending' && position?.has_coordinates && <small>历史坐标不代表已匹配 POI</small>}</>;
 }
 
-export default function PositionPanel({ position, busy, confirm, address, communityName }: { position: Position; busy: boolean; address?: string; communityName?: string;
+export default function PositionPanel({ position, busy, confirm, address, communityName, onQuery }: { position: Position; busy: boolean; address?: string; communityName?: string;
+  onQuery?: () => void;
   confirm: (body: object) => void }) {
   const [poi, setPoi] = useState('');
   const selected = position.selected;
@@ -37,6 +39,8 @@ export default function PositionPanel({ position, busy, confirm, address, commun
   return <section className="directory-position-panel" aria-label="高德定位详情">
     <div className="directory-position-heading"><h4>高德定位</h4><PositionBadge position={position} compact /></div>
     {selected?.name && selected.name.trim() !== communityName?.trim() && <p>高德名称：{selected.name}</p>}
+    {selected && <p>高德主体类型：{selected.poi_type || selected.poi_typecode || '缺少类型，需补充或人工确认用途'}</p>}
+    {onQuery && <button className="btn btn-secondary" disabled={busy} onClick={onQuery}>匹配楼盘地点与类型</button>}
     {addr ? <p className="directory-source-summary-line"><span>高德地址：{addr}</span>{mapLink && <a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a>}</p>
       : mapLink && <p><a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a></p>}
     {!selected && <p className="directory-muted">{position.has_coordinates ? '已有地图坐标' : '暂无地图坐标'}</p>}
@@ -46,7 +50,7 @@ export default function PositionPanel({ position, busy, confirm, address, commun
         <select aria-label="选择高德候选位置" value={poi} disabled={busy || !position.revision} onChange={e => setPoi(e.target.value)}>
           <option value="">请选择候选位置（{position.candidates.length} 个）</option>
           {position.candidates.map((p, i) => <option key={p.source_id || i} value={p.source_id || ''} disabled={!p.source_id || !(p.address || p.geographic_address)}>
-            {p.name || '未命名地点'} · {p.address || p.geographic_address || '地址缺失，无法确认'}{p.name_matched === false ? '（名称不匹配，请人工核对）' : ''}
+            {p.name || '未命名地点'} · {p.address || p.geographic_address || '地址缺失，无法确认'}{p.poi_type ? ` · ${p.poi_type}` : ''}{p.name_matched === false ? '（名称不匹配，请人工核对）' : ''}
           </option>)}
         </select>
         <button className="btn btn-primary" disabled={busy || !position.revision || !candidate || !(candidate.address || candidate.geographic_address)} onClick={() => confirm({ revision: position.revision, poi_id: poi })}>确认位置</button>
