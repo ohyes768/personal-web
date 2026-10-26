@@ -16,7 +16,12 @@ now lives inside `basic-quality-rating` v2.2+.
 - `GET /api/dividend/quality/jobs/{job_id}`: quality job or 404 (also 404 for
   non-quality kinds).
 - `GET /api/dividend/quality`: `{total, scores: {code: QualityScore},
-  hermes_configured}` from disk; `hermes_configured=false` disables the UI
+  per_code, hermes_configured}`; `GET /quality/jobs/{job_id}` also embeds
+  `per_code`. `per_code` is the in-memory per-stock live status
+  (`{state: queued|running|completed|failed, error, updated_at}`), cleared on
+  restart; the ScreeningTab action column renders it row-by-row
+  (排队中/评级中 pulse, 失败+原因 tooltip+重试, else 分析/重评 buttons).
+  `hermes_configured=false` disables the UI
   analyze button (grey + hint) instead of waiting for the 503.
 - `hermes_client`: `HermesConfig.from_env()` (frozen dataclass, `is_configured`
   property), `submit_run(cfg, prompt, idempotency_key) -> run_id`,

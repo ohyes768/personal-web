@@ -3640,18 +3640,21 @@ async def analyze_quality(body: CodesRequest):
 
 @router.get("/quality/jobs/{job_id}")
 async def get_quality_job(job_id: str):
-    """查询单个评级任务进度（含逐股状态与失败原因）"""
+    """查询单个评级任务进度（含逐股实时状态与失败原因）"""
     job = require_refresh_jobs().get(job_id)
     if job is None or job.get("kind") != "quality":
         raise HTTPException(status_code=404, detail=f"评级任务 {job_id} 不存在")
+    job["per_code"] = quality_service.get_per_code() if quality_service else {}
     return job
 
 
 @router.get("/quality")
 async def get_quality_scores():
-    """返回全部已落盘评级（code → 评分记录，含五维分/星级/report_md）与 Hermes 配置状态"""
+    """返回全部已落盘评级（code → 评分记录）、逐股实时状态与 Hermes 配置状态"""
     if quality_service is None:
         raise HTTPException(status_code=500, detail="评级服务未初始化")
     scores = quality_service.get_all()
     hermes_configured = HermesConfig.from_env().is_configured
-    return {"total": len(scores), "scores": scores, "hermes_configured": hermes_configured}
+    return {"total": len(scores), "scores": scores,
+            "per_code": quality_service.get_per_code(),
+            "hermes_configured": hermes_configured}

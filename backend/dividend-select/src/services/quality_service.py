@@ -149,11 +149,31 @@ def build_prompt(payload: dict) -> str:
 
 
 class QualityService:
-    """评级编排：入口校验 → RefreshJobManager 异步逐股 submit+poll → 落盘。"""
+    """评级编排：入口校验 → RefreshJobManager 异步逐股 submit+poll → 落盘。
+
+    逐股实时状态（queued/running/completed/failed）保存在内存 per_code，
+    供前端在列表行内展示；服务重启后清空（job 也会被置 interrupted，语义一致）。
+    """
 
     def __init__(self, quality_path: Path):
         self.quality_path = quality_path
         self._file_lock = threading.RLock()
+        self._status_lock = threading.RLock()
+        self._per_code: dict[str, dict] = {}
+
+    # ---- 逐股状态 ----
+
+    def _set_status(self, code: str, state: str, error: str = "") -> None:
+        with self._status_lock:
+            self._per_code[code] = {
+                "state": state,
+                "error": error or None,
+                "updated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
+            }
+
+    def get_per_code(self) -> dict:
+        with self._status_lock:
+            return json.loads(json.dumps(self._per_code))
 
     # ---- 落盘读写 ----
 
@@ -195,6 +215,11 @@ class QualityService:
         if missing:
             raise ValueError(f"以下股票不在采集池：{','.join(missing)}")
 
+        with self._status_lock:
+            self._per_code.clear()
+            for code in codes:
+                self._set_status(code, "queued")
+
         def work(progress: Callable[[str, bool], None]) -> None:
             semaphore = threading.Semaphore(hermes_config.max_concurrent)
             results: dict[str, tuple[bool, Optional[QualityScore], str]] = {}
@@ -203,6 +228,7 @@ class QualityService:
                 payload = build_stock_payload(stocks[code])
                 prompt = build_prompt(payload)
                 idempotency_key = f"quality-{code}-{data_date}"
+                self._set_status(code, "running")
                 try:
                     run_id = submit_run_fn(hermes_config, prompt, idempotency_key)
                     output = poll_run_fn(hermes_config, run_id)
@@ -232,10 +258,13 @@ class QualityService:
                         self._save_one(score, data_date)
                     except OSError as exc:
                         logger.exception("评分落盘失败 %s", code)
+                        self._set_status(code, "failed", f"评分结果保存失败: {exc}")
                         progress(code, False)
                         continue
-                elif not success:
+                    self._set_status(code, "completed")
+                else:
                     logger.warning("股票 %s 评级失败: %s", code, error)
+                    self._set_status(code, "failed", error)
                 progress(code, success)
 
         return refresh_jobs.submit("quality", codes, work, params={"data_date": data_date})

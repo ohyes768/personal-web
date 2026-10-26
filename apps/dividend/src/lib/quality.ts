@@ -30,10 +30,21 @@ export interface QualityScore {
   data_date: string;
 }
 
-export type QualityJob = RefreshJob & { kind: 'quality' };
+export type QualityJob = RefreshJob & { kind: 'quality'; per_code?: QualityPerCodeMap };
+
+/** 逐股实时状态（后端内存态，服务重启清空；completed 且未落盘视为失败） */
+export type QualityPerCodeState = 'queued' | 'running' | 'completed' | 'failed';
+export interface QualityPerCodeStatus {
+  state: QualityPerCodeState;
+  error: string | null;
+  updated_at: string;
+}
+export type QualityPerCodeMap = Record<string, QualityPerCodeStatus>;
+
 export interface QualityScoresResponse {
   total: number;
   scores: Record<string, QualityScore>;
+  per_code?: QualityPerCodeMap;
   hermes_configured: boolean;
 }
 

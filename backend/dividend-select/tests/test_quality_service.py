@@ -130,6 +130,10 @@ class TestSubmitAnalysis:
         assert record["data_date"] == "2026-09-30"
         assert record["scored_at"]
         assert record["report_md"].startswith("# 基本面评级")
+        per_code = service.get_per_code()
+        assert per_code["000001"]["state"] == "completed"
+        assert per_code["600000"]["state"] == "completed"
+        assert per_code["000001"]["error"] is None
 
     def test_one_failure_does_not_block_other(self, tmp_path):
         def submit_fn(cfg, prompt, key):
@@ -146,6 +150,10 @@ class TestSubmitAnalysis:
         assert job["status"] == "partial_failed"
         assert job["failed_codes"] == ["600000"]
         assert set(service.get_all()) == {"000001"}
+        per_code = service.get_per_code()
+        assert per_code["000001"]["state"] == "completed"
+        assert per_code["600000"]["state"] == "failed"
+        assert "终态 failed" in per_code["600000"]["error"]
 
     def test_garbage_output_marks_stock_failed(self, tmp_path):
         service, job = run_service(

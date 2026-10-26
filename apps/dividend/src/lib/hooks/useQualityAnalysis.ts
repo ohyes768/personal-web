@@ -8,11 +8,13 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { dividendApi } from '@/lib/api';
-import { qualityFinishMessage, qualityJobActive, type QualityJob, type QualityScoresResponse } from '@/lib/quality';
+import { qualityFinishMessage, qualityJobActive, type QualityJob, type QualityPerCodeMap, type QualityScoresResponse } from '@/lib/quality';
 
 export interface UseQualityAnalysisResult {
   /** 已落盘评级：code → 评分 */
   qualityScores: QualityScoresResponse['scores'];
+  /** 逐股实时状态：code → queued/running/completed/failed（含失败原因） */
+  qualityPerCode: QualityPerCodeMap;
   /** Hermes 是否已配置；false 时前端置灰分析入口 */
   qualityConfigured: boolean;
   /** 是否有评级任务在跑 */
@@ -29,6 +31,7 @@ export interface UseQualityAnalysisResult {
 
 export function useQualityAnalysis(): UseQualityAnalysisResult {
   const [qualityScores, setQualityScores] = useState<QualityScoresResponse['scores']>({});
+  const [qualityPerCode, setQualityPerCode] = useState<QualityPerCodeMap>({});
   const [qualityConfigured, setQualityConfigured] = useState(true);
   const [qualityJob, setQualityJob] = useState<QualityJob | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -41,6 +44,7 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
       const response = await dividendApi.getQualityScores();
       if (id === requestId.current) {
         setQualityScores(response.scores ?? {});
+        setQualityPerCode(response.per_code ?? {});
         // 旧后端缺 hermes_configured 字段时不置灰：点了会得到明确 503 提示，好过莫名禁用
         setQualityConfigured(response.hermes_configured !== false);
       }
@@ -77,8 +81,9 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
           }
           return;
         }
-        if (id !== requestId.current) return;
+               if (id !== requestId.current) return;
         setQualityJob(latest);
+        if (latest.per_code) setQualityPerCode(latest.per_code);
         if (qualityJobActive(latest)) {
           pollTimer.current = setTimeout(() => void poll(), 3000);
           return;
@@ -97,5 +102,5 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
     }
   }, [refreshScores]);
 
-  return { qualityScores, qualityConfigured, analyzing, qualityJob, qualityMessage, analyze, refreshScores: () => refreshScores(requestId.current) };
+  return { qualityScores, qualityPerCode, qualityConfigured, analyzing, qualityJob, qualityMessage, analyze, refreshScores: () => refreshScores(requestId.current) };
 }

@@ -27,7 +27,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
   const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ScreeningItem | null>(null);
-  const { qualityScores, qualityConfigured, analyzing, qualityJob, qualityMessage, analyze } = useQualityAnalysis();
+  const { qualityScores, qualityPerCode, qualityConfigured, analyzing, qualityJob, qualityMessage, analyze } = useQualityAnalysis();
   const requestId = useRef(0);
   const appliedConditions = useRef(DEFAULT_SCREENING);
   const previousRevision = useRef(refreshRevision);
@@ -141,11 +141,23 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
                 </button>
               </td>
               <td className="p-3" onClick={event => event.stopPropagation()}>
-                {status !== 'eligible'
-                  ? <span className="text-ink-muted">待分析</span>
-                  : score
-                    ? <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
-                    : <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>分析</button>}
+                {(() => {
+                  const live = qualityPerCode[stock.code];
+                  if (live && (live.state === 'queued' || live.state === 'running')) {
+                    return <span className="text-xs text-ink-muted animate-pulse" title="评级任务进行中，完成后自动刷新">{live.state === 'queued' ? '排队中…' : '评级中…'}</span>;
+                  }
+                  if (live?.state === 'failed') {
+                    return <span className="inline-flex items-center gap-2">
+                      <span className="text-xs text-red-700" title={live.error || '评级失败'}>失败</span>
+                      <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={live.error || '重新发起评级'} onClick={() => void analyze([stock.code])}>重试</button>
+                    </span>;
+                  }
+                  return status !== 'eligible'
+                    ? <span className="text-ink-muted">待分析</span>
+                    : score
+                      ? <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
+                      : <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>分析</button>;
+                })()}
               </td>
               <td className="p-3" onClick={event => event.stopPropagation()}>
                 {score

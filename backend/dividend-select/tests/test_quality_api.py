@@ -83,6 +83,10 @@ class TestAnalyze:
         assert scores["total"] == 1
         assert scores["scores"]["000001"]["stars"] == 4
         assert scores["scores"]["000001"]["report_md"] == "# 基本面评级"
+        assert scores["per_code"]["000001"]["state"] == "completed"
+
+        job_view = test_client.get(f"/quality/jobs/{job['job_id']}").json()
+        assert job_view["per_code"]["000001"]["state"] == "completed"
 
     def test_active_job_reused(self, client, monkeypatch):
         import threading
