@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "定位状态、候选确认、版本及人工保护契约"}
+{"file": ".trellis/spec/backend/housing-map/backend/collection-pipeline.md", "reason": "主体/参考地点、类型证据与无地址核对规则"}
+{"file": ".trellis/spec/backend/housing-map/backend/use-review.md", "reason": "用途状态标签与筛选语义"}
+{"file": ".trellis/tasks/10-27-housing-position-filter-ui/design.md", "reason": "卡片交互、筛选矩阵、清空及兼容性设计"}
