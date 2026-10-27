@@ -32,6 +32,8 @@ def position_view(target, records=()):
         return {**{k: v for k, v in saved.items() if k != 'identity'}, 'has_coordinates': has_coordinates}
     if saved:
         return dict(state='pending', has_coordinates=has_coordinates, candidates=[],
+                    query_history=dict(state='stale', checked_at=saved.get('checked_at'),
+                                       message='地点资料已变化，待重新查询'),
                     error='小区身份或地址已变化，请重新匹配')
     # A geocoder/TMSF source id is not an Amap POI id. Ignore removed source rows.
     for item in [target, *records]:
@@ -42,5 +44,18 @@ def position_view(target, records=()):
                 address=item.get('geographic_address') or evidence.get('formatted_address') or item.get('address'),
                 longitude=item['longitude'], latitude=item['latitude'], source_url=evidence.get('source_url'),
                 captured_at=evidence.get('captured_at')))
-    return dict(state='pending', has_coordinates=has_coordinates, candidates=[],
-                error='小区身份或地址已变化，请重新匹配' if saved else None)
+    view = dict(state='pending', has_coordinates=has_coordinates, candidates=[], error=None)
+    # Legacy use searches are query history, never selected-subject evidence.
+    from src.services.collection_pipeline import active
+    from src.services.use_review_policy import use_identity, RULE_VERSION
+    legacy = target.get('use_review') or {}
+    if (active(target) and legacy.get('identity') == use_identity(target)
+            and legacy.get('rule_version') == RULE_VERSION and legacy.get('checked_at')):
+        state = legacy.get('state')
+        messages = {'not_found': '历史未找到匹配地点，待重查', 'error': '历史查询失败，待重查',
+                    'checked': '历史已查询，待匹配主体', 'uncertain': '历史查询待核实，待重查'}
+        if state in messages:
+            incomplete = state == 'uncertain' and any(s in (legacy.get('error') or '') for s in ('未完整', '未取完整'))
+            view['query_history'] = dict(state='incomplete' if incomplete else state, checked_at=legacy['checked_at'],
+                                        message='历史查询未完成，待重查' if incomplete else messages[state])
+    return view

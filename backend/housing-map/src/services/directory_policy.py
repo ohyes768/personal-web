@@ -84,8 +84,17 @@ def eligibility(community, records, facts=None, admission=None):
             reason = f'透明售房网用途为{text}，待查询高德地点类型并确认用途' if pipeline else f'透明售房网用途为{text}，住宅用途不明确，暂不收录'
             if pipeline:
                 from src.services.directory_position_state import position_view
-                if position_view(community, records).get('reference_candidates'):
+                position = position_view(community, records)
+                if position.get('reference_candidates'):
                     reason = f'透明售房网用途为{text}，已有高德相关地点信息，请人工核对用途'
+                elif position.get('query_history'):
+                    reason = f"透明售房网用途为{text}，{position['query_history']['message']}"
+                elif position['state'] == 'not_found':
+                    reason = f'透明售房网用途为{text}，高德已查询但未找到主体地点，可补充别名后重查'
+                elif position['state'] == 'error':
+                    reason = f'透明售房网用途为{text}，高德查询失败，请重查后确认用途'
+                elif position['state'] == 'review':
+                    reason = f'透明售房网用途为{text}，请先确认高德候选主体地点，再判断用途'
             return result('type_uncertain', reason, incomplete=True)
     if pipeline:
         gate = position_gate(community, records, human_use=bool(use_decision))

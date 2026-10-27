@@ -45,6 +45,36 @@ def test_legacy_rule_stays_unchanged_until_explicit_migration():
     assert eligibility(c, [source()])['admission_state'] == 'admitted'
 
 
+@pytest.mark.parametrize('state,error,expected', [
+    ('uncertain', '高德返回结果未完整，匹配不确定，待复核', 'incomplete'),
+    ('not_found', None, 'not_found'), ('error', '异常', 'error'), ('checked', None, 'checked'),
+])
+def test_legacy_search_history_is_visible_but_never_subject_evidence(state, error, expected):
+    from src.services.directory_position_state import position_view
+    from src.services.use_review_policy import use_identity, RULE_VERSION
+    from src.services.collection_pipeline import selected_review
+    c = master()
+    c['use_review'] = dict(identity=use_identity(c), rule_version=RULE_VERSION, state=state,
+                           error=error, checked_at='2026-10-25T14:29:13Z', category='residential')
+    view = position_view(c)
+    assert view['state'] == 'pending' and not view.get('selected')
+    assert view['query_history']['state'] == expected
+    assert selected_review(c)['state'] is None
+    result = eligibility(c, [source('其他')])
+    assert result['workflow_state'] == 'pending'
+    assert view['query_history']['message'] in result['exclusion_reason']
+    assert 'query_history' not in position_view(positioned(c))  # New subject result wins.
+    c['community_name'] = '另一个小区'
+    assert 'query_history' not in position_view(c)  # Never attach old history to changed identity.
+
+
+def test_complete_no_subject_search_is_described_as_searched_not_unqueried():
+    c = master()
+    c['amap_position'] = dict(identity=identity(c), state='not_found', candidates=[], checked_at='2026-10-27T00:00:00Z')
+    result = eligibility(c, [source('其他')])
+    assert '已查询但未找到主体地点' in result['exclusion_reason']
+
+
 def test_old_loose_auto_match_has_no_grandfather_exemption():
     c = positioned(master())
     c['amap_position']['selected']['name'] += '二期'

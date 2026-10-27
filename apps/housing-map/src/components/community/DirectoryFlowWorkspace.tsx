@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Community, Source, DirectorySourceCard, marketLabels, mapLabels, safeDirectoryLink } from './DirectoryCards';
-import PositionPanel, { Position, PositionBadge, positionLabels, positionBucketLabels } from './PositionPanel';
+import PositionPanel, { Position, PositionBadge, positionLabels, positionBucketLabels, positionQueryLabel } from './PositionPanel';
 import UseReviewPanel, { UseReview, UseReviewBadge, useReviewFilterLabels, formatUseReviewMessage } from './UseReviewPanel';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
@@ -186,7 +186,12 @@ export function CatalogClassificationFilter({ mode, value, propertyTypes, onChan
   </select>;
 }
 
-export function pipelineStageLabel(row: Pick<CatalogRow, 'workflow_state' | 'qualification'>): string {
+export function pipelineStageLabel(row: Pick<CatalogRow, 'workflow_state' | 'qualification' | 'position'>): string {
+  if (row.workflow_state === 'pending' && row.qualification === 'type_uncertain' && row.position && !row.position.selected) {
+    if (row.position.query_history) return '待重查地点';
+    return row.position.state === 'not_found' ? '未找到主体地点' : row.position.state === 'error' ? '待重查地点'
+      : row.position.state === 'review' ? '待确认地点' : '待匹配地点';
+  }
   if (row.workflow_state === 'admitted') return '已收录';
   if (row.workflow_state === 'excluded') return '明确不收录';
   return ({ position_pending: '待匹配地点', position_review: '待确认地点', position_type_missing: '待补主体类型',
@@ -208,9 +213,7 @@ function CatalogAmapType({ position }: { position?: Position }) {
     {!!candidates.length && <div>{types(candidates)}<small className="directory-muted">候选主体 · 待确认</small></div>}
     {!!references.length && <div>{types(references)}<small className="directory-muted">相关地点 · 仅供参考</small></div>}
   </>;
-  const empty = position?.state === 'error' ? '查询失败' : position?.state === 'not_found' ? '未找到相关地点'
-    : position?.state === 'review' ? '待确认地点，类型缺失' : position?.checked_at ? '未获取类型' : '未查询';
-  return <span className="directory-muted">{empty}</span>;
+  return <span className="directory-muted">{positionQueryLabel(position)}</span>;
 }
 
 export function CatalogTable({ items, excluded, pending = false, select, busy, position, exclude }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;

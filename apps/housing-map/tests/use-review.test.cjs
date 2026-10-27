@@ -100,7 +100,11 @@ test('catalog shows Amap types directly in both lists with candidate and referen
   assert.match(candidate, /候选主体 · 待确认/);
   assert.match(table(undefined), /data-label="高德类型"><span[^>]*>未查询/);
   assert.match(table({ state: 'error', candidates: [] }), /data-label="高德类型"><span[^>]*>查询失败/);
-  assert.match(table({ state: 'not_found', candidates: [] }), /未找到相关地点/);
+  assert.match(table({ state: 'not_found', candidates: [] }), /未找到主体地点/);
+  const historical = table({ state: 'pending', candidates: [], query_history: {
+    state: 'incomplete', checked_at: '2026-10-25T14:29:13Z', message: '历史查询未完成，待重查' } });
+  assert.match(historical, /历史查询未完成，待重查/);
+  assert.doesNotMatch(historical, />未查询</);
 });
 
 test('compact badges name the same buckets as the filter labels', () => {

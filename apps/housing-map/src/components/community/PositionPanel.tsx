@@ -8,7 +8,16 @@ export type PositionPoint = { source_id?: string; name?: string; address?: strin
   poi_typecode?: string; poi_type?: string };
 export type Position = { state: string; has_coordinates: boolean; revision?: string; candidates: PositionPoint[];
   selected?: PositionPoint; checked_at?: string; confirmed_at?: string; error?: string;
+  query_history?: { state: string; checked_at?: string; message: string };
   reference_candidates?: PositionPoint[] };
+
+export function positionQueryLabel(position?: Position): string {
+  if (position?.state === 'error') return '查询失败';
+  if (position?.state === 'not_found') return '未找到主体地点';
+  if (position?.state === 'review') return '待确认地点，类型缺失';
+  if (position?.query_history) return position.query_history.message;
+  return position?.checked_at ? '未获取类型' : '未查询';
+}
 export const positionLabels: Record<string, string> = { matched: '已匹配', pending: '待补全', review: '待确认',
   not_found: '未找到', error: '查询失败', manual: '人工已确认' };
 export const positionBucketLabels: Record<string, string> = { done: '已定位', review: '待确认', todo: '待处理' };
@@ -42,6 +51,7 @@ export default function PositionPanel({ position, busy, confirm, address, commun
     {selected?.name && selected.name.trim() !== communityName?.trim() && <p>高德名称：{selected.name}</p>}
     {selected && <p>高德主体类型：{selected.poi_type || selected.poi_typecode || '缺少类型，需补充或人工确认用途'}</p>}
     {!selected && onQuery && <p className="directory-muted">高德主体类型：{position.candidates.length || position.reference_candidates?.length ? '尚未确认，请参考下方地点类型' : '尚未获取高德类型，可点击下方按钮查询'}</p>}
+    {position.query_history && <p className="directory-muted">{position.query_history.message}（历史查询记录，不代表已确认主体）</p>}
     {onQuery && <button className="btn btn-secondary" disabled={busy} onClick={onQuery}>匹配楼盘地点与类型</button>}
     {addr ? <p className="directory-source-summary-line"><span>高德地址：{addr}</span>{mapLink && <a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a>}</p>
       : mapLink && <p><a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a></p>}
