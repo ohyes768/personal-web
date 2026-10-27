@@ -1,5 +1,6 @@
 import asyncio
 import json
+import pytest
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -7,6 +8,34 @@ from fastapi.testclient import TestClient
 from src.api import directory_routes, routes
 from src.services import data_loader
 from src.services.community_directory import prepare_directory
+
+
+@pytest.mark.parametrize('use_source_district', [False, True])
+def test_verified_position_address_survives_map_loading(tmp_path, monkeypatch, use_source_district):
+    from src.services.community_admission import community_views
+    (tmp_path / 'binjiang_communities.json').write_text(json.dumps([
+        dict(community_id='100', community_name='国信嘉园', district='滨江', address='之江三号路以西')]))
+    (tmp_path / 'property_types.json').write_text(json.dumps({'100': {'property_type': '住宅'}}))
+    (tmp_path / 'binjiang_coordinates.json').write_text(json.dumps({'100': dict(
+        longitude=120.161695, latitude=30.189725, formatted_address='杭州市滨江区国信嘉园')}))
+    store = prepare_directory(tmp_path)
+    with store.db() as db:
+        row = db.execute("SELECT payload FROM communities WHERE id='100'").fetchone()
+        payload = json.loads(row['payload'])
+        payload.update(longitude=120.161695, latitude=30.189725)
+        if not use_source_district:
+            payload['geographic_address'] = '杭州市滨江区国信嘉园'
+        db.execute("UPDATE communities SET payload=? WHERE id='100'", (json.dumps(payload),))
+    if use_source_district:
+        store.ingest(dict(source='tmsf', source_id='100', name='国信嘉园', district='滨江',
+                          address='之江三号路以西', address_district='滨江', property_type='住宅'))
+    monkeypatch.setattr(data_loader, 'DATA_DIR', tmp_path)
+    assert community_views(store, tmp_path)[0]['map_status'] == 'displayed'
+    coordinates = data_loader.load_coordinates()
+    assert '滨江区' in coordinates['100']['formatted_address']
+    body = asyncio.run(routes.get_communities())
+    assert [c['community_id'] for c in body['data']] == ['100']
+    assert body['stats'] == {'admitted': 1, 'displayed': 0, 'hidden': {'missing_boundary': 1}}
 
 
 def test_admission_api_and_map_share_state_but_keep_collection_identity(tmp_path, monkeypatch):

@@ -170,6 +170,7 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
                        'source_address': community.get('address'), 'address_evidence': address_info,
                        'admission_conflict': conflict, 'residential_state': classification,
                        'effective_property_type': prop,
+                       'position_formatted_address': (coordinate or {}).get('formatted_address'),
                        'market_state': market, 'market_state_conflict': len(markets) > 1,
                        'map_status': map_status(community, effective_admission, coordinate, drop_ids=drop_ids), **policy})
     return result
