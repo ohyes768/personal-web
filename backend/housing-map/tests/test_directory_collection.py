@@ -5,6 +5,93 @@ import threading
 import pytest
 
 
+def test_retry_failed_targets_known_identities_without_discovery(tmp_path, monkeypatch):
+    from src.services import directory_collection as collection, tmsf_property_type as facts, tmsf_fetcher
+    import scripts.fetch_tmsf_binjiang_communities as listing
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    base = dict(source='tmsf', district='滨江', property_type='住宅', address='江南大道1号')
+    for sid, extra in [('1', dict(property_type_error='timeout', listing_count_error='timeout', address_error='timeout')),
+                       ('2', {}), ('3', dict(address_error='timeout')),
+                       ('4', dict(property_type_error='timeout'))]:
+        record = store.ingest(dict(base, source_id=sid, name=f'花园{sid}', **extra))
+        if sid == '4':
+            store.ignore_source(record['id'])
+    store.ingest(dict(base, source_kind='project', source_id='1', name='新房1',
+                      project_id='1', project_siteid='33', property_type_error='timeout',
+                      listing_count_error='old', address_error='timeout', market_state='new_house'))
+    store.ingest(dict(base, source='fang', source_id='5', name='其他来源', property_type_error='timeout'))
+    store.ingest(dict(base, source_id='6', name='尚未采集'))
+    before = {r['id']: r for r in store.sources()}
+    calls = []
+    def forbidden():
+        raise AssertionError('retry must not discover names')
+    monkeypatch.setattr(listing, 'fetch_binjiang_communities', forbidden)
+    monkeypatch.setattr(tmsf_fetcher, 'TmsfClient', lambda: type('Client', (), {'close': lambda _: None})())
+    monkeypatch.setattr(collection, 'pause', lambda _: None)
+    def community(client, sid, names):
+        calls.append(('community', sid))
+        return dict(property_type='住宅', address='江南大道1号', market_state='second_hand',
+                    listing_count=5, listing_count_error=None)
+    def project(client, **kwargs):
+        calls.append(('project', str(kwargs['propertyid'])))
+        return dict(property_type='住宅', address='江南大道1号', market_state='new_house')
+    monkeypatch.setattr(facts, 'fetch_community_facts', community)
+    monkeypatch.setattr(facts, 'fetch_project_facts_by_id', project)
+    job = collection.DirectoryJob(store)
+    job.start(['tmsf'], mode='retry_failed')
+    job.worker.join(timeout=5)
+    assert not job.worker.is_alive()
+    report = job.state
+    assert set(calls) == {('community', '1'), ('community', '3'), ('project', '1')}
+    assert report['phase'] == 'succeeded' and report['existing'] == 3 and report['new'] == 0
+    assert report['mode'] == 'retry_failed'
+    assert job.status()['retryable'] == 0
+    for row in store.sources():
+        if (row['source_kind'], row['source_id']) in calls and row['source'] == 'tmsf':
+            assert not row.get('property_type_error') and not row.get('address_error') and not row.get('listing_count_error')
+        else:
+            assert row == before[row['id']]
+
+
+def test_retry_failures_survive_restart_and_empty_retry_does_not_start(tmp_path, monkeypatch):
+    from src.services import directory_collection as collection
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    record = store.ingest(dict(source='tmsf', source_id='1', name='失败花园', district='滨江',
+                               address_error='timeout', property_type_error='timeout'))
+    job = collection.DirectoryJob(store)
+    assert job.status()['retryable'] == 1
+    assert collection.DirectoryJob(store).status()['retryable'] == 1
+    store.ignore_source(record['id'])
+    with pytest.raises(ValueError, match='没有.*失败'):
+        job.start(['tmsf'], mode='retry_failed')
+    assert job.worker is None
+    with pytest.raises(ValueError, match='模式'):
+        job.start(['tmsf'], mode='invalid')
+
+
+def test_retry_failure_and_cancellation_keep_effective_facts(tmp_path, monkeypatch):
+    from src.services import directory_collection as collection, tmsf_fetcher, tmsf_property_type as facts
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    store.ingest(dict(source='tmsf', source_id='1', name='失败花园', district='滨江',
+                      property_type='住宅', property_type_error='old', address='江南大道1号'))
+    client = type('Client', (), {'close': lambda _: None, 'fetch_text': lambda *_: (_ for _ in ()).throw(ValueError('timeout'))})()
+    monkeypatch.setattr(tmsf_fetcher, 'TmsfClient', lambda: client)
+    monkeypatch.setattr(collection, 'pause', lambda _: None)
+    monkeypatch.setattr(facts, 'fetch_community_facts', lambda *_: (_ for _ in ()).throw(ValueError('timeout')))
+    report = collect_names(store, ['tmsf'], mode='retry_failed')
+    assert report['phase'] == 'partial_failed'
+    row = store.sources()[0]
+    assert row['property_type'] == '住宅' and row['address'] == '江南大道1号' and row['property_type_error']
+    cancel = threading.Event()
+    def interrupted(*_):
+        cancel.set()
+        return dict(property_type='写字楼')
+    monkeypatch.setattr(facts, 'fetch_community_facts', interrupted)
+    report = collect_names(store, ['tmsf'], mode='retry_failed', cancel=cancel)
+    assert report['phase'] == 'cancelled'
+    assert store.sources()[0]['property_type'] == '住宅'
+
+
 def test_removed_amap_cannot_run_even_with_injected_adapter(tmp_path):
     store = CommunityRegistry(tmp_path / 'registry.sqlite3')
     def forbidden(*args):

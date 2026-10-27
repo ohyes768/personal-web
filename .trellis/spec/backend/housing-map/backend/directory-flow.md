@@ -61,3 +61,26 @@ test_directory_flow covers actual registry + raw rounds + publish_run, sample de
 
 ### Wrong vs Correct
 Wrong: `property_count=len(auction_rounds)` or `sample_count=source.sample_count`. Correct: unique known asset identity; missing-asset rounds separate; rental count from select_valid on the current confirmed source snapshot.
+
+## Failed-only collection retry (2026-10-27)
+
+### Scope / Trigger
+TMSF source collection controls distinguish whole-directory updates from repairing failed existing identities. Reuse the existing DirectoryJob and completion classification pipeline.
+
+### Signatures
+POST `/directory/collection` accepts `mode: 'all' | 'retry_failed'` (default `all`) beside existing `sources: ['tmsf']`. GET returns job state with `retryable: number`; before the first run it returns `{running:false,phase:'idle',retryable:N}`. Reports persist `mode`.
+
+### Contracts
+`retryable_sources(records)` counts unignored Binjiang TMSF community/project identities having any current property_type_error/address_error/listing_count_error/market_state_error, once per identity. Counts derive from current durable source facts, surviving restart, ignore and individual corrections. Retry bypasses the 30-day cache, reconstructs known identities from stored sources and never scans name lists or discovers projects. A community detail fallback may fetch the shared newhouse index; known project details use their stored siteid/propertyid directly. Keep community/project kinds isolated even for equal numeric IDs. Retain aliases, source identity and valid prior facts; success clears corresponding errors, failure/cancellation retains retry eligibility. No new admission/position behavior.
+
+### Validation & Error Matrix
+Unknown mode ->422 at API / ValueError for direct service use. Retry of unsupported source list ->ValueError. Empty retry ->409 before report mutation/thread creation. Running full/retry job ->409 via the shared worker lock. Storage errors ->503. Detail errors ->partial_failed, cancellation ->cancelled, preserving old successful facts. Source-level discovery errors without a known identity require whole-directory update, not failed-only retry.
+
+### Good / Base / Bad
+Good: 3 failures among 200 successful sources ->3 detail targets and no name-list request. Base: a target fails again ->prior facts and error remain available after restart. Bad: retry all 203 details, infer failures from the latest report only, or count multiple errors on one identity multiple times.
+
+### Tests Required
+`test_directory_collection.py`: actual DirectoryJob mode forwarding, no discovery/healthy-source requests, same-ID kind separation, ignored/other-source/unattempted preservation, successful error clearing, repeat failure, cancellation, restart counts and empty/invalid start rejection. `test_directory_api.py`: default mode compatibility, retry mode/422, durable counts and empty409. Frontend directory-flow tests: button action payload, counts, disabled conditions and stop wording; desktop/mobile preview checks wrapping without overflow.
+
+### Wrong vs Correct
+Wrong: count `last_report.errors` and call the normal full collection endpoint again. Correct: derive current failed source identities from persisted facts and pass `mode='retry_failed'` through the existing shared job.

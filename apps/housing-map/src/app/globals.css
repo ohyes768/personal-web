@@ -1281,7 +1281,8 @@ body {
 .directory-task-row:last-child { border-bottom: 0; }
 .directory-task-row-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .directory-task-row-head strong { font-size: 13.5px; }
-.directory-task-row-head .btn { margin-left: auto; flex: none; }
+.directory-task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.directory-task-row-head .btn { flex: none; }
 .directory-task-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.6; color: #596c86; }
 .directory-refresh { padding: 6px 11px; font-size: 14px; line-height: 1; }
 .directory-task-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0; color: var(--text-muted); }

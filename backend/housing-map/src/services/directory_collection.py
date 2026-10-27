@@ -25,7 +25,15 @@ def pause(cancel):
         raise InterruptedError('采集已取消')
 
 
-def tmsf_names(cancel, ignored, existing=None):
+def retryable_sources(records):
+    """Stored failures, counted once per active source identity (not per error)."""
+    return [r for r in records if r['source'] == 'tmsf' and r.get('status') != 'ignored'
+            and r.get('source_kind', 'community') in {'community', 'project'}
+            and (r.get('district') or '').removesuffix('区') == '滨江'
+            and any(r.get(key) for key in ('property_type_error', 'address_error', 'listing_count_error', 'market_state_error'))]
+
+
+def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
     from scripts.fetch_tmsf_binjiang_communities import fetch_binjiang_communities
     from src.services.tmsf_fetcher import TmsfClient
     from src.services.community_registry import normalized
@@ -36,11 +44,15 @@ def tmsf_names(cancel, ignored, existing=None):
     projects = None
     project_index_error = False
     try:
-        discovered = list(fetch_binjiang_communities())
+        targets = retryable_sources(existing.values()) if retry_failed else []
+        discovered = [SimpleNamespace(community_id=r['source_id'], community_name=r['name'],
+                         community_alias='', district='滨江', subdistrict=r.get('subdistrict', ''),
+                         source_url=r.get('source_url')) for r in targets if r['source_kind'] == 'community'] \
+            if retry_failed else list(fetch_binjiang_communities())
         discovered_ids = {str(c.community_id) for c in discovered}
         # Previously imported identities may disappear from the current name list.
         for (kind, sid), previous in existing.items():
-            if kind == 'community' and previous.get('address_verification_pending') and sid not in discovered_ids:
+            if not retry_failed and kind == 'community' and previous.get('address_verification_pending') and sid not in discovered_ids:
                 discovered.append(SimpleNamespace(community_id=sid, community_name=previous['name'],
                     community_alias='', district=previous.get('district'), subdistrict=previous.get('subdistrict', ''),
                     source_url=previous.get('source_url')))
@@ -48,10 +60,10 @@ def tmsf_names(cancel, ignored, existing=None):
             check(cancel)
             if c.district != '滨江':
                 continue
-            row = dict(source='tmsf', source_kind='community', source_id=c.community_id,
-                       name=c.community_name, aliases=[c.community_alias] if c.community_alias else [],
-                       district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
             previous = existing.get(('community', str(c.community_id)), {})
+            row = dict(source='tmsf', source_kind='community', source_id=c.community_id,
+                       name=c.community_name, aliases=previous.get('aliases', []) if retry_failed else ([c.community_alias] if c.community_alias else []),
+                       district=c.district, subdistrict=c.subdistrict, source_url=c.source_url)
             for field in ('property_type', 'property_type_url', 'property_type_captured_at', 'address', 'address_origin', 'address_checked_at', 'address_verification_pending',
                           'market_state', 'market_state_url', 'market_state_captured_at',
                           'listing_count', 'listing_count_checked_at', 'listing_count_error',
@@ -62,7 +74,7 @@ def tmsf_names(cancel, ignored, existing=None):
             yield {**row, '_stage': 'names'}
             if ignored('tmsf', 'community', c.community_id):
                 continue
-            if effective_market_state(previous) == 'new_house' and previous.get('address_checked_at') and not previous.get('address_verification_pending') and previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
+            if not retry_failed and effective_market_state(previous) == 'new_house' and previous.get('address_checked_at') and not previous.get('address_verification_pending') and previous.get('property_type') and not previous.get('property_type_error') and previous.get('name') == c.community_name:
                 try:
                     age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(previous['property_type_captured_at'])
                     if dt.timedelta(0) <= age < dt.timedelta(days=30):
@@ -77,7 +89,8 @@ def tmsf_names(cancel, ignored, existing=None):
             row.update(_stage='property_type', property_type_checked_at=now())
             try:
                 try:
-                    detail = fetch_community_facts(client, c.community_id, [c.community_name, c.community_alias])
+                    detail = fetch_community_facts(client, c.community_id, [c.community_name, *row['aliases']])
+                    detail['market_state_error'] = None
                 except Exception:
                     check(cancel)
                     if projects is None and not project_index_error:
@@ -91,10 +104,11 @@ def tmsf_names(cancel, ignored, existing=None):
                     pause(cancel)
                     if ignored('tmsf', 'community', c.community_id):
                         continue
-                    row.update(project_identity(find_project(projects, [c.community_name, c.community_alias], c.district)),
+                    row.update(project_identity(find_project(projects, [c.community_name, *row['aliases']], c.district)),
                                market_state_captured_at=now())
-                    detail = fetch_project_facts(client, [c.community_name, c.community_alias], c.district, projects=projects, previous=previous)
+                    detail = fetch_project_facts(client, [c.community_name, *row['aliases']], c.district, projects=projects, previous=previous)
                     detail['market_state_captured_at'] = now()
+                    detail['market_state_error'] = None
                 # An ESF page also exists for many new projects; low listings are
                 # not evidence that the project belongs only to the second-hand market.
                 count = detail.get('listing_count')
@@ -110,7 +124,9 @@ def tmsf_names(cancel, ignored, existing=None):
                     if ignored('tmsf', 'community', c.community_id):
                         continue
                     try:
-                        identity = project_identity(find_project(projects or [], [c.community_name, c.community_alias], c.district))
+                        if project_index_error:
+                            raise ValueError('新房索引获取失败')
+                        identity = project_identity(find_project(projects or [], [c.community_name, *row['aliases']], c.district))
                         if identity['market_state'] == 'unknown':
                             identity.pop('market_state')
                         detail.update(identity, market_state_captured_at=now(), market_state_error=None)
@@ -118,6 +134,8 @@ def tmsf_names(cancel, ignored, existing=None):
                         if effective_market_state(previous) == 'new_house':
                             detail.pop('market_state', None)
                             detail['market_state_error'] = '新房项目身份更新失败，保留已有证据'
+                        elif project_index_error:
+                            detail['market_state_error'] = '新房索引获取失败，项目身份待重试'
                 address_error = detail.get('address_error')
                 if address_error:
                     detail.pop('address', None)
@@ -125,12 +143,18 @@ def tmsf_names(cancel, ignored, existing=None):
                 if detail.get('market_state') == 'second_hand':
                     row['listing_count_checked_at'] = now()
                 if not address_error:
-                    row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False)
+                    row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False, address_error=None)
                 else:
+                    row['address_error'] = address_error
                     row['_collection_errors'] = [dict(source='tmsf', stage='newhouse_address',
                         source_id=c.community_id, message=f'{c.community_name} {address_error}')]
                 row.update(property_type_captured_at=now(), property_type_error=None,
                            _property_type_result='succeeded')
+                if detail.get('market_state') == 'new_house':
+                    row['listing_count_error'] = None
+                if detail.get('market_state_error'):
+                    row.setdefault('_collection_errors', []).append(dict(source='tmsf', stage='market_state',
+                        source_id=c.community_id, message=f'{c.community_name} {detail["market_state_error"]}'))
             except InterruptedError:
                 raise
             except Exception as exc:
@@ -142,6 +166,11 @@ def tmsf_names(cancel, ignored, existing=None):
         # Independent discovery: sellable newhouse projects absent from the ESF name list.
         # Candidates publish before their details; a failed detail never drops the name.
         check(cancel)
+        if retry_failed:
+            projects = [dict(propertyid=r['source_id'], siteid=r.get('project_siteid', ''),
+                            propertyname=r['name'], districtname='滨江', propertystateid=2)
+                        for r in targets if r['source_kind'] == 'project']
+            project_index_error = False
         if projects is None and not project_index_error:
             pause(cancel)
             try:
@@ -169,7 +198,7 @@ def tmsf_names(cancel, ignored, existing=None):
                 continue
             pid = str(project['propertyid'])
             names = identity['project_aliases']
-            if {normalized(n) for n in names if n} & esf_names:
+            if not retry_failed and {normalized(n) for n in names if n} & esf_names:
                 continue  # 名录已覆盖的项目走既有补充匹配，不产生重复候选。
             if ignored('tmsf', 'project', pid):
                 continue
@@ -180,13 +209,17 @@ def tmsf_names(cancel, ignored, existing=None):
                        project_siteid=str(project['siteid']), project_name=identity['project_name'],
                        project_aliases=names)
             previous = existing.get(('project', pid), {})
+            if retry_failed:
+                metadata = {'id', 'community_id', 'status', 'method', 'evidence'}
+                row = {**{k: v for k, v in previous.items() if k not in metadata},
+                       **{k: v for k, v in row.items() if k not in previous}}
             for field in ('property_type', 'property_type_url', 'property_type_captured_at',
                           'property_type_checked_at', 'address', 'address_origin', 'address_checked_at',
                           'address_error', 'property_type_error'):
                 if field in previous:
                     row[field] = previous[field]
             yield {**row, '_stage': 'names'}
-            if previous.get('property_type') and previous.get('address') and previous.get('address_checked_at') \
+            if not retry_failed and previous.get('property_type') and previous.get('address') and previous.get('address_checked_at') \
                     and not previous.get('property_type_error') and not previous.get('address_error'):
                 try:
                     age = dt.datetime.now(dt.UTC) - dt.datetime.fromisoformat(previous['property_type_captured_at'])
@@ -217,6 +250,7 @@ def tmsf_names(cancel, ignored, existing=None):
                     detail.pop('address', None)  # Q1: a truncated address never lands on the row.
                 row.update(detail, property_type_captured_at=now(), property_type_error=None,
                            address_error=address_error, _property_type_result='succeeded')
+                row.update(listing_count_error=None, market_state_error=None)
                 if address_error:
                     row['_collection_errors'] = [dict(source='tmsf', stage='newhouse_detail', source_id=pid,
                                                       message=f'{identity["project_name"]} {address_error}')]
@@ -326,11 +360,17 @@ def _check_sources(sources):
         raise ValueError('高德小区名单采集已停止，请使用透明售房网')
 
 
-def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
+def _check_mode(sources, mode):
+    if mode not in {'all', 'retry_failed'} or (mode == 'retry_failed' and sources != ['tmsf']):
+        raise ValueError('不支持的采集模式')
+
+
+def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, mode='all'):
     _check_sources(sources)
+    _check_mode(sources, mode)
     cancel = cancel or threading.Event()
     adapters = adapters or ADAPTERS
-    report = dict(phase='running', running=True, started_at=now(), source=None,
+    report = dict(phase='running', running=True, started_at=now(), source=None, mode=mode,
                   stage='names', property_types=0, property_types_failed=0, property_types_cached=0, property_types_deferred=0,
                   new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[])
     handled = set()
@@ -362,6 +402,7 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None):
                                             property_type_captured_at=old.get('captured_at'))
                         existing[(record.get('source_kind', 'community'), str(record['source_id']))] = previous
                     kwargs['existing'] = existing
+                    kwargs['retry_failed'] = mode == 'retry_failed'
                 for row in adapter(cancel, store.is_ignored, **kwargs):
                     check(cancel)
                     if row.pop('_errors_only', False):
@@ -466,15 +507,22 @@ class DirectoryJob:
             if state.get('running'):
                 raise
 
-    def start(self, sources):
+    def status(self):
+        return {**(self.state or {'running': False, 'phase': 'idle'}),
+                'retryable': len(retryable_sources(self.store.sources()))}
+
+    def start(self, sources, *, mode='all'):
         _check_sources(sources)
+        _check_mode(sources, mode)
         with self.lock:
             if self.worker and self.worker.is_alive():
-                raise ValueError('名称采集正在运行')
+                raise ValueError('楼盘资料采集正在运行')
+            if mode == 'retry_failed' and not retryable_sources(self.store.sources()):
+                raise ValueError('当前没有可重试的失败项')
             self.cancel.clear()
-            self._save({'running': True, 'phase': 'running', 'started_at': now()})
+            self._save({'running': True, 'phase': 'running', 'mode': mode, 'started_at': now()})
             self.worker = threading.Thread(target=collect_names, args=(self.store, sources),
-                kwargs={'cancel': self.cancel, 'progress': self._save}, daemon=True)
+                kwargs={'cancel': self.cancel, 'progress': self._save, 'mode': mode}, daemon=True)
             self.worker.start()
         return self.state
 

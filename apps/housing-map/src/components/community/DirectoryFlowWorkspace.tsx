@@ -22,6 +22,7 @@ type Page<T> = { items: T[]; total: number; page: number; property_types?: strin
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
+  retryable?: number; mode?: 'all' | 'retry_failed';
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string }[]; truncated?: { message: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
   errors?: Job['errors'] | { items?: { message: string }[]; total?: number } };
@@ -31,7 +32,7 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
     errors: Array.isArray(value.errors) ? value.errors : value.errors?.items || [] };
 }
 const tasks = [
-  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止名称采集', path: '/directory/collection', hint: '采集名单、用途和挂牌数量，自动分类收录', body: { sources: ['tmsf'] } },
+  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；重试失败项仅补采获取失败的楼盘资料，保留成功项，自动分类收录。', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
   { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。' },
   { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新幸福里或房天下租金' },
@@ -92,7 +93,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
       {relevant.map(t => {
         const job = jobs[t.id];
         const problem = errors[t.id] || job?.error || '';
-        const message = job ? [phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+        const message = job ? [job.mode === 'retry_failed' && '重试失败项', phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
         return <span key={t.id}><strong>{t.short}</strong> {problem || message}</span>;
       })}
       <span className="directory-task-more">详情</span>
@@ -104,16 +105,19 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
         const running = !!job?.running;
         const state = taskStateOf(t, jobs, errors);
         const problem = errors[t.id] || job?.error || '';
-        const message = job ? [phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+        const message = job ? [job.mode === 'retry_failed' && '重试失败项', phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
         const lastRun = job?.finished_at ? ` · 上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
         const issues = [...(job?.errors || []), ...(job?.truncated || [])];
         return <div key={t.id} className="directory-task-row" data-state={state}>
           <div className="directory-task-row-head">
             <span className="directory-task-dot" aria-hidden="true" />
             <strong>{t.label}</strong>
-            <button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
+            <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
               onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.body))}>
-              {running ? t.stop : '开始'}</button>
+              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : '开始'}</button>
+            {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
+              onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
+              重试失败项（{job?.retryable || 0}）</button>}</div>
           </div>
           <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
           {(problem || message) && <p className="directory-task-line" data-state={state}>

@@ -40,8 +40,8 @@ def test_name_collection_uses_only_tmsf_and_rejects_amap():
 def test_collection_http_rejects_removed_source_without_starting_job(monkeypatch):
     calls = []
     class Job:
-        def start(self, sources):
-            calls.append(sources)
+        def start(self, sources, *, mode='all'):
+            calls.append((sources, mode))
             return {'running': True}
     monkeypatch.setattr(directory_routes, 'job', lambda: Job())
     app = FastAPI(); app.include_router(directory_routes.router, prefix='/api')
@@ -50,7 +50,27 @@ def test_collection_http_rejects_removed_source_without_starting_job(monkeypatch
     assert client.post('/api/directory/collection', json={'sources': ['tmsf', 'amap']}).status_code == 422
     assert calls == []
     assert client.post('/api/directory/collection', json={}).status_code == 202
-    assert calls == [['tmsf']]
+    assert calls == [(['tmsf'], 'all')]
+    assert client.post('/api/directory/collection', json={'mode': 'retry_failed'}).status_code == 202
+    assert calls[-1] == (['tmsf'], 'retry_failed')
+    assert client.post('/api/directory/collection', json={'mode': 'unknown'}).status_code == 422
+
+
+def test_failed_collection_retry_status_and_empty_conflict(tmp_path, monkeypatch):
+    from src.services.directory_collection import DirectoryJob
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    store.ingest(dict(source='tmsf', source_id='1', name='失败项目', district='滨江', address_error='timeout'))
+    monkeypatch.setattr(directory_routes, 'job', lambda: DirectoryJob(store))
+    app = FastAPI(); app.include_router(directory_routes.router, prefix='/api')
+    client = TestClient(app)
+    response = client.get('/api/directory/collection')
+    assert response.status_code == 200
+    assert response.json()['data']['retryable'] == 1
+    assert response.json()['data']['phase'] == 'idle'
+    store.ignore_source(store.sources()[0]['id'])
+    assert client.get('/api/directory/collection').json()['data']['retryable'] == 0
+    response = client.post('/api/directory/collection', json={'mode': 'retry_failed'})
+    assert response.status_code == 409 and '没有可重试' in response.json()['detail']
 
 
 def test_community_filter_by_residential_state(tmp_path, monkeypatch):

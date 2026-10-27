@@ -10,6 +10,35 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 }).outputText, filename);
 const { CollectionControls, CatalogTable, normalizeCollectionJob, workflowRequest } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 
+test('TMSF collection separates full update and failed-only retry', () => {
+  const render = (job, props = {}) => renderToStaticMarkup(React.createElement(CollectionControls, {
+    active: true, busy: false, open: true, pipeline: true, errors: {}, jobs: { tmsf: job }, action() {}, ...props }));
+  const html = render({ running: false, phase: 'partial_failed', retryable: 3 });
+  assert.match(html, />更新全部资料<\/button>/);
+  assert.match(html, />重试失败项（3）<\/button>/);
+  assert.doesNotMatch(html, /disabled=""[^>]*>重试失败项/);
+  for (const value of [render({ running: false, phase: 'idle', retryable: 0 }),
+                       render({ running: true, phase: 'running', retryable: 3 }),
+                       render({ running: false, retryable: 3 }, { active: false }),
+                       render({ running: false, retryable: 3 }, { busy: true })]) {
+    assert.match(value, /disabled=""[^>]*>重试失败项/);
+  }
+  assert.match(render({ running: true, phase: 'running', retryable: 3 }), />停止采集<\/button>/);
+  const calls = [];
+  const tree = CollectionControls({ active: true, busy: false, open: true, pipeline: true,
+    jobs: { tmsf: { retryable: 3 } }, errors: {}, action: (...args) => calls.push(args) });
+  const buttons = [];
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === 'button') buttons.push(node);
+    visit(node.props?.children);
+  }
+  visit(tree);
+  buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === '重试失败项（').props.onClick();
+  assert.deepEqual(calls, [['/directory/collection', 'POST', { sources: ['tmsf'], mode: 'retry_failed' }]]);
+});
+
 test('collection status preserves rental units and nested errors', () => {
   const value = normalizeCollectionJob({ running: false, phase: 'partial_failed', processed_communities: 2,
     total_communities: 5, errors: { total: 1, items: [{ message: '来源未应用关键词' }] } });

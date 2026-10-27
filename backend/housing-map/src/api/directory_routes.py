@@ -86,6 +86,7 @@ class AssociationInput(BaseModel):
 
 class DiscoveryInput(BaseModel):
     sources: list[Literal['tmsf']] = Field(default_factory=lambda: ['tmsf'], min_length=1, max_length=1)
+    mode: Literal['all', 'retry_failed'] = 'all'
 
 
 class AdmissionInput(BaseModel):
@@ -287,18 +288,18 @@ def auto_associate():
 
 @router.get('/directory/collection')
 def collection_status():
-    return {'success': True, 'data': job().state}
+    return result(lambda: job().status())
 
 
 @router.post('/directory/collection', status_code=202)
 def collect(request: DiscoveryInput):
-    return result(lambda: job().start(list(dict.fromkeys(request.sources))))
+    return result(lambda: job().start(list(dict.fromkeys(request.sources)), mode=request.mode))
 
 
 @router.delete('/directory/collection')
 def cancel():
     if not job().state or not job().state.get('running'):
-        raise HTTPException(409, '当前没有名称采集任务')
+        raise HTTPException(409, '当前没有楼盘资料采集任务')
     job().cancel.set()
     return {'success': True, 'data': {'phase': 'cancelling'}}
 
