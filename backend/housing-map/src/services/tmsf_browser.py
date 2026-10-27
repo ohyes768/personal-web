@@ -7,9 +7,10 @@ from urllib.request import Request, urlopen
 
 
 class BrowserFetchError(ValueError):
-    def __init__(self, code, message):
+    def __init__(self, code, message, *, pause_reason=None):
         super().__init__(message)
         self.code = code
+        self.pause_reason = pause_reason or code
 
 
 def page_identity(url):
@@ -49,7 +50,8 @@ class BrowserClient:
         if self.cancelled():
             raise InterruptedError('采集已取消')
         if self.failure:
-            raise BrowserFetchError('paused', f'本轮新房详情已暂停：{self.failure}')
+            raise BrowserFetchError('paused', f'本轮新房详情已暂停：{self.failure}',
+                                    pause_reason=self.failure.pause_reason)
         target = page_identity(url)
         try:
             self.used = True
