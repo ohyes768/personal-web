@@ -240,10 +240,10 @@ export function CatalogTable({ items, excluded, pending = false, select, busy, p
     <td data-label="高德类型"><CatalogAmapType position={c.position} /></td>
     {excluded && <td data-label={pending ? '待处理操作' : '住宅用途核对'}><div className="catalog-inline">
       {pending && <span className={`directory-badge directory-op-${pendingOperationBucket(c)}`}>{pipelineStageLabel(c)}</span>}
-      <UseReviewBadge review={c.use_review} compact />
+      {!pending && <UseReviewBadge review={c.use_review} compact />}
       {!pending && c.collection_pipeline_version && <small className="catalog-text">{pipelineStageLabel(c)}</small>}
-      {c.use_review?.auto_skip_reason && <small className="catalog-text directory-muted">{c.use_review.auto_skip_reason}</small>}
-      {c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
+      {!pending && c.use_review?.auto_skip_reason && <small className="catalog-text directory-muted">{c.use_review.auto_skip_reason}</small>}
+      {!pending && c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
     {excluded && <td data-label={pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态'}>{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : pending ? '待核对' : '条件不符'}</small></td>}
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}
     {!excluded && <><td data-label="法拍"><AuctionCoverage value={c.coverage?.auction} onView={() => select(c)} /></td>
