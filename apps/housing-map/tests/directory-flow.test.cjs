@@ -65,7 +65,7 @@ test('TMSF collection separates full update and failed-only retry', () => {
 
 test('Amap offers continuation and current-query retry with the correct request mode', () => {
   const props = { active: true, busy: false, open: true, pipeline: true, errors: {},
-    jobs: { amap: { running: false, phase: 'partial_failed', failed: 99, retryable: 2 } } };
+    jobs: { amap: { running: false, phase: 'partial_failed', failed: 99, retryable: 2, unqueried: 11 } } };
   const calls = [];
   const tree = CollectionControls({ ...props, action: (...args) => calls.push(args) });
   const buttons = [];
@@ -82,6 +82,8 @@ test('Amap offers continuation and current-query retry with the correct request 
     ['/directory/workflow/positions', 'POST', { mode: 'retry_failed' }]]);
   const html = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, action() {} }));
   assert.match(html, /重试查询失败（2）/);
+  assert.match(html, /尚未查询 11 条 → 继续匹配/);
+  assert.match(html, /查询失败／不完整 2 条 → 重试查询失败/);
   assert.doesNotMatch(html, /重试查询失败（99）/);
   const empty = renderToStaticMarkup(React.createElement(CollectionControls, { ...props,
     jobs: { amap: { retryable: 0 } }, action() {} }));

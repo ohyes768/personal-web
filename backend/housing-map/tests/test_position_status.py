@@ -501,3 +501,29 @@ def test_suspect_candidate_confirmable_via_existing_flow(setup):
     detail = position_detail(store, data, cid)
     result = confirm_position(store, data, cid, revision=detail['revision'], poi_id='B9')
     assert result['state'] == 'manual' and result['selected']['source_id'] == 'B9'
+
+
+def test_snapshot_counts_current_unqueried_separately_from_retryable(setup, monkeypatch):
+    import src.services.directory_position as module
+    store, _, _ = setup
+    job = PositionJob(store)
+    views = [
+        {'state': 'pending'},
+        {'state': 'pending', 'has_coordinates': True},
+        {'state': 'pending', 'query_history': {'state': 'stale'}},
+        {'state': 'pending', 'query_history': {'state': 'incomplete'}},
+        {'state': 'error'},
+        {'state': 'review', 'review_reason': 'results_incomplete'},
+        {'state': 'review', 'review_reason': 'name_mismatch'},
+        {'state': 'not_found'},
+        {'state': 'matched'},
+        {'state': 'manual'},
+        {'state': 'pending', 'checked_at': '2026-10-27', 'review_reason': 'request_budget'},
+    ]
+    monkeypatch.setattr(module, 'batch_targets', lambda _: [{'position': p} for p in views])
+    snap = job.snapshot()
+    assert snap['unqueried'] == 2
+    assert snap['retryable'] == 3
+    assert snap.get('processed', 0) == 0
+    monkeypatch.setattr(module, 'batch_targets', lambda _: [])
+    assert job.snapshot()['unqueried'] == job.snapshot()['retryable'] == 0

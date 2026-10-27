@@ -330,7 +330,11 @@ class PositionJob:
     def snapshot(self):
         with self.lock:
             value = copy.deepcopy(self.state) if self.state else dict(running=False, phase='idle')
-        value['retryable'] = sum(query_retryable(c['position']) for c in batch_targets(self.store))
+        targets = batch_targets(self.store)
+        value['unqueried'] = sum(c['position'].get('state') == 'pending'
+                                 and not c['position'].get('checked_at')
+                                 and not c['position'].get('query_history') for c in targets)
+        value['retryable'] = sum(query_retryable(c['position']) for c in targets)
         return value
 
     def _save(self):
