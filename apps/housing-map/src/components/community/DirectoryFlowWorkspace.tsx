@@ -35,7 +35,7 @@ export function CatalogTabs({ summary, mode, onChange }: { summary: Summary | nu
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
-  failed?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
+  failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
   retryable?: number; mode?: 'all' | 'retry_failed';
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
@@ -57,7 +57,7 @@ const stageLabels: Record<string, string> = { checking: '检查租金来源', di
   publishing: '发布租金统计', names: '更新小区名录', property_types: '补充用途资料' };
 const phases: Record<string, string> = { running: '正在采集', crawling: '正在采集', publishing: '正在发布', checking_sources: '检查来源', idle: '尚未采集',
   succeeded: '采集完成', done: '采集完成', failed: '采集失败', error: '采集失败', partial_failed: '部分完成',
-  cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
+  cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消', budget_exhausted: '本轮预算用完，可继续匹配' };
 
 export async function workflowRequest<T>(path: string, method = 'GET', body?: object, signal?: AbortSignal): Promise<T> {
   const response = await fetch('/api/map' + path, { method, signal,
@@ -72,7 +72,7 @@ function taskCounts(t: (typeof tasks)[number], job: Job | null): string {
     job?.processed !== undefined && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
     job?.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
     job?.updated !== undefined && job.review !== undefined &&
-      `补全 ${job.updated || 0} · 待人工确认 ${job.review} · 未找到主体地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
+      `补全 ${job.updated || 0} · 待人工确认 ${job.review} · 未找到主体地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}${job.incomplete ? ` · 返回不完整 ${job.incomplete}` : ''}`,
     job?.updated !== undefined && job.review === undefined && job.conflict === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
     job?.conflict !== undefined &&
       `已完成用途核对 ${job.updated || 0} · 用途冲突，待人工确认 ${job.conflict} · 未找到高德地点 ${job.not_found || 0}${job.uncertain ? ` · 高德地点匹配不明确 ${job.uncertain}` : ''}${job.error ? ` · 查询失败 ${job.error}` : ''} · 跳过 ${job.skipped || 0}`,
@@ -133,12 +133,16 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
             <strong>{t.label}</strong>
             <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
               onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.body))}>
-              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : '开始'}</button>
+              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '继续匹配' : '开始'}</button>
             {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
               onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
-              重试失败项（{job?.retryable || 0}）</button>}</div>
+              重试失败项（{job?.retryable || 0}）</button>}
+            {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
+              onClick={() => action(t.path, 'POST', { mode: 'retry_failed' })}>
+              重试查询失败（{job?.retryable || 0}）</button>}</div>
           </div>
           <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
+          {t.id === 'amap' && <p className="directory-task-sub">继续匹配会接着处理未查询、未完成和失败项；重试仅处理当前查询失败或结果不完整的项目。待人工确认、已匹配和未找到主体地点的项目不重复查询。</p>}
           {(problem || message) && <p className="directory-task-line" data-state={state}>
             {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
           </p>}

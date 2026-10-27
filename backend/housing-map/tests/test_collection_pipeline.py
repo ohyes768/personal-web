@@ -354,6 +354,114 @@ def test_paging_budget_counts_actual_requests(store, tmp_path):
     assert client.calls == 2
     assert job.snapshot()['requests'] == 2
     assert inventory(store, tmp_path)[0]['admission_state'] == 'excluded'
+    assert job.snapshot()['failed'] == 0
+    assert inventory(store, tmp_path)[0]['position']['state'] == 'pending'
+    assert job.snapshot()['retryable'] == 0
+    assert job.snapshot()['phase'] == 'budget_exhausted'
+
+
+def test_retry_scope_and_live_count_ignore_old_job_failures_and_protected_states(store, tmp_path):
+    from src.services.directory_position import PositionJob
+    def add(name, state, reason=None, error=None):
+        c = store.create(name, district='滨江', address='月明路1076号', collection_pipeline_version=RULE)
+        s = store.ingest({**source(), 'name': name, 'source_id': name})
+        store.associate(s['id'], c['community_id'])
+        with store.db() as db:
+            payload = json.loads(db.execute('SELECT payload FROM communities WHERE id=?', (c['community_id'],)).fetchone()[0])
+            payload['amap_position'] = dict(identity=identity(c), state=state, candidates=[], review_reason=reason,
+                                            error=error, checked_at='2026-10-27T00:00:00Z')
+            db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(payload), c['community_id']))
+        return c['community_id']
+    add('失败小区', 'error')
+    add('分页小区', 'review', 'results_incomplete')
+    add('待确认小区', 'review', 'multiple_subjects')
+    add('人工确认小区', 'manual')
+    add('未找到小区', 'not_found')
+    add('预算小区', 'error', error='达到本轮高德实际请求预算，未完成目标可下次重试')
+    excluded = add('人工排除小区', 'error')
+    revision = next(r for r in inventory(store, tmp_path) if r['community_id'] == excluded)['admission']['revision']
+    store.decide_admission(excluded, 'exclude', revision=revision, reason='人工确认不收录')
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=99, skipped_by_state={}, errors=[])
+    assert job.snapshot()['retryable'] == 2
+    class Client:
+        queries = []
+        def search_name(self, name, *args, **kwargs):
+            self.queries.append(name)
+            return [dict(id=name, name=name, adname='滨江区', typecode='120302',
+                         address='月明路1076号', location='120.20749,30.20226')], 1
+    client = Client()
+    job.state['failed'] = 0
+    job._run(client=client, delay=0, mode='retry_failed')
+    assert set(client.queries) == {'失败小区', '分页小区'}
+    assert job.snapshot()['total'] == 2 and job.snapshot()['updated'] == 2
+    assert job.snapshot()['retryable'] == 0
+    client.queries.clear()
+    job._run(client=client, delay=0, mode='retry_failed')
+    assert client.queries == [] and job.snapshot()['total'] == 0
+
+
+def test_automatic_retry_rechecks_manual_exclusion_before_query(store, tmp_path):
+    from src.services.directory_position import position_one
+    store.ingest(source()); synchronize(store, tmp_path)
+    row = inventory(store, tmp_path)[0]
+    store.decide_admission(row['community_id'], 'exclude', revision=row['admission']['revision'], reason='人工确认不收录')
+    class Client:
+        def search_name(self, *args, **kwargs):
+            raise AssertionError('人工排除后不得发起自动查询')
+    assert position_one(store, tmp_path, row['community_id'], Client(), automatic=True) == 'skipped'
+
+
+def test_position_start_api_accepts_retry_mode_and_keeps_no_body_compatibility(store, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import directory_workflow_routes as routes
+    modes = []
+    class Job:
+        def start(self, mode='all'):
+            modes.append(mode)
+            return dict(running=True, mode=mode)
+    monkeypatch.setattr(routes, '_position', Job())
+    app = FastAPI(); app.include_router(routes.router, prefix='/api')
+    with TestClient(app) as client:
+        assert client.post('/api/directory/workflow/positions').status_code == 202
+        assert client.post('/api/directory/workflow/positions', json={'mode': 'retry_failed'}).status_code == 202
+        assert client.post('/api/directory/workflow/positions', json={'mode': 'invalid'}).status_code == 422
+    assert modes == ['all', 'retry_failed']
+
+
+def test_incomplete_query_is_retryable_but_not_counted_as_manual_review(store, tmp_path):
+    from src.services.directory_position import PositionJob
+    store.ingest(source()); synchronize(store, tmp_path)
+    class Client:
+        def search_name(self, name, *args, **kwargs):
+            return [dict(id='P1', name=name, adname='滨江区', typecode='120302',
+                         address='月明路1076号', location='120.20749,30.20226')], 30
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
+    job._run(client=Client(), delay=0)
+    state = job.snapshot()
+    assert state['incomplete'] == state['retryable'] == 1
+    assert state['failed'] == state['review'] == 0
+    assert state['phase'] == 'partial_failed'
+
+
+def test_empty_failure_retry_is_lazy_and_legacy_history_is_classified_correctly(store, monkeypatch):
+    from src.services.directory_position import PositionJob, query_retryable
+    def no_key():
+        raise AssertionError('无失败项不能创建高德客户端')
+    monkeypatch.setattr('src.services.directory_position.AmapClient', no_key)
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
+    job._run(delay=0, mode='retry_failed')
+    assert job.snapshot()['phase'] == 'succeeded' and job.snapshot()['total'] == 0
+    assert query_retryable(dict(state='pending', query_history={'state': 'incomplete'}))
+    assert query_retryable(dict(state='pending', query_history={'state': 'error'}))
+    assert not query_retryable(dict(state='pending', query_history={'state': 'not_found'}))
+    assert not query_retryable(dict(state='review', error='候选有歧义、地址不同或结果未完整返回'))
 
 
 @pytest.mark.parametrize('kind', ['two_subjects', 'wrong_address', 'phase_only'])

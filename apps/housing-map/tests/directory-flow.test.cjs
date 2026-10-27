@@ -39,6 +39,31 @@ test('TMSF collection separates full update and failed-only retry', () => {
   assert.deepEqual(calls, [['/directory/collection', 'POST', { sources: ['tmsf'], mode: 'retry_failed' }]]);
 });
 
+test('Amap offers continuation and current-query retry with the correct request mode', () => {
+  const props = { active: true, busy: false, open: true, pipeline: true, errors: {},
+    jobs: { amap: { running: false, phase: 'partial_failed', failed: 99, retryable: 2 } } };
+  const calls = [];
+  const tree = CollectionControls({ ...props, action: (...args) => calls.push(args) });
+  const buttons = [];
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === 'button') buttons.push(node);
+    visit(node.props?.children);
+  }
+  visit(tree);
+  buttons.find(b => b.props.children === '继续匹配').props.onClick();
+  buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === '重试查询失败（').props.onClick();
+  assert.deepEqual(calls, [['/directory/workflow/positions', 'POST', undefined],
+    ['/directory/workflow/positions', 'POST', { mode: 'retry_failed' }]]);
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, action() {} }));
+  assert.match(html, /重试查询失败（2）/);
+  assert.doesNotMatch(html, /重试查询失败（99）/);
+  const empty = renderToStaticMarkup(React.createElement(CollectionControls, { ...props,
+    jobs: { amap: { retryable: 0 } }, action() {} }));
+  assert.match(empty, /disabled=""[^>]*>重试查询失败（0）/);
+});
+
 test('collection status preserves rental units and nested errors', () => {
   const value = normalizeCollectionJob({ running: false, phase: 'partial_failed', processed_communities: 2,
     total_communities: 5, errors: { total: 1, items: [{ message: '来源未应用关键词' }] } });

@@ -100,6 +100,10 @@ def reference_pois(rows, district, names, subjects):
     return list(related.values())
 
 
+class RequestBudgetExhausted(ValueError):
+    """A resumable batch stop, not an upstream query failure."""
+
+
 class RequestBudgetClient:
     """Lazy HTTP page budget shared across candidates, aliases and communities."""
     def __init__(self, factory, *, limit, delay, cancel):
@@ -110,7 +114,7 @@ class RequestBudgetClient:
         if self.cancel.is_set():
             raise InterruptedError()
         if self.used >= self.limit:
-            raise ValueError('达到本轮高德实际请求预算，未完成目标可下次重试')
+            raise RequestBudgetExhausted('达到本轮高德实际请求预算，未完成目标可下次重试')
         if self.used and self.cancel.wait(self.delay):
             raise InterruptedError()
         if self.client is None:

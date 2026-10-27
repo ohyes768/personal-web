@@ -118,16 +118,49 @@ def _name_hit(p, flats):
     return name_hit(p['name'], flats)
 
 
-def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False):
+def query_retryable(view):
+    """Only actual failures/incomplete results, never budget stops or ambiguity."""
+    if view.get('review_reason') == 'request_budget' or '请求预算' in (view.get('error') or ''):
+        return False
+    return (view.get('state') == 'error' or
+            (view.get('state') == 'review' and view.get('review_reason') == 'results_incomplete') or
+            (view.get('state') == 'pending' and (view.get('query_history') or {}).get('state') in {'error', 'incomplete'}))
+
+
+def batch_targets(store):
+    from src.services.directory_workflow import inventory
+    from src.services.collection_pipeline import active
+    return [c for c in inventory(store, store.path.parent)
+            if (c['admission_state'] == 'admitted' or active(c)) and not c.get('source_record_id')
+            and (not active(c) or (c.get('workflow_state') != 'excluded'
+                                  and c['qualification'] not in {'non_residential', 'manual_exclusion', 'region_conflict'}
+                                  and not (c.get('use_review') or {}).get('auto_skip_reason')))]
+
+
+def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, force=False, automatic=False,
+                 retry_failed_only=False):
     snapshot = _snapshot(store, cid)
     target = _target(store, data_dir, cid)
     from src.services.collection_pipeline import active, subject_name, subject_pois
     pipeline = active(target)
     records = [store._source(r) for r in snapshot['members'] if r['status'] == 'matched']
     previous = position_view(target, records)
+    if automatic and pipeline:
+        from src.services.use_review_scope import auto_review_skip_reason
+        from src.services.use_review_policy import tmsf_property_types
+        facts = property_facts(data_dir)
+        admission = json.loads(snapshot['admission']) if snapshot['admission'] else {}
+        status = eligibility(target, records, facts, admission)
+        fresh = {**target, **status, 'admission': admission, 'sources': records, 'position': previous,
+                 'property_types': tmsf_property_types(records, facts)}
+        if status.get('workflow_state') == 'excluded' or auto_review_skip_reason(fresh):
+            return 'skipped'
+    if retry_failed_only and not query_retryable(previous):
+        return 'skipped'
     from src.services.collection_pipeline import selected_review
     needs_subject_type = pipeline and previous['state'] == 'matched' and not selected_review(target, records)['state']
-    if previous['state'] == 'manual' or (not force and previous['state'] not in {'pending', 'error'} and not needs_subject_type):
+    if previous['state'] == 'manual' or (not force and previous['state'] not in {'pending', 'error'}
+                                        and not needs_subject_type and not query_retryable(previous)):
         return 'skipped'
     district = (target.get('district') or '').removesuffix('区')
     names = {normalized(n) for n in [target['community_name'], *target.get('aliases', [])] if n}
@@ -218,7 +251,10 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
         if isinstance(exc, InterruptedError):
             raise
         error = str(exc) if isinstance(exc, ValueError) else '高德位置查询失败，请重试'
-        values.update(state='error', error=error)
+        from src.services.collection_pipeline import RequestBudgetExhausted
+        values.update(state='pending' if isinstance(exc, RequestBudgetExhausted) else 'error', error=error)
+        if isinstance(exc, RequestBudgetExhausted):
+            values['review_reason'] = 'request_budget'
     finally:
         if owned and client:
             client.close()
@@ -226,7 +262,7 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
         values.update(state='matched', selected=previous['selected'], error=values.get('error') or '本次未匹配，保留已有结果')
     _publish(store, data_dir, cid, snapshot, values, point, cancelled=cancelled)
     if error:
-        raise PositionOutcome(error)
+        raise PositionOutcome(error, reason=values.get('review_reason'))
     if values['state'] in {'review', 'not_found'}:
         raise PositionOutcome(values['error'], state=values['state'], reason=values.get('review_reason'))
     return 'updated'
@@ -282,13 +318,17 @@ class PositionJob:
 
     def snapshot(self):
         with self.lock:
-            return copy.deepcopy(self.state)
+            value = copy.deepcopy(self.state) if self.state else dict(running=False, phase='idle')
+        value['retryable'] = sum(query_retryable(c['position']) for c in batch_targets(self.store))
+        return value
 
     def _save(self):
         with self.lock, self.store.db() as db:
             db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (KEY, dump(self.state)))
 
-    def start(self):
+    def start(self, mode='all'):
+        if mode not in {'all', 'retry_failed'}:
+            raise ValueError('未知高德匹配模式')
         with self.lock:
             with self.store.db() as db:
                 if not enabled(db):
@@ -297,22 +337,20 @@ class PositionJob:
                 raise ValueError('高德信息正在采集')
             self.cancel.clear()
             self.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
-                              review=0, not_found=0, failed=0, skipped_by_state={},
-                              errors=[], started_at=now(), finished_at=None)
+                              review=0, not_found=0, failed=0, incomplete=0, skipped_by_state={},
+                              errors=[], mode=mode, started_at=now(), finished_at=None)
             self._save()
-            self.worker = threading.Thread(target=self._run, daemon=True)
+            self.worker = threading.Thread(target=self._run, kwargs={'mode': mode}, daemon=True)
             self.worker.start()
             return self.snapshot()
 
-    def _run(self, *, client=None, delay=2, budget=256):
+    def _run(self, *, client=None, delay=2, budget=256, mode='all'):
         owned = client is None
         try:
-            from src.services.directory_workflow import inventory
             from src.services.collection_pipeline import active
-            targets = [c for c in inventory(self.store, self.store.path.parent)
-                       if (c['admission_state'] == 'admitted' or active(c)) and not c.get('source_record_id')
-                       and (not active(c) or (c['qualification'] not in {'non_residential', 'manual_exclusion', 'region_conflict'}
-                                             and not (c.get('use_review') or {}).get('auto_skip_reason')))]
+            targets = batch_targets(self.store)
+            if mode == 'retry_failed':
+                targets = [c for c in targets if query_retryable(c['position'])]
             from src.services.collection_pipeline import RequestBudgetClient
             page_client = None
             if any(active(c) for c in targets):
@@ -321,6 +359,7 @@ class PositionJob:
                 client = page_client
             with self.lock:
                 self.state['total'] = len(targets)
+                self.state['mode'] = mode
             requests = 0
             budget_stopped = False
             for target in targets:
@@ -329,7 +368,7 @@ class PositionJob:
                 cid = target['community_id']
                 current_state = position_view(target, target.get('sources', [])).get('state')
                 needs_subject_type = active(target) and current_state == 'matched' and not (target.get('use_review') or {}).get('state')
-                if current_state not in {'pending', 'error'} and not needs_subject_type:
+                if current_state not in {'pending', 'error'} and not needs_subject_type and not query_retryable(target['position']):
                     outcome = 'skipped'
                     with self.lock:
                         by = self.state['skipped_by_state']
@@ -344,13 +383,24 @@ class PositionJob:
                         raise InterruptedError()
                     requests += 1
                     try:
-                        outcome = position_one(self.store, self.store.path.parent, cid, client, cancelled=self.cancel.is_set)
+                        outcome = position_one(self.store, self.store.path.parent, cid, client,
+                                               cancelled=self.cancel.is_set, automatic=True,
+                                               retry_failed_only=mode == 'retry_failed')
                     except InterruptedError:
                         raise
                     except Exception as exc:
                         message = str(exc) if isinstance(exc, ValueError) else '地图查询失败，已有位置保留'
+                        if isinstance(exc, PositionOutcome) and exc.reason == 'request_budget':
+                            with self.lock:
+                                self.state['requests'] = page_client.used if page_client else requests
+                                self.state['errors'].append({'community_id': cid, 'name': target['community_name'],
+                                                             'message': message, 'reason': 'request_budget'})
+                            budget_stopped = True
+                            break
                         with self.lock:
-                            if isinstance(exc, PositionOutcome) and exc.state:
+                            if isinstance(exc, PositionOutcome) and exc.reason == 'results_incomplete':
+                                self.state['incomplete'] = self.state.get('incomplete', 0) + 1
+                            elif isinstance(exc, PositionOutcome) and exc.state:
                                 self.state[exc.state] += 1
                             else:
                                 self.state['failed'] += 1
@@ -367,7 +417,8 @@ class PositionJob:
                         self.state[outcome] += 1
                 self._save()
             with self.lock:
-                self.state['phase'] = 'partial_failed' if (self.state['failed'] or budget_stopped) else 'succeeded'
+                self.state['phase'] = ('partial_failed' if self.state['failed'] or self.state.get('incomplete') else
+                                       'budget_exhausted' if budget_stopped else 'succeeded')
         except InterruptedError:
             with self.lock:
                 self.state['phase'] = 'cancelled'

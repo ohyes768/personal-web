@@ -196,9 +196,13 @@ def position_status():
     return result(lambda: position_job().snapshot())
 
 
+class PositionStart(BaseModel):
+    mode: Literal['all', 'retry_failed'] = 'all'
+
+
 @router.post('/positions', status_code=202)
-def position_start():
-    return result(lambda: position_job().start())
+def position_start(body: PositionStart | None = None):
+    return result(lambda: position_job().start(mode=body.mode if body else 'all'))
 
 
 @router.delete('/positions')
