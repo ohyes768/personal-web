@@ -194,7 +194,8 @@ async def get_communities():
         and is_in_scope(coord.get("longitude") or 0, coord.get("latitude") or 0)
     ]
 
-    # 收录口径统计: 目录收录总量 vs 通过上图门槛的数量, 未上图按原因细分。
+    polygons = load_polygons()
+    # 展示统计只计实际轮廓；位置示意问号仍下发，但计入边界待补。
     # 无 registry (raw JSON 回退/mock) 时为 None, 前端不展示该行。
     stats = None
     from src.services.community_admission import community_views
@@ -207,13 +208,17 @@ async def get_communities():
             if v['admission_state'] == 'admitted'
         ]
         hidden = Counter(v['map_status'] for v in admitted_views if v['map_status'] != 'displayed')
+        for view in admitted_views:
+            if view['map_status'] == 'displayed':
+                polygon = polygons.get(view['community_id']) or {}
+                if not polygon.get('rings') or polygon.get('source') == 'shp':
+                    hidden['missing_boundary'] += 1
         stats = {
             'admitted': len(admitted_views),
             'displayed': len(admitted_views) - sum(hidden.values()),
             'hidden': dict(hidden),
         }
     pois_data = load_pois()
-    polygons = load_polygons()
     community_ages = load_community_ages()
     community_attrs = load_community_attrs()
     transit_routes = load_transit_routes()

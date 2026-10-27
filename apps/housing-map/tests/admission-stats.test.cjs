@@ -13,6 +13,10 @@ test('admission stats line stays compact and explains hidden reasons on hover', 
   assert.equal(all.line, '收录 90 · 展示 90 · 未展示 0');
   assert.equal(all.title, '');
 
+  const placeholders = formatAdmissionStats({ admitted: 158, displayed: 100, hidden: { missing_boundary: 58 } });
+  assert.equal(placeholders.line, '收录 158 · 展示 100 · 未展示 58');
+  assert.equal(placeholders.title, '边界待补 58');
+
   const mixed = formatAdmissionStats({ admitted: 90, displayed: 76, hidden: { missing_coordinates: 10, outside_scope: 3, check_coordinates: 1 } });
   assert.equal(mixed.line, '收录 90 · 展示 76 · 未展示 14');
   assert.equal(mixed.title, '缺坐标 10 · 围栏外 3 · 坐标待核 1');

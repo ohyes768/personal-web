@@ -240,11 +240,12 @@ export function isListingReference(value: unknown): value is MarketReferenceAvai
 // 地图收录口径统计 (/api/communities 的 stats 字段, 无 registry 时为 null)
 export interface MapAdmissionStats {
   admitted: number;               // 目录收录总量
-  displayed: number;              // 通过上图门槛 (有效坐标 + 覆盖范围内)
-  hidden: Record<string, number>; // 未上图按 map_status 细分
+  displayed: number;              // 通过上图门槛且有可展示边界（不含问号占位）
+  hidden: Record<string, number>; // 未展示原因，含边界待补
 }
 
 const HIDDEN_STATUS_LABELS: Record<string, string> = {
+  missing_boundary: '边界待补',
   missing_coordinates: '缺坐标',
   check_coordinates: '坐标待核',
   outside_scope: '围栏外',

@@ -135,7 +135,13 @@ def test_communities_excludes_dirty_data(seeded_data_dir):
     assert "453982737" in {c["community_id"] for c in data}
 
 
-def test_communities_reports_admission_stats(tmp_path, monkeypatch):
+@pytest.mark.parametrize('polygon, displayed', [
+    ({}, 0),
+    ({'rings': []}, 0),
+    ({'rings': [[120.207, 30.202], [120.208, 30.202], [120.207, 30.203]], 'source': 'shp'}, 0),
+    ({'rings': [[120.207, 30.202], [120.208, 30.202], [120.207, 30.203]], 'source': 'osm'}, 1),
+])
+def test_communities_reports_admission_stats(tmp_path, monkeypatch, polygon, displayed):
     """收录口径统计: 收录总量 vs 通过上图门槛数量, 未上图按 map_status 细分。"""
     import src.services.data_loader as data_loader
     from src.services.community_directory import prepare_directory
@@ -154,7 +160,7 @@ def test_communities_reports_admission_stats(tmp_path, monkeypatch):
         "100": {"property_type": "住宅"}, "200": {"property_type": "住宅"}}), encoding="utf-8")
     for name, payload in {
         "binjiang_pois.json": {},
-        "binjiang_polygons_merged.json": {},
+        "binjiang_polygons_merged.json": {"100": polygon},
         "community_ages.json": {},
         "community_attrs.json": {},
         "binjiang_transit_routes.geojson": {"type": "FeatureCollection", "features": []},
@@ -167,7 +173,10 @@ def test_communities_reports_admission_stats(tmp_path, monkeypatch):
     resp = client.get("/api/communities")
     body = resp.json()
     # 两个小区迁移后都被收录; 无坐标小区不上图并按原因细分
-    assert body["stats"] == {"admitted": 2, "displayed": 1, "hidden": {"missing_coordinates": 1}}
+    hidden = {"missing_coordinates": 1}
+    if not displayed:
+        hidden['missing_boundary'] = 1
+    assert body["stats"] == {"admitted": 2, "displayed": displayed, "hidden": hidden}
     assert [c["community_name"] for c in body["data"]] == ["有坐标小区"]
 
 
