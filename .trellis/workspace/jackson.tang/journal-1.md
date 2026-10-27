@@ -1640,3 +1640,37 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 45: 楼盘资料失败项定向补采
+
+**Date**: 2026-10-27
+**Task**: 楼盘资料失败项定向补采
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+新增更新全部资料与重试失败项，持久化失败计数并复用任务锁和取消。后端842测试通过，相关前端35测试、lint、类型检查及Webpack构建通过，桌面和手机静态组件验收无溢出；前端全量另有3项既存失败。未部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2a50f4b` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
