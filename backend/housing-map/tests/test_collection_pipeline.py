@@ -567,3 +567,25 @@ def test_candidate_api_can_query_before_admission_and_reclassifies(store, tmp_pa
         assert admitted['total'] == 1
         assert admitted['items'][0]['use_review']['evidence']['poi_id'] == 'P1'
         assert client.get(base + '/catalog?state=excluded&workflow=pending').json()['data']['total'] == 0
+
+
+def test_zero_count_suggestion_allows_alias_subject_lookup(store, tmp_path):
+    from src.services.directory_position import position_one, position_detail
+    store.ingest(source())
+    synchronize(store, tmp_path)
+    cid = inventory(store, tmp_path)[0]['community_id']
+    c = store.communities()[0]
+    store.update(cid, name=c['community_name'], aliases=['测试别名'])
+
+    class Client:
+        queries = []
+        def search_name(self, name, district, **kwargs):
+            self.queries.append(name)
+            if name == '测试住宅':
+                return [dict(name='地址建议', location='120,30')], 0
+            return [dict(id='P1', name='测试别名', adname='滨江区', typecode='120302',
+                         address='月明路1076号', location='120.20749,30.20226')], 1
+    client = Client()
+    assert position_one(store, tmp_path, cid, client) == 'updated'
+    assert client.queries == ['测试住宅', '测试别名']
+    assert position_detail(store, tmp_path, cid)['selected']['source_id'] == 'P1'

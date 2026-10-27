@@ -87,6 +87,10 @@ def _search_review(client, name, district, *, cancelled):
         rows, count = client.search_name(name, district, **options)
         if cancelled():
             raise InterruptedError()
+        # Zero-result searches may include a geocoding suggestion without a POI
+        # identity. It is not a truncated place page and must not block aliases.
+        if count == 0 and rows and all(not row.get('id') for row in rows):
+            return list(pois.values()), True
         # Real Amap responses can report 53 results but return 25 + 14 + an
         # empty page whose count becomes 0. That is a terminal page, not failure.
         if not rows:
