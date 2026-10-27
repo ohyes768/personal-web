@@ -2,13 +2,14 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { Community, Source, DirectorySourceCard, marketLabels, mapLabels, safeDirectoryLink } from './DirectoryCards';
-import PositionPanel, { Position, PositionBadge, positionLabels, positionBucketLabels, positionQueryLabel } from './PositionPanel';
-import UseReviewPanel, { UseReview, UseReviewBadge, useReviewFilterLabels, formatUseReviewMessage } from './UseReviewPanel';
+import PositionPanel, { Position, PositionBadge, positionLabels, positionQueryLabel } from './PositionPanel';
+import UseReviewPanel, { UseReview, UseReviewBadge, formatUseReviewMessage } from './UseReviewPanel';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
+import CatalogFilters, { CatalogFilterValues, catalogFilterParams, catalogFiltersForMode, emptyCatalogFilters } from './CatalogFilters';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
 import type { RentalRequestDiagnostics } from '../../lib/rental-types';
-import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, rentalCoverageLabels, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
+import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
 
 type CatalogRow = Community & { property_types?: string[]; position?: Position; use_review?: UseReview;
   collection_pipeline_version?: string; workflow_state?: 'pending' | 'admitted' | 'excluded';
@@ -176,20 +177,6 @@ export function CollectionTasksButton({ jobs, errors, onOpen }: {
   </button>;
 }
 
-export function CatalogClassificationFilter({ mode, value, propertyTypes, onChange }: {
-  mode: string; value: string; propertyTypes: string[]; onChange: (value: string) => void;
-}) {
-  if (mode === 'auctions') return null;
-  if (mode === 'admitted') return <select aria-label="新房二手房筛选" value={value} onChange={e => onChange(e.target.value)}>
-    <option value="">全部</option><option value="new_house">新房</option><option value="second_hand">二手房</option>
-  </select>;
-  const options = [...new Set(['住宅', '其他', '写字楼', ...propertyTypes, ...(value && value !== '__missing__' ? [value] : [])])];
-  return <select aria-label="不收录用途筛选" value={value} onChange={e => onChange(e.target.value)}>
-    <option value="">全部用途</option>{options.map(prop => <option key={prop} value={prop}>{prop}</option>)}
-    <option value="__missing__">用途资料缺失</option>
-  </select>;
-}
-
 export function pipelineStageLabel(row: Pick<CatalogRow, 'workflow_state' | 'qualification' | 'position'>): string {
   if (row.workflow_state === 'pending' && row.qualification === 'type_uncertain' && row.position && !row.position.selected) {
     if (row.position.query_history) return '待重查地点';
@@ -275,13 +262,8 @@ function AuctionPanel({ row, busy, action }: { row: Auction; busy: boolean;
 
 export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }: { onChanged: () => void; initialSource?: string }) {
   const [mode, setMode] = useState(initialSource === 'laipai' ? 'auctions' : 'admitted');
-  const [q, setQ] = useState(''); const [district, setDistrict] = useState('滨江'); const [page, setPage] = useState(1);
-  const [positionFilter, setPositionFilter] = useState('');
-  const [marketFilter, setMarketFilter] = useState('');
-  const [auctionFilter, setAuctionFilter] = useState('');
-  const [rentalFilter, setRentalFilter] = useState('');
-  const [propertyFilter, setPropertyFilter] = useState('');
-  const [useFilter, setUseFilter] = useState('');
+  const [filters, setFilters] = useState<CatalogFilterValues>(() => ({ ...emptyCatalogFilters(), district: '滨江' }));
+  const [page, setPage] = useState(1);
   const [useConfirmOpen, setUseConfirmOpen] = useState(false);
   const [propertyTypes, setPropertyTypes] = useState<string[]>([]);
   const [showSkipped, setShowSkipped] = useState(false);
@@ -300,13 +282,13 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     const controller = new AbortController();
     const timer = setTimeout(async () => {
       try {
-        const counts = await workflowRequest<Summary>(`/directory/workflow/summary?${new URLSearchParams({ q, district })}`, 'GET', undefined, controller.signal);
+        const counts = await workflowRequest<Summary>(`/directory/workflow/summary?${new URLSearchParams({ q: filters.q, district: filters.district })}`, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         setSummary(counts);
         if (!counts.active) { setLoading(false); return; }
         if (mode === 'rental') { setLoading(false); return; }
-        const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q, page: String(page), include_skipped: String(showSkipped) })}`
-          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, ...catalogScope(mode, counts.pipeline), page: String(page), position: mode === 'admitted' || mode === 'pending' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' || mode === 'pending' ? propertyFilter : '', use: useFilter, auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
+        const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q: filters.q, page: String(page), include_skipped: String(showSkipped) })}`
+          : `/directory/workflow/catalog?${new URLSearchParams({ ...catalogScope(mode, counts.pipeline), page: String(page), ...catalogFilterParams(mode, filters) })}`;
         const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         if (page > 1 && (page - 1) * 30 >= packet.total) { setPage(Math.max(1, Math.ceil(packet.total / 30))); return; }
@@ -316,7 +298,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '名单加载失败'); setLoading(false); } }
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter, useFilter]);
+  }, [mode, filters, page, showSkipped, revision]);
   useEffect(() => {
     if (!summary?.active) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -360,7 +342,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     }
     finally { optimistic.current = null; setBusy(false); }
   }
-  function changeMode(value: string) { setMode(value); setPage(1); setPositionFilter(''); setUseFilter(''); setPropertyFilter(''); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
+  function changeMode(value: string) { setMode(value); setPage(1); setFilters(current => catalogFiltersForMode(current)); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
     setError(''); setNotice(''); setDetail(row); setAuction(null);
@@ -454,25 +436,20 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
     <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
     <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />
-    {mode !== 'rental' && <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索小区名称、地址" value={q} onChange={e => { setQ(e.target.value); setPage(1); setLoading(true); }} />
-      {mode !== 'auctions' && <select aria-label="目录区域" value={district} onChange={e => { setDistrict(e.target.value); setPage(1); setLoading(true); }}><option value="滨江">滨江区</option><option value="萧山">萧山接壤目录</option><option value="">全部区域</option></select>}
-      <CatalogClassificationFilter mode={mode} value={mode === 'admitted' ? marketFilter : propertyFilter} propertyTypes={propertyTypes}
-        onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
-      {(mode === 'admitted' || mode === 'pending') && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionBucketLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
-      {mode !== 'auctions' && <select aria-label="住宅用途核对状态" value={useFilter} onChange={e => { setUseFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部用途核对状态</option>{Object.entries(useReviewFilterLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
-      {mode === 'admitted' && <><select aria-label="法拍数据筛选" value={auctionFilter} onChange={e => { setAuctionFilter(e.target.value); setPage(1); setLoading(true); }}>
-        <option value="">全部法拍覆盖</option><option value="has">有法拍记录</option><option value="none">暂无法拍记录</option>
-      </select><select aria-label="租金状态筛选" value={rentalFilter} onChange={e => { setRentalFilter(e.target.value); setPage(1); setLoading(true); }}>
-        <option value="">全部租金状态</option>{Object.entries(rentalCoverageLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select></>}
-      {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
-      <button type="button" className="btn btn-secondary directory-refresh" aria-label="刷新名单" title="刷新名单" onClick={() => { setLoading(true); setRevision(v => v + 1); }}>↻</button>
-      {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}</div>}
+    {mode !== 'rental' && <CatalogFilters mode={mode} values={filters} propertyTypes={propertyTypes} total={total} loading={loading}
+      onChange={(key, value) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); setLoading(true); }}
+      onRemove={key => { setFilters(current => ({ ...current, [key]: '' })); setPage(1); setLoading(true); }}
+      onClear={() => { setFilters(emptyCatalogFilters()); setPage(1); setLoading(true); }}
+      onRefresh={() => { setLoading(true); setRevision(v => v + 1); }}
+      extra={<>
+        {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
+        {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}
+      </>} />}
     {error && !detail && !auction && <p role="alert" className="directory-warning">{error}</p>}{notice && <p role="status">{notice}</p>}
     {mode === 'rental' ? (summary?.active ? <RentalAssociationReview onChanged={changed} /> :
       <p role="status" className="directory-muted">名单流程尚未启用，暂无租金待处理清单。</p>) :
     <div className="directory-workspace"><div className="directory-list-panel">
-      {loading ? <p role="status">加载名单…</p> : summary?.active && <><p className="directory-muted">当前筛选：{total} 条</p>
+      {loading ? <p role="status">加载名单…</p> : summary?.active && <>
         {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode !== 'admitted'} pending={mode === 'pending'} select={row => void select(row)}
           exclude={row => void admissionAction('exclude', row)}
           busy={busy || !!jobs.amap?.running} position={row => void select(row)} />

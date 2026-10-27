@@ -1148,8 +1148,23 @@ body {
 .directory-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:10px 0; }
 .directory-actions label { display:flex; align-items:center; gap:6px; font-size:12px; }
 .directory-actions input[type=number] { width:70px; }
-.directory-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-bottom:15px; }
-.directory-toolbar>input { flex:1; min-width:180px!important; }
+.directory-toolbar { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,190px)); align-items:end; gap:12px; margin-bottom:15px; }
+.directory-toolbar>.btn,.directory-toolbar>.directory-refresh { justify-self:start; }
+.directory-toolbar>label:not(.directory-filter-field) { display:flex; align-items:center; gap:6px; font-size:12px; }
+.directory-filter-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-muted); min-width:0; }
+.directory-filter-field>span { font-weight:600; }
+.directory-filter-field select,.directory-filter-field input { font-size:13px; }
+.directory-filter-search { grid-column:span 2; }
+.directory-filter-search input { width:100%; }
+.directory-filter-more { margin-bottom:12px; }
+.directory-filter-more>summary { display:inline-block; cursor:pointer; color:var(--text-muted); font-size:12px; padding:8px 12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-surface); }
+.directory-filter-more-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,180px)); gap:12px; padding:12px 0 4px; }
+.directory-filter-summary { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; font-size:12px; color:var(--text-muted); }
+.directory-filter-count { font-weight:600; color:var(--text-primary); }
+.directory-filter-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border:1px solid var(--border); border-radius:999px; background:var(--bg-surface); color:var(--text-primary); }
+.directory-filter-chip button { border:0; background:none; padding:0 2px; cursor:pointer; color:var(--text-muted); font-size:13px; line-height:1; }
+.directory-filter-chip button:hover { color:#a74325; }
+.directory-filter-summary .btn { min-height:26px; padding:2px 10px; font-size:12px; }
 .directory-switch { display:flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
 .directory-switch button { border:0; padding:10px 16px; background:var(--bg-surface); cursor:pointer; font-size:13px; }
 .directory-switch button[aria-pressed=true] { background:var(--text-primary); color:white; }
@@ -1359,6 +1374,29 @@ body {
 .directory-position-choice select { flex: 1; min-width: 0; }
 .directory-position-choice .btn { flex: none; }
 .directory-position-panel summary { cursor: pointer; color: var(--text-muted); margin-top: 8px; }
+.directory-position-status { margin: 8px 0 10px; line-height: 1.6; }
+.directory-position-status-info { color: var(--text-primary); }
+.directory-position-status-caution { color: #8a5a00; }
+.directory-position-status-error { color: #a74325; }
+.directory-caution { color: #8a5a00; }
+.directory-candidate-list { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.directory-candidate-list legend { padding: 0 6px; color: var(--text-muted); font-size: 12px; }
+.directory-candidate-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg-surface); }
+.directory-candidate-card[data-selected=true] { border-color: var(--accent-warm); box-shadow: inset 3px 0 0 var(--accent-warm); }
+/* 弹窗通用 label 规则会把控件撑满整行，候选卡片要自己收回单选样式 */
+.directory-detail .directory-candidate-pick { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; cursor: pointer; }
+.directory-detail .directory-candidate-pick input[type=radio] { display: inline-block; width: auto; margin: 0; flex: none; }
+.directory-candidate-lines { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; color: var(--text-muted); font-size: 12px; }
+.directory-candidate-detail summary { font-size: 12px; }
+.directory-position-review { margin-top: 12px; }
+.directory-position-coords summary { font-size: 12px; }
+.directory-position-verify { margin-top: 10px; }
+.directory-detail .directory-position-verify label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; }
+.directory-detail .directory-position-verify input[type=checkbox] { display: inline-block; width: auto; margin: 0; flex: none; }
+.directory-position-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.directory-position-blocker { color: var(--text-muted); font-size: 12px; }
+.directory-position-references { margin-top: 12px; }
+.directory-position-references p { font-size: 12px; }
 .directory-use-review-panel { padding: 16px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
 .directory-use-review-panel h4 { margin: 0 0 10px; font-size: 14px; }
 .directory-use-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
@@ -1377,6 +1415,12 @@ body {
 @media (max-width: 480px) {
   .directory-position-choice { flex-wrap: wrap; }
   .directory-position-choice select { flex-basis: 100%; }
+  .directory-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .directory-filter-more-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  /* 搜索独占一行；放在 .directory-filter-field 之后以覆盖同权重规则 */
+  .directory-filter-field.directory-filter-search { grid-column:1 / -1; }
+  .directory-position-confirm { flex-direction: column; align-items: stretch; }
+  .directory-position-confirm .btn { width: 100%; }
 }
 @media (max-width: 480px) {
   .directory-basic-info dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }

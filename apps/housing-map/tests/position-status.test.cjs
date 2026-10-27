@@ -8,7 +8,8 @@ const { renderToStaticMarkup: render } = require('react-dom/server');
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
 }).outputText, filename);
-const { PositionBadge, default: PositionPanel } = require('../src/components/community/PositionPanel.tsx');
+const { PositionBadge, default: PositionPanel, positionStatusSummary, positionChoiceState,
+  positionConfirmBlocker, positionConfirmPayload, positionLeafType } = require('../src/components/community/PositionPanel.tsx');
 const { CatalogTable, CollectionControls } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 
 test('history coordinates are distinct from a matched POI and missing coordinates', () => {
@@ -38,10 +39,10 @@ test('candidate panel preserves evidence, stale-write revision and manual protec
     state: 'review', revision: 'abc', has_coordinates: true, checked_at: '2026-10-16T01:00:00Z', error: '候选地址不同，请核对',
     candidates: [{ source_id: 'B1', name: '风雅钱塘', address: '月明路1076号', longitude: 120.207, latitude: 30.202, source_url: 'https://www.amap.com/search?query=test' }]
   } }));
-  assert.match(html, /<h4>高德定位<\/h4>/); assert.match(html, />待确认<\/span>/); assert.match(html, /<option value="B1">风雅钱塘 · 月明路1076号<\/option>/);
-  assert.match(html, /<select aria-label="选择高德候选位置"/);
-  assert.match(html, /<button[^>]*disabled="">确认位置/);
-  assert.doesNotMatch(html, /手动定位|手动地图地址|手动经度|手动纬度|填写坐标|type="radio"|重新匹配|补全高德 POI/); assert.match(html, /候选地址不同/);
+  assert.match(html, /<h4>高德定位<\/h4>/); assert.match(html, />待确认<\/span>/);
+  assert.match(html, /<input type="radio" name="position-candidate"[^>]*value="B1"/);
+  assert.match(html, /风雅钱塘/); assert.match(html, /地址：月明路1076号/);
+  assert.doesNotMatch(html, /手动定位|手动地图地址|手动经度|手动纬度|填写坐标|重新匹配|补全高德 POI/); assert.match(html, /候选地址不同/);
   const manual = render(React.createElement(PositionPanel, { busy: false, query() {}, confirm() {}, position: {
     state: 'manual', revision: 'abc', has_coordinates: true, candidates: [], selected: { longitude: 120.207, latitude: 30.202 }
   } }));
@@ -54,7 +55,7 @@ test('only review positions expose candidate selection; other states have no sin
     const position = { state, revision: 'abc', has_coordinates: true,
       candidates: [{ source_id: 'B1', name: '测试花园', address: '测试路1号' }] };
     const panel = render(React.createElement(PositionPanel, { position, busy: false, confirm() {} }));
-    assert.doesNotMatch(panel, /<select|<button|手动定位/);
+    assert.doesNotMatch(panel, /type="radio"|确认此地点|手动定位/);
     const row = render(React.createElement(CatalogTable, { excluded: false, busy: false, select() {}, retry() {},
       items: [{ community_id: '1', community_name: '测试花园', position }] }));
     assert.doesNotMatch(row, /查看定位|补全 \/ 重试|确认位置/);
@@ -67,9 +68,9 @@ test('candidate confirmation is blocked while busy or missing a revision', () =>
       state: 'review', revision: extra.revision, has_coordinates: false,
       candidates: [{ source_id: 'B1', name: '测试花园', address: '测试路1号' }, { source_id: 'B2', name: '地址缺失' }]
     } }));
-    assert.match(html, /<select[^>]*disabled=""/);
-    assert.match(html, /<option value="B2" disabled=""/);
-    assert.match(html, /<button[^>]*disabled="">确认位置/);
+    assert.match(html, /<input type="radio"[^>]*disabled=""/);
+    assert.match(html, /<button[^>]*disabled="">确认此地点/);
+    assert.match(html, /directory-position-blocker/);
   }
 });
 test('amap job summary reports per-outcome states instead of skip counts', () => {
@@ -84,25 +85,85 @@ test('amap job summary reports per-outcome states instead of skip counts', () =>
   assert.doesNotMatch(html, /跳过/);
 });
 
-test('addressless candidate can be selected and requires map verification before confirmation', () => {
-  const original = React.useState;
-  function panel(verified) {
-    let i = 0;
-    React.useState = () => [[{ poi: 'B1', revision: 'abc', verified }][i++], () => {}];
-    try {
-      return render(React.createElement(PositionPanel, { busy: false, confirm() {}, position: {
-        state: 'review', revision: 'abc', has_coordinates: true,
-        candidates: [{ source_id: 'B1', name: '鸿雁苑', address: '', longitude: 120.202578, latitude: 30.165324 }]
-      } }));
-    } finally { React.useState = original; }
-  }
-  const unchecked = panel(false);
-  assert.match(unchecked, /<option value="B1" selected="">/);
-  assert.match(unchecked, /120.202578,30.165324/);
-  assert.match(unchecked, /https:\/\/uri.amap.com\/marker\?position=120.202578,30.165324/);
-  assert.match(unchecked, /已核对地图位置，确认是该楼盘/);
-  assert.match(unchecked, /<button[^>]*disabled="">确认位置/);
-  assert.doesNotMatch(panel(true), /<button[^>]*disabled="">确认位置/);
+test('addressless candidate is preselected and needs map verification before confirmation', () => {
+  const candidate = { source_id: 'B1', name: '鸿雁苑', address: '', longitude: 120.202578, latitude: 30.165324 };
+  const candidates = [candidate];
+  // 唯一可用候选直接成为当前核对对象，但不自动勾选，也不触发提交。
+  const preselected = positionChoiceState(candidates, { poi: '', revision: 'abc' }, 'abc');
+  assert.equal(preselected.poi, 'B1');
+  assert.equal(preselected.verified, false);
+  assert.equal(positionConfirmBlocker({ busy: false, revision: 'abc', candidates, poi: 'B1', verified: false }),
+    '请先查看地图并勾选已核对位置。');
+  assert.equal(positionConfirmBlocker({ busy: false, revision: 'abc', candidates, poi: 'B1', verified: true }), '');
+  const checked = positionChoiceState(candidates, { poi: '', revision: 'abc', verifiedFor: 'B1' }, 'abc');
+  assert.equal(checked.verified, true);
+  assert.deepEqual(positionConfirmPayload({ revision: 'abc', poi: 'B1', candidate, verified: true }),
+    { revision: 'abc', poi_id: 'B1', coordinates_verified: true });
+  const html = render(React.createElement(PositionPanel, { busy: false, confirm() {}, position: {
+    state: 'review', revision: 'abc', has_coordinates: true, candidates: [candidate]
+  } }));
+  assert.match(html, /<input type="radio" name="position-candidate" checked="" value="B1"/);
+  assert.match(html, /120.202578,30.165324/);
+  assert.match(html, /https:\/\/uri\.amap\.com\/marker\?position=120\.202578,30\.165324/);
+  assert.match(html, /已核对地图位置，确认是该楼盘/);
+  assert.match(html, /<button[^>]*disabled="">确认此地点/);
+});
+
+test('switching candidate or revision clears the map verification mark', () => {
+  const candidates = [{ source_id: 'B1', name: '一号', address: '路1号' }, { source_id: 'B2', name: '二号', address: '' }];
+  const verified = { poi: 'B2', revision: 'abc', verifiedFor: 'B2' };
+  assert.equal(positionChoiceState(candidates, verified, 'abc').verified, true);
+  // revision 变化后核对标记失效，选择回到唯一可用候选（多候选则不选）。
+  const afterRevision = positionChoiceState(candidates, verified, 'def');
+  assert.equal(afterRevision.verified, false);
+  assert.equal(afterRevision.poi, '');
+  // 换候选后核对标记同样失效（标记绑定 POI ID）。
+  assert.equal(positionChoiceState(candidates, { poi: 'B1', revision: 'abc', verifiedFor: 'B2' }, 'abc').verified, false);
+  assert.equal(positionChoiceState([candidates[1]], { poi: 'B2', revision: 'abc', verifiedFor: 'B2' }, 'abc').verified, true);
+});
+
+test('multiple candidates start unselected and the leaf type stays visible', () => {
+  const candidates = [
+    { source_id: 'B1', name: '一号', address: '路1号', longitude: 120.2, latitude: 30.2, poi_type: '房地产;住宅小区;普通住宅' },
+    { source_id: 'B2', name: '二号', address: '路2号', longitude: 120.3, latitude: 30.3, poi_type: '公司企业;公司' },
+  ];
+  const state = positionChoiceState(candidates, { poi: '', revision: 'abc' }, 'abc');
+  assert.equal(state.poi, '');
+  const html = render(React.createElement(PositionPanel, { busy: false, confirm() {}, position: {
+    state: 'review', revision: 'abc', has_coordinates: true, candidates
+  } }));
+  assert.match(html, /<fieldset class="directory-candidate-list"><legend>候选主体（2）<\/legend>/);
+  // 卡片只显示末级类型，完整分级类型放进可展开详情。
+  assert.match(html, /<span>类型：普通住宅<\/span>/);
+  assert.match(html, /<summary>完整类型<\/summary><p>房地产;住宅小区;普通住宅<\/p>/);
+  assert.match(html, /<summary>完整类型<\/summary><p>公司企业;公司<\/p>/);
+  assert.equal(positionLeafType({ poi_type: '公司企业;公司;公司' }), '公司');
+});
+
+test('reference candidates are collapsed, counted and never selectable', () => {
+  const html = render(React.createElement(PositionPanel, { busy: false, confirm() {}, position: {
+    state: 'review', revision: 'abc', has_coordinates: true, candidates: [],
+    reference_candidates: [{ source_id: 'R1', name: '公交站', address: '路口', poi_type: '交通设施;公交车站' }]
+  } }));
+  assert.match(html, /<summary>相关地点，仅供参考（1）<\/summary>/);
+  assert.match(html, /公交站/);
+  assert.doesNotMatch(html, /type="radio"/);
+  assert.match(html, /未找到可确认主体/);
+});
+
+test('the status line separates caution from error and names the actual reason', () => {
+  assert.equal(positionStatusSummary({ state: 'error', has_coordinates: false, candidates: [] }).tone, 'error');
+  assert.equal(positionStatusSummary({ state: 'not_found', has_coordinates: false, candidates: [] }).tone, 'caution');
+  assert.equal(positionStatusSummary({ state: 'review', has_coordinates: false,
+    candidates: [{ source_id: 'B1', name: '一号', address: '', longitude: 1, latitude: 1 }] }).tone, 'caution');
+  assert.equal(positionStatusSummary({ state: 'review', has_coordinates: false,
+    candidates: [{ source_id: 'B1', name: '一号', address: '', longitude: 1, latitude: 1, name_matched: false }] }).tone, 'caution');
+  assert.match(positionStatusSummary({ state: 'review', has_coordinates: false,
+    candidates: [{ source_id: 'B1', name: '一号', address: '路1号' }, { source_id: 'B2', name: '二号', address: '路2号' }] }).text,
+    /找到 2 个候选主体/);
+  // 旧的泛化错误文案不会被反推成“缺地址”。
+  assert.match(positionStatusSummary({ state: 'error', has_coordinates: false, candidates: [],
+    error: '候选地址不同，请核对' }).text, /查询失败/);
 });
 
 test('verified addressless subject never displays the source address as a Gaode address', () => {

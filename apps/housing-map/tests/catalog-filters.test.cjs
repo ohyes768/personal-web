@@ -8,7 +8,10 @@ const { renderToStaticMarkup } = require('react-dom/server');
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
 }).outputText, filename);
-const { CatalogClassificationFilter, CatalogTable, CatalogTabs, catalogScope } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+const { CatalogTable, CatalogTabs, catalogScope } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+const CatalogFiltersModule = require('../src/components/community/CatalogFilters.tsx');
+const { default: CatalogFilters, catalogFilterParams, catalogFilterSummary, catalogFilterScope,
+  catalogFiltersForMode, emptyCatalogFilters } = CatalogFiltersModule;
 
 test('pipeline tabs split pending from final exclusions with distinct counts and queries', () => {
   const summary = { active: true, pipeline: true, admitted: 89, pending: 254, excluded: 355, auction_pending: 32 };
@@ -62,16 +65,18 @@ test('pending rows offer direct exclusion in a dedicated column and preserve row
   assert.match(virtual, /需先补齐身份/);
 });
 
-test('catalog classification filters show mode-specific options and preserve selection', () => {
-  const render = (mode, value) => renderToStaticMarkup(React.createElement(CatalogClassificationFilter,
-    { mode, value, propertyTypes: ['住宅', '商铺'], onChange() {} }));
+test('the classification filter offers mode-specific options and preserves selection', () => {
+  const render = (mode, value) => renderToStaticMarkup(React.createElement(CatalogFilters, {
+    mode, values: { ...emptyCatalogFilters(), [mode === 'admitted' ? 'market' : 'property_type']: value },
+    propertyTypes: ['住宅', '商铺'], total: 0, loading: false,
+    onChange() {}, onRemove() {}, onClear() {}, onRefresh() {},
+  }));
   assert.match(render('admitted', 'new_house'), /value="new_house" selected="">新房/);
-  assert.match(render('admitted', ''), />全部<.*>新房<.*>二手房</);
+  assert.match(render('admitted', ''), />全部房源类型<.*>新房<.*>二手房</);
   const excluded = render('excluded', '住宅');
-  assert.match(excluded, />全部用途</);
+  assert.match(excluded, />全部来源用途</);
   for (const label of ['住宅', '其他', '写字楼', '商铺', '用途资料缺失']) assert.ok(excluded.includes(label));
   assert.equal((excluded.match(/>住宅</g) || []).length, 1);
-  assert.equal(render('auctions', ''), '');
 });
 
 test('excluded table displays the same TMSF types used by server filtering', () => {
@@ -96,4 +101,114 @@ test('admitted table shows new or second-hand classification without repeating p
   assert.match(html, /data-label="新房 \/ 二手房">二手房<\/td>/);
   assert.match(html, /新房 \/ 二手房状态未知/);
   assert.doesNotMatch(html, /住宅|用途 \/ 市场/);
+});
+
+test('each catalog tab exposes only the filters that apply to it', () => {
+  assert.deepEqual(catalogFilterScope('admitted').primary, ['q', 'district', 'market', 'position']);
+  assert.deepEqual(catalogFilterScope('admitted').more, ['use', 'auction', 'rental']);
+  assert.deepEqual(catalogFilterScope('pending').primary, ['q', 'district', 'property_type', 'position']);
+  assert.deepEqual(catalogFilterScope('pending').more, ['use']);
+  assert.deepEqual(catalogFilterScope('excluded').primary, ['q', 'district', 'property_type']);
+  assert.deepEqual(catalogFilterScope('excluded').more, ['use']);
+  // 法拍待关联保留自己的搜索与跳过开关，不套入住宅目录筛选。
+  assert.deepEqual(catalogFilterScope('auctions').primary, ['q']);
+  assert.deepEqual(catalogFilterScope('auctions').more, []);
+});
+
+test('only applicable conditions reach the request', () => {
+  const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
+    property_type: '住宅', position: 'review', use: 'conflict', auction: 'has', rental: 'data' };
+  assert.deepEqual(catalogFilterParams('admitted', values),
+    { q: '鸿雁苑', district: '滨江', market: 'new_house', position: 'review', use: 'conflict', auction: 'has', rental: 'data' });
+  assert.deepEqual(catalogFilterParams('pending', values),
+    { q: '鸿雁苑', district: '滨江', property_type: '住宅', position: 'review', use: 'conflict' });
+  assert.deepEqual(catalogFilterParams('excluded', values),
+    { q: '鸿雁苑', district: '滨江', property_type: '住宅', use: 'conflict' });
+  assert.deepEqual(catalogFilterParams('auctions', values), { q: '鸿雁苑' });
+  // 隐藏条件不会因为有值就进入请求。
+  const hidden = { ...emptyCatalogFilters(), q: 'x', market: 'new_house' };
+  assert.deepEqual(catalogFilterParams('excluded', hidden), { q: 'x' });
+});
+
+test('the summary lists exactly the conditions sent to the current tab', () => {
+  const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
+    property_type: '住宅', position: 'review', use: 'conflict', auction: 'has' };
+  const admitted = catalogFilterSummary('admitted', values);
+  assert.deepEqual(admitted.map(item => item.key), ['q', 'district', 'market', 'position', 'use', 'auction']);
+  assert.equal(admitted.find(item => item.key === 'market').value, '新房');
+  assert.equal(admitted.find(item => item.key === 'position').value, '待确认');
+  const excluded = catalogFilterSummary('excluded', values);
+  assert.deepEqual(excluded.map(item => item.key), ['q', 'district', 'property_type', 'use']);
+  // 未知维度不编造分项数量：摘要只有列出的条件。
+  assert.equal(excluded.length, 4);
+});
+
+test('switching tabs keeps the search and area and clears the tab-specific filters', () => {
+  const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
+    property_type: '住宅', position: 'review', use: 'conflict', auction: 'has', rental: 'data' };
+  const next = catalogFiltersForMode(values);
+  assert.equal(next.q, '鸿雁苑');
+  assert.equal(next.district, '滨江');
+  for (const key of ['market', 'property_type', 'position', 'use', 'auction', 'rental']) assert.equal(next[key], '');
+});
+
+test('the filter bar labels every control and counts the folded conditions', () => {
+  const html = renderToStaticMarkup(React.createElement(CatalogFilters, {
+    mode: 'admitted', values: { ...emptyCatalogFilters(), district: '滨江', use: 'conflict', auction: 'has' },
+    propertyTypes: ['住宅'], total: 42, loading: false,
+    onChange() {}, onRemove() {}, onClear() {}, onRefresh() {},
+  }));
+  for (const label of ['搜索', '区域', '房源类型', '定位状态']) assert.match(html, new RegExp(`>${label}</span>`));
+  assert.match(html, /<summary>更多筛选（2）<\/summary>/);
+  assert.match(html, /用途核对/); assert.match(html, /法拍/); assert.match(html, /租金/);
+  assert.match(html, /全部房源类型/); assert.match(html, /全部定位状态/);
+  // 生效条件摘要带可移除入口与清空入口。
+  assert.match(html, /区域：滨江区/);
+  assert.match(html, /用途核对：用途冲突，待人工确认/);
+  assert.match(html, /aria-label="移除区域筛选"/);
+  assert.match(html, />清空筛选</);
+  assert.match(html, /共 42 条/);
+});
+
+test('the count states that the list is updating instead of showing a stale total', () => {
+  const html = renderToStaticMarkup(React.createElement(CatalogFilters, {
+    mode: 'admitted', values: emptyCatalogFilters(), total: 42, loading: true,
+    onChange() {}, onRemove() {}, onClear() {}, onRefresh() {},
+  }));
+  assert.match(html, /更新中/);
+  assert.doesNotMatch(html, /共 42 条/);
+});
+
+test('removing one summary item clears only that condition and clearing resets every one', () => {
+  const removed = [];
+  const cleared = [];
+  const props = {
+    mode: 'admitted', values: { ...emptyCatalogFilters(), district: '滨江', use: 'conflict' },
+    total: 3, loading: false,
+    onChange() {}, onRemove: key => removed.push(key), onClear: () => cleared.push(true), onRefresh() {},
+  };
+  const html = renderToStaticMarkup(React.createElement(CatalogFilters, props));
+  // 折叠的更多筛选条件仍出现在摘要里，且各自可单独移除。
+  assert.match(html, /用途核对：用途冲突，待人工确认/);
+  assert.match(html, /区域：滨江区/);
+  const buttons = [];
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === 'button') buttons.push(node);
+    visit(node.props?.children);
+  }
+  visit(CatalogFilters(props));
+  const removeRegion = buttons.find(button => button.props['aria-label'] === '移除区域筛选');
+  assert.ok(removeRegion, '摘要提供按项移除入口');
+  removeRegion.props.onClick();
+  assert.deepEqual(removed, ['district']);
+  const clearAll = buttons.find(button => button.props.children === '清空筛选');
+  assert.ok(clearAll, '摘要提供清空入口');
+  clearAll.props.onClick();
+  assert.deepEqual(cleared, [true]);
+  // 清空后没有生效条件，摘要只剩结果数。
+  const empty = renderToStaticMarkup(React.createElement(CatalogFilters, { ...props, values: emptyCatalogFilters() }));
+  assert.doesNotMatch(empty, /清空筛选/);
+  assert.doesNotMatch(empty, /directory-filter-chip/);
 });
