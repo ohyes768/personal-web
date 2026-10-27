@@ -100,7 +100,7 @@ def _enrich_project_source(store, data_dir, record, tmsf_client):
         if address_error:
             detail.pop('address', None)  # Q1: a truncated address never lands on the row.
             errors.append(address_error)
-        update.update(detail, property_type_captured_at=now(), property_type_error=None,
+        update.update(detail, property_type_captured_at=now(), property_type_error=None, collection_error_code=None,
                       address_error=address_error, market_state_captured_at=now())
         if not address_error:
             update.update(address_origin='source_detail', address_checked_at=now(), address_verification_pending=False)
@@ -110,6 +110,7 @@ def _enrich_project_source(store, data_dir, record, tmsf_client):
         code = getattr(exc, 'code', None)
         errors.append(f'新房详情获取失败（{code or type(exc).__name__}）：{exc}，保留已有证据')
         update['property_type_error'] = errors[-1]
+        update['collection_error_code'] = code or type(exc).__name__
     finally:
         if tmsf_client is None:
             client.close()

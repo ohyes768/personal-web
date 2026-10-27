@@ -7,6 +7,7 @@ import threading
 from types import SimpleNamespace
 
 from src.services.community_registry import now, dump
+from src.services.source_collection_state import collection_resolution
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ def retryable_sources(records):
     return [r for r in records if r['source'] == 'tmsf' and r.get('status') != 'ignored'
             and r.get('source_kind', 'community') in {'community', 'project'}
             and (r.get('district') or '').removesuffix('区') == '滨江'
-            and any(r.get(key) for key in ('property_type_error', 'address_error', 'listing_count_error', 'market_state_error'))]
+            and collection_resolution(r)['retryable']]
 
 
 def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
@@ -106,7 +107,8 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
                         continue
                     row.update(project_identity(find_project(projects, [c.community_name, *row['aliases']], c.district)),
                                market_state_captured_at=now())
-                    detail = fetch_project_facts(client, [c.community_name, *row['aliases']], c.district, projects=projects, previous=previous)
+                    detail = fetch_project_facts(client, [c.community_name, *row['aliases']], c.district,
+                                                 projects=projects, previous=previous, supplement_address=False)
                     detail['market_state_captured_at'] = now()
                     detail['market_state_error'] = None
                 # An ESF page also exists for many new projects; low listings are
@@ -137,18 +139,19 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
                         elif project_index_error:
                             detail['market_state_error'] = '新房索引获取失败，项目身份待重试'
                 address_error = detail.get('address_error')
-                if address_error:
+                address_pending = detail.get('address_pending', False)
+                if address_error or address_pending:
                     detail.pop('address', None)
                 row.update(detail)
                 if detail.get('market_state') == 'second_hand':
                     row['listing_count_checked_at'] = now()
-                if not address_error:
+                if not address_error and not address_pending:
                     row.update(address_checked_at=now(), address_origin='source_detail', address_verification_pending=False, address_error=None)
-                else:
+                elif address_error:
                     row['address_error'] = address_error
                     row['_collection_errors'] = [dict(source='tmsf', stage='newhouse_address',
                         source_id=c.community_id, message=f'{c.community_name} {address_error}')]
-                row.update(property_type_captured_at=now(), property_type_error=None,
+                row.update(property_type_captured_at=now(), property_type_error=None, collection_error_code=None,
                            _property_type_result='succeeded')
                 if detail.get('market_state') == 'new_house':
                     row['listing_count_error'] = None
@@ -159,7 +162,8 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
                 raise
             except Exception as exc:
                 message = f'{c.community_name} 物业类型获取失败（{getattr(exc, "code", type(exc).__name__)}）：{exc}'
-                row.update(listing_count_error=message, listing_count_checked_at=now(), property_type_error=message, _property_type_result='failed',
+                row.update(listing_count_error=message, listing_count_checked_at=now(), property_type_error=message,
+                           collection_error_code=getattr(exc, 'code', type(exc).__name__), _property_type_result='failed',
                            _collection_errors=[dict(source='tmsf', stage='property_type',
                                                     source_id=c.community_id, message=message)])
             yield row
@@ -235,7 +239,8 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
             row.update(_stage='property_type', property_type_checked_at=now())
             try:
                 detail = fetch_project_facts_by_id(client, siteid=project['siteid'], propertyid=project['propertyid'],
-                                                   names=[identity['project_name'], *names], district='滨江', previous=previous)
+                                                   names=[identity['project_name'], *names], district='滨江', previous=previous,
+                                                   supplement_address=False)
             except InterruptedError:
                 raise
             except Exception as exc:
@@ -245,18 +250,25 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
                 row['_newhouse_pause_reason'] = (getattr(exc, 'pause_reason', code)
                                                  if getattr(exc, 'task_paused', True) else None)
                 row.update(property_type_error=message, _property_type_result='deferred' if deferred else 'failed',
+                           collection_error_code=code or type(exc).__name__,
                            _collection_errors=[] if deferred else [dict(source='tmsf', stage='newhouse_detail', source_id=pid, message=message)])
+                if code in {'identity_mismatch', 'invalid_target', 'missing_facts'}:
+                    row.update(_property_type_result='review', _collection_errors=[],
+                               _collection_issue=dict(name=identity['project_name'], source_id=pid, code=code, message=message))
             else:
                 address_error = detail.pop('address_error', None)
-                if address_error:
+                address_pending = detail.get('address_pending', False)
+                if address_error or address_pending:
                     detail.pop('address', None)  # Q1: a truncated address never lands on the row.
                 row.update(detail, property_type_captured_at=now(), property_type_error=None,
-                           address_error=address_error, _property_type_result='succeeded')
+                           collection_error_code=None,
+                           address_error=address_error or (previous.get('address_error') if address_pending else None),
+                           _property_type_result='succeeded')
                 row.update(listing_count_error=None, market_state_error=None)
                 if address_error:
                     row['_collection_errors'] = [dict(source='tmsf', stage='newhouse_detail', source_id=pid,
                                                       message=f'{identity["project_name"]} {address_error}')]
-                else:
+                elif not address_pending:
                     row.update(address_origin='source_detail', address_checked_at=now(), address_verification_pending=False)
             yield row
     finally:
@@ -367,14 +379,15 @@ def _check_mode(sources, mode):
         raise ValueError('不支持的采集模式')
 
 
-def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, mode='all'):
+def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, mode='all', after_collect=None):
     _check_sources(sources)
     _check_mode(sources, mode)
     cancel = cancel or threading.Event()
     adapters = adapters or ADAPTERS
     report = dict(phase='running', running=True, started_at=now(), source=None, mode=mode,
                   stage='names', property_types=0, property_types_failed=0, property_types_cached=0, property_types_deferred=0,
-                  new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[])
+                  new=0, existing=0, ignored=0, matched=0, pending=0, errors=[], truncated=[],
+                  property_types_review=0, evidence_issues=[])
     handled = set()
     counted_status = {}
     failed_sources = set()
@@ -419,14 +432,17 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, 
                                         'browser_timeout', 'browser_error', 'browser_unavailable'}:
                         report.setdefault('newhouse_pause_reason', pause_reason)
                     type_result = row.pop('_property_type_result', None)
+                    issue = row.pop('_collection_issue', None)
                     key = (source, row.get('source_kind', 'community'), str(row['source_id']))
                     if store.is_ignored(*key):
                         if key not in handled:
                             report['ignored'] += 1
                     else:
+                        if issue:
+                            report['evidence_issues'].append(issue)
                         if type_result:
                             counter = {'succeeded': 'property_types', 'failed': 'property_types_failed', 'cached': 'property_types_cached',
-                                       'deferred': 'property_types_deferred'}[type_result]
+                                       'deferred': 'property_types_deferred', 'review': 'property_types_review'}[type_result]
                             report[counter] += 1
                         report['errors'].extend(row.pop('_collection_errors', []))
                         item = store.ingest(row)
@@ -490,6 +506,14 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, 
                     report['errors'].append(dict(source='directory', stage='auto_review', message='资料和审核队列已保存，自动审核未完成，请重新预演'))
                     if report['phase'] == 'succeeded':
                         report['phase'] = 'partial_failed'
+        if after_collect and not cancel.is_set() and report.get('phase') not in {'failed', 'cancelled'}:
+            try:
+                report['position_followup'] = after_collect(handled)
+            except Exception:
+                logger.exception('Could not start shared position followup')
+                report['position_followup'] = {'state': 'failed', 'message': '资料已保存，主体匹配未启动，请继续匹配'}
+                report['errors'].append(dict(source='amap', stage='position_followup', message='资料已保存，主体匹配未启动，请继续匹配'))
+                report['phase'] = 'partial_failed'
         report.update(running=False, source=None, finished_at=now())
         if progress:
             progress(report)
@@ -525,8 +549,33 @@ class DirectoryJob:
                 raise
 
     def status(self):
-        return {**(self.state or {'running': False, 'phase': 'idle'}),
+        resolutions = {}
+        for record in self.store.sources():
+            if record.get('source') == 'tmsf' and record.get('status') != 'ignored':
+                state = collection_resolution(record)['state']
+                resolutions[state] = resolutions.get(state, 0) + 1
+        return {**(self.state or {'running': False, 'phase': 'idle'}), 'resolutions': resolutions,
                 'retryable': len(retryable_sources(self.store.sources()))}
+
+    def _match_sources(self, handled):
+        if self.cancel.is_set():
+            return {'state': 'cancelled'}
+        from src.services.address_policy_migration import enabled
+        with self.store.db() as db:
+            if not enabled(db):
+                return {'state': 'disabled'}
+        cids = sorted({r['community_id'] for r in self.store.sources()
+            if (r['source'], r['source_kind'], str(r['source_id'])) in handled
+            and r.get('community_id') and r.get('status') == 'matched' and r.get('property_type')
+            and collection_resolution(r)['state'] in {'ready', 'position_pending'}})
+        if not cids:
+            return {'state': 'not_needed'}
+        from src.services.directory_position import get_position_job
+        try:
+            get_position_job(self.store).start(community_ids=cids)
+        except ValueError as exc:
+            return {'state': 'pending', 'message': str(exc)}
+        return {'state': 'started', 'targets': len(cids)}
 
     def start(self, sources, *, mode='all'):
         _check_sources(sources)
@@ -539,7 +588,8 @@ class DirectoryJob:
             self.cancel.clear()
             self._save({'running': True, 'phase': 'running', 'mode': mode, 'started_at': now()})
             self.worker = threading.Thread(target=collect_names, args=(self.store, sources),
-                kwargs={'cancel': self.cancel, 'progress': self._save, 'mode': mode}, daemon=True)
+                kwargs={'cancel': self.cancel, 'progress': self._save, 'mode': mode,
+                        'after_collect': self._match_sources}, daemon=True)
             self.worker.start()
         return self.state
 

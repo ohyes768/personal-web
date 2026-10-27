@@ -18,7 +18,7 @@ def auto_review_skip_reason(row):
             or (admission.get('decision_kind') == 'manual' and admission.get('auto_review_locked'))):
         return '已有人工用途决定或人工排除，按需手动查询'
     district = (row.get('district') or '').removesuffix('区')
-    addresses = [row.get('address') or '']
+    addresses = [row.get('source_address', row.get('address')) or '']
     if row.get('address_origin') != 'manual':
         addresses.extend(r.get('address') or '' for r in row.get('sources', []) if r.get('source') == 'tmsf')
     for address in addresses:

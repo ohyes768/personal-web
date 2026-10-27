@@ -167,7 +167,7 @@ def test_truncated_address_stays_unverified(tmp_path, monkeypatch):
     collect_names(store, ['tmsf'])
     row = project_rows(store)[PID]
     assert 'address' not in row and 'address_checked_at' not in row, '截断地址不能成为成功事实'
-    assert '截断' in (row.get('address_error') or ''), '地址失败独立可见'
+    assert row['address_pending'] and '截断' in row['address_note'], '基本资料完成，地址交给主体匹配'
     assert row.get('property_type_error') is None and row['property_type'] == '住宅', '用途证据不受地址影响'
 
 

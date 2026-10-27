@@ -38,6 +38,8 @@ type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finishe
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
   retryable?: number; mode?: 'all' | 'retry_failed';
+  resolutions?: Record<string, number>; evidence_issues?: { name?: string; message: string }[];
+  position_followup?: { state: string; targets?: number; message?: string };
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
   errors?: Job['errors'] | { items?: { message: string }[]; total?: number } };
@@ -47,7 +49,7 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
     errors: Array.isArray(value.errors) ? value.errors : value.errors?.items || [] };
 }
 const tasks = [
-  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；重试失败项仅补采获取失败的楼盘资料，保留成功项，自动分类收录。', body: { sources: ['tmsf'] } },
+  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。重试失败项仅补采网络获取失败的项目，保留成功项；身份冲突和待地点匹配分开处理。', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
   { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。' },
   { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新幸福里或房天下租金' },
@@ -148,6 +150,11 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
             {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
           </p>}
           {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
+          {t.id === 'tmsf' && job?.resolutions && <p className="directory-task-sub">当前资料：基本资料齐备 {job.resolutions.ready || 0} · 非住宅 {job.resolutions.non_residential || 0} · 待地点匹配 {job.resolutions.position_pending || 0} · 身份待核对 {job.resolutions.identity_conflict || 0} · 网络可重试 {job.resolutions.retryable || 0} · 基本资料待取得 {job.resolutions.facts_pending || 0}</p>}
+          {t.id === 'tmsf' && job?.position_followup?.state === 'started' && <p className="directory-task-sub">已自动衔接主体匹配（{job.position_followup.targets || 0} 项），进度见地点匹配任务。</p>}
+          {t.id === 'tmsf' && job?.position_followup?.state === 'pending' && <p className="directory-task-sub">主体匹配待继续：{job.position_followup.message}</p>}
+          {!!job?.evidence_issues?.length && <details className="directory-task-sub"><summary>资料待核对（{job.evidence_issues.length}）</summary>
+            {job.evidence_issues.map((item, index) => <p key={index}>{item.name && `${item.name}：`}{item.message}</p>)}</details>}
           {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
           {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
             <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
@@ -213,6 +220,11 @@ function CatalogAmapType({ position }: { position?: Position }) {
   return <span className="directory-muted">{positionQueryLabel(position)}</span>;
 }
 
+function addressSourceLabel(c: Community): string {
+  const origin = c.address_evidence?.origin;
+  return origin === 'amap_subject' ? '高德主体地址' : origin === 'manual' ? '历史确认地址' : origin ? '透明售房网地址' : '';
+}
+
 export function CatalogTable({ items, excluded, pending = false, select, busy, position, exclude }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
   select: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void; }) {
   return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}${pending ? ' catalog-pending' : ''}`}><thead><tr>
@@ -220,8 +232,8 @@ export function CatalogTable({ items, excluded, pending = false, select, busy, p
     <th>高德类型</th>{excluded && <th>{pending ? '待处理操作' : '住宅用途核对'}</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}{pending && <th>收录决定</th>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
     <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
-      {!excluded && <small className="catalog-text directory-muted" title={c.address || '实际地址待补充'}>{c.district || '区域待补'} · {c.address || '实际地址待补充'}</small>}</td>
-    {excluded && <td data-label="区域 / 实际地址">{c.district || '区域待补'}<small className="catalog-text" title={c.address || '实际地址待补充'}>{c.address || '实际地址待补充'}</small></td>}
+      {!excluded && <><small className="catalog-text directory-muted" title={c.address || '地址待主体匹配'}>{c.district || '区域待补'} · {c.address || '地址待主体匹配'}</small><small className="directory-muted">{addressSourceLabel(c)}</small></>}</td>
+    {excluded && <td data-label="区域 / 实际地址">{c.district || '区域待补'}<small className="catalog-text" title={c.address || '地址待主体匹配'}>{c.address || '地址待主体匹配'}</small><small className="directory-muted">{addressSourceLabel(c)}</small></td>}
     <td data-label={excluded ? '房屋用途' : '新房 / 二手房'}>{excluded
       ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
       : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
@@ -483,7 +495,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
           <div><dt>{detail.collection_pipeline_version ? '透明售房网用途' : '用途'}</dt><dd>{detail.property_types?.join(' / ') || detail.effective_property_type || [...new Set(detail.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'}</dd></div>
           {detail.collection_pipeline_version && <div><dt>处理状态</dt><dd>{pipelineStageLabel(detail)}</dd></div>}
           <div><dt>新房 / 二手房</dt><dd>{marketLabels[detail.market_state || 'unknown'] || marketLabels.unknown}</dd></div>
-          <div className="directory-info-wide"><dt>实际地址</dt><dd>{detail.address || '待补充'}</dd></div>
+          <div className="directory-info-wide"><dt>收录地址</dt><dd>{detail.address || '地址待主体匹配'}{addressSourceLabel(detail) && <small className="directory-muted"> · {addressSourceLabel(detail)}</small>}</dd></div>
         </dl>
         {detail.admission_state === 'admitted' && detail.map_status !== 'displayed' && <p className="directory-warning" role="status">地图暂未展示：{mapLabels[detail.map_status || ''] || '待核对'}</p>}
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}

@@ -10,6 +10,30 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 }).outputText, filename);
 const { CollectionControls, CatalogTable, normalizeCollectionJob, workflowRequest } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 
+test('collection separates saved evidence outcomes and automatic position followup', () => {
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, {
+    active: true, busy: false, open: true, pipeline: true, action() {}, errors: {}, jobs: {
+      tmsf: { running: false, phase: 'succeeded', resolutions: { ready: 4, position_pending: 3, identity_conflict: 2, retryable: 1 },
+        position_followup: { state: 'started', targets: 3 },
+        evidence_issues: [{ name: '待核对项目', message: '项目身份不一致' }] }
+    }
+  }));
+  assert.match(html, /待地点匹配 3/);
+  assert.match(html, /身份待核对 2/);
+  assert.match(html, /网络可重试 1/);
+  assert.match(html, /已自动衔接主体匹配/);
+  assert.match(html, /资料待核对/);
+});
+
+test('catalog marks Amap admission address instead of claiming official location', () => {
+  const html = renderToStaticMarkup(React.createElement(CatalogTable, {
+    items: [{ community_id: 'c', community_name: '测试住宅', address: '月明路1号',
+      address_evidence: { origin: 'amap_subject' }, position: { state: 'matched' } }],
+    excluded: false, busy: false, select() {}
+  }));
+  assert.match(html, /高德主体地址/);
+});
+
 test('TMSF collection separates full update and failed-only retry', () => {
   const render = (job, props = {}) => renderToStaticMarkup(React.createElement(CollectionControls, {
     active: true, busy: false, open: true, pipeline: true, errors: {}, jobs: { tmsf: job }, action() {}, ...props }));

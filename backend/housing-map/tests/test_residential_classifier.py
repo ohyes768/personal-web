@@ -98,7 +98,7 @@ def test_classify_directory_reports_conflicts_and_summary():
 
 
 def test_ambiguous_and_mixed_labels_never_become_residential():
-    for prop in ['非住宅', '住宅/写字楼', '住宅 别墅', '公寓', '其他', '住宅公寓']:
+    for prop in ['住宅/写字楼', '住宅 别墅', '公寓', '其他', '住宅公寓']:
         assert classify(community_id='1', tmsf_property_type=prop)['state'] == RESIDENTIAL_STATE_PENDING
     assert classify(community_id='1', tmsf_property_type='住宅', fang_samples=[
         {'property_type': '住宅'}, {'property_type': '写字楼'}])['state'] == RESIDENTIAL_STATE_PENDING

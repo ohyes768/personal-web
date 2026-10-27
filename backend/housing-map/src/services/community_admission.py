@@ -146,6 +146,12 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
         if conflict and admission['decision_kind'] != 'manual':
             effective_admission = {**admission, 'state': 'pending'}
         address = effective_address(community.get('address'), records)
+        from src.services.community_address import admission_address
+        address_info = admission_address(community, records) if directory_mode else None
+        if address_info and address_info['valid']:
+            address = address_info['value']
+            if coordinate:
+                coordinate = {**coordinate, 'formatted_address': qualified_address(address, district)}
         listing_state, listing_reason = listing_gate(records, community)
         if listing_state and admission['state'] != 'excluded':
             effective_admission = {**effective_admission, 'state': listing_state}
@@ -161,6 +167,7 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
             effective_admission = {**effective_admission, 'state': policy['admission_state']}
             prop = policy['effective_property_type']
         result.append({**community, 'address': address, 'address_missing': not bool(address), 'exclusion_reason': '缺少有效地址' if not address else listing_reason, 'admission': admission, 'admission_state': effective_admission['state'],
+                       'source_address': community.get('address'), 'address_evidence': address_info,
                        'admission_conflict': conflict, 'residential_state': classification,
                        'effective_property_type': prop,
                        'market_state': market, 'market_state_conflict': len(markets) > 1,

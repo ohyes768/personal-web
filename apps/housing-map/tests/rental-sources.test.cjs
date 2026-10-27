@@ -11,7 +11,7 @@ for (const ext of ['.ts', '.tsx']) {
   }).outputText, filename);
 }
 const { SourceCandidate } = require('../src/components/rental/RentalSourceManager.tsx');
-const { RentalRefreshControl } = require('../src/components/rental/RentalRefreshButton.tsx');
+const { CollectionControls } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 const { safeSourceLink } = require('../src/lib/rental-sources.ts');
 test('candidate exposes evidence and requires confirmation instead of automatic collection', () => {
   const html = renderToStaticMarkup(React.createElement(SourceCandidate, {
@@ -21,12 +21,16 @@ test('candidate exposes evidence and requires confirmation instead of automatic 
   assert.match(html, /分期尚未核对/); assert.match(html, /确认是这个小区/); assert.match(html, /不是这个小区/);
   assert.match(html, /来源地址：尚不可得/); assert.match(html, /rel="noopener noreferrer"/);
 });
-test('empty refresh result provides management action', () => {
-  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: null, running: false, actionError: '还没有关联租金来源，请先选择小区并确认来源', start() {}, cancel() {}, onManageSources() {},
+test('central rental task exposes missing-source feedback', () => {
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, {
+    active: true, busy: false, open: true, pipeline: true, jobs: {}, action() {},
+    errors: { rent: '还没有关联租金来源，请先选择小区并确认来源' },
   }));
-  assert.match(html, /查找租金来源/); assert.match(html, /更新租金/);
+  assert.match(html, /采集租金/);
+  assert.match(html, /还没有关联租金来源/);
+  assert.match(html, /role="alert"/);
 });
+
 test('source links reject external domains and credentials', () => {
   assert.equal(safeSourceLink('https://evil.com/hz/'), undefined);
   assert.equal(safeSourceLink('javascript:alert(1)'), undefined);

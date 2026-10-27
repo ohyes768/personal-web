@@ -19,7 +19,7 @@ from typing import Any, Iterable
 
 RESIDENTIAL_TYPES = frozenset({"住宅", "别墅", "排屋"})
 FANG_RESIDENTIAL_TYPES = frozenset({"住宅", "普通住宅"})
-NON_RESIDENTIAL_TYPES = frozenset({"写字楼", "商贸", "车位"})
+NON_RESIDENTIAL_TYPES = frozenset({"写字楼", "商贸", "车位", "非住宅"})
 RESIDENTIAL_STATE_RESIDENTIAL = "residential"
 RESIDENTIAL_STATE_NON_RESIDENTIAL = "non_residential"
 RESIDENTIAL_STATE_PENDING = "pending"

@@ -15,6 +15,17 @@ from src.services.amap_directory import AmapClient, normalize_poi
 from src.services.poi_names import flat_name, name_hit
 
 KEY = 'directory_position_job'
+_jobs = {}
+_jobs_lock = threading.Lock()
+
+
+def get_position_job(store):
+    """Collection followups and API buttons share the same per-registry lock/job."""
+    key = str(store.path.resolve())
+    with _jobs_lock:
+        if key not in _jobs:
+            _jobs[key] = PositionJob(store)
+        return _jobs[key]
 
 
 class PositionOutcome(ValueError):
@@ -326,7 +337,7 @@ class PositionJob:
         with self.lock, self.store.db() as db:
             db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (KEY, dump(self.state)))
 
-    def start(self, mode='all'):
+    def start(self, mode='all', *, community_ids=None):
         if mode not in {'all', 'retry_failed'}:
             raise ValueError('未知高德匹配模式')
         with self.lock:
@@ -340,15 +351,17 @@ class PositionJob:
                               review=0, not_found=0, failed=0, incomplete=0, skipped_by_state={},
                               errors=[], mode=mode, started_at=now(), finished_at=None)
             self._save()
-            self.worker = threading.Thread(target=self._run, kwargs={'mode': mode}, daemon=True)
+            self.worker = threading.Thread(target=self._run, kwargs={'mode': mode, 'community_ids': community_ids}, daemon=True)
             self.worker.start()
             return self.snapshot()
 
-    def _run(self, *, client=None, delay=2, budget=256, mode='all'):
+    def _run(self, *, client=None, delay=2, budget=256, mode='all', community_ids=None):
         owned = client is None
         try:
             from src.services.collection_pipeline import active
             targets = batch_targets(self.store)
+            if community_ids is not None:
+                targets = [c for c in targets if c['community_id'] in community_ids]
             if mode == 'retry_failed':
                 targets = [c for c in targets if query_retryable(c['position'])]
             from src.services.collection_pipeline import RequestBudgetClient

@@ -42,7 +42,8 @@ def position_job():
     global _position
     with _lock:
         if _position is None:
-            _position = PositionJob(require_store())
+            from src.services.directory_position import get_position_job
+            _position = get_position_job(require_store())
         return _position
 
 

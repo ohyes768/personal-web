@@ -45,6 +45,9 @@ def eligibility(community, records, facts=None, admission=None):
         return result('manual_exclusion', admission.get('reason') or '人工暂不收录')
     if not records:
         return result('missing_tmsf', '缺少透明售房网资料，待补充', incomplete=True)
+    from src.services.source_collection_state import collection_resolution
+    if any(collection_resolution(r)['state'] == 'identity_conflict' for r in records):
+        return result('identity_conflict', '来源项目身份不一致，待核对身份', incomplete=True)
     names = {normalized(n) for n in [community.get('community_name'), community.get('community_alias'), *community.get('aliases', [])] if n}
     if names and any(r.get('method') != 'manual' and normalized(r['name']) not in names and not names.intersection(normalized(n) for n in r.get('aliases', [])) for r in records):
         return result('identity_conflict', '透明售房网名称与小区身份不一致，待补资料', incomplete=True)
@@ -100,9 +103,8 @@ def eligibility(community, records, facts=None, admission=None):
         gate = position_gate(community, records, human_use=bool(use_decision))
         if gate:
             return result(*gate, incomplete=True)
-    verified = [r for r in records if not r.get('address_verification_pending')]
-    actual_address = community.get('address') if community.get('address_origin') == 'manual' else ''
-    if not effective_address(actual_address, verified):
+    from src.services.community_address import admission_address
+    if not admission_address(community, records)['valid']:
         return result('address_missing', '实际地址资料缺失或待核实，暂不收录', incomplete=True)
     state, reason = listing_gate(records, community)
     if state:

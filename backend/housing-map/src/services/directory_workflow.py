@@ -37,6 +37,10 @@ def materialize(store, db, facts):
                  aliases=record.get('aliases', []))
         if pipeline:
             c[PIPELINE_KEY] = RULE
+            from src.services.community_address import POLICY_KEY, POLICY_RULE
+            address_policy = db.execute('SELECT value FROM meta WHERE key=?', (POLICY_KEY,)).fetchone()
+            if address_policy and address_policy[0] == POLICY_RULE:
+                c[POLICY_KEY] = POLICY_RULE
         if not pipeline and eligibility(c, [record], facts)['admission_state'] != 'admitted':
             continue
         # A plausible existing identity needs association evidence, not another master.
@@ -109,6 +113,10 @@ def inventory(store, data_dir):
                        'use_review': use_review_projection(c, [r], manual, facts),
                        'sources': [{k: v for k, v in r.items() if k != 'samples'}], 'map_status': 'not_admitted'})
     for row in output:
+        from src.services.source_collection_state import collection_resolution
+        for record in row.get('sources', []):
+            if record.get('source') == 'tmsf':
+                record['collection_resolution'] = collection_resolution(record)
         row['property_types'] = catalog_property_types(row, facts)
         row['use_review']['auto_skip_reason'] = auto_review_skip_reason(row)
     return sorted(output, key=lambda c: (c['community_name'], c['community_id']))

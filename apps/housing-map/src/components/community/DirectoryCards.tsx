@@ -19,6 +19,7 @@ export type Source = { id: string; source: string; source_kind: string; source_i
   community_name_missing?: boolean; auction_title?: string;
   property_type_captured_at?: string; property_type_error?: string };
 export type Community = { community_id: string; community_name: string; aliases?: string[]; district?: string;
+  address_evidence?: { origin?: string | null; valid?: boolean; reason?: string } | null;
   address?: string; deleted?: boolean; sources?: Source[]; eligible?: boolean; evidence?: string[];
   longitude?: number; latitude?: number; has_boundary?: boolean; residential_state?: 'residential' | 'pending' | 'non_residential' | 'deleted' | 'unknown';
   admission?: { state: string; revision: number; decision_kind: string; auto_review_locked: boolean; reason?: string; decided_at?: string;

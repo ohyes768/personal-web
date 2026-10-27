@@ -164,7 +164,7 @@ def _id_text(html, element_id):
     return strip_tags(match.group(1)) if match else ''
 
 
-def _project_detail(client, url, names, district, timeout, fallback_status=None, previous=None):
+def _project_detail(client, url, names, district, timeout, fallback_status=None, previous=None, *, supplement_address=True):
     fetch = getattr(client, 'fetch_project_text', client.fetch_text)
     cache = (previous or {}).get('newhouse_detail_cache') or {}
     cached = cache.get('facts') or {}
@@ -192,6 +192,9 @@ def _project_detail(client, url, names, district, timeout, fallback_status=None,
         detail.update(address_evidence_url=url, address_evidence_kind='tmsf_project_detail')
         return detail
     detail['newhouse_detail_cache'] = cache
+    if not supplement_address:
+        detail.update(address_pending=True, address_note=detail.get('address_error'), address_error=None)
+        return detail
     # Only a link belonging to this exact site/project can supply address evidence.
     identity = re.fullmatch(r'/newhouse/property_(\d+)_(\d+)_infoUpgrade.htm', urlsplit(url).path)
     if not identity:
@@ -226,20 +229,21 @@ def _project_detail(client, url, names, district, timeout, fallback_status=None,
     return detail
 
 
-def fetch_project_facts_by_id(client, *, siteid, propertyid, names, district, timeout=15, previous=None):
+def fetch_project_facts_by_id(client, *, siteid, propertyid, names, district, timeout=15, previous=None, supplement_address=True):
     """Fetch a known project detail directly; never resolves via the ESF name list."""
     if not str(siteid).isdigit() or not str(propertyid).isdigit():
         raise ValueError('无效的新房项目编号')
     url = f'{BASE_URL}/newhouse/property_{siteid}_{propertyid}_infoUpgrade.htm'
-    return _project_detail(client, url, names, district, timeout, previous=previous)
+    return _project_detail(client, url, names, district, timeout, previous=previous, supplement_address=supplement_address)
 
 
-def fetch_project_facts(client, names, district, *, projects=None, timeout=15, previous=None):
+def fetch_project_facts(client, names, district, *, projects=None, timeout=15, previous=None, supplement_address=True):
     projects = projects if projects is not None else parse_project_index(client.fetch_text(PROJECT_INDEX_URL, timeout))
     project = find_project(projects, names, district)
     identity = project_identity(project)
     detail = _project_detail(client, identity['project_url'], project_names(project.get('propertyname')),
-                             district, timeout, fallback_status=identity['project_sale_status'], previous=previous)
+                             district, timeout, fallback_status=identity['project_sale_status'], previous=previous,
+                             supplement_address=supplement_address)
     detail.update(project_id=str(project['propertyid']),
                   project_aliases=project_names(project.get('propertyname')))
     return detail

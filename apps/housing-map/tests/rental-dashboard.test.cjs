@@ -33,7 +33,13 @@ test('rental diagnostics distinguish reused data and cooldown from fresh success
   assert.match(note, /新关联 1 个，下轮采集/);
 });
 const { RentalScopeSelect, RentalSummaryCells } = require('../src/components/dashboard/RentalDashboardWidgets.tsx');
-const { RentalRefreshControl } = require('../src/components/rental/RentalRefreshButton.tsx');
+const { CollectionControls, normalizeCollectionJob } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+function renderRent(value, error) {
+  return renderToStaticMarkup(React.createElement(CollectionControls, {
+    active: true, busy: false, open: true, pipeline: true, action() {},
+    jobs: { rent: normalizeCollectionJob(value) }, errors: error ? { rent: error } : {},
+  }));
+}
 
 function summary(overrides = {}) {
   return {
@@ -158,73 +164,45 @@ test('scope select defaults to 90-144 + all bedrooms and renders options', () =>
   assert.match(html, /租金房型/);
 });
 
-test('refresh control idle state shows start button with scope hint, no cancel', () => {
-  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: null, running: false, actionError: null, start: () => {}, cancel: () => {},
-  }));
-  assert.match(html, /更新租金/);
-  assert.match(html, /检查滨江住宅小区来源并更新租金/);
-  assert.doesNotMatch(html, /取消/);
+test('central rental task offers start and preserves its residential scope', () => {
+  const html = renderRent(null);
+  assert.match(html, /采集租金/);
+  assert.match(html, /仅已收录住宅/);
+  assert.doesNotMatch(html, /停止采集租金/);
 });
 
-test('refresh control running state shows processed progress and cancel button', () => {
-  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: job(), running: true, actionError: null, start: () => {}, cancel: () => {},
-  }));
-  assert.match(html, /已处理 3\/8 小区/);
-  assert.match(html, /取消/);
-  assert.doesNotMatch(html, /更新租金/);
+test('central rental task normalizes progress and offers cancellation', () => {
+  const html = renderRent(job());
+  assert.match(html, /已处理 3 \/ 8/);
+  assert.match(html, /停止采集租金/);
 });
 
-test('refresh control cancelling state and terminal notes render', () => {
-  const cancelling = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: job({ phase: 'cancelling' }), running: true, actionError: null, start: () => {}, cancel: () => {},
-  }));
-  assert.match(cancelling, /正在取消…/);
-  const settled = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: job({ running: false, phase: 'partial_failed', result: { published: true, success_count: 5, failed_count: 2 } }),
-    running: false, actionError: null, start: () => {}, cancel: () => {},
-  }));
-  assert.match(settled, /成功 5 \/ 失败 2/);
-  const failed = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: job({ running: false, phase: 'failed' }), running: false, actionError: null, start: () => {}, cancel: () => {},
-  }));
-  assert.match(failed, /上次更新失败，数据未改动/);
+test('central rental task reports cancelling, partial and failed phases', () => {
+  assert.match(renderRent(job({ phase: 'cancelling' })), /正在取消/);
+  assert.match(renderRent(job({ running: false, phase: 'partial_failed' })), /部分完成/);
+  assert.match(renderRent(job({ running: false, phase: 'failed' })), /采集失败/);
 });
 
-test('refresh control surfaces action errors like 409/422 feedback', () => {
-  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: null, running: false,
-    actionError: '已有租金更新任务在运行，请稍后再试',
-    start: () => {}, cancel: () => {},
-  }));
+test('central rental task keeps actionable API errors visible', () => {
+  const html = renderRent(null, '已有租金更新任务在运行，请稍后再试');
   assert.match(html, /role="alert"/);
   assert.match(html, /已有租金更新任务在运行，请稍后再试/);
 });
 
-test('rental source checks use stage progress and honest pending counts', () => {
+test('rental source checks separate missing, failed and unqueried communities', () => {
   assert.equal(rentalRefreshProgressText(job({ stage: 'checking' })), '正在检查租金来源…');
-  const association = { targets: 20, checked: 3, excluded: 2, matched: 1, pending: 2, skipped: 4, missing: 5, failed: 6, deferred: 7 };
+  const association = { targets: 20, checked: 3, matched: 1, pending: 2, missing: 5, failed: 6, deferred: 7 };
   assert.equal(rentalRefreshProgressText(job({ stage: 'discovering', association })), '正在查找来源 3/20 小区');
-  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: job({ running: false, phase: 'partial_failed', association, result: { published: false, success_count: 0, failed_count: 0 } }),
-    running: false, actionError: null, start() {}, cancel() {}, onManageSources() {},
-  }));
-  assert.match(html, /处理租金来源/);
-  assert.match(html, /暂无来源 5/);
-  assert.match(html, /查找失败 6/);
+  const html = renderRent(job({ running: false, phase: 'partial_failed', association }));
+  assert.match(html, /未找到 5/);
+  assert.match(html, /查询失败 6/);
   assert.match(html, /未查询 7/);
 });
 
-test('deferred-only rentals remain actionable without counting them as failed', () => {
-  const association = { targets: 4, checked: 4, excluded: 0, matched: 0, pending: 0, skipped: 0, missing: 0, failed: 0, deferred: 4 };
-  const html = renderToStaticMarkup(React.createElement(RentalRefreshControl, {
-    job: job({ running: false, phase: 'partial_failed', association, result: { published: false, success_count: 0, failed_count: 0 } }),
-    running: false, actionError: null, start() {}, cancel() {}, onManageSources() {},
-  }));
-  assert.match(html, /查找失败 0/);
+test('deferred-only rentals are unqueried rather than failed', () => {
+  const html = renderRent(job({ running: false, phase: 'partial_failed', association: { checked: 4, failed: 0, deferred: 4 } }));
+  assert.match(html, /查询失败 0/);
   assert.match(html, /未查询 4/);
-  assert.match(html, /处理租金来源/);
   const { RentalCandidateChoice } = require('../src/components/rental/RentalAssociationReview.tsx');
   const review = renderToStaticMarkup(React.createElement(RentalCandidateChoice, {
     item: { community_id: 'c1', community_name: '测试花园', reason: 'search_deferred', candidates: [] },

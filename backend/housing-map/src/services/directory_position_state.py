@@ -6,6 +6,7 @@ from src.services.community_registry import dump
 
 
 def identity(target):
+    target = {**target, 'address': target.get('source_address', target.get('address'))}
     return hashlib.sha256(dump({k: target.get(k) for k in
         ('community_id', 'community_name', 'aliases', 'district', 'address')}).encode()).hexdigest()
 
