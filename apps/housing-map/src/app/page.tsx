@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
-import type { Community, MapPOI, MarketReference, SchoolLevel } from '@/lib/types';
-import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
+import type { Community, MapPOI, MarketReference, SchoolLevel, MapAdmissionStats } from '@/lib/types';
+import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, formatAdmissionStats, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
 import { isInScope } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
 import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
@@ -19,15 +19,15 @@ import {
 } from '@/lib/rental-dashboard';
 import type { RentalSummaryEntry } from '@/lib/rental-types';
 
-// 从 API 获取小区数据
-async function fetchCommunities(): Promise<Community[]> {
+// 从 API 获取小区数据 (连带收录口径统计, 避免二次拉取完整列表)
+async function fetchCommunities(): Promise<{ communities: Community[]; stats: MapAdmissionStats | null }> {
   try {
     const res = await fetch('/api/map/communities');
-    const data = await res.json();
-    return data.data || [];
+    const payload = await res.json();
+    return { communities: payload.data || [], stats: payload.stats ?? null };
   } catch (error) {
     console.error('Failed to fetch communities:', error);
-    return [];
+    return { communities: [], stats: null };
   }
 }
 
@@ -269,6 +269,7 @@ export default function BinjiangMapPage() {
   const [priceMode, setPriceMode] = useState<'all' | 'deal' | 'listing'>('all');
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [communities, setCommunities] = useState<Community[]>([]);
+  const [mapStats, setMapStats] = useState<MapAdmissionStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [marketReference, setMarketReference] = useState<MarketReference | null>(null);
   const [marketSubdistrict, setMarketSubdistrict] = useState<string | null>(null);
@@ -294,8 +295,9 @@ export default function BinjiangMapPage() {
 
   // 加载小区数据
   useEffect(() => {
-    fetchCommunities().then(data => {
-      setCommunities(data);
+    fetchCommunities().then(({ communities, stats }) => {
+      setCommunities(communities);
+      setMapStats(stats);
       setLoading(false);
     });
   }, []);
@@ -387,8 +389,9 @@ export default function BinjiangMapPage() {
           running: j.running, phase: j.phase, processed: j.processed, total: j.total, error: j.error,
         });
         if (j.phase === 'done') {
-          const data = await fetchCommunities();
-          setCommunities(data);
+          const { communities, stats } = await fetchCommunities();
+          setCommunities(communities);
+          setMapStats(stats);
           setLoading(false);
         }
       } catch { /* 网络抖动, 下个周期重试 */ }
@@ -404,6 +407,8 @@ export default function BinjiangMapPage() {
   const mapCommunities = marketSubdistrict
     ? filteredCommunities.filter(c => c.subdistrict === marketSubdistrict)
     : filteredCommunities;
+  // 收录口径一行说明: 收录/展示/未展示, 未展示原因放悬浮说明 (不筛选依赖, 数据集级事实)
+  const admissionLine = mapStats ? formatAdmissionStats(mapStats) : null;
 
   // 跨小区去重后的可见 POI（同一地铁站/学校会出现在多个小区的周边列表里）
   // 地图绘制以覆盖范围围栏 (滨江 ∪ 萧山接壤板块多边形) 为地理围栏, 矩形 bbox 会误伤区外设施;
@@ -473,7 +478,10 @@ export default function BinjiangMapPage() {
       <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
         {activeTab === 'management' ? <CommunityManagement key={managementSource} initialSource={managementSource} onChanged={() => {
           setSelectedCommunity(null);
-          void fetchCommunities().then(setCommunities);
+          void fetchCommunities().then(({ communities, stats }) => {
+            setCommunities(communities);
+            setMapStats(stats);
+          });
           window.dispatchEvent(new Event('housing-rental-data-changed'));
           setAuctionRefreshVersion(v => v + 1);
         }} /> : activeTab === 'auction' ? (
@@ -682,6 +690,16 @@ export default function BinjiangMapPage() {
               background: 'var(--bg-surface)', border: '1px solid var(--border)',
               borderRadius: '8px', padding: '12px',
             }}>
+              {admissionLine && (
+                <div
+                  style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}
+                  title={admissionLine.title || undefined}
+                >
+                  {admissionLine.title
+                    ? <span style={{ textDecoration: 'underline dotted', textUnderlineOffset: '3px' }}>{admissionLine.line}</span>
+                    : admissionLine.line}
+                </div>
+              )}
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
                 价格区间
                 <span style={{ marginLeft: '6px' }}>

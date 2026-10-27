@@ -4,6 +4,7 @@
 响应结构与字段名与源 Next.js 完全一致（design D8）。
 """
 
+from collections import Counter
 from typing import Annotated
 
 from fastapi import APIRouter, Query
@@ -192,6 +193,25 @@ async def get_communities():
         and (coord := coordinates.get(c.get("community_id")))
         and is_in_scope(coord.get("longitude") or 0, coord.get("latitude") or 0)
     ]
+
+    # 收录口径统计: 目录收录总量 vs 通过上图门槛的数量, 未上图按原因细分。
+    # 无 registry (raw JSON 回退/mock) 时为 None, 前端不展示该行。
+    stats = None
+    from src.services.community_admission import community_views
+    from src.services.community_registry import existing_registry
+
+    registry = existing_registry(get_data_paths()['communities'].parent)
+    if registry:
+        admitted_views = [
+            v for v in community_views(registry, get_data_paths()['communities'].parent, drop_ids=MERGE_DROP_IDS)
+            if v['admission_state'] == 'admitted'
+        ]
+        hidden = Counter(v['map_status'] for v in admitted_views if v['map_status'] != 'displayed')
+        stats = {
+            'admitted': len(admitted_views),
+            'displayed': len(admitted_views) - sum(hidden.values()),
+            'hidden': dict(hidden),
+        }
     pois_data = load_pois()
     polygons = load_polygons()
     community_ages = load_community_ages()
@@ -217,9 +237,8 @@ async def get_communities():
         return {"pois": {}}
 
     if len(communities_list) == 0:
-        from src.services.community_registry import existing_registry
-        if existing_registry(get_data_paths()['communities'].parent):
-            return {'success': True, 'data': [], 'total': 0, 'source': 'real'}
+        if registry:
+            return {'success': True, 'data': [], 'total': 0, 'source': 'real', 'stats': stats}
         return {
             "success": True,
             "data": MOCK_COMMUNITIES,
@@ -251,6 +270,7 @@ async def get_communities():
         "data": data_with_scores,
         "total": len(data_with_scores),
         "source": "real",
+        "stats": stats,
         "transit": {"routes": transit_routes, "stops": transit_stops},
     }
 

@@ -91,9 +91,10 @@ def test_communities_structure(seeded_data_dir):
     resp = client.get("/api/communities")
     assert resp.status_code == 200
     body = resp.json()
-    # 响应键与源 Next.js 完全一致
-    assert set(body.keys()) == {"success", "data", "total", "source", "transit"}
+    # 响应键与源 Next.js 完全一致 (stats 为收录口径统计, 无 registry 时为 None)
+    assert set(body.keys()) == {"success", "data", "total", "source", "transit", "stats"}
     assert body["success"] is True
+    assert body["stats"] is None
     assert body["total"] > 0
     assert body["source"] in ("real", "mock")
     assert body["total"] == len(body["data"])
@@ -132,6 +133,42 @@ def test_communities_excludes_dirty_data(seeded_data_dir):
     # 水电片区 4 个 drop 成员合并掉, 只留 primary
     assert "453982238" not in {c["community_id"] for c in data}
     assert "453982737" in {c["community_id"] for c in data}
+
+
+def test_communities_reports_admission_stats(tmp_path, monkeypatch):
+    """收录口径统计: 收录总量 vs 通过上图门槛数量, 未上图按 map_status 细分。"""
+    import src.services.data_loader as data_loader
+    from src.services.community_directory import prepare_directory
+
+    communities = [
+        {"community_id": "100", "community_name": "有坐标小区", "district": "滨江", "address": "杭州市滨江区测试路1号"},
+        {"community_id": "200", "community_name": "无坐标小区", "district": "滨江", "address": "杭州市滨江区测试路2号"},
+    ]
+    coordinates = {
+        # 坐标取自 admission API 测试同款围栏内点位
+        "100": {"longitude": 120.207490, "latitude": 30.202261, "formatted_address": "杭州市滨江区测试路1号"},
+    }
+    (tmp_path / "binjiang_communities.json").write_text(json.dumps(communities, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "binjiang_coordinates.json").write_text(json.dumps(coordinates, ensure_ascii=False), encoding="utf-8")
+    (tmp_path / "property_types.json").write_text(json.dumps({
+        "100": {"property_type": "住宅"}, "200": {"property_type": "住宅"}}), encoding="utf-8")
+    for name, payload in {
+        "binjiang_pois.json": {},
+        "binjiang_polygons_merged.json": {},
+        "community_ages.json": {},
+        "community_attrs.json": {},
+        "binjiang_transit_routes.geojson": {"type": "FeatureCollection", "features": []},
+        "binjiang_transit_stops.geojson": {"type": "FeatureCollection", "features": []},
+    }.items():
+        (tmp_path / name).write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setattr(data_loader, "DATA_DIR", tmp_path)
+    prepare_directory(tmp_path)
+
+    resp = client.get("/api/communities")
+    body = resp.json()
+    # 两个小区迁移后都被收录; 无坐标小区不上图并按原因细分
+    assert body["stats"] == {"admitted": 2, "displayed": 1, "hidden": {"missing_coordinates": 1}}
+    assert [c["community_name"] for c in body["data"]] == ["有坐标小区"]
 
 
 def test_score_single_community(seeded_data_dir):

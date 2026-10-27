@@ -236,3 +236,30 @@ export function isListingReference(value: unknown): value is MarketReferenceAvai
     && Boolean(reference.source?.name && reference.source.url && reference.source.captured_at)
     && Boolean(reference.overall) && Array.isArray(reference.subdistricts);
 }
+
+// 地图收录口径统计 (/api/communities 的 stats 字段, 无 registry 时为 null)
+export interface MapAdmissionStats {
+  admitted: number;               // 目录收录总量
+  displayed: number;              // 通过上图门槛 (有效坐标 + 覆盖范围内)
+  hidden: Record<string, number>; // 未上图按 map_status 细分
+}
+
+const HIDDEN_STATUS_LABELS: Record<string, string> = {
+  missing_coordinates: '缺坐标',
+  check_coordinates: '坐标待核',
+  outside_scope: '围栏外',
+  check_name: '名称待核',
+  merged_duplicate: '重复合并',
+};
+
+export function formatAdmissionStats(stats: MapAdmissionStats): { line: string; title: string } {
+  const hiddenCount = Object.values(stats.hidden).reduce((sum, n) => sum + n, 0);
+  const title = Object.entries(stats.hidden)
+    .filter(([, n]) => n > 0)
+    .map(([status, n]) => `${HIDDEN_STATUS_LABELS[status] ?? status} ${n}`)
+    .join(' · ');
+  return {
+    line: `收录 ${stats.admitted} · 展示 ${stats.displayed} · 未展示 ${hiddenCount}`,
+    title,
+  };
+}
