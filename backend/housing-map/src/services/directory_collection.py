@@ -242,7 +242,8 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
                 code = getattr(exc, 'code', None)
                 message = f'{identity["project_name"]} 新房详情获取失败（{code or type(exc).__name__}）：{exc}'
                 deferred = code in {'paused', 'busy'}
-                row['_newhouse_pause_reason'] = getattr(exc, 'pause_reason', code)
+                row['_newhouse_pause_reason'] = (getattr(exc, 'pause_reason', code)
+                                                 if getattr(exc, 'task_paused', True) else None)
                 row.update(property_type_error=message, _property_type_result='deferred' if deferred else 'failed',
                            _collection_errors=[] if deferred else [dict(source='tmsf', stage='newhouse_detail', source_id=pid, message=message)])
             else:

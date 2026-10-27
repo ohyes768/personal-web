@@ -116,7 +116,7 @@ class PageWorker:
                     raise WorkerError('invalid_response', '新房页面过大，未采用资料')
                 return html
             page.wait_for_timeout(250)
-        raise WorkerError('browser_timeout', '新房页面关键正文加载超时，本轮已暂停，请稍后重试')
+        raise WorkerError('browser_timeout', '本项目新房页面关键正文加载超时，可稍后重试')
 
     def fetch(self, payload):
         url = target_url(payload)
@@ -147,7 +147,7 @@ class PageWorker:
             # Playwright is an optional worker-only dependency; its TimeoutError
             # shares the standard name but does not inherit built-in TimeoutError.
             if isinstance(exc, TimeoutError) or type(exc).__name__ == 'TimeoutError':
-                raise WorkerError('browser_timeout', '新房页面加载超时，本轮暂停，请稍后重试') from exc
+                raise WorkerError('browser_timeout', '本项目新房页面加载超时，可稍后重试') from exc
             raise WorkerError('browser_error', '新房浏览器读取失败，本轮暂停，请检查服务后重试') from exc
 
 

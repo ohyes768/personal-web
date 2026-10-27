@@ -92,6 +92,24 @@ def test_address_retry_reuses_recent_detail_but_rechecks_certificate():
     assert value['address'] == ADDRESS and calls == [CERT]
 
 
+def test_cached_address_retry_initializes_fresh_browser_at_own_homepage():
+    from src.services.tmsf_browser import BrowserClient
+    initial, _ = upstream(certificate=TimeoutError())
+    previous = facts(initial)
+    calls = []
+    browser = BrowserClient('http://worker')
+    def request(path, body, timeout):
+        url = CERT if body.get('presellid') else URL
+        calls.append(url)
+        return dict(url=url, html=CERTIFICATE if body.get('presellid') else HOME)
+    browser._request = request
+    client = SimpleNamespace(fetch_project_text=browser.fetch_text, fetch_text=browser.fetch_text)
+    result = fetch_project_facts_by_id(client, siteid='33', propertyid=PID,
+        names=[NAME, ALIAS], district='滨江', previous=previous)
+    assert result['address'] == ADDRESS
+    assert calls == [URL, CERT]
+
+
 def test_expired_or_other_identity_cache_cannot_skip_detail():
     client, _ = upstream(certificate=TimeoutError())
     first = facts(client)
@@ -126,3 +144,34 @@ def test_observed_sale_status_takes_priority_over_index_fallback():
     client, _ = upstream(home=HOME.replace('在售</span>', '售完</span>'))
     result = _project_detail(client, URL, [NAME, ALIAS], '滨江', 15, fallback_status='在售')
     assert result['project_sale_status'] == '售完' and result['market_state'] == 'second_hand'
+
+
+@pytest.mark.parametrize('prefix', ['滨江区', '杭州市滨江区', '浙江省杭州市滨江区'])
+def test_missing_district_link_uses_own_complete_address(prefix):
+    home = HOME.replace('<a id="districtname">滨江楼盘</a>', '').replace(
+        '东至规划道路，南至零磁谷街绿..', prefix + '坚塔路与新浦路交叉口')
+    client, calls = upstream(home=home)
+    value = facts(client)
+    assert value['address_district'] == '滨江'
+    assert value['address'] == prefix + '坚塔路与新浦路交叉口'
+    assert value['address_evidence_url'] == URL
+    assert calls == [URL]
+
+
+@pytest.mark.parametrize('address', ['滨江区坚塔路..', '滨江区', '萧山区坚塔路与新浦路交叉口',
+                                   '坚塔路与新浦路交叉口', '附近滨江区售楼处'])
+def test_missing_district_link_cannot_borrow_ambiguous_or_other_address(address):
+    home = HOME.replace('<a id="districtname">滨江楼盘</a>', '').replace(
+        '东至规划道路，南至零磁谷街绿..', address)
+    home += '<a id="recommend_district">滨江楼盘</a><div>售楼处地址</div><div>滨江区浦沿路</div>'
+    client, _ = upstream(home=home)
+    with pytest.raises(ValueError, match='目标项目和区域'):
+        facts(client)
+
+
+def test_explicit_district_conflict_is_not_replaced_by_address():
+    home = HOME.replace('滨江楼盘', '萧山楼盘').replace(
+        '东至规划道路，南至零磁谷街绿..', '滨江区坚塔路与新浦路交叉口')
+    client, _ = upstream(home=home)
+    with pytest.raises(ValueError, match='目标项目和区域'):
+        facts(client)
