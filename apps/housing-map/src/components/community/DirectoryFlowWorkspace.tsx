@@ -213,11 +213,11 @@ function CatalogAmapType({ position }: { position?: Position }) {
   return <span className="directory-muted">{empty}</span>;
 }
 
-export function CatalogTable({ items, excluded, pending = false, select, retry, busy, position }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
-  select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; }) {
-  return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}`}><thead><tr>
+export function CatalogTable({ items, excluded, pending = false, select, retry, busy, position, exclude }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
+  select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void; }) {
+  return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}${pending ? ' catalog-pending' : ''}`}><thead><tr>
     <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
-    <th>高德类型</th>{excluded && <th>住宅用途核对</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
+    <th>高德类型</th>{excluded && <th>住宅用途核对</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}{pending && <th>收录决定</th>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
     <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
       {!excluded && <small className="catalog-text directory-muted" title={c.address || '实际地址待补充'}>{c.district || '区域待补'} · {c.address || '实际地址待补充'}</small>}</td>
@@ -234,6 +234,7 @@ export function CatalogTable({ items, excluded, pending = false, select, retry, 
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}
     {!excluded && <><td data-label="法拍"><AuctionCoverage value={c.coverage?.auction} onView={() => select(c)} /></td>
       <td data-label="租金"><RentalCoverage value={c.coverage?.rental} /></td></>}
+    {pending && <td data-label="收录决定">{catalogCanExclude(c) && exclude ? <button className="btn directory-exclude-action" disabled={busy} onClick={() => exclude(c)}>确认不收录</button> : <span className="directory-muted">需先补齐身份</span>}</td>}
     <td data-label="操作"><div className="catalog-inline catalog-row-actions"><button className="btn btn-secondary" onClick={() => select(c)}>查看资料</button>{excluded && <button className="btn btn-secondary" disabled={busy} onClick={() => retry(c)}>更新资料</button>}</div></td>
   </tr>)}</tbody></table></div>;
 }
@@ -286,9 +287,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
-  const [excluding, setExcluding] = useState(false); const [excludeReason, setExcludeReason] = useState('');
-  const [customExcludeReason, setCustomExcludeReason] = useState('');
-  const exclusionReason = excludeReason === 'other' ? customExcludeReason.trim() : excludeReason;
   const detailVersion = useRef(0);
   const finishes = useRef<Record<string, string>>({});
   const optimistic = useRef<string | null>(null);
@@ -360,7 +358,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   function changeMode(value: string) { setMode(value); setPage(1); setPositionFilter(''); setUseFilter(''); setPropertyFilter(''); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
-    setError(''); setNotice(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason(''); setCustomExcludeReason('');
+    setError(''); setNotice(''); setDetail(row); setAuction(null);
     setUseConfirmOpen(row.qualification === 'use_conflict' || row.qualification === 'use_uncertain');
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
@@ -440,13 +438,13 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     } catch (e) { setError(e instanceof Error ? e.message : '用途操作失败，请刷新'); }
     finally { setBusy(false); }
   }
-  async function admissionAction(kind: 'exclude' | 'resume', reason = '') {
-    if (!detail) return;
-    const rev = detail.admission?.revision;
+  async function admissionAction(kind: 'exclude' | 'resume', target = detail) {
+    if (!target) return;
+    const rev = target.admission?.revision;
     if (!rev) { setError('缺少审核版本，请刷新后重试'); return; }
     setBusy(true); setError('');
     try {
-      await workflowRequest(`/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}/${kind}`, 'POST', { revision: rev, reason });
+      await workflowRequest(`/directory/workflow/catalog/${encodeURIComponent(target.community_id)}/${kind}`, 'POST', { revision: rev, reason: kind === 'exclude' ? '人工确认不收录' : '' });
       setNotice(kind === 'exclude' ? '已转为不收录，自动流程不会再收录；可在不收录列表恢复。' : '已恢复自动分类，是否符合收录条件由透明售房网资料重新判定。');
       changed();
     } catch (e) { setError(e instanceof Error ? e.message : '操作失败，请刷新'); }
@@ -493,6 +491,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     <div className="directory-workspace"><div className="directory-list-panel">
       {loading ? <p role="status">加载名单…</p> : summary?.active && <><p className="directory-muted">当前筛选：{total} 条</p>
         {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode !== 'admitted'} pending={mode === 'pending'} select={row => void select(row)}
+          exclude={row => void admissionAction('exclude', row)}
           retry={row => void action(`/directory/workflow/catalog/${encodeURIComponent(row.community_id)}/retry`, 'POST')} busy={busy || !!jobs.amap?.running} position={row => void select(row)} />
           : <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>法拍房产</th><th>地址</th><th>待关联原因</th><th>操作</th></tr></thead><tbody>{auctions.map(r => <tr key={r.id}>
             <td data-label="法拍房产">{r.name}<small>{r.auction_ids?.length || 0} 条轮次{r.skipped ? ' · 已跳过' : ''}</small></td><td data-label="地址">{r.address || '暂无地址'}</td><td data-label="待关联原因">{r.reason}</td>
@@ -502,17 +501,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
       actions={detail && <button type="button" className="btn btn-secondary" disabled={busy} aria-label="更新资料" title={busy ? '正在更新资料…' : '更新资料：重新拉取透明售房网等来源，并重新判定收录'} onClick={() => void refreshDetail()}>↻</button>}
       footer={detail && (canExclude || resumeAdmission) ? <div className="directory-detail-actions">
-        {canExclude && (excluding ? <div className="directory-exclusion-confirm">
-          <label>不收录原因<select value={excludeReason} disabled={busy} onChange={e => { setExcludeReason(e.target.value); setCustomExcludeReason(''); }}>
-            <option value="">请选择不收录原因</option>
-            {['非住宅用途', '非真实小区（道路、楼栋或附属设施）', '不在管理区域内', '与其他小区重复', '名称、地址或位置存疑，暂不收录'].map(reason => <option key={reason} value={reason}>{reason}</option>)}
-            <option value="other">其他原因</option>
-          </select></label>
-          {excludeReason === 'other' && <label>具体原因<input value={customExcludeReason} disabled={busy} maxLength={300} placeholder="请填写具体原因" onChange={e => setCustomExcludeReason(e.target.value)} /></label>}
-          <div><button className="btn btn-primary" disabled={busy || !exclusionReason} onClick={() => void admissionAction('exclude', exclusionReason)}>确认不收录</button>
-            <button className="btn btn-secondary" disabled={busy} onClick={() => { setExcluding(false); setExcludeReason(''); setCustomExcludeReason(''); }}>取消</button></div>
-          <p className="directory-muted">确认后该项目将明确标记为不收录，不参与住宅地图、租金和法拍匹配；之后可恢复自动分类。</p>
-        </div> : <button className="btn directory-exclude-action" disabled={busy} title="需要选择不收录原因" onClick={() => setExcluding(true)}>转为不收录</button>)}
+        {canExclude && <button className="btn directory-exclude-action" disabled={busy} onClick={() => void admissionAction('exclude')}>确认不收录</button>}
         {resumeAdmission && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
       </div> : undefined} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
       {error && <p role="alert" className="directory-warning">{error}</p>}

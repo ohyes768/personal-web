@@ -39,6 +39,29 @@ test('pending catalog labels unfinished reasons without calling them exclusions'
   assert.doesNotMatch(html, /不收录原因|条件不符/);
 });
 
+test('pending rows offer direct exclusion in a dedicated column and preserve row identity', () => {
+  const row = { community_id: 'road', community_name: '东信大道', qualification: 'position_review', admission: { revision: 3 } };
+  const calls = [];
+  const props = { items: [row], excluded: true, pending: true, busy: false, select() {}, retry() {}, exclude: r => calls.push(r) };
+  const html = renderToStaticMarkup(React.createElement(CatalogTable, props));
+  assert.match(html, /<th>收录决定<\/th>/);
+  assert.match(html, /data-label="收录决定"><button[^>]*>确认不收录<\/button>/);
+  assert.doesNotMatch(html, /请选择不收录原因|具体原因/);
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === 'td' && node.props['data-label'] === '收录决定') node.props.children.props.onClick();
+    else visit(node.props?.children);
+  }
+  visit(CatalogTable(props));
+  assert.deepEqual(calls, [row]);
+  const busy = renderToStaticMarkup(React.createElement(CatalogTable, { ...props, busy: true }));
+  assert.match(busy, /disabled=""[^>]*>确认不收录/);
+  const virtual = renderToStaticMarkup(React.createElement(CatalogTable, { ...props, items: [{ ...row, source_record_id: 'source-only' }] }));
+  assert.doesNotMatch(virtual, />确认不收录</);
+  assert.match(virtual, /需先补齐身份/);
+});
+
 test('catalog classification filters show mode-specific options and preserve selection', () => {
   const render = (mode, value) => renderToStaticMarkup(React.createElement(CatalogClassificationFilter,
     { mode, value, propertyTypes: ['住宅', '商铺'], onChange() {} }));

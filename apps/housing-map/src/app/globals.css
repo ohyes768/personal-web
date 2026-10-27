@@ -1225,6 +1225,14 @@ body {
 .catalog-excluded th:nth-child(5) { width: 11%; }
 .catalog-excluded th:nth-child(6) { width: 19%; }
 .catalog-excluded th:last-child { width: 12%; }
+.catalog-pending th:nth-child(1) { width: 14%; }
+.catalog-pending th:nth-child(2) { width: 14%; }
+.catalog-pending th:nth-child(3) { width: 8%; }
+.catalog-pending th:nth-child(4) { width: 16%; }
+.catalog-pending th:nth-child(5) { width: 10%; }
+.catalog-pending th:nth-child(6) { width: 16%; }
+.catalog-pending th:nth-child(7) { width: 10%; }
+.catalog-pending th:last-child { width: 12%; }
 .catalog-coverage { font-variant-numeric: tabular-nums; line-height: 1.5; }
 .catalog-data-value { font-weight: 600; }
 .catalog-coverage .catalog-data-note { color: #925022; }
