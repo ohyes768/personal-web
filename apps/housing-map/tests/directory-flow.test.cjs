@@ -84,7 +84,8 @@ test('excluded catalog distinguishes insufficient facts from nonresidential cond
   const html = renderToStaticMarkup(React.createElement(CatalogTable, { excluded: true, busy: false, select() {}, retry() {},
     items: [{ community_id: '1', community_name: '资料缺失小区', sources: [], facts_state: 'incomplete', exclusion_reason: '用途资料缺失，待补充' },
       { community_id: '2', community_name: '办公楼', sources: [], facts_state: 'complete', exclusion_reason: '用途为写字楼，不收录' }] }));
-  assert.match(html, /资料待补，可重新获取/); assert.match(html, /条件不符/); assert.match(html, /更新资料/);
+  assert.match(html, /资料待补，可重新获取/); assert.match(html, /条件不符/); assert.match(html, /查看资料/);
+  assert.doesNotMatch(html, />更新资料<\/button>/);
   assert.doesNotMatch(html, /确认收录|旧主档用途证据初始化/);
 });
 test('admitted catalog shows asset counts and preserves usable rental data after refresh failure', () => {

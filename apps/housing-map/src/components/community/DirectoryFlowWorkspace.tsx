@@ -213,8 +213,8 @@ function CatalogAmapType({ position }: { position?: Position }) {
   return <span className="directory-muted">{empty}</span>;
 }
 
-export function CatalogTable({ items, excluded, pending = false, select, retry, busy, position, exclude }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
-  select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void; }) {
+export function CatalogTable({ items, excluded, pending = false, select, busy, position, exclude }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
+  select: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void; }) {
   return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}${pending ? ' catalog-pending' : ''}`}><thead><tr>
     <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
     <th>高德类型</th>{excluded && <th>住宅用途核对</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}{pending && <th>收录决定</th>}<th>操作</th>
@@ -235,7 +235,7 @@ export function CatalogTable({ items, excluded, pending = false, select, retry, 
     {!excluded && <><td data-label="法拍"><AuctionCoverage value={c.coverage?.auction} onView={() => select(c)} /></td>
       <td data-label="租金"><RentalCoverage value={c.coverage?.rental} /></td></>}
     {pending && <td data-label="收录决定">{catalogCanExclude(c) && exclude ? <button className="btn directory-exclude-action" disabled={busy} onClick={() => exclude(c)}>确认不收录</button> : <span className="directory-muted">需先补齐身份</span>}</td>}
-    <td data-label="操作"><div className="catalog-inline catalog-row-actions"><button className="btn btn-secondary" onClick={() => select(c)}>查看资料</button>{excluded && <button className="btn btn-secondary" disabled={busy} onClick={() => retry(c)}>更新资料</button>}</div></td>
+    <td data-label="操作"><div className="catalog-inline catalog-row-actions"><button className="btn btn-secondary" onClick={() => select(c)}>查看资料</button></div></td>
   </tr>)}</tbody></table></div>;
 }
 
@@ -380,28 +380,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     } catch (e) { setError(e instanceof Error ? e.message : '定位操作失败，请刷新'); }
     finally { setBusy(false); }
   }
-  async function refreshDetail() {
-    if (!detail || busy) return;
-    const version = detailVersion.current;
-    const path = `/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}`;
-    setBusy(true); setError(''); setNotice('');
-    let saved = false;
-    try {
-      const outcome = await workflowRequest<{ errors?: string[] } | null>(path + '/retry', 'POST');
-      saved = true;
-      const fresh = await workflowRequest<CatalogRow>(path);
-      if (fresh.admission_state === 'admitted' || (fresh.collection_pipeline_version && !fresh.source_record_id)) fresh.position = await workflowRequest<Position>(path + '/position');
-      if (detailVersion.current === version) {
-        setDetail(fresh);
-        setNotice(outcome?.errors?.length ? `部分资料已更新：${outcome.errors.join('；')}` : '资料已更新，名单已重新分类。');
-      }
-    } catch (e) {
-      if (detailVersion.current === version) setError(saved ? '资料已更新，但刷新详情失败，请关闭后重新打开。' : e instanceof Error ? e.message : '更新失败，请重试');
-    } finally {
-      if (saved) { setRevision(v => v + 1); onChanged(); }
-      setBusy(false);
-    }
-  }
   async function queryDetailPosition() {
     if (!detail || busy) return;
     const version = detailVersion.current;
@@ -492,14 +470,13 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       {loading ? <p role="status">加载名单…</p> : summary?.active && <><p className="directory-muted">当前筛选：{total} 条</p>
         {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode !== 'admitted'} pending={mode === 'pending'} select={row => void select(row)}
           exclude={row => void admissionAction('exclude', row)}
-          retry={row => void action(`/directory/workflow/catalog/${encodeURIComponent(row.community_id)}/retry`, 'POST')} busy={busy || !!jobs.amap?.running} position={row => void select(row)} />
+          busy={busy || !!jobs.amap?.running} position={row => void select(row)} />
           : <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>法拍房产</th><th>地址</th><th>待关联原因</th><th>操作</th></tr></thead><tbody>{auctions.map(r => <tr key={r.id}>
             <td data-label="法拍房产">{r.name}<small>{r.auction_ids?.length || 0} 条轮次{r.skipped ? ' · 已跳过' : ''}</small></td><td data-label="地址">{r.address || '暂无地址'}</td><td data-label="待关联原因">{r.reason}</td>
             <td data-label="操作"><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setError(''); setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
         {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
         <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); }}>下一页</button></nav></>}
     </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
-      actions={detail && <button type="button" className="btn btn-secondary" disabled={busy} aria-label="更新资料" title={busy ? '正在更新资料…' : '更新资料：重新拉取透明售房网等来源，并重新判定收录'} onClick={() => void refreshDetail()}>↻</button>}
       footer={detail && (canExclude || resumeAdmission) ? <div className="directory-detail-actions">
         {canExclude && <button className="btn directory-exclude-action" disabled={busy} onClick={() => void admissionAction('exclude')}>确认不收录</button>}
         {resumeAdmission && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
