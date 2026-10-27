@@ -209,6 +209,7 @@ function CatalogAmapType({ position }: { position?: Position }) {
   const references = position?.reference_candidates || [];
   const types = (points: typeof candidates) => Array.from(new Set(points.map(p => p.poi_type || p.poi_typecode || '类型缺失'))).join(' / ');
   if (selected) return <span>{selected.poi_type || selected.poi_typecode || '类型缺失'}</span>;
+  if (candidates.length > 1) return <span className="directory-muted">候选主体 · 待确认</span>;
   if (candidates.length || references.length) return <>
     {!!candidates.length && <div>{types(candidates)}<small className="directory-muted">候选主体 · 待确认</small></div>}
     {!!references.length && <div>{types(references)}<small className="directory-muted">相关地点 · 仅供参考</small></div>}
