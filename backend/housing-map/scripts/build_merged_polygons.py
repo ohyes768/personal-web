@@ -12,13 +12,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
-from src.services.community_filters import is_residential_community
+from src.services.community_admission import community_views
+from src.services.community_registry import existing_registry
+from src.services.data_loader import DATA_DIR as SERVICE_DATA_DIR
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
+DATA_DIR = str(SERVICE_DATA_DIR)
 OSM_PATH = os.path.join(DATA_DIR, 'binjiang_osm_residential.geojson')
-COMM_PATH = os.path.join(DATA_DIR, 'binjiang_communities.json')
 COORD_PATH = os.path.join(DATA_DIR, 'binjiang_coordinates.json')
-PROPERTY_TYPES_PATH = os.path.join(DATA_DIR, 'property_types.json')
 OUT_PATH = os.path.join(DATA_DIR, 'binjiang_polygons_merged.json')
 
 NAME_MATCH_MAX_M = 800
@@ -99,24 +99,20 @@ def match_osm(lon, lat, name, osm_feats, osm_by_name):
     return None
 
 
-def select_residential_points(communities, coords, property_types):
-    """返回与地图展示口径一致、且具备坐标的住宅小区。"""
+def select_residential_points(data_dir, coords):
+    """复用有效住宅收录与地图定位校验，不按旧物业类型再次筛选。"""
+    registry = existing_registry(data_dir)
+    if registry is None:
+        raise ValueError('缺少住宅目录数据库，无法按已收录住宅生成边界')
     points = []
     filtered = 0
-    for community in communities:
-        community_id = community.get('community_id')
-        coordinate = coords.get(community_id, {})
-        if not coordinate.get('latitude'):
-            continue
-        if not is_residential_community(community, property_types):
+    for community in community_views(registry, data_dir, coordinates=coords):
+        if community['admission_state'] != 'admitted' or community['map_status'] != 'displayed':
             filtered += 1
             continue
-        points.append((
-            community_id,
-            community.get('community_name', ''),
-            coordinate['longitude'],
-            coordinate['latitude'],
-        ))
+        cid = community['community_id']
+        coordinate = community if community.get('longitude') is not None else coords[cid]
+        points.append((cid, community['community_name'], coordinate['longitude'], coordinate['latitude']))
     return points, filtered
 
 
@@ -126,13 +122,9 @@ def main():
     osm_by_name = {normalize_name(f['properties']['name']): f for f in osm_feats if f['properties']['name']}
     print(f'OSM 轮廓: {len(osm_feats)}')
 
-    communities = json.load(open(COMM_PATH, encoding='utf-8'))
-    if isinstance(communities, dict):
-        communities = communities['communities']
     coords = json.load(open(COORD_PATH, encoding='utf-8'))
-    property_types = json.load(open(PROPERTY_TYPES_PATH, encoding='utf-8'))
-    points, filtered = select_residential_points(communities, coords, property_types)
-    print(f'已过滤非住宅/无效条目: {filtered}')
+    points, filtered = select_residential_points(Path(COORD_PATH).parent, coords)
+    print(f'已过滤未收录/定位无效条目: {filtered}')
     print(f'住宅小区待匹配: {len(points)}')
 
     polygons = {}

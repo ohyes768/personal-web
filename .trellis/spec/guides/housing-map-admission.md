@@ -4,6 +4,10 @@
 
 > **适用场景**：改小区可见性 / 刷新采集范围 / 轮廓生成 / 覆盖范围围栏，或排查"某小区数据没抓下来/地图看不到"。
 
+## 当前边界生成口径（2026-10-27）
+
+`build_merged_polygons.py` 从 `HOUSING_DATA_DIR`（默认服务 data 目录）的现有 registry 读取 `community_views`，仅处理有效 `admission_state='admitted'` 且 `map_status='displayed'` 的小区；不再以旧 `property_types.json` 的住宅白名单二次筛选。定位优先使用主档/来源投影，再使用历史坐标文件。无 registry 时明确失败并保留原边界文件，不回退到旧物业类型名单。已收录但无可靠 OSM 匹配的项目仍保持无边界。以下轮廓白名单说明为历史背景，以此规则为准。
+
 ## 契约
 
 准入分两层，**采集与展示全量，只有轮廓按住宅口径**：
