@@ -194,6 +194,14 @@ export function catalogCanExclude(row?: Pick<CatalogRow, 'admission_state' | 'wo
   return !!row && !row.source_record_id && !!row.admission?.revision && row.qualification !== 'manual_exclusion';
 }
 
+/** 待处理行按操作三桶分类，分支顺序与 pipelineStageLabel 一致，也与后端 operation 筛选对齐：所见即所筛。 */
+export function pendingOperationBucket(row: Pick<CatalogRow, 'qualification' | 'position'>): 'position' | 'use' | 'facts' {
+  if (row.qualification === 'type_uncertain' && row.position && !row.position.selected) return 'position';
+  if (['position_pending', 'position_review', 'position_type_missing'].includes(row.qualification)) return 'position';
+  if (['use_conflict', 'use_uncertain', 'type_uncertain'].includes(row.qualification)) return 'use';
+  return 'facts';
+}
+
 function CatalogAmapType({ position }: { position?: Position }) {
   const selected = position?.selected;
   const candidates = position?.candidates || [];
@@ -209,7 +217,7 @@ export function CatalogTable({ items, excluded, pending = false, select, busy, p
   select: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void; }) {
   return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}${pending ? ' catalog-pending' : ''}`}><thead><tr>
     <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
-    <th>高德类型</th>{excluded && <th>住宅用途核对</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}{pending && <th>收录决定</th>}<th>操作</th>
+    <th>高德类型</th>{excluded && <th>{pending ? '待处理操作' : '住宅用途核对'}</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}{pending && <th>收录决定</th>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
     <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
       {!excluded && <small className="catalog-text directory-muted" title={c.address || '实际地址待补充'}>{c.district || '区域待补'} · {c.address || '实际地址待补充'}</small>}</td>
@@ -218,8 +226,10 @@ export function CatalogTable({ items, excluded, pending = false, select, busy, p
       ? c.property_types?.join(' / ') || c.effective_property_type || [...new Set(c.sources?.filter(s => s.source === 'tmsf').map(s => s.property_type).filter(Boolean))].join(' / ') || '用途资料缺失'
       : marketLabels[c.market_state || 'unknown'] || marketLabels.unknown}</td>
     <td data-label="高德类型"><CatalogAmapType position={c.position} /></td>
-    {excluded && <td data-label="住宅用途核对"><div className="catalog-inline"><UseReviewBadge review={c.use_review} compact />
-      {c.collection_pipeline_version && <small className="catalog-text">{pipelineStageLabel(c)}</small>}
+    {excluded && <td data-label={pending ? '待处理操作' : '住宅用途核对'}><div className="catalog-inline">
+      {pending && <span className={`directory-badge directory-op-${pendingOperationBucket(c)}`}>{pipelineStageLabel(c)}</span>}
+      <UseReviewBadge review={c.use_review} compact />
+      {!pending && c.collection_pipeline_version && <small className="catalog-text">{pipelineStageLabel(c)}</small>}
       {c.use_review?.auto_skip_reason && <small className="catalog-text directory-muted">{c.use_review.auto_skip_reason}</small>}
       {c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
     {excluded && <td data-label={pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态'}>{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : pending ? '待核对' : '条件不符'}</small></td>}

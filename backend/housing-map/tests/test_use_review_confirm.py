@@ -59,13 +59,13 @@ def test_confirm_non_residential_records_the_reason(setup):
     assert value['reason'] == '高德与克而瑞均为写字楼'
 
 
-def test_confirm_requires_evidence_with_a_link(setup):
+def test_confirm_allows_missing_evidence_and_an_empty_link(setup):
     store, cid, data = setup
-    with pytest.raises(ValueError, match='证据链接'):
-        store.confirm_use(cid, revision=1, decision='residential', property_type='住宅')
-    with pytest.raises(ValueError, match='证据链接'):
-        store.confirm_use(cid, revision=1, decision='residential', property_type='住宅',
-                          use_evidence=[{'source': 'amap', 'url': '', 'note': ''}])
+    saved = store.confirm_use(cid, revision=1, decision='residential', property_type='住宅')
+    assert saved['use_evidence'] == []
+    saved = store.confirm_use(cid, revision=2, decision='residential', property_type='别墅',
+                              use_evidence=[{'source': 'amap', 'url': '', 'note': ''}])
+    assert saved['use_evidence'] == [{'source': 'amap', 'url': '', 'note': ''}]
 
 
 def test_confirm_requires_a_reason_for_non_residential(setup):

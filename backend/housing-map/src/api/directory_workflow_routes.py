@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.services import directory_workflow as flow
+from src.services.collection_pipeline import pending_operation_bucket
 from src.services.community_review import community_matches
 from src.services.directory_coverage import attach_coverage
 from src.services.directory_position import PositionJob, position_detail, position_one, confirm_position, PositionOutcome
@@ -103,6 +104,7 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
             property_type: str = Query('', max_length=100),
             auction: Literal['', 'has', 'none'] = '',
             rental: Literal['', 'data', 'pending', 'unmapped', 'source_missing', 'no_samples', 'failed'] = '',
+            operation: Literal['', 'position', 'use', 'facts'] = '',
             page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
     def read():
         registry = require_store()
@@ -120,6 +122,8 @@ def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query(
             rows = [r for r in rows if r.get('position', {}).get('state') in states]
         if use:
             rows = [r for r in rows if USE_FILTERS[use](r.get('use_review') or {})]
+        if operation:
+            rows = [r for r in rows if r.get('workflow_state') == 'pending' and pending_operation_bucket(r) == operation]
         if state == 'admitted':
             rows = attach_coverage(rows, registry, registry.path.parent)
             if auction:
@@ -279,7 +283,7 @@ def use_review_cancel():
 
 class UseEvidence(BaseModel):
     source: str = Field(min_length=1, max_length=30)
-    url: str = Field(min_length=1, max_length=500)
+    url: str = Field('', max_length=500)
     note: str = Field('', max_length=300)
 
 
@@ -287,7 +291,7 @@ class UseConfirm(BaseModel):
     revision: int = Field(ge=1)
     decision: Literal['residential', 'non_residential']
     property_type: Literal['住宅', '别墅', '排屋'] | None = None
-    use_evidence: list[UseEvidence] = Field(min_length=1, max_length=10)
+    use_evidence: list[UseEvidence] = Field(default_factory=list, max_length=10)
     reason: str = Field('', max_length=300)
 
 

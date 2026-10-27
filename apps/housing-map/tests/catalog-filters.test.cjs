@@ -106,7 +106,7 @@ test('admitted table shows new or second-hand classification without repeating p
 test('each catalog tab exposes only the filters that apply to it', () => {
   assert.deepEqual(catalogFilterScope('admitted').primary, ['q', 'district', 'market', 'position']);
   assert.deepEqual(catalogFilterScope('admitted').more, ['use', 'auction', 'rental']);
-  assert.deepEqual(catalogFilterScope('pending').primary, ['q', 'district', 'property_type', 'position']);
+  assert.deepEqual(catalogFilterScope('pending').primary, ['q', 'district', 'operation']);
   assert.deepEqual(catalogFilterScope('pending').more, ['use']);
   assert.deepEqual(catalogFilterScope('excluded').primary, ['q', 'district', 'property_type']);
   assert.deepEqual(catalogFilterScope('excluded').more, ['use']);
@@ -115,13 +115,26 @@ test('each catalog tab exposes only the filters that apply to it', () => {
   assert.deepEqual(catalogFilterScope('auctions').more, []);
 });
 
+test('the pending tab filters by pending operation instead of source use or position state', () => {
+  const html = renderToStaticMarkup(React.createElement(CatalogFilters, {
+    mode: 'pending', values: { ...emptyCatalogFilters(), operation: 'use' }, total: 0, loading: false,
+    onChange() {}, onRemove() {}, onClear() {}, onRefresh() {},
+  }));
+  // 待处理页签按操作三桶筛选，不再暴露来源用途与定位状态。
+  assert.match(html, /<span>待处理操作<\/span>/);
+  assert.match(html, /value="use" selected="">用途待确认</);
+  for (const label of ['全部待处理操作', '地点待处理', '资料待补']) assert.match(html, new RegExp(`>${label}<`));
+  assert.match(html, /待处理操作：用途待确认/);
+  assert.doesNotMatch(html, /来源用途|定位状态|全部定位/);
+});
+
 test('only applicable conditions reach the request', () => {
   const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
-    property_type: '住宅', position: 'review', use: 'conflict', auction: 'has', rental: 'data' };
+    property_type: '住宅', position: 'review', use: 'conflict', auction: 'has', rental: 'data', operation: 'facts' };
   assert.deepEqual(catalogFilterParams('admitted', values),
     { q: '鸿雁苑', district: '滨江', market: 'new_house', position: 'review', use: 'conflict', auction: 'has', rental: 'data' });
   assert.deepEqual(catalogFilterParams('pending', values),
-    { q: '鸿雁苑', district: '滨江', property_type: '住宅', position: 'review', use: 'conflict' });
+    { q: '鸿雁苑', district: '滨江', operation: 'facts', use: 'conflict' });
   assert.deepEqual(catalogFilterParams('excluded', values),
     { q: '鸿雁苑', district: '滨江', property_type: '住宅', use: 'conflict' });
   assert.deepEqual(catalogFilterParams('auctions', values), { q: '鸿雁苑' });
@@ -145,11 +158,11 @@ test('the summary lists exactly the conditions sent to the current tab', () => {
 
 test('switching tabs keeps the search and area and clears the tab-specific filters', () => {
   const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
-    property_type: '住宅', position: 'review', use: 'conflict', auction: 'has', rental: 'data' };
+    property_type: '住宅', position: 'review', use: 'conflict', auction: 'has', rental: 'data', operation: 'use' };
   const next = catalogFiltersForMode(values);
   assert.equal(next.q, '鸿雁苑');
   assert.equal(next.district, '滨江');
-  for (const key of ['market', 'property_type', 'position', 'use', 'auction', 'rental']) assert.equal(next[key], '');
+  for (const key of ['market', 'property_type', 'position', 'use', 'auction', 'rental', 'operation']) assert.equal(next[key], '');
 });
 
 test('the filter bar labels every control and counts the folded conditions', () => {

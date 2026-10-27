@@ -130,6 +130,24 @@ test('excluded rows show the review badge and keep the reason column', () => {
   assert.match(html, /分类冲突，待人工审核/); assert.match(html, /资料待补，可重新获取/);
 });
 
+test('pending rows badge the pending operation in its own three buckets', () => {
+  const { pendingOperationBucket } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+  const row = extra => ({ community_id: '1', community_name: '测试住宅', workflow_state: 'pending', facts_state: 'incomplete',
+    exclusion_reason: '待处理', ...extra });
+  const html = render(React.createElement(CatalogTable, { excluded: true, pending: true, busy: false, select() {}, retry() {},
+    items: [row({ qualification: 'position_review' }), row({ community_id: '2', qualification: 'use_conflict' }),
+      row({ community_id: '3', qualification: 'type_missing' })] }));
+  assert.match(html, /<th>待处理操作<\/th>/);
+  assert.match(html, /directory-op-position">待确认地点<\/span>/);
+  assert.match(html, /directory-op-use">待确认用途<\/span>/);
+  assert.match(html, /directory-op-facts">待补用途资料<\/span>/);
+  // 归桶分支对齐 pipelineStageLabel：type_uncertain 看定位是否已选定。
+  assert.equal(pendingOperationBucket({ qualification: 'type_uncertain', position: { selected: null } }), 'position');
+  assert.equal(pendingOperationBucket({ qualification: 'type_uncertain', position: { selected: { poi_id: 'B1' } } }), 'use');
+  assert.equal(pendingOperationBucket({ qualification: 'region_conflict' }), 'facts');
+  assert.equal(pendingOperationBucket({ qualification: 'unknown_qualification' }), 'facts');
+});
+
 test('the panel shows evidence, the conflict and the pending re-review warning', () => {
   const html = render(React.createElement(UseReviewPanel, { review: { ...conflict, re_review: true },
     busy: false, revision: 3, onRecheck() {}, onConfirm() {} }));
@@ -143,15 +161,19 @@ test('the panel shows evidence, the conflict and the pending re-review warning',
   assert.doesNotMatch(incomplete, /待复核/);
 });
 
-test('the confirm form requires an evidence link and a reason for non-residential', () => {
+test('the confirm form drops evidence inputs and lets residential decisions submit directly', () => {
   const closed = render(React.createElement(UseReviewPanel, { review: conflict, busy: false, revision: 3,
     onRecheck() {}, onConfirm() {} }));
-  assert.doesNotMatch(closed, /证据链接/);
+  assert.match(closed, /人工确认用途/); assert.doesNotMatch(closed, /证据链接|确认是住宅/);
   const open = render(React.createElement(UseReviewPanel, { review: conflict, busy: false, revision: 3, open: true,
     onRecheck() {}, onConfirm() {} }));
-  assert.match(open, /证据链接/); assert.match(open, /证据来源/); assert.match(open, /确认理由/);
-  assert.match(open, /<button[^>]*disabled=""[^>]*>提交确认/);
-  assert.match(open, /克而瑞/); assert.match(open, /房天下/); assert.match(open, /高德/);
+  // 证据输入整块移除：确认只取决于决定与理由。
+  assert.doesNotMatch(open, /证据链接|证据来源|证据说明/);
+  assert.match(open, /确认是住宅/); assert.match(open, /确认不是住宅/);
+  assert.match(open, /住宅类型/); assert.match(open, /确认理由/);
+  assert.match(open, /<input type="radio" name="use-decision" checked=""\/>/);
+  // 默认确认住宅即可提交，不再因缺证据链接而禁用。
+  assert.doesNotMatch(open, /disabled=""[^>]*>提交确认/);
 });
 
 test('an admitted row keeps the review state but offers no manual confirmation', () => {

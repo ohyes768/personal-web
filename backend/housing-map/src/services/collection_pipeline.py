@@ -100,6 +100,27 @@ def reference_pois(rows, district, names, subjects):
     return list(related.values())
 
 
+_POSITION_OPERATIONS = {'position_pending', 'position_review', 'position_type_missing'}
+_USE_OPERATIONS = {'use_conflict', 'use_uncertain', 'type_uncertain'}
+
+
+def pending_operation_bucket(row) -> str:
+    """待处理操作三桶，分支顺序对齐前端 pendingOperationBucket，所见即所筛。
+
+    type_uncertain 且已有定位对象、但尚未选定主体时归地点；定位对象缺失时归用途。
+    未知 qualification 归资料。
+    """
+    qualification = row.get('qualification') or ''
+    position = row.get('position')
+    if qualification == 'type_uncertain' and position and not position.get('selected'):
+        return 'position'
+    if qualification in _POSITION_OPERATIONS:
+        return 'position'
+    if qualification in _USE_OPERATIONS:
+        return 'use'
+    return 'facts'
+
+
 class RequestBudgetExhausted(ValueError):
     """A resumable batch stop, not an upstream query failure."""
 

@@ -1187,6 +1187,9 @@ body {
 .directory-use-review { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
 .directory-use-todo { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
 .directory-use-none, .directory-use-skipped { background:var(--bg-elevated); color:var(--text-muted); border:1px solid var(--border); }
+.directory-op-position { background:#e3edf7; color:#2c5d8f; border:1px solid #b9d2e8; }
+.directory-op-use { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
+.directory-op-facts { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
 .directory-detail { width:390px; flex-shrink:0; padding:20px; background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; overflow-wrap:anywhere; }
 .directory-detail h3 { font-size:19px; margin:0 0 12px; }
 .directory-edit-grid { display:grid; gap:12px; margin:12px 0 16px; }

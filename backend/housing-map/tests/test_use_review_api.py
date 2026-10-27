@@ -97,11 +97,21 @@ def test_confirm_writes_the_decision_and_reports_it_in_the_row(setup):
     assert detail['use_review']['re_review'] is False
 
 
-def test_confirm_requires_evidence_and_a_reason(setup):
+def test_confirm_accepts_a_request_without_evidence(setup):
     client, store, cid = setup
-    assert client.post(f'{BASE}/catalog/{cid}/use-review/confirm', json={
-        'revision': 1, 'decision': 'residential', 'property_type': '住宅',
-        'use_evidence': [], 'reason': ''}).status_code == 422
+    omitted = client.post(f'{BASE}/catalog/{cid}/use-review/confirm', json={
+        'revision': 1, 'decision': 'residential', 'property_type': '住宅', 'reason': ''})
+    assert omitted.status_code == 200, omitted.text
+    assert omitted.json()['data']['use_evidence'] == []
+    empty_url = client.post(f'{BASE}/catalog/{cid}/use-review/confirm', json={
+        'revision': 2, 'decision': 'residential', 'property_type': '别墅',
+        'use_evidence': [{'source': 'kerui', 'url': '', 'note': ''}], 'reason': ''})
+    assert empty_url.status_code == 200, empty_url.text
+    assert empty_url.json()['data']['use_evidence'][0]['url'] == ''
+
+
+def test_confirm_still_requires_a_residential_type_and_a_non_residential_reason(setup):
+    client, store, cid = setup
     assert client.post(f'{BASE}/catalog/{cid}/use-review/confirm', json={
         'revision': 1, 'decision': 'non_residential',
         'use_evidence': EVIDENCE, 'reason': ''}).status_code == 422

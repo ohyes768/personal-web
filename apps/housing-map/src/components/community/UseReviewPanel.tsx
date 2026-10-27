@@ -60,17 +60,13 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
   onConfirm: (body: object) => void }) {
   const [decision, setDecision] = useState<'residential' | 'non_residential'>('residential');
   const [propertyType, setPropertyType] = useState('住宅');
-  const [source, setSource] = useState('kerui');
-  const [url, setUrl] = useState('');
-  const [note, setNote] = useState('');
   const [reason, setReason] = useState('');
   const evidence = review?.evidence;
   const human = review?.human;
-  const ready = !!url.trim() && (decision === 'residential' || !!reason.trim());
+  const ready = decision === 'residential' || !!reason.trim();
   const submit = () => {
     if (!ready) return;
-    onConfirm({ revision, decision, property_type: decision === 'residential' ? propertyType : null,
-      use_evidence: [{ source, url: url.trim(), note: note.trim() }], reason: reason.trim() });
+    onConfirm({ revision, decision, property_type: decision === 'residential' ? propertyType : null, reason: reason.trim() });
   };
   return <section className="directory-use-review-panel" aria-label="住宅用途核对">
     <div className="directory-use-review-heading"><h4>住宅用途核对</h4><UseReviewBadge review={review} compact /></div>
@@ -109,13 +105,6 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
         onChange={e => setPropertyType(e.target.value)}>
         {['住宅', '别墅', '排屋'].map(value => <option key={value} value={value}>{value}</option>)}
       </select></label>}
-      <label>证据来源<select aria-label="证据来源" value={source} disabled={busy} onChange={e => setSource(e.target.value)}>
-        {Object.entries(useReviewSourceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-      </select></label>
-      <label>证据链接<input aria-label="证据链接" value={url} disabled={busy} maxLength={500}
-        placeholder="如克而瑞、房天下或高德详情页链接" onChange={e => setUrl(e.target.value)} /></label>
-      <label>证据说明<input aria-label="证据说明" value={note} disabled={busy} maxLength={300}
-        placeholder="如：克而瑞标注为住宅" onChange={e => setNote(e.target.value)} /></label>
       <label>理由<textarea aria-label="确认理由" value={reason} disabled={busy} maxLength={300} rows={2}
         placeholder={decision === 'non_residential' ? '确认为非住宅必填' : '可选'} onChange={e => setReason(e.target.value)} /></label>
       <div className="directory-actions">

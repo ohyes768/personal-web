@@ -139,8 +139,6 @@ class CommunityRegistry:
             raise ValueError('请选择确认住宅或非住宅')
         evidence = [{'source': str(item.get('source') or ''), 'url': str(item.get('url') or ''),
                      'note': str(item.get('note') or '')} for item in use_evidence]
-        if not evidence or not all(item['source'] and item['url'] for item in evidence):
-            raise ValueError('人工确认必须填写来源与证据链接')
         reason = str(reason or '').strip()
         if decision == 'non_residential' and not reason:
             raise ValueError('确认非住宅必须填写理由')

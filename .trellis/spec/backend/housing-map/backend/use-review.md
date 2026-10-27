@@ -10,7 +10,7 @@ External prefix `/api/map/directory/workflow` (backend `/api/directory/workflow`
 - GET `/catalog?use=conflict|uncertain|pending_retry|agree|none|skipped` filters before pagination, alongside the district/market/use/position filters. `skipped` selects automatic-skip rows without resolved agreement or actionable conflict; `none` and `pending_retry` exclude automatic skips.
 - GET `/catalog/{cid}/use-review` returns the review projection `{state, category, result, checked_at, error, evidence, candidates_count, human, re_review, auto_skip_reason}`. `auto_skip_reason` is a derived explanation, not stored evidence or a new use verdict.
 - POST `/catalog/{cid}/use-review`, no body: explicit re-check of one community; returns the same projection plus `errors:string[]`.
-- POST `/catalog/{cid}/use-review/confirm` accepts `{revision:int>=1, decision:'residential'|'non_residential', property_type?:'住宅'|'别墅'|'排屋', use_evidence:[{source,url,note}] (non-empty, url required), reason (required for non_residential)}`.
+- POST `/catalog/{cid}/use-review/confirm` accepts `{revision:int>=1, decision:'residential'|'non_residential', property_type?:'住宅'|'别墅'|'排屋', use_evidence?:[{source,url,note}] (default [], max 10; source still required on each item, url may be empty), reason (required for non_residential)}`. Omitting `use_evidence` stores `[]`. Previously saved evidence stays readable and is not required for a new decision.
 - GET/POST/DELETE `/use-reviews` is the persistent batch job: status/start202/cancel. Error or conflicting startup409, storage503.
 - `amap_category(typecode)`, `tmsf_category(types)`, `compare(types, amap)`, `select_evidence(pois, community)` are pure. `use_identity(target)`, `use_review_view(target)`, `use_review_projection(community, records, admission, facts)` are pure projections. `review_one(store, data_dir, cid, client=None, *, cancelled=..., force=False)` performs one bounded lookup then publishes it. `UseReviewOutcome(ValueError)` means an outcome was persisted; ordinary stale/eligibility ValueErrors remain conflicts.
 
@@ -29,25 +29,25 @@ External prefix `/api/map/directory/workflow` (backend `/api/directory/workflow`
 
 ## 4. Validation & Error Matrix
 - Inactive flow409; unknown/deleted/merged target409. Stale revision409. DB/filesystem failures503.
-- Invalid enum/missing or empty `use_evidence`/missing evidence url/missing `property_type` for residential/missing `reason` for non-residential → 422.
+- Invalid enum / missing `property_type` for residential / missing `reason` for non-residential → 422. Omitted or empty `use_evidence`, and an evidence item whose url is empty, are accepted.
 - A query that finds nothing, fails or cannot match uniquely returns 200 with the saved state and an explanatory error.
 - Active batch + single query/confirmation409. Empty batch succeeds without an upstream key.
 
 ## 5. Good / Base / Bad Cases
-Good: TMSF says 商贸, Amap says 住宅小区 → `use_conflict` (incomplete) → the reviewer confirms residential with a 克而瑞 link → the community is admitted and enters the rental/auction target set.
+Good: TMSF says 商贸, Amap says 住宅小区 → `use_conflict` (incomplete) → the reviewer confirms residential without an evidence link → the community is admitted and enters the rental/auction target set. An older client may still send a link; it is stored and shown read-only.
 Base: TMSF says 商贸 and Amap finds nothing → the TMSF verdict stands unchanged and the community stays retryable.
 Bad: treating a failed lookup as a non-residential verdict, letting an Amap code admit a community directly, or letting a review run overwrite the human decision.
 
 ## 6. Tests Required
 `test_use_review_policy.py`: typecode mapping (compound codes, empty, unknown), the TMSF category, every matrix branch, evidence selection (exact/alias/loose, other district, attached places, disagreeing candidates, agreeing candidates).
 `test_directory_use_review.py`: one review stores evidence; not_found/error/truncation persist; no write after cancellation; a changed snapshot refuses the write; a valid evidence is skipped unless forced; the alias retry; an identity change invalidates the evidence.
-`test_use_review_confirm.py`: the decision and its audit event; the required evidence, url, reason and type; a stale revision; a deleted target; a manual exclusion cannot be overridden; a refresh never overwrites the decision; the contrary-evidence rule.
+`test_use_review_confirm.py`: the decision and its audit event; confirmation with no evidence and with an empty url; reason and residential type still required; a stale revision; a deleted target; a manual exclusion cannot be overridden; a refresh never overwrites the decision; the contrary-evidence rule.
 `test_directory_policy.py`: the whole matrix, the no-evidence equivalence with the previous verdict, the human decision passing only the use gate, and a plain manual exclusion staying untouched.
 `test_use_review_scope.py`: explicit/ambiguous/missing/conflicting types, manual decisions, position gating, address conflicts and manual address precedence, no name-based exclusion.
 `test_use_review_job.py`: eligible admitted and excluded targets, mixed-catalog scope, all-skipped runs without client/evidence writes, manual-query override, outcome counting, budget, cancellation, restart and human-decision preservation.
 `test_use_review_api.py`: the single query and confirm endpoints, the 422/409 matrix, the `use=` filter before pagination, the batch lifecycle and the batch/single-write exclusion.
 `test_use_review_scenario.py`: the end-to-end 风雅钱塘 case from `non_residential` to `use_conflict` to a human residential confirmation to admitted.
-`use-review.test.cjs`: the review buckets and badges, the excluded column, the panel evidence and re-review warning, the required confirm fields, the job summary wording and its legacy fallback.
+`use-review.test.cjs`: the review buckets and badges, the excluded column, the panel evidence and re-review warning, the confirm form without evidence inputs, the job summary wording and its legacy fallback.
 
 ## 7. Wrong vs Correct
 Wrong: `if amap_says_non_residential: exclude(community)` or storing the human decision in the master payload.
