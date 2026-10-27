@@ -31,8 +31,6 @@ def auto_review_skip_reason(row):
     types = set(row.get('property_types') or [])
     if types and types <= EXPLICIT_NON_RESIDENTIAL_TYPES:
         return '透明售房网用途明确为非住宅，按需手动查询'
-    if types == {'其他'} and row.get('admission_state') != 'admitted':
-        return '尚未收录且用途仅标注其他，按需手动查询'
     if row.get('admission_state') == 'admitted' and (row.get('position') or {}).get('state') not in {'matched', 'manual'}:
         return '已收录住宅尚未完成定位，请先补全定位'
     return None

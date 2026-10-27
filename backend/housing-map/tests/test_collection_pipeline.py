@@ -153,6 +153,67 @@ def test_candidate_can_match_and_confirm_nonresidential_poi(store, tmp_path):
     assert inventory(store, tmp_path)[0]['qualification'] == 'use_conflict'
 
 
+def test_company_type_is_visible_as_reference_without_becoming_a_selected_subject(store, tmp_path):
+    from src.services.directory_position import position_one, position_detail, PositionOutcome
+    store.ingest(source('其他')); synchronize(store, tmp_path)
+    cid = inventory(store, tmp_path)[0]['community_id']
+
+    class Client:
+        def search_name(self, name, district, types=None, **kwargs):
+            return [dict(id='company', name=name+'通讯有限公司', adname='滨江区',
+                         typecode='170200', type='公司企业;公司;公司',
+                         address='六和路368号', location='120.20749,30.20226')], 1
+
+    with pytest.raises(PositionOutcome):
+        position_one(store, tmp_path, cid, Client(), force=True)
+    detail = position_detail(store, tmp_path, cid)
+    assert detail['reference_candidates'][0]['poi_type'] == '公司企业;公司;公司'
+    assert not detail.get('selected')
+    assert inventory(store, tmp_path)[0]['workflow_state'] == 'pending'
+    assert '已有高德相关地点信息' in inventory(store, tmp_path)[0]['exclusion_reason']
+
+
+def test_other_use_participates_in_automatic_poi_collection(store, tmp_path):
+    from src.services.directory_position import PositionJob
+    store.ingest(source('其他')); synchronize(store, tmp_path)
+
+    class Client:
+        calls = 0
+        def search_name(self, name, district, types=None, **kwargs):
+            self.calls += 1
+            return [dict(id='P1', name=name, adname='滨江区', typecode='120201', type='写字楼',
+                         address='月明路1076号', location='120.20749,30.20226')], 1
+
+    client = Client()
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
+    job._run(client=client, delay=0)
+    assert client.calls == 1 and job.snapshot()['total'] == 1
+    row = inventory(store, tmp_path)[0]
+    assert row['position']['selected']['poi_type'] == '写字楼'
+    assert row['use_review']['auto_skip_reason'] is None
+    assert row['workflow_state'] == 'pending'  # One unknown source is not a final negative decision.
+
+
+def test_pending_other_can_be_explicitly_excluded_with_a_reason(store, tmp_path, monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import directory_routes, directory_workflow_routes as routes
+    store.ingest(source('其他')); synchronize(store, tmp_path)
+    cid = inventory(store, tmp_path)[0]['community_id']
+    monkeypatch.setattr(directory_routes, 'store', lambda: store)
+    app = FastAPI(); app.include_router(routes.router, prefix='/api')
+    with TestClient(app) as client:
+        response = client.post(f'/api/directory/workflow/catalog/{cid}/exclude', json={
+            'revision': 1, 'reason': '高德显示公司企业，人工确认非住宅'})
+        assert response.status_code == 200, response.text
+    row = inventory(store, tmp_path)[0]
+    assert row['workflow_state'] == 'excluded'
+    assert row['qualification'] == 'manual_exclusion'
+    assert row['admission']['reason'] == '高德显示公司企业，人工确认非住宅'
+
+
 def test_precise_subject_beats_shop_and_loose_containment(store, tmp_path):
     from src.services.directory_position import position_one
     store.ingest(source()); synchronize(store, tmp_path)

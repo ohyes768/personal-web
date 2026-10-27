@@ -145,6 +145,9 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
             return rows, total, total <= 25
         pois, count, complete = lookup(target['community_name'])
         valid = subject_pois(pois, district) if pipeline else _valid_pois(pois, district)
+        if pipeline:
+            from src.services.collection_pipeline import reference_pois
+            references = {p['source_id']: p for p in reference_pois(pois, district, names, valid)}
         flats = {_flat_name(n) for n in names}
         precise_names = {subject_name(n) for n in names}
         def is_match(p):
@@ -161,10 +164,14 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
             for alias in aliases[:3]:
                 alias_pois, alias_count, alias_complete = lookup(alias)
                 alias_valid = subject_pois(alias_pois, district) if pipeline else _valid_pois(alias_pois, district)
+                if pipeline:
+                    references.update({p['source_id']: p for p in reference_pois(alias_pois, district, names, alias_valid)})
                 alias_matches = {k: p for k, p in alias_valid.items() if is_match(p)}
                 if alias_matches:
                     valid, matches, count, complete = alias_valid, alias_matches, alias_count, alias_complete
                     break
+        if pipeline:
+            values['reference_candidates'] = list(references.values())
         # In-district POIs failing the name check stay visible as suspect candidates
         # for human confirmation; they never qualify for auto-binding.
         suspects = {k: p for k, p in valid.items() if k not in matches}

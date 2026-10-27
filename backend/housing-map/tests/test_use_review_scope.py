@@ -13,8 +13,8 @@ def test_explicit_non_residential_uses_skip(prop):
     assert '非住宅' in auto_review_skip_reason({**row(), 'property_types': [prop]})
 
 
-def test_other_is_skipped_without_making_a_use_verdict():
-    assert '其他' in auto_review_skip_reason({**row(), 'property_types': ['其他']})
+def test_other_means_unknown_use_and_must_not_skip_amap():
+    assert auto_review_skip_reason({**row(), 'property_types': ['其他']}) is None
 
 
 @pytest.mark.parametrize('props', [[], ['公寓'], ['商住两用'], ['住宅', '写字楼'], ['住宅', '其他']])

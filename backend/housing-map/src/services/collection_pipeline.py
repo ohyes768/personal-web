@@ -84,6 +84,22 @@ def subject_pois(rows, district):
     return valid
 
 
+def reference_pois(rows, district, names, subjects):
+    """Related non-subject POIs help humans judge use; never select them as estates."""
+    from src.services.amap_directory import normalize_poi_category
+    from src.services.poi_names import flat_name, name_hit
+    flats = {flat_name(n) for n in names if n}
+    related = {}
+    for raw in rows:
+        p = normalize_poi_category(raw, district=district)
+        if not p or p['source_id'] in subjects or not name_hit(p['name'], flats):
+            continue
+        if any(code.startswith('1509') for code in p['poi_typecode'].split('|')):
+            continue  # Parking types describe facilities, not the project's use.
+        related[p['source_id']] = p
+    return list(related.values())
+
+
 class RequestBudgetClient:
     """Lazy HTTP page budget shared across candidates, aliases and communities."""
     def __init__(self, factory, *, limit, delay, cancel):

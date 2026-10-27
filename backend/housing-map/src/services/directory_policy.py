@@ -75,13 +75,18 @@ def eligibility(community, records, facts=None, admission=None):
         if outcome == CONFLICT:
             return result('use_conflict', '透明售房网与高德用途分类冲突，待人工审核', incomplete=True)
         if outcome == UNCERTAIN_RESULT:
-            return result('use_uncertain', '住宅用途待确认，暂不收录', incomplete=True)
+            return result('use_uncertain', '两来源用途尚不能确定，请人工确认' if pipeline else '住宅用途待确认，暂不收录', incomplete=True)
         if not types <= RESIDENTIAL_TYPES:
             text = ' / '.join(sorted(types))
             from src.services.use_review_scope import EXPLICIT_NON_RESIDENTIAL_TYPES
             if types <= (EXPLICIT_NON_RESIDENTIAL_TYPES if pipeline else NON_RESIDENTIAL_TYPES):
                 return result('non_residential', f'透明售房网用途为{text}，不收录')
-            return result('type_uncertain', f'透明售房网用途为{text}，住宅用途不明确，暂不收录', incomplete=True)
+            reason = f'透明售房网用途为{text}，待查询高德地点类型并确认用途' if pipeline else f'透明售房网用途为{text}，住宅用途不明确，暂不收录'
+            if pipeline:
+                from src.services.directory_position_state import position_view
+                if position_view(community, records).get('reference_candidates'):
+                    reason = f'透明售房网用途为{text}，已有高德相关地点信息，请人工核对用途'
+            return result('type_uncertain', reason, incomplete=True)
     if pipeline:
         gate = position_gate(community, records, human_use=bool(use_decision))
         if gate:

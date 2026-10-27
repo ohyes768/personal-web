@@ -60,6 +60,49 @@ test('pipeline renders the selected subject type and unfinished admission stage'
   assert.match(row, /待确认地点/);
 });
 
+test('unselected details show available company types as references and allow explicit query', () => {
+  const { default: PositionPanel } = require('../src/components/community/PositionPanel.tsx');
+  const html = render(React.createElement(PositionPanel, { busy: false, confirm() {}, onQuery() {}, position: {
+    state: 'not_found', has_coordinates: true, candidates: [], reference_candidates: [
+      { source_id: 'company', name: 'UT斯达康通讯有限公司', poi_type: '公司企业;公司;公司', address: '六和路368号' }] } }));
+  assert.match(html, /UT斯达康通讯有限公司/);
+  assert.match(html, /公司企业;公司;公司/);
+  assert.match(html, /参考/);
+  assert.match(html, /匹配楼盘地点与类型/);
+  const empty = render(React.createElement(PositionPanel, { busy: false, confirm() {}, onQuery() {}, position: {
+    state: 'pending', has_coordinates: true, candidates: [] } }));
+  assert.match(empty, /尚未获取高德类型/);
+});
+
+test('pending rows using the excluded compatibility state may be manually excluded', () => {
+  const { catalogCanExclude } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+  const row = { admission_state: 'excluded', workflow_state: 'pending', qualification: 'type_uncertain',
+    admission: { revision: 1 } };
+  assert.equal(catalogCanExclude(row), true);
+  assert.equal(catalogCanExclude({ ...row, source_record_id: 'unlinked-source' }), false);
+  assert.equal(catalogCanExclude({ ...row, qualification: 'manual_exclusion' }), false);
+});
+
+test('catalog shows Amap types directly in both lists with candidate and reference context', () => {
+  const base = { community_id: '1', community_name: 'UT斯达康', sources: [], property_types: ['其他'] };
+  const table = (position, excluded = true) => render(React.createElement(CatalogTable, {
+    excluded, busy: false, select() {}, retry() {}, items: [{ ...base, position }] }));
+  for (const excluded of [true, false]) {
+    const html = table({ state: 'matched', candidates: [], selected: { poi_type: '商务住宅;住宅区;住宅小区' } }, excluded);
+    assert.match(html, /<th>高德类型<\/th>/);
+    assert.match(html, /data-label="高德类型"><span>商务住宅;住宅区;住宅小区/);
+  }
+  const reference = table({ state: 'not_found', candidates: [], reference_candidates: [{ poi_type: '公司企业;公司;公司' }] });
+  assert.match(reference, /公司企业;公司;公司/);
+  assert.match(reference, /相关地点 · 仅供参考/);
+  const candidate = table({ state: 'review', candidates: [{ poi_type: '写字楼' }, { poi_type: '住宅小区' }] });
+  assert.match(candidate, /写字楼 \/ 住宅小区/);
+  assert.match(candidate, /候选主体 · 待确认/);
+  assert.match(table(undefined), /data-label="高德类型"><span[^>]*>未查询/);
+  assert.match(table({ state: 'error', candidates: [] }), /data-label="高德类型"><span[^>]*>查询失败/);
+  assert.match(table({ state: 'not_found', candidates: [] }), /未找到相关地点/);
+});
+
 test('compact badges name the same buckets as the filter labels', () => {
   for (const [review, label] of [[conflict, '待人工确认'], [{ state: 'checked', result: 'agree_residential' }, '已一致'],
     [{ state: 'not_found', result: 'pending_retry' }, '未取得明确结果'], [{ result: 'pending_retry' }, '尚未核对']]) {

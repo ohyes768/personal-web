@@ -171,7 +171,7 @@ def update_master(store, cid, **values):
         db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(payload), cid))
 
 
-@pytest.mark.parametrize('case', ['non_residential', 'other', 'outside', 'manual', 'position_pending'])
+@pytest.mark.parametrize('case', ['non_residential', 'outside', 'manual', 'position_pending'])
 def test_skipped_only_run_needs_no_client_or_new_evidence(setup, monkeypatch, case):
     from src.services.directory_workflow import inventory
     from src.services.directory_use_review import use_review_detail
@@ -213,13 +213,13 @@ def test_mixed_catalog_only_queries_unclear_and_positioned_residential(setup):
     client = Client()
     job = UseReviewJob(store)
     job._run(client=client, delay=0)
-    assert set(client.queries) == {'待核实公寓', '用途缺失', '已定位住宅'}
-    assert job.snapshot()['total'] == 3
+    assert set(client.queries) == {'IX-WORK', '待核实公寓', '用途缺失', '已定位住宅'}
+    assert job.snapshot()['total'] == 4
 
 
 def test_batch_rechecks_scope_before_request_but_manual_query_is_allowed(setup):
     store, data = setup
-    cid = make(store, 'IX-WORK', '其他')
+    cid = make(store, '办公中心', '写字楼')
     client = Client()
     assert review_one(store, data, cid, client, automatic=True) == 'skipped'
     assert client.calls == 0

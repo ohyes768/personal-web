@@ -7,7 +7,8 @@ export type PositionPoint = { source_id?: string; name?: string; address?: strin
   source_url?: string; captured_at?: string; geographic_address?: string; name_similarity?: number; name_matched?: boolean;
   poi_typecode?: string; poi_type?: string };
 export type Position = { state: string; has_coordinates: boolean; revision?: string; candidates: PositionPoint[];
-  selected?: PositionPoint; checked_at?: string; confirmed_at?: string; error?: string };
+  selected?: PositionPoint; checked_at?: string; confirmed_at?: string; error?: string;
+  reference_candidates?: PositionPoint[] };
 export const positionLabels: Record<string, string> = { matched: '已匹配', pending: '待补全', review: '待确认',
   not_found: '未找到', error: '查询失败', manual: '人工已确认' };
 export const positionBucketLabels: Record<string, string> = { done: '已定位', review: '待确认', todo: '待处理' };
@@ -40,11 +41,22 @@ export default function PositionPanel({ position, busy, confirm, address, commun
     <div className="directory-position-heading"><h4>高德定位</h4><PositionBadge position={position} compact /></div>
     {selected?.name && selected.name.trim() !== communityName?.trim() && <p>高德名称：{selected.name}</p>}
     {selected && <p>高德主体类型：{selected.poi_type || selected.poi_typecode || '缺少类型，需补充或人工确认用途'}</p>}
+    {!selected && onQuery && <p className="directory-muted">高德主体类型：{position.candidates.length || position.reference_candidates?.length ? '尚未确认，请参考下方地点类型' : '尚未获取高德类型，可点击下方按钮查询'}</p>}
     {onQuery && <button className="btn btn-secondary" disabled={busy} onClick={onQuery}>匹配楼盘地点与类型</button>}
     {addr ? <p className="directory-source-summary-line"><span>高德地址：{addr}</span>{mapLink && <a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a>}</p>
       : mapLink && <p><a href={mapLink} target="_blank" rel="noopener noreferrer">高德查看 ↗</a></p>}
     {!selected && <p className="directory-muted">{position.has_coordinates ? '已有地图坐标' : '暂无地图坐标'}</p>}
     {position.error && <p role="status" className="directory-warning">{position.error}</p>}
+    {!selected && position.candidates.length > 0 && <div className="directory-position-types">
+      <p>候选主体类型（确认地点后用于分类）</p>
+      {position.candidates.map((p, i) => <p key={p.source_id || i}>{p.name || '未命名地点'} · {p.poi_type || p.poi_typecode || '高德未提供类型'}</p>)}
+    </div>}
+    {!!position.reference_candidates?.length && <div className="directory-position-types">
+      <p>名称相关地点类型（参考）</p>
+      {position.reference_candidates.map((p, i) => <p key={p.source_id || i}>{p.name || '未命名地点'} · {p.poi_type || p.poi_typecode || '高德未提供类型'}
+        {p.address && <> · {p.address}</>}</p>)}
+      <p className="directory-muted">这些地点尚未确认为楼盘主体，类型供人工判断用途参考。</p>
+    </div>}
     {position.state === 'review' && (position.candidates.length ? <>
       <div className="directory-position-choice">
         <select aria-label="选择高德候选位置" value={poi} disabled={busy || !position.revision} onChange={e => setPoi(e.target.value)}>
