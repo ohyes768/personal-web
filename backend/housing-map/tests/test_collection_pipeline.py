@@ -323,7 +323,11 @@ def test_ambiguous_subjects_need_human_confirmation(store, tmp_path, kind):
     with pytest.raises(PositionOutcome) as exc:
         position_one(store, tmp_path, cid, Client())
     assert exc.value.state == 'review'
+    expected_reason = {'two_subjects': 'multiple_subjects', 'wrong_address': 'address_check', 'phase_only': 'name_mismatch'}[kind]
+    assert exc.value.reason == expected_reason
     row = inventory(store, tmp_path)[0]
+    assert row['position']['review_reason'] == expected_reason
+    assert '结果未完整返回' not in row['position']['error']
     assert row['workflow_state'] == 'pending'
     assert not row.get('coordinate_evidence')
 

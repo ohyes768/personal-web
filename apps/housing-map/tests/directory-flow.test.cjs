@@ -56,6 +56,30 @@ test('rental task separates actual failures from unqueried communities', () => {
   assert.match(html, /查询失败 1 · 未查询 99/);
   assert.doesNotMatch(html, /查询失败 100/);
 });
+
+test('position tasks separate normal review and missing places from retryable failures', () => {
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
+    pipeline: true, errors: {}, jobs: { amap: { running: false, phase: 'partial_failed', review: 2, not_found: 1,
+      errors: [
+        { name: '东冠路710号', state: 'review', message: '未找到唯一可靠位置：候选有歧义、地址不同或结果未完整返回，请核对后确认' },
+        { name: '同名小区', state: 'review', message: '找到 2 个同名主体地点，请核对地址并选择' },
+        { name: '未找到的小区', state: 'not_found', message: '未找到名称、区域及分类可靠的高德地点' },
+        { name: '分页小区', state: 'review', reason: 'results_incomplete', message: '高德结果尚未取完整，请重新查询后确认地点' },
+        { name: '异常小区', state: 'error', message: '高德位置查询失败，请重试' },
+        { message: '达到本轮请求预算，未完成目标可下次重试' },
+      ] } }, action() {} }));
+  const sections = html.match(/<details[^>]*>.*?<\/details>/g);
+  assert.equal(sections.length, 3);
+  assert.match(sections[0], /待人工确认地点（2）/);
+  assert.match(sections[0], /东冠路710号：候选地点需人工核对/);
+  assert.doesNotMatch(sections[0], /结果未完整返回/);
+  assert.match(sections[1], /未找到主体地点（1）/);
+  assert.match(sections[2], /查询未完成（可重试）/);
+  assert.match(sections[2], /分页小区/);
+  assert.match(sections[2], /异常小区/);
+  assert.match(sections[2], /达到本轮请求预算/);
+  assert.doesNotMatch(sections[2], /东冠路710号|同名小区|未找到的小区/);
+});
 test('excluded catalog distinguishes insufficient facts from nonresidential conditions', () => {
   const html = renderToStaticMarkup(React.createElement(CatalogTable, { excluded: true, busy: false, select() {}, retry() {},
     items: [{ community_id: '1', community_name: '资料缺失小区', sources: [], facts_state: 'incomplete', exclusion_reason: '用途资料缺失，待补充' },

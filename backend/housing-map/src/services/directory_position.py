@@ -20,9 +20,10 @@ KEY = 'directory_position_job'
 class PositionOutcome(ValueError):
     """A query finished and its review/failure outcome was durably saved."""
 
-    def __init__(self, message, state=None):
+    def __init__(self, message, state=None, reason=None):
         super().__init__(message)
         self.state = state
+        self.reason = reason
 
 
 def _snapshot(store, cid):
@@ -200,8 +201,17 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
             point = next(iter(matches.values()))
             values.update(state='matched', selected=point, candidates=list(matches.values()))
         elif candidates or not complete:
+            reason = ('results_incomplete' if not complete else 'multiple_subjects' if len(matches) > 1
+                      else 'name_mismatch' if not matches else 'address_check')
+            messages = {
+                'results_incomplete': '高德结果尚未取完整，请重新查询后确认地点',
+                'multiple_subjects': f'找到 {len(matches)} 个同名主体地点，请核对地址并选择',
+                'name_mismatch': '已找到候选地点，但名称未完全对应，请核对后选择',
+                'address_check': '已找到同名地点，但地址缺失或与来源门牌不同，请核对后确认',
+            }
             values.update(state='review', candidates=candidates,
-                          error='未找到唯一可靠位置：候选有歧义、地址不同或结果未完整返回，请核对后确认')
+                          review_reason=reason, error=messages[reason] if pipeline else
+                          '未找到唯一可靠位置：候选有歧义、地址不同或结果未完整返回，请核对后确认')
         else:
             values.update(state='not_found', error='未找到名称、区域及分类可靠的高德地点')
     except Exception as exc:
@@ -218,7 +228,7 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
     if error:
         raise PositionOutcome(error)
     if values['state'] in {'review', 'not_found'}:
-        raise PositionOutcome(values['error'], state=values['state'])
+        raise PositionOutcome(values['error'], state=values['state'], reason=values.get('review_reason'))
     return 'updated'
 
 
@@ -339,7 +349,8 @@ class PositionJob:
                             else:
                                 self.state['failed'] += 1
                             self.state['errors'].append({'community_id': cid, 'name': target['community_name'],
-                                                         'message': message, 'state': getattr(exc, 'state', None) or 'error'})
+                                                         'message': message, 'state': getattr(exc, 'state', None) or 'error',
+                                                         'reason': getattr(exc, 'reason', None)})
                         outcome = None
                 with self.lock:
                     if page_client:

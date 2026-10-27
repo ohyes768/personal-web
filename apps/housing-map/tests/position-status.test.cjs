@@ -77,7 +77,7 @@ test('amap job summary reports per-outcome states instead of skip counts', () =>
     running: false, phase: 'succeeded', processed: 155, total: 155, updated: 1, skipped: 102,
     review: 24, not_found: 29, failed: 0, skipped_by_state: { manual: 2, review: 71, not_found: 29 } } } }));
   assert.match(html, /采集完成/);
-  assert.match(html, /补全 1 · 转待确认 24 · 高德无此地点 29/);
+  assert.match(html, /补全 1 · 待人工确认 24 · 未找到主体地点 29/);
   assert.match(html, /已处理 155 \/ 155/);
   assert.match(html, /未参与本轮 102/);
   assert.match(html, /人工已确认 2 · 待确认 71 · 未找到 29/);

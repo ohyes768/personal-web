@@ -23,7 +23,7 @@ type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finishe
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
   retryable?: number; mode?: 'all' | 'retry_failed';
-  stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string }[]; truncated?: { message: string }[] };
+  stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
   errors?: Job['errors'] | { items?: { message: string }[]; total?: number } };
 export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
@@ -58,7 +58,7 @@ function taskCounts(t: (typeof tasks)[number], job: Job | null): string {
     job?.processed !== undefined && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
     job?.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
     job?.updated !== undefined && job.review !== undefined &&
-      `补全 ${job.updated || 0} · 转待确认 ${job.review} · 高德无此地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
+      `补全 ${job.updated || 0} · 待人工确认 ${job.review} · 未找到主体地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}`,
     job?.updated !== undefined && job.review === undefined && job.conflict === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
     job?.conflict !== undefined &&
       `已完成用途核对 ${job.updated || 0} · 用途冲突，待人工确认 ${job.conflict} · 未找到高德地点 ${job.not_found || 0}${job.uncertain ? ` · 高德地点匹配不明确 ${job.uncertain}` : ''}${job.error ? ` · 查询失败 ${job.error}` : ''} · 跳过 ${job.skipped || 0}`,
@@ -108,6 +108,11 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
         const message = job ? [job.mode === 'retry_failed' && '重试失败项', phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
         const lastRun = job?.finished_at ? ` · 上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
         const issues = [...(job?.errors || []), ...(job?.truncated || [])];
+        const isReview = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'review' && e.reason !== 'results_incomplete';
+        const isMissing = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'not_found';
+        const reviewIssues = issues.filter(isReview);
+        const missingIssues = issues.filter(isMissing);
+        const retryIssues = issues.filter(e => !isReview(e) && !isMissing(e));
         return <div key={t.id} className="directory-task-row" data-state={state}>
           <div className="directory-task-row-head">
             <span className="directory-task-dot" aria-hidden="true" />
@@ -127,8 +132,14 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
           {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
           {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
             <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
-          {issues.length > 0 && <details className="directory-task-sub"><summary>本轮未完成事项（可重试）</summary>
-            {issues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{t.id === 'use' ? formatUseReviewMessage(e.message) : e.message}</p>)}</details>}
+          {reviewIssues.length > 0 && <details className="directory-task-sub"><summary>待人工确认地点（{reviewIssues.length}）</summary>
+            <p>请在列表中查看地点与类型，核对后选择主体；待确认是正常审核步骤。</p>
+            {reviewIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message.startsWith('未找到唯一可靠位置：') ? '候选地点需人工核对，请查看资料并选择主体' : e.message}</p>)}</details>}
+          {missingIssues.length > 0 && <details className="directory-task-sub"><summary>未找到主体地点（{missingIssues.length}）</summary>
+            <p>可补充别名后重新查询，或查看相关地点类型；未找到不代表非住宅。</p>
+            {missingIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
+          {retryIssues.length > 0 && <details className="directory-task-sub"><summary>{t.id === 'amap' ? '查询未完成（可重试）' : '本轮未完成事项（可重试）'}</summary>
+            {retryIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{t.id === 'use' ? formatUseReviewMessage(e.message) : e.message}</p>)}</details>}
         </div>;
       })}
     </DirectoryDialog>}
