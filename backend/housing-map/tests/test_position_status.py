@@ -282,6 +282,59 @@ def test_addressless_candidate_auto_matches_but_confirm_requires_address(setup):
     assert position_detail(store, data, cid)['state'] == 'matched'
 
 
+def test_addressless_candidate_requires_explicit_coordinate_verification(setup):
+    store, cid, data = setup
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, Client([poi(address=[]), poi('B2')]))
+    detail = position_detail(store, data, cid)
+    with pytest.raises(ValueError, match='核对'):
+        confirm_position(store, data, cid, revision=detail['revision'], poi_id='B1')
+    result = confirm_position(store, data, cid, revision=detail['revision'], poi_id='B1', coordinates_verified=True)
+    assert result['state'] == 'manual'
+    assert result['selected']['source_id'] == 'B1'
+    assert result['selected']['address'] == ''  # Never fabricate an upstream address.
+    assert result['coordinates_verified'] is True
+    assert result['selected']['poi_typecode'] == '120302'
+    assert store.communities()[0]['longitude'] == 120.20749
+    assert store.communities()[0]['address'] == '月明路1076号'
+    with pytest.raises(ValueError, match='变化'):
+        confirm_position(store, data, cid, revision=detail['revision'], poi_id='B1', coordinates_verified=True)
+
+
+@pytest.mark.parametrize('changes', [{'longitude': None}, {'longitude': 'NaN'},
+                                    {'longitude': 0}, {'latitude': 31}, {'district': '萧山'}])
+def test_verified_candidate_still_requires_valid_district_coordinates(setup, changes):
+    store, cid, data = setup
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, Client([poi(address=[]), poi('B2')]))
+    saved = store.communities()[0]['amap_position']
+    saved['candidates'][0].update(changes)
+    update_master(store, cid, amap_position=saved)
+    detail = position_detail(store, data, cid)
+    with pytest.raises(ValueError, match='坐标|区域'):
+        confirm_position(store, data, cid, revision=detail['revision'], poi_id='B1', coordinates_verified=True)
+
+
+def test_addressless_candidate_api_confirmation(setup, monkeypatch):
+    from src.api import directory_routes, directory_workflow_routes as routes
+    store, cid, data = setup
+    monkeypatch.setattr(directory_routes, 'store', lambda: store)
+    monkeypatch.setattr(routes, '_position', None)
+    with pytest.raises(ValueError):
+        position_one(store, data, cid, Client([poi(address=[]), poi('B2')]))
+    detail = position_detail(store, data, cid)
+    app = FastAPI(); app.include_router(routes.router, prefix='/api')
+    client = TestClient(app)
+    path = f'/api/directory/workflow/catalog/{cid}/position/confirm'
+    body = dict(revision=detail['revision'], poi_id='B1')
+    assert client.post(path, json=body).status_code == 409
+    assert client.post(path, json={**body, 'coordinates_verified': 'true'}).status_code == 422
+    response = client.post(path, json={**body, 'coordinates_verified': True})
+    assert response.status_code == 200, response.text
+    assert response.json()['data']['state'] == 'manual'
+    assert response.json()['data']['coordinates_verified'] is True
+
+
 def with_alias(store, cid):
     store.update(cid, name='风雅钱塘', aliases=['茂御居'], address='月明路1076号', district='滨江')
 

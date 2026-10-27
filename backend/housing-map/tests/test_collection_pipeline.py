@@ -183,6 +183,30 @@ def test_candidate_can_match_and_confirm_nonresidential_poi(store, tmp_path):
     assert inventory(store, tmp_path)[0]['qualification'] == 'use_conflict'
 
 
+def test_addressless_subject_can_be_verified_and_admitted(store, tmp_path):
+    from src.services.directory_position import position_one, position_detail, confirm_position, PositionOutcome
+    store.ingest(source())
+    synchronize(store, tmp_path)
+    cid = inventory(store, tmp_path)[0]['community_id']
+
+    class Client:
+        def search_name(self, name, district, types=None, **kwargs):
+            return [dict(id='P1', name=name, adname='滨江区', typecode='120302', type='住宅小区',
+                         address=[], location='120.20749,30.20226')], 1
+
+    with pytest.raises(PositionOutcome):
+        position_one(store, tmp_path, cid, Client())
+    detail = position_detail(store, tmp_path, cid)
+    assert detail['state'] == 'review'
+    assert detail['review_reason'] == 'address_check'
+    assert inventory(store, tmp_path)[0]['workflow_state'] == 'pending'
+    confirm_position(store, tmp_path, cid, revision=detail['revision'], poi_id='P1', coordinates_verified=True)
+    row = inventory(store, tmp_path)[0]
+    assert row['workflow_state'] == 'admitted'
+    assert row['position']['selected']['address'] == ''
+    assert row['use_review']['evidence']['poi_id'] == 'P1'
+
+
 def test_company_type_is_visible_as_reference_without_becoming_a_selected_subject(store, tmp_path):
     from src.services.directory_position import position_one, position_detail, PositionOutcome
     store.ingest(source('其他')); synchronize(store, tmp_path)

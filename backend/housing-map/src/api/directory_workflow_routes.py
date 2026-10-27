@@ -213,6 +213,7 @@ def position_cancel():
 class PositionDecision(BaseModel):
     revision: str = Field(pattern='^[a-f0-9]{64}$')
     poi_id: str | None = Field(None, min_length=1, max_length=100)
+    coordinates_verified: bool = Field(False, strict=True)
     longitude: float | None = Field(None, ge=-180, le=180, allow_inf_nan=False)
     latitude: float | None = Field(None, ge=-90, le=90, allow_inf_nan=False)
     address: str | None = Field(None, max_length=300)

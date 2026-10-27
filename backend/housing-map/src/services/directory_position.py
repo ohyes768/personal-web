@@ -232,7 +232,8 @@ def position_one(store, data_dir, cid, client=None, *, cancelled=lambda: False, 
     return 'updated'
 
 
-def confirm_position(store, data_dir, cid, *, revision, poi_id=None, longitude=None, latitude=None, address=None):
+def confirm_position(store, data_dir, cid, *, revision, poi_id=None, longitude=None, latitude=None, address=None,
+                     coordinates_verified=False):
     snapshot = _snapshot(store, cid)
     if _revision(snapshot) != revision:
         raise ValueError('定位资料已变化，请刷新后确认')
@@ -243,14 +244,19 @@ def confirm_position(store, data_dir, cid, *, revision, poi_id=None, longitude=N
         point = next((p for p in state.get('candidates', []) if p['source_id'] == poi_id), None)
         if not point:
             raise ValueError('候选已失效，请重新查询')
-        if not valid_address(point.get('address')):
-            raise ValueError('候选缺少地图地址，请核对后使用手动定位')
+        if not valid_address(point.get('address')) and coordinates_verified is not True:
+            raise ValueError('候选缺少地图地址，请先核对地图坐标并确认')
+        if (point.get('district') != district or not valid_position(point, district)
+                or not in_district(point, district)):
+            raise ValueError('候选坐标无效或不在当前区域，请重新查询')
     else:
         point = dict(longitude=longitude, latitude=latitude, coordinate_system='gcj02', address=address)
         if not valid_address(address) or not valid_position(point, district) or not in_district(point, district):
             raise ValueError('请填写有效地图地址与区域内GCJ02坐标')
     values = dict(identity=identity(target), state='manual', checked_at=state.get('checked_at'), selected=point,
                   candidates=state.get('candidates', []), confirmed_at=now())
+    if poi_id and not valid_address(point.get('address')):
+        values['coordinates_verified'] = True
     _publish(store, data_dir, cid, snapshot, values, point, replace=True)
     return position_detail(store, data_dir, cid)
 

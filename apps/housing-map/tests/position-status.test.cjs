@@ -83,6 +83,36 @@ test('amap job summary reports per-outcome states instead of skip counts', () =>
   assert.match(html, /人工已确认 2 · 待确认 71 · 未找到 29/);
   assert.doesNotMatch(html, /跳过/);
 });
+
+test('addressless candidate can be selected and requires map verification before confirmation', () => {
+  const original = React.useState;
+  function panel(verified) {
+    let i = 0;
+    React.useState = () => [[{ poi: 'B1', revision: 'abc', verified }][i++], () => {}];
+    try {
+      return render(React.createElement(PositionPanel, { busy: false, confirm() {}, position: {
+        state: 'review', revision: 'abc', has_coordinates: true,
+        candidates: [{ source_id: 'B1', name: '鸿雁苑', address: '', longitude: 120.202578, latitude: 30.165324 }]
+      } }));
+    } finally { React.useState = original; }
+  }
+  const unchecked = panel(false);
+  assert.match(unchecked, /<option value="B1" selected="">/);
+  assert.match(unchecked, /120.202578,30.165324/);
+  assert.match(unchecked, /https:\/\/uri.amap.com\/marker\?position=120.202578,30.165324/);
+  assert.match(unchecked, /已核对地图位置，确认是该楼盘/);
+  assert.match(unchecked, /<button[^>]*disabled="">确认位置/);
+  assert.doesNotMatch(panel(true), /<button[^>]*disabled="">确认位置/);
+});
+
+test('verified addressless subject never displays the source address as a Gaode address', () => {
+  const html = render(React.createElement(PositionPanel, { busy: false, confirm() {}, address: '来源路1号', position: {
+    state: 'manual', coordinates_verified: true, has_coordinates: true, candidates: [],
+    selected: { source_id: 'B1', name: '鸿雁苑', address: '', longitude: 120.202578, latitude: 30.165324 }
+  } }));
+  assert.match(html, /高德未提供地址，已人工核对地图位置/);
+  assert.doesNotMatch(html, /高德地址：来源路1号/);
+});
 test('legacy amap job without outcome fields keeps the old wording', () => {
   const html = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, action() {}, errors: {}, jobs: { amap: {
     running: false, phase: 'partial_failed', processed: 155, total: 155, updated: 0, skipped: 155 } } }));
