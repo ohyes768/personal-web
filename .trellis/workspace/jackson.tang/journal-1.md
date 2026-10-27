@@ -1711,3 +1711,37 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 47: 归档待处理操作筛选任务
+
+**Date**: 2026-10-27
+**Task**: 归档待处理操作筛选任务
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+将 10-27-pending-operation-filter 归档到 archive/2026-10。功能已在 2f58250 落地。工作区里未提交的新房资料补全改动和其他任务的 package 修正未纳入本次归档。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f58250` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
