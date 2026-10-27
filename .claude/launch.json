@@ -44,6 +44,10 @@
       "port": 3003
     },
     {
+      "name": "dividend-web-attach",
+      "url": "http://localhost:3003"
+    },
+    {
       "name": "home-preview",
       "runtimeExecutable": "python",
       "runtimeArgs": ["-m", "http.server", "4010", "--directory", "nginx/html"],
