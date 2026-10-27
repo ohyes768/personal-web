@@ -37,7 +37,7 @@ type Page<T> = { items: T[]; total: number; page: number; property_types?: strin
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
-  retryable?: number; unqueried?: number; mode?: 'all' | 'retry_failed';
+  retryable?: number; unqueried?: number; mode?: 'all' | 'unqueried' | 'retry_failed';
   resolutions?: Record<string, number>; evidence_issues?: { name?: string; message: string }[];
   position_followup?: { state: string; targets?: number; message?: string };
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
@@ -135,7 +135,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
             <span className="directory-task-dot" aria-hidden="true" />
             <strong>{t.label}</strong>
             <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
-              onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.body))}>
+              onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'unqueried' } : t.body))}>
               {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '继续匹配' : '开始'}</button>
             {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
               onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
@@ -146,7 +146,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
           </div>
           <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
           {t.id === 'amap' && <p className="directory-task-sub">当前待处理：尚未查询 {job?.unqueried ?? '—'} 条 → 继续匹配 · 查询失败／不完整 {job?.retryable ?? '—'} 条 → 重试查询失败</p>}
-          {t.id === 'amap' && <p className="directory-task-sub">继续匹配会接着处理未查询、未完成和失败项；重试仅处理当前查询失败或结果不完整的项目。待人工确认、已匹配和未找到主体地点的项目不重复查询。</p>}
+          {t.id === 'amap' && <p className="directory-task-sub">继续匹配只处理上方统计的尚未查询项目；重试查询失败只处理当前查询失败或结果不完整的项目。已有查询记录的其他项目不参与。</p>}
           {(problem || message) && <p className="directory-task-line" data-state={state}>
             {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
           </p>}

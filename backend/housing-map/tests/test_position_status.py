@@ -527,3 +527,19 @@ def test_snapshot_counts_current_unqueried_separately_from_retryable(setup, monk
     assert snap.get('processed', 0) == 0
     monkeypatch.setattr(module, 'batch_targets', lambda _: [])
     assert job.snapshot()['unqueried'] == job.snapshot()['retryable'] == 0
+
+
+def test_unqueried_run_total_excludes_existing_results_and_failures(setup):
+    store, cid, data = setup
+    position_one(store, data, cid, Client())
+    other = add_admitted(store, '新小区', 'new-one')
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', total=0, processed=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
+    client = Client(rows=[])
+    job._run(client=client, delay=0, mode='unqueried')
+    snap = job.snapshot()
+    assert snap['total'] == snap['processed'] == client.calls == 1
+    assert snap['skipped'] == 0
+    assert snap['not_found'] == 1
+    assert snap['unqueried'] == 0

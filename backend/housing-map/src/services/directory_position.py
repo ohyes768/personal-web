@@ -129,6 +129,12 @@ def _name_hit(p, flats):
     return name_hit(p['name'], flats)
 
 
+def query_unqueried(view):
+    """No usable query or history exists for this identity."""
+    return (view.get('state') == 'pending' and not view.get('checked_at')
+            and not view.get('query_history'))
+
+
 def query_retryable(view):
     """Only actual failures/incomplete results, never budget stops or ambiguity."""
     if view.get('review_reason') == 'request_budget' or '请求预算' in (view.get('error') or ''):
@@ -331,9 +337,7 @@ class PositionJob:
         with self.lock:
             value = copy.deepcopy(self.state) if self.state else dict(running=False, phase='idle')
         targets = batch_targets(self.store)
-        value['unqueried'] = sum(c['position'].get('state') == 'pending'
-                                 and not c['position'].get('checked_at')
-                                 and not c['position'].get('query_history') for c in targets)
+        value['unqueried'] = sum(query_unqueried(c['position']) for c in targets)
         value['retryable'] = sum(query_retryable(c['position']) for c in targets)
         return value
 
@@ -342,7 +346,7 @@ class PositionJob:
             db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (KEY, dump(self.state)))
 
     def start(self, mode='all', *, community_ids=None):
-        if mode not in {'all', 'retry_failed'}:
+        if mode not in {'all', 'unqueried', 'retry_failed'}:
             raise ValueError('未知高德匹配模式')
         with self.lock:
             with self.store.db() as db:
@@ -366,6 +370,8 @@ class PositionJob:
             targets = batch_targets(self.store)
             if community_ids is not None:
                 targets = [c for c in targets if c['community_id'] in community_ids]
+            if mode == 'unqueried':
+                targets = [c for c in targets if query_unqueried(c['position'])]
             if mode == 'retry_failed':
                 targets = [c for c in targets if query_retryable(c['position'])]
             from src.services.collection_pipeline import RequestBudgetClient

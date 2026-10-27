@@ -78,7 +78,7 @@ test('Amap offers continuation and current-query retry with the correct request 
   visit(tree);
   buttons.find(b => b.props.children === '继续匹配').props.onClick();
   buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === '重试查询失败（').props.onClick();
-  assert.deepEqual(calls, [['/directory/workflow/positions', 'POST', undefined],
+  assert.deepEqual(calls, [['/directory/workflow/positions', 'POST', { mode: 'unqueried' }],
     ['/directory/workflow/positions', 'POST', { mode: 'retry_failed' }]]);
   const html = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, action() {} }));
   assert.match(html, /重试查询失败（2）/);
