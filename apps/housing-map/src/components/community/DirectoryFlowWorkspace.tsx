@@ -18,6 +18,20 @@ type CatalogRow = Community & { property_types?: string[]; position?: Position; 
 type Auction = Source & { revision: string; skipped: boolean; candidates: Community[]; reason: string;
   auction_ids?: string[]; rounds?: { auction_id: string; title?: string; source_url?: string; round?: number }[] };
 type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number; pipeline?: boolean; pending?: number };
+
+export function catalogScope(mode: string, pipeline = false) {
+  return { state: mode === 'pending' ? 'excluded' : mode,
+    workflow: pipeline && (mode === 'pending' || mode === 'excluded') ? mode : '' };
+}
+
+export function CatalogTabs({ summary, mode, onChange }: { summary: Summary | null; mode: string; onChange: (mode: string) => void }) {
+  const tabs = [['admitted', '已收录', summary?.admitted],
+    ...(summary?.pipeline ? [['pending', '待处理', summary.pending]] : []),
+    ['excluded', '不收录', summary?.pipeline ? Math.max(0, summary.excluded - (summary.pending || 0)) : summary?.excluded],
+    ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]];
+  return <div className="review-tabs">{tabs.map(([key, label, count]) =>
+    <button key={key} aria-pressed={mode === key} onClick={() => onChange(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
+}
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
@@ -199,11 +213,11 @@ function CatalogAmapType({ position }: { position?: Position }) {
   return <span className="directory-muted">{empty}</span>;
 }
 
-export function CatalogTable({ items, excluded, select, retry, busy, position }: { items: CatalogRow[]; excluded: boolean;
+export function CatalogTable({ items, excluded, pending = false, select, retry, busy, position }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
   select: (row: CatalogRow) => void; retry: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; }) {
   return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}`}><thead><tr>
     <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
-    <th>高德类型</th>{excluded && <th>住宅用途核对</th>}<th>{excluded ? '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
+    <th>高德类型</th>{excluded && <th>住宅用途核对</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
     <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
       {!excluded && <small className="catalog-text directory-muted" title={c.address || '实际地址待补充'}>{c.district || '区域待补'} · {c.address || '实际地址待补充'}</small>}</td>
@@ -216,7 +230,7 @@ export function CatalogTable({ items, excluded, select, retry, busy, position }:
       {c.collection_pipeline_version && <small className="catalog-text">{pipelineStageLabel(c)}</small>}
       {c.use_review?.auto_skip_reason && <small className="catalog-text directory-muted">{c.use_review.auto_skip_reason}</small>}
       {c.use_review?.re_review && <small className="catalog-text directory-muted">有新证据待复审</small>}</div></td>}
-    {excluded && <td data-label="不收录原因 / 资料状态">{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : '条件不符'}</small></td>}
+    {excluded && <td data-label={pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态'}>{c.exclusion_reason}<small>{c.facts_state === 'incomplete' ? '资料待补，可重新获取' : pending ? '待核对' : '条件不符'}</small></td>}
     {!excluded && <td data-label="高德定位"><div className="catalog-inline"><PositionBadge position={c.position} compact />{c.position?.state === 'review' && <button className="btn btn-secondary" disabled={busy} onClick={() => (position || select)(c)}>确认位置</button>}</div></td>}
     {!excluded && <><td data-label="法拍"><AuctionCoverage value={c.coverage?.auction} onView={() => select(c)} /></td>
       <td data-label="租金"><RentalCoverage value={c.coverage?.rental} /></td></>}
@@ -262,7 +276,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
   const [rentalFilter, setRentalFilter] = useState('');
   const [propertyFilter, setPropertyFilter] = useState('');
   const [useFilter, setUseFilter] = useState('');
-  const [workflowFilter, setWorkflowFilter] = useState('');
   const [useConfirmOpen, setUseConfirmOpen] = useState(false);
   const [propertyTypes, setPropertyTypes] = useState<string[]>([]);
   const [showSkipped, setShowSkipped] = useState(false);
@@ -290,17 +303,17 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
         if (!counts.active) { setLoading(false); return; }
         if (mode === 'rental') { setLoading(false); return; }
         const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q, page: String(page), include_skipped: String(showSkipped) })}`
-          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, state: mode, page: String(page), workflow: mode === 'excluded' ? workflowFilter : '', position: mode === 'admitted' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' ? propertyFilter : '', use: mode === 'auctions' ? '' : useFilter, auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
+          : `/directory/workflow/catalog?${new URLSearchParams({ q, district, ...catalogScope(mode, counts.pipeline), page: String(page), position: mode === 'admitted' || mode === 'pending' ? positionFilter : '', market: mode === 'admitted' ? marketFilter : '', property_type: mode === 'excluded' || mode === 'pending' ? propertyFilter : '', use: useFilter, auction: mode === 'admitted' ? auctionFilter : '', rental: mode === 'admitted' ? rentalFilter : '' })}`;
         const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         if (page > 1 && (page - 1) * 30 >= packet.total) { setPage(Math.max(1, Math.ceil(packet.total / 30))); return; }
         if (mode === 'auctions') setAuctions((packet as Page<Auction>).items); else setItems((packet as Page<CatalogRow>).items);
-        if (mode === 'excluded') setPropertyTypes(packet.property_types || []);
+        if (mode === 'excluded' || mode === 'pending') setPropertyTypes(packet.property_types || []);
         setTotal(packet.total); setError(''); setLoading(false);
       } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '名单加载失败'); setLoading(false); } }
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter, useFilter, workflowFilter]);
+  }, [mode, q, district, page, showSkipped, revision, positionFilter, marketFilter, propertyFilter, auctionFilter, rentalFilter, useFilter]);
   useEffect(() => {
     if (!summary?.active) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -344,7 +357,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     }
     finally { optimistic.current = null; setBusy(false); }
   }
-  function changeMode(value: string) { setMode(value); setPage(1); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
+  function changeMode(value: string) { setMode(value); setPage(1); setPositionFilter(''); setUseFilter(''); setPropertyFilter(''); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
     setError(''); setNotice(''); setDetail(row); setAuction(null); setExcluding(false); setExcludeReason(''); setCustomExcludeReason('');
@@ -459,15 +472,12 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       <CollectionTasksButton jobs={summary?.pipeline ? Object.fromEntries(Object.entries(jobs).filter(([id]) => id !== 'use')) : jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
     <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
-    <div className="review-tabs">{[['admitted', '已收录', summary?.admitted], ['excluded', summary?.pipeline ? '待处理 / 不收录' : '不收录', summary?.excluded], ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]].map(([key, label, count]) =>
-      <button key={key} aria-pressed={mode === key} onClick={() => changeMode(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>
+    <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />
     {mode !== 'rental' && <div className="directory-toolbar"><input aria-label="搜索小区名称" placeholder="搜索小区名称、地址" value={q} onChange={e => { setQ(e.target.value); setPage(1); setLoading(true); }} />
       {mode !== 'auctions' && <select aria-label="目录区域" value={district} onChange={e => { setDistrict(e.target.value); setPage(1); setLoading(true); }}><option value="滨江">滨江区</option><option value="萧山">萧山接壤目录</option><option value="">全部区域</option></select>}
-      {mode === 'excluded' && summary?.pipeline && <select aria-label="收录处理状态" value={workflowFilter} onChange={e => { setWorkflowFilter(e.target.value); setPage(1); setLoading(true); }}>
-        <option value="">待处理及不收录</option><option value="pending">待处理</option><option value="excluded">明确不收录</option></select>}
       <CatalogClassificationFilter mode={mode} value={mode === 'admitted' ? marketFilter : propertyFilter} propertyTypes={propertyTypes}
         onChange={value => { if (mode === 'admitted') setMarketFilter(value); else setPropertyFilter(value); setPage(1); setLoading(true); }} />
-      {mode === 'admitted' && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionBucketLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
+      {(mode === 'admitted' || mode === 'pending') && <select aria-label="高德定位状态" value={positionFilter} onChange={e => { setPositionFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部定位状态</option>{Object.entries(positionBucketLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
       {mode !== 'auctions' && <select aria-label="住宅用途核对状态" value={useFilter} onChange={e => { setUseFilter(e.target.value); setPage(1); setLoading(true); }}><option value="">全部用途核对状态</option>{Object.entries(useReviewFilterLabels).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select>}
       {mode === 'admitted' && <><select aria-label="法拍数据筛选" value={auctionFilter} onChange={e => { setAuctionFilter(e.target.value); setPage(1); setLoading(true); }}>
         <option value="">全部法拍覆盖</option><option value="has">有法拍记录</option><option value="none">暂无法拍记录</option>
@@ -482,7 +492,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
       <p role="status" className="directory-muted">名单流程尚未启用，暂无租金待处理清单。</p>) :
     <div className="directory-workspace"><div className="directory-list-panel">
       {loading ? <p role="status">加载名单…</p> : summary?.active && <><p className="directory-muted">当前筛选：{total} 条</p>
-        {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode === 'excluded'} select={row => void select(row)}
+        {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode !== 'admitted'} pending={mode === 'pending'} select={row => void select(row)}
           retry={row => void action(`/directory/workflow/catalog/${encodeURIComponent(row.community_id)}/retry`, 'POST')} busy={busy || !!jobs.amap?.running} position={row => void select(row)} />
           : <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>法拍房产</th><th>地址</th><th>待关联原因</th><th>操作</th></tr></thead><tbody>{auctions.map(r => <tr key={r.id}>
             <td data-label="法拍房产">{r.name}<small>{r.auction_ids?.length || 0} 条轮次{r.skipped ? ' · 已跳过' : ''}</small></td><td data-label="地址">{r.address || '暂无地址'}</td><td data-label="待关联原因">{r.reason}</td>

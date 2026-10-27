@@ -8,7 +8,36 @@ const { renderToStaticMarkup } = require('react-dom/server');
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { target: ts.ScriptTarget.ES2020, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
 }).outputText, filename);
-const { CatalogClassificationFilter, CatalogTable } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+const { CatalogClassificationFilter, CatalogTable, CatalogTabs, catalogScope } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+
+test('pipeline tabs split pending from final exclusions with distinct counts and queries', () => {
+  const summary = { active: true, pipeline: true, admitted: 89, pending: 254, excluded: 355, auction_pending: 32 };
+  const html = renderToStaticMarkup(React.createElement(CatalogTabs, { summary, mode: 'pending', onChange() {} }));
+  assert.match(html, /aria-pressed="true">待处理（254）/);
+  assert.match(html, />不收录（101）/);
+  assert.match(html, />已收录（89）/);
+  assert.doesNotMatch(html, /待处理 \/ 不收录|收录处理状态/);
+  assert.deepEqual(catalogScope('pending', true), { state: 'excluded', workflow: 'pending' });
+  assert.deepEqual(catalogScope('excluded', true), { state: 'excluded', workflow: 'excluded' });
+  assert.deepEqual(catalogScope('admitted', true), { state: 'admitted', workflow: '' });
+  const clicks = [];
+  const tabs = CatalogTabs({ summary, mode: 'pending', onChange: mode => clicks.push(mode) });
+  tabs.props.children.find(button => button.key === 'excluded').props.onClick();
+  tabs.props.children.find(button => button.key === 'pending').props.onClick();
+  assert.deepEqual(clicks, ['excluded', 'pending']);
+  const legacy = renderToStaticMarkup(React.createElement(CatalogTabs, { summary: { ...summary, pipeline: false }, mode: 'excluded', onChange() {} }));
+  assert.doesNotMatch(legacy, /待处理/);
+  assert.match(legacy, /不收录（355）/);
+  assert.deepEqual(catalogScope('excluded', false), { state: 'excluded', workflow: '' });
+});
+
+test('pending catalog labels unfinished reasons without calling them exclusions', () => {
+  const html = renderToStaticMarkup(React.createElement(CatalogTable, { excluded: true, pending: true, busy: false, select() {}, retry() {},
+    items: [{ community_id: 'p', community_name: '待确认小区', exclusion_reason: '请确认主体地点', facts_state: 'complete' }] }));
+  assert.match(html, /<th>待处理原因 \/ 资料状态<\/th>/);
+  assert.match(html, /待核对/);
+  assert.doesNotMatch(html, /不收录原因|条件不符/);
+});
 
 test('catalog classification filters show mode-specific options and preserve selection', () => {
   const render = (mode, value) => renderToStaticMarkup(React.createElement(CatalogClassificationFilter,
