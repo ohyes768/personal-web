@@ -1745,3 +1745,40 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 48: 归档五条购房采集任务
+
+**Date**: 2026-10-27
+**Task**: 归档五条购房采集任务
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+将已落地的 5 个 housing-map 任务归档到 archive/2026-10：透明售房网与高德住宅筛选、挂牌少于三套不收录、名单分类与采集流程重构、新房独立采集、楼盘采集与住宅收录流程统一。10-15 与 10-19 的记录里仍写着生产部署未完成，按确认一并归档。未纳入未提交的新房资料补全，以及其他任务尚未提交的 package 修正。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `7b63e6e` | (see git log) |
+| `58492a2` | (see git log) |
+| `bd38a1d` | (see git log) |
+| `30e0a8e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
