@@ -161,8 +161,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
               </td>
               <td className="p-3" onClick={event => event.stopPropagation()}>
                 {score
-                  ? <button className="font-mono tabular-nums text-ink hover:underline" title="查看基本面评级详情" onClick={() => openQuality(stock.code)}>
-                      {score.weighted_score.toFixed(1)}
+                  ? <button className="font-mono tabular-nums text-ink hover:underline" title={score.weighted_score == null ? '证据不足，本次未评级；点击查看详情' : '查看基本面评级详情'} onClick={() => openQuality(stock.code)}>
+                      {score.weighted_score == null ? <span className="text-ink-muted">未评级</span> : score.weighted_score.toFixed(1)}
                       {score.boundary && <span className="ml-1 text-xs text-amber-700" title={score.boundary}>⚠️</span>}
                     </button>
                   : <span className="text-ink-muted">-</span>}

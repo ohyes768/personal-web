@@ -27,8 +27,8 @@ def stock(**updates):
 
 
 def fake_output(code, name, b=4, m=5, i=3, mg=3, f=5, *, bad_weighted=False, bad_stars=False):
-    weighted = round(b * 0.25 + m * 0.25 + i * 0.20 + mg * 0.15 + f * 0.15, 2)
-    stars = 4
+    weighted = None if f is None else round(b * 0.25 + m * 0.25 + i * 0.20 + mg * 0.15 + f * 0.15, 2)
+    stars = None if f is None else 4
     if bad_weighted:
         weighted = round(weighted + 0.5, 2)
     if bad_stars:
@@ -84,6 +84,30 @@ class TestParse:
         with pytest.raises(ValueError):
             parse_quality_output(raw, "000001", "样本")
 
+    def test_unrated_financial_parses(self):
+        # v3：金融股 E 维证据不足为 null，整体未评级，派生字段全 null
+        score = parse_quality_output(fake_output("600036", "招行", b=3, m=4, i=3, mg=2, f=None), "600036", "招行")
+        assert score.dimensions["financial"] is None
+        assert score.dimensions["business"] == 3
+        assert score.weighted_score is None
+        assert score.stars is None
+        assert score.boundary is None
+
+    def test_unrated_with_score_rejected(self):
+        raw = fake_output("600036", "招行", f=None).replace('"weighted_score": null', '"weighted_score": 2.4')
+        with pytest.raises(ValueError, match="必须全为 null"):
+            parse_quality_output(raw, "600036", "招行")
+
+    def test_unrated_with_stars_rejected(self):
+        raw = fake_output("600036", "招行", f=None).replace('"stars": null', '"stars": 2')
+        with pytest.raises(ValueError, match="必须全为 null"):
+            parse_quality_output(raw, "600036", "招行")
+
+    def test_rated_with_null_weighted_rejected(self):
+        raw = fake_output("000001", "样本").replace('"weighted_score": 4.05', '"weighted_score": null')
+        with pytest.raises(ValueError, match="不能为 null"):
+            parse_quality_output(raw, "000001", "样本")
+
 
 class TestPayloadAndPrompt:
     def test_payload_fields_match_skill_contract(self):
@@ -134,6 +158,19 @@ class TestSubmitAnalysis:
         assert per_code["000001"]["state"] == "completed"
         assert per_code["600000"]["state"] == "completed"
         assert per_code["000001"]["error"] is None
+
+    def test_unrated_stock_saves_and_completes(self, tmp_path):
+        service, job = run_service(
+            tmp_path, ["000001"], {"000001": stock()},
+            lambda cfg, prompt, key: "run-1",
+            lambda cfg, run_id: fake_output("000001", "样本", f=None),
+        )
+        assert job["status"] == "succeeded"
+        record = service.get_all()["000001"]
+        assert record["stars"] is None
+        assert record["weighted_score"] is None
+        assert record["dimensions"]["financial"] is None
+        assert service.get_per_code()["000001"]["state"] == "completed"
 
     def test_one_failure_does_not_block_other(self, tmp_path):
         def submit_fn(cfg, prompt, key):

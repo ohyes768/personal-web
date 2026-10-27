@@ -1,6 +1,7 @@
 /**
  * 基本面评级（Hermes 五维评分）类型与工具
- * 评分契约见 backend/dividend-select/skills/basic-quality-rating/SKILL.md（自动化 JSON 输出模式）
+ * 评分契约源：skills 仓库 finance-macro/basic-quality-rating（v3 起允许「未评级」null）；
+ * 后端侧契约摘要见 .trellis/spec/backend/dividend-select/backend/quality-rating-contract.md
  */
 import type { RefreshJob } from './types';
 
@@ -18,9 +19,11 @@ export const QUALITY_DIMENSION_LABELS: Record<QualityDimensionKey, string> = {
 export interface QualityScore {
   code: string;
   name: string;
-  dimensions: Record<QualityDimensionKey, number>;
-  weighted_score: number;
-  stars: number;
+  /** 1-5 整数；证据不足的维度为 null（金融股 financial 维必然 null） */
+  dimensions: Record<QualityDimensionKey, number | null>;
+  /** 五维齐全才有值；任一维 null 时与 stars、boundary 一起为 null（未评级） */
+  weighted_score: number | null;
+  stars: number | null;
   boundary: string | null;
   summary: string;
   risks: string[];

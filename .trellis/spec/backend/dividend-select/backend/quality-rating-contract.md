@@ -43,17 +43,29 @@ mtime date (fallback: today), so re-runs on the same data day reuse the run.
 
 The skill output is a single bare JSON object: `code`, `name`,
 `dimensions` (exactly business/moat/industry/management/financial, each 1-5
-int), `weighted_score` (= dimensions × 0.25/0.25/0.20/0.15/0.15, tolerance
-±0.01), `stars` (mechanical mapping ≥4.5→5, ≥4.0→4, ≥3.0→3, ≥2.0→2, else 1),
-`boundary` (set when within 0.25 of a tier edge), `summary`, `risks`,
-`watch_points`, `report_md` (non-empty Chinese markdown). Parsing tolerates
-```json fences and stray prose around the object; pydantic rejects
-weight/star/report mismatches as a per-stock failure. `weighted_score` is
-shown to users in the screening list's 「评级结果」column as a 1-decimal
-number (e.g. `3.4`) alongside the `boundary` flag; stocks without a score
-show `-`. The rating report modal itself still shows stars + dimensions and
-no weighted score. (Changed 2026-10-24: the previous "never shown to
-users — ordinal false precision" rule is superseded.)
+int or null — evidence-insufficient dimensions are null, and `financial` is
+necessarily null for banks/insurers), `weighted_score` (= dimensions ×
+0.25/0.25/0.20/0.15/0.15, tolerance ±0.01), `stars` (mechanical mapping
+≥4.5→5, ≥4.0→4, ≥3.0→3, ≥2.0→2, else 1), `boundary` (set when within 0.25 of
+a tier edge), `summary`, `risks`, `watch_points`, `report_md` (non-empty
+Chinese markdown). When any dimension is null the stock is 未评级:
+`weighted_score`, `stars` and `boundary` must ALL be null (v3 skill contract;
+summary starts with 「灰色地带（证据不足，未评级）」). pydantic enforces the
+all-or-nothing in both directions: an unrated stock carrying any non-null
+derived field, or a fully rated stock carrying null weighted_score/stars, is
+rejected as a per-stock failure. Parsing tolerates
+```json fences and stray prose around the object. In the screening list's
+「评级结果」column, rated stocks show the 1-decimal weighted_score (e.g. `3.4`)
+alongside the `boundary` ⚠️ flag; parsed-but-unrated stocks show 「未评级」
+(still opens the report modal, which shows 未评级 instead of stars and
+「未评分」 per null dimension); `-` still means never rated. The rating report
+modal itself still shows no weighted score. (Changed 2026-10-24: the previous
+"never shown to users — ordinal false precision" rule is superseded. Changed
+2026-10-27: v3 null contract adopted; the in-repo skill copy
+`backend/dividend-select/skills/basic-quality-rating/SKILL.md` was removed
+after drifting stale — the skills repo
+`F:\personal-projects\skills\finance-macro\basic-quality-rating\` is the
+single source, installed into Hermes via skill-manager.)
 
 Bulk analysis reuses `RefreshJobManager` with `kind='quality'` (included in
 `_prune` kinds). Each stock is one worker thread bounded by a semaphore
@@ -65,9 +77,9 @@ written via `atomic_write` after each stock completes.
 Hermes config comes from env only: `HERMES_BASE_URL`, `HERMES_API_KEY`,
 `HERMES_PROFILE` (default `ohyes768`), `HERMES_POLL_INTERVAL` (30s),
 `HERMES_TIMEOUT` (3600s), `HERMES_MAX_CONCURRENT` (4). Unset base/key keeps
-every other feature unchanged (analyze returns 503). The skill source lives
-at `backend/dividend-select/skills/basic-quality-rating/SKILL.md` and is
-published to the Hermes profile out-of-band (copy to skills source root, then
-install via skill-manager); the skill must never embed dividend backend URLs
-or schema details. Frontend mirrors the contract in `lib/quality.ts`
+every other feature unchanged (analyze returns 503). The skill source lives in the skills repo
+(`F:\personal-projects\skills\finance-macro\basic-quality-rating\`, v3+),
+installed into the Hermes profile via skill-manager — the former in-repo copy
+was removed 2026-10-27 (see the changed-notes in Contracts); the skill must
+never embed dividend backend URLs or schema details. Frontend mirrors the contract in `lib/quality.ts`
 (`starsFor` must match the mapping above; `RefreshKind` includes `quality`).

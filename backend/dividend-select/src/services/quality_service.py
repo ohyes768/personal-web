@@ -1,6 +1,8 @@
 """基本面评级编排服务：组装数据 → 提交 Hermes → 解析校验 → 落盘。
 
-评分契约见 skills/basic-quality-rating/SKILL.md「自动化 JSON 输出模式」（五维 1-5 分 + 星级 + report_md）。
+评分契约源在 skills 仓库 finance-macro/basic-quality-rating（v3 起：证据不足的维度为 null，
+任一维 null 时 weighted_score/stars/boundary 全为 null，即「未评级」）；后端侧契约摘要见
+.trellis/spec/backend/dividend-select/backend/quality-rating-contract.md。
 批量异步复用 RefreshJobManager（kind='quality'），逐股完成即回调 progress 并合并落盘。
 """
 from __future__ import annotations
@@ -47,9 +49,9 @@ class QualityScore(BaseModel):
 
     code: str
     name: str
-    dimensions: dict[str, int]
-    weighted_score: float
-    stars: int
+    dimensions: dict[str, Optional[int]]
+    weighted_score: Optional[float]
+    stars: Optional[int]
     boundary: Optional[str] = None
     summary: str
     risks: list[str] = Field(default_factory=list)
@@ -58,22 +60,32 @@ class QualityScore(BaseModel):
 
     @field_validator("dimensions")
     @classmethod
-    def _dimensions_ok(cls, value: dict[str, int]) -> dict[str, int]:
+    def _dimensions_ok(cls, value: dict[str, Optional[int]]) -> dict[str, Optional[int]]:
         if set(value) != set(DIMENSION_WEIGHTS):
             raise ValueError(f"dimensions 键必须为 {sorted(DIMENSION_WEIGHTS)}")
         for key, score in value.items():
+            if score is None:
+                continue
             if not isinstance(score, int) or not 1 <= score <= 5:
-                raise ValueError(f"维度 {key} 分数须为 1-5 整数，得到 {score}")
+                raise ValueError(f"维度 {key} 分数须为 1-5 整数或 null，得到 {score}")
         return value
 
     @model_validator(mode="after")
     def _score_and_stars_consistent(self) -> "QualityScore":
-        expected = round(sum(self.dimensions[k] * w for k, w in DIMENSION_WEIGHTS.items()), 2)
-        if abs(self.weighted_score - expected) > SCORE_TOLERANCE:
-            raise ValueError(f"weighted_score {self.weighted_score} 与加权和 {expected} 不符")
-        expected_stars = _stars_for(self.weighted_score)
-        if self.stars != expected_stars:
-            raise ValueError(f"stars {self.stars} 与映射不符（{self.weighted_score} 应为 {expected_stars} 星）")
+        unrated = any(score is None for score in self.dimensions.values())
+        if unrated:
+            # v3 契约：任一维未评分即为「未评级」，三个派生字段全 null，禁止回填或按剩余权重折算
+            if any(v is not None for v in (self.weighted_score, self.stars, self.boundary)):
+                raise ValueError("存在未评分维度时 weighted_score/stars/boundary 必须全为 null")
+        else:
+            if self.weighted_score is None or self.stars is None:
+                raise ValueError("五维齐全时 weighted_score/stars 不能为 null")
+            expected = round(sum(self.dimensions[k] * w for k, w in DIMENSION_WEIGHTS.items()), 2)
+            if abs(self.weighted_score - expected) > SCORE_TOLERANCE:
+                raise ValueError(f"weighted_score {self.weighted_score} 与加权和 {expected} 不符")
+            expected_stars = _stars_for(self.weighted_score)
+            if self.stars != expected_stars:
+                raise ValueError(f"stars {self.stars} 与映射不符（{self.weighted_score} 应为 {expected_stars} 星）")
         if not self.report_md or not self.report_md.strip():
             raise ValueError("report_md 不能为空")
         return self
@@ -103,7 +115,7 @@ def parse_quality_output(raw: str, code: str, name: str) -> QualityScore:
 
 
 def build_stock_payload(stock: DividendStock) -> dict:
-    """挑参与评分的字段组装 JSON（缺失传 null，由 skill 按降档规则处理）。"""
+    """挑参与评分的字段组装 JSON（缺失传 null，由 skill 按可评分性规则处理）。"""
     return {
         "code": stock.code,
         "name": stock.name,

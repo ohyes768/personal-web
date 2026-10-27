@@ -57,9 +57,11 @@ export function QualityReportModal({ score, onClose, onReanalyze, analyzing = fa
           </div>
         )}
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className={`text-2xl ${starBadgeClass(score.stars)}`}>
-            {'⭐'.repeat(score.stars)}<span className="ml-1 text-sm text-ink-muted">({score.stars}/5)</span>
-          </span>
+          {score.stars != null
+            ? <span className={`text-2xl ${starBadgeClass(score.stars)}`}>
+                {'⭐'.repeat(score.stars)}<span className="ml-1 text-sm text-ink-muted">({score.stars}/5)</span>
+              </span>
+            : <span className="text-2xl text-ink-muted">未评级</span>}
           {score.boundary && <span className="text-sm text-amber-700" title="距档位边界不足 0.25 分">⚠️ {score.boundary}</span>}
           <span className="text-xs text-ink-muted">数据日期 {score.data_date} · 评分时间 {score.scored_at}</span>
         </div>
@@ -76,7 +78,7 @@ export function QualityReportModal({ score, onClose, onReanalyze, analyzing = fa
               {QUALITY_DIMENSION_ORDER.map(key => (
                 <tr key={key} className="border-t border-rule">
                   <td className="p-2">{QUALITY_DIMENSION_LABELS[key]}<span className="ml-1 text-xs text-ink-muted">{WEIGHT_LABEL[key]}</span></td>
-                  <td className="p-2">{score.dimensions[key]} / 5</td>
+                  <td className="p-2">{score.dimensions[key] == null ? <span className="text-ink-muted">未评分</span> : `${score.dimensions[key]} / 5`}</td>
                 </tr>
               ))}
             </tbody>

@@ -30,6 +30,9 @@ describe('dimensionShorthand', () => {
     assert.equal(dimensionShorthand(undefined), null);
     assert.equal(dimensionShorthand({ business: 4, moat: 5, industry: 3, management: 3, financial: NaN }), null);
   });
+  it('维度为 null（未评级）返回 null', () => {
+    assert.equal(dimensionShorthand({ business: 3, moat: 4, industry: 3, management: 2, financial: null }), null);
+  });
 });
 
 describe('starBadgeClass', () => {
