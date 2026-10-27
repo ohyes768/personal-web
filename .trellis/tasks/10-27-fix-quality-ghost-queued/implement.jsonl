@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md", "reason": "quality analyze 受理、reused 与 per_code 状态契约"}
+{"file": ".trellis/spec/backend/dividend-select/backend/refresh-jobs-contract.md", "reason": "RefreshJobManager 通用 reused 语义不能改"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest basetemp 约束"}

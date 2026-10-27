@@ -220,19 +220,32 @@ class QualityService:
         submit_run_fn: Callable[[HermesConfig, str, str], str],
         poll_run_fn: Callable[[HermesConfig, str], str],
     ) -> Optional[dict]:
-        """提交批量评级任务；返回 job dict（含 reused），未配置/股票缺失由调用方前置校验。"""
+        """提交批量评级任务；返回 job dict（含 reused）。
+
+        未配置、股票不在采集池、或已有 quality 任务但本次含其 codes 之外的股票时抛 ValueError。
+        per_code 的 queued 只在 job 真正开跑后、按本批 codes 写入。
+        """
         if not hermes_config.is_configured:
             raise ValueError("Hermes 未配置")
         missing = [code for code in codes if code not in stocks]
         if missing:
             raise ValueError(f"以下股票不在采集池：{','.join(missing)}")
 
-        with self._status_lock:
-            self._per_code.clear()
-            for code in codes:
-                self._set_status(code, "queued")
+        def reject_if_extra(job: Optional[dict]) -> None:
+            if not job:
+                return
+            active_codes = set(job.get("codes") or [])
+            if any(code not in active_codes for code in codes):
+                raise ValueError("已有评级任务在跑，请等待当前任务结束后再提交")
+
+        # 先于任何 per_code 写入判断：reused 路径不能清掉正在跑的状态。
+        reject_if_extra(refresh_jobs.active("quality"))
 
         def work(progress: Callable[[str, bool], None]) -> None:
+            # 只有真正开跑的 job 才写 queued，且只覆盖本批 codes。
+            with self._status_lock:
+                for code in codes:
+                    self._set_status(code, "queued")
             semaphore = threading.Semaphore(hermes_config.max_concurrent)
             results: dict[str, tuple[bool, Optional[QualityScore], str]] = {}
 
@@ -279,4 +292,7 @@ class QualityService:
                     self._set_status(code, "failed", error)
                 progress(code, success)
 
-        return refresh_jobs.submit("quality", codes, work, params={"data_date": data_date})
+        job = refresh_jobs.submit("quality", codes, work, params={"data_date": data_date})
+        if job and job.get("reused"):
+            reject_if_extra(job)
+        return job

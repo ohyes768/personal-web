@@ -12,14 +12,22 @@ now lives inside `basic-quality-rating` v2.2+.
 ## 2. Signatures
 - `POST /api/dividend/quality/analyze`: `{codes: string[]}` → 202 job; 503 when
   `HERMES_BASE_URL`/`HERMES_API_KEY` unset; 400 for codes outside the collected
-  pool; 422 for non-six-digit codes; active kind job is reused (`reused: true`).
+  pool, or when an active quality job exists and this request contains any code
+  outside that job (`detail` includes `已有评级任务在跑`); 422 for non-six-digit
+  codes or an empty list. An active quality job is reused (`reused: true`) only
+  when every requested code is already in that job. `RefreshJobManager` itself
+  still reuses any same-kind active job; the extra-code rejection lives in
+  `QualityService.submit_analysis`, so m120/financial admission is unchanged.
 - `GET /api/dividend/quality/jobs/{job_id}`: quality job or 404 (also 404 for
   non-quality kinds).
 - `GET /api/dividend/quality`: `{total, scores: {code: QualityScore},
   per_code, hermes_configured}`; `GET /quality/jobs/{job_id}` also embeds
   `per_code`. `per_code` is the in-memory per-stock live status
   (`{state: queued|running|completed|failed, error, updated_at}`), cleared on
-  restart; the ScreeningTab action column renders it row-by-row
+  restart. `queued` is written only after a quality job is actually accepted
+  and its `work()` starts, and only for that job's codes — a reused submit
+  must not clear or rewrite `per_code`. The ScreeningTab action column renders
+  it row-by-row
   (排队中/评级中 pulse, 失败+原因 tooltip+重试, else 分析/重评 buttons).
   `hermes_configured=false` disables the UI
   analyze button (grey + hint) instead of waiting for the 503.
@@ -83,3 +91,49 @@ installed into the Hermes profile via skill-manager — the former in-repo copy
 was removed 2026-10-27 (see the changed-notes in Contracts); the skill must
 never embed dividend backend URLs or schema details. Frontend mirrors the contract in `lib/quality.ts`
 (`starsFor` must match the mapping above; `RefreshKind` includes `quality`).
+
+## Scenario: quality job admission mutex
+
+### 1. Scope / Trigger
+- Trigger: changing `QualityService.submit_analysis`, quality `per_code`, or
+  `POST /quality/analyze` behavior while another quality job is active.
+
+### 2. Signatures
+- `QualityService.submit_analysis(...) -> job | None`
+- Active same-kind check uses `refresh_jobs.active("quality")` before any
+  `per_code` write. Do not change `RefreshJobManager.submit` reuse rules.
+
+### 3. Contracts
+- No active quality job: accept, then `work()` overwrites `per_code` to
+  `queued` for this request's codes only.
+- Active job whose `codes` contain every requested code: return that job with
+  `reused: true` and do not touch `per_code`.
+- Active job missing any requested code: `ValueError` whose message contains
+  `已有评级任务在跑`. The route maps that to HTTP 400 `detail`. The running
+  job and its `per_code` stay as they were.
+- Frontend `useQualityAnalysis` already surfaces `detail` as `qualityMessage`.
+
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+| Hermes base/key unset | 503 |
+| Code not in collected pool | 400，采集池文案 |
+| Active quality job, request codes are a subset | 202, same `job_id`, `reused: true`, `per_code` unchanged |
+| Active quality job, request has a code outside it | 400，`detail` 含「已有评级任务在跑」，`per_code` 不变 |
+| Accepted job | only this batch flips to `queued`, then `running`, then `completed`/`failed` |
+
+### 5. Good/Base/Bad Cases
+- Good: no active job, two codes finish `completed`.
+- Base: resubmit a code already inside the running job; same id, no extra `queued`.
+- Bad: running job is `000001`, request is `000001+600519`. Must 400. A previously `completed` code outside the batch must remain.
+
+### 6. Tests Required
+- `tests/test_quality_service.py`: extra codes raise `ValueError` and `per_code` is unchanged; contained resubmit is `reused` and does not leave a ghost `queued` or wipe unrelated codes.
+- Existing quality API reuse test still expects same-code resubmit to return 202 `reused: true`.
+
+### 7. Wrong vs Correct
+#### Wrong
+Clear `_per_code` and write `queued` in `submit_analysis` before `refresh_jobs.submit()`. An active job makes `submit()` return the existing job without running `work()`, so the clear is never repaired and new codes stay `queued` forever.
+
+#### Correct
+Reject extra codes before writing status. Write `queued` at the start of `work()`, only for this job's codes.

@@ -236,3 +236,79 @@ class TestSubmitAnalysis:
             gate.set()
             await manager.close(timeout=5)
         asyncio.run(scenario())
+
+    def test_active_job_rejects_extra_codes_without_mutating_status(self, tmp_path):
+        import threading
+
+        async def scenario():
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            gate = threading.Event()
+            started = threading.Event()
+
+            def submit_fn(cfg, prompt, key):
+                started.set()
+                assert gate.wait(120)
+                return "run-1"
+
+            stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
+            service.submit_analysis(
+                ["000001"], CFG, stocks, "2026-09-30", manager,
+                submit_fn, lambda cfg, run_id: fake_output("000001", "样本"))
+            assert started.wait(5)
+            before = service.get_per_code()
+            assert before["000001"]["state"] == "running"
+            with pytest.raises(ValueError, match="已有评级任务在跑"):
+                service.submit_analysis(
+                    ["000001", "600519"], CFG, stocks, "2026-09-30", manager,
+                    lambda cfg, prompt, key: "run-2",
+                    lambda cfg, run_id: fake_output("600519", "新股"))
+            assert service.get_per_code() == before
+            assert "600519" not in service.get_per_code()
+            gate.set()
+            await manager.close(timeout=5)
+
+        asyncio.run(scenario())
+
+    def test_contained_resubmit_reuses_without_ghost_queued(self, tmp_path):
+        import threading
+
+        async def scenario():
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            service._set_status("600000", "completed")
+            gate = threading.Event()
+            started = threading.Event()
+            cfg = HermesConfig(
+                base_url="http://nas:8642", api_key="secret", profile="ohyes768",
+                poll_interval=0, timeout=5, max_concurrent=1)
+            stocks = {
+                "000001": stock(),
+                "000002": stock(code="000002", name="乙"),
+                "600000": stock(code="600000", name="丙"),
+            }
+
+            def submit_fn(cfg, prompt, key):
+                started.set()
+                assert gate.wait(120)
+                return "run-1"
+
+            job1 = service.submit_analysis(
+                ["000001", "000002"], cfg, stocks, "2026-09-30", manager,
+                submit_fn, lambda c, run_id: fake_output("000001", "样本"))
+            assert started.wait(5)
+            job2 = service.submit_analysis(
+                ["000001"], cfg, stocks, "2026-09-30", manager,
+                lambda cfg, prompt, key: "run-should-not-start",
+                lambda cfg, run_id: fake_output("000001", "样本"))
+            after = service.get_per_code()
+            assert job2["job_id"] == job1["job_id"]
+            assert job2["reused"] is True
+            assert after["600000"]["state"] == "completed"
+            assert after["000001"]["state"] == "running"
+            assert after["000002"]["state"] == "queued"
+            assert [code for code, item in after.items() if item["state"] == "queued"] == ["000002"]
+            gate.set()
+            await manager.close(timeout=5)
+
+        asyncio.run(scenario())
