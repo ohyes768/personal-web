@@ -14,7 +14,7 @@ export type Position = { state: string; has_coordinates: boolean; revision?: str
 export function positionQueryLabel(position?: Position): string {
   if (position?.state === 'error') return '查询失败';
   if (position?.state === 'not_found') return '未找到主体地点';
-  if (position?.state === 'review') return '待确认地点，类型缺失';
+  if (position?.state === 'review') return '待确认地点';
   if (position?.query_history) return position.query_history.message;
   return position?.checked_at ? '未获取类型' : '未查询';
 }

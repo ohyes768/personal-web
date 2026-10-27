@@ -95,9 +95,16 @@ test('catalog shows Amap types directly in both lists with candidate and referen
   const reference = table({ state: 'not_found', candidates: [], reference_candidates: [{ poi_type: '公司企业;公司;公司' }] });
   assert.match(reference, /公司企业;公司;公司/);
   assert.match(reference, /相关地点 · 仅供参考/);
-  const candidate = table({ state: 'review', candidates: [{ poi_type: '写字楼' }, { poi_type: '住宅小区' }] });
-  assert.doesNotMatch(candidate, /写字楼|住宅小区/);
-  assert.match(candidate, /候选主体 · 待确认/);
+  for (const candidates of [[{ poi_type: '住宅小区' }], [{ poi_type: '写字楼' }, { poi_type: '住宅小区' }]]) {
+    for (const excluded of [true, false]) {
+      const candidate = table({ state: 'review', candidates }, excluded);
+      assert.doesNotMatch(candidate, /写字楼|住宅小区/);
+      assert.match(candidate, /候选主体 · 待确认/);
+    }
+  }
+  const review = table({ state: 'review', candidates: [] });
+  assert.match(review, /data-label="高德类型"><span[^>]*>待确认地点<\/span>/);
+  assert.doesNotMatch(review, /类型缺失/);
   assert.match(table(undefined), /data-label="高德类型"><span[^>]*>未查询/);
   assert.match(table({ state: 'error', candidates: [] }), /data-label="高德类型"><span[^>]*>查询失败/);
   assert.match(table({ state: 'not_found', candidates: [] }), /未找到主体地点/);

@@ -16,7 +16,7 @@ This contract supersedes the v1 directory/position/use-review rules only after e
 
 ## Classification
 
-- Catalog Amap type cells with multiple unselected subject candidates show only 候选主体 · 待确认. Keep candidate types in the detail panel for review; selected subjects continue to show their confirmed type.
+- Catalog Amap type cells with any unselected subject candidates show only 候选主体 · 待确认, including a single candidate. Review rows without candidates or references show 待确认地点 without claiming the type is missing. Keep candidate types in the detail panel for review; selected subjects continue to show their confirmed type.
 
 - `use_review_view` / projection for v2 derive Amap evidence solely from the confirmed selected position. Legacy name-search use_review payloads are retained but ignored as v2 evidence. An explicit use-review action recomputes the selected evidence, without another text search; missing selected type instructs the user to confirm a subject or provide manual use evidence.
 - TMSF residential + selected Amap residential passes the use gate. Disagreement or mixed Amap type requires human use confirmation. Missing/ambiguous TMSF use never becomes residential merely because Amap says residential. Clear TMSF nonresidential remains excluded without a request; 商铺/厂房 are explicit nonresidential types for v2 only.
