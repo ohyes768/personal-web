@@ -90,23 +90,33 @@ class PageWorker:
 
     def _navigate(self, url):
         page = self.session.page
-        page.goto(url, wait_until='domcontentloaded', timeout=25000)
+        # Third-party scripts can delay DOMContentLoaded after our facts arrive.
+        # Wait for the response, then inspect the required content ourselves.
+        page.goto(url, wait_until='commit', timeout=25000)
         selector = '#locatedrr' if '/presell_' in url else '.house_float_name_title'
         deadline = self.clock() + 10
         while self.clock() < deadline:
             # Ignore hidden captcha widgets loaded as part of the normal site shell.
             if page.locator('.captcha:visible, .captcha_cover:visible, #nc_1_wrapper:visible').count():
                 raise WorkerError('manual_verification', '透明售房网需要人工验证，已暂停新房采集，保留已有资料')
-            if page.url != url:
+            # Read readiness and HTML in one browser execution. A count() followed
+            # by text_content() can wait 30s if the site replaces that node in between.
+            snapshot = page.evaluate('''({selector, presell}) => {
+                const text = s => document.querySelector(s)?.textContent?.trim() || '';
+                const ready = Boolean(text(selector) && (presell ||
+                    text('.house_float_name_tips_grey, .house_information_price_residence')));
+                return {url: location.href, ready,
+                    html: ready ? document.documentElement.outerHTML : null};
+            }''', dict(selector=selector, presell='/presell_' in url))
+            if snapshot['url'] != url:
                 raise WorkerError('identity_mismatch', '新房页面跳转后身份不一致')
-            node = page.locator(selector).first
-            if node.count() and node.text_content().strip():
-                html = page.content()
+            if snapshot['ready']:
+                html = snapshot['html']
                 if len(html.encode()) > 2_000_000:
                     raise WorkerError('invalid_response', '新房页面过大，未采用资料')
                 return html
             page.wait_for_timeout(250)
-        raise WorkerError('challenge', '新房页面验证未完成，本轮已暂停，请稍后重试')
+        raise WorkerError('browser_timeout', '新房页面关键正文加载超时，本轮已暂停，请稍后重试')
 
     def fetch(self, payload):
         url = target_url(payload)
@@ -132,7 +142,12 @@ class PageWorker:
             self.close()
             raise
         except Exception as exc:
+            logger.exception('TMSF browser request failed for project %s', payload['propertyid'])
             self.close()
+            # Playwright is an optional worker-only dependency; its TimeoutError
+            # shares the standard name but does not inherit built-in TimeoutError.
+            if isinstance(exc, TimeoutError) or type(exc).__name__ == 'TimeoutError':
+                raise WorkerError('browser_timeout', '新房页面加载超时，本轮暂停，请稍后重试') from exc
             raise WorkerError('browser_error', '新房浏览器读取失败，本轮暂停，请检查服务后重试') from exc
 
 
@@ -156,7 +171,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header('Content-Type', 'application/json; charset=utf-8')
         self.send_header('Content-Length', str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        try:
+            self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError):
+            # A local health probe may expire during a bounded navigation.
+            pass
 
     def do_GET(self):
         if self.path != '/health':

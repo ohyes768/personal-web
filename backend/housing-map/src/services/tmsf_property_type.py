@@ -129,6 +129,14 @@ def _parse_project_detail(html, known_names, district, url, fallback_status=None
     observed_name = class_text(html, 'house_float_name_title')
     district_match = re.search(r'<a\b[^>]*id=["\']districtname["\'][^>]*>(.*?)</a>', html, re.S)
     observed_district = strip_tags(district_match.group(1)).removesuffix('楼盘').removesuffix('区') if district_match else ''
+    match = re.search(r'楼盘地址\s*</div>\s*<div\b[^>]*>(.*?)</div>', html, re.S)
+    address = strip_tags(match.group(1)).strip() if match else ''
+    if not district_match and valid_address(address) and not looks_truncated(address):
+        # Some project templates omit the district link. Only this project's
+        # actual location, with an explicit administrative prefix, is evidence.
+        area = re.match(r'^(?:浙江省)?(?:杭州市)?(滨江|萧山)区\s*\S{3,}', address)
+        if area:
+            observed_district = area.group(1)
     if not observed_name:
         raise ProjectDetailError('challenge', '新房详情页返回验证页或空页面')
     if normalized(observed_name) not in {normalized(n) for n in known_names if n} or observed_district != (district or '').removesuffix('区'):
@@ -139,8 +147,6 @@ def _parse_project_detail(html, known_names, district, url, fallback_status=None
     status = (class_text(html, 'house_float_name_tips_grey999')
               or class_text(html, 'house_float_name_tips_greenlight')
               or fallback_status or '')
-    match = re.search(r'楼盘地址\s*</div>\s*<div\b[^>]*>(.*?)</div>', html, re.S)
-    address = strip_tags(match.group(1)).strip() if match else ''
     facts = dict(property_type=prop, property_type_url=url, address='', address_district=observed_district,
                  market_state=project_market_state(status), market_state_url=url,
                  project_name=observed_name, project_sale_status=status)

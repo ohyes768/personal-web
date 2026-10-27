@@ -242,6 +242,7 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
                 code = getattr(exc, 'code', None)
                 message = f'{identity["project_name"]} 新房详情获取失败（{code or type(exc).__name__}）：{exc}'
                 deferred = code in {'paused', 'busy'}
+                row['_newhouse_pause_reason'] = getattr(exc, 'pause_reason', code)
                 row.update(property_type_error=message, _property_type_result='deferred' if deferred else 'failed',
                            _collection_errors=[] if deferred else [dict(source='tmsf', stage='newhouse_detail', source_id=pid, message=message)])
             else:
@@ -412,6 +413,10 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, 
                             progress(report)
                         continue
                     report['stage'] = row.pop('_stage', 'names')
+                    pause_reason = row.pop('_newhouse_pause_reason', None)
+                    if pause_reason in {'manual_verification', 'challenge', 'paused', 'busy',
+                                        'browser_timeout', 'browser_error', 'browser_unavailable'}:
+                        report.setdefault('newhouse_pause_reason', pause_reason)
                     type_result = row.pop('_property_type_result', None)
                     key = (source, row.get('source_kind', 'community'), str(row['source_id']))
                     if store.is_ignored(*key):
@@ -444,8 +449,19 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, 
                 # Upstream clients redact request URLs and credentials before reporting errors.
                 report['errors'].append({'source': source, 'message': str(exc) if isinstance(exc, ValueError) else f'{type(exc).__name__}：来源请求失败'})
         if report['property_types_deferred']:
+            reason = report.get('newhouse_pause_reason')
+            if reason in {'manual_verification', 'challenge', 'paused'}:
+                advice = '请在验证冷却结束后重试（通常 15 分钟）'
+            elif reason == 'busy':
+                advice = '浏览器会话被占用，请在其他采集结束后重试'
+            elif reason == 'browser_timeout':
+                advice = '页面加载超时，请稍后重试'
+            elif reason in {'browser_error', 'browser_unavailable'}:
+                advice = '请检查新房浏览器服务后重试'
+            else:
+                advice = '请查看具体失败原因后重试'
             report['truncated'].append(dict(source='tmsf', stage='newhouse_detail',
-                message=f'新房详情已暂停，本轮暂缓 {report["property_types_deferred"]} 个项目，名单已保留；请在验证冷却结束后重试'))
+                message=f'新房详情已暂停，本轮暂缓 {report["property_types_deferred"]} 个项目，名单已保留；{advice}'))
         report['phase'] = 'partial_failed' if report['errors'] or report['truncated'] else 'succeeded'
         if len(failed_sources) == len(sources):
             report['phase'] = 'failed'
