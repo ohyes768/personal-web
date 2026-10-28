@@ -1,0 +1,33 @@
+{
+  "id": "binjiang-residential-cleanup",
+  "name": "binjiang-residential-cleanup",
+  "title": "清理非住宅来源并补齐缺失物业类型",
+  "description": "移除已确认非住宅条目；将\"其他\"或缺失记录标记为待核实并补采。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "housing-map",
+  "package": null,
+  "priority": "P1",
+  "creator": "tang",
+  "assignee": "tang",
+  "createdAt": "2026-10-13",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/housing-map/src/services/directory_collection.py",
+    "backend/housing-map/src/services/community_directory.py",
+    "backend/housing-map/src/api/directory_routes.py",
+    "backend/housing-map/scripts/filter_residential_communities.py",
+    "backend/housing-map/tests/test_directory_filtering.py",
+    ".trellis/spec/backend/housing-map/backend/community-directory.md"
+  ],
+  "notes": "实现与验收完成，已提交，未部署。实现于 8a62779。功能核对：scripts/filter_residential_communities.py 读 tmsf property_types 与 fang samples，输出 binjiang_residential_communities.json / binjiang_pending_communities.json / binjiang_non_residential_communities.json 三个集合与 residential_classification.json 报告，写入前快照原输入到 data/diagnostics/pre-residential/；community_directory.py 在 prepare 时优先使用住宅列表、排除非住宅 id 但保留其 sources，原输入备份到 data/directory-backup/，导入用 INSERT OR IGNORE 不重置既有决定。审计痕迹：非住宅与待核实条目连同 community_id 与 residential_evidence 完整保留在独立 json 中，原 community_id 不复用，恢复时不与新条目混淆。测试 test_filter_residential_communities.py（集合划分、桶内证据保留）与 test_directory_filtering.py（有过滤文件时跳过非住宅、无过滤文件时用全量）通过；本轮复核含 classify/auction/directory 系列共 28 项通过，后端全量 968 passed。spec community-directory.md 第 35 行已写入过滤管线契约。",
+  "meta": {}
+}
