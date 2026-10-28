@@ -108,8 +108,11 @@ revision = `digest(基础条目 + 覆盖条目 + 有效定位/名称)`，**不�
 - `apps/housing-map/src/lib/boundary-workflow.ts`：类型 + 请求封装 + 展示层纯函数（可测）。
 - `apps/housing-map/src/lib/use-boundary-workflow.ts`：状态与轮询（活动任务 2s 一次，终态停）。
   数据按小区 ID 存档，渲染时只取当前小区快照 —— 切小区后迟到响应不会叠加旧候选。
-- `apps/housing-map/src/components/community/BoundaryWorkflowPanel.tsx`：
-  `BoundaryWorkflowSection`（弹框内摘要 + 入口）、`BoundaryWorkflowPanel`（候选确认面板）。
+- **轮廓操作在小区详情弹框的第三个 tab「地块轮廓」里**，与「小区概况」「租金与收益」平级
+  （`CommunityDetailTabs` 的 `boundary` 插槽，有内容才渲染这个 tab）。
+  不要把轮廓内容再塞回概况页正文 —— 那是最初的写法，挤在价格评分中间，越加越乱。
+  `BoundaryWorkflowPanel.tsx` 拆成两个 tab 内容组件：`BoundaryWorkflowSection`（状态 + 入口）、
+  `BoundaryWorkflowPreview`（候选确认，就地展开，不另起抽屉）。
 - `BinjiangMap` 的 `boundaryPreview` prop 是**临时候选图层**，与正式地块图层分开管理：
   候选高亮、参考建筑可开关、被预览小区的问号占位弱化；切小区/关闭预览即移除。
 - 关闭弹框停止前端轮询，服务端任务照常跑完；重新打开会恢复任务/候选。
@@ -117,6 +120,10 @@ revision = `digest(基础条目 + 覆盖条目 + 有效定位/名称)`，**不�
 - **任务失败原因必须在弹框里露出来**（线上踩过：任务已经 failed，弹框还显示"联网获取建筑中"，
   用户干等一整轮才知道失败）。`BoundaryWorkflowSection` 要渲染 `error` / `jobError`，
   并把按钮文案从"生成候选轮廓"改成"重新生成轮廓"。
+- **异步动作的 busy 标志必须无条件复位**（线上踩过：`startEstimate` 成功路径漏了复位，
+  按钮永久 disabled，"查看候选"点了没反应）。统一走 `runBoundaryAction`，
+  成功失败都复位；错误判断用 (message, code) 形状判断而非 `instanceof`
+  （转译到 ES5 时 Error 子类的 instanceof 会失效）。
 
 ## 11. 去核对定位
 
