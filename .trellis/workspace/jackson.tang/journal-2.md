@@ -61,3 +61,57 @@
 ### Next Steps
 
 - None - task complete
+
+---
+
+## Session 53: 完成已收录小区多选合并
+
+**Date**: 2026-10-28
+**Task**: 已收录小区多选合并（10-28-community-merge-ui）
+**Package**: apps/housing-map
+**Branch**: `master`
+
+### Summary
+
+接手上一会话遗留的合并 UI 实现（代码已写、未提交、未验证），完成文案修正、隔离环境端到端验证、
+提交与归档。线上水晶城 3 条重复记录由用户自行在页面合并，未触碰生产数据。
+
+### Main Changes
+
+- **修正合并预览文案（b19051e）**：后端 `_merge` 只补 `address/district/longitude/latitude/coordinate_system`
+  这些 payload 字段，**不迁移 `amap_position`**（高德 POI 匹配结果）。原预览写"保留方缺失，将补入被并方定位坐标"
+  与实际不符，改为按 `has_coordinates` 表述并加一行"高德 POI 匹配结果不随合并迁移"提示；
+  另修 "无法拍记录" 语病为 "暂无拍卖记录"。
+- **前端实现**（上一会话产出，本次提交）：`MergeDialog.tsx`（保留方单选 + 预览 + 逐条提交）、
+  `DirectoryFlowWorkspace.tsx`（admitted 模式选择列、批量条、翻页/筛选清空选择）、
+  `globals.css`（`.catalog-selectable.catalog-admitted` 8 列列宽、窄屏隐藏选择列）。
+- **隔离验证环境**（`.tmp-merge-verify/`，验证后已删除）：`HOUSING_DATA_DIR` 指向副本 data 目录的后端 +
+  `HOUSING_API_ORIGIN` 指向该后端的前端副本，造 5 条假小区（甲有坐标/new_house、乙无坐标、丙无坐标2来源、
+  租甲/租乙各有 fang matched 来源）。
+- **spec 新增** `guides/housing-map-merge.md`：合并语义表、admitted 硬门槛与"本地库已收录列表为空"的原因、
+  隔离验证环境做法（Next dev 跨域保护、造数唯一约束、进程残留导致目录删不掉）、选择列列宽约定。
+
+### Testing
+
+- `pnpm lint` / `pnpm build` 通过（apps/housing-map）。
+- 浏览器端到端（隔离环境，端口 3010/8099）：预选规则（有坐标优先于来源多）、混合市场状态警告与按钮文案、
+  逐条失败（"两个小区都有租金来源"原样透出，失败项仍在列表）、成功合并（5→3 条、保留方别名含被并方名称与别名）、
+  宽屏列宽 4/24/10/16/12/10/14/10、不收录 Tab 0 checkbox、窄屏 502px 卡片态不塌无横向溢出。
+- 开发库与生产库数据未改动（主库 meta 与 admission 行核对一致）。
+
+### Status
+
+[OK] **Completed** — 任务归档至 `.trellis/tasks/archive/2026-10/10-28-community-merge-ui`。
+
+### Next Steps
+
+- 线上水晶城水晶澜轩 / 钱江水晶城 / 钱江水晶澜轩 三条由用户在「已收录」页自行合并（实施者不碰生产数据）。
+- `10-12-community-price-transactions` 仍在 planning，未动代码。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b19051e` | feat(housing-map): 已收录小区多选合并 |
+| `5d0878d` | docs: 记录小区合并契约与隔离验证环境做法 |
+| `003809e` | chore: 归档已收录小区多选合并任务 |
