@@ -3,7 +3,7 @@
   "name": "housing-use-review-scope",
   "title": "高德用途自动复核范围收紧",
   "description": "按已确认规则收紧高德用途批量复核，显示跳过原因并保留手动查询",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "housing-map",
   "package": "backend/housing-map",
@@ -11,7 +11,7 @@
   "creator": "jackson.tang",
   "assignee": "jackson.tang",
   "createdAt": "2026-10-25",
-  "completedAt": null,
+  "completedAt": "2026-10-28",
   "branch": null,
   "base_branch": "master",
   "worktree_path": null,
@@ -21,6 +21,6 @@
   "children": [],
   "parent": null,
   "relatedFiles": [],
-  "notes": "",
+  "notes": "实现与验证完成，已提交并推送。后端相关回归212 passed、前端相关28 passed，ESLint/TypeScript/生产构建通过；全量pytest中途无输出被中止，未声称全量通过。真实高德分页count与实际返回不一致（万科城市之光53→25+14、东和云第30→20）的终止条件修正已纳入统一采集流程版本，相关后端98项通过，只读查询未写线上数据。无线上查询、未部署。",
   "meta": {}
 }
