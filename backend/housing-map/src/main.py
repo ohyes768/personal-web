@@ -24,12 +24,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.api.routes import router
 from src.api.auction_routes import router as auction_router
 from src.api.boundary_import_routes import router as boundary_import_router
+from src.api.boundary_workflow_routes import router as boundary_workflow_router
 from src.api.rental_routes import router as rental_router, shutdown_rental_refresh
 from src.api.rental_source_routes import router as rental_source_router
 from src.api.directory_routes import router as directory_router, shutdown_directory
 from src.services.community_directory import prepare_directory
 from src.services.data_loader import DATA_DIR
 from src.services.auction_refresh import shutdown_refresh
+from src.services.boundary_workflow import recover_interrupted_jobs
 from src.scheduler import shutdown_scheduler, start_scheduler
 
 logger = logging.getLogger("housing-map")
@@ -42,6 +44,9 @@ async def lifespan(app: FastAPI):
     logger.info("housing-map 服务启动中...")
     logger.info("=" * 50)
     prepare_directory(DATA_DIR)
+    interrupted = recover_interrupted_jobs()
+    if interrupted:
+        logger.warning("轮廓工作流: %s 个在途任务标记为中断,可手动重试", interrupted)
     start_scheduler()
     yield
     shutdown_scheduler()
@@ -73,6 +78,7 @@ app.include_router(rental_router, prefix="/api")
 app.include_router(rental_source_router, prefix="/api")
 app.include_router(directory_router, prefix="/api")
 app.include_router(boundary_import_router, prefix="/api")
+app.include_router(boundary_workflow_router, prefix="/api")
 
 
 if __name__ == "__main__":

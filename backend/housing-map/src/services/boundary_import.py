@@ -3,17 +3,15 @@ import json
 import os
 import shutil
 import tempfile
-import threading
 from datetime import datetime, timezone
 from pathlib import Path
 
+from src.services.boundary_publish import publish_lock
 from src.services.data_loader import DATA_DIR
 
 POLYGONS_PATH = DATA_DIR / "binjiang_polygons_merged.json"
 BACKUP_DIR = DATA_DIR / "boundaries-backup"
 MAX_BACKUPS = 5
-
-_lock = threading.Lock()
 
 
 def rotate_backup(path: Path, backup_dir: Path | None = None, keep: int = MAX_BACKUPS) -> Path | None:
@@ -34,7 +32,8 @@ def merge_boundaries(items: list[dict], path: Path | None = None, backup_dir: Pa
     """items 须已通过路由层校验;同 cid 覆盖(幂等),_meta 追加 osm-building 计数。"""
     path = Path(path or POLYGONS_PATH)
     backup_dir = backup_dir or BACKUP_DIR
-    with _lock:
+    # 与重建、人工覆盖操作共用发布锁:写基础层时不会与版本判定交错
+    with publish_lock():
         data = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
         meta = data.get("_meta") if isinstance(data.get("_meta"), dict) else {}
         rotate_backup(path, backup_dir)

@@ -6,6 +6,9 @@ import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, for
 import { isInScope } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
 import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
+import BoundaryWorkflowPanel, { BoundaryWorkflowSection, type BoundaryPanelView, type BoundaryWorkflowActions } from '@/components/community/BoundaryWorkflowPanel';
+import { useBoundaryWorkflow } from '@/lib/use-boundary-workflow';
+import type { BoundaryPreview } from '@/components/map/BinjiangMap';
 import LatestAuctionCard from '@/components/community/LatestAuctionCard';
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import { RentalScopeSelect, RentalSummaryCells, type RentalScope } from '@/components/dashboard/RentalDashboardWidgets';
@@ -20,14 +23,15 @@ import {
 import type { RentalSummaryEntry } from '@/lib/rental-types';
 
 // 从 API 获取小区数据 (连带收录口径统计, 避免二次拉取完整列表)
-async function fetchCommunities(): Promise<{ communities: Community[]; stats: MapAdmissionStats | null }> {
+// ok=false 表示这次刷新失败: 调用方要区分"保存失败"与"保存成功但刷新失败", 不能把列表清空
+async function fetchCommunities(): Promise<{ communities: Community[]; stats: MapAdmissionStats | null; ok: boolean }> {
   try {
     const res = await fetch('/api/map/communities');
     const payload = await res.json();
-    return { communities: payload.data || [], stats: payload.stats ?? null };
+    return { communities: payload.data || [], stats: payload.stats ?? null, ok: true };
   } catch (error) {
     console.error('Failed to fetch communities:', error);
-    return { communities: [], stats: null };
+    return { communities: [], stats: null, ok: false };
   }
 }
 
@@ -72,11 +76,17 @@ function CommunityPopup({
   onClose,
   auctionCount,
   auctionRefreshVersion,
+  boundaryView,
+  boundaryActions,
+  onPreviewBoundary,
 }: {
   community: Community;
   onClose: () => void;
   auctionCount?: number;
   auctionRefreshVersion: number;
+  boundaryView?: BoundaryPanelView;
+  boundaryActions?: BoundaryWorkflowActions;
+  onPreviewBoundary?: () => void;
 }) {
   const poiGroups = community.pois.reduce((acc, poi) => {
     const type = poi.type as POIType;
@@ -141,6 +151,14 @@ function CommunityPopup({
         </div>
         <LatestAuctionCard communityId={community.community_id} refreshVersion={auctionRefreshVersion} />
       </div>
+
+      {boundaryView && boundaryActions && (
+        <BoundaryWorkflowSection
+          view={boundaryView}
+          actions={boundaryActions}
+          onPreview={onPreviewBoundary ?? (() => {})}
+        />
+      )}
 
       {/* 评分维度 2×2 大卡: 可点击翻转看明细, 宽度翻倍解决明细显示不下 */}
       <div className="score-grid">
@@ -295,7 +313,8 @@ export default function BinjiangMapPage() {
 
   // 加载小区数据
   useEffect(() => {
-    fetchCommunities().then(({ communities, stats }) => {
+    fetchCommunities().then(({ communities, stats, ok }) => {
+      if (!ok) return;
       setCommunities(communities);
       setMapStats(stats);
       setLoading(false);
@@ -389,7 +408,8 @@ export default function BinjiangMapPage() {
           running: j.running, phase: j.phase, processed: j.processed, total: j.total, error: j.error,
         });
         if (j.phase === 'done') {
-          const { communities, stats } = await fetchCommunities();
+          const { communities, stats, ok } = await fetchCommunities();
+          if (!ok) return;
           setCommunities(communities);
           setMapStats(stats);
           setLoading(false);
@@ -445,6 +465,75 @@ export default function BinjiangMapPage() {
     setSelectedCommunity(community);
   }, []);
 
+  // 缺失地块轮廓:生成 → 预览 → 确认应用 → 撤销
+  // 预览态按小区存档: 切到别的小区即自动退出预览, 不用 effect 重置状态
+  const [previewCommunityId, setPreviewCommunityId] = useState<string | null>(null);
+  const [referenceVisibility, setReferenceVisibility] = useState<{ communityId: string; visible: boolean } | null>(null);
+  const [positionFocus, setPositionFocus] = useState<{ communityId: string; key: number } | null>(null);
+  const [boundaryNotice, setBoundaryNotice] = useState<string | null>(null);
+  const boundaryPreviewOpen = !!selectedCommunity && previewCommunityId === selectedCommunity.community_id;
+  const showReferenceBuildings = !!selectedCommunity
+    && referenceVisibility?.communityId === selectedCommunity.community_id
+    && referenceVisibility.visible;
+
+  const boundaryWorkflow = useBoundaryWorkflow(selectedCommunity?.community_id ?? null, () => {
+    void fetchCommunities().then(({ communities, stats, ok }) => {
+      if (!ok) {
+        // 轮廓已保存, 只是地图数据没刷新回来 —— 不能报成保存失败
+        setBoundaryNotice('轮廓已保存，但地图刷新失败，请刷新页面查看最新轮廓。');
+        return;
+      }
+      setBoundaryNotice(null);
+      setCommunities(communities);
+      setMapStats(stats);
+    });
+  });
+
+  const boundaryView: BoundaryPanelView = {
+    state: boundaryWorkflow.state,
+    candidate: boundaryWorkflow.candidate,
+    jobPhase: boundaryWorkflow.job?.phase ?? boundaryWorkflow.state?.job?.phase ?? null,
+    jobError: boundaryWorkflow.job?.error_message ?? boundaryWorkflow.state?.latest_job?.error_message ?? null,
+    jobErrorCode: boundaryWorkflow.job?.error_code ?? boundaryWorkflow.state?.latest_job?.error_code ?? null,
+    loading: boundaryWorkflow.loading,
+    busy: boundaryWorkflow.busy,
+    error: boundaryWorkflow.error,
+  };
+
+  const boundaryActions: BoundaryWorkflowActions = {
+    startEstimate: boundaryWorkflow.startEstimate,
+    applyCandidate: boundaryWorkflow.applyCandidate,
+    rejectCandidate: boundaryWorkflow.rejectCandidate,
+    revert: boundaryWorkflow.revert,
+  };
+
+  const openBoundaryPreview = useCallback(() => {
+    if (!selectedCommunity) return;
+    setPreviewCommunityId(selectedCommunity.community_id);
+    const position = boundaryWorkflow.candidate?.position;
+    if (position) setMapFocus({ lng: position[0], lat: position[1], key: Date.now() });
+  }, [boundaryWorkflow.candidate, selectedCommunity]);
+
+  // 去核对定位: 复用收录管理里的定位面板, 不新增第二套定位逻辑
+  const openPositionForCommunity = useCallback((communityId: string) => {
+    setPreviewCommunityId(null);
+    setSelectedCommunity(null);
+    setPositionFocus({ communityId, key: Date.now() });
+    setManagementSource('');
+    setActiveTab('management');
+  }, []);
+
+  const boundaryPreview: BoundaryPreview | null =
+    boundaryPreviewOpen && boundaryWorkflow.candidate
+      ? {
+          communityId: boundaryWorkflow.candidate.community_id,
+          rings: boundaryWorkflow.candidate.rings,
+          referenceBuildings: boundaryWorkflow.candidate.reference_buildings,
+          showReferences: showReferenceBuildings,
+          position: boundaryWorkflow.candidate.position,
+        }
+      : null;
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppHeader
@@ -476,9 +565,10 @@ export default function BinjiangMapPage() {
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-        {activeTab === 'management' ? <CommunityManagement key={managementSource} initialSource={managementSource} onChanged={() => {
+        {activeTab === 'management' ? <CommunityManagement key={managementSource} initialSource={managementSource} focusPosition={positionFocus} onChanged={() => {
           setSelectedCommunity(null);
-          void fetchCommunities().then(({ communities, stats }) => {
+          void fetchCommunities().then(({ communities, stats, ok }) => {
+            if (!ok) return;
             setCommunities(communities);
             setMapStats(stats);
           });
@@ -563,6 +653,9 @@ export default function BinjiangMapPage() {
                 <button onClick={() => setMarketSubdistrict(null)} aria-label="清除市场行情地图筛选">清除</button>
               </div>
             )}
+            {boundaryNotice && (
+              <p className="auction-note" role="status">{boundaryNotice}</p>
+            )}
             {loading ? (
               <div style={{
                 position: 'absolute', inset: 0,
@@ -581,6 +674,7 @@ export default function BinjiangMapPage() {
                 focus={mapFocus}
                 priceMode={priceMode}
                 auctionCounts={auctionCounts}
+                boundaryPreview={boundaryPreview}
               />
             )}
 
@@ -730,13 +824,30 @@ export default function BinjiangMapPage() {
               </div>
             </div>
 
-            {selectedCommunity && (
+            {selectedCommunity && !boundaryPreviewOpen && (
               <CommunityPopup
                 key={selectedCommunity.community_id}
                 community={selectedCommunity}
                 auctionCount={auctionCounts[selectedCommunity.community_id]}
                 auctionRefreshVersion={auctionRefreshVersion}
+                boundaryView={boundaryView}
+                boundaryActions={boundaryActions}
+                onPreviewBoundary={openBoundaryPreview}
                 onClose={() => setSelectedCommunity(null)}
+              />
+            )}
+
+            {selectedCommunity && boundaryPreviewOpen && (
+              <BoundaryWorkflowPanel
+                view={boundaryView}
+                actions={boundaryActions}
+                onClose={() => setPreviewCommunityId(null)}
+                onLocate={() => openPositionForCommunity(selectedCommunity.community_id)}
+                showReferences={showReferenceBuildings}
+                onToggleReferences={visible => {
+                  if (!selectedCommunity) return;
+                  setReferenceVisibility({ communityId: selectedCommunity.community_id, visible });
+                }}
               />
             )}
           </>

@@ -1,0 +1,29 @@
+[PASS] 缺口小区无 boundary 字段
+[PASS] stats 计入边界待补 -- {'admitted': 1, 'displayed': 0, 'hidden': {'missing_boundary': 1}}
+[PASS] 初始无可见轮廓
+[PASS] 初始无可撤销操作
+[PASS] 新任务返回 202 -- 202
+[PASS] 重复请求复用同一任务
+[PASS] 任务成功 -- succeeded None
+[PASS] 产出候选
+[PASS] 候选有环
+[PASS] 候选可应用
+[PASS] 候选带参考面 -- 4 建筑面 / 0 住宅面
+[PASS] 候选带参考建筑几何
+[PASS] 重开仍能取回候选
+[PASS] 应用成功 -- {"success":true,"data":{"candidate_id":"806acebc20434dabaf41854ea33da1fd","community_id":"20000608","operation_id":"e2e-op-1","revision":"a714bfa64e","previous_revision":"413204065b","applied_at":"202
+[PASS] 应用后下发 boundary
+[PASS] 应用后来源为 osm-building -- osm-building
+[PASS] 问号缺口消失 -- {'admitted': 1, 'displayed': 1, 'hidden': {}}
+[PASS] 同 operation_id 幂等重放
+[PASS] 旧版本号被拒(409) -- 409
+[PASS] 重建后人工覆盖仍生效 -- osm-building
+[PASS] 撤销成功 -- {"success":true,"data":{"community_id":"20000608","operation_id":"e2e-revert-1","candidate_id":"806acebc20434dabaf41854ea33da1fd","revision":"413204065b","previous_revision":"a714bfa64e","reverted_at"
+[PASS] 撤销后回到占位
+[PASS] 撤销后缺口重新计入 -- {'admitted': 1, 'displayed': 0, 'hidden': {'missing_boundary': 1}}
+[PASS] 重启把在途任务标记为中断 -- interrupted
+[PASS] 撤销后候选记录仍在且状态为 reverted -- reverted
+[PASS] 撤销后可重新生成任务 -- 202
+[PASS] 重新生成成功 -- succeeded None
+[PASS] 重启后 ready 候选可恢复
+全部通过

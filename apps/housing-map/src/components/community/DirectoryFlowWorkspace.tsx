@@ -283,7 +283,7 @@ function AuctionPanel({ row, busy, action }: { row: Auction; busy: boolean;
       <button className="btn btn-secondary" disabled={busy} onClick={() => send(row.skipped ? 'reopen' : 'skip')}>{row.skipped ? '重新处理' : '暂时跳过'}</button></div></>;
 }
 
-export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }: { onChanged: () => void; initialSource?: string }) {
+export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', focusPosition = null }: { onChanged: () => void; initialSource?: string; focusPosition?: { communityId: string; key: number } | null }) {
   const [mode, setMode] = useState(initialSource === 'laipai' ? 'auctions' : 'admitted');
   const [filters, setFilters] = useState<CatalogFilterValues>(() => ({ ...emptyCatalogFilters(), district: '滨江' }));
   const [page, setPage] = useState(1);
@@ -378,8 +378,25 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '' }
     }
     catch (e) { if (detailVersion.current === version) setError(e instanceof Error ? e.message : '详情加载失败'); }
   }
-  async function positionAction(body: object) {
-    if (!detail) return;
+  // 地图侧"去核对定位"跳转: 按小区直接打开资料弹框(定位面板在弹框内), 不必在分页列表里找
+  useEffect(() => {
+    if (!focusPosition) return;
+    const cid = focusPosition.communityId;
+    let cancelled = false;
+    (async () => {
+      try {
+        const row = await workflowRequest<CatalogRow>(`/directory/workflow/catalog/${encodeURIComponent(cid)}`);
+        if (cancelled) return;
+        setMode('admitted');
+        await select(row);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : '定位资料加载失败');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [focusPosition]);
+
+  async function positionAction(body: object) {    if (!detail) return;
     const cid = detail.community_id; const version = detailVersion.current;
     setBusy(true); setError('');
     try {

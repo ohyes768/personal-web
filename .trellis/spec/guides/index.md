@@ -42,6 +42,7 @@ These guides help you **ask the right questions before coding**.
 | [Housing-Map 租金来源管理](../backend/housing-map/backend/rental-sources.md) | SQLite 关联迁移、候选确认/拒绝、顶部更新、来源查询降级与旧快照隔离 | 修改租金来源关联或排查无可采集小区 |
 | [Housing-Map 租金参考与租售比契约](./housing-map-rental-reference.md) | 映射台账(version字段!)、availability优先级、统计口径(<3不出参考/缺失沉底)、原子发布、6条API、看板三列与跨tab物业类型联动 | 改租金统计/映射台账/刷新任务/看板租金列前必读 |
 | [Housing-Map 名称相似度契约](./housing-map-name-matching.md) | name_similarity 打分器(通名剥离/拼音兜底/分期冲突短路)、各场景阈值(租金0.92自动绑/审核0.85/定位仅排序)、测试隔离 | 判断两个名字是否同一家小区,或改租金/法拍/审核/定位的名称匹配 |
+| [Housing-Map 轮廓生成工作流契约](../backend/housing-map/backend/boundary-workflow.md) | 基础层+人工覆盖层两层模型、无口令公开路由、revision 冲突规则、发布锁、快照覆盖判定、估算质量口径 | 改缺失地块轮廓生成/预览/确认应用/撤销,或地图"?"占位 |
 
 ---
 

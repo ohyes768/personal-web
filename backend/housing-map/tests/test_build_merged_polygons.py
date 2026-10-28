@@ -46,11 +46,11 @@ def test_main_uses_effective_admitted_homes_instead_of_legacy_types(monkeypatch,
     monkeypatch.setattr(builder, 'OUT_PATH', str(output_path))
     monkeypatch.setattr(builder.os, 'replace', replace_output_for_test)
     assert builder.main() == {'matched': 1, 'unmatched': 0, 'total': 1, 'filtered': 3}
-    assert json.loads(output_path.read_text())['polygons'] == {'home': {'source': 'osm', 'rings': [ring]}}
+    assert json.loads(output_path.read_text(encoding='utf-8'))['polygons'] == {'home': {'source': 'osm', 'rings': [ring]}}
     assert builder.select_residential_points(tmp_path, coords)[0] == [('home', '逸天广场', 120.207490, 30.202261)]
     osm_path.write_text(json.dumps({'features': []}), encoding='utf-8')
     assert builder.main()['unmatched'] == 1
-    assert json.loads(output_path.read_text())['polygons'] == {}
+    assert json.loads(output_path.read_text(encoding='utf-8'))['polygons'] == {}
 
 
 def test_missing_registry_preserves_existing_boundary_file(monkeypatch, tmp_path):
@@ -63,7 +63,7 @@ def test_missing_registry_preserves_existing_boundary_file(monkeypatch, tmp_path
     monkeypatch.setattr(builder, 'OUT_PATH', str(output))
     with pytest.raises(ValueError, match='缺少住宅目录数据库'):
         builder.main()
-    assert json.loads(output.read_text()) == {'polygons': {'old': {}}}
+    assert json.loads(output.read_text(encoding='utf-8')) == {'polygons': {'old': {}}}
 
 
 def test_current_master_position_overrides_legacy_coordinate_file(tmp_path):

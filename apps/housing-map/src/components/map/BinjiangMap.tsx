@@ -19,6 +19,14 @@ export interface TransitStop {
   lat: number;
 }
 
+export interface BoundaryPreview {
+  communityId: string;
+  rings: number[][][];                                   // 候选轮廓 (GCJ-02)
+  referenceBuildings: { kind: string; rings: number[][][] }[];
+  showReferences: boolean;
+  position?: [number, number] | null;                   // 定位点 (GCJ-02)
+}
+
 interface BinjiangMapProps {
   auctionCounts?: Record<string, number>;
   communities: Community[];
@@ -28,6 +36,7 @@ interface BinjiangMapProps {
   selectedCommunity?: Community | null;
   focus?: { lng: number; lat: number; key: number } | null; // 外部触发的飞行定位信号
   priceMode?: 'all' | 'deal' | 'listing'; // 价格口径: 混合 / 仅签约价 / 仅挂牌价(不匹配的小区显示灰色)
+  boundaryPreview?: BoundaryPreview | null; // 候选轮廓预览图层(临时候选, 不进正式地块图层)
 }
 
 const GAODE_MAP_KEY = process.env.NEXT_PUBLIC_GAODE_MAP_KEY || '';
@@ -149,11 +158,12 @@ declare global {
   }
 }
 
-export default function BinjiangMap({ communities, pois, transit, onCommunityClick, selectedCommunity, focus, priceMode = 'all', auctionCounts }: BinjiangMapProps) {
+export default function BinjiangMap({ communities, pois, transit, onCommunityClick, selectedCommunity, focus, priceMode = 'all', auctionCounts, boundaryPreview = null }: BinjiangMapProps) {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<AMapMap | null>(null);
   const markersRef = useRef<AMapMarker[]>([]);
   const polygonsRef = useRef<AMapOverlay[]>([]);
+  const previewOverlaysRef = useRef<AMapOverlay[]>([]);
   const polygonByCommIdRef = useRef<Map<string, AMapOverlay>>(new Map());
   const commByCidRef = useRef<Map<string, Community>>(new Map());
   const circleRef = useRef<AMapOverlay | null>(null);
@@ -248,6 +258,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
   }, [mapLoaded]);
 
   // 添加小区标记点
+  const previewCommunityId = boundaryPreview?.communityId ?? null;
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map || !mapLoaded) return;
@@ -344,6 +355,8 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
           [community.longitude + halfLng, community.latitude + halfLat],
           [community.longitude - halfLng, community.latitude + halfLat],
         ];
+        // 预览中的小区弱化占位,让候选轮廓成为视觉主体
+        const dimmed = community.community_id === previewCommunityId;
         const placeholder = new window.AMap.Polygon({
           path,
           fillColor: color,
@@ -353,6 +366,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
           cursor: 'pointer',
           bubble: true,
           ...styleOptions(community, false, false),
+          ...(dimmed ? { fillOpacity: 0.08, strokeOpacity: 0.35, strokeWeight: 1 } : {}),
         });
         placeholder.on('click', () => onCommunityClick(community));
         bindHover(placeholder, community);
@@ -369,7 +383,64 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         markersRef.current.push(questionMark);
       }
     });
-  }, [communities, mapLoaded, onCommunityClick, priceMode, auctionCounts]);
+  }, [communities, mapLoaded, onCommunityClick, priceMode, auctionCounts, previewCommunityId]);
+
+  // 候选轮廓预览图层: 与正式地块图层分开管理, 切换小区或关闭预览即移除
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !mapLoaded) return;
+
+    previewOverlaysRef.current.forEach(overlay => map.remove(overlay));
+    previewOverlaysRef.current = [];
+    if (!boundaryPreview) return;
+
+    if (boundaryPreview.showReferences) {
+      boundaryPreview.referenceBuildings.forEach(reference => {
+        const polygon = new window.AMap.Polygon({
+          path: reference.rings,
+          fillColor: '#B45F3F',
+          fillOpacity: 0.12,
+          strokeColor: '#B45F3F',
+          strokeOpacity: 0.45,
+          strokeWeight: 1,
+          strokeStyle: 'dotted',
+          bubble: true,
+        });
+        map.add(polygon);
+        previewOverlaysRef.current.push(polygon);
+      });
+    }
+
+    if (boundaryPreview.rings.length > 0) {
+      const candidate = new window.AMap.Polygon({
+        path: boundaryPreview.rings,
+        fillColor: '#B45F3F',
+        fillOpacity: 0.3,
+        strokeColor: '#B45F3F',
+        strokeWeight: 2.5,
+        strokeStyle: 'dashed',
+        strokeDasharray: [8, 5],
+        bubble: true,
+      });
+      map.add(candidate);
+      previewOverlaysRef.current.push(candidate);
+    }
+
+    if (boundaryPreview.position) {
+      const marker = new window.AMap.Marker({
+        position: boundaryPreview.position,
+        anchor: 'center',
+        content: '<div style="pointer-events:none;width:12px;height:12px;border-radius:50%;background:#1F2429;border:2px solid #fff;box-shadow:0 0 3px rgba(0,0,0,0.45)"></div>',
+      });
+      map.add(marker);
+      previewOverlaysRef.current.push(marker);
+    }
+
+    return () => {
+      previewOverlaysRef.current.forEach(overlay => map.remove(overlay));
+      previewOverlaysRef.current = [];
+    };
+  }, [boundaryPreview, mapLoaded]);
 
   // 地铁路线 + 地铁站 (在小区轮廓之下)
   useEffect(() => {

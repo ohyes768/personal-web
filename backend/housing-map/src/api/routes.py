@@ -13,7 +13,8 @@ from fastapi.responses import JSONResponse
 from src.api.models import MOCK_COMMUNITIES, RefreshLimit, ScoreWeights
 from src.services import boundary_refresh
 from src.services import refresh as refresh_service
-from src.services.community_filters import is_real_community
+from src.services.community_filters import COMMUNITY_MERGE_GROUPS, MERGE_DROP_IDS, is_real_community
+from src.services.boundary_workflow import effective_polygons, is_displayable
 from src.services.market_reference import load_market_reference
 from src.services.data_loader import (
     get_data_paths,
@@ -23,7 +24,6 @@ from src.services.data_loader import (
     load_coordinates,
     load_json,
     load_pois,
-    load_polygons,
     load_price_snapshots,
     load_property_types,
     load_transit_routes,
@@ -33,18 +33,6 @@ from src.services.scoring import DEFAULT_WEIGHTS, calculate_score, find_nearest_
 from src.services.transit import boundary_points, build_subway_data
 
 router = APIRouter()
-
-# 水电片区: tmsf 以新旧名重复收录 5 个条目(同一片区), 合并为单条展示。
-# 价格/POI 借用有数据的成员(西兴镇水电社区: 挂牌 35127 可信;
-# 一区 9937/三区 4549 为 0 签约下的异常签约价, 不采用)
-COMMUNITY_MERGE_GROUPS = [
-    {
-        "primaryId": "453982737",   # 水电社区(保留)
-        "fallbackId": "453982238",  # 西兴镇水电社区(价格/POI 来源)
-        "dropIds": ["453982238", "20073231", "5001850", "20056022"],  # 西兴镇水电社区/省水电新村一区/二区/三区
-    },
-]
-MERGE_DROP_IDS = {did for g in COMMUNITY_MERGE_GROUPS for did in g["dropIds"]}
 
 
 # ---------------------------------------------------------------------------
@@ -194,7 +182,8 @@ async def get_communities():
         and is_in_scope(coord.get("longitude") or 0, coord.get("latitude") or 0)
     ]
 
-    polygons = load_polygons()
+    # 有效轮廓视图 = 基础轮廓 + 人工确认覆盖层;人工确认后"问号"缺口即消失。
+    polygons = effective_polygons()
     # 展示统计只计实际轮廓；位置示意问号仍下发，但计入边界待补。
     # 无 registry (raw JSON 回退/mock) 时为 None, 前端不展示该行。
     stats = None
@@ -210,8 +199,7 @@ async def get_communities():
         hidden = Counter(v['map_status'] for v in admitted_views if v['map_status'] != 'displayed')
         for view in admitted_views:
             if view['map_status'] == 'displayed':
-                polygon = polygons.get(view['community_id']) or {}
-                if not polygon.get('rings') or polygon.get('source') == 'shp':
+                if not is_displayable(polygons.get(view['community_id'])):
                     hidden['missing_boundary'] += 1
         stats = {
             'admitted': len(admitted_views),

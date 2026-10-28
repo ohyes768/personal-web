@@ -12,6 +12,7 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+from src.services.boundary_publish import publish_lock
 from src.services.community_admission import community_views
 from src.services.community_registry import existing_registry
 from src.services.data_loader import DATA_DIR as SERVICE_DATA_DIR
@@ -148,9 +149,12 @@ def main():
         'polygons': polygons,
     }
     temp_path = f'{OUT_PATH}.tmp'
-    with open(temp_path, 'w', encoding='utf-8') as f:
-        json.dump(output, f, ensure_ascii=False)
-    os.replace(temp_path, OUT_PATH)
+    # 重建只写基础层:人工确认的覆盖层独立存放,不受影响。发布锁与人工覆盖操作互斥,
+    # 避免重建原子替换文件的同时有人正在比对基础层版本。
+    with publish_lock():
+        with open(temp_path, 'w', encoding='utf-8') as f:
+            json.dump(output, f, ensure_ascii=False)
+        os.replace(temp_path, OUT_PATH)
     for cid, name, lon, lat in unmatched:
         print(f'[未匹配] {cid} {name} ({lon:.6f}, {lat:.6f})')
     rate = matched / len(points) * 100 if points else 0

@@ -1,6 +1,7 @@
 # Housing-map backend
 
 ## Pre-Development Checklist
+- Read [Boundary generation workflow](./boundary-workflow.md) before changing missing-boundary detection, the manual confirmation overlay, candidate apply/revert, or the "?" placeholder on the map. It defines the base+overlay data model, the public no-token routes, and the single definition of a displayable boundary.
 - Read [Candidate-to-admission pipeline v2](./collection-pipeline.md) before changing the versioned candidate identity, selected-POI use evidence, strict admission or full re-review migration. It supersedes v1 position/use behavior only after explicit activation.
 - Read [Amap position status](./directory-position.md) for catalog POI states, per-community query/confirmation, historical coordinates and manual position protection.
 - Read [TMSF directory workflow](./directory-flow.md) for TMSF-only admission, five collection tasks, auction-only association and explicit offline migration; it supersedes the legacy multi-source review flow after activation.

@@ -124,8 +124,10 @@ def test_area_ha_sanity():
 
 
 def test_load_snapshot_filters_bbox(tmp_path, monkeypatch):
-    inside = _way(1, _box(*WGS), name="楼A")
-    outside = _way(2, _box(WGS[0] + 0.05, WGS[1]), name="楼B")
+    # 旧快照覆盖范围 30.17-30.20 / 120.15-120.21,取范围内的点
+    point = (120.17, 30.185)
+    inside = _way(1, _box(*point), name="楼A")
+    outside = _way(2, _box(point[0] + 0.05, point[1]), name="楼B")
     buildings = {"elements": [inside, outside]}
     residential = {"elements": []}
     bpath, rpath = tmp_path / "b.json", tmp_path / "r.json"
@@ -134,8 +136,22 @@ def test_load_snapshot_filters_bbox(tmp_path, monkeypatch):
     monkeypatch.setattr(est, "SNAPSHOT_BUILDINGS", bpath)
     monkeypatch.setattr(est, "SNAPSHOT_RESIDENTIAL", rpath)
     monkeypatch.setattr(est, "SNAPSHOT_ALL", tmp_path / "all-absent.json")  # 屏蔽真实全量快照
-    elements = est.load_snapshot(*WGS)
+    elements, covered = est.load_snapshot(*point)
+    assert covered is True
     assert [el["id"] for el in elements] == [1]
-    # 快照缺文件 -> None(交给在线)
+    # 快照缺文件 -> 未覆盖,交给在线
     monkeypatch.setattr(est, "SNAPSHOT_BUILDINGS", tmp_path / "none.json")
-    assert est.load_snapshot(*WGS) is None
+    assert est.load_snapshot(*point) == ([], False)
+
+
+def test_load_snapshot_not_covered_outside_extent(tmp_path, monkeypatch):
+    """快照文件存在但覆盖范围不含该点时不算覆盖,必须转在线补查。"""
+    bpath = tmp_path / "b.json"
+    bpath.write_text(json.dumps({"elements": []}), encoding="utf-8")
+    monkeypatch.setattr(est, "SNAPSHOT_ALL", tmp_path / "all-absent.json")
+    monkeypatch.setattr(est, "SNAPSHOT_BUILDINGS", bpath)
+    monkeypatch.setattr(est, "SNAPSHOT_RESIDENTIAL", bpath)
+    # 萧山闻堰一带,超出旧快照覆盖范围(30.17-30.20 / 120.15-120.21)
+    elements, covered = est.load_snapshot(120.155, 30.137)
+    assert covered is False
+    assert elements == []

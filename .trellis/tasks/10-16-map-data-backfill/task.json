@@ -6,7 +6,7 @@
   "status": "planning",
   "dev_type": null,
   "scope": null,
-  "package": "backend/douyin-processor",
+  "package": "backend/housing-map",
   "priority": "P2",
   "creator": "jackson.tang",
   "assignee": "jackson.tang",
