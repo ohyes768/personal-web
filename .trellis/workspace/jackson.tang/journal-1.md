@@ -1836,3 +1836,33 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+## 2026-10-28 housing-boundary-preview
+
+- 10-28：实现"缺失地块轮廓生成、预览与人工确认"。线上只读核对：160 个展示小区中 25 个无可展示轮廓（含隐藏 shp 口径），本地全量 OSM 快照试算 16 高置信 / 6 低置信 / 3 无建筑。
+- 后端新增 5 个服务模块（boundary_estimate / boundary_geometry / boundary_publish / boundary_workflow_store / boundary_workflow）与公开无鉴权路由；人工确认结果存 SQLite 覆盖层，不写基础轮廓文件。
+- 前端新增 lib/boundary-workflow.ts、lib/use-boundary-workflow.ts、BoundaryWorkflowPanel.tsx，BinjiangMap 增加临时候选图层。
+- 顺带修：test_build_merged_polygons 读 UTF-8 未指定 encoding（Windows locale 是 GBK，纯净 origin/master 同样失败）；4 个 task.json 的 package 字段修正。
+
+### Status
+
+[OK] **Completed** — 任务实现与验证完成，已本地提交 `cb5d871`；未推送、未部署、线上行为未变。
+
+### Next Steps
+
+- 推送与部署需用户授权后执行（deploy-nas.sh）。
+- 浏览器端手工 QA 未做（问号徽标本体点击、键盘焦点、窄屏地图操作）：地图层依赖高德 JS API 无测试基建，需人工确认。
+- 生产环境大概率没有 OSM 快照（文件被 gitignore，NAS 是 git pull 后本地构建），首次生成会走在线 Overpass，单任务最长 240s。
+- 线上 25 个缺口里 朗庭 / 春来晴翠园 / 泊玺骏庐 本地快照下无建筑，需联网补查，仍可能报 no_geometry。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cb5d871` | feat(housing-map): 缺失地块轮廓生成、预览与人工确认 |
+
+### Testing
+
+- 后端全量 968 passed（纯净 origin/master 基线 944 passed / 1 failed）。
+- 前端 lint / tsc --noEmit / node --test 130 passed / npm run build 全通过。
+- 隔离数据端到端 29/29 通过，证据见 `.trellis/tasks/10-28-housing-boundary-preview/research/02-e2e-transcript.txt`。
