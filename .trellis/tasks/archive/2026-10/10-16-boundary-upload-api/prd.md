@@ -20,12 +20,18 @@
 
 ## Acceptance Criteria
 
-- [ ] 无/错 token → 401;服务端未配 token → 503
-- [ ] 四类校验各自有拒绝用例,响应含 cid+原因;合法条目不受同批非法条目影响
-- [ ] 合法上传落盘后 communities 接口返回该轮廓(source=osm-building);重复上传覆盖不重复
-- [ ] 落盘前有备份、写入为原子操作(测试覆盖)
-- [ ] 前端 osm-building 轮廓以虚线渲染(本地数据验证)
-- [ ] `python -m pytest tests/ -v` 与前端 `pnpm build` 无新增失败
+- [x] 无/错 token → 401;服务端未配 token → 503
+      （hmac.compare_digest 常量时间比较；test_missing_token_returns_503、test_wrong_token_returns_401）
+- [x] 四类校验各自有拒绝用例,响应含 cid+原因;合法条目不受同批非法条目影响
+      （test_reject_unknown_community / test_reject_open_ring / test_reject_out_of_scope / test_area_limit_unit / test_reject_wrong_source；test_partial_accept_mixed_batch 覆盖混合批次）
+- [x] 合法上传落盘后 communities 接口返回该轮廓(source=osm-building);重复上传覆盖不重复
+      （test_accept_writes_entry_with_meta_and_backup、test_reupload_is_idempotent；写入 source=osm-building，_meta.matched 计数去重追加。链路：上传落 binjiang_polygons_merged.json → load_polygons → effective_polygons → /communities 下发 boundary_source=osm-building）
+- [x] 落盘前有备份、写入为原子操作(测试覆盖)
+      （rotate_backup 保留最近 5 份，test_rotate_backup_keeps_recent_five；tempfile.mkstemp + os.replace 原子写）
+- [x] 前端 osm-building 轮廓以虚线渲染(本地数据验证)
+      （BinjiangMap.tsx 白名单 osm|osm-building，strokeStyle dashed）
+- [x] `python -m pytest tests/ -v` 与前端 `pnpm build` 无新增失败
+      （后端全量 968 passed；前端 130 测试、tsc、lint、build 全通过）
 
 ## Dependencies
 
