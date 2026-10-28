@@ -6,7 +6,7 @@ import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, for
 import { isInScope } from '@/lib/binjiang-boundary';
 import BinjiangMap from '@/components/map/BinjiangMap';
 import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
-import BoundaryWorkflowPanel, { BoundaryWorkflowSection, type BoundaryPanelView, type BoundaryWorkflowActions } from '@/components/community/BoundaryWorkflowPanel';
+import { BoundaryWorkflowPreview, BoundaryWorkflowSection, type BoundaryPanelView, type BoundaryWorkflowActions } from '@/components/community/BoundaryWorkflowPanel';
 import { useBoundaryWorkflow } from '@/lib/use-boundary-workflow';
 import type { BoundaryPreview } from '@/components/map/BinjiangMap';
 import LatestAuctionCard from '@/components/community/LatestAuctionCard';
@@ -76,17 +76,13 @@ function CommunityPopup({
   onClose,
   auctionCount,
   auctionRefreshVersion,
-  boundaryView,
-  boundaryActions,
-  onPreviewBoundary,
+  boundaryContent,
 }: {
   community: Community;
   onClose: () => void;
   auctionCount?: number;
   auctionRefreshVersion: number;
-  boundaryView?: BoundaryPanelView;
-  boundaryActions?: BoundaryWorkflowActions;
-  onPreviewBoundary?: () => void;
+  boundaryContent?: ReactNode;
 }) {
   const poiGroups = community.pois.reduce((acc, poi) => {
     const type = poi.type as POIType;
@@ -129,7 +125,7 @@ function CommunityPopup({
         <button className="close-btn" onClick={onClose}>×</button>
       </div>
 
-      <CommunityDetailTabs communityId={community.community_id} auctionCount={auctionCount}>
+      <CommunityDetailTabs communityId={community.community_id} auctionCount={auctionCount} boundary={boundaryContent}>
       <p className="auction-meta">普通房价快照：{community.price.snapshot_date || '未知'} · 均价单位：元/㎡</p>
       {/* 普通房价指标与最近法拍参考 */}
       <div className="popup-price-row">
@@ -151,14 +147,6 @@ function CommunityPopup({
         </div>
         <LatestAuctionCard communityId={community.community_id} refreshVersion={auctionRefreshVersion} />
       </div>
-
-      {boundaryView && boundaryActions && (
-        <BoundaryWorkflowSection
-          view={boundaryView}
-          actions={boundaryActions}
-          onPreview={onPreviewBoundary ?? (() => {})}
-        />
-      )}
 
       {/* 评分维度 2×2 大卡: 可点击翻转看明细, 宽度翻倍解决明细显示不下 */}
       <div className="score-grid">
@@ -477,6 +465,7 @@ export default function BinjiangMapPage() {
     && referenceVisibility.visible;
 
   const boundaryWorkflow = useBoundaryWorkflow(selectedCommunity?.community_id ?? null, () => {
+    setPreviewCommunityId(null);  // 应用或撤销后回到摘要, 预览态不再挂着
     void fetchCommunities().then(({ communities, stats, ok }) => {
       if (!ok) {
         // 轮廓已保存, 只是地图数据没刷新回来 —— 不能报成保存失败
@@ -824,30 +813,31 @@ export default function BinjiangMapPage() {
               </div>
             </div>
 
-            {selectedCommunity && !boundaryPreviewOpen && (
+            {selectedCommunity && (
               <CommunityPopup
                 key={selectedCommunity.community_id}
                 community={selectedCommunity}
                 auctionCount={auctionCounts[selectedCommunity.community_id]}
                 auctionRefreshVersion={auctionRefreshVersion}
-                boundaryView={boundaryView}
-                boundaryActions={boundaryActions}
-                onPreviewBoundary={openBoundaryPreview}
+                boundaryContent={boundaryPreviewOpen ? (
+                  <BoundaryWorkflowPreview
+                    view={boundaryView}
+                    actions={boundaryActions}
+                    onBack={() => setPreviewCommunityId(null)}
+                    onLocate={() => openPositionForCommunity(selectedCommunity.community_id)}
+                    showReferences={showReferenceBuildings}
+                    onToggleReferences={visible => {
+                      setReferenceVisibility({ communityId: selectedCommunity.community_id, visible });
+                    }}
+                  />
+                ) : (
+                  <BoundaryWorkflowSection
+                    view={boundaryView}
+                    actions={boundaryActions}
+                    onPreview={openBoundaryPreview}
+                  />
+                )}
                 onClose={() => setSelectedCommunity(null)}
-              />
-            )}
-
-            {selectedCommunity && boundaryPreviewOpen && (
-              <BoundaryWorkflowPanel
-                view={boundaryView}
-                actions={boundaryActions}
-                onClose={() => setPreviewCommunityId(null)}
-                onLocate={() => openPositionForCommunity(selectedCommunity.community_id)}
-                showReferences={showReferenceBuildings}
-                onToggleReferences={visible => {
-                  if (!selectedCommunity) return;
-                  setReferenceVisibility({ communityId: selectedCommunity.community_id, visible });
-                }}
               />
             )}
           </>

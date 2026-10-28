@@ -24,7 +24,7 @@ const {
 } = require('../src/lib/boundary-workflow.ts');
 const {
   BoundaryWorkflowSection,
-  default: BoundaryWorkflowPanel,
+  BoundaryWorkflowPreview,
 } = require('../src/components/community/BoundaryWorkflowPanel.tsx');
 
 const RING = [[[120.207, 30.202], [120.209, 30.202], [120.209, 30.204], [120.207, 30.204], [120.207, 30.202]]];
@@ -177,7 +177,6 @@ test('popup section offers the generate entry when the boundary is missing', () 
     actions: noopActions,
     onPreview: () => {},
   }));
-  assert.match(html, /地块轮廓/);
   assert.match(html, /暂无地块轮廓/);
   assert.match(html, /生成候选轮廓/);
   assert.doesNotMatch(html, /查看候选/);
@@ -227,10 +226,10 @@ test('popup section surfaces the failure reason and offers a retry', () => {
 });
 
 test('preview panel shows the real candidate facts and the decision actions', () => {
-  const html = render(React.createElement(BoundaryWorkflowPanel, {
+  const html = render(React.createElement(BoundaryWorkflowPreview, {
     view: view({ candidate: candidate() }),
     actions: noopActions,
-    onClose: () => {},
+    onBack: () => {},
     onLocate: () => {},
     showReferences: false,
     onToggleReferences: () => {},
@@ -246,12 +245,12 @@ test('preview panel shows the real candidate facts and the decision actions', ()
 });
 
 test('preview panel blocks apply for a stale candidate and explains why', () => {
-  const html = render(React.createElement(BoundaryWorkflowPanel, {
+  const html = render(React.createElement(BoundaryWorkflowPreview, {
     view: view({
       candidate: candidate({ stale: true, stale_reasons: ['基础轮廓或定位已变化'], applicable: false }),
     }),
     actions: noopActions,
-    onClose: () => {},
+    onBack: () => {},
     onLocate: () => {},
     showReferences: true,
     onToggleReferences: () => {},
@@ -262,17 +261,39 @@ test('preview panel blocks apply for a stale candidate and explains why', () => 
 });
 
 test('preview panel lists quality warnings and the running phase', () => {
-  const html = render(React.createElement(BoundaryWorkflowPanel, {
+  const html = render(React.createElement(BoundaryWorkflowPreview, {
     view: view({
       candidate: candidate({ warnings: ['定位点未落在任何建筑簇内,轮廓取自最近的建筑簇,需人工确认范围'] }),
       jobPhase: 'fetching',
     }),
     actions: noopActions,
-    onClose: () => {},
+    onBack: () => {},
     onLocate: () => {},
     showReferences: false,
     onToggleReferences: () => {},
   }));
   assert.match(html, /联网获取建筑中/);
   assert.match(html, /需人工确认范围/);
+});
+
+test('detail tabs put the boundary tab next to the community overview', () => {
+  const { default: CommunityDetailTabs } = require('../src/components/community/CommunityDetailTabs.tsx');
+  const html = render(React.createElement(CommunityDetailTabs, {
+    communityId: '100',
+    boundary: React.createElement(BoundaryWorkflowSection, {
+      view: view(), actions: noopActions, onPreview: () => {},
+    }),
+  }, React.createElement('p', null, '概况内容')));
+  assert.match(html, /小区概况/);
+  assert.match(html, /租金与收益/);
+  assert.match(html, /地块轮廓/);
+});
+
+test('detail tabs hide the boundary tab when there is nothing to show', () => {
+  const { default: CommunityDetailTabs } = require('../src/components/community/CommunityDetailTabs.tsx');
+  const html = render(React.createElement(CommunityDetailTabs, {
+    communityId: '100',
+  }, React.createElement('p', null, '概况内容')));
+  assert.match(html, /小区概况/);
+  assert.doesNotMatch(html, /地块轮廓/);
 });

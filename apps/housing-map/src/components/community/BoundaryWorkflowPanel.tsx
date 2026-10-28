@@ -42,7 +42,7 @@ function confirmedAtText(value: string | null): string {
   return parsed.toLocaleString('zh-CN', { hour12: false });
 }
 
-/** 弹框内的轮廓摘要区:状态 + 入口,不堆任务实现。 */
+/** 「地块轮廓」tab 的摘要区: 状态 + 入口。 */
 export function BoundaryWorkflowSection({
   view,
   actions,
@@ -59,7 +59,6 @@ export function BoundaryWorkflowSection({
 
   return (
     <div className="boundary-section">
-      <div className="panel-title">地块轮廓</div>
       <div className="boundary-status-row">
         <span className={`boundary-dot ${status.tone}`} aria-hidden="true" />
         <span className="boundary-status-text">{status.label}</span>
@@ -112,38 +111,35 @@ export function BoundaryWorkflowSection({
   );
 }
 
-/** 候选预览确认面板:进入预览时取代普通小区详情。 */
-export default function BoundaryWorkflowPanel({
+/** 候选预览: 在「地块轮廓」tab 内就地确认, 地图同步高亮候选范围。 */
+export function BoundaryWorkflowPreview({
   view,
   actions,
-  onClose,
+  onBack,
   onLocate,
   showReferences,
   onToggleReferences,
 }: {
   view: BoundaryPanelView;
   actions: BoundaryWorkflowActions;
-  onClose: () => void;
+  onBack: () => void;
   onLocate: () => void;
   showReferences: boolean;
   onToggleReferences: (next: boolean) => void;
 }) {
-  const { state, candidate, jobPhase, jobError, busy, error, loading } = view;
+  const { candidate, jobPhase, jobError, jobErrorCode, busy, error, loading } = view;
   const active = isBoundaryJobActive(jobPhase);
 
   return (
-    <div className="boundary-panel open animate-fade-in">
-      <div className="popup-header">
-        <div>
-          <span className="popup-title">{state?.community_name || '地块轮廓'}</span>
-          <span className="popup-subdistrict">候选轮廓确认</span>
-        </div>
-        <button className="close-btn" onClick={onClose} aria-label="关闭">×</button>
+    <div className="boundary-preview">
+      <div className="boundary-preview-head">
+        <button type="button" className="boundary-back" onClick={onBack}>← 返回</button>
+        <span className="boundary-status-text">候选轮廓确认</span>
       </div>
 
       {loading && <p className="boundary-hint">读取轮廓状态…</p>}
       {error && <p className="boundary-error" role="alert">{error}</p>}
-      {jobError && <p className="boundary-error" role="alert">{boundaryErrorText(view.jobErrorCode, jobError)}</p>}
+      {jobError && <p className="boundary-error" role="alert">{boundaryErrorText(jobErrorCode, jobError)}</p>}
 
       {active && (
         <div className="boundary-progress">
