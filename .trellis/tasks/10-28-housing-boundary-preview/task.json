@@ -28,6 +28,6 @@
     "backend/housing-map/src/services/data_loader.py",
     "backend/housing-map/src/services/boundary_import.py"
   ],
-  "notes": "2026-10-28: 实现完成。backend 新增 boundary_estimate/boundary_geometry/boundary_publish/boundary_workflow_store/boundary_workflow 五个服务模块与公开无鉴权路由；人工确认结果存 SQLite 覆盖层，不写基础轮廓文件，重建不吞、撤销只删覆盖层。frontend 新增 lib/boundary-workflow.ts、lib/use-boundary-workflow.ts、BoundaryWorkflowPanel.tsx，BinjiangMap 接受临时候选图层。验证：后端全量 968 passed；前端 lint/tsc/130 tests/build 全通过；隔离数据端到端 29/29 通过（research/02-e2e-transcript.txt）。遗留：浏览器端手工 QA 未做；部署与线上正式应用待用户授权。",
+  "notes": "2026-10-28: 实现完成。backend 新增 boundary_estimate/boundary_geometry/boundary_publish/boundary_workflow_store/boundary_workflow 五个服务模块与公开无鉴权路由；人工确认结果存 SQLite 覆盖层，不写基础轮廓文件，重建不吞、撤销只删覆盖层。frontend 新增 lib/boundary-workflow.ts、lib/use-boundary-workflow.ts、BoundaryWorkflowPanel.tsx，BinjiangMap 接受临时候选图层。已推送 origin/master（cb5d871 + 44beb07）。验证：后端全量 968 passed；前端 lint/tsc/130 tests/build 全通过；隔离数据端到端 29/29 通过（research/02-e2e-transcript.txt）。遗留：浏览器端手工 QA 未做；线上部署与正式应用待用户授权（推送已完成）。",
   "meta": {}
 }
