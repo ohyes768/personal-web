@@ -55,6 +55,7 @@ export function BoundaryWorkflowSection({
   const { state, candidate, jobPhase, busy } = view;
   const status = statusText(state);
   const active = isBoundaryJobActive(jobPhase);
+  const failure = view.error || (view.jobError ? boundaryErrorText(view.jobErrorCode, view.jobError) : '');
 
   return (
     <div className="boundary-section">
@@ -73,12 +74,18 @@ export function BoundaryWorkflowSection({
         </p>
       )}
 
+      {!active && failure && (
+        <p className="boundary-error" role="alert">{failure}</p>
+      )}
+
       {!state?.has_visible_boundary && !active && (
         <>
           <p className="boundary-hint">
             {candidate
               ? '已有候选轮廓，确认无误后应用到地图。'
-              : '轮廓由开放街图建筑聚类估算，生成后需要人工确认范围是否合适。'}
+              : failure
+                ? '没有拿到建筑数据，可以稍后重试。'
+                : '轮廓由开放街图建筑聚类估算，生成后需要人工确认范围是否合适。'}
           </p>
           <div className="boundary-actions">
             {candidate ? (
@@ -87,7 +94,7 @@ export function BoundaryWorkflowSection({
               </button>
             ) : (
               <button type="button" className="btn btn-primary" onClick={() => void actions.startEstimate()} disabled={busy}>
-                {busy ? '正在发起…' : '生成候选轮廓'}
+                {busy ? '正在发起…' : failure ? '重新生成轮廓' : '生成候选轮廓'}
               </button>
             )}
           </div>

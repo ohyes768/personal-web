@@ -14,6 +14,9 @@ data/rentals/
 
 # Regenerable script captures (Overpass dumps, TMSF CSV export)
 data/binjiang_osm_*_raw.json
+# 例外: 全量建筑快照随仓库分发。NAS 连不上 Overpass,这份数据在那边无法重建,
+# 必须进 git 才能进镜像,生产环境的轮廓估算才能完全离线跑。
+!data/binjiang_osm_buildings_all_raw.json
 data/binjiang_communities.csv
 
 # Boundary estimation outputs (task 10-16-boundary-estimate-script)

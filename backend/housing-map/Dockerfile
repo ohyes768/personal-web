@@ -29,6 +29,9 @@ COPY data ./data
 COPY data/binjiang_osm_residential.geojson ./seed-data/binjiang_osm_residential.geojson
 COPY data/market_reference.json ./seed-data/market_reference.json
 COPY data/rental_community_mappings.json ./seed-data/rental_community_mappings.json
+# 全量 OSM 建筑快照：NAS 连不上 Overpass，这份数据在那边无法重建，
+# 随仓库分发并落到数据卷，轮廓估算才能完全离线跑。
+COPY data/binjiang_osm_buildings_all_raw.json ./seed-data/binjiang_osm_buildings_all_raw.json
 
 # 安装依赖（uv sync 从 lock 文件精确安装）
 RUN uv sync --frozen --no-dev
@@ -47,4 +50,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD sh -c "curl -f http://localhost:${HOUSING_PORT:-8096}/api/health || exit 1"
 
 # 启动命令（端口从 HOUSING_PORT 读，未设置时 fallback 8096）；已有数据卷文件绝不覆盖。
-CMD ["sh", "-c", "if [ ! -f /app/data/binjiang_osm_residential.geojson ]; then cp /app/seed-data/binjiang_osm_residential.geojson /app/data/; fi; if [ ! -f /app/data/market_reference.json ]; then cp /app/seed-data/market_reference.json /app/data/; fi; exec uvicorn src.main:app --host 0.0.0.0 --port ${HOUSING_PORT:-8096}"]
+CMD ["sh", "-c", "if [ ! -f /app/data/binjiang_osm_residential.geojson ]; then cp /app/seed-data/binjiang_osm_residential.geojson /app/data/; fi; if [ ! -f /app/data/market_reference.json ]; then cp /app/seed-data/market_reference.json /app/data/; fi; if [ ! -f /app/data/binjiang_osm_buildings_all_raw.json ]; then cp /app/seed-data/binjiang_osm_buildings_all_raw.json /app/data/; fi; exec uvicorn src.main:app --host 0.0.0.0 --port ${HOUSING_PORT:-8096}"]

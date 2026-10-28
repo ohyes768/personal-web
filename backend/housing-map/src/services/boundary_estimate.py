@@ -370,11 +370,15 @@ def cache_path_for(cache_dir, community_id: str, lng_wgs: float, lat_wgs: float)
 
 
 def fetch_elements(lng_wgs, lat_wgs, cache_path, interval=REQUEST_INTERVAL, fetcher=None,
-                   *, clock=time.time, sleeper=time.sleep, timeout=REQUEST_TIMEOUT, use_cache=True):
+                   *, clock=time.time, sleeper=time.sleep, timeout=REQUEST_TIMEOUT, use_cache=True,
+                   budget_seconds=TASK_BUDGET_SECONDS):
     """带 7 天缓存与镜像 fallback 的 Overpass 抓取;返回 elements 列表。
 
     缓存内容记录查询 bbox 与版本,只有完全匹配才复用。use_cache=False 时忽略已有缓存
-    强制重新抓取(用户显式选择"重新获取建筑")。"""
+    强制重新抓取(用户显式选择"重新获取建筑")。
+
+    整个任务受 budget_seconds 总预算约束:预算耗尽即放弃,不再逐个镜像试下去。
+    """
     cache_path = Path(cache_path)
     bbox = _bbox_of(lng_wgs, lat_wgs)
     if use_cache and cache_path.exists():
@@ -387,16 +391,24 @@ def fetch_elements(lng_wgs, lat_wgs, cache_path, interval=REQUEST_INTERVAL, fetc
     query = overpass_query(lng_wgs, lat_wgs)
     body = urllib.parse.urlencode({"data": query}).encode()
     errors = []
-    do_fetch = fetcher or _http_post
+    started = clock()
     for mirror in MIRRORS:
+        remaining = budget_seconds - (clock() - started)
+        if remaining <= 0:
+            raise EstimateError("timeout", f"建筑数据获取超过 {budget_seconds:.0f} 秒预算")
         try:
             _pace(interval, clock, sleeper, injected=fetcher is not None)
-            elements = do_fetch(mirror, body)
+            if fetcher:
+                elements = fetcher(mirror, body)
+            else:
+                elements = _http_post(mirror, body, timeout=min(timeout, remaining))
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(json.dumps(
                 {"version": QUERY_VERSION, "bbox": [round(v, 6) for v in bbox], "elements": elements},
                 ensure_ascii=False), encoding="utf-8")
             return elements
+        except EstimateError:
+            raise
         except Exception as exc:  # noqa: BLE001 - 镜像逐个降级,任何失败都换下一个
             errors.append(f"{mirror}: {exc}")
     raise EstimateError("network", "所有 Overpass 镜像均失败:\n" + "\n".join(errors))
@@ -415,12 +427,12 @@ def _pace(interval, clock, sleeper, *, injected=False):
         _last_request_at = clock()
 
 
-def _http_post(url, body):
+def _http_post(url, body, timeout=REQUEST_TIMEOUT):
     req = urllib.request.Request(url, data=body, headers={
         "User-Agent": USER_AGENT,
         "Content-Type": "application/x-www-form-urlencoded",
     })
-    with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)["elements"]
 
 
@@ -446,12 +458,16 @@ def estimate_one(target: EstimateTarget, *, snapshot_paths=None, cache_dir=None,
     report("reading", "读取建筑快照")
     lng_wgs, lat_wgs = gcj02_to_wgs84(target.longitude, target.latitude)
     paths = default_snapshot_paths() if snapshot_paths is None else snapshot_paths
-    elements, covered = load_snapshot(
-        lng_wgs, lat_wgs,
-        snapshot_all=paths.get("all"),
-        snapshot_buildings=paths.get("buildings"),
-        snapshot_residential=paths.get("residential"),
-    )
+    if use_cache:
+        elements, covered = load_snapshot(
+            lng_wgs, lat_wgs,
+            snapshot_all=paths.get("all"),
+            snapshot_buildings=paths.get("buildings"),
+            snapshot_residential=paths.get("residential"),
+        )
+    else:
+        # 用户显式选择"重新获取建筑": 连本地快照也不用, 直接联网取最新的
+        elements, covered = [], False
     if covered:
         report("estimating", "按本地快照聚类")
     else:

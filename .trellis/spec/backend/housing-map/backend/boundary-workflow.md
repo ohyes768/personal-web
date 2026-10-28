@@ -81,11 +81,16 @@ revision = `digest(基础条目 + 覆盖条目 + 有效定位/名称)`，**不�
 
 - 数据源顺序：坐标匹配的本地快照 → 在线 Overpass。**快照文件存在不等于该区域已采集**：
   快照必须覆盖请求 bbox，否则照样走在线（`boundary_estimate.load_snapshot` 返回 `(elements, covered)`）。
-- 快照文件（`data/binjiang_osm_*_raw.json`）是 gitignore 的运行时产物，**NAS 上可能不存在**，
-  生产默认走在线。
+- **全量建筑快照 `data/binjiang_osm_buildings_all_raw.json` 随仓库分发**（.gitignore 里专门开了例外），
+  Dockerfile 把它复制进 `seed-data`，容器启动时落到数据卷。原因：**NAS 连不上 Overpass**
+  （三个镜像实测 502 / 读超时），这份数据在那边无法重建，只能随代码走。
+  改这条链路时要同时看三处：`.gitignore` 例外、Dockerfile 的 `COPY ... ./seed-data/`、CMD 的补齐拷贝。
+  `test_dockerfile.py` 里有断言守着这条链。
 - 缓存键含查询 bbox 与查询版本（`cache_key`），不能只按小区 ID；缓存放 `data/boundary_cache/`。
-- 服务内请求起始间隔 ≥10s、单次 60s、单任务总预算 240s；限流不立即重试。
-- `refresh_buildings=True` 才跳过建筑缓存强制重抓；普通"重新生成"复用缓存。
+- 服务内请求起始间隔 ≥10s、单次 60s、**单任务总预算 240s（已强制）**：预算耗尽即放弃剩余镜像，
+  单次请求超时还会被剩余预算压住。预算用 `budget_seconds` 参数注入，测试用假时钟验证。
+- `refresh_buildings=True`（"重新获取建筑"）会**连本地快照一起绕开**，强制走在线；
+  普通"重新生成"复用快照与缓存。在离线环境（NAS）这个操作必然失败，界面会显示网络错误。
 
 ## 9. 估算算法唯一实现处
 
@@ -109,6 +114,9 @@ revision = `digest(基础条目 + 覆盖条目 + 有效定位/名称)`，**不�
   候选高亮、参考建筑可开关、被预览小区的问号占位弱化；切小区/关闭预览即移除。
 - 关闭弹框停止前端轮询，服务端任务照常跑完；重新打开会恢复任务/候选。
 - 保存成功但地图刷新失败要显示"已保存，地图刷新失败"，**不能报成保存失败**。
+- **任务失败原因必须在弹框里露出来**（线上踩过：任务已经 failed，弹框还显示"联网获取建筑中"，
+  用户干等一整轮才知道失败）。`BoundaryWorkflowSection` 要渲染 `error` / `jobError`，
+  并把按钮文案从"生成候选轮廓"改成"重新生成轮廓"。
 
 ## 11. 去核对定位
 

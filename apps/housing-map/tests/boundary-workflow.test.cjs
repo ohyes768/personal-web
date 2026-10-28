@@ -184,6 +184,22 @@ test('popup section offers revert only for a manually confirmed boundary', () =>
   assert.match(html, /撤销本次应用/);
 });
 
+test('popup section surfaces the failure reason and offers a retry', () => {
+  // 线上踩过的坑: 任务失败后弹框只显示"联网获取建筑中",失败原因藏在接口里,用户干等
+  const html = render(React.createElement(BoundaryWorkflowSection, {
+    view: view({
+      jobPhase: 'failed',
+      jobError: '所有 Overpass 镜像均失败',
+      jobErrorCode: 'network',
+    }),
+    actions: noopActions,
+    onPreview: () => {},
+  }));
+  assert.match(html, /获取建筑数据失败/);
+  assert.match(html, /重新生成轮廓/);
+  assert.doesNotMatch(html, /联网获取建筑中/);
+});
+
 test('preview panel shows the real candidate facts and the decision actions', () => {
   const html = render(React.createElement(BoundaryWorkflowPanel, {
     view: view({ candidate: candidate() }),

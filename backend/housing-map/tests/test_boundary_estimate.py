@@ -4,6 +4,7 @@ import pytest
 from shapely.geometry import Polygon
 
 import scripts.estimate_boundaries as est
+import src.services.boundary_estimate as svc
 
 # 滨江某点(约)的 WGS84 坐标
 WGS = (120.15, 30.18)
@@ -121,6 +122,77 @@ def test_area_ha_sanity():
     ring.append(ring[0])
     ha = est._area_ha(ring)
     assert 0.7 < ha < 1.4
+
+
+class FakeClock:
+    """可推进的假时钟,用来验证总预算。"""
+
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+    def advance(self, seconds):
+        self.now += seconds
+
+
+def test_fetch_stops_at_total_budget(tmp_path):
+    """预算耗尽即放弃,不再试下一个镜像。"""
+    clock = FakeClock()
+    calls = []
+
+    def slow_fetcher(url, body):
+        calls.append(url)
+        clock.advance(150)
+        raise RuntimeError("boom")
+
+    with pytest.raises(est.EstimateError) as error:
+        est.fetch_elements(*WGS, tmp_path / "c.json", interval=0, fetcher=slow_fetcher,
+                           clock=clock, budget_seconds=240)
+    assert error.value.code == "timeout"
+    assert len(calls) == 2  # 第三次尝试前预算已耗尽,不再发请求
+
+
+def test_fetch_caps_single_request_by_remaining_budget(tmp_path, monkeypatch):
+    """单次请求超时不能超过剩余预算,否则一次请求就能把总预算撑爆。"""
+    clock = FakeClock()
+    seen = []
+
+    def fake_http_post(url, body, timeout=None):
+        seen.append(timeout)
+        clock.advance(100)
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(svc, "_http_post", fake_http_post)  # 服务模块里的才是真正被调用的
+    with pytest.raises(est.EstimateError):
+        est.fetch_elements(*WGS, tmp_path / "c.json", interval=0, clock=clock, budget_seconds=240)
+    assert seen == [60, 60, 40]  # 第三次只剩 40 秒预算,单次超时被压到 40
+
+
+def test_estimate_one_skips_snapshot_when_cache_disabled(tmp_path):
+    """用户点"重新获取建筑"时连本地快照也不用,必须真的联网取最新的。"""
+    lng_wgs, lat_wgs = est.gcj02_to_wgs84(WGS[0], WGS[1])
+    snapshot = tmp_path / "all.json"
+    snapshot.write_text(json.dumps({"elements": [_way(1, _box(lng_wgs, lat_wgs))]}), encoding="utf-8")
+    paths = {"all": snapshot, "buildings": None, "residential": None}
+    target = est.EstimateTarget(community_id="c1", community_name="测试小区",
+                                longitude=WGS[0], latitude=WGS[1])
+
+    fetched = []
+
+    def fetcher(url, body):
+        fetched.append(url)
+        return [_way(2, _box(lng_wgs + 0.0005, lat_wgs))]
+
+    # 默认: 用本地快照, 不联网
+    est.estimate_one(target, snapshot_paths=paths, cache_dir=tmp_path / "cache1", fetcher=fetcher)
+    assert fetched == []
+
+    # 显式重新获取: 绕开快照走联网
+    est.estimate_one(target, snapshot_paths=paths, cache_dir=tmp_path / "cache2",
+                     fetcher=fetcher, use_cache=False)
+    assert len(fetched) == 1
 
 
 def test_load_snapshot_filters_bbox(tmp_path, monkeypatch):
