@@ -1,5 +1,17 @@
 # 实施计划
 
+## 2026-10-28 短名补修增补（本会话）
+
+用户明确授权修复短名称并补钱江彩虹城/长虹苑；另在解释彩虹城暂停收录后明确授权确认住宅、恢复展示。两字以上非通用专名可精确命中，包含至少三字，保留空间及歧义检查；ALGORITHM_VERSION升v2。
+
+- [x] 新增失败回归→修复→59项估算/坐标测试通过；服务层工作流24项通过。
+- [x] NAS标准构建、备份SQLite、发布后端，健康检查通过。
+- [x] 长虹苑1.64公顷、钱江彩虹城主区11.60公顷候选验证IoU=1后经公开API应用，地图返回轮廓且均可撤销。
+- [x] 更新spec及research/02-short-name-backfill.md的验证、备份与操作记录。
+- [ ] 本轮未commit/push；前端新房地图相关并行变更不属于本轮，保留原样。
+
+HTTP TestClient在Windows socketpair/accept初始化挂起，4项HTTP/token测试未执行；生产NAS公开HTTP生成/应用/读取已通过。未将局部检查宣称全量测试。
+
 状态implementing。已按本计划改代码；未改 spec，未提交。task.json 在进入实现时已是 in_progress，本轮没有再跑 task.py start。
 
 ## 顺序与验收映射

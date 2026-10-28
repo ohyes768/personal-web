@@ -41,9 +41,10 @@ REQUEST_TIMEOUT = 60.0    # 单次请求超时(秒)
 TASK_BUDGET_SECONDS = 240.0  # 单任务联网总预算(秒)
 CACHE_TTL_DAYS = 7
 QUERY_VERSION = "v2"      # 查询语义变化时递增,顺带作废旧缓存
-ALGORITHM_VERSION = "v1"  # 估算策略版本,与查询版本分开;旧指纹不含本字段即过期
+ALGORITHM_VERSION = "v2"  # 短专名匹配修复;旧候选须重新生成
 LANDUSE_GATE_M = 150.0    # 门口定位:到已匹配住宅面边界的最近距离容差
-MIN_IDENTITY_CHARS = 4    # 短于观邸国际这类专名的通用词不参与包含匹配
+MIN_IDENTITY_CHARS = 3    # 包含匹配至少三个字;两字专名只允许完全一致
+GENERIC_PLACE_NAMES = frozenset({"小区", "住宅", "住宅区", "住宅小区", "公寓", "花园", "大厦", "国际", "社区", "别墅"})
 WARN_TRUSTED_LANDUSE = "采用名称匹配的住宅用地面外轮廓,不是测绘或产权边界"
 WARN_AMBIGUOUS_LANDUSE = "多个名称匹配的住宅用地面无法区分,已回退为建筑聚类"
 WARN_FAR_SAME_NAME = "同名住宅用地距离过远,未作为可靠命中"
@@ -158,16 +159,18 @@ def normalize_place_name(value) -> str:
 
 
 def identity_match(element_name, known_names) -> bool:
-    """受约束的双向包含。较短一侧短于 4 个字时拒绝,空名不命中。"""
+    """两字以上专名可精确匹配;包含匹配至少三字,通用词不命中。"""
     left = normalize_place_name(element_name)
-    if len(left) < MIN_IDENTITY_CHARS:
+    if len(left) < 2 or left in GENERIC_PLACE_NAMES:
         return False
     for known in known_names or ():
         right = normalize_place_name(known)
-        if len(right) < MIN_IDENTITY_CHARS:
+        if len(right) < 2 or right in GENERIC_PLACE_NAMES:
             continue
+        if left == right:
+            return True
         shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
-        if shorter in longer:
+        if len(shorter) >= MIN_IDENTITY_CHARS and shorter in longer:
             return True
     return False
 

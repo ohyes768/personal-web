@@ -286,6 +286,74 @@ def test_aliases_from_source_does_not_guess():
     assert svc.aliases_from_source("观邸国际寓所") == ("观邸国际寓所",)
 
 
+@pytest.mark.parametrize("osm_name,known", [
+    ("长虹苑", "长虹苑"),
+    ("朗庭", "朗庭"),
+    ("彩虹城", "钱江彩虹城"),
+    ("彩虹·城", "钱江彩虹城"),
+])
+def test_short_estate_names_can_match(osm_name, known):
+    assert svc.identity_match(osm_name, [known])
+
+
+@pytest.mark.parametrize("osm_name,known", [
+    ("庭", "朗庭"),
+    ("朗庭", "朗庭公寓"),
+    ("公寓", "公寓"),
+    ("住宅区", "住宅区"),
+    ("小区", "某某小区"),
+    ("长虹苑", "长虹南苑"),
+])
+def test_short_name_matching_does_not_accept_generic_or_partial_two_char_names(osm_name, known):
+    assert not svc.identity_match(osm_name, [known])
+
+
+@pytest.mark.parametrize("name,osm_name", [("长虹苑", "长虹苑"), ("钱江彩虹城", "彩虹城")])
+def test_short_named_landuse_is_used_instead_of_a_single_building(name, osm_name):
+    face = _box(*WGS, size=0.001)
+    elements = [_way(1, face, name=osm_name, landuse=True), _way(2, _box(*WGS, size=0.0001))]
+    result = svc.estimate_from_elements(elements, name=name, center_wgs=WGS)
+    assert result.residential_faces == 1
+    assert not result.low_confidence
+    assert result.area_ha > 0.8
+    assert svc.WARN_TRUSTED_LANDUSE in result.warnings
+
+
+def test_short_named_landuse_still_requires_spatial_match():
+    face = _box(WGS[0] + 0.01, WGS[1], size=0.001)
+    members = svc.parse_members([_way(1, face, name="长虹苑", landuse=True)])
+    from shapely.geometry import Point
+    chosen, status = svc.choose_trusted_landuse(members, Point(WGS), ["长虹苑"])
+    assert chosen is None
+    assert status == "far"
+
+
+@pytest.mark.parametrize("case_index", [0, 1])
+def test_real_short_name_estates_use_existing_residential_faces(case_index):
+    from pathlib import Path
+    from shapely.geometry import Point
+    payload = json.loads((Path(__file__).parent / "fixtures/short_name_landuse.json").read_text(encoding="utf-8"))
+    case = payload["cases"][case_index]
+    center = svc.gcj02_to_wgs84(case["longitude"], case["latitude"])
+    result = svc.estimate_from_elements(case["elements"], name=case["name"], center_wgs=center)
+    faces = [m for m in result.members if m.kind == "residential"]
+    assert [m.element["id"] for m in faces] == [case["expected_osm_id"]]
+    assert not result.low_confidence
+    expected = Polygon(svc.member_ring_gcj02(faces[0]))
+    actual = Polygon(result.ring)
+    assert actual.covers(Point(case["longitude"], case["latitude"]))
+    assert actual.intersection(expected).area / actual.union(expected).area >= 0.99
+
+
+def test_short_name_conflicting_containing_faces_are_not_silently_chosen():
+    from shapely.geometry import Point
+    elements = [_way(1, _box(*WGS, size=0.001), name="长虹苑", landuse=True),
+                _way(2, _box(*WGS, size=0.002), name="长虹苑", landuse=True)]
+    chosen, status = svc.choose_trusted_landuse(svc.parse_members(elements), Point(WGS), ["长虹苑"])
+    assert chosen is None
+    assert status == "ambiguous"
+
+
 def test_select_members_does_not_filter_by_foreign_landuse():
     point = (120.15, 30.18)
     target = _box(*point, 0.0003)
