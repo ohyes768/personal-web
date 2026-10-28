@@ -1927,3 +1927,59 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 51: 归档法拍手工关联与住宅分类清理任务
+
+**Date**: 2026-10-28
+**Task**: 归档法拍手工关联与住宅分类清理任务
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+归档 10-13-housing-auction-manual-association、2026-10-13-binjiang-residential-classify、2026-10-13-binjiang-residential-cleanup 三个任务：复核后端全量 968 passed 与前端 130 测试/tsc/lint/build，专项 28 项通过，并按实际实现补写各任务 notes。
+
+### Main Changes
+
+### Main Changes
+
+- 归档 `10-13-housing-auction-manual-association`：法拍未关联记录进入手工关联列表。实现于 2e20b09，随 3f9fb68 重构调整。核对：采集后自动同步统一来源目录，历史可显式补同步不请求上游；按房产身份归组、无身份按轮次；空小区名称与旧轮次禁止强行自动绑定；人工绑定/解除/拒绝优先且重采不覆盖，身份升级保留既有决定；同步失败保留已保存法拍并提示重试，POST 同步 409 互斥、GET 待关联只读。test_auction_association.py 7 项通过。未部署。
+- 归档 `2026-10-13-binjiang-residential-classify`：滨江区住宅小区分类与多源核验。实现于 8a62779，后续 11ffafc / 7b63e6e / bd38a1d / fec7431 持续加固。核对：residential_classifier.py 提供 classify / classify_directory / normalize_property_type / conflict report，按 tmsf 物业类型与 fang 房源样本交叉判定出四态，冲突按 kind 分类上报不静默裁决。test_residential_classifier.py 8 项通过。未部署。
+- 归档 `2026-10-13-binjiang-residential-cleanup`：清理非住宅来源并补齐缺失物业类型。实现于 8a62779。核对：filter_residential_communities.py 输出住宅/待核实/非住宅三个集合与分类报告，写入前快照原输入到 data/diagnostics/pre-residential/；community_directory.py 在 prepare 时优先用住宅列表、排除非住宅 id 但保留 sources，导入用 INSERT OR IGNORE 不重置既有决定。审计痕迹：非住宅与待核实条目连同 community_id 与 residential_evidence 完整保留在独立 json，原 community_id 不复用。未部署。
+
+### Testing
+
+- 后端全量 pytest 968 passed；前端 node --test 130 项、npx tsc --noEmit、eslint、npm run build 全通过。
+- 本轮专项复核：test_auction_association.py + test_residential_classifier.py + test_filter_residential_communities.py + test_directory_filtering.py + test_directory_api.py 共 28 项通过。
+
+### Status
+
+[OK] **Completed** — 三个任务均未部署，线上行为未变。
+
+### Next Steps
+
+- `10-16-map-data-backfill` 父任务现 2/2 done，但跨子验收还剩「端到端跑通 → 线上地图出现 12 个轮廓」，需部署后才能验证。
+- `10-28-housing-boundary-preview` 实现完成（cb5d871），遗留浏览器端手工 QA 与线上部署待授权。
+- `10-12-community-price-transactions` 仍在 planning，未动代码。
+- `00-bootstrap-guidelines` 按 notes 保留进行中。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2e20b09` | (see git log) |
+| `8a62779` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
