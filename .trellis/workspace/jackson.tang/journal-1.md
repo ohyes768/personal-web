@@ -1782,3 +1782,57 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+
+## Session 49: 归档用途复核范围收紧与新房资料自动补全任务
+
+**Date**: 2026-10-28
+**Task**: 归档用途复核范围收紧与新房资料自动补全任务
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+归档 10-25-housing-use-review-scope 与 10-27-housing-newhouse-resolution：两任务代码与验证早已完成，本轮按实际状态改写 task.json notes、标注 10-27 部署三项未执行后归档，均未部署、线上行为未变。
+
+### Main Changes
+
+### Main Changes
+
+- 归档 `10-25-housing-use-review-scope`：收紧高德用途自动复核范围（跳过人工决定/明确非住宅/地址与目录区域冲突/未收录仅标"其他"），目录与详情显示跳过原因，保留单项手动查询。真实高德分页 count 与实际返回不一致（万科城市之光 53→25+14、东和云第 30→20）的终止条件修正已纳入统一采集流程版本。实现提交 `12d69f9`，分页修正随后续采集流程提交 `bd38a1d`、`61c4b17` 落地。
+- 归档 `10-27-housing-newhouse-resolution`：取消新房人工补全，预售证不再是主流程硬依赖；引入共享 `admission_address` 投影（人工保护 > 来源实际地址 > 高德主体地址），独立 `amap-subject-address-v1` 开关控制高德兜底，关闭时等价旧规则；基本采集不追预售证，缺地址记 address_pending 而非网络失败；明确非住宅停止住宅补证。实现提交 `fec7431`。
+- 两个任务的 task.json notes 按实际状态改写（原 10-27 notes 记为"仅规划，未激活"，与已提交实施矛盾，已修正）；10-27 implement.md 发布与回退三项标注为"本轮不部署、开关保持未激活"。
+
+### Testing
+
+- 10-25：后端相关回归 212 passed，前端相关 28 passed，ESLint / TypeScript / 生产构建通过；后端全量 pytest 长时间无输出被中止，未声称全量通过。分页修正相关后端 98 项通过，真实只读查询复现万科城市之光分页完成取回 39 条并进入 8 个同名候选人工核对；无线上写入。
+- 10-27：后端 930 测试、前端 117 测试通过，lint / tsc / build 通过，1440px / 390px 浏览器验证通过（阶段计数 4+4+7+2+1+0=18，高德主体地址标注，无横向溢出）；生产快照只读演练 444 项逐项输出，2 项 excluded→admitted、7 项地址来源变化、2 项地图变化，active=False 待审阅激活。
+
+### Status
+
+[OK] **Completed** — 两个任务均未部署、未激活线上规则，线上行为未变。
+
+### Next Steps
+
+- 10-27 留待后续发布窗口执行：仓库外备份旧镜像/规则/数据库、仅发布本任务服务并检查健康与只读样本、回退关闭新地址策略重新投影。
+- 工作区仍有其他会话的未提交改动：4 个 task.json 的 package 字段修正（backend/douyin-processor → backend/housing-map）、`apps/housing-map/next-env.d.ts`、`backend/housing-map/scripts/estimate_boundaries.py` 改动及新增 `src/services/boundary_estimate.py`，以及未跟踪的 `10-28-housing-boundary-preview/`，均未纳入本次归档。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `12d69f9` | (see git log) |
+| `fec7431` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
