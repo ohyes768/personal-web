@@ -2012,3 +2012,31 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 
 - 后端全量 973 passed；前端 lint / tsc --noEmit / node --test 131 passed。
 - 隔离数据端到端 29/29 通过。
+
+## 2026-10-28 housing-boundary-preview 「查看候选」按钮无响应
+
+- 现象：线上钱塘大观(20000561)已有 ready 候选(8.33 公顷 / 49 参考面 / applicable)，弹框显示"已有候选轮廓"+「查看候选」，点击毫无反应。
+- 根因：use-boundary-workflow 的 `startEstimate` 只在 catch 里复位 busy，成功路径漏了 → busy 永久 true → 按钮一直 disabled。apply/reject/revert 三处都有复位，只有这一处漏。
+- 修法（44a4259）：busy 生命周期收进 `runBoundaryAction` 一个函数（成功失败都复位），四个动作统一走它；错误判断从 instanceof 改成 (message, code) 形状判断——转译到 ES5 时 Error 子类 instanceof 会失效。
+- 教训：同一类"状态复位"散落在 4 处就该收进 1 处；测试要能抓住"复位被漏掉"，而不是只测成功路径。
+
+### Status
+
+[OK] **Completed** — 已推送 origin/master（44a4259）；**需重新部署前端**才生效。
+
+### Next Steps
+
+- 前端部署：./scripts/deploy-nas.sh housing-map frontend（后端无需重部署）。
+- 部署后线上钱塘大观可直接点「查看候选」，不需要重新生成。
+- 并行会话正在改 apps/housing-map/src/components/community/MergeDialog.tsx（未提交，tsc 报错属其改动），本次提交只含 3 个前端 lib/test 文件。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `44a4259` | fix(housing-map): 生成成功后 busy 未复位导致"查看候选"按钮点不动 |
+
+### Testing
+
+- 前端 node --test 133 passed（含 2 条新回归测试）。
+- 该轮 npx tsc --noEmit 唯一报错在并行会话未提交的 MergeDialog.tsx，与本改动无关。
