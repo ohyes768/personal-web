@@ -1983,3 +1983,32 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 ### Next Steps
 
 - None - task complete
+
+## 2026-10-28 housing-boundary-preview 线上失败复盘与修复
+
+- 线上现象：地图弹框只显示"联网获取建筑中"，用户问"日志从哪看"。查线上接口发现任务早已 failed（error_code=network），三个 Overpass 镜像 502 + 读超时 —— **失败原因只存在接口里，界面一个字没露**。
+- 根因：NAS 连不上 Overpass，而 OSM 建筑快照被 gitignore，NAS 是 git pull 后本地构建 → 快照进不了镜像 → 只能在线 → 在线也不通。两头落空。
+- 用户选方案 B（快照随仓库走）。已提交 31ff320：.gitignore 开例外、Dockerfile 复制进 seed-data、容器启动补齐到数据卷；快照 bbox 覆盖全部 25 个缺口小区。
+- 顺带修自己三个漏洞：弹框渲染失败原因、240s 总预算真正强制、"重新获取建筑"连快照一起绕开（原先静默无效）。
+- 验证：后端 973 passed；前端 lint/tsc/131 tests；隔离数据端到端全通过。
+
+### Status
+
+[OK] **Completed** — 已推送 origin/master（31ff320）；未部署，线上仍是旧镜像。
+
+### Next Steps
+
+- 需重新部署 NAS：deploy-nas.sh housing-map backend → 新镜像含快照 → 容器启动补齐到数据卷 → 线上可离线生成。
+- 部署后建议实测一次：随便挑一个问号小区生成，确认不再走联网。
+- 浏览器端手工 QA 仍未做（问号徽标本体点击、键盘焦点、窄屏底部面板）。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `31ff320` | fix(housing-map): 轮廓生成失败原因可见、预算强制、快照随仓库分发 |
+
+### Testing
+
+- 后端全量 973 passed；前端 lint / tsc --noEmit / node --test 131 passed。
+- 隔离数据端到端 29/29 通过。
