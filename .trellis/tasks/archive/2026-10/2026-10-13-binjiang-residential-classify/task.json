@@ -3,7 +3,7 @@
   "name": "binjiang-residential-classify",
   "title": "滨江区住宅小区分类与多源核验",
   "description": "对当前目录补齐住宅分类，结合透明售房网详情页与房天下小区/房源物业类型交叉验证。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "housing-map",
   "package": null,
@@ -11,7 +11,7 @@
   "creator": "tang",
   "assignee": "tang",
   "createdAt": "2026-10-13",
-  "completedAt": null,
+  "completedAt": "2026-10-28",
   "branch": null,
   "base_branch": "master",
   "worktree_path": null,
@@ -28,6 +28,6 @@
     "backend/housing-map/tests/test_residential_classifier.py",
     ".trellis/spec/backend/housing-map/backend/community-directory.md"
   ],
-  "notes": "已验证：residential_classifier.py（classify / classify_directory / normalize / conflict report） + test_residential_classifier.py（8 条用例覆盖 4 状态 + 目录报告 + 冲突分类）。spec 已更新增加分类契约。pytest 16/16 通过、ESLint/TS 通过。",
+  "notes": "实现与验收完成，已提交，未部署。实现于 8a62779（后续 11ffafc / 7b63e6e / bd38a1d / fec7431 持续加固）。功能核对：residential_classifier.py 提供 classify / classify_directory / normalize_property_type / conflict report 四个入口，按 tmsf 物业类型（住宅/别墅/排屋 为住宅，写字楼/商贸/车位/非住宅 为非住宅）与 fang 房源样本类型（住宅/普通住宅 为住宅）交叉判定，产出 residential / non_residential / pending / unknown 四态；冲突按 kind 分类上报不静默裁决，tmsf 其他与 fang 混合信号保持 pending。测试 test_residential_classifier.py 8 项覆盖四态转换、目录报告与冲突分类，本轮复核连同 filter/directory 系列共 28 项通过；后端全量 968 passed，前端 130 项/tsc/lint/build 通过。spec community-directory.md 第 34 行已写入分类契约。",
   "meta": {}
 }
