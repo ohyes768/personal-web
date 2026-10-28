@@ -1,0 +1,31 @@
+{
+  "id": "binjiang-management-residential",
+  "name": "binjiang-management-residential",
+  "title": "小区管理界面增加住宅筛选与状态标记",
+  "description": "前端管理列表支持只看住宅/待核实/非住宅，并在详情页标记物业类型来源。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "housing-map",
+  "package": null,
+  "priority": "P2",
+  "creator": "tang",
+  "assignee": "tang",
+  "createdAt": "2026-10-13",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/housing-map/src/components/community/CommunityManagement.tsx",
+    "apps/housing-map/src/app/page.tsx",
+    "apps/housing-map/tests/community-management.test.cjs",
+    ".trellis/spec/frontend"
+  ],
+  "notes": "实现完成于 9109c94 与 900349e（residential_state 筛选下拉 + ✅住宅/❓待核实/❌非住宅徽章列 + 后端 residential_state 参数与 literal 校验），后端 310/310 通过。前端功能在后续重构 3f9fb68（重构住宅收录与统一小区审核）中由新的 DirectoryFlowWorkspace 工作台取代：管理列表改为已收录/待处理/不收录/法拍/租金分页签，用「房屋用途」列与 UseReviewBadge 表达分类与用途核对状态，住宅状态列与 residential_state 下拉随之移除；后端 /directory/communities 的 residential_state 参数仍在（directory_routes.py），前端改走 /catalog 接口不再传该参数。物业类型来源与原始页链接仍保留在 DirectoryCards 的来源卡片（property_type_url 证据链接）。原 AC「冲突或缺失时提供标记为已核实操作」从未实现，该需求由用途核对流程 UseReviewPanel 的人工确认承担。",
+  "meta": {}
+}
