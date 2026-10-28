@@ -182,6 +182,38 @@ test('an admitted row keeps the review state but offers no manual confirmation',
   assert.match(html, /已一致/); assert.doesNotMatch(html, /确认用途|证据链接/);
 });
 
+test('a positioned estate with missing subject type can confirm use without a review result', () => {
+  const { CatalogUseReviewSection, catalogCanConfirmUse } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+  const row = { community_id: 'caihong', community_name: '钱江彩虹城', collection_pipeline_version: 'collection-pipeline-v2',
+    admission_state: 'excluded', qualification: 'position_type_missing', admission: { revision: 1 },
+    position: { state: 'manual', selected: { source_id: 'B1' } } };
+  assert.equal(catalogCanConfirmUse(row), true);
+  const html = render(React.createElement(CatalogUseReviewSection, { row, busy: false, open: true,
+    onToggle() {}, onRecheck() {}, onConfirm() {} }));
+  assert.match(html, /确认是住宅/);
+  assert.match(html, /住宅类型/);
+  assert.match(html, /已确认位置.*类型/);
+  assert.match(html, /区域、地址/);
+  assert.doesNotMatch(html, /disabled=""[^>]*>提交确认/);
+});
+
+test('catalog use confirmation preserves identity and manual protection gates', () => {
+  const { catalogCanConfirmUse } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+  const row = { admission_state: 'excluded', qualification: 'position_type_missing', admission: { revision: 1 } };
+  assert.equal(catalogCanConfirmUse({ ...row, source_record_id: 'source-only' }), false);
+  assert.equal(catalogCanConfirmUse({ ...row, deleted: true }), false);
+  assert.equal(catalogCanConfirmUse({ ...row, merged_to: 'other' }), false);
+  assert.equal(catalogCanConfirmUse({ ...row, qualification: 'manual_exclusion' }), false);
+  assert.equal(catalogCanConfirmUse({ ...row, admission: { revision: 1, auto_review_locked: true } }), false);
+  assert.equal(catalogCanConfirmUse({ ...row, admission: undefined }), false);
+});
+
+test('use confirmation cannot submit with missing revision', () => {
+  const html = render(React.createElement(UseReviewPanel, { busy: false, open: true,
+    onRecheck() {}, onConfirm() {} }));
+  assert.match(html, /disabled=""[^>]*>提交确认/);
+});
+
 test('the human decision and its evidence stay visible after confirming', () => {
   const html = render(React.createElement(UseReviewPanel, { review: { state: 'checked', result: 'conflict',
     human: { decision: 'residential', decided_at: '2026-10-23T03:00:00+00:00', reason: '克而瑞标注为住宅',

@@ -13,6 +13,7 @@ import type { RentalRequestDiagnostics } from '../../lib/rental-types';
 import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
 
 export type CatalogRow = Community & { property_types?: string[]; position?: Position; use_review?: UseReview;
+  merged_to?: string | null;
   collection_pipeline_version?: string; workflow_state?: 'pending' | 'admitted' | 'excluded';
   qualification: string; facts_state: string; exclusion_reason: string;
   source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string };
@@ -203,6 +204,25 @@ export function catalogCanExclude(row?: Pick<CatalogRow, 'admission_state' | 'wo
   return !!row && !row.source_record_id && !!row.admission?.revision && row.qualification !== 'manual_exclusion';
 }
 
+export function catalogCanConfirmUse(row?: CatalogRow | null): boolean {
+  return !!row && !row.source_record_id && !row.deleted && !row.merged_to && !!row.admission?.revision
+    && !row.admission.auto_review_locked && row.qualification !== 'manual_exclusion'
+    && (row.admission_state !== 'admitted' || !!row.use_review?.re_review);
+}
+
+export function CatalogUseReviewSection({ row, busy, open, onToggle, onRecheck, onConfirm }: {
+  row: CatalogRow; busy: boolean; open: boolean; onToggle: (open: boolean) => void;
+  onRecheck: () => void; onConfirm: (body: object) => void;
+}) {
+  if (!row.use_review && !catalogCanConfirmUse(row)) return null;
+  return <div id={`catalog-use-review-${row.community_id}`}>
+    <UseReviewPanel review={row.use_review} pipeline={!!row.collection_pipeline_version}
+      missingSubjectType={row.qualification === 'position_type_missing'} busy={busy}
+      revision={row.admission?.revision} open={open} canConfirm={catalogCanConfirmUse(row)}
+      onToggle={onToggle} onRecheck={onRecheck} onConfirm={onConfirm} />
+  </div>;
+}
+
 /** 待处理行按操作三桶分类，分支顺序与 pipelineStageLabel 一致，也与后端 operation 筛选对齐：所见即所筛。 */
 export function pendingOperationBucket(row: Pick<CatalogRow, 'qualification' | 'position'>): 'position' | 'use' | 'facts' {
   if (row.qualification === 'type_uncertain' && row.position && !row.position.selected) return 'position';
@@ -375,7 +395,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
     setError(''); setNotice(''); setDetail(row); setAuction(null);
-    setUseConfirmOpen(row.qualification === 'use_conflict' || row.qualification === 'use_uncertain');
+    setUseConfirmOpen(catalogCanConfirmUse(row) && ['position_type_missing', 'use_conflict', 'use_uncertain'].includes(row.qualification));
     try {
       const path = `/directory/workflow/catalog/${encodeURIComponent(row.community_id)}`;
       const value = await workflowRequest<CatalogRow>(path);
@@ -531,12 +551,17 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
         </dl>
         {detail.admission_state === 'admitted' && detail.map_status !== 'displayed' && <p className="directory-warning" role="status">地图暂未展示：{mapLabels[detail.map_status || ''] || '待核对'}</p>}
         {detail.exclusion_reason && <p className="directory-warning">{detail.exclusion_reason}</p>}
+        {detail.qualification === 'position_type_missing' && catalogCanConfirmUse(detail) && <div className="directory-actions">
+          <button className="btn btn-secondary" disabled={busy || !!jobs.use?.running} onClick={() => {
+            setUseConfirmOpen(true);
+            document.getElementById(`catalog-use-review-${detail.community_id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}>确认住宅用途</button>
+        </div>}
       </section>
         {(detail.admission_state === 'admitted' || (detail.collection_pipeline_version && !detail.source_record_id)) && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} onQuery={detail.collection_pipeline_version ? () => void queryDetailPosition() : undefined} />}
-        {detail.use_review && <UseReviewPanel review={detail.use_review} pipeline={!!detail.collection_pipeline_version} busy={busy || !!jobs.use?.running}
-          revision={detail.admission?.revision} open={useConfirmOpen} canConfirm={detail.admission_state !== 'admitted'}
+        <CatalogUseReviewSection key={detail.community_id} row={detail} busy={busy || !!jobs.use?.running} open={useConfirmOpen}
           onToggle={setUseConfirmOpen} onRecheck={() => void reviewAction('recheck')}
-          onConfirm={body => void reviewAction('confirm', body)} />}
+          onConfirm={body => void reviewAction('confirm', body)} />
         <CatalogAuctionRecords coverage={detail.coverage} records={detail.auction_records} />
         <CatalogRentalDetails value={detail.coverage?.rental} />
         <section className="directory-source-section" aria-label="来源资料">

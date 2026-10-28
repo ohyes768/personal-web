@@ -53,8 +53,9 @@ export function UseReviewBadge({ review, compact = false }: { review?: UseReview
     {review?.re_review && <small>有新证据，待人工重新确认</small>}</>;
 }
 
-export default function UseReviewPanel({ review, busy, revision, open, canConfirm = true, onToggle, onRecheck, onConfirm, pipeline = false }: {
+export default function UseReviewPanel({ review, busy, revision, open, canConfirm = true, onToggle, onRecheck, onConfirm, pipeline = false, missingSubjectType = false }: {
   pipeline?: boolean;
+  missingSubjectType?: boolean;
   review?: UseReview; busy: boolean; revision?: number; open?: boolean; canConfirm?: boolean;
   onToggle?: (open: boolean) => void; onRecheck: () => void;
   onConfirm: (body: object) => void }) {
@@ -63,14 +64,15 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
   const [reason, setReason] = useState('');
   const evidence = review?.evidence;
   const human = review?.human;
-  const ready = decision === 'residential' || !!reason.trim();
+  const ready = !!revision && canConfirm && (decision === 'residential' || !!reason.trim());
   const submit = () => {
-    if (!ready) return;
+    if (!ready || busy) return;
     onConfirm({ revision, decision, property_type: decision === 'residential' ? propertyType : null, reason: reason.trim() });
   };
   return <section className="directory-use-review-panel" aria-label="住宅用途核对">
     <div className="directory-use-review-heading"><h4>住宅用途核对</h4><UseReviewBadge review={review} compact /></div>
-    {pipeline && <p className="directory-muted">使用上方已确认地点的高德类型与透明售房网用途比较。确认位置后自动分类；有冲突再人工确认用途。</p>}
+    {missingSubjectType ? <p className="directory-warning">已确认位置，但高德主体类型不完整。核实小区用途后，可直接人工确认，无需先重新查询高德。</p>
+      : pipeline && <p className="directory-muted">使用上方已确认地点的高德类型与透明售房网用途比较。确认位置后自动分类；有冲突再人工确认用途。</p>}
     {review?.auto_skip_reason && <p className="directory-muted">{review.auto_skip_reason}。仍可手动查询高德。</p>}
     {review?.re_review && <p role="alert" className="directory-warning">出现与人工结论相反的证据，请重新核对后再确认。</p>}
     <p className="directory-muted">{useReviewResultLabels[review?.result || ''] || '尚未核对'}
@@ -91,10 +93,10 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
     </div>}
     <div className="directory-actions">
       <button className="btn btn-secondary" disabled={busy} onClick={onRecheck}>{pipeline ? '核对已选主体类型' : '重新查询高德'}</button>
-      {canConfirm && !open && <button className="btn btn-secondary" disabled={busy || !revision} onClick={() => onToggle?.(true)}>人工确认用途</button>}
+      {canConfirm && !open && <button className={`btn ${missingSubjectType ? 'btn-primary' : 'btn-secondary'}`} disabled={busy || !revision} onClick={() => onToggle?.(true)}>{missingSubjectType ? '确认住宅用途' : '人工确认用途'}</button>}
     </div>
     {open && canConfirm && <div className="directory-use-review-confirm">
-      <fieldset>
+      <fieldset disabled={busy}>
         <legend>人工确认用途</legend>
         <label><input type="radio" name="use-decision" checked={decision === 'residential'}
           onChange={() => setDecision('residential')} />确认是住宅</label>
@@ -112,6 +114,7 @@ export default function UseReviewPanel({ review, busy, revision, open, canConfir
         <button className="btn btn-secondary" disabled={busy} onClick={() => onToggle?.(false)}>取消</button>
       </div>
       <p className="directory-muted">人工结论独立保存，采集刷新与重新查询都不会覆盖；出现相反证据时需人工重新确认。</p>
+      <p className="directory-muted">此操作只确认用途；区域、地址等收录条件仍需满足，确认后会重新检查是否可以收录。</p>
     </div>}
   </section>;
 }
