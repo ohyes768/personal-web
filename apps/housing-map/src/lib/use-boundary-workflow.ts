@@ -13,6 +13,7 @@ import {
   boundaryRequest,
   isBoundaryJobActive,
   newOperationId,
+  runBoundaryAction,
 } from './boundary-workflow';
 
 const POLL_INTERVAL_MS = 2000;
@@ -71,6 +72,14 @@ export function useBoundaryWorkflow(
   const busy = status.communityId === communityId ? status.busy : false;
   const error = status.communityId === communityId ? status.error : null;
   const loading = !!communityId && !current;
+
+  // 所有异步动作共用一条 busy 生命周期: 成功失败都会复位, 不会把按钮永久禁用
+  const runAction = useCallback(async (communityId: string, action: () => Promise<void>, fallback?: string) => {
+    await runBoundaryAction(action, {
+      busy: () => setStatus({ communityId, busy: true, error: null }),
+      settle: error => setStatus({ communityId, busy: false, error }),
+    }, fallback);
+  }, []);
 
   const patchData = useCallback((communityId: string, patch: Partial<BoundaryData>) => {
     setData(prev => {
@@ -160,8 +169,7 @@ export function useBoundaryWorkflow(
 
   const startEstimate = useCallback(async (options?: { regenerate?: boolean; refreshBuildings?: boolean }) => {
     if (!communityId) return;
-    setStatus({ communityId, busy: true, error: null });
-    try {
+    await runAction(communityId, async () => {
       const accepted = await boundaryRequest<BoundaryEstimateAccepted>(
         boundaryPaths.estimates(communityId),
         'POST',
@@ -183,15 +191,12 @@ export function useBoundaryWorkflow(
         await loadCandidate(communityId, accepted.candidate_id);
       }
       await reload();
-    } catch (err) {
-      setStatus({ communityId, busy: false, error: err instanceof BoundaryWorkflowError ? err.message : '生成失败,请稍后重试' });
-    }
-  }, [communityId, loadCandidate, patchData, reload]);
+    }, '生成失败,请稍后重试');
+  }, [communityId, loadCandidate, patchData, reload, runAction]);
 
   const applyCandidate = useCallback(async () => {
     if (!communityId || !candidate) return;
-    setStatus({ communityId, busy: true, error: null });
-    try {
+    await runAction(communityId, async () => {
       await boundaryRequest(
         boundaryPaths.apply(candidate.candidate_id),
         'POST',
@@ -199,16 +204,12 @@ export function useBoundaryWorkflow(
       );
       await reload();
       changedRef.current?.();
-      setStatus({ communityId, busy: false, error: null });
-    } catch (err) {
-      setStatus({ communityId, busy: false, error: err instanceof BoundaryWorkflowError ? err.message : '保存失败,请重试' });
-    }
-  }, [communityId, candidate, reload]);
+    }, '保存失败,请重试');
+  }, [communityId, candidate, reload, runAction]);
 
   const rejectCandidate = useCallback(async () => {
     if (!communityId || !candidate) return;
-    setStatus({ communityId, busy: true, error: null });
-    try {
+    await runAction(communityId, async () => {
       await boundaryRequest(
         boundaryPaths.reject(candidate.candidate_id),
         'POST',
@@ -216,33 +217,27 @@ export function useBoundaryWorkflow(
       );
       patchData(communityId, { candidate: null });
       await reload();
-      setStatus({ communityId, busy: false, error: null });
-    } catch (err) {
-      setStatus({ communityId, busy: false, error: err instanceof BoundaryWorkflowError ? err.message : '操作失败,请重试' });
-    }
-  }, [communityId, candidate, patchData, reload]);
+    }, '操作失败,请重试');
+  }, [communityId, candidate, patchData, reload, runAction]);
 
   const revert = useCallback(async () => {
-    if (!communityId || !state?.revertable) return;
-    setStatus({ communityId, busy: true, error: null });
-    try {
+    const revertable = state?.revertable;
+    if (!communityId || !revertable) return;
+    await runAction(communityId, async () => {
       await boundaryRequest(
         boundaryPaths.revert(communityId),
         'POST',
         {
-          expected_revision: state.revision,
-          apply_operation_id: state.revertable.operation_id,
+          expected_revision: state?.revision ?? '',
+          apply_operation_id: revertable.operation_id,
           operation_id: newOperationId(),
         },
       );
       patchData(communityId, { candidate: null });
       await reload();
       changedRef.current?.();
-      setStatus({ communityId, busy: false, error: null });
-    } catch (err) {
-      setStatus({ communityId, busy: false, error: err instanceof BoundaryWorkflowError ? err.message : '撤销失败,请重试' });
-    }
-  }, [communityId, state, patchData, reload]);
+    }, '撤销失败,请重试');
+  }, [communityId, state, patchData, reload, runAction]);
 
   return {
     state,

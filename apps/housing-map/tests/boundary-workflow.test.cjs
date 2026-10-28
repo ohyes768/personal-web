@@ -12,6 +12,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 
 const {
   BOUNDARY_ERROR_MESSAGES,
+  BoundaryWorkflowError,
   boundaryAreaText,
   boundaryErrorText,
   boundaryPhaseLabel,
@@ -19,6 +20,7 @@ const {
   boundaryReferenceSummary,
   isBoundaryJobActive,
   newOperationId,
+  runBoundaryAction,
 } = require('../src/lib/boundary-workflow.ts');
 const {
   BoundaryWorkflowSection,
@@ -143,6 +145,30 @@ test('api paths keep the /api/map prefix contract', () => {
 
 test('operation ids are unique per operation', () => {
   assert.notEqual(newOperationId(), newOperationId());
+});
+
+test('action lifecycle always releases the busy flag', async () => {
+  // busy 不复位 -> 界面按钮永远 disabled -> "查看候选"点了没反应(线上踩过)
+  const events = [];
+  const handlers = {
+    busy: () => events.push('busy'),
+    settle: error => events.push(`settle:${error}`),
+  };
+  await runBoundaryAction(async () => {}, handlers);
+  assert.deepEqual(events, ['busy', 'settle:null']);
+
+  events.length = 0;
+  await runBoundaryAction(async () => { throw new Error('boom'); }, handlers, '生成失败,请稍后重试');
+  assert.deepEqual(events, ['busy', 'settle:生成失败,请稍后重试']);
+});
+
+test('action lifecycle keeps the server error message when there is one', async () => {
+  const seen = [];
+  await runBoundaryAction(
+    async () => { throw new BoundaryWorkflowError('轮廓已过期,请重新生成', 'candidate_stale', 409); },
+    { busy: () => {}, settle: error => seen.push(error) },
+    '操作失败,请重试');
+  assert.deepEqual(seen, ['轮廓已过期,请重新生成']);
 });
 
 test('popup section offers the generate entry when the boundary is missing', () => {

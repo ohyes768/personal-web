@@ -198,3 +198,36 @@ export function newOperationId(): string {
   if (globalCrypto && typeof globalCrypto.randomUUID === 'function') return globalCrypto.randomUUID();
   return `op-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
+
+/**
+ * 判断是不是工作流错误。
+ *
+ * 不只靠 instanceof: 转译到 ES5 时 Error 子类的 instanceof 会失效,模块被重复加载时
+ * 也会失效。按 (message, code) 的形状判断更稳。
+ */
+export function isBoundaryWorkflowError(value: unknown): value is BoundaryWorkflowError {
+  if (value instanceof BoundaryWorkflowError) return true;
+  if (!value || typeof value !== 'object') return false;
+  const record = value as { message?: unknown; code?: unknown };
+  return typeof record.message === 'string' && typeof record.code === 'string';
+}
+
+/**
+ * 异步动作的统一生命周期: 开始置忙, 结束(成功或失败)一定复位。
+ *
+ * busy 若不复位, 界面上的按钮会一直 disabled —— 点下去毫无反应, 用户看不出原因。
+ * 收在一处实现, 就不可能再漏掉某一条成功路径的复位。
+ */
+export async function runBoundaryAction(
+  action: () => Promise<void>,
+  handlers: { busy: () => void; settle: (error: string | null) => void },
+  fallbackMessage = '操作失败,请重试',
+): Promise<void> {
+  handlers.busy();
+  try {
+    await action();
+    handlers.settle(null);
+  } catch (err) {
+    handlers.settle(isBoundaryWorkflowError(err) ? err.message : fallbackMessage);
+  }
+}
