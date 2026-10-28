@@ -1,0 +1,29 @@
+{
+  "id": "map-data-backfill",
+  "name": "map-data-backfill",
+  "title": "地图页无数据小区补齐:定位一键重查 + OSM 建筑轮廓估算",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "backend/housing-map",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-16",
+  "completedAt": "2026-10-28",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "10-16-boundary-estimate-script",
+    "10-16-boundary-upload-api"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "父任务，按方案演进归档。两个子任务已交付并各自归档：boundary-estimate-script（ef61c7d，2026-10-28 由 cb5d871 重构为脚本与后台共用 boundary_estimate）与 boundary-upload-api（ffdef53，写入锁改用共享 boundary_publish 发布锁）。原跨子验收未全部达成，如实记录：①「端到端 → 线上地图出现 12 个 osm-building 轮廓」未达成——2026-10-28 核对线上 /api/map/communities 为 160 个展示小区、135 个 osm 轮廓、25 个无轮廓，来源分布无任何 osm-building，即脚本 --apply 未在生产执行过；②缺口已从 10-16 摸底的 12 扩到 25，因期间新增 local-* 前缀新房/在建小区，原「补齐 12 个」目标本身过期。③交互式生成/预览/确认应用/撤销已由 10-28-housing-boundary-preview 接手并实现（cb5d871，SQLite 覆盖层分层，基础层+人工确认覆盖层），本父任务的脚本+上传接口方案在生产补轮廓上已被其取代，剩余线上补齐随 10-28 部署窗口处理。本地 estimate_out 实跑 12 个小区产出 11 个候选（朗庭 1024 无建筑可聚类、兴耀鑫都汇 167483594 仅 1 栋低置信），均为候选未上传。全部相关任务未部署。",
+  "meta": {}
+}
