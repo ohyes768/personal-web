@@ -16,11 +16,15 @@
 
 ## Acceptance Criteria
 
-- [ ] 对 12 个线上无轮廓小区完整跑通,产出候选 geojson + 预览 HTML
-- [ ] 预览页可勾选并导出 selected.json;重复运行命中缓存,不重复请求 Overpass
-- [ ] `--apply` 在本地后端(接口就绪)上传成功;接口未就绪时明确报错
-- [ ] 挑楼聚类/外轮廓生成/坐标转换有单元测试(合成楼块 fixture)
-- [ ] 后端 `python -m pytest tests/ -v` 无新增失败
+- [x] 对 12 个线上无轮廓小区完整跑通,产出候选 geojson + 预览 HTML
+      （实际 11 个成功产出 candidates.geojson + estimate_preview.html；朗庭(1024)无建筑可聚类，记入 failures.json）
+- [x] 预览页可勾选并导出 selected.json;重复运行命中缓存,不重复请求 Overpass
+      （预览页含导出按钮与 cache/ 目录；test_fetch_uses_cache_and_mirror_fallback 覆盖缓存命中与镜像 fallback）
+- [x] `--apply` 在本地后端(接口就绪)上传成功;接口未就绪时明确报错
+      （apply_selection 走 POST /api/boundaries/import，缺 token 时 SystemExit 明确报错；上传接口由 boundary-upload-api 任务的 11 项测试覆盖）
+- [x] 挑楼聚类/外轮廓生成/坐标转换有单元测试(合成楼块 fixture)
+      （test_boundary_estimate.py 9 项：坐标往返、名称优先与距离过滤、25m/40m 间隙聚类、点在簇外低置信、外轮廓含成员、缓存与镜像 fallback、面积 sanity、快照 bbox 内外过滤）
+- [x] 后端 `python -m pytest tests/ -v` 无新增失败（全量 968 passed）
 
 ## Dependencies
 
