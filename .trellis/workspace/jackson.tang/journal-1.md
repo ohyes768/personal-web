@@ -1866,3 +1866,64 @@ rss-relay 新增文章详情页：后端 GET /api/post/{id} 单篇接口（find_
 - 后端全量 968 passed（纯净 origin/master 基线 944 passed / 1 failed）。
 - 前端 lint / tsc --noEmit / node --test 130 passed / npm run build 全通过。
 - 隔离数据端到端 29/29 通过，证据见 `.trellis/tasks/10-28-housing-boundary-preview/research/02-e2e-transcript.txt`。
+
+
+## Session 50: 归档租金更新流程与轮廓估算上传及住宅筛选任务
+
+**Date**: 2026-10-28
+**Task**: 归档租金更新流程与轮廓估算上传及住宅筛选任务
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+归档 10-13-housing-rental-update-flow、10-16-boundary-estimate-script、10-16-boundary-upload-api、2026-10-13-binjiang-management-residential 四个任务：补跑后端全量 968 passed 与前端 130 测试/tsc/lint/build，补写两个 10-16 子任务的 PRD 验收证据，并如实记录管理界面住宅筛选已被后续重构取代。
+
+### Main Changes
+
+### Main Changes
+
+- 归档 `10-13-housing-rental-update-flow`：房天下租金更新统一入口与来源关联流程。实现于 2e20b09 一批，后续经 6ea81b3（候选相似度打分与唯一候选自动绑定）、4ff1cdc（识别滑块风控熔断）、b9bc261（缓存/限速/风控冷却）、790ca63（幸福里来源试点）持续加固。验证记录：后端 364 passed、前端 43 项、lint/tsc/build 通过，隔离浏览器完成「无映射仍能更新 → 两候选 → 暂时跳过 → 重新处理 → 单选东区绑定 → 下次更新成功」闭环，390px 无横向溢出。真实「风雅钱塘」只读查询仍被房天下验证重定向拦截，未写目录、未绕过验证码——不能宣称真实来源当前可自动找到所有小区。未部署。
+- 归档 `10-16-boundary-estimate-script`：OSM 建筑估算脚本。实现于 ef61c7d，2026-10-28 由 cb5d871 重构（估算逻辑下沉到 src/services/boundary_estimate.py，脚本与后台共用）。补跑验证：test_boundary_estimate.py 9 项通过（坐标往返、名称优先与距离过滤、25m/40m 间隙聚类、点在簇外低置信、外轮廓含成员、缓存与镜像 fallback、面积 sanity、快照 bbox 内外过滤）；本地 estimate_out 实跑 12 个无轮廓小区，11 个产出 candidates.geojson + estimate_preview.html，朗庭(1024) 无建筑可聚类记入 failures.json。PRD 五条 AC 已逐条勾选并附证据。
+- 归档 `10-16-boundary-upload-api`：轮廓上传接口与前端虚线渲染。实现于 ffdef53，cb5d871 将写入锁改为与重建/人工覆盖共用 boundary_publish 发布锁。补跑验证：test_boundary_import.py 11 项通过（401/503、四类拒绝含 cid 与原因、混合批次部分接受、合法写入含备份、重复上传幂等、备份轮转保留 5 份），链路 load_polygons → effective_polygons → /communities 下发 boundary_source=osm-building 已核对。未部署。
+- 归档 `2026-10-13-binjiang-management-residential`：小区管理界面住宅筛选与状态标记。实现于 9109c94 / 900349e（residential_state 下拉 + ✅住宅/❓待核实/❌非住宅徽章列 + 后端参数与 literal 校验），前端功能在 3f9fb68 重构中被新的 DirectoryFlowWorkspace 工作台取代；原 AC「冲突或缺失时提供标记为已核实操作」从未实现，该需求由 UseReviewPanel 的人工用途确认承担。notes 已如实记录覆盖情况。
+
+### Testing
+
+- 后端全量 pytest 968 passed（3 条既有警告）；前端 node --test 130 项全通过，npx tsc --noEmit 通过，eslint 通过，npm run build 通过。
+- 租金专项 test_rental_api.py + test_rental_association_flow.py 67 项通过。
+- 边界专项 test_boundary_import.py + test_boundary_estimate.py + test_boundary.py 29 项通过。
+
+### Status
+
+[OK] **Completed** — 四个任务均未部署，线上行为未变。
+
+### Next Steps
+
+- `10-16-map-data-backfill` 父任务现显示 2/2 done，但跨子验收还剩「端到端跑通 → 线上地图出现 12 个轮廓」，需部署后才能验证，故暂不归档。
+- `10-13-housing-auction-manual-association`、`2026-10-13-binjiang-residential-classify`、`2026-10-13-binjiang-residential-cleanup` 仍待归档。
+- `10-28-housing-boundary-preview` 实现完成（cb5d871），遗留浏览器端手工 QA 与线上部署待授权。
+- `10-12-community-price-transactions` 仍在 planning，未动代码。
+- `00-bootstrap-guidelines` 按 notes 保留进行中（三个后端包规范仍是模板）。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2e20b09` | (see git log) |
+| `ef61c7d` | (see git log) |
+| `ffdef53` | (see git log) |
+| `9109c94` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
