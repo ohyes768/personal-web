@@ -251,9 +251,10 @@ test('preview panel shows the real candidate facts and the decision actions', ()
   assert.match(html, /开放街图建筑估算/);
   assert.match(html, /不是测绘或产权边界/);
   assert.match(html, /应用此轮廓/);
-  assert.match(html, /范围不合适/);
-  assert.match(html, /去核对定位/);
-  assert.match(html, /重新获取建筑/);
+  assert.match(html, /放弃此候选/);
+  assert.match(html, /检查定位/);
+  assert.match(html, /重新生成/);
+  assert.doesNotMatch(html, /重新获取建筑|范围不合适|去核对定位|更多/);
   assert.doesNotMatch(html, /准确率|置信度\s*\d/);
 });
 

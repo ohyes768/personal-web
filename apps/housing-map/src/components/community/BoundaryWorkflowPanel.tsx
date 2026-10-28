@@ -200,7 +200,7 @@ export function BoundaryWorkflowPreview({
               应用此轮廓
             </button>
             <button type="button" className="btn btn-secondary" onClick={onLocate}>
-              去核对定位
+              检查定位
             </button>
             <button
               type="button"
@@ -208,7 +208,7 @@ export function BoundaryWorkflowPreview({
               onClick={() => void actions.rejectCandidate()}
               disabled={busy}
             >
-              范围不合适
+              放弃此候选
             </button>
           </div>
 
@@ -220,14 +220,6 @@ export function BoundaryWorkflowPreview({
               disabled={busy}
             >
               重新生成
-            </button>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => void actions.startEstimate({ regenerate: true, refreshBuildings: true })}
-              disabled={busy}
-            >
-              重新获取建筑
             </button>
           </div>
         </>
