@@ -6,12 +6,13 @@ import PositionPanel, { Position, PositionBadge, positionLabels, positionQueryLa
 import UseReviewPanel, { UseReview, UseReviewBadge, formatUseReviewMessage } from './UseReviewPanel';
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
+import MergeDialog from './MergeDialog';
 import CatalogFilters, { CatalogFilterValues, catalogFilterParams, catalogFiltersForMode, emptyCatalogFilters } from './CatalogFilters';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
 import type { RentalRequestDiagnostics } from '../../lib/rental-types';
 import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
 
-type CatalogRow = Community & { property_types?: string[]; position?: Position; use_review?: UseReview;
+export type CatalogRow = Community & { property_types?: string[]; position?: Position; use_review?: UseReview;
   collection_pipeline_version?: string; workflow_state?: 'pending' | 'admitted' | 'excluded';
   qualification: string; facts_state: string; exclusion_reason: string;
   source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string };
@@ -226,12 +227,15 @@ function addressSourceLabel(c: Community): string {
   return origin === 'amap_subject' ? '高德主体地址' : origin === 'manual' ? '历史确认地址' : origin ? '透明售房网地址' : '';
 }
 
-export function CatalogTable({ items, excluded, pending = false, select, busy, position, exclude }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
-  select: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void; }) {
-  return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}${pending ? ' catalog-pending' : ''}`}><thead><tr>
-    <th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
+export function CatalogTable({ items, excluded, pending = false, select, busy, position, exclude, selected, onToggle }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
+  select: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void;
+  selected?: string[]; onToggle?: (id: string) => void; }) {
+  const selectable = !excluded && !!onToggle;
+  return <div className="directory-table-wrap"><table className={`review-table catalog-table ${excluded ? 'catalog-excluded' : 'catalog-admitted'}${pending ? ' catalog-pending' : ''}${selectable ? ' catalog-selectable' : ''}`}><thead><tr>
+    {selectable && <th>选择</th>}<th>{excluded ? '小区名称' : '小区 / 地址'}</th>{excluded && <th>区域 / 实际地址</th>}<th>{excluded ? '房屋用途' : '新房 / 二手房'}</th>
     <th>高德类型</th>{excluded && <th>{pending ? '待处理操作' : '住宅用途核对'}</th>}<th>{excluded ? pending ? '待处理原因 / 资料状态' : '不收录原因 / 资料状态' : '高德定位'}</th>{!excluded && <><th>法拍</th><th>租金</th></>}{pending && <th>收录决定</th>}<th>操作</th>
   </tr></thead><tbody>{items.map(c => <tr key={c.community_id}>
+    {selectable && <td data-label="选择"><input type="checkbox" aria-label={`选择${c.community_name}参与合并`} checked={!!selected?.includes(c.community_id)} onChange={() => onToggle?.(c.community_id)} /></td>}
     <td data-label={excluded ? '小区名称' : '小区 / 地址'}><strong className="catalog-text" title={c.community_name}>{c.community_name}</strong>{!!c.aliases?.length && <small className="catalog-text" title={c.aliases.join(' / ')}>{c.aliases.join(' / ')}</small>}
       {!excluded && <><small className="catalog-text directory-muted" title={c.address || '地址待主体匹配'}>{c.district || '区域待补'} · {c.address || '地址待主体匹配'}</small><small className="directory-muted">{addressSourceLabel(c)}</small></>}</td>
     {excluded && <td data-label="区域 / 实际地址">{c.district || '区域待补'}<small className="catalog-text" title={c.address || '地址待主体匹配'}>{c.address || '地址待主体匹配'}</small><small className="directory-muted">{addressSourceLabel(c)}</small></td>}
@@ -296,6 +300,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [selection, setSelection] = useState<string[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false); const [mergeRows, setMergeRows] = useState<CatalogRow[]>([]);
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
   const detailVersion = useRef(0);
   const finishes = useRef<Record<string, string>>({});
@@ -365,7 +371,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
     }
     finally { optimistic.current = null; setBusy(false); }
   }
-  function changeMode(value: string) { setMode(value); setPage(1); setFilters(current => catalogFiltersForMode(current)); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; }
+  function changeMode(value: string) { setMode(value); setPage(1); setFilters(current => catalogFiltersForMode(current)); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; setSelection([]); setMergeOpen(false); }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
     setError(''); setNotice(''); setDetail(row); setAuction(null);
@@ -470,6 +476,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
   }
   const resumeAdmission = !!detail && detail.admission_state !== 'admitted' && !detail.source_record_id && detail.qualification === 'manual_exclusion';
   const canExclude = catalogCanExclude(detail);
+  const selectedRows = mode === 'admitted' ? items.filter(c => selection.includes(c.community_id)) : [];
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
     <header className="review-heading"><h2>住宅名单与数据采集</h2>
       <CollectionTasksButton jobs={summary?.pipeline ? Object.fromEntries(Object.entries(jobs).filter(([id]) => id !== 'use')) : jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
@@ -477,9 +484,9 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
     <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
     <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />
     {mode !== 'rental' && <CatalogFilters mode={mode} values={filters} propertyTypes={propertyTypes} total={total} loading={loading}
-      onChange={(key, value) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); setLoading(true); }}
-      onRemove={key => { setFilters(current => ({ ...current, [key]: '' })); setPage(1); setLoading(true); }}
-      onClear={() => { setFilters(emptyCatalogFilters()); setPage(1); setLoading(true); }}
+      onChange={(key, value) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); setLoading(true); setSelection([]); }}
+      onRemove={key => { setFilters(current => ({ ...current, [key]: '' })); setPage(1); setLoading(true); setSelection([]); }}
+      onClear={() => { setFilters(emptyCatalogFilters()); setPage(1); setLoading(true); setSelection([]); }}
       onRefresh={() => { setLoading(true); setRevision(v => v + 1); }}
       extra={<>
         {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
@@ -490,14 +497,21 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
       <p role="status" className="directory-muted">名单流程尚未启用，暂无租金待处理清单。</p>) :
     <div className="directory-workspace"><div className="directory-list-panel">
       {loading ? <p role="status">加载名单…</p> : summary?.active && <>
+        {mode === 'admitted' && selectedRows.length >= 2 && <div className="directory-actions directory-batch">
+          <span className="directory-muted">已选 {selectedRows.length} 条</span>
+          <button className="btn btn-primary" onClick={() => { setMergeRows(selectedRows); setMergeOpen(true); }}>合并所选（{selectedRows.length}）</button>
+          <button className="btn btn-secondary" onClick={() => setSelection([])}>取消选择</button>
+        </div>}
         {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode !== 'admitted'} pending={mode === 'pending'} select={row => void select(row)}
           exclude={row => void admissionAction('exclude', row)}
-          busy={busy || !!jobs.amap?.running} position={row => void select(row)} />
+          busy={busy || !!jobs.amap?.running} position={row => void select(row)}
+          selected={mode === 'admitted' ? selection : undefined}
+          onToggle={mode === 'admitted' ? (id => setSelection(v => v.includes(id) ? v.filter(k => k !== id) : [...v, id])) : undefined} />
           : <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>法拍房产</th><th>地址</th><th>待关联原因</th><th>操作</th></tr></thead><tbody>{auctions.map(r => <tr key={r.id}>
             <td data-label="法拍房产">{r.name}<small>{r.auction_ids?.length || 0} 条轮次{r.skipped ? ' · 已跳过' : ''}</small></td><td data-label="地址">{r.address || '暂无地址'}</td><td data-label="待关联原因">{r.reason}</td>
             <td data-label="操作"><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setError(''); setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
         {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
-        <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); }}>下一页</button></nav></>}
+        <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); setSelection([]); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); setSelection([]); }}>下一页</button></nav></>}
     </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
       footer={detail && (canExclude || resumeAdmission) ? <div className="directory-detail-actions">
         {canExclude && <button className="btn directory-exclude-action" disabled={busy} onClick={() => void admissionAction('exclude')}>确认不收录</button>}
@@ -534,5 +548,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
         </section>
       </>}
     </DirectoryDialog>}</div>}
+    {mergeOpen && <MergeDialog rows={mergeRows} onClose={() => setMergeOpen(false)} onMerged={() => { setSelection([]); changed(); }} />}
   </section>;
 }

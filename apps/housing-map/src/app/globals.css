@@ -1251,6 +1251,15 @@ body {
 .catalog-pending th:nth-child(6) { width: 16%; }
 .catalog-pending th:nth-child(7) { width: 10%; }
 .catalog-pending th:last-child { width: 12%; }
+/* 多选合并：仅 admitted 表叠加 catalog-selectable 时重排为 8 列，不收录/待处理列宽不受影响。 */
+.catalog-selectable.catalog-admitted th:nth-child(1) { width: 4%; }
+.catalog-selectable.catalog-admitted th:nth-child(2) { width: 24%; }
+.catalog-selectable.catalog-admitted th:nth-child(3) { width: 10%; }
+.catalog-selectable.catalog-admitted th:nth-child(4) { width: 16%; }
+.catalog-selectable.catalog-admitted th:nth-child(5) { width: 12%; }
+.catalog-selectable.catalog-admitted th:nth-child(6) { width: 10%; }
+.catalog-selectable.catalog-admitted th:nth-child(7) { width: 14%; }
+.catalog-selectable.catalog-admitted th:last-child { width: 10%; }
 .catalog-coverage { font-variant-numeric: tabular-nums; line-height: 1.5; }
 .catalog-data-value { font-weight: 600; }
 .catalog-coverage .catalog-data-note { color: #925022; }
@@ -1290,6 +1299,7 @@ body {
   .review-workspace .review-table td::before { content: attr(data-label); display: block; font-size: 11px; color: #718198; margin-bottom: 4px; }
   .review-workspace .catalog-table .catalog-text { white-space: normal; overflow-wrap: anywhere; }
   .review-workspace .catalog-table .btn { min-height: 36px; }
+  .review-workspace .catalog-selectable th:first-child, .review-workspace .catalog-selectable td:first-child { display: none; }
 }
 
 /* Independent collection tasks share the directory's existing palette. */
@@ -1324,6 +1334,19 @@ body {
 @media (prefers-reduced-motion: reduce) { .directory-task-dot { animation: none; } }
 .directory-detail label { display: block; margin: 12px 0; }
 .directory-detail label input, .directory-detail label select { display: block; width: 100%; margin-top: 6px; }
+
+/* 已收录小区多选合并弹框：.directory-detail 前缀压过 label 块级/全宽默认（.directory-detail label 特异性 0,1,1），否则 radio 行 flex 失效。 */
+.directory-detail .merge-row { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.directory-detail .merge-row input[type="radio"] { width: auto; margin-top: 4px; flex: none; }
+.merge-row-body { display: block; min-width: 0; flex: 1; }
+.merge-row small { display: block; margin-top: 2px; color: var(--text-muted); line-height: 1.5; }
+.merge-market-mixed { color: #a74325; font-weight: 600; }
+.merge-preview { font-size: 13px; line-height: 1.6; }
+.merge-preview h4 { margin: 16px 0 6px; font-size: 14px; }
+.merge-preview p { margin: 6px 0; }
+.merge-preview small { display: block; color: var(--text-muted); margin-top: 2px; }
+.merge-result { margin: 6px 0; }
+.merge-result[data-ok="false"] { color: #a74325; }
 
 /* 名单详情弹窗：覆盖旧侧栏宽度，列表保持原有布局和滚动位置。 */
 .review-workspace .directory-detail-dialog,
