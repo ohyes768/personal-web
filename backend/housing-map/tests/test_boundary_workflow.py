@@ -37,11 +37,14 @@ class FakeExecutor:
         return len(self.jobs)
 
 
-def seed_world(tmp_path, monkeypatch, *, polygons=None, community_id='100'):
+def seed_world(tmp_path, monkeypatch, *, polygons=None, community_id='100', community_alias=''):
     """造一个最小展示集合:一个住宅小区 + 坐标 + 可选基础轮廓。"""
+    community = dict(community_id=community_id, community_name='江汉路小区', district='滨江',
+                     address='杭州市滨江区江汉路')
+    if community_alias:
+        community['community_alias'] = community_alias
     (tmp_path / 'binjiang_communities.json').write_text(json.dumps([
-        dict(community_id=community_id, community_name='江汉路小区', district='滨江',
-             address='杭州市滨江区江汉路')], ensure_ascii=False), encoding='utf-8')
+        community], ensure_ascii=False), encoding='utf-8')
     (tmp_path / 'property_types.json').write_text(json.dumps(
         {community_id: {'property_type': '住宅'}}, ensure_ascii=False), encoding='utf-8')
     (tmp_path / 'binjiang_coordinates.json').write_text(json.dumps({community_id: dict(
@@ -359,6 +362,132 @@ def test_http_apply_conflict_returns_409(client, world):
     response = client.post(f'/api/boundary-candidates/{candidate_id}/apply',
                            json={'expected_revision': 'wrong', 'operation_id': 'op-x'})
     assert response.status_code == 409
+
+
+def _ready_with_fingerprint(cid, fingerprint):
+    store = boundary_workflow._store()
+    store.insert_job('job-old', cid, fingerprint)
+    store.complete_job_with_candidate(
+        job_id='job-old', candidate_id='cand-old', community_id=cid, fingerprint=fingerprint,
+        base_revision=boundary_workflow.base_revision(cid),
+        effective_revision=boundary_workflow.effective_revision(cid),
+        rings=[RING], reference_buildings=[], area_ha=1.2, building_faces=1,
+        residential_faces=0, low_confidence=False, source='osm-building', warnings=[],
+        estimated_at='2020-01-01T00:00:00Z',
+    )
+    return 'cand-old'
+
+
+def test_context_passes_existing_alias(tmp_path, monkeypatch):
+    cid = seed_world(tmp_path, monkeypatch, community_alias='观邸国际寓所')
+    context = boundary_workflow.community_context(cid)
+    assert context['community_alias'] == '观邸国际寓所'
+    target_aliases = {}
+
+    def capture(target, **kwargs):
+        target_aliases['value'] = target.aliases
+        return EstimateOutcome(
+            ring=RING, members=(), building_faces=1, residential_faces=0,
+            dropped_parts=0, low_confidence=False, warnings=(), area_ha=1.5)
+
+    monkeypatch.setattr(boundary_workflow, 'estimate_one', capture)
+    status, payload = boundary_workflow.create_estimate(cid)
+    assert status == 202
+    drain_jobs()
+    assert target_aliases['value'] == ('观邸国际寓所',)
+
+
+def test_old_ready_candidate_is_not_reused_when_fingerprint_differs(world):
+    _ready_with_fingerprint(world, 'historical-fingerprint')
+    status, payload = boundary_workflow.create_estimate(world)
+    assert status == 202
+    assert payload['reused'] is False
+    assert boundary_workflow._store().candidate('cand-old')['status'] == 'superseded'
+
+
+def test_get_and_apply_reject_stale_fingerprint(world):
+    candidate_id = _ready_with_fingerprint(world, 'historical-fingerprint')
+    state = boundary_workflow.candidate_state(candidate_id)
+    assert state['stale'] is True
+    assert state['applicable'] is False
+    assert any('生成输入' in reason for reason in state['stale_reasons'])
+    with pytest.raises(boundary_workflow.WorkflowError) as error:
+        boundary_workflow.apply_candidate(candidate_id, state['revision'], 'op-stale')
+    assert error.value.status_code == 409
+    assert error.value.code == 'candidate_stale'
+
+
+def test_run_job_does_not_publish_when_input_changes(world, monkeypatch):
+    real = boundary_workflow.community_context
+    state = {'alias': ''}
+
+    def wrapped(cid):
+        context = real(cid)
+        return {**context, 'community_alias': state['alias']}
+
+    monkeypatch.setattr(boundary_workflow, 'community_context', wrapped)
+    status, payload = boundary_workflow.create_estimate(world)
+    assert status == 202
+
+    def mutate(target, **kwargs):
+        state['alias'] = '后来补上的别名'
+        return EstimateOutcome(
+            ring=RING, members=(), building_faces=1, residential_faces=0,
+            dropped_parts=0, low_confidence=False, warnings=(), area_ha=1.5)
+
+    monkeypatch.setattr(boundary_workflow, 'estimate_one', mutate)
+    boundary_workflow._run_job(payload['job_id'])
+    job = boundary_workflow.job_state(payload['job_id'])
+    assert job['phase'] == 'failed'
+    assert job['error_code'] == 'stale'
+    assert job['candidate_id'] is None
+
+
+def test_run_job_stops_before_estimate_when_input_already_changed(world, monkeypatch):
+    real = boundary_workflow.community_context
+    state = {'alias': ''}
+
+    def wrapped(cid):
+        context = real(cid)
+        return {**context, 'community_alias': state['alias']}
+
+    monkeypatch.setattr(boundary_workflow, 'community_context', wrapped)
+    status, payload = boundary_workflow.create_estimate(world)
+    state['alias'] = '变了'
+    called = []
+
+    def boom(*args, **kwargs):
+        called.append(True)
+        raise AssertionError('输入已变，不应继续估算')
+
+    monkeypatch.setattr(boundary_workflow, 'estimate_one', boom)
+    boundary_workflow._run_job(payload['job_id'])
+    assert called == []
+    job = boundary_workflow.job_state(payload['job_id'])
+    assert job['phase'] == 'failed'
+    assert job['error_code'] == 'stale'
+    assert job['candidate_id'] is None
+
+
+def test_applied_override_stays_revertible_after_fingerprint_changes(world, tmp_path):
+    status, payload = boundary_workflow.create_estimate(world)
+    drain_jobs()
+    candidate_id = boundary_workflow.job_state(payload['job_id'])['candidate_id']
+    revision = boundary_workflow.effective_revision(world)
+    boundary_workflow.apply_candidate(candidate_id, revision, 'op-1')
+    store = boundary_workflow._store()
+    with store.db() as db:
+        db.execute(
+            'UPDATE candidates SET input_fingerprint=? WHERE candidate_id=?',
+            ('historical-algorithm', candidate_id),
+        )
+    assert boundary_workflow.effective_polygons()[world]['source'] == 'osm-building'
+    base_before = (tmp_path / 'binjiang_polygons_merged.json').read_text(encoding='utf-8')
+    current = boundary_workflow.effective_revision(world)
+    reverted = boundary_workflow.revert_community(world, current, 'op-1', 'op-revert-1')
+    assert reverted['community_id'] == world
+    assert boundary_workflow.community_state(world)['override'] is None
+    assert (tmp_path / 'binjiang_polygons_merged.json').read_text(encoding='utf-8') == base_before
 
 
 def test_old_import_route_still_requires_token(client, world, monkeypatch):

@@ -20,11 +20,15 @@ from datetime import datetime, timezone
 
 from src.services import boundary_workflow_store as store_module
 from src.services.boundary_estimate import (
+    ALGORITHM_VERSION,
     QUERY_VERSION,
     EstimateError,
     EstimateTarget,
+    aliases_from_source,
+    canonical_aliases,
     estimate_one,
     member_ring_gcj02,
+    normalize_place_name,
 )
 from src.services.boundary_geometry import validate_rings
 from src.services.boundary_publish import publish_lock
@@ -177,9 +181,13 @@ def community_context(cid: str) -> dict | None:
     latitude = coordinate.get("latitude")
     if not longitude or not latitude:
         return None
+    alias = match.get("community_alias") or ""
+    if not isinstance(alias, str):
+        alias = ""
     return {
         "community_id": str(cid),
         "community_name": match.get("community_name") or "",
+        "community_alias": alias.strip(),
         "longitude": float(longitude),
         "latitude": float(latitude),
     }
@@ -219,13 +227,16 @@ def effective_revision(cid: str, context: dict | None = None) -> str:
 
 
 def input_fingerprint(cid: str, context: dict) -> str:
-    """生成输入指纹:同一小区同一坐标同一名称复用同一个在途任务。"""
+    """生成输入指纹:主名、别名、坐标、查询版本和算法版本。"""
+    primary = context.get("community_name") or ""
     return _digest({
         "community_id": str(cid),
         "longitude": round(context["longitude"], 6),
         "latitude": round(context["latitude"], 6),
-        "name": context["community_name"],
+        "name": normalize_place_name(primary),
+        "aliases": canonical_aliases(primary, aliases_from_source(context.get("community_alias"))),
         "query_version": QUERY_VERSION,
+        "algorithm_version": ALGORITHM_VERSION,
     })
 
 
@@ -251,13 +262,12 @@ def create_estimate(cid: str, *, regenerate: bool = False, refresh_buildings: bo
             return 200, {"job_id": active["job_id"], "phase": active["phase"],
                          "reused": True, "candidate_id": active.get("candidate_id")}
         ready = store.ready_candidate(cid)
-        if ready:
+        if ready and ready.get("input_fingerprint") == fingerprint:
             return 200, {"candidate_id": ready["candidate_id"], "job_id": ready["job_id"],
                          "phase": "succeeded", "reused": True}
 
-    # 重新生成:旧候选置为 superseded,必须生成新候选才能应用
-    if regenerate or refresh_buildings:
-        store.supersede_ready_candidates(cid)
+    # 重新生成,或旧 ready 的输入指纹已对不上:旧候选置为 superseded
+    store.supersede_ready_candidates(cid)
 
     job_id = uuid.uuid4().hex
     store.insert_job(job_id, cid, fingerprint, refresh_buildings=refresh_buildings)
@@ -276,16 +286,19 @@ def _run_job(job_id: str) -> None:
         return
     cid = job["community_id"]
     context = community_context(cid)
-    if context is None:
+    if context is None or input_fingerprint(cid, context) != job["input_fingerprint"]:
         store.update_job(job_id, phase="failed", error_code="stale",
-                         error_message="小区已不在展示集合,任务未执行")
+                         error_message="生成输入已变化,任务未发布")
         return
 
     def progress(phase: str, detail: str = "") -> None:
         store.update_job(job_id, phase=phase)
 
-    target = EstimateTarget(community_id=cid, community_name=context["community_name"],
-                            longitude=context["longitude"], latitude=context["latitude"])
+    target = EstimateTarget(
+        community_id=cid, community_name=context["community_name"],
+        longitude=context["longitude"], latitude=context["latitude"],
+        aliases=aliases_from_source(context.get("community_alias")),
+    )
     try:
         outcome = estimate_one(target, progress=progress,
                                use_cache=not bool(job.get("refresh_buildings")))
@@ -305,8 +318,16 @@ def _run_job(job_id: str) -> None:
     reference = [{"kind": m.kind, "rings": [member_ring_gcj02(m)]} for m in outcome.members]
     candidate_id = uuid.uuid4().hex
     with publish_lock():
-        base_rev = base_revision(cid, context)
-        effective_rev = effective_revision(cid, context)
+        context_now = community_context(cid)
+        if context_now is None or input_fingerprint(cid, context_now) != job["input_fingerprint"]:
+            context_now = None
+        else:
+            base_rev = base_revision(cid, context_now)
+            effective_rev = effective_revision(cid, context_now)
+    if context_now is None:
+        store.update_job(job_id, phase="failed", error_code="stale",
+                         error_message="生成输入已变化,任务未发布")
+        return
     store.complete_job_with_candidate(
         job_id=job_id, candidate_id=candidate_id, community_id=cid,
         fingerprint=job["input_fingerprint"], base_revision=base_rev, effective_revision=effective_rev,
@@ -346,6 +367,10 @@ def candidate_state(candidate_id: str) -> dict:
     current_effective = effective_revision(cid, context)
     current_base = base_revision(cid, context)
     stale_reasons = []
+    if not context:
+        stale_reasons.append("小区已不在展示集合")
+    elif candidate.get("input_fingerprint") != input_fingerprint(cid, context):
+        stale_reasons.append("生成输入已变化")
     if candidate["base_revision"] != current_base:
         stale_reasons.append("基础轮廓或定位已变化")
     if candidate["status"] == "ready" and candidate["effective_revision"] != current_effective:
@@ -491,8 +516,13 @@ def apply_candidate(candidate_id: str, expected_revision: str, operation_id: str
         raise WorkflowError(422, "invalid_geometry", reason)
 
     with publish_lock():
+        context = community_context(cid)
+        if context is None:
+            raise WorkflowError(404, "community_not_found", "小区已不在展示集合,不能继续应用候选")
         current_base = base_revision(cid, context)
         current_effective = effective_revision(cid, context)
+        if candidate.get("input_fingerprint") != input_fingerprint(cid, context):
+            raise WorkflowError(409, "candidate_stale", "生成输入已变化,请重新生成候选")
         if candidate["base_revision"] != current_base:
             raise WorkflowError(409, "candidate_stale", "基础轮廓或定位已变化,请重新生成候选")
         if expected_revision and expected_revision != current_effective:

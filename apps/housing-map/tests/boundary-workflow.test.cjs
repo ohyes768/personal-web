@@ -15,6 +15,8 @@ const {
   BoundaryWorkflowError,
   boundaryAreaText,
   boundaryErrorText,
+  boundaryFootnote,
+  boundaryOriginLabel,
   boundaryPhaseLabel,
   boundaryPaths,
   boundaryReferenceSummary,
@@ -112,6 +114,15 @@ test('error text distinguishes failure categories and never invents accuracy cla
   for (const message of Object.values(BOUNDARY_ERROR_MESSAGES)) {
     assert.doesNotMatch(message, /准确率|精度/);
   }
+});
+
+test('origin label follows the residential-landuse warning and does not claim a survey', () => {
+  const trusted = '采用名称匹配的住宅用地面外轮廓,不是测绘或产权边界';
+  assert.equal(boundaryOriginLabel(candidate({ warnings: [trusted], residential_faces: 1 })), '开放街图住宅用地');
+  assert.equal(boundaryOriginLabel(candidate({ warnings: ['未匹配到可信住宅用地,轮廓仅按附近建筑聚类估算,需人工确认'] })), '开放街图建筑估算');
+  assert.equal(boundaryOriginLabel(candidate({ warnings: [] })), '开放街图建筑估算');
+  assert.match(boundaryFootnote(candidate({ warnings: [trusted] })), /不是测绘或产权边界/);
+  assert.doesNotMatch(boundaryOriginLabel(candidate({ warnings: [trusted] })), /测绘边界|产权边界/);
 });
 
 test('reference summary keeps building faces and residential landuse apart', () => {
@@ -237,11 +248,36 @@ test('preview panel shows the real candidate facts and the decision actions', ()
   assert.match(html, /候选轮廓确认/);
   assert.match(html, /3\.25 公顷/);
   assert.match(html, /4 个建筑面 \+ 1 个住宅面/);
+  assert.match(html, /开放街图建筑估算/);
+  assert.match(html, /不是测绘或产权边界/);
   assert.match(html, /应用此轮廓/);
   assert.match(html, /范围不合适/);
   assert.match(html, /去核对定位/);
   assert.match(html, /重新获取建筑/);
   assert.doesNotMatch(html, /准确率|置信度\s*\d/);
+});
+
+test('preview panel names a residential landuse candidate without calling it a survey', () => {
+  const html = render(React.createElement(BoundaryWorkflowPreview, {
+    view: view({
+      candidate: candidate({
+        building_faces: 10,
+        residential_faces: 1,
+        area_ha: 10.53,
+        warnings: ['采用名称匹配的住宅用地面外轮廓,不是测绘或产权边界'],
+      }),
+    }),
+    actions: noopActions,
+    onBack: () => {},
+    onLocate: () => {},
+    showReferences: false,
+    onToggleReferences: () => {},
+  }));
+  assert.match(html, /开放街图住宅用地/);
+  assert.match(html, /10 个建筑面 \+ 1 个住宅面/);
+  assert.match(html, /10\.53 公顷/);
+  assert.match(html, /不是测绘或产权边界/);
+  assert.doesNotMatch(html, /测绘成果|产权证/);
 });
 
 test('preview panel blocks apply for a stale candidate and explains why', () => {

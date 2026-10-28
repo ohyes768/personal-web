@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/housing-map/backend/index.md", "reason": "后端预开发与质量门"}
+{"file": ".trellis/spec/backend/housing-map/backend/boundary-workflow.md", "reason": "独立覆盖、候选生命周期、版本与撤销、来源口径"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "定位坐标和人工定位保护"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows项目盘隔离pytest basetemp"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "CLI、后台、候选库、预览的输入传递"}
+{"file": ".trellis/tasks/10-28-housing-boundary-accuracy/research/01-reproduction.md", "reason": "真实样本复现与公式对照证据"}

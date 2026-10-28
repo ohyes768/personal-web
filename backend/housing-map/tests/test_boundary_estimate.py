@@ -1,10 +1,15 @@
 import json
+from pathlib import Path
 
 import pytest
-from shapely.geometry import Polygon
+from shapely.geometry import Point, Polygon
 
 import scripts.estimate_boundaries as est
 import src.services.boundary_estimate as svc
+
+FIXTURE = Path(__file__).parent / "fixtures" / "qiantang_daguan_osm.json"
+SAMPLE_GCJ = (120.133258, 30.181901)
+SAMPLE_WGS = (120.12850226078159, 30.1841956361507)
 
 # 滨江某点(约)的 WGS84 坐标
 WGS = (120.15, 30.18)
@@ -214,6 +219,275 @@ def test_load_snapshot_filters_bbox(tmp_path, monkeypatch):
     # 快照缺文件 -> 未覆盖,交给在线
     monkeypatch.setattr(est, "SNAPSHOT_BUILDINGS", tmp_path / "none.json")
     assert est.load_snapshot(*point) == ([], False)
+
+
+def _fixture_payload():
+    return json.loads(FIXTURE.read_text(encoding="utf-8"))
+
+
+def _fixture_elements():
+    return _fixture_payload()["elements"]
+
+
+def _write_snapshot(tmp_path, elements):
+    path = tmp_path / "all.json"
+    path.write_text(json.dumps({"elements": elements}, ensure_ascii=False), encoding="utf-8")
+    return {"all": path, "buildings": None, "residential": None}
+
+
+def _iou(ring_a, ring_b) -> float:
+    left, right = Polygon(ring_a), Polygon(ring_b)
+    if not left.is_valid:
+        left = left.buffer(0)
+    if not right.is_valid:
+        right = right.buffer(0)
+    union = left.union(right).area
+    if union <= 0:
+        return 0.0
+    return left.intersection(right).area / union
+
+
+def _converted_way_ring(way_id):
+    element = next(el for el in _fixture_elements() if el["id"] == way_id)
+    ring = []
+    for point in element["geometry"]:
+        lng, lat = svc.wgs84_to_gcj02(point["lon"], point["lat"])
+        ring.append([round(lng, 6), round(lat, 6)])
+    if ring[0] != ring[-1]:
+        ring.append(ring[0])
+    return ring
+
+
+def test_fixture_keeps_target_and_neighbor():
+    payload = _fixture_payload()
+    ids = {el["id"] for el in payload["elements"]}
+    assert 614214443 in ids
+    assert 113467424 in ids
+    named = {el["id"]: (el.get("tags") or {}).get("name") for el in payload["elements"]}
+    assert named[614214443] == "观邸国际"
+    assert named[113467424] == "贺田尚城"
+    assert payload["meta"]["deduped"] is True
+
+
+def test_identity_match_is_constrained_containment():
+    assert svc.identity_match("观邸国际", ["观邸国际寓所"])
+    assert svc.identity_match("观邸·国际", ["观邸 国际寓所"])
+    assert not svc.identity_match("", ["观邸国际"])
+    assert not svc.identity_match("观邸国际", [""])
+    assert not svc.identity_match("观邸国际", ["国际"])
+    assert not svc.identity_match("公寓", ["观邸国际寓所"])
+    assert not svc.identity_match("钱塘大观", ["观邸国际"])
+
+
+def test_aliases_from_source_does_not_guess():
+    assert svc.aliases_from_source(None) == ()
+    assert svc.aliases_from_source("") == ()
+    assert svc.aliases_from_source("  ") == ()
+    assert svc.aliases_from_source("观邸国际寓所") == ("观邸国际寓所",)
+
+
+def test_select_members_does_not_filter_by_foreign_landuse():
+    point = (120.15, 30.18)
+    target = _box(*point, 0.0003)
+    neighbor = _box(point[0] + 0.0015, point[1], 0.0008)
+    inside = _box(point[0] + 0.0015, point[1], 0.0002)
+    elements = [
+        _way(1, target),
+        _way(2, neighbor, name="贺田尚城", landuse=True),
+        _way(3, inside),
+    ]
+    members, low = est.select_buildings(elements, point, "钱塘大观")
+    assert Polygon(target) in members
+    assert Polygon(inside) not in members
+    assert not low
+
+
+def test_complex_residential_face_is_not_trusted():
+    shell = _box(120.15, 30.18, size=0.002)
+    hole = _box(120.15, 30.18, size=0.0005)
+    poly = Polygon(shell, [hole])
+    member = svc.Member(
+        element={"type": "way", "id": 1, "tags": {"name": "观邸国际", "landuse": "residential"}},
+        polygon=poly,
+        kind="residential",
+    )
+    chosen, status = svc.choose_trusted_landuse(
+        [member], Point(120.15, 30.18), ("钱塘大观", "观邸国际寓所"),
+    )
+    assert chosen is None
+    assert status == "none"
+
+
+def test_qiantang_sample_uses_matching_residential_face(tmp_path):
+    paths = _write_snapshot(tmp_path, _fixture_elements())
+    target = svc.EstimateTarget(
+        community_id="20000561",
+        community_name="钱塘大观",
+        longitude=SAMPLE_GCJ[0],
+        latitude=SAMPLE_GCJ[1],
+        aliases=("观邸国际寓所",),
+    )
+    outcome = svc.estimate_one(target, snapshot_paths=paths, cache_dir=tmp_path / "cache")
+    residential_ids = [m.element["id"] for m in outcome.members if m.kind == "residential"]
+    assert residential_ids == [614214443]
+    assert all(m.element["id"] != 113467424 for m in outcome.members)
+    assert outcome.building_faces != 49
+    assert not 8.2 <= outcome.area_ha <= 8.5
+    assert Polygon(outcome.ring).covers(Point(SAMPLE_GCJ))
+    reference = _converted_way_ring(614214443)
+    reference_area = svc.area_ha(reference)
+    candidate_area = svc.area_ha(outcome.ring)
+    assert abs(candidate_area - reference_area) / reference_area <= 0.01
+    assert _iou(outcome.ring, reference) >= 0.98
+    assert any("采用名称匹配的住宅用地面外轮廓" in warning for warning in outcome.warnings)
+    assert outcome.source == "osm-building"
+
+
+def test_sample_without_alias_does_not_absorb_neighbor(tmp_path):
+    paths = _write_snapshot(tmp_path, _fixture_elements())
+    target = svc.EstimateTarget(
+        community_id="20000561",
+        community_name="钱塘大观",
+        longitude=SAMPLE_GCJ[0],
+        latitude=SAMPLE_GCJ[1],
+        aliases=(),
+    )
+    outcome = svc.estimate_one(target, snapshot_paths=paths, cache_dir=tmp_path / "cache")
+    assert all(m.element["id"] != 113467424 for m in outcome.members)
+    assert outcome.residential_faces == 0
+    assert outcome.building_faces != 49
+    assert not 8.2 <= outcome.area_ha <= 8.5
+    assert any("未匹配到可信住宅用地" in warning for warning in outcome.warnings)
+    face = next(el for el in _fixture_elements() if el["id"] == 614214443)
+    land = Polygon([(p["lon"], p["lat"]) for p in face["geometry"]])
+    for member in outcome.members:
+        geometry = member.element["geometry"]
+        centroid = Polygon([(p["lon"], p["lat"]) for p in geometry]).centroid
+        assert land.covers(centroid)
+
+
+def test_residential_face_alone_still_succeeds(tmp_path):
+    only = [el for el in _fixture_elements() if el["id"] == 614214443]
+    paths = _write_snapshot(tmp_path, only)
+    target = svc.EstimateTarget(
+        community_id="20000561",
+        community_name="钱塘大观",
+        longitude=SAMPLE_GCJ[0],
+        latitude=SAMPLE_GCJ[1],
+        aliases=("观邸国际寓所",),
+    )
+    outcome = svc.estimate_one(target, snapshot_paths=paths, cache_dir=tmp_path / "cache")
+    assert [m.element["id"] for m in outcome.members] == [614214443]
+    assert outcome.building_faces == 0
+    assert outcome.residential_faces == 1
+    assert Polygon(outcome.ring).covers(Point(SAMPLE_GCJ))
+
+
+def test_no_matching_face_keeps_building_cluster_with_warning():
+    point = (120.15, 30.18)
+    elements = [_way(1, _box(*point, 0.0003)), _way(2, _box(point[0] + 0.0004, point[1], 0.0003))]
+    outcome = svc.estimate_from_elements(elements, name="钱塘大观", aliases=(), center_wgs=point)
+    assert outcome.residential_faces == 0
+    assert outcome.building_faces == 2
+    assert any("未匹配到可信住宅用地" in warning for warning in outcome.warnings)
+
+
+def test_differently_named_neighbor_is_not_absorbed():
+    point = (120.15, 30.18)
+    target = _box(*point, 0.0003)
+    neighbor = _box(point[0] + 0.0015, point[1], 0.0008)
+    extras = [_box(point[0] + 0.0015 + i * 0.00012, point[1], 0.00008) for i in range(-2, 3)]
+    elements = [
+        _way(1, target),
+        _way(113467424, neighbor, name="贺田尚城", landuse=True),
+        *[_way(10 + index, box) for index, box in enumerate(extras)],
+    ]
+    outcome = svc.estimate_from_elements(elements, name="钱塘大观", aliases=(), center_wgs=point)
+    assert all(m.element["id"] != 113467424 for m in outcome.members)
+    assert outcome.building_faces == 1
+    assert any("未匹配到可信住宅用地" in warning for warning in outcome.warnings)
+
+
+def test_same_name_far_away_is_not_a_silent_hit():
+    point = (120.15, 30.18)
+    gap = 200 / 110574.0
+    size = 0.0006
+    center_lat = point[1] + gap + size / 2
+    face = _box(point[0], center_lat, size)
+    building = _box(point[0], center_lat, 0.0002)
+    elements = [
+        _way(7, face, name="观邸国际", landuse=True),
+        _way(8, building),
+    ]
+    with pytest.raises(svc.EstimateError) as error:
+        svc.estimate_from_elements(
+            elements, name="观邸国际寓所", aliases=(), center_wgs=point,
+        )
+    assert error.value.code == "no_geometry"
+    assert "过远" in error.value.message
+
+
+def test_multiple_matching_faces_warn_and_do_not_pick_the_larger():
+    point = (120.15, 30.18)
+    big = _box(*point, 0.002)
+    small = _box(*point, 0.001)
+    building = _box(*point, 0.0002)
+    elements = [
+        _way(1, big, name="观邸国际", landuse=True),
+        _way(2, small, name="观邸国际寓所", landuse=True),
+        _way(3, building),
+    ]
+    outcome = svc.estimate_from_elements(
+        elements, name="钱塘大观", aliases=("观邸国际寓所",), center_wgs=point,
+    )
+    assert outcome.residential_faces == 0
+    assert outcome.building_faces == 1
+    assert any("无法区分" in warning for warning in outcome.warnings)
+
+
+def test_unique_gate_within_150m_uses_the_face():
+    point = (120.15, 30.18)
+    gap = 80 / 110574.0
+    size = 0.0008
+    face = _box(point[0], point[1] + gap + size / 2, size)
+    elements = [_way(9, face, name="观邸国际", landuse=True)]
+    outcome = svc.estimate_from_elements(
+        elements, name="观邸国际寓所", aliases=(), center_wgs=point,
+    )
+    assert [m.element["id"] for m in outcome.members if m.kind == "residential"] == [9]
+    assert any("采用名称匹配的住宅用地面外轮廓" in warning for warning in outcome.warnings)
+
+
+def test_empty_elements_raise_no_geometry():
+    with pytest.raises(svc.EstimateError) as error:
+        svc.estimate_from_elements([], name="钱塘大观", aliases=(), center_wgs=(120.15, 30.18))
+    assert error.value.code == "no_geometry"
+
+
+def test_cache_key_ignores_algorithm_version(monkeypatch):
+    monkeypatch.setattr(svc, "ALGORITHM_VERSION", "v1")
+    first = svc.cache_key("20000561", *SAMPLE_WGS)
+    monkeypatch.setattr(svc, "ALGORITHM_VERSION", "v9")
+    second = svc.cache_key("20000561", *SAMPLE_WGS)
+    assert first == second
+
+
+def test_cli_target_passes_existing_alias_only():
+    local = est.build_estimate_target({
+        "community_id": "20000561",
+        "community_name": "钱塘大观",
+        "community_alias": "观邸国际寓所",
+        "longitude": SAMPLE_GCJ[0],
+        "latitude": SAMPLE_GCJ[1],
+    })
+    remote = est.build_estimate_target({
+        "community_id": "20000561",
+        "community_name": "钱塘大观",
+        "longitude": SAMPLE_GCJ[0],
+        "latitude": SAMPLE_GCJ[1],
+    })
+    assert local.aliases == ("观邸国际寓所",)
+    assert remote.aliases == ()
 
 
 def test_load_snapshot_not_covered_outside_extent(tmp_path, monkeypatch):

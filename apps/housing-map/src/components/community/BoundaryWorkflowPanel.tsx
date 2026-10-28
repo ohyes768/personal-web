@@ -5,6 +5,8 @@ import {
   BoundaryWorkflowState,
   boundaryAreaText,
   boundaryErrorText,
+  boundaryFootnote,
+  boundaryOriginLabel,
   boundaryPhaseLabel,
   boundaryReferenceSummary,
   isBoundaryJobActive,
@@ -84,7 +86,7 @@ export function BoundaryWorkflowSection({
               ? '已有候选轮廓，确认无误后应用到地图。'
               : failure
                 ? '没有拿到建筑数据，可以稍后重试。'
-                : '轮廓由开放街图建筑聚类估算，生成后需要人工确认范围是否合适。'}
+                : '轮廓由开放街图数据估算，生成后需要人工确认范围是否合适。不是测绘或产权边界。'}
           </p>
           <div className="boundary-actions">
             {candidate ? (
@@ -161,7 +163,7 @@ export function BoundaryWorkflowPreview({
             </div>
             <div className="stat-cell">
               <div className="stat-label">数据来源</div>
-              <div className="stat-value">开放街图建筑</div>
+              <div className="stat-value">{boundaryOriginLabel(candidate)}</div>
             </div>
           </div>
 
@@ -236,7 +238,7 @@ export function BoundaryWorkflowPreview({
       )}
 
       <p className="boundary-footnote">
-        轮廓为开放街图建筑聚类的近似范围，应用后仍可撤销。
+        {boundaryFootnote(candidate)}
       </p>
     </div>
   );

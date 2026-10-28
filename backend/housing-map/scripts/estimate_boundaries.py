@@ -28,6 +28,7 @@ from src.services.boundary_estimate import (  # noqa: E402 - 需先补 sys.path
     USER_AGENT,
     EstimateError,
     EstimateTarget,
+    aliases_from_source,
     area_ha,
     build_boundary,
     cache_path_for,
@@ -77,8 +78,13 @@ def target_communities(ids=None, from_api=None):
                 continue
             if c.get("boundary") and c.get("boundary_source") != "shp":
                 continue
-            targets.append({"community_id": str(c["community_id"]), "community_name": c["community_name"],
-                            "longitude": c["longitude"], "latitude": c["latitude"]})
+            targets.append({
+                "community_id": str(c["community_id"]),
+                "community_name": c["community_name"],
+                "community_alias": c.get("community_alias") or "",
+                "longitude": c["longitude"],
+                "latitude": c["latitude"],
+            })
     else:
         targets = load_display_communities()
         polygons = effective_polygons()
@@ -129,6 +135,17 @@ def _http_post(url, body):
 # 输出:候选 geojson + 预览 HTML
 # ---------------------------------------------------------------------------
 
+def build_estimate_target(community) -> EstimateTarget:
+    """本地目录和 --from-api 都只传递来源里已有的别名。"""
+    return EstimateTarget(
+        community_id=str(community["community_id"]),
+        community_name=community.get("community_name") or "",
+        longitude=community["longitude"],
+        latitude=community["latitude"],
+        aliases=aliases_from_source(community.get("community_alias")),
+    )
+
+
 def estimate_all(ids=None, interval=REQUEST_INTERVAL, fetcher=None, online=False, from_api=None):
     targets = target_communities(ids, from_api=from_api)
     results, failures = [], []
@@ -139,8 +156,7 @@ def estimate_all(ids=None, interval=REQUEST_INTERVAL, fetcher=None, online=False
     for index, community in enumerate(targets):
         cid, name = community["community_id"], community["community_name"]
         print(f"[{index + 1}/{len(targets)}] {name} ({cid}) ...", flush=True)
-        target = EstimateTarget(community_id=cid, community_name=name,
-                                longitude=community["longitude"], latitude=community["latitude"])
+        target = build_estimate_target(community)
         try:
             outcome = estimate_one(
                 target,

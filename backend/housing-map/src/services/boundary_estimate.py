@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 import threading
 import time
 import urllib.parse
@@ -21,6 +22,7 @@ from pathlib import Path
 from shapely.geometry import Point, Polygon
 from shapely.ops import unary_union
 
+from src.core.coordinates import gcj02_to_wgs84, wgs84_to_gcj02
 from src.services.data_loader import DATA_DIR
 
 # 运行时快照与缓存(与 CLI 共用同一份,快照缺失时自动转在线)
@@ -39,6 +41,16 @@ REQUEST_TIMEOUT = 60.0    # 单次请求超时(秒)
 TASK_BUDGET_SECONDS = 240.0  # 单任务联网总预算(秒)
 CACHE_TTL_DAYS = 7
 QUERY_VERSION = "v2"      # 查询语义变化时递增,顺带作废旧缓存
+ALGORITHM_VERSION = "v1"  # 估算策略版本,与查询版本分开;旧指纹不含本字段即过期
+LANDUSE_GATE_M = 150.0    # 门口定位:到已匹配住宅面边界的最近距离容差
+MIN_IDENTITY_CHARS = 4    # 短于观邸国际这类专名的通用词不参与包含匹配
+WARN_TRUSTED_LANDUSE = "采用名称匹配的住宅用地面外轮廓,不是测绘或产权边界"
+WARN_AMBIGUOUS_LANDUSE = "多个名称匹配的住宅用地面无法区分,已回退为建筑聚类"
+WARN_FAR_SAME_NAME = "同名住宅用地距离过远,未作为可靠命中"
+WARN_SPATIAL_FALLBACK = "未匹配到可信住宅用地,轮廓仅按附近建筑聚类估算,需人工确认"
+WARN_LOW_CONFIDENCE = "定位点未落在任何建筑簇内,轮廓取自最近的建筑簇,需人工确认范围"
+WARN_SINGLE_FACE = "仅有一个参考面,轮廓为单面近似"
+_NAME_PUNCT = re.compile(r"[\s·・･•．.。,，、/／\\\-—–_~～'\"“”‘’()（）\[\]【】「」]+")
 MIRRORS = [
     "https://overpass-api.de/api/interpreter",
     "https://overpass.kumi.systems/api/interpreter",
@@ -49,54 +61,6 @@ USER_AGENT = "housing-map-boundary-estimate/1.0 (personal project)"
 # 快照覆盖范围(bbox):全量快照覆盖滨江全域,旧的具名/住宅面快照只覆盖核心区。
 SNAPSHOT_ALL_EXTENT = (30.10, 120.10, 30.26, 120.28)
 SNAPSHOT_LEGACY_EXTENT = (30.17, 120.15, 30.20, 120.21)
-
-# ---------------------------------------------------------------------------
-# WGS84 <-> GCJ02(标准偏移算法,互逆用一次反射近似,误差 <1m)
-# ---------------------------------------------------------------------------
-_PI = math.pi
-_A = 6378245.0
-_EE = 0.00669342162296594323
-
-
-def _out_of_china(lng, lat):
-    return not (73.66 < lng < 135.05 and 3.86 < lat < 53.55)
-
-
-def _offset(lng, lat):
-    dlat = -100.0 + 2.0 * lng + 3.0 * lat + 0.2 * lat * lat + 0.1 * lng * lat + 0.2 * math.sqrt(abs(lng))
-    dlat += (20.0 * math.sin(6.0 * lng * _PI) + 20.0 * math.sin(2.0 * lng * _PI)) * 2.0 / 3.0
-    dlat += (20.0 * math.sin(lat * _PI) + 40.0 * math.sin(lat / 3.0 * _PI)) * 2.0 / 3.0
-    dlat += (160.0 * math.sin(lat / 12.0 * _PI) + 320.0 * math.sin(lat * _PI / 30.0)) * 2.0 / 3.0
-    dlng = 300.0 + lng + 2.0 * lat + 0.1 * lng * lng + 0.1 * lng * lat + 0.1 * math.sqrt(abs(lng))
-    dlng += (20.0 * math.sin(6.0 * lng * _PI) + 20.0 * math.sin(2.0 * lng * _PI)) * 2.0 / 3.0
-    dlng += (20.0 * math.sin(lat * _PI) + 40.0 * math.sin(lat / 3.0 * _PI)) * 2.0 / 3.0
-    dlng += (150.0 * math.sin(lat / 12.0 * _PI) + 300.0 * math.sin(lat / 30.0)) * 2.0 / 3.0
-    return dlat, dlng
-
-
-def wgs84_to_gcj02(lng, lat):
-    if _out_of_china(lng, lat):
-        return lng, lat
-    dlat, dlng = _offset(lng - 105.0, lat - 35.0)
-    radlat = lat / 180.0 * _PI
-    magic = 1 - _EE * math.sin(radlat) ** 2
-    sqrtmagic = math.sqrt(magic)
-    dlat = (dlat * 180.0) / ((_A * (1 - _EE)) / (magic * sqrtmagic) * _PI)
-    dlng = (dlng * 180.0) / (_A / sqrtmagic * math.cos(radlat) * _PI)
-    return lng + dlng, lat + dlat
-
-
-def gcj02_to_wgs84(lng, lat, iterations=2):
-    """迭代逼近逆变换(两次后残差 <1e-6°,远小于楼块尺度)。"""
-    if _out_of_china(lng, lat):
-        return lng, lat
-    wlng, wlat = lng, lat
-    for _ in range(iterations):
-        glng, glat = wgs84_to_gcj02(wlng, wlat)
-        wlng += lng - glng
-        wlat += lat - glat
-    return wlng, wlat
-
 
 # ---------------------------------------------------------------------------
 # 数据结构
@@ -116,6 +80,7 @@ class EstimateTarget:
     community_name: str
     longitude: float  # GCJ02
     latitude: float   # GCJ02
+    aliases: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -185,49 +150,263 @@ def _point_distance_m(point, poly):
     return math.hypot(dlat * 110574.0, dlng * 111320.0 * math.cos(math.radians(point.y)))
 
 
-def _name_hit(el_name, community_name):
-    """双向包含:楼名"倾城之恋3幢"与小区名"顺发倾城之恋"互为子串即命中。"""
-    if not community_name or not el_name:
+def normalize_place_name(value) -> str:
+    """只去掉空白和常见标点,不删通名、不做模糊匹配。"""
+    if value is None:
+        return ""
+    return _NAME_PUNCT.sub("", str(value))
+
+
+def identity_match(element_name, known_names) -> bool:
+    """受约束的双向包含。较短一侧短于 4 个字时拒绝,空名不命中。"""
+    left = normalize_place_name(element_name)
+    if len(left) < MIN_IDENTITY_CHARS:
         return False
-    return community_name in el_name or el_name in community_name
+    for known in known_names or ():
+        right = normalize_place_name(known)
+        if len(right) < MIN_IDENTITY_CHARS:
+            continue
+        shorter, longer = (left, right) if len(left) <= len(right) else (right, left)
+        if shorter in longer:
+            return True
+    return False
 
 
-def select_members(elements, center_wgs, name) -> tuple[list[Member], bool]:
-    """名称优先 + 距离过滤 + landuse 收编 + 连通聚簇;中心点须为 WGS84(与 OSM 同系)。
+def aliases_from_source(value) -> tuple[str, ...]:
+    """只采用来源里已有的别名,不猜测。"""
+    if value is None:
+        return ()
+    if isinstance(value, str):
+        text = value.strip()
+        return (text,) if text else ()
+    if isinstance(value, (list, tuple)):
+        items = []
+        for item in value:
+            if item is None:
+                continue
+            text = str(item).strip()
+            if text:
+                items.append(text)
+        return tuple(items)
+    return ()
 
-    名称命中的楼与具名 residential 面(小区边界本体)无条件入选;其余楼聚类后取含定位点的簇。
-    返回 (成员面列表, low_confidence)。"""
+
+def canonical_aliases(primary: str, aliases) -> tuple[str, ...]:
+    """指纹用的别名:归一化、去掉与主名重复的项、去重后排序。"""
+    primary_key = normalize_place_name(primary)
+    seen: set[str] = set()
+    result = []
+    for alias in aliases or ():
+        key = normalize_place_name(alias)
+        if not key or key == primary_key or key in seen:
+            continue
+        seen.add(key)
+        result.append(key)
+    return tuple(sorted(result))
+
+
+def _element_name(member: Member) -> str:
+    return (member.element.get("tags") or {}).get("name") or ""
+
+
+def _known_names(name, aliases) -> tuple[str, ...]:
+    values = []
+    if name:
+        values.append(name)
+    values.extend(aliases or ())
+    return tuple(values)
+
+
+def _usable_residential_polygon(poly) -> bool:
+    """带洞或复合面不当作可信住宅面。"""
+    return getattr(poly, "geom_type", None) == "Polygon" and not list(poly.interiors)
+
+
+def _meters_between(lng1, lat1, lng2, lat2) -> float:
+    return math.hypot(
+        (lat1 - lat2) * 110574.0,
+        (lng1 - lng2) * 111320.0 * math.cos(math.radians((lat1 + lat2) / 2)),
+    )
+
+
+def _boundary_distance_m(point: Point, poly: Polygon) -> float:
+    if poly.covers(point):
+        return 0.0
+    nearest = poly.boundary.interpolate(poly.boundary.project(point))
+    return _meters_between(point.x, point.y, nearest.x, nearest.y)
+
+
+def _is_foreign_face(member: Member, known) -> bool:
+    name = _element_name(member)
+    return bool(name) and not identity_match(name, known)
+
+
+def _inside_face(building: Member, face: Member) -> bool:
+    return face.polygon.covers(building.polygon.representative_point())
+
+
+def choose_trusted_landuse(landuse, point: Point, known_names) -> tuple[Member | None, str]:
+    """身份命中且空间唯一时返回该面。status: hit / ambiguous / far / none。"""
+    usable = [m for m in landuse if _usable_residential_polygon(m.polygon)]
+    matched = [m for m in usable if identity_match(_element_name(m), known_names)]
+    if not matched:
+        return None, "none"
+    containing = [m for m in matched if m.polygon.covers(point)]
+    if len(containing) == 1:
+        return containing[0], "hit"
+    if len(containing) > 1:
+        return None, "ambiguous"
+    ranked = []
+    for member in matched:
+        distance = _boundary_distance_m(point, member.polygon)
+        if distance <= LANDUSE_GATE_M:
+            ranked.append((distance, member.element.get("id") or 0, member))
+    if not ranked:
+        return None, "far"
+    ranked.sort(key=lambda item: (item[0], str(item[1])))
+    if len(ranked) == 1 or ranked[1][0] - ranked[0][0] >= 1.0:
+        return ranked[0][2], "hit"
+    return None, "ambiguous"
+
+
+def _cluster_buildings(rest: list[Member], point: Point, named_present: bool) -> tuple[list[Member], bool]:
+    low_confidence = False
+    if not rest:
+        return [], low_confidence
+    buf_deg = CLUSTER_GAP_M / 111574.0  # 近似 1m ≈ 1/111574°(滨江纬度下 ±5% 内)
+    buffered = [m.polygon.buffer(buf_deg) for m in rest]
+    merged = unary_union(buffered)
+    parts = list(merged.geoms) if merged.geom_type == "MultiPolygon" else [merged]
+    target = next((part for part in parts if part.covers(point) or part.distance(point) < 1e-6), None)
+    if target is None:
+        low_confidence = not named_present
+        target = min(parts, key=lambda part: part.distance(point))
+    cluster = [m for m, buf in zip(rest, buffered) if buf.intersects(target)]
+    return cluster, low_confidence
+
+
+def _building_selection(buildings, landuse, point: Point, known, status: str) -> tuple[list[Member], bool]:
+    """建筑回退。定位若落在异名面内,只留该面里的楼,避免邻区簇把结果带走。"""
+    named = [m for m in buildings if identity_match(_element_name(m), known)]
+    named_ids = {id(m) for m in named}
+    rest = [m for m in buildings if id(m) not in named_ids
+            and _point_distance_m(point, m.polygon) <= MAX_CENTROID_M]
+    containing_foreign = [face for face in landuse if _is_foreign_face(face, known) and face.polygon.covers(point)]
+    if containing_foreign:
+        inside = [m for m in rest if any(_inside_face(m, face) for face in containing_foreign)]
+        if inside:
+            rest = inside
+        else:
+            other_named = [face for face in landuse if _element_name(face) and face not in containing_foreign]
+            rest = [m for m in rest if not any(_inside_face(m, face) for face in other_named)]
+    if status == "far":
+        far_faces = [
+            face for face in landuse
+            if _usable_residential_polygon(face.polygon) and identity_match(_element_name(face), known)
+        ]
+        rest = [m for m in rest if not any(_inside_face(m, face) for face in far_faces)]
+    if not named and not rest:
+        return [], True
+    cluster, low_confidence = _cluster_buildings(rest, point, bool(named))
+    return named + cluster, low_confidence
+
+
+def select_members(elements, center_wgs, name, aliases=()) -> tuple[list[Member], bool]:
+    """名称优先 + 距离过滤 + 连通聚簇。中心点须为 WGS84。
+
+    不再用任意异名/未命名住宅面筛楼。返回 (成员面列表, low_confidence)。"""
     members = parse_members(elements)
     buildings = [m for m in members if m.kind == "building"]
     landuse = [m for m in members if m.kind == "residential"]
     point = Point(center_wgs)
+    known = _known_names(name, aliases)
+    return _building_selection(buildings, landuse, point, known, "none")
 
-    named = [m for m in buildings if _name_hit((m.element.get("tags") or {}).get("name"), name)]
-    named_residential = [m for m in landuse if _name_hit((m.element.get("tags") or {}).get("name"), name)]
-    rest = [m for m in buildings if not _name_hit((m.element.get("tags") or {}).get("name"), name)]
-    rest = [m for m in rest if _point_distance_m(point, m.polygon) <= MAX_CENTROID_M]
-    other_landuse = [m for m in landuse if m not in named_residential]
-    if other_landuse:
-        inside = [m for m in rest if any(m.polygon.within(lu.polygon) for lu in other_landuse)]
-        if inside:
-            rest = inside
-    if not named and not named_residential and not rest:
-        return [], True
 
-    low_confidence = False
-    cluster: list[Member] = []
-    if rest:
-        buf_deg = CLUSTER_GAP_M / 111574.0  # 近似 1m ≈ 1/111574°(滨江纬度下 ±5% 内)
-        buffered = [m.polygon.buffer(buf_deg) for m in rest]
-        merged = unary_union(buffered)
-        parts = list(merged.geoms) if merged.geom_type == "MultiPolygon" else [merged]
-        target = next((part for part in parts if part.covers(point) or part.distance(point) < 1e-6), None)
-        if target is None:
-            # 名称已给出可信成员时不降置信;仅裸聚类取最近簇时才标低置信
-            low_confidence = not (named or named_residential)
-            target = min(parts, key=lambda part: part.distance(point))
-        cluster = [m for m, buf in zip(rest, buffered) if buf.intersects(target)]
-    return named + named_residential + cluster, low_confidence
+def _gcj_outer_ring(poly: Polygon) -> list[list[float]]:
+    """直接采用外环,只去掉重复点和非数值,再转到 GCJ02。"""
+    coords = []
+    for lng, lat in poly.exterior.coords:
+        if not (math.isfinite(lng) and math.isfinite(lat)):
+            continue
+        point = (lng, lat)
+        if coords and coords[-1] == point:
+            continue
+        coords.append(point)
+    if len(coords) >= 2 and coords[0] == coords[-1]:
+        coords.pop()
+    if len(coords) < 3:
+        raise EstimateError("invalid_geometry", "合并后的轮廓顶点不足")
+    ring = []
+    for lng, lat in coords:
+        glng, glat = wgs84_to_gcj02(lng, lat)
+        ring.append([round(glng, 6), round(glat, 6)])
+    if ring[0] != ring[-1]:
+        ring.append(ring[0])
+    return ring
+
+
+def _empty_geometry_message(status: str, landuse, point: Point, known) -> str:
+    if status == "ambiguous":
+        return "多个名称匹配的住宅用地面无法区分,且没有可靠的建筑面"
+    if status == "far":
+        return "同名住宅用地距离过远,附近没有可靠的建筑面"
+    if any(_is_foreign_face(face, known) and face.polygon.covers(point) for face in landuse):
+        return "定位落在异名住宅用地内,不能采用邻区建筑轮廓"
+    return "该定位附近没有可用的建筑面"
+
+
+def _outcome(ring, members, *, warnings, low_confidence, dropped_parts) -> EstimateOutcome:
+    return EstimateOutcome(
+        ring=ring,
+        members=tuple(members),
+        building_faces=sum(1 for m in members if m.kind == "building"),
+        residential_faces=sum(1 for m in members if m.kind == "residential"),
+        dropped_parts=dropped_parts,
+        low_confidence=low_confidence,
+        warnings=tuple(warnings),
+        area_ha=round(area_ha(ring), 2),
+    )
+
+
+def estimate_from_elements(elements, *, name, aliases=(), center_wgs) -> EstimateOutcome:
+    """已有 OSM 要素上的估算。可信住宅面直接用外环,否则建筑聚类。"""
+    members = parse_members(elements)
+    buildings = [m for m in members if m.kind == "building"]
+    landuse = [m for m in members if m.kind == "residential"]
+    point = Point(center_wgs)
+    known = _known_names(name, aliases)
+    chosen, status = choose_trusted_landuse(landuse, point, known)
+    if status == "hit" and chosen is not None:
+        related = [b for b in buildings if _inside_face(b, chosen)]
+        return _outcome(
+            _gcj_outer_ring(chosen.polygon),
+            [chosen, *related],
+            warnings=[WARN_TRUSTED_LANDUSE],
+            low_confidence=False,
+            dropped_parts=0,
+        )
+
+    warnings: list[str] = []
+    if status == "ambiguous":
+        warnings.append(WARN_AMBIGUOUS_LANDUSE)
+    elif status == "far":
+        warnings.append(WARN_FAR_SAME_NAME)
+    selected, low_confidence = _building_selection(buildings, landuse, point, known, status)
+    if not selected:
+        raise EstimateError("no_geometry", _empty_geometry_message(status, landuse, point, known))
+    ring, dropped_parts, _count = build_boundary_detail(selected)
+    if status == "none":
+        warnings.append(WARN_SPATIAL_FALLBACK)
+    if low_confidence:
+        warnings.append(WARN_LOW_CONFIDENCE)
+    if dropped_parts:
+        warnings.append(f"附近存在 {dropped_parts} 个未纳入的其他建筑簇,轮廓只覆盖最大的一簇")
+    if len(selected) == 1:
+        warnings.append(WARN_SINGLE_FACE)
+    return _outcome(
+        ring, selected, warnings=warnings, low_confidence=low_confidence, dropped_parts=dropped_parts,
+    )
 
 
 def select_buildings(elements, center_wgs, name) -> tuple[list[Polygon], bool]:
@@ -477,28 +656,9 @@ def estimate_one(target: EstimateTarget, *, snapshot_paths=None, cache_dir=None,
                                   fetcher=fetcher, clock=clock, sleeper=sleeper, use_cache=use_cache)
 
     report("estimating", "聚类建筑面")
-    members, low_confidence = select_members(elements, (lng_wgs, lat_wgs), target.community_name)
-    if not members:
-        raise EstimateError("no_geometry", "该定位附近没有可用的建筑面")
-    ring, dropped_parts, _count = build_boundary_detail(members)
-
-    warnings: list[str] = []
-    if low_confidence:
-        warnings.append("定位点未落在任何建筑簇内,轮廓取自最近的建筑簇,需人工确认范围")
-    if dropped_parts:
-        warnings.append(f"附近存在 {dropped_parts} 个未纳入的其他建筑簇,轮廓只覆盖最大的一簇")
-    if len(members) == 1:
-        warnings.append("仅有一个参考面,轮廓为单面近似")
-
-    building_faces = sum(1 for m in members if m.kind == "building")
-    residential_faces = sum(1 for m in members if m.kind == "residential")
-    return EstimateOutcome(
-        ring=ring,
-        members=tuple(members),
-        building_faces=building_faces,
-        residential_faces=residential_faces,
-        dropped_parts=dropped_parts,
-        low_confidence=low_confidence,
-        warnings=tuple(warnings),
-        area_ha=round(area_ha(ring), 2),
+    return estimate_from_elements(
+        elements,
+        name=target.community_name,
+        aliases=target.aliases,
+        center_wgs=(lng_wgs, lat_wgs),
     )

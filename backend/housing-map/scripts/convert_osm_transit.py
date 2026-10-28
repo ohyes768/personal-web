@@ -16,46 +16,21 @@
 from __future__ import annotations
 
 import json
-import math
 import os
+import sys
+from pathlib import Path
+
+_ROOT = Path(__file__).resolve().parents[1]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from src.core.coordinates import transform_lat, transform_lon, wgs84_to_gcj02  # noqa: E402
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
 ROUTES_RAW = os.path.join(DATA_DIR, 'binjiang_osm_transit_routes_raw.json')
 STOPS_RAW = os.path.join(DATA_DIR, 'binjiang_osm_transit_stops_raw.json')
 ROUTES_OUT = os.path.join(DATA_DIR, 'binjiang_transit_routes.geojson')
 STOPS_OUT = os.path.join(DATA_DIR, 'binjiang_transit_stops.geojson')
-
-
-def transform_lat(x: float, y: float) -> float:
-    ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * math.sqrt(abs(x))
-    ret += (20.0 * math.sin(6.0 * x * math.pi) + 20.0 * math.sin(2.0 * x * math.pi)) * 2.0 / 3.0
-    ret += (20.0 * math.sin(y * math.pi) + 40.0 * math.sin(y / 3.0 * math.pi)) * 2.0 / 3.0
-    ret += (160.0 * math.sin(y / 12.0 * math.pi) + 320 * math.sin(y * math.pi / 30.0)) * 2.0 / 3.0
-    return ret
-
-
-def transform_lon(x: float, y: float) -> float:
-    ret = 300.0 + x + 2.0 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * math.sqrt(abs(x))
-    ret += (20.0 * math.sin(6.0 * x * math.pi) + 20.0 * math.sin(2.0 * x * math.pi)) * 2.0 / 3.0
-    ret += (20.0 * math.sin(x * math.pi) + 40.0 * math.sin(x / 3.0 * math.pi)) * 2.0 / 3.0
-    ret += (150.0 * math.sin(x / 12.0 * math.pi) + 300.0 * math.sin(x / 30.0 * math.pi)) * 2.0 / 3.0
-    return ret
-
-
-def wgs84_to_gcj02(lon: float, lat: float) -> tuple[float, float]:
-    if 72.004 <= lon <= 137.8347 and 0.8293 <= lat <= 55.8271:
-        a = 6378245.0
-        ee = 0.00669342162296594323
-        dlat = transform_lat(lon - 105.0, lat - 35.0)
-        dlon = transform_lon(lon - 105.0, lat - 35.0)
-        radlat = lat / 180.0 * math.pi
-        magic = math.sin(radlat)
-        magic = 1 - ee * magic * magic
-        sqrtmagic = math.sqrt(magic)
-        dlat = (dlat * 180.0) / ((a * (1 - ee)) / (magic * sqrtmagic) * math.pi)
-        dlon = (dlon * 180.0) / (a / sqrtmagic * math.cos(radlat) * math.pi)
-        return lon + dlon, lat + dlat
-    return lon, lat
 
 
 def assemble_route_line(rel: dict) -> list[list[float]] | None:

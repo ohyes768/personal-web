@@ -1,0 +1,33 @@
+{
+  "id": "housing-boundary-accuracy",
+  "name": "housing-boundary-accuracy",
+  "title": "修复小区轮廓估算坐标与用地匹配偏差",
+  "description": "以钱塘大观（观邸国际）为回归样本，修复坐标偏移、别名漏匹配与住宅面优先策略。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "housing-map",
+  "package": "backend/housing-map",
+  "priority": "P1",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-28",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/housing-map/src/services/boundary_estimate.py",
+    "backend/housing-map/src/services/boundary_workflow.py",
+    "backend/housing-map/scripts/estimate_boundaries.py",
+    "backend/housing-map/scripts/convert_osm_residential.py",
+    "backend/housing-map/scripts/convert_osm_transit.py",
+    "apps/housing-map/src/components/community/BoundaryWorkflowPanel.tsx"
+  ],
+  "notes": "2026-10-28: 用户授权规划。已形成prd/design/implement及只读复现证据；保持planning，未start、未修改业务代码或线上数据。关联10-28-housing-boundary-preview。",
+  "meta": {}
+}

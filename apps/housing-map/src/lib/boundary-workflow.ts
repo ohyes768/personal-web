@@ -174,6 +174,22 @@ export function boundaryErrorText(code: string | null | undefined, fallback?: st
   return '生成失败,请稍后重试';
 }
 
+const TRUSTED_LANDUSE_MARK = '采用名称匹配的住宅用地面外轮廓';
+
+/** 候选来自匹配的住宅用地面,还是建筑聚类。旧记录没有这句提示时按建筑估算显示。 */
+export function boundaryOriginLabel(candidate: { warnings?: string[] | null }): string {
+  const warnings = candidate.warnings ?? [];
+  if (warnings.some(warning => warning.includes(TRUSTED_LANDUSE_MARK))) return '开放街图住宅用地';
+  return '开放街图建筑估算';
+}
+
+export function boundaryFootnote(candidate: { warnings?: string[] | null } | null | undefined): string {
+  if (candidate && boundaryOriginLabel(candidate) === '开放街图住宅用地') {
+    return '轮廓来自开放街图住宅用地面,不是测绘或产权边界。请对照底图确认后再应用,应用后仍可撤销。';
+  }
+  return '轮廓为开放街图建筑聚类的近似范围,不是测绘或产权边界。应用后仍可撤销。';
+}
+
 // 参考面数量:住宅用地面与建筑面分开说,不一律叫"楼栋"
 export function boundaryReferenceSummary(candidate: BoundaryCandidate): string {
   const building = candidate.building_faces ?? 0;
