@@ -31,8 +31,8 @@ apps/index-trends 中 TrendChart（ECharts 6 candlestick + line 叠加）的渲�
 
 ## Wrong vs Correct
 
-Wrong：candleData 里塞 `null` 表示无 K 线月份。
-Correct：用 `"-"` 占位；K 线项为 `[index, open, close, low, high]`。
+Wrong：candleData 里塞 `null` 表示无 K 线月份，或在 category 轴的 K 线数组前加月份序号。
+Correct：用 `"-"` 占位；K 线项为 `[open, close, low, high]`。序号会被当成开盘价，实体从 0 画到价格，看起来像柱状图。
 
 Wrong：前端用 `ext最后月 > 拟合末月` 判断是否"未来延伸"。
 Correct：读后端 `extend_note` 的语义标注。

@@ -60,3 +60,11 @@
 - 接入 9 点全部落位（nginx/compose/deploy-nas/启动脚本/CLAUDE.md/DOCKER_DEPLOY/首页卡片/gitignore/launch.json）；compose config 与 bash -n 通过。
 - 周报开放决定按 PRD 建议值落地：默认模型近10年、周五19:00、趋势延伸12个月；钉钉渠道未配置时报告存 no_channel 不发送。
 - 遗留：真实钉钉投递需在 NAS .env 配 INDEX_TRENDS_DINGTALK_WEBHOOK_URL 后手动触发验证；nginx -t 需 Docker 引擎运行后执行（本机未启动 Docker Desktop）。
+
+## 蜡烛图修复复验（2026-10-29）
+
+- category 轴 K 线输入去掉月份序号，使用 [open, close, low, high]；保留未来月份 '-' 占位。
+- candleData.test.ts 三项测试通过，包含 ECharts SVG SSR 实际解析 OHLC 与空月份渲染回归。
+- 本机直接运行已安装的 TypeScript/Next CLI：类型检查和生产构建通过（pnpm 包装命令触发依赖重装提示，未重装依赖）。
+- 生产构建本机 3011 预览：历史窗口1、当前近10年及成立以来切换通过，蜡烛实体与影线正常；375px 页面 scrollWidth/clientWidth 均为375，控制台无 error/warn。
+- 真实钉钉投递和 NAS nginx 检查仍属部署验收，不在本次图表修复范围。

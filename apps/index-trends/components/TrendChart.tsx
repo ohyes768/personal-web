@@ -18,6 +18,7 @@ import {
   TooltipComponent,
 } from "echarts/components";
 import { CanvasRenderer } from "echarts/renderers";
+import { toCandleDatum } from "../lib/candleData";
 import type { ChartBar, ChartData } from "../lib/types";
 
 echarts.use([
@@ -56,13 +57,8 @@ function buildOption(data: ChartData): echarts.EChartsCoreOption {
   xAxisCategories.forEach((m, i) => indexOfMonth.set(m, i));
 
   const barByMonth = new Map<string, ChartBar>(bars.map((b) => [b.month, b]));
-  // ECharts candlestick 不接受 null 项；无 K 线的月份（未来延伸月）用 '-' 占位
-  const candleData: Array<[number, number, number, number, number] | "-"> =
-    xAxisCategories.map((m) => {
-      const b = barByMonth.get(m);
-      // ECharts candlestick: [index, open, close, lowest, highest]
-      return b ? [indexOfMonth.get(m)!, b.open, b.close, b.low, b.high] : "-";
-    });
+  // category 轴的 K 线是 [open, close, lowest, highest]；无行情月份用 '-'
+  const candleData = xAxisCategories.map((m) => toCandleDatum(barByMonth.get(m)));
 
   // 轨道线：fit 段 + 延伸段（缺月补 null，不跨缺口相连）
   const lineOf = (months: string[], values: number[]): Array<number | null> => {
