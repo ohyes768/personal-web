@@ -3,7 +3,7 @@
   "name": "housing-xingfuli-source-probe",
   "title": "幸福里租金来源自动匹配与按需探查",
   "description": "按已收录小区名称和别名自动匹配幸福里来源，未命中时按需探查小区主页并人工选择，系统沿主页寻找租房入口；不提供粘贴链接入口，仅规划",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "fullstack",
   "scope": "housing-map",
   "package": "backend/housing-map",

@@ -89,12 +89,16 @@ def reviews(registry):
         if cid in mapped:
             continue
         review = read_review(registry, cid)
-        if not review:
-            continue
         candidates = candidates_for(registry, community)
-        if review.get('decision') == 'skipped' and review.get('fingerprint') != fingerprint(candidates):
-            save_review(registry, community, 'needs_selection' if candidates else 'missing', candidates)
-            review = read_review(registry, cid)
+        if review:
+            if review.get('decision') == 'skipped' and review.get('fingerprint') != fingerprint(candidates):
+                save_review(registry, community, 'needs_selection' if candidates else 'missing', candidates)
+                review = read_review(registry, cid)
+        else:
+            # A community without any rental source is still pending: the
+            # on-demand probe has to be reachable from the management list.
+            review = {'community_id': cid, 'community_name': community['community_name'],
+                      'reason': 'missing', 'message': '尚未关联租金来源，可探查幸福里来源'}
         items.append({**review, 'candidates': candidates})
     # Strongest matches first so the review list reads best-evidence-first.
     items.sort(key=lambda r: max((c.get('similarity', 0) for c in r['candidates']), default=0), reverse=True)

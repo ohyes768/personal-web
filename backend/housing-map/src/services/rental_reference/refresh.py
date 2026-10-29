@@ -20,6 +20,7 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import json
+import logging
 import os
 import tempfile
 import threading
@@ -51,6 +52,8 @@ DEFAULT_MAX_PAGES = 10
 DEFAULT_DELAY_SECONDS = 5.0
 DEFAULT_TIMEOUT_SECONDS = 20.0
 MAX_ERRORS_KEPT = 20
+
+logger = logging.getLogger(__name__)
 
 
 class RefreshAlreadyRunning(RuntimeError):
@@ -182,6 +185,8 @@ class RentalRefreshService:
     def __init__(self, rentals_dir: Path, mappings_path: Path, *,
                  fetch_factory: Callable[..., object] = FangClient,
                  xingfuli_factory: Callable[..., object] = XingfuliClient,
+                 discovery_factory: Callable[..., object] | None = None,
+                 auto_discover: bool = False,
                  max_pages: int = DEFAULT_MAX_PAGES,
                  delay: float = DEFAULT_DELAY_SECONDS,
                  timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -192,6 +197,11 @@ class RentalRefreshService:
         self.mappings_path = Path(mappings_path)
         self._fetch_factory = fetch_factory
         self._xingfuli_factory = xingfuli_factory
+        self._discovery_factory = discovery_factory
+        # Automatic source discovery reaches the platform; it is switched off
+        # by default so an offline run never calls out, and so the feature can
+        # be rolled back without touching the recorded sources.
+        self._auto_discover = auto_discover
         self._max_pages = max_pages
         self._delay = delay
         self._timeout = timeout
@@ -444,6 +454,9 @@ class RentalRefreshService:
                     delay=self._delay, budget=5, paused_reason=crawl_paused)
                 self._update_job(association=association,
                     new_sources_deferred=sum(cid not in {p.community_id for p in plans.values()} for _, cid in pairs))
+                xingfuli_association = self._discover_xingfuli_sources(registry, eligible, selected)
+                if xingfuli_association:
+                    self._update_job(xingfuli_association=xingfuli_association)
             if self._cancel_event.is_set():
                 raise RentalCrawlCancelled([], None)
             self._update_job(phase='publishing', stage='publishing', current_community_id=None)
@@ -529,6 +542,28 @@ class RentalRefreshService:
 
     def _has_active_thread(self) -> bool:
         return self._thread is not None and self._thread.is_alive()
+
+    def _discover_xingfuli_sources(self, registry, eligible, selected):
+        """Bind the Xingfuli sources whose identity the platform proves.
+
+        Only communities without any rental source are searched, and the
+        request budget is bounded; the rest stays for the on-demand probe.
+        """
+        if not self._auto_discover:
+            return {}
+        from src.services.rental_reference.xingfuli_sources import auto_discover
+        from src.services.xingfuli_discovery import XingfuliDiscovery
+        missing = [c for cid, c in eligible.items() if cid not in selected]
+        if not missing:
+            return {}
+        factory = self._discovery_factory or XingfuliDiscovery
+        discovery = factory(timeout=self._timeout, directory=self.rentals_dir,
+                            cancel_event=self._cancel_event, delay=self._delay)
+        try:
+            return auto_discover(registry, discovery, missing, budget=5, cancel=self._cancel_event)
+        except Exception:
+            logger.exception('Xingfuli source discovery failed')
+            return {}
 
     def _update_job(self, **fields) -> None:
         with self._mutex:

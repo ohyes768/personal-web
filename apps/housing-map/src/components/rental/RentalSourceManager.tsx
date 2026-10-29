@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { rentalDataChanged, safeSourceLink, sourcePath, sourceRequest, type RentalSource, type SourceDetail } from '../../lib/rental-sources';
+import { XingfuliProbe } from './XingfuliProbe';
 
 export function SourceCandidate({ candidate, busy, onConfirm, onReject }: {
   candidate: RentalSource; busy: boolean; onConfirm: () => void; onReject: () => void;
@@ -21,7 +22,6 @@ export function SourceCandidate({ candidate, busy, onConfirm, onReject }: {
 export function RentalSourceAssociation({ communityId, onChanged }: { communityId: string; onChanged?: () => void }) {
   const [state, setState] = useState<{ id: string; data?: SourceDetail; error?: string } | null>(null);
   const [keyword, setKeyword] = useState('');
-  const [sourceUrl, setSourceUrl] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<RentalSource | 'remove' | null>(null);
   const [notice, setNotice] = useState('');
@@ -48,7 +48,7 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
       setState({ id: communityId, data: { ...next, community: next.community || data?.community } });
       setConfirming(null);
       if (suffix === '/search') {
-        setNotice(next.found_count === 0 ? '未找到可确认的候选。可修改关键词，或打开房天下找到小区租房页后粘贴链接。' : '请核对来源名称、位置和分期，再确认关联。');
+        setNotice(next.found_count === 0 ? '未找到可确认的候选。可修改关键词后重试，或用下方“探查幸福里来源”。' : '请核对来源名称、位置和分期，再确认关联。');
       } else if (!suffix) {
         setNotice(method === 'DELETE' ? '已解除关联，旧租金不再展示。' : '关联已保存。在“采集任务”里开始“采集租金”即可采集数据。');
         rentalDataChanged();
@@ -71,14 +71,12 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
         <div className="rental-source-actions"><a href={safeSourceLink(data.mapping.source_url)} target="_blank" rel="noopener noreferrer">查看来源 ↗</a>
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirming('remove')}>解除关联</button></div>
       </div> : <p>尚未关联租金来源。先找到对应小区，确认后在“采集任务”里采集租金。</p>}
-      <form onSubmit={e => { e.preventDefault(); void act('POST', '/search', { keyword, source_url: sourceUrl }); }}>
+      <form onSubmit={e => { e.preventDefault(); void act('POST', '/search', { keyword, source_url: '' }); }}>
         <label>小区名称或别名<input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder={data.community?.community_alias || data.community?.community_name} maxLength={80} /></label>
-        <label>房天下小区租房页链接（可选）<input type="url" value={sourceUrl} onChange={e => setSourceUrl(e.target.value)} placeholder="https://zu.fang.com/hz/house-xm…/" maxLength={300} /></label>
         <div className="rental-source-actions">
-          <button className="btn btn-primary" disabled={busy} type="submit">{busy ? '处理中…' : sourceUrl ? '读取链接候选' : '查找租金来源'}</button>
-          <a href="https://zu.fang.com/hz/" target="_blank" rel="noopener noreferrer">打开房天下搜索 ↗</a>
+          <button className="btn btn-primary" disabled={busy} type="submit">{busy ? '处理中…' : '查找租金来源'}</button>
         </div>
-        <p className="rental-meta">搜索名称：{searchName}。若自动查找不可用，在房天下搜索后打开小区租房页，复制链接到上方；不需要编辑文件。已排除的候选可再次粘贴链接重新核对。</p>
+        <p className="rental-meta">搜索名称：{searchName}。房天下按名称查找；找不到时用下方“探查幸福里来源”，不需要自己找链接。</p>
       </form>
       {data.candidates.map(candidate => <SourceCandidate key={candidate.source_community_id} candidate={candidate} busy={busy}
         onConfirm={() => setConfirming(candidate)} onReject={() => void act('DELETE', `/candidates/${encodeURIComponent(candidate.source_community_id)}`)} />)}
@@ -87,6 +85,7 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
         <button className="btn btn-primary" disabled={busy} onClick={() => void act(confirming === 'remove' ? 'DELETE' : 'PUT', '', confirming === 'remove' ? undefined : { source_community_id: confirming.source_community_id })}>确认{confirming === 'remove' ? '解除' : '关联'}</button>
         <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirming(null)}>返回核对</button>
       </div>}
+      {!data.mapping && <XingfuliProbe communityId={communityId} onChanged={onChanged} />}
     </>}
     {notice && <p role="status" className="rental-source-notice">{notice}</p>}
   </section>;

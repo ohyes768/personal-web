@@ -244,7 +244,11 @@ def test_review_api_single_choice_and_locked_decisions(tmp_path, monkeypatch):
     assert client.post('/rentals/association-tasks/c1', json={'action':'bind','candidate_id':[source['id']]}).status_code==422
     assert client.post('/rentals/association-tasks/c1', json={'action':'reopen'}).status_code==200
     assert client.post('/rentals/association-tasks/c1', json={'action':'bind','candidate_id':source['id']}).status_code==200
-    assert client.get('/rentals/association-tasks').json()['data']['items']==[]
+    # c1 now has a source; c2 is still unmatched and stays reachable for the
+    # on-demand probe.
+    remaining = client.get('/rentals/association-tasks').json()['data']['items']
+    assert [i['community_id'] for i in remaining]==['c2']
+    assert remaining[0]['reason']=='missing'
 
 
 def test_empty_search_cache_does_not_extend_itself(tmp_path):

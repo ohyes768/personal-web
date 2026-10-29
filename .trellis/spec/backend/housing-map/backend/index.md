@@ -14,6 +14,7 @@
 - Read [Community directory](./community-directory.md) for names, multi-source identity, automatic/manual association, deletion and discovery. It supersedes the original human-only rental-source model in the current deployment.
 - Read [Rental sources](./rental-sources.md) when changing source discovery, confirmation, migration or refresh membership.
 - Read [Xingfuli rental pilot](./xingfuli-rentals.md) for provider selection, seed-vs-neighborhood IDs, explicit pilot import and cross-provider snapshot isolation.
+- Read [Xingfuli source discovery](./xingfuli-discovery.md) when changing the search channels, the homepage identity check, the on-demand probe workflow or the automatic source matching.
 - Read [Rental reference](../../../guides/housing-map-rental-reference.md) when changing statistics, snapshots, availability or dashboard columns.
 - Read [Fang collection](../../../guides/housing-map-fang-rentals.md) for public source collection and URL constraints.
 

@@ -54,6 +54,7 @@ router = APIRouter(tags=["rentals"])
 _rentals_dir = DATA_DIR / "rentals"
 _mappings_path = DATA_DIR / "rental_community_mappings.json"
 _service: RentalRefreshService | None = None
+_probe_service = None
 _service_lock = threading.Lock()
 
 ALLOWED_SOURCE_HOST = "zu.fang.com"
@@ -70,7 +71,8 @@ def _get_service() -> RentalRefreshService:
         with _service_lock:
             if _service is None:
                 _service = RentalRefreshService(
-                    rentals_dir=_rentals_dir, mappings_path=_mappings_path)
+                    rentals_dir=_rentals_dir, mappings_path=_mappings_path,
+                    auto_discover=True)
     return _service
 
 
@@ -80,6 +82,27 @@ async def shutdown_rental_refresh() -> None:
     if service is None:
         return
     await asyncio.to_thread(service.shutdown)
+
+
+def _get_probe_service():
+    """Lazily built probe service; the directory owns the only source registry."""
+    global _probe_service
+    if _probe_service is None:
+        from src.services.community_registry import existing_registry
+        from src.services.rental_reference.probe import ProbeService
+        registry = existing_registry(_mappings_path.parent)
+        if not registry:
+            raise HTTPException(503, "小区目录尚未准备好")
+        with _service_lock:
+            if _probe_service is None:
+                _probe_service = ProbeService(
+                    registry, directory=_rentals_dir,
+                    busy=lambda: bool(_get_service().status().get("running")))
+    return _probe_service
+
+
+def _probe_busy() -> bool:
+    return bool(_probe_service and _probe_service.busy())
 
 
 # ---------------------------------------------------------------------------
@@ -554,6 +577,9 @@ async def start_rental_refresh():
     """启动租金刷新（范围由已核验台账决定，无任意 URL 参数）。"""
     try:
         await asyncio.to_thread(_verified_source_ids)
+        if _probe_busy():
+            return JSONResponse({"success": False, "error": "租金来源探查进行中，请结束后再更新"},
+                                status_code=409)
         snapshot = await asyncio.to_thread(_get_service().start)
     except RefreshAlreadyRunning:
         return JSONResponse({"success": False, "error": "rental refresh job already running"},

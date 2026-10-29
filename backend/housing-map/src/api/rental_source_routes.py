@@ -150,3 +150,86 @@ def association_decision(cid: str, request: ReviewDecision):
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(503, '处理结果保存失败，请重试') from exc
     return {'success': True, 'data': {'saved': True}}
+
+
+class ProbeSelectRequest(BaseModel):
+    candidate_id: str = Field(min_length=1, max_length=100)
+    revision: int | None = Field(None, ge=0)
+
+
+def _probe():
+    try:
+        return rental_routes._get_probe_service()
+    except HTTPException:
+        raise
+    except (OSError, sqlite3.Error) as exc:
+        logger.exception('Rental probe service unavailable')
+        raise HTTPException(503, '租金来源探查暂不可用，请稍后重试') from exc
+
+
+@router.get('/communities/{community_id}/rental-source/probe')
+def probe_status(community_id: str):
+    """Read-only probe state; never starts a network request on its own."""
+    community(community_id)
+    try:
+        return {'success': True, 'data': _probe().status(community_id)}
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '探查状态读取失败，请重试') from exc
+
+
+@router.post('/communities/{community_id}/rental-source/probe')
+def probe_start(community_id: str):
+    """Look for the community's homepage; repeated clicks reuse the running job."""
+    community(community_id)
+    from src.services.rental_reference.probe import ProbeAlreadyRunning, ProbeInvalid
+    try:
+        return {'success': True, 'data': _probe().start(community_id)}
+    except ProbeAlreadyRunning as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ProbeInvalid as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '探查启动失败，请重试') from exc
+
+
+@router.post('/communities/{community_id}/rental-source/probe/select')
+def probe_select(community_id: str, request: ProbeSelectRequest):
+    """Confirm a homepage; the system then finds the rental entry inside it."""
+    community(community_id)
+    from src.services.rental_reference.probe import ProbeConflict, ProbeInvalid
+    try:
+        return {'success': True, 'data': _probe().select(community_id, request.candidate_id, request.revision)}
+    except ProbeConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ProbeInvalid as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '主页选择保存失败，请重试') from exc
+
+
+@router.post('/communities/{community_id}/rental-source/probe/retry')
+def probe_retry(community_id: str):
+    """Retry the failed stage of the probe."""
+    community(community_id)
+    from src.services.rental_reference.probe import ProbeAlreadyRunning, ProbeInvalid
+    try:
+        return {'success': True, 'data': _probe().retry(community_id)}
+    except ProbeAlreadyRunning as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ProbeInvalid as exc:
+        raise HTTPException(422, str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '探查重试失败，请稍后重试') from exc
+
+
+@router.post('/communities/{community_id}/rental-source/probe/cancel')
+def probe_cancel(community_id: str):
+    """Stop the running probe; a chosen homepage is kept."""
+    community(community_id)
+    from src.services.rental_reference.probe import ProbeNotRunning
+    try:
+        return {'success': True, 'data': _probe().cancel(community_id)}
+    except ProbeNotRunning as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(503, '探查取消失败，请重试') from exc

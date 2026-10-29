@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import DirectoryDialog from '../community/DirectoryDialog';
 import { rentalDataChanged } from '../../lib/rental-sources';
+import { XingfuliProbe } from './XingfuliProbe';
 
 type Candidate = { id: string; name: string; address?: string; district?: string; similarity?: number };
 export type RentalReview = { community_id: string; community_name: string; reason: string;
@@ -14,7 +15,7 @@ const filterLabels: Record<string, string> = { needs_selection: '待选择', mis
   search_failed: '查找失败', search_deferred: '未查询', skipped: '已跳过' };
 const filterHints: Record<string, string> = {
   needs_selection: '搜索返回了候选，请核对名称、地址与分期后绑定；拿不准可先跳过。',
-  missing: '房天下没搜到像样的候选；等下轮更新重试，或在小区详情“租金与收益”里粘贴房天下小区租房页链接。',
+  missing: '还没有关联租金来源。可以点开小区后用“探查幸福里来源”，只选主页即可，不需要自己找链接。',
   search_failed: '上一轮查找失败（常见为房天下临时拦截），稍后重新采集租金即可。',
   search_deferred: '本轮尚未查询，之后的更新会自动继续，无需操作。',
   skipped: '之前跳过的小区，可在这里恢复处理。' };
@@ -112,6 +113,7 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
       {item && <DirectoryDialog title={item.community_name} onClose={() => { setSelectedCommunity(''); setCandidate(''); }}>
         {error && <p role="alert" className="directory-warning">{error}</p>}
         <RentalCandidateChoice item={item} selected={candidate} busy={busy} onSelect={setCandidate} onDecide={action => void decide(action)} />
+        <XingfuliProbe communityId={item.community_id} onChanged={() => { void load(); onChanged?.(); }} />
       </DirectoryDialog>}</div>
       : <p className="directory-empty">{filterLabels[reasonFilter] || '该类别'}下暂无小区。</p>}
   </section>;

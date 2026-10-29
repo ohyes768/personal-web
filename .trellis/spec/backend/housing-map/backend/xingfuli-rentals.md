@@ -1,7 +1,10 @@
 # 幸福里租金来源试点契约
 
+> 2026-10-29：来源“发现”与“按需探查”已独立成 [发现与探查契约](./xingfuli-discovery.md)。本文件仍是采集器的口径：
+> 真实 neighborhood_id 与 seed 的分工、provider 隔离、限速冷却与快照隔离不变。
+
 ## 1. Scope / Trigger
-修改 `xingfuli_rentals.py`、`xingfuli_pilots.py`、`rental_reference/providers.py` 或租金刷新/查询/覆盖率前必读。幸福里为已确认小区的试点来源，不能作为 TMSF 住宅资格证据。关键词搜索尚未打通。
+修改 `xingfuli_rentals.py`、`xingfuli_pilots.py`、`rental_reference/providers.py` 或租金刷新/查询/覆盖率前必读。幸福里为已确认小区的试点来源，不能作为 TMSF 住宅资格证据。
 
 ## 2. Signatures
 - `XingfuliClient(timeout=20, directory=..., fetcher=None, delay=5, cancel_event=None)`；`crawl(source_id, seed_listing_id, *, community_name, property_type, max_pages=10, details=True, cancel_event=None) -> SeedRunResult`。

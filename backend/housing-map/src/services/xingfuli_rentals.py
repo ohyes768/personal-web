@@ -9,16 +9,11 @@ import datetime as dt
 import json
 import math
 import re
-import threading
-import time
 from html.parser import HTMLParser
-from pathlib import Path
-from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlencode, urlsplit
-from urllib.request import Request, build_opener, HTTPRedirectHandler
 
 from src.services.fang_rentals import RentalCrawlCancelled, SeedRunResult
-from src.services.rental_reference.storage import RentalPublishLock, _atomic_write_json
+from src.services.xingfuli_transport import XingfuliTransport
 
 BASE_URL = 'https://m.xflapp.com'
 
@@ -117,9 +112,20 @@ def _sample(row, sid, community_name, captured):
                 captured_at=captured, published_at=None, price_kind='listing_rent')
 
 
+def parse_listing(body, listing_id):
+    """Parsed payload of a listing or same-neighborhood page."""
+    return _page(body, listing_id)
+
+
+def listing_neighborhood(body, listing_id):
+    """Neighborhood that owns the listing page, or None when unknown."""
+    cards = _page(body, listing_id)['info']['card_info']
+    target = parse_qs(urlsplit(cards['neighborhood']['open_url']).query).get('neighborhood_id')
+    return target[0] if target else None
+
+
 def _detail_cards(body, listing_id, sid):
-    data = _page(body, listing_id)
-    cards = data['info']['card_info']
+    cards = _page(body, listing_id)['info']['card_info']
     target = parse_qs(urlsplit(cards['neighborhood']['open_url']).query).get('neighborhood_id')
     if target != [sid]:
         raise ValueError('幸福里详情所属小区与关联不一致')
@@ -143,73 +149,10 @@ def _enrich(sample, body, sid, property_type):
                   property_type=property_type, property_type_origin='community_directory')
 
 
-class _NoRedirect(HTTPRedirectHandler):
-    def redirect_request(self, req, fp, code, msg, headers, newurl):
-        # Redirects often lead to login/challenge; never follow an unchecked URL.
-        return None
-
-
-class XingfuliClient:
+class XingfuliClient(XingfuliTransport):
     def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=5, cancel_event=None):
-        if directory is None:
-            from src.services.data_loader import DATA_DIR
-            directory = DATA_DIR / 'rentals'
-        self.directory = Path(directory)
-        self.timeout = timeout
-        self.delay = max(0, delay) if fetcher else max(5, delay)
-        self.cancel = cancel_event or threading.Event()
-        self.fetcher = fetcher
-        self.request_count = 0
-        self.cooldown_until = None
-        self.opener = build_opener(_NoRedirect())
-
-    def _check_cancel(self, seconds=0):
-        if self.cancel.is_set() or (seconds and self.cancel.wait(seconds)):
-            raise RentalCrawlCancelled([], None)
-
-    def fetch(self, url):
-        validate_url(url)
-        self._check_cancel()
-        # Serializes HTTP across same-data-directory workers/processes.
-        with RentalPublishLock(self.directory / 'xingfuli_request'):
-            path = self.directory / 'xingfuli_request_state.json'
-            if path.exists():
-                try:
-                    state = json.loads(path.read_text(encoding='utf-8'))
-                    last, cooldown = float(state['last_request_at']), float(state['cooldown_until'])
-                    if not all(math.isfinite(v) and v >= 0 for v in (last, cooldown)):
-                        raise ValueError('invalid state')
-                except (ValueError, KeyError, TypeError):
-                    raise ValueError('幸福里请求状态损坏，请核查后重试') from None
-            else:
-                last, cooldown = 0, 0
-            if cooldown > time.time():
-                self.cooldown_until = dt.datetime.fromtimestamp(cooldown, dt.UTC).isoformat()
-                raise ValueError('幸福里来源冷却中，暂停请求')
-            self._check_cancel(max(0, last + self.delay - time.time()))
-            self.request_count += 1
-            try:
-                if self.fetcher:
-                    body = self.fetcher(url)
-                else:
-                    with self.opener.open(Request(url, headers={'User-Agent': 'Mozilla/5.0'}), timeout=self.timeout) as r:
-                        body = r.read(4_000_001)
-                        if len(body) > 4_000_000:
-                            raise ValueError('幸福里响应超出大小限制')
-                        body = body.decode('utf-8')
-                if re.search(r'验证码|滑块验证|captcha|访问过于频繁', body, re.I):
-                    cooldown = time.time() + 3600
-                    raise ValueError('幸福里要求验证，本轮暂停请求')
-                self._check_cancel()
-                return body
-            except HTTPError as exc:
-                if exc.code in {301, 302, 303, 307, 308, 403, 429}:
-                    cooldown = time.time() + 3600
-                raise ValueError(f'幸福里请求失败（HTTP {exc.code}）') from None
-            finally:
-                _atomic_write_json(path, dict(last_request_at=time.time(), cooldown_until=cooldown))
-                if cooldown > time.time():
-                    self.cooldown_until = dt.datetime.fromtimestamp(cooldown, dt.UTC).isoformat()
+        super().__init__(timeout, directory=directory, fetcher=fetcher, delay=delay,
+                         cancel_event=cancel_event, validate=validate_url)
 
     def crawl(self, source_id, seed_listing_id, *, community_name, property_type,
               max_pages=10, details=True, cancel_event=None):
