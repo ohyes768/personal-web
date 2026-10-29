@@ -33,23 +33,23 @@
 
 ```
 .venv/Scripts/python.exe -m pytest tests/ -q --basetemp=<独立目录>
-→ 1075 passed, 1 skipped
+→ 1085 passed（复查修复后，在与另一会话合并的最终树上复跑）
 ```
 
 新增/改动相关套件单独结果：
 
 | 套件 | 结果 |
 |---|---|
-| `tests/test_xingfuli_discovery.py`（新增） | 14 passed |
-| `tests/test_rental_probe.py`（新增） | 12 passed, 1 skipped |
-| `tests/test_rental_xingfuli_sources.py`（新增） | 9 passed |
+| `tests/test_xingfuli_discovery.py`（新增） | passed |
+| `tests/test_rental_probe.py`（新增） | passed |
+| `tests/test_rental_xingfuli_sources.py`（新增） | passed |
 | `tests/test_xingfuli_rentals.py` `test_xingfuli_pilots.py` `test_rental_providers.py` | 26 passed（传输层抽取后无回归） |
-| `tests/test_rental_association_flow.py` `test_rental_refresh.py` | 44 passed |
+| `tests/test_rental_association_flow.py` `test_rental_refresh.py` `test_rental_sources.py` `test_rental_api.py` | passed |
 
 前端（`apps/housing-map`）：
 
 ```
-node --test tests/*.test.cjs        → 167 passed
+node --test tests/*.test.cjs        → 169 passed
 npx tsc --noEmit                    → 无错误
 npm run lint                        → 无告警无错误
 npx next build --webpack（隔离目录）→ 构建成功，/ 与 /_not-found 静态预渲染
