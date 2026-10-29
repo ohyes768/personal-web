@@ -3,7 +3,8 @@ import pytest
 
 from src.services.community_registry import CommunityRegistry
 from src.services.rental_reference import probe
-from src.services.rental_reference.probe import ProbeConflict, ProbeInvalid, ProbeService
+from src.services.rental_reference.probe import (
+    ProbeAlreadyRunning, ProbeConflict, ProbeInvalid, ProbeService)
 
 TOTAL_ID = '6581009489657331972'
 PHASE_ID = '6598511715770433795'
@@ -163,15 +164,15 @@ def test_listing_of_another_community_is_not_an_entry(tmp_path):
 
 def test_stale_revision_is_rejected(tmp_path):
     registry = setup(tmp_path)
+    other = '6581009489657331973'
     fake = FakeDiscovery(
-        search={('测试花园', 'second_hand'): {TOTAL_ID: '测试花园'}},
-        homepages={TOTAL_ID: homepage()},
+        search={('测试花园', 'second_hand'): {TOTAL_ID: '测试花园', other: '测试花园'}},
+        homepages={TOTAL_ID: homepage(), other: homepage(neighborhood_id=other)},
         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
     svc = service(registry, fake, tmp_path)
     state = run(svc)
-    candidate = state['candidates'][0] if state.get('candidates') else None
-    if candidate is None:
-        pytest.skip('single strong candidate needs no selection')
+    assert state['stage'] == probe.STAGE_NEEDS_SELECTION
+    candidate = state['candidates'][0]
     with pytest.raises(ProbeConflict):
         svc.select('c1', candidate['candidate_id'], state['revision'] + 5)
 
@@ -209,6 +210,74 @@ def test_a_community_with_a_source_is_not_probed_again(tmp_path):
     svc = service(registry, fake, tmp_path)
     with pytest.raises((ProbeInvalid, ValueError)):
         svc.start('c1')
+
+
+def test_a_running_probe_refuses_a_second_job(tmp_path):
+    """Two background jobs would write the same state."""
+    registry = setup(tmp_path)
+    other = '6581009489657331973'
+    fake = FakeDiscovery(
+        search={('测试花园', 'second_hand'): {TOTAL_ID: '测试花园', other: '测试花园'}},
+        homepages={TOTAL_ID: homepage(), other: homepage(neighborhood_id=other)},
+        owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    state = run(svc)
+    candidate = state['candidates'][0]
+    # The search is finished, but a second job must not start while another
+    # one is still running; the guard is what keeps the state single-writer.
+    svc._thread = _RunningThread()
+    try:
+        with pytest.raises(ProbeAlreadyRunning):
+            svc.select('c1', candidate['candidate_id'], state['revision'])
+        with pytest.raises(ProbeAlreadyRunning):
+            svc.retry('c1')
+    finally:
+        svc._thread = None
+
+
+class _RunningThread:
+    """A thread stand-in that never ends, to hold the probe slot."""
+
+    def is_alive(self):
+        return True
+
+    def join(self, timeout=None):
+        return None
+
+
+def test_a_cooling_platform_reports_the_cooldown(tmp_path):
+    registry = setup(tmp_path)
+
+    class Cooling(FakeDiscovery):
+        def search(self, name, channel):
+            raise ValueError('幸福里来源冷却中，暂停请求')
+
+    fake = Cooling(search={}, homepages={})
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_COOLING
+
+
+def test_an_unlinked_community_can_be_probed_again(tmp_path):
+    """An explicit probe is the re-processing the user asked for."""
+    registry = setup(tmp_path)
+    fake = FakeDiscovery(
+        search={('测试花园', 'second_hand'): {TOTAL_ID: '测试花园'}},
+        homepages={TOTAL_ID: homepage()},
+        owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    state = run(svc)
+    assert state['stage'] == probe.STAGE_BOUND
+    # The human removed the source again; the probe may bind it once more.
+    source = next(s for s in registry.sources() if s['source'] == 'xingfuli')
+    registry.unlink(source['id'], 'c1')
+    fake2 = FakeDiscovery(
+        search={('测试花园', 'second_hand'): {TOTAL_ID: '测试花园'}},
+        homepages={TOTAL_ID: homepage()},
+        owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc2 = service(registry, fake2, tmp_path)
+    assert run(svc2)['stage'] == probe.STAGE_BOUND
+    assert [s for s in registry.sources()
+            if s['source'] == 'xingfuli' and s['status'] == 'matched']
 
 
 # --- API surface ---------------------------------------------------------

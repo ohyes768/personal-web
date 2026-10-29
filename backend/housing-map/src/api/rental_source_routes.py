@@ -196,10 +196,12 @@ def probe_start(community_id: str):
 def probe_select(community_id: str, request: ProbeSelectRequest):
     """Confirm a homepage; the system then finds the rental entry inside it."""
     community(community_id)
-    from src.services.rental_reference.probe import ProbeConflict, ProbeInvalid
+    from src.services.rental_reference.probe import ProbeAlreadyRunning, ProbeConflict, ProbeInvalid
     try:
         return {'success': True, 'data': _probe().select(community_id, request.candidate_id, request.revision)}
     except ProbeConflict as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except ProbeAlreadyRunning as exc:
         raise HTTPException(409, str(exc)) from exc
     except ProbeInvalid as exc:
         raise HTTPException(422, str(exc)) from exc

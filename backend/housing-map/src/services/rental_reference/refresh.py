@@ -560,10 +560,17 @@ class RentalRefreshService:
         discovery = factory(timeout=self._timeout, directory=self.rentals_dir,
                             cancel_event=self._cancel_event, delay=self._delay)
         try:
-            return auto_discover(registry, discovery, missing, budget=5, cancel=self._cancel_event)
-        except Exception:
+            report = auto_discover(registry, discovery, missing, budget=5, cancel=self._cancel_event)
+        except Exception as exc:
+            # The discovery is an optional stage: it must never break the run,
+            # but the failure stays visible in the job report.
             logger.exception('Xingfuli source discovery failed')
+            self._add_error({'stage': 'xingfuli_discovery', 'error': str(exc) or '幸福里来源发现失败'})
             return {}
+        # The discovery spends real requests; the job counts every HTTP hop.
+        with self._mutex:
+            self._job['request_count'] = self._job.get('request_count', 0) + discovery.request_count
+        return report
 
     def _update_job(self, **fields) -> None:
         with self._mutex:

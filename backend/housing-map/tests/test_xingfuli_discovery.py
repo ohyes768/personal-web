@@ -132,15 +132,10 @@ def test_search_groups_ignores_items_without_identity():
 
 # --- phase / district conflicts -----------------------------------------
 
-def test_phase_variant_conflicts_with_the_base_community():
-    assert disc.name_conflict(['白金海岸'], '白金海岸(南区)')
-    assert disc.name_conflict(['白金海岸'], '白金海岸(北区)')
-
-
-def test_same_or_unqualified_name_does_not_conflict():
-    assert not disc.name_conflict(['白金海岸'], '白金海岸')
-    assert not disc.name_conflict(['欣盛东方郡'], '欣盛东方郡')
-    assert not disc.name_conflict(['白金海岸(南区)'], '白金海岸(南区)')
+def test_phase_marker_is_read_from_the_platform_name():
+    assert disc.phase_of('白金海岸(南区)') == '南区'
+    assert disc.phase_of('白金海岸（北区）') == '北区'
+    assert disc.phase_of('白金海岸') == ''
 
 
 def test_address_district_reads_the_named_district():

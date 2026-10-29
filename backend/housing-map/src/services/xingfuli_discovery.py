@@ -157,30 +157,6 @@ def search_groups(items, channel='rent'):
     return groups
 
 
-def name_conflict(internal_names, platform_name):
-    """True when the platform names a sub-division or another place.
-
-    白金海岸(南区) is a phase of 白金海岸, not the community itself; a human
-    confirmation may not force such a binding.
-    """
-    platform = str(platform_name or '').strip()
-    if not platform:
-        return True
-    qualifier = phase_of(platform)
-    if qualifier:
-        # The platform entity is a qualified variant; only an internal name that
-        # carries the same qualifier can be the same place.
-        return not any(qualifier in str(name or '') for name in internal_names if name)
-    normalized_platform = platform.replace(' ', '').replace('　', '')
-    for name in internal_names:
-        if not name:
-            continue
-        normalized_internal = str(name).replace(' ', '').replace('　', '')
-        if normalized_platform == normalized_internal:
-            return False
-    return False
-
-
 class XingfuliDiscovery(XingfuliTransport):
     """Reads the platform's public search and community homepage pages."""
 

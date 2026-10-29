@@ -60,7 +60,12 @@ export function probePath(communityId: string) {
 
 export async function probeRequest<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, init);
-  const payload = await response.json();
+  let payload: { success?: boolean; data?: T; detail?: unknown };
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('租金来源探查暂时不可用，请稍后重试');
+  }
   if (!response.ok || payload.success !== true) {
     throw new Error(typeof payload.detail === 'string' ? payload.detail : '租金来源探查暂时不可用，请重试');
   }

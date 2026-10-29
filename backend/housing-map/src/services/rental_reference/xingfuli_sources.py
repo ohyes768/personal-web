@@ -11,7 +11,7 @@ import json
 import logging
 import math
 
-from src.services.community_registry import dump, normalized, now
+from src.services.community_registry import normalized, now
 from src.services.xingfuli_discovery import address_district, phase_of
 from src.services.xingfuli_rentals import list_url
 
@@ -110,38 +110,54 @@ def candidate_from_homepage(homepage, *, discovered_via):
     }
 
 
-def _human_veto(registry, community_id, record):
-    """Reason a human decision forbids an automatic binding, if any."""
-    from src.services.community_review import same_community
+def _human_veto(registry, community_id, record, *, allow_reprocessed=False):
+    """Reason a human decision forbids a binding, if any.
+
+    The registry's own automatic branch compares two source records to find
+    the decisions it must respect. A Xingfuli record is excluded from that
+    comparison on purpose, so the decisions are read here instead: the
+    rejected pairs, the community's admission lock and the community's review
+    group. `allow_reprocessed` is the explicit re-processing path: a user who
+    asks for the probe again may bind an unlinked source, but nothing is ever
+    rebound silently.
+    """
     with registry.db() as db:
-        if db.execute('SELECT 1 FROM rejected WHERE rid=? AND cid=?',
-                      (record['id'], community_id)).fetchone():
-            return '人工已拒绝该关联'
+        if not allow_reprocessed:
+            if db.execute('SELECT 1 FROM rejected WHERE rid=? AND cid=?',
+                          (record['id'], community_id)).fetchone():
+                return '人工已拒绝该来源与该小区的关联'
+            if db.execute('SELECT 1 FROM rejected WHERE cid=?', (community_id,)).fetchone():
+                return '人工已解除或拒绝该小区的租金来源'
         admission = db.execute('SELECT payload FROM community_admission WHERE cid=?', (community_id,)).fetchone()
         if admission:
             payload = json.loads(admission[0])
             if payload.get('auto_review_locked') or payload.get('state') == 'excluded':
                 return '目标小区已有人工排除或审核锁'
-        for veto in db.execute('SELECT c.payload AS decision,s.* FROM review_candidates c '
-                               'JOIN review_members m ON m.candidate_id=c.id JOIN sources s ON s.id=m.rid'):
-            decision = json.loads(veto['decision'])
-            if (decision.get('auto_review_locked') or decision.get('state') == 'excluded') \
-                    and same_community(record, dict(veto)):
-                return '同一小区身份已有人工审核决定'
+        if record.get('status') not in {None, 'pending'}:
+            return '该幸福里来源已有有效关联，请先核对'
+        for row in db.execute('SELECT payload FROM review_candidates'):
+            group = json.loads(row[0])
+            if group.get('existing_cid') != community_id:
+                continue
+            if group.get('auto_review_locked') or group.get('state') == 'excluded':
+                return '该小区已有人工审核决定'
     return None
 
 
-def bind_source(registry, community, candidate, *, seed, method='manual', evidence=None):
+def bind_source(registry, community, candidate, *, seed, method='manual', evidence=None,
+                allow_reprocessed=False):
     """Create the Xingfuli source and attach it to the internal community.
 
-    The registry's automatic branch refuses a differing address outright; a
-    platform address is written in its own wording, so a position match has to
-    be able to bind. The human decisions that branch protects are checked here
-    instead, so no explicit decision is overridden.
+    The platform address is kept in its own field: it is the source's own
+    wording, so it must neither veto the binding (the registry refuses an
+    automatic binding whose address differs from the directory address) nor
+    become the community's address evidence. The address or position evidence
+    of this contract decides instead, and the human decisions the registry's
+    automatic branch protects are checked above.
     """
     record = registry.ingest(dict(
         source='xingfuli', source_kind='community', source_id=candidate['neighborhood_id'],
-        name=candidate['name'], address=candidate['address'],
+        name=candidate['name'], platform_address=candidate['address'],
         coordinate_system=candidate['coordinate_system'],
         longitude=candidate['longitude'], latitude=candidate['latitude'],
         seed_listing_id=seed, source_url=list_url(seed),
@@ -149,10 +165,9 @@ def bind_source(registry, community, candidate, *, seed, method='manual', eviden
         # The generic similarity branch of auto_associate would bind a phase
         # variant; this provider only binds through the checked evidence above.
         auto_association_disabled=True, verified_at=now()))
-    if method == 'auto':
-        veto = _human_veto(registry, community['community_id'], record)
-        if veto:
-            raise ValueError(veto)
+    veto = _human_veto(registry, community['community_id'], record, allow_reprocessed=allow_reprocessed)
+    if veto:
+        raise ValueError(veto)
     registry.associate(record['id'], community['community_id'], method=method,
                        evidence=evidence or ['人工确认'])
     return record['id']
@@ -163,6 +178,14 @@ def protected(registry, community_id):
     with registry.db() as db:
         if db.execute('SELECT 1 FROM rejected WHERE cid=?', (community_id,)).fetchone():
             return True
+        row = db.execute("SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source IN ('fang','xingfuli')",
+                         (community_id,)).fetchone()
+    return bool(row)
+
+
+def has_source(registry, community_id):
+    """True when the community already has a confirmed rental source."""
+    with registry.db() as db:
         row = db.execute("SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source IN ('fang','xingfuli')",
                          (community_id,)).fetchone()
     return bool(row)
@@ -180,6 +203,106 @@ def _name_related(query, platform_name):
     return left == right or left in right or right in left
 
 
+CURSOR_KEY = 'rental_xingfuli_auto_cursor'
+
+
+def _ordered_communities(registry, communities):
+    """The order the bounded budget should visit the communities in.
+
+    One round can only afford a few requests. Without a cursor the same first
+    community would consume every round and the remaining ones would never be
+    discovered, so the round resumes after the last visited community.
+    """
+    with registry.db() as db:
+        row = db.execute('SELECT value FROM meta WHERE key=?', (CURSOR_KEY,)).fetchone()
+    cursor = row[0] if row else ''
+    ids = [c['community_id'] for c in communities]
+    if not cursor or cursor not in ids:
+        return list(communities)
+    start = (ids.index(cursor) + 1) % len(ids)
+    return communities[start:] + communities[:start]
+
+
+def _advance_cursor(registry, community_id):
+    with registry.db() as db:
+        db.execute('INSERT INTO meta(key,value) VALUES (?,?) '
+                   'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (CURSOR_KEY, community_id))
+
+
+def _verified_seed(client, candidate, group, neighborhood_id, *, budget):
+    """A rent seed whose owner the platform pages prove.
+
+    A search response nominates a seed but never proves it; the listing page
+    and the same-neighborhood list do. A seed that belongs to another community
+    would publish that community's rent under this one.
+    """
+    seeds = list(candidate.get('seeds') or []) + list(group.get('seeds') or [])
+    for seed in dict.fromkeys(seeds):
+        if client.request_count >= budget:
+            return None
+        try:
+            if client.listing_owner(seed) != neighborhood_id:
+                continue
+            if client.request_count >= budget:
+                return None
+            if not client.listing_owner_from_list(seed, neighborhood_id):
+                continue
+        except ValueError as exc:
+            logger.warning('Xingfuli seed verification failed id=%s seed=%s error=%s',
+                           neighborhood_id, seed, exc)
+            continue
+        return seed
+    return None
+
+
+def _auto_match(registry, client, community, *, budget):
+    """Try to bind one community; returns matched/pending/missing/failed/deferred."""
+    community_id = community['community_id']
+    found = False
+    for name in community_names(community)[:2]:
+        # The second-hand channel names the whole community; the rent
+        # channel can answer with a phase identity instead.
+        for channel in ('second_hand', 'rent'):
+            if client.request_count >= budget:
+                return 'deferred'
+            try:
+                groups = client.search(name, channel)
+            except ValueError as exc:
+                logger.warning('Xingfuli auto search failed community_id=%s channel=%s error=%s',
+                               community_id, channel, exc)
+                if '冷却' in str(exc):
+                    return 'deferred'
+                continue
+            for neighborhood_id, group in groups.items():
+                if not _name_related(name, group['name']):
+                    continue
+                found = True
+                if client.request_count >= budget:
+                    return 'deferred'
+                try:
+                    homepage = client.homepage(neighborhood_id)
+                except ValueError as exc:
+                    logger.warning('Xingfuli auto homepage failed community_id=%s id=%s error=%s',
+                                   community_id, neighborhood_id, exc)
+                    continue
+                candidate = candidate_from_homepage(homepage, discovered_via=channel)
+                judgement = evaluate(community, candidate)
+                if not judgement['strong']:
+                    continue
+                seed = _verified_seed(client, candidate, group, neighborhood_id, budget=budget)
+                if not seed:
+                    return 'deferred' if client.request_count >= budget else 'pending'
+                try:
+                    bind_source(registry, community, candidate, seed=seed, method='auto',
+                                evidence=[*judgement['evidence'], '平台主页与目录证据一致'])
+                except ValueError as exc:
+                    logger.warning('Xingfuli auto bind failed community_id=%s error=%s',
+                                   community_id, exc)
+                    return 'failed'
+                return 'matched'
+    return 'pending' if found else 'missing'
+
+
 def auto_discover(registry, client, communities, *, budget=AUTO_SEARCH_BUDGET, cancel=None):
     """Bind the Xingfuli sources whose identity the platform proves.
 
@@ -187,77 +310,20 @@ def auto_discover(registry, client, communities, *, budget=AUTO_SEARCH_BUDGET, c
     agreeing address or position and no phase or district conflict. Everything
     else stays unbound, and the on-demand probe handles it.
     """
-    report = {'checked': 0, 'matched': 0, 'pending': 0, 'failed': 0, 'deferred': 0}
-    for community in communities:
+    report = {'checked': 0, 'matched': 0, 'pending': 0, 'missing': 0, 'failed': 0, 'deferred': 0}
+    for community in _ordered_communities(registry, communities):
         if cancel is not None and cancel.is_set():
             break
         community_id = community['community_id']
-        if protected(registry, community_id) or active_source(registry, community_id):
+        if protected(registry, community_id) or has_source(registry, community_id):
             continue
+        outcome = _auto_match(registry, client, community, budget=budget)
+        if outcome == 'deferred':
+            # The budget ran out before this community was examined; it keeps
+            # its place and is checked again in the next round.
+            report['deferred'] += 1
+            break
         report['checked'] += 1
-        matched = False
-        for name in community_names(community)[:2]:
-            # The second-hand channel names the whole community; the rent
-            # channel can answer with a phase identity instead.
-            for channel in ('second_hand', 'rent'):
-                if client.request_count >= budget:
-                    report['deferred'] += 1
-                    return report
-                try:
-                    groups = client.search(name, channel)
-                except ValueError as exc:
-                    logger.warning('Xingfuli auto search failed community_id=%s channel=%s error=%s',
-                                   community_id, channel, exc)
-                    if '冷却' in str(exc):
-                        report['deferred'] += 1
-                        return report
-                    continue
-                matches = {nid: group for nid, group in groups.items()
-                           if _name_related(name, group['name'])}
-                for neighborhood_id, group in matches.items():
-                    if client.request_count >= budget:
-                        report['deferred'] += 1
-                        return report
-                    try:
-                        homepage = client.homepage(neighborhood_id)
-                    except ValueError as exc:
-                        logger.warning('Xingfuli auto homepage failed community_id=%s id=%s error=%s',
-                                       community_id, neighborhood_id, exc)
-                        continue
-                    candidate = candidate_from_homepage(homepage, discovered_via=channel)
-                    judgement = evaluate(community, candidate)
-                    if not judgement['strong']:
-                        report['pending'] += 1
-                        continue
-                    seed = next(iter(group['seeds']), None)
-                    if not seed:
-                        seed = candidate['seeds'][0] if candidate['seeds'] else None
-                        if seed:
-                            try:
-                                if client.listing_owner(seed) != neighborhood_id:
-                                    seed = None
-                            except ValueError:
-                                seed = None
-                    if not seed:
-                        report['pending'] += 1
-                        continue
-                    try:
-                        bind_source(registry, community, candidate, seed=seed, method='auto',
-                                    evidence=[*judgement['evidence'], '平台主页与目录证据一致'])
-                    except ValueError as exc:
-                        report['failed'] += 1
-                        logger.warning('Xingfuli auto bind failed community_id=%s error=%s',
-                                       community_id, exc)
-                        continue
-                    report['matched'] += 1
-                    matched = True
-                    break
-                if matched:
-                    break
-            if matched:
-                break
+        report[outcome] += 1
+        _advance_cursor(registry, community_id)
     return report
-
-
-def dump_state(payload):
-    return dump(payload)

@@ -10,7 +10,7 @@ for (const ext of ['.ts', '.tsx']) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
   }).outputText, filename);
 }
-const { probeIsRunning, probePath, probeStageLabel } = require('../src/lib/rental-probe.ts');
+const { probeIsRunning, probePath, probeRequest, probeStageLabel } = require('../src/lib/rental-probe.ts');
 const { ProbeCandidateCard, XingfuliProbe } = require('../src/components/rental/XingfuliProbe.tsx');
 const { RentalSourceAssociation } = require('../src/components/rental/RentalSourceManager.tsx');
 
@@ -85,4 +85,24 @@ test('source manager offers the probe and no longer asks for a pasted url', () =
   assert.doesNotMatch(html, /读取链接候选/);
   assert.doesNotMatch(html, /打开房天下搜索/);
   assert.doesNotMatch(html, /复制链接/);
+});
+
+test('a failed request shows the reason the backend gave', async () => {
+  const original = global.fetch;
+  global.fetch = async () => ({ ok: false, json: async () => ({ detail: '候选已更新，请刷新后重新选择' }) });
+  try {
+    await assert.rejects(() => probeRequest('/api/map/probe'), /候选已更新/);
+  } finally {
+    global.fetch = original;
+  }
+});
+
+test('a broken response does not leak a parser error', async () => {
+  const original = global.fetch;
+  global.fetch = async () => ({ ok: false, json: async () => { throw new Error('Unexpected token <'); } });
+  try {
+    await assert.rejects(() => probeRequest('/api/map/probe'), /暂时不可用/);
+  } finally {
+    global.fetch = original;
+  }
 });

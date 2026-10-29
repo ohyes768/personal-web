@@ -155,8 +155,11 @@ class SourceStore:
 
     @staticmethod
     def _rental(r):
+        # The platform address is display evidence only: it stays out of the
+        # source's own address so it cannot become the community's address.
         return {**r, 'source_community_id': r['source_id'], 'source_name': r['name'],
-                'source_address': r.get('address'), 'status': 'verified', 'verified_at': r.get('associated_at')}
+                'source_address': r.get('address') or r.get('platform_address'),
+                'status': 'verified', 'verified_at': r.get('associated_at')}
 
 
 def source_page(url: str) -> str:

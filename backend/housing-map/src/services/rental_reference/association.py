@@ -30,19 +30,28 @@ def eligible_communities(registry):
                                   and r['status'] == 'matched'], properties) == 'residential'], len(communities)
 
 
-def candidates_for(registry, community):
+def _candidate_pool(sources):
+    """Pending Fang sources with their normalized names, prepared once."""
+    return [(row, normalized(row['name'])) for row in sources
+            if row['source'] == 'fang' and row['status'] == 'pending']
+
+
+def candidates_for(registry, community, *, sources=None, rejected=None, pool=None, previous_ids=None):
     from src.services.name_similarity import name_similarity
     cid = community['community_id']
     names = {normalized(n) for n in [community['community_name'], community.get('community_alias'),
                                     *community.get('aliases', [])] if n}
-    with registry.db() as db:
-        rejected = {r[0] for r in db.execute('SELECT rid FROM rejected WHERE cid=?', (cid,))}
-    previous_ids = set(read_review(registry, cid).get('candidate_ids', []))
+    if rejected is None:
+        with registry.db() as db:
+            rejected = {r[0] for r in db.execute('SELECT rid FROM rejected WHERE cid=?', (cid,))}
+    if pool is None:
+        pool = _candidate_pool(sources if sources is not None else registry.sources())
+    if previous_ids is None:
+        previous_ids = set(read_review(registry, cid).get('candidate_ids', []))
     result = []
-    for row in registry.sources():
-        if row['source'] != 'fang' or row['status'] != 'pending' or row['id'] in rejected:
+    for row, source_name in pool:
+        if row['id'] in rejected:
             continue
-        source_name = normalized(row['name'])
         if row['id'] not in previous_ids and not any(
                 source_name and (source_name in name or name in source_name) for name in names):
             continue
@@ -83,13 +92,26 @@ def save_review(registry, community, reason, candidates, message='', *, searched
 def reviews(registry):
     communities, _ = eligible_communities(registry)
     mapped = set(active_sources(registry))
+    # The list covers every community without a source, so the sources and the
+    # rejections are read once instead of once per community.
+    sources = registry.sources()
+    pool = _candidate_pool(sources)
+    with registry.db() as db:
+        rejected_pairs = {}
+        for rid, cid in db.execute('SELECT rid,cid FROM rejected'):
+            rejected_pairs.setdefault(rid, set()).add(cid)
+        stored = {}
+        for key, value in db.execute("SELECT key,value FROM meta WHERE key LIKE ?", (PREFIX + '%',)):
+            stored[key[len(PREFIX):]] = json.loads(value)
     items = []
     for community in communities:
         cid = community['community_id']
         if cid in mapped:
             continue
-        review = read_review(registry, cid)
-        candidates = candidates_for(registry, community)
+        review = stored.get(cid, {})
+        rejected = {rid for rid, cids in rejected_pairs.items() if cid in cids}
+        candidates = candidates_for(registry, community, rejected=rejected, pool=pool,
+                                    previous_ids=set(review.get('candidate_ids', [])))
         if review:
             if review.get('decision') == 'skipped' and review.get('fingerprint') != fingerprint(candidates):
                 save_review(registry, community, 'needs_selection' if candidates else 'missing', candidates)

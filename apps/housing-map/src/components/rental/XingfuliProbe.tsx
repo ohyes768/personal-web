@@ -106,7 +106,9 @@ export function XingfuliProbe({ communityId, onChanged }: {
         setActionError(problem instanceof Error ? problem.message : '操作失败，请重试');
       }
     } finally {
-      if (activeId.current === communityId) setBusy(false);
+      // The busy flag must not survive a community switch, otherwise every
+      // button of the new community stays disabled.
+      setBusy(false);
     }
   }
 
@@ -115,8 +117,8 @@ export function XingfuliProbe({ communityId, onChanged }: {
   }
 
   const candidates = data?.candidates ?? [];
-  const retryable = ['homepage_not_found', 'entry_not_found', 'upstream_failed', 'cooling_down',
-    'deferred', 'cancelled', 'interrupted'];
+  const retryable = ['needs_homepage_selection', 'homepage_not_found', 'entry_not_found',
+    'upstream_failed', 'cooling_down', 'deferred', 'cancelled', 'interrupted'];
 
   return <section className="rental-source-association" aria-label="探查幸福里来源">
     <h3>幸福里来源</h3>

@@ -154,6 +154,10 @@ class ProbeService:
     def select(self, community_id, candidate_id, revision):
         """Remember the chosen homepage and continue to its rental entry."""
         with self._mutex:
+            if self._thread is not None and self._thread.is_alive():
+                raise ProbeAlreadyRunning('已有探查任务在进行，请等它结束')
+            if self._busy and self._busy():
+                raise ProbeAlreadyRunning('租金更新进行中，请稍后再探查')
             state = read_state(self.registry, community_id)
             if not state:
                 raise ProbeInvalid('尚未开始探查')
@@ -178,6 +182,10 @@ class ProbeService:
     def retry(self, community_id):
         """Retry the failed stage: the entry first, otherwise the search."""
         with self._mutex:
+            if self._thread is not None and self._thread.is_alive():
+                raise ProbeAlreadyRunning('已有探查任务在进行，请等它结束')
+            if self._busy and self._busy():
+                raise ProbeAlreadyRunning('租金更新进行中，请稍后再探查')
             state = read_state(self.registry, community_id)
             community = self._community(community_id)
             mode = 'entry' if state.get('selected_page') else 'search'
@@ -260,6 +268,7 @@ class ProbeService:
         community_id = community['community_id']
         client = self._client()
         candidates = []
+        homepages = {}
         seen = set()
         for name in _search_names(community):
             for channel in CHANNEL_ORDER:
@@ -272,6 +281,10 @@ class ProbeService:
                 except ValueError as exc:
                     logger.warning('Rental probe search failed community_id=%s channel=%s error=%s',
                                    community_id, channel, exc)
+                    if '冷却' in str(exc):
+                        write_state(self.registry, community_id, stage=STAGE_COOLING,
+                                    message='幸福里请求冷却中，请稍后重试')
+                        return
                     continue
                 for neighborhood_id, group in found.items():
                     platform_name = group['name']
@@ -286,6 +299,7 @@ class ProbeService:
                         logger.warning('Rental probe homepage failed community_id=%s id=%s error=%s',
                                        community_id, neighborhood_id, exc)
                         continue
+                    homepages[neighborhood_id] = homepage
                     candidate = candidate_from_homepage(homepage, discovered_via=channel)
                     judgement = evaluate(community, candidate)
                     candidate['candidate_id'] = f"{channel}:{neighborhood_id}"
@@ -306,12 +320,12 @@ class ProbeService:
         if len(candidates) == 1 and len(strong) == 1:
             write_state(self.registry, community_id, stage=STAGE_RESOLVING,
                         selected_page=candidates[0], message='正在寻找该主页的租房入口')
-            self._resolve_entry(community, candidates[0], client)
+            self._resolve_entry(community, candidates[0], client, homepage=homepages.get(candidates[0]['neighborhood_id']))
             return
         write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION, candidates=candidates,
                     message='请选择对应的小区主页')
 
-    def _resolve_entry(self, community, candidate=None, client=None):
+    def _resolve_entry(self, community, candidate=None, client=None, homepage=None):
         community_id = community['community_id']
         state = read_state(self.registry, community_id)
         candidate = candidate or state.get('selected_page')
@@ -319,13 +333,13 @@ class ProbeService:
             write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
                         message='请选择对应的小区主页')
             return
-        own_client = client is None
         client = client or self._client()
-        try:
-            homepage = client.homepage(candidate['neighborhood_id'])
-        except ValueError as exc:
-            write_state(self.registry, community_id, stage=STAGE_FAILED, message=str(exc) or '读取小区主页失败')
-            return
+        if homepage is None:
+            try:
+                homepage = client.homepage(candidate['neighborhood_id'])
+            except ValueError as exc:
+                write_state(self.registry, community_id, stage=STAGE_FAILED, message=str(exc) or '读取小区主页失败')
+                return
         seeds = list(homepage.get('seeds') or [])[:MAX_SEED_TRIES]
         if not seeds:
             write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
@@ -351,6 +365,9 @@ class ProbeService:
                 logger.warning('Rental probe list failed community_id=%s seed=%s error=%s',
                                community_id, seed, exc)
                 continue
+            if self._cancel.is_set():
+                write_state(self.registry, community_id, stage=STAGE_CANCELLED, message='探查已取消')
+                return
             self._bind(community, candidate, seed)
             return
         write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
@@ -358,17 +375,21 @@ class ProbeService:
 
     def _bind(self, community, candidate, seed):
         community_id = community['community_id']
-        from src.services.rental_reference.xingfuli_sources import active_source, protected
+        from src.services.rental_reference.xingfuli_sources import has_source
         # The decision must still hold at write time: another tab may have
         # unbound, rejected or re-bound the community meanwhile.
-        if protected(self.registry, community_id) or active_source(self.registry, community_id):
+        if has_source(self.registry, community_id):
             write_state(self.registry, community_id, stage=STAGE_FAILED,
-                        message='小区已有租金来源或已被人工处理，请刷新后重试')
+                        message='小区已有租金来源，请刷新后重试')
             return
         judgement = evaluate(community, candidate)
         evidence = [*judgement['evidence'], '主页租房入口已核验', f'房源种子 {seed}']
         try:
-            bind_source(self.registry, community, candidate, seed=seed, method='manual', evidence=evidence)
+            # An explicit probe is the re-processing the user asked for, so a
+            # previously unlinked community may be bound again; the exact
+            # rejected pair still refuses.
+            bind_source(self.registry, community, candidate, seed=seed, method='manual', evidence=evidence,
+                        allow_reprocessed=True)
         except ValueError as exc:
             write_state(self.registry, community_id, stage=STAGE_FAILED, message=str(exc) or '关联失败')
             return
