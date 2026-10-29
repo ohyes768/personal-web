@@ -12,6 +12,9 @@ const stock = {
 
 /** quality 场景控制：测试内直接改 perCode / 开关 failQuery，route handler 每次读最新值 */
 interface QualityScenario {
+  scoreVersion?: string | null;
+  currentVersion?: string | null;
+  financialUnrated?: boolean;
   perCode: Record<string, Record<string, unknown>>;
   jobStatus?: string;
   failQuery?: { value: boolean };
@@ -57,8 +60,8 @@ async function setup(page: Page, initiallyFavorite = false, analysisDuration?: n
       await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: quality?.jobStatus ?? 'running', total: 3, processed: 0, succeeded: 0, failed: 0, remaining: 3, codes: ['000001', '000002', '000003'], failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '', per_code: quality?.perCode ?? {} } });
     }
     else if (url.pathname.endsWith('/refresh/jobs')) await route.fulfill({ json: quality?.latestJob !== undefined ? quality.latestJob : null });
-    else if (url.pathname.endsWith('/quality')) await route.fulfill({ json: { total: 1, hermes_configured: true, per_code: quality?.perCode ?? {}, scores: {
-      '000001': { code: '000001', name: '测试公司', dimensions: { business: 4, moat: 4, industry: 3, management: 3, financial: 5 }, weighted_score: 3.7, stars: 3, boundary: null, summary: '示例摘要', risks: [], watch_points: [], report_md: '## 评级报告\n\n示例正文。', scored_at: '2026-10-20 10:00', data_date: '2026-10-20', analysis_duration_seconds: analysisDuration },
+    else if (url.pathname.endsWith('/quality')) await route.fulfill({ json: { total: 1, hermes_configured: true, current_skill_version: quality?.currentVersion, per_code: quality?.perCode ?? {}, scores: {
+      '000001': { code: '000001', name: '测试公司', skill_version: quality?.scoreVersion, dimensions: { business: 4, moat: 4, industry: 3, management: 3, financial: quality?.financialUnrated ? null : 5 }, weighted_score: quality?.financialUnrated ? null : 3.7, stars: quality?.financialUnrated ? null : 3, boundary: null, summary: '示例摘要', risks: [], watch_points: [], report_md: '## 评级报告\n\n示例正文。', scored_at: '2026-10-20 10:00', data_date: '2026-10-20', analysis_duration_seconds: analysisDuration },
     } } });
     else if (url.pathname.endsWith('/favorites')) await route.fulfill({ json: favorites() });
     else if (url.pathname.endsWith('/stocks')) await route.fulfill({ json: { items: url.searchParams.get('min_yield') === '0' ? [stock] : [], total: 0 } });
@@ -83,7 +86,7 @@ test('screening remains accessible with no stocks in old filter, allows retrying
   await expect(page.getByRole('checkbox', { name: '勾选 资料不足' })).toBeDisabled();
   // 单季下滑警告不再占据列表列，进入个股详情弹层后展示
   await page.getByRole('button', { name: '符合条件 1' }).click();
-  await page.getByRole('button', { name: /测试公司/ }).click();
+  await page.getByRole('button', { name: /^测试公司/ }).click();
   await expect(page.getByRole('heading', { name: '测试公司（000001）', exact: true })).toBeVisible();
   await expect(page.getByText('一个季度扣非利润同比下降，建议持续关注')).toBeVisible();
 });
@@ -98,7 +101,7 @@ for (const [duration, label] of [
   test(`rating report shows analysis duration: ${duration}`, async ({ page }) => {
     await setup(page, false, duration);
     await page.goto('/?tab=screening');
-    await page.getByRole('button', { name: '3.7', exact: true }).click();
+    await page.getByRole('button', { name: '查看测试公司的评级报告' }).click();
     await expect(page.getByText(`分析耗时 ${label}`, { exact: false })).toBeVisible();
   });
 }
@@ -159,14 +162,14 @@ test('decline threshold marks changed snapshot, persists, rejects zero, and rese
   expect(await page.evaluate(() => localStorage.getItem('dividend-screening-conditions-v1'))).toBeNull();
 });
 
-test('rating column shows weighted score, row click opens detail without rating entry', async ({ page }) => {
+test('compact rating keeps a report entry and row click opens stock detail', async ({ page }) => {
   await setup(page);
   await page.goto('/?tab=screening');
   await expect(page.getByRole('button', { name: '符合条件 1' })).toBeVisible();
-  // 评级结果列展示加权分（一位小数），点击打开评级弹框
-  await expect(page.getByRole('button', { name: '3.7', exact: true })).toBeVisible();
+  // 五维评分和版本文本整体作为报告入口
+  await expect(page.getByRole('button', { name: '查看测试公司的评级报告' })).toBeVisible();
   // 点行打开个股详情弹层，六个区块齐备
-  await page.getByRole('button', { name: /测试公司/ }).click();
+  await page.getByRole('button', { name: /^测试公司/ }).click();
   await expect(page.getByRole('heading', { name: '测试公司（000001）', exact: true })).toBeVisible();
   for (const block of ['筛选状态', '股息率', '盈利质量', '买点参考', '筹码']) {
     await expect(page.getByRole('heading', { level: 3, name: new RegExp(block) })).toBeVisible();
@@ -179,7 +182,7 @@ test('reanalyze inside rating modal shows progress and rating modal stays open',
   await setup(page);
   await page.goto('/?tab=screening');
   // 评级结果列打开评级弹框（与详情弹层互斥）
-  await page.getByRole('button', { name: '3.7', exact: true }).click();
+  await page.getByRole('button', { name: '查看测试公司的评级报告' }).click();
   await expect(page.getByRole('heading', { name: '基本面评级 · 测试公司（000001）', exact: true })).toBeVisible();
   // 重评后全局进度在评级弹框内可见
   await page.getByRole('button', { name: '重评' }).last().click();
@@ -249,6 +252,36 @@ test('quality queue recovers after reload and offers retry for failed stock', as
   await queue.getByRole('button', { name: '重试', exact: true }).click();
   await expect.poll(() => quality.analyzeCalls?.[0]).toEqual(['000001']);
 });
+
+test('compact rating preserves partial scores and opens report with skill version', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  await setup(page, false, undefined, { perCode: {}, scoreVersion: '4.2.0', currentVersion: '4.3.0', financialUnrated: true });
+  await page.goto('/?tab=screening');
+  const table = page.getByRole('table').filter({ has: page.getByRole('columnheader', { name: '基本面操作', exact: true }) });
+  const row = table.getByRole('row').filter({ has: page.getByRole('button', { name: /测试公司/ }) });
+  await expect(table.getByRole('columnheader', { name: '评级结果', exact: true })).toBeVisible();
+  await expect(row.getByRole('button', { name: '查看测试公司的评级报告' })).toHaveText('4/4/3/3/—（v4.2.0）');
+  await expect(row.getByText('需重评', { exact: true })).toBeVisible();
+  await expect(table.getByRole('columnheader', { name: '业务模式', exact: true })).toHaveCount(0);
+  await page.screenshot({ path: testInfo.outputPath('five-dimensions.png'), fullPage: true });
+  await row.getByRole('button', { name: '查看测试公司的评级报告' }).click();
+  await expect(page.getByRole('heading', { name: /基本面评级/ })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await page.getByRole('button', { name: '待补数据 1' }).click();
+  const unscored = table.getByRole('row').filter({ has: page.getByRole('button', { name: /^资料不足/ }) });
+  await expect(unscored.getByRole('cell').nth(3)).toHaveText('—');
+});
+
+for (const [version, expected] of [['4.3.0', 'v4.3.0'], [null, '版本未知']] as const) {
+  test(`skill version display: ${expected}`, async ({ page }) => {
+    await setup(page, false, undefined, { perCode: {}, scoreVersion: version, currentVersion: '4.3.0' });
+    await page.goto('/?tab=screening');
+    const row = page.getByRole('row').filter({ has: page.getByRole('button', { name: /测试公司/ }) });
+    await expect(row.getByRole('button', { name: '查看测试公司的评级报告' })).toHaveText(`4/4/3/3/5（${expected}）`);
+    await expect(row.getByText('需重评', { exact: true })).toHaveCount(version ? 0 : 1);
+    await expect(row.getByRole('button', { name: '3.7', exact: true })).toHaveCount(0);
+  });
+}
 
 test('temporary quality query errors keep state and recover automatically', async ({ page }) => {
   const startedAt = new Date(Date.now() - 30_000).toISOString();

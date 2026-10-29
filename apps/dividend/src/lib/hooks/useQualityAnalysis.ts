@@ -14,6 +14,7 @@ import { qualityFinishMessage, qualityJobActive, type QualityJob, type QualityPe
 const POLL_INTERVAL_MS = 3000;
 
 export interface UseQualityAnalysisResult {
+  currentSkillVersion: string | null;
   /** 已落盘评级：code → 评分 */
   qualityScores: QualityScoresResponse['scores'];
   /** 逐股实时状态：code → queued/running/completed/failed（含名称与生命周期时间戳） */
@@ -33,6 +34,7 @@ export interface UseQualityAnalysisResult {
 }
 
 export function useQualityAnalysis(): UseQualityAnalysisResult {
+  const [currentSkillVersion, setCurrentSkillVersion] = useState<string | null>(null);
   const [qualityScores, setQualityScores] = useState<QualityScoresResponse['scores']>({});
   const [qualityPerCode, setQualityPerCode] = useState<QualityPerCodeMap>({});
   const [qualityConfigured, setQualityConfigured] = useState(true);
@@ -48,6 +50,7 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
       const response = await dividendApi.getQualityScores();
       if (!mounted.current) return;
       setQualityScores(response.scores ?? {});
+      setCurrentSkillVersion(response.current_skill_version ?? null);
       // 逐股实时状态以 job 轮询为准；这里仅在尚无状态时做首屏快照
       setQualityPerCode(prev => (Object.keys(prev).length > 0 ? prev : response.per_code ?? {}));
       setQualityConfigured(response.hermes_configured !== false);
@@ -139,6 +142,7 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
   }, [handleTerminal, startPolling]);
 
   return {
+    currentSkillVersion,
     qualityScores,
     qualityPerCode,
     qualityConfigured,

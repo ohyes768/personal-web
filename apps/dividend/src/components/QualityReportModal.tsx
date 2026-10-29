@@ -4,6 +4,7 @@
 'use client';
 
 import { Modal } from './shared-ui/Modal';
+import { QualitySkillVersion } from './QualitySkillVersion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
@@ -25,6 +26,7 @@ const WEIGHT_LABEL: Record<QualityDimensionKey, string> = {
 };
 
 export interface QualityReportModalProps {
+  currentSkillVersion?: string | null;
   score: QualityScore | null;
   onClose: () => void;
   /** 提供时渲染「重评」入口；不提供时行为与原先一致（按钮不渲染） */
@@ -37,7 +39,7 @@ export interface QualityReportModalProps {
   reanalyzeDisabled?: boolean;
 }
 
-export function QualityReportModal({ score, onClose, onReanalyze, progress = null, reanalyzePending = false, reanalyzeDisabled = false }: QualityReportModalProps) {
+export function QualityReportModal({ score, onClose, onReanalyze, currentSkillVersion, progress = null, reanalyzePending = false, reanalyzeDisabled = false }: QualityReportModalProps) {
   if (!score) return null;
   const jobRunning = !!progress && progress.processed < progress.total;
   return (
@@ -72,6 +74,7 @@ export function QualityReportModal({ score, onClose, onReanalyze, progress = nul
           <span className="text-xs text-ink-muted">数据日期 {score.data_date} · 评分时间 {score.scored_at} · 分析耗时 {formatAnalysisDuration(score.analysis_duration_seconds)}</span>
         </div>
 
+        <QualitySkillVersion version={score.skill_version} currentVersion={currentSkillVersion} />
         <p className="text-sm text-ink">{score.summary}</p>
 
         <div className="overflow-x-auto rounded-lg border border-rule">

@@ -81,6 +81,7 @@ from src.utils.atomic_file import atomic_csv
 from src.services.refresh_jobs import RefreshJobManager
 from src.services.hermes_client import HermesConfig, poll_run, submit_run
 from src.services.quality_service import QualityService
+from src.services.quality_version import current_quality_skill_version
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -3658,4 +3659,5 @@ async def get_quality_scores():
     hermes_configured = HermesConfig.from_env().is_configured
     return {"total": len(scores), "scores": scores,
             "per_code": quality_service.get_per_code(),
-            "hermes_configured": hermes_configured}
+            "hermes_configured": hermes_configured,
+            "current_skill_version": current_quality_skill_version()}

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
 import { dividendApi } from '@/lib/api';
-import { buildQualityQueue, isQualityPending } from '@/lib/quality';
+import { buildQualityQueue, isQualityPending, QUALITY_DIMENSION_ORDER, QUALITY_DIMENSION_LABELS } from '@/lib/quality';
 import { DEFAULT_SCREENING, restoreScreeningConditions, type ScreeningConditions, type ScreeningItem, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityReportModal } from './QualityReportModal';
@@ -29,7 +29,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
   const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ScreeningItem | null>(null);
-  const { qualityScores, qualityPerCode, qualityConfigured, qualityJob, qualityMessage, qualityPollError, analyze } = useQualityAnalysis();
+  const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion, qualityJob, qualityMessage, qualityPollError, analyze } = useQualityAnalysis();
   const queueView = buildQualityQueue(qualityPerCode);
   const pending = useCallback((code: string) => isQualityPending(qualityPerCode[code]), [qualityPerCode]);
   const requestId = useRef(0);
@@ -127,6 +127,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       </p>}
       {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}</p>}
       {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
+      <p className="text-xs text-ink-muted">五维评分顺序：业务模式 / 护城河 / 行业前景 / 管理层 / 财务质量，各 1–5 分，— 表示未评分。{currentSkillVersion ? `当前 Skill v${currentSkillVersion}，版本不同或未知的评分建议重评。` : '当前已部署 Skill 版本暂不可用，无法自动判断评分是否过期。'}</p>
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
         <table className="w-full text-sm text-ink whitespace-nowrap"><thead className="bg-paper-deep text-left"><tr>
           <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={activeView !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>
@@ -163,12 +164,12 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
                 })()}
               </td>
               <td className="p-3" onClick={event => event.stopPropagation()}>
-                {score
-                  ? <button className="font-mono tabular-nums text-ink hover:underline" title={score.weighted_score == null ? '证据不足，本次未评级；点击查看详情' : '查看基本面评级详情'} onClick={() => openQuality(stock.code)}>
-                      {score.weighted_score == null ? <span className="text-ink-muted">未评级</span> : score.weighted_score.toFixed(1)}
-                      {score.boundary && <span className="ml-1 text-xs text-amber-700" title={score.boundary}>⚠️</span>}
-                    </button>
-                  : <span className="text-ink-muted">-</span>}
+                {score ? <span className="inline-flex items-center gap-2">
+                  <button className="font-mono tabular-nums text-ink underline-offset-4 hover:underline" aria-label={`查看${stock.name}的评级报告`} title={`${QUALITY_DIMENSION_ORDER.map(key => QUALITY_DIMENSION_LABELS[key]).join(' / ')}；— 表示未评分；点击查看详情`} onClick={() => openQuality(stock.code)}>
+                    {QUALITY_DIMENSION_ORDER.map(key => score.dimensions[key] ?? '—').join('/')}（{score.skill_version ? `v${score.skill_version}` : '版本未知'}）
+                  </button>
+                  {currentSkillVersion && score.skill_version !== currentSkillVersion && <span className="text-xs text-amber-700" title={`当前已部署 Skill v${currentSkillVersion}，建议重新分析`}>需重评</span>}
+                </span> : <span className="text-ink-muted">—</span>}
               </td>
               <td className="p-3 font-mono tabular-nums">{pct(stock.avg_yield_3y)}</td>
               <td className="p-3 font-mono tabular-nums">{pct(priceMap.get(stock.code)?.yield_ttm)}</td>
@@ -200,6 +201,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       onClose={() => setDetailItem(null)}
     />
     <QualityReportModal
+      currentSkillVersion={currentSkillVersion}
       score={qualityModalCode ? qualityScores[qualityModalCode] ?? null : null}
       onClose={() => setQualityModalCode(null)}
       onReanalyze={code => void analyze([code])}

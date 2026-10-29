@@ -164,7 +164,7 @@ class TestSubmitAnalysis:
 
         assert job["status"] == "succeeded"
         assert (job["processed"], job["succeeded"], job["failed"]) == (2, 2, 0)
-        assert submitted == ["quality-000001-2026-09-30", "quality-600000-2026-09-30"]
+        assert [key.split('-unknown-')[0] for key in submitted] == ["quality-000001-2026-09-30", "quality-600000-2026-09-30"]
         saved = service.get_all()
         assert set(saved) == {"000001", "600000"}
         record = saved["000001"]
@@ -522,7 +522,7 @@ class TestQueueAppend:
             service.submit_analysis(codes, cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
             await manager.close(timeout=5)
             with order_lock:
-                assert order == [f"quality-{c}-2026-09-30" for c in codes]
+                assert [key.split('-unknown-')[0] for key in order] == [f"quality-{c}-2026-09-30" for c in codes]
 
         asyncio.run(scenario())
 

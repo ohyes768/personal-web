@@ -57,8 +57,10 @@ Scoring runs one Hermes run per stock through the Runs API
 (`POST {base}/p/{profile}/v1/runs`, Bearer + `Idempotency-Key`, poll to
 terminal state). Results are delivered via `run.output` only — no shared
 artifact directory, no run bindings. Idempotency key is
-`quality-{code}-{data_date}` where `data_date` is the financial summary file
-mtime date (fallback: today), so re-runs on the same data day reuse the run.
+`quality-{code}-{data_date}-{skill_version}` where `data_date` is the financial
+summary mtime date (fallback: today). Capture the installed version at admission;
+version changes must not reuse an old Hermes run. Without a configured installed
+version, use `unknown-{attempt_id}` so explicit reanalysis avoids stale cache.
 
 The skill output is a single bare JSON object: `code`, `name`,
 `dimensions` (exactly business/moat/industry/management/financial, each 1-5
@@ -73,18 +75,43 @@ summary starts with 「灰色地带（证据不足，未评级）」). pydantic 
 all-or-nothing in both directions: an unrated stock carrying any non-null
 derived field, or a fully rated stock carrying null weighted_score/stars, is
 rejected as a per-stock failure. Parsing tolerates
-```json fences and stray prose around the object. In the screening list's
-「评级结果」column, rated stocks show the 1-decimal weighted_score (e.g. `3.4`)
-alongside the `boundary` ⚠️ flag; parsed-but-unrated stocks show 「未评级」
-(still opens the report modal, which shows 未评级 instead of stars and
-「未评分」 per null dimension); `-` still means never rated. The rating report
-modal itself still shows no weighted score. (Changed 2026-10-24: the previous
-"never shown to users — ordinal false precision" rule is superseded. Changed
+```json fences and stray prose around the object. The screening list shows one
+评级结果 column: `4/4/3/2/1（v1.1.1）` in
+business/moat/industry/management/financial order. Each score is 1–5; null uses
+— in its position, explained as 未评分 in the tooltip and report. A missing
+report shows a single —. The entire score/version text is a button opening the
+report. Missing provenance shows （版本未知）; 需重评 remains an adjacent hint.
+Do not show weighted_score or hide known scores when a dimension is null.
+The report modal still shows no weighted score. (Changed 2026-10-29: five
+scores/version in a compact column supersede the aggregate result. Changed
 2026-10-27: v3 null contract adopted; the in-repo skill copy
 `backend/dividend-select/skills/basic-quality-rating/SKILL.md` was removed
 after drifting stale — the skills repo
 `F:\personal-projects\skills\finance-macro\basic-quality-rating\` is the
 single source, installed into Hermes via skill-manager.)
+
+### Skill version provenance (2026-10-29)
+- Skill 4.3.0 adds `skill_version` as the eleventh output field. Its finalizer
+  reads its own SKILL.md metadata.version and its validator rejects mismatches.
+- Backend QualityScore accepts optional semantic-version strings for backward
+  compatibility; missing versions remain null and are never backfilled.
+  Persist the reported version, including on parsed-but-unrated results.
+- `GET /quality` adds nullable `current_skill_version`. Read deployed metadata
+  fresh from `HERMES_QUALITY_SKILL_PATH`, or the explicit override
+  `HERMES_QUALITY_SKILL_VERSION`. No source means null, not latest stored score.
+  Never point the path at an unpublished development checkout.
+- Capture this expected version per queue item; include it in the prompt and
+  reject a missing/different output version without overwriting previous scores.
+- List and report show vX.Y.Z or 版本未知. With a known current version, differing
+  or missing provenance displays 需重评. Without it, explain comparison is
+  unavailable. Historical scores are still immediately usable.
+- Publish the changed skill to the configured Hermes profile before configuring
+  the expected version. To follow installed metadata automatically, mount that
+  skill read-only and set the in-container SKILL.md path; verify symlink targets
+  remain readable. Env-only version overrides need updating on each publication.
+- Tests: test_quality_version.py checks persistence, legacy/invalid input, fresh
+  manifest reads, cache separation and mismatched output. screening.spec.ts
+  checks column mapping, partial dimensions and current/old/unknown versions.
 
 Bulk analysis reuses `RefreshJobManager` with `kind='quality'` (included in
 `_prune` kinds). Each stock is one worker thread bounded by a semaphore

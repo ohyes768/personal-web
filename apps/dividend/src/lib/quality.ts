@@ -17,6 +17,8 @@ export const QUALITY_DIMENSION_LABELS: Record<QualityDimensionKey, string> = {
 };
 
 export interface QualityScore {
+  /** 实际执行的 skill 版本；历史结果可能未记录 */
+  skill_version?: string | null;
   code: string;
   name: string;
   /** 1-5 整数；证据不足的维度为 null（金融股 financial 维必然 null） */
@@ -137,6 +139,7 @@ export function formatElapsedSpan(startedAt: string | null, finishedAt: string |
 }
 
 export interface QualityScoresResponse {
+  current_skill_version?: string | null;
   total: number;
   scores: Record<string, QualityScore>;
   per_code?: QualityPerCodeMap;

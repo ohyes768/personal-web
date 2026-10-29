@@ -1,0 +1,2 @@
+{"file":".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md","reason":"Five-dimension UI, skill version provenance and Hermes idempotency"}
+{"file":".trellis/spec/backend/dividend-select/backend/refresh-jobs-contract.md","reason":"Preserve queued admission and refresh semantics"}

@@ -217,3 +217,36 @@ housing-map：采集任务弹窗里「匹配租金来源」与「更新租金数
 ### Next Steps
 
 - None - task complete
+
+
+## Session 56: 股息率五维评分与 skill 版本追踪
+
+**Date**: 2026-10-29
+**Task**: 股息率五维评分与 skill 版本追踪
+**Package**: backend/dividend-select
+**Branch**: `master`
+
+### Summary
+
+五维分数与版本合并为单列 4/4/3/2/1（v1.1.1），点击打开报告；skill 4.3.0 确定性输出版本，保存版本并标识需重评，隔离旧缓存。后端64/skill199/浏览器18项通过，TypeScript通过。部署需配置实际 skill 版本来源。
+
+### Main Changes
+
+- 紧凑五维结果、未知维度占位及实际 skill 版本展示。
+- skill 输出版本落盘、部署版本对比与 Hermes 缓存隔离。
+
+### Git Commits
+
+见本次功能提交及独立 skills 仓库的 4.3.0 版本合同提交。
+
+### Testing
+
+- 后端 64 项、skill 199 项、浏览器 18 项及 TypeScript 检查通过。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

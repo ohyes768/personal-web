@@ -57,6 +57,22 @@ def wait_job(manager, job_id, timeout=5.0):
 
 
 class TestAnalyze:
+    def test_current_and_reported_skill_versions_are_exposed(self, client, monkeypatch):
+        test_client, manager = client
+        monkeypatch.setenv('HERMES_BASE_URL', 'http://nas:8642')
+        monkeypatch.setenv('HERMES_API_KEY', 'secret')
+        monkeypatch.setenv('HERMES_QUALITY_SKILL_VERSION', '4.3.0')
+        monkeypatch.setattr(routes, 'submit_run', lambda *args: 'versioned-run')
+        output = json.loads(fake_output('000001', '样本'))
+        output['skill_version'] = '4.3.0'
+        monkeypatch.setattr(routes, 'poll_run', lambda *args: json.dumps(output))
+        accepted = test_client.post('/quality/analyze', json={'codes': ['000001']})
+        assert accepted.status_code == 202
+        assert wait_job(manager, accepted.json()['job_id'])['status'] == 'succeeded'
+        response = test_client.get('/quality')
+        assert response.json()['current_skill_version'] == '4.3.0'
+        assert response.json()['scores']['000001']['skill_version'] == '4.3.0'
+
     def test_unconfigured_returns_503(self, client, monkeypatch):
         test_client, _ = client
         monkeypatch.delenv("HERMES_BASE_URL", raising=False)

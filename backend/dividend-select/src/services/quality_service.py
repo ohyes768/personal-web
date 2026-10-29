@@ -18,11 +18,13 @@ from pathlib import Path
 from time import monotonic
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo
+from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.api.models import DividendStock
 from src.services.hermes_client import HermesConfig, HermesError
+from src.services.quality_version import VERSION_PATTERN, current_quality_skill_version
 from src.utils.atomic_file import atomic_write
 from src.utils.logger import setup_logger
 
@@ -58,6 +60,7 @@ class QualityScore(BaseModel):
 
     code: str
     name: str
+    skill_version: Optional[str] = Field(default=None, pattern=f"^{VERSION_PATTERN}$")
     dimensions: dict[str, Optional[int]]
     weighted_score: Optional[float]
     stars: Optional[int]
@@ -159,13 +162,15 @@ def build_stock_payload(stock: DividendStock) -> dict:
     }
 
 
-def build_prompt(payload: dict) -> str:
+def build_prompt(payload: dict, skill_version: str | None = None) -> str:
     """点名 skill + 数据 JSON + 输出约束。"""
     data = json.dumps(payload, ensure_ascii=False)
     return (
         f"请使用 {SKILL_NAME} skill 评估以下股票，严格按 skill 的五维细则与星级映射打分。\n"
         f"最终回复只输出一个 JSON 对象（含 report_md），不要 markdown 代码围栏，不要任何解释文字。\n"
-        f"股票数据：{data}"
+        "输出 skill_version，必须来自本次实际执行 skill 的 metadata.version，不得猜测或回填。\n"
+        + (f"本次要求已部署 skill 版本 {skill_version}；版本不符则报告失败，不要冒充该版本。\n" if skill_version else "")
+        + f"股票数据：{data}"
     )
 
 
@@ -228,6 +233,7 @@ class QualityService:
                 "code": code, "name": snap["name"], "state": "queued", "error": None,
                 "queued_at": _now(), "started_at": None, "finished_at": None, "updated_at": _now(),
                 "data_date": snap["data_date"], "payload": snap["payload"],
+                "skill_version": snap["skill_version"], "attempt_id": uuid4().hex,
             }
             self._pending.append(code)
 
@@ -261,7 +267,9 @@ class QualityService:
         if missing:
             raise ValueError(f"以下股票不在采集池：{','.join(missing)}")
         ordered = list(dict.fromkeys(codes))
+        skill_version = current_quality_skill_version()
         snapshots = {code: {"name": stocks[code].name, "data_date": data_date,
+                            "skill_version": skill_version,
                             "payload": build_stock_payload(stocks[code])}
                      for code in ordered}
 
@@ -324,12 +332,16 @@ class QualityService:
         try:
             try:
                 started = monotonic()
-                prompt = build_prompt(item["payload"])
-                run_id = submit_run_fn(hermes_config, prompt, f"quality-{code}-{item['data_date']}")
+                expected_version = item["skill_version"]
+                prompt = build_prompt(item["payload"], expected_version)
+                version_key = expected_version or f"unknown-{item['attempt_id']}"
+                run_id = submit_run_fn(hermes_config, prompt, f"quality-{code}-{item['data_date']}-{version_key}")
                 output = poll_run_fn(hermes_config, run_id)
                 # Local queueing, parsing and other stocks' runtime are excluded.
                 duration = round(monotonic() - started, 3)
                 score = parse_quality_output(output, code, item["name"])
+                if expected_version and score.skill_version != expected_version:
+                    raise ValueError(f"skill 版本不符：要求 {expected_version}，实际 {score.skill_version or '未知'}，请检查 Hermes 部署")
             except HermesError as exc:
                 outcome = (False, None, str(exc)[:300])
             except ValueError as exc:
