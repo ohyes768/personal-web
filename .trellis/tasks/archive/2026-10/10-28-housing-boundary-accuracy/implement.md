@@ -8,11 +8,11 @@
 - [x] NAS标准构建、备份SQLite、发布后端，健康检查通过。
 - [x] 长虹苑1.64公顷、钱江彩虹城主区11.60公顷候选验证IoU=1后经公开API应用，地图返回轮廓且均可撤销。
 - [x] 更新spec及research/02-short-name-backfill.md的验证、备份与操作记录。
-- [ ] 本轮未commit/push；前端新房地图相关并行变更不属于本轮，保留原样。
+- [x] 本轮已commit/push：代码见 56521e0 等提交，已推送 origin/master；前端新房地图相关并行变更不属于本轮，保留原样。
 
 HTTP TestClient在Windows socketpair/accept初始化挂起，4项HTTP/token测试未执行；生产NAS公开HTTP生成/应用/读取已通过。未将局部检查宣称全量测试。
 
-状态implementing。已按本计划改代码；未改 spec，未提交。task.json 在进入实现时已是 in_progress，本轮没有再跑 task.py start。
+> 2026-10-29 收尾回填：本轮改动已随 56521e0 提交并推送 origin/master。spec 已补（`boundary-workflow.md` 第9节坐标、别名匹配、ALGORITHM_VERSION v2 与历史兼容契约）。2026-10-29 全量复核：`backend/housing-map` pytest 全量 **1101 passed**；`apps/housing-map` lint / tsc / 170 tests / build 全通过。**未做**：桌面/窄屏实机对照（当时地图展示集为空，20000561 处于 excluded 口径）与浏览器手工 QA。
 
 ## 顺序与验收映射
 
@@ -24,7 +24,7 @@ HTTP TestClient在Windows socketpair/accept初始化挂起，4项HTTP/token测�
 5. [x] 加算法版本；修复ready复用、GET stale、apply重验、任务起始及发布前一致性；验证旧库兼容和覆盖撤销。（A4–A5）
 6. [x] 按需调整预览来源/面类型文案，沿用现有tab和API。（A6）
 7. [x] 隔离端到端与全量质量门；钱塘大观离线前后预览已记录。桌面/窄屏实机对照未完成：当前地图展示集为空。（A5–A7）
-8. [ ] 更新boundary-workflow spec的坐标、匹配、指纹及历史兼容契约；记录结果，按Trellis结束流程收尾。提交需用户授权。
+8. [x] 更新boundary-workflow spec的坐标、匹配、指纹及历史兼容契约；记录结果，按Trellis结束流程收尾。提交需用户授权。——spec 第9节已补齐坐标口径、别名/短名匹配、ALGORITHM_VERSION v2 指纹与历史覆盖兼容；结果记于本文件"验证记录"与 task.json notes；提交见 56521e0（已推送）。
 
 ## 影响文件
 
