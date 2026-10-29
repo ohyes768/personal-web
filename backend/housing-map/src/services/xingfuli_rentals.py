@@ -3,8 +3,8 @@
 The same-neighborhood URL is anchored to a listing, not a neighborhood ID.
 Never infer membership from that URL or from keyword-search recommendations.
 
-Collection is quota sampled: at most MAX_SAMPLES listings are verified by
-detail request, and the crawl stops paging once that quota is met.
+Collection uses list API evidence: at most MAX_SAMPLES valid listings enter
+statistics, and the crawl stops paging once that quota is met.
 """
 from __future__ import annotations
 
@@ -16,12 +16,12 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlencode, urlsplit
 
 from src.services.fang_rentals import RentalCrawlCancelled, SeedRunResult
-from src.services.xingfuli_transport import XingfuliTransport
+from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY, XingfuliTransport
+from src.services.rental_reference.statistics import XINGFULI_LIST_API_EVIDENCE, select_valid
 
 BASE_URL = 'https://m.xflapp.com'
 
-# 配额采样：核验通过 10 条整租合格样本即停，不再翻页。
-# 小区整租在租少于 10 套时行为与全量采集完全一致。
+# 列表抽样：统计过滤后满 10 条有效整租即停，不再请求详情。
 MAX_SAMPLES = 10
 
 
@@ -105,7 +105,7 @@ def _sample(row, sid, community_name, captured):
     if row.get('rent_price_unit') != '元/月':
         raise ValueError('幸福里租金单位不受支持')
     title = str(row.get('title') or '')
-    area = re.search(r'(\d+(?:\.\d+)?)㎡', str(row.get('sub_title') or ''))
+    area = re.search(r'(-?\d+(?:\.\d+)?)㎡', str(row.get('sub_title') or ''))
     layout = re.search(r'\d+室(?:\d+厅)?(?:\d+卫)?', title)
     mode = {1: 'whole', 2: 'shared'}.get(row.get('rental_type'), 'unknown')
     flags = ['shared_rental'] if mode == 'shared' else ['unknown_rental_mode'] if mode == 'unknown' else []
@@ -117,16 +117,6 @@ def _sample(row, sid, community_name, captured):
                 layout=layout[0] if layout else None, rental_mode=mode, quality_flags=flags,
                 detail_fetched=False, property_type=None, address=None, floor=None,
                 captured_at=captured, published_at=None, price_kind='listing_rent')
-
-
-def _is_candidate(sample):
-    """候选 = 列表行即整租且标题无疑似隔断旗。
-
-    只有候选值得发详情请求：合租与疑似隔断行在统计侧本就排除，
-    提前识别可省下请求（限速 5 秒/请求）。
-    """
-    return (sample['rental_mode'] == 'whole'
-            and 'suspected_partition' not in sample['quality_flags'])
 
 
 def parse_listing(body, listing_id):
@@ -167,7 +157,7 @@ def _enrich(sample, body, sid, property_type):
 
 
 class XingfuliClient(XingfuliTransport):
-    def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=5, cancel_event=None):
+    def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=DEFAULT_XINGFULI_DELAY, cancel_event=None):
         super().__init__(timeout, directory=directory, fetcher=fetcher, delay=delay,
                          cancel_event=cancel_event, validate=validate_url)
 
@@ -182,15 +172,20 @@ class XingfuliClient(XingfuliTransport):
         captured = dt.datetime.now(dt.UTC).isoformat()
         seen = set()
         offset = 0
-        stage = 'list'
+        search_id = None
         try:
-            data = _page(self.fetch(seed), seed_listing_id)
             for page in range(max_pages):
                 self._check_cancel()
-                first = page == 0
-                rows = data.get('_list' if first else 'items')
-                more = data.get('_hasMore' if first else 'has_more')
-                update = data.get('_updateParams', {}) if first else data
+                params = dict(channel_id=94349583687, house_id=seed_listing_id, house_type=3,
+                              aid=1370, app_name='f100', count=20, refresh_type=2,
+                              offset=offset, list_style='same_neighborhood_list')
+                if search_id:
+                    params['search_id'] = search_id
+                response = json.loads(self.fetch(BASE_URL + '/f100/api/search_api/rent?' + urlencode(params)))
+                if not isinstance(response, dict) or response.get('status') != 0 or not isinstance(response.get('data'), dict):
+                    raise ValueError('幸福里列表 API 请求未成功')
+                data = response['data']
+                rows, more = data.get('items'), data.get('has_more')
                 if not isinstance(rows, list) or not isinstance(more, bool):
                     raise ValueError('幸福里列表结构不完整')
                 result.pages_fetched += 1
@@ -201,64 +196,42 @@ class XingfuliClient(XingfuliTransport):
                     if sample['source_listing_id'] in seen:
                         result.duplicate_ids += 1
                         continue
-                    seen.add(sample['source_listing_id']); added += 1
-                    result.samples.append(sample)
+                    seen.add(sample['source_listing_id'])
+                    added += 1
+                    sample.update(verification_method=XINGFULI_LIST_API_EVIDENCE,
+                                  property_type=property_type, property_type_origin='community_directory')
                     if quota_met:
-                        # 配额已满：本页剩余行只登记为样本，不再发详情请求
-                        continue
-                    if details and _is_candidate(sample):
-                        stage = 'detail'
-                        try:
-                            _enrich(sample, self.fetch(sample['source_url']), source_id, property_type)
-                            result.detail_success += 1
-                        except RentalCrawlCancelled:
-                            raise
-                        except Exception as exc:
-                            result.detail_failed += 1
-                            sample['quality_flags'].append('detail_fetch_failed')
-                            result.errors.append(dict(stage='detail', url=sample['source_url'], error=str(exc)))
-                            if self.cooldown_until:
-                                raise
-                        stage = 'list'
-                        # 只有核验通过的候选占配额；失败候选等后续候选补位
-                        if result.detail_success >= MAX_SAMPLES:
-                            quota_met = True
+                        sample['quality_flags'].append('outside_sampling_quota')
+                    result.samples.append(sample)
+                    quota_met = len(select_valid(result.samples)[0]) >= MAX_SAMPLES
                 if quota_met:
-                    # 配额已满即停：不再翻页，快照是采样契约下的完整结果
                     result.status = 'complete'
                     break
                 if not more:
+                    if not result.samples:
+                        raise ValueError('幸福里空列表缺少小区归属证据，保留原数据')
                     if rows and not added and page > 0:
                         raise ValueError('幸福里末页重复，拒绝发布不完整结果')
-                    if not result.samples:
-                        # An echoed URL alone does not prove an empty list belongs
-                        # to the binding. Verify the anchor's actual neighborhood.
-                        _detail_cards(self.fetch(detail_url(seed_listing_id)), seed_listing_id, source_id)
-                    result.status = 'partial_detail' if result.detail_failed else 'complete' if result.samples else 'empty_ok'
+                    result.status = 'complete'
                     break
-                next_offset, search = update.get('offset'), update.get('search_id')
+                next_offset, search = data.get('offset'), data.get('search_id')
                 if (not added or not isinstance(next_offset, int) or isinstance(next_offset, bool)
                         or next_offset <= offset or not isinstance(search, str) or not search):
                     raise ValueError('幸福里分页未推进，拒绝发布不完整结果')
                 if page + 1 == max_pages:
-                    result.status = 'truncated'; result.pages_truncated = True
+                    result.status = 'truncated'
+                    result.pages_truncated = True
                     break
-                offset = next_offset
-                params = dict(channel_id=94349583687, house_id=seed_listing_id, house_type=3,
-                              aid=1370, app_name='f100', count=20, refresh_type=2,
-                              offset=offset, search_id=search, list_style='same_neighborhood_list')
-                data = json.loads(self.fetch(BASE_URL + '/f100/api/search_api/rent?' + urlencode(params)))
-                if data.get('status') != 0 or not isinstance(data.get('data'), dict):
-                    raise ValueError('幸福里分页请求未成功')
-                data = data['data']
+                offset, search_id = next_offset, search
             else:
-                result.status = 'truncated'; result.pages_truncated = True
+                result.status = 'truncated'
+                result.pages_truncated = True
         except RentalCrawlCancelled:
             raise
         except Exception as exc:
-            result.status = 'partial_detail' if stage == 'detail' else 'list_failed'
+            result.status = 'list_failed'
             result.deferred = bool(self.cooldown_until and self.request_count == starting_requests)
-            result.errors.append(dict(stage=stage, url=seed, error=str(exc)))
+            result.errors.append(dict(stage='list', url=seed, error=str(exc)))
         return result
 
     def close(self):

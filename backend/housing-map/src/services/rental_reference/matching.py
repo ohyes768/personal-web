@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 
+from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
 from src.services.community_registry import now
 from src.services.rental_reference.association import eligible_communities, read_review
 from src.services.rental_reference.probe import PREFIX as PROBE_PREFIX, ProbeService, read_state
@@ -40,7 +41,7 @@ def source_reviews(registry):
 
 
 class SourceMatchingService:
-    def __init__(self, registry, *, directory, discovery_factory=None, delay=5,
+    def __init__(self, registry, *, directory, discovery_factory=None, delay=DEFAULT_XINGFULI_DELAY,
                  busy=None, task_lock=None):
         self.registry = registry
         self.directory = directory

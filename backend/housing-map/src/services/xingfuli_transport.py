@@ -19,6 +19,9 @@ from src.services.fang_rentals import RentalCrawlCancelled
 from src.services.rental_reference.storage import RentalPublishLock, _atomic_write_json
 
 
+DEFAULT_XINGFULI_DELAY = 3
+
+
 class _NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         # Redirects often lead to login/challenge; never follow an unchecked URL.
@@ -28,13 +31,13 @@ class _NoRedirect(HTTPRedirectHandler):
 class XingfuliTransport:
     """Bounded, serialized HTTP access to the whitelisted Xingfuli host."""
 
-    def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=5, cancel_event=None, validate=None):
+    def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=DEFAULT_XINGFULI_DELAY, cancel_event=None, validate=None):
         if directory is None:
             from src.services.data_loader import DATA_DIR
             directory = DATA_DIR / 'rentals'
         self.directory = Path(directory)
         self.timeout = timeout
-        self.delay = max(0, delay) if fetcher else max(5, delay)
+        self.delay = max(0, delay) if fetcher else max(DEFAULT_XINGFULI_DELAY, delay)
         self.cancel = cancel_event or threading.Event()
         self.fetcher = fetcher
         self.request_count = 0

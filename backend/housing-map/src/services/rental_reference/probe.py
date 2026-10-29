@@ -12,6 +12,7 @@ import os
 import threading
 import uuid
 
+from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
 from src.services.community_registry import dump, normalized, now
 from src.services.fang_rentals import RentalCrawlCancelled
 from src.services.rental_reference.xingfuli_sources import (
@@ -108,7 +109,7 @@ def _search_names(community):
 class ProbeService:
     """Single-slot background probe of one community's Xingfuli source."""
 
-    def __init__(self, registry, *, directory=None, delay=5, timeout=20, budget=DEFAULT_BUDGET,
+    def __init__(self, registry, *, directory=None, delay=DEFAULT_XINGFULI_DELAY, timeout=20, budget=DEFAULT_BUDGET,
                  discovery_factory=None, busy=None, task_lock=None, xingfuli_only=False):
         self.registry = registry
         self.directory = directory

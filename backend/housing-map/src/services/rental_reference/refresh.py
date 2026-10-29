@@ -46,6 +46,8 @@ from src.services.fang_detail_cache import FangDetailCache
 from src.services.fang_request_policy import FangRequestPolicy, FangRequestCancelled
 from src.services.rental_reference.providers import active_sources, same_source, source_url
 from src.services.xingfuli_rentals import MAX_SAMPLES, XingfuliClient
+from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
+from src.services.rental_reference.statistics import select_valid
 
 JOB_FILE_NAME = 'refresh_job.json'
 DEFAULT_MAX_PAGES = 10
@@ -189,7 +191,7 @@ class RentalRefreshService:
                  auto_discover: bool = False,
                  xingfuli_only: bool = False, task_lock=None, busy=None,
                  max_pages: int = DEFAULT_MAX_PAGES,
-                 delay: float = DEFAULT_DELAY_SECONDS,
+                 delay: float | None = None,
                  timeout: float = DEFAULT_TIMEOUT_SECONDS,
                  details: bool = True,
                  reuse_hours: float = 6,
@@ -206,7 +208,8 @@ class RentalRefreshService:
         self._xingfuli_only = xingfuli_only
         self._busy = busy
         self._max_pages = max_pages
-        self._delay = delay
+        self._delay = delay if delay is not None else (DEFAULT_XINGFULI_DELAY if xingfuli_only else DEFAULT_DELAY_SECONDS)
+        self._xingfuli_delay = delay if delay is not None else DEFAULT_XINGFULI_DELAY
         self._timeout = timeout
         self._details = details
         self._reuse_hours = reuse_hours
@@ -395,7 +398,7 @@ class RentalRefreshService:
                     self._update_job(current_community_id=plan.community_id)
                     if xingfuli_client is None:
                         xingfuli_client = self._xingfuli_factory(timeout=self._timeout, directory=self.rentals_dir,
-                            cancel_event=self._cancel_event, delay=self._delay)
+                            cancel_event=self._cancel_event, delay=self._xingfuli_delay)
                     result = xingfuli_client.crawl(plan.source_community_id, plan.seed_listing_id,
                         community_name=plan.community_name, property_type=plan.property_type,
                         max_pages=self._max_pages, details=self._details, cancel_event=self._cancel_event)
@@ -417,11 +420,12 @@ class RentalRefreshService:
                 # carried_over/absent logic instead of dropping the community.
                 quality = {'duplicate_source_ids_skipped': seed_result.duplicate_ids}
                 if plan.source == 'xingfuli':
-                    # 配额采样快照：如实记录抽了多少、核验通过多少
+                    # 列表抽样快照：记录检查行数和统计过滤后的有效数
                     quality['sampling'] = {
+                        'mode': 'list_api',
                         'quota': MAX_SAMPLES,
-                        'qualified': seed_result.detail_success,
-                        'sampled': seed_result.detail_success + seed_result.detail_failed,
+                        'qualified': len(select_valid(seed_result.samples)[0]),
+                        'sampled': len(seed_result.samples),
                     }
                 batches.append(CommunityBatch(
                     community_id=plan.community_id, source=plan.source,
@@ -579,7 +583,7 @@ class RentalRefreshService:
             return {}
         factory = self._discovery_factory or XingfuliDiscovery
         discovery = factory(timeout=self._timeout, directory=self.rentals_dir,
-                            cancel_event=self._cancel_event, delay=self._delay)
+                            cancel_event=self._cancel_event, delay=self._xingfuli_delay)
         try:
             report = auto_discover(registry, discovery, missing, budget=5, cancel=self._cancel_event)
         except Exception as exc:

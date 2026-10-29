@@ -12,6 +12,7 @@ import json
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
+from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
 from src.services.xingfuli_rentals import detail_url, listing_neighborhood, list_url
 from src.services.xingfuli_transport import XingfuliTransport
 
@@ -160,7 +161,7 @@ def search_groups(items, channel='rent'):
 class XingfuliDiscovery(XingfuliTransport):
     """Reads the platform's public search and community homepage pages."""
 
-    def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=5, cancel_event=None):
+    def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=DEFAULT_XINGFULI_DELAY, cancel_event=None):
         super().__init__(timeout, directory=directory, fetcher=fetcher, delay=delay,
                          cancel_event=cancel_event, validate=validate_discovery_url)
 

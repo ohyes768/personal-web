@@ -170,3 +170,18 @@ test('detail request path encodes community id and query params', () => {
   const encoded = buildRentalDetailPath('a b/c', { areaBand: 'all', bedrooms: '4plus', page: 1, view: 'valid' });
   assert.match(encoded, /^communities\/a%20b%2Fc\/rentals\?/);
 });
+
+test('list API sampling explicitly discloses missing detail verification', () => {
+  const html = renderToStaticMarkup(React.createElement(RentalReferenceContent, {
+    data: availableData({ sampling: { mode: 'list_api', quota: 10, qualified: 8, sampled: 20 } }),
+  }));
+  assert.match(html, /列表抽样：最多 10 套整租/);
+  assert.match(html, /未经逐套详情核验/);
+});
+
+test('list sampling notice remains visible when a filter has no samples', () => {
+  const html = renderToStaticMarkup(React.createElement(RentalReferenceContent, {
+    data: availableData({ availability: 'no_samples', sampling: { mode: 'list_api', quota: 10, qualified: 0, sampled: 20 } }),
+  }));
+  assert.match(html, /未经逐套详情核验/);
+});

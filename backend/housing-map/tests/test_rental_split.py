@@ -48,7 +48,12 @@ def test_xingfuli_batch_publishes_sampling_quality(tmp_path):
         def crawl(self, sid, seed, **kwargs):
             return SeedRunResult(seed=source_url(next(s for s in reg.sources() if s['source'] == 'xingfuli')),
                                  status='complete', pages_fetched=1,
-                                 detail_success=10, detail_failed=1)
+                                 samples=[dict(source='xingfuli', source_listing_id=str(i), source_community_id=sid,
+                                               captured_at='2026-10-29T00:00:00+00:00',
+                                               monthly_rent_yuan=6000+i, area_m2=90, rental_mode='whole',
+                                               layout='3室1厅', property_type='住宅', property_type_origin='community_directory',
+                                               verification_method='xingfuli_list_api_v1', detail_fetched=False)
+                                          for i in range(10)])
         def close(self): pass
     svc = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
                                xingfuli_only=True, fetch_factory=forbidden,
@@ -57,7 +62,7 @@ def test_xingfuli_batch_publishes_sampling_quality(tmp_path):
     svc._thread.join(5)
     assert svc.status()['phase'] == 'done', svc.status()
     entry = load_current(tmp_path / 'rentals')['communities']['pilot']
-    assert entry['quality']['sampling'] == {'quota': 10, 'qualified': 10, 'sampled': 11}
+    assert entry['quality']['sampling'] == {'mode': 'list_api', 'quota': 10, 'qualified': 10, 'sampled': 10}
 
 
 def test_collection_with_only_old_fang_source_requires_matching(tmp_path):

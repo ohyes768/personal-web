@@ -71,7 +71,7 @@
 - 白名单：`m.xflapp.com` 的 `/f100/api/search`（参数限 `city_id/house_type/channel_id/full_text/count/offset/page_type`）、
   `/xiaoqu/hz-数字.html`、`/zufang/hz-数字.html`、`/zufang/neighbor-house-list/hz-数字.html`。
 - **不要引入 m.99hdf.com**：总小区页在 xflapp 上直接可读。
-- 搜索与探查共用同一限速/冷却槽（`RentalPublishLock(rentals/xingfuli_request)`），至少 5 秒间隔，一小时冷却。
+- 搜索与探查共用同一限速/冷却槽（`RentalPublishLock(rentals/xingfuli_request)`），至少 3 秒间隔，一小时冷却。
 - 预算按真实 HTTP 计：自动发现每轮 5 次，手动单小区探查最多 12 次；超限记 `deferred`，不记失败。
 - 自动发现的预算只够看几个小区，因此按 `rental_xingfuli_auto_cursor` 轮转：没有游标就会每轮重复查同一个小区，
   其余小区永远轮不到。预算耗尽的小区保留位置，下一轮优先。
@@ -122,7 +122,7 @@ Wrong：把平台地址写进来源的 `address`。Correct：写 `platform_addre
 ## 来源匹配提速契约（2026-10-29）
 
 ### Scope / Trigger
-修改`matching.py`、`probe.py`、`discovery_checkpoint.py`、发现客户端或来源匹配按钮时适用。保留共享5秒限速、冷却、任务锁与发布锁。
+修改`matching.py`、`probe.py`、`discovery_checkpoint.py`、发现客户端或来源匹配按钮时适用。保留共享3秒限速、冷却、任务锁与发布锁。
 
 ### Signatures
 - `SourceMatchingService.start(mode=None, *, _startup=False)`；POST请求`{"mode":"full"}`或`{"mode":"incremental"}`，非法模式422，互斥409。省略请求体/模式兼容原先自动续跑行为。

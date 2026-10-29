@@ -744,3 +744,25 @@ def test_routes_use_shared_group_stats():
     assert stats['sample_count'] == 3
     assert stats['rent_reference']['median_unit_rent_yuan_m2_month'] == \
         pytest.approx(90.0)
+
+
+def test_list_api_evidence_and_sampling_mode_survive_detail_and_summary(api_env):
+    from src.services.community_registry import CommunityRegistry
+    registry = CommunityRegistry(api_env.parent / 'community_registry.sqlite3')
+    registry.create('风雅钱塘世纪花园', district='滨江', address='测试路1号', community_id=CID_MAPPED)
+    record = registry.ingest(dict(source='xingfuli', source_id=SRC_ID, name='风雅钱塘世纪花园',
+                                  seed_listing_id='7502229388495274018', auto_association_disabled=True))
+    registry.associate(record['id'], CID_MAPPED)
+    samples = valid3()
+    for sample in samples:
+        sample.update(source='xingfuli', detail_fetched=False,
+                      verification_method='xingfuli_list_api_v1', property_type_origin='community_directory')
+    marker = {'mode': 'list_api', 'quota': 10, 'qualified': 3, 'sampled': 3}
+    snapshot = entry(CID_MAPPED, samples, quality={'sampling': marker})
+    snapshot['source'] = 'xingfuli'
+    publish(api_env, {CID_MAPPED: snapshot})
+    data = detail(CID_MAPPED)
+    assert data['sample_count'] == 3 and data['excluded_count'] == 0
+    assert data['sampling'] == marker
+    assert data['groups'][0]['rent_reference'] is not None
+    assert summaries()[CID_MAPPED]['sample_count'] == data['sample_count']

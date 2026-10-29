@@ -78,17 +78,22 @@ function SampleItem({ sample, excluded }: { sample: RentalDetailSample; excluded
       <span>{sample.unit_rent_yuan_m2_month == null ? '单价未知' : `${sample.unit_rent_yuan_m2_month.toFixed(1)} 元/㎡/月`}</span>
     </div>
     {sample.title && <p className="rental-meta">{sample.title}</p>}
-    {excluded && <p className="rental-exclude-reason">排除理由：{sample.exclude_reason || '未知'}</p>}
+    {excluded && <p className="rental-exclude-reason">排除理由：{sample.exclude_reason === 'outside_sampling_quota' ? '已达到本次抽样上限' : sample.exclude_reason || '未知'}</p>}
     <p className="rental-meta">采集 {date(sample.captured_at)} · <RentalSourceLink url={sample.source_url}>来源房源</RentalSourceLink></p>
   </li>;
 }
 
 export function RentalReferenceContent({ data, view = 'valid' }: { data: RentalDetailData; view?: RentalSampleView }) {
+  const samplingNotice = data.sampling
+    ? data.sampling.mode === 'list_api'
+      ? `列表抽样：最多 ${data.sampling.quota} 套整租，未经逐套详情核验，非小区全部在租房源。`
+      : `抽样采集：目标 ${data.sampling.quota} 条整租合格样本，非小区全部在租房源。`
+    : null;
   if (data.availability === 'unmapped') {
     return <div className="rental-empty">这个小区尚未关联租金来源，请在上方查找并确认对应小区。</div>;
   }
   if (data.availability === 'no_samples') {
-    return <div className="rental-empty">{data.captured_at ? '已关联来源，但当前筛选下没有可用房源样本。' : '已关联来源，尚未采集租金。在“采集任务”里开始“更新租金数据”即可更新。'}</div>;
+    return <div className="rental-empty">{data.captured_at ? '已关联来源，但当前筛选下没有可用房源样本。' : '已关联来源，尚未采集租金。在“采集任务”里开始“更新租金数据”即可更新。'}{samplingNotice && <p className="rental-meta">{samplingNotice}</p>}</div>;
   }
   if (data.availability === 'source_failed' && data.groups.length === 0) {
     return <div className="rental-empty">最近一次租金采集失败，暂无可展示数据。</div>;
@@ -96,7 +101,7 @@ export function RentalReferenceContent({ data, view = 'valid' }: { data: RentalD
 
   const notices: string[] = [];
   if (data.regional_sample) notices.push('来自区域采集的租房样本，尚未覆盖该小区全部房源；关联后按已保存样本计算参考。');
-  if (data.sampling) notices.push(`抽样采集：目标 ${data.sampling.quota} 条整租合格样本，非小区全部在租房源。`);
+  if (samplingNotice) notices.push(samplingNotice);
   if (data.availability === 'insufficient_samples') {
     notices.push('有效样本不足 3 条，仅展示明细，不输出租金参考与收益估算。');
   }

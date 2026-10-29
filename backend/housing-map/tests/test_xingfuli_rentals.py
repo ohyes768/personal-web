@@ -1,29 +1,27 @@
-"""Offline contract tests for the public Hangzhou Xingfuli rental pages."""
+"""List API sampling, identity checks, pagination and shared request policy."""
 import json
 import threading
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
 from src.services import xingfuli_rentals as xfl
+from src.services.rental_reference.statistics import select_valid
+from src.services.xingfuli_transport import XingfuliTransport
 
 SID = '6581030816598458638'
 SEED = '7502229388495274018'
 LID = '7660466810168328198'
 
 
-def row(lid=LID, sid=SID, mode=1, title='整租·风雅钱塘 3室1厅'):
-    return dict(id=lid, neighborhood_id=sid, rental_type=mode, rent_price='6000',
+def row(lid=LID, sid=SID, mode=1, title='整租·风雅钱塘 3室1厅', rent='6000'):
+    return dict(id=lid, neighborhood_id=sid, rental_type=mode, rent_price=rent,
                 rent_price_unit='元/月', title=title, sub_title='130.76㎡ | 南 | 滨江 滨江区政府')
 
 
 def html(data, query=None):
     return '<script name="pia-ssr-data" type="application/json">' + json.dumps(
         dict(query=query or dict(city='hz', id=SEED), data=data), ensure_ascii=False) + '</script>'
-
-
-def listing(rows=None, more=False, offset=20):
-    return html(dict(status=1, _list=[row()] if rows is None else rows, _hasMore=more,
-                     _updateParams=dict(offset=offset, search_id='opaque-cursor', refresh_type=2)))
 
 
 def detail(lid=LID, sid=SID):
@@ -35,96 +33,108 @@ def detail(lid=LID, sid=SID):
         query=dict(city='hz', id=lid))
 
 
+def page(items, more=False, offset=20, search='cursor'):
+    return dict(status=0, data=dict(items=items, has_more=more, offset=offset, search_id=search))
+
+
 def client(tmp_path, pages):
+    calls = []
     def fetch(url):
-        if '/search_api/rent?' in url:
-            return pages['next']
-        return pages[url]
-    return xfl.XingfuliClient(directory=tmp_path, fetcher=fetch, delay=0)
+        assert urlsplit(url).path == '/f100/api/search_api/rent', url
+        calls.append(parse_qs(urlsplit(url).query))
+        response = pages[len(calls) - 1]
+        return response if isinstance(response, str) else json.dumps(response)
+    return xfl.XingfuliClient(directory=tmp_path, fetcher=fetch, delay=0), calls
 
 
 def crawl(c, **kwargs):
     return c.crawl(SID, SEED, community_name='风雅钱塘', property_type='住宅', **kwargs)
 
 
-def test_complete_pagination_and_actual_detail_verification(tmp_path):
-    other = '7660466810168328199'
-    c = client(tmp_path, {xfl.list_url(SEED): listing(more=True),
-        'next': json.dumps(dict(status=0, data=dict(items=[row(other, mode=2, title='合租·风雅钱塘 3室1厅')],
-                                 offset=21, search_id='next', has_more=False))),
-        xfl.detail_url(LID): detail()})
+def rows(start, count):
+    return [row(lid=str(900000 + i), rent=str(6000 + i)) for i in range(start, start + count)]
+
+
+def test_list_api_first_page_stops_at_ten_statistically_valid_samples(tmp_path):
+    c, calls = client(tmp_path, [page(rows(0, 20), more=True)])
     result = crawl(c)
-    assert result.status == 'complete' and result.pages_fetched == 2
-    assert len(result.samples) == 2 and result.detail_success == 1
-    whole, shared = result.samples
-    assert whole['source_listing_id'] == LID and whole['source_community_id'] == SID
-    assert whole['monthly_rent_yuan'] == 6000 and whole['area_m2'] == 130.76
-    assert whole['detail_fetched'] and whole['floor'] == '中 | 共27层'
-    assert whole['published_at'] is None and whole['price_kind'] == 'listing_rent'
-    assert shared['rental_mode'] == 'shared' and 'shared_rental' in shared['quality_flags']
+    assert result.status == 'complete' and not result.pages_truncated
+    valid, _ = select_valid(result.samples)
+    assert len(valid) == 10
+    assert result.detail_success == result.detail_failed == 0
+    assert all(not s['detail_fetched'] for s in result.samples)
+    assert valid[0]['verification_method'] == 'xingfuli_list_api_v1'
+    assert valid[0]['property_type_origin'] == 'community_directory'
+    assert calls[0]['offset'] == ['0'] and calls[0]['house_id'] == [SEED]
+    assert 'search_id' not in calls[0] and len(calls) == 1
+    assert len(result.samples) == 20  # excluded rows remain auditable
 
 
-@pytest.mark.parametrize('body', [listing([row(sid='999')]), '<title>验证</title>',
-    html(dict(status=1, _list=[], _hasMore=False), query=dict(city='bj', id=SEED))])
-def test_wrong_community_challenge_and_city_are_failures(tmp_path, body):
-    result = crawl(client(tmp_path, {xfl.list_url(SEED): body}))
+def test_invalid_and_duplicate_rows_do_not_consume_quota(tmp_path):
+    invalid = [row(lid='1', mode=2), row(lid='2', title='整租·风雅钱塘 独立厨卫'),
+               row(lid='3', rent='0'), row(lid='4', title='整租·风雅钱塘 户型未知')]
+    duplicate = row(lid='5', rent='6000')  # same facts as row 900000
+    c, calls = client(tmp_path, [page(invalid + rows(0, 4) + [duplicate], True),
+                                page(rows(3, 10), False, offset=40)])
+    result = crawl(c)
+    assert result.status == 'complete'
+    valid, audit = select_valid(result.samples)
+    assert len(valid) == 10 and result.duplicate_ids == 1
+    assert len(audit['suspect_duplicates']) == 1
+    assert len(calls) == 2 and calls[1]['offset'] == ['20']
+    assert calls[1]['search_id'] == ['cursor']
+
+
+def test_small_community_saves_actual_samples(tmp_path):
+    c, calls = client(tmp_path, [page(rows(0, 3))])
+    result = crawl(c)
+    assert result.status == 'complete' and len(select_valid(result.samples)[0]) == 3
+    assert len(calls) == 1 and result.detail_success == result.detail_failed == 0
+
+
+@pytest.mark.parametrize('response', [page([row(sid='wrong')]), page([dict(row(), rent_price_unit='元/天')]),
+    '<title>验证</title>', dict(status=1001, message='params error'), page([]),
+    dict(status=0, data=dict(items=[], has_more='false'))])
+def test_unverified_empty_wrong_membership_or_invalid_response_fails(tmp_path, response):
+    c, _ = client(tmp_path, [response])
+    result = crawl(c)
     assert result.status == 'list_failed' and result.errors
 
 
-def test_partial_details_never_count_as_complete(tmp_path):
-    result = crawl(client(tmp_path, {xfl.list_url(SEED): listing(),
-                                   xfl.detail_url(LID): detail(sid='wrong')}))
-    assert result.status == 'partial_detail'
-    assert result.samples[0]['detail_fetched'] is False
-
-
-def test_page_limit_and_stalled_cursor_are_not_complete(tmp_path):
-    c = client(tmp_path, {xfl.list_url(SEED): listing(more=True)})
-    assert crawl(c, max_pages=1, details=False).status == 'truncated'
-    c = client(tmp_path / 'again', {xfl.list_url(SEED): listing(more=True), 'next': json.dumps(
-        dict(status=0, data=dict(items=[row()], offset=20, search_id='x', has_more=True)))})
-    assert crawl(c, details=False).status == 'list_failed'
-
-
-def test_empty_complete_and_cancel_before_fetch(tmp_path):
-    c = client(tmp_path, {xfl.list_url(SEED): listing([]), xfl.detail_url(SEED): detail(lid=SEED)})
-    assert crawl(c).status == 'empty_ok'
-    event = threading.Event(); event.set()
-    with pytest.raises(xfl.RentalCrawlCancelled):
-        crawl(c, cancel_event=event)
-
-
-def test_empty_list_without_membership_proof_is_not_empty_success(tmp_path):
-    c = client(tmp_path, {xfl.list_url(SEED): listing([]), xfl.detail_url(SEED): '<title>已下架</title>'})
+def test_page_limit_stalled_cursor_and_duplicate_final_page(tmp_path):
+    c, _ = client(tmp_path, [page(rows(0, 2), True)])
+    assert crawl(c, max_pages=1).status == 'truncated'
+    c, _ = client(tmp_path / 'cursor', [page(rows(0, 2), True, offset=0)])
+    assert crawl(c).status == 'list_failed'
+    c, _ = client(tmp_path / 'duplicate', [page(rows(0, 2), True), page(rows(0, 2))])
     assert crawl(c).status == 'list_failed'
 
 
-def test_duplicate_final_page_and_api_error_are_not_complete(tmp_path):
-    for response in [dict(status=0, data=dict(items=[row()], offset=20, search_id='x', has_more=False)),
-                     dict(status=1001, message='params error')]:
-        c = client(tmp_path, {xfl.list_url(SEED): listing(more=True), 'next': json.dumps(response)})
-        assert crawl(c, details=False).status == 'list_failed'
+def test_even_rows_after_quota_must_belong_to_expected_community(tmp_path):
+    c, _ = client(tmp_path, [page(rows(0, 10) + [row(sid='wrong')])])
+    assert crawl(c).status == 'list_failed'
 
 
-def test_cancellation_after_http_response_discards_result(tmp_path):
+def test_cancel_before_and_after_http_response(tmp_path):
     event = threading.Event()
+    c, calls = client(tmp_path, [page(rows(0, 2))])
+    event.set()
+    with pytest.raises(xfl.RentalCrawlCancelled):
+        crawl(c, cancel_event=event)
+    assert calls == []
+    event.clear()
     def fetch(url):
         event.set()
-        return listing()
+        return json.dumps(page(rows(0, 2)))
     c = xfl.XingfuliClient(directory=tmp_path, fetcher=fetch, delay=0)
     with pytest.raises(xfl.RentalCrawlCancelled):
         crawl(c, cancel_event=event)
 
 
 def test_challenge_cools_down_without_repeated_requests(tmp_path):
-    requests = []
-    def fetch(url):
-        requests.append(url)
-        return '<title>captcha</title>'
-    c = xfl.XingfuliClient(directory=tmp_path, fetcher=fetch, delay=0)
+    c, calls = client(tmp_path, ['<title>captcha</title>'])
     assert crawl(c).status == 'list_failed'
-    second = crawl(c)
-    assert second.deferred and c.cooldown_until and len(requests) == 1
+    assert crawl(c).deferred and c.cooldown_until and len(calls) == 1
 
 
 @pytest.mark.parametrize('url', ['http://m.xflapp.com/zufang/hz-123.html',
@@ -135,114 +145,64 @@ def test_unsafe_urls_rejected(url):
         xfl.validate_url(url)
 
 
-# ---------------------------------------------------------------------------
-# 配额采样（crawl 抽样早停）
-# ---------------------------------------------------------------------------
-
-def rows(start, count, mode=1, title='整租·风雅钱塘 3室1厅'):
-    """一批列表行；房源 ID 递增，便于逐条核对详情请求。"""
-    return [row(lid=str(900000 + start + i), mode=mode, title=title) for i in range(count)]
+def test_transport_three_second_minimum_and_explicit_slower_delay(tmp_path):
+    assert XingfuliTransport(directory=tmp_path).delay == 3
+    assert XingfuliTransport(directory=tmp_path, delay=0).delay == 3
+    assert XingfuliTransport(directory=tmp_path, delay=8).delay == 8
+    assert XingfuliTransport(directory=tmp_path, fetcher=lambda _: '', delay=0).delay == 0
 
 
-def page_html(items, more=False, offset=20):
-    return html(dict(status=1, _list=items, _hasMore=more,
-                     _updateParams=dict(offset=offset, search_id='opaque-cursor', refresh_type=2)))
+def test_all_xingfuli_entry_points_default_to_three_seconds(tmp_path):
+    from src.services.xingfuli_discovery import XingfuliDiscovery
+    from src.services.rental_reference.probe import ProbeService
+    from src.services.rental_reference.matching import SourceMatchingService
+    from src.services.rental_reference.refresh import RentalRefreshService
+    from tests.test_rental_probe import setup
+    reg = setup(tmp_path)
+    assert xfl.XingfuliClient(directory=tmp_path).delay == 3
+    assert XingfuliDiscovery(directory=tmp_path).delay == 3
+    assert ProbeService(reg, directory=tmp_path).delay == 3
+    assert SourceMatchingService(reg, directory=tmp_path)._probe.delay == 3
+    mixed = RentalRefreshService(tmp_path, tmp_path / 'mapping.json')
+    assert mixed._delay == 5 and mixed._xingfuli_delay == 3
+    assert RentalRefreshService(tmp_path, tmp_path / 'mapping.json', xingfuli_only=True)._xingfuli_delay == 3
 
 
-def page_json(items, more=False, offset=20):
-    return json.dumps(dict(status=0, data=dict(items=items, offset=offset,
-                                               search_id='next-cursor', has_more=more)))
+def test_source_matching_html_membership_parser_remains_available():
+    assert xfl.listing_neighborhood(detail(), LID) == SID
+    with pytest.raises(ValueError, match='城市或房源 ID'):
+        xfl.listing_neighborhood(detail(), SEED)
 
 
-def quota_client(tmp_path, pages, *, bad_details=()):
-    """按 URL 分派的离线客户端：列表页 / 分页接口 / 详情页。
-
-    pages[i] = {'body': 该页列表 HTML, 'next': 取到该页的分页响应 JSON}；
-    bad_details 中的房源详情返回不可解析页面（模拟详情失败）。
-    """
-    state = {'page': 0, 'requests': []}
-
-    def fetch(url):
-        state['requests'].append(url)
-        if '/search_api/rent?' in url:
-            index = state['page']
-            state['page'] += 1
-            return pages[index]['next']
-        if 'neighbor-house-list' in url:
-            return pages[0]['body']
-        lid = url.rsplit('hz-', 1)[1].split('.html')[0]
-        if lid in bad_details:
-            return '<title>已下架</title>'
-        return detail(lid=lid)
-
-    return xfl.XingfuliClient(directory=tmp_path, fetcher=fetch, delay=0), state
+def test_list_sampling_statistics_keeps_minimum_group_threshold(tmp_path):
+    from src.services.rental_reference.statistics import group_stats
+    c, _ = client(tmp_path, [page(rows(0, 2))])
+    valid, _ = select_valid(crawl(c).samples)
+    stats = group_stats(valid, bedrooms=None, band=None)
+    assert stats['sample_count'] == 2
+    assert stats['rent_reference'] is None
 
 
-def requested_details(state):
-    return [url.rsplit('hz-', 1)[1].split('.html')[0]
-            for url in state['requests'] if '/zufang/hz-' in url]
+def test_three_second_interval_uses_persisted_shared_request_state(tmp_path, monkeypatch):
+    from src.services import xingfuli_transport
+    (tmp_path / 'xingfuli_request_state.json').write_text(json.dumps(
+        dict(last_request_at=100, cooldown_until=0)))
+    monkeypatch.setattr(xingfuli_transport.time, 'time', lambda: 101)
+    first = XingfuliTransport(directory=tmp_path, fetcher=lambda _: '{}', delay=3)
+    waits = []
+    monkeypatch.setattr(first, '_check_cancel', lambda seconds=0: waits.append(seconds))
+    first.fetch('https://m.xflapp.com/f100/api/search_api/rent')
+    assert 2 in waits  # 100 + 3 - 101
+    second = XingfuliTransport(directory=tmp_path, fetcher=lambda _: '{}', delay=3)
+    waits.clear()
+    monkeypatch.setattr(second, '_check_cancel', lambda seconds=0: waits.append(seconds))
+    second.fetch('https://m.xflapp.com/f100/api/search_api/rent')
+    assert 3 in waits  # another client observes the same persisted slot
 
 
-def paged(state):
-    return [url for url in state['requests'] if '/search_api/rent?' in url]
-
-
-def test_quota_stops_paging(tmp_path):
-    """整租超过配额：详情请求停在第 10 条合格样本，不再翻页。"""
-    c, state = quota_client(tmp_path, [
-        {'body': page_html(rows(0, 8), more=True), 'next': page_json(rows(8, 8), more=True, offset=40)},
-        {'body': page_html(rows(8, 8), more=True, offset=40), 'next': page_json(rows(16, 8), more=True, offset=60)},
-    ])
+@pytest.mark.parametrize('subtitle', ['-20㎡ | 南', '0㎡ | 南', '面积未知'])
+def test_invalid_area_does_not_enter_list_statistics(tmp_path, subtitle):
+    c, _ = client(tmp_path, [page([dict(row(), sub_title=subtitle)])])
     result = crawl(c)
     assert result.status == 'complete'
-    assert result.pages_truncated is False
-    assert result.detail_success == 10 and result.detail_failed == 0
-    assert requested_details(state) == [str(900000 + i) for i in range(10)]
-    assert len(paged(state)) == 1  # 只翻到配额满足的那一页
-    # 配额满足后本页剩余行仍进 samples（明细视图保持完整）
-    assert len(result.samples) == 16
-
-
-def test_quota_skips_partition_suspects(tmp_path):
-    """疑似隔断行不发详情请求，也不占配额。"""
-    suspects = rows(0, 12, title='整租·风雅钱塘 3室1厅 独立厨卫')
-    normal = rows(12, 10)
-    c, state = quota_client(tmp_path, [
-        {'body': page_html(suspects + normal, more=False), 'next': page_json([])},
-    ])
-    result = crawl(c)
-    assert result.status == 'complete'
-    assert result.detail_success == 10 and result.detail_failed == 0
-    assert requested_details(state) == [str(900012 + i) for i in range(10)]
-    assert len(result.samples) == 22
-    flagged = [s for s in result.samples if 'suspected_partition' in s['quality_flags']]
-    assert len(flagged) == 12 and all(not s['detail_fetched'] for s in flagged)
-
-
-def test_quota_backfills_after_detail_failure(tmp_path):
-    """详情失败不占配额：后续候选补位，直到攒满 10 条合格样本。"""
-    c, state = quota_client(tmp_path, [
-        {'body': page_html(rows(0, 12), more=False), 'next': page_json([])},
-    ], bad_details={'900001'})
-    result = crawl(c)
-    assert result.status == 'complete'
-    assert result.pages_truncated is False
-    assert result.detail_success == 10 and result.detail_failed == 1
-    # 第 11 条整租被补位抓取，第 12 条不再请求
-    assert requested_details(state) == [str(900000 + i) for i in range(11)]
-    failed = [s for s in result.samples if 'detail_fetch_failed' in s['quality_flags']]
-    assert len(failed) == 1 and failed[0]['source_listing_id'] == '900001'
-
-
-def test_small_community_unchanged(tmp_path):
-    """整租不超过配额的小区：每条都核验，行为与全量采集一致。"""
-    c, state = quota_client(tmp_path, [
-        {'body': page_html(rows(0, 3), more=False), 'next': page_json([])},
-    ])
-    result = crawl(c)
-    assert result.status == 'complete'
-    assert result.pages_fetched == 1 and result.pages_truncated is False
-    assert result.detail_success == 3 and result.detail_failed == 0
-    assert len(result.samples) == 3
-    assert all(s['detail_fetched'] for s in result.samples)
-    assert len(requested_details(state)) == 3 and not paged(state)
+    assert select_valid(result.samples)[0] == []

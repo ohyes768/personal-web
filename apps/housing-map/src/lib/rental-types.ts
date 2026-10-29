@@ -81,11 +81,12 @@ export interface RentalLastRefresh {
 }
 
 export interface RentalSampling {
+  mode?: 'list_api';
   /** 目标整租合格样本数 */
   quota: number;
-  /** 详情核验通过的样本数 */
+  /** 按本次采样口径过滤后的有效样本数 */
   qualified: number;
-  /** 实际发起详情核验的样本数（成功 + 失败） */
+  /** 实际检查的样本数；旧快照为详情核验次数 */
   sampled: number;
 }
 

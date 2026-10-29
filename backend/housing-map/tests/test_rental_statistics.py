@@ -290,3 +290,17 @@ def test_is_stale_parses_z_suffix_and_naive_utc():
     assert not is_stale('2026-10-01T00:00:00', now=NOW)
     assert is_stale(None, now=NOW)
     assert is_stale('not-a-date', now=NOW)
+
+
+@pytest.mark.parametrize('source,method,origin,layout,expected', [
+    ('xingfuli', 'xingfuli_list_api_v1', 'community_directory', '3室1厅', 1),
+    ('fang', 'xingfuli_list_api_v1', 'community_directory', '3室1厅', 0),
+    ('xingfuli', 'unknown', 'community_directory', '3室1厅', 0),
+    ('xingfuli', 'xingfuli_list_api_v1', None, '3室1厅', 0),
+    ('xingfuli', 'xingfuli_list_api_v1', 'community_directory', None, 0),
+])
+def test_only_explicit_xingfuli_list_evidence_can_replace_detail(source, method, origin, layout, expected):
+    from src.services.rental_reference.statistics import select_valid
+    item = sample(detail=False, layout=layout)
+    item.update(source=source, verification_method=method, property_type_origin=origin)
+    assert len(select_valid([item])[0]) == expected

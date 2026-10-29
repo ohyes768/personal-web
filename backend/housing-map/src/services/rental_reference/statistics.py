@@ -15,6 +15,7 @@ RESIDENTIAL_TYPES = {'住宅', '普通住宅'}
 SALE_PRICE_BASES = {'signed', 'listing'}
 STALE_AFTER = dt.timedelta(days=30)
 MIN_GROUP_SAMPLES = 3
+XINGFULI_LIST_API_EVIDENCE = 'xingfuli_list_api_v1'
 
 _LAYOUT_ROOMS = re.compile(r'(\d+)室')
 
@@ -78,7 +79,14 @@ def _exclusion_reason(row: dict) -> str | None:
     if 'non_residential' in flags or (
             prop_type is not None and prop_type not in RESIDENTIAL_TYPES):
         return 'non_residential'
-    if not row.get('detail_fetched'):
+    if 'outside_sampling_quota' in flags:
+        return 'outside_sampling_quota'
+    list_verified = (row.get('source') == 'xingfuli'
+                     and row.get('verification_method') == XINGFULI_LIST_API_EVIDENCE
+                     and row.get('property_type_origin') == 'community_directory'
+                     and prop_type in RESIDENTIAL_TYPES
+                     and (bedrooms_of(row.get('layout')) or 0) > 0)
+    if not row.get('detail_fetched') and not list_verified:
         return 'detail_not_verified'
     return None
 

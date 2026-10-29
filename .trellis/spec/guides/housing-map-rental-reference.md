@@ -21,7 +21,7 @@ RentalPublishLock   # OS 文件锁 rentals_dir/rental_publish.lock；锁文件�
 
 # refresh.py（后台任务；线程内生命周期自管理，FastAPI 侧 asyncio.to_thread 包装）
 RentalRefreshService(rentals_dir, mappings_path, *, fetch_factory=FangClient,
-                     max_pages=10, delay=5.0, timeout=20.0, details=True, reuse_hours=6, max_errors_kept=20)
+                     max_pages=10, delay=None, timeout=20.0, details=True, reuse_hours=6, max_errors_kept=20)
     .start() -> dict   # RefreshAlreadyRunning→409 / NoVerifiedMappings→422 / MappingFileError→503
     .cancel() -> dict  # RefreshNotRunning→409；cancelling 直到线程退出→cancelled
     .status() -> dict / .shutdown(timeout=30) -> bool
@@ -159,3 +159,7 @@ compareNumericMissingLast(a, b, order)       # null 一律 > 任何数值
 
 ### Unified source check before web refresh (2026-10-14)
 The directory-backed web flow now includes source checking/discovery before crawling. It retains the existing phase enum and adds `stage` plus optional `association` counts. No mappings is not a 422 when a directory is available: checking can finish with review tasks without publishing any data. Discovery/review cannot change asking-rent statistics or make stale/rebound snapshots valid. The legacy standalone mapping-only caller retains its no-mappings error.
+
+
+## 幸福里列表证据兼容（2026-10-29）
+`statistics._exclusion_reason`只允许source=xingfuli、verification_method=xingfuli_list_api_v1、property_type_origin=community_directory、住宅类型且户型有效的列表样本在detail_fetched=false时参与统计。其他无详情核验样本仍为detail_not_verified；所有整租/正值/隔断/重复过滤继续生效。outside_sampling_quota排除本页配额外房源，quota按select_valid之后数量计算，不能直接对原始列表切10条。抽样模式、前端披露、分页失败语义见xingfuli-rentals.md。
