@@ -3,7 +3,7 @@
   "name": "housing-newhouse-map",
   "title": "同地图展示新房项目并比较周边二手房",
   "description": "共用地图增加二手房/新房/全部切换，以项目点展示新房，区分位置可信度与价格口径，便于比较附近二手房。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "housing-map",
   "package": "backend/housing-map",
@@ -11,7 +11,7 @@
   "creator": "jackson.tang",
   "assignee": "jackson.tang",
   "createdAt": "2026-10-28",
-  "completedAt": null,
+  "completedAt": "2026-10-29",
   "branch": null,
   "base_branch": "master",
   "worktree_path": null,
@@ -26,6 +26,6 @@
     "apps/housing-map/src/lib/types.ts",
     "backend/housing-map/src/api/routes.py"
   ],
-  "notes": "用户已确认同地图+类型切换用于新房与附近二手房比较；仅授权规划。默认全部/附近1.5km；保持planning，未启动实现。",
+  "notes": "用户已确认同地图+类型切换用于新房与附近二手房比较；仅授权规划。默认全部/附近1.5km；保持planning，未启动实现。 2026-10-29 收尾：实现已在 afca2fa 提交并推送 origin/master；全量质量门复核（backend/housing-map pytest 1101 passed，tests/test_newhouse_map_api.py 7 passed；apps/housing-map lint/tsc/170 tests/build 全通过）；spec 见 .trellis/spec/backend/housing-map/backend/newhouse-map.md。遗留未做：1440px/375px 实机浏览器验收与键盘操作核对（A6）。按用户指令归档。",
   "meta": {}
 }
