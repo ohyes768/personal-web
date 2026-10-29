@@ -257,7 +257,7 @@ class TestSubmitAnalysis:
             await manager.close(timeout=5)
         asyncio.run(scenario())
 
-    def test_active_job_rejects_extra_codes_without_mutating_status(self, tmp_path):
+    def test_active_job_appends_extra_codes(self, tmp_path):
         import threading
 
         async def scenario():
@@ -272,21 +272,39 @@ class TestSubmitAnalysis:
                 return "run-1"
 
             stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
-            service.submit_analysis(
-                ["000001"], CFG, stocks, "2026-09-30", manager,
-                submit_fn, lambda cfg, run_id: fake_output("000001", "样本"))
+
+            def submit_by_key(cfg, prompt, key):
+                started.set()
+                assert gate.wait(120)
+                return f"run-{key}"
+
+            def poll_by_run(cfg, run_id):
+                if "600519" in run_id:
+                    return fake_output("600519", "新股")
+                return fake_output("000001", "样本")
+
+            job1 = service.submit_analysis(
+                ["000001"], CFG, stocks, "2026-09-30", manager, submit_by_key, poll_by_run)
             assert started.wait(5)
             before = service.get_per_code()
             assert before["000001"]["state"] == "running"
-            with pytest.raises(ValueError, match="已有评级任务在跑"):
-                service.submit_analysis(
-                    ["000001", "600519"], CFG, stocks, "2026-09-30", manager,
-                    lambda cfg, prompt, key: "run-2",
-                    lambda cfg, run_id: fake_output("600519", "新股"))
-            assert service.get_per_code() == before
-            assert "600519" not in service.get_per_code()
+            # 追加受理复用当前任务的执行闭包；此处传入的 fn 不会被采用
+            job2 = service.submit_analysis(
+                ["600519"], CFG, stocks, "2026-09-30", manager, submit_by_key, poll_by_run)
+            after = service.get_per_code()
+            # 旧任务与既有状态不受影响；新代码进入队列
+            assert after["000001"]["state"] == "running"
+            assert after["000001"] == before["000001"]
+            # 追加受理后可能仍在队列或已被派发（并发余量足够时立即开跑）
+            assert after["600519"]["state"] in ("queued", "running")
+            assert job2["job_id"] == job1["job_id"]
+            assert job2["reused"] is True
+            assert job2["codes"] == ["000001", "600519"]
             gate.set()
             await manager.close(timeout=5)
+            final = manager.get(job2["job_id"])
+            assert final["status"] == "succeeded"
+            assert set(service.get_all()) == {"000001", "600519"}
 
         asyncio.run(scenario())
 
@@ -296,7 +314,11 @@ class TestSubmitAnalysis:
         async def scenario():
             service = QualityService(tmp_path / "quality_scores.json")
             manager = RefreshJobManager(tmp_path / "jobs")
-            service._set_status("600000", "completed")
+            service._items["600000"] = {
+                "code": "600000", "name": "丙", "state": "completed", "error": None,
+                "queued_at": "2026-09-30T09:00:00+08:00", "started_at": "2026-09-30T09:00:01+08:00",
+                "finished_at": "2026-09-30T09:03:00+08:00", "updated_at": "2026-09-30T09:03:00+08:00",
+            }
             gate = threading.Event()
             started = threading.Event()
             cfg = HermesConfig(
@@ -330,5 +352,259 @@ class TestSubmitAnalysis:
             assert [code for code, item in after.items() if item["state"] == "queued"] == ["000002"]
             gate.set()
             await manager.close(timeout=5)
+
+
+class TestQueueAppend:
+    """R1/R3：运行中受理新代码入队（FIFO）；重复提交不重复执行、不重置计时。"""
+
+    def test_append_admits_new_code_while_running(self, tmp_path):
+        import threading
+
+        async def scenario():
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            gate = threading.Event()
+            started = threading.Event()
+            stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
+
+            def submit_fn(cfg, prompt, key):
+                started.set()
+                assert gate.wait(120)
+                return f"run-{key}"
+
+            def poll_fn(cfg, run_id):
+                if "000001" in run_id:
+                    return fake_output("000001", "样本")
+                return fake_output("600519", "新股")
+
+            job1 = service.submit_analysis(
+                ["000001"], CFG, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+            assert started.wait(5)
+            # 追加时使用不同的数据日期，验证受理快照逐项生效
+            job2 = service.submit_analysis(
+                ["600519"], CFG, stocks, "2026-10-08", manager, submit_fn, poll_fn)
+            assert job2["job_id"] == job1["job_id"]
+            assert job2["reused"] is True
+            assert job2["codes"] == ["000001", "600519"]
+            assert (job2["total"], job2["remaining"]) == (2, 2)
+            live = service.get_per_code()
+            assert live["600519"]["state"] in ("queued", "running")
+            assert live["600519"]["queued_at"]
+            # 受理先于确认落盘：新的 manager 实例从磁盘读到追加结果
+            persisted = RefreshJobManager(tmp_path / "jobs").get(job1["job_id"])
+            assert persisted["codes"] == ["000001", "600519"]
+            assert persisted["total"] == 2
+            gate.set()
+            await manager.close(timeout=5)
+            final = manager.get(job1["job_id"])
+            assert final["status"] == "succeeded"
+            assert final["processed"] == 2
+            scores = service.get_all()
+            assert set(scores) == {"000001", "600519"}
+            # 600519 使用受理时的数据日期（幂等键与落盘 data_date 逐项快照）
+            assert scores["600519"]["data_date"] == "2026-10-08"
+
+        asyncio.run(scenario())
+
+    def test_duplicate_only_submit_reuses_without_resetting(self, tmp_path):
+        import threading
+
+        async def scenario():
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            gate = threading.Event()
+            started = threading.Event()
+            submit_count = [0]
+
+            def submit_fn(cfg, prompt, key):
+                submit_count[0] += 1
+                started.set()
+                assert gate.wait(120)
+                return "run-1"
+
+            stocks = {"000001": stock()}
+            service.submit_analysis(
+                ["000001"], CFG, stocks, "2026-09-30", manager, submit_fn,
+                lambda cfg, run_id: fake_output("000001", "样本"))
+            assert started.wait(5)
+            before = service.get_per_code()["000001"]
+            job2 = service.submit_analysis(
+                ["000001"], CFG, stocks, "2026-09-30", manager, submit_fn,
+                lambda cfg, run_id: fake_output("000001", "样本"))
+            assert job2["reused"] is True
+            assert submit_count[0] == 1
+            after = service.get_per_code()["000001"]
+            # 重复受理不重置时间戳、不重复执行
+            assert after == before
+            gate.set()
+            await manager.close(timeout=5)
+
+        asyncio.run(scenario())
+
+    def test_retry_failed_code_while_active_requeues(self, tmp_path):
+        import threading
+        import time as time_mod
+
+        async def scenario():
+            # max_concurrent=2：000001 与 600000 同时开跑，600000 先失败可被运行中重试
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=2)
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            gate = threading.Event()
+            attempts = {"600000": 0}
+            attempts_lock = threading.Lock()
+            stocks = {"000001": stock(), "600000": stock(code="600000", name="乙")}
+
+            def submit_fn(cfg, prompt, key):
+                return key
+
+            def poll_fn(cfg, run_id):
+                if "600000" in run_id:
+                    with attempts_lock:
+                        attempts["600000"] += 1
+                        first = attempts["600000"] == 1
+                    if first:
+                        raise HermesRunFailed("run xx 终态 failed")
+                    gate.wait(120)
+                    return fake_output("600000", "乙")
+                assert gate.wait(120)
+                return fake_output("000001", "样本")
+
+            job1 = service.submit_analysis(
+                ["000001", "600000"], cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+            deadline = time_mod.monotonic() + 5
+            while time_mod.monotonic() < deadline:
+                if service.get_per_code().get("600000", {}).get("state") == "failed":
+                    break
+                time_mod.sleep(0.02)
+            assert service.get_per_code()["600000"]["state"] == "failed"
+            # 运行中重试失败的 600000：并入当前任务，total 计为新受理项
+            job2 = service.submit_analysis(
+                ["600000"], cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+            assert job2["reused"] is True
+            assert job2["codes"] == ["000001", "600000"]
+            assert (job2["total"], job2["remaining"]) == (3, 2)
+            assert service.get_per_code()["600000"]["state"] == "queued"
+            gate.set()
+            await manager.close(timeout=5)
+            final = manager.get(job1["job_id"])
+            # 重试成功后失败清单清空，任务以成功收尾
+            assert final["status"] == "succeeded"
+            assert final["failed_codes"] == []
+            assert (final["processed"], final["succeeded"]) == (3, 2)
+            assert set(service.get_all()) == {"000001", "600000"}
+
+        asyncio.run(scenario())
+
+    def test_dispatch_follows_fifo_order(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            order = []
+            order_lock = threading.Lock()
+
+            def submit_fn(cfg, prompt, key):
+                return key
+
+            def poll_fn(cfg, run_id):
+                with order_lock:
+                    order.append(run_id)
+                return fake_output("000001", "样本")
+
+            stocks = {c: stock(code=c, name=n) for c, n in
+                      [("000001", "甲"), ("600000", "乙"), ("600519", "丙")]}
+            codes = ["000001", "600000", "600519"]
+            service.submit_analysis(codes, cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+            await manager.close(timeout=5)
+            with order_lock:
+                assert order == [f"quality-{c}-2026-09-30" for c in codes]
+
+        asyncio.run(scenario())
+
+    def test_global_concurrency_respected(self, tmp_path):
+        import threading
+        import time as time_mod
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=2)
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            stats = {"running": 0, "peak": 0}
+            stats_lock = threading.Lock()
+            codes = ["000001", "000002", "600000", "600519", "601318"]
+            stocks = {c: stock(code=c, name=f"股{i}") for i, c in enumerate(codes)}
+
+            def submit_fn(cfg, prompt, key):
+                return key
+
+            def poll_fn(cfg, run_id):
+                with stats_lock:
+                    stats["running"] += 1
+                    stats["peak"] = max(stats["peak"], stats["running"])
+                time_mod.sleep(0.05)
+                with stats_lock:
+                    stats["running"] -= 1
+                return fake_output("000001", "样本")
+
+            service.submit_analysis(codes, cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+            await manager.close(timeout=10)
+            assert 1 <= stats["peak"] <= 2
+
+        asyncio.run(scenario())
+
+    def test_fresh_service_waits_for_active_job_then_starts_new(self, tmp_path):
+        """跨实例（如重启后新实例）在旧任务收尾前提交：等待终态后开新任务，不丢受理。"""
+        import threading
+        import time as time_mod
+
+        async def scenario():
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            gate = threading.Event()
+            started = threading.Event()
+            stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
+
+            def submit_fn(cfg, prompt, key):
+                started.set()
+                assert gate.wait(120)
+                return f"run-{key}"
+
+            def poll_fn(cfg, run_id):
+                if "000001" in run_id:
+                    return fake_output("000001", "样本")
+                return fake_output("600519", "新股")
+
+            job1 = service.submit_analysis(
+                ["000001"], CFG, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+            assert started.wait(5)
+
+            fresh = QualityService(tmp_path / "quality_scores.json")
+            result = {}
+
+            def delayed():
+                result["job"] = fresh.submit_analysis(
+                    ["600519"], CFG, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+
+            worker = threading.Thread(target=delayed, daemon=True)
+            worker.start()
+            time_mod.sleep(0.3)
+            assert worker.is_alive()  # 旧任务收尾前保持等待，不并发受理
+            gate.set()
+            worker.join(10)
+            assert not worker.is_alive()
+            job2 = result["job"]
+            assert job2["job_id"] != job1["job_id"]
+            await manager.close(timeout=5)
+            assert set(service.get_all()) == {"000001", "600519"}
+            # per_code 是服务内存态：600519 由 fresh 实例受理，状态在 fresh 里
+            assert fresh.get_per_code()["600519"]["state"] == "completed"
+
+        asyncio.run(scenario())
 
         asyncio.run(scenario())

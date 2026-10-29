@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md", "reason": "校验受理/去重/幂等键/快照行为与契约一致"}
+{"file": ".trellis/spec/backend/dividend-select/backend/refresh-jobs-contract.md", "reason": "校验 m120/financial 行为不变与 interrupted 语义保留"}

@@ -12,17 +12,33 @@ FastAPI worker. This is an in-process thread executor, not a distributed queue.
 - `GET /api/dividend/refresh/jobs/{job_id}`: job, or 404.
 - `RefreshJobManager.submit(kind, codes, work, params=None)`: durable acceptance;
   `work(progress)` runs synchronously in a dedicated executor thread.
+- `RefreshJobManager.append_codes(job_id, codes) -> job | None`: quality-only
+  durable append into an active job; returns None when the job is missing or
+  already terminal. Never called by m120/financial.
 - Collectors accept optional `on_progress(code, success)` without changing their
   existing integer/DataFrame return values. Financial batch callbacks remain supported.
 
 ## 3. Contracts
 Jobs contain `job_id`, `kind`, `status`, `total`, `processed`, `succeeded`, `failed`,
-`remaining`, `codes`, `failed_codes`, `retry_codes`, `params`, `error`, `message`,
+`remaining`, `codes`, `failed_codes`, `retry_codes`, `admissions`, `params`, `error`, `message`,
 and Shanghai timezone ISO timestamps. Admission also includes `reused`.
 Statuses: queued/running/succeeded/partial_failed/failed/interrupted.
-`processed=succeeded+failed`; `remaining=total-processed`. Success counts collected
+`processed=succeeded+failed`; `remaining=total-processed`. `total` counts
+accepted items: one per code initially, plus one per appended acceptance
+(quality retry re-admits a code). `admissions[code]` records the expected
+number of completions per code; `progress` rejects codes outside `codes`, and
+counts repeated progress for the same code only up to quality retry re-admission
+(m120/financial still report each code exactly once). Success removes the code
+from `failed_codes`; terminal status uses `failed_codes` (current failures), not
+the cumulative `failed` attempt count, so a retried-and-recovered quality job
+ends `succeeded`. The `message` 失败 figure is `len(failed_codes)`. Success counts collected
 rows; publication failure overrides the whole job to failed and retries all codes.
 Empty selections produce a zero-count succeeded job.
+
+`append_codes` merges new acceptances into the active job under the manager
+lock: new codes extend `codes`, `admissions[code]` increments, `total`/
+`remaining`/`retry_codes` update, and the job is saved before the caller
+acknowledges. It never touches a terminal job.
 
 One active job per kind owns all writes, including scheduled refresh. Different
 kinds may run concurrently. Synchronous routes perform only preparation/admission;

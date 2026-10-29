@@ -4,9 +4,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
 import { dividendApi } from '@/lib/api';
+import { buildQualityQueue, isQualityPending } from '@/lib/quality';
 import { DEFAULT_SCREENING, restoreScreeningConditions, type ScreeningConditions, type ScreeningItem, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityReportModal } from './QualityReportModal';
+import { QualityQueuePanel } from './QualityQueuePanel';
 import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
 
 const STORAGE_KEY = 'dividend-screening-conditions-v1';
@@ -27,7 +29,9 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
   const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ScreeningItem | null>(null);
-  const { qualityScores, qualityPerCode, qualityConfigured, analyzing, qualityJob, qualityMessage, analyze } = useQualityAnalysis();
+  const { qualityScores, qualityPerCode, qualityConfigured, qualityJob, qualityMessage, qualityPollError, analyze } = useQualityAnalysis();
+  const queueView = buildQualityQueue(qualityPerCode);
+  const pending = useCallback((code: string) => isQualityPending(qualityPerCode[code]), [qualityPerCode]);
   const requestId = useRef(0);
   const appliedConditions = useRef(DEFAULT_SCREENING);
   const previousRevision = useRef(refreshRevision);
@@ -115,12 +119,11 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
       </div>
-      {analyzing && <p aria-live="polite" className="text-sm text-ink-muted">
-        {qualityJob ? `评级进行中 ${qualityJob.processed}/${qualityJob.total} · 失败 ${qualityJob.failed}` : '评级提交中…'}
-      </p>}
+      <QualityQueuePanel view={queueView} job={qualityJob} onRetry={codes => void analyze(codes)} configured={qualityConfigured} />
+      {qualityPollError && <p role="status" className="text-sm text-amber-700">评级进度查询失败，任务不受影响，自动重试中…</p>}
       {qualityMessage && <p role="status" className="text-sm text-ink">
         {qualityMessage}
-        {!analyzing && qualityJob && qualityJob.failed_codes.length > 0 && <button className={`${buttonClass} ml-2`} onClick={() => void analyze(qualityJob.failed_codes)}>重试失败 {qualityJob.failed_codes.length} 只</button>}
+        {qualityJob && qualityJob.failed_codes.length > 0 && qualityJob.status !== 'queued' && qualityJob.status !== 'running' && <button className={`${buttonClass} ml-2`} onClick={() => void analyze(qualityJob.failed_codes)}>重试失败 {qualityJob.failed_codes.length} 只</button>}
       </p>}
       {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}</p>}
       {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
@@ -149,14 +152,14 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
                   if (live?.state === 'failed') {
                     return <span className="inline-flex items-center gap-2">
                       <span className="text-xs text-red-700" title={live.error || '评级失败'}>失败</span>
-                      <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={live.error || '重新发起评级'} onClick={() => void analyze([stock.code])}>重试</button>
+                      <button className={buttonClass} disabled={saving || !qualityConfigured} title={live.error || '重新发起评级'} onClick={() => void analyze([stock.code])}>重试</button>
                     </span>;
                   }
                   return status !== 'eligible'
                     ? <span className="text-ink-muted">待分析</span>
                     : score
-                      ? <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
-                      : <button className={buttonClass} disabled={analyzing || saving || !qualityConfigured} title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>分析</button>;
+                      ? <button className={buttonClass} disabled={pending(stock.code) || saving || !qualityConfigured} title={pending(stock.code) ? '评级任务进行中，完成后自动刷新' : qualityConfigured ? '用当前数据重新评级' : 'Hermes 未配置，无法评级'} onClick={() => void analyze([stock.code])}>重评</button>
+                      : <button className={buttonClass} disabled={pending(stock.code) || saving || !qualityConfigured} title={pending(stock.code) ? '评级任务进行中，完成后自动刷新' : qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'} onClick={() => void analyze([stock.code])}>分析</button>;
                 })()}
               </td>
               <td className="p-3" onClick={event => event.stopPropagation()}>
@@ -200,8 +203,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       score={qualityModalCode ? qualityScores[qualityModalCode] ?? null : null}
       onClose={() => setQualityModalCode(null)}
       onReanalyze={code => void analyze([code])}
-      analyzing={analyzing}
       progress={qualityJob ? { processed: qualityJob.processed, total: qualityJob.total } : null}
+      reanalyzePending={qualityModalCode ? pending(qualityModalCode) : false}
       reanalyzeDisabled={!qualityConfigured}
     />
   </section>;

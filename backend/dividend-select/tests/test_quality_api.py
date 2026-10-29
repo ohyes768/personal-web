@@ -36,7 +36,8 @@ def client(monkeypatch, tmp_path):
     manager = RefreshJobManager(tmp_path / "jobs")
     routes.set_refresh_jobs(manager)
     async def load(**kwargs):
-        return StockListResponse(total=1, items=[stock()], last_updated="2026-10-23")
+        items = [stock(), stock(code="600519", name="新股")]
+        return StockListResponse(total=2, items=items, last_updated="2026-10-23")
     monkeypatch.setattr(routes, "get_stocks", load)
     monkeypatch.setattr(routes, "find_latest_aux_file", lambda *args: None)
     app = FastAPI()
@@ -109,6 +110,37 @@ class TestAnalyze:
         assert second.json()["reused"] is True
         gate.set()
         wait_job(manager, first.json()["job_id"])
+
+    def test_append_new_code_while_running(self, client, monkeypatch):
+        import threading
+        test_client, manager = client
+        monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
+        monkeypatch.setenv("HERMES_API_KEY", "secret")
+        gate = threading.Event()
+
+        def slow_poll(cfg, run_id):
+            if "600519" in run_id:
+                return fake_output("600519", "新股")
+            gate.wait(120)
+            return fake_output("000001", "样本")
+
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: f"run-{key}")
+        monkeypatch.setattr(routes, "poll_run", slow_poll)
+        first = test_client.post("/quality/analyze", json={"codes": ["000001"]})
+        assert first.status_code == 202
+        second = test_client.post("/quality/analyze", json={"codes": ["600519"]})
+        assert second.status_code == 202
+        assert second.json()["job_id"] == first.json()["job_id"]
+        assert second.json()["reused"] is True
+        assert second.json()["codes"] == ["000001", "600519"]
+        live = test_client.get(f"/quality/jobs/{first.json()['job_id']}").json()
+        # 并发余量足够时追加项可能立即开跑，只要进入受理即可
+        assert live["per_code"]["600519"]["state"] in ("queued", "running")
+        gate.set()
+        wait_job(manager, first.json()["job_id"])
+        assert test_client.get("/quality").json()["total"] == 2
+        final = test_client.get(f"/quality/jobs/{first.json()['job_id']}").json()
+        assert final["per_code"]["600519"]["state"] == "completed"
 
     def test_missing_code_returns_400(self, client, monkeypatch):
         test_client, _ = client

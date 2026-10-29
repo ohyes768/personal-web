@@ -29,31 +29,36 @@ export interface QualityReportModalProps {
   onClose: () => void;
   /** 提供时渲染「重评」入口；不提供时行为与原先一致（按钮不渲染） */
   onReanalyze?: (code: string) => void;
-  /** 重评进行中 */
-  analyzing?: boolean;
-  /** 重评进度 */
+  /** 全局评级任务进度（展示用；按钮状态按本股票的 reanalyzePending 决定） */
   progress?: { processed: number; total: number } | null;
+  /** 这只股票的评级正在排队/运行：按钮置灰 */
+  reanalyzePending?: boolean;
   /** 重评不可用（如 Hermes 未配置）；按钮置灰并给出原因 */
   reanalyzeDisabled?: boolean;
 }
 
-export function QualityReportModal({ score, onClose, onReanalyze, analyzing = false, progress = null, reanalyzeDisabled = false }: QualityReportModalProps) {
+export function QualityReportModal({ score, onClose, onReanalyze, progress = null, reanalyzePending = false, reanalyzeDisabled = false }: QualityReportModalProps) {
   if (!score) return null;
+  const jobRunning = !!progress && progress.processed < progress.total;
   return (
     <Modal isOpen={!!score} onClose={onClose} title={`基本面评级 · ${score.name}（${score.code}）`} size="lg">
       <div className="space-y-4">
         {onReanalyze && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-rule bg-paper-card px-3 py-2">
             <span className="text-sm text-ink-muted">
-              {analyzing ? `评级分析中 ${progress?.processed ?? 0}/${progress?.total ?? 1}…` : '用当前数据重新评级（每只约几分钟）'}
+              {reanalyzePending
+                ? '该股票评级进行中，完成后自动刷新…'
+                : jobRunning
+                  ? `评级任务进行中 ${progress?.processed ?? 0}/${progress?.total ?? 1}，这只股票可同时提交排队`
+                  : '用当前数据重新评级（每只约几分钟）'}
             </span>
             <button
               className="rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent disabled:opacity-40"
-              disabled={analyzing || reanalyzeDisabled}
-              title={reanalyzeDisabled ? 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级' : undefined}
+              disabled={reanalyzePending || reanalyzeDisabled}
+              title={reanalyzePending ? '评级任务进行中，完成后自动刷新' : reanalyzeDisabled ? 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级' : undefined}
               onClick={() => onReanalyze(score.code)}
             >
-              {analyzing ? '重评中…' : '重评'}
+              {reanalyzePending ? '评级中…' : '重评'}
             </button>
           </div>
         )}

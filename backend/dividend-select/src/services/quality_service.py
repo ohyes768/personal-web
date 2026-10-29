@@ -1,15 +1,18 @@
-"""基本面评级编排服务：组装数据 → 提交 Hermes → 解析校验 → 落盘。
+"""基本面评级编排服务：组装数据 → 受理入队 → Hermes 逐股分析 → 解析校验 → 落盘。
 
 评分契约源在 skills 仓库 finance-macro/basic-quality-rating（v3 起：证据不足的维度为 null，
 任一维 null 时 weighted_score/stars/boundary 全为 null，即「未评级」）；后端侧契约摘要见
 .trellis/spec/backend/dividend-select/backend/quality-rating-contract.md。
-批量异步复用 RefreshJobManager（kind='quality'），逐股完成即回调 progress 并合并落盘。
+批量异步复用 RefreshJobManager（kind='quality'）。任务运行中可继续受理新代码：追加进当前
+任务的 FIFO 队列（重复提交幂等去重），受 HERMES_MAX_CONCURRENT 全局限并发，逐股完成即落盘
+并回报进度。受理与调度结束判定共用同一把锁，追加不会在任务收尾窗口丢失。
 """
 from __future__ import annotations
 
 import json
 import re
 import threading
+from collections import deque
 from datetime import datetime
 from pathlib import Path
 from time import monotonic
@@ -27,9 +30,14 @@ logger = setup_logger(__name__)
 
 SKILL_NAME = "basic-quality-rating"
 QUALITY_FILE = "quality_scores.json"
-
 DIMENSION_WEIGHTS = {"business": 0.25, "moat": 0.25, "industry": 0.20, "management": 0.15, "financial": 0.15}
 SCORE_TOLERANCE = 0.01
+# 收尾窗口（dispatch loop 已停、job 未落终态）内受理新任务的最长等待秒数
+ADMISSION_WAIT_SECONDS = 10.0
+
+
+def _now() -> str:
+    return datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
 
 
 def _stars_for(score: float) -> int:
@@ -162,31 +170,31 @@ def build_prompt(payload: dict) -> str:
 
 
 class QualityService:
-    """评级编排：入口校验 → RefreshJobManager 异步逐股 submit+poll → 落盘。
+    """评级编排：入口校验 → 受理入队（运行中可追加）→ FIFO 逐股分析 → 落盘。
 
-    逐股实时状态（queued/running/completed/failed）保存在内存 per_code，
-    供前端在列表行内展示；服务重启后清空（job 也会被置 interrupted，语义一致）。
+    逐股实时状态（queued/running/completed/failed + 受理/开始/结束时间）保存在内存
+    items，供前端队列面板与列表行内展示；受理时快照 payload 与 data_date（幂等键逐项），
+    排队期间数据变化不影响已受理项。服务重启后清空（job 置 interrupted，语义一致）。
     """
 
     def __init__(self, quality_path: Path):
         self.quality_path = quality_path
         self._file_lock = threading.RLock()
-        self._status_lock = threading.RLock()
-        self._per_code: dict[str, dict] = {}
+        self._cond = threading.Condition(threading.RLock())
+        self._items: dict[str, dict] = {}
+        self._pending: deque[str] = deque()
+        self._running = 0
+        self._active_job_id: Optional[str] = None
+        self._accepting = False
 
     # ---- 逐股状态 ----
 
-    def _set_status(self, code: str, state: str, error: str = "") -> None:
-        with self._status_lock:
-            self._per_code[code] = {
-                "state": state,
-                "error": error or None,
-                "updated_at": datetime.now(ZoneInfo("Asia/Shanghai")).isoformat(),
-            }
-
     def get_per_code(self) -> dict:
-        with self._status_lock:
-            return json.loads(json.dumps(self._per_code))
+        with self._cond:
+            return {code: {key: item.get(key) for key in
+                           ("state", "error", "updated_at", "name",
+                            "queued_at", "started_at", "finished_at")}
+                    for code, item in self._items.items()}
 
     # ---- 落盘读写 ----
 
@@ -197,7 +205,7 @@ class QualityService:
             return {}
 
     def _save_one(self, score: QualityScore, data_date: str, analysis_duration_seconds: float) -> None:
-        scored_at = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
+        scored_at = _now()
         record = {**score.model_dump(), "scored_at": scored_at, "data_date": data_date,
                   "analysis_duration_seconds": analysis_duration_seconds}
         with self._file_lock:
@@ -210,7 +218,26 @@ class QualityService:
         with self._file_lock:
             return self._read_all()
 
-    # ---- 任务编排 ----
+    # ---- 受理与调度 ----
+
+    def _admit(self, ordered: list[str], snapshots: dict[str, dict]) -> None:
+        """建队列项并入队（调用方持有 _cond）。重复受理的旧项由调用方处理。"""
+        for code in ordered:
+            snap = snapshots[code]
+            self._items[code] = {
+                "code": code, "name": snap["name"], "state": "queued", "error": None,
+                "queued_at": _now(), "started_at": None, "finished_at": None, "updated_at": _now(),
+                "data_date": snap["data_date"], "payload": snap["payload"],
+            }
+            self._pending.append(code)
+
+    def _wait_for_terminal(self, refresh_jobs) -> None:
+        """任务收尾窗口（dispatch loop 已停、job 未落终态）内等它结束再受理新任务。"""
+        deadline = monotonic() + ADMISSION_WAIT_SECONDS
+        while refresh_jobs.active("quality") is not None:
+            if monotonic() > deadline:
+                raise ValueError("上一个评级任务收尾中，请稍后重试")
+            self._cond.wait(0.05)
 
     def submit_analysis(
         self,
@@ -222,83 +249,109 @@ class QualityService:
         submit_run_fn: Callable[[HermesConfig, str, str], str],
         poll_run_fn: Callable[[HermesConfig, str], str],
     ) -> Optional[dict]:
-        """提交批量评级任务；返回 job dict（含 reused）。
+        """受理批量评级；返回 job dict（含 reused）或 None（服务关闭中）。
 
-        未配置、股票不在采集池、或已有 quality 任务但本次含其 codes 之外的股票时抛 ValueError。
-        per_code 的 queued 只在 job 真正开跑后、按本批 codes 写入。
+        无任务时开新任务；任务运行中把新代码追加进当前任务（reused=true），已在
+        排队/运行的代码幂等跳过且不重置时间戳。未配置、股票不在采集池或收尾等待
+        超时时抛 ValueError。
         """
         if not hermes_config.is_configured:
             raise ValueError("Hermes 未配置")
         missing = [code for code in codes if code not in stocks]
         if missing:
             raise ValueError(f"以下股票不在采集池：{','.join(missing)}")
-
-        def reject_if_extra(job: Optional[dict]) -> None:
-            if not job:
-                return
-            active_codes = set(job.get("codes") or [])
-            if any(code not in active_codes for code in codes):
-                raise ValueError("已有评级任务在跑，请等待当前任务结束后再提交")
-
-        # 先于任何 per_code 写入判断：reused 路径不能清掉正在跑的状态。
-        reject_if_extra(refresh_jobs.active("quality"))
+        ordered = list(dict.fromkeys(codes))
+        snapshots = {code: {"name": stocks[code].name, "data_date": data_date,
+                            "payload": build_stock_payload(stocks[code])}
+                     for code in ordered}
 
         def work(progress: Callable[[str, bool], None]) -> None:
-            # 只有真正开跑的 job 才写 queued，且只覆盖本批 codes。
-            with self._status_lock:
-                for code in codes:
-                    self._set_status(code, "queued")
             semaphore = threading.Semaphore(hermes_config.max_concurrent)
-            results: dict[str, tuple[bool, Optional[QualityScore], str]] = {}
-            durations: dict[str, float] = {}
-
-            def run_one(code: str) -> None:
-                payload = build_stock_payload(stocks[code])
-                prompt = build_prompt(payload)
-                idempotency_key = f"quality-{code}-{data_date}"
-                self._set_status(code, "running")
-                try:
-                    started = monotonic()
-                    run_id = submit_run_fn(hermes_config, prompt, idempotency_key)
-                    output = poll_run_fn(hermes_config, run_id)
-                    # Local queueing, parsing and other stocks' runtime are excluded.
-                    durations[code] = round(monotonic() - started, 3)
-                    score = parse_quality_output(output, code, stocks[code].name)
-                except HermesError as exc:
-                    results[code] = (False, None, str(exc)[:300])
-                except ValueError as exc:
-                    results[code] = (False, None, f"解析失败: {exc}")
-                else:
-                    results[code] = (True, score, "")
-                finally:
-                    semaphore.release()
-
-            threads = []
-            for code in codes:
+            while True:
+                with self._cond:
+                    while not self._pending and self._running > 0:
+                        self._cond.wait()
+                    if not self._pending:
+                        # 队列清空且无在跑项：此后受理一律开新任务；
+                        # 退出判定与追加共用 _cond，追加不会落在此判定之后丢失。
+                        self._accepting = False
+                        self._active_job_id = None
+                        return
+                    code = self._pending.popleft()
+                    item = self._items[code]
+                    started_at = _now()
+                    item.update(state="running", started_at=started_at, updated_at=started_at)
+                    self._running += 1
                 semaphore.acquire()
-                thread = threading.Thread(target=run_one, args=(code,), daemon=True)
-                thread.start()
-                threads.append(thread)
-            for thread in threads:
-                thread.join()
+                threading.Thread(target=self._run_one, daemon=True,
+                                 args=(code, hermes_config, submit_run_fn, poll_run_fn,
+                                       progress, semaphore)).start()
 
-            for code in codes:
-                success, score, error = results.get(code, (False, None, "内部错误：无结果"))
-                if success and score is not None:
-                    try:
-                        self._save_one(score, data_date, durations[code])
-                    except OSError as exc:
-                        logger.exception("评分落盘失败 %s", code)
-                        self._set_status(code, "failed", f"评分结果保存失败: {exc}")
-                        progress(code, False)
-                        continue
-                    self._set_status(code, "completed")
+        with self._cond:
+            if self._accepting and self._active_job_id:
+                fresh = [code for code in ordered
+                         if (self._items.get(code) or {}).get("state") not in ("queued", "running")]
+                if not fresh:
+                    job = refresh_jobs.get(self._active_job_id)
+                    if job:
+                        return {**job, "reused": True}
                 else:
-                    logger.warning("股票 %s 评级失败: %s", code, error)
-                    self._set_status(code, "failed", error)
-                progress(code, success)
+                    self._admit(fresh, snapshots)
+                    updated = refresh_jobs.append_codes(self._active_job_id, fresh)
+                    if updated is not None:
+                        return {**updated, "reused": True}
+                    # job 恰在收尾窗口变终态：撤回刚入队的项，按新任务受理
+                    for code in fresh:
+                        self._pending.remove(code)
+                        self._items.pop(code, None)
+            self._wait_for_terminal(refresh_jobs)
+            self._admit(ordered, snapshots)
+            job = refresh_jobs.submit("quality", ordered, work, params={"data_date": data_date})
+            if job is None or job.get("reused"):
+                # closing 或（防御性）出现竞态活跃任务：撤回本次受理，不留幽灵队列项
+                for code in ordered:
+                    self._pending.remove(code)
+                    self._items.pop(code, None)
+                if job is None:
+                    return None
+                raise ValueError("已有评级任务在跑，请稍后重试")
+            self._active_job_id = job["job_id"]
+            self._accepting = True
+            return job
 
-        job = refresh_jobs.submit("quality", codes, work, params={"data_date": data_date})
-        if job and job.get("reused"):
-            reject_if_extra(job)
-        return job
+    def _run_one(self, code, hermes_config, submit_run_fn, poll_run_fn, progress, semaphore) -> None:
+        item = self._items[code]
+        try:
+            try:
+                started = monotonic()
+                prompt = build_prompt(item["payload"])
+                run_id = submit_run_fn(hermes_config, prompt, f"quality-{code}-{item['data_date']}")
+                output = poll_run_fn(hermes_config, run_id)
+                # Local queueing, parsing and other stocks' runtime are excluded.
+                duration = round(monotonic() - started, 3)
+                score = parse_quality_output(output, code, item["name"])
+            except HermesError as exc:
+                outcome = (False, None, str(exc)[:300])
+            except ValueError as exc:
+                outcome = (False, None, f"解析失败: {exc}")
+            else:
+                outcome = (True, score, "")
+        finally:
+            semaphore.release()
+        success, score, error = outcome
+        if success and score is not None:
+            try:
+                self._save_one(score, item["data_date"], duration)
+            except OSError as exc:
+                logger.exception("评分落盘失败 %s", code)
+                success, error = False, f"评分结果保存失败: {exc}"
+        finished = _now()
+        with self._cond:
+            item.update(state="completed" if success else "failed",
+                        error=None if success else error,
+                        finished_at=finished, updated_at=finished)
+            self._running -= 1
+            self._cond.notify_all()
+        if not success:
+            logger.warning("股票 %s 评级失败: %s", code, error)
+        progress(code, success)

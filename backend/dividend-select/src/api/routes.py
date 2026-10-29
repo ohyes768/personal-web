@@ -3609,7 +3609,7 @@ async def analyze_quality(body: CodesRequest):
 
     - 每股一个 Hermes run（点名 basic-quality-rating skill 的自动化 JSON 模式），并发受 HERMES_MAX_CONCURRENT 限制
     - 已有进行中的 quality 任务且本次 codes 都已包含在该任务内时复用（reused=true）
-    - 已有任务但本次含任务外的股票时返回 400
+    - 任务运行中受理新代码：追加进当前任务 FIFO 队列（reused=true），重复代码幂等跳过
     - Hermes 未配置（HERMES_BASE_URL / HERMES_API_KEY 缺失）返回 503
     """
     if quality_service is None:

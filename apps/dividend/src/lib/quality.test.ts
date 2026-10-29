@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  buildQualityQueue,
   dimensionShorthand,
+  formatElapsedSince,
+  formatElapsedSpan,
+  isQualityPending,
   qualityFinishMessage,
   qualityJobActive,
   starBadgeClass,
@@ -56,5 +60,57 @@ describe('qualityJobActive / qualityFinishMessage', () => {
     assert.match(qualityFinishMessage({ ...base, status: 'succeeded', succeeded: 2 } as never), /成功 2 只/);
     assert.match(qualityFinishMessage({ ...base, status: 'partial_failed', succeeded: 1, failed: 1, failed_codes: ['600000'] } as never), /600000/);
     assert.match(qualityFinishMessage({ ...base, status: 'failed', error: 'boom' } as never), /boom/);
+  });
+});
+
+describe('buildQualityQueue（运行优先、排队按受理顺序、终态新的在前）', () => {
+  const status = (state: string, extra: Record<string, unknown> = {}) => ({
+    state, error: state === 'failed' ? 'run 失败' : null, updated_at: '2026-10-29T10:00:00+08:00', ...extra,
+  });
+  it('分区排序：running → queued（按 queued_at）→ terminal（按 finished_at 倒序）', () => {
+    const view = buildQualityQueue({
+      late: status('queued', { queued_at: '2026-10-29T10:02:00+08:00' }),
+      early: status('queued', { queued_at: '2026-10-29T10:01:00+08:00' }),
+      runA: status('running', { started_at: '2026-10-29T10:03:00+08:00' }),
+      old: status('completed', { finished_at: '2026-10-29T09:00:00+08:00', started_at: '2026-10-29T08:50:00+08:00' }),
+      recent: status('failed', { finished_at: '2026-10-29T09:30:00+08:00', started_at: '2026-10-29T09:20:00+08:00' }),
+    });
+    assert.deepEqual(view.rows.map(row => row.code), ['runA', 'early', 'late', 'recent', 'old']);
+    assert.equal(view.runningCount, 1);
+    assert.equal(view.queuedCount, 2);
+  });
+  it('缺时间戳的项不参与时间排序但不丢失', () => {
+    const view = buildQualityQueue({ legacy: { state: 'completed', error: null, updated_at: 'x' } });
+    assert.equal(view.rows.length, 1);
+    assert.equal(view.rows[0].code, 'legacy');
+  });
+});
+
+describe('isQualityPending', () => {
+  it('queued/running 为 pending，completed/failed/缺失不是', () => {
+    assert.equal(isQualityPending({ state: 'queued', error: null, updated_at: 'x' }), true);
+    assert.equal(isQualityPending({ state: 'running', error: null, updated_at: 'x' }), true);
+    assert.equal(isQualityPending({ state: 'completed', error: null, updated_at: 'x' }), false);
+    assert.equal(isQualityPending({ state: 'failed', error: 'e', updated_at: 'x' }), false);
+    assert.equal(isQualityPending(undefined), false);
+  });
+});
+
+describe('运行时长计时（R3：从实际开始执行起算，完成后定格）', () => {
+  const startedAt = '2026-10-29T10:00:00+08:00';
+  it('运行 125 秒显示 2分5秒，且随本地时钟推进', () => {
+    const base = new Date('2026-10-29T10:02:05+08:00').getTime();
+    assert.equal(formatElapsedSince(startedAt, base), '2分5秒');
+    assert.equal(formatElapsedSince(startedAt, base + 1000), '2分6秒');
+  });
+  it('等待中冒充：queued 缺 started_at 显示未记录', () => {
+    assert.equal(formatElapsedSince(null, Date.now()), '未记录');
+    assert.equal(formatElapsedSince('garbage', Date.now()), '未记录');
+  });
+  it('完成后定格 finished-started，缺时间戳显示未记录', () => {
+    const finishedAt = '2026-10-29T10:03:35+08:00';
+    assert.equal(formatElapsedSpan(startedAt, finishedAt), '3分35秒');
+    assert.equal(formatElapsedSpan(null, finishedAt), '未记录');
+    assert.equal(formatElapsedSpan(startedAt, null), '未记录');
   });
 });

@@ -92,23 +92,52 @@ class RefreshJobManager:
             self._prune()
             return {**copy.deepcopy(job), 'reused': False}
 
+    def append_codes(self, job_id, codes):
+        """把新受理项并入 active job（quality 连续排队专用；普通 submit 不走此路径）。
+
+        codes 里的新股票追加进 codes 列表，重复股票（失败重试）只增加受理次数
+        admissions。total/remaining/retry_codes 同步更新并先落盘再返回，受理确认即持久。
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if not job or job['status'] not in ACTIVE:
+                return None
+            admissions = job.get('admissions') or {c: 1 for c in job['codes']}
+            for code in codes:
+                if code not in job['codes']:
+                    job['codes'].append(code)
+                admissions[code] = admissions.get(code, 0) + 1
+                if code not in job['retry_codes']:
+                    job['retry_codes'].append(code)
+            job['admissions'] = admissions
+            job['total'] = sum(admissions.values())
+            job['remaining'] = job['total'] - job['processed']
+            job['updated_at'] = now()
+            self._save(job)
+            return copy.deepcopy(job)
+
     def _run(self, job, work):
-        seen = set()
+        attempts = {}
         try:
             with self._lock:
                 job.update(status='running', started_at=now(), updated_at=now())
                 self._save(job)
             def progress(code, success):
                 with self._lock:
-                    if code in seen or code not in job['codes']:
-                        raise ValueError('无效或重复的股票进度')
-                    seen.add(code)
+                    if code not in job['codes']:
+                        raise ValueError('无效的股票进度')
+                    # quality 失败重试会对同一 code 二次计数；m120/financial 每 code 恰一次，行为不变。
+                    attempts[code] = attempts.get(code, 0) + 1
                     job['processed'] += 1
                     job['succeeded' if success else 'failed'] += 1
-                    if not success:
+                    if success:
+                        job['failed_codes'] = [c for c in job['failed_codes'] if c != code]
+                    elif code not in job['failed_codes']:
                         job['failed_codes'].append(code)
                     job['remaining'] = job['total'] - job['processed']
-                    job['retry_codes'] = [c for c in job['codes'] if c not in seen or c in job['failed_codes']]
+                    admissions = job.get('admissions') or {}
+                    job['retry_codes'] = [c for c in job['codes']
+                                          if attempts.get(c, 0) < admissions.get(c, 1) or c in job['failed_codes']]
                     job['updated_at'] = now()
                     if time.monotonic() - self._last_save[job['job_id']] >= 1:
                         self._save(job)
@@ -116,7 +145,7 @@ class RefreshJobManager:
             with self._lock:
                 if job['remaining']:
                     job['error'] = '采集提前停止，仍有未处理股票（可能触发限流保护）'
-                job['status'] = ('succeeded' if not job['failed'] and not job['remaining'] else
+                job['status'] = ('succeeded' if not job['failed_codes'] and not job['remaining'] else
                                  'partial_failed' if job['succeeded'] else 'failed')
         except Exception as exc:
             logger.exception('刷新任务失败 %s', job['job_id'])
@@ -125,7 +154,7 @@ class RefreshJobManager:
         finally:
             with self._lock:
                 job.update(finished_at=now(), updated_at=now())
-                job['message'] = f"已处理 {job['processed']}/{job['total']}，成功 {job['succeeded']}，失败 {job['failed']}，未处理 {job['remaining']}"
+                job['message'] = f"已处理 {job['processed']}/{job['total']}，成功 {job['succeeded']}，失败 {len(job['failed_codes'])}，未处理 {job['remaining']}"
                 try:
                     self._save(job)
                 except OSError as exc:

@@ -10,7 +10,21 @@ const stock = {
   previous_quarter_label: '2026Q1', previous_quarter_yoy_pct: 2,
 };
 
-async function setup(page: Page, initiallyFavorite = false, analysisDuration?: number | null) {
+/** quality 场景控制：测试内直接改 perCode / 开关 failQuery，route handler 每次读最新值 */
+interface QualityScenario {
+  perCode: Record<string, Record<string, unknown>>;
+  jobStatus?: string;
+  failQuery?: { value: boolean };
+  analyzeCalls?: string[][];
+  /** mount 重新发现用的最新任务；未设置时返回 null */
+  latestJob?: Record<string, unknown> | null;
+}
+
+function perCodeItem(state: string, extra: Record<string, unknown> = {}) {
+  return { state, error: state === 'failed' ? 'run 终态 failed' : null, updated_at: '2026-10-29T10:00:00+08:00', name: '测试公司', ...extra };
+}
+
+async function setup(page: Page, initiallyFavorite = false, analysisDuration?: number | null, quality?: QualityScenario) {
   let codes: string[] = initiallyFavorite ? [stock.code] : [];
   let batchAttempts = 0;
   await page.route('**/api/dividend/**', async route => {
@@ -18,10 +32,15 @@ async function setup(page: Page, initiallyFavorite = false, analysisDuration?: n
     const favorites = () => ({ version: 1, total: codes.length, codes, items: codes.map(code => ({ code, added_at: '2026-10-09' })), notify: { enabled: false, rules: [], last_notified_at: null } });
     if (url.pathname.endsWith('/stocks/screen')) {
       const conditions = route.request().postDataJSON();
+      const extra = quality ? [
+        { stock: { ...stock, code: '000002', name: '排队公司' }, status: 'eligible', reasons: [], warnings: [] },
+        { stock: { ...stock, code: '000003', name: '空闲公司' }, status: 'eligible', reasons: [], warnings: [] },
+      ] : [];
       await route.fulfill({ json: { conditions, items: [
         { stock, status: 'eligible', reasons: [], warnings: ['一个季度扣非利润同比下降，建议持续关注'] },
-        { stock: { ...stock, code: '000002', name: '资料不足', roe_avg_3y: null }, status: 'insufficient_data', reasons: ['连续三年年度 ROE 数据缺失'], warnings: [] },
-      ], counts: { eligible: 1, excluded: 0, insufficient_data: 1 }, dividend_years: [2023, 2024, 2025], total: 2, last_updated: null } });
+        ...extra,
+        { stock: { ...stock, code: '000009', name: '资料不足', roe_avg_3y: null }, status: 'insufficient_data', reasons: ['连续三年年度 ROE 数据缺失'], warnings: [] },
+      ], counts: { eligible: quality ? 3 : 1, excluded: 0, insufficient_data: 1 }, dividend_years: [2023, 2024, 2025], total: quality ? 4 : 2, last_updated: null } });
     } else if (url.pathname.endsWith('/favorites/batch')) {
       batchAttempts++;
       const requested = route.request().postDataJSON().codes as string[];
@@ -29,9 +48,16 @@ async function setup(page: Page, initiallyFavorite = false, analysisDuration?: n
       if (batchAttempts > 1) codes = [...new Set([...codes, ...requested])];
       await route.fulfill({ json: { items, favorites: favorites() } });
     } else if (url.pathname.includes('/favorites/alerts')) await route.fulfill({ json: { items: [], total: 0, enabled_count: 0 } });
-    else if (url.pathname.endsWith('/quality/analyze')) await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: 'running', total: 1, processed: 0, succeeded: 0, failed: 0, remaining: 1, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '' } });
-    else if (url.pathname.includes('/quality/jobs/')) await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: 'running', total: 1, processed: 0, succeeded: 0, failed: 0, remaining: 1, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '' } });
-    else if (url.pathname.endsWith('/quality')) await route.fulfill({ json: { total: 1, hermes_configured: true, scores: {
+    else if (url.pathname.endsWith('/quality/analyze')) {
+      quality?.analyzeCalls?.push(route.request().postDataJSON().codes as string[]);
+      await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: quality?.jobStatus ?? 'running', total: 3, processed: 0, succeeded: 0, failed: 0, remaining: 3, codes: route.request().postDataJSON().codes, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '', per_code: quality?.perCode ?? {} } });
+    }
+    else if (url.pathname.includes('/quality/jobs/')) {
+      if (quality?.failQuery?.value) { await route.fulfill({ status: 500, json: { detail: '查询评级进度失败' } }); return; }
+      await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: quality?.jobStatus ?? 'running', total: 3, processed: 0, succeeded: 0, failed: 0, remaining: 3, codes: ['000001', '000002', '000003'], failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '', per_code: quality?.perCode ?? {} } });
+    }
+    else if (url.pathname.endsWith('/refresh/jobs')) await route.fulfill({ json: quality?.latestJob !== undefined ? quality.latestJob : null });
+    else if (url.pathname.endsWith('/quality')) await route.fulfill({ json: { total: 1, hermes_configured: true, per_code: quality?.perCode ?? {}, scores: {
       '000001': { code: '000001', name: '测试公司', dimensions: { business: 4, moat: 4, industry: 3, management: 3, financial: 5 }, weighted_score: 3.7, stars: 3, boundary: null, summary: '示例摘要', risks: [], watch_points: [], report_md: '## 评级报告\n\n示例正文。', scored_at: '2026-10-20 10:00', data_date: '2026-10-20', analysis_duration_seconds: analysisDuration },
     } } });
     else if (url.pathname.endsWith('/favorites')) await route.fulfill({ json: favorites() });
@@ -53,7 +79,7 @@ test('screening remains accessible with no stocks in old filter, allows retrying
   await expect(page.getByRole('status')).toContainText('新增 1 只');
   await expect(page.getByRole('cell', { name: '已收藏', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '待补数据 1' }).click();
-  await expect(page.getByRole('cell', { name: /资料不足\s+000002/ })).toBeVisible();
+  await expect(page.getByRole('cell', { name: /资料不足\s+000009/ })).toBeVisible();
   await expect(page.getByRole('checkbox', { name: '勾选 资料不足' })).toBeDisabled();
   // 单季下滑警告不再占据列表列，进入个股详情弹层后展示
   await page.getByRole('button', { name: '符合条件 1' }).click();
@@ -155,8 +181,78 @@ test('reanalyze inside rating modal shows progress and rating modal stays open',
   // 评级结果列打开评级弹框（与详情弹层互斥）
   await page.getByRole('button', { name: '3.7', exact: true }).click();
   await expect(page.getByRole('heading', { name: '基本面评级 · 测试公司（000001）', exact: true })).toBeVisible();
-  // 重评后进度在评级弹框内可见
+  // 重评后全局进度在评级弹框内可见
   await page.getByRole('button', { name: '重评' }).last().click();
-  await expect(page.getByText(/评级分析中/)).toBeVisible();
+  await expect(page.getByText(/评级任务进行中/)).toBeVisible();
   await expect(page.getByRole('heading', { name: '基本面评级 · 测试公司（000001）', exact: true })).toBeVisible();
+});
+
+test('quality queue shows running and queued stocks, keeps others actionable, and ticks elapsed time', async ({ page }) => {
+  const startedAt = new Date(Date.now() - 125_000).toISOString();
+  const quality: QualityScenario = {
+    perCode: { '000001': perCodeItem('running', { started_at: startedAt, queued_at: startedAt }) },
+  };
+  await setup(page, false, undefined, quality);
+  await page.goto('/?tab=screening');
+  await expect(page.getByRole('button', { name: '符合条件 3' })).toBeVisible();
+  // 提交 000001 后出现队列面板：running 行带实时计时
+  await page.getByRole('button', { name: '分析', exact: true }).first().click();
+  const queue = page.getByLabel('评级任务队列');
+  await expect(queue).toBeVisible();
+  await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible();
+  // 追加 000002：同一任务排队；面板显示运行+排队计数
+  quality.perCode['000002'] = perCodeItem('queued', { queued_at: new Date().toISOString(), name: '排队公司' });
+  await expect(queue.getByText(/运行 1 · 排队 1/)).toBeVisible({ timeout: 10_000 });
+  await expect(queue.getByText('排队中…')).toBeVisible();
+  // 运行中/排队中股票行内显示状态文本而非按钮，空闲股票 000003 仍可点击
+  await expect(page.getByRole('button', { name: '重评', exact: true })).toHaveCount(0);
+  // 000001 评级中、000002 排队中都是状态文本；只有空闲的 000003 还有按钮且可点
+  await expect(page.getByRole('button', { name: '分析', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '分析', exact: true })).toBeEnabled();
+  // 计时持续走（本地每秒刷新，不依赖轮询、不因轮询重置）
+  const firstElapsed = await queue.getByText(/已分析 2分\d+秒/).textContent();
+  await page.waitForTimeout(2100);
+  const secondElapsed = await queue.getByText(/已分析 2分\d+秒/).textContent();
+  expect(secondElapsed).not.toEqual(firstElapsed);
+});
+
+test('quality queue recovers after reload and offers retry for failed stock', async ({ page }) => {
+  const quality: QualityScenario = {
+    perCode: {
+      '000001': perCodeItem('failed', { started_at: new Date(Date.now() - 200_000).toISOString(), finished_at: new Date(Date.now() - 100_000).toISOString() }),
+      '000002': perCodeItem('queued', { queued_at: new Date().toISOString(), name: '排队公司' }),
+    },
+    latestJob: { job_id: 'job-1', kind: 'quality', status: 'running', total: 3, processed: 0, succeeded: 0, failed: 1, remaining: 2, codes: ['000001', '000002', '000003'], failed_codes: ['000001'], retry_codes: ['000001', '000002'], error: null, finished_at: null, message: '' },
+    analyzeCalls: [],
+  };
+  await setup(page, false, undefined, quality);
+  await page.goto('/?tab=screening');
+  const queue = page.getByLabel('评级任务队列');
+  // 刷新恢复：mount 发现 running 任务恢复轮询，面板展示失败与排队项
+  await expect(queue).toBeVisible({ timeout: 10_000 });
+  await expect(queue.getByText(/失败 · 耗时/)).toBeVisible();
+  await expect(queue.getByText('排队中…')).toBeVisible();
+  // 行内重试把失败股票追加重新提交
+  await queue.getByRole('button', { name: '重试', exact: true }).click();
+  await expect.poll(() => quality.analyzeCalls?.[0]).toEqual(['000001']);
+});
+
+test('temporary quality query errors keep state and recover automatically', async ({ page }) => {
+  const startedAt = new Date(Date.now() - 30_000).toISOString();
+  const quality: QualityScenario = {
+    perCode: { '000001': perCodeItem('running', { started_at: startedAt, queued_at: startedAt }) },
+    failQuery: { value: false },
+  };
+  await setup(page, false, undefined, quality);
+  await page.goto('/?tab=screening');
+  await page.getByRole('button', { name: '分析', exact: true }).first().click();
+  const queue = page.getByLabel('评级任务队列');
+  await expect(queue).toBeVisible();
+  // 查询开始失败：状态保留并提示自动重试
+  quality.failQuery.value = true;
+  await expect(page.getByText('评级进度查询失败，任务不受影响，自动重试中…')).toBeVisible({ timeout: 10_000 });
+  await expect(queue.getByText(/已分析/)).toBeVisible(); // 面板与计时不受影响
+  // 恢复后提示消失
+  quality.failQuery.value = false;
+  await expect(page.getByText('评级进度查询失败，任务不受影响，自动重试中…')).toHaveCount(0, { timeout: 10_000 });
 });

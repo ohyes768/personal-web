@@ -54,8 +54,87 @@ export interface QualityPerCodeStatus {
   state: QualityPerCodeState;
   error: string | null;
   updated_at: string;
+  /** 受理时快照的股票名称（旧后端可能缺省） */
+  name?: string | null;
+  /** 生命周期时间戳：受理 / 实际开始执行 / 结束（排队不计入分析时长） */
+  queued_at?: string | null;
+  started_at?: string | null;
+  finished_at?: string | null;
 }
 export type QualityPerCodeMap = Record<string, QualityPerCodeStatus>;
+
+/** 是否处于排队或运行中（重复提交禁用、计时进行中的判定） */
+export function isQualityPending(status?: QualityPerCodeStatus | null): boolean {
+  return status?.state === 'queued' || status?.state === 'running';
+}
+
+/** 队列面板行：运行优先、排队按受理顺序、终态新的在前 */
+export interface QualityQueueRow {
+  code: string;
+  name: string | null;
+  state: QualityPerCodeState;
+  error: string | null;
+  queuedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+}
+
+export interface QualityQueueView {
+  rows: QualityQueueRow[];
+  runningCount: number;
+  queuedCount: number;
+}
+
+const byTimestamp = (value: string | null) => {
+  const time = value ? new Date(value).getTime() : NaN;
+  return Number.isFinite(time) ? time : 0;
+};
+
+export function buildQualityQueue(perCode: QualityPerCodeMap, terminalLimit = 8): QualityQueueView {
+  const running: QualityQueueRow[] = [];
+  const queued: QualityQueueRow[] = [];
+  const terminal: QualityQueueRow[] = [];
+  for (const [code, item] of Object.entries(perCode)) {
+    const row: QualityQueueRow = {
+      code,
+      name: item.name ?? null,
+      state: item.state,
+      error: item.error,
+      queuedAt: item.queued_at ?? null,
+      startedAt: item.started_at ?? null,
+      finishedAt: item.finished_at ?? null,
+    };
+    if (item.state === 'running') running.push(row);
+    else if (item.state === 'queued') queued.push(row);
+    else terminal.push(row);
+  }
+  queued.sort((a, b) => byTimestamp(a.queuedAt) - byTimestamp(b.queuedAt));
+  terminal.sort((a, b) => byTimestamp(b.finishedAt) - byTimestamp(a.finishedAt));
+  return { rows: [...running, ...queued, ...terminal.slice(0, terminalLimit)], runningCount: running.length, queuedCount: queued.length };
+}
+
+/** 运行中股票的实时已分析时长（从后端 started_at 起算）；缺失显示未记录 */
+export function formatElapsedSince(startedAt: string | null, nowMs: number): string {
+  if (!startedAt) return '未记录';
+  const start = new Date(startedAt).getTime();
+  if (!Number.isFinite(start)) return '未记录';
+  const seconds = Math.max(0, Math.floor((nowMs - start) / 1000));
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${minutes}分${rest}秒` : `${rest}秒`;
+}
+
+/** 已结束项的定格时长（开始到结束）；缺时间戳显示未记录 */
+export function formatElapsedSpan(startedAt: string | null, finishedAt: string | null): string {
+  if (!startedAt || !finishedAt) return '未记录';
+  const start = new Date(startedAt).getTime();
+  const end = new Date(finishedAt).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) return '未记录';
+  const seconds = Math.floor((end - start) / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return minutes > 0 ? `${minutes}分${rest}秒` : `${rest}秒`;
+}
 
 export interface QualityScoresResponse {
   total: number;
