@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Community, MapPOI } from '@/lib/types';
 import { getDisplayPrice, getPriceColor, SCHOOL_LEVEL_COLORS, SCHOOL_LEVEL_LABELS } from '@/lib/types';
-import { scopeBounds } from '@/lib/binjiang-boundary';
+import { BINJIANG_BOUNDARY } from '@/lib/binjiang-boundary';
 import { isNewHouse, marketStateOf } from '@/lib/market-map';
 import { buildNewHouseMarkerContent, escapeHtml, newHouseLabel, NEW_HOUSE_LABEL_MIN_ZOOM } from './NewHouseLayer';
 
@@ -42,11 +42,14 @@ interface BinjiangMapProps {
 }
 
 const GAODE_MAP_KEY = process.env.NEXT_PUBLIC_GAODE_MAP_KEY || '';
-// 默认视野: 覆盖范围 (滨江 ∪ 萧山接壤板块) 围栏外接框, 中心由围栏集合推导;
-// zoom 11 实测刚好覆盖垂直方向紧约束 (双区 lat 跨度 ~21km, 600px 高容器);
-// 未用 map.setBounds —— JS API 2.0 实测 fit 结果不稳定 (同 bounds 多次调用 zoom 9.1-9.6 摆动)
-const SCOPE = scopeBounds();
-const SCOPE_CENTER: [number, number] = [(SCOPE.lngMin + SCOPE.lngMax) / 2, (SCOPE.latMin + SCOPE.latMax) / 2];
+// 首页聚焦滨江区: 中心取行政边界外接框, zoom 12 完整展示全区。
+// 不随萧山接壤板块扩大初始视野; 保留手动缩放和平移查看周边。
+const BINJIANG_LNGS = BINJIANG_BOUNDARY.map(([lng]) => lng);
+const BINJIANG_LATS = BINJIANG_BOUNDARY.map(([, lat]) => lat);
+const BINJIANG_CENTER: [number, number] = [
+  (Math.min(...BINJIANG_LNGS) + Math.max(...BINJIANG_LNGS)) / 2,
+  (Math.min(...BINJIANG_LATS) + Math.max(...BINJIANG_LATS)) / 2,
+];
 
 // POI 圆点配色，与 page.tsx 的 POI_CONFIG 保持一致 (浅色底图上适当加深保证对比度)
 const POI_MARKER_COLORS: Record<string, string> = {
@@ -245,8 +248,8 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
     if (!mapLoaded || !mapRef.current || mapInstanceRef.current) return;
 
     const map = new window.AMap.Map(mapRef.current, {
-      zoom: 11,
-      center: SCOPE_CENTER,
+      zoom: 12,
+      center: BINJIANG_CENTER,
       mapStyle: 'amap://styles/whitesmoke',
       viewMode: '2D',
     });
