@@ -39,10 +39,19 @@ class FakeDiscovery:
         found = self._search.get((name, channel), self._search.get(name, {}))
         return {nid: {'name': platform_name, 'seeds': []} for nid, platform_name in found.items()}
 
-    def homepage(self, neighborhood_id):
+    def community_info(self, neighborhood_id):
         self.request_count += 1
-        self.calls.append(('homepage', neighborhood_id))
-        return self._homepages[neighborhood_id]
+        self.calls.append(('community_info', neighborhood_id))
+        facts = self._homepages[neighborhood_id]
+        return {**{k: v for k, v in facts.items() if k not in {'seeds', 'rent_total'}},
+                'city_id': 1853, 'district': facts.get('district', '滨江')}
+
+    def rental_entry(self, neighborhood_id):
+        self.request_count += 1
+        self.calls.append(('rental_entry', neighborhood_id))
+        facts = self._homepages[neighborhood_id]
+        return dict(neighborhood_id=neighborhood_id, seeds=facts['seeds'],
+                    rent_total=facts['rent_total'], rent_has_more=bool(facts['seeds']))
 
     def listing_owner(self, seed):
         self.request_count += 1

@@ -1,7 +1,7 @@
 # 幸福里来源发现与按需探查契约
 
-> 2026-10-29 建立。系统的“找来源”能力：平台内多通道搜索 → 读小区主页验证身份 → 主页内找真实租房入口 → 核验后绑定。
-> 关键结论：**搜索响应永远不是身份证据**，身份只来自小区主页；**平台内可执行，不需要外部搜索引擎**。
+> 2026-10-29 建立。系统的“找来源”能力：平台内多通道搜索 → 小区资料API验证身份 → 选定后按需获取租房入口API → 双归属核验后绑定。
+> 关键结论：**搜索响应永远不是身份证据**，身份来自小区资料API（旧版本为主页HTML）；**平台内可执行，不需要外部搜索引擎**。
 
 ## 当前网页入口（2026-10-29）
 
@@ -19,9 +19,9 @@
 - `XingfuliTransport(timeout, *, directory, fetcher, delay, cancel_event, validate)`：共享的限速/冷却/取消/大小限制/验证页检测；
   `xingfuli_rentals.XingfuliClient` 与 `xingfuli_discovery.XingfuliDiscovery` 都继承它，两者共用 `rentals/xingfuli_request` 锁与
   `xingfuli_request_state.json` 冷却状态。
-- `XingfuliDiscovery.search(name, channel) -> {neighborhood_id: {name, seeds}}`；`homepage(nid) -> dict`；
+- `XingfuliDiscovery.search(name, channel) -> {neighborhood_id: {name, seeds}}`；`community_info(nid) -> dict`；`rental_entry(nid) -> dict`；
   `listing_owner(seed) -> str|None`；`listing_owner_from_list(seed, nid) -> bool`。
-- `parse_homepage(html, expected_id)`：小区主页 `window._SSR_DATA` → `data.loadersData["@neighborDetail_<id>"].data`
+- `parse_homepage(html, expected_id)` 仅保留作历史解析/对照测试，不进入当前匹配默认路径：小区主页 `window._SSR_DATA` → `data.loadersData["@neighborDetail_<id>"].data`
   的 `neighborhood_info`（名称/地址/GCJ02）与 `rentInNeighbor`（`total` 与 `items[].id`=房源种子）。
 - `rental_reference.xingfuli_sources.evaluate(community, candidate) -> {evidence, gaps, conflicts, strong}`；
   `bind_source(registry, community, candidate, *, seed, method, evidence, allow_reprocessed=False)`；
@@ -43,7 +43,7 @@
 | 4 | 94349530172 | 小区 | 可能只给分区身份；自带地址与坐标 |
 
 - **二手房通道给的是整小区身份，租房通道可能给分区身份**。找整小区必须用二手房通道优先。
-- 搜索条目本身没有地址坐标（二手房通道），身份必须读主页核验。
+- 搜索条目本身没有地址坐标（二手房通道），身份必须用小区资料API核验。
 
 ### 身份规则
 - 自动绑定要求：**精确名称** + （地址一致或已知 GCJ02 点 100 米内）+ 无分期标记 + 无区域冲突。相似度只用于排序。
@@ -69,7 +69,7 @@
 
 ### 请求面
 - 白名单：`m.xflapp.com` 的 `/f100/api/search`（参数限 `city_id/house_type/channel_id/full_text/count/offset/page_type`）、
-  `/xiaoqu/hz-数字.html`、`/zufang/hz-数字.html`、`/zufang/neighbor-house-list/hz-数字.html`。
+  `/f100/api/neighborhood/info`（仅neighborhood_id）、`/f100/api/same_neighborhood_rent`（neighborhood_id/city_id=1853/offset=0/count=10）、`/zufang/hz-数字.html`、`/zufang/neighbor-house-list/hz-数字.html`。旧`/xiaoqu/hz-数字.html`只保留只读对照入口。
 - **不要引入 m.99hdf.com**：总小区页在 xflapp 上直接可读。
 - 搜索与探查共用同一限速/冷却槽（`RentalPublishLock(rentals/xingfuli_request)`），至少 3 秒间隔，一小时冷却。
 - 预算按真实 HTTP 计：自动发现每轮 5 次，手动单小区探查最多 12 次；超限记 `deferred`，不记失败。
@@ -164,6 +164,19 @@ Good：首通道完整、唯一强候选，1搜索+1主页+2核验，共4请求�
 # Wrong: cached strong identity means entry is safe to bind.
 bind_source(registry, old_community, cached_candidate, seed=old_seed)
 # Correct: refresh homepage entry, re-evaluate current identity, then check both owners.
-homepage = client.homepage(candidate['neighborhood_id'], fresh=True)
+info = client.community_info(candidate['neighborhood_id'], fresh=True)
+entry = client.rental_entry(candidate['neighborhood_id'])
 # Recompute evaluate(...), verify detail + same-neighborhood list, then recheck under publish lock.
 ```
+
+
+## 来源匹配资料 API 与按需入口（2026-10-29，替代上述主页读取实现）
+
+- `XingfuliDiscovery.community_info(nid)`：单次GET `/f100/api/neighborhood/info?neighborhood_id=...`，验证status=0、目标ID和杭州city_id=1853、名称/地址字段、有限GCJ02坐标。`district_name`作为额外区域证据，和地址中的区域分别检查，任一冲突均禁止自动/人工绑定。
+- `XingfuliDiscovery.rental_entry(nid)`：单次GET `/f100/api/same_neighborhood_rent?neighborhood_id=...&city_id=1853&offset=0&count=10`，验证items/total/has_more。只提取去重的数字种子；条目无neighborhood_id不等于归属已证明，若字段存在且冲突则拒绝。
+- 搜索候选只查资料，`rent_total=null,seeds=[]`表示入口尚未查询，不是零房源。有竞争、不完整或冲突时不预取入口。唯一完整强候选或人工选择后才获取入口；真实成功空入口记entry_not_found并保留选择，失败记upstream_failed，验证/限流持久化冷却并映射cooling_down。
+- 绑定前保留详情与同小区列表双核验。搜索条目种子不能替代新鲜入口。来源绑定/拒绝、候选revision、前端业务stage、full/incremental和互斥语义不变，资料和入口进度分别沿用homepage/resolving_entry显示。
+- `DiscoveryCheckpoint.VERSION=2`，缓存键按search/community_info/rental_entry分开；旧版homepage缓存失效，不重写来源或人工决定。成功步骤逐个持久化，失败不缓存。选择/恢复必须fresh=True刷新资料，按当前身份重新evaluate；入口每次解析绑定都刷新，历史入口不是绑定授权。每个API请求单独检查预算/取消并计诊断，不允许组合两请求只检查一次。
+- 当前3秒共享间隔来自列表抽样任务；本任务不再修改限速、冷却或浏览器容器。租金采集仍按独立列表API抽样契约。
+- 性能边界：唯一强候选冷启动由原4次变成5次（搜索+资料+入口+详情核验+列表核验）；多候选待选不取入口。不得把接口响应更轻等同于总耗时必然更快。真实小批对照记录API/HTML请求数、等待和HTTP耗时，不能以测试绑定成功声称全量性能达标。
+- 必要回归：`test_xingfuli_source_api.py`覆盖真实适配器五请求/无主页HTML、待选不取入口/选择后只取目标、逐请求预算2/3/4边界、空入口与API失败区分、跨小区种子拒绑、新鲜区域冲突、旧缓存迁移/损坏/过期、取消/验证冷却和严格URL参数；既有probe/matching/split/source回归继续执行。

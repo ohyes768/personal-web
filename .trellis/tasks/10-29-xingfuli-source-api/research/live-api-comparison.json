@@ -1,0 +1,67 @@
+{
+  "interval_seconds": 3,
+  "results": [
+    {
+      "neighborhood_id": "6584028761644073220",
+      "name": "万科璞悦湾",
+      "identity_equal": true,
+      "total_equal": true,
+      "seed_ids_equal": true,
+      "seed_count": 10,
+      "metrics": [
+        {
+          "step": "community_info",
+          "requests": 1,
+          "wait_seconds": 0.0,
+          "http_seconds": 0.658,
+          "elapsed_seconds": 0.665
+        },
+        {
+          "step": "rental_entry",
+          "requests": 1,
+          "wait_seconds": 3.0,
+          "http_seconds": 0.334,
+          "elapsed_seconds": 3.338
+        },
+        {
+          "step": "legacy_homepage",
+          "requests": 1,
+          "wait_seconds": 2.999,
+          "http_seconds": 1.207,
+          "elapsed_seconds": 4.218
+        }
+      ]
+    },
+    {
+      "neighborhood_id": "6854812199240614151",
+      "name": "欣盛东方郡",
+      "identity_equal": true,
+      "total_equal": true,
+      "seed_ids_equal": true,
+      "seed_count": 10,
+      "metrics": [
+        {
+          "step": "community_info",
+          "requests": 1,
+          "wait_seconds": 2.99,
+          "http_seconds": 0.735,
+          "elapsed_seconds": 3.73
+        },
+        {
+          "step": "rental_entry",
+          "requests": 1,
+          "wait_seconds": 2.999,
+          "http_seconds": 0.501,
+          "elapsed_seconds": 3.502
+        },
+        {
+          "step": "legacy_homepage",
+          "requests": 1,
+          "wait_seconds": 3.002,
+          "http_seconds": 1.677,
+          "elapsed_seconds": 4.685
+        }
+      ]
+    }
+  ]
+}

@@ -62,22 +62,22 @@ def test_complete_unique_channel_stops_search_but_verifies_both_owners(tmp_path)
     fake = strong()
     state = run(service(reg, fake, tmp_path))
     assert state['stage'] == STAGE_BOUND
-    assert fake.calls == [('search', '测试花园', 'second_hand'), ('homepage', TOTAL_ID),
-                          ('listing', SEED), ('list', SEED)]
+    assert fake.calls == [('search', '测试花园', 'second_hand'), ('community_info', TOTAL_ID),
+                          ('rental_entry', TOTAL_ID), ('listing', SEED), ('list', SEED)]
     assert state['diagnostics']['early_stop'] is True
-    assert state['diagnostics']['requests'] == 4
+    assert state['diagnostics']['requests'] == 5
 
 
 def test_failed_competitor_never_allows_automatic_binding(tmp_path):
     reg = setup(tmp_path)
     fake = strong()
     fake._search = {'测试花园': {TOTAL_ID: '测试花园', 'other': '测试花园'}}
-    original = fake.homepage
+    original = fake.community_info
     def read(nid):
         if nid == 'other':
             raise ValueError('temporarily unavailable')
         return original(nid)
-    fake.homepage = read
+    fake.community_info = read
     state = run(service(reg, fake, tmp_path))
     assert state['stage'] == STAGE_NEEDS_SELECTION
     assert ('search', '测试花园', 'rent') in fake.calls
@@ -200,7 +200,7 @@ def test_restored_identity_refreshes_seeds_and_ownership(tmp_path):
     assert run(service(reg, first, tmp_path))['stage'] == 'entry_not_found'
     second = strong(); state = run(service(reg, second, tmp_path))
     assert state['stage'] == STAGE_BOUND
-    assert second.calls == [('homepage', TOTAL_ID), ('listing', SEED), ('list', SEED)]
+    assert second.calls == [('community_info', TOTAL_ID), ('rental_entry', TOTAL_ID), ('listing', SEED), ('list', SEED)]
 
 
 def test_budget_truncation_cannot_bind_and_applies_before_list_check(tmp_path):
@@ -216,7 +216,7 @@ def test_early_stop_can_be_disabled_for_comparable_request_baseline(tmp_path, mo
     monkeypatch.setenv('HOUSING_XINGFULI_EARLY_STOP', '0')
     fake = strong()
     assert run(service(setup(tmp_path), fake, tmp_path))['stage'] == STAGE_BOUND
-    assert len(fake.calls) == 6
+    assert len(fake.calls) == 7
 
 
 def test_diagnostics_accumulate_across_communities(tmp_path):

@@ -11,10 +11,11 @@ import time
 
 from src.services.community_registry import dump
 from src.services.fang_rentals import RentalCrawlCancelled
+from src.services.xingfuli_discovery import CITY_ID
 
 logger = logging.getLogger(__name__)
 PREFIX = 'rental_discovery_steps:'
-VERSION = 1
+VERSION = 2
 TTL = 24 * 3600
 
 
@@ -30,7 +31,7 @@ class DiscoveryCheckpoint:
         self.enabled = os.getenv('HOUSING_XINGFULI_DISCOVERY_CACHE', '1') != '0'
         self.search_complete = True
         self.steps = {}
-        self.fresh_homepages = set()
+        self.fresh_communities = set()
         self.started = time.monotonic()
         self.initial_requests = client.request_count
         self.diagnostics = dict(requests=0, cache_hits=0, early_stop=False,
@@ -78,7 +79,7 @@ class DiscoveryCheckpoint:
             value = getattr(self.client, method)(*args)
             if method == 'search':
                 self.search_complete = getattr(self.client, 'search_complete', True)
-            # Only parsed, successful search/homepage facts are persisted.
+            # Only parsed, successful search/info/entry facts are persisted.
             if cached and self.enabled:
                 self.steps[key] = dict(value=value, complete=self.search_complete, expires_at=time.time() + TTL)
                 state = dict(version=VERSION, fingerprint=self.fingerprint, steps=self.steps)
@@ -86,6 +87,10 @@ class DiscoveryCheckpoint:
                     db.execute('INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',
                                (self.key, dump(state)))
             return value
+        except ValueError as exc:
+            if getattr(self.client, 'cooldown_until', None):
+                raise ValueError(f'幸福里来源冷却中：{exc}') from exc
+            raise
         finally:
             self.report(method)
 
@@ -97,23 +102,34 @@ class DiscoveryCheckpoint:
             return all(isinstance(nid, str) and isinstance(group, dict)
                        and isinstance(group.get('name'), str) and isinstance(group.get('seeds'), list)
                        for nid, group in value.items())
-        return (value.get('neighborhood_id') == args[0] and isinstance(value.get('name'), str)
-                and isinstance(value.get('address'), str) and isinstance(value.get('seeds'), list)
-                and all(isinstance(seed, str) for seed in value['seeds'])
+        if method == 'rental_entry':
+            return (value.get('neighborhood_id') == args[0] and isinstance(value.get('seeds'), list)
+                    and all(isinstance(seed, str) and seed.isdecimal() for seed in value['seeds'])
+                    and type(value.get('rent_total')) is int and value['rent_total'] >= 0
+                    and isinstance(value.get('rent_has_more'), bool))
+        return (method == 'community_info' and value.get('neighborhood_id') == args[0]
+                and isinstance(value.get('name'), str) and bool(value['name'].strip())
+                and isinstance(value.get('address'), str) and value.get('city_id') == CITY_ID
+                and isinstance(value.get('district'), str)
                 and value.get('coordinate_system') in {'gcj02', None}
                 and all(key in value and (value[key] is None or (
-                    isinstance(value[key], (int, float)) and math.isfinite(value[key])))
-                    for key in ('longitude', 'latitude')))
+                    not isinstance(value[key], bool) and isinstance(value[key], (int, float))
+                    and math.isfinite(value[key]) and abs(value[key]) <= limit))
+                    for key, limit in (('longitude', 180), ('latitude', 90))))
 
     def search(self, name, channel):
         return self._call('search', (name, channel), cached=True)
 
-    def homepage(self, nid, *, fresh=False):
+    def community_info(self, nid, *, fresh=False):
         before = self.request_count
-        value = self._call('homepage', (nid,), cached=True, refresh=fresh)
+        value = self._call('community_info', (nid,), cached=True, refresh=fresh)
         if self.request_count > before:
-            self.fresh_homepages.add(nid)
+            self.fresh_communities.add(nid)
         return value
+
+    def rental_entry(self, nid):
+        # Entry facts may be recorded, but never reused as binding authority.
+        return self._call('rental_entry', (nid,), cached=True, refresh=True)
 
     def listing_owner(self, seed):
         return self._call('listing_owner', (seed,))

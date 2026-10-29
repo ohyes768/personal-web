@@ -2,9 +2,9 @@
 
 A keyword search on the platform answers with HTTP 200 and unrelated listings
 even when the name matches nothing, so a search response never proves identity.
-The search only nominates which community homepage to read; identity, address,
-position and the actual rental entry all come from the homepage and the
-listing pages it links to.
+The search only nominates community IDs. Identity comes from the community
+info API; rental seeds are fetched separately after a candidate is selected.
+Listing pages still prove that those seeds belong to the selected community.
 """
 from __future__ import annotations
 
@@ -45,6 +45,19 @@ def validate_discovery_url(url):
         if not set(dict(parse_qsl(p.query))) <= SEARCH_PARAMS:
             raise ValueError('幸福里搜索参数不在允许范围')
         return url
+    api_params = {
+        '/f100/api/neighborhood/info': {'neighborhood_id'},
+        '/f100/api/same_neighborhood_rent': {'neighborhood_id', 'city_id', 'offset', 'count'},
+    }
+    if p.path in api_params:
+        pairs = parse_qsl(p.query, keep_blank_values=True)
+        params = dict(pairs)
+        if (set(params) != api_params[p.path] or len(params) != len(pairs)
+                or not re.fullmatch(r'[0-9]+', params.get('neighborhood_id', ''))
+                or (p.path.endswith('same_neighborhood_rent') and
+                    (params['city_id'] != str(CITY_ID) or params['offset'] != '0' or params['count'] != '10'))):
+            raise ValueError('幸福里小区API参数不在允许范围')
+        return url
     if re.fullmatch(r'/xiaoqu/hz-[0-9]+\.html', p.path):
         if p.query:
             raise ValueError('幸福里小区主页不能包含查询参数')
@@ -58,10 +71,14 @@ def validate_discovery_url(url):
     raise ValueError('仅支持幸福里杭州公开搜索、小区主页与房源页')
 
 
-def homepage_url(neighborhood_id):
+def _community_id(neighborhood_id):
     if not re.fullmatch(r'[0-9]+', str(neighborhood_id or '')):
         raise ValueError('幸福里小区 ID 必须为数字字符串')
-    return f'{BASE_URL}/xiaoqu/hz-{neighborhood_id}.html'
+    return str(neighborhood_id)
+
+
+def homepage_url(neighborhood_id):
+    return f'{BASE_URL}/xiaoqu/hz-{_community_id(neighborhood_id)}.html'
 
 
 def _number(value):
@@ -125,6 +142,59 @@ def parse_homepage(html, expected_id):
     }
 
 
+def _api_data(body):
+    try:
+        payload = json.loads(body)
+    except (ValueError, TypeError):
+        raise ValueError('幸福里小区API未返回有效JSON') from None
+    if (not isinstance(payload, dict) or type(payload.get('status')) is not int
+            or payload['status'] != 0 or not isinstance(payload.get('data'), dict)):
+        raise ValueError('幸福里小区API未返回有效数据')
+    return payload['data']
+
+
+def parse_community_info(body, expected_id):
+    info = _api_data(body).get('neighborhood_info')
+    if not isinstance(info, dict) or str(info.get('id')) != expected_id:
+        raise ValueError('幸福里小区API身份与请求不一致')
+    if str(info.get('city_id')) != str(CITY_ID):
+        raise ValueError('幸福里小区API城市与杭州不一致')
+    if (not isinstance(info.get('name'), str) or not info['name'].strip()
+            or not isinstance(info.get('address'), str)
+            or not isinstance(info.get('district_name', ''), str)):
+        raise ValueError('幸福里小区API缺少有效名称或地址字段')
+    coordinates = []
+    for key, limit in (('gaode_lng', 180), ('gaode_lat', 90)):
+        raw = info.get(key)
+        value = _number(raw)
+        if raw not in (None, '') and (isinstance(raw, bool) or value is None or abs(value) > limit):
+            raise ValueError('幸福里小区API坐标无效')
+        coordinates.append(value)
+    return dict(neighborhood_id=expected_id, name=info['name'].strip(), address=info['address'],
+                longitude=coordinates[0], latitude=coordinates[1], coordinate_system='gcj02',
+                city_id=CITY_ID, district=info.get('district_name', ''))
+
+
+def parse_rental_entry(body, expected_id):
+    data = _api_data(body)
+    items, total, more = data.get('items'), data.get('total'), data.get('has_more')
+    if (not isinstance(items, list) or type(total) is not int or total < 0
+            or not isinstance(more, bool) or total < len(items)
+            or (not items and (total > 0 or more))):
+        raise ValueError('幸福里租房入口API结构不完整')
+    seeds = []
+    for item in items:
+        if (not isinstance(item, dict) or not isinstance(item.get('id'), str)
+                or not re.fullmatch(r'[0-9]+', item['id'])):
+            raise ValueError('幸福里租房入口API种子无效')
+        # The current API omits membership. If supplied, never ignore a conflict.
+        if item.get('neighborhood_id') is not None and str(item['neighborhood_id']) != expected_id:
+            raise ValueError('幸福里租房入口API混入其他小区')
+        if item['id'] not in seeds:
+            seeds.append(item['id'])
+    return dict(neighborhood_id=expected_id, seeds=seeds, rent_total=total, rent_has_more=more)
+
+
 def search_groups(items, channel='rent'):
     """Community identities the platform reported, keyed by neighborhood id.
 
@@ -159,7 +229,7 @@ def search_groups(items, channel='rent'):
 
 
 class XingfuliDiscovery(XingfuliTransport):
-    """Reads the platform's public search and community homepage pages."""
+    """Reads public search/info/entry APIs and verifies seeds against listings."""
 
     def __init__(self, timeout=20, *, directory=None, fetcher=None, delay=DEFAULT_XINGFULI_DELAY, cancel_event=None):
         super().__init__(timeout, directory=directory, fetcher=fetcher, delay=delay,
@@ -186,8 +256,16 @@ class XingfuliDiscovery(XingfuliTransport):
             isinstance(total, (int, float)) and total > len(items))
         return search_groups(items, channel)
 
-    def homepage(self, neighborhood_id):
-        return parse_homepage(self.fetch(homepage_url(neighborhood_id)), neighborhood_id)
+    def community_info(self, neighborhood_id):
+        neighborhood_id = _community_id(neighborhood_id)
+        url = BASE_URL + '/f100/api/neighborhood/info?' + urlencode({'neighborhood_id': neighborhood_id})
+        return parse_community_info(self.fetch(url), neighborhood_id)
+
+    def rental_entry(self, neighborhood_id):
+        neighborhood_id = _community_id(neighborhood_id)
+        url = BASE_URL + '/f100/api/same_neighborhood_rent?' + urlencode({
+            'neighborhood_id': neighborhood_id, 'city_id': CITY_ID, 'offset': 0, 'count': 10})
+        return parse_rental_entry(self.fetch(url), neighborhood_id)
 
     def listing_owner(self, seed):
         """Neighborhood that actually owns the listing behind a seed."""

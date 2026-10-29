@@ -36,10 +36,19 @@ class FakeDiscovery:
         return {nid: {'name': platform_name, 'seeds': list(seeds)}
                 for nid, (platform_name, seeds) in found.items()}
 
-    def homepage(self, neighborhood_id):
+    def community_info(self, neighborhood_id):
         self.request_count += 1
-        self.calls.append(('homepage', neighborhood_id))
-        return self._homepages[neighborhood_id]
+        self.calls.append(('community_info', neighborhood_id))
+        facts = self._homepages[neighborhood_id]
+        return {**{k: v for k, v in facts.items() if k not in {'seeds', 'rent_total'}},
+                'city_id': 1853, 'district': facts.get('district', '滨江')}
+
+    def rental_entry(self, neighborhood_id):
+        self.request_count += 1
+        self.calls.append(('rental_entry', neighborhood_id))
+        facts = self._homepages[neighborhood_id]
+        return dict(neighborhood_id=neighborhood_id, seeds=facts['seeds'],
+                    rent_total=facts['rent_total'], rent_has_more=bool(facts['seeds']))
 
     def listing_owner(self, seed):
         self.request_count += 1
@@ -62,7 +71,7 @@ def homepage(neighborhood_id=TOTAL_ID, name='测试花园', address='测试路1�
 def test_exact_name_and_matching_place_binds(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {TOTAL_ID: ('测试花园', [SEED])}},
+        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
         homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
     report = auto_discover(registry, fake, registry.communities())
     assert report['matched'] == 1 and report['pending'] == 0
@@ -89,7 +98,7 @@ def test_a_position_match_binds_although_the_address_wording_differs(tmp_path):
     """The platform writes its own address; the position decides."""
     registry = setup(tmp_path, address='浙江省杭州市滨江区测试路1号')
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {TOTAL_ID: ('测试花园', [SEED])}},
+        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
         homepages={TOTAL_ID: homepage(address='测试路1号')},
         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
     report = auto_discover(registry, fake, registry.communities())
@@ -105,7 +114,7 @@ def test_a_position_match_binds_although_the_address_wording_differs(tmp_path):
 def test_a_seed_of_another_community_is_never_bound(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {TOTAL_ID: ('测试花园', [SEED])}},
+        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
         homepages={TOTAL_ID: homepage()}, owners={SEED: '6581009489657331973'},
         lists={SEED: TOTAL_ID})
     report = auto_discover(registry, fake, registry.communities())
@@ -116,7 +125,7 @@ def test_a_seed_of_another_community_is_never_bound(tmp_path):
 def test_a_seed_whose_list_belongs_elsewhere_is_never_bound(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {TOTAL_ID: ('测试花园', [SEED])}},
+        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
         homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID},
         lists={SEED: '6581009489657331973'})
     report = auto_discover(registry, fake, registry.communities())
@@ -149,7 +158,7 @@ def test_a_different_name_is_never_bound_automatically(tmp_path):
 def test_a_far_away_match_is_not_bound(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {TOTAL_ID: ('测试花园', [SEED])}},
+        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
         homepages={TOTAL_ID: homepage(address='测试路9号', longitude=120.30, latitude=30.30)},
         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
     report = auto_discover(registry, fake, registry.communities())
@@ -213,7 +222,7 @@ def test_the_refresh_run_binds_a_proven_source(tmp_path):
     from src.services.rental_reference.refresh import RentalRefreshService
     registry = setup(tmp_path)
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {TOTAL_ID: ('测试花园', [SEED])}},
+        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
         homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
     service = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
                                    delay=0, auto_discover=True,

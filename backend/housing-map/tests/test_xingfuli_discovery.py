@@ -158,9 +158,15 @@ def test_search_rejects_a_failed_status(tmp_path):
         client.search('白金海岸', 'second_hand')
 
 
-def test_homepage_reads_the_public_page(tmp_path):
-    client, _ = discovery(tmp_path, {f'/xiaoqu/hz-{TOTAL_ID}.html': homepage_html()})
-    assert client.homepage(TOTAL_ID)['name'] == '白金海岸'
+def test_community_info_reads_the_api_without_rental_entry(tmp_path):
+    body = json.dumps({'status': 0, 'data': {'neighborhood_info': {
+        'id': TOTAL_ID, 'name': '白金海岸', 'address': '香溢路88号',
+        'city_id': 1853, 'district_name': '滨江', 'gaode_lng': '120.188369', 'gaode_lat': '30.203001'}}})
+    client, _ = discovery(tmp_path, {'/f100/api/neighborhood/info': body})
+    info = client.community_info(TOTAL_ID)
+    assert info['name'] == '白金海岸'
+    assert 'seeds' not in info and 'rent_total' not in info
+    assert client.request_count == 1
 
 
 def test_listing_owner_comes_from_the_detail_page(tmp_path):

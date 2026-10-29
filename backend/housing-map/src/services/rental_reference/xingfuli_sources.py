@@ -74,6 +74,9 @@ def evaluate(community, candidate):
     candidate_district = address_district(candidate.get('address'))
     if candidate_district and candidate_district.removesuffix('区') != internal_district:
         conflicts.append(f'平台地址位于{candidate_district}，与目录区域{internal_district}不一致')
+    api_district = (candidate.get('district') or '').removesuffix('区')
+    if api_district and api_district != internal_district:
+        conflicts.append(f'平台区域为{api_district}，与目录区域{internal_district}不一致')
 
     same_address = bool(normalized(candidate.get('address'))) and \
         normalized(candidate.get('address')) == normalized(community.get('address'))
@@ -103,6 +106,7 @@ def candidate_from_homepage(homepage, *, discovered_via):
         'longitude': homepage['longitude'],
         'latitude': homepage['latitude'],
         'coordinate_system': homepage['coordinate_system'],
+        'district': homepage.get('district', ''),
         'phase': phase_of(homepage['name']),
         'rent_total': homepage.get('rent_total'),
         'seeds': list(homepage.get('seeds') or []),
@@ -230,14 +234,14 @@ def _advance_cursor(registry, community_id):
                    'ON CONFLICT(key) DO UPDATE SET value=excluded.value', (CURSOR_KEY, community_id))
 
 
-def _verified_seed(client, candidate, group, neighborhood_id, *, budget):
+def _verified_seed(client, candidate, neighborhood_id, *, budget):
     """A rent seed whose owner the platform pages prove.
 
     A search response nominates a seed but never proves it; the listing page
     and the same-neighborhood list do. A seed that belongs to another community
     would publish that community's rent under this one.
     """
-    seeds = list(candidate.get('seeds') or []) + list(group.get('seeds') or [])
+    seeds = list(candidate.get('seeds') or [])
     for seed in dict.fromkeys(seeds):
         if client.request_count >= budget:
             return None
@@ -281,7 +285,7 @@ def _auto_match(registry, client, community, *, budget):
                 if client.request_count >= budget:
                     return 'deferred'
                 try:
-                    homepage = client.homepage(neighborhood_id)
+                    homepage = client.community_info(neighborhood_id)
                 except ValueError as exc:
                     logger.warning('Xingfuli auto homepage failed community_id=%s id=%s error=%s',
                                    community_id, neighborhood_id, exc)
@@ -290,7 +294,16 @@ def _auto_match(registry, client, community, *, budget):
                 judgement = evaluate(community, candidate)
                 if not judgement['strong']:
                     continue
-                seed = _verified_seed(client, candidate, group, neighborhood_id, budget=budget)
+                if client.request_count >= budget:
+                    return 'deferred'
+                try:
+                    entry = client.rental_entry(neighborhood_id)
+                except ValueError as exc:
+                    logger.warning('Xingfuli auto entry failed community_id=%s id=%s error=%s',
+                                   community_id, neighborhood_id, exc)
+                    return 'failed'
+                candidate.update(seeds=entry['seeds'], rent_total=entry['rent_total'])
+                seed = _verified_seed(client, candidate, neighborhood_id, budget=budget)
                 if not seed:
                     return 'deferred' if client.request_count >= budget else 'pending'
                 try:

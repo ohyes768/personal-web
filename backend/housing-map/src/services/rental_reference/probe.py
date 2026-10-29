@@ -289,7 +289,6 @@ class ProbeService:
         community_id = community['community_id']
         client = self._checkpoint_client(community)
         candidates = []
-        homepages = {}
         seen = set()
         incomplete = False
         for name in _search_names(community):
@@ -312,13 +311,12 @@ class ProbeService:
                         continue
                     seen.add(neighborhood_id)
                     try:
-                        homepage = client.homepage(neighborhood_id)
+                        homepage = client.community_info(neighborhood_id)
                     except ValueError as exc:
                         incomplete = True
                         logger.warning('Rental probe homepage failed community_id=%s id=%s error=%s',
                                        community_id, neighborhood_id, exc)
                         continue
-                    homepages[neighborhood_id] = homepage
                     candidate = candidate_from_homepage(homepage, discovered_via=channel)
                     judgement = evaluate(community, candidate)
                     candidate['candidate_id'] = f"{channel}:{neighborhood_id}"
@@ -335,8 +333,7 @@ class ProbeService:
                     client.report('resolving_entry')
                     write_state(self.registry, community_id, stage=STAGE_RESOLVING,
                                 selected_page=candidates[0], message='正在核验租房入口')
-                    self._resolve_entry(community, candidates[0], client,
-                                        homepage=homepages.get(candidates[0]['neighborhood_id']))
+                    self._resolve_entry(community, candidates[0], client)
                     return
                 if len(candidates) >= MAX_CANDIDATES:
                     break
@@ -348,12 +345,12 @@ class ProbeService:
         if not incomplete and len(candidates) == 1 and len(strong) == 1:
             write_state(self.registry, community_id, stage=STAGE_RESOLVING,
                         selected_page=candidates[0], message='正在寻找该主页的租房入口')
-            self._resolve_entry(community, candidates[0], client, homepage=homepages.get(candidates[0]['neighborhood_id']))
+            self._resolve_entry(community, candidates[0], client)
             return
         write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION, candidates=candidates,
                     message='请选择对应的小区主页')
 
-    def _resolve_entry(self, community, candidate=None, client=None, homepage=None):
+    def _resolve_entry(self, community, candidate=None, client=None):
         community_id = community['community_id']
         state = read_state(self.registry, community_id)
         candidate = candidate or state.get('selected_page')
@@ -362,10 +359,10 @@ class ProbeService:
                         message='请选择对应的小区主页')
             return
         client = client or self._checkpoint_client(community)
-        # Cached identities are useful for discovery, but a restored worker
-        # must refresh rental seeds before doing both ownership checks.
-        if isinstance(client, DiscoveryCheckpoint) and candidate['neighborhood_id'] not in client.fresh_homepages:
-            homepage = client.homepage(candidate['neighborhood_id'], fresh=True)
+        # A restored/selected identity must be fresh before fetching entry
+        # seeds and doing both ownership checks. Cold search already read it.
+        if isinstance(client, DiscoveryCheckpoint) and candidate['neighborhood_id'] not in client.fresh_communities:
+            homepage = client.community_info(candidate['neighborhood_id'], fresh=True)
             fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
             fresh_candidate['candidate_id'] = candidate.get('candidate_id', 'homepage:' + candidate['neighborhood_id'])
             judgement = evaluate(community, fresh_candidate)
@@ -374,13 +371,10 @@ class ProbeService:
                             candidates=[fresh_candidate], message='主页信息已变化，请重新探查')
                 return
             candidate = fresh_candidate
-        if homepage is None:
-            try:
-                homepage = client.homepage(candidate['neighborhood_id'])
-            except ValueError as exc:
-                write_state(self.registry, community_id, stage=STAGE_FAILED, message=str(exc) or '读取小区主页失败')
-                return
-        seeds = list(homepage.get('seeds') or [])[:MAX_SEED_TRIES]
+        entry = client.rental_entry(candidate['neighborhood_id'])
+        candidate = {**candidate, 'rent_total': entry['rent_total'], 'seeds': entry['seeds']}
+        write_state(self.registry, community_id, selected_page=candidate)
+        seeds = list(entry['seeds'])[:MAX_SEED_TRIES]
         if not seeds:
             write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
                         message='该主页没有可用的租房入口，请重试或换一个主页')
@@ -416,7 +410,9 @@ class ProbeService:
     def _checkpoint_client(self, community):
         return DiscoveryCheckpoint(self.registry, community, self._client(), self._cancel, self.budget,
                                    lambda step, diagnostics: write_state(
-                                       self.registry, community['community_id'], current_step=step,
+                                       self.registry, community['community_id'],
+                                       current_step={'community_info': 'homepage',
+                                                     'rental_entry': 'resolving_entry'}.get(step, step),
                                        diagnostics=diagnostics))
 
     def _bind(self, community, candidate, seed):
