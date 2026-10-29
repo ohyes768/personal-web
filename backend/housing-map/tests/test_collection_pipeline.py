@@ -402,7 +402,8 @@ def test_retry_scope_and_live_count_ignore_old_job_failures_and_protected_states
     assert client.queries == [] and job.snapshot()['total'] == 0
 
 
-def test_automatic_retry_rechecks_manual_exclusion_before_query(store, tmp_path):
+@pytest.mark.parametrize('force', [False, True])
+def test_automatic_retry_rechecks_manual_exclusion_before_query(store, tmp_path, force):
     from src.services.directory_position import position_one
     store.ingest(source()); synchronize(store, tmp_path)
     row = inventory(store, tmp_path)[0]
@@ -410,7 +411,7 @@ def test_automatic_retry_rechecks_manual_exclusion_before_query(store, tmp_path)
     class Client:
         def search_name(self, *args, **kwargs):
             raise AssertionError('人工排除后不得发起自动查询')
-    assert position_one(store, tmp_path, row['community_id'], Client(), automatic=True) == 'skipped'
+    assert position_one(store, tmp_path, row['community_id'], Client(), automatic=True, force=force) == 'skipped'
 
 
 def test_position_start_api_accepts_retry_mode_and_keeps_no_body_compatibility(store, monkeypatch):
@@ -427,8 +428,56 @@ def test_position_start_api_accepts_retry_mode_and_keeps_no_body_compatibility(s
     with TestClient(app) as client:
         assert client.post('/api/directory/workflow/positions').status_code == 202
         assert client.post('/api/directory/workflow/positions', json={'mode': 'retry_failed'}).status_code == 202
+        assert client.post('/api/directory/workflow/positions', json={'mode': 'refresh_all'}).status_code == 202
         assert client.post('/api/directory/workflow/positions', json={'mode': 'invalid'}).status_code == 422
-    assert modes == ['all', 'retry_failed']
+    assert modes == ['all', 'retry_failed', 'refresh_all']
+
+
+@pytest.mark.parametrize('state', ['matched', 'review', 'not_found', 'pending', 'error', 'manual'])
+def test_refresh_all_requeries_automatic_results_and_protects_manual(store, tmp_path, state):
+    from src.services.directory_position import PositionJob
+    c = positioned(master(), state=state)
+    saved = c['amap_position']
+    if state not in {'matched', 'manual'}:
+        saved.pop('selected')
+    store.create(c['community_name'], district='滨江', address=c['address'], community_id='c',
+                 collection_pipeline_version=RULE, amap_position=saved)
+    r = store.ingest(source()); store.associate(r['id'], 'c')
+    before = inventory(store, tmp_path)[0]
+
+    class Client:
+        calls = 0
+        def search_name(self, name, *args, **kwargs):
+            self.calls += 1
+            return [dict(id='NEW', name=name, adname='滨江区', typecode='120201', type='写字楼',
+                         address='月明路1076号', location='120.20749,30.20226')], 1
+
+    client = Client()
+    job = PositionJob(store)
+    job.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
+    job._run(client=client, delay=0, mode='refresh_all')
+    assert job.snapshot()['phase'] == 'succeeded'
+    if state == 'manual':
+        assert client.calls == 0
+        assert inventory(store, tmp_path)[0] == before
+    else:
+        assert client.calls == 1
+        assert job.snapshot()['updated'] == 1
+        row = inventory(store, tmp_path)[0]
+        assert row['position']['selected']['source_id'] == 'NEW'
+        assert row['use_review']['evidence']['typecode'] == '120201'
+        assert row['qualification'] == 'use_conflict'
+
+
+def test_refresh_all_start_accepts_mode_and_uses_shared_job(store, monkeypatch):
+    from src.services.directory_position import PositionJob
+    job = PositionJob(store)
+    modes = []
+    monkeypatch.setattr(job, '_run', lambda **kwargs: modes.append(kwargs['mode']))
+    job.start(mode='refresh_all')
+    job.worker.join(timeout=5)
+    assert modes == ['refresh_all']
 
 
 def test_incomplete_query_is_retryable_but_not_counted_as_manual_review(store, tmp_path):

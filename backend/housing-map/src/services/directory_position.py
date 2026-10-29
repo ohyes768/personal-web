@@ -346,7 +346,7 @@ class PositionJob:
             db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (KEY, dump(self.state)))
 
     def start(self, mode='all', *, community_ids=None):
-        if mode not in {'all', 'unqueried', 'retry_failed'}:
+        if mode not in {'all', 'refresh_all', 'unqueried', 'retry_failed'}:
             raise ValueError('未知高德匹配模式')
         with self.lock:
             with self.store.db() as db:
@@ -391,7 +391,8 @@ class PositionJob:
                 cid = target['community_id']
                 current_state = position_view(target, target.get('sources', [])).get('state')
                 needs_subject_type = active(target) and current_state == 'matched' and not (target.get('use_review') or {}).get('state')
-                if current_state not in {'pending', 'error'} and not needs_subject_type and not query_retryable(target['position']):
+                if current_state == 'manual' or (mode != 'refresh_all' and current_state not in {'pending', 'error'}
+                        and not needs_subject_type and not query_retryable(target['position'])):
                     outcome = 'skipped'
                     with self.lock:
                         by = self.state['skipped_by_state']
@@ -408,6 +409,7 @@ class PositionJob:
                     try:
                         outcome = position_one(self.store, self.store.path.parent, cid, client,
                                                cancelled=self.cancel.is_set, automatic=True,
+                                               force=mode == 'refresh_all',
                                                retry_failed_only=mode == 'retry_failed')
                     except InterruptedError:
                         raise

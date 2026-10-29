@@ -39,7 +39,7 @@ type Page<T> = { items: T[]; total: number; page: number; property_types?: strin
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
-  retryable?: number; unqueried?: number; mode?: 'all' | 'unqueried' | 'retry_failed';
+  retryable?: number; unqueried?: number; mode?: 'all' | 'refresh_all' | 'unqueried' | 'retry_failed';
   resolutions?: Record<string, number>; evidence_issues?: { name?: string; message: string }[];
   position_followup?: { state: string; targets?: number; message?: string };
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
@@ -137,18 +137,20 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
             <span className="directory-task-dot" aria-hidden="true" />
             <strong>{t.label}</strong>
             <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
-              onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'unqueried' } : t.body))}>
-              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '继续匹配' : '开始'}</button>
+              onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'refresh_all' } : t.body))}>
+              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : '开始'}</button>
             {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
               onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
               重试失败项（{job?.retryable || 0}）</button>}
+            {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running}
+              onClick={() => action(t.path, 'POST', { mode: 'unqueried' })}>继续匹配</button>}
             {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
               onClick={() => action(t.path, 'POST', { mode: 'retry_failed' })}>
               重试查询失败（{job?.retryable || 0}）</button>}</div>
           </div>
           <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
           {t.id === 'amap' && <p className="directory-task-sub">当前待处理：尚未查询 {job?.unqueried ?? '—'} 条 → 继续匹配 · 查询失败／不完整 {job?.retryable ?? '—'} 条 → 重试查询失败</p>}
-          {t.id === 'amap' && <p className="directory-task-sub">继续匹配只处理上方统计的尚未查询项目；重试查询失败只处理当前查询失败或结果不完整的项目。已有查询记录的其他项目不参与。</p>}
+          {t.id === 'amap' && <p className="directory-task-sub">更新全部会重新查询符合条件的楼盘，包括已自动匹配、待确认和未找到的项目，保留人工确认结果；继续匹配只处理尚未查询项目；重试查询失败只处理查询失败或结果不完整的项目。每轮有请求上限。</p>}
           {(problem || message) && <p className="directory-task-line" data-state={state}>
             {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
           </p>}

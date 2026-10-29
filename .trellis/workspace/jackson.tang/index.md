@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 52
-- **Last Active**: 2026-10-28
+- **Total Sessions**: 53
+- **Last Active**: 2026-10-29
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,8 +19,8 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~63 | Active |
-| `journal-1.md` | ~1985 | Archived |
+| `journal-2.md` | ~149 | Active |
+| `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 53 | 2026-10-29 | 补齐楼盘地点与类型全量更新 | - | `master` |
 | 52 | 2026-10-28 | 归档地图数据补齐父任务 | `ef61c7d`, `ffdef53`, `cb5d871` | `master` |
 | 51 | 2026-10-28 | 归档法拍手工关联与住宅分类清理任务 | `2e20b09`, `8a62779` | `master` |
 | 50 | 2026-10-28 | 归档租金更新流程与轮廓估算上传及住宅筛选任务 | `2e20b09`, `ef61c7d`, `ffdef53`, `9109c94` | `master` |

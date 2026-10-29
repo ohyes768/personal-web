@@ -115,3 +115,35 @@
 | `b19051e` | feat(housing-map): 已收录小区多选合并 |
 | `5d0878d` | docs: 记录小区合并契约与隔离验证环境做法 |
 | `003809e` | chore: 归档已收录小区多选合并任务 |
+
+
+## Session 53: 补齐楼盘地点与类型全量更新
+
+**Date**: 2026-10-29
+**Task**: 补齐楼盘地点与类型全量更新
+**Package**: housing-map
+**Branch**: `master`
+
+### Summary
+
+新增更新全部/继续匹配/重试失败三个入口；refresh_all重新查询自动结果并保护人工决定，旧all保持补缺兼容。后端1093和前端169测试通过，lint/tsc/build通过，1440/390静态预览无溢出。用户已授权提交并推送，未部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+随本次 housing-map 功能提交。
+
+### Testing
+
+- 后端1093与前端169测试通过；lint、类型检查和生产构建通过；1440/390静态预览无溢出。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

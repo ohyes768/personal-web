@@ -12,6 +12,7 @@ External prefix `/api/map/directory/workflow` (backend `/api/directory/workflow`
 - POST `/catalog/{cid}/position/query`, no body: explicit known-name retry; returns current position plus `errors:string[]` for durably saved query outcomes.
 - POST `/catalog/{cid}/position/confirm` accepts `{revision,poi_id,coordinates_verified?:boolean}` for an existing server-side candidate, or `{revision,longitude,latitude,address}` for a verified manual GCJ02 point. `coordinates_verified` defaults to false and uses strict boolean validation.
 - GET/POST/DELETE `/positions` retain the existing persistent/cancellable batch job.
+- POST `/positions` additionally accepts explicit `mode:refresh_all` for the 更新全部 control: query eligible automatic matched/review/not_found/pending/error entries while preserving manual positions and current automatic-scope exclusions. `unqueried` and `retry_failed` keep their narrower target sets; legacy default `all` keeps the original supplement-only behavior used by collection followups. All modes share the job lock, budget and cancellation.
 - `position_view(target, records=())` is a pure projection; `position_one(...,client=None,cancelled=...,force=False)` performs bounded lookup then optimistic publication. `PositionOutcome(ValueError)` means an outcome was persisted; ordinary stale/eligibility ValueErrors remain conflicts.
 
 ## 3. Contracts

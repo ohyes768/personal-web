@@ -63,7 +63,7 @@ test('TMSF collection separates full update and failed-only retry', () => {
   assert.deepEqual(calls, [['/directory/collection', 'POST', { sources: ['tmsf'], mode: 'retry_failed' }]]);
 });
 
-test('Amap offers continuation and current-query retry with the correct request mode', () => {
+test('Amap offers full update, continuation and current-query retry with the correct request mode', () => {
   const props = { active: true, busy: false, open: true, pipeline: true, errors: {},
     jobs: { amap: { running: false, phase: 'partial_failed', failed: 99, retryable: 2, unqueried: 11 } } };
   const calls = [];
@@ -76,9 +76,12 @@ test('Amap offers continuation and current-query retry with the correct request 
     visit(node.props?.children);
   }
   visit(tree);
+  assert.ok(buttons.some(b => b.props.children === '更新全部'), '高德匹配应提供更新全部入口');
+  buttons.find(b => b.props.children === '更新全部').props.onClick();
   buttons.find(b => b.props.children === '继续匹配').props.onClick();
   buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === '重试查询失败（').props.onClick();
-  assert.deepEqual(calls, [['/directory/workflow/positions', 'POST', { mode: 'unqueried' }],
+  assert.deepEqual(calls, [['/directory/workflow/positions', 'POST', { mode: 'refresh_all' }],
+    ['/directory/workflow/positions', 'POST', { mode: 'unqueried' }],
     ['/directory/workflow/positions', 'POST', { mode: 'retry_failed' }]]);
   const html = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, action() {} }));
   assert.match(html, /重试查询失败（2）/);
@@ -88,6 +91,13 @@ test('Amap offers continuation and current-query retry with the correct request 
   const empty = renderToStaticMarkup(React.createElement(CollectionControls, { ...props,
     jobs: { amap: { retryable: 0 } }, action() {} }));
   assert.match(empty, /disabled=""[^>]*>重试查询失败（0）/);
+  for (const override of [{ busy: true }, { active: false }, { jobs: { amap: { running: true, retryable: 2 } } }]) {
+    const disabled = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, ...override, action() {} }));
+    if (!override.jobs) assert.match(disabled, /disabled=""[^>]*>更新全部<\/button>/);
+    else assert.match(disabled, />停止补全定位<\/button>/);
+    assert.match(disabled, /disabled=""[^>]*>继续匹配<\/button>/);
+    assert.match(disabled, /disabled=""[^>]*>重试查询失败（2）/);
+  }
 });
 
 test('collection status preserves rental units and nested errors', () => {

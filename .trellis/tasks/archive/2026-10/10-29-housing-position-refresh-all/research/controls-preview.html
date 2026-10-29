@@ -1,0 +1,1758 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>楼盘匹配三按钮预览</title><style>
+
+:root {
+  --bg-primary: #F5F6F8;
+  --bg-surface: #FFFFFF;
+  --bg-elevated: #F0F2F5;
+  --border: #E3E6EB;
+  --text-primary: #1F2429;
+  --text-muted: #7A828C;
+  --accent-warm: #B45F3F;
+  --accent-gold: #A97B1F;
+  --price-up: #D64541;
+  --price-down: #2E8B44;
+  --metro: #3B76D2;
+  --school: #6C5CE7;
+  --hospital: #D94F7E;
+  --mall: #DE8F0E;
+  --park: #2E9E55;
+  --bus: #4899BE;
+}
+
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --font-sans: 'Geist Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: 'Bricolage Grotesque', var(--font-sans);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+}
+
+/* 返回首页链接 */
+.back-home {
+  color: var(--text-primary);
+  text-decoration: none;
+  font-size: 14px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+.back-home:hover {
+  background: var(--bg-elevated);
+}
+
+/* 自定义滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}
+
+/* 地图区域 */
+.map-container {
+  position: relative;
+  width: 100%;
+  height: calc(100vh - 64px);
+  background: linear-gradient(135deg, #EEF1F5 0%, #E3E7ED 100%);
+  overflow: hidden;
+}
+
+/* 模拟地图网格 */
+.map-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(160, 170, 185, 0.25) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(160, 170, 185, 0.25) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+/* 小区标记点 */
+.community-marker {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  border: 2px solid rgba(255,255,255,0.3);
+}
+
+.community-marker:hover {
+  transform: scale(1.3);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  z-index: 100;
+}
+
+/* 价格标签 */
+.price-tag {
+  position: absolute;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+/* 控制面板 */
+.control-panel {
+  position: absolute;
+  right: 16px;
+  top: 16px;
+  width: 280px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.1);
+  transition: transform 0.3s ease;
+}
+
+.control-panel.collapsed {
+  transform: translateX(calc(100% + 24px));
+}
+
+/* 控制栏收起/展开把手 */
+.panel-toggle {
+  position: absolute;
+  right: 312px; /* 面板宽 280 + 右边距 16, 紧贴面板左缘 */
+  top: 16px;
+  width: 24px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-right: none;
+  border-radius: 8px 0 0 8px;
+  color: var(--text-muted);
+  font-size: 14px;
+  cursor: pointer;
+  transition: right 0.3s ease;
+  z-index: 10;
+}
+
+.panel-toggle.collapsed {
+  right: 16px;
+  border-right: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.panel-section {
+  margin-bottom: 20px;
+}
+
+.panel-section:last-child {
+  margin-bottom: 0;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 12px;
+}
+
+/* POI 开关按钮 */
+.poi-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.poi-toggle:hover {
+  border-color: var(--text-muted);
+}
+
+.poi-toggle.active {
+  border-color: var(--accent-warm);
+  background: rgba(194, 117, 88, 0.15);
+}
+
+.poi-toggle .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* 权重滑块 */
+.weight-slider {
+  margin-bottom: 16px;
+}
+
+.weight-slider label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+  color: var(--text-primary);
+  margin-bottom: 8px;
+}
+
+.weight-slider input[type="range"] {
+  width: 100%;
+  height: 4px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  appearance: none;
+  cursor: pointer;
+}
+
+.weight-slider input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  background: var(--accent-warm);
+  border-radius: 50%;
+  cursor: pointer;
+  transition: transform 0.2s;
+}
+
+.weight-slider input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* 小区弹窗 */
+/* 小区详情: 左侧抽屉, 点击小区从左滑入, 占满地图区高度, 内部滚动 */
+.community-popup {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 560px;
+  max-width: calc(100vw - 32px);
+  background: var(--bg-surface);
+  border-right: 1px solid var(--border);
+  border-radius: 0 16px 16px 0;
+  padding: 24px;
+  transform: translateX(-100%);
+  transition: transform 0.3s ease;
+  overflow-y: auto;
+  box-shadow: 8px 0 24px rgba(15, 23, 42, 0.12);
+  z-index: 300;
+}
+
+.community-popup.open {
+  transform: translateX(0);
+}
+
+.popup-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 16px;
+}
+
+.popup-title {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
+}
+
+.popup-subdistrict {
+  font-size: 12px;
+  color: var(--accent-warm);
+  background: rgba(194, 117, 88, 0.15);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-left: 8px;
+}
+
+.popup-score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.score-badge {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--accent-gold);
+  font-family: var(--font-display);
+}
+
+.score-label {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  font-size: 20px;
+  line-height: 1;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: var(--text-primary);
+}
+
+/* ——————————————————————————————————————————————————————————— */
+/* 房价数字条 (一行 4 列紧凑) + 评分维度 2×2 大卡 (可翻转)           */
+/* ——————————————————————————————————————————————————————————— */
+.popup-price-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+/* 评分卡 2×2: 560px 抽屉下每张 ~264px 宽, 明细背面两列排布无需滚动 */
+.score-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.stat-cell {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 2px 7px;
+  text-align: center;
+  min-width: 0;
+  position: relative;            /* 评分卡翻转容器需要相对定位, 不影响其他 cell */
+  overflow: hidden;              /* face 翻出时超出容器部分裁剪 */
+}
+
+.stat-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 3px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* ——————————————————————————————————————————————————————————— */
+/* 评分卡: 点击在"分数正面"与"明细背面"间切换                         */
+/* 实现方式: 两个 face 绝对定位叠放, 用透明度过渡切换显示.             */
+/* 刻意不用 3D rotateY 翻转 —— 无镜像字风险, 无 preserve-3d 兼容坑     */
+/* ——————————————————————————————————————————————————————————— */
+.score-card.stat-cell {
+  cursor: pointer;
+  min-height: 120px;
+  padding: 0;                     /* face 自带内边距, 容器 padding 归零 */
+}
+
+.score-card-face {
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: opacity 0.25s ease;
+}
+
+/* 正面: 图标+维度名 居左, 大分数 居右, 下方评分进度条, 底部翻转提示 */
+.score-card-front {
+  padding: 12px 14px 9px;
+  background: rgba(212, 168, 75, 0.10);
+  opacity: 1;
+}
+.score-card.stat-cell:hover .score-card-front {
+  background: rgba(212, 168, 75, 0.18);
+}
+.score-card.flipped .score-card-front { opacity: 0; }
+
+/* 背面: 该维度的子项明细 */
+.score-card-back {
+  background: var(--bg-elevated);
+  opacity: 0;
+}
+.score-card.flipped .score-card-back { opacity: 1; }
+
+.score-card-head {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+}
+.score-card-icon { font-size: 14px; line-height: 1; }
+.score-card-label { font-size: 12px; font-weight: 600; color: var(--text-primary); }
+.score-card-score {
+  margin-left: auto;
+  font-size: 26px; font-weight: 800; color: var(--accent-gold);
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+/* 评分进度条: 分值/100 的直观映射, 金色渐变填充 */
+.score-card-bar {
+  margin-top: 9px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(212, 168, 75, 0.18);
+  overflow: hidden;
+}
+.score-card-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent-warm), var(--accent-gold));
+  transition: width 0.5s ease;
+}
+
+.score-card-hint {
+  margin-top: auto;
+  padding-top: 7px;
+  font-size: 9px;
+  color: var(--text-muted);
+  text-align: right;
+  opacity: 0.65;
+  transition: opacity 0.2s;
+}
+.score-card.stat-cell:hover .score-card-hint { opacity: 1; color: var(--accent-warm); }
+
+.score-card-back-label {
+  font-size: 11px; font-weight: 600; color: var(--accent-warm);
+  text-align: left; padding-bottom: 4px;
+  border-bottom: 1px solid var(--border); margin-bottom: 5px;
+}
+
+.score-detail { display: flex; flex-direction: column; gap: 3px; font-size: 11px; flex: 1; min-height: 0; overflow: auto; }
+.score-detail-row { display: flex; justify-content: space-between; gap: 6px; }
+.score-detail-label { color: var(--text-muted); white-space: nowrap; }
+.score-detail-val { color: var(--text-primary); font-weight: 500; text-align: right; }
+.score-detail-empty { font-size: 11px; color: var(--text-muted); text-align: center; padding-top: 14px; }
+
+/* 两列明细网格 (配套/产品卡): 标签在上、数值在下, 宽卡下全部可见无需滚动 */
+.score-detail-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  align-content: start;
+}
+.score-detail-cell { display: flex; flex-direction: column; min-width: 0; }
+.score-detail-cell .score-detail-label { font-size: 9px; }
+.score-detail-cell .score-detail-val {
+  font-size: 11.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.score-detail-full {
+  grid-column: 1 / -1;
+  border-top: 1px solid var(--border);
+  padding-top: 3px;
+}
+
+/* 周边配套分类磁贴 (默认收起, 点击展开) */
+.poi-tiles {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.poi-tile {
+  --tile-color: var(--text-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 9px 2px 8px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, background 0.15s, transform 0.1s;
+}
+
+.poi-tile:hover:not(.empty):not(.active) {
+  border-color: var(--tile-color);
+}
+
+.poi-tile:active:not(.empty) {
+  transform: scale(0.95);
+}
+
+.poi-tile.active {
+  border-color: var(--tile-color);
+  background: color-mix(in srgb, var(--tile-color) 14%, var(--bg-elevated));
+}
+
+.poi-tile.empty {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.poi-tile-icon {
+  font-size: 14px;
+  line-height: 1;
+}
+
+.poi-tile-count {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--tile-color);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.poi-tile-near {
+  font-size: 9.5px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.poi-tile-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+/* 周边配套 */
+.poi-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.poi-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.poi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.poi-info {
+  flex: 1;
+}
+
+.poi-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.poi-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.poi-distance {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* 统计卡片（看板页） */
+.stat-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px;
+}
+
+.stat-value {
+  font-size: 28px;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+/* 数据表格 */
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.data-table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table td {
+  padding: 14px 16px;
+  font-size: 13px;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table tr:hover td {
+  background: var(--bg-elevated);
+}
+
+/* 标签 */
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.tag-subway { background: rgba(91, 141, 239, 0.2); color: var(--metro); }
+.tag-xiaoshan { background: rgba(180, 95, 63, 0.16); color: var(--accent-warm); }
+.tag-school { background: rgba(123, 104, 238, 0.2); color: var(--school); }
+.tag-hospital { background: rgba(255, 107, 157, 0.2); color: var(--hospital); }
+.tag-mall { background: rgba(255, 179, 71, 0.2); color: var(--mall); }
+.tag-park { background: rgba(80, 200, 120, 0.2); color: var(--park); }
+.tag-bus { background: rgba(135, 206, 235, 0.2); color: var(--bus); }
+
+/* 搜索框 */
+.search-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  width: 200px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.search-input:focus {
+  border-color: var(--accent-warm);
+}
+
+.search-input::placeholder {
+  color: var(--text-muted);
+}
+
+/* 按钮 */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.btn-primary {
+  background: var(--accent-warm);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: #a8624a;
+}
+
+.btn-secondary {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+}
+
+.btn-secondary:hover {
+  border-color: var(--text-muted);
+}
+
+/* 标签切换 */
+.tab-nav {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-elevated);
+  padding: 4px;
+  border-radius: 8px;
+}
+
+.tab-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab-btn:hover {
+  color: var(--text-primary);
+}
+
+.tab-btn.active {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* 筛选栏 */
+.filter-bar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 16px 20px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+
+.select-input {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+}
+
+.select-input:focus {
+  border-color: var(--accent-warm);
+}
+
+/* 分页 */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px;
+}
+
+.pagination button {
+  padding: 8px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.pagination button:hover:not(:disabled) {
+  border-color: var(--accent-warm);
+}
+
+.pagination button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pagination span {
+  font-size: 13px;
+  color: var(--text-muted);
+  padding: 0 12px;
+}
+
+/* 动画 */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.3s ease forwards;
+}
+
+/* 响应式 */
+@media (max-width: 1024px) {
+  .control-panel {
+    width: 240px;
+  }
+}
+
+@media (max-width: 768px) {
+  /* 窄屏: 控制面板改为覆盖式浮层。
+     原先是 position:relative 的全宽文档流块, 会把地图整体挤到面板下方,
+     且面板正好盖住地图上的小区标记, 导致标记点不到。浮层不占文档流,
+     收起时滑出视口, 地图保持可点。 */
+  .control-panel {
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    top: auto;
+    width: min(320px, calc(100% - 16px));
+    max-height: 55vh;
+    overflow-y: auto;
+    border-radius: 12px;
+  }
+
+  .control-panel.collapsed {
+    transform: translateX(calc(100% + 16px));
+  }
+
+  /* 窄屏保留收起把手: 浮层收起后靠它再拉回来 */
+  .panel-toggle {
+    right: 8px;
+    bottom: 8px;
+    top: auto;
+    width: auto;
+    padding: 0 12px;
+    height: 36px;
+    border-radius: 8px;
+    border-right: 1px solid var(--border);
+  }
+
+  .map-container {
+    height: auto;
+    min-height: calc(100vh - 64px);
+  }
+
+  /* 窄屏: 切换条靠左上但收窄, 避免盖住地图中部的小区标记 */
+  .market-mode-dock {
+    left: 8px;
+    top: 8px;
+    right: 8px;
+    padding: 6px 8px;
+    transform: none;
+  }
+
+  /* 窄屏详情弹框几乎占满视口, 切换条让位, 关闭详情后自动回来 */
+  .market-mode-dock.with-detail {
+    display: none;
+  }
+}
+/* 控制面板折叠区 (评分权重等低频设置) */
+.panel-collapse {
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+
+.panel-collapse summary {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  user-select: none;
+}
+
+.panel-collapse[open] summary {
+  margin-bottom: 12px;
+}
+
+/* 地图 hover 小提示 */
+.map-tooltip {
+  position: absolute;
+  z-index: 400;
+  pointer-events: none;
+  background: #FFFFFF;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+  white-space: nowrap;
+  display: none;
+}
+
+.map-tooltip .tt-name {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.map-tooltip .tt-price {
+  color: var(--text-muted);
+  margin-left: 8px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 价格口径角标: 签=成交价口径, 挂=要价口径 (签约价系统性低于挂牌价, 提示避免误比) */
+.map-tooltip .tt-tag {
+  display: inline-block;
+  margin-left: 4px;
+  padding: 0 4px;
+  font-size: 10px;
+  line-height: 14px;
+  border-radius: 3px;
+  background: rgba(194, 117, 88, 0.15);
+  color: var(--accent-warm);
+  vertical-align: 1px;
+}
+
+/* 市场行情: 独立的挂牌参考视图，不复用小区成交价色阶。 */
+.market-overview {
+  width: min(1120px, 100%);
+  min-height: calc(100vh - 116px);
+  margin: 0 auto;
+  padding: 48px 32px 56px;
+  background:
+    radial-gradient(circle at 88% 0%, rgba(180, 95, 63, 0.12), transparent 28rem),
+    var(--bg-primary);
+}
+
+.market-hero {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 32px;
+  padding-bottom: 30px;
+  border-bottom: 1px solid var(--border);
+}
+
+.market-kicker {
+  color: var(--accent-warm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.market-hero h1, .market-section-head h2 {
+  margin: 7px 0 8px;
+  font-family: var(--font-display);
+  letter-spacing: -0.035em;
+}
+
+.market-hero h1 { font-size: clamp(30px, 4vw, 44px); }
+.market-hero h1 span { color: var(--accent-warm); font-size: 0.52em; letter-spacing: 0; }
+
+.market-source, .market-section-head p, .market-footnote, .market-disclaimer {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.market-source { margin: 0; display: flex; gap: 12px; flex-wrap: wrap; }
+.market-source a { color: var(--accent-warm); font-weight: 600; }
+.market-disclaimer { max-width: 235px; margin: 0; padding-left: 16px; border-left: 2px solid var(--accent-gold); }
+
+.market-summary { display: grid; grid-template-columns: 1.55fr 1fr 1fr; gap: 14px; margin: 26px 0 34px; }
+.market-card { min-height: 152px; padding: 22px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-surface); box-shadow: 0 10px 30px rgba(31, 36, 41, 0.04); }
+.market-price-card { background: linear-gradient(135deg, #FFF9F5, var(--bg-surface)); border-color: rgba(180, 95, 63, 0.28); }
+.market-card-label { color: var(--text-muted); font-size: 12px; }
+.market-card strong { display: block; margin: 15px 0 3px; font-family: var(--font-display); font-size: 31px; letter-spacing: -0.04em; font-variant-numeric: tabular-nums; }
+.market-card span { color: var(--text-muted); font-size: 12px; }
+.market-change.up { color: var(--price-up); }
+.market-change.down { color: var(--price-down); }
+.market-change.flat { color: var(--text-muted); }
+
+.market-table-panel { border: 1px solid var(--border); border-radius: 16px; overflow: hidden; background: var(--bg-surface); }
+.market-section-head { display: flex; justify-content: space-between; align-items: end; gap: 20px; padding: 22px 24px 18px; border-bottom: 1px solid var(--border); }
+.market-section-head h2 { font-size: 22px; }
+.market-section-head p { margin: 0; text-align: right; }
+.market-table-wrap { overflow-x: auto; }
+.market-table { width: 100%; border-collapse: collapse; min-width: 680px; }
+.market-table th { padding: 12px 24px; text-align: left; color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; }
+.market-table td { padding: 15px 24px; border-top: 1px solid var(--border); font-size: 14px; }
+.market-table td strong { display: block; }
+.market-table td small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; }
+.market-price-cell { font-weight: 700; font-variant-numeric: tabular-nums; }
+.market-price-cell span { color: var(--text-muted); font-size: 11px; font-weight: 400; }
+.market-view-btn { padding: 7px 11px; border: 1px solid rgba(180, 95, 63, 0.38); border-radius: 7px; background: transparent; color: var(--accent-warm); font: inherit; font-size: 12px; cursor: pointer; transition: background 0.2s, color 0.2s; }
+.market-view-btn:hover { background: var(--accent-warm); color: #fff; }
+.market-footnote { margin: 18px 4px 0; }
+.market-empty { display: grid; place-content: center; min-height: calc(100vh - 116px); text-align: center; }
+.market-empty h1 { margin: 10px 0 6px; font-family: var(--font-display); }
+.market-empty p { max-width: 360px; color: var(--text-muted); }
+
+.market-map-filter { position: absolute; top: 62px; left: 50%; z-index: 200; display: flex; align-items: center; gap: 10px; padding: 7px 10px 7px 14px; transform: translateX(-50%); border: 1px solid var(--accent-gold); border-radius: 999px; background: var(--bg-surface); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12); color: var(--text-primary); font-size: 13px; }
+.market-map-filter button { padding: 3px 7px; border: 0; border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; }
+
+@media (max-width: 768px) {
+  .market-overview { padding: 28px 18px 40px; }
+  .market-hero, .market-section-head { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .market-disclaimer { max-width: none; }
+  .market-section-head p { text-align: left; }
+  .market-summary { grid-template-columns: 1fr; }
+  .market-card { min-height: 118px; }
+  .market-map-filter { top: 62px; max-width: calc(100% - 32px); }
+}
+
+/* 法拍成交：价格、样本与来源分层展示 */
+.community-detail-tabs { display: flex; gap: 24px; border-bottom: 1px solid var(--border); margin: 18px 0; }
+.community-detail-tabs button { padding: 10px 0; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--text-muted); cursor: pointer; font-weight: 600; }
+.community-detail-tabs button[aria-selected=true] { color: var(--text-primary); border-color: #2c6c69; }
+.community-detail-tabs button span { margin-left: 7px; padding: 2px 6px; border-radius: 4px; background: #e7f1ef; color: #285d59; font-size: 11px; }
+.auction-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 20px; }
+.auction-filters label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 150px; }
+.auction-filters select { width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+.auction-stats { display: grid; grid-template-columns: 2fr 1fr; gap: 16px; padding: 20px 0 14px; border-top: 2px solid #2c6c69; }
+.auction-stats > div { display: grid; gap: 8px; }
+.auction-stats span { color: var(--text-muted); font-size: 12px; }
+.auction-stats strong { font-size: 29px; font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.auction-median strong { color: #285d59; }
+.auction-stats small { font-size: 12px; font-weight: 400; margin-left: 5px; letter-spacing: 0; }
+.auction-meta { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin: 8px 0; }
+.auction-note { border-left: 3px solid #b58b3a; padding: 8px 10px; background: #faf5e9; color: #745728; font-size: 12px; line-height: 1.6; margin: 12px 0; }
+.auction-disclosure { font-size: 12px; color: var(--text-muted); line-height: 1.7; }
+.auction-record { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 18px; }
+.auction-record-heading { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; }
+.auction-record-heading h4 { margin: 0; font-size: 14px; line-height: 1.7; }
+.auction-record-heading > span { white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.auction-record-price { display: flex; flex-wrap: wrap; gap: 12px; align-items: baseline; margin-top: 8px; }
+.auction-record-price strong { font-size: 23px; font-variant-numeric: tabular-nums; }
+.auction-record-price small { font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.auction-record-price > span { font-size: 13px; color: #285d59; }
+.auction-record summary { cursor: pointer; font-size: 12px; padding: 8px 0; color: #285d59; }
+.auction-facts { font-size: 12px; margin: 8px 0; }
+.auction-facts > div { display: grid; grid-template-columns: 95px minmax(0, 1fr); gap: 10px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.auction-facts dt { color: var(--text-muted); }
+.auction-facts dd { margin: 0; overflow-wrap: anywhere; line-height: 1.6; }
+.auction-rounds { padding-left: 20px; font-size: 12px; line-height: 1.9; }
+.auction-links { display: flex; flex-wrap: wrap; gap: 18px; font-size: 12px; }
+.auction-links a { color: #285d59; text-decoration: underline; text-underline-offset: 3px; }
+.auction-empty { padding: 32px 0; color: var(--text-muted); text-align: center; font-size: 13px; }
+.auction-pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; font-size: 12px; }
+.auction-pagination button, .auction-empty button { padding: 7px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-surface); cursor: pointer; }
+.auction-pagination button:disabled { opacity: .4; cursor: default; }
+.auction-map-badge { display: block; font-size: 11px; margin-top: 6px; color: #285d59; }
+.latest-auction-unit { font-size: 11px; font-weight: 400; margin-left: 2px; }
+.latest-auction-note { font-size: 10px; line-height: 1.6; color: var(--text-muted); margin-top: 5px; overflow-wrap: anywhere; }
+.latest-auction-card .stat-value { color: #285d59; font-size: 22px; }
+.latest-auction-card .latest-auction-unit { font-size: 9px; }
+@media (max-width: 480px) { .popup-price-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.auction-data-page { max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; }
+.auction-list-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; padding-bottom: 20px; border-bottom: 2px solid #285d59; }
+.auction-list-heading p { font-size: 12px; color: #285d59; margin: 0 0 8px; }
+.auction-list-heading h2 { font-size: 28px; margin: 0; letter-spacing: -.5px; }
+.auction-list-heading > span { font-size: 12px; color: var(--text-muted); }
+.auction-list-filters { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; padding: 20px 0; }
+.auction-list-filters label { display: grid; gap: 7px; font-size: 12px; color: var(--text-muted); flex: 1; min-width: 150px; }
+.auction-list-filters label:first-child { flex: 2; }
+.auction-list-filters input, .auction-list-filters select { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+.auction-list-count { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
+.auction-list-count strong { font-size: 18px; }
+.auction-list-count span { font-size: 12px; color: var(--text-muted); }
+.auction-list-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
+.auction-list-card { border: 1px solid var(--border); border-radius: 10px; padding: 20px; background: var(--bg-surface); min-width: 0; overflow-wrap: anywhere; }
+.auction-list-card h3 { font-size: 16px; margin: 0; line-height: 1.6; }
+.auction-status { border-radius: 4px; padding: 4px 7px; background: #f4f0e7; color: #745728 !important; }
+.auction-status-done { background: #eaf3f0; color: #285d59 !important; }
+.auction-list-community { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; font-size: 13px; color: #285d59; }
+.auction-list-community button { padding: 6px 10px; font-size: 12px; }
+.auction-list-prices { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.auction-list-prices > div { display: grid; gap: 7px; }
+.auction-list-prices span { font-size: 12px; color: var(--text-muted); }
+.auction-list-prices strong { font-size: 19px; font-variant-numeric: tabular-nums; }
+.auction-list-card summary { cursor: pointer; color: #285d59; font-size: 12px; padding: 8px 0; }
+@media (max-width: 700px) { .auction-list-records { grid-template-columns: 1fr; } .auction-data-page { padding: 20px 14px 36px; } .auction-list-heading { align-items: start; flex-direction: column; } .auction-list-card { padding: 16px; } .auction-list-filters label:first-child { flex-basis: 100%; } }
+.community-detail-tabs button:focus-visible, .auction-history summary:focus-visible { outline: 2px solid #2c6c69; outline-offset: 3px; }
+@media (max-width: 480px) { .auction-stats strong { font-size: 25px; } .auction-facts > div { grid-template-columns: 80px minmax(0, 1fr); } }
+
+/* 租金与收益标签 */
+.rental-reference { padding: 4px 0 12px; }
+.rental-filters { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.rental-filters label { display: grid; gap: 6px; color: var(--text-muted); font-size: 12px; flex: 1; min-width: 150px; }
+.rental-filters select { width: 100%; padding: 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-surface); color: var(--text-primary); }
+.rental-note { border-left: 3px solid #b58b3a; padding: 8px 10px; background: #faf5e9; color: #745728; font-size: 12px; line-height: 1.6; margin: 10px 0; }
+.rental-note-warning { border-left-color: #a05a2c; }
+.rental-groups { display: grid; gap: 14px; margin: 14px 0; }
+.rental-group { border-top: 1px solid var(--border); padding-top: 14px; }
+.rental-group-heading { display: flex; align-items: baseline; gap: 12px; justify-content: space-between; }
+.rental-group-heading h4 { margin: 0; font-size: 14px; }
+.rental-group-heading > span { white-space: nowrap; font-size: 11px; color: var(--text-muted); }
+.rental-group-metrics { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 14px; padding: 10px 0; }
+.rental-group-metrics > div { display: grid; gap: 6px; }
+.rental-group-metrics span { color: var(--text-muted); font-size: 12px; }
+.rental-group-metrics strong { font-size: 20px; font-variant-numeric: tabular-nums; letter-spacing: -0.5px; }
+.rental-yield { border-top: 1px dashed var(--border); padding-top: 10px; display: grid; grid-template-columns: 1.4fr 1fr; gap: 14px; }
+.rental-yield > div { display: grid; gap: 6px; }
+.rental-yield span { color: var(--text-muted); font-size: 12px; }
+.rental-yield strong { font-size: 20px; color: #285d59; font-variant-numeric: tabular-nums; }
+.rental-yield .rental-meta { grid-column: 1 / -1; }
+.rental-meta { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin: 8px 0; }
+.rental-meta a { color: #285d59; text-decoration: underline; text-underline-offset: 3px; }
+.rental-samples-heading { margin: 18px 0 8px; font-size: 13px; }
+.rental-sample-list { list-style: none; margin: 0; padding: 0; }
+.rental-sample { border-top: 1px solid var(--border); padding: 12px 0; }
+.rental-sample-main { display: flex; flex-wrap: wrap; gap: 14px; align-items: baseline; font-size: 13px; }
+.rental-sample-rent { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.rental-exclude-reason { margin: 6px 0 0; font-size: 12px; color: #745728; background: #faf5e9; padding: 6px 8px; border-radius: 4px; }
+.rental-empty { padding: 28px 0; color: var(--text-muted); text-align: center; font-size: 13px; }
+.rental-empty button, .rental-view-switch button, .rental-pagination button { padding: 7px 12px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg-surface); cursor: pointer; font-size: 12px; }
+.rental-pagination button:disabled { opacity: .4; cursor: default; }
+.rental-view-switch { display: flex; gap: 8px; margin-top: 14px; }
+.rental-view-switch button[aria-pressed="true"] { border-color: #2c6c69; color: #2c6c69; font-weight: 600; }
+.rental-pagination { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; font-size: 12px; }
+@media (max-width: 480px) { .rental-group-metrics { grid-template-columns: 1fr 1fr; } .rental-yield { grid-template-columns: 1fr 1fr; } }
+
+/* Rental source review: one management view shared by map and dashboard. */
+.rental-source-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.rental-source-actions { justify-content: flex-start; margin: 12px 0; }
+.rental-source-association input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-primary); color: var(--text-primary); margin: 6px 0 12px; }
+.rental-source-list { max-height: 55vh; overflow-y: auto; display: grid; gap: 6px; }
+.rental-source-list button { display: flex; justify-content: space-between; gap: 10px; text-align: left; padding: 10px; color: var(--text-primary); background: var(--bg-primary); border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.rental-source-list button[aria-pressed="true"] { border-color: var(--accent-warm); }
+.rental-source-list small { white-space: nowrap; color: var(--text-muted); }
+.rental-source-association { min-width: 0; margin: 12px 0; }
+.rental-source-association h3 { margin-bottom: 12px; }
+.rental-source-association form { margin: 16px 0; }
+.rental-source-association label { display: block; font-size: 13px; }
+.rental-source-current, .rental-source-candidate, .rental-source-confirm { padding: 12px; border: 1px solid var(--border); border-radius: 10px; margin: 12px 0; overflow-wrap: anywhere; }
+.rental-source-candidate p, .rental-source-current p { margin: 8px 0; font-size: 13px; }
+.rental-source-confirm { border-color: var(--accent-warm); }
+.rental-source-confirm button { margin: 8px 8px 0 0; }
+.rental-source-notice { padding: 10px; color: var(--accent-warm); overflow-wrap: anywhere; }
+@media (max-width: 700px) {
+  .housing-app-header { padding-left: 12px !important; padding-right: 12px !important; }
+  .housing-header-actions { width: 100%; margin-left: 0 !important; }
+}
+
+/* Community directory: independent management workspace */
+.directory-page { width:100%; min-width:0; padding:20px; overflow:auto; background:var(--bg-primary); }
+.directory-source-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.directory-muted { color:var(--text-muted); font-size:12px; line-height:1.7; }
+.directory-page input:not([type=checkbox]),.directory-page select { padding:9px 12px; background:var(--bg-surface); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); max-width:100%; min-width:0; font-size:13px; }
+.directory-page input:focus,.directory-page select:focus { outline:2px solid var(--accent-warm); outline-offset:2px; }
+.directory-collection { padding:0 0 12px; border-bottom:1px solid var(--border); margin:0 0 12px; }
+.directory-collection>.directory-actions { margin:0; }
+.directory-collection p { margin:6px 0 0; }
+.directory-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:10px 0; }
+.directory-actions label { display:flex; align-items:center; gap:6px; font-size:12px; }
+.directory-actions input[type=number] { width:70px; }
+.directory-toolbar { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,190px)); align-items:end; gap:12px; margin-bottom:15px; }
+.directory-toolbar>.btn,.directory-toolbar>.directory-refresh { justify-self:start; }
+.directory-toolbar>label:not(.directory-filter-field) { display:flex; align-items:center; gap:6px; font-size:12px; }
+.directory-filter-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-muted); min-width:0; }
+.directory-filter-field>span { font-weight:600; }
+.directory-filter-field select,.directory-filter-field input { font-size:13px; }
+.directory-filter-search { grid-column:span 2; }
+.directory-filter-search input { width:100%; }
+.directory-filter-more { margin-bottom:12px; }
+.directory-filter-more>summary { display:inline-block; cursor:pointer; color:var(--text-muted); font-size:12px; padding:8px 12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-surface); }
+.directory-filter-more-fields { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,180px)); gap:12px; padding:12px 0 4px; }
+.directory-filter-summary { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:12px; font-size:12px; color:var(--text-muted); }
+.directory-filter-count { font-weight:600; color:var(--text-primary); }
+.directory-filter-chip { display:inline-flex; align-items:center; gap:6px; padding:3px 8px; border:1px solid var(--border); border-radius:999px; background:var(--bg-surface); color:var(--text-primary); }
+.directory-filter-chip button { border:0; background:none; padding:0 2px; cursor:pointer; color:var(--text-muted); font-size:13px; line-height:1; }
+.directory-filter-chip button:hover { color:#a74325; }
+.directory-filter-summary .btn { min-height:26px; padding:2px 10px; font-size:12px; }
+.directory-switch { display:flex; border:1px solid var(--border); border-radius:6px; overflow:hidden; }
+.directory-switch button { border:0; padding:10px 16px; background:var(--bg-surface); cursor:pointer; font-size:13px; }
+.directory-switch button[aria-pressed=true] { background:var(--text-primary); color:white; }
+.directory-workspace { display:flex; align-items:flex-start; gap:20px; }
+.directory-list-panel { flex:1; min-width:0; background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; padding:16px; }
+.directory-table-wrap { overflow-x:auto; }
+.directory-list-panel table { border-collapse:collapse; width:100%; font-size:13px; }
+.directory-list-panel th { text-align:left; font-size:11px; color:var(--text-muted); background:var(--bg-elevated); }
+.directory-list-panel td,.directory-list-panel th { padding:14px 12px; border-bottom:1px solid var(--border); }
+.directory-list-panel td small { display:block; color:var(--text-muted); font-size:11px; margin-top:5px; max-width:240px; overflow-wrap:anywhere; }
+.directory-list-panel tr.selected { background:#fbf3ed; }
+.directory-badge { display:inline-block; padding:3px 7px; border-radius:4px; background:var(--bg-elevated); font-size:10px; margin:2px; white-space:nowrap; }
+.directory-residential { background:#e8f4ea; color:#1f6b3a; border:1px solid #b6dcc1; }
+.directory-pending { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
+.directory-non-residential { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
+.directory-position-done { background:#e8f4ea; color:#1f6b3a; border:1px solid #b6dcc1; }
+.directory-position-review { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
+.directory-position-todo { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
+.directory-use-done { background:#e8f4ea; color:#1f6b3a; border:1px solid #b6dcc1; }
+.directory-use-review { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
+.directory-use-todo { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
+.directory-use-none, .directory-use-skipped { background:var(--bg-elevated); color:var(--text-muted); border:1px solid var(--border); }
+.directory-op-position { background:#e3edf7; color:#2c5d8f; border:1px solid #b9d2e8; }
+.directory-op-use { background:#fff4d9; color:#8a5a00; border:1px solid #f0d896; }
+.directory-op-facts { background:#efe6df; color:#6b4a32; border:1px solid #d8c4b3; }
+.directory-detail { width:390px; flex-shrink:0; padding:20px; background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; overflow-wrap:anywhere; }
+.directory-detail h3 { font-size:19px; margin:0 0 12px; }
+.directory-edit-grid { display:grid; gap:12px; margin:12px 0 16px; }
+.directory-edit-grid label { display:flex; flex-direction:column; gap:6px; color:var(--text-muted); font-size:12px; }
+.directory-source-card { padding:14px 0; border-bottom:1px solid var(--border); font-size:12px; }
+.directory-source-card .directory-source-heading { justify-content:flex-start; flex-wrap:wrap; }
+.directory-source-card p { margin:6px 0; }
+.directory-source-card a { color:var(--accent-warm); display:block; margin:10px 0; }
+.directory-evidence { color:var(--text-muted); font-size:11px; }
+.directory-linker { display:grid; gap:10px; margin:16px 0; }
+.directory-candidate { border:1px solid var(--border); padding:12px; margin:10px 0; border-radius:6px; font-size:12px; }
+.directory-candidate small { display:block; color:var(--text-muted); margin:5px 0; }
+.directory-danger { padding:14px; background:#fff5f2; border:1px solid #f0d1c5; border-radius:6px; margin:20px 0; font-size:12px; line-height:1.7; }
+.directory-warning { color:#a74325; font-size:12px; line-height:1.7; }
+.directory-empty { text-align:center; padding:35px; color:var(--text-muted); }
+.directory-confirm { position:fixed; inset:0; margin:auto; z-index:1000; width:min(480px,calc(100vw - 32px)); height:fit-content; padding:24px; background:var(--bg-surface); border:1px solid var(--border); border-radius:12px; box-shadow:0 0 0 100vmax #0005,0 15px 70px #0002; }
+@media(max-width:1100px) { .directory-workspace { flex-direction:column; } .directory-detail,.directory-list-panel { width:100%; } }
+@media(max-width:600px) { .directory-page { padding:12px; } .directory-toolbar { align-items:stretch; } .directory-source-heading { flex-wrap:wrap; } }
+.directory-confirm::backdrop { background:#0005; }
+.directory-confirm { color:var(--text-primary); box-shadow:0 15px 70px #0002; }
+.review-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid #dce3ec; }
+.review-heading h2 { margin: 0; font-size: 16px; letter-spacing: -.2px; }
+.review-inventory { line-height: 1.8; color: #52647e; font-size: 13px; white-space: nowrap; }
+.review-inventory strong { font-size: 22px; color: #263b52; padding: 0 4px; }
+.review-collection, .review-rental { padding: 14px 0; border-bottom: 1px solid #e2e8f0; }
+.review-collection summary, .review-rental summary { cursor: pointer; color: #596c86; font-size: 13px; }
+.review-tabs { display: flex; gap: 24px; border-bottom: 1px solid #dce3ec; margin: 18px 0; }
+.review-tabs button { padding: 12px 2px; border: 0; border-bottom: 3px solid transparent; background: none; color: #66768c; font-weight: 600; cursor: pointer; }
+.review-tabs button[aria-pressed=true] { color: #a65f40; border-bottom-color: #b56947; }
+.review-table { font-size: 13px; }
+.review-table td { max-width: 220px; overflow-wrap: anywhere; }
+.review-table small { display: block; margin-top: 5px; line-height: 1.6; }
+.directory-list-panel .catalog-table { table-layout: fixed; }
+.directory-list-panel .catalog-table td,.directory-list-panel .catalog-table th { padding: 8px 12px; vertical-align: middle; }
+.catalog-table th:nth-child(1) { width: 20%; }
+.catalog-table th:nth-child(2) { width: 26%; }
+.catalog-table th:nth-child(3) { width: 14%; }
+.catalog-table th:nth-child(4) { width: 22%; }
+.catalog-table th:last-child { width: 18%; }
+.catalog-admitted th:nth-child(1) { width: 25%; }
+.catalog-admitted th:nth-child(2) { width: 10%; }
+.catalog-admitted th:nth-child(3) { width: 17%; }
+.catalog-admitted th:nth-child(4) { width: 12%; }
+.catalog-admitted th:nth-child(5) { width: 10%; }
+.catalog-admitted th:nth-child(6) { width: 15%; }
+.catalog-admitted th:last-child { width: 11%; }
+.catalog-excluded th:nth-child(1) { width: 16%; }
+.catalog-excluded th:nth-child(2) { width: 16%; }
+.catalog-excluded th:nth-child(3) { width: 9%; }
+.catalog-excluded th:nth-child(4) { width: 17%; }
+.catalog-excluded th:nth-child(5) { width: 11%; }
+.catalog-excluded th:nth-child(6) { width: 19%; }
+.catalog-excluded th:last-child { width: 12%; }
+.catalog-pending th:nth-child(1) { width: 14%; }
+.catalog-pending th:nth-child(2) { width: 14%; }
+.catalog-pending th:nth-child(3) { width: 8%; }
+.catalog-pending th:nth-child(4) { width: 16%; }
+.catalog-pending th:nth-child(5) { width: 10%; }
+.catalog-pending th:nth-child(6) { width: 16%; }
+.catalog-pending th:nth-child(7) { width: 10%; }
+.catalog-pending th:last-child { width: 12%; }
+/* 多选合并：仅 admitted 表叠加 catalog-selectable 时重排为 8 列，不收录/待处理列宽不受影响。 */
+.catalog-selectable.catalog-admitted th:nth-child(1) { width: 4%; }
+.catalog-selectable.catalog-admitted th:nth-child(2) { width: 24%; }
+.catalog-selectable.catalog-admitted th:nth-child(3) { width: 10%; }
+.catalog-selectable.catalog-admitted th:nth-child(4) { width: 16%; }
+.catalog-selectable.catalog-admitted th:nth-child(5) { width: 12%; }
+.catalog-selectable.catalog-admitted th:nth-child(6) { width: 10%; }
+.catalog-selectable.catalog-admitted th:nth-child(7) { width: 14%; }
+.catalog-selectable.catalog-admitted th:last-child { width: 10%; }
+.catalog-coverage { font-variant-numeric: tabular-nums; line-height: 1.5; }
+.catalog-data-value { font-weight: 600; }
+.catalog-coverage .catalog-data-note { color: #925022; }
+.catalog-data-link { background: transparent; border: 0; padding: 4px 0; color: var(--accent-warm); font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.catalog-data-link:hover { color: var(--text-primary); }
+.catalog-data-link:focus-visible { outline: 2px solid var(--accent-warm); outline-offset: 3px; border-radius: 2px; }
+.catalog-auction-records { padding: 16px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.catalog-auction-records h4, .catalog-rental-details h4 { margin: 0 0 10px; font-size: 14px; }
+.catalog-rental-details { padding: 16px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.catalog-rental-details p { margin: 6px 0 0; line-height: 1.6; overflow-wrap: anywhere; }
+.catalog-auction-list { list-style: none; padding: 0; margin: 0; }
+.catalog-auction-list li { padding: 10px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.catalog-auction-list small { display: block; margin: 4px 0; color: var(--text-muted); }
+.catalog-table .catalog-text { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.directory-list-panel .catalog-table small { margin-top: 2px; line-height: 1.4; }
+.catalog-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
+.catalog-inline .directory-badge { margin: 0; }
+.catalog-row-actions { flex-wrap: nowrap; }
+.catalog-exclude { background: transparent; border: 1px solid transparent; color: var(--text-muted); }
+.catalog-exclude:hover:not(:disabled) { color: #a74325; background: #fff5f2; }
+.catalog-table .btn { min-height: 28px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }
+.review-member { display: flex; gap: 8px; align-items: flex-start; padding: 12px 0 6px; font-size: 13px; }
+.review-panel h4 { margin-top: 20px; }
+.review-panel select, .review-panel input:not([type=checkbox]) { max-width: 100%; }
+.review-workspace .directory-detail { scroll-margin-top: 12px; }
+@media (max-width: 760px) {
+  .review-heading { flex-wrap: wrap; gap: 10px; }
+  .review-inventory { white-space: normal; margin: 0; }
+  .review-tabs { gap: 18px; }
+  .review-workspace .directory-detail { width: 100%; min-width: 0; }
+  .review-workspace .directory-actions { flex-wrap: wrap; }
+  .review-workspace .review-table { display: block; min-width: 0; width: 100%; }
+  .review-workspace .review-table thead { display: none; }
+  .review-workspace .review-table tbody { display: block; }
+  .review-workspace .review-table tr { display: block; margin: 8px; padding: 8px 0; border: 1px solid #dce3ec; border-radius: 6px; }
+  .review-workspace .review-table td { display: block; max-width: none; width: 100%; border: 0; padding: 8px 12px; white-space: normal; }
+  .review-workspace .review-table td::before { content: attr(data-label); display: block; font-size: 11px; color: #718198; margin-bottom: 4px; }
+  .review-workspace .catalog-table .catalog-text { white-space: normal; overflow-wrap: anywhere; }
+  .review-workspace .catalog-table .btn { min-height: 36px; }
+  .review-workspace .catalog-selectable th:first-child, .review-workspace .catalog-selectable td:first-child { display: none; }
+}
+
+/* Independent collection tasks share the directory's existing palette. */
+.directory-task-gear { flex: none; }
+.directory-task-gear .directory-task-dot { flex: none; }
+.directory-task-gear[data-state="running"] .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
+.directory-task-gear[data-state="failed"] .directory-task-dot { background: #a74325; }
+.directory-task-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 12px; width: 100%; margin: 12px 0 0; padding: 7px 12px; border: 1px solid #dce3ec; border-radius: 6px; background: var(--bg-surface); font-size: 12px; line-height: 1.6; color: #596c86; cursor: pointer; text-align: left; }
+.directory-task-summary strong { color: #263b52; font-weight: 600; }
+.directory-task-summary[data-state="running"] .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
+.directory-task-summary[data-state="failed"] { border-color: #a74325; }
+.directory-task-summary[data-state="failed"] .directory-task-dot { background: #a74325; }
+.directory-task-more { margin-left: auto; color: #a65f40; flex: none; }
+.directory-task-row { padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
+.directory-task-row:last-child { border-bottom: 0; }
+.directory-task-row-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.directory-task-row-head strong { font-size: 13.5px; }
+.directory-task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.directory-task-row-head .btn { flex: none; }
+.directory-task-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.6; color: #596c86; }
+.directory-refresh { padding: 6px 11px; font-size: 14px; line-height: 1; }
+.directory-task-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0; color: var(--text-muted); }
+.directory-task-line strong { color: var(--text-primary); font-weight: 600; }
+.directory-task-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: none; align-self: center; }
+.directory-task-line[data-state="running"] .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
+.directory-task-line[data-state="failed"] { color: #a74325; }
+.directory-task-line[data-state="failed"] .directory-task-dot { background: #a74325; }
+.directory-task-line[data-state="failed"] strong { color: #a74325; }
+.directory-task-sub { margin: 0; padding-left: 16px; color: var(--text-muted); font-size: 12px; }
+.directory-task-sub summary { cursor: pointer; }
+@keyframes directory-task-pulse { 50% { opacity: .4; } }
+@media (prefers-reduced-motion: reduce) { .directory-task-dot { animation: none; } }
+.directory-detail label { display: block; margin: 12px 0; }
+.directory-detail label input, .directory-detail label select { display: block; width: 100%; margin-top: 6px; }
+
+/* 已收录小区多选合并弹框：.directory-detail 前缀压过 label 块级/全宽默认（.directory-detail label 特异性 0,1,1），否则 radio 行 flex 失效。 */
+.directory-detail .merge-row { display: flex; gap: 10px; align-items: flex-start; margin: 0; padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.directory-detail .merge-row input[type="radio"] { width: auto; margin-top: 4px; flex: none; }
+.merge-row-body { display: block; min-width: 0; flex: 1; }
+.merge-row small { display: block; margin-top: 2px; color: var(--text-muted); line-height: 1.5; }
+.merge-market-mixed { color: #a74325; font-weight: 600; }
+.merge-preview { font-size: 13px; line-height: 1.6; }
+.merge-preview h4 { margin: 16px 0 6px; font-size: 14px; }
+.merge-preview p { margin: 6px 0; }
+.merge-preview small { display: block; color: var(--text-muted); margin-top: 2px; }
+.merge-result { margin: 6px 0; }
+.merge-result[data-ok="false"] { color: #a74325; }
+
+/* 名单详情弹窗：覆盖旧侧栏宽度，列表保持原有布局和滚动位置。 */
+.review-workspace .directory-detail-dialog,
+.directory-detail-dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(860px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
+  max-height: 88dvh;
+  padding: 0;
+  color: var(--text-primary);
+  overflow: auto;
+  box-shadow: 0 15px 70px #0003;
+}
+.directory-detail-dialog::backdrop { background: rgb(0 0 0 / 55%); }
+.directory-dialog-heading {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 16px 20px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+}
+.directory-dialog-heading h3 { margin: 0; }
+.directory-dialog-heading-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.directory-dialog-content { padding: 4px 20px 20px; }
+.directory-basic-info { padding: 16px 0; border-bottom: 1px solid var(--border); }
+.directory-basic-info h4 { margin: 0 0 12px; font-size: 14px; }
+.directory-basic-info dl { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 20px; margin: 0; }
+.directory-basic-info dt { color: var(--text-muted); font-size: 12px; margin-bottom: 4px; }
+.directory-basic-info dd { margin: 0; font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.directory-info-wide { grid-column: 1 / -1; }
+.directory-basic-info .directory-warning { margin: 12px 0 0; }
+.directory-position-panel { padding: 16px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.directory-position-panel h4 { margin: 0 0 10px; font-size: 14px; }
+.directory-position-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.directory-position-heading h4 { margin: 0; }
+.directory-position-heading .directory-badge { margin: 0; }
+.directory-source-section { padding: 16px 0; font-size: 13px; }
+.directory-source-section-heading,.directory-source-summary-line { display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; }
+.directory-source-section-heading h4 { margin: 0; font-size: 14px; }
+.directory-source-summary { padding: 12px 0; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+.directory-source-summary p { margin: 0 0 6px; line-height: 1.6; }
+.directory-source-summary-line { color: var(--text-muted); line-height: 1.6; }
+.directory-source-summary a, .directory-position-panel a { color: var(--accent-warm); }
+.directory-source-summary summary { margin-top: 8px; color: var(--text-muted); cursor: pointer; font-size: 12px; }
+.directory-source-summary details p { margin: 6px 0; color: var(--text-muted); font-size: 12px; }
+.directory-position-panel p { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.directory-position-choice { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+.directory-position-choice select { flex: 1; min-width: 0; }
+.directory-position-choice .btn { flex: none; }
+.directory-position-panel summary { cursor: pointer; color: var(--text-muted); margin-top: 8px; }
+.directory-position-status { margin: 8px 0 10px; line-height: 1.6; }
+.directory-position-status-info { color: var(--text-primary); }
+.directory-position-status-caution { color: #8a5a00; }
+.directory-position-status-error { color: #a74325; }
+.directory-caution { color: #8a5a00; }
+.directory-candidate-list { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 12px 0; }
+.directory-candidate-list legend { padding: 0 6px; color: var(--text-muted); font-size: 12px; }
+.directory-candidate-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; margin-bottom: 8px; background: var(--bg-surface); }
+.directory-candidate-card[data-selected=true] { border-color: var(--accent-warm); box-shadow: inset 3px 0 0 var(--accent-warm); }
+/* 弹窗通用 label 规则会把控件撑满整行，候选卡片要自己收回单选样式 */
+.directory-detail .directory-candidate-pick { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; cursor: pointer; }
+.directory-detail .directory-candidate-pick input[type=radio] { display: inline-block; width: auto; margin: 0; flex: none; }
+.directory-candidate-lines { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; color: var(--text-muted); font-size: 12px; }
+.directory-candidate-detail summary { font-size: 12px; }
+.directory-position-review { margin-top: 12px; }
+.directory-position-coords summary { font-size: 12px; }
+.directory-position-verify { margin-top: 10px; }
+.directory-detail .directory-position-verify label { display: flex; align-items: center; gap: 6px; margin: 0; font-size: 12px; }
+.directory-detail .directory-position-verify input[type=checkbox] { display: inline-block; width: auto; margin: 0; flex: none; }
+.directory-position-confirm { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.directory-position-blocker { color: var(--text-muted); font-size: 12px; }
+.directory-position-references { margin-top: 12px; }
+.directory-position-references p { font-size: 12px; }
+.directory-use-review-panel { padding: 16px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+.directory-use-review-panel h4 { margin: 0 0 10px; font-size: 14px; }
+.directory-use-review-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px; }
+.directory-use-review-heading h4 { margin: 0; }
+.directory-use-review-heading .directory-badge { margin: 0; }
+.directory-use-review-panel p { margin: 6px 0; line-height: 1.6; overflow-wrap: anywhere; }
+.directory-use-review-panel a { color: var(--accent-warm); }
+.directory-use-review-decision { margin: 10px 0; padding: 10px 12px; background:var(--bg-elevated); border-radius:6px; }
+.directory-use-review-decision p { margin: 4px 0; }
+.directory-use-review-confirm { display: grid; gap: 10px; margin-top: 12px; }
+.directory-use-review-confirm fieldset { display: flex; gap: 16px; flex-wrap: wrap; border:1px solid var(--border); border-radius:6px; padding:10px 12px; }
+.directory-use-review-confirm legend { padding: 0 6px; color: var(--text-muted); font-size: 12px; }
+.directory-use-review-confirm label { display: flex; flex-direction: column; gap: 6px; color: var(--text-muted); font-size: 12px; }
+.directory-use-review-confirm fieldset label { flex:none; flex-direction: row; align-items: center; gap: 6px; color: var(--text-primary); white-space: nowrap; }
+.directory-use-review-confirm textarea { resize: vertical; font: inherit; }
+@media (max-width: 480px) {
+  .directory-position-choice { flex-wrap: wrap; }
+  .directory-position-choice select { flex-basis: 100%; }
+  .directory-toolbar { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .directory-filter-more-fields { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  /* 搜索独占一行；放在 .directory-filter-field 之后以覆盖同权重规则 */
+  .directory-filter-field.directory-filter-search { grid-column:1 / -1; }
+  .directory-position-confirm { flex-direction: column; align-items: stretch; }
+  .directory-position-confirm .btn { width: 100%; }
+}
+@media (max-width: 480px) {
+  .directory-basic-info dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .directory-dialog-heading { padding: 12px 16px; }
+  .directory-dialog-content { padding: 4px 16px 16px; }
+}
+
+.directory-dialog-footer { position: sticky; bottom: 0; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; padding: 16px 20px; background: var(--bg-surface); border-top: 1px solid var(--border); }
+.directory-detail-actions { min-width: 0; flex: 1; }
+.directory-exclude-action { color: #a74325; background: transparent; border-color: transparent; }
+.directory-exclude-action:hover:not(:disabled) { background: #fff5f2; }
+.directory-exclusion-confirm { display: grid; gap: 8px; }
+.directory-exclusion-confirm label { display: grid; gap: 4px; }
+.directory-exclusion-confirm input { width: 100%; min-width: 0; }
+.directory-exclusion-confirm p { margin: 0; }
+@media (max-width: 640px) { .directory-dialog-footer { padding: 12px 16px; gap: 8px; } }
+
+/* 缺失地块轮廓: 弹框摘要区 + 候选确认面板 */
+.boundary-section {
+  margin: 18px 0;
+  padding: 14px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.boundary-status-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.boundary-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  flex: 0 0 auto;
+}
+
+.boundary-dot.ok { background: var(--price-down); }
+.boundary-dot.warn { background: var(--accent-gold); }
+
+.boundary-status-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.boundary-status-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.boundary-hint {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--text-muted);
+  margin: 6px 0;
+}
+
+.boundary-error {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--price-up);
+  background: rgba(214, 69, 69, 0.08);
+  border: 1px solid rgba(214, 69, 69, 0.2);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin: 8px 0;
+}
+
+.boundary-warnings {
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--accent-gold);
+}
+
+.boundary-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.boundary-actions .btn { flex: 0 0 auto; }
+
+.boundary-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  margin: 12px 0 4px;
+  cursor: pointer;
+}
+
+.boundary-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-primary);
+  padding: 12px 0;
+}
+
+.boundary-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent-warm);
+  border-radius: 50%;
+  animation: boundary-spin 0.9s linear infinite;
+}
+
+@keyframes boundary-spin {
+  to { transform: rotate(360deg); }
+}
+
+.boundary-facts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+  margin: 12px 0 4px;
+}
+
+.boundary-facts .stat-value { font-size: 15px; }
+
+.boundary-footnote {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* 候选确认: 在「地块轮廓」tab 内就地展开, 地图同步高亮候选范围 */
+.boundary-preview {
+  padding: 4px 0 8px;
+}
+
+.boundary-preview-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.boundary-back {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 13px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.boundary-back:hover { color: var(--text-primary); }
+
+/* ——————————————————————————————————————————————————————————— */
+/* 新房项目详情与附近二手房比较 (nh- 前缀, 避免与既有 class 冲突)   */
+/* ——————————————————————————————————————————————————————————— */
+
+/* 房源类型切换常驻条: 独立于可折叠控制面板。
+   窄屏下面板默认收起, 若切换也藏进去, 用户就无从切换房源类型。
+   位置避开左侧详情弹框(560px 全高)与右侧控制面板, 落在地图区顶部居中。 */
+.market-mode-dock {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 16px;
+  z-index: 320;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+/* 详情弹框打开时把切换条推到弹框右侧, 不压在弹框上 */
+.market-mode-dock.with-detail {
+  left: calc(560px + 24px);
+  transform: none;
+}
+
+.nh-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #4B3FA8;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 项目事实格: 2 列, 允许长文本换行 (地址/来源说明可能较长) */
+.nh-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.nh-fact-value { font-size: 12px; font-weight: 600; white-space: normal; }
+
+/* 明细行: 标签 + 值, 值允许换行 */
+.nh-detail-list { margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
+.nh-detail-row { display: flex; gap: 10px; font-size: 12px; line-height: 1.6; }
+.nh-detail-label { flex: 0 0 72px; color: var(--text-muted); }
+.nh-detail-value { flex: 1; min-width: 0; color: var(--text-primary); word-break: break-word; }
+
+.nh-note { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin: 8px 0; }
+.nh-locate-btn { padding: 6px 12px; font-size: 12px; margin-bottom: 10px; }
+
+/* 就近比较区块 */
+.nh-nearby-section { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 16px; }
+.nh-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.nh-section-head .panel-title { margin-bottom: 0; }
+.nh-nearby-toggle { padding: 5px 12px; font-size: 12px; }
+
+.nh-nearby-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.nh-nearby-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.nh-nearby-radius { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.nh-nearby-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.nh-nearby-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.nh-nearby-item:hover { border-color: var(--accent-warm); }
+.nh-nearby-item:focus-visible { outline: 2px solid var(--accent-warm); outline-offset: 1px; }
+.nh-nearby-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.nh-nearby-meta { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.nh-nearby-price { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.nh-nearby-distance { font-size: 11px; color: var(--text-muted); white-space: nowrap; min-width: 56px; text-align: right; }
+
+/* 比较锚点提示条: 选中附近二手房后仍能找回新房项目 */
+.nh-compare-bar {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--accent-warm);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  font-size: 13px;
+  max-width: calc(100% - 32px);
+}
+.nh-compare-bar button { padding: 3px 7px; border: 0; border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }
+.nh-compare-bar button:hover { color: var(--text-primary); }
+
+@media (max-width: 768px) {
+  .nh-nearby-item { flex-wrap: wrap; }
+  .nh-nearby-price { order: 3; }
+  .nh-compare-bar { top: 62px; max-width: calc(100% - 32px); }
+}
+</style><body><dialog class="directory-detail directory-detail-dialog" aria-label="采集任务"><div class="directory-source-heading directory-dialog-heading"><h3>采集任务</h3><div class="directory-dialog-heading-actions"><button autofocus="" type="button" class="btn btn-secondary">关闭</button></div></div><div class="directory-dialog-content"><div class="directory-task-row" data-state="info"><div class="directory-task-row-head"><span class="directory-task-dot" aria-hidden="true"></span><strong>采集楼盘名单与资料</strong><div class="directory-task-actions"><button class="btn btn-primary">更新全部资料</button><button class="btn btn-secondary" disabled="">重试失败项（0）</button></div></div><p class="directory-task-hint">更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。重试失败项仅补采网络获取失败的项目，保留成功项；身份冲突和待地点匹配分开处理。<span class="directory-task-lastrun"></span></p></div><div class="directory-task-row" data-state="info"><div class="directory-task-row-head"><span class="directory-task-dot" aria-hidden="true"></span><strong>匹配楼盘地点与类型</strong><div class="directory-task-actions"><button class="btn btn-primary">更新全部</button><button class="btn btn-secondary">继续匹配</button><button class="btn btn-secondary">重试查询失败（2）</button></div></div><p class="directory-task-hint">候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类；多个主体由你选择。<span class="directory-task-lastrun"></span></p><p class="directory-task-sub">当前待处理：尚未查询 11 条 → 继续匹配 · 查询失败／不完整 2 条 → 重试查询失败</p><p class="directory-task-sub">更新全部会重新查询符合条件的楼盘，包括已自动匹配、待确认和未找到的项目，保留人工确认结果；继续匹配只处理尚未查询项目；重试查询失败只处理查询失败或结果不完整的项目。每轮有请求上限。</p><p class="directory-task-line" data-state="info"><span role="status">尚未采集</span></p></div><div class="directory-task-row" data-state="info"><div class="directory-task-row-head"><span class="directory-task-dot" aria-hidden="true"></span><strong>采集租金</strong><div class="directory-task-actions"><button class="btn btn-primary">开始</button></div></div><p class="directory-task-hint">仅已收录住宅；复用关联，更新幸福里或房天下租金<span class="directory-task-lastrun"></span></p></div><div class="directory-task-row" data-state="info"><div class="directory-task-row-head"><span class="directory-task-dot" aria-hidden="true"></span><strong>采集法拍</strong><div class="directory-task-actions"><button class="btn btn-primary">开始</button></div></div><p class="directory-task-hint">采集滨江法拍，匹配住宅，未匹配进入待关联<span class="directory-task-lastrun"></span></p></div></div></dialog><script>document.querySelector("dialog").showModal()</script></body></html>
