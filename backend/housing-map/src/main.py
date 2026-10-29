@@ -25,7 +25,7 @@ from src.api.routes import router
 from src.api.auction_routes import router as auction_router
 from src.api.boundary_import_routes import router as boundary_import_router
 from src.api.boundary_workflow_routes import router as boundary_workflow_router
-from src.api.rental_routes import router as rental_router, shutdown_rental_refresh
+from src.api.rental_routes import router as rental_router, shutdown_rental_refresh, resume_source_matching
 from src.api.rental_source_routes import router as rental_source_router
 from src.api.directory_routes import router as directory_router, shutdown_directory
 from src.services.community_directory import prepare_directory
@@ -48,6 +48,7 @@ async def lifespan(app: FastAPI):
     if interrupted:
         logger.warning("轮廓工作流: %s 个在途任务标记为中断,可手动重试", interrupted)
     start_scheduler()
+    await resume_source_matching()
     yield
     shutdown_scheduler()
     await shutdown_directory()

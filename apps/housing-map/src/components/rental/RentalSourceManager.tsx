@@ -21,7 +21,6 @@ export function SourceCandidate({ candidate, busy, onConfirm, onReject }: {
 
 export function RentalSourceAssociation({ communityId, onChanged }: { communityId: string; onChanged?: () => void }) {
   const [state, setState] = useState<{ id: string; data?: SourceDetail; error?: string } | null>(null);
-  const [keyword, setKeyword] = useState('');
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState<RentalSource | 'remove' | null>(null);
   const [notice, setNotice] = useState('');
@@ -50,7 +49,7 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
       if (suffix === '/search') {
         setNotice(next.found_count === 0 ? '未找到可确认的候选。可修改关键词后重试，或用下方“探查幸福里来源”。' : '请核对来源名称、位置和分期，再确认关联。');
       } else if (!suffix) {
-        setNotice(method === 'DELETE' ? '已解除关联，旧租金不再展示。' : '关联已保存。在“采集任务”里开始“采集租金”即可采集数据。');
+        setNotice(method === 'DELETE' ? '已解除关联，旧租金不再展示。' : '关联已保存。在“采集任务”里开始“更新租金数据”即可采集数据。');
         rentalDataChanged();
       }
       onChanged?.();
@@ -58,7 +57,6 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
       if (activeId.current === communityId) setNotice(error instanceof Error ? error.message : '操作失败，请重试');
     } finally { if (activeId.current === communityId) setBusy(false); }
   }
-  const searchName = keyword || data?.community?.community_alias || data?.community?.community_name || '';
   return <section className="rental-source-association" aria-label="关联租金来源">
     <h3>租金来源</h3>
     {!current && <p role="status">正在加载来源关联…</p>}
@@ -70,16 +68,7 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
         <p>{data.mapping.source_address || '地址未记录'} · 确认时间 {data.mapping.verified_at?.slice(0, 10) || '—'}</p>
         <div className="rental-source-actions"><a href={safeSourceLink(data.mapping.source_url)} target="_blank" rel="noopener noreferrer">查看来源 ↗</a>
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirming('remove')}>解除关联</button></div>
-      </div> : <p>尚未关联租金来源。先找到对应小区，确认后在“采集任务”里采集租金。</p>}
-      <form onSubmit={e => { e.preventDefault(); void act('POST', '/search', { keyword, source_url: '' }); }}>
-        <label>小区名称或别名<input value={keyword} onChange={e => setKeyword(e.target.value)} placeholder={data.community?.community_alias || data.community?.community_name} maxLength={80} /></label>
-        <div className="rental-source-actions">
-          <button className="btn btn-primary" disabled={busy} type="submit">{busy ? '处理中…' : '查找租金来源'}</button>
-        </div>
-        <p className="rental-meta">搜索名称：{searchName}。房天下按名称查找；找不到时用下方“探查幸福里来源”，不需要自己找链接。</p>
-      </form>
-      {data.candidates.map(candidate => <SourceCandidate key={candidate.source_community_id} candidate={candidate} busy={busy}
-        onConfirm={() => setConfirming(candidate)} onReject={() => void act('DELETE', `/candidates/${encodeURIComponent(candidate.source_community_id)}`)} />)}
+      </div> : <p>尚未关联租金来源。先用下方幸福里探查，或在“采集任务”中匹配租金来源；关联后再更新租金数据。</p>}
       {confirming && <div className="rental-source-confirm" role="group" aria-label="确认来源变更">
         <p>{confirming === 'remove' ? '解除后，这个小区不会再采集或展示原来源租金。确认解除？' : `请确认“${confirming.source_name}”与地图小区是同一地址、同一分期。${data.mapping ? '确认后将替换现有关联，原租金暂不展示。' : ''}`}</p>
         <button className="btn btn-primary" disabled={busy} onClick={() => void act(confirming === 'remove' ? 'DELETE' : 'PUT', '', confirming === 'remove' ? undefined : { source_community_id: confirming.source_community_id })}>确认{confirming === 'remove' ? '解除' : '关联'}</button>

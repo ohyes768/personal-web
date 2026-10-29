@@ -54,15 +54,26 @@ const tasks = [
   { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。重试失败项仅补采网络获取失败的项目，保留成功项；身份冲突和待地点匹配分开处理。', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
   { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。' },
-  { id: 'rent', label: '采集租金', short: '租金', stop: '停止采集租金', path: '/rentals/refresh', hint: '仅已收录住宅；复用关联，更新幸福里或房天下租金' },
+  { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching', hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。' },
+  { id: 'rent', label: '更新租金数据', short: '租金更新', stop: '停止更新租金', path: '/rentals/refresh', hint: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计，不会查找或关联来源。' },
   { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
 const restPhases = ['idle', 'succeeded', 'done'];
-const stageLabels: Record<string, string> = { checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源',
+const stageLabels: Record<string, string> = { matching: '匹配幸福里来源', checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源',
   publishing: '发布租金统计', names: '更新小区名录', property_types: '补充用途资料' };
 const phases: Record<string, string> = { running: '正在采集', crawling: '正在采集', publishing: '正在发布', checking_sources: '检查来源', idle: '尚未采集',
   succeeded: '采集完成', done: '采集完成', failed: '采集失败', error: '采集失败', partial_failed: '部分完成',
-  cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消', budget_exhausted: '本轮预算用完，可继续匹配' };
+  cancelled: '已取消', interrupted: '服务重启，任务中断', cancelling: '正在取消', cooling_down: '来源冷却中，将自动继续', budget_exhausted: '本轮预算用完，可继续匹配' };
+
+function taskPhase(t: (typeof tasks)[number], job: Job) {
+  if (t.id === 'rentalMatch') {
+    if (job.phase === 'done') return '匹配完成';
+    if (job.phase === 'running') return '正在匹配';
+    if (job.phase === 'idle') return '尚未匹配';
+    if (job.phase === 'failed') return '匹配失败';
+  }
+  return phases[job.phase] || job.phase;
+}
 
 export async function workflowRequest<T>(path: string, method = 'GET', body?: object, signal?: AbortSignal): Promise<T> {
   const response = await fetch('/api/map' + path, { method, signal,
@@ -112,7 +123,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
       {relevant.map(t => {
         const job = jobs[t.id];
         const problem = errors[t.id] || job?.error || '';
-        const message = job ? [job.mode === 'retry_failed' && '重试失败项', phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+        const message = job ? [job.mode === 'retry_failed' && '重试失败项', taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' · ') : '';
         return <span key={t.id}><strong>{t.short}</strong> {problem || message}</span>;
       })}
       <span className="directory-task-more">详情</span>
@@ -124,7 +135,8 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
         const running = !!job?.running;
         const state = taskStateOf(t, jobs, errors);
         const problem = errors[t.id] || job?.error || '';
-        const message = job ? [job.mode === 'retry_failed' && '重试失败项', phases[job.phase] || job.phase, taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+        const message = job ? [job.mode === 'retry_failed' && '重试失败项', taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+        const rentalBlocked = (t.id === 'rent' && jobs.rentalMatch?.running) || (t.id === 'rentalMatch' && jobs.rent?.running);
         const lastRun = job?.finished_at ? ` · 上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
         const issues = [...(job?.errors || []), ...(job?.truncated || [])];
         const isReview = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'review' && e.reason !== 'results_incomplete';
@@ -136,9 +148,9 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
           <div className="directory-task-row-head">
             <span className="directory-task-dot" aria-hidden="true" />
             <strong>{t.label}</strong>
-            <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running)}
+            <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running) || !!rentalBlocked}
               onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'refresh_all' } : t.body))}>
-              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : '开始'}</button>
+              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : t.id === 'rentalMatch' && ['cancelled', 'interrupted'].includes(job?.phase || '') ? '继续匹配' : ['rentalMatch', 'rent'].includes(t.id) ? t.label : '开始'}</button>
             {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
               onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
               重试失败项（{job?.retryable || 0}）</button>}

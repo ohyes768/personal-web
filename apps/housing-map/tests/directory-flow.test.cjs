@@ -10,6 +10,31 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 }).outputText, filename);
 const { CollectionControls, CatalogTable, normalizeCollectionJob, workflowRequest } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 
+test('rental source matching and data update are distinct Xingfuli-only actions', () => {
+  const calls = [];
+  const props = { active: true, busy: false, open: true, jobs: {}, errors: {}, action: (...args) => calls.push(args) };
+  const tree = CollectionControls(props);
+  const buttons = [];
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === 'button') buttons.push(node);
+    visit(node.props?.children);
+  }
+  visit(tree);
+  const match = buttons.find(b => b.props.children === '匹配租金来源');
+  const update = buttons.find(b => b.props.children === '更新租金数据');
+  assert.ok(match && update);
+  match.props.onClick(); update.props.onClick();
+  assert.deepEqual(calls, [['/rentals/source-matching', 'POST', undefined], ['/rentals/refresh', 'POST', undefined]]);
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, props));
+  assert.doesNotMatch(html, /房天下/);
+  assert.match(html, /不会采集租金/);
+  const busy = renderToStaticMarkup(React.createElement(CollectionControls, { ...props,
+    jobs: { rentalMatch: { running: true, phase: 'running' } } }));
+  assert.match(busy, /disabled=""[^>]*>更新租金数据<\/button>/);
+});
+
 test('collection separates saved evidence outcomes and automatic position followup', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, {
     active: true, busy: false, open: true, pipeline: true, action() {}, errors: {}, jobs: {

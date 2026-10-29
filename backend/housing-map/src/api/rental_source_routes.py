@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from src.api import rental_routes
 from src.services.data_loader import load_communities
 from src.services.rental_reference.refresh import MappingFileError, RefreshAlreadyRunning
-from src.services.rental_reference.sources import SourceStore, discover
+from src.services.rental_reference.sources import SourceStore
 
 router = APIRouter(tags=['rental-sources'])
 logger = logging.getLogger(__name__)
@@ -60,40 +60,12 @@ def source(community_id: str):
 
 @router.post('/communities/{community_id}/rental-source/search')
 def search(community_id: str, request: SearchRequest):
-    item = community(community_id)
-    source_store = store()
-    try:
-        candidates = discover(item, keyword=request.keyword, source_url=request.source_url.strip())
-    except ValueError as exc:
-        # Explicit URL errors are user input errors; source HTML errors are upstream failures.
-        if request.source_url:
-            from src.services.rental_reference.sources import source_page
-            try:
-                source_page(request.source_url.strip())
-            except ValueError as input_error:
-                raise HTTPException(422, str(input_error)) from input_error
-        logger.warning('Rental discovery failed: %s', exc)
-        raise HTTPException(502, '房天下页面暂时无法识别，请稍后重试或打开来源搜索后导入小区链接') from exc
-    except Exception as exc:
-        logger.warning('Rental discovery unavailable: %s', exc)
-        raise HTTPException(502, '房天下暂时无法访问，请稍后重试或导入小区租房页链接') from exc
-    source_store.save_candidates(community_id, candidates, restore=bool(request.source_url.strip()))
-    return {'success': True, 'data': {**source_store.get(community_id), 'community': item,
-                                      'found_count': len(candidates)}}
+    raise HTTPException(410, '房天下租金来源查找已停用，请使用“匹配租金来源”查找幸福里')
 
 
 @router.put('/communities/{community_id}/rental-source')
 def confirm(community_id: str, request: ConfirmRequest):
-    community(community_id)
-    source_store = store()
-    try:
-        rental_routes._get_service().change_sources(
-            lambda: source_store.confirm(community_id, request.source_community_id))
-    except RefreshAlreadyRunning as exc:
-        raise HTTPException(409, '租金正在更新，请结束后修改来源关联') from exc
-    except ValueError as exc:
-        raise HTTPException(409, str(exc)) from exc
-    return {'success': True, 'data': source_store.get(community_id)}
+    raise HTTPException(410, '房天下租金来源确认已停用，请使用幸福里主页选择')
 
 
 @router.delete('/communities/{community_id}/rental-source')
@@ -130,9 +102,9 @@ def review_registry():
 
 @router.get('/rentals/association-tasks')
 def association_tasks():
-    from src.services.rental_reference.association import reviews
+    from src.services.rental_reference.matching import source_reviews
     try:
-        return {'success': True, 'data': {'items': reviews(review_registry())}}
+        return {'success': True, 'data': {'items': source_reviews(review_registry())}}
     except (OSError, sqlite3.Error, ValueError) as exc:
         raise HTTPException(503, '租金待处理清单暂不可用') from exc
 
@@ -140,6 +112,8 @@ def association_tasks():
 @router.post('/rentals/association-tasks/{cid}')
 def association_decision(cid: str, request: ReviewDecision):
     from src.services.rental_reference.association import decide
+    if request.action == 'bind':
+        raise HTTPException(410, '请在幸福里候选中选择对应小区主页')
     try:
         rental_routes._get_service().change_sources(
             lambda: decide(review_registry(), cid, request.action, request.candidate_id))
@@ -150,6 +124,33 @@ def association_decision(cid: str, request: ReviewDecision):
     except (OSError, sqlite3.Error) as exc:
         raise HTTPException(503, '处理结果保存失败，请重试') from exc
     return {'success': True, 'data': {'saved': True}}
+
+
+@router.get('/rentals/source-matching')
+def matching_status():
+    try:
+        return {'success': True, 'data': rental_routes._get_matching_service().status()}
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(503, '来源匹配状态暂不可用，请检查后台数据') from exc
+
+
+@router.post('/rentals/source-matching', status_code=202)
+def matching_start():
+    try:
+        return {'success': True, 'data': rental_routes._get_matching_service().start()}
+    except RefreshAlreadyRunning as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise HTTPException(503, '来源匹配启动失败，请重试') from exc
+
+
+@router.delete('/rentals/source-matching')
+def matching_cancel():
+    from src.services.rental_reference.refresh import RefreshNotRunning
+    try:
+        return {'success': True, 'data': rental_routes._get_matching_service().cancel()}
+    except RefreshNotRunning as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 class ProbeSelectRequest(BaseModel):

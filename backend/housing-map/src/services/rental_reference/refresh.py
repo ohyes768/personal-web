@@ -187,6 +187,7 @@ class RentalRefreshService:
                  xingfuli_factory: Callable[..., object] = XingfuliClient,
                  discovery_factory: Callable[..., object] | None = None,
                  auto_discover: bool = False,
+                 xingfuli_only: bool = False, task_lock=None, busy=None,
                  max_pages: int = DEFAULT_MAX_PAGES,
                  delay: float = DEFAULT_DELAY_SECONDS,
                  timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -202,13 +203,15 @@ class RentalRefreshService:
         # by default so an offline run never calls out, and so the feature can
         # be rolled back without touching the recorded sources.
         self._auto_discover = auto_discover
+        self._xingfuli_only = xingfuli_only
+        self._busy = busy
         self._max_pages = max_pages
         self._delay = delay
         self._timeout = timeout
         self._details = details
         self._reuse_hours = reuse_hours
         self._max_errors_kept = max_errors_kept
-        self._mutex = threading.RLock()
+        self._mutex = task_lock if task_lock is not None else threading.RLock()
         self._cancel_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._job_path = self.rentals_dir / JOB_FILE_NAME
@@ -227,9 +230,17 @@ class RentalRefreshService:
         with self._mutex:
             if self._has_active_thread():
                 raise RefreshAlreadyRunning('rental refresh job is already running')
+            if self._busy and self._busy():
+                raise RefreshAlreadyRunning('租金来源匹配正在运行，请结束后再更新租金数据')
             mappings = load_verified_mappings(self.mappings_path)
             from src.services.community_registry import existing_registry
             registry = existing_registry(self.mappings_path.parent)
+            if self._xingfuli_only:
+                from src.services.rental_reference.association import eligible_communities
+                eligible = {c['community_id'] for c in eligible_communities(registry)[0]} if registry else set()
+                confirmed = active_sources(registry, xingfuli_only=True) if registry else {}
+                if not any(cid in eligible for cid in confirmed):
+                    raise NoVerifiedMappings('请先匹配租金来源，再更新租金数据')
             if not mappings and not registry:
                 raise NoVerifiedMappings('no verified rental community mappings')
             plans = [_SeedPlan(seed=f'{BASE_URL}/hz/house-xm{source_id}/',
@@ -259,6 +270,8 @@ class RentalRefreshService:
         with self._mutex:
             if self._has_active_thread():
                 raise RefreshAlreadyRunning('请等待租金更新结束后修改关联')
+            if self._busy and self._busy():
+                raise RefreshAlreadyRunning('租金来源匹配正在运行，请结束后修改关联')
             try:
                 with RentalPublishLock(self.rentals_dir / 'rental_publish'):
                     return action()
@@ -335,7 +348,7 @@ class RentalRefreshService:
                 from src.services.rental_reference.association import eligible_communities
                 self._update_job(stage='checking')
                 eligible = {c['community_id']: c for c in eligible_communities(registry)[0]}
-                selected = active_sources(registry)
+                selected = active_sources(registry, xingfuli_only=self._xingfuli_only)
                 ordered = [_SeedPlan(source_url(r), cid, r['source_id'], r['source'],
                                      r.get('seed_listing_id'), eligible[cid]['community_name'],
                                      eligible[cid].get('effective_property_type') or eligible[cid].get('property_type') or '住宅')
@@ -361,7 +374,7 @@ class RentalRefreshService:
             ordered = [plan for plan in ordered if plan.community_id not in reused]
             progress.processed_seeds = len(reused)
             self._update_job(reused_communities=len(reused), processed_communities=len(reused))
-            needs_discovery = registry and any(cid not in selected for cid in eligible)
+            needs_discovery = not self._xingfuli_only and registry and any(cid not in selected for cid in eligible)
             if any(p.source == 'fang' for p in ordered) or needs_discovery:
                 client = self._fetch_factory(timeout=self._timeout)
                 if isinstance(client, FangClient):
@@ -444,7 +457,7 @@ class RentalRefreshService:
                             errors['items'].append(
                                 {'community_id': plan.community_id, **error})
                     self._write_job_file()
-            if registry:
+            if registry and not self._xingfuli_only:
                 from src.services.rental_reference.association import prepare_sources
                 from src.services.rental_reference.sources import discover
                 # A paused crawl must not immediately start searching via another client.

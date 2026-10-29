@@ -102,7 +102,7 @@ class ProbeService:
     """Single-slot background probe of one community's Xingfuli source."""
 
     def __init__(self, registry, *, directory=None, delay=5, timeout=20, budget=DEFAULT_BUDGET,
-                 discovery_factory=None, busy=None):
+                 discovery_factory=None, busy=None, task_lock=None, xingfuli_only=False):
         self.registry = registry
         self.directory = directory
         self.delay = delay
@@ -110,7 +110,9 @@ class ProbeService:
         self.budget = budget
         self._discovery_factory = discovery_factory or self._default_discovery
         self._busy = busy
-        self._mutex = threading.RLock()
+        self._mutex = task_lock if task_lock is not None else threading.RLock()
+        self._automatic = False
+        self._xingfuli_only = xingfuli_only
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._job_id: str | None = None
@@ -133,7 +135,7 @@ class ProbeService:
         with self._mutex:
             return bool(self._thread and self._thread.is_alive())
 
-    def start(self, community_id):
+    def start(self, community_id, *, automatic=False):
         """Start looking for the community's homepage; 202 semantics."""
         with self._mutex:
             if self._thread is not None and self._thread.is_alive():
@@ -143,6 +145,7 @@ class ProbeService:
             if self._busy and self._busy():
                 raise ProbeAlreadyRunning('租金更新进行中，请稍后再探查')
             community = self._community(community_id)
+            self._automatic = automatic
             self._cancel.clear()
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
@@ -168,6 +171,7 @@ class ProbeService:
             if candidate is None:
                 raise ProbeConflict('候选已更新，请刷新后重新选择')
             community = self._community(community_id)
+            self._automatic = False
             judgement = evaluate(community, candidate)
             if judgement['conflicts']:
                 raise ProbeInvalid('；'.join(judgement['conflicts']) + '，不能绑定到该小区')
@@ -188,6 +192,7 @@ class ProbeService:
                 raise ProbeAlreadyRunning('租金更新进行中，请稍后再探查')
             state = read_state(self.registry, community_id)
             community = self._community(community_id)
+            self._automatic = False
             mode = 'entry' if state.get('selected_page') else 'search'
             self._cancel.clear()
             self._job_id = uuid.uuid4().hex
@@ -231,6 +236,8 @@ class ProbeService:
         from src.services.rental_reference.xingfuli_sources import active_source
         try:
             existing = active_source(self.registry, community_id)
+            if self._xingfuli_only and existing and existing.get('source') == 'fang':
+                existing = None
         except ValueError:
             existing = True
         if existing:
@@ -378,18 +385,25 @@ class ProbeService:
         from src.services.rental_reference.xingfuli_sources import has_source
         # The decision must still hold at write time: another tab may have
         # unbound, rejected or re-bound the community meanwhile.
-        if has_source(self.registry, community_id):
+        if has_source(self.registry, community_id, xingfuli_only=self._xingfuli_only):
             write_state(self.registry, community_id, stage=STAGE_FAILED,
                         message='小区已有租金来源，请刷新后重试')
             return
         judgement = evaluate(community, candidate)
         evidence = [*judgement['evidence'], '主页租房入口已核验', f'房源种子 {seed}']
         try:
-            # An explicit probe is the re-processing the user asked for, so a
-            # previously unlinked community may be bound again; the exact
-            # rejected pair still refuses.
-            bind_source(self.registry, community, candidate, seed=seed, method='manual', evidence=evidence,
-                        allow_reprocessed=True)
+            from src.services.rental_reference.storage import RentalPublishLock
+            with self._mutex, RentalPublishLock(self.directory / 'rental_publish'):
+                self._community(community_id)
+                if self._cancel.is_set():
+                    raise ValueError('探查已取消')
+                if self._automatic:
+                    from src.services.rental_reference.association import read_review
+                    if read_review(self.registry, community_id).get('decision') == 'skipped':
+                        raise ValueError('用户已跳过该小区，请显式重新处理')
+                bind_source(self.registry, community, candidate, seed=seed,
+                            method='auto' if self._automatic else 'manual', evidence=evidence,
+                            allow_reprocessed=not self._automatic)
         except ValueError as exc:
             write_state(self.registry, community_id, stage=STAGE_FAILED, message=str(exc) or '关联失败')
             return

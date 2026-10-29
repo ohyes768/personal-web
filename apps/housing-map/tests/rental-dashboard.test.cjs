@@ -166,15 +166,15 @@ test('scope select defaults to 90-144 + all bedrooms and renders options', () =>
 
 test('central rental task offers start and preserves its residential scope', () => {
   const html = renderRent(null);
-  assert.match(html, /采集租金/);
+  assert.match(html, /更新租金数据/);
   assert.match(html, /仅已收录住宅/);
-  assert.doesNotMatch(html, /停止采集租金/);
+  assert.doesNotMatch(html, /停止更新租金/);
 });
 
 test('central rental task normalizes progress and offers cancellation', () => {
   const html = renderRent(job());
   assert.match(html, /已处理 3 \/ 8/);
-  assert.match(html, /停止采集租金/);
+  assert.match(html, /停止更新租金/);
 });
 
 test('central rental task reports cancelling, partial and failed phases', () => {
@@ -212,7 +212,7 @@ test('deferred-only rentals are unqueried rather than failed', () => {
   assert.doesNotMatch(review, /来源查找失败/);
 });
 
-test('rental candidates are single-choice, bind requires selection, skip can reopen', () => {
+test('review sends homepage selection to Xingfuli and preserves skip/reopen', () => {
   const { RentalCandidateChoice } = require('../src/components/rental/RentalAssociationReview.tsx');
   const item = { community_id: 'c1', community_name: '东方郡', reason: 'needs_selection', candidates: [
     { id: 'east', name: '东方郡东区', address: '东区地址' }, { id: 'west', name: '东方郡西区' },
@@ -221,10 +221,11 @@ test('rental candidates are single-choice, bind requires selection, skip can reo
     item: { ...item, reason }, selected, busy: false, onSelect() {}, onDecide() {},
   }));
   const empty = render('');
-  assert.equal((empty.match(/type="radio"/g) || []).length, 2);
-  assert.match(empty, /disabled=""[^>]*>绑定所选小区/);
+  assert.equal((empty.match(/type="radio"/g) || []).length, 0);
+  assert.doesNotMatch(empty, /绑定所选小区|房天下/);
+  assert.match(empty, /幸福里主页/);
   assert.match(empty, /暂时跳过/);
   assert.doesNotMatch(empty, /type="checkbox"|贴链接|粘贴/);
-  assert.match(render('east'), /checked=""/);
+  assert.doesNotMatch(render('east'), /checked=""/);
   assert.match(render('', 'skipped'), /重新处理/);
 });

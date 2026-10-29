@@ -243,11 +243,10 @@ def test_review_api_single_choice_and_locked_decisions(tmp_path, monkeypatch):
     assert client.get('/rentals/association-tasks').json()['data']['items'][0]['reason']=='skipped'
     assert client.post('/rentals/association-tasks/c1', json={'action':'bind','candidate_id':[source['id']]}).status_code==422
     assert client.post('/rentals/association-tasks/c1', json={'action':'reopen'}).status_code==200
-    assert client.post('/rentals/association-tasks/c1', json={'action':'bind','candidate_id':source['id']}).status_code==200
-    # c1 now has a source; c2 is still unmatched and stays reachable for the
-    # on-demand probe.
+    assert client.post('/rentals/association-tasks/c1', json={'action':'bind','candidate_id':source['id']}).status_code==410
+    # Fang binding is retired; both targets stay available for Xingfuli probes.
     remaining = client.get('/rentals/association-tasks').json()['data']['items']
-    assert [i['community_id'] for i in remaining]==['c2']
+    assert {i['community_id'] for i in remaining}=={'c1', 'c2'}
     assert remaining[0]['reason']=='missing'
 
 

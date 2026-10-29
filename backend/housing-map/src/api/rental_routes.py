@@ -54,6 +54,8 @@ router = APIRouter(tags=["rentals"])
 _rentals_dir = DATA_DIR / "rentals"
 _mappings_path = DATA_DIR / "rental_community_mappings.json"
 _service: RentalRefreshService | None = None
+_matching_service = None
+_task_lock = threading.RLock()
 _probe_service = None
 _service_lock = threading.Lock()
 
@@ -72,12 +74,16 @@ def _get_service() -> RentalRefreshService:
             if _service is None:
                 _service = RentalRefreshService(
                     rentals_dir=_rentals_dir, mappings_path=_mappings_path,
-                    auto_discover=True)
+                    xingfuli_only=True, task_lock=_task_lock, busy=_probe_busy)
     return _service
 
 
 async def shutdown_rental_refresh() -> None:
     """服务关闭钩子：取消活动任务并等待 worker 退出；服务从未创建则无操作。"""
+    if _matching_service is not None:
+        await asyncio.to_thread(_matching_service.shutdown)
+    if _probe_service is not None:
+        await asyncio.to_thread(_probe_service.shutdown)
     service = _service
     if service is None:
         return
@@ -97,12 +103,39 @@ def _get_probe_service():
             if _probe_service is None:
                 _probe_service = ProbeService(
                     registry, directory=_rentals_dir,
-                    busy=lambda: bool(_get_service().status().get("running")))
+                    task_lock=_task_lock, xingfuli_only=True,
+                    busy=lambda: bool(_get_service().status().get("running")) or _matching_busy())
     return _probe_service
 
 
 def _probe_busy() -> bool:
-    return bool(_probe_service and _probe_service.busy())
+    return bool(_probe_service and _probe_service.busy()) or _matching_busy()
+
+
+def _matching_busy():
+    return bool(_matching_service and _matching_service.busy())
+
+
+def _get_matching_service():
+    global _matching_service
+    if _matching_service is None:
+        from src.services.community_registry import existing_registry
+        from src.services.rental_reference.matching import SourceMatchingService
+        registry = existing_registry(_mappings_path.parent)
+        if not registry:
+            raise HTTPException(503, '小区目录尚未准备好')
+        with _service_lock:
+            if _matching_service is None:
+                _matching_service = SourceMatchingService(
+                    registry, directory=_rentals_dir, task_lock=_task_lock,
+                    busy=lambda: bool(_get_service().status().get('running')) or bool(_probe_service and _probe_service.busy()))
+    return _matching_service
+
+
+async def resume_source_matching():
+    from src.services.community_registry import existing_registry
+    if (_rentals_dir / 'source_matching_job.json').exists() and existing_registry(_mappings_path.parent):
+        await asyncio.to_thread(_get_matching_service().resume)
 
 
 # ---------------------------------------------------------------------------
@@ -585,7 +618,7 @@ async def start_rental_refresh():
         return JSONResponse({"success": False, "error": "rental refresh job already running"},
                             status_code=409)
     except NoVerifiedMappings:
-        return JSONResponse({"success": False, "error": "no verified rental community mappings"},
+        return JSONResponse({"success": False, "error": "还没有幸福里租金来源，请先运行“匹配租金来源”"},
                             status_code=422)
     except MappingFileError:
         return JSONResponse({"success": False, "error": "rental mapping file unavailable"},

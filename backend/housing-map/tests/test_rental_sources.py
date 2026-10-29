@@ -170,30 +170,24 @@ def api(tmp_path, monkeypatch):
     monkeypatch.setattr(rental_routes, '_rentals_dir', tmp_path / 'rentals')
     monkeypatch.setattr(rental_routes, '_service', None)
     monkeypatch.setattr(rental_source_routes, 'load_communities', lambda: [{'community_id': 'c1', 'community_name': '测试花园'}])
-    monkeypatch.setattr(rental_source_routes, 'discover', lambda *args, **kwargs: [candidate()])
     app = FastAPI(); app.include_router(rental_source_routes.router, prefix='/api')
     with TestClient(app) as client: yield client
 
 
-def test_api_discover_confirm_and_unlink(api):
+def test_api_fang_discovery_and_confirmation_are_retired(api):
     path = '/api/communities/c1/rental-source'
     assert api.get(path).json()['data']['mapping'] is None
-    assert api.put(path, json={'source_community_id': '123'}).status_code == 409
-    assert api.post(path + '/search', json={}).json()['data']['found_count'] == 1
-    assert api.put(path, json={'source_community_id': '123'}).json()['data']['mapping']['status'] == 'verified'
-    assert api.get('/api/rentals/sources').json()['data']['communities'][0]['mapping']
+    assert api.put(path, json={'source_community_id': '123'}).status_code == 410
+    assert api.post(path + '/search', json={}).status_code == 410
     assert api.delete(path).json()['data']['mapping'] is None
     assert api.get('/api/communities/unknown/rental-source').status_code == 404
 
 
-def test_api_reject_and_upstream_failure(api, monkeypatch):
-    path = '/api/communities/c1/rental-source'
-    api.post(path + '/search', json={})
-    assert api.delete(path + '/candidates/123').json()['data']['candidates'] == []
-    assert api.put(path, json={'source_community_id': '123'}).status_code == 409
-    monkeypatch.setattr(rental_source_routes, 'discover', lambda *a, **kw: (_ for _ in ()).throw(ValueError('challenge')))
-    assert api.post(path + '/search', json={}).status_code == 502
-    assert api.post(path + '/search', json={'source_url': 'https://example.com'}).status_code == 422
+def test_api_cannot_import_fang_links(api):
+    path = '/api/communities/c1/rental-source/search'
+    response = api.post(path, json={'source_url': 'https://zu.fang.com/hz/house-xm123/'})
+    assert response.status_code == 410
+    assert '幸福里' in response.json()['detail']
 
 
 def test_empty_community_page_still_provides_review_candidate():

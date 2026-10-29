@@ -3,6 +3,14 @@
 > 2026-10-29 建立。系统的“找来源”能力：平台内多通道搜索 → 读小区主页验证身份 → 主页内找真实租房入口 → 核验后绑定。
 > 关键结论：**搜索响应永远不是身份证据**，身份只来自小区主页；**平台内可执行，不需要外部搜索引擎**。
 
+## 当前网页入口（2026-10-29）
+
+- `GET/POST/DELETE /rentals/source-matching` 独立查询、启动/继续、取消来源匹配；POST为202。SourceMatchingService顺序执行幸福里probe，保存小区级remaining/outcomes和计数到rentals/source_matching_job.json；绝不采集整租样本或发布租金快照。人工跳过、拒绝、已有幸福里来源不自动重做。
+- 网页`/rentals/refresh`明确启用`RentalRefreshService(xingfuli_only=True)`，只采已关联幸福里的合资格小区，不运行任何来源发现；零关联返回422并提示先匹配。历史默认构造器保留独立旧库测试/工具兼容，不能作为网页运行配置。
+- 匹配、租金采集、单小区probe共用task_lock与busy检查，不能并发网络执行。取消保留未处理队列；未取消的在途任务可在服务启动时恢复；GET不启动网络。当前断点粒度为小区，中断中的小区可能重查。
+- 旧Fang搜索、链接导入、候选确认及review bind写入口返回410；来源待处理清单按幸福里probe状态投影。人工选择主页仍走probe/select，不复用旧Fang候选确认。
+- 来源绑定在发布锁下复查资格、取消和人工跳过；自动匹配不绕过人工拒绝，显式单小区探查保留重新处理语义。
+
 ## 1. Scope / Trigger
 修改 `xingfuli_transport.py`、`xingfuli_discovery.py`、`rental_reference/xingfuli_sources.py`、
 `rental_reference/probe.py`、`rental_source_routes.py` 的探查路由，或 `refresh.py` 的幸福里自动发现前必读。

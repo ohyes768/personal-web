@@ -3,9 +3,11 @@
 RENTAL_PROVIDERS = frozenset({'fang', 'xingfuli'})
 
 
-def active_sources(registry):
+def active_sources(registry, *, xingfuli_only=False):
     selected = {}
     for row in registry.sources():
+        if xingfuli_only and row['source'] != 'xingfuli':
+            continue
         if (row['source'] not in RENTAL_PROVIDERS or row['status'] != 'matched'
                 or not row.get('community_id') or not registry.resolve(row['community_id'])):
             continue
