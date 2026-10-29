@@ -1,0 +1,33 @@
+{
+  "id": "housing-boundary-preview",
+  "name": "housing-boundary-preview",
+  "title": "地图缺失地块轮廓生成、预览与确认应用",
+  "description": "从地图问号入口为单个小区生成建筑估算轮廓，预览确认后应用，支持撤销。",
+  "status": "completed",
+  "dev_type": "fullstack",
+  "scope": null,
+  "package": "backend/housing-map",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-28",
+  "completedAt": "2026-10-29",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/housing-map/src/components/map/BinjiangMap.tsx",
+    "apps/housing-map/src/app/page.tsx",
+    "backend/housing-map/scripts/estimate_boundaries.py",
+    "backend/housing-map/scripts/build_merged_polygons.py",
+    "backend/housing-map/src/services/data_loader.py",
+    "backend/housing-map/src/services/boundary_import.py"
+  ],
+  "notes": "2026-10-28: 实现完成。backend 新增 boundary_estimate/boundary_geometry/boundary_publish/boundary_workflow_store/boundary_workflow 五个服务模块与公开无鉴权路由；人工确认结果存 SQLite 覆盖层，不写基础轮廓文件，重建不吞、撤销只删覆盖层。frontend 新增 lib/boundary-workflow.ts、lib/use-boundary-workflow.ts、BoundaryWorkflowPanel.tsx，BinjiangMap 接受临时候选图层。已推送 origin/master（cb5d871 + 44beb07）。验证：后端全量 968 passed；前端 lint/tsc/130 tests/build 全通过；隔离数据端到端 29/29 通过（research/02-e2e-transcript.txt）。遗留：浏览器端手工 QA 未做；线上部署与正式应用待用户授权（推送已完成）。 2026-10-28 补充：线上生成失败复盘（research/03-production-network-failure.md）——NAS 连不上 Overpass 且快照被 gitignore，两头落空；用户选方案 B，全量建筑快照已随仓库分发并打进镜像（31ff320），同时修掉弹框不显示失败原因、240s 预算未强制、'重新获取建筑'静默无效三个问题。待办：重新部署到 NAS 后验证线上能离线生成；浏览器手工 QA 仍未做。 2026-10-28 补充2：线上「查看候选」按钮点不动 —— startEstimate 成功路径漏了 busy 复位，按钮永久 disabled。已修（44a4259）：busy 生命周期收进 runBoundaryAction，四个动作统一走它；错误判断改形状判断（ES5 转译下 instanceof 会失效）。需重新部署前端才生效。线上钱塘大观(20000561)已有可用候选(8.33公顷/49参考面)，部署后直接点查看即可，无需重新生成。 2026-10-28 补充3：按用户要求把轮廓操作从概况页正文搬到小区详情弹框的第三个 tab「地块轮廓」(与小区概况/租金与收益平级)，候选预览改为 tab 内就地展开(e4197f4)。前端 135 tests 通过、build 通过。需重新部署前端生效。 2026-10-29 收尾：全量质量门复核（backend/housing-map pytest 1101 passed；apps/housing-map lint/tsc/170 tests/build 全通过），代码已在 origin/master（cb5d871+44beb07+31ff320+44a4259+e4197f4）。遗留未做：NAS 重新部署后的线上离线生成验证、线上正式应用候选、浏览器手工 QA。按用户指令归档。",
+  "meta": {}
+}
