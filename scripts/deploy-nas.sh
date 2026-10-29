@@ -43,7 +43,7 @@ NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
   ./scripts/deploy-nas.sh <target> [side] [options]
 
 target:
-  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | nginx | all
+  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | nginx | all
   （nginx 只同步 nginx/web.conf 到 nginx 容器并 reload，不走 build/up，忽略 side）
 
 side:（默认 both）
@@ -82,6 +82,7 @@ options:
   ./scripts/deploy-nas.sh housing-map both
   ./scripts/deploy-nas.sh skill-manager both
   ./scripts/deploy-nas.sh kids-catalog both
+  ./scripts/deploy-nas.sh index-trends both
   ./scripts/deploy-nas.sh nginx              # 同步 nginx/web.conf + reload（忽略 side）
   ./scripts/deploy-nas.sh all
   ./scripts/deploy-nas.sh dividend frontend --no-pull
@@ -166,7 +167,7 @@ sync_nginx() {
 get_services() {
     local target="$1" side="$2"
     case "$target" in
-        dividend|douyin|rss-relay|macro|fund-select|housing-map|skill-manager|kids-catalog)
+        dividend|douyin|rss-relay|macro|fund-select|housing-map|skill-manager|kids-catalog|index-trends)
             case "$side" in
                 backend)  echo "${target}-backend" ;;
                 frontend) echo "${target}-frontend" ;;
@@ -181,10 +182,10 @@ get_services() {
             if [[ "$side" != "both" ]]; then
                 echo "提示: target=all 时 side 强制 both（忽略 '$side'）" >&2
             fi
-            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend fund-select-backend fund-select-frontend housing-map-backend housing-map-frontend skill-manager-backend skill-manager-frontend"
+            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend fund-select-backend fund-select-frontend housing-map-backend housing-map-frontend skill-manager-backend skill-manager-frontend index-trends-backend index-trends-frontend"
             ;;
         *)
-            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | all，实际 '$target'" >&2
+            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | all，实际 '$target'" >&2
             exit 1
             ;;
     esac
@@ -206,6 +207,7 @@ get_buildx_config() {
         housing-map-frontend) echo "apps/housing-map:apps/housing-map/Dockerfile:housing-map-frontend:NEXT_PUBLIC_GAODE_MAP_KEY=${GAODE_MAP_KEY:-${NEXT_PUBLIC_GAODE_MAP_KEY:-}}|NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY=${GAODE_MAP_SECURITY_KEY:-${NEXT_PUBLIC_GAODE_MAP_SECURITY_KEY:-}}" ;;
         skill-manager-frontend) echo "apps/skill-manager:apps/skill-manager/Dockerfile:skill-manager-frontend" ;;
         kids-catalog-frontend) echo "apps/kids-catalog:apps/kids-catalog/Dockerfile:kids-catalog-frontend" ;;
+        index-trends-frontend) echo "apps/index-trends:apps/index-trends/Dockerfile:index-trends-frontend" ;;
         *) return 1 ;;
     esac
 }

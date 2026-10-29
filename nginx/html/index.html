@@ -114,7 +114,7 @@ footer { margin-top: 26px; font-size: 11px; color: var(--text-3); }
   <header>
     <div>
       <h1>个人工作台</h1>
-      <p class="sub"><span id="date-line"></span>8 个应用 · 状态实时探测</p>
+      <p class="sub"><span id="date-line"></span>9 个应用 · 状态实时探测</p>
     </div>
     <span class="agg" id="agg" data-state="idle"><span class="dot"></span><span id="agg-text"></span></span>
   </header>
@@ -157,6 +157,14 @@ footer { margin-top: 26px; font-size: 11px; color: var(--text-3); }
           <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
         </div>
         <div class="card-body"><span class="desc">在地图上查看滨江小区的参考房价、评分与地铁通勤信息</span></div>
+      </a>
+      <a class="card" data-key="index-trends" href="/index-trends">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M3 18h18"/><path d="m4 16 5-6 4 3 7-8"/></svg></span>
+          <span class="card-title">宽基趋势观察</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">用月收盘线性回归通道回看沪深300趋势，观察当前指数位置</span></div>
       </a>
     </main>
   </section>
@@ -227,6 +235,7 @@ footer { margin-top: 26px; font-size: 11px; color: var(--text-3); }
     { key: 'macro', health: '/api/macro/health', group: 'invest' },
     { key: 'map', health: '/api/map/health', group: 'invest' },
     { key: 'funds', health: '/api/funds/health', group: 'invest' },
+    { key: 'index-trends', health: '/api/index-trends/health', group: 'invest' },
     { key: 'rss', health: '/rss/api/rss-relay/health', group: 'tool' },
     { key: 'douyin', health: '/api/douyin/health', group: 'tool' },
     { key: 'skills', health: '/api/skills/health', group: 'tool' },

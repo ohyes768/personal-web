@@ -1,0 +1,73 @@
+{
+  "algorithm_version": "lrc-ltb-port-v1",
+  "multiplier": 2,
+  "data_cutoff_month": "2026-09",
+  "fixed_windows": [
+    {
+      "window": 1,
+      "fit_start": "2005-04",
+      "fit_end": "2015-03",
+      "months": 120,
+      "coefficients": {
+        "slope": 5.495744221820955,
+        "intercept": 2301.2746938016535,
+        "deviation": 993.66036458361
+      }
+    },
+    {
+      "window": 2,
+      "fit_start": "2008-04",
+      "fit_end": "2018-03",
+      "months": 120,
+      "coefficients": {
+        "slope": 8.257278897840136,
+        "intercept": 2493.3888805785127,
+        "deviation": 575.0418628697205
+      }
+    },
+    {
+      "window": 3,
+      "fit_start": "2011-04",
+      "fit_end": "2021-03",
+      "months": 120,
+      "coefficients": {
+        "slope": 18.27267987360233,
+        "intercept": 2230.299464187329,
+        "deviation": 491.99720131347055
+      }
+    },
+    {
+      "window": 4,
+      "fit_start": "2014-04",
+      "fit_end": "2024-03",
+      "months": 120,
+      "coefficients": {
+        "slope": 10.441964198902696,
+        "intercept": 3199.212546831957,
+        "deviation": 591.8533002941858
+      }
+    }
+  ],
+  "current_models": {
+    "trailing_120m": {
+      "fit_start": "2016-10",
+      "fit_end": "2026-09",
+      "months": 120,
+      "coefficients": {
+        "slope": 5.0175498298492975,
+        "intercept": 3757.9732851239683,
+        "deviation": 525.8245669278663
+      }
+    },
+    "since_inception": {
+      "fit_start": "2005-04",
+      "fit_end": "2026-09",
+      "months": 258,
+      "coefficients": {
+        "slope": 9.293842006296535,
+        "intercept": 2161.4116781598864,
+        "deviation": 799.444379685959
+      }
+    }
+  }
+}

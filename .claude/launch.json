@@ -44,6 +44,12 @@
       "port": 3003
     },
     {
+      "name": "index-trends-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "apps/index-trends", "dev"],
+      "port": 3010
+    },
+    {
       "name": "dividend-web-attach",
       "url": "http://localhost:3003"
     },

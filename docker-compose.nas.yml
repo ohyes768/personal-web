@@ -1,7 +1,7 @@
 # =============================================================================
 # 个人财富网站 - NAS 部署统一编排
 # =============================================================================
-# 用途：Ubuntu Server NAS 部署（7 个后端 + 7 个前端，共 14 个服务）
+# 用途：Ubuntu Server NAS 部署（8 个后端 + 8 个前端，共 16 个服务）
 # 用法：
 #   1. 准备 .env：在仓库根目录创建 .env，填入各服务 key（已被 .gitignore 忽略）
 #        cat > .env << 'EOF'
@@ -40,6 +40,8 @@
 #   /skills/*      → skill-manager-frontend:3008  (basePath = /skills，apps/skill-manager/)
 #   /api/skills/*  → skill-manager-backend:8097/api/skills/*  (nginx 原样直转后端)
 #   /api/export-targets/* → skill-manager-backend:8097/api/export-targets/*
+#   /index-trends/*      → index-trends-frontend:3010  (basePath = /index-trends，apps/index-trends/)
+#   /api/index-trends/*  → index-trends-backend:8100/api/*  (nginx 直转后端)
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
@@ -48,6 +50,7 @@
 #   macro-data / macro-logs
 #   fund-select-data / fund-select-cache / fund-select-logs
 #   housing-map-data / housing-map-logs
+#   index-trends-data
 # skill-manager 服务已合并到主文件，各服务共享 .env 变量，详见 docs/skill-manager-nas-setup.md
 # =============================================================================
 
@@ -518,6 +521,41 @@ services:
     networks: [app-net]
     depends_on:
       kids-catalog-backend: { condition: service_healthy }
+
+
+  # ---------------------------------------------------------------------------
+  # index-trends 后端（宽基趋势观察：沪深300线性回归通道）
+  # ---------------------------------------------------------------------------
+  index-trends-backend:
+    build: { context: ./backend/index-trends }
+    container_name: index-trends-backend
+    restart: unless-stopped
+    expose: ["8100"]
+    volumes:
+      - index-trends-data:/app/data
+    # INDEX_TRENDS_DINGTALK_WEBHOOK_URL 未配置时周报保存为 no_channel 不发送；
+    # INDEX_TRENDS_PUBLIC_SITE_URL 用于周报消息内的页面链接
+    environment: [TZ=Asia/Shanghai, INDEX_TRENDS_DATA_DIR=/app/data,
+                  "INDEX_TRENDS_DINGTALK_WEBHOOK_URL=${INDEX_TRENDS_DINGTALK_WEBHOOK_URL:-}",
+                  "INDEX_TRENDS_PUBLIC_SITE_URL=${INDEX_TRENDS_PUBLIC_SITE_URL:-}"]
+    networks: [app-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8100/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  index-trends-frontend:
+    image: index-trends-frontend:latest
+    container_name: index-trends-frontend
+    restart: unless-stopped
+    ports: ["127.0.0.1:3010:3010"]
+    build:
+      context: ./apps/index-trends
+      args: { INDEX_TRENDS_API_ORIGIN: http://index-trends-backend:8100 }
+    networks: [app-net]
+    depends_on:
+      index-trends-backend: { condition: service_healthy }
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -560,3 +598,5 @@ volumes:
     name: skill-manager-state
   kids-catalog-data:
     name: kids-catalog-data
+  index-trends-data:
+    name: index-trends-data

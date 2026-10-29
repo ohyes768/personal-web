@@ -3,6 +3,7 @@
 ## Pre-development checklist
 - For apps/skill-manager UI work, read [skill-manager control language](./skill-manager-ui.md); use `lib/ui.ts` constants, never hand-rolled button/input classes.
 - For apps/macro time-series charts, read [ECharts contracts](./macro-echarts.md).
+- For apps/index-trends candlestick+channel charts, read [index-trends ECharts contracts](./index-trends-echarts.md).
 - For apps/housing-map housing-type switching, project points or nearby comparison, read [New-house projects on the shared map](../backend/housing-map/backend/newhouse-map.md); market classification, distance and price text live in `lib/market-map.ts`.
 - Preserve API units, null observations, display transformations, independent calendars, and Tab lazy loading.
 - Read shared code-reuse guidance before adding wrappers or chart utilities.

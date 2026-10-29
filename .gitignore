@@ -117,3 +117,10 @@ backend/rss-relay/.pytest_cache/
 # kids-catalog metadata tool test scratch
 backend/kids-catalog/.pytest-tmp*/
 backend/kids-catalog/.test-deps-linux/
+
+# index-trends（行情数据为运行时拉取，走 volume；测试临时目录重定向项目盘）
+backend/index-trends/data/
+backend/index-trends/.pytest-tmp*/
+backend/index-trends/.venv/
+apps/index-trends/.next/
+apps/index-trends/node_modules/
