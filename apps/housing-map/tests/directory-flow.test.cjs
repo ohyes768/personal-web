@@ -35,6 +35,16 @@ test('rental source matching and data update are distinct Xingfuli-only actions'
   assert.match(busy, /disabled=""[^>]*>更新租金数据<\/button>/);
 });
 
+test('rental matching and rental update share one task block', () => {
+  const html = renderToStaticMarkup(React.createElement(CollectionControls,
+    { active: true, busy: false, open: true, jobs: {}, errors: {}, action() {} }));
+  const groups = html.match(/<section class="directory-task-group"[\s\S]*?<\/section>/g) || [];
+  assert.equal(groups.length, 1, '租金两步应收进同一个区块');
+  assert.match(groups[0], /匹配租金来源/);
+  assert.match(groups[0], /更新租金数据/);
+  assert.match(groups[0], /租金流程/);
+});
+
 test('collection separates saved evidence outcomes and automatic position followup', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, {
     active: true, busy: false, open: true, pipeline: true, action() {}, errors: {}, jobs: {

@@ -50,14 +50,31 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
   return { ...value, total: value.total ?? value.total_communities, processed: value.processed ?? value.processed_communities,
     errors: Array.isArray(value.errors) ? value.errors : value.errors?.items || [] };
 }
-const tasks = [
+type CollectionTask = { id: string; label: string; short: string; stop: string; path: string; hint: string;
+  body?: object; group?: string };
+const rentalGroupTitle = '租金流程';
+const rentalGroupHint = '先匹配幸福里来源，再更新租金数据；两个动作互斥，不能同时运行。';
+const tasks: CollectionTask[] = [
   { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。重试失败项仅补采网络获取失败的项目，保留成功项；身份冲突和待地点匹配分开处理。', body: { sources: ['tmsf'] } },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
   { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。' },
-  { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching', hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。' },
-  { id: 'rent', label: '更新租金数据', short: '租金更新', stop: '停止更新租金', path: '/rentals/refresh', hint: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计，不会查找或关联来源。' },
+  { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching', hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。', group: 'rental' },
+  { id: 'rent', label: '更新租金数据', short: '租金更新', stop: '停止更新租金', path: '/rentals/refresh', hint: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计，不会查找或关联来源。', group: 'rental' },
   { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
 ];
+type TaskGroup = { id: string; title?: string; hint?: string; tasks: CollectionTask[] };
+/** 同一 group 的相邻任务收进同一区块：租金两步（匹配来源 → 更新租金）本是一条流程，不该散在任务列表里。 */
+function taskGroups(list: CollectionTask[]): TaskGroup[] {
+  return list.reduce<TaskGroup[]>((groups, t) => {
+    const last = groups[groups.length - 1];
+    if (t.group && last && last.id === t.group) {
+      groups[groups.length - 1] = { ...last, tasks: [...last.tasks, t] };
+      return groups;
+    }
+    return [...groups, { id: t.group || t.id, title: t.group ? rentalGroupTitle : undefined,
+      hint: t.group ? rentalGroupHint : undefined, tasks: [t] }];
+  }, []);
+}
 const restPhases = ['idle', 'succeeded', 'done'];
 const stageLabels: Record<string, string> = { matching: '匹配幸福里来源', checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源',
   publishing: '发布租金统计', names: '更新小区名录', property_types: '补充用途资料' };
@@ -115,6 +132,61 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
   const relevant = availableTasks.filter(t => taskRelevant(t, jobs, errors));
   const anyRunning = relevant.some(t => taskStateOf(t, jobs, errors) === 'running');
   const anyFailed = relevant.some(t => taskStateOf(t, jobs, errors) === 'failed');
+  const renderTask = (t: CollectionTask) => {
+    const job = jobs[t.id];
+    const running = !!job?.running;
+    const state = taskStateOf(t, jobs, errors);
+    const problem = errors[t.id] || job?.error || '';
+    const message = job ? [job.mode === 'retry_failed' && '重试失败项', taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+    const rentalBlocked = (t.id === 'rent' && jobs.rentalMatch?.running) || (t.id === 'rentalMatch' && jobs.rent?.running);
+    const lastRun = job?.finished_at ? ` · 上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
+    const issues = [...(job?.errors || []), ...(job?.truncated || [])];
+    const isReview = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'review' && e.reason !== 'results_incomplete';
+    const isMissing = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'not_found';
+    const reviewIssues = issues.filter(isReview);
+    const missingIssues = issues.filter(isMissing);
+    const retryIssues = issues.filter(e => !isReview(e) && !isMissing(e));
+    return <div key={t.id} className="directory-task-row" data-state={state}>
+      <div className="directory-task-row-head">
+        <span className="directory-task-dot" aria-hidden="true" />
+        <strong>{t.label}</strong>
+        <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running) || !!rentalBlocked}
+          onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'refresh_all' } : t.body))}>
+          {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : t.id === 'rentalMatch' && ['cancelled', 'interrupted'].includes(job?.phase || '') ? '继续匹配' : ['rentalMatch', 'rent'].includes(t.id) ? t.label : '开始'}</button>
+        {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
+          onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
+          重试失败项（{job?.retryable || 0}）</button>}
+        {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running}
+          onClick={() => action(t.path, 'POST', { mode: 'unqueried' })}>继续匹配</button>}
+        {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
+          onClick={() => action(t.path, 'POST', { mode: 'retry_failed' })}>
+          重试查询失败（{job?.retryable || 0}）</button>}</div>
+      </div>
+      <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
+      {t.id === 'amap' && <p className="directory-task-sub">当前待处理：尚未查询 {job?.unqueried ?? '—'} 条 → 继续匹配 · 查询失败／不完整 {job?.retryable ?? '—'} 条 → 重试查询失败</p>}
+      {t.id === 'amap' && <p className="directory-task-sub">更新全部会重新查询符合条件的楼盘，包括已自动匹配、待确认和未找到的项目，保留人工确认结果；继续匹配只处理尚未查询项目；重试查询失败只处理查询失败或结果不完整的项目。每轮有请求上限。</p>}
+      {(problem || message) && <p className="directory-task-line" data-state={state}>
+        {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
+      </p>}
+      {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
+      {t.id === 'tmsf' && job?.resolutions && <p className="directory-task-sub">当前资料：基本资料齐备 {job.resolutions.ready || 0} · 非住宅 {job.resolutions.non_residential || 0} · 待地点匹配 {job.resolutions.position_pending || 0} · 身份待核对 {job.resolutions.identity_conflict || 0} · 网络可重试 {job.resolutions.retryable || 0} · 基本资料待取得 {job.resolutions.facts_pending || 0}</p>}
+      {t.id === 'tmsf' && job?.position_followup?.state === 'started' && <p className="directory-task-sub">已自动衔接主体匹配（{job.position_followup.targets || 0} 项），进度见地点匹配任务。</p>}
+      {t.id === 'tmsf' && job?.position_followup?.state === 'pending' && <p className="directory-task-sub">主体匹配待继续：{job.position_followup.message}</p>}
+      {!!job?.evidence_issues?.length && <details className="directory-task-sub"><summary>资料待核对（{job.evidence_issues.length}）</summary>
+        {job.evidence_issues.map((item, index) => <p key={index}>{item.name && `${item.name}：`}{item.message}</p>)}</details>}
+      {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
+      {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
+        <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
+      {reviewIssues.length > 0 && <details className="directory-task-sub"><summary>待人工确认地点（{reviewIssues.length}）</summary>
+        <p>请在列表中查看地点与类型，核对后选择主体；待确认是正常审核步骤。</p>
+        {reviewIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message.startsWith('未找到唯一可靠位置：') ? '候选地点需人工核对，请查看资料并选择主体' : e.message}</p>)}</details>}
+      {missingIssues.length > 0 && <details className="directory-task-sub"><summary>未找到主体地点（{missingIssues.length}）</summary>
+        <p>可补充别名后重新查询，或查看相关地点类型；未找到不代表非住宅。</p>
+        {missingIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
+      {retryIssues.length > 0 && <details className="directory-task-sub"><summary>{t.id === 'amap' ? '查询未完成（可重试）' : '本轮未完成事项（可重试）'}</summary>
+        {retryIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{t.id === 'use' ? formatUseReviewMessage(e.message) : e.message}</p>)}</details>}
+    </div>;
+  };
   return <>
     {relevant.length > 0 && <button type="button" className="directory-task-summary"
       data-state={anyFailed ? 'failed' : anyRunning ? 'running' : 'info'}
@@ -130,61 +202,12 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
     </button>}
     {open && <DirectoryDialog title="采集任务" onClose={() => onOpenChange(false)}>
       {!active && <p className="directory-warning">名单流程尚未启用，采集暂不可用。</p>}
-      {availableTasks.map(t => {
-        const job = jobs[t.id];
-        const running = !!job?.running;
-        const state = taskStateOf(t, jobs, errors);
-        const problem = errors[t.id] || job?.error || '';
-        const message = job ? [job.mode === 'retry_failed' && '重试失败项', taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' · ') : '';
-        const rentalBlocked = (t.id === 'rent' && jobs.rentalMatch?.running) || (t.id === 'rentalMatch' && jobs.rent?.running);
-        const lastRun = job?.finished_at ? ` · 上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
-        const issues = [...(job?.errors || []), ...(job?.truncated || [])];
-        const isReview = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'review' && e.reason !== 'results_incomplete';
-        const isMissing = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'not_found';
-        const reviewIssues = issues.filter(isReview);
-        const missingIssues = issues.filter(isMissing);
-        const retryIssues = issues.filter(e => !isReview(e) && !isMissing(e));
-        return <div key={t.id} className="directory-task-row" data-state={state}>
-          <div className="directory-task-row-head">
-            <span className="directory-task-dot" aria-hidden="true" />
-            <strong>{t.label}</strong>
-            <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running) || !!rentalBlocked}
-              onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'refresh_all' } : t.body))}>
-              {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : t.id === 'rentalMatch' && ['cancelled', 'interrupted'].includes(job?.phase || '') ? '继续匹配' : ['rentalMatch', 'rent'].includes(t.id) ? t.label : '开始'}</button>
-            {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
-              onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
-              重试失败项（{job?.retryable || 0}）</button>}
-            {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running}
-              onClick={() => action(t.path, 'POST', { mode: 'unqueried' })}>继续匹配</button>}
-            {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
-              onClick={() => action(t.path, 'POST', { mode: 'retry_failed' })}>
-              重试查询失败（{job?.retryable || 0}）</button>}</div>
-          </div>
-          <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
-          {t.id === 'amap' && <p className="directory-task-sub">当前待处理：尚未查询 {job?.unqueried ?? '—'} 条 → 继续匹配 · 查询失败／不完整 {job?.retryable ?? '—'} 条 → 重试查询失败</p>}
-          {t.id === 'amap' && <p className="directory-task-sub">更新全部会重新查询符合条件的楼盘，包括已自动匹配、待确认和未找到的项目，保留人工确认结果；继续匹配只处理尚未查询项目；重试查询失败只处理查询失败或结果不完整的项目。每轮有请求上限。</p>}
-          {(problem || message) && <p className="directory-task-line" data-state={state}>
-            {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
-          </p>}
-          {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
-          {t.id === 'tmsf' && job?.resolutions && <p className="directory-task-sub">当前资料：基本资料齐备 {job.resolutions.ready || 0} · 非住宅 {job.resolutions.non_residential || 0} · 待地点匹配 {job.resolutions.position_pending || 0} · 身份待核对 {job.resolutions.identity_conflict || 0} · 网络可重试 {job.resolutions.retryable || 0} · 基本资料待取得 {job.resolutions.facts_pending || 0}</p>}
-          {t.id === 'tmsf' && job?.position_followup?.state === 'started' && <p className="directory-task-sub">已自动衔接主体匹配（{job.position_followup.targets || 0} 项），进度见地点匹配任务。</p>}
-          {t.id === 'tmsf' && job?.position_followup?.state === 'pending' && <p className="directory-task-sub">主体匹配待继续：{job.position_followup.message}</p>}
-          {!!job?.evidence_issues?.length && <details className="directory-task-sub"><summary>资料待核对（{job.evidence_issues.length}）</summary>
-            {job.evidence_issues.map((item, index) => <p key={index}>{item.name && `${item.name}：`}{item.message}</p>)}</details>}
-          {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
-          {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
-            <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
-          {reviewIssues.length > 0 && <details className="directory-task-sub"><summary>待人工确认地点（{reviewIssues.length}）</summary>
-            <p>请在列表中查看地点与类型，核对后选择主体；待确认是正常审核步骤。</p>
-            {reviewIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message.startsWith('未找到唯一可靠位置：') ? '候选地点需人工核对，请查看资料并选择主体' : e.message}</p>)}</details>}
-          {missingIssues.length > 0 && <details className="directory-task-sub"><summary>未找到主体地点（{missingIssues.length}）</summary>
-            <p>可补充别名后重新查询，或查看相关地点类型；未找到不代表非住宅。</p>
-            {missingIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message}</p>)}</details>}
-          {retryIssues.length > 0 && <details className="directory-task-sub"><summary>{t.id === 'amap' ? '查询未完成（可重试）' : '本轮未完成事项（可重试）'}</summary>
-            {retryIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{t.id === 'use' ? formatUseReviewMessage(e.message) : e.message}</p>)}</details>}
-        </div>;
-      })}
+      {taskGroups(availableTasks).map(group => group.title
+        ? <section key={group.id} className="directory-task-group" aria-label={group.title}>
+          <div className="directory-task-group-head"><strong>{group.title}</strong><span>{group.hint}</span></div>
+          {group.tasks.map(renderTask)}
+        </section>
+        : renderTask(group.tasks[0]))}
     </DirectoryDialog>}
   </>;
 }
