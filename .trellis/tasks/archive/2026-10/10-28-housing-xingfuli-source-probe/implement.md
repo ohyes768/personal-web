@@ -1,5 +1,8 @@
 # 实施计划（已实施）
 
+> 2026-10-29 收尾：本任务主体（幸福里来源自动匹配与按需探查）实现完成并推送 `origin/master`（`8c18f3b`、`a2af452` 等），随本任务归档。
+> 2026-10-29 追加需求（租金统一切换幸福里、匹配/更新拆分、Fang 退出、全量补全上线）已拆出为独立任务 `10-29-housing-rental-source-unification`，其文档与剩余验收项在那个任务目录里。
+
 状态：in_progress（2026-10-29 用户批准后启动）。技术门已通过，结论回写 `design.md`，证据见 `research/probe-feasibility.md`，
 验证记录见 `verification.md`。
 
@@ -14,6 +17,7 @@
 7. [x] 接入 probe start/status/select/retry/cancel API与持久化状态；真实HTTP计预算、重复点击幂等、过期选择409、失败保留selected_page；纯GET不触发发现。
 8. [x] 前端共用 `XingfuliProbe` 组件，管理页与详情一致；移除URL输入与找链接提示；区分无主页/无入口/失败/冷却并提供重试与取消。
 9. [~] 隔离DATA_DIR端到端：接口级与组件级已覆盖；**浏览器桌面/390px 实测未做**（见 verification.md 第4节）。
+   —— 2026-10-29 收尾复核：仍未做（浏览器 MCP 被地图 WebGL 报错循环卡死，见 verification.md 第5节）。该缺口与后续"匹配/更新拆分"的浏览器验收合并到新任务 `10-29-housing-rental-source-unification` 一起补。
 10. [x] 运行受影响后端/前端检查，逐项核对A1–A8并写 `verification.md`；真实公开只读烟测与离线测试分开，未导入生产。已新增 `xingfuli-discovery.md` 契约并更新租金来源/幸福里契约。
 
 ## 文件责任范围（建议）
@@ -65,4 +69,4 @@ npm run build
 - [x] 已检查现有Fang-only审核、幸福里采集器、请求白名单和前端粘贴入口。
 - [x] 已给出复杂任务design.md/implement.md及真实上下文清单。
 - [x] 技术未知单独落在首道验证门，未伪装成已完成能力。
-- [ ] 用户在最终规划摘要之后明确批准开始实现，届时才进入task.py start。
+- [x] 用户在最终规划摘要之后明确批准开始实现，届时才进入task.py start。

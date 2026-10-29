@@ -3,7 +3,7 @@
   "name": "housing-xingfuli-source-probe",
   "title": "幸福里租金来源自动匹配与按需探查",
   "description": "按已收录小区名称和别名自动匹配幸福里来源，未命中时按需探查小区主页并人工选择，系统沿主页寻找租房入口；不提供粘贴链接入口，仅规划",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "housing-map",
   "package": "backend/housing-map",
@@ -11,7 +11,7 @@
   "creator": "tang",
   "assignee": "tang",
   "createdAt": "2026-10-28",
-  "completedAt": null,
+  "completedAt": "2026-10-29",
   "branch": null,
   "base_branch": "master",
   "worktree_path": null,
@@ -32,6 +32,6 @@
     ".trellis/tasks/10-28-housing-xingfuli-source-probe/design.md",
     ".trellis/tasks/10-28-housing-xingfuli-source-probe/implement.md"
   ],
-  "notes": "仅规划；PRD已按最终结构收敛；实施先验证白金海岸主页发现链；等待后续明确批准才start。",
+  "notes": "仅规划；PRD已按最终结构收敛；实施先验证白金海岸主页发现链；等待后续明确批准才start。 2026-10-29 收尾：主体实现完成并推送 origin/master（8c18f3b、a2af452 等）；spec 已落 xingfuli-discovery.md。2026-10-29 追加需求（租金统一切换幸福里、匹配/更新拆分、Fang 退出、全量补全上线）及其 migration-*/online-eight-switch 文档已拆出到新任务 10-29-housing-rental-source-unification，该任务状态 in_progress，承接剩余浏览器验收、冷却/重启回归、通道级断点续跑、独立迁移工具与全量上线。本任务遗留：浏览器桌面/390px 实测未做（已转记到新任务一并补）。按用户指令归档。",
   "meta": {}
 }
