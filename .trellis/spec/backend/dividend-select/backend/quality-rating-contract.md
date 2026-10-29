@@ -82,7 +82,8 @@ business/moat/industry/management/financial order. Each score is 1–5; null use
 report shows a single —. The entire score/version text is a button opening the
 report. Missing provenance shows （版本未知）; 需重评 remains an adjacent hint.
 Do not show weighted_score or hide known scores when a dimension is null.
-The report modal still shows no weighted score. (Changed 2026-10-29: five
+The report modal shows dimension scores and metadata, with no aggregate stars,
+overall unrated banner, weighted score or boundary banner. (Changed 2026-10-29: five
 scores/version in a compact column supersede the aggregate result. Changed
 2026-10-27: v3 null contract adopted; the in-repo skill copy
 `backend/dividend-select/skills/basic-quality-rating/SKILL.md` was removed
@@ -112,6 +113,24 @@ single source, installed into Hermes via skill-manager.)
 - Tests: test_quality_version.py checks persistence, legacy/invalid input, fresh
   manifest reads, cache separation and mismatched output. screening.spec.ts
   checks column mapping, partial dimensions and current/old/unknown versions.
+
+### Dimension-only reports (skill 4.4.0)
+- Keep the 11 JSON fields and existing stars/boundary arithmetic for machine
+  compatibility. Do not copy them into summary/report_md/risks/watch_points.
+- Skill finalize rejects aggregate star/boundary presentation in these narrative
+  fields. The read-only validator reuses that check and no longer warns that a
+  report is missing the former star/boundary section. Business facts such as
+  五星酒店 / 三星电子 and risk-boundary descriptions are not rating labels.
+- New report sections are title/date, business verification, five dimensions,
+  conclusions/risks and sources. No stars, star counts, upgrade/downgrade or
+  踩线/非边界档位 presentation. Financial evidence/null handling is unchanged.
+- Remove the modal's aggregate star/unrated/boundary header even for old saved
+  scores. Historical narrative is not rewritten; publish 4.4.0 and reanalyze
+  to replace old report text. Preserve dimension table, duration, dates, version
+  warning and reanalysis actions.
+- Tests: skill test_no_stars.py checks narrative rejection and retained JSON
+  fields; screening.spec.ts injects an old 3-star/boundary record and checks
+  the header stays hidden while metadata/dimension rows remain visible.
 
 Bulk analysis reuses `RefreshJobManager` with `kind='quality'` (included in
 `_prune` kinds). Each stock is one worker thread bounded by a semaphore

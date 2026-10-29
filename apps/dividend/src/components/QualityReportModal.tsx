@@ -1,5 +1,5 @@
 /**
- * 基本面评级详情弹层：五维得分 + 星级 + 完整 markdown 报告
+ * 基本面评级详情弹层：五维得分、分析元数据与完整 markdown 报告
  */
 'use client';
 
@@ -12,7 +12,6 @@ import {
   QUALITY_DIMENSION_LABELS,
   QUALITY_DIMENSION_ORDER,
   formatAnalysisDuration,
-  starBadgeClass,
   type QualityDimensionKey,
   type QualityScore,
 } from '@/lib/quality';
@@ -65,12 +64,6 @@ export function QualityReportModal({ score, onClose, onReanalyze, currentSkillVe
           </div>
         )}
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          {score.stars != null
-            ? <span className={`text-2xl ${starBadgeClass(score.stars)}`}>
-                {'⭐'.repeat(score.stars)}<span className="ml-1 text-sm text-ink-muted">({score.stars}/5)</span>
-              </span>
-            : <span className="text-2xl text-ink-muted">未评级</span>}
-          {score.boundary && <span className="text-sm text-amber-700" title="距档位边界不足 0.25 分">⚠️ {score.boundary}</span>}
           <span className="text-xs text-ink-muted">数据日期 {score.data_date} · 评分时间 {score.scored_at} · 分析耗时 {formatAnalysisDuration(score.analysis_duration_seconds)}</span>
         </div>
 

@@ -24,3 +24,10 @@ User requested commit and push after verification. The skill changes are committ
 ## Compact layout follow-up
 
 User requested one column such as 4/4/3/2/1（v1.1.1）. Implemented directly; whole text opens the report, nullable dimensions use —, and version-unknown/needs-reanalysis semantics remain. Updated regression first failed on the missing 评级结果 header, then all 18 screening browser tests and TypeScript passed. Inspected the new screenshot.
+
+## 4.4.0 no-stars follow-up
+
+- Removed the modal's aggregate stars/count, overall unrated banner and boundary banner, preserving dimension rows, version, dates, elapsed duration and reanalysis.
+- Skill 4.4.0 removes star/boundary report sections and adds finalizer rejection of aggregate rating prose in summary/report_md/risks/watch_points. JSON arithmetic and all 11 fields remain compatible. Read-only validation no longer requests a boundary section. Tests allow actual hotel grades and 三星电子 business facts.
+- Red/green evidence: new skill narrative tests initially failed; the browser regression initially exposed the old ⭐⭐⭐/3-star boundary display. After implementation: skill full suite 203 passed, skill Ruff checks passed, TypeScript passed. Full screening suite: 21/22 passed on the first run, with an in-progress queue-cancellation test timing out; both that test and the new historical-star regression passed in an isolated 2-test rerun. No queue-control code was changed in this follow-up.
+- Updated deployment examples to 4.4.0. User subsequently requested commit/push: skill commit 630c85f, frontend/spec changes in the corresponding personal-web feature commit. No production deployment. Historical stored report narratives remain archival; publish the new skill and reanalyze to regenerate those texts without stars.

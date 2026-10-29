@@ -2,7 +2,7 @@
 # HERMES_QUALITY_SKILL_HOST_PATH must be the ACTUALLY INSTALLED skill directory
 # for the HERMES_PROFILE used by dividend-backend, not unpublished source.
 # docker compose -f docker-compose.nas.yml -f deploy/docker-compose.dividend-quality-version.example.yml up -d dividend-backend
-# Publish skill 4.3.0+ before enabling this. If this is a symlink, mount its
+# Publish skill 4.4.0+ before enabling this. If this is a symlink, mount its
 # readable target; if publication replaces the target, recreate the container.
 services:
   dividend-backend:

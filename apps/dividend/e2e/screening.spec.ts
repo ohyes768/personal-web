@@ -10,6 +10,32 @@ const stock = {
   previous_quarter_label: '2026Q1', previous_quarter_yoy_pct: 2,
 };
 
+test('rating modal hides legacy aggregate stars and boundary but keeps dimensions and metadata', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/dividend/quality', route => route.fulfill({ json: {
+    total: 1, hermes_configured: true, current_skill_version: '4.4.0', scores: {
+      '000001': { code: '000001', name: '测试公司', skill_version: '4.3.0',
+        dimensions: { business: 4, moat: 4, industry: 3, management: 3, financial: 5 },
+        weighted_score: 3.7, stars: 3, boundary: '踩线 3 星：任一维度降1分即降至2星',
+        summary: '业务模式清晰，存在周期风险', risks: ['原料波动'], watch_points: [],
+        report_md: '## 五维分析\n\n业务模式有稳定客户，关注原料价格。',
+        scored_at: '2026-10-29T11:28:49+08:00', data_date: '2026-10-12', analysis_duration_seconds: 846 },
+    },
+  } }));
+  await page.goto('/?tab=screening');
+  await page.getByRole('button', { name: '查看测试公司的评级报告' }).click();
+  const dialog = page.getByRole('heading', { name: '基本面评级 · 测试公司（000001）', exact: true }).locator('../..');
+  await expect(dialog).toBeVisible();
+  await expect(dialog).not.toContainText('⭐');
+  await expect(dialog).not.toContainText('(3/5)');
+  await expect(dialog).not.toContainText('踩线');
+  await expect(dialog.getByText(/数据日期 2026-10-12/)).toBeVisible();
+  await expect(dialog.getByText(/分析耗时 14分6秒/)).toBeVisible();
+  await expect(dialog.getByText('v4.3.0', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('cell', { name: '4 / 5', exact: true })).toHaveCount(2);
+  await expect(dialog.getByRole('button', { name: '重评', exact: true })).toBeVisible();
+});
+
 /** quality 场景控制：测试内直接改 perCode / 开关 failQuery，route handler 每次读最新值 */
 interface QualityScenario {
   scoreVersion?: string | null;

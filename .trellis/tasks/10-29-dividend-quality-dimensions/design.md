@@ -9,3 +9,7 @@ Backend accepts optional skill_version for legacy compatibility, validates versi
 Use the expected version in prompt and an admission-captured version in the idempotency key; reject mismatching output when the expected version is known. When no installed version is available, use an attempt token so explicit reanalysis cannot retrieve a stale run under the old code/date key. Do not label unversioned responses with the expected version.
 
 No production publication/deployment or historical score backfill. Deployment docs must describe installing the changed skill and configuring the installed manifest/version. Automated stale detection remains unavailable until that source is configured.
+
+## 4.4.0 follow-up: dimension-only presentation
+
+Remove stars, aggregate unrated labels and boundary banners from the report modal header. Keep all metadata and dimension evidence. Skill 4.4.0 retains weighted_score/stars/boundary only as machine-compatible JSON fields; narrative fields must not present aggregate ratings. Enforce this in finalize so the actual delivery path rejects copied star/boundary prose, and remove the read-only validator's old boundary-section warning. Permit real business descriptions such as 五星酒店 and 三星电子, and risk-boundary language. Update report instructions, version metadata and relevant fixtures together. Historical report bodies remain archival and require reanalysis to regenerate under the new contract.
