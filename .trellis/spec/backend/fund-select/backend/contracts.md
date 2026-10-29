@@ -1,5 +1,18 @@
 # fund-select 契约（API / DB / 缓存 / 前后端链路）
 
+## 每周自动刷新（2026-10-29）
+
+- `src/scheduler/scheduler.json` 是调度配置源：`weekly_fund_refresh`，`5 7 * * sat`，显式 `Asia/Shanghai`；替换原每日名单/债基任务。
+- 顺序：债基 yaml → 股基 yaml → 债基市场完整流水线（bond）→ 股基市场完整流水线（stock）。配置名单 `use_cache=False`；市场默认预筛与前端一致：收益 10%/20%，规模 5 亿、经理 5 年；类型集合复用 `market_subtype_map`。
+- 整组经 `asyncio.to_thread` 执行；`max_instances=1` 防周任务重入，`coalesce=True`，错过触发宽限 3600 秒。MemoryJobStore 不补跑服务停机期间历史周次。生产维持单 uvicorn worker。
+- 单项异常继续下一项。结果为 success/partial/failed；市场必须检查 `stage_results.*.status` 及嵌套 `result.failed`，不能仅依赖阶段 done。成功数量兼容 `completed` 和 `inserted/updated`。空配置名单记失败。
+- 整组和四项开始/结束时间带 `+08:00`，原始结果/错误追加至 `data/scheduler/weekly_refresh.jsonl`（NAS data volume 持久化）；刷新自身的 DB `RefreshRun` 仍保留。
+- 管理页 `/funds/scheduler` 从四 tab 共用顶部进入。API：GET `/api/funds/scheduler/jobs`、PATCH `/jobs/{id}`（enabled）、POST `/jobs/{id}/run`、GET `/jobs/{id}/runs?limit=20`。未知任务404、重复执行409、未初始化/设置写失败503、limit 范围1..200。Next 代理支持 GET/PATCH/POST 并透传请求体和响应状态。
+- 启停覆盖原子保存至 `data/scheduler/settings.json`，重启后读取，禁止写镜像源配置。禁用仅暂停自动任务，不中止当前执行，允许立即执行。
+- 管理页立即执行与 cron 在创建异步任务前保留同一运行标记，防止同时启动；线程进度通过加锁快照提供 `current_run`。这不涵盖四 tab 原有单独刷新入口。
+- 历史最新在前，兼容旧记录无 job_id/run_id/trigger，跳过损坏 JSONL 行。当前记录增加 run_id/trigger，历史保留原始阶段错误。页面每5秒刷新，四项显示运行/等待/最终状态，操作错误独立于轮询错误，不被后台刷新吞掉。
+- 离线验证：`tests/test_weekly_refresh.py`，含真实 CronTrigger 下一次周六日期、串行参数、失败继续、部分成功归类、线程执行、JSONL 追加。
+
 ## 1. Scope / Trigger
 
 - 任务 09-01-fund-select-v1-bond：新增跨层契约（FastAPI ↔ Next.js 代理 ↔ 前端表格/对比），且补回了预研缺失的费率 fetcher 契约。

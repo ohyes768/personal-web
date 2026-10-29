@@ -2,12 +2,12 @@
   "version": 1,
   "jobs": [
     {
-      "id": "daily_fund_refresh",
-      "name": "每日刷新配置名单基金",
-      "target": "refresh_configured",
-      "cron": "5 7 * * *",
+      "id": "weekly_fund_refresh",
+      "name": "每周刷新四个基金 tab",
+      "target": "refresh_weekly",
+      "cron": "5 7 * * sat",
       "enabled": true,
-      "description": "每日 07:05 拉取 config/funds.yaml 名单（净值/基础信息/季报持仓/费率）"
+      "description": "每周六北京时间 07:05 依次刷新债基配置名单、股基配置名单、债基市场与股基市场；市场预筛沿用页面默认值"
     }
   ]
 }

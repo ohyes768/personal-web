@@ -5,7 +5,7 @@ import { NextRequest } from 'next/server';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:8095';
 
-export async function GET(
+async function proxy(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }
 ) {
@@ -14,7 +14,14 @@ export async function GET(
   const target = `${BACKEND_URL}/api/funds/${path.join('/')}${url.search}`;
 
   try {
-    const res = await fetch(target, { cache: 'no-store' });
+    const res = await fetch(target, {
+      cache: 'no-store',
+      method: request.method,
+      ...(request.method !== 'GET' ? {
+        body: await request.text(),
+        headers: { 'Content-Type': request.headers.get('Content-Type') || 'application/json' },
+      } : {}),
+    });
     const body = await res.arrayBuffer();  // 二进制透传，保住 CSV 的 UTF-8 BOM
     return new Response(body, {
       status: res.status,
@@ -33,3 +40,7 @@ export async function GET(
     });
   }
 }
+
+export const GET = proxy;
+export const PATCH = proxy;
+export const POST = proxy;

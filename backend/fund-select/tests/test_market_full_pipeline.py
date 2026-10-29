@@ -8,16 +8,27 @@ market_full_pipeline 三段预筛 pipeline 单测
   refresh_market_full_sync 新签名（3 用户参数 + 后端常量）
 """
 from datetime import date
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
-from src.db.models import Fund, MarketFundRank
+from src.db.models import Fund
 from src.services.market_full_pipeline import (
     MAX_NAV_STALE_DAYS,
     _load_market_universe,
     refresh_market_full_sync,
 )
+
+
+@pytest.fixture(autouse=True)
+def stable_pipeline_date(monkeypatch):
+    """Fixture NAVs are dated Sep 7; keep freshness assertions independent of today."""
+    class FixtureDate(date):
+        @classmethod
+        def today(cls):
+            return cls(2026, 9, 7)
+
+    monkeypatch.setattr("src.services.market_full_pipeline.date", FixtureDate)
 
 
 def _mk_fund(code: str, market_subtype: str, **kw):
@@ -195,7 +206,7 @@ class TestRefreshMarketFullSync:
         import pandas as pd
         from datetime import date
         monkeypatch.setattr(
-            "src.services.market_full_pipeline.fetch_market_universe",
+            "src.data.market_universe_fetcher.fetch_market_universe",
             lambda: pd.DataFrame([{
                 "code": "000001", "name": "X", "market_subtype": "股票型",
                 "market_type": "stock",
@@ -596,13 +607,15 @@ class TestPipelineProfile:
         self._mock_all_fetchers(monkeypatch)
         self._seed_funds(db_session)
 
-        with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
-            with pytest.raises(ValueError, match="pipeline_profile must be 'stock' or 'bond'"):
-                refresh_market_full_sync(
-                    universe_filter=["股票型"],
-                    pipeline_profile="etf",
-                    preset_task_id="test-bad-profile",
-                )
+        with (
+            patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session),
+            pytest.raises(ValueError, match="pipeline_profile must be 'stock' or 'bond'"),
+        ):
+            refresh_market_full_sync(
+                universe_filter=["股票型"],
+                pipeline_profile="etf",
+                preset_task_id="test-bad-profile",
+            )
 
         # 不应创建 RefreshRun
         run = db_session.get(RefreshRun, "test-bad-profile")
@@ -691,7 +704,7 @@ class TestL6FeesHoldings:
                 preset_task_id="test-l6-count",
             )
 
-        l6 = result["stage_results"]["L6_fees_holdings"]
+        result["stage_results"]["L6_fees_holdings"]
         # 3 只债基（000001/000002/000003），每只调一次 fetch_fees + fetch_bond_hold
         assert sorted(fees_calls) == ["000001", "000002", "000003"], \
             f"fetch_fees 应调 3 次（每只债基），实际 {fees_calls}"
@@ -782,7 +795,7 @@ class TestL6FeesHoldings:
         monkeypatch.setattr("src.services.refresh_service.persist_snapshot", fake_persist)
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
-            result = refresh_market_full_sync(
+            refresh_market_full_sync(
                 universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-persist",

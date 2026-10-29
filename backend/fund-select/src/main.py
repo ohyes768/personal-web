@@ -30,6 +30,7 @@ from src.api.routes import (
 )
 from src.db.session import init_db
 from src.scheduler.manager import SchedulerManager
+from src.scheduler.routes import router as scheduler_router
 from src.utils.config import get_server_host, get_server_port
 from src.utils.logger import setup_logger
 
@@ -46,7 +47,7 @@ async def lifespan(app: FastAPI):
     # 建表（幂等）
     init_db()
 
-    # 启动定时调度（每日刷新配置名单）
+    # 启动定时调度（每周六刷新四个 tab）
     scheduler = SchedulerManager()
     scheduler.start(app)
     app.state.scheduler = scheduler
@@ -72,6 +73,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(scheduler_router, prefix="/api/funds")
 app.include_router(router, prefix="/api/funds")
 app.include_router(router_stock, prefix="/api/funds")
 app.include_router(router_discovery_bond, prefix="/api/funds")

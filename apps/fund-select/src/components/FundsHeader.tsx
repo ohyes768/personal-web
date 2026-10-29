@@ -49,6 +49,7 @@ const TITLE: Record<FundsTab, string> = {
 /** 老 tab 的 refresh 端点（仅 bond / stock：刷 yaml 60 只业绩）。
  *  discovery-* tab 已合并到「全量刷新」按钮（pipeline L0 自动跑 fund_name_em）。 */
 const REFRESH_URL: Partial<Record<FundsTab, string>> = {
+  'bond': '/funds/api/funds/refresh',
   'stock': '/funds/api/funds/stock/refresh',
 };
 
@@ -102,6 +103,7 @@ export function FundsHeader({
               <TabLink href="/stock" active={active === 'stock'}>股基·雪球三分法</TabLink>
               <TabLink href="/discovery-bond" active={active === 'discovery-bond'}>债基·市场</TabLink>
               <TabLink href="/discovery-stock" active={active === 'discovery-stock'}>股基·市场</TabLink>
+              <Link href="/scheduler" className="px-2 py-1 text-ink-muted hover:text-info focus-visible:outline-2 focus-visible:outline-info rounded">定时任务</Link>
             </nav>
           </div>
         </div>
