@@ -249,10 +249,10 @@ test('temporary quality query errors keep state and recover automatically', asyn
   const queue = page.getByLabel('评级任务队列');
   await expect(queue).toBeVisible();
   // 查询开始失败：状态保留并提示自动重试
-  quality.failQuery.value = true;
+  quality.failQuery!.value = true;
   await expect(page.getByText('评级进度查询失败，任务不受影响，自动重试中…')).toBeVisible({ timeout: 10_000 });
   await expect(queue.getByText(/已分析/)).toBeVisible(); // 面板与计时不受影响
   // 恢复后提示消失
-  quality.failQuery.value = false;
+  quality.failQuery!.value = false;
   await expect(page.getByText('评级进度查询失败，任务不受影响，自动重试中…')).toHaveCount(0, { timeout: 10_000 });
 });

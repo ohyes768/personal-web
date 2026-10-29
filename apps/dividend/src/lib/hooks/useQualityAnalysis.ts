@@ -20,8 +20,6 @@ export interface UseQualityAnalysisResult {
   qualityPerCode: QualityPerCodeMap;
   /** Hermes 是否已配置；false 时前端置灰分析入口 */
   qualityConfigured: boolean;
-  /** 是否有评级任务在跑（轮询中的 active job） */
-  analyzing: boolean;
   /** 当前评级任务（用于展示进度） */
   qualityJob: QualityJob | null;
   /** 任务结果/错误提示 */
@@ -39,23 +37,20 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
   const [qualityPerCode, setQualityPerCode] = useState<QualityPerCodeMap>({});
   const [qualityConfigured, setQualityConfigured] = useState(true);
   const [qualityJob, setQualityJob] = useState<QualityJob | null>(null);
-  const [analyzing, setAnalyzing] = useState(false);
   const [qualityMessage, setQualityMessage] = useState('');
   const [qualityPollError, setQualityPollError] = useState('');
   const pollJobId = useRef<string | null>(null);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mounted = useRef(true);
-  const requestId = useRef(0);
 
-  const refreshScores = useCallback(async (id: number) => {
+  const refreshScores = useCallback(async () => {
     try {
       const response = await dividendApi.getQualityScores();
-      if (id === requestId.current) {
-        setQualityScores(response.scores ?? {});
-        // 逐股实时状态以 job 轮询为准；这里仅在尚无状态时做首屏快照
-        setQualityPerCode(prev => (Object.keys(prev).length > 0 ? prev : response.per_code ?? {}));
-        setQualityConfigured(response.hermes_configured !== false);
-      }
+      if (!mounted.current) return;
+      setQualityScores(response.scores ?? {});
+      // 逐股实时状态以 job 轮询为准；这里仅在尚无状态时做首屏快照
+      setQualityPerCode(prev => (Object.keys(prev).length > 0 ? prev : response.per_code ?? {}));
+      setQualityConfigured(response.hermes_configured !== false);
     } catch { /* 拉取失败保持现状，表格列显示「待分析」，点分析时会得到明确报错 */ }
   }, []);
 
@@ -66,17 +61,16 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
     }
   }, []);
 
-  const handleTerminal = useCallback(async (job: QualityJob, id: number) => {
+  const handleTerminal = useCallback(async (job: QualityJob) => {
     stopPolling();
     pollJobId.current = null;
     if (!mounted.current) return;
-    setAnalyzing(false);
     setQualityPollError('');
-    await refreshScores(id);
+    await refreshScores();
     if (mounted.current) setQualityMessage(qualityFinishMessage(job));
   }, [refreshScores, stopPolling]);
 
-  const startPolling = useCallback((jobId: string, id: number) => {
+  const startPolling = useCallback((jobId: string) => {
     stopPolling();
     pollJobId.current = jobId;
     const poll = async () => {
@@ -100,7 +94,7 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
         pollTimer.current = setTimeout(() => void poll(), POLL_INTERVAL_MS);
         return;
       }
-      await handleTerminal(latest, id);
+      await handleTerminal(latest);
     };
     pollTimer.current = setTimeout(() => void poll(), 0);
   }, [handleTerminal, stopPolling]);
@@ -108,16 +102,14 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
   // 挂载：加载已落盘评级，并重新发现服务器上仍在进行的 quality 任务
   useEffect(() => {
     mounted.current = true;
-    const id = requestId.current;
-    void refreshScores(id);
+    void refreshScores();
     void (async () => {
       try {
         const latest = await dividendUpdateApi.getLatestRefreshJob('quality');
         const discovered = latest && latest.kind === 'quality' ? (latest as QualityJob) : null;
         if (discovered && qualityJobActive(discovered)) {
           setQualityJob(discovered);
-          setAnalyzing(true);
-          startPolling(discovered.job_id, id);
+          startPolling(discovered.job_id);
         }
       } catch { /* 发现失败不影响首屏；提交或下次轮询会再触发 */ }
     })();
@@ -129,7 +121,6 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
 
   const analyze = useCallback(async (codes: string[]) => {
     if (!codes.length) return;
-    const id = requestId.current;
     setQualityMessage('');
     try {
       const job = await dividendApi.analyzeQuality(codes);
@@ -138,10 +129,9 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
       if (pollJobId.current === job.job_id) return; // 追加受理：现有轮询不动
       setQualityJob(job);
       if (qualityJobActive(job)) {
-        setAnalyzing(true);
-        startPolling(job.job_id, id);
+        startPolling(job.job_id);
       } else {
-        await handleTerminal(job, id);
+        await handleTerminal(job);
       }
     } catch (err) {
       if (mounted.current) setQualityMessage(err instanceof Error ? err.message : '提交评级失败');
@@ -152,11 +142,10 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
     qualityScores,
     qualityPerCode,
     qualityConfigured,
-    analyzing,
     qualityJob,
     qualityMessage,
     qualityPollError,
     analyze,
-    refreshScores: () => refreshScores(requestId.current),
+    refreshScores,
   };
 }

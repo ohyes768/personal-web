@@ -38,7 +38,9 @@ Empty selections produce a zero-count succeeded job.
 `append_codes` merges new acceptances into the active job under the manager
 lock: new codes extend `codes`, `admissions[code]` increments, `total`/
 `remaining`/`retry_codes` update, and the job is saved before the caller
-acknowledges. It never touches a terminal job.
+acknowledges. It never touches a terminal job. `admissions` first appears on
+the quality job's first append (lazy); before that it is absent and every code
+counts as one admission (`.get(c, 1)` fallback).
 
 One active job per kind owns all writes, including scheduled refresh. Different
 kinds may run concurrently. Synchronous routes perform only preparation/admission;

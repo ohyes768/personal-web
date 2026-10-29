@@ -7,6 +7,7 @@ import {
   formatElapsedSpan,
   isQualityPending,
   qualityFinishMessage,
+  type QualityPerCodeState,
   qualityJobActive,
   starBadgeClass,
   starsFor,
@@ -64,7 +65,7 @@ describe('qualityJobActive / qualityFinishMessage', () => {
 });
 
 describe('buildQualityQueue（运行优先、排队按受理顺序、终态新的在前）', () => {
-  const status = (state: string, extra: Record<string, unknown> = {}) => ({
+  const status = (state: QualityPerCodeState, extra: Record<string, unknown> = {}) => ({
     state, error: state === 'failed' ? 'run 失败' : null, updated_at: '2026-10-29T10:00:00+08:00', ...extra,
   });
   it('分区排序：running → queued（按 queued_at）→ terminal（按 finished_at 倒序）', () => {

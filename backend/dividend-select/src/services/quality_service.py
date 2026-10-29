@@ -334,6 +334,9 @@ class QualityService:
                 outcome = (False, None, str(exc)[:300])
             except ValueError as exc:
                 outcome = (False, None, f"解析失败: {exc}")
+            except Exception as exc:  # 未预期异常按该股失败计，避免派发循环因 _running 不归零而永久等待
+                logger.exception("股票 %s 评级过程异常", code)
+                outcome = (False, None, f"评级过程异常: {exc}")
             else:
                 outcome = (True, score, "")
         finally:
@@ -342,7 +345,8 @@ class QualityService:
         if success and score is not None:
             try:
                 self._save_one(score, item["data_date"], duration)
-            except OSError as exc:
+            except (OSError, ValueError) as exc:
+                # ValueError：落盘 JSON 含 NaN 等非法数值（allow_nan=False）
                 logger.exception("评分落盘失败 %s", code)
                 success, error = False, f"评分结果保存失败: {exc}"
         finished = _now()
