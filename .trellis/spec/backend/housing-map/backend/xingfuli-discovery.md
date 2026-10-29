@@ -64,7 +64,7 @@
 - `registry.auto_associate` 的通用相似度分支会把分区变体绑上去，幸福里来源必须带 `auto_association_disabled` 并走本契约的证据判断。
 - 人工决定在写入前重查（见 `xingfuli_sources._human_veto`）：拒绝对、准入锁、审核锁、来源已有其他有效关联。
   注册表的“同名异址”自动否决对幸福里不适用（地址不在 `address` 字段），由本契约的地址或位置证据判断。
-- 自动发现**不**碰人工处理过的小区（`rejected` 或已有有效来源）；人工点“探查”是显式重新处理，
+- 自动发现**不**碰人工处理过租金来源的小区（`rejected` 关联的来源为 `fang`/`xingfuli`，或已有有效来源）；高德、透明售房网、法拍来源的解绑/拒绝不属于租金决定，不得排除租金匹配或阻止绑定。统一使用 `providers.rejected_rental_communities(db)`，通过 `rejected.rid = sources.id` 判断来源类型，不能仅按 `rejected.cid` 全局屏蔽小区。人工点“探查”是显式重新处理，
   可以重新关联被解除的来源，但被拒绝的那一对仍然拒绝。
 
 ### 请求面
@@ -156,6 +156,8 @@ Good：首通道完整、唯一强候选，1搜索+1主页+2核验，共4请求�
 
 ### Tests Required
 `test_matching_speed.py`覆盖6→4请求、唯一/竞争/截断、缓存有效空/过期/损坏/输入变化、失败不缓存、强制进程退出、恢复刷新入口/双核验、预算、模式及API、启动恢复不扩队、累计请求与功能关闭；原probe/split/discovery/source套件继续执行。前端directory-flow验证两个mode的点击、空增量/运行/租金更新互斥，position-status断言限定高德任务行，不能误判租金说明。
+
+拒绝来源隔离回归：`test_matching_speed.py` 验证高德解绑后 full/incremental 均重新入队且成功绑定，原高德拒绝记录仍保留；Fang/Xingfuli 解绑后仍不入队且绑定被拒绝。`test_rental_xingfuli_sources.py` 验证自动发现也能为有高德解绑历史的小区绑定来源。
 
 ### Wrong vs Correct
 ```python

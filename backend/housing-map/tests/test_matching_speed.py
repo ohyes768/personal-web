@@ -16,6 +16,47 @@ def strong():
                          homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
 
 
+@pytest.mark.parametrize('mode', ['full', 'incremental'])
+def test_unlinked_amap_does_not_exclude_or_veto_rental_matching(tmp_path, mode):
+    reg = setup(tmp_path)
+    record = reg.ingest(dict(source='amap', source_kind='poi', source_id='old-poi',
+                             name='测试花园', district='滨江', address='测试路1号'))
+    reg.associate(record['id'], 'c1')
+    reg.unlink(record['id'])
+    fake = strong()
+    svc = SourceMatchingService(reg, directory=tmp_path / 'rentals',
+                                discovery_factory=lambda **kw: fake, delay=0)
+    svc.start(mode=mode)
+    svc._thread.join(5)
+    state = svc.status()
+    assert not state['running']
+    assert state['processed'] == state['total'] == 1
+    assert state['association']['matched'] == 1
+    with reg.db() as db:
+        assert db.execute('SELECT 1 FROM rejected WHERE rid=? AND cid=?',
+                          (record['id'], 'c1')).fetchone()
+    assert next(s for s in reg.sources() if s['id'] == record['id'])['community_id'] is None
+
+
+@pytest.mark.parametrize('provider', ['fang', 'xingfuli'])
+def test_unlinked_rental_source_still_excludes_batch_and_vetoes_binding(tmp_path, provider):
+    from src.services.rental_reference.xingfuli_sources import protected, bind_source
+    reg = setup(tmp_path)
+    record = reg.ingest(dict(source=provider, source_id='12345', name='测试花园',
+                             district='滨江', address='测试路1号'))
+    reg.associate(record['id'], 'c1')
+    reg.unlink(record['id'])
+    fake = strong()
+    svc = SourceMatchingService(reg, directory=tmp_path / 'rentals',
+                                discovery_factory=lambda **kw: fake, delay=0)
+    assert svc._targets('full') == svc._targets('incremental') == []
+    assert protected(reg, 'c1')
+    with pytest.raises(ValueError, match='人工已解除或拒绝'):
+        bind_source(reg, reg.communities()[0], homepage(), seed=SEED,
+                    method='auto', evidence=['测试'])
+    assert not any(s['source'] == 'xingfuli' and s['status'] == 'matched' for s in reg.sources())
+
+
 def test_complete_unique_channel_stops_search_but_verifies_both_owners(tmp_path):
     reg = setup(tmp_path)
     fake = strong()

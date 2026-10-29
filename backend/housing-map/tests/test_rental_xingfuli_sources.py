@@ -71,6 +71,20 @@ def test_exact_name_and_matching_place_binds(tmp_path):
     assert source['source_id'] == TOTAL_ID and source['seed_listing_id'] == SEED
 
 
+def test_automatic_discovery_ignores_unrelated_source_unlinks(tmp_path):
+    registry = setup(tmp_path)
+    record = registry.ingest(dict(source='amap', source_kind='poi', source_id='old-poi',
+                                  name='测试花园', district='滨江', address='测试路1号'))
+    registry.associate(record['id'], 'c1')
+    registry.unlink(record['id'])
+    fake = FakeDiscovery(
+        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
+        homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    report = auto_discover(registry, fake, registry.communities())
+    assert report['matched'] == 1
+    assert any(s['source'] == 'xingfuli' and s['status'] == 'matched' for s in registry.sources())
+
+
 def test_a_position_match_binds_although_the_address_wording_differs(tmp_path):
     """The platform writes its own address; the position decides."""
     registry = setup(tmp_path, address='浙江省杭州市滨江区测试路1号')

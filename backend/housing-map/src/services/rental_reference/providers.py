@@ -3,6 +3,13 @@
 RENTAL_PROVIDERS = frozenset({'fang', 'xingfuli'})
 
 
+def rejected_rental_communities(db):
+    """Keep unrelated source unlinks out of rental-source vetoes."""
+    return {row[0] for row in db.execute(
+        "SELECT DISTINCT r.cid FROM rejected r JOIN sources s ON s.id=r.rid "
+        "WHERE s.source IN ('fang','xingfuli')")}
+
+
 def active_sources(registry, *, xingfuli_only=False):
     selected = {}
     for row in registry.sources():

@@ -12,7 +12,7 @@ from src.services.community_registry import now
 from src.services.rental_reference.association import eligible_communities, read_review
 from src.services.rental_reference.probe import PREFIX as PROBE_PREFIX, ProbeService, read_state
 from src.services.rental_reference.association import PREFIX as REVIEW_PREFIX
-from src.services.rental_reference.providers import active_sources
+from src.services.rental_reference.providers import active_sources, rejected_rental_communities
 from src.services.rental_reference.refresh import RefreshAlreadyRunning, RefreshNotRunning
 from src.services.rental_reference.storage import _atomic_write_json
 from src.services.rental_reference.discovery_checkpoint import clear_checkpoint
@@ -86,7 +86,7 @@ class SourceMatchingService:
         communities, _ = eligible_communities(self.registry)
         selected = active_sources(self.registry, xingfuli_only=True)
         with self.registry.db() as db:
-            rejected = {row[0] for row in db.execute('SELECT cid FROM rejected')}
+            rejected = rejected_rental_communities(db)
             skipped = {row[0][len(REVIEW_PREFIX):] for row in db.execute(
                 'SELECT key,value FROM meta WHERE key LIKE ?', (REVIEW_PREFIX + '%',))
                 if json.loads(row[1]).get('decision') == 'skipped'}

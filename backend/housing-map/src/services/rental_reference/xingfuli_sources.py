@@ -12,6 +12,7 @@ import logging
 import math
 
 from src.services.community_registry import normalized, now
+from src.services.rental_reference.providers import rejected_rental_communities
 from src.services.xingfuli_discovery import address_district, phase_of
 from src.services.xingfuli_rentals import list_url
 
@@ -126,7 +127,7 @@ def _human_veto(registry, community_id, record, *, allow_reprocessed=False):
             if db.execute('SELECT 1 FROM rejected WHERE rid=? AND cid=?',
                           (record['id'], community_id)).fetchone():
                 return '人工已拒绝该来源与该小区的关联'
-            if db.execute('SELECT 1 FROM rejected WHERE cid=?', (community_id,)).fetchone():
+            if community_id in rejected_rental_communities(db):
                 return '人工已解除或拒绝该小区的租金来源'
         admission = db.execute('SELECT payload FROM community_admission WHERE cid=?', (community_id,)).fetchone()
         if admission:
@@ -176,7 +177,7 @@ def bind_source(registry, community, candidate, *, seed, method='manual', eviden
 def protected(registry, community_id):
     """True when a human already decided this community's rental source."""
     with registry.db() as db:
-        if db.execute('SELECT 1 FROM rejected WHERE cid=?', (community_id,)).fetchone():
+        if community_id in rejected_rental_communities(db):
             return True
         row = db.execute("SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source IN ('fang','xingfuli')",
                          (community_id,)).fetchone()
