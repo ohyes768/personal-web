@@ -35,6 +35,6 @@
 - 临时服务已停止，viewport已恢复；生成HTML被research/.gitignore忽略，可重新运行脚本复现。
 
 ## 交付边界
-未提交、未部署、未改线上数据、未启动匹配/租金批次。followup任务R2已标明由本任务承接，不重复开发。真实小批性能/命中差异报告与生产默认构建验收仍在上线前执行；迁移、全量上线归followup任务。
+功能已于 127d7f15 提交；未部署、未改线上数据、未启动匹配/租金批次。followup任务R2已标明由本任务承接，不重复开发。真实小批性能/命中差异报告与生产默认构建验收仍在上线前执行；迁移、全量上线归followup任务。
 
 回退开关：`HOUSING_XINGFULI_EARLY_STOP=0`和`HOUSING_XINGFULI_DISCOVERY_CACHE=0`。回退不覆盖来源、人工决定或整库。
