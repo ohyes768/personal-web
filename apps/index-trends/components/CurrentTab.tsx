@@ -18,6 +18,7 @@ interface CurrentTabProps {
   selected: CurrentModel;
   onSelect: (model: CurrentModel) => void;
   onGoHistory: () => void;
+  reloadKey: number;
 }
 
 interface TabState {
@@ -27,7 +28,7 @@ interface TabState {
   loading: boolean;
 }
 
-export default function CurrentTab({ selected, onSelect, onGoHistory }: CurrentTabProps) {
+export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey }: CurrentTabProps) {
   const [state, setState] = useState<TabState>({
     status: null,
     chart: null,
@@ -59,7 +60,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory }: CurrentT
     return () => {
       cancelled = true;
     };
-  }, [selected, retryTick]);
+  }, [selected, retryTick, reloadKey]);
 
   const model: ModelInfo | null =
     state.chart?.model ?? state.status?.model ?? null;

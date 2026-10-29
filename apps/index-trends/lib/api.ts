@@ -3,12 +3,13 @@ import type {
   CurrentStatus,
   HistoryOverview,
   IndicesOverview,
+  RefreshResult,
 } from "./types";
 
 const BASE = "/api/index-trends";
 
-async function fetchJSON<T>(path: string): Promise<T> {
-  const resp = await fetch(`${BASE}${path}`);
+async function fetchJSON<T>(path: string, init?: RequestInit): Promise<T> {
+  const resp = await fetch(`${BASE}${path}`, init);
   if (!resp.ok) {
     const body = await resp.json().catch(() => null);
     const detail =
@@ -29,4 +30,5 @@ export const api = {
     ),
   status: (model: "trailing_120m" | "since_inception") =>
     fetchJSON<CurrentStatus>(`/indices/000300/status?model=${model}`),
+  refresh: () => fetchJSON<RefreshResult>("/refresh", { method: "POST" }),
 };

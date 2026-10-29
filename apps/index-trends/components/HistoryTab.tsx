@@ -10,6 +10,7 @@ interface HistoryTabProps {
   overview: HistoryOverview;
   selected: string;
   onSelect: (stableId: string) => void;
+  reloadKey: number;
 }
 
 interface LoadState {
@@ -18,7 +19,7 @@ interface LoadState {
   loading: boolean;
 }
 
-export default function HistoryTab({ overview, selected, onSelect }: HistoryTabProps) {
+export default function HistoryTab({ overview, selected, onSelect, reloadKey }: HistoryTabProps) {
   const [state, setState] = useState<LoadState>({
     chart: null,
     error: null,
@@ -51,7 +52,7 @@ export default function HistoryTab({ overview, selected, onSelect }: HistoryTabP
     return () => {
       cancelled = true;
     };
-  }, [currentMeta?.model_id, retryTick]);
+  }, [currentMeta?.model_id, retryTick, reloadKey]);
 
   const scopeText = (() => {
     if (!currentMeta) return "";

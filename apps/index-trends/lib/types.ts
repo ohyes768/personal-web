@@ -22,6 +22,14 @@ export interface ModelInfo {
   coefficients: Coefficients;
 }
 
+export interface RefreshResult {
+  success: boolean;
+  message: string;
+  data_cutoff_month: string | null;
+  new_models: string[] | null;
+  monthly_count: number | null;
+}
+
 export interface DataStatus {
   state: "ok" | "stale" | "empty";
   data_cutoff_month: string | null;

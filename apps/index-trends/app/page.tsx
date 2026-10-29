@@ -46,7 +46,10 @@ function PageInner() {
 
   const [overview, setOverview] = useState<HistoryOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
-  const [tick, setTick] = useState(0); // 重试用
+  const [tick, setTick] = useState(0); // 重试与「获取最新」成功后重载
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshNote, setRefreshNote] = useState<string | null>(null);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
 
   // 历史窗口默认取第一个；默认值不写进 URL，保持地址干净
   const selectedWindow =
@@ -86,16 +89,42 @@ function PageInner() {
     };
   }, [tick]);
 
+  const onRefresh = useCallback(() => {
+    setRefreshing(true);
+    setRefreshNote(null);
+    setRefreshError(null);
+    api
+      .refresh()
+      .then((result) => {
+        setRefreshNote(result.message);
+        setTick((t) => t + 1);
+      })
+      .catch((err: unknown) => {
+        setRefreshError(err instanceof Error ? err.message : "获取失败");
+      })
+      .finally(() => setRefreshing(false));
+  }, []);
+
   return (
     <main>
       <header className="site">
-        <div className="eyebrow">宽基趋势观察 · INDEX TRENDS</div>
-        <h1>沪深300 · 线性回归通道</h1>
+        <div className="site-top">
+          <div>
+            <div className="eyebrow">宽基趋势观察 · INDEX TRENDS</div>
+            <h1>沪深300 · 线性回归通道</h1>
+          </div>
+          <button type="button" className="refresh" disabled={refreshing} onClick={onRefresh}>
+            {refreshing ? "正在获取…" : "获取最新"}
+          </button>
+        </div>
         <p className="subtitle">
           月收盘拟合的长期趋势通道，回看它在历史上的表现，观察当前指数位置。
           描述相对趋势的位置，不构成买卖建议。
         </p>
       </header>
+
+      {refreshNote && <div className="message">{refreshNote}</div>}
+      {refreshError && <div className="message error">获取失败：{refreshError}</div>}
 
       <nav className="tabs" aria-label="页面切换">
         <button aria-current={tab === "history"} onClick={() => setQuery({ tab: "history", window: windowParam })}>
@@ -123,6 +152,7 @@ function PageInner() {
           <HistoryTab
             overview={overview}
             selected={selectedWindow}
+            reloadKey={tick}
             onSelect={(stableId) => setQuery({ tab: "history", window: stableId })}
           />
         ) : (
@@ -132,6 +162,7 @@ function PageInner() {
       {tab === "current" && (
         <CurrentTab
           selected={modelParam}
+          reloadKey={tick}
           onSelect={(model) => setQuery({ tab: "current", model })}
           onGoHistory={() => setQuery({ tab: "history", window: "" })}
         />
