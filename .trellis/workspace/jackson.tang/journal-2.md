@@ -182,3 +182,38 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 55: 租金两个按钮收进同一区块并收尾任务
+
+**Date**: 2026-10-29
+**Task**: 租金两个按钮收进同一区块并收尾任务
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+housing-map：采集任务弹窗里「匹配租金来源」与「更新租金数据」收进同一「租金流程」区块（.directory-task-group），桌面与 390px 实测无溢出；前端 171 项测试、tsc、lint 通过。10-29-housing-rental-source-unification 归档，未完成项（R1 剩余验收、R2 通道级断点、R3 独立迁移工具、R4 全量上线）转入新任务 10-29-housing-rental-source-followup。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f18938` | (see git log) |
+| `98e3ddc` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
