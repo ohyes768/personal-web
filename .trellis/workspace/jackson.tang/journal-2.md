@@ -188,7 +188,7 @@
 
 **Date**: 2026-10-29
 **Task**: 租金两个按钮收进同一区块并收尾任务
-**Package**: backend/douyin-processor
+**Package**: backend/housing-map
 **Branch**: `master`
 
 ### Summary

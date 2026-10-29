@@ -124,4 +124,8 @@ packages:
     path: backend/kids-catalog
   apps/kids-catalog:
     path: apps/kids-catalog
+  backend/housing-map:
+    path: backend/housing-map
+  apps/housing-map:
+    path: apps/housing-map
 default_package: backend/douyin-processor
