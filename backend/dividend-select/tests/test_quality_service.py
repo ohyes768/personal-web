@@ -126,6 +126,26 @@ class TestPayloadAndPrompt:
 
 
 class TestSubmitAnalysis:
+    def test_analysis_duration_is_measured_and_persisted(self, tmp_path, monkeypatch):
+        from src.services import quality_service
+
+        clock = [100.0]
+        monkeypatch.setattr(quality_service, "monotonic", lambda: clock[0], raising=False)
+
+        def submit_fn(cfg, prompt, key):
+            clock[0] += 2.0
+            return "run-1"
+
+        def poll_fn(cfg, run_id):
+            clock[0] += 153.25
+            return fake_output("000001", "样本")
+
+        service, job = run_service(tmp_path, ["000001"], {"000001": stock()}, submit_fn, poll_fn)
+        assert job["status"] == "succeeded"
+        # Read a fresh instance to verify persistence, not just in-memory state.
+        saved = QualityService(service.quality_path).get_all()["000001"]
+        assert saved["analysis_duration_seconds"] == 155.25
+
     def test_two_stocks_complete(self, tmp_path):
         submitted, polls = [], []
         captured = {}

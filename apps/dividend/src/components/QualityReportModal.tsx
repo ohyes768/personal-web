@@ -10,6 +10,7 @@ import remarkBreaks from 'remark-breaks';
 import {
   QUALITY_DIMENSION_LABELS,
   QUALITY_DIMENSION_ORDER,
+  formatAnalysisDuration,
   starBadgeClass,
   type QualityDimensionKey,
   type QualityScore,
@@ -63,7 +64,7 @@ export function QualityReportModal({ score, onClose, onReanalyze, analyzing = fa
               </span>
             : <span className="text-2xl text-ink-muted">未评级</span>}
           {score.boundary && <span className="text-sm text-amber-700" title="距档位边界不足 0.25 分">⚠️ {score.boundary}</span>}
-          <span className="text-xs text-ink-muted">数据日期 {score.data_date} · 评分时间 {score.scored_at}</span>
+          <span className="text-xs text-ink-muted">数据日期 {score.data_date} · 评分时间 {score.scored_at} · 分析耗时 {formatAnalysisDuration(score.analysis_duration_seconds)}</span>
         </div>
 
         <p className="text-sm text-ink">{score.summary}</p>

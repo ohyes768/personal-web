@@ -31,9 +31,22 @@ export interface QualityScore {
   report_md: string;
   scored_at: string;
   data_date: string;
+  /** 后端实测的单股 Hermes 提交与轮询耗时；旧结果未记录 */
+  analysis_duration_seconds?: number | null;
 }
 
 export type QualityJob = RefreshJob & { kind: 'quality'; per_code?: QualityPerCodeMap };
+
+export function formatAnalysisDuration(seconds: QualityScore['analysis_duration_seconds']): string {
+  if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '未记录';
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const remainder = total % 60;
+  if (hours > 0) return `${hours}小时${minutes}分${remainder}秒`;
+  if (minutes > 0) return `${minutes}分${remainder}秒`;
+  return `${remainder}秒`;
+}
 
 /** 逐股实时状态（后端内存态，服务重启清空；completed 且未落盘视为失败） */
 export type QualityPerCodeState = 'queued' | 'running' | 'completed' | 'failed';

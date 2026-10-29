@@ -79,8 +79,25 @@ Bulk analysis reuses `RefreshJobManager` with `kind='quality'` (included in
 `_prune` kinds). Each stock is one worker thread bounded by a semaphore
 (`HERMES_MAX_CONCURRENT`, default 4); a failed poll/parse marks only that
 stock failed. Scores persist to `data/quality_scores.json`
-(`{code: {…score, scored_at, data_date}}`), merged under a file lock and
+(`{code: {…score, scored_at, data_date, analysis_duration_seconds}}`), merged under a file lock and
 written via `atomic_write` after each stock completes.
+
+### Analysis duration (2026-10-29)
+- Scope / signature: `QualityService._save_one(score, data_date,
+  analysis_duration_seconds)` persists backend-owned metadata; `GET /quality`
+  passes it through to the report modal. The skill JSON is unchanged.
+- Contract: seconds rounded to 3 decimals, measured with `monotonic()` per
+  stock from immediately before submit until poll returns. Excludes local
+  semaphore queueing, parsing, saving and waiting for other stocks. A reused
+  Hermes run measures this request's retrieval time, not the original run.
+- Validation / cases: `155.25` displays `分析耗时 2分35秒`, `3600` displays
+  `1小时0分0秒`, and zero displays `0秒`. Missing, null or invalid durations
+  display `分析耗时 未记录`; historical records are never backfilled.
+- Tests: `test_analysis_duration_is_measured_and_persisted` verifies submit
+  plus poll duration survives a fresh service read; screening Playwright
+  duration cases verify the report UI and legacy compatibility.
+- Wrong: subtract `data_date` from `scored_at` or let the model invent timing.
+  Correct: measure the individual request in the backend and save numeric seconds.
 
 Hermes config comes from env only: `HERMES_BASE_URL`, `HERMES_API_KEY`,
 `HERMES_PROFILE` (default `ohyes768`), `HERMES_POLL_INTERVAL` (30s),

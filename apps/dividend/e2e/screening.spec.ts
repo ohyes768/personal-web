@@ -10,7 +10,7 @@ const stock = {
   previous_quarter_label: '2026Q1', previous_quarter_yoy_pct: 2,
 };
 
-async function setup(page: Page, initiallyFavorite = false) {
+async function setup(page: Page, initiallyFavorite = false, analysisDuration?: number | null) {
   let codes: string[] = initiallyFavorite ? [stock.code] : [];
   let batchAttempts = 0;
   await page.route('**/api/dividend/**', async route => {
@@ -32,7 +32,7 @@ async function setup(page: Page, initiallyFavorite = false) {
     else if (url.pathname.endsWith('/quality/analyze')) await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: 'running', total: 1, processed: 0, succeeded: 0, failed: 0, remaining: 1, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '' } });
     else if (url.pathname.includes('/quality/jobs/')) await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: 'running', total: 1, processed: 0, succeeded: 0, failed: 0, remaining: 1, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '' } });
     else if (url.pathname.endsWith('/quality')) await route.fulfill({ json: { total: 1, hermes_configured: true, scores: {
-      '000001': { code: '000001', name: '测试公司', dimensions: { business: 4, moat: 4, industry: 3, management: 3, financial: 5 }, weighted_score: 3.7, stars: 3, boundary: null, summary: '示例摘要', risks: [], watch_points: [], report_md: '## 评级报告\n\n示例正文。', scored_at: '2026-10-20 10:00', data_date: '2026-10-20' },
+      '000001': { code: '000001', name: '测试公司', dimensions: { business: 4, moat: 4, industry: 3, management: 3, financial: 5 }, weighted_score: 3.7, stars: 3, boundary: null, summary: '示例摘要', risks: [], watch_points: [], report_md: '## 评级报告\n\n示例正文。', scored_at: '2026-10-20 10:00', data_date: '2026-10-20', analysis_duration_seconds: analysisDuration },
     } } });
     else if (url.pathname.endsWith('/favorites')) await route.fulfill({ json: favorites() });
     else if (url.pathname.endsWith('/stocks')) await route.fulfill({ json: { items: url.searchParams.get('min_yield') === '0' ? [stock] : [], total: 0 } });
@@ -61,6 +61,21 @@ test('screening remains accessible with no stocks in old filter, allows retrying
   await expect(page.getByRole('heading', { name: '测试公司（000001）', exact: true })).toBeVisible();
   await expect(page.getByText('一个季度扣非利润同比下降，建议持续关注')).toBeVisible();
 });
+
+for (const [duration, label] of [
+  [155.25, '2分35秒'],
+  [3600, '1小时0分0秒'],
+  [0, '0秒'],
+  [undefined, '未记录'],
+  [null, '未记录'],
+] as const) {
+  test(`rating report shows analysis duration: ${duration}`, async ({ page }) => {
+    await setup(page, false, duration);
+    await page.goto('/?tab=screening');
+    await page.getByRole('button', { name: '3.7', exact: true }).click();
+    await expect(page.getByText(`分析耗时 ${label}`, { exact: false })).toBeVisible();
+  });
+}
 
 test('conditions persist, query uses configured ROE and reset restores defaults', async ({ page }) => {
   await setup(page);

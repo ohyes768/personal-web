@@ -12,6 +12,7 @@ import re
 import threading
 from datetime import datetime
 from pathlib import Path
+from time import monotonic
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
@@ -195,9 +196,10 @@ class QualityService:
         except (OSError, ValueError):
             return {}
 
-    def _save_one(self, score: QualityScore, data_date: str) -> None:
+    def _save_one(self, score: QualityScore, data_date: str, analysis_duration_seconds: float) -> None:
         scored_at = datetime.now(ZoneInfo("Asia/Shanghai")).isoformat()
-        record = {**score.model_dump(), "scored_at": scored_at, "data_date": data_date}
+        record = {**score.model_dump(), "scored_at": scored_at, "data_date": data_date,
+                  "analysis_duration_seconds": analysis_duration_seconds}
         with self._file_lock:
             merged = self._read_all()
             merged[score.code] = record
@@ -248,6 +250,7 @@ class QualityService:
                     self._set_status(code, "queued")
             semaphore = threading.Semaphore(hermes_config.max_concurrent)
             results: dict[str, tuple[bool, Optional[QualityScore], str]] = {}
+            durations: dict[str, float] = {}
 
             def run_one(code: str) -> None:
                 payload = build_stock_payload(stocks[code])
@@ -255,8 +258,11 @@ class QualityService:
                 idempotency_key = f"quality-{code}-{data_date}"
                 self._set_status(code, "running")
                 try:
+                    started = monotonic()
                     run_id = submit_run_fn(hermes_config, prompt, idempotency_key)
                     output = poll_run_fn(hermes_config, run_id)
+                    # Local queueing, parsing and other stocks' runtime are excluded.
+                    durations[code] = round(monotonic() - started, 3)
                     score = parse_quality_output(output, code, stocks[code].name)
                 except HermesError as exc:
                     results[code] = (False, None, str(exc)[:300])
@@ -280,7 +286,7 @@ class QualityService:
                 success, score, error = results.get(code, (False, None, "内部错误：无结果"))
                 if success and score is not None:
                     try:
-                        self._save_one(score, data_date)
+                        self._save_one(score, data_date, durations[code])
                     except OSError as exc:
                         logger.exception("评分落盘失败 %s", code)
                         self._set_status(code, "failed", f"评分结果保存失败: {exc}")
