@@ -19,6 +19,28 @@ export interface Community {
   far_ratio?: number | null;      // 容积率, null=无数据
   greening_rate?: number | null;  // 绿化率 %, null=无数据
   nearest_subway?: { name: string; distance: number } | null; // 最近地铁站(直线距离,米)
+  market_state?: MarketState;   // 房源类型: 新房项目/二手房/未知。缺失或非法一律按 unknown 处理, 不得默认成二手房
+  project?: ProjectInfo | null; // 新房项目身份证据, 与 community_id 相互独立(项目 ID 不等于小区 ID)
+  position?: PositionInfo | null; // 位置来源与核验状态, 用于区分实心(已核验)与空心(待核验)
+}
+
+// 房源类型: 显式状态证据缺失时为 unknown, 前端不得用"零挂牌"之类的猜测替代
+export type MarketState = 'new_house' | 'second_hand' | 'unknown';
+
+// 新房项目身份: 只投影后端已核验的字段, 没有的项目资料一律 null, 不从文本猜测
+export interface ProjectInfo {
+  project_id: string;
+  project_name: string | null;
+  sale_status: string | null;   // 在售 / 尾盘 / 待售 / 售完
+  identity_url: string | null;  // 身份来源页, 售完项目仍保留但不据此判为新房
+  captured_at: string | null;
+}
+
+// 项目位置来源: 售楼处坐标不满足项目上图资格, 故此处只表达项目所在地
+export interface PositionInfo {
+  source: 'amap' | 'manual' | 'historical_amap' | null;
+  verified: boolean;            // true=已核验位置(实心), false=待核验(空心)
+  address: string | null;       // 实际项目所在地
 }
 
 export interface PriceInfo {

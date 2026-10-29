@@ -840,22 +840,54 @@ body {
 }
 
 @media (max-width: 768px) {
+  /* 窄屏: 控制面板改为覆盖式浮层。
+     原先是 position:relative 的全宽文档流块, 会把地图整体挤到面板下方,
+     且面板正好盖住地图上的小区标记, 导致标记点不到。浮层不占文档流,
+     收起时滑出视口, 地图保持可点。 */
   .control-panel {
-    position: relative;
-    right: 0;
-    top: 0;
-    width: 100%;
-    border-radius: 12px 12px 0 0;
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    top: auto;
+    width: min(320px, calc(100% - 16px));
+    max-height: 55vh;
+    overflow-y: auto;
+    border-radius: 12px;
   }
 
-  /* 移动端面板为文档流全宽布局, 收起把手不适用 */
+  .control-panel.collapsed {
+    transform: translateX(calc(100% + 16px));
+  }
+
+  /* 窄屏保留收起把手: 浮层收起后靠它再拉回来 */
   .panel-toggle {
-    display: none;
+    right: 8px;
+    bottom: 8px;
+    top: auto;
+    width: auto;
+    padding: 0 12px;
+    height: 36px;
+    border-radius: 8px;
+    border-right: 1px solid var(--border);
   }
 
   .map-container {
     height: auto;
     min-height: calc(100vh - 64px);
+  }
+
+  /* 窄屏: 切换条靠左上但收窄, 避免盖住地图中部的小区标记 */
+  .market-mode-dock {
+    left: 8px;
+    top: 8px;
+    right: 8px;
+    padding: 6px 8px;
+    transform: none;
+  }
+
+  /* 窄屏详情弹框几乎占满视口, 切换条让位, 关闭详情后自动回来 */
+  .market-mode-dock.with-detail {
+    display: none;
   }
 }
 /* 控制面板折叠区 (评分权重等低频设置) */
@@ -1611,3 +1643,115 @@ body {
 }
 
 .boundary-back:hover { color: var(--text-primary); }
+
+/* ——————————————————————————————————————————————————————————— */
+/* 新房项目详情与附近二手房比较 (nh- 前缀, 避免与既有 class 冲突)   */
+/* ——————————————————————————————————————————————————————————— */
+
+/* 房源类型切换常驻条: 独立于可折叠控制面板。
+   窄屏下面板默认收起, 若切换也藏进去, 用户就无从切换房源类型。
+   位置避开左侧详情弹框(560px 全高)与右侧控制面板, 落在地图区顶部居中。 */
+.market-mode-dock {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 16px;
+  z-index: 320;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.08);
+}
+
+/* 详情弹框打开时把切换条推到弹框右侧, 不压在弹框上 */
+.market-mode-dock.with-detail {
+  left: calc(560px + 24px);
+  transform: none;
+}
+
+.nh-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: #4B3FA8;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* 项目事实格: 2 列, 允许长文本换行 (地址/来源说明可能较长) */
+.nh-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.nh-fact-value { font-size: 12px; font-weight: 600; white-space: normal; }
+
+/* 明细行: 标签 + 值, 值允许换行 */
+.nh-detail-list { margin: 12px 0; display: flex; flex-direction: column; gap: 6px; }
+.nh-detail-row { display: flex; gap: 10px; font-size: 12px; line-height: 1.6; }
+.nh-detail-label { flex: 0 0 72px; color: var(--text-muted); }
+.nh-detail-value { flex: 1; min-width: 0; color: var(--text-primary); word-break: break-word; }
+
+.nh-note { color: var(--text-muted); font-size: 12px; line-height: 1.7; margin: 8px 0; }
+.nh-locate-btn { padding: 6px 12px; font-size: 12px; margin-bottom: 10px; }
+
+/* 就近比较区块 */
+.nh-nearby-section { border-top: 1px solid var(--border); padding-top: 14px; margin-top: 16px; }
+.nh-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; }
+.nh-section-head .panel-title { margin-bottom: 0; }
+.nh-nearby-toggle { padding: 5px 12px; font-size: 12px; }
+
+.nh-nearby-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 10px; }
+.nh-nearby-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.nh-nearby-radius { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
+
+.nh-nearby-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.nh-nearby-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+.nh-nearby-item:hover { border-color: var(--accent-warm); }
+.nh-nearby-item:focus-visible { outline: 2px solid var(--accent-warm); outline-offset: 1px; }
+.nh-nearby-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.nh-nearby-meta { display: block; margin-top: 2px; font-size: 11px; font-weight: 400; color: var(--text-muted); }
+.nh-nearby-price { font-size: 12px; font-weight: 600; color: var(--text-primary); white-space: nowrap; }
+.nh-nearby-distance { font-size: 11px; color: var(--text-muted); white-space: nowrap; min-width: 56px; text-align: right; }
+
+/* 比较锚点提示条: 选中附近二手房后仍能找回新房项目 */
+.nh-compare-bar {
+  position: absolute;
+  top: 62px;
+  left: 50%;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 10px 7px 14px;
+  transform: translateX(-50%);
+  border: 1px solid var(--accent-warm);
+  border-radius: 999px;
+  background: var(--bg-surface);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  color: var(--text-primary);
+  font-size: 13px;
+  max-width: calc(100% - 32px);
+}
+.nh-compare-bar button { padding: 3px 7px; border: 0; border-radius: 999px; background: var(--bg-elevated); color: var(--text-muted); cursor: pointer; font: inherit; font-size: 11px; white-space: nowrap; }
+.nh-compare-bar button:hover { color: var(--text-primary); }
+
+@media (max-width: 768px) {
+  .nh-nearby-item { flex-wrap: wrap; }
+  .nh-nearby-price { order: 3; }
+  .nh-compare-bar { top: 62px; max-width: calc(100% - 32px); }
+}

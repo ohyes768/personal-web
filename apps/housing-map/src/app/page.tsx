@@ -4,7 +4,18 @@ import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties, 
 import type { Community, MapPOI, MarketReference, SchoolLevel, MapAdmissionStats } from '@/lib/types';
 import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, formatAdmissionStats, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
 import { isInScope } from '@/lib/binjiang-boundary';
+import {
+  isNewHouse,
+  isSecondHand,
+  marketStateOf,
+  visibleCommunities,
+  type MarketMode,
+  type PriceMode,
+} from '@/lib/market-map';
 import BinjiangMap from '@/components/map/BinjiangMap';
+import { NEW_HOUSE_COLOR } from '@/components/map/NewHouseLayer';
+import MarketModeFilter from '@/components/community/MarketModeFilter';
+import NewHouseDetail from '@/components/community/NewHouseDetail';
 import CommunityDetailTabs from '@/components/community/CommunityDetailTabs';
 import { BoundaryWorkflowPreview, BoundaryWorkflowSection, type BoundaryPanelView, type BoundaryWorkflowActions } from '@/components/community/BoundaryWorkflowPanel';
 import { useBoundaryWorkflow } from '@/lib/use-boundary-workflow';
@@ -70,116 +81,29 @@ function fmtCompact(value: number | null): string {
   return value >= 10000 ? `${(value / 10000).toFixed(1)}万` : String(value);
 }
 
-// 小区弹窗组件
-function CommunityPopup({
-  community,
-  onClose,
-  auctionCount,
-  auctionRefreshVersion,
-  boundaryContent,
-}: {
-  community: Community;
-  onClose: () => void;
-  auctionCount?: number;
-  auctionRefreshVersion: number;
-  boundaryContent?: ReactNode;
-}) {
-  const poiGroups = community.pois.reduce((acc, poi) => {
+// 按 POI 类型分组并按距离排序: 磁贴与评分明细共用同一份数据
+function sortPoisByType(community: Community): Partial<Record<POIType, Community['pois']>> {
+  const groups = community.pois.reduce((acc, poi) => {
     const type = poi.type as POIType;
     if (!acc[type]) acc[type] = [];
     acc[type].push(poi);
     return acc;
-  }, {} as Record<POIType, typeof community.pois>);
+  }, {} as Record<POIType, Community['pois']>);
 
-  // 各类按距离排序 (取"最近"用)
-  const poiSorted: Partial<Record<POIType, typeof community.pois>> = {};
-  for (const type of Object.keys(poiGroups) as POIType[]) {
-    poiSorted[type] = [...poiGroups[type]].sort((a, b) => a.distance - b.distance);
+  const sorted: Partial<Record<POIType, Community['pois']>> = {};
+  for (const type of Object.keys(groups) as POIType[]) {
+    sorted[type] = [...groups[type]].sort((a, b) => a.distance - b.distance);
   }
+  return sorted;
+}
 
+// 周边配套磁贴: 二手房与新房详情共用同一套渲染, 避免两处各写一套
+function CommunityPoiTiles({ community }: { community: Community }) {
   const [expandedPOI, setExpandedPOI] = useState<POIType | null>(null);
-  // 每张评分卡独立翻转 (互不影响), Set 记录当前翻开的维度
-  // 切换小区时收起展开的分类与翻开的评分卡: 由父组件以 community_id 作为 key 重挂载本组件实现
-  const [flippedScores, setFlippedScores] = useState<Set<ScoreCardKey>>(new Set());
-
-  const toggleScoreCard = useCallback((key: ScoreCardKey) => {
-    setFlippedScores(prev => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  }, []);
+  const poiSorted = sortPoisByType(community);
 
   return (
-    <div className="community-popup open animate-fade-in">
-      <div className="popup-header">
-        <div>
-          <span className="popup-title">{community.community_name}</span>
-          <span className="popup-subdistrict">{community.subdistrict}</span>
-        </div>
-        <div className="popup-score">
-          <span className="score-badge">{community.score.total_score}</span>
-          <span className="score-label">综合评分</span>
-        </div>
-        <button className="close-btn" onClick={onClose}>×</button>
-      </div>
-
-      <CommunityDetailTabs communityId={community.community_id} auctionCount={auctionCount} boundary={boundaryContent}>
-      <p className="auction-meta">普通房价快照：{community.price.snapshot_date || '未知'} · 均价单位：元/㎡</p>
-      {/* 普通房价指标与最近法拍参考 */}
-      <div className="popup-price-row">
-        <div className="stat-cell">
-          <div className="stat-label">挂牌均价</div>
-          <div className="stat-value">{fmtCompact(community.price.listing_avg_price)}</div>
-        </div>
-        <div className="stat-cell">
-          <div className="stat-label">签约均价</div>
-          <div className="stat-value">{fmtCompact(community.price.deal_avg_price)}</div>
-        </div>
-        <div className="stat-cell">
-          <div className="stat-label">在售套数</div>
-          <div className="stat-value">{community.price.listing_count ?? '-'}</div>
-        </div>
-        <div className="stat-cell">
-          <div className="stat-label">近月签约</div>
-          <div className="stat-value">{community.price.deal_count ?? '-'}</div>
-        </div>
-        <LatestAuctionCard communityId={community.community_id} refreshVersion={auctionRefreshVersion} />
-      </div>
-
-      {/* 评分维度 2×2 大卡: 可点击翻转看明细, 宽度翻倍解决明细显示不下 */}
-      <div className="score-grid">
-        <ScoreCard
-          label="区位" icon="📍"
-          score={community.score.location_score}
-          detail={<SubwayDetail subway={community.nearest_subway} />}
-          flipped={flippedScores.has('location')}
-          onFlip={() => toggleScoreCard('location')}
-        />
-        <ScoreCard
-          label="配套" icon="🛒"
-          score={community.score.amenity_score}
-          detail={<AmenityDetail pois={poiSorted} />}
-          flipped={flippedScores.has('amenity')}
-          onFlip={() => toggleScoreCard('amenity')}
-        />
-        <ScoreCard
-          label="产品" icon="🏢"
-          score={community.score.product_score}
-          detail={<ProductDetail c={community} />}
-          flipped={flippedScores.has('product')}
-          onFlip={() => toggleScoreCard('product')}
-        />
-        <ScoreCard
-          label="市场" icon="💹"
-          score={community.score.market_score}
-          detail={<MarketDetail c={community} />}
-          flipped={flippedScores.has('market')}
-          onFlip={() => toggleScoreCard('market')}
-        />
-      </div>
-
+    <>
       <div className="panel-title">周边配套（1500m内）</div>
       {community.pois.length > 0 ? (
         <>
@@ -226,6 +150,108 @@ function CommunityPopup({
           暂无周边设施数据
         </div>
       )}
+    </>
+  );
+}
+
+// 小区弹窗组件: 只用于二手房, 新房走 NewHouseDetail (项目证据一套 UI)
+function CommunityPopup({
+  community,
+  onClose,
+  auctionCount,
+  auctionRefreshVersion,
+  boundaryContent,
+}: {
+  community: Community;
+  onClose: () => void;
+  auctionCount?: number;
+  auctionRefreshVersion: number;
+  boundaryContent?: ReactNode;
+}) {
+  // 每张评分卡独立翻转 (互不影响), Set 记录当前翻开的维度
+  // 切换小区时收起展开的分类与翻开的评分卡: 由父组件以 community_id 作为 key 重挂载本组件实现
+  const [flippedScores, setFlippedScores] = useState<Set<ScoreCardKey>>(new Set());
+  const poiSorted = sortPoisByType(community);
+
+  const toggleScoreCard = useCallback((key: ScoreCardKey) => {
+    setFlippedScores(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+
+  return (
+    <div className="community-popup open animate-fade-in">
+      <div className="popup-header">
+        <div>
+          <span className="popup-title">{community.community_name}</span>
+          <span className="popup-subdistrict">{community.subdistrict}</span>
+        </div>
+        <div className="popup-score">
+          <span className="score-badge">{community.score.total_score}</span>
+          <span className="score-label">综合评分</span>
+        </div>
+        <button className="close-btn" onClick={onClose}>×</button>
+      </div>
+
+      <CommunityDetailTabs communityId={community.community_id} auctionCount={auctionCount} boundary={boundaryContent}>
+      <p className="auction-meta">普通房价快照：{community.price.snapshot_date || '未知'} · 均价单位：元/㎡</p>
+        {/* 普通房价指标与最近法拍参考 */}
+        <div className="popup-price-row">
+          <div className="stat-cell">
+            <div className="stat-label">挂牌均价</div>
+            <div className="stat-value">{fmtCompact(community.price.listing_avg_price)}</div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-label">签约均价</div>
+            <div className="stat-value">{fmtCompact(community.price.deal_avg_price)}</div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-label">在售套数</div>
+            <div className="stat-value">{community.price.listing_count ?? '-'}</div>
+          </div>
+          <div className="stat-cell">
+            <div className="stat-label">近月签约</div>
+            <div className="stat-value">{community.price.deal_count ?? '-'}</div>
+          </div>
+          <LatestAuctionCard communityId={community.community_id} refreshVersion={auctionRefreshVersion} />
+        </div>
+
+        {/* 评分维度 2×2 大卡: 可点击翻转看明细, 宽度翻倍解决明细显示不下 */}
+        <div className="score-grid">
+          <ScoreCard
+            label="区位" icon="📍"
+            score={community.score.location_score}
+            detail={<SubwayDetail subway={community.nearest_subway} />}
+            flipped={flippedScores.has('location')}
+            onFlip={() => toggleScoreCard('location')}
+          />
+          <ScoreCard
+            label="配套" icon="🛒"
+            score={community.score.amenity_score}
+            detail={<AmenityDetail pois={poiSorted} />}
+            flipped={flippedScores.has('amenity')}
+            onFlip={() => toggleScoreCard('amenity')}
+          />
+          <ScoreCard
+            label="产品" icon="🏢"
+            score={community.score.product_score}
+            detail={<ProductDetail c={community} />}
+            flipped={flippedScores.has('product')}
+            onFlip={() => toggleScoreCard('product')}
+          />
+          <ScoreCard
+            label="市场" icon="💹"
+            score={community.score.market_score}
+            detail={<MarketDetail c={community} />}
+            flipped={flippedScores.has('market')}
+            onFlip={() => toggleScoreCard('market')}
+          />
+        </div>
+
+      <CommunityPoiTiles community={community} />
       </CommunityDetailTabs>
     </div>
   );
@@ -272,8 +298,17 @@ export default function BinjiangMapPage() {
   const [propertyTypes, setPropertyTypes] = useState<Set<string>>(
     new Set(['住宅', '别墅', '排屋'])
   );
-  const [priceMode, setPriceMode] = useState<'all' | 'deal' | 'listing'>('all');
-  const [panelCollapsed, setPanelCollapsed] = useState(false);
+  const [priceMode, setPriceMode] = useState<PriceMode>('all');
+  // 房源类型切换: 只改变地图上可见的小区集合, 不动中心/缩放/搜索/区域/物业类型/POI 图层
+  const [marketMode, setMarketMode] = useState<MarketMode>('all');
+  // 附近二手房比较的锚点(新房项目 id): 展开时地图切到「全部」, 锚点与其它筛选保持不变
+  const [nearbyAnchorId, setNearbyAnchorId] = useState<string | null>(null);
+  // 窄屏默认收起控制面板: 面板是覆盖式浮层, 展开时会盖住地图上的小区标记,
+  // 而窄屏上标记很小、很难避开, 所以默认让地图占满视口, 需要筛选时再展开。
+  // 用惰性初值而非 effect, 避免多一次渲染与 set-state-in-effect 告警。
+  const [panelCollapsed, setPanelCollapsed] = useState(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 768px)').matches
+  );
   const [communities, setCommunities] = useState<Community[]>([]);
   const [mapStats, setMapStats] = useState<MapAdmissionStats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -407,14 +442,47 @@ export default function BinjiangMapPage() {
     return () => clearInterval(timer);
   }, [refreshState?.running]);
 
-  const filteredCommunities = communities.filter(c =>
+  // 过滤结果用 memo 固定引用: 否则每次渲染都换新数组, 地图图层会被整层重建
+  const filteredCommunities = useMemo(() => communities.filter(c =>
     c.community_name.toLowerCase().includes(searchQuery.toLowerCase()) &&
     (districtFilter === 'all' || c.district === districtFilter) &&
     (propertyTypes.has('全部') || propertyTypes.has(c.property_type ?? ''))
-  );
-  const mapCommunities = marketSubdistrict
+  ), [communities, searchQuery, districtFilter, propertyTypes]);
+  const mapCommunities = useMemo(() => marketSubdistrict
     ? filteredCommunities.filter(c => c.subdistrict === marketSubdistrict)
-    : filteredCommunities;
+    : filteredCommunities
+  , [filteredCommunities, marketSubdistrict]);
+  // 房源类型切换叠加在其它筛选之后; 未知房源类型只在「全部」里出现
+  const marketVisible = useMemo(
+    () => visibleCommunities(mapCommunities, marketMode),
+    [mapCommunities, marketMode]
+  );
+  // 切换控件上的计数: 口径与可见集合一致, 未知单独标出来
+  const marketCounts = useMemo(() => {
+    let secondHand = 0;
+    let newHouse = 0;
+    let unknown = 0;
+    for (const c of mapCommunities) {
+      const state = marketStateOf(c);
+      if (state === 'second_hand') secondHand++;
+      else if (state === 'new_house') newHouse++;
+      else unknown++;
+    }
+    return { visible: marketVisible.length, second_hand: secondHand, new_house: newHouse, unknown };
+  }, [mapCommunities, marketVisible]);
+  // 图例里的签/挂计数是二手专属口径: 新房与待核实房源类型不参与
+  const secondHandPriceCounts = useMemo(() => {
+    let deal = 0;
+    let listing = 0;
+    for (const c of marketVisible) {
+      if (!isSecondHand(c)) continue;
+      if (c.price.deal_avg_price != null) deal++;
+      if (c.price.listing_avg_price != null) listing++;
+    }
+    return { deal, listing };
+  }, [marketVisible]);
+  const secondHandWithDealPrice = secondHandPriceCounts.deal;
+  const secondHandWithListingPrice = secondHandPriceCounts.listing;
   // 收录口径一行说明: 收录/展示/未展示, 未展示原因放悬浮说明 (不筛选依赖, 数据集级事实)
   const admissionLine = mapStats ? formatAdmissionStats(mapStats) : null;
 
@@ -453,6 +521,11 @@ export default function BinjiangMapPage() {
     setSelectedCommunity(community);
   }, []);
 
+  // 从看板/法拍跳到地图时, 若目标被当前房源类型过滤掉, 放开到「全部」, 免得刚打开就被收起
+  const ensureMarketVisible = useCallback((community: Community) => {
+    if (visibleCommunities([community], marketMode).length === 0) setMarketMode('all');
+  }, [marketMode]);
+
   // 缺失地块轮廓:生成 → 预览 → 确认应用 → 撤销
   // 预览态按小区存档: 切到别的小区即自动退出预览, 不用 effect 重置状态
   const [previewCommunityId, setPreviewCommunityId] = useState<string | null>(null);
@@ -463,6 +536,39 @@ export default function BinjiangMapPage() {
   const showReferenceBuildings = !!selectedCommunity
     && referenceVisibility?.communityId === selectedCommunity.community_id
     && referenceVisibility.visible;
+
+  // 房源类型切换: 只改变可见集合; 当前选中的对象被切掉时顺手收起它的详情与临时图层
+  const changeMarketMode = useCallback((next: MarketMode) => {
+    setMarketMode(next);
+    setSelectedCommunity(prev => (
+      prev && visibleCommunities([prev], next).length === 0 ? null : prev
+    ));
+    setPreviewCommunityId(null);
+    // 离开「全部」时没有二手房可比较, 比较锚点一并清掉
+    if (next !== 'all') setNearbyAnchorId(null);
+  }, []);
+
+  // 展开附近二手房: 切到「全部」让二手房可见, 但保留新房锚点与其它筛选条件
+  const toggleNearby = useCallback((communityId: string) => {
+    setNearbyAnchorId(prev => (prev === communityId ? null : communityId));
+    setMarketMode(prev => (prev === 'all' ? prev : 'all'));
+  }, []);
+
+  // 附近列表的筛选条件说明: 列表结果受这些条件影响, 必须一起展示出来
+  const nearbyFilterSummary = useMemo(() => {
+    const parts: string[] = [];
+    parts.push(searchQuery.trim() ? `名称含「${searchQuery.trim()}」` : '名称不限');
+    parts.push(districtFilter === 'all' ? '全部区域' : `区域 ${districtFilter}`);
+    if (marketSubdistrict) parts.push(`板块 ${marketSubdistrict}`);
+    parts.push(propertyTypes.has('全部') ? '全部物业类型' : `物业类型 ${[...propertyTypes].join('/')}`);
+    return parts.join(' · ');
+  }, [searchQuery, districtFilter, marketSubdistrict, propertyTypes]);
+
+  // 比较锚点(新房项目): 选中附近二手房后仍要能找回这个锚点, 否则用户不知道在跟谁比
+  const nearbyAnchor = useMemo(
+    () => (nearbyAnchorId ? communities.find(c => c.community_id === nearbyAnchorId) ?? null : null),
+    [nearbyAnchorId, communities]
+  );
 
   const boundaryWorkflow = useBoundaryWorkflow(selectedCommunity?.community_id ?? null, () => {
     setPreviewCommunityId(null);  // 应用或撤销后回到摘要, 预览态不再挂着
@@ -575,6 +681,7 @@ export default function BinjiangMapPage() {
               setPropertyTypes(new Set(['全部']));
               setMarketSubdistrict(null);
               setCameFromDashboard(false);
+              ensureMarketVisible(community);
               setSelectedCommunity(community);
               setActiveTab('map');
               if (community.latitude && community.longitude) setMapFocus({ lng: community.longitude, lat: community.latitude, key: Date.now() });
@@ -603,6 +710,7 @@ export default function BinjiangMapPage() {
               sortOrder={dashSortOrder} setSortOrder={setDashSortOrder}
               rentalScope={rentalScope} onRentalScopeChange={changeRentalScope}
               onView={(c) => {
+                ensureMarketVisible(c);
                 setSelectedCommunity(c);
                 setCameFromDashboard(true);
                 setActiveTab('map');
@@ -642,6 +750,21 @@ export default function BinjiangMapPage() {
                 <button onClick={() => setMarketSubdistrict(null)} aria-label="清除市场行情地图筛选">清除</button>
               </div>
             )}
+            {/* 比较锚点提示: 选中附近二手房后仍要能找回新房项目这个锚点 */}
+            {nearbyAnchor && selectedCommunity?.community_id !== nearbyAnchor.community_id && (
+              <div className="nh-compare-bar" role="status">
+                <span>正在与新房项目「{nearbyAnchor.community_name}」比较</span>
+                <button
+                  onClick={() => {
+                    setSelectedCommunity(nearbyAnchor);
+                    setMarketMode('all');
+                  }}
+                >
+                  返回附近比较
+                </button>
+                <button onClick={() => setNearbyAnchorId(null)} aria-label="结束附近比较">结束比较</button>
+              </div>
+            )}
             {boundaryNotice && (
               <p className="auction-note" role="status">{boundaryNotice}</p>
             )}
@@ -655,7 +778,7 @@ export default function BinjiangMapPage() {
               </div>
             ) : (
               <BinjiangMap
-                communities={mapCommunities}
+                communities={marketVisible}
                 pois={visiblePOIs}
                 transit={transit ?? undefined}
                 onCommunityClick={handleCommunityClick}
@@ -672,12 +795,20 @@ export default function BinjiangMapPage() {
               className={`panel-toggle ${panelCollapsed ? 'collapsed' : ''}`}
               onClick={() => setPanelCollapsed(v => !v)}
               title={panelCollapsed ? '展开控制栏' : '收起控制栏'}
+              aria-label={panelCollapsed ? '展开控制栏' : '收起控制栏'}
+              aria-expanded={!panelCollapsed}
             >
               {panelCollapsed ? '‹' : '›'}
             </button>
 
+            {/* 房源类型切换: 独立于可折叠面板, 窄屏收起面板时仍然可达。
+                详情弹框打开时让位, 免得切换条压在弹框上点不到。 */}
+            <div className={`market-mode-dock ${selectedCommunity ? 'with-detail' : ''}`}>
+              <MarketModeFilter mode={marketMode} counts={marketCounts} onChange={changeMarketMode} />
+            </div>
+
             {/* 右侧控制面板 */}
-            <div className={`control-panel ${panelCollapsed ? 'collapsed' : ''}`}>
+            <div className={`control-panel ${panelCollapsed ? 'collapsed' : ''}`} id="map-control-panel">
               <div className="panel-section">
                 <div className="panel-title">区域</div>
                 <div style={{ display: 'flex', gap: '6px' }}>
@@ -784,9 +915,9 @@ export default function BinjiangMapPage() {
                 </div>
               )}
               <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '8px' }}>
-                价格区间
+                价格区间（仅二手房）
                 <span style={{ marginLeft: '6px' }}>
-                  (签 {mapCommunities.filter(c => c.price.deal_avg_price != null).length} / 挂 {mapCommunities.filter(c => c.price.listing_avg_price != null).length})
+                  (签 {secondHandWithDealPrice} / 挂 {secondHandWithListingPrice})
                 </span>
               </div>
               <div style={{ display: 'flex', gap: '12px' }}>
@@ -811,9 +942,45 @@ export default function BinjiangMapPage() {
                   <span style={{ fontSize: '11px' }}>&gt;7万</span>
                 </div>
               </div>
+              {/* 新房用固定类别色, 不套价格色阶; 位置未核验时是空心标记 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '8px' }}>
+                <span style={{
+                  fontSize: '10px', fontWeight: 700, lineHeight: '14px', padding: '0 5px',
+                  borderRadius: '999px', background: NEW_HOUSE_COLOR, color: '#fff',
+                }}>新</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>新房项目（固定色，不按价格着色）</span>
+              </div>
+              {marketCounts.unknown > 0 && (
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                  房源类型待核实 {marketCounts.unknown} 个（只在「全部」里出现）
+                </div>
+              )}
             </div>
 
-            {selectedCommunity && (
+            {selectedCommunity && (isNewHouse(selectedCommunity) ? (
+              // 新房: 走项目证据面板, 不展示二手价/租售收益/综合评分
+              <NewHouseDetail
+                key={selectedCommunity.community_id}
+                community={selectedCommunity}
+                priceMode={priceMode}
+                onClose={() => {
+                  setSelectedCommunity(null);
+                  setNearbyAnchorId(null);
+                }}
+                onLocate={() => openPositionForCommunity(selectedCommunity.community_id)}
+                poiContent={<CommunityPoiTiles community={selectedCommunity} />}
+                nearbyOpen={nearbyAnchorId === selectedCommunity.community_id}
+                nearbyCommunities={marketVisible}
+                nearbyConditions={nearbyFilterSummary}
+                onToggleNearby={() => toggleNearby(selectedCommunity.community_id)}
+                onSelectNearby={community => {
+                  setSelectedCommunity(community);
+                  if (community.latitude && community.longitude) {
+                    setMapFocus({ lng: community.longitude, lat: community.latitude, key: Date.now() });
+                  }
+                }}
+              />
+            ) : (
               <CommunityPopup
                 key={selectedCommunity.community_id}
                 community={selectedCommunity}
@@ -839,7 +1006,7 @@ export default function BinjiangMapPage() {
                 )}
                 onClose={() => setSelectedCommunity(null)}
               />
-            )}
+            ))}
           </>
         )}
       </div>
@@ -1298,11 +1465,13 @@ function DashboardPage({
   const latestSnapshot = communities.reduce((m, c) => (c.price.snapshot_date > m ? c.price.snapshot_date : m), '');
 
   const priceOf = (c: Community) => getDisplayPrice(c.price) || 0;
+  // 均价/签约套数/有价小区是二手专属口径: 新房与待核实房源类型不参与, 否则会被误读成二手行情
+  const secondHandOnly = filtered.filter(c => isSecondHand(c));
   const stats = {
     total: filtered.length,
-    avgPrice: filtered.length ? Math.round(filtered.reduce((sum, c) => sum + priceOf(c), 0) / filtered.length) : null,
-    dealCount: filtered.reduce((sum, c) => sum + (c.price.deal_count || 0), 0),
-    withPrice: filtered.filter(c => getDisplayPrice(c.price) != null).length,
+    avgPrice: secondHandOnly.length ? Math.round(secondHandOnly.reduce((sum, c) => sum + priceOf(c), 0) / secondHandOnly.length) : null,
+    dealCount: secondHandOnly.reduce((sum, c) => sum + (c.price.deal_count || 0), 0),
+    withPrice: secondHandOnly.filter(c => getDisplayPrice(c.price) != null).length,
   };
 
   return (
@@ -1323,15 +1492,15 @@ function DashboardPage({
         </div>
         <div className="stat-card">
           <div className="stat-value">{stats.avgPrice?.toLocaleString() ?? '—'}</div>
-          <div className="stat-label">平均价格 (元/㎡)</div>
+          <div className="stat-label">二手房均价 (元/㎡)</div>
         </div>
         <div className="stat-card">
           <div className="stat-value">{stats.dealCount}</div>
-          <div className="stat-label">近30日签约 (套)</div>
+          <div className="stat-label">二手房近30日签约 (套)</div>
         </div>
         <div className="stat-card">
           <div className="stat-value">{stats.withPrice}</div>
-          <div className="stat-label">有价格数据的小区</div>
+          <div className="stat-label">二手房有价小区</div>
         </div>
       </div>
 
@@ -1382,6 +1551,7 @@ function DashboardPage({
           近30日签约为滚动 30 天口径，0 套代表近 30 天无成交、不代表更早无成交；综合评分的市场面维度即基于该签约套数。
           租金三列基于上方所选租金口径（面积段+房型）统计，缺失值排序时始终排在末尾；
           收益率为参考年化毛收益（粗略估算，小区均价与租金组并非同户型成交），不代表真实市场收益。
+          上方均价、近30日签约与有价小区三项只统计二手房，新房与房源类型待核实的小区不计入。
         </div>
         <table className="data-table">
           <thead>
@@ -1405,18 +1575,28 @@ function DashboardPage({
             {paginated.map(community => {
               const isDeal = community.price.deal_avg_price != null;
               const score = community.score;
+              // 新房行不展示二手均价: 那套价格口径不能挪到新房上
+              const newHouseRow = isNewHouse(community);
               return (
                 <tr key={community.community_id}>
-                  <td style={{ fontWeight: '500' }}>{community.community_name}</td>
+                  <td style={{ fontWeight: '500' }}>
+                    {community.community_name}
+                    {newHouseRow && (
+                      <span style={{
+                        marginLeft: '4px', fontSize: '10px', fontWeight: 700, padding: '1px 5px',
+                        borderRadius: '999px', background: NEW_HOUSE_COLOR, color: '#fff',
+                      }}>新</span>
+                    )}
+                  </td>
                   <td>
                     <span className={`tag ${community.district === '萧山' ? 'tag-xiaoshan' : 'tag-subway'}`}>{community.subdistrict}</span>
                   </td>
                   <td>
                     <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>{community.property_type || '-'}</span>
                   </td>
-                  <td style={{ fontWeight: '600', color: getPriceColor(getDisplayPrice(community.price)) }}>
-                    {getDisplayPrice(community.price)?.toLocaleString() || '-'}
-                    {getDisplayPrice(community.price) != null && (
+                  <td style={{ fontWeight: '600', color: newHouseRow ? 'var(--text-muted)' : getPriceColor(getDisplayPrice(community.price)) }}>
+                    {newHouseRow ? '—' : (getDisplayPrice(community.price)?.toLocaleString() || '-')}
+                    {!newHouseRow && getDisplayPrice(community.price) != null && (
                       <span style={{
                         marginLeft: '4px', fontSize: '10px', padding: '1px 4px', borderRadius: '3px',
                         background: isDeal ? 'rgba(194, 117, 88, 0.15)' : 'var(--bg-primary)',

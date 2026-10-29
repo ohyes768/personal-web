@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { Community, MapPOI } from '@/lib/types';
 import { getDisplayPrice, getPriceColor, SCHOOL_LEVEL_COLORS, SCHOOL_LEVEL_LABELS } from '@/lib/types';
 import { scopeBounds } from '@/lib/binjiang-boundary';
+import { isNewHouse, marketStateOf } from '@/lib/market-map';
+import { buildNewHouseMarkerContent, escapeHtml, newHouseLabel, NEW_HOUSE_LABEL_MIN_ZOOM } from './NewHouseLayer';
 
 export interface TransitRoute {
   id: string;
@@ -108,9 +110,9 @@ function buildPOIInfoContent(poi: MapPOI, color: string): string {
 // 未引入官方类型包 (@amap/amap-jsapi-types), 仅声明本文件用到的 API 表面;
 // 构造器选项保持宽松 (Record<string, unknown>), 覆盖物实例按实际用法定型
 
-// 覆盖物鼠标事件参数 (仅用到 pixel)
+// 覆盖物鼠标事件参数 (仅用到 pixel; Marker 的事件不保证带 pixel, 故为可选)
 interface AMapEvent {
-  pixel: { x: number; y: number };
+  pixel?: { x: number; y: number };
 }
 
 // 覆盖物公共能力 (Polygon/Polyline/Circle/Marker)
@@ -136,6 +138,7 @@ interface AMapMap {
   on: (event: string, handler: () => void) => void;
   getZoom: () => number;
   setZoomAndCenter: (zoom: number, center: number[], immediately?: boolean) => void;
+  lngLatToContainer: (lnglat: number[]) => { x: number; y: number };
   addControl: (control: object) => void;
   destroy: () => void;
 }
@@ -163,6 +166,9 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
   const mapInstanceRef = useRef<AMapMap | null>(null);
   const markersRef = useRef<AMapMarker[]>([]);
   const polygonsRef = useRef<AMapOverlay[]>([]);
+  // 新房项目点单独管理: 与二手房轮廓互不影响, 切换房源类型时各自重建, 不残留标记
+  const newHouseMarkersRef = useRef<AMapMarker[]>([]);
+  const newHouseEntriesRef = useRef<{ marker: AMapMarker; community: Community }[]>([]);
   const previewOverlaysRef = useRef<AMapOverlay[]>([]);
   const polygonByCommIdRef = useRef<Map<string, AMapOverlay>>(new Map());
   const commByCidRef = useRef<Map<string, Community>>(new Map());
@@ -189,6 +195,20 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
       strokeWeight: selected ? 3.5 : hovered ? 2.8 : 1.6,
       strokeOpacity: 0.95,
     };
+  };
+
+  // 新房标记内容随缩放级别与选中态刷新: 低缩放只留「新」徽标, 放大后带项目名。
+  // 只读 ref 里的最新数据, 因此在 map 初始化回调里也能安全调用。
+  const refreshNewHouseMarkers = (map: AMapMap) => {
+    const showName = map.getZoom() >= NEW_HOUSE_LABEL_MIN_ZOOM;
+    for (const { marker, community } of newHouseEntriesRef.current) {
+      marker.setContent(buildNewHouseMarkerContent({
+        name: newHouseLabel(community),
+        verified: community.position?.verified === true,
+        selected: selectedIdRef.current === community.community_id,
+        showName,
+      }));
+    }
   };
 
   // 加载高德地图 JS API
@@ -249,6 +269,8 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
       for (const { marker, dot, full } of poiMarkerStylesRef.current) {
         marker.setContent(useIcon ? full : dot);
       }
+      // 新房项目点同样按级别收起项目名, 密集时不堆叠长文字
+      refreshNewHouseMarkers(map);
     });
 
     return () => {
@@ -267,6 +289,9 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
     markersRef.current = [];
     polygonsRef.current.forEach(p => map.remove(p));
     polygonsRef.current = [];
+    newHouseMarkersRef.current.forEach(m => map.remove(m));
+    newHouseMarkersRef.current = [];
+    newHouseEntriesRef.current = [];
     polygonByCommIdRef.current.clear();
     commByCidRef.current.clear();
 
@@ -274,13 +299,29 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
     const showTooltip = (community: Community, pixel?: { x: number; y: number }) => {
       const el = tooltipRef.current;
       if (!el) return;
+      if (isNewHouse(community)) {
+        // 新房不借用二手价格: 没有可信价格口径就明说暂无价格, 并交代位置核验状态
+        const verified = community.position?.verified === true;
+        const positionTag = verified
+          ? '<span class="tt-tag">位置已核验</span>'
+          : '<span class="tt-tag">位置待核实</span>';
+        el.innerHTML = `<span class="tt-name">${escapeHtml(newHouseLabel(community))}</span>`
+          + `<span class="tt-price">暂无价格${positionTag}</span>`;
+        el.style.display = 'block';
+        if (pixel) moveTooltip(pixel);
+        return;
+      }
       const price = getDisplayPrice(community.price);
       // 价格口径角标: 数据源里签约/挂牌互斥, 有签约价标"签", 否则标"挂" (签约价系统性低于挂牌价, 提示口径避免跨小区误比)
       const priceTag = community.price.deal_avg_price != null ? '签' : '挂';
       const priceHtml = price
         ? `${price.toLocaleString()} 元/㎡<span class="tt-tag">${priceTag}</span>`
         : '暂无价格';
-      el.innerHTML = `<span class="tt-name">${community.community_name}</span><span class="tt-price">${priceHtml}</span>`;
+      // 房源类型待核实的小区不默认当成二手房, 提示里显式标出来
+      const stateTag = marketStateOf(community) === 'unknown'
+        ? '<span class="tt-tag">房源类型待核实</span>'
+        : '';
+      el.innerHTML = `<span class="tt-name">${escapeHtml(community.community_name)}</span><span class="tt-price">${priceHtml}${stateTag}</span>`;
       const count = auctionCounts?.[community.community_id];
       if (count) {
         const badge = document.createElement('span');
@@ -306,7 +347,7 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         overlay.setOptions(styleOptions(community, selectedIdRef.current === community.community_id, true));
         showTooltip(community, ev?.pixel);
       });
-      overlay.on('mousemove', (ev) => moveTooltip(ev?.pixel));
+      overlay.on('mousemove', (ev) => { if (ev?.pixel) moveTooltip(ev.pixel); });
       overlay.on('mouseout', () => {
         overlay.setOptions(styleOptions(community, selectedIdRef.current === community.community_id, false));
         hideTooltip();
@@ -315,13 +356,36 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
 
     communities.forEach(community => {
       if (!community.latitude || !community.longitude) return;
+      commByCidRef.current.set(community.community_id, community);
+
+      // 新房: 画项目点而不是小区轮廓 —— 新房没有可靠的建筑聚类轮廓,
+      // 套用二手房的问号方块会把它误读成"边界待补的老小区"
+      if (isNewHouse(community)) {
+        const marker = new window.AMap.Marker({
+          position: [community.longitude, community.latitude],
+          anchor: 'bottom-center',
+          title: community.community_name,
+          cursor: 'pointer',
+          content: '',
+        });
+        marker.on('click', () => onCommunityClick(community));
+        marker.on('mouseover', (ev) => {
+          const pixel = ev?.pixel ?? map.lngLatToContainer([community.longitude, community.latitude]);
+          showTooltip(community, pixel);
+        });
+        marker.on('mousemove', (ev) => { if (ev?.pixel) moveTooltip(ev.pixel); });
+        marker.on('mouseout', hideTooltip);
+        map.add(marker);
+        newHouseMarkersRef.current.push(marker);
+        newHouseEntriesRef.current.push({ marker, community });
+        return;
+      }
 
       // 价格口径: 'deal'/'listing' 模式下只取对应口径的价格, 无该口径价格的小区显示灰色(保证同色阶内同口径可比)
       const modePrice = priceMode === 'deal' ? community.price.deal_avg_price
         : priceMode === 'listing' ? community.price.listing_avg_price
         : getDisplayPrice(community.price);
       const color = getPriceColor(modePrice);
-      commByCidRef.current.set(community.community_id, community);
 
       // 展示 OSM 快照与建筑聚类估算轮廓; Shapefile 来源暂不展示（数据管线保留, boundary_source==='shp'）
       const hasVisiblePolygon = !!(community.boundary && community.boundary.length > 0 && community.boundary_source !== 'shp');
@@ -383,6 +447,9 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
         markersRef.current.push(questionMark);
       }
     });
+
+    // 新房标记内容按当前缩放级别与选中态统一刷新一次
+    refreshNewHouseMarkers(map);
   }, [communities, mapLoaded, onCommunityClick, priceMode, auctionCounts, previewCommunityId]);
 
   // 候选轮廓预览图层: 与正式地块图层分开管理, 切换小区或关闭预览即移除
@@ -486,6 +553,8 @@ export default function BinjiangMap({ communities, pois, transit, onCommunityCli
       const community = commByCidRef.current.get(cid);
       if (community) overlay.setOptions(styleOptions(community, cid === selId, false));
     }
+    // 新房项目点没有多边形可加粗, 用标记上的高亮环表达选中
+    refreshNewHouseMarkers(map);
 
     if (circleRef.current) {
       map.remove(circleRef.current);

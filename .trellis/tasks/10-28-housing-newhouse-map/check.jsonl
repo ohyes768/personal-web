@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/backend/housing-map/backend/community-enrichment.md", "reason": "新房有效身份、售完、定位与价格隔离"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "坐标来源与定位核验"}
+{"file": ".trellis/spec/backend/housing-map/backend/boundary-workflow.md", "reason": "新房点与二手轮廓工作流隔离"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-admission.md", "reason": "收录与展示资格"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端开发规范"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows测试临时目录"}
+{"file": ".trellis/tasks/10-28-housing-newhouse-map/research/01-current-state.md", "reason": "本轮确认方向与代码现状"}

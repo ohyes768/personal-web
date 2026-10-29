@@ -21,3 +21,7 @@ data/binjiang_communities.csv
 
 # Boundary estimation outputs (task 10-16-boundary-estimate-script)
 estimate_out/
+
+# 隔离 QA 数据集 (scripts/seed_newhouse_map_qa.py 的输出目录)
+.tmp-newhouse-qa/
+

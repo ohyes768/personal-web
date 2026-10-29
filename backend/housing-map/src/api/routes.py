@@ -95,6 +95,11 @@ def _assemble_community(
     cid = c.get("community_id")
     coord = coordinates.get(cid)
     pois = pois_block.get("pois") or {}
+    # 新房不挂二手价格快照: 二手口径的价格/套数只属于二手房,
+    # 混进新房记录会让"新房价格"变成二手快照的借用品, 市场面评分也会跟着失真。
+    # 售完项目按有效市场状态转入二手房, 仍照常带二手价格。
+    if c.get("market_state") == "new_house":
+        price_data = None
     # 签约均价 -> deal_avg_price, 挂牌样本均价 -> listing_avg_price
     is_deal_price = (price_data or {}).get("price_type") == "monthly_deal_avg_latest"
     price_val = price_data.get("price") if price_data else None
@@ -146,6 +151,11 @@ def _assemble_community(
     record["far_ratio"] = (community_attrs.get(cid) or {}).get("far_ratio")
     record["greening_rate"] = (community_attrs.get(cid) or {}).get("greening_rate")
     record["nearest_subway"] = _nearest_subway_of(coordinates, cid, subway_stations)
+    # 房源类型与项目证据: 显式未知就是未知, 新房不得借用二手价格字段。
+    record["market_state"] = c.get("market_state") or "unknown"
+    record["market_state_conflict"] = bool(c.get("market_state_conflict"))
+    record["project"] = c.get("project")
+    record["position"] = c.get("position_evidence")
     return record
 
 

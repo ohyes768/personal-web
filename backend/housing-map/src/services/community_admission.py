@@ -5,6 +5,7 @@ import sqlite3
 from pathlib import Path
 
 from src.services.community_address import effective_address
+from src.services.community_market import position_evidence_view, project_view
 from src.services.tmsf_property_type import effective_market_state
 from src.services.community_listing import listing_gate
 from src.services.community_enrichment import source_position, qualified_address
@@ -172,5 +173,6 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
                        'effective_property_type': prop,
                        'position_formatted_address': (coordinate or {}).get('formatted_address'),
                        'market_state': market, 'market_state_conflict': len(markets) > 1,
+                       'project': project_view(records), 'position_evidence': position_evidence_view(community, records, coordinate),
                        'map_status': map_status(community, effective_admission, coordinate, drop_ids=drop_ids), **policy})
     return result

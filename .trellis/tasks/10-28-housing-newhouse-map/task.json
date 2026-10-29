@@ -1,0 +1,31 @@
+{
+  "id": "housing-newhouse-map",
+  "name": "housing-newhouse-map",
+  "title": "同地图展示新房项目并比较周边二手房",
+  "description": "共用地图增加二手房/新房/全部切换，以项目点展示新房，区分位置可信度与价格口径，便于比较附近二手房。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "housing-map",
+  "package": "backend/housing-map",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-28",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/housing-map/src/app/page.tsx",
+    "apps/housing-map/src/components/map/BinjiangMap.tsx",
+    "apps/housing-map/src/lib/types.ts",
+    "backend/housing-map/src/api/routes.py"
+  ],
+  "notes": "用户已确认同地图+类型切换用于新房与附近二手房比较；仅授权规划。默认全部/附近1.5km；保持planning，未启动实现。",
+  "meta": {}
+}
