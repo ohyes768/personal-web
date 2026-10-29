@@ -79,6 +79,8 @@ export function XingfuliProbe({ communityId, onChanged }: {
   const data = current?.data;
   const loadError = current?.error;
   const stage = data?.stage;
+  const stageLabel = probeStageLabel(stage);
+  const message = data?.message?.trim();
   const running = probeIsRunning(stage);
 
   useEffect(() => {
@@ -127,7 +129,7 @@ export function XingfuliProbe({ communityId, onChanged }: {
     {!current && !loadError && <p role="status">正在加载探查状态…</p>}
     {current && <>
       <p role="status" className="rental-meta">
-        {probeStageLabel(stage)}{data?.message ? ` · ${data.message}` : ''}
+        {stageLabel}{message && message !== stageLabel ? ` · ${message}` : ''}
       </p>
       {stage === PROBE_STAGES.idle && <div className="rental-source-actions">
         <button className="btn btn-primary" disabled={busy} onClick={() => void act('')}>
