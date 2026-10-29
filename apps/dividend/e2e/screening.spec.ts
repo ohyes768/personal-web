@@ -194,11 +194,16 @@ test('quality queue shows running and queued stocks, keeps others actionable, an
   await page.goto('/?tab=screening');
   await expect(page.getByRole('button', { name: '符合条件 3' })).toBeVisible();
   const queue = page.getByLabel('评级任务队列');
-  // 面板常驻：无任务时显示空态而非整块消失
+  // 默认只有紧凑入口，点击后才展示任务列表
+  await expect(queue).toHaveCount(0);
+  await page.getByRole('button', { name: /评级队列/ }).click();
   await expect(queue).toBeVisible();
   await expect(queue.getByText(/当前无评级任务/)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(queue).toHaveCount(0);
   // 提交一只股票，mock 随后返回 running：空态切换为带实时计时的运行行
   await page.getByRole('button', { name: '分析', exact: true }).first().click();
+  await page.getByRole('button', { name: /评级队列/ }).click();
   quality.perCode['000001'] = perCodeItem('running', { started_at: startedAt, queued_at: startedAt });
   await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible({ timeout: 10_000 });
   await expect(queue.getByText(/当前无评级任务/)).toHaveCount(0);
@@ -216,6 +221,11 @@ test('quality queue shows running and queued stocks, keeps others actionable, an
   await page.waitForTimeout(2100);
   const secondElapsed = await queue.getByText(/已分析 2分\d+秒/).textContent();
   expect(secondElapsed).not.toEqual(firstElapsed);
+  await page.keyboard.press('Escape');
+  await expect(queue).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /评级队列.*运行 1.*排队 1/ })).toBeVisible();
+  await page.getByRole('button', { name: /评级队列/ }).click();
+  await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible();
 });
 
 test('quality queue recovers after reload and offers retry for failed stock', async ({ page }) => {
@@ -231,6 +241,7 @@ test('quality queue recovers after reload and offers retry for failed stock', as
   await page.goto('/?tab=screening');
   const queue = page.getByLabel('评级任务队列');
   // 刷新恢复：mount 发现 running 任务恢复轮询，面板展示失败与排队项
+  await page.getByRole('button', { name: /评级队列/ }).click();
   await expect(queue).toBeVisible({ timeout: 10_000 });
   await expect(queue.getByText(/失败 · 耗时/)).toBeVisible();
   await expect(queue.getByText('排队中…')).toBeVisible();
@@ -249,6 +260,7 @@ test('temporary quality query errors keep state and recover automatically', asyn
   await page.goto('/?tab=screening');
   await page.getByRole('button', { name: '分析', exact: true }).first().click();
   const queue = page.getByLabel('评级任务队列');
+  await page.getByRole('button', { name: /评级队列/ }).click();
   await expect(queue).toBeVisible();
   // 查询开始失败：状态保留并提示自动重试
   quality.failQuery!.value = true;

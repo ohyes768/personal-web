@@ -33,9 +33,13 @@ now lives inside `basic-quality-rating` v2.2+.
   resubmitting a terminal code re-admits it with fresh timestamps. The
   ScreeningTab action column renders it row-by-row
   (排队中/评级中 pulse, 失败+原因 tooltip+重试, else 分析/重评 buttons);
-  the queue panel above the screening table lists running first, queued in
-  admission order, then recent terminal items, with a per-second local tick
-  computing 已分析 X分Y秒 from server `started_at`.
+  a compact 评级队列 button in the screening toolbar shows running/queued
+  counts. Clicking opens the shared Modal with progress, running items first,
+  queued items in admission order, then recent terminal items and retry.
+  The modal's per-second local tick computes 已分析 X分Y秒 from server
+  `started_at`; closing stops only this display timer, never polling or work.
+  Reopening restores elapsed time from the original timestamp. Escape,
+  backdrop and close button dismiss the modal.
   `hermes_configured=false` disables the UI
   analyze button (grey + hint) instead of waiting for the 503.
 - `hermes_client`: `HermesConfig.from_env()` (frozen dataclass, `is_configured`

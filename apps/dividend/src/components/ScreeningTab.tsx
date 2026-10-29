@@ -118,8 +118,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
         {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
+        <QualityQueuePanel view={queueView} job={qualityJob} onRetry={codes => void analyze(codes)} configured={qualityConfigured} />
       </div>
-      <QualityQueuePanel view={queueView} job={qualityJob} onRetry={codes => void analyze(codes)} configured={qualityConfigured} />
       {qualityPollError && <p role="status" className="text-sm text-amber-700">评级进度查询失败，任务不受影响，自动重试中…</p>}
       {qualityMessage && <p role="status" className="text-sm text-ink">
         {qualityMessage}
