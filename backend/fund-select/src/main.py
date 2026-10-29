@@ -47,7 +47,7 @@ async def lifespan(app: FastAPI):
     # 建表（幂等）
     init_db()
 
-    # 启动定时调度（每周六刷新四个 tab）
+    # 启动定时调度（四个 tab 每周六错峰刷新）
     scheduler = SchedulerManager()
     scheduler.start(app)
     app.state.scheduler = scheduler

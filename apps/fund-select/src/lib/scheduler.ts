@@ -1,4 +1,4 @@
-export type RunStatus = 'running' | 'success' | 'partial' | 'failed';
+export type RunStatus = 'queued' | 'running' | 'success' | 'partial' | 'failed';
 export interface CollectionResult {
   completed?: number;
   failed?: number;
@@ -26,6 +26,8 @@ export interface SchedulerRun {
 export interface SchedulerJob {
   id: string;
   name: string;
+  tab: string;
+  description: string;
   enabled: boolean;
   running: boolean;
   cron_human: string;
@@ -44,8 +46,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 export const schedulerApi = {
-  jobs: () => request<{ jobs: SchedulerJob[] }>('/jobs'),
-  runs: (id: string) => request<{ runs: SchedulerRun[] }>(`/jobs/${encodeURIComponent(id)}/runs?limit=20`),
+  jobs: (signal?: AbortSignal) => request<{ jobs: SchedulerJob[] }>('/jobs', { signal }),
+  runs: (id: string, signal?: AbortSignal) => request<{ runs: SchedulerRun[] }>(`/jobs/${encodeURIComponent(id)}/runs?limit=20`, { signal }),
   setEnabled: (id: string, enabled: boolean) => request<SchedulerJob>(`/jobs/${encodeURIComponent(id)}`, {
     method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
   }),

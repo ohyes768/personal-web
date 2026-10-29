@@ -2,12 +2,44 @@
   "version": 1,
   "jobs": [
     {
-      "id": "weekly_fund_refresh",
-      "name": "每周刷新四个基金 tab",
-      "target": "refresh_weekly",
+      "id": "weekly_bond_refresh",
+      "name": "债基·雪球三分法",
+      "tab": "bond",
+      "target": "refresh_tab",
       "cron": "5 7 * * sat",
+      "cron_human": "每周六 07:05（北京时间）",
       "enabled": true,
-      "description": "每周六北京时间 07:05 依次刷新债基配置名单、股基配置名单、债基市场与股基市场；市场预筛沿用页面默认值"
+      "description": "刷新债基配置名单的净值、基础信息、持仓及费率"
+    },
+    {
+      "id": "weekly_stock_refresh",
+      "name": "股基·雪球三分法",
+      "tab": "stock",
+      "target": "refresh_tab",
+      "cron": "5 8 * * sat",
+      "cron_human": "每周六 08:05（北京时间）",
+      "enabled": true,
+      "description": "刷新股基配置名单、业绩排名及风险指标"
+    },
+    {
+      "id": "weekly_discovery_bond_refresh",
+      "name": "债基·市场",
+      "tab": "discovery-bond",
+      "target": "refresh_tab",
+      "cron": "5 9 * * sat",
+      "cron_human": "每周六 09:05（北京时间）",
+      "enabled": true,
+      "description": "市场全量刷新：三年收益 ≥10%、规模 ≥5 亿、经理从业 ≥5 年"
+    },
+    {
+      "id": "weekly_discovery_stock_refresh",
+      "name": "股基·市场",
+      "tab": "discovery-stock",
+      "target": "refresh_tab",
+      "cron": "5 10 * * sat",
+      "cron_human": "每周六 10:05（北京时间）",
+      "enabled": true,
+      "description": "市场全量刷新：三年收益 ≥20%、规模 ≥5 亿、经理从业 ≥5 年"
     }
   ]
 }

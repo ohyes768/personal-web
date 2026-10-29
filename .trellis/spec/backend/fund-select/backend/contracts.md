@@ -2,16 +2,17 @@
 
 ## 每周自动刷新（2026-10-29）
 
-- `src/scheduler/scheduler.json` 是调度配置源：`weekly_fund_refresh`，`5 7 * * sat`，显式 `Asia/Shanghai`；替换原每日名单/债基任务。
-- 顺序：债基 yaml → 股基 yaml → 债基市场完整流水线（bond）→ 股基市场完整流水线（stock）。配置名单 `use_cache=False`；市场默认预筛与前端一致：收益 10%/20%，规模 5 亿、经理 5 年；类型集合复用 `market_subtype_map`。
-- 整组经 `asyncio.to_thread` 执行；`max_instances=1` 防周任务重入，`coalesce=True`，错过触发宽限 3600 秒。MemoryJobStore 不补跑服务停机期间历史周次。生产维持单 uvicorn worker。
-- 单项异常继续下一项。结果为 success/partial/failed；市场必须检查 `stage_results.*.status` 及嵌套 `result.failed`，不能仅依赖阶段 done。成功数量兼容 `completed` 和 `inserted/updated`。空配置名单记失败。
-- 整组和四项开始/结束时间带 `+08:00`，原始结果/错误追加至 `data/scheduler/weekly_refresh.jsonl`（NAS data volume 持久化）；刷新自身的 DB `RefreshRun` 仍保留。
-- 管理页 `/funds/scheduler` 从四 tab 共用顶部进入。API：GET `/api/funds/scheduler/jobs`、PATCH `/jobs/{id}`（enabled）、POST `/jobs/{id}/run`、GET `/jobs/{id}/runs?limit=20`。未知任务404、重复执行409、未初始化/设置写失败503、limit 范围1..200。Next 代理支持 GET/PATCH/POST 并透传请求体和响应状态。
+- `src/scheduler/scheduler.json` 定义四项独立周任务：`weekly_bond_refresh` 07:05、`weekly_stock_refresh` 08:05、`weekly_discovery_bond_refresh` 09:05、`weekly_discovery_stock_refresh` 10:05；每周六，显式 `Asia/Shanghai`。`cron_human` 与 cron 保持一致，由真实 CronTrigger 下一次日期测试约束。
+- `refresh_tab_sync` 仅调用该 tab 的采集器。配置名单 `use_cache=False`；市场 bond/stock profile 默认预筛收益 10%/20%，规模5亿、经理5年，类型复用 `market_subtype_map`。
+- 每任务独立运行标记、当前快照、上次结果和历史；同任务 cron/立即执行重复触发409/跳过；不同任务共用 asyncio.Lock 排队，不因上一项超时尚未完成而丢弃本周任务。已排队状态为 queued，采集线程启动后变 running。
+- 采集经 `asyncio.to_thread`；每项 `max_instances=1`、`coalesce=True`、错过触发宽限3600秒。MemoryJobStore 不补跑停机期间历史周次。生产保持单 uvicorn worker。
+- success/partial/failed 分类检查 `stage_results.*.status` 与嵌套 `result.failed`，兼容 completed/inserted/updated，空名单失败。某任务失败不影响队列后续任务。
+- 各项开始/结束时间带 `+08:00`，结果/错误追加至 `data/scheduler/weekly_refresh.jsonl`；NAS data volume持久化。读取时按job_id隔离；旧 `weekly_fund_refresh` 或无job_id的组记录按items.tab投影成单任务状态与时间，不能把整组partial传播给成功tab。
+- 四 tab 共用顶部右侧齿轮打开 `SchedulerDialog`，原生dialog提供模态/键盘约束，关闭恢复焦点/滚动；仅弹框打开时5秒轮询。旧 `/funds/scheduler` 重定向 `/bond?scheduler=1` 自动打开弹框。API路径不变：GET `/api/funds/scheduler/jobs`、PATCH `/jobs/{id}`、POST `/jobs/{id}/run`、GET `/jobs/{id}/runs?limit=20`；404/409/503与limit1..200约束保留，Next代理GET/PATCH/POST。
 - 启停覆盖原子保存至 `data/scheduler/settings.json`，重启后读取，禁止写镜像源配置。禁用仅暂停自动任务，不中止当前执行，允许立即执行。
-- 管理页立即执行与 cron 在创建异步任务前保留同一运行标记，防止同时启动；线程进度通过加锁快照提供 `current_run`。这不涵盖四 tab 原有单独刷新入口。
-- 历史最新在前，兼容旧记录无 job_id/run_id/trigger，跳过损坏 JSONL 行。当前记录增加 run_id/trigger，历史保留原始阶段错误。页面每5秒刷新，四项显示运行/等待/最终状态，操作错误独立于轮询错误，不被后台刷新吞掉。
-- 离线验证：`tests/test_weekly_refresh.py`，含真实 CronTrigger 下一次周六日期、串行参数、失败继续、部分成功归类、线程执行、JSONL 追加。
+- 旧设置 `weekly_fund_refresh=false` 迁移为四项默认暂停；新任务显式设置优先。保存时写四项独立enabled，重启保持。线程进度快照加锁；互斥不涵盖四tab原来的单独刷新入口。
+- 历史最新在前，损坏行跳过，每项最近20次；操作错误不被轮询清掉。
+- `test_weekly_refresh.py` / `test_scheduler_management.py` 覆盖四项时间、仅采集对应tab、独立设置/历史、旧数据迁移、排队无重叠、失败释放队列及线程执行。
 
 ## 1. Scope / Trigger
 

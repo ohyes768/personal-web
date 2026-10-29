@@ -1,13 +1,12 @@
-# 实施计划
+# 实施与验证
 
-1. 编写调度与组任务离线测试，验证红灯。
-2. 实现串行刷新、失败隔离、结果归类和 JSONL 历史。
-3. 替换每日任务注册，读取周任务配置，更新启动注释。
-4. 跑新增测试、API 与 pipeline 回归、ruff、diff check。
-5. 更新基金后端契约与验证记录；不提交或部署。
+- [x] 新要求测试先红：旧单任务不满足四项时间/隔离/迁移。
+- [x] 四项配置、per-job状态、共享队列、单tab采集、历史及设置兼容。
+- [x] 右侧齿轮、原生dialog、四项管理和旧URL兼容。
+- [x] `pytest tests/test_scheduler_management.py tests/test_weekly_refresh.py tests/test_market_full_pipeline.py tests/test_api.py -q --basetemp=.pytest-tmp-four-all`：64 passed。
+- [x] `ruff check src/scheduler tests/test_weekly_refresh.py tests/test_scheduler_management.py`。
+- [x] `node node_modules/typescript/bin/tsc --noEmit --incremental false`。
+- [x] Playwright桌面/手机交互与截图，修复关闭焦点恢复及原生dialog居中尺寸；最终验证通过。
+- [x] 更新后端契约；git差异检查；关闭临时浏览器与预览。
 
-## 管理页扩展
-1. 添加 API、启停持久化与 cron/手动冲突测试，验证红灯。
-2. 扩展 manager 和 weekly 进度，增加管理路由与代理方法。
-3. 增加 scheduler 页面、共用顶部入口和类型/API client。
-4. 运行后端回归、ruff、前端 tsc/build；桌面和手机批量检查加载/错误/运行/历史交互。
+本轮变更尚未提交、未部署；并行任务目录保持原样。
