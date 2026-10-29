@@ -189,17 +189,19 @@ test('reanalyze inside rating modal shows progress and rating modal stays open',
 
 test('quality queue shows running and queued stocks, keeps others actionable, and ticks elapsed time', async ({ page }) => {
   const startedAt = new Date(Date.now() - 125_000).toISOString();
-  const quality: QualityScenario = {
-    perCode: { '000001': perCodeItem('running', { started_at: startedAt, queued_at: startedAt }) },
-  };
+  const quality: QualityScenario = { perCode: {} };
   await setup(page, false, undefined, quality);
   await page.goto('/?tab=screening');
   await expect(page.getByRole('button', { name: '符合条件 3' })).toBeVisible();
-  // 提交 000001 后出现队列面板：running 行带实时计时
-  await page.getByRole('button', { name: '分析', exact: true }).first().click();
   const queue = page.getByLabel('评级任务队列');
+  // 面板常驻：无任务时显示空态而非整块消失
   await expect(queue).toBeVisible();
-  await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible();
+  await expect(queue.getByText(/当前无评级任务/)).toBeVisible();
+  // 提交一只股票，mock 随后返回 running：空态切换为带实时计时的运行行
+  await page.getByRole('button', { name: '分析', exact: true }).first().click();
+  quality.perCode['000001'] = perCodeItem('running', { started_at: startedAt, queued_at: startedAt });
+  await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible({ timeout: 10_000 });
+  await expect(queue.getByText(/当前无评级任务/)).toHaveCount(0);
   // 追加 000002：同一任务排队；面板显示运行+排队计数
   quality.perCode['000002'] = perCodeItem('queued', { queued_at: new Date().toISOString(), name: '排队公司' });
   await expect(queue.getByText(/运行 1 · 排队 1/)).toBeVisible({ timeout: 10_000 });

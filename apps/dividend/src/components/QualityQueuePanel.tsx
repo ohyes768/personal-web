@@ -35,7 +35,6 @@ export function QualityQueuePanel({ view, job, onRetry, configured }: QualityQue
     return () => clearInterval(timer);
   }, [active]);
 
-  if (view.rows.length === 0) return null;
   const failedRows = view.rows.filter(row => row.state === 'failed');
   return (
     <div aria-label="评级任务队列" className="rounded-xl border border-rule bg-paper-card p-4">
@@ -59,7 +58,9 @@ export function QualityQueuePanel({ view, job, onRetry, configured }: QualityQue
           </button>
         )}
       </div>
-      <ul className="mt-2 space-y-1">
+      {view.rows.length === 0
+        ? <p className="mt-2 text-xs text-ink-muted">当前无评级任务 · 在下方列表对股票点「分析 / 重评」，进度会在这里实时展示</p>
+        : <ul className="mt-2 space-y-1">
         {view.rows.map(row => (
           <li key={row.code} className="flex flex-wrap items-baseline gap-2 text-sm">
             <span className="font-medium text-ink">{row.name || row.code}</span>
@@ -90,7 +91,7 @@ export function QualityQueuePanel({ view, job, onRetry, configured }: QualityQue
             )}
           </li>
         ))}
-      </ul>
+      </ul>}
     </div>
   );
 }
