@@ -37,8 +37,8 @@ SUMMARY_ENTRY_KEYS = {'community_id', 'availability', 'last_refresh', 'sample_co
                       'captured_at', 'unit_rent_yuan_m2_month',
                       'annualized_gross_yield_pct'}
 DETAIL_DATA_KEYS = {'availability', 'last_refresh', 'sample_count', 'excluded_count',
-                    'captured_at', 'regional_sample', 'groups', 'bedrooms_distribution', 'samples',
-                    'page', 'page_size', 'total', 'source_links'}
+                    'captured_at', 'regional_sample', 'sampling', 'groups', 'bedrooms_distribution',
+                    'samples', 'page', 'page_size', 'total', 'source_links'}
 GROUP_KEYS = {'bedrooms', 'area_band', 'sample_count', 'rent_reference',
               'sale_reference', 'yield_estimate'}
 JOB_KEYS = {'stage', 'association', 'job_id', 'running', 'phase', 'total_communities',
@@ -86,10 +86,10 @@ def valid3():
     return [smp('A', 9000.0, 100.0), smp('B', 7500.0, 100.0), smp('C', 12000.0, 120.0)]
 
 
-def entry(cid, samples, captured=None, src=SRC_ID):
+def entry(cid, samples, captured=None, src=SRC_ID, quality=None):
     return {'community_id': cid, 'source': 'fang', 'source_community_id': src,
             'captured_at': captured or now_iso(), 'samples': samples,
-            'quality': {}, 'status': 'complete'}
+            'quality': quality or {}, 'status': 'complete'}
 
 
 def publish(rentals_dir, communities, run_id='run-1'):
@@ -371,6 +371,19 @@ def test_detail_groups_structure_and_numbers(api_env):
     assert data['groups'][0]['sale_reference'] is None
     assert data['groups'][0]['yield_estimate'] is None
     assert data['source_links'] == [f'https://zu.fang.com/hz/house-xm{SRC_ID}/']
+
+
+def test_detail_sampling_marker_passed_through(api_env):
+    """配额采样标记透传到详情响应；旧快照（无标记）为 null。"""
+    publish(api_env, {CID_MAPPED: entry(CID_MAPPED, valid3(), quality={
+        'sampling': {'quota': 10, 'qualified': 10, 'sampled': 11}})})
+    data = detail(CID_MAPPED)
+    assert data['sampling'] == {'quota': 10, 'qualified': 10, 'sampled': 11}
+
+
+def test_detail_without_sampling_marker_is_null(api_env):
+    publish(api_env, {CID_MAPPED: entry(CID_MAPPED, valid3())})
+    assert detail(CID_MAPPED)['sampling'] is None
 
 
 def test_detail_group_under_three_samples(api_env):

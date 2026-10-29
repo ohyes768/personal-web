@@ -421,6 +421,17 @@ def _mapped_entry(current: dict | None, community_id: str, source_ids: dict) -> 
     return entry
 
 
+def _sampling_of(entry: dict | None) -> dict | None:
+    """配额采样标记（仅幸福里抽样快照有）；旧快照与房天下快照为 None。"""
+    if not entry:
+        return None
+    quality = entry.get('quality')
+    if not isinstance(quality, dict):
+        return None
+    sampling = quality.get('sampling')
+    return sampling if isinstance(sampling, dict) else None
+
+
 def _source_links(community_id, source_id):
     if not source_id:
         return []
@@ -584,6 +595,7 @@ def community_rentals(
         "excluded_count": len(excluded),
         "captured_at": entry.get("captured_at") if entry else None,
         "regional_sample": bool(entry and entry.get('quality', {}).get('regional_sample')),
+        "sampling": _sampling_of(entry),
         "groups": groups,
         "bedrooms_distribution": distribution,
         "samples": rows[start:start + page_size],

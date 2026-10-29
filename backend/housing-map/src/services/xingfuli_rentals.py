@@ -2,6 +2,9 @@
 
 The same-neighborhood URL is anchored to a listing, not a neighborhood ID.
 Never infer membership from that URL or from keyword-search recommendations.
+
+Collection is quota sampled: at most MAX_SAMPLES listings are verified by
+detail request, and the crawl stops paging once that quota is met.
 """
 from __future__ import annotations
 
@@ -16,6 +19,10 @@ from src.services.fang_rentals import RentalCrawlCancelled, SeedRunResult
 from src.services.xingfuli_transport import XingfuliTransport
 
 BASE_URL = 'https://m.xflapp.com'
+
+# 配额采样：核验通过 10 条整租合格样本即停，不再翻页。
+# 小区整租在租少于 10 套时行为与全量采集完全一致。
+MAX_SAMPLES = 10
 
 
 def _id(value):
@@ -112,6 +119,16 @@ def _sample(row, sid, community_name, captured):
                 captured_at=captured, published_at=None, price_kind='listing_rent')
 
 
+def _is_candidate(sample):
+    """候选 = 列表行即整租且标题无疑似隔断旗。
+
+    只有候选值得发详情请求：合租与疑似隔断行在统计侧本就排除，
+    提前识别可省下请求（限速 5 秒/请求）。
+    """
+    return (sample['rental_mode'] == 'whole'
+            and 'suspected_partition' not in sample['quality_flags'])
+
+
 def parse_listing(body, listing_id):
     """Parsed payload of a listing or same-neighborhood page."""
     return _page(body, listing_id)
@@ -178,6 +195,7 @@ class XingfuliClient(XingfuliTransport):
                     raise ValueError('幸福里列表结构不完整')
                 result.pages_fetched += 1
                 added = 0
+                quota_met = False
                 for raw in rows:
                     sample = _sample(raw, source_id, community_name, captured)
                     if sample['source_listing_id'] in seen:
@@ -185,7 +203,10 @@ class XingfuliClient(XingfuliTransport):
                         continue
                     seen.add(sample['source_listing_id']); added += 1
                     result.samples.append(sample)
-                    if details and sample['rental_mode'] == 'whole':
+                    if quota_met:
+                        # 配额已满：本页剩余行只登记为样本，不再发详情请求
+                        continue
+                    if details and _is_candidate(sample):
                         stage = 'detail'
                         try:
                             _enrich(sample, self.fetch(sample['source_url']), source_id, property_type)
@@ -199,6 +220,13 @@ class XingfuliClient(XingfuliTransport):
                             if self.cooldown_until:
                                 raise
                         stage = 'list'
+                        # 只有核验通过的候选占配额；失败候选等后续候选补位
+                        if result.detail_success >= MAX_SAMPLES:
+                            quota_met = True
+                if quota_met:
+                    # 配额已满即停：不再翻页，快照是采样契约下的完整结果
+                    result.status = 'complete'
+                    break
                 if not more:
                     if rows and not added and page > 0:
                         raise ValueError('幸福里末页重复，拒绝发布不完整结果')

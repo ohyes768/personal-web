@@ -45,7 +45,7 @@ from src.services.rental_reference.storage import (
 from src.services.fang_detail_cache import FangDetailCache
 from src.services.fang_request_policy import FangRequestPolicy, FangRequestCancelled
 from src.services.rental_reference.providers import active_sources, same_source, source_url
-from src.services.xingfuli_rentals import XingfuliClient
+from src.services.xingfuli_rentals import MAX_SAMPLES, XingfuliClient
 
 JOB_FILE_NAME = 'refresh_job.json'
 DEFAULT_MAX_PAGES = 10
@@ -415,12 +415,20 @@ class RentalRefreshService:
                 # Failed seeds keep their samples for diagnostics only; passing
                 # them to publish_run with a failed status is what triggers the
                 # carried_over/absent logic instead of dropping the community.
+                quality = {'duplicate_source_ids_skipped': seed_result.duplicate_ids}
+                if plan.source == 'xingfuli':
+                    # 配额采样快照：如实记录抽了多少、核验通过多少
+                    quality['sampling'] = {
+                        'quota': MAX_SAMPLES,
+                        'qualified': seed_result.detail_success,
+                        'sampled': seed_result.detail_success + seed_result.detail_failed,
+                    }
                 batches.append(CommunityBatch(
                     community_id=plan.community_id, source=plan.source,
                     source_community_id=plan.source_community_id,
                     status=seed_result.status, captured_at=captured_at,
                     samples=seed_result.samples,
-                    quality={'duplicate_source_ids_skipped': seed_result.duplicate_ids},
+                    quality=quality,
                     pages_fetched=seed_result.pages_fetched,
                     pages_truncated=seed_result.pages_truncated,
                     detail_success=seed_result.detail_success,

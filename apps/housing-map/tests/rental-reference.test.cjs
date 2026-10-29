@@ -142,6 +142,18 @@ test('no_samples availability differs from unmapped', () => {
   assert.match(html, /没有可用房源样本/);
 });
 
+test('sampling marker renders the quota notice, old snapshots do not', () => {
+  const sampled = renderToStaticMarkup(React.createElement(RentalReferenceContent, {
+    data: availableData({ sampling: { quota: 10, qualified: 10, sampled: 11 } }),
+  }));
+  assert.match(sampled, /抽样采集：目标 10 条整租合格样本/);
+  assert.match(sampled, /非小区全部在租房源/);
+  const legacy = renderToStaticMarkup(React.createElement(RentalReferenceContent, {
+    data: availableData(),
+  }));
+  assert.doesNotMatch(legacy, /抽样采集/);
+});
+
 test('terminal refresh phases stop polling, non-terminal keep polling', () => {
   assert.equal(isTerminalPhase('succeeded'), true);
   assert.equal(isTerminalPhase('partial_failed'), true);

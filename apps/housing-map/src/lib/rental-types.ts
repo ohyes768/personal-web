@@ -80,8 +80,19 @@ export interface RentalLastRefresh {
   error: string | null;
 }
 
+export interface RentalSampling {
+  /** 目标整租合格样本数 */
+  quota: number;
+  /** 详情核验通过的样本数 */
+  qualified: number;
+  /** 实际发起详情核验的样本数（成功 + 失败） */
+  sampled: number;
+}
+
 export interface RentalDetailData {
   regional_sample?: boolean;
+  /** 配额采样标记；旧快照与房天下快照为 null */
+  sampling?: RentalSampling | null;
   availability: RentalAvailability;
   /** 最近一次采集任务结果；允许"旧数据可用 + 最近抓取失败"并存 */
   last_refresh: RentalLastRefresh | null;

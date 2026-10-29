@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/guides/housing-map-rental-reference.md", "reason": "检查统计口径（<3不出参考、排除规则、原子发布）未被采样改动破坏"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 sampling 字段从 crawl→quality→快照→API→前端四层透传一致，无断节"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "确认测试按 Windows 约束运行（basetemp、marker），结果可信"}

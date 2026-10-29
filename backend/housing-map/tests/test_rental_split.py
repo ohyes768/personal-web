@@ -37,6 +37,29 @@ def test_collection_only_uses_confirmed_xingfuli_even_with_missing_neighbors(tmp
     assert set(load_current(tmp_path / 'rentals')['communities']) == {'pilot'}
 
 
+def test_xingfuli_batch_publishes_sampling_quality(tmp_path):
+    """幸福里批次如实记录配额采样元数据（快照 → API → 前端的唯一来源）。"""
+    reg = registry(tmp_path)
+    source(reg, 'xingfuli')
+    class Client:
+        request_count = 1
+        cooldown_until = None
+        def __init__(self, **kwargs): pass
+        def crawl(self, sid, seed, **kwargs):
+            return SeedRunResult(seed=source_url(next(s for s in reg.sources() if s['source'] == 'xingfuli')),
+                                 status='complete', pages_fetched=1,
+                                 detail_success=10, detail_failed=1)
+        def close(self): pass
+    svc = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
+                               xingfuli_only=True, fetch_factory=forbidden,
+                               discovery_factory=forbidden, xingfuli_factory=Client)
+    svc.start()
+    svc._thread.join(5)
+    assert svc.status()['phase'] == 'done', svc.status()
+    entry = load_current(tmp_path / 'rentals')['communities']['pilot']
+    assert entry['quality']['sampling'] == {'quota': 10, 'qualified': 10, 'sampled': 11}
+
+
 def test_collection_with_only_old_fang_source_requires_matching(tmp_path):
     reg = registry(tmp_path)
     source(reg, 'fang')

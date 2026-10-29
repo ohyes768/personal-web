@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/guides/housing-map-rental-reference.md", "reason": "租金参考与租售比契约：统计口径、原子发布、看板三列——采样改动不得破坏这些口径"}
+{"file": ".trellis/spec/backend/housing-map/backend/rental-sources.md", "reason": "租金来源管理契约：快照隔离与来源关联背景，crawl/refresh 改动的上下文"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest 硬约束（basetemp、symlink marker），跑 housing-map 测试前必读"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "本任务跨采集→编排→API→前端四层，字段一路透传，防跨层断节"}
+{"file": "backend/housing-map/docs/2026-10-28-xingfuli-discovery-research.md", "reason": "幸福里只读实测研究：来源发现方法、误命中教训、列表页归属验证证据"}
