@@ -38,6 +38,8 @@ class XingfuliTransport:
         self.cancel = cancel_event or threading.Event()
         self.fetcher = fetcher
         self.request_count = 0
+        self.wait_seconds = 0
+        self.http_seconds = 0
         self.cooldown_until = None
         self.opener = build_opener(_NoRedirect())
         self.validate = validate
@@ -66,8 +68,13 @@ class XingfuliTransport:
             if cooldown > time.time():
                 self.cooldown_until = dt.datetime.fromtimestamp(cooldown, dt.UTC).isoformat()
                 raise ValueError('幸福里来源冷却中，暂停请求')
-            self._check_cancel(max(0, last + self.delay - time.time()))
+            waiting = time.monotonic()
+            try:
+                self._check_cancel(max(0, last + self.delay - time.time()))
+            finally:
+                self.wait_seconds += time.monotonic() - waiting
             self.request_count += 1
+            requesting = time.monotonic()
             try:
                 if self.fetcher:
                     body = self.fetcher(url)
@@ -87,6 +94,7 @@ class XingfuliTransport:
                     cooldown = time.time() + 3600
                 raise ValueError(f'幸福里请求失败（HTTP {exc.code}）') from None
             finally:
+                self.http_seconds += time.monotonic() - requesting
                 _atomic_write_json(path, dict(last_request_at=time.time(), cooldown_until=cooldown))
                 if cooldown > time.time():
                     self.cooldown_until = dt.datetime.fromtimestamp(cooldown, dt.UTC).isoformat()

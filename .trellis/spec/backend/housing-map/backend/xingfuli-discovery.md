@@ -5,9 +5,9 @@
 
 ## 当前网页入口（2026-10-29）
 
-- `GET/POST/DELETE /rentals/source-matching` 独立查询、启动/继续、取消来源匹配；POST为202。SourceMatchingService顺序执行幸福里probe，保存小区级remaining/outcomes和计数到rentals/source_matching_job.json；绝不采集整租样本或发布租金快照。人工跳过、拒绝、已有幸福里来源不自动重做。
+- `GET/POST/DELETE /rentals/source-matching` 独立查询、启动/继续、取消来源匹配；POST为202，接受`mode=full|incremental`（详见下方提速契约）。SourceMatchingService顺序执行幸福里probe，保存remaining/outcomes和计数到rentals/source_matching_job.json；绝不采集整租样本或发布租金快照。人工跳过、拒绝、已有幸福里来源不自动重做。
 - 网页`/rentals/refresh`明确启用`RentalRefreshService(xingfuli_only=True)`，只采已关联幸福里的合资格小区，不运行任何来源发现；零关联返回422并提示先匹配。历史默认构造器保留独立旧库测试/工具兼容，不能作为网页运行配置。
-- 匹配、租金采集、单小区probe共用task_lock与busy检查，不能并发网络执行。取消保留未处理队列；未取消的在途任务可在服务启动时恢复；GET不启动网络。当前断点粒度为小区，中断中的小区可能重查。
+- 匹配、租金采集、单小区probe共用task_lock与busy检查，不能并发网络执行。取消保留未处理队列；未取消的在途任务可在服务启动时恢复；GET不启动网络。成功搜索与主页步骤持久化，中断的小区复用有效步骤，绑定前仍重新核验入口。
 - 旧Fang搜索、链接导入、候选确认及review bind写入口返回410；来源待处理清单按幸福里probe状态投影。人工选择主页仍走probe/select，不复用旧Fang候选确认。
 - 来源绑定在发布锁下复查资格、取消和人工跳过；自动匹配不绕过人工拒绝，显式单小区探查保留重新处理语义。
 
@@ -118,3 +118,50 @@ Correct：搜索只用来点名要读哪个主页，身份、地址、坐标、�
 Wrong：`source_id = url.split('hz-')[1]`。Correct：`source_id` 是 neighborhood_id，种子单独存 `seed_listing_id`。
 Wrong：搜索条目带一个种子就直接绑定。Correct：种子必须经详情页与同小区列表核验后才可绑定。
 Wrong：把平台地址写进来源的 `address`。Correct：写 `platform_address`，租金资料不得变成小区地址证据。
+
+## 来源匹配提速契约（2026-10-29）
+
+### Scope / Trigger
+修改`matching.py`、`probe.py`、`discovery_checkpoint.py`、发现客户端或来源匹配按钮时适用。保留共享5秒限速、冷却、任务锁与发布锁。
+
+### Signatures
+- `SourceMatchingService.start(mode=None, *, _startup=False)`；POST请求`{"mode":"full"}`或`{"mode":"incremental"}`，非法模式422，互斥409。省略请求体/模式兼容原先自动续跑行为。
+- GET增加`incremental_count`、`mode`、`current_community_name`、`current_step`及`diagnostics`；GET仅查本地状态，不启动网络。
+- `DiscoveryCheckpoint`以`community_registry.meta`的`rental_discovery_steps:{cid}`保存版本、身份指纹及结构化成功步骤；不保存HTML、Cookie或核验授权，不建立第二个关联库。
+
+### Contracts
+- full清除本轮目标的派生断点，重查所有合资格且缺来源小区，包括待选择/未找到/失败；incremental处理remaining、新增未查和失败，跳过已完成待选/未找到。history保留以往完成结果，避免一次空增量丢掉历史。
+- 人工跳过/拒绝及现有来源始终保护。恢复在途服务只恢复保存的remaining，不追加新小区；用户点继续才追加新增/失败项。
+- 名称按normalized去重，主名加最多一个别名；完整检查当前通道所有相关候选后，只有一个候选且strong才提前结束。主页读取失败、竞争候选、预算/候选上限截断、搜索满20条或total超过返回数，均不得自动绑定。
+- 只能证明已查询通道内唯一，不能证明全平台唯一。`HOUSING_XINGFULI_EARLY_STOP=0`关闭提前结束；仍保留不完整证据不可自动绑定的安全修复。
+- 每个成功搜索/主页步骤先落SQLite，再进入下一步。有效空搜索也保存24小时；失败/验证页/冷却不保存。身份指纹包括名称/别名/地址/区域/坐标；身份、版本变化或步骤过期/损坏后重查。缓存按小区隔离，身份判定每次重算。
+- `HOUSING_XINGFULI_DISCOVERY_CACHE=0`关闭缓存读写。缓存不计HTTP预算；每个真实请求（包括列表核验）之前检查取消与预算；真实传输继续检查冷却/限速。
+- 恢复/选择时刷新主页租房入口，然后重新执行详情和列表两次归属核验。新鲜主页与绑定时的当前目录信息重新评估：搜索自动决策须strong；人工选择允许证据缺口但不得有冲突。不要用`automatic=False`推断“用户已经选过”：显式单小区搜索也属于自动决策。
+- `diagnostics`统计本次启动的requests、cache_hits、wait_seconds、http_seconds、elapsed_seconds；probe另记early_stop。每个HTTP步骤更新，批次汇总当前及已完成小区。新点击启动时请求诊断重置，恢复保留业务结果计数。
+
+### Validation & Error Matrix
+|情况|行为|
+|---|---|
+|未知mode|422，不启动任务|
+|增量0项|按钮禁用；API允许空任务，不发HTTP|
+|成功空搜索|缓存24小时；继续不反复查已完成未找到项|
+|主页/搜索读取失败或截断|不自动绑；有候选留待选，无候选记失败，可增量重试|
+|预算耗尽|deferred，不越预算核验列表|
+|取消/进程退出|保留已成功步骤；恢复重做未成功步骤及入口核验|
+|坏缓存/过期/身份变化|重查，不伪造成功空结果|
+|权威数据库读取失败|失败关闭，不继续绑定|
+
+### Good / Base / Bad
+Good：首通道完整、唯一强候选，1搜索+1主页+2核验，共4请求。Base：证据不足继续通道/别名或人工选择。Bad：第一个strong出现就绑定、忽略读取失败的竞争候选、复用旧详情归属直接绑定。
+
+### Tests Required
+`test_matching_speed.py`覆盖6→4请求、唯一/竞争/截断、缓存有效空/过期/损坏/输入变化、失败不缓存、强制进程退出、恢复刷新入口/双核验、预算、模式及API、启动恢复不扩队、累计请求与功能关闭；原probe/split/discovery/source套件继续执行。前端directory-flow验证两个mode的点击、空增量/运行/租金更新互斥，position-status断言限定高德任务行，不能误判租金说明。
+
+### Wrong vs Correct
+```python
+# Wrong: cached strong identity means entry is safe to bind.
+bind_source(registry, old_community, cached_candidate, seed=old_seed)
+# Correct: refresh homepage entry, re-evaluate current identity, then check both owners.
+homepage = client.homepage(candidate['neighborhood_id'], fresh=True)
+# Recompute evaluate(...), verify detail + same-neighborhood list, then recheck under publish lock.
+```

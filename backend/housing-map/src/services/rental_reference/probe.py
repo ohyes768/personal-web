@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import threading
 import uuid
 
@@ -20,6 +21,7 @@ from src.services.rental_reference.xingfuli_sources import (
     evaluate,
 )
 from src.services.xingfuli_discovery import CHANNEL_ORDER, XingfuliDiscovery
+from src.services.rental_reference.discovery_checkpoint import DiscoveryCheckpoint, DiscoveryBudgetExhausted
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +94,12 @@ def _related(query, platform_name):
 
 
 def _search_names(community):
-    names = community_names(community)
+    names, seen = [], set()
+    for name in community_names(community):
+        key = normalized(name)
+        if key and key not in seen:
+            names.append(name)
+            seen.add(key)
     # The main name first, then at most one alias; every extra name costs a
     # request from a bounded budget.
     return names[:2]
@@ -108,10 +115,12 @@ class ProbeService:
         self.delay = delay
         self.timeout = timeout
         self.budget = budget
+        self.early_stop = os.getenv('HOUSING_XINGFULI_EARLY_STOP', '1') != '0'
         self._discovery_factory = discovery_factory or self._default_discovery
         self._busy = busy
         self._mutex = task_lock if task_lock is not None else threading.RLock()
         self._automatic = False
+        self._require_strong = False
         self._xingfuli_only = xingfuli_only
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
@@ -150,7 +159,8 @@ class ProbeService:
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
             write_state(self.registry, community_id, stage=STAGE_SEARCHING, job_id=self._job_id,
-                        message='正在查找幸福里小区主页', candidates=None, error=None)
+                        message='正在查找幸福里小区主页', candidates=None, error=None,
+                        diagnostics={}, current_step=None)
             self._spawn(community, 'search')
         return self.status(community_id)
 
@@ -258,11 +268,14 @@ class ProbeService:
 
     def _run(self, community, mode):
         community_id = community['community_id']
+        self._require_strong = mode == 'search' or self._automatic
         try:
             if mode == 'search':
                 self._search(community)
             else:
                 self._resolve_entry(community)
+        except DiscoveryBudgetExhausted as exc:
+            write_state(self.registry, community_id, stage=STAGE_DEFERRED, message=str(exc))
         except RentalCrawlCancelled:
             write_state(self.registry, community_id, stage=STAGE_CANCELLED, message='探查已取消')
         except Exception as exc:
@@ -273,19 +286,18 @@ class ProbeService:
 
     def _search(self, community):
         community_id = community['community_id']
-        client = self._client()
+        client = self._checkpoint_client(community)
         candidates = []
         homepages = {}
         seen = set()
+        incomplete = False
         for name in _search_names(community):
             for channel in CHANNEL_ORDER:
-                if client.request_count >= self.budget:
-                    write_state(self.registry, community_id, stage=STAGE_DEFERRED,
-                                message='本轮探查请求额度已用完，请稍后重试')
-                    return
                 try:
                     found = client.search(name, channel)
+                    incomplete = incomplete or not client.search_complete
                 except ValueError as exc:
+                    incomplete = True
                     logger.warning('Rental probe search failed community_id=%s channel=%s error=%s',
                                    community_id, channel, exc)
                     if '冷却' in str(exc):
@@ -298,11 +310,10 @@ class ProbeService:
                     if neighborhood_id in seen or not _related(name, platform_name):
                         continue
                     seen.add(neighborhood_id)
-                    if client.request_count >= self.budget:
-                        break
                     try:
                         homepage = client.homepage(neighborhood_id)
                     except ValueError as exc:
+                        incomplete = True
                         logger.warning('Rental probe homepage failed community_id=%s id=%s error=%s',
                                        community_id, neighborhood_id, exc)
                         continue
@@ -316,15 +327,24 @@ class ProbeService:
                     candidate['strong'] = judgement['strong']
                     candidates.append(candidate)
                     if len(candidates) >= MAX_CANDIDATES:
+                        incomplete = True
                         break
+                if self.early_stop and not incomplete and len(candidates) == 1 and candidates[0]['strong'] and not candidates[0]['conflicts']:
+                    client.diagnostics['early_stop'] = True
+                    client.report('resolving_entry')
+                    write_state(self.registry, community_id, stage=STAGE_RESOLVING,
+                                selected_page=candidates[0], message='正在核验租房入口')
+                    self._resolve_entry(community, candidates[0], client,
+                                        homepage=homepages.get(candidates[0]['neighborhood_id']))
+                    return
                 if len(candidates) >= MAX_CANDIDATES:
                     break
         if not candidates:
-            write_state(self.registry, community_id, stage=STAGE_NO_HOMEPAGE,
+            write_state(self.registry, community_id, stage=STAGE_FAILED if incomplete else STAGE_NO_HOMEPAGE,
                         candidates=[], message='未找到幸福里小区主页，请稍后重试或检查名称')
             return
         strong = [c for c in candidates if c['strong'] and not c['conflicts']]
-        if len(candidates) == 1 and len(strong) == 1:
+        if not incomplete and len(candidates) == 1 and len(strong) == 1:
             write_state(self.registry, community_id, stage=STAGE_RESOLVING,
                         selected_page=candidates[0], message='正在寻找该主页的租房入口')
             self._resolve_entry(community, candidates[0], client, homepage=homepages.get(candidates[0]['neighborhood_id']))
@@ -340,7 +360,19 @@ class ProbeService:
             write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
                         message='请选择对应的小区主页')
             return
-        client = client or self._client()
+        client = client or self._checkpoint_client(community)
+        # Cached identities are useful for discovery, but a restored worker
+        # must refresh rental seeds before doing both ownership checks.
+        if isinstance(client, DiscoveryCheckpoint) and candidate['neighborhood_id'] not in client.fresh_homepages:
+            homepage = client.homepage(candidate['neighborhood_id'], fresh=True)
+            fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
+            fresh_candidate['candidate_id'] = candidate.get('candidate_id', 'homepage:' + candidate['neighborhood_id'])
+            judgement = evaluate(community, fresh_candidate)
+            if judgement['conflicts'] or (self._require_strong and not judgement['strong']):
+                write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
+                            candidates=[fresh_candidate], message='主页信息已变化，请重新探查')
+                return
+            candidate = fresh_candidate
         if homepage is None:
             try:
                 homepage = client.homepage(candidate['neighborhood_id'])
@@ -380,6 +412,12 @@ class ProbeService:
         write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
                     message='该主页没有可核验的租房入口，请重试或换一个主页')
 
+    def _checkpoint_client(self, community):
+        return DiscoveryCheckpoint(self.registry, community, self._client(), self._cancel, self.budget,
+                                   lambda step, diagnostics: write_state(
+                                       self.registry, community['community_id'], current_step=step,
+                                       diagnostics=diagnostics))
+
     def _bind(self, community, candidate, seed):
         community_id = community['community_id']
         from src.services.rental_reference.xingfuli_sources import has_source
@@ -394,7 +432,11 @@ class ProbeService:
         try:
             from src.services.rental_reference.storage import RentalPublishLock
             with self._mutex, RentalPublishLock(self.directory / 'rental_publish'):
-                self._community(community_id)
+                current = self._community(community_id)
+                if evaluate(current, candidate)['conflicts']:
+                    raise ValueError('小区身份信息已变化，请重新探查')
+                if self._require_strong and not evaluate(current, candidate)['strong']:
+                    raise ValueError('小区身份信息已变化，请重新探查')
                 if self._cancel.is_set():
                     raise ValueError('探查已取消')
                 if self._automatic:

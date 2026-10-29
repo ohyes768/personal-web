@@ -10,10 +10,12 @@ import uuid
 
 from src.services.community_registry import now
 from src.services.rental_reference.association import eligible_communities, read_review
-from src.services.rental_reference.probe import ProbeService, read_state
+from src.services.rental_reference.probe import PREFIX as PROBE_PREFIX, ProbeService, read_state
+from src.services.rental_reference.association import PREFIX as REVIEW_PREFIX
 from src.services.rental_reference.providers import active_sources
 from src.services.rental_reference.refresh import RefreshAlreadyRunning, RefreshNotRunning
 from src.services.rental_reference.storage import _atomic_write_json
+from src.services.rental_reference.discovery_checkpoint import clear_checkpoint
 
 
 def source_reviews(registry):
@@ -64,12 +66,55 @@ class SourceMatchingService:
 
     def status(self):
         with self._mutex:
-            return copy.deepcopy(self._job)
+            state = copy.deepcopy(self._job)
+            state['incremental_count'] = len(self._targets('incremental'))
+            cid = state.get('current_community_id')
+            if cid:
+                probe = self._probe.status(cid)
+                state['current_step'] = probe.get('current_step')
+                state['diagnostics'] = self._diagnostics(probe.get('diagnostics', {}))
+            return state
+
+    def _diagnostics(self, current=None):
+        diagnostics = list(self._job.get('completed_diagnostics', {}).values())
+        if current:
+            diagnostics.append(current)
+        return {key: round(sum(item.get(key, 0) for item in diagnostics), 3)
+                for key in ('requests', 'cache_hits', 'wait_seconds', 'http_seconds', 'elapsed_seconds')}
+
+    def _eligible(self):
+        communities, _ = eligible_communities(self.registry)
+        selected = active_sources(self.registry, xingfuli_only=True)
+        with self.registry.db() as db:
+            rejected = {row[0] for row in db.execute('SELECT cid FROM rejected')}
+            skipped = {row[0][len(REVIEW_PREFIX):] for row in db.execute(
+                'SELECT key,value FROM meta WHERE key LIKE ?', (REVIEW_PREFIX + '%',))
+                if json.loads(row[1]).get('decision') == 'skipped'}
+        return [c['community_id'] for c in communities if c['community_id'] not in selected
+                and c['community_id'] not in rejected
+                and c['community_id'] not in skipped]
+
+    def _targets(self, mode):
+        eligible = self._eligible()
+        if mode == 'full':
+            return eligible
+        remaining = [cid for cid in self._job.get('remaining', []) if cid in eligible]
+        outcomes = {**self._job.get('history', {}), **self._job.get('outcomes', {})}
+        with self.registry.db() as db:
+            stages = {row[0][len(PROBE_PREFIX):]: json.loads(row[1]).get('stage') for row in db.execute(
+                'SELECT key,value FROM meta WHERE key LIKE ?', (PROBE_PREFIX + '%',))}
+        for cid in eligible:
+            stage = stages.get(cid)
+            completed = outcomes.get(cid) in {'pending', 'missing', 'matched', 'skipped'} or (
+                cid not in outcomes and stage in {'needs_homepage_selection', 'homepage_not_found', 'entry_not_found'})
+            if cid not in remaining and not completed:
+                remaining.append(cid)
+        return remaining
 
     def resume(self):
         if self._resume_on_startup:
             self._resume_on_startup = False
-            return self.start()
+            return self.start(_startup=True)
 
     def _save(self, **fields):
         with self._mutex:
@@ -77,29 +122,36 @@ class SourceMatchingService:
             self.directory.mkdir(parents=True, exist_ok=True)
             _atomic_write_json(self._path, self._job)
 
-    def start(self):
+    def start(self, mode=None, *, _startup=False):
         with self._mutex:
+            if mode not in {None, 'full', 'incremental'}:
+                raise ValueError('未知来源匹配模式')
             if self.busy() or (self._busy and self._busy()):
                 raise RefreshAlreadyRunning('已有租金采集或来源匹配任务正在运行')
-            communities, _ = eligible_communities(self.registry)
-            selected = active_sources(self.registry, xingfuli_only=True)
-            with self.registry.db() as db:
-                rejected = {row[0] for row in db.execute('SELECT cid FROM rejected')}
-            eligible = {c['community_id'] for c in communities if c['community_id'] not in selected
-                        and c['community_id'] not in rejected
-                        and read_review(self.registry, c['community_id']).get('decision') != 'skipped'}
-            resume = self._job.get('phase') in {'cancelled', 'interrupted', 'cooling_down'} and self._job.get('remaining')
-            remaining = [cid for cid in self._job['remaining'] if cid in eligible] if resume else [
-                c['community_id'] for c in communities if c['community_id'] in eligible]
-            outcomes = self._job.get('outcomes', {}) if resume else {}
+            resume = mode != 'full' and self._job.get('phase') in {'cancelled', 'interrupted', 'cooling_down'} and self._job.get('remaining')
+            effective_mode = mode or ('incremental' if resume else 'full')
+            remaining = self._targets(effective_mode)
+            if _startup:
+                remaining = [cid for cid in self._job.get('remaining', []) if cid in self._eligible()]
+            outcomes = {cid: value for cid, value in self._job.get('outcomes', {}).items()
+                        if cid not in remaining} if resume else {}
+            # Keep completion history across empty/repeated incremental runs.
+            history = dict(self._job.get('history', {}))
+            history.update(self._job.get('outcomes', {}))
+            if effective_mode == 'full' and not _startup:
+                for cid in remaining:
+                    clear_checkpoint(self.registry, cid)
             self._cancel.clear()
             self._stopping = False
-            self._save(job_id=uuid.uuid4().hex, running=True, phase='running', stage='matching',
+            self._save(job_id=uuid.uuid4().hex, mode=effective_mode, history=history,
+                       running=True, phase='running', stage='matching',
+                       completed_diagnostics={},
                        total=len(remaining) + len(outcomes), processed=len(outcomes),
                        remaining=remaining, outcomes=outcomes, errors=[], error=None,
                        association={**{name: list(outcomes.values()).count(name) for name in ('matched', 'pending', 'missing', 'failed', 'skipped')},
                                     'checked': len(outcomes), 'deferred': len(remaining)},
-                       started_at=now(), finished_at=None)
+                       started_at=now(), finished_at=None, diagnostics={}, current_step=None,
+                       current_community_id=None, current_community_name=None)
             self._thread = threading.Thread(target=self._run, name='rental-source-matching', daemon=True)
             self._thread.start()
             return self.status()
@@ -133,6 +185,7 @@ class SourceMatchingService:
         phase = 'done'
         try:
             while self._job['remaining'] and not self._cancel.is_set():
+                state = None
                 until = self._cooldown()
                 if until > time.time():
                     self._save(phase='cooling_down', cooldown_until=dt.datetime.fromtimestamp(until, dt.UTC).isoformat())
@@ -145,13 +198,17 @@ class SourceMatchingService:
                 elif read_review(self.registry, cid).get('decision') == 'skipped':
                     outcome = 'skipped'
                 else:
-                    self._save(current_community_id=cid, phase='running', cooldown_until=None)
+                    name = next(c['community_name'] for c in current if c['community_id'] == cid)
+                    self._save(current_community_id=cid, current_community_name=name,
+                               phase='running', cooldown_until=None)
                     self._probe.start(cid, automatic=True)
                     while self._probe.busy():
                         if self._cancel.wait(.1):
                             self._probe.shutdown()
                             break
                     state = self._probe.status(cid)
+                    self._save(diagnostics=self._diagnostics(state.get('diagnostics', {})),
+                               current_step=state.get('current_step'))
                     if self._cancel.is_set():
                         break
                     stage = state.get('stage')
@@ -160,17 +217,22 @@ class SourceMatchingService:
                     outcome = {'bound_pending_collection': 'matched', 'needs_homepage_selection': 'pending',
                                'homepage_not_found': 'missing', 'entry_not_found': 'missing'}.get(stage, 'failed')
                 with self._mutex:
+                    if state is not None:
+                        self._job.setdefault('completed_diagnostics', {})[cid] = state.get('diagnostics', {})
                     self._job['outcomes'][cid] = outcome
                     self._job['remaining'].pop(0)
                     counts = {name: list(self._job['outcomes'].values()).count(name)
                               for name in ('matched', 'pending', 'missing', 'failed', 'skipped')}
                     counts['checked'] = len(self._job['outcomes'])
                     counts['deferred'] = len(self._job['remaining'])
-                    self._save(processed=len(self._job['outcomes']), association=counts)
+                    self._save(processed=len(self._job['outcomes']), association=counts,
+                               diagnostics=self._diagnostics(), current_community_id=None,
+                               current_community_name=None)
         except Exception as exc:
             phase = 'failed'
             self._save(error=str(exc), errors=[{'message': str(exc)}])
         finally:
             if self._cancel.is_set():
                 phase = 'interrupted' if self._stopping else 'cancelled'
-            self._save(running=self._stopping, phase=phase, current_community_id=None, finished_at=now())
+            self._save(running=self._stopping, phase=phase, current_community_id=None,
+                       current_community_name=None, finished_at=now())

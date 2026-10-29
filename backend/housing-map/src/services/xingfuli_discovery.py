@@ -176,7 +176,14 @@ class XingfuliDiscovery(XingfuliTransport):
         if payload.get('status') != 0 or not isinstance(payload.get('data'), dict):
             raise ValueError('幸福里搜索未返回有效数据')
         items = payload['data'].get('items')
-        return search_groups(items if isinstance(items, list) else [], channel)
+        if not isinstance(items, list):
+            raise ValueError('幸福里搜索结果不完整')
+        total = payload['data'].get('total')
+        # A filled first page can omit another plausible identity. It cannot
+        # authorize automatic binding, even when one visible result is strong.
+        self.search_complete = len(items) < 20 and not (
+            isinstance(total, (int, float)) and total > len(items))
+        return search_groups(items, channel)
 
     def homepage(self, neighborhood_id):
         return parse_homepage(self.fetch(homepage_url(neighborhood_id)), neighborhood_id)

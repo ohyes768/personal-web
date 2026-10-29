@@ -39,7 +39,9 @@ type Page<T> = { items: T[]; total: number; page: number; property_types?: strin
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
-  retryable?: number; unqueried?: number; mode?: 'all' | 'refresh_all' | 'unqueried' | 'retry_failed';
+  retryable?: number; unqueried?: number; mode?: 'all' | 'refresh_all' | 'unqueried' | 'retry_failed' | 'full' | 'incremental';
+  incremental_count?: number; current_community_id?: string; current_community_name?: string; current_step?: string;
+  diagnostics?: { requests?: number; cache_hits?: number; wait_seconds?: number; http_seconds?: number; elapsed_seconds?: number; early_stop?: boolean };
   resolutions?: Record<string, number>; evidence_issues?: { name?: string; message: string }[];
   position_followup?: { state: string; targets?: number; message?: string };
   stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
@@ -151,8 +153,11 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
         <span className="directory-task-dot" aria-hidden="true" />
         <strong>{t.label}</strong>
         <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running) || !!rentalBlocked}
-          onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'refresh_all' } : t.body))}>
-          {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : t.id === 'rentalMatch' && ['cancelled', 'interrupted'].includes(job?.phase || '') ? '继续匹配' : ['rentalMatch', 'rent'].includes(t.id) ? t.label : '开始'}</button>
+          onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'refresh_all' } : t.id === 'rentalMatch' ? { mode: 'full' } : t.body))}>
+          {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : t.id === 'rentalMatch' ? '全量匹配' : t.id === 'rent' ? t.label : '开始'}</button>
+        {t.id === 'rentalMatch' && <button className="btn btn-secondary" data-rental-incremental
+          disabled={busy || !active || running || !!rentalBlocked || !job?.incremental_count}
+          onClick={() => action(t.path, 'POST', { mode: 'incremental' })}>继续匹配（{job?.incremental_count ?? '—'}）</button>}
         {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
           onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
           重试失败项（{job?.retryable || 0}）</button>}
@@ -163,6 +168,12 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
           重试查询失败（{job?.retryable || 0}）</button>}</div>
       </div>
       <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
+      {t.id === 'rentalMatch' && <p className="directory-task-sub">全量匹配会重新查询所有缺来源小区；继续匹配只查剩余、新增及失败项，跳过已查完的待选择和未找到项。已关联及人工跳过的小区会保留。</p>}
+      {t.id === 'rentalMatch' && job?.diagnostics && <p className="directory-task-sub">
+        {job.mode === 'full' ? '全量匹配' : '继续匹配'} · 实际请求 {job.diagnostics.requests || 0} · 复用结果 {job.diagnostics.cache_hits || 0}
+        {job.current_community_name && ` · 当前：${job.current_community_name}`}
+        {job.current_step && ` · ${{ search: '搜索小区', homepage: '核对主页', resolving_entry: '寻找租房入口', listing_owner: '核验房源', listing_owner_from_list: '核验列表' }[job.current_step] || '正在处理'}`}
+      </p>}
       {t.id === 'amap' && <p className="directory-task-sub">当前待处理：尚未查询 {job?.unqueried ?? '—'} 条 → 继续匹配 · 查询失败／不完整 {job?.retryable ?? '—'} 条 → 重试查询失败</p>}
       {t.id === 'amap' && <p className="directory-task-sub">更新全部会重新查询符合条件的楼盘，包括已自动匹配、待确认和未找到的项目，保留人工确认结果；继续匹配只处理尚未查询项目；重试查询失败只处理查询失败或结果不完整的项目。每轮有请求上限。</p>}
       {(problem || message) && <p className="directory-task-line" data-state={state}>

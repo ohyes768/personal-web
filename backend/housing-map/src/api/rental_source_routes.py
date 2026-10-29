@@ -134,10 +134,14 @@ def matching_status():
         raise HTTPException(503, '来源匹配状态暂不可用，请检查后台数据') from exc
 
 
+class MatchingRequest(BaseModel):
+    mode: Literal['full', 'incremental'] | None = None
+
+
 @router.post('/rentals/source-matching', status_code=202)
-def matching_start():
+def matching_start(request: MatchingRequest | None = None):
     try:
-        return {'success': True, 'data': rental_routes._get_matching_service().start()}
+        return {'success': True, 'data': rental_routes._get_matching_service().start(mode=request.mode if request else None)}
     except RefreshAlreadyRunning as exc:
         raise HTTPException(409, str(exc)) from exc
     except (OSError, sqlite3.Error, ValueError) as exc:

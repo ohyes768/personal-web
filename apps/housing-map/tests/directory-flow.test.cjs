@@ -22,17 +22,42 @@ test('rental source matching and data update are distinct Xingfuli-only actions'
     visit(node.props?.children);
   }
   visit(tree);
-  const match = buttons.find(b => b.props.children === '匹配租金来源');
+  const match = buttons.find(b => b.props.children === '全量匹配');
   const update = buttons.find(b => b.props.children === '更新租金数据');
   assert.ok(match && update);
   match.props.onClick(); update.props.onClick();
-  assert.deepEqual(calls, [['/rentals/source-matching', 'POST', undefined], ['/rentals/refresh', 'POST', undefined]]);
+  assert.deepEqual(calls, [['/rentals/source-matching', 'POST', { mode: 'full' }], ['/rentals/refresh', 'POST', undefined]]);
   const html = renderToStaticMarkup(React.createElement(CollectionControls, props));
   assert.doesNotMatch(html, /房天下/);
   assert.match(html, /不会采集租金/);
   const busy = renderToStaticMarkup(React.createElement(CollectionControls, { ...props,
     jobs: { rentalMatch: { running: true, phase: 'running' } } }));
   assert.match(busy, /disabled=""[^>]*>更新租金数据<\/button>/);
+});
+
+test('incremental rental matching sends explicit scope and respects count and exclusion', () => {
+  const calls = [];
+  function buttons(jobs) {
+    const found = [];
+    function visit(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(visit);
+      if (node.type === 'button') found.push(node);
+      visit(node.props?.children);
+    }
+    visit(CollectionControls({ active: true, busy: false, open: true, jobs, errors: {}, action: (...args) => calls.push(args) }));
+    return found;
+  }
+  const next = buttons({ rentalMatch: { incremental_count: 58 } }).find(b => b.props['data-rental-incremental']);
+  assert.ok(next);
+  assert.equal(next.props.disabled, false);
+  next.props.onClick();
+  assert.deepEqual(calls, [['/rentals/source-matching', 'POST', { mode: 'incremental' }]]);
+  for (const jobs of [{ rentalMatch: { incremental_count: 0 } },
+                       { rentalMatch: { incremental_count: 58, running: true } },
+                       { rentalMatch: { incremental_count: 58 }, rent: { running: true } }]) {
+    assert.equal(buttons(jobs).find(b => b.props['data-rental-incremental']).props.disabled, true);
+  }
 });
 
 test('rental matching and rental update share one task block', () => {
