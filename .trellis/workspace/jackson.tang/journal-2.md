@@ -148,32 +148,32 @@
 
 - None - task complete
 
+
 ## Session 54: 评级任务连续排队与队列实时展示
 
 **Date**: 2026-10-29
-**Task**: 股息率 Hermes 分析支持连续排队与队列展示
-**Package**: backend/dividend-select + apps/dividend
+**Task**: 评级任务连续排队与队列实时展示
+**Package**: backend/douyin-processor
 **Branch**: `master`
 
 ### Summary
 
-废止"已有评级任务在跑即 400 拒绝"旧契约，改为运行中受理新代码追加进当前任务（append_codes 持久化、FIFO 派发、收尾窗口互斥不丢项）。前端单一轮询生命周期 + 队列面板（运行/排队/终态分区、每秒本地计时、逐股禁用）。后端 298、前端单测 13、e2e 15+3 全过。
+废止评级 400 拒绝旧契约，改为运行中受理追加（append_codes 持久化、FIFO 派发、收尾窗口互斥）。前端单一轮询生命周期 + 队列面板（分区展示、每秒计时、逐股禁用）。后端 298、单测 13、e2e 18 全过；审查修复 _run_one 异常兜底防队列挂起（HIGH）。
 
 ### Main Changes
 
-- refresh_jobs.py：新增 append_codes（quality 专用 durable 追加）；progress 按 admissions 计数支持同 code 重试；终态判定改用 failed_codes
-- quality_service.py：队列驱动重写（Condition + FIFO deque + dispatch loop），受理快照 payload/data_date，append 与退出判定共用一把锁
-- 前端：useQualityAnalysis 重构（mount 发现、追加复用轮询、查询失败自动重试）；新增 QualityQueuePanel；ScreeningTab/QualityReportModal 逐股禁用
-- spec：quality-rating-contract（append admission 场景重写）、refresh-jobs-contract（append_codes/admissions 语义）
+- Detailed change bullets were not supplied; see the summary above.
 
 ### Git Commits
 
-- ec68ff0 feat(dividend): 评级任务支持连续排队与队列实时展示（已推送）
+| Hash | Message |
+|------|---------|
+| `ec68ff0` | (see git log) |
+| `7e4262b` | (see git log) |
 
 ### Testing
 
-- backend/dividend-select：pytest 全量 298 passed 3 skipped
-- apps/dividend：node --test 13 passed；tsc --noEmit 通过；playwright screening 15 passed、refresh-jobs/data-update-drawer 3 passed
+- Validation was not recorded for this session.
 
 ### Status
 
@@ -181,4 +181,4 @@
 
 ### Next Steps
 
-- trellis-check 质量审查进行中，发现问题将补提交
+- None - task complete
