@@ -87,6 +87,8 @@ def summary(q: str = Query('', max_length=200), district: str = ''):
 POSITION_BUCKETS = {'done': {'matched', 'manual'}, 'review': {'review'}, 'todo': {'pending', 'not_found', 'error'}}
 # 复核视角：冲突/待确认/一致/无结论/从未复核。
 USE_FILTERS = {
+    'review': lambda p: p.get('result') in {'conflict', 'uncertain'},
+    'unreviewed': lambda p: p.get('result') not in {'conflict', 'uncertain', 'agree_residential', 'agree_non_residential'} and (p.get('state') is None or bool(p.get('auto_skip_reason'))),
     'conflict': lambda p: p.get('result') == 'conflict',
     'uncertain': lambda p: p.get('result') == 'uncertain',
     'agree': lambda p: p.get('result') in {'agree_residential', 'agree_non_residential'},
@@ -99,7 +101,7 @@ USE_FILTERS = {
 @router.get('/catalog')
 def catalog(state: Literal['admitted', 'excluded'] = 'admitted', q: str = Query('', max_length=200),
             district: str = '', position: Literal['', 'matched', 'pending', 'review', 'not_found', 'error', 'manual', 'done', 'todo'] = '',
-            use: Literal['', 'conflict', 'uncertain', 'pending_retry', 'agree', 'none', 'skipped'] = '',
+            use: Literal['', 'review', 'unreviewed', 'conflict', 'uncertain', 'pending_retry', 'agree', 'none', 'skipped'] = '',
             workflow: Literal['', 'pending', 'admitted', 'excluded'] = '',
             market: Literal['', 'new_house', 'second_hand'] = '',
             property_type: str = Query('', max_length=100),

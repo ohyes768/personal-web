@@ -1208,6 +1208,12 @@ body {
 .directory-actions input[type=number] { width:70px; }
 .directory-toolbar { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,190px)); align-items:end; gap:12px; margin-bottom:15px; }
 .directory-toolbar>.btn,.directory-toolbar>.directory-refresh { justify-self:start; }
+@media(min-width:601px) {
+  .catalog-toolbar { display:flex; flex-wrap:wrap; }
+  .catalog-toolbar>.directory-filter-field { flex:1 1 120px; max-width:190px; }
+  .catalog-toolbar>.directory-filter-search { flex-basis:180px; }
+  .catalog-toolbar>.directory-refresh { flex:none; }
+}
 .directory-toolbar>label:not(.directory-filter-field) { display:flex; align-items:center; gap:6px; font-size:12px; }
 .directory-filter-field { display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-muted); min-width:0; }
 .directory-filter-field>span { font-weight:600; }

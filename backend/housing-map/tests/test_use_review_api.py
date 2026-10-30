@@ -49,6 +49,32 @@ BASE = '/api/directory/workflow'
 EVIDENCE = [{'source': 'kerui', 'url': 'https://www.cihud.com/x/1', 'note': '住宅'}]
 
 
+def test_simplified_use_filters_cover_all_states_before_pagination(setup, monkeypatch):
+    client, store, cid = setup
+    from src.api import directory_workflow_routes as routes
+    projections = [
+        {'state': 'checked', 'result': 'conflict', 'auto_skip_reason': '人工决定'},
+        {'state': 'checked', 'result': 'uncertain'},
+        {'state': 'checked', 'result': 'agree_residential'},
+        {'state': 'checked', 'result': 'agree_non_residential', 'auto_skip_reason': '非住宅'},
+        *[{'state': state, 'result': 'pending_retry'} for state in ['not_found', 'uncertain', 'error']],
+        {},
+        {'result': 'pending_retry'},
+        {'state': 'error', 'result': 'pending_retry', 'auto_skip_reason': '明确非住宅'},
+    ]
+    rows = [{'community_id': str(i), 'community_name': f'小区{i}', 'admission_state': 'excluded', 'use_review': p}
+            for i, p in enumerate(projections)]
+    monkeypatch.setattr(routes.flow, 'inventory', lambda *args: rows)
+    for bucket, expected in [('review', ['0', '1']), ('agree', ['2', '3']),
+                             ('pending_retry', ['4', '5', '6']), ('unreviewed', ['7', '8', '9'])]:
+        response = client.get(f'{BASE}/catalog?state=excluded&use={bucket}&page_size=1')
+        assert response.status_code == 200, response.text
+        assert response.json()['data']['total'] == len(expected)
+        for page, identity in enumerate(expected, 1):
+            data = client.get(f'{BASE}/catalog?state=excluded&use={bucket}&page_size=1&page={page}').json()['data']
+            assert [row['community_id'] for row in data['items']] == [identity]
+
+
 def test_a_single_review_returns_the_projection(setup):
     client, store, cid = setup
     before = client.get(f'{BASE}/catalog/{cid}/use-review').json()['data']

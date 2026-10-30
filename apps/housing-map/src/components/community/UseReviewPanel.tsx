@@ -19,8 +19,8 @@ export const useReviewResultLabels: Record<string, string> = { conflict: '用途
   agree_residential: '一致（住宅）', agree_non_residential: '一致（非住宅）', pending_retry: '未取得明确结果' };
 export const useReviewBucketLabels: Record<UseReviewBucket, string> = { review: '待人工确认', done: '已一致',
   todo: '未取得明确结果', none: '尚未核对', skipped: '不自动核对' };
-export const useReviewFilterLabels: Record<string, string> = { conflict: '用途冲突，待人工确认', uncertain: '用途待人工确认',
-  agree: '用途一致', pending_retry: '未取得明确结果', none: '尚未核对', skipped: '不自动核对' };
+export const useReviewFilterLabels: Record<string, string> = { review: '待人工确认', agree: '核对一致',
+  pending_retry: '核对未成功', unreviewed: '尚未核对' };
 export const useReviewSourceLabels: Record<string, string> = { kerui: '克而瑞', fang: '房天下', amap: '高德', other: '其他' };
 
 // 旧任务和证据保存了提示原文；统一转换显示，无需重新查询高德。

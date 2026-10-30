@@ -128,13 +128,13 @@ test('admitted table shows new or second-hand classification without repeating p
 });
 
 test('each catalog tab exposes only the filters that apply to it', () => {
-  assert.deepEqual(catalogFilterScope('admitted').primary, ['q', 'district', 'market', 'position']);
+  assert.deepEqual(catalogFilterScope('admitted').primary, ['q', 'district', 'market', 'position', 'use']);
   // 收录审核只管用途核对；法拍与租金是数据覆盖度，不进审核筛选。
-  assert.deepEqual(catalogFilterScope('admitted').more, ['use']);
-  assert.deepEqual(catalogFilterScope('pending').primary, ['q', 'district', 'operation']);
-  assert.deepEqual(catalogFilterScope('pending').more, ['use']);
-  assert.deepEqual(catalogFilterScope('excluded').primary, ['q', 'district', 'property_type']);
-  assert.deepEqual(catalogFilterScope('excluded').more, ['use']);
+  assert.deepEqual(catalogFilterScope('admitted').more, []);
+  assert.deepEqual(catalogFilterScope('pending').primary, ['q', 'district', 'operation', 'use']);
+  assert.deepEqual(catalogFilterScope('pending').more, []);
+  assert.deepEqual(catalogFilterScope('excluded').primary, ['q', 'district', 'property_type', 'use']);
+  assert.deepEqual(catalogFilterScope('excluded').more, []);
   // 法拍待关联保留自己的搜索与跳过开关，不套入住宅目录筛选。
   assert.deepEqual(catalogFilterScope('auctions').primary, ['q']);
   assert.deepEqual(catalogFilterScope('auctions').more, []);
@@ -155,13 +155,13 @@ test('the pending tab filters by pending operation instead of source use or posi
 
 test('only applicable conditions reach the request', () => {
   const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
-    property_type: '住宅', position: 'review', use: 'conflict', operation: 'facts' };
+    property_type: '住宅', position: 'review', use: 'review', operation: 'facts' };
   assert.deepEqual(catalogFilterParams('admitted', values),
-    { q: '鸿雁苑', district: '滨江', market: 'new_house', position: 'review', use: 'conflict' });
+    { q: '鸿雁苑', district: '滨江', market: 'new_house', position: 'review', use: 'review' });
   assert.deepEqual(catalogFilterParams('pending', values),
-    { q: '鸿雁苑', district: '滨江', operation: 'facts', use: 'conflict' });
+    { q: '鸿雁苑', district: '滨江', operation: 'facts', use: 'review' });
   assert.deepEqual(catalogFilterParams('excluded', values),
-    { q: '鸿雁苑', district: '滨江', property_type: '住宅', use: 'conflict' });
+    { q: '鸿雁苑', district: '滨江', property_type: '住宅', use: 'review' });
   assert.deepEqual(catalogFilterParams('auctions', values), { q: '鸿雁苑' });
   // 隐藏条件不会因为有值就进入请求。
   const hidden = { ...emptyCatalogFilters(), q: 'x', market: 'new_house' };
@@ -170,7 +170,7 @@ test('only applicable conditions reach the request', () => {
 
 test('the summary lists exactly the conditions sent to the current tab', () => {
   const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
-    property_type: '住宅', position: 'review', use: 'conflict' };
+    property_type: '住宅', position: 'review', use: 'review' };
   const admitted = catalogFilterSummary('admitted', values);
   assert.deepEqual(admitted.map(item => item.key), ['q', 'district', 'market', 'position', 'use']);
   assert.equal(admitted.find(item => item.key === 'market').value, '新房');
@@ -183,28 +183,32 @@ test('the summary lists exactly the conditions sent to the current tab', () => {
 
 test('switching tabs keeps the search and area and clears the tab-specific filters', () => {
   const values = { ...emptyCatalogFilters(), q: '鸿雁苑', district: '滨江', market: 'new_house',
-    property_type: '住宅', position: 'review', use: 'conflict', operation: 'use' };
+    property_type: '住宅', position: 'review', use: 'review', operation: 'use' };
   const next = catalogFiltersForMode(values);
   assert.equal(next.q, '鸿雁苑');
   assert.equal(next.district, '滨江');
   for (const key of ['market', 'property_type', 'position', 'use', 'operation']) assert.equal(next[key], '');
 });
 
-test('the filter bar labels every control and counts the folded conditions', () => {
+test('the filter bar shows use review inline without a folded row', () => {
   const html = renderToStaticMarkup(React.createElement(CatalogFilters, {
-    mode: 'admitted', values: { ...emptyCatalogFilters(), district: '滨江', use: 'conflict' },
+    mode: 'admitted', values: { ...emptyCatalogFilters(), district: '滨江', use: 'review' },
     propertyTypes: ['住宅'], total: 42, loading: false,
     onChange() {}, onRemove() {}, onClear() {}, onRefresh() {},
   }));
   for (const label of ['搜索', '区域', '房源类型', '定位状态']) assert.match(html, new RegExp(`>${label}</span>`));
-  assert.match(html, /<summary>更多筛选（1）<\/summary>/);
+  assert.doesNotMatch(html, /更多筛选|<details/);
+  const toolbar = html.slice(0, html.indexOf('directory-filter-summary'));
+  assert.match(toolbar, /住宅用途核对/);
+  for (const label of ['全部', '待人工确认', '核对一致', '核对未成功', '尚未核对']) assert.match(toolbar, new RegExp(`>${label}</option>`));
+  assert.doesNotMatch(toolbar, /用途冲突，待人工确认|用途待人工确认|不自动核对/);
   assert.match(html, /用途核对/);
   // 收录审核不出现法拍与租金筛选，它们是数据覆盖度不是收录判据。
   assert.doesNotMatch(html, /法拍|租金/);
   assert.match(html, /全部房源类型/); assert.match(html, /全部定位状态/);
   // 生效条件摘要带可移除入口与清空入口。
   assert.match(html, /区域：滨江区/);
-  assert.match(html, /用途核对：用途冲突，待人工确认/);
+  assert.match(html, /住宅用途核对：待人工确认/);
   assert.match(html, /aria-label="移除区域筛选"/);
   assert.match(html, />清空筛选</);
   assert.match(html, /共 42 条/);
@@ -223,13 +227,13 @@ test('removing one summary item clears only that condition and clearing resets e
   const removed = [];
   const cleared = [];
   const props = {
-    mode: 'admitted', values: { ...emptyCatalogFilters(), district: '滨江', use: 'conflict' },
+    mode: 'admitted', values: { ...emptyCatalogFilters(), district: '滨江', use: 'review' },
     total: 3, loading: false,
     onChange() {}, onRemove: key => removed.push(key), onClear: () => cleared.push(true), onRefresh() {},
   };
   const html = renderToStaticMarkup(React.createElement(CatalogFilters, props));
-  // 折叠的更多筛选条件仍出现在摘要里，且各自可单独移除。
-  assert.match(html, /用途核对：用途冲突，待人工确认/);
+  // 第一排条件也出现在摘要里，且各自可单独移除。
+  assert.match(html, /住宅用途核对：待人工确认/);
   assert.match(html, /区域：滨江区/);
   const buttons = [];
   function visit(node) {

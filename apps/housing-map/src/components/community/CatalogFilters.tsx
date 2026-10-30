@@ -12,14 +12,14 @@ export const emptyCatalogFilters = (): CatalogFilterValues =>
 
 export const catalogFilterLabels: Record<CatalogFilterKey, string> = {
   q: '搜索', district: '区域', position: '定位状态', market: '房源类型',
-  property_type: '来源用途', use: '用途核对', operation: '待处理操作',
+  property_type: '来源用途', use: '住宅用途核对', operation: '待处理操作',
 };
 
 /** 每个目录页签适用哪些条件：请求参数、生效摘要与可见控件共用这一份定义。 */
 const scopes: Record<string, { primary: CatalogFilterKey[]; more: CatalogFilterKey[] }> = {
-  admitted: { primary: ['q', 'district', 'market', 'position'], more: ['use'] },
-  pending: { primary: ['q', 'district', 'operation'], more: ['use'] },
-  excluded: { primary: ['q', 'district', 'property_type'], more: ['use'] },
+  admitted: { primary: ['q', 'district', 'market', 'position', 'use'], more: [] },
+  pending: { primary: ['q', 'district', 'operation', 'use'], more: [] },
+  excluded: { primary: ['q', 'district', 'property_type', 'use'], more: [] },
   auctions: { primary: ['q'], more: [] },
 };
 
@@ -42,7 +42,7 @@ export function catalogFilterOptions(key: CatalogFilterKey, propertyTypes: strin
     case 'operation':
       return [{ value: '', label: '全部待处理操作' }, { value: 'position', label: '地点待处理' }, { value: 'use', label: '用途待确认' }, { value: 'facts', label: '资料待补' }];
     case 'use':
-      return [{ value: '', label: '全部用途核对状态' }, ...Object.entries(useReviewFilterLabels).map(([value, label]) => ({ value, label }))];
+      return [{ value: '', label: '全部' }, ...Object.entries(useReviewFilterLabels).map(([value, label]) => ({ value, label }))];
     default:
       return [];
   }
@@ -70,10 +70,6 @@ export function catalogFilterSummary(mode: string, values: CatalogFilterValues, 
   }));
 }
 
-export function catalogMoreActiveCount(mode: string, values: CatalogFilterValues): number {
-  return catalogFilterScope(mode).more.filter(key => !!values[key]).length;
-}
-
 /** 切换页签时保留搜索与区域，并清掉页签专属的筛选条件。 */
 export function catalogFiltersForMode(values: CatalogFilterValues): CatalogFilterValues {
   const next = emptyCatalogFilters();
@@ -92,10 +88,9 @@ export default function CatalogFilters({ mode, values, propertyTypes, total, loa
 }) {
   const scope = catalogFilterScope(mode);
   const summary = catalogFilterSummary(mode, values, propertyTypes);
-  const moreCount = catalogMoreActiveCount(mode, values);
   const select = (key: CatalogFilterKey) => (event: ChangeEvent<HTMLSelectElement>) => onChange(key, event.target.value);
   return <>
-    <div className="directory-toolbar">
+    <div className="directory-toolbar catalog-toolbar">
       {scope.primary.includes('q') && <label className="directory-filter-field directory-filter-search">
         <span>搜索</span>
         <input value={values.q} placeholder="搜索小区名称、地址" onChange={event => onChange('q', event.target.value)} />
@@ -110,18 +105,6 @@ export default function CatalogFilters({ mode, values, propertyTypes, total, loa
       {extra}
       <button type="button" className="btn btn-secondary directory-refresh" aria-label="刷新名单" title="刷新名单" onClick={onRefresh}>↻</button>
     </div>
-    {scope.more.length > 0 && <details className="directory-filter-more">
-      <summary>更多筛选（{moreCount}）</summary>
-      <div className="directory-filter-more-fields">
-        {scope.more.map(key => <label key={key} className="directory-filter-field">
-          <span>{catalogFilterLabels[key]}</span>
-          <select value={values[key]} onChange={select(key)}>
-            {catalogFilterOptions(key, propertyTypes, values[key]).map(option =>
-              <option key={option.value} value={option.value}>{option.label}</option>)}
-          </select>
-        </label>)}
-      </div>
-    </details>}
     <div className="directory-filter-summary">
       <span className="directory-filter-count">{loading ? '更新中…' : `共 ${total} 条`}</span>
       {summary.map(item => <span key={item.key} className="directory-filter-chip">
