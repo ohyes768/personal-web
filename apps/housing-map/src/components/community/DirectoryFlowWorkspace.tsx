@@ -56,7 +56,7 @@ type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finishe
   diagnostics?: { requests?: number; cache_hits?: number; wait_seconds?: number; http_seconds?: number; elapsed_seconds?: number; early_stop?: boolean };
   resolutions?: Record<string, number>; evidence_issues?: { name?: string; message: string }[];
   position_followup?: { state: string; targets?: number; message?: string };
-  stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
+  stage?: string; association?: { checked?: number; matched?: number; pending?: number; missing?: number; failed?: number; deferred?: number; incomplete?: number }; errors?: { message: string; name?: string; state?: string; reason?: string }[]; truncated?: { message: string; state?: string; reason?: string }[] };
 type IncomingJob = Omit<Job, 'errors'> & { total_communities?: number; processed_communities?: number;
   errors?: Job['errors'] | { items?: { message: string }[]; total?: number } };
 export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
@@ -191,12 +191,13 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
       {(problem || message) && <p className="directory-task-line" data-state={state}>
         {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
       </p>}
-      {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查询 {job.association.deferred || 0}</p>}
+      {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查完 {job.association.incomplete || 0} · 未查询 {job.association.deferred || 0}</p>}
       {t.id === 'tmsf' && job?.resolutions && <p className="directory-task-sub">当前资料：基本资料齐备 {job.resolutions.ready || 0} · 非住宅 {job.resolutions.non_residential || 0} · 待地点匹配 {job.resolutions.position_pending || 0} · 身份待核对 {job.resolutions.identity_conflict || 0} · 网络可重试 {job.resolutions.retryable || 0} · 基本资料待取得 {job.resolutions.facts_pending || 0}</p>}
       {t.id === 'tmsf' && job?.position_followup?.state === 'started' && <p className="directory-task-sub">已自动衔接主体匹配（{job.position_followup.targets || 0} 项），进度见地点匹配任务。</p>}
       {t.id === 'tmsf' && job?.position_followup?.state === 'pending' && <p className="directory-task-sub">主体匹配待继续：{job.position_followup.message}</p>}
       {!!job?.evidence_issues?.length && <details className="directory-task-sub"><summary>资料待核对（{job.evidence_issues.length}）</summary>
         {job.evidence_issues.map((item, index) => <p key={index}>{item.name && `${item.name}：`}{item.message}</p>)}</details>}
+      {t.id === 'rent' && <p className="directory-task-sub">待采集 {job?.continuable ?? '—'} 个小区（尚未采集、失败或未完成）；继续采集跳过已完成项，保留现有成功数据。已查完但无房源的小区不重复采集。</p>}
       {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
       {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
         <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}

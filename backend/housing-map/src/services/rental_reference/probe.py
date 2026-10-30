@@ -21,7 +21,7 @@ from src.services.rental_reference.xingfuli_sources import (
     community_names,
     evaluate,
 )
-from src.services.xingfuli_discovery import CHANNEL_ORDER, XingfuliDiscovery
+from src.services.xingfuli_discovery import CHANNEL_ORDER, SEARCH_PAGE_SIZE, XingfuliDiscovery
 from src.services.rental_reference.discovery_checkpoint import DiscoveryCheckpoint, DiscoveryBudgetExhausted
 
 logger = logging.getLogger(__name__)
@@ -290,59 +290,81 @@ class ProbeService:
         client = self._checkpoint_client(community)
         candidates = []
         seen = set()
-        incomplete = False
+        page_errors = []   # request failures; the search did not finish cleanly
+        degraded = False   # a later page repeated without new identities
+        truncated = False  # MAX_CANDIDATES reached before channels finished
         for name in _search_names(community):
             for channel in CHANNEL_ORDER:
-                try:
-                    found = client.search(name, channel)
-                    incomplete = incomplete or not client.search_complete
-                except ValueError as exc:
-                    incomplete = True
-                    logger.warning('Rental probe search failed community_id=%s channel=%s error=%s',
-                                   community_id, channel, exc)
-                    if '冷却' in str(exc):
-                        write_state(self.registry, community_id, stage=STAGE_COOLING,
-                                    message='幸福里请求冷却中，请稍后重试')
-                        return
-                    continue
-                for neighborhood_id, group in found.items():
-                    platform_name = group['name']
-                    if neighborhood_id in seen or not _related(name, platform_name):
-                        continue
-                    seen.add(neighborhood_id)
+                channel_seen = set()
+                offset = 0
+                while True:
                     try:
-                        homepage = client.community_info(neighborhood_id)
+                        found = client.search(name, channel, offset)
                     except ValueError as exc:
-                        incomplete = True
-                        logger.warning('Rental probe homepage failed community_id=%s id=%s error=%s',
-                                       community_id, neighborhood_id, exc)
-                        continue
-                    candidate = candidate_from_homepage(homepage, discovered_via=channel)
-                    judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True)
-                    candidate['candidate_id'] = f"{channel}:{neighborhood_id}"
-                    candidate['evidence'] = judgement['evidence']
-                    candidate['evidence_gaps'] = judgement['gaps']
-                    candidate['conflicts'] = judgement['conflicts']
-                    candidate['strong'] = judgement['strong']
-                    candidates.append(candidate)
-                    if len(candidates) >= MAX_CANDIDATES:
-                        incomplete = True
+                        logger.warning('Rental probe search failed community_id=%s channel=%s offset=%s error=%s',
+                                       community_id, channel, offset, exc)
+                        if '冷却' in str(exc):
+                            write_state(self.registry, community_id, stage=STAGE_COOLING,
+                                        message='幸福里请求冷却中，请稍后重试')
+                            return
+                        page_errors.append(str(exc))
                         break
-                if self.early_stop and not incomplete and len(candidates) == 1 and candidates[0]['strong'] and not candidates[0]['conflicts']:
+                    new_ids = {nid for nid in found if nid not in channel_seen}
+                    channel_seen.update(found)
+                    for neighborhood_id, group in found.items():
+                        platform_name = group['name']
+                        if neighborhood_id in seen or not _related(name, platform_name):
+                            continue
+                        seen.add(neighborhood_id)
+                        try:
+                            homepage = client.community_info(neighborhood_id)
+                        except ValueError as exc:
+                            page_errors.append(str(exc))
+                            logger.warning('Rental probe homepage failed community_id=%s id=%s error=%s',
+                                           community_id, neighborhood_id, exc)
+                            continue
+                        candidate = candidate_from_homepage(homepage, discovered_via=channel)
+                        judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True)
+                        candidate['candidate_id'] = f"{channel}:{neighborhood_id}"
+                        candidate['evidence'] = judgement['evidence']
+                        candidate['evidence_gaps'] = judgement['gaps']
+                        candidate['conflicts'] = judgement['conflicts']
+                        candidate['strong'] = judgement['strong']
+                        candidates.append(candidate)
+                        if len(candidates) >= MAX_CANDIDATES:
+                            truncated = True
+                            break
+                    if truncated or client.search_complete:
+                        break
+                    if offset > 0 and not new_ids:
+                        # The platform ignored the offset: no further page can
+                        # add identities, and uniqueness is no longer provable.
+                        degraded = True
+                        break
+                    offset += SEARCH_PAGE_SIZE
+                if truncated:
+                    break
+                if self.early_stop and not page_errors and not degraded and not truncated \
+                        and len(candidates) == 1 and candidates[0]['strong'] and not candidates[0]['conflicts']:
                     client.diagnostics['early_stop'] = True
                     client.report('resolving_entry')
                     write_state(self.registry, community_id, stage=STAGE_RESOLVING,
                                 selected_page=candidates[0], message='正在核验租房入口')
                     self._resolve_entry(community, candidates[0], client)
                     return
-                if len(candidates) >= MAX_CANDIDATES:
-                    break
+            if truncated:
+                break
         if not candidates:
-            write_state(self.registry, community_id, stage=STAGE_FAILED if incomplete else STAGE_NO_HOMEPAGE,
-                        candidates=[], message='未找到幸福里小区主页，请稍后重试或检查名称')
+            if page_errors:
+                write_state(self.registry, community_id, stage=STAGE_FAILED, candidates=[],
+                            message=f'幸福里搜索请求失败：{page_errors[-1]}，可重试')
+            else:
+                write_state(self.registry, community_id, stage=STAGE_NO_HOMEPAGE,
+                            candidates=[], message='未找到幸福里小区主页，请检查名称')
             return
         strong = [c for c in candidates if c['strong'] and not c['conflicts']]
-        if not incomplete and len(candidates) == 1 and len(strong) == 1:
+        if not page_errors and not degraded and not truncated \
+                and len(candidates) == 1 and len(strong) == 1:
             write_state(self.registry, community_id, stage=STAGE_RESOLVING,
                         selected_page=candidates[0], message='正在寻找该主页的租房入口')
             self._resolve_entry(community, candidates[0], client)

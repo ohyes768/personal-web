@@ -15,7 +15,7 @@ from src.services.xingfuli_discovery import CITY_ID
 
 logger = logging.getLogger(__name__)
 PREFIX = 'rental_discovery_steps:'
-VERSION = 2
+VERSION = 3
 TTL = 24 * 3600
 
 
@@ -66,11 +66,11 @@ class DiscoveryCheckpoint:
             expires = step.get('expires_at')
             value = step.get('value')
             complete = step.get('complete')
-            # An incomplete first search page is a reason to retry live, not a
-            # fact to replay: reusing it would reproduce the same dead end
+            # An incomplete search page is pagination progress, not a dead end
+            # to replay: reusing it and requesting the next offset advances the
+            # search, where replaying it used to reproduce the same dead end
             # without a single request for the whole cache window.
-            if ((complete is not False or method != 'search')
-                    and isinstance(expires, (int, float)) and math.isfinite(expires)
+            if (isinstance(expires, (int, float)) and math.isfinite(expires)
                     and time.time() < expires <= time.time() + TTL
                     and self._valid(method, args, value) and isinstance(complete, bool)):
                 self.search_complete = complete
@@ -78,7 +78,7 @@ class DiscoveryCheckpoint:
                 self.report(method)
                 return copy.deepcopy(value)
         if self.request_count >= self.budget:
-            raise DiscoveryBudgetExhausted('本轮探查请求额度已用完，请稍后重试')
+            raise DiscoveryBudgetExhausted('本轮探查请求额度已用完，可稍后继续')
         self.report(method)
         try:
             value = getattr(self.client, method)(*args)
@@ -122,8 +122,8 @@ class DiscoveryCheckpoint:
                     and math.isfinite(value[key]) and abs(value[key]) <= limit))
                     for key, limit in (('longitude', 180), ('latitude', 90))))
 
-    def search(self, name, channel):
-        return self._call('search', (name, channel), cached=True)
+    def search(self, name, channel, offset=0):
+        return self._call('search', (name, channel, offset), cached=True)
 
     def community_info(self, nid, *, fresh=False):
         before = self.request_count

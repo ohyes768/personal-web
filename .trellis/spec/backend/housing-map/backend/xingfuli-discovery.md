@@ -3,6 +3,17 @@
 > 2026-10-29 建立。系统的“找来源”能力：平台内多通道搜索 → 小区资料API验证身份 → 选定后按需获取租房入口API → 双归属核验后绑定。
 > 关键结论：**搜索响应永远不是身份证据**，身份来自小区资料API（旧版本为主页HTML）；**平台内可执行，不需要外部搜索引擎**。
 
+## 搜索分页续查与失败状态区分（2026-10-30）
+
+- `XingfuliDiscovery.search(name, channel, offset=0)`：`SEARCH_PAGE_SIZE=20`，URL 透传 offset（白名单本就允许）；`search_complete` 语义不变——**本页响应**是否结束该（名字,通道）的结果列表，不是全通道结论。
+- `DiscoveryCheckpoint.VERSION=3`：搜索步键 `['search', name, channel, offset]`，每页独立缓存。**不完整搜索页（complete=False）从"死胡同"改为翻页进度**：参与缓存复用（零请求回放），续查真实请求下一 offset。v2 缓存整体作废重查，回滚同样安全。
+- `ProbeService._search` 每（名字,通道）顺序翻页至 `search_complete`；预算（批次与手动均 12 请求/小区轮次）即页数硬上限，每页恰 1 请求，缓存回放不计预算。
+- **状态三分**：`deferred`=未查完可继续（本轮预算用尽，已查页已缓存）；`upstream_failed`=请求失败可重试（仅真实请求错误，message 保留原因）；`homepage_not_found`=已查完所有页且无相关候选。不再新增 stage。
+- **重复页保护**：offset>0 的页未贡献新 neighborhood_id 且 complete=False → 该通道 degraded，停止翻页；degraded/截断/页错误存在时禁止早停与唯一强候选自动绑定——分页未完成时当前页唯一候选不是完整唯一证据。
+- 批次：stage `deferred` → outcome `'incomplete'`（不再计入 failed）；`association.incomplete`=已处理但未查完数，`association.deferred` 保持=剩余队列长度。`_targets('incremental')` 的 completed 集合不含 incomplete，未查完小区下一轮自动重新入队；旧 job json 的 failed 记录不迁移，重查后归位。
+- 前端：`deferred`→"未查完，可继续"；来源维护列表 `search_deferred`→"未查完或未查询，可继续匹配"；批次统计行增加"未查完 {incomplete}"。
+- 回归：`test_rental_search_pagination.py`（第二页命中、预算断点续查、请求失败重试位置、查完未找到、未查完不绑定、重复页保护、v2 缓存作废、批次 incomplete 计数与重入队）；`test_matching_speed.py` 重复页缓存零请求稳定复现；前端 rental-dashboard/directory-flow 文案断言。
+
 ## 关联入口列表API提速（2026-10-30，替代下文双HTML核验默认路径）
 
 - 默认 ProbeService 在刷新小区资料和租房入口后，调用 `DiscoveryCheckpoint.verified_rental_seed(seed,nid)`，由 `XingfuliDiscovery` 单次请求 `/f100/api/search_api/rent` 的固定同小区第一页。与租金采集共用 `rental_list_api_url`；发现白名单仅允许固定参数和offset=0，无额外、重复或分页参数。
@@ -160,7 +171,7 @@ Wrong：把平台地址写进来源的 `address`。Correct：写 `platform_addre
 - 人工跳过/拒绝及现有来源始终保护。恢复在途服务只恢复保存的remaining，不追加新小区；用户点继续才追加新增/失败项。
 - 名称按normalized去重，主名加最多一个别名；完整检查当前通道所有相关候选后，只有一个候选且strong才提前结束。主页读取失败、竞争候选、预算/候选上限截断、搜索满20条或total超过返回数，均不得自动绑定。
 - 只能证明已查询通道内唯一，不能证明全平台唯一。`HOUSING_XINGFULI_EARLY_STOP=0`关闭提前结束；仍保留不完整证据不可自动绑定的安全修复。
-- 每个成功搜索/主页步骤先落SQLite，再进入下一步。有效空搜索也保存24小时；失败/验证页/冷却不保存。身份指纹包括名称/别名/地址/区域/坐标；身份、版本变化或步骤过期/损坏后重查。缓存按小区隔离，身份判定每次重算。首页不完整的搜索步（满20条或total超返回数，`complete=False`）不参与缓存复用：增量重试对其真实发请求，避免整个缓存窗口内零请求空转。
+- 每个成功搜索/主页步骤先落SQLite，再进入下一步。有效空搜索也保存24小时；失败/验证页/冷却不保存。身份指纹包括名称/别名/地址/区域/坐标；身份、版本变化或步骤过期/损坏后重查。缓存按小区隔离，身份判定每次重算。搜索页步骤（含 `complete=False` 的满页）按 offset 逐页缓存并复用，作为翻页进度；真实推进由下一 offset 的请求给出（2026-10-30 分页续查，替代“不完整搜索步不参与缓存复用”的旧规则）。
 - `HOUSING_XINGFULI_DISCOVERY_CACHE=0`关闭缓存读写。缓存不计HTTP预算；每个真实请求（包括列表核验）之前检查取消与预算；真实传输继续检查冷却/限速。
 - 恢复/选择时刷新主页租房入口，然后重新执行详情和列表两次归属核验。新鲜主页与绑定时的当前目录信息重新评估：搜索自动决策须strong；人工选择允许证据缺口但不得有冲突。不要用`automatic=False`推断“用户已经选过”：显式单小区搜索也属于自动决策。
 - `diagnostics`统计本次启动的requests、cache_hits、wait_seconds、http_seconds、elapsed_seconds；probe另记early_stop。每个HTTP步骤更新，批次汇总当前及已完成小区。新点击启动时请求诊断重置，恢复保留业务结果计数。

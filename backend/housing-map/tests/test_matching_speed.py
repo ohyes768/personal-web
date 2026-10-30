@@ -62,7 +62,7 @@ def test_complete_unique_channel_stops_search_but_verifies_both_owners(tmp_path)
     fake = strong()
     state = run(service(reg, fake, tmp_path))
     assert state['stage'] == STAGE_BOUND
-    assert fake.calls == [('search', '测试花园', 'second_hand'), ('community_info', TOTAL_ID),
+    assert fake.calls == [('search', '测试花园', 'second_hand', 0), ('community_info', TOTAL_ID),
                           ('rental_entry', TOTAL_ID), ('listing', SEED), ('list', SEED)]
     assert state['diagnostics']['early_stop'] is True
     assert state['diagnostics']['requests'] == 5
@@ -80,7 +80,7 @@ def test_failed_competitor_never_allows_automatic_binding(tmp_path):
     fake.community_info = read
     state = run(service(reg, fake, tmp_path))
     assert state['stage'] == STAGE_NEEDS_SELECTION
-    assert ('search', '测试花园', 'neighborhood') in fake.calls
+    assert ('search', '测试花园', 'neighborhood', 0) in fake.calls
     assert not any(call[0] == 'search' and call[2] == 'rent' for call in fake.calls)
     assert not any(c[0] == 'listing' for c in fake.calls)
 
@@ -100,15 +100,18 @@ def test_restart_reuses_successful_empty_searches_and_full_refresh_bypasses(tmp_
     assert len(third.calls) == 2
 
 
-def test_incomplete_cached_search_is_retried_live_within_window(tmp_path):
+def test_repeated_full_page_stays_cached_without_new_requests(tmp_path):
     reg = setup(tmp_path)
     first = strong(); first.search_complete = False
     assert run(service(reg, first, tmp_path))['stage'] == STAGE_NEEDS_SELECTION
     second = strong()
     state = run(service(reg, second, tmp_path))
-    assert second.calls[0] == ('search', '测试花园', 'second_hand')
-    assert state['diagnostics']['cache_hits'] == 1
-    assert state['stage'] == STAGE_BOUND
+    # The offset-blind page is cached on both channels: a retry replays the
+    # whole dead end without a single request, and the candidate still waits
+    # for a human choice instead of an automatic binding.
+    assert second.calls == []
+    assert state['diagnostics']['cache_hits'] == 5
+    assert state['stage'] == STAGE_NEEDS_SELECTION
 
 
 def test_incremental_skips_finished_missing_but_full_rechecks(tmp_path):
@@ -185,20 +188,20 @@ def test_steps_survive_process_recreation_after_partial_search(tmp_path):
     from src.services.fang_rentals import RentalCrawlCancelled
     reg = setup(tmp_path)
     class Interrupted(FakeDiscovery):
-        def search(self, name, channel):
+        def search(self, name, channel, offset=0):
             if channel == 'neighborhood':
                 raise RentalCrawlCancelled([], None)
             return super().search(name, channel)
     assert run(service(reg, Interrupted(), tmp_path))['stage'] == 'cancelled'
     fake = FakeDiscovery(); state = run(service(reg, fake, tmp_path))
-    assert fake.calls == [('search', '测试花园', 'neighborhood')]
+    assert fake.calls == [('search', '测试花园', 'neighborhood', 0)]
     assert state['diagnostics']['cache_hits'] == 1
 
 
 def test_upstream_failures_are_not_saved_as_empty_results(tmp_path):
     reg = setup(tmp_path)
     class Broken(FakeDiscovery):
-        def search(self, name, channel):
+        def search(self, name, channel, offset=0):
             raise ValueError('verification required')
     assert run(service(reg, Broken(), tmp_path))['stage'] == 'upstream_failed'
     fake = FakeDiscovery(); run(service(reg, fake, tmp_path))
@@ -279,7 +282,7 @@ def test_completed_http_step_survives_abrupt_process_exit(tmp_path):
         from src.services.community_registry import CommunityRegistry
         from tests.test_rental_probe import FakeDiscovery, service, run
         class ExitAfterFirst(FakeDiscovery):
-            def search(self, name, channel):
+            def search(self, name, channel, offset=0):
                 if channel == 'neighborhood':
                     os._exit(0)
                 return super().search(name, channel)
@@ -292,7 +295,7 @@ def test_completed_http_step_survives_abrupt_process_exit(tmp_path):
     fake = FakeDiscovery()
     state = run(service(reg, fake, tmp_path))
     assert state['diagnostics']['cache_hits'] == 1
-    assert fake.calls == [('search', '测试花园', 'neighborhood')]
+    assert fake.calls == [('search', '测试花园', 'neighborhood', 0)]
 
 
 def test_startup_recovery_does_not_append_new_communities(tmp_path):

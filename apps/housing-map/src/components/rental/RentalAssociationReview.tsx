@@ -9,14 +9,14 @@ type Candidate = { id: string; name: string; address?: string; district?: string
 export type RentalReview = { community_id: string; community_name: string; reason: string;
   message?: string; candidates: Candidate[] };
 const reasons: Record<string, string> = { needs_selection: '请选择对应小区', missing: '暂无租金来源',
-  search_failed: '来源查找失败', search_deferred: '尚未查询，下次更新继续', skipped: '已跳过' };
+  search_failed: '来源查找失败', search_deferred: '未查完或未查询，可继续匹配', skipped: '已跳过' };
 const filterLabels: Record<string, string> = { needs_selection: '待选择', missing: '未找到',
   search_failed: '查找失败', search_deferred: '未查询', skipped: '已跳过' };
 const filterHints: Record<string, string> = {
   needs_selection: '搜索返回了候选，请核对名称、地址与分期后绑定；拿不准可先跳过。',
   missing: '还没有关联租金来源。可以点开小区后用“探查幸福里来源”，只选主页即可，不需要自己找链接。',
   search_failed: '幸福里来源查找或租房入口核验失败，请点开小区查看原因并重试。',
-  search_deferred: '匹配任务暂停或等待继续；可在“维护采集”中继续匹配租金来源，也可单独探查。',
+  search_deferred: '搜索未查完或还没轮到该小区；可在“维护采集”中继续匹配租金来源，也可单独探查。',
   skipped: '之前跳过的小区，可在这里恢复处理。' };
 const filterOrder = ['needs_selection', 'missing', 'search_failed', 'search_deferred', 'skipped'];
 

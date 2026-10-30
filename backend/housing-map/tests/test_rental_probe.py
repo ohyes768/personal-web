@@ -36,9 +36,9 @@ class FakeDiscovery:
         self._owners = owners or {}
         self._lists = lists or {}
 
-    def search(self, name, channel):
+    def search(self, name, channel, offset=0):
         self.request_count += 1
-        self.calls.append(('search', name, channel))
+        self.calls.append(('search', name, channel, offset))
         found = self._search.get((name, channel), self._search.get(name, {}))
         return {nid: {'name': platform_name, 'seeds': []} for nid, platform_name in found.items()}
 
@@ -90,8 +90,8 @@ def test_identity_search_uses_only_second_hand_and_neighborhood(tmp_path):
     state = run(service(registry, fake, tmp_path))
     assert state['stage'] == probe.STAGE_NO_HOMEPAGE
     assert [call for call in fake.calls if call[0] == 'search'] == [
-        ('search', '测试花园', 'second_hand'),
-        ('search', '测试花园', 'neighborhood'),
+        ('search', '测试花园', 'second_hand', 0),
+        ('search', '测试花园', 'neighborhood', 0),
     ]
 
 
@@ -412,7 +412,7 @@ def test_a_cooling_platform_reports_the_cooldown(tmp_path):
     registry = setup(tmp_path)
 
     class Cooling(FakeDiscovery):
-        def search(self, name, channel):
+        def search(self, name, channel, offset=0):
             raise ValueError('幸福里来源冷却中，暂停请求')
 
     fake = Cooling(search={}, homepages={})

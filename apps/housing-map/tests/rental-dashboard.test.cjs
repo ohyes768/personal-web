@@ -208,7 +208,7 @@ test('deferred-only rentals are unqueried rather than failed', () => {
     item: { community_id: 'c1', community_name: '测试花园', reason: 'search_deferred', candidates: [] },
     selected: '', busy: false, onSelect() {}, onDecide() {},
   }));
-  assert.match(review, /尚未查询，下次更新继续/);
+  assert.match(review, /未查完或未查询，可继续匹配/);
   assert.doesNotMatch(review, /来源查找失败/);
 });
 

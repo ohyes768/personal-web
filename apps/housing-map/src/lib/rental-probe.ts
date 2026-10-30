@@ -39,7 +39,7 @@ export const PROBE_STAGES = {
   entry_not_found: '该主页没有可用的租房入口',
   upstream_failed: '幸福里暂时无法访问',
   cooling_down: '幸福里请求冷却中',
-  deferred: '本轮请求额度已用完',
+  deferred: '未查完，可继续',
   cancelled: '探查已取消',
   interrupted: '探查被中断',
 } as const;

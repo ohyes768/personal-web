@@ -127,7 +127,7 @@ def test_matching_cancellation_and_restart_preserve_remaining_targets(tmp_path):
     reg = setup(tmp_path)
     entered, release = threading.Event(), threading.Event()
     class Blocking(FakeDiscovery):
-        def search(self, name, channel):
+        def search(self, name, channel, offset=0):
             entered.set()
             assert release.wait(5)
             return super().search(name, channel)

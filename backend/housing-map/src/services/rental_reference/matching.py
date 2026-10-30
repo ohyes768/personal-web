@@ -149,7 +149,7 @@ class SourceMatchingService:
                        completed_diagnostics={},
                        total=len(remaining) + len(outcomes), processed=len(outcomes),
                        remaining=remaining, outcomes=outcomes, errors=[], error=None,
-                       association={**{name: list(outcomes.values()).count(name) for name in ('matched', 'pending', 'missing', 'failed', 'skipped')},
+                       association={**{name: list(outcomes.values()).count(name) for name in ('matched', 'pending', 'missing', 'failed', 'skipped', 'incomplete')},
                                     'checked': len(outcomes), 'deferred': len(remaining)},
                        started_at=now(), finished_at=None, diagnostics={}, current_step=None,
                        current_community_id=None, current_community_name=None)
@@ -216,14 +216,15 @@ class SourceMatchingService:
                     if stage == 'cooling_down' and self._cooldown() > time.time():
                         continue
                     outcome = {'bound_pending_collection': 'matched', 'needs_homepage_selection': 'pending',
-                               'homepage_not_found': 'missing', 'entry_not_found': 'missing'}.get(stage, 'failed')
+                               'homepage_not_found': 'missing', 'entry_not_found': 'missing',
+                               'deferred': 'incomplete'}.get(stage, 'failed')
                 with self._mutex:
                     if state is not None:
                         self._job.setdefault('completed_diagnostics', {})[cid] = state.get('diagnostics', {})
                     self._job['outcomes'][cid] = outcome
                     self._job['remaining'].pop(0)
                     counts = {name: list(self._job['outcomes'].values()).count(name)
-                              for name in ('matched', 'pending', 'missing', 'failed', 'skipped')}
+                              for name in ('matched', 'pending', 'missing', 'failed', 'skipped', 'incomplete')}
                     counts['checked'] = len(self._job['outcomes'])
                     counts['deferred'] = len(self._job['remaining'])
                     self._save(processed=len(self._job['outcomes']), association=counts,

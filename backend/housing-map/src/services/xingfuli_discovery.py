@@ -28,6 +28,7 @@ SEARCH_CHANNELS = {
     'neighborhood': (4, 94349530172, 'neighborhood_list'),
 }
 SEARCH_PARAMS = frozenset({'city_id', 'house_type', 'channel_id', 'full_text', 'count', 'offset', 'page_type'})
+SEARCH_PAGE_SIZE = 20
 # Identity search only. Second-hand names the whole community; the neighborhood
 # channel adds address and coordinates. Rent search is not an identity source:
 # it misses communities, returns city-wide listings, and can split one community
@@ -244,14 +245,14 @@ class XingfuliDiscovery(XingfuliTransport):
         super().__init__(timeout, directory=directory, fetcher=fetcher, delay=delay,
                          cancel_event=cancel_event, validate=validate_discovery_url)
 
-    def search(self, name, channel):
+    def search(self, name, channel, offset=0):
         """Neighborhood identities the platform reported for a name on one channel."""
         if channel not in SEARCH_CHANNELS:
             raise ValueError('未知的幸福里搜索通道')
         house_type, channel_id, page_type = SEARCH_CHANNELS[channel]
         url = BASE_URL + '/f100/api/search?' + urlencode({
             'city_id': CITY_ID, 'house_type': house_type, 'channel_id': channel_id,
-            'full_text': name, 'count': 20, 'offset': 0, 'page_type': page_type})
+            'full_text': name, 'count': SEARCH_PAGE_SIZE, 'offset': offset, 'page_type': page_type})
         payload = json.loads(self.fetch(url))
         if payload.get('status') != 0 or not isinstance(payload.get('data'), dict):
             raise ValueError('幸福里搜索未返回有效数据')
@@ -259,9 +260,9 @@ class XingfuliDiscovery(XingfuliTransport):
         if not isinstance(items, list):
             raise ValueError('幸福里搜索结果不完整')
         total = payload['data'].get('total')
-        # A filled first page can omit another plausible identity. It cannot
+        # A filled page can omit another plausible identity. It cannot
         # authorize automatic binding, even when one visible result is strong.
-        self.search_complete = len(items) < 20 and not (
+        self.search_complete = len(items) < SEARCH_PAGE_SIZE and not (
             isinstance(total, (int, float)) and total > len(items))
         return search_groups(items, channel)
 

@@ -174,9 +174,10 @@ test('collection status preserves rental units and nested errors', () => {
 test('rental task separates actual failures from unqueried communities', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
     scope: 'maintenance', errors: {}, jobs: { rent: { running: false, phase: 'partial_failed',
-      association: { checked: 100, failed: 1, deferred: 99 } } }, action() {} }));
-  assert.match(html, /查询失败 1 · 未查询 99/);
+      association: { checked: 100, failed: 1, deferred: 99, incomplete: 5 } } }, action() {} }));
+  assert.match(html, /查询失败 1 · 未查完 5 · 未查询 99/);
   assert.doesNotMatch(html, /查询失败 100/);
+  assert.doesNotMatch(html, /查询失败 6/);
 });
 
 test('position tasks separate normal review and missing places from retryable failures', () => {
