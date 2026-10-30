@@ -14,9 +14,38 @@ from src.services.rental_reference.association import eligible_communities, read
 from src.services.rental_reference.probe import PREFIX as PROBE_PREFIX, ProbeService, read_state
 from src.services.rental_reference.association import PREFIX as REVIEW_PREFIX
 from src.services.rental_reference.providers import active_sources, rejected_rental_communities
+from src.services.rental_reference.xingfuli_sources import evaluate
 from src.services.rental_reference.refresh import RefreshAlreadyRunning, RefreshNotRunning
 from src.services.rental_reference.storage import _atomic_write_json
 from src.services.rental_reference.discovery_checkpoint import clear_checkpoint
+
+
+def selection_summary(community, state):
+    """Project saved candidates without crawling or writing probe state."""
+    candidates = []
+    conflicts = []
+    for candidate in state.get('candidates') or []:
+        judgement = evaluate(community, candidate, allow_subdivision=True)
+        candidates.append(dict(id=candidate.get('candidate_id', ''), name=candidate.get('name', ''),
+                               manual_selectable=judgement['selectable'], manual_scope=judgement['manual_scope']))
+        conflicts.extend(judgement['conflicts'])
+    count = len(candidates)
+    selectable = sum(c['manual_selectable'] for c in candidates)
+    message = state.get('message') or ''
+    if not count:
+        reason = '候选资料待刷新，请重新探查'
+    elif not selectable:
+        reason = '；'.join(dict.fromkeys(conflicts)) or '候选名称与目录小区不匹配，请重新探查'
+    elif message and message != '请选择对应的小区主页':
+        reason = message
+    elif any(c['manual_scope'] for c in candidates):
+        reason = '候选范围不同，请核对后选择对应分园'
+    elif count > 1:
+        reason = '有多个候选，请核对名称、地址和范围'
+    else:
+        reason = '请核对候选名称、地址和范围'
+    return dict(candidates=candidates, candidate_count=count, selectable_count=selectable,
+                selection_reason=reason)
 
 
 def source_reviews(registry):
@@ -36,8 +65,10 @@ def source_reviews(registry):
                   'no_listings' if stage == 'no_rental_listings' else
                   'search_failed' if stage in {'upstream_failed', 'entry_not_found'} else
                   'search_deferred' if stage in {'cooling_down', 'deferred', 'interrupted', 'cancelled'} else 'missing')
+        summary = selection_summary(community, state) if reason == 'needs_selection' else {'candidates': []}
         items.append(dict(community_id=cid, community_name=community['community_name'],
-                          reason=reason, message=state.get('message', ''), candidates=[]))
+                          address=community.get('address') or '',
+                          reason=reason, message=state.get('message', ''), **summary))
     return items
 
 

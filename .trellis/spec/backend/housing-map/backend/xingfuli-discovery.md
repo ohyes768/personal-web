@@ -260,3 +260,19 @@ entry = client.rental_entry(candidate['neighborhood_id'])
 - GET probe在待选状态重新计算每个候选的`manual_selectable:boolean`和`manual_scope:string`，不修改存储或自动strong。旧待选记录部署后也可获得人工选择权限。POST select不信任这些客户端字段，重新计算；新鲜主页及落库前复查同样规则。
 - 前端仍要求完整证据数组；人工可选分园按钮显示“选择这个分园”，并提示“租金样本仅来自该分园”。来源审计证据保留人工选择分园及范围说明，不宣称分园样本覆盖整小区。
 - 测试覆盖留园/观园不自动绑但人工可选、手动落库method及范围证据、跨区/主体/明确分期冲突不可选、候选卡片按钮权限及提示。
+
+## 待选择四列摘要（2026-10-30）
+### Scope
+只调整租金来源“待选择”为小区/候选情况/待确认原因/操作四列；核对候选打开原弹框，无最近处理列。未查询Tab改名“未完成”，其余Tab保留原列表。
+### Signatures
+GET `/rentals/association-tasks` 待选择条目增加 `address,candidate_count,selectable_count,selection_reason`，`candidates`返回白名单摘要 `{id,name,manual_selectable,manual_scope}`；其他类别的candidates仍为空。
+### Contracts
+`selection_summary`从保存的probe候选和当前目录身份计算人工可选权限，不请求上游、不更新探查状态。候选列展示前两个名称及完整总数/可选数量，不展示相似度。先给出全部不可选的具体冲突，再保留明确搜索/身份变更原因，之后才使用分园或多候选提示。
+### Validation / Errors
+旧接口无新增字段时显示已有候选信息或“候选资料待刷新”，不得虚构可选数量；读取失败沿用原API错误。无候选依然可打开弹框重新探查。
+### Cases
+两个分园显示数量2及名称、分园选择提示；全部跨区显示可选0及实际区域冲突；候选超过2个截断名称但保留总数。表格操作只按community_id打开弹框，不执行关联。
+### Tests
+`test_rental_selection_summary.py`验证当前权限、总数、地址、具体原因及GET不改probe状态；`rental-selection-table.test.cjs`验证四列、名称截断、原ID回调、缺失字段、零可选和HTML转义。
+### Wrong vs Correct
+Wrong：给每行单独请求probe，或展示固定空candidates。Correct：单次清单请求投影已存证据，弹框再读取详情；来源确认继续走原revision和归属核验。
