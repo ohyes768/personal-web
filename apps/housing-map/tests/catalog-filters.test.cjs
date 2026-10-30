@@ -23,6 +23,20 @@ test('admission states contain no rental or auction work', () => {
   assert.match(html, /待处理（3）/);
 });
 
+test('maintenance splits into its own two tabs and counts pending auctions', () => {
+  const { MaintenanceTabs } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+  const summary = { active: true, admitted: 89, excluded: 355, auction_pending: 32 };
+  const html = renderToStaticMarkup(React.createElement(MaintenanceTabs, { summary, mode: 'rental', onChange() {} }));
+  assert.match(html, /aria-label="维护事项"/);
+  assert.match(html, /aria-pressed="true">租金来源/);
+  assert.match(html, />法拍待关联（32）</);
+  assert.equal((html.match(/<button/g) || []).length, 2);
+  const clicks = [];
+  const tabs = MaintenanceTabs({ summary, mode: 'rental', onChange: mode => clicks.push(mode) });
+  for (const button of tabs.props.children) button.props.onClick();
+  assert.deepEqual(clicks, ['rental', 'auctions']);
+});
+
 test('pipeline tabs split pending from final exclusions with distinct counts and queries', () => {
   const summary = { active: true, pipeline: true, admitted: 89, pending: 254, excluded: 355, auction_pending: 32 };
   const html = renderToStaticMarkup(React.createElement(CatalogTabs, { summary, mode: 'pending', onChange() {} }));

@@ -31,8 +31,18 @@ export function CatalogTabs({ summary, mode, onChange }: { summary: Summary | nu
   const tabs = [['admitted', '已收录', summary?.admitted],
     ...(summary?.pipeline ? [['pending', '待处理', summary.pending]] : []),
     ['excluded', '不收录', summary?.pipeline ? Math.max(0, summary.excluded - (summary.pending || 0)) : summary?.excluded]];
-  return <div className="review-tabs directory-review-states" role="group" aria-label="收录审核状态">{tabs.map(([key, label, count]) =>
+  return <div className="review-tabs directory-subtabs" role="group" aria-label="收录审核状态">{tabs.map(([key, label, count]) =>
     <button key={key} aria-pressed={mode === key} onClick={() => onChange(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
+}
+
+/** 小区数据维护下的两个页签，与收录审核的页签同一套样式与交互。 */
+export function MaintenanceTabs({ summary, mode, onChange }: { summary: Summary | null; mode: string; onChange: (mode: string) => void }) {
+  const tabs: [string, string, number | undefined][] = [
+    ['rental', '租金来源', undefined],
+    ['auctions', '法拍待关联', summary?.auction_pending],
+  ];
+  return <div className="review-tabs directory-subtabs" role="group" aria-label="维护事项">{tabs.map(([key, label, count]) =>
+    <button key={key} aria-pressed={mode === key} onClick={() => onChange(key)}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
 }
 
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
@@ -533,12 +543,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
       <CollectionTasksButton jobs={summary?.pipeline ? Object.fromEntries(Object.entries(jobs).filter(([id]) => id !== 'use')) : jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
     <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
-    {maintenance ? <div className="directory-actions directory-maintenance-filter">
-      <label>维护事项<select value={mode} onChange={e => changeMode(e.target.value)}>
-        <option value="rental">租金来源</option>
-        <option value="auctions">法拍待关联{summary ? `（${summary.auction_pending}）` : ''}</option>
-      </select></label>
-    </div> : <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />}
+    {maintenance ? <MaintenanceTabs summary={summary} mode={mode} onChange={changeMode} /> :
+      <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />}
     {mode !== 'rental' && <CatalogFilters mode={mode} values={filters} propertyTypes={propertyTypes} total={total} loading={loading}
       onChange={(key, value) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); setLoading(true); setSelection([]); }}
       onRemove={key => { setFilters(current => ({ ...current, [key]: '' })); setPage(1); setLoading(true); setSelection([]); }}

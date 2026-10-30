@@ -37,9 +37,11 @@ test('review and maintenance are separate entries into the community workspace',
   assert.match(review, /已收录/); assert.match(review, /不收录/);
   assert.doesNotMatch(review, /法拍待关联/);
   assert.doesNotMatch(review, /待审核小区|先预演|启用自动审核/);
-  // 小区数据维护入口走自己的维护事项，不再复用收录状态页签。
+  // 小区数据维护入口走自己的两个页签，不再复用收录状态页签。
   const maintenance = renderToStaticMarkup(React.createElement(Management, { onChanged() {}, initialMode: 'rental' }));
-  assert.match(maintenance, /维护事项/); assert.match(maintenance, /租金来源/); assert.match(maintenance, /法拍待关联/);
+  assert.match(maintenance, /aria-label="维护事项"/);
+  assert.match(maintenance, /aria-pressed="true">租金来源/);
+  assert.match(maintenance, />法拍待关联</);
   assert.doesNotMatch(maintenance, /已收录/);
 });
 
