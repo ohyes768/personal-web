@@ -24,6 +24,7 @@ import LatestAuctionCard from '@/components/community/LatestAuctionCard';
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import { RentalScopeSelect, RentalSummaryCells, type RentalScope } from '@/components/dashboard/RentalDashboardWidgets';
 import CommunityManagement from '@/components/community/CommunityManagement';
+import AppTabs, { type AppTab } from '@/components/AppTabs';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 import { useRentalSummary } from '@/lib/use-rental-summary';
 import {
@@ -273,10 +274,16 @@ export default function BinjiangMapPage() {
       .catch(() => {});
     return () => controller.abort();
   }, []);
-  const [activeTab, setActiveTab] = useState<'map' | 'dashboard' | 'market' | 'auction' | 'management'>('map');
-  const [managementSource, setManagementSource] = useState('');
+  const [activeTab, setActiveTab] = useState<AppTab>('map');
+  // 收录审核与小区数据维护是顶层两个页签，各自进入名单工作区的不同入口。
+  const [managementMode, setManagementMode] = useState('admitted');
+  const switchTab = useCallback((tab: AppTab) => {
+    if (tab === 'review') setManagementMode('admitted');
+    if (tab === 'maintenance') setManagementMode('rental');
+    setActiveTab(tab);
+  }, []);
   useEffect(() => {
-    const open = () => { setManagementSource('laipai'); setActiveTab('management'); };
+    const open = () => { setManagementMode('auctions'); setActiveTab('maintenance'); };
     window.addEventListener('housing-open-community-review', open);
     return () => window.removeEventListener('housing-open-community-review', open);
   }, []);
@@ -609,14 +616,13 @@ export default function BinjiangMapPage() {
     if (position) setMapFocus({ lng: position[0], lat: position[1], key: Date.now() });
   }, [boundaryWorkflow.candidate, selectedCommunity]);
 
-  // 去核对定位: 复用收录管理里的定位面板, 不新增第二套定位逻辑
+  // 去核对定位: 复用收录审核页里的定位面板, 不新增第二套定位逻辑
   const openPositionForCommunity = useCallback((communityId: string) => {
     setPreviewCommunityId(null);
     setSelectedCommunity(null);
     setPositionFocus({ communityId, key: Date.now() });
-    setManagementSource('');
-    setActiveTab('management');
-  }, []);
+    switchTab('review');
+  }, [switchTab]);
 
   const boundaryPreview: BoundaryPreview | null =
     boundaryPreviewOpen && boundaryWorkflow.candidate
@@ -642,25 +648,11 @@ export default function BinjiangMapPage() {
 
       {/* Tab 导航 */}
       <div style={{ background: 'var(--bg-surface)', padding: '12px 20px', borderBottom: '1px solid var(--border)' }}>
-        <div className="tab-nav">
-          <button className={`tab-btn ${activeTab === 'map' ? 'active' : ''}`} onClick={() => setActiveTab('map')}>
-            地图查看
-          </button>
-          <button className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`} onClick={() => setActiveTab('dashboard')}>
-            数据看板
-          </button>
-          <button className={`tab-btn ${activeTab === 'market' ? 'active' : ''}`} onClick={() => setActiveTab('market')}>
-            市场行情
-          </button>
-          <button className={`tab-btn ${activeTab === 'auction' ? 'active' : ''}`} onClick={() => setActiveTab('auction')}>
-            法拍数据
-          </button>
-          <button className={`tab-btn ${activeTab === 'management' ? 'active' : ''}`} onClick={() => { setManagementSource(''); setActiveTab('management'); }}>小区数据管理</button>
-        </div>
+        <AppTabs active={activeTab} onChange={switchTab} />
       </div>
 
       <div style={{ flex: 1, position: 'relative', display: 'flex' }}>
-        {activeTab === 'management' ? <CommunityManagement key={managementSource} initialSource={managementSource} focusPosition={positionFocus} onChanged={() => {
+        {activeTab === 'review' || activeTab === 'maintenance' ? <CommunityManagement key={`${activeTab}:${managementMode}`} initialMode={managementMode} focusPosition={positionFocus} onChanged={() => {
           setSelectedCommunity(null);
           void fetchCommunities().then(({ communities, stats, ok }) => {
             if (!ok) return;

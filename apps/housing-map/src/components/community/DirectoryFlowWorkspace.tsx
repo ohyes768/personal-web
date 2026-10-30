@@ -35,13 +35,6 @@ export function CatalogTabs({ summary, mode, onChange }: { summary: Summary | nu
     <button key={key} aria-pressed={mode === key} onClick={() => onChange(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
 }
 
-export function ManagementTabs({ mode, onChange }: { mode: string; onChange: (mode: string) => void }) {
-  const maintenance = mode === 'rental' || mode === 'auctions';
-  return <div className="review-tabs" role="group" aria-label="管理工作区">
-    <button aria-pressed={!maintenance} onClick={() => { if (maintenance) onChange('admitted'); }}>收录审核</button>
-    <button aria-pressed={maintenance} onClick={() => { if (!maintenance) onChange('rental'); }}>小区数据维护</button>
-  </div>;
-}
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
@@ -362,8 +355,8 @@ function AuctionPanel({ row, busy, action }: { row: Auction; busy: boolean;
       <button className="btn btn-secondary" disabled={busy} onClick={() => send(row.skipped ? 'reopen' : 'skip')}>{row.skipped ? '重新处理' : '暂时跳过'}</button></div></>;
 }
 
-export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', focusPosition = null }: { onChanged: () => void; initialSource?: string; focusPosition?: { communityId: string; key: number } | null }) {
-  const [mode, setMode] = useState(initialSource === 'laipai' ? 'auctions' : 'admitted');
+export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admitted', focusPosition = null }: { onChanged: () => void; initialMode?: string; focusPosition?: { communityId: string; key: number } | null }) {
+  const [mode, setMode] = useState(initialMode);
   const [filters, setFilters] = useState<CatalogFilterValues>(() => ({ ...emptyCatalogFilters(), district: '滨江' }));
   const [page, setPage] = useState(1);
   const [useConfirmOpen, setUseConfirmOpen] = useState(false);
@@ -553,12 +546,11 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
   const canExclude = catalogCanExclude(detail);
   const maintenance = mode === 'rental' || mode === 'auctions';
   const selectedRows = mode === 'admitted' ? items.filter(c => selection.includes(c.community_id)) : [];
-  return <section className="directory-page review-workspace" aria-label="小区数据管理">
+  return <section className="directory-page review-workspace" aria-label={maintenance ? '小区数据维护' : '小区收录审核'}>
     <header className="review-heading"><h2>住宅名单与数据采集</h2>
       <CollectionTasksButton jobs={summary?.pipeline ? Object.fromEntries(Object.entries(jobs).filter(([id]) => id !== 'use')) : jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
     <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
-    <ManagementTabs mode={mode} onChange={changeMode} />
     {maintenance ? <div className="directory-actions directory-maintenance-filter">
       <label>维护事项<select value={mode} onChange={e => changeMode(e.target.value)}>
         <option value="rental">租金来源</option>

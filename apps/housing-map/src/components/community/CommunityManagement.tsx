@@ -11,12 +11,12 @@ export interface PositionFocusRequest {
 
 export default function CommunityManagement({
   onChanged,
-  initialSource = '',
+  initialMode = 'admitted',
   focusPosition = null,
 }: {
   onChanged: () => void;
-  initialSource?: string;
+  initialMode?: string;
   focusPosition?: PositionFocusRequest | null;
 }) {
-  return <CommunityWorkspace onChanged={onChanged} initialSource={initialSource} focusPosition={focusPosition} />;
+  return <CommunityWorkspace onChanged={onChanged} initialMode={initialMode} focusPosition={focusPosition} />;
 }

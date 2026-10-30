@@ -30,13 +30,17 @@ test('review table counts communities with separate asset and round clues', () =
   assert.match(html, /用途待核实/); assert.match(html, /审核/);
 });
 
-test('management separates TMSF admission from auction association', () => {
+test('review and maintenance are separate entries into the community workspace', () => {
   const Management = require('../src/components/community/CommunityManagement.tsx').default;
-  const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
-  assert.match(html, /收录审核/); assert.match(html, /小区数据维护/);
-  assert.match(html, /已收录/); assert.match(html, /不收录/);
-  assert.doesNotMatch(html, /法拍待关联/);
-  assert.doesNotMatch(html, /待审核小区|先预演|启用自动审核/);
+  // 收录审核入口只看住宅名单的收录状态，不掺法拍待关联。
+  const review = renderToStaticMarkup(React.createElement(Management, { onChanged() {}, initialMode: 'admitted' }));
+  assert.match(review, /已收录/); assert.match(review, /不收录/);
+  assert.doesNotMatch(review, /法拍待关联/);
+  assert.doesNotMatch(review, /待审核小区|先预演|启用自动审核/);
+  // 小区数据维护入口走自己的维护事项，不再复用收录状态页签。
+  const maintenance = renderToStaticMarkup(React.createElement(Management, { onChanged() {}, initialMode: 'rental' }));
+  assert.match(maintenance, /维护事项/); assert.match(maintenance, /租金来源/); assert.match(maintenance, /法拍待关联/);
+  assert.doesNotMatch(maintenance, /已收录/);
 });
 
 test('auction review entry sends users to the shared community workspace', () => {

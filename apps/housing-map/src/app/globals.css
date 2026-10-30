@@ -734,6 +734,7 @@ body {
 /* 标签切换 */
 .tab-nav {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
   background: var(--bg-elevated);
   padding: 4px;
