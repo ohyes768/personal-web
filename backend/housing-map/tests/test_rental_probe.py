@@ -1,4 +1,7 @@
 """Probe workflow: the system finds the homepage, the user only picks one."""
+import sqlite3
+import time
+
 import pytest
 
 from src.services.community_registry import CommunityRegistry
@@ -411,3 +414,50 @@ def test_probe_api_reports_a_missing_job_on_cancel(tmp_path, monkeypatch):
     client, _ = api_client(registry, fake, tmp_path, monkeypatch)
     assert client.post('/communities/c1/rental-source/probe/cancel').status_code == 409
     assert client.post('/communities/c1/rental-source/probe').status_code == 200
+
+
+# --- 只读状态读取：探查任务持写锁时 GET 不得排队或失败 --------------------
+# 线上回归：探查运行期间 write_state 频繁持 SQLite 写锁，而 db() 每个连接都
+# BEGIN IMMEDIATE，GET probe 轮询排队甚至 database is locked（503）。
+
+def test_read_state_avoids_writer_lock(tmp_path):
+    registry = setup(tmp_path)
+    probe.write_state(registry, 'c1', stage=probe.STAGE_SEARCHING)
+    holder = sqlite3.connect(registry.path, timeout=15)
+    holder.execute('BEGIN IMMEDIATE')
+    try:
+        started = time.perf_counter()
+        state = probe.read_state(registry, 'c1')
+        elapsed = time.perf_counter() - started
+    finally:
+        holder.rollback()
+        holder.close()
+    assert state['stage'] == probe.STAGE_SEARCHING
+    assert elapsed < 0.2, f'状态读取被写锁阻塞 {elapsed:.2f}s'
+
+
+def test_community_exists_checks_identity_not_snapshot(tmp_path):
+    registry = setup(tmp_path)
+    assert registry.community_exists('c1')
+    assert not registry.community_exists('missing')
+    with registry.db() as db:
+        db.execute("UPDATE communities SET deleted=1 WHERE id='c1'")
+    assert not registry.community_exists('c1'), '已删除小区不应视为存在'
+    with registry.db() as db:
+        db.execute("UPDATE communities SET deleted=0, merged_to='other' WHERE id='c1'")
+    assert not registry.community_exists('c1'), '已合并小区不应视为存在'
+
+
+def test_probe_get_stays_readable_while_writer_lock_is_held(tmp_path, monkeypatch):
+    registry = setup(tmp_path)
+    fake = FakeDiscovery(search={}, homepages={})
+    client, _ = api_client(registry, fake, tmp_path, monkeypatch)
+    holder = sqlite3.connect(registry.path, timeout=15)
+    holder.execute('BEGIN IMMEDIATE')
+    try:
+        response = client.get('/communities/c1/rental-source/probe')
+    finally:
+        holder.rollback()
+        holder.close()
+    assert response.status_code == 200
+    assert response.json()['data']['stage'] == 'idle'

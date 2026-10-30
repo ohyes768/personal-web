@@ -24,6 +24,21 @@ def dump(value):
     return json.dumps(value, ensure_ascii=False, allow_nan=False)
 
 
+def registry_path(data_dir) -> Path:
+    return Path(data_dir) / 'community_registry.sqlite3'
+
+
+def _read_only(path):
+    """Readers must not queue on the writer lock: mode=ro never runs BEGIN IMMEDIATE."""
+    return sqlite3.connect(f'file:{path.as_posix()}?mode=ro', uri=True, timeout=15)
+
+
+def community_exists_at(path, community_id):
+    with _read_only(path) as db:
+        return db.execute('SELECT 1 FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL',
+                          (community_id,)).fetchone() is not None
+
+
 class CommunityRegistry:
     def __init__(self, path: Path):
         self.path = Path(path)
@@ -57,6 +72,14 @@ class CommunityRegistry:
             db.execute('PRAGMA foreign_keys=ON')
             db.execute('BEGIN IMMEDIATE')
             yield db
+
+    def community_exists(self, community_id):
+        return community_exists_at(self.path, community_id)
+
+    def read_meta(self, key):
+        with _read_only(self.path) as db:
+            row = db.execute('SELECT value FROM meta WHERE key=?', (key,)).fetchone()
+        return row[0] if row else None
 
     def _event(self, db, cid, action, payload):
         db.execute('INSERT INTO events(cid,action,payload,created_at) VALUES (?,?,?,?)',
@@ -512,5 +535,5 @@ class CommunityRegistry:
 
 
 def existing_registry(data_dir):
-    path = Path(data_dir) / 'community_registry.sqlite3'
+    path = registry_path(data_dir)
     return CommunityRegistry(path) if path.exists() else None

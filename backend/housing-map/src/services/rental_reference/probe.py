@@ -67,9 +67,8 @@ def state_key(community_id):
 
 
 def read_state(registry, community_id):
-    with registry.db() as db:
-        row = db.execute('SELECT value FROM meta WHERE key=?', (state_key(community_id),)).fetchone()
-    return json.loads(row[0]) if row else {}
+    raw = registry.read_meta(state_key(community_id))
+    return json.loads(raw) if raw else {}
 
 
 def write_state(registry, community_id, **fields):

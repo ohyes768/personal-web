@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from src.api import rental_routes
+from src.services.community_registry import community_exists_at, registry_path
 from src.services.data_loader import load_communities
 from src.services.rental_reference.refresh import MappingFileError, RefreshAlreadyRunning
 from src.services.rental_reference.sources import SourceStore
@@ -39,6 +40,14 @@ def community(community_id: str) -> dict:
     if item is None:
         raise HTTPException(404, '小区不存在')
     return item
+
+
+def community_exists(community_id: str) -> bool:
+    """Point lookup on the same registry the mappings use; JSON directory as fallback."""
+    path = registry_path(rental_routes._mappings_path.parent)
+    if path.exists():
+        return community_exists_at(path, community_id)
+    return any(c.get('community_id') == community_id for c in load_communities())
 
 
 @router.get('/rentals/sources')
@@ -175,7 +184,8 @@ def _probe():
 @router.get('/communities/{community_id}/rental-source/probe')
 def probe_status(community_id: str):
     """Read-only probe state; never starts a network request on its own."""
-    community(community_id)
+    if not community_exists(community_id):
+        raise HTTPException(404, '小区不存在')
     try:
         return {'success': True, 'data': _probe().status(community_id)}
     except (OSError, sqlite3.Error) as exc:
