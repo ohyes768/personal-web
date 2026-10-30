@@ -3,6 +3,16 @@
 > 2026-10-29 建立。系统的“找来源”能力：平台内多通道搜索 → 小区资料API验证身份 → 选定后按需获取租房入口API → 双归属核验后绑定。
 > 关键结论：**搜索响应永远不是身份证据**，身份来自小区资料API（旧版本为主页HTML）；**平台内可执行，不需要外部搜索引擎**。
 
+## 关联入口列表API提速（2026-10-30，替代下文双HTML核验默认路径）
+
+- 默认 ProbeService 在刷新小区资料和租房入口后，调用 `DiscoveryCheckpoint.verified_rental_seed(seed,nid)`，由 `XingfuliDiscovery` 单次请求 `/f100/api/search_api/rent` 的固定同小区第一页。与租金采集共用 `rental_list_api_url`；发现白名单仅允许固定参数和offset=0，无额外、重复或分页参数。
+- 此API必须status=0、有效data、items列表及布尔has_more；非空列表每行必须有数字字符串id和与目标nid严格一致的neighborhood_id。空、缺身份、混归属、坏结构不关联。旧入口种子可能不在第一页：绑定种子必须从本次已核验列表选择，不直接绑定入口种子。nid仍是来源ID，seed单独保存。
+- 核验不读写成功步骤缓存，每次真实HTTP继续检查预算、取消、共享3秒间隔与冷却；验证码/限流冷却直接结束，不能误报“无入口”或继续下一种子。新鲜资料/当前目录用途、分期、区域和人工决定复查及发布锁不变。
+- 人工选择默认3请求（资料+入口+列表核验），唯一强候选冷启动4请求（另加搜索），比上一版各少1请求。兼容注入的旧客户端没有新方法时，Checkpoint沿用旧详情+列表双核验及独立预算；默认网页客户端不走HTML。独立旧auto_discover兼容实现仍保留原接口。
+- 前端在运行态展示current_step（资料核对/入口读取/列表归属），终态优先stage；新select/retry清空旧步骤及诊断。GET状态不启动请求。
+- 实测上线前基线为4请求/约12秒，8.9秒为限速等待；新链路的3请求由真实适配器测试验证，预计省3～4秒，实际时延须部署后测量，不能把测试次数当线上性能结论。
+- `test_xingfuli_source_api.py`覆盖3/4请求、实时列表种子替换、空/混归属/缺归属/坏ID、预算、取消、冷却、未缓存核验与URL白名单；旧probe/matching及租金采集回归保留。
+
 ## 当前网页入口（2026-10-29）
 
 - `GET/POST/DELETE /rentals/source-matching` 独立查询、启动/继续、取消来源匹配；POST为202，接受`mode=full|incremental`（详见下方提速契约）。SourceMatchingService顺序执行幸福里probe，保存remaining/outcomes和计数到rentals/source_matching_job.json；绝不采集整租样本或发布租金快照。人工跳过、拒绝、已有幸福里来源不自动重做。

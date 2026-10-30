@@ -6,7 +6,7 @@ import {
   probeIsRunning,
   probePath,
   probeRequest,
-  probeStageLabel,
+  probeProgressLabel,
   type ProbeCandidate,
   type ProbeState,
 } from '../../lib/rental-probe';
@@ -79,9 +79,9 @@ export function XingfuliProbe({ communityId, onChanged }: {
   const data = current?.data;
   const loadError = current?.error;
   const stage = data?.stage;
-  const stageLabel = probeStageLabel(stage);
-  const message = data?.message?.trim();
   const running = probeIsRunning(stage);
+  const stageLabel = data ? probeProgressLabel(data) : '';
+  const message = running ? '' : data?.message?.trim();
 
   useEffect(() => {
     if (!running) return;

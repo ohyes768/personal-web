@@ -46,6 +46,14 @@ test('stage labels distinguish the outcomes', () => {
   assert.equal(probeIsRunning('needs_homepage_selection'), false);
 });
 
+test('running probe names the actual API step and terminal states ignore old progress', () => {
+  const { probeProgressLabel } = require('../src/lib/rental-probe.ts');
+  assert.match(probeProgressLabel({stage:'resolving_entry',current_step:'homepage'}), /小区资料/);
+  assert.match(probeProgressLabel({stage:'resolving_entry',current_step:'verified_rental_seed'}), /列表.*归属/);
+  assert.equal(probeProgressLabel({stage:'bound_pending_collection',current_step:'verified_rental_seed'}),
+    probeStageLabel('bound_pending_collection'));
+});
+
 test('probe shows the platform facts and never asks for a link', () => {
   const html = renderToStaticMarkup(React.createElement(ProbeCandidateCard, {
     candidate, busy: false, onSelect() {},

@@ -35,6 +35,7 @@ class APIResponses:
         if ambiguous:
             self.infos[OTHER] = info_body(OTHER)
         self.entries = {TOTAL_ID: entry_body()}
+        self.rental_rows = [dict(id=SEED, neighborhood_id=TOTAL_ID)]
 
     def __call__(self, url):
         self.calls.append(url)
@@ -48,6 +49,8 @@ class APIResponses:
         if parts.path == '/f100/api/same_neighborhood_rent':
             assert query['city_id'] == ['1853'] and query['offset'] == ['0'] and query['count'] == ['10']
             return self.entries[query['neighborhood_id'][0]]
+        if parts.path == '/f100/api/search_api/rent':
+            return json.dumps(dict(status=0, data=dict(items=self.rental_rows, has_more=False)))
         if parts.path == f'/zufang/hz-{SEED}.html':
             return listing_html()
         if parts.path == f'/zufang/neighbor-house-list/hz-{SEED}.html':
@@ -64,15 +67,15 @@ def probe(registry, responses, tmp_path, **kwargs):
                             fetcher=responses, **options), **kwargs)
 
 
-def test_cold_matching_uses_five_real_requests_and_no_homepage_html(tmp_path):
+def test_cold_matching_uses_four_api_requests_and_no_listing_html(tmp_path):
     reg = setup(tmp_path)
     responses = APIResponses()
     state = run(probe(reg, responses, tmp_path))
     assert state['stage'] == 'bound_pending_collection'
-    assert state['diagnostics']['requests'] == 5
+    assert state['diagnostics']['requests'] == 4
     assert responses.paths() == [
         '/f100/api/search', '/f100/api/neighborhood/info', '/f100/api/same_neighborhood_rent',
-        f'/zufang/hz-{SEED}.html', f'/zufang/neighbor-house-list/hz-{SEED}.html']
+        '/f100/api/search_api/rent']
 
 
 def test_ambiguous_candidates_do_not_fetch_entries_until_selected(tmp_path):
@@ -91,13 +94,13 @@ def test_ambiguous_candidates_do_not_fetch_entries_until_selected(tmp_path):
     assert svc.status('c1')['stage'] == 'bound_pending_collection'
     assert responses.paths()[before:] == [
         '/f100/api/neighborhood/info', '/f100/api/same_neighborhood_rent',
-        f'/zufang/hz-{SEED}.html', f'/zufang/neighbor-house-list/hz-{SEED}.html']
+        '/f100/api/search_api/rent']
+    assert svc.status('c1')['diagnostics']['requests'] == 3
     assert parse_qs(urlsplit(responses.calls[before + 1]).query)['neighborhood_id'] == [TOTAL_ID]
 
 
 @pytest.mark.parametrize('budget,last_path', [
-    (2, '/f100/api/neighborhood/info'), (3, '/f100/api/same_neighborhood_rent'),
-    (4, f'/zufang/hz-{SEED}.html')])
+    (2, '/f100/api/neighborhood/info'), (3, '/f100/api/same_neighborhood_rent')])
 def test_each_new_http_step_respects_budget_without_binding(tmp_path, budget, last_path):
     reg = setup(tmp_path)
     responses = APIResponses()
@@ -117,7 +120,7 @@ def test_restart_reuses_search_and_info_but_refreshes_identity_and_entry(tmp_pat
     assert state['stage'] == 'bound_pending_collection'
     assert state['diagnostics']['cache_hits'] == 2
     assert second.paths() == ['/f100/api/neighborhood/info', '/f100/api/same_neighborhood_rent',
-                              f'/zufang/hz-{SEED}.html', f'/zufang/neighbor-house-list/hz-{SEED}.html']
+                              '/f100/api/search_api/rent']
 
 
 def test_failed_entry_is_not_cached_or_mistaken_for_no_entry(tmp_path):
@@ -132,19 +135,75 @@ def test_failed_entry_is_not_cached_or_mistaken_for_no_entry(tmp_path):
     assert state['selected_page']['neighborhood_id'] == TOTAL_ID
 
 
-def test_entry_seed_cannot_bypass_detail_membership_check(tmp_path):
+@pytest.mark.parametrize('rows', [[], [dict(id=SEED, neighborhood_id=OTHER)],
+    [dict(id=SEED)], [dict(id=SEED, neighborhood_id=TOTAL_ID), dict(id='2', neighborhood_id=OTHER)],
+    [dict(id=True, neighborhood_id=TOTAL_ID)]])
+def test_entry_cannot_bypass_live_list_membership_check(tmp_path, rows):
     reg = setup(tmp_path)
     responses = APIResponses()
-    original = responses.__call__
-    def wrong_owner(url):
-        if urlsplit(url).path == f'/zufang/hz-{SEED}.html':
-            responses.calls.append(url)
-            return listing_html(neighborhood_id=OTHER)
-        return original(url)
-    state = run(probe(reg, wrong_owner, tmp_path))
+    responses.rental_rows = rows
+    state = run(probe(reg, responses, tmp_path))
     assert state['stage'] == 'entry_not_found'
     assert f'/zufang/neighbor-house-list/hz-{SEED}.html' not in responses.paths()
     assert not any(s['source'] == 'xingfuli' for s in reg.sources())
+
+
+def test_bind_uses_a_seed_with_explicit_membership_from_the_live_api(tmp_path):
+    reg = setup(tmp_path)
+    responses = APIResponses()
+    responses.rental_rows = [dict(id='123456789', neighborhood_id=TOTAL_ID)]
+    state = run(probe(reg, responses, tmp_path, budget=4))
+    assert state['stage'] == 'bound_pending_collection'
+    source = next(s for s in reg.sources() if s['source'] == 'xingfuli')
+    assert source['seed_listing_id'] == '123456789'
+    assert len(responses.calls) == 4
+
+
+def test_list_verification_challenge_stops_in_cooldown_without_binding(tmp_path):
+    reg = setup(tmp_path)
+    responses = APIResponses()
+    def challenge(url):
+        if urlsplit(url).path == '/f100/api/search_api/rent':
+            responses.calls.append(url)
+            return '<html>captcha</html>'
+        return responses(url)
+    state = run(probe(reg, challenge, tmp_path))
+    assert state['stage'] == 'cooling_down'
+    assert len(responses.calls) == 4
+    assert not any(s['source'] == 'xingfuli' for s in reg.sources())
+
+
+def test_cancel_during_api_membership_check_cannot_bind(tmp_path):
+    reg = setup(tmp_path)
+    responses = APIResponses()
+    svc = probe(reg, responses, tmp_path)
+    def cancelling(url):
+        body = responses(url)
+        if urlsplit(url).path == '/f100/api/search_api/rent':
+            svc._cancel.set()
+        return body
+    svc._discovery_factory = lambda **options: XingfuliDiscovery(fetcher=cancelling, **options)
+    assert run(svc)['stage'] == 'cancelled'
+    assert not any(s['source'] == 'xingfuli' for s in reg.sources())
+
+
+def test_membership_verification_is_never_reused_from_checkpoint(tmp_path):
+    reg = setup(tmp_path)
+    responses = APIResponses()
+    cp = DiscoveryCheckpoint(reg, reg.communities()[0],
+        XingfuliDiscovery(directory=tmp_path, fetcher=responses, delay=0),
+        threading.Event(), 12, lambda *args: None)
+    assert cp.verified_rental_seed(SEED, TOTAL_ID) == SEED
+    responses.rental_rows = []
+    assert cp.verified_rental_seed(SEED, TOTAL_ID) is None
+    assert cp.request_count == 2 and cp.diagnostics['cache_hits'] == 0
+
+
+@pytest.mark.parametrize('suffix', ['&offset=20', '&search_id=abc', '&callback=x', '&house_id=123'])
+def test_list_verification_url_rejects_extra_or_duplicate_parameters(suffix):
+    from src.services.xingfuli_rentals import rental_list_api_url
+    with pytest.raises(ValueError):
+        validate_discovery_url(rental_list_api_url(SEED) + suffix)
 
 
 def test_api_district_conflict_blocks_automatic_binding_even_with_matching_address(tmp_path):
@@ -168,7 +227,7 @@ def test_legacy_homepage_checkpoint_cannot_authorize_new_api_binding(tmp_path):
     responses = APIResponses()
     state = run(probe(reg, responses, tmp_path))
     assert state['stage'] == 'bound_pending_collection' and state['diagnostics']['cache_hits'] == 0
-    assert len(responses.calls) == 5
+    assert len(responses.calls) == 4
 
 
 @pytest.mark.parametrize('damage', ['expired', 'city', 'coordinates', 'district'])

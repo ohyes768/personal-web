@@ -4,7 +4,7 @@ A keyword search on the platform answers with HTTP 200 and unrelated listings
 even when the name matches nothing, so a search response never proves identity.
 The search only nominates community IDs. Identity comes from the community
 info API; rental seeds are fetched separately after a candidate is selected.
-Listing pages still prove that those seeds belong to the selected community.
+A fresh rental list API response proves membership of the seed we actually bind.
 """
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ import re
 from urllib.parse import parse_qsl, urlencode, urlsplit
 
 from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
-from src.services.xingfuli_rentals import detail_url, listing_neighborhood, list_url
+from src.services.xingfuli_rentals import detail_url, listing_neighborhood, list_url, rental_list_api_url
 from src.services.xingfuli_transport import XingfuliTransport
 
 BASE_URL = 'https://m.xflapp.com'
@@ -44,6 +44,13 @@ def validate_discovery_url(url):
     if p.path == '/f100/api/search':
         if not set(dict(parse_qsl(p.query))) <= SEARCH_PARAMS:
             raise ValueError('幸福里搜索参数不在允许范围')
+        return url
+    if p.path == '/f100/api/search_api/rent':
+        pairs = parse_qsl(p.query, keep_blank_values=True)
+        params = dict(pairs)
+        expected = parse_qsl(urlsplit(rental_list_api_url(params.get('house_id', ''))).query)
+        if sorted(pairs) != sorted(expected):
+            raise ValueError('幸福里租房列表API参数不在允许范围')
         return url
     api_params = {
         '/f100/api/neighborhood/info': {'neighborhood_id'},
@@ -266,6 +273,23 @@ class XingfuliDiscovery(XingfuliTransport):
         url = BASE_URL + '/f100/api/same_neighborhood_rent?' + urlencode({
             'neighborhood_id': neighborhood_id, 'city_id': CITY_ID, 'offset': 0, 'count': 10})
         return parse_rental_entry(self.fetch(url), neighborhood_id)
+
+    def verified_rental_seed(self, seed, neighborhood_id):
+        """Return a live, explicitly owned listing; the old anchor may be absent."""
+        neighborhood_id = _community_id(neighborhood_id)
+        data = _api_data(self.fetch(rental_list_api_url(seed)))
+        rows = data.get('items')
+        if not isinstance(rows, list) or not isinstance(data.get('has_more'), bool):
+            raise ValueError('幸福里租房列表API结构不完整')
+        if not rows:
+            return None
+        for row in rows:
+            if (not isinstance(row, dict) or not isinstance(row.get('id'), str)
+                    or not re.fullmatch(r'[0-9]+', row['id'])
+                    or row.get('neighborhood_id') != neighborhood_id):
+                raise ValueError('幸福里租房列表归属不一致或身份缺失')
+        # Bind a listing from verified rows, never the unverified entry anchor.
+        return rows[0]['id']
 
     def listing_owner(self, seed):
         """Neighborhood that actually owns the listing behind a seed."""

@@ -26,6 +26,7 @@ export interface ProbeState {
   community_id?: string;
   candidates?: ProbeCandidate[] | null;
   selected_page?: ProbeCandidate | null;
+  current_step?: string | null;
 }
 
 export const PROBE_STAGES = {
@@ -52,6 +53,18 @@ export function probeStageLabel(stage: string | undefined): string {
 
 export function probeIsRunning(stage: string | undefined): boolean {
   return !!stage && RUNNING_STAGES.has(stage);
+}
+
+export function probeProgressLabel(state: Pick<ProbeState, 'stage' | 'current_step'>): string {
+  const steps: Record<string, string> = {
+    search: '正在查找幸福里小区主页',
+    homepage: '正在核对最新小区资料',
+    resolving_entry: '正在读取租房入口',
+    verified_rental_seed: '正在核验租房列表的小区归属',
+    listing_owner: '正在核验房源归属',
+    listing_owner_from_list: '正在核验同小区列表',
+  };
+  return (probeIsRunning(state.stage) && steps[state.current_step || '']) || probeStageLabel(state.stage);
 }
 
 export function probePath(communityId: string) {

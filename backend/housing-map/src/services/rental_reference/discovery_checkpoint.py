@@ -137,6 +137,14 @@ class DiscoveryCheckpoint:
     def listing_owner_from_list(self, seed, nid):
         return self._call('listing_owner_from_list', (seed, nid))
 
+    def verified_rental_seed(self, seed, nid):
+        if hasattr(self.client, 'verified_rental_seed'):
+            return self._call('verified_rental_seed', (seed, nid))
+        # Legacy injected adapters keep both original checks and their budgets.
+        if self.listing_owner(seed) == nid and self.listing_owner_from_list(seed, nid):
+            return seed
+        return None
+
 
 class DiscoveryBudgetExhausted(RuntimeError):
     pass

@@ -190,7 +190,8 @@ class ProbeService:
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
             write_state(self.registry, community_id, stage=STAGE_RESOLVING, job_id=self._job_id,
-                        selected_page=candidate, message='正在寻找该主页的租房入口', error=None)
+                        selected_page=candidate, message='正在寻找该主页的租房入口', error=None,
+                        current_step=None, diagnostics={})
             self._spawn(community, 'entry')
         return self.status(community_id)
 
@@ -209,7 +210,7 @@ class ProbeService:
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
             write_state(self.registry, community_id, stage=STAGE_SEARCHING if mode == 'search' else STAGE_RESOLVING,
-                        job_id=self._job_id, message='正在重试', error=None)
+                        job_id=self._job_id, message='正在重试', error=None, current_step=None, diagnostics={})
             self._spawn(community, mode)
         return self.status(community_id)
 
@@ -360,7 +361,7 @@ class ProbeService:
             return
         client = client or self._checkpoint_client(community)
         # A restored/selected identity must be fresh before fetching entry
-        # seeds and doing both ownership checks. Cold search already read it.
+        # seeds and verifying live list ownership. Cold search already read it.
         if isinstance(client, DiscoveryCheckpoint) and candidate['neighborhood_id'] not in client.fresh_communities:
             homepage = client.community_info(candidate['neighborhood_id'], fresh=True)
             fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
@@ -385,24 +386,19 @@ class ProbeService:
                             message='本轮探查请求额度已用完，请稍后重试')
                 return
             try:
-                owner = client.listing_owner(seed)
+                verified_seed = client.verified_rental_seed(seed, candidate['neighborhood_id'])
             except ValueError as exc:
-                logger.warning('Rental probe listing failed community_id=%s seed=%s error=%s',
+                logger.warning('Rental probe list verification failed community_id=%s seed=%s error=%s',
                                community_id, seed, exc)
+                if '冷却' in str(exc):
+                    raise
                 continue
-            if owner != candidate['neighborhood_id']:
-                continue
-            try:
-                if not client.listing_owner_from_list(seed, candidate['neighborhood_id']):
-                    continue
-            except ValueError as exc:
-                logger.warning('Rental probe list failed community_id=%s seed=%s error=%s',
-                               community_id, seed, exc)
+            if not verified_seed:
                 continue
             if self._cancel.is_set():
                 write_state(self.registry, community_id, stage=STAGE_CANCELLED, message='探查已取消')
                 return
-            self._bind(community, candidate, seed)
+            self._bind(community, candidate, verified_seed)
             return
         write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
                     message='该主页没有可核验的租房入口，请重试或换一个主页')

@@ -39,6 +39,15 @@ def detail_url(lid):
     return f'{BASE_URL}/zufang/hz-{_id(lid)}.html'
 
 
+def rental_list_api_url(seed, *, offset=0, search_id=None):
+    params = dict(channel_id=94349583687, house_id=_id(seed), house_type=3,
+                  aid=1370, app_name='f100', count=20, refresh_type=2,
+                  offset=offset, list_style='same_neighborhood_list')
+    if search_id:
+        params['search_id'] = search_id
+    return BASE_URL + '/f100/api/search_api/rent?' + urlencode(params)
+
+
 def validate_url(url):
     p = urlsplit(url)
     if (p.scheme != 'https' or p.hostname != 'm.xflapp.com' or p.username or p.password
@@ -176,12 +185,8 @@ class XingfuliClient(XingfuliTransport):
         try:
             for page in range(max_pages):
                 self._check_cancel()
-                params = dict(channel_id=94349583687, house_id=seed_listing_id, house_type=3,
-                              aid=1370, app_name='f100', count=20, refresh_type=2,
-                              offset=offset, list_style='same_neighborhood_list')
-                if search_id:
-                    params['search_id'] = search_id
-                response = json.loads(self.fetch(BASE_URL + '/f100/api/search_api/rent?' + urlencode(params)))
+                response = json.loads(self.fetch(rental_list_api_url(
+                    seed_listing_id, offset=offset, search_id=search_id)))
                 if not isinstance(response, dict) or response.get('status') != 0 or not isinstance(response.get('data'), dict):
                     raise ValueError('幸福里列表 API 请求未成功')
                 data = response['data']
