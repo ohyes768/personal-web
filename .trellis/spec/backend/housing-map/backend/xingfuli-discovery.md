@@ -238,6 +238,12 @@ entry = client.rental_entry(candidate['neighborhood_id'])
 - 旧待选候选可能保留误报conflicts，部署后重新探查刷新证据；后端人工select也会重新计算，不能因历史误报而拒绝合法类型注释。
 - 测试覆盖半/全角括号、空白、自动匹配、旧候选人工选择、类型注释与真实分期并存。
 
+## 失效主页恢复与候选证据（2026-10-30）
+- 新一轮start必须清掉selected_page；身份复核发现冲突或不再满足自动身份条件时，清掉旧选择，返回带evidence/evidence_gaps/conflicts/strong的最新候选及具体原因。
+- needs_homepage_selection状态的retry必须重新search，即使旧记录残留selected_page；入口失败/冷却/中断等保留有效选择的状态继续原入口核验逻辑。
+- 前端遇到历史缺失证据数组的候选，显示重新探查提示并禁用选择，不能因读取conflicts.length崩溃或默认放行。实际区域冲突仍不可绑定。
+- 回归覆盖错误桐庐主页复核、旧待选记录重试搜到正确候选、新搜索不残留旧选择、历史残缺候选安全展示。
+
 ## 已关联来源提示（2026-10-30）
 - `_human_veto` 拒绝占用来源时，从来源的当前 `community_id` 查询目录名称，并返回“该幸福里来源已关联：名称（小区ID：ID），请先核对”；名称缺失仍显示已有ID。
 - 仅补充诊断，不解除、迁移或共享来源；原关联唯一性及人工决定保护不变。`test_rental_source_owner_message.py`验证占用方信息和拒绝后关联不变。

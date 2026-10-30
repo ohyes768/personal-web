@@ -607,3 +607,54 @@ def test_manual_selection_rechecks_old_false_type_conflict(tmp_path):
     svc.select('c1', candidate['candidate_id'], state['revision'])
     svc._thread.join(5)
     assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+
+
+def test_identity_recheck_clears_wrong_selection_and_returns_complete_evidence(tmp_path):
+    registry = setup(tmp_path, name='西房锦绣江南')
+    stale = {**homepage(name='锦绣江南'), 'candidate_id': 'second_hand:' + TOTAL_ID}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NO_ENTRY, selected_page=stale)
+    wrong = {**homepage(name='锦绣江南', address='窄石路344号'),
+             'district': '桐庐', 'longitude': 119.766958, 'latitude': 29.86177}
+    svc = service(registry, FakeDiscovery(homepages={TOTAL_ID: wrong}), tmp_path)
+    svc.retry('c1'); svc._thread.join(5)
+    state = svc.status('c1')
+    assert state['stage'] == probe.STAGE_NEEDS_SELECTION
+    assert state.get('selected_page') is None
+    candidate = state['candidates'][0]
+    assert candidate['conflicts'] and '桐庐' in state['message']
+    assert isinstance(candidate['evidence'], list)
+    assert isinstance(candidate['evidence_gaps'], list)
+    assert candidate['strong'] is False
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+
+
+def test_retry_legacy_needs_selection_searches_again_instead_of_old_homepage(tmp_path):
+    registry = setup(tmp_path)
+    stale = {**homepage(neighborhood_id=PHASE_ID), 'candidate_id': 'second_hand:' + PHASE_ID}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NEEDS_SELECTION, selected_page=stale)
+    fake = FakeDiscovery(search={'测试花园': {TOTAL_ID: '测试花园'}},
+                         homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.retry('c1'); svc._thread.join(5)
+    assert fake.calls[0][0] == 'search'
+    assert not any(call == ('community_info', PHASE_ID) for call in fake.calls)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+
+
+def test_fresh_search_does_not_retain_previous_selected_homepage(tmp_path):
+    registry = setup(tmp_path)
+    probe.write_state(registry, 'c1', stage=probe.STAGE_FAILED, selected_page=homepage())
+    svc = service(registry, FakeDiscovery(), tmp_path)
+    assert run(svc)['stage'] == probe.STAGE_NO_HOMEPAGE
+    assert svc.status('c1').get('selected_page') is None
+
+
+def test_retry_preserves_valid_selection_for_entry_failure(tmp_path):
+    registry = setup(tmp_path)
+    selected = {**homepage(), 'candidate_id': 'second_hand:' + TOTAL_ID}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NO_ENTRY, selected_page=selected)
+    fake = FakeDiscovery(homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.retry('c1'); svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+    assert not any(call[0] == 'search' for call in fake.calls)

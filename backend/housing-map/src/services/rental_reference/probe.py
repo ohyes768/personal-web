@@ -160,7 +160,7 @@ class ProbeService:
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
             write_state(self.registry, community_id, stage=STAGE_SEARCHING, job_id=self._job_id,
-                        message='正在查找幸福里小区主页', candidates=None, error=None,
+                        message='正在查找幸福里小区主页', candidates=None, selected_page=None, error=None,
                         diagnostics={}, current_step=None)
             self._spawn(community, 'search')
         return self.status(community_id)
@@ -205,12 +205,13 @@ class ProbeService:
             state = read_state(self.registry, community_id)
             community = self._community(community_id)
             self._automatic = False
-            mode = 'entry' if state.get('selected_page') else 'search'
+            mode = 'entry' if state.get('selected_page') and state.get('stage') != STAGE_NEEDS_SELECTION else 'search'
             self._cancel.clear()
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
             write_state(self.registry, community_id, stage=STAGE_SEARCHING if mode == 'search' else STAGE_RESOLVING,
-                        job_id=self._job_id, message='正在重试', error=None, current_step=None, diagnostics={})
+                        job_id=self._job_id, message='正在重试', error=None, current_step=None, diagnostics={},
+                        **({'selected_page': None, 'candidates': None} if mode == 'search' else {}))
             self._spawn(community, mode)
         return self.status(community_id)
 
@@ -397,9 +398,13 @@ class ProbeService:
             fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
             fresh_candidate['candidate_id'] = candidate.get('candidate_id', 'homepage:' + candidate['neighborhood_id'])
             judgement = evaluate(community, fresh_candidate, allow_name_only=True, allow_partial_name=True)
+            fresh_candidate.update(evidence=judgement['evidence'], evidence_gaps=judgement['gaps'],
+                                   conflicts=judgement['conflicts'], strong=judgement['strong'])
             if judgement['conflicts'] or (self._require_strong and not judgement['strong']):
+                reason = '；'.join(judgement['conflicts']) or '主页身份信息已变化'
                 write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
-                            candidates=[fresh_candidate], message='主页信息已变化，请重新探查')
+                            selected_page=None, candidates=[fresh_candidate],
+                            message=reason + '，请重新探查')
                 return
             candidate = fresh_candidate
         entry = client.rental_entry(candidate['neighborhood_id'])

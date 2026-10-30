@@ -114,3 +114,13 @@ test('a broken response does not leak a parser error', async () => {
     global.fetch = original;
   }
 });
+
+test('legacy refreshed candidate without evidence arrays renders safely and requires retry', () => {
+  const legacy = { ...candidate };
+  delete legacy.conflicts; delete legacy.evidence; delete legacy.evidence_gaps;
+  const html = renderToStaticMarkup(React.createElement(ProbeCandidateCard, {
+    candidate: legacy, busy: false, onSelect() { throw new Error('incomplete evidence must not bind'); },
+  }));
+  assert.match(html, /候选证据不完整，请重试重新探查/);
+  assert.match(html, /disabled=""/);
+});
