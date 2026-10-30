@@ -13,10 +13,10 @@ const CatalogFiltersModule = require('../src/components/community/CatalogFilters
 const { default: CatalogFilters, catalogFilterParams, catalogFilterSummary, catalogFilterScope,
   catalogFiltersForMode, emptyCatalogFilters } = CatalogFiltersModule;
 
-test('tabs count unified manual work separately from final exclusions', () => {
-  const summary = { active: true, pipeline: true, admitted: 89, unified_pending: 280, pending: 254, excluded: 355, auction_pending: 32 };
+test('pipeline tabs split pending from final exclusions with distinct counts and queries', () => {
+  const summary = { active: true, pipeline: true, admitted: 89, pending: 254, excluded: 355, auction_pending: 32 };
   const html = renderToStaticMarkup(React.createElement(CatalogTabs, { summary, mode: 'pending', onChange() {} }));
-  assert.match(html, /aria-pressed="true">待处理（280）/);
+  assert.match(html, /aria-pressed="true">待处理（254）/);
   assert.match(html, />不收录（101）/);
   assert.match(html, />已收录（89）/);
   assert.doesNotMatch(html, /待处理 \/ 不收录|收录处理状态/);
@@ -29,8 +29,7 @@ test('tabs count unified manual work separately from final exclusions', () => {
   tabs.props.children.find(button => button.key === 'pending').props.onClick();
   assert.deepEqual(clicks, ['excluded', 'pending']);
   const legacy = renderToStaticMarkup(React.createElement(CatalogTabs, { summary: { ...summary, pipeline: false }, mode: 'excluded', onChange() {} }));
-  assert.match(legacy, /待处理（280）/);
-  assert.doesNotMatch(html, /法拍待关联|租金来源/);
+  assert.doesNotMatch(legacy, /待处理/);
   assert.match(legacy, /不收录（355）/);
   assert.deepEqual(catalogScope('excluded', false), { state: 'excluded', workflow: '' });
 });

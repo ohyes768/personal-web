@@ -7,7 +7,6 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from src.services import directory_workflow as flow
-from src.services.directory_pending import load as pending_load, query as pending_query
 from src.services.collection_pipeline import pending_operation_bucket
 from src.services.community_review import community_matches
 from src.services.directory_coverage import attach_coverage
@@ -73,15 +72,13 @@ def summary(q: str = Query('', max_length=200), district: str = ''):
         registry = store()
         if not flow.is_enabled(registry):
             return {'active': False, 'admitted': 0, 'excluded': 0, 'auction_pending': 0}
-        all_rows = flow.inventory(registry, registry.path.parent)
-        rows = filtered(all_rows, q, district)
+        rows = filtered(flow.inventory(registry, registry.path.parent), q, district)
         tasks = flow.auction_tasks(registry, registry.path.parent)
         from src.services.collection_pipeline import enabled as pipeline_enabled
         with registry.db() as db:
             pipeline = pipeline_enabled(db)
         return {'active': True, 'admitted': sum(r['admission_state'] == 'admitted' for r in rows),
                 'excluded': sum(r['admission_state'] != 'admitted' for r in rows), 'auction_pending': len(tasks),
-                'unified_pending': pending_query(pending_load(registry, all_rows))['default_pending_total'],
                 'pipeline': pipeline, 'pending': sum(r.get('workflow_state') == 'pending' for r in rows)}
     return result(read)
 
@@ -97,18 +94,6 @@ USE_FILTERS = {
     'none': lambda p: p.get('state') is None and not p.get('auto_skip_reason'),
     'skipped': lambda p: bool(p.get('auto_skip_reason')) and p.get('result') in {None, 'pending_retry'},
 }
-
-
-@router.get('/pending')
-def pending(q: str = Query('', max_length=200), district: str = '',
-            kind: Literal['', 'admission', 'auction', 'rental'] = '',
-            rental_status: Literal['', 'needs_selection', 'search_failed', 'missing', 'skipped'] = '',
-            include_skipped: bool = False, operation: Literal['', 'position', 'use', 'facts'] = '',
-            use: Literal['', 'conflict', 'uncertain', 'pending_retry', 'agree', 'none', 'skipped'] = '',
-            page: int = Query(1, ge=1), page_size: int = Query(30, ge=1, le=100)):
-    return result(lambda: pending_query(pending_load(require_store()), q=q, district=district,
-        kind=kind, rental_status=rental_status, include_skipped=include_skipped,
-        operation=operation, use=use, use_filters=USE_FILTERS, page=page, page_size=page_size))
 
 
 @router.get('/catalog')

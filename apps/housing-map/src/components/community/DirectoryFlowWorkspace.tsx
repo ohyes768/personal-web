@@ -1,10 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Community, Source, DirectorySourceCard, marketLabels, mapLabels, safeDirectoryLink } from './DirectoryCards';
 import PositionPanel, { Position, PositionBadge, positionLabels, positionQueryLabel } from './PositionPanel';
 import UseReviewPanel, { UseReview, UseReviewBadge, formatUseReviewMessage } from './UseReviewPanel';
-import PendingWorkspace from './PendingWorkspace';
+import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
 import MergeDialog from './MergeDialog';
 import CatalogFilters, { CatalogFilterValues, catalogFilterParams, catalogFiltersForMode, emptyCatalogFilters } from './CatalogFilters';
@@ -18,9 +18,9 @@ export type CatalogRow = Community & { property_types?: string[]; position?: Pos
   qualification: string; facts_state: string; exclusion_reason: string;
   source_record_id?: string; geographic_address?: string; coordinate_evidence?: { source_id?: string; captured_at?: string };
   coverage?: CatalogCoverage; auction_records?: CatalogAuctionRecord[] };
-export type Auction = Source & { revision: string; skipped: boolean; candidates: Community[]; reason: string;
+type Auction = Source & { revision: string; skipped: boolean; candidates: Community[]; reason: string;
   auction_ids?: string[]; rounds?: { auction_id: string; title?: string; source_url?: string; round?: number }[] };
-type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number; pipeline?: boolean; unified_pending?: number; pending?: number };
+type Summary = { active: boolean; admitted: number; excluded: number; auction_pending: number; pipeline?: boolean; pending?: number };
 
 export function catalogScope(mode: string, pipeline = false) {
   return { state: mode === 'pending' ? 'excluded' : mode,
@@ -29,8 +29,9 @@ export function catalogScope(mode: string, pipeline = false) {
 
 export function CatalogTabs({ summary, mode, onChange }: { summary: Summary | null; mode: string; onChange: (mode: string) => void }) {
   const tabs = [['admitted', '已收录', summary?.admitted],
-    ['pending', '待处理', summary?.unified_pending],
-    ['excluded', '不收录', summary?.pipeline ? Math.max(0, summary.excluded - (summary.pending || 0)) : summary?.excluded]];
+    ...(summary?.pipeline ? [['pending', '待处理', summary.pending]] : []),
+    ['excluded', '不收录', summary?.pipeline ? Math.max(0, summary.excluded - (summary.pending || 0)) : summary?.excluded],
+    ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]];
   return <div className="review-tabs">{tabs.map(([key, label, count]) =>
     <button key={key} aria-pressed={mode === key} onClick={() => onChange(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
 }
@@ -355,13 +356,14 @@ function AuctionPanel({ row, busy, action }: { row: Auction; busy: boolean;
 }
 
 export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', focusPosition = null }: { onChanged: () => void; initialSource?: string; focusPosition?: { communityId: string; key: number } | null }) {
-  const [mode, setMode] = useState(initialSource === 'laipai' ? 'pending' : 'admitted');
+  const [mode, setMode] = useState(initialSource === 'laipai' ? 'auctions' : 'admitted');
   const [filters, setFilters] = useState<CatalogFilterValues>(() => ({ ...emptyCatalogFilters(), district: '滨江' }));
   const [page, setPage] = useState(1);
   const [useConfirmOpen, setUseConfirmOpen] = useState(false);
   const [propertyTypes, setPropertyTypes] = useState<string[]>([]);
+  const [showSkipped, setShowSkipped] = useState(false);
   const [summary, setSummary] = useState<Summary | null>(null); const [items, setItems] = useState<CatalogRow[]>([]);
-  const [total, setTotal] = useState(0);
+  const [auctions, setAuctions] = useState<Auction[]>([]); const [total, setTotal] = useState(0);
   const [jobs, setJobs] = useState<Record<string, Job | null>>({}); const [jobErrors, setJobErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0);
@@ -372,7 +374,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
   const detailVersion = useRef(0);
   const finishes = useRef<Record<string, string>>({});
   const optimistic = useRef<string | null>(null);
-  const updatePendingCount = useCallback((count: number) => setSummary(current => current ? { ...current, unified_pending: count } : current), []);
   const changed = () => { detailVersion.current += 1; setRevision(v => v + 1); setDetail(null); setAuction(null); onChanged(); };
   useEffect(() => {
     const controller = new AbortController();
@@ -382,18 +383,19 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
         if (controller.signal.aborted) return;
         setSummary(counts);
         if (!counts.active) { setLoading(false); return; }
-        if (mode === 'pending') { setLoading(false); return; }
-        const path = `/directory/workflow/catalog?${new URLSearchParams({ ...catalogScope(mode, counts.pipeline), page: String(page), ...catalogFilterParams(mode, filters) })}`;
-        const packet = await workflowRequest<Page<CatalogRow>>(path, 'GET', undefined, controller.signal);
+        if (mode === 'rental') { setLoading(false); return; }
+        const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q: filters.q, page: String(page), include_skipped: String(showSkipped) })}`
+          : `/directory/workflow/catalog?${new URLSearchParams({ ...catalogScope(mode, counts.pipeline), page: String(page), ...catalogFilterParams(mode, filters) })}`;
+        const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         if (page > 1 && (page - 1) * 30 >= packet.total) { setPage(Math.max(1, Math.ceil(packet.total / 30))); return; }
-        setItems(packet.items);
+        if (mode === 'auctions') setAuctions((packet as Page<Auction>).items); else setItems((packet as Page<CatalogRow>).items);
         if (mode === 'excluded' || mode === 'pending') setPropertyTypes(packet.property_types || []);
         setTotal(packet.total); setError(''); setLoading(false);
       } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '名单加载失败'); setLoading(false); } }
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, filters, page, revision]);
+  }, [mode, filters, page, showSkipped, revision]);
   useEffect(() => {
     if (!summary?.active) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;
@@ -549,18 +551,18 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
     <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
     <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />
-    {mode !== 'pending' && <CatalogFilters mode={mode} values={filters} propertyTypes={propertyTypes} total={total} loading={loading}
+    {mode !== 'rental' && <CatalogFilters mode={mode} values={filters} propertyTypes={propertyTypes} total={total} loading={loading}
       onChange={(key, value) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); setLoading(true); setSelection([]); }}
       onRemove={key => { setFilters(current => ({ ...current, [key]: '' })); setPage(1); setLoading(true); setSelection([]); }}
       onClear={() => { setFilters(emptyCatalogFilters()); setPage(1); setLoading(true); setSelection([]); }}
       onRefresh={() => { setLoading(true); setRevision(v => v + 1); }}
-      />}
+      extra={<>
+        {mode === 'auctions' && <label><input type="checkbox" checked={showSkipped} onChange={e => { setShowSkipped(e.target.checked); setPage(1); }} />包含已跳过</label>}
+        {mode === 'auctions' && <button className="btn btn-secondary" disabled={busy || !summary?.active} onClick={() => void action('/auctions/associations/sync', 'POST')}>同步历史法拍 / 重试</button>}
+      </>} />}
     {error && !detail && !auction && <p role="alert" className="directory-warning">{error}</p>}{notice && <p role="status">{notice}</p>}
-    {mode === 'pending' ? <PendingWorkspace initialKind={initialSource === 'laipai' ? 'auction' : ''}
-      revision={revision} active={!!summary?.active} onSelect={row => void select(row)}
-      onAuction={row => { detailVersion.current += 1; setError(''); setAuction(row); setDetail(null); }}
-      onChanged={changed} onCount={updatePendingCount}
-      onSyncAuctions={() => void action('/auctions/associations/sync', 'POST')} busy={busy} /> :
+    {mode === 'rental' ? (summary?.active ? <RentalAssociationReview onChanged={changed} /> :
+      <p role="status" className="directory-muted">名单流程尚未启用，暂无租金待处理清单。</p>) :
     <div className="directory-workspace"><div className="directory-list-panel">
       {loading ? <p role="status">加载名单…</p> : summary?.active && <>
         {mode === 'admitted' && selectedRows.length >= 2 && <div className="directory-actions directory-batch">
@@ -568,15 +570,17 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
           <button className="btn btn-primary" onClick={() => { setMergeRows(selectedRows); setMergeOpen(true); }}>合并所选（{selectedRows.length}）</button>
           <button className="btn btn-secondary" onClick={() => setSelection([])}>取消选择</button>
         </div>}
-        <CatalogTable items={items} excluded={mode !== 'admitted'} select={row => void select(row)}
+        {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode !== 'admitted'} pending={mode === 'pending'} select={row => void select(row)}
           exclude={row => void admissionAction('exclude', row)}
           busy={busy || !!jobs.amap?.running} position={row => void select(row)}
           selected={mode === 'admitted' ? selection : undefined}
           onToggle={mode === 'admitted' ? (id => setSelection(v => v.includes(id) ? v.filter(k => k !== id) : [...v, id])) : undefined} />
+          : <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>法拍房产</th><th>地址</th><th>待关联原因</th><th>操作</th></tr></thead><tbody>{auctions.map(r => <tr key={r.id}>
+            <td data-label="法拍房产">{r.name}<small>{r.auction_ids?.length || 0} 条轮次{r.skipped ? ' · 已跳过' : ''}</small></td><td data-label="地址">{r.address || '暂无地址'}</td><td data-label="待关联原因">{r.reason}</td>
+            <td data-label="操作"><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setError(''); setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
         {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
         <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); setSelection([]); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); setSelection([]); }}>下一页</button></nav></>}
-    </div></div>}
-    {(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
+    </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
       footer={detail && (canExclude || resumeAdmission) ? <div className="directory-detail-actions">
         {canExclude && <button className="btn directory-exclude-action" disabled={busy} onClick={() => void admissionAction('exclude')}>确认不收录</button>}
         {resumeAdmission && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
@@ -616,7 +620,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
           </DirectorySourceCard>) : <p className="directory-muted">暂无来源资料。</p>}
         </section>
       </>}
-    </DirectoryDialog>}
+    </DirectoryDialog>}</div>}
     {mergeOpen && <MergeDialog rows={mergeRows} onClose={() => setMergeOpen(false)} onMerged={() => { setSelection([]); changed(); }} />}
   </section>;
 }
