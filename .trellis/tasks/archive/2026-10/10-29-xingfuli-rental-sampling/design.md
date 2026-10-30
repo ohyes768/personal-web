@@ -1,5 +1,11 @@
 # 设计：幸福里租金配额采样
 
+> **⚠️ 已被取代**：本设计（逐套详情核验 + 详情通过数早停）已由 `10-29-xingfuli-list-api-sampling`
+> 的列表 API 抽样方案取代（提交 `20c503a`）。当前代码不再发详情请求、不再有 `detail_failed`
+> 补位与 `partial_detail` 状态。当前权威契约见
+> `.trellis/spec/backend/housing-map/backend/xingfuli-rentals.md`「列表API抽样契约（2026-10-29）」。
+> 下文保留为历史记录。
+
 ## 边界
 
 改动集中在四处，其余不动：

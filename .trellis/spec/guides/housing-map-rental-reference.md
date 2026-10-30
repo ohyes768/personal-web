@@ -87,22 +87,21 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 
 ### 3.5 幸福里配额采样（2026-10-29）
 
-幸福里采集是**配额抽样**，不是全量抓取。契约：
+幸福里租金采集是**配额抽样**，不是全量抓取。**权威契约见
+[幸福里来源管理契约](../backend/housing-map/backend/xingfuli-rentals.md) 的「列表API抽样契约（2026-10-29）」小节** —— 本节只记与租金参考层相关的部分，改采集行为前先读那份。
 
-- `MAX_SAMPLES = 10`（`xingfuli_rentals.py`）：候选 = 列表行整租且**无疑似隔断旗**；合租与疑似隔断行不发详情请求（统计侧本就排除，提前识别省请求）。
-- **只有详情核验通过才占配额**；失败候选记 `detail_fetch_failed` 并由后续候选补位，直到攒满 10 条合格样本。
-- 配额满 → `status='complete'`、`pages_truncated=False`、**不再发分页请求**；当前页剩余行仍进 `samples`（不发详情），保持"已排除样本"明细视图完整。
-- 配额未满：列表耗尽 → `partial_detail` if detail_failed else `complete`；翻满 `max_pages` → `truncated`。
-- **配额满时即使有 detail_failed 也记 `complete`**（失败已被补位吸收，快照是采样契约下的完整结果，必须入库）。标成 `partial_detail` 会因 `ADOPTABLE_STATUSES` 只含 `complete`/`empty_ok` 而白采——这是有意为之，不要"回退"成 partial_detail。
-- 快照 `quality.sampling = {quota, qualified, sampled}`：quota=10，qualified=核验通过数，sampled=实际发起核验数（成功+失败）。仅幸福里批次有；房天下批次 quality 不变。
-- API `GET /communities/{id}/rentals` 响应透传可选 `sampling`；旧快照与房天下快照为 `null`。前端仅在非 null 时显示抽样口径说明行，看板/目录"有效样本数"列含义不变。
-- 统计侧排除口径未变：`statistics.py` `_exclusion_reason` 中 `suspected_partition` 判定在 `detail_fetched` 之前，疑似隔断行不发详情后排除原因仍是 `suspect_partition`。
-- 防线未削弱：逐行 `neighborhood_id` 校验拒发、seen 去重、末页重复/分页不推进拒发、空列表反查种子详情、冷却熔断中止、取消检查，全部保留。
+- `MAX_SAMPLES = 10`（`xingfuli_rentals.py`）：按**统一 `select_valid` 过滤后的有效数**计配额，**不能对原始列表直接切 10 条**。合租/疑似隔断/缺失正值/无效户型/相同ID/疑似重复都不占配额，依返回顺序补位，无额外面积门槛。
+- 满 10 → `status='complete'`、**不再发分页请求**；本页配额后的非重复行仍留诊断，带 `outside_sampling_quota` 旗标，统计侧排除该旗标。
+- 真实耗尽不足 10 记 `complete`（保留实际数）；翻满 `max_pages`（10 页）仍记 `truncated`。
+- 快照 `quality.sampling = {mode:'list_api', quota:10, qualified:<select_valid 数量>, sampled:<实际检查的非重复行数>}`。**详情计数保持 0，不伪造 `detail_success`**；仅幸福里批次有，房天下批次 quality 不变。
+- API `GET /communities/{id}/rentals` 响应透传可选 `sampling`。前端按 `mode` 分支显示说明：`list_api` → "列表抽样：最多 N 套整租，未经逐套详情核验"；旧快照（`sampling` 无 `mode`）保留原详情核验文案。看板/目录"有效样本数"列含义不变。
+- **列表证据准入**：`statistics.py` 的 `_exclusion_reason` 只允许 `source=xingfuli` + `verification_method=xingfuli_list_api_v1` + `property_type_origin=community_directory` + 住宅类型 + 有效户型的列表样本在 `detail_fetched=false` 时参与统计；其他无详情核验样本仍为 `detail_not_verified`。
+- 防线未削弱：逐行 `neighborhood_id` 校验拒发、seen 去重、末页重复/分页不推进拒发、空列表无归属证据即 `list_failed`（不伪造 `empty_ok`）、冷却熔断中止、取消检查，全部保留。
 
 ### 3.6 发布语义（部分失败混合版本）
 
 - 每小区 status ∈ {complete, empty_ok} 才采用新数据；truncated/partial_detail/list_failed → 保留旧样本与原 captured_at（`origin='carried_over'`），无历史则 absent。
-- 幸福里配额采样下"配额满"也算 complete（见 §3.5），与全量抓取同义。
+- 幸福里抽样下"凑满配额"与"真实耗尽"都记 `complete`，与全量抓取同义（见 §3.5）。
 - 全部失败 / 取消任何阶段 → **不切指针**；已写一半批次目录留在盘上供诊断。
 - `current.json` 指针原子切换（tmp+os.replace）；损坏/悬空指针 → `load_current` 返回 None 不抛。
 - job 状态持久化 `rentals/refresh_job.json`，进程重启：running→interrupted（仅本进程无线程时）；锁 sidecar 永不按年龄删除（防误杀存活 CLI 发布者）。
