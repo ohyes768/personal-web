@@ -7,6 +7,14 @@
 - `git diff --check`通过；本次仅后端规则、测试和文档变更，无前端修改。未提交、部署或触发线上绑定；线上已有待选结果需重新探查或全量匹配。
 
 ## 原因及方案证据
+
+## 名称包含补充验证（2026-10-30）
+- 用户确认实施“完整搜索唯一候选+名称包含+100米内+无区域/分期冲突”后，复用本任务记录。新增测试在旧实现下复现近距离包含名称仍待选；先红后绿完成。
+- 最终相关回归：test_rental_probe、test_matching_speed、test_xingfuli_source_api、test_rental_xingfuli_sources、test_xingfuli_discovery、test_xingfuli_rentals、test_rental_split、test_rental_refresh，共230 passed / 2依赖弃用警告（71.21秒）。独立F盘basetemp=.pytest-tmp-contained-final-1030，正常进程权限避开已确认的沙箱socket阻塞。
+- 最后整理真实API测试响应构造后，两个contained_name API用例再次验证2 passed。git diff --check通过。
+- 仅后端身份规则、测试及任务/规范记录变更；其他窗口的目录审核/前端改动保留原样。未提交、推送、部署或修改真实来源数据；已有待选结果需要重新探查或更新全部。任务保留in_progress等待后续提交。
+
+### 原列表API提速证据
 线上只读查询最近两次人工选择的持久化诊断：4请求，11.797/12.001秒，限速等待8.93秒、HTTP2.78/2.93秒。检查代码发现前半段资料与入口API化，末尾仍双HTML。
 单次只读上游列表API探测返回20行，全部明确属于目标nid，旧入口seed不在第一页。因此替换为列表API并使用返回行中的已核验seed，不以锚点URL、搜索结果或旧seed推断归属。未修改线上库、未触发真实关联。
 

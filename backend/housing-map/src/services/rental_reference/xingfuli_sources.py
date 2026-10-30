@@ -1,11 +1,10 @@
 """Turn a discovered Xingfuli community into a rental source.
 
-Two rules decide everything here. An automatic binding needs the platform name
-to match the internal community exactly and the place to agree by address or
-position. The complete, unique-candidate probe may also accept an exact name
-when coordinates cannot be compared; a human may confirm a merely similar
-name, but never a phase variant or a different district. A keyword search
-response is never evidence.
+Legacy automatic binding needs an exact name and matching address or position.
+The complete, unique-candidate probe may also accept an exact name when
+coordinates cannot be compared, or a contained name within 100 meters without
+phase qualifiers. A human may confirm other similar names, but never a phase
+conflict or a different district. A keyword search response is never evidence.
 """
 from __future__ import annotations
 
@@ -52,11 +51,12 @@ def _matches_name(names, platform_name):
     return 'none'
 
 
-def evaluate(community, candidate, *, allow_name_only=False):
+def evaluate(community, candidate, *, allow_name_only=False, allow_partial_name=False):
     """Judge identity; name-only acceptance requires caller-proven uniqueness.
 
-    Only the probe checks search completeness and candidate uniqueness. Legacy
-    automatic discovery must keep the default place-evidence requirement.
+    Only the probe checks search completeness and candidate uniqueness and may
+    enable either relaxation. Legacy discovery keeps the default exact name
+    and place-evidence requirement.
     """
     names = community_names(community)
     evidence = []
@@ -100,8 +100,11 @@ def evaluate(community, candidate, *, allow_name_only=False):
     else:
         gaps.append('缺少一致地址或位置证据')
 
-    strong = match == 'exact' and not conflicts and (
+    exact_identity = match == 'exact' and (
         same_address or same_position or (allow_name_only and not comparable_position))
+    nearby_partial_identity = allow_partial_name and match == 'partial' and same_position \
+        and not any(phase_of(name) for name in [*names, candidate.get('name')])
+    strong = not conflicts and (exact_identity or nearby_partial_identity)
     return {'evidence': evidence, 'gaps': gaps, 'conflicts': conflicts, 'strong': strong}
 
 

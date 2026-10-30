@@ -89,6 +89,37 @@ def test_name_only_identity_binds_through_live_api_membership_check(tmp_path):
     assert next(s for s in reg.sources() if s['source'] == 'xingfuli')['community_id'] == 'c1'
 
 
+@pytest.mark.parametrize('move_before_bind', [False, True])
+def test_contained_name_uses_live_list_verification_and_current_position(tmp_path, move_before_bind):
+    reg = setup(tmp_path, name='中海寰宇天下')
+    responses = APIResponses()
+    responses.infos[TOTAL_ID] = info_body(name='寰宇天下', address='阡陌路822号')
+
+    def fetch(url):
+        body = responses(url)
+        path = urlsplit(url).path
+        if path == '/f100/api/search':
+            payload = json.loads(body)
+            for item in payload['data']['items']:
+                item['neighborhood_info']['name'] = '寰宇天下'
+            body = json.dumps(payload)
+        if move_before_bind and path == '/f100/api/search_api/rent':
+            with reg.db() as db:
+                db.execute("UPDATE communities SET longitude=120.30 WHERE community_id='c1'")
+        return body
+
+    state = run(probe(reg, fetch, tmp_path))
+    assert state['diagnostics']['requests'] == 4
+    assert responses.paths()[-1] == '/f100/api/search_api/rent'
+    sources = [s for s in reg.sources() if s['source'] == 'xingfuli']
+    if move_before_bind:
+        assert state['stage'] == 'upstream_failed', state
+        assert not sources
+    else:
+        assert state['stage'] == 'bound_pending_collection', state
+        assert sources[0]['source_id'] == TOTAL_ID
+
+
 def test_name_only_identity_is_rechecked_after_live_verification(tmp_path):
     reg = setup(tmp_path)
     responses = APIResponses()

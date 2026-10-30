@@ -112,6 +112,87 @@ def test_single_strong_candidate_binds_without_asking(tmp_path):
 
 
 @pytest.mark.parametrize('automatic', [False, True])
+@pytest.mark.parametrize('case', [
+    'near', 'reverse', 'multiple', 'incomplete', 'far', 'missing',
+    'other_system', 'district', 'phase', 'internal_phase', 'wrong_owner',
+])
+def test_contained_name_requires_unique_complete_nearby_identity(tmp_path, automatic, case):
+    name, platform = '中海寰宇天下', '寰宇天下'
+    if case == 'reverse':
+        name, platform = platform, name
+    if case == 'internal_phase':
+        name = '中海寰宇天下(南区)'
+    registry = setup(tmp_path, name=name)
+    facts = homepage(name=platform, address='阡陌路822号')
+    facts['longitude'] += 0.0001
+    search = {TOTAL_ID: platform}
+    pages = {TOTAL_ID: facts}
+    if case == 'multiple':
+        pages[PHASE_ID] = {**facts, 'neighborhood_id': PHASE_ID}
+        search[PHASE_ID] = platform
+    elif case == 'far':
+        facts.update(longitude=120.30, latitude=30.30, address='测试路1号')
+    elif case == 'missing':
+        facts.update(longitude=None, latitude=None, address='测试路1号')
+    elif case == 'other_system':
+        facts.update(coordinate_system='wgs84', address='测试路1号')
+    elif case == 'district':
+        facts['district'] = '萧山'
+    elif case == 'phase':
+        facts['name'] = platform + '(南区)'
+        search[TOTAL_ID] = name
+    fake = FakeDiscovery(search={name: search}, homepages=pages,
+                         owners={SEED: PHASE_ID if case == 'wrong_owner' else TOTAL_ID},
+                         lists={SEED: TOTAL_ID})
+    if case == 'incomplete':
+        fake.search_complete = False
+    svc = service(registry, fake, tmp_path)
+    svc.start('c1', automatic=automatic)
+    svc._thread.join(5)
+    state = svc.status('c1')
+    sources = [s for s in registry.sources() if s['source'] == 'xingfuli']
+    if case in {'near', 'reverse'}:
+        assert state['stage'] == probe.STAGE_BOUND, state
+        assert sources[0]['source_id'] == TOTAL_ID
+        assert '名称高度相似' in sources[0]['evidence']
+        assert '位置接近（100米内）' in sources[0]['evidence']
+    else:
+        assert not sources
+        assert state['stage'] == (probe.STAGE_NO_ENTRY if case == 'wrong_owner'
+                                  else probe.STAGE_NEEDS_SELECTION), state
+
+
+def test_contained_name_restores_then_rechecks_location_before_binding(tmp_path):
+    name = '中海寰宇天下'
+    registry = setup(tmp_path, name=name)
+    facts = homepage(name='寰宇天下', address='阡陌路822号', seeds=())
+    first = FakeDiscovery(search={name: {TOTAL_ID: facts['name']}}, homepages={TOTAL_ID: facts})
+    assert run(service(registry, first, tmp_path))['stage'] == probe.STAGE_NO_ENTRY
+    second = FakeDiscovery(homepages={TOTAL_ID: {**facts, 'seeds': [SEED], 'longitude': 120.30}},
+                           owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    assert run(service(registry, second, tmp_path))['stage'] == probe.STAGE_NEEDS_SELECTION
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+    assert not any(call[0] == 'rental_entry' for call in second.calls)
+
+
+def test_contained_name_rechecks_current_directory_position_at_bind(tmp_path):
+    name = '中海寰宇天下'
+    registry = setup(tmp_path, name=name)
+    facts = homepage(name='寰宇天下', address='阡陌路822号')
+    fake = FakeDiscovery(search={name: {TOTAL_ID: facts['name']}}, homepages={TOTAL_ID: facts},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    original = fake.listing_owner_from_list
+    def move_before_bind(seed, nid):
+        with registry.db() as db:
+            db.execute("UPDATE communities SET longitude=120.30 WHERE community_id='c1'")
+        return original(seed, nid)
+    fake.listing_owner_from_list = move_before_bind
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_FAILED, state
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+
+
+@pytest.mark.parametrize('automatic', [False, True])
 @pytest.mark.parametrize('position', [
     {'longitude': None, 'latitude': None},
     {'coordinate_system': 'wgs84'},

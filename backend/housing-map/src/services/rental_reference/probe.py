@@ -318,7 +318,7 @@ class ProbeService:
                                        community_id, neighborhood_id, exc)
                         continue
                     candidate = candidate_from_homepage(homepage, discovered_via=channel)
-                    judgement = evaluate(community, candidate, allow_name_only=True)
+                    judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True)
                     candidate['candidate_id'] = f"{channel}:{neighborhood_id}"
                     candidate['evidence'] = judgement['evidence']
                     candidate['evidence_gaps'] = judgement['gaps']
@@ -365,7 +365,7 @@ class ProbeService:
             homepage = client.community_info(candidate['neighborhood_id'], fresh=True)
             fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
             fresh_candidate['candidate_id'] = candidate.get('candidate_id', 'homepage:' + candidate['neighborhood_id'])
-            judgement = evaluate(community, fresh_candidate, allow_name_only=True)
+            judgement = evaluate(community, fresh_candidate, allow_name_only=True, allow_partial_name=True)
             if judgement['conflicts'] or (self._require_strong and not judgement['strong']):
                 write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
                             candidates=[fresh_candidate], message='主页信息已变化，请重新探查')
@@ -419,13 +419,13 @@ class ProbeService:
             write_state(self.registry, community_id, stage=STAGE_FAILED,
                         message='小区已有租金来源，请刷新后重试')
             return
-        judgement = evaluate(community, candidate, allow_name_only=True)
+        judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True)
         evidence = [*judgement['evidence'], '主页租房入口已核验', f'房源种子 {seed}']
         try:
             from src.services.rental_reference.storage import RentalPublishLock
             with self._mutex, RentalPublishLock(self.directory / 'rental_publish'):
                 current = self._community(community_id)
-                current_judgement = evaluate(current, candidate, allow_name_only=True)
+                current_judgement = evaluate(current, candidate, allow_name_only=True, allow_partial_name=True)
                 if current_judgement['conflicts']:
                     raise ValueError('小区身份信息已变化，请重新探查')
                 if self._require_strong and not current_judgement['strong']:

@@ -111,6 +111,17 @@ def test_a_position_match_binds_although_the_address_wording_differs(tmp_path):
     assert registry.communities()[0]['address'] == '浙江省杭州市滨江区测试路1号'
 
 
+def test_legacy_discovery_does_not_relax_contained_names(tmp_path):
+    registry = setup(tmp_path, name='中海寰宇天下')
+    fake = FakeDiscovery(
+        search={'中海寰宇天下': {TOTAL_ID: ('寰宇天下', [SEED])}},
+        homepages={TOTAL_ID: homepage(name='寰宇天下')},
+        owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    report = auto_discover(registry, fake, registry.communities())
+    assert report['matched'] == 0
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+
+
 def test_a_seed_of_another_community_is_never_bound(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(
