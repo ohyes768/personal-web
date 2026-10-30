@@ -45,7 +45,8 @@ JOB_KEYS = {'stage', 'association', 'job_id', 'running', 'phase', 'total_communi
             'processed_communities', 'current_community_id', 'pages_fetched',
             'details_fetched', 'success_count', 'failed_count', 'started_at',
             'finished_at', 'last_success_at', 'errors', 'result', 'request_count',
-            'detail_cache_hits', 'reused_communities', 'deferred_count', 'cooldown_until', 'new_sources_deferred'}
+            'detail_cache_hits', 'reused_communities', 'deferred_count', 'cooldown_until',
+            'new_sources_deferred', 'mode', 'continuable'}
 
 
 def test_request_diagnostics_old_jobs_and_new_pause_state():
@@ -579,10 +580,15 @@ def test_detail_invalid_query_422(api_env):
 # 刷新任务路由
 # ---------------------------------------------------------------------------
 
-def test_refresh_get_without_job_null_data(api_env):
+def test_refresh_get_without_job_still_reports_continuable(api_env):
+    """没跑过任务也要给出待采集数量，前端才能显示“继续采集（N）”。"""
     resp = client.get('/rentals/refresh')
     assert resp.status_code == 200
-    assert resp.json() == {'success': True, 'data': None}
+    body = resp.json()
+    assert body['success'] is True
+    assert body['data']['job_id'] is None
+    # 台账里两个已核验来源都还没采过快照。
+    assert body['data']['continuable'] == 2
 
 
 def test_refresh_get_with_job_external_shape(api_env, monkeypatch):

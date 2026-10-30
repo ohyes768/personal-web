@@ -218,50 +218,135 @@ class RentalRefreshService:
         self._cancel_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._job_path = self.rentals_dir / JOB_FILE_NAME
+        self._scope_cache: tuple | None = None
+        self._snapshot_cache: tuple | None = None
         self._job = self._load_job_file()
         self._recover_interrupted_job()
 
     # ------------------------------------------------------------- public
 
-    def start(self) -> dict:
+    @staticmethod
+    def _file_key(path: Path):
+        """文件指纹；台账/快照变了才算数，没变就复用已算好的结果。"""
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return (stat.st_mtime_ns, stat.st_size)
+
+    def _scope_key(self):
+        from src.services.community_registry import registry_path
+        from src.services.rental_reference.sources import database_path
+        return (self._file_key(registry_path(self.mappings_path.parent)),
+                self._file_key(self.mappings_path),
+                self._file_key(database_path(self.mappings_path)))
+
+    def _scope(self):
+        """采集范围：已收录住宅 × 已关联来源。
+
+        待采集数量与“继续采集”共用这一份名单，避免数量和实际下手的对象
+        各算各的。范围按台账文件指纹缓存，台账不变就不重算。
+        """
+        key = self._scope_key()
+        with self._mutex:
+            cached = self._scope_cache
+            if cached is not None and cached[0] == key:
+                return cached[1]
+        from src.services.community_registry import existing_registry
+        from src.services.rental_reference.association import eligible_communities
+        registry = existing_registry(self.mappings_path.parent)
+        if not registry:
+            plans = [_SeedPlan(f'{BASE_URL}/hz/house-xm{sid}/', cid, sid)
+                     for sid, cid in load_verified_mappings(self.mappings_path)]
+            scope = (registry, {}, {}, plans)
+        else:
+            eligible = {c['community_id']: c for c in eligible_communities(registry)[0]}
+            selected = active_sources(registry, xingfuli_only=self._xingfuli_only)
+            plans = [_SeedPlan(source_url(r), cid, r['source_id'], r['source'],
+                               r.get('seed_listing_id'), eligible[cid]['community_name'],
+                               eligible[cid].get('effective_property_type') or eligible[cid].get('property_type') or '住宅')
+                     for cid, r in selected.items() if cid in eligible]
+            plans.sort(key=lambda p: p.source == 'fang')
+            scope = (registry, eligible, selected, plans)
+        with self._mutex:
+            self._scope_cache = (key, scope)
+        return scope
+
+    def _published_entries(self) -> dict:
+        """已发布快照里各小区的条目（按快照指针文件指纹缓存）。"""
+        key = self._file_key(self.rentals_dir / 'current.json')
+        with self._mutex:
+            cached = self._snapshot_cache
+            if cached is not None and cached[0] == key:
+                return cached[1]
+        entries = (load_current(self.rentals_dir) or {}).get('communities', {})
+        with self._mutex:
+            self._snapshot_cache = (key, entries)
+        return entries
+
+    def _collected(self, plan, entry, outcomes):
+        """这个小区是否已经采集成功并发布。
+
+        完成 = 当前来源与快照一致 + 快照状态可采用 + 最近一次采集也成功。
+        换过来源、采集失败、结果不完整（截断/列表失败）或采集完没发布的，
+        都算没采完，重新采。
+        """
+        if not same_source(entry, plan.source, plan.source_community_id) or entry.get('status') not in ADOPTABLE_STATUSES:
+            return False
+        outcome = (outcomes or {}).get(plan.community_id)
+        if outcome and same_source(outcome, plan.source, plan.source_community_id):
+            if outcome.get('status') not in ADOPTABLE_STATUSES:
+                return False
+            # A completed crawl that never published (cancel/failure) is unfinished.
+            return entry.get('captured_at') == outcome.get('captured_at')
+        return True
+
+    def continuation_count(self) -> int | None:
+        """待采集数量：范围内尚未采集成功的小区数；算不出时返回 None（数量未知）。"""
+        try:
+            _registry, _eligible, _selected, plans = self._scope()
+            entries = self._published_entries()
+            with self._mutex:
+                outcomes = dict(self._job.get('community_outcomes') or {})
+            return sum(not self._collected(plan, entries.get(plan.community_id), outcomes)
+                       for plan in plans)
+        except Exception as exc:
+            # 台账坏了也要让状态接口活着：数量未知比假装 0 更诚实。
+            logger.warning('待采集数量计算失败：%s', exc)
+            return None
+
+    def start(self, mode='all') -> dict:
         """Start a refresh job and return its snapshot (202 semantics).
 
         Raises RefreshAlreadyRunning (409) when the single slot is taken and
         NoVerifiedMappings (422) when the ledger has nothing verified to crawl.
         Crawl limits are service configuration, never request parameters.
         """
+        if mode not in {'all', 'continue'}:
+            raise ValueError('未知租金采集模式')
         with self._mutex:
             if self._has_active_thread():
                 raise RefreshAlreadyRunning('rental refresh job is already running')
             if self._busy and self._busy():
                 raise RefreshAlreadyRunning('租金来源匹配正在运行，请结束后再更新租金数据')
-            mappings = load_verified_mappings(self.mappings_path)
-            from src.services.community_registry import existing_registry
-            registry = existing_registry(self.mappings_path.parent)
-            if self._xingfuli_only:
-                from src.services.rental_reference.association import eligible_communities
-                eligible = {c['community_id'] for c in eligible_communities(registry)[0]} if registry else set()
-                confirmed = active_sources(registry, xingfuli_only=True) if registry else {}
-                if not any(cid in eligible for cid in confirmed):
-                    raise NoVerifiedMappings('请先匹配租金来源，再更新租金数据')
-            if not mappings and not registry:
+            registry, _eligible, _selected, plans = self._scope()
+            if self._xingfuli_only and not any(plan.source == 'xingfuli' for plan in plans):
+                raise NoVerifiedMappings('请先匹配租金来源，再更新租金数据')
+            if not plans and not registry:
                 raise NoVerifiedMappings('no verified rental community mappings')
-            plans = [_SeedPlan(seed=f'{BASE_URL}/hz/house-xm{source_id}/',
-                               community_id=community_id,
-                               source_community_id=source_id)
-                     for source_id, community_id in mappings]
             self._cancel_event.clear()
             job = _initial_job()
             # last_success_at survives jobs: a failed rerun must still be able
             # to show when rentals were last published successfully (R2).
             job['last_success_at'] = self._job.get('last_success_at')
+            job['community_outcomes'] = copy.deepcopy(self._job.get('community_outcomes') or {})
+            job['mode'] = mode
             job.update(job_id=uuid.uuid4().hex, running=True, phase='crawling',
                        total_communities=len(plans), started_at=_utc_now())
             self._job = job
             self._write_job_file()
             thread = threading.Thread(
                 target=self._execute,
-                args=({plan.seed: plan for plan in plans},),
                 name='rental-refresh', daemon=True)
             self._thread = thread
             thread.start()
@@ -293,7 +378,9 @@ class RentalRefreshService:
     def status(self) -> dict:
         """Current job snapshot; after a restart this comes from the job file."""
         with self._mutex:
-            return self._snapshot()
+            value = self._snapshot()
+        value['continuable'] = self.continuation_count()
+        return value
 
     def shutdown(self, timeout: float = 30.0) -> bool:
         """Cancel any active job and join the worker; False on join timeout.
@@ -316,9 +403,10 @@ class RentalRefreshService:
 
     # ------------------------------------------------------------ worker
 
-    def _execute(self, plans: dict[str, _SeedPlan]) -> None:
-        progress = CrawlProgress(total_seeds=len(plans))
-        ordered = list(plans.values())
+    def _execute(self) -> None:
+        progress = CrawlProgress(total_seeds=0)
+        ordered: list[_SeedPlan] = []
+        plans: dict[str, _SeedPlan] = {}
         batches: list[CommunityBatch] = []
         crawl_errors: list[dict] = []
         truncated_seeds: list[str] = []
@@ -333,40 +421,32 @@ class RentalRefreshService:
         cache = FangDetailCache(self.rentals_dir)
         cache.prune()
         def skip_seed(seed):
-            from src.services.community_registry import existing_registry
-            registry = existing_registry(self.mappings_path.parent)
+            registry, eligible, selected, _scoped = self._scope()
             if not registry:
                 return False
             plan = plans[seed]
-            if registry:
-                from src.services.rental_reference.association import eligible_communities
-                if plan.community_id not in {c['community_id'] for c in eligible_communities(registry)[0]}:
-                    return True
-            current = active_sources(registry).get(plan.community_id)
+            if plan.community_id not in eligible:
+                return True
+            current = selected.get(plan.community_id)
             return not current or (current['source'], current['source_id']) != (plan.source, plan.source_community_id)
         try:
-            from src.services.community_registry import existing_registry
-            registry = existing_registry(self.mappings_path.parent)
+            registry, eligible, selected, scoped = self._scope()
+            ordered = scoped
+            plans = {plan.seed: plan for plan in ordered}
+            progress = CrawlProgress(total_seeds=len(plans))
             if registry:
-                from src.services.rental_reference.association import eligible_communities
                 self._update_job(stage='checking')
-                eligible = {c['community_id']: c for c in eligible_communities(registry)[0]}
-                selected = active_sources(registry, xingfuli_only=self._xingfuli_only)
-                ordered = [_SeedPlan(source_url(r), cid, r['source_id'], r['source'],
-                                     r.get('seed_listing_id'), eligible[cid]['community_name'],
-                                     eligible[cid].get('effective_property_type') or eligible[cid].get('property_type') or '住宅')
-                           for cid, r in selected.items() if cid in eligible]
-                ordered.sort(key=lambda p: p.source == 'fang')
-                plans = {plan.seed: plan for plan in ordered}
-                progress = CrawlProgress(total_seeds=len(plans))
                 self._update_job(stage='crawling', total_communities=len(plans))
             self._update_job(stage='crawling')
             previous = load_current(self.rentals_dir)
+            entries = (previous or {}).get('communities', {})
+            with self._mutex:
+                outcomes = dict(self._job.get('community_outcomes') or {})
             now = dt.datetime.now(dt.UTC)
             for plan in ordered:
-                entry = (previous or {}).get('communities', {}).get(plan.community_id)
+                entry = entries.get(plan.community_id)
                 if (not same_source(entry, plan.source, plan.source_community_id)
-                        or entry.get('status') not in ADOPTABLE_STATUSES or skip_seed(plan.seed)):
+                        or not self._collected(plan, entry, outcomes) or skip_seed(plan.seed)):
                     continue
                 try:
                     age = (now - dt.datetime.fromisoformat(entry['captured_at'])).total_seconds()
@@ -374,6 +454,10 @@ class RentalRefreshService:
                     continue
                 if 0 <= age < self._reuse_hours * 3600:
                     reused[plan.community_id] = (plan.source, plan.source_community_id)
+            if self._job.get('mode') == 'continue':
+                # 继续采集只补没采完的：已采完的保留原数据，不重爬也不重发。
+                reused = {p.community_id: (p.source, p.source_community_id) for p in ordered
+                          if self._collected(p, entries.get(p.community_id), outcomes)}
             ordered = [plan for plan in ordered if plan.community_id not in reused]
             progress.processed_seeds = len(reused)
             self._update_job(reused_communities=len(reused), processed_communities=len(reused))
@@ -442,6 +526,10 @@ class RentalRefreshService:
                 crawl_errors.extend(seed_result.errors)
                 if seed_result.pages_truncated:
                     truncated_seeds.append(seed_result.seed)
+                with self._mutex:
+                    self._job.setdefault('community_outcomes', {})[plan.community_id] = dict(
+                        source=plan.source, source_community_id=plan.source_community_id,
+                        status=seed_result.status, captured_at=captured_at)
                 succeeded = seed_result.status in ADOPTABLE_STATUSES
                 # current_community_id points at the upcoming seed: per-seed
                 # snapshots land only after a seed finishes, so the "current"

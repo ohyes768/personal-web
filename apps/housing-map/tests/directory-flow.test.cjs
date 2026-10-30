@@ -92,6 +92,36 @@ test('incremental rental matching sends explicit scope and respects count and ex
   }
 });
 
+test('rent continue button shows the pending count and asks for continue mode', () => {
+  const calls = [];
+  function buttons(jobs) {
+    const found = [];
+    function visit(node) {
+      if (!node || typeof node !== 'object') return;
+      if (Array.isArray(node)) return node.forEach(visit);
+      if (node.type === 'button') found.push(node);
+      visit(node.props?.children);
+    }
+    visit(CollectionControls({ active: true, busy: false, open: true, scope: 'maintenance', jobs, errors: {}, action: (...args) => calls.push(args) }));
+    return found;
+  }
+  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
+    scope: 'maintenance', jobs: { rent: { continuable: 7 } }, errors: {}, action() {} }));
+  assert.match(html, /继续采集（7）/);
+  assert.match(html, /待采集 7 个小区/);
+  const label = b => (Array.isArray(b.props.children) ? b.props.children.join('') : String(b.props.children ?? ''));
+  const next = buttons({ rent: { continuable: 7 } }).find(b => label(b).startsWith('继续采集'));
+  assert.ok(next);
+  assert.equal(next.props.disabled, false);
+  next.props.onClick();
+  assert.deepEqual(calls, [['/rentals/refresh', 'POST', { mode: 'continue' }]]);
+  // 没有待采集项（数量为 0 或算不出来）时按钮不可点。
+  for (const jobs of [{ rent: { continuable: 0 } }, { rent: { continuable: null } }, { rent: {} },
+                       { rent: { continuable: 7, running: true } }]) {
+    assert.equal(buttons(jobs).find(b => label(b).startsWith('继续采集')).props.disabled, true);
+  }
+});
+
 test('rental matching and rental update share one task block', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls,
     { active: true, busy: false, open: true, scope: 'maintenance', jobs: {}, errors: {}, action() {} }));

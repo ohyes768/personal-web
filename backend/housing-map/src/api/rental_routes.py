@@ -7,7 +7,9 @@
   no_samples（口径零样本）> insufficient_samples（样本 < 3）> available。
 - phase 对外映射：crawling/publishing→running；cancelling→cancelling；
   done 且全部 adopted→succeeded；done 但 carried_over/absent 非空→partial_failed；
-  failed/cancelled/interrupted 原样透出；无任务（job_id 为空）→ data:null。
+  failed/cancelled/interrupted 原样透出。
+- /rentals/refresh 的 GET 始终返回快照：没跑过任务时 job_id 为空，但 continuable
+  （待采集数量）仍然有值，前端才能显示“继续采集（N）”。
 - 样本链接只允许已知来源的 HTTPS 精确域，其他域过滤为 null。
 - 售价参考只消费 load_price_snapshots 的输出（单价/口径/日期），过期签约价
   的排除规则由该加载器负责，这里不重复实现。
@@ -23,6 +25,8 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from typing import Literal
 from fastapi.responses import JSONResponse
 
 from src.api.routes import COMMUNITY_MERGE_GROUPS
@@ -245,6 +249,8 @@ def _external_job(job: dict) -> dict:
     failed_count = job.get("failed_count") or 0
     return {
         "stage": job.get("stage"),
+        "continuable": job.get("continuable"),
+        "mode": job.get("mode", "all"),
         "association": job.get("association"),
         "job_id": job.get("job_id"),
         "running": bool(job.get("running")),
@@ -613,19 +619,23 @@ def community_rentals(
 @router.get("/rentals/refresh")
 async def rental_refresh_status():
     job = _current_job_snapshot()
-    data = _external_job(job) if isinstance(job, dict) and job.get("job_id") else None
+    data = _external_job(job) if isinstance(job, dict) else None
     return {"success": True, "data": data}
 
 
+class RentalRefreshInput(BaseModel):
+    mode: Literal["all", "continue"] = "all"
+
+
 @router.post("/rentals/refresh")
-async def start_rental_refresh():
+async def start_rental_refresh(body: RentalRefreshInput | None = None):
     """启动租金刷新（范围由已核验台账决定，无任意 URL 参数）。"""
     try:
         await asyncio.to_thread(_verified_source_ids)
         if _probe_busy():
             return JSONResponse({"success": False, "error": "租金来源探查进行中，请结束后再更新"},
                                 status_code=409)
-        snapshot = await asyncio.to_thread(_get_service().start)
+        snapshot = await asyncio.to_thread(_get_service().start, mode="continue") if body and body.mode == "continue" else await asyncio.to_thread(_get_service().start)
     except RefreshAlreadyRunning:
         return JSONResponse({"success": False, "error": "rental refresh job already running"},
                             status_code=409)

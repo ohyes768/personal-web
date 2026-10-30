@@ -59,3 +59,16 @@ Wrong：对 full_text=璞悦湾 的 HTTP 200 全市列表进行自动关联；Co
 - API沿用sampling字段透传；前端依据mode显示“列表抽样：最多10套整租，未经逐套详情核验”，包括筛选后no_samples状态；旧sampling无mode保留原说明。
 - 幸福里传输、discovery/probe/matching/refresh默认和最低真实间隔统一3秒；Fang仍5秒，假fetcher可0秒，一小时冷却和共享OS请求锁不变。
 - 回归：test_xingfuli_rentals覆盖首屏仅API、配额/补位/分页/错误/取消/冷却/全入口默认3秒；test_rental_statistics验证显式列表证据准入、未知证据与其他provider拒绝；test_rental_split验证快照元数据；rental-reference测试新旧说明。
+
+## 继续采集（数量）契约（2026-10-30）
+- **采集范围只有一个来源**：`RentalRefreshService._scope()` = 已收录住宅 × 已关联来源（`xingfuli_only` 时只取幸福里）。
+  待采集数量与“继续采集”共用这份名单，数量与实际下手的对象不许各算各的；`start()`/`_execute()`/数量统计都从它取。
+- **完成判定**：当前来源与快照一致 + 快照状态可采用（complete/empty_ok）+ 最近一次采集也成功且已发布
+  （快照 captured_at 与采集结果一致）。没有快照、采集失败（list_failed/truncated/partial_detail）、采完没发布、
+  换过来源，都算待采集；**已查完但无房源（empty_ok）算完成**，不重复采集。
+- 每个小区的采集结果记在 job 的 `community_outcomes`（来源、状态、captured_at），跨任务保留；换来源后旧结果不再算数。
+- `POST /rentals/refresh` 接受 `mode=all|continue`；`continue` 只补待采集小区，已完成的按 `preserved_sources`
+  保留原快照数据，不重爬也不重发。`GET /rentals/refresh` 始终返回快照并带 `continuable`（算不出时为 null，不假装 0）。
+- 数量按台账/快照文件指纹缓存，状态查询不重算台账；台账或快照变了才重算。
+- 回归：`test_rental_continue` 覆盖数量归零、只补缺的那些、失败保留旧数据但仍待采集、换来源重采、数量与 continue 同源；
+  `test_rental_api` 覆盖无任务时也返回数量；前端 `directory-flow` 覆盖按钮数量、禁用条件与 continue 请求体。

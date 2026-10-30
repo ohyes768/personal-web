@@ -51,7 +51,7 @@ type Page<T> = { items: T[]; total: number; page: number; property_types?: strin
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
-  retryable?: number; unqueried?: number; continuable?: number; mode?: 'continue' | 'all' | 'refresh_all' | 'unqueried' | 'retry_failed' | 'full' | 'incremental';
+  retryable?: number; unqueried?: number; continuable?: number | null; mode?: 'continue' | 'all' | 'refresh_all' | 'unqueried' | 'retry_failed' | 'full' | 'incremental';
   incremental_count?: number; current_community_id?: string; current_community_name?: string; current_step?: string;
   diagnostics?: { requests?: number; cache_hits?: number; wait_seconds?: number; http_seconds?: number; elapsed_seconds?: number; early_stop?: boolean };
   resolutions?: Record<string, number>; evidence_issues?: { name?: string; message: string }[];
@@ -129,7 +129,7 @@ export async function workflowRequest<T>(path: string, method = 'GET', body?: ob
 
 function taskCounts(t: (typeof tasks)[number], job: Job | null): string {
   return [job?.stage && stageLabels[job.stage],
-    job?.processed !== undefined && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
+    job?.processed !== undefined && (job.total || job.processed) && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
     job?.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
     job?.updated !== undefined && job.review !== undefined &&
       `补全 ${job.updated || 0} · 待人工确认 ${job.review} · 未找到主体地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}${job.incomplete ? ` · 返回不完整 ${job.incomplete}` : ''}`,
@@ -173,6 +173,8 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
         {t.id === 'rentalMatch' && <button className="btn btn-secondary" data-rental-incremental
           disabled={busy || !active || running || !!rentalBlocked || !job?.incremental_count}
           onClick={() => action(t.path, 'POST', { mode: 'incremental' })}>继续匹配（{job?.incremental_count ?? '—'}）</button>}
+        {t.id === 'rent' && <button className="btn btn-secondary" disabled={busy || !active || running || !!rentalBlocked || !job?.continuable}
+          onClick={() => action(t.path, 'POST', { mode: 'continue' })}>继续采集（{job?.continuable ?? '—'}）</button>}
         {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.continuable}
           onClick={() => action(t.path, 'POST', { ...t.body, mode: 'continue' })}>
           继续采集（{job?.continuable ?? '—'}）</button>}
@@ -197,7 +199,9 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
       {t.id === 'tmsf' && job?.position_followup?.state === 'pending' && <p className="directory-task-sub">主体匹配待继续：{job.position_followup.message}</p>}
       {!!job?.evidence_issues?.length && <details className="directory-task-sub"><summary>资料待核对（{job.evidence_issues.length}）</summary>
         {job.evidence_issues.map((item, index) => <p key={index}>{item.name && `${item.name}：`}{item.message}</p>)}</details>}
-      {t.id === 'rent' && <p className="directory-task-sub">待采集 {job?.continuable ?? '—'} 个小区（尚未采集、失败或未完成）；继续采集跳过已完成项，保留现有成功数据。已查完但无房源的小区不重复采集。</p>}
+      {t.id === 'rent' && (typeof job?.continuable === 'number'
+        ? <p className="directory-task-sub">待采集 {job.continuable} 个小区（尚未采集、失败或未完成）；继续采集跳过已完成项，保留现有成功数据。已查完但无房源的小区不重复采集。</p>
+        : <p className="directory-task-sub">继续采集只补尚未采集、失败或未完成的小区；已查完但无房源的小区不重复采集。</p>)}
       {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
       {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
         <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}

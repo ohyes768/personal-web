@@ -152,6 +152,8 @@ export interface RentalRequestDiagnostics {
 }
 
 export interface RentalRefreshJob extends RentalRequestDiagnostics {
+  continuable?: number | null;
+  mode?: 'all' | 'continue';
   stage?: string | null;
   association?: RentalAssociationProgress | null;
   job_id: string;
@@ -264,7 +266,7 @@ function isRefreshEnvelope(payload: unknown): payload is { success: true; data: 
   return candidate.success === true;
 }
 
-/** GET：无活动任务时后端返回 data=null */
+/** GET：始终返回快照；没跑过任务时 job_id 为空，但待采集数量（continuable）仍有值 */
 export async function fetchRentalRefreshJob(signal?: AbortSignal): Promise<RentalRefreshJob | null> {
   const response = await fetch('/api/map/rentals/refresh', { signal });
   if (!response.ok) throw new Error('租金更新状态暂时不可用');
