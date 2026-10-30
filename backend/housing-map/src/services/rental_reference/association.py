@@ -8,6 +8,7 @@ from src.services.community_registry import dump, now, normalized
 from src.services.residential_classifier import classify_sources
 from src.services.community_address import effective_address
 from src.services.community_listing import listing_gate
+from src.services.tmsf_property_type import effective_market_state
 from src.services.rental_reference.providers import active_sources
 
 PREFIX = 'rental_review:'
@@ -17,12 +18,18 @@ logger = logging.getLogger(__name__)
 def eligible_communities(registry):
     from src.services.directory_workflow import is_enabled, admitted
     if is_enabled(registry):
-        return [c for c in admitted(registry, registry.path.parent) if (c.get('district') or '').removesuffix('区') == '滨江'], len(registry.communities())
+        return [c for c in admitted(registry, registry.path.parent)
+                if (c.get('district') or '').removesuffix('区') == '滨江'
+                and c.get('market_state') != 'new_house'], len(registry.communities())
     path = registry.path.parent / 'property_types.json'
     properties = json.loads(path.read_text(encoding='utf-8-sig')) if path.exists() else {}
     sources = registry.sources()
+    newhouse_ids = {r['community_id'] for r in sources
+                    if r['source'] == 'tmsf' and r['status'] == 'matched'
+                    and effective_market_state(r) == 'new_house'}
     communities = registry.communities()
-    return [c for c in communities if effective_address(c.get('address'),
+    return [c for c in communities if c['community_id'] not in newhouse_ids
+            and effective_address(c.get('address'),
             [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched']) and (c.get('district') or '').removesuffix('区') == '滨江'
             and listing_gate([r for r in sources if r['community_id'] == c['community_id']
                                and r['status'] == 'matched'], c)[0] is None
