@@ -7,6 +7,7 @@ import UseReviewPanel, { UseReview, UseReviewBadge, formatUseReviewMessage } fro
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
 import MergeDialog from './MergeDialog';
+import { CatalogReviewAction, type CatalogReviewKind } from './CatalogReviewAction';
 import CatalogFilters, { CatalogFilterValues, catalogFilterParams, catalogFiltersForMode, emptyCatalogFilters } from './CatalogFilters';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
 import type { RentalRequestDiagnostics } from '../../lib/rental-types';
@@ -250,7 +251,7 @@ export function pipelineStageLabel(row: Pick<CatalogRow, 'workflow_state' | 'qua
   if (row.workflow_state === 'admitted') return '已收录';
   if (row.workflow_state === 'excluded') return '明确不收录';
   return ({ position_pending: '待匹配地点', position_review: '待确认地点', position_type_missing: '待补主体类型',
-    use_conflict: '待确认用途', use_uncertain: '待确认用途', type_uncertain: '待确认用途',
+    manual_review: '待人工复核', use_conflict: '待确认用途', use_uncertain: '待确认用途', type_uncertain: '待确认用途',
     type_missing: '待补用途资料', type_conflict: '待核实用途', region_conflict: '待核实区域' } as Record<string, string>)[row.qualification] || '待补资料';
 }
 
@@ -260,7 +261,7 @@ export function catalogCanExclude(row?: Pick<CatalogRow, 'admission_state' | 'wo
 
 export function catalogCanConfirmUse(row?: CatalogRow | null): boolean {
   return !!row && !row.source_record_id && !row.deleted && !row.merged_to && !!row.admission?.revision
-    && !row.admission.auto_review_locked && row.qualification !== 'manual_exclusion'
+    && (!row.admission.auto_review_locked || !!row.admission.review_requested) && row.qualification !== 'manual_exclusion'
     && (row.admission_state !== 'admitted' || !!row.use_review?.re_review);
 }
 
@@ -300,8 +301,9 @@ function addressSourceLabel(c: Community): string {
   const origin = c.address_evidence?.origin;
   return origin === 'amap_subject' ? '高德主体地址' : origin === 'manual' ? '历史确认地址' : origin ? '透明售房网地址' : '';
 }
+  review?: (kind: CatalogReviewKind, row: CatalogRow) => void;
 
-export function CatalogTable({ items, excluded, pending = false, select, busy, position, exclude, selected, onToggle }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
+export function CatalogTable({ items, excluded, pending = false, select, busy, position, exclude, review, selected, onToggle }: { items: CatalogRow[]; excluded: boolean; pending?: boolean;
   select: (row: CatalogRow) => void; busy: boolean; position?: (row: CatalogRow) => void; exclude?: (row: CatalogRow) => void;
   selected?: string[]; onToggle?: (id: string) => void; }) {
   const selectable = !excluded && !!onToggle;
@@ -328,7 +330,10 @@ export function CatalogTable({ items, excluded, pending = false, select, busy, p
     {!excluded && <><td data-label="法拍"><AuctionCoverage value={c.coverage?.auction} onView={() => select(c)} /></td>
       <td data-label="租金"><RentalCoverage value={c.coverage?.rental} /></td></>}
     {pending && <td data-label="收录决定">{catalogCanExclude(c) && exclude ? <button className="btn directory-exclude-action" disabled={busy} onClick={() => exclude(c)}>确认不收录</button> : <span className="directory-muted">需先补齐身份</span>}</td>}
-    <td data-label="操作"><div className="catalog-inline catalog-row-actions"><button className="btn btn-secondary" onClick={() => select(c)}>查看资料</button></div></td>
+    <td data-label="操作"><div className="catalog-inline catalog-row-actions"><button className="btn btn-secondary" onClick={() => select(c)}>查看资料</button>
+      {review && <CatalogReviewAction row={c} busy={busy} action={review} />}
+      {!excluded && exclude && catalogCanExclude(c) && <button className="btn directory-exclude-action" disabled={busy} onClick={() => exclude(c)}>确认不收录</button>}
+    </div></td>
   </tr>)}</tbody></table></div>;
 }
 
@@ -523,14 +528,17 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
     } catch (e) { setError(e instanceof Error ? e.message : '用途操作失败，请刷新'); }
     finally { setBusy(false); }
   }
-  async function admissionAction(kind: 'exclude' | 'resume', target = detail) {
+  async function admissionAction(kind: 'exclude' | 'resume' | CatalogReviewKind, target = detail) {
     if (!target) return;
     const rev = target.admission?.revision;
     if (!rev) { setError('缺少审核版本，请刷新后重试'); return; }
     setBusy(true); setError('');
     try {
       await workflowRequest(`/directory/workflow/catalog/${encodeURIComponent(target.community_id)}/${kind}`, 'POST', { revision: rev, reason: kind === 'exclude' ? '人工确认不收录' : '' });
-      setNotice(kind === 'exclude' ? '已转为不收录，自动流程不会再收录；可在不收录列表恢复。' : '已恢复自动分类，是否符合收录条件由透明售房网资料重新判定。');
+      setNotice(kind === 'exclude' ? '已转为不收录，自动流程不会再收录；可在不收录列表重新审核。'
+      if (kind === 'reopen-review') changeMode('pending');
+        : kind === 'reopen-review' ? '已移到待处理。核对资料、位置和用途后，请完成审核或确认不收录。'
+        : '审核已完成，已按当前资料重新分类；符合全部条件才会收录。');
       changed();
     } catch (e) { setError(e instanceof Error ? e.message : '操作失败，请刷新'); }
     finally { setBusy(false); }
@@ -548,7 +556,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
     } catch (e) { setError(e instanceof Error ? e.message : '解除失败，请重试'); }
     finally { setBusy(false); }
   }
-  const resumeAdmission = !!detail && detail.admission_state !== 'admitted' && !detail.source_record_id && detail.qualification === 'manual_exclusion';
+  const resumeAdmission = !!detail && !detail.collection_pipeline_version && detail.admission_state !== 'admitted' && !detail.source_record_id && detail.qualification === 'manual_exclusion';
   const canExclude = catalogCanExclude(detail);
   const maintenance = mode === 'rental' || mode === 'auctions';
   // 采集任务按页签分流: 收录审核页放名单与资料类, 小区数据维护页放租金与法拍类
@@ -581,6 +589,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
           <span className="directory-muted">已选 {selectedRows.length} 条</span>
           <button className="btn btn-primary" onClick={() => { setMergeRows(selectedRows); setMergeOpen(true); }}>合并所选（{selectedRows.length}）</button>
           <button className="btn btn-secondary" onClick={() => setSelection([])}>取消选择</button>
+          review={(kind, row) => void admissionAction(kind, row)}
         </div>}
         {mode !== 'auctions' ? <CatalogTable items={items} excluded={mode !== 'admitted'} pending={mode === 'pending'} select={row => void select(row)}
           exclude={row => void admissionAction('exclude', row)}
@@ -592,8 +601,9 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
             <td data-label="操作"><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setError(''); setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
         {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
         <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); setSelection([]); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); setSelection([]); }}>下一页</button></nav></>}
+        <CatalogReviewAction row={detail} busy={busy} action={(kind, row) => void admissionAction(kind, row)} />
     </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
-      footer={detail && (canExclude || resumeAdmission) ? <div className="directory-detail-actions">
+      footer={detail && (canExclude || resumeAdmission || (!detail.source_record_id && detail.admission?.revision)) ? <div className="directory-detail-actions">
         {canExclude && <button className="btn directory-exclude-action" disabled={busy} onClick={() => void admissionAction('exclude')}>确认不收录</button>}
         {resumeAdmission && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
       </div> : undefined} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>

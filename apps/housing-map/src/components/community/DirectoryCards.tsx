@@ -22,7 +22,7 @@ export type Community = { community_id: string; community_name: string; aliases?
   address_evidence?: { origin?: string | null; valid?: boolean; reason?: string } | null;
   address?: string; deleted?: boolean; sources?: Source[]; eligible?: boolean; evidence?: string[];
   longitude?: number; latitude?: number; has_boundary?: boolean; residential_state?: 'residential' | 'pending' | 'non_residential' | 'deleted' | 'unknown';
-  admission?: { state: string; revision: number; decision_kind: string; auto_review_locked: boolean; reason?: string; decided_at?: string;
+  admission?: { state: string; revision: number; decision_kind: string; auto_review_locked: boolean; review_requested?: boolean; reason?: string; decided_at?: string;
     rule_version?: string; batch_id?: string; evidence?: AutoReviewEvidence[] };
   market_state?: string; market_state_conflict?: boolean; admission_state?: string; admission_conflict?: boolean; effective_property_type?: string; map_status?: string;
   events?: { seq: number; action: string; created_at: string; payload: { reason?: string } }[] };

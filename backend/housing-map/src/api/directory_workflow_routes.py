@@ -196,6 +196,19 @@ def resume_catalog(cid: str, body: AdmissionDecision):
     return result(action)
 
 
+@router.post('/catalog/{cid}/reopen-review')
+def reopen_catalog_review(cid: str, body: AdmissionDecision):
+    registry = require_store()
+    return result(lambda: registry.decide_admission(cid, 'reopen-review', revision=body.revision,
+                                                    reason='人工发起重新审核，核对后请完成审核'))
+
+
+@router.post('/catalog/{cid}/complete-review')
+def complete_catalog_review(cid: str, body: AdmissionDecision):
+    registry = require_store()
+    return result(lambda: registry.decide_admission(cid, 'complete-review', revision=body.revision))
+
+
 @router.get('/positions')
 def position_status():
     return result(lambda: position_job().snapshot())

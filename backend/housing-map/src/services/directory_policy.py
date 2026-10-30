@@ -31,6 +31,8 @@ def eligibility(community, records, facts=None, admission=None):
         return status
     if community.get('deleted') or community.get('merged_to'):
         return result('inactive', '小区已删除或合并')
+    if pipeline and admission.get('review_requested'):
+        return result('manual_review', admission.get('reason') or '人工发起重新审核，核对后请完成审核', incomplete=True)
     records = [r for r in records if r['source'] == 'tmsf' and r.get('status') != 'ignored']
     # 高德分类只是第二来源证据：人工用途决定优先，出现新的相反证据才回到待审核。
     use_decision = admission.get('use_rule') == RULE_VERSION and admission.get('use_decision')

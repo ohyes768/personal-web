@@ -101,7 +101,8 @@ class CommunityRegistry:
 
     def _decide_admission(self, db, cid, action, *, revision, reason='', property_type=None, automatic=None):
         from src.services.residential_classifier import RESIDENTIAL_TYPES
-        if action not in {'admit', 'review', 'exclude', 'restore-admission', 'allow-auto-review'}:
+        if action not in {'admit', 'review', 'exclude', 'restore-admission', 'allow-auto-review',
+                          'reopen-review', 'complete-review'}:
             raise ValueError('未知住宅审核操作')
         if action == 'exclude' and not reason.strip():
             raise ValueError('排除必须填写原因')
@@ -109,6 +110,12 @@ class CommunityRegistry:
             raise ValueError('请确认住宅、别墅或排屋类型')
         if not db.execute('SELECT 1 FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (cid,)).fetchone():
             raise ValueError('小区不存在或已删除/合并')
+        if action in {'reopen-review', 'complete-review'}:
+            from src.services.collection_pipeline import active, enabled
+            master = self._community(db.execute('SELECT * FROM communities WHERE id=?', (cid,)).fetchone())
+            if not enabled(db) or not active(master) or not db.execute(
+                    "SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source='tmsf'", (cid,)).fetchone():
+                raise ValueError('请先补齐新版名单中的小区身份')
         if action == 'admit':
             from src.services.directory_policy import enabled
             if enabled(db):
@@ -123,19 +130,23 @@ class CommunityRegistry:
         previous = json.loads(row[0]) if row else self.pending_admission()
         if revision != previous['revision']:
             raise ValueError('审核版本已变化，请刷新后重新核对')
+        if action == 'complete-review' and not previous.get('review_requested'):
+            raise ValueError('该小区没有待完成的人工复核')
         if automatic and (previous.get('auto_review_locked') or previous['state'] == 'excluded'):
             raise ValueError('人工审核锁或排除优先')
         if action == 'restore-admission' and previous['state'] != 'excluded':
             raise ValueError('只有已排除小区可以恢复待审核')
         if action == 'allow-auto-review' and previous['state'] != 'pending':
             raise ValueError('请先移到待审核再允许自动审核')
-        locked = action in {'review', 'exclude', 'restore-admission'}
+        locked = action in {'review', 'exclude', 'restore-admission', 'reopen-review'}
         decided_at = now()
         value = dict(state='admitted' if action == 'admit' else 'excluded' if action == 'exclude' else 'pending',
                      decision_kind='manual', property_type=property_type if action == 'admit' else None,
                      revision=revision + 1, auto_review_locked=locked, reason=reason.strip(),
                      lock_reason=(reason.strip() or '人工决定，禁止自动收录') if locked else None,
                      locked_at=decided_at if locked else None, decided_at=decided_at)
+        if action == 'reopen-review':
+            value.update(review_requested=True, reason=reason.strip() or '人工发起重新审核，核对后请完成审核')
         if automatic:
             value.update(decision_kind='automatic', **automatic)
         db.execute('INSERT OR REPLACE INTO community_admission VALUES (?,?)', (cid, dump(value)))
@@ -174,6 +185,7 @@ class CommunityRegistry:
         if revision != previous['revision']:
             raise ValueError('审核版本已变化，请刷新后重新核对')
         if (previous.get('decision_kind') == 'manual' and previous.get('use_rule') != RULE_VERSION
+                and not previous.get('review_requested')
                 and (previous.get('state') == 'excluded' or previous.get('auto_review_locked'))):
             raise ValueError('人工排除或审核锁优先，不能改写')
         value = dict(state='admitted' if decision == 'residential' else 'excluded',

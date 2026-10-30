@@ -1341,7 +1341,7 @@ body {
 .directory-list-panel .catalog-table small { margin-top: 2px; line-height: 1.4; }
 .catalog-inline { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; }
 .catalog-inline .directory-badge { margin: 0; }
-.catalog-row-actions { flex-wrap: nowrap; }
+.catalog-row-actions { flex-wrap: wrap; }
 .catalog-exclude { background: transparent; border: 1px solid transparent; color: var(--text-muted); }
 .catalog-exclude:hover:not(:disabled) { color: #a74325; background: #fff5f2; }
 .catalog-table .btn { min-height: 28px; padding: 4px 8px; font-size: 12px; white-space: nowrap; }

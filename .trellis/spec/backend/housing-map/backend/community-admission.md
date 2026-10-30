@@ -27,6 +27,8 @@ Applies to registry admission, management actions, map/score visibility and migr
 - One-time `migrate_admission` uses effective associated TMSF/Fang evidence (Amap alone is insufficient), residential→admitted, nonresidential→excluded, unknown/conflict→pending; deleted/merged identities stay inactive. Uses SQLite backup to `directory-backup/community_registry-before-admission.sqlite3` before admission initialization. Repeat prepare/restart never reseeds decisions. QA must set isolated `HOUSING_DATA_DIR`; production rollout requires separate authorization.
 
 ## 4. Validation & Error Matrix
+
+V2 catalog 重新审核/完成审核 use dedicated reopen-review/complete-review routes and a durable review_requested marker; see [collection pipeline](./collection-pipeline.md). This pending hold is not manual exclusion. Manual use confirmation may resolve it; ordinary manual exclusions keep their veto. Legacy generic review/restore behavior stays unchanged.
 Malformed action/body/type/revision→422. Stale revision, inactive target, missing exclusion reason/type or invalid transition→409. Directory/SQLite/filesystem initialization or mutation error→503. Detail not found→404. Duplicate submit with the old revision→409, no additional community/event.
 
 ## 5. Good / Base / Bad Cases
