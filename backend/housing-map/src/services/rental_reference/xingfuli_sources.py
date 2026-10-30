@@ -155,6 +155,11 @@ def _human_veto(registry, community_id, record, *, allow_reprocessed=False):
             if payload.get('auto_review_locked') or payload.get('state') == 'excluded':
                 return '目标小区已有人工排除或审核锁'
         if record.get('status') not in {None, 'pending'}:
+            owner_id = record.get('community_id')
+            if owner_id:
+                owner = db.execute('SELECT payload FROM communities WHERE id=?', (owner_id,)).fetchone()
+                owner_name = json.loads(owner['payload']).get('community_name') if owner else None
+                return f'该幸福里来源已关联：{owner_name or "名称未知"}（小区ID：{owner_id}），请先核对'
             return '该幸福里来源已有有效关联，请先核对'
         for row in db.execute('SELECT payload FROM review_candidates'):
             group = json.loads(row[0])
