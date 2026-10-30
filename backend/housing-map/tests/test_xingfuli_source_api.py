@@ -173,7 +173,7 @@ def test_restart_reuses_search_and_info_but_refreshes_identity_and_entry(tmp_pat
     reg = setup(tmp_path)
     first = APIResponses()
     first.entries[TOTAL_ID] = entry_body(items=[], total=0)
-    assert run(probe(reg, first, tmp_path))['stage'] == 'entry_not_found'
+    assert run(probe(reg, first, tmp_path))['stage'] == 'no_rental_listings'
     second = APIResponses()
     state = run(probe(reg, second, tmp_path))
     assert state['stage'] == 'bound_pending_collection'

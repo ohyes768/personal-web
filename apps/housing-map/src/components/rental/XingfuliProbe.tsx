@@ -120,7 +120,7 @@ export function XingfuliProbe({ communityId, onChanged }: {
   }
 
   const candidates = data?.candidates ?? [];
-  const retryable = ['needs_homepage_selection', 'homepage_not_found', 'entry_not_found',
+  const retryable = ['needs_homepage_selection', 'homepage_not_found', 'entry_not_found', 'no_rental_listings',
     'upstream_failed', 'cooling_down', 'deferred', 'cancelled', 'interrupted'];
 
   return <section className="rental-source-association" aria-label="探查幸福里来源">

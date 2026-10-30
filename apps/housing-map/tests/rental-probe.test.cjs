@@ -39,7 +39,7 @@ test('probe path is scoped to the community', () => {
 
 test('stage labels distinguish the outcomes', () => {
   assert.match(probeStageLabel('homepage_not_found'), /未找到/);
-  assert.match(probeStageLabel('entry_not_found'), /没有可用的租房入口/);
+  assert.match(probeStageLabel('entry_not_found'), /归属核验未通过/);
   assert.match(probeStageLabel('bound_pending_collection'), /等待下一轮采集/);
   assert.equal(probeIsRunning('searching_homepage'), true);
   assert.equal(probeIsRunning('resolving_entry'), true);
@@ -123,4 +123,9 @@ test('legacy refreshed candidate without evidence arrays renders safely and requ
   }));
   assert.match(html, /候选证据不完整，请重试重新探查/);
   assert.match(html, /disabled=""/);
+});
+
+test('no listings is a normal empty result distinct from verification or request failure', () => {
+  assert.equal(probeStageLabel('no_rental_listings'), '暂无在租房源');
+  assert.equal(probeIsRunning('no_rental_listings'), false);
 });

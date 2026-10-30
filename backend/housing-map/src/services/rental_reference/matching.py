@@ -33,6 +33,7 @@ def source_reviews(registry):
         stage = state.get('stage', 'idle')
         reason = ('skipped' if review.get('decision') == 'skipped' else
                   'needs_selection' if stage == 'needs_homepage_selection' else
+                  'no_listings' if stage == 'no_rental_listings' else
                   'search_failed' if stage in {'upstream_failed', 'entry_not_found'} else
                   'search_deferred' if stage in {'cooling_down', 'deferred', 'interrupted', 'cancelled'} else 'missing')
         items.append(dict(community_id=cid, community_name=community['community_name'],
@@ -107,7 +108,7 @@ class SourceMatchingService:
         for cid in eligible:
             stage = stages.get(cid)
             completed = outcomes.get(cid) in {'pending', 'missing', 'matched', 'skipped'} or (
-                cid not in outcomes and stage in {'needs_homepage_selection', 'homepage_not_found', 'entry_not_found'})
+                cid not in outcomes and stage in {'needs_homepage_selection', 'homepage_not_found', 'entry_not_found', 'no_rental_listings'})
             if cid not in remaining and not completed:
                 remaining.append(cid)
         return remaining
@@ -216,7 +217,7 @@ class SourceMatchingService:
                     if stage == 'cooling_down' and self._cooldown() > time.time():
                         continue
                     outcome = {'bound_pending_collection': 'matched', 'needs_homepage_selection': 'pending',
-                               'homepage_not_found': 'missing', 'entry_not_found': 'missing',
+                               'homepage_not_found': 'missing', 'entry_not_found': 'missing', 'no_rental_listings': 'missing',
                                'deferred': 'incomplete'}.get(stage, 'failed')
                 with self._mutex:
                     if state is not None:

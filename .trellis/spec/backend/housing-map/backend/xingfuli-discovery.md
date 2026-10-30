@@ -247,3 +247,9 @@ entry = client.rental_entry(candidate['neighborhood_id'])
 ## 已关联来源提示（2026-10-30）
 - `_human_veto` 拒绝占用来源时，从来源的当前 `community_id` 查询目录名称，并返回“该幸福里来源已关联：名称（小区ID：ID），请先核对”；名称缺失仍显示已有ID。
 - 仅补充诊断，不解除、迁移或共享来源；原关联唯一性及人工决定保护不变。`test_rental_source_owner_message.py`验证占用方信息和拒绝后关联不变。
+
+## 空租房结果提示与分类（2026-10-30）
+- 探查入口返回 seeds=[] 且 rent_total=0 时记录新状态 `no_rental_listings`，提示“暂无在租房源，暂时无法采集租金；可稍后重新查询，无需更换主页”。不创建来源，允许稍后重新查询。
+- 来源清单将该状态投影为 `no_listings`（暂无在租），不归 search_failed；批量来源匹配仍计入 missing，failed不增加，已查完空结果不由继续匹配反复查询。
+- 有房源数量但缺seed仍为 entry_not_found，明确“平台显示有租房房源，但未返回可核验的房源入口”；房源归属未通过提示核验未通过。上游请求异常保留 upstream_failed，不冒充正常空结果。
+- 前端状态、重试入口及列表类别同步新增；`test_rental_empty_status.py`覆盖清单和批次计数，既有错误归属与重试测试保持有效。

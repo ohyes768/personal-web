@@ -40,6 +40,7 @@ STAGE_RESOLVING = 'resolving_entry'
 STAGE_BOUND = 'bound_pending_collection'
 STAGE_NO_HOMEPAGE = 'homepage_not_found'
 STAGE_NO_ENTRY = 'entry_not_found'
+STAGE_NO_LISTINGS = 'no_rental_listings'
 STAGE_FAILED = 'upstream_failed'
 STAGE_COOLING = 'cooling_down'
 STAGE_DEFERRED = 'deferred'
@@ -412,8 +413,10 @@ class ProbeService:
         write_state(self.registry, community_id, selected_page=candidate)
         seeds = list(entry['seeds'])[:MAX_SEED_TRIES]
         if not seeds:
-            write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
-                        message='该主页没有可用的租房入口，请重试或换一个主页')
+            empty = entry['rent_total'] == 0
+            write_state(self.registry, community_id, stage=STAGE_NO_LISTINGS if empty else STAGE_NO_ENTRY,
+                        message='该小区当前暂无在租房源，暂时无法采集租金；可稍后重新查询，无需更换主页' if empty
+                        else '平台显示有租房房源，但未返回可核验的房源入口；请稍后重试')
             return
         for seed in seeds:
             if client.request_count >= self.budget:
@@ -436,7 +439,7 @@ class ProbeService:
             self._bind(community, candidate, verified_seed)
             return
         write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
-                    message='该主页没有可核验的租房入口，请重试或换一个主页')
+                    message='租房房源归属核验未通过，暂未关联来源；请稍后重试或核对主页范围')
 
     def _checkpoint_client(self, community):
         return DiscoveryCheckpoint(self.registry, community, self._client(), self._cancel, self.budget,

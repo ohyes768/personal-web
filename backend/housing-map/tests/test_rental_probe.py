@@ -311,7 +311,10 @@ def test_no_homepage_and_no_entry_are_different_reasons(tmp_path):
     fake2 = FakeDiscovery(
         search={('测试花园', 'second_hand'): {TOTAL_ID: '测试花园'}},
         homepages={TOTAL_ID: homepage(seeds=(), total=0)})
-    assert run(service(registry2, fake2, tmp_path / 'b'))['stage'] == probe.STAGE_NO_ENTRY
+    state = run(service(registry2, fake2, tmp_path / 'b'))
+    assert state['stage'] == probe.STAGE_NO_LISTINGS
+    assert '暂无在租房源' in state['message']
+    assert '无需更换主页' in state['message']
 
 
 def test_listing_of_another_community_is_not_an_entry(tmp_path):
