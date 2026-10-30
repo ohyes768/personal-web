@@ -37,7 +37,15 @@ export interface QualityScore {
   analysis_duration_seconds?: number | null;
 }
 
-export type QualityJob = RefreshJob & { kind: 'quality'; per_code?: QualityPerCodeMap };
+export type QualityJob = RefreshJob & { kind: 'quality'; per_code?: QualityPerCodeMap; cancelled?: number };
+
+export type QualityMoveAction = 'front' | 'up' | 'down';
+
+export interface QualityQueueSnapshot {
+  per_code: QualityPerCodeMap;
+  running_count: number;
+  queued_count: number;
+}
 
 export function formatAnalysisDuration(seconds: QualityScore['analysis_duration_seconds']): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '未记录';
@@ -51,7 +59,7 @@ export function formatAnalysisDuration(seconds: QualityScore['analysis_duration_
 }
 
 /** 逐股实时状态（后端内存态，服务重启清空；completed 且未落盘视为失败） */
-export type QualityPerCodeState = 'queued' | 'running' | 'completed' | 'failed';
+export type QualityPerCodeState = 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
 export interface QualityPerCodeStatus {
   state: QualityPerCodeState;
   error: string | null;
@@ -62,23 +70,29 @@ export interface QualityPerCodeStatus {
   queued_at?: string | null;
   started_at?: string | null;
   finished_at?: string | null;
+  /** 这一次分析的身份；调序和取消都认它，不认股票代码 */
+  item_id?: string | null;
+  /** 服务端等待序号，从 1 开始；前端不再按 queued_at 重排 */
+  position?: number | null;
 }
 export type QualityPerCodeMap = Record<string, QualityPerCodeStatus>;
 
 /** 是否处于排队或运行中（重复提交禁用、计时进行中的判定） */
 export function isQualityPending(status?: QualityPerCodeStatus | null): boolean {
-  return status?.state === 'queued' || status?.state === 'running';
+  return status?.state === 'queued' || status?.state === 'running' || status?.state === 'cancelling';
 }
 
-/** 队列面板行：运行优先、排队按受理顺序、终态新的在前 */
+/** 队列面板行：只含正在分析与排队，排队顺序用服务端 position */
 export interface QualityQueueRow {
   code: string;
+  itemId: string | null;
   name: string | null;
   state: QualityPerCodeState;
   error: string | null;
   queuedAt: string | null;
   startedAt: string | null;
   finishedAt: string | null;
+  position: number | null;
 }
 
 export interface QualityQueueView {
@@ -87,32 +101,26 @@ export interface QualityQueueView {
   queuedCount: number;
 }
 
-const byTimestamp = (value: string | null) => {
-  const time = value ? new Date(value).getTime() : NaN;
-  return Number.isFinite(time) ? time : 0;
-};
-
-export function buildQualityQueue(perCode: QualityPerCodeMap, terminalLimit = 8): QualityQueueView {
+export function buildQualityQueue(perCode: QualityPerCodeMap): QualityQueueView {
   const running: QualityQueueRow[] = [];
   const queued: QualityQueueRow[] = [];
-  const terminal: QualityQueueRow[] = [];
   for (const [code, item] of Object.entries(perCode)) {
     const row: QualityQueueRow = {
       code,
+      itemId: item.item_id ?? null,
       name: item.name ?? null,
       state: item.state,
       error: item.error,
       queuedAt: item.queued_at ?? null,
       startedAt: item.started_at ?? null,
       finishedAt: item.finished_at ?? null,
+      position: item.position ?? null,
     };
-    if (item.state === 'running') running.push(row);
+    if (item.state === 'running' || item.state === 'cancelling') running.push(row);
     else if (item.state === 'queued') queued.push(row);
-    else terminal.push(row);
   }
-  queued.sort((a, b) => byTimestamp(a.queuedAt) - byTimestamp(b.queuedAt));
-  terminal.sort((a, b) => byTimestamp(b.finishedAt) - byTimestamp(a.finishedAt));
-  return { rows: [...running, ...queued, ...terminal.slice(0, terminalLimit)], runningCount: running.length, queuedCount: queued.length };
+  queued.sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER));
+  return { rows: [...running, ...queued], runningCount: running.length, queuedCount: queued.length };
 }
 
 /** 运行中股票的实时已分析时长（从后端 started_at 起算）；缺失显示未记录 */
@@ -176,7 +184,10 @@ export function qualityJobActive(job: Pick<QualityJob, 'status'>): boolean {
 
 /** job 终态的用户提示文案 */
 export function qualityFinishMessage(job: QualityJob): string {
-  if (job.status === 'succeeded') return `评级完成：成功 ${job.succeeded} 只`;
+  if (job.status === 'succeeded') {
+    const cancelled = job.cancelled ? `，取消 ${job.cancelled} 只` : '';
+    return `评级完成：成功 ${job.succeeded} 只${cancelled}`;
+  }
   if (job.status === 'partial_failed') {
     return `评级完成：成功 ${job.succeeded} 只，失败 ${job.failed} 只（${job.failed_codes.join('、')}），可重试失败项`;
   }

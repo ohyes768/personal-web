@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.api import routes
 from src.api.models import DividendStock, StockListResponse
+from src.services.hermes_client import HermesRunCancelled, HermesRunFailed
 from src.services.quality_service import QualityService
 from src.services.refresh_jobs import RefreshJobManager
 
@@ -40,6 +41,18 @@ def client(monkeypatch, tmp_path):
         return StockListResponse(total=2, items=items, last_updated="2026-10-23")
     monkeypatch.setattr(routes, "get_stocks", load)
     monkeypatch.setattr(routes, "find_latest_aux_file", lambda *args: None)
+
+    def fake_get(cfg, run_id):
+        try:
+            output = routes.poll_run(cfg, run_id)
+        except HermesRunCancelled:
+            return {"status": "cancelled"}
+        except HermesRunFailed as exc:
+            return {"status": "failed", "error": str(exc)}
+        return {"status": "completed", "output": output}
+
+    monkeypatch.setattr(routes, "get_run", fake_get)
+    monkeypatch.setattr(routes, "stop_run", lambda cfg, run_id: "stopping")
     app = FastAPI()
     app.include_router(routes.router)
     yield TestClient(app), manager
@@ -135,9 +148,9 @@ class TestAnalyze:
         gate = threading.Event()
 
         def slow_poll(cfg, run_id):
+            assert gate.wait(120)
             if "600519" in run_id:
                 return fake_output("600519", "新股")
-            gate.wait(120)
             return fake_output("000001", "样本")
 
         monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: f"run-{key}")
@@ -219,3 +232,73 @@ class TestScores:
         app = FastAPI()
         app.include_router(routes.router)
         assert TestClient(app).get("/quality").status_code == 500
+
+
+class TestQueueActions:
+    def _configure(self, monkeypatch, poll):
+        monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
+        monkeypatch.setenv("HERMES_API_KEY", "secret")
+        monkeypatch.setenv("HERMES_MAX_CONCURRENT", "1")
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
+        monkeypatch.setattr(routes, "poll_run", poll)
+
+    def test_cancel_waiting_is_idempotent_and_move_reports_conflict(self, client, monkeypatch):
+        import threading
+        test_client, manager = client
+        gate = threading.Event()
+
+        async def load(**kwargs):
+            items = [stock(), stock(code="600519", name="乙"), stock(code="000002", name="丙")]
+            return StockListResponse(total=3, items=items, last_updated="2026-10-23")
+
+        monkeypatch.setattr(routes, "get_stocks", load)
+
+        def poll(cfg, run_id):
+            if "000001" in run_id:
+                gate.wait(5)
+            name = "乙" if "600519" in run_id else "丙" if "000002" in run_id else "样本"
+            code = "600519" if "600519" in run_id else "000002" if "000002" in run_id else "000001"
+            return fake_output(code, name)
+
+        self._configure(monkeypatch, poll)
+        accepted = test_client.post("/quality/analyze", json={"codes": ["000001", "600519", "000002"]})
+        assert accepted.status_code == 202
+        job_id = accepted.json()["job_id"]
+
+        def queued_ready():
+            live = test_client.get(f"/quality/jobs/{job_id}").json()["per_code"]
+            return live["000001"]["state"] == "running" and live["000002"]["state"] == "queued"
+
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not queued_ready():
+            time.sleep(0.02)
+        live = test_client.get(f"/quality/jobs/{job_id}").json()["per_code"]
+        assert live["600519"]["position"] == 1
+        moved = test_client.post(f"/quality/queue/{live['000002']['item_id']}/move", json={"action": "front"})
+        assert moved.status_code == 200
+        assert moved.json()["per_code"]["000002"]["position"] == 1
+        assert moved.json()["per_code"]["600519"]["position"] == 2
+        boundary = test_client.post(f"/quality/queue/{live['000002']['item_id']}/move", json={"action": "up"})
+        assert boundary.status_code == 409
+        assert "队首" in boundary.json()["detail"]["message"]
+        running_move = test_client.post(f"/quality/queue/{live['000001']['item_id']}/move", json={"action": "down"})
+        assert running_move.status_code == 409
+        assert running_move.json()["detail"]["per_code"]["000001"]["state"] == "running"
+        waiting_id = moved.json()["per_code"]["600519"]["item_id"]
+        cancelled = test_client.post(f"/quality/queue/{waiting_id}/cancel")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["per_code"]["600519"]["state"] == "cancelled"
+        duplicate = test_client.post(f"/quality/queue/{waiting_id}/cancel")
+        assert duplicate.status_code == 200
+        assert manager.get(job_id)["cancelled"] == 1
+        stale = test_client.post("/quality/analyze", json={"codes": ["600519"]})
+        assert stale.status_code == 202 and stale.json()["reused"] is True
+        new_id = stale.json()["per_code"]["600519"]["item_id"]
+        assert new_id != waiting_id
+        conflict = test_client.post(f"/quality/queue/{waiting_id}/cancel")
+        assert conflict.status_code == 409
+        assert conflict.json()["detail"]["per_code"]["600519"]["item_id"] == new_id
+        assert test_client.post("/quality/queue/missing/cancel").status_code == 409
+        assert test_client.post(f"/quality/queue/{new_id}/move", json={"action": "sideways"}).status_code == 422
+        gate.set()
+        wait_job(manager, job_id)

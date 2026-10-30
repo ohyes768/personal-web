@@ -11,7 +11,12 @@ export interface ApiResponse<T = any> {
 type ApiClientMode = 'wrapped' | 'direct';
 
 export class ApiHttpError extends Error {
-  constructor(message: string, public status: number) { super(message); }
+  readonly body: unknown;
+  constructor(message: string, public status: number, body: unknown = null) {
+    super(message);
+    this.name = 'ApiHttpError';
+    this.body = body;
+  }
 }
 
 class ApiClient {
@@ -34,13 +39,18 @@ class ApiClient {
         // 尝试从响应体中提取后端返回的 detail/message/error 字段
         // 例如 FastAPI 的 HTTPException(429, detail="距上次更新仅 N 天...") 会返回 {"detail": "..."}
         let serverMsg = '';
+        let parsed: unknown = null;
         try {
           const body = await response.clone().json();
-          serverMsg = body.detail || body.message || body.error || '';
+          parsed = body;
+          const detail = body.detail;
+          if (typeof detail === 'string') serverMsg = detail;
+          else if (detail && typeof detail === 'object' && typeof detail.message === 'string') serverMsg = detail.message;
+          else serverMsg = body.message || body.error || '';
         } catch {
           // 响应体不是 JSON 时忽略
         }
-        throw new ApiHttpError(serverMsg || `请求失败 (HTTP ${response.status})`, response.status);
+        throw new ApiHttpError(serverMsg || `请求失败 (HTTP ${response.status})`, response.status, parsed);
       }
 
       if (this.mode === 'direct') return response.json() as Promise<T>;

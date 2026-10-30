@@ -92,3 +92,59 @@ def test_restart_interruption_and_write_failure(tmp_path):
         assert 'disk full' in other.get(failed['job_id'])['error']
         assert other.get(failed['job_id'])['retry_codes'] == ['000090']
     asyncio.run(scenario())
+
+
+def test_quality_cancel_accounting_does_not_change_financial_failures(tmp_path):
+    async def scenario():
+        manager = RefreshJobManager(tmp_path)
+        def work(progress):
+            progress('000090', False, outcome='cancelled', queue_order=[])
+            progress('600000', False, outcome='cancelled', queue_order=[])
+        job = manager.submit('quality', ['000090', '600000'], work)
+        await manager.close(timeout=2)
+        result = manager.get(job['job_id'])
+        assert result['status'] == 'succeeded'
+        assert (result['processed'], result['succeeded'], result['failed'], result.get('cancelled'), result['remaining']) == (2, 0, 0, 2, 0)
+        assert result['failed_codes'] == []
+        assert result['retry_codes'] == []
+        assert '取消 2' in result['message']
+
+        financial = RefreshJobManager(tmp_path / 'financial')
+        failed = financial.submit('financial', ['000090'], lambda progress: progress('000090', False))
+        await financial.close(timeout=2)
+        fin = financial.get(failed['job_id'])
+        assert fin['status'] == 'failed'
+        assert fin['failed'] == 1
+        assert 'cancelled' not in fin
+        assert '取消' not in fin['message']
+
+        other = RefreshJobManager(tmp_path / 'financial-reject')
+        def rejected(progress):
+            progress('000090', False, outcome='cancelled')
+        rejected_job = other.submit('financial', ['000090'], rejected)
+        await other.close(timeout=2)
+        assert '仅评级任务可以取消' in other.get(rejected_job['job_id'])['error']
+    asyncio.run(scenario())
+
+
+def test_legacy_quality_job_without_cancel_fields_reloads(tmp_path):
+    import json
+    record = {
+        'job_id': 'legacy-quality', 'kind': 'quality', 'status': 'succeeded', 'codes': ['000090'],
+        'params': {}, 'total': 1, 'processed': 1, 'succeeded': 1, 'failed': 0, 'remaining': 0,
+        'failed_codes': [], 'retry_codes': [], 'error': None,
+        'created_at': '2026-10-01T00:00:00+08:00', 'updated_at': '2026-10-01T00:00:00+08:00',
+        'started_at': '2026-10-01T00:00:00+08:00', 'finished_at': '2026-10-01T00:01:00+08:00',
+        'message': '已处理 1/1，成功 1，失败 0，未处理 0',
+    }
+    (tmp_path / 'legacy-quality.json').write_text(json.dumps(record), encoding='utf-8')
+    loaded = RefreshJobManager(tmp_path).get('legacy-quality')
+    assert loaded['status'] == 'succeeded'
+    assert loaded.get('cancelled', 0) == 0
+    record['job_id'] = 'legacy-active'
+    record['status'] = 'running'
+    record['finished_at'] = None
+    (tmp_path / 'legacy-active.json').write_text(json.dumps(record), encoding='utf-8')
+    interrupted = RefreshJobManager(tmp_path).get('legacy-active')
+    assert interrupted['status'] == 'interrupted'
+    assert interrupted['retry_codes'] == ['000090']

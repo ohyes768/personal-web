@@ -24,20 +24,29 @@ now lives inside `basic-quality-rating` v2.2+.
 - `GET /api/dividend/quality`: `{total, scores: {code: QualityScore},
   per_code, hermes_configured}`; `GET /quality/jobs/{job_id}` also embeds
   `per_code`. `per_code` is the in-memory per-stock live status
-  (`{state: queued|running|completed|failed, error, updated_at, name,
-  queued_at, started_at, finished_at}`), cleared on restart. `queued` is
-  written at admission (with `queued_at`), `running` when the dispatch loop
-  hands the item to a worker (`started_at` — the analysis-duration clock base),
-  and `completed`/`failed` when that stock finishes (`finished_at`). Items
-  persist across jobs so recent terminal results stay visible for retry;
-  resubmitting a terminal code re-admits it with fresh timestamps. The
+  (`{state: queued|running|cancelling|completed|failed|cancelled, error,
+  updated_at, name, queued_at, started_at, finished_at, item_id, position}`),
+  cleared on restart. `queued` is written at admission (with `queued_at`).
+  `running` starts only after a free concurrency slot is claimed
+  (`started_at` — the analysis-duration clock base). `cancelling` stays in the
+  running group until Hermes confirms a terminal status. `position` is the
+  1-based server waiting order and is null once the item is no longer queued.
+  `item_id` is that admission's `attempt_id`. Items persist across jobs so
+  recent terminal results stay visible for list retry; resubmitting a terminal
+  code re-admits it with a new `item_id` and fresh timestamps. The
   ScreeningTab action column renders it row-by-row
   (排队中/评级中 pulse, 失败+原因 tooltip+重试, else 分析/重评 buttons);
   a compact 评级队列 button in the screening toolbar shows running/queued
-  counts. Clicking opens the shared Modal with progress, running items first,
-  queued items in admission order, then recent terminal items and retry.
-  The modal's per-second local tick computes 已分析 X分Y秒 from server
-  `started_at`; closing stops only this display timer, never polling or work.
+  counts. Clicking opens the shared Modal with only two groups: 正在分析
+  (`running` and `cancelling`) and 排队中 (server `position` order). The header
+  shows those two counts. Empty active state is 暂无进行中的任务. The modal
+  does not show terminal rows, aggregate job progress, or retry. Reports and
+  list retry stay outside it. The modal's per-second local tick computes
+  已分析 X分Y秒 from server `started_at`; closing stops only this display
+  timer, never polling or work. Queue mutations are
+  `POST /quality/queue/{item_id}/cancel` and
+  `POST /quality/queue/{item_id}/move` (`{action: front|up|down}`). See the
+  active-queue scenario below.
   Reopening restores elapsed time from the original timestamp. Escape,
   backdrop and close button dismiss the modal.
   `hermes_configured=false` disables the UI
@@ -244,3 +253,58 @@ the appended work).
 #### Correct
 Append under the service `_cond`, persist via `append_codes` before
 acknowledging, and gate the dispatch loop's exit on the same lock.
+
+## Scenario: active quality queue cancel and reorder (2026-10-29)
+
+### 1. Scope / Trigger
+- Trigger: changing `QualityService.cancel_item` / `move_item`, Hermes
+  `stop_run`, quality `per_code.item_id` / `position`, or the 评级队列 modal.
+
+### 2. Signatures
+- `POST /api/dividend/quality/queue/{item_id}/cancel` → `{per_code, running_count, queued_count}`.
+- `POST /api/dividend/quality/queue/{item_id}/move` body `{action: "front"|"up"|"down"}` → the same snapshot.
+- `QualityService.cancel_item(item_id, refresh_jobs)` / `move_item(item_id, action, refresh_jobs)`.
+- `HermesClient.stop_run(cfg, run_id) -> str`: `POST {base}/p/{profile}/v1/runs/{run_id}/stop`, Bearer, no body.
+- `RefreshJobManager.note_quality_cancel(job_id, code, queue_order)` and `note_quality_order(job_id, order)`.
+
+### 3. Contracts
+- Mutations target `attempt_id`, never the stock code. A later admission of the same code has a new `item_id`.
+- Waiting cancel removes that attempt under `_cond` before any Hermes submit, then `note_quality_cancel` writes the job before the response. If the executor has not attached `progress` yet, do not wait for it.
+- Reorder changes only `queued` items, keeps `queued_at` / `started_at`, and persists `queue_order` before ack. New admissions still append at the tail. The dispatcher claims a free `HERMES_MAX_CONCURRENT` slot before `queued` → `running`, so an unsent item stays reorderable.
+- Running cancel sets `cancelling` and `cancel_requested`. It stores `run_id` when submit returns. If cancel arrives before `run_id`, send stop as soon as the id exists. Do not hold `_cond` across HTTP.
+- `stop_run` HTTP 2xx is accepted only when `status` is `stopping` or `cancelled`. `stopping` is not terminal. Keep the row and the slot until a later GET is `cancelled` (release, no score) or `completed` (publish that result). Timeout, poll errors, and any other stop body keep the row and the slot. Surface `取消请求失败` / `取消结果未确认` on the same row.
+- Repeated cancel of the same `cancelling` or `cancelled` item returns the current snapshot. Confirmed cancel bumps `data/quality_cancel_generations.json` and the next admission uses `quality-{code}-{data_date}-{skill_version}-c{n}`. An uncertain submit still uses the unscoped key. A waiting cancel that never called Hermes does not bump the generation.
+- The modal renders server `position`, not `queued_at`. First waiting row disables 置顶/上移; last disables 下移. One in-flight action per row. 409 refreshes from `detail.per_code`.
+
+### 4. Validation & Error Matrix
+| Condition | Result |
+| --- | --- |
+| Unknown, stale, or already finished `item_id` | 409 `{message, per_code}` |
+| Move an item that is already `running` / `cancelling` | 409，当前快照 |
+| Move when already first (`front`/`up`) or last (`down`) | 409 |
+| Move action outside `front\|up\|down` | 422 |
+| Waiting cancel, job still active | snapshot; item leaves the queue; slot never taken |
+| Running stop accepted (`stopping`) | row stays 取消中…; slot held |
+| Later poll `cancelled` | row leaves the modal; generation increments |
+| Later poll `completed` | valid score kept; not counted as cancel |
+| Stop HTTP error, timeout, or 2xx without `stopping`/`cancelled` | row stays; error text shown; slot held |
+| Same `item_id` cancelled again while `cancelling` | same snapshot, no second stop success claim |
+
+### 5. Good/Base/Bad Cases
+- Good: waiting order A/B/C, front C → C/A/B; up on the new first item is rejected; cancel A → C/B with continuous positions. Next free slot takes the new head.
+- Base: running cancel shows 取消中… until Hermes GET is `cancelled`. If the run completes first, the new score is saved and the row leaves the active list.
+- Bad: cancel during submit, before `run_id` returns — intent is kept and stop is sent when the id arrives. Stopping local polling is not a successful cancel. A stale `item_id` must not cancel the stock's newer attempt.
+
+### 6. Tests Required
+- `tests/test_quality_service.py`: waiting cancel submits nothing; front/up/down and boundaries; stale `item_id`; slot claimed before `running`; cancel-before-run-id; stop refusal keeps the slot; completed-before-cancel keeps the score; confirmed cancel changes the idempotency key.
+- `tests/test_quality_api.py`: cancel/move snapshots and 409 with `per_code`.
+- `tests/test_hermes_client.py`: `stopping` is not terminal; 2xx without `stopping`/`cancelled` is not acceptance; poll `cancelled` is `HermesRunCancelled`.
+- `tests/test_refresh_jobs.py`: quality cancel accounting (see that contract).
+- `src/lib/quality.test.ts` and `e2e/screening.spec.ts`: active-only groups, empty state, waiting order/cancel, running cancel lifecycle, request failure still visible, conflict refresh, elapsed time restored after reopen.
+
+### 7. Wrong vs Correct
+#### Wrong
+Sort the modal by `queued_at`, mark `running` before `semaphore.acquire`, treat `stopping` or a stopped poll as cancel success, or reuse `quality-{code}-{data_date}-{skill_version}` after a confirmed `cancelled` run (Hermes replays that run for 24 hours).
+
+#### Correct
+Mutate by `item_id`, persist order and waiting cancellation before ack, and release a running slot only after GET `cancelled` or a real completion. After confirmed cancellation, append `-c{n}` to the next idempotency key.

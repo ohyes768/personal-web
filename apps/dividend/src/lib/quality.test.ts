@@ -64,35 +64,40 @@ describe('qualityJobActive / qualityFinishMessage', () => {
   });
 });
 
-describe('buildQualityQueue（运行优先、排队按受理顺序、终态新的在前）', () => {
+describe('buildQualityQueue（只保留活动项，排队按服务端序号）', () => {
   const status = (state: QualityPerCodeState, extra: Record<string, unknown> = {}) => ({
     state, error: state === 'failed' ? 'run 失败' : null, updated_at: '2026-10-29T10:00:00+08:00', ...extra,
   });
-  it('分区排序：running → queued（按 queued_at）→ terminal（按 finished_at 倒序）', () => {
+  it('正在分析（含取消中）在前，排队按 position，终态不进入弹框', () => {
     const view = buildQualityQueue({
-      late: status('queued', { queued_at: '2026-10-29T10:02:00+08:00' }),
-      early: status('queued', { queued_at: '2026-10-29T10:01:00+08:00' }),
-      runA: status('running', { started_at: '2026-10-29T10:03:00+08:00' }),
-      old: status('completed', { finished_at: '2026-10-29T09:00:00+08:00', started_at: '2026-10-29T08:50:00+08:00' }),
-      recent: status('failed', { finished_at: '2026-10-29T09:30:00+08:00', started_at: '2026-10-29T09:20:00+08:00' }),
+      late: status('queued', { queued_at: '2026-10-29T10:01:00+08:00', position: 2, item_id: 'late' }),
+      early: status('queued', { queued_at: '2026-10-29T10:05:00+08:00', position: 1, item_id: 'early' }),
+      runA: status('running', { started_at: '2026-10-29T10:03:00+08:00', item_id: 'run' }),
+      stopping: status('cancelling', { started_at: '2026-10-29T10:04:00+08:00', item_id: 'stop' }),
+      old: status('completed', { finished_at: '2026-10-29T09:00:00+08:00' }),
+      recent: status('failed', { finished_at: '2026-10-29T09:30:00+08:00' }),
+      dropped: status('cancelled', { finished_at: '2026-10-29T09:40:00+08:00' }),
     });
-    assert.deepEqual(view.rows.map(row => row.code), ['runA', 'early', 'late', 'recent', 'old']);
-    assert.equal(view.runningCount, 1);
+    assert.deepEqual(view.rows.map(row => row.code), ['runA', 'stopping', 'early', 'late']);
+    assert.equal(view.runningCount, 2);
     assert.equal(view.queuedCount, 2);
+    assert.equal(view.rows[2].position, 1);
   });
-  it('缺时间戳的项不参与时间排序但不丢失', () => {
+  it('没有活动项时为空', () => {
     const view = buildQualityQueue({ legacy: { state: 'completed', error: null, updated_at: 'x' } });
-    assert.equal(view.rows.length, 1);
-    assert.equal(view.rows[0].code, 'legacy');
+    assert.equal(view.rows.length, 0);
+    assert.equal(view.runningCount, 0);
   });
 });
 
 describe('isQualityPending', () => {
-  it('queued/running 为 pending，completed/failed/缺失不是', () => {
+  it('queued/running/cancelling 为 pending，终态和缺失不是', () => {
     assert.equal(isQualityPending({ state: 'queued', error: null, updated_at: 'x' }), true);
     assert.equal(isQualityPending({ state: 'running', error: null, updated_at: 'x' }), true);
+    assert.equal(isQualityPending({ state: 'cancelling', error: null, updated_at: 'x' }), true);
     assert.equal(isQualityPending({ state: 'completed', error: null, updated_at: 'x' }), false);
     assert.equal(isQualityPending({ state: 'failed', error: 'e', updated_at: 'x' }), false);
+    assert.equal(isQualityPending({ state: 'cancelled', error: null, updated_at: 'x' }), false);
     assert.equal(isQualityPending(undefined), false);
   });
 });

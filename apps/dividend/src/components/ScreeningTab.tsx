@@ -29,7 +29,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
   const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ScreeningItem | null>(null);
-  const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion, qualityJob, qualityMessage, qualityPollError, analyze } = useQualityAnalysis();
+  const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion, qualityJob, qualityMessage, qualityPollError, analyze, cancelQueueItem, moveQueueItem } = useQualityAnalysis();
   const queueView = buildQualityQueue(qualityPerCode);
   const pending = useCallback((code: string) => isQualityPending(qualityPerCode[code]), [qualityPerCode]);
   const requestId = useRef(0);
@@ -118,7 +118,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
         {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
-        <QualityQueuePanel view={queueView} job={qualityJob} onRetry={codes => void analyze(codes)} configured={qualityConfigured} />
+        <QualityQueuePanel view={queueView} onCancel={cancelQueueItem} onMove={moveQueueItem} />
       </div>
       {qualityPollError && <p role="status" className="text-sm text-amber-700">评级进度查询失败，任务不受影响，自动重试中…</p>}
       {qualityMessage && <p role="status" className="text-sm text-ink">
@@ -147,8 +147,9 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
               <td className="p-3" onClick={event => event.stopPropagation()}>
                 {(() => {
                   const live = qualityPerCode[stock.code];
-                  if (live && (live.state === 'queued' || live.state === 'running')) {
-                    return <span className="text-xs text-ink-muted animate-pulse" title="评级任务进行中，完成后自动刷新">{live.state === 'queued' ? '排队中…' : '评级中…'}</span>;
+                  if (isQualityPending(live)) {
+                    const label = live?.state === 'queued' ? '排队中…' : live?.state === 'cancelling' ? '取消中…' : '评级中…';
+                    return <span className="text-xs text-ink-muted animate-pulse" title="评级任务进行中，完成后自动刷新">{label}</span>;
                   }
                   if (live?.state === 'failed') {
                     return <span className="inline-flex items-center gap-2">

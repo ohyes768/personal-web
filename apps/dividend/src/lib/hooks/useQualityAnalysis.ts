@@ -9,7 +9,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { dividendApi, dividendUpdateApi } from '@/lib/api';
-import { qualityFinishMessage, qualityJobActive, type QualityJob, type QualityPerCodeMap, type QualityScoresResponse } from '@/lib/quality';
+import { ApiHttpError } from '@/lib/api-client';
+import { qualityFinishMessage, qualityJobActive, type QualityJob, type QualityMoveAction, type QualityPerCodeMap, type QualityScoresResponse } from '@/lib/quality';
 
 const POLL_INTERVAL_MS = 3000;
 
@@ -31,6 +32,10 @@ export interface UseQualityAnalysisResult {
   analyze: (codes: string[]) => Promise<void>;
   /** 重新拉取已落盘评级 */
   refreshScores: () => Promise<void>;
+  /** 取消这一次分析。返回空字符串表示已按服务端快照更新；否则是要展示的失败原因。 */
+  cancelQueueItem: (itemId: string) => Promise<string>;
+  /** 调整等待顺序。冲突时仍会刷成服务端快照。 */
+  moveQueueItem: (itemId: string, action: QualityMoveAction) => Promise<string>;
 }
 
 export function useQualityAnalysis(): UseQualityAnalysisResult {
@@ -122,6 +127,29 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
     };
   }, [refreshScores, startPolling]);
 
+  const applyQueueResult = useCallback(async (work: () => Promise<{ per_code?: QualityPerCodeMap }>) => {
+    try {
+      const snapshot = await work();
+      if (mounted.current && snapshot.per_code) setQualityPerCode(snapshot.per_code);
+      return '';
+    } catch (err) {
+      const body = err instanceof ApiHttpError ? err.body : null;
+      const record = body && typeof body === 'object' ? body as { per_code?: QualityPerCodeMap; detail?: { per_code?: QualityPerCodeMap } } : null;
+      const perCode = record?.per_code ?? record?.detail?.per_code;
+      if (mounted.current && perCode) setQualityPerCode(perCode);
+      return err instanceof Error ? err.message : '队列操作失败';
+    }
+  }, []);
+
+  const cancelQueueItem = useCallback(
+    (itemId: string) => applyQueueResult(() => dividendApi.cancelQualityItem(itemId)),
+    [applyQueueResult],
+  );
+  const moveQueueItem = useCallback(
+    (itemId: string, action: QualityMoveAction) => applyQueueResult(() => dividendApi.moveQualityItem(itemId, action)),
+    [applyQueueResult],
+  );
+
   const analyze = useCallback(async (codes: string[]) => {
     if (!codes.length) return;
     setQualityMessage('');
@@ -151,5 +179,7 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
     qualityPollError,
     analyze,
     refreshScores,
+    cancelQueueItem,
+    moveQueueItem,
   };
 }

@@ -52,6 +52,7 @@ from src.api.models import (
     RefreshResponse,
     RefreshStats,
     CodesRequest,
+    QualityQueueMoveRequest,
     IndexRefreshItem,
     IndexRefreshRequest,
 )
@@ -79,8 +80,8 @@ from src.api.helpers.aux_data import (
 )
 from src.utils.atomic_file import atomic_csv
 from src.services.refresh_jobs import RefreshJobManager
-from src.services.hermes_client import HermesConfig, poll_run, submit_run
-from src.services.quality_service import QualityService
+from src.services.hermes_client import HermesConfig, get_run, poll_run, stop_run, submit_run
+from src.services.quality_service import QualityService, QueueConflict
 from src.services.quality_version import current_quality_skill_version
 from src.utils.logger import setup_logger
 
@@ -3632,12 +3633,45 @@ async def analyze_quality(body: CodesRequest):
     try:
         job = quality_service.submit_analysis(
             codes, cfg, stocks, _quality_data_date(), require_refresh_jobs(),
-            submit_run_fn=submit_run, poll_run_fn=poll_run)
+            submit_run_fn=submit_run, poll_run_fn=poll_run,
+            stop_run_fn=stop_run, get_run_fn=get_run)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     if job is None:
         raise HTTPException(status_code=503, detail="服务关闭中，请稍后重试")
+    job["per_code"] = quality_service.get_per_code()
     return job
+
+
+def _quality_conflict(exc: QueueConflict) -> None:
+    per_code = quality_service.get_per_code() if quality_service else {}
+    raise HTTPException(status_code=409, detail={"message": str(exc), "per_code": per_code})
+
+
+@router.post("/quality/queue/{item_id}/cancel")
+async def cancel_quality_queue_item(item_id: str):
+    """取消这一次分析。等待项立即移出；运行项保持占位直到 Hermes 确认停止。"""
+    if quality_service is None:
+        raise HTTPException(status_code=500, detail="评级服务未初始化")
+    try:
+        return quality_service.cancel_item(item_id, require_refresh_jobs())
+    except QueueConflict as exc:
+        _quality_conflict(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.post("/quality/queue/{item_id}/move")
+async def move_quality_queue_item(item_id: str, body: QualityQueueMoveRequest):
+    """调整等待顺序。已开始或身份过期时返回当前快照冲突，不假装成功。"""
+    if quality_service is None:
+        raise HTTPException(status_code=500, detail="评级服务未初始化")
+    try:
+        return quality_service.move_item(item_id, body.action, require_refresh_jobs())
+    except QueueConflict as exc:
+        _quality_conflict(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/quality/jobs/{job_id}")

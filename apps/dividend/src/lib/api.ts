@@ -6,7 +6,7 @@ import type { RefreshJob, RefreshKind } from './types';
 import { directClient } from './api-client';
 import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse } from './screening';
 import type { FavoritesResponse } from './watchlist';
-import type { QualityJob, QualityScoresResponse } from './quality';
+import type { QualityJob, QualityMoveAction, QualityQueueSnapshot, QualityScoresResponse } from './quality';
 import type {
   DividendListResponse,
   DividendDetailResponse,
@@ -43,6 +43,12 @@ export const dividendApi = {
   /** 获取全部已落盘评级 */
   getQualityScores: () =>
     directClient.get<QualityScoresResponse>('/api/dividend/quality'),
+  /** 取消这一次分析。重复取消由服务端幂等处理。 */
+  cancelQualityItem: (itemId: string) =>
+    directClient.post<QualityQueueSnapshot>(`/api/dividend/quality/queue/${encodeURIComponent(itemId)}/cancel`, {}),
+  /** 调整等待顺序。冲突时响应体带有服务端快照。 */
+  moveQualityItem: (itemId: string, action: QualityMoveAction) =>
+    directClient.post<QualityQueueSnapshot>(`/api/dividend/quality/queue/${encodeURIComponent(itemId)}/move`, { action }),
   /**
    * 获取股票列表
    */

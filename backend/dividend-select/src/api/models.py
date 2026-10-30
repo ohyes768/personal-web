@@ -371,6 +371,11 @@ class CodesRequest(BaseModel):
     codes: list[str] = Field(..., description="股票代码列表", min_length=1)
 
 
+class QualityQueueMoveRequest(BaseModel):
+    """排队项调序。只接受仍在等待的那一次分析。"""
+    action: Literal["front", "up", "down"] = Field(..., description="front 置顶，up 上移，down 下移")
+
+
 class IndexRefreshRequest(BaseModel):
     """
     单指数持仓刷新请求模型（用于 /dividend/index-holdings/refresh）

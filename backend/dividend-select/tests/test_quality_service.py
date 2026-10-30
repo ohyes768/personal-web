@@ -5,9 +5,10 @@ import json
 import pytest
 
 from src.api.models import DividendStock
-from src.services.hermes_client import HermesConfig, HermesRunFailed
+from src.services.hermes_client import HermesApiError, HermesConfig, HermesRunFailed
 from src.services.quality_service import (
     QualityService,
+    QueueConflict,
     build_prompt,
     build_stock_payload,
     parse_quality_output,
@@ -485,7 +486,7 @@ class TestQueueAppend:
             assert job2["reused"] is True
             assert job2["codes"] == ["000001", "600000"]
             assert (job2["total"], job2["remaining"]) == (3, 2)
-            assert service.get_per_code()["600000"]["state"] == "queued"
+            assert service.get_per_code()["600000"]["state"] in ("queued", "running")
             gate.set()
             await manager.close(timeout=5)
             final = manager.get(job1["job_id"])
@@ -606,5 +607,537 @@ class TestQueueAppend:
             assert fresh.get_per_code()["600519"]["state"] == "completed"
 
         asyncio.run(scenario())
+
+        asyncio.run(scenario())
+
+
+def _wait_until(predicate, timeout=5):
+    import time as time_mod
+    deadline = time_mod.monotonic() + timeout
+    while time_mod.monotonic() < deadline:
+        if predicate():
+            return
+        time_mod.sleep(0.02)
+    raise AssertionError("条件未在超时内成立")
+
+
+class TestQueueControls:
+    def test_waiting_cancel_does_not_submit_and_reorder_is_authoritative(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+            submitted = []
+
+            def submit_fn(cfg, prompt, key):
+                submitted.append(key)
+                if len(submitted) == 1:
+                    assert release.wait(5)
+                return key
+
+            def poll_fn(cfg, run_id):
+                code = "000001" if "000001" in run_id else "000002" if "000002" in run_id else "600000"
+                name = {"000001": "甲", "000002": "乙", "600000": "丙"}[code]
+                return fake_output(code, name)
+
+            stocks = {code: stock(code=code, name=name) for code, name in
+                      (("000001", "甲"), ("000002", "乙"), ("600000", "丙"))}
+            job = service.submit_analysis(
+                ["000001", "000002", "600000"], cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running"
+                        and service.get_per_code()["600000"]["state"] == "queued")
+            live = service.get_per_code()
+            assert [live["000002"]["position"], live["600000"]["position"]] == [1, 2]
+            queued_at = live["600000"]["queued_at"]
+            moved = service.move_item(live["600000"]["item_id"], "front", manager)
+            assert [moved["per_code"]["600000"]["position"], moved["per_code"]["000002"]["position"]] == [1, 2]
+            assert moved["per_code"]["600000"]["queued_at"] == queued_at
+            with pytest.raises(QueueConflict, match="已在队首"):
+                service.move_item(service.get_per_code()["600000"]["item_id"], "up", manager)
+            with pytest.raises(QueueConflict, match="已在队尾"):
+                service.move_item(service.get_per_code()["000002"]["item_id"], "down", manager)
+            raw = json.loads((tmp_path / "jobs" / f"{job['job_id']}.json").read_text(encoding="utf-8"))
+            assert raw["queue_order"] == ["600000", "000002"]
+            cancelled_id = service.get_per_code()["000002"]["item_id"]
+            service.cancel_item(cancelled_id, manager)
+            again = service.cancel_item(cancelled_id, manager)
+            assert again["per_code"]["000002"]["state"] == "cancelled"
+            assert manager.get(job["job_id"])["cancelled"] == 1
+            release.set()
+            await manager.close(timeout=5)
+            assert all("000002" not in key for key in submitted)
+            assert [key.split("-unknown-")[0] for key in submitted] == [
+                "quality-000001-2026-09-30", "quality-600000-2026-09-30"]
+            final = manager.get(job["job_id"])
+            assert final["status"] == "succeeded"
+            assert final["cancelled"] == 1
+            assert final["failed_codes"] == []
+            assert "000002" not in service.get_all()
+
+        asyncio.run(scenario())
+
+    def test_stale_attempt_and_readmit_do_not_touch_the_new_item(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "quality_scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+
+            def submit_fn(cfg, prompt, key):
+                if "000001" in key and not release.is_set():
+                    assert release.wait(5)
+                return key
+
+            stocks = {"000001": stock(), "600000": stock(code="600000", name="乙")}
+            service.submit_analysis(
+                ["000001", "600000"], cfg, stocks, "2026-09-30", manager, submit_fn,
+                lambda cfg, run_id: fake_output("000001", "样本"))
+            _wait_until(lambda: service.get_per_code().get("600000", {}).get("state") == "queued")
+            old_id = service.get_per_code()["600000"]["item_id"]
+            service.cancel_item(old_id, manager)
+            again = service.submit_analysis(
+                ["600000"], cfg, stocks, "2026-09-30", manager, submit_fn,
+                lambda cfg, run_id: fake_output("600000", "乙"))
+            assert again["reused"] is True
+            assert again["total"] == 3
+            new_id = service.get_per_code()["600000"]["item_id"]
+            assert new_id != old_id
+            with pytest.raises(QueueConflict, match="不是当前这一次分析"):
+                service.cancel_item(old_id, manager)
+            assert service.get_per_code()["600000"]["state"] == "queued"
+            with pytest.raises(QueueConflict, match="已开始执行"):
+                service.move_item(service.get_per_code()["000001"]["item_id"], "front", manager)
+            release.set()
+            await manager.close(timeout=5)
+
+        asyncio.run(scenario())
+
+    def test_running_cancel_confirms_before_release_and_completion_wins(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            stops = []
+            phase = {"status": "running"}
+
+            def submit_fn(cfg, prompt, key):
+                return "run-1"
+
+            def stop_fn(cfg, run_id):
+                stops.append(run_id)
+                phase["status"] = "cancelled"
+                return "stopping"
+
+            def get_fn(cfg, run_id):
+                status = phase["status"]
+                return {"status": status, "output": fake_output("000001", "样本") if status == "completed" else ""}
+
+            service.submit_analysis(
+                ["000001"], cfg, {"000001": stock()}, "2026-09-30", manager,
+                submit_fn, lambda *args: (_ for _ in ()).throw(AssertionError("不应走阻塞轮询")),
+                stop_run_fn=stop_fn, get_run_fn=get_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
+            item_id = service.get_per_code()["000001"]["item_id"]
+            pending = service.cancel_item(item_id, manager)
+            assert pending["per_code"]["000001"]["state"] == "cancelling"
+            assert service.cancel_item(item_id, manager)["per_code"]["000001"]["state"] == "cancelling"
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "cancelled")
+            assert stops == ["run-1"]
+            assert service.get_all() == {}
+            await manager.close(timeout=5)
+            saved = json.loads(next((tmp_path / "jobs").glob("*.json")).read_text(encoding="utf-8"))
+            assert saved["cancelled"] == 1
+            assert saved["succeeded"] == 0
+            assert saved["failed"] == 0
+            assert saved["status"] == "succeeded"
+            assert saved["remaining"] == 0
+
+        asyncio.run(scenario())
+
+    def test_completion_beats_cancel_and_keeps_score(self, tmp_path):
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            stops = []
+
+            def get_fn(cfg, run_id):
+                if not stops:
+                    return {"status": "running", "output": ""}
+                return {"status": "completed", "output": fake_output("000001", "样本")}
+
+            service.submit_analysis(
+                ["000001"], cfg, {"000001": stock()}, "2026-09-30", manager,
+                lambda *args: "run-1", lambda *args: (_ for _ in ()).throw(AssertionError("poll")),
+                stop_run_fn=lambda *args: stops.append("run") or "stopping", get_run_fn=get_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
+            service.cancel_item(service.get_per_code()["000001"]["item_id"], manager)
+            await manager.close(timeout=5)
+            assert service.get_per_code()["000001"]["state"] == "completed"
+            assert service.get_all()["000001"]["report_md"].startswith("# 基本面评级")
+            saved = json.loads(next((tmp_path / "jobs").glob("*.json")).read_text(encoding="utf-8"))
+            assert saved.get("cancelled", 0) == 0
+            assert saved["succeeded"] == 1
+            assert stops  # stop 已发出，但完成结果优先
+
+        asyncio.run(scenario())
+
+    def test_stop_failure_keeps_the_slot_until_terminal(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+            submitted = []
+
+            def submit_fn(cfg, prompt, key):
+                submitted.append(key)
+                return key
+
+            def stop_fn(cfg, run_id):
+                raise HermesApiError("停止失败 HTTP 404: missing")
+
+            def get_fn(cfg, run_id):
+                if release.is_set() and "000001" in run_id:
+                    return {"status": "cancelled", "output": ""}
+                if "600000" in run_id:
+                    return {"status": "completed", "output": fake_output("600000", "乙")}
+                return {"status": "running", "output": ""}
+
+            stocks = {"000001": stock(), "600000": stock(code="600000", name="乙")}
+            service.submit_analysis(
+                ["000001", "600000"], cfg, stocks, "2026-09-30", manager,
+                submit_fn, lambda *args: (_ for _ in ()).throw(AssertionError("poll")),
+                stop_run_fn=stop_fn, get_run_fn=get_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
+            service.cancel_item(service.get_per_code()["000001"]["item_id"], manager)
+            _wait_until(lambda: "取消请求失败" in (service.get_per_code()["000001"].get("error") or ""))
+            assert service.get_per_code()["000001"]["state"] == "cancelling"
+            assert service.get_per_code()["600000"]["state"] == "queued"
+            assert len(submitted) == 1
+            release.set()
+            await manager.close(timeout=5)
+            assert service.get_per_code()["000001"]["state"] == "cancelled"
+            assert service.get_per_code()["600000"]["state"] == "completed"
+            assert len(submitted) == 2
+
+        asyncio.run(scenario())
+
+    def test_confirmed_cancel_changes_the_next_idempotency_key(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            keys = []
+            release = threading.Event()
+            first = {"done": False}
+
+            def submit_fn(cfg, prompt, key):
+                keys.append(key)
+                if not first["done"]:
+                    first["done"] = True
+                    assert release.wait(5)
+                return key
+
+            def get_fn(cfg, run_id):
+                if not release.is_set():
+                    return {"status": "running", "output": ""}
+                if len(keys) == 1:
+                    return {"status": "cancelled", "output": ""}
+                return {"status": "completed", "output": fake_output("000001", "样本")}
+
+            service.submit_analysis(
+                ["000001"], cfg, {"000001": stock()}, "2026-09-30", manager,
+                submit_fn, lambda *args: (_ for _ in ()).throw(AssertionError("poll")),
+                stop_run_fn=lambda *args: "stopping", get_run_fn=get_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
+            service.cancel_item(service.get_per_code()["000001"]["item_id"], manager)
+            release.set()
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "cancelled")
+            service.submit_analysis(
+                ["000001"], cfg, {"000001": stock()}, "2026-09-30", manager,
+                submit_fn, lambda *args: (_ for _ in ()).throw(AssertionError("poll")),
+                stop_run_fn=lambda *args: "stopping", get_run_fn=get_fn)
+            await manager.close(timeout=5)
+            assert keys[0].startswith("quality-000001-2026-09-30-")
+            assert not keys[0].endswith("-c1")
+            assert keys[1].endswith("-c1")
+            assert service.get_all()["000001"]["report_md"].startswith("# 基本面评级")
+
+        asyncio.run(scenario())
+
+    def test_cancel_intent_before_submit_returns_stops_that_run(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            entered = threading.Event()
+            release = threading.Event()
+            stops = []
+
+            def submit_fn(cfg, prompt, key):
+                entered.set()
+                assert release.wait(5)
+                return "run-late"
+
+            service.submit_analysis(
+                ["000001"], cfg, {"000001": stock()}, "2026-09-30", manager,
+                submit_fn, lambda *args: (_ for _ in ()).throw(AssertionError("poll")),
+                stop_run_fn=lambda cfg, run_id: stops.append(run_id) or "stopping",
+                get_run_fn=lambda cfg, run_id: {"status": "cancelled", "output": ""})
+            assert entered.wait(5)
+            assert service.get_per_code()["000001"]["state"] == "running"
+            service.cancel_item(service.get_per_code()["000001"]["item_id"], manager)
+            release.set()
+            await manager.close(timeout=5)
+            assert stops == ["run-late"]
+            assert service.get_per_code()["000001"]["state"] == "cancelled"
+            assert service.get_all() == {}
+
+        asyncio.run(scenario())
+
+    def test_previous_score_survives_cancelled_reattempt(self, tmp_path):
+        async def scenario():
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            service.submit_analysis(
+                ["000001"], CFG, {"000001": stock()}, "2026-09-30", manager,
+                lambda *args: "run-old", lambda *args: fake_output("000001", "样本"))
+            await manager.close(timeout=5)
+            original = service.get_all()["000001"]["report_md"]
+            manager2 = RefreshJobManager(tmp_path / "jobs2")
+            phase = {"stop": False}
+
+            def get_fn(cfg, run_id):
+                if phase["stop"]:
+                    return {"status": "cancelled", "output": ""}
+                return {"status": "running", "output": ""}
+
+            service.submit_analysis(
+                ["000001"], CFG, {"000001": stock()}, "2026-09-30", manager2,
+                lambda *args: "run-new", lambda *args: (_ for _ in ()).throw(AssertionError("poll")),
+                stop_run_fn=lambda *args: phase.__setitem__("stop", True) or "stopping",
+                get_run_fn=get_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
+            service.cancel_item(service.get_per_code()["000001"]["item_id"], manager2)
+            await manager2.close(timeout=5)
+            assert service.get_all()["000001"]["report_md"] == original
+
+        asyncio.run(scenario())
+
+    def test_restart_interrupts_without_replaying_items(self, tmp_path):
+        import threading
+
+        async def scenario():
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+            def poll_fn(cfg, run_id):
+                assert release.wait(5)
+                return fake_output("000001", "样本")
+
+            job = service.submit_analysis(
+                ["000001"], CFG, {"000001": stock()}, "2026-09-30", manager,
+                lambda *args: "run-1", poll_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
+            await manager.close(timeout=0)
+            restored = RefreshJobManager(tmp_path / "jobs").get(job["job_id"])
+            assert restored["status"] == "interrupted"
+            assert restored["retry_codes"] == ["000001"]
+            assert QualityService(tmp_path / "scores.json").get_per_code() == {}
+            release.set()
+            await manager.close(timeout=5)
+
+        asyncio.run(scenario())
+
+    def test_shutdown_still_accounts_for_waiting_cancel(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+
+            def submit_fn(cfg, prompt, key):
+                assert release.wait(5)
+                return key
+
+            service.submit_analysis(
+                ["000001", "600000"], cfg, {"000001": stock(), "600000": stock(code="600000", name="乙")},
+                "2026-09-30", manager, submit_fn,
+                lambda cfg, run_id: fake_output("000001" if "000001" in run_id else "600000", "样本"))
+            _wait_until(lambda: service.get_per_code()["600000"]["state"] == "queued")
+            manager.stop_admission()
+            assert manager.submit("quality", ["000002"], lambda progress: None) is None
+            service.cancel_item(service.get_per_code()["600000"]["item_id"], manager)
+            release.set()
+            await manager.close(timeout=5)
+            saved = json.loads(next((tmp_path / "jobs").glob("*.json")).read_text(encoding="utf-8"))
+            assert saved["cancelled"] == 1
+            assert saved["succeeded"] == 1
+            assert saved["status"] == "succeeded"
+
+        asyncio.run(scenario())
+
+    def test_append_and_reorder_keep_one_waiting_order(self, tmp_path):
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+            stocks = {code: stock(code=code, name=name) for code, name in
+                      (("000001", "甲"), ("000002", "乙"), ("600000", "丙"), ("601318", "丁"))}
+
+            def submit_fn(cfg, prompt, key):
+                if "000001" in key:
+                    assert release.wait(5)
+                return key
+
+            service.submit_analysis(
+                ["000001", "000002", "600000"], cfg, stocks, "2026-09-30", manager, submit_fn,
+                lambda cfg, run_id: fake_output("000001", "甲"))
+            _wait_until(lambda: service.get_per_code()["600000"]["state"] == "queued")
+
+            def append():
+                service.submit_analysis(
+                    ["601318"], cfg, stocks, "2026-09-30", manager, submit_fn,
+                    lambda cfg, run_id: fake_output("601318", "丁"))
+
+            def front():
+                service.move_item(service.get_per_code()["600000"]["item_id"], "front", manager)
+
+            threads = [threading.Thread(target=append), threading.Thread(target=front)]
+            for thread in threads:
+                thread.start()
+            for thread in threads:
+                thread.join(5)
+            assert all(not thread.is_alive() for thread in threads)
+            pending = [code for code, item in service.get_per_code().items() if item["state"] == "queued"]
+            by_position = sorted(pending, key=lambda code: service.get_per_code()[code]["position"])
+            assert by_position == ["600000", "000002", "601318"]
+            release.set()
+            await manager.close(timeout=5)
+
+        asyncio.run(scenario())
+
+    def test_waiting_reorder_sequence_is_the_dispatch_order(self, tmp_path):
+        """A/B/C：C 置顶后 C/A/B，A 上移后 A/C/B，A 下移后 C/A/B，取消 A 后 C/B。"""
+        import threading
+
+        async def scenario():
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=1)
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+            submitted = []
+            stocks = {code: stock(code=code, name=name) for code, name in
+                      (("000001", "跑"), ("000002", "甲"), ("600000", "乙"), ("601318", "丙"))}
+
+            def submit_fn(cfg, prompt, key):
+                submitted.append(key)
+                if "000001" in key:
+                    assert release.wait(5)
+                return key
+
+            def poll_fn(cfg, run_id):
+                code = next(item for item in ("000001", "601318", "600000", "000002") if item in run_id)
+                return fake_output(code, stocks[code].name)
+
+            service.submit_analysis(
+                ["000001", "000002", "600000", "601318"], cfg, stocks, "2026-09-30", manager,
+                submit_fn, poll_fn)
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running"
+                        and service.get_per_code()["601318"]["state"] == "queued")
+            live = service.get_per_code()
+            assert [live["000002"]["position"], live["600000"]["position"], live["601318"]["position"]] == [1, 2, 3]
+            service.move_item(live["601318"]["item_id"], "front", manager)
+            service.move_item(service.get_per_code()["000002"]["item_id"], "up", manager)
+            assert [service.get_per_code()[code]["position"] for code in ("000002", "601318", "600000")] == [1, 2, 3]
+            service.move_item(service.get_per_code()["000002"]["item_id"], "down", manager)
+            assert [service.get_per_code()[code]["position"] for code in ("601318", "000002", "600000")] == [1, 2, 3]
+            queued_at = service.get_per_code()["601318"]["queued_at"]
+            service.cancel_item(service.get_per_code()["000002"]["item_id"], manager)
+            remaining = service.get_per_code()
+            assert remaining["000002"]["state"] == "cancelled"
+            assert [remaining["601318"]["position"], remaining["600000"]["position"]] == [1, 2]
+            assert remaining["601318"]["queued_at"] == queued_at
+            release.set()
+            await manager.close(timeout=5)
+            assert [key.split("-unknown-")[0] for key in submitted] == [
+                "quality-000001-2026-09-30", "quality-601318-2026-09-30", "quality-600000-2026-09-30"]
+
+        asyncio.run(scenario())
+
+    def test_waiting_cancel_before_dispatch_thread_starts(self, tmp_path):
+        import threading
+        import time as time_mod
+
+        async def scenario():
+            service = QualityService(tmp_path / "scores.json")
+            manager = RefreshJobManager(tmp_path / "jobs")
+            gate = threading.Event()
+            submitted = []
+
+            def block(progress):
+                assert gate.wait(10)
+
+            m120 = manager.submit("m120", ["000090"], block)
+            financial = manager.submit("financial", ["000091"], block)
+            _wait_until(lambda: manager.get(m120["job_id"])["status"] == "running"
+                        and manager.get(financial["job_id"])["status"] == "running")
+            stocks = {"000001": stock(), "600000": stock(code="600000", name="乙")}
+
+            def submit_fn(cfg, prompt, key):
+                submitted.append(key)
+                return key
+
+            job = service.submit_analysis(
+                ["000001", "600000"], CFG, stocks, "2026-09-30", manager, submit_fn,
+                lambda cfg, run_id: fake_output("000001" if "000001" in run_id else "600000", "样本"))
+            assert service._progress is None
+            started = time_mod.monotonic()
+            service.cancel_item(service.get_per_code()["600000"]["item_id"], manager)
+            assert time_mod.monotonic() - started < 2
+            assert service.get_per_code()["600000"]["state"] == "cancelled"
+            assert service.get_per_code()["000001"]["state"] == "queued"
+            raw = json.loads((tmp_path / "jobs" / f"{job['job_id']}.json").read_text(encoding="utf-8"))
+            assert raw["cancelled"] == 1
+            assert raw["queue_order"] == ["000001"]
+            assert submitted == []
+            gate.set()
+            await manager.close(timeout=5)
+            assert [key.split("-unknown-")[0] for key in submitted] == ["quality-000001-2026-09-30"]
+            final = manager.get(job["job_id"])
+            assert final["cancelled"] == 1
+            assert final["succeeded"] == 1
+            assert final["status"] == "succeeded"
+            generations = tmp_path / "quality_cancel_generations.json"
+            assert not generations.exists()
 
         asyncio.run(scenario())

@@ -15,6 +15,12 @@ FastAPI worker. This is an in-process thread executor, not a distributed queue.
 - `RefreshJobManager.append_codes(job_id, codes) -> job | None`: quality-only
   durable append into an active job; returns None when the job is missing or
   already terminal. Never called by m120/financial.
+- `RefreshJobManager.note_quality_order(job_id, order) -> job | None`: persist
+  the still-waiting code order on an active quality job. Returns None when the
+  job is missing, not quality, or already terminal.
+- `RefreshJobManager.note_quality_cancel(job_id, code, queue_order) -> job | None`:
+  settle one waiting cancellation before the dispatch thread has a progress
+  callback. Same None conditions. Writes the job before return.
 - Collectors accept optional `on_progress(code, success)` without changing their
   existing integer/DataFrame return values. Financial batch callbacks remain supported.
 
@@ -22,16 +28,27 @@ FastAPI worker. This is an in-process thread executor, not a distributed queue.
 Jobs contain `job_id`, `kind`, `status`, `total`, `processed`, `succeeded`, `failed`,
 `remaining`, `codes`, `failed_codes`, `retry_codes`, `admissions`, `params`, `error`, `message`,
 and Shanghai timezone ISO timestamps. Admission also includes `reused`.
-Statuses: queued/running/succeeded/partial_failed/failed/interrupted.
-`processed=succeeded+failed`; `remaining=total-processed`. `total` counts
+Quality jobs may also contain `cancelled` (absent on old records; treat as 0)
+and `queue_order` (the current waiting codes). Statuses:
+queued/running/succeeded/partial_failed/failed/interrupted.
+For m120/financial, `processed=succeeded+failed`. For quality,
+`processed=succeeded+failed+cancelled`, and `progress(..., outcome="cancelled")`
+is the only cancel path. `outcome="cancelled"` on m120/financial raises.
+`remaining=total-processed`. `total` counts
 accepted items: one per code initially, plus one per appended acceptance
 (quality retry re-admits a code). `admissions[code]` records the expected
 number of completions per code; `progress` rejects codes outside `codes`, and
 counts repeated progress for the same code only up to quality retry re-admission
-(m120/financial still report each code exactly once). Success removes the code
-from `failed_codes`; terminal status uses `failed_codes` (current failures), not
-the cumulative `failed` attempt count, so a retried-and-recovered quality job
-ends `succeeded`. The `message` 失败 figure is `len(failed_codes)`. Success counts collected
+(m120/financial still report each code exactly once). Quality cancel and a later
+success/failure for that code share one attempt tally, so a cancel already
+counted is not written back into `retry_codes` by a duplicate completion.
+Success removes the code
+from `failed_codes`; a cancel does not add it. Terminal status uses `failed_codes`
+(current failures) and `remaining`, not the cumulative `failed` attempt count
+and not `cancelled`, so a job whose remaining work was cancelled and that has
+no current failures ends `succeeded`. The `message` 失败 figure is
+`len(failed_codes)`. When `cancelled` is non-zero the message also appends
+`，取消 {cancelled}`. Success counts collected
 rows; publication failure overrides the whole job to failed and retries all codes.
 Empty selections produce a zero-count succeeded job.
 
@@ -100,6 +117,10 @@ failed, old CSV readable, all requested codes eligible for forced retry.
 ## 6. Tests Required
 `test_refresh_jobs.py`: prompt acceptance, concurrent dedup, counts, shutdown,
 restart interruption, empty jobs, terminal persistence and publication errors.
+Quality cases: waiting cancel settles once through `note_quality_cancel`,
+mixed success/cancel, all-cancel ends `succeeded` with a cancel count, old
+records missing `cancelled` still load, and m120/financial reject
+`outcome="cancelled"`.
 `test_refresh_jobs_api.py`: ASGI acceptance/query, 404/422, financial throttle,
 force merge and string codes. `test_refresh_collectors.py`: real collector
 limit/retry, invalid numeric values, failed atomic publication, corrupt cache.

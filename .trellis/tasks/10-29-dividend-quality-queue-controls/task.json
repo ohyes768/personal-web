@@ -3,7 +3,7 @@
   "name": "dividend-quality-queue-controls",
   "title": "股息率评级活动队列取消与调序",
   "description": "评级弹框只展示正在分析与排队任务；运行中请求真正取消，排队项支持取消、置顶、上移和下移。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "backend/dividend-select",

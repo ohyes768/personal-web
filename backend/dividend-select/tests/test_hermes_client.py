@@ -5,9 +5,11 @@ from src.services import hermes_client
 from src.services.hermes_client import (
     HermesApiError,
     HermesConfig,
+    HermesRunCancelled,
     HermesRunFailed,
     HermesTimeout,
     poll_run,
+    stop_run,
     submit_run,
 )
 
@@ -95,7 +97,7 @@ class TestPoll:
         with pytest.raises(HermesRunFailed):
             poll_run(CFG, "run-1")
 
-    @pytest.mark.parametrize("status", ["failed", "cancelled", "interrupted"])
+    @pytest.mark.parametrize("status", ["failed", "interrupted"])
     def test_poll_failed_terminal_raises(self, monkeypatch, status):
         monkeypatch.setattr(hermes_client.requests, "get",
                             lambda *a, **k: FakeResponse(payload={"status": status}))
@@ -115,3 +117,52 @@ class TestPoll:
         monkeypatch.setattr(hermes_client.requests, "get", boom)
         with pytest.raises(HermesApiError, match="查询请求异常"):
             poll_run(CFG, "run-1")
+
+    def test_stopping_waits_until_cancelled(self, monkeypatch):
+        payloads = [{"status": "stopping"}, {"status": "cancelled"}]
+
+        def fake_get(*args, **kwargs):
+            return FakeResponse(payload=payloads.pop(0))
+
+        monkeypatch.setattr(hermes_client.requests, "get", fake_get)
+        with pytest.raises(HermesRunCancelled, match="cancelled"):
+            poll_run(CFG, "run-1")
+        assert payloads == []
+
+    def test_stop_accepts_without_declaring_terminal(self, monkeypatch):
+        captured = {}
+
+        def fake_post(url, headers=None, timeout=None, json=None):
+            captured.update(url=url, headers=headers, json=json)
+            return FakeResponse(payload={"status": "stopping"})
+
+        monkeypatch.setattr(hermes_client.requests, "post", fake_post)
+        assert stop_run(CFG, "run-1") == "stopping"
+        assert captured["url"] == "http://nas:8642/p/ohyes768/v1/runs/run-1/stop"
+        assert captured["json"] is None
+        assert "Idempotency-Key" not in captured["headers"]
+        assert captured["headers"]["Authorization"] == "Bearer secret"
+
+    def test_stop_cancelled_status_still_needs_poll_confirmation(self, monkeypatch):
+        monkeypatch.setattr(
+            hermes_client.requests, "post",
+            lambda *args, **kwargs: FakeResponse(payload={"status": "cancelled"}),
+        )
+        assert stop_run(CFG, "run-1") == "cancelled"
+
+    def test_stop_http_error_is_not_success(self, monkeypatch):
+        monkeypatch.setattr(
+            hermes_client.requests, "post",
+            lambda *args, **kwargs: FakeResponse(status_code=404, text="missing"),
+        )
+        with pytest.raises(HermesApiError, match="404"):
+            stop_run(CFG, "run-1")
+
+    @pytest.mark.parametrize("payload", [{}, {"status": "running"}, {"status": "completed"}])
+    def test_stop_without_stopping_status_is_not_success(self, monkeypatch, payload):
+        monkeypatch.setattr(
+            hermes_client.requests, "post",
+            lambda *args, **kwargs: FakeResponse(payload=payload),
+        )
+        with pytest.raises(HermesApiError, match="未确认受理"):
+            stop_run(CFG, "run-1")

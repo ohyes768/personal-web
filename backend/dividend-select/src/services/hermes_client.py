@@ -17,7 +17,7 @@ import requests
 
 HTTP_TIMEOUT = 60  # 单次 HTTP 请求超时（秒）
 
-TERMINAL_FAILED_STATUSES = {"failed", "cancelled", "interrupted"}
+TERMINAL_FAILED_STATUSES = {"failed", "interrupted"}
 
 
 class HermesError(Exception):
@@ -34,6 +34,10 @@ class HermesTimeout(HermesError):
 
 class HermesRunFailed(HermesError):
     """run 到达失败终态或输出为空。"""
+
+
+class HermesRunCancelled(HermesRunFailed):
+    """run 被 stop 确认后进入 cancelled。轮询超时或 stopping 不是这个结果。"""
 
 
 @dataclass(frozen=True)
@@ -95,25 +99,67 @@ def submit_run(cfg: HermesConfig, prompt: str, idempotency_key: str) -> str:
     return run_id
 
 
+def get_run(cfg: HermesConfig, run_id: str) -> dict:
+    """单次查询 run 状态。网络异常或非 2xx 抛 HermesApiError，不把超时当成终态。"""
+    try:
+        resp = requests.get(_runs_url(cfg, run_id), headers=_auth_headers(cfg), timeout=HTTP_TIMEOUT)
+    except requests.RequestException as exc:
+        raise HermesApiError(f"查询请求异常: {exc}") from exc
+    if not 200 <= resp.status_code < 300:
+        raise HermesApiError(f"查询失败 HTTP {resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    if not isinstance(data, dict):
+        raise HermesApiError(f"查询响应不是 JSON 对象: {resp.text[:300]}")
+    return data
+
+
+def stop_run(cfg: HermesConfig, run_id: str) -> str:
+    """请求停止运行中的 run。
+
+    官方契约是 POST {base}/p/{profile}/v1/runs/{run_id}/stop，Bearer 鉴权，无请求体。
+    HTTP 2xx 且 status=stopping 只表示已受理，执行器仍在跑；终态以随后的 GET 为准
+    （cancelled 才是确认停止，completed 表示停之前已经跑完）。4xx/5xx 抛 HermesApiError。
+    """
+    try:
+        resp = requests.post(
+            f"{_runs_url(cfg, run_id)}/stop",
+            headers=_auth_headers(cfg),
+            timeout=HTTP_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise HermesApiError(f"停止请求异常: {exc}") from exc
+    if not 200 <= resp.status_code < 300:
+        raise HermesApiError(f"停止失败 HTTP {resp.status_code}: {resp.text[:300]}")
+    try:
+        data = resp.json()
+    except ValueError as exc:
+        raise HermesApiError(f"停止响应不是 JSON: {resp.text[:300]}") from exc
+    if not isinstance(data, dict):
+        raise HermesApiError(f"停止响应不是 JSON 对象: {resp.text[:300]}")
+    status = str(data.get("status") or "")
+    # 2xx 且 status=stopping 才是受理；cancelled 仍不是本地成功，调用方继续轮询确认。
+    if status not in {"stopping", "cancelled"}:
+        raise HermesApiError(f"停止响应未确认受理: {resp.text[:300]}")
+    return status
+
+
 def poll_run(cfg: HermesConfig, run_id: str) -> str:
-    """轮询至终态；completed 返回 output，失败终态/空输出抛错，超时抛 HermesTimeout。"""
-    url = _runs_url(cfg, run_id)
-    headers = _auth_headers(cfg)
+    """轮询至终态；completed 返回 output，失败终态/空输出抛错，超时抛 HermesTimeout。
+
+    cancelled 抛 HermesRunCancelled（HermesRunFailed 的子类）。stopping / unknown 继续等，
+    不能把它们或轮询超时当成已取消。
+    """
     deadline = time.monotonic() + cfg.timeout
     while True:
-        try:
-            resp = requests.get(url, headers=headers, timeout=HTTP_TIMEOUT)
-        except requests.RequestException as exc:
-            raise HermesApiError(f"查询请求异常: {exc}") from exc
-        if not 200 <= resp.status_code < 300:
-            raise HermesApiError(f"查询失败 HTTP {resp.status_code}: {resp.text[:300]}")
-        data = resp.json()
+        data = get_run(cfg, run_id)
         status = str(data.get("status", ""))
         if status == "completed":
             output = str(data.get("output") or "")
             if not output:
                 raise HermesRunFailed(f"run {run_id} completed 但 output 为空")
             return output
+        if status == "cancelled":
+            raise HermesRunCancelled(f"run {run_id} 终态 cancelled")
         if status in TERMINAL_FAILED_STATUSES:
             raise HermesRunFailed(f"run {run_id} 终态 {status}")
         if time.monotonic() >= deadline:

@@ -47,6 +47,15 @@ interface QualityScenario {
   analyzeCalls?: string[][];
   /** mount 重新发现用的最新任务；未设置时返回 null */
   latestJob?: Record<string, unknown> | null;
+  /** 队列取消/调序请求次数，测试可读取 */
+  queueCalls?: { itemId: string; kind: string }[];
+  /** 设为 true 时队列操作直接断网 */
+  queueNetwork?: boolean;
+  /** 非 2xx 时使用；409 可带 detail.per_code 让界面按服务端刷新 */
+  queueStatus?: number;
+  queueBody?: Record<string, unknown>;
+  /** 挡住第一次队列操作，用来断言重复点击不会发出第二次请求 */
+  queueHold?: { promise: Promise<void> };
 }
 
 function perCodeItem(state: string, extra: Record<string, unknown> = {}) {
@@ -77,6 +86,37 @@ async function setup(page: Page, initiallyFavorite = false, analysisDuration?: n
       if (batchAttempts > 1) codes = [...new Set([...codes, ...requested])];
       await route.fulfill({ json: { items, favorites: favorites() } });
     } else if (url.pathname.includes('/favorites/alerts')) await route.fulfill({ json: { items: [], total: 0, enabled_count: 0 } });
+    else if (url.pathname.includes('/quality/queue/')) {
+      const [itemId, kind] = url.pathname.split('/quality/queue/')[1].split('/');
+      if (quality?.queueHold) await quality.queueHold.promise;
+      quality?.queueCalls?.push({ itemId: decodeURIComponent(itemId), kind });
+      if (quality?.queueNetwork) { await route.abort(); return; }
+      if (quality?.queueStatus) {
+        await route.fulfill({ status: quality.queueStatus, json: quality.queueBody ?? { detail: '取消请求失败: HTTP 404' } });
+        return;
+      }
+      if (quality) {
+        const entry = Object.entries(quality.perCode).find(([, item]) => item.item_id === decodeURIComponent(itemId));
+        if (entry && kind === 'cancel') {
+          const next = entry[1].state === 'queued' ? 'cancelled' : 'cancelling';
+          quality.perCode[entry[0]] = { ...entry[1], state: next, error: null };
+        }
+        if (entry && kind === 'move') {
+          const action = route.request().postDataJSON().action as string;
+          const waiting = Object.entries(quality.perCode).filter(([, item]) => item.state === 'queued')
+            .sort((a, b) => Number(a[1].position) - Number(b[1].position));
+          const index = waiting.findIndex(([code]) => code === entry[0]);
+          if (action === 'front' && index > 0) waiting.unshift(waiting.splice(index, 1)[0]);
+          else if (action === 'up' && index > 0) [waiting[index - 1], waiting[index]] = [waiting[index], waiting[index - 1]];
+          else if (action === 'down' && index >= 0 && index < waiting.length - 1) [waiting[index + 1], waiting[index]] = [waiting[index], waiting[index + 1]];
+          waiting.forEach(([code], position) => { quality.perCode[code] = { ...quality.perCode[code], position: position + 1 }; });
+        }
+      }
+      const per = quality?.perCode ?? {};
+      const runningCount = Object.values(per).filter(item => item.state === 'running' || item.state === 'cancelling').length;
+      const queuedCount = Object.values(per).filter(item => item.state === 'queued').length;
+      await route.fulfill({ json: { per_code: per, running_count: runningCount, queued_count: queuedCount } });
+    }
     else if (url.pathname.endsWith('/quality/analyze')) {
       quality?.analyzeCalls?.push(route.request().postDataJSON().codes as string[]);
       await route.fulfill({ json: { job_id: 'job-1', kind: 'quality', status: quality?.jobStatus ?? 'running', total: 3, processed: 0, succeeded: 0, failed: 0, remaining: 3, codes: route.request().postDataJSON().codes, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '', per_code: quality?.perCode ?? {} } });
@@ -227,7 +267,7 @@ test('quality queue shows running and queued stocks, keeps others actionable, an
   await expect(queue).toHaveCount(0);
   await page.getByRole('button', { name: /评级队列/ }).click();
   await expect(queue).toBeVisible();
-  await expect(queue.getByText(/当前无评级任务/)).toBeVisible();
+  await expect(queue.getByText('暂无进行中的任务')).toBeVisible();
   await page.keyboard.press('Escape');
   await expect(queue).toHaveCount(0);
   // 提交一只股票，mock 随后返回 running：空态切换为带实时计时的运行行
@@ -235,11 +275,11 @@ test('quality queue shows running and queued stocks, keeps others actionable, an
   await page.getByRole('button', { name: /评级队列/ }).click();
   quality.perCode['000001'] = perCodeItem('running', { started_at: startedAt, queued_at: startedAt });
   await expect(queue.getByText(/已分析 2分\d+秒/)).toBeVisible({ timeout: 10_000 });
-  await expect(queue.getByText(/当前无评级任务/)).toHaveCount(0);
+  await expect(queue.getByText('暂无进行中的任务')).toHaveCount(0);
   // 追加 000002：同一任务排队；面板显示运行+排队计数
   quality.perCode['000002'] = perCodeItem('queued', { queued_at: new Date().toISOString(), name: '排队公司' });
   await expect(queue.getByText(/运行 1 · 排队 1/)).toBeVisible({ timeout: 10_000 });
-  await expect(queue.getByText('排队中…')).toBeVisible();
+  await expect(queue.getByRole('heading', { name: '排队中' })).toBeVisible();
   // 运行中/排队中股票行内显示状态文本而非按钮，空闲股票 000003 仍可点击
   await expect(page.getByRole('button', { name: '重评', exact: true })).toHaveCount(0);
   // 000001 评级中、000002 排队中都是状态文本；只有空闲的 000003 还有按钮且可点
@@ -261,7 +301,7 @@ test('quality queue recovers after reload and offers retry for failed stock', as
   const quality: QualityScenario = {
     perCode: {
       '000001': perCodeItem('failed', { started_at: new Date(Date.now() - 200_000).toISOString(), finished_at: new Date(Date.now() - 100_000).toISOString() }),
-      '000002': perCodeItem('queued', { queued_at: new Date().toISOString(), name: '排队公司' }),
+      '000002': perCodeItem('queued', { queued_at: new Date().toISOString(), name: '排队公司', position: 1, item_id: 'queued-2' }),
     },
     latestJob: { job_id: 'job-1', kind: 'quality', status: 'running', total: 3, processed: 0, succeeded: 0, failed: 1, remaining: 2, codes: ['000001', '000002', '000003'], failed_codes: ['000001'], retry_codes: ['000001', '000002'], error: null, finished_at: null, message: '' },
     analyzeCalls: [],
@@ -272,10 +312,13 @@ test('quality queue recovers after reload and offers retry for failed stock', as
   // 刷新恢复：mount 发现 running 任务恢复轮询，面板展示失败与排队项
   await page.getByRole('button', { name: /评级队列/ }).click();
   await expect(queue).toBeVisible({ timeout: 10_000 });
-  await expect(queue.getByText(/失败 · 耗时/)).toBeVisible();
-  await expect(queue.getByText('排队中…')).toBeVisible();
-  // 行内重试把失败股票追加重新提交
-  await queue.getByRole('button', { name: '重试', exact: true }).click();
+  await expect(queue.getByText(/失败/)).toHaveCount(0);
+  await expect(queue.getByRole('button', { name: '重试', exact: true })).toHaveCount(0);
+  await expect(queue.getByText('第 1 位')).toBeVisible();
+  await expect(queue.getByText(/进度/)).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  // 失败重试留在列表，不在队列弹框里
+  await page.getByRole('button', { name: '重试', exact: true }).click();
   await expect.poll(() => quality.analyzeCalls?.[0]).toEqual(['000001']);
 });
 
@@ -328,4 +371,115 @@ test('temporary quality query errors keep state and recover automatically', asyn
   // 恢复后提示消失
   quality.failQuery!.value = false;
   await expect(page.getByText('评级进度查询失败，任务不受影响，自动重试中…')).toHaveCount(0, { timeout: 10_000 });
+});
+
+test('quality queue orders waiting rows from the server and cancels them', async ({ page }, testInfo) => {
+  const quality: QualityScenario = {
+    perCode: {
+      '000001': perCodeItem('running', { started_at: new Date(Date.now() - 65_000).toISOString(), item_id: 'run-1', name: '测试公司' }),
+      '000002': perCodeItem('queued', { queued_at: '2026-10-29T10:00:00+08:00', position: 2, item_id: 'wait-2', name: '排队公司' }),
+      '000003': perCodeItem('queued', { queued_at: '2026-10-29T09:00:00+08:00', position: 1, item_id: 'wait-3', name: '空闲公司' }),
+      '000009': perCodeItem('failed', { finished_at: '2026-10-29T08:00:00+08:00', item_id: 'old' }),
+    },
+    queueCalls: [],
+    latestJob: { job_id: 'job-1', kind: 'quality', status: 'running', total: 3, processed: 0, succeeded: 0, failed: 0, remaining: 3, codes: ['000001', '000002', '000003'], failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '' },
+  };
+  await setup(page, false, undefined, quality);
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto('/?tab=screening');
+  const queue = page.getByLabel('评级任务队列');
+  await page.getByRole('button', { name: /评级队列/ }).click();
+  await expect(queue.getByRole('heading', { name: '正在分析' })).toBeVisible();
+  await expect(queue.getByText(/失败/)).toHaveCount(0);
+  await expect(queue.getByText(/进度/)).toHaveCount(0);
+  const waiting = queue.getByRole('list').nth(1);
+  await expect(waiting.getByRole('listitem').first()).toContainText('空闲公司');
+  await expect(waiting.getByRole('listitem').nth(1)).toContainText('排队公司');
+  const first = waiting.getByRole('listitem').first();
+  const second = waiting.getByRole('listitem').nth(1);
+  await expect(first.getByRole('button', { name: '置顶' })).toBeDisabled();
+  await expect(first.getByRole('button', { name: '上移' })).toBeDisabled();
+  await expect(second.getByRole('button', { name: '下移' })).toBeDisabled();
+  await second.getByRole('button', { name: '置顶' }).click();
+  await expect(waiting.getByRole('listitem').first()).toContainText('排队公司');
+  await page.screenshot({ path: testInfo.outputPath('queue-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.screenshot({ path: testInfo.outputPath('queue-mobile.png') });
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await waiting.getByRole('listitem').filter({ hasText: '空闲公司' }).getByRole('button', { name: '取消' }).click();
+  await expect(queue.getByText('空闲公司')).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '分析', exact: true })).toBeEnabled();
+  await page.reload();
+  await page.getByRole('button', { name: /评级队列/ }).click();
+  await expect(page.getByLabel('评级任务队列').getByRole('listitem').filter({ hasText: '排队公司' })).toBeVisible();
+});
+
+test('running cancel stays visible until the server removes it and reports request failures', async ({ page }) => {
+  let releaseHold: () => void = () => {};
+  const quality: QualityScenario = {
+    perCode: {
+      '000001': perCodeItem('running', { started_at: new Date(Date.now() - 10_000).toISOString(), item_id: 'run-1', name: '测试公司' }),
+      '000003': perCodeItem('completed', { finished_at: '2026-10-29T08:00:00+08:00', item_id: 'done' }),
+    },
+    queueCalls: [],
+    queueHold: { promise: new Promise(resolve => { releaseHold = resolve; }) },
+    latestJob: { job_id: 'job-1', kind: 'quality', status: 'running', total: 1, processed: 0, succeeded: 0, failed: 0, remaining: 1, codes: ['000001'], failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '' },
+  };
+  await setup(page, false, undefined, quality);
+  await page.goto('/?tab=screening');
+  const queue = page.getByLabel('评级任务队列');
+  await page.getByRole('button', { name: /评级队列/ }).click();
+  const cancel = queue.getByRole('button', { name: '取消' });
+  await cancel.click();
+  await expect(queue.getByRole('button', { name: '取消中…' })).toBeDisabled();
+  await queue.getByRole('button', { name: '取消中…' }).click({ force: true });
+  releaseHold();
+  await expect.poll(() => quality.queueCalls?.length).toBe(1);
+  await expect(queue.getByText('测试公司')).toBeVisible();
+  quality.perCode['000001'] = { ...quality.perCode['000001'], state: 'cancelled' };
+  await expect(queue.getByText('暂无进行中的任务')).toBeVisible({ timeout: 10_000 });
+
+  quality.queueHold = undefined;
+  quality.queueStatus = 502;
+  quality.perCode['000001'] = perCodeItem('running', { started_at: new Date(Date.now() - 10_000).toISOString(), item_id: 'run-1', name: '测试公司' });
+  await page.reload();
+  await page.getByRole('button', { name: /评级队列/ }).click();
+  await page.getByLabel('评级任务队列').getByRole('button', { name: '取消' }).click();
+  await expect(page.getByLabel('评级任务队列').getByRole('alert')).toContainText('取消请求失败');
+  await expect(page.getByLabel('评级任务队列').getByText('测试公司')).toBeVisible();
+
+  quality.queueStatus = undefined;
+  quality.queueNetwork = true;
+  await page.getByLabel('评级任务队列').getByRole('button', { name: '取消' }).click();
+  await expect(page.getByLabel('评级任务队列').getByRole('alert')).toBeVisible();
+  await expect(page.getByLabel('评级任务队列').getByText('测试公司')).toBeVisible();
+});
+
+test('queue conflict refreshes to the server order', async ({ page }) => {
+  const quality: QualityScenario = {
+    perCode: {
+      '000002': perCodeItem('queued', { position: 1, item_id: 'b', name: '排队公司' }),
+      '000003': perCodeItem('queued', { position: 2, item_id: 'c', name: '空闲公司' }),
+    },
+    queueCalls: [],
+    queueStatus: 409,
+    latestJob: { job_id: 'job-1', kind: 'quality', status: 'running', total: 2, processed: 0, succeeded: 0, failed: 0, remaining: 2, codes: ['000002', '000003'], failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '' },
+  };
+  quality.queueBody = {
+    detail: {
+      message: '任务已开始执行，无法调整排队顺序',
+      per_code: {
+        '000003': perCodeItem('queued', { position: 1, item_id: 'c', name: '空闲公司' }),
+        '000002': perCodeItem('running', { position: null, item_id: 'b', name: '排队公司', started_at: new Date().toISOString() }),
+      },
+    },
+  };
+  await setup(page, false, undefined, quality);
+  await page.goto('/?tab=screening');
+  await page.getByRole('button', { name: /评级队列/ }).click();
+  const queue = page.getByLabel('评级任务队列');
+  await queue.getByRole('listitem').nth(1).getByRole('button', { name: '置顶' }).click();
+  await expect(queue.getByRole('alert')).toContainText('无法调整排队顺序');
+  await expect(queue.getByRole('heading', { name: '正在分析' })).toBeVisible();
+  await expect(queue.getByText('空闲公司')).toBeVisible();
 });
