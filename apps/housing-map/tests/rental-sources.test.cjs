@@ -23,7 +23,7 @@ test('candidate exposes evidence and requires confirmation instead of automatic 
 });
 test('central rental task exposes missing-source feedback', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, {
-    active: true, busy: false, open: true, pipeline: true, jobs: {}, action() {},
+    active: true, busy: false, open: true, pipeline: true, scope: 'maintenance', jobs: {}, action() {},
     errors: { rent: '还没有关联租金来源，请先选择小区并确认来源' },
   }));
   assert.match(html, /采集租金/);

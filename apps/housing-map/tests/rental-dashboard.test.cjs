@@ -36,7 +36,7 @@ const { RentalScopeSelect, RentalSummaryCells } = require('../src/components/das
 const { CollectionControls, normalizeCollectionJob } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 function renderRent(value, error) {
   return renderToStaticMarkup(React.createElement(CollectionControls, {
-    active: true, busy: false, open: true, pipeline: true, action() {},
+    active: true, busy: false, open: true, pipeline: true, scope: 'maintenance', action() {},
     jobs: { rent: normalizeCollectionJob(value) }, errors: error ? { rent: error } : {},
   }));
 }

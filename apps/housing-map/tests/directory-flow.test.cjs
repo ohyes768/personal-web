@@ -12,7 +12,7 @@ const { CollectionControls, CollectionTasksButton, CatalogTable, normalizeCollec
 
 test('rental source matching and data update are distinct Xingfuli-only actions', () => {
   const calls = [];
-  const props = { active: true, busy: false, open: true, jobs: {}, errors: {}, action: (...args) => calls.push(args) };
+  const props = { active: true, busy: false, open: true, scope: 'maintenance', jobs: {}, errors: {}, action: (...args) => calls.push(args) };
   const tree = CollectionControls(props);
   const buttons = [];
   function visit(node) {
@@ -45,7 +45,7 @@ test('incremental rental matching sends explicit scope and respects count and ex
       if (node.type === 'button') found.push(node);
       visit(node.props?.children);
     }
-    visit(CollectionControls({ active: true, busy: false, open: true, jobs, errors: {}, action: (...args) => calls.push(args) }));
+    visit(CollectionControls({ active: true, busy: false, open: true, scope: 'maintenance', jobs, errors: {}, action: (...args) => calls.push(args) }));
     return found;
   }
   const next = buttons({ rentalMatch: { incremental_count: 58 } }).find(b => b.props['data-rental-incremental']);
@@ -62,7 +62,7 @@ test('incremental rental matching sends explicit scope and respects count and ex
 
 test('rental matching and rental update share one task block', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls,
-    { active: true, busy: false, open: true, jobs: {}, errors: {}, action() {} }));
+    { active: true, busy: false, open: true, scope: 'maintenance', jobs: {}, errors: {}, action() {} }));
   const groups = html.match(/<section class="directory-task-group"[\s\S]*?<\/section>/g) || [];
   assert.equal(groups.length, 1, '租金两步应收进同一个区块');
   assert.match(groups[0], /匹配租金来源/);
@@ -165,14 +165,16 @@ test('collection status preserves rental units and nested errors', () => {
     total_communities: 5, errors: { total: 1, items: [{ message: '来源未应用关键词' }] } });
   assert.equal(value.processed, 2); assert.equal(value.total, 5);
   assert.equal(value.errors[0].message, '来源未应用关键词');
-  const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
-    errors: {}, jobs: { rent: value, amap: { running: true, phase: 'running', processed: 1, total: 3 } }, action() {} }));
-  assert.match(html, /部分完成.*已处理 2 \/ 5/); assert.match(html, /来源未应用关键词/);
-  assert.match(html, /停止补全定位/); assert.match(html, /仅已收录住宅/); assert.doesNotMatch(html, /%/);
+  const rent = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
+    scope: 'maintenance', errors: {}, jobs: { rent: value }, action() {} }));
+  assert.match(rent, /部分完成.*已处理 2 \/ 5/); assert.match(rent, /来源未应用关键词/);
+  const admission = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
+    errors: {}, jobs: { amap: { running: true, phase: 'running', processed: 1, total: 3 } }, action() {} }));
+  assert.match(admission, /停止补全定位/); assert.match(admission, /仅已收录住宅/); assert.doesNotMatch(admission, /%/);
 });
 test('rental task separates actual failures from unqueried communities', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
-    errors: {}, jobs: { rent: { running: false, phase: 'partial_failed',
+    scope: 'maintenance', errors: {}, jobs: { rent: { running: false, phase: 'partial_failed',
       association: { checked: 100, failed: 1, deferred: 99 } } }, action() {} }));
   assert.match(html, /查询失败 1 · 未查询 99/);
   assert.doesNotMatch(html, /查询失败 100/);

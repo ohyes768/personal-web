@@ -16,7 +16,7 @@ const filterHints: Record<string, string> = {
   needs_selection: '搜索返回了候选，请核对名称、地址与分期后绑定；拿不准可先跳过。',
   missing: '还没有关联租金来源。可以点开小区后用“探查幸福里来源”，只选主页即可，不需要自己找链接。',
   search_failed: '幸福里来源查找或租房入口核验失败，请点开小区查看原因并重试。',
-  search_deferred: '匹配任务暂停或等待继续；可在“采集任务”中继续匹配租金来源，也可单独探查。',
+  search_deferred: '匹配任务暂停或等待继续；可在“维护采集”中继续匹配租金来源，也可单独探查。',
   skipped: '之前跳过的小区，可在这里恢复处理。' };
 const filterOrder = ['needs_selection', 'missing', 'search_failed', 'search_deferred', 'skipped'];
 

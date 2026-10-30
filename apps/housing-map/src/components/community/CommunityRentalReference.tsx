@@ -93,7 +93,7 @@ export function RentalReferenceContent({ data, view = 'valid' }: { data: RentalD
     return <div className="rental-empty">这个小区尚未关联租金来源，请在上方查找并确认对应小区。</div>;
   }
   if (data.availability === 'no_samples') {
-    return <div className="rental-empty">{data.captured_at ? '已关联来源，但当前筛选下没有可用房源样本。' : '已关联来源，尚未采集租金。在“采集任务”里开始“更新租金数据”即可更新。'}{samplingNotice && <p className="rental-meta">{samplingNotice}</p>}</div>;
+    return <div className="rental-empty">{data.captured_at ? '已关联来源，但当前筛选下没有可用房源样本。' : '已关联来源，尚未采集租金。在“维护采集”里开始“更新租金数据”即可更新。'}{samplingNotice && <p className="rental-meta">{samplingNotice}</p>}</div>;
   }
   if (data.availability === 'source_failed' && data.groups.length === 0) {
     return <div className="rental-empty">最近一次租金采集失败，暂无可展示数据。</div>;
@@ -162,7 +162,7 @@ export default function CommunityRentalReference({ communityId }: { communityId:
       </select></label>
     </div>
     <RentalSourceAssociation key={communityId} communityId={communityId} />
-    <p className="rental-meta">采集在“采集任务”里进行，“更新租金数据”会更新全部已关联小区。</p>
+    <p className="rental-meta">采集在“维护采集”里进行，“更新租金数据”会更新全部已关联小区。</p>
     {!data && !error && <p className="rental-empty" role="status">正在加载租金数据…</p>}
     {error && <div className="rental-empty" role="alert">{error} <button onClick={() => setRetry(v => v + 1)}>重试</button></div>}
     {data && <RentalReferenceContent data={data} view={view} />}

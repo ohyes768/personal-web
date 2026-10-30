@@ -1255,6 +1255,9 @@ body {
 .directory-subtabs { gap: 8px; flex-wrap: wrap; border-bottom: 0; }
 .directory-subtabs button { padding: 6px 12px; border: 1px solid #dce3ec; border-radius: 6px; }
 .directory-subtabs button[aria-pressed=true] { background: #faf1eb; border-color: #b56947; }
+/* 页签行：状态页签靠左，采集入口靠右，省掉一行独立标题的高度 */
+.directory-tabs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.directory-tabs-row > .review-tabs { flex: 1 1 auto; min-width: 0; }
 .review-table { font-size: 13px; }
 .review-table td { max-width: 220px; overflow-wrap: anywhere; }
 .review-table small { display: block; margin-top: 5px; line-height: 1.6; }

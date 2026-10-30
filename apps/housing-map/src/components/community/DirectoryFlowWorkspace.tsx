@@ -62,18 +62,32 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
   return { ...value, total: value.total ?? value.total_communities, processed: value.processed ?? value.processed_communities,
     errors: Array.isArray(value.errors) ? value.errors : value.errors?.items || [] };
 }
+/** 采集任务按归属页签分流: 收录审核收名单与资料类, 小区数据维护收租金与法拍类。 */
+export type TaskScope = 'admission' | 'maintenance';
 type CollectionTask = { id: string; label: string; short: string; stop: string; path: string; hint: string;
-  body?: object; group?: string };
+  body?: object; group?: string; scope: TaskScope };
 const rentalGroupTitle = '租金流程';
 const rentalGroupHint = '先匹配幸福里来源，再更新租金数据；两个动作互斥，不能同时运行。';
 const tasks: CollectionTask[] = [
-  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。重试失败项仅补采网络获取失败的项目，保留成功项；身份冲突和待地点匹配分开处理。', body: { sources: ['tmsf'] } },
-  { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果' },
-  { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。' },
-  { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching', hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。', group: 'rental' },
-  { id: 'rent', label: '更新租金数据', short: '租金更新', stop: '停止更新租金', path: '/rentals/refresh', hint: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计，不会查找或关联来源。', group: 'rental' },
-  { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联' },
+  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。重试失败项仅补采网络获取失败的项目，保留成功项；身份冲突和待地点匹配分开处理。', body: { sources: ['tmsf'] }, scope: 'admission' },
+  { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果', scope: 'admission' },
+  { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。', scope: 'admission' },
+  { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching', hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。', group: 'rental', scope: 'maintenance' },
+  { id: 'rent', label: '更新租金数据', short: '租金更新', stop: '停止更新租金', path: '/rentals/refresh', hint: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计，不会查找或关联来源。', group: 'rental', scope: 'maintenance' },
+  { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联', scope: 'maintenance' },
 ];
+/** 每个页签的采集入口叫法: 按钮短, 弹层标题说全。 */
+const scopeLabels: Record<TaskScope, { button: string; dialog: string }> = {
+  admission: { button: '收录采集', dialog: '收录采集任务' },
+  maintenance: { button: '维护采集', dialog: '维护采集任务' },
+};
+/** 当前页签可见的任务: 新名单流程下用途核对并入收录列表, 不再单独成任务。 */
+function visibleTasks(scope: TaskScope, pipeline: boolean): CollectionTask[] {
+  return tasks.filter(t => t.scope === scope && (!pipeline || t.id !== 'use')).map(t =>
+    pipeline && t.id === 'amap'
+      ? { ...t, label: '匹配楼盘地点与类型', hint: '候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类；多个主体由你选择。' }
+      : pipeline && t.id === 'tmsf' ? { ...t, label: '采集楼盘名单与资料' } : t);
+}
 type TaskGroup = { id: string; title?: string; hint?: string; tasks: CollectionTask[] };
 /** 同一 group 的相邻任务收进同一区块：租金两步（匹配来源 → 更新租金）本是一条流程，不该散在任务列表里。 */
 function taskGroups(list: CollectionTask[]): TaskGroup[] {
@@ -128,13 +142,11 @@ function taskStateOf(t: (typeof tasks)[number], jobs: Record<string, Job | null>
 }
 
 /** 采集任务弹层：触发/停止/完整进度都收在弹层里，页面上不再常驻状态条。 */
-export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {}, pipeline = false }: {
-  pipeline?: boolean;
+export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {}, pipeline = false, scope = 'admission' }: {
+  pipeline?: boolean; scope?: TaskScope;
   active: boolean; jobs: Record<string, Job | null>; errors: Record<string, string>; busy: boolean;
   action: (path: string, method: string, body?: object) => void; open?: boolean; onOpenChange?: (open: boolean) => void }) {
-  const availableTasks = tasks.filter(t => !pipeline || t.id !== 'use').map(t => pipeline && t.id === 'amap'
-    ? { ...t, label: '匹配楼盘地点与类型', hint: '候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类；多个主体由你选择。' }
-    : pipeline && t.id === 'tmsf' ? { ...t, label: '采集楼盘名单与资料' } : t);
+  const availableTasks = visibleTasks(scope, pipeline);
   const renderTask = (t: CollectionTask) => {
     const job = jobs[t.id];
     const running = !!job?.running;
@@ -200,7 +212,7 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
     </div>;
   };
   return <>
-    {open && <DirectoryDialog title="采集任务" onClose={() => onOpenChange(false)}>
+    {open && <DirectoryDialog title={scopeLabels[scope].dialog} onClose={() => onOpenChange(false)}>
       {!active && <p className="directory-warning">名单流程尚未启用，采集暂不可用。</p>}
       {taskGroups(availableTasks).map(group => group.title
         ? <section key={group.id} className="directory-task-group" aria-label={group.title}>
@@ -212,18 +224,20 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
   </>;
 }
 
-/** 标题行右端的采集任务入口：齿轮空闲，运行/失败时以状态点替换并高亮。进度详情走悬浮说明，不占页面高度。 */
-export function CollectionTasksButton({ jobs, errors, onOpen }: {
-  jobs: Record<string, Job | null>; errors: Record<string, string>; onOpen: () => void }) {
-  const running = tasks.filter(t => jobs[t.id]?.running);
-  const failed = tasks.filter(t => errors[t.id] || jobs[t.id]?.error);
+/** 标题行右端的采集入口：齿轮空闲，运行/失败时以状态点替换并高亮。进度详情走悬浮说明，不占页面高度。 */
+export function CollectionTasksButton({ jobs, errors, onOpen, scope = 'admission', pipeline = false }: {
+  jobs: Record<string, Job | null>; errors: Record<string, string>; onOpen: () => void;
+  scope?: TaskScope; pipeline?: boolean }) {
+  const scoped = visibleTasks(scope, pipeline);
+  const running = scoped.filter(t => jobs[t.id]?.running);
+  const failed = scoped.filter(t => errors[t.id] || jobs[t.id]?.error);
   const state = running.length ? 'running' : failed.length ? 'failed' : 'idle';
   const title = running.length
     ? `运行中：${running.map(t => { const job = jobs[t.id]!; return [t.short, taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' '); }).join('；')}`
-    : failed.length ? `有采集任务失败：${failed.map(t => t.short).join('、')}` : '采集任务';
+    : failed.length ? `有采集任务失败：${failed.map(t => t.short).join('、')}` : scopeLabels[scope].dialog;
   return <button type="button" className="btn btn-secondary directory-task-gear" data-state={state} aria-haspopup="dialog"
     title={title} onClick={onOpen}>
-    {state === 'idle' ? <span aria-hidden="true">⚙️</span> : <span className="directory-task-dot" aria-hidden="true" />}采集任务
+    {state === 'idle' ? <span aria-hidden="true">⚙️</span> : <span className="directory-task-dot" aria-hidden="true" />}{scopeLabels[scope].button}
   </button>;
 }
 
@@ -537,14 +551,18 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
   const resumeAdmission = !!detail && detail.admission_state !== 'admitted' && !detail.source_record_id && detail.qualification === 'manual_exclusion';
   const canExclude = catalogCanExclude(detail);
   const maintenance = mode === 'rental' || mode === 'auctions';
+  // 采集任务按页签分流: 收录审核页放名单与资料类, 小区数据维护页放租金与法拍类
+  const scope: TaskScope = maintenance ? 'maintenance' : 'admission';
   const selectedRows = mode === 'admitted' ? items.filter(c => selection.includes(c.community_id)) : [];
   return <section className="directory-page review-workspace" aria-label={maintenance ? '小区数据维护' : '小区收录审核'}>
-    <header className="review-heading"><h2>住宅名单与数据采集</h2>
-      <CollectionTasksButton jobs={summary?.pipeline ? Object.fromEntries(Object.entries(jobs).filter(([id]) => id !== 'use')) : jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
-    <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
-    {maintenance ? <MaintenanceTabs summary={summary} mode={mode} onChange={changeMode} /> :
-      <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />}
+    <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} scope={scope} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
+    {/* 采集入口放在页签行右侧，省掉一行独立标题的高度 */}
+    <div className="directory-tabs-row">
+      {maintenance ? <MaintenanceTabs summary={summary} mode={mode} onChange={changeMode} /> :
+        <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />}
+      <CollectionTasksButton scope={scope} pipeline={!!summary?.pipeline} jobs={jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} />
+    </div>
     {mode !== 'rental' && <CatalogFilters mode={mode} values={filters} propertyTypes={propertyTypes} total={total} loading={loading}
       onChange={(key, value) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); setLoading(true); setSelection([]); }}
       onRemove={key => { setFilters(current => ({ ...current, [key]: '' })); setPage(1); setLoading(true); setSelection([]); }}

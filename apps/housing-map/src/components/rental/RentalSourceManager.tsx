@@ -49,7 +49,7 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
       if (suffix === '/search') {
         setNotice(next.found_count === 0 ? '未找到可确认的候选。可修改关键词后重试，或用下方“探查幸福里来源”。' : '请核对来源名称、位置和分期，再确认关联。');
       } else if (!suffix) {
-        setNotice(method === 'DELETE' ? '已解除关联，旧租金不再展示。' : '关联已保存。在“采集任务”里开始“更新租金数据”即可采集数据。');
+        setNotice(method === 'DELETE' ? '已解除关联，旧租金不再展示。' : '关联已保存。在“维护采集”里开始“更新租金数据”即可采集数据。');
         rentalDataChanged();
       }
       onChanged?.();
@@ -68,7 +68,7 @@ export function RentalSourceAssociation({ communityId, onChanged }: { communityI
         <p>{data.mapping.source_address || '地址未记录'} · 确认时间 {data.mapping.verified_at?.slice(0, 10) || '—'}</p>
         <div className="rental-source-actions"><a href={safeSourceLink(data.mapping.source_url)} target="_blank" rel="noopener noreferrer">查看来源 ↗</a>
           <button className="btn btn-secondary" disabled={busy} onClick={() => setConfirming('remove')}>解除关联</button></div>
-      </div> : <p>尚未关联租金来源。先用下方幸福里探查，或在“采集任务”中匹配租金来源；关联后再更新租金数据。</p>}
+      </div> : <p>尚未关联租金来源。先用下方幸福里探查，或在“维护采集”中匹配租金来源；关联后再更新租金数据。</p>}
       {confirming && <div className="rental-source-confirm" role="group" aria-label="确认来源变更">
         <p>{confirming === 'remove' ? '解除后，这个小区不会再采集或展示原来源租金。确认解除？' : `请确认“${confirming.source_name}”与地图小区是同一地址、同一分期。${data.mapping ? '确认后将替换现有关联，原租金暂不展示。' : ''}`}</p>
         <button className="btn btn-primary" disabled={busy} onClick={() => void act(confirming === 'remove' ? 'DELETE' : 'PUT', '', confirming === 'remove' ? undefined : { source_community_id: confirming.source_community_id })}>确认{confirming === 'remove' ? '解除' : '关联'}</button>
