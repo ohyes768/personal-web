@@ -819,7 +819,7 @@ export default function BinjiangMapPage() {
 
               <div className="panel-section">
                 <div className="panel-title">POI 图层</div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <div className="map-poi-options">
                   {(Object.entries(POI_CONFIG) as [POIType, typeof POI_CONFIG[POIType]][])
                     .filter(([type]) => type !== 'bus' && type !== 'school')
                     .map(([type, config]) => (
@@ -833,14 +833,13 @@ export default function BinjiangMapPage() {
                     </button>
                   ))}
 
-                  <div style={{ marginTop: '4px' }}>
-                    <div style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0' }}>🏫 学校（按学段）</div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                  <div className="map-school-options">
+                    <div className="map-school-label">🏫 学校（按学段）</div>
+                    <div className="map-school-levels">
                       {(Object.entries(SCHOOL_LEVEL_LABELS) as [SchoolLevel, string][]).map(([level, label]) => (
                         <button
                           key={level}
                           className={`poi-toggle ${schoolLevels.has(level) ? 'active' : ''}`}
-                          style={{ padding: '4px 10px', fontSize: '12px' }}
                           onClick={() => toggleSchoolLevel(level)}
                         >
                           <span className="dot" style={{ backgroundColor: SCHOOL_LEVEL_COLORS[level] }} />
@@ -853,7 +852,17 @@ export default function BinjiangMapPage() {
               </div>
 
               <div className="panel-section">
-                <div className="panel-title">价格口径</div>
+                <div className="panel-title map-price-heading">
+                  价格口径
+                  <details className="map-price-help">
+                    <summary aria-label="价格口径说明">?</summary>
+                    <div className="map-price-tooltip">
+                      {priceMode === 'all' && '签=成交价, 挂=要价, 成交价通常低于要价 10-20%; 混合显示时跨小区比色注意口径'}
+                      {priceMode === 'deal' && '仅显示有签约价的小区(真实成交口径), 其余灰色'}
+                      {priceMode === 'listing' && '仅显示有挂牌价的小区(房东要价口径), 其余灰色'}
+                    </div>
+                  </details>
+                </div>
                 <div style={{ display: 'flex', gap: '6px', marginBottom: '4px' }}>
                   {([['all', '全部'], ['deal', '仅签约价'], ['listing', '仅挂牌价']] as const).map(([mode, label]) => (
                     <button
@@ -865,11 +874,6 @@ export default function BinjiangMapPage() {
                       {label}
                     </button>
                   ))}
-                </div>
-                <div style={{ fontSize: '11px', color: 'var(--text-muted)', lineHeight: 1.5 }}>
-                  {priceMode === 'all' && '签=成交价, 挂=要价, 成交价通常低于要价 10-20%; 混合显示时跨小区比色注意口径'}
-                  {priceMode === 'deal' && '仅显示有签约价的小区(真实成交口径), 其余灰色'}
-                  {priceMode === 'listing' && '仅显示有挂牌价的小区(房东要价口径), 其余灰色'}
                 </div>
               </div>
 

@@ -142,6 +142,31 @@ body {
   transform: translateX(calc(100% + 24px));
 }
 
+/* Keep map filters compact; short windows can still reach every option. */
+.control-panel {
+  max-height: calc(100% - 32px);
+  overflow-y: auto;
+}
+
+.control-panel .panel-section { margin-bottom: 12px; }
+.control-panel .panel-section:last-child { margin-bottom: 0; }
+.control-panel .panel-title { margin-bottom: 6px; }
+.control-panel .poi-toggle { white-space: nowrap; }
+.map-poi-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.map-poi-options > .poi-toggle { padding: 5px 8px; gap: 6px; font-size: 12px; }
+.map-school-options { grid-column: 1 / -1; }
+.map-school-label { font-size: 12px; color: var(--text-muted); margin: 4px 0 6px; white-space: nowrap; }
+.map-school-levels { display: grid; grid-template-columns: 1.25fr repeat(3, 1fr); gap: 4px; }
+.map-school-levels .poi-toggle { justify-content: center; padding: 5px 2px; gap: 4px; font-size: 12px; }
+.map-school-levels .dot { flex-shrink: 0; width: 6px; height: 6px; }
+.map-price-heading { position: relative; display: flex; align-items: center; gap: 6px; }
+.map-price-help summary { display: flex; align-items: center; justify-content: center; width: 24px; height: 24px; border: 1px solid var(--border); border-radius: 50%; color: var(--text-primary); cursor: pointer; list-style: none; }
+.map-price-help summary::-webkit-details-marker { display: none; }
+.map-price-help summary:focus-visible { outline: 2px solid var(--accent-warm); outline-offset: 2px; }
+.map-price-help:hover::details-content { content-visibility: visible; }
+.map-price-help:not([open]):hover > .map-price-tooltip { display: block; }
+.map-price-tooltip { position: absolute; bottom: calc(100% + 6px); left: 0; width: 100%; z-index: 20; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-surface); color: var(--text-primary); box-shadow: 0 4px 12px rgba(15, 23, 42, 0.12); font-size: 12px; font-weight: 400; line-height: 1.6; letter-spacing: normal; text-transform: none; }
+
 /* 控制栏收起/展开把手 */
 .panel-toggle {
   position: absolute;
