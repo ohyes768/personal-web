@@ -144,6 +144,13 @@ def query_retryable(view):
             (view.get('state') == 'pending' and (view.get('query_history') or {}).get('state') in {'error', 'incomplete'}))
 
 
+def query_continuable(view):
+    return (query_unqueried(view) or query_retryable(view)
+            or (view.get('state') == 'pending' and (view.get('query_history') or {}).get('state') == 'stale')
+            or view.get('review_reason') == 'request_budget'
+            or '请求预算' in (view.get('error') or '')) and view.get('state') != 'manual'
+
+
 def batch_targets(store):
     from src.services.directory_workflow import inventory
     from src.services.collection_pipeline import active
@@ -339,6 +346,7 @@ class PositionJob:
         targets = batch_targets(self.store)
         value['unqueried'] = sum(query_unqueried(c['position']) for c in targets)
         value['retryable'] = sum(query_retryable(c['position']) for c in targets)
+        value['continuable'] = sum(query_continuable(c['position']) for c in targets)
         return value
 
     def _save(self):
@@ -346,7 +354,7 @@ class PositionJob:
             db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (KEY, dump(self.state)))
 
     def start(self, mode='all', *, community_ids=None):
-        if mode not in {'all', 'refresh_all', 'unqueried', 'retry_failed'}:
+        if mode not in {'all', 'refresh_all', 'unqueried', 'retry_failed', 'continue'}:
             raise ValueError('未知高德匹配模式')
         with self.lock:
             with self.store.db() as db:
@@ -363,13 +371,15 @@ class PositionJob:
             self.worker.start()
             return self.snapshot()
 
-    def _run(self, *, client=None, delay=2, budget=256, mode='all', community_ids=None):
+    def _run(self, *, client=None, delay=2, budget=None, mode='all', community_ids=None):
         owned = client is None
         try:
             from src.services.collection_pipeline import active
             targets = batch_targets(self.store)
             if community_ids is not None:
                 targets = [c for c in targets if c['community_id'] in community_ids]
+            if mode == 'continue':
+                targets = [c for c in targets if query_continuable(c['position'])]
             if mode == 'unqueried':
                 targets = [c for c in targets if query_unqueried(c['position'])]
             if mode == 'retry_failed':
@@ -392,13 +402,14 @@ class PositionJob:
                 current_state = position_view(target, target.get('sources', [])).get('state')
                 needs_subject_type = active(target) and current_state == 'matched' and not (target.get('use_review') or {}).get('state')
                 if current_state == 'manual' or (mode != 'refresh_all' and current_state not in {'pending', 'error'}
-                        and not needs_subject_type and not query_retryable(target['position'])):
+                        and not needs_subject_type and not query_retryable(target['position'])
+                        and not (mode == 'continue' and query_continuable(target['position']))):
                     outcome = 'skipped'
                     with self.lock:
                         by = self.state['skipped_by_state']
                         by[current_state] = by.get(current_state, 0) + 1
                 else:
-                    if (page_client.used if page_client else requests) >= budget:
+                    if budget is not None and (page_client.used if page_client else requests) >= budget:
                         with self.lock:
                             self.state['errors'].append({'message': '达到本轮请求预算，未完成目标可下次重试'})
                         budget_stopped = True
@@ -409,7 +420,7 @@ class PositionJob:
                     try:
                         outcome = position_one(self.store, self.store.path.parent, cid, client,
                                                cancelled=self.cancel.is_set, automatic=True,
-                                               force=mode == 'refresh_all',
+                                               force=mode == 'refresh_all' or (mode == 'continue' and query_continuable(target['position'])),
                                                retry_failed_only=mode == 'retry_failed')
                     except InterruptedError:
                         raise

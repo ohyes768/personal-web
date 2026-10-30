@@ -86,7 +86,7 @@ class AssociationInput(BaseModel):
 
 class DiscoveryInput(BaseModel):
     sources: list[Literal['tmsf']] = Field(default_factory=lambda: ['tmsf'], min_length=1, max_length=1)
-    mode: Literal['all', 'retry_failed'] = 'all'
+    mode: Literal['all', 'retry_failed', 'continue'] = 'all'
 
 
 class AdmissionInput(BaseModel):

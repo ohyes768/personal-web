@@ -134,7 +134,7 @@ class RequestBudgetClient:
     def search_name(self, *args, **kwargs):
         if self.cancel.is_set():
             raise InterruptedError()
-        if self.used >= self.limit:
+        if self.limit is not None and self.used >= self.limit:
             raise RequestBudgetExhausted('达到本轮高德实际请求预算，未完成目标可下次重试')
         if self.used and self.cancel.wait(self.delay):
             raise InterruptedError()

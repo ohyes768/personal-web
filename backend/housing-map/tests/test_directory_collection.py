@@ -5,7 +5,8 @@ import threading
 import pytest
 
 
-def test_retry_failed_targets_known_identities_without_discovery(tmp_path, monkeypatch):
+@pytest.mark.parametrize('mode', ['retry_failed', 'continue'])
+def test_retry_failed_targets_known_identities_without_discovery(tmp_path, monkeypatch, mode):
     from src.services import directory_collection as collection, tmsf_property_type as facts, tmsf_fetcher
     import scripts.fetch_tmsf_binjiang_communities as listing
     store = CommunityRegistry(tmp_path / 'registry.sqlite3')
@@ -20,7 +21,7 @@ def test_retry_failed_targets_known_identities_without_discovery(tmp_path, monke
                       project_id='1', project_siteid='33', property_type_error='timeout',
                       listing_count_error='old', address_error='timeout', market_state='new_house'))
     store.ingest(dict(base, source='fang', source_id='5', name='其他来源', property_type_error='timeout'))
-    store.ingest(dict(base, source_id='6', name='尚未采集'))
+    store.ingest({**base, 'source_id': '6', 'name': '尚未采集', 'property_type': None})
     before = {r['id']: r for r in store.sources()}
     calls = []
     def forbidden():
@@ -38,13 +39,17 @@ def test_retry_failed_targets_known_identities_without_discovery(tmp_path, monke
     monkeypatch.setattr(facts, 'fetch_community_facts', community)
     monkeypatch.setattr(facts, 'fetch_project_facts_by_id', project)
     job = collection.DirectoryJob(store)
-    job.start(['tmsf'], mode='retry_failed')
+    assert job.status()['continuable'] == 4
+    job.start(['tmsf'], mode=mode)
     job.worker.join(timeout=5)
     assert not job.worker.is_alive()
     report = job.state
-    assert set(calls) == {('community', '1'), ('community', '3'), ('project', '1')}
-    assert report['phase'] == 'succeeded' and report['existing'] == 3 and report['new'] == 0
-    assert report['mode'] == 'retry_failed'
+    expected = {('community', '1'), ('community', '3'), ('project', '1')}
+    if mode == 'continue':
+        expected.add(('community', '6'))
+    assert set(calls) == expected
+    assert report['phase'] == 'succeeded' and report['existing'] == len(expected) and report['new'] == 0
+    assert report['mode'] == mode
     assert job.status()['retryable'] == 0
     for row in store.sources():
         if (row['source_kind'], row['source_id']) in calls and row['source'] == 'tmsf':
@@ -295,3 +300,16 @@ def test_directory_job_save_failure_finishes_in_memory(tmp_path, monkeypatch, ca
     assert job.state['phase'] == 'failed' and job.state['running'] is False
     assert any(e['stage'] == 'save' for e in job.state['errors'])
     assert 'Could not persist community collection report' in caplog.text
+
+
+def test_continue_excludes_completed_source_gaps_and_human_conflicts():
+    from src.services.directory_collection import continuable_sources
+    base = dict(source='tmsf', source_kind='community', district='滨江')
+    rows = [dict(base, source_id=str(i), **fields) for i, fields in enumerate([
+        {}, {'property_type_error': 'timeout'},
+        {'collection_error_code': 'missing_facts'},
+        {'collection_error_code': 'identity_mismatch'},
+        {'property_type': '住宅', 'address': '江南大道1号'},
+        {'property_type_checked_at': '2026-10-30'}, {'status': 'ignored'},
+    ])]
+    assert [r['source_id'] for r in continuable_sources(rows)] == ['0', '1']

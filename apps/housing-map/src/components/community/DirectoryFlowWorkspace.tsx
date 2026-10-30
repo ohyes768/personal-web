@@ -50,7 +50,7 @@ type Page<T> = { items: T[]; total: number; page: number; property_types?: strin
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
   failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
-  retryable?: number; unqueried?: number; mode?: 'all' | 'refresh_all' | 'unqueried' | 'retry_failed' | 'full' | 'incremental';
+  retryable?: number; unqueried?: number; continuable?: number; mode?: 'continue' | 'all' | 'refresh_all' | 'unqueried' | 'retry_failed' | 'full' | 'incremental';
   incremental_count?: number; current_community_id?: string; current_community_name?: string; current_step?: string;
   diagnostics?: { requests?: number; cache_hits?: number; wait_seconds?: number; http_seconds?: number; elapsed_seconds?: number; early_stop?: boolean };
   resolutions?: Record<string, number>; evidence_issues?: { name?: string; message: string }[];
@@ -70,7 +70,7 @@ type CollectionTask = { id: string; label: string; short: string; stop: string; 
 const rentalGroupTitle = '租金流程';
 const rentalGroupHint = '先匹配幸福里来源，再更新租金数据；两个动作互斥，不能同时运行。';
 const tasks: CollectionTask[] = [
-  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。重试失败项仅补采网络获取失败的项目，保留成功项；身份冲突和待地点匹配分开处理。', body: { sources: ['tmsf'] }, scope: 'admission' },
+  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。继续采集只补查已发现楼盘中未完成及查询失败的资料，跳过已完成、身份冲突、待地点匹配及来源资料缺失项。', body: { sources: ['tmsf'] }, scope: 'admission' },
   { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果', scope: 'admission' },
   { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。', scope: 'admission' },
   { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching', hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。', group: 'rental', scope: 'maintenance' },
@@ -172,14 +172,11 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
         {t.id === 'rentalMatch' && <button className="btn btn-secondary" data-rental-incremental
           disabled={busy || !active || running || !!rentalBlocked || !job?.incremental_count}
           onClick={() => action(t.path, 'POST', { mode: 'incremental' })}>继续匹配（{job?.incremental_count ?? '—'}）</button>}
-        {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
-          onClick={() => action(t.path, 'POST', { ...t.body, mode: 'retry_failed' })}>
-          重试失败项（{job?.retryable || 0}）</button>}
-        {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running}
-          onClick={() => action(t.path, 'POST', { mode: 'unqueried' })}>继续匹配</button>}
-        {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.retryable}
-          onClick={() => action(t.path, 'POST', { mode: 'retry_failed' })}>
-          重试查询失败（{job?.retryable || 0}）</button>}</div>
+        {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.continuable}
+          onClick={() => action(t.path, 'POST', { ...t.body, mode: 'continue' })}>
+          继续采集（{job?.continuable ?? '—'}）</button>}
+        {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.continuable}
+          onClick={() => action(t.path, 'POST', { mode: 'continue' })}>继续匹配（{job?.continuable ?? '—'}）</button>}</div>
       </div>
       <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
       {t.id === 'rentalMatch' && <p className="directory-task-sub">全量匹配会重新查询所有缺来源小区；继续匹配只查剩余、新增及失败项，跳过已查完的待选择和未找到项。已关联及人工跳过的小区会保留。</p>}
@@ -188,8 +185,8 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
         {job.current_community_name && ` · 当前：${job.current_community_name}`}
         {job.current_step && ` · ${{ search: '搜索小区', homepage: '核对主页', resolving_entry: '寻找租房入口', listing_owner: '核验房源', listing_owner_from_list: '核验列表' }[job.current_step] || '正在处理'}`}
       </p>}
-      {t.id === 'amap' && <p className="directory-task-sub">当前待处理：尚未查询 {job?.unqueried ?? '—'} 条 → 继续匹配 · 查询失败／不完整 {job?.retryable ?? '—'} 条 → 重试查询失败</p>}
-      {t.id === 'amap' && <p className="directory-task-sub">更新全部会重新查询符合条件的楼盘，包括已自动匹配、待确认和未找到的项目，保留人工确认结果；继续匹配只处理尚未查询项目；重试查询失败只处理查询失败或结果不完整的项目。每轮有请求上限。</p>}
+      {t.id === 'amap' && <p className="directory-task-sub">待继续匹配 {job?.continuable ?? '—'} 条（含尚未查询、未完成及查询失败／不完整的项目）。</p>}
+      {t.id === 'amap' && <p className="directory-task-sub">更新全部会重查符合条件的楼盘，保留人工确认结果；继续匹配处理尚未查询、未完成和查询失败／不完整的项目，跳过已完成、未找到及待人工确认项。不设每轮请求总量上限，请求间隔 2 秒。</p>}
       {(problem || message) && <p className="directory-task-line" data-state={state}>
         {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
       </p>}

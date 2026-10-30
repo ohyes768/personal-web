@@ -34,7 +34,19 @@ def retryable_sources(records):
             and collection_resolution(r)['retryable']]
 
 
-def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
+def continuable_sources(records):
+    """Known unfinished details plus retryable failures; never human/source gaps."""
+    return [r for r in records if r['source'] == 'tmsf' and r.get('status') != 'ignored'
+            and r.get('source_kind', 'community') in {'community', 'project'}
+            and (r.get('district') or '').removesuffix('区') == '滨江'
+            and (collection_resolution(r)['retryable'] or
+                 (collection_resolution(r)['state'] == 'facts_pending'
+                  and not r.get('property_type_checked_at')
+                  and not r.get('collection_error_code')
+                  and not r.get('property_type_captured_at')))]
+
+
+def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False, resume=False):
     from scripts.fetch_tmsf_binjiang_communities import fetch_binjiang_communities
     from src.services.tmsf_fetcher import TmsfClient
     from src.services.community_registry import normalized
@@ -45,7 +57,7 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False):
     projects = None
     project_index_error = False
     try:
-        targets = retryable_sources(existing.values()) if retry_failed else []
+        targets = (continuable_sources(existing.values()) if resume else retryable_sources(existing.values())) if retry_failed else []
         discovered = [SimpleNamespace(community_id=r['source_id'], community_name=r['name'],
                          community_alias='', district='滨江', subdistrict=r.get('subdistrict', ''),
                          source_url=r.get('source_url')) for r in targets if r['source_kind'] == 'community'] \
@@ -375,7 +387,7 @@ def _check_sources(sources):
 
 
 def _check_mode(sources, mode):
-    if mode not in {'all', 'retry_failed'} or (mode == 'retry_failed' and sources != ['tmsf']):
+    if mode not in {'all', 'retry_failed', 'continue'} or (mode in {'retry_failed', 'continue'} and sources != ['tmsf']):
         raise ValueError('不支持的采集模式')
 
 
@@ -417,7 +429,8 @@ def collect_names(store, sources, *, cancel=None, adapters=None, progress=None, 
                                             property_type_captured_at=old.get('captured_at'))
                         existing[(record.get('source_kind', 'community'), str(record['source_id']))] = previous
                     kwargs['existing'] = existing
-                    kwargs['retry_failed'] = mode == 'retry_failed'
+                    kwargs['retry_failed'] = mode in {'retry_failed', 'continue'}
+                    kwargs['resume'] = mode == 'continue'
                 for row in adapter(cancel, store.is_ignored, **kwargs):
                     check(cancel)
                     if row.pop('_errors_only', False):
@@ -555,7 +568,8 @@ class DirectoryJob:
                 state = collection_resolution(record)['state']
                 resolutions[state] = resolutions.get(state, 0) + 1
         return {**(self.state or {'running': False, 'phase': 'idle'}), 'resolutions': resolutions,
-                'retryable': len(retryable_sources(self.store.sources()))}
+                'retryable': len(retryable_sources(self.store.sources())),
+                'continuable': len(continuable_sources(self.store.sources()))}
 
     def _match_sources(self, handled):
         if self.cancel.is_set():
@@ -583,7 +597,7 @@ class DirectoryJob:
         with self.lock:
             if self.worker and self.worker.is_alive():
                 raise ValueError('楼盘资料采集正在运行')
-            if mode == 'retry_failed' and not retryable_sources(self.store.sources()):
+            if mode in {'retry_failed', 'continue'} and not (continuable_sources(self.store.sources()) if mode == 'continue' else retryable_sources(self.store.sources())):
                 raise ValueError('当前没有可重试的失败项')
             self.cancel.clear()
             self._save({'running': True, 'phase': 'running', 'mode': mode, 'started_at': now()})

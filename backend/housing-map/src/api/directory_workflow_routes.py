@@ -215,7 +215,7 @@ def position_status():
 
 
 class PositionStart(BaseModel):
-    mode: Literal['all', 'refresh_all', 'unqueried', 'retry_failed'] = 'all'
+    mode: Literal['all', 'refresh_all', 'unqueried', 'retry_failed', 'continue'] = 'all'
 
 
 @router.post('/positions', status_code=202)

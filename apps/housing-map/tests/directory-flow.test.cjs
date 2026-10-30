@@ -94,40 +94,12 @@ test('catalog marks Amap admission address instead of claiming official location
   assert.match(html, /高德主体地址/);
 });
 
-test('TMSF collection separates full update and failed-only retry', () => {
-  const render = (job, props = {}) => renderToStaticMarkup(React.createElement(CollectionControls, {
-    active: true, busy: false, open: true, pipeline: true, errors: {}, jobs: { tmsf: job }, action() {}, ...props }));
-  const html = render({ running: false, phase: 'partial_failed', retryable: 3 });
-  assert.match(html, />更新全部资料<\/button>/);
-  assert.match(html, />重试失败项（3）<\/button>/);
-  assert.doesNotMatch(html, /disabled=""[^>]*>重试失败项/);
-  for (const value of [render({ running: false, phase: 'idle', retryable: 0 }),
-                       render({ running: true, phase: 'running', retryable: 3 }),
-                       render({ running: false, retryable: 3 }, { active: false }),
-                       render({ running: false, retryable: 3 }, { busy: true })]) {
-    assert.match(value, /disabled=""[^>]*>重试失败项/);
-  }
-  assert.match(render({ running: true, phase: 'running', retryable: 3 }), />停止采集<\/button>/);
+test('collection and Amap continuation combine unfinished and failed counts', () => {
   const calls = [];
-  const tree = CollectionControls({ active: true, busy: false, open: true, pipeline: true,
-    jobs: { tmsf: { retryable: 3 } }, errors: {}, action: (...args) => calls.push(args) });
-  const buttons = [];
-  function visit(node) {
-    if (!node || typeof node !== 'object') return;
-    if (Array.isArray(node)) return node.forEach(visit);
-    if (node.type === 'button') buttons.push(node);
-    visit(node.props?.children);
-  }
-  visit(tree);
-  buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === '重试失败项（').props.onClick();
-  assert.deepEqual(calls, [['/directory/collection', 'POST', { sources: ['tmsf'], mode: 'retry_failed' }]]);
-});
-
-test('Amap offers full update, continuation and current-query retry with the correct request mode', () => {
   const props = { active: true, busy: false, open: true, pipeline: true, errors: {},
-    jobs: { amap: { running: false, phase: 'partial_failed', failed: 99, retryable: 2, unqueried: 11 } } };
-  const calls = [];
-  const tree = CollectionControls({ ...props, action: (...args) => calls.push(args) });
+    jobs: { tmsf: { continuable: 5, retryable: 2 }, amap: { continuable: 13, retryable: 2, unqueried: 11 } },
+    action: (...args) => calls.push(args) };
+  const tree = CollectionControls(props);
   const buttons = [];
   function visit(node) {
     if (!node || typeof node !== 'object') return;
@@ -136,27 +108,22 @@ test('Amap offers full update, continuation and current-query retry with the cor
     visit(node.props?.children);
   }
   visit(tree);
-  assert.ok(buttons.some(b => b.props.children === '更新全部'), '高德匹配应提供更新全部入口');
-  buttons.find(b => b.props.children === '更新全部').props.onClick();
-  buttons.find(b => b.props.children === '继续匹配').props.onClick();
-  buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === '重试查询失败（').props.onClick();
-  assert.deepEqual(calls, [['/directory/workflow/positions', 'POST', { mode: 'refresh_all' }],
-    ['/directory/workflow/positions', 'POST', { mode: 'unqueried' }],
-    ['/directory/workflow/positions', 'POST', { mode: 'retry_failed' }]]);
-  const html = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, action() {} }));
-  assert.match(html, /重试查询失败（2）/);
-  assert.match(html, /尚未查询 11 条 → 继续匹配/);
-  assert.match(html, /查询失败／不完整 2 条 → 重试查询失败/);
-  assert.doesNotMatch(html, /重试查询失败（99）/);
-  const empty = renderToStaticMarkup(React.createElement(CollectionControls, { ...props,
-    jobs: { amap: { retryable: 0 } }, action() {} }));
-  assert.match(empty, /disabled=""[^>]*>重试查询失败（0）/);
-  for (const override of [{ busy: true }, { active: false }, { jobs: { amap: { running: true, retryable: 2 } } }]) {
-    const disabled = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, ...override, action() {} }));
-    if (!override.jobs) assert.match(disabled, /disabled=""[^>]*>更新全部<\/button>/);
-    else assert.match(disabled, />停止补全定位<\/button>/);
-    assert.match(disabled, /disabled=""[^>]*>继续匹配<\/button>/);
-    assert.match(disabled, /disabled=""[^>]*>重试查询失败（2）/);
+  for (const label of ['继续采集（', '继续匹配（']) {
+    buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === label).props.onClick();
+  }
+  assert.deepEqual(calls, [
+    ['/directory/collection', 'POST', { sources: ['tmsf'], mode: 'continue' }],
+    ['/directory/workflow/positions', 'POST', { mode: 'continue' }],
+  ]);
+  const render = override => renderToStaticMarkup(React.createElement(CollectionControls, { ...props, ...override }));
+  assert.match(render(), /继续采集（5）/);
+  assert.match(render(), /继续匹配（13）/);
+  assert.doesNotMatch(render(), /重试失败项|重试查询失败/);
+  for (const override of [{ busy: true }, { active: false },
+    { jobs: { tmsf: { continuable: 0 }, amap: { continuable: 0 } } },
+    { jobs: { tmsf: { running: true, continuable: 5 }, amap: { running: true, continuable: 13 } } }]) {
+    assert.match(render(override), /disabled=""[^>]*>继续采集（/);
+    assert.match(render(override), /disabled=""[^>]*>继续匹配（/);
   }
 });
 

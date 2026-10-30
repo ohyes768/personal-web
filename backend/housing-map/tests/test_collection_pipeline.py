@@ -360,7 +360,8 @@ def test_paging_budget_counts_actual_requests(store, tmp_path):
     assert job.snapshot()['phase'] == 'budget_exhausted'
 
 
-def test_retry_scope_and_live_count_ignore_old_job_failures_and_protected_states(store, tmp_path):
+@pytest.mark.parametrize('mode', ['retry_failed', 'continue'])
+def test_retry_scope_and_live_count_ignore_old_job_failures_and_protected_states(store, tmp_path, mode):
     from src.services.directory_position import PositionJob
     def add(name, state, reason=None, error=None):
         c = store.create(name, district='滨江', address='月明路1076号', collection_pipeline_version=RULE)
@@ -393,12 +394,13 @@ def test_retry_scope_and_live_count_ignore_old_job_failures_and_protected_states
                          address='月明路1076号', location='120.20749,30.20226')], 1
     client = Client()
     job.state['failed'] = 0
-    job._run(client=client, delay=0, mode='retry_failed')
-    assert set(client.queries) == {'失败小区', '分页小区'}
-    assert job.snapshot()['total'] == 2 and job.snapshot()['updated'] == 2
+    job._run(client=client, delay=0, mode=mode)
+    expected = {'失败小区', '分页小区'} | ({'预算小区'} if mode == 'continue' else set())
+    assert set(client.queries) == expected
+    assert job.snapshot()['total'] == len(expected) and job.snapshot()['updated'] == len(expected)
     assert job.snapshot()['retryable'] == 0
     client.queries.clear()
-    job._run(client=client, delay=0, mode='retry_failed')
+    job._run(client=client, delay=0, mode=mode)
     assert client.queries == [] and job.snapshot()['total'] == 0
 
 
@@ -429,8 +431,9 @@ def test_position_start_api_accepts_retry_mode_and_keeps_no_body_compatibility(s
         assert client.post('/api/directory/workflow/positions').status_code == 202
         assert client.post('/api/directory/workflow/positions', json={'mode': 'retry_failed'}).status_code == 202
         assert client.post('/api/directory/workflow/positions', json={'mode': 'refresh_all'}).status_code == 202
+        assert client.post('/api/directory/workflow/positions', json={'mode': 'continue'}).status_code == 202
         assert client.post('/api/directory/workflow/positions', json={'mode': 'invalid'}).status_code == 422
-    assert modes == ['all', 'retry_failed', 'refresh_all']
+    assert modes == ['all', 'retry_failed', 'refresh_all', 'continue']
 
 
 @pytest.mark.parametrize('state', ['matched', 'review', 'not_found', 'pending', 'error', 'manual'])
@@ -638,3 +641,49 @@ def test_zero_count_suggestion_allows_alias_subject_lookup(store, tmp_path):
     assert position_one(store, tmp_path, cid, client) == 'updated'
     assert client.queries == ['测试住宅', '测试别名']
     assert position_detail(store, tmp_path, cid)['selected']['source_id'] == 'P1'
+
+
+def test_continuation_scope_includes_unfinished_failed_and_old_budget_stops():
+    from src.services.directory_position import query_continuable
+    assert query_continuable(dict(state='pending'))
+    assert query_continuable(dict(state='error'))
+    assert query_continuable(dict(state='review', review_reason='results_incomplete'))
+    assert query_continuable(dict(state='pending', review_reason='request_budget', checked_at='old'))
+    for state in ['manual', 'matched', 'not_found']:
+        assert not query_continuable(dict(state=state))
+    assert not query_continuable(dict(state='review', review_reason='multiple_subjects'))
+
+
+def test_default_position_batch_has_no_256_request_stop(store, monkeypatch):
+    from src.services import directory_position as positions
+    targets = [dict(community_id=str(i), position=dict(state='pending')) for i in range(300)]
+    monkeypatch.setattr(positions, 'batch_targets', lambda _: targets)
+    monkeypatch.setattr(positions, 'position_view', lambda *args: dict(state='pending'))
+    calls = []
+    def query(*args, **kwargs):
+        calls.append(args[2])
+        return 'updated'
+    monkeypatch.setattr(positions, 'position_one', query)
+    job = positions.PositionJob(store)
+    job.state = dict(running=True, phase='running', processed=0, total=0, updated=0, skipped=0,
+                     review=0, not_found=0, failed=0, skipped_by_state={}, errors=[])
+    job._run(client=object(), delay=0, mode='continue')
+    assert len(calls) == 300
+    assert job.state['phase'] == 'succeeded' and job.state['processed'] == 300
+
+
+def test_unlimited_page_client_keeps_counting_after_256():
+    import threading
+    from src.services.collection_pipeline import RequestBudgetClient
+    class Client:
+        def search_name(self):
+            return [], 0
+    client = RequestBudgetClient(Client, limit=None, delay=0, cancel=threading.Event())
+    for _ in range(300):
+        client.search_name()
+    assert client.used == 300
+
+
+def test_collection_api_accepts_continue_mode():
+    from src.api.directory_routes import DiscoveryInput
+    assert DiscoveryInput(sources=['tmsf'], mode='continue').mode == 'continue'
