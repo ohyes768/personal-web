@@ -84,3 +84,28 @@ Good: 3 failures among 200 successful sources ->3 detail targets and no name-lis
 
 ### Wrong vs Correct
 Wrong: count `last_report.errors` and call the normal full collection endpoint again. Correct: derive current failed source identities from persisted facts and pass `mode='retry_failed'` through the existing shared job.
+
+## Unified manual pending workspace (2026-10-30)
+
+### Scope / Trigger
+Management consolidates admission, rental-source exceptions and auction associations into 已收录 / 待处理 / 不收录. This supersedes the separate rental and auction navigation above; stored business states and original mutation endpoints stay unchanged.
+
+### Signatures
+GET `/directory/workflow/pending?q&district&kind&rental_status&include_skipped&operation&use&page&page_size` returns `items,total,page,page_size,counts,default_pending_total`. `kind=''|admission|auction|rental`; `rental_status=''|needs_selection|search_failed|missing|skipped`; operation/use use catalog enums. Summary adds `unified_pending`; existing `pending` retains its pipeline meaning.
+
+### Contracts
+`directory_pending.project/load/query` is read-only. Rows use `community:<community_id>` for identified communities and `auction:<source_record_id>` for unresolved assets (including stale old target associations). Never merge by name. Each row has name/address/district and independently actionable issues. Rental defaults include needs_selection/search_failed and only proven homepage_not_found for missing: legacy source_reviews labels an idle/unqueried probe as missing, which must not inflate this manual queue. Deferred/running/unqueried work stays in collection tasks. Skipped issues are hidden by default and opt-in through include_skipped.
+Search/region filter before counts; counts are per-kind row counts before kind/status/operation/use and paging; all deduplicates identities and need not equal the category sum. `default_pending_total` is global, independent of temporary search/region/include_skipped. Filter issues before sorting and 30-row paging; stable sort uses priority/name/key. Clamp out-of-range pages. No known district means only all-region searches include that asset. Hidden operation/use filters do not affect other kinds. Non-pipeline instances still expose rental/auction work after directory activation.
+Frontend keeps a single filter toolbar and reusable dialogs. `initialSource=laipai` opens pending with kind=auction. Rental skip/reopen reuse the association API; homepage confirmation uses XingfuliProbe, never the retired bind endpoint. Mutation success and task completion refresh rows/counts; a row with remaining issues stays visible. Mobile uses existing review-table card CSS.
+
+### Validation & Error Matrix
+Inactive directory →409 for pending, readable inactive summary. Invalid kind/status/filter/page or page_size>100 →422. Registry read failures use the existing directory error envelope, not a fabricated empty list. Writes retain original revision and refresh/edit exclusion checks.
+
+### Good / Base / Bad Cases
+Good: one community with two issues is one row with two operations. Base: an unassociated auction remains a separate source record. Bad: joining similarly named sources, adding already paged lists, counting idle rental probes as missing, or treating rental work as an admission change.
+
+### Tests Required
+`test_directory_pending.py`: real API activation/validation, identity separation, remaining issues, skip exclusion, deferred exclusion, stable multi-page ordering, districts and idle-vs-not-found projection. Frontend `pending-workspace.test.cjs`, catalog-filters and community-review assert three navigation entries, dropdown-based filtering, independent row actions and Laipai entry. Desktop/390px browser QA uses disposable fixtures; never send live collection requests just to check layout.
+
+### Wrong vs Correct
+Wrong: `catalog_page + rental_page + auction_page`, then count; `missing` always means searched-and-not-found. Correct: load complete current projections, require stored not-found evidence, group by verified identity, filter/sort and then paginate.

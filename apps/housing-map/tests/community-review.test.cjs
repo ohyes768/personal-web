@@ -30,10 +30,11 @@ test('review table counts communities with separate asset and round clues', () =
   assert.match(html, /用途待核实/); assert.match(html, /审核/);
 });
 
-test('management separates TMSF admission from auction association', () => {
+test('management consolidates manual work under pending', () => {
   const Management = require('../src/components/community/CommunityManagement.tsx').default;
   const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
-  assert.match(html, /已收录/); assert.match(html, /不收录/); assert.match(html, /法拍待关联/);
+  assert.match(html, /已收录/); assert.match(html, /不收录/); assert.match(html, /待处理/);
+  assert.doesNotMatch(html, /法拍待关联|>租金来源</);
   assert.doesNotMatch(html, /待审核小区|先预演|启用自动审核/);
 });
 
