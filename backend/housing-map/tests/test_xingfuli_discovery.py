@@ -212,3 +212,12 @@ def test_search_uses_offset_for_last_page_and_fingerprints_raw_listings(tmp_path
     last = client.search_page_fingerprint
     client.search('天阳半岛国际', 'second_hand', 20)
     assert client.search_page_fingerprint == last
+
+
+@pytest.mark.parametrize('name,expected', [
+    ('贺田尚城(小区)', ''), ('贺田尚城（小区）', ''),
+    ('贺田尚城(小区)(一期)', '一期'), ('贺田尚城(南区)(小区)', '南区'),
+    ('贺田尚城(小区一期)', '小区一期'), ('贺田尚城(公寓)', '公寓'),
+])
+def test_type_label_does_not_hide_real_qualifiers(name, expected):
+    assert disc.phase_of(name) == expected

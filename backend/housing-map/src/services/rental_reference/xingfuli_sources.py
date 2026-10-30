@@ -14,7 +14,7 @@ import math
 
 from src.services.community_registry import normalized, now
 from src.services.rental_reference.providers import rejected_rental_communities
-from src.services.xingfuli_discovery import CHANNEL_ORDER, address_district, phase_of
+from src.services.xingfuli_discovery import CHANNEL_ORDER, address_district, phase_of, without_community_type_label
 from src.services.xingfuli_rentals import list_url
 
 logger = logging.getLogger(__name__)
@@ -28,8 +28,8 @@ def community_names(community):
 
 
 def rental_name_key(value):
-    """Ignore decorative middle dots only; retain phase and identity markers."""
-    return normalized(value).translate(str.maketrans('', '', '·•・‧∙⋅･'))
+    """Ignore middle dots and generic 小区 annotations; retain identity qualifiers."""
+    return normalized(without_community_type_label(value)).translate(str.maketrans('', '', '·•・‧∙⋅･'))
 
 
 def _distance_meters(a_lng, a_lat, b_lng, b_lat):

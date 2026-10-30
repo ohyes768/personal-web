@@ -100,9 +100,14 @@ def _number(value):
     return number if number == number and abs(number) != float('inf') else None
 
 
+def without_community_type_label(name):
+    """Only the generic 小区 annotation is not an identity qualifier."""
+    return re.sub(r'[（(]\s*小区\s*[）)]', '', str(name or ''))
+
+
 def phase_of(name):
     """Qualifier carried by the platform name, e.g. 白金海岸(南区) -> 南区."""
-    match = QUALIFIER.search(str(name or ''))
+    match = QUALIFIER.search(without_community_type_label(name))
     return match.group(1) if match else ''
 
 

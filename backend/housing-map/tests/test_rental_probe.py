@@ -581,3 +581,29 @@ def test_middle_dot_normalization_keeps_phase_conflicts(tmp_path):
     state = run(service(registry, fake, tmp_path))
     assert state['stage'] != probe.STAGE_BOUND
     assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+
+
+@pytest.mark.parametrize('suffix', ['(小区)', '（小区）', '( 小区 )'])
+def test_community_type_suffix_is_not_a_phase_and_can_bind(tmp_path, suffix):
+    registry = setup(tmp_path, name='贺田尚城')
+    platform = '贺田尚城' + suffix
+    fake = FakeDiscovery(search={'贺田尚城': {TOTAL_ID: platform}},
+                         homepages={TOTAL_ID: homepage(name=platform)},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_BOUND
+    assert registry.communities()[0]['community_name'] == '贺田尚城'
+
+
+def test_manual_selection_rechecks_old_false_type_conflict(tmp_path):
+    registry = setup(tmp_path, name='贺田尚城')
+    candidate = {**homepage(name='贺田尚城(小区)'), 'candidate_id': 'second_hand:' + TOTAL_ID,
+                 'conflicts': ['平台名称带分期标记“小区”'], 'evidence': [], 'evidence_gaps': []}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NEEDS_SELECTION, candidates=[candidate])
+    fake = FakeDiscovery(homepages={TOTAL_ID: homepage(name=candidate['name'])},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    state = svc.status('c1')
+    svc.select('c1', candidate['candidate_id'], state['revision'])
+    svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
