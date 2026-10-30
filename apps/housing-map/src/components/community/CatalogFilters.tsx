@@ -3,22 +3,21 @@
 import type { ChangeEvent, ReactNode } from 'react';
 import { positionBucketLabels } from './PositionPanel';
 import { useReviewFilterLabels } from './UseReviewPanel';
-import { rentalCoverageLabels } from './CatalogCoverage';
 
-export type CatalogFilterKey = 'q' | 'district' | 'position' | 'market' | 'property_type' | 'use' | 'auction' | 'rental' | 'operation';
+export type CatalogFilterKey = 'q' | 'district' | 'position' | 'market' | 'property_type' | 'use' | 'operation';
 export type CatalogFilterValues = Record<CatalogFilterKey, string>;
 
 export const emptyCatalogFilters = (): CatalogFilterValues =>
-  ({ q: '', district: '', position: '', market: '', property_type: '', use: '', auction: '', rental: '', operation: '' });
+  ({ q: '', district: '', position: '', market: '', property_type: '', use: '', operation: '' });
 
 export const catalogFilterLabels: Record<CatalogFilterKey, string> = {
   q: '搜索', district: '区域', position: '定位状态', market: '房源类型',
-  property_type: '来源用途', use: '用途核对', auction: '法拍', rental: '租金', operation: '待处理操作',
+  property_type: '来源用途', use: '用途核对', operation: '待处理操作',
 };
 
 /** 每个目录页签适用哪些条件：请求参数、生效摘要与可见控件共用这一份定义。 */
 const scopes: Record<string, { primary: CatalogFilterKey[]; more: CatalogFilterKey[] }> = {
-  admitted: { primary: ['q', 'district', 'market', 'position'], more: ['use', 'auction', 'rental'] },
+  admitted: { primary: ['q', 'district', 'market', 'position'], more: ['use'] },
   pending: { primary: ['q', 'district', 'operation'], more: ['use'] },
   excluded: { primary: ['q', 'district', 'property_type'], more: ['use'] },
   auctions: { primary: ['q'], more: [] },
@@ -44,10 +43,6 @@ export function catalogFilterOptions(key: CatalogFilterKey, propertyTypes: strin
       return [{ value: '', label: '全部待处理操作' }, { value: 'position', label: '地点待处理' }, { value: 'use', label: '用途待确认' }, { value: 'facts', label: '资料待补' }];
     case 'use':
       return [{ value: '', label: '全部用途核对状态' }, ...Object.entries(useReviewFilterLabels).map(([value, label]) => ({ value, label }))];
-    case 'auction':
-      return [{ value: '', label: '全部法拍覆盖' }, { value: 'has', label: '有法拍记录' }, { value: 'none', label: '暂无法拍记录' }];
-    case 'rental':
-      return [{ value: '', label: '全部租金状态' }, ...Object.entries(rentalCoverageLabels).map(([value, label]) => ({ value, label }))];
     default:
       return [];
   }
