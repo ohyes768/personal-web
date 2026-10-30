@@ -13,6 +13,34 @@ const CatalogFiltersModule = require('../src/components/community/CatalogFilters
 const { default: CatalogFilters, catalogFilterParams, catalogFilterSummary, catalogFilterScope,
   catalogFiltersForMode, emptyCatalogFilters } = CatalogFiltersModule;
 
+test('admission states contain no rental or auction work', () => {
+  const html = renderToStaticMarkup(React.createElement(CatalogTabs, {
+    summary: { active: true, pipeline: true, admitted: 8, pending: 3, excluded: 5, auction_pending: 99 },
+    mode: 'pending', onChange() {},
+  }));
+  assert.equal((html.match(/<button/g) || []).length, 3);
+  assert.doesNotMatch(html, /法拍|租金|99/);
+  assert.match(html, /待处理（3）/);
+});
+
+test('management has two main tabs and routes maintenance to its own actions', () => {
+  const { ManagementTabs } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+  const changes = [];
+  for (const mode of ['admitted', 'pending', 'excluded', 'rental', 'auctions']) {
+    const tree = ManagementTabs({ mode, onChange: value => changes.push(value) });
+    const html = renderToStaticMarkup(tree);
+    assert.equal((html.match(/<button/g) || []).length, 2);
+    assert.match(html, /收录审核/);
+    assert.match(html, /小区数据维护/);
+    assert.match(html, new RegExp(`aria-pressed="true">${['rental', 'auctions'].includes(mode) ? '小区数据维护' : '收录审核'}`));
+  }
+  const tree = ManagementTabs({ mode: 'pending', onChange: value => changes.push(value) });
+  tree.props.children[1].props.onClick();
+  const maintenance = ManagementTabs({ mode: 'auctions', onChange: value => changes.push(value) });
+  maintenance.props.children[0].props.onClick();
+  assert.deepEqual(changes, ['rental', 'admitted']);
+});
+
 test('pipeline tabs split pending from final exclusions with distinct counts and queries', () => {
   const summary = { active: true, pipeline: true, admitted: 89, pending: 254, excluded: 355, auction_pending: 32 };
   const html = renderToStaticMarkup(React.createElement(CatalogTabs, { summary, mode: 'pending', onChange() {} }));

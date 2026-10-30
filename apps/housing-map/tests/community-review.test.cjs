@@ -33,7 +33,9 @@ test('review table counts communities with separate asset and round clues', () =
 test('management separates TMSF admission from auction association', () => {
   const Management = require('../src/components/community/CommunityManagement.tsx').default;
   const html = renderToStaticMarkup(React.createElement(Management, { onChanged() {} }));
-  assert.match(html, /已收录/); assert.match(html, /不收录/); assert.match(html, /法拍待关联/);
+  assert.match(html, /收录审核/); assert.match(html, /小区数据维护/);
+  assert.match(html, /已收录/); assert.match(html, /不收录/);
+  assert.doesNotMatch(html, /法拍待关联/);
   assert.doesNotMatch(html, /待审核小区|先预演|启用自动审核/);
 });
 

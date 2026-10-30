@@ -30,10 +30,17 @@ export function catalogScope(mode: string, pipeline = false) {
 export function CatalogTabs({ summary, mode, onChange }: { summary: Summary | null; mode: string; onChange: (mode: string) => void }) {
   const tabs = [['admitted', '已收录', summary?.admitted],
     ...(summary?.pipeline ? [['pending', '待处理', summary.pending]] : []),
-    ['excluded', '不收录', summary?.pipeline ? Math.max(0, summary.excluded - (summary.pending || 0)) : summary?.excluded],
-    ['auctions', '法拍待关联', summary?.auction_pending], ['rental', '租金来源', null]];
-  return <div className="review-tabs">{tabs.map(([key, label, count]) =>
+    ['excluded', '不收录', summary?.pipeline ? Math.max(0, summary.excluded - (summary.pending || 0)) : summary?.excluded]];
+  return <div className="review-tabs directory-review-states" role="group" aria-label="收录审核状态">{tabs.map(([key, label, count]) =>
     <button key={key} aria-pressed={mode === key} onClick={() => onChange(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
+}
+
+export function ManagementTabs({ mode, onChange }: { mode: string; onChange: (mode: string) => void }) {
+  const maintenance = mode === 'rental' || mode === 'auctions';
+  return <div className="review-tabs" role="group" aria-label="管理工作区">
+    <button aria-pressed={!maintenance} onClick={() => { if (maintenance) onChange('admitted'); }}>收录审核</button>
+    <button aria-pressed={maintenance} onClick={() => { if (!maintenance) onChange('rental'); }}>小区数据维护</button>
+  </div>;
 }
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
@@ -544,13 +551,20 @@ export default function DirectoryFlowWorkspace({ onChanged, initialSource = '', 
   }
   const resumeAdmission = !!detail && detail.admission_state !== 'admitted' && !detail.source_record_id && detail.qualification === 'manual_exclusion';
   const canExclude = catalogCanExclude(detail);
+  const maintenance = mode === 'rental' || mode === 'auctions';
   const selectedRows = mode === 'admitted' ? items.filter(c => selection.includes(c.community_id)) : [];
   return <section className="directory-page review-workspace" aria-label="小区数据管理">
     <header className="review-heading"><h2>住宅名单与数据采集</h2>
       <CollectionTasksButton jobs={summary?.pipeline ? Object.fromEntries(Object.entries(jobs).filter(([id]) => id !== 'use')) : jobs} errors={jobErrors} onOpen={() => setTasksOpen(true)} /></header>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
     <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
-    <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />
+    <ManagementTabs mode={mode} onChange={changeMode} />
+    {maintenance ? <div className="directory-actions directory-maintenance-filter">
+      <label>维护事项<select value={mode} onChange={e => changeMode(e.target.value)}>
+        <option value="rental">租金来源</option>
+        <option value="auctions">法拍待关联{summary ? `（${summary.auction_pending}）` : ''}</option>
+      </select></label>
+    </div> : <CatalogTabs summary={summary} mode={mode} onChange={changeMode} />}
     {mode !== 'rental' && <CatalogFilters mode={mode} values={filters} propertyTypes={propertyTypes} total={total} loading={loading}
       onChange={(key, value) => { setFilters(current => ({ ...current, [key]: value })); setPage(1); setLoading(true); setSelection([]); }}
       onRemove={key => { setFilters(current => ({ ...current, [key]: '' })); setPage(1); setLoading(true); setSelection([]); }}

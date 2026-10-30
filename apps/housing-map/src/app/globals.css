@@ -1251,6 +1251,11 @@ body {
 .review-tabs { display: flex; gap: 24px; border-bottom: 1px solid #dce3ec; margin: 18px 0; }
 .review-tabs button { padding: 12px 2px; border: 0; border-bottom: 3px solid transparent; background: none; color: #66768c; font-weight: 600; cursor: pointer; }
 .review-tabs button[aria-pressed=true] { color: #a65f40; border-bottom-color: #b56947; }
+.directory-review-states { gap: 8px; flex-wrap: wrap; border-bottom: 0; }
+.directory-review-states button { padding: 6px 12px; border: 1px solid #dce3ec; border-radius: 6px; }
+.directory-review-states button[aria-pressed=true] { background: #faf1eb; border-color: #b56947; }
+.directory-maintenance-filter { margin: 18px 0; }
+.directory-maintenance-filter label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 .review-table { font-size: 13px; }
 .review-table td { max-width: 220px; overflow-wrap: anywhere; }
 .review-table small { display: block; margin-top: 5px; line-height: 1.6; }
