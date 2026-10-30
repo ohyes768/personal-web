@@ -15,7 +15,7 @@ import math
 
 from src.services.community_registry import normalized, now
 from src.services.rental_reference.providers import rejected_rental_communities
-from src.services.xingfuli_discovery import address_district, phase_of
+from src.services.xingfuli_discovery import CHANNEL_ORDER, address_district, phase_of
 from src.services.xingfuli_rentals import list_url
 
 logger = logging.getLogger(__name__)
@@ -273,9 +273,9 @@ def _auto_match(registry, client, community, *, budget):
     community_id = community['community_id']
     found = False
     for name in community_names(community)[:2]:
-        # The second-hand channel names the whole community; the rent
-        # channel can answer with a phase identity instead.
-        for channel in ('second_hand', 'rent'):
+        # Same identity channels as the on-demand probe. Rent search is not used
+        # to find the neighborhood id.
+        for channel in CHANNEL_ORDER:
             if client.request_count >= budget:
                 return 'deferred'
             try:

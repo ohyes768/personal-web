@@ -28,9 +28,11 @@ SEARCH_CHANNELS = {
     'neighborhood': (4, 94349530172, 'neighborhood_list'),
 }
 SEARCH_PARAMS = frozenset({'city_id', 'house_type', 'channel_id', 'full_text', 'count', 'offset', 'page_type'})
-# Channel order used by the bounded discovery: the cheapest channel that can
-# name a whole community comes first.
-CHANNEL_ORDER = ('second_hand', 'rent', 'neighborhood')
+# Identity search only. Second-hand names the whole community; the neighborhood
+# channel adds address and coordinates. Rent search is not an identity source:
+# it misses communities, returns city-wide listings, and can split one community
+# into phases. Rental listings are fetched later, after the neighborhood id is known.
+CHANNEL_ORDER = ('second_hand', 'neighborhood')
 
 QUALIFIER = re.compile(r'[（(]([^（()）]{1,10})[）)]')
 RENT_TITLE = re.compile(r'^[整合]租[·.]\s*(.+?)\s*\d+室')

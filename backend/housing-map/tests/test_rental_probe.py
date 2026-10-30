@@ -84,6 +84,17 @@ def run(service, community_id='c1'):
     return service.status(community_id)
 
 
+def test_identity_search_uses_only_second_hand_and_neighborhood(tmp_path):
+    registry = setup(tmp_path)
+    fake = FakeDiscovery()
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_NO_HOMEPAGE
+    assert [call for call in fake.calls if call[0] == 'search'] == [
+        ('search', '测试花园', 'second_hand'),
+        ('search', '测试花园', 'neighborhood'),
+    ]
+
+
 def test_single_strong_candidate_binds_without_asking(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(

@@ -80,7 +80,8 @@ def test_failed_competitor_never_allows_automatic_binding(tmp_path):
     fake.community_info = read
     state = run(service(reg, fake, tmp_path))
     assert state['stage'] == STAGE_NEEDS_SELECTION
-    assert ('search', '测试花园', 'rent') in fake.calls
+    assert ('search', '测试花园', 'neighborhood') in fake.calls
+    assert not any(call[0] == 'search' and call[2] == 'rent' for call in fake.calls)
     assert not any(c[0] == 'listing' for c in fake.calls)
 
 
@@ -88,15 +89,15 @@ def test_restart_reuses_successful_empty_searches_and_full_refresh_bypasses(tmp_
     reg = setup(tmp_path)
     first = FakeDiscovery()
     run(service(reg, first, tmp_path))
-    assert len(first.calls) == 3
+    assert len(first.calls) == 2
     second = FakeDiscovery()
     state = run(service(reg, second, tmp_path))
     assert second.calls == []
-    assert state['diagnostics']['cache_hits'] == 3
+    assert state['diagnostics']['cache_hits'] == 2
     third = FakeDiscovery()
     batch = SourceMatchingService(reg, directory=tmp_path / 'rentals', discovery_factory=lambda **kw: third)
     batch.start(mode='full'); batch._thread.join(5)
-    assert len(third.calls) == 3
+    assert len(third.calls) == 2
 
 
 def test_incomplete_cached_search_is_retried_live_within_window(tmp_path):
@@ -118,9 +119,9 @@ def test_incremental_skips_finished_missing_but_full_rechecks(tmp_path):
     assert svc.status()['incremental_count'] == 0
     svc.start(mode='incremental'); svc._thread.join(5)
     assert svc.status()['total'] == 0
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 2
     svc.start(mode='full'); svc._thread.join(5)
-    assert len(fake.calls) == 6
+    assert len(fake.calls) == 4
 
 
 def test_incremental_uses_legacy_remaining_and_retries_failures(tmp_path):
@@ -170,14 +171,14 @@ def test_cache_expiry_corruption_and_identity_change_force_requery(tmp_path):
             step['expires_at'] = 0
         db.execute('UPDATE meta SET value=? WHERE key=?', (json.dumps(state), key))
     fake = FakeDiscovery(); run(service(reg, fake, tmp_path))
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 2
     with reg.db() as db:
         db.execute('UPDATE meta SET value=? WHERE key=?', ('not-json', key))
     fake = FakeDiscovery(); run(service(reg, fake, tmp_path))
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 2
     reg.update('c1', name='测试花园', aliases=[], address='新路1号')
     fake = FakeDiscovery(); run(service(reg, fake, tmp_path))
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 2
 
 
 def test_steps_survive_process_recreation_after_partial_search(tmp_path):
@@ -185,12 +186,12 @@ def test_steps_survive_process_recreation_after_partial_search(tmp_path):
     reg = setup(tmp_path)
     class Interrupted(FakeDiscovery):
         def search(self, name, channel):
-            if channel == 'rent':
+            if channel == 'neighborhood':
                 raise RentalCrawlCancelled([], None)
             return super().search(name, channel)
     assert run(service(reg, Interrupted(), tmp_path))['stage'] == 'cancelled'
     fake = FakeDiscovery(); state = run(service(reg, fake, tmp_path))
-    assert fake.calls == [('search', '测试花园', 'rent'), ('search', '测试花园', 'neighborhood')]
+    assert fake.calls == [('search', '测试花园', 'neighborhood')]
     assert state['diagnostics']['cache_hits'] == 1
 
 
@@ -201,7 +202,7 @@ def test_upstream_failures_are_not_saved_as_empty_results(tmp_path):
             raise ValueError('verification required')
     assert run(service(reg, Broken(), tmp_path))['stage'] == 'upstream_failed'
     fake = FakeDiscovery(); run(service(reg, fake, tmp_path))
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 2
 
 
 def test_restored_identity_refreshes_seeds_and_ownership(tmp_path):
@@ -227,7 +228,7 @@ def test_early_stop_can_be_disabled_for_comparable_request_baseline(tmp_path, mo
     monkeypatch.setenv('HOUSING_XINGFULI_EARLY_STOP', '0')
     fake = strong()
     assert run(service(setup(tmp_path), fake, tmp_path))['stage'] == STAGE_BOUND
-    assert len(fake.calls) == 7
+    assert len(fake.calls) == 6
 
 
 def test_diagnostics_accumulate_across_communities(tmp_path):
@@ -238,7 +239,7 @@ def test_diagnostics_accumulate_across_communities(tmp_path):
     reg.associate(fact['id'], 'c2')
     svc = SourceMatchingService(reg, directory=tmp_path / 'rentals', discovery_factory=lambda **kw: FakeDiscovery())
     svc.start(mode='full'); svc._thread.join(5)
-    assert svc.status()['diagnostics']['requests'] == 6
+    assert svc.status()['diagnostics']['requests'] == 4
 
 
 def test_truncated_search_never_autobinds(tmp_path):
@@ -259,7 +260,7 @@ def test_damaged_cached_steps_are_requeried(tmp_path):
         db.execute('UPDATE meta SET value=? WHERE key=?', (json.dumps(payload), key))
     fake = FakeDiscovery()
     assert run(service(reg, fake, tmp_path))['stage'] == 'homepage_not_found'
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 2
 
 
 def test_cache_can_be_disabled(tmp_path, monkeypatch):
@@ -267,7 +268,7 @@ def test_cache_can_be_disabled(tmp_path, monkeypatch):
     run(service(reg, FakeDiscovery(), tmp_path))
     monkeypatch.setenv('HOUSING_XINGFULI_DISCOVERY_CACHE', '0')
     fake = FakeDiscovery(); run(service(reg, fake, tmp_path))
-    assert len(fake.calls) == 3
+    assert len(fake.calls) == 2
 
 
 def test_completed_http_step_survives_abrupt_process_exit(tmp_path):
@@ -279,7 +280,7 @@ def test_completed_http_step_survives_abrupt_process_exit(tmp_path):
         from tests.test_rental_probe import FakeDiscovery, service, run
         class ExitAfterFirst(FakeDiscovery):
             def search(self, name, channel):
-                if channel == 'rent':
+                if channel == 'neighborhood':
                     os._exit(0)
                 return super().search(name, channel)
         directory = Path(sys.argv[1])
@@ -291,7 +292,7 @@ def test_completed_http_step_survives_abrupt_process_exit(tmp_path):
     fake = FakeDiscovery()
     state = run(service(reg, fake, tmp_path))
     assert state['diagnostics']['cache_hits'] == 1
-    assert fake.calls == [('search', '测试花园', 'rent'), ('search', '测试花园', 'neighborhood')]
+    assert fake.calls == [('search', '测试花园', 'neighborhood')]
 
 
 def test_startup_recovery_does_not_append_new_communities(tmp_path):

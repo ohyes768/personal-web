@@ -112,7 +112,7 @@ def test_ambiguous_candidates_do_not_fetch_entries_until_selected(tmp_path):
     svc = probe(reg, responses, tmp_path)
     state = run(svc)
     assert state['stage'] == 'needs_homepage_selection'
-    assert state['diagnostics']['requests'] == 5  # Three channels, two identities.
+    assert state['diagnostics']['requests'] == 4  # Two identity channels, two homepages.
     assert set(responses.paths()) == {'/f100/api/search', '/f100/api/neighborhood/info'}
     assert all(c['rent_total'] is None and c['seeds'] == [] for c in state['candidates'])
     chosen = next(c for c in state['candidates'] if c['neighborhood_id'] == TOTAL_ID)

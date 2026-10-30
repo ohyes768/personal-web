@@ -136,7 +136,7 @@ def test_a_seed_whose_list_belongs_elsewhere_is_never_bound(tmp_path):
 def test_a_phase_variant_is_never_bound_automatically(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {PHASE_ID: ('测试花园(南区)', [SEED])}},
+        search={('测试花园', 'neighborhood'): {PHASE_ID: ('测试花园(南区)', [SEED])}},
         homepages={PHASE_ID: homepage(neighborhood_id=PHASE_ID, name='测试花园(南区)')},
         owners={SEED: PHASE_ID}, lists={SEED: PHASE_ID})
     report = auto_discover(registry, fake, registry.communities())
@@ -147,7 +147,7 @@ def test_a_phase_variant_is_never_bound_automatically(tmp_path):
 def test_a_different_name_is_never_bound_automatically(tmp_path):
     registry = setup(tmp_path)
     fake = FakeDiscovery(
-        search={('测试花园', 'rent'): {TOTAL_ID: ('幸福人家', [SEED])}},
+        search={('测试花园', 'neighborhood'): {TOTAL_ID: ('幸福人家', [SEED])}},
         homepages={TOTAL_ID: homepage(name='幸福人家')}, owners={SEED: TOTAL_ID},
         lists={SEED: TOTAL_ID})
     report = auto_discover(registry, fake, registry.communities())
