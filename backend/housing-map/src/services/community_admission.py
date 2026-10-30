@@ -2,6 +2,7 @@
 import json
 import math
 import sqlite3
+from collections import defaultdict
 from pathlib import Path
 
 from src.services.community_address import effective_address
@@ -109,13 +110,17 @@ def community_views(store, data_dir, *, deleted=False, coordinates=None, drop_id
         from src.services.directory_policy import enabled
         directory_mode = enabled(db)
         admissions = {r['cid']: json.loads(r['payload']) for r in db.execute('SELECT * FROM community_admission')}
+    matched = defaultdict(list)
+    for record in sources:
+        if record['status'] == 'matched':
+            matched[record['community_id']].append(record)
     result = []
     for community in communities:
         cid = community['community_id']
         coordinate = coordinates.get(cid)
         if community.get('longitude') is not None and community.get('latitude') is not None:
             coordinate = {**community, 'formatted_address': community.get('geographic_address') or community.get('address', '')}
-        records = [r for r in sources if r['community_id'] == cid and r['status'] == 'matched']
+        records = matched[cid]
         if community.get('longitude') is None and community.get('latitude') is None:
             point = source_position(community, records)
             if point:

@@ -385,6 +385,10 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
   const finishes = useRef<Record<string, string>>({});
   const optimistic = useRef<string | null>(null);
   const changed = () => { detailVersion.current += 1; setRevision(v => v + 1); setDetail(null); setAuction(null); onChanged(); };
+  const flowActive = summary?.active;
+  const pipeline = !!summary?.pipeline;
+  // Counts depend on search scope and data changes, not the current page or
+  // classification filter. A slow count must not hold up an already active list.
   useEffect(() => {
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -392,10 +396,19 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
         const counts = await workflowRequest<Summary>(`/directory/workflow/summary?${new URLSearchParams({ q: filters.q, district: filters.district })}`, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         setSummary(counts);
-        if (!counts.active) { setLoading(false); return; }
+        if (!counts.active) setLoading(false);
+      } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '统计加载失败'); setLoading(false); } }
+    }, 200);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [filters.q, filters.district, revision]);
+  useEffect(() => {
+    if (!flowActive) return;
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      try {
         if (mode === 'rental') { setLoading(false); return; }
         const path = mode === 'auctions' ? `/directory/workflow/auctions?${new URLSearchParams({ q: filters.q, page: String(page), include_skipped: String(showSkipped) })}`
-          : `/directory/workflow/catalog?${new URLSearchParams({ ...catalogScope(mode, counts.pipeline), page: String(page), ...catalogFilterParams(mode, filters) })}`;
+          : `/directory/workflow/catalog?${new URLSearchParams({ ...catalogScope(mode, pipeline), page: String(page), ...catalogFilterParams(mode, filters) })}`;
         const packet = await workflowRequest<Page<CatalogRow> | Page<Auction>>(path, 'GET', undefined, controller.signal);
         if (controller.signal.aborted) return;
         if (page > 1 && (page - 1) * 30 >= packet.total) { setPage(Math.max(1, Math.ceil(packet.total / 30))); return; }
@@ -405,7 +418,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
       } catch (e) { if (!controller.signal.aborted) { setError(e instanceof Error ? e.message : '名单加载失败'); setLoading(false); } }
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [mode, filters, page, showSkipped, revision]);
+  }, [mode, filters, page, showSkipped, revision, flowActive, pipeline]);
   useEffect(() => {
     if (!summary?.active) return;
     const controller = new AbortController(); let timer: ReturnType<typeof setTimeout>;

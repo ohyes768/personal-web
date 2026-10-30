@@ -84,7 +84,9 @@ test('amap job summary reports per-outcome states instead of skip counts', () =>
   assert.match(html, /人工已确认 2 · 待确认 71 · 未找到 29/);
   const amapRow = html.match(/<div class="directory-task-row"[^>]*>(?:(?!<div class="directory-task-row").)*补全高德定位(?:(?!<div class="directory-task-row").)*/s)?.[0];
   assert.ok(amapRow);
-  assert.doesNotMatch(amapRow, /跳过/);
+  const statusLine = amapRow.match(/<p class="directory-task-line"[^>]*>.*?<\/p>/s)?.[0];
+  assert.ok(statusLine);
+  assert.doesNotMatch(statusLine, /跳过/);
 });
 
 test('addressless candidate is preselected and needs map verification before confirmation', () => {

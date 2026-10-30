@@ -1,14 +1,21 @@
 """Materialize TMSF identities and expose independent business queues after migration."""
 import json
 import uuid
+from collections import defaultdict
+from pathlib import Path
 
-from src.services.community_registry import dump, normalized, now
+from src.services.community_registry import CommunityRegistry, dump, normalized, now
 from src.services.community_admission import community_views, property_facts
 from src.services.directory_policy import enabled, eligibility, VERSION
 from src.services.directory_position_state import position_view
 from src.services.tmsf_property_type import effective_market_state
 from src.services.use_review_policy import use_review_projection
 from src.services.use_review_scope import auto_review_skip_reason
+from src.services.directory_projection_cache import ProjectionCache, projection_inputs
+
+
+_inventory_cache = ProjectionCache()
+_auction_cache = ProjectionCache()
 
 
 def is_enabled(store):
@@ -78,10 +85,22 @@ def catalog_property_types(row, facts):
 
 
 def inventory(store, data_dir):
+    # Migration previews use an in-memory SnapshotRegistry with the live path.
+    # Its simulated writes cannot be versioned by that file's metadata.
+    if type(store) is not CommunityRegistry:
+        return _inventory(store, data_dir)
+    return _inventory_cache.read(projection_inputs(store, data_dir), lambda: _inventory(store, data_dir))
+
+
+def _inventory(store, data_dir):
     """Unlinked TMSF records are visible as incomplete/excluded entries, never auctions."""
     facts = property_facts(data_dir)
     from src.services.collection_pipeline import enabled as pipeline_enabled, KEY as PIPELINE_KEY, RULE
     sources = store.sources()
+    matched = defaultdict(list)
+    for record in sources:
+        if record['status'] == 'matched':
+            matched[record['community_id']].append(record)
     views = community_views(store, data_dir)
     with store.db() as db:
         pipeline = pipeline_enabled(db)
@@ -89,7 +108,7 @@ def inventory(store, data_dir):
             'SELECT m.rid,c.payload FROM review_members m JOIN review_candidates c ON c.id=m.candidate_id')}
     output = []
     for c in views:
-        records = [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched']
+        records = matched[c['community_id']]
         # Old non-TMSF identities stay in history, not the new TMSF catalog.
         if not any(r['source'] == 'tmsf' for r in records):
             continue
@@ -127,6 +146,14 @@ def admitted(store, data_dir):
 
 
 def auction_tasks(store, data_dir, *, include_skipped=False):
+    if type(store) is not CommunityRegistry:
+        return _auction_tasks(store, data_dir, include_skipped=include_skipped)
+    paths = (*projection_inputs(store, data_dir), Path(data_dir) / 'auction_records.json')
+    return _auction_cache.read(paths, lambda: _auction_tasks(store, data_dir, include_skipped=include_skipped),
+                               variant=include_skipped)
+
+
+def _auction_tasks(store, data_dir, *, include_skipped=False):
     targets = admitted(store, data_dir)
     result = []
     with store.db() as db:

@@ -1,5 +1,12 @@
 # TMSF directory and independent collection workflow
 
+## Catalog projection reuse (2026-10-30)
+
+`inventory` and `auction_tasks` reuse bounded process-local projections while their input versions match. Versions cover SQLite main/WAL metadata, property_types.json and binjiang_coordinates.json; auction tasks additionally track auction_records.json. Changed DB facts/associations/admissions/meta, external SQL and atomic file replacement invalidate the next read. Only retain a build when versions match before and after it; never cache exceptions. Deployment/restart clears cached rule results. SnapshotRegistry migration previews bypass disk-version caching because simulated writes live only in memory.
+
+Return deep copies so caller enrichment cannot mutate the shared projection. Group matched source records by community_id once in community_views and inventory rather than scanning every source per master. Coverage remains uncached to preserve live rental snapshot/job and time-based stale semantics. Frontend summary loading depends on q/district/data revision, while catalog paging and classification filters load independently after initial active/pipeline discovery. Preserve cancellation and page reset/overflow behavior. Tests: test_directory_projection_cache.py and catalog-loading.test.cjs.
+
+
 For explicitly activated collection-pipeline-v2 instances, [the unified pipeline contract](./collection-pipeline.md) supersedes the v1 admission-before-position order and independent text-search use review below. Unmigrated instances retain this document's v1 behavior.
 
 ## Scope and rollout
