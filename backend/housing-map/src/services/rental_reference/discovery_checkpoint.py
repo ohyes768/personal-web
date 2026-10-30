@@ -65,10 +65,15 @@ class DiscoveryCheckpoint:
         if cached and not refresh and self.enabled and isinstance(step, dict):
             expires = step.get('expires_at')
             value = step.get('value')
-            if (isinstance(expires, (int, float)) and math.isfinite(expires)
+            complete = step.get('complete')
+            # An incomplete first search page is a reason to retry live, not a
+            # fact to replay: reusing it would reproduce the same dead end
+            # without a single request for the whole cache window.
+            if ((complete is not False or method != 'search')
+                    and isinstance(expires, (int, float)) and math.isfinite(expires)
                     and time.time() < expires <= time.time() + TTL
-                    and self._valid(method, args, value) and isinstance(step.get('complete'), bool)):
-                self.search_complete = step['complete']
+                    and self._valid(method, args, value) and isinstance(complete, bool)):
+                self.search_complete = complete
                 self.diagnostics['cache_hits'] += 1
                 self.report(method)
                 return copy.deepcopy(value)

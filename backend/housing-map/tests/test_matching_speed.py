@@ -99,6 +99,17 @@ def test_restart_reuses_successful_empty_searches_and_full_refresh_bypasses(tmp_
     assert len(third.calls) == 3
 
 
+def test_incomplete_cached_search_is_retried_live_within_window(tmp_path):
+    reg = setup(tmp_path)
+    first = strong(); first.search_complete = False
+    assert run(service(reg, first, tmp_path))['stage'] == STAGE_NEEDS_SELECTION
+    second = strong()
+    state = run(service(reg, second, tmp_path))
+    assert second.calls[0] == ('search', '测试花园', 'second_hand')
+    assert state['diagnostics']['cache_hits'] == 1
+    assert state['stage'] == STAGE_BOUND
+
+
 def test_incremental_skips_finished_missing_but_full_rechecks(tmp_path):
     reg = setup(tmp_path)
     fake = FakeDiscovery()
