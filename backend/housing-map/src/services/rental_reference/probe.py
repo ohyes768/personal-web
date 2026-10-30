@@ -139,6 +139,15 @@ class ProbeService:
         state.setdefault('stage', STAGE_IDLE)
         state.setdefault('revision', 0)
         state['running'] = self._running_for(community_id)
+        if state['stage'] == STAGE_NEEDS_SELECTION and state.get('candidates'):
+            try:
+                community = self._community(community_id)
+            except ProbeInvalid:
+                return state
+            for candidate in state['candidates']:
+                manual = evaluate(community, candidate, allow_subdivision=True)
+                candidate['manual_selectable'] = manual['selectable']
+                candidate['manual_scope'] = manual['manual_scope']
         return state
 
     def busy(self):
@@ -184,9 +193,9 @@ class ProbeService:
                 raise ProbeConflict('候选已更新，请刷新后重新选择')
             community = self._community(community_id)
             self._automatic = False
-            judgement = evaluate(community, candidate)
-            if judgement['conflicts']:
-                raise ProbeInvalid('；'.join(judgement['conflicts']) + '，不能绑定到该小区')
+            judgement = evaluate(community, candidate, allow_subdivision=True)
+            if not judgement['selectable']:
+                raise ProbeInvalid(('；'.join(judgement['conflicts']) or '主页名称与目录小区不匹配') + '，不能绑定到该小区')
             self._cancel.clear()
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
@@ -398,10 +407,11 @@ class ProbeService:
             homepage = client.community_info(candidate['neighborhood_id'], fresh=True)
             fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
             fresh_candidate['candidate_id'] = candidate.get('candidate_id', 'homepage:' + candidate['neighborhood_id'])
-            judgement = evaluate(community, fresh_candidate, allow_name_only=True, allow_partial_name=True)
+            judgement = evaluate(community, fresh_candidate, allow_name_only=True, allow_partial_name=True,
+                                 allow_subdivision=not self._require_strong)
             fresh_candidate.update(evidence=judgement['evidence'], evidence_gaps=judgement['gaps'],
                                    conflicts=judgement['conflicts'], strong=judgement['strong'])
-            if judgement['conflicts'] or (self._require_strong and not judgement['strong']):
+            if not judgement['selectable'] or (self._require_strong and not judgement['strong']):
                 reason = '；'.join(judgement['conflicts']) or '主页身份信息已变化'
                 write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
                             selected_page=None, candidates=[fresh_candidate],
@@ -458,14 +468,16 @@ class ProbeService:
             write_state(self.registry, community_id, stage=STAGE_FAILED,
                         message='小区已有租金来源，请刷新后重试')
             return
-        judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True)
+        judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True,
+                             allow_subdivision=not self._require_strong)
         evidence = [*judgement['evidence'], '主页租房入口已核验', f'房源种子 {seed}']
         try:
             from src.services.rental_reference.storage import RentalPublishLock
             with self._mutex, RentalPublishLock(self.directory / 'rental_publish'):
                 current = self._community(community_id)
-                current_judgement = evaluate(current, candidate, allow_name_only=True, allow_partial_name=True)
-                if current_judgement['conflicts']:
+                current_judgement = evaluate(current, candidate, allow_name_only=True, allow_partial_name=True,
+                                             allow_subdivision=not self._require_strong)
+                if not current_judgement['selectable']:
                     raise ValueError('小区身份信息已变化，请重新探查')
                 if self._require_strong and not current_judgement['strong']:
                     raise ValueError('小区身份信息已变化，请重新探查')

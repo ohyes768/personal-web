@@ -273,9 +273,9 @@ def test_ambiguous_candidates_ask_the_user_to_choose(tmp_path):
 
 
 def test_phase_variant_cannot_be_forced(tmp_path):
-    registry = setup(tmp_path)
+    registry = setup(tmp_path, name='测试花园(北区)')
     fake = FakeDiscovery(
-        search={('测试花园', 'second_hand'): {PHASE_ID: '测试花园(南区)'}},
+        search={('测试花园(北区)', 'second_hand'): {PHASE_ID: '测试花园(北区)(南区)'}},
         homepages={PHASE_ID: homepage(neighborhood_id=PHASE_ID, name='测试花园(南区)')},
         owners={SEED: PHASE_ID}, lists={SEED: PHASE_ID})
     svc = service(registry, fake, tmp_path)
@@ -488,9 +488,9 @@ def test_probe_api_starts_reads_and_rejects_a_stale_choice(tmp_path, monkeypatch
 
 
 def test_probe_api_refuses_a_conflicting_candidate(tmp_path, monkeypatch):
-    registry = setup(tmp_path)
+    registry = setup(tmp_path, name='测试花园(北区)')
     fake = FakeDiscovery(
-        search={('测试花园', 'second_hand'): {PHASE_ID: '测试花园(南区)'}},
+        search={('测试花园(北区)', 'second_hand'): {PHASE_ID: '测试花园(北区)(南区)'}},
         homepages={PHASE_ID: homepage(neighborhood_id=PHASE_ID, name='测试花园(南区)')},
         owners={SEED: PHASE_ID}, lists={SEED: PHASE_ID})
     client, svc = api_client(registry, fake, tmp_path, monkeypatch)
@@ -661,3 +661,39 @@ def test_retry_preserves_valid_selection_for_entry_failure(tmp_path):
     svc.retry('c1'); svc._thread.join(5)
     assert svc.status('c1')['stage'] == probe.STAGE_BOUND
     assert not any(call[0] == 'search' for call in fake.calls)
+
+
+@pytest.mark.parametrize('scope', ['留园', '观园'])
+def test_parent_community_allows_manual_subdivision_but_never_auto_binds(tmp_path, scope):
+    name = '保亿风景蝶院'
+    registry = setup(tmp_path, name=name)
+    platform = f'{name}({scope}）'
+    fake = FakeDiscovery(search={name: {PHASE_ID: platform}},
+                         homepages={PHASE_ID: homepage(neighborhood_id=PHASE_ID, name=platform)},
+                         owners={SEED: PHASE_ID}, lists={SEED: PHASE_ID})
+    svc = service(registry, fake, tmp_path)
+    state = run(svc)
+    assert state['stage'] == probe.STAGE_NEEDS_SELECTION
+    candidate = state['candidates'][0]
+    assert candidate['manual_selectable'] is True
+    assert candidate['manual_scope'] == scope
+    assert candidate['strong'] is False
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+    svc.select('c1', candidate['candidate_id'], state['revision'])
+    svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+    source = next(s for s in registry.sources() if s['source'] == 'xingfuli')
+    assert source['method'] == 'manual'
+    assert scope in str(source['evidence'])
+
+
+def test_manual_subdivision_does_not_allow_cross_phase_or_district(tmp_path):
+    from src.services.rental_reference.xingfuli_sources import evaluate
+    community = dict(community_name='保亿风景蝶院(留园)', aliases=['保亿风景蝶院'], district='滨江')
+    candidate = {**homepage(name='保亿风景蝶院(观园)'), 'district': '滨江'}
+    assert evaluate(community, candidate, allow_subdivision=True)['conflicts']
+    community['community_name'] = '保亿风景蝶院'
+    candidate['district'] = '桐庐'
+    assert evaluate(community, candidate, allow_subdivision=True)['conflicts']
+    candidate.update(district='滨江', name='其他花园(观园)')
+    assert not evaluate(community, candidate, allow_subdivision=True)['selectable']

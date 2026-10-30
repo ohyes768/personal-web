@@ -16,6 +16,7 @@ const POLL_INTERVAL_MS = 2000;
 
 function evidenceLine(candidate: ProbeCandidate) {
   if (!Array.isArray(candidate.conflicts) || !Array.isArray(candidate.evidence) || !Array.isArray(candidate.evidence_gaps)) return '候选证据不完整，请重试重新探查';
+  if (candidate.manual_selectable && candidate.manual_scope) return `可人工选择分园“${candidate.manual_scope}”，租金样本仅来自该分园`;
   if (candidate.conflicts.length) return candidate.conflicts.join('；');
   if (candidate.evidence.length) return candidate.evidence.join('；');
   return '平台未给出可核对的证据';
@@ -37,8 +38,8 @@ export function ProbeCandidateCard({ candidate, busy, onSelect }: {
     <p className="rental-meta">证据：{evidenceLine(candidate)}</p>
     {(candidate.evidence_gaps?.length ?? 0) > 0 && <p className="rental-meta">待核实：{candidate.evidence_gaps.join('；')}</p>}
     <div className="rental-source-actions">
-      <button className="btn btn-primary" disabled={busy || !Array.isArray(candidate.conflicts) || !Array.isArray(candidate.evidence) || !Array.isArray(candidate.evidence_gaps) || candidate.conflicts.length > 0} onClick={onSelect}>
-        选择这个主页
+      <button className="btn btn-primary" disabled={busy || !Array.isArray(candidate.conflicts) || !Array.isArray(candidate.evidence) || !Array.isArray(candidate.evidence_gaps) || (candidate.manual_selectable === undefined ? candidate.conflicts.length > 0 : !candidate.manual_selectable)} onClick={onSelect}>
+        {candidate.manual_scope ? '选择这个分园' : '选择这个主页'}
       </button>
     </div>
   </article>;

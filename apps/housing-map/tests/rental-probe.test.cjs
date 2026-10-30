@@ -129,3 +129,18 @@ test('no listings is a normal empty result distinct from verification or request
   assert.equal(probeStageLabel('no_rental_listings'), '暂无在租房源');
   assert.equal(probeIsRunning('no_rental_listings'), false);
 });
+
+test('server-approved manual subdivision can be selected and explains rental scope', () => {
+  const html = renderToStaticMarkup(React.createElement(ProbeCandidateCard, {
+    candidate: { ...candidate, name: '保亿风景蝶院(观园)', manual_selectable: true, manual_scope: '观园',
+      conflicts: ['平台名称带分期标记“观园”，与目录小区不是同一范围'] },
+    busy: false, onSelect() {},
+  }));
+  assert.match(html, /选择这个分园/);
+  assert.match(html, /租金样本仅来自该分园/);
+  assert.doesNotMatch(html, /disabled/);
+  const denied = renderToStaticMarkup(React.createElement(ProbeCandidateCard, {
+    candidate: { ...candidate, manual_selectable: false, manual_scope: '' }, busy: false, onSelect() {},
+  }));
+  assert.match(denied, /disabled/);
+});

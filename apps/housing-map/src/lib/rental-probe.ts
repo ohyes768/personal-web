@@ -1,6 +1,8 @@
 /** 幸福里来源探查：只点击与选择，不接受用户粘贴的链接。 */
 
 export interface ProbeCandidate {
+  manual_selectable?: boolean;
+  manual_scope?: string;
   candidate_id: string;
   neighborhood_id: string;
   name: string;

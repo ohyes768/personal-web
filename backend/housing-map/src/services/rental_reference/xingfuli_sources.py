@@ -14,7 +14,9 @@ import math
 
 from src.services.community_registry import normalized, now
 from src.services.rental_reference.providers import rejected_rental_communities
-from src.services.xingfuli_discovery import CHANNEL_ORDER, address_district, phase_of, without_community_type_label
+from src.services.xingfuli_discovery import (
+    CHANNEL_ORDER, QUALIFIER, address_district, phase_of, without_community_type_label,
+)
 from src.services.xingfuli_rentals import list_url
 
 logger = logging.getLogger(__name__)
@@ -56,19 +58,29 @@ def _matches_name(names, platform_name):
     return 'none'
 
 
-def evaluate(community, candidate, *, allow_name_only=False, allow_partial_name=False):
+def evaluate(community, candidate, *, allow_name_only=False, allow_partial_name=False, allow_subdivision=False):
     """Judge identity; name-only acceptance requires caller-proven uniqueness.
 
-    Only the probe checks search completeness and candidate uniqueness and may
-    enable either relaxation. Legacy discovery keeps the default exact name
-    and place-evidence requirement.
+    The probe alone enables automatic name relaxations after checking search
+    completeness and uniqueness. Subdivision matching is for explicit manual
+    selection only; legacy discovery keeps its exact-name/place requirements.
     """
     names = community_names(community)
     evidence = []
     gaps = []
     conflicts = []
 
+    qualifier = phase_of(candidate.get('name'))
+    manual_scope = False
     match = _matches_name(names, candidate.get('name'))
+    if allow_subdivision and qualifier and not phase_of(community.get('community_name')):
+        base_name = QUALIFIER.sub('', without_community_type_label(candidate.get('name')), count=1)
+        parent_names = [name for name in names if not phase_of(name)]
+        base_match = _matches_name(parent_names, base_name)
+        if base_match != 'none':
+            match = base_match
+            manual_scope = True
+            evidence.append(f'人工选择分园“{qualifier}”，租金样本仅来自该分园')
     if match == 'exact':
         evidence.append('完整名称一致')
     elif match == 'partial':
@@ -77,8 +89,7 @@ def evaluate(community, candidate, *, allow_name_only=False, allow_partial_name=
     else:
         gaps.append('名称不匹配')
 
-    qualifier = phase_of(candidate.get('name'))
-    if qualifier and not any(qualifier in str(name or '') for name in names):
+    if qualifier and not manual_scope and not any(qualifier in str(name or '') for name in names):
         conflicts.append(f'平台名称带分期标记“{qualifier}”，与目录小区不是同一范围')
 
     internal_district = (community.get('district') or '').removesuffix('区')
@@ -110,7 +121,9 @@ def evaluate(community, candidate, *, allow_name_only=False, allow_partial_name=
     nearby_partial_identity = allow_partial_name and match == 'partial' and same_position \
         and not any(phase_of(name) for name in [*names, candidate.get('name')])
     strong = not conflicts and (exact_identity or nearby_partial_identity)
-    return {'evidence': evidence, 'gaps': gaps, 'conflicts': conflicts, 'strong': strong}
+    return {'evidence': evidence, 'gaps': gaps, 'conflicts': conflicts, 'strong': strong,
+            'selectable': match != 'none' and not conflicts,
+            'manual_scope': qualifier if manual_scope and not conflicts else ''}
 
 
 def candidate_from_homepage(homepage, *, discovered_via):
