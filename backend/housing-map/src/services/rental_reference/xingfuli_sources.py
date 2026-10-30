@@ -27,6 +27,11 @@ def community_names(community):
                         *(community.get('aliases') or [])] if n]
 
 
+def rental_name_key(value):
+    """Ignore decorative middle dots only; retain phase and identity markers."""
+    return normalized(value).translate(str.maketrans('', '', '·•・‧∙⋅･'))
+
+
 def _distance_meters(a_lng, a_lat, b_lng, b_lat):
     dx = (a_lng - b_lng) * math.cos(math.radians(a_lat)) * 111320
     dy = (a_lat - b_lat) * 111320
@@ -35,17 +40,17 @@ def _distance_meters(a_lng, a_lat, b_lng, b_lat):
 
 def _matches_name(names, platform_name):
     """How the platform name relates to the internal names."""
-    platform = normalized(platform_name)
+    platform = rental_name_key(platform_name)
     if not platform:
         return 'none'
     for name in names:
-        if normalized(name) == platform:
+        if rental_name_key(name) == platform:
             return 'exact'
     if phase_of(platform_name):
         # A qualified platform name is a phase of the base community.
         return 'none'
     for name in names:
-        internal = normalized(name)
+        internal = rental_name_key(name)
         if internal and (internal in platform or platform in internal):
             return 'partial'
     return 'none'

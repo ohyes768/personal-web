@@ -13,12 +13,13 @@ import threading
 import uuid
 
 from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
-from src.services.community_registry import dump, normalized, now
+from src.services.community_registry import dump, now
 from src.services.fang_rentals import RentalCrawlCancelled
 from src.services.rental_reference.xingfuli_sources import (
     bind_source,
     candidate_from_homepage,
     community_names,
+    rental_name_key,
     evaluate,
 )
 from src.services.xingfuli_discovery import CHANNEL_ORDER, SEARCH_PAGE_SIZE, XingfuliDiscovery
@@ -87,7 +88,7 @@ def write_state(registry, community_id, **fields):
 
 def _related(query, platform_name):
     """Whether a platform name plausibly answers the searched name."""
-    left, right = normalized(query), normalized(platform_name)
+    left, right = rental_name_key(query), rental_name_key(platform_name)
     if not left or not right:
         return False
     return left == right or left in right or right in left
@@ -96,7 +97,7 @@ def _related(query, platform_name):
 def _search_names(community):
     names, seen = [], set()
     for name in community_names(community):
-        key = normalized(name)
+        key = rental_name_key(name)
         if key and key not in seen:
             names.append(name)
             seen.add(key)
@@ -296,6 +297,7 @@ class ProbeService:
         for name in _search_names(community):
             for channel in CHANNEL_ORDER:
                 channel_seen = set()
+                page_fingerprints = set()
                 offset = 0
                 while True:
                     try:
@@ -334,12 +336,19 @@ class ProbeService:
                         if len(candidates) >= MAX_CANDIDATES:
                             truncated = True
                             break
-                    if truncated or client.search_complete:
+                    if truncated:
                         break
-                    if offset > 0 and not new_ids:
-                        # The platform ignored the offset: no further page can
-                        # add identities, and uniqueness is no longer provable.
+                    page_fingerprint = client.search_page_fingerprint
+                    repeated_page = (page_fingerprint in page_fingerprints if page_fingerprint
+                                     else not new_ids and not client.search_complete)
+                    if page_fingerprint:
+                        page_fingerprints.add(page_fingerprint)
+                    if offset > 0 and repeated_page:
+                        # The raw listing page repeated, not merely the same
+                        # neighborhood across different listing cards.
                         degraded = True
+                        break
+                    if client.search_complete:
                         break
                     offset += SEARCH_PAGE_SIZE
                 if truncated:
@@ -370,7 +379,7 @@ class ProbeService:
             self._resolve_entry(community, candidates[0], client)
             return
         write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION, candidates=candidates,
-                    message='请选择对应的小区主页')
+                    message='搜索分页返回重复房源，无法确认唯一候选，请核对小区主页' if degraded else '请选择对应的小区主页')
 
     def _resolve_entry(self, community, candidate=None, client=None):
         community_id = community['community_id']

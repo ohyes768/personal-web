@@ -553,3 +553,31 @@ def test_probe_get_stays_readable_while_writer_lock_is_held(tmp_path, monkeypatc
         holder.close()
     assert response.status_code == 200
     assert response.json()['data']['stage'] == 'idle'
+
+
+@pytest.mark.parametrize('separator', ['·', '•', '・', '‧', '∙', '⋅', '･'])
+@pytest.mark.parametrize('automatic', [False, True])
+def test_middle_dot_name_binds_unique_candidate_without_changing_original_name(tmp_path, separator, automatic):
+    name = f'绿城卓越{separator}傲旋城'
+    registry = setup(tmp_path, name=name)
+    fake = FakeDiscovery(search={name: {TOTAL_ID: '绿城卓越傲旋城'}},
+                         homepages={TOTAL_ID: homepage(name='绿城卓越傲旋城')},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.start('c1', automatic=automatic)
+    svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+    assert registry.communities()[0]['community_name'] == name
+    assert len([s for s in registry.sources() if s['source'] == 'xingfuli' and s['status'] == 'matched']) == 1
+
+
+def test_middle_dot_normalization_keeps_phase_conflicts(tmp_path):
+    name = '绿城卓越·傲旋城(一期)'
+    registry = setup(tmp_path, name=name)
+    platform = '绿城卓越傲旋城(二期)'
+    fake = FakeDiscovery(search={name: {TOTAL_ID: platform}},
+                         homepages={TOTAL_ID: homepage(name=platform)},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] != probe.STAGE_BOUND
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())

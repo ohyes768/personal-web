@@ -8,6 +8,7 @@ A fresh rental list API response proves membership of the seed we actually bind.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from urllib.parse import parse_qsl, urlencode, urlsplit
@@ -259,11 +260,17 @@ class XingfuliDiscovery(XingfuliTransport):
         items = payload['data'].get('items')
         if not isinstance(items, list):
             raise ValueError('幸福里搜索结果不完整')
+        # Search returns listing cards, grouped into neighborhoods below.
+        # Different listing pages may legitimately have identical neighborhoods.
+        page_ids = [str(item['id']) if isinstance(item, dict) and item.get('id') is not None
+                    else json.dumps(item, sort_keys=True, ensure_ascii=False) for item in items]
+        self.search_page_fingerprint = hashlib.sha256(
+            json.dumps(sorted(page_ids), ensure_ascii=False).encode()).hexdigest()
         total = payload['data'].get('total')
         # A filled page can omit another plausible identity. It cannot
         # authorize automatic binding, even when one visible result is strong.
         self.search_complete = len(items) < SEARCH_PAGE_SIZE and not (
-            isinstance(total, (int, float)) and total > len(items))
+            isinstance(total, (int, float)) and total > offset + len(items))
         return search_groups(items, channel)
 
     def community_info(self, neighborhood_id):

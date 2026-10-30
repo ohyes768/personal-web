@@ -192,3 +192,23 @@ def test_collector_still_rejects_discovery_paths():
         xfl.validate_url(f'https://m.xflapp.com/xiaoqu/hz-{TOTAL_ID}.html')
     with pytest.raises(ValueError):
         xfl.validate_url('https://m.xflapp.com/f100/api/search?city_id=1853')
+
+
+def test_search_uses_offset_for_last_page_and_fingerprints_raw_listings(tmp_path):
+    from urllib.parse import urlsplit, parse_qs
+    def fetch(url):
+        offset = int(parse_qs(urlsplit(url).query)['offset'][0])
+        items = [{'id': str(i), 'neighborhood_info': {'id': TOTAL_ID, 'name': '半岛国际'}}
+                 for i in range(offset, min(offset + 20, 35))]
+        return json.dumps({'status': 0, 'data': {'total': 35, 'items': items}})
+    client = disc.XingfuliDiscovery(directory=tmp_path, fetcher=fetch, delay=0)
+    first = client.search('天阳半岛国际', 'second_hand', 0)
+    assert not client.search_complete
+    fingerprint = client.search_page_fingerprint
+    second = client.search('天阳半岛国际', 'second_hand', 20)
+    assert first == second
+    assert client.search_complete
+    assert client.search_page_fingerprint != fingerprint
+    last = client.search_page_fingerprint
+    client.search('天阳半岛国际', 'second_hand', 20)
+    assert client.search_page_fingerprint == last
