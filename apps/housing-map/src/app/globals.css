@@ -1345,12 +1345,6 @@ body {
 .directory-task-gear .directory-task-dot { flex: none; }
 .directory-task-gear[data-state="running"] .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
 .directory-task-gear[data-state="failed"] .directory-task-dot { background: #a74325; }
-.directory-task-summary { display: flex; align-items: center; flex-wrap: wrap; gap: 2px 12px; width: 100%; margin: 12px 0 0; padding: 7px 12px; border: 1px solid #dce3ec; border-radius: 6px; background: var(--bg-surface); font-size: 12px; line-height: 1.6; color: #596c86; cursor: pointer; text-align: left; }
-.directory-task-summary strong { color: #263b52; font-weight: 600; }
-.directory-task-summary[data-state="running"] .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
-.directory-task-summary[data-state="failed"] { border-color: #a74325; }
-.directory-task-summary[data-state="failed"] .directory-task-dot { background: #a74325; }
-.directory-task-more { margin-left: auto; color: #a65f40; flex: none; }
 .directory-task-row { padding: 12px 0; border-bottom: 1px solid #e2e8f0; }
 .directory-task-row:last-child { border-bottom: 0; }
 /* 同流程的多个任务收进一块，避免在平铺列表里看起来互不相干 */

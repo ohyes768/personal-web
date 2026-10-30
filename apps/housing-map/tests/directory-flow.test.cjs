@@ -8,7 +8,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
 }).outputText, filename);
-const { CollectionControls, CatalogTable, normalizeCollectionJob, workflowRequest } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
+const { CollectionControls, CollectionTasksButton, CatalogTable, normalizeCollectionJob, workflowRequest } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 
 test('rental source matching and data update are distinct Xingfuli-only actions', () => {
   const calls = [];
@@ -252,4 +252,21 @@ test('request keeps null successes and exposes API conflict instead of claiming 
     global.fetch = async () => ({ ok: false, json: async () => ({ detail: '目标已不符合住宅条件' }) });
     await assert.rejects(workflowRequest('/directory/workflow/auctions/a', 'POST', {}), /目标已不符合住宅条件/);
   } finally { global.fetch = previous; }
+});
+
+test('collection progress stays in the dialog instead of occupying a permanent page row', () => {
+  const amap = { running: true, phase: 'running', processed: 209, total: 209, updated: 0, review: 0, not_found: 0 };
+  const props = { active: true, busy: false, open: false, jobs: { amap }, errors: {}, action: () => {} };
+  // 弹层关闭时页面上不留任何进度字样：常驻状态条已移除
+  const closed = renderToStaticMarkup(React.createElement(CollectionControls, props));
+  assert.doesNotMatch(closed, /directory-task-summary/);
+  assert.doesNotMatch(closed, /已处理/);
+  // 进度只在弹层里可见
+  const dialog = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, open: true }));
+  assert.match(dialog, /已处理 209 \/ 209/);
+  // 齿轮按钮用悬浮说明带出进度，不占页面高度
+  const gear = renderToStaticMarkup(React.createElement(CollectionTasksButton, { jobs: { amap }, errors: {}, onOpen: () => {} }));
+  assert.match(gear, /data-state="running"/);
+  assert.match(gear, /title="运行中：/);
+  assert.match(gear, /已处理 209 \/ 209/);
 });

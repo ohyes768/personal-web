@@ -77,7 +77,6 @@ function taskGroups(list: CollectionTask[]): TaskGroup[] {
       hint: t.group ? rentalGroupHint : undefined, tasks: [t] }];
   }, []);
 }
-const restPhases = ['idle', 'succeeded', 'done'];
 const stageLabels: Record<string, string> = { matching: '匹配幸福里来源', checking: '检查租金来源', discovering: '查找租金来源', crawling: '采集租金房源',
   publishing: '发布租金统计', names: '更新小区名录', property_types: '补充用途资料' };
 const phases: Record<string, string> = { running: '正在采集', crawling: '正在采集', publishing: '正在发布', checking_sources: '检查来源', idle: '尚未采集',
@@ -117,13 +116,8 @@ function taskStateOf(t: (typeof tasks)[number], jobs: Record<string, Job | null>
   const job = jobs[t.id];
   return job?.running ? 'running' : (errors[t.id] || job?.error) ? 'failed' : 'info';
 }
-function taskRelevant(t: (typeof tasks)[number], jobs: Record<string, Job | null>, errors: Record<string, string>): boolean {
-  const job = jobs[t.id];
-  return !!errors[t.id] || !!job?.running || !!job?.error ||
-    (!!job && (t.id === 'amap' ? job.processed !== undefined : !restPhases.includes(job.phase)));
-}
 
-/** 采集任务弹层：触发/停止/完整进度都收在弹层里；运行中另有单行状态条常驻（CollectionControls 返回的 summary）。 */
+/** 采集任务弹层：触发/停止/完整进度都收在弹层里，页面上不再常驻状态条。 */
 export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {}, pipeline = false }: {
   pipeline?: boolean;
   active: boolean; jobs: Record<string, Job | null>; errors: Record<string, string>; busy: boolean;
@@ -131,9 +125,6 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
   const availableTasks = tasks.filter(t => !pipeline || t.id !== 'use').map(t => pipeline && t.id === 'amap'
     ? { ...t, label: '匹配楼盘地点与类型', hint: '候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类；多个主体由你选择。' }
     : pipeline && t.id === 'tmsf' ? { ...t, label: '采集楼盘名单与资料' } : t);
-  const relevant = availableTasks.filter(t => taskRelevant(t, jobs, errors));
-  const anyRunning = relevant.some(t => taskStateOf(t, jobs, errors) === 'running');
-  const anyFailed = relevant.some(t => taskStateOf(t, jobs, errors) === 'failed');
   const renderTask = (t: CollectionTask) => {
     const job = jobs[t.id];
     const running = !!job?.running;
@@ -199,18 +190,6 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
     </div>;
   };
   return <>
-    {relevant.length > 0 && <button type="button" className="directory-task-summary"
-      data-state={anyFailed ? 'failed' : anyRunning ? 'running' : 'info'}
-      aria-haspopup="dialog" onClick={() => onOpenChange(true)}>
-      <span className="directory-task-dot" aria-hidden="true" />
-      {relevant.map(t => {
-        const job = jobs[t.id];
-        const problem = errors[t.id] || job?.error || '';
-        const message = job ? [job.mode === 'retry_failed' && '重试失败项', taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' · ') : '';
-        return <span key={t.id}><strong>{t.short}</strong> {problem || message}</span>;
-      })}
-      <span className="directory-task-more">详情</span>
-    </button>}
     {open && <DirectoryDialog title="采集任务" onClose={() => onOpenChange(false)}>
       {!active && <p className="directory-warning">名单流程尚未启用，采集暂不可用。</p>}
       {taskGroups(availableTasks).map(group => group.title
@@ -223,14 +202,17 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
   </>;
 }
 
-/** 标题行右端的采集任务入口：齿轮空闲，运行/失败时以状态点替换并高亮。 */
+/** 标题行右端的采集任务入口：齿轮空闲，运行/失败时以状态点替换并高亮。进度详情走悬浮说明，不占页面高度。 */
 export function CollectionTasksButton({ jobs, errors, onOpen }: {
   jobs: Record<string, Job | null>; errors: Record<string, string>; onOpen: () => void }) {
-  const running = tasks.some(t => jobs[t.id]?.running);
-  const failed = tasks.some(t => errors[t.id] || jobs[t.id]?.error);
-  const state = running ? 'running' : failed ? 'failed' : 'idle';
+  const running = tasks.filter(t => jobs[t.id]?.running);
+  const failed = tasks.filter(t => errors[t.id] || jobs[t.id]?.error);
+  const state = running.length ? 'running' : failed.length ? 'failed' : 'idle';
+  const title = running.length
+    ? `运行中：${running.map(t => { const job = jobs[t.id]!; return [t.short, taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' '); }).join('；')}`
+    : failed.length ? `有采集任务失败：${failed.map(t => t.short).join('、')}` : '采集任务';
   return <button type="button" className="btn btn-secondary directory-task-gear" data-state={state} aria-haspopup="dialog"
-    title={running ? '有采集任务运行中' : failed ? '有采集任务失败' : '采集任务'} onClick={onOpen}>
+    title={title} onClick={onOpen}>
     {state === 'idle' ? <span aria-hidden="true">⚙️</span> : <span className="directory-task-dot" aria-hidden="true" />}采集任务
   </button>;
 }
