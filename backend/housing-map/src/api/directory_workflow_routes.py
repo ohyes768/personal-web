@@ -164,7 +164,11 @@ def retry(cid: str):
         results = [enrich_source(registry, registry.path.parent, s['id'], include_position=False)
                    for s in row['sources'] if s['source'] == 'tmsf']
         flow.synchronize(registry, registry.path.parent)
-        return {'results': results, 'errors': [e for r in results for e in r.get('errors', [])]}
+        source_ids = {s['id'] for s in row['sources'] if s['source'] == 'tmsf'}
+        current_id = next((s['community_id'] for s in registry.sources()
+                           if s['id'] in source_ids and s.get('community_id')), cid)
+        return {'community_id': current_id, 'results': results,
+                'errors': [e for r in results for e in r.get('errors', [])]}
     return result(action)
 
 

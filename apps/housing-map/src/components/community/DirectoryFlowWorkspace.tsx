@@ -7,6 +7,7 @@ import UseReviewPanel, { UseReview, UseReviewBadge, formatUseReviewMessage } fro
 import RentalAssociationReview from '../rental/RentalAssociationReview';
 import DirectoryDialog from './DirectoryDialog';
 import MergeDialog from './MergeDialog';
+import { CatalogTmsfDetails } from './CatalogTmsfDetails';
 import { CatalogReviewAction, type CatalogReviewKind } from './CatalogReviewAction';
 import CatalogFilters, { CatalogFilterValues, catalogFilterParams, catalogFiltersForMode, emptyCatalogFilters } from './CatalogFilters';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
@@ -375,6 +376,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
   const [jobs, setJobs] = useState<Record<string, Job | null>>({}); const [jobErrors, setJobErrors] = useState<Record<string, string>>({});
   const [error, setError] = useState(''); const [notice, setNotice] = useState(''); const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0);
+  const [updatingTmsf, setUpdatingTmsf] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeOpen, setMergeOpen] = useState(false); const [mergeRows, setMergeRows] = useState<CatalogRow[]>([]);
@@ -478,6 +480,28 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
     return () => { cancelled = true; };
   }, [focusPosition]);
 
+  async function updateTmsfDetails() {
+    if (!detail || busy || jobs.tmsf?.running) return;
+    const version = detailVersion.current;
+    const path = `/directory/workflow/catalog/${encodeURIComponent(detail.community_id)}`;
+    setBusy(true); setUpdatingTmsf(true); setError(''); setNotice('');
+    try {
+      const outcome = await workflowRequest<{ community_id?: string; errors?: string[] }>(path + '/retry', 'POST');
+      setRevision(v => v + 1); onChanged();
+      const freshPath = outcome?.community_id ? `/directory/workflow/catalog/${encodeURIComponent(outcome.community_id)}` : path;
+      const fresh = await workflowRequest<CatalogRow>(freshPath);
+      if (fresh.admission_state === 'admitted' || (fresh.collection_pipeline_version && !fresh.source_record_id)) {
+        fresh.position = await workflowRequest<Position>(freshPath + '/position');
+      }
+      if (detailVersion.current === version) {
+        setDetail(fresh);
+        setNotice(outcome?.errors?.length ? `透明售房网资料部分更新：${outcome.errors.join('；')}`
+          : '透明售房网资料已更新，收录状态已重新计算。');
+      }
+    } catch (e) {
+      if (detailVersion.current === version) setError(e instanceof Error ? e.message : '透明售房网资料更新失败，请重试');
+    } finally { setBusy(false); setUpdatingTmsf(false); }
+  }
   async function positionAction(body: object) {    if (!detail) return;
     const cid = detail.community_id; const version = detailVersion.current;
     setBusy(true); setError('');
@@ -625,6 +649,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
           }}>确认住宅用途</button>
         </div>}
       </section>
+        <CatalogTmsfDetails sources={detail.sources} busy={busy} updating={updatingTmsf} collecting={!!jobs.tmsf?.running}
+          onUpdate={() => void updateTmsfDetails()} />
         {(detail.admission_state === 'admitted' || (detail.collection_pipeline_version && !detail.source_record_id)) && detail.position && <PositionPanel key={`${detail.community_id}-${detail.position.revision}`} position={detail.position} busy={busy || !!jobs.amap?.running} address={detail.geographic_address} communityName={detail.community_name} confirm={body => void positionAction(body)} onQuery={detail.collection_pipeline_version ? () => void queryDetailPosition() : undefined} />}
         <CatalogUseReviewSection key={detail.community_id} row={detail} busy={busy || !!jobs.use?.running} open={useConfirmOpen}
           onToggle={setUseConfirmOpen} onRecheck={() => void reviewAction('recheck')}
@@ -634,7 +660,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
         <section className="directory-source-section" aria-label="来源资料">
           <div className="directory-source-section-heading"><h4>来源资料</h4></div>
           {notice && <p role="status" className="directory-muted">{notice}</p>}
-          {detail.sources?.length ? detail.sources.map(s => <DirectorySourceCard key={s.id} item={s} compact>
+          {detail.sources?.some(s => s.source !== 'tmsf') ? detail.sources.filter(s => s.source !== 'tmsf').map(s => <DirectorySourceCard key={s.id} item={s} compact>
             {s.source === 'laipai' && s.status === 'matched' && <button className="btn btn-secondary" disabled={busy} title="解除后这条法拍记录回到待关联列表，可重新核对" onClick={() => void unlinkAuctionSource(s.id)}>解除法拍关联</button>}
           </DirectorySourceCard>) : <p className="directory-muted">暂无来源资料。</p>}
         </section>

@@ -10,6 +10,38 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 }).outputText, filename);
 const { CollectionControls, CollectionTasksButton, CatalogTable, normalizeCollectionJob, workflowRequest } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
 
+test('TMSF detail has an independent update action and source evidence', () => {
+  const { CatalogTmsfDetails } = require('../src/components/community/CatalogTmsfDetails.tsx');
+  let updates = 0;
+  const props = { sources: [{ id: 't1', source: 'tmsf', name: '万科城市之光', source_id: '123',
+    status: 'matched', property_type: '住宅', property_type_captured_at: '2026-10-30T00:00:00Z',
+    property_type_url: 'https://www.tmsf.com/community/123', property_type_error: '详情更新失败' },
+    { id: 'a1', source: 'amap', name: '高德主体' }], busy: false, updating: false, collecting: false,
+    onUpdate() { updates++; } };
+  const html = renderToStaticMarkup(React.createElement(CatalogTmsfDetails, props));
+  assert.match(html, /透明售房网资料/);
+  assert.match(html, /更新透明售房网资料/);
+  assert.match(html, /类型采集时间/);
+  assert.match(html, /详情更新失败/);
+  assert.match(html, /https:\/\/www.tmsf.com\/community\/123/);
+  assert.doesNotMatch(html, /高德主体/);
+  const buttons = [];
+  function visit(node) {
+    if (!node || typeof node !== 'object') return;
+    if (Array.isArray(node)) return node.forEach(visit);
+    if (node.type === 'button') buttons.push(node);
+    visit(node.props?.children);
+  }
+  visit(CatalogTmsfDetails(props));
+  buttons[0].props.onClick();
+  assert.equal(updates, 1);
+  for (const override of [{ busy: true }, { updating: true }, { collecting: true }, { sources: [] },
+    { sources: [{ ...props.sources[0], status: 'ignored' }] }]) {
+    assert.match(renderToStaticMarkup(React.createElement(CatalogTmsfDetails, { ...props, ...override })), /disabled=""/);
+  }
+  assert.match(renderToStaticMarkup(React.createElement(CatalogTmsfDetails, { ...props, updating: true })), /正在更新透明售房网资料/);
+});
+
 test('rental source matching and data update are distinct Xingfuli-only actions', () => {
   const calls = [];
   const props = { active: true, busy: false, open: true, scope: 'maintenance', jobs: {}, errors: {}, action: (...args) => calls.push(args) };
