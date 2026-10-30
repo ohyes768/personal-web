@@ -12,13 +12,6 @@ const reasons: Record<string, string> = { needs_selection: '请选择对应小�
   search_failed: '来源查找失败', search_deferred: '未查完或未查询，可继续匹配', skipped: '已跳过' };
 const filterLabels: Record<string, string> = { needs_selection: '待选择', missing: '未找到', no_listings: '暂无在租',
   search_failed: '查找失败', search_deferred: '未查询', skipped: '已跳过' };
-const filterHints: Record<string, string> = {
-  needs_selection: '搜索返回了候选，请核对名称、地址与分期后绑定；拿不准可先跳过。',
-  missing: '还没有关联租金来源。可以点开小区后用“探查幸福里来源”，只选主页即可，不需要自己找链接。',
-  search_failed: '幸福里来源查找或租房入口核验失败，请点开小区查看原因并重试。',
-  search_deferred: '搜索未查完或还没轮到该小区；可在“维护采集”中继续匹配租金来源，也可单独探查。',
-  no_listings: '已找到小区主页，但当前暂无在租房源，暂时无法采集租金；无需更换主页，可稍后重新查询。',
-  skipped: '之前跳过的小区，可在这里恢复处理。' };
 const filterOrder = ['needs_selection', 'missing', 'no_listings', 'search_failed', 'search_deferred', 'skipped'];
 
 export function RentalCandidateChoice({ item, busy, onDecide }: {
@@ -45,7 +38,6 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
   const [candidate, setCandidate] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await fetch('/api/map/rentals/association-tasks', { signal });
@@ -68,7 +60,7 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
   function pickFilter(reason: string) { setReasonFilter(reason); setSelectedCommunity(''); setCandidate(''); }
   async function decide(action: 'bind' | 'skip' | 'reopen') {
     if (!item) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const response = await fetch(`/api/map/rentals/association-tasks/${encodeURIComponent(item.community_id)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -78,7 +70,6 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
       if (!response.ok || !payload.success) throw new Error(payload.detail || '保存失败，请重试');
       setSelectedCommunity('');
       setCandidate('');
-      setNotice(action === 'bind' ? '已绑定，请运行“更新租金数据”。' : action === 'skip' ? '已跳过，以后可在“已跳过”中重新处理。' : '已恢复处理，可探查幸福里或运行“匹配租金来源”。');
       await load(); rentalDataChanged(); onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : '操作失败'); }
     finally { setBusy(false); }
@@ -91,8 +82,6 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
       <button className="btn btn-secondary" disabled={busy} onClick={() => void load()}>刷新清单</button>
     </div>
     {error && !item && <p role="alert" className="directory-warning">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
-    <p className="directory-muted">{filterHints[reasonFilter] || ''}</p>
     {visible.length ? <div className="directory-workspace"><div className="directory-list-panel">
       <div className="rental-source-list">{visible.map(entry => {
         const top = Math.max(0, ...entry.candidates.map(c => c.similarity ?? 0));

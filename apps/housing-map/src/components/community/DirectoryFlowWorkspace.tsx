@@ -436,7 +436,6 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
           const mark = next?.finished_at || '';
           if (mark && finishes.current[t.id] !== undefined && finishes.current[t.id] !== mark) {
             setRevision(v => v + 1); onChanged();
-            setNotice(`${t.short}：${phases[next?.phase || ''] || '已结束'}`);
           }
           finishes.current[t.id] = mark;
         } catch (e) { if (!controller.signal.aborted) setJobErrors(v => ({ ...v, [t.id]: e instanceof Error ? e.message : '状态查询失败' })); }
@@ -455,7 +454,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
     }
     try {
       const outcome = await workflowRequest<{ errors?: string[] } | null>(path, method, body);
-      setNotice(outcome?.errors?.length ? `部分资料已保存：${outcome.errors.join('；')}` : path.endsWith('/retry') ? '资料已更新，名单已重新分类。' : '操作已受理，采集结果请查看对应进度。');
+      if (!task) setNotice(outcome?.errors?.length ? `部分资料已保存：${outcome.errors.join('；')}` : path.endsWith('/retry') ? '资料已更新，名单已重新分类。' : '操作已受理，采集结果请查看对应进度。');
       changed();
       if (task) {
         const next = normalizeCollectionJob(await workflowRequest<IncomingJob | null>(path));
