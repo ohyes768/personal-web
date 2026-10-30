@@ -7,3 +7,5 @@ DiscoveryCheckpoint 提供同名未缓存步骤，通过_call计预算、取消�
 前端ProbeState增可选current_step，运行态由实际步骤显示进度，终态沿用stage。选择/重试先清空旧步骤与诊断，避免旧结果污染新操作。
 
 不并发请求、不降低间隔；对比保留双HTML仅换文案，本方案减少真实请求且复用已验证的列表API。无需数据库迁移，回滚相关代码即可。
+
+同名唯一补充：evaluate增加仅由ProbeService启用的allow_name_only参数，完整名称且无冲突时允许缺少可比较位置的候选通过strong判定。唯一性与搜索完整性仍由_search统一控制，资料刷新及发布锁内复核同样启用该参数。旧auto_discover不启用，避免其没有候选完整性保护的路径被放宽。

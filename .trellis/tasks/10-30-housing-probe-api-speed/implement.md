@@ -5,3 +5,8 @@
 - [x] 更新 rental-probe.ts / XingfuliProbe.tsx 运行态进度，清除新操作遗留步骤。
 - [x] 运行后端source_api/probe/matching/discovery/collector及相关回归，独立F盘basetemp；前端node测试、lint、tsc、build。
 - [x] 更新发现契约和验证记录；改动留工作区，不影响其他任务。
+
+## 同名唯一补充
+- [x] 新增缺少位置证据的唯一候选自动绑定测试，以及多候选、截断、远距离、恢复后资料变化保护。
+- [x] evaluate提供显式同名策略，ProbeService搜索、恢复和落库复核一致使用。
+- [x] 跑幸福里相关回归并同步发现契约与验证记录。

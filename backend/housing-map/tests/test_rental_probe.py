@@ -97,6 +97,65 @@ def test_single_strong_candidate_binds_without_asking(tmp_path):
     assert sources[0]['seed_listing_id'] == SEED
 
 
+@pytest.mark.parametrize('automatic', [False, True])
+@pytest.mark.parametrize('position', [
+    {'longitude': None, 'latitude': None},
+    {'coordinate_system': 'wgs84'},
+])
+def test_unique_exact_name_binds_without_matching_place(tmp_path, automatic, position):
+    registry = setup(tmp_path, name='湘云雅苑')
+    facts = {**homepage(name='湘云雅苑', address='西兴路1190号'), **position}
+    fake = FakeDiscovery(search={'湘云雅苑': {TOTAL_ID: '湘云雅苑'}},
+                         homepages={TOTAL_ID: facts},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.start('c1', automatic=automatic)
+    svc._thread.join(5)
+    state = svc.status('c1')
+    assert state['stage'] == probe.STAGE_BOUND
+    source = next(s for s in registry.sources() if s['source'] == 'xingfuli')
+    assert source['community_id'] == 'c1'
+    assert '完整名称一致' in source['evidence']
+    assert '地址一致' not in source['evidence']
+    assert '位置接近（100米内）' not in source['evidence']
+
+
+@pytest.mark.parametrize('case', ['multiple', 'incomplete', 'far', 'partial'])
+def test_name_only_binding_still_requires_complete_unique_identity(tmp_path, case):
+    registry = setup(tmp_path)
+    facts = {**homepage(address='其他路1号'), 'longitude': None, 'latitude': None}
+    search = {TOTAL_ID: '测试花园'}
+    pages = {TOTAL_ID: facts}
+    if case == 'multiple':
+        other = '6581009489657331973'
+        search[other] = '测试花园'
+        pages[other] = {**facts, 'neighborhood_id': other}
+    elif case == 'far':
+        facts.update(longitude=120.30, latitude=30.30)
+    elif case == 'partial':
+        facts['name'] = search[TOTAL_ID] = '测试花园小区'
+    fake = FakeDiscovery(search={'测试花园': search}, homepages=pages,
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    if case == 'incomplete':
+        fake.search_complete = False
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_NEEDS_SELECTION
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+    assert not any(call[0] == 'rental_entry' for call in fake.calls)
+
+
+def test_restored_name_only_candidate_is_rechecked_before_binding(tmp_path):
+    registry = setup(tmp_path)
+    facts = {**homepage(address='其他路1号', seeds=()), 'longitude': None, 'latitude': None}
+    first = FakeDiscovery(search={'测试花园': {TOTAL_ID: '测试花园'}},
+                          homepages={TOTAL_ID: facts})
+    assert run(service(registry, first, tmp_path))['stage'] == probe.STAGE_NO_ENTRY
+    second = FakeDiscovery(homepages={TOTAL_ID: {**facts, 'seeds': [SEED]}},
+                           owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    assert run(service(registry, second, tmp_path))['stage'] == probe.STAGE_BOUND
+    assert ('community_info', TOTAL_ID) in second.calls
+
+
 def test_ambiguous_candidates_ask_the_user_to_choose(tmp_path):
     registry = setup(tmp_path)
     other = '6581009489657331973'

@@ -1,5 +1,11 @@
 # 验证记录（2026-10-30）
 
+## 同名唯一候选补充
+- TDD先复现5失败20通过：同名唯一缺坐标/坐标系不可比仍待选，恢复流程无法进入入口核验。
+- 完成后8个相关后端套件198通过，2个既有依赖弃用警告；命令：`.venv/Scripts/python.exe -m pytest tests/test_rental_probe.py tests/test_matching_speed.py tests/test_xingfuli_source_api.py tests/test_rental_xingfuli_sources.py tests/test_xingfuli_discovery.py tests/test_xingfuli_rentals.py tests/test_rental_split.py tests/test_rental_refresh.py -q --basetemp=.pytest-tmp-name-only-final`。
+- 覆盖显式/自动搜索、缺坐标/不可比坐标系、多候选/截断/远距离/相似名称、恢复刷新、真实API归属核验，以及核验中目录改名后禁止落库。旧auto_discover保持原位置门槛。
+- `git diff --check`通过；本次仅后端规则、测试和文档变更，无前端修改。未提交、部署或触发线上绑定；线上已有待选结果需重新探查或全量匹配。
+
 ## 原因及方案证据
 线上只读查询最近两次人工选择的持久化诊断：4请求，11.797/12.001秒，限速等待8.93秒、HTTP2.78/2.93秒。检查代码发现前半段资料与入口API化，末尾仍双HTML。
 单次只读上游列表API探测返回20行，全部明确属于目标nid，旧入口seed不在第一页。因此替换为列表API并使用返回行中的已核验seed，不以锚点URL、搜索结果或旧seed推断归属。未修改线上库、未触发真实关联。

@@ -2,8 +2,10 @@
 
 Two rules decide everything here. An automatic binding needs the platform name
 to match the internal community exactly and the place to agree by address or
-position; a human may confirm a merely similar name, but never a phase variant
-or a different district. A keyword search response is never evidence.
+position. The complete, unique-candidate probe may also accept an exact name
+when coordinates cannot be compared; a human may confirm a merely similar
+name, but never a phase variant or a different district. A keyword search
+response is never evidence.
 """
 from __future__ import annotations
 
@@ -50,8 +52,12 @@ def _matches_name(names, platform_name):
     return 'none'
 
 
-def evaluate(community, candidate):
-    """Evidence, gaps and conflicts between an internal community and a candidate."""
+def evaluate(community, candidate, *, allow_name_only=False):
+    """Judge identity; name-only acceptance requires caller-proven uniqueness.
+
+    Only the probe checks search completeness and candidate uniqueness. Legacy
+    automatic discovery must keep the default place-evidence requirement.
+    """
     names = community_names(community)
     evidence = []
     gaps = []
@@ -83,8 +89,9 @@ def evaluate(community, candidate):
     same_position = False
     values = [candidate.get('longitude'), candidate.get('latitude'),
               community.get('longitude'), community.get('latitude')]
-    if candidate.get('coordinate_system') == community.get('coordinate_system') == 'gcj02' \
-            and all(isinstance(v, (int, float)) and math.isfinite(v) for v in values):
+    comparable_position = candidate.get('coordinate_system') == community.get('coordinate_system') == 'gcj02' \
+        and all(isinstance(v, (int, float)) and math.isfinite(v) for v in values)
+    if comparable_position:
         same_position = _distance_meters(*values) <= POSITION_LIMIT_METERS
     if same_address:
         evidence.append('地址一致')
@@ -93,7 +100,8 @@ def evaluate(community, candidate):
     else:
         gaps.append('缺少一致地址或位置证据')
 
-    strong = match == 'exact' and not conflicts and (same_address or same_position)
+    strong = match == 'exact' and not conflicts and (
+        same_address or same_position or (allow_name_only and not comparable_position))
     return {'evidence': evidence, 'gaps': gaps, 'conflicts': conflicts, 'strong': strong}
 
 

@@ -78,6 +78,34 @@ def test_cold_matching_uses_four_api_requests_and_no_listing_html(tmp_path):
         '/f100/api/search_api/rent']
 
 
+def test_name_only_identity_binds_through_live_api_membership_check(tmp_path):
+    reg = setup(tmp_path)
+    responses = APIResponses()
+    responses.infos[TOTAL_ID] = info_body(address='西兴路1190号', gaode_lng=None, gaode_lat=None)
+    state = run(probe(reg, responses, tmp_path))
+    assert state['stage'] == 'bound_pending_collection'
+    assert state['diagnostics']['requests'] == 4
+    assert responses.paths()[-1] == '/f100/api/search_api/rent'
+    assert next(s for s in reg.sources() if s['source'] == 'xingfuli')['community_id'] == 'c1'
+
+
+def test_name_only_identity_is_rechecked_after_live_verification(tmp_path):
+    reg = setup(tmp_path)
+    responses = APIResponses()
+    responses.infos[TOTAL_ID] = info_body(address='西兴路1190号', gaode_lng=None, gaode_lat=None)
+
+    def changed_during_verification(url):
+        body = responses(url)
+        if urlsplit(url).path == '/f100/api/search_api/rent':
+            reg.update('c1', name='另一个花园', aliases=[])
+        return body
+
+    state = run(probe(reg, changed_during_verification, tmp_path))
+    assert state['stage'] == 'upstream_failed'
+    assert '身份信息已变化' in state['message']
+    assert not any(s['source'] == 'xingfuli' for s in reg.sources())
+
+
 def test_ambiguous_candidates_do_not_fetch_entries_until_selected(tmp_path):
     reg = setup(tmp_path)
     responses = APIResponses(ambiguous=True)
