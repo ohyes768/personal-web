@@ -33,13 +33,18 @@ class TestConfig:
     def test_from_env_defaults(self, monkeypatch):
         monkeypatch.delenv("HERMES_BASE_URL", raising=False)
         monkeypatch.delenv("HERMES_API_KEY", raising=False)
+        monkeypatch.delenv("HERMES_MAX_CONCURRENT", raising=False)
         monkeypatch.setenv("HERMES_PROFILE", "ohyes768")
         cfg = HermesConfig.from_env()
         assert cfg.is_configured is False
         assert cfg.profile == "ohyes768"
         assert cfg.poll_interval == 30
         assert cfg.timeout == 3600
-        assert cfg.max_concurrent == 4
+        assert cfg.max_concurrent == 1
+
+    def test_concurrency_can_be_overridden(self, monkeypatch):
+        monkeypatch.setenv("HERMES_MAX_CONCURRENT", "2")
+        assert HermesConfig.from_env().max_concurrent == 2
 
     def test_from_env_configured(self, monkeypatch):
         monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642/")

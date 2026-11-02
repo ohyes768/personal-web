@@ -198,6 +198,13 @@ never embed dividend backend URLs or schema details. Frontend mirrors the contra
   `retry_codes` updated) and **persists the job before acknowledging**;
   service-side items enter the FIFO deque under `_cond`. Response is the
   updated job with `reused: true`.
+- After a successful persisted append, call `_cond.notify_all()` while holding
+  `_cond`. The dispatcher may be asleep with no pending work and spare capacity;
+  it must not wait for another stock to finish before noticing new work.
+- `HERMES_MAX_CONCURRENT` defaults to 1 in both `HermesConfig.from_env()` and
+  the NAS Compose service. Production uses one stock at a time in FIFO order;
+  explicit environment overrides remain supported. When the slot is occupied,
+  appended items stay queued and reorderable until it is released.
 - Codes already queued/running → skipped; duplicate-only requests return the
   job `reused: true` and never reset timestamps or re-run Hermes.
 - Resubmitting a completed/failed code re-admits it (fresh `queued_at`;
@@ -238,6 +245,9 @@ never embed dividend backend URLs or schema details. Frontend mirrors the contra
   cleanup + terminal `succeeded`), FIFO dispatch order, `HERMES_MAX_CONCURRENT`
   respected, fresh-service instance waits for the active job then starts a new
   one, contained resubmit leaves unrelated `per_code` untouched.
+- Hold A's fake upstream run open and wait until the dispatcher sleeps; with an
+  explicit limit of 2, appending B must start it before A finishes. Verify the
+  environment default is 1 and explicit concurrency overrides are honored.
 - `tests/test_quality_api.py`: append returns 202 same id with updated codes
   and `per_code`; duplicate-only 202 `reused: true`.
 - `e2e/screening.spec.ts`: queue panel rows/counts, elapsed tick, per-stock
@@ -252,7 +262,9 @@ the appended work).
 
 #### Correct
 Append under the service `_cond`, persist via `append_codes` before
-acknowledging, and gate the dispatch loop's exit on the same lock.
+acknowledging, notify the sleeping dispatcher after a successful append, and
+gate the dispatch loop's exit on the same lock. Without that notification,
+appended work can remain queued despite spare capacity until another run ends.
 
 ## Scenario: active quality queue cancel and reorder (2026-10-29)
 

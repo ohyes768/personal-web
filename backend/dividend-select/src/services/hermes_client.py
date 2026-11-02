@@ -59,7 +59,7 @@ class HermesConfig:
             profile=os.environ.get("HERMES_PROFILE", "ohyes768"),
             poll_interval=int(os.environ.get("HERMES_POLL_INTERVAL", "30")),
             timeout=int(os.environ.get("HERMES_TIMEOUT", "3600")),
-            max_concurrent=int(os.environ.get("HERMES_MAX_CONCURRENT", "4")),
+            max_concurrent=int(os.environ.get("HERMES_MAX_CONCURRENT", "1")),
         )
 
     @property

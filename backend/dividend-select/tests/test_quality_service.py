@@ -358,6 +358,51 @@ class TestSubmitAnalysis:
 class TestQueueAppend:
     """R1/R3：运行中受理新代码入队（FIFO）；重复提交不重复执行、不重置计时。"""
 
+    def test_append_wakes_idle_dispatcher_when_slot_available(self, tmp_path):
+        import threading
+
+        async def scenario():
+            dispatcher_waiting = threading.Event()
+
+            class ObservedCondition(threading.Condition):
+                def wait(self, timeout=None):
+                    dispatcher_waiting.set()
+                    return super().wait(timeout)
+
+            service = QualityService(tmp_path / "quality_scores.json")
+            service._cond = ObservedCondition()
+            manager = RefreshJobManager(tmp_path / "jobs")
+            release = threading.Event()
+            second_started = threading.Event()
+            cfg = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="p",
+                               poll_interval=0, timeout=5, max_concurrent=2)
+            stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
+
+            def submit_fn(cfg, prompt, key):
+                if "600519" in key:
+                    second_started.set()
+                return key
+
+            def poll_fn(cfg, run_id):
+                assert release.wait(10)
+                code = "600519" if "600519" in run_id else "000001"
+                return fake_output(code, stocks[code].name)
+
+            try:
+                first = service.submit_analysis(
+                    ["000001"], cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+                assert dispatcher_waiting.wait(5)
+                appended = service.submit_analysis(
+                    ["600519"], cfg, stocks, "2026-09-30", manager, submit_fn, poll_fn)
+                assert appended["job_id"] == first["job_id"]
+                assert second_started.wait(2), "An available slot must start appended work before the first run finishes"
+            finally:
+                release.set()
+                await manager.close(timeout=5)
+            assert manager.get(first["job_id"])["status"] == "succeeded"
+
+        asyncio.run(scenario())
+
     def test_append_admits_new_code_while_running(self, tmp_path):
         import threading
 
@@ -729,6 +774,7 @@ class TestQueueControls:
             manager = RefreshJobManager(tmp_path / "jobs")
             stops = []
             phase = {"status": "running"}
+            polled = threading.Event()
 
             def submit_fn(cfg, prompt, key):
                 return "run-1"
@@ -739,6 +785,7 @@ class TestQueueControls:
                 return "stopping"
 
             def get_fn(cfg, run_id):
+                polled.set()
                 status = phase["status"]
                 return {"status": status, "output": fake_output("000001", "样本") if status == "completed" else ""}
 
@@ -746,7 +793,7 @@ class TestQueueControls:
                 ["000001"], cfg, {"000001": stock()}, "2026-09-30", manager,
                 submit_fn, lambda *args: (_ for _ in ()).throw(AssertionError("不应走阻塞轮询")),
                 stop_run_fn=stop_fn, get_run_fn=get_fn)
-            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
+            assert polled.wait(5)  # 确认已提交到 Hermes，避免走提交前取消分支。
             item_id = service.get_per_code()["000001"]["item_id"]
             pending = service.cancel_item(item_id, manager)
             assert pending["per_code"]["000001"]["state"] == "cancelling"

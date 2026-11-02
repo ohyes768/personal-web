@@ -370,6 +370,8 @@ class QualityService:
                     self._admit(fresh, snapshots)
                     updated = refresh_jobs.append_codes(self._active_job_id, fresh)
                     if updated is not None:
+                        # 入队并持久化成功后唤醒调度；空闲名额不必等在跑项结束。
+                        self._cond.notify_all()
                         return {**updated, "reused": True}
                     # job 恰在收尾窗口变终态，或服务已停止受理：撤回刚入队的项
                     for code in fresh:
