@@ -500,3 +500,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 14: 宽基趋势接入理杏仁沪深300 PE 分位
+
+**Date**: 2026-11-02
+**Task**: 宽基趋势接入理杏仁沪深300 PE 分位
+**Package**: backend/index-trends
+
+### Summary
+
+实施 11-02-index-trends-pe-percentile：后端新增理杏仁适配层 src/data/lixinger.py 与估值服务 src/services/valuation_service.py、迁移 005_valuation_tables、状态 API 只读返回 valuation、周报增加估值行并固化快照；前端 CurrentTab 增加独立估值区域与五种状态文案；compose 透传 INDEX_TRENDS_LIXINGER_TOKEN，新增 backend/index-trends/README.md。验证：后端 215 passed，前端 tsc/9 项 node 测试/build 通过；本地烟测确认无 Token 时 disabled 且不发请求、假 Token 得 401→error 且日志无令牌泄漏。规范：新增 .trellis/spec/backend/index-trends/backend/{index,weekly-pipeline,valuation-contract}.md 并注册 package。未完成（需用户授权）：真实 Token 联调、浏览器视觉复核、部署与真实投递。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `65cea2ac` | (see git log) |
+| `3b994b97` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
