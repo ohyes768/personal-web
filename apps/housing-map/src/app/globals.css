@@ -1794,3 +1794,10 @@ body {
   .nh-nearby-price { order: 3; }
   .nh-compare-bar { top: 62px; max-width: calc(100% - 32px); }
 }
+
+.rental-selection-table { width:100%; table-layout:fixed; }
+.rental-selection-table th:nth-child(1) { width:25%; }
+.rental-selection-table th:nth-child(2) { width:27%; }
+.rental-selection-table th:nth-child(3) { width:34%; }
+.rental-selection-table th:nth-child(4) { width:14%; }
+.rental-selection-table td { vertical-align:top; }

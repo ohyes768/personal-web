@@ -1,6 +1,8 @@
 """搜索分页：翻过满页首页、从断点续查，并区分请求失败/未查完/未找到。"""
 import json
 
+import pytest
+
 from tests.test_rental_probe import FakeDiscovery, homepage, setup, service, run, TOTAL_ID, SEED
 from src.services.rental_reference import probe
 from src.services.rental_reference.discovery_checkpoint import PREFIX, VERSION
@@ -158,3 +160,45 @@ def test_batch_counts_incomplete_and_requeues_it(tmp_path):
     assert status['association']['incomplete'] == 1
     assert status['association']['failed'] == 0
     assert svc._targets('incremental') == ['c1']
+
+
+def test_distinct_listing_pages_for_one_neighborhood_do_not_stop_search(tmp_path):
+    registry = setup(tmp_path)
+
+    class ListingPages(Paged):
+        def search(self, name, channel, offset=0):
+            groups = super().search(name, channel, offset)
+            self.search_page_fingerprint = f'{channel}:listings:{offset}'
+            return groups
+
+    fake = ListingPages(pages={
+        ('测试花园', 'second_hand', 0): ({TOTAL_ID: '测试花园'}, False),
+        ('测试花园', 'second_hand', 20): ({TOTAL_ID: '测试花园'}, False),
+        ('测试花园', 'second_hand', 40): ({}, True),
+    }, homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.budget = 2
+    assert run(svc)['stage'] == probe.STAGE_DEFERRED
+    resumed = service(registry, fake, tmp_path)
+    assert run(resumed)['stage'] == probe.STAGE_BOUND
+    assert ('search', '测试花园', 'second_hand', 40) in fake.calls
+
+
+@pytest.mark.parametrize('reported_complete', [False, True])
+def test_repeated_raw_listing_page_cannot_authorize_binding(tmp_path, reported_complete):
+    registry = setup(tmp_path)
+
+    class Repeated(Paged):
+        def search(self, name, channel, offset=0):
+            groups = super().search(name, channel, offset)
+            self.search_page_fingerprint = 'same-raw-listings'
+            return groups
+
+    fake = Repeated(pages={
+        ('测试花园', 'second_hand', 0): ({TOTAL_ID: '测试花园'}, False),
+        ('测试花园', 'second_hand', 20): ({TOTAL_ID: '测试花园'}, reported_complete),
+    }, homepages={TOTAL_ID: homepage()})
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_NEEDS_SELECTION
+    assert '重复' in state['message']
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())

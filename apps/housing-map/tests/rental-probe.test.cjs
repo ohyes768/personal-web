@@ -39,7 +39,7 @@ test('probe path is scoped to the community', () => {
 
 test('stage labels distinguish the outcomes', () => {
   assert.match(probeStageLabel('homepage_not_found'), /未找到/);
-  assert.match(probeStageLabel('entry_not_found'), /没有可用的租房入口/);
+  assert.match(probeStageLabel('entry_not_found'), /归属核验未通过/);
   assert.match(probeStageLabel('bound_pending_collection'), /等待下一轮采集/);
   assert.equal(probeIsRunning('searching_homepage'), true);
   assert.equal(probeIsRunning('resolving_entry'), true);
@@ -113,4 +113,34 @@ test('a broken response does not leak a parser error', async () => {
   } finally {
     global.fetch = original;
   }
+});
+
+test('legacy refreshed candidate without evidence arrays renders safely and requires retry', () => {
+  const legacy = { ...candidate };
+  delete legacy.conflicts; delete legacy.evidence; delete legacy.evidence_gaps;
+  const html = renderToStaticMarkup(React.createElement(ProbeCandidateCard, {
+    candidate: legacy, busy: false, onSelect() { throw new Error('incomplete evidence must not bind'); },
+  }));
+  assert.match(html, /候选证据不完整，请重试重新探查/);
+  assert.match(html, /disabled=""/);
+});
+
+test('no listings is a normal empty result distinct from verification or request failure', () => {
+  assert.equal(probeStageLabel('no_rental_listings'), '暂无在租房源');
+  assert.equal(probeIsRunning('no_rental_listings'), false);
+});
+
+test('server-approved manual subdivision can be selected and explains rental scope', () => {
+  const html = renderToStaticMarkup(React.createElement(ProbeCandidateCard, {
+    candidate: { ...candidate, name: '保亿风景蝶院(观园)', manual_selectable: true, manual_scope: '观园',
+      conflicts: ['平台名称带分期标记“观园”，与目录小区不是同一范围'] },
+    busy: false, onSelect() {},
+  }));
+  assert.match(html, /选择这个分园/);
+  assert.match(html, /租金样本仅来自该分园/);
+  assert.doesNotMatch(html, /disabled/);
+  const denied = renderToStaticMarkup(React.createElement(ProbeCandidateCard, {
+    candidate: { ...candidate, manual_selectable: false, manual_scope: '' }, busy: false, onSelect() {},
+  }));
+  assert.match(denied, /disabled/);
 });

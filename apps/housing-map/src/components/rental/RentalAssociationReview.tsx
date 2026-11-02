@@ -5,20 +5,15 @@ import DirectoryDialog from '../community/DirectoryDialog';
 import { rentalDataChanged } from '../../lib/rental-sources';
 import { XingfuliProbe } from './XingfuliProbe';
 
-type Candidate = { id: string; name: string; address?: string; district?: string; similarity?: number };
+type Candidate = { id: string; name: string; address?: string; district?: string; similarity?: number; manual_selectable?: boolean; manual_scope?: string };
 export type RentalReview = { community_id: string; community_name: string; reason: string;
-  message?: string; candidates: Candidate[] };
-const reasons: Record<string, string> = { needs_selection: '请选择对应小区', missing: '暂无租金来源',
+  message?: string; address?: string; candidates: Candidate[];
+  candidate_count?: number; selectable_count?: number; selection_reason?: string };
+const reasons: Record<string, string> = { needs_selection: '请选择对应小区', missing: '暂无租金来源', no_listings: '暂无在租房源',
   search_failed: '来源查找失败', search_deferred: '未查完或未查询，可继续匹配', skipped: '已跳过' };
-const filterLabels: Record<string, string> = { needs_selection: '待选择', missing: '未找到',
-  search_failed: '查找失败', search_deferred: '未查询', skipped: '已跳过' };
-const filterHints: Record<string, string> = {
-  needs_selection: '搜索返回了候选，请核对名称、地址与分期后绑定；拿不准可先跳过。',
-  missing: '还没有关联租金来源。可以点开小区后用“探查幸福里来源”，只选主页即可，不需要自己找链接。',
-  search_failed: '幸福里来源查找或租房入口核验失败，请点开小区查看原因并重试。',
-  search_deferred: '搜索未查完或还没轮到该小区；可在“维护采集”中继续匹配租金来源，也可单独探查。',
-  skipped: '之前跳过的小区，可在这里恢复处理。' };
-const filterOrder = ['needs_selection', 'missing', 'search_failed', 'search_deferred', 'skipped'];
+const filterLabels: Record<string, string> = { needs_selection: '待选择', missing: '未找到', no_listings: '暂无在租',
+  search_failed: '查找失败', search_deferred: '未完成', skipped: '已跳过' };
+const filterOrder = ['needs_selection', 'missing', 'no_listings', 'search_failed', 'search_deferred', 'skipped'];
 
 export function RentalCandidateChoice({ item, busy, onDecide }: {
   item: RentalReview; selected: string; busy: boolean; onSelect: (id: string) => void;
@@ -37,6 +32,26 @@ export function RentalCandidateChoice({ item, busy, onDecide }: {
   </div>;
 }
 
+export function RentalSelectionTable({ items, onReview }: {
+  items: RentalReview[]; onReview: (id: string) => void;
+}) {
+  return <div className="directory-table-wrap"><table className="review-table rental-selection-table">
+    <thead><tr><th>小区</th><th>候选情况</th><th>待确认原因</th><th>操作</th></tr></thead>
+    <tbody>{items.map(entry => {
+      const total = entry.candidate_count ?? entry.candidates.length;
+      const names = entry.candidates.slice(0, 2).map(c => c.name).join('、');
+      return <tr key={entry.community_id}>
+        <td data-label="小区"><strong>{entry.community_name}</strong><small>{entry.address || '地址待补充'}</small></td>
+        <td data-label="候选情况">{total ? `${total} 个候选` : '候选资料待刷新'}
+          {entry.selectable_count !== undefined && total > 0 && <small>{entry.selectable_count} 个可人工选择</small>}
+          {names && <small>{names}{total > 2 ? `等，共 ${total} 个` : ''}</small>}</td>
+        <td data-label="待确认原因">{entry.selection_reason || '请打开弹框核对候选资料'}</td>
+        <td data-label="操作"><button type="button" className="btn btn-secondary" onClick={() => onReview(entry.community_id)}>核对候选</button></td>
+      </tr>;
+    })}</tbody>
+  </table></div>;
+}
+
 export default function RentalAssociationReview({ onChanged }: { onChanged?: () => void }) {
   const [items, setItems] = useState<RentalReview[]>([]);
   const [reasonFilter, setReasonFilter] = useState('needs_selection');
@@ -44,7 +59,6 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
   const [candidate, setCandidate] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
   const load = useCallback(async (signal?: AbortSignal) => {
     try {
       const response = await fetch('/api/map/rentals/association-tasks', { signal });
@@ -67,7 +81,7 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
   function pickFilter(reason: string) { setReasonFilter(reason); setSelectedCommunity(''); setCandidate(''); }
   async function decide(action: 'bind' | 'skip' | 'reopen') {
     if (!item) return;
-    setBusy(true); setError(''); setNotice('');
+    setBusy(true); setError('');
     try {
       const response = await fetch(`/api/map/rentals/association-tasks/${encodeURIComponent(item.community_id)}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -77,7 +91,6 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
       if (!response.ok || !payload.success) throw new Error(payload.detail || '保存失败，请重试');
       setSelectedCommunity('');
       setCandidate('');
-      setNotice(action === 'bind' ? '已绑定，请运行“更新租金数据”。' : action === 'skip' ? '已跳过，以后可在“已跳过”中重新处理。' : '已恢复处理，可探查幸福里或运行“匹配租金来源”。');
       await load(); rentalDataChanged(); onChanged?.();
     } catch (e) { setError(e instanceof Error ? e.message : '操作失败'); }
     finally { setBusy(false); }
@@ -90,16 +103,15 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
       <button className="btn btn-secondary" disabled={busy} onClick={() => void load()}>刷新清单</button>
     </div>
     {error && !item && <p role="alert" className="directory-warning">{error}</p>}
-    {notice && <p role="status">{notice}</p>}
-    <p className="directory-muted">{filterHints[reasonFilter] || ''}</p>
     {visible.length ? <div className="directory-workspace"><div className="directory-list-panel">
-      <div className="rental-source-list">{visible.map(entry => {
+      {reasonFilter === 'needs_selection' ? <RentalSelectionTable items={visible} onReview={id => { setSelectedCommunity(id); setCandidate(''); }} />
+        : <div className="rental-source-list">{visible.map(entry => {
         const top = Math.max(0, ...entry.candidates.map(c => c.similarity ?? 0));
         return <button key={entry.community_id} type="button"
           aria-pressed={selectedCommunity === entry.community_id}
           onClick={() => { setSelectedCommunity(entry.community_id === selectedCommunity ? '' : entry.community_id); setCandidate(''); }}>
           <span>{entry.community_name}</span><small>{filterLabels[entry.reason] || entry.reason}{top > 0 ? ` · ${Math.round(top * 100)}%` : ''}</small></button>;
-      })}</div>
+      })}</div>}
     </div>
       {item && <DirectoryDialog title={item.community_name} onClose={() => { setSelectedCommunity(''); setCandidate(''); }}>
         {error && <p role="alert" className="directory-warning">{error}</p>}

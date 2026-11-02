@@ -13,12 +13,13 @@ import threading
 import uuid
 
 from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
-from src.services.community_registry import dump, normalized, now
+from src.services.community_registry import dump, now
 from src.services.fang_rentals import RentalCrawlCancelled
 from src.services.rental_reference.xingfuli_sources import (
     bind_source,
     candidate_from_homepage,
     community_names,
+    rental_name_key,
     evaluate,
 )
 from src.services.xingfuli_discovery import CHANNEL_ORDER, SEARCH_PAGE_SIZE, XingfuliDiscovery
@@ -39,6 +40,7 @@ STAGE_RESOLVING = 'resolving_entry'
 STAGE_BOUND = 'bound_pending_collection'
 STAGE_NO_HOMEPAGE = 'homepage_not_found'
 STAGE_NO_ENTRY = 'entry_not_found'
+STAGE_NO_LISTINGS = 'no_rental_listings'
 STAGE_FAILED = 'upstream_failed'
 STAGE_COOLING = 'cooling_down'
 STAGE_DEFERRED = 'deferred'
@@ -87,7 +89,7 @@ def write_state(registry, community_id, **fields):
 
 def _related(query, platform_name):
     """Whether a platform name plausibly answers the searched name."""
-    left, right = normalized(query), normalized(platform_name)
+    left, right = rental_name_key(query), rental_name_key(platform_name)
     if not left or not right:
         return False
     return left == right or left in right or right in left
@@ -96,7 +98,7 @@ def _related(query, platform_name):
 def _search_names(community):
     names, seen = [], set()
     for name in community_names(community):
-        key = normalized(name)
+        key = rental_name_key(name)
         if key and key not in seen:
             names.append(name)
             seen.add(key)
@@ -144,6 +146,15 @@ class ProbeService:
             candidate.setdefault('evidence_gaps', [])
             candidate.setdefault('conflicts', [])
             candidate.setdefault('strong', False)
+        if state['stage'] == STAGE_NEEDS_SELECTION and state.get('candidates'):
+            try:
+                community = self._community(community_id)
+            except ProbeInvalid:
+                return state
+            for candidate in state['candidates']:
+                manual = evaluate(community, candidate, allow_subdivision=True)
+                candidate['manual_selectable'] = manual['selectable']
+                candidate['manual_scope'] = manual['manual_scope']
         return state
 
     def busy(self):
@@ -166,7 +177,7 @@ class ProbeService:
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
             write_state(self.registry, community_id, stage=STAGE_SEARCHING, job_id=self._job_id,
-                        message='正在查找幸福里小区主页', candidates=None, error=None,
+                        message='正在查找幸福里小区主页', candidates=None, selected_page=None, error=None,
                         diagnostics={}, current_step=None)
             self._spawn(community, 'search')
         return self.status(community_id)
@@ -189,9 +200,9 @@ class ProbeService:
                 raise ProbeConflict('候选已更新，请刷新后重新选择')
             community = self._community(community_id)
             self._automatic = False
-            judgement = evaluate(community, candidate)
-            if judgement['conflicts']:
-                raise ProbeInvalid('；'.join(judgement['conflicts']) + '，不能绑定到该小区')
+            judgement = evaluate(community, candidate, allow_subdivision=True)
+            if not judgement['selectable']:
+                raise ProbeInvalid(('；'.join(judgement['conflicts']) or '主页名称与目录小区不匹配') + '，不能绑定到该小区')
             self._cancel.clear()
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
@@ -211,12 +222,13 @@ class ProbeService:
             state = read_state(self.registry, community_id)
             community = self._community(community_id)
             self._automatic = False
-            mode = 'entry' if state.get('selected_page') else 'search'
+            mode = 'entry' if state.get('selected_page') and state.get('stage') != STAGE_NEEDS_SELECTION else 'search'
             self._cancel.clear()
             self._job_id = uuid.uuid4().hex
             self._community_id = community_id
             write_state(self.registry, community_id, stage=STAGE_SEARCHING if mode == 'search' else STAGE_RESOLVING,
-                        job_id=self._job_id, message='正在重试', error=None, current_step=None, diagnostics={})
+                        job_id=self._job_id, message='正在重试', error=None, current_step=None, diagnostics={},
+                        **({'selected_page': None, 'candidates': None} if mode == 'search' else {}))
             self._spawn(community, mode)
         return self.status(community_id)
 
@@ -303,6 +315,7 @@ class ProbeService:
         for name in _search_names(community):
             for channel in CHANNEL_ORDER:
                 channel_seen = set()
+                page_fingerprints = set()
                 offset = 0
                 while True:
                     try:
@@ -341,12 +354,19 @@ class ProbeService:
                         if len(candidates) >= MAX_CANDIDATES:
                             truncated = True
                             break
-                    if truncated or client.search_complete:
+                    if truncated:
                         break
-                    if offset > 0 and not new_ids:
-                        # The platform ignored the offset: no further page can
-                        # add identities, and uniqueness is no longer provable.
+                    page_fingerprint = client.search_page_fingerprint
+                    repeated_page = (page_fingerprint in page_fingerprints if page_fingerprint
+                                     else not new_ids and not client.search_complete)
+                    if page_fingerprint:
+                        page_fingerprints.add(page_fingerprint)
+                    if offset > 0 and repeated_page:
+                        # The raw listing page repeated, not merely the same
+                        # neighborhood across different listing cards.
                         degraded = True
+                        break
+                    if client.search_complete:
                         break
                     offset += SEARCH_PAGE_SIZE
                 if truncated:
@@ -377,7 +397,7 @@ class ProbeService:
             self._resolve_entry(community, candidates[0], client)
             return
         write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION, candidates=candidates,
-                    message='请选择对应的小区主页')
+                    message='搜索分页返回重复房源，无法确认唯一候选，请核对小区主页' if degraded else '请选择对应的小区主页')
 
     def _resolve_entry(self, community, candidate=None, client=None):
         community_id = community['community_id']
@@ -394,15 +414,15 @@ class ProbeService:
             homepage = client.community_info(candidate['neighborhood_id'], fresh=True)
             fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
             fresh_candidate['candidate_id'] = candidate.get('candidate_id', 'homepage:' + candidate['neighborhood_id'])
-            judgement = evaluate(community, fresh_candidate, allow_name_only=True, allow_partial_name=True)
-            # 与 _search 写回的候选保持同一形状，缺字段会让前端白屏。
-            fresh_candidate['evidence'] = judgement['evidence']
-            fresh_candidate['evidence_gaps'] = judgement['gaps']
-            fresh_candidate['conflicts'] = judgement['conflicts']
-            fresh_candidate['strong'] = judgement['strong']
-            if judgement['conflicts'] or (self._require_strong and not judgement['strong']):
+            judgement = evaluate(community, fresh_candidate, allow_name_only=True, allow_partial_name=True,
+                                 allow_subdivision=not self._require_strong)
+            fresh_candidate.update(evidence=judgement['evidence'], evidence_gaps=judgement['gaps'],
+                                   conflicts=judgement['conflicts'], strong=judgement['strong'])
+            if not judgement['selectable'] or (self._require_strong and not judgement['strong']):
+                reason = '；'.join(judgement['conflicts']) or '主页身份信息已变化'
                 write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
-                            candidates=[fresh_candidate], message='主页信息已变化，请重新探查')
+                            selected_page=None, candidates=[fresh_candidate],
+                            message=reason + '，请重新探查')
                 return
             candidate = fresh_candidate
         entry = client.rental_entry(candidate['neighborhood_id'])
@@ -410,8 +430,10 @@ class ProbeService:
         write_state(self.registry, community_id, selected_page=candidate)
         seeds = list(entry['seeds'])[:MAX_SEED_TRIES]
         if not seeds:
-            write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
-                        message='该主页没有可用的租房入口，请重试或换一个主页')
+            empty = entry['rent_total'] == 0
+            write_state(self.registry, community_id, stage=STAGE_NO_LISTINGS if empty else STAGE_NO_ENTRY,
+                        message='该小区当前暂无在租房源，暂时无法采集租金；可稍后重新查询，无需更换主页' if empty
+                        else '平台显示有租房房源，但未返回可核验的房源入口；请稍后重试')
             return
         for seed in seeds:
             if client.request_count >= self.budget:
@@ -434,7 +456,7 @@ class ProbeService:
             self._bind(community, candidate, verified_seed)
             return
         write_state(self.registry, community_id, stage=STAGE_NO_ENTRY,
-                    message='该主页没有可核验的租房入口，请重试或换一个主页')
+                    message='租房房源归属核验未通过，暂未关联来源；请稍后重试或核对主页范围')
 
     def _checkpoint_client(self, community):
         return DiscoveryCheckpoint(self.registry, community, self._client(), self._cancel, self.budget,
@@ -453,14 +475,16 @@ class ProbeService:
             write_state(self.registry, community_id, stage=STAGE_FAILED,
                         message='小区已有租金来源，请刷新后重试')
             return
-        judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True)
+        judgement = evaluate(community, candidate, allow_name_only=True, allow_partial_name=True,
+                             allow_subdivision=not self._require_strong)
         evidence = [*judgement['evidence'], '主页租房入口已核验', f'房源种子 {seed}']
         try:
             from src.services.rental_reference.storage import RentalPublishLock
             with self._mutex, RentalPublishLock(self.directory / 'rental_publish'):
                 current = self._community(community_id)
-                current_judgement = evaluate(current, candidate, allow_name_only=True, allow_partial_name=True)
-                if current_judgement['conflicts']:
+                current_judgement = evaluate(current, candidate, allow_name_only=True, allow_partial_name=True,
+                                             allow_subdivision=not self._require_strong)
+                if not current_judgement['selectable']:
                     raise ValueError('小区身份信息已变化，请重新探查')
                 if self._require_strong and not current_judgement['strong']:
                     raise ValueError('小区身份信息已变化，请重新探查')

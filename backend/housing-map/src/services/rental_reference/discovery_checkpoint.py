@@ -15,7 +15,7 @@ from src.services.xingfuli_discovery import CITY_ID
 
 logger = logging.getLogger(__name__)
 PREFIX = 'rental_discovery_steps:'
-VERSION = 3
+VERSION = 4
 TTL = 24 * 3600
 
 
@@ -30,6 +30,7 @@ class DiscoveryCheckpoint:
         self.fingerprint = hashlib.sha256(dump(identity).encode()).hexdigest()
         self.enabled = os.getenv('HOUSING_XINGFULI_DISCOVERY_CACHE', '1') != '0'
         self.search_complete = True
+        self.search_page_fingerprint = None
         self.steps = {}
         self.fresh_communities = set()
         self.started = time.monotonic()
@@ -74,6 +75,8 @@ class DiscoveryCheckpoint:
                     and time.time() < expires <= time.time() + TTL
                     and self._valid(method, args, value) and isinstance(complete, bool)):
                 self.search_complete = complete
+                if method == 'search':
+                    self.search_page_fingerprint = step.get('page_fingerprint')
                 self.diagnostics['cache_hits'] += 1
                 self.report(method)
                 return copy.deepcopy(value)
@@ -84,9 +87,11 @@ class DiscoveryCheckpoint:
             value = getattr(self.client, method)(*args)
             if method == 'search':
                 self.search_complete = getattr(self.client, 'search_complete', True)
+                self.search_page_fingerprint = getattr(self.client, 'search_page_fingerprint', None)
             # Only parsed, successful search/info/entry facts are persisted.
             if cached and self.enabled:
-                self.steps[key] = dict(value=value, complete=self.search_complete, expires_at=time.time() + TTL)
+                self.steps[key] = dict(value=value, complete=self.search_complete, expires_at=time.time() + TTL,
+                                       page_fingerprint=self.search_page_fingerprint if method == 'search' else None)
                 state = dict(version=VERSION, fingerprint=self.fingerprint, steps=self.steps)
                 with self.registry.db() as db:
                     db.execute('INSERT INTO meta(key,value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value',

@@ -273,9 +273,9 @@ def test_ambiguous_candidates_ask_the_user_to_choose(tmp_path):
 
 
 def test_phase_variant_cannot_be_forced(tmp_path):
-    registry = setup(tmp_path)
+    registry = setup(tmp_path, name='测试花园(北区)')
     fake = FakeDiscovery(
-        search={('测试花园', 'second_hand'): {PHASE_ID: '测试花园(南区)'}},
+        search={('测试花园(北区)', 'second_hand'): {PHASE_ID: '测试花园(北区)(南区)'}},
         homepages={PHASE_ID: homepage(neighborhood_id=PHASE_ID, name='测试花园(南区)')},
         owners={SEED: PHASE_ID}, lists={SEED: PHASE_ID})
     svc = service(registry, fake, tmp_path)
@@ -311,7 +311,10 @@ def test_no_homepage_and_no_entry_are_different_reasons(tmp_path):
     fake2 = FakeDiscovery(
         search={('测试花园', 'second_hand'): {TOTAL_ID: '测试花园'}},
         homepages={TOTAL_ID: homepage(seeds=(), total=0)})
-    assert run(service(registry2, fake2, tmp_path / 'b'))['stage'] == probe.STAGE_NO_ENTRY
+    state = run(service(registry2, fake2, tmp_path / 'b'))
+    assert state['stage'] == probe.STAGE_NO_LISTINGS
+    assert '暂无在租房源' in state['message']
+    assert '无需更换主页' in state['message']
 
 
 def test_listing_of_another_community_is_not_an_entry(tmp_path):
@@ -485,9 +488,9 @@ def test_probe_api_starts_reads_and_rejects_a_stale_choice(tmp_path, monkeypatch
 
 
 def test_probe_api_refuses_a_conflicting_candidate(tmp_path, monkeypatch):
-    registry = setup(tmp_path)
+    registry = setup(tmp_path, name='测试花园(北区)')
     fake = FakeDiscovery(
-        search={('测试花园', 'second_hand'): {PHASE_ID: '测试花园(南区)'}},
+        search={('测试花园(北区)', 'second_hand'): {PHASE_ID: '测试花园(北区)(南区)'}},
         homepages={PHASE_ID: homepage(neighborhood_id=PHASE_ID, name='测试花园(南区)')},
         owners={SEED: PHASE_ID}, lists={SEED: PHASE_ID})
     client, svc = api_client(registry, fake, tmp_path, monkeypatch)
@@ -555,27 +558,6 @@ def test_probe_get_stays_readable_while_writer_lock_is_held(tmp_path, monkeypatc
     assert response.json()['data']['stage'] == 'idle'
 
 
-# --- 线上回归：'主页信息已变化'分支曾写入缺证据字段的候选，前端读
-# conflicts.length 直接白屏（线上小区 604 西房锦绣江南，2026-10-30）----------
-
-def test_homepage_changed_recheck_persists_full_candidate(tmp_path):
-    registry = setup(tmp_path)
-    first = FakeDiscovery(search={'测试花园': {TOTAL_ID: '测试花园'}},
-                          homepages={TOTAL_ID: homepage(seeds=())})
-    assert run(service(registry, first, tmp_path))['stage'] == probe.STAGE_NO_ENTRY
-    # 重试时主页改名成带分期的变体：重检发现冲突，回到待选择并写回新候选
-    changed = FakeDiscovery(homepages={TOTAL_ID: homepage(name='测试花园(南区)', seeds=())},
-                            owners={}, lists={})
-    svc = service(registry, changed, tmp_path)
-    svc.retry('c1')
-    svc._thread.join(5)
-    assert svc.status('c1')['stage'] == probe.STAGE_NEEDS_SELECTION
-    candidate = svc.status('c1')['candidates'][0]
-    assert candidate['conflicts'], '主页已变化的候选必须带冲突说明'
-    for key in ('evidence', 'evidence_gaps', 'conflicts', 'strong'):
-        assert key in candidate
-
-
 def test_status_fills_evidence_fields_for_legacy_candidates(tmp_path):
     registry = setup(tmp_path)
     svc = service(registry, FakeDiscovery(), tmp_path)
@@ -590,3 +572,142 @@ def test_status_fills_evidence_fields_for_legacy_candidates(tmp_path):
     assert candidate['evidence'] == []
     assert candidate['evidence_gaps'] == []
     assert candidate['strong'] is False
+@pytest.mark.parametrize('separator', ['·', '•', '・', '‧', '∙', '⋅', '･'])
+@pytest.mark.parametrize('automatic', [False, True])
+def test_middle_dot_name_binds_unique_candidate_without_changing_original_name(tmp_path, separator, automatic):
+    name = f'绿城卓越{separator}傲旋城'
+    registry = setup(tmp_path, name=name)
+    fake = FakeDiscovery(search={name: {TOTAL_ID: '绿城卓越傲旋城'}},
+                         homepages={TOTAL_ID: homepage(name='绿城卓越傲旋城')},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.start('c1', automatic=automatic)
+    svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+    assert registry.communities()[0]['community_name'] == name
+    assert len([s for s in registry.sources() if s['source'] == 'xingfuli' and s['status'] == 'matched']) == 1
+
+
+def test_middle_dot_normalization_keeps_phase_conflicts(tmp_path):
+    name = '绿城卓越·傲旋城(一期)'
+    registry = setup(tmp_path, name=name)
+    platform = '绿城卓越傲旋城(二期)'
+    fake = FakeDiscovery(search={name: {TOTAL_ID: platform}},
+                         homepages={TOTAL_ID: homepage(name=platform)},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] != probe.STAGE_BOUND
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+
+
+@pytest.mark.parametrize('suffix', ['(小区)', '（小区）', '( 小区 )'])
+def test_community_type_suffix_is_not_a_phase_and_can_bind(tmp_path, suffix):
+    registry = setup(tmp_path, name='贺田尚城')
+    platform = '贺田尚城' + suffix
+    fake = FakeDiscovery(search={'贺田尚城': {TOTAL_ID: platform}},
+                         homepages={TOTAL_ID: homepage(name=platform)},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_BOUND
+    assert registry.communities()[0]['community_name'] == '贺田尚城'
+
+
+def test_manual_selection_rechecks_old_false_type_conflict(tmp_path):
+    registry = setup(tmp_path, name='贺田尚城')
+    candidate = {**homepage(name='贺田尚城(小区)'), 'candidate_id': 'second_hand:' + TOTAL_ID,
+                 'conflicts': ['平台名称带分期标记“小区”'], 'evidence': [], 'evidence_gaps': []}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NEEDS_SELECTION, candidates=[candidate])
+    fake = FakeDiscovery(homepages={TOTAL_ID: homepage(name=candidate['name'])},
+                         owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    state = svc.status('c1')
+    svc.select('c1', candidate['candidate_id'], state['revision'])
+    svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+
+
+def test_identity_recheck_clears_wrong_selection_and_returns_complete_evidence(tmp_path):
+    registry = setup(tmp_path, name='西房锦绣江南')
+    stale = {**homepage(name='锦绣江南'), 'candidate_id': 'second_hand:' + TOTAL_ID}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NO_ENTRY, selected_page=stale)
+    wrong = {**homepage(name='锦绣江南', address='窄石路344号'),
+             'district': '桐庐', 'longitude': 119.766958, 'latitude': 29.86177}
+    svc = service(registry, FakeDiscovery(homepages={TOTAL_ID: wrong}), tmp_path)
+    svc.retry('c1'); svc._thread.join(5)
+    state = svc.status('c1')
+    assert state['stage'] == probe.STAGE_NEEDS_SELECTION
+    assert state.get('selected_page') is None
+    candidate = state['candidates'][0]
+    assert candidate['conflicts'] and '桐庐' in state['message']
+    assert isinstance(candidate['evidence'], list)
+    assert isinstance(candidate['evidence_gaps'], list)
+    assert candidate['strong'] is False
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+
+
+def test_retry_legacy_needs_selection_searches_again_instead_of_old_homepage(tmp_path):
+    registry = setup(tmp_path)
+    stale = {**homepage(neighborhood_id=PHASE_ID), 'candidate_id': 'second_hand:' + PHASE_ID}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NEEDS_SELECTION, selected_page=stale)
+    fake = FakeDiscovery(search={'测试花园': {TOTAL_ID: '测试花园'}},
+                         homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.retry('c1'); svc._thread.join(5)
+    assert fake.calls[0][0] == 'search'
+    assert not any(call == ('community_info', PHASE_ID) for call in fake.calls)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+
+
+def test_fresh_search_does_not_retain_previous_selected_homepage(tmp_path):
+    registry = setup(tmp_path)
+    probe.write_state(registry, 'c1', stage=probe.STAGE_FAILED, selected_page=homepage())
+    svc = service(registry, FakeDiscovery(), tmp_path)
+    assert run(svc)['stage'] == probe.STAGE_NO_HOMEPAGE
+    assert svc.status('c1').get('selected_page') is None
+
+
+def test_retry_preserves_valid_selection_for_entry_failure(tmp_path):
+    registry = setup(tmp_path)
+    selected = {**homepage(), 'candidate_id': 'second_hand:' + TOTAL_ID}
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NO_ENTRY, selected_page=selected)
+    fake = FakeDiscovery(homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
+    svc = service(registry, fake, tmp_path)
+    svc.retry('c1'); svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+    assert not any(call[0] == 'search' for call in fake.calls)
+
+
+@pytest.mark.parametrize('scope', ['留园', '观园'])
+def test_parent_community_allows_manual_subdivision_but_never_auto_binds(tmp_path, scope):
+    name = '保亿风景蝶院'
+    registry = setup(tmp_path, name=name)
+    platform = f'{name}({scope}）'
+    fake = FakeDiscovery(search={name: {PHASE_ID: platform}},
+                         homepages={PHASE_ID: homepage(neighborhood_id=PHASE_ID, name=platform)},
+                         owners={SEED: PHASE_ID}, lists={SEED: PHASE_ID})
+    svc = service(registry, fake, tmp_path)
+    state = run(svc)
+    assert state['stage'] == probe.STAGE_NEEDS_SELECTION
+    candidate = state['candidates'][0]
+    assert candidate['manual_selectable'] is True
+    assert candidate['manual_scope'] == scope
+    assert candidate['strong'] is False
+    assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+    svc.select('c1', candidate['candidate_id'], state['revision'])
+    svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_BOUND
+    source = next(s for s in registry.sources() if s['source'] == 'xingfuli')
+    assert source['method'] == 'manual'
+    assert scope in str(source['evidence'])
+
+
+def test_manual_subdivision_does_not_allow_cross_phase_or_district(tmp_path):
+    from src.services.rental_reference.xingfuli_sources import evaluate
+    community = dict(community_name='保亿风景蝶院(留园)', aliases=['保亿风景蝶院'], district='滨江')
+    candidate = {**homepage(name='保亿风景蝶院(观园)'), 'district': '滨江'}
+    assert evaluate(community, candidate, allow_subdivision=True)['conflicts']
+    community['community_name'] = '保亿风景蝶院'
+    candidate['district'] = '桐庐'
+    assert evaluate(community, candidate, allow_subdivision=True)['conflicts']
+    candidate.update(district='滨江', name='其他花园(观园)')
+    assert not evaluate(community, candidate, allow_subdivision=True)['selectable']
