@@ -10,8 +10,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from src import __version__
-from src.core.models import CURRENT_MODEL_KINDS, KIND_SINCE_INCEPTION
-from src.services.trend_service import FUTURE_EXTENSION_MONTHS, INDEX_CODE, TrendService
+from src.core.models import (
+    CURRENT_WEEKLY_MODEL_KINDS,
+    LEGACY_KIND_TO_WEEKLY,
+)
+from src.services.trend_service import INDEX_CODE, WeeklyTrendService
 
 router = APIRouter(prefix="/api")
 
@@ -23,7 +26,7 @@ class ReportSettingsPatch(BaseModel):
     channel: str | None = None
 
 
-def get_service(request: Request) -> TrendService:
+def get_service(request: Request) -> WeeklyTrendService:
     service = getattr(request.app.state, "trend_service", None)
     if service is None:
         raise HTTPException(status_code=503, detail="服务未初始化")
@@ -33,6 +36,17 @@ def get_service(request: Request) -> TrendService:
 def _require_supported_index(code: str) -> None:
     if code != INDEX_CODE:
         raise HTTPException(status_code=404, detail=f"暂不支持指数: {code}（首版仅支持 {INDEX_CODE}）")
+
+
+def _resolve_current_kind(kind: str) -> str:
+    """旧月线 kind 只作为别名解析到周线，响应里的 timeframe 仍是 week。"""
+    mapped = LEGACY_KIND_TO_WEEKLY.get(kind, kind)
+    if mapped not in CURRENT_WEEKLY_MODEL_KINDS:
+        raise HTTPException(status_code=400, detail=f"非法当前模型: {kind}")
+    return mapped
+
+
+_MONTHLY_MODEL_DETAIL = "该模型属于月线周期，不能用于周线图。请改用周线模型。"
 
 
 @router.get("/health")
@@ -61,40 +75,26 @@ async def chart(
     _require_supported_index(code)
     service = get_service(request)
     if model.startswith("kind:"):
-        kind = model.split(":", 1)[1]
-        if kind not in CURRENT_MODEL_KINDS:
-            raise HTTPException(status_code=400, detail=f"非法当前模型: {kind}")
-        target = service.store.latest_model(code, kind)
+        kind = _resolve_current_kind(model.split(":", 1)[1])
+        target = service.store.latest_weekly_model(code, kind)
     else:
-        target = next(
-            (m for m in service.store.list_models(code) if m.model_id == model), None
-        )
+        target = service.weekly_model_by_id(model)
+        if target is None and service.monthly_model_by_id(model) is not None:
+            raise HTTPException(status_code=409, detail=_MONTHLY_MODEL_DETAIL)
     if target is None:
         raise HTTPException(status_code=404, detail=f"模型不存在: {model}")
-    extend_until: str | None
-    if scope == "history":
-        # 全历史回溯不延伸未来；固定窗口延伸到观察区实际截止
-        if target.kind == KIND_SINCE_INCEPTION:
-            extend_until = None
-        else:
-            extend_until = service._observation_end(target.fit_start, target.fit_end)
-    else:
-        from src.core import months as mutils
-
-        extend_until = mutils.shift_month(target.fit_end, FUTURE_EXTENSION_MONTHS)
-    return service.build_chart(target, extend_until)
+    return service.build_chart(target, scope)
 
 
 @router.get("/indices/{code}/status")
 async def status(
     code: str,
     request: Request,
-    model: str = Query(..., description="当前模型种类 trailing_120m|since_inception"),
+    model: str = Query(..., description="当前模型种类 trailing_10y_weekly|since_inception_weekly，旧月线 kind 仅作别名"),
 ) -> dict:
     _require_supported_index(code)
-    if model not in CURRENT_MODEL_KINDS:
-        raise HTTPException(status_code=400, detail=f"非法当前模型: {model}")
-    return get_service(request).current_status(model)
+    kind = _resolve_current_kind(model)
+    return get_service(request).current_status(kind)
 
 
 @router.get("/report-settings")
@@ -109,8 +109,11 @@ async def get_report_settings(request: Request) -> dict:
 async def patch_report_settings(patch: ReportSettingsPatch, request: Request) -> dict:
     service = get_service(request)
     updates = {k: v for k, v in patch.model_dump().items() if v is not None}
-    if "model_kind" in updates and updates["model_kind"] not in CURRENT_MODEL_KINDS:
-        raise HTTPException(status_code=400, detail=f"非法模型种类: {updates['model_kind']}")
+    if "model_kind" in updates:
+        mapped = LEGACY_KIND_TO_WEEKLY.get(updates["model_kind"], updates["model_kind"])
+        if mapped not in CURRENT_WEEKLY_MODEL_KINDS:
+            raise HTTPException(status_code=400, detail=f"非法模型种类: {updates['model_kind']}")
+        updates["model_kind"] = mapped
     if "channel" in updates and updates["channel"] != "dingtalk":
         raise HTTPException(status_code=400, detail="首版仅支持 dingtalk 渠道")
     updated = service.store.update_report_settings(updates)
@@ -141,9 +144,10 @@ async def refresh(request: Request) -> dict:
     return {
         "success": result.success,
         "message": result.message,
-        "data_cutoff_month": result.data_cutoff_month,
+        "data_cutoff_week": result.data_cutoff_week,
         "new_models": result.new_models,
-        "monthly_count": result.monthly_count,
+        "weekly_count": result.weekly_count,
+        "snapshot_id": result.snapshot_id,
     }
 
 

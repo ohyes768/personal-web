@@ -1,4 +1,4 @@
-"""线性回归通道计算（算法版本 lrc-ltb-port-v1）。
+"""线性回归通道计算（月线 lrc-ltb-port-v1 / 周线 lrc-ltb-week-v1）。
 
 纯计算层：不依赖网络、FastAPI、第三方数值库。
 
@@ -10,6 +10,10 @@
 deviation 的基线前移一根 K 线是公开移植公式（LonesomeTheBlue Linear
 Regression Channel）的实现细节，与本版本绑定；若改为标准残差 RMSE 必须
 另升算法版本，不能悄悄替换后仍宣称同一条通道。
+
+周线版（lrc-ltb-week-v1）公式结构相同，差异只在坐标：x 是自然周坐标
+(week_start - origin).days / 7，而非等间距整数序号。整周休市会在 x 上留下
+间隔，必须显式传入，不能用序号压缩掉时间——压缩会得到不同的系数。
 """
 from __future__ import annotations
 
@@ -17,6 +21,7 @@ import math
 from dataclasses import dataclass
 
 ALGORITHM_VERSION = "lrc-ltb-port-v1"
+WEEK_ALGORITHM_VERSION = "lrc-ltb-week-v1"
 DEFAULT_MULTIPLIER = 2.0
 
 
@@ -62,3 +67,44 @@ def channel_at(coeff: Coefficients, x: float, multiplier: float = DEFAULT_MULTIP
     mid = coeff.intercept + coeff.slope * x
     band = multiplier * coeff.deviation
     return mid, mid + band, mid - band
+
+
+def fit_weekly_channel(
+    xs: list[float],
+    closes: list[float],
+    multiplier: float = DEFAULT_MULTIPLIER,
+) -> Coefficients:
+    """对一段周收盘拟合通道（算法版本 lrc-ltb-week-v1）。
+
+    xs 为显式自然周坐标，必须严格递增（等间距或含休市间隔）。
+    deviation 的基线前移一个自然周（x + 1），与月线同构但位移以周计。
+    """
+    n = len(xs)
+    if n != len(closes):
+        raise ValueError(f"坐标与收盘数量不一致: {n} != {len(closes)}")
+    if n == 0:
+        raise ValueError("收盘序列为空")
+    if not all(math.isfinite(c) and c > 0 for c in closes):
+        raise ValueError("收盘序列含非有限或非正数值")
+    if not all(math.isfinite(x) for x in xs):
+        raise ValueError("周坐标含非有限数值")
+    if any(xs[i] >= xs[i + 1] for i in range(n - 1)):
+        raise ValueError("周坐标必须严格递增")
+    if multiplier <= 0 or not math.isfinite(multiplier):
+        raise ValueError("通道宽度参数必须为正数")
+
+    mean_x = sum(xs) / n
+    mean_y = sum(closes) / n
+    sxx = sum((x - mean_x) ** 2 for x in xs)
+    sxy = sum((x - mean_x) * (y - mean_y) for x, y in zip(xs, closes))
+    if sxx == 0:
+        raise ValueError("序列长度不足，无法拟合")
+    slope = sxy / sxx
+    intercept = mean_y - slope * mean_x
+    variance = sum(
+        (y - (intercept + slope * (x + 1))) ** 2 for x, y in zip(xs, closes)
+    ) / n
+    deviation = math.sqrt(variance)
+    if not math.isfinite(deviation) or deviation <= 0:
+        raise ValueError("通道宽度无效（deviation 非正），模型无效")
+    return Coefficients(slope=slope, intercept=intercept, deviation=deviation)

@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端跨层日期、数据单位与验证要求"}
+{"file": ".trellis/spec/frontend/index-trends-echarts.md", "reason": "K线OHLC、空时间槽、拟合与延伸和隐藏Tab合同"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest basetemp与运行目录约定"}
+{"file": ".trellis/spec/backend/dividend-select/backend/code-type-guidelines.md", "reason": "指数代码字符串合同"}
+{"file": ".trellis/spec/backend/dividend-select/backend/scheduler-lifecycle.md", "reason": "调度互斥、关闭与重试生命周期"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API、存储、页面及周报数据一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "扩展现有服务与避免跨包复制"}
+{"file": ".trellis/tasks/11-02-index-trends-weekly/prd.md", "reason": "最终需求与验收范围；本轮仅规划"}
+{"file": ".trellis/tasks/11-02-index-trends-weekly/design.md", "reason": "周线、日历、迁移、API及快照合同"}
+{"file": ".trellis/tasks/11-02-index-trends-weekly/research/current-state.md", "reason": "现有代码与线上只读探测证据"}

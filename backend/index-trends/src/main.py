@@ -14,7 +14,7 @@ from src.services.notifier import DingTalkNotifier
 from src.services.report_service import ReportService
 from src.services.scheduler import JOB_WEEKLY, ReportScheduler
 from src.services.store import Store
-from src.services.trend_service import TrendService
+from src.services.trend_service import WeeklyTrendService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("index-trends")
@@ -23,7 +23,7 @@ logger = logging.getLogger("index-trends")
 def create_app() -> FastAPI:
     settings = get_settings()
     store = Store(settings.data_dir / "index-trends.db")
-    trend_service = TrendService(store)
+    trend_service = WeeklyTrendService(store)
     notifier = DingTalkNotifier()
     report_service = ReportService(store, trend_service, notifier, settings.public_site_url)
 
@@ -66,7 +66,7 @@ def create_app() -> FastAPI:
     return app
 
 
-async def _catchup_with_lock(report_service: ReportService, trend_service: TrendService) -> None:
+async def _catchup_with_lock(report_service: ReportService, trend_service: WeeklyTrendService) -> None:
     async with trend_service.refresh_lock:
         await asyncio.to_thread(report_service.catchup_if_needed)
 

@@ -1,5 +1,6 @@
 import type {
   ChartData,
+  CurrentModelKind,
   CurrentStatus,
   HistoryOverview,
   IndicesOverview,
@@ -28,7 +29,7 @@ export const api = {
     fetchJSON<ChartData>(
       `/indices/000300/chart?model=${encodeURIComponent(modelId)}&scope=${scope}`,
     ),
-  status: (model: "trailing_120m" | "since_inception") =>
+  status: (model: CurrentModelKind) =>
     fetchJSON<CurrentStatus>(`/indices/000300/status?model=${model}`),
   refresh: () => fetchJSON<RefreshResult>("/refresh", { method: "POST" }),
 };

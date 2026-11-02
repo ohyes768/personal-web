@@ -1,6 +1,20 @@
-/** 后端 API 类型镜像（与 backend/index-trends 响应结构一一对应）。 */
+/** 后端 API 类型镜像（与 backend/index-trends 响应结构一一对应）。
+ *
+ * 口径：周线。模型、图表、状态摘要与周报统一使用「完整交易周」——
+ * 周主键是周一（YYYY-MM-DD），行情的 date 是该周实际最后交易日。
+ * 不把周值写进 month 命名字段。
+ */
 
-export type ModelKind = "trailing_120m" | "since_inception" | "historical_fixed_120m";
+/** 当前页可选的两个模型种类（周线）。 */
+export type CurrentModelKind = "trailing_10y_weekly" | "since_inception_weekly";
+
+/** 全部模型种类（周线）。历史固定窗口用 stable_id 做页面稳定选项。 */
+export type ModelKind =
+  | CurrentModelKind
+  | "historical_fixed_10y_weekly";
+
+/** 当前后端只提供周线模型。 */
+export type Timeframe = "week";
 
 export interface Coefficients {
   slope: number;
@@ -12,11 +26,22 @@ export interface ModelInfo {
   model_id: string;
   index_code: string;
   kind: ModelKind;
+  timeframe: Timeframe;
+  /** 首个样本周的周一。 */
   fit_start: string;
+  /** 末个样本周的周一。 */
   fit_end: string;
-  months: number;
+  /** 末个样本周的实际最后交易日。 */
+  fit_last_trade_date: string;
+  /** 实际参与拟合的交易周数量。 */
+  sample_count: number;
+  /** 日历窗口左边界（含）。 */
+  calendar_window_start: string;
+  /** 日历窗口右边界（不含）。 */
+  calendar_window_end: string;
+  /** 已发布的截止周（周一）。 */
+  data_cutoff_week: string;
   algorithm_version: string;
-  data_cutoff_month: string;
   multiplier: number;
   calculated_at: string;
   coefficients: Coefficients;
@@ -25,36 +50,54 @@ export interface ModelInfo {
 export interface RefreshResult {
   success: boolean;
   message: string;
-  data_cutoff_month: string | null;
+  data_cutoff_week: string | null;
   new_models: string[] | null;
-  monthly_count: number | null;
+  weekly_count: number | null;
+  snapshot_id: string | null;
 }
 
+export type DataState = "ok" | "stale" | "empty" | "error";
+
 export interface DataStatus {
-  state: "ok" | "stale" | "empty";
-  data_cutoff_month: string | null;
-  expected_cutoff_month: string;
+  state: DataState;
+  data_cutoff_week: string | null;
+  expected_cutoff_week: string | null;
+  /** 最近应完成的自然周的周一。 */
+  expected_close_date: string | null;
   daily_last_date: string | null;
   captured_at: string | null;
-  provider: string | null;
+  reason: string | null;
+  snapshot_id: string | null;
+  /** 行情来源（可选，后端未提供时不显示）。 */
+  provider?: string | null;
 }
 
 export interface WindowMeta {
+  /** 页面稳定选项，如 fixed-2024-04。 */
   stable_id: string;
-  window: number;
+  /** 窗口序号（可选，缺省时按列表顺序）。 */
+  window?: number;
+  calendar_window_start: string;
+  calendar_window_end: string;
+  /** 首个样本周的周一。 */
   fit_start: string;
+  /** 末个样本周的周一。 */
   fit_end: string;
-  observation_end_month: string | null;
+  observation_end_week: string | null;
+  sample_count: number;
   model_id: string;
 }
 
 export interface AllHistoryMeta {
   stable_id: "all";
+  calendar_window_start: string;
+  calendar_window_end: string;
   fit_start: string;
   fit_end: string;
-  sample_fitted: boolean;
+  observation_end_week: string | null;
+  sample_count: number;
   model_id: string;
-  note: string;
+  note?: string;
 }
 
 export interface HistoryOverview {
@@ -71,25 +114,28 @@ export interface IndicesOverview {
     name: string;
     symbol: string;
     kind: string;
-    inception_month: string;
+    inception_week: string;
     available_model_kinds: ModelKind[];
-    current_models: Partial<Record<"trailing_120m" | "since_inception", ModelInfo>>;
+    current_models: Partial<Record<CurrentModelKind, ModelInfo>>;
   }>;
   data_status: DataStatus;
 }
 
+/** 一根周 K 线：week_start 是周一，date 是该周实际最后交易日。 */
 export interface ChartBar {
-  month: string;
+  week_start: string;
   date: string;
   open: number;
   close: number;
   high: number;
   low: number;
+  /** 该周尚未走完（进行中），不参与拟合。 */
   partial: boolean;
 }
 
+/** 通道序列：weeks 覆盖所有自然周（周一），含整周休市的时间槽。 */
 export interface ChannelSeries {
-  months: string[];
+  weeks: string[];
   mid: number[];
   upper: number[];
   lower: number[];
@@ -100,8 +146,9 @@ export interface ChartData {
   bars: ChartBar[];
   fit_series: ChannelSeries;
   extension_series: ChannelSeries | null;
-  fit_boundary_month: string;
+  fit_boundary_week: string;
   extend_note: string | null;
+  snapshot_id: string;
 }
 
 export type Region =
@@ -116,9 +163,11 @@ export interface CurrentStatus {
   model_kind?: ModelKind;
   reason?: string;
   model?: ModelInfo;
+  /** 实际收盘日。 */
   price_as_of?: string;
   close?: number;
-  projection_month?: string;
+  /** 投影所在自然周的周一。 */
+  projection_week?: string;
   upper?: number;
   mid?: number;
   lower?: number;
@@ -126,6 +175,7 @@ export interface CurrentStatus {
   region?: Region;
   data_status?: DataStatus;
   error?: string;
+  snapshot_id?: string;
 }
 
 export interface ReportSettings {
@@ -164,7 +214,7 @@ export const REGION_LABELS: Record<Region, string> = {
 };
 
 export const KIND_LABELS: Record<string, string> = {
-  trailing_120m: "近10年",
-  since_inception: "成立以来",
-  historical_fixed_120m: "固定窗口",
+  trailing_10y_weekly: "近10年",
+  since_inception_weekly: "成立以来",
+  historical_fixed_10y_weekly: "固定窗口",
 };

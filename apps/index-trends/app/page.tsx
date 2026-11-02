@@ -1,6 +1,6 @@
 "use client";
 
-/** 宽基趋势观察主页面：历史回溯 / 当前通道两个 Tab。
+/** 宽基趋势观察主页面：历史回溯 / 当前通道两个 Tab（周线口径）。
  *
  * Tab、窗口、模型都编码在 URL 查询参数（tab/window/model），
  * 刷新和返回不换图；图表懒加载由 Tab 组件各自负责。
@@ -14,6 +14,17 @@ import type { DataStatus, HistoryOverview } from "../lib/types";
 
 type Tab = "history" | "current";
 
+/** 旧月线模型参数 → 周线模型参数；旧链接能恢复到同名时间窗口。 */
+const LEGACY_MODEL_MAP: Record<string, CurrentModel> = {
+  trailing_120m: "trailing_10y_weekly",
+  since_inception: "since_inception_weekly",
+};
+
+function resolveModel(raw: string | null): CurrentModel {
+  if (raw && LEGACY_MODEL_MAP[raw]) return LEGACY_MODEL_MAP[raw];
+  return raw === "since_inception_weekly" ? "since_inception_weekly" : "trailing_10y_weekly";
+}
+
 function DataStatusBar({ status }: { status: DataStatus | null }) {
   if (!status) return null;
   return (
@@ -23,11 +34,18 @@ function DataStatusBar({ status }: { status: DataStatus | null }) {
       )}
       {status.state === "stale" && (
         <span className="stale">
-          数据可能过期：截至 {status.data_cutoff_month}（期望{" "}
-          {status.expected_cutoff_month}）
+          数据可能过期：截至 {status.data_cutoff_week ?? "未知"}
+          {status.expected_cutoff_week ? `（期望 ${status.expected_cutoff_week}）` : ""}
         </span>
       )}
+      {status.state === "error" && (
+        <span className="stale">数据异常{status.reason ? `：${status.reason}` : ""}</span>
+      )}
+      {status.data_cutoff_week && status.state === "ok" && (
+        <span>数据截至 {status.data_cutoff_week}</span>
+      )}
       {status.provider && <span>来源 {status.provider}</span>}
+      {status.expected_close_date && <span>应完成收盘 {status.expected_close_date}</span>}
       {status.daily_last_date && <span>日线 {status.daily_last_date}</span>}
       {status.captured_at && (
         <span>抓取 {new Date(status.captured_at).toLocaleString("zh-CN")}</span>
@@ -41,8 +59,8 @@ function PageInner() {
   const params = useSearchParams();
   const tab: Tab = params.get("tab") === "current" ? "current" : "history";
   const windowParam = params.get("window") ?? "";
-  const modelParam: CurrentModel =
-    params.get("model") === "since_inception" ? "since_inception" : "trailing_120m";
+  const rawModel = params.get("model");
+  const modelParam: CurrentModel = resolveModel(rawModel);
 
   const [overview, setOverview] = useState<HistoryOverview | null>(null);
   const [overviewError, setOverviewError] = useState<string | null>(null);
@@ -68,6 +86,13 @@ function PageInner() {
     },
     [params, router],
   );
+
+  // 旧月线模型参数就地换成周线参数（replace，不留历史记录）
+  useEffect(() => {
+    if (!rawModel) return;
+    const mapped = LEGACY_MODEL_MAP[rawModel];
+    if (mapped) setQuery({ model: mapped });
+  }, [rawModel, setQuery]);
 
   useEffect(() => {
     let cancelled = false;
@@ -118,7 +143,7 @@ function PageInner() {
           </button>
         </div>
         <p className="subtitle">
-          月收盘拟合的长期趋势通道，回看它在历史上的表现，观察当前指数位置。
+          周收盘拟合的长期趋势通道，回看它在历史上的表现，观察当前指数位置。
           描述相对趋势的位置，不构成买卖建议。
         </p>
       </header>

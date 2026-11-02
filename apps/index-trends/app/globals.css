@@ -188,8 +188,16 @@ h1 {
 }
 
 .status-card .close-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 8px;
   font-size: 15px;
   color: #6b614f;
+}
+
+.status-card .close-line small {
+  white-space: nowrap;
 }
 
 .status-card .close-line b {

@@ -1,6 +1,6 @@
 "use client";
 
-/** 历史回溯 Tab：4 组固定窗口 + 全历史，默认单图展示。 */
+/** 历史回溯 Tab：4 组固定窗口 + 全历史，默认单图展示（周口径）。 */
 import { useEffect, useState } from "react";
 import TrendChart from "./TrendChart";
 import { api } from "../lib/api";
@@ -57,24 +57,21 @@ export default function HistoryTab({ overview, selected, onSelect, reloadKey }: 
   const scopeText = (() => {
     if (!currentMeta) return "";
     if (selected === "all" && overview.all_history) {
-      return `全样本拟合：${currentMeta.fit_start} 至 ${currentMeta.fit_end}（${overview.all_history.note}）`;
+      return `全样本拟合：${currentMeta.fit_start} 至 ${currentMeta.fit_end}（${currentMeta.sample_count} 个交易周${overview.all_history.note ? `，${overview.all_history.note}` : ""}）`;
     }
-    if ("window" in currentMeta) {
-      return `固定窗口 ${currentMeta.window}：拟合 ${currentMeta.fit_start} 至 ${currentMeta.fit_end}（120个月），拟合后模型保持不变，右侧最多展示 36 个月后续价格`;
-    }
-    return "";
+    return `固定窗口：日历窗口 ${currentMeta.calendar_window_start} 至 ${currentMeta.calendar_window_end}（右端不含），拟合 ${currentMeta.fit_start} 至 ${currentMeta.fit_end}，共 ${currentMeta.sample_count} 个交易周；拟合后模型保持不变，右侧最多展示 3 个自然年的后续价格（至 ${currentMeta.observation_end_week ?? "暂无"}）`;
   })();
 
   return (
     <section>
       <div className="picker" role="tablist" aria-label="历史窗口选择">
-        {overview.windows.map((w) => (
+        {overview.windows.map((w, i) => (
           <button
             key={w.stable_id}
             aria-current={selected === w.stable_id}
             onClick={() => onSelect(w.stable_id)}
           >
-            窗口{w.window} {w.fit_start}–{w.fit_end}
+            窗口{w.window ?? i + 1} {w.fit_start}–{w.fit_end}
           </button>
         ))}
         {overview.all_history && (
@@ -108,8 +105,8 @@ export default function HistoryTab({ overview, selected, onSelect, reloadKey }: 
             <span>
               拟合区间 {state.chart.model.fit_start} – {state.chart.model.fit_end}
             </span>
-            <span>拟合截止 {state.chart.fit_boundary_month}</span>
-            <span>窗口 {state.chart.model.months} 个月</span>
+            <span>拟合截止 {state.chart.fit_boundary_week}</span>
+            <span>窗口 {state.chart.model.sample_count} 个交易周</span>
             <span>通道宽度 {state.chart.model.multiplier}×deviation</span>
             {state.chart.extend_note && <span>{state.chart.extend_note}</span>}
           </div>
@@ -118,7 +115,7 @@ export default function HistoryTab({ overview, selected, onSelect, reloadKey }: 
 
       <div className="notes">
         <div className="note-item">
-          每个固定窗口只用其 120 个月数据拟合；竖线右侧为拟合结束后的实际价格
+          每个固定窗口只用其 10 年日历区间内的完整交易周拟合；竖线右侧为拟合结束后的实际价格
           <span className="emphasis">观察区</span>，模型全程保持不变——后续价格不参与拟合。
         </div>
         <div className="note-item">

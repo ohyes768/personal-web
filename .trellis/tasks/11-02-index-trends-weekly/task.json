@@ -1,0 +1,35 @@
+{
+  "id": "index-trends-weekly",
+  "name": "index-trends-weekly",
+  "title": "宽基趋势观察改为完整周线拟合与周报",
+  "description": "沪深300历史、当前通道和周报统一完整周线拟合：交易日历、10年窗口、周报迁移与去重。2026-11-02 上午仅完成规划，下午用户授权进入实施。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "index-trends",
+  "package": null,
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-11-02",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-02 上午：用户明确 trellis 规划任务完成就行，保留 planning。2026-11-02 下午：用户授权实施（开干吧），已执行 task.py start 转 in_progress，按 implement.md 执行第 1-5 节；部署与真实消息投递仍需单独授权。",
+  "meta": {
+    "planned_packages": [
+      "backend/index-trends",
+      "apps/index-trends"
+    ],
+    "planning_only": false,
+    "review_required_before_start": true,
+    "source_task": ".trellis/tasks/archive/2026-10/10-29-index-trends",
+    "calendar_decision": "2026-11-02 实测：exchange_calendars 4.7-4.13 的 XSHG 覆盖自 2006-11-02 起，够不到成立以来起点 2005-04；改用 pandas_market_calendars 的 SSE 日历（覆盖 2005-04-01 起），两源在 2006-11-02~2026-12-31 的 4902 个交易日逐日比对零差异。design.md 第 2 节已据此更新。"
+  }
+}

@@ -1,0 +1,101 @@
+{
+  "algorithm_version": "lrc-ltb-week-v1",
+  "multiplier": 2,
+  "as_of": "2026-11-02T18:00:00+08:00",
+  "data_cutoff_week": "2026-10-26",
+  "data_cutoff_trade_date": "2026-10-30",
+  "current_models": {
+    "trailing_10y_weekly": {
+      "kind": "trailing_10y_weekly",
+      "sample_count": 512,
+      "fit_start": "2016-10-31",
+      "fit_end": "2026-10-26",
+      "fit_last_trade_date": "2026-10-30",
+      "calendar_window_start": "2016-11-02",
+      "calendar_window_end": "2026-11-02",
+      "data_hash": "d91e63379c49",
+      "coefficients": {
+        "slope": 1.075346634590572,
+        "intercept": 3785.4923921601608,
+        "deviation": 536.2316816459199
+      }
+    },
+    "since_inception_weekly": {
+      "kind": "since_inception_weekly",
+      "sample_count": 1100,
+      "fit_start": "2005-04-04",
+      "fit_end": "2026-10-26",
+      "fit_last_trade_date": "2026-10-30",
+      "calendar_window_start": "2005-04-04",
+      "calendar_window_end": "2026-11-02",
+      "data_hash": "22322f31370a",
+      "coefficients": {
+        "slope": 2.111969344957455,
+        "intercept": 2180.2250862312235,
+        "deviation": 800.8210673464002
+      }
+    }
+  },
+  "fixed_windows": [
+    {
+      "kind": "historical_fixed_10y_weekly",
+      "sample_count": 507,
+      "fit_start": "2005-04-04",
+      "fit_end": "2015-03-23",
+      "fit_last_trade_date": "2015-03-27",
+      "calendar_window_start": "2005-04-01",
+      "calendar_window_end": "2015-04-01",
+      "data_hash": "f1138813b8ed",
+      "coefficients": {
+        "slope": 1.1796224747206039,
+        "intercept": 2329.348418583837,
+        "deviation": 987.8732820985633
+      }
+    },
+    {
+      "kind": "historical_fixed_10y_weekly",
+      "sample_count": 511,
+      "fit_start": "2008-03-31",
+      "fit_end": "2018-03-19",
+      "fit_last_trade_date": "2018-03-23",
+      "calendar_window_start": "2008-04-01",
+      "calendar_window_end": "2018-04-01",
+      "data_hash": "a82c3a702d8c",
+      "coefficients": {
+        "slope": 1.7745836953946041,
+        "intercept": 2538.805959856065,
+        "deviation": 581.135233790978
+      }
+    },
+    {
+      "kind": "historical_fixed_10y_weekly",
+      "sample_count": 512,
+      "fit_start": "2011-03-28",
+      "fit_end": "2021-03-22",
+      "fit_last_trade_date": "2021-03-26",
+      "calendar_window_start": "2011-04-01",
+      "calendar_window_end": "2021-04-01",
+      "data_hash": "36a11ed8ca7d",
+      "coefficients": {
+        "slope": 4.14629488445227,
+        "intercept": 2244.8403900017674,
+        "deviation": 509.872719349807
+      }
+    },
+    {
+      "kind": "historical_fixed_10y_weekly",
+      "sample_count": 511,
+      "fit_start": "2014-03-31",
+      "fit_end": "2024-03-25",
+      "fit_last_trade_date": "2024-03-29",
+      "calendar_window_start": "2014-04-01",
+      "calendar_window_end": "2024-04-01",
+      "data_hash": "2420a42f7b5b",
+      "coefficients": {
+        "slope": 2.517903316787723,
+        "intercept": 3176.521313264577,
+        "deviation": 603.845533380347
+      }
+    }
+  ]
+}

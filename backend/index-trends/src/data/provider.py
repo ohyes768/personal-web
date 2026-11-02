@@ -1,6 +1,7 @@
 """行情数据供应商适配（腾讯财经公开接口）。
 
-主数据：月K（拟合与图形）；日线（最近已完成交易日收盘，用于当前位置与周报）。
+主数据：月K（拟合与图形）、周K（周线拟合与图形）、日线（最近已完成交易日收盘，
+用于当前位置与周报）。
 
 腾讯 fqkline 返回行结构为 [日期, 开盘, 收盘, 最高, 最低, 成交量, ...]，
 收盘在最高/最低之前，不能按常见 OHLC 顺序解包。
@@ -15,6 +16,11 @@ import httpx
 TENCENT_KLINE_URL = "https://web.ifzq.gtimg.cn/appstock/app/fqkline/get"
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) index-trends/0.1"
 REQUEST_TIMEOUT = 15.0
+
+# 支持的K线周期：月K / 周K / 日线
+PERIOD_MONTH = "month"
+PERIOD_WEEK = "week"
+PERIOD_DAY = "day"
 
 
 class ProviderError(RuntimeError):
@@ -69,7 +75,11 @@ def fetch_kline(
     count: int,
     client: httpx.Client,
 ) -> list[KlineBar]:
-    """拉取指定周期的K线。period: "month" | "day"。"""
+    """拉取指定周期的K线。period: "month" | "week" | "day"。
+
+    周K 返回的行按周聚合，date 为该周实际最后交易日（进行中的周为最近
+    一个已收盘交易日）——具体判定由 src/data/validate.py 按交易日历完成。
+    """
     params = {"param": f"{symbol},{period},,,{count},qfq"}
     try:
         resp = client.get(TENCENT_KLINE_URL, params=params)
