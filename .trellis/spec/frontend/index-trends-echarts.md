@@ -3,6 +3,9 @@
 > 来源：10-29-index-trends 任务。apps/index-trends 的月K+回归通道图契约，
 > 与 macro-echarts.md 平行（各自独立副本，改一处勿同步另一处）。
 > Last verified: 2026-10-29
+>
+> 2026-11-02（11-02-index-trends-weekly）：历史/当前/周报已统一为完整周线拟合，
+> 下方「完整周线契约」一节优先于月线口径描述。
 
 ## Scope / Trigger
 
@@ -36,3 +39,36 @@ Correct：用 `"-"` 占位；K 线项为 `[open, close, low, high]`。序号会�
 
 Wrong：前端用 `ext最后月 > 拟合末月` 判断是否"未来延伸"。
 Correct：读后端 `extend_note` 的语义标注。
+
+## 完整周线契约（2026-11-02，11-02-index-trends-weekly）
+
+### Scope / Trigger
+apps/index-trends 的历史图、当前通道图和周报统一使用**完整周线**拟合。
+改周坐标、周 K 解析、窗口/模型切换、周报文案或迁移兼容前必读。
+
+### Contracts
+- **周主键是自然周周一**（`week_start`），`week_end` 为其后第 6 天；x 轴必须摊到
+  **所有自然周**（含休市时间槽）。休市周与未来周的 K 线位置用 `"-"` 占位，
+  通道序列在该处留 `null` 断点，**不跨缺口连线**；未来周不是"休市"，文案要区分。
+- **只有交易日历判定完整、且该周最后交易日 15:05 已过的周**才进入拟合与完整 K 线；
+  进行中的当周只做投影，不参与训练。前端**不自己判断"本周是否结束"**，
+  一律读后端 `data_cutoff_week` / `expected_cutoff_week` / `expected_close_date`。
+- 摘要口径用「最近收盘」并标明该周进行中、不参与拟合；不要写成「已完成交易周」。
+- **所有周字段用周单位**：`timeframe:week`、`sample_count`（样本周数）、
+  `fit_start/fit_end`（周一）、`data_cutoff_week`、`projection_week`。
+  不再出现 `months` / `data_cutoff_month` 这类月命名字段装周值。
+- **snapshot_id 一致性**：当前摘要与图形必须来自同一 `snapshot_id`；
+  两次请求不一致时重新取同一 `model_id`，不混画旧模型。
+- **模型 kind 带 `_weekly` 后缀**（`trailing_10y_weekly`、`since_inception_weekly`、
+  `historical_fixed_10y_weekly`）。旧 URL `model=trailing_120m/since_inception` 在前端
+  映射到周线并 `replace` URL；请求**旧月线 `model_id`**时后端返回明确的"旧周期不可用于
+  周线图"提示，前端不得静默换成别的模型。
+- 未来延伸为 **52 个自然周（约 1 年）**，不要机械换算成 156 条有交易周。
+- 周报去重键是 `指数|ISO周|weekly`；同一周已 `sent` 不重发。切换到周线后首次报告
+  不与旧月线位置直接比较。
+
+### Tests Required
+`node --experimental-strip-types --test lib/candleData.test.ts`（周 K 解析、跨年 ISO 周、
+休市/未来周占位、通道摊平不跨缺口相连）+ `pnpm exec tsc --noEmit` + `pnpm build`。
+浏览器验证：双 Tab、4 个固定窗口+全历史、两个周线模型、周/周单位文案、
+375px 与 1440px 无横向溢出、控制台无 ECharts 错误。

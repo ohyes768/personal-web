@@ -73,6 +73,41 @@ test_directory_flow covers actual registry + raw rounds + publish_run, sample de
 ### Wrong vs Correct
 Wrong: `property_count=len(auction_rounds)` or `sample_count=source.sample_count`. Correct: unique known asset identity; missing-asset rounds separate; rental count from select_valid on the current confirmed source snapshot.
 
+## 采集任务弹框紧凑行（2026-11-02，11-02-housing-map-collection-tasks-slim）
+
+### Scope / Trigger
+收录采集任务 / 维护采集任务两个弹框的任务行渲染。改徽标文案、指标行、说明入口或
+时间显示前必读。纯展示逻辑集中在 `apps/housing-map/src/lib/collection-tasks.ts`
+（无副作用，可被 node:test 直接覆盖）。
+
+### Contracts
+- **一个任务一行**：状态用徽标呈现，指标行一行，长说明收进说明区，任务行本身不再堆叠长文本。
+- **phase → 徽标**：`idle`→尚未采集（租金匹配可用「尚未匹配」覆盖）、`running`/`crawling`/
+  `publishing`/`checking_sources`/`cancelling`→运行中、`succeeded`/`done`→已完成、
+  `partial_failed`/`cooling_down`/`budget_exhausted`→部分完成、`failed`/`error`→失败、
+  `cancelled`→已取消、`interrupted`→已中断。**未列出的 phase 落到 idle 并保留原串**，
+  不吞掉后端新增状态。
+- **零值不渲染**：指标行与明细统计区的 `0`/`null`/`undefined`/空串一律跳过；
+  全部为零时指标区为空，不出现「已检查 0 · 已关联 0」。
+- **说明入口是 `?`**：点击展开/收起说明面板（`aria-expanded` 正确翻转），
+  同时用原生 tooltip 给摘要；说明内容含范围说明、全量/继续差异与明细。
+- **数量未知不写 `（—）`**：数量已知保留 `（N）`，算不出时按钮文案里不出现占位括号。
+- **时间用相对时间**（刚刚/N 分钟前/N 小时前/N 天前/N 周前/N 个月前/N 年前），
+  文案里**不出现 `UTC`**。
+- 改造只改呈现：**6 个任务的按钮点击行为与禁用条件保持不变**；
+  「租金流程」分组保留，租金匹配与租金更新同组互斥（见
+  [幸福里来源发现](./xingfuli-discovery.md)）。
+
+### Tests Required
+`apps/housing-map`：`node --test tests/collection-tasks.test.cjs`（徽标归并、零值过滤、
+相对时间格式化）、`npm run lint`、`npx tsc --noEmit`、`npm run build`。
+浏览器验证：两个弹框各 6 个任务各占一行、`?` 展开/收起与 aria-expanded、390px 无横向溢出。
+
+### Wrong vs Correct
+Wrong：把 `phase` 原样透出成状态文本、指标为零仍渲染「已检查 0」、说明用长段落、
+时间显示 `2026-11-02 22:05 UTC`。
+Correct：徽标归并 phase、零值跳过、`?` 面板 + tooltip、相对时间。
+
 ## Failed-only collection retry (2026-10-27)
 
 ### Scope / Trigger
