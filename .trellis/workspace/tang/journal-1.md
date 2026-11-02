@@ -391,3 +391,46 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 11: 收尾归档：10 个已提交任务复验与归档
+
+**Date**: 2026-11-02
+**Task**: 收尾归档：10 个已提交任务复验与归档
+**Package**: backend/douyin-processor
+
+### Summary
+
+对 11 个已提交未归档任务做归档前复验：backend/housing-map 1359 passed、dividend-select 332 passed/3 skipped、index-trends 151 passed；apps/housing-map lint/tsc/199 项 node 测试/build 通过，apps/index-trends 9 项 node 测试/tsc/build 通过。补齐两处规范（宽基完整周线契约、采集任务弹框紧凑行契约），随后归档 10 个任务（amap-rate-limit 由并行会话先行归档）。各任务部署、真实链路复测与投递验收等需另行授权的事项记录在各自 archive-note.md。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d2633465` | (see git log) |
+| `74b006fa` | (see git log) |
+| `0f584866` | (see git log) |
+| `0130b321` | (see git log) |
+| `20c503aa` | (see git log) |
+| `3787a82b` | (see git log) |
+| `7d63bd66` | (see git log) |
+| `9092591d` | (see git log) |
+| `772d5485` | (see git log) |
+| `7c56bf59` | (see git log) |
+| `1534fa83` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
