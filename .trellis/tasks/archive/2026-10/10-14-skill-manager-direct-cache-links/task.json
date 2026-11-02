@@ -1,0 +1,32 @@
+{
+  "id": "skill-manager-direct-cache-links",
+  "name": "skill-manager-direct-cache-links",
+  "title": "GitHub Skill 缓存目录直链",
+  "description": "Hermes 对 GitHub 多成员仓库逐子目录安装软链；单项仓库直接链接登记目录，停止生成每个 Skill 的版本快照。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "skill-manager",
+  "package": "backend/skill-manager",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-14",
+  "completedAt": "2026-10-14",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": "9cbfee42",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-02 补记：该任务在 Trellis task 生命周期引入前完成，目录一直滞留在 active 区且没有 task.json。代码已在 9cbfee42 提交，规范见 .trellis/spec/guides/skill-manager-github-cache.md（仓库缓存直链一节）。本次补写 task.json 并归档，未改产品代码。WSL 验证按用户要求中止，NAS 部署未做。",
+  "meta": {
+    "planned_packages": [
+      "backend/skill-manager"
+    ],
+    "review_required_before_start": false,
+    "retro_task_json": true
+  }
+}

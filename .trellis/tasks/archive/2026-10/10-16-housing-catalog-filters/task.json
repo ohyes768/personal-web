@@ -1,0 +1,33 @@
+{
+  "id": "housing-catalog-filters",
+  "name": "housing-catalog-filters",
+  "title": "小区目录分类筛选",
+  "description": "已收录页增加全部/新房/二手房下拉筛选；不收录页增加住宅、其他、写字楼等用途筛选。",
+  "status": "completed",
+  "dev_type": null,
+  "scope": "housing-map",
+  "package": "backend/housing-map",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-10-16",
+  "completedAt": "2026-10-16",
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": "3eb9dbeb",
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-02 补记：该任务在 Trellis task 生命周期引入前完成，目录一直滞留在 active 区且没有 task.json。代码已在 3eb9dbeb 提交，规范见 .trellis/spec/backend/housing-map/backend/directory-flow.md（GET /catalog 的 market/property_type 参数契约）。本次补写 task.json 并归档，未改产品代码；本轮未做真实浏览器交互，未部署生产。",
+  "meta": {
+    "planned_packages": [
+      "backend/housing-map",
+      "apps/housing-map"
+    ],
+    "review_required_before_start": false,
+    "retro_task_json": true
+  }
+}
