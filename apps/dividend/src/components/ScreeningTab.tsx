@@ -127,11 +127,11 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       </p>}
       {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}</p>}
       {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
-      <p className="text-xs text-ink-muted">五维评分顺序：业务模式 / 护城河 / 行业前景 / 管理层 / 财务质量，各 1–5 分，— 表示未评分。{currentSkillVersion ? `当前 Skill v${currentSkillVersion}，版本不同或未知的评分建议重评。` : '当前已部署 Skill 版本暂不可用，无法自动判断评分是否过期。'}</p>
+      <p className="text-xs text-ink-muted">五维评分各 1–5 分，— 表示未评分。{currentSkillVersion ? `当前 Skill v${currentSkillVersion}，版本不同或未知的评分建议重评。` : '当前已部署 Skill 版本暂不可用，无法自动判断评分是否过期。'}</p>
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
         <table className="w-full text-sm text-ink whitespace-nowrap"><thead className="bg-paper-deep text-left"><tr>
           <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={activeView !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>
-          {['股票', '基本面操作', '评级结果', '三年股息率', '当前股息率（TTM）', '最新季扣非同比', ...(showReason ? ['原因'] : []), '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
+          {['股票', '基本面操作', '五维评级', '三年股息率', '当前股息率（TTM）', '最新季扣非同比', ...(showReason ? ['原因'] : []), '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
         </tr></thead><tbody>
           {rows.map(item => {
             const { stock, status, reasons, warnings } = item;
@@ -165,9 +165,13 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
                 })()}
               </td>
               <td className="p-3" onClick={event => event.stopPropagation()}>
-                {score ? <span className="inline-flex items-center gap-2">
-                  <button className="font-mono tabular-nums text-ink underline-offset-4 hover:underline" aria-label={`查看${stock.name}的评级报告`} title={`${QUALITY_DIMENSION_ORDER.map(key => QUALITY_DIMENSION_LABELS[key]).join(' / ')}；— 表示未评分；点击查看详情`} onClick={() => openQuality(stock.code)}>
-                    {QUALITY_DIMENSION_ORDER.map(key => score.dimensions[key] ?? '—').join('/')}（{score.skill_version ? `v${score.skill_version}` : '版本未知'}）
+                {score ? <span className="inline-flex items-start gap-2">
+                  <button className="inline-grid grid-cols-3 gap-x-3 gap-y-0.5 text-left underline-offset-4 hover:underline" aria-label={`查看${stock.name}的评级报告`} title={`五维评分（各 1–5 分）：${QUALITY_DIMENSION_ORDER.map(key => `${QUALITY_DIMENSION_LABELS[key]} ${score.dimensions[key] ?? '未评分'}`).join(' / ')}；Skill ${score.skill_version ? `v${score.skill_version}` : '版本未知'}；点击查看详情`} onClick={() => openQuality(stock.code)}>
+                    {QUALITY_DIMENSION_ORDER.map(key => <span key={key} className="flex items-baseline gap-1">
+                      <span className="text-xs text-ink-muted">{QUALITY_DIMENSION_LABELS[key]}</span>
+                      <span className="font-mono text-sm font-medium tabular-nums text-ink">{score.dimensions[key] ?? '—'}</span>
+                    </span>)}
+                    <span className="text-xs text-ink-muted">{score.skill_version ? `v${score.skill_version}` : '版本未知'}</span>
                   </button>
                   {currentSkillVersion && score.skill_version !== currentSkillVersion && <span className="text-xs text-amber-700" title={`当前已部署 Skill v${currentSkillVersion}，建议重新分析`}>需重评</span>}
                 </span> : <span className="text-ink-muted">—</span>}
