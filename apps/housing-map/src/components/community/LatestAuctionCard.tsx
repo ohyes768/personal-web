@@ -9,10 +9,9 @@ export function LatestAuctionCardContent({ data, loading, error }: { data?: Auct
   const price = latest?.deal_unit_price;
   const value = price != null ? `${(price / 10000).toFixed(2)}万` : '—';
   const note = loading ? '加载中…' : error ? '暂时不可用' : !data?.available ? '尚未采集' : !latest ? '暂无成交' : `${date(latest.end_at)} · ${latest.area_m2 == null ? '面积未知' : `${latest.area_m2}㎡`}`;
-  return <div className="stat-cell latest-auction-card" aria-label="最近法拍成交" title="已采集记录中最近一套的成交单价，来源标记成交，未核验付款或过户">
+  return <div className="stat-cell latest-auction-card" aria-label="最近法拍成交" title={`已采集记录中最近一套的成交单价，来源标记成交，未核验付款或过户；${note}`}>
     <div className="stat-label">最近法拍成交</div>
     <div className="stat-value">{value}<span className="latest-auction-unit">{price != null ? '/㎡' : ''}</span></div>
-    <div className="latest-auction-note" role={error ? 'status' : undefined}>{note}</div>
   </div>;
 }
 

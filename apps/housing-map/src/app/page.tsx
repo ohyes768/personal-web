@@ -21,6 +21,7 @@ import { BoundaryWorkflowPreview, BoundaryWorkflowSection, type BoundaryPanelVie
 import { useBoundaryWorkflow } from '@/lib/use-boundary-workflow';
 import type { BoundaryPreview } from '@/components/map/BinjiangMap';
 import LatestAuctionCard from '@/components/community/LatestAuctionCard';
+import CommunityRentalMetrics from '@/components/community/CommunityRentalMetrics';
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import { RentalScopeSelect, RentalSummaryCells, type RentalScope } from '@/components/dashboard/RentalDashboardWidgets';
 import CommunityManagement from '@/components/community/CommunityManagement';
@@ -184,7 +185,7 @@ function CommunityPopup({
   }, []);
 
   return (
-    <div className="community-popup open animate-fade-in">
+    <div className="community-popup community-popup-resale open animate-fade-in">
       <div className="popup-header">
         <div>
           <span className="popup-title">{community.community_name}</span>
@@ -218,6 +219,7 @@ function CommunityPopup({
             <div className="stat-value">{community.price.deal_count ?? '-'}</div>
           </div>
           <LatestAuctionCard communityId={community.community_id} refreshVersion={auctionRefreshVersion} />
+          <CommunityRentalMetrics communityId={community.community_id} />
         </div>
 
         {/* 评分维度 2×2 大卡: 可点击翻转看明细, 宽度翻倍解决明细显示不下 */}

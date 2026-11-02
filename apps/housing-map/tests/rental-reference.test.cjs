@@ -185,3 +185,34 @@ test('list sampling notice remains visible when a filter has no samples', () => 
   }));
   assert.match(html, /未经逐套详情核验/);
 });
+
+const { CommunityRentalMetricsContent } = require('../src/components/community/CommunityRentalMetrics.tsx');
+
+test('overview uses merged area group rather than an individual bedroom yield', () => {
+  const individual = availableData().groups[0];
+  const data = availableData({ groups: [individual, {
+    ...individual, bedrooms: null,
+    yield_estimate: { rent_to_sale_ratio: 500, annualized_gross_yield_pct: 2.4 },
+  }] });
+  const html = renderToStaticMarkup(React.createElement(CommunityRentalMetricsContent, { data }));
+  assert.match(html, />1:500</);
+  assert.match(html, />2\.40%</);
+  assert.doesNotMatch(html, />1:708</);
+  assert.match(html, /title="90–144㎡/);
+  assert.doesNotMatch(html, /<p|rental-meta/);
+});
+
+test('overview hides estimates for stale or insufficient samples and exposes the reason', () => {
+  for (const [availability, reason] of [['stale', '超过30天'], ['insufficient_samples', '不足3套']]) {
+    const individual = availableData().groups[0];
+    const data = availableData({ availability, groups: [{ ...individual, bedrooms: null }] });
+    const html = renderToStaticMarkup(React.createElement(CommunityRentalMetricsContent, { data }));
+    assert.equal((html.match(/>—</g) ?? []).length, 2);
+    assert.match(html, new RegExp(reason));
+  }
+});
+
+test('overview does not substitute bedroom group when merged group is missing', () => {
+  const html = renderToStaticMarkup(React.createElement(CommunityRentalMetricsContent, { data: availableData() }));
+  assert.equal((html.match(/>—</g) ?? []).length, 2);
+});

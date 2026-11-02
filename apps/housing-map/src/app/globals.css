@@ -298,6 +298,10 @@ body {
   z-index: 300;
 }
 
+.community-popup.community-popup-resale {
+  width: 760px;
+}
+
 .community-popup.open {
   transform: translateX(0);
 }
@@ -360,16 +364,16 @@ body {
 }
 
 /* ——————————————————————————————————————————————————————————— */
-/* 房价数字条 (一行 4 列紧凑) + 评分维度 2×2 大卡 (可翻转)           */
+/* 房价数字条（桌面七列）+ 评分维度 2×2 大卡（可翻转）          */
 /* ——————————————————————————————————————————————————————————— */
 .popup-price-row {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 8px;
 }
 
-/* 评分卡 2×2: 560px 抽屉下每张 ~264px 宽, 明细背面两列排布无需滚动 */
+/* 评分卡 2×2，随抽屉宽度伸缩 */
 .score-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -1103,9 +1107,9 @@ body {
 .auction-pagination button:disabled { opacity: .4; cursor: default; }
 .auction-map-badge { display: block; font-size: 11px; margin-top: 6px; color: #285d59; }
 .latest-auction-unit { font-size: 11px; font-weight: 400; margin-left: 2px; }
-.latest-auction-note { font-size: 10px; line-height: 1.6; color: var(--text-muted); margin-top: 5px; overflow-wrap: anywhere; }
 .latest-auction-card .stat-value { color: #285d59; font-size: 22px; }
 .latest-auction-card .latest-auction-unit { font-size: 9px; }
+@media (max-width: 760px) { .popup-price-row { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .popup-price-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .auction-data-page { max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; }
 .auction-list-heading { display: flex; justify-content: space-between; align-items: end; gap: 16px; padding-bottom: 20px; border-bottom: 2px solid #285d59; }

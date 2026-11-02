@@ -16,6 +16,8 @@ test('card shows latest sale instead of median and has no navigation', () => {
   assert.match(html, /3.19万/);
   assert.match(html, /2026\/9\/29/);
   assert.match(html, /149.3㎡/);
+  assert.doesNotMatch(html, /latest-auction-note/);
+  assert.doesNotMatch(html.replace(/ title="[^"]*"/g, ""), /2026\/9\/29|149.3㎡/);
   assert.doesNotMatch(html, /4.00万|<a|<button/);
 });
 test('missing latest area does not silently substitute an older price', () => {

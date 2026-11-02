@@ -162,3 +162,9 @@ The directory-backed web flow now includes source checking/discovery before craw
 
 ## 幸福里列表证据兼容（2026-10-29）
 `statistics._exclusion_reason`只允许source=xingfuli、verification_method=xingfuli_list_api_v1、property_type_origin=community_directory、住宅类型且户型有效的列表样本在detail_fetched=false时参与统计。其他无详情核验样本仍为detail_not_verified；所有整租/正值/隔断/重复过滤继续生效。outside_sampling_quota排除本页配额外房源，quota按select_valid之后数量计算，不能直接对原始列表切10条。抽样模式、前端披露、分页失败语义见xingfuli-rentals.md。
+
+### 小区概览指标条（2026-11-02）
+
+- 二手小区概览复用详情接口，固定 `area_band=90to144&bedrooms=all`，只取 `bedrooms=null` 的合并重算组，不平均各户型结果。
+- 月租售比及年化毛收益率仅在 availability=available 且组内 yield_estimate 有值时展示；缺失为 —，口径和缺失原因放 title，不加说明小字。
+- 桌面抽屉默认760px、七列；760px及以下四列，480px及以下三列。最近法拍日期/面积只放悬停提示。
