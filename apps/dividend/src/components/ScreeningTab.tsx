@@ -171,7 +171,6 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
                       <span className="text-xs text-ink-muted">{QUALITY_DIMENSION_LABELS[key]}</span>
                       <span className="font-mono text-sm font-medium tabular-nums text-ink">{score.dimensions[key] ?? '—'}</span>
                     </span>)}
-                    <span className="text-xs text-ink-muted">{score.skill_version ? `v${score.skill_version}` : '版本未知'}</span>
                   </button>
                   {currentSkillVersion && score.skill_version !== currentSkillVersion && <span className="text-xs text-amber-700" title={`当前已部署 Skill v${currentSkillVersion}，建议重新分析`}>需重评</span>}
                 </span> : <span className="text-ink-muted">—</span>}
