@@ -2,10 +2,21 @@
 import math
 import os
 import re
+import threading
+import time
 from urllib.parse import quote
 
 from src.core.boundary import is_in_binjiang, is_in_xiaoshan_border
 from src.services.community_registry import now
+
+
+# One worker serves the backend. Share the gate across clients and tasks, not
+# just communities: pagination and alias lookups also consume upstream QPS.
+_REQUEST_LOCK = threading.Lock()
+_NEXT_REQUEST_AT = 0.0
+_REQUEST_INTERVAL = 2.0
+_RETRY_DELAYS = (2.0, 4.0, 8.0)
+_QPS_CODES = {'10014', '10015', '10019', '10020', '10021', '10029'}
 
 
 def web_service_key():
@@ -27,7 +38,7 @@ class AmapClient:
         self.key = web_service_key()
         self.session = Session()
 
-    def search_name(self, name, district, types='120300|120203', *, page=1):
+    def search_name(self, name, district, types='120300|120203', *, page=1, before_request=None):
         """Search POIs by name. `types=None` searches every category (use review);
         the default keeps the residential whitelist so position lookups stay narrow.
         Use district adcodes to restrict upstream results before the 25-result limit."""
@@ -36,15 +47,47 @@ class AmapClient:
                   'offset': 25, 'page': page, 'extensions': 'base'}
         if types is not None:
             params['types'] = types
-        try:
-            response = self.session.get('https://restapi.amap.com/v3/place/text', params=params, timeout=20)
-            response.raise_for_status()
-            data = response.json()
-        except Exception:
-            raise ValueError('高德位置补全请求失败') from None
-        if data.get('status') != '1' or not isinstance(data.get('pois'), list) or not str(data.get('count', '')).isdigit():
-            raise ValueError('高德位置补全返回异常')
-        return data['pois'], int(data['count'])
+        global _NEXT_REQUEST_AT
+        for attempt in range(len(_RETRY_DELAYS) + 1):
+            # Serialize the actual HTTP call too, so slow requests cannot let
+            # another client overtake its reservation and produce a burst.
+            with _REQUEST_LOCK:
+                wait = _NEXT_REQUEST_AT - time.monotonic()
+                if wait > 0:
+                    time.sleep(wait)
+                if before_request:
+                    # Keep cancellation and explicit HTTP budgets effective on
+                    # every retry, not just the first attempt of a page.
+                    before_request()
+                try:
+                    response = self.session.get('https://restapi.amap.com/v3/place/text', params=params, timeout=20)
+                    limited = getattr(response, 'status_code', None) == 429
+                    if limited:
+                        code = 'HTTP 429'
+                    else:
+                        response.raise_for_status()
+                        data = response.json()
+                        if not isinstance(data, dict):
+                            raise ValueError()
+                        raw_code = str(data.get('infocode', ''))
+                        code = raw_code if re.fullmatch(r'\d{5}', raw_code) else '未知'
+                        limited = data.get('status') != '1' and code in _QPS_CODES
+                except Exception:
+                    raise ValueError('高德位置补全请求失败') from None
+                finally:
+                    _NEXT_REQUEST_AT = time.monotonic() + _REQUEST_INTERVAL
+                if limited:
+                    # Cooldown is shared: other tasks must respect it as well.
+                    _NEXT_REQUEST_AT = time.monotonic() + _RETRY_DELAYS[min(attempt, len(_RETRY_DELAYS) - 1)]
+            if limited:
+                if attempt == len(_RETRY_DELAYS):
+                    raise ValueError(f'高德查询频率超限（{code}），退避重试后仍失败，请稍后继续')
+                continue
+            if data.get('status') != '1':
+                raise ValueError(f'高德位置补全返回异常（错误码 {code}）')
+            if not isinstance(data.get('pois'), list) or not str(data.get('count', '')).isdigit():
+                raise ValueError('高德位置补全返回异常')
+            return data['pois'], int(data['count'])
 
     def close(self):
         self.session.close()

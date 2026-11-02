@@ -132,16 +132,27 @@ class RequestBudgetClient:
         self.client, self.used = None, 0
 
     def search_name(self, *args, **kwargs):
+        from src.services.amap_directory import AmapClient
+        if self.client is None:
+            # Preserve lazy construction for cancelled/budget-exhausted jobs.
+            self._check_request()
+            self.client = self.factory()
+        if isinstance(self.client, AmapClient):
+            return self.client.search_name(*args, **kwargs, before_request=self._consume_request)
+        self._consume_request()
+        return self.client.search_name(*args, **kwargs)
+
+    def _check_request(self):
         if self.cancel.is_set():
             raise InterruptedError()
         if self.limit is not None and self.used >= self.limit:
             raise RequestBudgetExhausted('达到本轮高德实际请求预算，未完成目标可下次重试')
+
+    def _consume_request(self):
+        self._check_request()
         if self.used and self.cancel.wait(self.delay):
             raise InterruptedError()
-        if self.client is None:
-            self.client = self.factory()
         self.used += 1
-        return self.client.search_name(*args, **kwargs)
 
     def close(self):
         if self.client:
