@@ -467,3 +467,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 13: 小区概览租售比与毛收益率
+
+**Date**: 2026-11-02
+**Task**: 小区概览租售比与毛收益率
+**Package**: backend/douyin-processor
+
+### Summary
+
+二手小区抽屉加宽至760px并展示七项指标，租售比及年化毛收益率复用90–144㎡全部房型合并统计；法拍日期面积移入悬停提示。lint、tsc、既有199项测试、新增相关18项用例及生产构建通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `56f91af2` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
