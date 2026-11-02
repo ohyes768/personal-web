@@ -137,6 +137,13 @@ class ProbeService:
         state.setdefault('stage', STAGE_IDLE)
         state.setdefault('revision', 0)
         state['running'] = self._running_for(community_id)
+        # 早期版本写入的候选可能缺证据字段，原样返回会让前端读
+        # conflicts.length 时白屏；这里是前端唯一的状态入口，读时兜底。
+        for candidate in state.get('candidates') or []:
+            candidate.setdefault('evidence', [])
+            candidate.setdefault('evidence_gaps', [])
+            candidate.setdefault('conflicts', [])
+            candidate.setdefault('strong', False)
         return state
 
     def busy(self):
@@ -388,6 +395,11 @@ class ProbeService:
             fresh_candidate = candidate_from_homepage(homepage, discovered_via=candidate.get('discovered_via', 'homepage'))
             fresh_candidate['candidate_id'] = candidate.get('candidate_id', 'homepage:' + candidate['neighborhood_id'])
             judgement = evaluate(community, fresh_candidate, allow_name_only=True, allow_partial_name=True)
+            # 与 _search 写回的候选保持同一形状，缺字段会让前端白屏。
+            fresh_candidate['evidence'] = judgement['evidence']
+            fresh_candidate['evidence_gaps'] = judgement['gaps']
+            fresh_candidate['conflicts'] = judgement['conflicts']
+            fresh_candidate['strong'] = judgement['strong']
             if judgement['conflicts'] or (self._require_strong and not judgement['strong']):
                 write_state(self.registry, community_id, stage=STAGE_NEEDS_SELECTION,
                             candidates=[fresh_candidate], message='主页信息已变化，请重新探查')

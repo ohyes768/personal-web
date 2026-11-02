@@ -553,3 +553,40 @@ def test_probe_get_stays_readable_while_writer_lock_is_held(tmp_path, monkeypatc
         holder.close()
     assert response.status_code == 200
     assert response.json()['data']['stage'] == 'idle'
+
+
+# --- 线上回归：'主页信息已变化'分支曾写入缺证据字段的候选，前端读
+# conflicts.length 直接白屏（线上小区 604 西房锦绣江南，2026-10-30）----------
+
+def test_homepage_changed_recheck_persists_full_candidate(tmp_path):
+    registry = setup(tmp_path)
+    first = FakeDiscovery(search={'测试花园': {TOTAL_ID: '测试花园'}},
+                          homepages={TOTAL_ID: homepage(seeds=())})
+    assert run(service(registry, first, tmp_path))['stage'] == probe.STAGE_NO_ENTRY
+    # 重试时主页改名成带分期的变体：重检发现冲突，回到待选择并写回新候选
+    changed = FakeDiscovery(homepages={TOTAL_ID: homepage(name='测试花园(南区)', seeds=())},
+                            owners={}, lists={})
+    svc = service(registry, changed, tmp_path)
+    svc.retry('c1')
+    svc._thread.join(5)
+    assert svc.status('c1')['stage'] == probe.STAGE_NEEDS_SELECTION
+    candidate = svc.status('c1')['candidates'][0]
+    assert candidate['conflicts'], '主页已变化的候选必须带冲突说明'
+    for key in ('evidence', 'evidence_gaps', 'conflicts', 'strong'):
+        assert key in candidate
+
+
+def test_status_fills_evidence_fields_for_legacy_candidates(tmp_path):
+    registry = setup(tmp_path)
+    svc = service(registry, FakeDiscovery(), tmp_path)
+    # 旧版本写入的状态缺证据字段（线上 604 的存量数据就是这个形状），
+    # status 是前端唯一的状态入口，必须在这里归一化兜底
+    probe.write_state(registry, 'c1', stage=probe.STAGE_NEEDS_SELECTION,
+                      candidates=[{'candidate_id': 'second_hand:1', 'neighborhood_id': '1',
+                                   'name': '测试花园', 'address': '测试路1号'}],
+                      message='主页信息已变化，请重新探查')
+    candidate = svc.status('c1')['candidates'][0]
+    assert candidate['conflicts'] == []
+    assert candidate['evidence'] == []
+    assert candidate['evidence_gaps'] == []
+    assert candidate['strong'] is False
