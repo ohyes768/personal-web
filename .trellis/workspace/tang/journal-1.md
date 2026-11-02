@@ -358,3 +358,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 10: 高德查询统一限速与退避重试
+
+**Date**: 2026-11-02
+**Task**: 高德查询统一限速与退避重试
+**Package**: backend/douyin-processor
+
+### Summary
+
+定位NAS国信嘉园分页第4页10021限流；AmapClient共享2秒节奏与2/4/8秒有限重试，保留实际HTTP预算和取消检查。新增21项回归，最终相关213项通过；全量1344通过及端口受限文件重跑33通过。未部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `5dafd66d` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
