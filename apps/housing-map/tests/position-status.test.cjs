@@ -77,16 +77,16 @@ test('amap job summary reports per-outcome states instead of skip counts', () =>
   const html = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, action() {}, errors: {}, jobs: { amap: {
     running: false, phase: 'succeeded', processed: 155, total: 155, updated: 1, skipped: 102,
     review: 24, not_found: 29, failed: 0, skipped_by_state: { manual: 2, review: 71, not_found: 29 } } } }));
-  assert.match(html, /采集完成/);
+  assert.match(html, /已完成 · 155\/155/);
   assert.match(html, /补全 1 · 待人工确认 24 · 未找到主体地点 29/);
-  assert.match(html, /已处理 155 \/ 155/);
   assert.match(html, /未参与本轮 102/);
   assert.match(html, /人工已确认 2 · 待确认 71 · 未找到 29/);
   const amapRow = html.match(/<div class="directory-task-row"[^>]*>(?:(?!<div class="directory-task-row").)*补全高德定位(?:(?!<div class="directory-task-row").)*/s)?.[0];
   assert.ok(amapRow);
-  const statusLine = amapRow.match(/<p class="directory-task-line"[^>]*>.*?<\/p>/s)?.[0];
+  const statusLine = amapRow.match(/<div class="directory-task-metrics"[^>]*>.*?<\/div>/s)?.[0];
   assert.ok(statusLine);
   assert.doesNotMatch(statusLine, /跳过/);
+  assert.doesNotMatch(statusLine, /已处理/);
 });
 
 test('addressless candidate is preselected and needs map verification before confirmation', () => {
@@ -181,8 +181,9 @@ test('verified addressless subject never displays the source address as a Gaode 
 test('legacy amap job without outcome fields keeps the old wording', () => {
   const html = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, action() {}, errors: {}, jobs: { amap: {
     running: false, phase: 'partial_failed', processed: 155, total: 155, updated: 0, skipped: 155 } } }));
-  assert.match(html, /部分完成/);
-  assert.match(html, /补全 0 · 跳过 155/);
+  assert.match(html, /部分完成 · 155\/155/);
+  assert.match(html, /跳过 155/);
+  assert.doesNotMatch(html, /补全 0/);
 });
 
 

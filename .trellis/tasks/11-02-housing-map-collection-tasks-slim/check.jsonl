@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-flow.md", "reason": "校验改造后六个采集任务的归属、job 单位口径与按钮语义未变；不得把不同任务单元的计数混在同一指标行"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "校验高德定位任务的 review/not_found/retryable 三类计数仍分列且零值过滤未误删待人工确认项"}
+{"file": ".trellis/spec/backend/housing-map/backend/xingfuli-rentals.md", "reason": "校验租金任务的 failed 与 deferred 未查询项仍可区分（现有测试断言查询失败 1 而非 100）"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端通用约定：保持 API 单位与空观测语义、复用共享代码、不新增重复工具函数"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享指南，确认代码复用与展示层纯函数的放置惯例"}

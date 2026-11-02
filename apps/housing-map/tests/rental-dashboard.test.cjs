@@ -173,14 +173,15 @@ test('central rental task offers start and preserves its residential scope', () 
 
 test('central rental task normalizes progress and offers cancellation', () => {
   const html = renderRent(job());
-  assert.match(html, /已处理 3 \/ 8/);
+  assert.match(html, /运行中 · 3\/8/);
   assert.match(html, /停止更新租金/);
+  assert.doesNotMatch(html, /已处理 3 \/ 8/);
 });
 
 test('central rental task reports cancelling, partial and failed phases', () => {
-  assert.match(renderRent(job({ phase: 'cancelling' })), /正在取消/);
-  assert.match(renderRent(job({ running: false, phase: 'partial_failed' })), /部分完成/);
-  assert.match(renderRent(job({ running: false, phase: 'failed' })), /采集失败/);
+  assert.match(renderRent(job({ phase: 'cancelling' })), /data-tone="running"[^>]*>运行中/);
+  assert.match(renderRent(job({ running: false, phase: 'partial_failed' })), /data-tone="warn"[^>]*>部分完成/);
+  assert.match(renderRent(job({ running: false, phase: 'failed' })), /data-tone="failed"[^>]*>失败/);
 });
 
 test('central rental task keeps actionable API errors visible', () => {
@@ -201,8 +202,9 @@ test('rental source checks separate missing, failed and unqueried communities', 
 
 test('deferred-only rentals are unqueried rather than failed', () => {
   const html = renderRent(job({ running: false, phase: 'partial_failed', association: { checked: 4, failed: 0, deferred: 4 } }));
-  assert.match(html, /查询失败 0/);
+  assert.match(html, /已检查 4/);
   assert.match(html, /未查询 4/);
+  assert.doesNotMatch(html, /查询失败/);
   const { RentalCandidateChoice } = require('../src/components/rental/RentalAssociationReview.tsx');
   const review = renderToStaticMarkup(React.createElement(RentalCandidateChoice, {
     item: { community_id: 'c1', community_name: '测试花园', reason: 'search_deferred', candidates: [] },

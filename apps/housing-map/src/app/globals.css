@@ -1386,20 +1386,73 @@ body {
 .directory-task-group-head span { font-size: 12px; color: var(--text-muted); }
 .directory-task-group .directory-task-row { padding: 10px 0; border-bottom: 0; }
 .directory-task-group .directory-task-row + .directory-task-row { border-top: 1px solid #eef2f7; }
-.directory-task-row-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
-.directory-task-row-head strong { font-size: 13.5px; }
-.directory-task-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-left: auto; }
+.directory-task-row-head {
+  display: grid;
+  grid-template-columns: 10px minmax(0, max-content) auto auto minmax(0, 1fr) minmax(0, max-content);
+  align-items: center;
+  gap: 8px 10px;
+}
+.directory-task-row-head > strong { font-size: 13.5px; min-width: 0; overflow-wrap: anywhere; }
+.directory-task-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; grid-column: 6; }
 .directory-task-row-head .btn { flex: none; }
+.directory-task-help {
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 14px;
+  cursor: pointer;
+}
+.directory-task-help:hover { color: var(--text-primary); border-color: var(--text-muted); }
+.directory-task-badge {
+  display: inline-flex;
+  align-items: center;
+  width: max-content;
+  max-width: 100%;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.directory-task-badge[data-tone="running"] { color: var(--accent-warm); background: #f8ebe6; }
+.directory-task-badge[data-tone="idle"] { color: var(--text-muted); background: #f3f4f6; }
+.directory-task-badge[data-tone="warn"] { color: #A97B1F; background: #fbf6ea; }
+.directory-task-badge[data-tone="failed"] { color: #a74325; background: #fdf2ef; }
+.directory-task-badge[data-tone="ok"] { color: #2E8B44; background: #eef6f0; }
+.directory-task-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.4;
+}
+.directory-task-detail { margin: 8px 0 0 20px; padding: 8px 12px; border-left: 2px solid var(--border); }
+.directory-task-detail[hidden] { display: none; }
 .directory-task-hint { margin: 4px 0 0; font-size: 12px; line-height: 1.6; color: #596c86; }
+.directory-task-detail .directory-task-hint:first-child { margin-top: 0; }
 .directory-refresh { padding: 6px 11px; font-size: 14px; line-height: 1; }
-.directory-task-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; margin: 0; color: var(--text-muted); }
-.directory-task-line strong { color: var(--text-primary); font-weight: 600; }
 .directory-task-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-muted); flex: none; align-self: center; }
-.directory-task-line[data-state="running"] .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
-.directory-task-line[data-state="failed"] { color: #a74325; }
-.directory-task-line[data-state="failed"] .directory-task-dot { background: #a74325; }
-.directory-task-line[data-state="failed"] strong { color: #a74325; }
+.directory-task-row[data-state="running"] > .directory-task-row-head > .directory-task-dot { background: var(--accent-warm); animation: directory-task-pulse 1.6s ease-in-out infinite; }
+.directory-task-row[data-state="failed"] > .directory-task-row-head > .directory-task-dot { background: #a74325; }
+.directory-task-problem { margin: 6px 0 0; font-size: 12px; }
+.directory-task-problem[data-state="failed"] { color: #a74325; }
 .directory-task-sub { margin: 0; padding-left: 16px; color: var(--text-muted); font-size: 12px; }
+@media (max-width: 640px) {
+  .directory-task-row-head { grid-template-columns: 10px minmax(0, 1fr) auto; }
+  .directory-task-row-head > .directory-task-badge,
+  .directory-task-row-head > .directory-task-metrics,
+  .directory-task-row-head > .directory-task-actions { grid-column: 1 / -1; }
+  .directory-task-actions { justify-content: flex-start; }
+}
 .directory-task-sub summary { cursor: pointer; }
 @keyframes directory-task-pulse { 50% { opacity: .4; } }
 @media (prefers-reduced-motion: reduce) { .directory-task-dot { animation: none; } }

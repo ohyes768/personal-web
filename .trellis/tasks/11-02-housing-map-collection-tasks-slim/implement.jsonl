@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/housing-map/backend/directory-flow.md", "reason": "Five jobs / UI 段定义收录审核与小区数据维护两个工作区、六个采集任务的归属与 job 单位口径；改造不得改变任务划分、按钮语义与后端契约"}
+{"file": ".trellis/spec/backend/housing-map/backend/collection-pipeline.md", "reason": "pipeline 模式下 tmsf/amap 的 label 与 hint 被 visibleTasks 覆盖，说明区文案需跟随同一变体"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-position.md", "reason": "高德定位任务的 processed/total、review/not_found/retryable 计数语义，决定状态徽标进度与明细指标的取数"}
+{"file": ".trellis/spec/backend/housing-map/backend/xingfuli-rentals.md", "reason": "租金匹配与更新的 association 计数（checked/matched/pending/missing/failed/deferred）与 continuable 语义，决定维护弹框的指标与按钮计数"}
+{"file": ".trellis/spec/backend/housing-map/backend/use-review.md", "reason": "用途核对任务的 updated/conflict/not_found/uncertain/error/skipped 计数，决定收录弹框的状态与指标呈现"}

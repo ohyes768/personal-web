@@ -11,6 +11,7 @@ import { CatalogTmsfDetails } from './CatalogTmsfDetails';
 import { CatalogReviewAction, type CatalogReviewKind } from './CatalogReviewAction';
 import CatalogFilters, { CatalogFilterValues, catalogFilterParams, catalogFiltersForMode, emptyCatalogFilters } from './CatalogFilters';
 import { rentalRefreshDiagnostics } from '../../lib/rental-dashboard';
+import { taskBadge, formatMetrics, relativeTime, absoluteTime, type BadgeTone, type Metric } from '../../lib/collection-tasks';
 import type { RentalRequestDiagnostics } from '../../lib/rental-types';
 import { AuctionCoverage, RentalCoverage, CatalogAuctionRecords, CatalogRentalDetails, type CatalogCoverage, type CatalogAuctionRecord } from './CatalogCoverage';
 
@@ -50,7 +51,7 @@ export function MaintenanceTabs({ summary, mode, onChange }: { summary: Summary 
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
 type Job = RentalRequestDiagnostics & { running: boolean; phase: string; finished_at?: string; started_at?: string; processed?: number; total?: number;
   matched?: number; new?: number; existing?: number; updated?: number; skipped?: number; review?: number; not_found?: number;
-  failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string;
+  failed?: number; incomplete?: number; conflict?: number; uncertain?: number; requests?: number; skipped_by_state?: Record<string, number>; error?: string | number;
   retryable?: number; unqueried?: number; continuable?: number | null; mode?: 'continue' | 'all' | 'refresh_all' | 'unqueried' | 'retry_failed' | 'full' | 'incremental';
   incremental_count?: number; current_community_id?: string; current_community_name?: string; current_step?: string;
   diagnostics?: { requests?: number; cache_hits?: number; wait_seconds?: number; http_seconds?: number; elapsed_seconds?: number; early_stop?: boolean };
@@ -67,16 +68,43 @@ export function normalizeCollectionJob(value: IncomingJob | null): Job | null {
 /** 采集任务按归属页签分流: 收录审核收名单与资料类, 小区数据维护收租金与法拍类。 */
 export type TaskScope = 'admission' | 'maintenance';
 type CollectionTask = { id: string; label: string; short: string; stop: string; path: string; hint: string;
-  body?: object; group?: string; scope: TaskScope };
+  body?: object; group?: string; scope: TaskScope;
+  /** 「?」悬浮时的一句摘要 */
+  tip: string;
+  /** 「?」展开后的差异规则（更新全部 vs 继续） */
+  detail?: string };
 const rentalGroupTitle = '租金流程';
-const rentalGroupHint = '先匹配幸福里来源，再更新租金数据；两个动作互斥，不能同时运行。';
+const rentalGroupHint = '先匹配来源，再更新租金；两步互斥。';
 const tasks: CollectionTask[] = [
-  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection', hint: '更新全部资料会重新扫描名单、更新用途和挂牌数量；新房采集基本资料后衔接主体匹配，可靠高德主体地址可用于收录。继续采集只补查已发现楼盘中未完成及查询失败的资料，跳过已完成、身份冲突、待地点匹配及来源资料缺失项。', body: { sources: ['tmsf'] }, scope: 'admission' },
-  { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions', hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果', scope: 'admission' },
-  { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews', hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。', scope: 'admission' },
-  { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching', hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。', group: 'rental', scope: 'maintenance' },
-  { id: 'rent', label: '更新租金数据', short: '租金更新', stop: '停止更新租金', path: '/rentals/refresh', hint: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计，不会查找或关联来源。', group: 'rental', scope: 'maintenance' },
-  { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh', hint: '采集滨江法拍，匹配住宅，未匹配进入待关联', scope: 'maintenance' },
+  { id: 'tmsf', label: '住宅名称采集', short: '透明售房网', stop: '停止采集', path: '/directory/collection',
+    hint: '重新扫描名单、更新用途和挂牌数量；新房采集基本资料后自动衔接主体匹配，可靠的高德主体地址可直接用于收录。',
+    tip: '重新扫描名单并更新用途、挂牌数量，新房采集后自动衔接主体匹配。',
+    detail: '继续采集只补查已发现楼盘中未完成及查询失败的资料，跳过已完成、身份冲突、待地点匹配及来源资料缺失的项。',
+    body: { sources: ['tmsf'] }, scope: 'admission' },
+  { id: 'amap', label: '补全高德定位', short: '高德定位', stop: '停止补全定位', path: '/directory/workflow/positions',
+    hint: '仅已收录住宅；批量补待补全和失败项，保留人工结果。',
+    tip: '仅已收录住宅；批量补待补全和失败项，保留人工结果。',
+    detail: '更新全部会重查符合条件的楼盘，保留人工确认结果；继续匹配处理尚未查询、未完成和查询失败／不完整的项目，跳过已完成、未找到及待人工确认项。不设每轮请求总量上限，请求间隔 2 秒。',
+    scope: 'admission' },
+  { id: 'use', label: '核对住宅用途', short: '用途核对', stop: '停止用途核对', path: '/directory/workflow/use-reviews',
+    hint: '核对用途缺失、其他、冲突、公寓商住等需核实项目及已定位住宅；已有人工决定、明确非住宅和区域异常项不重复查询，发现冲突后由你确认。',
+    tip: '核对用途缺失、冲突、公寓商住等需核实项目，冲突由你确认。',
+    detail: '用途冲突会留在名单里等你确认，不会自动取舍。',
+    scope: 'admission' },
+  { id: 'rentalMatch', label: '匹配租金来源', short: '来源匹配', stop: '停止匹配', path: '/rentals/source-matching',
+    hint: '为缺来源的已收录小区匹配幸福里；有歧义的留待确认，不会采集租金。',
+    tip: '为缺来源的已收录小区匹配幸福里，不会采集租金。',
+    detail: '全量匹配会重新查询所有缺来源小区；继续匹配只查剩余、新增及失败项，跳过已查完的待选择和未找到项。已关联及人工跳过的小区会保留。',
+    group: 'rental', scope: 'maintenance' },
+  { id: 'rent', label: '更新租金数据', short: '租金更新', stop: '停止更新租金', path: '/rentals/refresh',
+    hint: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计，不会查找或关联来源。',
+    tip: '仅已收录住宅中已关联幸福里的小区；采集房源并更新租金统计。',
+    detail: '继续采集只补尚未采集、失败或未完成的小区；已查完但无房源的小区不重复采集，保留现有成功数据。',
+    group: 'rental', scope: 'maintenance' },
+  { id: 'auction', label: '采集法拍', short: '法拍', stop: '停止采集法拍', path: '/auctions/refresh',
+    hint: '采集滨江法拍，匹配住宅，未匹配进入待关联。',
+    tip: '采集滨江法拍，匹配住宅，未匹配进入待关联。',
+    scope: 'maintenance' },
 ];
 /** 每个页签的采集入口叫法: 按钮短, 弹层标题说全。 */
 const scopeLabels: Record<TaskScope, { button: string; dialog: string }> = {
@@ -87,8 +115,12 @@ const scopeLabels: Record<TaskScope, { button: string; dialog: string }> = {
 function visibleTasks(scope: TaskScope, pipeline: boolean): CollectionTask[] {
   return tasks.filter(t => t.scope === scope && (!pipeline || t.id !== 'use')).map(t =>
     pipeline && t.id === 'amap'
-      ? { ...t, label: '匹配楼盘地点与类型', hint: '候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类；多个主体由你选择。' }
-      : pipeline && t.id === 'tmsf' ? { ...t, label: '采集楼盘名单与资料' } : t);
+      ? { ...t, label: '匹配楼盘地点与类型',
+        hint: '候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类；多个主体由你选择。',
+        tip: '候选楼盘先确认主体地点，同时保存坐标与类型，再自动分类。',
+        detail: '更新全部会重查符合条件的楼盘，保留人工确认结果；继续匹配处理尚未查询、未完成和查询失败／不完整的项目，跳过已完成、未找到及待人工确认项。' }
+      : pipeline && t.id === 'tmsf' ? { ...t, label: '采集楼盘名单与资料',
+        tip: '扫描名单并采集楼盘基本资料，新房采集后自动衔接主体匹配。' } : t);
 }
 type TaskGroup = { id: string; title?: string; hint?: string; tasks: CollectionTask[] };
 /** 同一 group 的相邻任务收进同一区块：租金两步（匹配来源 → 更新租金）本是一条流程，不该散在任务列表里。 */
@@ -127,25 +159,87 @@ export async function workflowRequest<T>(path: string, method = 'GET', body?: ob
   return packet.data as T;
 }
 
+/** 进度：已处理 X / Y。只有算得出分母才带 "/ Y"。齿轮悬浮说明仍用这句。 */
+function taskProgressText(job: Job | null): string | null {
+  if (job?.processed === undefined) return null;
+  if (!job.total && !job.processed) return null;
+  return `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`;
+}
+
+/** 徽标上的进度后缀。标题行不再重复「已处理 X / Y」。 */
+function badgeProgress(job: Job | null): string {
+  if (job?.processed === undefined) return '';
+  if (!job.processed && !job.total) return '';
+  return ` · ${job.processed}${job.total !== undefined ? `/${job.total}` : ''}`;
+}
+
+/** 数量已知且大于 0 才带括号；0 与未知都不显示括号。 */
+function continueLabel(base: string, count: number | null | undefined): string {
+  return typeof count === 'number' && count > 0 ? `${base}（${count}）` : base;
+}
+
+/** 本轮产出：跑完这次任务的结果与待办。零值不显示。 */
+function taskOutputMetrics(t: CollectionTask, job: Job | null): Metric[] {
+  if (!job) return [];
+  switch (t.id) {
+    case 'tmsf': return [
+      { label: '新来源', value: job.new ?? 0 }, { label: '已有', value: job.existing ?? 0 },
+      { label: '补全', value: job.updated ?? 0 }, { label: '跳过', value: job.skipped ?? 0 }];
+    case 'amap': return [
+      { label: '补全', value: job.updated ?? 0 }, { label: '待人工确认', value: job.review ?? 0 },
+      { label: '未找到主体地点', value: job.not_found ?? 0 }, { label: '查询失败', value: job.failed ?? 0 },
+      { label: '返回不完整', value: job.incomplete ?? 0 }];
+    case 'use': return [
+      { label: '已完成用途核对', value: job.updated ?? 0 }, { label: '用途冲突，待人工确认', value: job.conflict ?? 0 },
+      { label: '未找到高德地点', value: job.not_found ?? 0 }, { label: '高德地点匹配不明确', value: job.uncertain ?? 0 },
+      { label: '查询失败', value: typeof job.error === 'number' ? job.error : 0 }, { label: '跳过', value: job.skipped ?? 0 }];
+    case 'rentalMatch':
+    case 'rent': return [
+      { label: '已关联', value: job.association?.matched ?? 0 }, { label: '待选择', value: job.association?.pending ?? 0 },
+      { label: '未找到', value: job.association?.missing ?? 0 }];
+    case 'auction': return [{ label: '本次法拍', value: job.matched ?? 0, unit: ' 条' }];
+    default: return [];
+  }
+}
+
+/** 总量与分项：本轮跑了多少、还有哪些没跑完。零值不显示。 */
+function taskDetailMetrics(t: CollectionTask, job: Job | null): Metric[] {
+  if (!job) return [];
+  switch (t.id) {
+    case 'tmsf': return job.resolutions ? [
+      { label: '基本资料齐备', value: job.resolutions.ready ?? 0 }, { label: '非住宅', value: job.resolutions.non_residential ?? 0 },
+      { label: '待地点匹配', value: job.resolutions.position_pending ?? 0 }, { label: '身份待核对', value: job.resolutions.identity_conflict ?? 0 },
+      { label: '网络可重试', value: job.resolutions.retryable ?? 0 }, { label: '基本资料待取得', value: job.resolutions.facts_pending ?? 0 }] : [];
+    case 'amap': return !job.skipped_by_state && job.skipped ? [{ label: '跳过', value: job.skipped }] : [];
+    case 'rentalMatch':
+    case 'rent': return job.association ? [
+      { label: '已检查', value: job.association.checked ?? 0 }, { label: '查询失败', value: job.association.failed ?? 0 },
+      { label: '未查完', value: job.association.incomplete ?? 0 }, { label: '未查询', value: job.association.deferred ?? 0 }] : [];
+    default: return [];
+  }
+}
+
+/** 齿轮悬浮说明用的一行摘要。 */
 function taskCounts(t: (typeof tasks)[number], job: Job | null): string {
-  return [job?.stage && stageLabels[job.stage],
-    job?.processed !== undefined && (job.total || job.processed) && `已处理 ${job.processed}${job.total !== undefined ? ` / ${job.total}` : ''}`,
-    job?.new !== undefined && `新来源 ${job.new} · 已有 ${job.existing || 0}`,
-    job?.updated !== undefined && job.review !== undefined &&
-      `补全 ${job.updated || 0} · 待人工确认 ${job.review} · 未找到主体地点 ${job.not_found || 0}${job.failed ? ` · 查询失败 ${job.failed}` : ''}${job.incomplete ? ` · 返回不完整 ${job.incomplete}` : ''}`,
-    job?.updated !== undefined && job.review === undefined && job.conflict === undefined && `补全 ${job.updated} · 跳过 ${job.skipped || 0}`,
-    job?.conflict !== undefined &&
-      `已完成用途核对 ${job.updated || 0} · 用途冲突，待人工确认 ${job.conflict} · 未找到高德地点 ${job.not_found || 0}${job.uncertain ? ` · 高德地点匹配不明确 ${job.uncertain}` : ''}${job.error ? ` · 查询失败 ${job.error}` : ''} · 跳过 ${job.skipped || 0}`,
-    job?.matched !== undefined && t.id === 'auction' && `本次法拍 ${job.matched} 条`].filter(Boolean).join(' · ');
+  return [job?.stage && stageLabels[job.stage], taskProgressText(job), formatMetrics(taskOutputMetrics(t, job))]
+    .filter(Boolean).join(' · ');
 }
 function taskStateOf(t: (typeof tasks)[number], jobs: Record<string, Job | null>, errors: Record<string, string>): 'running' | 'failed' | 'info' {
   const job = jobs[t.id];
   return job?.running ? 'running' : (errors[t.id] || job?.error) ? 'failed' : 'info';
 }
 
+/** 徽标 = 归并后的状态词 + 进度。有报错时一律按失败显示，不被 phase 掩盖。租金匹配只把 idle 说成「尚未匹配」。 */
+function taskBadgeState(t: CollectionTask, job: Job | null, error: string): { tone: BadgeTone; label: string } {
+  if (error) return { tone: 'failed', label: '失败' };
+  const badge = taskBadge(job?.phase, t.id === 'rentalMatch' ? { idleLabel: '尚未匹配' } : {});
+  return { tone: badge.tone, label: `${badge.label}${badgeProgress(job)}` };
+}
+
 /** 采集任务弹层：触发/停止/完整进度都收在弹层里，页面上不再常驻状态条。 */
-export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {}, pipeline = false, scope = 'admission' }: {
+export function CollectionControls({ active, jobs, errors, busy, action, open = false, onOpenChange = () => {}, pipeline = false, scope = 'admission', expandedTasks = {}, onToggleTask = () => {} }: {
   pipeline?: boolean; scope?: TaskScope;
+  expandedTasks?: Record<string, boolean>; onToggleTask?: (id: string) => void;
   active: boolean; jobs: Record<string, Job | null>; errors: Record<string, string>; busy: boolean;
   action: (path: string, method: string, body?: object) => void; open?: boolean; onOpenChange?: (open: boolean) => void }) {
   const availableTasks = visibleTasks(scope, pipeline);
@@ -153,58 +247,65 @@ export function CollectionControls({ active, jobs, errors, busy, action, open = 
     const job = jobs[t.id];
     const running = !!job?.running;
     const state = taskStateOf(t, jobs, errors);
-    const problem = errors[t.id] || job?.error || '';
-    const message = job ? [job.mode === 'retry_failed' && '重试失败项', taskPhase(t, job), taskCounts(t, job)].filter(Boolean).join(' · ') : '';
+    const problem = errors[t.id] || (typeof job?.error === 'string' ? job.error : '');
+    const badge = taskBadgeState(t, job, errors[t.id]);
     const rentalBlocked = (t.id === 'rent' && jobs.rentalMatch?.running) || (t.id === 'rentalMatch' && jobs.rent?.running);
-    const lastRun = job?.finished_at ? ` · 上次结束：${job.finished_at.slice(0, 19).replace('T', ' ')}（UTC）` : '';
+    const lastRun = relativeTime(job?.finished_at);
+    const lastRunTitle = absoluteTime(job?.finished_at);
     const issues = [...(job?.errors || []), ...(job?.truncated || [])];
     const isReview = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'review' && e.reason !== 'results_incomplete';
     const isMissing = (e: (typeof issues)[number]) => t.id === 'amap' && e.state === 'not_found';
     const reviewIssues = issues.filter(isReview);
     const missingIssues = issues.filter(isMissing);
     const retryIssues = issues.filter(e => !isReview(e) && !isMissing(e));
+    const output = formatMetrics(taskOutputMetrics(t, job));
+    const detailMetrics = formatMetrics(taskDetailMetrics(t, job));
+    const expanded = !!expandedTasks[t.id];
     return <div key={t.id} className="directory-task-row" data-state={state}>
       <div className="directory-task-row-head">
         <span className="directory-task-dot" aria-hidden="true" />
         <strong>{t.label}</strong>
+        <button type="button" className="directory-task-help" aria-expanded={expanded}
+          aria-controls={`task-detail-${t.id}`} aria-label={`${t.label} 说明`} title={t.tip}
+          onClick={() => onToggleTask(t.id)}>?</button>
+        <span className="directory-task-badge" data-tone={badge.tone}>{badge.label}</span>
+        {(output || lastRun) && <div className="directory-task-metrics">
+          {output && <span>{output}</span>}
+          {lastRun && <span title={lastRunTitle || undefined}>上次结束 {lastRun}</span>}
+        </div>}
         <div className="directory-task-actions"><button className={`btn ${running ? 'btn-secondary' : 'btn-primary'}`} disabled={busy || (!active && !running) || !!rentalBlocked}
           onClick={() => (running ? action(t.path, 'DELETE') : action(t.path, 'POST', t.id === 'amap' ? { mode: 'refresh_all' } : t.id === 'rentalMatch' ? { mode: 'full' } : t.body))}>
           {running ? t.stop : t.id === 'tmsf' ? '更新全部资料' : t.id === 'amap' ? '更新全部' : t.id === 'rentalMatch' ? '全量匹配' : t.id === 'rent' ? t.label : '开始'}</button>
         {t.id === 'rentalMatch' && <button className="btn btn-secondary" data-rental-incremental
           disabled={busy || !active || running || !!rentalBlocked || !job?.incremental_count}
-          onClick={() => action(t.path, 'POST', { mode: 'incremental' })}>继续匹配（{job?.incremental_count ?? '—'}）</button>}
+          onClick={() => action(t.path, 'POST', { mode: 'incremental' })}>{continueLabel('继续匹配', job?.incremental_count)}</button>}
         {t.id === 'rent' && <button className="btn btn-secondary" disabled={busy || !active || running || !!rentalBlocked || !job?.continuable}
-          onClick={() => action(t.path, 'POST', { mode: 'continue' })}>继续采集（{job?.continuable ?? '—'}）</button>}
+          onClick={() => action(t.path, 'POST', { mode: 'continue' })}>{continueLabel('继续采集', job?.continuable)}</button>}
         {t.id === 'tmsf' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.continuable}
-          onClick={() => action(t.path, 'POST', { ...t.body, mode: 'continue' })}>
-          继续采集（{job?.continuable ?? '—'}）</button>}
+          onClick={() => action(t.path, 'POST', { ...t.body, mode: 'continue' })}>{continueLabel('继续采集', job?.continuable)}</button>}
         {t.id === 'amap' && <button className="btn btn-secondary" disabled={busy || !active || running || !job?.continuable}
-          onClick={() => action(t.path, 'POST', { mode: 'continue' })}>继续匹配（{job?.continuable ?? '—'}）</button>}</div>
+          onClick={() => action(t.path, 'POST', { mode: 'continue' })}>{continueLabel('继续匹配', job?.continuable)}</button>}</div>
       </div>
-      <p className="directory-task-hint">{t.hint}<span className="directory-task-lastrun">{lastRun}</span></p>
-      {t.id === 'rentalMatch' && <p className="directory-task-sub">全量匹配会重新查询所有缺来源小区；继续匹配只查剩余、新增及失败项，跳过已查完的待选择和未找到项。已关联及人工跳过的小区会保留。</p>}
-      {t.id === 'rentalMatch' && job?.diagnostics && <p className="directory-task-sub">
-        {job.mode === 'full' ? '全量匹配' : '继续匹配'} · 实际请求 {job.diagnostics.requests || 0} · 复用结果 {job.diagnostics.cache_hits || 0}
-        {job.current_community_name && ` · 当前：${job.current_community_name}`}
-        {job.current_step && ` · ${{ search: '搜索小区', homepage: '核对主页', resolving_entry: '寻找租房入口', listing_owner: '核验房源', listing_owner_from_list: '核验列表' }[job.current_step] || '正在处理'}`}
-      </p>}
-      {t.id === 'amap' && <p className="directory-task-sub">待继续匹配 {job?.continuable ?? '—'} 条（含尚未查询、未完成及查询失败／不完整的项目）。</p>}
-      {t.id === 'amap' && <p className="directory-task-sub">更新全部会重查符合条件的楼盘，保留人工确认结果；继续匹配处理尚未查询、未完成和查询失败／不完整的项目，跳过已完成、未找到及待人工确认项。不设每轮请求总量上限，请求间隔 2 秒。</p>}
-      {(problem || message) && <p className="directory-task-line" data-state={state}>
-        {problem ? <span role="alert">{problem}</span> : <span role="status">{message}</span>}
-      </p>}
-      {job?.association && <p className="directory-task-sub">已检查 {job.association.checked || 0} · 已关联 {job.association.matched || 0} · 待选择 {job.association.pending || 0} · 未找到 {job.association.missing || 0} · 查询失败 {job.association.failed || 0} · 未查完 {job.association.incomplete || 0} · 未查询 {job.association.deferred || 0}</p>}
-      {t.id === 'tmsf' && job?.resolutions && <p className="directory-task-sub">当前资料：基本资料齐备 {job.resolutions.ready || 0} · 非住宅 {job.resolutions.non_residential || 0} · 待地点匹配 {job.resolutions.position_pending || 0} · 身份待核对 {job.resolutions.identity_conflict || 0} · 网络可重试 {job.resolutions.retryable || 0} · 基本资料待取得 {job.resolutions.facts_pending || 0}</p>}
-      {t.id === 'tmsf' && job?.position_followup?.state === 'started' && <p className="directory-task-sub">已自动衔接主体匹配（{job.position_followup.targets || 0} 项），进度见地点匹配任务。</p>}
-      {t.id === 'tmsf' && job?.position_followup?.state === 'pending' && <p className="directory-task-sub">主体匹配待继续：{job.position_followup.message}</p>}
+      <div className="directory-task-detail" id={`task-detail-${t.id}`} hidden={!expanded}>
+        <p className="directory-task-hint">{t.hint}</p>
+        {t.detail && <p className="directory-task-hint">{t.detail}</p>}
+        {job?.stage && <p className="directory-task-sub">当前阶段：{stageLabels[job.stage]}</p>}
+        {detailMetrics && <p className="directory-task-sub">{detailMetrics}</p>}
+        {t.id === 'tmsf' && job?.position_followup?.state === 'started' && <p className="directory-task-sub">已自动衔接主体匹配（{job.position_followup.targets || 0} 项），进度见地点匹配任务。</p>}
+        {t.id === 'tmsf' && job?.position_followup?.state === 'pending' && <p className="directory-task-sub">主体匹配待继续：{job.position_followup.message}</p>}
+        {t.id === 'rentalMatch' && job?.diagnostics && <p className="directory-task-sub">
+          {job.mode === 'full' ? '全量匹配' : '继续匹配'} · 实际请求 {job.diagnostics.requests || 0} · 复用结果 {job.diagnostics.cache_hits || 0}
+          {job.current_community_name && ` · 当前：${job.current_community_name}`}
+          {job.current_step && ` · ${{ search: '搜索小区', homepage: '核对主页', resolving_entry: '寻找租房入口', listing_owner: '核验房源', listing_owner_from_list: '核验列表' }[job.current_step] || '正在处理'}`}
+        </p>}
+        {t.id === 'rent' && typeof job?.continuable === 'number' && <p className="directory-task-sub">待采集 {job.continuable} 个小区（尚未采集、失败或未完成）；继续采集跳过已完成项，保留现有成功数据。已查完但无房源的小区不重复采集。</p>}
+        {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
+        {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
+          <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
+      </div>
+      {problem && <p className="directory-task-problem" data-state={state}><span role="alert">{problem}</span></p>}
       {!!job?.evidence_issues?.length && <details className="directory-task-sub"><summary>资料待核对（{job.evidence_issues.length}）</summary>
         {job.evidence_issues.map((item, index) => <p key={index}>{item.name && `${item.name}：`}{item.message}</p>)}</details>}
-      {t.id === 'rent' && (typeof job?.continuable === 'number'
-        ? <p className="directory-task-sub">待采集 {job.continuable} 个小区（尚未采集、失败或未完成）；继续采集跳过已完成项，保留现有成功数据。已查完但无房源的小区不重复采集。</p>
-        : <p className="directory-task-sub">继续采集只补尚未采集、失败或未完成的小区；已查完但无房源的小区不重复采集。</p>)}
-      {t.id === 'rent' && rentalRefreshDiagnostics(job) && <p className="directory-task-sub">{rentalRefreshDiagnostics(job)}</p>}
-      {t.id === 'amap' && !!job?.skipped_by_state && Object.keys(job.skipped_by_state).length > 0 &&
-        <p className="directory-task-sub">未参与本轮 {job.skipped || 0}（{Object.entries(job.skipped_by_state).map(([k, v]) => `${positionLabels[k] || k} ${v}`).join(' · ')}）</p>}
       {reviewIssues.length > 0 && <details className="directory-task-sub"><summary>待人工确认地点（{reviewIssues.length}）</summary>
         <p>请在列表中查看地点与类型，核对后选择主体；待确认是正常审核步骤。</p>
         {reviewIssues.map((e, i) => <p key={i}>{'name' in e && e.name ? `${e.name}：` : ''}{e.message.startsWith('未找到唯一可靠位置：') ? '候选地点需人工核对，请查看资料并选择主体' : e.message}</p>)}</details>}
@@ -383,6 +484,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
   const [busy, setBusy] = useState(false); const [revision, setRevision] = useState(0);
   const [updatingTmsf, setUpdatingTmsf] = useState(false);
   const [tasksOpen, setTasksOpen] = useState(false);
+  const [expandedTasks, setExpandedTasks] = useState<Record<string, boolean>>({});
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeOpen, setMergeOpen] = useState(false); const [mergeRows, setMergeRows] = useState<CatalogRow[]>([]);
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
@@ -602,7 +704,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
   const selectedRows = mode === 'admitted' ? items.filter(c => selection.includes(c.community_id)) : [];
   return <section className="directory-page review-workspace" aria-label={maintenance ? '小区数据维护' : '小区收录审核'}>
     {summary?.active === false && <p role="alert" className="directory-warning">新版名单流程尚未启用。需先备份线上数据并核对迁移预演；旧小区和历史数据不会自动删除或重置。</p>}
-    <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} scope={scope} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen} />
+    <CollectionControls active={!!summary?.active} pipeline={summary?.pipeline} scope={scope} jobs={jobs} errors={jobErrors} busy={busy} action={(...args) => void action(...args)} open={tasksOpen} onOpenChange={setTasksOpen}
+      expandedTasks={expandedTasks} onToggleTask={id => setExpandedTasks(current => ({ ...current, [id]: !current[id] }))} />
     {/* 采集入口放在页签行右侧，省掉一行独立标题的高度 */}
     <div className="directory-tabs-row">
       {maintenance ? <MaintenanceTabs summary={summary} mode={mode} onChange={changeMode} /> :

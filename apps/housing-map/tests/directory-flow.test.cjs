@@ -170,8 +170,9 @@ test('collection and Amap continuation combine unfinished and failed counts', ()
     visit(node.props?.children);
   }
   visit(tree);
-  for (const label of ['继续采集（', '继续匹配（']) {
-    buttons.find(b => Array.isArray(b.props.children) && b.props.children[0] === label).props.onClick();
+  const text = b => (Array.isArray(b.props.children) ? b.props.children.join('') : String(b.props.children ?? ''));
+  for (const label of ['继续采集（5）', '继续匹配（13）']) {
+    buttons.find(b => text(b) === label).props.onClick();
   }
   assert.deepEqual(calls, [
     ['/directory/collection', 'POST', { sources: ['tmsf'], mode: 'continue' }],
@@ -182,11 +183,14 @@ test('collection and Amap continuation combine unfinished and failed counts', ()
   assert.match(render(), /继续匹配（13）/);
   assert.doesNotMatch(render(), /重试失败项|重试查询失败/);
   for (const override of [{ busy: true }, { active: false },
-    { jobs: { tmsf: { continuable: 0 }, amap: { continuable: 0 } } },
     { jobs: { tmsf: { running: true, continuable: 5 }, amap: { running: true, continuable: 13 } } }]) {
-    assert.match(render(override), /disabled=""[^>]*>继续采集（/);
-    assert.match(render(override), /disabled=""[^>]*>继续匹配（/);
+    assert.match(render(override), /disabled=""[^>]*>继续采集（5）/);
+    assert.match(render(override), /disabled=""[^>]*>继续匹配（13）/);
   }
+  const zero = render({ jobs: { tmsf: { continuable: 0 }, amap: { continuable: 0 } } });
+  assert.match(zero, /disabled=""[^>]*>继续采集</);
+  assert.match(zero, /disabled=""[^>]*>继续匹配</);
+  assert.doesNotMatch(zero, /继续采集（|继续匹配（/);
 });
 
 test('collection status preserves rental units and nested errors', () => {
@@ -196,7 +200,8 @@ test('collection status preserves rental units and nested errors', () => {
   assert.equal(value.errors[0].message, '来源未应用关键词');
   const rent = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
     scope: 'maintenance', errors: {}, jobs: { rent: value }, action() {} }));
-  assert.match(rent, /部分完成.*已处理 2 \/ 5/); assert.match(rent, /来源未应用关键词/);
+  assert.match(rent, /部分完成 · 2\/5/); assert.match(rent, /来源未应用关键词/);
+  assert.doesNotMatch(rent, /已处理 2 \/ 5/);
   const admission = renderToStaticMarkup(React.createElement(CollectionControls, { active: true, busy: false, open: true,
     errors: {}, jobs: { amap: { running: true, phase: 'running', processed: 1, total: 3 } }, action() {} }));
   assert.match(admission, /停止补全定位/); assert.match(admission, /仅已收录住宅/); assert.doesNotMatch(admission, /%/);
@@ -295,10 +300,34 @@ test('collection progress stays in the dialog instead of occupying a permanent p
   assert.doesNotMatch(closed, /已处理/);
   // 进度只在弹层里可见
   const dialog = renderToStaticMarkup(React.createElement(CollectionControls, { ...props, open: true }));
-  assert.match(dialog, /已处理 209 \/ 209/);
+  assert.match(dialog, /运行中 · 209\/209/);
+  assert.doesNotMatch(dialog, /已处理/);
   // 齿轮按钮用悬浮说明带出进度，不占页面高度
   const gear = renderToStaticMarkup(React.createElement(CollectionTasksButton, { jobs: { amap }, errors: {}, onOpen: () => {} }));
   assert.match(gear, /data-state="running"/);
   assert.match(gear, /title="运行中：/);
   assert.match(gear, /已处理 209 \/ 209/);
+});
+
+test('task help exposes scope text and drops zero metrics', () => {
+  const jobs = { rent: { running: false, phase: 'succeeded', finished_at: '2026-10-12T00:01:33Z',
+    association: { checked: 0, matched: 2, failed: 0, pending: 0, missing: 0, incomplete: 0, deferred: 4 } } };
+  const closed = renderToStaticMarkup(React.createElement(CollectionControls, {
+    active: true, busy: false, open: true, scope: 'maintenance', jobs, errors: {}, action() {} }));
+  assert.match(closed, /aria-expanded="false"/);
+  assert.match(closed, /aria-label="更新租金数据 说明"/);
+  assert.match(closed, /title="[^"]*已关联幸福里/);
+  assert.match(closed, /id="task-detail-rent"[^>]*hidden=""/);
+  assert.doesNotMatch(closed, /已检查 0/);
+  assert.doesNotMatch(closed, /查询失败 0/);
+  assert.match(closed, /未查询 4/);
+  assert.match(closed, /已关联 2/);
+  assert.match(closed, /上次结束 /);
+  assert.doesNotMatch(closed, /UTC/);
+  const open = renderToStaticMarkup(React.createElement(CollectionControls, {
+    active: true, busy: false, open: true, scope: 'maintenance', expandedTasks: { rent: true }, jobs, errors: {}, action() {} }));
+  assert.match(open, /aria-controls="task-detail-rent" aria-expanded="true"|aria-expanded="true"[^>]*aria-controls="task-detail-rent"/);
+  assert.doesNotMatch(open, /id="task-detail-rent"[^>]*hidden/);
+  assert.match(open, /仅已收录住宅/);
+  assert.match(open, /继续采集只补尚未采集/);
 });

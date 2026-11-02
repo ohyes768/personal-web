@@ -237,6 +237,7 @@ test('the use review job card reports outcomes by result and falls back to the l
   assert.match(running, /停止用途核对/);
   const legacy = render(React.createElement(CollectionControls, { active: true, busy: false, open: true, errors: {},
     jobs: { use: { running: false, phase: 'succeeded', processed: 2, total: 2, updated: 2, skipped: 0 } }, action() {} }));
-  assert.match(legacy, /已处理 2 \/ 2/);
+  assert.match(legacy, /已完成 · 2\/2/);
+  assert.match(legacy, /已完成用途核对 2/);
   assert.doesNotMatch(legacy, /待人工确认 1/);
 });
