@@ -163,13 +163,6 @@ export function starsFor(score: number): number {
   return 1;
 }
 
-/** 五维分简写（固定顺序），如 4/5/3/3/5；缺评分返回 null */
-export function dimensionShorthand(dimensions: QualityScore['dimensions'] | undefined): string | null {
-  if (!dimensions) return null;
-  if (!QUALITY_DIMENSION_ORDER.every(key => Number.isFinite(dimensions[key]))) return null;
-  return QUALITY_DIMENSION_ORDER.map(key => dimensions[key]).join('/');
-}
-
 /** 星级徽章样式：5-4 星绿、3 星琥珀、2-1 星红（纸感 UI 用文字色而非底色） */
 export function starBadgeClass(stars: number): string {
   if (stars >= 4) return 'text-emerald-700';

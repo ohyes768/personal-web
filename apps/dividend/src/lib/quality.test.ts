@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   buildQualityQueue,
-  dimensionShorthand,
   formatElapsedSince,
   formatElapsedSpan,
   isQualityPending,
@@ -24,19 +23,6 @@ describe('starsFor（与 SKILL.md / 后端映射一致）', () => {
     assert.equal(starsFor(2.99), 2);
     assert.equal(starsFor(2.0), 2);
     assert.equal(starsFor(1.99), 1);
-  });
-});
-
-describe('dimensionShorthand', () => {
-  it('固定顺序五维简写', () => {
-    assert.equal(dimensionShorthand({ business: 4, moat: 5, industry: 3, management: 3, financial: 5 }), '4/5/3/3/5');
-  });
-  it('缺维度返回 null（显示待分析）', () => {
-    assert.equal(dimensionShorthand(undefined), null);
-    assert.equal(dimensionShorthand({ business: 4, moat: 5, industry: 3, management: 3, financial: NaN }), null);
-  });
-  it('维度为 null（未评级）返回 null', () => {
-    assert.equal(dimensionShorthand({ business: 3, moat: 4, industry: 3, management: 2, financial: null }), null);
   });
 });
 
