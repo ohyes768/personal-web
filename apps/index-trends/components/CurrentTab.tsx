@@ -11,6 +11,7 @@ import {
   type CurrentModelKind,
   type CurrentStatus,
   type ModelInfo,
+  type Valuation,
 } from "../lib/types";
 
 export type CurrentModel = CurrentModelKind;
@@ -49,6 +50,79 @@ async function loadConsistent(model: CurrentModel): Promise<{
     if (!s || !c || s === c) return last;
   }
   throw new Error("数据版本不一致：摘要与图表来自不同快照，请重试");
+}
+
+/** 估值区域：理杏仁沪深300 PE-TTM 近10年分位。
+ *
+ * 与通道位置严格区分：通道位置是相对趋势通道，分位是相对自身历史估值。
+ * 异常状态各有明确文案；旧后端不提供该字段时按“暂不可用”降级，不影响主图。
+ */
+function ValuationLine({ valuation }: { valuation: Valuation | null }) {
+  const label = <small style={{ color: "#8c6847" }}>PE-TTM 近10年分位</small>;
+  if (!valuation) {
+    return (
+      <div className="valuation-line">
+        {label}
+        <span className="valuation-muted">暂不可用</span>
+      </div>
+    );
+  }
+  const pct = valuation.percentile_pct;
+  const pe = valuation.pe_ttm;
+  const hasValue = typeof pct === "number";
+  const value = hasValue ? <b>{pct.toFixed(1)}%</b> : null;
+  const detail =
+    typeof pe === "number" ? `PE ${pe.toFixed(2)}` : null;
+
+  if (valuation.state === "ok") {
+    return (
+      <div className="valuation-line">
+        {label}
+        {value}
+        <span>
+          {detail ? `${detail} · ` : ""}数据日期 {valuation.as_of} · 总市值加权 · 理杏仁
+        </span>
+      </div>
+    );
+  }
+  if (valuation.state === "stale") {
+    return (
+      <div className="valuation-line">
+        {label}
+        {value}
+        <span>
+          {detail ? `${detail} · ` : ""}数据日期 {valuation.as_of} · 未更新至{" "}
+          {valuation.target_date} · 理杏仁
+        </span>
+      </div>
+    );
+  }
+  if (valuation.state === "disabled") {
+    return (
+      <div className="valuation-line">
+        {label}
+        <span className="valuation-muted">未启用（未配置理杏仁访问令牌）</span>
+      </div>
+    );
+  }
+  if (valuation.state === "empty") {
+    return (
+      <div className="valuation-line">
+        {label}
+        <span className="valuation-muted">暂无估值数据</span>
+      </div>
+    );
+  }
+  return (
+    <div className="valuation-line">
+      {label}
+      {value}
+      <span className="valuation-muted">
+        {hasValue ? `缓存值（数据日期 ${valuation.as_of}）· ` : ""}
+        估值暂不可用{valuation.reason ? `（${valuation.reason}）` : ""}
+      </span>
+    </div>
+  );
 }
 
 export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey }: CurrentTabProps) {
@@ -90,6 +164,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
 
   const dataState = state.status?.data_status?.state ?? "ok";
   const stale = dataState === "stale";
+  const valuation = state.status?.valuation ?? null;
 
   return (
     <section>
@@ -172,6 +247,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
               <br />
               投影周 {state.status.projection_week}
             </div>
+            <ValuationLine valuation={valuation} />
             <div className="model-line">
               模型：{KIND_LABELS[selected]}（{model.fit_start} – {model.fit_end}，{model.sample_count}
               个交易周）
@@ -224,6 +300,12 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
               通道位置 = (收盘 − 下轨) ÷ (上轨 − 下轨) × 100。区域阈值 25/75
               仅为阅读分层，<span className="emphasis">不是买卖阈值</span>；
               「低位」不等于低估，上轨突破也不等于应当卖出。
+            </div>
+            <div className="note-item">
+              PE-TTM 近10年分位来自理杏仁（总市值加权），是
+              <span className="emphasis">独立的估值口径</span>，与通道位置不同：
+              通道位置描述相对趋势通道的高低，分位描述相对自身历史估值的贵贱。
+              两个模型共享同一份估值；数据日期取最近完整交易周的最后交易日。
             </div>
           </div>
         </>

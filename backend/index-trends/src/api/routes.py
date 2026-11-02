@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel
@@ -15,6 +16,7 @@ from src.core.models import (
     LEGACY_KIND_TO_WEEKLY,
 )
 from src.services.trend_service import INDEX_CODE, WeeklyTrendService
+from src.services.valuation_service import ValuationService
 
 router = APIRouter(prefix="/api")
 
@@ -31,6 +33,30 @@ def get_service(request: Request) -> WeeklyTrendService:
     if service is None:
         raise HTTPException(status_code=503, detail="服务未初始化")
     return service
+
+
+def get_valuation_service(request: Request) -> ValuationService | None:
+    """估值服务（未启用时为 None；页面按“估值不可用”降级）。"""
+    return getattr(request.app.state, "valuation_service", None)
+
+
+def valuation_status(request: Request) -> dict:
+    """只读本地缓存的估值状态（不在 GET 内请求供应商）。"""
+    service = get_valuation_service(request)
+    if service is None:
+        return {
+            "state": "disabled",
+            "reason": "service_not_initialized",
+            "source": "lixinger",
+            "metric": "pe_ttm_mcw",
+            "window": "y10",
+            "target_date": None,
+            "as_of": None,
+            "pe_ttm": None,
+            "percentile_pct": None,
+            "captured_at": None,
+        }
+    return service.status()
 
 
 def _require_supported_index(code: str) -> None:
@@ -94,7 +120,10 @@ async def status(
 ) -> dict:
     _require_supported_index(code)
     kind = _resolve_current_kind(model)
-    return get_service(request).current_status(kind)
+    payload = get_service(request).current_status(kind)
+    # 估值与模型无关：两个模型共享同一份估值口径
+    payload["valuation"] = valuation_status(request)
+    return payload
 
 
 @router.get("/report-settings")
@@ -141,6 +170,14 @@ async def refresh(request: Request) -> dict:
         raise HTTPException(status_code=502, detail=str(e))  # noqa: B904
     except ValueError as e:
         raise HTTPException(status_code=502, detail=f"数据校验失败: {e}")  # noqa: B904
+    # 估值采集尽力而为：失败不改行情的成功/失败语义，只在响应里给出估值状态
+    valuation_service = get_valuation_service(request)
+    valuation = valuation_status(request)
+    if valuation_service is not None:
+        try:
+            valuation = await asyncio.to_thread(valuation_service.refresh)
+        except Exception:  # noqa: BLE001 — 估值异常不改变行情结果
+            valuation = valuation_status(request)
     return {
         "success": result.success,
         "message": result.message,
@@ -148,6 +185,7 @@ async def refresh(request: Request) -> dict:
         "new_models": result.new_models,
         "weekly_count": result.weekly_count,
         "snapshot_id": result.snapshot_id,
+        "valuation": valuation,
     }
 
 

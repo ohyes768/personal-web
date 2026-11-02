@@ -57,7 +57,6 @@ export interface RefreshResult {
 }
 
 export type DataState = "ok" | "stale" | "empty" | "error";
-
 export interface DataStatus {
   state: DataState;
   data_cutoff_week: string | null;
@@ -176,6 +175,30 @@ export interface CurrentStatus {
   data_status?: DataStatus;
   error?: string;
   snapshot_id?: string;
+  /** 理杏仁估值（可选：旧后端不提供时按不可用展示）。 */
+  valuation?: Valuation | null;
+}
+
+/** 估值状态：与行情状态独立，估值异常不阻断行情与图表。 */
+export type ValuationState = "ok" | "stale" | "empty" | "error" | "disabled";
+
+export interface Valuation {
+  state: ValuationState;
+  /** 固定错误码（不含供应商正文）。 */
+  reason: string | null;
+  source: string;
+  metric: string;
+  /** 分位窗口（如 y10 = 近10年）。 */
+  window: string;
+  /** 期望的数据日期（最近完整周的最后交易日）。 */
+  target_date: string | null;
+  /** 实际数据日期。 */
+  as_of: string | null;
+  /** PE-TTM（总市值加权）。 */
+  pe_ttm: number | null;
+  /** 近 N 年分位（0–100）。 */
+  percentile_pct: number | null;
+  captured_at: string | null;
 }
 
 export interface ReportSettings {

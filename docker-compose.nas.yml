@@ -535,9 +535,12 @@ services:
       - index-trends-data:/app/data
     # INDEX_TRENDS_DINGTALK_WEBHOOK_URL 未配置时周报保存为 no_channel 不发送；
     # INDEX_TRENDS_PUBLIC_SITE_URL 用于周报消息内的页面链接
+    # INDEX_TRENDS_LIXINGER_TOKEN 为理杏仁访问令牌（沪深300 PE-TTM 近10年分位）；
+    # 未配置时不发起理杏仁请求，页面与周报显示“估值暂不可用”
     environment: [TZ=Asia/Shanghai, INDEX_TRENDS_DATA_DIR=/app/data,
                   "INDEX_TRENDS_DINGTALK_WEBHOOK_URL=${INDEX_TRENDS_DINGTALK_WEBHOOK_URL:-}",
-                  "INDEX_TRENDS_PUBLIC_SITE_URL=${INDEX_TRENDS_PUBLIC_SITE_URL:-}"]
+                  "INDEX_TRENDS_PUBLIC_SITE_URL=${INDEX_TRENDS_PUBLIC_SITE_URL:-}",
+                  "INDEX_TRENDS_LIXINGER_TOKEN=${INDEX_TRENDS_LIXINGER_TOKEN:-}"]
     networks: [app-net]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8100/api/health"]

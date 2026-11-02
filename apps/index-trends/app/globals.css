@@ -263,6 +263,27 @@ h1 {
   color: #8c6847;
 }
 
+/* ---- 估值（理杏仁 PE-TTM 近10年分位）---- */
+.valuation-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 10px;
+  font-family: system-ui, sans-serif;
+  font-size: 14px;
+  color: #5b4a3a;
+  font-variant-numeric: tabular-nums;
+}
+
+.valuation-line b {
+  font-size: 22px;
+  color: #2f4858;
+}
+
+.valuation-line .valuation-muted {
+  color: #8c6847;
+}
+
 /* ---- 说明区 ---- */
 .notes {
   margin-top: 18px;

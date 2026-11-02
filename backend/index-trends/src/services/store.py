@@ -150,6 +150,29 @@ CREATE INDEX IF NOT EXISTS idx_report_attempts_key
     ON report_attempts (idempotency_key);
 """
 
+# 估值相关表（理杏仁 PE-TTM 近10年分位；与行情/模型表隔离）
+VALUATION_SCHEMA = """
+CREATE TABLE IF NOT EXISTS index_valuations (
+    index_code TEXT NOT NULL,
+    source TEXT NOT NULL,
+    metric TEXT NOT NULL,
+    window TEXT NOT NULL,
+    date TEXT NOT NULL,
+    pe_ttm REAL NOT NULL,
+    percentile_ratio REAL NOT NULL,
+    captured_at TEXT NOT NULL,
+    PRIMARY KEY (index_code, source, metric, window, date)
+);
+CREATE TABLE IF NOT EXISTS valuation_fetch_meta (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    index_code TEXT NOT NULL DEFAULT '000300',
+    target_date TEXT,
+    last_attempt_at TEXT,
+    last_success_at TEXT,
+    last_error TEXT
+);
+"""
+
 # 迁移版本：每次结构/数据变更追加一行，已应用的版本不重复执行
 MIGRATION_VERSIONS = ("001_weekly_tables", "002_report_settings_weekly_kind")
 
@@ -190,6 +213,7 @@ class Store:
         self._apply_migration("001_weekly_tables", lambda: None)
         self._apply_migration("003_reports_snapshot_json", self._add_snapshot_json_column)
         self._apply_migration("004_weekly_bars_is_partial", self._add_is_partial_column)
+        self._apply_migration("005_valuation_tables", self._add_valuation_tables)
         if self._has_weekly_models():
             # 已切到周线管线的库（周线快照已发布过）：补做 kind 映射
             self._apply_migration(
@@ -230,6 +254,13 @@ class Store:
             self._conn.execute(
                 "ALTER TABLE weekly_bars ADD COLUMN is_partial INTEGER NOT NULL DEFAULT 0"
             )
+
+    def _add_valuation_tables(self) -> None:
+        """新增估值表（只加表，不动行情/模型/报告；幂等）。"""
+        self._conn.executescript(VALUATION_SCHEMA)
+        self._conn.execute(
+            "INSERT OR IGNORE INTO valuation_fetch_meta (id, index_code) VALUES (1, '000300')"
+        )
 
     def _apply_migration(self, version: str, action: Any) -> None:
         row = self._conn.execute(
@@ -557,6 +588,76 @@ class Store:
             self._conn.execute(
                 "UPDATE weekly_data_meta SET last_error=NULL, last_error_at=NULL WHERE id=1"
             )
+
+    # ---- 估值（理杏仁 PE-TTM 近10年分位）----
+    def publish_valuation(
+        self,
+        index_code: str,
+        source: str,
+        metric: str,
+        window: str,
+        points: list[tuple[str, float, float]],
+        target_date: str,
+    ) -> None:
+        """在单个事务里写入估值记录并更新采集元数据。
+
+        points 为 (date, pe_ttm, percentile_ratio) 列表。失败时不调用本方法，
+        旧的成功数据保持可读。
+        """
+        with self._conn:
+            self._conn.executemany(
+                "INSERT INTO index_valuations (index_code, source, metric, window, date, "
+                "pe_ttm, percentile_ratio, captured_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(index_code, source, metric, window, date) DO UPDATE SET "
+                "pe_ttm=excluded.pe_ttm, percentile_ratio=excluded.percentile_ratio, "
+                "captured_at=excluded.captured_at",
+                [
+                    (index_code, source, metric, window, day, pe, ratio, now_iso())
+                    for day, pe, ratio in points
+                ],
+            )
+            self._conn.execute(
+                "UPDATE valuation_fetch_meta SET index_code=?, target_date=?, "
+                "last_attempt_at=?, last_success_at=?, last_error=NULL WHERE id=1",
+                (index_code, target_date, now_iso(), now_iso()),
+            )
+
+    def record_valuation_failure(self, index_code: str, target_date: str, error: str) -> None:
+        """记录一次估值采集失败（不改动已存的成功数据）。"""
+        with self._conn:
+            self._conn.execute(
+                "UPDATE valuation_fetch_meta SET index_code=?, target_date=?, "
+                "last_attempt_at=?, last_error=? WHERE id=1",
+                (index_code, target_date, now_iso(), error),
+            )
+
+    def latest_valuation(
+        self,
+        index_code: str,
+        source: str,
+        metric: str,
+        window: str,
+        on_or_before: str | None = None,
+    ) -> dict[str, Any] | None:
+        """取最新一条估值记录（可选：只取不晚于 on_or_before 的）。"""
+        sql = (
+            "SELECT date, pe_ttm, percentile_ratio, captured_at FROM index_valuations "
+            "WHERE index_code=? AND source=? AND metric=? AND window=?"
+        )
+        params: list[Any] = [index_code, source, metric, window]
+        if on_or_before:
+            sql += " AND date<=?"
+            params.append(on_or_before)
+        sql += " ORDER BY date DESC LIMIT 1"
+        row = self._conn.execute(sql, params).fetchone()
+        return dict(row) if row else None
+
+    def get_valuation_meta(self) -> dict[str, Any]:
+        row = self._conn.execute(
+            "SELECT index_code, target_date, last_attempt_at, last_success_at, last_error "
+            "FROM valuation_fetch_meta WHERE id=1"
+        ).fetchone()
+        return dict(row) if row else {}
 
     def publish_weekly_snapshot(
         self,

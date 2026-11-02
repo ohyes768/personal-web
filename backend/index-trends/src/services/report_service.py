@@ -33,6 +33,7 @@ from src.data.validate import CLOSE_TOLERANCE, MARKET_CLOSE_CUTOFF
 from src.services.notifier import DingTalkNotifier
 from src.services.store import Store
 from src.services.trend_service import INDEX_CODE, INDEX_NAME, WeeklyTrendService
+from src.services.valuation_service import ValuationService
 
 REPORT_KIND = "weekly"
 REPORT_PAGE_PATH = "/index-trends?tab=current"
@@ -115,12 +116,14 @@ class ReportService:
         notifier: DingTalkNotifier,
         public_url: str = "",
         now_fn: Any | None = None,
+        valuation_service: ValuationService | None = None,
     ):
         self.store = store
         self.trend_service = trend_service
         self.notifier = notifier
         self.public_url = public_url.rstrip("/")
         self._now_fn = now_fn or (lambda: datetime.now(SHANGHAI_TZ))
+        self.valuation_service = valuation_service
 
     def _now(self) -> datetime:
         return self._now_fn()
@@ -273,10 +276,13 @@ class ReportService:
                 ],
             )
         if week_state == "no_trading":
+            valuation = self._valuation_readonly(self._holiday_valuation_target(now))
             content = self._join(
                 kind_label,
                 [
                     f"**{iso_week} 全周休市**：交易日历确认本周无交易日，无新收盘数据。",
+                    "",
+                    self._valuation_line(valuation, holiday=True),
                     "",
                     "> 每周照常提醒 · 本周无交易变化",
                 ],
@@ -369,11 +375,14 @@ class ReportService:
         }
         comparison = self._comparison_lines(iso_week, model_kind, snapshot, now)
         price_change = self._price_change_line(bars, monday, bar.close)
+        valuation = self._valuation_snapshot(bar.date)
+        snapshot["valuation"] = valuation
         lines = [
             f"- 收盘（{bar.date}）：**{bar.close:.2f}**",
             f"- 周涨跌：{price_change}",
             f"- 通道位置：**{pct:.1f}%**，区域：**{REGION_LABELS_ZH[region]}**",
             f"- 上/中/下轨：{upper:.2f} / {mid:.2f} / {lower:.2f}",
+            self._valuation_line(valuation),
             (
                 f"- 模型区间：{model.fit_start} 至 {model.fit_end}"
                 f"（{kind_label}，{model.sample_count} 个交易周，{model.algorithm_version}）"
@@ -394,6 +403,61 @@ class ReportService:
             "error": None,
             "snapshot_json": json.dumps(snapshot, ensure_ascii=False, separators=(",", ":")),
         }
+
+    def _valuation_snapshot(self, target_date: str | None) -> dict[str, Any] | None:
+        """取报告发送时的估值（尽力而为；异常不改变周报状态与投递结果）。"""
+        if self.valuation_service is None:
+            return None
+        try:
+            return self.valuation_service.refresh(target_date)
+        except Exception:  # noqa: BLE001 — 估值异常只影响估值行
+            try:
+                return self.valuation_service.status(target_date)
+            except Exception:  # noqa: BLE001
+                return None
+
+    def _holiday_valuation_target(self, now: datetime) -> str | None:
+        """休市周的估值目标日：最近一个交易日的估值（明确“沿用”）。"""
+        if self.valuation_service is None:
+            return None
+        monday = week_start_of(now.date())
+        return self.valuation_service.resolve_last_trading_date(monday)
+
+    def _valuation_readonly(self, target_date: str | None = None) -> dict[str, Any] | None:
+        """只读缓存的估值（休市等不需要新数据的场景）。"""
+        if self.valuation_service is None:
+            return None
+        try:
+            return self.valuation_service.status(target_date)
+        except Exception:  # noqa: BLE001
+            return None
+
+    def _valuation_line(self, valuation: dict[str, Any] | None, holiday: bool = False) -> str:
+        """把估值状态渲染成一行周报文案（与通道位置严格区分）。"""
+        if valuation is None:
+            return "- 估值：暂不可用"
+        state = valuation.get("state")
+        pct = valuation.get("percentile_pct")
+        pe = valuation.get("pe_ttm")
+        as_of = valuation.get("as_of")
+        target = valuation.get("target_date")
+        if state == "ok" and pct is not None:
+            tail = "（休市沿用最近有交易完整周）" if holiday else ""
+            return (
+                f"- 估值（沪深300 PE-TTM 近10年分位）：**{pct:.1f}%**，"
+                f"PE {pe:.2f}（数据日期 {as_of}，总市值加权，理杏仁）{tail}"
+            )
+        if state == "stale" and pct is not None:
+            return (
+                f"- 估值（沪深300 PE-TTM 近10年分位）：{pct:.1f}%，PE {pe:.2f}"
+                f"（数据日期 {as_of}，未更新至 {target}，理杏仁）"
+            )
+        if state == "disabled":
+            return "- 估值：暂不可用（未配置理杏仁访问令牌）"
+        if state == "empty":
+            return "- 估值：暂不可用（暂无估值数据）"
+        reason = valuation.get("reason") or "unknown"
+        return f"- 估值：暂不可用（{reason}）"
 
     def _error_report(
         self,
