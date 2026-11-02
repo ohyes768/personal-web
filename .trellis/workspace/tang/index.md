@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 11
+- **Total Sessions**: 12
 - **Last Active**: 2026-11-02
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~436 | Active |
+| `journal-1.md` | ~469 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 12 | 2026-11-02 | 清理两个早期任务目录 | `b2163b3e` | `-` |
 | 11 | 2026-11-02 | 收尾归档：10 个已提交任务复验与归档 | `d2633465`, `74b006fa`, `0f584866`, `0130b321`, `20c503aa`, `3787a82b`, `7d63bd66`, `9092591d`, `772d5485`, `7c56bf59`, `1534fa83` | `-` |
 | 10 | 2026-11-02 | 高德查询统一限速与退避重试 | `5dafd66d` | `-` |
 | 9 | 2026-10-29 | 宽基趋势观察收尾 | `7d6395b8`, `0dcfc99a`, `e0e2a792` | `-` |

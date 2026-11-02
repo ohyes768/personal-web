@@ -434,3 +434,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 12: 清理两个早期任务目录
+
+**Date**: 2026-11-02
+**Task**: 清理两个早期任务目录
+**Package**: backend/douyin-processor
+
+### Summary
+
+10-14-skill-manager-direct-cache-links 与 10-16-housing-catalog-filters 是 Trellis task 生命周期引入前完成的目录，长期滞留在 active 区且缺 task.json。本轮补写 task.json（status=completed、记录原提交号与规范位置），git mv 到 archive/2026-10/ 并提交；未改产品代码，未重跑测试（代码早已合入且规范已覆盖）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b2163b3e` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
