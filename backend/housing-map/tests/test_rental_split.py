@@ -6,11 +6,7 @@ from tests.test_rental_providers import registry, source
 from src.services.rental_reference.refresh import RentalRefreshService, NoVerifiedMappings
 from src.services.rental_reference.providers import source_url
 from src.services.rental_reference.storage import load_current
-from src.services.fang_rentals import SeedRunResult
-
-
-def forbidden(**kwargs):
-    raise AssertionError('source discovery / Fang must not run during rent collection')
+from src.services.rental_reference.crawl_types import SeedRunResult
 
 
 def test_collection_only_uses_confirmed_xingfuli_even_with_missing_neighbors(tmp_path):
@@ -29,8 +25,7 @@ def test_collection_only_uses_confirmed_xingfuli_even_with_missing_neighbors(tmp
                                  status='empty_ok', pages_fetched=1)
         def close(self): pass
     svc = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
-                               xingfuli_only=True, fetch_factory=forbidden,
-                               discovery_factory=forbidden, xingfuli_factory=Client)
+                               xingfuli_factory=Client)
     svc.start()
     svc._thread.join(5)
     assert svc.status()['phase'] == 'done', svc.status()
@@ -56,8 +51,7 @@ def test_xingfuli_batch_publishes_sampling_quality(tmp_path):
                                           for i in range(10)])
         def close(self): pass
     svc = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
-                               xingfuli_only=True, fetch_factory=forbidden,
-                               discovery_factory=forbidden, xingfuli_factory=Client)
+                               xingfuli_factory=Client)
     svc.start()
     svc._thread.join(5)
     assert svc.status()['phase'] == 'done', svc.status()
@@ -68,8 +62,7 @@ def test_xingfuli_batch_publishes_sampling_quality(tmp_path):
 def test_collection_with_only_old_fang_source_requires_matching(tmp_path):
     reg = registry(tmp_path)
     source(reg, 'fang')
-    svc = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
-                               xingfuli_only=True, fetch_factory=forbidden)
+    svc = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json')
     with pytest.raises(NoVerifiedMappings):
         svc.start()
 
@@ -149,7 +142,7 @@ def test_matching_and_collecting_reject_other_running_work(tmp_path):
     svc = SourceMatchingService(reg, directory=tmp_path / 'rentals', busy=lambda: True)
     with pytest.raises(RefreshAlreadyRunning): svc.start()
     collector = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
-                                     xingfuli_only=True, busy=lambda: True)
+                                     busy=lambda: True)
     with pytest.raises(RefreshAlreadyRunning): collector.start()
 
 

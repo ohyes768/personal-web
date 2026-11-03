@@ -190,9 +190,17 @@ def publish_run(rentals_dir: Path, batches: Sequence[CommunityBatch], *,
         communities: dict[str, dict] = {}
         # Explicitly retain eligible cache hits. Omitted/removed sources must not
         # be resurrected from the previous snapshot.
-        from src.services.rental_reference.providers import same_source
+        from src.services.rental_reference.providers import CURRENT_RENTAL_PROVIDER, same_source
         for cid, identity in (preserved_sources or {}).items():
-            source, sid = identity if isinstance(identity, tuple) else ('fang', identity)
+            # Only an explicit current-provider identity is accepted; the legacy
+            # bare-string form used to mean Fang and is refused before the
+            # current pointer can move.
+            if (not isinstance(identity, tuple) or len(identity) != 2
+                    or identity[0] != CURRENT_RENTAL_PROVIDER
+                    or not isinstance(identity[1], str) or not identity[1]):
+                raise ValueError(
+                    'preserved_sources must be explicit (xingfuli, source_community_id) identities')
+            source, sid = identity
             entry = previous_communities.get(cid)
             if same_source(entry, source, sid):
                 communities[cid] = {**entry, 'origin': 'cached'}

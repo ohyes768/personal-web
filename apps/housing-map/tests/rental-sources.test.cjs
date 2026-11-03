@@ -10,16 +10,17 @@ for (const ext of ['.ts', '.tsx']) {
     compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
   }).outputText, filename);
 }
-const { SourceCandidate } = require('../src/components/rental/RentalSourceManager.tsx');
+const { RentalSourceAssociation } = require('../src/components/rental/RentalSourceManager.tsx');
 const { CollectionControls } = require('../src/components/community/DirectoryFlowWorkspace.tsx');
-const { safeSourceLink } = require('../src/lib/rental-sources.ts');
-test('candidate exposes evidence and requires confirmation instead of automatic collection', () => {
-  const html = renderToStaticMarkup(React.createElement(SourceCandidate, {
-    candidate: { source_community_id: '123', source_name: '花园二期', source_url: 'https://zu.fang.com/hz/house-xm123/', source_address: null, evidence: ['分期尚未核对'] },
-    busy: false, onConfirm() {}, onReject() {},
+const { RENTAL_SOURCE_LABEL, safeSourceLink } = require('../src/lib/rental-sources.ts');
+test('source manager names the only current provider and offers no candidate confirmation', () => {
+  assert.equal(RENTAL_SOURCE_LABEL, '幸福里');
+  const html = renderToStaticMarkup(React.createElement(RentalSourceAssociation, {
+    communityId: 'c1', onChanged() {},
   }));
-  assert.match(html, /分期尚未核对/); assert.match(html, /确认是这个小区/); assert.match(html, /不是这个小区/);
-  assert.match(html, /来源地址：尚不可得/); assert.match(html, /rel="noopener noreferrer"/);
+  assert.doesNotMatch(html, /房天下/);
+  assert.doesNotMatch(html, /确认是这个小区|不是这个小区/);
+  assert.doesNotMatch(html, /粘贴|搜索关键词|读取链接候选/);
 });
 test('central rental task exposes missing-source feedback', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, {
@@ -31,9 +32,14 @@ test('central rental task exposes missing-source feedback', () => {
   assert.match(html, /role="alert"/);
 });
 
-test('source links reject external domains and credentials', () => {
+test('retired Fang hosts are rejected and only public Xingfuli pages are allowed', () => {
   assert.equal(safeSourceLink('https://evil.com/hz/'), undefined);
   assert.equal(safeSourceLink('javascript:alert(1)'), undefined);
+  assert.equal(safeSourceLink('https://zu.fang.com/hz/house-xm123/'), undefined);
+  assert.equal(safeSourceLink('https://hz.zu.fang.com/hz/house-xm123/'), undefined);
   assert.equal(safeSourceLink('https://user@zu.fang.com/hz/'), undefined);
-  assert.equal(safeSourceLink('https://zu.fang.com/hz/house-xm123/'), 'https://zu.fang.com/hz/house-xm123/');
+  assert.equal(safeSourceLink('https://m.xflapp.com/zufang/hz-1.html'), 'https://m.xflapp.com/zufang/hz-1.html');
+  assert.equal(safeSourceLink('https://m.xflapp.com:8443/zufang/hz-1.html'), undefined);
+  assert.equal(safeSourceLink('http://m.xflapp.com/zufang/hz-1.html'), undefined);
+  assert.equal(safeSourceLink('https://m.xflapp.com/zufang/hz-1.html?from=1'), undefined);
 });

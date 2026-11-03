@@ -15,7 +15,7 @@ import re
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, urlencode, urlsplit
 
-from src.services.fang_rentals import RentalCrawlCancelled, SeedRunResult
+from src.services.rental_reference.crawl_types import RentalCrawlCancelled, SeedRunResult
 from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY, XingfuliTransport
 from src.services.rental_reference.statistics import XINGFULI_LIST_API_EVIDENCE, select_valid
 

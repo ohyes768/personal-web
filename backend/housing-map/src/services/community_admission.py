@@ -33,7 +33,7 @@ def effective_type(records, facts):
                 prop = facts.get(record['source_id'], {}).get('property_type')
             if prop in RESIDENTIAL_TYPES:
                 return prop
-    return '住宅'  # A consistent residential Fang classification uses the common label.
+    return '住宅'  # A consistent residential classification uses the common label.
 
 
 def migrate_admission(store, data_dir):

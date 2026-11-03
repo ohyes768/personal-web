@@ -7,7 +7,7 @@ from src.services.auction_history import property_key
 from src.services.auction_store import read_store
 from src.services.rental_reference.statistics import is_stale, parse_utc, select_valid
 from src.services.rental_reference.storage import load_current
-from src.services.rental_reference.providers import active_sources
+from src.services.rental_reference.providers import CURRENT_RENTAL_PROVIDER, active_sources
 
 
 def attach_coverage(rows, registry, data_dir, *, include_records=False):
@@ -18,8 +18,10 @@ def attach_coverage(rows, registry, data_dir, *, include_records=False):
                    for r in db.execute("SELECT key,value FROM meta WHERE key LIKE 'rental_review:%'")}
     auctions = auction_records(sources, read_store(data_dir / 'auction_records.json')['records'])
     current = load_current(data_dir / 'rentals')
-    entries = {(e.get('source', 'fang'), e.get('source_community_id')): e
-               for e in (current or {}).get('communities', {}).values()}
+    # 只索引当前来源的快照：缺 provider 的旧快照与房天下快照都不参与覆盖统计。
+    entries = {(e.get('source'), e.get('source_community_id')): e
+               for e in (current or {}).get('communities', {}).values()
+               if e.get('source') == CURRENT_RENTAL_PROVIDER}
     mappings = active_sources(registry)
     job_path = data_dir / 'rentals' / 'refresh_job.json'
     job = json.loads(job_path.read_text(encoding='utf-8')) if job_path.exists() else {}

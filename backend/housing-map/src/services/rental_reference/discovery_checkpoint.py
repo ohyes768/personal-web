@@ -10,7 +10,7 @@ import os
 import time
 
 from src.services.community_registry import dump
-from src.services.fang_rentals import RentalCrawlCancelled
+from src.services.rental_reference.crawl_types import RentalCrawlCancelled
 from src.services.xingfuli_discovery import CITY_ID
 
 logger = logging.getLogger(__name__)

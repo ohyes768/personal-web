@@ -28,7 +28,7 @@ COPY data ./data
 # 已存在的 named volume 会遮住 /app/data；保留缺失时需要补齐的只读种子副本。
 COPY data/binjiang_osm_residential.geojson ./seed-data/binjiang_osm_residential.geojson
 COPY data/market_reference.json ./seed-data/market_reference.json
-COPY data/rental_community_mappings.json ./seed-data/rental_community_mappings.json
+# 旧房天下映射文件不再作为种子：社区台账（community_registry.sqlite3）是唯一来源。
 # 全量 OSM 建筑快照：NAS 连不上 Overpass，这份数据在那边无法重建，
 # 随仓库分发并落到数据卷，轮廓估算才能完全离线跑。
 COPY data/binjiang_osm_buildings_all_raw.json ./seed-data/binjiang_osm_buildings_all_raw.json

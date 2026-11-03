@@ -13,7 +13,8 @@ def test_management_lifecycle(tmp_path, monkeypatch):
     client = TestClient(app)
     response = client.post('/api/directory/communities', json={'name': '测试花园', 'district': '滨江'})
     cid = response.json()['data']['community_id']
-    item = store.ingest(dict(source='fang', source_id='123', name='测试花园', district='滨江'))
+    item = store.ingest(dict(source='laipai', source_kind='auction', source_id='123',
+                             name='测试花园', district='滨江'))
     assert client.post(f"/api/directory/sources/{item['id']}/associate", json={'community_id': cid}).status_code == 200
     assert client.get('/api/directory/communities?q=测试').json()['data']['total'] == 1
     assert client.delete(f'/api/directory/communities/{cid}').status_code == 200
@@ -24,13 +25,28 @@ def test_management_lifecycle(tmp_path, monkeypatch):
     assert client.get('/api/directory/communities?page=0').status_code == 422
 
 
-def test_name_collection_uses_only_tmsf_and_rejects_amap():
+def test_retired_fang_association_is_refused_without_touching_the_record(tmp_path, monkeypatch):
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    monkeypatch.setattr(directory_routes, 'store', lambda: store)
+    app = FastAPI()
+    app.include_router(directory_routes.router, prefix='/api')
+    client = TestClient(app)
+    cid = client.post('/api/directory/communities', json={'name': '测试花园', 'district': '滨江'}).json()['data']['community_id']
+    item = store.ingest(dict(source='fang', source_id='123', name='测试花园', district='滨江'))
+    before = store.sources()[0]
+    response = client.post(f"/api/directory/sources/{item['id']}/associate", json={'community_id': cid})
+    assert response.status_code == 409
+    assert store.sources()[0] == before
+    assert store.sources()[0]['status'] == 'pending' and store.sources()[0]['community_id'] is None
+
+
+def test_name_collection_uses_only_tmsf_and_rejects_retired_sources():
     from pydantic import ValidationError
     import pytest
     from src.services.directory_collection import ADAPTERS
 
     assert directory_routes.DiscoveryInput().sources == ['tmsf']
-    assert set(ADAPTERS) == {'tmsf', 'fang', 'laipai'}
+    assert set(ADAPTERS) == {'tmsf', 'laipai'}
     with pytest.raises(ValidationError):
         directory_routes.DiscoveryInput(sources=['fang'])
     with pytest.raises(ValidationError):
@@ -138,11 +154,11 @@ def test_collected_types_filter_sources_and_follow_current_association(tmp_path,
     assert residential_ids() == {'local-b'}  # Failed attempts preserve the last effective fact.
     assert client.get('/api/directory/sources?residential_state=residential').json()['data']['items'][0]['property_type'] == '住宅'
     registry.ingest(dict(source='tmsf', source_id='11', name='花园A', property_type='住宅', property_type_error=None))
-    fang = registry.ingest(dict(source='fang', source_id='f1', name='花园B', samples=[
-        {'source_listing_id': 'l1', 'property_type': '写字楼'}]))
-    registry.associate(fang['id'], 'local-b')
+    conflict = registry.ingest(dict(source='tmsf', source_id='12', name='花园B', property_type='写字楼',
+                                   property_type_checked_at='2026-10-13'))
+    registry.associate(conflict['id'], 'local-b')
     assert not residential_ids()  # Source conflict remains pending.
-    registry.unlink(fang['id'])
+    registry.unlink(conflict['id'])
     assert residential_ids() == {'local-b'}
     registry.unlink(item['id'])
     assert not residential_ids()

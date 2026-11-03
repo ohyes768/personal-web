@@ -1,5 +1,9 @@
 # 幸福里租金来源试点契约
 
+> 2026-11-03：房天下退役，幸福里成为**唯一当前租金来源**。`providers.CURRENT_RENTAL_PROVIDER='xingfuli'`，
+> `active_sources` 只返回幸福里，`same_source` 要求显式 provider，采集器不再有房天下默认分支，
+> 房天下历史关联/快照只读保留且不参与当前来源选择、租金统计与用途判定。
+
 > 2026-10-29：来源“发现”与“按需探查”已独立成 [发现与探查契约](./xingfuli-discovery.md)。本文件仍是采集器的口径：
 > 真实 neighborhood_id 与 seed 的分工、provider 隔离、限速冷却与快照隔离不变。
 
@@ -8,12 +12,14 @@
 
 ## 2. Signatures
 - `XingfuliClient(timeout=20, directory=..., fetcher=None, delay=3, cancel_event=None)`；`crawl(source_id, seed_listing_id, *, community_name, property_type, max_pages=10, details=True, cancel_event=None) -> SeedRunResult`。
-- `providers.active_sources(registry) -> {community_id: source_record}`；同小区优先 matched xingfuli，否则 matched fang，不混样本。
-- `providers.same_source(entry, provider, source_id)`：provider + 真实来源小区 ID；缺失旧 provider 按 fang 兼容。
+- 公共采集类型 `SeedRunResult` / `RentalCrawlCancelled` / `CrawlProgress` 住在 `rental_reference/crawl_types.py`（房天下模块删除后，幸福里采集器、传输层、探查、断点缓存与刷新共用同一套类型与取消语义）。
+- `providers.active_sources(registry) -> {community_id: source_record}`；只返回 matched 且小区有效的幸福里来源（`CURRENT_RENTAL_PROVIDER='xingfuli'`）。历史房天下关联保留在台账里，但不参与当前采集，也不与幸福里竞争同一小区。
+- `providers.same_source(entry, provider, source_id)`：必须显式 `provider=='xingfuli'` 且 entry 的 provider 与真实来源小区 ID 都相同；缺 provider 的旧快照不补为幸福里。
+- `providers.source_url(record)`：只为幸福里生成来源链接；其它 provider 抛 `ValueError`，不构造房天下 URL。
 - `scripts/import_xingfuli_pilots.py --data-dir PATH` 默认只读预览；写入必须显式 `--apply --maintenance`，先停止服务和其他目录写入者。
 
 ## 3. Contracts
-权威来源关系仍在 CommunityRegistry，identity=`source='xingfuli',kind='community',sid=<真实 neighborhood_id>`，另存字符串 `seed_listing_id`。列表 URL `/zufang/neighbor-house-list/hz-<种子房源ID>.html` 的数字不是 neighborhood_id。试点导入不创建住宅、不复活解除/ignored来源，保留原 Fang 关系用于显式回退。
+权威来源关系仍在 CommunityRegistry，identity=`source='xingfuli',kind='community',sid=<真实 neighborhood_id>`，另存字符串 `seed_listing_id`。列表 URL `/zufang/neighbor-house-list/hz-<种子房源ID>.html` 的数字不是 neighborhood_id。试点导入不创建住宅、不复活解除/ignored来源；房天下关系只作为历史审计保留，不再是显式回退目标。
 
 只允许 HTTPS m.xflapp.com 的杭州列表/详情及 `/f100/api/search_api/rent` GET，拒绝 userinfo/异常端口/fragment，HTML入口拒绝 query。HTTP重定向不跟随；403/429/验证内容触发独立一小时冷却，持久化 `rentals/xingfuli_request_state.json`，使用独立 OS 锁保证同数据目录请求串行、至少3秒间隔，不自动处理验证码。假客户端可零延迟离线测试。
 
@@ -23,7 +29,7 @@
 
 租金更新仅用列表字段筛选整租，排除疑似隔断、无效租金/面积/户型及重复。property_type来自权威目录，property_type_origin=community_directory，published_at未知仍为null。采用下述显式列表证据后允许进入统计；中位数、分组至少3条、过期30天不变。
 
-缓存、失败保留、查询与覆盖率均比较 provider+source_id。publish_run.preserved_sources 接受 `(provider,sid)`；旧字符串仍代表 fang。同数字 ID 的其他平台快照不能保留或显示。解除幸福里后选择仍有效的 Fang，旧幸福里数据立即失效。公共 API 响应形状不变，source_links 指向真实提供方，前后端均白名单校验。
+缓存、失败保留、查询与覆盖率均比较 provider+source_id，且 provider 必须是显式的幸福里。`storage.publish_run(..., preserved_sources=...)` 只接受显式 `(xingfuli, source_community_id)` 二元身份；旧的裸字符串身份（曾代表房天下）抛 `ValueError`，并且在替换 current 指针之前失败。同数字 ID 的其他平台快照不能保留或显示。解除幸福里后没有当前来源（不回退房天下），旧幸福里数据立即失效。公共 API 响应形状不变，source_links 只指向幸福里，前后端均白名单校验。
 
 ## 4. Validation / Error Matrix
 | 条件 | 结果 |
@@ -38,10 +44,10 @@
 | 名称不唯一/地址与位置证据不足 | unverified，禁止强绑 |
 
 ## 5. Good / Base / Bad
-Good：东方郡已确认幸福里来源，翻到 has_more=false，再用原统计发布；其他小区 Fang 不受其冷却影响。Base：种子下架，保留原快照和原采集时间，报告失败。Bad：用52条挂牌数当52条合格整租、用 URL 种子当小区ID、将“元/月起”当整租均价、忽略来源只比数字ID。
+Good：东方郡已确认幸福里来源，翻到 has_more=false，再用原统计发布；其他小区不受其冷却影响。Base：种子下架，保留原快照和原采集时间，报告失败。Bad：用52条挂牌数当52条合格整租、用 URL 种子当小区ID、将“元/月起”当整租均价、忽略来源只比数字ID、把缺 provider 的旧快照当幸福里复用。
 
 ## 6. Tests Required
-`test_xingfuli_rentals`：真实JSON形状、ID/城市/单位、错误页、分页、空列表身份、重复末页、详情、取消、独立冷却。`test_rental_providers`：优先级、解绑、跨平台同ID、混合原子发布、全缓存第二轮、查询/覆盖率隔离。`test_xingfuli_pilots`：只读预览字节不变、幂等、解除不复活、错地址。沿用 rental API/storage/statistics/refresh/association 和 Fang 测试；前端 rental-xingfuli/reference/directory-flow、TypeScript、ESLint、生产构建。公网验证为手动低频，不进入自动测试。
+`test_xingfuli_rentals`：真实JSON形状、ID/城市/单位、错误页、分页、空列表身份、重复末页、详情、取消、独立冷却。`test_rental_providers`：唯一当前来源、解绑、跨平台同ID、混合原子发布、全缓存第二轮、查询/覆盖率隔离（含缺 provider 的旧快照不命中）。`test_xingfuli_pilots`：只读预览字节不变、幂等、解除不复活、错地址。沿用 rental API/storage/statistics/refresh/association 测试；房天下专属测试随房天下模块一并删除，其仍有意义的断言（取消、共享锁、快照保护）移入幸福里/公共测试。前端 rental-xingfuli/reference/directory-flow、TypeScript、ESLint、生产构建。公网验证为手动低频，不进入自动测试。
 
 ## 7. Wrong vs Correct
 Wrong：`entry.source_community_id == mapping.source_id` 就复用；Correct：`same_source(entry, mapping.source, mapping.source_id)`。
@@ -57,11 +63,11 @@ Wrong：对 full_text=璞悦湾 的 HTTP 200 全市列表进行自动关联；Co
 - 满10不再翻页；本页配额后的非重复行仍留诊断，quality_flags含outside_sampling_quota，统计排除该标记。真实耗尽不足10记complete、保留实际数；上限10页仍记truncated。无归属证据的空列表失败保留旧快照。
 - `quality.sampling={mode:'list_api',quota:10,qualified:<select_valid数量>,sampled:<实际检查的非重复行数>}`。详情计数保持0，不伪造detail_success。样本和快照证据不追溯改写，旧详情快照仍可读，6小时复用仍按旧证据展示。
 - API沿用sampling字段透传；前端依据mode显示“列表抽样：最多10套整租，未经逐套详情核验”，包括筛选后no_samples状态；旧sampling无mode保留原说明。
-- 幸福里传输、discovery/probe/matching/refresh默认和最低真实间隔统一3秒；Fang仍5秒，假fetcher可0秒，一小时冷却和共享OS请求锁不变。
+- 幸福里传输、discovery/probe/matching/refresh默认和最低真实间隔统一3秒；房天下传输与其5秒间隔策略随模块删除，假fetcher可0秒，一小时冷却和共享OS请求锁不变。
 - 回归：test_xingfuli_rentals覆盖首屏仅API、配额/补位/分页/错误/取消/冷却/全入口默认3秒；test_rental_statistics验证显式列表证据准入、未知证据与其他provider拒绝；test_rental_split验证快照元数据；rental-reference测试新旧说明。
 
 ## 继续采集（数量）契约（2026-10-30）
-- **采集范围只有一个来源**：`RentalRefreshService._scope()` = 已收录住宅 × 已关联来源（`xingfuli_only` 时只取幸福里）。
+- **采集范围只有一个来源**：`RentalRefreshService._scope()` = 已收录住宅 × 已关联来源（`providers.active_sources` 只给幸福里）。
   待采集数量与“继续采集”共用这份名单，数量与实际下手的对象不许各算各的；`start()`/`_execute()`/数量统计都从它取。
 - **完成判定**：当前来源与快照一致 + 快照状态可采用（complete/empty_ok）+ 最近一次采集也成功且已发布
   （快照 captured_at 与采集结果一致）。没有快照、采集失败（list_failed/truncated/partial_detail）、采完没发布、

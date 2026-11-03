@@ -46,6 +46,20 @@ def identity(master):
     return {**master, 'name': master['community_name']}
 
 
+def _retired_fang_needs_link(members, cid):
+    """Fang 历史成员只读保留：自动流程不能为它建立或迁移关联。
+
+    已经关联到目标小区的历史记录不算新建关联，因此不阻塞。
+    """
+    for member in members:
+        if member['source'] != 'fang':
+            continue
+        if member.get('status') == 'matched' and member.get('community_id') == cid:
+            continue
+        return True
+    return False
+
+
 def evidence(record, facts):
     fields = ('id', 'source', 'source_id', 'name', 'district', 'address', 'property_type', 'property_type_error',
               'property_type_checked_at', 'property_type_url', 'samples', 'source_url',
@@ -141,11 +155,11 @@ def decide(group, members, *, groups, sources, masters, admissions, rejected, fa
         target_members = [m for m in sources if m['community_id'] == target_id and m['status'] == 'matched']
         admitted = target_admission.get('state') == 'admitted' and (target_admission.get('decision_kind') == 'manual' or classify_sources(target_members, facts) == 'residential')
         if exact and admitted and not cid and not any((m['id'], target_id) in rejected for m in members):
-            has_use_evidence = any(m['source'] in {'tmsf', 'fang'} for m in members)
+            has_use_evidence = any(m['source'] == 'tmsf' for m in members)
             if has_use_evidence and classify_sources([*target_members, *members], facts) != 'residential':
                 return result('pending', '补充来源会造成用途冲突')
-            if sum(m['source'] == 'fang' for m in [*target_members, *members]) > 1:
-                return result('pending', '房天下来源唯一性冲突')
+            if _retired_fang_needs_link(members, None):
+                return result('pending', '房天下历史来源不参与自动合并，请人工核对')
             return result('merge', '完整名称/别名、区域与地址或位置一致，补充已有住宅来源', target_id=target_id)
         return result('pending', '已有同名、分期或相似小区，须人工核对')
     for other in groups:
@@ -161,8 +175,8 @@ def decide(group, members, *, groups, sources, masters, admissions, rejected, fa
         return result('exclude', '明确非住宅用途；建议人工排除')
     if classification != 'residential':
         return result('pending', '缺少充分住宅证据，或最新用途失败/混合/冲突')
-    if sum(m['source'] == 'fang' for m in members) > 1:
-        return result('pending', '房天下来源唯一性冲突')
+    if _retired_fang_needs_link(members, cid):
+        return result('pending', '房天下历史来源不参与自动收录，请人工核对')
     return result('admit', '住宅用途明确、名称区域地址可靠，未发现重复身份疑点', property_type=effective_type(members, facts))
 
 

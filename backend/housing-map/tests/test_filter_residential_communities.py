@@ -25,11 +25,7 @@ def test_split_buckets_by_state():
         "3": {"property_type": "其他"},
         "4": {"property_type": "其他"},
     }
-    fang_samples = {
-        "3": [{"property_type": "住宅"}],
-        "4": [],
-    }
-    result = split_communities(communities=communities, property_types=property_types, fang_samples_by_community=fang_samples)
+    result = split_communities(communities=communities, property_types=property_types)
     buckets = result["buckets"]
     assert {c["community_id"] for c in buckets[RESIDENTIAL_STATE_RESIDENTIAL]} == {"1"}
     assert {c["community_id"] for c in buckets[RESIDENTIAL_STATE_PENDING]} == {"3", "4"}
@@ -43,10 +39,9 @@ def test_split_buckets_by_state():
 def test_split_preserves_evidence_in_buckets():
     communities = [_community("1", "小区A"), _community("2", "小区B")]
     property_types = {"1": {"property_type": "住宅"}, "2": {"property_type": "其他"}}
-    fang_samples = {"2": [{"property_type": "住宅"}, {"property_type": "写字楼"}]}
-    result = split_communities(communities=communities, property_types=property_types, fang_samples_by_community=fang_samples)
+    result = split_communities(communities=communities, property_types=property_types)
     pending = result["buckets"][RESIDENTIAL_STATE_PENDING]
     assert len(pending) == 1 and pending[0]["community_id"] == "2"
     evidence = pending[0]["residential_evidence"]
     assert evidence["tmsf"] == "其他"
-    assert "住宅" in evidence["fang"] and "写字楼" in evidence["fang"]
+    assert "fang" not in evidence

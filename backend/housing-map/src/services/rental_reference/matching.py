@@ -51,7 +51,7 @@ def selection_summary(community, state):
 def source_reviews(registry):
     """Project stored Xingfuli probe evidence into the existing review list."""
     communities, _ = eligible_communities(registry)
-    selected = active_sources(registry, xingfuli_only=True)
+    selected = active_sources(registry)
     items = []
     for community in communities:
         cid = community['community_id']
@@ -84,7 +84,7 @@ class SourceMatchingService:
         self._thread = None
         self._stopping = False
         self._probe = ProbeService(registry, directory=directory, delay=delay,
-                                    discovery_factory=discovery_factory, task_lock=self._mutex, xingfuli_only=True)
+                                    discovery_factory=discovery_factory, task_lock=self._mutex)
         self._job = dict(running=False, phase='idle', total=0, processed=0,
                          association={}, remaining=[], outcomes={}, errors=[])
         if self._path.exists():
@@ -117,7 +117,7 @@ class SourceMatchingService:
 
     def _eligible(self):
         communities, _ = eligible_communities(self.registry)
-        selected = active_sources(self.registry, xingfuli_only=True)
+        selected = active_sources(self.registry)
         with self.registry.db() as db:
             rejected = rejected_rental_communities(db)
             skipped = {row[0][len(REVIEW_PREFIX):] for row in db.execute(
@@ -226,7 +226,7 @@ class SourceMatchingService:
                     continue
                 cid = self._job['remaining'][0]
                 current, _ = eligible_communities(self.registry)
-                if cid not in {c['community_id'] for c in current} or cid in active_sources(self.registry, xingfuli_only=True):
+                if cid not in {c['community_id'] for c in current} or cid in active_sources(self.registry):
                     outcome = 'skipped'
                 elif read_review(self.registry, cid).get('decision') == 'skipped':
                     outcome = 'skipped'

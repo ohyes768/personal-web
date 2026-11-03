@@ -37,10 +37,10 @@ function availableData(overrides = {}) {
     samples: [{
       source_listing_id: 'f1', title: '整租·两房', bedrooms: 2, area_m2: 89,
       month_rent_yuan: 4500, unit_rent_yuan_m2_month: 50.6,
-      source_url: 'https://zu.fang.com/house/f1.html', captured_at: '2026-10-10',
+      source_url: 'https://m.xflapp.com/zufang/hz-1.html', captured_at: '2026-10-10',
     }],
     page: 1, page_size: 10, total: 1,
-    source_links: ['https://zu.fang.com/house/'],
+    source_links: ['https://m.xflapp.com/zufang/hz-1.html'],
     ...overrides,
   };
 }
@@ -57,7 +57,7 @@ test('available data shows group metrics, yield estimate labels and disclosure',
   assert.match(html, /1 : 708/);
   assert.match(html, /近期签约价/);
   assert.match(html, /房型分布：2居×4、3居×1/);
-  assert.match(html, /href="https:\/\/zu\.fang\.com\/house\/f1\.html"/);
+  assert.match(html, /href="https:\/\/m\.xflapp\.com\/zufang\/hz-1\.html"/);
 });
 
 test('unmapped availability explains missing mapping', () => {
@@ -120,18 +120,19 @@ test('excluded view renders exclusion reasons, valid view does not', () => {
   assert.doesNotMatch(validHtml, /排除理由/);
 });
 
-test('source links restricted to zu.fang.com https domain', () => {
+test('source links restricted to the current provider https domain', () => {
   const data = availableData({
     samples: [{
       source_listing_id: 'fx', title: null, bedrooms: null, area_m2: null,
       month_rent_yuan: null, unit_rent_yuan_m2_month: null,
       source_url: 'javascript:alert(1)', captured_at: null,
     }],
-    source_links: ['http://evil.example.com/list'],
+    source_links: ['http://evil.example.com/list', 'https://zu.fang.com/house/'],
   });
   const html = renderToStaticMarkup(React.createElement(RentalReferenceContent, { data }));
   assert.doesNotMatch(html, /href="javascript:/);
   assert.doesNotMatch(html, /evil\.example\.com" ?/);
+  assert.doesNotMatch(html, /zu\.fang\.com/);
   assert.doesNotMatch(html, /<a /);
 });
 

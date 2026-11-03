@@ -287,54 +287,6 @@ def tmsf_names(cancel, ignored, existing=None, *, retry_failed=False, resume=Fal
         client.close()
 
 
-def fang_names(cancel, ignored):
-    from src.services.fang_rentals import FangClient, parse_listing_page
-    client = FangClient(timeout=20, cancel_event=cancel)
-    url = 'https://zu.fang.com/hz/house-a0154/n31/'
-    visited = set()
-    try:
-        while True:
-            check(cancel)
-            visited.add(url)
-            rows, next_url = parse_listing_page(client.fetch(url), url)
-            grouped = {}
-            for row in rows:
-                sid = row.get('source_community_id')
-                if not sid or not row.get('community_name'):
-                    continue
-                row['captured_at'] = now()
-                if not ignored('fang', 'community', sid):
-                    pause(cancel)
-                    try:
-                        from src.services.fang_detail_cache import enrich_cached
-                        enrich_cached(row, client.fetch, getattr(client, 'detail_cache', None))
-                    except InterruptedError:
-                        raise
-                    except Exception as exc:
-                        from src.services.fang_request_policy import FangChallenge, FangTemporarilyUnavailable
-                        if isinstance(exc, (FangChallenge, FangTemporarilyUnavailable)):
-                            raise
-                        row['quality_flags'].append('detail_fetch_failed')
-                        row['_collection_error'] = dict(source='fang', stage='detail',
-                            source_id=sid, listing_id=row['source_listing_id'],
-                            message=f"房源 {row['source_listing_id']} 详情采集失败（{type(exc).__name__}）")
-                grouped.setdefault(sid, []).append(row)
-            for sid, samples in grouped.items():
-                yield dict(source='fang', source_kind='community', source_id=sid,
-                           name=samples[0]['community_name'], district='滨江',
-                           address=next((s.get('address') for s in samples if s.get('address')), ''),
-                           source_url=f'https://zu.fang.com/hz/house-xm{sid}/', samples=samples,
-                           _collection_errors=[s.pop('_collection_error') for s in samples if '_collection_error' in s])
-            if not next_url:
-                return
-            if next_url in visited:
-                raise DiscoveryTruncated('房天下分页重复，名称覆盖不完整')
-            url = next_url
-            pause(cancel)
-    finally:
-        client.close()
-
-
 def laipai_names(cancel, ignored):
     from src.services.auction_fetcher import AuctionClient, normalize_auction
     client = AuctionClient()
@@ -378,12 +330,14 @@ def laipai_names(cancel, ignored):
         client.close()
 
 
-ADAPTERS = {'tmsf': tmsf_names, 'fang': fang_names, 'laipai': laipai_names}
+ADAPTERS = {'tmsf': tmsf_names, 'laipai': laipai_names}
 
 
 def _check_sources(sources):
     if 'amap' in sources:
         raise ValueError('高德小区名单采集已停止，请使用透明售房网')
+    if 'fang' in sources:
+        raise ValueError('房天下采集已停止，请使用透明售房网')
 
 
 def _check_mode(sources, mode):

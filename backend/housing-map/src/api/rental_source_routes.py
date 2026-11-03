@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field
 from src.api import rental_routes
 from src.services.community_registry import community_exists_at, registry_path
 from src.services.data_loader import load_communities
-from src.services.rental_reference.refresh import MappingFileError, RefreshAlreadyRunning
-from src.services.rental_reference.sources import SourceStore
+from src.services.rental_reference.refresh import RefreshAlreadyRunning
+from src.services.rental_reference.sources import SourceRegistryUnavailable, SourceStore
 
 router = APIRouter(tags=['rental-sources'])
 logger = logging.getLogger(__name__)
@@ -28,11 +28,12 @@ class ConfirmRequest(BaseModel):
 
 
 def store() -> SourceStore:
+    """The community registry is the only authority; without it there is no source store."""
     try:
         return SourceStore(rental_routes._mappings_path)
-    except (MappingFileError, sqlite3.Error, OSError, ValueError) as exc:
-        logger.exception('Rental source initialization failed')
-        raise HTTPException(503, '租金来源配置暂不可用，请检查后台数据') from exc
+    except (SourceRegistryUnavailable, sqlite3.Error, OSError, ValueError) as exc:
+        logger.exception('Rental source store unavailable')
+        raise HTTPException(503, '小区目录尚未准备好，租金来源暂不可用') from exc
 
 
 def community(community_id: str) -> dict:
@@ -90,10 +91,9 @@ def remove(community_id: str):
 
 @router.delete('/communities/{community_id}/rental-source/candidates/{source_id}')
 def reject(community_id: str, source_id: str):
+    """Retired Fang candidate pool: no side effect, no database write."""
     community(community_id)
-    source_store = store()
-    source_store.reject(community_id, source_id)
-    return {'success': True, 'data': source_store.get(community_id)}
+    raise HTTPException(410, '房天下候选来源已停用，请在幸福里候选中选择对应小区主页')
 
 
 class ReviewDecision(BaseModel):

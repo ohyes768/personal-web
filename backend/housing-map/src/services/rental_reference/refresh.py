@@ -29,21 +29,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from src.services.fang_rentals import (
-    BASE_URL,
-    CrawlProgress,
-    FangClient,
-    RentalCrawlCancelled,
-    crawl_runs,
-)
+from src.services.rental_reference.crawl_types import CrawlProgress, RentalCrawlCancelled
 from src.services.rental_reference.storage import (
     ADOPTABLE_STATUSES,
     CommunityBatch,
     publish_run,
     load_current,
 )
-from src.services.fang_detail_cache import FangDetailCache
-from src.services.fang_request_policy import FangRequestPolicy, FangRequestCancelled
 from src.services.rental_reference.providers import active_sources, same_source, source_url
 from src.services.xingfuli_rentals import MAX_SAMPLES, XingfuliClient
 from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
@@ -51,7 +43,6 @@ from src.services.rental_reference.statistics import select_valid
 
 JOB_FILE_NAME = 'refresh_job.json'
 DEFAULT_MAX_PAGES = 10
-DEFAULT_DELAY_SECONDS = 5.0
 DEFAULT_TIMEOUT_SECONDS = 20.0
 MAX_ERRORS_KEPT = 20
 
@@ -70,68 +61,24 @@ class NoVerifiedMappings(RuntimeError):
     """422: the ledger has no verified mapping, so there is nothing to crawl."""
 
 
-class MappingFileError(RuntimeError):
-    """503: the mapping file exists but is unreadable or structurally invalid."""
-
-
 def load_verified_mappings(path: Path) -> list[tuple[str, str]]:
+    """当前可采集的 (source_community_id, internal community_id) 对。
+
+    社区台账是唯一权威：没有台账就没有采集计划。旧房天下映射文件与旧映射
+    数据库不再是运行依赖，也不会被重新导入。
+    """
     from src.services.community_registry import existing_registry
     registry = existing_registry(path.parent)
-    if registry:
-        from src.services.community_address import effective_address
-        sources = registry.sources()
-        valid_ids = {c['community_id'] for c in registry.communities() if effective_address(c.get('address'),
-                     [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched'])}
-        from src.services.directory_workflow import is_enabled, admitted
-        if is_enabled(registry):
-            valid_ids = {c['community_id'] for c in admitted(registry, path.parent)}
-        return [(r['source_id'], cid) for cid, r in active_sources(registry).items() if cid in valid_ids]
-    from src.services.rental_reference.sources import database_path, confirmed_pairs, connection
-    db_path = database_path(path)
-    if db_path.exists():
-        try:
-            with connection(db_path) as db:
-                initialized = db.execute("SELECT 1 FROM meta WHERE key='imported'").fetchone()
-            if initialized:
-                return confirmed_pairs(db_path)
-        except Exception as exc:
-            raise MappingFileError(f'unreadable rental source database: {exc}') from exc
-    return load_legacy_mappings(path)
-
-
-def load_legacy_mappings(path: Path) -> list[tuple[str, str]]:
-    """Verified (source_community_id, internal community_id) pairs in file order.
-
-    A missing file means zero mappings (the caller maps that to 422). A present
-    but invalid file is server-side data corruption (503), never silently
-    skipped: a typo in the ledger must not silently shrink the crawl scope.
-    """
-    if not path.exists():
+    if not registry:
         return []
-    try:
-        payload = json.loads(path.read_text(encoding='utf-8-sig'))
-    except (OSError, ValueError) as exc:
-        raise MappingFileError(f'unreadable rental mapping file: {exc}') from exc
-    if (not isinstance(payload, dict) or payload.get('version') != 1
-            or not isinstance(payload.get('mappings'), list)):
-        raise MappingFileError('invalid rental mapping file structure')
-    pairs: list[tuple[str, str]] = []
-    seen: set[str] = set()
-    for entry in payload['mappings']:
-        if (not isinstance(entry, dict)
-                or not isinstance(entry.get('source_community_id'), str)
-                or not entry['source_community_id']
-                or not isinstance(entry.get('community_id'), str)
-                or not entry['community_id']):
-            raise MappingFileError('invalid rental mapping entry')
-        if entry.get('source') != 'fang' or entry.get('status') != 'verified':
-            continue
-        if entry['source_community_id'] in seen:
-            raise MappingFileError(
-                f'duplicate source_community_id: {entry["source_community_id"]}')
-        seen.add(entry['source_community_id'])
-        pairs.append((entry['source_community_id'], entry['community_id']))
-    return pairs
+    from src.services.community_address import effective_address
+    sources = registry.sources()
+    valid_ids = {c['community_id'] for c in registry.communities() if effective_address(c.get('address'),
+                 [r for r in sources if r['community_id'] == c['community_id'] and r['status'] == 'matched'])}
+    from src.services.directory_workflow import is_enabled, admitted
+    if is_enabled(registry):
+        valid_ids = {c['community_id'] for c in admitted(registry, path.parent)}
+    return [(r['source_id'], cid) for cid, r in active_sources(registry).items() if cid in valid_ids]
 
 
 def _utc_now() -> str:
@@ -170,7 +117,7 @@ class _SeedPlan:
     seed: str
     community_id: str
     source_community_id: str
-    source: str = 'fang'
+    source: str = 'xingfuli'
     seed_listing_id: str | None = None
     community_name: str = ''
     property_type: str = '住宅'
@@ -185,11 +132,10 @@ class RentalRefreshService:
     """
 
     def __init__(self, rentals_dir: Path, mappings_path: Path, *,
-                 fetch_factory: Callable[..., object] = FangClient,
                  xingfuli_factory: Callable[..., object] = XingfuliClient,
                  discovery_factory: Callable[..., object] | None = None,
                  auto_discover: bool = False,
-                 xingfuli_only: bool = False, task_lock=None, busy=None,
+                 task_lock=None, busy=None,
                  max_pages: int = DEFAULT_MAX_PAGES,
                  delay: float | None = None,
                  timeout: float = DEFAULT_TIMEOUT_SECONDS,
@@ -198,17 +144,14 @@ class RentalRefreshService:
                  max_errors_kept: int = MAX_ERRORS_KEPT):
         self.rentals_dir = Path(rentals_dir)
         self.mappings_path = Path(mappings_path)
-        self._fetch_factory = fetch_factory
         self._xingfuli_factory = xingfuli_factory
         self._discovery_factory = discovery_factory
         # Automatic source discovery reaches the platform; it is switched off
         # by default so an offline run never calls out, and so the feature can
         # be rolled back without touching the recorded sources.
         self._auto_discover = auto_discover
-        self._xingfuli_only = xingfuli_only
         self._busy = busy
         self._max_pages = max_pages
-        self._delay = delay if delay is not None else (DEFAULT_XINGFULI_DELAY if xingfuli_only else DEFAULT_DELAY_SECONDS)
         self._xingfuli_delay = delay if delay is not None else DEFAULT_XINGFULI_DELAY
         self._timeout = timeout
         self._details = details
@@ -236,10 +179,8 @@ class RentalRefreshService:
 
     def _scope_key(self):
         from src.services.community_registry import registry_path
-        from src.services.rental_reference.sources import database_path
         return (self._file_key(registry_path(self.mappings_path.parent)),
-                self._file_key(self.mappings_path),
-                self._file_key(database_path(self.mappings_path)))
+                self._file_key(self.mappings_path))
 
     def _scope(self):
         """采集范围：已收录住宅 × 已关联来源。
@@ -256,17 +197,15 @@ class RentalRefreshService:
         from src.services.rental_reference.association import eligible_communities
         registry = existing_registry(self.mappings_path.parent)
         if not registry:
-            plans = [_SeedPlan(f'{BASE_URL}/hz/house-xm{sid}/', cid, sid)
-                     for sid, cid in load_verified_mappings(self.mappings_path)]
-            scope = (registry, {}, {}, plans)
+            # 没有社区台账就没有来源，没有采集计划；旧映射文件不再是运行依赖。
+            scope = (registry, {}, {}, [])
         else:
             eligible = {c['community_id']: c for c in eligible_communities(registry)[0]}
-            selected = active_sources(registry, xingfuli_only=self._xingfuli_only)
+            selected = active_sources(registry)
             plans = [_SeedPlan(source_url(r), cid, r['source_id'], r['source'],
                                r.get('seed_listing_id'), eligible[cid]['community_name'],
                                eligible[cid].get('effective_property_type') or eligible[cid].get('property_type') or '住宅')
                      for cid, r in selected.items() if cid in eligible]
-            plans.sort(key=lambda p: p.source == 'fang')
             scope = (registry, eligible, selected, plans)
         with self._mutex:
             self._scope_cache = (key, scope)
@@ -330,10 +269,10 @@ class RentalRefreshService:
             if self._busy and self._busy():
                 raise RefreshAlreadyRunning('租金来源匹配正在运行，请结束后再更新租金数据')
             registry, _eligible, _selected, plans = self._scope()
-            if self._xingfuli_only and not any(plan.source == 'xingfuli' for plan in plans):
+            if not plans:
+                if not registry:
+                    raise NoVerifiedMappings('no verified rental community mappings')
                 raise NoVerifiedMappings('请先匹配租金来源，再更新租金数据')
-            if not plans and not registry:
-                raise NoVerifiedMappings('no verified rental community mappings')
             self._cancel_event.clear()
             job = _initial_job()
             # last_success_at survives jobs: a failed rerun must still be able
@@ -410,16 +349,10 @@ class RentalRefreshService:
         batches: list[CommunityBatch] = []
         crawl_errors: list[dict] = []
         truncated_seeds: list[str] = []
-        client = None
         xingfuli_client = None
         outcome_phase = 'failed'
         result_summary: dict | None = None
         reused = {}
-        policy = None
-        request_count = 0
-        crawl_paused = None
-        cache = FangDetailCache(self.rentals_dir)
-        cache.prune()
         def skip_seed(seed):
             registry, eligible, selected, _scoped = self._scope()
             if not registry:
@@ -461,22 +394,9 @@ class RentalRefreshService:
             ordered = [plan for plan in ordered if plan.community_id not in reused]
             progress.processed_seeds = len(reused)
             self._update_job(reused_communities=len(reused), processed_communities=len(reused))
-            needs_discovery = not self._xingfuli_only and registry and any(cid not in selected for cid in eligible)
-            if any(p.source == 'fang' for p in ordered) or needs_discovery:
-                client = self._fetch_factory(timeout=self._timeout)
-                if isinstance(client, FangClient):
-                    policy = FangRequestPolicy(self.rentals_dir, cancel_event=self._cancel_event)
-                    client.policy = policy
-                    client.detail_cache = cache
-            def fetch(url):
-                nonlocal request_count
-                request_count += 1
-                return client.fetch(url)
             def results():
                 nonlocal xingfuli_client
                 for plan in ordered:
-                    if plan.source != 'xingfuli':
-                        continue
                     if skip_seed(plan.seed):
                         continue
                     self._update_job(current_community_id=plan.community_id)
@@ -490,12 +410,8 @@ class RentalRefreshService:
                     progress.pages_fetched += result.pages_fetched
                     progress.details_fetched += result.detail_success + result.detail_failed
                     yield result
-                yield from crawl_runs([p.seed for p in ordered if p.source == 'fang'], fetch=fetch,
-                        max_pages=self._max_pages, delay=self._delay, details=self._details,
-                        cancel_event=self._cancel_event, progress=progress, skip_seed=skip_seed, detail_cache=cache)
             for index, seed_result in enumerate(results()):
                 plan = plans[seed_result.seed]
-                crawl_paused = crawl_paused or seed_result.pause_reason
                 next_plan = ordered[index + 1] if index + 1 < len(ordered) else None
                 captured_at = (seed_result.samples[0]['captured_at']
                                if seed_result.samples else _utc_now())
@@ -547,8 +463,7 @@ class RentalRefreshService:
                             self._job['failed_count'] + (0 if succeeded or seed_result.deferred else 1),
                         'deferred_count': self._job['deferred_count'] + int(seed_result.deferred),
                         'detail_cache_hits': self._job['detail_cache_hits'] + seed_result.detail_cache_hits,
-                        'request_count': (policy.request_count if policy else request_count)
-                                         + (xingfuli_client.request_count if xingfuli_client else 0),
+                        'request_count': xingfuli_client.request_count if xingfuli_client else 0,
                     })
                     errors = self._job['errors']
                     for error in seed_result.errors:
@@ -557,16 +472,9 @@ class RentalRefreshService:
                             errors['items'].append(
                                 {'community_id': plan.community_id, **error})
                     self._write_job_file()
-            if registry and not self._xingfuli_only:
-                from src.services.rental_reference.association import prepare_sources
-                from src.services.rental_reference.sources import discover
-                # A paused crawl must not immediately start searching via another client.
-                pairs, association = prepare_sources(registry, self._cancel_event,
-                    lambda values: self._update_job(stage='discovering', association=values),
-                    lambda community: discover(community, client_factory=self._fetch_factory, client=client),
-                    delay=self._delay, budget=5, paused_reason=crawl_paused)
-                self._update_job(association=association,
-                    new_sources_deferred=sum(cid not in {p.community_id for p in plans.values()} for _, cid in pairs))
+            if registry:
+                # 采集只认幸福里；缺来源由独立的匹配/探查流程补齐，采集任务
+                # 自己不再发起平台搜索。
                 xingfuli_association = self._discover_xingfuli_sources(registry, eligible, selected)
                 if xingfuli_association:
                     self._update_job(xingfuli_association=xingfuli_association)
@@ -603,12 +511,10 @@ class RentalRefreshService:
             if publish.published:
                 outcome_phase = 'done'
                 self._update_job(last_success_at=publish.published_at)
-                if policy and self._details and ordered and all(b.status in ADOPTABLE_STATUSES for b in batches):
-                    policy.mark_complete()
             elif publish.reason == 'cancelled':
                 outcome_phase = 'cancelled'
             # all_failed keeps outcome_phase 'failed'; the pointer never moved.
-        except (RentalCrawlCancelled, FangRequestCancelled) as cancelled:
+        except RentalCrawlCancelled as cancelled:
             outcome_phase = 'cancelled'
             result_summary = {'published': False, 'reason': 'cancelled',
                               'completed_communities': len(getattr(cancelled, 'completed', []))}
@@ -620,28 +526,11 @@ class RentalRefreshService:
             self._add_error({'stage': 'worker',
                              'error': f'{type(exc).__name__}: {exc}'})
         finally:
-            self._update_job(detail_cache_hits=cache.hits)
-            if policy is not None:
-                # status uses a fresh uncancelled reader after worker cancellation.
-                try:
-                    state = FangRequestPolicy(self.rentals_dir).status()
-                    until = state['cooldown_until']
-                    self._update_job(request_count=policy.request_count + (xingfuli_client.request_count if xingfuli_client else 0),
-                        cooldown_until=dt.datetime.fromtimestamp(until, dt.UTC).isoformat() if until > dt.datetime.now(dt.UTC).timestamp() else None)
-                except Exception as exc:
-                    self._add_error({'stage': 'request_state', 'error': str(exc)})
             if xingfuli_client is not None:
-                if policy is None:
-                    self._update_job(request_count=request_count + xingfuli_client.request_count)
                 if xingfuli_client.cooldown_until:
                     self._update_job(cooldown_until=max(filter(None, [self._job.get('cooldown_until'), xingfuli_client.cooldown_until])))
                 try:
                     xingfuli_client.close()
-                except Exception:
-                    pass
-            if client is not None:
-                try:
-                    client.close()
                 except Exception:
                     pass
             with self._mutex:

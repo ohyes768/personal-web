@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/backend/housing-map/backend/index.md", "reason": "模块规范索引与前置要求"}
+{"file": ".trellis/spec/backend/housing-map/backend/rental-sources.md", "reason": "旧来源适配、API和锁边界；退役后需同步"}
+{"file": ".trellis/spec/backend/housing-map/backend/xingfuli-rentals.md", "reason": "幸福里身份、采集和发布不变量"}
+{"file": ".trellis/spec/backend/housing-map/backend/xingfuli-discovery.md", "reason": "匹配/探查/断点与人工决定"}
+{"file": ".trellis/spec/backend/housing-map/backend/directory-flow.md", "reason": "现行准入及目录覆盖，不覆盖其他工作"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-auto-review.md", "reason": "用途与人工保护"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows basetemp 与 symlink 约束"}
+{"file": ".trellis/tasks/11-03-housing-fang-retirement/research/inventory.md", "reason": "现状引用和删除/保留分类"}
+{"file": ".trellis/tasks/11-03-housing-fang-retirement/design.md", "reason": "最终技术契约与验证矩阵"}

@@ -22,7 +22,7 @@ SAMPLE = {'source_listing_id': '3_265860917_1', 'monthly_rent_yuan': 6400.0,
 def batch(cid='10001039', status='complete', samples=None, captured=CAPTURED,
           quality=None, **kwargs):
     return CommunityBatch(
-        community_id=cid, source='fang', source_community_id='2010067741',
+        community_id=cid, source='xingfuli', source_community_id='2010067741',
         status=status, captured_at=captured,
         samples=[{'source_listing_id': f'{cid}_1_1'}] if samples is None else samples,
         quality={'duplicate_source_ids_skipped': 0} if quality is None else quality,
@@ -50,7 +50,7 @@ def test_publish_then_load_roundtrip(rentals):
     current = load_current(rentals)
     assert current['run_id'] == result.run_id
     assert current['communities']['10001039'] == {
-        'community_id': '10001039', 'source': 'fang',
+        'community_id': '10001039', 'source': 'xingfuli',
         'source_community_id': '2010067741', 'captured_at': CAPTURED,
         'samples': [SAMPLE], 'quality': {'duplicate_source_ids_skipped': 2},
         'origin': 'this_run', 'status': 'complete'}

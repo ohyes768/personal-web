@@ -1,5 +1,6 @@
 export interface RentalSource {
-  source?: 'fang' | 'xingfuli';
+  /** 当前唯一租金来源；房天下已退役，历史关联只能只读展示。 */
+  source?: 'xingfuli';
   source_community_id: string;
   source_name: string;
   source_url: string;
@@ -24,6 +25,8 @@ export interface SourceDetail {
   found_count?: number;
 }
 export const RENTAL_DATA_CHANGED = 'housing-rental-data-changed';
+/** 当前唯一租金来源的展示名；房天下已退役，历史记录只保留只读标签。 */
+export const RENTAL_SOURCE_LABEL = '幸福里';
 export function rentalDataChanged() { window.dispatchEvent(new Event(RENTAL_DATA_CHANGED)); }
 export function sourcePath(communityId: string) {
   return `/api/map/communities/${encodeURIComponent(communityId)}/rental-source`;
@@ -31,10 +34,9 @@ export function sourcePath(communityId: string) {
 export function safeSourceLink(url: string): string | undefined {
   try {
     const parsed = new URL(url);
-    const sourceAllowed = ['zu.fang.com', 'hz.zu.fang.com'].includes(parsed.hostname)
-      || (parsed.hostname === 'm.xflapp.com'
-        && /^\/zufang\/(?:neighbor-house-list\/)?hz-\d+\.html$/.test(parsed.pathname)
-        && !parsed.search && !parsed.hash);
+    const sourceAllowed = parsed.hostname === 'm.xflapp.com'
+      && /^\/zufang\/(?:neighbor-house-list\/)?hz-\d+\.html$/.test(parsed.pathname)
+      && !parsed.search && !parsed.hash;
     return parsed.protocol === 'https:' && sourceAllowed && !parsed.username && !parsed.password
       && (!parsed.port || parsed.port === '443') ? url : undefined;
   } catch { return undefined; }

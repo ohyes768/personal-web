@@ -44,7 +44,13 @@ def test_unlinked_rental_source_still_excludes_batch_and_vetoes_binding(tmp_path
     reg = setup(tmp_path)
     record = reg.ingest(dict(source=provider, source_id='12345', name='测试花园',
                              district='滨江', address='测试路1号'))
-    reg.associate(record['id'], 'c1')
+    if provider == 'fang':
+        # 房天下关联已退役：历史台账行仍然保护该小区不被自动重新绑定。
+        with reg.db() as db:
+            db.execute("UPDATE sources SET cid=?,status='matched',method='manual' WHERE id=?",
+                       ('c1', record['id']))
+    else:
+        reg.associate(record['id'], 'c1')
     reg.unlink(record['id'])
     fake = strong()
     svc = SourceMatchingService(reg, directory=tmp_path / 'rentals',
@@ -185,7 +191,7 @@ def test_cache_expiry_corruption_and_identity_change_force_requery(tmp_path):
 
 
 def test_steps_survive_process_recreation_after_partial_search(tmp_path):
-    from src.services.fang_rentals import RentalCrawlCancelled
+    from src.services.rental_reference.crawl_types import RentalCrawlCancelled
     reg = setup(tmp_path)
     class Interrupted(FakeDiscovery):
         def search(self, name, channel, offset=0):

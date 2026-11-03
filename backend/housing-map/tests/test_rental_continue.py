@@ -5,15 +5,11 @@
 """
 import datetime as dt
 
-from src.services.fang_rentals import SeedRunResult
+from src.services.rental_reference.crawl_types import SeedRunResult
 from src.services.rental_reference.refresh import RentalRefreshService
 from src.services.rental_reference.storage import CommunityBatch, load_current, publish_run
 from src.services.xingfuli_rentals import list_url
 from tests.test_rental_providers import registry, source
-
-
-def forbidden(**kwargs):
-    raise AssertionError('source discovery / Fang must not run during rent collection')
 
 
 def client(calls, status='empty_ok'):
@@ -38,8 +34,7 @@ def client(calls, status='empty_ok'):
 
 def service(tmp_path, reg, calls, status='empty_ok'):
     return RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
-                                xingfuli_only=True, fetch_factory=forbidden,
-                                discovery_factory=forbidden, xingfuli_factory=client(calls, status))
+                                xingfuli_factory=client(calls, status))
 
 
 def add_community(reg, community_id, sid, seed):

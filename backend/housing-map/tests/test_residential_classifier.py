@@ -19,86 +19,52 @@ def test_normalize_handles_aliases_and_noise():
 
 
 def test_classify_residential_via_tmsf():
-    result = classify(community_id="c1", tmsf_property_type="住宅", fang_samples=[], name="小区1")
+    result = classify(community_id="c1", tmsf_property_type="住宅", name="小区1")
     assert result["state"] == RESIDENTIAL_STATE_RESIDENTIAL
     assert result["tmsf_property_type"] == "住宅"
-    assert result["fang_property_counts"] == {}
+    assert result["evidence"] == {"tmsf": "住宅"}
 
 
 def test_classify_non_residential_via_tmsf():
-    result = classify(community_id="c2", tmsf_property_type="写字楼", fang_samples=[], name="写字楼")
+    result = classify(community_id="c2", tmsf_property_type="写字楼", name="写字楼")
     assert result["state"] == RESIDENTIAL_STATE_NON_RESIDENTIAL
 
 
-def test_classify_pending_when_tmsf_other_and_no_fang():
-    result = classify(community_id="c3", tmsf_property_type="其他", fang_samples=[], name="待核实")
-    assert result["state"] == RESIDENTIAL_STATE_PENDING
-
-
-def test_classify_pending_when_tmsf_other_and_fang_residential():
-    result = classify(community_id="c4", tmsf_property_type="其他", fang_samples=[
-        {"property_type": "住宅"}, {"property_type": "普通住宅"}
-    ], name="4")
-    assert result["state"] == RESIDENTIAL_STATE_PENDING
-    assert result["fang_property_counts"] == {"住宅": 1, "普通住宅": 1}
-
-
-def test_classify_pending_when_tmsf_other_and_fang_non_residential():
-    result = classify(community_id="c5", tmsf_property_type="其他", fang_samples=[
-        {"property_type": "写字楼"}
-    ], name="5")
+def test_classify_pending_when_tmsf_other():
+    result = classify(community_id="c3", tmsf_property_type="其他", name="待核实")
     assert result["state"] == RESIDENTIAL_STATE_PENDING
 
 
 def test_classify_unknown_when_no_signals():
-    result = classify(community_id="c6", tmsf_property_type=None, fang_samples=[], name="6")
+    result = classify(community_id="c6", tmsf_property_type=None, name="6")
     assert result["state"] == RESIDENTIAL_STATE_UNKNOWN
 
 
-def test_classify_pending_when_tmsf_other_and_fang_mixed():
-    result = classify(community_id="c7", tmsf_property_type="其他", fang_samples=[
-        {"property_type": "住宅"}, {"property_type": "写字楼"}
-    ], name="7")
-    assert result["state"] == RESIDENTIAL_STATE_PENDING
-
-
-def test_classify_directory_reports_conflicts_and_summary():
+def test_classify_directory_reports_summary_without_fang_evidence():
     communities = [
         {"community_id": "1", "community_name": "A"},
         {"community_id": "2", "community_name": "B"},
         {"community_id": "3", "community_name": "C"},
-        {"community_id": "4", "community_name": "D"},
     ]
     property_types = {
         "1": {"property_type": "住宅"},
         "2": {"property_type": "写字楼"},
         "3": {"property_type": "其他"},
-        "4": {"property_type": "其他"},
     }
-    fang_samples = {
-        "1": [{"property_type": "写字楼"}],
-        "2": [{"property_type": "住宅"}],
-        "3": [{"property_type": "住宅"}, {"property_type": "写字楼"}],
-        "4": [],
-    }
-    report = classify_directory(communities=communities, property_types=property_types, fang_samples_by_community=fang_samples)
+    report = classify_directory(communities=communities, property_types=property_types)
     summary = report["summary"]
-    assert summary["total"] == 4
-    assert summary["residential"] == 0
-    assert summary["non_residential"] == 0
-    assert summary["pending"] == 4
+    assert summary["total"] == 3
+    assert summary["residential"] == 1
+    assert summary["non_residential"] == 1
+    assert summary["pending"] == 1
     assert summary["unknown"] == 0
-    assert len(report["conflicts"]) == 3
-    kinds = {c["kind"] for c in report["conflicts"]}
-    assert kinds == {
-        "fang_non_residential_overrides_tmsf_residential",
-        "fang_residential_overrides_tmsf_non_residential",
-        "fang_mixed",
+    assert {e["community_id"]: e["state"] for e in report["entries"]} == {
+        "1": RESIDENTIAL_STATE_RESIDENTIAL,
+        "2": RESIDENTIAL_STATE_NON_RESIDENTIAL,
+        "3": RESIDENTIAL_STATE_PENDING,
     }
 
 
 def test_ambiguous_and_mixed_labels_never_become_residential():
     for prop in ['住宅/写字楼', '住宅 别墅', '公寓', '其他', '住宅公寓']:
         assert classify(community_id='1', tmsf_property_type=prop)['state'] == RESIDENTIAL_STATE_PENDING
-    assert classify(community_id='1', tmsf_property_type='住宅', fang_samples=[
-        {'property_type': '住宅'}, {'property_type': '写字楼'}])['state'] == RESIDENTIAL_STATE_PENDING

@@ -67,7 +67,8 @@ def test_failed_attempt_preserves_type_but_conflict_requires_review():
     assert classify_sources([source]) == 'residential'
     assert classify_sources([{**source, 'property_type': None}]) == 'pending'
     assert classify_sources([{**source, 'property_type_conflict': True}]) == 'pending'
-    assert classify_sources([source, dict(source='fang', samples=[{'property_type': '写字楼'}])]) == 'pending'
+    # 房天下样本已退役：不再参与用途判定，冲突也不再把结论拉回待核对。
+    assert classify_sources([source, dict(source='fang', samples=[{'property_type': '写字楼'}])]) == 'residential'
 
 
 def seed(tmp_path, *, history=True):

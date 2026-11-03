@@ -34,7 +34,7 @@ test('compact source never falls back to a TMSF script and rental source omits u
   } }));
   assert.doesNotMatch(render({ source: 'tmsf', source_url: 'https://www.tmsf.com/list.js?x=1' }), /<a\s|list\.js/);
   const rental = render({ source: 'fang', market_state: 'unknown', source_url: 'https://zu.fang.com/hz/house-xm1/' });
-  assert.match(rental, /租金来源/); assert.match(rental, /查看来源/);
+  assert.match(rental, /房天下（历史）/); assert.match(rental, /历史租金来源（已退役）/); assert.match(rental, /查看来源/);
   assert.doesNotMatch(rental, /物业类型|尚未获取|新房 \/ 二手房状态未知/);
 });
 
@@ -60,6 +60,9 @@ test('source card preserves original identity, manual method and evidence', () =
   }}));
   assert.match(html, /花园一期/); assert.match(html, /123/); assert.match(html, /人工关联/); assert.match(html, /完整名称一致/);
   assert.match(html, /noopener noreferrer/);
+  // 房天下只保留只读历史标签，不再提供启用、确认或采集动作。
+  assert.match(html, /房天下（历史）/);
+  assert.doesNotMatch(html, /幸福里|确认是这个小区|开始采集|更新资料/);
 });
 test('directory links reject executable schemes and credentials', () => {
   assert.equal(safeDirectoryLink('javascript:alert(1)'), undefined);

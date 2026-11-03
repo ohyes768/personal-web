@@ -16,7 +16,9 @@ def test_prepare_once_and_business_delete(tmp_path, monkeypatch):
     store.update('100', name='人工标准名', aliases=['测试花园'], address='滨江区测试路1号')
     assert prepare_directory(tmp_path).communities()[0]['community_name'] == '人工标准名'
     assert data_loader.load_communities()[0]['community_name'] == '人工标准名'
-    assert load_verified_mappings(tmp_path / 'rental_community_mappings.json') == [('123', '100')]
+    # 房天下已退役：旧映射文件只是备份，不再是当前来源。
+    assert load_verified_mappings(tmp_path / 'rental_community_mappings.json') == []
+    assert not [s for s in store.sources() if s['source'] == 'fang']
     store.delete('100')
     assert data_loader.load_communities() == []
     assert load_verified_mappings(tmp_path / 'rental_community_mappings.json') == []

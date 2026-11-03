@@ -222,11 +222,11 @@ def protected(registry, community_id):
     return bool(row)
 
 
-def has_source(registry, community_id, *, xingfuli_only=False):
-    """True when the community already has a confirmed rental source."""
+def has_source(registry, community_id):
+    """True when the community already has a confirmed current rental source."""
     with registry.db() as db:
-        row = db.execute("SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source IN ('fang','xingfuli')"
-                         + (" AND source='xingfuli'" if xingfuli_only else ''), (community_id,)).fetchone()
+        row = db.execute("SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source='xingfuli'",
+                         (community_id,)).fetchone()
     return bool(row)
 
 

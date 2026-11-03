@@ -51,8 +51,8 @@ def _snapshot(path: Path, backup_dir: Path) -> None:
     shutil.copy2(path, backup_dir / path.name)
 
 
-def split_communities(*, communities, property_types, fang_samples_by_community=None) -> dict[str, list]:
-    report = classify_directory(communities=communities, property_types=property_types, fang_samples_by_community=fang_samples_by_community or {})
+def split_communities(*, communities, property_types) -> dict[str, list]:
+    report = classify_directory(communities=communities, property_types=property_types)
     buckets = {state: [] for state in (RESIDENTIAL_STATE_RESIDENTIAL, RESIDENTIAL_STATE_PENDING, RESIDENTIAL_STATE_NON_RESIDENTIAL)}
     index_by_id = {str(item.get("community_id") or item.get("communityid") or ""): item for item in communities}
     for entry in report["entries"]:
@@ -70,7 +70,6 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Split communities by residential classification")
     parser.add_argument("--communities", default="data/binjiang_communities.json")
     parser.add_argument("--property-types", default="data/property_types.json")
-    parser.add_argument("--fang-samples", default="data/rental_samples.json")
     parser.add_argument("--data-dir", default="data", help="Directory to write the split files")
     parser.add_argument("--backup-dir", default="data/diagnostics/pre-residential")
     args = parser.parse_args()
@@ -80,14 +79,12 @@ def main() -> int:
     if isinstance(communities, dict):
         communities = communities.get("communities", [])
     property_types = _load(Path(args.property_types)) or {}
-    fang_samples = _load(Path(args.fang_samples)) or {}
 
     backup_dir = Path(args.backup_dir)
     _snapshot(Path(args.communities), backup_dir)
     _snapshot(Path(args.property_types), backup_dir)
-    _snapshot(Path(args.fang_samples), backup_dir)
 
-    result = split_communities(communities=communities, property_types=property_types, fang_samples_by_community=fang_samples)
+    result = split_communities(communities=communities, property_types=property_types)
     summary = result["report"]["summary"]
 
     _dump(data_dir / "binjiang_residential_communities.json", result["buckets"][RESIDENTIAL_STATE_RESIDENTIAL])
@@ -96,7 +93,6 @@ def main() -> int:
     _dump(data_dir / "residential_classification.json", result["report"])
 
     print("total=" + str(summary["total"]) + " residential=" + str(summary["residential"]) + " non_residential=" + str(summary["non_residential"]) + " pending=" + str(summary["pending"]) + " unknown=" + str(summary["unknown"]))
-    print("conflicts=" + str(len(result["report"]["conflicts"])))
     return 0
 
 

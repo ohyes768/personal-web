@@ -28,8 +28,12 @@ def prepare_directory(data_dir):
         path = data_dir / name
         if path.exists() and not (backup / name).exists():
             if name.endswith('.sqlite3'):
-                with sqlite3.connect(path) as src, sqlite3.connect(backup / name) as dst:
-                    src.backup(dst)
+                try:
+                    with sqlite3.connect(path) as src, sqlite3.connect(backup / name) as dst:
+                        src.backup(dst)
+                except sqlite3.Error:
+                    # A corrupt legacy database must not block the directory; keep the raw bytes.
+                    shutil.copy2(path, backup / name)
             else:
                 shutil.copy2(path, backup / name)
     coords = read(data_dir / 'binjiang_coordinates.json', {})
@@ -63,22 +67,7 @@ def prepare_directory(data_dir):
                               'aliases': payload['aliases']}
             db.execute("INSERT OR IGNORE INTO sources(id,source,kind,sid,payload,cid,status,method) VALUES (?,'tmsf','community',?,?,?,'matched','import')",
                        ('tmsf-' + cid, cid, dump(source_payload), cid))
-        mappings = []
-        old_db = data_dir / 'rental_sources.sqlite3'
-        if old_db.exists():
-            with sqlite3.connect(old_db) as src:
-                mappings = [json.loads(r[0]) for r in src.execute('SELECT payload FROM mappings')]
-                candidates = src.execute('SELECT community_id,payload,rejected FROM candidates').fetchall()
-        else:
-            mappings = [m for m in read(data_dir / 'rental_community_mappings.json', {}).get('mappings', []) if m.get('status') == 'verified']
-            candidates = []
-        for item in mappings:
-            _import_fang(db, item, item.get('community_id'), 'matched')
-        for cid, raw, rejected in candidates:
-            item = json.loads(raw)
-            rid = _import_fang(db, item, None, 'pending')
-            if rejected:
-                db.execute('INSERT OR IGNORE INTO rejected VALUES (?,?)', (rid, cid))
+        # 房天下已退役：旧租金映射/候选库不再导入，只保留文件备份。
         auctions = read(data_dir / 'auction_records.json', {}).get('records', [])
         explicit = {}
         for m in read(data_dir / 'auction_community_mappings.json', {}).get('mappings', []):
@@ -102,17 +91,6 @@ def prepare_directory(data_dir):
     from src.services.community_admission import migrate_admission
     migrate_admission(store, data_dir)
     return store
-
-
-def _import_fang(db, item, cid, status):
-    sid = str(item['source_community_id'])
-    rid = 'fang-' + sid
-    payload = {'name': item['source_name'], 'address': item.get('source_address'), 'district': '滨江',
-               'associated_at': item.get('verified_at'),
-               'source_url': item.get('source_url') or f'https://zu.fang.com/hz/house-xm{sid}/'}
-    db.execute("INSERT OR IGNORE INTO sources(id,source,kind,sid,payload,cid,status,method) VALUES (?,'fang','community',?,?,?,?,?)",
-               (rid, sid, dump(payload), cid, status, 'manual' if cid else None))
-    return rid
 
 
 def mark_legacy_addresses(store, data_dir):

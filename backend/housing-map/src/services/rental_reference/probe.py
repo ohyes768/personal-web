@@ -14,7 +14,7 @@ import uuid
 
 from src.services.xingfuli_transport import DEFAULT_XINGFULI_DELAY
 from src.services.community_registry import dump, now
-from src.services.fang_rentals import RentalCrawlCancelled
+from src.services.rental_reference.crawl_types import RentalCrawlCancelled
 from src.services.rental_reference.xingfuli_sources import (
     bind_source,
     candidate_from_homepage,
@@ -111,7 +111,7 @@ class ProbeService:
     """Single-slot background probe of one community's Xingfuli source."""
 
     def __init__(self, registry, *, directory=None, delay=DEFAULT_XINGFULI_DELAY, timeout=20, budget=DEFAULT_BUDGET,
-                 discovery_factory=None, busy=None, task_lock=None, xingfuli_only=False):
+                 discovery_factory=None, busy=None, task_lock=None):
         self.registry = registry
         self.directory = directory
         self.delay = delay
@@ -123,7 +123,6 @@ class ProbeService:
         self._mutex = task_lock if task_lock is not None else threading.RLock()
         self._automatic = False
         self._require_strong = False
-        self._xingfuli_only = xingfuli_only
         self._cancel = threading.Event()
         self._thread: threading.Thread | None = None
         self._job_id: str | None = None
@@ -262,12 +261,10 @@ class ProbeService:
         if not community:
             raise ProbeInvalid('小区已删除或不是有效滨江住宅，请刷新')
         # A community that already has a source keeps it; the probe never
-        # replaces an existing Fang or Xingfuli association.
+        # replaces an existing association.
         from src.services.rental_reference.xingfuli_sources import active_source
         try:
             existing = active_source(self.registry, community_id)
-            if self._xingfuli_only and existing and existing.get('source') == 'fang':
-                existing = None
         except ValueError:
             existing = True
         if existing:
@@ -471,7 +468,7 @@ class ProbeService:
         from src.services.rental_reference.xingfuli_sources import has_source
         # The decision must still hold at write time: another tab may have
         # unbound, rejected or re-bound the community meanwhile.
-        if has_source(self.registry, community_id, xingfuli_only=self._xingfuli_only):
+        if has_source(self.registry, community_id):
             write_state(self.registry, community_id, stage=STAGE_FAILED,
                         message='小区已有租金来源，请刷新后重试')
             return

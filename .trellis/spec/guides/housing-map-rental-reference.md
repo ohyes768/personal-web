@@ -1,57 +1,56 @@
 # Housing-Map 租金参考与租售比契约
 
-> 任务的实现层契约（上游采集见 [housing-map-fang-rentals.md](./housing-map-fang-rentals.md)，
+> 任务的实现层契约（上游采集见 [幸福里采集契约](../backend/housing-map/backend/xingfuli-rentals.md)，
 > 后台任务/发布模式同源见 [housing-map-auctions.md](./housing-map-auctions.md)）。
 > 改租金统计口径、映射台账、刷新任务或看板租金列前必读。
+
+> 2026-11-03：房天下退役，幸福里是唯一当前租金来源，社区台账（`community_registry.sqlite3`）是唯一关联权威。
+> 旧映射台账 `rental_sources.sqlite3` 与 `rental_community_mappings.json` 不再读取、不再迁移、也不再作为容器种子分发；
+> 历史房天下关联与快照只读保留，不参与当前来源选择、租金统计与用途判定。缺 provider 的旧快照不能当幸福里复用。
 
 ## 1. Scope / Trigger
 
 - 触发：修改 `src/services/rental_reference/*`（statistics/storage/refresh）、`src/api/rental_routes.py`、前端 `rental-*`/`use-rental-*`、看板租金三列。
-- 数据流：fang 租金样本 → 映射台账归并 → rental_reference 统计/存储 → 6 条 API → 详情标签 + 看板三列。
+- 数据流：幸福里租金样本 → 社区台账归并 → rental_reference 统计/存储 → 6 条 API → 详情标签 + 看板三列。
 
 ## 2. Signatures
 
 ```python
 # storage.py（原子发布；路径全部参数化，生产默认 data/rentals/）
-publish_run(rentals_dir, batches, *, run_id=None, report=None, cancel_event=None) -> PublishResult
+publish_run(rentals_dir, batches, *, run_id=None, report=None, cancel_event=None,
+            preserved_sources=None) -> PublishResult
     # PublishResult: published, run_id, reason('all_failed'|'cancelled'|None),
     #                adopted / carried_over / absent: tuple[str, ...]
+    # preserved_sources: {community_id: ('xingfuli', source_community_id)}；旧字符串身份抛 ValueError
 load_current(rentals_dir) -> dict | None   # {run_id, published_at, communities{...}, degraded} 或 None
 RentalPublishLock   # OS 文件锁 rentals_dir/rental_publish.lock；锁文件保留不删，OS 释放
 
 # refresh.py（后台任务；线程内生命周期自管理，FastAPI 侧 asyncio.to_thread 包装）
-RentalRefreshService(rentals_dir, mappings_path, *, fetch_factory=FangClient,
+RentalRefreshService(rentals_dir, mappings_path, *, xingfuli_factory=XingfuliClient,
                      max_pages=10, delay=None, timeout=20.0, details=True, reuse_hours=6, max_errors_kept=20)
-    .start() -> dict   # RefreshAlreadyRunning→409 / NoVerifiedMappings→422 / MappingFileError→503
+    .start(mode='all'|'continue') -> dict   # RefreshAlreadyRunning→409 / NoVerifiedMappings→422
     .cancel() -> dict  # RefreshNotRunning→409；cancelling 直到线程退出→cancelled
     .status() -> dict / .shutdown(timeout=30) -> bool
-load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 source='fang' 且 status='verified'
+load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 社区台账里的当前幸福里来源
 ```
 
 ## 3. Contracts
 
 ### Incremental collection and cooling (2026-10-18)
-- Existing eligible matched Fang sources are collected before bounded discovery (5 searches per round). New associations are eligible for the next round, counted in new_sources_deferred; do not silently claim they were crawled this round.
+- The refresh collects the eligible communities that already have a current Xingfuli source. The retired Fang discovery is gone and the optional Xingfuli auto-discovery is off by default, so the refresh itself does not search the platform: a community without a source is handled by the separate matching/probe flow (see [Xingfuli discovery](../backend/housing-map/backend/xingfuli-discovery.md)), and the refresh answers 422 telling the user to match first.
 - Only complete/empty_ok snapshots captured less than 6 hours ago and matching the current source may be reused. Do not use failed/truncated/partial-detail results as cache entries. All-cache rounds keep the current pointer and last_success_at unchanged.
-- Mixed publication passes an explicit preserved_sources mapping to publish_run; under the publish lock it preserves only matching prior source entries and their original captured_at. Failed sources may carry old samples only when source IDs match. Never restore removed/rebound sources by copying the entire old snapshot.
+- Mixed publication passes an explicit preserved_sources mapping to publish_run; under the publish lock it preserves only matching prior source entries and their original captured_at. The identity must be the explicit pair `('xingfuli', source_community_id)`; the legacy bare-string form is refused with ValueError before the current pointer can move. Failed sources may carry old samples only when source IDs match. Never restore removed/rebound sources by copying the entire old snapshot.
 - Job/API optional diagnostics are request_count (actual HTTP hops including retries), detail_cache_hits, reused_communities, deferred_count (unattempted crawl targets), cooldown_until (UTC ISO string or null), new_sources_deferred. Missing legacy fields default to zero/null. Cache reuse is not a new crawl success; pending/deferred targets keep the external result partial_failed.
 - Both header controls and management collection dialog show the shared diagnostic formatter. Cooldown is enforced at the backend across entry points, even when users repeat the start action.
 
-### 3.1 关联数据库与旧台账（踩过坑）
+### 3.1 关联权威：社区台账（2026-11-03）
 
-运行时关联以 `data/rental_sources.sqlite3` 为准，JSON 仅一次性迁移；页面确认/改绑/解除契约见 [租金来源管理](../backend/housing-map/backend/rental-sources.md)。旧数据卷缺 JSON 时从镜像 seed 导入，不能每次启动覆盖用户关联。
+运行时关联以社区台账 `data/community_registry.sqlite3` 为准，来源只认幸福里（`providers.CURRENT_RENTAL_PROVIDER`）；页面确认/改绑/解除契约见 [租金来源管理](../backend/housing-map/backend/rental-sources.md)。
 
-旧 JSON 格式：
+> **历史坑（2026-10-12）**：旧实现用 `data/rental_sources.sqlite3` 作权威、JSON 仅一次性迁移，且 JSON 顶层必须有 `"version": 1`，否则 `load_verified_mappings` 判结构损坏 → summary/detail 503、POST refresh 503。该台账与 JSON 种子已随房天下退役删除，不再读取、不再迁移、不再分发；旧文件即使残留在数据目录也不会被导入。
 
-```json
-{ "version": 1, "mappings": [ { "source": "fang", "source_community_id": "...",
-  "community_id": "...", "source_name": "...", "source_address": "...|null",
-  "verified_at": "...", "status": "verified", "notes": "证据摘要+来源URL" } ] }
-```
-
-> **Warning**: 顶层**必须**有 `"version": 1`，否则 `load_verified_mappings` 判结构损坏 →
-> summary/detail 503、POST refresh 503。2026-10-12 联调真实踩过（核验代理只写了
-> `mappings` 键）。手工编辑台账后先跑 `load_verified_mappings` 验证。
+- 没有社区台账就没有来源：来源管理返回 503，采集没有可采集计划，summary/detail 一律 `unmapped`，不伪装成空数据也不回退历史房天下样本。
+- 台账损坏是服务端数据错误（503），与「未映射」（200 + availability）严格区分。
 
 ### 3.2 API（对外路径经 nginx `/api/map/*` 剥前缀 → `/api/*`，无新增 nginx 规则）
 
@@ -60,7 +59,7 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 | GET | `/api/rentals/summary?area_band&bedrooms` | `{success,data:{area_band,bedrooms,summaries:[670条]}}` |
 | GET | `/api/communities/{id}/rentals?area_band&bedrooms&view=valid\|excluded&page&page_size` | 分组汇总+明细分页；未知 ID 404，未映射 200+availability |
 | GET | `/api/rentals/refresh` | 无任务 `data:null`；否则对外 job |
-| POST | `/api/rentals/refresh` | 202 / 409 已运行 / 422 无映射 / 503 台账损坏；**无任何 URL 参数**，限制是服务配置 |
+| POST | `/api/rentals/refresh` | 202 / 409 已运行 / 422 没有当前幸福里来源；**无任何 URL 参数**，限制是服务配置 |
 | DELETE | `/api/rentals/refresh` | 触发取消；无活动任务 409 |
 
 - 枚举（前后端已互锁，勿单方改）：`area_band: all|lt90|90to144|gte144`；`bedrooms: all|1|2|3|4plus`。
@@ -70,7 +69,7 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 
 ### 3.3 availability 判定优先级（顺序敏感）
 
-1. 台账无 verified 映射 → `unmapped`
+1. 台账没有当前幸福里来源 → `unmapped`
 2. 发布版本无该小区：最近刷新 failed → `source_failed`，否则 `no_samples`
 3. 快照 >30 天 → `stale`（yield 强制 null，明细照常）
 4. 口径内有效样本 0 → `no_samples`；<3 → `insufficient_samples`
@@ -93,7 +92,7 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 - `MAX_SAMPLES = 10`（`xingfuli_rentals.py`）：按**统一 `select_valid` 过滤后的有效数**计配额，**不能对原始列表直接切 10 条**。合租/疑似隔断/缺失正值/无效户型/相同ID/疑似重复都不占配额，依返回顺序补位，无额外面积门槛。
 - 满 10 → `status='complete'`、**不再发分页请求**；本页配额后的非重复行仍留诊断，带 `outside_sampling_quota` 旗标，统计侧排除该旗标。
 - 真实耗尽不足 10 记 `complete`（保留实际数）；翻满 `max_pages`（10 页）仍记 `truncated`。
-- 快照 `quality.sampling = {mode:'list_api', quota:10, qualified:<select_valid 数量>, sampled:<实际检查的非重复行数>}`。**详情计数保持 0，不伪造 `detail_success`**；仅幸福里批次有，房天下批次 quality 不变。
+- 快照 `quality.sampling = {mode:'list_api', quota:10, qualified:<select_valid 数量>, sampled:<实际检查的非重复行数>}`。**详情计数保持 0，不伪造 `detail_success`**。
 - API `GET /communities/{id}/rentals` 响应透传可选 `sampling`。前端按 `mode` 分支显示说明：`list_api` → "列表抽样：最多 N 套整租，未经逐套详情核验"；旧快照（`sampling` 无 `mode`）保留原详情核验文案。看板/目录"有效样本数"列含义不变。
 - **列表证据准入**：`statistics.py` 的 `_exclusion_reason` 只允许 `source=xingfuli` + `verification_method=xingfuli_list_api_v1` + `property_type_origin=community_directory` + 住宅类型 + 有效户型的列表样本在 `detail_fetched=false` 时参与统计；其他无详情核验样本仍为 `detail_not_verified`。
 - 防线未削弱：逐行 `neighborhood_id` 校验拒发、seen 去重、末页重复/分页不推进拒发、空列表无归属证据即 `list_failed`（不伪造 `empty_ok`）、冷却熔断中止、取消检查，全部保留。
@@ -102,6 +101,7 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 
 - 每小区 status ∈ {complete, empty_ok} 才采用新数据；truncated/partial_detail/list_failed → 保留旧样本与原 captured_at（`origin='carried_over'`），无历史则 absent。
 - 幸福里抽样下"凑满配额"与"真实耗尽"都记 `complete`，与全量抓取同义（见 §3.5）。
+- 保留旧数据的身份必须是显式 `('xingfuli', source_community_id)`；旧的裸字符串身份（曾代表房天下）在切换指针前抛 ValueError，指针保持不变。
 - 全部失败 / 取消任何阶段 → **不切指针**；已写一半批次目录留在盘上供诊断。
 - `current.json` 指针原子切换（tmp+os.replace）；损坏/悬空指针 → `load_current` 返回 None 不抛。
 - job 状态持久化 `rentals/refresh_job.json`，进程重启：running→interrupted（仅本进程无线程时）；锁 sidecar 永不按年龄删除（防误杀存活 CLI 发布者）。
@@ -110,10 +110,11 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 
 | 条件 | 结果 |
 |---|---|
-| 台账缺 version / 结构非法 | 503（summary/detail/POST） |
-| 台账不存在 | 422（POST）；summary/detail 全部 unmapped |
+| 社区台账不存在 | 422（POST refresh）；summary/detail 全部 unmapped；来源管理 503 |
+| 社区台账损坏 / 不可读 | 503（summary/detail/POST） |
+| 旧房天下映射文件或映射库存在 | 忽略，不导入、不读取、不影响当前结果 |
 | 未知 community_id（不在小区表） | 404 |
-| 已映射但从未采集成功 | 200 + source_failed |
+| 已关联但从未采集成功 | 200 + source_failed |
 | 样本 <3 的组 | rent_reference 全 null，仅明细 |
 | 非法 area_band/bedrooms | 422（Literal 校验） |
 | 重复 POST / 无任务 DELETE | 409 |
@@ -122,25 +123,28 @@ load_verified_mappings(path) -> list[tuple[source_id, community_id]]  # 仅 sour
 
 - Good：3 小区采集成功 → adopted 全量、看板风雅钱塘 61.8 元/㎡/月 + 2.12%参考 + n=3。
 - Base：部分小区截断 → 混合发布（成功新数据+失败沿用旧版）、刷新按钮显示"成功 X / 失败 Y"。
-- Bad（禁止）：为凑样本把合租/疑似分割计入；用 0 代替缺失；口径间混排收益率。
+- Bad（禁止）：为凑样本把合租/疑似分割计入；用 0 代替缺失；口径间混排收益率；把历史房天下快照当成当前幸福里数据展示。
 
 ## 6. Tests Required
 
-后端 261 passed（`--basetemp` 项目盘）：统计 26（单位换算/分组边界 89.9/90/143.9/144/合并≠均值/P25P75 插值/不足3/缺售价/过期30d）、采集 run 15（五态/取消唤醒/进度）、存储 15（原子指针/全失败/混合/空页/取消竞争/损坏容错/锁互斥）、refresh 19（互斥/取消/持久化/重启恢复/CLI 锁冲突）、API 44（availability 全形状/phase 全枚举/域白名单/NaN 序列化）。前端 26 passed（node:test + renderToStaticMarkup；排序缺失沉底、终态判定、链接域）。改任一层必须全量回归。
+后端 261 passed（`--basetemp` 项目盘）：统计 26（单位换算/分组边界 89.9/90/143.9/144/合并≠均值/P25P75 插值/不足3/缺售价/过期30d）、采集 run 15（五态/取消唤醒/进度）、存储 15（原子指针/全失败/混合/空页/取消竞争/损坏容错/锁互斥）、refresh 19（互斥/取消/持久化/重启恢复/CLI 锁冲突）、API 44（availability 全形状/phase 全枚举/域白名单/NaN 序列化）。前端 26 passed（node:test + renderToStaticMarkup；排序缺失沉底、终态判定、链接域）。改任一层必须全量回归。房天下退役后新增回归：provider 隔离（缺 provider 的旧快照不命中、跨平台同 ID 不复用）、`preserved_sources` 旧字符串身份被拒且指针不变、无台账时的 422/503 语义、历史样本不被回退为当前数据。
 
 ## 7. Wrong vs Correct
 
 ### Wrong
 ```python
-# 手工维护台账只写 mappings，缺 version → 全站租金接口 503
+# 手工维护旧映射台账，只写 mappings 缺 version → 全站租金接口 503
 { "mappings": [...] }
 # 排序把缺失当 0：0 租金小区混进收益排名
 value = summary.annualized_gross_yield_pct ?? 0
+# 快照缺 provider 也当幸福里复用
+entry = next(e for e in current['communities'].values() if e['source_community_id'] == sid)
 ```
 
 ### Correct
 ```python
-{ "version": 1, "mappings": [...] }          # 结构校验通过
+# 来源身份必须显式：provider 与来源 ID 同时相同才命中
+same_source(entry, 'xingfuli', sid)           # 缺 provider 的旧快照返回 False
 # 前端：缺失 null → 显示 '—' 且排序永远沉底（升降序一致）
 compareNumericMissingLast(a, b, order)       # null 一律 > 任何数值
 ```
@@ -157,7 +161,7 @@ compareNumericMissingLast(a, b, order)       # null 一律 > 任何数值
    `bedrooms_filter: '4plus'`；前端如需"4居及以上"文案用后者渲染。
 
 ### Unified source check before web refresh (2026-10-14)
-The directory-backed web flow now includes source checking/discovery before crawling. It retains the existing phase enum and adds `stage` plus optional `association` counts. No mappings is not a 422 when a directory is available: checking can finish with review tasks without publishing any data. Discovery/review cannot change asking-rent statistics or make stale/rebound snapshots valid. The legacy standalone mapping-only caller retains its no-mappings error.
+The directory-backed web flow once ran source checking/discovery before crawling, with an extra `stage` and optional `association` counts on the phase enum. Since the Fang retirement (2026-11-03) the refresh no longer runs the retired Fang discovery: it collects the communities that already have a current Xingfuli source, and a community without a source is answered 422 so the user can run the separate matching/probe flow. Discovery/review never changes asking-rent statistics and never makes stale/rebound snapshots valid.
 
 
 ## 幸福里列表证据兼容（2026-10-29）

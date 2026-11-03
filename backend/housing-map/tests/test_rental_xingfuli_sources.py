@@ -178,8 +178,9 @@ def test_a_far_away_match_is_not_bound(tmp_path):
 
 def test_a_community_with_a_source_is_left_alone(tmp_path):
     registry = setup(tmp_path)
-    registry.ingest(dict(source='fang', source_id='f1', name='测试花园', district='滨江',
-                         address='测试路1号'))
+    source = registry.ingest(dict(source='xingfuli', source_id='s1', name='测试花园', district='滨江',
+                                  address='测试路1号', seed_listing_id=SEED))
+    registry.associate(source['id'], 'c1')
     fake = FakeDiscovery(search={}, homepages={})
     report = auto_discover(registry, fake, registry.communities())
     assert report['checked'] == 0 and fake.calls == []
@@ -229,15 +230,21 @@ def test_evaluate_reports_the_gaps_of_a_weak_candidate():
     assert not judgement['conflicts']
 
 
-def test_the_refresh_run_binds_a_proven_source(tmp_path):
-    from src.services.rental_reference.refresh import RentalRefreshService
-    registry = setup(tmp_path)
-    fake = FakeDiscovery(
-        search={('测试花园', 'second_hand'): {TOTAL_ID: ('测试花园', [SEED])}},
-        homepages={TOTAL_ID: homepage()}, owners={SEED: TOTAL_ID}, lists={SEED: TOTAL_ID})
-    service = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
-                                   delay=0, auto_discover=True,
-                                   discovery_factory=lambda **kwargs: fake)
+def test_the_matching_run_binds_a_proven_source(tmp_path):
+    """绑定来源属于独立的匹配流程，不再由采集任务触发。"""
+    from src.services.rental_reference.matching import SourceMatchingService
+    from tests.test_rental_probe import FakeDiscovery as ProbeDiscovery
+    from tests.test_rental_probe import homepage as probe_homepage
+    from tests.test_rental_probe import setup as probe_setup
+    from tests.test_rental_probe import SEED as PROBE_SEED
+    from tests.test_rental_probe import TOTAL_ID as PROBE_TOTAL_ID
+    registry = probe_setup(tmp_path)
+    fake = ProbeDiscovery(
+        search={('测试花园', 'second_hand'): {PROBE_TOTAL_ID: ('测试花园', [PROBE_SEED])}},
+        homepages={PROBE_TOTAL_ID: probe_homepage()},
+        owners={PROBE_SEED: PROBE_TOTAL_ID}, lists={PROBE_SEED: PROBE_TOTAL_ID})
+    service = SourceMatchingService(registry, directory=tmp_path / 'rentals',
+                                    discovery_factory=lambda **kwargs: fake, delay=0)
     service.start()
     service._thread.join(5)
     assert not service.status()['running']
@@ -245,13 +252,14 @@ def test_the_refresh_run_binds_a_proven_source(tmp_path):
     assert source['status'] == 'matched' and source['community_id'] == 'c1'
 
 
-def test_the_refresh_run_stays_offline_without_the_switch(tmp_path):
-    from src.services.rental_reference.refresh import RentalRefreshService
+def test_the_refresh_run_never_discovers_sources(tmp_path):
+    """采集任务只认台账里的来源，不发起平台搜索。"""
+    from src.services.rental_reference.refresh import NoVerifiedMappings, RentalRefreshService
     registry = setup(tmp_path)
     fake = FakeDiscovery(search={}, homepages={})
     service = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
                                    delay=0, discovery_factory=lambda **kwargs: fake)
-    service.start()
-    service._thread.join(5)
+    with pytest.raises(NoVerifiedMappings):
+        service.start()
     assert fake.calls == []
     assert not any(s['source'] == 'xingfuli' for s in registry.sources())

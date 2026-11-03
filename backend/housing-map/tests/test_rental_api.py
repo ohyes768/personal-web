@@ -2,6 +2,8 @@
 
 契约来源：apps/housing-map/src/lib/rental-types.ts 与任务 design.md
 "Query API" / "Web refresh"；响应形状以探针验证的真实行为为准。
+
+房天下已退役：台账（社区 registry）是唯一来源，样本与链接只认幸福里。
 """
 import asyncio
 import datetime as dt
@@ -13,6 +15,8 @@ from fastapi.testclient import TestClient
 
 import src.api.rental_routes as rental_routes
 from src.api.rental_routes import _external_job, _external_phase, _last_refresh_of
+from src.services.community_registry import CommunityRegistry
+from src.services.directory_policy import KEY, VERSION
 from src.services.rental_reference.refresh import (
     RefreshAlreadyRunning,
     RefreshNotRunning,
@@ -24,6 +28,10 @@ CID_UNVERIFIED = '20044031'
 CID_UNMAPPED = '90000001'
 CID_UNKNOWN = '88888888'
 SRC_ID = '2010067741'
+SRC_ID_2 = '2010356262'
+SEED = '7502229388495274018'
+SEED_2 = '7694922441520431153'
+XINGFULI_LIST = f'https://m.xflapp.com/zufang/neighbor-house-list/hz-{SEED}.html'
 
 COMMUNITIES = [
     {'community_id': CID_MAPPED, 'community_name': '风雅钱塘世纪花园'},
@@ -62,12 +70,12 @@ def now_iso(days=0):
 
 def smp(lid, rent=9000.0, area=100.0, layout='3室2厅', mode='whole', prop='住宅',
         detail=True, floor='5', captured=None, url=None):
-    """与采集输出同形的样本；A/B/C 三个默认样本 = unit rent 90/75/100。"""
+    """与采集输出同形的样本；默认三条样本的每平米租金为 90/75/100。"""
     return {
-        'source': 'fang',
+        'source': 'xingfuli',
         'source_listing_id': lid,
         'source_url': url if url is not None
-        else f'https://zu.fang.com/hz/chuzu/3_{lid}_1.htm',
+        else f'https://m.xflapp.com/zufang/hz-{lid}.html',
         'source_community_id': SRC_ID,
         'community_name': '风雅钱塘世纪花园',
         'title': f'出租{lid}',
@@ -84,11 +92,11 @@ def smp(lid, rent=9000.0, area=100.0, layout='3室2厅', mode='whole', prop='住
 
 
 def valid3():
-    return [smp('A', 9000.0, 100.0), smp('B', 7500.0, 100.0), smp('C', 12000.0, 120.0)]
+    return [smp('101', 9000.0, 100.0), smp('102', 7500.0, 100.0), smp('103', 12000.0, 120.0)]
 
 
 def entry(cid, samples, captured=None, src=SRC_ID, quality=None):
-    return {'community_id': cid, 'source': 'fang', 'source_community_id': src,
+    return {'community_id': cid, 'source': 'xingfuli', 'source_community_id': src,
             'captured_at': captured or now_iso(), 'samples': samples,
             'quality': quality or {}, 'status': 'complete'}
 
@@ -104,15 +112,6 @@ def publish(rentals_dir, communities, run_id='run-1'):
     (rentals_dir / 'current.json').write_text(json.dumps({
         'version': 1, 'run_id': run_id, 'published_at': published_at}),
         encoding='utf-8')
-
-
-def write_maps(path, entries):
-    path.write_text(json.dumps({'version': 1, 'mappings': entries}), encoding='utf-8')
-
-
-def mp(src, cid, status='verified'):
-    return {'source': 'fang', 'source_community_id': src, 'community_id': cid,
-            'source_name': 'x', 'source_address': None, 'status': status}
 
 
 def job(**over):
@@ -177,17 +176,32 @@ _app.include_router(rental_routes.router)
 client = TestClient(_app)
 
 
+def ledger(api_env):
+    return CommunityRegistry(api_env.parent / 'community_registry.sqlite3')
+
+
 @pytest.fixture()
 def api_env(tmp_path, monkeypatch):
-    """隔离环境：tmp rentals 目录 + verified/unverified 台账 + 空售价 + 无任务。"""
+    """隔离环境：tmp rentals 目录 + 台账（两个已关联来源）+ 空售价 + 无任务。"""
     rentals_dir = tmp_path / 'rentals'
     rentals_dir.mkdir()
     mappings_path = tmp_path / 'rental_community_mappings.json'
-    write_maps(mappings_path, [
-        mp(SRC_ID, CID_MAPPED),
-        mp('2010356262', CID_MAPPED_2),
-        mp('2011095896', CID_UNVERIFIED, status='unverified'),
-    ])
+    registry = CommunityRegistry(tmp_path / 'community_registry.sqlite3')
+    for cid, name in [(CID_MAPPED, '风雅钱塘世纪花园'), (CID_MAPPED_2, '欣盛东方郡'),
+                      (CID_UNVERIFIED, '万科璞悦湾'), (CID_UNMAPPED, '无映射小区')]:
+        community = registry.create(name, district='滨江', address='测试路1号', community_id=cid)
+        record = registry.ingest(dict(source='tmsf', source_id=cid, name=name, district='滨江',
+                                      address='测试路1号', property_type='住宅',
+                                      market_state='second_hand', listing_count=3))
+        registry.associate(record['id'], community['community_id'])
+    for cid, sid, seed in [(CID_MAPPED, SRC_ID, SEED), (CID_MAPPED_2, SRC_ID_2, SEED_2)]:
+        record = registry.ingest(dict(source='xingfuli', source_id=sid, name='风雅钱塘世纪花园',
+                                      district='滨江', address='测试路1号', seed_listing_id=seed,
+                                      auto_association_disabled=True,
+                                      source_url=f'https://m.xflapp.com/zufang/neighbor-house-list/hz-{seed}.html'))
+        registry.associate(record['id'], cid)
+    with registry.db() as db:
+        db.execute('INSERT OR REPLACE INTO meta VALUES (?,?)', (KEY, VERSION))
     monkeypatch.setattr(rental_routes, '_rentals_dir', rentals_dir)
     monkeypatch.setattr(rental_routes, '_mappings_path', mappings_path)
     monkeypatch.setattr(rental_routes, '_service', None)
@@ -248,7 +262,7 @@ def test_summary_signed_basis_yield(api_env, monkeypatch):
 def test_summary_unmapped_and_unverified(api_env):
     rows = summaries()
     assert rows[CID_UNMAPPED]['availability'] == 'unmapped'
-    # 未核验台账条目不能当映射用（未核验不发布关联）
+    # 未关联来源的小区不能当映射用
     assert rows[CID_UNVERIFIED]['availability'] == 'unmapped'
     assert rows[CID_UNMAPPED]['sample_count'] == 0
     assert rows[CID_UNMAPPED]['unit_rent_yuan_m2_month'] is None
@@ -311,9 +325,9 @@ def test_summary_available_with_failed_refresh_coexist(api_env, monkeypatch):
 
 
 def test_summary_all_band_4plus_scope(api_env):
-    samples = [smp('D', 4000.0, 80.0, layout='4室2厅'),
-               smp('E', 6000.0, 100.0, layout='5室1厅'),
-               smp('F', 8000.0, 120.0, layout='4室2厅')]
+    samples = [smp('201', 4000.0, 80.0, layout='4室2厅'),
+               smp('202', 6000.0, 100.0, layout='5室1厅'),
+               smp('203', 8000.0, 120.0, layout='4室2厅')]
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples)})
     row = summaries({'area_band': 'all', 'bedrooms': '4plus'})[CID_MAPPED]
     assert row['availability'] == 'available'
@@ -321,10 +335,8 @@ def test_summary_all_band_4plus_scope(api_env):
     assert row['unit_rent_yuan_m2_month'] == pytest.approx(60.0)  # 50/60/66.7 中位
 
 
-def test_summary_corrupt_mapping_file_503(api_env, monkeypatch):
-    broken = api_env.parent / 'broken-summary.json'
-    monkeypatch.setattr(rental_routes, '_mappings_path', broken)
-    broken.write_text('{not json', encoding='utf-8')
+def test_summary_corrupt_registry_503(api_env, monkeypatch):
+    (api_env.parent / 'community_registry.sqlite3').write_text('not a database', encoding='utf-8')
     assert client.get('/rentals/summary').status_code == 503
 
 
@@ -371,7 +383,7 @@ def test_detail_groups_structure_and_numbers(api_env):
     assert rent['sample_count'] == 3
     assert data['groups'][0]['sale_reference'] is None
     assert data['groups'][0]['yield_estimate'] is None
-    assert data['source_links'] == [f'https://zu.fang.com/hz/house-xm{SRC_ID}/']
+    assert data['source_links'] == [XINGFULI_LIST]
 
 
 def test_detail_sampling_marker_passed_through(api_env):
@@ -431,7 +443,7 @@ def test_detail_matches_summary_numbers(api_env, monkeypatch):
 
 def test_detail_pagination_server_side(api_env):
     # 属性各不相同（相同 居/面积/租金/楼层 会被"疑似重复"正确排除）
-    samples = [smp(f'L{i:02d}', rent=5000.0 + i * 111.0) for i in range(11)]
+    samples = [smp(f'{400 + i:03d}', rent=5000.0 + i * 111.0) for i in range(11)]
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples)})
     page1 = detail(CID_MAPPED, {'page': 1, 'page_size': 10})
     page2 = detail(CID_MAPPED, {'page': 2, 'page_size': 10})
@@ -446,8 +458,8 @@ def test_detail_pagination_server_side(api_env):
 
 def test_detail_excluded_view_reasons(api_env):
     samples = valid3() + [
-        smp('S1', mode='shared'),   # rental_mode=shared → quality_flags 自动无关
-        smp('S2', detail=False),    # 详情未核验
+        smp('301', mode='shared'),   # rental_mode=shared → quality_flags 自动无关
+        smp('302', detail=False),    # 详情未核验
     ]
     samples[-2]['quality_flags'] = ['shared_rental']
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples)})
@@ -455,13 +467,13 @@ def test_detail_excluded_view_reasons(api_env):
     assert data['excluded_count'] == 2
     assert data['total'] == 2
     reasons = {s['source_listing_id']: s['exclude_reason'] for s in data['samples']}
-    assert reasons['S1'] == 'shared_rental'
-    assert reasons['S2'] == 'detail_not_verified'
+    assert reasons['301'] == 'shared_rental'
+    assert reasons['302'] == 'detail_not_verified'
     assert all('exclude_reason' in s for s in data['samples'])
 
 
 def test_detail_suspect_duplicate_tracked_not_counted(api_env):
-    dup = smp('A-dup', 9000.0, 100.0, layout='3室2厅', floor='5')
+    dup = smp('104', 9000.0, 100.0, layout='3室2厅', floor='5')
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, valid3() + [dup])})
     valid_view = detail(CID_MAPPED)
     assert valid_view['sample_count'] == 3  # 疑似重复不计入样本数
@@ -471,7 +483,7 @@ def test_detail_suspect_duplicate_tracked_not_counted(api_env):
 
 
 def test_detail_nan_rent_never_serialized(api_env):
-    publish(api_env, {CID_MAPPED: entry(CID_MAPPED, [smp('NAN1', rent=float('nan'))])})
+    publish(api_env, {CID_MAPPED: entry(CID_MAPPED, [smp('901', rent=float('nan'))])})
     data = detail(CID_MAPPED, {'view': 'excluded'})
     assert data['samples'][0]['exclude_reason'] == 'non_positive_value'
     assert data['samples'][0]['month_rent_yuan'] is None
@@ -493,16 +505,18 @@ def test_detail_infinite_price_nulls_yield(api_env, monkeypatch):
 
 def test_detail_source_url_domain_whitelist(api_env):
     samples = valid3() + [
-        smp('BAD1', rent=8800.0, url='http://zu.fang.com/hz/chuzu/3_BAD1_1.htm'),
-        smp('BAD2', rent=8900.0, url='https://evil.example.com/hz/chuzu/3_BAD2_1.htm'),
+        smp('801', rent=8800.0, url='http://m.xflapp.com/zufang/hz-801.html'),
+        smp('802', rent=8900.0, url='https://evil.example.com/zufang/hz-802.html'),
+        smp('803', rent=8950.0, url='https://zu.fang.com/hz/chuzu/3_803_1.htm'),
     ]
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples)})
     data = detail(CID_MAPPED, {'area_band': '90to144'})
     rows = {s['source_listing_id']: s for s in data['samples']}
-    assert rows['A']['source_url'].startswith('https://zu.fang.com/')
-    assert rows['BAD1']['source_url'] is None  # 非 https
-    assert rows['BAD2']['source_url'] is None  # 外域
-    assert all(link.startswith('https://zu.fang.com/') for link in data['source_links'])
+    assert rows['101']['source_url'].startswith('https://m.xflapp.com/')
+    assert rows['801']['source_url'] is None  # 非 https
+    assert rows['802']['source_url'] is None  # 外域
+    assert rows['803']['source_url'] is None  # 已退役的房天下链接
+    assert all(link.startswith('https://m.xflapp.com/') for link in data['source_links'])
 
 
 def test_xingfuli_links_are_exact_host_and_hangzhou_only():
@@ -510,7 +524,9 @@ def test_xingfuli_links_are_exact_host_and_hangzhou_only():
     assert rental_routes._safe_source_url(safe) == safe
     for bad in ['https://m.xflapp.com.evil/zufang/hz-1.html',
                 'https://user@m.xflapp.com/zufang/hz-1.html',
-                'https://m.xflapp.com/zufang/bj-1.html']:
+                'https://m.xflapp.com/zufang/bj-1.html',
+                'https://zu.fang.com/hz/house-xm123/',
+                'https://hz.zu.fang.com/hz/house-xm123/']:
         assert rental_routes._safe_source_url(bad) is None
 
 
@@ -528,21 +544,21 @@ def test_detail_stale_returns_details_without_yield(api_env, monkeypatch):
 
 
 def test_detail_area_band_filter_scopes(api_env):
-    samples = valid3() + [smp('D', 4000.0, 80.0)]
+    samples = valid3() + [smp('204', 4000.0, 80.0)]
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples)})
     data = detail(CID_MAPPED, {'area_band': 'lt90'})
     assert data['sample_count'] == 1
     assert data['total'] == 1
-    assert data['samples'][0]['source_listing_id'] == 'D'
+    assert data['samples'][0]['source_listing_id'] == '204'
     # lt90 段：3 居组 + 全部房型合并重算组
     assert [(g['bedrooms'], g['area_band']) for g in data['groups']] == \
         [(3, 'lt90'), (None, 'lt90')]
 
 
 def test_detail_4plus_group_labels_filter(api_env):
-    samples = [smp('D', 4000.0, 80.0, layout='4室2厅'),
-               smp('E', 6000.0, 100.0, layout='5室1厅'),
-               smp('F', 8000.0, 120.0, layout='4室2厅')]
+    samples = [smp('201', 4000.0, 80.0, layout='4室2厅'),
+               smp('202', 6000.0, 100.0, layout='5室1厅'),
+               smp('203', 8000.0, 120.0, layout='4室2厅')]
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples)})
     data = detail(CID_MAPPED, {'bedrooms': '4plus'})
     assert data['sample_count'] == 3
@@ -555,17 +571,15 @@ def test_detail_4plus_group_labels_filter(api_env):
 
 
 def test_detail_bedrooms_distribution_valid_only(api_env):
-    samples = valid3() + [smp('S1', mode='shared')]
+    samples = valid3() + [smp('301', mode='shared')]
     samples[-1]['quality_flags'] = ['shared_rental']
     publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples)})
     data = detail(CID_MAPPED)
     assert data['bedrooms_distribution'] == {'3': 3}  # 排除样本不进分布
 
 
-def test_detail_corrupt_mapping_file_503(api_env, monkeypatch):
-    broken = api_env.parent / 'broken-detail.json'
-    monkeypatch.setattr(rental_routes, '_mappings_path', broken)
-    broken.write_text('[]', encoding='utf-8')  # 结构非法
+def test_detail_corrupt_registry_503(api_env, monkeypatch):
+    (api_env.parent / 'community_registry.sqlite3').write_text('[]', encoding='utf-8')
     assert client.get(f'/communities/{CID_MAPPED}/rentals').status_code == 503
 
 
@@ -587,7 +601,7 @@ def test_refresh_get_without_job_still_reports_continuable(api_env):
     body = resp.json()
     assert body['success'] is True
     assert body['data']['job_id'] is None
-    # 台账里两个已核验来源都还没采过快照。
+    # 台账里两个已关联来源都还没采过快照。
     assert body['data']['continuable'] == 2
 
 
@@ -625,16 +639,18 @@ def test_refresh_post_conflict_409(api_env, monkeypatch):
 
 
 def test_refresh_post_no_verified_mappings_422(api_env):
-    """不替换 service：走真实 service 的台账校验路径（tmp 台账只有 unverified）。"""
-    write_maps(api_env.parent / 'rental_community_mappings.json', [
-        mp(SRC_ID, CID_MAPPED, status='unverified')])
+    """不替换 service：走真实 service 的台账校验路径（台账没有当前来源）。"""
+    registry = ledger(api_env)
+    for row in registry.sources():
+        if row['source'] == 'xingfuli':
+            registry.unlink(row['id'])
     resp = client.post('/rentals/refresh')
     assert resp.status_code == 422
     assert resp.json()['success'] is False
 
 
-def test_refresh_post_broken_mapping_503(api_env):
-    (api_env.parent / 'rental_community_mappings.json').write_text(
+def test_refresh_post_broken_registry_503(api_env):
+    (api_env.parent / 'community_registry.sqlite3').write_text(
         'not-json', encoding='utf-8')
     assert client.post('/rentals/refresh').status_code == 503
 
@@ -753,20 +769,12 @@ def test_routes_use_shared_group_stats():
 
 
 def test_list_api_evidence_and_sampling_mode_survive_detail_and_summary(api_env):
-    from src.services.community_registry import CommunityRegistry
-    registry = CommunityRegistry(api_env.parent / 'community_registry.sqlite3')
-    registry.create('风雅钱塘世纪花园', district='滨江', address='测试路1号', community_id=CID_MAPPED)
-    record = registry.ingest(dict(source='xingfuli', source_id=SRC_ID, name='风雅钱塘世纪花园',
-                                  seed_listing_id='7502229388495274018', auto_association_disabled=True))
-    registry.associate(record['id'], CID_MAPPED)
     samples = valid3()
     for sample in samples:
-        sample.update(source='xingfuli', detail_fetched=False,
+        sample.update(detail_fetched=False,
                       verification_method='xingfuli_list_api_v1', property_type_origin='community_directory')
     marker = {'mode': 'list_api', 'quota': 10, 'qualified': 3, 'sampled': 3}
-    snapshot = entry(CID_MAPPED, samples, quality={'sampling': marker})
-    snapshot['source'] = 'xingfuli'
-    publish(api_env, {CID_MAPPED: snapshot})
+    publish(api_env, {CID_MAPPED: entry(CID_MAPPED, samples, quality={'sampling': marker})})
     data = detail(CID_MAPPED)
     assert data['sample_count'] == 3 and data['excluded_count'] == 0
     assert data['sampling'] == marker

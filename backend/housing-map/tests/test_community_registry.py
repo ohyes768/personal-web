@@ -4,7 +4,10 @@ from src.services.community_registry import CommunityRegistry
 
 
 def record(sid='f1', name='测试花园', address='测试路1号'):
-    return dict(source='fang', source_kind='community', source_id=sid,
+    # A non-retired external source: the retired Fang source can no longer be
+    # associated, so the generic ingest/auto-association behaviour needs a
+    # source that is still allowed.
+    return dict(source='laipai', source_kind='community', source_id=sid,
                 name=name, district='滨江', address=address)
 
 
@@ -43,13 +46,13 @@ def test_delete_all_sources_restart_rename_restore(tmp_path):
     store.delete('c1', '不是小区')
     store = CommunityRegistry(store.path)
     assert store.communities() == []
-    assert store.is_ignored('fang', 'community', 'f1')
+    assert store.is_ignored('laipai', 'community', 'f1')
     assert store.ingest(record(name='改名'))['status'] == 'ignored'
     assert all(r['status'] == 'ignored' for r in store.sources())
     assert store.events('c1')[0]['action'] == 'delete'
     store.restore('c1')
     assert len(store.communities()) == 1
-    assert not store.is_ignored('fang', 'community', 'f1')
+    assert not store.is_ignored('laipai', 'community', 'f1')
 
 
 def test_no_name_blacklist_and_merge_history(tmp_path):
@@ -60,7 +63,7 @@ def test_no_name_blacklist_and_merge_history(tmp_path):
     assert store.resolve('c1') == other['community_id']
     assert store.sources()[0]['community_id'] == other['community_id']
     store.delete(other['community_id'])
-    assert not store.is_ignored('fang', 'community', 'new-id')
+    assert not store.is_ignored('laipai', 'community', 'new-id')
     assert store.ingest(record('new-id'))['community_id'] is None
 
 
@@ -72,13 +75,16 @@ def test_deleted_target_rejects_late_association(tmp_path):
         store.associate(item['id'], 'c1')
 
 
-def test_rental_skipped_seed_never_requests_upstream():
-    from src.services.fang_rentals import crawl_runs
-    calls = []
-    results = list(crawl_runs(['https://zu.fang.com/hz/house-xm123/'], fetch=lambda url: calls.append(url),
-                             skip_seed=lambda _: True))
-    assert calls == []
-    assert results[0].status == 'list_failed'
+def test_retired_fang_source_cannot_be_associated_anymore(tmp_path):
+    """房天下来源已退役：不能再建立新关联，历史关联仍可读取。"""
+    import pytest
+    from src.services.rental_reference.providers import active_sources
+    store = registry(tmp_path)
+    item = store.ingest(dict(source='fang', source_kind='community', source_id='f1',
+                             name='风雅钱塘', district='滨江'))
+    with pytest.raises(ValueError, match='房天下'):
+        store.associate(item['id'], 'c1')
+    assert active_sources(store) == {}
 
 
 def test_create_from_source_is_atomic_and_preserves_position(tmp_path):

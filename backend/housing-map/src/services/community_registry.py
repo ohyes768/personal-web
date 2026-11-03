@@ -16,6 +16,10 @@ def normalized(value):
     return re.sub(r'\s+', '', unicodedata.normalize('NFKC', str(value or ''))).casefold()
 
 
+# 房天下已退役：历史关联仍可读取与解绑，但不能再建立或迁移新的关联。
+RETIRED_RENTAL_SOURCES = frozenset({'fang'})
+
+
 def now():
     return dt.datetime.now(dt.UTC).isoformat()
 
@@ -259,6 +263,8 @@ class CommunityRegistry:
             row = db.execute("SELECT * FROM sources WHERE id=? AND status='pending'", (rid,)).fetchone()
             if not row:
                 raise ValueError('来源已关联或删除，请刷新后重试')
+            if row['source'] == 'fang':
+                raise ValueError('房天下来源已退役，不能建立新的关联')
             source = json.loads(row['payload'])
             cid = 'local-' + uuid.uuid4().hex[:16]
             item = {'community_id': cid, 'community_name': name.strip(), 'aliases': aliases,
@@ -390,6 +396,9 @@ class CommunityRegistry:
 
     def associate(self, rid, cid, *, method='manual', evidence=None):
         with self.db() as db:
+            row = db.execute('SELECT source FROM sources WHERE id=?', (rid,)).fetchone()
+            if row and row['source'] in RETIRED_RENTAL_SOURCES:
+                raise ValueError('房天下来源已退役，不能建立新的关联')
             return self._associate(db, rid, cid, method=method, evidence=evidence)
 
     @staticmethod
@@ -405,9 +414,12 @@ class CommunityRegistry:
         r = db.execute('SELECT * FROM sources WHERE id=?', (rid,)).fetchone()
         if not c or not r or r['status'] == 'ignored':
             raise ValueError('来源或目标小区不存在，或已删除')
+        # 房天下已退役：不能新建或迁移房天下关联；历史关联原样保留，可读取与解绑。
+        if r['source'] in RETIRED_RENTAL_SOURCES and not (r['status'] == 'matched' and r['cid'] == cid):
+            raise ValueError('房天下来源已退役，不能建立新的关联')
         from src.services.directory_policy import enabled, eligibility
         directory_mode = enabled(db)
-        if directory_mode and r['source'] in {'laipai', 'fang', 'xingfuli'}:
+        if directory_mode and r['source'] in {'laipai', 'xingfuli'}:
             from src.services.community_admission import property_facts
             members = [self._source(s) for s in db.execute("SELECT * FROM sources WHERE cid=? AND status='matched'", (cid,))]
             a = db.execute('SELECT payload FROM community_admission WHERE cid=?', (cid,)).fetchone()
@@ -434,10 +446,10 @@ class CommunityRegistry:
             if record.get('address') and community.get('address') and normalized(record['address']) != normalized(community['address']):
                 raise ValueError('同名异址需要人工确认')
         # Current rental snapshots are one-source-per-community; avoid silently hiding another source.
-        if r['source'] in {'fang', 'xingfuli'} and db.execute(
+        # 房天下已退役：历史关联不参与唯一性检查，当前只认幸福里。
+        if r['source'] == 'xingfuli' and db.execute(
                 "SELECT 1 FROM sources WHERE source=? AND cid=? AND status='matched' AND id<>?", (r['source'], cid, rid)).fetchone():
-            label = '幸福里' if r['source'] == 'xingfuli' else '房天下'
-            raise ValueError(f'该小区已有{label}关联，请先解除原关联')
+            raise ValueError('该小区已有幸福里关联，请先解除原关联')
         payload = json.loads(r['payload'])
         payload['associated_at'] = now()
         db.execute("UPDATE sources SET cid=?,status='matched',method=?,evidence=?,payload=? WHERE id=?",
@@ -503,7 +515,7 @@ class CommunityRegistry:
         rows = [db.execute('SELECT * FROM communities WHERE id=? AND deleted=0 AND merged_to IS NULL', (key,)).fetchone() for key in (cid, target)]
         if not all(rows):
             raise ValueError('小区不存在或已删除')
-        for provider in ('fang', 'xingfuli'):
+        for provider in ('xingfuli',):
             count = db.execute("SELECT COUNT(*) FROM sources WHERE source=? AND status='matched' AND cid IN (?,?)", (provider, cid, target)).fetchone()[0]
             if count > 1:
                 raise ValueError('两个小区都有租金来源，请先解除错误来源再合并')

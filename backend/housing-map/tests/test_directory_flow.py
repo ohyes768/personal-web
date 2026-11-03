@@ -60,7 +60,7 @@ def test_catalog_coverage_auction_assets_not_rounds(store, tmp_path, monkeypatch
 def test_catalog_rental_coverage_samples_failure_and_rebind(store, tmp_path, monkeypatch):
     from src.services.rental_reference.storage import CommunityBatch, publish_run
     c, _ = master(store); activate(store)
-    s = store.ingest(dict(source='fang', source_id='f1', name='租金来源', district='滨江'))
+    s = store.ingest(dict(source='xingfuli', source_id='f1', name='租金来源', district='滨江'))
     store.associate(s['id'], c['community_id'])
     client = coverage_client(store, monkeypatch)
     def read():
@@ -68,7 +68,7 @@ def test_catalog_rental_coverage_samples_failure_and_rebind(store, tmp_path, mon
     assert read()['state'] == 'pending'
     sample = dict(source_listing_id='r1', rental_mode='whole', monthly_rent_yuan=6000,
                   area_m2=90, detail_fetched=True, property_type='住宅')
-    publish_run(tmp_path/'rentals', [CommunityBatch(community_id='legacy-id', source='fang',
+    publish_run(tmp_path/'rentals', [CommunityBatch(community_id='legacy-id', source='xingfuli',
         source_community_id='f1', status='complete', captured_at='2020-01-01T00:00:00+00:00',
         samples=[sample, sample, {**sample, 'source_listing_id':'r2', 'rental_mode':'shared'}])])
     (tmp_path/'rentals'/'refresh_job.json').write_text(json.dumps(dict(phase='done',
@@ -79,14 +79,14 @@ def test_catalog_rental_coverage_samples_failure_and_rebind(store, tmp_path, mon
     assert value['stale'] and value['update_failed'] and value['captured_at'].startswith('2020')
     store.unlink(s['id'])
     assert read()['state'] != 'data'
-    other = store.ingest(dict(source='fang', source_id='f2', name='新来源', district='滨江'))
+    other = store.ingest(dict(source='xingfuli', source_id='f2', name='新来源', district='滨江'))
     store.associate(other['id'], c['community_id'])
     # An error from before the new association cannot mark its never-attempted source failed.
     job_path = tmp_path/'rentals'/'refresh_job.json'
     job = json.loads(job_path.read_text()); job['started_at'] = '2020-01-01T00:00:00+00:00'
     job_path.write_text(json.dumps(job), encoding='utf-8')
     assert read()['state'] == 'pending' and read()['sample_count'] == 0
-    publish_run(tmp_path/'rentals', [CommunityBatch(community_id=c['community_id'], source='fang',
+    publish_run(tmp_path/'rentals', [CommunityBatch(community_id=c['community_id'], source='xingfuli',
         source_community_id='f2', status='empty_ok', captured_at='2026-10-19T00:00:00+00:00', samples=[])])
     assert read()['state'] == 'no_samples'
 
@@ -130,11 +130,13 @@ def test_uncertain_and_nonresidential_not_auction_review(store,tmp_path,prop,cod
     assert auction_tasks(store,tmp_path)==[]
 
 
-def test_fang_cannot_create_or_veto_tmsf_admission(store,tmp_path):
+def test_retired_fang_cannot_create_or_veto_tmsf_admission(store,tmp_path):
     c,_=master(store);activate(store)
     s=store.ingest(dict(source='fang',source_id='f1',name=c['community_name'],district='滨江',address=c['address'],
         samples=[{'source_listing_id':'a','property_type':'写字楼'}]))
-    store.associate(s['id'],c['community_id'])
+    # 房天下已退役：不能建立新的关联，历史来源也不能否决透明售房网的收录。
+    with pytest.raises(ValueError, match='房天下'):
+        store.associate(s['id'],c['community_id'])
     assert admitted(store,tmp_path)[0]['community_id']==c['community_id']
     store.create('只有租金证据',district='滨江',address='其他路1号')
     assert len(admitted(store,tmp_path))==1 and len(inventory(store,tmp_path))==1
@@ -326,7 +328,7 @@ def test_active_rental_targets_match_admission_and_drop_after_gate_change(store,
     from src.services.rental_reference.association import eligible_communities
     from src.services.rental_reference.refresh import load_verified_mappings
     c,_=master(store);activate(store)
-    s=store.ingest(dict(source='fang',source_id='f1',name=c['community_name'],district='滨江',address=c['address']))
+    s=store.ingest(dict(source='xingfuli',source_id='f1',name=c['community_name'],district='滨江',address=c['address']))
     store.associate(s['id'],c['community_id'])
     assert [r['community_id'] for r in eligible_communities(store)[0]]==[c['community_id']]
     assert load_verified_mappings(tmp_path/'rental_community_mappings.json')==[('f1',c['community_id'])]

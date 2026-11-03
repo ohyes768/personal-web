@@ -114,7 +114,7 @@ def test_removed_amap_cannot_run_even_with_injected_adapter(tmp_path):
 def test_collection_report_ignored_and_partial_failures(tmp_path):
     store = CommunityRegistry(tmp_path / 'registry.sqlite3')
     store.create('测试花园', district='滨江', address='测试路1号', community_id='c1')
-    row = dict(source='fang', source_id='f1', name='测试花园', district='滨江', address='测试路1号')
+    row = dict(source='laipai', source_id='f1', name='测试花园', district='滨江', address='测试路1号')
     store.ingest(row)
     store.delete('c1')
     def broken(cancel, ignored):
@@ -123,30 +123,21 @@ def test_collection_report_ignored_and_partial_failures(tmp_path):
     def good(cancel, ignored):
         yield row
         yield {**row, 'source_id': 'f2'}
-    report = collect_names(store, ['fang', 'tmsf'],
-                           adapters={'fang': good, 'tmsf': broken})
+    report = collect_names(store, ['laipai', 'tmsf'],
+                           adapters={'laipai': good, 'tmsf': broken})
     assert report['ignored'] == 1 and report['new'] == 1
     assert report['phase'] == 'partial_failed'
     assert report['pending'] == 1
     assert not store.communities()
 
 
-def test_fang_ignored_community_skips_details_and_closes_client(monkeypatch):
-    from src.services import fang_rentals, directory_collection
-    requests = []
-    closed = []
-    class Client:
-        def __init__(self, **kwargs): pass
-        def fetch(self, url):
-            requests.append(url)
-            return 'listing'
-        def close(self): closed.append(True)
-    sample = dict(source_community_id='f1', community_name='测试花园', source_listing_id='l1',
-                  source_url='https://zu.fang.com/hz/chuzu/3_1_1.htm', quality_flags=[])
-    monkeypatch.setattr(fang_rentals, 'FangClient', Client)
-    monkeypatch.setattr(fang_rentals, 'parse_listing_page', lambda *_: ([sample], None))
-    rows = list(directory_collection.fang_names(threading.Event(), lambda *args: True))
-    assert len(rows) == 1 and len(requests) == 1 and closed
+def test_retired_fang_collection_is_refused(tmp_path):
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    def forbidden(*args):
+        raise AssertionError('Retired Fang adapter must never run')
+    with pytest.raises(ValueError, match='房天下'):
+        collect_names(store, ['fang'], adapters={'fang': forbidden})
+    assert store.sources() == []
 
 
 def test_laipai_known_ignored_auction_skips_detail(monkeypatch):
@@ -184,26 +175,6 @@ def test_restart_preserves_amap_failures(tmp_path):
     assert DirectoryJob(store).state == saved
 
 
-def test_fang_collects_beyond_ten_pages(monkeypatch):
-    from src.services import fang_rentals, directory_collection
-    requests = []
-    class Client:
-        def __init__(self, **kwargs): pass
-        def fetch(self, url):
-            requests.append(url)
-            return str(len(requests))
-        def close(self): pass
-    def parse(html, url):
-        page = int(html)
-        return [dict(source_community_id=str(page), community_name=f'小区{page}')], (
-            f'https://zu.fang.com/hz/house-a0154/n31/i3{page + 1}/' if page < 12 else None)
-    monkeypatch.setattr(fang_rentals, 'FangClient', Client)
-    monkeypatch.setattr(fang_rentals, 'parse_listing_page', parse)
-    monkeypatch.setattr(directory_collection, 'pause', lambda cancel: None)
-    rows = list(directory_collection.fang_names(threading.Event(), lambda *_: True))
-    assert len(rows) == len(requests) == 12
-
-
 def test_laipai_collects_beyond_ten_pages(monkeypatch):
     from src.services import auction_fetcher, directory_collection
     requests = []
@@ -232,36 +203,28 @@ def test_laipai_repeated_page_reports_incomplete(monkeypatch):
         list(directory_collection.laipai_names(threading.Event(), lambda *_: True))
 
 
-def test_fang_detail_failures_are_reported_without_losing_candidates(tmp_path, monkeypatch):
-    from src.services import fang_rentals, directory_collection
-    closed = []
+def test_detail_failures_are_reported_without_losing_candidates(tmp_path, monkeypatch):
+    from src.services import directory_collection, tmsf_fetcher, tmsf_property_type
+    import scripts.fetch_tmsf_binjiang_communities as listing
     class Client:
-        def __init__(self, **kwargs): pass
-        def fetch(self, url):
-            if '/chuzu/' in url:
-                raise ValueError('challenge URL with private query')
-            return 'listing'
-        def close(self): closed.append(True)
-    samples = [dict(source_community_id='f1', community_name='测试花园',
-                    source_listing_id=f'l{i}', source_url=f'https://zu.fang.com/hz/chuzu/3_{i}_1.htm',
-                    quality_flags=[]) for i in range(2)]
-    monkeypatch.setattr(fang_rentals, 'FangClient', Client)
-    monkeypatch.setattr(fang_rentals, 'parse_listing_page', lambda *_: (samples, None))
+        def fetch_text(self, *args, **kwargs):
+            raise ValueError('challenge page')
+        def close(self): pass
+    monkeypatch.setattr(tmsf_fetcher, 'TmsfClient', Client)
+    monkeypatch.setattr(listing, 'fetch_binjiang_communities', lambda: [
+        type('Row', (), {'community_id': '1', 'community_name': '测试花园', 'community_alias': '',
+                         'district': '滨江', 'subdistrict': '', 'source_url': None})()])
+    monkeypatch.setattr(tmsf_property_type, 'fetch_community_facts',
+                        lambda *a, **k: (_ for _ in ()).throw(ValueError('challenge page')))
     monkeypatch.setattr(directory_collection, 'pause', lambda _: None)
     store = CommunityRegistry(tmp_path / 'registry.sqlite3')
-    report = collect_names(store, ['fang'])
+    report = collect_names(store, ['tmsf'])
     assert report['phase'] == 'partial_failed' and report['running'] is False
     assert report['new'] == report['pending'] == 1
-    assert len(report['errors']) == 2
-    assert {e['listing_id'] for e in report['errors']} == {'l0', 'l1'}
-    assert all(e['stage'] == 'detail' and e['source_id'] == 'f1' for e in report['errors'])
-    assert 'private query' not in str(report)
+    assert report['errors'] and all(e['source'] == 'tmsf' for e in report['errors'])
     item = store.sources()[0]
-    assert len(item['samples']) == 2 and item['status'] == 'pending'
-    assert all('detail_fetch_failed' in s['quality_flags'] for s in item['samples'])
+    assert item['status'] == 'pending' and item['property_type_error']
     assert '_collection_errors' not in item
-    assert all('_collection_error' not in s for s in item['samples'])
-    assert closed
 
 
 def test_directory_job_initialization_failure_finishes_and_can_restart(tmp_path, monkeypatch):

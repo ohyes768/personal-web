@@ -1,5 +1,9 @@
 # 幸福里来源发现与按需探查契约
 
+> 2026-11-03：房天下退役，本文件描述的“找来源”流程成为**唯一**的来源建立路径。
+> 房天下关键词/链接搜索、候选池与 review bind 写入口全部删除（旧入口保留无副作用的 410 壳），
+> 采集任务默认也不再发起平台搜索；发现/探查的请求预算、冷却、人工决定保护与入口归属核验不变。
+
 > 2026-10-29 建立。系统的“找来源”能力：平台内多通道搜索 → 小区资料API验证身份 → 选定后按需获取租房入口API → 双归属核验后绑定。
 > 关键结论：**搜索响应永远不是身份证据**，身份来自小区资料API（旧版本为主页HTML）；**平台内可执行，不需要外部搜索引擎**。
 
@@ -43,9 +47,9 @@
 ## 当前网页入口（2026-10-29）
 
 - `GET/POST/DELETE /rentals/source-matching` 独立查询、启动/继续、取消来源匹配；POST为202，接受`mode=full|incremental`（详见下方提速契约）。SourceMatchingService顺序执行幸福里probe，保存remaining/outcomes和计数到rentals/source_matching_job.json；绝不采集整租样本或发布租金快照。人工跳过、拒绝、已有幸福里来源不自动重做。
-- 网页`/rentals/refresh`明确启用`RentalRefreshService(xingfuli_only=True)`，只采已关联幸福里的合资格小区，不运行任何来源发现；零关联返回422并提示先匹配。历史默认构造器保留独立旧库测试/工具兼容，不能作为网页运行配置。
+- 网页`/rentals/refresh`只采已关联幸福里的合资格小区（采集器的来源只有幸福里一种，`xingfuli_only` 开关已删除），不运行任何来源发现；零关联返回422并提示先匹配。
 - 匹配、租金采集、单小区probe共用task_lock与busy检查，不能并发网络执行。取消保留未处理队列；未取消的在途任务可在服务启动时恢复；GET不启动网络。成功搜索与主页步骤持久化，中断的小区复用有效步骤，绑定前仍重新核验入口。
-- 旧Fang搜索、链接导入、候选确认及review bind写入口返回410；来源待处理清单按幸福里probe状态投影。人工选择主页仍走probe/select，不复用旧Fang候选确认。
+- 房天下退役后，旧的Fang搜索、链接导入、候选确认及review bind写入口保留为无副作用的410壳（不建库、不读旧库、不发请求）；来源待处理清单按幸福里probe状态投影。人工选择主页仍走probe/select，不复用旧Fang候选确认。
 - 来源绑定在发布锁下复查资格、取消和人工跳过；自动匹配不绕过人工拒绝，显式单小区探查保留重新处理语义。
 
 ## 1. Scope / Trigger
@@ -102,7 +106,7 @@
 - 人工决定在写入前重查（见 `xingfuli_sources._human_veto`）：拒绝对、准入锁、审核锁、来源已有其他有效关联。
   注册表的“同名异址”自动否决对幸福里不适用（地址不在 `address` 字段），由本契约的地址或位置证据判断。
 - 自动发现**不**碰人工处理过租金来源的小区（`rejected` 关联的来源为 `fang`/`xingfuli`，或已有有效来源）；高德、透明售房网、法拍来源的解绑/拒绝不属于租金决定，不得排除租金匹配或阻止绑定。统一使用 `providers.rejected_rental_communities(db)`，通过 `rejected.rid = sources.id` 判断来源类型，不能仅按 `rejected.cid` 全局屏蔽小区。人工点“探查”是显式重新处理，
-  可以重新关联被解除的来源，但被拒绝的那一对仍然拒绝。
+  可以重新关联被解除的来源，但被拒绝的那一对仍然拒绝。房天下退役后，历史房天下的人工拒绝记录仍算人工决定并继续生效（只读保留，不参与任何当前来源选择或统计）。
 
 ### 请求面
 - 白名单：`m.xflapp.com` 的 `/f100/api/search`（参数限 `city_id/house_type/channel_id/full_text/count/offset/page_type`）、
@@ -197,7 +201,7 @@ Good：首通道完整、唯一强候选，1搜索+1主页+2核验，共4请求�
 ### Tests Required
 `test_matching_speed.py`覆盖6→4请求、唯一/竞争/截断、缓存有效空/过期/损坏/输入变化、失败不缓存、强制进程退出、恢复刷新入口/双核验、预算、模式及API、启动恢复不扩队、累计请求与功能关闭；原probe/split/discovery/source套件继续执行。前端directory-flow验证两个mode的点击、空增量/运行/租金更新互斥，position-status断言限定高德任务行，不能误判租金说明。
 
-拒绝来源隔离回归：`test_matching_speed.py` 验证高德解绑后 full/incremental 均重新入队且成功绑定，原高德拒绝记录仍保留；Fang/Xingfuli 解绑后仍不入队且绑定被拒绝。`test_rental_xingfuli_sources.py` 验证自动发现也能为有高德解绑历史的小区绑定来源。
+拒绝来源隔离回归：`test_matching_speed.py` 验证高德解绑后 full/incremental 均重新入队且成功绑定，原高德拒绝记录仍保留；解绑后仍不入队且绑定被拒绝的是租金来源（幸福里；历史房天下拒绝记录作为人工决定继续保留）。`test_rental_xingfuli_sources.py` 验证自动发现也能为有高德解绑历史的小区绑定来源。
 
 ### Wrong vs Correct
 ```python

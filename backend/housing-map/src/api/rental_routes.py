@@ -32,7 +32,6 @@ from fastapi.responses import JSONResponse
 from src.api.routes import COMMUNITY_MERGE_GROUPS
 from src.services.data_loader import DATA_DIR, load_communities, load_price_snapshots
 from src.services.rental_reference.refresh import (
-    MappingFileError,
     NoVerifiedMappings,
     RefreshAlreadyRunning,
     RefreshNotRunning,
@@ -63,7 +62,7 @@ _task_lock = threading.RLock()
 _probe_service = None
 _service_lock = threading.Lock()
 
-ALLOWED_SOURCE_HOST = "zu.fang.com"
+ALLOWED_SOURCE_HOST = "m.xflapp.com"
 _PRICE_BASIS = {"monthly_deal_avg_latest": "signed", "listing_avg": "listing"}
 AreaBandParam = Literal["all", "lt90", "90to144", "gte144"]
 BedroomsParam = Literal["all", "1", "2", "3", "4plus"]
@@ -78,7 +77,7 @@ def _get_service() -> RentalRefreshService:
             if _service is None:
                 _service = RentalRefreshService(
                     rentals_dir=_rentals_dir, mappings_path=_mappings_path,
-                    xingfuli_only=True, task_lock=_task_lock, busy=_probe_busy)
+                    task_lock=_task_lock, busy=_probe_busy)
     return _service
 
 
@@ -107,7 +106,7 @@ def _get_probe_service():
             if _probe_service is None:
                 _probe_service = ProbeService(
                     registry, directory=_rentals_dir,
-                    task_lock=_task_lock, xingfuli_only=True,
+                    task_lock=_task_lock,
                     busy=lambda: bool(_get_service().status().get("running")) or _matching_busy())
     return _probe_service
 
@@ -164,28 +163,24 @@ def _safe_source_url(url: object) -> str | None:
         return None
     if parts.scheme != "https" or parts.username or parts.password:
         return None
-    if parts.hostname == 'm.xflapp.com':
-        from src.services.xingfuli_rentals import validate_url
-        try:
-            validate_url(url)
-        except ValueError:
-            return None
-        return url if parts.path.startswith('/zufang/') else None
     if parts.hostname != ALLOWED_SOURCE_HOST:
         return None
-    return url
+    from src.services.xingfuli_rentals import validate_url
+    try:
+        validate_url(url)
+    except ValueError:
+        return None
+    return url if parts.path.startswith('/zufang/') else None
 
 
 def _verified_source_ids() -> dict[str, str]:
-    """internal community_id -> Fang source_community_id（仅 verified）。
+    """internal community_id -> 幸福里 source_community_id（仅当前已核验）。
 
     台账损坏是服务端数据错误（503），与"未映射"（200 + availability）严格区分。
     """
     try:
-        from src.services.rental_reference.sources import SourceStore
-        SourceStore(_mappings_path)
         pairs = load_verified_mappings(_mappings_path)
-    except (MappingFileError, sqlite3.Error, OSError, ValueError) as exc:
+    except (sqlite3.Error, OSError, ValueError) as exc:
         raise HTTPException(503, "rental mapping file unavailable") from exc
     return {community_id: source_id for source_id, community_id in pairs}
 
@@ -410,20 +405,14 @@ def _mapped_entry(current: dict | None, community_id: str, source_ids: dict) -> 
     from src.services.community_registry import existing_registry
     registry = existing_registry(_mappings_path.parent)
     mapping = active_sources(registry).get(community_id) if registry else None
-    provider = mapping['source'] if mapping else 'fang'
+    # 唯一当前来源是幸福里；快照必须显式带 provider 才能复用，缺 provider 的
+    # 旧快照与房天下快照都不参与当前统计。
+    provider = mapping['source'] if mapping else 'xingfuli'
     if entry and not same_source(entry, provider, source_ids[community_id]):
         entry = None
-    if not entry:
-        if registry:
-            entry = next((e for e in (current or {}).get('communities', {}).values()
-                          if same_source(e, provider, source_ids[community_id])), None)
-            r = next((r for r in registry.sources() if provider == 'fang' and r['source'] == 'fang'
-                      and r['source_id'] == source_ids[community_id] and r['status'] == 'matched'), None)
-            if not entry and r and r.get('samples'):
-                # Explicitly a regional sample, not a claim of a complete community crawl.
-                entry = {'source_community_id': r['source_id'], 'samples': r['samples'],
-                         'captured_at': min(s.get('captured_at') or r['updated_at'] for s in r['samples']),
-                         'quality': {'regional_sample': True}}
+    if not entry and registry:
+        entry = next((e for e in (current or {}).get('communities', {}).values()
+                      if same_source(e, provider, source_ids[community_id])), None)
     return entry
 
 
@@ -444,8 +433,10 @@ def _source_links(community_id, source_id):
     from src.services.community_registry import existing_registry
     registry = existing_registry(_mappings_path.parent)
     record = active_sources(registry).get(community_id) if registry else None
-    link = source_url(record) if record else f'https://{ALLOWED_SOURCE_HOST}/hz/house-xm{source_id}/'
-    safe = _safe_source_url(link)
+    if not record:
+        # 没有当前来源就没有可展示的来源链接，不构造任何已退役来源的 URL。
+        return []
+    safe = _safe_source_url(source_url(record))
     return [safe] if safe else []
 
 
@@ -642,9 +633,6 @@ async def start_rental_refresh(body: RentalRefreshInput | None = None):
     except NoVerifiedMappings:
         return JSONResponse({"success": False, "error": "还没有幸福里租金来源，请先运行“匹配租金来源”"},
                             status_code=422)
-    except MappingFileError:
-        return JSONResponse({"success": False, "error": "rental mapping file unavailable"},
-                            status_code=503)
     return JSONResponse({"success": True, "data": _external_job(snapshot)}, status_code=202)
 
 

@@ -163,9 +163,8 @@ def test_all_xingfuli_entry_points_default_to_three_seconds(tmp_path):
     assert XingfuliDiscovery(directory=tmp_path).delay == 3
     assert ProbeService(reg, directory=tmp_path).delay == 3
     assert SourceMatchingService(reg, directory=tmp_path)._probe.delay == 3
-    mixed = RentalRefreshService(tmp_path, tmp_path / 'mapping.json')
-    assert mixed._delay == 5 and mixed._xingfuli_delay == 3
-    assert RentalRefreshService(tmp_path, tmp_path / 'mapping.json', xingfuli_only=True)._xingfuli_delay == 3
+    collector = RentalRefreshService(tmp_path, tmp_path / 'mapping.json')
+    assert collector._xingfuli_delay == 3
 
 
 def test_source_matching_html_membership_parser_remains_available():

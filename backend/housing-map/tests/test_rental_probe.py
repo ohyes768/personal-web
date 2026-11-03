@@ -368,14 +368,28 @@ def test_selection_survives_a_cancelled_probe(tmp_path):
     assert stored.get('selected_page', {}).get('neighborhood_id') == chosen['neighborhood_id']
 
 
-def test_a_community_with_a_source_is_not_probed_again(tmp_path):
+def test_a_community_with_a_current_source_is_not_probed_again(tmp_path):
     registry = setup(tmp_path)
-    registry.ingest(dict(source='fang', source_id='f1', name='测试花园', district='滨江',
-                         address='测试路1号'))
+    row = registry.ingest(dict(source='xingfuli', source_id='s1', name='测试花园', district='滨江',
+                               address='测试路1号', seed_listing_id=SEED))
+    registry.associate(row['id'], 'c1')
     fake = FakeDiscovery(search={}, homepages={})
     svc = service(registry, fake, tmp_path)
     with pytest.raises((ProbeInvalid, ValueError)):
         svc.start('c1')
+
+
+def test_a_historical_fang_source_does_not_block_the_probe(tmp_path):
+    """房天下来源已退役：它不再是当前来源，幸福里探查照常进行。"""
+    registry = setup(tmp_path)
+    row = registry.ingest(dict(source='fang', source_id='f1', name='测试花园', district='滨江',
+                               address='测试路1号'))
+    with registry.db() as db:
+        db.execute("UPDATE sources SET cid=?,status='matched',method='manual' WHERE id=?",
+                   ('c1', row['id']))
+    fake = FakeDiscovery(search={}, homepages={})
+    state = run(service(registry, fake, tmp_path))
+    assert state['stage'] == probe.STAGE_NO_HOMEPAGE
 
 
 def test_a_running_probe_refuses_a_second_job(tmp_path):

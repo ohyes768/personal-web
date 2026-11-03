@@ -15,7 +15,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 
-from src.services.fang_rentals import RentalCrawlCancelled
+from src.services.rental_reference.crawl_types import RentalCrawlCancelled
 from src.services.rental_reference.storage import RentalPublishLock, _atomic_write_json
 
 

@@ -84,9 +84,13 @@ def test_addressless_master_removed_with_sources_and_business_mappings(tmp_path)
     from src.services.auction_history import load_mappings
     store=CommunityRegistry(tmp_path/'community_registry.sqlite3')
     master=store.create('襄七房',district='滨江',address='暂无')
-    for site in ('fang','laipai'):
-        r=store.ingest(dict(source=site,source_kind='community' if site=='fang' else 'asset',source_id='123',name='襄七房'))
-        store.associate(r['id'],master['community_id'])
+    r=store.ingest(dict(source='laipai',source_kind='asset',source_id='123',name='襄七房'))
+    store.associate(r['id'],master['community_id'])
+    # 房天下关联已退役：只能作为历史台账行存在，不能再新建。
+    legacy=store.ingest(dict(source='fang',source_kind='community',source_id='123',name='襄七房'))
+    with store.db() as db:
+        db.execute("UPDATE sources SET cid=?,status='matched',method='manual' WHERE id=?",
+                   (master['community_id'], legacy['id']))
     assert load_verified_mappings(tmp_path/'rental_community_mappings.json')==[]
     assert load_mappings(tmp_path/'auction_community_mappings.json',store.communities())=={}
     work=ReviewWorkspace(store,tmp_path);row=work.reviews(state='excluded')[0]

@@ -91,8 +91,7 @@ export interface RentalSampling {
 }
 
 export interface RentalDetailData {
-  regional_sample?: boolean;
-  /** 配额采样标记；旧快照与房天下快照为 null */
+  /** 配额采样标记；旧快照为 null */
   sampling?: RentalSampling | null;
   availability: RentalAvailability;
   /** 最近一次采集任务结果；允许"旧数据可用 + 最近抓取失败"并存 */
