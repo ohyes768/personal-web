@@ -3,6 +3,7 @@ import urllib.error
 import pytest
 
 from src import link_import
+from src.downloader import NETEASE_ALBUM, NETEASE_PLAYLIST
 from src.link_import import LinkImportError, parse_album_link, probe_album
 
 
@@ -280,3 +281,107 @@ def test_probe_qingting_empty_channel_data_is_rejected(monkeypatch):
 def test_probe_rejects_unknown_platform():
     with pytest.raises(LinkImportError):
         probe_album("荔枝FM", "1")
+
+
+# --- 网易云音乐（2026-11-02 实测接口，见 task research/findings.md）---
+
+
+@pytest.mark.parametrize("url,platform,album_id", [
+    ("https://music.163.com/playlist?id=3778678", NETEASE_PLAYLIST, "3778678"),
+    ("https://music.163.com/album?id=34720827", NETEASE_ALBUM, "34720827"),
+    # 移动版路径多一层 /m/
+    ("https://music.163.com/m/playlist?id=3778678", NETEASE_PLAYLIST, "3778678"),
+    ("https://y.music.163.com/m/playlist?id=3778678", NETEASE_PLAYLIST, "3778678"),
+    ("https://y.music.163.com/m/album?id=34720827", NETEASE_ALBUM, "34720827"),
+    # hash 路由：# 之后才是路径，用户复制地址栏就是这个形态
+    ("https://music.163.com/#/playlist?id=3778678", NETEASE_PLAYLIST, "3778678"),
+    ("https://music.163.com/#/album?id=34720827", NETEASE_ALBUM, "34720827"),
+    # 缺省 scheme 与多余 query 参数
+    ("music.163.com/playlist?id=3778678", NETEASE_PLAYLIST, "3778678"),
+    ("https://music.163.com/playlist?id=3778678&userid=1", NETEASE_PLAYLIST, "3778678"),
+    ("  https://music.163.com/album?id=34720827  ", NETEASE_ALBUM, "34720827"),
+    ("https://music.163.com/playlist/?id=3778678", NETEASE_PLAYLIST, "3778678"),
+    # id 参数在 query 里的位置不固定
+    ("https://music.163.com/playlist?userid=1&id=3778678", NETEASE_PLAYLIST, "3778678"),
+    ("https://music.163.com/album?id=34720827&userid=1", NETEASE_ALBUM, "34720827"),
+])
+def test_parse_netease_links(url, platform, album_id):
+    assert parse_album_link(url) == (platform, album_id)
+
+
+def test_parse_netease_link_without_id_is_rejected():
+    with pytest.raises(LinkImportError, match="缺少有效的 id"):
+        parse_album_link("https://music.163.com/playlist?userid=1")
+
+
+def test_parse_netease_single_track_link_is_rejected():
+    with pytest.raises(LinkImportError, match="单曲链接不支持"):
+        parse_album_link("https://music.163.com/song?id=347230")
+
+
+def test_parse_netease_short_link_is_rejected():
+    """短链当前不可达，明确拒绝并提示用完整链接，不盲目跟随重定向。"""
+    with pytest.raises(LinkImportError, match="短链接暂不支持"):
+        parse_album_link("https://163.cn/tS7bB")
+
+
+def test_parse_other_platforms_are_not_mistaken_for_netease():
+    """域名不同，不能互相误判。"""
+    assert parse_album_link("https://www.ximalaya.com/album/4436043") == ("喜马拉雅", "4436043")
+    assert parse_album_link("https://www.qingting.fm/vchannels/326665") == ("蜻蜓FM", "326665")
+
+
+def test_probe_netease_playlist(monkeypatch):
+    monkeypatch.setattr(link_import, "_fetch_json", lambda url, referer=None: {
+        "code": 200,
+        "playlist": {"name": "婴儿哄睡必听", "trackCount": 39,
+                     "trackIds": [{"id": 1}, {"id": 2}]}})
+    info = probe_album(NETEASE_PLAYLIST, "13907752641")
+    assert info["platform"] == NETEASE_PLAYLIST
+    assert info["album_id"] == "13907752641"
+    assert info["title"] == "婴儿哄睡必听"
+    assert info["track_count"] == 39
+    assert info["url"] == "https://music.163.com/playlist?id=13907752641"
+    # 歌单是免费曲与 VIP 曲混排，专辑级无法判定付费。
+    assert info["sale_type"] is None
+
+
+def test_probe_netease_album(monkeypatch):
+    monkeypatch.setattr(link_import, "_fetch_json", lambda url, referer=None: {
+        "code": 200,
+        "album": {"name": "周杰伦的床边故事", "size": 10},
+        "songs": [{"id": 415792916, "name": "床边故事"}]})
+    info = probe_album(NETEASE_ALBUM, "34720827")
+    assert info["platform"] == NETEASE_ALBUM
+    assert info["title"] == "周杰伦的床边故事"
+    assert info["track_count"] == 10
+    assert info["sale_type"] is None
+
+
+def test_probe_netease_playlist_not_found(monkeypatch):
+    monkeypatch.setattr(link_import, "_fetch_json", lambda url, referer=None: {"code": 404})
+    with pytest.raises(LinkImportError, match="未找到该网易云歌单"):
+        probe_album(NETEASE_PLAYLIST, "999999999999")
+
+
+def test_probe_netease_album_not_found(monkeypatch):
+    monkeypatch.setattr(link_import, "_fetch_json", lambda url, referer=None: {"code": 404})
+    with pytest.raises(LinkImportError, match="未找到该网易云专辑"):
+        probe_album(NETEASE_ALBUM, "999999999999")
+
+
+def test_probe_netease_empty_playlist_is_rejected(monkeypatch):
+    """空歌单不建 0 曲的目录行。"""
+    monkeypatch.setattr(link_import, "_fetch_json", lambda url, referer=None: {
+        "code": 200, "playlist": {"name": "空的歌单", "trackCount": 0, "trackIds": []}})
+    with pytest.raises(LinkImportError, match="没有可读取的曲目"):
+        probe_album(NETEASE_PLAYLIST, "1")
+
+
+def test_probe_netease_network_failure_is_reported(monkeypatch):
+    def fake(url, referer=None):
+        raise urllib.error.URLError("connection reset")
+
+    monkeypatch.setattr(link_import, "_fetch_json", fake)
+    with pytest.raises(LinkImportError, match="网络请求失败"):
+        probe_album(NETEASE_PLAYLIST, "3778678")

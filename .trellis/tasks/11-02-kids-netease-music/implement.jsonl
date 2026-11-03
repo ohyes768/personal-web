@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/kids-catalog/backend/index.md", "reason": "kids-catalog 后端开发前置清单与质量门槛"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/manual-import.md", "reason": "手动导入契约：parse_album_link / probe_album 签名、平台付费判定口径、生命周期与前端文案约定"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/device-directory.md", "reason": "设备歌单候选与发布链路契约，确认网易云复用现有流程不需改动"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/track-management.md", "reason": "曲目管理与完成确认台账语义，下载结果需与既有状态机对齐"}
+{"file": ".trellis/spec/apps/kids-catalog/frontend/index.md", "reason": "前端导入入口文案与质量门槛（tsc + build）"}
+{"file": ".trellis/spec/guides/kids-audio-tags.md", "reason": "音频标签规则，确认本期不写标签、且下载产物能被现有校验识别"}
+{"file": ".trellis/tasks/11-02-kids-netease-music/research/findings.md", "reason": "网易云接口实测结论：可用接口、失效接口、fee 与 player/url 付费判定、分批上限 200、ID 冲突方案、链接格式"}

@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/kids-catalog/backend/index.md", "reason": "后端质量门槛与开发前置清单"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/manual-import.md", "reason": "核对新增平台是否遵守既有导入契约与付费判定口径"}
+{"file": ".trellis/spec/backend/kids-catalog/backend/device-directory.md", "reason": "核对设备歌单候选/发布链路未被破坏"}
+{"file": ".trellis/spec/apps/kids-catalog/frontend/index.md", "reason": "前端类型检查与生产构建要求"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用检查：确认未另建下载器或另造歌单生成逻辑"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层数据流检查：后端 reason/platform 与前端渲染的贯通"}
+{"file": ".trellis/tasks/11-02-kids-netease-music/research/findings.md", "reason": "核对实现与实测结论一致，特别是 player/url 返回顺序与按 id 对齐的坑"}

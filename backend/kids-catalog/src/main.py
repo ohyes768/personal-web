@@ -285,6 +285,7 @@ class Catalog:
             self.collections.mark_failed(sanitize_filename(title))
             return
         logger.info("专辑《%s》下载完成: 成功 %d 跳过 %d 失败 %d", title, report.downloaded, report.skipped, report.failed)
+        detail = report.skip_summary()
         if report.downloaded and not (report.skipped or report.failed):
             self._finish(job_id, 'done', None, report.size_bytes)
             if hasattr(self, 'collections'):
@@ -294,12 +295,15 @@ class Catalog:
                     self.collections.mark_failed(sanitize_filename(title))
                     logger.warning('下载完成，但设备合集文件校验未通过')
         elif report.downloaded:
-            self._finish(job_id, 'partial',
-                         f'完成 {report.downloaded}，跳过受限 {report.skipped}，失败 {report.failed}',
-                         report.size_bytes)
+            reason = f'完成 {report.downloaded}，跳过受限 {report.skipped}，失败 {report.failed}'
+            if detail:
+                reason = f'{reason}（{detail}）'
+            self._finish(job_id, 'partial', reason, report.size_bytes)
         else:
-            self._finish(job_id, 'failed',
-                         f'未能下载任何曲目（跳过受限 {report.skipped}，失败 {report.failed}）')
+            reason = f'未能下载任何曲目（跳过受限 {report.skipped}，失败 {report.failed}）'
+            if detail:
+                reason = f'{reason}（{detail}）'
+            self._finish(job_id, 'failed', reason)
         if (report.skipped or report.failed or not report.downloaded) and hasattr(self, 'collections'):
             self.collections.mark_failed(sanitize_filename(title))
 

@@ -9,12 +9,22 @@
   但旧接口 mobile/v1/album/single 仍在服务且曲目项字段兼容；曲目列表统一经
   downloader.xm_tracks_page 获取，自动回退。微信分享链接 selfshare/album(new)/{id}
   与 album/{id} 同一专辑号，解析等价。
+- 2026-11-02 补充：新增网易云音乐来源（歌单/专辑链接）。实测接口全部免登录：
+  歌单 /api/v3/playlist/detail（trackIds 全量，实测 965 首不截断）；
+  专辑 /api/v1/album/{id}（songs 一次全量，注意 /api/album/{id} 恒返回空 songs）；
+  曲目详情 /api/song/detail/?ids=[...]（单批上限 200）；
+  播放直链 /api/song/enhance/player/url?ids=[...&br=128000]（单批上限 200）。
+  付费判定用曲目级 fee：8=可下载、1=VIP 无音源（player/url 回 code=-110）。
+  网易云歌单是免费曲与 VIP 曲混排，专辑级无法判定，sale_type 统一 None（付费未知）。
 """
 import re
 import time
 import urllib.error
+import urllib.parse
 
-from src.downloader import (QT_CHANNEL_URL, QT_PROGRAMS_URL, QT_REFERER,
+from src.downloader import (NETEASE_ALBUM, NETEASE_ALBUM_URL, NETEASE_PLAYLIST,
+                            NETEASE_PLAYLIST_URL, NETEASE_REFERER,
+                            QT_CHANNEL_URL, QT_PROGRAMS_URL, QT_REFERER,
                             XM_OFFLINE_RET, _fetch_json, xm_tracks_page)
 
 XM_PLATFORM = "喜马拉雅"
@@ -28,9 +38,18 @@ _XM_ALBUM = re.compile(
 _QT_VCHANNEL = re.compile(r'^https?://(?:[\w-]+\.)*qingting\.fm/vchannels/(\d+)(?:[/?#]|$)', re.I)
 _XM_SINGLE = re.compile(r'ximalaya\.com/(?:sound|radio|album_sound)/', re.I)
 _QT_SINGLE = re.compile(r'qingting\.fm/(?:album|channels)/\d+/(?:audio|\d+)', re.I)
+# 网易云歌单/专辑：路径式 /playlist?id= 、/album?id= ，移动版多一层 /m/。
+# hash 路由（/#/playlist?id=）由 parse_album_link 先剥掉 # 段再匹配。
+# 只匹配路径，id 参数另行从 query 里取，避免 query 参数顺序影响解析。
+_NETEASE_PATH = re.compile(
+    r'^https?://(?:[\w-]+\.)*music\.163\.com/(?:m/)?(playlist|album)/?$', re.I)
+_NETEASE_SINGLE = re.compile(r'music\.163\.com/(?:m/)?song/?\?id=\d+', re.I)
+_NETEASE_SHORT = re.compile(r'(?:^|//)163\.cn/', re.I)
 _SUPPORTED = ("仅支持专辑链接：喜马拉雅 ximalaya.com/album/{id}"
               "（含微信分享 m.ximalaya.com/selfshare/albumnew/{id}）"
-              "或蜻蜓 qingting.fm/vchannels/{id}")
+              "、蜻蜓 qingting.fm/vchannels/{id}"
+              "，或网易云音乐 music.163.com/playlist?id={id}（歌单）"
+              "与 music.163.com/album?id={id}（专辑）")
 
 
 class LinkImportError(ValueError):
@@ -53,9 +72,42 @@ def parse_album_link(url: str) -> tuple[str, str]:
     match = _QT_VCHANNEL.match(text)
     if match:
         return QT_PLATFORM, match.group(1)
+    # 网易云 hash 路由（https://music.163.com/#/playlist?id=123）里的 # 之后才是路径，
+    # 直接把 # 段接回路径再匹配，两种写法共用同一组正则。
+    netease = _parse_netease_link(text)
+    if netease:
+        return netease
     if _XM_SINGLE.search(text) or _QT_SINGLE.search(text):
         raise LinkImportError(f"单曲链接不支持，请提供专辑链接。{_SUPPORTED}")
     raise LinkImportError(f"无法识别的链接，{_SUPPORTED}")
+
+
+def _parse_netease_link(text: str) -> tuple[str, str] | None:
+    """解析网易云歌单/专辑链接；不是网易云链接返回 None。"""
+    if _NETEASE_SHORT.search(text):
+        raise LinkImportError(
+            f"网易云短链接暂不支持，请复制完整链接（浏览器地址栏整条）。{_SUPPORTED}")
+    if _NETEASE_SINGLE.search(text):
+        raise LinkImportError(f"单曲链接不支持，请提供歌单或专辑链接。{_SUPPORTED}")
+    # hash 路由：把 # 之后的部分当作路径来接在域名后面。
+    head, sep, tail = text.partition("#")
+    candidates = [text]
+    if sep and tail.startswith("/"):
+        candidates.append(f"{head.rstrip('/')}{tail}")
+    for candidate in candidates:
+        path, _, query = candidate.partition("?")
+        match = _NETEASE_PATH.match(path)
+        if not match:
+            continue
+        # id 参数在 query 里的位置不固定（?id=1 与 ?userid=1&id=1 都要认）。
+        params = urllib.parse.parse_qs(query)
+        ids = params.get("id") or []
+        if not ids or not ids[0].isdigit():
+            raise LinkImportError(f"该网易云链接缺少有效的 id 参数。{_SUPPORTED}")
+        platform = (NETEASE_PLAYLIST if match.group(1).lower() == "playlist"
+                    else NETEASE_ALBUM)
+        return platform, ids[0]
+    return None
 
 
 def probe_album(platform: str, album_id: str) -> dict:
@@ -64,6 +116,10 @@ def probe_album(platform: str, album_id: str) -> dict:
         return _probe_ximalaya(album_id)
     if platform == QT_PLATFORM:
         return _probe_qingting(album_id)
+    if platform == NETEASE_PLAYLIST:
+        return _probe_netease_playlist(album_id)
+    if platform == NETEASE_ALBUM:
+        return _probe_netease_album(album_id)
     raise LinkImportError(f"不支持的下载来源：{platform}")
 
 
@@ -147,4 +203,55 @@ def _probe_qingting(channel_id: str) -> dict:
         "url": f"https://m.qingting.fm/vchannels/{channel_id}/",
         "sale_type": 0,
         "track_count": total if isinstance(total, int) else len(pdata.get("programs") or []),
+    }
+
+
+def _fetch_netease(url: str) -> dict:
+    return _fetch(url, referer=NETEASE_REFERER, label="网易云接口")
+
+
+def _probe_netease_playlist(playlist_id: str) -> dict:
+    """预检网易云歌单：trackIds 给出完整曲目 ID 列表（实测不截断）。"""
+    payload = _fetch_netease(NETEASE_PLAYLIST_URL.format(playlist_id=playlist_id))
+    if payload.get("code") == 404:
+        raise LinkImportError("未找到该网易云歌单，编号可能不正确")
+    playlist = payload.get("playlist") or {}
+    if not playlist:
+        raise LinkImportError("未找到该网易云歌单，编号可能不正确")
+    title = playlist.get("name")
+    if not title:
+        raise LinkImportError("未能读取到歌单名称")
+    track_ids = playlist.get("trackIds") or []
+    if not track_ids:
+        raise LinkImportError("该歌单没有可读取的曲目")
+    total = playlist.get("trackCount")
+    return {
+        "platform": NETEASE_PLAYLIST, "album_id": playlist_id, "title": title,
+        "url": f"https://music.163.com/playlist?id={playlist_id}",
+        # 网易云歌单是免费曲与 VIP 曲混排，专辑级无法判定付费，逐曲在下载时处理。
+        "sale_type": None,
+        "track_count": total if isinstance(total, int) else len(track_ids),
+    }
+
+
+def _probe_netease_album(album_id: str) -> dict:
+    """预检网易云专辑：/api/v1/album 的 songs 一次全量返回。"""
+    payload = _fetch_netease(NETEASE_ALBUM_URL.format(album_id=album_id))
+    if payload.get("code") == 404:
+        raise LinkImportError("未找到该网易云专辑，编号可能不正确")
+    album = payload.get("album") or {}
+    if not album:
+        raise LinkImportError("未找到该网易云专辑，编号可能不正确")
+    title = album.get("name")
+    if not title:
+        raise LinkImportError("未能读取到专辑名称")
+    songs = payload.get("songs") or []
+    if not songs:
+        raise LinkImportError("该专辑没有可读取的曲目")
+    total = album.get("size")
+    return {
+        "platform": NETEASE_ALBUM, "album_id": album_id, "title": title,
+        "url": f"https://music.163.com/album?id={album_id}",
+        "sale_type": None,
+        "track_count": total if isinstance(total, int) else len(songs),
     }

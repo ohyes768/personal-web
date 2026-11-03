@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from src.downloader import AlbumOfflineError, DownloadReport
+from src.downloader import AlbumOfflineError, DownloadReport, SkipReason
 from src.link_import import LinkImportError
 from src.main import create_app
 
@@ -512,3 +512,92 @@ def test_partial_job_requeues_for_completion(tmp_path: Path):
         with app.state.catalog.db() as con:
             jobs = con.execute("select status from jobs").fetchall()
         assert len(jobs) == 1 and jobs[0]["status"] == "queued"
+
+
+# --- 网易云音乐（2026-11-02）---
+
+
+NETEASE_PROBE_RESULT = {"platform": "网易云歌单", "album_id": "13907752641",
+                         "title": "婴儿哄睡必听",
+                         "url": "https://music.163.com/playlist?id=13907752641",
+                         "sale_type": None, "track_count": 39}
+
+
+@pytest.fixture
+def netease_probe_ok(monkeypatch):
+    monkeypatch.setattr("src.main.probe_album",
+                        lambda platform, album_id: dict(NETEASE_PROBE_RESULT))
+
+
+def test_import_netease_playlist_starts_download(tmp_path: Path, netease_probe_ok):
+    """网易云歌单导入：sale_type=None 不触发整张付费跳过，正常排队下载。"""
+    downloader = FakeDownloader()
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    with TestClient(app) as client:
+        imported = client.post("/api/albums/import",
+                               json={"url": "https://music.163.com/playlist?id=13907752641"}).json()
+        assert imported["status"] == "queued"
+        assert imported["title"] == "婴儿哄睡必听"
+        albums = client.get("/api/albums").json()["albums"]
+        assert albums[0]["platform"] == "网易云歌单"
+        assert albums[0]["source"] == "manual"
+    assert downloader.calls == [("网易云歌单", "13907752641", "婴儿哄睡必听")]
+
+
+def test_import_netease_playlist_becomes_device_collection_candidate(tmp_path: Path, netease_probe_ok):
+    """跨层：网易云歌单下载完成 → 设备歌单候选，复用现有发布链路。"""
+    downloader = FakeDownloader(DownloadReport(downloaded=2))
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    with TestClient(app) as client:
+        client.post("/api/albums/import",
+                    json={"url": "https://music.163.com/playlist?id=13907752641"})
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            listing = client.get("/api/albums").json()["albums"]
+            if listing and listing[0]["download_status"] == "done":
+                break
+            time.sleep(0.05)
+        candidates = client.get("/api/collections").json()["candidates"]
+        assert [c["folder"] for c in candidates] == ["婴儿哄睡必听"]
+
+
+def test_import_netease_reports_per_track_skip_reasons(tmp_path: Path, monkeypatch):
+    """VIP 曲目逐条跳过，原因写入 job 的 reason 供前端展示。"""
+    monkeypatch.setattr("src.main.probe_album",
+                        lambda platform, album_id: dict(NETEASE_PROBE_RESULT))
+    downloader = FakeDownloader(DownloadReport(
+        downloaded=1, skipped=2,
+        skip_reasons=(SkipReason("付费曲甲", "VIP 付费曲目，平台未放行"),
+                      SkipReason("付费曲乙", "VIP 付费曲目，平台未放行"))))
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    with TestClient(app) as client:
+        client.post("/api/albums/import",
+                    json={"url": "https://music.163.com/playlist?id=13907752641"})
+        deadline = time.monotonic() + 10
+        listing = client.get("/api/albums").json()["albums"]
+        while listing and listing[0]["download_status"] not in ("done", "partial", "failed") \
+                and time.monotonic() < deadline:
+            time.sleep(0.05)
+            listing = client.get("/api/albums").json()["albums"]
+        reason = listing[0]["reason"]
+        assert "VIP 付费曲目，平台未放行 2 首" in reason
+        assert "《付费曲甲》" in reason
+
+
+def test_netease_playlist_and_album_with_same_id_are_distinct(tmp_path: Path, monkeypatch):
+    """歌单 ID 与专辑 ID 空间重叠（实测 2884035 两者皆是），platform 不同即两行。"""
+    def probe(platform, album_id):
+        return {"platform": platform, "album_id": album_id,
+                "title": "歌单名" if platform == "网易云歌单" else "专辑名",
+                "url": f"https://music.163.com/?id={album_id}",
+                "sale_type": None, "track_count": 3}
+
+    monkeypatch.setattr("src.main.probe_album", probe)
+    downloader = FakeDownloader()
+    app = create_app(data_dir=tmp_path / "data", music_dir=tmp_path / "music", downloader=downloader)
+    with TestClient(app) as client:
+        client.post("/api/albums/import", json={"url": "https://music.163.com/playlist?id=2884035"})
+        client.post("/api/albums/import", json={"url": "https://music.163.com/album?id=2884035"})
+        albums = client.get("/api/albums").json()["albums"]
+        assert len(albums) == 2
+        assert {a["platform"] for a in albums} == {"网易云歌单", "网易云专辑"}

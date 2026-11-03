@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from src.downloader import (AlbumOfflineError, Downloader, Track,
+from src.downloader import (AlbumOfflineError, Downloader, DownloadReport, SkipReason,
+                            Track, NETEASE_ALBUM, NETEASE_PLAYLIST,
                             qingting_media_url, sanitize_filename, track_total)
 
 
@@ -47,7 +48,7 @@ class FakeHttp:
                 return payload
         raise AssertionError(f"未预期的请求: {url}")
 
-    def download_file(self, url, dest: Path):
+    def download_file(self, url, dest: Path, referer=None):
         self.download_urls.append(url)
         dest.write_bytes(b"audio-bytes")
 
@@ -220,3 +221,194 @@ def test_download_album_reports_directory_size(make_downloader):
 def test_album_size_bytes_missing_directory_returns_none(tmp_path: Path):
     downloader = Downloader(tmp_path / "music")
     assert downloader.album_size_bytes("喜马拉雅", "从未下载") is None
+
+
+# --- 网易云音乐（2026-11-02 实测接口，见 task research/findings.md）---
+
+
+def netease_playlist_payload(track_ids):
+    return {"code": 200, "playlist": {"name": "歌单", "trackCount": len(track_ids),
+                                      "trackIds": [{"id": i} for i in track_ids]}}
+
+
+def netease_song_detail(songs):
+    return {"code": 200, "songs": songs}
+
+
+def netease_player(data):
+    return {"code": 200, "data": data}
+
+
+def test_netease_playlist_lists_tracks_in_order(make_downloader):
+    """歌单 trackIds 给全量 ID，标题分批取；顺序按 trackIds 保持。"""
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/v3/playlist/detail?id=13907752641",
+                netease_playlist_payload([11, 22])),
+               ("https://music.163.com/api/song/detail/?ids=",
+                netease_song_detail([{"id": 11, "name": "小星星"}, {"id": 22, "name": "摇篮曲"}]))])
+    tracks = downloader.list_tracks(NETEASE_PLAYLIST, "13907752641")
+    assert [(t.track_id, t.title, t.ext) for t in tracks] == [
+        ("11", "小星星", "mp3"), ("22", "摇篮曲", "mp3")]
+
+
+def test_netease_album_lists_tracks_from_songs(make_downloader):
+    """专辑 songs 一次全量返回，不需要二次请求标题。"""
+    downloader, http = make_downloader(
+        platform=NETEASE_ALBUM,
+        pages=[("https://music.163.com/api/v1/album/34720827",
+                {"code": 200, "album": {"name": "周杰伦的床边故事", "size": 2},
+                 "songs": [{"id": 415792916, "name": "床边故事"},
+                           {"id": 418602084, "name": "说走就走"}]})])
+    tracks = downloader.list_tracks(NETEASE_ALBUM, "34720827")
+    assert [(t.track_id, t.title) for t in tracks] == [
+        ("415792916", "床边故事"), ("418602084", "说走就走")]
+    # 只有一次请求：album 的 songs 已带标题
+    assert len(http.json_responses) == 1
+
+
+def test_netease_batch_urls_aligns_by_id_not_by_order(make_downloader):
+    """player/url 的返回顺序不保证与请求一致（2026-11-02 实测踩过的坑）。
+
+    故意让响应乱序，若按位置匹配会把直链安到错误的曲目上。
+    """
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 22, "url": "https://cdn.example/b.mp3", "code": 200},
+                                {"id": 11, "url": "https://cdn.example/a.mp3", "code": 200}]))])
+    urls, reasons = downloader._netease_batch_urls(["11", "22"])
+    assert urls == {"11": "https://cdn.example/a.mp3", "22": "https://cdn.example/b.mp3"}
+    assert reasons == {}
+
+
+def test_netease_vip_and_missing_source_report_reasons(make_downloader):
+    """code=-110 是 VIP 未放行；无 url 是平台无音源；两者都逐条跳过并说明原因。"""
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": None, "code": -110},
+                                {"id": 22, "url": None, "code": 404}]))])
+    urls, reasons = downloader._netease_batch_urls(["11", "22"])
+    assert urls == {}
+    assert reasons["11"] == "VIP 付费曲目，平台未放行"
+    assert reasons["22"] == "平台无可用音源"
+
+
+def test_netease_track_missing_from_response_is_marked_no_source(make_downloader):
+    """接口没返回的曲目同样没有可用音源，不能当作成功。"""
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": "https://cdn.example/a.mp3", "code": 200}]))])
+    urls, reasons = downloader._netease_batch_urls(["11", "22"])
+    assert list(urls) == ["11"]
+    assert reasons == {"22": "平台无可用音源"}
+
+
+def test_netease_download_album_skips_vip_with_reason(make_downloader):
+    """免费曲落盘、VIP 曲跳过且带原因；文件名为 NNN-标题.mp3。"""
+    downloader, http = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/v3/playlist/detail?id=13907752641",
+                netease_playlist_payload([11, 22])),
+               ("https://music.163.com/api/song/detail/?ids=",
+                netease_song_detail([{"id": 11, "name": "小星星"}, {"id": 22, "name": "付费曲"}])),
+               ("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": "https://cdn.example/a.mp3", "code": 200},
+                                {"id": 22, "url": None, "code": -110}]))])
+    report = downloader.download_album(NETEASE_PLAYLIST, "13907752641", "婴儿哄睡必听")
+    assert report.downloaded == 1 and report.skipped == 1 and report.failed == 0
+    files = sorted(p.name for p in (downloader.music_dir / "婴儿哄睡必听").iterdir())
+    assert files == ["001-小星星.mp3"]
+    assert report.skip_reasons == (SkipReason("付费曲", "VIP 付费曲目，平台未放行"),)
+
+
+def test_netease_download_failure_is_not_counted_as_skipped(make_downloader, monkeypatch):
+    """网络故障如实记为 failed，不能当成跳过或成功。"""
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/v3/playlist/detail?id=1",
+                netease_playlist_payload([11])),
+               ("https://music.163.com/api/song/detail/?ids=",
+                netease_song_detail([{"id": 11, "name": "小星星"}])),
+               ("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": "https://cdn.example/a.mp3", "code": 200}]))])
+
+    def boom(url, dest, referer=None):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr("src.downloader._download_file", boom)
+    report = downloader.download_album(NETEASE_PLAYLIST, "1", "歌单")
+    assert report.downloaded == 0 and report.skipped == 0 and report.failed == 1
+
+
+def test_netease_http_403_counts_as_skipped_not_failed(make_downloader, monkeypatch):
+    """403 = 直链失效/音源被撤，属不可下载而非网络故障。"""
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/v3/playlist/detail?id=1",
+                netease_playlist_payload([11])),
+               ("https://music.163.com/api/song/detail/?ids=",
+                netease_song_detail([{"id": 11, "name": "小星星"}])),
+               ("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": "https://cdn.example/a.mp3", "code": 200}]))])
+
+    def reject(url, dest, referer=None):
+        raise urllib.error.HTTPError(url, 403, "Forbidden", None, None)
+
+    monkeypatch.setattr("src.downloader._download_file", reject)
+    report = downloader.download_album(NETEASE_PLAYLIST, "1", "歌单")
+    assert report.downloaded == 0 and report.skipped == 1 and report.failed == 0
+    assert report.skip_reasons == (SkipReason("小星星", "音源不可用"),)
+
+
+def test_netease_download_resumes_existing_files(make_downloader):
+    """已存在的同名文件视为已完成，不重复下载（断点续传）。"""
+    downloader, http = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/v3/playlist/detail?id=1",
+                netease_playlist_payload([11])),
+               ("https://music.163.com/api/song/detail/?ids=",
+                netease_song_detail([{"id": 11, "name": "小星星"}])),
+               ("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": "https://cdn.example/a.mp3", "code": 200}]))])
+    album_dir = downloader.music_dir / "歌单"
+    album_dir.mkdir(parents=True)
+    (album_dir / "001-小星星.mp3").write_bytes(b"old")
+    report = downloader.download_album(NETEASE_PLAYLIST, "1", "歌单")
+    assert report.downloaded == 1
+    assert http.download_urls == []
+
+
+def test_skip_summary_groups_reasons_and_lists_samples():
+    report = DownloadReport(skipped=3, skip_reasons=(
+        SkipReason("付费曲甲", "VIP 付费曲目，平台未放行"),
+        SkipReason("付费曲乙", "VIP 付费曲目，平台未放行"),
+        SkipReason("无源曲", "平台无可用音源")))
+    summary = report.skip_summary()
+    assert "VIP 付费曲目，平台未放行 2 首" in summary
+    assert "平台无可用音源 1 首" in summary
+    assert "《付费曲甲》" in summary
+
+
+def test_skip_summary_is_empty_without_reasons():
+    assert DownloadReport().skip_summary() == ""
+
+
+def test_netease_resolve_url_returns_direct_link(make_downloader):
+    """resolve_url 对网易云也要能用（逐曲调用时同样返回直链）。"""
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": "https://cdn.example/a.mp3", "code": 200}]))])
+    assert downloader.resolve_url(NETEASE_PLAYLIST, "1", Track("11", "小星星", "mp3")) \
+        == "https://cdn.example/a.mp3"
+
+
+def test_netease_resolve_url_returns_none_for_vip(make_downloader):
+    downloader, _ = make_downloader(
+        platform=NETEASE_PLAYLIST,
+        pages=[("https://music.163.com/api/song/enhance/player/url",
+                netease_player([{"id": 11, "url": None, "code": -110}]))])
+    assert downloader.resolve_url(NETEASE_PLAYLIST, "1", Track("11", "付费曲", "mp3")) is None
