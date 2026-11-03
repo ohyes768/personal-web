@@ -213,11 +213,16 @@ def bind_source(registry, community, candidate, *, seed, method='manual', eviden
 
 
 def protected(registry, community_id):
-    """True when a human already decided this community's rental source."""
+    """True when a human already decided this community's rental source.
+
+    Only the current provider counts: a retired Fang association is history, it
+    must not keep the community out of automatic matching while the UI shows it
+    as unmapped. Explicit human rejections still protect the community.
+    """
     with registry.db() as db:
         if community_id in rejected_rental_communities(db):
             return True
-        row = db.execute("SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source IN ('fang','xingfuli')",
+        row = db.execute("SELECT 1 FROM sources WHERE cid=? AND status='matched' AND source='xingfuli'",
                          (community_id,)).fetchone()
     return bool(row)
 

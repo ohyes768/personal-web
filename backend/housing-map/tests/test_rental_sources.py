@@ -41,9 +41,8 @@ def rental_source(reg, kind='xingfuli', sid='123'):
 
 
 def test_source_store_requires_the_authoritative_registry(tmp_path):
-    path = tmp_path / 'data' / 'rental_community_mappings.json'
     with pytest.raises(SourceRegistryUnavailable):
-        SourceStore(path)
+        SourceStore(tmp_path / 'data')
     # No second mapping database is created behind the user's back.
     assert not (tmp_path / 'data' / 'rental_sources.sqlite3').exists()
 
@@ -52,7 +51,7 @@ def test_source_store_reads_only_the_current_xingfuli_mapping(tmp_path):
     reg = registry(tmp_path / 'data')
     rental_source(reg, 'fang', '999')
     rental_source(reg, 'xingfuli', '123')
-    store = SourceStore(tmp_path / 'data' / 'rental_community_mappings.json')
+    store = SourceStore(tmp_path / 'data')
     mapping = store.get('c1')['mapping']
     assert mapping['source'] == 'xingfuli'
     assert mapping['source_community_id'] == '123'
@@ -63,7 +62,7 @@ def test_source_store_reads_only_the_current_xingfuli_mapping(tmp_path):
 def test_historical_fang_only_community_has_no_current_mapping(tmp_path):
     reg = registry(tmp_path / 'data')
     rental_source(reg, 'fang', '999')
-    store = SourceStore(tmp_path / 'data' / 'rental_community_mappings.json')
+    store = SourceStore(tmp_path / 'data')
     assert store.get('c1')['mapping'] is None
     assert load_verified_mappings(tmp_path / 'data' / 'rental_community_mappings.json') == []
 
@@ -72,7 +71,7 @@ def test_remove_unlinks_xingfuli_and_never_falls_back_to_fang(tmp_path):
     reg = registry(tmp_path / 'data')
     rental_source(reg, 'fang', '999')
     rental_source(reg, 'xingfuli', '123')
-    store = SourceStore(tmp_path / 'data' / 'rental_community_mappings.json')
+    store = SourceStore(tmp_path / 'data')
     store.remove('c1')
     assert store.get('c1')['mapping'] is None
     assert load_verified_mappings(tmp_path / 'data' / 'rental_community_mappings.json') == []

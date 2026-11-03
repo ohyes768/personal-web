@@ -30,7 +30,7 @@ class ConfirmRequest(BaseModel):
 def store() -> SourceStore:
     """The community registry is the only authority; without it there is no source store."""
     try:
-        return SourceStore(rental_routes._mappings_path)
+        return SourceStore(rental_routes._mappings_path.parent)
     except (SourceRegistryUnavailable, sqlite3.Error, OSError, ValueError) as exc:
         logger.exception('Rental source store unavailable')
         raise HTTPException(503, '小区目录尚未准备好，租金来源暂不可用') from exc

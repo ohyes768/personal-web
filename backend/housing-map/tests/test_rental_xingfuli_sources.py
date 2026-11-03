@@ -263,3 +263,16 @@ def test_the_refresh_run_never_discovers_sources(tmp_path):
         service.start()
     assert fake.calls == []
     assert not any(s['source'] == 'xingfuli' for s in registry.sources())
+
+
+def test_a_historical_fang_source_does_not_block_automatic_discovery(tmp_path):
+    """房天下退役后不再挡路：只有历史房天下关联的小区仍会被自动匹配检查。"""
+    registry = setup(tmp_path)
+    row = registry.ingest(dict(source='fang', source_id='f1', name='测试花园', district='滨江',
+                               address='测试路1号'))
+    with registry.db() as db:
+        db.execute("UPDATE sources SET cid=?,status='matched',method='manual' WHERE id=?",
+                   ('c1', row['id']))
+    fake = FakeDiscovery(search={}, homepages={})
+    report = auto_discover(registry, fake, registry.communities())
+    assert report['checked'] == 1

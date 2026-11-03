@@ -239,3 +239,34 @@ trellis-check 子代理因 API 用量上限（429）中断，以下为主会话�
 **已知 LOW 项（有意保留，不改）**：`api/rental_routes.py` 的详情响应仍带 `regional_sample` 键（房天下区域样本
 标记）。该标记路径已删除，运行时恒为 `false`；保留它是为了遵守 design「公共 API 响应形状不变」，
 前端已不再声明该字段，也不依赖它。
+
+## 9. 质量检查发现与修复（fix 提交）
+
+trellis-check 子代理在 429 中断后恢复并跑完，报告 2 个 HIGH / 4 个 MEDIUM / 3 个 LOW。核对源码后
+逐项处理：
+
+| 编号 | 问题 | 处理 |
+|---|---|---|
+| HIGH 1 | `protected()` 仍查 `source IN ('fang','xingfuli')`，只有历史房天下关联的小区被 `auto_discover` 永久跳过，而 UI 同时显示它「未关联来源」 | 改为只认 `source='xingfuli'`；人工**拒绝**记录仍经 `rejected_rental_communities` 保护该小区 |
+| HIGH 2 | `_associate` 放行「已 matched 同 cid」的历史房天下行，一次无关的人工审核会覆写其 `associated_at`/`method`/`evidence` | 改为幂等 no-op（直接 return，不改写、不发事件） |
+| MEDIUM 1 | 人工审核遇到未关联的房天下成员会整体失败（409） | 组内**只有**退役成员时仍失败；混编时只跳过退役成员，其余正常关联 |
+| MEDIUM 2 | `guides/housing-map-merge.md` 合并拒绝条件仍写 `fang`/`xingfuli` | 改为只认 `xingfuli`，并注明历史房天下关联不阻塞合并 |
+| MEDIUM 3 | spec 里 `SourceStore(mappings_path)` 与实现的「读台账目录」语义不符 | 参数改为 `data_dir`，spec 同步 |
+| MEDIUM 4 | `SourceStore.__init__` 丢失类型标注 | 补 `data_dir: Path` |
+| LOW 1 | 前端来源管理测试在拉数据前只渲染加载态，断言全落在空壳上 | 改为直接锁住组件源码（禁房天下文案 / `SourceCandidate` / search 端点 / PUT） |
+| LOW 2 | 死代码：`providers.RENTAL_PROVIDERS`、两处未用 logger、包 docstring 仍写 "for Fang rents" | 全部清理（`rejected_rental_communities` 的 `'fang'` 是有意保留的历史隔离，不动） |
+| LOW 3 | `housing-map-fang-rentals.md` 成为孤立文件 | 与 design 一致（保留退役事实、移出必读），不处理 |
+
+新增回归护栏：
+
+- `test_fang_retirement_directory.py::test_historical_fang_association_does_not_block_automatic_matching`
+- `::test_human_rejection_still_protects_a_community`
+- `::test_historical_fang_evidence_is_not_rewritten_by_a_later_review`
+- `test_rental_xingfuli_sources.py::test_a_historical_fang_source_does_not_block_automatic_discovery`
+- `test_community_review.py::test_a_retired_fang_member_does_not_fail_the_whole_review`
+
+规范同步：`xingfuli-discovery.md`（自动匹配保护范围）、`community-review.md`（退役成员语义与证据保护）、
+`rental-sources.md`（SourceStore 签名）、`guides/housing-map-merge.md`（合并唯一性）。
+
+验证：后端 `pytest -q` → **1309 passed, 3 warnings in 247.27s**；前端 `npm run lint`、
+`npx tsc --noEmit` 通过，`node --test tests/*.test.cjs` → **202 tests, 202 pass, 0 fail**。

@@ -2,7 +2,6 @@
 
 # 唯一当前租金来源。房天下已退役，历史关联仍可读取，但不再参与当前采集与统计。
 CURRENT_RENTAL_PROVIDER = 'xingfuli'
-RENTAL_PROVIDERS = frozenset({'fang', 'xingfuli'})
 
 
 def rejected_rental_communities(db):

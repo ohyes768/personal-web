@@ -8,7 +8,7 @@ from pathlib import Path
 from src.services.community_address import effective_address
 from src.services.community_listing import listing_gate
 from src.services.community_admission import community_views, property_facts
-from src.services.community_registry import dump, normalized, now
+from src.services.community_registry import RETIRED_RENTAL_SOURCES, dump, normalized, now
 
 
 def same_community(a, b):
@@ -372,7 +372,12 @@ class ReviewWorkspace:
                     payload = json.loads(row[0]); payload['community_name'] = name.strip()
                     db.execute('UPDATE communities SET payload=? WHERE id=?', (dump(payload), cid))
                 self.store._decide_admission(db, cid, 'admit', revision=group.get('admission_revision', 1), reason=reason, property_type=property_type, automatic=automatic)
-            for member in members:
+            # 房天下已退役：不为它新建关联。组里只有退役成员时没有可关联的来源，
+            # 整组仍然失败；混编时只跳过退役成员，不让整组人工审核失败。
+            associable = [m for m in members if m.get('source') not in RETIRED_RENTAL_SOURCES]
+            if members and not associable:
+                raise ValueError('房天下来源已退役，不能建立新的关联')
+            for member in associable:
                 if automatic and member['status'] == 'matched' and member['community_id'] == cid:
                     continue  # Admission is separate from identity; retain its original association audit.
                 self.store._associate(db, member['id'], cid, review_override=True,

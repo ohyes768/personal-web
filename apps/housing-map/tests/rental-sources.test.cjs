@@ -2,6 +2,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
+const path = require('node:path');
 const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
@@ -15,12 +16,20 @@ const { CollectionControls } = require('../src/components/community/DirectoryFlo
 const { RENTAL_SOURCE_LABEL, safeSourceLink } = require('../src/lib/rental-sources.ts');
 test('source manager names the only current provider and offers no candidate confirmation', () => {
   assert.equal(RENTAL_SOURCE_LABEL, '幸福里');
+  // The component renders its loading state before the request resolves, so a
+  // markup assertion would pass even with retired wording inside. Lock the
+  // component source itself instead.
+  const source = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'components', 'rental', 'RentalSourceManager.tsx'), 'utf8');
+  assert.doesNotMatch(source, /房天下/);
+  assert.doesNotMatch(source, /SourceCandidate/);
+  assert.doesNotMatch(source, /rental-source\/search/);
+  assert.doesNotMatch(source, /method: 'PUT'/);
+  assert.doesNotMatch(source, /粘贴|搜索关键词|读取链接候选/);
   const html = renderToStaticMarkup(React.createElement(RentalSourceAssociation, {
     communityId: 'c1', onChanged() {},
   }));
-  assert.doesNotMatch(html, /房天下/);
-  assert.doesNotMatch(html, /确认是这个小区|不是这个小区/);
-  assert.doesNotMatch(html, /粘贴|搜索关键词|读取链接候选/);
+  assert.match(html, /正在加载来源关联/);
 });
 test('central rental task exposes missing-source feedback', () => {
   const html = renderToStaticMarkup(React.createElement(CollectionControls, {

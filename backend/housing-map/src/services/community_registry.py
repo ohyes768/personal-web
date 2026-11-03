@@ -415,7 +415,10 @@ class CommunityRegistry:
         if not c or not r or r['status'] == 'ignored':
             raise ValueError('来源或目标小区不存在，或已删除')
         # 房天下已退役：不能新建或迁移房天下关联；历史关联原样保留，可读取与解绑。
-        if r['source'] in RETIRED_RENTAL_SOURCES and not (r['status'] == 'matched' and r['cid'] == cid):
+        if r['source'] in RETIRED_RENTAL_SOURCES:
+            if r['status'] == 'matched' and r['cid'] == cid:
+                # 历史关联原样保留：幂等返回，既不迁移也不改写人工审核证据。
+                return
             raise ValueError('房天下来源已退役，不能建立新的关联')
         from src.services.directory_policy import enabled, eligibility
         directory_mode = enabled(db)

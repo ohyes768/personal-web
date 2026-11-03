@@ -159,3 +159,56 @@ def test_manual_admission_and_review_payloads_survive_retirement(tmp_path):
     assert restarted.events('100') == before[1]
     with restarted.db() as db:
         assert db.execute('SELECT COUNT(*) FROM rejected').fetchone()[0] == 1
+
+
+def legacy_fang_association(store, cid, sid='f1'):
+    """构造一条历史房天下关联（只能来自既有数据，直接写台账行）。"""
+    row = store.ingest(dict(source='fang', source_kind='community', source_id=sid,
+                            name='测试花园', district='滨江', address='测试路1号'))
+    with store.db() as db:
+        db.execute("UPDATE sources SET cid=?,status='matched',method='manual',evidence=? WHERE id=?",
+                   (cid, json.dumps(['人工确认']), row['id']))
+    return row
+
+
+def test_historical_fang_association_does_not_block_automatic_matching(tmp_path):
+    """房天下退役后不再挡幸福里的路：UI 显示未关联，自动匹配就应能补上来源。"""
+    from src.services.rental_reference.xingfuli_sources import has_source, protected
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    store.create('测试花园', district='滨江', address='测试路1号', community_id='c1')
+    legacy_fang_association(store, 'c1')
+    assert not has_source(store, 'c1')
+    assert not protected(store, 'c1')
+
+
+def test_human_rejection_still_protects_a_community(tmp_path):
+    """人工拒绝记录仍是人工决定，与退役来源无关。"""
+    from src.services.rental_reference.xingfuli_sources import protected
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    store.create('测试花园', district='滨江', address='测试路1号', community_id='c1')
+    item = store.ingest(dict(source='xingfuli', source_id='s1', name='测试花园',
+                             district='滨江', address='测试路1号', seed_listing_id='123'))
+    store.associate(item['id'], 'c1')
+    store.unlink(item['id'], 'c1')
+    assert protected(store, 'c1')
+
+
+def test_historical_fang_evidence_is_not_rewritten_by_a_later_review(tmp_path):
+    """一次无关的人工审核不得改写历史房天下关联的人工审核痕迹。"""
+    store = CommunityRegistry(tmp_path / 'registry.sqlite3')
+    store.create('测试花园', district='滨江', address='测试路1号', community_id='c1')
+    row = legacy_fang_association(store, 'c1')
+    def fang_row():
+        with store.db() as db:
+            raw = dict(db.execute('SELECT * FROM sources WHERE id=?', (row['id'],)).fetchone())
+        raw['payload'] = json.loads(raw['payload'])
+        return raw
+    before = fang_row()
+    other = store.ingest(dict(source='tmsf', source_id='t1', name='测试花园', district='滨江',
+                              address='测试路1号', property_type='住宅', listing_count=3))
+    store.associate(other['id'], 'c1')
+    after = fang_row()
+    assert after['payload'].get('associated_at') == before['payload'].get('associated_at')
+    assert after['evidence'] == before['evidence']
+    assert after['method'] == before['method']
+    assert after['status'] == 'matched' and after['cid'] == 'c1'

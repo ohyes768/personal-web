@@ -144,3 +144,18 @@ def test_collection_completion_materializes_review_without_admitting(tmp_path):
     with work.store.db() as db:
         assert db.execute('SELECT COUNT(*) FROM review_candidates').fetchone()[0] == 1
     assert work.store.communities() == []
+
+
+def test_a_retired_fang_member_does_not_fail_the_whole_review(tmp_path):
+    """房天下退役后，人工审核不再被一个未关联的房天下成员整体打回。"""
+    work = workspace(tmp_path)
+    source(work.store, '1', source='tmsf', property_type='住宅')
+    source(work.store, '2', source='fang')
+    grouped = next(r for r in work.reviews() if len(r['members']) == 2)
+    result = work.decide(grouped['id'], 'admit', revision=grouped['revision'],
+                          name='标准花园', property_type='住宅')
+    assert result['state'] == 'resolved'
+    fang = next(s for s in work.store.sources() if s['source'] == 'fang')
+    assert fang['status'] == 'pending' and fang['community_id'] is None
+    tmsf = next(s for s in work.store.sources() if s['source'] == 'tmsf')
+    assert tmsf['status'] == 'matched'

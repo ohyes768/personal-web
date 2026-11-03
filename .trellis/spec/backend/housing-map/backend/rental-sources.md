@@ -12,7 +12,7 @@
 Applies to `rental_reference/sources.py`, `rental_source_routes.py`, source membership in `refresh.py`, rental query snapshot selection and the frontend source manager.
 
 ## 2. Signatures
-- `SourceStore(mappings_path)` reads the community registry next to `mappings_path`; it raises `SourceRegistryUnavailable` when no registry exists. It never creates a mapping database.
+- `SourceStore(data_dir)` reads the community registry in `data_dir`; it raises `SourceRegistryUnavailable` when no registry exists. It never creates a mapping database.
 - `get(community_id)` -> `{mapping, candidates}`; `candidates` is always `[]` (the retired Fang candidate pool is neither exposed nor confirmable).
 - `all_mappings()` -> `{community_id: mapping}` for the current Xingfuli sources only.
 - `pending_counts()` -> `{}`; there is no pending Fang candidate queue.
@@ -63,7 +63,7 @@ The Fang keyword/link discovery, the `FangClient` URL validation, the keyword-pr
 ## 7. Wrong vs Correct
 ```python
 # Wrong: a second writable mapping store next to the authoritative registry.
-store = SourceStore(path.with_name('rental_sources.sqlite3'))
+store = SourceStore(data_dir)
 # Correct: adapt the registry; without it the feature is unavailable, not rebuilt.
 registry = existing_registry(path.parent)
 if not registry:

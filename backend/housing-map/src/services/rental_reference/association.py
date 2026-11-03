@@ -6,7 +6,6 @@ decisions that the matching and probe flows rely on.
 """
 import hashlib
 import json
-import logging
 
 from src.services.community_registry import dump, now
 from src.services.residential_classifier import classify_sources
@@ -16,7 +15,6 @@ from src.services.tmsf_property_type import effective_market_state
 from src.services.rental_reference.providers import active_sources
 
 PREFIX = 'rental_review:'
-logger = logging.getLogger(__name__)
 
 
 def eligible_communities(registry):

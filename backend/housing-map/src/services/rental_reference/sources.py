@@ -6,9 +6,7 @@ unavailable (503), never silently rebuilt from an old file.
 """
 from __future__ import annotations
 
-import logging
-
-logger = logging.getLogger(__name__)
+from pathlib import Path
 
 
 class SourceRegistryUnavailable(RuntimeError):
@@ -18,9 +16,9 @@ class SourceRegistryUnavailable(RuntimeError):
 class SourceStore:
     """Read/write adapter over the community registry's rental sources."""
 
-    def __init__(self, mappings_path):
+    def __init__(self, data_dir: Path):
         from src.services.community_registry import existing_registry
-        self.registry = existing_registry(mappings_path.parent)
+        self.registry = existing_registry(data_dir)
         if not self.registry:
             raise SourceRegistryUnavailable('小区目录尚未准备好')
 

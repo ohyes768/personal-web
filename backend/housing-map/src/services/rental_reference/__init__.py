@@ -1,4 +1,4 @@
-"""Rental reference: statistics helpers and snapshot storage for Fang rents."""
+"""Rental reference: statistics helpers and snapshot storage for rental rents."""
 
 from src.services.rental_reference.storage import (
     CommunityBatch,
