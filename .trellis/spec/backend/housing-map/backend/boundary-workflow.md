@@ -117,7 +117,7 @@ revision = `digest(基础条目 + 覆盖条目 + 有效定位/名称)`，**不�
 - `apps/housing-map/src/lib/boundary-workflow.ts`：类型 + 请求封装 + 展示层纯函数（可测）。
 - `apps/housing-map/src/lib/use-boundary-workflow.ts`：状态与轮询（活动任务 2s 一次，终态停）。
   数据按小区 ID 存档，渲染时只取当前小区快照 —— 切小区后迟到响应不会叠加旧候选。
-- **轮廓操作在小区详情弹框的第三个 tab「地块轮廓」里**，与「小区概况」「租金与收益」平级
+- **轮廓操作在小区详情弹框的第二个 tab「地块轮廓」里**，与「小区概况」平级；「租金与收益」页签已移除。
   （`CommunityDetailTabs` 的 `boundary` 插槽，有内容才渲染这个 tab）。
   不要把轮廓内容再塞回概况页正文 —— 那是最初的写法，挤在价格评分中间，越加越乱。
   `BoundaryWorkflowPanel.tsx` 拆成两个 tab 内容组件：`BoundaryWorkflowSection`（状态 + 入口）、

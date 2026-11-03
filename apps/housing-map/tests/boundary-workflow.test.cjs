@@ -322,7 +322,7 @@ test('detail tabs put the boundary tab next to the community overview', () => {
     }),
   }, React.createElement('p', null, '概况内容')));
   assert.match(html, /小区概况/);
-  assert.match(html, /租金与收益/);
+  assert.doesNotMatch(html, /租金与收益/);
   assert.match(html, /地块轮廓/);
 });
 

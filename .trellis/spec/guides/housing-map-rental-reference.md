@@ -165,6 +165,7 @@ The directory-backed web flow now includes source checking/discovery before craw
 
 ### 小区概览指标条（2026-11-02）
 
+- 2026-11-03：小区详情移除「租金与收益」页签；概况保留以下两项指标，看板租金列与小区数据维护中的来源匹配、租金采集入口保留。样本明细和分组统计不搬入概况。
 - 二手小区概览复用详情接口，固定 `area_band=90to144&bedrooms=all`，只取 `bedrooms=null` 的合并重算组，不平均各户型结果。
 - 月租售比及年化毛收益率仅在 availability=available 且组内 yield_estimate 有值时展示；缺失为 —，口径和缺失原因放 title，不加说明小字。
 - 桌面抽屉默认760px、七列；760px及以下四列，480px及以下三列。最近法拍日期/面积只放悬停提示。
