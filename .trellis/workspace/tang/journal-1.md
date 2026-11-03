@@ -534,3 +534,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 15: Kid 支持网易云音乐链接下载与设备歌单
+
+**Date**: 2026-11-03
+**Task**: Kid 支持网易云音乐链接下载与设备歌单
+**Package**: backend/douyin-processor
+
+### Summary
+
+手动导入新增网易云音乐来源（歌单/专辑链接），复用现有下载台账与设备歌单候选链路。实测 4 个匿名接口、曲目级 fee 付费判定、player/url 返回顺序须按 id 对齐、歌单与专辑 ID 空间重叠用两个 platform 名区分。真实网络 e2e：歌单 39 首成功 33/VIP 跳过 6，专辑 8 首成功 6/跳过 2，文件为合法 mp3 且重跑幂等。后端 238 passed，前端 tsc 与生产构建通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d1da8748` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
