@@ -9,6 +9,7 @@ import { DEFAULT_SCREENING, restoreScreeningConditions, type ScreeningConditions
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityReportModal } from './QualityReportModal';
 import { QualityQueuePanel } from './QualityQueuePanel';
+import { QualityReaderEntry } from './QualityReaderEntry';
 import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
 
 const STORAGE_KEY = 'dividend-screening-conditions-v1';
@@ -17,7 +18,7 @@ const isDeclining = (value?: number | null) => value != null && Number.isFinite(
 const statusNames: Record<ScreeningStatus, string> = { eligible: '符合条件', excluded: '未符合', insufficient_data: '待补数据' };
 const buttonClass = 'rounded border border-rule-strong px-3 py-2 text-sm text-ink hover:border-accent disabled:opacity-40';
 
-export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: UseWatchlistResult; refreshRevision?: number }) {
+export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'tab=screening' }: { watchlist: UseWatchlistResult; refreshRevision?: number; sourceQuery?: string }) {
   const [conditions, setConditions] = useState<ScreeningConditions>(DEFAULT_SCREENING);
   const [result, setResult] = useState<ScreeningResponse | null>(null);
   const [loading, setLoading] = useState(false);
@@ -121,7 +122,10 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
         {(Object.keys(statusNames) as ScreeningStatus[]).filter(status => status !== 'insufficient_data' || result.counts[status] > 0).map(status => <button key={status} className={`${buttonClass} ${activeView === status ? 'bg-paper-deep border-accent' : ''}`} onClick={() => setView(status)}>{statusNames[status]} {result.counts[status]}</button>)}
         <button className={`${buttonClass} md:ml-auto`} disabled={saving || selected.size === 0} onClick={() => void save([...selected])}>收藏所选 ({selected.size})</button>
         <button className={buttonClass} disabled={saving || eligibleCodes.length === 0} onClick={() => void save(eligibleCodes)}>{saving ? '收藏中…' : '收藏全部符合条件'}</button>
-        <QualityQueuePanel view={queueView} onCancel={cancelQueueItem} onMove={moveQueueItem} />
+        <div className="screening-quality-actions flex items-center gap-2">
+          <QualityQueuePanel view={queueView} onCancel={cancelQueueItem} onMove={moveQueueItem} />
+          <QualityReaderEntry sourceQuery={sourceQuery} />
+        </div>
       </div>
       {qualityPollError && <p role="status" className="text-sm text-amber-700">评级进度查询失败，任务不受影响，自动重试中…</p>}
       {qualityMessage && <p role="status" className="text-sm text-ink">

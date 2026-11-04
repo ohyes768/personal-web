@@ -481,3 +481,41 @@ def test_stocks_concurrent_builds_stay_consistent(monkeypatch):
         await routes.health()
 
     asyncio.run(scenario())
+
+
+def test_screen_route_uses_real_stock_loader_with_omitted_codes(monkeypatch):
+    """Mocking get_stocks would hide leaks of FastAPI parameter defaults."""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    reader, filterer, sorter = make_routes_mocks()
+    patch_routes(reader, filterer, sorter, monkeypatch)
+    monkeypatch.setattr(routes, "find_latest_aux_file", lambda *args: None)
+    app = FastAPI()
+    app.include_router(routes.router)
+    response = TestClient(app).post("/stocks/screen", json={})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 3
+    assert {item["stock"]["code"] for item in body["items"]} == {"000090", "600000", "000001"}
+    assert sum(body["counts"].values()) == 3
+    filterer.filter_by_3y_dividend.assert_not_called()
+
+
+@pytest.mark.parametrize("query,expected_status,expected_codes", [
+    ("", 200, ["000090", "600000", "000001"]),
+    ("?codes=90,600000", 200, ["000090", "600000"]),
+    ("?codes=abc", 422, None),
+])
+def test_stocks_http_codes_parameter(monkeypatch, query, expected_status, expected_codes):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    reader, filterer, sorter = make_routes_mocks()
+    patch_routes(reader, filterer, sorter, monkeypatch)
+    app = FastAPI()
+    app.include_router(routes.router)
+    response = TestClient(app).get(f"/stocks{query}")
+    assert response.status_code == expected_status
+    if expected_codes is not None:
+        assert [item["code"] for item in response.json()["items"]] == expected_codes

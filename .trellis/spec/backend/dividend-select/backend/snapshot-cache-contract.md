@@ -40,6 +40,7 @@
 - 读取类 async 路由的同步 Pandas 组装放 `asyncio.to_thread`：`health`、
   `get_stocks`（`_build_stock_list`）、`get_m120_stocks`（`_build_m120_list`）、
   `get_prices`（`_build_price_list`）、`get_m120_status`、`get_financial_status`。
+- 被内部直接调用的路由新增查询参数时，用 `Annotated[..., Query(...)] = None` 等普通 Python 默认值；FastAPI `Query(None)` 默认对象不会在 Python 调用中自动解析。必须测试真实路由调用链，不能只 mock `get_stocks`（2026-11-04：screen/quality analyze 曾因此触发 `Query.strip` 异常）。
 - 内部 `await get_stocks(...)` 的调用方（screen、quality analyze）保持不变，
   隔离在 get_stocks 内部完成。
 - 刷新任务互斥、调度器生命周期、原子发布语义不受影响（refresh 的写路径经
