@@ -165,3 +165,264 @@ input[type="number"] {
 .md-body th { background: var(--color-paper-deep); font-weight: 600; color: var(--color-ink-strong); }
 .md-body tr:nth-child(even) td { background: var(--color-paper-tint); }
 .md-body hr { margin: 1em 0; border: 0; border-top: 1px solid var(--color-rule); }
+
+/* === 基本面资料阅读页（/quality-reader，手机长文阅读）=== */
+/* 只作用于 reader 作用域，不影响原评分弹窗的视觉密度 */
+.quality-reader-root {
+  --quality-reader-nav-height: 64px;
+  --quality-reader-safe-bottom: env(safe-area-inset-bottom, 0px);
+  min-height: 100vh;
+  background: var(--color-paper);
+  color: var(--color-ink);
+}
+
+.quality-reader-container {
+  max-width: 48rem;
+  margin: 0 auto;
+  padding: 16px 16px calc(var(--quality-reader-nav-height) + var(--quality-reader-safe-bottom) + 24px);
+}
+
+@media (min-width: 640px) {
+  .quality-reader-container {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+.quality-reader-title {
+  margin: 16px 0 12px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--color-ink-strong);
+}
+
+.quality-reader-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-rule);
+}
+
+.quality-reader-label {
+  font-size: 0.8125rem;
+  color: var(--color-ink-muted);
+}
+
+.quality-reader-select {
+  min-height: 44px;
+  max-width: 100%;
+  font-size: 16px; /* ≥16px 避免手机输入框自动缩放 */
+  padding: 8px 10px;
+  color: var(--color-ink);
+  background: var(--color-paper-card);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 8px;
+}
+
+.quality-reader-select:focus-visible,
+.quality-reader-btn:focus-visible,
+.quality-reader-link:focus-visible,
+.quality-reader-entry:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+.quality-reader-progress {
+  font-size: 0.8125rem;
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.quality-reader-link {
+  display: inline-block;
+  min-height: 44px;
+  line-height: 44px;
+  color: var(--color-ink-muted);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.quality-reader-link:hover {
+  color: var(--color-ink-strong);
+}
+
+.quality-reader-btn {
+  min-height: 44px;
+  padding: 8px 16px;
+  font-size: 0.9375rem;
+  color: var(--color-ink);
+  background: var(--color-paper-card);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 8px;
+}
+
+.quality-reader-btn:hover:not(:disabled) {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.quality-reader-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.quality-reader-btn-ghost {
+  background: transparent;
+}
+
+.quality-reader-state {
+  margin-top: 24px;
+  padding: 20px 16px;
+  color: var(--color-ink-muted);
+  background: var(--color-paper-card);
+  border: 1px solid var(--color-rule);
+  border-radius: 12px;
+}
+
+.quality-reader-error {
+  color: var(--color-down);
+  border-color: var(--color-down);
+}
+
+.quality-reader-refresh-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  font-size: 0.875rem;
+  color: var(--color-down);
+  background: var(--color-down-tint);
+  border-radius: 8px;
+}
+
+.quality-reader-article {
+  margin-top: 20px;
+}
+
+.quality-reader-company {
+  font-size: 1.375rem;
+  font-weight: 700;
+  color: var(--color-ink-strong);
+  outline: none;
+}
+
+.quality-reader-code {
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  color: var(--color-ink-muted);
+}
+
+/* 正文：17px / 1.8，长链接与长串不撑破整页 */
+.quality-reader-content {
+  margin-top: 16px;
+  font-size: 17px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.quality-reader-section {
+  margin: 1.4em 0 0.4em;
+  font-size: 1.0625rem;
+  font-weight: 600;
+  color: var(--color-ink-strong);
+  line-height: 1.5;
+}
+
+.quality-reader-text {
+  color: var(--color-ink);
+}
+
+.quality-reader-list {
+  margin: 0.5em 0;
+  padding-left: 1.4em;
+  list-style: disc;
+}
+
+.quality-reader-list li {
+  margin: 0.25em 0;
+}
+
+/* 宽表格与代码块局部横滑，不产生整页横向滚动 */
+.quality-reader-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.quality-reader-md table {
+  width: max-content;
+  min-width: 100%;
+}
+
+.quality-reader-md pre {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 12px;
+  background: var(--color-paper-deep);
+  border-radius: 8px;
+}
+
+.quality-reader-md code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+}
+
+.quality-reader-md pre code {
+  font-size: 0.85em;
+}
+
+.quality-reader-md img {
+  max-width: 100%;
+  height: auto;
+}
+
+/* 底部翻页栏：固定底部 + 安全区，正文底部留白与之对应 */
+.quality-reader-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--color-paper);
+  border-top: 1px solid var(--color-rule);
+  padding-bottom: var(--quality-reader-safe-bottom);
+}
+
+.quality-reader-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 48rem;
+  min-height: var(--quality-reader-nav-height);
+  margin: 0 auto;
+  padding: 10px 16px;
+}
+
+@media (min-width: 640px) {
+  .quality-reader-nav-inner {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+
+/* 主页面入口（手机可换行，不挤入右侧操作列） */
+.quality-reader-entry {
+  display: inline-block;
+  margin-top: 8px;
+  min-height: 44px;
+  line-height: 44px;
+  padding: 0 12px;
+  font-size: 0.875rem;
+  color: var(--color-accent);
+  background: var(--color-paper-card);
+  border: 1px solid var(--color-rule-strong);
+  border-radius: 8px;
+  text-decoration: none;
+}
+
+.quality-reader-entry:hover {
+  border-color: var(--color-accent);
+}

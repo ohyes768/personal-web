@@ -1,0 +1,36 @@
+{
+  "id": "dividend-quality-reader",
+  "name": "dividend-quality-reader",
+  "title": "基本面资料手机阅读界面",
+  "description": "apps/dividend：独立的手机基本面报告阅读页、页面入口、上下篇及股票下拉切换。2026-11-04 完成实现与验证，待提交。",
+  "status": "in_progress",
+  "dev_type": "frontend",
+  "scope": "dividend",
+  "package": null,
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-11-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "apps/dividend/src/app/page.tsx",
+    "apps/dividend/src/components/QualityReportModal.tsx",
+    "apps/dividend/src/lib/quality.ts",
+    "apps/dividend/src/lib/api.ts",
+    "nginx/web.conf",
+    "docs/dividend/01-界面功能设计.md"
+  ],
+  "notes": "2026-11-03 用户授权建任务并规划（prd/design/implement 三件套齐备）。2026-11-04 用户授权实现，trellis-implement 子代理完成阶段 1-5，主会话做质量检查与阶段 6 收尾。验证：单测 19/19；tsc --noEmit exit 0；npm run build exit 0（新增 ○ /quality-reader 2.24 kB）；E2E 48 passed / 3 failed——3 例为存量失败（上游 66b268af 改了评分单元格 UI 未同步断言，已用 git stash 在基线复现确认），未改断言。npm run lint 不可用（项目无 ESLint 配置，next lint 进交互向导），未迁移 lint。未测：真实 nginx 容器部署形态（E2E 用 route 模拟剥前缀）、真实后端全量 report_md 体积。详见同目录 verification.md。未提交、未推送、未部署；apps/dividend 未注册 Trellis package，package=null 以 relatedFiles/scope 标明范围。",
+  "meta": {
+    "verification": "verification.md",
+    "frontend_spec": ".trellis/spec/frontend/dividend-quality-reader.md"
+  }
+}

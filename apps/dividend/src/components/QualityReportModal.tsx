@@ -1,28 +1,12 @@
 /**
- * 基本面评级详情弹层：五维得分、分析元数据与完整 markdown 报告
+ * 基本面评级详情弹层：重评工具条 + 共享报告正文
+ * 正文内容与手机阅读页共用 QualityReportContent，行为与样式保持不变。
  */
 'use client';
 
 import { Modal } from './shared-ui/Modal';
-import { QualitySkillVersion } from './QualitySkillVersion';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import remarkBreaks from 'remark-breaks';
-import {
-  QUALITY_DIMENSION_LABELS,
-  QUALITY_DIMENSION_ORDER,
-  formatAnalysisDuration,
-  type QualityDimensionKey,
-  type QualityScore,
-} from '@/lib/quality';
-
-const WEIGHT_LABEL: Record<QualityDimensionKey, string> = {
-  business: '25%',
-  moat: '25%',
-  industry: '20%',
-  management: '15%',
-  financial: '15%',
-};
+import { QualityReportContent } from './QualityReportContent';
+import type { QualityScore } from '@/lib/quality';
 
 export interface QualityReportModalProps {
   currentSkillVersion?: string | null;
@@ -63,51 +47,7 @@ export function QualityReportModal({ score, onClose, onReanalyze, currentSkillVe
             </button>
           </div>
         )}
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-          <span className="text-xs text-ink-muted">数据日期 {score.data_date} · 评分时间 {score.scored_at} · 分析耗时 {formatAnalysisDuration(score.analysis_duration_seconds)}</span>
-        </div>
-
-        <QualitySkillVersion version={score.skill_version} currentVersion={currentSkillVersion} />
-        <p className="text-sm text-ink">{score.summary}</p>
-
-        <div className="overflow-x-auto rounded-lg border border-rule">
-          <table className="w-full text-sm text-ink">
-            <thead className="bg-paper-deep text-left"><tr>
-              <th className="p-2 font-medium">维度</th>
-              <th className="p-2 font-medium">得分</th>
-            </tr></thead>
-            <tbody>
-              {QUALITY_DIMENSION_ORDER.map(key => (
-                <tr key={key} className="border-t border-rule">
-                  <td className="p-2">{QUALITY_DIMENSION_LABELS[key]}<span className="ml-1 text-xs text-ink-muted">{WEIGHT_LABEL[key]}</span></td>
-                  <td className="p-2">{score.dimensions[key] == null ? <span className="text-ink-muted">未评分</span> : `${score.dimensions[key]} / 5`}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {score.risks.length > 0 && (
-          <div>
-            <h3 className="mb-1 text-sm font-semibold text-ink">主要风险</h3>
-            <ul className="list-disc pl-5 text-sm text-ink">
-              {score.risks.map((risk, index) => <li key={index}>{risk}</li>)}
-            </ul>
-          </div>
-        )}
-
-        {score.watch_points.length > 0 && (
-          <div>
-            <h3 className="mb-1 text-sm font-semibold text-ink">关注点</h3>
-            <ul className="list-disc pl-5 text-sm text-ink">
-              {score.watch_points.map((point, index) => <li key={index}>{point}</li>)}
-            </ul>
-          </div>
-        )}
-
-        <div className="md-body max-w-none text-sm text-ink">
-          <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]}>{score.report_md}</ReactMarkdown>
-        </div>
+        <QualityReportContent score={score} currentSkillVersion={currentSkillVersion} variant="modal" />
       </div>
     </Modal>
   );

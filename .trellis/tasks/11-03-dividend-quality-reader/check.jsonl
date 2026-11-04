@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md", "reason": "检查新阅读页与旧弹窗评分语义一致"}
+{"file": ".trellis/spec/frontend/dividend-quality-reader.md", "reason": "核对阅读页与共享正文是否符合前端契约"}
+{"file": ".trellis/tasks/11-03-dividend-quality-reader/research/codebase.md", "reason": "核对手机阅读边界和反代路径验证"}

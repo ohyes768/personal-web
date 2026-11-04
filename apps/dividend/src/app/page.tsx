@@ -11,6 +11,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
 import { ScreeningTab } from '@/components/ScreeningTab';
+import { QualityReaderEntry } from '@/components/QualityReaderEntry';
 import { DividendTable } from '@/components/DividendTable';
 import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -621,6 +622,7 @@ function DividendPageContent() {
         <div className="mb-6">
           <div className="h-8 bg-paper-card rounded w-48 mb-2 animate-pulse"></div>
           <div className="h-5 bg-paper-card rounded w-32 animate-pulse"></div>
+          <QualityReaderEntry sourceQuery={searchParams.toString()} />
         </div>
         <div className="bg-paper-card rounded-lg h-[500px] animate-pulse"></div>
       </div>
@@ -954,6 +956,10 @@ function DividendPageContent() {
               )}
             </div>
           </div>
+        </div>
+        {/* 基本面资料阅读入口（全部/挡位监控/选股关注三个视图都可见，独占一行便于手机阅读） */}
+        <div className="mt-3">
+          <QualityReaderEntry sourceQuery={searchParams.toString()} />
         </div>
       </div>
 

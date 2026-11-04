@@ -36,6 +36,29 @@ test('rating modal hides legacy aggregate stars and boundary but keeps dimension
   await expect(dialog.getByRole('button', { name: '重评', exact: true })).toBeVisible();
 });
 
+test('rating modal keeps scores and metadata when the report body is empty', async ({ page }) => {
+  await setup(page);
+  await page.route('**/api/dividend/quality', route => route.fulfill({ json: {
+    total: 1, hermes_configured: true, current_skill_version: '4.4.0', scores: {
+      '000001': { code: '000001', name: '测试公司', skill_version: '4.4.0',
+        dimensions: { business: 4, moat: 4, industry: 3, management: 3, financial: 5 },
+        weighted_score: 3.7, stars: 3, boundary: null,
+        summary: '业务模式清晰', risks: ['原料波动'], watch_points: [],
+        report_md: '',
+        scored_at: '2026-10-29T11:28:49+08:00', data_date: '2026-10-12', analysis_duration_seconds: 846 },
+    },
+  } }));
+  await page.goto('/?tab=screening');
+  await page.getByRole('button', { name: '查看测试公司的评级报告' }).click();
+  const dialog = page.getByRole('heading', { name: '基本面评级 · 测试公司（000001）', exact: true }).locator('../..');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('暂无完整报告正文')).toBeVisible();
+  // 评分与元数据仍然可读
+  await expect(dialog.getByText(/数据日期 2026-10-12/)).toBeVisible();
+  await expect(dialog.getByRole('cell', { name: '4 / 5', exact: true })).toHaveCount(2);
+  await expect(dialog.getByRole('button', { name: '重评', exact: true })).toBeVisible();
+});
+
 /** quality 场景控制：测试内直接改 perCode / 开关 failQuery，route handler 每次读最新值 */
 interface QualityScenario {
   scoreVersion?: string | null;
