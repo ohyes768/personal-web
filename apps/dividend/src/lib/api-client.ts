@@ -1,7 +1,7 @@
 /**
  * API HTTP 客户端
  */
-export interface ApiResponse<T = any> {
+export interface ApiResponse<T = unknown> {
   success: boolean;
   data: T;
   message?: string;
@@ -64,7 +64,12 @@ class ApiClient {
     }
   }
 
-  async get<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
+  /**
+   * P 必须是 object 而不是 Record<string, unknown>：TS 的隐式索引签名只对 type alias 生效，
+   * DividendQueryParams / BoardInfoRequest 这些 interface 不满足 Record<string, unknown>。
+   * 默认值 object 不能省：调用方常只显式给 T（如 get<QualityJob>(url)），省掉会报 TS2558。
+   */
+  async get<T, P extends object = object>(endpoint: string, params?: P): Promise<T> {
     const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
     let url: string;
 
@@ -91,22 +96,22 @@ class ApiClient {
     return this.request<T>(url);
   }
 
-  async post<T>(endpoint: string, data?: any): Promise<T> {
+  async post<T>(endpoint: string, data?: unknown): Promise<T> {
     const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
     return this.request<T>(`${effectiveBase}${endpoint}`, { method: 'POST', body: JSON.stringify(data) });
   }
 
-  async put<T>(endpoint: string, data?: any): Promise<T> {
+  async put<T>(endpoint: string, data?: unknown): Promise<T> {
     const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
     return this.request<T>(`${effectiveBase}${endpoint}`, { method: 'PUT', body: JSON.stringify(data) });
   }
 
-  async patch<T>(endpoint: string, data?: any): Promise<T> {
+  async patch<T>(endpoint: string, data?: unknown): Promise<T> {
     const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
     return this.request<T>(`${effectiveBase}${endpoint}`, { method: 'PATCH', body: JSON.stringify(data) });
   }
 
-  async delete<T>(endpoint: string, params?: Record<string, any>): Promise<T> {
+  async delete<T, P extends object = object>(endpoint: string, params?: P): Promise<T> {
     const effectiveBase = this.baseUrl === '/' ? '' : this.baseUrl;
     let url = `${effectiveBase}${endpoint}`;
     if (params) {

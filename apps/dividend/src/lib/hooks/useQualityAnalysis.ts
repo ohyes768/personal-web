@@ -125,7 +125,7 @@ export function useQualityAnalysis(): UseQualityAnalysisResult {
       mounted.current = false;
       stopPolling();
     };
-  }, [refreshScores, startPolling]);
+  }, [refreshScores, startPolling, stopPolling]);
 
   const applyQueueResult = useCallback(async (work: () => Promise<{ per_code?: QualityPerCodeMap }>) => {
     try {

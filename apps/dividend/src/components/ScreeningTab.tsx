@@ -35,6 +35,9 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
   const requestId = useRef(0);
   const appliedConditions = useRef(DEFAULT_SCREENING);
   const previousRevision = useRef(refreshRevision);
+  // 作废在途请求：序号 +1 后，先前发出的响应不再被采纳。
+  // 抽成稳定回调，避免在 effect cleanup 里直接读 ref（cleanup 执行时 ref 可能已被改写）。
+  const invalidateRequest = useCallback(() => { requestId.current++; }, []);
   const query = useCallback(async (next: ScreeningConditions) => {
     appliedConditions.current = next;
     const id = ++requestId.current;
@@ -55,8 +58,8 @@ export function ScreeningTab({ watchlist, refreshRevision = 0 }: { watchlist: Us
       next = restoreScreeningConditions(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'));
     } catch { /* unavailable storage uses defaults */ }
     setConditions(next); void query(next);
-    return () => { requestId.current++; };
-  }, [query]);
+    return () => { invalidateRequest(); };
+  }, [query, invalidateRequest]);
 
   useEffect(() => {
     if (previousRevision.current !== refreshRevision) {

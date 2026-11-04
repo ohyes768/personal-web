@@ -14,6 +14,6 @@
 - Run apps/macro TypeScript check and production build.
 - Run the chart option tests described in macro-echarts.md.
 - Verify actual slider input, reset, hidden-Tab switching, legend toggles, all comparison modes, and 375px/1440px layouts.
-- next lint currently needs initial ESLint configuration; report this limitation explicitly.
+- Most apps still have no ESLint configuration, so `next lint` (deprecated in Next 15, removed in Next 16) prompts interactively and cannot run in a script or CI — report this limitation explicitly. apps/dividend is the exception since 2026-11-04: it has `apps/dividend/eslint.config.mjs` (flat config, `FlatCompat` bridge because `eslint-config-next@15` only ships eslintrc-style configs) and its `lint` script is `eslint`.
 - Keep [historical Plotly contracts](./macro-plotly.md) for archived tasks, not as current rendering instructions.
 - For apps/dividend: run `node --experimental-strip-types --test src/lib/quality-reader.test.ts` and `npx playwright test` (full suite). The screening table's compact rating cell renders dimension labels inline (`业务模式4护城河4…`, unrated dimensions show `—`) since upstream change `66b268af`; the Skill version moved into the button `title` tooltip since `3cf5836e` — assert against that shape, not the old `4/4/3/3/5（v4.3.0）` string.

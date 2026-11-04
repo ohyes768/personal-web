@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范索引，含需要更新的 lint 现状说明"}
+{"file": ".trellis/tasks/11-04-dividend-eslint-setup/research/hook-deps.md", "reason": "12 条 exhaustive-deps 的逐条判定、引用稳定性证据与修法"}

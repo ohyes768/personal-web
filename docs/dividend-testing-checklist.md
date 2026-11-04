@@ -61,6 +61,21 @@ cd F:\github\person_project\personal-web
 git status --short
 ```
 
+### 5. 前端 lint（apps/dividend）
+
+apps/dividend 自 2026-11-04 起接入 ESLint（`eslint.config.mjs` flat config，脚本为 `eslint`），改动该前端后必须跑：
+
+```powershell
+cd F:\github\person_project\personal-web\apps\dividend
+npm run lint
+```
+
+- 命令必须**非交互**跑完并退出，不能停在配置向导。
+- **error 数必须为 0**（error 会让命令退出码非 0，视为不通过）。
+- 允许存在存量 `no-unused-vars` warning（预存死代码，已登记留档），但**本次新增/修改的文件里不能引入新的 warning**。
+- 其余 app（macro / housing-map 以外等）仍无 ESLint 配置，`next lint` 会进交互向导不可用，遇到时如实说明，不要谎报通过。
+- lint 不能替代类型检查与 E2E，三者都要跑。
+
 ## 二、改了前端页面时追加检查
 
 ### 1. 筛选和查询

@@ -15,8 +15,11 @@ export function useRealtimePrices(codes: string[]) {
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  // 缓存 codes 引用，避免每次渲染触发 fetch（与 useTechnicalData 一致）
-  const memoCodes = useMemo(() => codes, [JSON.stringify(codes)]);
+  // 缓存 codes 引用，避免每次渲染触发 fetch（与 useTechnicalData 一致）。
+  // 依赖用序列化后的字符串而不是 codes 本身：codes 每次渲染都是新数组，
+  // 直接进依赖数组会让 memo 永远失效并反复请求。
+  const codesKey = JSON.stringify(codes);
+  const memoCodes = useMemo(() => JSON.parse(codesKey) as string[], [codesKey]);
 
   useEffect(() => {
     if (memoCodes.length === 0) {

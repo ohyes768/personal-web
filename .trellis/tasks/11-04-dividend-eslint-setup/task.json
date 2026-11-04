@@ -1,0 +1,28 @@
+{
+  "id": "dividend-eslint-setup",
+  "name": "dividend-eslint-setup",
+  "title": "股息率前端接入 ESLint 并清理存量问题",
+  "description": "apps/dividend：补齐 ESLint flat config，把失效的 next lint 换成 eslint CLI，修掉 6 个 no-explicit-any error，hook 依赖告警按研究结论合法修复。",
+  "status": "in_progress",
+  "dev_type": null,
+  "scope": "dividend",
+  "package": "backend/douyin-processor",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "2026-11-04 用户授权建任务并实施（务实版：修 error + 高价值 hook 依赖，其余登记）。结果：npm run lint 非交互 exit 0，0 error / 19 warning（全为存量 unused-vars）；tsc exit 0；build exit 0；全量 Playwright 54 passed / 0 failed。技术要点：eslint-config-next@15 只发 eslintrc 风格配置，用 FlatCompat 桥接 flat config（housing-map 在 Next 16 可直接 import）；api-client 的 Record<string, any> 不能换 Record<string, unknown>（interface 无隐式索引签名），改用 P extends object = object。12 条 exhaustive-deps 经研究判定全为误报（照插件加依赖会引入无限重渲染），3 个非并发文件做合法修复，page.tsx/hooks.ts 因并发任务 11-02 在改而用配置级 suppress 并留 TODO 待回收。未触碰 page.tsx/hooks.ts/types.ts/backend（并发任务 11-02 范围）。详见 verification.md。未提交、未推送。",
+  "meta": {
+    "verification": "verification.md"
+  }
+}

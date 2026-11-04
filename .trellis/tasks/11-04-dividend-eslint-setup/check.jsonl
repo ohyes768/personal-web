@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "核对前端规范索引的 lint 说明已同步"}
+{"file": ".trellis/tasks/11-04-dividend-eslint-setup/research/hook-deps.md", "reason": "核对 hook 依赖处理符合研究结论且未改变运行时行为"}

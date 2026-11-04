@@ -6,7 +6,7 @@
     "dev": "next dev -p 3003",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "eslint",
     "test:e2e": "playwright test"
   },
   "dependencies": {
@@ -22,11 +22,14 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
     "@playwright/test": "^1.63.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10",
+    "eslint": "^9.39.4",
+    "eslint-config-next": "15.5.19",
     "postcss": "^8",
     "tailwindcss": "^4.0.0",
     "typescript": "^5"
