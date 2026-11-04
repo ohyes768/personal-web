@@ -194,7 +194,7 @@ async def get_communities():
 
     # 有效轮廓视图 = 基础轮廓 + 人工确认覆盖层;人工确认后"问号"缺口即消失。
     polygons = effective_polygons()
-    # 展示统计只计实际轮廓；位置示意问号仍下发，但计入边界待补。
+    # 新房以项目点计入展示；其他小区需实际轮廓，问号占位计入边界待补。
     # 无 registry (raw JSON 回退/mock) 时为 None, 前端不展示该行。
     stats = None
     from src.services.community_admission import community_views
@@ -208,7 +208,7 @@ async def get_communities():
         ]
         hidden = Counter(v['map_status'] for v in admitted_views if v['map_status'] != 'displayed')
         for view in admitted_views:
-            if view['map_status'] == 'displayed':
+            if view['map_status'] == 'displayed' and view.get('market_state') != 'new_house':
                 if not is_displayable(polygons.get(view['community_id'])):
                     hidden['missing_boundary'] += 1
         stats = {

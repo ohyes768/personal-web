@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/housing-map/backend/newhouse-map.md", "reason": "验证新房无轮廓展示与售完转二手"}
+{"file": ".trellis/spec/backend/housing-map/backend/boundary-workflow.md", "reason": "验证其他市场类型仍按有效轮廓统计"}

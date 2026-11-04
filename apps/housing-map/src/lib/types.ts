@@ -262,7 +262,7 @@ export function isListingReference(value: unknown): value is MarketReferenceAvai
 // 地图收录口径统计 (/api/communities 的 stats 字段, 无 registry 时为 null)
 export interface MapAdmissionStats {
   admitted: number;               // 目录收录总量
-  displayed: number;              // 通过上图门槛且有可展示边界（不含问号占位）
+  displayed: number;              // 通过上图门槛的新房项目点，或有可展示边界的其他小区（不含问号占位）
   hidden: Record<string, number>; // 未展示原因，含边界待补
 }
 

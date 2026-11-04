@@ -17,6 +17,8 @@
 `routes.get_communities()` 的 `missing_boundary` 统计、前端 `BinjiangMap` 的问号占位、
 CLI 的默认缺口筛选都必须用同一口径。历史 shp 条目属"有文件但不可展示"，也算缺口。
 
+新房以项目点展示，无需地块轮廓：`routes.get_communities()` 仅对有效市场身份不是 `new_house` 的上图小区累计 `missing_boundary`；有效新房项目点直接计入展示。新房仍必须通过收录、坐标和围栏门槛。
+
 ## 2. 有效轮廓视图改了哪些接口
 
 `GET /api/communities` 现在下发**有效视图**（基础 + 人工覆盖）：

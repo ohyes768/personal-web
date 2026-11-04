@@ -78,6 +78,21 @@ def _by_name(body):
     return {c['community_name']: c for c in body['data']}
 
 
+def test_admission_stats_count_newhouse_points_without_boundaries(seeded_registry):
+    body = client.get('/api/communities').json()
+
+    # 新房已画项目点即算展示；售完转二手、普通二手和未知类型仍需轮廓。
+    # 无坐标的新房仍未展示，不能因新房豁免轮廓而绕过定位门槛。
+    assert body['stats'] == {
+        'admitted': 5,
+        'displayed': 1,
+        'hidden': {'missing_coordinates': 1, 'missing_boundary': 3},
+    }
+    records = _by_name(body)
+    assert '朗拾滨屿府' in records
+    assert '无坐标新房' not in records
+
+
 def test_map_records_carry_market_state_and_project_evidence(seeded_registry):
     body = client.get('/api/communities').json()
     records = _by_name(body)
