@@ -600,3 +600,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 17: 阅读入口移至评级队列旁
+
+**Date**: 2026-11-04
+**Task**: 阅读入口移至评级队列旁
+**Package**: backend/douyin-processor
+
+### Summary
+
+选股关注阅读入口从独立头部行移到评级队列右侧，同排显示并在窄屏局部横滑，保留来源及前缀跳转。类型检查通过，lint无错误，6项阅读入口Playwright测试通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `c8b44b72` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
