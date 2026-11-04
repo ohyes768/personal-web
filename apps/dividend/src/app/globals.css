@@ -426,3 +426,19 @@ input[type="number"] {
 .quality-reader-entry:hover {
   border-color: var(--color-accent);
 }
+/* 选股关注工具栏：阅读入口与评级队列同排，不增加独立行。 */
+.screening-quality-actions {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+}
+.screening-quality-actions > button { flex-wrap: nowrap; flex-shrink: 0; }
+.screening-quality-actions .quality-reader-entry { flex-shrink: 0; }
+.screening-quality-actions .quality-reader-entry {
+  margin-top: 0;
+  min-height: 0;
+  line-height: 1.25rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.25rem;
+}

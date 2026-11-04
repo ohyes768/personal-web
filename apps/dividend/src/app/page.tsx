@@ -983,10 +983,10 @@ function DividendPageContent() {
             </div>
           </div>
         </div>
-        {/* 基本面资料阅读入口（全部/挡位监控/选股关注三个视图都可见，独占一行便于手机阅读） */}
-        <div className="mt-3">
+        {/* 选股关注的阅读入口与评级队列同排，其余视图保留头部入口。 */}
+        {activeTab !== 'screening' && <div className="mt-3">
           <QualityReaderEntry sourceQuery={searchParams.toString()} />
-        </div>
+        </div>}
       </div>
 
       {/* 错误提示 */}
@@ -1067,7 +1067,7 @@ function DividendPageContent() {
       )}
 
       {/* 表格 - 使用 refreshKey 作为 key 强制刷新；all+favOnly 用过滤后的 displayData */}
-      {activeTab === 'screening' ? <ScreeningTab watchlist={watchlist} refreshRevision={refreshJobs.revision} /> : activeTab === 'alerts' ? (
+      {activeTab === 'screening' ? <ScreeningTab watchlist={watchlist} refreshRevision={refreshJobs.revision} sourceQuery={searchParams.toString()} /> : activeTab === 'alerts' ? (
         <div className="space-y-2">
           {alertsStatus.loading && alertStocks.length === 0 ? (
             <div className="bg-paper-card rounded-lg h-40 animate-pulse" />
