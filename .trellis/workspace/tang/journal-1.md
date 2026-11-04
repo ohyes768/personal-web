@@ -567,3 +567,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 16: 修复股息筛选Query默认值异常
+
+**Date**: 2026-11-04
+**Task**: 修复股息筛选Query默认值异常
+**Package**: backend/douyin-processor
+
+### Summary
+
+复现线上POST筛选500与本地Query.strip异常；codes改为Annotated查询元数据和普通None默认值，兼容筛选及评级内部调用。真实调用链回归修复前失败、修复后200，HTTP codes查询验证保留，相关87项测试通过。按用户范围仅本地提交，未推送部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b4e004ab` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
