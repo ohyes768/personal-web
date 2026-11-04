@@ -10,8 +10,8 @@
 
 ## 1. Scope / Trigger
 
-- 触发：修改 `src/services/rental_reference/*`（statistics/storage/refresh）、`src/api/rental_routes.py`、前端 `rental-*`/`use-rental-*`、看板租金三列。
-- 数据流：幸福里租金样本 → 社区台账归并 → rental_reference 统计/存储 → 6 条 API → 详情标签 + 看板三列。
+- 触发：修改 `src/services/rental_reference/*`（statistics/storage/refresh）、`src/api/rental_routes.py`、前端 `rental-*`/`use-rental-*`（11-04 起看板租金筛选器与三列已移除，`rentals/summary` 端点暂无前端消费方）。
+- 数据流：幸福里租金样本 → 社区台账归并 → rental_reference 统计/存储 → 6 条 API → 维护页签采集管理 + 详情概览租售比/收益率。
 
 ## 2. Signatures
 

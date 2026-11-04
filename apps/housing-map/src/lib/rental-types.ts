@@ -222,41 +222,6 @@ function isEnvelope<T>(payload: unknown): payload is { success: true; data: T } 
   return candidate.success === true && candidate.data !== undefined && candidate.data !== null;
 }
 
-// ---- 看板摘要（GET /api/rentals/summary?area_band=...&bedrooms=...，design.md "Query API"）----
-// 与详情接口同一统计算法，按内部 community_id 返回统一口径摘要，供看板独立加载。
-
-export interface RentalSummaryEntry {
-  community_id: string;
-  availability: RentalAvailability;
-  /** 允许"旧数据可用 + 最近抓取失败"并存 */
-  last_refresh: RentalLastRefresh | null;
-  /** 该口径下有效候选样本数 */
-  sample_count: number;
-  /** 当前发布版本对应的租金采集时间 */
-  captured_at: string | null;
-  /** 该口径单位租金中位数（元/㎡/月）；样本不足 3 条或无样本为 null */
-  unit_rent_yuan_m2_month: number | null;
-  /** 参考年化毛收益率（%）；stale 或缺有效售价为 null */
-  annualized_gross_yield_pct: number | null;
-}
-
-export interface RentalSummaryData {
-  area_band: RentalAreaBand;
-  bedrooms: RentalBedroomsFilter;
-  summaries: RentalSummaryEntry[];
-}
-
-export function buildRentalSummaryPath(query: {
-  areaBand: RentalAreaBand;
-  bedrooms: RentalBedroomsFilter;
-}): string {
-  const params = new URLSearchParams({
-    area_band: query.areaBand,
-    bedrooms: query.bedrooms,
-  });
-  return `rentals/summary?${params.toString()}`;
-}
-
 // ---- 刷新任务取数（nginx 对外路径 /api/map/rentals/refresh）----
 
 function isRefreshEnvelope(payload: unknown): payload is { success: true; data: RentalRefreshJob | null } {

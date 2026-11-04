@@ -23,17 +23,10 @@ import type { BoundaryPreview } from '@/components/map/BinjiangMap';
 import LatestAuctionCard from '@/components/community/LatestAuctionCard';
 import CommunityRentalMetrics from '@/components/community/CommunityRentalMetrics';
 import AuctionDataList from '@/components/auction/AuctionDataList';
-import { RentalScopeSelect, RentalSummaryCells, type RentalScope } from '@/components/dashboard/RentalDashboardWidgets';
 import CommunityManagement from '@/components/community/CommunityManagement';
 import AppTabs, { type AppTab } from '@/components/AppTabs';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
-import { useRentalSummary } from '@/lib/use-rental-summary';
-import {
-  compareNumericMissingLast,
-  isRentalSortKey,
-  rentalSortValue,
-} from '@/lib/rental-dashboard';
-import type { RentalSummaryEntry } from '@/lib/rental-types';
+import { compareNumericMissingLast } from '@/lib/rental-dashboard';
 
 // 从 API 获取小区数据 (连带收录口径统计, 避免二次拉取完整列表)
 // ok=false 表示这次刷新失败: 调用方要区分"保存失败"与"保存成功但刷新失败", 不能把列表清空
@@ -331,15 +324,6 @@ export default function BinjiangMapPage() {
   const [dashScore, setDashScore] = useState('');
   const [dashSortKey, setDashSortKey] = useState<DashSortKey>('total_score');
   const [dashSortOrder, setDashSortOrder] = useState<'asc' | 'desc'>('desc');
-  // 看板全局租金口径（面积段+房型），默认 90–144㎡ + 全部房型；切 tab 保留
-  const [rentalScope, setRentalScope] = useState<RentalScope>({ areaBand: '90to144', bedrooms: 'all' });
-
-  // 口径切换时若正按租金三列排序则重置，避免不同口径的值混排
-  const changeRentalScope = useCallback((next: RentalScope) => {
-    setRentalScope(next);
-    setDashSortKey(prev => (isRentalSortKey(prev) ? 'total_score' : prev));
-    setDashPage(1);
-  }, []);
   // 标记"刚从看板点过查看", 地图页显示返回按钮; 点击返回后清除
   const [cameFromDashboard, setCameFromDashboard] = useState(false);
 
@@ -702,7 +686,6 @@ export default function BinjiangMapPage() {
               scoreFilter={dashScore} setScoreFilter={setDashScore}
               sortKey={dashSortKey} setSortKey={setDashSortKey}
               sortOrder={dashSortOrder} setSortOrder={setDashSortOrder}
-              rentalScope={rentalScope} onRentalScopeChange={changeRentalScope}
               onView={(c) => {
                 ensureMarketVisible(c);
                 setSelectedCommunity(c);
@@ -1109,8 +1092,7 @@ function MarketOverviewPage({
 }
 
 // 数据看板页面
-type DashSortKey = 'total_score' | 'price' | 'name' | 'build_year' | 'property_fee' | 'parking_ratio' | 'subway'
-  | 'rent_unit' | 'rent_yield' | 'rent_samples';
+type DashSortKey = 'total_score' | 'price' | 'name' | 'build_year' | 'property_fee' | 'parking_ratio' | 'subway';
 
 // ———————————————————————————————————————————————————————————
 // 弹窗内的可翻转评分卡片: 正面只显示分数, 翻到背面看具体指标明细
@@ -1381,7 +1363,6 @@ function DashboardPage({
   scoreFilter, setScoreFilter,
   sortKey, setSortKey,
   sortOrder, setSortOrder,
-  rentalScope, onRentalScopeChange,
 }: {
   communities: Community[];
   onView: (c: Community) => void;
@@ -1393,14 +1374,9 @@ function DashboardPage({
   scoreFilter: string; setScoreFilter: (v: string) => void;
   sortKey: DashSortKey; setSortKey: (v: DashSortKey | ((k: DashSortKey) => DashSortKey)) => void;
   sortOrder: 'asc' | 'desc'; setSortOrder: (v: 'asc' | 'desc' | ((o: 'asc' | 'desc') => 'asc' | 'desc')) => void;
-  rentalScope: RentalScope; onRentalScopeChange: (next: RentalScope) => void;
 }) {
 
   const pageSize = 50;
-
-  // 租金摘要：只加载当前口径一份数据，失败/加载中展示层降级为全 '—'，不影响其他列
-  const rental = useRentalSummary(rentalScope.areaBand, rentalScope.bedrooms);
-  const rentalById: Record<string, RentalSummaryEntry> = rental.summaries ?? {};
 
   const toggleSort = (key: DashSortKey) => {
     if (sortKey === key) {
@@ -1422,9 +1398,6 @@ function DashboardPage({
       case 'property_fee': return c.property_fee ?? null;
       case 'parking_ratio': return c.parking_ratio ?? null;
       case 'subway': return c.nearest_subway?.distance ?? null;
-      case 'rent_unit': return rentalSortValue(rentalById[c.community_id], 'rent_unit');
-      case 'rent_yield': return rentalSortValue(rentalById[c.community_id], 'rent_yield');
-      case 'rent_samples': return rentalSortValue(rentalById[c.community_id], 'rent_samples');
     }
   };
 
@@ -1532,13 +1505,6 @@ function DashboardPage({
           <option value="60-80">60-80分</option>
           <option value="0-60">60分以下</option>
         </select>
-        <RentalScopeSelect scope={rentalScope} onChange={onRentalScopeChange} />
-
-        {rental.error && (
-          <span role="alert" style={{ fontSize: '12px', color: 'var(--price-up)' }}>
-            租金数据暂不可用，租金三列暂显示为 —，其余功能不受影响
-          </span>
-        )}
       </div>
 
       {/* 数据表格 */}
@@ -1547,8 +1513,6 @@ function DashboardPage({
           口径说明：价格数据取自透明售房网（{latestSnapshot} 采集）。<b>挂</b> = 挂牌均价（在售房源标价均值）；
           <b>签</b> = 签约均价（月签约走势的最新一个月均价，即最近一个有成交的月份，可能滞后于当前月份）；
           近30日签约为滚动 30 天口径，0 套代表近 30 天无成交、不代表更早无成交；综合评分的市场面维度即基于该签约套数。
-          租金三列基于上方所选租金口径（面积段+房型）统计，缺失值排序时始终排在末尾；
-          收益率为参考年化毛收益（粗略估算，小区均价与租金组并非同户型成交），不代表真实市场收益。
           上方均价、近30日签约与有价小区三项只统计二手房，新房与房源类型待核实的小区不计入。
         </div>
         <table className="data-table">
@@ -1558,9 +1522,6 @@ function DashboardPage({
               <th>板块</th>
               <th>物业类型</th>
               <Th label="均价 (元/㎡)" k="price" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
-              <Th label="租金单价 (元/㎡/月)" k="rent_unit" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
-              <Th label="参考年化收益率" k="rent_yield" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
-              <Th label="租金样本数" k="rent_samples" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
               <Th label="综合评分" k="total_score" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
               <Th label="最近地铁" k="subway" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
               <Th label="建成年代" k="build_year" sortKey={sortKey} sortOrder={sortOrder} onToggle={toggleSort} />
@@ -1602,7 +1563,6 @@ function DashboardPage({
                       }}>{isDeal ? '签' : '挂'}</span>
                     )}
                   </td>
-                  <RentalSummaryCells summary={rentalById[community.community_id]} />
                   <td>
                     <span style={{ color: 'var(--accent-gold)', fontWeight: '700' }}>{score?.total_score ?? '-'}</span>
                     <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>/100</span>
