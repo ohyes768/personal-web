@@ -238,9 +238,3 @@ git status --short
 - 后端测试未通过，测试在收集阶段找不到实际代码路径。
 - 项目中存在较多运行产物、导出文件、日志、缓存和依赖目录。
 - 多处中文文案、注释、文档存在乱码。
-- （2026-11-04 新增）`e2e/screening.spec.ts` 有 3 例断言过期，源于上游提交 `66b268af`（2026-11-02）把选股关注表格的五维评级单元格改成「维度名 + 分」网格后未同步断言：
-  - `compact rating preserves partial scores and opens report with skill version`
-  - `skill version display: v4.3.0`
-  - `skill version display: 版本未知`
-
-  断言期望 `4/4/3/3/5（v4.3.0）`，实际渲染为 `业务模式4护城河4行业前景3管理层3财务质量5`。属测试断言滞后于 UI 变更，非产品缺陷；修正前不要把这些用例的失败当作新引入的回归。

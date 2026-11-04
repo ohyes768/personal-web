@@ -351,8 +351,13 @@ test('compact rating preserves partial scores and opens report with skill versio
   await page.goto('/?tab=screening');
   const table = page.getByRole('table').filter({ has: page.getByRole('columnheader', { name: '基本面操作', exact: true }) });
   const row = table.getByRole('row').filter({ has: page.getByRole('button', { name: /测试公司/ }) });
-  await expect(table.getByRole('columnheader', { name: '评级结果', exact: true })).toBeVisible();
-  await expect(row.getByRole('button', { name: '查看测试公司的评级报告' })).toHaveText('4/4/3/3/—（v4.2.0）');
+  await expect(table.getByRole('columnheader', { name: '五维评级', exact: true })).toBeVisible();
+  const rating = row.getByRole('button', { name: '查看测试公司的评级报告' });
+  // 五维按「维度名 + 分」直读；未评级的维度显示 —，不合成星级与总分
+  await expect(rating).toHaveText('业务模式4护城河4行业前景3管理层3财务质量—');
+  // 悬浮 title 给出完整的维度→分映射与本次评分使用的 Skill 版本
+  await expect(rating).toHaveAttribute('title', /业务模式 4 \/ 护城河 4 \/ 行业前景 3 \/ 管理层 3 \/ 财务质量 未评分/);
+  await expect(rating).toHaveAttribute('title', /Skill v4\.2\.0/);
   await expect(row.getByText('需重评', { exact: true })).toBeVisible();
   await expect(table.getByRole('columnheader', { name: '业务模式', exact: true })).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath('five-dimensions.png'), fullPage: true });
@@ -369,7 +374,10 @@ for (const [version, expected] of [['4.3.0', 'v4.3.0'], [null, '版本未知']] 
     await setup(page, false, undefined, { perCode: {}, scoreVersion: version, currentVersion: '4.3.0' });
     await page.goto('/?tab=screening');
     const row = page.getByRole('row').filter({ has: page.getByRole('button', { name: /测试公司/ }) });
-    await expect(row.getByRole('button', { name: '查看测试公司的评级报告' })).toHaveText(`4/4/3/3/5（${expected}）`);
+    const rating = row.getByRole('button', { name: '查看测试公司的评级报告' });
+    await expect(rating).toHaveText('业务模式4护城河4行业前景3管理层3财务质量5');
+    // 版本号不再占格（3cf5836e），改为悬浮 title 展示
+    await expect(rating).toHaveAttribute('title', new RegExp(`Skill ${expected.replace(/\./g, '\\.')}`));
     await expect(row.getByText('需重评', { exact: true })).toHaveCount(version ? 0 : 1);
     await expect(row.getByRole('button', { name: '3.7', exact: true })).toHaveCount(0);
   });
