@@ -83,8 +83,9 @@ export function useTechnicalData(
   /** 最近一次成功拉取的时间戳（ISO 字符串），用于在卡片上展示现价更新时间 */
   const [priceUpdatedAt, setPriceUpdatedAt] = useState<string | null>(null);
 
-  // 使用 useMemo 缓存 stockCodes，避免无限循环
-  const memoizedStockCodes = useMemo(() => stockCodes, [JSON.stringify(stockCodes)]);
+  // 按内容去抖：调用方可能每渲染传新数组引用，key 不变则 memo 引用稳定，下游 effect 不重跑
+  const stockCodesKey = JSON.stringify(stockCodes);
+  const memoizedStockCodes = useMemo(() => JSON.parse(stockCodesKey) as string[], [stockCodesKey]);
 
   useEffect(() => {
     if (!enabled || memoizedStockCodes.length === 0) {
@@ -173,15 +174,16 @@ export function useDetailModal() {
   return { isOpen, modalType, stock, open, close };
 }
 
+// 实时价偏离度本地缓存：key 前缀与有效期。值恒定，放模块级——hook 依赖静态检查
+// 对函数体内的表达式常量（如 24 * 60 * 60 * 1000）不放行
+const CACHE_KEY_PREFIX = 'dividend-deviation-';
+const CACHE_DURATION = 24 * 60 * 60 * 1000; // 1天（毫秒）
+
 /**
  * 实时股价刷新 Hook
  */
 export function useRefreshPrice() {
   const [refreshStates, setRefreshStates] = useState<Map<string, RefreshState>>(new Map());
-
-  // 缓存相关
-  const CACHE_KEY_PREFIX = 'dividend-deviation-';
-  const CACHE_DURATION = 24 * 60 * 60 * 1000; // 1天（毫秒）
 
   /**
    * 从 localStorage 读取缓存
@@ -296,8 +298,9 @@ export function useStockInfo(stockCodes: string[]) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // 使用 useMemo 缓存 stockCodes，避免无限循环
-  const memoizedStockCodes = useMemo(() => stockCodes, [JSON.stringify(stockCodes)]);
+  // 按内容去抖：调用方可能每渲染传新数组引用，key 不变则 memo 引用稳定，下游 effect 不重跑
+  const stockCodesKey = JSON.stringify(stockCodes);
+  const memoizedStockCodes = useMemo(() => JSON.parse(stockCodesKey) as string[], [stockCodesKey]);
 
   useEffect(() => {
     if (memoizedStockCodes.length === 0) {
@@ -590,6 +593,9 @@ export function useDataUpdate() {
     if (kind === 'm120') void checkM120Status();
     else { void checkFinancialStatus(); void checkAuxStatus(); }
   });
+  // accept 引用终身稳定（内部 useCallback 产出）；解构出来作依赖，避免把每渲染新建的
+  // refreshJobs 对象整个加进依赖导致回调逐渲染重建
+  const { accept: acceptRefreshJob } = refreshJobs;
 
   // 初始化时检查状态（financial 状态由 checkAuxStatus 一并提供，不单独请求）
   useEffect(() => {
@@ -675,7 +681,7 @@ export function useDataUpdate() {
     setState(prev => ({ ...prev, m120: 'loading', message: undefined }));
     try {
       const result = await dividendUpdateApi.refreshM120(codes);
-      refreshJobs.accept(result);
+      acceptRefreshJob(result);
       setState(prev => ({ ...prev, m120: 'idle' }));
       return true;
     } catch (err) {
@@ -683,7 +689,7 @@ export function useDataUpdate() {
       setState(prev => ({ ...prev, m120: 'error', message }));
       return false;
     }
-  }, [refreshJobs.accept]);
+  }, [acceptRefreshJob]);
 
   /**
    * 更新实时价格
@@ -708,7 +714,7 @@ export function useDataUpdate() {
     setState(prev => ({ ...prev, financial: 'loading', message: undefined }));
     try {
       const result = await dividendUpdateApi.refreshFinancial(codes, force);
-      refreshJobs.accept(result);
+      acceptRefreshJob(result);
       setState(prev => ({ ...prev, financial: 'idle' }));
       return true;
     } catch (err) {
@@ -716,7 +722,7 @@ export function useDataUpdate() {
       setState(prev => ({ ...prev, financial: 'error', message }));
       return false;
     }
-  }, [refreshJobs.accept]);
+  }, [acceptRefreshJob]);
 
   /**
    * 更新申万行业数据

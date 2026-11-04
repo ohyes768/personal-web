@@ -33,15 +33,6 @@ export default defineConfig([
     },
   },
 
-  // 这两个文件的 hook 依赖数组刻意不含「每渲染新建的数组/对象」
-  //（eligibleCodes / stockCodes / refreshJobs 等），照插件建议加依赖会引发无限重渲染与请求风暴。
-  // 逐条判定与证据见 .trellis/tasks/11-04-dividend-eslint-setup/research/hook-deps.md。
-  // TODO: 11-02-dividend-page-load-speed 落地后改回逐点处理，恢复该规则在这两个文件里的检查。
-  {
-    files: ["src/app/page.tsx", "src/lib/hooks.ts"],
-    rules: { "react-hooks/exhaustive-deps": "off" },
-  },
-
   globalIgnores([
     ".next/**",
     "out/**",

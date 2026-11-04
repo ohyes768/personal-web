@@ -528,12 +528,16 @@ function DividendPageContent() {
   const { refreshJobs, state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard, indexResults, indexRefreshing, refreshIndexHoldings, holdingsStatus } = useDataUpdate();
   // 刷新任务终态只处理一次：非"全部"Tab 时跳过主列表 refetch，切回时由 enabled 重新拉
   const lastRevisionRef = useRef(0);
+  // minYieldInput 是输入框受控值，逐字符变化；刻意不进下方 effect 依赖（否则每次按键
+  // 都 refetch + 整表重挂载），触发时经 ref 读最新值
+  const minYieldInputRef = useRef(minYieldInput);
+  useEffect(() => { minYieldInputRef.current = minYieldInput; }, [minYieldInput]);
   useEffect(() => {
     if (!refreshJobs.revision || lastRevisionRef.current === refreshJobs.revision) return;
     lastRevisionRef.current = refreshJobs.revision;
     if (activeTab !== 'all') return;
     setRefreshKey(k => k + 1);
-    void refetch({ min_yield: parseFloat(minYieldInput) || 0, sort_by: 'avg_yield_3y', sort_order: 'desc' });
+    void refetch({ min_yield: parseFloat(minYieldInputRef.current) || 0, sort_by: 'avg_yield_3y', sort_order: 'desc' });
   }, [refreshJobs.revision, refetch, activeTab]);
 
 
