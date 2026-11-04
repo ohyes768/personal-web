@@ -25,7 +25,7 @@ import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { dividendApi } from '@/lib/api';
-import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus } from '@/lib/types';
+import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus, PriceItem, TechnicalIndicators } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
 type TabKey = 'all' | 'alerts' | 'screening';
@@ -320,6 +320,25 @@ function buildCurrentConfig(item: AlertStatusItem | undefined): AlertConfigReque
   };
 }
 
+/**
+ * 把 /prices 返回的现价项转成技术指标对象：挡位设置弹框在"全部"Tab 之外
+ * 打开时没有全量 M120，用现价通道补 close/realtime/PE/PB/yield_ttm，
+ * M120/偏离度保持空（组件已有空值处理）。
+ */
+function priceToTechnical(price?: PriceItem): TechnicalIndicators | undefined {
+  if (!price) return undefined;
+  return {
+    m120: null,
+    close: price.close ?? null,
+    deviation: null,
+    realtime: price.realtime ?? null,
+    realtimeDeviation: null,
+    yield_ttm: price.yield_ttm ?? null,
+    pe: price.pe ?? null,
+    pb: price.pb ?? null,
+  };
+}
+
 export default function DividendPage() {
   return (
     <Suspense fallback={<div className="container mx-auto px-8 py-8 min-h-screen bg-paper" />}>
@@ -334,12 +353,36 @@ function DividendPageContent() {
   // 股息率阈值输入
   const [minYieldInput, setMinYieldInput] = useState('3.5');
 
-  // 股息率数据
-  const { data, total, loading, error, refetch } = useDividendData();
+  // URL query 同步 tab（?tab=alerts）+ 收藏过滤（?fav=1）
+  // 提前解析：主列表/技术指标按 Tab 按需加载依赖 activeTab（11-02 提速任务）
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const activeTab: TabKey = tabParam === 'alerts' ? 'alerts' : tabParam === 'screening' ? 'screening' : 'all';
+  // 兼容旧 ?tab=watchlist 书签 → 等价于 all + 只看收藏
+  const favOnly = searchParams.get('fav') === '1' || tabParam === 'watchlist';
+  const handleTabChange = useCallback((tab: TabKey) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === 'all') params.delete('tab');
+    else params.set('tab', tab);
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : '?', { scroll: false });
+  }, [router, searchParams]);
+  const handleToggleFav = useCallback(() => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (favOnly) { params.delete('fav'); if (params.get('tab') === 'watchlist') params.delete('tab'); }
+    else params.set('fav', '1');
+    const qs = params.toString();
+    router.replace(qs ? `?${qs}` : '?', { scroll: false });
+  }, [router, searchParams, favOnly]);
 
-  // 全量股票数（来自 /api/dividend/stats，未应用 min_yield 筛选）
+  // 股息率数据：仅"全部"Tab 加载主列表；挡位监控/选股关注不拉全量 stocks
+  const { data, total, loading, error, refetch } = useDividendData(activeTab === 'all');
+
+  // 全量股票数（来自 /api/dividend/stats，未应用 min_yield 筛选；仅"全部"Tab 需要）
   const [totalCollected, setTotalCollected] = useState<number | null>(null);
   useEffect(() => {
+    if (activeTab !== 'all') return;
     let cancelled = false;
     dividendApi.getStats().then((s) => {
       if (!cancelled) setTotalCollected(s.total_stocks);
@@ -348,7 +391,7 @@ function DividendPageContent() {
       console.error('获取全量股票数失败:', err);
     });
     return () => { cancelled = true; };
-  }, []);
+  }, [activeTab]);
 
   // 刷新计数，用于强制表格重新渲染
   const [refreshKey, setRefreshKey] = useState(0);
@@ -472,8 +515,8 @@ function DividendPageContent() {
   // 股票代码列表
   const stockCodes = useMemo(() => data.map(s => s.code), [data]);
 
-  // 技术指标数据
-  const { technicalData } = useTechnicalData(stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
+  // 技术指标数据：仅"全部"Tab 拉全量 M120；挡位监控的现价走 /prices 独立通道
+  const { technicalData } = useTechnicalData(activeTab === 'all', stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
 
   // 详情弹框
   const detailModal = useDetailModal();
@@ -483,11 +526,15 @@ function DividendPageContent() {
 
   // 数据更新功能
   const { refreshJobs, state: updateState, m120NeedsUpdate, m120MissingCodes, dividendNeedsUpdate, financialNeedsUpdate, financialMissingCodes, boardMissingCodes, auxStatuses, checkAuxStatus, updateDividend, updateM120, updateRealtimeInfo, updateFinancial, updateSwIndustry, updateShareholder, updateBoard, indexResults, indexRefreshing, refreshIndexHoldings, holdingsStatus } = useDataUpdate();
+  // 刷新任务终态只处理一次：非"全部"Tab 时跳过主列表 refetch，切回时由 enabled 重新拉
+  const lastRevisionRef = useRef(0);
   useEffect(() => {
-    if (!refreshJobs.revision) return;
+    if (!refreshJobs.revision || lastRevisionRef.current === refreshJobs.revision) return;
+    lastRevisionRef.current = refreshJobs.revision;
+    if (activeTab !== 'all') return;
     setRefreshKey(k => k + 1);
     void refetch({ min_yield: parseFloat(minYieldInput) || 0, sort_by: 'avg_yield_3y', sort_order: 'desc' });
-  }, [refreshJobs.revision, refetch]);
+  }, [refreshJobs.revision, refetch, activeTab]);
 
 
   // 收藏（watchlist）
@@ -498,7 +545,8 @@ function DividendPageContent() {
   useEffect(() => {
     let cancelled = false;
     if (watchlist.codes.size === 0) { setFavoriteStocks([]); return; }
-    dividendApi.getStocks({ min_yield: 0 }).then(response => {
+    // 精确按收藏 codes 请求：挡位监控/只看收藏不再拉全量 stocks（阈值外收藏靠 min_yield=0 保留）
+    dividendApi.getStocks({ min_yield: 0, codes: [...watchlist.codes].join(',') }).then(response => {
       if (!cancelled) { setFavoriteStocks(response.items); setFavoriteLoadError(''); }
     }).catch(err => { if (!cancelled) setFavoriteLoadError(err instanceof Error ? err.message : '收藏资料加载失败'); });
     return () => { cancelled = true; };
@@ -547,28 +595,6 @@ function DividendPageContent() {
     }
   }, [data, independentFavorites]);
 
-  // URL query 同步 tab（?tab=alerts）+ 收藏过滤（?fav=1）
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const tabParam = searchParams.get('tab');
-  const activeTab: TabKey = tabParam === 'alerts' ? 'alerts' : tabParam === 'screening' ? 'screening' : 'all';
-  // 兼容旧 ?tab=watchlist 书签 → 等价于 all + 只看收藏
-  const favOnly = searchParams.get('fav') === '1' || tabParam === 'watchlist';
-  const handleTabChange = useCallback((tab: TabKey) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (tab === 'all') params.delete('tab');
-    else params.set('tab', tab);
-    const qs = params.toString();
-    router.replace(qs ? `?${qs}` : '?', { scroll: false });
-  }, [router, searchParams]);
-  const handleToggleFav = useCallback(() => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (favOnly) { params.delete('fav'); if (params.get('tab') === 'watchlist') params.delete('tab'); }
-    else params.set('fav', '1');
-    const qs = params.toString();
-    router.replace(qs ? `?${qs}` : '?', { scroll: false });
-  }, [router, searchParams, favOnly]);
-
   // 抽屉引用
   const drawerRef = useRef<HTMLDivElement>(null);
 
@@ -588,17 +614,17 @@ function DividendPageContent() {
     return stocksWithTechnical;
   }, [stocksWithTechnical, activeTab, favOnly, independentFavorites]);
 
-  // 挡位监控 Tab：filter 已设 alerts 的收藏股票
+  // 挡位监控 Tab：从挡位状态直接派生，现价链只依赖挡位代码（不等资料/M120 响应）。
+  // 资料未回或缺失时用挡位 item 的名称占位，条目不消失（收藏独立于股息率筛选）。
   const alertStocks = useMemo(() => {
     const items = alertsStatus.status?.items ?? [];
     return items
       .filter(it => it.levels && Object.values(it.levels).some(lv => lv && lv.price))
       .map(it => {
-        const stock = independentFavorites.find(s => s.code === it.code) || stocksWithTechnical.find(s => s.code === it.code);
-        if (!stock) return null;
+        const stock = independentFavorites.find(s => s.code === it.code) || stocksWithTechnical.find(s => s.code === it.code)
+          || { code: it.code, name: it.name || it.code, exchange: '' };
         return { stock, levels: it.levels as AlertLevels };
-      })
-      .filter((s): s is { stock: DividendStockWithTechnical; levels: AlertLevels } => s !== null);
+      });
   }, [alertsStatus.status, stocksWithTechnical, independentFavorites]);
 
   // 挡位监控现价（独立于 M120：M120 缺失时仍能取现价，避免挡位 bar 空窗）
@@ -1043,7 +1069,9 @@ function DividendPageContent() {
       {/* 表格 - 使用 refreshKey 作为 key 强制刷新；all+favOnly 用过滤后的 displayData */}
       {activeTab === 'screening' ? <ScreeningTab watchlist={watchlist} refreshRevision={refreshJobs.revision} /> : activeTab === 'alerts' ? (
         <div className="space-y-2">
-          {alertStocks.length === 0 ? (
+          {alertsStatus.loading && alertStocks.length === 0 ? (
+            <div className="bg-paper-card rounded-lg h-40 animate-pulse" />
+          ) : alertStocks.length === 0 ? (
             <div className="bg-paper-card rounded-lg p-12 text-center">
               <svg className="w-12 h-12 mx-auto mb-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 17l6-6 4 4 8-8M14 7h7v7" />
@@ -1112,7 +1140,9 @@ function DividendPageContent() {
         isOpen={alertOpen}
         onClose={() => setAlertOpen(false)}
         stock={alertStock}
-        technical={alertStock ? technicalData.get(alertStock.code) || null : null}
+        technical={alertStock
+          ? (technicalData.get(alertStock.code) ?? priceToTechnical(alertPriceMap.get(alertStock.code)))
+          : null}
         currentConfig={alertStock ? buildCurrentConfig(alertsStatus.alertMap.get(alertStock.code)) : null}
         currentUpdatedAt={alertStock ? alertsStatus.alertMap.get(alertStock.code)?.updated_at ?? null : null}
         onSubmit={async (code, body) => {

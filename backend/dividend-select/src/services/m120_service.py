@@ -5,6 +5,7 @@ M120 服务
 import json
 import math
 import os
+import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,6 +24,7 @@ from src.utils.logger import setup_logger
 from src.utils.helpers import get_current_date_dir, DATA_DIR, CODE_DTYPE
 from src.utils.atomic_file import atomic_csv
 from src.services.base import CsvPathService, current_week_suffix
+from src.services.versioned_snapshot import file_signature
 
 logger = setup_logger(__name__)
 
@@ -78,6 +80,15 @@ class M120Service(CsvPathService):
                      仅用于测试或历史回放场景；生产应传 None 走实时。
         """
         super().__init__(date_str=date_str)
+        # 只读快照缓存（请求路径全部复用；refresh 写路径经原子替换后签名变化自动失效）
+        self._snapshot_lock = threading.Lock()
+        # (当前周写路径, 当前周文件签名, 选中快照路径或 None, 选中快照签名或 None, df)
+        self._snapshot_cache: tuple | None = None
+        self._price_lock = threading.Lock()
+        self._price_cache: tuple | None = None  # (价格文件签名, 解析结果 dict)
+        self._merged_lock = threading.Lock()
+        self._deviation_cache: tuple | None = None  # ((快照签名, 价格签名), 合并结果 dict)
+        self._m120_data_cache: tuple | None = None  # (快照签名, {code: {m120}})
 
     @property
     def M120_CSV_FILE(self) -> Path:
@@ -426,10 +437,41 @@ class M120Service(CsvPathService):
     def _read_latest_m120_snapshot(self) -> tuple[Optional[Path], pd.DataFrame]:
         """Read the newest usable week, while refresh writes stay in this week.
 
-        Sort by snapshot week rather than mtime (copying old backups must not
-        make them current). Search month directories too, including year rollover.
+        Cached by the current-week file signature plus the selected snapshot
+        signature: refreshing (atomic replace) or repairing the current-week
+        file invalidates the cache; restored backups must not look current, so
+        selection stays by snapshot week rather than mtime. Concurrent misses
+        scan once under the lock. Search month directories too, including year
+        rollover.
         """
         current = self.M120_CSV_FILE
+        current_key = str(current)
+        current_signature = file_signature(current)
+
+        with self._snapshot_lock:
+            cached = self._snapshot_cache
+            if (
+                cached is not None
+                and cached[0] == current_key
+                and cached[1] == current_signature
+                and cached[2] is not None
+                and file_signature(Path(cached[2])) == cached[3]
+            ):
+                return Path(cached[2]), cached[4]
+
+            path, df = self._scan_latest_m120_snapshot()
+            snapshot_signature = file_signature(path)
+            self._snapshot_cache = (
+                current_key,
+                current_signature,
+                str(path) if path is not None else None,
+                snapshot_signature,
+                df,
+            )
+            return path, df
+
+    def _scan_latest_m120_snapshot(self) -> tuple[Optional[Path], pd.DataFrame]:
+        """Scan month directories for the newest usable week (no caching)."""
 
         def week_start(path: Path) -> datetime:
             year, directory_month = map(int, path.parent.name.split("-"))
@@ -438,6 +480,8 @@ class M120Service(CsvPathService):
             if month > directory_month:
                 year -= 1
             return datetime(year, month, day)
+
+        current = self.M120_CSV_FILE
 
         latest_week = week_start(current)
         candidates = []
@@ -468,19 +512,35 @@ class M120Service(CsvPathService):
         """
         只读实时价格 CSV，返回 {code: {close, realtime, pe, pb}}。
 
+        结果按文件签名缓存：实时价格刷新（原子写）后签名变化自动重读；
+        文件缺失或解析失败返回 {} 且不缓存（缺失后补齐即恢复）。
+
         与 read_m120_with_deviation 不同，本方法不以 M120 为主表，
-        实时价格文件有数据即可独立返回。文件不存在或读取失败返回 {}。
+        实时价格文件有数据即可独立返回。
         """
-        if not self.REALTIME_PRICE_CSV_FILE.exists():
-            logger.warning(f"实时价格数据文件不存在: {self.REALTIME_PRICE_CSV_FILE}")
+        path = self.REALTIME_PRICE_CSV_FILE
+        if not path.exists():
+            logger.warning(f"实时价格数据文件不存在: {path}")
             return {}
 
-        try:
-            price_df = pd.read_csv(self.REALTIME_PRICE_CSV_FILE, encoding="utf-8-sig", dtype=CODE_DTYPE)
-        except Exception as e:
-            logger.error(f"读取实时价格数据失败: {e}")
-            return {}
+        signature = file_signature(path)
+        with self._price_lock:
+            if self._price_cache is not None and self._price_cache[0] == signature:
+                return self._price_cache[1]
 
+            try:
+                price_df = pd.read_csv(path, encoding="utf-8-sig", dtype=CODE_DTYPE)
+            except Exception as e:
+                logger.error(f"读取实时价格数据失败: {e}")
+                return {}
+
+            result = self._parse_price_csv(price_df)
+            self._price_cache = (signature, result)
+            return result
+
+    @staticmethod
+    def _parse_price_csv(price_df: pd.DataFrame) -> dict[str, dict]:
+        """解析价格 DataFrame 为按代码索引的字典（纯转换，不做缓存）。"""
         result: dict[str, dict] = {}
         for _, row in price_df.iterrows():
             code = str(row["股票代码"]).zfill(6)
@@ -530,6 +590,9 @@ class M120Service(CsvPathService):
         """
         读取 M120 数据，并结合实时价格计算偏离度
 
+        合并结果按 (快照签名, 价格签名) 缓存：M120 快照或实时价格任一刷新后
+        下一次读取自动重算。消费者对返回的 dict 只读。
+
         Returns:
             {股票代码: {"m120", "close", "realtime", "deviation",
                        "realtime_deviation", "pe", "pb"}} 字典
@@ -541,6 +604,14 @@ class M120Service(CsvPathService):
         if snapshot_path is None:
             logger.warning(f"M120 数据文件不存在: {self.M120_CSV_FILE}")
             return {}
+
+        cache_key = (
+            file_signature(snapshot_path),
+            file_signature(self.REALTIME_PRICE_CSV_FILE),
+        )
+        with self._merged_lock:
+            if self._deviation_cache is not None and self._deviation_cache[0] == cache_key:
+                return self._deviation_cache[1]
 
         # 读取实时价格数据（包含昨日收盘和实时价格）
         price_dict = self._read_price_csv()
@@ -576,11 +647,16 @@ class M120Service(CsvPathService):
                 "pb": price_data.get("pb"),
             }
 
+        with self._merged_lock:
+            self._deviation_cache = (cache_key, result)
+
         return result
 
     def read_m120_data(self) -> dict[str, dict]:
         """
         读取 M120 数据（不包含偏离度）
+
+        结果按快照签名缓存，消费者对返回的 dict 只读。
 
         Returns:
             {股票代码: {"m120": float}} 字典
@@ -591,6 +667,11 @@ class M120Service(CsvPathService):
             logger.warning(f"M120 数据文件不存在: {self.M120_CSV_FILE}")
             return {}
 
+        cache_key = file_signature(snapshot_path)
+        with self._merged_lock:
+            if self._m120_data_cache is not None and self._m120_data_cache[0] == cache_key:
+                return self._m120_data_cache[1]
+
         try:
             result = {}
             for _, row in df.iterrows():
@@ -598,10 +679,13 @@ class M120Service(CsvPathService):
                 result[code] = {
                     "m120": float(row["M120"]),
                 }
-            return result
         except Exception as e:
             logger.error(f"读取 M120 数据失败: {e}")
             return {}
+
+        with self._merged_lock:
+            self._m120_data_cache = (cache_key, result)
+        return result
 
     def get_m120_file_mtime(self) -> Optional[float]:
         """获取 M120 数据文件的修改时间"""

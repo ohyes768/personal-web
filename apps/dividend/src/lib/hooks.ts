@@ -3,7 +3,7 @@ import { useRefreshJobs, isRefreshActive } from './hooks/useRefreshJobs';
  * 股息率模块自定义 Hooks
  * 封装组件中可复用的状态逻辑
  */
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { dividendApi, dividendUpdateApi } from './api';
 import type {
   DividendStock,
@@ -20,39 +20,47 @@ import type {
 
 /**
  * 股息率数据 Hook
+ *
+ * enabled=false 时不发请求（按 Tab 按需加载）；enabled 由 false 变 true 时
+ * 自动拉取（Tab 切回"全部"时恢复）。响应带序号：慢的旧响应不会覆盖新筛选结果。
  */
-export function useDividendData() {
+export function useDividendData(enabled: boolean = true) {
   const [data, setData] = useState<DividendStock[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const requestSeqRef = useRef(0);
 
   const fetchData = useCallback(async (params?: DividendQueryParams) => {
+    const seq = ++requestSeqRef.current;
     setLoading(true);
     setError(null);
     try {
       const response = await dividendApi.getStocks(params);
+      if (seq !== requestSeqRef.current) return; // 旧响应，丢弃
       setData(response.items);
       setTotal(response.total);
       setLastUpdated(response.last_updated ?? null);
     } catch (err) {
+      if (seq !== requestSeqRef.current) return;
       const message = err instanceof Error ? err.message : '获取数据失败';
       setError(message);
       console.error('Failed to fetch dividend data:', err);
     } finally {
-      setLoading(false);
+      if (seq === requestSeqRef.current) setLoading(false);
     }
   }, []);
 
   useEffect(() => {
+    if (!enabled) return;
     // 默认参数：阈值 3.5%，降序排序
     fetchData({
       min_yield: 3.5,
       sort_by: 'avg_yield_3y',
       sort_order: 'desc',
     });
-  }, [fetchData]);
+  }, [fetchData, enabled]);
 
   return { data, total, loading, error, refetch: fetchData, lastUpdated };
 }
@@ -60,8 +68,15 @@ export function useDividendData() {
 /**
  * 技术指标数据 Hook
  * 获取 M120 / 实时价 / 静态PE / PB
+ *
+ * enabled=false 时清空并跳过请求：挡位监控等不需要全量 M120 的 Tab 不拉。
  */
-export function useTechnicalData(stockCodes: string[], refreshKey?: number, minYield?: number) {
+export function useTechnicalData(
+  enabled: boolean,
+  stockCodes: string[],
+  refreshKey?: number,
+  minYield?: number,
+) {
   const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -72,7 +87,7 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
   const memoizedStockCodes = useMemo(() => stockCodes, [JSON.stringify(stockCodes)]);
 
   useEffect(() => {
-    if (memoizedStockCodes.length === 0) {
+    if (!enabled || memoizedStockCodes.length === 0) {
       setTechnicalData(new Map());
       setPriceUpdatedAt(null);
       return;
@@ -127,7 +142,7 @@ export function useTechnicalData(stockCodes: string[], refreshKey?: number, minY
     };
 
     fetchTechnicalData();
-  }, [memoizedStockCodes, refreshKey]);
+  }, [enabled, memoizedStockCodes, refreshKey]);
 
   return { technicalData, loading, error, priceUpdatedAt };
 }
@@ -547,7 +562,9 @@ export function useDataUpdate() {
   }, []);
 
   /**
-   * 并行检查四项辅助数据状态
+   * 并行检查四项辅助数据状态。
+   * financial 状态在这里一并提取 missing_codes，初始化不再单独请求
+   * /financial/status（此前同一状态接口初始化时会被拉两次）。
    */
   const checkAuxStatus = useCallback(async () => {
     const [sw, fi, sh, bo] = await Promise.allSettled([
@@ -562,9 +579,11 @@ export function useDataUpdate() {
       shareholder: sh.status === 'fulfilled' ? sh.value : null,
       board: bo.status === 'fulfilled' ? bo.value : null,
     });
-    // 同步提取 board 的 missing_codes（用于增量补缺）
+    // 同步提取 board / financial 的 missing_codes（用于增量补缺）
     const boardStatus = bo.status === 'fulfilled' ? bo.value : null;
     setBoardMissingCodes(boardStatus?.missing_codes || []);
+    const financialStatus = fi.status === 'fulfilled' ? fi.value : null;
+    setFinancialMissingCodes(financialStatus?.missing_codes || []);
   }, []);
 
   const refreshJobs = useRefreshJobs((kind) => {
@@ -572,13 +591,12 @@ export function useDataUpdate() {
     else { void checkFinancialStatus(); void checkAuxStatus(); }
   });
 
-  // 初始化时检查状态
+  // 初始化时检查状态（financial 状态由 checkAuxStatus 一并提供，不单独请求）
   useEffect(() => {
     checkM120Status();
     checkDividendStatus();
-    checkFinancialStatus();
     checkAuxStatus();
-  }, [checkM120Status, checkDividendStatus, checkFinancialStatus, checkAuxStatus]);
+  }, [checkM120Status, checkDividendStatus, checkAuxStatus]);
 
   /**
    * 更新股息率数据

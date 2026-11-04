@@ -1,6 +1,7 @@
 """
 CSV 数据读取服务
 """
+import threading
 from pathlib import Path
 from time import time
 from typing import Optional
@@ -26,6 +27,7 @@ class DataReader:
         self._cache: pd.DataFrame | None = None
         self._cache_timestamp: float | None = None
         self._cache_ttl = 30  # 缓存有效期（秒）
+        self._lock = threading.Lock()
 
     def check_csv_exists(self) -> bool:
         """检查 CSV 文件是否存在"""
@@ -67,21 +69,26 @@ class DataReader:
             logger.warning(f"数据文件不存在: {self.csv_path}，返回空数据")
             return pd.DataFrame()
 
-        # 使用缓存
+        # 双检锁：并发请求在缓存失效时只读一次文件
         if not force_refresh and self._is_cache_valid():
             logger.debug("使用缓存数据")
             return self._cache
 
-        logger.info(f"读取数据文件: {self.csv_path}")
-        try:
-            df = pd.read_csv(self.csv_path, encoding=self.encoding, dtype=CODE_DTYPE)
-            self._cache = df
-            self._cache_timestamp = self.get_file_mtime()
-            logger.info(f"数据加载成功，共 {len(df)} 条记录")
-            return df
-        except Exception as e:
-            logger.error(f"读取 CSV 文件失败: {e}")
-            return pd.DataFrame()
+        with self._lock:
+            if not force_refresh and self._is_cache_valid():
+                logger.debug("使用缓存数据")
+                return self._cache
+
+            logger.info(f"读取数据文件: {self.csv_path}")
+            try:
+                df = pd.read_csv(self.csv_path, encoding=self.encoding, dtype=CODE_DTYPE)
+                self._cache = df
+                self._cache_timestamp = self.get_file_mtime()
+                logger.info(f"数据加载成功，共 {len(df)} 条记录")
+                return df
+            except Exception as e:
+                logger.error(f"读取 CSV 文件失败: {e}")
+                return pd.DataFrame()
 
     def get_stock_by_code(self, code: str) -> Optional[pd.Series]:
         """

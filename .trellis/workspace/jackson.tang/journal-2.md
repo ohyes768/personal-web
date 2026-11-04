@@ -282,3 +282,43 @@ housing-map：采集任务弹窗里「匹配租金来源」与「更新租金数
 ### Next Steps
 
 - None - task complete
+
+## Session 58: 股息率页面加载提速实施
+
+**Date**: 2026-11-04
+**Task**: 11-02-dividend-page-load-speed
+**Package**: backend/dividend-select + apps/dividend
+**Branch**: `master`
+
+### Summary
+
+实施页面加载提速：后端以源文件签名 (path, mtime_ns, size) 缓存股东/财务/申万/M120
+派生快照（失败不发布、并发构建去重），读取类路由同步 Pandas 组装移入 asyncio.to_thread，
+/stocks 新增 codes 精确过滤；前端主列表/全量 M120/stats 仅"全部"Tab 加载，挡位监控
+深链接只发收藏 codes 资料与精确现价请求，去重初始化时的重复 financial/status。
+
+### Main Changes
+
+- 新增 versioned_snapshot.py 与 ShareholderReader/FinancialReader/StockInfoService/
+  M120Service 的签名缓存；修复申万映射加载一次永不更新的既有缺陷
+- routes.py：health/stocks/m120/prices/m120-status/financial-status 提取同步构建函数进线程池
+- page.tsx/hooks.ts：enabled 按 Tab 请求、响应序号防竞态、alertStocks 占位兜底（现价
+  链只依赖挡位代码）、挡位弹框无 M120 时用 /prices 降级
+- 新增 tests/test_snapshot_cache.py 24 用例；spec 新增 snapshot-cache-contract.md
+
+### Testing
+
+- 后端全量 355 passed / 3 skipped；唯一失败 test_quality_service 队列排序为改动前
+  即存在的 flaky（stash 对照 3/3 复现）
+- 前端 tsc --noEmit 零错误；next build --no-lint 编译与静态生成通过（lint 阶段由
+  并行任务 11-04-eslint 的 api-client.ts 存量 error 阻塞，非本任务范围）
+- 浏览器验证：/tab=alerts 深链接不再请求全量 stocks/M120/stats，挡位 bar 完整渲染；
+  本地并发压测 health p95 374→226ms。详见任务 research/measurement-local.md
+
+### Status
+
+[OK] **Completed**（NAS p95 复测与部署按 PRD 另行授权后执行）
+
+### Next Steps
+
+- 部署授权后在 NAS 按 baseline.md 方法复测 30 次冷/热 p95

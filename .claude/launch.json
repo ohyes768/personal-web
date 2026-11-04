@@ -44,6 +44,12 @@
       "port": 3003
     },
     {
+      "name": "dividend-api",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "--directory", "backend/dividend-select", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", "8092", "--no-access-log"],
+      "port": 8092
+    },
+    {
       "name": "index-trends-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/index-trends", "dev"],

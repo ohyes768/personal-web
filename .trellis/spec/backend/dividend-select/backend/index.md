@@ -15,6 +15,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | Guide | Description | Status |
 |-------|-------------|--------|
 | [Code Type Guidelines](./code-type-guidelines.md) | 股票代码/指数代码全链路 str 契约、CSV dtype 规范 | Active |
+| [Snapshot Cache Contract](./snapshot-cache-contract.md) | 源文件签名快照缓存（失效/失败不发布/并发去重）、读取路由线程隔离、/stocks codes 过滤、前端按 Tab 请求边界 | Active |
 | [Background Refresh Jobs](./refresh-jobs-contract.md) | M120/financial/quality 202 jobs, progress, persistence, atomic publication and scheduler results | Active |
 | [Hermes Quality Rating](./quality-rating-contract.md) | 五维基本面评级：skill 契约、Hermes Runs API、幂等、落盘与前端映射 | Active |
 | [M120 Snapshot Continuity](./m120-snapshot-contract.md) | 跨周读取、历史文件保留、状态时间与周六调度 | Active |

@@ -1,5 +1,9 @@
 """
 CSV 数据读取服务 - 股东户数和财务指标
+
+read_csv / read_map 均按源文件签名（路径、mtime_ns、size）缓存：
+文件被替换、切换季度文件或删除后补齐时下一次读取自动重建；
+解析失败不发布缓存，下一次请求重试。
 """
 import json
 import math
@@ -10,7 +14,8 @@ from typing import Optional
 import pandas as pd
 
 from ..api.helpers.aux_data import find_latest_aux_file
-from ..utils.helpers import DATA_DIR, setup_logger, CODE_DTYPE
+from ..utils.helpers import setup_logger, CODE_DTYPE
+from .versioned_snapshot import VersionedSnapshot, file_signature
 
 logger = setup_logger(__name__)
 
@@ -22,6 +27,8 @@ class ShareholderReader:
 
     def __init__(self):
         self._cache: pd.DataFrame | None = None
+        self._snapshot = VersionedSnapshot("股东户数", self._read_latest_file)
+        self._map_snapshot = VersionedSnapshot("股东户数快照", self._build_map)
 
     def _get_file_path(self) -> Optional[Path]:
         """获取文件路径（按 mtime 取最新季度后缀文件，无文件返回 None）"""
@@ -32,20 +39,52 @@ class ShareholderReader:
         path = self._get_file_path()
         return path is not None and path.exists()
 
+    def _read_latest_file(self) -> pd.DataFrame:
+        """按签名缓存构建：读当前活跃文件并归一代码列。失败抛异常，不发布缓存。"""
+        filepath = self._get_file_path()
+        if filepath is None or not filepath.exists():
+            raise FileNotFoundError("股东户数文件不存在")
+        df = pd.read_csv(filepath, encoding="utf-8-sig", dtype=CODE_DTYPE)
+        df["股票代码"] = df["股票代码"].astype(str).str.zfill(6)
+        return df
+
     def read_csv(self) -> pd.DataFrame:
-        """读取股东户数数据"""
+        """读取股东户数数据（按源文件签名缓存；失败返回空 DataFrame 且不缓存）"""
         filepath = self._get_file_path()
         if filepath is None or not filepath.exists():
             logger.warning(f"股东户数文件不存在")
             return pd.DataFrame()
-
         try:
-            df = pd.read_csv(filepath, encoding="utf-8-sig", dtype=CODE_DTYPE)
-            df["股票代码"] = df["股票代码"].astype(str).str.zfill(6)
-            return df
+            return self._snapshot.get(lambda: file_signature(filepath))
         except Exception as e:
             logger.error(f"读取股东户数数据失败: {e}")
             return pd.DataFrame()
+
+    def _build_map(self) -> dict[str, dict]:
+        """从已缓存的 DataFrame 构建按代码索引的字典。"""
+        df = self.read_csv()
+        result: dict[str, dict] = {}
+        if df.empty:
+            return result
+        for _, sh_row in df.iterrows():
+            code = str(sh_row["股票代码"]).zfill(6)
+            result[code] = {
+                "shareholder_count": int(sh_row["股东户数"]) if pd.notna(sh_row.get("股东户数")) else None,
+                "shareholder_change_pct": float(sh_row["股东人数增幅"]) if pd.notna(sh_row.get("股东人数增幅")) else None,
+                "per_share_holding": float(sh_row["人均持股数量"]) if pd.notna(sh_row.get("人均持股数量")) else None,
+            }
+        return result
+
+    def read_map(self) -> dict[str, dict]:
+        """按代码索引的股东户数快照（随源文件签名缓存；失败返回空 dict 且不缓存）"""
+        filepath = self._get_file_path()
+        if filepath is None or not filepath.exists():
+            return {}
+        try:
+            return self._map_snapshot.get(lambda: file_signature(filepath))
+        except Exception as e:
+            logger.error(f"构建股东户数快照失败: {e}")
+            return {}
 
     def get_quarter(self) -> Optional[str]:
         """获取数据季度"""
@@ -83,6 +122,8 @@ class FinancialReader:
 
     def __init__(self):
         self._cache: pd.DataFrame | None = None
+        self._snapshot = VersionedSnapshot("财务指标", self._read_latest_file)
+        self._map_snapshot = VersionedSnapshot("财务指标快照", self._build_map)
 
     def _get_file_path(self) -> Optional[Path]:
         """获取文件路径（按 mtime 取最新季度后缀文件，无文件返回 None）"""
@@ -93,22 +134,51 @@ class FinancialReader:
         path = self._get_file_path()
         return path is not None and path.exists()
 
+    def _read_latest_file(self) -> pd.DataFrame:
+        """按签名缓存构建：读当前活跃文件并归一代码列。失败抛异常，不发布缓存。"""
+        filepath = self._get_file_path()
+        if filepath is None or not filepath.exists():
+            raise FileNotFoundError("财务指标文件不存在")
+        df = pd.read_csv(filepath, encoding="utf-8-sig", dtype=CODE_DTYPE)
+        df["股票代码"] = df["股票代码"].astype(str).str.zfill(6)
+        return df
+
     def read_csv(self, strict: bool = False) -> pd.DataFrame:
-        """读取财务指标数据"""
+        """读取财务指标数据（按源文件签名缓存；失败返回空 DataFrame 且不缓存）"""
         filepath = self._get_file_path()
         if filepath is None or not filepath.exists():
             logger.warning(f"财务指标文件不存在")
             return pd.DataFrame()
 
         try:
-            df = pd.read_csv(filepath, encoding="utf-8-sig", dtype=CODE_DTYPE)
-            df["股票代码"] = df["股票代码"].astype(str).str.zfill(6)
-            return df
+            return self._snapshot.get(lambda: file_signature(filepath))
         except Exception as e:
             logger.error(f"读取财务指标数据失败: {e}")
             if strict:
                 raise
             return pd.DataFrame()
+
+    def _build_map(self) -> dict[str, dict]:
+        """从已缓存的 DataFrame 构建按代码索引的财务数据字典。"""
+        df = self.read_csv()
+        result: dict[str, dict] = {}
+        if df.empty:
+            return result
+        for _, fi_row in df.iterrows():
+            code = str(fi_row["股票代码"]).zfill(6)
+            result[code] = self.row_to_data(fi_row)
+        return result
+
+    def read_map(self) -> dict[str, dict]:
+        """按代码索引的财务数据快照（随源文件签名缓存；失败返回空 dict 且不缓存）"""
+        filepath = self._get_file_path()
+        if filepath is None or not filepath.exists():
+            return {}
+        try:
+            return self._map_snapshot.get(lambda: file_signature(filepath))
+        except Exception as e:
+            logger.error(f"构建财务指标快照失败: {e}")
+            return {}
 
     def get_quarter(self) -> Optional[str]:
         """获取数据季度"""

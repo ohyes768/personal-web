@@ -2,7 +2,6 @@
 股票信息服务
 批量查询股票的行业/概念信息
 """
-from pathlib import Path
 from typing import Optional
 
 import pandas as pd
@@ -10,6 +9,7 @@ import pandas as pd
 from src.api.helpers.aux_data import find_latest_aux_file
 from src.utils.logger import setup_logger
 from src.utils.helpers import CODE_DTYPE
+from src.services.versioned_snapshot import VersionedSnapshot, file_signature
 
 logger = setup_logger(__name__)
 
@@ -26,28 +26,19 @@ class StockInfoService:
 
     def __init__(self):
         """初始化股票信息服务"""
-        self._sw_df: Optional[pd.DataFrame] = None
+        self._sw_snapshot = VersionedSnapshot("申万行业映射", self._read_sw_mapping)
 
-    def _load_sw_mapping(self) -> bool:
-        """加载申万行业映射数据（每次调用动态 glob 最新季度后缀文件）"""
-        if self._sw_df is not None:
-            return True
-
-        # 每次重新 glob，避免 refresh 后仍读旧文件
+    def _read_sw_mapping(self) -> pd.DataFrame:
+        """按签名缓存构建：读最新申万行业映射并归一代码列。失败抛异常，不发布缓存。"""
         sw_mapping_file = find_latest_aux_file("个股申万行业映射")
         if sw_mapping_file is None or not sw_mapping_file.exists():
-            logger.warning(f"申万行业映射文件不存在")
-            return False
+            raise FileNotFoundError("申万行业映射文件不存在")
 
-        try:
-            self._sw_df = pd.read_csv(sw_mapping_file, encoding="utf-8-sig", dtype=CODE_DTYPE)
-            # 处理股票代码格式 (001220.SZ -> 001220)
-            self._sw_df["股票代码"] = self._sw_df["股票代码"].str.replace(r"\.(SZ|SH)$", "", regex=True)
-            logger.info(f"申万行业映射加载成功: {len(self._sw_df)} 条 from {sw_mapping_file.name}")
-            return True
-        except Exception as e:
-            logger.error(f"加载申万行业映射失败: {e}")
-            return False
+        df = pd.read_csv(sw_mapping_file, encoding="utf-8-sig", dtype=CODE_DTYPE)
+        # 处理股票代码格式 (001220.SZ -> 001220)
+        df["股票代码"] = df["股票代码"].str.replace(r"\.(SZ|SH)$", "", regex=True)
+        logger.info(f"申万行业映射加载成功: {len(df)} 条 from {sw_mapping_file.name}")
+        return df
 
     def get_stocks_info(self, codes: list[str]) -> dict[str, dict]:
         """
@@ -66,14 +57,19 @@ class StockInfoService:
         if not codes:
             return {}
 
-        if not self._load_sw_mapping() or self._sw_df is None:
+        try:
+            sw_df = self._sw_snapshot.get(
+                lambda: file_signature(find_latest_aux_file("个股申万行业映射"))
+            )
+        except Exception as e:
+            logger.error(f"加载申万行业映射失败: {e}")
             return {}
 
         # 统一转为 6 位字符串匹配
         codes_formatted = [str(c).zfill(6) for c in codes]
 
         # 筛选
-        filtered_df = self._sw_df[self._sw_df["股票代码"].isin(codes_formatted)]
+        filtered_df = sw_df[sw_df["股票代码"].isin(codes_formatted)]
 
         if filtered_df.empty:
             return {}
@@ -94,7 +90,7 @@ class StockInfoService:
         获取单只股票的行业/概念信息
 
         Args:
-            code: 股票代码
+            code: 6位股票代码
 
         Returns:
             股票信息字典，如果不存在返回 None

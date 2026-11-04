@@ -1,1 +1,8 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/11-02-dividend-page-load-speed/research/baseline.md", "reason": "NAS 性能基线采样与代码证据，是全部优化目标的来源与对照"}
+{"file": ".trellis/spec/backend/dividend-select/backend/code-type-guidelines.md", "reason": "股票/指数代码全链路 str 契约，codes 精确过滤必须遵守"}
+{"file": ".trellis/spec/backend/dividend-select/backend/refresh-jobs-contract.md", "reason": "刷新任务互斥、原子发布与调度结果契约，计算隔离不得破坏"}
+{"file": ".trellis/spec/backend/dividend-select/backend/screening-watchlist-contract.md", "reason": "筛选三态与收藏契约，监控/收藏按需加载需保持兼容"}
+{"file": ".trellis/spec/backend/dividend-select/backend/financial-quarterly-contract.md", "reason": "财务最新季度扣非单季口径，快照缓存不得改变输出字段"}
+{"file": ".trellis/spec/backend/dividend-select/backend/m120-snapshot-contract.md", "reason": "M120 跨周读取与快照连续性，M120/TTM 缓存依赖此契约"}
+{"file": ".trellis/spec/backend/dividend-select/backend/scheduler-lifecycle.md", "reason": "调度器有界关闭与任务生命周期，保留单 worker 约束"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范索引，page.tsx 按 Tab 按需加载改造需遵守"}

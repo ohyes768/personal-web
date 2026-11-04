@@ -1,1 +1,7 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/11-02-dividend-page-load-speed/research/baseline.md", "reason": "对照性能基线验证改善与回归"}
+{"file": ".trellis/spec/backend/dividend-select/backend/code-type-guidelines.md", "reason": "检查代码类型 str 契约未被破坏"}
+{"file": ".trellis/spec/backend/dividend-select/backend/refresh-jobs-contract.md", "reason": "检查刷新互斥与原子发布语义保留"}
+{"file": ".trellis/spec/backend/dividend-select/backend/screening-watchlist-contract.md", "reason": "检查筛选/收藏兼容与旧 watchlist 链接回归"}
+{"file": ".trellis/spec/backend/dividend-select/backend/financial-quarterly-contract.md", "reason": "检查财务季度口径与输出字段一致"}
+{"file": ".trellis/spec/backend/dividend-select/backend/m120-snapshot-contract.md", "reason": "检查 M120 快照连续性契约"}
+{"file": ".trellis/spec/backend/dividend-select/backend/scheduler-lifecycle.md", "reason": "检查调度器生命周期与单 worker 约束"}

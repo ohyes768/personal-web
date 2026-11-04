@@ -1,6 +1,7 @@
 """
 API 路由定义
 """
+import asyncio
 import os
 import math
 import secrets
@@ -431,8 +432,8 @@ async def health():
     if data_reader is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
 
-    csv_exists = data_reader.check_csv_exists()
-    total = data_reader.get_total_count() if csv_exists else 0
+    # 文件 stat 与计数放线程池，混合并发时不再排在同步重计算后面
+    csv_exists, total = await asyncio.to_thread(_health_snapshot)
 
     return HealthResponse(
         status="healthy" if csv_exists else "unhealthy",
@@ -443,20 +444,40 @@ async def health():
     )
 
 
-@router.get("/stocks", response_model=StockListResponse)
-async def get_stocks(
-    min_yield: float = Query(5, description="最小股息率(%)，默认5%"),
-    max_yield: Optional[float] = Query(None, description="最大股息率(%)"),
-    exchange: Optional[str] = Query(None, description="交易所筛选"),
-    industry: Optional[str] = Query(None, description="行业筛选"),
-    index: Optional[str] = Query(None, description="来源指数筛选"),
-    sort_by: str = Query("avg_yield_3y", description="排序字段"),
-    sort_order: str = Query("desc", description="排序方向(asc/desc)")
-):
-    """获取股票列表（支持筛选、排序，无分页）"""
-    if data_reader is None or filter_service is None or sort_service is None:
-        raise HTTPException(status_code=500, detail="服务未初始化")
+def _health_snapshot() -> tuple[bool, int]:
+    """健康检查的同步部分：文件存在性与记录数。"""
+    csv_exists = data_reader.check_csv_exists()
+    total = data_reader.get_total_count() if csv_exists else 0
+    return csv_exists, total
 
+
+def _normalize_codes_filter(codes: Optional[str]) -> Optional[set[str]]:
+    """把逗号分隔的查询参数归一为六位数字代码集合；空/None 返回 None（保持原行为）。"""
+    if codes is None or not codes.strip():
+        return None
+    normalized: list[str] = []
+    for raw in codes.split(","):
+        item = raw.strip()
+        if not item:
+            continue
+        code = str(item).zfill(6)
+        if len(code) != 6 or not code.isascii() or not code.isdigit():
+            raise HTTPException(422, f"股票代码须为六位数字: {item}")
+        normalized.append(code)
+    return set(normalized) or None
+
+
+def _build_stock_list(
+    min_yield: float,
+    max_yield: Optional[float],
+    exchange: Optional[str],
+    industry: Optional[str],
+    index: Optional[str],
+    sort_by: str,
+    sort_order: str,
+    wanted_codes: Optional[set[str]],
+) -> StockListResponse:
+    """股票列表的同步构建：读取、筛选、排序、组装模型（供线程池执行）。"""
     # 读取数据
     df = data_reader.read_csv()
 
@@ -467,6 +488,10 @@ async def get_stocks(
             items=[],
             last_updated=None
         )
+
+    # codes 精确过滤：与后续筛选参数取交集（min_yield=0 时不做股息率过滤）
+    if wanted_codes:
+        df = df[df["股票代码"].astype(str).str.zfill(6).isin(wanted_codes)]
 
     # 筛选
     # 如果设置了min_yield，则使用3年连续分红筛选（3年平均>=min_yield 且 每年都有分红）
@@ -487,26 +512,17 @@ async def get_stocks(
     if stock_info_service is not None and codes:
         info_map = stock_info_service.get_stocks_info(codes)
 
-    # 批量查询股东户数和财务指标
-    shareholder_map = {}
-    financial_map = {}
-    if shareholder_reader is not None and shareholder_reader.check_exists():
-        sh_df = shareholder_reader.read_csv()
-        if not sh_df.empty:
-            for _, sh_row in sh_df.iterrows():
-                code = str(sh_row["股票代码"]).zfill(6)
-                shareholder_map[code] = {
-                    "shareholder_count": int(sh_row["股东户数"]) if pd.notna(sh_row.get("股东户数")) else None,
-                    "shareholder_change_pct": float(sh_row["股东人数增幅"]) if pd.notna(sh_row.get("股东人数增幅")) else None,
-                    "per_share_holding": float(sh_row["人均持股数量"]) if pd.notna(sh_row.get("人均持股数量")) else None,
-                }
-
-    if financial_reader is not None and financial_reader.check_exists():
-        fi_df = financial_reader.read_csv()
-        if not fi_df.empty:
-            for _, fi_row in fi_df.iterrows():
-                code = str(fi_row["股票代码"]).zfill(6)
-                financial_map[code] = financial_reader.row_to_data(fi_row)
+    # 批量查询股东户数和财务指标（按代码索引的只读快照，随源文件签名缓存）
+    shareholder_map = (
+        shareholder_reader.read_map()
+        if shareholder_reader is not None and shareholder_reader.check_exists()
+        else {}
+    )
+    financial_map = (
+        financial_reader.read_map()
+        if financial_reader is not None and financial_reader.check_exists()
+        else {}
+    )
 
     # 无分页，返回所有数据
     items = [_row_to_stock_model(
@@ -526,6 +542,31 @@ async def get_stocks(
         total=len(items),
         items=items,
         last_updated=last_updated
+    )
+
+
+@router.get("/stocks", response_model=StockListResponse)
+async def get_stocks(
+    min_yield: float = Query(5, description="最小股息率(%)，默认5%"),
+    max_yield: Optional[float] = Query(None, description="最大股息率(%)"),
+    exchange: Optional[str] = Query(None, description="交易所筛选"),
+    industry: Optional[str] = Query(None, description="行业筛选"),
+    index: Optional[str] = Query(None, description="来源指数筛选"),
+    sort_by: str = Query("avg_yield_3y", description="排序字段"),
+    sort_order: str = Query("desc", description="排序方向(asc/desc)"),
+    codes: Optional[str] = Query(None, description="逗号分隔的六位股票代码精确过滤，与筛选参数取交集；不传保持原行为"),
+):
+    """获取股票列表（支持筛选、排序，无分页）"""
+    if data_reader is None or filter_service is None or sort_service is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+
+    wanted_codes = _normalize_codes_filter(codes)
+
+    # 同步 Pandas 组装放线程池，避免堵住事件循环（uvicorn 单 worker）
+    return await asyncio.to_thread(
+        _build_stock_list,
+        min_yield, max_yield, exchange, industry, index,
+        sort_by, sort_order, wanted_codes,
     )
 
 
@@ -641,29 +682,8 @@ async def get_stats():
     )
 
 
-@router.get("/m120", response_model=M120ListResponse)
-async def get_m120_stocks(
-    min_yield: float = Query(0, description="最小股息率(%)，前端传入控制；0则不过滤返回全部"),
-    sort_by: str = Query("avg_yield_3y", description="排序字段"),
-    sort_order: str = Query("desc", description="排序方向(asc/desc)")
-):
-    """
-    批量获取股票的 M120 数据
-
-    min_yield=0 时不过滤，返回所有有股息数据的股票（用于前端技术指标匹配）
-    默认 min_yield=5 用于 n8n 定时调用（只刷新高股息股）
-
-    返回数据：
-    - 股票代码
-    - 股票名称
-    - 3年平均股息率
-    - 120日均线（M120）
-    - 最新收盘价
-    - 收盘价与M120的偏离度(%)
-    """
-    if data_reader is None or sort_service is None or m120_service is None:
-        raise HTTPException(status_code=500, detail="服务未初始化")
-
+def _build_m120_list(min_yield: float, sort_by: str, sort_order: str) -> M120ListResponse:
+    """M120 列表的同步构建（供线程池执行）。"""
     # 读取股息率数据
     df = data_reader.read_csv()
 
@@ -729,24 +749,39 @@ async def get_m120_stocks(
     )
 
 
-@router.get("/prices", response_model=PriceListResponse)
-async def get_prices(
-    codes: str = Query("", description="逗号分隔的股票代码，空=返回实时价格CSV全部股票"),
+@router.get("/m120", response_model=M120ListResponse)
+async def get_m120_stocks(
+    min_yield: float = Query(0, description="最小股息率(%)，前端传入控制；0则不过滤返回全部"),
+    sort_by: str = Query("avg_yield_3y", description="排序字段"),
+    sort_order: str = Query("desc", description="排序方向(asc/desc)")
 ):
     """
-    批量获取股票现价（独立于 M120）。
+    批量获取股票的 M120 数据
 
-    供挡位监控等"只需现价/PE/PB/yield_ttm"的场景：M120 数据缺失时仍可用。
-    yield_ttm 计算口径与 /api/dividend/m120 完全一致（_compute_yield_ttm）。
+    min_yield=0 时不过滤，返回所有有股息数据的股票（用于前端技术指标匹配）
+    默认 min_yield=5 用于 n8n 定时调用（只刷新高股息股）
+
+    返回数据：
+    - 股票代码
+    - 股票名称
+    - 3年平均股息率
+    - 120日均线（M120）
+    - 最新收盘价
+    - 收盘价与M120的偏离度(%)
     """
-    if data_reader is None or m120_service is None:
+    if data_reader is None or sort_service is None or m120_service is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
 
+    return await asyncio.to_thread(_build_m120_list, min_yield, sort_by, sort_order)
+
+
+def _build_price_list(codes_param: str) -> PriceListResponse:
+    """现价列表的同步构建（供线程池执行）。"""
     prices = m120_service.read_prices_only()
 
     # codes 过滤（逗号分隔，前导零补全）
-    if codes.strip():
-        wanted = {c.strip().zfill(6) for c in codes.split(",") if c.strip()}
+    if codes_param.strip():
+        wanted = {c.strip().zfill(6) for c in codes_param.split(",") if c.strip()}
         prices = {code: v for code, v in prices.items() if code in wanted}
 
     # 读主 CSV 用于 yield_ttm 计算（按 code 索引）
@@ -781,6 +816,22 @@ async def get_prices(
     return PriceListResponse(total=len(items), items=items, last_updated=last_updated)
 
 
+@router.get("/prices", response_model=PriceListResponse)
+async def get_prices(
+    codes: str = Query("", description="逗号分隔的股票代码，空=返回实时价格CSV全部股票"),
+):
+    """
+    批量获取股票现价（独立于 M120）。
+
+    供挡位监控等"只需现价/PE/PB/yield_ttm"的场景：M120 数据缺失时仍可用。
+    yield_ttm 计算口径与 /api/dividend/m120 完全一致（_compute_yield_ttm）。
+    """
+    if data_reader is None or m120_service is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+
+    return await asyncio.to_thread(_build_price_list, codes)
+
+
 @router.get("/m120/status")
 async def get_m120_status(
     min_yield: float = Query(3.5, description="最小股息率(%)，与前端展示口径对齐，默认3.5%"),
@@ -801,6 +852,11 @@ async def get_m120_status(
     if m120_service is None or data_reader is None or filter_service is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
 
+    return await asyncio.to_thread(_build_m120_status, min_yield)
+
+
+def _build_m120_status(min_yield: float) -> dict:
+    """M120 状态的同步构建（供线程池执行）；读取均走快照缓存。"""
     file_exists = m120_service.check_m120_file_exists()
     last_updated = None
 
@@ -943,6 +999,11 @@ async def get_financial_status():
     if financial_reader is None:
         raise HTTPException(status_code=500, detail="服务未初始化")
 
+    return await asyncio.to_thread(_build_financial_status)
+
+
+def _build_financial_status() -> dict:
+    """财务指标状态的同步构建（供线程池执行）。"""
     fi_path = find_latest_aux_file("财务指标汇总")
     file_exists = financial_reader.check_exists()
     last_updated = file_mtime_iso(fi_path) if fi_path else None

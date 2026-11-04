@@ -145,6 +145,8 @@ export interface DividendQueryParams {
   index?: string | null;
   sort_by?: string;
   sort_order?: 'asc' | 'desc';
+  /** 逗号分隔的六位股票代码精确过滤；与筛选参数取交集，不传保持原行为 */
+  codes?: string;
 }
 
 // ========== 组件 Props 类型 ==========
