@@ -280,3 +280,19 @@ GET `/rentals/association-tasks` 待选择条目增加 `address,candidate_count,
 `test_rental_selection_summary.py`验证当前权限、总数、地址、具体原因及GET不改probe状态；`rental-selection-table.test.cjs`验证四列、名称截断、原ID回调、缺失字段、零可选和HTML转义。
 ### Wrong vs Correct
 Wrong：给每行单独请求probe，或展示固定空candidates。Correct：单次清单请求投影已存证据，弹框再读取详情；来源确认继续走原revision和归属核验。
+
+## 已采集计数（2026-11-04）
+### Scope
+租金来源待处理清单只含待处理小区，已关联幸福里来源的小区被排除，此前页面无任何位置显示已采集总数。
+### Signatures
+GET `/rentals/association-tasks` 返回体增加顶层 `associated_count:int` = `len(active_sources(registry))`；清单条目结构不变。
+### Contracts
+"已采集"口径是当前已关联幸福里租金来源（`active_sources`，含刚绑定、等待下一轮采集的小区），不是"本轮成功采集"；人工"已跳过"（decision=skipped）不计入。前端渲染为 `.directory-static-count` 静态标签，不参与筛选——已关联小区不在清单内，无可筛列表。
+### Validation / Errors
+接口失败沿用原503语义；前端 `associated_count` 缺失按0显示，不虚构数字。
+### Cases
+已关联1个、待处理2个时：items只含待处理2个，associated_count=1，标签显示"已采集 1"；目录合格小区总数=待处理计数之和+已采集数。
+### Tests
+`test_review_api_reports_associated_count`（test_rental_association_flow.py）断言绑定1个来源后 items 只剩其余小区且 associated_count==1。
+### Wrong vs Correct
+Wrong：把"已采集"做成disabled筛选按钮（假按钮），或把人工跳过计入已采集。Correct：静态只读标签加悬浮说明写明口径。

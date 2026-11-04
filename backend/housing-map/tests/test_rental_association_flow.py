@@ -78,6 +78,26 @@ def test_review_api_skip_reopen_and_retired_bind(tmp_path, monkeypatch):
     assert remaining[0]['reason'] == 'missing'
 
 
+def test_review_api_reports_associated_count(tmp_path, monkeypatch):
+    """已关联幸福里来源的小区不在清单里，但接口必须报出它们的数量，否则页面无处看已采集总数。"""
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import rental_source_routes, rental_routes
+    registry = setup(tmp_path)
+    service = RentalRefreshService(tmp_path / 'rentals', tmp_path / 'rental_community_mappings.json',
+                                    delay=0)
+    monkeypatch.setattr(rental_routes, '_mappings_path', tmp_path / 'rental_community_mappings.json')
+    monkeypatch.setattr(rental_routes, '_get_service', lambda: service)
+    app = FastAPI(); app.include_router(rental_source_routes.router)
+    client = TestClient(app)
+    source = registry.ingest(dict(source='xingfuli', source_id='101', name='测试花园',
+                                  seed_listing_id='101', auto_association_disabled=True))
+    registry.associate(source['id'], 'c1')
+    data = client.get('/rentals/association-tasks').json()['data']
+    assert {i['community_id'] for i in data['items']} == {'c2'}
+    assert data['associated_count'] == 1
+
+
 def test_matching_review_list_keeps_the_human_skip(tmp_path):
     from src.services.rental_reference.matching import source_reviews
     registry = setup(tmp_path)

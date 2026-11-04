@@ -112,8 +112,12 @@ def review_registry():
 @router.get('/rentals/association-tasks')
 def association_tasks():
     from src.services.rental_reference.matching import source_reviews
+    from src.services.rental_reference.providers import active_sources
     try:
-        return {'success': True, 'data': {'items': source_reviews(review_registry())}}
+        registry = review_registry()
+        return {'success': True,
+                'data': {'items': source_reviews(registry),
+                         'associated_count': len(active_sources(registry))}}
     except (OSError, sqlite3.Error, ValueError) as exc:
         raise HTTPException(503, '租金待处理清单暂不可用') from exc
 

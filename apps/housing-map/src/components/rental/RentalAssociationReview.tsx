@@ -54,6 +54,7 @@ export function RentalSelectionTable({ items, onReview }: {
 
 export default function RentalAssociationReview({ onChanged }: { onChanged?: () => void }) {
   const [items, setItems] = useState<RentalReview[]>([]);
+  const [associatedCount, setAssociatedCount] = useState(0);
   const [reasonFilter, setReasonFilter] = useState('needs_selection');
   const [selectedCommunity, setSelectedCommunity] = useState('');
   const [candidate, setCandidate] = useState('');
@@ -64,7 +65,7 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
       const response = await fetch('/api/map/rentals/association-tasks', { signal });
       const payload = await response.json();
       if (!response.ok || !payload.success) throw new Error(payload.detail || '租金待处理清单暂不可用');
-      if (!signal?.aborted) { setItems(payload.data.items); setError(''); }
+      if (!signal?.aborted) { setItems(payload.data.items); setAssociatedCount(payload.data.associated_count ?? 0); setError(''); }
     } catch (e) { if (!signal?.aborted) setError(e instanceof Error ? e.message : '清单加载失败'); }
   }, []);
   useEffect(() => {
@@ -100,6 +101,7 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
     <div className="directory-actions">
       {filterOrder.map(reason => <button key={reason} className="btn btn-secondary" aria-pressed={reasonFilter === reason}
         onClick={() => pickFilter(reason)}>{filterLabels[reason]} {counts[reason] || 0}</button>)}
+      <span className="directory-static-count" title="已关联幸福里租金来源的小区数（含等待下一轮采集）">已采集 {associatedCount}</span>
       <button className="btn btn-secondary" disabled={busy} onClick={() => void load()}>刷新清单</button>
     </div>
     {error && !item && <p role="alert" className="directory-warning">{error}</p>}

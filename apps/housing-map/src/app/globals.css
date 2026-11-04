@@ -1210,6 +1210,7 @@ body {
 .directory-actions { display:flex; align-items:center; flex-wrap:wrap; gap:10px; margin:10px 0; }
 .directory-actions label { display:flex; align-items:center; gap:6px; font-size:12px; }
 .directory-actions input[type=number] { width:70px; }
+.directory-static-count { display:inline-flex; align-items:center; padding:8px 16px; border-radius:8px; font-size:13px; border:1px solid var(--border); color:var(--text-muted); }
 .directory-toolbar { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,190px)); align-items:end; gap:12px; margin-bottom:15px; }
 .directory-toolbar>.btn,.directory-toolbar>.directory-refresh { justify-self:start; }
 @media(min-width:601px) {
