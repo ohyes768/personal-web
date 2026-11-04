@@ -6,7 +6,7 @@ import os
 import math
 import secrets
 from datetime import datetime
-from typing import Optional
+from typing import Annotated, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
@@ -554,7 +554,7 @@ async def get_stocks(
     index: Optional[str] = Query(None, description="来源指数筛选"),
     sort_by: str = Query("avg_yield_3y", description="排序字段"),
     sort_order: str = Query("desc", description="排序方向(asc/desc)"),
-    codes: Optional[str] = Query(None, description="逗号分隔的六位股票代码精确过滤，与筛选参数取交集；不传保持原行为"),
+    codes: Annotated[Optional[str], Query(description="逗号分隔的六位股票代码精确过滤，与筛选参数取交集；不传保持原行为")] = None,
 ):
     """获取股票列表（支持筛选、排序，无分页）"""
     if data_reader is None or filter_service is None or sort_service is None:
