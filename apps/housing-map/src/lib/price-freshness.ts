@@ -332,6 +332,20 @@ export function normalizeRefreshCounts(raw: unknown): { eligible: number | null;
   return { eligible, missing };
 }
 
+// POST /api/map/refresh 200 的 data 只有 {total, mode, backupFile}, 不是 job 快照;
+// 但 200 即任务已启动(服务端先置 running 再返回): 这里补上 running/phase,
+// 让控件立即进入进度态并触发 3s 轮询, 首次 GET 用真实进度覆盖。
+// 陷阱(2026-11-05 实测回归): 直接把 POST data 喂 normalizeRefreshJob 会得到
+// running=false/phase=idle —— loading 不出现、轮询守卫不通过, 页面毫无反应。
+export function refreshJobFromStartPayload(raw: unknown): RefreshJobView {
+  const data = isRecord(raw) ? raw : {};
+  return normalizeRefreshJob({
+    ...data,
+    running: data.running === undefined ? true : data.running === true,
+    phase: typeof data.phase === 'string' ? data.phase : 'fetching',
+  });
+}
+
 // ---------------------------------------------------------------------------
 // 终态统计展示 (R3)
 // ---------------------------------------------------------------------------

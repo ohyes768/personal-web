@@ -78,6 +78,7 @@ sources: {<sid>: {outcome, reason, partial, errors[]}}
 ## 8. 前端（apps/housing-map）
 
 - `src/lib/price-freshness.ts` 是价格数据的唯一读取归一化口（价格条目/counts/job/每小区状态/eligible-missing）；缺失字段不崩、不编造。
+- **POST 响应不是 job 快照**：§4 的 200 `data` 只有 `{total, mode, backupFile}`，前端 `startRefresh` 成功后必须经 `refreshJobFromStartPayload` 合成乐观 `running/phase` 视图——直接喂 `normalizeRefreshJob` 会得到 `running=false/phase=idle`，loading 不出现且轮询守卫（`if (!refreshJob?.running) return`）不通过，页面毫无反应（2026-11-05 实测回归）。
 - `PriceDetails`：签/挂各一格（价格+所属月份+采集日+stale 角标），过期签约进「历史参考」行，无有效价显示「暂无近期价格」。
 - `PriceRefreshControls`：双入口「刷新已收录」「补齐价格（N）」；N=0 禁用补齐；页面加载 GET 一次数量、running 时 3s 轮询 job、done 后重拉小区数据；终态展示 updated/noData/failed/skipped/retained。
 

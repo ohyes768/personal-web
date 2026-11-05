@@ -12,6 +12,7 @@ for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) 
 const {
   monthLabel, shortDate, normalizePriceBlock, normalizeRefreshJob, normalizeRefreshCounts,
   refreshPhaseText, refreshSummaryMetrics, refreshStatusLine, dualPriceLines,
+  refreshJobFromStartPayload,
 } = require('../src/lib/price-freshness.ts');
 const PriceDetails = require('../src/components/community/PriceDetails.tsx').default;
 const PriceRefreshControls = require('../src/components/community/PriceRefreshControls.tsx').default;
@@ -97,6 +98,27 @@ test('refresh counts stay null when the server did not send them', () => {
   assert.deepEqual(normalizeRefreshCounts({ eligible: 10, missing: 3 }), { eligible: 10, missing: 3 });
   assert.deepEqual(normalizeRefreshCounts({}), { eligible: null, missing: null });
   assert.deepEqual(normalizeRefreshCounts({ eligible: 'x' }), { eligible: null, missing: null });
+});
+
+test('a successful start payload becomes a running job so loading and polling start (2026-11-05 regression)', () => {
+  // POST 200 data 契约只有 {total, mode, backupFile}: 直接归一化会得到 running=false,
+  // loading 与轮询都不启动 —— 必须经 refreshJobFromStartPayload 合成乐观运行态
+  const job = refreshJobFromStartPayload({
+    total: 12, mode: 'missing', backupFile: 'price_snapshots_2026-11-05.bak.jsonl',
+  });
+  assert.equal(job.running, true);
+  assert.equal(job.phase, 'fetching');
+  assert.equal(job.mode, 'missing');
+  assert.equal(job.total, 12);
+  assert.equal(refreshPhaseText(job), '补齐中 0/12…');
+  // 响应若已带真实 running/phase, 以响应为准
+  assert.equal(refreshJobFromStartPayload({ total: 1, mode: 'all', phase: 'merging' }).phase, 'merging');
+  assert.equal(refreshJobFromStartPayload({ total: 1, mode: 'all', running: false }).running, false);
+  // 非法 payload 不崩, 仍按"已启动"处理
+  const empty = refreshJobFromStartPayload(null);
+  assert.equal(empty.running, true);
+  assert.equal(empty.phase, 'fetching');
+  assert.equal(empty.total, 0);
 });
 
 test('phase text distinguishes the two entries and keeps the four-way accounting', () => {

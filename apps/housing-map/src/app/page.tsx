@@ -32,6 +32,7 @@ import {
   normalizePriceBlock,
   normalizeRefreshCounts,
   normalizeRefreshJob,
+  refreshJobFromStartPayload,
   refreshStatusLine,
   type RefreshJobView,
 } from '@/lib/price-freshness';
@@ -416,7 +417,9 @@ export default function BinjiangMapPage() {
         setRefreshNotice(d?.error || `触发刷新失败（${res.status}）`);
         return;
       }
-      applyRefreshPayload(d.data, false);
+      // POST data 不是 job 快照(只有 total/mode/backupFile):
+      // 200 即任务已启动, 合成乐观 running 视图, loading 立即出现并启动轮询
+      applyRefreshPayload(refreshJobFromStartPayload(d.data), false);
     } catch {
       setRefreshNotice('触发刷新失败');
     }
