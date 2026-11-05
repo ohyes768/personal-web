@@ -38,6 +38,45 @@ INDEX_TRENDS_LIXINGER_TOKEN=<your-lixinger-token>
 NAS 部署：在 `.env` 里加 `INDEX_TRENDS_LIXINGER_TOKEN=...`，compose 会透传给
 `index-trends-backend`。令牌需具备指数基本面与 10 年统计指标权限，费用与开通由使用者自行确认。
 
+## 对外查询 API（Hermes / 脚本）
+
+一次 GET 即可获取沪深300 当前周线通道位置和 PE-TTM 近10年分位，复用网页的状态接口。
+GET 只读本地缓存，不触发供应商采集、模型重算或消息发送。
+
+```bash
+curl --fail-with-body 'https://web.duomi77.cn:9443/api/index-trends/indices/000300/status?model=trailing_10y_weekly'
+```
+
+本地后端使用 `http://localhost:8100/api/indices/000300/status?model=trailing_10y_weekly`。
+`model` 必填：`trailing_10y_weekly` 为近10年周线模型，
+`since_inception_weekly` 为上市以来周线模型。两个模型共享同一份估值。
+指数代码为字符串，当前仅支持 `000300`。
+
+| 响应字段 | 含义 |
+|---|---|
+| `available` / `reason` | 通道是否可用及不可用原因；不可用时不保证存在价格、轨道和位置字段 |
+| `model_kind` / `model` | 选用的周线模型及其拟合信息 |
+| `price_as_of` / `close` | 最近已收盘交易日及收盘价，不是盘中价格 |
+| `projection_week` | 价格所在自然周的周一；进行中的周也可投影到已有周线通道 |
+| `lower` / `mid` / `upper` | 该周的下轨、中轨、上轨 |
+| `position_pct` | `(close-lower)/(upper-lower)*100`；下轨为0、上轨为100，突破时可小于0或大于100 |
+| `region` | `below_channel` / `lower` / `middle` / `upper` / `above_channel`，依次表示通道下方、低位、中部、高位、通道上方 |
+| `data_status` / `snapshot_id` | 行情新鲜度、异常原因与快照标识；`available=true` 不代表数据一定新鲜 |
+| `valuation.state` / `valuation.reason` | 估值状态：`ok` / `stale` / `empty` / `error` / `disabled` 及原因 |
+| `valuation.pe_ttm` | 总市值加权 PE-TTM，缺失为 `null` |
+| `valuation.percentile_pct` | 理杏仁近10年 PE-TTM 分位，0—100（不是0—1比例），缺失为 `null` |
+| `valuation.target_date` / `valuation.as_of` | 估值期望日期与实际数据日期 |
+| `valuation.source` / `valuation.metric` / `valuation.window` | 供应商与统计口径 |
+
+通道位置使用最近已收盘交易日的价格，估值目标日为最近应当完成的自然周的最后交易日，
+两者日期可能不同。调用方应分别标注 `price_as_of` 与 `valuation.as_of`，
+并检查 `data_status` 和 `valuation.state`；估值异常不表示通道也不可用。
+`error` 状态可以携带缓存估值，必须标注更新失败；`disabled` 表示未配置估值服务，不能当成零分位。
+
+接口沿用现有公开只读访问方式，不需要把理杏仁令牌传给调用端。
+不支持的指数返回404，非法模型返回400，缺少必填参数返回422，趋势服务未初始化返回503。
+HTTP 200仍需检查上述业务状态；这里的访问约定仅针对本查询接口。
+
 ## 验证命令
 
 ```bash
