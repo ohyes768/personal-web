@@ -322,3 +322,37 @@ housing-map：采集任务弹窗里「匹配租金来源」与「更新租金数
 ### Next Steps
 
 - 部署授权后在 NAS 按 baseline.md 方法复测 30 次冷/热 p95
+
+
+## Session 58: index-trends 移除推送职责并保留 Web 每日刷新
+
+**Date**: 2026-11-05
+**Task**: index-trends 移除推送职责并保留 Web 每日刷新
+**Package**: backend/index-trends
+**Branch**: `master`
+
+### Summary
+
+移除周报生成、钉钉发送、每周调度、启动补发与控制接口，保留 Web 工作日16:30行情和估值刷新、手动刷新、只读状态API及历史周报。后端200项、前端9项测试通过，类型检查和构建通过；未部署。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2a683b53` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
