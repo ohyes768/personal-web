@@ -2,6 +2,18 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "fund-select-api",
+      "runtimeExecutable": "backend/fund-select/.venv/Scripts/python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "src.main:app", "--app-dir", "backend/fund-select", "--host", "127.0.0.1", "--port", "8095", "--no-access-log"],
+      "port": 8095
+    },
+    {
+      "name": "fund-select-web",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "apps/fund-select", "dev"],
+      "port": 3005
+    },
+    {
       "name": "kids-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["-C", "apps/kids-catalog", "dev"],

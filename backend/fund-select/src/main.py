@@ -28,6 +28,7 @@ from src.api.routes import (
     router_discovery_stock,
     router_stock,
 )
+from src.api.sharpe_board import router as sharpe_board_router
 from src.db.session import init_db
 from src.scheduler.manager import SchedulerManager
 from src.scheduler.routes import router as scheduler_router
@@ -74,6 +75,9 @@ app.add_middleware(
 )
 
 app.include_router(scheduler_router, prefix="/api/funds")
+# 静态 /sharpe-board 必须在通用 /{code} 详情路由（router）之前注册：
+# FastAPI 按注册顺序匹配，后注册会被 /{code} 吞掉当基金代码查（404）
+app.include_router(sharpe_board_router, prefix="/api/funds")
 app.include_router(router, prefix="/api/funds")
 app.include_router(router_stock, prefix="/api/funds")
 app.include_router(router_discovery_bond, prefix="/api/funds")

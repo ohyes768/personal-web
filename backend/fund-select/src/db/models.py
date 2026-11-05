@@ -3,7 +3,19 @@ ORM 模型（SQLAlchemy 2.x）
 """
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, Column, Date, DateTime, Float, Index, Integer, String
+from sqlalchemy import (
+    Boolean,
+    Column,
+    Date,
+    DateTime,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import DeclarativeBase
 
 
@@ -193,5 +205,65 @@ class FundRiskMetrics(Base):
     excess_3y = Column(Float, nullable=True)      # 3 年累计超额（小数）
     sample_days = Column(Integer, nullable=True)  # 实际样本交易日数（诊断）
     as_of_date = Column(Date, nullable=False)
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))
+
+
+class SharpeBoardWeek(Base):
+    """夏普榜单周批次（每周一行；source+profile_version+week_start 联合唯一）
+
+    周榜状态机：complete（已发布，冻结不可重写）/ failed / skipped_no_new_data
+    （可同周重试）。running 不落表，复用 scheduler 内存状态。
+    时间列保存 UTC 挂钟（naive），展示层转北京时间。
+    profile_json 是完整规则副本（canonical JSON），规则变更换 profile_version 不改旧行。
+    """
+    __tablename__ = "sharpe_board_weeks"
+    __table_args__ = (
+        UniqueConstraint("source", "profile_version", "week_start",
+                         name="uq_sharpe_board_weeks_source_version_week"),
+        Index("ix_sharpe_board_weeks_source_week", "source", "week_start"),
+    )
+
+    id = Column(Integer, primary_key=True)               # 自增
+    source = Column(String(32), nullable=False)          # 'stock' | 'discovery-stock'
+    profile_version = Column(String(16), nullable=False)  # 'v1'
+    week_start = Column(Date, nullable=False)            # 任务开始所在北京时间自然周的周一
+    profile_json = Column(Text, nullable=False)          # 完整规则副本（canonical JSON）
+    profile_hash = Column(String(64), nullable=False)    # canonical JSON sha256
+    algorithm_version = Column(String(16), nullable=False)  # 夏普算法口径版本
+    status = Column(String(32), nullable=False)          # complete|failed|skipped_no_new_data
+    run_id = Column(String(64), nullable=True)           # 关联 RefreshRun.task_id
+    trigger = Column(String(32), nullable=True)          # scheduled|manual
+    started_at = Column(DateTime, nullable=False)        # 本轮采集开始时刻（UTC）
+    finished_at = Column(DateTime, nullable=True)        # 本轮采集结束时刻（UTC）
+    published_at = Column(DateTime, nullable=True)       # 发布时刻（UTC，仅 complete）
+    selected_count = Column(Integer, nullable=False, default=0)
+    errors_json = Column(Text, nullable=True)            # JSON 数组：本轮采集错误
+    diagnostics_json = Column(Text, nullable=True)       # JSON 对象：诊断（样本未更新等）
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
+                        onupdate=lambda: datetime.now(UTC))
+
+
+class SharpeBoardObservation(Base):
+    """夏普榜单周观测（一只基金一周一行；week_id+code 联合唯一）
+
+    不引用实时 Fund 表（无外键到 funds）：基金清盘/改名/失活不抹掉历史；
+    name 是入选时名称快照。sharpe 只存有限数（NULL/NaN/Infinity 不写观测）。
+    """
+    __tablename__ = "sharpe_board_observations"
+    __table_args__ = (
+        UniqueConstraint("week_id", "code", name="uq_sharpe_board_obs_week_code"),
+        Index("ix_sharpe_board_obs_code", "code"),
+    )
+
+    id = Column(Integer, primary_key=True)  # 自增
+    week_id = Column(Integer, ForeignKey("sharpe_board_weeks.id"), nullable=False, index=True)
+    code = Column(String(6), nullable=False)
+    name = Column(String(128), nullable=False)  # 入选时名称快照
+    sharpe = Column(Float, nullable=False)      # 近三年夏普（有限数）
+    metric_calculated_at = Column(DateTime, nullable=True)  # 指标计算时刻（UTC，未知留空）
+    returns_end_date = Column(Date, nullable=True)          # 实际收益样本截止日（未知留空）
+    sample_days = Column(Integer, nullable=True)
+    evidence_json = Column(Text, nullable=True)  # 筛选字段 + 来源刷新 ID（JSON）
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC),
                         onupdate=lambda: datetime.now(UTC))

@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from src.data.nav_fetcher import fetch_nav
 from src.db.models import FundBenchmark, FundRiskMetrics, RiskFreeRate
+from src.services.sharpe_capture import SharpeRunCapture
 from src.utils.logger import setup_logger
 
 logger = setup_logger("fund-select.risk_service")
@@ -39,6 +40,10 @@ class MetricsResult:
     alpha_ir: float | None
     excess_3y: float | None
     sample_days: int
+    # 计算夏普所用 joined 样本的最大日期（实际收益样本截止日，R7 日期真实性；
+    # 可能早于 as_of_date——受基准 TRI 尾日 inner join 约束）。默认 None 保持
+    # 旧 7 位置参数构造兼容；样本不足/无输入时为 None（未知就标未知）。
+    returns_end_date: date | None = None
 
 
 def compute_risk_metrics(
@@ -105,7 +110,8 @@ def compute_risk_metrics(
                 alpha_ir = alpha_d / sigma_e * math.sqrt(TRADING_DAYS)
         # x 恒定（std=0）→ 回归退化，alpha/gamma/alpha_ir 保持 None
 
-    return MetricsResult(sharpe, ir, alpha, gamma, alpha_ir, excess_3y, sample_days)
+    return MetricsResult(sharpe, ir, alpha, gamma, alpha_ir, excess_3y, sample_days,
+                         joined.index.max().date())
 
 
 def _ratio_annualized(s: pd.Series) -> float | None:
@@ -118,8 +124,16 @@ def _ratio_annualized(s: pd.Series) -> float | None:
     return None if math.isnan(v) else v
 
 
-def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
-    """全量刷新 fund_risk_metrics。单只失败记 errors 不阻塞。"""
+def refresh_fund_risks(
+    db: Session, codes: list[str], capture: SharpeRunCapture | None = None,
+) -> list[str]:
+    """全量刷新 fund_risk_metrics。单只失败记 errors 不阻塞。
+
+    capture 非 None（仅两个股基周刷新链路）：每只成功 commit 后把本轮风险值
+    及实际样本尾日冻结进 capture.risk_rows（内存直存，发布不回读共享行）；
+    nav 网络失败单独记 capture.errors（_safe_fetch_nav 吞异常，capture=None
+    路径照旧静默返回空表）；数据有效但指标无定义记 capture.diagnostics。
+    """
     end = date.today()
     start = end - timedelta(days=365 * WINDOW_YEARS)
     as_of = end
@@ -152,7 +166,21 @@ def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
                 if bench_rows else pd.Series(dtype=float)
             )
 
-            r_p = _risk_returns(_safe_fetch_nav(code), pd.Timestamp(start))
+            r_p_nav_failed = False
+            if capture is not None:
+                try:
+                    nav_df = fetch_nav(code)
+                except Exception as nav_err:  # noqa: BLE001
+                    # _safe_fetch_nav 会吞异常返回空表；capture 路径保留失败证据，
+                    # 发布侧据 capture.errors 判定本轮不得发布完整榜（R6），
+                    # 不能用库内旧值或把网络失败当正常缺值
+                    capture.add_error(f"risk:nav:{code}: {str(nav_err)[:120]}")
+                    nav_df = pd.DataFrame()
+                    r_p_nav_failed = True
+            else:
+                nav_df = _safe_fetch_nav(code)
+
+            r_p = _risk_returns(nav_df, pd.Timestamp(start))
 
             m = compute_risk_metrics(r_p, r_b, r_f)
             # 调试：算不出 IR/alpha 时打诊断（区分失败原因）
@@ -208,6 +236,27 @@ def refresh_fund_risks(db: Session, codes: list[str]) -> list[str]:
                         )
             _upsert(db, code, m, as_of)
             db.commit()
+            if capture is not None and not r_p_nav_failed:
+                # nav 失败的 code 不写 risk_rows：本轮没有它的有效风险证据，
+                # errors 是唯一痕迹（发布侧不可能用库内旧值冒充本轮，R6）
+                capture.risk_rows[code] = {
+                    "sharpe": m.sharpe,
+                    "ir": m.ir,
+                    "alpha": m.alpha,
+                    "gamma": m.gamma,
+                    "alpha_ir": m.alpha_ir,
+                    "excess_3y": m.excess_3y,
+                    "sample_days": m.sample_days,
+                    "returns_end_date": m.returns_end_date,
+                    "as_of_date": as_of,
+                    # 指标计算时刻（UTC，R7 与样本尾日/刷新日区分开）
+                    "calculated_at": datetime.now(UTC),
+                    "benchmark_source": all_bench_rows[0].source if all_bench_rows else None,
+                }
+                if m.sharpe is None:
+                    # 数据有效但指标无定义（QDII 无基准 / 样本不足 / 回归退化）：
+                    # 正常缺值进诊断，不算采集失败（R6 区分）
+                    capture.diagnostics.setdefault("metrics_undefined", []).append(code)
             if i % 20 == 0:
                 logger.info("[risk %d/%d] 进度", i, len(codes))
         except Exception as e:  # noqa: BLE001

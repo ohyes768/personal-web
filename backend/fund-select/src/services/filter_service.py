@@ -93,6 +93,70 @@ RANK_PERIODS: list[tuple[str, str, str]] = [
 ]
 
 
+def _predicate_field(row, key: str):
+    """行级谓词取字段：dict（capture 冻结数据）与 ORM 行/命名空间均可。"""
+    if isinstance(row, dict):
+        return row.get(key)
+    return getattr(row, key, None)
+
+
+def entry_predicate(
+    *,
+    min_age: Optional[float] = None,
+    min_size_yi: Optional[float] = None,
+    max_dd_3y: Optional[float] = None,
+    min_mgr_exp: Optional[float] = None,
+    min_sharpe: Optional[float] = None,
+    exclude_qdii: bool = False,
+):
+    """入选谓词（行级）：实时 SQL 筛选（_screen 的 where 链）与夏普榜单 capture
+    冻结数据共用的同一份阈值语义。
+
+    返回 fn(row) -> bool。row 需提供 age_years / size_yi / dd_3y /
+    mgr_experience_years / sharpe / market_subtype（dict 或带属性对象均可）。
+
+    与 SQL where 的语义对齐（由等价性测试锁定，勿单改一边）：
+    - NULL 处理：SQL col >= X 对 NULL 行为 falsy → 任一所选维度为 None 即不命中
+    - 阈值含等号：SQL >= ↔ Python >=（如 dd_3y=-10 过 max_dd_3y=10、
+      sharpe=0.8 过 min_sharpe=0.8）
+    - dd_3y 库内为负值，按绝对值比较：SQL dd_3y >= -abs(X) ↔ Python v < -abs(X) 淘汰
+    - exclude_qdii：market_subtype 为 None/空串保留；丢 QDII*（LIKE 'QDII%'）与
+      「互认基金」——字段是 market_subtype（精确 akshare 子类），不是 fund_type
+    - 市场子类成员判定（market_types IN 精确 subtype）不在此谓词内：与 _screen
+      一致，成员判定是 universe 层（SQL .in_），调用方自行组合
+    """
+    def predicate(row) -> bool:
+        if exclude_qdii:
+            sub = _predicate_field(row, "market_subtype")
+            if sub and (sub.startswith("QDII") or sub == "互认基金"):
+                return False
+        if min_age is not None:
+            v = _predicate_field(row, "age_years")
+            if v is None or v < min_age:
+                return False
+        if min_size_yi is not None:
+            v = _predicate_field(row, "size_yi")
+            if v is None or v < min_size_yi:
+                return False
+        if max_dd_3y is not None:
+            v = _predicate_field(row, "dd_3y")
+            # 库内 dd_3y 为负值（如 -4.47），阈值按绝对值（SQL: dd_3y >= -abs(X)）
+            if v is None or v < -abs(max_dd_3y):
+                return False
+        if min_mgr_exp is not None:
+            v = _predicate_field(row, "mgr_experience_years")
+            if v is None or v < min_mgr_exp:
+                return False
+        if min_sharpe is not None:
+            v = _predicate_field(row, "sharpe")
+            # sharpe 为 NULL（无风险指标）一并排除，与 SQL 筛选惯例一致
+            if v is None or v < min_sharpe:
+                return False
+        return True
+
+    return predicate
+
+
 class FilterService:
     def __init__(self, db: Session):
         self.db = db

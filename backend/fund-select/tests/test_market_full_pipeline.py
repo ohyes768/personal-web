@@ -179,7 +179,7 @@ class TestLoadMarketUniverse:
 class TestRefreshMarketFullSyncSignature:
 
     def test_accepts_three_user_params_plus_task_id(self):
-        """新签名：universe_filter + 3 用户参数 + preset_task_id"""
+        """新签名：universe_filter + 3 用户参数 + preset_task_id + pipeline_profile + capture"""
         import inspect
         sig = inspect.signature(refresh_market_full_sync)
         params = list(sig.parameters.keys())
@@ -190,7 +190,8 @@ class TestRefreshMarketFullSyncSignature:
             "min_mgr_exp",
             "preset_task_id",
             "pipeline_profile",
-        ], f"签名变更：新增 pipeline_profile；当前参数: {params}"
+            "capture",
+        ], f"签名变更：新增 capture（夏普榜单本轮采集捕获）；当前参数: {params}"
 
     def test_no_longer_accepts_min_ret_1y_or_max_nav_stale_days(self):
         """旧参数被移除：min_ret_1y / max_nav_stale_days"""

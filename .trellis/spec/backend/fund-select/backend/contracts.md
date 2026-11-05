@@ -721,3 +721,80 @@ def _fetch_one(...):
     out["fees"] = fetch_fees(code)   # 异常自然传播
     ...
 ```
+
+## 13. 夏普榜单：每周入选记录与周榜发布（11-04-fund-sharpe-weekly-board，2026-11-05）
+
+### 1. Scope / Trigger
+
+- 新增独立「夏普榜单」：两个股基周任务采集后原子发布带规则版本的周榜（批次 + 观测两表），只读 API 聚合，前端独立页（前端契约见 [frontend/fund-sharpe-board.md](../../../frontend/fund-sharpe-board.md)）。
+- 触发本节的条件：改周榜表/发布判定/采集冻结（capture）/聚合排序分页/`/sharpe-board` API 任何一处。
+
+### 2. Signatures
+
+**新表（create_all 幂等建表，不改旧表）**
+
+- `sharpe_board_weeks`：id PK；`(source, profile_version, week_start)` 联合唯一；profile_json（完整规则副本）/profile_hash/algorithm_version；`status ∈ complete|failed|skipped_no_new_data`（running 复用 scheduler 内存态，不落表）；run_id/trigger/started_at(not null)/finished_at/published_at；selected_count/errors_json/diagnostics_json。时间列存 UTC 挂钟 naive，展示层转北京时间。
+- `sharpe_board_observations`：id PK；`(week_id, code)` 联合唯一；week_id FK 但**不引用实时 Fund 表级联**（清盘/改名/失活不抹历史）；name 是入选时名称快照；sharpe 只存有限数；metric_calculated_at/returns_end_date/sample_days/evidence_json。
+
+**核心函数**（`src/services/sharpe_board_service.py` / `src/services/sharpe_capture.py`）
+
+```python
+recording_week(started_at) -> date          # aware datetime → 北京时间所在周周一；naive 抛 ValueError
+get_profile(source, version) -> dict        # 深拷贝；未知组合 KeyError（API 层转 404）
+canonical_json / canonical_hash(payload)    # sort_keys+紧凑分隔符+ensure_ascii=False / sha256
+publish_week_board(db, capture, *, source, profile_version, week_start, trigger, ...)
+    -> tuple[SharpeBoardWeek, bool]         # (周行, 是否本次写入)；单事务写批次+全部观测
+```
+
+**采集冻结**：`SharpeRunCapture(run_id, base_rows, risk_rows, errors, diagnostics, universe_codes, filters, collection_prefilters)`；接线点 = `weekly_refresh.py` 仅 stock/discovery-stock 两条（bond 不接、普通页面刷新不接）。链路函数（`refresh_stock_funds_sync` / `refresh_market_full_sync` / `market_risk_refresh.refresh` / `refresh_fund_risks`）加可选 `capture=None`，**旧路径逐字节零行为变更**。
+
+### 3. Contracts
+
+- **规则 profile**：`(stock, v1)`（雪球 yaml 名单，market_subtypes=None）与 `(discovery-stock, v1)`（market_subtypes=DISCOVERY_STOCK_SUBTYPES 确定副本 + 采集预筛 min_ret_3y=20/min_size_yi=5/min_mgr_exp=5）。filters=入选条件（成立≥3年/规模≥5亿/回撤绝对值≤30%/经理≥5年/夏普≥0.8/不排 QDII）。**记录参数 filters.min_sharpe 与展示参数 min_latest_sharpe 分开**。规则变更必须换 version，不改旧周行。
+- **周键**：任务 `started_at`（非 finished_at）转 Asia/Shanghai 所在周周一；跨周完成仍归开始周。
+- **冻结范围（易漏）**：入选谓词消费的 `dd_3y` 在 `FundPerformance` 行上，`freeze_base_row` 冻结不到——两条链路必须在 commit 点调 `freeze_dd_rows` 合并进 `base_rows[code]["dd_3y"]`，发布侧只读 capture，**禁止回读共享最新表**（普通刷新会覆盖）。risk_rows 冻结本轮 sharpe + `returns_end_date` + `benchmark_source` + `calculated_at`。
+- **API**：`GET /api/funds/sharpe-board`，参数 `source=stock|discovery-stock`（默认 discovery-stock）/`profile_version=v1`（未知 404）/`min_latest_sharpe` 可空 [-10,10]/`min_weeks>=1` 默认 1/`latest_only` 默认 false/`range=3m|6m|1y|all` 默认 all/`page>=1`/`limit 1..200` 默认 50。返回 9 字段：profile/latest_published_week/latest_attempt/stale/total/items/weeks/series/diagnostics——**全部在 Pydantic DTO 显式声明**（§3a 静默砍字段）。items=当页（code/name/listed_weeks/consecutive_weeks/latest_sharpe/last_listed_week/on_latest_board）；series=全部命中不随分页。静态 router 必须注册在通用 `/{code}` 详情路由**之前**（main.py）。
+- **聚合顺序**：complete 周全历史聚合 → 展示筛选（min_latest_sharpe 含等号、min_weeks、latest_only 用当前来源最新 complete 周而非各基金最后记录周）→ 排序 `(listed_weeks DESC, latest_sharpe DESC, code ASC)` → total 切片前算 → 切片（§分页不变量）。weeks 周历=首次观测周→当前周周一，range **只裁起点且起点对齐回周一网格**，终点恒为当前周；失败/停机/空榜周留位。consecutive_weeks=从最近上榜周向前数相邻自然周，缺席/未知中断。stale=当前周无 complete 榜。
+
+### 4. Validation & Error Matrix
+
+| 条件 | 行为 |
+|---|---|
+| capture.errors 非空（nav 失败/阶段失败/基准风险错误/collector 崩溃） | 不发榜，记 failed（returned failed==0 也会漏报，errors 是唯一证据） |
+| universe 去重后为空 | failed（不发空榜冒充零入选） |
+| 有效全量输入零入选 | complete 空榜（selected_count=0，有效空状态） |
+| sharpe NULL/NaN/Infinity 或无本轮证据 | 不写观测，计 diagnostics；nav 失败 code **完全不进 risk_rows** |
+| 样本尾日相对上次发布全部无更新 | skipped_no_new_data（首次发布无「上次」直接发布） |
+| 同周已有 complete | 冻结返回 (已有行, False)；failed/skipped 可同周成功重试；并发 IntegrityError 重读返回已有 complete |
+| 发布抛错 | 单事务 rollback 零残留；snapshot_status=failed，不抹 collector 结果、不阻断队列 |
+| API 非法参数 / 未知版本 | 422 / 404 |
+
+### 5. Good/Base/Bad Cases
+
+- Good: A=[0.95,缺席,1.05]、B=[0.90,0.92,0.94] → B(3周) 排 A(2周) 前；A values `[0.95,null,1.05]` 断线。
+- Base: 首次上线零历史 → 首次成功发布后开始积累，如实显示 0/1 周。
+- Bad: 用 finished_at 归档周、发布时回读被普通刷新覆盖的最新行、把 capture.errors 非空当零入选发 complete 空榜。
+
+### 6. Tests Required
+
+- `test_sharpe_board_service.py`：唯一约束/跨年周键/三状态区分/complete 冻结/tmp_path 重开保留。
+- `test_sharpe_board_capture.py`：**nav 失败不冒充旧值**（errors 有证据 + risk_rows 无该 code）、覆盖写隔离（带反证断言）、谓词与 SQL 等价（等号/负回撤/NULL/QDII/精确 subtype）。
+- `test_sharpe_board_service.py`（发布）+ `test_weekly_refresh.py`：202 只全量去重、中途失败 rollback 零残留、bond/普通刷新不发布、周键用 started_at。
+- `test_sharpe_board_api.py`：implement.md 固定断言（total==1/items[0]==000001/series values）、三键排序、`range=1y` **周历终点==当前周且全周一网格**（2026-11-05 实锤 365 天裁剪落周日导致全 null 的回归）。
+
+### 7. Wrong vs Correct
+
+```python
+# Wrong — 365=52周+1 天，raw cutoff 落周日，周历整体脱离周一观测键 → values 全 null
+start = current - timedelta(days=cutoff_days)
+# Correct — 裁剪起点对齐回周一，终点保持当前周
+start = current - timedelta(days=cutoff_days)
+start -= timedelta(days=start.weekday())
+```
+
+```python
+# Wrong — 发布时回读实时表（可能已被普通刷新覆盖）
+perf = db.get(FundPerformance, code).dd_3y
+# Correct — 只读 capture 冻结快照（含 freeze_dd_rows 合并的 dd_3y）
+pred_input = capture.base_rows[code] | {"sharpe": capture.risk_rows[code]["sharpe"]}
+```

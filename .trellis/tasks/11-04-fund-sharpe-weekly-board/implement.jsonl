@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/backend/fund-select/backend/contracts.md", "reason": "风险指标、筛选分页、类型映射、周刷新与代理合同"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "图形与前端验证通用规范"}
+{"file": ".trellis/tasks/11-04-fund-sharpe-weekly-board/prd.md", "reason": "用户已确认需求及本次工程默认值"}
+{"file": ".trellis/tasks/11-04-fund-sharpe-weekly-board/design.md", "reason": "冻结输入、原子周榜、API与图形合同"}
+{"file": ".trellis/tasks/11-04-fund-sharpe-weekly-board/research.md", "reason": "当前代码证据与采集失败边界"}

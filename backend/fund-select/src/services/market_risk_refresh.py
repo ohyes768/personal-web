@@ -17,13 +17,24 @@ from sqlalchemy.orm import Session
 from src.db.models import RefreshRun
 from src.services import benchmark_refresh
 from src.services.risk_service import refresh_fund_risks
+from src.services.sharpe_capture import SharpeRunCapture
 from src.utils.logger import setup_logger
 
 logger = setup_logger("fund-select.market_risk_refresh")
 
 
-def refresh(session: Session, codes: list[str], task_id: Optional[str] = None) -> dict:
-    """对 codes 列表先写基金基准行，再算风险指标，统计 errors。"""
+def refresh(
+    session: Session,
+    codes: list[str],
+    task_id: Optional[str] = None,
+    capture: SharpeRunCapture | None = None,
+) -> dict:
+    """对 codes 列表先写基金基准行，再算风险指标，统计 errors。
+
+    capture 非 None：透传给 refresh_fund_risks（冻结本轮风险值与样本尾日）；
+    基准错误与风险错误均汇入 capture.errors（有输入采集错误则本轮不得
+    发布完整榜，design「本轮采集与发布」第 4 条）。
+    """
     total = len(codes)
     errors: list[str] = []
 
@@ -41,10 +52,19 @@ def refresh(session: Session, codes: list[str], task_id: Optional[str] = None) -
         return {"task_id": task_id, "total": 0, "completed": 0, "failed": 0, "errors": []}
 
     # 先写基金基准行（QDII 写 tri=NULL 跳过行，其他写真实指数），否则 IR 公式读不到基准
-    errors.extend(benchmark_refresh.refresh(session, codes))
+    bench_errors = benchmark_refresh.refresh(session, codes)
+    errors.extend(bench_errors)
 
     # 再算风险指标
-    errors.extend(refresh_fund_risks(session, codes))
+    if capture is not None:
+        risk_errors = refresh_fund_risks(session, codes, capture=capture)
+    else:
+        risk_errors = refresh_fund_risks(session, codes)
+    errors.extend(risk_errors)
+
+    if capture is not None:
+        capture.errors.extend(bench_errors)
+        capture.errors.extend(risk_errors)
 
     failed = len(errors)
     completed = total - failed

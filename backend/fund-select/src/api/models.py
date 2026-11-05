@@ -148,3 +148,68 @@ class StatsResponse(BaseModel):
     with_fees: int
     with_holdings: int
     last_refresh_at: Optional[datetime] = None
+
+
+class SharpeBoardProfileDTO(BaseModel):
+    """固定规则 profile（design：source/version/filters/prefilters/algorithm）"""
+    source: str
+    version: str
+    filters: dict = {}
+    collection_prefilters: dict = {}
+    market_subtypes: Optional[list[str]] = None
+    algorithm_version: str = ""
+
+
+class SharpeBoardAttemptDTO(BaseModel):
+    """最新一次周榜尝试（任意状态；失败时 errors 原文透出，R6/R7）
+
+    时间展示北京时间（存储 UTC，design「新表」契约）。
+    """
+    week_start: date
+    status: str
+    trigger: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+    selected_count: int = 0
+    errors: list[str] = []
+
+
+class SharpeBoardItemDTO(BaseModel):
+    """榜单列表项（R3：排序 (listed_weeks DESC, latest_sharpe DESC, code ASC)）"""
+    code: str
+    name: str                      # 最近上榜观测的名称快照（改名不抹历史）
+    listed_weeks: int              # 累计在榜周数（全历史）
+    consecutive_weeks: int         # 最近一段连续在榜周数（缺席/未知中断）
+    latest_sharpe: Optional[float] = None  # 最近上榜夏普（不是「当前夏普」）
+    last_listed_week: Optional[date] = None
+    on_latest_board: bool = False  # 是否在最新成功（complete）榜单内
+
+
+class SharpeBoardSeriesDTO(BaseModel):
+    """曲线序列（全部命中基金，不随 items 分页；values 长度 == weeks 长度）"""
+    code: str
+    name: str
+    values: list[Optional[float]] = []  # 缺席/失败/停机周为 null，断线不补零
+
+
+class SharpeBoardDiagnosticsDTO(BaseModel):
+    """数据状态透明化（R6/R7：成功空榜/采集失败/样本未更新可区分）"""
+    no_board_weeks: list[date] = []    # 周历内无 complete 榜的周（失败/停机/未跑）
+    latest_diagnostics: dict = {}      # 最新尝试行的 diagnostics_json 原样（stale_codes 等）
+
+
+class SharpeBoardResponse(BaseModel):
+    """GET /api/funds/sharpe-board 响应
+
+    ⚠ 每个顶层字段都必须在此显式声明：response_model 序列化会静默丢弃
+    未声明字段（contracts §3a 陷阱）。
+    """
+    profile: SharpeBoardProfileDTO
+    latest_published_week: Optional[date] = None  # 最新 complete 周周一（失败/停机时是旧榜日期）
+    latest_attempt: Optional[SharpeBoardAttemptDTO] = None
+    stale: bool = False            # 当前自然周无 complete 榜 → True，不冒充本周
+    total: int = 0
+    items: list[SharpeBoardItemDTO] = []
+    weeks: list[date] = []         # 统一周历（周一日期），range 只裁起点
+    series: list[SharpeBoardSeriesDTO] = []
+    diagnostics: SharpeBoardDiagnosticsDTO = SharpeBoardDiagnosticsDTO()

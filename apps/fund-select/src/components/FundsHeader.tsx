@@ -10,13 +10,13 @@
  */
 'use client';
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
 import { Cog6ToothIcon, FunnelIcon } from '@heroicons/react/24/outline';
 
 import { discoveryBondApi, discoveryStockApi } from '@/lib/api';
+import { FundsNavigation } from './FundsNavigation';
 import { FullRefreshDialog } from './FullRefreshDialog';
 import { RefreshStatusPopover } from './RefreshStatusPopover';
 import { SchedulerDialog } from './SchedulerDialog';
@@ -102,12 +102,7 @@ export function FundsHeader({
           </a>
           <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
             <h1 className="text-lg font-semibold text-ink-strong">{title}</h1>
-            <nav className="flex items-center gap-0.5 text-sm flex-wrap">
-              <TabLink href="/bond" active={active === 'bond'}>债基·雪球三分法</TabLink>
-              <TabLink href="/stock" active={active === 'stock'}>股基·雪球三分法</TabLink>
-              <TabLink href="/discovery-bond" active={active === 'discovery-bond'}>债基·市场</TabLink>
-              <TabLink href="/discovery-stock" active={active === 'discovery-stock'}>股基·市场</TabLink>
-            </nav>
+            <FundsNavigation active={active} />
           </div>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">
@@ -159,21 +154,5 @@ export function FundsHeader({
       </div>
       {schedulerOpen && <SchedulerDialog onClose={() => setSchedulerOpen(false)} />}
     </header>
-  );
-}
-
-function TabLink({ href, active, children }: { href: string; active: boolean; children: React.ReactNode }) {
-  return (
-    <Link
-      href={href}
-      aria-current={active ? 'page' : undefined}
-      className={`px-2 py-0.5 rounded transition-colors ${
-        active
-          ? 'bg-accent text-white'
-          : 'text-ink-muted hover:text-ink-strong'
-      }`}
-    >
-      {children}
-    </Link>
   );
 }

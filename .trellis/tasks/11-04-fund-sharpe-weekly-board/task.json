@@ -1,0 +1,34 @@
+{
+  "id": "fund-sharpe-weekly-board",
+  "name": "fund-sharpe-weekly-board",
+  "title": "基金夏普榜单与每周入选历史",
+  "description": "独立夏普榜单Tab：每周记录入选基金、累计在榜排序、全量趋势及最近上榜夏普展示筛选；仅规划。",
+  "status": "in_progress",
+  "dev_type": "fullstack",
+  "scope": "fund-select",
+  "package": "backend/fund-select",
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-11-04",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/fund-select",
+    "apps/fund-select"
+  ],
+  "notes": "2026-11-04 已创建需求、设计、实施计划和代码证据；保持 planning，未实施。工程默认值见 prd.md，实施前评审。",
+  "meta": {
+    "packages": [
+      "backend/fund-select",
+      "apps/fund-select"
+    ]
+  }
+}

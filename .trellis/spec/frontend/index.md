@@ -5,6 +5,7 @@
 - For apps/skill-manager UI work, read [skill-manager control language](./skill-manager-ui.md); use `lib/ui.ts` constants, never hand-rolled button/input classes.
 - For apps/macro time-series charts, read [ECharts contracts](./macro-echarts.md).
 - For apps/index-trends candlestick+channel charts, read [index-trends ECharts contracts](./index-trends-echarts.md); the valuation display contract lives in the same file.
+- For apps/fund-select 夏普榜单页（`/funds/sharpe-board`）或其图表/展示筛选，read [fund-sharpe-board 前端契约](./fund-sharpe-board.md); 后端周榜/聚合契约在同包 backend contracts §13.
 - For backend/index-trends weekly pipeline or lixinger valuation, read [index-trends backend spec](../backend/index-trends/backend/index.md) (weekly-pipeline.md, valuation-contract.md).
 - For apps/housing-map housing-type switching, project points or nearby comparison, read [New-house projects on the shared map](../backend/housing-map/backend/newhouse-map.md); market classification, distance and price text live in `lib/market-map.ts`.
 - Preserve API units, null observations, display transformations, independent calendars, and Tab lazy loading.

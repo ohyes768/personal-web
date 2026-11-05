@@ -60,6 +60,7 @@ from src.services.market_rank_refresh import refresh as refresh_market_rank_db
 from src.services.market_risk_refresh import refresh as refresh_market_risk_db
 from src.services.market_size_refresh import refresh as refresh_market_size_db
 from src.services.market_universe_refresh import refresh as refresh_market_universe_db
+from src.services.sharpe_capture import SharpeRunCapture, freeze_base_rows, freeze_dd_rows
 from src.utils.logger import setup_logger
 logger = setup_logger("fund-select.market_full")
 
@@ -251,6 +252,7 @@ def refresh_market_full_sync(
     min_mgr_exp: Optional[float] = None,
     preset_task_id: Optional[str] = None,
     pipeline_profile: str = "stock",
+    capture: SharpeRunCapture | None = None,
 ) -> dict:
     """市场 tab 全量数据 refresh（profile-driven 流水线 + 分阶段重算 codes）。
 
@@ -266,12 +268,23 @@ def refresh_market_full_sync(
     后端常量：
       - 净值新鲜度 ≤ MAX_NAV_STALE_DAYS = 14 天（不再接用户参数）
 
+    capture（仅股基·市场周刷新传，design「本轮采集与发布」）：
+      - bond profile 债基不接夏普，传入即忽略
+      - stock profile：L2 后最终 codes 确定时冻结 universe_codes /
+        collection_prefilters / base_rows；L4 阶段透传给 risk 刷新冻结本轮
+        风险值；任一阶段失败汇入 capture.errors（本轮不得发布完整榜）
+
     分阶段重算 codes（避免首次空跑）：
       初始 → L0/L1 → 重算 +预筛 2 → L2 → 重算 +预筛 3 → L3/L4/L5
       这样 L0/L1/L2 完成后才应用 L1/L2 数据依赖的预筛，L3-L5 拿到真实命中。
     """
     if pipeline_profile not in ("stock", "bond"):
         raise ValueError(f"pipeline_profile must be 'stock' or 'bond', got {pipeline_profile!r}")
+
+    # 债基链路不接夏普 capture（PRD：现有债基刷新不算夏普）
+    if pipeline_profile == "bond" and capture is not None:
+        logger.warning("[market_full] task=%s bond profile 不接夏普 capture，忽略", preset_task_id)
+        capture = None
 
     # bond profile 跳过 L4/L5 后单次刷新 ~100min → ~30min（44+22 分钟风险/排名 IO 省下），
     # 用 L6_fees_holdings 补上详情页消费的 fees/holdings 数据写入。
@@ -386,6 +399,19 @@ def refresh_market_full_sync(
         main_run.total = len(codes) * stages_per_code if codes else stages_per_code
         db.commit()
 
+        # 最终 codes 确定（L2 已 commit）：冻结本轮 universe 名单、采集预筛与
+        # 基础字段快照。后续普通刷新覆盖共享行不影响已冻结的纯拷贝（design：
+        # 发布不重新读可能被覆盖的最新行）
+        if capture is not None:
+            capture.universe_codes = list(codes)
+            capture.collection_prefilters = {
+                "min_ret_3y": min_ret_3y,
+                "min_size_yi": min_size_yi,
+                "min_mgr_exp": min_mgr_exp,
+                "max_nav_stale_days": MAX_NAV_STALE_DAYS,
+            }
+            capture.base_rows = freeze_base_rows(db, codes)
+
         # L3 日频净值 + dd/ret
         def _stage_l3(d):
             nav_data = fetch_market_nav(codes)
@@ -395,6 +421,10 @@ def refresh_market_full_sync(
                                               len(codes), _stage_l3)
         _update_main_progress(len(codes),
                               failed=stage_results["L3_nav"].get("result", {}).get("failed", 0))
+        if capture is not None:
+            # L3 commit 后补冻结 dd_3y（入选谓词消费，FundPerformance 行字段，
+            # 不在 Fund 行上）；发布只读 capture，不回读共享行
+            freeze_dd_rows(db, capture.base_rows)
 
         if pipeline_profile == "bond":
             # L6 fees + bond holdings（仅 bond profile）
@@ -420,6 +450,10 @@ def refresh_market_full_sync(
         # L4 业绩比较基准 + 风险指标（stock only；bond profile 跳过）
         if not skip_risk_actual:
             def _stage_l4(d):
+                # capture 非 None 时才传 kwarg：capture=None 调用形态与旧路径逐字节一致
+                # （旧 mock/包装函数签名不接受 capture）
+                if capture is not None:
+                    return refresh_market_risk_db(d, codes, task_id=f"{task_id}_L4", capture=capture)
                 return refresh_market_risk_db(d, codes, task_id=f"{task_id}_L4")
 
             stage_results["L4_risk"] = _run_stage(db, task_id, "L4_risk",
@@ -442,6 +476,15 @@ def refresh_market_full_sync(
                                   failed=stage_results["L5_achievement"].get("result", {}).get("failed", 0))
         else:
             logger.info("[market_full] task=%s profile=bond 跳过 L5 achievement 阶段", task_id)
+
+        # 阶段错误汇入 capture（stock 基准/风险错误在 market_risk_refresh 内汇入；
+        # 其余阶段失败在此汇入）。有输入采集错误则本轮不得发布完整榜（design 第 4 条）
+        if capture is not None:
+            for stage_name, stage_out in stage_results.items():
+                if stage_out.get("status") != "done":
+                    capture.add_error(
+                        f"stage:{stage_name}: {str(stage_out.get('error', 'unknown'))[:150]}"
+                    )
 
         # 主 task 标记完成
         main_run.status = "done" if all(

@@ -21,6 +21,7 @@ from src.scheduler.daily_refresh import bootstrap_from_csv
 from src.services import benchmark_refresh
 from src.services.market_universe_refresh import refresh as refresh_market_db
 from src.services.refresh_service import persist_snapshot, snapshot_fund
+from src.services.sharpe_capture import SharpeRunCapture, freeze_base_row, freeze_dd_rows
 from src.utils.config import PROJECT_ROOT, get_stock_funds_config_path
 from src.utils.logger import setup_logger
 
@@ -104,6 +105,7 @@ def refresh_stock_funds_sync(
     limit: int | None = None,
     use_cache: bool = True,
     preset_task_id: str | None = None,
+    capture: SharpeRunCapture | None = None,
 ) -> dict:
     """同步刷新 funds_stock.yaml 名单（股票型 / QDII / 混合型 全名单）。
 
@@ -113,6 +115,11 @@ def refresh_stock_funds_sync(
     - 进度写入 RefreshRun 表
     - 差异：fetch_holdings=False（股票宇宙不拉债券季报，债基 tab 才消费持仓）
             + fetch_ranking=True（funds_stock.yaml 全名单抓雪球业绩排名，含混合型）
+
+    capture 非 None（仅股基·雪球三分法周刷新传）：
+    - 名单确定后冻结 universe_codes；每只 commit 后冻结 Fund 行筛选字段；
+    - snapshot 失败、基准/风险错误均汇入 capture.errors（本轮不得发布完整榜）；
+      风险值与样本尾日由 refresh_fund_risks 直接冻结进 capture.risk_rows。
     """
     task_id = preset_task_id or str(uuid.uuid4())
     codes = load_fund_codes(get_stock_funds_config_path())
@@ -128,6 +135,9 @@ def refresh_stock_funds_sync(
         if not codes:
             _finish_run(db, run, errors=["股票基金配置名单为空"])
             return {"task_id": task_id, "total": 0, "completed": 0, "failed": 0}
+
+        if capture is not None:
+            capture.universe_codes = list(codes)
 
         mgr_worktime, mgr_company = fetch_manager_table(use_cache=use_cache)
 
@@ -147,22 +157,43 @@ def refresh_stock_funds_sync(
             if snap is None:
                 failed += 1
                 errors.append(f"{code}: {last_err}")
+                if capture is not None:
+                    capture.add_error(f"{code}: {last_err}")
                 _update_progress(db, run, completed, failed, errors)
                 continue
 
             persist_snapshot(db, snap)
             db.commit()
             completed += 1
+            # 本轮 commit 后冻结基础字段（读到的即本轮刚写入的值；纯内存拷贝，
+            # 后续普通刷新覆盖共享行不影响 capture）
+            if capture is not None:
+                frozen = freeze_base_row(db, code)
+                if frozen is not None:
+                    capture.base_rows[code] = frozen
             _update_progress(db, run, completed, failed, errors)
             logger.info("[stock %d/%d] ✓ %s %s", i, len(codes), code, snap.get("name", "")[:20])
 
         # 业绩基准 TRI（phase2-A）+ 风险指标（phase2-B）：主循环后统一跑，单只失败不影响整批
+        if capture is not None:
+            # 本轮全部 FundPerformance commit 后补冻结 dd_3y（入选谓词消费，
+            # 不在 Fund 行上）；发布只读 capture，不回读共享行
+            freeze_dd_rows(db, capture.base_rows)
         bench_failed = benchmark_refresh.refresh(db, codes)
         errors.extend(bench_failed)
 
         from src.services.risk_service import refresh_fund_risks
-        risk_failed = refresh_fund_risks(db, codes)
+        if capture is not None:
+            risk_failed = refresh_fund_risks(db, codes, capture=capture)
+        else:
+            risk_failed = refresh_fund_risks(db, codes)
         errors.extend(risk_failed)
+
+        if capture is not None:
+            # 基准/风险返回的错误（research：returned failed 可能漏报，
+            # capture 是发布侧判定本轮能否发完整榜的证据来源）
+            capture.errors.extend(bench_failed)
+            capture.errors.extend(risk_failed)
 
         _finish_run(db, run, completed, failed, errors, final_status="done")
         return {"task_id": task_id, "total": len(codes), "completed": completed, "failed": failed}
