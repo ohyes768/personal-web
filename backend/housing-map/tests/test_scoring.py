@@ -1,9 +1,11 @@
 """scoring 模块测试: 四维公式逐项对齐源 scoring.ts
 
 公式断言值均由源公式手算得出, 用于保证移植后与 Next.js 版评分结果一致。
+市场面套数自 11-04 起走 counts 槽（带独立采集时间）, 超过 30 天未核验退出评分;
+日期用注入的 TODAY, 不依赖执行当天。
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 from src.services.scoring import (
     calculate_all_scores,
@@ -15,6 +17,14 @@ from src.services.scoring import (
     find_nearest_station,
     get_school_level,
 )
+
+# 固定"今天"（与 test_price_freshness/test_refresh 同一基准）
+TODAY = date(2026, 11, 15)
+
+
+def _counts(deal_count: int, *, captured_at: str | None = "2026-11-10") -> dict:
+    """counts 槽造数: 默认采集时间在 30 天内（相对 TODAY 不陈旧）。"""
+    return {"listing_count": 7, "deal_count": deal_count, "captured_at": captured_at}
 
 
 # ---------------------------------------------------------------------------
@@ -170,7 +180,7 @@ def _community(**overrides):
     base = {
         "community_id": "1",
         "community_name": "测试小区",
-        "price": {"deal_count": None},
+        "price": {"counts": None},
         "pois": [],
         "nearest_subway": None,
         "build_year": None,
@@ -189,11 +199,24 @@ def test_score_all_dimensions_missing_is_50():
 
 
 def test_score_renormalizes_missing_dimensions():
-    # 仅市场面有分 (deal=10 → 95) → 权重重归一 → 总分 95
-    score = calculate_score(_community(price={"deal_count": 10}))
+    # 仅市场面有分 (counts.deal_count=10 → 95) → 权重重归一 → 总分 95
+    score = calculate_score(_community(price={"counts": _counts(10)}), today=TODAY)
     assert score["total_score"] == 95
     assert score["market_score"] == 95
     assert score["location_score"] is None
+
+
+def test_stale_counts_exit_market_score():
+    # 超过 30 天未核验的套数退出评分（PRD: 不把历史活跃度当成当前）
+    stale = calculate_score(_community(price={"counts": _counts(10, captured_at="2026-09-30")}),
+                            today=TODAY)
+    assert stale["market_score"] is None
+    # 无独立采集时间的套数同样不算可核验的当前活跃度
+    no_time = calculate_score(_community(price={"counts": _counts(10, captured_at=None)}),
+                              today=TODAY)
+    assert no_time["market_score"] is None
+    # 缺 counts 槽（如新房隔离/score 路由 include_counts=False）→ 市场面退出
+    assert calculate_score(_community(), today=TODAY)["market_score"] is None
 
 
 def test_score_full_dimensions():
@@ -203,8 +226,8 @@ def test_score_full_dimensions():
         nearest_subway={"name": "西浦路站", "distance": 400},
         pois=[{"name": "西浦路站", "type": "subway", "distance": 200, "latitude": 30.17, "longitude": 120.13}],
         build_year=datetime.now().year,
-        price={"deal_count": 0},
-    ))
+        price={"counts": _counts(0)},
+    ), today=TODAY)
     assert score == {
         "total_score": 60,
         "location_score": 90,
@@ -216,12 +239,13 @@ def test_score_full_dimensions():
 
 def test_score_clamped_to_0_100():
     # deal 巨大 → market 封顶 95, 单维权重 → 总分 95, 不越界
-    score = calculate_score(_community(price={"deal_count": 1000}))
+    score = calculate_score(_community(price={"counts": _counts(1000)}), today=TODAY)
     assert 0 <= score["total_score"] <= 100
 
 
 def test_calculate_all_scores_preserves_fields():
-    communities = [_community(community_id="a"), _community(community_id="b", price={"deal_count": 5})]
-    scored = calculate_all_scores(communities)
+    communities = [_community(community_id="a"), _community(community_id="b", price={"counts": _counts(5)})]
+    scored = calculate_all_scores(communities, today=TODAY)
     assert scored[0]["community_id"] == "a"
     assert "score" in scored[0] and "score" in scored[1]
+    assert scored[1]["score"]["market_score"] == calculate_market_score(5)

@@ -17,6 +17,7 @@
 - Read [Xingfuli rental pilot](./xingfuli-rentals.md) for provider selection, seed-vs-neighborhood IDs, explicit pilot import and cross-provider snapshot isolation.
 - Read [Xingfuli source discovery](./xingfuli-discovery.md) when changing the search channels, the homepage identity check, the on-demand probe workflow or the automatic source matching.
 - Read [Rental reference](../../../guides/housing-map-rental-reference.md) when changing statistics, snapshots, availability or dashboard columns.
+- Read [Price freshness](./price-freshness.md) before changing price projection, collection eligibility, refresh jobs, market scoring or price UI; it defines the dual-price slots, 6-month/30-day rules, refresh API and atomic publish boundaries.
 
 ## Quality Check
 - `backend/housing-map/.venv/bin/python -m pytest` from the backend directory (use `.venv/bin/python`, with a separate `--basetemp`).

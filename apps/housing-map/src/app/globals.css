@@ -407,6 +407,64 @@ body {
   white-space: nowrap;
 }
 
+/* 价格元信息行 (11-04): stat-cell 内的所属月份/采集日/套数时间小字 */
+.stat-meta {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  line-height: 1.5;
+}
+
+/* 弹窗价格块下的提示行: 无当前价/陈旧/历史参考/每小区刷新状态, 跨整行铺满 */
+.price-detail-notes {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  padding: 0 2px;
+}
+.price-detail-notes div:first-child {
+  color: var(--text-primary);
+}
+
+/* 价格陈旧角标 (弹窗/看板共用 "!"): 具体口径放 title 悬浮说明 */
+.price-stale-dot,
+.dash-price-stale {
+  display: inline-block;
+  margin-left: 3px;
+  width: 12px;
+  height: 12px;
+  line-height: 12px;
+  border-radius: 999px;
+  background: rgba(226, 113, 29, 0.16);
+  color: #b35c12;
+  font-size: 9px;
+  font-weight: 700;
+  text-align: center;
+  vertical-align: 1px;
+}
+
+/* 看板双价行 */
+.dash-price-tag {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+}
+.dash-price-tag-deal {
+  background: rgba(194, 117, 88, 0.15);
+  color: var(--accent-warm);
+}
+.dash-price-meta {
+  margin-left: 4px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
 /* ——————————————————————————————————————————————————————————— */
 /* 评分卡: 点击在"分数正面"与"明细背面"间切换                         */
 /* 实现方式: 两个 face 绝对定位叠放, 用透明度过渡切换显示.             */
@@ -758,6 +816,48 @@ body {
 
 .btn-secondary:hover {
   border-color: var(--text-muted);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* 顶部价格刷新控件 (11-04): 两按钮 + 进度/终态统计, 窄屏可换行 */
+.price-refresh-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.price-refresh-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.price-refresh-buttons .btn {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.price-refresh-progress {
+  font-size: 12px;
+  color: var(--accent-warm);
+  white-space: nowrap;
+}
+.price-refresh-result {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+.price-refresh-warn {
+  font-size: 12px;
+  color: #b35c12;
+  white-space: nowrap;
+}
+.price-refresh-error {
+  font-size: 12px;
+  color: var(--price-up, #b0532e);
+  white-space: nowrap;
 }
 
 /* 标签切换 */

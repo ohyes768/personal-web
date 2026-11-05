@@ -161,7 +161,10 @@ def test_price_loader_rejects_explicit_listing_average_without_active_listings(t
         "listing_count": 0, "deal_count": 0, "snapshot_date": "2026-09-20",
     }])
 
-    assert load_price_snapshots(path) == {}
+    result = load_price_snapshots(path)
+    # 无挂牌就没有挂牌价（price=None）; 套数 0 如实保留, 不冒充价格
+    assert result["A"]["price"] is None
+    assert result["A"]["counts"]["listing_count"] == 0
 
 
 def test_price_unsupported_type_rejected(tmp_path):
@@ -205,7 +208,11 @@ def test_price_loader_rejects_monthly_deal_older_than_six_months_at_crawl_time(t
         "raw_payload": {"tendency": {"latest_month": "2025-01"}},
     }])
 
-    assert load_price_snapshots(path) == {}
+    result = load_price_snapshots(path)
+    # 过期签约价不能当当前价: 兼容价置空, 只保留为历史参考
+    assert result["A"]["price"] is None
+    assert result["A"]["deal"] is None
+    assert result["A"]["history_deal"]["month"] == "2025-01"
 
 
 def test_price_missing_file_returns_empty(tmp_path):

@@ -9,6 +9,8 @@ import math
 import re
 from datetime import datetime
 
+from src.services.price_policy import collection_stale
+
 # 地铁站最近距离计算用常数 (纬度换算)
 M_PER_DEG_LAT = 111320
 
@@ -182,10 +184,28 @@ def calculate_market_score(deal_count: float | None) -> int | None:
 # 综合评分
 # ---------------------------------------------------------------------------
 
-def calculate_score(community: dict, weights: dict | None = None) -> dict:
+def _market_deal_count(price: dict, *, today=None) -> float | None:
+    """市场面套数走 counts 槽（带独立采集时间, 11-04 双价投影）。
+
+    无采集日期或超过 30 天未核验的套数退出评分, 不把历史活跃度当成当前
+    （PRD 默认选价与评分）; 顶层 deal_count 兼容字段已不再由快照填充。
+    """
+    counts = price.get("counts")
+    if not isinstance(counts, dict):
+        return None
+    captured_at = counts.get("captured_at")
+    if not isinstance(captured_at, str) or not captured_at:
+        return None
+    if collection_stale(captured_at, today=today):
+        return None
+    return counts.get("deal_count")
+
+
+def calculate_score(community: dict, weights: dict | None = None, *, today=None) -> dict:
     """计算小区综合评分。
 
     权重按各维度之和归一化; 无数据的维度(得分null)剔除后重归一化, 保证各小区可比。
+    today 注入上海当前日期供套数 30 天时效判断, 测试传固定日期。
     """
     if weights is None:
         weights = DEFAULT_WEIGHTS
@@ -203,7 +223,7 @@ def calculate_score(community: dict, weights: dict | None = None) -> dict:
         community.get("far_ratio"),
         community.get("greening_rate"),
     )
-    market_score = calculate_market_score(price.get("deal_count"))
+    market_score = calculate_market_score(_market_deal_count(price, today=today))
 
     parts: list[tuple[int, int]] = []
     if location_score is not None:
@@ -229,8 +249,9 @@ def calculate_score(community: dict, weights: dict | None = None) -> dict:
     }
 
 
-def calculate_all_scores(communities: list[dict], weights: dict | None = None) -> list[dict]:
+def calculate_all_scores(communities: list[dict], weights: dict | None = None, *, today=None) -> list[dict]:
     """批量计算所有小区评分"""
     if weights is None:
         weights = DEFAULT_WEIGHTS
-    return [{**community, "score": calculate_score(community, weights)} for community in communities]
+    return [{**community, "score": calculate_score(community, weights, today=today)}
+            for community in communities]

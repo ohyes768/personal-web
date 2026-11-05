@@ -189,6 +189,8 @@ def _sale_reference(price_snapshots: dict, community_id: str) -> tuple[dict | No
     """售价参考（单价/口径/日期）与裸单价；无有效售价返回 (None, None)。
 
     口径映射：monthly_deal_avg_latest→signed（近期签约），listing_avg→listing（挂牌）。
+    日期优先用价格所属月份（deal.month），无月份时回退采集日期；
+    load_price_snapshots 只返回有效当前价，过期签约不会到这里。
     """
     snapshot = price_snapshots.get(community_id)
     if not isinstance(snapshot, dict):
@@ -197,10 +199,15 @@ def _sale_reference(price_snapshots: dict, community_id: str) -> tuple[dict | No
     price = _num(snapshot.get("price"))
     if basis is None or price is None or price <= 0:
         return None, None
+    entry_key = {"monthly_deal_avg_latest": "deal", "listing_avg": "listing"}.get(snapshot.get("price_type"))
+    entry = snapshot.get(entry_key) if entry_key else None
+    price_date = None
+    if isinstance(entry, dict):
+        price_date = entry.get("month") or entry.get("captured_at") or None
     reference = {
         "unit_price_yuan_m2": price,
         "price_kind": basis,
-        "price_date": snapshot.get("date") or None,
+        "price_date": price_date or snapshot.get("date") or None,
     }
     return reference, price
 

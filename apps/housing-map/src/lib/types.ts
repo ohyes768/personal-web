@@ -43,12 +43,41 @@ export interface PositionInfo {
   address: string | null;       // 实际项目所在地
 }
 
+// API 价格条目 payload (双价投影): 字段缺失一律视为 null, 读取侧在
+// lib/price-freshness.ts 归一化, 不在消费方各自解析。
+export interface PriceEntryPayload {
+  price: number;
+  month: string | null;      // 价格所属月份; 挂牌价没有成交月份概念, 恒为 null
+  captured_at: string | null;
+  source_url: string | null;
+  stale: boolean;            // 超过 30 天未成功更新
+}
+
+export interface PriceCountsPayload {
+  listing_count: number;
+  deal_count: number;
+  captured_at: string | null; // 套数自己的采集时间, 与价格采集时间独立
+}
+
+// 每小区价格刷新状态 (price_refresh_status.json 同形): snake_case 枚举,
+// 归一化时要求 outcome 为字符串才算有效, 其余字段缺失不崩。
+export interface PriceRefreshStatusPayload {
+  outcome: string;
+  [key: string]: unknown;
+}
+
 export interface PriceInfo {
   listing_avg_price: number | null;     // 挂牌均价 (visible_listing_unit_price_avg)
   deal_avg_price: number | null;        // 签约均价 (monthly_deal_avg_latest)
-  listing_count: number | null;         // 在售套数
+  listing_count: number | null;         // 在售套数 (兼容旧快照; 新数据在 counts 槽)
   deal_count: number | null;            // 近30日签约
   snapshot_date: string;
+  // 双价投影 (11-04-housing-price-freshness): 缺失一律 null; 新房隔离时全为 null
+  deal?: PriceEntryPayload | null;
+  listing?: PriceEntryPayload | null;
+  history_deal?: PriceEntryPayload | null; // 过期签约, 仅历史参考
+  counts?: PriceCountsPayload | null;
+  refresh?: PriceRefreshStatusPayload | null;
 }
 
 // 展示/评分用价格: 优先签约均价, 无则用挂牌均价 (每个小区只有其中一种)

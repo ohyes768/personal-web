@@ -40,9 +40,13 @@ class PriceSnapshot:
     min_price: int | None
     max_price: int | None
     source_url: str
-    confidence_score: float
     raw_payload: dict[str, Any]
     crawled_at: str
+    # 走势图价格点数量: 只是走势数据规模, 不是成交样本数（无逐套成交采集）。
+    # 挂牌快照无走势, 恒为 None。
+    trend_point_count: int | None = None
+    # 历史字段: 曾写固定值(0.9/0.82), 固定置信度不是测量值, 不再暴露数值。
+    confidence_score: float | None = None
 
 
 @dataclass
@@ -243,12 +247,14 @@ def build_snapshots(community_id: str, index_html: str, tendency_html: str) -> l
     }
     snapshots: list[PriceSnapshot] = []
     if tendency_data["latest_monthly_avg"]:
+        trend_points = len(tendency_data["monthly_trend"].get("line", [])) if tendency_data["monthly_trend"] else 0
         snapshots.append(PriceSnapshot(
             community_id=community_id, community_name=index_data["community_name"], snapshot_date=today,
             source="tmsf", price_type="monthly_deal_avg_latest", avg_price=tendency_data["latest_monthly_avg"],
             listing_count=index_data["listing_count"], deal_count=index_data["deal_count"],
-            sample_count=len(tendency_data["monthly_trend"].get("line", [])) if tendency_data["monthly_trend"] else 0,
-            min_price=None, max_price=None, source_url=tendency_url, confidence_score=0.9,
+            # 无逐套成交采集: 不把走势图长度当成交样本数, 只记录走势点数
+            sample_count=0, trend_point_count=trend_points,
+            min_price=None, max_price=None, source_url=tendency_url,
             raw_payload={**common_raw, "monthly_trend": tendency_data["monthly_trend"]}, crawled_at=crawled_at,
         ))
     if index_data["listing_avg_price"]:
@@ -257,7 +263,19 @@ def build_snapshots(community_id: str, index_html: str, tendency_html: str) -> l
             source="tmsf", price_type="listing_avg", avg_price=index_data["listing_avg_price"],
             listing_count=index_data["listing_count"], deal_count=index_data["deal_count"],
             sample_count=index_data["listing_count"] or 0, min_price=None, max_price=None,
-            source_url=index_url, confidence_score=0.82, raw_payload=common_raw, crawled_at=crawled_at,
+            source_url=index_url, raw_payload=common_raw, crawled_at=crawled_at,
+        ))
+    if not snapshots and (index_data["listing_count"] is not None or index_data["deal_count"] is not None):
+        # 抓到首页且解析出套数但没有任何价格: 生成只带套数的快照（R3）。
+        # 套数更新不冒充价格更新; 连套数都没有时不产出记录, 由调用方按解析失败处理。
+        snapshots.append(PriceSnapshot(
+            community_id=community_id, community_name=index_data["community_name"], snapshot_date=today,
+            source="tmsf", price_type="counts_only", avg_price=None,
+            listing_count=index_data["listing_count"], deal_count=index_data["deal_count"],
+            sample_count=0, min_price=None, max_price=None,
+            source_url=index_url, raw_payload={
+                "community": common_raw["community"], "index": common_raw["index"],
+            }, crawled_at=crawled_at,
         ))
     return snapshots
 

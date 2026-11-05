@@ -7,8 +7,15 @@
 import json
 import os
 import re
-from datetime import date
 from pathlib import Path
+
+from src.services.price_policy import (
+    PRICE_KIND_COUNTS,
+    PRICE_KIND_DEAL,
+    PRICE_KIND_LISTING,
+    project_price_record,
+    shanghai_today,
+)
 
 # 数据目录: backend/housing-map/data (src/services/data_loader.py -> parents[2] = 服务根)
 DATA_DIR = Path(os.environ['HOUSING_DATA_DIR']) if os.environ.get('HOUSING_DATA_DIR') else Path(__file__).resolve().parents[2] / "data"
@@ -336,31 +343,108 @@ def load_pois() -> dict[str, dict]:
     return result
 
 
-MAX_MONTHLY_DEAL_AGE_MONTHS = 6
+# 价格槽: 当前有效签约 / 当前有效挂牌 / 过期签约历史; counts 为套数（独立采集时间）
+_PRICE_SLOTS = ("deal", "listing", "history_deal", "counts")
 
 
-def _monthly_deal_is_recent(record: dict) -> bool:
-    raw_payload = record.get("raw_payload")
-    tendency = raw_payload.get("tendency") if isinstance(raw_payload, dict) else None
-    latest_month = tendency.get("latest_month") if isinstance(tendency, dict) else None
-    snapshot_date = record.get("snapshot_date")
-    if not isinstance(latest_month, str) or not isinstance(snapshot_date, str):
-        return False
-    try:
-        latest_year, latest_month_number = map(int, latest_month.split("-"))
-        snapshot_year, snapshot_month = map(int, snapshot_date[:7].split("-"))
-        date(latest_year, latest_month_number, 1)
-        date(snapshot_year, snapshot_month, 1)
-    except ValueError:
-        return False
-    month_gap = (snapshot_year - latest_year) * 12 + snapshot_month - latest_month_number
-    return 0 <= month_gap <= MAX_MONTHLY_DEAL_AGE_MONTHS
+def _record_order_key(record: dict) -> tuple[str, str]:
+    """记录新旧排序键: crawled_at 优先, snapshot_date 兜底（字符串本身可比）。"""
+    return (str(record.get("crawled_at") or ""), str(record.get("snapshot_date") or ""))
 
 
-def load_price_snapshots(path: Path | None = None) -> dict[str, dict]:
-    """加载经过质量筛选的价格快照：近期签约均价优先，明确挂牌均价兜底。"""
+def _new_price_slots() -> dict[str, tuple[tuple[str, str], dict] | None]:
+    return {key: None for key in _PRICE_SLOTS}
+
+
+def _offer_slot(slots: dict, key: str, order_key: tuple[str, str], value) -> None:
+    """同槽按采集时间取最新, 与记录在文件中的先后顺序无关。"""
+    if value is None:
+        return
+    existing = slots[key]
+    if existing is None or order_key > existing[0]:
+        slots[key] = (order_key, value)
+
+
+def _public_price_entry(entry: dict) -> dict:
+    """对外的价格条目: 价格所属月份、采集时间、来源 URL、陈旧标记。"""
+    return {
+        "price": entry["price"],
+        "month": entry["month"],
+        "captured_at": entry["captured_at"],
+        "source_url": entry["source_url"],
+        "stale": entry["stale"],
+    }
+
+
+def _counts_entry(record: dict) -> dict:
+    """套数快照与它自己的采集时间; 套数更新不冒充价格更新（R3）。"""
+    return {
+        "listing_count": record.get("listing_count") or 0,
+        "deal_count": record.get("deal_count") or 0,
+        "captured_at": record.get("crawled_at") or record.get("snapshot_date") or None,
+    }
+
+
+def _has_counts(record: dict) -> bool:
+    """记录是否真的带着套数: 缺套数的新记录不得把旧套数标成本轮采集（R3）。"""
+    return record.get("listing_count") is not None or record.get("deal_count") is not None
+
+
+def _assemble_price_entry(slots: dict, refresh) -> dict:
+    """组装单小区条目: 兼容 price/price_type/date + 新字段, 缺失一律 None。
+
+    兼容字段只来自有效当前价（有效签约优先、挂牌兜底）; 无有效价时
+    price=None 但历史与套数照常返回（前端可显示"暂无近期价格"）。
+    """
+    deal = slots["deal"][1] if slots["deal"] else None
+    listing = slots["listing"][1] if slots["listing"] else None
+    history_deal = slots["history_deal"][1] if slots["history_deal"] else None
+    counts = slots["counts"][1] if slots["counts"] else None
+    current = deal or listing
+    if current is not None:
+        price_type = "monthly_deal_avg_latest" if deal is not None else "listing_avg"
+        date_value = current.get("captured_date") or current.get("captured_at")
+        price = current["price"]
+    else:
+        price_type = price = date_value = None
+    return {
+        "price": price,
+        "price_type": price_type,
+        "date": date_value,
+        "deal": _public_price_entry(deal) if deal else None,
+        "listing": _public_price_entry(listing) if listing else None,
+        "history_deal": _public_price_entry(history_deal) if history_deal else None,
+        "counts": counts,
+        "refresh": refresh if isinstance(refresh, dict) else None,
+    }
+
+
+def _load_price_refresh_status(data_dir: Path) -> dict[str, dict]:
+    """读取每小区价格刷新状态（refresh 服务写侧的 sidecar, 形状见 services/refresh.py）。
+
+    文件缺失/损坏返回空表; 顶层为 {community_id: 状态对象}。条目必须带字符串
+    outcome（写侧契约字段）, 否则忽略, 不编造未知字段。
+    """
+    data = load_json(data_dir / "price_refresh_status.json", {})
+    if not isinstance(data, dict):
+        return {}
+    return {cid: value for cid, value in data.items()
+            if isinstance(value, dict) and isinstance(value.get("outcome"), str)}
+
+
+def load_price_snapshots(path: Path | None = None, *, today=None) -> dict[str, dict]:
+    """加载价格快照: 双价投影（签约/挂牌独立返回）+ 兼容选价。
+
+    - 有效性按当前上海日期判断（可注入 today）: 成交月份超过 6 个月的签约价
+      只进 history_deal, 不参与当前价; 未知月份不得用采集日期代替。
+    - 每条价格含所属月份、采集时间、来源 URL、stale（30 天陈旧, 与月度有效期
+      分别计算）。
+    - 合并来源按价格类型分别选最新记录, 不按文件顺序整体覆盖。
+    - counts_only 记录只贡献套数槽; 缺套数的价格记录不覆盖旧套数采集时间。
+    """
     if path is None:
         path = get_data_paths()["price_snapshots"]
+    today = shanghai_today(today)
     result: dict[str, dict] = {}
 
     try:
@@ -380,29 +464,28 @@ def load_price_snapshots(path: Path | None = None) -> dict[str, dict]:
 
             for record in records:
                 price_type = record.get("price_type")
-                if not record.get("community_id") or not isinstance(record.get("avg_price"), (int, float)) or record["avg_price"] <= 0:
+                if price_type not in (PRICE_KIND_DEAL, PRICE_KIND_LISTING, PRICE_KIND_COUNTS):
+                    continue
+                if not record.get("community_id"):
                     continue
                 if record.get('market_state') == 'new_house' or '/newhouse/' in (record.get('source_url') or ''):
                     continue
-                if price_type == "monthly_deal_avg_latest":
-                    if not _monthly_deal_is_recent(record):
-                        continue
-                elif price_type == "listing_avg":
-                    if not record.get("listing_count"):
-                        continue
-                else:
-                    continue
 
-                existing = result.get(record["community_id"])
-                snapshot = {
-                    "price": record["avg_price"],
-                    "date": record.get("snapshot_date") or "",
-                    "listing_count": record.get("listing_count") or 0,
-                    "deal_count": record.get("deal_count") or 0,
-                    "price_type": price_type,
-                }
-                if existing is None or price_type == "monthly_deal_avg_latest":
-                    result[record["community_id"]] = snapshot
+                cid = record["community_id"]
+                slots = result.setdefault(cid, _new_price_slots())
+                order_key = _record_order_key(record)
+                if price_type == PRICE_KIND_COUNTS:
+                    if _has_counts(record):
+                        _offer_slot(slots, "counts", order_key, _counts_entry(record))
+                    continue
+                entry = project_price_record(record, today=today)
+                if entry is not None:
+                    slot_key = ("history_deal" if entry["expired"] else
+                                ("deal" if price_type == PRICE_KIND_DEAL else "listing"))
+                    _offer_slot(slots, slot_key, order_key, entry)
+                # 过期/无月份/无挂牌的记录不产出价格条目, 但页面套数仍如实保留
+                if _has_counts(record):
+                    _offer_slot(slots, "counts", order_key, _counts_entry(record))
     except OSError as exc:
         print(f"加载价格快照失败: {exc}")
 
@@ -411,12 +494,19 @@ def load_price_snapshots(path: Path | None = None) -> dict[str, dict]:
     if registry:
         mappings = {r['source_id']: r['community_id'] for r in registry.sources()
                     if r['source'] == 'tmsf' and r['status'] == 'matched'}
-        associated = {}
-        for sid, snapshot in result.items():
+        refresh_status = _load_price_refresh_status(path.parent)
+        merged: dict[str, dict] = {}
+        for sid, slots in result.items():
             cid = mappings.get(sid)
-            if cid and registry.resolve(cid):
-                previous = associated.get(cid)
-                if not previous or (snapshot['price_type'] == 'monthly_deal_avg_latest', snapshot['date']) > (previous['price_type'] == 'monthly_deal_avg_latest', previous['date']):
-                    associated[cid] = snapshot
-        return associated
-    return result
+            if not cid or not registry.resolve(cid):
+                continue
+            target = merged.setdefault(cid, _new_price_slots())
+            for key in _PRICE_SLOTS:
+                value = slots[key]
+                if value is not None:
+                    _offer_slot(target, key, value[0], value[1])
+        return {cid: _assemble_price_entry(slots, refresh_status.get(cid))
+                for cid, slots in merged.items()}
+    refresh_status = _load_price_refresh_status(path.parent)
+    return {cid: _assemble_price_entry(slots, refresh_status.get(cid))
+            for cid, slots in result.items()}

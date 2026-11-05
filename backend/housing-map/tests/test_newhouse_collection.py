@@ -267,11 +267,11 @@ def test_price_refresh_never_treats_project_id_as_esf(tmp_path):
     def fake_fetcher(community_id, *, timeout):
         raise AssertionError('project sid 不得进入价格采集')
 
-    async def scenario():
-        await refresh.run_refresh_once(['8888888888'], tmp_path / 's.jsonl', tmp_path / 'b.jsonl',
-                                       tmp_path, fetcher=fake_fetcher, sleep_seconds=0)
-    with pytest.raises(RuntimeError):
-        asyncio.run(scenario()), '无 community 来源时本轮无价格可采'
+    # 2026-11 R5: 采集计划来自 collectible_plans, project 来源不构成已收录小区目标
+    assert refresh.collectible_plans(tmp_path) == []
+    result = asyncio.run(refresh.run_refresh_once([], tmp_path / 's.jsonl', tmp_path / 'b.jsonl',
+                                                  tmp_path, fetcher=fake_fetcher, sleep_seconds=0))
+    assert result['outcome'] == 'no_data' and result['published'] is False, '无 community 来源时本轮无价格可采'
 
 
 def test_newhouse_index_failure_reported_without_losing_tmsf(tmp_path, monkeypatch):

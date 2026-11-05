@@ -4,6 +4,8 @@
 强类型仅用于入参。
 """
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -17,9 +19,10 @@ class ScoreWeights(BaseModel):
 
 
 class RefreshLimit(BaseModel):
-    """refresh 测试限量（?limit=N, 0=全量; 上限 500 由服务端 clamp）"""
+    """refresh 采集参数（?mode=all|missing&limit=N, 0=全量; 上限 500 由服务端 clamp）"""
 
     limit: int = 0
+    mode: Literal["all", "missing"] = "all"
 
 
 # 预设小区数据（源 types.ts MOCK_COMMUNITIES 原样移植）:

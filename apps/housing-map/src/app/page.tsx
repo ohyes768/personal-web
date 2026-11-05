@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef, type CSSProperties, type ReactNode } from 'react';
 import type { Community, MapPOI, MarketReference, SchoolLevel, MapAdmissionStats } from '@/lib/types';
-import { getDisplayPrice, getPriceColor, getSchoolLevel, isListingReference, formatAdmissionStats, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
+import { getDisplayPrice, getSchoolLevel, isListingReference, formatAdmissionStats, SCHOOL_LEVEL_LABELS, SCHOOL_LEVEL_COLORS } from '@/lib/types';
 import { isInScope } from '@/lib/binjiang-boundary';
 import {
   isNewHouse,
@@ -25,6 +25,16 @@ import CommunityRentalMetrics from '@/components/community/CommunityRentalMetric
 import AuctionDataList from '@/components/auction/AuctionDataList';
 import CommunityManagement from '@/components/community/CommunityManagement';
 import AppTabs, { type AppTab } from '@/components/AppTabs';
+import PriceDetails from '@/components/community/PriceDetails';
+import PriceRefreshControls from '@/components/community/PriceRefreshControls';
+import {
+  dualPriceLines,
+  normalizePriceBlock,
+  normalizeRefreshCounts,
+  normalizeRefreshJob,
+  refreshStatusLine,
+  type RefreshJobView,
+} from '@/lib/price-freshness';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 import { compareNumericMissingLast } from '@/lib/rental-dashboard';
 
@@ -69,12 +79,6 @@ type POIType = keyof typeof POI_CONFIG;
 
 // 弹窗周边配套展示的五类 (公交数据量可忽略, 不列)
 const POI_TILE_TYPES: POIType[] = ['subway', 'school', 'hospital', 'mall', 'park'];
-
-// 紧凑数值: 过万显示 X.X万
-function fmtCompact(value: number | null): string {
-  if (value == null) return '-';
-  return value >= 10000 ? `${(value / 10000).toFixed(1)}万` : String(value);
-}
 
 // 按 POI 类型分组并按距离排序: 磁贴与评分明细共用同一份数据
 function sortPoisByType(community: Community): Partial<Record<POIType, Community['pois']>> {
@@ -193,24 +197,10 @@ function CommunityPopup({
 
       <CommunityDetailTabs communityId={community.community_id} auctionCount={auctionCount} boundary={boundaryContent}>
       <p className="auction-meta">普通房价快照：{community.price.snapshot_date || '未知'} · 均价单位：元/㎡</p>
-        {/* 普通房价指标与最近法拍参考 */}
+        {/* 双价与时效 (R1/R2/R3): 签/挂各自展示价格、所属月份、采集日、陈旧提示,
+            过期签约进历史参考, 无有效价显示"暂无近期价格"; 套数带独立采集时间 */}
         <div className="popup-price-row">
-          <div className="stat-cell">
-            <div className="stat-label">挂牌均价</div>
-            <div className="stat-value">{fmtCompact(community.price.listing_avg_price)}</div>
-          </div>
-          <div className="stat-cell">
-            <div className="stat-label">签约均价</div>
-            <div className="stat-value">{fmtCompact(community.price.deal_avg_price)}</div>
-          </div>
-          <div className="stat-cell">
-            <div className="stat-label">在售套数</div>
-            <div className="stat-value">{community.price.listing_count ?? '-'}</div>
-          </div>
-          <div className="stat-cell">
-            <div className="stat-label">近月签约</div>
-            <div className="stat-value">{community.price.deal_count ?? '-'}</div>
-          </div>
+          <PriceDetails price={community.price} />
           <LatestAuctionCard communityId={community.community_id} refreshVersion={auctionRefreshVersion} />
           <CommunityRentalMetrics communityId={community.community_id} />
         </div>
@@ -390,40 +380,61 @@ export default function BinjiangMapPage() {
     });
   }, []);
 
-  // —— 价格数据刷新: 触发后台采集 -> 轮询进度 -> 完成后重拉数据 ——
-  const [refreshState, setRefreshState] = useState<{
-    running: boolean; phase: string; processed: number; total: number; error: string | null;
-  } | null>(null);
+  // —— 价格数据刷新 (R3/R5): 页面加载即查询任务 -> 运行中轮询 -> 终态重拉数据 ——
+  // 任务与数量同源 GET /api/map/refresh (job + eligible/missing), 不额外发请求;
+  // 覆盖定时任务已启动、页面重新打开等"进门即有任务"的场景。
+  const [refreshJob, setRefreshJob] = useState<RefreshJobView | null>(null);
+  const [refreshCounts, setRefreshCounts] = useState<{ eligible: number | null; missing: number | null }>({
+    eligible: null,
+    missing: null,
+  });
+  const [refreshNotice, setRefreshNotice] = useState<string | null>(null);
 
-  const startRefresh = useCallback(async () => {
+  // eligible/missing 只有 GET 响应带; POST/轮询响应没有这两个字段,
+  // 不覆盖已加载数量 (轮询也不重复取, R5: 服务端每次全量重算, 较重)。
+  const applyRefreshPayload = useCallback((data: unknown, updateCounts: boolean): RefreshJobView => {
+    const job = normalizeRefreshJob(data);
+    setRefreshJob(job);
+    if (updateCounts) setRefreshCounts(normalizeRefreshCounts(data));
+    return job;
+  }, []);
+
+  useEffect(() => {
+    fetch('/api/map/refresh')
+      .then(res => res.json())
+      .then(d => { if (d?.success && d.data) applyRefreshPayload(d.data, true); })
+      .catch(() => { /* 数量未加载时补齐按钮不禁用, 下次操作自然重试 */ });
+  }, [applyRefreshPayload]);
+
+  const startRefresh = useCallback(async (mode: 'all' | 'missing') => {
+    setRefreshNotice(null);
     try {
-      const res = await fetch('/api/map/refresh', { method: 'POST' });
-      const d = await res.json();
-      if (!d.success) {
-        setRefreshState({ running: false, phase: 'error', processed: 0, total: 0, error: d.error });
+      const res = await fetch(`/api/map/refresh?mode=${mode}`, { method: 'POST' });
+      const d = await res.json().catch(() => null);
+      if (!res.ok || !d?.success) {
+        // 409: 已有任务运行, 或目标为空 (如"没有缺少价格的小区"); 422: mode 非法
+        setRefreshNotice(d?.error || `触发刷新失败（${res.status}）`);
         return;
       }
-      setRefreshState({ running: true, phase: 'fetching', processed: 0, total: d.data.total, error: null });
+      applyRefreshPayload(d.data, false);
     } catch {
-      setRefreshState({ running: false, phase: 'error', processed: 0, total: 0, error: '触发刷新失败' });
+      setRefreshNotice('触发刷新失败');
     }
-  }, []);
+  }, [applyRefreshPayload]);
 
   const stopRefresh = useCallback(async () => {
     try { await fetch('/api/map/refresh', { method: 'DELETE' }); } catch { /* 轮询会拿到终态 */ }
   }, []);
 
   useEffect(() => {
-    if (!refreshState?.running) return;
+    if (!refreshJob?.running) return;
     const timer = setInterval(async () => {
       try {
         const res = await fetch('/api/map/refresh');
         const d = await res.json();
-        const j = d.data;
-        setRefreshState({
-          running: j.running, phase: j.phase, processed: j.processed, total: j.total, error: j.error,
-        });
-        if (j.phase === 'done') {
+        if (!d?.success || !d.data) return;
+        const job = applyRefreshPayload(d.data, false);
+        if (job.phase === 'done') {
           const { communities, stats, ok } = await fetchCommunities();
           if (!ok) return;
           setCommunities(communities);
@@ -433,7 +444,7 @@ export default function BinjiangMapPage() {
       } catch { /* 网络抖动, 下个周期重试 */ }
     }, 3000);
     return () => clearInterval(timer);
-  }, [refreshState?.running]);
+  }, [refreshJob?.running, applyRefreshPayload]);
 
   // 过滤结果用 memo 固定引用: 否则每次渲染都换新数组, 地图图层会被整层重建
   const filteredCommunities = useMemo(() => communities.filter(c =>
@@ -627,9 +638,14 @@ export default function BinjiangMapPage() {
         searchQuery={searchQuery}
         onSearchChange={setSearchQuery}
         latestSnapshot={latestSnapshot}
-        refreshState={refreshState}
-        onRefresh={startRefresh}
-        onStopRefresh={stopRefresh}
+        refresh={{
+          job: refreshJob,
+          eligible: refreshCounts.eligible,
+          missing: refreshCounts.missing,
+          notice: refreshNotice,
+          onRefresh: startRefresh,
+          onStopRefresh: stopRefresh,
+        }}
       />
 
       {/* Tab 导航 */}
@@ -1178,8 +1194,10 @@ function ProductDetail({ c }: { c: Community }) {
 
 // 市场详情 (背面): 签约套数 + 在售 + 价格 + 签/挂标记
 function MarketDetail({ c }: { c: Community }) {
-  const deal = c.price.deal_count ?? null;
-  const list = c.price.listing_count ?? null;
+  // 套数走 counts 槽归一化 (兼容旧快照顶层字段), 不把旧套数标成本轮更新
+  const counts = normalizePriceBlock(c.price).counts;
+  const deal = counts.dealCount;
+  const list = counts.listingCount;
   const isDealPrice = c.price.deal_avg_price != null;
   const price = c.price.deal_avg_price ?? c.price.listing_avg_price;
   return (
@@ -1242,21 +1260,25 @@ function ScoreCard({
   );
 }
 
-// 顶部 header (Logo/搜索/价格数据/刷新), 地图页与看板共用同一份, 切 tab 时不重挂载
+// 顶部 header (Logo/搜索/价格数据/刷新), 地图页与看板共用同一份, 切 tab 时不重挂载。
+// 刷新入口是 PriceRefreshControls (两个按钮 + 进度 + 终态统计), 状态由页面注入。
 function AppHeader({
   searchQuery,
   onSearchChange,
   latestSnapshot,
-  refreshState,
-  onRefresh,
-  onStopRefresh,
+  refresh,
 }: {
   searchQuery: string;
   onSearchChange: (v: string) => void;
   latestSnapshot: string;
-  refreshState: { running: boolean; phase: string; processed: number; total: number; error: string | null } | null;
-  onRefresh: () => void;
-  onStopRefresh: () => void;
+  refresh: {
+    job: RefreshJobView | null;
+    eligible: number | null;
+    missing: number | null;
+    notice: string | null;
+    onRefresh: (mode: 'all' | 'missing') => void;
+    onStopRefresh: () => void;
+  };
 }) {
   return (
     <><header className="housing-app-header" style={{
@@ -1295,34 +1317,15 @@ function AppHeader({
       <div className="housing-header-actions" style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
         <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
           价格数据: {latestSnapshot || '—'}
-          {refreshState?.running && (
-            <span style={{ marginLeft: '8px', color: 'var(--accent-warm)' }}>
-              刷新中 {refreshState.processed}/{refreshState.total}…
-            </span>
-          )}
-          {refreshState && !refreshState.running && refreshState.phase === 'done' && (
-            <span style={{ marginLeft: '8px', color: 'var(--price-down)' }}>已更新</span>
-          )}
-          {refreshState && !refreshState.running && refreshState.phase === 'cancelled' && (
-            <span style={{ marginLeft: '8px' }}>已停止(数据未改动)</span>
-          )}
-          {refreshState && !refreshState.running && refreshState.phase === 'error' && (
-            <span style={{ marginLeft: '8px', color: 'var(--price-up)' }} title={refreshState.error ?? ''}>
-              刷新失败
-            </span>
-          )}
-
         </span>
-        {refreshState?.running ? (
-          <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={onStopRefresh}>
-            <span>⏹</span> 停止
-          </button>
-        ) : (
-          <button className="btn btn-secondary" style={{ whiteSpace: 'nowrap' }} onClick={onRefresh}>
-            <span>🔄</span> 刷新价格
-          </button>
-        )}
-
+        <PriceRefreshControls
+          job={refresh.job}
+          eligible={refresh.eligible}
+          missing={refresh.missing}
+          notice={refresh.notice}
+          onRefresh={refresh.onRefresh}
+          onStop={refresh.onStopRefresh}
+        />
       </div>
     </header>
     </>
@@ -1438,10 +1441,11 @@ function DashboardPage({
   const priceOf = (c: Community) => getDisplayPrice(c.price) || 0;
   // 均价/签约套数/有价小区是二手专属口径: 新房与待核实房源类型不参与, 否则会被误读成二手行情
   const secondHandOnly = filtered.filter(c => isSecondHand(c));
+  // 套数走 counts 槽归一化 (兼容旧快照顶层字段), 新旧数据都按同一口径汇总
   const stats = {
     total: filtered.length,
     avgPrice: secondHandOnly.length ? Math.round(secondHandOnly.reduce((sum, c) => sum + priceOf(c), 0) / secondHandOnly.length) : null,
-    dealCount: secondHandOnly.reduce((sum, c) => sum + (c.price.deal_count || 0), 0),
+    dealCount: secondHandOnly.reduce((sum, c) => sum + (normalizePriceBlock(c.price).counts.dealCount || 0), 0),
     withPrice: secondHandOnly.filter(c => getDisplayPrice(c.price) != null).length,
   };
 
@@ -1532,7 +1536,9 @@ function DashboardPage({
           </thead>
           <tbody>
             {paginated.map(community => {
-              const isDeal = community.price.deal_avg_price != null;
+              // 双价行 (R2): 签约/挂牌各自成行, 签约行带所属月份、挂牌行带采集日
+              const priceBlock = normalizePriceBlock(community.price);
+              const priceLines = dualPriceLines(priceBlock);
               const score = community.score;
               // 新房行不展示二手均价: 那套价格口径不能挪到新房上
               const newHouseRow = isNewHouse(community);
@@ -1553,15 +1559,20 @@ function DashboardPage({
                   <td>
                     <span style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-primary)', color: 'var(--text-muted)' }}>{community.property_type || '-'}</span>
                   </td>
-                  <td style={{ fontWeight: '600', color: newHouseRow ? 'var(--text-muted)' : getPriceColor(getDisplayPrice(community.price)) }}>
-                    {newHouseRow ? '—' : (getDisplayPrice(community.price)?.toLocaleString() || '-')}
-                    {!newHouseRow && getDisplayPrice(community.price) != null && (
-                      <span style={{
-                        marginLeft: '4px', fontSize: '10px', padding: '1px 4px', borderRadius: '3px',
-                        background: isDeal ? 'rgba(194, 117, 88, 0.15)' : 'var(--bg-primary)',
-                        color: isDeal ? 'var(--accent-warm)' : 'var(--text-muted)',
-                      }}>{isDeal ? '签' : '挂'}</span>
-                    )}
+                  <td style={{ fontWeight: '600' }}
+                    title={[
+                      ...priceLines.map(line => line.title),
+                      refreshStatusLine(priceBlock.refresh),
+                    ].filter(Boolean).join('\n')}
+                  >
+                    {newHouseRow ? '—' : priceLines.map(line => (
+                      <div key={line.tag} style={{ whiteSpace: 'nowrap', fontSize: '12px' }}>
+                        <span className={`dash-price-tag ${line.tag === '签' ? 'dash-price-tag-deal' : ''}`}>{line.tag}</span>
+                        {line.missing ? '—' : line.text}
+                        {line.meta && <span className="dash-price-meta">{line.meta}</span>}
+                        {line.stale && <span className="dash-price-stale" title="超过30天未更新">!</span>}
+                      </div>
+                    ))}
                   </td>
                   <td>
                     <span style={{ color: 'var(--accent-gold)', fontWeight: '700' }}>{score?.total_score ?? '-'}</span>

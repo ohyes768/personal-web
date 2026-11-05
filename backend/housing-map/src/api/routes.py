@@ -119,6 +119,14 @@ def _assemble_community(
             "listing_count": (price_data.get("listing_count") if price_data else None) if include_counts else None,
             "deal_count": (price_data.get("deal_count") if price_data else None) if include_counts else None,
             "snapshot_date": (price_data.get("date") or "") if price_data else "",
+            # 双价投影: 签约/挂牌各自的价格月份、采集时间、来源与陈旧标记;
+            # 过期签约在 history_deal; counts 套数带独立采集时间; refresh 为采集刷新
+            # 状态。缺失一律 None, 新房隔离时同样全为 None。
+            "deal": price_data.get("deal") if price_data else None,
+            "listing": price_data.get("listing") if price_data else None,
+            "history_deal": price_data.get("history_deal") if price_data else None,
+            "counts": (price_data.get("counts") if price_data else None) if include_counts else None,
+            "refresh": price_data.get("refresh") if price_data else None,
         },
         "pois": _poi_list_of(pois),
         "score": {
@@ -356,12 +364,14 @@ async def get_transit():
 
 @router.get("/refresh")
 async def get_refresh_status():
-    return {"success": True, "data": refresh_service.job}
+    # 页面加载即查询: 任务进度 + 已收录可采集/缺价小区数（R5, 供"补齐价格（N）"入口）
+    counts = refresh_service.eligibility_counts()
+    return {"success": True, "data": {**refresh_service.job, **counts}}
 
 
 @router.post("/refresh")
 async def start_refresh_job(params: Annotated[RefreshLimit, Query()]):
-    _, status, body = await refresh_service.start_refresh(params.limit)
+    _, status, body = await refresh_service.start_refresh(params.limit, mode=params.mode)
     return JSONResponse(status_code=status, content=body)
 
 

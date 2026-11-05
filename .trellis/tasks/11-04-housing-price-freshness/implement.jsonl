@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/housing-map/backend/index.md", "reason": "housing-map 后端开发清单、质检命令与各契约文档导航"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest 硬约束：--basetemp 重定向、Windows/WSL 不共用 .pytest-tmp"}
+{"file": ".trellis/spec/guides/housing-map-admission.md", "reason": "收录资格、定时刷新范围与手动刷新互斥契约（R5 采集范围）"}
+{"file": ".trellis/spec/guides/housing-map-rental-reference.md", "reason": "租售比统计口径与原子发布契约（R1 租售比日期调整）"}
+{"file": ".trellis/spec/guides/housing-map-merge.md", "reason": "合并小区解析规则与隔离验证环境做法（A3 合并来源口径）"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-enrichment.md", "reason": "新房身份/价格隔离契约（R2 新房与二手房价格隔离）"}
+{"file": ".trellis/spec/backend/housing-map/backend/newhouse-map.md", "reason": "地图新房切换、点位与价格隔离契约（R2/A6）"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "API/服务/前端跨层字段对齐检查（新增 deal/listing/refresh 字段）"}

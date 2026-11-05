@@ -62,8 +62,9 @@ def test_admission_api_and_map_share_state_but_keep_collection_identity(tmp_path
     assert client.get('/api/directory/communities?admission_state=pending').json()['data']['total'] == 1
     assert asyncio.run(routes.get_communities())['data'] == []
     assert data_loader.load_communities()[0]['tmsf_id'] == '100'
-    from src.services.refresh import select_refresh_targets
-    assert select_refresh_targets(data_loader.load_communities()) == ['100']
+    from src.services.refresh import collectible_plans
+    # 2026-11 R5: 只有已收录小区才采集价格, 待审核不采集（缺轮廓仍可采, 与收录无关）
+    assert collectible_plans(tmp_path) == []
     assert store.sources()[0]['status'] == 'matched'
     assert client.post('/api/directory/communities/100/exclude', json={'revision': 2}).status_code == 409
     assert client.post('/api/directory/communities/100/exclude', json={'revision': 2, 'reason': '确认非住宅'}).status_code == 200
@@ -71,6 +72,10 @@ def test_admission_api_and_map_share_state_but_keep_collection_identity(tmp_path
     assert client.post('/api/directory/communities/100/allow-auto-review', json={'revision': 4}).json()['data']['state'] == 'pending'
     assert client.post('/api/directory/communities/100/admit', json={'revision': 5, 'property_type': '排屋'}).status_code == 200
     assert asyncio.run(routes.get_communities())['data'][0]['property_type'] == '排屋'
+    # 已收录 + matched tmsf 来源 → 进入采集计划, 来源按 sid 去重
+    plans = collectible_plans(tmp_path)
+    assert [plan['community_id'] for plan in plans] == ['100']
+    assert plans[0]['sources'] == ['100']
 
 
 def test_missing_or_invalid_coordinates_are_explained(tmp_path):
@@ -80,7 +85,8 @@ def test_missing_or_invalid_coordinates_are_explained(tmp_path):
     store.create('测试花园', community_id='local-one', district='滨江', address='滨江区测试路1号')
     store.decide_admission('local-one', 'admit', revision=1, property_type='住宅')
     assert community_views(store, tmp_path)[0]['map_status'] == 'missing_coordinates'
-    from src.services.refresh import select_refresh_targets
-    assert select_refresh_targets(store.communities(), {'local-one': dict(longitude=120.207490, latitude=30.202261)}) == []
+    from src.services.refresh import collectible_plans
+    # 缺坐标与缺少有效 tmsf 来源都不进采集计划
+    assert collectible_plans(tmp_path) == []
     invalid = dict(longitude=float('nan'), latitude=30, formatted_address='滨江区')
     assert community_views(store, tmp_path, coordinates={'local-one': invalid})[0]['map_status'] == 'check_coordinates'

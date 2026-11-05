@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/backend/housing-map/backend/index.md", "reason": "质检命令清单与契约文档导航"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest basetemp 硬约束"}
+{"file": ".trellis/spec/guides/housing-map-admission.md", "reason": "定时/手动刷新互斥与收录资格契约核对"}
+{"file": ".trellis/spec/guides/housing-map-rental-reference.md", "reason": "租售比口径与原子发布契约核对"}
+{"file": ".trellis/spec/guides/housing-map-merge.md", "reason": "合并来源选择口径核对"}
+{"file": ".trellis/spec/backend/housing-map/backend/community-enrichment.md", "reason": "新房价格隔离核对"}
+{"file": ".trellis/spec/backend/housing-map/backend/newhouse-map.md", "reason": "新房地图价格隔离核对"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用既有资格/快照/发布逻辑而非新写"}

@@ -125,6 +125,8 @@ def test_new_house_never_borrows_second_hand_price(seeded_registry):
     assert new_house['price'] == {
         'listing_avg_price': None, 'deal_avg_price': None,
         'listing_count': None, 'deal_count': None, 'snapshot_date': '',
+        # 双价投影字段随隔离一并置空, 不得泄漏二手价格与新字段
+        'deal': None, 'listing': None, 'history_deal': None, 'counts': None, 'refresh': None,
     }
 
 

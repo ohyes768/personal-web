@@ -106,9 +106,10 @@ def test_communities_structure(seeded_data_dir):
         "parking_ratio", "property_fee", "far_ratio", "greening_rate", "nearest_subway",
     ):
         assert key in first, f"缺少字段 {key}"
-    # price 口径字段
+    # price 口径字段（兼容五键 + 双价投影/套数/刷新状态）
     assert set(first["price"].keys()) == {
         "listing_avg_price", "deal_avg_price", "listing_count", "deal_count", "snapshot_date",
+        "deal", "listing", "history_deal", "counts", "refresh",
     }
     # score 五字段
     assert set(first["score"].keys()) == {
@@ -246,9 +247,13 @@ def test_refresh_status_initial_idle():
     body = resp.json()
     assert body["success"] is True
     job = body["data"]
+    # job 基础字段 + R3 统计字段 + R5 的 eligible/missing 数量
     assert set(job.keys()) == {
-        "running", "phase", "total", "processed", "okCount", "errorCount",
-        "startedAt", "finishedAt", "error", "result",
+        "running", "phase", "mode", "total", "processed", "okCount", "errorCount",
+        "updated", "noData", "failed", "skipped", "retained",
+        "startedAt", "finishedAt", "error", "result", "eligible", "missing",
     }
     assert job["running"] is False
     assert job["phase"] in ("idle", "fetching", "merging", "done", "error", "cancelled")
+    assert isinstance(job["eligible"], int)
+    assert isinstance(job["missing"], int)

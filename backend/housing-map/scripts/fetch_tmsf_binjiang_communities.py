@@ -234,11 +234,12 @@ def fetch_tendency_only_snapshot(community: Community, timeout: int) -> list[Pri
                 avg_price=latest_monthly_avg,
                 listing_count=community.listing_count_hint,
                 deal_count=community.recent_deal_count_hint,
-                sample_count=len(monthly_trend.get("line", [])) if monthly_trend else 0,
+                # 无逐套成交采集: 走势点数记 trend_point_count, 不冒充成交样本数
+                sample_count=0,
+                trend_point_count=len(monthly_trend.get("line", [])) if monthly_trend else 0,
                 min_price=None,
                 max_price=None,
                 source_url=tendency_url,
-                confidence_score=0.88,
                 raw_payload={
                     "community": {
                         "district": community.district,
@@ -272,7 +273,6 @@ def fetch_tendency_only_snapshot(community: Community, timeout: int) -> list[Pri
                 min_price=None,
                 max_price=None,
                 source_url=COMMUNITY_LIST_URL,
-                confidence_score=0.72,
                 raw_payload={
                     "list_hints": {
                         "listing_count": community.listing_count_hint,
