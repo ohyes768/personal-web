@@ -120,26 +120,25 @@ test('deferred-only rentals are unqueried rather than failed', () => {
   const { RentalCandidateChoice } = require('../src/components/rental/RentalAssociationReview.tsx');
   const review = renderToStaticMarkup(React.createElement(RentalCandidateChoice, {
     item: { community_id: 'c1', community_name: '测试花园', reason: 'search_deferred', candidates: [] },
-    selected: '', busy: false, onSelect() {}, onDecide() {},
   }));
   assert.match(review, /未查完或未查询，可继续匹配/);
   assert.doesNotMatch(review, /来源查找失败/);
 });
 
 test('review sends homepage selection to Xingfuli and preserves skip/reopen', () => {
-  const { RentalCandidateChoice } = require('../src/components/rental/RentalAssociationReview.tsx');
+  const { RentalCandidateChoice, RentalCandidateActions } = require('../src/components/rental/RentalAssociationReview.tsx');
   const item = { community_id: 'c1', community_name: '东方郡', reason: 'needs_selection', candidates: [
     { id: 'east', name: '东方郡东区', address: '东区地址' }, { id: 'west', name: '东方郡西区' },
   ] };
-  const render = (selected, reason = item.reason) => renderToStaticMarkup(React.createElement(RentalCandidateChoice, {
-    item: { ...item, reason }, selected, busy: false, onSelect() {}, onDecide() {},
+  const empty = renderToStaticMarkup(React.createElement(RentalCandidateChoice, {
+    item,
   }));
-  const empty = render('');
   assert.equal((empty.match(/type="radio"/g) || []).length, 0);
   assert.doesNotMatch(empty, /绑定所选小区|房天下/);
   assert.match(empty, /幸福里主页/);
-  assert.match(empty, /暂时跳过/);
   assert.doesNotMatch(empty, /type="checkbox"|贴链接|粘贴/);
-  assert.doesNotMatch(render('east'), /checked=""/);
-  assert.match(render('', 'skipped'), /重新处理/);
+  const actions = reason => renderToStaticMarkup(React.createElement(RentalCandidateActions, {
+    item: { ...item, reason }, busy: false, onDecide() {} }));
+  assert.match(actions('needs_selection'), /暂时跳过/);
+  assert.match(actions('skipped'), /重新处理/);
 });

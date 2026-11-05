@@ -35,7 +35,7 @@ export function CatalogTabs({ summary, mode, onChange }: { summary: Summary | nu
     ...(summary?.pipeline ? [['pending', '待处理', summary.pending]] : []),
     ['excluded', '不收录', summary?.pipeline ? Math.max(0, summary.excluded - (summary.pending || 0)) : summary?.excluded]];
   return <div className="review-tabs directory-subtabs" role="group" aria-label="收录审核状态">{tabs.map(([key, label, count]) =>
-    <button key={key} aria-pressed={mode === key} onClick={() => onChange(String(key))}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
+    <button key={key} aria-pressed={mode === key} onClick={() => onChange(String(key))}>{count == null ? `${label}（…）` : `${label}（${count}）`}</button>)}</div>;
 }
 
 /** 小区数据维护下的两个页签，与收录审核的页签同一套样式与交互。 */
@@ -45,7 +45,7 @@ export function MaintenanceTabs({ summary, mode, onChange }: { summary: Summary 
     ['auctions', '法拍待关联', summary?.auction_pending],
   ];
   return <div className="review-tabs directory-subtabs" role="group" aria-label="维护事项">{tabs.map(([key, label, count]) =>
-    <button key={key} aria-pressed={mode === key} onClick={() => onChange(key)}>{count == null ? label : `${label}（${count}）`}</button>)}</div>;
+    <button key={key} aria-pressed={mode === key} onClick={() => onChange(key)}>{key === 'rental' ? label : count == null ? `${label}（…）` : `${label}（${count}）`}</button>)}</div>;
 }
 
 type Page<T> = { items: T[]; total: number; page: number; property_types?: string[] };
@@ -441,9 +441,9 @@ export function CatalogTable({ items, excluded, pending = false, select, busy, p
   </tr>)}</tbody></table></div>;
 }
 
-function AuctionPanel({ row, busy, action }: { row: Auction; busy: boolean;
-  action: (path: string, method: string, body: object) => void }) {
-  const [target, setTarget] = useState(''); const [keyword, setKeyword] = useState('');
+function AuctionPanel({ row, target, onTargetChange }: { row: Auction;
+  target: string; onTargetChange: (value: string) => void }) {
+  const [keyword, setKeyword] = useState('');
   const [targets, setTargets] = useState<Community[]>(row.candidates);
   const [error, setError] = useState('');
   useEffect(() => {
@@ -455,19 +455,16 @@ function AuctionPanel({ row, busy, action }: { row: Auction; busy: boolean;
     }, 200);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [keyword]);
-  const send = (kind: string) => action(`/directory/workflow/auctions/${encodeURIComponent(row.id)}`, 'POST',
-    { revision: row.revision, action: kind, ...(kind === 'bind' ? { community_id: target } : {}) });
   return <><p>{row.address || '法拍地址缺失'}</p><p className="directory-warning">{row.reason}</p>
     {safeDirectoryLink(row.source_url) && <a href={row.source_url} target="_blank" rel="noopener noreferrer">查看来拍呀原文 ↗</a>}
     <p>房产来源 ID：{row.source_id} · {row.auction_ids?.length || 0} 条拍卖轮次</p>
     {row.rounds?.map(r => <p key={r.auction_id}>{r.round ? `第${r.round}轮 · ` : ''}{r.title || r.auction_id}</p>)}
-    <label>搜索已收录小区<input value={keyword} onChange={e => { setKeyword(e.target.value); setTarget(''); }} /></label>
-    <label>关联到<select value={target} onChange={e => setTarget(e.target.value)}><option value="">请选择已收录小区</option>
+    <label>搜索已收录小区<input value={keyword} onChange={e => { setKeyword(e.target.value); onTargetChange(''); }} /></label>
+    <label>关联到<select value={target} onChange={e => onTargetChange(e.target.value)}><option value="">请选择已收录小区</option>
       {targets.map(c => <option value={c.community_id} key={c.community_id}>{c.community_name} · {c.address || '地址待核对'}</option>)}</select></label>
     <p className="directory-muted">这里只建立法拍关联；找不到目标时可先跳过，不会新增住宅。绑定后可在已收录小区的资料弹框中解除，解除后会回到待关联列表重新核对。</p>
     {error && <p role="alert">{error}</p>}
-    <div className="directory-actions"><button className="btn btn-primary" disabled={busy || !target} onClick={() => send('bind')}>确认关联</button>
-      <button className="btn btn-secondary" disabled={busy} onClick={() => send(row.skipped ? 'reopen' : 'skip')}>{row.skipped ? '重新处理' : '暂时跳过'}</button></div></>;
+  </>;
 }
 
 export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admitted', focusPosition = null }: { onChanged: () => void; initialMode?: string; focusPosition?: { communityId: string; key: number } | null }) {
@@ -488,6 +485,8 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
   const [selection, setSelection] = useState<string[]>([]);
   const [mergeOpen, setMergeOpen] = useState(false); const [mergeRows, setMergeRows] = useState<CatalogRow[]>([]);
   const [detail, setDetail] = useState<CatalogRow | null>(null); const [auction, setAuction] = useState<Auction | null>(null);
+  // 法拍关联目标提到父级：动作按钮统一放弹层 footer（与详情弹层同位置），面板内只保留搜索与选择
+  const [auctionTarget, setAuctionTarget] = useState('');
   const detailVersion = useRef(0);
   const finishes = useRef<Record<string, string>>({});
   const optimistic = useRef<string | null>(null);
@@ -568,7 +567,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
     }
     finally { optimistic.current = null; setBusy(false); }
   }
-  function changeMode(value: string) { setMode(value); setPage(1); setFilters(current => catalogFiltersForMode(current)); setLoading(true); setDetail(null); setAuction(null); detailVersion.current += 1; setSelection([]); setMergeOpen(false); }
+  function changeMode(value: string) { setMode(value); setPage(1); setFilters(current => catalogFiltersForMode(current)); setLoading(true); setDetail(null); setAuction(null); setAuctionTarget(''); detailVersion.current += 1; setSelection([]); setMergeOpen(false); }
   async function select(row: CatalogRow) {
     const version = ++detailVersion.current;
     setError(''); setNotice(''); setDetail(row); setAuction(null);
@@ -725,7 +724,7 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
     {mode === 'rental' ? (summary?.active ? <RentalAssociationReview onChanged={changed} /> :
       <p role="status" className="directory-muted">名单流程尚未启用，暂无租金待处理清单。</p>) :
     <div className="directory-workspace"><div className="directory-list-panel">
-      {loading ? <p role="status">加载名单…</p> : summary?.active && <>
+      {loading ? <div role="status" aria-label="加载名单中"><div className="directory-skeleton-row" /><div className="directory-skeleton-row" /><div className="directory-skeleton-row" /></div> : summary?.active && <>
         {mode === 'admitted' && selectedRows.length >= 2 && <div className="directory-actions directory-batch">
           <span className="directory-muted">已选 {selectedRows.length} 条</span>
           <button className="btn btn-primary" onClick={() => { setMergeRows(selectedRows); setMergeOpen(true); }}>合并所选（{selectedRows.length}）</button>
@@ -740,16 +739,23 @@ export default function DirectoryFlowWorkspace({ onChanged, initialMode = 'admit
           : <div className="directory-table-wrap"><table className="review-table"><thead><tr><th>法拍房产</th><th>地址</th><th>待关联原因</th><th>操作</th></tr></thead><tbody>{auctions.map(r => <tr key={r.id}>
             <td data-label="法拍房产">{r.name}<small>{r.auction_ids?.length || 0} 条轮次{r.skipped ? ' · 已跳过' : ''}</small></td><td data-label="地址">{r.address || '暂无地址'}</td><td data-label="待关联原因">{r.reason}</td>
             <td data-label="操作"><button className="btn btn-secondary" onClick={() => { detailVersion.current += 1; setError(''); setAuction(r); setDetail(null); }}>核对关联</button></td></tr>)}</tbody></table></div>}
-        {total === 0 && <p className="directory-empty">没有符合条件的记录。</p>}
+        {total === 0 && (mode === 'admitted' && !filters.q ? <div className="directory-empty">
+          <p>还没有已收录小区。</p>
+          <p className="directory-muted">先在「收录采集」里扫描名单；住宅候选确认收录后才会出现在这里。</p>
+          <button className="btn btn-primary" onClick={() => setTasksOpen(true)}>打开收录采集</button>
+        </div> : <p className="directory-empty">没有符合条件的记录。</p>)}
         <nav className="directory-actions" aria-label="小区名单分页"><button disabled={page === 1} onClick={() => { setPage(v => v - 1); setLoading(true); setSelection([]); }}>上一页</button><span>第 {page} / {Math.max(1, Math.ceil(total / 30))} 页</span><button disabled={page * 30 >= total} onClick={() => { setPage(v => v + 1); setLoading(true); setSelection([]); }}>下一页</button></nav></>}
     </div>{(detail || auction) && <DirectoryDialog title={detail?.community_name || auction?.name || '查看资料'}
-      footer={detail && (canExclude || resumeAdmission || (!detail.source_record_id && detail.admission?.revision)) ? <div className="directory-detail-actions">
+      footer={auction ? <div className="directory-detail-actions">
+        <button className="btn btn-primary" disabled={busy || !auctionTarget} onClick={() => void action(`/directory/workflow/auctions/${encodeURIComponent(auction.id)}`, 'POST', { revision: auction.revision, action: 'bind', community_id: auctionTarget })}>确认关联</button>
+        <button className="btn btn-secondary" disabled={busy} onClick={() => void action(`/directory/workflow/auctions/${encodeURIComponent(auction.id)}`, 'POST', { revision: auction.revision, action: auction.skipped ? 'reopen' : 'skip' })}>{auction.skipped ? '重新处理' : '暂时跳过'}</button>
+      </div> : detail && (canExclude || resumeAdmission || (!detail.source_record_id && detail.admission?.revision)) ? <div className="directory-detail-actions">
         {canExclude && <button className="btn directory-exclude-action" disabled={busy} onClick={() => void admissionAction('exclude')}>确认不收录</button>}
         <CatalogReviewAction row={detail} busy={busy} action={(kind, row) => void admissionAction(kind, row)} />
         {resumeAdmission && <button className="btn btn-secondary" disabled={busy} title="恢复后是否收录由透明售房网资料重新判定" onClick={() => void admissionAction('resume')}>恢复自动分类</button>}
-      </div> : undefined} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); }}>
+      </div> : undefined} onClose={() => { detailVersion.current += 1; setDetail(null); setAuction(null); setAuctionTarget(''); }}>
       {error && <p role="alert" className="directory-warning">{error}</p>}
-      {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} busy={busy} action={(...args) => void action(...args)} />}
+      {auction && <AuctionPanel key={`${auction.id}-${auction.revision}`} row={auction} target={auctionTarget} onTargetChange={setAuctionTarget} />}
       {detail && <><section className="directory-basic-info" aria-label="基本信息">
         <h4>基本信息</h4>
         <dl>

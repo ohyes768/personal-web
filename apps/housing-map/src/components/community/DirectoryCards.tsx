@@ -1,7 +1,5 @@
 'use client';
 
-import { useState } from 'react';
-
 export type AutoReviewEvidence = { source: string; source_id?: string; name?: string; address?: string; property_type?: string; property_type_error?: string };
 export type AutoReviewReport = { snapshot_id: string; rule_version: string; executed_at?: string; counts: Record<string, number>;
   items: { candidate_id: string; name: string; action: string; reasons: string[]; evidence: AutoReviewEvidence[]; outcome?: string; error?: string }[] };
@@ -36,38 +34,9 @@ export const marketLabels: Record<string, string> = { new_house: '新房项目',
 export const phaseLabels: Record<string, string> = { running: '正在采集', succeeded: '采集结束', partial_failed: '部分完成',
   failed: '采集失败', cancelled: '已取消', interrupted: '服务重启，采集中断', cancelling: '正在取消' };
 const root = '/api/map/directory';
-export const admissionLabels: Record<string, string> = { admitted: '已收录住宅', pending: '待审核', excluded: '已排除' };
 export const mapLabels: Record<string, string> = { displayed: '地图显示', not_admitted: '尚未收录，不在地图显示',
   missing_coordinates: '缺坐标', check_coordinates: '坐标待核对', outside_scope: '坐标在覆盖范围外',
   check_name: '名称待核对', merged_duplicate: '重复分期已合并显示', inactive: '已删除或合并' };
-
-export function AdmissionControls({ community, busy, onDecision }: { community: Community; busy: boolean;
-  onDecision: (action: string, body: object, text: string) => void }) {
-  const [reason, setReason] = useState('');
-  const [propertyType, setPropertyType] = useState(community.effective_property_type || '住宅');
-  if (!community.admission || community.deleted) return null;
-  const admission = community.admission;
-  const state = community.admission_state || admission.state;
-  const decide = (action: string, text: string) => onDecision(action,
-    { revision: admission.revision, reason, ...(action === 'admit' ? { property_type: propertyType } : {}) }, text);
-  return <section className="directory-linker" aria-label="住宅收录管理">
-    <h4>{admissionLabels[state] || '待审核'} · {mapLabels[community.map_status || ''] || '地图状态待确认'}</h4>
-    <p className="directory-muted">{admission.decision_kind === 'manual' ? '人工确认' : admission.decision_kind === 'migration' ? '旧资料初始化' : admission.decision_kind === 'automatic' ? '自动收录' : '尚未审核'}
-      {admission.reason ? ` · ${admission.reason}` : ''}</p>
-    {admission.auto_review_locked && <p className="directory-warning">自动审核已锁定：重新采集和更新资料不会自动收录。</p>}
-    {community.admission_conflict && <p className="directory-warning">当前来源用途证据有变化，请核对；人工确认保留。</p>}
-    <label>审核原因<input aria-label="审核原因" value={reason} maxLength={300} onChange={e => setReason(e.target.value)} placeholder="排除必填；撤销可填写疑点" /></label>
-    {state !== 'excluded' && <label>确认住宅类型<select aria-label="确认住宅类型" value={propertyType} onChange={e => setPropertyType(e.target.value)}>
-      {['住宅', '别墅', '排屋'].map(type => <option key={type}>{type}</option>)}</select></label>}
-    <div className="directory-actions">
-      {state !== 'excluded' && <button className="btn btn-primary" disabled={busy} onClick={() => decide('admit', '确认这是独立住宅小区？确认后解除自动审核锁，坐标有效时在地图显示。')}>确认收录</button>}
-      {state === 'admitted' && <button className="btn btn-secondary" disabled={busy} onClick={() => decide('review', '移到待审核？地图停止显示，资料和历史保留，并锁定自动审核。')}>移到待审核</button>}
-      {state !== 'excluded' && <button className="btn btn-secondary" disabled={busy || !reason.trim()} onClick={() => decide('exclude', '排除住宅收录？地图停止显示，来源资料及历史保留，可恢复到待审核。')}>排除收录</button>}
-      {state === 'excluded' && <button className="btn btn-secondary" disabled={busy} onClick={() => decide('restore-admission', '恢复到待审核？仍保留自动审核锁，不会直接进入地图。')}>恢复到待审核</button>}
-      {state === 'pending' && admission.auto_review_locked && <button className="btn btn-secondary" disabled={busy} onClick={() => decide('allow-auto-review', '解除人工审核锁？仍是待审核，之后允许自动审核规则处理。')}>允许重新自动审核</button>}
-    </div>
-  </section>;
-}
 
 export async function request<T>(path: string, method = 'GET', body?: object, signal?: AbortSignal): Promise<T> {
   const response = await fetch(root + path, { method, signal,

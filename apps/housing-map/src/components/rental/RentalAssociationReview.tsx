@@ -15,20 +15,24 @@ const filterLabels: Record<string, string> = { needs_selection: '待选择', mis
   search_failed: '查找失败', search_deferred: '未完成', skipped: '已跳过' };
 const filterOrder = ['needs_selection', 'missing', 'no_listings', 'search_failed', 'search_deferred', 'skipped'];
 
-export function RentalCandidateChoice({ item, busy, onDecide }: {
-  item: RentalReview; selected: string; busy: boolean; onSelect: (id: string) => void;
+/** 弹层 footer 的动作按钮：skipped 状态给「重新处理」，其余给「暂时跳过」。 */
+export function RentalCandidateActions({ item, busy, onDecide }: {
+  item: RentalReview; busy: boolean;
   onDecide: (action: 'bind' | 'skip' | 'reopen') => void;
+}) {
+  return <div className="directory-tabs-row-actions">
+    {item.reason === 'skipped' ? <button className="btn btn-secondary" disabled={busy} onClick={() => onDecide('reopen')}>重新处理</button>
+      : <button className="btn btn-secondary" disabled={busy} onClick={() => onDecide('skip')}>暂时跳过</button>}
+  </div>;
+}
+
+export function RentalCandidateChoice({ item }: {
+  item: RentalReview;
 }) {
   return <div className="directory-candidate">
     <h4>{item.community_name} · {reasons[item.reason] || '待处理'}</h4>
     {item.message && <p className="directory-warning">{item.message}</p>}
     <p className="directory-muted">在下方核对幸福里主页的名称、地址和范围；拿不准可以跳过。</p>
-
-    <div className="directory-actions">
-      {item.reason === 'skipped' ? <button className="btn btn-secondary" disabled={busy} onClick={() => onDecide('reopen')}>重新处理</button> : <>
-        <button className="btn btn-secondary" disabled={busy} onClick={() => onDecide('skip')}>暂时跳过</button>
-      </>}
-    </div>
   </div>;
 }
 
@@ -97,12 +101,14 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
     finally { setBusy(false); }
   }
   return <section aria-label="租金来源待处理" className="directory-collection">
-    <h3>租金来源待处理</h3>
-    <div className="directory-actions">
-      {filterOrder.map(reason => <button key={reason} className="btn btn-secondary" aria-pressed={reasonFilter === reason}
-        onClick={() => pickFilter(reason)}>{filterLabels[reason]} {counts[reason] || 0}</button>)}
-      <span className="directory-static-count" title="已关联幸福里租金来源的小区数（含等待下一轮采集）">已采集 {associatedCount}</span>
-      <button className="btn btn-secondary" disabled={busy} onClick={() => void load()}>刷新清单</button>
+    <div className="directory-tabs-row">
+      <div className="review-tabs directory-subtabs" role="group" aria-label="租金分类">{filterOrder.map(reason =>
+        <button key={reason} aria-pressed={reasonFilter === reason}
+          onClick={() => pickFilter(reason)}>{filterLabels[reason]}（{counts[reason] || 0}）</button>)}</div>
+      <div className="directory-tabs-row-actions">
+        <span className="directory-muted" title="已关联幸福里租金来源的小区数（含等待下一轮采集）">已采集（{associatedCount}）</span>
+        <button type="button" className="btn btn-secondary directory-refresh" aria-label="刷新清单" title="刷新清单" onClick={() => void load()}>↻</button>
+      </div>
     </div>
     {error && !item && <p role="alert" className="directory-warning">{error}</p>}
     {visible.length ? <div className="directory-workspace"><div className="directory-list-panel">
@@ -115,9 +121,10 @@ export default function RentalAssociationReview({ onChanged }: { onChanged?: () 
           <span>{entry.community_name}</span><small>{filterLabels[entry.reason] || entry.reason}{top > 0 ? ` · ${Math.round(top * 100)}%` : ''}</small></button>;
       })}</div>}
     </div>
-      {item && <DirectoryDialog title={item.community_name} onClose={() => { setSelectedCommunity(''); setCandidate(''); }}>
+      {item && <DirectoryDialog title={item.community_name} onClose={() => { setSelectedCommunity(''); setCandidate(''); }}
+        footer={<RentalCandidateActions item={item} busy={busy} onDecide={action => void decide(action)} />}>
         {error && <p role="alert" className="directory-warning">{error}</p>}
-        <RentalCandidateChoice item={item} selected={candidate} busy={busy} onSelect={setCandidate} onDecide={action => void decide(action)} />
+        <RentalCandidateChoice item={item} />
         <XingfuliProbe communityId={item.community_id} onChanged={() => { void load(); onChanged?.(); }} />
       </DirectoryDialog>}</div>
       : <p className="directory-empty">{filterLabels[reasonFilter] || '该类别'}下暂无小区。</p>}

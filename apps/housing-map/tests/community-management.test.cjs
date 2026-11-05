@@ -8,7 +8,7 @@ const { renderToStaticMarkup } = require('react-dom/server');
 for (const ext of ['.ts', '.tsx']) require.extensions[ext] = (module, filename) => module._compile(ts.transpileModule(fs.readFileSync(filename, 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX }
 }).outputText, filename);
-const { DirectorySourceCard, ResidentialStateBadge, safeDirectoryLink } = require('../src/components/community/CommunityManagement.tsx');
+const { DirectorySourceCard, ResidentialStateBadge, safeDirectoryLink } = require('../src/components/community/DirectoryCards.tsx');
 
 test('compact TMSF source shows facts and keeps audit metadata in its disclosure', () => {
   const html = renderToStaticMarkup(React.createElement(DirectorySourceCard, { compact: true, item: {
@@ -38,21 +38,6 @@ test('compact source never falls back to a TMSF script and rental source omits u
   assert.doesNotMatch(rental, /物业类型|尚未获取|新房 \/ 二手房状态未知/);
 });
 
-test('admission controls distinguish reversible review/exclusion from whole deletion', () => {
-  const { AdmissionControls } = require('../src/components/community/CommunityManagement.tsx');
-  const render = state => renderToStaticMarkup(React.createElement(AdmissionControls, {
-    community: { community_id: '100', community_name: '江汉路小区', admission_state: state,
-      admission: { state, revision: 2, decision_kind: 'manual', auto_review_locked: true, reason: '疑似道路' },
-      map_status: 'not_admitted' }, busy: false, onDecision() {} }));
-  assert.match(render('admitted'), /移到待审核/);
-  assert.match(render('admitted'), /排除收录/);
-  assert.match(render('pending'), /确认收录/);
-  assert.match(render('pending'), /自动审核已锁定/);
-  assert.match(render('pending'), /疑似道路/);
-  assert.match(render('excluded'), /恢复到待审核/);
-  assert.doesNotMatch(render('excluded'), /确认收录/);
-  assert.doesNotMatch(render('admitted'), /删除整个/);
-});
 test('source card preserves original identity, manual method and evidence', () => {
   const html = renderToStaticMarkup(React.createElement(DirectorySourceCard, { item: {
     id: 'r', source: 'fang', source_kind: 'community', source_id: '123', name: '花园一期',

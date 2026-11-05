@@ -16,7 +16,8 @@ test('review and maintenance sit beside the map view as top-level tabs', () => {
   }
   // 原来的"小区数据管理"总页签已被两个独立页签取代。
   assert.doesNotMatch(html, /小区数据管理/);
-  assert.match(html, /class="tab-btn active">地图查看/);
+  assert.match(html, /class="tab-btn active" aria-pressed="true">地图查看/);
+  assert.match(html, /class="tab-btn " aria-pressed="false">数据看板/);
 });
 
 test('each top-level tab reports its own key when clicked', () => {
@@ -25,6 +26,6 @@ test('each top-level tab reports its own key when clicked', () => {
   for (const button of tree.props.children) button.props.onClick();
   assert.deepEqual(clicks, ['map', 'dashboard', 'market', 'auction', 'review', 'maintenance']);
   const active = renderToStaticMarkup(React.createElement(AppTabs, { active: 'maintenance', onChange() {} }));
-  assert.match(active, /class="tab-btn active">小区数据维护/);
-  assert.match(active, /class="tab-btn ">小区收录审核/);
+  assert.match(active, /class="tab-btn active" aria-pressed="true">小区数据维护/);
+  assert.match(active, /class="tab-btn " aria-pressed="false">小区收录审核/);
 });

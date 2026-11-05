@@ -15,6 +15,7 @@ const tabs: { key: AppTab; label: string }[] = [
 export default function AppTabs({ active, onChange }: { active: AppTab; onChange: (tab: AppTab) => void }) {
   return <div className="tab-nav">
     {tabs.map(tab => <button key={tab.key} className={`tab-btn ${active === tab.key ? 'active' : ''}`}
+      aria-pressed={active === tab.key}
       onClick={() => onChange(tab.key)}>{tab.label}</button>)}
   </div>;
 }
