@@ -19,6 +19,28 @@ header.site {
   padding-bottom: 22px;
 }
 
+.back-home {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  margin-bottom: 12px;
+  color: #6b614f;
+  font-family: system-ui, sans-serif;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.back-home:hover {
+  color: #263329;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.back-home:focus-visible {
+  outline: 2px solid #273f31;
+  outline-offset: 4px;
+}
+
 .site-top {
   display: flex;
   justify-content: space-between;

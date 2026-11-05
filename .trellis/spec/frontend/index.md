@@ -1,6 +1,11 @@
 # Frontend guidelines
 
 ## Pre-development checklist
+
+- Every app's main page must expose a visible `← 返回首页` link near its header,
+  pointing to the project-wide root `/`. Use a native `<a href="/">`, not Next Link
+  or router navigation that can prepend the app's basePath. Preserve keyboard focus
+  visibility and ensure the entry remains available on mobile layouts.
 - For apps/dividend fundamental-report reading work (the `/quality-reader` page, the main-page entry, or the shared report body), read [基本面资料阅读页前端契约](./dividend-quality-reader.md); it fixes the reading-collection order, the `code`-as-identity URL rule, and the `/dividend` prefix handling.
 - For apps/skill-manager UI work, read [skill-manager control language](./skill-manager-ui.md); use `lib/ui.ts` constants, never hand-rolled button/input classes.
 - For apps/macro time-series charts, read [ECharts contracts](./macro-echarts.md).

@@ -13,6 +13,7 @@
 | 前端目录 | `apps/<name>/`，package name `<name>-frontend`，端口顺延（已用 3001/3003-3007，下一个 3008） |
 | 后端目录 | `backend/<name>/`（FastAPI + uv，`[tool.uv] package=false`），端口顺延（已用 8092-8096，下一个 8097） |
 | URL 前缀 | basePath `/<name>`（或用户指定的短名）；API 前缀 `/api/<name>/*` |
+| 返回首页 | 各应用主页面头部必须有「← 返回首页」，使用原生 `<a href="/">` 返回项目总首页，避免 Next Link/router 自动附加 basePath；移动端也必须可见 |
 | nginx | `nginx/web.conf`：upstream ×2 + location ×3（见 §4） |
 | compose | `docker-compose.nas.yml`：service ×2 + named volumes + 头部注释三处同步 |
 | 部署脚本 | `scripts/deploy-nas.sh`：target 映射 / all 列表 / buildx 映射 / 帮助文本 4 处 |

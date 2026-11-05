@@ -133,6 +133,7 @@ function PageInner() {
   return (
     <main>
       <header className="site">
+        <a href="/" className="back-home">← 返回首页</a>
         <div className="site-top">
           <div>
             <div className="eyebrow">宽基趋势观察 · INDEX TRENDS</div>
