@@ -305,7 +305,7 @@ export default function CurrentTab({ selected, onSelect, onGoHistory, reloadKey 
               PE-TTM 近10年分位来自理杏仁（总市值加权），是
               <span className="emphasis">独立的估值口径</span>，与通道位置不同：
               通道位置描述相对趋势通道的高低，分位描述相对自身历史估值的贵贱。
-              两个模型共享同一份估值；数据日期取最近完整交易周的最后交易日。
+              两个模型共享同一份估值；数据日期取最近已收盘交易日。
             </div>
           </div>
         </>

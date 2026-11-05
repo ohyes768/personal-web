@@ -190,7 +190,7 @@ export interface Valuation {
   metric: string;
   /** 分位窗口（如 y10 = 近10年）。 */
   window: string;
-  /** 期望的数据日期（最近完整周的最后交易日）。 */
+  /** 期望的数据日期（最近已收盘交易日）。 */
   target_date: string | null;
   /** 实际数据日期。 */
   as_of: string | null;

@@ -36,8 +36,9 @@
 
 ## 刷新与简报边界
 
-- Web 后端 `RefreshScheduler` 只注册 `daily_refresh`，默认工作日16:30（Asia/Shanghai）；
-  每日任务刷新行情，并在 finally 中独立采集估值，行情失败也尝试更新估值。
+- Web 后端 `RefreshScheduler` 注册两个独立任务：`daily_refresh`（工作日16:30）只刷新行情，
+  `valuation_refresh`（工作日18:30）独立采集估值；行情失败不影响估值采集，
+  估值采集细节见[估值契约](./valuation-contract.md)。
 - 服务启动仍初始化估值；保留 `POST /api/refresh`。GET 状态接口只读缓存。
 - 周报生成、钉钉发送、周五定时与启动补发已移除，由 Hermes 生成简况并调度投递。
 - 删除 `GET/PATCH /api/report-settings`、`POST /api/report-jobs/{job_id}/run`；

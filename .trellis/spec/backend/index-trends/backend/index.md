@@ -13,9 +13,11 @@
 - Never let a supplier failure change the market pipeline semantics: the trend
   refresh result and the chart keep their own success/failure
   contract.
-- Web owns daily market/valuation collection (weekdays 16:30 Asia/Shanghai), manual
+- Web owns daily market collection (weekdays 16:30 Asia/Shanghai) and a
+  separate daily valuation collection (weekdays 18:30 Asia/Shanghai), plus manual
   refresh and startup valuation initialization. Hermes owns brief generation,
   scheduling and delivery; do not reintroduce DingTalk/webhook or report catch-up.
+  Do not couple valuation collection back into the 16:30 market refresh.
 - Preserve report/settings/attempt tables and GET /api/reports as legacy history.
   Report configuration and job-trigger APIs are retired (404).
 
@@ -29,5 +31,8 @@
 - New supplier code must ship with an offline test that proves: no token means no
   request, error messages carry no token or upstream body, and missing values stay
   `null` (never `0`).
-- `tests/test_refresh_lifecycle.py` verifies daily-only scheduling, bounded task
-  shutdown, valuation collection after market failure, and legacy report retention.
+- `tests/test_refresh_lifecycle.py` verifies market/valuation job separation,
+  bounded task shutdown, and legacy report retention.
+- `tests/test_valuation_daily_job.py` verifies the two independent jobs, the
+  market-holiday skip (no provider request), explicit calendar errors, and
+  single-request behaviour under overlapping collection.

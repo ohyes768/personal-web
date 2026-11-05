@@ -81,6 +81,8 @@ apps/index-trends 的历史图和当前通道图使用**完整周线**拟合。
 
 ### Scope / Trigger
 当前通道摘要里的估值区域。改估值文案、单位或状态分支前必读。
+后端目标日口径（最近已收盘交易日）见
+[估值契约](../backend/index-trends/backend/valuation-contract.md)。
 
 ### Contracts
 - **单列一个估值区域**，不复用通道位置的标签、色调或百分比语义：

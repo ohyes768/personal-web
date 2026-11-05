@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index-trends/backend/index.md", "reason": "后端规范索引与质量检查入口（脱网测试命令）"}
+{"file": ".trellis/spec/backend/index-trends/backend/valuation-contract.md", "reason": "估值契约：目标日、状态机、缓存冷却、凭据边界（本任务要改页面目标日口径）"}
+{"file": ".trellis/spec/backend/index-trends/backend/weekly-pipeline.md", "reason": "周报与交易日历契约（周报目标日与休市语义不能被破坏）"}
+{"file": ".trellis/spec/guides/index.md", "reason": "跨层数据流与代码复用思考指南"}

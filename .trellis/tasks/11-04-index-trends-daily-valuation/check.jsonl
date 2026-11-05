@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/backend/index-trends/backend/index.md", "reason": "后端质量检查入口"}
+{"file": ".trellis/spec/backend/index-trends/backend/valuation-contract.md", "reason": "核对估值目标日/状态机/冷却契约是否被破坏"}
+{"file": ".trellis/spec/backend/index-trends/backend/weekly-pipeline.md", "reason": "核对周报目标日与休市沿用语义"}
+{"file": ".trellis/spec/guides/index.md", "reason": "检查时的思考指南"}
