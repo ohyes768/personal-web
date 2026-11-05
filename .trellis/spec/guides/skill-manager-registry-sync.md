@@ -30,10 +30,11 @@ GET /api/skills (routes.list_skills)
 - 行为：
   1. `discover_local()` 扫描源库根（跳过 `.` 隐藏目录与
      `scripts/__pycache__/node_modules/logs/output`，目录名须符合 SkillId pattern）；
-  2. **新目录**（id 不在登记表）→ upsert，name/summary 取自 SKILL.md frontmatter；
-  3. **已登记条目一律不覆盖**（保护人工维护的 tags/summary/status/deprecated）；
-  4. **目录缺失的已登记条目不处理**（保留），卡片显示 `source_missing`；
+  2. **新目录**（id 不在登记表且候选唯一）→ upsert，name/summary 取自 SKILL.md frontmatter；同 ID 的 GitHub 登记绝不覆盖；
+  3. **已登记本地条目**：旧路径含有效 SKILL.md 时不改；旧路径失效且同 ID 恰好一个候选时，校验目录及 SKILL.md resolve 后都在源库内，仅更新 path，保留人工维护的 name/tags/summary/status/depends_on/shared_paths；
+  4. **目录缺失且无唯一候选**：保留原登记，卡片显示 `source_missing`；重名候选不按扫描顺序任选，记录 warning；
   5. 幂等：二次对账无新增返回 0。
+- 返回值仍仅统计新增登记数，路径迁移单独记 info 日志。对账不修改安装链接、部署台账或安装历史；旧安装链接失效时通过现有安装流程重新预览并安装。
 - 失败降级：`OSError` / `RegistryValidationError` / `sqlite3.Error` → `logger.warning`，
   列表降级为现有登记，**绝不返 5xx**。
 
@@ -67,8 +68,7 @@ GET /api/skills (routes.list_skills)
 
 ## 相关坑
 
-- **已登记条目绝不覆盖**：`sync_local` 只增不改——人工维护的 tags/summary/
-  deprecated 在源目录变化后仍保留（2026-09-22 实现时的显式取舍）；
+- **已登记元数据不覆盖**：`sync_local` 仅在旧路径失效且候选唯一时迁移 path；人工维护的 tags/summary/deprecated 在源目录变化后仍保留；
 - **退役条目不自动删**：源目录被删后条目保留并 `source_missing`，防 NAS 瞬断误删；
   要移除只能走登记表清理（当前无此 API）；
 - **新增自研 skill 零操作**：在源库建 `<skill>/SKILL.md`（frontmatter 写

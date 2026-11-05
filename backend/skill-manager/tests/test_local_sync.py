@@ -121,6 +121,72 @@ def test_sync_ignores_github_skills(registry_service, store, source_root):
     assert store.get_registry_skill("gh") is not None
 
 
+def test_sync_migrates_unique_move_and_preserves_metadata(registry_service, store, source_root):
+    make_skill(source_root, "old/moved")
+    original = RegistrySkill(
+        id="moved", name="人工名称", source="local", path="old/moved",
+        tags=["投研"], summary="人工简介", status="deprecated",
+    )
+    registry_service.upsert(original)
+    (source_root / "new").mkdir()
+    (source_root / "old/moved").rename(source_root / "new/moved")
+
+    assert registry_service.sync_local() == 0  # 返回值仍只统计新增
+    updated = store.get_registry_skill("moved")
+    assert updated == original.model_copy(update={"path": "new/moved"})
+    assert registry_service.sync_local() == 0
+    assert store.get_registry_skill("moved") == updated
+
+
+@pytest.mark.parametrize("old_exists", [False, True])
+def test_sync_does_not_guess_between_duplicate_ids(registry_service, store, source_root, old_exists):
+    make_skill(source_root, "old/duplicate")
+    registry_service.sync_local()
+    if not old_exists:
+        shutil.rmtree(source_root / "old/duplicate")
+    make_skill(source_root, "new/duplicate")
+    make_skill(source_root, "another/duplicate")
+
+    assert registry_service.sync_local() == 0
+    assert store.get_registry_skill("duplicate").path == "old/duplicate"
+
+
+def test_sync_preserves_valid_old_path(registry_service, store, source_root):
+    make_skill(source_root, "old/stays")
+    registry_service.sync_local()
+    make_skill(source_root, "new/stays")
+    assert registry_service.sync_local() == 0
+    assert store.get_registry_skill("stays").path == "old/stays"
+
+
+def test_sync_skips_new_ambiguous_ids(registry_service, store, source_root):
+    make_skill(source_root, "first/ambiguous")
+    make_skill(source_root, "second/ambiguous")
+    assert registry_service.sync_local() == 0
+    assert store.get_registry_skill("ambiguous") is None
+
+
+def test_sync_preserves_github_registration_with_same_local_id(registry_service, store, source_root):
+    original = RegistrySkill(id="collision", name="GH", source="github", path=".",
+                             repository="https://github.com/example/repo")
+    registry_service.upsert(original)
+    make_skill(source_root, "collision")
+    assert registry_service.sync_local() == 0
+    assert store.get_registry_skill("collision") == original
+
+
+@pytest.mark.requires_symlink
+def test_sync_rejects_candidate_with_skill_file_outside_root(registry_service, store, source_root, tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("---\nname: Outside\n---", encoding="utf-8")
+    store.upsert_registry_skill(RegistrySkill(id="escaped", name="Original", source="local", path="old/escaped"))
+    new = source_root / "new/escaped"
+    new.mkdir(parents=True)
+    (new / "SKILL.md").symlink_to(outside)
+    assert registry_service.sync_local() == 0
+    assert store.get_registry_skill("escaped").path == "old/escaped"
+
+
 # ---------- API 层：source_missing 契约与降级 ----------
 
 
@@ -182,6 +248,16 @@ def test_list_skills_degrades_when_source_root_missing(client, env, roots):
     response = client.get("/api/skills")
 
     assert response.status_code == 200
+
+
+def test_list_migrates_directory_and_clears_source_missing(client, roots):
+    make_skill(roots.source_root, "old/moving")
+    assert _get_card(client, "moving")["path"] == "old/moving"
+    (roots.source_root / "new").mkdir()
+    (roots.source_root / "old/moving").rename(roots.source_root / "new/moving")
+    card = _get_card(client, "moving")
+    assert card["path"] == "new/moving"
+    assert card["source_missing"] is False
 
 
 def _get_card(client, skill_id: str) -> dict:

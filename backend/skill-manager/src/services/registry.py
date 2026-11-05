@@ -9,12 +9,13 @@ RegistryService 是登记真源（skill-manager 自己的 SQLite）的唯一读�
 - 拒绝 github repository+path 组合重复（同 id 视为更新，排除自身）；
 - tags 排序去重；
 - `sync_local()` 把源库目录对账进登记表：仅登记新出现的自研 skill，
-  name/summary 取自 SKILL.md frontmatter（缺失降级），已登记条目与
-  源缺失条目一律不动。
+  name/summary 取自 SKILL.md frontmatter（缺失降级）；旧路径失效且
+  同 id 只有一个有效候选时，仅迁移 path，保留人工维护字段。
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path, PurePosixPath
@@ -24,6 +25,7 @@ from src.db import SkillStateStore
 from src.models import RegistrySkill, SKILL_ID_PATTERN, SkillSource
 
 _ID_RE = re.compile(SKILL_ID_PATTERN)
+logger = logging.getLogger(__name__)
 
 
 def _normalized_shared_paths(paths: list[str]) -> list[str]:
@@ -166,22 +168,45 @@ class RegistryService:
 
     @serialized
     def sync_local(self) -> int:
-        """把源库目录与登记表对账：仅登记新出现的自研 skill，返回新增数。
+        """登记新自研 skill，并修复唯一可识别的目录迁移；返回新增数。
 
-        已登记条目一律不动（绝不覆盖人工维护的 summary/tags/status）；
-        目录缺失的已登记条目不处理（保留，卡片以 source_missing 提示）。
-        源库根不可达时 os.walk 静默返回空，对账为 no-op（调用方降级）。
+        已有目录有效时不改；旧目录失效且同 id 候选唯一时只更新 path。
+        同名歧义、跨来源冲突及非法候选均保留原登记，不猜测迁移目的地。
+        不改安装链接/部署台账；已有安装通过安装流程更新。
         """
-        discovered = {skill.id: skill for skill in self.discover_local()}
-        existing_local = {
-            skill.id
-            for skill in self.list_skills()
-            if skill.source is SkillSource.LOCAL
-        }
-        new_ids = sorted(discovered.keys() - existing_local)
-        for skill_id in new_ids:
-            self.store.upsert_registry_skill(discovered[skill_id])
-        return len(new_ids)
+        discovered: dict[str, list[RegistrySkill]] = {}
+        for candidate in self.discover_local():
+            discovered.setdefault(candidate.id, []).append(candidate)
+        existing = {skill.id: skill for skill in self.list_skills()}
+        added = 0
+        for skill_id, candidates in sorted(discovered.items()):
+            current = existing.get(skill_id)
+            if current is not None:
+                if current.source is not SkillSource.LOCAL:
+                    continue
+                if (self.source_root / current.path / "SKILL.md").is_file():
+                    continue
+            if len(candidates) != 1:
+                logger.warning("local sync: ambiguous skill id %s at %s", skill_id,
+                               [candidate.path for candidate in candidates])
+                continue
+            candidate = candidates[0]
+            try:
+                self._check_path(candidate)
+                skill_file = (self.source_root / candidate.path / "SKILL.md").resolve()
+                if not skill_file.is_relative_to(self.source_root):
+                    raise RegistryValidationError("SKILL.md escapes the source root")
+            except (OSError, RegistryValidationError) as exc:
+                logger.warning("local sync: skipping invalid candidate %s: %s", candidate.path, exc)
+                continue
+            if current is None:
+                self.store.upsert_registry_skill(candidate)
+                added += 1
+            else:
+                self.store.upsert_registry_skill(current.model_copy(update={"path": candidate.path}))
+                logger.info("local sync: migrated %s from %s to %s",
+                            skill_id, current.path, candidate.path)
+        return added
 
     # ---------- 内部工具 ----------
 
