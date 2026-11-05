@@ -469,33 +469,35 @@ async function setupMainPage(page: Page, options: { stocksPending?: boolean } = 
   return calls;
 }
 
+test('main page shows the reader entry in the 选股关注 view', async ({ page }) => {
+  await setupMainPage(page);
+  await page.goto('/?tab=screening');
+  const entry = page.getByTestId('quality-reader-entry');
+  await expect(entry).toBeVisible();
+  await expect(entry).toHaveText('基本面资料阅读');
+});
+
 for (const view of [
   { path: '/', label: '全部' },
   { path: '/?tab=alerts', label: '挡位监控' },
-  { path: '/?tab=screening', label: '选股关注' },
 ]) {
-  test(`main page shows the reader entry in the ${view.label} view`, async ({ page }) => {
+  test(`main page has no reader entry in the ${view.label} view`, async ({ page }) => {
     await setupMainPage(page);
     await page.goto(view.path);
-    const entry = page.getByTestId('quality-reader-entry');
-    await expect(entry).toBeVisible();
-    await expect(entry).toHaveText('基本面资料阅读');
+    await expect(page.getByTestId('quality-reader-entry')).toHaveCount(0);
   });
 }
 
-test('main page shows the reader entry while the stock table is still loading', async ({ page }) => {
+test('main page has no reader entry while the stock table is still loading', async ({ page }) => {
   await setupMainPage(page, { stocksPending: true });
   await page.goto('/');
-  const entry = page.getByTestId('quality-reader-entry');
-  await expect(entry).toBeVisible();
+  await expect(page.getByTestId('quality-reader-entry')).toHaveCount(0);
 });
 
 test('reader entry keeps the source view for the return link', async ({ page }) => {
   await setupMainPage(page);
   await page.goto('/?tab=screening');
   await expect(page.getByTestId('quality-reader-entry')).toHaveAttribute('href', /fromTab=screening/);
-  await page.goto('/?fav=1');
-  await expect(page.getByTestId('quality-reader-entry')).toHaveAttribute('href', /fromFav=1/);
 });
 
 test('clicking the reader entry opens the independent reader page', async ({ page }) => {
