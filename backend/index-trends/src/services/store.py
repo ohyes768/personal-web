@@ -598,12 +598,17 @@ class Store:
         window: str,
         points: list[tuple[str, float, float]],
         target_date: str,
+        at: str | None = None,
     ) -> None:
         """在单个事务里写入估值记录并更新采集元数据。
 
         points 为 (date, pe_ttm, percentile_ratio) 列表。失败时不调用本方法，
         旧的成功数据保持可读。
+
+        at 为采集时间戳（ISO）；不传则用当前时间。调用方（估值服务）传自己的
+        业务时钟，冷却判定与记录时间才在同一时间轴上。
         """
+        stamp = at or now_iso()
         with self._conn:
             self._conn.executemany(
                 "INSERT INTO index_valuations (index_code, source, metric, window, date, "
@@ -612,23 +617,30 @@ class Store:
                 "pe_ttm=excluded.pe_ttm, percentile_ratio=excluded.percentile_ratio, "
                 "captured_at=excluded.captured_at",
                 [
-                    (index_code, source, metric, window, day, pe, ratio, now_iso())
+                    (index_code, source, metric, window, day, pe, ratio, stamp)
                     for day, pe, ratio in points
                 ],
             )
             self._conn.execute(
                 "UPDATE valuation_fetch_meta SET index_code=?, target_date=?, "
                 "last_attempt_at=?, last_success_at=?, last_error=NULL WHERE id=1",
-                (index_code, target_date, now_iso(), now_iso()),
+                (index_code, target_date, stamp, stamp),
             )
 
-    def record_valuation_failure(self, index_code: str, target_date: str, error: str) -> None:
+    def record_valuation_failure(
+        self,
+        index_code: str,
+        target_date: str,
+        error: str,
+        at: str | None = None,
+    ) -> None:
         """记录一次估值采集失败（不改动已存的成功数据）。"""
+        stamp = at or now_iso()
         with self._conn:
             self._conn.execute(
                 "UPDATE valuation_fetch_meta SET index_code=?, target_date=?, "
                 "last_attempt_at=?, last_error=? WHERE id=1",
-                (index_code, target_date, now_iso(), error),
+                (index_code, target_date, stamp, error),
             )
 
     def latest_valuation(

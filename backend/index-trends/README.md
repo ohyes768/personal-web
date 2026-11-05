@@ -7,7 +7,8 @@
 - 前端：`apps/index-trends`（Next.js 静态页，basePath `/index-trends`）
 - 部署：`docker-compose.nas.yml` 中的 `index-trends-backend` / `index-trends-frontend`
 
-每日行情与估值刷新继续由 Web 后端负责，默认工作日16:30（Asia/Shanghai），启动时仍初始化估值。
+每日行情刷新由 Web 后端负责，默认工作日16:30（Asia/Shanghai）；
+每日估值采集是**独立任务**，默认工作日18:30，启动时仍初始化估值。
 Hermes 通过查询 API 获取缓存，负责简报生成、定时与钉钉/RSS投递；本服务不再生成或发送周报，也不在启动时补发。
 页面手动刷新 `POST /api/refresh` 保留；GET 查询不会触发刷新。
 
@@ -22,7 +23,8 @@ Hermes 通过查询 API 获取缓存，负责简报生成、定时与钉钉/RSS�
 |---|---|---|
 | `INDEX_TRENDS_DATA_DIR` | `data` | SQLite 目录（`index-trends.db`） |
 | `INDEX_TRENDS_SERVICE_HOST` / `_SERVICE_PORT` | `0.0.0.0` / `8100` | 监听地址 |
-| `INDEX_TRENDS_DAILY_REFRESH_CRON` | `30 16 * * mon-fri` | Web 后端每日行情与估值刷新 |
+| `INDEX_TRENDS_DAILY_REFRESH_CRON` | `30 16 * * mon-fri` | Web 后端每日行情刷新 |
+| `INDEX_TRENDS_VALUATION_REFRESH_CRON` | `30 18 * * mon-fri` | 每日估值采集（与行情刷新独立） |
 | `INDEX_TRENDS_LIXINGER_TOKEN` | 空 | 理杏仁访问令牌（沪深300 PE-TTM 近10年分位） |
 
 ### 理杏仁估值（可选）
@@ -33,13 +35,21 @@ Hermes 通过查询 API 获取缓存，负责简报生成、定时与钉钉/RSS�
 - 令牌只由后端读取（`SecretStr`），不进入前端响应、日志、数据库与版本库；
 - 供应商返回的 PE-TTM（`pe_ttm.mcw`，总市值加权）与近 10 年分位
   （`pe_ttm.y10.mcw.cvpos`，0–1 比例）直接采用，**不在本地重算分位**；
-- 数据日期取**最近一个应当完成的自然周的最后交易日**（周五 15:05 收盘后才切到本周）；
-- 估值异常（无权限、网络失败、格式异常、日期滞后）不阻断行情、图表与查询服务。
+- 数据日期取**最近一个已收盘交易日**（每日口径）：以 Asia/Shanghai 15:05 收盘阈值为界，
+  阈值之前取上一个交易日，之后可取当日；周末与节假日沿用最近一个已收盘交易日，
+  绝不引用未来数据；
+- 估值采集在**独立任务**里进行（默认工作日18:30），与 16:30 行情刷新互不联动：
+  交易日历确认当日休市时该任务直接跳过、不发任何请求；日历不可用时记录明确异常，
+  不猜交易日；
+- 估值异常（无权限、网络失败、格式异常、日期滞后）不阻断行情、图表与查询服务；
+  采集失败时保留既有缓存值并写明实际数据日期与失败原因。
 
 本地 `.env` 示例（占位值，不要提交真实令牌）：
 
 ```bash
 INDEX_TRENDS_LIXINGER_TOKEN=<your-lixinger-token>
+# 可选：调整每日估值采集时间（Asia/Shanghai）
+INDEX_TRENDS_VALUATION_REFRESH_CRON=30 18 * * mon-fri
 ```
 
 NAS 部署：在 `.env` 里加 `INDEX_TRENDS_LIXINGER_TOKEN=...`，compose 会透传给
@@ -75,9 +85,9 @@ curl --fail-with-body 'https://web.duomi77.cn:9443/api/index-trends/indices/0003
 | `valuation.target_date` / `valuation.as_of` | 估值期望日期与实际数据日期 |
 | `valuation.source` / `valuation.metric` / `valuation.window` | 供应商与统计口径 |
 
-通道位置使用最近已收盘交易日的价格，估值目标日为最近应当完成的自然周的最后交易日，
-两者日期可能不同。调用方应分别标注 `price_as_of` 与 `valuation.as_of`，
-并检查 `data_status` 和 `valuation.state`；估值异常不表示通道也不可用。
+通道位置与估值使用同一个“最近已收盘交易日”口径，但两者日期仍可能不同
+（价格当天收盘即有，估值要等供应商发布）。调用方应分别标注 `price_as_of` 与
+`valuation.as_of`，并检查 `data_status` 和 `valuation.state`；估值异常不表示通道也不可用。
 `error` 状态可以携带缓存估值，必须标注更新失败；`disabled` 表示未配置估值服务，不能当成零分位。
 
 接口沿用现有公开只读访问方式，不需要把理杏仁令牌传给调用端。

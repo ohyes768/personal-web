@@ -4,19 +4,32 @@ from __future__ import annotations
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from typing import Awaitable, Callable
 
 from fastapi import FastAPI
 
 from src import __version__
 from src.api.routes import router
 from src.config import get_settings
-from src.services.scheduler import RefreshScheduler
+from src.services.scheduler import JOB_DAILY, JOB_VALUATION, RefreshScheduler
 from src.services.store import Store
 from src.services.trend_service import WeeklyTrendService
 from src.services.valuation_service import ValuationService
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
 logger = logging.getLogger("index-trends")
+
+
+def build_jobs(
+    market_job: Callable[[], Awaitable[object]],
+    valuation_job: Callable[[], Awaitable[object]],
+) -> dict[str, Callable[[], Awaitable[object]]]:
+    """构造两个互相独立的调度回调。
+
+    - daily：工作日 16:30 行情刷新，**不联动估值**。
+    - valuation：工作日 18:30 估值采集；休市日跳过，日历不可用时抛错。
+    """
+    return {JOB_DAILY: market_job, JOB_VALUATION: valuation_job}
 
 
 def create_app() -> FastAPI:
@@ -30,15 +43,23 @@ def create_app() -> FastAPI:
     )
 
     async def daily_job() -> object:
-        try:
-            return await trend_service.refresh()
-        finally:
-            # 估值采集独立于行情：行情失败也尽量采集，估值失败不改行情语义
-            await _refresh_valuation(valuation_service)
+        # 行情刷新与估值采集解耦：估值由独立的 18:30 任务负责，
+        # 行情失败也不改变估值的采集时机。
+        return await trend_service.refresh()
 
+    async def valuation_job() -> object:
+        # 每日估值采集：休市日跳过（不发请求），日历不可用时抛错。
+        result = await asyncio.to_thread(valuation_service.refresh_scheduled)
+        if isinstance(result, dict) and result.get("skipped"):
+            logger.info("估值采集跳过：%s", result.get("reason"))
+        return result
+
+    jobs = build_jobs(daily_job, valuation_job)
     scheduler = RefreshScheduler(
-        refresh_fn=daily_job,
+        refresh_fn=jobs[JOB_DAILY],
         daily_cron=settings.daily_refresh_cron,
+        valuation_fn=jobs[JOB_VALUATION],
+        valuation_cron=settings.valuation_refresh_cron,
     )
 
     @asynccontextmanager

@@ -40,7 +40,7 @@ class _FakeClient:
         return None
 
 
-def _payload(day="2026-10-30T15:00:00+08:00", pe=12.3456, ratio=0.565952) -> dict:
+def _payload(day="2026-11-02T15:00:00+08:00", pe=12.3456, ratio=0.565952) -> dict:
     return {
         "code": 1,
         "data": [
@@ -93,7 +93,9 @@ def test_status_includes_valuation(client):
     assert valuation["pe_ttm"] == 12.35
     assert valuation["source"] == "lixinger"
     assert valuation["window"] == "y10"
-    assert valuation["as_of"] == "2026-10-30"
+    # 页面目标日 = 最近已收盘交易日（WEEKLY_FIXED_NOW = 2026-11-02 18:00）
+    assert valuation["target_date"] == "2026-11-02"
+    assert valuation["as_of"] == "2026-11-02"
 
 
 def test_status_valuation_is_shared_between_models(client):

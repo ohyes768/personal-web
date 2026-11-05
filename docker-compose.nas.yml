@@ -536,8 +536,11 @@ services:
     # 每日行情和估值刷新由 Web 服务负责；简报定时与投递由 Hermes 负责。
     # INDEX_TRENDS_LIXINGER_TOKEN 为理杏仁访问令牌（沪深300 PE-TTM 近10年分位）；
     # 未配置时不发起理杏仁请求，查询接口返回估值 disabled。
+    # INDEX_TRENDS_VALUATION_REFRESH_CRON 为每日估值采集时间（Asia/Shanghai），
+    # 与 16:30 行情刷新独立；交易日历确认休市时该任务跳过不发请求
     environment: [TZ=Asia/Shanghai, INDEX_TRENDS_DATA_DIR=/app/data,
-                  "INDEX_TRENDS_LIXINGER_TOKEN=${INDEX_TRENDS_LIXINGER_TOKEN:-}"]
+                  "INDEX_TRENDS_LIXINGER_TOKEN=${INDEX_TRENDS_LIXINGER_TOKEN:-}",
+                  "INDEX_TRENDS_VALUATION_REFRESH_CRON=${INDEX_TRENDS_VALUATION_REFRESH_CRON:-30 18 * * mon-fri}"]
     networks: [app-net]
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8100/api/health"]

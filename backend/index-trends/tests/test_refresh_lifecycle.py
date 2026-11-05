@@ -97,14 +97,18 @@ def test_application_keeps_daily_market_and_valuation_refresh(main_module, monke
     valuation = Mock(side_effect=collect_valuation)
     monkeypatch.setattr(main_module.WeeklyTrendService, "refresh", market)
     monkeypatch.setattr(main_module.ValuationService, "refresh", valuation)
+    monkeypatch.setattr(main_module.ValuationService, "refresh_scheduled", valuation)
     with TestClient(main_module.create_app()) as client:
         assert valuation_done.wait(2)  # startup valuation initialization stays enabled
         valuation.reset_mock()
         scheduler = client.app.state.scheduler
-        assert [job["id"] for job in scheduler.jobs_info()] == ["daily_refresh"]
+        # 行情与估值是两个独立任务：行情失败不影响估值采集
+        assert [job["id"] for job in scheduler.jobs_info()] == ["daily_refresh", "valuation_refresh"]
         client.portal.call(scheduler._run_daily)
         market.assert_awaited_once()
-        valuation.assert_called_once()  # even when market refresh raises
+        valuation.assert_not_called()  # 16:30 只刷行情，不联动估值
+        client.portal.call(scheduler._run_valuation)
+        valuation.assert_called_once()
         assert client.get("/api/reports").json()["reports"] == []
 
 

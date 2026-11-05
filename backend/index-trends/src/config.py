@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     data_dir: Path = Path("data")
     # Web 服务每日采集时间（Asia/Shanghai），星期字段用英文名。
     daily_refresh_cron: str = "30 16 * * mon-fri"
+    # 每日估值采集时间（Asia/Shanghai）。与行情刷新独立：休市日回调自行跳过。
+    valuation_refresh_cron: str = "30 18 * * mon-fri"
     # 理杏仁访问令牌（沪深300 PE-TTM 近10年分位）。空则不启用估值采集。
     # 只在后端读取：SecretStr 不出现在 repr、日志、API 响应与数据库里。
     lixinger_token: SecretStr = SecretStr("")
