@@ -633,3 +633,37 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 18: 理杏仁估值独立每日采集
+
+**Date**: 2026-11-05
+**Task**: 理杏仁估值独立每日采集
+**Package**: backend/douyin-processor
+
+### Summary
+
+宽基趋势估值从行情刷新中解耦：新增独立18:30 valuation_refresh任务（INDEX_TRENDS_VALUATION_REFRESH_CRON可覆盖），16:30行情不再联动估值；页面目标日改为最近已收盘交易日（15:05阈值），周末/长假回溯上一交易日，日历覆盖不足返回calendar_unavailable；估值服务集中串行保护缓存—网络—发布，多入口重叠只发一次请求，失败按目标日隔离并保留既有缓存；同步valuation-contract/README/compose与前端文案。后端221项测试通过，前端tsc通过。AC6需部署后核对18:30任务实际注册与真实数据日期。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `eb19fd20` | (see git log) |
+| `a78e909b` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
