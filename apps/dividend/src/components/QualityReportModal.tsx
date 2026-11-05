@@ -47,7 +47,7 @@ export function QualityReportModal({ score, onClose, onReanalyze, currentSkillVe
             </button>
           </div>
         )}
-        <QualityReportContent score={score} currentSkillVersion={currentSkillVersion} variant="modal" />
+        <QualityReportContent score={score} currentSkillVersion={currentSkillVersion} />
       </div>
     </Modal>
   );

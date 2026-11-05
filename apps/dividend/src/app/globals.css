@@ -205,23 +205,6 @@ input[type="number"] {
   border-bottom: 1px solid var(--color-rule);
 }
 
-.quality-reader-label {
-  font-size: 0.8125rem;
-  color: var(--color-ink-muted);
-}
-
-.quality-reader-select {
-  min-height: 44px;
-  max-width: 100%;
-  font-size: 16px; /* ≥16px 避免手机输入框自动缩放 */
-  padding: 8px 10px;
-  color: var(--color-ink);
-  background: var(--color-paper-card);
-  border: 1px solid var(--color-rule-strong);
-  border-radius: 8px;
-}
-
-.quality-reader-select:focus-visible,
 .quality-reader-btn:focus-visible,
 .quality-reader-link:focus-visible,
 .quality-reader-entry:focus-visible {

@@ -2,7 +2,7 @@
  * 基本面资料阅读页（独立路由 /quality-reader）
  *
  * URL 的 code 参数是当前公司的唯一身份：
- * - 翻篇/下拉用 History API pushState 同步 query，保留浏览器真实 pathname（线上带 /dividend 前缀）；
+ * - 翻篇用 History API pushState 同步 query，保留浏览器真实 pathname（线上带 /dividend 前缀）；
  * - 当前公司从 useSearchParams 与本地快照派生，不另存选中下标；
  * - 主动换篇回到正文顶部并聚焦标题，刷新资料不抢焦点、不重置滚动。
  */
@@ -109,24 +109,8 @@ export function QualityReader() {
 
         <h1 className="quality-reader-title">基本面资料阅读</h1>
 
+        {/* 不做公司下拉筛选：固定展示地址 code 指定的公司，翻篇只走上一篇/下一篇 */}
         <div className="quality-reader-controls">
-          <label htmlFor="quality-reader-company" className="quality-reader-label">选择公司</label>
-          <select
-            id="quality-reader-company"
-            aria-label="选择公司"
-            className="quality-reader-select"
-            value={current?.code ?? ''}
-            disabled={loading || showFatalError || !reports.length}
-            onChange={event => {
-              const nextCode = event.target.value;
-              if (nextCode && nextCode !== current?.code) switchTo(nextCode);
-            }}
-          >
-            {!current && reports.length > 0 && <option value="">请选择已有资料</option>}
-            {reports.map(report => (
-              <option key={report.code} value={report.code}>{report.code} {report.name}</option>
-            ))}
-          </select>
           <span className="quality-reader-progress" aria-live="polite">{progress}</span>
         </div>
 
@@ -154,7 +138,7 @@ export function QualityReader() {
         {showMissing && (
           <div className="quality-reader-state">
             <p>该公司的基本面资料暂不可用。</p>
-            <p className="mt-1 text-sm text-ink-muted">请从上方选择已有资料。</p>
+            <a href={backHref} className="quality-reader-link mt-3 inline-block">← 返回股息率</a>
           </div>
         )}
 
@@ -168,7 +152,7 @@ export function QualityReader() {
           <article className="quality-reader-article">
             <h2 ref={titleRef} tabIndex={-1} className="quality-reader-company">{current.name}</h2>
             <p className="quality-reader-code">{current.code}</p>
-            <QualityReportContent score={current} currentSkillVersion={snapshot?.current_skill_version} variant="reader" />
+            <QualityReportContent score={current} currentSkillVersion={snapshot?.current_skill_version} />
           </article>
         )}
       </div>

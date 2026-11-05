@@ -112,11 +112,8 @@ test('reader lists saved reports by code, keeps null dimension as 未评分 and 
   await setupQualityApi(page, state);
   await page.goto('/quality-reader');
   await expect(page.getByRole('heading', { name: '甲公司', exact: true })).toBeVisible();
-  // 按代码升序：000001 甲公司 / 000002 乙公司 / 000003 丙公司
-  await expect(page.getByRole('combobox', { name: '选择公司' })).toHaveValue('000001');
+  // 按代码升序：000001 甲公司 / 000002 乙公司 / 000003 丙公司；无下拉筛选，默认固定第一篇
   await expect(page.getByText('第 1 / 3 篇').first()).toBeVisible();
-  const options = await page.getByRole('combobox', { name: '选择公司' }).locator('option').allTextContents();
-  expect(options).toEqual(['000001 甲公司', '000002 乙公司', '000003 丙公司']);
   // null 维度显示未评分；不显示总星级/加权分/边界横幅
   await expect(page.getByText('未评分').first()).toBeVisible();
   await expect(page.getByText('3.7', { exact: true })).toHaveCount(0);
@@ -129,7 +126,7 @@ test('reader lists saved reports by code, keeps null dimension as 未评分 and 
   expect(state.writeCalls).toEqual([]);
 });
 
-test('dropdown and prev/next navigation sync company, body, progress and URL', async ({ page }) => {
+test('prev/next navigation syncs company, body, progress and URL', async ({ page }) => {
   const state = newState();
   await setupQualityApi(page, state);
   await page.goto('/quality-reader?code=000001');
@@ -138,15 +135,15 @@ test('dropdown and prev/next navigation sync company, body, progress and URL', a
   await page.getByRole('button', { name: '下一篇', exact: true }).click();
   await expect(page).toHaveURL(/code=000002/);
   await expect(page.getByRole('heading', { name: '乙公司', exact: true })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: '选择公司' })).toHaveValue('000002');
   await expect(page.getByText('第 2 / 3 篇').first()).toBeVisible();
 
   await page.getByRole('button', { name: '上一篇', exact: true }).click();
   await expect(page).toHaveURL(/code=000001/);
   await expect(page.getByRole('heading', { name: '甲公司', exact: true })).toBeVisible();
 
-  // 下拉直接跳到第三篇
-  await page.getByRole('combobox', { name: '选择公司' }).selectOption('000003');
+  // 连续翻到第三篇
+  await page.getByRole('button', { name: '下一篇', exact: true }).click();
+  await page.getByRole('button', { name: '下一篇', exact: true }).click();
   await expect(page).toHaveURL(/code=000003/);
   await expect(page.getByRole('heading', { name: '丙公司', exact: true })).toBeVisible();
   expect(state.writeCalls).toEqual([]);
@@ -177,12 +174,8 @@ test('unknown code shows unavailable state and does not silently show another co
   await page.goto('/quality-reader?code=999999');
   await expect(page.getByText('该公司的基本面资料暂不可用')).toBeVisible();
   await expect(page.getByRole('heading', { name: '甲公司', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('combobox', { name: '选择公司' })).toHaveValue('');
   await expect(page.getByRole('button', { name: '下一篇', exact: true })).toBeDisabled();
   await expect(page.getByRole('button', { name: '上一篇', exact: true })).toBeDisabled();
-  // 用户可以主动选择现有资料
-  await page.getByRole('combobox', { name: '选择公司' }).selectOption('000002');
-  await expect(page.getByRole('heading', { name: '乙公司', exact: true })).toBeVisible();
 });
 
 test('empty result set shows empty state instead of an error', async ({ page }) => {
@@ -226,7 +219,6 @@ test('refresh keeps the selected code, ignores newly added reports and detects d
   state.scores = { ...state.scores, '000000': score({ code: '000000', name: '零零公司' }) };
   await page.getByRole('button', { name: '刷新资料' }).click();
   await expect(page.getByRole('heading', { name: '乙公司', exact: true })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: '选择公司' })).toHaveValue('000002');
 
   // 当前公司被删除：进入不存在状态，不擅自跳到邻篇
   const { '000002': _removed, ...rest } = state.scores;
@@ -244,7 +236,6 @@ test('browser back and forward restore the company from the URL', async ({ page 
   await expect(page.getByRole('heading', { name: '乙公司', exact: true })).toBeVisible();
   await page.goBack();
   await expect(page.getByRole('heading', { name: '甲公司', exact: true })).toBeVisible();
-  await expect(page.getByRole('combobox', { name: '选择公司' })).toHaveValue('000001');
   await page.goForward();
   await expect(page.getByRole('heading', { name: '乙公司', exact: true })).toBeVisible();
 });
@@ -405,7 +396,7 @@ test('reader never polls for analysis jobs and only reads the scores endpoint', 
   expect(paths.filter(path => path.includes('/quality') && path.startsWith('GET'))).toHaveLength(1);
 });
 
-test('a very long company name does not stretch the select or overflow the page', async ({ page }) => {
+test('a very long company name does not overflow the page', async ({ page }) => {
   const longName = '中国某某某某某某某某某某某某股份有限公司';
   const state = newState({
     scores: {
@@ -423,13 +414,6 @@ test('a very long company name does not stretch the select or overflow the page'
       clientWidth: document.documentElement.clientWidth,
     }));
     expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
-    // 选择框不超出容器
-    const selectWidth = await page.evaluate(() => {
-      const select = document.querySelector('#quality-reader-company') as HTMLElement | null;
-      const container = document.querySelector('.quality-reader-controls') as HTMLElement | null;
-      return select && container ? select.getBoundingClientRect().right - container.getBoundingClientRect().left : 0;
-    });
-    expect(selectWidth).toBeLessThanOrEqual(viewport.width);
   }
 });
 
@@ -439,18 +423,10 @@ test('keyboard can reach and operate the reader controls', async ({ page }) => {
   await page.goto('/quality-reader?code=000001');
   await expect(page.getByRole('heading', { name: '甲公司', exact: true })).toBeVisible();
   // 控件有可读名称
-  await expect(page.getByRole('combobox', { name: '选择公司' })).toBeVisible();
   await expect(page.getByRole('button', { name: '刷新资料' })).toBeVisible();
   await expect(page.getByRole('button', { name: '上一篇', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '下一篇', exact: true })).toBeVisible();
   await expect(page.getByRole('link', { name: '← 返回股息率' })).toBeVisible();
-  // 焦点可见：聚焦下拉后应有 outline
-  await page.getByRole('combobox', { name: '选择公司' }).focus();
-  const outline = await page.evaluate(() => {
-    const select = document.querySelector('#quality-reader-company') as HTMLElement | null;
-    return select ? getComputedStyle(select).outlineStyle : null;
-  });
-  expect(outline).not.toBeNull();
   // 键盘触发下一篇
   await page.getByRole('button', { name: '下一篇', exact: true }).focus();
   await page.keyboard.press('Enter');
