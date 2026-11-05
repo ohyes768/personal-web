@@ -1,6 +1,6 @@
 /** 后端 API 类型镜像（与 backend/index-trends 响应结构一一对应）。
  *
- * 口径：周线。模型、图表、状态摘要与周报统一使用「完整交易周」——
+ * 口径：周线。模型拟合使用「完整交易周」，状态可用最新日收盘投影——
  * 周主键是周一（YYYY-MM-DD），行情的 date 是该周实际最后交易日。
  * 不把周值写进 month 命名字段。
  */
@@ -201,15 +201,7 @@ export interface Valuation {
   captured_at: string | null;
 }
 
-export interface ReportSettings {
-  index_code: string;
-  model_kind: ModelKind;
-  enabled: boolean;
-  send_cron: string;
-  channel: string;
-  updated_at: string;
-}
-
+/** 退役周报的历史存档；新简报由 Hermes 生成和投递。 */
 export interface ReportRecord {
   idempotency_key: string;
   index_code: string;

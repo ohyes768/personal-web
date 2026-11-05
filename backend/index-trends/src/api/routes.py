@@ -8,7 +8,6 @@ from __future__ import annotations
 import asyncio
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel
 
 from src import __version__
 from src.core.models import (
@@ -19,13 +18,6 @@ from src.services.trend_service import INDEX_CODE, WeeklyTrendService
 from src.services.valuation_service import ValuationService
 
 router = APIRouter(prefix="/api")
-
-
-class ReportSettingsPatch(BaseModel):
-    model_kind: str | None = None
-    enabled: bool | None = None
-    send_cron: str | None = None
-    channel: str | None = None
 
 
 def get_service(request: Request) -> WeeklyTrendService:
@@ -126,35 +118,12 @@ async def status(
     return payload
 
 
-@router.get("/report-settings")
-async def get_report_settings(request: Request) -> dict:
-    service = get_service(request)
-    settings = service.store.get_report_settings()
-    settings.pop("id", None)
-    return settings   # 不含任何密钥字段
-
-
-@router.patch("/report-settings")
-async def patch_report_settings(patch: ReportSettingsPatch, request: Request) -> dict:
-    service = get_service(request)
-    updates = {k: v for k, v in patch.model_dump().items() if v is not None}
-    if "model_kind" in updates:
-        mapped = LEGACY_KIND_TO_WEEKLY.get(updates["model_kind"], updates["model_kind"])
-        if mapped not in CURRENT_WEEKLY_MODEL_KINDS:
-            raise HTTPException(status_code=400, detail=f"非法模型种类: {updates['model_kind']}")
-        updates["model_kind"] = mapped
-    if "channel" in updates and updates["channel"] != "dingtalk":
-        raise HTTPException(status_code=400, detail="首版仅支持 dingtalk 渠道")
-    updated = service.store.update_report_settings(updates)
-    updated.pop("id", None)
-    return updated
-
-
 @router.get("/reports")
 async def list_reports(
     request: Request,
     limit: int = Query(20, ge=1, le=100),
 ) -> dict:
+    """历史周报只读存档；新简报由 Hermes 生成与投递。"""
     service = get_service(request)
     return {"reports": service.store.list_reports(limit), "total_returned": min(limit, 100)}
 
@@ -187,16 +156,3 @@ async def refresh(request: Request) -> dict:
         "snapshot_id": result.snapshot_id,
         "valuation": valuation,
     }
-
-
-@router.post("/report-jobs/{job_id}/run")
-async def run_report_job(job_id: str, request: Request) -> dict:
-    scheduler = getattr(request.app.state, "scheduler", None)
-    if scheduler is None:
-        raise HTTPException(status_code=503, detail="调度器未初始化")
-    try:
-        return await scheduler.trigger(job_id)
-    except KeyError:
-        raise HTTPException(status_code=404, detail=f"未知任务: {job_id}")  # noqa: B904
-    except RuntimeError as e:
-        raise HTTPException(status_code=409, detail=str(e))  # noqa: B904

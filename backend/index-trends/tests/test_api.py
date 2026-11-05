@@ -144,11 +144,11 @@ def test_legacy_kind_alias_resolves_to_weekly(client):
     assert chart["model"]["timeframe"] == "week"
 
 
-def test_status_switches_model_without_touching_report_settings(client):
-    before = client.get("/api/report-settings").json()
+def test_status_switches_model_without_touching_archived_report_settings(client, api_app):
+    before = api_app.state.store.get_report_settings()
     trailing = client.get("/api/indices/000300/status?model=trailing_10y_weekly").json()
     since = client.get("/api/indices/000300/status?model=since_inception_weekly").json()
-    after = client.get("/api/report-settings").json()
+    after = api_app.state.store.get_report_settings()
     assert before["model_kind"] == after["model_kind"] == KIND_TRAILING_WEEKLY
     assert trailing["model"]["model_id"] != since["model"]["model_id"]
     assert trailing["snapshot_id"] == since["snapshot_id"]
@@ -192,20 +192,6 @@ def test_invalid_kind_unknown_index_and_model(client):
     assert client.get("/api/indices/000905/history").status_code == 404
     assert client.get("/api/indices/000300/chart?model=no-such-model").status_code == 404
     assert client.get("/api/indices/000300/status?model=weird").status_code == 400
-
-
-def test_report_settings_roundtrip_maps_legacy_kind(client):
-    original = client.get("/api/report-settings").json()
-    assert original["model_kind"] == KIND_TRAILING_WEEKLY
-    patched = client.patch(
-        "/api/report-settings", json={"model_kind": "since_inception"}
-    ).json()
-    assert patched["model_kind"] == KIND_SINCE_INCEPTION_WEEKLY
-    assert client.patch("/api/report-settings", json={"model_kind": "bogus"}).status_code == 400
-    restored = client.patch(
-        "/api/report-settings", json={"model_kind": "trailing_120m"}
-    ).json()
-    assert restored["model_kind"] == KIND_TRAILING_WEEKLY
 
 
 def test_empty_library_is_visible(empty_client):

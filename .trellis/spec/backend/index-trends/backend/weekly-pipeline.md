@@ -1,12 +1,12 @@
 # 周线管线契约（后端）
 
 > 来源：10-29-index-trends 与 11-02-index-trends-weekly 任务。
-> `backend/index-trends` 的取数 → 校验 → 计算 → 发布 → 周报口径速查。
-> Last verified: 2026-11-02
+> `backend/index-trends` 的取数 → 校验 → 计算 → 发布口径速查。
+> Last verified: 2026-11-05
 
 ## Scope / Trigger
 
-改周K取数、交易日历、周线模型、周报生成或存储结构前必读。
+改周K取数、交易日历、周线模型、每日刷新或存储结构前必读。
 
 ## 周与日历
 
@@ -34,14 +34,16 @@
 - 一次刷新在内存算完后**单事务发布**周K/日线/模型/元数据；模型按 `model_id` 只插入不覆盖。
 - `snapshot_id` 由截止周、周线哈希与模型 ID 派生；哈希必须带周坐标。
 
-## 周报
+## 刷新与简报边界
 
-- 幂等键 `指数|ISO自然周|weekly`；同周已 `sent` 的报告（含旧月线）不重发。
-- 周五 19:00（Asia/Shanghai）发送；15:05 前手动触发不占用本周投递名额。
-- `business_status`：`normal` / `no_trading` / `data_error`；缺行情、缺模型、日历越界
-  都是 `data_error`，**不能写成休市或 normal**。
-- 位置变化只和同一周线 kind 的上一自然周快照比较，并拆成价格 / 模型 / 时间推进；
-  首次周线报告不与旧月线位置比较。
+- Web 后端 `RefreshScheduler` 只注册 `daily_refresh`，默认工作日16:30（Asia/Shanghai）；
+  每日任务刷新行情，并在 finally 中独立采集估值，行情失败也尝试更新估值。
+- 服务启动仍初始化估值；保留 `POST /api/refresh`。GET 状态接口只读缓存。
+- 周报生成、钉钉发送、周五定时与启动补发已移除，由 Hermes 生成简况并调度投递。
+- 删除 `GET/PATCH /api/report-settings`、`POST /api/report-jobs/{job_id}/run`；
+  `GET /api/reports` 仅返回历史存档，不触发刷新或投递。
+- 历史幂等键 `指数|ISO自然周|weekly`、报告状态和快照原样保存，不重发、不改写。
+- 调度器跟踪实际执行中的每日任务，关闭时有界等待，超时取消并等待取消落地。
 
 ## Storage
 

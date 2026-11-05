@@ -1,8 +1,8 @@
-"""SQLite 存储：行情、模型、周报配置与报告。
+"""SQLite 存储：行情、模型与历史周报/配置存档。
 
 约定：
 - 行情原始数据（月K/日线）直接落库；模型按 model_id 幂等写入，不覆盖旧版本。
-- 周报以 idempotency_key（指数|自然周|weekly）唯一约束保证不重复发送。
+- 历史周报以 idempotency_key（指数|自然周|weekly）唯一标识；Web 不再生成或发送。
 - 原子性依赖 SQLite 事务；连接由调用方管理（FastAPI 单进程）。
 
 周线存储与月线完全隔离（weekly_bars / weekly_models / weekly_data_meta），
@@ -743,7 +743,7 @@ class Store:
             )
         return {"new_model_ids": new_model_ids, "snapshot_id": snapshot_id}
 
-    # ---- 周报 ----
+    # ---- 历史周报兼容存储（保留旧库，不提供生成或投递入口） ----
     def archive_report_attempt(
         self,
         idempotency_key: str,

@@ -6,6 +6,7 @@
 >
 > 2026-11-02（11-02-index-trends-weekly）：历史/当前/周报已统一为完整周线拟合，
 > 下方「完整周线契约」一节优先于月线口径描述。
+> 2026-11-05：Web 周报生成与投递已移交 Hermes；仅保留数据刷新、图表和查询。
 >
 > 2026-11-02（11-02-index-trends-pe-percentile）：新增理杏仁 PE-TTM 近10年分位展示，
 > 见下方「估值展示契约」。后端口径见
@@ -47,8 +48,8 @@ Correct：读后端 `extend_note` 的语义标注。
 ## 完整周线契约（2026-11-02，11-02-index-trends-weekly）
 
 ### Scope / Trigger
-apps/index-trends 的历史图、当前通道图和周报统一使用**完整周线**拟合。
-改周坐标、周 K 解析、窗口/模型切换、周报文案或迁移兼容前必读。
+apps/index-trends 的历史图和当前通道图使用**完整周线**拟合。
+改周坐标、周 K 解析、窗口/模型切换或迁移兼容前必读。
 
 ### Contracts
 - **周主键是自然周周一**（`week_start`），`week_end` 为其后第 6 天；x 轴必须摊到
@@ -68,8 +69,7 @@ apps/index-trends 的历史图、当前通道图和周报统一使用**完整周
   映射到周线并 `replace` URL；请求**旧月线 `model_id`**时后端返回明确的"旧周期不可用于
   周线图"提示，前端不得静默换成别的模型。
 - 未来延伸为 **52 个自然周（约 1 年）**，不要机械换算成 156 条有交易周。
-- 周报去重键是 `指数|ISO周|weekly`；同一周已 `sent` 不重发。切换到周线后首次报告
-  不与旧月线位置直接比较。
+- Web 不提供周报设置或触发入口；历史周报数据保留。Hermes 只读数据 API 并自行调度投递。
 
 ### Tests Required
 `node --experimental-strip-types --test lib/candleData.test.ts`（周 K 解析、跨年 ISO 周、

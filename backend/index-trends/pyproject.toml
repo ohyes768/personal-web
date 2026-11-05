@@ -1,7 +1,7 @@
 [project]
 name = "index-trends"
 version = "0.1.0"
-description = "宽基趋势观察：沪深300线性回归通道回溯、当前通道与每周摘要"
+description = "宽基趋势观察：沪深300周线通道、估值查询与每日刷新"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115.0",

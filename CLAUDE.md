@@ -25,7 +25,7 @@ backend/
 ├── housing-map/  # 滨江购房地图后端（FastAPI + 透明售房网采集脚本）
 ├── skill-manager/  # Skill 发布管理台后端（FastAPI，受限 NAS 目录内发布 Skill 到 OpenClaw/Hermes）
 ├── kids-catalog/  # 宝宝音频库后端（FastAPI，月度榜单采集 + 喜马拉雅/蜻蜓免费专辑下载 + 设备歌单编号）
-├── index-trends/  # 宽基趋势观察后端（FastAPI，沪深300线性回归通道 + 周五19:00周报，SQLite 存储）
+├── index-trends/  # 宽基趋势观察后端（FastAPI，沪深300周线通道与估值，每日刷新，SQLite 存储；Hermes 负责简报投递）
 └── rss-relay/   # RSS 转发后端
 ```
 
