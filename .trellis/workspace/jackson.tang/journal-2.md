@@ -356,3 +356,40 @@ housing-map：采集任务弹窗里「匹配租金来源」与「更新租金数
 ### Next Steps
 
 - None - task complete
+
+
+## Session 59: 抖音文字稿定时任务页面化：内建调度管理 + 执行历史
+
+**Date**: 2026-11-06
+**Task**: 抖音文字稿定时任务页面化：内建调度管理 + 执行历史
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+douyin-processor 参照 dividend/macro 内建调度模式新增 src/scheduler 包（4 个管理 API、enabled.json overlay 持久化、JSONL 执行历史、多 cron 拆子 job）；前端加齿轮入口与 SchedulerModal 弹框（启停/立即执行/历史）；旧 /api/process/pending 委托 manager 且落 manual 历史。pytest 19/19、build 通过、本地前后端联调截图验证。踩坑已沉淀 spec：start 期 pause 需显式传 scheduler 实例、AsyncIOScheduler 测试须在事件循环内启动。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a28e261b` | (see git log) |
+| `ec2e6e52` | (see git log) |
+| `c2ba5cfa` | (see git log) |
+| `1f1274ee` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
