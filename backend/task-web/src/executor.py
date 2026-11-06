@@ -8,6 +8,7 @@
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -19,6 +20,12 @@ from . import db
 from .config import get_log_dir, get_workspace_root
 
 logger = logging.getLogger("task-web.executor")
+
+
+def _get_docker_client():
+    import docker
+
+    return docker.from_env()
 
 
 def resolve_cwd(cwd: str) -> str | None:
@@ -51,6 +58,113 @@ def _kill_process_group(proc: subprocess.Popen) -> None:
             return
     # Windows 开发环境兜底：无进程组语义
     proc.kill()
+
+
+def parse_env_file(path: str | None) -> dict[str, str]:
+    """读 KEY=VALUE 环境文件；忽略注释与空行。值不写日志。"""
+    if not path or not Path(path).exists():
+        return {}
+    result: dict[str, str] = {}
+    for line in Path(path).read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        result[key.strip()] = value.strip().strip('"').strip("'")
+    return result
+
+
+def _task_env(task: dict) -> dict[str, str]:
+    env: dict[str, str] = {}
+    raw = task.get("env")
+    if raw:
+        try:
+            env.update(json.loads(raw))
+        except (ValueError, TypeError):
+            logger.warning("run env 字段非法（已忽略）")
+    env.update(parse_env_file(task.get("env_file")))
+    return env
+
+
+def execute_docker_run(run_id: str, task: dict, timeout_seconds: int) -> str:
+    """docker 引擎：一次性容器执行（方案 B）。状态语义与 shell 引擎一致。
+    超时用看门狗线程杀容器（logs 流会阻塞到容器退出，无法用 wait(timeout) 实现）。"""
+    image = task.get("image")
+    if not image:
+        raise ValueError("engine=docker 需要 image 字段")
+    out_path, out_fh = _open_log(run_id, "out")
+    err_path, err_fh = _open_log(run_id, "err")
+    started = db.now_str()
+    container = None
+    timed_out = threading.Event()
+    status, exit_code = "failed", None
+    try:
+        db.update_run(run_id, started_at=started, status="running")
+        client = _get_docker_client()
+        workdir = task.get("cwd") or None  # docker 引擎：cwd=容器内 working_dir
+        container = client.containers.run(
+            image,
+            task["command"],
+            detach=True,
+            environment=_task_env(task),
+            working_dir=workdir,
+            stdout=True,
+            stderr=True,
+        )
+
+        def _watchdog() -> None:
+            if timed_out.wait(timeout_seconds):
+                return  # 主流程已正常结束
+            err_fh.write(f"\n[task-web] 容器超时（>{timeout_seconds}s），强制终止\n".encode())
+            err_fh.flush()
+            try:
+                container.kill()
+            except Exception:
+                pass
+            timed_out.set()  # 标记超时终态（主流程 logs/wait 结束后据此判 timeout）
+
+        watchdog = threading.Thread(target=_watchdog, daemon=True)
+        watchdog.start()
+        for stdout_chunk, stderr_chunk in container.logs(
+            stream=True, follow=True, demux=True
+        ):
+            if stdout_chunk:
+                out_fh.write(stdout_chunk)
+                out_fh.flush()
+            if stderr_chunk:
+                err_fh.write(stderr_chunk)
+                err_fh.flush()
+        result = container.wait(timeout=60)
+        exit_code = int(result.get("StatusCode", -1))
+        if timed_out.is_set():
+            status = "timeout"
+        else:
+            status = "success" if exit_code == 0 else "failed"
+    except Exception as e:
+        status = "failed"
+        err_fh.write(f"\n[task-web] 容器执行异常: {type(e).__name__}\n".encode())
+        logger.error("run %s docker 异常: %s", run_id, type(e).__name__)
+        if container is not None:
+            try:
+                result = container.wait(timeout=30)
+                exit_code = int(result.get("StatusCode", -1))
+            except Exception:
+                exit_code = None
+    finally:
+        timed_out.set()  # 停掉看门狗
+        if container is not None:
+            try:
+                container.remove(force=True)
+            except Exception:
+                pass
+        out_fh.close()
+        err_fh.close()
+
+    finished = db.now_str()
+    db.update_run(run_id, finished_at=finished, duration_ms=_diff_ms(started, finished),
+                  status=status, exit_code=exit_code)
+    logger.info("run %s 结束: %s exit=%s", run_id, status, exit_code)
+    return status
 
 
 def execute_run(run_id: str, command: str, cwd_resolved: str | None,
@@ -145,11 +259,10 @@ def start_run(task: dict, trigger: str, scheduled_at: str | None = None) -> str:
         "log_path": str(get_log_dir() / f"{run_id}.out"), "missed_schedule_at": None,
     })
     cwd_resolved = resolve_cwd(task.get("cwd", ""))
-    t = threading.Thread(
-        target=execute_run,
-        args=(run_id, task["command"], cwd_resolved, int(timeout)),
-        name=f"run-{run_id}",
-        daemon=True,
-    )
+    if task.get("engine", "shell") == "docker":
+        target, args = execute_docker_run, (run_id, task, int(timeout))
+    else:
+        target, args = execute_run, (run_id, task["command"], cwd_resolved, int(timeout))
+    t = threading.Thread(target=target, args=args, name=f"run-{run_id}", daemon=True)
     t.start()
     return run_id

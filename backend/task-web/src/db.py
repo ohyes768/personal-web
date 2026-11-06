@@ -21,7 +21,11 @@ CREATE TABLE IF NOT EXISTS tasks (
     command TEXT NOT NULL,
     cwd TEXT DEFAULT '',
     default_cron TEXT DEFAULT '',
-    default_timeout INTEGER DEFAULT 600
+    default_timeout INTEGER DEFAULT 600,
+    engine TEXT DEFAULT 'shell',
+    image TEXT,
+    env_file TEXT,
+    env TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task_schedules (
@@ -71,7 +75,19 @@ def get_conn() -> sqlite3.Connection:
 
 
 def init_db() -> None:
-    get_conn().executescript(SCHEMA)
+    conn = get_conn()
+    conn.executescript(SCHEMA)
+    # 旧卷无损升级：tasks 表补 docker 引擎列（2026-11-06 方案 B）
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tasks)").fetchall()}
+    for name, ddl in (
+        ("engine", "TEXT DEFAULT 'shell'"),
+        ("image", "TEXT"),
+        ("env_file", "TEXT"),
+        ("env", "TEXT"),
+    ):
+        if name not in cols:
+            conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {ddl}")
+    conn.commit()
 
 
 def now_str() -> str:
@@ -94,13 +110,19 @@ def os_unique() -> str:
 
 def upsert_task(row: dict) -> None:
     get_conn().execute(
-        """INSERT INTO tasks (id, name, description, command, cwd, default_cron, default_timeout)
-           VALUES (:id, :name, :description, :command, :cwd, :default_cron, :default_timeout)
+        """INSERT INTO tasks (id, name, description, command, cwd, default_cron, default_timeout,
+             engine, image, env_file, env)
+           VALUES (:id, :name, :description, :command, :cwd, :default_cron, :default_timeout,
+             :engine, :image, :env_file, :env)
            ON CONFLICT(id) DO UPDATE SET
              name=excluded.name, description=excluded.description,
              command=excluded.command, cwd=excluded.cwd,
-             default_cron=excluded.default_cron, default_timeout=excluded.default_timeout""",
-        row,
+             default_cron=excluded.default_cron, default_timeout=excluded.default_timeout,
+             engine=excluded.engine, image=excluded.image,
+             env_file=excluded.env_file, env=excluded.env""",
+        {
+            "engine": "shell", "image": None, "env_file": None, "env": None, **row,
+        },
     )
     get_conn().commit()
 

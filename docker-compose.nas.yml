@@ -573,8 +573,11 @@ services:
     expose: ["8101"]
     volumes:
       - task-web-data:/app/data
-      # 业务仓库挂载：预登记任务 cwd 相对路径基于它解析（容器内执行方案 A）
+      # 业务仓库挂载：env_file 读取来源（docker 引擎的代码在业务镜像内，不依赖此目录执行）
       - "${TASK_WEB_WORKSPACE_HOST_PATH:-/home/ohyes768/stock-info-dingding}:/workspace/stock-info-dingding"
+      # docker 引擎经 SDK 走 socket 按次拉起业务镜像（方案 B）。
+      # 边界：docker.sock 等价宿主机 root 权限，NAS 单用户自用环境接受
+      - /var/run/docker.sock:/var/run/docker.sock
     # TASK_WEB_ADMIN_PASSWORD：手动执行密码（未配置则手动执行禁用，fail closed）
     # 任务导入默认禁用（enabled=0），验证后页面手动启用，避免双调度器重复发送
     environment: [TZ=Asia/Shanghai,

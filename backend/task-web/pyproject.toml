@@ -11,9 +11,8 @@ dependencies = [
     "python-dotenv>=1.0.0",
     # 定时任务：APScheduler 3.x（不要 4.x，API 不兼容）
     "apscheduler>=3.10,<4.0",
-    # 业务脚本依赖（stock-info-dingding 容器内执行方案 A：依赖显式装进镜像）。
-    # 接入新脚本时核对其 import 并补到这里。
-    "requests>=2.31.0",
+    # docker 引擎（方案 B）：经 socket 按次拉起业务镜像，纯 Python SDK 无需容器内 CLI
+    "docker>=7.1.0",
 ]
 
 [project.optional-dependencies]

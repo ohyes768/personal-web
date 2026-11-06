@@ -27,14 +27,19 @@ tasks:
     cron: "0 9 * * *"
     timeout: 5
 
-  # ---- 首个正式接入（灰度）----
+  # ---- 首个正式接入（灰度，方案 B：业务镜像独立维护）----
+  # 前置：NAS 上 cd /home/ohyes768/stock-info-dingding && docker build -t stock-info:latest .
   # 注意：会真实推送钉钉！验证顺序：dry-run → 用户确认 → 启用
-  # 不走 run_a_stock.sh：其内嵌 cd /home/ohyes768/... 为宿主机路径，容器内必失败；
-  # executor 已按登记 cwd 切好目录，这里等价复刻脚本行为（PUSH_MODE=1 + python）
+  # env_file 指向业务仓库 .env（经 task-web 容器内 bind mount 读取，值不回显不写日志）
   - id: a-stock-push
     name: A股新股通知
     description: stock-info-dingding 新股抓取与钉钉推送（真实外发，启用前必须验证）
-    command: PUSH_MODE=1 python a_stock_push.py
-    cwd: stock-info-dingding
+    engine: docker
+    image: stock-info:latest
+    command: python a_stock_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
     cron: "0 8 * * *"
     timeout: 600

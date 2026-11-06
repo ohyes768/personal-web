@@ -16,12 +16,16 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
+import json
+
 import yaml
 
 from . import db
 from .config import get_tasks_yaml
 
 logger = logging.getLogger("task-web.registry")
+
+VALID_ENGINES = ("shell", "docker")
 
 
 def load_registry() -> list[dict]:
@@ -46,6 +50,10 @@ def sync_registry() -> list[str]:
     返回登记的任务 id 列表。已存在的 schedule（用户改过的 cron/启停）不覆盖。"""
     ids: list[str] = []
     for t in load_registry():
+        engine = t.get("engine", "shell")
+        if engine not in VALID_ENGINES:
+            raise ValueError(f"任务 {t['id']} engine 非法: {engine}（可选 {VALID_ENGINES}）")
+        env = t.get("env") or {}
         db.upsert_task({
             "id": t["id"],
             "name": t.get("name", t["id"]),
@@ -54,6 +62,10 @@ def sync_registry() -> list[str]:
             "cwd": t.get("cwd", ""),
             "default_cron": t.get("cron", ""),
             "default_timeout": int(t.get("timeout", 600)),
+            "engine": engine,
+            "image": t.get("image"),
+            "env_file": t.get("env_file"),
+            "env": json.dumps(env, ensure_ascii=False) if env else None,
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])
