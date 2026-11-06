@@ -101,7 +101,48 @@ def test_task_env_merges_yaml_and_file(env, tmp_path):
     merged = executor._task_env(task)
     assert merged["PUSH_MODE"] == "1"
     assert merged["FROM_FILE"] == "1"
-    assert merged["SHARED"] == "file"  # env_file 覆盖 yaml env
+    assert merged["SHARED"] == "yaml"  # yaml 显式 env 覆盖 env_file（2026-11-06 反转：显式声明优先）
+
+
+def test_task_volumes_parse(env):
+    task = {"volumes": json.dumps(["/h/a:/c/a", "/h/b:/c/b:ro"])}
+    assert executor._task_volumes(task) == {
+        "/h/a": {"bind": "/c/a", "mode": "rw"},
+        "/h/b": {"bind": "/c/b", "mode": "ro"},
+    }
+    assert executor._task_volumes({}) == {}
+    with pytest.raises(ValueError):
+        executor._task_volumes({"volumes": json.dumps(["/onlyone"])})
+
+
+def test_registry_parse_volumes(env):
+    from src import registry
+
+    assert registry._parse_volumes(None) is None
+    assert registry._parse_volumes(["/h:/c:ro"]) == ["/h:/c:ro"]
+    with pytest.raises(ValueError):
+        registry._parse_volumes(["/h:/c:bad"])
+    with pytest.raises(ValueError):
+        registry._parse_volumes("not-a-list")
+
+
+def test_docker_run_passes_volumes_network_user(env, fake_db_run, monkeypatch):
+    fc = FakeClient(FakeContainer(exit_code=0))
+    monkeypatch.setattr(executor, "_get_docker_client", lambda: fc)
+    task = {"id": "demo", "command": "python x.py", "engine": "docker",
+            "image": "stock-info:latest", "cwd": "/app", "env": None,
+            "env_file": None, "timeout_seconds": 30,
+            "volumes": json.dumps(["/host/data:/app/data", "/host/conf:/app/conf:ro"]),
+            "network": "nginx_nginx-bridge", "run_user": "1000:1000"}
+    run_id = fake_db_run()
+    status = executor.execute_docker_run(run_id, task, 30)
+    assert status == "success"
+    assert fc.last_kwargs["volumes"] == {
+        "/host/data": {"bind": "/app/data", "mode": "rw"},
+        "/host/conf": {"bind": "/app/conf", "mode": "ro"},
+    }
+    assert fc.last_kwargs["network"] == "nginx_nginx-bridge"
+    assert fc.last_kwargs["user"] == "1000:1000"
 
 
 def test_docker_run_success(env, fake_db_run, monkeypatch):

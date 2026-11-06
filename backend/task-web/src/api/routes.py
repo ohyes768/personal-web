@@ -3,6 +3,7 @@ task-web REST API（router 前缀 /api，nginx 剥 /api/task-web 后对上）
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -41,6 +42,9 @@ def _task_view(t: dict) -> dict:
         "description": t["description"],
         "command": t["command"],
         "cwd": t["cwd"],
+        "volumes": json.loads(t["volumes"]) if t.get("volumes") else [],
+        "network": t.get("network"),
+        "user": t.get("run_user"),
         "cron": t.get("cron"),
         "enabled": bool(t.get("enabled")),
         "timeout_seconds": t.get("timeout_seconds") or t.get("default_timeout"),

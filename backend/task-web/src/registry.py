@@ -28,6 +28,21 @@ logger = logging.getLogger("task-web.registry")
 VALID_ENGINES = ("shell", "docker")
 
 
+def _parse_volumes(raw) -> list[str] | None:
+    """volumes: ['宿主:容器', '宿主:容器:rw|ro']；登记时即校验，避免运行期才炸。"""
+    if not raw:
+        return None
+    if not isinstance(raw, list):
+        raise ValueError(f"volumes 必须是字符串列表: {raw!r}")
+    for item in raw:
+        parts = str(item).split(":")
+        if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
+            raise ValueError(f"volumes 条目非法（应为 宿主路径:容器路径[:rw|ro]）: {item!r}")
+        if len(parts) == 3 and parts[2] not in ("rw", "ro"):
+            raise ValueError(f"volumes 挂载模式只支持 rw/ro: {item!r}")
+    return [str(v) for v in raw]
+
+
 def load_registry() -> list[dict]:
     path: Path = get_tasks_yaml()
     if not path.exists():
@@ -54,7 +69,7 @@ def sync_registry() -> list[str]:
         if engine not in VALID_ENGINES:
             raise ValueError(f"任务 {t['id']} engine 非法: {engine}（可选 {VALID_ENGINES}）")
         env = t.get("env") or {}
-        volumes = t.get("volumes") or []
+        volumes = _parse_volumes(t.get("volumes"))
         db.upsert_task({
             "id": t["id"],
             "name": t.get("name", t["id"]),
@@ -68,6 +83,8 @@ def sync_registry() -> list[str]:
             "env_file": t.get("env_file"),
             "env": json.dumps(env, ensure_ascii=False) if env else None,
             "volumes": json.dumps(volumes, ensure_ascii=False) if volumes else None,
+            "network": t.get("network") or None,
+            "run_user": t.get("user") or None,
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])

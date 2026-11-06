@@ -123,6 +123,88 @@ tasks:
     cron: "0 17 * * mon-fri"
     timeout: 600
 
+  # ---- 2026-11-06 第二批：需挂载宿主目录的任务（volumes/network/user 新能力）----
+
+  # 迁移来源：n8n「Stock info Push」17:30 财报选股
+  # 关键点：HERMES_SYNC=1 让主进程同步等完 hermes 分析（一次性容器不能有 detach 子进程）；
+  # network=nginx_nginx-bridge 才能连 hermes（只绑该网关 172.27.0.1:8643）；
+  # user=1000:1000 保证宿主 data/reports/logs 文件属主与 webhook 容器一致；
+  # timeout 2400 > HERMES_TIMEOUT(1800)
+  - id: daily-pick-push
+    name: 每日财报阅读
+    description: 选股推送 + Hermes 财报分析（同步等待），状态落宿主 data/reports/logs
+    engine: docker
+    image: stock-info:latest
+    command: python daily_pick.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+      HERMES_SYNC: "1"
+      HOME: /tmp
+    env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/stock-info-dingding/data:/app/data"
+      - "/home/ohyes768/stock-info-dingding/reports:/app/reports"
+      - "/home/ohyes768/stock-info-dingding/logs:/app/logs"
+    network: nginx_nginx-bridge
+    user: "1000:1000"
+    cron: "30 17 * * mon-fri"
+    timeout: 2400
+
+  # 迁移来源：n8n「RSS Push」14:42 投顾
+  - id: rss-tougu-push
+    name: RSS推送-每日投顾
+    description: RSS 文章推送（tag=每日投顾），去重库 data/rss_articles.db 挂载宿主
+    engine: docker
+    image: stock-info:latest
+    command: python rss/push.py --push-mode 1 --rss-tag 每日投顾
+    cwd: /app
+    env:
+      HOME: /tmp
+    env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/stock-info-dingding/data:/app/data"
+      - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
+    user: "1000:1000"
+    cron: "42 14 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「RSS Push」17:00 理财
+  - id: rss-licai-push
+    name: RSS推送-理财
+    description: RSS 文章推送（tag=理财），去重库挂载宿主
+    engine: docker
+    image: stock-info:latest
+    command: python rss/push.py --push-mode 1 --rss-tag 理财
+    cwd: /app
+    env:
+      HOME: /tmp
+    env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/stock-info-dingding/data:/app/data"
+      - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
+    user: "1000:1000"
+    cron: "0 17 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「RSS Push」17:00 资讯（与理财错开 1 分钟，避免并发写同一个 SQLite）
+  - id: rss-zixun-push
+    name: RSS推送-资讯
+    description: RSS 文章推送（tag=资讯），去重库挂载宿主
+    engine: docker
+    image: stock-info:latest
+    command: python rss/push.py --push-mode 1 --rss-tag 资讯
+    cwd: /app
+    env:
+      HOME: /tmp
+    env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/stock-info-dingding/data:/app/data"
+      - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
+    user: "1000:1000"
+    cron: "1 17 * * mon-fri"
+    timeout: 600
+
   # ---- Hermes 统一触发试点（11-06-hermes-unified-trigger）----
   # csi300-brief：旧 crontab 35 8 * * 1-5 为 UTC = 北京 16:35；直跑 brief.py
   # （cron_daily.sh 恒 exit 0，失败会被掩盖，不用它）；skills 目录 ro 挂载

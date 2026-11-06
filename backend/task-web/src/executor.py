@@ -75,37 +75,33 @@ def parse_env_file(path: str | None) -> dict[str, str]:
 
 
 def _task_env(task: dict) -> dict[str, str]:
+    """合并顺序：先 env_file，后 yaml 显式 env（显式声明优先，可覆盖 .env）。"""
     env: dict[str, str] = {}
+    env.update(parse_env_file(task.get("env_file")))
     raw = task.get("env")
     if raw:
         try:
             env.update(json.loads(raw))
         except (ValueError, TypeError):
             logger.warning("run env 字段非法（已忽略）")
-    env.update(parse_env_file(task.get("env_file")))
     return env
 
 
-def parse_volumes(raw) -> list[str]:
-    """tasks.yaml volumes 列表：["src:dst", "src:dst:ro"] → SDK volumes 数组。
-    无 mode 默认 ro（任务一律只读挂载宿主资料，防误写）。"""
+def _task_volumes(task: dict) -> dict[str, dict[str, str]]:
+    """volumes: '宿主:容器[:rw|ro]' 列表 -> docker-py volumes 字典。"""
+    raw = task.get("volumes")
     if not raw:
-        return []
-    if isinstance(raw, str):
-        try:
-            raw = json.loads(raw)
-        except ValueError:
-            raise ValueError(f"volumes 字段非法: {raw!r}")
-    result = []
-    for item in raw:
+        return {}
+    specs = json.loads(raw) if isinstance(raw, str) else raw
+    result: dict[str, dict[str, str]] = {}
+    for item in specs or []:
         parts = str(item).split(":")
-        if len(parts) == 2:
-            parts.append("ro")
-        if len(parts) != 3 or not parts[0] or not parts[1]:
-            raise ValueError(f"volumes 条目非法: {item}（应为 src:dst[:mode]）")
-        if parts[2] not in ("ro", "rw"):
-            raise ValueError(f"volumes mode 非法: {item}（仅 ro/rw）")
-        result.append(f"{parts[0]}:{parts[1]}:{parts[2]}")
+        if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
+            raise ValueError(f"volumes 条目非法: {item!r}")
+        mode = parts[2] if len(parts) == 3 else "rw"
+        if mode not in ("rw", "ro"):
+            raise ValueError(f"volumes 挂载模式只支持 rw/ro: {item!r}")
+        result[parts[0]] = {"bind": parts[1], "mode": mode}
     return result
 
 
@@ -131,7 +127,9 @@ def execute_docker_run(run_id: str, task: dict, timeout_seconds: int) -> str:
             detach=True,
             environment=_task_env(task),
             working_dir=workdir,
-            volumes=parse_volumes(task.get("volumes")),
+            volumes=_task_volumes(task),
+            network=task.get("network") or None,
+            user=task.get("run_user") or None,
             stdout=True,
             stderr=True,
         )
