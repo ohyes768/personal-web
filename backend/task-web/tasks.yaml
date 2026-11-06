@@ -232,3 +232,39 @@ tasks:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "45 23,3,9 * * *"
     timeout: 2100
+
+  - id: damai-hz-push
+    name: 大麦活动-杭州
+    description: 大麦网杭州热门活动抓取与钉钉推送（周一/三/五 11:00）
+    engine: docker
+    image: stock-info:latest
+    command: python -m damai.damai_spider
+    cwd: /app
+    env:
+      PUSH_MODE: '1'
+    env_file: /workspace/stock-info-dingding/.env
+    cron: 0 11 * * mon,wed,fri
+    timeout: 600
+  - id: damai-sz-push
+    name: 大麦活动-深圳
+    description: 大麦网深圳热门活动抓取与钉钉推送（周一/三/五 11:00，CITY_NAME=深圳）
+    engine: docker
+    image: stock-info:latest
+    command: python -m damai.damai_spider
+    cwd: /app
+    env:
+      PUSH_MODE: '1'
+      CITY_NAME: 深圳
+    env_file: /workspace/stock-info-dingding/.env
+    cron: 0 11 * * mon,wed,fri
+    timeout: 600
+  - id: natgeo-push
+    name: 国家地理推送
+    description: 国家地理每日一图 → 翻译 → 钉钉推送
+    engine: docker
+    image: stock-info:latest
+    command: python -m natgeo.natgeo_push
+    cwd: /app
+    env_file: /workspace/stock-info-dingding/.env
+    cron: 30 13 * * *
+    timeout: 600
