@@ -19,6 +19,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [Error Handling](./error-handling.md) | Error types, handling strategies | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Logging Guidelines](./logging-guidelines.md) | Structured logging, log levels | To fill |
+| [Scheduler](./scheduler.md) | 内建调度管理模式：API 契约、enabled/history 持久化分工、锁互斥、APScheduler 陷阱 | Filled (2026-11) |
 
 ---
 
