@@ -15,6 +15,7 @@ apps/
 ├── skill-manager/  # Skill 发布管理台（Next.js 15, basePath /skills）
 ├── kids-catalog/  # 宝宝音频库（Next.js 15, basePath /kids）
 ├── index-trends/  # 宽基趋势观察（Next.js 15 + ECharts, basePath /index-trends）
+├── task-web/  # 定时任务管理（Next.js 15, basePath /tasks）
 └── rss-relay/   # RSS 转发
 
 backend/
@@ -26,6 +27,7 @@ backend/
 ├── skill-manager/  # Skill 发布管理台后端（FastAPI，受限 NAS 目录内发布 Skill 到 OpenClaw/Hermes）
 ├── kids-catalog/  # 宝宝音频库后端（FastAPI，月度榜单采集 + 喜马拉雅/蜻蜓免费专辑下载 + 设备歌单编号）
 ├── index-trends/  # 宽基趋势观察后端（FastAPI，沪深300周线通道与估值，每日刷新，SQLite 存储；Hermes 负责简报投递）
+├── task-web/  # 定时任务管理后端（FastAPI + APScheduler，预登记任务调度/执行记录/日志，SQLite 存储）
 └── rss-relay/   # RSS 转发后端
 ```
 
@@ -102,6 +104,15 @@ python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8100
 # index-trends 前端
 cd apps/index-trends
 pnpm dev          # 端口 3010，访问 /index-trends
+
+# task-web（定时任务管理，已在 monorepo 内）
+cd backend/task-web
+uv sync --extra dev
+uv run python -m pytest tests/ -v
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8101
+# task-web 前端
+cd apps/task-web
+pnpm dev          # 端口 3011，访问 /tasks
 ```
 
 ### Windows 开发脚本
@@ -113,6 +124,7 @@ scripts\start-douyin-dev.bat    # 抖音
 scripts\start-housing-dev.bat   # 滨江购房地图
 scripts\start-skill-manager-dev.bat   # Skill 发布管理台
 scripts\start-index-trends-dev.bat   # 宽基趋势观察
+scripts\start-task-web-dev.bat   # 定时任务管理
 ```
 
 ### Docker（本地）
@@ -174,6 +186,6 @@ docker compose down
 
 - 首页 `/` 是 `nginx/html/index.html` 静态驾驶舱（状态点 + KPI），由 nginx 容器从 `/var/www/personal`（仓库 `nginx/html/` 的 bind mount）serve；改它无需 restart nginx，改 `nginx/web.conf` 才需要 `./scripts/deploy-nas.sh nginx`
 - 不要在代码中硬编码端口号，使用环境变量
-- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，kids-catalog 用 `/kids`，index-trends 用 `/index-trends`，其他无 basePath
+- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，kids-catalog 用 `/kids`，index-trends 用 `/index-trends`，task-web 用 `/tasks`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交
 - 同一个 app 同时只允许运行一个 dev server 实例（`next dev` 独占 `.next` 目录，多实例会互相清缓存）。第二个会话需要验证时，直接复用已有端口的 server，不要另起实例或改端口

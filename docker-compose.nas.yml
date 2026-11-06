@@ -1,7 +1,7 @@
 # =============================================================================
 # 个人财富网站 - NAS 部署统一编排
 # =============================================================================
-# 用途：Ubuntu Server NAS 部署（8 个后端 + 8 个前端，共 16 个服务）
+# 用途：Ubuntu Server NAS 部署（10 个后端 + 10 个前端，共 20 个服务）
 # 用法：
 #   1. 准备 .env：在仓库根目录创建 .env，填入各服务 key（已被 .gitignore 忽略）
 #        cat > .env << 'EOF'
@@ -42,6 +42,8 @@
 #   /api/export-targets/* → skill-manager-backend:8097/api/export-targets/*
 #   /index-trends/*      → index-trends-frontend:3010  (basePath = /index-trends，apps/index-trends/)
 #   /api/index-trends/*  → index-trends-backend:8100/api/*  (nginx 直转后端)
+#   /tasks/*             → task-web-frontend:3011  (basePath = /tasks，apps/task-web/)
+#   /api/task-web/*      → task-web-backend:8101/api/*  (nginx 直转后端)
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
@@ -51,6 +53,7 @@
 #   fund-select-data / fund-select-cache / fund-select-logs
 #   housing-map-data / housing-map-logs
 #   index-trends-data
+#   task-web-data（SQLite + 运行日志；业务仓库 bind mount 见 task-web-backend 服务）
 # skill-manager 服务已合并到主文件，各服务共享 .env 变量，详见 docs/skill-manager-nas-setup.md
 # =============================================================================
 
@@ -559,6 +562,44 @@ services:
     networks: [app-net]
     depends_on:
       index-trends-backend: { condition: service_healthy }
+
+  # ---------------------------------------------------------------------------
+  # task-web 后端（定时任务管理：调度 + 执行记录 + 日志）
+  # ---------------------------------------------------------------------------
+  task-web-backend:
+    build: { context: ./backend/task-web }
+    container_name: task-web-backend
+    restart: unless-stopped
+    expose: ["8101"]
+    volumes:
+      - task-web-data:/app/data
+      # 业务仓库挂载：预登记任务 cwd 相对路径基于它解析（容器内执行方案 A）
+      - "${TASK_WEB_WORKSPACE_HOST_PATH:-/home/ohyes768/stock-info-dingding}:/workspace/stock-info-dingding"
+    # TASK_WEB_ADMIN_PASSWORD：手动执行密码（未配置则手动执行禁用，fail closed）
+    # 任务导入默认禁用（enabled=0），验证后页面手动启用，避免双调度器重复发送
+    environment: [TZ=Asia/Shanghai,
+                  "TASK_WEB_ADMIN_PASSWORD=${TASK_WEB_ADMIN_PASSWORD:-}",
+                  TASK_WEB_DB_PATH=/app/data/taskweb.sqlite3,
+                  TASK_WEB_LOG_DIR=/app/data/logs,
+                  TASK_WEB_WORKSPACE_ROOT=/workspace]
+    networks: [app-net]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8101/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  task-web-frontend:
+    image: task-web-frontend:latest
+    container_name: task-web-frontend
+    restart: unless-stopped
+    ports: ["127.0.0.1:3011:3011"]
+    build:
+      context: ./apps/task-web
+      args: { TASK_WEB_API_ORIGIN: http://task-web-backend:8101 }
+    networks: [app-net]
+    depends_on:
+      task-web-backend: { condition: service_healthy }
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -603,3 +644,5 @@ volumes:
     name: kids-catalog-data
   index-trends-data:
     name: index-trends-data
+  task-web-data:
+    name: task-web-data

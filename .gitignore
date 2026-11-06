@@ -124,3 +124,5 @@ backend/index-trends/.pytest-tmp*/
 backend/index-trends/.venv/
 apps/index-trends/.next/
 apps/index-trends/node_modules/
+
+backend/task-web/data/

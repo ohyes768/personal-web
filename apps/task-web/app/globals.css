@@ -1,0 +1,60 @@
+:root {
+  --border: #e5e7eb;
+  --text: #111827;
+  --muted: #6b7280;
+  --bg: #f9fafb;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+  color: var(--text);
+  background: var(--bg);
+}
+
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 24px;
+  background: #fff;
+  border-bottom: 1px solid var(--border);
+}
+
+.back-home { color: var(--muted); text-decoration: none; }
+.back-home:hover { color: var(--text); }
+.site-title { font-weight: 600; font-size: 16px; }
+.site-header nav { margin-left: auto; display: flex; gap: 12px; }
+.site-header nav a { color: var(--text); text-decoration: none; padding: 4px 8px; border-radius: 6px; }
+.site-header nav a:hover { background: var(--bg); }
+
+.container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+th { background: var(--bg); color: var(--muted); font-weight: 500; white-space: nowrap; }
+tr:last-child td { border-bottom: none; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; }
+.muted { color: var(--muted); font-size: 13px; }
+.mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
+
+.btn { border: 1px solid var(--border); background: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn:hover { background: var(--bg); }
+.btn-primary { background: #2563eb; color: #fff; border-color: #2563eb; }
+.btn-primary:hover { background: #1d4ed8; }
+
+.filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.filters select, .filters input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
+
+.notice { background: #fef3c7; border: 1px solid #fcd34d; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
+
+.log-box { background: #0b1020; color: #d7e0ff; font-family: ui-monospace, Consolas, monospace; font-size: 13px; padding: 16px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; max-height: 70vh; overflow: auto; }
+
+.dialog-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex; align-items: center; justify-content: center; }
+.dialog { background: #fff; padding: 20px; border-radius: 10px; min-width: 320px; }
+.dialog h3 { margin-top: 0; }
+.dialog input { width: 100%; padding: 8px; margin: 8px 0 12px; border: 1px solid var(--border); border-radius: 6px; }
+.error-text { color: #dc2626; font-size: 13px; }

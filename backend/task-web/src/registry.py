@@ -1,0 +1,60 @@
+"""
+任务登记：tasks.yaml 是唯一任务来源（PRD 决策：预登记制，Web 端不能新增任意命令）。
+
+yaml 格式：
+tasks:
+  - id: a-stock-push
+    name: A股新股通知
+    description: ...
+    command: bash run_a_stock.sh
+    cwd: stock-info-dingding        # 相对 workspace root；空 = 不切目录
+    cron: "0 9 * * *"               # 默认计划（导入后可在页面改）
+    timeout: 600
+"""
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+
+import yaml
+
+from . import db
+from .config import get_tasks_yaml
+
+logger = logging.getLogger("task-web.registry")
+
+
+def load_registry() -> list[dict]:
+    path: Path = get_tasks_yaml()
+    if not path.exists():
+        logger.warning("tasks.yaml 不存在: %s", path)
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    tasks = data.get("tasks") or []
+    seen: set[str] = set()
+    for t in tasks:
+        if not t.get("id") or not t.get("command"):
+            raise ValueError(f"tasks.yaml 条目缺少 id 或 command: {t}")
+        if t["id"] in seen:
+            raise ValueError(f"tasks.yaml 重复 id: {t['id']}")
+        seen.add(t["id"])
+    return tasks
+
+
+def sync_registry() -> list[str]:
+    """把 tasks.yaml 同步进 DB：登记任务 + 首次创建 schedule（默认禁用）。
+    返回登记的任务 id 列表。已存在的 schedule（用户改过的 cron/启停）不覆盖。"""
+    ids: list[str] = []
+    for t in load_registry():
+        db.upsert_task({
+            "id": t["id"],
+            "name": t.get("name", t["id"]),
+            "description": t.get("description", ""),
+            "command": t["command"],
+            "cwd": t.get("cwd", ""),
+            "default_cron": t.get("cron", ""),
+            "default_timeout": int(t.get("timeout", 600)),
+        })
+        db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
+        ids.append(t["id"])
+    return ids

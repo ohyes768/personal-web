@@ -1,0 +1,158 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { apiGet, apiSend, statusColor, statusLabel, TaskView } from "@/lib/api";
+
+export default function TasksPage() {
+  const [tasks, setTasks] = useState<TaskView[]>([]);
+  const [error, setError] = useState("");
+  const [pwdTarget, setPwdTarget] = useState<TaskView | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      const data = await apiGet<{ tasks: TaskView[] }>("/tasks");
+      setTasks(data.tasks);
+      setError("");
+    } catch (e) {
+      setError(String(e));
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+    const t = setInterval(load, 5000);
+    return () => clearInterval(t);
+  }, [load]);
+
+  async function toggleEnabled(t: TaskView) {
+    try {
+      await apiSend("PUT", `/tasks/${t.id}/schedule`, { enabled: !t.enabled });
+      load();
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function updateCron(t: TaskView, cron: string) {
+    if (cron === t.cron) return;
+    try {
+      await apiSend("PUT", `/tasks/${t.id}/schedule`, { cron });
+      load();
+    } catch (e) {
+      setError(String(e));
+      load();
+    }
+  }
+
+  async function manualRun(password: string) {
+    if (!pwdTarget) return;
+    try {
+      await apiSend("POST", `/tasks/${pwdTarget.id}/run`, { password });
+      setPwdTarget(null);
+      setError("");
+      setTimeout(load, 500);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  return (
+    <div>
+      <div className="notice">
+        结果含义：退出码 0 只代表进程正常退出，不代表业务投递（如钉钉推送）成功；
+        「中断」含漏执行补记（不自动补跑，可手动触发）。
+      </div>
+      {error && <p className="error-text">{error}</p>}
+      <table>
+        <thead>
+          <tr>
+            <th>任务</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
+            <th>上次执行</th><th>下次计划</th><th>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map((t) => (
+            <tr key={t.id}>
+              <td>
+                <strong>{t.name}</strong>
+                <div className="mono muted">{t.id}</div>
+                <div className="mono muted">{t.command}{t.cwd ? ` @ ${t.cwd}` : ""}</div>
+              </td>
+              <td className="muted" style={{ maxWidth: 220 }}>{t.description}</td>
+              <td>
+                <input
+                  className="mono" defaultValue={t.cron} style={{ width: 110 }}
+                  onBlur={(e) => updateCron(t, e.target.value.trim())}
+                />
+                <div className="muted">超时 {t.timeout_seconds}s</div>
+              </td>
+              <td>
+                <button className="btn" onClick={() => toggleEnabled(t)}>
+                  {t.enabled ? "暂停" : "启用"}
+                </button>
+                <div className="badge" style={{ background: t.enabled ? "#16a34a" : "#6b7280", marginTop: 4 }}>
+                  {t.enabled ? "已启用" : "已禁用"}
+                </div>
+              </td>
+              <td>
+                {t.last_run ? (
+                  <>
+                    <span className="badge" style={{ background: statusColor(t.last_run.status) }}>
+                      {statusLabel(t.last_run.status)}
+                    </span>
+                    <div className="muted">{t.last_run.started_at || t.last_run.scheduled_at || "-"}</div>
+                    {t.last_run.missed_schedule_at && (
+                      <div className="muted">漏执行：{t.last_run.missed_schedule_at}</div>
+                    )}
+                  </>
+                ) : <span className="muted">从未执行</span>}
+              </td>
+              <td className="muted">{t.next_fire_time || "-"}</td>
+              <td>
+                <button className="btn btn-primary" onClick={() => setPwdTarget(t)}>立即执行</button>
+                <div style={{ marginTop: 4 }}>
+                  <Link href={`/runs?task_id=${t.id}`} className="muted">运行记录 →</Link>
+                </div>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {pwdTarget && (
+        <PasswordDialog
+          taskName={pwdTarget.name}
+          onCancel={() => setPwdTarget(null)}
+          onSubmit={manualRun}
+        />
+      )}
+    </div>
+  );
+}
+
+function PasswordDialog({ taskName, onCancel, onSubmit }: {
+  taskName: string;
+  onCancel: () => void;
+  onSubmit: (password: string) => void;
+}) {
+  const [pwd, setPwd] = useState("");
+  return (
+    <div className="dialog-backdrop" onClick={onCancel}>
+      <div className="dialog" onClick={(e) => e.stopPropagation()}>
+        <h3>手动执行「{taskName}」</h3>
+        <p className="muted">该操作会真实执行任务命令，请输入管理密码确认。</p>
+        <input
+          type="password" autoFocus value={pwd}
+          placeholder="管理密码"
+          onChange={(e) => setPwd(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && onSubmit(pwd)}
+        />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button className="btn" onClick={onCancel}>取消</button>
+          <button className="btn btn-primary" onClick={() => onSubmit(pwd)}>确认执行</button>
+        </div>
+      </div>
+    </div>
+  );
+}

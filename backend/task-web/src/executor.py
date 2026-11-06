@@ -1,0 +1,155 @@
+"""
+执行器：subprocess 进程组执行、超时 kill、互斥、日志采集。
+
+设计要点（design.md）：
+- start_new_session=True + os.killpg：超时杀整个进程组，不留子进程
+- stdout/stderr 追加写日志文件，DB 只存路径
+- 互斥在 start_run 层做：存在 waiting/running 记录时记 skipped(reason=mutex)
+"""
+from __future__ import annotations
+
+import logging
+import os
+import signal
+import subprocess
+import threading
+from pathlib import Path
+
+from . import db
+from .config import get_log_dir, get_workspace_root
+
+logger = logging.getLogger("task-web.executor")
+
+
+def resolve_cwd(cwd: str) -> str | None:
+    """登记的 cwd 相对路径基于 workspace root 解析；绝对路径原样使用。"""
+    if not cwd:
+        return None
+    p = Path(cwd)
+    if p.is_absolute():
+        return str(p)
+    root = get_workspace_root()
+    if root is None:
+        return None  # 未配置 workspace 时相对目录不可用，执行会报错并留记录
+    return str(root / p)
+
+
+def _open_log(run_id: str, ext: str) -> tuple[Path, "object"]:
+    log_dir = get_log_dir()
+    log_dir.mkdir(parents=True, exist_ok=True)
+    path = log_dir / f"{run_id}.{ext}"
+    fh = open(path, "ab")
+    return path, fh
+
+
+def _kill_process_group(proc: subprocess.Popen) -> None:
+    if os.name == "posix":
+        try:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            return
+        except ProcessLookupError:
+            return
+    # Windows 开发环境兜底：无进程组语义
+    proc.kill()
+
+
+def execute_run(run_id: str, command: str, cwd_resolved: str | None,
+                timeout_seconds: int) -> str:
+    """同步执行一个 run（调用方负责在线程池里调用）。返回终态 status。"""
+    out_path, out_fh = _open_log(run_id, "out")
+    err_path, err_fh = _open_log(run_id, "err")
+    started = db.now_str()
+    try:
+        db.update_run(run_id, started_at=started, status="running")
+        proc = subprocess.Popen(
+            command,
+            shell=True,
+            cwd=cwd_resolved,
+            stdout=out_fh,
+            stderr=err_fh,
+            start_new_session=(os.name == "posix"),
+        )
+    except Exception as e:  # 启动失败也要留完整记录
+        err_fh.write(f"\n[task-web] 进程启动失败: {e}\n".encode())
+        db.update_run(run_id, finished_at=db.now_str(), status="failed", exit_code=None)
+        logger.error("run %s 启动失败: %s", run_id, e)
+        return "failed"
+    finally:
+        out_fh.flush()
+        err_fh.flush()
+
+    status, exit_code = "running", None
+    try:
+        exit_code = proc.wait(timeout=timeout_seconds)
+        status = "success" if exit_code == 0 else "failed"
+    except subprocess.TimeoutExpired:
+        _kill_process_group(proc)
+        try:
+            exit_code = proc.wait(timeout=10)
+        except Exception:
+            exit_code = None
+        status = "timeout"
+    except Exception as e:
+        logger.error("run %s 等待异常: %s", run_id, e)
+        _kill_process_group(proc)
+        status = "failed"
+    finally:
+        out_fh.close()
+        err_fh.close()
+
+    finished = db.now_str()
+    duration_ms = _diff_ms(started, finished)
+    db.update_run(run_id, finished_at=finished, duration_ms=duration_ms,
+                  status=status, exit_code=exit_code)
+    logger.info("run %s 结束: %s exit=%s", run_id, status, exit_code)
+    return status
+
+
+def _diff_ms(started: str, finished: str) -> int | None:
+    try:
+        from datetime import datetime
+
+        fmt = "%Y-%m-%dT%H:%M:%S"
+        d = datetime.strptime(finished, fmt) - datetime.strptime(started, fmt)
+        return int(d.total_seconds() * 1000)
+    except Exception:
+        return None
+
+
+def start_run(task: dict, trigger: str, scheduled_at: str | None = None) -> str:
+    """创建 run 记录并后台执行。互斥：已有活跃 run 时记 skipped。
+    返回 run_id（skipped 时也返回新记录的 run_id）。"""
+    active = db.active_run_of_task(task["id"])
+    if active:
+        run_id = db.new_run_id(task["id"])
+        db.insert_run({
+            "run_id": run_id, "task_id": task["id"],
+            "scheduled_at": scheduled_at, "started_at": db.now_str(),
+            "finished_at": db.now_str(), "duration_ms": None,
+            "trigger": trigger, "status": "skipped", "exit_code": None,
+            "log_path": None, "missed_schedule_at": None,
+        })
+        # skipped 原因写日志文件，页面可直接看
+        _, fh = _open_log(run_id, "err")
+        fh.write(f"[task-web] 互斥跳过：已有活跃运行 {active['run_id']} (status={active['status']})\n".encode())
+        fh.close()
+        return run_id
+
+    run_id = db.new_run_id(task["id"])
+    timeout = task.get("timeout_seconds") or task.get("default_timeout") or 600
+    db.insert_run({
+        "run_id": run_id, "task_id": task["id"],
+        "scheduled_at": scheduled_at, "started_at": None,
+        "finished_at": None, "duration_ms": None,
+        "trigger": trigger, "status": "waiting", "exit_code": None,
+        "log_path": str(get_log_dir() / f"{run_id}.out"), "missed_schedule_at": None,
+    })
+    cwd_resolved = resolve_cwd(task.get("cwd", ""))
+    t = threading.Thread(
+        target=execute_run,
+        args=(run_id, task["command"], cwd_resolved, int(timeout)),
+        name=f"run-{run_id}",
+        daemon=True,
+    )
+    t.start()
+    return run_id

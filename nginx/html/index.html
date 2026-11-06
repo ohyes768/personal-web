@@ -166,6 +166,14 @@ footer { margin-top: 26px; font-size: 11px; color: var(--text-3); }
         </div>
         <div class="card-body"><span class="desc">用月收盘线性回归通道回看沪深300趋势，观察当前指数位置</span></div>
       </a>
+      <a class="card" data-key="task-web" href="/tasks">
+        <div class="card-head">
+          <span class="chip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+          <span class="card-title">定时任务管理</span>
+          <span class="status" data-state="unknown"><span class="dot"></span><span class="status-text"></span></span>
+        </div>
+        <div class="card-body"><span class="desc">管理 NAS 定时任务：调度时间、启停、执行记录与日志排查</span></div>
+      </a>
     </main>
   </section>
 
@@ -239,7 +247,8 @@ footer { margin-top: 26px; font-size: 11px; color: var(--text-3); }
     { key: 'rss', health: '/rss/api/rss-relay/health', group: 'tool' },
     { key: 'douyin', health: '/api/douyin/health', group: 'tool' },
     { key: 'skills', health: '/api/skills/health', group: 'tool' },
-    { key: 'kids', health: '/api/kids/health', group: 'life' }
+    { key: 'kids', health: '/api/kids/health', group: 'life' },
+    { key: 'task-web', health: '/api/task-web/health', group: 'tool' }
   ];
 
   /* 页头日期（no-JS 时副标题只剩「状态实时探测」） */
