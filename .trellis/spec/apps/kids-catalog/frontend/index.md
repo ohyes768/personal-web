@@ -6,7 +6,7 @@ Read app/page.tsx, app/device-playlist.tsx, app/globals.css and [device director
 
 ## Page Structure
 
-`/kids` has two tabs carried in the query string (`?tab=catalog` default, `?tab=playlist`): 「本月精选」keeps the album catalog, 获取最新 and downloads; 「设备歌单」holds the device playlist, the candidate checklist and the skipped-collection confirmation flow. `useSearchParams` needs a Suspense boundary or the production build fails.
+`/kids` has three tabs carried in the query string (`?tab=catalog` default, `?tab=manual`, `?tab=playlist`): 「本月精选」lists only `source='chart'` albums with 获取最新 and downloads; 「手动添加」holds the link-import form and only `source='manual'` albums (no month heading, no 获取最新); 「设备歌单」holds the device playlist, the candidate checklist and the skipped-collection confirmation flow. Device-playlist candidates keep coming from downloaded collections of BOTH sources. The album card is shared by the catalog and manual tabs; the 「手动添加」badge is redundant inside the manual tab and is not rendered. `useSearchParams` needs a Suspense boundary or the production build fails.
 
 ## Quality Check
 
