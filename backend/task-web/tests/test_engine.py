@@ -29,6 +29,17 @@ class FakeContainer:
             return
         yield from self.chunks
 
+    def attach(self, logs=True, stream=True, demux=True):
+        """SDK 真实接口：logs 流式分路走 attach（demux 在此，不在 logs）。"""
+        assert stream and demux and logs
+        if self.hang:
+            for _ in range(600):
+                if self.killed:
+                    return
+                time.sleep(0.1)
+            return
+        yield from self.chunks
+
     def wait(self, timeout=60):
         if self.hang:
             for _ in range(100):

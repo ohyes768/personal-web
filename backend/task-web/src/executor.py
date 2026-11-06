@@ -125,8 +125,9 @@ def execute_docker_run(run_id: str, task: dict, timeout_seconds: int) -> str:
 
         watchdog = threading.Thread(target=_watchdog, daemon=True)
         watchdog.start()
-        for stdout_chunk, stderr_chunk in container.logs(
-            stream=True, follow=True, demux=True
+        # 注意：demux 只在 attach() 上支持（logs() 无此参数，docker 7.2 实测）
+        for stdout_chunk, stderr_chunk in container.attach(
+            logs=True, stream=True, demux=True
         ):
             if stdout_chunk:
                 out_fh.write(stdout_chunk)
