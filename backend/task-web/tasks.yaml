@@ -28,11 +28,13 @@ tasks:
     timeout: 5
 
   # ---- 首个正式接入（灰度）----
-  # 注意：run_a_stock.sh 会真实推送钉钉！验证顺序：dry-run → 用户确认 → 启用
+  # 注意：会真实推送钉钉！验证顺序：dry-run → 用户确认 → 启用
+  # 不走 run_a_stock.sh：其内嵌 cd /home/ohyes768/... 为宿主机路径，容器内必失败；
+  # executor 已按登记 cwd 切好目录，这里等价复刻脚本行为（PUSH_MODE=1 + python）
   - id: a-stock-push
     name: A股新股通知
     description: stock-info-dingding 新股抓取与钉钉推送（真实外发，启用前必须验证）
-    command: bash run_a_stock.sh
+    command: PUSH_MODE=1 python a_stock_push.py
     cwd: stock-info-dingding
     cron: "0 8 * * *"
     timeout: 600
