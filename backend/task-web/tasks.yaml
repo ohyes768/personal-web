@@ -1,6 +1,10 @@
 # task-web 预登记任务清单（Web 端不能新增任意命令，只能改调度）
 # 接入顺序见 .trellis/tasks/11-05-task-web-cron-manager/implement.md Phase 4
 # cwd 相对 TASK_WEB_WORKSPACE_ROOT（容器内 /workspace）；导入默认禁用，验证后手动启用
+#
+# 约束提醒：engine=docker 按次拉起业务镜像、不挂任何 volume，
+# 因此这里只登记「纯推送、不依赖本地状态文件」的脚本。
+# 依赖 data/*.json 或 data/*.db 的脚本（daily_pick / rss / xwlb）暂不接入。
 tasks:
   # ---- 无外发测试任务（验收用，永不真实推送）----
   - id: demo-success
@@ -26,6 +30,121 @@ tasks:
     cwd: ""
     cron: "0 9 * * *"
     timeout: 5
+
+  # ---- 正式接入：stock-info-dingding 纯推送任务（方案 B：业务镜像独立维护）----
+  # 前置：NAS 上 cd /home/ohyes768/stock-info-dingding && docker build -t stock-info:latest .
+  # 注意：会真实推送钉钉！启用前确认 n8n 上同名定时已停用，否则钉钉收双份。
+  # 迁移来源：n8n「New Stock Push」09:10 A股
+  - id: a-stock-push
+    name: A股新股通知
+    description: stock-info-dingding 新股抓取与钉钉推送（真实外发，启用前必须验证）
+    engine: docker
+    image: stock-info:latest
+    command: python a_stock_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "10 9 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「New Stock Push」09:15 港股
+  - id: hk-stock-push
+    name: 港股新股通知
+    description: 港股新股抓取与钉钉推送
+    engine: docker
+    image: stock-info:latest
+    command: python hk_stock_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "15 9 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「Stock info Push」11:30 + 14:30 板块涨跌（两触发器合并为逗号 cron）
+  - id: sector-push
+    name: 板块涨跌播报
+    description: 东方财富板块涨跌 → 钉钉（11:30、14:30 两档）
+    engine: docker
+    image: stock-info:latest
+    command: python dingtalk_em_api.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "30 11,14 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「Gold Price Push」09:30 + 15:30
+  - id: gold-price-push
+    name: 黄金价格推送
+    description: 黄金价格播报（09:30、15:30 两档）
+    engine: docker
+    image: stock-info:latest
+    command: python gold_price_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "30 9,15 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「Fund M120 Push」14:40
+  - id: fund-m120-push
+    name: 基金M120推送
+    description: 监控基金 M120 均线信号推送
+    engine: docker
+    image: stock-info:latest
+    command: python fund_m120_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "40 14 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「Stock info Push」14:35 科创50（分钟与 16:30 不同，拆两条任务）
+  - id: star50-macd-push
+    name: 科创50 MACD推送
+    description: 科创50 指数 MACD 信号推送（14:35 档）
+    engine: docker
+    image: stock-info:latest
+    command: python star50_macd_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "35 14 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「Stock info Push」16:30 科创50（16:30 档）
+  - id: star50-macd-push-1630
+    name: 科创50 MACD推送(16:30)
+    description: 科创50 指数 MACD 信号推送（16:30 档）
+    engine: docker
+    image: stock-info:latest
+    command: python star50_macd_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "30 16 * * mon-fri"
+    timeout: 600
+
+  # 迁移来源：n8n「Stock info Push」17:00 ETF 轮动
+  - id: etf-rotation-push
+    name: ETF轮动推送
+    description: ETF 轮动信号推送
+    engine: docker
+    image: stock-info:latest
+    command: python etf_rotation_push.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+    env_file: /workspace/stock-info-dingding/.env
+    cron: "0 17 * * mon-fri"
+    timeout: 600
 
   # ---- Hermes 统一触发试点（11-06-hermes-unified-trigger）----
   # csi300-brief：旧 crontab 35 8 * * 1-5 为 UTC = 北京 16:35；直跑 brief.py
@@ -54,18 +173,3 @@ tasks:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "45 23,3,9 * * *"
     timeout: 2100
-
-  # ---- 首个正式接入（已验证可用）----
-  # 会真实推送钉钉；env_file 指向业务仓库 .env（值不回显不写日志）
-  - id: a-stock-push
-    name: A股新股通知
-    description: stock-info-dingding 新股抓取与钉钉推送（真实外发，启用前必须验证）
-    engine: docker
-    image: stock-info:latest
-    command: python a_stock_push.py
-    cwd: /app
-    env:
-      PUSH_MODE: "1"
-    env_file: /workspace/stock-info-dingding/.env
-    cron: "0 8 * * *"
-    timeout: 600
