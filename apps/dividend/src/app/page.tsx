@@ -659,7 +659,9 @@ function DividendPageContent() {
 
 
   return (
-    <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper">
+    // flex flex-col + 面板区 flex-1：三个 tab 的面板共享同一弹性高度，
+    // 短内容 tab（挡位监控/选股关注）页面总高度稳定为一屏，切换 tab 不跳动。
+    <div className="container mx-auto px-8 lg:px-16 py-8 min-h-screen bg-paper flex flex-col">
       {/* 头部导航 */}
       <div className="mb-6">
         <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-start gap-2">
@@ -673,53 +675,6 @@ function DividendPageContent() {
                 ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${minYieldInput}%`
                 : `共 ${total} 只股票 | 3年股息率 ≥ ${minYieldInput}%`}
             </p>
-            {/* 筛选条件 */}
-            {activeTab !== 'screening' && <div className="mt-2 flex items-center gap-3">
-              <label className="text-sm text-ink-muted">交易所:</label>
-              <select
-                value={exchangeFilter}
-                onChange={(e) => setExchangeFilter(e.target.value)}
-                className="bg-paper-card text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
-              >
-                <option value="">全部</option>
-                <option value="沪市主板">沪市主板</option>
-                <option value="深市主板">深市主板</option>
-              </select>
-              <label className="text-sm text-ink-muted ml-2">股息率≥:</label>
-              <input
-                type="number"
-                value={minYieldInput}
-                onChange={(e) => setMinYieldInput(e.target.value)}
-                className="bg-paper-card text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
-                placeholder="3"
-                min="0"
-                step="0.1"
-              />
-              <span className="text-sm text-ink-muted">%</span>
-              <button
-                onClick={() => {
-                  const minYield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
-                  refetch({
-                    min_yield: minYield,
-                    exchange: exchangeFilter || undefined,
-                  });
-                  setRefreshKey(k => k + 1);
-                }}
-                disabled={loading}
-                className={`
-                  px-4 py-1.5 rounded font-medium transition-all flex items-center gap-2 text-sm
-                  ${loading
-                    ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
-                  }
-                `}
-              >
-                <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                查询
-              </button>
-            </div>}
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -1048,6 +1003,58 @@ function DividendPageContent() {
         )}
       </div>
 
+      {/* 三个 tab 的面板区：flex-1 撑满首屏剩余高度，短内容 tab 页面高度一致 */}
+      <div className="flex-1">
+      {/* 筛选条件：与「选股关注」筛选表单同层同位置（面板区顶部），三个 tab 排版骨架一致。
+          仅"全部"tab 显示（挡位监控列表不吃这两个筛选；只看收藏模式下列表来自收藏夹，查询不生效）。 */}
+      {activeTab === 'all' && !favOnly && (
+        <div className="mb-4 rounded-xl border border-rule bg-paper-card p-4 flex flex-wrap items-center gap-x-3 gap-y-2">
+          <label className="text-sm text-ink-muted">交易所:</label>
+          <select
+            value={exchangeFilter}
+            onChange={(e) => setExchangeFilter(e.target.value)}
+            className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
+          >
+            <option value="">全部</option>
+            <option value="沪市主板">沪市主板</option>
+            <option value="深市主板">深市主板</option>
+          </select>
+          <label className="text-sm text-ink-muted ml-2">股息率≥:</label>
+          <input
+            type="number"
+            value={minYieldInput}
+            onChange={(e) => setMinYieldInput(e.target.value)}
+            className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
+            placeholder="3"
+            min="0"
+            step="0.1"
+          />
+          <span className="text-sm text-ink-muted">%</span>
+          <button
+            onClick={() => {
+              const minYield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
+              refetch({
+                min_yield: minYield,
+                exchange: exchangeFilter || undefined,
+              });
+              setRefreshKey(k => k + 1);
+            }}
+            disabled={loading}
+            className={`
+              px-4 py-1.5 rounded font-medium transition-all flex items-center gap-2 text-sm
+              ${loading
+                ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
+                : 'bg-indigo-600 text-white hover:bg-indigo-500'
+              }
+            `}
+          >
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            查询
+          </button>
+        </div>
+      )}
       {activeTab === 'all' && favOnly && favoriteLoadError && <p role="alert" className="mb-3 text-red-600">收藏资料加载失败：{favoriteLoadError}，暂显示已有资料。</p>}
       {/* 只看收藏 空状态 */}
       {activeTab === 'all' && favOnly && displayData.length === 0 && !loading && (
@@ -1125,6 +1132,7 @@ function DividendPageContent() {
           />
         )
       )}
+      </div>
 
       {/* 详情弹框 */}
       <DetailModal
