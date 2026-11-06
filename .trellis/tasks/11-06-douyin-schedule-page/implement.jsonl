@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/11-06-douyin-schedule-page/research/scheduler-pattern-survey.md", "reason": "仓库内调度管理模式调研：dividend/macro 参照实现、douyin 现状锚点、前端代理缺口、部署约束"}
+{"file": ".trellis/spec/backend/dividend-select/backend/scheduler-lifecycle.md", "reason": "APScheduler shutdown drain 契约（pause admission → bounded drain → shutdown(wait=False) → await EVENT_SCHEDULER_SHUTDOWN），本任务 manager.shutdown 必须遵循"}
+{"file": ".trellis/spec/backend/douyin-processor/backend/index.md", "reason": "douyin-processor 包 spec 入口（质量/错误处理/日志约定索引）"}
