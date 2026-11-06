@@ -310,6 +310,12 @@ if $DO_PULL; then
 fi
 
 # ---- Step 2: build ----
+# task-web 前置：业务镜像 stock-info（方案 B，脚本+依赖在业务仓库自维护）
+if [[ "$TARGET" == "task-web" ]]; then
+    echo ""
+    echo "==> [2/3] 前置构建业务镜像 stock-info-image（context=\$STOCK_INFO_HOST_PATH，默认 /home/ohyes768/stock-info-dingding）"
+    compose_build stock-info-image
+fi
 echo ""
 if $USE_BUILDX; then
     ensure_buildx_builder "$BUILDX_BUILDER"

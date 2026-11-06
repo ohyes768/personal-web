@@ -564,6 +564,19 @@ services:
       index-trends-backend: { condition: service_healthy }
 
   # ---------------------------------------------------------------------------
+  # stock-info 业务镜像（build-only，方案 B：脚本+依赖由业务仓库自维护）
+  # ---------------------------------------------------------------------------
+  # 不承载运行时容器：entrypoint true，up 时创建即退出；仅用于
+  # `docker compose build stock-info-image`（deploy-nas.sh task-web 会前置调用）
+  stock-info-image:
+    image: stock-info:latest
+    container_name: stock-info-image
+    restart: "no"
+    entrypoint: ["true"]
+    build:
+      context: ${STOCK_INFO_HOST_PATH:-/home/ohyes768/stock-info-dingding}
+
+  # ---------------------------------------------------------------------------
   # task-web 后端（定时任务管理：调度 + 执行记录 + 日志）
   # ---------------------------------------------------------------------------
   task-web-backend:
