@@ -1,39 +1,16 @@
 # task-web 预登记任务清单（Web 端不能新增任意命令，只能改调度）
-# 接入顺序见 .trellis/tasks/11-05-task-web-cron-manager/implement.md Phase 4
 # cwd 相对 TASK_WEB_WORKSPACE_ROOT（容器内 /workspace）；导入默认禁用，验证后手动启用
 #
 # 约束提醒：engine=docker 按次拉起业务镜像、不挂任何 volume，
 # 因此这里只登记「纯推送、不依赖本地状态文件」的脚本。
 # 依赖 data/*.json 或 data/*.db 的脚本（daily_pick / rss / xwlb）暂不接入。
+# 2026-11-06 cutover：以下 8 条已启用，n8n 上对应触发器已停用（Gold/Fund/New Stock
+# 整工作流 unpublish；Stock info Push 保留 17:30 财报选股触发器）。
 tasks:
-  # ---- 无外发测试任务（验收用，永不真实推送）----
-  - id: demo-success
-    name: 演示-成功任务
-    description: 验收用：退出码 0，产生 stdout 日志
-    command: echo demo-success && sleep 1 && echo done
-    cwd: ""
-    cron: "0 9 * * *"
-    timeout: 60
-
-  - id: demo-failure
-    name: 演示-失败任务
-    description: 验收用：非 0 退出码 + stderr 输出
-    command: echo about-to-fail && exit 3
-    cwd: ""
-    cron: "0 9 * * *"
-    timeout: 60
-
-  - id: demo-timeout
-    name: 演示-超时任务
-    description: 验收用：长运行触发超时杀进程组
-    command: echo started && sleep 600
-    cwd: ""
-    cron: "0 9 * * *"
-    timeout: 5
-
-  # ---- 正式接入：stock-info-dingding 纯推送任务（方案 B：业务镜像独立维护）----
+  # ---- stock-info-dingding 纯推送任务（方案 B：业务镜像独立维护）----
   # 前置：NAS 上 cd /home/ohyes768/stock-info-dingding && docker build -t stock-info:latest .
   # 注意：会真实推送钉钉！启用前确认 n8n 上同名定时已停用，否则钉钉收双份。
+
   # 迁移来源：n8n「New Stock Push」09:10 A股
   - id: a-stock-push
     name: A股新股通知
