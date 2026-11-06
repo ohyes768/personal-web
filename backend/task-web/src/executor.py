@@ -142,8 +142,12 @@ def execute_docker_run(run_id: str, task: dict, timeout_seconds: int) -> str:
             status = "success" if exit_code == 0 else "failed"
     except Exception as e:
         status = "failed"
-        err_fh.write(f"\n[task-web] 容器执行异常: {type(e).__name__}\n".encode())
-        logger.error("run %s docker 异常: %s", run_id, type(e).__name__)
+        import traceback
+
+        tb = traceback.format_exc()
+        err_fh.write(f"\n[task-web] 容器执行异常: {type(e).__name__}: {e}\n".encode())
+        err_fh.write(tb.encode())
+        logger.error("run %s docker 异常: %s: %s", run_id, type(e).__name__, e)
         if container is not None:
             try:
                 result = container.wait(timeout=30)
