@@ -4,8 +4,8 @@ FastAPI 服务器
 
 import os
 from contextlib import asynccontextmanager
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from apscheduler.triggers.cron import CronTrigger
+from pathlib import Path
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -16,46 +16,15 @@ from src.server.endpoints import (
     set_processor,
     set_rss_config,
     set_rss_token,
-    _run_process_pending,
 )
+from src.scheduler import jobs as scheduler_jobs
+from src.scheduler.manager import SchedulerManager
+from src.scheduler.routes import router as scheduler_router
 from src.processor.filesystem_client import FileSystemClient
 from src.processor.asr_client import AliyunASRClient
 from src.processor.status_manager import StatusManager
 from src.processor.video_processor import VideoProcessor
 from src.utils import load_config, setup_logger
-
-
-async def _scheduled_cleanup(processor: "VideoProcessor", days: int) -> None:
-    """定时清理任务:复用 status_manager + filesystem_client,与手动 API 同源。
-
-    Args:
-        processor: 已初始化的 VideoProcessor 实例(lifespan 启动后可用)
-        days: 清理阈值(天)
-    """
-    try:
-        deleted_ids = await processor.status_manager.cleanup_old_records(days)
-        if not deleted_ids:
-            logger.info(f"定时清理:无过期记录(>{days}d)")
-            return
-        success = 0
-        failed = []
-        for aid in deleted_ids:
-            audio_filename = f"{aid}.wav"
-            ok = await processor.filesystem_client.delete_file(audio_filename)
-            if ok:
-                success += 1
-            else:
-                failed.append(audio_filename)
-            # 同步清 output json (data/output/{aweme_id}.json)，与 status.json 保持一致
-            try:
-                (processor.output_dir / f"{aid}.json").unlink(missing_ok=True)
-            except Exception as e:
-                logger.warning(f"清 output json 失败 {aid}: {e}")
-        logger.info(
-            f"定时清理完成:删 {success}/{len(deleted_ids)} 个文件(>{days}d),失败 {failed}"
-        )
-    except Exception as e:
-        logger.error(f"定时清理失败: {e}")
 
 # 加载 .env 文件
 load_dotenv()
@@ -131,47 +100,28 @@ async def lifespan(app: FastAPI):
     cleanup_cron = cleanup_config.get("cron", "7 3 * * *")
     cleanup_tz = cleanup_config.get("timezone", "Asia/Shanghai")
 
-    # 启动时立即清理一次(清停机期间过期的,失败不阻塞启动)
+    # 启动时立即清理一次(清停机期间过期的,失败不阻塞启动；不写 scheduler 历史)
     try:
-        await _scheduled_cleanup(video_processor, cleanup_days)
+        await scheduler_jobs.run_cleanup(
+            {"processor": video_processor, "cleanup_days": cleanup_days},
+            "cleanup_old_records",
+            "startup",
+        )
     except Exception as e:
         logger.error(f"启动时清理失败(非阻塞): {e}")
 
-    scheduler = AsyncIOScheduler(timezone=cleanup_tz)
-    scheduler.add_job(
-        _scheduled_cleanup,
-        CronTrigger.from_crontab(cleanup_cron, timezone=cleanup_tz),
-        args=[video_processor, cleanup_days],
-        id="cleanup_old_records",
-        replace_existing=True,
+    # 内建调度管理器：process_pending(09:45/17:15) + cleanup(03:07)，
+    # 取代裸 APScheduler 注册；页面可启停/立即执行/看历史（/api/scheduler/*）
+    # cron 来源 app.yaml（host 只读挂载），enabled 持久化到 data/scheduler/enabled.json
+    scheduler = SchedulerManager(
+        app_config=app_config,
+        data_dir=Path("data"),
+        services={"processor": video_processor, "cleanup_days": cleanup_days},
     )
-
-    # 注册 process_pending 自调度（09:45 / 17:15 北京时间，取代 n8n 外部触发）
-    # 与 cleanup 共用同一个 scheduler，共用 endpoints._process_lock 自动防重入
-    process_pending_config = app_config.get("process_pending", {})
-    pp_tz = process_pending_config.get("timezone", cleanup_tz)
-    pp_morning = process_pending_config.get("cron_morning", "45 9 * * *")
-    pp_evening = process_pending_config.get("cron_evening", "15 17 * * *")
-    scheduler.add_job(
-        _run_process_pending,
-        CronTrigger.from_crontab(pp_morning, timezone=pp_tz),
-        id="process_pending_morning",
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        _run_process_pending,
-        CronTrigger.from_crontab(pp_evening, timezone=pp_tz),
-        id="process_pending_evening",
-        replace_existing=True,
-    )
-    logger.info(
-        f"APScheduler 已注册 process_pending: {pp_morning} / {pp_evening} ({pp_tz}) "
-        f"自动处理 status=pending 视频"
-    )
-
     scheduler.start()
     logger.info(
-        f"APScheduler 已启动:每天 {cleanup_cron} ({cleanup_tz}) 清理 >{cleanup_days}d 过期记录"
+        f"APScheduler 已启动:每天 {cleanup_cron} ({cleanup_tz}) 清理 >{cleanup_days}d 过期记录；"
+        f"process_pending 自动处理 status=pending 视频（cron 见上方注册日志）"
     )
     app.state.scheduler = scheduler
 
@@ -202,6 +152,8 @@ app.add_middleware(
 
 # 注册路由
 app.include_router(router)
+# scheduler 管理 API（最终路径 /api/scheduler/*）
+app.include_router(scheduler_router)
 
 
 @app.get("/")

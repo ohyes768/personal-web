@@ -18,14 +18,14 @@ from src.server.rss_utils import (
     extract_hashtags,
     truncate_for_summary,
 )
+from src.scheduler.jobs import _process_lock
 
 router = APIRouter()
 
 # 全局处理器引用（在 main.py 中设置）
 processor = None
 
-# 处理任务锁：避免并发触发同一批 pending 被处理两次（重复消耗 ASR 配额）
-_process_lock = asyncio.Lock()
+# 处理任务锁已迁移到 src.scheduler.jobs（定时/手动/页面立即执行共用一把），此处仅 import 使用
 
 
 # ---- RSS 配置（由 main.py 注入）----
@@ -176,13 +176,14 @@ async def _run_process_pending():
 
 
 @router.post("/api/process/pending", response_model=TaskResponse)
-async def trigger_process_pending():
+async def trigger_process_pending(request: Request):
     """触发处理 status=pending 的视频（ASR → unread）
 
     行为：
       1. 检查锁：已有任务在跑 → 拒（success=false）
       2. 拉 pending 列表：空 → 直接返回
-      3. 非空 → asyncio.create_task 后台串行处理，立即返回
+      3. 非空 → 委托 scheduler.trigger_now（trigger=manual，落执行历史），
+         scheduler 未初始化时回退旧 asyncio.create_task 路径；均立即返回
     """
     if processor is None:
         raise HTTPException(status_code=500, detail="处理器未初始化")
@@ -202,9 +203,15 @@ async def trigger_process_pending():
             data={"pending": 0},
         )
 
-    asyncio.create_task(_run_process_pending())
+    scheduler = getattr(request.app.state, "scheduler", None)
+    if scheduler is not None:
+        scheduler.trigger_now("process_pending", trigger="manual")
+        logger.info(f"已启动 pending 处理任务（经 scheduler，trigger=manual）: {len(pending_list)} 个视频")
+    else:
+        # 回退：scheduler 尚未初始化（启动窗口期）时保持旧行为
+        asyncio.create_task(_run_process_pending())
+        logger.info(f"已启动 pending 处理任务: {len(pending_list)} 个视频")
 
-    logger.info(f"已启动 pending 处理任务: {len(pending_list)} 个视频")
     return TaskResponse(
         success=True,
         message=f"已启动 ASR 处理（后台串行运行 {len(pending_list)} 个视频）",

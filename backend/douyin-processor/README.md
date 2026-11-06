@@ -107,6 +107,21 @@ POST /api/process
 
 健康检查。
 
+## 定时任务管理（v2.1）
+
+定时任务由内建 `src/scheduler/` 包管理（参照 dividend-select/macro 模式），前端 `/douyin` 页面头部齿轮入口可视化管理。
+
+| 任务 | cron（北京时间） | 动作 |
+|------|------|------|
+| `process_pending` | 每天 09:45 / 17:15 | 转写 status=pending 视频（阿里 FunASR → unread） |
+| `cleanup_old_records` | 每天 03:07 | 删除超过保留期的 wav 源文件与 status/output 记录 |
+
+- **管理 API**（`src/scheduler/routes.py`）：`GET /api/scheduler/jobs` · `PATCH /api/scheduler/jobs/{id}`（启停）· `POST /api/scheduler/jobs/{id}/run`（立即执行）· `GET /api/scheduler/jobs/{id}/runs?limit=20`（历史）
+- **配置分工**：cron 在 `config/app.yaml`（host 只读挂载，改后 `docker restart douyin-backend`）；启停状态在 `data/scheduler/enabled.json`（douyin-data 卷，容器 recreate 不丢）；执行历史在 `data/scheduler/history.jsonl`（5MB 滚动归档，保留 3 份）
+- **互斥**：cron 触发、页面立即执行、旧 `POST /api/process/pending` 共用同一把 `_process_lock`（`src/scheduler/jobs.py`），并发时后到者记 `skipped/process_busy`
+- **UI 边界**：cron 不进 UI（沿 dividend 先例「cron 由配置文件固定」），只开放启停 / 立即执行 / 看历史
+- 生命周期契约（shutdown drain / 单 worker / 时区陷阱）见 `.trellis/spec/backend/dividend-select/backend/scheduler-lifecycle.md`，douyin manager 同构遵循
+
 ## 项目结构
 
 ```
@@ -115,6 +130,12 @@ douyin-processor/
 │   ├── server/              # FastAPI 服务器
 │   │   ├── main.py          # 服务器主文件
 │   │   └── endpoints.py     # API 接口
+│   ├── scheduler/           # 内建调度管理（启停/立即执行/历史）
+│   │   ├── manager.py       # SchedulerManager
+│   │   ├── routes.py        # /api/scheduler/* 管理 API
+│   │   ├── jobs.py          # JOB_SPECS + 进程内 target + _process_lock
+│   │   ├── history.py       # JSONL 执行历史
+│   │   └── cron_human.py    # cron → 中文可读
 │   ├── processor/           # 音频处理模块
 │   │   ├── asr_client.py         # ASR 客户端
 │   │   ├── filesystem_client.py  # file-system-go 客户端
@@ -126,9 +147,11 @@ douyin-processor/
 │   └── app.yaml             # 应用配置
 ├── scripts/
 │   └── run.sh               # 启动脚本
+├── tests/                   # pytest（scheduler 套件）
 ├── data/
 │   ├── output/              # 输出目录（识别结果）
-│   └── status.json          # 状态文件
+│   ├── status.json          # 状态文件
+│   └── scheduler/           # enabled.json + history.jsonl（调度状态与历史）
 ├── logs/                    # 日志目录
 ├── main.py                  # 主入口
 └── pyproject.toml           # 项目配置
