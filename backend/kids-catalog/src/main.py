@@ -106,12 +106,13 @@ class Catalog:
         return rows
 
     def _device_candidate_rows(self, con):
-        rows = con.execute("select a.platform,a.album_id,a.title,j.downloaded_tracks from albums a join jobs j "
+        rows = con.execute("select a.platform,a.album_id,a.title,a.source,j.downloaded_tracks from albums a join jobs j "
                            "on a.id=j.album_id where (j.status='done' or "
                            "(j.status='partial' and j.user_trimmed=1 and j.downloaded_tracks>0)) "
                            "order by a.platform,a.album_id").fetchall()
         return [{'folder': sanitize_filename(row['title']), 'title': row['title'],
                  'source_id': f"{row['platform']}:{row['album_id']}",
+                 'source': row['source'] or 'chart',
                  'downloaded_tracks': row['downloaded_tracks'] or 0} for row in rows]
 
     @contextmanager
@@ -439,6 +440,7 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
         for row in catalog.device_candidate_rows():
             status, ledger_tracks = completion.get(row['folder'], (None, None))
             candidates.append({'folder': row['folder'], 'title': row['title'],
+                               'source': row['source'],
                                'confirmed': status == 'complete',
                                'track_count': (ledger_tracks if status == 'complete' else row['downloaded_tracks']) or 0})
         return {**state, 'candidates': candidates}

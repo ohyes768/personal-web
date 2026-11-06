@@ -1,6 +1,6 @@
 "use client";
 
-export type Candidate = {folder: string; title: string; confirmed: boolean; track_count: number};
+export type Candidate = {folder: string; title: string; confirmed: boolean; track_count: number; source?: string};
 
 type CandidatePickerProps = {candidates: Candidate[]; unchecked: Set<string>; disabled: boolean;
   onToggle: (folder: string) => void; onSetAll: (checked: boolean) => void;
@@ -23,6 +23,10 @@ export default function CandidatePicker({candidates, unchecked, disabled, onTogg
           <input type="checkbox" checked={!unchecked.has(row.folder)} disabled={disabled}
             onChange={() => onToggle(row.folder)} />
           <span className="candidate-title">{row.title}</span>
+          {/* 来源徽章：手动添加与月度榜单的合集一起出现在候选里，标注来源便于区分 */}
+          {row.source === "manual"
+            ? <span className="badge manual" title="通过粘贴链接手动导入的合集">手动添加</span>
+            : <span className="badge chart" title="本月平台榜单采集的合集">榜单</span>}
         </label>
         {row.track_count > 0 && <span className="badge tracks"
           title={row.confirmed ? "完成台账记录的曲目数，生成时按此发布" : "以下载数估计，生成时以实际文件校验为准"}>{row.track_count} 首</span>}
