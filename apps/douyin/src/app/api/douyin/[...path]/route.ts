@@ -66,6 +66,33 @@ export async function POST(
   }
 }
 
+// PATCH：scheduler 管理 API 的启停用（/api/scheduler/jobs/{id}）
+export async function PATCH(
+  request: NextRequest,
+  { params }: { params: Promise<{ path: string[] }> }
+) {
+  try {
+    const resolvedParams = await params;
+    const path = resolvedParams.path.join('/');
+    const targetUrl = new URL(path, BACKEND_URL);
+    const body = await request.json();
+
+    const response = await fetch(targetUrl.toString(), {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    const data = await response.json();
+    return Response.json(data, { status: response.status });
+  } catch (error) {
+    console.error('API proxy error:', error);
+    return Response.json({ error: 'Internal Server Error' }, { status: 500 });
+  }
+}
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ path: string[] }> }

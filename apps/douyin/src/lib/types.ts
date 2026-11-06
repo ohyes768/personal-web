@@ -79,3 +79,35 @@ export interface VideoListParams {
   page?: number;
   page_size?: number;
 }
+
+// ---- scheduler 管理（/api/scheduler/*）----
+
+// 执行历史单条记录（backend src/scheduler/history.py build_record）
+export interface SchedulerJobRun {
+  job_id: string;
+  target: string;
+  trigger: 'scheduled' | 'manual' | 'startup';
+  start: string;
+  end: string;
+  status: 'success' | 'failed' | 'skipped';
+  count?: number;
+  reason?: string;
+  error?: string;
+  failed?: number | string[];
+}
+
+// 调度任务（backend src/scheduler/manager.py list_jobs）
+export interface SchedulerJob {
+  id: string;
+  name: string;
+  target: string;
+  crons: string[];
+  cron_human: string;
+  enabled: boolean;
+  next_run_time: string | null;
+  last_run: Pick<
+    SchedulerJobRun,
+    'trigger' | 'start' | 'end' | 'status' | 'count' | 'reason' | 'error'
+  > | null;
+  description: string;
+}

@@ -9,6 +9,8 @@ import type {
   StatsResponse,
   ProcessTaskResponse,
   VideoListParams,
+  SchedulerJob,
+  SchedulerJobRun,
 } from './types';
 
 export const douyinApi = {
@@ -55,4 +57,24 @@ export const douyinApi = {
    */
   deleteWithFile: (videoId: string): Promise<void> =>
     directClient.delete<void>(`/api/aweme/${videoId}`),
+};
+
+/**
+ * scheduler 管理 API（/api/scheduler/*，后端 src/scheduler/routes.py）
+ * 与 dividend/macro 的 schedulerApi 同形：jobs 列表 / 启停 / 立即执行 / 历史
+ */
+export const schedulerApi = {
+  listJobs: (): Promise<{ jobs: SchedulerJob[] }> =>
+    directClient.get<{ jobs: SchedulerJob[] }>('/api/douyin/scheduler/jobs'),
+
+  setEnabled: (jobId: string, enabled: boolean): Promise<SchedulerJob> =>
+    directClient.patch<SchedulerJob>(`/api/douyin/scheduler/jobs/${jobId}`, { enabled }),
+
+  runNow: (jobId: string): Promise<{ job_id: string; triggered_at: string }> =>
+    directClient.post(`/api/douyin/scheduler/jobs/${jobId}/run`),
+
+  getRuns: (jobId: string, limit = 20): Promise<{ runs: SchedulerJobRun[] }> =>
+    directClient.get<{ runs: SchedulerJobRun[] }>(
+      `/api/douyin/scheduler/jobs/${jobId}/runs?limit=${limit}`
+    ),
 };
