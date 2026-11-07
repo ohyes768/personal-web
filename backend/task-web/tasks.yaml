@@ -24,11 +24,9 @@ tasks:
     env:
       PUSH_MODE: "1"
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: "10 9 * * mon-fri"
     timeout: 600
@@ -45,11 +43,9 @@ tasks:
     env:
       PUSH_MODE: "1"
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: "15 9 * * mon-fri"
     timeout: 600
@@ -67,11 +63,9 @@ tasks:
     env:
       PUSH_MODE: "1"
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: "30 11,14 * * mon-fri"
     timeout: 600
@@ -105,11 +99,9 @@ tasks:
     env:
       PUSH_MODE: "1"
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: "40 14 * * mon-fri"
     timeout: 600
@@ -127,11 +119,9 @@ tasks:
     env:
       PUSH_MODE: "1"
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: "35 14,16 * * mon-fri"
     timeout: 600
@@ -148,11 +138,9 @@ tasks:
     env:
       PUSH_MODE: "1"
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: "0 17 * * mon-fri"
     timeout: 600
@@ -189,13 +177,11 @@ tasks:
     env:
       HOME: /tmp
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/stock-info-dingding/data:/app/data"
       - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
     user: "1000:1000"
     cron: "42 14 * * mon-fri"
     timeout: 600
@@ -212,13 +198,11 @@ tasks:
     env:
       HOME: /tmp
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/stock-info-dingding/data:/app/data"
       - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
     user: "1000:1000"
     cron: "0 17 * * mon-fri"
     timeout: 600
@@ -235,13 +219,11 @@ tasks:
     env:
       HOME: /tmp
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/stock-info-dingding/data:/app/data"
       - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
     user: "1000:1000"
     cron: "1 17 * * mon-fri"
     timeout: 600
@@ -447,11 +429,9 @@ tasks:
     env:
       PUSH_MODE: '1'
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: 0 11 * * mon,wed,fri
     timeout: 600
@@ -467,11 +447,9 @@ tasks:
       PUSH_MODE: '1'
       CITY_NAME: 深圳
       DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
-      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
-      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
 
     cron: 0 11 * * mon,wed,fri
     timeout: 600
