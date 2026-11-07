@@ -358,17 +358,21 @@ tasks:
     timeout: 3600
 
   # ohyes768 profile（gateway 8643，~/.hermes/profiles/ohyes768/cron/jobs.json）4 个
-  # 宏观周报（skill: None，纯 prompt 驱动）；UTC 1 点档 = 北京 9 点档
+  # 宏观周报；UTC 1 点档 = 北京 9 点档
+  # 这 4 个 job 是 no_agent 脚本任务（job.skill=None、job.script 指向 ~/.hermes/scripts/
+  # macro_*_weekly.sh，wrapper 内 exec finance-macro/scripts/cron_run_skill.sh <skill>），
+  # 所以 skills 字段按 wrapper 里实际传入的 finance-macro skill 目录名登记。
   # 该 profile 走 HERMES_PROFILE=ohyes768（.env 默认即此值，显式声明防漂移）；
   # env_file=.env 供 BASE_URL/API_KEY（8643 网关），network 同样必须 nginx_nginx-bridge
   - id: hermes-macro-monetary-weekly
     name: 货币政策周报（Hermes/ohyes768）
     group: ai
-    description: ohyes768 profile 宏观周报；原 Hermes job（a31a6196fc09）
+    description: monetary-policy-skill（抓 MLF/LPR）；no_agent 脚本任务，原 Hermes job（a31a6196fc09）
     targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id a31a6196fc09 --jobs-json /hermes-cron-p7/jobs.json
+    skills: [monetary-policy-skill]
     env_file: /workspace/stock-info-dingding/.env
     network: nginx_nginx-bridge
     env:
@@ -381,11 +385,12 @@ tasks:
   - id: hermes-macro-money-supply-weekly
     name: 金融数据周报（Hermes/ohyes768）
     group: ai
-    description: ohyes768 profile 宏观周报；原 Hermes job（633b4d12a8a3）
+    description: money-supply-skill（抓 M1/M2/社融）；no_agent 脚本任务，原 Hermes job（633b4d12a8a3）
     targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 633b4d12a8a3 --jobs-json /hermes-cron-p7/jobs.json
+    skills: [money-supply-skill]
     env_file: /workspace/stock-info-dingding/.env
     network: nginx_nginx-bridge
     env:
@@ -398,11 +403,12 @@ tasks:
   - id: hermes-macro-entity-weekly
     name: 实体经济周报（Hermes/ohyes768）
     group: ai
-    description: ohyes768 profile 宏观周报；原 Hermes job（3704976be0ec）
+    description: entity-economy-skill（抓 PMI/工增/固投/社零）；no_agent 脚本任务，原 Hermes job（3704976be0ec）
     targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 3704976be0ec --jobs-json /hermes-cron-p7/jobs.json
+    skills: [entity-economy-skill]
     env_file: /workspace/stock-info-dingding/.env
     network: nginx_nginx-bridge
     env:
@@ -415,11 +421,12 @@ tasks:
   - id: hermes-macro-inflation-weekly
     name: 通胀跟踪周报（Hermes/ohyes768）
     group: ai
-    description: ohyes768 profile 宏观周报；原 Hermes job（7243389de6f9）
+    description: inflation-skill（抓 CPI/PPI/核心CPI）；no_agent 脚本任务，原 Hermes job（7243389de6f9）
     targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 7243389de6f9 --jobs-json /hermes-cron-p7/jobs.json
+    skills: [inflation-skill]
     env_file: /workspace/stock-info-dingding/.env
     network: nginx_nginx-bridge
     env:
