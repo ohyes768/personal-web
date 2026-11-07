@@ -23,7 +23,13 @@ tasks:
     cwd: /app
     env:
       PUSH_MODE: "1"
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
     cron: "10 9 * * mon-fri"
     timeout: 600
 
@@ -38,17 +44,40 @@ tasks:
     cwd: /app
     env:
       PUSH_MODE: "1"
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
     cron: "15 9 * * mon-fri"
     timeout: 600
 
-  # 板块涨跌播报（sector-push）已随 stock-info-dingding 384f45c 下线：
-  # dingtalk_em_api.py 已删，yaml 条目同步移除（登记修剪自动清库，运行历史保留）
+  # 迁移来源：n8n「Stock info Push」11:30 + 14:30 板块涨跌（两触发器合并为逗号 cron）
+  # 2026-11-07 曾随 384f45c 下线，同日恢复（业务仓库已改走公共 dingtalk-push CLI）
+  - id: sector-push
+    name: 板块涨跌播报
+    description: 东方财富板块涨跌 → 钉钉（11:30、14:30 两档）
+    targets: [dingtalk]
+    engine: docker
+    image: stock-info:latest
+    command: python dingtalk_em_api.py
+    cwd: /app
+    env:
+      PUSH_MODE: "1"
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
+    env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
+    cron: "30 11,14 * * mon-fri"
+    timeout: 600
 
   # ---- 黄金播报已改为 Hermes skill（gold-price-brief），DeepSeek 版脚本退役 ----
   # 原 gold-price-push（脚本内置 DeepSeek 分析）删除；AI 分析由 skill 完成
-  # （板块涨跌播报 sector-push 已随 stock-info-dingding 384f45c 下线，
-  #   dingtalk_em_api.py 已删，yaml 条目同步移除，运行历史保留）
   - id: hermes-gold-price
     name: 黄金走势研判（钉钉）
     group: ai
@@ -75,7 +104,13 @@ tasks:
     cwd: /app
     env:
       PUSH_MODE: "1"
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
     cron: "40 14 * * mon-fri"
     timeout: 600
 
@@ -91,7 +126,13 @@ tasks:
     cwd: /app
     env:
       PUSH_MODE: "1"
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
     cron: "35 14,16 * * mon-fri"
     timeout: 600
 
@@ -106,7 +147,13 @@ tasks:
     cwd: /app
     env:
       PUSH_MODE: "1"
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
     cron: "0 17 * * mon-fri"
     timeout: 600
 
@@ -141,10 +188,14 @@ tasks:
     cwd: /app
     env:
       HOME: /tmp
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/stock-info-dingding/data:/app/data"
       - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
     user: "1000:1000"
     cron: "42 14 * * mon-fri"
     timeout: 600
@@ -160,10 +211,14 @@ tasks:
     cwd: /app
     env:
       HOME: /tmp
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/stock-info-dingding/data:/app/data"
       - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
     user: "1000:1000"
     cron: "0 17 * * mon-fri"
     timeout: 600
@@ -179,10 +234,14 @@ tasks:
     cwd: /app
     env:
       HOME: /tmp
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
     volumes:
       - "/home/ohyes768/stock-info-dingding/data:/app/data"
       - "/home/ohyes768/stock-info-dingding/rss_sources.yaml:/app/rss_sources.yaml:ro"
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
     user: "1000:1000"
     cron: "1 17 * * mon-fri"
     timeout: 600
@@ -387,7 +446,13 @@ tasks:
     cwd: /app
     env:
       PUSH_MODE: '1'
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
     cron: 0 11 * * mon,wed,fri
     timeout: 600
   - id: damai-sz-push
@@ -401,7 +466,13 @@ tasks:
     env:
       PUSH_MODE: '1'
       CITY_NAME: 深圳
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
+      DINGTALK_PUSH_STATE_DIR: /opt/dingtalk-state
     env_file: /workspace/stock-info-dingding/.env
+    volumes:
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
+      - "/home/ohyes768/.local/state/dingtalk-push:/opt/dingtalk-state"
+
     cron: 0 11 * * mon,wed,fri
     timeout: 600
   # natgeo 已改造成 Hermes skill（skills/photo/natgeo-daily，翻译由 Hermes 模型
