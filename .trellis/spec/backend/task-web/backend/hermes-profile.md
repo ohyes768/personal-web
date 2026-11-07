@@ -1,6 +1,22 @@
 # 生效 Hermes Profile 契约
 
-> 2026-11-07 起 profile 从「只读推导」变成「用户可设置」。改这块先读本文。
+> 2026-11-07 起 profile 从「只读推导」变成「用户可设置」；同日 prompt 事实源收编进
+> tasks.yaml（`prompt:` 字段 → tasks 表 → 执行注入 `HERMES_PROMPT`），AI 定时任务
+> 与 stock-info-dingding 解耦（镜像 `hermes-trigger:latest`，源码在 skills 仓库
+> `personal-tools/hermes-trigger/`）。改这块先读本文。
+
+## 0. prompt 事实源（2026-11-07 起）
+
+- tasks.yaml `prompt:` 字段是 AI 任务 prompt 的**唯一事实源**（登记制、进 git）；
+  sync 后存 `tasks.prompt` 列，执行时经 `executor._task_env` 注入容器 env
+  `HERMES_PROMPT`。
+- 触发脚本（skills 仓库 hermes_trigger.py）**首选 `HERMES_PROMPT`**；没有时回退按
+  `--job-id` 读挂载的 jobs.json（兼容未迁移任务）。`--job-id` 此时仅作日志标识。
+- jobs.json 降级为「未迁移任务的回退源」+「Hermes 侧原生 job 的定义文件」，
+  不再是 AI 任务的必要依赖；切换 profile 不再要求目标 profile 有同名 job。
+- AI 任务凭证在 `~/.hermes/gw-8642.env` / `gw-8643.env`（纯 HERMES_* 键，
+  chmod 600），经 compose 只读挂到后端容器 `/hermes-home`；env_file 容器路径
+  与 profile 目录里的 env_file 一致，是登记推导的匹配依据。
 
 ## 1. profile 不只是标签
 
@@ -37,13 +53,12 @@ job id 时才跑得通，否则触发会查不到 job 并在运行日志里明�
 
 ## 4. 执行期应用（`executor.py`）
 
-- `_task_env`：登记 env_file → profile 凭证 env_file → yaml 显式 env → 最后强制写入
-  `HERMES_PROFILE=${生效 profile}`。最后一步是为了让页面新选的值压过 yaml 里为防漂移
-  写死的旧值。
+- `_task_env`：登记 env_file → profile 凭证 env_file → yaml 显式 env → 强制写入
+  `HERMES_PROFILE=${生效 profile}` → 有登记 prompt 再注入 `HERMES_PROMPT`。
+  强制写 profile 是为了让页面新选的值压过 yaml 里为防漂移写死的旧值。
 - `_task_volumes` + `profiles.apply_jobs_mount`：宿主源等于任一 profile 的 `jobs_dir` 的挂载，
-  宿主源换成生效 profile 的目录，**容器路径不变**。因此命令里写死的
-  `--jobs-json /hermes-cron/jobs.json` 或 `/hermes-cron-p7/jobs.json` 切换 profile 后依然指向
-  生效 profile 的 jobs.json；回执目录、dingtalk-push 等非 jobs 挂载原样保留。
+  宿主源换成生效 profile 的目录，**容器路径不变**。prompt 已登记的任务通常不再挂
+  jobs.json（回退路径用不到）；保留该逻辑只为兼容未迁移任务。
 
 ## 5. API 与页面
 

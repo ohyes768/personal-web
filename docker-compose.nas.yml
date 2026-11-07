@@ -578,6 +578,16 @@ services:
     build:
       context: ${STOCK_INFO_HOST_PATH:-/home/ohyes768/stock-info-dingding}
 
+  # AI 任务触发镜像（方案 B 同款 build-only）：hermes_trigger.py + requests，
+  # 源码在 skills 仓库（AI 定时任务与 stock-info 解耦后唯一依赖）
+  hermes-trigger-image:
+    image: hermes-trigger:latest
+    container_name: hermes-trigger-image
+    restart: "no"
+    entrypoint: ["true"]
+    build:
+      context: ${SKILLS_HOST_PATH:-/home/ohyes768/skills}/personal-tools/hermes-trigger
+
   # ---------------------------------------------------------------------------
   # task-web 后端（定时任务管理：调度 + 执行记录 + 日志）
   # ---------------------------------------------------------------------------
@@ -588,8 +598,10 @@ services:
     expose: ["8101"]
     volumes:
       - task-web-data:/app/data
-      # 业务仓库挂载：env_file 读取来源（docker 引擎的代码在业务镜像内，不依赖此目录执行）
+      # 业务仓库挂载：脚本类任务 env_file 读取来源（docker 引擎的代码在业务镜像内）
       - "${TASK_WEB_WORKSPACE_HOST_PATH:-/home/ohyes768/stock-info-dingding}:/workspace/stock-info-dingding"
+      # Hermes profile 凭证（gw-8642/8643.env）只读挂载；AI 任务 env_file 指向这里
+      - "${HERMES_HOME_HOST_PATH:-/home/ohyes768/.hermes}:/hermes-home:ro"
       # docker 引擎经 SDK 走 socket 按次拉起业务镜像（方案 B）。
       # 边界：docker.sock 等价宿主机 root 权限，NAS 单用户自用环境接受
       - /var/run/docker.sock:/var/run/docker.sock

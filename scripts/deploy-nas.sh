@@ -41,7 +41,9 @@ NGINX_COMPOSE_FILE="${NGINX_COMPOSE_FILE:-/home/ohyes768/nginx/docker-compose.ym
 # 与下面 git pull 的目标是同一个路径。
 STOCK_INFO_HOST_PATH="${STOCK_INFO_HOST_PATH:-/home/ohyes768/stock-info-dingding}"
 TASK_WEB_WORKSPACE_HOST_PATH="${TASK_WEB_WORKSPACE_HOST_PATH:-$STOCK_INFO_HOST_PATH}"
-export STOCK_INFO_HOST_PATH TASK_WEB_WORKSPACE_HOST_PATH
+# AI 任务触发镜像的源码仓（hermes-trigger:latest 的构建 context 在其 personal-tools/hermes-trigger）
+SKILLS_HOST_PATH="${SKILLS_HOST_PATH:-/home/ohyes768/skills}"
+export STOCK_INFO_HOST_PATH TASK_WEB_WORKSPACE_HOST_PATH SKILLS_HOST_PATH
 
 show_help() {
     cat <<'EOF'
@@ -330,6 +332,18 @@ update_task_web_business_repo() {
             exit 1
         fi
     done
+    # AI 任务触发镜像源码仓（skills）
+    if [[ -d "$SKILLS_HOST_PATH" ]] && git -C "$SKILLS_HOST_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        current=$(git -C "$SKILLS_HOST_PATH" rev-parse --short HEAD 2>/dev/null || echo "?")
+        echo "  --- git pull skills 仓库 ($SKILLS_HOST_PATH, 当前 $current) ---"
+        git -C "$SKILLS_HOST_PATH" pull --ff-only || {
+            echo "错误: skills 仓库更新失败。" >&2
+            echo "  处理: cd $SKILLS_HOST_PATH && git status；或 --no-pull 跳过。" >&2
+            exit 1
+        }
+    else
+        echo "  提示: skills 仓库不可用（$SKILLS_HOST_PATH），跳过 pull；触发镜像将按现有文件构建"
+    fi
 }
 
 # docker 任务靠 env_file 注入密钥：文件缺失时容器起不来，但镜像构建不受影响，
@@ -391,6 +405,9 @@ if [[ "$TARGET" == "task-web" && "$SIDE" != "frontend" ]]; then
     echo ""
     echo "  --- compose build stock-info-image（context=$STOCK_INFO_HOST_PATH）---"
     compose_build stock-info-image
+    echo ""
+    echo "  --- compose build hermes-trigger-image（context=$SKILLS_HOST_PATH/personal-tools/hermes-trigger）---"
+    compose_build hermes-trigger-image
     check_task_web_business_env
 elif [[ "$TARGET" == "task-web" ]]; then
     echo ""

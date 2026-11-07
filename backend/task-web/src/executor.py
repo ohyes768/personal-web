@@ -102,6 +102,9 @@ def _task_env(task: dict) -> dict[str, str]:
             logger.warning("run env 字段非法（已忽略）")
     if profile:
         env[profiles.PROFILE_ENV_KEY] = profile
+    # 登记的 prompt 直接注入：触发脚本优先用 HERMES_PROMPT，jobs.json 只是回退
+    if task.get("prompt"):
+        env["HERMES_PROMPT"] = task["prompt"]
     return env
 
 

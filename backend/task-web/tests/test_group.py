@@ -62,16 +62,22 @@ def test_profile_explicit_env_wins(client, env):
 
 
 def test_profile_default_env_file(client, env):
-    """.env.hermes-default → default profile；.env → ohyes768（默认 profile）。"""
+    """gw-8642.env → default profile；gw-8643.env → ohyes768。
+
+    2026-11-07 起 AI 任务凭证迁到 ~/.hermes/gw-*.env（不再挂 stock-info checkout）；
+    旧 stock-info 路径不再对应任何 profile，推导为 None（防误绑）。"""
     _sync(env,
           'tasks:\n'
           '  - id: p2\n    name: x\n    group: ai\n    command: python hermes_trigger.py\n'
-          '    env_file: /workspace/stock-info-dingding/.env.hermes-default\n'
+          '    env_file: /hermes-home/gw-8642.env\n'
           '  - id: p3\n    name: y\n    group: ai\n    command: python hermes_trigger.py\n'
-          '    env_file: /workspace/stock-info-dingding/.env\n')
+          '    env_file: /hermes-home/gw-8643.env\n'
+          '  - id: p3b\n    name: z\n    group: ai\n    command: python hermes_trigger.py\n'
+          '    env_file: /workspace/stock-info-dingding/.env.hermes-default\n')
     rows = {t["id"]: t["profile"] for t in client.get("/api/tasks").json()["tasks"]}
     assert rows["p2"] == "default"
     assert rows["p3"] == "ohyes768"
+    assert rows["p3b"] is None
 
 
 def test_profile_script_task_none(client, env):

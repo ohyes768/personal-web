@@ -53,6 +53,7 @@ def _task_view(t: dict, override: str | None = None) -> dict:
         "group": t.get("group_name") or "script",
         "profile": profiles.effective_profile(t, override),
         "profile_source": profiles.profile_source(t, override),
+        "has_prompt": bool(t.get("prompt")),
         "targets": json.loads(t["targets"]) if t.get("targets") else [],
         "skills": json.loads(t["skills"]) if t.get("skills") else [],
         "cron": t.get("cron"),

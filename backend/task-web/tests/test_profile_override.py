@@ -16,7 +16,7 @@ AI_YAML = (
     "    name: ai 任务\n"
     "    group: ai\n"
     "    command: python hermes_trigger.py --jobs-json /hermes-cron/jobs.json\n"
-    "    env_file: /workspace/stock-info-dingding/.env.hermes-default\n"
+    "    env_file: /hermes-home/gw-8642.env\n"
     "    volumes:\n"
     "      - /home/ohyes768/.hermes/cron:/hermes-cron:ro\n"
     "      - /home/ohyes768/ack:/ack:rw\n"
@@ -112,17 +112,19 @@ def test_delete_task_drops_override(env):
 
 def test_registered_profile_derivation():
     base = {"group_name": "ai"}
-    assert profiles.registered_profile({**base, "env_file": "/w/.env.hermes-default"}) == "default"
-    assert profiles.registered_profile({**base, "env_file": "/w/.env"}) == "ohyes768"
+    assert profiles.registered_profile({**base, "env_file": "/hermes-home/gw-8642.env"}) == "default"
+    assert profiles.registered_profile({**base, "env_file": "/hermes-home/gw-8643.env"}) == "ohyes768"
     assert profiles.registered_profile(
-        {**base, "env_file": "/w/.env.hermes-default", "env": json.dumps({"HERMES_PROFILE": "ohyes768"})}
+        {**base, "env_file": "/hermes-home/gw-8642.env", "env": json.dumps({"HERMES_PROFILE": "ohyes768"})}
     ) == "ohyes768"
     assert profiles.registered_profile({**base}) is None
-    assert profiles.registered_profile({"group_name": "script", "env_file": "/w/.env"}) is None
+    # 旧路径（stock-info checkout）在新目录里无对应 profile → None（不误绑）
+    assert profiles.registered_profile({**base, "env_file": "/w/.env.hermes-default"}) is None
+    assert profiles.registered_profile({"group_name": "script", "env_file": "/hermes-home/gw-8643.env"}) is None
 
 
 def test_unknown_override_ignored_for_display():
-    task = {"id": "x", "group_name": "ai", "env_file": "/w/.env"}
+    task = {"id": "x", "group_name": "ai", "env_file": "/hermes-home/gw-8643.env"}
     assert profiles.effective_profile(task, "ghost") == "ohyes768"
     assert profiles.profile_source(task, "ghost") == "registry"
 
@@ -141,6 +143,28 @@ def _catalog(monkeypatch, tmp_path):
         "ohyes768": {"env_file": str(ohyes_env), "jobs_dir": "/h/ohyes768/cron"},
     }))
     return default_env, ohyes_env
+
+
+def test_prompt_injected_as_env(client, env, tmp_path, monkeypatch):
+    """登记 prompt → 执行环境注入 HERMES_PROMPT，优先于 jobs.json 回退。"""
+    _catalog(monkeypatch, tmp_path)
+    _sync(env,
+          "tasks:\n"
+          "  - id: p4\n    name: ai\n    group: ai\n    command: python hermes_trigger.py --job-id x\n"
+          "    prompt: |-\n"
+          "      第一行\n"
+          "      第二行\n")
+    e = executor._task_env(db.get_task("p4"))
+    assert e["HERMES_PROMPT"] == "第一行\n第二行"
+
+
+def test_no_prompt_no_env(client, env, tmp_path, monkeypatch):
+    _catalog(monkeypatch, tmp_path)
+    _sync(env,
+          "tasks:\n"
+          "  - id: p5\n    name: ai\n    group: ai\n    command: python hermes_trigger.py\n")
+    e = executor._task_env(db.get_task("p5"))
+    assert "HERMES_PROMPT" not in e
 
 
 def test_task_env_uses_profile_credentials(client, env, tmp_path, monkeypatch):

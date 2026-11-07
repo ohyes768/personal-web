@@ -81,13 +81,13 @@ tasks:
     description: 经 Hermes Runs API 触发 gold-price-brief skill（取数→AI 研判→钉钉推送）；job 7c8d2bd1c230（Hermes 侧已 pause）
     targets: [dingtalk]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id 7c8d2bd1c230
+    prompt: |-
+      按 gold-price-brief skill 执行当日黄金走势研判：运行取数脚本获取数据（失败则中止不推送），基于数据完成研判并落盘 markdown，然后 PUSH_MODE=1 推送钉钉；最终回复只写研判要点与推送结果。
     skills: [gold-price-brief]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 9,15 * * mon-fri"
     timeout: 1800
 
@@ -160,13 +160,13 @@ tasks:
     description: 经 Hermes Runs API 触发 daily-pick-brief skill；选股/去重/推送历史由脚本维护，AI 研判同步完成后退出
     targets: [dingtalk]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id 1f04c0e830c8
+    prompt: |-
+      按 daily-pick-brief skill 执行每日财报阅读：运行脚本主流程（守卫自动防当日重复推送），判读结果（推送成功/已跳过/无推荐/失败）并如实转述标的信息。
     skills: [daily-pick-brief]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 17 * * mon-fri"
     timeout: 3600
 
@@ -260,13 +260,44 @@ tasks:
     description: 经 Hermes Runs API 触发 hangzhou-pm25 skill；原 Hermes cron job（id 246c69c1e845）迁移
     targets: [wechat]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id 246c69c1e845
+    prompt: |-
+      查询杭州主城区 PM2.5 当前情况和未来五天变化，生成简报并推送到微信。
+
+      ## 步骤
+
+      1. 运行取数脚本（脚本自带全部取数与计算逻辑，**不要**另找网页数据、不要另抄一套口径）：
+
+      ```bash
+      cd /home/ohyes768/skills/environment/hangzhou-pm25 && \
+      python3 scripts/hangzhou_pm25.py --output-dir /tmp/hzpm25-$(date -u +%Y%m%d-%H%M)
+      ```
+
+      2. 读取生成的 `report.md`（完整版，含五天表格）和同目录的 `report.json`（结构化数据）。
+
+      3. 整理出**最终推送到微信的正文**，按 SKILL.md 的「如何回答」规范：
+         - 长度控制在 **120–200 字**，最多 300 字
+         - 先说当前浓度 + 观测时间，再说近 24 小时均值相对 WHO 参考值（15 μg/m³）的高低
+         - 一句话说后续趋势（哪天变差/变好）
+         - 五天表格可以保留，但只在用户需要完整报告时；微信正文优先简短
+         - 用大白话（如「风小，污染物不容易散开」），不堆站点明细/风速数字/边界层术语
+         - `current.kind=observation` 时说明是周边站点自算均值、非官方全市均值；`model_estimate` 必须说「模型估计，非实测」
+         - 不贴「安全」「适合运动」这类标签；PM2.5 单项不等于综合空气质量
+         - 保留来源署名（中国环境监测总站 / CAMS/ECMWF / Open-Meteo）
+
+      4. 把完整报告另存到 `~/.hermes/cron/output/hangzhou-pm25/YYYY-MM-DD_HH-MM.md`（文件名用**北京时间**，同名覆盖，不要追加）。
+
+      ## 硬规则
+
+      - **不要**调用 `clarify` 或任何交互式工具（cron 场景无用户在场）
+      - **不要**调用 `push_rss.py` 或推任何 RSS / 钉钉（用户只要微信）
+      - 脚本退出码 1 表示没有可用 PM2.5 数据 → 此时**如实说明当前数据缺失**，不要编造数值；退出码 2 是参数/文件错误 → 说明错误原因
+      - final response 就是**要推送到微信的正文本身**（≤300 字），不要复述流程、不要加「已完成」之类的话
+      - 工具调用预算 ≤ 15 次
     skills: [hangzhou-pm25]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "45 7,11,17 * * *"
     timeout: 2100
 
@@ -283,13 +314,66 @@ tasks:
     description: hk-ipo-research skill，产出推 RSS（已核实 prompt 内置推送步骤）（job 10ef8281a3bd）
     targets: [rss]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id 10ef8281a3bd
+    prompt: |-
+      使用 hk-ipo-research skill 跑每日港股打新研究，按 references/report-contract.md 生成最终 Markdown 并推送到 RSS：
+
+      ## 工作流程
+
+      1. 运行 `python3 ~/.hermes/skills/hk-ipo-research/scripts/hkipo.py overview` + `hkex active` 双源看今天仍在招股的港股
+      2. 对每只新股运行 `python3 ~/.hermes/skills/hk-ipo-research/scripts/hkipo.py analyze <代码>` + `tradesmart tracker <代码>` 拿孖展数据
+      3. **财务和股东字段改用实时全网搜索**（按 references/financial-research.md 和 references/ownership-research.md）：
+         - 用公司名 + 关键词组合搜索（AAStocks / 智通财经 / 财联社 / 新浪财经 / 格隆汇 / 界面 / 公司官网）
+         - 不要从 HKEX PDF 抓财务/股东（已知失败）
+         - 优先找明确引用“招股书/申请版本”的报道，再用第二个独立来源交叉确认
+         - 拿不到时仍可推送，但保留 `quality_warnings`
+      4. 一次性写 **1 只 = 1 篇 Markdown**，路径 `~/.hermes/cron/output/hk-ipo-daily-{YYYY-MM-DD}-{code}.md`
+      5. Markdown 包含 references/report-contract.md 的 8 个二级标题（必备章节尽量齐全）
+      6. **重要**：生成 Markdown 后**立即调用** push_rss.py 推送，每只都必须显式带 `--allow-duplicate`（PITFALL #30：批次内第 2-N 只不加会被 relay 误判 duplicate 而丢报告）：
+
+      ```bash
+      python3 ~/.hermes/skills/hk-ipo-research/scripts/push_rss.py <md-path> \
+        --title "YYYY-MM-DD 港股打新｜公司名（00000.HK）｜66分 B" \
+        --endpoint https://web.duomi77.cn:9443/rss/api/rss-relay/post \
+        --source hk-ipo-research \
+        --insecure \
+        --allow-duplicate
+      ```
+
+      推送成功后从返回 JSON 里直接取 `detail_url` 字段（relay 已现成拼好 `/view/{id}` 完整链接），**不要自己拼**。若 `detail_url` 为空则用 `id` 字段拼 `https://web.duomi77.cn:9443/rss/view/{id}` 兜底。
+
+      7. 财务字段未找到时，RSS 会告警但默认继续推；如想强制门禁，追加 `--strict`。
+      8. 不要合并多只新股；每只独立生成 + 独立推送。
+      9. 用中文输出，时间使用 Asia/Hong_Kong。
+      10. **工具调用预算**：≤ 30 次；每只新股 ≤ 8 次。
+
+      不要超过 20 分钟。报告存在关键占位符时不得推送。
+
+      ## ⭐ 微信摘要（final response 必填，最后一步）
+
+      所有 push_rss.py 都跑完后，你的 final response（也就是 cron 自动 deliver 到 Home 微信 + 飞书的内容）必须是 **≤ 500 字的极简摘要**，严格按以下格式输出，不要复述报告全文、不要把 Markdown 粘贴进 final response（PITFALL #10a：完整报告约 37000 字符会被切 18 次发 iLink 触发限流）：
+
+      ```
+      【YYYY-MM-DD 港股打新｜共 N 只新股】
+
+      • 03228 景旺电子（10.8-10.15 招股）｜62 B-｜现金 1 手｜风险：H1 净利 -25.3%
+      • 03757 罗博特科（10.13-10.16 招股）｜35 C｜建议回避｜风险：2025 由盈转亏 -204%
+
+      📄 03228 完整阅读：<detail_url 或 https://web.duomi77.cn:9443/rss/view/{RSS_ID_1}>
+      📄 03757 完整阅读：<detail_url 或 https://web.duomi77.cn:9443/rss/view/{RSS_ID_2}>
+
+      ⚠️ 仅为研究参考，不构成认购或买卖建议。
+      ```
+
+      硬规则：
+      - 每只 1 行 bullet：代码 + 招股期 + 评分 + 1 句建议 + 1 句核心风险
+      - N = 0 时 final response 只发一行：`【YYYY-MM-DD 港股打新】今日无新股可申购`
+      - 完整 Markdown 已落 `~/.hermes/cron/output/hk-ipo-daily-YYYY-MM-DD-<code>.md`
+      - 禁止把 Markdown 全文、表格、免责声明复制到 final response
     skills: [hk-ipo-research]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 8 * * 1-5"
     timeout: 3600
 
@@ -299,13 +383,41 @@ tasks:
     description: hk-ipo-backtest skill，推 RSS（已核实 prompt 内置推送步骤）（job f6ce56ef2c94）
     targets: [rss]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id f6ce56ef2c94
+    prompt: |-
+      使用 hk-ipo-backtest skill 跑每日港股 IPO 回测审计，按 references/report-contract.md 生成最终 Markdown 并推送到 RSS：
+
+      ## 工作流程
+
+      1. 确认今天是香港交易日，且港股已正常收市（hour >= 16）
+      2. 找出今天完成首日交易的港股 IPO（排除转板、介绍上市、ETF、债券）
+      3. 逐只回到“公开招股截止日前一天 23:59:59 (Asia/Hong_Kong)”的预测截止点
+      4. 重建当时候选全集，调用 hk-ipo-research skill
+      5. **财务和股东字段**按 references/financial-research.md 和 references/ownership-research.md 实时全网搜（不依赖 HKEX PDF）
+      6. 冻结预测快照（候选列表 + 输入来源 + 评分 + 排名 + 方向 + 置信度 + 理由）
+      7. 解锁后读取真实结果（最终发售价、暗盘、上市首日开盘/最高/最低/收盘）
+      8. 按 references/report-contract.md 输出：暗盘方向是否命中、首日开盘方向是否命中、推荐股票表现、高分破发反例、低分上涨反例
+      9. **每只独立**生成 Markdown，路径 `~/.hermes/cron/output/hk-ipo-backtest-{YYYY-MM-DD}-{code}.md`
+      10. **重要**：生成 Markdown 后**立即调用** push_rss.py：
+
+      ```bash
+      python3 ~/.hermes/skills/hk-ipo-research/scripts/push_rss.py <md-path> \
+        --report-type backtest \
+        --title "YYYY-MM-DD 港股IPO回测｜公司名（00000.HK）｜预测命中" \
+        --endpoint https://web.duomi77.cn:9443/rss/api/rss-relay/post \
+        --source hk-ipo-backtest \
+        --insecure
+      ```
+
+      11. 当天有 N 只成熟案例就推送 N 篇；无成熟案例则不推送。
+      12. 结论只能是 `预测命中` / `部分命中` / `预测未命中`。
+      13. 财务/股东字段未找到时 RSS 会告警但默认继续推；如想强制门禁，追加 `--strict`。
+
+      不要超过 20 分钟。**严禁未来数据泄漏**。工具调用预算 ≤ 30 次。
     skills: [hk-ipo-backtest]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "0 16 * * 1-5"
     timeout: 3600
 
@@ -315,13 +427,13 @@ tasks:
     description: a-share-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 8c85ad9c4c24）
     targets: [rss, web]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id 8c85ad9c4c24
+    prompt: |-
+      Run a-share-macro-impact-skill end-to-end following SKILL.md execution steps. Do not skip the final RSS push step.
     skills: [a-share-macro-impact-skill]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "0 18 * * 1"
     timeout: 3600
 
@@ -331,13 +443,13 @@ tasks:
     description: bond-market-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 053337ce60b7）
     targets: [rss, web]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id 053337ce60b7
+    prompt: |-
+      Run bond-market-macro-impact-skill end-to-end following SKILL.md execution steps. Do not skip the final RSS push step.
     skills: [bond-market-macro-impact-skill]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "5 18 * * 1"
     timeout: 3600
 
@@ -347,13 +459,54 @@ tasks:
     description: waytoagi-update-log skill，推 RSS Relay+钉钉群机器人（已核实 prompt 内置双通道推送）（job adad4bb38199）
     targets: [rss, dingtalk]
     engine: docker
-    image: stock-info:latest
+    image: hermes-trigger:latest
     command: python hermes_trigger.py --job-id adad4bb38199
+    prompt: |-
+      追踪 WaytoAGI 知识库近 7 日更新日志，整理今天（按 Asia/Shanghai 时区）的文章列表（标题 + 说明 + 飞书 Wiki 链接 + 微信原文链接），按 Step 1-5 流程执行，并把结果推送到 **RSS Relay** 和 **钉钉群机器人**。如果今天无更新则返回 [SILENT]。
+
+      ## 推送目标（只有两个，都不经过 IM 通道）
+
+      本 cron 的 `deliver=local`，**不会投递到飞书/微信/任何 IM**。最终回复只落本地文件，不外发。推送靠下面两条通道：
+
+      1. **RSS Relay** —— 由 skill 内部按 Step 6 执行，每篇文章一条 POST（`--source waytoagi-daily`，`channel` 固定 `waytoagi`）
+      2. **钉钉群机器人** —— 必须由 agent **显式调用脚本**推送
+
+      两个目标互不替代，**都要发**。
+
+      ### 钉钉推送步骤
+
+      有文章时，在写 final response **之前**执行：
+
+      ```bash
+      cd ~/.hermes/skills/waytoagi-update-log && \
+      node scripts/send_dingtalk.js \
+        "$(grep ^DINGTALK_WEBHOOK .env | cut -d= -f2-)" \
+        "$(cat /tmp/waytoagi-dingtalk.md)"
+      ```
+
+      其中 `/tmp/waytoagi-dingtalk.md` 是本次要推的日报 markdown（**必须先写到该文件**）。格式要求：
+
+      - **正文第一行必须包含 `WaytoAGI` 这个词** —— 钉钉机器人配置了关键词安全校验，正文/标题里不含 `WaytoAGI` 会被直接拒绝（`errcode:310000 关键词不匹配`）。`send_dingtalk.js` 的 markdown title 硬编码为 `WaytoAGI 更新日报`，标题已满足要求；正文首行仍建议写成 `## 📅 WaytoAGI 更新日志 · X月X日 更新 N 篇` 双重保险
+      - 文章条目之间用 `---` 分隔
+      - 标题、说明、链接之间用空行分隔
+      - 每篇的链接：微信来源 → 微信原文链接（优先）+ 飞书 Wiki 作备；非微信来源 → 直接用飞书 Wiki 链接
+
+      ### 成功判定
+
+      - 脚本输出 `发送成功: {"errcode":0,"errmsg":"ok"}` = 钉钉推送成功
+      - 若报 `钉钉返回错误: 关键词不匹配` → 正文缺 `WaytoAGI` 关键词，**补上关键词后重试一次**，不要反复重试
+      - **钉钉推送失败不能阻断 RSS 推送和 final response** —— 两个目标（钉钉 / RSS）任一失败，其余照常执行，最后在 final response 里说明哪个失败了
+
+      ## 硬规则
+
+      - 不要调用 `clarify` 或任何交互式工具（cron 场景无用户在场）
+      - **不要**尝试向飞书或微信发送任何消息（`deliver=local`，没有 IM 投递）
+      - 工具调用预算 ≤ 30 次
+      - 完整 Markdown 报告仍按 SKILL.md Step 5 落 `~/.hermes/cron/output/`，RSS 仍按 Step 6 每篇一条 POST
+      - final response 保持简洁（≤ 500 字），完整报告已落盘 + 已推 RSS / 钉钉，不要复述全文
     skills: [waytoagi-update-log]
-    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    volumes:
-      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "0 10 * * *"
     timeout: 3600
 
@@ -370,15 +523,15 @@ tasks:
     description: monetary-policy-skill（抓 MLF/LPR）；no_agent 脚本任务，原 Hermes job（a31a6196fc09）
     targets: [web]
     engine: docker
-    image: stock-info:latest
-    command: python hermes_trigger.py --job-id a31a6196fc09 --jobs-json /hermes-cron-p7/jobs.json
+    image: hermes-trigger:latest
+    command: python hermes_trigger.py --job-id a31a6196fc09
+    prompt: |-
+      每周一 09:00 (Asia/Shanghai) 抓 MLF/LPR 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [monetary-policy-skill]
-    env_file: /workspace/stock-info-dingding/.env
+    env_file: /hermes-home/gw-8643.env
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    volumes:
-      - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
     cron: "0 9 * * 1"
     timeout: 3600
 
@@ -388,15 +541,15 @@ tasks:
     description: money-supply-skill（抓 M1/M2/社融）；no_agent 脚本任务，原 Hermes job（633b4d12a8a3）
     targets: [web]
     engine: docker
-    image: stock-info:latest
-    command: python hermes_trigger.py --job-id 633b4d12a8a3 --jobs-json /hermes-cron-p7/jobs.json
+    image: hermes-trigger:latest
+    command: python hermes_trigger.py --job-id 633b4d12a8a3
+    prompt: |-
+      每周一 09:15 (Asia/Shanghai) 抓 M1/M2/社融 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [money-supply-skill]
-    env_file: /workspace/stock-info-dingding/.env
+    env_file: /hermes-home/gw-8643.env
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    volumes:
-      - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
     cron: "15 9 * * 1"
     timeout: 3600
 
@@ -406,15 +559,15 @@ tasks:
     description: entity-economy-skill（抓 PMI/工增/固投/社零）；no_agent 脚本任务，原 Hermes job（3704976be0ec）
     targets: [web]
     engine: docker
-    image: stock-info:latest
-    command: python hermes_trigger.py --job-id 3704976be0ec --jobs-json /hermes-cron-p7/jobs.json
+    image: hermes-trigger:latest
+    command: python hermes_trigger.py --job-id 3704976be0ec
+    prompt: |-
+      每周一 09:30 (Asia/Shanghai) 抓 PMI/工增/固投/社零 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [entity-economy-skill]
-    env_file: /workspace/stock-info-dingding/.env
+    env_file: /hermes-home/gw-8643.env
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    volumes:
-      - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
     cron: "30 9 * * 1"
     timeout: 3600
 
@@ -424,15 +577,15 @@ tasks:
     description: inflation-skill（抓 CPI/PPI/核心CPI）；no_agent 脚本任务，原 Hermes job（7243389de6f9）
     targets: [web]
     engine: docker
-    image: stock-info:latest
-    command: python hermes_trigger.py --job-id 7243389de6f9 --jobs-json /hermes-cron-p7/jobs.json
+    image: hermes-trigger:latest
+    command: python hermes_trigger.py --job-id 7243389de6f9
+    prompt: |-
+      每周一 09:45 (Asia/Shanghai) 抓 CPI/PPI/核心CPI 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [inflation-skill]
-    env_file: /workspace/stock-info-dingding/.env
+    env_file: /hermes-home/gw-8643.env
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    volumes:
-      - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
     cron: "45 9 * * 1"
     timeout: 3600
 
@@ -480,15 +633,15 @@ tasks:
     description: natgeo-daily skill 经 Runs API 触发（job 78cb9eead904，ohyes768 profile，已 pause）
     targets: [dingtalk]
     engine: docker
-    image: stock-info:latest
-    command: python hermes_trigger.py --job-id 78cb9eead904 --jobs-json /hermes-cron-p7/jobs.json
+    image: hermes-trigger:latest
+    command: python hermes_trigger.py --job-id 78cb9eead904
+    prompt: |-
+      运行 python3 /home/ohyes768/skills/photo/natgeo-daily/scripts/natgeo_daily.py（自动抓取国家地理每日一图、翻译描述并推送钉钉）。完成后汇报：标题、摄影师、一句中文摘要、是否推送成功；脚本退出码非 0 时原样转述 stderr。
     skills: [natgeo-daily]
-    env_file: /workspace/stock-info-dingding/.env
+    env_file: /hermes-home/gw-8643.env
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    volumes:
-      - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
     cron: "30 13 * * *"
     timeout: 900
 

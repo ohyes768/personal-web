@@ -109,6 +109,8 @@ def sync_registry() -> list[str]:
         if not isinstance(targets, list) or any(x not in VALID_TARGETS for x in targets):
             raise ValueError(f"任务 {t['id']} targets 非法: {targets}（可选 {VALID_TARGETS}，可多选）")
         skills = _parse_skills(t.get("skills"))
+        prompt = t.get("prompt")
+        prompt = prompt.strip() if isinstance(prompt, str) and prompt.strip() else None
         db.upsert_task({
             "id": t["id"],
             "name": t.get("name", t["id"]),
@@ -127,6 +129,7 @@ def sync_registry() -> list[str]:
             "group_name": group,
             "targets": json.dumps(targets, ensure_ascii=False),
             "skills": json.dumps(skills, ensure_ascii=False) if skills else None,
+            "prompt": prompt,
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])

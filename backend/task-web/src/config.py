@@ -9,16 +9,17 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.parent
 
 # Hermes profile 目录默认值：与 tasks.yaml 既有约定一致
-# （default = gateway 8642 + .env.hermes-default 独立 key；ohyes768 = 8643 + .env）
+# （default = gateway 8642；ohyes768 = 8643）。凭证文件在 ~/.hermes 下（NAS 侧
+# 从 stock-info checkout 迁出的纯 HERMES_* 键），经 compose 只读挂到 /hermes-home。
 _DEFAULT_HERMES_PROFILES: dict[str, dict] = {
     "default": {
         "label": "default 网关（8642）",
-        "env_file": "/workspace/stock-info-dingding/.env.hermes-default",
+        "env_file": "/hermes-home/gw-8642.env",
         "jobs_dir": "/home/ohyes768/.hermes/cron",
     },
     "ohyes768": {
         "label": "ohyes768 网关（8643）",
-        "env_file": "/workspace/stock-info-dingding/.env",
+        "env_file": "/hermes-home/gw-8643.env",
         "jobs_dir": "/home/ohyes768/.hermes/profiles/ohyes768/cron",
     },
 }
