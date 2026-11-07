@@ -27,13 +27,26 @@ export interface TaskView {
   enabled: boolean;
   timeout_seconds: number;
   group: "script" | "ai";
+  /** 生效 Hermes profile（AI 任务）；脚本任务为 null */
   profile: string | null;
+  /** 生效 profile 来源：override=页面设置（存 DB），registry=tasks.yaml 登记推导 */
+  profile_source: "override" | "registry" | null;
   targets: ("dingtalk" | "wechat" | "rss" | "web")[];
   /** 涉及的 skill 名（tasks.yaml 登记，仅展示）；纯 prompt 驱动的 AI 任务为空数组 */
   skills: string[];
   last_run: Run | null;
   active_run: Run | null;
   next_fire_time: string | null;
+}
+
+/** Hermes profile 目录条目（后端 GET /profiles） */
+export interface ProfileInfo {
+  name: string;
+  label: string;
+  env_file: string | null;
+  jobs_dir: string | null;
+  /** 当前生效到该 profile 的任务数 */
+  tasks: number;
 }
 
 export interface ScheduleSummaryDay {

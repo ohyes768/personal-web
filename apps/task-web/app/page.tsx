@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { apiGet, apiSend, statusColor, statusLabel, TaskView } from "@/lib/api";
+import { apiGet, apiSend, statusColor, statusLabel, ProfileInfo, TaskView } from "@/lib/api";
 
 const TARGET_LABELS: Record<string, { label: string; color: string }> = {
   dingtalk: { label: "钉钉", color: "#2563eb" },
@@ -19,6 +19,7 @@ const GROUP_TABS: { key: "all" | "script" | "ai"; label: string }[] = [
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskView[]>([]);
+  const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [error, setError] = useState("");
   const [pwdTarget, setPwdTarget] = useState<TaskView | null>(null);
   const [groupTab, setGroupTab] = useState<"all" | "script" | "ai">("all");
@@ -35,6 +36,9 @@ export default function TasksPage() {
 
   useEffect(() => {
     load();
+    apiGet<{ profiles: ProfileInfo[] }>("/profiles")
+      .then((d) => setProfiles(d.profiles))
+      .catch(() => {});
     const t = setInterval(load, 5000);
     return () => clearInterval(t);
   }, [load]);
@@ -52,6 +56,19 @@ export default function TasksPage() {
     if (cron === t.cron) return;
     try {
       await apiSend("PUT", `/tasks/${t.id}/schedule`, { cron });
+      load();
+    } catch (e) {
+      setError(String(e));
+      load();
+    }
+  }
+
+  async function updateProfile(t: TaskView, profile: string) {
+    // `__reset__` = 清除覆盖，回到 tasks.yaml 登记推导值
+    const next = profile === "__reset__" ? null : profile === "" ? null : profile;
+    if (next === t.profile) return;
+    try {
+      await apiSend("PUT", `/tasks/${t.id}/profile`, { profile: next });
       load();
     } catch (e) {
       setError(String(e));
@@ -79,6 +96,9 @@ export default function TasksPage() {
       <div className="notice">
         结果含义：退出码 0 只代表进程正常退出，不代表业务投递（如钉钉推送）成功；
         「中断」含漏执行补记（不自动补跑，可手动触发）。
+        <br />
+        AI 任务的「生效 Profile」可在页面直接切换：执行时一并换掉凭证 env_file、HERMES_PROFILE
+        与 jobs.json 来源，设置存库（不写 tasks.yaml，重新登记不会冲掉）。
       </div>
       {error && <p className="error-text">{error}</p>}
       <div className="filters" role="tablist">
@@ -103,7 +123,7 @@ export default function TasksPage() {
           <tr>
             <th>任务</th><th>输出</th>
             {showSkillCol && <th>涉及 Skill</th>}
-            <th>生效 Profile</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
+            <th>生效 Profile（可切换）</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
             <th>上次执行</th><th>下次计划</th><th>操作</th>
           </tr>
         </thead>
@@ -151,8 +171,31 @@ export default function TasksPage() {
                 </td>
               )}
               <td>
-                {t.profile ? (
-                  <span className="badge" style={{ background: "#7c3aed" }}>{t.profile}</span>
+                {t.group === "ai" ? (
+                  <>
+                    <select
+                      value={t.profile ?? ""}
+                      style={{ width: 132 }}
+                      title="切换后立即生效：执行时同时换凭证 env_file、HERMES_PROFILE 和 jobs.json 来源"
+                      onChange={(e) => updateProfile(t, e.target.value)}
+                    >
+                      {!t.profile && <option value="">按登记（未知）</option>}
+                      {t.profile && !profiles.some((p) => p.name === t.profile) && (
+                        <option value={t.profile}>{t.profile}（目录外）</option>
+                      )}
+                      {profiles.map((p) => (
+                        <option key={p.name} value={p.name}>{p.name}</option>
+                      ))}
+                      {t.profile_source === "override" && (
+                        <option value="__reset__">↩ 回到登记值</option>
+                      )}
+                    </select>
+                    {t.profile_source === "override" ? (
+                      <div className="muted" style={{ fontSize: 11 }}>已覆盖登记值</div>
+                    ) : (
+                      <div className="muted" style={{ fontSize: 11 }}>来自 tasks.yaml</div>
+                    )}
+                  </>
                 ) : (
                   <span className="muted" style={{ fontSize: 12 }}>-</span>
                 )}

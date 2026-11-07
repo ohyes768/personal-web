@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import db, executor, schedule
+from .. import db, executor, profiles, schedule
 from ..config import get_admin_password, get_log_dir, get_log_retention_days
 from ..scheduler import TaskScheduler
 
@@ -32,33 +32,12 @@ class ManualRunRequest(BaseModel):
     password: str
 
 
-def _effective_profile(t: dict) -> str | None:
-    """AI 任务的生效 Hermes profile（只读推导，不改表）。
-
-    推导规则（与 tasks.yaml 注释及 .env 约定一致）：
-    - env 显式 HERMES_PROFILE → 该值（防漂移，显式声明优先）；
-    - env_file 为 .env.hermes-default → default profile（gateway 8642）；
-    - env_file 为 .env → ohyes768（.env 默认 profile，gateway 8643）；
-    - 其余（非 Hermes 触发的 AI 任务 / 脚本任务）→ None。
-    """
-    if (t.get("group_name") or "script") != "ai":
-        return None
-    try:
-        env = json.loads(t["env"]) if t.get("env") else {}
-    except (TypeError, ValueError):
-        env = {}
-    explicit = env.get("HERMES_PROFILE")
-    if explicit:
-        return str(explicit)
-    env_file = t.get("env_file") or ""
-    if env_file.endswith(".env.hermes-default"):
-        return "default"
-    if env_file.endswith("/.env") or env_file == ".env":
-        return "ohyes768"
-    return None
+class ProfileUpdate(BaseModel):
+    # null = 清除覆盖，回到 tasks.yaml 登记推导值
+    profile: str | None = None
 
 
-def _task_view(t: dict) -> dict:
+def _task_view(t: dict, override: str | None = None) -> dict:
     last = db.last_run_of_task(t["id"])
     active = db.active_run_of_task(t["id"])
     nxt = scheduler.next_fire_time(t["id"]) if scheduler else None
@@ -72,7 +51,8 @@ def _task_view(t: dict) -> dict:
         "network": t.get("network"),
         "user": t.get("run_user"),
         "group": t.get("group_name") or "script",
-        "profile": _effective_profile(t),
+        "profile": profiles.effective_profile(t, override),
+        "profile_source": profiles.profile_source(t, override),
         "targets": json.loads(t["targets"]) if t.get("targets") else [],
         "skills": json.loads(t["skills"]) if t.get("skills") else [],
         "cron": t.get("cron"),
@@ -89,9 +69,52 @@ def health():
     return {"status": "ok", "heartbeat": db.get_heartbeat()}
 
 
+@router.get("/profiles")
+def list_profiles():
+    """Hermes profile 目录（页面「生效 Profile」下拉的数据源）。"""
+    counts: dict[str, int] = {}
+    overrides = db.list_profile_overrides()
+    for t in db.list_tasks():
+        name = profiles.effective_profile(t, overrides.get(t["id"]))
+        if name:
+            counts[name] = counts.get(name, 0) + 1
+    return {
+        "profiles": [
+            {
+                "name": name,
+                "label": cfg.get("label") or name,
+                "env_file": cfg.get("env_file"),
+                "jobs_dir": cfg.get("jobs_dir"),
+                "tasks": counts.get(name, 0),
+            }
+            for name, cfg in profiles.catalog().items()
+        ]
+    }
+
+
+@router.put("/tasks/{task_id}/profile")
+def update_profile(task_id: str, body: ProfileUpdate):
+    """设置/清除任务的生效 Hermes profile（存 DB 覆盖，不写 tasks.yaml）。"""
+    task = db.get_task(task_id)
+    if not task:
+        raise HTTPException(404, f"任务不存在: {task_id}")
+    if not profiles.is_ai_task(task):
+        raise HTTPException(400, "只有 AI 任务有 Hermes profile，脚本任务不可设置")
+    if body.profile is not None:
+        cat = profiles.catalog()
+        if body.profile not in cat:
+            raise HTTPException(
+                400,
+                f"未知 profile: {body.profile}（可选 {', '.join(cat) or '无，检查 TASK_WEB_HERMES_PROFILES'}）",
+            )
+    db.set_profile_override(task_id, body.profile)
+    return _task_view(db.get_task(task_id), db.get_profile_override(task_id))
+
+
 @router.get("/tasks")
 def list_tasks():
-    tasks = [_task_view(t) for t in db.list_tasks()]
+    overrides = db.list_profile_overrides()
+    tasks = [_task_view(t, overrides.get(t["id"])) for t in db.list_tasks()]
     return {"total": len(tasks), "tasks": tasks}
 
 

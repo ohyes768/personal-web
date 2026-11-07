@@ -24,6 +24,7 @@ from src.api import routes
 from src.api.routes import router
 from src.config import get_server_host, get_server_port, get_timezone
 from src.db import init_db
+from src.profiles import catalog as profile_catalog
 from src.registry import sync_registry
 from src.scheduler import TaskScheduler
 
@@ -37,6 +38,10 @@ scheduler = TaskScheduler(timezone=get_timezone())
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    # profile 目录在启动期解析一次：TASK_WEB_HERMES_PROFILES 写坏时直接启动失败，
+    # 不要等到某次 AI 任务执行才发现
+    logger.info("Hermes profile 目录: %s",
+                {name: cfg.get("label") for name, cfg in profile_catalog().items()})
     registered = sync_registry()
     logger.info("任务登记同步完成: %s", registered)
     scheduler.start()

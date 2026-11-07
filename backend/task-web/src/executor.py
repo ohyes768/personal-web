@@ -16,7 +16,7 @@ import subprocess
 import threading
 from pathlib import Path
 
-from . import db
+from . import db, profiles
 from .config import get_log_dir, get_workspace_root
 
 logger = logging.getLogger("task-web.executor")
@@ -74,27 +74,50 @@ def parse_env_file(path: str | None) -> dict[str, str]:
     return result
 
 
+def _profile_override(task: dict) -> str | None:
+    """页面设置的 profile 覆盖值（纯函数式调用时 task 可能没有 id）。"""
+    task_id = task.get("id")
+    return db.get_profile_override(task_id) if task_id else None
+
+
 def _task_env(task: dict) -> dict[str, str]:
-    """合并顺序：先 env_file，后 yaml 显式 env（显式声明优先，可覆盖 .env）。"""
+    """合并顺序：env_file → 生效 profile 的凭证 env_file → yaml 显式 env → 强制 HERMES_PROFILE。
+
+    profile 的凭证文件排在登记 env_file 之后（切换 profile 时网关地址/API key 以 profile
+    为准），yaml 显式 env 再覆盖其余变量；`HERMES_PROFILE` 最后强制写入，避免 yaml 里
+    为防漂移写死的旧值压过页面新选的 profile。
+    """
     env: dict[str, str] = {}
     env.update(parse_env_file(task.get("env_file")))
+    profile = profiles.effective_profile(task, _profile_override(task))
+    cat = profiles.catalog() if profile else {}
+    cfg = cat.get(profile) or {}
+    if cfg.get("env_file"):
+        env.update(parse_env_file(cfg["env_file"]))
     raw = task.get("env")
     if raw:
         try:
             env.update(json.loads(raw))
         except (ValueError, TypeError):
             logger.warning("run env 字段非法（已忽略）")
+    if profile:
+        env[profiles.PROFILE_ENV_KEY] = profile
     return env
 
 
 def _task_volumes(task: dict) -> dict[str, dict[str, str]]:
-    """volumes: '宿主:容器[:rw|ro]' 列表 -> docker-py volumes 字典。"""
+    """volumes: '宿主:容器[:rw|ro]' 列表 -> docker-py volumes 字典。
+
+    AI 任务的 jobs.json 挂载按生效 profile 换宿主源（容器路径不变），
+    否则切换 profile 后 job id 与 jobs.json 不同源，触发会查不到 job。
+    """
     raw = task.get("volumes")
     if not raw:
         return {}
     specs = json.loads(raw) if isinstance(raw, str) else raw
+    profile = profiles.effective_profile(task, _profile_override(task))
     result: dict[str, dict[str, str]] = {}
-    for item in specs or []:
+    for item in profiles.apply_jobs_mount(list(specs or []), profile):
         parts = str(item).split(":")
         if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
             raise ValueError(f"volumes 条目非法: {item!r}")

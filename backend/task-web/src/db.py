@@ -41,6 +41,14 @@ CREATE TABLE IF NOT EXISTS task_schedules (
     timeout_seconds INTEGER
 );
 
+-- 用户级覆盖设置：tasks.yaml 每次同步都会 upsert tasks 表，因此可编辑项
+-- （cron/启停/超时在 task_schedules，profile 覆盖在此）必须分表存放。
+CREATE TABLE IF NOT EXISTS task_overrides (
+    task_id TEXT PRIMARY KEY,
+    profile TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS runs (
     run_id TEXT PRIMARY KEY,
     task_id TEXT NOT NULL,
@@ -169,6 +177,7 @@ def ensure_schedule(task_id: str, cron: str, timeout: int | None) -> None:
 def delete_task(task_id: str) -> None:
     """登记修剪：删除任务与其调度；runs 历史保留（无外键约束）。"""
     get_conn().execute("DELETE FROM task_schedules WHERE task_id=?", (task_id,))
+    get_conn().execute("DELETE FROM task_overrides WHERE task_id=?", (task_id,))
     get_conn().execute("DELETE FROM tasks WHERE id=?", (task_id,))
     get_conn().commit()
 
@@ -208,6 +217,36 @@ def update_schedule(task_id: str, cron: str | None = None, enabled: bool | None 
         return
     args.append(task_id)
     get_conn().execute(f"UPDATE task_schedules SET {', '.join(sets)} WHERE task_id=?", args)
+    get_conn().commit()
+
+
+# ---------------------------------------------------------------------------
+# task_overrides（用户覆盖设置：生效 Hermes profile）
+# ---------------------------------------------------------------------------
+
+def get_profile_override(task_id: str) -> str | None:
+    row = get_conn().execute(
+        "SELECT profile FROM task_overrides WHERE task_id=?", (task_id,)
+    ).fetchone()
+    return row["profile"] if row else None
+
+
+def list_profile_overrides() -> dict[str, str]:
+    rows = get_conn().execute("SELECT task_id, profile FROM task_overrides").fetchall()
+    return {r["task_id"]: r["profile"] for r in rows}
+
+
+def set_profile_override(task_id: str, profile: str | None) -> None:
+    """profile=None 表示清除覆盖，回到 tasks.yaml 登记推导值。"""
+    if profile is None:
+        get_conn().execute("DELETE FROM task_overrides WHERE task_id=?", (task_id,))
+    else:
+        get_conn().execute(
+            """INSERT INTO task_overrides (task_id, profile, updated_at) VALUES (?, ?, ?)
+               ON CONFLICT(task_id) DO UPDATE SET
+                 profile=excluded.profile, updated_at=excluded.updated_at""",
+            (task_id, profile, now_str()),
+        )
     get_conn().commit()
 
 

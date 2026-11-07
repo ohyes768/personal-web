@@ -597,6 +597,9 @@ services:
     # 任务导入默认禁用（enabled=0），验证后页面手动启用，避免双调度器重复发送
     environment: [TZ=Asia/Shanghai,
                   "TASK_WEB_ADMIN_PASSWORD=${TASK_WEB_ADMIN_PASSWORD:-}",
+                  # Hermes profile 目录覆盖（JSON）；留空用代码内默认
+                  # default → .env.hermes-default + ~/.hermes/cron，ohyes768 → .env + profiles/ohyes768/cron
+                  "TASK_WEB_HERMES_PROFILES=${TASK_WEB_HERMES_PROFILES:-}",
                   TASK_WEB_DB_PATH=/app/data/taskweb.sqlite3,
                   TASK_WEB_LOG_DIR=/app/data/logs,
                   TASK_WEB_WORKSPACE_ROOT=/workspace]

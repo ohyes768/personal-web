@@ -5,6 +5,7 @@
 ## Pre-Development Checklist
 
 - [ ] 涉及 `runs` 时间戳的比较/聚合/落库 → 必读 [时间戳口径契约](./naive-timestamps.md)（naive 本地串 + `db.naive_local` 归一 + 漏执行枚举上界）
+- [ ] 涉及 AI 任务生效 profile、凭证 env_file、jobs.json 挂载 → 必读 [生效 Hermes Profile 契约](./hermes-profile.md)（覆盖存 `task_overrides`，执行期三件事一起换）
 - [ ] 新增只读 API → 参照 `src/api/routes.py` 现有风格：Query 校验、HTTPException(400, 中文 detail)、服务逻辑放 `src/` 独立模块（如 `schedule.py`），不堆在 routes
 - [ ] 调度器行为改动 → `src/scheduler.py` 的 tick/补记逻辑有回归测试保护，改动必须补用例
 - [ ] Windows 跑 pytest → 遵循 [Windows 测试环境契约](../../backend/testing-environment.md)
