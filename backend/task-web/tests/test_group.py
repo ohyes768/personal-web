@@ -35,7 +35,7 @@ def test_group_legacy_hermes_alias(client, env):
 
 def test_group_invalid_rejected(client, env):
     try:
-        _sync(env, 'tasks:\n  - id: t3\n    name: x\n    group: ai\n    command: x\n')
+        _sync(env, 'tasks:\n  - id: t3\n    name: x\n    group: bogus\n    command: x\n')
     except ValueError as e:
         assert "group 非法" in str(e)
     else:
