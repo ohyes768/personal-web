@@ -104,6 +104,17 @@ def now_str() -> str:
     return datetime.now().isoformat(timespec="seconds")
 
 
+def naive_local(ts: str | None) -> str | None:
+    """统一时间戳为 naive 本地串。APScheduler 触发点 isoformat 带 +08:00，
+    库内其余（now_str / executor 写入）均为 naive；比较前必须先归一。"""
+    if not ts:
+        return ts
+    dt = datetime.fromisoformat(ts)
+    if dt.tzinfo is not None:
+        dt = dt.replace(tzinfo=None)
+    return dt.isoformat(timespec="seconds")
+
+
 def new_run_id(task_id: str) -> str:
     return f"{task_id}-{datetime.now().strftime('%Y%m%d-%H%M%S')}-{os_unique()}"
 
@@ -246,6 +257,31 @@ def list_runs(task_id: str | None = None, status: str | None = None,
     sql += " ORDER BY COALESCE(started_at, scheduled_at) DESC, run_id DESC LIMIT ?"
     args.append(limit)
     return [dict(r) for r in get_conn().execute(sql, args).fetchall()]
+
+
+def summary_rows(from_str: str, to_str: str):
+    """排期日历：按天 + 状态聚合（计划日口径：scheduled 按计划日、manual 按开始日、
+    漏执行补记按 missed_schedule_at，见 schedule 服务）。"""
+    return get_conn().execute(
+        """SELECT substr(COALESCE(scheduled_at, started_at, missed_schedule_at), 1, 10) AS d,
+                  status, COUNT(*) AS n,
+                  SUM(CASE WHEN status='interrupted' AND missed_schedule_at IS NOT NULL
+                           THEN 1 ELSE 0 END) AS missed
+           FROM runs
+           WHERE COALESCE(scheduled_at, started_at, missed_schedule_at) BETWEEN ? AND ?
+           GROUP BY d, status""",
+        (from_str, to_str),
+    ).fetchall()
+
+
+def day_runs(day_start: str, day_end: str) -> list[dict]:
+    """排期日历：单日全部 runs（计划日口径同上）。"""
+    return [dict(r) for r in get_conn().execute(
+        """SELECT * FROM runs
+           WHERE COALESCE(scheduled_at, started_at, missed_schedule_at) BETWEEN ? AND ?
+           ORDER BY COALESCE(scheduled_at, started_at, missed_schedule_at), run_id""",
+        (day_start, day_end),
+    ).fetchall()]
 
 
 def last_run_of_task(task_id: str) -> dict | None:

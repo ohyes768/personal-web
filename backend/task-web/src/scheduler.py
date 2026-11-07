@@ -119,12 +119,16 @@ class TaskScheduler:
             cur = start
             for _ in range(200):  # 防御性上限
                 nxt = trigger.get_next_fire_time(cur, now)
-                if nxt is None:
+                if nxt is None or nxt > now:
+                    # 上界必须显式判断：传 previous 后 get_next_fire_time 忽略 now，
+                    # 否则会把未来触发点也补记成"漏执行"
                     break
                 expected.append(nxt)
                 cur = nxt
             for fire in expected:
-                fire_str = fire.isoformat(timespec="seconds")
+                # 归一为 naive 本地串：与 scheduled_at / 库内其余时间戳同格式，
+                # 否则 _has_run_for_schedule 永不匹配，已执行的时刻会被补记成假漏执行
+                fire_str = db.naive_local(fire.isoformat(timespec="seconds"))
                 if self._has_run_for_schedule(t["id"], fire_str):
                     continue
                 db.insert_run({
@@ -146,10 +150,11 @@ class TaskScheduler:
 
     @staticmethod
     def _has_run_for_schedule(task_id: str, fire_str: str) -> bool:
-        # scheduled 触发的 run 或漏执行补记，任一存在即视为已记录
+        # scheduled 触发的 run 或漏执行补记，任一存在即视为已记录；
+        # 补记可能是修复前写入的带时区格式，统一归一后再比较
         rows = db.list_runs(task_id=task_id, limit=500)
         for r in rows:
-            if r.get("missed_schedule_at") == fire_str:
+            if db.naive_local(r.get("missed_schedule_at")) == fire_str:
                 return True
             if r.get("trigger") == "scheduled" and r.get("scheduled_at") == fire_str:
                 return True
