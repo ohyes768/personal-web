@@ -53,20 +53,19 @@ tasks:
     cron: "30 11,14 * * mon-fri"
     timeout: 600
 
-  # 迁移来源：n8n「Gold Price Push」09:30 + 15:30
-  - id: gold-price-push
-    name: 黄金价格推送
-    description: 黄金价格播报（09:30、15:30 两档）
+  # ---- 黄金播报已改为 Hermes skill（gold-price-brief），DeepSeek 版脚本退役 ----
+  # 原 gold-price-push（脚本内置 DeepSeek 分析）删除；AI 分析由 skill 完成
+  - id: hermes-gold-price
+    name: 黄金走势研判（钉钉）
     group: ai
+    description: 经 Hermes Runs API 触发 gold-price-brief skill（取数→AI 研判→钉钉推送）；job 7c8d2bd1c230（Hermes 侧已 pause）
     engine: docker
     image: stock-info:latest
-    command: python gold_price_push.py
-    cwd: /app
-    env:
-      PUSH_MODE: "1"
-    env_file: /workspace/stock-info-dingding/.env
+    command: python hermes_trigger.py --job-id 7c8d2bd1c230
+    volumes:
+      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 9,15 * * mon-fri"
-    timeout: 600
+    timeout: 1800
 
   # 迁移来源：n8n「Fund M120 Push」14:40
   - id: fund-m120-push
