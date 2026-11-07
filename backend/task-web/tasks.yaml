@@ -209,16 +209,18 @@ tasks:
 
   # ---- Hermes 统一触发试点（11-06-hermes-unified-trigger）----
   # csi300-brief：旧 crontab 35 8 * * 1-5 为 UTC = 北京 16:35；直跑 brief.py
-  # （cron_daily.sh 恒 exit 0，失败会被掩盖，不用它）；skills 目录 ro 挂载
+  # （cron_daily.sh 恒 exit 0，失败会被掩盖，不用它）。脚本已迁入业务仓库
+  # csi300_brief/；webhook 密钥经 .env 文件只读挂载（必须显式 --env-file，
+  # 否则 dingtalk_push 默认读仓库根 /app/.env 会发错群）
   - id: csi300-brief
     name: CSI300盘后简报（钉钉）
-    description: csi300-brief skill 盘后简报推送钉钉；原宿主机 crontab 迁移。启用前先禁用旧 crontab 条目
+    description: csi300 盘后简报推送钉钉；原宿主机 crontab 迁移。启用前先禁用旧 crontab 条目
     engine: docker
     image: stock-info:latest
-    command: python /hermes-skills/investment-analysis/csi300-brief/scripts/brief.py --push --insecure --only-today
-    cwd: /hermes-skills/investment-analysis/csi300-brief
+    command: python csi300_brief/brief.py --push --insecure --only-today --env-file /app/csi300_brief/.env
+    cwd: /app
     volumes:
-      - "/home/ohyes768/skills:/hermes-skills:ro"
+      - "/home/ohyes768/skills/investment-analysis/csi300-brief/.env:/app/csi300_brief/.env:ro"
     cron: "35 16 * * 1-5"
     timeout: 900
 
