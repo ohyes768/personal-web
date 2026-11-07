@@ -415,7 +415,7 @@ tasks:
     description: 每日 git pull git_repos.json 内仓库（当前 xin-wen-lian-bo master，新闻摘要生成上游）；迁移来源 n8n 08:10 git-pull 钩子
     engine: docker
     image: stock-info:latest
-    command: python run_git_pull.sh
+    command: bash run_git_pull.sh
     cwd: /app
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
