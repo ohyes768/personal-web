@@ -59,3 +59,52 @@ tr:last-child td { border-bottom: none; }
 .dialog h3 { margin-top: 0; }
 .dialog input { width: 100%; padding: 8px; margin: 8px 0 12px; border: 1px solid var(--border); border-radius: 6px; }
 .error-text { color: #dc2626; font-size: 13px; }
+
+/* 排期日历 */
+.schedule-layout { display: flex; gap: 16px; align-items: flex-start; flex-wrap: wrap; }
+.panel { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+.cal-panel { width: 320px; flex: none; }
+.day-panel { flex: 1; min-width: 560px; }
+.cal-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.cal-title { font-weight: 600; font-size: 14px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; font-size: 12px; }
+.cal-wd { color: var(--muted); text-align: center; font-size: 11px; padding: 2px 0; }
+.cal-cell { min-height: 44px; border: 1px solid var(--border); border-radius: 4px; padding: 2px 4px; cursor: pointer; background: #fff; }
+.cal-cell:hover { border-color: #2563eb; }
+.cal-cell.out { background: var(--bg); color: var(--muted); }
+.cal-cell.future { background: var(--bg); color: var(--muted); }
+.cal-cell.ok { background: #f0fdf4; border-color: #bbf7d0; }
+.cal-cell.bad { background: #fef2f2; border-color: #fecaca; }
+.cal-cell.miss { background: #faf5ff; border-color: #e9d5ff; }
+.cal-cell.sel { outline: 2px solid #2563eb; outline-offset: 1px; }
+.cal-n { font-weight: 600; font-size: 12px; }
+.chips { display: flex; gap: 2px; flex-wrap: wrap; }
+.chip { font-size: 10px; line-height: 14px; padding: 0 4px; border-radius: 6px; color: #fff; font-style: normal; }
+.chip.g { background: #16a34a; }
+.chip.r { background: #dc2626; }
+.chip.p { background: #7c3aed; }
+.chip.empty { background: transparent; color: var(--muted); }
+.ruler { position: relative; height: 16px; margin-left: 150px; font-size: 11px; color: var(--muted); }
+.ruler span { position: absolute; transform: translateX(-50%); }
+.ruler span:first-child { transform: none; }
+.ruler span:last-child { transform: translateX(-100%); }
+.slot-row { display: flex; align-items: center; height: 30px; gap: 8px; }
+.slot-lbl { width: 142px; flex: none; font-size: 12px; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slot-track { position: relative; flex: 1; height: 16px; border-left: 1px solid #cbd5e1; border-right: 1px solid #cbd5e1;
+  background: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), var(--border) calc(25% - 1px), var(--border) 25%); }
+.slot-dot { position: absolute; top: 50%; width: 10px; height: 10px; border-radius: 50%; transform: translate(-50%, -50%); box-shadow: 0 0 0 2px #fff; cursor: pointer; }
+.slot-dot:hover { transform: translate(-50%, -50%) scale(1.25); }
+.slot-dot.hollow { width: 8px; height: 8px; background: #fff; border: 2px solid #94a3b8; cursor: default; }
+.slot-dot.hollow:hover { transform: translate(-50%, -50%); }
+.slot-dot.pending-dot { width: 8px; height: 8px; background: #fff; border: 2px dashed #94a3b8; cursor: default; }
+.slot-dot.pending-dot:hover { transform: translate(-50%, -50%); }
+.slot-dot.square { width: 9px; height: 9px; border-radius: 2px; background: #fff; border: 2px solid #2563eb; }
+.slot-band { position: absolute; top: -6px; bottom: -6px; width: 4%; transform: translateX(-50%); background: rgba(245,158,11,.15);
+  border-left: 1px solid rgba(245,158,11,.5); border-right: 1px solid rgba(245,158,11,.5); pointer-events: none; }
+.slot-now { position: absolute; top: -4px; bottom: -4px; width: 1px; background: rgba(220,38,38,.45); pointer-events: none; }
+.cluster-note { margin: 10px 0 8px 150px; font-size: 12px; color: #92400e; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 4px 8px; display: inline-block; }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-top: 12px; align-items: center; }
+.legend i { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; vertical-align: -1px; }
+.legend i.hollow { background: #fff; border: 2px solid #94a3b8; }
+.legend i.pending-dot { background: #fff; border: 2px dashed #94a3b8; }
+.legend i.sq { border-radius: 2px; background: #fff; border: 2px solid #2563eb; }

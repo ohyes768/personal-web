@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import db, executor
+from .. import db, executor, schedule
 from ..config import get_admin_password, get_log_dir, get_log_retention_days
 from ..scheduler import TaskScheduler
 
@@ -140,9 +140,27 @@ def list_runs_api(
     return {"total": len(runs), "runs": runs}
 
 
-# 排期日历接口（/schedule/summary、/schedule/day）待 src/schedule.py 与其依赖的
-# db.naive_local / db.summary_rows / db.day_runs 一起提交后再启用；
-# c8bc7c35 只提交了本文件的引用，模块未入库，master 起不来。
+@router.get("/schedule/summary")
+def schedule_summary(
+    from_str: str = Query(..., alias="from"),
+    to_str: str = Query(..., alias="to"),
+):
+    """排期日历：按天聚合 run 计数（计划日口径），供月历格使用。"""
+    try:
+        days = schedule.summary_days(from_str, to_str)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"days": days}
+
+
+@router.get("/schedule/day")
+def schedule_day(date: str = Query(...)):
+    """排期日历：单日计划/实际槽视图（now 分界规则见 schedule.day_view）。"""
+    try:
+        return schedule.day_view(date)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
 
 @router.get("/runs/{run_id}")
 def get_run_api(run_id: str):

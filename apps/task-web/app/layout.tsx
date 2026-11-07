@@ -16,6 +16,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <span className="site-title">定时任务管理</span>
           <nav>
             <Link href="/tasks">任务</Link>
+            <Link href="/schedule">排期日历</Link>
             <Link href="/runs">运行记录</Link>
           </nav>
         </header>
