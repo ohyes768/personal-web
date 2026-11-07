@@ -139,7 +139,7 @@ tasks:
   - id: rss-tougu-push
     name: RSS推送-每日投顾
     description: RSS 文章推送（tag=每日投顾），去重库 data/rss_articles.db 挂载宿主
-    targets: [rss]
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python rss/push.py --push-mode 1 --rss-tag 每日投顾
@@ -158,7 +158,7 @@ tasks:
   - id: rss-licai-push
     name: RSS推送-理财
     description: RSS 文章推送（tag=理财），去重库挂载宿主
-    targets: [rss]
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python rss/push.py --push-mode 1 --rss-tag 理财
@@ -177,7 +177,7 @@ tasks:
   - id: rss-zixun-push
     name: RSS推送-资讯
     description: RSS 文章推送（tag=资讯），去重库挂载宿主
-    targets: [rss]
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python rss/push.py --push-mode 1 --rss-tag 资讯
