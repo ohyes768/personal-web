@@ -125,32 +125,20 @@ tasks:
 
   # ---- 2026-11-06 第二批：需挂载宿主目录的任务（volumes/network/user 新能力）----
 
-  # 迁移来源：n8n「Stock info Push」17:30 财报选股
-  # 关键点：HERMES_SYNC=1 让主进程同步等完 hermes 分析（一次性容器不能有 detach 子进程）；
-  # network=nginx_nginx-bridge 才能连 hermes（只绑该网关 172.27.0.1:8643）；
-  # user=1000:1000 保证宿主 data/reports/logs 文件属主与 webhook 容器一致；
-  # timeout 2400 > HERMES_TIMEOUT(1800)
-  - id: daily-pick-push
-    name: 每日财报阅读
-    description: 选股推送 + Hermes 财报分析（同步等待），状态落宿主 data/reports/logs
+  # ---- 财报阅读已改为 Hermes skill（daily-pick-brief），容器直跑版退役 ----
+  # skill 流程：agent 在宿主机跑 daily_pick.py（守卫 DAILY_PICK_ONCE_DAILY=1 防当日重复推送，
+  # HERMES_SYNC=1 同步等完深度分析，data/reports/logs 产物契约不变）；job 1f04c0e830c8 已 pause
+  - id: hermes-daily-pick
+    name: 每日财报阅读（AI）
     group: ai
+    description: 经 Hermes Runs API 触发 daily-pick-brief skill；选股/去重/推送历史由脚本维护，AI 研判同步完成后退出
     engine: docker
     image: stock-info:latest
-    command: python daily_pick.py
-    cwd: /app
-    env:
-      PUSH_MODE: "1"
-      HERMES_SYNC: "1"
-      HOME: /tmp
-    env_file: /workspace/stock-info-dingding/.env
+    command: python hermes_trigger.py --job-id 1f04c0e830c8
     volumes:
-      - "/home/ohyes768/stock-info-dingding/data:/app/data"
-      - "/home/ohyes768/stock-info-dingding/reports:/app/reports"
-      - "/home/ohyes768/stock-info-dingding/logs:/app/logs"
-    network: nginx_nginx-bridge
-    user: "1000:1000"
+      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 17 * * mon-fri"
-    timeout: 2400
+    timeout: 3600
 
   # 迁移来源：n8n「RSS Push」14:42 投顾
   - id: rss-tougu-push
