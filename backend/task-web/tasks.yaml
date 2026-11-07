@@ -206,7 +206,7 @@ tasks:
     command: python csi300_brief/brief.py --push --insecure --only-today --env-file /app/csi300_brief/.env
     cwd: /app
     volumes:
-      - "/home/ohyes768/skills/investment-analysis/csi300-brief/.env:/app/csi300_brief/.env:ro"
+      - "/home/ohyes768/stock-info-dingding/csi300_brief/.env:/app/csi300_brief/.env:ro"
     cron: "35 16 * * 1-5"
     timeout: 900
 
