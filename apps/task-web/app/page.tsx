@@ -71,6 +71,9 @@ export default function TasksPage() {
     }
   }
 
+  // 「涉及 Skill」列只在含 AI 任务的 tab 下出现（脚本任务没有 skill 概念，避免整列都是「-」）
+  const showSkillCol = groupTab !== "script";
+
   return (
     <div>
       <div className="notice">
@@ -98,7 +101,9 @@ export default function TasksPage() {
       <table>
         <thead>
           <tr>
-            <th>任务</th><th>输出</th><th>生效 Profile</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
+            <th>任务</th><th>输出</th>
+            {showSkillCol && <th>涉及 Skill</th>}
+            <th>生效 Profile</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
             <th>上次执行</th><th>下次计划</th><th>操作</th>
           </tr>
         </thead>
@@ -130,6 +135,21 @@ export default function TasksPage() {
                   )}
                 </div>
               </td>
+              {showSkillCol && (
+                <td style={{ maxWidth: 180 }}>
+                  {(t.skills || []).length > 0 ? (
+                    <div className="badge-stack">
+                      {(t.skills || []).map((s) => (
+                        <span key={s} className="badge badge-skill">{s}</span>
+                      ))}
+                    </div>
+                  ) : t.group === "ai" ? (
+                    <span className="muted" style={{ fontSize: 12 }}>无（纯 prompt）</span>
+                  ) : (
+                    <span className="muted" style={{ fontSize: 12 }}>-</span>
+                  )}
+                </td>
+              )}
               <td>
                 {t.profile ? (
                   <span className="badge" style={{ background: "#7c3aed" }}>{t.profile}</span>

@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     network TEXT,
     run_user TEXT,
     group_name TEXT DEFAULT 'script',
-    targets TEXT
+    targets TEXT,
+    skills TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task_schedules (
@@ -94,6 +95,7 @@ def init_db() -> None:
         ("run_user", "TEXT"),
         ("group_name", "TEXT DEFAULT 'script'"),
         ("targets", "TEXT"),
+        ("skills", "TEXT"),
     ):
         if name not in cols:
             conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {ddl}")
@@ -132,9 +134,10 @@ def os_unique() -> str:
 def upsert_task(row: dict) -> None:
     get_conn().execute(
         """INSERT INTO tasks (id, name, description, command, cwd, default_cron, default_timeout,
-             engine, image, env_file, env, volumes, network, run_user, group_name, targets)
+             engine, image, env_file, env, volumes, network, run_user, group_name, targets, skills)
            VALUES (:id, :name, :description, :command, :cwd, :default_cron, :default_timeout,
-             :engine, :image, :env_file, :env, :volumes, :network, :run_user, :group_name, :targets)
+             :engine, :image, :env_file, :env, :volumes, :network, :run_user, :group_name, :targets,
+             :skills)
            ON CONFLICT(id) DO UPDATE SET
              name=excluded.name, description=excluded.description,
              command=excluded.command, cwd=excluded.cwd,
@@ -142,11 +145,11 @@ def upsert_task(row: dict) -> None:
              engine=excluded.engine, image=excluded.image,
              env_file=excluded.env_file, env=excluded.env,
              volumes=excluded.volumes, network=excluded.network, run_user=excluded.run_user,
-             group_name=excluded.group_name, targets=excluded.targets""",
+             group_name=excluded.group_name, targets=excluded.targets, skills=excluded.skills""",
         {
             "engine": "shell", "image": None, "env_file": None, "env": None,
             "volumes": None, "network": None, "run_user": None,
-            "group_name": "script", "targets": None, **row,
+            "group_name": "script", "targets": None, "skills": None, **row,
         },
     )
     get_conn().commit()

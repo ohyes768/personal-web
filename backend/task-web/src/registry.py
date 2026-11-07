@@ -8,12 +8,15 @@ tasks:
     description: ...
     command: bash run_a_stock.sh
     cwd: stock-info-dingding        # 相对 workspace root；空 = 不切目录
+    group: ai                       # script(默认) | ai
+    skills: [gold-price-brief]      # 涉及的 Hermes skill 名（可多个，仅页面展示用）
     cron: "0 9 * * *"               # 默认计划（导入后可在页面改）
     timeout: 600
 """
 from __future__ import annotations
 
 import logging
+import re
 from pathlib import Path
 
 import json
@@ -32,6 +35,29 @@ VALID_GROUPS = ("script", "ai")
 _LEGACY_GROUPS = {"hermes": "ai"}  # 旧值兼容
 # 输出目的（多选）：钉钉 / 微信 / RSS 中转服务
 VALID_TARGETS = ("dingtalk", "wechat", "rss", "web")
+# 涉及的 skill 名：Hermes skill 目录名（如 gold-price-brief）。只允许目录名安全字符，
+# 免得写进 yaml 的是说明文字/路径，页面上展示出来也没法对应到真实 skill。
+_SKILL_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._\-]*$")
+
+
+def _parse_skills(raw) -> list[str] | None:
+    """skills: [gold-price-brief, dingtalk-push] 或 "gold-price-brief,dingtalk-push"。
+
+    纯 prompt 驱动的 AI 任务（Hermes job 的 skill=None）不写该字段 → None。
+    """
+    if raw is None or raw == "" or raw == []:
+        return None
+    if isinstance(raw, str):
+        items = [s.strip() for s in raw.split(",")]
+    elif isinstance(raw, list):
+        items = [str(s).strip() for s in raw]
+    else:
+        raise ValueError(f"skills 必须是字符串或字符串列表: {raw!r}")
+    items = [s for s in items if s]
+    for name in items:
+        if not _SKILL_NAME_RE.match(name):
+            raise ValueError(f"skills 条目非法（应为 skill 目录名，如 gold-price-brief）: {name!r}")
+    return items or None
 
 
 def _parse_volumes(raw) -> list[str] | None:
@@ -82,6 +108,7 @@ def sync_registry() -> list[str]:
         targets = t.get("targets") or []
         if not isinstance(targets, list) or any(x not in VALID_TARGETS for x in targets):
             raise ValueError(f"任务 {t['id']} targets 非法: {targets}（可选 {VALID_TARGETS}，可多选）")
+        skills = _parse_skills(t.get("skills"))
         db.upsert_task({
             "id": t["id"],
             "name": t.get("name", t["id"]),
@@ -99,6 +126,7 @@ def sync_registry() -> list[str]:
             "run_user": t.get("user") or None,
             "group_name": group,
             "targets": json.dumps(targets, ensure_ascii=False),
+            "skills": json.dumps(skills, ensure_ascii=False) if skills else None,
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])

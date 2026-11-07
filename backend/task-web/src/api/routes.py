@@ -74,6 +74,7 @@ def _task_view(t: dict) -> dict:
         "group": t.get("group_name") or "script",
         "profile": _effective_profile(t),
         "targets": json.loads(t["targets"]) if t.get("targets") else [],
+        "skills": json.loads(t["skills"]) if t.get("skills") else [],
         "cron": t.get("cron"),
         "enabled": bool(t.get("enabled")),
         "timeout_seconds": t.get("timeout_seconds") or t.get("default_timeout"),

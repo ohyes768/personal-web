@@ -39,6 +39,14 @@ tr:last-child td { border-bottom: none; }
 
 .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; white-space: nowrap; }
 .badge-stack { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+/* skill 名较长（如 bond-market-macro-impact-skill）：浅底方角 chip + 等宽字，
+   按连字符折行（不 break-all，否则会断成词中间的碎片） */
+.badge-skill {
+  background: #fdf2f8; color: #9d174d; border: 1px solid #fbcfe8;
+  border-radius: 5px; padding: 1px 6px; font-size: 11px; line-height: 1.35;
+  font-family: ui-monospace, Consolas, monospace;
+  white-space: normal; overflow-wrap: break-word; text-align: left;
+}
 .muted { color: var(--muted); font-size: 13px; }
 .mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
 

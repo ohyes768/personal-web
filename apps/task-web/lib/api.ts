@@ -29,6 +29,8 @@ export interface TaskView {
   group: "script" | "ai";
   profile: string | null;
   targets: ("dingtalk" | "wechat" | "rss" | "web")[];
+  /** 涉及的 skill 名（tasks.yaml 登记，仅展示）；纯 prompt 驱动的 AI 任务为空数组 */
+  skills: string[];
   last_run: Run | null;
   active_run: Run | null;
   next_fire_time: string | null;

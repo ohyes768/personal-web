@@ -7,6 +7,9 @@
 # daily_pick 已改走 Hermes skill，rss / xwlb 已用 volumes 挂载接入。
 # 2026-11-06 cutover：以下 8 条已启用，n8n 上对应触发器已停用（Gold/Fund/New Stock
 # 整工作流 unpublish；Stock info Push 保留 17:30 财报选股触发器）。
+# 2026-11-07：AI 任务新增 skills: [skill-名] 字段（页面「涉及 Skill」列展示用），
+# 取值以 Hermes 侧 jobs.json 的 job.skill 为准（job-id → skill 对应关系见各条注释）；
+# 纯 prompt 驱动的任务（job.skill=None）不写该字段。
 tasks:
   # ---- stock-info-dingding 纯推送任务（方案 B：业务镜像独立维护）----
   # 前置：NAS 上 cd /home/ohyes768/stock-info-dingding && docker build -t stock-info:latest .
@@ -80,6 +83,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 7c8d2bd1c230
+    skills: [gold-price-brief]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -158,6 +162,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 1f04c0e830c8
+    skills: [daily-pick-brief]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -257,6 +262,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 246c69c1e845
+    skills: [hangzhou-pm25]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -279,6 +285,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 10ef8281a3bd
+    skills: [hk-ipo-research]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -294,6 +301,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id f6ce56ef2c94
+    skills: [hk-ipo-backtest]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -309,6 +317,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 8c85ad9c4c24
+    skills: [a-share-macro-impact-skill]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -324,6 +333,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 053337ce60b7
+    skills: [bond-market-macro-impact-skill]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -339,6 +349,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id adad4bb38199
+    skills: [waytoagi-update-log]
     env_file: /workspace/stock-info-dingding/.env.hermes-default
     network: nginx_nginx-bridge
     volumes:
@@ -464,6 +475,7 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 78cb9eead904 --jobs-json /hermes-cron-p7/jobs.json
+    skills: [natgeo-daily]
     env_file: /workspace/stock-info-dingding/.env
     network: nginx_nginx-bridge
     env:
