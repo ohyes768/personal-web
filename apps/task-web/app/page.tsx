@@ -98,7 +98,7 @@ export default function TasksPage() {
       <table>
         <thead>
           <tr>
-            <th>任务</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
+            <th>任务</th><th>输出</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
             <th>上次执行</th><th>下次计划</th><th>操作</th>
           </tr>
         </thead>
@@ -113,19 +113,22 @@ export default function TasksPage() {
                 }}>
                   {t.group === "ai" ? "AI" : "脚本"}
                 </span>
-                {(t.targets || []).map((x) => (
-                  <span key={x} className="badge" style={{
-                    background: TARGET_LABELS[x]?.color ?? "#6b7280",
-                    marginLeft: 4, fontSize: 11, verticalAlign: "middle",
-                  }}>
-                    {TARGET_LABELS[x]?.label ?? x}
-                  </span>
-                ))}
-                {(t.targets || []).length === 0 && (
-                  <span className="muted" style={{ marginLeft: 4, fontSize: 11 }}>（输出目的待定）</span>
-                )}
                 <div className="mono muted">{t.id}</div>
                 <div className="mono muted">{t.command}{t.cwd ? ` @ ${t.cwd}` : ""}</div>
+              </td>
+              <td>
+                <div className="badge-stack">
+                  {(t.targets || []).map((x) => (
+                    <span key={x} className="badge" style={{
+                      background: TARGET_LABELS[x]?.color ?? "#6b7280",
+                    }}>
+                      {TARGET_LABELS[x]?.label ?? x}
+                    </span>
+                  ))}
+                  {(t.targets || []).length === 0 && (
+                    <span className="muted" style={{ fontSize: 12 }}>待定</span>
+                  )}
+                </div>
               </td>
               <td className="muted" style={{ maxWidth: 220 }}>{t.description}</td>
               <td>

@@ -37,11 +37,12 @@ th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--bo
 th { background: var(--bg); color: var(--muted); font-weight: 500; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
 
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; white-space: nowrap; }
+.badge-stack { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
 .muted { color: var(--muted); font-size: 13px; }
 .mono { font-family: ui-monospace, Consolas, monospace; font-size: 13px; }
 
-.btn { border: 1px solid var(--border); background: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.btn { border: 1px solid var(--border); background: #fff; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; white-space: nowrap; }
 .btn:hover { background: var(--bg); }
 .btn-primary { background: #2563eb; color: #fff; border-color: #2563eb; }
 .btn-primary:hover { background: #1d4ed8; }
