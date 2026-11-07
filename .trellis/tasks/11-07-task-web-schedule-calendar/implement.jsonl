@@ -1,0 +1,3 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "新增 API 跨层数据流：SQLite 聚合 -> FastAPI -> 前端组件"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 上写/跑 pytest 的硬约束（basetemp 等）"}
