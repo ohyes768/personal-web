@@ -57,6 +57,7 @@ tasks:
   - id: gold-price-push
     name: 黄金价格推送
     description: 黄金价格播报（09:30、15:30 两档）
+    group: ai
     engine: docker
     image: stock-info:latest
     command: python gold_price_push.py
@@ -133,6 +134,7 @@ tasks:
   - id: daily-pick-push
     name: 每日财报阅读
     description: 选股推送 + Hermes 财报分析（同步等待），状态落宿主 data/reports/logs
+    group: ai
     engine: docker
     image: stock-info:latest
     command: python daily_pick.py
@@ -225,7 +227,7 @@ tasks:
   # 注意：Hermes cron 存 UTC！jobs.json 里 45 23,3,9 = 北京 7:45/11:45/17:45
   - id: pm25-broadcast
     name: 杭州PM2.5播报（微信）
-    group: hermes
+    group: ai
     description: 经 Hermes Runs API 触发 hangzhou-pm25 skill；原 Hermes cron job（id 246c69c1e845）迁移
     engine: docker
     image: stock-info:latest
@@ -241,7 +243,7 @@ tasks:
   # 默认 profile（gateway 8642，root ~/.hermes/cron/jobs.json）
   - id: hermes-hk-ipo-research
     name: 港股IPO每日研究（Hermes）
-    group: hermes
+    group: ai
     description: hk-ipo-research skill，产出推 RSS（已核实 prompt 内置推送步骤）（job 10ef8281a3bd）
     engine: docker
     image: stock-info:latest
@@ -253,7 +255,7 @@ tasks:
 
   - id: hermes-hk-ipo-backtest
     name: 港股IPO回测审计（Hermes）
-    group: hermes
+    group: ai
     description: hk-ipo-backtest skill，推 RSS（已核实 prompt 内置推送步骤）（job f6ce56ef2c94）
     engine: docker
     image: stock-info:latest
@@ -265,7 +267,7 @@ tasks:
 
   - id: hermes-a-share-macro-impact
     name: A股宏观影响周报（Hermes）
-    group: hermes
+    group: ai
     description: a-share-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 8c85ad9c4c24）
     engine: docker
     image: stock-info:latest
@@ -277,7 +279,7 @@ tasks:
 
   - id: hermes-bond-macro-impact
     name: 债市宏观影响周报（Hermes）
-    group: hermes
+    group: ai
     description: bond-market-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 053337ce60b7）
     engine: docker
     image: stock-info:latest
@@ -289,7 +291,7 @@ tasks:
 
   - id: hermes-waytoagi-tracker
     name: WaytoAGI更新日志追踪（Hermes）
-    group: hermes
+    group: ai
     description: waytoagi-update-log skill，推 RSS Relay+钉钉群机器人（已核实 prompt 内置双通道推送）（job adad4bb38199）
     engine: docker
     image: stock-info:latest
@@ -304,7 +306,7 @@ tasks:
   # 该 profile 走 HERMES_PROFILE=ohyes768（.env 默认即此值，显式声明防漂移）
   - id: hermes-macro-monetary-weekly
     name: 货币政策周报（Hermes/ohyes768）
-    group: hermes
+    group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（a31a6196fc09）
     engine: docker
     image: stock-info:latest
@@ -318,7 +320,7 @@ tasks:
 
   - id: hermes-macro-money-supply-weekly
     name: 金融数据周报（Hermes/ohyes768）
-    group: hermes
+    group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（633b4d12a8a3）
     engine: docker
     image: stock-info:latest
@@ -332,7 +334,7 @@ tasks:
 
   - id: hermes-macro-entity-weekly
     name: 实体经济周报（Hermes/ohyes768）
-    group: hermes
+    group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（3704976be0ec）
     engine: docker
     image: stock-info:latest
@@ -346,7 +348,7 @@ tasks:
 
   - id: hermes-macro-inflation-weekly
     name: 通胀跟踪周报（Hermes/ohyes768）
-    group: hermes
+    group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（7243389de6f9）
     engine: docker
     image: stock-info:latest
@@ -386,6 +388,7 @@ tasks:
   - id: natgeo-push
     name: 国家地理推送
     description: 国家地理每日一图 → 翻译 → 钉钉推送
+    group: ai
     engine: docker
     image: stock-info:latest
     command: python -m natgeo.natgeo_push

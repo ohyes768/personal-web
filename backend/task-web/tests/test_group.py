@@ -18,11 +18,19 @@ def test_group_default_script(client, env):
     assert db.get_task("t1")["group_name"] == "script"
 
 
-def test_group_hermes_stored(client, env):
-    _sync(env, 'tasks:\n  - id: t2\n    name: x\n    group: hermes\n    command: python t.py\n')
+def test_group_ai_stored(client, env):
+    _sync(env, 'tasks:\n  - id: t2\n    name: x\n    group: ai\n    command: python t.py\n')
     from src import db
 
-    assert db.get_task("t2")["group_name"] == "hermes"
+    assert db.get_task("t2")["group_name"] == "ai"
+
+
+def test_group_legacy_hermes_alias(client, env):
+    """旧值 hermes 兼容映射为 ai。"""
+    _sync(env, 'tasks:\n  - id: t2b\n    name: x\n    group: hermes\n    command: python t.py\n')
+    from src import db
+
+    assert db.get_task("t2b")["group_name"] == "ai"
 
 
 def test_group_invalid_rejected(client, env):
@@ -35,8 +43,8 @@ def test_group_invalid_rejected(client, env):
 
 
 def test_api_returns_group(client, env):
-    _sync(env, 'tasks:\n  - id: t4\n    name: x\n    group: hermes\n    command: python t.py\n')
+    _sync(env, 'tasks:\n  - id: t4\n    name: x\n    group: ai\n    command: python t.py\n')
     r = client.get("/api/tasks")
     body = r.json()
     row = next(t for t in body["tasks"] if t["id"] == "t4")
-    assert row["group"] == "hermes"
+    assert row["group"] == "ai"

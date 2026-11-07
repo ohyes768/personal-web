@@ -4,17 +4,17 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet, apiSend, statusColor, statusLabel, TaskView } from "@/lib/api";
 
-const GROUP_TABS: { key: "all" | "script" | "hermes"; label: string }[] = [
+const GROUP_TABS: { key: "all" | "script" | "ai"; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "script", label: "脚本任务" },
-  { key: "hermes", label: "Hermes 任务" },
+  { key: "ai", label: "AI 任务" },
 ];
 
 export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskView[]>([]);
   const [error, setError] = useState("");
   const [pwdTarget, setPwdTarget] = useState<TaskView | null>(null);
-  const [groupTab, setGroupTab] = useState<"all" | "script" | "hermes">("all");
+  const [groupTab, setGroupTab] = useState<"all" | "script" | "ai">("all");
 
   const load = useCallback(async () => {
     try {

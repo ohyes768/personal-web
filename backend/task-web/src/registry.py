@@ -26,7 +26,10 @@ from .config import get_tasks_yaml
 logger = logging.getLogger("task-web.registry")
 
 VALID_ENGINES = ("shell", "docker")
-VALID_GROUPS = ("script", "hermes")
+# 分组原则：script=纯脚本实现（维护在 stock-info-dingding）；ai=用到 AI 能力
+# （Hermes skill 实现，task-web 只管触发时间；或脚本内置 LLM 调用）
+VALID_GROUPS = ("script", "ai")
+_LEGACY_GROUPS = {"hermes": "ai"}  # 旧值兼容
 
 
 def _parse_volumes(raw) -> list[str] | None:
@@ -71,7 +74,7 @@ def sync_registry() -> list[str]:
             raise ValueError(f"任务 {t['id']} engine 非法: {engine}（可选 {VALID_ENGINES}）")
         env = t.get("env") or {}
         volumes = _parse_volumes(t.get("volumes"))
-        group = t.get("group", "script")
+        group = _LEGACY_GROUPS.get(t.get("group") or "script") or (t.get("group") or "script")
         if group not in VALID_GROUPS:
             raise ValueError(f"任务 {t['id']} group 非法: {group}（可选 {VALID_GROUPS}）")
         db.upsert_task({
