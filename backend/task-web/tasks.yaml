@@ -42,23 +42,13 @@ tasks:
     cron: "15 9 * * mon-fri"
     timeout: 600
 
-  # 迁移来源：n8n「Stock info Push」11:30 + 14:30 板块涨跌（两触发器合并为逗号 cron）
-  - id: sector-push
-    name: 板块涨跌播报
-    description: 东方财富板块涨跌 → 钉钉（11:30、14:30 两档）
-    targets: [dingtalk]
-    engine: docker
-    image: stock-info:latest
-    command: python dingtalk_em_api.py
-    cwd: /app
-    env:
-      PUSH_MODE: "1"
-    env_file: /workspace/stock-info-dingding/.env
-    cron: "30 11,14 * * mon-fri"
-    timeout: 600
+  # 板块涨跌播报（sector-push）已随 stock-info-dingding 384f45c 下线：
+  # dingtalk_em_api.py 已删，yaml 条目同步移除（登记修剪自动清库，运行历史保留）
 
   # ---- 黄金播报已改为 Hermes skill（gold-price-brief），DeepSeek 版脚本退役 ----
   # 原 gold-price-push（脚本内置 DeepSeek 分析）删除；AI 分析由 skill 完成
+  # （板块涨跌播报 sector-push 已随 stock-info-dingding 384f45c 下线，
+  #   dingtalk_em_api.py 已删，yaml 条目同步移除，运行历史保留）
   - id: hermes-gold-price
     name: 黄金走势研判（钉钉）
     group: ai
