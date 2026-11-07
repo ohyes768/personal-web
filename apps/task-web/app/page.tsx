@@ -4,10 +4,17 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet, apiSend, statusColor, statusLabel, TaskView } from "@/lib/api";
 
+const GROUP_TABS: { key: "all" | "script" | "hermes"; label: string }[] = [
+  { key: "all", label: "全部" },
+  { key: "script", label: "脚本任务" },
+  { key: "hermes", label: "Hermes 任务" },
+];
+
 export default function TasksPage() {
   const [tasks, setTasks] = useState<TaskView[]>([]);
   const [error, setError] = useState("");
   const [pwdTarget, setPwdTarget] = useState<TaskView | null>(null);
+  const [groupTab, setGroupTab] = useState<"all" | "script" | "hermes">("all");
 
   const load = useCallback(async () => {
     try {
@@ -64,6 +71,23 @@ export default function TasksPage() {
         「中断」含漏执行补记（不自动补跑，可手动触发）。
       </div>
       {error && <p className="error-text">{error}</p>}
+      <div className="filters" role="tablist">
+        {GROUP_TABS.map((g) => (
+          <button
+            key={g.key}
+            className="btn"
+            style={groupTab === g.key
+              ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" }
+              : undefined}
+            onClick={() => setGroupTab(g.key)}
+          >
+            {g.label}
+            <span className="muted" style={{ marginLeft: 6, color: groupTab === g.key ? "#dbeafe" : undefined }}>
+              {g.key === "all" ? tasks.length : tasks.filter((t) => t.group === g.key).length}
+            </span>
+          </button>
+        ))}
+      </div>
       <table>
         <thead>
           <tr>
@@ -72,7 +96,7 @@ export default function TasksPage() {
           </tr>
         </thead>
         <tbody>
-          {tasks.map((t) => (
+          {tasks.filter((t) => groupTab === "all" || t.group === groupTab).map((t) => (
             <tr key={t.id}>
               <td>
                 <strong>{t.name}</strong>

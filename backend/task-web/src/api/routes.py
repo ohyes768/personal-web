@@ -45,6 +45,7 @@ def _task_view(t: dict) -> dict:
         "volumes": json.loads(t["volumes"]) if t.get("volumes") else [],
         "network": t.get("network"),
         "user": t.get("run_user"),
+        "group": t.get("group_name") or "script",
         "cron": t.get("cron"),
         "enabled": bool(t.get("enabled")),
         "timeout_seconds": t.get("timeout_seconds") or t.get("default_timeout"),

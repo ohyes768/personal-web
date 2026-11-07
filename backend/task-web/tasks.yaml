@@ -224,6 +224,7 @@ tasks:
   # 轮询终态；agent 依 prompt 自行推送微信。启用前先在 Hermes 侧禁用同名旧 job
   - id: pm25-broadcast
     name: 杭州PM2.5播报（微信）
+    group: hermes
     description: 经 Hermes Runs API 触发 hangzhou-pm25 skill；原 Hermes cron job（id 246c69c1e845）迁移
     engine: docker
     image: stock-info:latest

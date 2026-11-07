@@ -26,6 +26,7 @@ from .config import get_tasks_yaml
 logger = logging.getLogger("task-web.registry")
 
 VALID_ENGINES = ("shell", "docker")
+VALID_GROUPS = ("script", "hermes")
 
 
 def _parse_volumes(raw) -> list[str] | None:
@@ -70,6 +71,9 @@ def sync_registry() -> list[str]:
             raise ValueError(f"任务 {t['id']} engine 非法: {engine}（可选 {VALID_ENGINES}）")
         env = t.get("env") or {}
         volumes = _parse_volumes(t.get("volumes"))
+        group = t.get("group", "script")
+        if group not in VALID_GROUPS:
+            raise ValueError(f"任务 {t['id']} group 非法: {group}（可选 {VALID_GROUPS}）")
         db.upsert_task({
             "id": t["id"],
             "name": t.get("name", t["id"]),
@@ -85,6 +89,7 @@ def sync_registry() -> list[str]:
             "volumes": json.dumps(volumes, ensure_ascii=False) if volumes else None,
             "network": t.get("network") or None,
             "run_user": t.get("user") or None,
+            "group_name": group,
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])

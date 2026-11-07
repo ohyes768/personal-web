@@ -26,6 +26,7 @@ export interface TaskView {
   cron: string;
   enabled: boolean;
   timeout_seconds: number;
+  group: "script" | "hermes";
   last_run: Run | null;
   active_run: Run | null;
   next_fire_time: string | null;

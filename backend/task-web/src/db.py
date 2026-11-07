@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     env TEXT,
     volumes TEXT,
     network TEXT,
-    run_user TEXT
+    run_user TEXT,
+    group_name TEXT DEFAULT 'script'
 );
 
 CREATE TABLE IF NOT EXISTS task_schedules (
@@ -90,6 +91,7 @@ def init_db() -> None:
         ("volumes", "TEXT"),
         ("network", "TEXT"),
         ("run_user", "TEXT"),
+        ("group_name", "TEXT DEFAULT 'script'"),
     ):
         if name not in cols:
             conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {ddl}")
@@ -117,19 +119,21 @@ def os_unique() -> str:
 def upsert_task(row: dict) -> None:
     get_conn().execute(
         """INSERT INTO tasks (id, name, description, command, cwd, default_cron, default_timeout,
-             engine, image, env_file, env, volumes, network, run_user)
+             engine, image, env_file, env, volumes, network, run_user, group_name)
            VALUES (:id, :name, :description, :command, :cwd, :default_cron, :default_timeout,
-             :engine, :image, :env_file, :env, :volumes, :network, :run_user)
+             :engine, :image, :env_file, :env, :volumes, :network, :run_user, :group_name)
            ON CONFLICT(id) DO UPDATE SET
              name=excluded.name, description=excluded.description,
              command=excluded.command, cwd=excluded.cwd,
              default_cron=excluded.default_cron, default_timeout=excluded.default_timeout,
              engine=excluded.engine, image=excluded.image,
              env_file=excluded.env_file, env=excluded.env,
-             volumes=excluded.volumes, network=excluded.network, run_user=excluded.run_user""",
+             volumes=excluded.volumes, network=excluded.network, run_user=excluded.run_user,
+             group_name=excluded.group_name""",
         {
             "engine": "shell", "image": None, "env_file": None, "env": None,
-            "volumes": None, "network": None, "run_user": None, **row,
+            "volumes": None, "network": None, "run_user": None,
+            "group_name": "script", **row,
         },
     )
     get_conn().commit()
