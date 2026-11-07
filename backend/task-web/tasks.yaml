@@ -67,6 +67,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 7c8d2bd1c230
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 9,15 * * mon-fri"
@@ -131,6 +133,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 1f04c0e830c8
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 17 * * mon-fri"
@@ -222,6 +226,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 246c69c1e845
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "45 7,11,17 * * *"
@@ -230,7 +236,10 @@ tasks:
   # ---- Hermes 任务全量登记（默认禁用；启用前在 Hermes 侧禁用对应旧 job）----
   # 交付已全部核实：5 个任务 prompt/skill 内置推送（RSS 中转服务为主），
   # 不依赖 gateway 的 deliver 会话路由，API 触发不影响投递
-  # 默认 profile（gateway 8642，root ~/.hermes/cron/jobs.json）
+  # 默认 profile（gateway 8642，~/.hermes/cron/jobs.json）。2026-11-07 补配：
+  # 默认网关有独立 API key（~/.hermes/.env 的 API_SERVER_KEY，stock .env 的 key 仅对 8643 有效），
+  # 故 8 条默认任务统一 env_file=.env.hermes-default（8642+default+独立 key，NAS 上已生成 chmod 600）；
+  # 且 docker 默认 bridge 实测连不通 172.27.0.1，必须 network: nginx_nginx-bridge 才能达网关
   - id: hermes-hk-ipo-research
     name: 港股IPO每日研究（Hermes）
     group: ai
@@ -239,6 +248,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 10ef8281a3bd
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "30 8 * * 1-5"
@@ -252,6 +263,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id f6ce56ef2c94
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "0 16 * * 1-5"
@@ -265,6 +278,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 8c85ad9c4c24
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "0 18 * * 1"
@@ -278,6 +293,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 053337ce60b7
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "5 18 * * 1"
@@ -291,6 +308,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id adad4bb38199
+    env_file: /workspace/stock-info-dingding/.env.hermes-default
+    network: nginx_nginx-bridge
     volumes:
       - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
     cron: "0 10 * * *"
@@ -298,7 +317,8 @@ tasks:
 
   # ohyes768 profile（gateway 8643，~/.hermes/profiles/ohyes768/cron/jobs.json）4 个
   # 宏观周报（skill: None，纯 prompt 驱动）；UTC 1 点档 = 北京 9 点档
-  # 该 profile 走 HERMES_PROFILE=ohyes768（.env 默认即此值，显式声明防漂移）
+  # 该 profile 走 HERMES_PROFILE=ohyes768（.env 默认即此值，显式声明防漂移）；
+  # env_file=.env 供 BASE_URL/API_KEY（8643 网关），network 同样必须 nginx_nginx-bridge
   - id: hermes-macro-monetary-weekly
     name: 货币政策周报（Hermes/ohyes768）
     group: ai
@@ -307,6 +327,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id a31a6196fc09 --jobs-json /hermes-cron-p7/jobs.json
+    env_file: /workspace/stock-info-dingding/.env
+    network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
     volumes:
@@ -322,6 +344,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 633b4d12a8a3 --jobs-json /hermes-cron-p7/jobs.json
+    env_file: /workspace/stock-info-dingding/.env
+    network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
     volumes:
@@ -337,6 +361,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 3704976be0ec --jobs-json /hermes-cron-p7/jobs.json
+    env_file: /workspace/stock-info-dingding/.env
+    network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
     volumes:
@@ -352,6 +378,8 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 7243389de6f9 --jobs-json /hermes-cron-p7/jobs.json
+    env_file: /workspace/stock-info-dingding/.env
+    network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
     volumes:
@@ -397,11 +425,13 @@ tasks:
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 78cb9eead904 --jobs-json /hermes-cron-p7/jobs.json
+    env_file: /workspace/stock-info-dingding/.env
+    network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
     volumes:
       - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
-    cron: "30 21 * * *"
+    cron: "30 13 * * *"
     timeout: 900
 
   # 迁移来源：n8n「xwlb-analyse Push」08:10 git-pull 触发器（2026-11-07 n8n 完整下线时迁移）。
