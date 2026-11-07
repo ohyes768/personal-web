@@ -386,14 +386,19 @@ tasks:
     env_file: /workspace/stock-info-dingding/.env
     cron: 0 11 * * mon,wed,fri
     timeout: 600
-  - id: natgeo-push
-    name: 国家地理推送
-    description: 国家地理每日一图 → 翻译 → 钉钉推送
+  # natgeo 已改造成 Hermes skill（skills/photo/natgeo-daily，翻译由 Hermes 模型
+  # 或 DeepSeek 完成，脚本自推钉钉）；job 78cb9eead904 在 ohyes768 profile，
+  # 已 pause——jobs.json 仅作 prompt 单一事实源，调度权在 task-web
+  - id: hermes-natgeo
+    name: 国家地理每日一图（Hermes）
     group: ai
+    description: natgeo-daily skill 经 Runs API 触发（job 78cb9eead904，ohyes768 profile，已 pause）
     engine: docker
     image: stock-info:latest
-    command: python -m natgeo.natgeo_push
-    cwd: /app
-    env_file: /workspace/stock-info-dingding/.env
-    cron: 30 13 * * *
-    timeout: 600
+    command: python hermes_trigger.py --job-id 78cb9eead904 --jobs-json /hermes-cron-p7/jobs.json
+    env:
+      HERMES_PROFILE: "ohyes768"
+    volumes:
+      - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
+    cron: "30 21 * * *"
+    timeout: 900
