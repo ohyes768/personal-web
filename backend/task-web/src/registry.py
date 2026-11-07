@@ -96,4 +96,9 @@ def sync_registry() -> list[str]:
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])
+    # 登记修剪：yaml 里已移除的任务清理出库（运行历史保留，仅删任务与调度）
+    known = set(ids)
+    for gone in [t["id"] for t in db.list_tasks()] - known:
+        db.delete_task(gone)
+        logger.info("登记修剪：移除已不在 tasks.yaml 的任务 %s", gone)
     return ids

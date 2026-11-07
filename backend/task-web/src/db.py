@@ -150,6 +150,13 @@ def ensure_schedule(task_id: str, cron: str, timeout: int | None) -> None:
     get_conn().commit()
 
 
+def delete_task(task_id: str) -> None:
+    """登记修剪：删除任务与其调度；runs 历史保留（无外键约束）。"""
+    get_conn().execute("DELETE FROM task_schedules WHERE task_id=?", (task_id,))
+    get_conn().execute("DELETE FROM tasks WHERE id=?", (task_id,))
+    get_conn().commit()
+
+
 def list_tasks() -> list[dict]:
     rows = get_conn().execute(
         """SELECT t.*, s.cron, s.enabled, s.timeout_seconds

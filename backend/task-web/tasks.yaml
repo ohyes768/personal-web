@@ -81,10 +81,11 @@ tasks:
     cron: "40 14 * * mon-fri"
     timeout: 600
 
-  # 迁移来源：n8n「Stock info Push」14:35 科创50（分钟与 16:30 不同，拆两条任务）
+  # 迁移来源：n8n「Stock info Push」14:35 + 16:30 科创50，两档统一为 14:35/16:35
+  # （同分钟不同小时 → 单条 cron 小时列表即可表达，合并为一条任务）
   - id: star50-macd-push
     name: 科创50 MACD推送
-    description: 科创50 指数 MACD 信号推送（14:35 档）
+    description: 科创50 指数 MACD 信号推送（14:35 / 16:35 两档）
     engine: docker
     image: stock-info:latest
     command: python star50_macd_push.py
@@ -92,21 +93,7 @@ tasks:
     env:
       PUSH_MODE: "1"
     env_file: /workspace/stock-info-dingding/.env
-    cron: "35 14 * * mon-fri"
-    timeout: 600
-
-  # 迁移来源：n8n「Stock info Push」16:30 科创50（16:30 档）
-  - id: star50-macd-push-1630
-    name: 科创50 MACD推送(16:30)
-    description: 科创50 指数 MACD 信号推送（16:30 档）
-    engine: docker
-    image: stock-info:latest
-    command: python star50_macd_push.py
-    cwd: /app
-    env:
-      PUSH_MODE: "1"
-    env_file: /workspace/stock-info-dingding/.env
-    cron: "30 16 * * mon-fri"
+    cron: "35 14,16 * * mon-fri"
     timeout: 600
 
   # 迁移来源：n8n「Stock info Push」17:00 ETF 轮动
