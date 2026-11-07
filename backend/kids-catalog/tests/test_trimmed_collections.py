@@ -22,7 +22,8 @@ def test_eighteen_trimmed_to_one_can_be_confirmed_and_generated(setup):
     for number in range(1, 18):
         delete(client, pk, f'{number:03d}-曲目.mp3')
     candidates = client.get('/api/collections').json()['candidates']
-    assert candidates == [{'folder': title, 'title': title, 'confirmed': False, 'track_count': 1}]
+    assert candidates == [{'folder': title, 'title': title, 'source': 'chart', 'platform': '蜻蜓FM',
+                           'confirmed': False, 'track_count': 1}]
     before = generate_selected(client, [title])
     assert before['snapshot'] is None
     assert before['generation']['skipped'][0]['code'] == 'incomplete'
@@ -57,7 +58,8 @@ def test_legacy_user_delete_migration_is_specific_and_does_not_confirm_files(set
     Catalog(catalog.path.parent)
     Catalog(catalog.path.parent)  # migration is idempotent
     rows = client.get('/api/collections').json()['candidates']
-    assert rows == [{'folder': '旧删曲', 'title': '旧删曲', 'confirmed': False, 'track_count': 1}]
+    assert rows == [{'folder': '旧删曲', 'title': '旧删曲', 'source': 'chart', 'platform': '蜻蜓FM',
+                     'confirmed': False, 'track_count': 1}]
 
 
 def test_requeue_clears_trimmed_eligibility(setup, monkeypatch):

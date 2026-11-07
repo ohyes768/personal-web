@@ -445,6 +445,22 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
                                'track_count': (ledger_tracks if status == 'complete' else row['downloaded_tracks']) or 0})
         return {**state, 'candidates': candidates}
 
+    @app.get('/api/collections/{folder}/tracks')
+    def collection_tracks(folder: str):
+        """合集音频文件清单（浏览器播放数据源）：按文件名排序，仅 .mp3/.m4a。
+
+        folder 必须就是登记时的净化目录名（防路径穿越）；目录不存在或没有音频 → 404。
+        """
+        if ('/' in folder or '\\' in folder or folder in ('.', '..')
+                or folder != sanitize_filename(folder)):
+            raise HTTPException(404, detail={'code': 'unknown_folder', 'message': '合集不存在'})
+        files = catalog.audio_files(folder, app.state.music_dir)
+        if not files:
+            raise HTTPException(404, detail={'code': 'unknown_folder',
+                                             'message': '合集目录不存在或还没有音频'})
+        return {'tracks': [{'file': path.name, 'title': re.sub(r'^\d+-', '', path.stem) or path.stem}
+                           for path in files]}
+
     @app.post('/api/collections/generate', status_code=202)
     def generate_collections(body: GenerateCollections | None = None):
         folders = body.folders if body else None
