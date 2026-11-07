@@ -10,7 +10,7 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from .. import db, executor
+from .. import db, executor, schedule
 from ..config import get_admin_password, get_log_dir, get_log_retention_days
 from ..scheduler import TaskScheduler
 
@@ -32,6 +32,32 @@ class ManualRunRequest(BaseModel):
     password: str
 
 
+def _effective_profile(t: dict) -> str | None:
+    """AI 任务的生效 Hermes profile（只读推导，不改表）。
+
+    推导规则（与 tasks.yaml 注释及 .env 约定一致）：
+    - env 显式 HERMES_PROFILE → 该值（防漂移，显式声明优先）；
+    - env_file 为 .env.hermes-default → default profile（gateway 8642）；
+    - env_file 为 .env → ohyes768（.env 默认 profile，gateway 8643）；
+    - 其余（非 Hermes 触发的 AI 任务 / 脚本任务）→ None。
+    """
+    if (t.get("group_name") or "script") != "ai":
+        return None
+    try:
+        env = json.loads(t["env"]) if t.get("env") else {}
+    except (TypeError, ValueError):
+        env = {}
+    explicit = env.get("HERMES_PROFILE")
+    if explicit:
+        return str(explicit)
+    env_file = t.get("env_file") or ""
+    if env_file.endswith(".env.hermes-default"):
+        return "default"
+    if env_file.endswith("/.env") or env_file == ".env":
+        return "ohyes768"
+    return None
+
+
 def _task_view(t: dict) -> dict:
     last = db.last_run_of_task(t["id"])
     active = db.active_run_of_task(t["id"])
@@ -46,6 +72,7 @@ def _task_view(t: dict) -> dict:
         "network": t.get("network"),
         "user": t.get("run_user"),
         "group": t.get("group_name") or "script",
+        "profile": _effective_profile(t),
         "targets": json.loads(t["targets"]) if t.get("targets") else [],
         "cron": t.get("cron"),
         "enabled": bool(t.get("enabled")),
@@ -111,6 +138,28 @@ def list_runs_api(
     runs = db.list_runs(task_id=task_id, status=status,
                         start_from=start_from, start_to=start_to, limit=limit)
     return {"total": len(runs), "runs": runs}
+
+
+@router.get("/schedule/summary")
+def schedule_summary(
+    from_str: str = Query(..., alias="from"),
+    to_str: str = Query(..., alias="to"),
+):
+    """排期日历：按天聚合 run 计数（计划日口径），供月历格使用。"""
+    try:
+        days = schedule.summary_days(from_str, to_str)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {"days": days}
+
+
+@router.get("/schedule/day")
+def schedule_day(date: str = Query(...)):
+    """排期日历：单日计划/实际槽视图（now 分界规则见 schedule.day_view）。"""
+    try:
+        return schedule.day_view(date)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
 
 
 @router.get("/runs/{run_id}")

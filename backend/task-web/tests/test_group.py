@@ -48,3 +48,38 @@ def test_api_returns_group(client, env):
     body = r.json()
     row = next(t for t in body["tasks"] if t["id"] == "t4")
     assert row["group"] == "ai"
+
+
+def test_profile_explicit_env_wins(client, env):
+    """env 显式 HERMES_PROFILE 优先于 env_file 推导。"""
+    _sync(env,
+          'tasks:\n'
+          '  - id: p1\n    name: x\n    group: ai\n    command: python hermes_trigger.py\n'
+          '    env:\n      HERMES_PROFILE: "ohyes768"\n'
+          '    env_file: /workspace/stock-info-dingding/.env.hermes-default\n')
+    row = next(t for t in client.get("/api/tasks").json()["tasks"] if t["id"] == "p1")
+    assert row["profile"] == "ohyes768"
+
+
+def test_profile_default_env_file(client, env):
+    """.env.hermes-default → default profile；.env → ohyes768（默认 profile）。"""
+    _sync(env,
+          'tasks:\n'
+          '  - id: p2\n    name: x\n    group: ai\n    command: python hermes_trigger.py\n'
+          '    env_file: /workspace/stock-info-dingding/.env.hermes-default\n'
+          '  - id: p3\n    name: y\n    group: ai\n    command: python hermes_trigger.py\n'
+          '    env_file: /workspace/stock-info-dingding/.env\n')
+    rows = {t["id"]: t["profile"] for t in client.get("/api/tasks").json()["tasks"]}
+    assert rows["p2"] == "default"
+    assert rows["p3"] == "ohyes768"
+
+
+def test_profile_script_task_none(client, env):
+    """脚本任务无 profile；未配 env_file 的 AI 任务也为 None。"""
+    _sync(env,
+          'tasks:\n'
+          '  - id: p4\n    name: x\n    command: echo hi\n'
+          '  - id: p5\n    name: y\n    group: ai\n    command: python t.py\n')
+    rows = {t["id"]: t["profile"] for t in client.get("/api/tasks").json()["tasks"]}
+    assert rows["p4"] is None
+    assert rows["p5"] is None

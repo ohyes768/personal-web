@@ -98,7 +98,7 @@ export default function TasksPage() {
       <table>
         <thead>
           <tr>
-            <th>任务</th><th>输出</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
+            <th>任务</th><th>输出</th><th>生效 Profile</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
             <th>上次执行</th><th>下次计划</th><th>操作</th>
           </tr>
         </thead>
@@ -129,6 +129,13 @@ export default function TasksPage() {
                     <span className="muted" style={{ fontSize: 12 }}>待定</span>
                   )}
                 </div>
+              </td>
+              <td>
+                {t.profile ? (
+                  <span className="badge" style={{ background: "#7c3aed" }}>{t.profile}</span>
+                ) : (
+                  <span className="muted" style={{ fontSize: 12 }}>-</span>
+                )}
               </td>
               <td className="muted" style={{ maxWidth: 220 }}>{t.description}</td>
               <td>

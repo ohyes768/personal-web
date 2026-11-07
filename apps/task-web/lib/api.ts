@@ -27,10 +27,46 @@ export interface TaskView {
   enabled: boolean;
   timeout_seconds: number;
   group: "script" | "ai";
+  profile: string | null;
   targets: ("dingtalk" | "wechat" | "rss" | "web")[];
   last_run: Run | null;
   active_run: Run | null;
   next_fire_time: string | null;
+}
+
+export interface ScheduleSummaryDay {
+  date: string;
+  total: number;
+  missed: number;
+  waiting: number;
+  running: number;
+  success: number;
+  failed: number;
+  timeout: number;
+  interrupted: number;
+  skipped: number;
+}
+
+export interface ScheduleSlot {
+  at: string;
+  kind: "run" | "planned" | "pending";
+  run?: Run;
+}
+
+export interface ScheduleTaskView {
+  id: string;
+  name: string;
+  group: "script" | "ai";
+  cron: string;
+  enabled: boolean;
+  cron_valid: boolean;
+  slots: ScheduleSlot[];
+  manual: { at: string; run: Run }[];
+}
+
+export interface ScheduleDayView {
+  date: string;
+  tasks: ScheduleTaskView[];
 }
 
 export async function apiGet<T>(path: string): Promise<T> {
