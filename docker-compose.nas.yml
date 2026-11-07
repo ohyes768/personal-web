@@ -568,6 +568,8 @@ services:
   # ---------------------------------------------------------------------------
   # 不承载运行时容器：entrypoint true，up 时创建即退出；仅用于
   # `docker compose build stock-info-image`（deploy-nas.sh task-web 会前置调用）
+  # deploy-nas.sh task-web 的打包顺序：先在 $STOCK_INFO_HOST_PATH 的 checkout 上
+  # git pull --ff-only（--no-pull 时跳过），再构建本镜像，保证镜像与业务仓库代码同源同版本。
   stock-info-image:
     image: stock-info:latest
     container_name: stock-info-image

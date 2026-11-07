@@ -34,6 +34,14 @@ BUILDKITD_CONFIG="scripts/buildkitd-nas.toml"
 # nginx compose 文件在另一个项目里（~/-/nginx/），路径可被环境变量覆盖。
 NGINX_CONTAINER="${NGINX_CONTAINER:-nginx}"
 NGINX_COMPOSE_FILE="${NGINX_COMPOSE_FILE:-/home/ohyes768/nginx/docker-compose.yml}"
+# task-web 业务仓库（方案 B：脚本+依赖由 stock-info-dingding 自维护）
+# STOCK_INFO_HOST_PATH  = 业务镜像 stock-info:latest 的构建 context
+# TASK_WEB_WORKSPACE_HOST_PATH = task-web-backend 挂载给 docker 任务用的 workspace
+# 两者默认同一份 checkout；这里显式给默认值并 export，保证 compose 插值
+# 与下面 git pull 的目标是同一个路径。
+STOCK_INFO_HOST_PATH="${STOCK_INFO_HOST_PATH:-/home/ohyes768/stock-info-dingding}"
+TASK_WEB_WORKSPACE_HOST_PATH="${TASK_WEB_WORKSPACE_HOST_PATH:-$STOCK_INFO_HOST_PATH}"
+export STOCK_INFO_HOST_PATH TASK_WEB_WORKSPACE_HOST_PATH
 
 show_help() {
     cat <<'EOF'
@@ -50,7 +58,7 @@ side:（默认 both）
   backend | frontend | both
 
 options:
-  --no-pull     跳过 git pull
+  --no-pull     跳过 git pull（personal-web 与 task-web 业务仓库都跳过）
   --cold        强制冷构建：清 Docker 层缓存 + 换新的空 pnpm store（真正重下依赖）
   --no-buildx   前端也退回 docker compose build（默认 frontend 走 buildx）
   --tail        部署完后 tail 日志（默认关）
@@ -63,6 +71,14 @@ options:
   --cold --no-buildx  全部 compose 真冷构建
 
 说明:
+  task-web 连带处理业务仓库 stock-info-dingding（方案 B：业务代码不进本仓）：
+    1) 先在业务仓库 checkout 上 git pull --ff-only 更新代码
+    2) 再 docker compose build stock-info-image 重建 stock-info:latest
+    3) 校验 /workspace/stock-info-dingding 下的运行时 env_file 是否就位（缺失只告警）
+  路径默认 /home/ohyes768/stock-info-dingding，可用根 .env 里的
+  STOCK_INFO_HOST_PATH / TASK_WEB_WORKSPACE_HOST_PATH 覆盖；
+  side=frontend 时跳过以上步骤（前端不依赖业务镜像）。
+
   buildx 使用 docker-container 驱动时，不会继承宿主机 daemon.json 的
   registry-mirrors。脚本会创建 nas-builder-cn，并加载
   scripts/buildkitd-nas.toml（Docker Hub → 国内镜像）。
@@ -83,6 +99,7 @@ options:
   ./scripts/deploy-nas.sh skill-manager both
   ./scripts/deploy-nas.sh kids-catalog both
   ./scripts/deploy-nas.sh index-trends both
+  ./scripts/deploy-nas.sh task-web both      # 连带更新业务仓库 + 重建 stock-info:latest
   ./scripts/deploy-nas.sh nginx              # 同步 nginx/web.conf + reload（忽略 side）
   ./scripts/deploy-nas.sh all
   ./scripts/deploy-nas.sh dividend frontend --no-pull
@@ -282,6 +299,54 @@ buildx_build_frontend() {
     docker buildx build "${args[@]}" "$ctx"
 }
 
+# ---- task-web 业务仓库（stock-info-dingding）更新与就位校验 ----
+# 方案 B 下业务代码不进本仓，但仍要「一条命令打包到位」：
+# 镜像源码来自 STOCK_INFO_HOST_PATH 的 checkout，运行时 env_file 来自
+# TASK_WEB_WORKSPACE_HOST_PATH 的 checkout —— 两者部署前都必须是最新的。
+update_task_web_business_repo() {
+    local path seen="" current
+    for path in "$STOCK_INFO_HOST_PATH" "$TASK_WEB_WORKSPACE_HOST_PATH"; do
+        # 默认两者同路径，去重避免 pull 两遍
+        case " $seen " in *" $path "*) continue ;; esac
+        seen="$seen $path"
+
+        if [[ ! -d "$path" ]]; then
+            echo "错误: task-web 业务仓库不存在: $path" >&2
+            echo "  处理: 在根 .env 设置 STOCK_INFO_HOST_PATH / TASK_WEB_WORKSPACE_HOST_PATH 指向真实路径，" >&2
+            echo "        或加 --no-pull 跳过业务仓库更新（仅用现有文件构建镜像）。" >&2
+            exit 1
+        fi
+        if ! git -C "$path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "  提示: $path 不是 git 仓库，跳过 git pull（按现有文件构建镜像）"
+            continue
+        fi
+
+        current=$(git -C "$path" rev-parse --short HEAD 2>/dev/null || echo "?")
+        echo "  --- git pull 业务仓库 $(basename "$path") ($path, 当前 $current) ---"
+        if ! git -C "$path" pull --ff-only; then
+            echo "错误: $path 更新失败（本地改动、分支分叉或无远端凭据）。" >&2
+            echo "  处理: cd $path && git status 查看；修好重跑，" >&2
+            echo "        或加 --no-pull 用当前 checkout 直接构建（会打进旧代码）。" >&2
+            exit 1
+        fi
+    done
+}
+
+# docker 任务靠 env_file 注入密钥：文件缺失时容器起不来，但镜像构建不受影响，
+# 所以这里只告警，不阻断部署（历史镜像/无密钥环境仍可部署）。
+check_task_web_business_env() {
+    local name missing=()
+    for name in .env .env.hermes-default; do
+        [[ -f "$TASK_WEB_WORKSPACE_HOST_PATH/$name" ]] || missing+=("$TASK_WEB_WORKSPACE_HOST_PATH/$name")
+    done
+    if (( ${#missing[@]} > 0 )); then
+        echo "  警告: 缺少 docker 任务的 env_file（对应任务运行时会失败）：" >&2
+        printf '    - %s\n' "${missing[@]}" >&2
+    else
+        echo "  env_file 就位: $TASK_WEB_WORKSPACE_HOST_PATH/.env(.hermes-default)"
+    fi
+}
+
 # ---- nginx target：只同步 web.conf + reload，不走 build/up ----
 if [[ "$TARGET" == "nginx" ]]; then
     if $DO_PULL; then
@@ -300,6 +365,9 @@ echo "  pull:      $DO_PULL"
 echo "  cold:      $COLD"
 echo "  buildx:    $USE_BUILDX"
 echo "  tail:      $DO_TAIL"
+if [[ "$TARGET" == "task-web" && "$SIDE" != "frontend" ]]; then
+    echo "  业务仓库:  $STOCK_INFO_HOST_PATH"
+fi
 echo "============================================================"
 
 # ---- Step 1: git pull ----
@@ -310,11 +378,23 @@ if $DO_PULL; then
 fi
 
 # ---- Step 2: build ----
-# task-web 前置：业务镜像 stock-info（方案 B，脚本+依赖在业务仓库自维护）
-if [[ "$TARGET" == "task-web" ]]; then
+# task-web 前置：业务仓库更新 + 业务镜像 stock-info（方案 B，脚本+依赖在业务仓库自维护）
+# 前端不依赖业务镜像，side=frontend 时整段跳过。
+if [[ "$TARGET" == "task-web" && "$SIDE" != "frontend" ]]; then
     echo ""
-    echo "==> [2/3] 前置构建业务镜像 stock-info-image（context=\$STOCK_INFO_HOST_PATH，默认 /home/ohyes768/stock-info-dingding）"
+    if $DO_PULL; then
+        echo "==> [2/3] 更新 task-web 业务仓库（stock-info-dingding）"
+        update_task_web_business_repo
+    else
+        echo "==> [2/3] 跳过业务仓库 git pull（--no-pull，按当前 checkout 构建）"
+    fi
+    echo ""
+    echo "  --- compose build stock-info-image（context=$STOCK_INFO_HOST_PATH）---"
     compose_build stock-info-image
+    check_task_web_business_env
+elif [[ "$TARGET" == "task-web" ]]; then
+    echo ""
+    echo "==> [2/3] side=frontend：跳过业务仓库更新与 stock-info 镜像构建"
 fi
 echo ""
 if $USE_BUILDX; then
