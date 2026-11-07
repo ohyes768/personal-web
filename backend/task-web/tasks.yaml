@@ -235,14 +235,14 @@ tasks:
     cron: "45 7,11,17 * * *"
     timeout: 2100
 
-  # ---- Hermes 任务全量登记（默认禁用；启用前逐个核对交付路由并禁用 Hermes 旧 job）----
-  # 默认 profile（gateway 8642，root ~/.hermes/cron/jobs.json）其余 5 个：
-  # 港股IPO×2 与宏观影响周报×2 原为 deliver: origin（飞书原会话回复），
-  # 经 API 触发后 origin 路由失效，需先在 prompt 内显式指定投递目标再启用
+  # ---- Hermes 任务全量登记（默认禁用；启用前在 Hermes 侧禁用对应旧 job）----
+  # 交付已全部核实：5 个任务 prompt/skill 内置推送（RSS 中转服务为主），
+  # 不依赖 gateway 的 deliver 会话路由，API 触发不影响投递
+  # 默认 profile（gateway 8642，root ~/.hermes/cron/jobs.json）
   - id: hermes-hk-ipo-research
     name: 港股IPO每日研究（Hermes）
     group: hermes
-    description: hk-ipo-research skill，产出推 RSS；原 deliver:origin 飞书回复路由需核对（job 10ef8281a3bd）
+    description: hk-ipo-research skill，产出推 RSS（已核实 prompt 内置推送步骤）（job 10ef8281a3bd）
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 10ef8281a3bd
@@ -254,7 +254,7 @@ tasks:
   - id: hermes-hk-ipo-backtest
     name: 港股IPO回测审计（Hermes）
     group: hermes
-    description: hk-ipo-backtest skill；原 deliver:origin 需核对（job f6ce56ef2c94）
+    description: hk-ipo-backtest skill，推 RSS（已核实 prompt 内置推送步骤）（job f6ce56ef2c94）
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id f6ce56ef2c94
@@ -266,7 +266,7 @@ tasks:
   - id: hermes-a-share-macro-impact
     name: A股宏观影响周报（Hermes）
     group: hermes
-    description: a-share-macro-impact-skill；原 deliver:origin 需核对（job 8c85ad9c4c24）
+    description: a-share-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 8c85ad9c4c24）
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 8c85ad9c4c24
@@ -278,7 +278,7 @@ tasks:
   - id: hermes-bond-macro-impact
     name: 债市宏观影响周报（Hermes）
     group: hermes
-    description: bond-market-macro-impact-skill；原 deliver:origin 需核对（job 053337ce60b7）
+    description: bond-market-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 053337ce60b7）
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 053337ce60b7
@@ -290,7 +290,7 @@ tasks:
   - id: hermes-waytoagi-tracker
     name: WaytoAGI更新日志追踪（Hermes）
     group: hermes
-    description: waytoagi-update-log skill；原 deliver:origin 需核对（job adad4bb38199）
+    description: waytoagi-update-log skill，推 RSS Relay+钉钉群机器人（已核实 prompt 内置双通道推送）（job adad4bb38199）
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id adad4bb38199

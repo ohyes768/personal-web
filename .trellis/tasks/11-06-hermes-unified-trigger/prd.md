@@ -36,9 +36,10 @@
 
 ## Out of Scope
 
-- 其余 4 个 Hermes job 的迁移（港股IPO×2、宏观周报×2、WaytoAGI）——试点通过后另行处理。
-- deliver: origin 任务的会话路由问题（港股IPO研究需要单独核对投递目标）。
+- ~~其余 4 个 Hermes job 的迁移~~ 已扩展：2026-11-07 用户要求 Hermes 两 profile 全量登记（10 job 全进 tasks.yaml hermes 组，默认禁用）；交付核实结论：全部 5 个非试点 job 的 prompt/SKILL.md 内置 RSS 中转推送（push_rss.py 为必经步骤，推 macro 频道 + 看板；WaytoAGI 双通道 RSS+钉钉），无需改 prompt。
+- deliver: origin 任务的会话回复副本（仅飞书聊天层，任务产出已走 RSS，不影响业务）。
 - task-web 页面展示 Hermes run 内部进度（只落终态与摘要）。
+- 时区事实：Hermes cron 存 UTC，登记 task-web（Asia/Shanghai）时已逐个换算。
 
 ## Open Questions
 
