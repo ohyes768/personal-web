@@ -3,7 +3,8 @@
 #
 # 约束提醒：engine=docker 按次拉起业务镜像、不挂任何 volume，
 # 因此这里只登记「纯推送、不依赖本地状态文件」的脚本。
-# 依赖 data/*.json 或 data/*.db 的脚本（daily_pick / rss / xwlb）暂不接入。
+# 2026-11-07 起 volumes 能力上线后，依赖宿主文件的脚本也逐步接入：
+# daily_pick 已改走 Hermes skill，rss / xwlb 已用 volumes 挂载接入。
 # 2026-11-06 cutover：以下 8 条已启用，n8n 上对应触发器已停用（Gold/Fund/New Stock
 # 整工作流 unpublish；Stock info Push 保留 17:30 财报选股触发器）。
 tasks:
@@ -402,3 +403,29 @@ tasks:
       - "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"
     cron: "30 21 * * *"
     timeout: 900
+
+  # 迁移来源：n8n「xwlb-analyse Push」08:15 触发器（2026-11-07，n8n 侧同日停用，
+  # 08:10 git-pull 触发器保留）。转发昨日新闻联播摘要到 RSS 中转（channel=xinwen）；
+  # 上游摘要文件由 xin-wen-lian-bo 流程每日 00:10 生成。relay 端无鉴权、无服务端
+  # 去重，由 rss_publish CLI 预查 /api/posts 防重（published/duplicate 均 exit 0）。
+  # rss_publish.py 不在业务镜像内：挂载 skills 目录 + RSS_RELAY_SKILL_DIR 指路。
+  - id: xwlb-rss-push
+    name: 新闻联播摘要RSS推送
+    description: 转发昨日新闻联播摘要到 RSS 中转（channel=xinwen）；迁移来源 n8n 08:15 触发器
+    targets: [rss]
+    engine: docker
+    image: stock-info:latest
+    command: python xwlb_to_rss.py
+    cwd: /app
+    env:
+      RSS_DRY_RUN: "0"
+      RSS_RELAY_SKILL_DIR: /opt/rss-relay-publish
+      HOME: /tmp
+    env_file: /workspace/stock-info-dingding/.env
+    network: nginx_nginx-bridge
+    user: "1000:1000"
+    volumes:
+      - "/home/ohyes768/xin-wen-lian-bo/news:/home/ohyes768/xin-wen-lian-bo/news:ro"
+      - "/home/ohyes768/skills/knowledge/rss-relay-publish:/opt/rss-relay-publish:ro"
+    cron: "15 8 * * *"
+    timeout: 300
