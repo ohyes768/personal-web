@@ -8,6 +8,7 @@ const TARGET_LABELS: Record<string, { label: string; color: string }> = {
   dingtalk: { label: "钉钉", color: "#2563eb" },
   wechat: { label: "微信", color: "#16a34a" },
   rss: { label: "RSS", color: "#ea580c" },
+  web: { label: "Web", color: "#0d9488" },
 };
 
 const GROUP_TABS: { key: "all" | "script" | "ai"; label: string }[] = [

@@ -31,7 +31,7 @@ VALID_ENGINES = ("shell", "docker")
 VALID_GROUPS = ("script", "ai")
 _LEGACY_GROUPS = {"hermes": "ai"}  # 旧值兼容
 # 输出目的（多选）：钉钉 / 微信 / RSS 中转服务
-VALID_TARGETS = ("dingtalk", "wechat", "rss")
+VALID_TARGETS = ("dingtalk", "wechat", "rss", "web")
 
 
 def _parse_volumes(raw) -> list[str] | None:

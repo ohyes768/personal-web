@@ -36,6 +36,15 @@ def test_targets_invalid_rejected(client, env):
         raise AssertionError("非法 targets 未拒绝")
 
 
+def test_targets_web_multi(client, env):
+    """rss+web 多选（宏观影响周报投递：RSS Relay + macro 报告看板）。"""
+    _sync(env, 'tasks:\n  - id: t5\n    name: x\n    command: python t.py\n'
+               '    targets: [rss, web]\n')
+    from src import db
+
+    assert db.get_task("t5")["targets"] == '["rss", "web"]'
+
+
 def test_targets_api_returns(client, env):
     _sync(env, 'tasks:\n  - id: t4\n    name: x\n    command: python t.py\n'
                '    targets: [wechat]\n')

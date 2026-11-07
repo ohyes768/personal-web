@@ -260,7 +260,7 @@ tasks:
     name: A股宏观影响周报（Hermes）
     group: ai
     description: a-share-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 8c85ad9c4c24）
-    targets: []
+    targets: [rss, web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 8c85ad9c4c24
@@ -273,7 +273,7 @@ tasks:
     name: 债市宏观影响周报（Hermes）
     group: ai
     description: bond-market-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 053337ce60b7）
-    targets: []
+    targets: [rss, web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 053337ce60b7
@@ -302,7 +302,7 @@ tasks:
     name: 货币政策周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（a31a6196fc09）
-    targets: []
+    targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id a31a6196fc09 --jobs-json /hermes-cron-p7/jobs.json
@@ -317,7 +317,7 @@ tasks:
     name: 金融数据周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（633b4d12a8a3）
-    targets: []
+    targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 633b4d12a8a3 --jobs-json /hermes-cron-p7/jobs.json
@@ -332,7 +332,7 @@ tasks:
     name: 实体经济周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（3704976be0ec）
-    targets: []
+    targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 3704976be0ec --jobs-json /hermes-cron-p7/jobs.json
@@ -347,7 +347,7 @@ tasks:
     name: 通胀跟踪周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（7243389de6f9）
-    targets: []
+    targets: [web]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 7243389de6f9 --jobs-json /hermes-cron-p7/jobs.json

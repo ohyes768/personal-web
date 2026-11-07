@@ -27,7 +27,7 @@ export interface TaskView {
   enabled: boolean;
   timeout_seconds: number;
   group: "script" | "ai";
-  targets: ("dingtalk" | "wechat" | "rss")[];
+  targets: ("dingtalk" | "wechat" | "rss" | "web")[];
   last_run: Run | null;
   active_run: Run | null;
   next_fire_time: string | null;
