@@ -30,6 +30,8 @@ VALID_ENGINES = ("shell", "docker")
 # （Hermes skill 实现，task-web 只管触发时间；或脚本内置 LLM 调用）
 VALID_GROUPS = ("script", "ai")
 _LEGACY_GROUPS = {"hermes": "ai"}  # 旧值兼容
+# 输出目的（多选）：钉钉 / 微信 / RSS 中转服务
+VALID_TARGETS = ("dingtalk", "wechat", "rss")
 
 
 def _parse_volumes(raw) -> list[str] | None:
@@ -77,6 +79,9 @@ def sync_registry() -> list[str]:
         group = _LEGACY_GROUPS.get(t.get("group") or "script") or (t.get("group") or "script")
         if group not in VALID_GROUPS:
             raise ValueError(f"任务 {t['id']} group 非法: {group}（可选 {VALID_GROUPS}）")
+        targets = t.get("targets") or []
+        if not isinstance(targets, list) or any(x not in VALID_TARGETS for x in targets):
+            raise ValueError(f"任务 {t['id']} targets 非法: {targets}（可选 {VALID_TARGETS}，可多选）")
         db.upsert_task({
             "id": t["id"],
             "name": t.get("name", t["id"]),
@@ -93,6 +98,7 @@ def sync_registry() -> list[str]:
             "network": t.get("network") or None,
             "run_user": t.get("user") or None,
             "group_name": group,
+            "targets": json.dumps(targets, ensure_ascii=False),
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])

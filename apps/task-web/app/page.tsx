@@ -4,6 +4,12 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet, apiSend, statusColor, statusLabel, TaskView } from "@/lib/api";
 
+const TARGET_LABELS: Record<string, { label: string; color: string }> = {
+  dingtalk: { label: "钉钉", color: "#2563eb" },
+  wechat: { label: "微信", color: "#16a34a" },
+  rss: { label: "RSS", color: "#ea580c" },
+};
+
 const GROUP_TABS: { key: "all" | "script" | "ai"; label: string }[] = [
   { key: "all", label: "全部" },
   { key: "script", label: "脚本任务" },
@@ -106,6 +112,17 @@ export default function TasksPage() {
                 }}>
                   {t.group === "ai" ? "AI" : "脚本"}
                 </span>
+                {(t.targets || []).map((x) => (
+                  <span key={x} className="badge" style={{
+                    background: TARGET_LABELS[x]?.color ?? "#6b7280",
+                    marginLeft: 4, fontSize: 11, verticalAlign: "middle",
+                  }}>
+                    {TARGET_LABELS[x]?.label ?? x}
+                  </span>
+                ))}
+                {(t.targets || []).length === 0 && (
+                  <span className="muted" style={{ marginLeft: 4, fontSize: 11 }}>（输出目的待定）</span>
+                )}
                 <div className="mono muted">{t.id}</div>
                 <div className="mono muted">{t.command}{t.cwd ? ` @ ${t.cwd}` : ""}</div>
               </td>

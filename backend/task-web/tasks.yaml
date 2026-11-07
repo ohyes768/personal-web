@@ -15,6 +15,7 @@ tasks:
   - id: a-stock-push
     name: A股新股通知
     description: stock-info-dingding 新股抓取与钉钉推送（真实外发，启用前必须验证）
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python a_stock_push.py
@@ -29,6 +30,7 @@ tasks:
   - id: hk-stock-push
     name: 港股新股通知
     description: 港股新股抓取与钉钉推送
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python hk_stock_push.py
@@ -43,6 +45,7 @@ tasks:
   - id: sector-push
     name: 板块涨跌播报
     description: 东方财富板块涨跌 → 钉钉（11:30、14:30 两档）
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python dingtalk_em_api.py
@@ -59,6 +62,7 @@ tasks:
     name: 黄金走势研判（钉钉）
     group: ai
     description: 经 Hermes Runs API 触发 gold-price-brief skill（取数→AI 研判→钉钉推送）；job 7c8d2bd1c230（Hermes 侧已 pause）
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 7c8d2bd1c230
@@ -71,6 +75,7 @@ tasks:
   - id: fund-m120-push
     name: 基金M120推送
     description: 监控基金 M120 均线信号推送
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python fund_m120_push.py
@@ -86,6 +91,7 @@ tasks:
   - id: star50-macd-push
     name: 科创50 MACD推送
     description: 科创50 指数 MACD 信号推送（14:35 / 16:35 两档）
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python star50_macd_push.py
@@ -100,6 +106,7 @@ tasks:
   - id: etf-rotation-push
     name: ETF轮动推送
     description: ETF 轮动信号推送
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python etf_rotation_push.py
@@ -119,6 +126,7 @@ tasks:
     name: 每日财报阅读（AI）
     group: ai
     description: 经 Hermes Runs API 触发 daily-pick-brief skill；选股/去重/推送历史由脚本维护，AI 研判同步完成后退出
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 1f04c0e830c8
@@ -131,6 +139,7 @@ tasks:
   - id: rss-tougu-push
     name: RSS推送-每日投顾
     description: RSS 文章推送（tag=每日投顾），去重库 data/rss_articles.db 挂载宿主
+    targets: [rss]
     engine: docker
     image: stock-info:latest
     command: python rss/push.py --push-mode 1 --rss-tag 每日投顾
@@ -149,6 +158,7 @@ tasks:
   - id: rss-licai-push
     name: RSS推送-理财
     description: RSS 文章推送（tag=理财），去重库挂载宿主
+    targets: [rss]
     engine: docker
     image: stock-info:latest
     command: python rss/push.py --push-mode 1 --rss-tag 理财
@@ -167,6 +177,7 @@ tasks:
   - id: rss-zixun-push
     name: RSS推送-资讯
     description: RSS 文章推送（tag=资讯），去重库挂载宿主
+    targets: [rss]
     engine: docker
     image: stock-info:latest
     command: python rss/push.py --push-mode 1 --rss-tag 资讯
@@ -189,6 +200,7 @@ tasks:
   - id: csi300-brief
     name: CSI300盘后简报（钉钉）
     description: csi300 盘后简报推送钉钉；原宿主机 crontab 迁移。启用前先禁用旧 crontab 条目
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python csi300_brief/brief.py --push --insecure --only-today --env-file /app/csi300_brief/.env
@@ -205,6 +217,7 @@ tasks:
     name: 杭州PM2.5播报（微信）
     group: ai
     description: 经 Hermes Runs API 触发 hangzhou-pm25 skill；原 Hermes cron job（id 246c69c1e845）迁移
+    targets: [wechat]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 246c69c1e845
@@ -221,6 +234,7 @@ tasks:
     name: 港股IPO每日研究（Hermes）
     group: ai
     description: hk-ipo-research skill，产出推 RSS（已核实 prompt 内置推送步骤）（job 10ef8281a3bd）
+    targets: [rss]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 10ef8281a3bd
@@ -233,6 +247,7 @@ tasks:
     name: 港股IPO回测审计（Hermes）
     group: ai
     description: hk-ipo-backtest skill，推 RSS（已核实 prompt 内置推送步骤）（job f6ce56ef2c94）
+    targets: [rss]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id f6ce56ef2c94
@@ -245,6 +260,7 @@ tasks:
     name: A股宏观影响周报（Hermes）
     group: ai
     description: a-share-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 8c85ad9c4c24）
+    targets: []
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 8c85ad9c4c24
@@ -257,6 +273,7 @@ tasks:
     name: 债市宏观影响周报（Hermes）
     group: ai
     description: bond-market-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 053337ce60b7）
+    targets: []
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 053337ce60b7
@@ -269,6 +286,7 @@ tasks:
     name: WaytoAGI更新日志追踪（Hermes）
     group: ai
     description: waytoagi-update-log skill，推 RSS Relay+钉钉群机器人（已核实 prompt 内置双通道推送）（job adad4bb38199）
+    targets: [rss, dingtalk]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id adad4bb38199
@@ -284,6 +302,7 @@ tasks:
     name: 货币政策周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（a31a6196fc09）
+    targets: []
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id a31a6196fc09 --jobs-json /hermes-cron-p7/jobs.json
@@ -298,6 +317,7 @@ tasks:
     name: 金融数据周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（633b4d12a8a3）
+    targets: []
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 633b4d12a8a3 --jobs-json /hermes-cron-p7/jobs.json
@@ -312,6 +332,7 @@ tasks:
     name: 实体经济周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（3704976be0ec）
+    targets: []
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 3704976be0ec --jobs-json /hermes-cron-p7/jobs.json
@@ -326,6 +347,7 @@ tasks:
     name: 通胀跟踪周报（Hermes/ohyes768）
     group: ai
     description: ohyes768 profile 宏观周报；原 Hermes job（7243389de6f9）
+    targets: []
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 7243389de6f9 --jobs-json /hermes-cron-p7/jobs.json
@@ -339,6 +361,7 @@ tasks:
   - id: damai-hz-push
     name: 大麦活动-杭州
     description: 大麦网杭州热门活动抓取与钉钉推送（周一/三/五 11:00）
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python -m damai.damai_spider
@@ -351,6 +374,7 @@ tasks:
   - id: damai-sz-push
     name: 大麦活动-深圳
     description: 大麦网深圳热门活动抓取与钉钉推送（周一/三/五 11:00，CITY_NAME=深圳）
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python -m damai.damai_spider
@@ -368,6 +392,7 @@ tasks:
     name: 国家地理每日一图（Hermes）
     group: ai
     description: natgeo-daily skill 经 Runs API 触发（job 78cb9eead904，ohyes768 profile，已 pause）
+    targets: [dingtalk]
     engine: docker
     image: stock-info:latest
     command: python hermes_trigger.py --job-id 78cb9eead904 --jobs-json /hermes-cron-p7/jobs.json
