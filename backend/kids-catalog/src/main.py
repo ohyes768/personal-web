@@ -440,7 +440,7 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
         for row in catalog.device_candidate_rows():
             status, ledger_tracks = completion.get(row['folder'], (None, None))
             candidates.append({'folder': row['folder'], 'title': row['title'],
-                               'source': row['source'],
+                               'source': row['source'], 'platform': row['platform'],
                                'confirmed': status == 'complete',
                                'track_count': (ledger_tracks if status == 'complete' else row['downloaded_tracks']) or 0})
         return {**state, 'candidates': candidates}
