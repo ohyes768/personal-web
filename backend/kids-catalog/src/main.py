@@ -112,7 +112,7 @@ class Catalog:
                            "order by a.platform,a.album_id").fetchall()
         return [{'folder': sanitize_filename(row['title']), 'title': row['title'],
                  'source_id': f"{row['platform']}:{row['album_id']}",
-                 'source': row['source'] or 'chart',
+                 'source': row['source'] or 'chart', 'platform': row['platform'],
                  'downloaded_tracks': row['downloaded_tracks'] or 0} for row in rows]
 
     @contextmanager
