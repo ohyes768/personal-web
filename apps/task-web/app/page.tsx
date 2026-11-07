@@ -100,6 +100,12 @@ export default function TasksPage() {
             <tr key={t.id}>
               <td>
                 <strong>{t.name}</strong>
+                <span className="badge" style={{
+                  background: t.group === "ai" ? "#7c3aed" : "#0284c7",
+                  marginLeft: 6, fontSize: 11, verticalAlign: "middle",
+                }}>
+                  {t.group === "ai" ? "AI" : "脚本"}
+                </span>
                 <div className="mono muted">{t.id}</div>
                 <div className="mono muted">{t.command}{t.cwd ? ` @ ${t.cwd}` : ""}</div>
               </td>
