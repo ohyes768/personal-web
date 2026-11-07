@@ -404,6 +404,28 @@ tasks:
     cron: "30 21 * * *"
     timeout: 900
 
+  # 迁移来源：n8n「xwlb-analyse Push」08:10 git-pull 触发器（2026-11-07 n8n 完整下线时迁移）。
+  # 原链路：n8n → webhook 钩子 run_git_pull.sh（读 git_repos.json，经 Docker API 起
+  # alpine/git 容器逐仓 pull）→ 仅一个仓库 xin-wen-lian-bo。此处由 task-web docker
+  # 引擎等价拉起：以 uid 1000 运行（仓库属主，天然无 dubious ownership），SSH key
+  # 挂到 $HOME/.ssh。保持每日 08:10，先于 08:15 摘要推送刷新上游代码。
+  - id: xwlb-repo-gitpull
+    name: 新闻联播仓库更新
+    description: 每日 git pull xin-wen-lian-bo 仓库（master，新闻摘要生成上游）；迁移来源 n8n 08:10 git-pull 钩子
+    engine: docker
+    image: alpine/git:latest
+    command: pull origin master
+    cwd: /repo
+    env:
+      HOME: /tmp
+    user: "1000:1000"
+    volumes:
+      - "/home/ohyes768/xin-wen-lian-bo:/repo:rw"
+      - "/home/ohyes768/.ssh/id_ed25519:/tmp/.ssh/id_ed25519:ro"
+      - "/home/ohyes768/.ssh/known_hosts:/tmp/.ssh/known_hosts:ro"
+    cron: "10 8 * * *"
+    timeout: 120
+
   # 迁移来源：n8n「xwlb-analyse Push」08:15 触发器（2026-11-07，n8n 侧同日停用，
   # 08:10 git-pull 触发器保留）。转发昨日新闻联播摘要到 RSS 中转（channel=xinwen）；
   # 上游摘要文件由 xin-wen-lian-bo 流程每日 00:10 生成。relay 端无鉴权、无服务端
