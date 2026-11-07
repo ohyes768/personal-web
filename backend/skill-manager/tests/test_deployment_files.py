@@ -95,8 +95,12 @@ def _volume_lines(section: str) -> list[str]:
 
 
 def test_compose_does_not_mount_docker_sock(compose_text: str):
-    # 红线：任何部署文件都不得挂 docker.sock
-    assert "/var/run/docker.sock" not in compose_text
+    # 红线：skill-manager 服务不得挂 docker.sock。
+    # 2026-11-07 起收窄到 skill-manager 两个服务：task-web-backend 按方案 B 需要
+    # docker.sock 起业务容器（compose 内已有边界注释，NAS 单用户自用环境接受），
+    # 全文断言会误伤该服务的合法挂载。
+    for service in ("skill-manager-backend", "skill-manager-frontend"):
+        assert "/var/run/docker.sock" not in _service_section(compose_text, service)
 
 
 def test_skill_manager_services_in_base_compose(compose_text: str):

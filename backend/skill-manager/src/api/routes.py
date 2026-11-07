@@ -913,6 +913,11 @@ def _plan_one(
     else:
         action = "add"
     deployment = store.get_deployment(skill.id, str(target))
+    # 链接正确但 state 库没有 active 记录（链接先于接管存在、状态库重建过等）：
+    # 不能判 unchanged，否则安装永远跳过、deployment 表补不上，页面恒显示未安装。
+    # 判 update 让 publish 走一次原子替换（内容不变）并写入 active 记录。
+    if action == "unchanged" and not (deployment and deployment.status == "active"):
+        action = "update"
     current_revision = deployment.source_revision if deployment else ""
     if skill.source is SkillSource.GITHUB and final_link.is_symlink() and final_link.resolve() == source:
         current_revision = git_cache.current_revision(skill)

@@ -1365,6 +1365,33 @@ def _await_install(client, task_id):
 
 
 @pytest.mark.requires_symlink
+def test_install_adopt_preexisting_correct_link_without_deployment_record(client, roots):
+    """链接先于接管存在（无 active deployment 记录）时不能判 unchanged：
+    否则安装永远跳过、deployment 表补不上，页面恒显示未安装。"""
+    import os
+
+    source = roots.source_root / 'alpha'
+    os.symlink(source, roots.hermes / 'alpha', target_is_directory=True)
+
+    plan = client.post('/api/skills/install/preview', json={'skill_ids': ['alpha']}).json()
+    assert plan['items'][0]['action'] == 'update', plan['items']
+
+    created = client.post('/api/skills/install', json={
+        'plan_id': plan['plan_id'], 'request_id': 'adopt', 'password': PASSWORD})
+    assert created.status_code == 202
+    done = _await_install(client, created.json()['task_id'])
+    assert done['results'][0]['status'] == 'success', done
+
+    store = SkillStateStore.from_settings(Settings())
+    record = store.get_deployment('alpha', 'hermes')
+    assert record and record.status == 'active'
+    assert (roots.hermes / 'alpha').is_symlink()
+
+    after = client.post('/api/skills/install/preview', json={'skill_ids': ['alpha']}).json()
+    assert after['items'][0]['action'] == 'unchanged'
+
+
+@pytest.mark.requires_symlink
 def test_hermes_install_preview_password_and_idempotence(client, roots):
     preview = client.post('/api/skills/install/preview', json={'skill_ids': ['alpha']})
     assert preview.status_code == 200
