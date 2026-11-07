@@ -1,29 +1,42 @@
-"""volumes 支持（11-06-hermes-unified-trigger）：解析、校验、SDK 传参。"""
+"""volumes 支持（11-06-hermes-unified-trigger）：登记校验、docker-py 传参、入库读取。
+
+合并说明：两条并行实现已合并——登记层校验 registry._parse_volumes（允许裸挂载，
+不注入默认模式）来自 docker-engine 提交；执行层转换 executor._task_volumes
+（裸挂载默认 rw）与 volumes 列迁移来自 hermes-unified-trigger 提交。
+测试按合并后的行为重写。
+"""
 from __future__ import annotations
 
 import json
 
 import pytest
 
-from src import executor
+from src import executor, registry
 
 
-def test_parse_volumes_defaults_ro():
-    assert executor.parse_volumes(["/a:/b"]) == ["/a:/b:ro"]
-    assert executor.parse_volumes(["/a:/b:ro", "/c:/d:rw"]) == ["/a:/b:ro", "/c:/d:rw"]
+def test_parse_volumes_keeps_explicit_mode():
+    assert registry._parse_volumes(["/a:/b:ro", "/c:/d:rw"]) == ["/a:/b:ro", "/c:/d:rw"]
 
 
-def test_parse_volumes_json_string(env):
-    assert executor.parse_volumes(json.dumps(["/x:/y:ro"])) == ["/x:/y:ro"]
+def test_parse_volumes_allows_bare_bind():
+    # 登记层不注入默认模式，裸「宿主:容器」原样保留；执行层按 rw 处理。
+    assert registry._parse_volumes(["/a:/b"]) == ["/a:/b"]
 
 
 def test_parse_volumes_rejects_bad():
     with pytest.raises(ValueError, match="volumes 条目非法"):
-        executor.parse_volumes(["/only-src"])
-    with pytest.raises(ValueError, match="mode 非法"):
-        executor.parse_volumes(["/a:/b:xx"])
-    with pytest.raises(ValueError, match="volumes 字段非法"):
-        executor.parse_volumes("not-json")
+        registry._parse_volumes(["/only-src"])
+    with pytest.raises(ValueError, match="volumes 挂载模式只支持"):
+        registry._parse_volumes(["/a:/b:xx"])
+    with pytest.raises(ValueError, match="volumes 必须是字符串列表"):
+        registry._parse_volumes("not-a-list")
+
+
+def test_task_volumes_converts_to_sdk_dict():
+    # 入参是 task dict（volumes 可能是登记后的 JSON 字符串或已解析列表）。
+    assert executor._task_volumes({"volumes": ["/a:/b"]}) == {"/a": {"bind": "/b", "mode": "rw"}}
+    assert executor._task_volumes({"volumes": json.dumps(["/x:/y:ro"])}) == {"/x": {"bind": "/y", "mode": "ro"}}
+    assert executor._task_volumes({}) == {}
 
 
 def test_docker_run_passes_volumes(env, monkeypatch):
@@ -42,7 +55,7 @@ def test_docker_run_passes_volumes(env, monkeypatch):
             "image": "img", "timeout_seconds": 30,
             "volumes": ["/home/ohyes768/skills:/hermes-skills:ro"]}
     executor.execute_docker_run(run_id, task, 30)
-    assert fc.last_kwargs["volumes"] == ["/home/ohyes768/skills:/hermes-skills:ro"]
+    assert fc.last_kwargs["volumes"] == {"/home/ohyes768/skills": {"bind": "/hermes-skills", "mode": "ro"}}
 
 
 def test_registry_passes_volumes(client, env):
