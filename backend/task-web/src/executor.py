@@ -86,6 +86,29 @@ def _task_env(task: dict) -> dict[str, str]:
     return env
 
 
+def parse_volumes(raw) -> list[str]:
+    """tasks.yaml volumes 列表：["src:dst", "src:dst:ro"] → SDK volumes 数组。
+    无 mode 默认 ro（任务一律只读挂载宿主资料，防误写）。"""
+    if not raw:
+        return []
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raise ValueError(f"volumes 字段非法: {raw!r}")
+    result = []
+    for item in raw:
+        parts = str(item).split(":")
+        if len(parts) == 2:
+            parts.append("ro")
+        if len(parts) != 3 or not parts[0] or not parts[1]:
+            raise ValueError(f"volumes 条目非法: {item}（应为 src:dst[:mode]）")
+        if parts[2] not in ("ro", "rw"):
+            raise ValueError(f"volumes mode 非法: {item}（仅 ro/rw）")
+        result.append(f"{parts[0]}:{parts[1]}:{parts[2]}")
+    return result
+
+
 def execute_docker_run(run_id: str, task: dict, timeout_seconds: int) -> str:
     """docker 引擎：一次性容器执行（方案 B）。状态语义与 shell 引擎一致。
     超时用看门狗线程杀容器（logs 流会阻塞到容器退出，无法用 wait(timeout) 实现）。"""
@@ -108,6 +131,7 @@ def execute_docker_run(run_id: str, task: dict, timeout_seconds: int) -> str:
             detach=True,
             environment=_task_env(task),
             working_dir=workdir,
+            volumes=parse_volumes(task.get("volumes")),
             stdout=True,
             stderr=True,
         )

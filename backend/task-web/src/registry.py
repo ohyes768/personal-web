@@ -54,6 +54,7 @@ def sync_registry() -> list[str]:
         if engine not in VALID_ENGINES:
             raise ValueError(f"任务 {t['id']} engine 非法: {engine}（可选 {VALID_ENGINES}）")
         env = t.get("env") or {}
+        volumes = t.get("volumes") or []
         db.upsert_task({
             "id": t["id"],
             "name": t.get("name", t["id"]),
@@ -66,6 +67,7 @@ def sync_registry() -> list[str]:
             "image": t.get("image"),
             "env_file": t.get("env_file"),
             "env": json.dumps(env, ensure_ascii=False) if env else None,
+            "volumes": json.dumps(volumes, ensure_ascii=False) if volumes else None,
         })
         db.ensure_schedule(t["id"], t.get("cron", ""), int(t.get("timeout", 600)))
         ids.append(t["id"])

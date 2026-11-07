@@ -25,7 +25,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     engine TEXT DEFAULT 'shell',
     image TEXT,
     env_file TEXT,
-    env TEXT
+    env TEXT,
+    volumes TEXT
 );
 
 CREATE TABLE IF NOT EXISTS task_schedules (
@@ -84,6 +85,7 @@ def init_db() -> None:
         ("image", "TEXT"),
         ("env_file", "TEXT"),
         ("env", "TEXT"),
+        ("volumes", "TEXT"),
     ):
         if name not in cols:
             conn.execute(f"ALTER TABLE tasks ADD COLUMN {name} {ddl}")
@@ -111,17 +113,18 @@ def os_unique() -> str:
 def upsert_task(row: dict) -> None:
     get_conn().execute(
         """INSERT INTO tasks (id, name, description, command, cwd, default_cron, default_timeout,
-             engine, image, env_file, env)
+             engine, image, env_file, env, volumes)
            VALUES (:id, :name, :description, :command, :cwd, :default_cron, :default_timeout,
-             :engine, :image, :env_file, :env)
+             :engine, :image, :env_file, :env, :volumes)
            ON CONFLICT(id) DO UPDATE SET
              name=excluded.name, description=excluded.description,
              command=excluded.command, cwd=excluded.cwd,
              default_cron=excluded.default_cron, default_timeout=excluded.default_timeout,
              engine=excluded.engine, image=excluded.image,
-             env_file=excluded.env_file, env=excluded.env""",
+             env_file=excluded.env_file, env=excluded.env, volumes=excluded.volumes""",
         {
-            "engine": "shell", "image": None, "env_file": None, "env": None, **row,
+            "engine": "shell", "image": None, "env_file": None, "env": None,
+            "volumes": None, **row,
         },
     )
     get_conn().commit()

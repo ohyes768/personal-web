@@ -27,10 +27,36 @@ tasks:
     cron: "0 9 * * *"
     timeout: 5
 
-  # ---- 首个正式接入（灰度，方案 B：业务镜像独立维护）----
-  # 前置：NAS 上 cd /home/ohyes768/stock-info-dingding && docker build -t stock-info:latest .
-  # 注意：会真实推送钉钉！验证顺序：dry-run → 用户确认 → 启用
-  # env_file 指向业务仓库 .env（经 task-web 容器内 bind mount 读取，值不回显不写日志）
+  # ---- Hermes 统一触发试点（11-06-hermes-unified-trigger）----
+  # csi300-brief：旧 crontab 35 8 * * 1-5 为 UTC = 北京 16:35；直跑 brief.py
+  # （cron_daily.sh 恒 exit 0，失败会被掩盖，不用它）；skills 目录 ro 挂载
+  - id: csi300-brief
+    name: CSI300盘后简报（钉钉）
+    description: csi300-brief skill 盘后简报推送钉钉；原宿主机 crontab 迁移。启用前先禁用旧 crontab 条目
+    engine: docker
+    image: stock-info:latest
+    command: python /hermes-skills/investment-analysis/csi300-brief/scripts/brief.py --push --insecure --only-today
+    cwd: /hermes-skills/investment-analysis/csi300-brief
+    volumes:
+      - "/home/ohyes768/skills:/hermes-skills:ro"
+    cron: "35 16 * * 1-5"
+    timeout: 900
+
+  # pm25-broadcast：hermes_trigger 读 jobs.json 现场取 prompt → Runs API 提交 →
+  # 轮询终态；agent 依 prompt 自行推送微信。启用前先在 Hermes 侧禁用同名旧 job
+  - id: pm25-broadcast
+    name: 杭州PM2.5播报（微信）
+    description: 经 Hermes Runs API 触发 hangzhou-pm25 skill；原 Hermes cron job（id 246c69c1e845）迁移
+    engine: docker
+    image: stock-info:latest
+    command: python hermes_trigger.py --job-id 246c69c1e845
+    volumes:
+      - "/home/ohyes768/.hermes/cron:/hermes-cron:ro"
+    cron: "45 23,3,9 * * *"
+    timeout: 2100
+
+  # ---- 首个正式接入（已验证可用）----
+  # 会真实推送钉钉；env_file 指向业务仓库 .env（值不回显不写日志）
   - id: a-stock-push
     name: A股新股通知
     description: stock-info-dingding 新股抓取与钉钉推送（真实外发，启用前必须验证）
