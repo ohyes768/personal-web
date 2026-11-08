@@ -579,14 +579,14 @@ services:
       context: ${STOCK_INFO_HOST_PATH:-/home/ohyes768/stock-info-dingding}
 
   # AI 任务触发镜像（方案 B 同款 build-only）：hermes_trigger.py + requests，
-  # 源码在 skills 仓库（AI 定时任务与 stock-info 解耦后唯一依赖）
+  # 源码在本仓 backend/task-web/trigger/（task-web 的执行基础设施）
   hermes-trigger-image:
     image: hermes-trigger:latest
     container_name: hermes-trigger-image
     restart: "no"
     entrypoint: ["true"]
     build:
-      context: ${SKILLS_HOST_PATH:-/home/ohyes768/skills}/personal-tools/hermes-trigger
+      context: ./backend/task-web/trigger
 
   # ---------------------------------------------------------------------------
   # task-web 后端（定时任务管理：调度 + 执行记录 + 日志）

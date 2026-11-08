@@ -2,16 +2,18 @@
 
 > 2026-11-07 起 profile 从「只读推导」变成「用户可设置」；同日 prompt 事实源收编进
 > tasks.yaml（`prompt:` 字段 → tasks 表 → 执行注入 `HERMES_PROMPT`），AI 定时任务
-> 与 stock-info-dingding 解耦（镜像 `hermes-trigger:latest`，源码在 skills 仓库
-> `personal-tools/hermes-trigger/`）。改这块先读本文。
+> 与 stock-info-dingding 解耦（镜像 `hermes-trigger:latest`，源码在本仓
+> `backend/task-web/trigger/`——它是 task-web 的执行基础设施，不属于任何业务或
+> skill 内容仓库）。改这块先读本文。
 
 ## 0. prompt 事实源（2026-11-07 起）
 
 - tasks.yaml `prompt:` 字段是 AI 任务 prompt 的**唯一事实源**（登记制、进 git）；
   sync 后存 `tasks.prompt` 列，执行时经 `executor._task_env` 注入容器 env
   `HERMES_PROMPT`。
-- 触发脚本（skills 仓库 hermes_trigger.py）**首选 `HERMES_PROMPT`**；没有时回退按
-  `--job-id` 读挂载的 jobs.json（兼容未迁移任务）。`--job-id` 此时仅作日志标识。
+- 触发脚本（本仓 `backend/task-web/trigger/hermes_trigger.py`）**首选
+  `HERMES_PROMPT`**；没有时回退按 `--job-id` 读挂载的 jobs.json（兼容未迁移任务）。
+  `--job-id` 此时仅作日志标识。
 - jobs.json 降级为「未迁移任务的回退源」+「Hermes 侧原生 job 的定义文件」，
   不再是 AI 任务的必要依赖；切换 profile 不再要求目标 profile 有同名 job。
 - AI 任务凭证在 `~/.hermes/gw-8642.env` / `gw-8643.env`（纯 HERMES_* 键，
