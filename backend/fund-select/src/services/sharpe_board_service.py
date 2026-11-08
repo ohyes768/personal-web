@@ -526,6 +526,34 @@ def aggregate_board(
                  "latest_sharpe", "last_listed_week", "on_latest_board")
     items_page = [{k: s[k] for k in item_keys} for s in matched[offset:offset + limit]]
 
+    # 4b) 展示补充：近 1 年/近 3 年收益（仅展示，不参与统计/排序/命中集合）。
+    #     FundPerformance（雪球链路）优先，缺失回退 MarketFundRank（市场链路）；
+    #     只查当前页 codes，失活基金无行则留 null 不造数。
+    page_codes = [it["code"] for it in items_page]
+    ret_map: dict[str, tuple[float | None, float | None]] = {}
+    if page_codes:
+        from src.db.models import FundPerformance, MarketFundRank
+        perf_rows = db.execute(
+            select(FundPerformance.code, FundPerformance.ret_1y, FundPerformance.ret_3y)
+            .where(FundPerformance.code.in_(page_codes))
+        ).all()
+        for code, r1, r3 in perf_rows:
+            ret_map[code] = (r1, r3)
+        missing = [c for c in page_codes if c not in ret_map or ret_map[c] == (None, None)]
+        if missing:
+            rank_rows = db.execute(
+                select(MarketFundRank.code, MarketFundRank.ret_1y, MarketFundRank.ret_3y)
+                .where(MarketFundRank.code.in_(missing))
+            ).all()
+            for code, r1, r3 in rank_rows:
+                prev = ret_map.get(code) or (None, None)
+                ret_map[code] = (prev[0] if prev[0] is not None else r1,
+                                 prev[1] if prev[1] is not None else r3)
+    for it in items_page:
+        r1, r3 = ret_map.get(it["code"], (None, None))
+        it["ret_1y"] = r1
+        it["ret_3y"] = r3
+
     # 5) 周历：首次观测周 → 当前自然周；range 只裁起点，缺席/失败/停机留位
     current = _current_week()
     first_obs_week = min((eps[0][0] for eps in entries.values()), default=None)

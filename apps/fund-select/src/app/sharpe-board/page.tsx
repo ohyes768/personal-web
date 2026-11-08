@@ -17,6 +17,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { FundsNavigation } from '@/components/FundsNavigation';
 import { Pagination } from '@/components/Pagination';
+import { RowDetailDrawer } from '@/components/RowDetailDrawer';
 import { SchedulerDialog } from '@/components/SchedulerDialog';
 import { SharpeBoardFilters } from '@/components/sharpe-board/SharpeBoardFilters';
 import { SharpeBoardProfileCard } from '@/components/sharpe-board/SharpeBoardProfileCard';
@@ -32,6 +33,7 @@ import {
   type SharpeBoardFilters as Filters,
   type SharpeBoardResponse,
 } from '@/lib/sharpe-board';
+import type { FundListItem } from '@/lib/types';
 
 const SharpeChart = dynamic(() => import('@/components/sharpe-board/SharpeChart'), {
   ssr: false,
@@ -54,6 +56,19 @@ function SharpeBoardPageInner() {
   const [hiddenCodes, setHiddenCodes] = useState<ReadonlySet<string>>(new Set());
   const [focusCode, setFocusCode] = useState<string | null>(null);
   const [schedulerOpen, setSchedulerOpen] = useState(searchParams.get('scheduler') === '1');
+  // 详情抽屉：榜单行只有 code/name，传 stub，抽屉内部按 code 拉完整详情
+  const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
+  const openDetail = useCallback((code: string, name: string) => {
+    setDetailFund({
+      code, name, fund_type: '', market_subtype: '',
+      size_yi: null, age_years: null, dd_3y: null,
+      ret_1m: null, ret_1y: null, ret_3y: null, ret_5y: null,
+      sharpe: null, ir: null, alpha: null, gamma: null, alpha_ir: null, excess_3y: null,
+      mgr_name: null, mgr_company: null, mgr_experience_years: null,
+      rate_bond_pct: null, fee_mgmt: null, fee_custody: null, fee_service: null, fee_annual: null,
+      updated_at: null, rank_ytd: null, rank_1y: null, rank_3y: null, rank_5y: null,
+    });
+  }, []);
 
   // 拉取榜单：AbortController 中止旧请求（source 快速切换不串台）
   useEffect(() => {
@@ -262,6 +277,7 @@ function SharpeBoardPageInner() {
                 loading={loading}
                 focusCode={focusCode}
                 onFocusToggle={onFocusToggle}
+                onOpenDetail={openDetail}
               />
               {phase === 'ok' && (
                 <Pagination
@@ -275,6 +291,8 @@ function SharpeBoardPageInner() {
             </>
           )}
         </section>
+
+        <RowDetailDrawer fund={detailFund} onClose={() => setDetailFund(null)} />
       </div>
     </main>
   );

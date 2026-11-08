@@ -42,6 +42,9 @@ export interface SharpeBoardItem {
   latest_sharpe: number | null;
   last_listed_week: string | null;
   on_latest_board: boolean;
+  /** 近 1 年/近 3 年收益（实时表当前值，仅展示） */
+  ret_1y: number | null;
+  ret_3y: number | null;
 }
 
 /** 曲线序列（全部命中基金，不随 items 分页；values 长度 == weeks 长度） */

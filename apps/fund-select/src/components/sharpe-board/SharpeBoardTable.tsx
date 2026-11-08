@@ -18,14 +18,28 @@ interface SharpeBoardTableProps {
   focusCode: string | null;
   /** 点击行 / 聚焦按钮：切换聚焦 */
   onFocusToggle: (code: string) => void;
+  /** 点击代码 / 名称：打开基金详情抽屉 */
+  onOpenDetail: (code: string, name: string) => void;
 }
 
 const NAME_MAX = 12;
 
+/** 收益（百分数）→ 带符号两位小数 + %；null → - */
+function formatRet(v: number | null): string {
+  if (v === null) return '-';
+  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+}
+
+/** 涨红跌绿（与站内 up/down 语义一致），null 不着色 */
+function retClass(v: number | null): string {
+  if (v === null) return 'text-ink-muted';
+  return v >= 0 ? 'text-up' : 'text-down';
+}
+
 const th = 'px-1.5 py-2 text-left text-xs font-medium text-ink-muted';
 const td = 'px-1.5 py-1.5 align-middle';
 
-export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle }: SharpeBoardTableProps) {
+export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onOpenDetail }: SharpeBoardTableProps) {
   if (loading) {
     return (
       <div className="p-8 space-y-2 animate-pulse" aria-label="加载中">
@@ -46,6 +60,8 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle }: S
           <tr>
             <th className={`${th} w-[4.5rem]`}>代码</th>
             <th className={`${th} w-[8rem]`}>名称</th>
+            <th className={`${th} text-right`}>近1年收益</th>
+            <th className={`${th} text-right`}>近3年收益</th>
             <th className={`${th} text-right`}>累计在榜周数</th>
             <th className={`${th} text-right`}>最近连续周数</th>
             <th className={`${th} text-right`}>最近上榜夏普</th>
@@ -65,14 +81,41 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle }: S
                 }`}
                 onClick={() => onFocusToggle(item.code)}
               >
-                <td className={`${td} font-mono text-info whitespace-nowrap`}>{item.code}</td>
-                <td className={`${td} text-ink-strong`}>
-                  <span
-                    className={item.name.length > NAME_MAX ? 'hover-tip' : undefined}
-                    data-tip={item.name.length > NAME_MAX ? item.name : undefined}
+                <td className={`${td} font-mono whitespace-nowrap`}>
+                  <button
+                    type="button"
+                    className="text-info underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-info"
+                    aria-label={`查看 ${item.name} 详情`}
+                    onClick={e => {
+                      e.stopPropagation();
+                      onOpenDetail(item.code, item.name);
+                    }}
                   >
-                    {item.name.length > NAME_MAX ? `${item.name.slice(0, NAME_MAX)}…` : item.name}
-                  </span>
+                    {item.code}
+                  </button>
+                </td>
+                <td className={`${td} text-ink-strong`}>
+                  <button
+                    type="button"
+                    className="text-left underline-offset-4 hover:underline"
+                    onClick={e => {
+                      e.stopPropagation();
+                      onOpenDetail(item.code, item.name);
+                    }}
+                  >
+                    <span
+                      className={item.name.length > NAME_MAX ? 'hover-tip' : undefined}
+                      data-tip={item.name.length > NAME_MAX ? item.name : undefined}
+                    >
+                      {item.name.length > NAME_MAX ? `${item.name.slice(0, NAME_MAX)}…` : item.name}
+                    </span>
+                  </button>
+                </td>
+                <td className={`${td} text-right tnum whitespace-nowrap ${retClass(item.ret_1y)}`}>
+                  {formatRet(item.ret_1y)}
+                </td>
+                <td className={`${td} text-right tnum whitespace-nowrap ${retClass(item.ret_3y)}`}>
+                  {formatRet(item.ret_3y)}
                 </td>
                 <td className={`${td} text-right tnum font-semibold text-ink-strong`}>{item.listed_weeks}</td>
                 <td className={`${td} text-right tnum text-ink-muted`}>{item.consecutive_weeks}</td>

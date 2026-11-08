@@ -183,6 +183,8 @@ class SharpeBoardItemDTO(BaseModel):
     latest_sharpe: Optional[float] = None  # 最近上榜夏普（不是「当前夏普」）
     last_listed_week: Optional[date] = None
     on_latest_board: bool = False  # 是否在最新成功（complete）榜单内
+    ret_1y: Optional[float] = None  # 近 1 年收益（FundPerformance，回退 MarketFundRank；仅展示）
+    ret_3y: Optional[float] = None  # 近 3 年收益（同上）
 
 
 class SharpeBoardSeriesDTO(BaseModel):
