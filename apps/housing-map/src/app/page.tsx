@@ -38,6 +38,14 @@ import {
 } from '@/lib/price-freshness';
 import { fetchAuctionData, type AuctionSummary } from '@/lib/auction-types';
 import { compareNumericMissingLast } from '@/lib/rental-dashboard';
+import {
+  DASH_MARKET_FILTER_OPTIONS,
+  dashboardStats,
+  filterDashboardCommunities,
+  type DashMarketFilter,
+  type DashPriceRange,
+  type DashScoreRange,
+} from '@/lib/dashboard-filter';
 
 // 从 API 获取小区数据 (连带收录口径统计, 避免二次拉取完整列表)
 // ok=false 表示这次刷新失败: 调用方要区分"保存失败"与"保存成功但刷新失败", 不能把列表清空
@@ -313,6 +321,8 @@ export default function BinjiangMapPage() {
   const [dashSubdistrict, setDashSubdistrict] = useState('');
   const [dashPrice, setDashPrice] = useState('');
   const [dashScore, setDashScore] = useState('');
+  // 看板的房源类型筛选: 全部 / 二手房 / 新房项目 / 房源类型待核实
+  const [dashMarket, setDashMarket] = useState<DashMarketFilter>('all');
   const [dashSortKey, setDashSortKey] = useState<DashSortKey>('total_score');
   const [dashSortOrder, setDashSortOrder] = useState<'asc' | 'desc'>('desc');
   // 标记"刚从看板点过查看", 地图页显示返回按钮; 点击返回后清除
@@ -703,10 +713,17 @@ export default function BinjiangMapPage() {
               subdistrictFilter={dashSubdistrict} setSubdistrictFilter={setDashSubdistrict}
               priceFilter={dashPrice} setPriceFilter={setDashPrice}
               scoreFilter={dashScore} setScoreFilter={setDashScore}
+              marketFilter={dashMarket} setMarketFilter={setDashMarket}
               sortKey={dashSortKey} setSortKey={setDashSortKey}
               sortOrder={dashSortOrder} setSortOrder={setDashSortOrder}
               onView={(c) => {
-                ensureMarketVisible(c);
+                // 看板按房源类型筛选后跳地图: 地图的房源类型切换跟着看板走,
+                // 否则点开一个新房项目, 地图却停在「二手房」把它藏起来。
+                if (dashMarket === 'second_hand' || dashMarket === 'new_house') {
+                  setMarketMode(dashMarket);
+                } else {
+                  ensureMarketVisible(c);
+                }
                 setSelectedCommunity(c);
                 setCameFromDashboard(true);
                 setActiveTab('map');
@@ -1358,7 +1375,8 @@ function Th({
   );
 }
 
-function DashboardPage({
+// 数据看板页面 (导出供测试渲染校验筛选与统计口径)
+export function DashboardPage({
   communities,
   onView,
   header,
@@ -1367,6 +1385,7 @@ function DashboardPage({
   subdistrictFilter, setSubdistrictFilter,
   priceFilter, setPriceFilter,
   scoreFilter, setScoreFilter,
+  marketFilter, setMarketFilter,
   sortKey, setSortKey,
   sortOrder, setSortOrder,
 }: {
@@ -1378,6 +1397,7 @@ function DashboardPage({
   subdistrictFilter: string; setSubdistrictFilter: (v: string) => void;
   priceFilter: string; setPriceFilter: (v: string) => void;
   scoreFilter: string; setScoreFilter: (v: string) => void;
+  marketFilter: DashMarketFilter; setMarketFilter: (v: DashMarketFilter) => void;
   sortKey: DashSortKey; setSortKey: (v: DashSortKey | ((k: DashSortKey) => DashSortKey)) => void;
   sortOrder: 'asc' | 'desc'; setSortOrder: (v: 'asc' | 'desc' | ((o: 'asc' | 'desc') => 'asc' | 'desc')) => void;
 }) {
@@ -1407,24 +1427,13 @@ function DashboardPage({
     }
   };
 
-  // 应用筛选
-  const filtered = communities.filter(c => {
-    if (subdistrictFilter && c.subdistrict !== subdistrictFilter) return false;
-    if (priceFilter) {
-      const price = getDisplayPrice(c.price) || 0;
-      if (priceFilter === '0-20000' && (price < 20000 || price === 0)) return false;
-      if (priceFilter === '20000-35000' && (price < 20000 || price >= 35000)) return false;
-      if (priceFilter === '35000-50000' && (price < 35000 || price >= 50000)) return false;
-      if (priceFilter === '50000-999999' && price < 50000) return false;
-    }
-    if (scoreFilter) {
-      const score = c.score?.total_score || 0;
-      if (scoreFilter === '80-100' && score < 80) return false;
-      if (scoreFilter === '60-80' && (score < 60 || score >= 80)) return false;
-      if (scoreFilter === '0-60' && score >= 60) return false;
-    }
-    if (searchQuery && !c.community_name.toLowerCase().includes(searchQuery.toLowerCase())) return false;
-    return true;
+  // 应用筛选 (口径集中在 lib/dashboard-filter.ts, 与地图共用同一套房源类型判定)
+  const filtered = filterDashboardCommunities(communities, {
+    searchQuery,
+    subdistrict: subdistrictFilter,
+    priceRange: priceFilter as DashPriceRange,
+    scoreRange: scoreFilter as DashScoreRange,
+    market: marketFilter,
   }).sort((a, b) => {
     const aVal = sortValOf(a, sortKey);
     const bVal = sortValOf(b, sortKey);
@@ -1441,16 +1450,10 @@ function DashboardPage({
 
   const latestSnapshot = communities.reduce((m, c) => (c.price.snapshot_date > m ? c.price.snapshot_date : m), '');
 
-  const priceOf = (c: Community) => getDisplayPrice(c.price) || 0;
   // 均价/签约套数/有价小区是二手专属口径: 新房与待核实房源类型不参与, 否则会被误读成二手行情
-  const secondHandOnly = filtered.filter(c => isSecondHand(c));
-  // 套数走 counts 槽归一化 (兼容旧快照顶层字段), 新旧数据都按同一口径汇总
-  const stats = {
-    total: filtered.length,
-    avgPrice: secondHandOnly.length ? Math.round(secondHandOnly.reduce((sum, c) => sum + priceOf(c), 0) / secondHandOnly.length) : null,
-    dealCount: secondHandOnly.reduce((sum, c) => sum + (normalizePriceBlock(c.price).counts.dealCount || 0), 0),
-    withPrice: secondHandOnly.filter(c => getDisplayPrice(c.price) != null).length,
-  };
+  const stats = dashboardStats(filtered);
+  // 当前筛选里没有二手房时, 二手专属指标显示「—」而不是 0, 免得被当成"成交为零"
+  const hasSecondHand = stats.secondHand > 0;
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -1459,31 +1462,49 @@ function DashboardPage({
       {/* 统计卡片 */}
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(4, 1fr)',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
         gap: '16px',
         padding: '20px',
         background: 'var(--bg-primary)',
       }}>
         <div className="stat-card">
           <div className="stat-value">{stats.total}</div>
-          <div className="stat-label">小区总数</div>
+          <div className="stat-label">小区总数 (当前筛选)</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{stats.secondHand}</div>
+          <div className="stat-label">其中二手房</div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-value">{stats.newHouse}</div>
+          <div className="stat-label">其中新房项目</div>
         </div>
         <div className="stat-card">
           <div className="stat-value">{stats.avgPrice?.toLocaleString() ?? '—'}</div>
           <div className="stat-label">二手房均价 (元/㎡)</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value">{stats.dealCount}</div>
+          <div className="stat-value">{hasSecondHand ? stats.dealCount : '—'}</div>
           <div className="stat-label">二手房近30日签约 (套)</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value">{stats.withPrice}</div>
+          <div className="stat-value">{hasSecondHand ? stats.withPrice : '—'}</div>
           <div className="stat-label">二手房有价小区</div>
         </div>
       </div>
 
       {/* 筛选栏 */}
       <div className="filter-bar">
+        <select
+          className="select-input"
+          value={marketFilter}
+          onChange={e => { setMarketFilter(e.target.value as DashMarketFilter); setPage(1); }}
+          aria-label="房源类型筛选"
+        >
+          {DASH_MARKET_FILTER_OPTIONS.map(option => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
         <select className="select-input" value={subdistrictFilter} onChange={e => { setSubdistrictFilter(e.target.value); setPage(1); }}>
           <option value="">全部板块</option>
           <optgroup label="滨江">
@@ -1521,6 +1542,9 @@ function DashboardPage({
           <b>签</b> = 签约均价（月签约走势的最新一个月均价，即最近一个有成交的月份，可能滞后于当前月份）；
           近30日签约为滚动 30 天口径，0 套代表近 30 天无成交、不代表更早无成交；综合评分的市场面维度即基于该签约套数。
           上方均价、近30日签约与有价小区三项只统计二手房，新房与房源类型待核实的小区不计入。
+          房源类型按显式字段判定，可用上方「房源类型」下拉分别看二手房与新房项目；
+          房源类型待核实 {stats.unknown} 个（当前筛选内），只在「全部房源」里出现。
+          新房没有可信的价格与签约口径，选择价格区间时新房不参与匹配（均价也只对有价的二手房取平均，无价小区不拉低均价）。
         </div>
         <table className="data-table">
           <thead>
