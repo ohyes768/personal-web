@@ -11,8 +11,7 @@ const TARGET_LABELS: Record<string, { label: string; color: string }> = {
   web: { label: "Web", color: "#0d9488" },
 };
 
-const GROUP_TABS: { key: "all" | "script" | "ai"; label: string }[] = [
-  { key: "all", label: "全部" },
+const GROUP_TABS: { key: "script" | "ai"; label: string }[] = [
   { key: "script", label: "脚本任务" },
   { key: "ai", label: "AI 任务" },
 ];
@@ -22,7 +21,7 @@ export default function TasksPage() {
   const [profiles, setProfiles] = useState<ProfileInfo[]>([]);
   const [error, setError] = useState("");
   const [pwdTarget, setPwdTarget] = useState<TaskView | null>(null);
-  const [groupTab, setGroupTab] = useState<"all" | "script" | "ai">("all");
+  const [groupTab, setGroupTab] = useState<"script" | "ai">("script");
 
   const load = useCallback(async () => {
     try {
@@ -88,8 +87,8 @@ export default function TasksPage() {
     }
   }
 
-  // 「涉及 Skill」列只在含 AI 任务的 tab 下出现（脚本任务没有 skill 概念，避免整列都是「-」）
-  const showSkillCol = groupTab !== "script";
+  // 「涉及 Skill」「生效 Profile」列只在 AI 任务 tab 下出现（脚本任务没有这两个概念，避免整列都是「-」）
+  const showAiCols = groupTab === "ai";
 
   return (
     <div>
@@ -113,7 +112,7 @@ export default function TasksPage() {
           >
             {g.label}
             <span className="muted" style={{ marginLeft: 6, color: groupTab === g.key ? "#dbeafe" : undefined }}>
-              {g.key === "all" ? tasks.length : tasks.filter((t) => t.group === g.key).length}
+              {tasks.filter((t) => t.group === g.key).length}
             </span>
           </button>
         ))}
@@ -122,13 +121,14 @@ export default function TasksPage() {
         <thead>
           <tr>
             <th>任务</th><th>输出</th>
-            {showSkillCol && <th>涉及 Skill</th>}
-            <th>生效 Profile（可切换）</th><th>说明</th><th>cron（可编辑）</th><th>启停</th>
+            {showAiCols && <th>涉及 Skill</th>}
+            {showAiCols && <th>生效 Profile（可切换）</th>}
+            <th>说明</th><th>cron（可编辑）</th><th>启停</th>
             <th>上次执行</th><th>下次计划</th><th>操作</th>
           </tr>
         </thead>
         <tbody>
-          {tasks.filter((t) => groupTab === "all" || t.group === groupTab).map((t) => (
+          {tasks.filter((t) => t.group === groupTab).map((t) => (
             <tr key={t.id}>
               <td>
                 <strong>{t.name}</strong>
@@ -155,7 +155,7 @@ export default function TasksPage() {
                   )}
                 </div>
               </td>
-              {showSkillCol && (
+              {showAiCols && (
                 <td style={{ maxWidth: 180 }}>
                   {(t.skills || []).length > 0 ? (
                     <div className="badge-stack">
@@ -163,43 +163,37 @@ export default function TasksPage() {
                         <span key={s} className="badge badge-skill">{s}</span>
                       ))}
                     </div>
-                  ) : t.group === "ai" ? (
-                    <span className="muted" style={{ fontSize: 12 }}>无（纯 prompt）</span>
                   ) : (
-                    <span className="muted" style={{ fontSize: 12 }}>-</span>
+                    <span className="muted" style={{ fontSize: 12 }}>无（纯 prompt）</span>
                   )}
                 </td>
               )}
-              <td>
-                {t.group === "ai" ? (
-                  <>
-                    <select
-                      value={t.profile ?? ""}
-                      style={{ width: 132 }}
-                      title="切换后立即生效：执行时同时换凭证 env_file、HERMES_PROFILE 和 jobs.json 来源"
-                      onChange={(e) => updateProfile(t, e.target.value)}
-                    >
-                      {!t.profile && <option value="">按登记（未知）</option>}
-                      {t.profile && !profiles.some((p) => p.name === t.profile) && (
-                        <option value={t.profile}>{t.profile}（目录外）</option>
-                      )}
-                      {profiles.map((p) => (
-                        <option key={p.name} value={p.name}>{p.name}</option>
-                      ))}
-                      {t.profile_source === "override" && (
-                        <option value="__reset__">↩ 回到登记值</option>
-                      )}
-                    </select>
-                    {t.profile_source === "override" ? (
-                      <div className="muted" style={{ fontSize: 11 }}>已覆盖登记值</div>
-                    ) : (
-                      <div className="muted" style={{ fontSize: 11 }}>来自 tasks.yaml</div>
+              {showAiCols && (
+                <td>
+                  <select
+                    value={t.profile ?? ""}
+                    style={{ width: 132 }}
+                    title="切换后立即生效：执行时同时换凭证 env_file、HERMES_PROFILE 和 jobs.json 来源"
+                    onChange={(e) => updateProfile(t, e.target.value)}
+                  >
+                    {!t.profile && <option value="">按登记（未知）</option>}
+                    {t.profile && !profiles.some((p) => p.name === t.profile) && (
+                      <option value={t.profile}>{t.profile}（目录外）</option>
                     )}
-                  </>
-                ) : (
-                  <span className="muted" style={{ fontSize: 12 }}>-</span>
-                )}
-              </td>
+                    {profiles.map((p) => (
+                      <option key={p.name} value={p.name}>{p.name}</option>
+                    ))}
+                    {t.profile_source === "override" && (
+                      <option value="__reset__">↩ 回到登记值</option>
+                    )}
+                  </select>
+                  {t.profile_source === "override" ? (
+                    <div className="muted" style={{ fontSize: 11 }}>已覆盖登记值</div>
+                  ) : (
+                    <div className="muted" style={{ fontSize: 11 }}>来自 tasks.yaml</div>
+                  )}
+                </td>
+              )}
               <td className="muted" style={{ maxWidth: 220 }}>{t.description}</td>
               <td>
                 <input
