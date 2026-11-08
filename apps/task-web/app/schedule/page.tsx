@@ -7,8 +7,7 @@ import { apiGet } from "@/lib/api";
 import MonthCalendar from "@/components/MonthCalendar";
 import DayTimeline from "@/components/DayTimeline";
 
-const GROUP_TABS: { key: "all" | "script" | "ai"; label: string }[] = [
-  { key: "all", label: "全部" },
+const GROUP_TABS: { key: "script" | "ai"; label: string }[] = [
   { key: "script", label: "脚本任务" },
   { key: "ai", label: "AI 任务" },
 ];
@@ -47,7 +46,7 @@ function ScheduleInner() {
   const [viewMonth, setViewMonth] = useState(() => Number(initialDate.slice(5, 7)));
   const [summary, setSummary] = useState<Record<string, ScheduleSummaryDay>>({});
   const [day, setDay] = useState<ScheduleDayView | null>(null);
-  const [groupTab, setGroupTab] = useState<"all" | "script" | "ai">("all");
+  const [groupTab, setGroupTab] = useState<"script" | "ai">("script");
   const [onlyIssue, setOnlyIssue] = useState(false);
   const [error, setError] = useState("");
 
@@ -103,7 +102,7 @@ function ScheduleInner() {
 
   const visibleTasks = useMemo(
     () => (day?.tasks ?? [])
-      .filter((t) => groupTab === "all" || t.group === groupTab)
+      .filter((t) => t.group === groupTab)
       .filter((t) => !onlyIssue || hasIssue(t)),
     [day, groupTab, onlyIssue],
   );
@@ -127,9 +126,7 @@ function ScheduleInner() {
               className="muted"
               style={{ marginLeft: 6, color: groupTab === g.key ? "#dbeafe" : undefined }}
             >
-              {g.key === "all"
-                ? (day?.tasks.length ?? 0)
-                : (day?.tasks ?? []).filter((t) => t.group === g.key).length}
+              {(day?.tasks ?? []).filter((t) => t.group === g.key).length}
             </span>
           </button>
         ))}
