@@ -41,3 +41,21 @@ test('uncollected and filtered empty states differ', () => {
   assert.match(render({ available: true, overall_total: 4, total: 0, records: [] }), /当前筛选无结果/);
   assert.match(render({ available: true, overall_total: 0, total: 0, records: [] }), /暂无法拍记录/);
 });
+test('auction records render as a table list, not a card board', () => {
+  const { AuctionListContent } = require('../src/components/auction/AuctionDataList.tsx');
+  const html = renderToStaticMarkup(React.createElement(AuctionListContent, { onView: () => {}, data: {
+    available: true, overall_total: 2, total: 2, records: [
+      { source: 'laipai', auction_id: '1', title: '房源一', status: 'todo', area_m2: 89.5, deal_price_yuan: null },
+      { source: 'laipai', auction_id: '2', title: '房源二', status: 'done', area_m2: 149.3, deal_price_yuan: 4760000, deal_unit_price: 31882, community_id: 'c', community_display_name: '花园' }
+    ]
+  }}));
+  assert.match(html, /<table class="auction-table">/);
+  for (const column of ['房源', '状态', '小区', '面积', '起拍价', '成交价', '成交单价', '轮次与时间', '详情与来源']) {
+    assert.match(html, new RegExp(`<th>${column}</th>`));
+  }
+  // 每条记录占一行, 窄屏靠 data-label 标注列名
+  assert.equal((html.match(/<tr>/g) || []).length, 3);
+  assert.match(html, /data-label="房源"/);
+  // 不再使用卡片看板形态
+  assert.doesNotMatch(html, /auction-list-card|auction-list-records/);
+});

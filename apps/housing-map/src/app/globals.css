@@ -1227,19 +1227,38 @@ body {
 .auction-list-count { display: flex; gap: 16px; align-items: baseline; flex-wrap: wrap; }
 .auction-list-count strong { font-size: 18px; }
 .auction-list-count span { font-size: 12px; color: var(--text-muted); }
-.auction-list-records { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; margin-top: 20px; }
-.auction-list-card { border: 1px solid var(--border); border-radius: 10px; padding: 20px; background: var(--bg-surface); min-width: 0; overflow-wrap: anywhere; }
-.auction-list-card h3 { font-size: 16px; margin: 0; line-height: 1.6; }
-.auction-status { border-radius: 4px; padding: 4px 7px; background: #f4f0e7; color: #745728 !important; }
+/* 法拍记录列表：一条拍卖轮次一行，与看板/审核页同为表格形态 */
+.auction-table-wrap { margin-top: 18px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-surface); overflow-x: auto; }
+.auction-table { width: 100%; border-collapse: collapse; min-width: 1000px; font-size: 13px; }
+.auction-table th { padding: 12px 14px; text-align: left; background: var(--bg-elevated); color: var(--text-muted); font-size: 11px; font-weight: 700; letter-spacing: .06em; white-space: nowrap; }
+.auction-table td { padding: 12px 14px; border-top: 1px solid var(--border); vertical-align: top; }
+.auction-table tbody tr:hover td { background: var(--bg-primary); }
+.auction-table td strong { display: block; font-weight: 600; line-height: 1.6; }
+.auction-table td small { display: block; margin-top: 4px; color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.auction-status { border-radius: 4px; padding: 4px 7px; background: #f4f0e7; color: #745728 !important; font-size: 12px; white-space: nowrap; }
 .auction-status-done { background: #eaf3f0; color: #285d59 !important; }
-.auction-list-community { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 36px; font-size: 13px; color: #285d59; }
-.auction-list-community button { padding: 6px 10px; font-size: 12px; }
-.auction-list-prices { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 16px 0; padding: 16px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
-.auction-list-prices > div { display: grid; gap: 7px; }
-.auction-list-prices span { font-size: 12px; color: var(--text-muted); }
-.auction-list-prices strong { font-size: 19px; font-variant-numeric: tabular-nums; }
-.auction-list-card summary { cursor: pointer; color: #285d59; font-size: 12px; padding: 8px 0; }
-@media (max-width: 700px) { .auction-list-records { grid-template-columns: 1fr; } .auction-data-page { padding: 20px 14px 36px; } .auction-list-heading { align-items: start; flex-direction: column; } .auction-list-card { padding: 16px; } .auction-list-filters label:first-child { flex-basis: 100%; } }
+.auction-cell-num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.auction-cell-community { display: block; color: #285d59; white-space: nowrap; }
+.auction-table th:first-child, .auction-table td:first-child { min-width: 210px; }
+.auction-table td .btn { margin-top: 6px; padding: 4px 10px; font-size: 12px; }
+.auction-cell-detail { min-width: 240px; }
+.auction-cell-detail summary { cursor: pointer; color: #285d59; font-size: 12px; white-space: nowrap; }
+.auction-cell-detail .auction-facts > div { grid-template-columns: 78px minmax(0, 1fr); }
+.auction-inline-entry { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 0 0 16px; padding: 12px 16px; border: 1px solid var(--border); border-left: 3px solid #285d59; border-radius: 8px; background: var(--bg-surface); }
+.auction-inline-entry h3 { margin: 0; font-size: 14px; }
+.auction-inline-entry .auction-meta { margin: 4px 0 0; }
+@media (max-width: 700px) { .auction-data-page { padding: 20px 14px 36px; } .auction-list-heading { align-items: start; flex-direction: column; } .auction-list-filters label:first-child { flex-basis: 100%; } .auction-inline-entry { align-items: flex-start; } }
+@media (max-width: 760px) {
+  /* 窄屏：表格改为逐条堆叠，行内用 data-label 标注列名，避免横向滚动 */
+  .auction-table { min-width: 0; }
+  .auction-table thead { display: none; }
+  .auction-table tbody, .auction-table tr, .auction-table td { display: block; }
+  .auction-table tr { border-top: 1px solid var(--border); padding: 10px 12px; }
+  .auction-table tbody tr:first-child { border-top: 0; }
+  .auction-table td { border: 0; padding: 6px 0; }
+  .auction-table td::before { content: attr(data-label); display: block; margin-bottom: 3px; color: var(--text-muted); font-size: 11px; }
+  .auction-cell-detail { min-width: 0; }
+}
 .community-detail-tabs button:focus-visible, .auction-history summary:focus-visible { outline: 2px solid #2c6c69; outline-offset: 3px; }
 @media (max-width: 480px) { .auction-stats strong { font-size: 25px; } .auction-facts > div { grid-template-columns: 80px minmax(0, 1fr); } }
 
