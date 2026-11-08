@@ -15,7 +15,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <a href="/" className="back-home">← 返回首页</a>
           <span className="site-title">定时任务管理</span>
           <nav>
-            <Link href="/tasks">任务</Link>
+            {/* basePath=/tasks 由 Next 自动拼接；这里写 /tasks 会渲染成 /tasks/tasks → 404 */}
+            <Link href="/">任务</Link>
             <Link href="/schedule">排期日历</Link>
             <Link href="/runs">运行记录</Link>
           </nav>
