@@ -37,6 +37,8 @@ interface SourceWorkspaceProps {
   onAddMembers?: (repository: string) => void;
   /** 当前 view（manage / board / …），URL 变化时通知 SkillPool 关闭 modal */
   currentView?: string;
+  /** 技能池搜索框初始值（来自 URL ?q=，外链跳转用）；仅作初始值，随输入不回写 URL */
+  initialQuery?: string;
 }
 
 function applyFilters(skills: SkillCard[], filters: FilterState, target: TargetKey): SkillCard[] {
@@ -85,9 +87,10 @@ export default function SourceWorkspace({
   checkingUpdates,
   onAddMembers,
   currentView,
+  initialQuery = '',
 }: SourceWorkspaceProps) {
   const {current} = useInstallTargets();
-  const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [filters, setFilters] = useState<FilterState>({...DEFAULT_FILTERS, query: initialQuery});
   const [installIds, setInstallIds] = useState<string[] | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [editingTagsSkill, setEditingTagsSkill] = useState<SkillCard | null>(null);

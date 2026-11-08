@@ -72,6 +72,8 @@ function SkillManagerPage() {
   // 两级导航：URL 是唯一真源，非法值在派生时逐级回退
   const view: ViewKey = searchParams.get('view') === 'install-targets' ? 'install-targets' : searchParams.get('view') === 'board' ? 'board' : searchParams.get('view') === 'targets' ? 'targets' : 'manage';
   const sourceTab: SourceTab = searchParams.get('tab') === 'github' ? 'github' : 'local';
+  // 外链直达：?q=<skill 名> 作为技能池搜索框初始值（task-web「涉及 Skill」徽章跳转用）
+  const initialQuery = searchParams.get('q') ?? '';
   const agent = (searchParams.get('target') ?? 'hermes') as TargetKey;
   const [installTargets, setInstallTargets] = useState<InstallTarget[]>([]);
   const [installTargetsError, setInstallTargetsError] = useState('');
@@ -377,6 +379,7 @@ function SkillManagerPage() {
           <SourceWorkspace
             source="local"
             skills={localSkills}
+            initialQuery={initialQuery}
             loading={loading}
             onRefresh={refreshAll}
             exportTargets={exportTargets}
@@ -405,6 +408,7 @@ function SkillManagerPage() {
         <div className={sourceTab === 'github' ? 'flex min-h-0 flex-1' : 'hidden'}>
           <SourceWorkspace
             source="github"
+            initialQuery={initialQuery}
             onAddMembers={(repository) => {
               setActionError('');
               setRegisterRepository(repository);

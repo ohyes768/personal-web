@@ -160,7 +160,11 @@ export default function TasksPage() {
                   {(t.skills || []).length > 0 ? (
                     <div className="badge-stack">
                       {(t.skills || []).map((s) => (
-                        <span key={s} className="badge badge-skill">{s}</span>
+                        // 同域直跳 skill 管理台（nginx 下 /skills），?q= 打开即过滤出该 skill
+                        <a key={s} className="badge badge-skill" style={{ color: "#fff", textDecoration: "none" }}
+                          href={`/skills/?q=${encodeURIComponent(s)}`} target="_blank" rel="noreferrer"
+                          title={`在 Skill 管理台查看 ${s}`}
+                        >{s}</a>
                       ))}
                     </div>
                   ) : (
