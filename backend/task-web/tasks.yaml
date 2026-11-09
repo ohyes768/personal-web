@@ -248,7 +248,7 @@ tasks:
     cwd: /app
     volumes:
       - "/home/ohyes768/stock-info-dingding/csi300_brief/.env:/app/csi300_brief/.env:ro"
-    cron: "35 16 * * 1-5"
+    cron: "35 16 * * mon-fri"
     timeout: 900
 
   # pm25-broadcast：hermes_trigger 读 jobs.json 现场取 prompt → Runs API 提交 →
@@ -374,7 +374,7 @@ tasks:
     skills: [hk-ipo-research]
     env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    cron: "30 8 * * 1-5"
+    cron: "30 8 * * mon-fri"
     timeout: 3600
 
   - id: hermes-hk-ipo-backtest
@@ -418,7 +418,7 @@ tasks:
     skills: [hk-ipo-backtest]
     env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    cron: "0 16 * * 1-5"
+    cron: "0 16 * * mon-fri"
     timeout: 3600
 
   - id: hermes-a-share-macro-impact
@@ -434,7 +434,7 @@ tasks:
     skills: [a-share-macro-impact-skill]
     env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    cron: "0 18 * * 1"
+    cron: "0 18 * * mon"
     timeout: 3600
 
   - id: hermes-bond-macro-impact
@@ -450,7 +450,7 @@ tasks:
     skills: [bond-market-macro-impact-skill]
     env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    cron: "5 18 * * 1"
+    cron: "5 18 * * mon"
     timeout: 3600
 
   - id: hermes-waytoagi-tracker
@@ -532,7 +532,7 @@ tasks:
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    cron: "0 9 * * 1"
+    cron: "0 9 * * mon"
     timeout: 3600
 
   - id: hermes-macro-money-supply-weekly
@@ -550,7 +550,7 @@ tasks:
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    cron: "15 9 * * 1"
+    cron: "15 9 * * mon"
     timeout: 3600
 
   - id: hermes-macro-entity-weekly
@@ -568,7 +568,7 @@ tasks:
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    cron: "30 9 * * 1"
+    cron: "30 9 * * mon"
     timeout: 3600
 
   - id: hermes-macro-inflation-weekly
@@ -586,7 +586,7 @@ tasks:
     network: nginx_nginx-bridge
     env:
       HERMES_PROFILE: "ohyes768"
-    cron: "45 9 * * 1"
+    cron: "45 9 * * mon"
     timeout: 3600
 
   - id: damai-hz-push
