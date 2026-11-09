@@ -334,52 +334,30 @@ input[type="number"] {
   margin: 0.25em 0;
 }
 
-/* 宽表格与代码块局部横滑，不产生整页横向滚动 */
+/* 宽表格与代码块局部横滑兜底：正常情况下表格 100% 宽度自动换行，不会触到这里 */
 .quality-reader-table-wrap {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
-/* 可拖动的可见细滚动条：Windows/macOS 覆盖式滚动条下也能看出表格可以横滑 */
-.quality-reader-table-wrap {
-  scrollbar-width: thin;
-  scrollbar-color: var(--color-rule-strong, #b8ab98) transparent;
-}
-.quality-reader-table-wrap::-webkit-scrollbar {
-  height: 8px;
-}
-.quality-reader-table-wrap::-webkit-scrollbar-track {
-  background: transparent;
-}
-.quality-reader-table-wrap::-webkit-scrollbar-thumb {
-  background: var(--color-rule-strong, #b8ab98);
-  border-radius: 4px;
-}
-.quality-reader-table-wrap::-webkit-scrollbar-thumb:hover {
-  background: var(--color-ink-muted, #8a7d6a);
-}
-
-/* 横滑时首列（维度）吸附在左侧，不随表格滚出视野 */
-.quality-reader-md table th:first-child,
-.quality-reader-md table td:first-child {
-  position: sticky;
-  left: 0;
-  background: var(--color-paper);
-  /* 盖住下方滚过的单元格 */
-  box-shadow: -1px 0 0 var(--color-rule), 1px 0 0 var(--color-rule);
-}
-/* 表头首格保持表头深色 */
-.quality-reader-md table th:first-child {
-  background: var(--color-paper-deep);
-}
-.quality-reader-md table tr:nth-child(even) td:first-child {
-  background: var(--color-paper-tint);
-}
-
+/* markdown 表格不撑出容器：占满宽度，长文本在单元格内自然换行。
+   单元格恢复默认断词：content 的 anywhere/break-word 会让 "25%"、"得分" 这类
+   短词也被拆行（最小宽度塌缩到一个字符），中文本身无需它也能换行 */
 .quality-reader-md table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  table-layout: auto;
+}
+.quality-reader-md th,
+.quality-reader-md td {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+/* 短列（维度/得分/权重等）保持单行，只有最后一列长文本换行；
+   列特别多时由 .quality-reader-table-wrap 的横滑兜底 */
+.quality-reader-md th:not(:last-child),
+.quality-reader-md td:not(:last-child) {
+  white-space: nowrap;
 }
 
 .quality-reader-md pre {
