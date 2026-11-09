@@ -126,8 +126,8 @@ export default function TasksPage() {
                   }}>
                     {t.group === "ai" ? "AI" : "脚本"}
                   </span>
-                  <div className="mono muted truncate" title={`${t.id}\n${t.command}${t.cwd ? ` @ ${t.cwd}` : ""}`}>
-                    {t.id} · {t.command}{t.cwd ? ` @ ${t.cwd}` : ""}
+                  <div className="mono muted truncate" title={t.id}>
+                    {t.id}
                   </div>
                 </td>
                 <td>

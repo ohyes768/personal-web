@@ -42,9 +42,10 @@ tr:last-child td { border-bottom: none; }
 .badge-stack { display: inline-flex; flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
 /* 行内截断：id / command 这类长 mono 串只占一行，完整值放 title tooltip */
 .truncate { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* tab 激活态（替代此前两处内联三元） */
-.tab-active { background: #2563eb; color: #fff; border-color: #2563eb; }
-.tab-active span { color: #dbeafe; }
+/* tab 激活态（带 .btn 前缀保证优先级高于 .btn 的白底） */
+.btn.tab-active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.btn.tab-active:hover { background: #1d4ed8; }
+.btn.tab-active span { color: #dbeafe; }
 /* 单元格内操作行：按钮 + 链接同一行 */
 .cell-actions { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
 /* 脏值保护：出现「保存/撤销」chip，点保存才提交 */
