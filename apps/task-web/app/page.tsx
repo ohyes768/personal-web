@@ -73,6 +73,16 @@ export default function TasksPage() {
   const showAiCols = groupTab === "ai";
   const stale = lastRefresh != null && Date.now() - lastRefresh.getTime() > 15000;
 
+  // 按下次执行时间升序：第一行就是马上要执行的任务；已禁用（无下次时间）沉底
+  const groupTasks = tasks
+    .filter((t) => t.group === groupTab)
+    .sort((a, b) => {
+      const ka = a.enabled && a.next_fire_time ? a.next_fire_time : "9999";
+      const kb = b.enabled && b.next_fire_time ? b.next_fire_time : "9999";
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
+  const nextUpId = groupTasks[0]?.enabled ? groupTasks[0].id : null;
+
   return (
     <div>
       <details className="notice">
@@ -114,12 +124,19 @@ export default function TasksPage() {
           </tr>
         </thead>
         <tbody>
-          {tasks.filter((t) => t.group === groupTab).map((t) => {
+          {groupTasks.map((t) => {
             const missed = t.last_run?.missed_schedule_at;
+            const isNextUp = t.id === nextUpId;
             return (
-              <tr key={t.id}>
+              <tr key={t.id} className={isNextUp ? "row-next-up" : undefined}>
                 <td>
                   <strong title={t.description}>{t.name}</strong>
+                  {isNextUp && (
+                    <span className="badge" style={{ background: "#ea580c", marginLeft: 6, verticalAlign: "middle" }}
+                      title="这是下一个即将执行的任务">
+                      即将执行
+                    </span>
+                  )}
                   <span className="badge" style={{
                     background: t.group === "ai" ? "#7c3aed" : "#0284c7",
                     marginLeft: 6, verticalAlign: "middle",

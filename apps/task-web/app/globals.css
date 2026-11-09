@@ -38,6 +38,10 @@ th, td { vertical-align: top; }
 th { background: var(--bg); color: var(--muted); font-weight: 500; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
 
+/* 下一个即将执行的任务：整行淡橙底标注 */
+tr.row-next-up td { background: #fff7ed; }
+tr.row-next-up td:first-child { border-left: 3px solid #ea580c; }
+
 .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; color: #fff; white-space: nowrap; }
 .badge-stack { display: inline-flex; flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
 /* 行内截断：id / command 这类长 mono 串只占一行，完整值放 title tooltip */
