@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { apiGet, Run, statusColor, statusLabel } from "@/lib/api";
 import { fmtTime } from "@/lib/time";
+import { taskDisplayName } from "@/lib/name";
 
 const STATUS_OPTIONS = ["", "waiting", "running", "success", "failed", "timeout", "interrupted", "skipped"];
 
@@ -55,7 +56,7 @@ function RunsInner() {
         <select value={taskId} onChange={(e) => setTaskId(e.target.value)} title="选择任务">
           <option value="">全部任务</option>
           {tasks.map((t) => (
-            <option key={t.id} value={t.id}>{t.name}</option>
+            <option key={t.id} value={t.id}>{taskDisplayName(t.name)}</option>
           ))}
         </select>
         <select value={status} onChange={(e) => setStatus(e.target.value)}>

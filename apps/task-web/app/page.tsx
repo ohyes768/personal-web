@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { apiGet, apiSend, statusColor, statusLabel, ProfileInfo, TaskView } from "@/lib/api";
 import { fmtTime } from "@/lib/time";
+import { taskDisplayName } from "@/lib/name";
 
 const TARGET_LABELS: Record<string, { label: string; color: string }> = {
   dingtalk: { label: "钉钉", color: "#2563eb" },
@@ -130,7 +131,7 @@ export default function TasksPage() {
             return (
               <tr key={t.id} className={isNextUp ? "row-next-up" : undefined}>
                 <td>
-                  <strong title={t.description}>{t.name}</strong>
+                  <strong title={t.description}>{taskDisplayName(t.name)}</strong>
                   {isNextUp && (
                     <span className="badge" style={{ background: "#ea580c", marginLeft: 6, verticalAlign: "middle" }}
                       title="这是下一个即将执行的任务">
@@ -227,7 +228,7 @@ export default function TasksPage() {
 
       {pwdTarget && (
         <PasswordDialog
-          taskName={pwdTarget.name}
+          taskName={taskDisplayName(pwdTarget.name)}
           onCancel={() => setPwdTarget(null)}
           onSubmit={manualRun}
         />
