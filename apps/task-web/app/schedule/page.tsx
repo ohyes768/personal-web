@@ -100,10 +100,16 @@ function ScheduleInner() {
     setViewMonth(nm.getMonth() + 1);
   }
 
+  // 按当日最早槽位时间升序排列，时间轴从上到下即时间先后；无槽位的任务沉底
   const visibleTasks = useMemo(
     () => (day?.tasks ?? [])
       .filter((t) => t.group === groupTab)
-      .filter((t) => !onlyIssue || hasIssue(t)),
+      .filter((t) => !onlyIssue || hasIssue(t))
+      .sort((a, b) => {
+        const ka = a.slots.reduce<string | null>((min, s) => !min || s.at < min ? s.at : min, null) ?? "9999";
+        const kb = b.slots.reduce<string | null>((min, s) => !min || s.at < min ? s.at : min, null) ?? "9999";
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+      }),
     [day, groupTab, onlyIssue],
   );
 

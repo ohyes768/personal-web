@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo } from "react";
 import type { ScheduleSlot, ScheduleTaskView } from "@/lib/api";
 import { statusColor, statusLabel } from "@/lib/api";
+import { taskDisplayName } from "@/lib/name";
 
 /** "2026-11-07T09:30:00" → 0~1 的当日时间占比。 */
 function timeFrac(at: string): number {
@@ -98,7 +99,7 @@ export default function DayTimeline({ tasks, date, todayStr }: {
       {tasks.map((t) => (
         <div className="slot-row" key={t.id}>
           <div className="slot-lbl" title={t.cron ? `${t.name}（${t.cron}）` : t.name}>
-            <strong style={{ fontSize: 12 }}>{t.name}</strong>
+            <strong style={{ fontSize: 12 }}>{taskDisplayName(t.name)}</strong>
             {!t.enabled && (
               <span className="badge" style={{ background: "#6b7280", marginLeft: 4, fontSize: 10 }}>停用</span>
             )}
