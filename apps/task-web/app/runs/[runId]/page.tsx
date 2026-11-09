@@ -30,16 +30,21 @@ export default function RunDetailPage() {
     }
   }, [runId]);
 
+  // 初始加载一次；只有运行中/等待中的 run 才继续 3s 轮询，终态停止
   useEffect(() => {
     load();
+  }, [load]);
+
+  const isRunning = run?.status === "running" || run?.status === "waiting";
+
+  useEffect(() => {
+    if (!isRunning) return;
     const t = setInterval(load, 3000);
     return () => clearInterval(t);
-  }, [load]);
+  }, [isRunning, load]);
 
   if (error) return <p className="error-text">{error}</p>;
   if (!run) return <p className="muted">加载中…</p>;
-
-  const isRunning = run.status === "running" || run.status === "waiting";
 
   return (
     <div>

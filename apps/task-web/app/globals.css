@@ -30,15 +30,36 @@ body {
 .site-header nav a { color: var(--text); text-decoration: none; padding: 4px 8px; border-radius: 6px; }
 .site-header nav a:hover { background: var(--bg); }
 
-.container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+.container { max-width: 1400px; margin: 0 auto; padding: 20px 16px; }
 
 table { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 13px; vertical-align: middle; }
+th, td { vertical-align: top; }
 th { background: var(--bg); color: var(--muted); font-weight: 500; white-space: nowrap; }
 tr:last-child td { border-bottom: none; }
 
-.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; color: #fff; white-space: nowrap; }
-.badge-stack { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; color: #fff; white-space: nowrap; }
+.badge-stack { display: inline-flex; flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
+/* 行内截断：id / command 这类长 mono 串只占一行，完整值放 title tooltip */
+.truncate { max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* tab 激活态（替代此前两处内联三元） */
+.tab-active { background: #2563eb; color: #fff; border-color: #2563eb; }
+.tab-active span { color: #dbeafe; }
+/* 单元格内操作行：按钮 + 链接同一行 */
+.cell-actions { display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+/* 脏值保护：出现「保存/撤销」chip，点保存才提交 */
+.dirty-actions { display: inline-flex; gap: 4px; margin-left: 6px; vertical-align: middle; }
+.btn-mini { padding: 1px 8px; font-size: 12px; border-radius: 5px; }
+.btn-mini.save { background: #16a34a; color: #fff; border-color: #16a34a; }
+.btn-mini.save:hover { background: #15803d; }
+.input-invalid { border-color: #dc2626 !important; }
+/* 数据新鲜度指示 */
+.refresh-chip { font-size: 12px; color: var(--muted); margin-left: auto; }
+.refresh-chip.stale { color: #b45309; background: #fef3c7; border-radius: 999px; padding: 1px 8px; }
+/* 常驻说明折叠为一行 */
+.notice { background: #fef3c7; border: 1px solid #fcd34d; padding: 6px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 12px; }
+.notice summary { cursor: pointer; color: #92400e; }
+.notice summary .muted { color: #92400e; }
 /* skill 名较长（如 bond-market-macro-impact-skill）：浅底方角 chip + 等宽字，
    按连字符折行（不 break-all，否则会断成词中间的碎片） */
 .badge-skill {
@@ -58,7 +79,6 @@ tr:last-child td { border-bottom: none; }
 .filters { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
 .filters select, .filters input { padding: 6px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; }
 
-.notice { background: #fef3c7; border: 1px solid #fcd34d; padding: 10px 12px; border-radius: 8px; font-size: 13px; margin-bottom: 16px; }
 
 .log-box { background: #0b1020; color: #d7e0ff; font-family: ui-monospace, Consolas, monospace; font-size: 13px; padding: 16px; border-radius: 8px; white-space: pre-wrap; word-break: break-all; max-height: 70vh; overflow: auto; }
 
