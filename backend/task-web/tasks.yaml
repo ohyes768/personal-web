@@ -237,7 +237,10 @@ tasks:
   # csi300-brief：旧 crontab 35 8 * * 1-5 为 UTC = 北京 16:35；直跑 brief.py
   # （cron_daily.sh 恒 exit 0，失败会被掩盖，不用它）。脚本已迁入业务仓库
   # csi300_brief/；webhook 密钥经 .env 文件只读挂载（必须显式 --env-file，
-  # 否则 dingtalk_push 默认读仓库根 /app/.env 会发错群）
+  # 否则 dingtalk_push 默认读仓库根 /app/.env 会发错群）。发送走公共 dingtalk-push
+  # CLI：brief.py → dingtalk_push.delegate → locate_send_script()，因此必须挂
+  # /opt/dingtalk-push 并设 DINGTALK_PUSH_SKILL_DIR，否则推送直接 ValueError
+  # （2026-11-09 盘后失败即此因；3838c73b 批量补挂载时漏了本条）
   - id: csi300-brief
     name: CSI300盘后简报（钉钉）
     description: csi300 盘后简报推送钉钉；原宿主机 crontab 迁移。启用前先禁用旧 crontab 条目
@@ -246,8 +249,11 @@ tasks:
     image: stock-info:latest
     command: python csi300_brief/brief.py --push --insecure --only-today --env-file /app/csi300_brief/.env
     cwd: /app
+    env:
+      DINGTALK_PUSH_SKILL_DIR: /opt/dingtalk-push
     volumes:
       - "/home/ohyes768/stock-info-dingding/csi300_brief/.env:/app/csi300_brief/.env:ro"
+      - "/home/ohyes768/skills/personal-tools/dingtalk-push:/opt/dingtalk-push:ro"
     cron: "35 16 * * mon-fri"
     timeout: 900
 
