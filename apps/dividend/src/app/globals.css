@@ -189,6 +189,13 @@ input[type="number"] {
   }
 }
 
+/* 桌面端放宽版面：手机仍是 48rem 长文阅读宽度，≥1024px 放到 72rem */
+@media (min-width: 1024px) {
+  .quality-reader-container {
+    max-width: 72rem;
+  }
+}
+
 .quality-reader-title {
   margin: 16px 0 12px;
   font-size: 1.5rem;
@@ -332,6 +339,42 @@ input[type="number"] {
   max-width: 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+}
+
+/* 可拖动的可见细滚动条：Windows/macOS 覆盖式滚动条下也能看出表格可以横滑 */
+.quality-reader-table-wrap {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-rule-strong, #b8ab98) transparent;
+}
+.quality-reader-table-wrap::-webkit-scrollbar {
+  height: 8px;
+}
+.quality-reader-table-wrap::-webkit-scrollbar-track {
+  background: transparent;
+}
+.quality-reader-table-wrap::-webkit-scrollbar-thumb {
+  background: var(--color-rule-strong, #b8ab98);
+  border-radius: 4px;
+}
+.quality-reader-table-wrap::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-muted, #8a7d6a);
+}
+
+/* 横滑时首列（维度）吸附在左侧，不随表格滚出视野 */
+.quality-reader-md table th:first-child,
+.quality-reader-md table td:first-child {
+  position: sticky;
+  left: 0;
+  background: var(--color-paper);
+  /* 盖住下方滚过的单元格 */
+  box-shadow: -1px 0 0 var(--color-rule), 1px 0 0 var(--color-rule);
+}
+/* 表头首格保持表头深色 */
+.quality-reader-md table th:first-child {
+  background: var(--color-paper-deep);
+}
+.quality-reader-md table tr:nth-child(even) td:first-child {
+  background: var(--color-paper-tint);
 }
 
 .quality-reader-md table {
