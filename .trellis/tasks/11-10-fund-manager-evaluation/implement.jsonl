@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/fund-select/backend/index.md", "reason": "fund-select 后端架构与 spec 入口，本任务在此包内新增经理维度"}
+{"file": ".trellis/spec/backend/fund-select/backend/contracts.md", "reason": "API/DB/前端链路契约，新增 /managers 路由须与现有分页不变量一致"}
