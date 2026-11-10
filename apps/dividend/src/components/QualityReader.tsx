@@ -109,8 +109,25 @@ export function QualityReader() {
 
         <h1 className="quality-reader-title">基本面资料阅读</h1>
 
-        {/* 不做公司下拉筛选：固定展示地址 code 指定的公司，翻篇只走上一篇/下一篇 */}
+        {/* 公司选择器：下拉直接跳到指定股票，翻篇仍可走上一篇/下一篇 */}
         <div className="quality-reader-controls">
+          <label className="quality-reader-select-label" htmlFor="quality-reader-company-select">
+            选择股票
+          </label>
+          <select
+            id="quality-reader-company-select"
+            className="quality-reader-select"
+            value={current?.code ?? ''}
+            onChange={(event) => switchTo(event.target.value)}
+            disabled={!reports.length}
+          >
+            {!reports.length && <option value="">加载中…</option>}
+            {reports.map((report) => (
+              <option key={report.code} value={report.code}>
+                {report.name}（{report.code}）
+              </option>
+            ))}
+          </select>
           <span className="quality-reader-progress" aria-live="polite">{progress}</span>
         </div>
 
