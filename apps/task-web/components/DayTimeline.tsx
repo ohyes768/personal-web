@@ -115,6 +115,9 @@ export default function DayTimeline({ tasks, date, todayStr }: {
         <div className={`slot-row${t.id === nextUpId ? " row-next-up" : ""}`} key={t.id}>
           <div className="slot-lbl" title={t.cron ? `${t.name}（${t.cron}）` : t.name}>
             <strong style={{ fontSize: 12 }}>{taskDisplayName(t.name)}</strong>
+            {t.group === "ai" && (
+              <span className="badge" style={{ background: "#7c3aed", marginLeft: 4, fontSize: 10 }}>AI</span>
+            )}
             {t.id === nextUpId && (
               <span className="badge" style={{ background: "#ea580c", marginLeft: 4, fontSize: 10 }}
                 title="这是下一个即将执行的任务">

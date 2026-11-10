@@ -7,11 +7,6 @@ import { apiGet } from "@/lib/api";
 import MonthCalendar from "@/components/MonthCalendar";
 import DayTimeline from "@/components/DayTimeline";
 
-const GROUP_TABS: { key: "script" | "ai"; label: string }[] = [
-  { key: "script", label: "脚本任务" },
-  { key: "ai", label: "AI 任务" },
-];
-
 const WEEKDAY_NAMES = ["日", "一", "二", "三", "四", "五", "六"];
 
 function pad(n: number): string {
@@ -46,7 +41,6 @@ function ScheduleInner() {
   const [viewMonth, setViewMonth] = useState(() => Number(initialDate.slice(5, 7)));
   const [summary, setSummary] = useState<Record<string, ScheduleSummaryDay>>({});
   const [day, setDay] = useState<ScheduleDayView | null>(null);
-  const [groupTab, setGroupTab] = useState<"script" | "ai">("script");
   const [onlyIssue, setOnlyIssue] = useState(false);
   const [error, setError] = useState("");
 
@@ -103,39 +97,20 @@ function ScheduleInner() {
   // 按当日最早槽位时间升序排列，时间轴从上到下即时间先后；无槽位的任务沉底
   const visibleTasks = useMemo(
     () => (day?.tasks ?? [])
-      .filter((t) => t.group === groupTab)
       .filter((t) => !onlyIssue || hasIssue(t))
       .sort((a, b) => {
         const ka = a.slots.reduce<string | null>((min, s) => !min || s.at < min ? s.at : min, null) ?? "9999";
         const kb = b.slots.reduce<string | null>((min, s) => !min || s.at < min ? s.at : min, null) ?? "9999";
         return ka < kb ? -1 : ka > kb ? 1 : 0;
       }),
-    [day, groupTab, onlyIssue],
+    [day, onlyIssue],
   );
 
   const weekday = WEEKDAY_NAMES[new Date(`${date}T00:00:00`).getDay()];
 
   return (
     <div>
-      <div className="filters" role="tablist">
-        {GROUP_TABS.map((g) => (
-          <button
-            key={g.key}
-            className="btn"
-            style={groupTab === g.key
-              ? { background: "#2563eb", color: "#fff", borderColor: "#2563eb" }
-              : undefined}
-            onClick={() => setGroupTab(g.key)}
-          >
-            {g.label}
-            <span
-              className="muted"
-              style={{ marginLeft: 6, color: groupTab === g.key ? "#dbeafe" : undefined }}
-            >
-              {(day?.tasks ?? []).filter((t) => t.group === g.key).length}
-            </span>
-          </button>
-        ))}
+      <div className="filters">
         <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer", fontSize: 13 }}>
           <input type="checkbox" checked={onlyIssue} onChange={(e) => setOnlyIssue(e.target.checked)} />
           只看异常
