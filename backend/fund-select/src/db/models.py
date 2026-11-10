@@ -35,8 +35,14 @@ class Fund(Base):
     size_yi = Column(Float, nullable=True)
     mgr_name = Column(String(256), nullable=True)
     mgr_company = Column(String(128), nullable=True)
+    # 共管基金的多经理聚合：min = 从业最短（最保守），max = 从业最长（老将）。
+    # mgr_days / mgr_experience_years 保留 min 语义（历史口径，夏普榜单快照已冻结）。
+    # 筛选（min_mgr_exp）改用 *_max：只要有资深经理在管即视为达标，
+    # 避免「22 年老将 + 3 年新人」被记成 3 年而误杀（详见 design 说明）。
     mgr_days = Column(Integer, nullable=True)
     mgr_experience_years = Column(Float, nullable=True)
+    mgr_days_max = Column(Integer, nullable=True)
+    mgr_experience_years_max = Column(Float, nullable=True)
     is_active = Column(Boolean, nullable=False, default=True, index=True)
     # tab 分类（4 个 tab）：'bond'（债基·市场）/ 'stock'（股基·市场）/ 'other'（FOF/货币型/未分类）
     # 由 SUBCLASS_TO_CATEGORY 表按 akshare 子类映射得出，避免「指数型-固收」错归股基。

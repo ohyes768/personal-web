@@ -5,8 +5,14 @@
 - fund_type ← ak.fund_name_em() 「基金类型」字段（不覆盖已有非空值）
 - mgr_name ← ak.fund_manager_em() 按 现任基金代码 反查，经理名用 `、` 拼接
 - mgr_company ← 多经理的第一位所属公司
-- mgr_days ← 多经理中从业最短天数（取 min，避免新经理顶掉老资历）
-- mgr_experience_years ← mgr_days / 365.25（保留 2 位小数）
+- mgr_days / mgr_experience_years ← 多经理中从业最短（min，保守口径，历史保留）
+- mgr_days_max / mgr_experience_years_max ← 多经理中从业最长（max，筛选口径）
+
+为什么同时存 min 和 max（09-xx 缺陷修复）：
+共管基金里「老将 + 新人」极其常见（全市场 7868 只共管基金中 4443 只，占 56.5%）。
+原先只有 min，导致「22 年老将 + 3 年新人」被记成 3 年，min_mgr_exp=5 直接误杀
+（债基 universe 1519 只、股基市场 526 只）。取 max 表示「该基金有资深经理在管」，
+符合"跟着谁买"的实际判断；min 保留给历史口径与集中度诊断。
 
 关键约束：
 - fund_type：仅在已有值为空时才覆盖（避免覆盖掉老 L2 雪球细分类）
@@ -104,7 +110,9 @@ def refresh(
             code = row.code
             try:
                 # mgr_* 字段聚合（取自 mgr_by_code，与 df 行无关）
-                mgr_name = mgr_company = mgr_days = mgr_exp_years = None
+                mgr_name = mgr_company = None
+                mgr_days = mgr_exp_years = None
+                mgr_days_max = mgr_exp_years_max = None
                 if write_mgr:
                     mgrs = mgr_by_code.get(code) or []
                     if mgrs:
@@ -114,12 +122,13 @@ def refresh(
                             (m["company"] for m in mgrs if m.get("company")), None
                         )
                         mgr_company = first_co or None
-                        # mgr_days：所有经理都有 days 时取 min
+                        # min = 最保守（历史口径）；max = 有资深经理在管（筛选口径）
                         days_list = [int(m["days"]) for m in mgrs if m.get("days") is not None]
-                        mgr_days = min(days_list) if days_list else None
-                        mgr_exp_years = (
-                            round(mgr_days / 365.25, 2) if mgr_days is not None else None
-                        )
+                        if days_list:
+                            mgr_days = min(days_list)
+                            mgr_days_max = max(days_list)
+                            mgr_exp_years = round(mgr_days / 365.25, 2)
+                            mgr_exp_years_max = round(mgr_days_max / 365.25, 2)
 
                 if code in existing_codes:
                     update_values: dict[str, Any] = dict(
@@ -140,6 +149,8 @@ def refresh(
                             mgr_company=mgr_company,
                             mgr_days=mgr_days,
                             mgr_experience_years=mgr_exp_years,
+                            mgr_days_max=mgr_days_max,
+                            mgr_experience_years_max=mgr_exp_years_max,
                         )
                     session.execute(
                         update(Fund).where(Fund.code == code).values(**update_values)
@@ -162,6 +173,8 @@ def refresh(
                         new_fund.mgr_company = mgr_company
                         new_fund.mgr_days = mgr_days
                         new_fund.mgr_experience_years = mgr_exp_years
+                        new_fund.mgr_days_max = mgr_days_max
+                        new_fund.mgr_experience_years_max = mgr_exp_years_max
                     session.add(new_fund)
                     inserted += 1
             except Exception as e:  # noqa: BLE001

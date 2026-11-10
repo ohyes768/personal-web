@@ -103,19 +103,41 @@ class TestRefreshMarketUniverseStage0:
         assert f.fund_type == "股票型"
 
     def test_multi_manager_join_and_min_days(self, db_session):
-        """多经理：name 用 `、` 拼接；days 取 min（保守估计）；company 取首位。"""
+        """多经理：name 用 `、` 拼接；min/max 同时写；company 取首位。"""
         df = _df_with_ft([("000001", "双经理基金", "混合型-灵活", "stock", "混合型-灵活")])
         mgr_by_code = self._mgr_by_code([
             ("000001", "陈染", "华夏基金", 5000),    # 老将
-            ("000001", "缪扬帆", "易方达基金", 1000),  # 新人 → min 取 1000
+            ("000001", "缪扬帆", "易方达基金", 1000),  # 新人
         ])
         refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
 
         f = db_session.get(Fund, "000001")
         assert f.mgr_name == "陈染、缪扬帆"   # 按 mgr_by_code list 顺序
         assert f.mgr_company == "华夏基金"      # 第一位
-        assert f.mgr_days == 1000              # min
+        # min：保守口径（历史保留）
+        assert f.mgr_days == 1000
         assert f.mgr_experience_years == round(1000 / 365.25, 2)
+        # max：筛选口径（有资深经理在管）
+        assert f.mgr_days_max == 5000
+        assert f.mgr_experience_years_max == round(5000 / 365.25, 2)
+
+    def test_veteran_not_dragged_down_by_rookie(self, db_session):
+        """回归锁：老将+新人共管时，max 必须保住老将年限（修复误杀）。
+
+        缺陷：原先只有 min，22 年老将 + 3 年新人被记成 3 年，
+        min_mgr_exp=5 会把整只基金误杀。
+        """
+        df = _df_with_ft([("000001", "老将共管基金", "股票型", "stock", "股票型")])
+        veteran, rookie = int(22.4 * 365.25), int(3.2 * 365.25)
+        mgr_by_code = self._mgr_by_code([
+            ("000001", "老将", "某基金", veteran),
+            ("000001", "新人", "某基金", rookie),
+        ])
+        refresh_market_universe(db_session, df, mgr_by_code=mgr_by_code)
+
+        f = db_session.get(Fund, "000001")
+        assert f.mgr_experience_years_max >= 5   # 老将在管 → 达标
+        assert f.mgr_experience_years < 5        # min 口径仍会判死（保留此证据）
 
     def test_update_existing_with_mgr_writes_mgr_only_keeps_fund_type(self, db_session):
         """已有行同时有 fund_type（不覆盖）+ mgr_by_code 提供 mgr（写入）。"""

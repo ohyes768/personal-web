@@ -25,7 +25,8 @@ profile（pipeline_profile 参数）：
   L2 后：+预筛 3（size_yi，funds 表已填）→ 最终 L3/L4/L5 用这个 codes
 
 仅接 3 个用户参数：
-  - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years）
+  - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years_max 优先，
+    未回填时回退 mgr_experience_years；共管取最长，避免资深经理被新人拉低）
   - min_ret_3y：近 3 年涨跌幅 ≥ X%（预筛 2，market_fund_rank.ret_3y）
   - min_size_yi：规模 ≥ Y 亿（预筛 3，funds.size_yi）
 
@@ -37,7 +38,7 @@ import uuid as _uuid
 from datetime import UTC, date, datetime, timedelta
 from typing import Optional
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 # 净值新鲜度后端常量：A 股工作日 5 天/周 + 节假日 buffer ≈ 14 天
@@ -94,9 +95,14 @@ def _load_market_universe(
         Fund.is_active == True,  # noqa: E712
         Fund.market_subtype.in_(all_types),
     )
-    # 预筛 1：经理从业（funds 表字段）
+    # 预筛 1：经理从业（共管取最长 *_max；未回填回退老字段，与 filter_service 同口径）
     if min_mgr_exp is not None:
-        q = q.where(Fund.mgr_experience_years >= min_mgr_exp)
+        q = q.where(
+            func.coalesce(
+                Fund.mgr_experience_years_max,
+                Fund.mgr_experience_years,
+            ) >= min_mgr_exp
+        )
     # 预筛 3：规模（funds 表字段；首次刷新多数 NULL，过滤会砍到 ~0）
     if min_size_yi is not None:
         q = q.where(Fund.size_yi >= min_size_yi)
@@ -261,7 +267,8 @@ def refresh_market_full_sync(
       "bond"  — 5 阶段（跳 L4 risk + L5 achievement；L6_fees_holdings 替代——债基详情页消费 fees/holdings）
 
     仅接 3 个用户参数：
-      - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years）
+      - min_mgr_exp：经理从业 ≥ W 年（预筛 1，funds.mgr_experience_years_max 优先，
+    未回填时回退 mgr_experience_years；共管取最长，避免资深经理被新人拉低）
       - min_ret_3y：近 3 年涨跌幅 ≥ X%（预筛 2，market_fund_rank.ret_3y）
       - min_size_yi：规模 ≥ Y 亿（预筛 3，funds.size_yi）
 

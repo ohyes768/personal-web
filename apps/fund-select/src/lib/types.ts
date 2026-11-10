@@ -31,6 +31,8 @@ export interface FundListItem {
   mgr_name: string | null;
   mgr_company: string | null;
   mgr_experience_years: number | null;
+  /** 共管取最长（筛选口径）；mgr_experience_years 是共管最短（历史保守口径） */
+  mgr_experience_years_max?: number | null;
   rate_bond_pct: number | null;
   fee_mgmt: number | null;
   fee_custody: number | null;

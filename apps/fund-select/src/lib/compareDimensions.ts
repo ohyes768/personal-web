@@ -18,7 +18,7 @@ const yi = (v: number) => `${v.toFixed(2)}亿`;
 export const fundCompareDimensions: Array<CompareDimension<FundListItem>> = [
   { key: 'size_yi', label: '规模', extract: f => f.size_yi, format: yi, direction: 'max' },
   { key: 'age_years', label: '成立年限', extract: f => f.age_years, format: years, direction: 'max' },
-  { key: 'mgr_exp', label: '经理从业年限', extract: f => f.mgr_experience_years, format: years, direction: 'max' },
+  { key: 'mgr_exp', label: '经理从业年限', extract: f => f.mgr_experience_years_max ?? f.mgr_experience_years, format: years, direction: 'max' },
   { key: 'dd_3y', label: '近3年最大回撤', extract: f => f.dd_3y, format: pct, direction: 'min-abs' },
   { key: 'ret_1y', label: '近1年收益', extract: f => f.ret_1y, format: signedPct, direction: 'max' },
   { key: 'ret_3y', label: '近3年收益', extract: f => f.ret_3y, format: signedPct, direction: 'max' },

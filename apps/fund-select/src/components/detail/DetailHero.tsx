@@ -130,11 +130,11 @@ export function DetailHero({ fund }: DetailHeroProps) {
         />
         <KpiCell
           label="经理从业"
-          value={
-            fund.mgr_experience_years !== null && fund.mgr_experience_years !== undefined
-              ? `${fund.mgr_experience_years.toFixed(1)} 年`
-              : '-'
-          }
+          value={(() => {
+            // 与筛选口径一致：共管取最长（max），缺失时回退老字段
+            const yr = fund.mgr_experience_years_max ?? fund.mgr_experience_years;
+            return yr !== null && yr !== undefined ? `${yr.toFixed(1)} 年` : '-';
+          })()}
           sub={fund.mgr_name ?? '-'}
         />
       </div>

@@ -47,6 +47,8 @@ class FundListItem(BaseModel):
     mgr_name: Optional[str] = None
     mgr_company: Optional[str] = None
     mgr_experience_years: Optional[float] = None
+    # 共管取最长（筛选口径）；mgr_experience_years 为共管最短（历史保守口径）
+    mgr_experience_years_max: Optional[float] = None
     rate_bond_pct: Optional[float] = None
     fee_mgmt: Optional[float] = None
     fee_custody: Optional[float] = None
@@ -97,6 +99,7 @@ class FundDetailResponse(BaseModel):
     mgr_company: Optional[str] = None
     mgr_days: Optional[int] = None
     mgr_experience_years: Optional[float] = None
+    mgr_experience_years_max: Optional[float] = None
     is_active: bool = True
     # 业绩全量
     ret_1m: Optional[float] = None

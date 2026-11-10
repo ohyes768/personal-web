@@ -24,6 +24,27 @@ def init_db() -> None:
     """建表（幂等，已存在的表不动）+ 老库列升级"""
     Base.metadata.create_all(engine)
     _ensure_market_type_column(engine)
+    _ensure_mgr_max_columns(engine)
+
+
+def _ensure_mgr_max_columns(engine) -> None:
+    """funds.mgr_days_max / mgr_experience_years_max：旧库需要 ALTER TABLE。
+
+    这两列是共管基金经理「取最长」的聚合值，供 min_mgr_exp 筛选使用；
+    新库由 create_all 直接建出。历史行为 NULL，下次 universe refresh 回填。
+    """
+    additions = (
+        ("mgr_days_max", "INTEGER"),
+        ("mgr_experience_years_max", "FLOAT"),
+    )
+    with engine.begin() as conn:
+        rows = conn.execute(text("PRAGMA table_info(funds)")).fetchall()
+        col_names = {row[1] for row in rows}
+        for name, col_type in additions:
+            if name in col_names:
+                continue
+            conn.execute(text(f"ALTER TABLE funds ADD COLUMN {name} {col_type}"))
+            logger.info("funds.%s 列已添加（旧库升级）", name)
 
 
 def _ensure_market_type_column(engine) -> None:

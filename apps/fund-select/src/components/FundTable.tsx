@@ -186,7 +186,13 @@ export function FundTable({
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.age_years, 1)}</td>
                 <td className={td}><DrawdownBar dd={fund.dd_3y} capPct={ddBarCapPct} /></td>
                 <td className={`${td} text-right`}>
-                  <div className="tnum whitespace-nowrap">{fund.mgr_experience_years != null ? `${fund.mgr_experience_years.toFixed(1)}年` : '-'}</div>
+                  {/* 显示与筛选同口径（共管取最长）：否则会出现「筛了≥5年却显示3.2年」 */}
+                  {(() => {
+                    const yr = fund.mgr_experience_years_max ?? fund.mgr_experience_years;
+                    return (
+                      <div className="tnum whitespace-nowrap">{yr != null ? `${yr.toFixed(1)}年` : '-'}</div>
+                    );
+                  })()}
                   <div className="text-[10px] text-ink-soft truncate" title={mgrTip}>
                     {fund.mgr_name || '-'}
                   </div>

@@ -67,10 +67,12 @@ def snapshot_fund(
 
     out["size_yi"] = parse_size(basic.get("最新规模", ""))
 
-    # 经理：多经理取从业最短（保守估计），公司取第一位命中的
+    # 经理：共管同时记录 min（保守，历史口径）与 max（有资深经理在管，筛选口径），
+    # 公司取第一位命中的。min 会把「老将+新人」判成新人而误杀，筛选一律用 max。
     mgr_name = _clean(basic.get("基金经理", ""))
     out["mgr_name"] = mgr_name
     mgr_days = None
+    mgr_days_max = None
     mgr_co = None
     for name in re.split(r"[、,，\s]+", mgr_name):
         name = name.strip()
@@ -79,10 +81,15 @@ def snapshot_fund(
         if name in mgr_worktime:
             d = int(mgr_worktime[name])
             mgr_days = d if mgr_days is None else min(mgr_days, d)
+            mgr_days_max = d if mgr_days_max is None else max(mgr_days_max, d)
         if mgr_co is None and name in mgr_company:
             mgr_co = mgr_company[name]
     out["mgr_days"] = mgr_days
     out["mgr_experience_years"] = round(mgr_days / 365.25, 2) if mgr_days is not None else None
+    out["mgr_days_max"] = mgr_days_max
+    out["mgr_experience_years_max"] = (
+        round(mgr_days_max / 365.25, 2) if mgr_days_max is not None else None
+    )
     out["mgr_company"] = mgr_co
 
     # 2. 净值 → 业绩
@@ -128,6 +135,8 @@ def persist_snapshot(db: Session, snap: dict) -> None:
         mgr_company=snap.get("mgr_company"),
         mgr_days=snap.get("mgr_days"),
         mgr_experience_years=snap.get("mgr_experience_years"),
+        mgr_days_max=snap.get("mgr_days_max"),
+        mgr_experience_years_max=snap.get("mgr_experience_years_max"),
         is_active=snap.get("is_active", True),
         updated_at=datetime.now(UTC),
     ))

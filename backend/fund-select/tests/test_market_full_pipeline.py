@@ -115,7 +115,7 @@ class TestLoadMarketUniverse:
     # ── 三段预筛新增测试 ─────────────────────────────────────────
 
     def test_stage1_filter_by_mgr_experience_years(self, db_session):
-        """预筛 1：min_mgr_exp=10 排除 mgr_experience_years < 10 的基金"""
+        """预筛 1：min_mgr_exp=10 排除经理年限 < 10 的基金"""
         db_session.add_all([
             _mk_fund("000001", "股票型", mgr_experience_years=15.0),
             _mk_fund("000002", "股票型", mgr_experience_years=8.0),
@@ -124,6 +124,36 @@ class TestLoadMarketUniverse:
         db_session.commit()
 
         codes = _load_market_universe(db_session, min_mgr_exp=10)
+        assert codes == ["000001"]
+
+    def test_stage1_uses_mgr_max_not_min(self, db_session):
+        """回归锁：预筛 1 用 max（共管取最长），老将+新人不再被误杀。
+
+        000001：min=3.2 年（新人）、max=22.4 年（老将）→ 应入选。
+        000002：只有 3.0 年单人 → 应排除。
+        """
+        db_session.add_all([
+            _mk_fund("000001", "股票型",
+                     mgr_experience_years=3.2, mgr_experience_years_max=22.4),
+            _mk_fund("000002", "股票型",
+                     mgr_experience_years=3.0, mgr_experience_years_max=3.0),
+        ])
+        db_session.commit()
+
+        codes = _load_market_universe(db_session, min_mgr_exp=5)
+        assert codes == ["000001"]
+
+    def test_stage1_falls_back_when_max_is_null(self, db_session):
+        """历史行 max 未回填（NULL）时回退老字段，不回退成「全部通过」。"""
+        db_session.add_all([
+            _mk_fund("000001", "股票型",
+                     mgr_experience_years=8.0, mgr_experience_years_max=None),
+            _mk_fund("000002", "股票型",
+                     mgr_experience_years=2.0, mgr_experience_years_max=None),
+        ])
+        db_session.commit()
+
+        codes = _load_market_universe(db_session, min_mgr_exp=5)
         assert codes == ["000001"]
 
     def test_stage3_filter_by_size_yi(self, db_session):

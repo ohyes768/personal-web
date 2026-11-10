@@ -144,7 +144,12 @@ def entry_predicate(
             if v is None or v < -abs(max_dd_3y):
                 return False
         if min_mgr_exp is not None:
-            v = _predicate_field(row, "mgr_experience_years")
+            # 用 *_max（共管取最长）：有资深经理在管即达标。
+            # 旧口径取 min 会把「22 年老将 + 3 年新人」判成 3 年而误杀。
+            # 兼容：max 列未回填（历史行为 NULL）时回退到 mgr_experience_years。
+            v = _predicate_field(row, "mgr_experience_years_max")
+            if v is None:
+                v = _predicate_field(row, "mgr_experience_years")
             if v is None or v < min_mgr_exp:
                 return False
         if min_sharpe is not None:
@@ -386,7 +391,13 @@ class FilterService:
             # 库内 dd_3y 为负值（如 -4.47），用户输入阈值按绝对值（如 5）
             q = q.where(FundPerformance.dd_3y >= -abs(max_dd_3y))
         if min_mgr_exp is not None:
-            q = q.where(Fund.mgr_experience_years >= min_mgr_exp)
+            # 共管取最长（*_max）；未回填时回退老字段，语义见 entry_predicate
+            q = q.where(
+                func.coalesce(
+                    Fund.mgr_experience_years_max,
+                    Fund.mgr_experience_years,
+                ) >= min_mgr_exp
+            )
         if min_sharpe is not None:
             # sharpe 为 NULL（无风险指标）的基金一并排除，与 dd_3y 筛选惯例一致
             q = q.where(FundRiskMetrics.sharpe >= min_sharpe)
@@ -442,7 +453,11 @@ class FilterService:
         key_map = {
             "size_yi": lambda it: it["size_yi"],
             "age_years": lambda it: it["age_years"],
-            "mgr_experience_years": lambda it: it["mgr_experience_years"],
+            "mgr_experience_years": lambda it: (
+                it["mgr_experience_years_max"]
+                if it.get("mgr_experience_years_max") is not None
+                else it["mgr_experience_years"]
+            ),
             "dd_3y": lambda it: None if it["dd_3y"] is None else abs(it["dd_3y"]),
             "ret_1y": lambda it: it["ret_1y"],
             "ret_3y": lambda it: it["ret_3y"],
@@ -502,6 +517,7 @@ class FilterService:
             "mgr_name": f.mgr_name,
             "mgr_company": f.mgr_company,
             "mgr_experience_years": f.mgr_experience_years,
+            "mgr_experience_years_max": f.mgr_experience_years_max,
             "rate_bond_pct": hold.rate_bond_pct if hold else None,
             "fee_mgmt": fee.fee_mgmt if fee else None,
             "fee_custody": fee.fee_custody if fee else None,
@@ -547,6 +563,7 @@ class FilterService:
             "mgr_company": f.mgr_company,
             "mgr_days": f.mgr_days,
             "mgr_experience_years": f.mgr_experience_years,
+            "mgr_experience_years_max": f.mgr_experience_years_max,
             "is_active": f.is_active,
             "ret_1m": p.ret_1m if p else None,
             "ret_6m": p.ret_6m if p else None,
