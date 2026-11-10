@@ -52,6 +52,21 @@ export default function DayTimeline({ tasks, date, todayStr }: {
       .sort((a, b) => a.frac - b.frac);
   }, [tasks]);
 
+  // 下一个马上要执行的任务：今天取当前时刻之后最早的槽位；未来日期取第一行有槽位的启用任务
+  const nextUpId = useMemo(() => {
+    let best: { id: string; frac: number } | null = null;
+    for (const t of tasks) {
+      if (!t.enabled) continue;
+      for (const s of t.slots) {
+        const frac = timeFrac(s.at);
+        if (isToday && frac <= nowFrac) continue;
+        if (!best || frac < best.frac) best = { id: t.id, frac };
+        break;
+      }
+    }
+    return best?.id ?? null;
+  }, [tasks, isToday, nowFrac]);
+
   function renderSlot(t: ScheduleTaskView, s: ScheduleSlot, i: number) {
     const left = { left: `${timeFrac(s.at) * 100}%` };
     const key = `s${i}`;
@@ -97,9 +112,15 @@ export default function DayTimeline({ tasks, date, todayStr }: {
       )}
       {tasks.length === 0 && <p className="muted">该筛选条件下无任务</p>}
       {tasks.map((t) => (
-        <div className="slot-row" key={t.id}>
+        <div className={`slot-row${t.id === nextUpId ? " row-next-up" : ""}`} key={t.id}>
           <div className="slot-lbl" title={t.cron ? `${t.name}（${t.cron}）` : t.name}>
             <strong style={{ fontSize: 12 }}>{taskDisplayName(t.name)}</strong>
+            {t.id === nextUpId && (
+              <span className="badge" style={{ background: "#ea580c", marginLeft: 4, fontSize: 10 }}
+                title="这是下一个即将执行的任务">
+                即将执行
+              </span>
+            )}
             {!t.enabled && (
               <span className="badge" style={{ background: "#6b7280", marginLeft: 4, fontSize: 10 }}>停用</span>
             )}

@@ -41,6 +41,9 @@ tr:last-child td { border-bottom: none; }
 /* 下一个即将执行的任务：整行淡橙底标注 */
 tr.row-next-up td { background: #fff7ed; }
 tr.row-next-up td:first-child { border-left: 3px solid #ea580c; }
+/* 时间轴（排期日历）里的同款标注 */
+.slot-row.row-next-up { background: #fff7ed; border-radius: 6px; }
+.slot-row.row-next-up .slot-lbl strong { color: #c2410c; }
 
 .badge { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 11px; color: #fff; white-space: nowrap; }
 .badge-stack { display: inline-flex; flex-direction: row; flex-wrap: wrap; gap: 4px; align-items: center; }
