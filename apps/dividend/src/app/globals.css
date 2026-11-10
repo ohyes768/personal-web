@@ -348,28 +348,17 @@ input[type="number"] {
   width: 100%;
   table-layout: auto;
 }
+/* 表格整体不撑出容器。不要给数据单元格设 nowrap：
+   真实报告的「证据来源」表有多列长文本，任何一列 nowrap 都会把
+   整表撑出容器、把「关键内容摘录」挤成几十像素宽的细长条。
+   表头都是短词，保持单行 */
 .quality-reader-md th,
 .quality-reader-md td {
   word-break: normal;
   overflow-wrap: normal;
 }
-/* 短列（维度/得分/权重等）保持单行，只有最后一列长文本换行；
-   列特别多时由 .quality-reader-table-wrap 的横滑兜底 */
-.quality-reader-md th:not(:last-child),
-.quality-reader-md td:not(:last-child) {
+.quality-reader-md th {
   white-space: nowrap;
-}
-/* 含链接/URL 的单元格（如「证据来源」）必须换行：URL 不再撑出超宽表格。
-   写成 :not(:last-child):has(a) 以盖过上面同特异性的 nowrap 规则 */
-.quality-reader-md th:has(a),
-.quality-reader-md td:has(a),
-.quality-reader-md th:not(:last-child):has(a),
-.quality-reader-md td:not(:last-child):has(a) {
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.quality-reader-md a {
-  overflow-wrap: anywhere;
 }
 
 .quality-reader-md pre {
