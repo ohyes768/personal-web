@@ -359,6 +359,18 @@ input[type="number"] {
 .quality-reader-md td:not(:last-child) {
   white-space: nowrap;
 }
+/* 含链接/URL 的单元格（如「证据来源」）必须换行：URL 不再撑出超宽表格。
+   写成 :not(:last-child):has(a) 以盖过上面同特异性的 nowrap 规则 */
+.quality-reader-md th:has(a),
+.quality-reader-md td:has(a),
+.quality-reader-md th:not(:last-child):has(a),
+.quality-reader-md td:not(:last-child):has(a) {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.quality-reader-md a {
+  overflow-wrap: anywhere;
+}
 
 .quality-reader-md pre {
   max-width: 100%;
