@@ -1,0 +1,36 @@
+{
+  "id": "nas-service-manager",
+  "name": "nas-service-manager",
+  "title": "NAS 服务管理台 V1 规划",
+  "description": "规划单 NAS Docker Compose 服务台账、部署路径、端口、域名证书、运行检查、GitHub Release 与导出恢复；仅规划，待评审。",
+  "status": "planning",
+  "dev_type": "fullstack",
+  "scope": "service-manager",
+  "package": null,
+  "priority": "P2",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-11-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    ".trellis/tasks/11-11-nas-service-manager/prd.md",
+    ".trellis/tasks/11-11-nas-service-manager/design.md",
+    ".trellis/tasks/11-11-nas-service-manager/implement.md",
+    ".trellis/tasks/11-11-nas-service-manager/research/findings.md"
+  ],
+  "notes": "2026-11-11 完成 V1 规划草案与 NAS 只读研究；等待用户评审，不启动实现。",
+  "meta": {
+    "target_packages": [
+      "apps/service-manager",
+      "backend/service-manager"
+    ]
+  }
+}

@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/guides/new-service-onboarding.md", "reason": "新模块部署接线、Nginx 路由、Compose、首页与开发脚本契约"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "采集、归一化、持久化、API 和 UI 的数据边界"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "返回首页、basePath 和前端质量约定"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows pytest basetemp 与真实文件操作约束"}
+{"file": ".trellis/tasks/11-11-nas-service-manager/research/findings.md", "reason": "已核实的 NAS 部署情况、方案选择与官方资料"}
