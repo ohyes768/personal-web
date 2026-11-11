@@ -179,23 +179,6 @@ export function FavoritesTrackingTab({
 
   return (
     <section aria-label="收藏跟踪" className="space-y-3">
-      {/* 顶部：说明 + 汇总 */}
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-ink">收藏跟踪</h2>
-          <p className="text-sm text-ink-muted">好公司先收藏，评估确认后价格才有尺度。收藏不自动评估，也不自动开启监控。</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-xs text-ink-muted">
-            {rows.length} 只收藏 · {monitoringCount} 只监控中
-            {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
-          </p>
-          {(valuationQueueView.runningCount > 0 || valuationQueueView.queuedCount > 0) && (
-            <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
-          )}
-        </div>
-      </div>
-
       {/* 待应用提示条 */}
       {pendingApplyCount > 0 && (
         <div className="rounded-lg border border-rule bg-paper-tint px-4 py-2.5 flex items-center justify-between gap-3">
@@ -225,13 +208,18 @@ export function FavoritesTrackingTab({
             </button>
           ))}
         </div>
+        <p className="ml-auto text-xs text-ink-muted">
+          {rows.length} 只收藏 · {monitoringCount} 只监控中
+          {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
+        </p>
+        <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
         <input
           type="search"
           value={searchInput}
           onChange={e => setSearchInput(e.target.value)}
           placeholder="搜索名称 / 代码"
           aria-label="搜索收藏的股票名称或代码"
-          className="ml-auto w-44 rounded border border-rule-strong bg-paper px-3 py-1.5 text-sm text-ink focus:outline-none focus:border-accent"
+          className="w-44 rounded border border-rule-strong bg-paper px-3 py-1.5 text-sm text-ink focus:outline-none focus:border-accent"
         />
       </div>
 
