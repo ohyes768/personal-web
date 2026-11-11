@@ -130,4 +130,8 @@ packages:
     path: apps/housing-map
   backend/index-trends:
     path: backend/index-trends
+  backend/service-manager:
+    path: backend/service-manager
+  apps/service-manager:
+    path: apps/service-manager
 default_package: backend/douyin-processor

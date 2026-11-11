@@ -1,6 +1,8 @@
 # New Service Onboarding Contract（新服务接入 monorepo 契约）
 
 > 来源：09-18-migrate-binjiang-housing-map 迁移任务。第 6 组服务 housing-map（前端 3007 / 后端 8096）按此契约接入，本文是该契约的权威表述。
+> 后续按同一契约接入的组：skill-manager（3008/8097）、kids-catalog（3009/8098）、index-trends（3010/8100）、
+> task-web（3011/8101）、**service-manager（3012/8102，另加一个 socket-proxy 容器与 `sm-docker-net` 专用 internal 网络）**。
 
 ## 1. Scope / Trigger
 

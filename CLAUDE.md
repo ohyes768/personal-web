@@ -16,6 +16,7 @@ apps/
 ├── kids-catalog/  # 宝宝音频库（Next.js 15, basePath /kids）
 ├── index-trends/  # 宽基趋势观察（Next.js 15 + ECharts, basePath /index-trends）
 ├── task-web/  # 定时任务管理（Next.js 15, basePath /tasks）
+├── service-manager/  # NAS 服务管理台（Next.js 15, basePath /services）
 └── rss-relay/   # RSS 转发
 
 backend/
@@ -28,6 +29,7 @@ backend/
 ├── kids-catalog/  # 宝宝音频库后端（FastAPI，月度榜单采集 + 喜马拉雅/蜻蜓免费专辑下载 + 设备歌单编号）
 ├── index-trends/  # 宽基趋势观察后端（FastAPI，沪深300周线通道与估值，每日刷新，SQLite 存储；Hermes 负责简报投递）
 ├── task-web/  # 定时任务管理后端（FastAPI + APScheduler，预登记任务调度/执行记录/日志，SQLite 存储）
+├── service-manager/  # NAS 服务管理台后端（FastAPI，服务台账 + 只读 Docker 发现 + URL/TLS/Release 检查，SQLite 存储）
 └── rss-relay/   # RSS 转发后端
 ```
 
@@ -113,6 +115,19 @@ python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8101
 # task-web 前端
 cd apps/task-web
 pnpm dev          # 端口 3011，访问 /tasks
+
+# service-manager（NAS 服务管理台，已在 monorepo 内）
+cd backend/service-manager
+uv sync
+uv run python -m pytest tests/ -v
+# 启动前需从 .env.local.example 复制出 .env.local 并填管理口令与签名密钥；
+# 本机直连 Docker 时 SERVICE_MANAGER_DOCKER_HOST=unix:///var/run/docker.sock
+python -m uvicorn src.main:app --reload --host 0.0.0.0 --port 8102
+# service-manager 前端
+cd apps/service-manager
+pnpm dev          # 端口 3012，访问 /services
+pnpm lint / pnpm exec tsc --noEmit / pnpm build
+pnpm exec playwright test    # e2e（需先起 8102 + 3012）
 ```
 
 ### Windows 开发脚本
@@ -125,6 +140,7 @@ scripts\start-housing-dev.bat   # 滨江购房地图
 scripts\start-skill-manager-dev.bat   # Skill 发布管理台
 scripts\start-index-trends-dev.bat   # 宽基趋势观察
 scripts\start-task-web-dev.bat   # 定时任务管理
+scripts\start-service-manager-dev.bat   # NAS 服务管理台
 ```
 
 ### Docker（本地）
@@ -186,6 +202,6 @@ docker compose down
 
 - 首页 `/` 是 `nginx/html/index.html` 静态驾驶舱（状态点 + KPI），由 nginx 容器从 `/var/www/personal`（仓库 `nginx/html/` 的 bind mount）serve；改它无需 restart nginx，改 `nginx/web.conf` 才需要 `./scripts/deploy-nas.sh nginx`
 - 不要在代码中硬编码端口号，使用环境变量
-- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，kids-catalog 用 `/kids`，index-trends 用 `/index-trends`，task-web 用 `/tasks`，其他无 basePath
+- 前端 `basePath` 配置：dividend 用 `/dividend`，douyin 用 `/douyin`，macro 用 `/macro`，housing-map 用 `/map`，skill-manager 用 `/skills`，kids-catalog 用 `/kids`，index-trends 用 `/index-trends`，task-web 用 `/tasks`，service-manager 用 `/services`，其他无 basePath
 - 所有环境变量文件（.env.local）已被 .gitignore 忽略，不要提交
 - 同一个 app 同时只允许运行一个 dev server 实例（`next dev` 独占 `.next` 目录，多实例会互相清缓存）。第二个会话需要验证时，直接复用已有端口的 server，不要另起实例或改端口

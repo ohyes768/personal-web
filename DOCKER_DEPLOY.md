@@ -56,6 +56,8 @@ curl http://localhost:8092/api/dividend/health  # dividend 后端健康检查
 - `/api/index-trends/*` → index-trends-backend:8100
 - `/tasks/*` → task-web-frontend:3011（basePath = /tasks）
 - `/api/task-web/*` → task-web-backend:8101
+- `/services/*` → service-manager-frontend:3012（basePath = /services）
+- `/api/services/*` → service-manager-backend:8102（nginx 剥前缀到后端 `/api/*`）
 
 **数据持久化**（使用 named volume）：
 - `dividend-data`、`dividend-logs`、`dividend-config`
@@ -63,6 +65,9 @@ curl http://localhost:8092/api/dividend/health  # dividend 后端健康检查
 - `skill-manager-state`
 - `index-trends-data`
 - `task-web-data`（SQLite + 运行日志；业务仓库 bind mount 见 docker-compose.nas.yml task-web-backend）
+- `service-manager-data`（SQLite 台账 + 恢复前备份）
+
+service-manager 后端读取 Docker 元数据的路径是 **socket-proxy**：只有 `service-manager-socket-proxy` 容器挂载 `/var/run/docker.sock:ro`，且 `POST=0` 只放行 GET/HEAD；后端通过专用 internal 网络 `service-manager-docker-net` 访问 proxy 的 2375，自己不挂 socket、不挂宿主目录。需要 NAS `.env` 提供 `SERVICE_MANAGER_ADMIN_PASSWORD` 与 `SERVICE_MANAGER_SESSION_SECRET`（缺失时 compose 直接拒绝启动），详见 [docs/service-manager-nas-setup.md](docs/service-manager-nas-setup.md)。
 
 skill-manager 后端额外需要四个宿主机目录的 bind mount（Skills 源库、GitHub 缓存、OpenClaw/Hermes 技能目录）与管理密码，均在 NAS `.env` 中配置，详见 [docs/skill-manager-nas-setup.md](docs/skill-manager-nas-setup.md)。
 

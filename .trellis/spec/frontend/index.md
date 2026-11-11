@@ -9,6 +9,7 @@
 - For apps/dividend fundamental-report reading work (the `/quality-reader` page, the main-page entry, or the shared report body), read [基本面资料阅读页前端契约](./dividend-quality-reader.md); it fixes the reading-collection order, the `code`-as-identity URL rule, and the `/dividend` prefix handling.
 - For apps/dividend 「全部」页股票搜索（搜索条、`/api/dividend/stocks?search=`、只看收藏时收窄到收藏 codes），read [股息率「全部」页股票搜索契约](../backend/dividend-select/backend/stock-search-contract.md).
 - For apps/skill-manager UI work, read [skill-manager control language](./skill-manager-ui.md); use `lib/ui.ts` constants, never hand-rolled button/input classes.
+- For apps/service-manager（NAS 服务管理台，`/services`）, read [service-manager frontend contract](../apps/service-manager/frontend/index.md); 状态展示铁律（五个维度不许合并、未配置 health 不许显示「健康」、端口范围提示）与 SafeLink/真实 URL 约束都在那里。
 - For apps/macro time-series charts, read [ECharts contracts](./macro-echarts.md).
 - For apps/index-trends candlestick+channel charts, read [index-trends ECharts contracts](./index-trends-echarts.md); the valuation display contract lives in the same file.
 - For apps/fund-select 夏普榜单页（`/funds/sharpe-board`）或其图表/展示筛选，read [fund-sharpe-board 前端契约](./fund-sharpe-board.md); 后端周榜/聚合契约在同包 backend contracts §13.
