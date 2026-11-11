@@ -81,11 +81,14 @@ def _profile_override(task: dict) -> str | None:
 
 
 def _task_env(task: dict) -> dict[str, str]:
-    """合并顺序：env_file → 生效 profile 的凭证 env_file → yaml 显式 env → 强制 HERMES_PROFILE。
+    """合并顺序：env_file → 生效 profile 的凭证 env_file → yaml 显式 env → 强制注入项。
 
     profile 的凭证文件排在登记 env_file 之后（切换 profile 时网关地址/API key 以 profile
-    为准），yaml 显式 env 再覆盖其余变量；`HERMES_PROFILE` 最后强制写入，避免 yaml 里
-    为防漂移写死的旧值压过页面新选的 profile。
+    为准），yaml 显式 env 再覆盖其余变量；`HERMES_PROFILE` / `HERMES_TIMEOUT` 最后强制写入。
+
+    HERMES_TIMEOUT 强制对齐任务的 yaml `timeout`：脚本内的轮询截止时间与容器看门狗
+    必须同源，否则短的那条先断。此前两者独立——gw-8643.env 里写死 1800 会压过
+    yaml 的 3600，导致登记 1 小时的任务 30 分钟就 exit 3（2026-11-11 修复）。
     """
     env: dict[str, str] = {}
     env.update(parse_env_file(task.get("env_file")))
@@ -105,6 +108,12 @@ def _task_env(task: dict) -> dict[str, str]:
     # 登记的 prompt 直接注入 HERMES_PROMPT：触发脚本唯一 prompt 来源（2026-11-11 起）
     if task.get("prompt"):
         env["HERMES_PROMPT"] = task["prompt"]
+    # 轮询截止时间与容器看门狗同源（2026-11-11）：以任务 timeout 覆盖 env_file 里的旧值。
+    # 留 30s 余量让脚本先到点、按 exit 3 写出“轮询超时”日志，再由看门狗兜底杀容器，
+    # 避免容器先被杀导致日志里只剩一句“容器超时”而非真实超时原因。
+    timeout = task.get("timeout_seconds") or task.get("default_timeout")
+    if timeout:
+        env["HERMES_TIMEOUT"] = str(max(int(timeout) - 30, 60))
     return env
 
 

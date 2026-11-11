@@ -104,6 +104,32 @@ def test_task_env_merges_yaml_and_file(env, tmp_path):
     assert merged["SHARED"] == "yaml"  # yaml 显式 env 覆盖 env_file（2026-11-06 反转：显式声明优先）
 
 
+def test_task_env_timeout_follows_task_timeout(env, tmp_path):
+    """回归（2026-11-11）：HERMES_TIMEOUT 必须跟随任务 timeout，不能被 env_file 写死的旧值压过。
+
+    此前 gw-8643.env 里 `HERMES_TIMEOUT=1800` 会覆盖一切，导致 yaml 登记 timeout=3600
+    的任务实际 30 分钟就 exit 3（200 分钟级任务还会撞上）。这里固定"任务 timeout 胜出"。
+    """
+    f = tmp_path / "gw.env"
+    f.write_text("HERMES_TIMEOUT=1800\n", encoding="utf-8")
+    merged = executor._task_env({"env_file": str(f), "timeout_seconds": 3600})
+    assert merged["HERMES_TIMEOUT"] == "3570"  # 3600 - 30s 余量，让脚本先于看门狗到点
+
+
+def test_task_env_timeout_left_alone_without_task_timeout(env, tmp_path):
+    """无任务 timeout 时不注入，env_file 的既有值保持原样（不误伤非 AI 任务）。"""
+    f = tmp_path / "gw.env"
+    f.write_text("HERMES_TIMEOUT=1800\n", encoding="utf-8")
+    merged = executor._task_env({"env_file": str(f)})
+    assert merged["HERMES_TIMEOUT"] == "1800"
+
+
+def test_task_env_timeout_floor(env):
+    """极短 timeout 不产生 <=0 的轮询预算（下限 60s）。"""
+    merged = executor._task_env({"timeout_seconds": 30})
+    assert merged["HERMES_TIMEOUT"] == "60"
+
+
 def test_task_volumes_parse(env):
     task = {"volumes": json.dumps(["/h/a:/c/a", "/h/b:/c/b:ro"])}
     assert executor._task_volumes(task) == {
