@@ -432,3 +432,39 @@ douyin-processor 参照 dividend/macro 内建调度模式新增 src/scheduler �
 ### Next Steps
 
 - None - task complete
+
+
+## Session 61: Dividend 全部页股票搜索上线——完整收集池匹配与星标复用
+
+**Date**: 2026-11-11
+**Task**: Dividend 全部页股票搜索上线——完整收集池匹配与星标复用
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+后端 /stocks?search= 在完整收集池按名称/代码包含匹配（zfill6 保留前导零、忽略股息率阈值、codes 取交集、相关度排序、纯读不采集）；前端「全部」页搜索条（300ms 防抖+序号防旧覆盖），显示分支=搜索>只看收藏>阈值列表，结果复用星标收藏；无匹配明确空状态；useTechnicalData 改全量 M120 Map 派生避免搜索重拉。验证：后端 380 passed（新增 21 例）、前端 tsc/lint 0 error、45 单测、4 e2e、真实 uvicorn 联调确认阈值绕过与 codes 交集。沉淀 .trellis/spec/backend/dividend-select/backend/stock-search-contract.md。已知既有失败（stash 对照证明与本次无关）：test_quality_service flaky、quality-reader 布局 e2e、Windows standalone symlink 构建限制。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `88f5bc1c` | (see git log) |
+| `73a546da` | (see git log) |
+| `298bb542` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
