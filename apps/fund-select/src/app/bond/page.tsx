@@ -42,7 +42,6 @@ function FundsPageInner() {
         activeFilterCount={activeCount}
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
-        filters={filters}
         exportKind="bond"
       />
 

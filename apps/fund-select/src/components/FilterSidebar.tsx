@@ -27,7 +27,8 @@ interface FilterPanelProps {
 }
 
 export interface Dimension {
-  key: NumericFilterKey;
+  /** 基金 tab 收窄到 NumericFilterKey；经理 tab 复用时用它自己的键（同名 query 参数） */
+  key: NumericFilterKey | string;
   label: string;
   unit: string;
   min: number;
@@ -48,7 +49,31 @@ export const STOCK_DIMENSIONS: Dimension[] = [
   { key: 'min_sharpe', label: '夏普', unit: '', min: -1, max: 2, step: 0.1 },
 ];
 
-function DimensionControl({ dim, value, onChange, disabled = false }: {
+/** 筛选卡片外壳：标题「筛选」+「清空」。基金 tab 与经理 tab 共用，
+ *  避免两套页面各自写 shell 后视觉漂移。 */
+export function FilterPanelShell({ children, onClearAll, activeCount }: {
+  children: React.ReactNode;
+  onClearAll: () => void;
+  activeCount: number;
+}) {
+  return (
+    <div className="bg-paper-card rounded-lg border border-rule">
+      <div className="px-2.5 py-2 border-b border-rule flex items-center justify-between gap-1">
+        <span className="text-xs font-semibold text-ink-strong">筛选</span>
+        <button
+          onClick={onClearAll}
+          disabled={activeCount === 0}
+          className="text-[11px] text-ink-muted hover:text-down disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          清空
+        </button>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+export function DimensionControl({ dim, value, onChange, disabled = false }: {
   dim: Dimension;
   value: number | null;
   onChange: (v: number | null) => void;
@@ -153,24 +178,14 @@ export function FilterPanel({
   dimensions = DIMENSIONS,
 }: FilterPanelProps) {
   return (
-    <div className="bg-paper-card rounded-lg border border-rule">
-      <div className="px-2.5 py-2 border-b border-rule flex items-center justify-between gap-1">
-        <span className="text-xs font-semibold text-ink-strong">筛选</span>
-        <button
-          onClick={onClearAll}
-          disabled={activeCount === 0}
-          className="text-[11px] text-ink-muted hover:text-down disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          清空
-        </button>
-      </div>
+    <FilterPanelShell onClearAll={onClearAll} activeCount={activeCount}>
       {dimensions.map(dim => (
         <DimensionControl
           key={dim.key}
           dim={dim}
-          value={filters[dim.key]}
+          value={filters[dim.key as NumericFilterKey]}
           disabled={lockedFields.includes(dim.key)}
-          onChange={v => onChange(dim.key, v)}
+          onChange={v => onChange(dim.key as FilterKey, v)}
         />
       ))}
       {showMarketTypes && (
@@ -192,6 +207,6 @@ export function FilterPanel({
           <span className="text-xs font-medium text-ink-strong">排除 QDII</span>
         </label>
       )}
-    </div>
+    </FilterPanelShell>
   );
 }

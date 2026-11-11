@@ -798,3 +798,94 @@ perf = db.get(FundPerformance, code).dd_3y
 # Correct — 只读 capture 冻结快照（含 freeze_dd_rows 合并的 dd_3y）
 pred_input = capture.base_rows[code] | {"sharpe": capture.risk_rows[code]["sharpe"]}
 ```
+
+---
+
+## 14. 经理维度：采集刷新契约（11-11-fund-manager-tab-refresh）
+
+### 14.1 端点是 `/managers/refresh`，注册顺序在 `/{manager_id}` 之前
+
+`GET /api/funds/managers/refresh` 与 `/managers/refresh/status` 必须注册在
+`/managers/{manager_id}` **之前**。FastAPI 按注册顺序匹配，反了会把 `refresh`
+当作经理 ID 走详情查询（404「经理不存在: refresh」）。
+`test_refresh_route_not_swallowed_by_detail_route` 同时断言存在性与顺序。
+
+```python
+# Correct —— 静态段在前
+@router_managers.get("/refresh")           ...
+@router_managers.get("/refresh/status")    ...
+@router_managers.get("/{manager_id}")      ...
+```
+
+### 14.2 `force` 是刷新语义的分水岭
+
+`manager_refresh.refresh(force=False)` 默认保持断点续采（只采 `fetched_at IS NULL`）。
+API 入口固定传 `force=True`：经理档案没有增量口径（东财不提供变更时间），
+「刷新」的唯一正确含义是全量覆盖。
+
+```python
+# Wrong —— 只接入口不改采集，第二次点刷新空转（pending_ids 恒为空）
+background.add_task(refresh_managers, db)
+# Correct
+refresh_managers(db, task_id=task_id, force=True)
+```
+
+幂等靠 `_replace_tenures`（按 `manager_id` 先 delete 再 insert），不是 upsert。
+
+### 14.3 `RefreshRun` 三字段按「人」计
+
+| 字段 | 契约 |
+|---|---|
+| `total` | 本轮 `pending_ids` 人数（M1 算完 scope 才有值；之前为 0） |
+| `completed` | 每人递增内存值，每 5 人落库（`PROGRESS_COMMIT_EVERY`） |
+| `failed` | 同上 |
+
+页面进度条用 `(completed + failed) / total`。因为 `total` 在 M1 之后才确定，
+刷新端点先 commit 一个空 `RefreshRun` 拿到 `task_id`，采集线程再回填。
+
+### 14.4 `RefreshRun.errors` 必须是 JSON 数组字符串
+
+`/refresh/status` 契约是 `errors: list[str]`，实现走 `json.loads(run.errors)`。
+写入方必须 `json.dumps(list)`：
+
+```python
+# Wrong —— 换行拼接，前端 json.loads 抛错后 errors 恒为空
+run.errors = "\n".join(stats["errors"])
+# Correct
+run.errors = json.dumps(stats["errors"][:20], ensure_ascii=False)[:1900]
+```
+
+读取方对非 JSON 旧行降级为 `[raw]`，不能 500。
+
+### 14.5 长任务必须单飞
+
+全量采集 1881 人 × 0.3s ≈ 40 分钟。`threading.Lock` 非阻塞 `acquire` 失败 → 409，
+不重复起线程：两个线程同时 `_replace_tenures` 同一批经理会撞
+`uq_tenure_mfc` 唯一键。
+
+后台体自己开 `SessionLocal()`（`BackgroundTasks` 与 `get_db` 依赖生命周期不同），
+`finally` 里关 session 并**释放锁**——漏释放会让后续刷新永久 409。
+
+### 14.6 前端长任务轮询节奏
+
+`RefreshStatusPopover` 对 managers 用 10s 轮询（`POLL_INTERVAL_SLOW_MS`）。
+1s 轮询跑 40 分钟会打出约 2400 次请求。判断依据是 `refreshUrl.includes('/managers/')`。
+
+### 14.7 经理 tab 必须复用共享表现层
+
+`managers/page.tsx` 曾自建 header + 内联筛选行 + 文字箭头排序，与其余 5 tab 视觉漂移。
+契约：**任何 tab 都不得自写 header**——`FundsHeader` 是唯一入口
+（加 tab 就扩 `FundsTab` / `TITLE` / `REFRESH_URL`，必要时加 `totalUnit`）；
+筛选面板用 `FilterPanelShell` + `DimensionControl`；排序用 `SortableHeader`。
+
+### 14.8 排序白名单要覆盖所有可排序列
+
+页面给了排序按钮，`VALID_SORTS` / `SORT_COLUMNS` / getter 三处必须同步，
+否则该列点了会静默退回默认排序。「最长任期」列曾错绑 `managed_fund_count`
+且 `longest_tenure_years` 不在白名单——排序结果按「管理过几只」排，语义错。
+
+### 14.9 页面需 `Suspense` 包裹
+
+`FundsHeader` 内部 `useSearchParams()`（`?scheduler=1` 自动开齿轮弹框），
+静态预渲染要求页面在 Suspense 边界内，否则 `pnpm build` 报
+`useSearchParams() should be wrapped in a suspense boundary`。

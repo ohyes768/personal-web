@@ -20,20 +20,22 @@ import { FundsNavigation } from './FundsNavigation';
 import { FullRefreshDialog } from './FullRefreshDialog';
 import { RefreshStatusPopover } from './RefreshStatusPopover';
 import { SchedulerDialog } from './SchedulerDialog';
-import type { FullRefreshFilters, FundFilters, RefreshStatus } from '@/lib/types';
+import type { FullRefreshFilters, RefreshStatus } from '@/lib/types';
 
-export type FundsTab = 'bond' | 'stock' | 'discovery-bond' | 'discovery-stock';
+export type FundsTab = 'bond' | 'stock' | 'discovery-bond' | 'discovery-stock' | 'managers';
 
 interface FundsHeaderProps {
   active: FundsTab;
   total: number;
+  /** 总数单位：基金 tab 是「只」，经理 tab 是「人」 */
+  totalUnit?: string;
   activeFilterCount: number;
   onOpenMobileFilter: () => void;
   /** 「债基」时由父级调 reset 回调；「股票」也同 */
   onRefreshed: () => void;
-  filters: FundFilters;
   /** 刷新接口选择：'stock' → /funds/api/funds/stock/*，
-   *  'discovery-bond'/'discovery-stock' → /funds/api/funds/discovery-*/
+   *  'discovery-bond'/'discovery-stock' → /funds/api/funds/discovery-*，
+   *  'managers' → /funds/api/funds/managers/refresh */
   exportKind: FundsTab;
   /** 全量 refresh 完成回调（仅 discovery-* tab 传）：同步预筛选值到左侧 */
   onFullRefreshComplete?: (preFilters: FullRefreshFilters) => void;
@@ -46,13 +48,15 @@ const TITLE: Record<FundsTab, string> = {
   'stock': '股基·雪球三分法',
   'discovery-bond': '债基·市场',
   'discovery-stock': '股基·市场',
+  'managers': '经理·股票基金',
 };
 
-/** 老 tab 的 refresh 端点（仅 bond / stock：刷 yaml 60 只业绩）。
+/** tab 的 refresh 端点（bond / stock 刷 yaml 名单业绩；managers 刷经理档案）。
  *  discovery-* tab 已合并到「全量刷新」按钮（pipeline L0 自动跑 fund_name_em）。 */
 const REFRESH_URL: Partial<Record<FundsTab, string>> = {
   'bond': '/funds/api/funds/refresh',
   'stock': '/funds/api/funds/stock/refresh',
+  'managers': '/funds/api/funds/managers/refresh',
 };
 
 /** discovery-* tab 的全量 refresh：start 闭包 + poll 闭包（避免组件持有 URL 字符串） */
@@ -73,10 +77,10 @@ const FULL_REFRESH_API: Partial<Record<FundsTab, {
 export function FundsHeader({
   active,
   total,
+  totalUnit = '只',
   activeFilterCount,
   onOpenMobileFilter,
   onRefreshed,
-  filters,
   exportKind,
   onFullRefreshComplete,
   preFilters,
@@ -137,7 +141,7 @@ export function FundsHeader({
             </>
           )}
           <span className="hidden sm:inline text-sm text-ink-muted">
-            共 <span className="tnum font-semibold text-ink-strong">{total}</span> 只
+            共 <span className="tnum font-semibold text-ink-strong">{total}</span> {totalUnit}
           </span>
           <button
             onClick={onOpenMobileFilter}

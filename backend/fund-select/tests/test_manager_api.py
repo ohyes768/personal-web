@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 from fastapi.testclient import TestClient
 
-from src.db.models import Base, Fund, Manager, ManagerTenure
+from src.db.models import Fund, Manager, ManagerTenure
 from src.main import app
 
 
@@ -126,3 +126,79 @@ class TestDetail:
         r = client.get("/api/funds/000011")
         assert r.status_code == 200
         assert r.json()["code"] == "000011"
+
+
+class TestRefreshRoutes:
+    """刷新端点（11-11）：路由顺序 + 单飞 + 状态轮询口径。"""
+
+    def test_refresh_status_404_when_no_run(self, client, seeded):
+        r = client.get("/api/funds/managers/refresh/status", params={"task_id": "nope"})
+        assert r.status_code == 404
+
+    def test_refresh_status_reads_run(self, client, db_session, seeded):
+        from src.db.models import RefreshRun
+        db_session.add(RefreshRun(task_id="t1", status="running", total=10, completed=3, failed=1))
+        db_session.commit()
+        r = client.get("/api/funds/managers/refresh/status", params={"task_id": "t1"})
+        assert r.status_code == 200
+        assert r.json() == {
+            "task_id": "t1", "status": "running", "total": 10,
+            "completed": 3, "failed": 1, "errors": [],
+        }
+
+    def test_refresh_status_errors_parsed_as_list(self, client, db_session, seeded):
+        """errors 列是 JSON 数组字符串；非 JSON 旧行降级成单元素列表，不 500。"""
+        from src.db.models import RefreshRun
+        db_session.add_all([
+            RefreshRun(task_id="tj", status="partial", errors='["m1: 超时", "m2: 404"]'),
+            RefreshRun(task_id="tb", status="error", errors="裸文本错误"),
+        ])
+        db_session.commit()
+        assert client.get("/api/funds/managers/refresh/status",
+                          params={"task_id": "tj"}).json()["errors"] == ["m1: 超时", "m2: 404"]
+        assert client.get("/api/funds/managers/refresh/status",
+                          params={"task_id": "tb"}).json()["errors"] == ["裸文本错误"]
+
+    def test_refresh_route_not_swallowed_by_detail_route(self, client, seeded):
+        """/managers/refresh 必须命中刷新端点，不能被 /{manager_id} 当成经理 ID 吞掉。"""
+        paths = app.openapi()["paths"]
+        assert "/api/funds/managers/refresh" in paths
+        assert "/api/funds/managers/refresh/status" in paths
+        # 顺序守卫：refresh 的注册必须早于 /{manager_id}（FastAPI 按序匹配）
+        ordered = [p for p in paths if p.startswith("/api/funds/managers/")]
+        assert ordered.index("/api/funds/managers/refresh") < ordered.index(
+            "/api/funds/managers/{manager_id}"
+        )
+
+    def test_refresh_409_when_already_running(self, client, seeded, monkeypatch):
+        """并发保护：已有采集在跑时返回 409，不重复起任务。"""
+        from src.api import manager_routes as mr
+
+        class _BusyLock:
+            def acquire(self, blocking=True):
+                return False
+
+            def release(self):
+                pass
+
+        monkeypatch.setattr(mr, "_refresh_lock", _BusyLock())
+        r = client.get("/api/funds/managers/refresh")
+        assert r.status_code == 409
+
+
+class TestSortLongestTenure:
+    """最长任期列可排序（页面「最长任期」列原来错绑 managed_fund_count）。"""
+
+    def test_sort_longest_tenure_years(self, client, db_session, seeded):
+        from src.db.models import Manager
+        for mid, years in (("m1", 3.0), ("m2", 9.5), ("m3", 6.0)):
+            m = db_session.get(Manager, mid)
+            m.longest_tenure_years = years
+        db_session.commit()
+
+        r = client.get("/api/funds/managers/screen", params={"sort": "longest_tenure_years"})
+        assert r.status_code == 200
+        got = [it["longest_tenure_years"] for it in r.json()["items"]
+               if it["longest_tenure_years"] is not None]
+        assert got == sorted(got, reverse=True)
+        assert got[0] == 9.5

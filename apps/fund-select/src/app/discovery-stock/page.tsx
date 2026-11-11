@@ -85,7 +85,6 @@ function DiscoveryStockPageInner() {
         activeFilterCount={activeCount}
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
-        filters={filters}
         exportKind="discovery-stock"
         onFullRefreshComplete={handleFullRefreshComplete}
         preFilters={preFilters}

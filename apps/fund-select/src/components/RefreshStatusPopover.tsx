@@ -18,10 +18,15 @@ interface RefreshStatusPopoverProps {
 }
 
 const POLL_INTERVAL_MS = 1000;  // 市场 tab 全量 27800 只 ~10s 完成；1s 轮询才能看到进度跳动
+/** 长任务（经理采集 20-40 分钟）用这个节奏：1s 轮询会打出上千次请求 */
+const POLL_INTERVAL_SLOW_MS = 10000;
 
 /** 根据 statusUrl 推断刷新文案（覆盖默认「拉取配置名单 31 只基金」老文案） */
 function describeScope(refreshUrl?: string): string {
   if (!refreshUrl) return '拉取配置名单 31 只基金（净值 / 季报持仓 / 费率），约 2-3 分钟';
+  if (refreshUrl.includes('/managers/')) {
+    return '重采全部经理档案与代表基金净值，约 20-40 分钟（按人数推进）';
+  }
   if (refreshUrl.includes('discovery')) return '拉取全市场基金名单（约 2-3 万只），约 10-30 秒';
   if (refreshUrl.includes('/stock/')) return '拉取股票基金名单（约 30 只），约 2-3 分钟';
   return '拉取数据中…';
@@ -79,7 +84,10 @@ export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: Ref
       }
       // 立即轮询一次（不等 interval），让用户尽快看到 running 状态
       // （背景任务 27800 只可能 10s 完成，5s 间隔太迟）
-      timerRef.current = setInterval(() => pollOnce(r.task_id), POLL_INTERVAL_MS);
+      const interval = refreshUrl?.includes('/managers/')
+        ? POLL_INTERVAL_SLOW_MS
+        : POLL_INTERVAL_MS;
+      timerRef.current = setInterval(() => pollOnce(r.task_id), interval);
       pollOnce(r.task_id);
     } catch (e) {
       setStatus({
@@ -133,7 +141,9 @@ export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: Ref
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-ink-muted">
-                    {status.status === 'running' ? '进行中' : status.status === 'done' ? '完成' : '出错'}
+                    {status.status === 'running' ? '进行中'
+                      : status.status === 'done' ? '完成'
+                      : status.status === 'partial' ? '部分完成' : '出错'}
                     ：{status.completed}/{status.total}
                   </span>
                   {status.failed > 0 && (

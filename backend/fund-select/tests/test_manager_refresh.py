@@ -1,5 +1,5 @@
 """manager_refresh 编排单测：全 mock，不联网。"""
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
@@ -153,3 +153,74 @@ def test_manager_re_fetch_replaces_tenures(db_with_funds):
 
     rows = db_with_funds.query(ManagerTenure).filter_by(manager_id="m1").all()
     assert len(rows) == 1  # 不是 2 条
+
+
+def test_force_refetches_even_when_fetched(db_with_funds):
+    """force=True：已采过的经理也重采（档案变更靠这个更新，不是一次性采集）。"""
+    db_with_funds.add(Manager(manager_id="m_done", name="已采", fetched_at=datetime.now(UTC)))
+    db_with_funds.commit()
+
+    table = [_mk_table_row("m_done", "已采", "华夏基金", ["000011"], 5000)]
+    calls = []
+
+    def tenure_provider(mid):
+        calls.append(mid)
+        return _tenures("000011")
+
+    refresh(db_with_funds, fetch_nav=False, force=True, table_provider=lambda: table,
+            tenure_provider=tenure_provider, nav_provider=lambda c: [],
+            profile_fetch_delay_s=0)
+    assert calls == ["m_done"]
+
+
+def test_force_false_default_keeps_resume_semantics(db_with_funds):
+    """不传 force 就是断点续采（向后兼容）：已采的不再拉。"""
+    db_with_funds.add(Manager(manager_id="m_done", name="已采", fetched_at=datetime.now(UTC)))
+    db_with_funds.commit()
+
+    table = [_mk_table_row("m_done", "已采", "华夏基金", ["000011"], 5000)]
+    calls = []
+    refresh(db_with_funds, fetch_nav=False, table_provider=lambda: table,
+            tenure_provider=lambda mid: (calls.append(mid), _tenures("000011"))[1],
+            nav_provider=lambda c: [], profile_fetch_delay_s=0)
+    assert calls == []
+
+
+def test_progress_total_reports_pending_count(db_with_funds):
+    """进度分母 = 本轮待采人数，刷新页面的进度条靠它。"""
+    from src.db.models import RefreshRun
+
+    table = [
+        _mk_table_row("m1", "张三", "华夏基金", ["000011"], 5000),
+        _mk_table_row("m2", "李四", "易方达基金", ["000022"], 5000),
+    ]
+    refresh(db_with_funds, task_id="t_prog", fetch_nav=False, force=True,
+            table_provider=lambda: table,
+            tenure_provider=lambda mid: _tenures("000011"),
+            nav_provider=lambda c: [], profile_fetch_delay_s=0)
+
+    run = db_with_funds.get(RefreshRun, "t_prog")
+    assert run.total == 2
+    assert run.completed == 2
+    assert run.finished_at is not None
+
+
+def test_errors_persisted_as_json_array(db_with_funds):
+    """RefreshRun.errors 契约是 JSON 数组字符串（/refresh/status 要 json.loads 解析）。"""
+    import json
+
+    from src.db.models import RefreshRun
+
+    table = [_mk_table_row("m_bad", "会失败", "华夏基金", ["000011"], 5000)]
+
+    def tenure_provider(mid):
+        raise RuntimeError("网络超时")
+
+    refresh(db_with_funds, task_id="t_err", fetch_nav=False,
+            table_provider=lambda: table, tenure_provider=tenure_provider,
+            nav_provider=lambda c: [], profile_fetch_delay_s=0)
+
+    run = db_with_funds.get(RefreshRun, "t_err")
+    parsed = json.loads(run.errors)
+    assert isinstance(parsed, list)
+    assert any("m_bad" in e for e in parsed)

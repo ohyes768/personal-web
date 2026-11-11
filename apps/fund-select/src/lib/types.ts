@@ -95,7 +95,8 @@ export interface StatsResponse {
 
 export interface RefreshStatus {
   task_id: string;
-  status: 'running' | 'done' | 'error';
+  /** partial：部分经理采集失败，其余已入库（经理采集会出现，基金刷新不会） */
+  status: 'running' | 'done' | 'partial' | 'error';
   total: number;
   completed: number;
   failed: number;

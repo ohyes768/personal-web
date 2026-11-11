@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from src.db.models import Manager, ManagerTenure
@@ -22,6 +22,7 @@ SORT_COLUMNS: dict[str, tuple] = {
     "calmar": (Manager.calmar, "desc"),
     "current_scale_yi": (Manager.current_scale_yi, "desc"),
     "managed_fund_count": (Manager.managed_fund_count, "asc"),
+    "longest_tenure_years": (Manager.longest_tenure_years, "desc"),
     "name": (Manager.name, "asc"),
 }
 
@@ -65,7 +66,7 @@ class ManagerService:
         rows = self.db.execute(q).scalars().all()
         items = [self._to_dto(m) for m in rows]
 
-        col, default_desc = SORT_COLUMNS.get(sort, SORT_COLUMNS["weighted_annual"])
+        _col, default_desc = SORT_COLUMNS.get(sort, SORT_COLUMNS["weighted_annual"])
         descending = (order != "asc") if sort in SORT_COLUMNS else default_desc
         getter = {
             "career_years": lambda it: it["career_years"],
@@ -75,6 +76,7 @@ class ManagerService:
             "calmar": lambda it: it["calmar"],
             "current_scale_yi": lambda it: it["current_scale_yi"],
             "managed_fund_count": lambda it: None if it["managed_fund_count"] is None else -it["managed_fund_count"],
+            "longest_tenure_years": lambda it: it["longest_tenure_years"],
             "name": lambda it: it["name"],
         }.get(sort, lambda it: it["weighted_annual"])
 

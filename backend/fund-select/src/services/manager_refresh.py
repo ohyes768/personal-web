@@ -11,6 +11,7 @@ RefreshRun 记进度（复用现有机制，task_id 前缀 manager_refresh）。
 """
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, date, datetime
 from typing import Any, Optional
@@ -27,7 +28,6 @@ from src.db.models import Fund, Manager, ManagerTenure, RefreshRun
 from src.services.manager_metrics import (
     annualize,
     compute_risk,
-    is_active_equity,
     pick_representative,
     slice_series,
     weighted_annual,
@@ -38,6 +38,9 @@ logger = setup_logger("fund-select.manager_refresh")
 
 BATCH_LOG_EVERY = 50
 BATCH_COMMIT_EVERY = 20
+# 进度落库批次：比 BATCH_COMMIT_EVERY 更密，进度条才跟得上一人 ~0.3s 的节奏；
+# 只 commit 不重置，代价是每人一次 SQLite 写，与采集耗时相比可忽略。
+PROGRESS_COMMIT_EVERY = 5
 
 
 def refresh(
@@ -50,12 +53,15 @@ def refresh(
     tenure_provider=fetch_manager_tenures,
     nav_provider=fetch_adjusted_series,
     active_codes_provider=None,
+    force: bool = False,
 ) -> dict:
     """全量采集 + 聚合。providers 可注入以便测试 mock。
 
     Args:
         active_codes_provider: () -> set[str]，库内主动权益基金代码集合；
             None 则实时查 funds 表。
+        force: True = 重采 scope 内全部经理（覆盖档案变更：新增/离任/规模调整）；
+            False = 断点续采，只采 fetched_at IS NULL 的（首采/中断续采）。
     """
     run: RefreshRun | None = None
     if task_id:
@@ -104,11 +110,16 @@ def refresh(
         # 保留已采集过的（scope 内）+ 本次命中的；scope 外的经理行保留骨架但不采档案
         logger.info("M1 库内主动权益 %d 只基金，涉及经理 %d 人", len(active_codes), len(scoped_ids))
 
-        scoped_table = {r["manager_id"]: r for r in table if r["manager_id"] in scoped_ids}
-        pending_ids = [mid for mid in scoped_ids if _needs_fetch(session, mid)]
+        pending_ids = (list(scoped_ids) if force
+                       else [mid for mid in scoped_ids if _needs_fetch(session, mid)])
         if max_managers is not None:
             pending_ids = pending_ids[:max_managers]
-        logger.info("M2 待采档案 %d / %d 人", len(pending_ids), len(scoped_ids))
+        logger.info("M2 待采档案 %d / %d 人（force=%s）", len(pending_ids), len(scoped_ids), force)
+
+        # 进度分母：本轮待采人数（页面进度条用 completed/total）
+        if run is not None:
+            run.total = len(pending_ids)
+            session.commit()
 
         # ── M2/M3/M4 逐人采集与聚合 ──
         done = 0
@@ -141,11 +152,12 @@ def refresh(
             done += 1
             if done % BATCH_LOG_EVERY == 0:
                 logger.info("M2/M3 进度 %d/%d", done, len(pending_ids))
-            if done % BATCH_COMMIT_EVERY == 0:
+            if run is not None:
+                # 进度条按人推进：内存里每人更新，落库按 PROGRESS_COMMIT_EVERY 批
+                run.completed = done
+                run.failed = stats["failed"]
+            if done % PROGRESS_COMMIT_EVERY == 0:
                 session.commit()
-                if run is not None:
-                    run.completed = done
-                    session.commit()
             time.sleep(profile_fetch_delay_s)
 
         session.commit()
@@ -163,7 +175,8 @@ def refresh(
         run.completed = done
         run.failed = stats["failed"]
         if stats["errors"]:
-            run.errors = "\n".join(stats["errors"])[:1000]
+            # RefreshRun.errors 契约是 JSON 数组字符串（/refresh/status 用 json.loads 解析）
+            run.errors = json.dumps(stats["errors"][:20], ensure_ascii=False)[:1900]
         run.finished_at = datetime.now(UTC)
         session.commit()
 

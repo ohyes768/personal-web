@@ -85,7 +85,6 @@ function DiscoveryBondPageInner() {
         activeFilterCount={activeCount}
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
-        filters={filters}
         exportKind="discovery-bond"
         onFullRefreshComplete={handleFullRefreshComplete}
         preFilters={preFilters}

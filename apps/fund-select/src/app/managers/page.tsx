@@ -3,15 +3,22 @@
  *
  * 以经理为主体的列表：从业年限 / 加权年化 / 回撤 / 规模筛选 + 排序 + 分页。
  * 点击行展开历任基金（含已离任，按需拉取 /managers/{id}）。
- * 只读页面，无刷新入口（采集走 scheduler / 手动脚本，不在页面伪造）。
+ *
+ * 视觉契约（任务 11-11-fund-manager-tab-refresh）：与另外 5 个 tab 统一——
+ *   FundsHeader（返回首页 / 标题 / 导航 / 总数 / 刷新 / 齿轮）
+ *   + FilterPanelShell/DimensionControl（桌面左栏、窄屏 sheet 同一套表单）
+ *   + FilterChipBar 语义的激活条件 chips + SortableHeader 三态排序图标
+ * 不自己写 header、不写顶部内联筛选行、不用文字箭头排序。
  */
 'use client';
 
-import { ArrowPathIcon } from '@heroicons/react/24/outline';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowPathIcon, FunnelIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { FundsNavigation } from '@/components/FundsNavigation';
+import { FilterPanelShell, DimensionControl, type Dimension } from '@/components/FilterSidebar';
+import { FundsHeader } from '@/components/FundsHeader';
 import { Pagination } from '@/components/Pagination';
+import { SortableHeader } from '@/components/SortableHeader';
 import {
   MANAGER_DEFAULT_FILTERS,
   managerApi,
@@ -25,11 +32,31 @@ const fmtPct = (v: number | null, digits = 1) =>
   v != null ? `${v.toFixed(digits)}%` : '-';
 const fmtNum = (v: number | null, digits = 1) => (v != null ? v.toFixed(digits) : '-');
 
-export default function ManagersPage() {
+/** 经理筛选维度：键与后端 query 参数同名，DropdownControl 直接按 key 取值 */
+const MANAGER_DIMENSIONS: Dimension[] = [
+  { key: 'min_career_years', label: '从业年限', unit: '年', min: 0, max: 40, step: 1 },
+  { key: 'min_weighted_annual', label: '加权年化', unit: '%', min: -20, max: 50, step: 1 },
+  { key: 'max_drawdown', label: '最大回撤', unit: '%', min: 0, max: 100, step: 5 },
+  { key: 'min_scale_yi', label: '在管规模', unit: '亿', min: 0, max: 2000, step: 10 },
+];
+
+type NumericKey = 'min_career_years' | 'min_weighted_annual' | 'max_drawdown' | 'min_scale_yi';
+const NUMERIC_KEYS: NumericKey[] = ['min_career_years', 'min_weighted_annual', 'max_drawdown', 'min_scale_yi'];
+
+/** chip 文案：与基金 tab 的 FilterChipBar 同构（label + 关系符 + 值） */
+const CHIP_LABELS: Record<NumericKey, { label: string; fmt: (v: number) => string }> = {
+  min_career_years: { label: '从业年限', fmt: v => `≥ ${v} 年` },
+  min_weighted_annual: { label: '加权年化', fmt: v => `≥ ${v}%` },
+  max_drawdown: { label: '最大回撤', fmt: v => `≤ ${v}%` },
+  min_scale_yi: { label: '在管规模', fmt: v => `≥ ${v} 亿` },
+};
+
+function ManagersPageInner() {
   const [filters, setFilters] = useState<ManagerFilters>(MANAGER_DEFAULT_FILTERS);
   const [data, setData] = useState<ManagerScreenResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   // 展开的经理详情（按需拉取）
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -41,6 +68,22 @@ export default function ManagersPage() {
   const setFilter = useCallback(<K extends keyof ManagerFilters>(key: K, value: ManagerFilters[K]) => {
     setFilters(prev => ({ ...prev, [key]: value, page: 1 }));
   }, []);
+
+  /** 三态排序：同列再点切方向（与基金表 SortableHeader 行为一致） */
+  const toggleSort = useCallback((field: string) => {
+    setFilters(prev => prev.sort === field
+      ? { ...prev, order: prev.order === 'desc' ? 'asc' : 'desc', page: 1 }
+      : { ...prev, sort: field, order: 'desc', page: 1 });
+  }, []);
+
+  const clearAll = useCallback(() => {
+    setFilters(prev => ({ ...MANAGER_DEFAULT_FILTERS, sort: prev.sort, order: prev.order }));
+  }, []);
+
+  const activeCount = useMemo(
+    () => NUMERIC_KEYS.filter(k => filters[k] != null).length + (filters.keyword ? 1 : 0),
+    [filters],
+  );
 
   const load = useCallback(() => {
     abortRef.current?.abort();
@@ -76,99 +119,184 @@ export default function ManagersPage() {
       .finally(() => setDetailLoading(false));
   }, [expandedId]);
 
+  const panel = (
+    <FilterPanelShell onClearAll={clearAll} activeCount={activeCount}>
+      {MANAGER_DIMENSIONS.map(dim => (
+        <DimensionControl
+          key={dim.key}
+          dim={dim}
+          value={filters[dim.key as NumericKey]}
+          onChange={v => setFilter(dim.key as NumericKey, v)}
+        />
+      ))}
+    </FilterPanelShell>
+  );
+
   return (
-    <div className="min-h-screen bg-paper">
-      <header className="sticky top-0 z-10 bg-paper/95 backdrop-blur border-b border-rule">
-        <div className="max-w-6xl mx-auto px-4 py-2 flex items-center justify-between gap-3">
-          <h1 className="text-base font-semibold text-ink-strong whitespace-nowrap">经理·股票基金</h1>
-          <FundsNavigation active="managers" />
-        </div>
-      </header>
-      <main className="max-w-6xl mx-auto px-4 py-4">
-        {/* 筛选栏 */}
-        <div className="flex items-center gap-2 flex-wrap text-sm mb-3">
-          <NumInput label="从业≥" value={filters.min_career_years} unit="年"
-            onChange={v => setFilter('min_career_years', v)} />
-          <NumInput label="年化≥" value={filters.min_weighted_annual} unit="%"
-            onChange={v => setFilter('min_weighted_annual', v)} />
-          <NumInput label="回撤≤" value={filters.max_drawdown} unit="%"
-            onChange={v => setFilter('max_drawdown', v)} />
-          <NumInput label="规模≥" value={filters.min_scale_yi} unit="亿"
-            onChange={v => setFilter('min_scale_yi', v)} />
+    <main className="min-h-screen pb-20">
+      <FundsHeader
+        active="managers"
+        total={data?.total ?? 0}
+        totalUnit="人"
+        activeFilterCount={activeCount}
+        onOpenMobileFilter={() => setSheetOpen(true)}
+        onRefreshed={load}
+        exportKind="managers"
+      />
+
+      <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
+        {/* 激活条件 chips（与基金 tab 的 FilterChipBar 同构）+ 关键词输入 */}
+        <div className="flex items-center gap-2 flex-wrap py-1.5">
+          {activeCount === 0 ? (
+            <span className="flex items-center gap-1.5 text-xs text-ink-soft">
+              <FunnelIcon className="w-3.5 h-3.5" />
+              未筛选
+            </span>
+          ) : (
+            <>
+              {NUMERIC_KEYS.filter(k => filters[k] != null).map(key => {
+                const v = filters[key] as number;
+                const meta = CHIP_LABELS[key];
+                return (
+                  <span
+                    key={key}
+                    className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-info-tint text-info"
+                  >
+                    {meta.label} {meta.fmt(v)}
+                    <button
+                      onClick={() => setFilter(key, null)}
+                      className="hover:text-down"
+                      aria-label={`移除${meta.label}筛选`}
+                    >
+                      <XMarkIcon className="w-3 h-3" />
+                    </button>
+                  </span>
+                );
+              })}
+              {filters.keyword && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-info-tint text-info">
+                  姓名/公司: {filters.keyword}
+                  <button
+                    onClick={() => setFilter('keyword', null)}
+                    className="hover:text-down"
+                    aria-label="移除关键词筛选"
+                  >
+                    <XMarkIcon className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+            </>
+          )}
+          {/* 关键词是自由文本，面板里放不下输入框，独占这一行右侧 */}
           <input
             value={filters.keyword ?? ''}
             onChange={e => setFilter('keyword', e.target.value || null)}
-            placeholder="姓名/公司"
-            className="border border-rule rounded px-2 py-1 w-28 bg-white"
-            aria-label="搜索经理"
+            placeholder="搜索姓名 / 公司"
+            aria-label="搜索经理姓名或公司"
+            className="ml-auto w-40 px-2 py-0.5 text-xs border border-rule rounded bg-paper-card text-ink-strong focus:outline-none focus:border-info"
           />
-          <button
-            onClick={() => setFilters(MANAGER_DEFAULT_FILTERS)}
-            className="text-ink-muted hover:text-ink-strong underline text-xs"
-          >
-            重置
-          </button>
-          <span className="ml-auto text-ink-muted text-xs">
-            {loading ? '加载中…' : data ? `共 ${data.total} 人` : ''}
-          </span>
         </div>
 
         {error && (
-          <div className="mb-3 text-sm text-red-600" role="alert">{error}</div>
+          <div className="mb-3 text-sm text-down" role="alert">{error}</div>
         )}
 
-        {/* 表格 */}
-        <div className="bg-white rounded border border-rule overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-ink-muted border-b border-rule text-xs">
-                <SortableTh label="经理" active={filters} setFilter={setFilter} sortKey="name" />
-                <th className="px-2 py-2">公司</th>
-                <SortableTh label="从业" active={filters} setFilter={setFilter} sortKey="career_years" />
-                <SortableTh label="加权年化" active={filters} setFilter={setFilter} sortKey="weighted_annual" />
-                <SortableTh label="最长任期" active={filters} setFilter={setFilter} sortKey="managed_fund_count" />
-                <SortableTh label="回撤" active={filters} setFilter={setFilter} sortKey="max_drawdown" />
-                <SortableTh label="夏普" active={filters} setFilter={setFilter} sortKey="sharpe" />
-                <SortableTh label="规模" active={filters} setFilter={setFilter} sortKey="current_scale_yi" />
-                <th className="px-2 py-2 text-right">在管</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(data?.items ?? []).map(m => (
-                <ManagerRow
-                  key={m.manager_id}
-                  manager={m}
-                  expanded={expandedId === m.manager_id}
-                  detail={expandedId === m.manager_id ? detail : null}
-                  detailLoading={expandedId === m.manager_id && detailLoading}
-                  onToggle={() => toggleExpand(m.manager_id)}
-                />
-              ))}
-              {!loading && data && data.items.length === 0 && (
-                <tr><td colSpan={9} className="px-2 py-8 text-center text-ink-muted">
-                  没有符合条件的经理
-                </td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
+          <aside className="hidden lg:block sticky top-16">{panel}</aside>
 
-        {/* 分页 */}
-        <Pagination
-          page={filters.page}
-          limit={filters.limit}
-          total={data?.total ?? 0}
-          onPageChange={p => setFilter('page', p)}
-          onLimitChange={n => setFilter('limit', n)}
-        />
+          <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
+            <table className="w-full table-fixed text-xs">
+              <thead className="border-b border-rule-strong">
+                <tr>
+                  <SortableHeader label="经理" field="name" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} align="left" className="w-[8.5rem]" />
+                  <th className="px-1.5 py-2 text-left text-xs font-medium text-ink-muted">公司</th>
+                  <SortableHeader label="从业" field="career_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="加权年化" field="weighted_annual" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="最长任期" field="longest_tenure_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="回撤" field="max_drawdown" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="夏普" field="sharpe" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="规模" field="current_scale_yi" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <th className="px-1.5 py-2 text-right text-xs font-medium text-ink-muted">在管</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && !data && (
+                  <tr>
+                    <td colSpan={9} className="p-8">
+                      <div className="space-y-2 animate-pulse" aria-label="加载中">
+                        {Array.from({ length: 6 }).map((_, i) => (
+                          <div key={i} className="h-8 bg-paper-tint rounded" />
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                {!loading && data && data.items.length === 0 && (
+                  <tr>
+                    <td colSpan={9} className="p-12 text-center text-ink-muted">
+                      暂无数据，请调整筛选条件
+                    </td>
+                  </tr>
+                )}
+                {(data?.items ?? []).map(m => (
+                  <ManagerRow
+                    key={m.manager_id}
+                    manager={m}
+                    expanded={expandedId === m.manager_id}
+                    detail={expandedId === m.manager_id ? detail : null}
+                    detailLoading={expandedId === m.manager_id && detailLoading}
+                    onToggle={() => toggleExpand(m.manager_id)}
+                  />
+                ))}
+              </tbody>
+            </table>
+
+            <Pagination
+              page={filters.page}
+              limit={filters.limit}
+              total={data?.total ?? 0}
+              onPageChange={p => setFilters(prev => ({ ...prev, page: p }))}
+              onLimitChange={n => setFilters(prev => ({ ...prev, limit: n, page: 1 }))}
+            />
+          </section>
+        </div>
 
         <p className="mt-4 text-xs text-ink-muted leading-relaxed">
           口径说明：加权年化 = 排除债基/货币/FOF 后按管理天数加权（避免经理自选代表作）；
           回撤/夏普取代表基金（主动权益优先、任期最长、在管优先）按任职窗口的复权净值计算。
           数据源：天天基金经理档案（每日非实时）。
         </p>
-      </main>
-    </div>
+      </div>
+
+      {/* 窄屏筛选 sheet：与基金 tab 的 FilterSheet 同一套表单，这里内联避免多传一层 props */}
+      {sheetOpen && (
+        <>
+          <div className="fixed inset-0 bg-black/40 z-40 lg:hidden" onClick={() => setSheetOpen(false)} aria-hidden="true" />
+          <div
+            className="fixed bottom-0 left-0 right-0 z-50 bg-paper rounded-t-2xl max-h-[80vh] overflow-y-auto lg:hidden"
+            role="dialog"
+            aria-modal="true"
+            aria-label="筛选条件"
+          >
+            <div className="sticky top-0 bg-paper px-4 py-3 flex items-center justify-between border-b border-rule">
+              <span className="font-semibold text-ink-strong">筛选</span>
+              <button onClick={() => setSheetOpen(false)} className="p-1 text-ink-muted hover:text-ink-strong" aria-label="关闭筛选">
+                <XMarkIcon className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-3">
+              {panel}
+              <button
+                onClick={() => setSheetOpen(false)}
+                className="w-full mt-3 py-2.5 text-sm font-medium text-white bg-accent hover:bg-accent-hover rounded-lg"
+              >
+                查看结果
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </main>
   );
 }
 
@@ -179,69 +307,72 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
   detailLoading: boolean;
   onToggle: () => void;
 }) {
+  const td = 'px-1.5 py-1.5';
   return (
     <>
       <tr
         onClick={onToggle}
         className={`border-b border-rule cursor-pointer transition-colors hover:bg-paper-tint ${expanded ? 'bg-info-tint' : ''}`}
       >
-        <td className="px-2 py-1.5 font-medium text-ink-strong whitespace-nowrap">
-          {m.name}
+        <td className={`${td} text-ink-strong`}>
+          <div className="truncate" title={m.name}>{m.name}</div>
           {m.representative_fund && (
-            <span className="ml-1 text-[10px] text-ink-soft font-mono">{m.representative_fund}</span>
+            <div className="text-[10px] text-ink-soft font-mono truncate">{m.representative_fund}</div>
           )}
         </td>
-        <td className="px-2 py-1.5 text-ink-muted whitespace-nowrap">{m.company ?? '-'}</td>
-        <td className="px-2 py-1.5 tnum text-right">{fmtNum(m.career_years)}</td>
-        <td className={`px-2 py-1.5 tnum text-right font-medium ${(m.weighted_annual ?? 0) >= 10 ? 'text-up' : (m.weighted_annual ?? 0) < 0 ? 'text-down' : ''}`}>
+        <td className={`${td} text-ink-muted`}>
+          <div className="truncate" title={m.company ?? ''}>{m.company ?? '-'}</div>
+        </td>
+        <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.career_years)}</td>
+        <td className={`${td} text-right tnum whitespace-nowrap font-medium ${(m.weighted_annual ?? 0) >= 10 ? 'text-up' : (m.weighted_annual ?? 0) < 0 ? 'text-down' : ''}`}>
           {fmtPct(m.weighted_annual)}
         </td>
-        <td className="px-2 py-1.5 tnum text-right">{fmtNum(m.longest_tenure_years)}</td>
-        <td className={`px-2 py-1.5 tnum text-right ${(m.max_drawdown ?? 0) <= -60 ? 'text-down' : ''}`}>
+        <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.longest_tenure_years)}</td>
+        <td className={`${td} text-right tnum whitespace-nowrap ${(m.max_drawdown ?? 0) <= -60 ? 'text-down' : ''}`}>
           {fmtPct(m.max_drawdown)}
         </td>
-        <td className="px-2 py-1.5 tnum text-right">{fmtNum(m.sharpe, 2)}</td>
-        <td className="px-2 py-1.5 tnum text-right">{fmtNum(m.current_scale_yi, 0)}</td>
-        <td className="px-2 py-1.5 tnum text-right text-ink-muted">
+        <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.sharpe, 2)}</td>
+        <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.current_scale_yi, 0)}</td>
+        <td className={`${td} text-right tnum whitespace-nowrap text-ink-muted`}>
           {m.current_fund_count ?? '-'}/{m.managed_fund_count ?? '-'}
         </td>
       </tr>
       {expanded && (
         <tr className="bg-paper-tint">
-          <td colSpan={9} className="px-4 py-3">
+          <td colSpan={9} className="px-3 py-3">
             {detailLoading ? (
               <span className="text-xs text-ink-muted inline-flex items-center gap-1">
                 <ArrowPathIcon className="w-3 h-3 animate-spin" /> 加载历任基金…
               </span>
             ) : detail?.tenures?.length ? (
               <div>
-                <div className="text-xs text-ink-muted mb-1">
+                <div className="text-[11px] text-ink-muted mb-1.5">
                   历任基金 {detail.tenures.length} 只（含离任）· 代表基金按高亮行计算风险指标
                 </div>
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-left text-ink-muted border-b border-rule">
-                      <th className="py-1 pr-2">代码</th>
-                      <th className="py-1 pr-2">名称</th>
-                      <th className="py-1 pr-2">类型</th>
-                      <th className="py-1 pr-2 text-right">规模(亿)</th>
-                      <th className="py-1 pr-2">任职期间</th>
-                      <th className="py-1 pr-2 text-right">天数</th>
-                      <th className="py-1 pr-2 text-right">任职回报</th>
-                      <th className="py-1 text-right">年化</th>
+                      <th className="py-1 pr-2 font-medium">代码</th>
+                      <th className="py-1 pr-2 font-medium">名称</th>
+                      <th className="py-1 pr-2 font-medium">类型</th>
+                      <th className="py-1 pr-2 text-right font-medium">规模(亿)</th>
+                      <th className="py-1 pr-2 font-medium">任职期间</th>
+                      <th className="py-1 pr-2 text-right font-medium">天数</th>
+                      <th className="py-1 pr-2 text-right font-medium">任职回报</th>
+                      <th className="py-1 text-right font-medium">年化</th>
                     </tr>
                   </thead>
                   <tbody>
                     {detail.tenures.map(t => (
-                      <tr key={`${t.fund_code}-${t.start_date}`} className="border-b border-rule/50">
-                        <td className="py-1 pr-2 font-mono text-info">{t.fund_code}</td>
+                      <tr key={`${t.fund_code}-${t.start_date}`} className="border-b border-rule/50 last:border-b-0">
+                        <td className="py-1 pr-2 font-mono text-info whitespace-nowrap">{t.fund_code}</td>
                         <td className="py-1 pr-2">
-                          {t.fund_name}
+                          <span className="truncate">{t.fund_name}</span>
                           {!t.is_current && <span className="ml-1 text-[10px] text-ink-soft">已离任</span>}
                         </td>
                         <td className="py-1 pr-2 text-ink-muted">{t.fund_type ?? '-'}</td>
                         <td className="py-1 pr-2 tnum text-right">{fmtNum(t.size_yi, 1)}</td>
-                        <td className="py-1 pr-2 text-ink-muted">{t.start_date}~{t.end_date ?? '至今'}</td>
+                        <td className="py-1 pr-2 text-ink-muted whitespace-nowrap">{t.start_date}~{t.end_date ?? '至今'}</td>
                         <td className="py-1 pr-2 tnum text-right">{t.tenure_days ?? '-'}</td>
                         <td className={`py-1 pr-2 tnum text-right ${(t.tenure_return ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
                           {fmtPct(t.tenure_return)}
@@ -264,48 +395,10 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
   );
 }
 
-function NumInput({ label, value, unit, onChange }: {
-  label: string;
-  value: number | null;
-  unit: string;
-  onChange: (v: number | null) => void;
-}) {
+export default function ManagersPage() {
   return (
-    <label className="inline-flex items-center gap-1 text-ink-muted">
-      {label}
-      <input
-        type="number"
-        value={value ?? ''}
-        onChange={e => {
-          const v = e.target.value;
-          onChange(v === '' ? null : Number(v));
-        }}
-        className="border border-rule rounded px-1.5 py-1 w-16 bg-white tnum"
-        aria-label={label}
-      />
-      {unit}
-    </label>
-  );
-}
-
-function SortableTh({ label, active, setFilter, sortKey }: {
-  label: string;
-  active: ManagerFilters;
-  setFilter: <K extends keyof ManagerFilters>(key: K, value: ManagerFilters[K]) => void;
-  sortKey: string;
-}) {
-  const isActive = active.sort === sortKey;
-  return (
-    <th className="px-2 py-2 text-right">
-      <button
-        onClick={() => setFilter('sort' as keyof ManagerFilters, sortKey as never)}
-        onDoubleClick={() => setFilter('order', isActive && active.order === 'desc' ? 'asc' : 'desc')}
-        className={`hover:text-ink-strong ${isActive ? 'text-ink-strong' : ''}`}
-        title="单击按此列排序（默认降序），双击切换升/降"
-      >
-        {label}
-        {isActive && <span className="ml-0.5">{active.order === 'asc' ? '↑' : '↓'}</span>}
-      </button>
-    </th>
+    <Suspense fallback={<div className="p-8 text-ink-muted">加载中…</div>}>
+      <ManagersPageInner />
+    </Suspense>
   );
 }
