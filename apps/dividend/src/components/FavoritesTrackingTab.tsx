@@ -406,7 +406,18 @@ function TrackingRow({
           if (!levels) return null;
           const levelCount = VALUATION_LEVEL_KEYS.filter(key => levels[key]?.price).length;
           if (levelCount >= 2) {
-            return <ValuationPriceBar levels={levels} currentPrice={currentPrice} variant="effective" title="当前生效挡位" />;
+            return (
+              <ValuationPriceBar
+                levels={levels}
+                currentPrice={currentPrice}
+                currentPE={price?.pe ?? null}
+                currentPB={price?.pb ?? null}
+                dividend2025={stock.dividend_2025 ?? null}
+                yieldTtm={price?.yield_ttm ?? null}
+                variant="effective"
+                title="当前生效挡位"
+              />
+            );
           }
           // 单挡位（手工配置可能只填一档）：不足两条价格线不画条，明确列出该档
           const only = VALUATION_LEVEL_KEYS.map(key => levels[key]).find(lv => lv?.price);
@@ -417,7 +428,16 @@ function TrackingRow({
           );
         })()}
         {!levels && candidateLevels && (
-          <ValuationPriceBar levels={candidateLevels} currentPrice={currentPrice} variant="candidate" title="评估结果预览，尚未应用" />
+          <ValuationPriceBar
+            levels={candidateLevels}
+            currentPrice={currentPrice}
+            currentPE={price?.pe ?? null}
+            currentPB={price?.pb ?? null}
+            dividend2025={stock.dividend_2025 ?? null}
+            yieldTtm={price?.yield_ttm ?? null}
+            variant="candidate"
+            title="评估结果预览，尚未应用"
+          />
         )}
         {!levels && !candidateLevels && (
           <div className="text-xs text-ink-muted max-w-[220px] whitespace-normal">

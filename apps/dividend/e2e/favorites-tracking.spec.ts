@@ -32,8 +32,8 @@ export function scenario(): TrackingScenario {
     alerts: {
       // 000001：监控中（旧挡位四档，生效条可画）
       '000001': { enabled: true, updated_at: '2026-11-01T10:00:00', levels: {
-        heavy_position: { price: 8.5 }, add_position: { price: 9.5 },
-        reduce_position: { price: 14 }, full_exit: { price: 21 } } },
+        heavy_position: { price: 8.5, pe: 5.1, pb: 0.7 }, add_position: { price: 9.5, pe: 5.7, pb: 0.8 },
+        reduce_position: { price: 14, pe: 8.4, pb: 1.0 }, full_exit: { price: 21, pe: 12.6, pb: 1.5 } } },
       // 600000：已暂停（手工只配一档 → 不画条，单挡位文本）
       '600000': { enabled: false, updated_at: '2026-11-02T10:00:00', levels: { heavy_position: { price: 9 } } },
       // 600004/600005：无挡位
@@ -228,7 +228,12 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
   // 监控中行：生效条（无候选角标）
-  await expect(table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]')).toBeVisible();
+  const effective = table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]');
+  await expect(effective).toBeVisible();
+  // 生效条带每档 PE 与距各档距离（旧样式的信息收进条内）
+  await expect(effective).toContainText('PE 5.1');
+  await expect(effective).toContainText('距重仓');
+  await expect(effective).toContainText('持有区');
   // 重评待应用重叠：监控中 + 新评估待应用
   await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
   await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '对比并应用' })).toBeVisible();

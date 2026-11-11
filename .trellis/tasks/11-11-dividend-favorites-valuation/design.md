@@ -102,9 +102,10 @@
 - `components/FavoritesTrackingTab.tsx`：主表 5 列（股票/基本面、现价、窄挡位条、评估与监控状态、操作），
   5 筛选 chips + 搜索框；行内操作=评估挡位/重评/重试、查看报告、对比并应用、暂停/恢复、挡位设置
   （打开既有 AlertSettingsModal）；基本面列展示五维分数文本（评级报告仍在选股关注阅读）。
-- `components/ValuationPriceBar.tsx`：宽 220–260px（w-60/240px），四阈值五区间横条 + 4 价标签 +
-  现价标记；现价越界（低于重仓/高于全卖）在条端显示箭头+越界文案；缺现价显示「现价缺失」；
-  生效条实线、候选条虚线并角标「评估结果 · 未启用监控」；无 levels 不渲染条（不画虚构五块）。
+- `components/ValuationPriceBar.tsx`：宽 400px（2026-11-11 用户复核后由 248px 加宽），显式分层：
+  行1 四价签＋现价签（相邻过近时错层）→ 行2 色条＋四圆点（点击看该价位股息率）＋现价标记
+  → 行3 每档 PE（无 PE 数据不占位）→ 行4 区间名（放得下的才显示）→ 行5 当前所在区＋距各档距离。
+  越界显示箭头与「低于重仓线/高于全卖线」，缺现价显示「暂无位置标记」；生效实线、候选虚线＋角标。
 - `components/ValuationReportModal.tsx`：侧边报告面板——身份/期间/版本/耗时、四价新旧对比
   （新值列表 + 划线旧值）、summary、risks/data_gaps/invalidation_conditions、report_md 安全 Markdown
   （react-markdown + remark-gfm，同 quality-reader 约定）；底部确认应用/暂不应用；与详情/评级弹框互斥。
