@@ -1,7 +1,8 @@
-"""生效 Hermes profile 可设置（11-07-profile-override）：页面覆盖、执行期应用、jobs.json 同源。
+"""生效 Hermes profile 可设置（11-07-profile-override）：页面覆盖、执行期应用。
 
 覆盖值存 `task_overrides`（tasks.yaml 每次同步都 upsert tasks 表，可编辑项必须分表），
-执行时同时切三件事：凭证 env_file、HERMES_PROFILE、jobs.json 挂载宿主源。
+执行时同时切两件事：凭证 env_file、HERMES_PROFILE。
+（2026-11-11 起 jobs.json 挂载同源机制已随触发脚本回退一并移除。）
 """
 from __future__ import annotations
 
@@ -15,10 +16,9 @@ AI_YAML = (
     "  - id: p1\n"
     "    name: ai 任务\n"
     "    group: ai\n"
-    "    command: python hermes_trigger.py --jobs-json /hermes-cron/jobs.json\n"
+    "    command: python hermes_trigger.py\n"
     "    env_file: /hermes-home/gw-8642.env\n"
     "    volumes:\n"
-    "      - /home/ohyes768/.hermes/cron:/hermes-cron:ro\n"
     "      - /home/ohyes768/ack:/ack:rw\n"
 )
 
@@ -42,7 +42,7 @@ def test_profiles_endpoint_lists_catalog(client):
     items = {p["name"]: p for p in r.json()["profiles"]}
     assert {"default", "ohyes768"} <= set(items)
     for p in items.values():
-        assert p["env_file"] and p["jobs_dir"] and p["label"]
+        assert p["env_file"] and p["label"]
         assert isinstance(p["tasks"], int)
 
 
@@ -139,18 +139,18 @@ def _catalog(monkeypatch, tmp_path):
     ohyes_env = tmp_path / ".env"
     ohyes_env.write_text("BASE_URL=http://gw:8643\nAPI_KEY=key-ohyes\n", encoding="utf-8")
     monkeypatch.setenv("TASK_WEB_HERMES_PROFILES", json.dumps({
-        "default": {"env_file": str(default_env), "jobs_dir": "/h/default/cron"},
-        "ohyes768": {"env_file": str(ohyes_env), "jobs_dir": "/h/ohyes768/cron"},
+        "default": {"env_file": str(default_env)},
+        "ohyes768": {"env_file": str(ohyes_env)},
     }))
     return default_env, ohyes_env
 
 
 def test_prompt_injected_as_env(client, env, tmp_path, monkeypatch):
-    """登记 prompt → 执行环境注入 HERMES_PROMPT，优先于 jobs.json 回退。"""
+    """登记 prompt → 执行环境注入 HERMES_PROMPT（触发脚本唯一 prompt 来源）。"""
     _catalog(monkeypatch, tmp_path)
     _sync(env,
           "tasks:\n"
-          "  - id: p4\n    name: ai\n    group: ai\n    command: python hermes_trigger.py --job-id x\n"
+          "  - id: p4\n    name: ai\n    group: ai\n    command: python hermes_trigger.py\n"
           "    prompt: |-\n"
           "      第一行\n"
           "      第二行\n")
@@ -191,32 +191,8 @@ def test_task_env_uses_profile_credentials(client, env, tmp_path, monkeypatch):
     assert e["KEEP"] == "1"                           # 其余登记变量保留
 
 
-def test_jobs_mount_follows_profile(client, env, tmp_path, monkeypatch):
-    default_env, _ = _catalog(monkeypatch, tmp_path)
-    _sync(env,
-          "tasks:\n"
-          "  - id: p3\n    name: ai\n    group: ai\n    command: python hermes_trigger.py --jobs-json /hermes-cron/jobs.json\n"
-          f"    env_file: {default_env}\n"
-          "    volumes:\n"
-          "      - /h/default/cron:/hermes-cron:ro\n"
-          "      - /home/ohyes768/ack:/ack:rw\n")
-    vol = executor._task_volumes(db.get_task("p3"))
-    assert vol == {
-        "/h/default/cron": {"bind": "/hermes-cron", "mode": "ro"},
-        "/home/ohyes768/ack": {"bind": "/ack", "mode": "rw"},
-    }
-
-    db.set_profile_override("p3", "ohyes768")
-    vol = executor._task_volumes(db.get_task("p3"))
-    # 宿主源换成生效 profile 的 cron 目录，容器路径不变 → 命令里的 --jobs-json 照旧有效
-    assert vol["/h/ohyes768/cron"] == {"bind": "/hermes-cron", "mode": "ro"}
-    assert "/h/default/cron" not in vol
-    assert vol["/home/ohyes768/ack"] == {"bind": "/ack", "mode": "rw"}
-
-
-def test_apply_jobs_mount_ignores_non_jobs_volumes():
-    # 默认目录：default → ~/.hermes/cron，ohyes768 → ~/.hermes/profiles/ohyes768/cron
-    specs = ["/data/x:/x", "/home/ohyes768/.hermes/profiles/ohyes768/cron:/hermes-cron-p7:ro"]
-    out = profiles.apply_jobs_mount(specs, "default")
-    assert out == ["/data/x:/x", "/home/ohyes768/.hermes/cron:/hermes-cron-p7:ro"]
-    assert profiles.apply_jobs_mount(specs, None) == specs
+def test_task_volumes_passthrough(client, env):
+    """普通挂载原样进 docker-py 结构（jobs.json 挂载改写移除后行为不变）。"""
+    _sync(env, AI_YAML)
+    vol = executor._task_volumes(db.get_task("p1"))
+    assert vol == {"/home/ohyes768/ack": {"bind": "/ack", "mode": "rw"}}

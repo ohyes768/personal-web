@@ -102,7 +102,7 @@ def _task_env(task: dict) -> dict[str, str]:
             logger.warning("run env 字段非法（已忽略）")
     if profile:
         env[profiles.PROFILE_ENV_KEY] = profile
-    # 登记的 prompt 直接注入：触发脚本优先用 HERMES_PROMPT，jobs.json 只是回退
+    # 登记的 prompt 直接注入 HERMES_PROMPT：触发脚本唯一 prompt 来源（2026-11-11 起）
     if task.get("prompt"):
         env["HERMES_PROMPT"] = task["prompt"]
     return env
@@ -111,16 +111,15 @@ def _task_env(task: dict) -> dict[str, str]:
 def _task_volumes(task: dict) -> dict[str, dict[str, str]]:
     """volumes: '宿主:容器[:rw|ro]' 列表 -> docker-py volumes 字典。
 
-    AI 任务的 jobs.json 挂载按生效 profile 换宿主源（容器路径不变），
-    否则切换 profile 后 job id 与 jobs.json 不同源，触发会查不到 job。
+    （2026-11-11 起 jobs.json 挂载改写已移除：触发脚本只认 HERMES_PROMPT，
+    AI 任务登记里无需也无法依赖 jobs.json。）
     """
     raw = task.get("volumes")
     if not raw:
         return {}
     specs = json.loads(raw) if isinstance(raw, str) else raw
-    profile = profiles.effective_profile(task, _profile_override(task))
     result: dict[str, dict[str, str]] = {}
-    for item in profiles.apply_jobs_mount(list(specs or []), profile):
+    for item in specs or []:
         parts = str(item).split(":")
         if len(parts) not in (2, 3) or not parts[0] or not parts[1]:
             raise ValueError(f"volumes 条目非法: {item!r}")

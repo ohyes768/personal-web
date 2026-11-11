@@ -85,7 +85,6 @@ def list_profiles():
                 "name": name,
                 "label": cfg.get("label") or name,
                 "env_file": cfg.get("env_file"),
-                "jobs_dir": cfg.get("jobs_dir"),
                 "tasks": counts.get(name, 0),
             }
             for name, cfg in profiles.catalog().items()

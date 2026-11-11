@@ -44,7 +44,6 @@ export interface ProfileInfo {
   name: string;
   label: string;
   env_file: string | null;
-  jobs_dir: string | null;
   /** 当前生效到该 profile 的任务数 */
   tasks: number;
 }

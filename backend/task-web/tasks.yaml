@@ -8,8 +8,9 @@
 # 2026-11-06 cutover：以下 8 条已启用，n8n 上对应触发器已停用（Gold/Fund/New Stock
 # 整工作流 unpublish；Stock info Push 保留 17:30 财报选股触发器）。
 # 2026-11-07：AI 任务新增 skills: [skill-名] 字段（页面「涉及 Skill」列展示用），
-# 取值以 Hermes 侧 jobs.json 的 job.skill 为准（job-id → skill 对应关系见各条注释）；
-# 纯 prompt 驱动的任务（job.skill=None）不写该字段。
+# 取值对齐 Hermes 侧 skill 目录名；纯 prompt 驱动的任务不写该字段。
+# 2026-11-11：prompt 唯一来源 = 本登记（prompt: 字段 → HERMES_PROMPT 注入），
+# Hermes 侧 cron job 与 --job-id 已退役，触发命令统一为 `python hermes_trigger.py`。
 tasks:
   # ---- stock-info-dingding 纯推送任务（方案 B：业务镜像独立维护）----
   # 前置：NAS 上 cd /home/ohyes768/stock-info-dingding && docker build -t stock-info:latest .
@@ -78,11 +79,11 @@ tasks:
   - id: hermes-gold-price
     name: 黄金走势研判（钉钉）
     group: ai
-    description: 经 Hermes Runs API 触发 gold-price-brief skill（取数→AI 研判→钉钉推送）；job 7c8d2bd1c230（Hermes 侧已 pause）
+    description: 经 Hermes Runs API 触发 gold-price-brief skill（取数→AI 研判→钉钉推送）
     targets: [dingtalk]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 7c8d2bd1c230
+    command: python hermes_trigger.py
     prompt: |-
       按 gold-price-brief skill 执行当日黄金走势研判：运行取数脚本获取数据（失败则中止不推送），基于数据完成研判并落盘 markdown，然后 PUSH_MODE=1 推送钉钉；最终回复只写研判要点与推送结果。
     skills: [gold-price-brief]
@@ -153,7 +154,7 @@ tasks:
 
   # ---- 财报阅读已改为 Hermes skill（daily-pick-brief），容器直跑版退役 ----
   # skill 流程：agent 在宿主机跑 daily_pick.py（守卫 DAILY_PICK_ONCE_DAILY=1 防当日重复推送，
-  # HERMES_SYNC=1 同步等完深度分析，data/reports/logs 产物契约不变）；job 1f04c0e830c8 已 pause
+  # HERMES_SYNC=1 同步等完深度分析，data/reports/logs 产物契约不变）
   - id: hermes-daily-pick
     name: 每日财报阅读（AI）
     group: ai
@@ -161,7 +162,7 @@ tasks:
     targets: [dingtalk]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 1f04c0e830c8
+    command: python hermes_trigger.py
     prompt: |-
       按 daily-pick-brief skill 执行每日财报阅读：运行脚本主流程（守卫自动防当日重复推送），判读结果（推送成功/已跳过/无推荐/失败）并如实转述标的信息。
     skills: [daily-pick-brief]
@@ -257,17 +258,16 @@ tasks:
     cron: "35 16 * * mon-fri"
     timeout: 900
 
-  # pm25-broadcast：hermes_trigger 读 jobs.json 现场取 prompt → Runs API 提交 →
-  # 轮询终态；agent 依 prompt 自行推送微信。启用前先在 Hermes 侧禁用同名旧 job
-  # 注意：Hermes cron 存 UTC！jobs.json 里 45 23,3,9 = 北京 7:45/11:45/17:45
+  # pm25-broadcast：hermes_trigger 经 Runs API 提交登记 prompt → 轮询终态；
+  # agent 依 prompt 自行推送微信
   - id: pm25-broadcast
     name: 杭州PM2.5播报（微信）
     group: ai
-    description: 经 Hermes Runs API 触发 hangzhou-pm25 skill；原 Hermes cron job（id 246c69c1e845）迁移
+    description: 经 Hermes Runs API 触发 hangzhou-pm25 skill；原 Hermes cron job 迁移
     targets: [wechat]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 246c69c1e845
+    command: python hermes_trigger.py
     prompt: |-
       查询杭州主城区 PM2.5 当前情况和未来五天变化，生成简报并推送到微信。
 
@@ -310,18 +310,18 @@ tasks:
   # ---- Hermes 任务全量登记（默认禁用；启用前在 Hermes 侧禁用对应旧 job）----
   # 交付已全部核实：5 个任务 prompt/skill 内置推送（RSS 中转服务为主），
   # 不依赖 gateway 的 deliver 会话路由，API 触发不影响投递
-  # 默认 profile（gateway 8642，~/.hermes/cron/jobs.json）。2026-11-07 补配：
+  # 默认 profile（gateway 8642）。2026-11-07 补配：
   # 默认网关有独立 API key（~/.hermes/.env 的 API_SERVER_KEY，stock .env 的 key 仅对 8643 有效），
   # 故 8 条默认任务统一 env_file=.env.hermes-default（8642+default+独立 key，NAS 上已生成 chmod 600）；
   # 且 docker 默认 bridge 实测连不通 172.27.0.1，必须 network: nginx_nginx-bridge 才能达网关
   - id: hermes-hk-ipo-research
     name: 港股IPO每日研究（Hermes）
     group: ai
-    description: hk-ipo-research skill，产出推 RSS（已核实 prompt 内置推送步骤）（job 10ef8281a3bd）
+    description: hk-ipo-research skill，产出推 RSS（已核实 prompt 内置推送步骤）
     targets: [rss]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 10ef8281a3bd
+    command: python hermes_trigger.py
     prompt: |-
       使用 hk-ipo-research skill 跑每日港股打新研究，按 references/report-contract.md 生成最终 Markdown 并推送到 RSS：
 
@@ -386,11 +386,11 @@ tasks:
   - id: hermes-hk-ipo-backtest
     name: 港股IPO回测审计（Hermes）
     group: ai
-    description: hk-ipo-backtest skill，推 RSS（已核实 prompt 内置推送步骤）（job f6ce56ef2c94）
+    description: hk-ipo-backtest skill，推 RSS（已核实 prompt 内置推送步骤）
     targets: [rss]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id f6ce56ef2c94
+    command: python hermes_trigger.py
     prompt: |-
       使用 hk-ipo-backtest skill 跑每日港股 IPO 回测审计，按 references/report-contract.md 生成最终 Markdown 并推送到 RSS：
 
@@ -430,11 +430,11 @@ tasks:
   - id: hermes-a-share-macro-impact
     name: A股宏观影响周报（Hermes）
     group: ai
-    description: a-share-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 8c85ad9c4c24）
+    description: a-share-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）
     targets: [rss, web]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 8c85ad9c4c24
+    command: python hermes_trigger.py
     prompt: |-
       Run a-share-macro-impact-skill end-to-end following SKILL.md execution steps. Do not skip the final RSS push step.
     skills: [a-share-macro-impact-skill]
@@ -446,11 +446,11 @@ tasks:
   - id: hermes-bond-macro-impact
     name: 债市宏观影响周报（Hermes）
     group: ai
-    description: bond-market-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）（job 053337ce60b7）
+    description: bond-market-macro-impact-skill，推 RSS macro 频道+看板（已核实 SKILL.md 推送为必经步骤）
     targets: [rss, web]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 053337ce60b7
+    command: python hermes_trigger.py
     prompt: |-
       Run bond-market-macro-impact-skill end-to-end following SKILL.md execution steps. Do not skip the final RSS push step.
     skills: [bond-market-macro-impact-skill]
@@ -462,11 +462,11 @@ tasks:
   - id: hermes-waytoagi-tracker
     name: WaytoAGI更新日志追踪（Hermes）
     group: ai
-    description: waytoagi-update-log skill，推 RSS Relay+钉钉群机器人（已核实 prompt 内置双通道推送）（job adad4bb38199）
+    description: waytoagi-update-log skill，推 RSS Relay+钉钉群机器人（已核实 prompt 内置双通道推送）
     targets: [rss, dingtalk]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id adad4bb38199
+    command: python hermes_trigger.py
     prompt: |-
       追踪 WaytoAGI 知识库近 7 日更新日志，整理今天（按 Asia/Shanghai 时区）的文章列表（标题 + 说明 + 飞书 Wiki 链接 + 微信原文链接），按 Step 1-5 流程执行，并把结果推送到 **RSS Relay** 和 **钉钉群机器人**。如果今天无更新则返回 [SILENT]。
 
@@ -516,21 +516,19 @@ tasks:
     cron: "0 10 * * *"
     timeout: 3600
 
-  # ohyes768 profile（gateway 8643，~/.hermes/profiles/ohyes768/cron/jobs.json）4 个
-  # 宏观周报；UTC 1 点档 = 北京 9 点档
-  # 这 4 个 job 是 no_agent 脚本任务（job.skill=None、job.script 指向 ~/.hermes/scripts/
-  # macro_*_weekly.sh，wrapper 内 exec finance-macro/scripts/cron_run_skill.sh <skill>），
-  # 所以 skills 字段按 wrapper 里实际传入的 finance-macro skill 目录名登记。
+  # ohyes768 profile（gateway 8643）4 个宏观周报；UTC 1 点档 = 北京 9 点档
+  # 原为 Hermes no_agent 脚本任务（wrapper 内 exec finance-macro/scripts/cron_run_skill.sh
+  # <skill>），skills 字段按 wrapper 里实际传入的 finance-macro skill 目录名登记。
   # 该 profile 走 HERMES_PROFILE=ohyes768（.env 默认即此值，显式声明防漂移）；
   # env_file=.env 供 BASE_URL/API_KEY（8643 网关），network 同样必须 nginx_nginx-bridge
   - id: hermes-macro-monetary-weekly
     name: 货币政策周报（Hermes/ohyes768）
     group: ai
-    description: monetary-policy-skill（抓 MLF/LPR）；no_agent 脚本任务，原 Hermes job（a31a6196fc09）
+    description: monetary-policy-skill（抓 MLF/LPR）；no_agent 脚本任务
     targets: [web]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id a31a6196fc09
+    command: python hermes_trigger.py
     prompt: |-
       每周一 09:00 (Asia/Shanghai) 抓 MLF/LPR 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [monetary-policy-skill]
@@ -544,11 +542,11 @@ tasks:
   - id: hermes-macro-money-supply-weekly
     name: 金融数据周报（Hermes/ohyes768）
     group: ai
-    description: money-supply-skill（抓 M1/M2/社融）；no_agent 脚本任务，原 Hermes job（633b4d12a8a3）
+    description: money-supply-skill（抓 M1/M2/社融）；no_agent 脚本任务
     targets: [web]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 633b4d12a8a3
+    command: python hermes_trigger.py
     prompt: |-
       每周一 09:15 (Asia/Shanghai) 抓 M1/M2/社融 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [money-supply-skill]
@@ -562,11 +560,11 @@ tasks:
   - id: hermes-macro-entity-weekly
     name: 实体经济周报（Hermes/ohyes768）
     group: ai
-    description: entity-economy-skill（抓 PMI/工增/固投/社零）；no_agent 脚本任务，原 Hermes job（3704976be0ec）
+    description: entity-economy-skill（抓 PMI/工增/固投/社零）；no_agent 脚本任务
     targets: [web]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 3704976be0ec
+    command: python hermes_trigger.py
     prompt: |-
       每周一 09:30 (Asia/Shanghai) 抓 PMI/工增/固投/社零 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [entity-economy-skill]
@@ -580,11 +578,11 @@ tasks:
   - id: hermes-macro-inflation-weekly
     name: 通胀跟踪周报（Hermes/ohyes768）
     group: ai
-    description: inflation-skill（抓 CPI/PPI/核心CPI）；no_agent 脚本任务，原 Hermes job（7243389de6f9）
+    description: inflation-skill（抓 CPI/PPI/核心CPI）；no_agent 脚本任务
     targets: [web]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 7243389de6f9
+    command: python hermes_trigger.py
     prompt: |-
       每周一 09:45 (Asia/Shanghai) 抓 CPI/PPI/核心CPI 并推送 macro_signal.json 到 personal-web。no_agent 脚本任务，输出即结果。
     skills: [inflation-skill]
@@ -631,16 +629,15 @@ tasks:
     cron: 0 11 * * mon,wed,fri
     timeout: 600
   # natgeo 已改造成 Hermes skill（skills/photo/natgeo-daily，翻译由 Hermes 模型
-  # 或 DeepSeek 完成，脚本自推钉钉）；job 78cb9eead904 在 ohyes768 profile，
-  # 已 pause——jobs.json 仅作 prompt 单一事实源，调度权在 task-web
+  # 或 DeepSeek 完成，脚本自推钉钉），经 ohyes768 profile 的 Runs API 触发
   - id: hermes-natgeo
     name: 国家地理每日一图（Hermes）
     group: ai
-    description: natgeo-daily skill 经 Runs API 触发（job 78cb9eead904，ohyes768 profile，已 pause）
+    description: natgeo-daily skill 经 Runs API 触发（ohyes768 profile）
     targets: [dingtalk]
     engine: docker
     image: hermes-trigger:latest
-    command: python hermes_trigger.py --job-id 78cb9eead904
+    command: python hermes_trigger.py
     prompt: |-
       运行 python3 /home/ohyes768/skills/photo/natgeo-daily/scripts/natgeo_daily.py（自动抓取国家地理每日一图、翻译描述并推送钉钉）。完成后汇报：标题、摄影师、一句中文摘要、是否推送成功；脚本退出码非 0 时原样转述 stderr。
     skills: [natgeo-daily]

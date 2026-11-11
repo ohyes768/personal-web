@@ -1,10 +1,12 @@
 """Hermes profile 解析：登记推导 + 用户覆盖（DB）+ 执行期应用。
 
-一个 profile 不只是标签，它绑定三件事，切换时必须一起换，否则「选了不生效」：
+一个 profile 绑定两件事，切换时必须一起换，否则「选了不生效」：
 
 1. 凭证 env_file（BASE_URL / API_KEY 属于哪个网关）；
-2. 容器内环境变量 `HERMES_PROFILE`（Runs API 前缀 `/p/<profile>/`）；
-3. jobs.json 目录（job id 是 profile 内唯一的，prompt 源必须同源）。
+2. 容器内环境变量 `HERMES_PROFILE`（Runs API 前缀 `/p/<profile>/`）。
+
+（2026-11-11 起 jobs.json 挂载改写已随触发脚本回退一并移除：prompt 唯一来源
+是 task-web 登记，profile 切换与 Hermes 侧 cron job 无关。）
 
 profile 目录见 `config.get_hermes_profiles()`；每个任务的生效 profile 优先级：
 用户在页面设置的覆盖值（存在 `task_overrides` 表，tasks.yaml 同步不会覆盖）
@@ -22,7 +24,7 @@ AI_GROUP = "ai"
 
 
 def catalog() -> dict[str, dict]:
-    """profile 目录（name → {label, env_file, jobs_dir}）。"""
+    """profile 目录（name → {label, env_file}）。"""
     return get_hermes_profiles()
 
 
@@ -83,29 +85,3 @@ def profile_source(task: dict, override: str | None = None) -> str | None:
     if override and override in catalog():
         return "override"
     return "registry" if registered_profile(task) else None
-
-
-def apply_jobs_mount(specs: list[str], profile: str | None) -> list[str]:
-    """把登记里的 jobs.json 挂载换成生效 profile 的 cron 目录。
-
-    只替换宿主源（容器路径保持登记时的值），因此命令里写死的
-    `--jobs-json /hermes-cron/jobs.json`、`/hermes-cron-p7/jobs.json` 依然有效，
-    读到的却是生效 profile 的 jobs.json。识别方式：宿主源等于目录里任一 profile
-    的 jobs_dir。非 jobs 挂载（如回执目录、dingtalk-push）原样保留。
-    """
-    if not profile:
-        return specs
-    cat = catalog()
-    target = cat.get(profile) or {}
-    jobs_dir = target.get("jobs_dir")
-    if not jobs_dir:
-        return specs
-    known = {cfg["jobs_dir"] for cfg in cat.values() if cfg.get("jobs_dir")}
-    result: list[str] = []
-    for item in specs or []:
-        parts = str(item).split(":")
-        if parts and parts[0] in known:
-            result.append(":".join([jobs_dir, *parts[1:]]))
-        else:
-            result.append(str(item))
-    return result
