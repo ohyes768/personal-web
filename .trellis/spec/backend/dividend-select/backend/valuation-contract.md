@@ -54,6 +54,12 @@ A local skill checkout is never proof of deployment.
   `completed` wins over a cancel request and still saves the report. Without
   `get_run_fn` it falls back to blocking `poll_run`, where
   `HermesRunCancelled` maps to a cancelled outcome.
+- **Cross-service cap**: `ValuationService(reports_path, limiter=)` takes the
+  shared `HermesLimiter` (same instance as quality, wired in `main.py`; `None`
+  skips global limiting). Dispatch peeks the queue head, waits for a global
+  slot outside `_cond` while the item remains `queued` (cancel/move still
+  apply), then claims it locally; `_run_one` releases the slot in `finally`.
+  See quality-rating-contract.md for the full limiter semantics.
 - `parse_valuation_output(raw, code, name) -> ValuationReport` (pydantic).
 - `build_valuation_payload(stock, quality_record, market_snapshot) -> dict`,
   `build_prompt(payload, skill_version, data_date) -> str`.

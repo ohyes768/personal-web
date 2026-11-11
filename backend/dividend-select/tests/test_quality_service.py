@@ -1069,6 +1069,9 @@ class TestQueueControls:
                 ["000001", "000002", "600000"], cfg, stocks, "2026-09-30", manager, submit_fn,
                 lambda cfg, run_id: fake_output("000001", "甲"))
             _wait_until(lambda: service.get_per_code()["600000"]["state"] == "queued")
+            # 000001 必须已实际运行（submit_fn 阻塞持锁），否则 front() 可能抢在
+            # 调度线程标记 000001 running 之前把 600000 提前，断言必挂——这是历史竞态
+            _wait_until(lambda: service.get_per_code()["000001"]["state"] == "running")
 
             def append():
                 service.submit_analysis(

@@ -47,14 +47,14 @@ dividend-select 的基本面评级（quality）与四挡位估值（valuation）
 
 ## Acceptance Criteria
 
-- [ ] quality + valuation 并行时，同时在跑的 Hermes run 总数 ≤ `HERMES_MAX_CONCURRENT`
+- [x] quality + valuation 并行时，同时在跑的 Hermes run 总数 ≤ `HERMES_MAX_CONCURRENT`
       （有测试证明）。
-- [ ] 队列取消/调序/追加行为与 822d9f8 之后完全一致：取消等待项立即移出、运行项经
+- [x] 队列取消/调序/追加行为与 822d9f8 之后完全一致：取消等待项立即移出、运行项经
       stop 确认后才收尾、完成结果优先于取消请求。
-- [ ] `cd backend/dividend-select && .venv/bin/python -m pytest tests/ -q` 全绿
+- [x] `cd backend/dividend-select && .venv/bin/python -m pytest tests/ -q` 全绿
       （test_quality_service 的 append/reorder 套件级抖动若复现，按已知问题记录，不算回归）。
-- [ ] 无新增环境变量；`grep -rn "HERMES_MAX_CONCURRENT" backend/dividend-select/src` 语义注释已更新。
-- [ ] 两份契约文档更新完毕。
+- [x] 无新增环境变量；`grep -rn "HERMES_MAX_CONCURRENT" backend/dividend-select/src` 语义注释已更新。
+- [x] 两份契约文档更新完毕。
 
 ## Out of Scope
 

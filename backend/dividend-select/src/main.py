@@ -28,6 +28,7 @@ from src.scheduler.routes import router as scheduler_router
 from src.services.refresh_jobs import RefreshJobManager
 from src.services.quality_service import QualityService
 from src.services.valuation_service import ValuationService
+from src.services.hermes_limiter import HermesLimiter
 from src.services.alert_service import init_alert_service
 from src.services.data_reader import DataReader
 from src.services.favorites_service import FavoritesService
@@ -76,10 +77,12 @@ async def lifespan(app: FastAPI):
     set_refresh_jobs(refresh_jobs)
     app.state.refresh_jobs = refresh_jobs
 
-    quality_service = QualityService(PROJECT_ROOT / 'data' / 'quality_scores.json')
+    # Hermes 跨 service 全局并发闸：quality + valuation 合计 ≤ HERMES_MAX_CONCURRENT
+    hermes_limiter = HermesLimiter.from_env()
+    quality_service = QualityService(PROJECT_ROOT / 'data' / 'quality_scores.json', limiter=hermes_limiter)
     set_quality_service(quality_service)
 
-    valuation_service = ValuationService(PROJECT_ROOT / 'data' / 'valuation_reports.json')
+    valuation_service = ValuationService(PROJECT_ROOT / 'data' / 'valuation_reports.json', limiter=hermes_limiter)
     set_valuation_service(valuation_service)
 
     # 设置服务到路由

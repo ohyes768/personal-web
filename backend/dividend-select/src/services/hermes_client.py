@@ -59,6 +59,8 @@ class HermesConfig:
             profile=os.environ.get("HERMES_PROFILE", "ohyes768"),
             poll_interval=int(os.environ.get("HERMES_POLL_INTERVAL", "30")),
             timeout=int(os.environ.get("HERMES_TIMEOUT", "3600")),
+            # 全局并发上限：quality + valuation 合计（跨 service 共享闸，
+            # 见 services/hermes_limiter.py；单任务本地调度与全局闸都用这个值）
             max_concurrent=int(os.environ.get("HERMES_MAX_CONCURRENT", "1")),
         )
 

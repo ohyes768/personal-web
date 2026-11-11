@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from src.api.models import DividendStock
 from src.services.hermes_client import HermesConfig, HermesError, HermesRunCancelled, HermesRunFailed
+from src.services.hermes_limiter import HermesLimiter
 from src.services.quality_version import VERSION_PATTERN, current_quality_skill_version
 from src.utils.atomic_file import atomic_write
 from src.utils.logger import setup_logger
@@ -187,8 +188,11 @@ class QualityService:
     排队期间数据变化不影响已受理项。服务重启后清空（job 置 interrupted，语义一致）。
     """
 
-    def __init__(self, quality_path: Path):
+    def __init__(self, quality_path: Path, limiter: HermesLimiter | None = None):
         self.quality_path = quality_path
+        # 跨 service 全局限流（quality + valuation 合计 ≤ HERMES_MAX_CONCURRENT）；
+        # None = 不参与全局限流（测试用），本地 limit 仍然生效
+        self._limiter = limiter
         self._file_lock = threading.RLock()
         self._cond = threading.Condition(threading.RLock())
         self._items: dict[str, dict] = {}
@@ -332,6 +336,7 @@ class QualityService:
 
         def work(progress: Callable[..., None]) -> None:
             limit = max(1, hermes_config.max_concurrent)
+            limiter = self._limiter
             with self._cond:
                 self._progress = progress
                 self._cond.notify_all()
@@ -350,12 +355,31 @@ class QualityService:
                     item = self._items.get(code)
                     if not item or item.get("state") != "queued":
                         continue
+                    # 放回队首，锁外等共享全局名额；等待期间项保持 queued（可取消/调序）
+                    self._pending.appendleft(code)
+                holds_slot = False
+                while True:
+                    with self._cond:
+                        item = self._items.get(code)
+                        if not item or item.get("state") != "queued" or code not in self._pending:
+                            break
+                    if limiter is None or limiter.acquire(timeout=0.2):
+                        holds_slot = True
+                        break
+                with self._cond:
+                    item = self._items.get(code)
+                    if not holds_slot or not item or item.get("state") != "queued" or code not in self._pending:
+                        if holds_slot:
+                            limiter.release()
+                        continue  # 等待期间被取消/移除：回调度循环，不消耗名额
+                    self._pending.remove(code)
                     started_at = _now()
                     item.update(state="running", started_at=started_at, updated_at=started_at, error=None)
                     self._running += 1
                 threading.Thread(
                     target=self._run_one, daemon=True,
-                    args=(code, hermes_config, submit_run_fn, poll_run_fn, progress, stop_run_fn, get_run_fn),
+                    args=(code, hermes_config, submit_run_fn, poll_run_fn, progress,
+                          stop_run_fn, get_run_fn, holds_slot),
                 ).start()
 
         with self._cond:
@@ -489,26 +513,31 @@ class QualityService:
         event.wait(interval)
         event.clear()
 
-    def _run_one(self, code, hermes_config, submit_run_fn, poll_run_fn, progress, stop_run_fn, get_run_fn) -> None:
+    def _run_one(self, code, hermes_config, submit_run_fn, poll_run_fn, progress, stop_run_fn, get_run_fn,
+                 holds_slot: bool = False) -> None:
         item = self._items[code]
         try:
-            kind, score, error, duration, bump = self._execute(
-                item, hermes_config, submit_run_fn, poll_run_fn, stop_run_fn, get_run_fn)
-        except Exception as exc:  # 未预期异常按该股失败计，避免 _running 不归零
-            logger.exception("股票 %s 评级过程异常", code)
-            kind, score, error, duration, bump = "failed", None, f"评级过程异常: {exc}"[:300], None, False
-        if kind == "completed" and score is not None:
             try:
-                self._save_one(score, item["data_date"], duration if duration is not None else 0.0)
-            except (OSError, ValueError) as exc:
-                logger.exception("评分落盘失败 %s", code)
-                kind, error, bump = "failed", f"评分结果保存失败: {exc}", False
-        if kind == "cancelled" and bump:
-            try:
-                self._store_generation(code, int(item.get("cancel_generation") or 0) + 1)
-            except OSError:
-                logger.exception("取消后的幂等代数未能落盘 %s", code)
-        self._finish_item(code, item, kind, error, progress)
+                kind, score, error, duration, bump = self._execute(
+                    item, hermes_config, submit_run_fn, poll_run_fn, stop_run_fn, get_run_fn)
+            except Exception as exc:  # 未预期异常按该股失败计，避免 _running 不归零
+                logger.exception("股票 %s 评级过程异常", code)
+                kind, score, error, duration, bump = "failed", None, f"评级过程异常: {exc}"[:300], None, False
+            if kind == "completed" and score is not None:
+                try:
+                    self._save_one(score, item["data_date"], duration if duration is not None else 0.0)
+                except (OSError, ValueError) as exc:
+                    logger.exception("评分落盘失败 %s", code)
+                    kind, error, bump = "failed", f"评分结果保存失败: {exc}", False
+            if kind == "cancelled" and bump:
+                try:
+                    self._store_generation(code, int(item.get("cancel_generation") or 0) + 1)
+                except OSError:
+                    logger.exception("取消后的幂等代数未能落盘 %s", code)
+            self._finish_item(code, item, kind, error, progress)
+        finally:
+            if holds_slot:
+                self._limiter.release()
 
     def _execute(self, item, hermes_config, submit_run_fn, poll_run_fn, stop_run_fn, get_run_fn):
         with self._cond:

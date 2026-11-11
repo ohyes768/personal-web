@@ -205,6 +205,16 @@ never embed dividend backend URLs or schema details. Frontend mirrors the contra
   the NAS Compose service. Production uses one stock at a time in FIFO order;
   explicit environment overrides remain supported. When the slot is occupied,
   appended items stay queued and reorderable until it is released.
+- **Cross-service cap (2026-11-11)**: quality and valuation share one
+  `HermesLimiter` (process-wide `threading.BoundedSemaphore` sized from
+  `HERMES_MAX_CONCURRENT`, constructed in `main.py` and injected via the
+  services' `limiter=` kwarg; `None` disables participation, used by tests).
+  The dispatcher acquires a global slot outside `_cond` while the item is still
+  head-of-queue (appendleft peek) and still `queued` — so a slot-waiting item
+  stays reorderable/cancellable; a cancel during the wait breaks the wait
+  without consuming the slot. The claimed slot is released in `_run_one`'s
+  `finally`. Local `_running` still bounds the per-service dispatch; the
+  limiter bounds quality + valuation combined.
 - Codes already queued/running → skipped; duplicate-only requests return the
   job `reused: true` and never reset timestamps or re-run Hermes.
 - Resubmitting a completed/failed code re-admits it (fresh `queued_at`;
