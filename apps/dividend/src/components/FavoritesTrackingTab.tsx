@@ -39,8 +39,6 @@ const FILTERS: Array<{ key: TrackingFilterKey; label: string }> = [
   { key: 'all', label: '全部收藏' },
   { key: 'pending', label: '待评估' },
   { key: 'ready', label: '待应用' },
-  { key: 'monitoring', label: '监控中' },
-  { key: 'paused', label: '已暂停' },
 ];
 
 const chip = 'rounded border px-2.5 py-1 text-xs transition-colors';
@@ -124,7 +122,7 @@ export function FavoritesTrackingTab({
   }, [rows]);
 
   const pendingApplyCount = counts.ready;
-  const monitoringCount = counts.monitoring;
+  const monitoringCount = rows.filter(row => row.derived.state === 'monitoring').length;
 
   const submitEvaluate = useCallback(async (codeList: string[]) => {
     if (!codeList.length) return;

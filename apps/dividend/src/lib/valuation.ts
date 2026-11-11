@@ -245,8 +245,8 @@ export const TRACKING_STATE_META: Record<FavoriteTrackingState, { label: string;
   unevaluated: { label: '待评估', note: '' },
 };
 
-/** 五种筛选的谓词（重叠仅发生在 待应用 ∩ 监控中/已暂停） */
-export type TrackingFilterKey = 'all' | 'pending' | 'ready' | 'monitoring' | 'paused';
+/** 三种筛选的谓词（监控中/已暂停不设筛选：有挡位的默认都在监控，行内徽章区分暂停） */
+export type TrackingFilterKey = 'all' | 'pending' | 'ready';
 
 export function matchesTrackingFilter(filter: TrackingFilterKey, derived: FavoriteTrackingDerived): boolean {
   switch (filter) {
@@ -260,10 +260,6 @@ export function matchesTrackingFilter(filter: TrackingFilterKey, derived: Favori
           || derived.state === 'failed' || derived.state === 'not_ready');
     case 'ready':
       return derived.pendingApply;
-    case 'monitoring':
-      return derived.state === 'monitoring';
-    case 'paused':
-      return derived.state === 'paused';
     default:
       return false;
   }

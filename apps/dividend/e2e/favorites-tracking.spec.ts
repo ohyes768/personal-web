@@ -197,14 +197,13 @@ test('favorites tab shows all favorites with filter counts and legacy URL', asyn
   const s = scenario();
   await setup(page, s);
   await page.goto('/?tab=alerts');
-  await expect(page.getByRole('heading', { name: '收藏跟踪', level: 2 })).toBeVisible();
   await expect(page.getByText('4 只收藏 · 1 只监控中')).toBeVisible();
-  // 五种筛选与计数（待评估=未评估+非 ready 且无旧挡位，重叠仅待应用∩监控中）
+  // 三种筛选与计数（监控中/已暂停不设筛选：有挡位的默认都在列表里，行内徽章区分暂停）
   await expect(page.getByRole('button', { name: /全部收藏\s*4/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /待评估\s*2/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /待应用\s*1/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /监控中\s*1/ })).toBeVisible();
-  await expect(page.getByRole('button', { name: /已暂停\s*1/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /监控中/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: /已暂停/ })).toHaveCount(0);
   // 四行都在
   const table = page.getByRole('table');
   await expect(table.getByText('测试公司')).toBeVisible();
