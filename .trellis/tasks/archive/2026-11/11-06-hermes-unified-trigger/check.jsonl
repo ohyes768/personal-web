@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/backend/task-web/backend/hermes-profile.md", "reason": "生效 profile 契约与 prompt 事实源：验收须核对 profile 切换三件事同换、HERMES_PROMPT 注入与触发脚本位置"}
+{"file": ".trellis/spec/backend/task-web/backend/index.md", "reason": "task-web 后端包 Quality Check 入口：docker 引擎 volumes/network/user 参数与只读 API 风格一致性"}
+{"file": ".trellis/spec/backend/task-web/backend/naive-timestamps.md", "reason": "runs 时间戳口径：排期与触发相关的时间比较须经 db.naive_local 归一"}
+{"file": ".trellis/spec/backend/testing-environment.md", "reason": "Windows 跑 pytest 的环境约束（uv run 与 .venv 路径差异）"}
