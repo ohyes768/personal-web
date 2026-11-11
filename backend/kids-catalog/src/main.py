@@ -443,7 +443,12 @@ def create_app(data_dir: Path | None = None, music_dir: Path | None = None,
                                'source': row['source'], 'platform': row['platform'],
                                'confirmed': status == 'complete',
                                'track_count': (ledger_tracks if status == 'complete' else row['downloaded_tracks']) or 0})
-        return {**state, 'candidates': candidates}
+        # 已发布合集的播放目录：快照只带标题，目录名由标题净化得到（与下载/生成同源）。
+        # 上月发布、本月已不在候选里的合集也能在浏览器里播。
+        published = [{'number': item['number'], 'title': item['title'],
+                      'folder': sanitize_filename(item['title'])}
+                     for item in (state.get('snapshot') or {}).get('items', [])]
+        return {**state, 'candidates': candidates, 'published': published}
 
     @app.get('/api/collections/{folder}/tracks')
     def collection_tracks(folder: str):

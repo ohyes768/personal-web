@@ -1,4 +1,5 @@
 """浏览器播放数据源接口：GET /api/collections/{folder}/tracks。"""
+import json
 import shutil
 from pathlib import Path
 
@@ -61,3 +62,18 @@ def test_tracks_unknown_folder_404(setup):
 def test_tracks_rejects_traversal(setup, folder):
     client, catalog, root = setup
     assert client.get(f'/api/collections/{folder}/tracks').status_code == 404
+
+
+def test_collections_expose_published_folders(setup):
+    """已发布合集带播放目录：上月发布、本月不在候选里的合集也能播。"""
+    client, catalog, root = setup
+    snapshot = {'schema_version': 1, 'revision': 'rev-1', 'generated_at': '2026-11-07T00:00:00',
+                'items': [{'number': 1, 'title': '儿歌', 'track_count': 3}]}
+    with client.app.state.collections.db() as con:
+        con.execute('insert or replace into publication values(1,?,?)', (json.dumps(snapshot), '{}'))
+    body = client.get('/api/collections').json()
+    assert body['published'] == [{'number': 1, 'title': '儿歌', 'folder': '儿歌'}]
+    # 目录名就是播放入口，tracks 接口能直接用它取到曲目
+    tracks = client.get('/api/collections/%E5%84%BF%E6%AD%8C/tracks')
+    assert tracks.status_code == 404  # 目录还没建好时给出可读错误，不白屏
+    assert tracks.json()['detail']['code'] == 'unknown_folder'

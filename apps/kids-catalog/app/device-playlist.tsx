@@ -1,16 +1,19 @@
 "use client";
 
-import {useCallback, useEffect, useState} from "react";
+import {Fragment, useCallback, useEffect, useState} from "react";
+import CollectionPlayer from "./audio-player";
 import CandidatePicker, {type Candidate} from "./candidate-picker";
 import {describeGeneration, type IntegrationState} from "./generation-progress";
 
 type Entry = {number: number; title: string; track_count: number};
+type Published = {number: number; title: string; folder: string};
 type Snapshot = {revision: string; generated_at: string; items: Entry[]};
 type Skipped = {title: string; folder?: string; reason: string; code: string};
 type DirectoryState = {
   snapshot: Snapshot | null;
   generation: {status: "idle" | "running" | "done" | "failed"; error: string | null; skipped: Skipped[]; integration?: IntegrationState};
   candidates?: Candidate[];
+  published?: Published[];
 };
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
@@ -31,6 +34,8 @@ export default function DevicePlaylist() {
   const [message, setMessage] = useState("");
   // 只记取消勾选的合集：新出现的合集默认勾上，用户的取消不会因刷新丢失。
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
+  // 浏览器播放：整个页面只允许一个合集在播（候选区与设备歌单表共用这一状态）。
+  const [playing, setPlaying] = useState<string | null>(null);
   const load = useCallback(async () => {
     const next = await request<DirectoryState>("");
     setState(next);
@@ -65,6 +70,10 @@ export default function DevicePlaylist() {
   }, [running]);
 
   const candidates = state?.candidates ?? [];
+  // 设备歌单快照只带标题，浏览器播放要用本地目录名（folder）：
+  // 优先用服务端给的已发布目录，其次按标题回查本月候选（旧接口的兜底）。
+  const folderOfTitle = new Map(candidates.map(row => [row.title, row.folder]));
+  const folderOfNumber = new Map((state?.published ?? []).map(row => [row.number, row.folder]));
   const selection = candidates.filter(row => !unchecked.has(row.folder)).map(row => row.folder);
   const toggle = (folder: string) => {
     setUnchecked(previous => {
@@ -138,17 +147,33 @@ export default function DevicePlaylist() {
       {state.generation.integration.metadata_errors.map(item => <li key={item.title}>{item.title}：{item.message}</li>)}
     </ul>}
     {!loading && <CandidatePicker candidates={candidates} unchecked={unchecked}
-      disabled={running || submitting} onToggle={toggle} onSetAll={setAll}
+      disabled={running || submitting} playing={playing} onPlay={setPlaying}
+      onToggle={toggle} onSetAll={setAll}
       onConfirm={confirm} confirming={confirming} />}
     {snapshot ? <>
       <h3 className="playlist-subheading">当前设备歌单</h3>
       <div className="playlist-stamp">{snapshot.items.length} 个合集 · 生成于 {new Date(snapshot.generated_at).toLocaleString("zh-CN")}</div>
       <div className="playlist-table-wrap"><table className="playlist-table">
         <caption className="visually-hidden">设备当前歌单，按曲目数从少到多排列</caption>
-        <thead><tr><th scope="col">编号</th><th scope="col">合集名称</th><th scope="col">曲目数</th></tr></thead>
-        <tbody>{snapshot.items.map(item => <tr key={item.number}>
-          <td className="playlist-number">{item.number}</td><td>{item.title}</td><td>{item.track_count} 首</td>
-        </tr>)}</tbody>
+        <thead><tr><th scope="col">编号</th><th scope="col">合集名称</th><th scope="col">曲目数</th><th scope="col">操作</th></tr></thead>
+        <tbody>{snapshot.items.map(item => {
+          const folder = folderOfNumber.get(item.number) ?? folderOfTitle.get(item.title);
+          return <Fragment key={item.number}>
+            <tr>
+              <td className="playlist-number">{item.number}</td><td>{item.title}</td><td>{item.track_count} 首</td>
+              <td>{folder
+                ? (playing === folder
+                  ? <button type="button" className="secondary" onClick={() => setPlaying(null)}>停止</button>
+                  : <button type="button" className="secondary" title="在浏览器里播放该合集" disabled={running || submitting}
+                    onClick={() => setPlaying(folder)}>播放</button>)
+                : <span className="playlist-unplayable" title="该合集不在本月候选清单中，暂无本地目录可播放">不可播</span>}</td>
+            </tr>
+            {folder && playing === folder && <tr className="playlist-player-row">
+              <td colSpan={4}><CollectionPlayer key={folder} folder={folder} title={item.title}
+                onClose={() => setPlaying(null)}/></td>
+            </tr>}
+          </Fragment>;
+        })}</tbody>
       </table></div>
     </> : !loading && <p className="playlist-empty">还没有设备歌单。下载完成后，勾选合集并点击“生成歌单”。</p>}
     {!!state?.generation.skipped.length && <details className="playlist-skipped" open>

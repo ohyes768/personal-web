@@ -1,19 +1,19 @@
 "use client";
 
-import {Fragment, useState} from "react";
+import {Fragment} from "react";
 import CollectionPlayer from "./audio-player";
 
 export type Candidate = {folder: string; title: string; confirmed: boolean; track_count: number; source?: string; platform?: string};
 
 type CandidatePickerProps = {candidates: Candidate[]; unchecked: Set<string>; disabled: boolean;
+  playing: string | null; onPlay: (folder: string | null) => void;
   onToggle: (folder: string) => void; onSetAll: (checked: boolean) => void;
   onConfirm: (candidate: Candidate) => void; confirming: string | null};
 
-export default function CandidatePicker({candidates, unchecked, disabled, onToggle, onSetAll, onConfirm, confirming}: CandidatePickerProps) {
+export default function CandidatePicker({candidates, unchecked, disabled, playing, onPlay, onToggle, onSetAll, onConfirm, confirming}: CandidatePickerProps) {
   const selectedCount = candidates.filter(row => !unchecked.has(row.folder)).length;
   const allSelected = selectedCount === candidates.length;
-  // 浏览器播放：同一时间只展开一个合集的播放器，切换即换源。
-  const [playing, setPlaying] = useState<string | null>(null);
+  // 浏览器播放：播放状态由设备歌单页统一持有，候选区与设备歌单表同一时间只播一个合集。
   return <section className="playlist-candidates" aria-labelledby="candidate-heading">
     <div className="candidates-head">
       <h3 id="candidate-heading">选择要加入歌单的合集（{selectedCount}/{candidates.length}）</h3>
@@ -42,12 +42,12 @@ export default function CandidatePicker({candidates, unchecked, disabled, onTogg
             onClick={() => onConfirm(row)}>{confirming === row.folder ? "正在核对…" : "确认保留曲目"}</button>
         </>}
         {playing === row.folder
-          ? <button className="secondary" onClick={() => setPlaying(null)}>停止</button>
-          : <button className="secondary" title="在浏览器里播放该合集"
-            onClick={() => setPlaying(row.folder)}>播放</button>}
+          ? <button className="secondary" onClick={() => onPlay(null)}>停止</button>
+          : <button className="secondary" title="在浏览器里播放该合集" disabled={disabled}
+            onClick={() => onPlay(row.folder)}>播放</button>}
       </li>
       {playing === row.folder && <li className="player-row">
-        <CollectionPlayer folder={row.folder} title={row.title} onClose={() => setPlaying(null)}/>
+        <CollectionPlayer key={row.folder} folder={row.folder} title={row.title} onClose={() => onPlay(null)}/>
       </li>}
       </Fragment>)}
     </ul>
