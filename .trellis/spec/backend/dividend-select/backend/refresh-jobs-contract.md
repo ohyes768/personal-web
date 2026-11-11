@@ -8,13 +8,15 @@ FastAPI worker. This is an in-process thread executor, not a distributed queue.
 ## 2. Signatures
 - `POST /api/dividend/m120/refresh`: `{codes: string[]}` → HTTP 202 job.
 - `POST /api/dividend/financial/refresh?force=true|false`: optional `{codes}` → 202 job.
-- `GET /api/dividend/refresh/jobs?kind=m120|financial`: latest job or JSON null.
+- `POST /api/dividend/refresh/jobs?kind=m120|financial|quality|valuation`: latest job or JSON null.
+  (2026-11-11: quality/valuation added — mount-time rediscovery for Hermes jobs.)
 - `GET /api/dividend/refresh/jobs/{job_id}`: job, or 404.
 - `RefreshJobManager.submit(kind, codes, work, params=None)`: durable acceptance;
   `work(progress)` runs synchronously in a dedicated executor thread.
-- `RefreshJobManager.append_codes(job_id, codes) -> job | None`: quality-only
-  durable append into an active job; returns None when the job is missing or
-  already terminal. Never called by m120/financial.
+- `RefreshJobManager.append_codes(job_id, codes) -> job | None`: durable append
+  into an active job; shared by quality and valuation (2026-11-11) continuous
+  queueing. Returns None when the job is missing or already terminal. Never
+  called by m120/financial.
 - `RefreshJobManager.note_quality_order(job_id, order) -> job | None`: persist
   the still-waiting code order on an active quality job. Returns None when the
   job is missing, not quality, or already terminal.

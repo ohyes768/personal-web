@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md", "reason": "Hermes Runs API 幂等/队列/落盘模式被估值链路复用，逐股失败与版本 provenance 语义必须一致"}
+{"file": ".trellis/spec/backend/dividend-select/backend/screening-watchlist-contract.md", "reason": "收藏与 alerts 字段存储契约、批量收藏语义、收藏独立于筛选"}
+{"file": ".trellis/spec/backend/dividend-select/backend/refresh-jobs-contract.md", "reason": "RefreshJobManager kind/append/恢复语义；valuation kind 与 latest kind pattern 扩展"}
+{"file": ".trellis/spec/backend/dividend-select/backend/valuation-contract.md", "reason": "本次新增合同：skill 17 字段校验、apply 身份防护、alerts/enabled、UI 状态语义"}
+{"file": "F:/personal-projects/skills/investment-analysis/stock-four-level-valuation/SKILL.md", "reason": "skill 输出合同源：四状态、仅 ready 有 levels、finalize/check 流程"}
+{"file": "F:/personal-projects/skills/investment-analysis/stock-four-level-valuation/references/output-contract.md", "reason": "17 字段逐项定义与状态约束，后端 pydantic 校验对齐依据"}

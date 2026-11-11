@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/valuation-contract.md", "reason": "验证矩阵与测试清单的核对基准"}
+{"file": ".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md", "reason": "估值与评级的模式一致性检查（队列/幂等/落盘/前端映射）"}
