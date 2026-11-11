@@ -77,11 +77,13 @@ options:
 
   task-web 连带处理业务仓库 stock-info-dingding（方案 B：业务代码不进本仓）：
     1) 先在业务仓库 checkout 上 git pull --ff-only 更新代码（同样带自动 stash）
-    2) 再 docker compose build stock-info-image 重建 stock-info:latest
+    2) 重建两个 build-only 镜像：
+       stock-info:latest      ← 业务仓库（含脚本与依赖）
+       hermes-trigger:latest  ← 本仓 backend/task-web/trigger/（13 个 AI 任务的执行载体）
     3) 校验 /workspace/stock-info-dingding 下的运行时 env_file 是否就位（缺失只告警）
   路径默认 /home/ohyes768/stock-info-dingding，可用根 .env 里的
   STOCK_INFO_HOST_PATH / TASK_WEB_WORKSPACE_HOST_PATH 覆盖；
-  side=frontend 时跳过以上步骤（前端不依赖业务镜像）。
+  side=frontend 时跳过以上全部步骤（前端不依赖这两个镜像）。
 
   buildx 使用 docker-container 驱动时，不会继承宿主机 daemon.json 的
   registry-mirrors。脚本会创建 nas-builder-cn，并加载
@@ -453,8 +455,8 @@ if $DO_PULL; then
 fi
 
 # ---- Step 2: build ----
-# task-web 前置：业务仓库更新 + 业务镜像 stock-info（方案 B，脚本+依赖在业务仓库自维护）
-# 前端不依赖业务镜像，side=frontend 时整段跳过。
+# task-web 前置：业务仓库更新 + 两个 build-only 镜像（stock-info:latest 来自业务仓库，
+# hermes-trigger:latest 来自本仓 trigger/）。前端不依赖这两个镜像，side=frontend 时整段跳过。
 if [[ "$TARGET" == "task-web" && "$SIDE" != "frontend" ]]; then
     echo ""
     if $DO_PULL; then
@@ -472,7 +474,7 @@ if [[ "$TARGET" == "task-web" && "$SIDE" != "frontend" ]]; then
     check_task_web_business_env
 elif [[ "$TARGET" == "task-web" ]]; then
     echo ""
-    echo "==> [2/3] side=frontend：跳过业务仓库更新与 stock-info 镜像构建"
+    echo "==> [2/3] side=frontend：跳过业务仓库更新与 stock-info / hermes-trigger 镜像构建"
 fi
 echo ""
 if $USE_BUILDX; then

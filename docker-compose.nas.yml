@@ -578,8 +578,12 @@ services:
     build:
       context: ${STOCK_INFO_HOST_PATH:-/home/ohyes768/stock-info-dingding}
 
-  # AI 任务触发镜像（方案 B 同款 build-only）：hermes_trigger.py + requests，
-  # 源码在本仓 backend/task-web/trigger/（task-web 的执行基础设施）
+  # AI 任务触发镜像（build-only，与 stock-info-image 同款）：镜像内是
+  # backend/task-web/trigger/hermes_trigger.py + requests，由 task-web 的 docker
+  # 引擎按次拉起执行 13 个 AI 任务（tasks.yaml 中 image: hermes-trigger:latest）。
+  # 这是 task-web 的执行基础设施，与本仓外的业务仓库无关，故 context 在本仓内。
+  # deploy-nas.sh task-web（side=backend/both）会前置调用
+  # `docker compose build hermes-trigger-image`，保证镜像与 trigger 源码同源。
   hermes-trigger-image:
     image: hermes-trigger:latest
     container_name: hermes-trigger-image
