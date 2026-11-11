@@ -249,6 +249,7 @@ export function FavoritesTrackingTab({
               <th className="p-3 font-medium">股票 / 基本面</th>
               <th className="p-3 font-medium">现价（元）</th>
               <th className="p-3 font-medium">挡位（元）</th>
+              <th className="p-3 font-medium">评估 / 版本</th>
               <th className="p-3 font-medium">评估与监控状态</th>
               <th className="p-3 font-medium">操作</th>
             </tr>
@@ -260,6 +261,7 @@ export function FavoritesTrackingTab({
                 row={row}
                 qualityScore={qualityScores[row.code] ?? null}
                 qualityVersion={qualityVersion}
+                valuationVersion={currentSkillVersion}
                 priceUpdatedAt={priceUpdatedAt}
                 evaluating={(perCode[row.code]?.state === 'queued' || perCode[row.code]?.state === 'running') || actionPending === row.code}
                 togglePending={actionPending === row.code}
@@ -272,7 +274,7 @@ export function FavoritesTrackingTab({
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-10 text-center text-ink-muted">
+                <td colSpan={6} className="p-10 text-center text-ink-muted">
                   {rows.length === 0
                     ? '还没有收藏的股票，去「全部」或「选股关注」添加收藏。'
                     : '没有符合条件的收藏股，试试其他状态或搜索词。'}
@@ -306,6 +308,7 @@ function TrackingRow({
   row,
   qualityScore,
   qualityVersion,
+  valuationVersion,
   priceUpdatedAt,
   evaluating,
   togglePending,
@@ -327,6 +330,8 @@ function TrackingRow({
   };
   qualityScore: { dimensions: Record<QualityDimensionKey, number | null>; skill_version?: string | null } | null;
   qualityVersion: string | null;
+  /** 当前已部署的估值 skill 版本；与行报告版本不一致时提示需重评 */
+  valuationVersion: string | null;
   priceUpdatedAt: string | null;
   evaluating: boolean;
   togglePending: boolean;
@@ -337,6 +342,7 @@ function TrackingRow({
   onOpenSettings: () => void;
 }) {
   const { stock, alertItem, report, derived, currentPrice, price, liveError } = row;
+  const currentValuationVersion = valuationVersion;
   const meta = TRACKING_STATE_META[derived.state];
   // 徽章已经说清的状态不再补一句说明（避免每行固定多占一行）
   const needsNote = derived.state === 'evaluating'
@@ -479,6 +485,32 @@ function TrackingRow({
         )}
       </td>
 
+      {/* 评估 / 版本：报告时间 + skill 版本；手工配置无报告时显示配置时间 */}
+      <td className="p-3 text-xs text-ink-muted whitespace-nowrap">
+        {report ? (
+          <>
+            <div className="tabular-nums">
+              {new Date(report.evaluated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <div className="mt-0.5 font-mono">
+              {report.skill_version ? `v${report.skill_version}` : '版本未记录'}
+              {currentValuationVersion && report.skill_version && report.skill_version !== currentValuationVersion && (
+                <span className="ml-1 text-amber-700" title={`当前已部署 v${currentValuationVersion}，可重评`}>需重评</span>
+              )}
+            </div>
+          </>
+        ) : alertItem?.updated_at ? (
+          <>
+            <div className="tabular-nums">
+              {new Date(alertItem.updated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            </div>
+            <div className="mt-0.5">手工配置</div>
+          </>
+        ) : (
+          '—'
+        )}
+      </td>
+
       {/* 状态：徽章说话；只有需要额外解释的状态才补一行（每行最多 3 行） */}
       <td className="p-3">
         {statePill}
@@ -487,11 +519,6 @@ function TrackingRow({
         )}
         {derived.pendingApply && derived.effective && (
           <div className="mt-1 text-xs text-accent">新评估待应用 · 旧挡位仍生效</div>
-        )}
-        {report && derived.state !== 'evaluating' && (
-          <div className="mt-1 text-[10px] text-ink-muted">
-            评估于 {new Date(report.evaluated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-          </div>
         )}
       </td>
 
