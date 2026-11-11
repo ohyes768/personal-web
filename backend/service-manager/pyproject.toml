@@ -1,0 +1,41 @@
+[project]
+name = "service-manager"
+version = "0.1.0"
+description = "NAS 服务管理台后端（FastAPI，单 NAS Docker Compose 服务台账 + 只读 Docker 发现 + URL/TLS/Release 检查）"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.24.0",
+    "pydantic>=2.5.0",
+    "pydantic-settings>=2.6.0",
+    "httpx>=0.27.0",
+    # Docker Engine 只读元数据（经 socket proxy，API 自动协商）
+    "docker>=7.1.0",
+    # 公开证书链解析（不读私钥）
+    "cryptography>=42.0.0",
+    # 签名 session cookie
+    "itsdangerous>=2.2.0",
+    # 备份文件上传（multipart）
+    "python-multipart>=0.0.9",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "httpx>=0.27.0",
+]
+
+# 应用而非库：不打包安装，uvicorn 从项目根目录直接跑 src.main:app
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+# tmp_path 固定在仓库内：本机 %TEMP% 目录上 os.replace 会报 WinError 6
+addopts = "--basetemp=.pytest-tmp"
+markers = [
+    "requires_network: 用例需要真实外网（GitHub / TLS 站点），离线环境显式跳过",
+]

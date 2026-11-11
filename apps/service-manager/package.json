@@ -1,0 +1,26 @@
+{
+  "name": "service-manager-frontend",
+  "private": true,
+  "scripts": {
+    "dev": "next dev -p 3012",
+    "build": "next build",
+    "start": "next start -p 3012",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "next": "^15.4.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.7",
+    "@playwright/test": "^1.65.0",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "^15.4.0",
+    "typescript": "^5"
+  }
+}
