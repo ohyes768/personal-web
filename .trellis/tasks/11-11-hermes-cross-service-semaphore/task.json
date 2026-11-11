@@ -1,0 +1,33 @@
+{
+  "id": "hermes-cross-service-semaphore",
+  "name": "hermes-cross-service-semaphore",
+  "title": "Hermes 跨 service 共享并发上限（quality/valuation 共用信号量）",
+  "description": "quality 与 valuation 各自限流导致 HERMES_MAX_CONCURRENT 实际翻倍；引入共享信号量让全局并发回归字面语义，不破坏队列取消/调序语义。",
+  "status": "todo",
+  "dev_type": "backend",
+  "scope": "backend/dividend-select",
+  "package": "backend/dividend-select",
+  "priority": "P3",
+  "creator": "jackson.tang",
+  "assignee": "jackson.tang",
+  "createdAt": "2026-11-11",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "master",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "backend/dividend-select/src/services/quality_service.py",
+    "backend/dividend-select/src/services/valuation_service.py",
+    "backend/dividend-select/src/services/refresh_jobs.py",
+    "backend/dividend-select/src/services/hermes_client.py",
+    ".trellis/spec/backend/dividend-select/backend/quality-rating-contract.md",
+    ".trellis/spec/backend/dividend-select/backend/valuation-contract.md"
+  ],
+  "notes": "2026-11-11 分析发现：两个 service 各自 limit = HERMES_MAX_CONCURRENT，RefreshJobManager executor max_workers=2 允许两类 job 并行，实际对 Hermes 并发 2×limit。",
+  "meta": {}
+}
