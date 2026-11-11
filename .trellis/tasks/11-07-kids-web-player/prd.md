@@ -22,8 +22,19 @@
 
 ## 验收标准
 
-- [ ] 浏览器访问 `/kids-audio/<合集>/<文件>` 可直接播放，拖动进度条正常（Range 生效）
-- [ ] 设备歌单页点「播放」能按编号顺序播放合集曲目，可暂停/切歌/拖进度
-- [ ] 未发布的合集（本地目录不存在）点播放给出可读提示，不白屏
-- [ ] `pnpm build`（apps/kids-catalog）通过；后端 pytest 通过（新增 tracks 接口测试）
-- [ ] docker-compose.nas.yml 与 nginx/web.conf 改动经 deploy 后在 NAS 实际生效
+- [x] 浏览器访问 `/kids-audio/<合集>/<文件>` 可直接播放，拖动进度条正常（Range 生效）
+      → NAS 实测 HEAD 200 + `Accept-Ranges: bytes`，Range 请求 206/1024 bytes，目录列表 403
+- [x] 设备歌单页点「播放」能按编号顺序播放合集曲目，可暂停/切歌/拖进度
+      → 候选区与「当前设备歌单」表都提供播放入口；上一首/下一首 + 原生控件暂停/拖动；线上实测 206 播放、下一首切到 002（计数 1/16 → 2/16）
+- [x] 未发布的合集（本地目录不存在）点播放给出可读提示，不白屏
+      → tracks 接口 404 `unknown_folder`，播放器行内显示「合集目录不存在或还没有音频」
+- [x] `pnpm build`（apps/kids-catalog）通过；后端 pytest 通过（新增 tracks 接口测试）
+      → Linux 容器内 next build 通过（Windows 本机 standalone 软链需特权，属环境限制）；pytest 245 passed / 1 skipped（另有 1 条 3000 文件用例因 Windows 磁盘慢超时、1 条顺序相关偶发，干净树上同样复现）
+- [x] docker-compose.nas.yml 与 nginx/web.conf 改动经 deploy 后在 NAS 实际生效
+      → nginx 本机挂载 `/home/ohyes768/xiaomusic/music:/music:ro` 已就位，web.conf 的 `/kids-audio/` 已 reload 生效；前后端容器经 `deploy-nas.sh kids-catalog` 重建上线
+
+## 补充说明（实施后新增）
+
+- 「当前设备歌单」表格新增「操作」列，可按编号直接播放已发布合集（PRD 第 3 条的「设备歌单页每个合集行」）。
+- 后端 `/api/collections` 增加 `published`（已发布合集的播放目录名），上月发布、本月不在候选清单里的合集同样能播。
+- 播放状态上提到设备歌单页，候选区与设备歌单表共用；播放器只在发起处展开，避免同一合集出现两个播放器同时出声。
