@@ -3,10 +3,10 @@
   "name": "nas-service-manager",
   "title": "NAS 服务管理台 V1 规划",
   "description": "规划单 NAS Docker Compose 服务台账、部署路径、端口、域名证书、运行检查、GitHub Release 与导出恢复；仅规划，待评审。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": "fullstack",
-  "scope": "service-manager",
-  "package": null,
+  "scope": "backend/service-manager + apps/service-manager",
+  "package": "backend/service-manager",
   "priority": "P2",
   "creator": "jackson.tang",
   "assignee": "jackson.tang",
@@ -21,16 +21,41 @@
   "children": [],
   "parent": null,
   "relatedFiles": [
-    ".trellis/tasks/11-11-nas-service-manager/prd.md",
-    ".trellis/tasks/11-11-nas-service-manager/design.md",
-    ".trellis/tasks/11-11-nas-service-manager/implement.md",
-    ".trellis/tasks/11-11-nas-service-manager/research/findings.md"
+    "backend/service-manager/src",
+    "backend/service-manager/tests",
+    "apps/service-manager/app",
+    "apps/service-manager/lib",
+    "apps/service-manager/e2e",
+    "docker-compose.nas.yml",
+    "nginx/web.conf",
+    "nginx/html/index.html",
+    "scripts/deploy-nas.sh",
+    "scripts/start-service-manager-dev.bat",
+    "docs/service-manager-nas-setup.md",
+    ".trellis/spec/backend/service-manager/backend/index.md",
+    ".trellis/spec/apps/service-manager/frontend/index.md"
   ],
-  "notes": "2026-11-11 完成 V1 规划草案与 NAS 只读研究；等待用户评审，不启动实现。",
+  "notes": "2026-11-11 实现完成（M1–M6 代码与接线）：后端 171 tests passed；前端 eslint 0 problems、tsc 0 error、build 成功、playwright 16 用例（desktop + 375px）全过；nginx -t 通过；compose config 通过。NAS 实机构建/部署与 socket-proxy ACL 冒烟待用户授权后执行（步骤见 docs/service-manager-nas-setup.md）。",
   "meta": {
     "target_packages": [
       "apps/service-manager",
       "backend/service-manager"
-    ]
+    ],
+    "milestones": {
+      "M1": "模块骨架、台账存储与登录 —— 完成",
+      "M2": "Docker 发现与组件导入 —— 完成",
+      "M3": "访问入口、资源投影与导出恢复 —— 完成",
+      "M4": "URL、证书、发布动态及检查调度 —— 完成",
+      "M5": "前端页面与可用性 —— 完成",
+      "M6": "NAS 接线、全量验收与回滚材料 —— 接线完成，实机部署待授权"
+    },
+    "ports": {
+      "frontend": 3012,
+      "backend": 8102
+    },
+    "routes": {
+      "ui": "/services",
+      "api": "/api/services/*"
+    }
   }
 }
