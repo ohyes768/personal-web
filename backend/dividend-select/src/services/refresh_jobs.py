@@ -29,7 +29,8 @@ class RefreshJobManager:
         self._futures = {}
         self._last_save = {}
         self._closing = False
-        self._quality_attempts = {}
+        # quality / valuation 这类带内存队列的任务按 job 记账每次受理的进度
+        self._queue_attempts = {}
         self._executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix='dividend-refresh')
         for path in sorted(directory.glob('*.json')):
             try:
@@ -57,7 +58,7 @@ class RefreshJobManager:
                     self._jobs.pop(job['job_id'], None)
                     self._futures.pop(job['job_id'], None)
                     self._last_save.pop(job['job_id'], None)
-                    self._quality_attempts.pop(job['job_id'], None)
+                    self._queue_attempts.pop(job['job_id'], None)
 
     def get(self, job_id):
         with self._lock:
@@ -120,24 +121,24 @@ class RefreshJobManager:
             self._save(job)
             return copy.deepcopy(job)
 
-    def note_quality_order(self, job_id, order):
-        """把仍在等待的代码顺序写入进行中的 quality 任务。终态任务返回 None。"""
+    def note_queue_order(self, job_id, order, kind='quality'):
+        """把仍在等待的代码顺序写入进行中的排队任务（quality / valuation）。终态任务返回 None。"""
         with self._lock:
             job = self._jobs.get(job_id)
-            if not job or job.get('kind') != 'quality' or job['status'] not in ACTIVE:
+            if not job or job.get('kind') != kind or job['status'] not in ACTIVE:
                 return None
             job['queue_order'] = list(order)
             job['updated_at'] = now()
             self._save(job)
             return copy.deepcopy(job)
 
-    def note_quality_cancel(self, job_id, code, queue_order):
+    def note_queue_cancel(self, job_id, code, queue_order, kind='quality'):
         """在调度线程尚未提供 progress 回调时，结清一次等待中的取消并先落盘。"""
         with self._lock:
             job = self._jobs.get(job_id)
-            if not job or job.get('kind') != 'quality' or job['status'] not in ACTIVE:
+            if not job or job.get('kind') != kind or job['status'] not in ACTIVE:
                 return None
-            tally = self._quality_attempts.setdefault(job_id, {})
+            tally = self._queue_attempts.setdefault(job_id, {})
             self._account_locked(job, tally, code, False, 'cancelled', queue_order)
             self._save(job)
             return copy.deepcopy(job)
@@ -146,9 +147,9 @@ class RefreshJobManager:
         if code not in job['codes']:
             raise ValueError('无效的股票进度')
         if outcome == 'cancelled':
-            # 只给 quality 用。取消不是成功也不是失败，且每个受理只结清一次。
-            if job.get('kind') != 'quality':
-                raise ValueError('仅评级任务可以取消')
+            # 只给带内存队列的任务用。取消不是成功也不是失败，且每个受理只结清一次。
+            if job.get('kind') not in ('quality', 'valuation'):
+                raise ValueError('仅评级/估值任务可以取消')
             tally[code] = tally.get(code, 0) + 1
             job['processed'] += 1
             job['cancelled'] = job.get('cancelled', 0) + 1
@@ -182,7 +183,8 @@ class RefreshJobManager:
                 self._save(job)
             def progress(code, success, *, outcome=None, queue_order=None):
                 with self._lock:
-                    tally = self._quality_attempts.setdefault(job['job_id'], {}) if job.get('kind') == 'quality' else attempts
+                    tally = (self._queue_attempts.setdefault(job['job_id'], {})
+                             if job.get('kind') in ('quality', 'valuation') else attempts)
                     self._account_locked(job, tally, code, success, outcome, queue_order)
                     if outcome == 'cancelled' or time.monotonic() - self._last_save[job['job_id']] >= 1:
                         self._save(job)

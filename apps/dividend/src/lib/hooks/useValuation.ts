@@ -8,9 +8,11 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { dividendApi, dividendUpdateApi } from '@/lib/api';
+import { ApiHttpError } from '@/lib/api-client';
 import {
   isValuationJobActive,
   type ValuationJob,
+  type ValuationMoveAction,
   type ValuationPerCodeMap,
   type ValuationReportRecord,
   type ValuationStatusResponse,
@@ -37,6 +39,10 @@ export interface UseValuationResult {
   analyze: (codes: string[]) => Promise<void>;
   /** 重新拉取全部报告与状态 */
   refresh: () => Promise<void>;
+  /** 取消这一次估值。返回空字符串表示已按服务端快照更新；否则是要展示的失败原因。 */
+  cancelQueueItem: (itemId: string) => Promise<string>;
+  /** 调整等待顺序。冲突时仍会刷成服务端快照。 */
+  moveQueueItem: (itemId: string, action: ValuationMoveAction) => Promise<string>;
 }
 
 export function useValuation(): UseValuationResult {
@@ -136,6 +142,29 @@ export function useValuation(): UseValuationResult {
     };
   }, [refresh, startPolling, stopPolling]);
 
+  const applyQueueResult = useCallback(async (work: () => Promise<{ per_code?: ValuationPerCodeMap }>) => {
+    try {
+      const snapshot = await work();
+      if (mounted.current && snapshot.per_code) setPerCode(snapshot.per_code);
+      return '';
+    } catch (err) {
+      const body = err instanceof ApiHttpError ? err.body : null;
+      const record = body && typeof body === 'object' ? body as { per_code?: ValuationPerCodeMap; detail?: { per_code?: ValuationPerCodeMap } } : null;
+      const perCode = record?.per_code ?? record?.detail?.per_code;
+      if (mounted.current && perCode) setPerCode(perCode);
+      return err instanceof Error ? err.message : '队列操作失败';
+    }
+  }, []);
+
+  const cancelQueueItem = useCallback(
+    (itemId: string) => applyQueueResult(() => dividendApi.cancelValuationItem(itemId)),
+    [applyQueueResult],
+  );
+  const moveQueueItem = useCallback(
+    (itemId: string, action: ValuationMoveAction) => applyQueueResult(() => dividendApi.moveValuationItem(itemId, action)),
+    [applyQueueResult],
+  );
+
   const analyze = useCallback(async (codes: string[]) => {
     if (!codes.length) return;
     setMessage('');
@@ -157,6 +186,6 @@ export function useValuation(): UseValuationResult {
 
   return {
     reports, perCode, configured, currentSkillVersion, job, message, pollError,
-    analyze, refresh,
+    analyze, refresh, cancelQueueItem, moveQueueItem,
   };
 }

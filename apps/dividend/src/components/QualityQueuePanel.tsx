@@ -1,27 +1,41 @@
 /**
- * 评级队列弹框：只展示正在分析与排队中的任务。
+ * 排队任务弹框：只展示正在分析与排队中的任务（评级/估值共用）。
  * 顺序和取消结果以服务端快照为准；关闭弹框只停本地计时。
  */
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from './shared-ui/Modal';
-import {
-  formatElapsedSince,
-  type QualityMoveAction,
-  type QualityQueueRow,
-  type QualityQueueView,
-} from '@/lib/quality';
+import { formatElapsedSince } from '@/lib/quality';
 
 const buttonClass = 'rounded border border-rule-strong px-2 py-1 text-xs text-ink hover:border-accent disabled:opacity-40';
 
-export interface QualityQueuePanelProps {
-  view: QualityQueueView;
-  onCancel: (itemId: string) => Promise<string>;
-  onMove: (itemId: string, action: QualityMoveAction) => Promise<string>;
+/** 队列面板行的最小结构（Quality/Valuation 行都满足） */
+export interface QueueRowData {
+  code: string;
+  itemId: string | null;
+  name: string | null;
+  state: string;
+  error: string | null;
+  startedAt: string | null;
+  position: number | null;
 }
 
-export function QualityQueuePanel({ view, onCancel, onMove }: QualityQueuePanelProps) {
+export interface QueuePanelView {
+  rows: QueueRowData[];
+  runningCount: number;
+  queuedCount: number;
+}
+
+export interface QualityQueuePanelProps {
+  view: QueuePanelView;
+  onCancel: (itemId: string) => Promise<string>;
+  onMove: (itemId: string, action: 'front' | 'up' | 'down') => Promise<string>;
+  /** 按钮与弹框标题前缀（默认「评级」） */
+  label?: string;
+}
+
+export function QualityQueuePanel({ view, onCancel, onMove, label = '评级' }: QualityQueuePanelProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const busyIds = useRef(new Set<string>());
@@ -64,11 +78,11 @@ export function QualityQueuePanel({ view, onCancel, onMove }: QualityQueuePanelP
         aria-expanded={isOpen}
         onClick={() => setIsOpen(true)}
       >
-        评级队列
+        {label}队列
         <span className="text-xs text-ink-muted">运行 {view.runningCount} · 排队 {view.queuedCount}</span>
       </button>
-      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title="评级任务队列" size="md">
-        <div role="dialog" aria-modal="true" aria-label="评级任务队列" className="rounded-xl border border-rule bg-paper-card p-4">
+      <Modal isOpen={isOpen} onClose={() => setIsOpen(false)} title={`${label}任务队列`} size="md">
+        <div role="dialog" aria-modal="true" aria-label={`${label}任务队列`} className="rounded-xl border border-rule bg-paper-card p-4">
           <p className="text-xs text-ink-muted">运行 {view.runningCount} · 排队 {view.queuedCount}</p>
           {actionError && <p role="alert" className="mt-2 text-xs text-red-700">{actionError}</p>}
           {running.length === 0 && queued.length === 0 && (
@@ -124,10 +138,10 @@ export function QualityQueuePanel({ view, onCancel, onMove }: QualityQueuePanelP
 }
 
 function QueueRow({ row, queuedCount, busy, onMove, onCancel }: {
-  row: QualityQueueRow;
+  row: QueueRowData;
   queuedCount: number;
   busy: boolean;
-  onMove: (action: QualityMoveAction) => void;
+  onMove: (action: 'front' | 'up' | 'down') => void;
   onCancel: () => void;
 }) {
   const atFront = row.position === 1;

@@ -422,8 +422,8 @@ class QualityService:
                 finished = _now()
                 item.update(state="cancelled", error=None, finished_at=finished, updated_at=finished)
                 try:
-                    saved = refresh_jobs.note_quality_cancel(
-                        self._active_job_id, code, list(self._pending))
+                    saved = refresh_jobs.note_queue_cancel(
+                        self._active_job_id, code, list(self._pending), kind='quality')
                 except Exception:
                     self._pending.insert(index, code)
                     item.update(state="queued", finished_at=previous[0], updated_at=previous[1], error=previous[2])
@@ -471,7 +471,7 @@ class QualityService:
             previous = list(self._pending)
             self._pending = deque(order)
             try:
-                saved = refresh_jobs.note_quality_order(self._active_job_id, order) if self._active_job_id else None
+                saved = refresh_jobs.note_queue_order(self._active_job_id, order, kind='quality') if self._active_job_id else None
             except Exception:
                 self._pending = deque(previous)
                 raise

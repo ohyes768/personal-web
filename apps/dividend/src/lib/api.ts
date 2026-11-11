@@ -9,6 +9,8 @@ import type { FavoritesResponse } from './watchlist';
 import type { QualityJob, QualityMoveAction, QualityQueueSnapshot, QualityScoresResponse } from './quality';
 import type {
   ValuationJob,
+  ValuationMoveAction,
+  ValuationQueueSnapshot,
   ValuationStatusResponse,
 } from './valuation';
 import type {
@@ -59,6 +61,12 @@ export const dividendApi = {
   /** 查询估值任务进度 */
   getValuationJob: (jobId: string) =>
     directClient.get<ValuationJob>(`/api/dividend/valuation/jobs/${jobId}`),
+  /** 取消这一次估值。等待项立即移出；运行项等 Hermes 确认停止。重复取消幂等。 */
+  cancelValuationItem: (itemId: string) =>
+    directClient.post<ValuationQueueSnapshot>(`/api/dividend/valuation/queue/${encodeURIComponent(itemId)}/cancel`, {}),
+  /** 调整估值等待顺序。冲突时响应体带有服务端快照。 */
+  moveValuationItem: (itemId: string, action: ValuationMoveAction) =>
+    directClient.post<ValuationQueueSnapshot>(`/api/dividend/valuation/queue/${encodeURIComponent(itemId)}/move`, { action }),
   /** 获取全部已落盘估值报告 + 逐股实时状态 */
   getValuationStatus: () =>
     directClient.get<ValuationStatusResponse>('/api/dividend/valuation'),

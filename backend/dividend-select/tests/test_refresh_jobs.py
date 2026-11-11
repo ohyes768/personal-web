@@ -123,7 +123,7 @@ def test_quality_cancel_accounting_does_not_change_financial_failures(tmp_path):
             progress('000090', False, outcome='cancelled')
         rejected_job = other.submit('financial', ['000090'], rejected)
         await other.close(timeout=2)
-        assert '仅评级任务可以取消' in other.get(rejected_job['job_id'])['error']
+        assert '仅评级/估值任务可以取消' in other.get(rejected_job['job_id'])['error']
     asyncio.run(scenario())
 
 

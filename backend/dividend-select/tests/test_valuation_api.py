@@ -85,12 +85,18 @@ def wait_job(manager, job_id, timeout=5.0):
     raise AssertionError("job 未在超时内完成")
 
 
-def configure_hermes(monkeypatch, version="1.0.0"):
+def configure_hermes(monkeypatch, version="1.0.0", status="ready"):
     monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
     monkeypatch.setenv("HERMES_API_KEY", "secret")
     monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", version)
     monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
-    monkeypatch.setattr(routes, "poll_run", lambda cfg, run_id: fake_report(run_id.split("-")[1], "样本"))
+    monkeypatch.setattr(routes, "poll_run",
+                        lambda cfg, run_id: fake_report(run_id.split("-")[1], "样本", status=status))
+    # _watch 路径用的单次查询/停止也要打桩
+    monkeypatch.setattr(routes, "get_run",
+                        lambda cfg, run_id: {"status": "completed",
+                                             "output": fake_report(run_id.split("-")[1], "样本", status=status)})
+    monkeypatch.setattr(routes, "stop_run", lambda cfg, run_id: "cancelled")
 
 
 class TestAnalyze:
@@ -175,12 +181,7 @@ class TestApply:
 
     def test_apply_non_ready_rejected(self, client, monkeypatch):
         test_client, _, _, _ = client
-        monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
-        monkeypatch.setenv("HERMES_API_KEY", "secret")
-        monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", "1.0.0")
-        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
-        monkeypatch.setattr(routes, "poll_run",
-                            lambda cfg, run_id: fake_report(run_id.split("-")[1], "样本", status="insufficient_data"))
+        configure_hermes(monkeypatch, status="insufficient_data")
         evaluated_at = self._evaluate(test_client)
         response = test_client.post("/valuation/000001/apply", json={"evaluated_at": evaluated_at})
         assert response.status_code == 400
@@ -239,6 +240,9 @@ class TestOldMonitorPreserved:
         monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
         monkeypatch.setattr(routes, "poll_run",
                             lambda cfg, run_id: (_ for _ in ()).throw(Exception("run 失败")))
+        monkeypatch.setattr(routes, "get_run",
+                            lambda cfg, run_id: {"status": "failed", "output": ""})
+        monkeypatch.setattr(routes, "stop_run", lambda cfg, run_id: "cancelled")
         accepted = test_client.post("/valuation/analyze", json={"codes": ["600000"]})
         wait_job(_manager_of(test_client), accepted.json()["job_id"])
         after = favorites.get_all()["items"]
@@ -250,3 +254,74 @@ class TestOldMonitorPreserved:
 def _manager_of(test_client):
     # job 轮询需要 manager；从 routes 全局拿（fixture 已设置）
     return routes.refresh_jobs
+
+
+class TestQueueRoutes:
+    """估值队列取消/调序路由：与 /quality/queue/* 同构。"""
+
+    def _submit_three(self, test_client):
+        accepted = test_client.post("/valuation/analyze", json={"codes": ["000001", "600000", "600519"]})
+        assert accepted.status_code == 202
+        return accepted.json()
+
+    def _wait_state(self, service, code, state, timeout=5.0):
+        import time as time_mod
+        deadline = time_mod.monotonic() + timeout
+        while time_mod.monotonic() < deadline:
+            item = service.get_per_code().get(code) or {}
+            if item.get("state") == state:
+                return item
+            time_mod.sleep(0.02)
+        raise AssertionError(f"{code} 未在超时内进入 {state}")
+
+    def test_cancel_and_move_routes(self, client, monkeypatch):
+        test_client, manager, _, service = client
+        configure_hermes(monkeypatch)
+        # watch 路径打桩：release 前 get_run 一直 running；poll 间隔归零避免 30s 等待
+        monkeypatch.setenv("HERMES_POLL_INTERVAL", "0")
+        import threading
+        release = threading.Event()
+        monkeypatch.setattr(routes, "get_run",
+                            lambda cfg, run_id: {"status": "running" if not release.is_set() else "completed",
+                                                 "output": "" if not release.is_set()
+                                                 else fake_report(run_id.split("-")[1], "样本")})
+        job = self._submit_three(test_client)
+        self._wait_state(service, "000001", "running")
+        queued = service.get_per_code()
+        assert [queued["600000"]["position"], queued["600519"]["position"]] == [1, 2]
+
+        # 调序
+        moved = test_client.post(f"/valuation/queue/{queued['600519']['item_id']}/move",
+                                 json={"action": "front"})
+        assert moved.status_code == 200
+        assert moved.json()["per_code"]["600519"]["position"] == 1
+
+        # 取消等待项
+        cancelled = test_client.post(f"/valuation/queue/{queued['600000']['item_id']}/cancel")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["per_code"]["600000"]["state"] == "cancelled"
+
+        # 坏动作 422，过期身份 409
+        assert test_client.post(f"/valuation/queue/{queued['600519']['item_id']}/move",
+                                json={"action": "sideways"}).status_code == 422
+        assert test_client.post(f"/valuation/queue/{queued['600000']['item_id']}/move",
+                                json={"action": "front"}).status_code == 409
+
+        release.set()
+        deadline = 0
+        while manager.get(job["job_id"])["status"] in ("queued", "running") and deadline < 100:
+            import time as time_mod
+            time_mod.sleep(0.05)
+            deadline += 1
+        final = manager.get(job["job_id"])
+        assert final["status"] == "succeeded"
+        assert final.get("cancelled") == 1
+        reports = test_client.get("/valuation").json()["reports"]
+        assert "600000" not in reports
+        assert set(reports) == {"000001", "600519"}
+
+    def test_cancel_unknown_item_409(self, client, monkeypatch):
+        test_client, _, _, _ = client
+        configure_hermes(monkeypatch)
+        response = test_client.post("/valuation/queue/nonexistent/cancel")
+        assert response.status_code == 409

@@ -4,7 +4,7 @@
  * 契约对齐后端 valuation_service：
  * - 17 字段报告，status ∈ ready/insufficient_data/blocked/not_applicable
  * - 仅 ready 有 levels（四价严格递增）与 valuation；非 ready 两者为 null
- * - per_code 状态 queued/running/completed/failed（重启清空）
+ * - per_code 状态 queued/running/cancelling/completed/failed/cancelled（重启清空）
  * 应用走 POST /valuation/{code}/apply（evaluated_at 身份校验），失败/非 ready 永不覆盖旧 alerts。
  */
 import type { AlertLevels, RefreshJob } from './types';
@@ -43,7 +43,7 @@ export interface ValuationReportRecord {
 }
 
 export interface ValuationPerCodeItem {
-  state: 'queued' | 'running' | 'completed' | 'failed';
+  state: 'queued' | 'running' | 'cancelling' | 'completed' | 'failed' | 'cancelled';
   error?: string | null;
   updated_at?: string | null;
   name?: string | null;
@@ -64,10 +64,64 @@ export interface ValuationStatusResponse {
   current_skill_version: string | null;
 }
 
-export type ValuationJob = RefreshJob & { per_code?: ValuationPerCodeMap };
+export type ValuationJob = RefreshJob & { per_code?: ValuationPerCodeMap; cancelled?: number };
 
 export function isValuationJobActive(job: ValuationJob | null | undefined): boolean {
   return !!job && (job.status === 'queued' || job.status === 'running');
+}
+
+export type ValuationMoveAction = 'front' | 'up' | 'down';
+
+export interface ValuationQueueSnapshot {
+  per_code: ValuationPerCodeMap;
+  running_count: number;
+  queued_count: number;
+}
+
+/** 是否处于排队/运行/取消中（重复提交禁用、行内「评估中」的判定） */
+export function isValuationPending(status?: ValuationPerCodeItem | null): boolean {
+  return status?.state === 'queued' || status?.state === 'running' || status?.state === 'cancelling';
+}
+
+/** 队列面板行：只含正在评估与排队，排队顺序用服务端 position */
+export interface ValuationQueueRow {
+  code: string;
+  itemId: string | null;
+  name: string | null;
+  state: ValuationPerCodeItem['state'];
+  error: string | null;
+  queuedAt: string | null;
+  startedAt: string | null;
+  finishedAt: string | null;
+  position: number | null;
+}
+
+export interface ValuationQueueView {
+  rows: ValuationQueueRow[];
+  runningCount: number;
+  queuedCount: number;
+}
+
+export function buildValuationQueue(perCode: ValuationPerCodeMap): ValuationQueueView {
+  const running: ValuationQueueRow[] = [];
+  const queued: ValuationQueueRow[] = [];
+  for (const [code, item] of Object.entries(perCode)) {
+    const row: ValuationQueueRow = {
+      code,
+      itemId: item.item_id ?? null,
+      name: item.name ?? null,
+      state: item.state,
+      error: item.error ?? null,
+      queuedAt: item.queued_at ?? null,
+      startedAt: item.started_at ?? null,
+      finishedAt: item.finished_at ?? null,
+      position: item.position ?? null,
+    };
+    if (item.state === 'running' || item.state === 'cancelling') running.push(row);
+    else if (item.state === 'queued') queued.push(row);
+  }
+  queued.sort((a, b) => (a.position ?? Number.MAX_SAFE_INTEGER) - (b.position ?? Number.MAX_SAFE_INTEGER));
+  return { rows: [...running, ...queued], runningCount: running.length, queuedCount: queued.length };
 }
 
 export const VALUATION_LEVEL_KEYS = ['heavy_position', 'add_position', 'reduce_position', 'full_exit'] as const;
@@ -168,7 +222,7 @@ export function deriveFavoriteTrackingState(
   let state: FavoriteTrackingState;
   if (effective) {
     state = alertsEnabled ? 'monitoring' : 'paused';
-  } else if (live === 'queued' || live === 'running') {
+  } else if (live === 'queued' || live === 'running' || live === 'cancelling') {
     state = 'evaluating';
   } else if (live === 'failed') {
     state = 'failed';

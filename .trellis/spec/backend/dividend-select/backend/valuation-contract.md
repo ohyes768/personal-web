@@ -21,8 +21,19 @@ A local skill checkout is never proof of deployment.
 - `GET /api/dividend/valuation/jobs/{job_id}`: valuation job + per_code, or 404.
 - `GET /api/dividend/valuation`: `{total, reports: {code: record}, per_code,
   hermes_configured, current_skill_version}`. `per_code` is in-memory
-  (queued/running/completed/failed + attempt_id/position), cleared on restart;
-  job is marked interrupted, saved reports persist.
+  (queued/running/cancelling/completed/failed/cancelled + attempt_id/position),
+  cleared on restart; job is marked interrupted, saved reports persist.
+- `POST /api/dividend/valuation/queue/{item_id}/cancel`: cancels one
+  valuation attempt (same semantics as quality). 202-style snapshot
+  `{per_code, running_count, queued_count}`; waiting items leave the queue
+  immediately (durable via `RefreshJobManager.note_queue_cancel(kind='valuation')`),
+  running items flip to `cancelling` and stay occupied until a `stop_run` is
+  accepted and `get_run` observes `cancelled`. Duplicate cancel is idempotent;
+  stale identity or finished items → 409 `{message, per_code}`.
+- `POST /api/dividend/valuation/queue/{item_id}/move`: `{action: front|up|down}`
+  reorders waiting items only; order persists via
+  `note_queue_order(kind='valuation')` before the response. Conflicts → 409,
+  unknown action → 422.
 - `POST /api/dividend/valuation/{code}/apply`: `{evaluated_at}` → writes
   favorites alerts `{enabled: true, levels: <report four prices incl. pe/pb>}`
   and returns the favorites response. 404 without report or favorite; 409
@@ -35,7 +46,14 @@ A local skill checkout is never proof of deployment.
   `^(m120|financial|quality|valuation)$` (2026-11-11: quality/valuation added so
   mount-time job rediscovery works; previously quality rediscovery silently 422'd).
 - `ValuationService.submit_valuation(codes, cfg, stocks, data_date, refresh_jobs,
-  quality_scores, submit_run_fn, poll_run_fn, market_snapshot_fn) -> job | None`.
+  quality_scores, submit_run_fn, poll_run_fn, market_snapshot_fn,
+  stop_run_fn, get_run_fn) -> job | None`. When `get_run_fn` is provided the
+  per-stock poll uses the interruptible `_watch` loop (same shape as quality):
+  cancel intent before submit skips submission; after submit it sends `stop_run`
+  (accepting only stopping/cancelled) and keeps polling until a terminal status;
+  `completed` wins over a cancel request and still saves the report. Without
+  `get_run_fn` it falls back to blocking `poll_run`, where
+  `HermesRunCancelled` maps to a cancelled outcome.
 - `parse_valuation_output(raw, code, name) -> ValuationReport` (pydantic).
 - `build_valuation_payload(stock, quality_record, market_snapshot) -> dict`,
   `build_prompt(payload, skill_version, data_date) -> str`.
@@ -65,7 +83,9 @@ A local skill checkout is never proof of deployment.
   is the financial summary mtime (same helper as quality). Without a deployed
   version the key degrades to `unknown-{attempt_id}` and version comparison is
   skipped. A mismatched/missing output version fails that stock without
-  overwriting previous reports.
+  overwriting previous reports. Confirmed cancels bump a persisted generation
+  (`valuation_cancel_generations.json`), suffixing the next key with `-cN` so
+  Hermes cannot replay the cancelled run.
 - Prompt names the skill, demands bare JSON, declares the expected deployed
   version, and marks inline materials: the stock payload (financial facts),
   an optional `existing_quality_rating` block (reusable evidence only — scores
@@ -117,6 +137,10 @@ A local skill checkout is never proof of deployment.
 | Apply with stale evaluated_at | 409 + current identity; alerts unchanged |
 | Apply unfavorite / missing report | 404 |
 | Toggle enabled without levels | 400；未收藏 404 |
+| Queue cancel, waiting item | leaves queue, job `cancelled` +1, report untouched |
+| Queue cancel, running item | `cancelling` until stop confirmed, then `cancelled` + `-c1` key |
+| Cancel request vs completion race | completed report wins and is saved |
+| Queue move on started/finished item | 409 + current snapshot |
 | Service restart | job interrupted, per_code cleared, saved reports kept |
 
 ## 5. Good/Base/Bad Cases
@@ -133,10 +157,13 @@ A local skill checkout is never proof of deployment.
   identity mismatch/fence tolerance/levels ordering/evidence duplicates),
   duration persistence, FIFO append while running, duplicate-only idempotency,
   failed poll, version mismatch keeps old reports, idempotency key shape,
-  restart interruption.
+  restart interruption, queue controls (waiting cancel skips submission,
+  move persists queue_order, running cancel via `_watch` stop/get confirmation,
+  completion beats cancel, confirmed cancel bumps the idempotency generation).
 - `tests/test_valuation_api.py`: analyze 202/503/400/422, GET /valuation,
   apply success/stale 409/non-ready 400/not-favorited 404, enabled toggle,
-  failed evaluation never touches alerts.
+  failed evaluation never touches alerts, queue cancel/move routes
+  (200/409/422) with cancelled accounting.
 - `e2e/favorites-tracking.spec.ts`: filter counts and overlap semantics,
   effective/candidate/single-level/hidden bar states, apply flow with identity,
   stale 409 dialog, non-ready gaps, pause/resume, out-of-range/missing price,

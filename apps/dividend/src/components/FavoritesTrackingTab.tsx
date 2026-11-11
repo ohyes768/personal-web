@@ -20,6 +20,7 @@ import {
   VALUATION_LEVEL_KEYS,
   VALUATION_LEVEL_LABEL,
   VALUATION_STATUS_LABEL,
+  buildValuationQueue,
   deriveFavoriteTrackingState,
   matchesTrackingFilter,
   reportLevelsToAlertLevels,
@@ -30,6 +31,7 @@ import {
 import type { AlertLevels, DividendStockWithTechnical, PriceItem } from '@/lib/types';
 import type { UseAlertsStatusResult } from '@/lib/hooks/useAlertsStatus';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
+import { QualityQueuePanel } from './QualityQueuePanel';
 import { ValuationPriceBar } from './ValuationPriceBar';
 import { ValuationReportModal } from './ValuationReportModal';
 
@@ -75,7 +77,8 @@ export function FavoritesTrackingTab({
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [applyError, setApplyError] = useState('');
 
-  const { reports, perCode, configured, currentSkillVersion, job, message: valuationMessage, pollError, analyze, refresh: refreshValuation } = useValuation();
+  const { reports, perCode, configured, currentSkillVersion, job, message: valuationMessage, pollError,
+          analyze, refresh: refreshValuation, cancelQueueItem, moveQueueItem } = useValuation();
   const { qualityScores, currentSkillVersion: qualityVersion } = useQualityAnalysis();
   const keyword = normalize(searchInput);
   const stockByCode = useMemo(() => {
@@ -172,6 +175,7 @@ export function FavoritesTrackingTab({
   const jobProgress = job && (job.status === 'queued' || job.status === 'running')
     ? { processed: job.processed, total: job.total }
     : null;
+  const valuationQueueView = useMemo(() => buildValuationQueue(perCode), [perCode]);
 
   return (
     <section aria-label="收藏跟踪" className="space-y-3">
@@ -181,10 +185,15 @@ export function FavoritesTrackingTab({
           <h2 className="text-lg font-semibold text-ink">收藏跟踪</h2>
           <p className="text-sm text-ink-muted">好公司先收藏，评估确认后价格才有尺度。收藏不自动评估，也不自动开启监控。</p>
         </div>
-        <p className="text-xs text-ink-muted">
-          {rows.length} 只收藏 · {monitoringCount} 只监控中
-          {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
-        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="text-xs text-ink-muted">
+            {rows.length} 只收藏 · {monitoringCount} 只监控中
+            {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
+          </p>
+          {(valuationQueueView.runningCount > 0 || valuationQueueView.queuedCount > 0) && (
+            <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
+          )}
+        </div>
       </div>
 
       {/* 待应用提示条 */}
