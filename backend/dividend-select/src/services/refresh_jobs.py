@@ -49,7 +49,7 @@ class RefreshJobManager:
         self._last_save[job['job_id']] = time.monotonic()
 
     def _prune(self):
-        for kind in ('m120', 'financial', 'quality'):
+        for kind in ('m120', 'financial', 'quality', 'valuation'):
             jobs = sorted((j for j in self._jobs.values() if j['kind'] == kind), key=lambda j: j['created_at'], reverse=True)
             for job in jobs[20:]:
                 if job['status'] not in ACTIVE:
@@ -95,7 +95,7 @@ class RefreshJobManager:
             return {**copy.deepcopy(job), 'reused': False}
 
     def append_codes(self, job_id, codes):
-        """把新受理项并入 active job（quality 连续排队专用；普通 submit 不走此路径）。
+        """把新受理项并入 active job（quality / valuation 连续排队共用；m120/financial 不走此路径）。
 
         codes 里的新股票追加进 codes 列表，重复股票（失败重试）只增加受理次数
         admissions。total/remaining/retry_codes 同步更新并先落盘再返回，受理确认即持久。

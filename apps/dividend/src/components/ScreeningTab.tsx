@@ -28,6 +28,10 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
   const [failedCodes, setFailedCodes] = useState<string[]>([]);
+  /** 本次收藏新增的代码：给「评估挡位」快捷入口用（不自动提交） */
+  const [lastAdded, setLastAdded] = useState<string[]>([]);
+  const [quickNotice, setQuickNotice] = useState('');
+  const [quickPending, setQuickPending] = useState(false);
   const [qualityModalCode, setQualityModalCode] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<ScreeningItem | null>(null);
   const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion, qualityJob, qualityMessage, qualityPollError, analyze, cancelQueueItem, moveQueueItem } = useQualityAnalysis();
@@ -71,19 +75,34 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
 
   async function save(codes: string[]) {
     if (!codes.length) return;
-    setSaving(true); setMessage(''); setFailedCodes([]);
+    setSaving(true); setMessage(''); setFailedCodes([]); setQuickNotice('');
     try {
       const response = await dividendApi.addFavoritesBatch(codes);
       const failed = response.items.filter(item => item.status === 'failed');
+      const added = response.items.filter(item => item.status === 'added').map(item => item.code);
       setFailedCodes(failed.map(item => item.code));
-      setMessage(`新增 ${response.items.filter(item => item.status === 'added').length} 只，已收藏 ${response.items.filter(item => item.status === 'already_exists').length} 只，失败 ${failed.length} 只${failed.length ? '：' + failed.map(item => `${item.code} ${item.error || ''}`).join('；') : ''}`);
+      setLastAdded(added);
+      setMessage(`新增 ${added.length} 只，已收藏 ${response.items.filter(item => item.status === 'already_exists').length} 只，失败 ${failed.length} 只${failed.length ? '：' + failed.map(item => `${item.code} ${item.error || ''}`).join('；') : ''}`);
       setSelected(new Set(failed.map(item => item.code)));
       try { localStorage.setItem('watchlist-sync-tick', String(Date.now())); } catch { /* refresh still works */ }
       await watchlist.refresh();
     } catch (err) {
       setFailedCodes(codes);
+      setLastAdded([]);
       setMessage(`收藏失败：${err instanceof Error ? err.message : '请重试'}`);
     } finally { setSaving(false); }
+  }
+
+  /** 收藏成功后的快捷评估入口：显式点击才提交，进度在收藏跟踪查看 */
+  async function quickEvaluate(codes: string[]) {
+    if (!codes.length) return;
+    setQuickPending(true); setQuickNotice('');
+    try {
+      await dividendApi.analyzeValuation(codes);
+      setQuickNotice(`已提交 ${codes.length} 只挡位评估，前往收藏跟踪查看进度`);
+    } catch (err) {
+      setQuickNotice(err instanceof Error ? `提交评估失败：${err.message}` : '提交评估失败，请重试');
+    } finally { setQuickPending(false); }
   }
 
   const eligibleCodes = result?.items.filter(item => item.status === 'eligible').map(item => item.stock.code) || [];
@@ -132,7 +151,10 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
         {qualityMessage}
         {qualityJob && qualityJob.failed_codes.length > 0 && qualityJob.status !== 'queued' && qualityJob.status !== 'running' && <button className={`${buttonClass} ml-2`} onClick={() => void analyze(qualityJob.failed_codes)}>重试失败 {qualityJob.failed_codes.length} 只</button>}
       </p>}
-      {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}</p>}
+      {message && <p role="status" className="text-sm text-ink">{message}{failedCodes.length > 0 && <button className={`${buttonClass} ml-2`} disabled={saving} onClick={() => void save(failedCodes)}>重试失败项</button>}
+        {lastAdded.length > 0 && <button className={`${buttonClass} ml-2`} disabled={quickPending || !qualityConfigured} title={qualityConfigured ? '用 Hermes 四挡位估值评估这些新收藏（约几分钟）' : 'Hermes 未配置，无法估值'} onClick={() => void quickEvaluate(lastAdded)}>{quickPending ? '提交中…' : `评估挡位 (${lastAdded.length})`}</button>}
+        {quickNotice && <span className="ml-3 text-ink-muted">{quickNotice}</span>}
+      </p>}
       {activeView === 'insufficient_data' && <p className="text-sm text-ink-muted">缺少必需数据的股票暂不入选。请通过「数据更新」刷新财务指标后重新查询。旧财务缓存补齐年度扣非净利润金额、年度及历史字段时，请对全量股票勾选「强制」刷新；来源仍缺失的数据继续待补。</p>}
       <p className="text-xs text-ink-muted">五维评分各 1–5 分，— 表示未评分。{currentSkillVersion ? `当前 Skill v${currentSkillVersion}，版本不同或未知的评分建议重评。` : '当前已部署 Skill 版本暂不可用，无法自动判断评分是否过期。'}</p>
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">

@@ -17,7 +17,7 @@ import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { AlertSettingsModal } from '@/components/AlertSettingsModal';
-import { AlertLevelBar } from '@/components/AlertLevelBar';
+import { FavoritesTrackingTab } from '@/components/FavoritesTrackingTab';
 import { SchedulerSettingsModal } from '@/components/SchedulerSettingsModal';
 import { DataUpdateDrawer } from '@/components/DataUpdateDrawer';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
@@ -27,7 +27,7 @@ import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { dividendApi } from '@/lib/api';
 import { normalizeSearchKeyword } from '@/lib/stock-search';
-import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus, PriceItem, TechnicalIndicators } from '@/lib/types';
+import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, IndexRefreshItem, HoldingsStatus, PriceItem, TechnicalIndicators } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
 type TabKey = 'all' | 'alerts' | 'screening';
@@ -671,22 +671,10 @@ function DividendPageContent() {
     && searchResults.length === 0
     && !(favOnly && watchlist.total === 0);
 
-  // 挡位监控 Tab：从挡位状态直接派生，现价链只依赖挡位代码（不等资料/M120 响应）。
-  // 资料未回或缺失时用挡位 item 的名称占位，条目不消失（收藏独立于股息率筛选）。
-  const alertStocks = useMemo(() => {
-    const items = alertsStatus.status?.items ?? [];
-    return items
-      .filter(it => it.levels && Object.values(it.levels).some(lv => lv && lv.price))
-      .map(it => {
-        const stock = independentFavorites.find(s => s.code === it.code) || stocksWithTechnical.find(s => s.code === it.code)
-          || { code: it.code, name: it.name || it.code, exchange: '' };
-        return { stock, levels: it.levels as AlertLevels };
-      });
-  }, [alertsStatus.status, stocksWithTechnical, independentFavorites]);
-
-  // 挡位监控现价（独立于 M120：M120 缺失时仍能取现价，避免挡位 bar 空窗）
-  const alertCodes = useMemo(() => alertStocks.map(s => s.stock.code), [alertStocks]);
-  const { priceMap: alertPriceMap, lastUpdated: alertPriceUpdatedAt } = useRealtimePrices(alertCodes);
+  // 收藏跟踪 Tab：展示全部收藏（不限于已配置挡位），现价链只依赖收藏代码。
+  // 资料未回或缺失时用收藏 item 的名称占位，条目不消失（收藏独立于股息率筛选）。
+  const favoriteCodes = useMemo(() => [...watchlist.codes], [watchlist.codes]);
+  const { priceMap: alertPriceMap, lastUpdated: alertPriceUpdatedAt } = useRealtimePrices(favoriteCodes);
 
   // 处理弹框
   const handleOpenModal = useCallback((type: 'quarterly' | 'sector' | 'yearly' | 'volatility', stock: DividendStock) => {
@@ -1033,10 +1021,10 @@ function DividendPageContent() {
           }`}
         >
           <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 17l6-6 4 4 8-8M14 7h7v7" />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.196-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.783-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.518-4.674z" />
           </svg>
-          挡位监控
-          <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{alertStocks.length}</span>
+          收藏跟踪
+          <span className="ml-1 text-xs bg-gray-700 px-1.5 py-0.5 rounded">{watchlist.total}</span>
         </button>
         <button onClick={() => handleTabChange('screening')} className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${activeTab === 'screening' ? 'border-indigo-500 text-indigo-600' : 'border-transparent text-ink-muted hover:text-ink'}`}>选股关注</button>
         {/* 只看收藏 toggle：仅 all tab 显示，过滤当前列表 */}
@@ -1166,47 +1154,14 @@ function DividendPageContent() {
 
       {/* 表格 - 使用 refreshKey 作为 key 强制刷新；all+favOnly 用过滤后的 displayData */}
       {activeTab === 'screening' ? <ScreeningTab watchlist={watchlist} refreshRevision={refreshJobs.revision} sourceQuery={searchParams.toString()} /> : activeTab === 'alerts' ? (
-        <div className="space-y-2">
-          {alertsStatus.loading && alertStocks.length === 0 ? (
-            <div className="bg-paper-card rounded-lg h-40 animate-pulse" />
-          ) : alertStocks.length === 0 ? (
-            <div className="bg-paper-card rounded-lg p-12 text-center">
-              <svg className="w-12 h-12 mx-auto mb-3 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 17l6-6 4 4 8-8M14 7h7v7" />
-              </svg>
-              <h2 className="text-xl font-semibold text-ink mb-2">暂无设置挡位的收藏股票</h2>
-              <p className="text-ink-muted mb-4">去「全部」tab 浏览股票，点星标收藏后设置挡位</p>
-              <button
-                onClick={() => handleTabChange('all')}
-                className="text-blue-400 hover:underline text-sm"
-              >
-                去全部 tab 浏览 →
-              </button>
-            </div>
-          ) : (
-            alertStocks.map(({ stock, levels }) => {
-              const price = alertPriceMap.get(stock.code);
-              const currentPrice = price?.realtime ?? price?.close ?? null;
-              if (currentPrice === null || currentPrice === undefined) return null;
-              return (
-                <AlertLevelBar
-                  key={stock.code}
-                  code={stock.code}
-                  name={stock.name}
-                  levels={levels}
-                  currentPrice={currentPrice}
-                  currentPE={price?.pe ?? null}
-                  currentPB={price?.pb ?? null}
-                  dividend2025={stock.dividend_2025 ?? null}
-                  yieldTtm={price?.yield_ttm ?? null}
-                  priceUpdatedAt={alertPriceUpdatedAt}
-                  preClose={price?.close ?? null}
-                  onClick={() => handleOpenAlertSettings(stock.code)}
-                />
-              );
-            })
-          )}
-        </div>
+        <FavoritesTrackingTab
+          watchlist={watchlist}
+          stocks={independentFavorites}
+          alertsStatus={alertsStatus}
+          priceMap={alertPriceMap}
+          priceUpdatedAt={alertPriceUpdatedAt}
+          onOpenAlertSettings={handleOpenAlertSettings}
+        />
       ) : (
         !(activeTab === 'all' && favOnly && displayData.length === 0)
         && !showSearchEmptyState

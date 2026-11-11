@@ -8,6 +8,10 @@ import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse } fr
 import type { FavoritesResponse } from './watchlist';
 import type { QualityJob, QualityMoveAction, QualityQueueSnapshot, QualityScoresResponse } from './quality';
 import type {
+  ValuationJob,
+  ValuationStatusResponse,
+} from './valuation';
+import type {
   DividendListResponse,
   DividendDetailResponse,
   DividendQueryParams,
@@ -49,6 +53,21 @@ export const dividendApi = {
   /** 调整等待顺序。冲突时响应体带有服务端快照。 */
   moveQualityItem: (itemId: string, action: QualityMoveAction) =>
     directClient.post<QualityQueueSnapshot>(`/api/dividend/quality/queue/${encodeURIComponent(itemId)}/move`, { action }),
+  /** 提交四挡位估值（异步 job；Hermes 未配置返回 503） */
+  analyzeValuation: (codes: string[]) =>
+    directClient.post<ValuationJob>('/api/dividend/valuation/analyze', { codes }),
+  /** 查询估值任务进度 */
+  getValuationJob: (jobId: string) =>
+    directClient.get<ValuationJob>(`/api/dividend/valuation/jobs/${jobId}`),
+  /** 获取全部已落盘估值报告 + 逐股实时状态 */
+  getValuationStatus: () =>
+    directClient.get<ValuationStatusResponse>('/api/dividend/valuation'),
+  /** 将 ready 报告应用为挡位监控配置（开启监控）；陈旧报告 409，非 ready 400 */
+  applyValuationReport: (code: string, evaluatedAt: string) =>
+    directClient.post<FavoritesResponse>(`/api/dividend/valuation/${code}/apply`, { evaluated_at: evaluatedAt }),
+  /** 暂停/恢复挡位监控：仅翻转 enabled，不改 levels */
+  setAlertsEnabled: (code: string, enabled: boolean) =>
+    directClient.put<FavoritesResponse>(`/api/dividend/favorites/${code}/alerts/enabled`, { enabled }),
   /**
    * 获取股票列表
    */

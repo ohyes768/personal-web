@@ -32,6 +32,8 @@ from src.api.models import (
     AlertBatchResponse,
     AlertBatchResultItem,
     AlertBatchUpdateItem,
+    AlertEnabledRequest,
+    ValuationApplyRequest,
     HealthResponse,
     M120ListResponse,
     M120Stock,
@@ -84,6 +86,11 @@ from src.services.refresh_jobs import RefreshJobManager
 from src.services.hermes_client import HermesConfig, get_run, poll_run, stop_run, submit_run
 from src.services.quality_service import QualityService, QueueConflict
 from src.services.quality_version import current_quality_skill_version
+from src.services.valuation_service import (
+    LEVEL_KEYS as VALUATION_LEVEL_KEYS,
+    ValuationService,
+)
+from src.services.valuation_version import current_valuation_skill_version
 from src.utils.logger import setup_logger
 
 logger = setup_logger(__name__)
@@ -107,6 +114,14 @@ quality_service: QualityService | None = None
 def set_quality_service(service: QualityService | None):
     global quality_service
     quality_service = service
+
+
+valuation_service: ValuationService | None = None
+
+
+def set_valuation_service(service: ValuationService | None):
+    global valuation_service
+    valuation_service = service
 
 
 def accept_job(manager, kind, codes, work, params=None):
@@ -899,7 +914,7 @@ def _build_m120_status(min_yield: float) -> dict:
 
 
 @router.get("/refresh/jobs")
-def latest_refresh_job(kind: str = Query(..., pattern="^(m120|financial)$")):
+def latest_refresh_job(kind: str = Query(..., pattern="^(m120|financial|quality|valuation)$")):
     return require_refresh_jobs().latest(kind)
 
 
@@ -3766,3 +3781,155 @@ async def get_quality_scores():
             "per_code": quality_service.get_per_code(),
             "hermes_configured": hermes_configured,
             "current_skill_version": current_quality_skill_version()}
+
+
+# ========== 四挡位估值（valuation）路由 ==========
+
+
+@router.post("/valuation/analyze", status_code=202)
+async def analyze_valuation(body: CodesRequest):
+    """
+    对收藏股票提交四挡位估值（异步任务，逐股一个 Hermes run）
+
+    - 点名 stock-four-level-valuation skill，复用基本面材料；任务与评级任务分开表达（kind=valuation）
+    - 已有进行中的估值任务且本次 codes 都已包含时复用（reused=true）；运行中受理新代码追加入队
+    - Hermes 未配置返回 503；股票不在采集池 400；codes 为空 422
+    """
+    if valuation_service is None:
+        raise HTTPException(status_code=500, detail="估值服务未初始化")
+    codes = normalize_refresh_codes(body.codes)
+    if not codes:
+        raise HTTPException(status_code=422, detail="codes 不能为空")
+    cfg = HermesConfig.from_env()
+    if not cfg.is_configured:
+        raise HTTPException(status_code=503, detail="Hermes 未配置（需设置 HERMES_BASE_URL 与 HERMES_API_KEY）")
+    stocks_list = await get_stocks(
+        min_yield=0, max_yield=None, exchange=None, industry=None,
+        index=None, sort_by="avg_yield_3y", sort_order="desc",
+    )
+    stocks = {s.code: s for s in stocks_list.items}
+    missing = [c for c in codes if c not in stocks]
+    if missing:
+        raise HTTPException(status_code=400, detail=f"以下股票不在采集池：{','.join(missing)}")
+    quality_scores = quality_service.get_all() if quality_service else {}
+    # 行情快照直接用路由层全局 m120/pe 服务；读取失败在 build_market_snapshot 内降级为 null
+    m120, pe = m120_service, pe_service
+
+    def _snapshot(code: str) -> dict:
+        from src.services.valuation_service import build_market_snapshot
+        return build_market_snapshot(m120, pe, code)
+
+
+    try:
+        job = valuation_service.submit_valuation(
+            codes, cfg, stocks, _quality_data_date(), require_refresh_jobs(), quality_scores,
+            submit_run_fn=submit_run, poll_run_fn=poll_run, market_snapshot_fn=_snapshot)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if job is None:
+        raise HTTPException(status_code=503, detail="服务关闭中，请稍后重试")
+    job["per_code"] = valuation_service.get_per_code()
+    return job
+
+
+@router.get("/valuation/jobs/{job_id}")
+async def get_valuation_job(job_id: str):
+    """查询单个估值任务进度（含逐股实时状态与失败原因）"""
+    job = require_refresh_jobs().get(job_id)
+    if job is None or job.get("kind") != "valuation":
+        raise HTTPException(status_code=404, detail=f"估值任务 {job_id} 不存在")
+    job["per_code"] = valuation_service.get_per_code() if valuation_service else {}
+    return job
+
+
+@router.get("/valuation")
+async def get_valuation_reports():
+    """返回全部已落盘估值报告（code → 记录）、逐股实时状态、Hermes 配置与部署版本"""
+    if valuation_service is None:
+        raise HTTPException(status_code=500, detail="估值服务未初始化")
+    reports = valuation_service.get_all()
+    return {"total": len(reports), "reports": reports,
+            "per_code": valuation_service.get_per_code(),
+            "hermes_configured": HermesConfig.from_env().is_configured,
+            "current_skill_version": current_valuation_skill_version()}
+
+
+def _valuation_level_to_alert(report: dict) -> dict:
+    """ready 报告 levels → favorites alerts levels dict（price 必填，pe/pb 选填保留）。"""
+    levels_dict: dict[str, dict] = {}
+    for key in VALUATION_LEVEL_KEYS:
+        level = (report.get("levels") or {}).get(key)
+        if not level or level.get("price") is None:
+            continue
+        entry: dict = {"price": float(level["price"])}
+        if level.get("pe") is not None:
+            entry["pe"] = float(level["pe"])
+        if level.get("pb") is not None:
+            entry["pb"] = float(level["pb"])
+        levels_dict[key] = entry
+    return levels_dict
+
+
+@router.post("/valuation/{code}/apply", response_model=FavoritesResponse)
+async def apply_valuation_report(code: str, body: ValuationApplyRequest):
+    """
+    将 ready 估值报告的四价应用为挡位监控配置（开启监控）
+
+    - 仅接受当前最新报告：evaluated_at 与落盘记录不一致 → 409（返回当前报告身份）
+    - 非 ready（insufficient_data/blocked/not_applicable）→ 400，不出价格也不可应用
+    - 未收藏 → 404；失败/未应用的重评永不覆盖旧监控配置
+    """
+    if valuation_service is None:
+        raise HTTPException(status_code=500, detail="估值服务未初始化")
+    if favorites_service is None:
+        raise HTTPException(status_code=500, detail="收藏服务未初始化")
+    reports = valuation_service.get_all()
+    report = reports.get(code)
+    if not report:
+        raise HTTPException(status_code=404, detail=f"{code} 没有估值报告，请先评估")
+    if report.get("evaluated_at") != body.evaluated_at:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "报告已更新，请刷新后应用最新报告",
+                    "evaluated_at": report.get("evaluated_at"),
+                    "status": report.get("status")})
+    if report.get("status") != "ready":
+        raise HTTPException(status_code=400, detail=f"报告状态为 {report.get('status')}，不可应用")
+    levels_dict = _valuation_level_to_alert(report)
+    if not levels_dict:
+        raise HTTPException(status_code=500, detail="报告挡位解析失败，拒绝应用")
+    alerts_dict = {
+        "enabled": True,
+        "updated_at": datetime.now().isoformat(),
+        "levels": levels_dict,
+    }
+    try:
+        data = favorites_service.update_alerts(code, alerts_dict)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"{code} 不在收藏中，请先加入收藏")
+    return _to_favorites_response(data)
+
+
+@router.put("/favorites/{code}/alerts/enabled", response_model=FavoritesResponse)
+async def set_favorite_alerts_enabled(code: str, body: AlertEnabledRequest):
+    """暂停/恢复挡位监控：仅翻转 enabled，保留 levels；未配置挡位时 400"""
+    if favorites_service is None:
+        raise HTTPException(status_code=500, detail="收藏服务未初始化")
+    try:
+        data = favorites_service.get_all()
+        item = next((it for it in data["items"] if it["code"] == code), None)
+        if item is None:
+            raise KeyError(f"{code} 不在收藏中")
+        alerts = item.get("alerts")
+        if not alerts or not (alerts.get("levels") or {}):
+            raise ValueError(f"{code} 尚未配置挡位，无需启停监控")
+        alerts["enabled"] = bool(body.enabled)
+        alerts["updated_at"] = datetime.now().isoformat()
+        data = favorites_service.update_alerts(code, alerts)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except KeyError:
+        raise HTTPException(status_code=404, detail=f"{code} 不在收藏中")
+    return _to_favorites_response(data)

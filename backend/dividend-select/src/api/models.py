@@ -475,6 +475,16 @@ class AlertConfigRequest(BaseModel):
     levels: AlertLevels = Field(default_factory=AlertLevels)
 
 
+class AlertEnabledRequest(BaseModel):
+    """挡位监控启停请求：仅翻转 enabled，不改 levels（收藏跟踪行暂停/恢复用）"""
+    enabled: bool = Field(..., description="true=恢复监控，false=暂停监控")
+
+
+class ValuationApplyRequest(BaseModel):
+    """估值报告应用请求：按报告身份（evaluated_at）应用，防止陈旧报告覆盖"""
+    evaluated_at: str = Field(..., min_length=1, description="要应用的估值报告 evaluated_at")
+
+
 # ========== 挡位监控相关响应模型 ==========
 
 

@@ -1,0 +1,347 @@
+/**
+ * 收藏跟踪（收藏跟踪 Tab，旧 ?tab=alerts URL）e2e
+ *
+ * 覆盖 AC1–AC6 的浏览器路径：收藏全集与筛选计数、待应用重叠语义、
+ * 生效/候选/隐藏三种价格条、现价越界与缺失、首次评估到确认应用（应用前不开启监控）、
+ * 暂停/恢复、非 ready 不可应用、失败重试与旧 URL 兼容。
+ */
+import { expect, test, type Page } from '@playwright/test';
+
+const stockBase = {
+  exchange: '深市主板', sw_level1: '银行', avg_yield_3y: 4.2,
+  dividend_2025: 0.5,
+};
+
+type ReportStatus = 'ready' | 'insufficient_data' | 'blocked' | 'not_applicable';
+
+export interface TrackingScenario {
+  codes: string[];
+  alerts: Record<string, { enabled: boolean; updated_at: string; levels: Record<string, { price: number; pe?: number; pb?: number }> } | undefined>;
+  prices: Record<string, { close: number | null; realtime: number | null; pe: number | null; pb: number | null; yield_ttm: number | null } | undefined>;
+  reports: Record<string, Record<string, unknown> | undefined>;
+  perCode: Record<string, Record<string, unknown>>;
+  analyzeCalls: string[][];
+  applyCalls: Array<{ code: string; evaluated_at: string }>;
+  enabledCalls: Array<{ code: string; enabled: boolean }>;
+  applyStatus: number;
+}
+
+export function scenario(): TrackingScenario {
+  return {
+    codes: ['000001', '600000', '600004', '600005'],
+    alerts: {
+      // 000001：监控中（旧挡位四档，生效条可画）
+      '000001': { enabled: true, updated_at: '2026-11-01T10:00:00', levels: {
+        heavy_position: { price: 8.5 }, add_position: { price: 9.5 },
+        reduce_position: { price: 14 }, full_exit: { price: 21 } } },
+      // 600000：已暂停（手工只配一档 → 不画条，单挡位文本）
+      '600000': { enabled: false, updated_at: '2026-11-02T10:00:00', levels: { heavy_position: { price: 9 } } },
+      // 600004/600005：无挡位
+      '600004': undefined,
+      '600005': undefined,
+    },
+    prices: {
+      '000001': { close: 11.9, realtime: 12.1, pe: 8.0, pb: 1.0, yield_ttm: 4.1 },
+      '600000': { close: 10.0, realtime: 10.2, pe: 7.0, pb: 0.9, yield_ttm: 4.5 },
+      '600004': { close: 27.8, realtime: 27.8, pe: 9.0, pb: 1.2, yield_ttm: 3.8 },
+      '600005': undefined,
+    },
+    reports: {
+      // 000001：重评 ready，evaluated_at 晚于 alerts.updated_at → 待应用重叠
+      '000001': report('000001', '测试公司', 'ready', { evaluated_at: '2026-11-11T10:00:00' }),
+      // 600000：非 ready（资料不足）→ 不出价格
+      '600000': report('600000', '暂停公司', 'insufficient_data', { evaluated_at: '2026-11-10T10:00:00' }),
+      // 600005：非 ready 且无旧挡位 → 占位说明 + 查看缺口
+      '600005': report('600005', '缺口公司', 'insufficient_data', { evaluated_at: '2026-11-09T10:00:00' }),
+      // 600004：无报告
+      '600004': undefined,
+    },
+    perCode: {},
+    analyzeCalls: [],
+    applyCalls: [],
+    enabledCalls: [],
+    applyStatus: 0,
+  };
+}
+
+function report(code: string, name: string, status: ReportStatus, opts?: { evaluated_at?: string; skill_version?: string | null }) {
+  const levels = status === 'ready' ? {
+    heavy_position: { price: 10, pe: 5.1, pb: 0.7 },
+    add_position: { price: 12, pe: 6.1, pb: 0.8 },
+    reduce_position: { price: 15, pe: 7.6, pb: 1.0 },
+    full_exit: { price: 19, pe: 9.7, pb: 1.3 },
+  } : null;
+  return {
+    schema_version: '1.0.0', skill_version: opts?.skill_version ?? '1.0.0',
+    code, name, currency: 'CNY', as_of: '2026-11-11', status,
+    levels, valuation: status === 'ready' ? { primary_method: 'pe_multiple' } : null,
+    evidence: [{ id: 'e1', title: '年报摘要', kind: 'official', origin: 'inline:2026-11-11:年报',
+      locator: '第二节', period: '2025 年度', published_at: '2026-03-30', accessed_at: '2026-11-11', verification: 'reused' }],
+    data_gaps: status === 'insufficient_data' ? ['缺少可持续分红依据'] : [],
+    confidence: { level: 'medium', reason: '上游复用' },
+    risks: ['分红波动'], invalidation_conditions: ['分红政策变更'],
+    summary: status === 'ready' ? '四点均有公司级依据' : '核心材料不足，暂不出价',
+    analysis: { business: 'b', normalization: 'n', dividend: 'd', valuation: 'v', risk: 'r' },
+    report_md: '## 估值依据\n\n内容完整。',
+    evaluated_at: opts?.evaluated_at ?? '2026-11-11T10:00:00',
+    data_date: '2026-10-12', analysis_duration_seconds: 92.5,
+  };
+}
+
+export async function setup(page: Page, s: TrackingScenario) {
+  await page.route('**/api/dividend/**', async route => {
+    const url = new URL(route.request().url());
+    const favorites = () => ({
+      version: 1, total: s.codes.length, codes: s.codes,
+      items: s.codes.map(code => ({
+        code, added_at: '2026-10-09',
+        alerts: s.alerts[code] ? { ...s.alerts[code] } : undefined,
+      })),
+      notify: { enabled: false, rules: [], last_notified_at: null },
+    });
+    const alertStatus = () => ({
+      total: s.codes.length,
+      enabled_count: s.codes.filter(code => s.alerts[code]?.enabled).length,
+      triggered_today_count: 0,
+      dingtalk_configured: false,
+      items: s.codes.map(code => {
+        const alerts = s.alerts[code];
+        return {
+          code, name: code === '000001' ? '测试公司' : code === '600000' ? '暂停公司' : code === '600005' ? '缺口公司' : '待评公司',
+          enabled: !!alerts?.enabled,
+          has_levels: !!alerts?.levels && Object.keys(alerts.levels).length > 0,
+          level_count: alerts?.levels ? Object.keys(alerts.levels).length : 0,
+          updated_at: alerts?.updated_at ?? null,
+          levels: alerts?.levels ?? null,
+          triggered_today: [],
+        };
+      }),
+    });
+    if (url.pathname.endsWith('/favorites/alerts/status')) {
+      await route.fulfill({ json: alertStatus() });
+    } else if (url.pathname.endsWith('/alerts/enabled')) {
+      const code = url.pathname.split('/favorites/')[1].split('/')[0];
+      const enabled = route.request().postDataJSON().enabled as boolean;
+      s.enabledCalls.push({ code, enabled });
+      const alerts = s.alerts[code];
+      if (alerts) s.alerts[code] = { ...alerts, enabled };
+      await route.fulfill({ json: favorites() });
+    } else if (url.pathname.endsWith('/favorites')) {
+      await route.fulfill({ json: favorites() });
+    } else if (url.pathname.endsWith('/stocks')) {
+      const requested = (url.searchParams.get('codes') ?? '').split(',').filter(Boolean);
+      const names: Record<string, string> = { '000001': '测试公司', '600000': '暂停公司', '600004': '待评公司', '600005': '缺口公司' };
+      await route.fulfill({ json: {
+        total: requested.length,
+        items: requested.map(code => ({ ...stockBase, code, name: names[code] ?? `股票${code}` })),
+        last_updated: '2026-11-11',
+      } });
+    } else if (url.pathname.endsWith('/prices')) {
+      const requested = (url.searchParams.get('codes') ?? '').split(',').filter(Boolean);
+      await route.fulfill({ json: {
+        total: requested.length,
+        items: requested.map(code => ({ code, ...(s.prices[code] ?? {}) })),
+        last_updated: '2026-11-11T15:00:00',
+      } });
+    } else if (url.pathname.endsWith('/valuation')) {
+      await route.fulfill({ json: {
+        total: Object.keys(s.reports).filter(code => s.reports[code]).length,
+        reports: Object.fromEntries(Object.entries(s.reports).filter(([, v]) => !!v)),
+        per_code: s.perCode,
+        hermes_configured: true,
+        current_skill_version: '1.0.0',
+      } });
+    } else if (url.pathname.endsWith('/valuation/analyze')) {
+      const codes = route.request().postDataJSON().codes as string[];
+      s.analyzeCalls.push(codes);
+      for (const code of codes) s.perCode[code] = { state: 'running', error: null };
+      await route.fulfill({ status: 202, json: {
+        job_id: 'val-job-1', kind: 'valuation', status: 'running', total: codes.length,
+        processed: 0, succeeded: 0, failed: 0, remaining: codes.length,
+        codes, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '',
+        per_code: s.perCode,
+      } });
+    } else if (url.pathname.includes('/valuation/jobs/')) {
+      await route.fulfill({ json: {
+        job_id: 'val-job-1', kind: 'valuation', status: 'succeeded', total: 1,
+        processed: 1, succeeded: 1, failed: 0, remaining: 0,
+        codes: [], failed_codes: [], retry_codes: [], error: null,
+        finished_at: '2026-11-11T10:05:00', message: '已处理 1/1，成功 1，失败 0，未处理 0',
+        per_code: s.perCode,
+      } });
+    } else if (url.pathname.endsWith('/apply')) {
+      const code = url.pathname.split('/valuation/')[1].split('/')[0];
+      const evaluated_at = route.request().postDataJSON().evaluated_at as string;
+      s.applyCalls.push({ code, evaluated_at });
+      if (s.applyStatus) {
+        await route.fulfill({ status: s.applyStatus, json: { message: '报告已更新' } });
+        return;
+      }
+      s.alerts[code] = { enabled: true, updated_at: '2026-11-11T11:00:00',
+        levels: { heavy_position: { price: 10, pe: 5.1, pb: 0.7 }, add_position: { price: 12, pe: 6.1, pb: 0.8 },
+          reduce_position: { price: 15, pe: 7.6, pb: 1.0 }, full_exit: { price: 19, pe: 9.7, pb: 1.3 } } };
+      await route.fulfill({ json: favorites() });
+    } else if (url.pathname.includes('/quality')) {
+      await route.fulfill({ json: { total: 0, scores: {}, per_code: {}, hermes_configured: true, current_skill_version: '4.4.0' } });
+    } else if (url.pathname.endsWith('/refresh/jobs')) {
+      await route.fulfill({ json: null });
+    } else if (url.pathname.endsWith('/stats')) {
+      await route.fulfill({ json: { total_stocks: 100, yield_stats: {}, yield_distribution: {}, industry_distribution: {}, index_distribution: {}, csv_last_modified: null } });
+    } else {
+      await route.fulfill({ json: { needs_update: false, missing_codes: [], days_since_update: 0 } });
+    }
+  });
+}
+
+test('favorites tab shows all favorites with filter counts and legacy URL', async ({ page }) => {
+  const s = scenario();
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  await expect(page.getByRole('heading', { name: '收藏跟踪', level: 2 })).toBeVisible();
+  await expect(page.getByText('4 只收藏 · 1 只监控中')).toBeVisible();
+  // 五种筛选与计数（待评估=未评估+非 ready 且无旧挡位，重叠仅待应用∩监控中）
+  await expect(page.getByRole('button', { name: /全部收藏\s*4/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /待评估\s*2/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /待应用\s*1/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /监控中\s*1/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /已暂停\s*1/ })).toBeVisible();
+  // 四行都在
+  const table = page.getByRole('table');
+  await expect(table.getByText('测试公司')).toBeVisible();
+  await expect(table.getByText('暂停公司')).toBeVisible();
+  await expect(table.getByText('待评公司')).toBeVisible();
+  await expect(table.getByText('缺口公司')).toBeVisible();
+  // 非 ready 无旧挡位：占位说明 + 查看缺口，无应用按钮
+  await expect(table.locator('[data-code="600005"]')).toContainText('核心材料不足，暂不出价');
+  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' })).toBeVisible();
+  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: /应用/ })).toHaveCount(0);
+  // 搜索过滤
+  await page.getByLabel('搜索收藏的股票名称或代码').fill('600000');
+  await expect(table.getByText('暂停公司')).toBeVisible();
+  await expect(table.getByText('测试公司')).not.toBeVisible();
+  await page.getByLabel('搜索收藏的股票名称或代码').fill('');
+});
+
+test('effective bar, single-level fallback and hidden bar follow state semantics', async ({ page }) => {
+  const s = scenario();
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  // 监控中行：生效条（无候选角标）
+  await expect(table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]')).toBeVisible();
+  // 重评待应用重叠：监控中 + 新评估待应用
+  await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
+  await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '对比并应用' })).toBeVisible();
+  // 已暂停 + 单挡位旧配置：条隐藏（不足两条价格线），显示单挡位文本
+  await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-effective"]')).not.toBeVisible();
+  await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-candidate"]')).not.toBeVisible();
+  await expect(table.locator('[data-code="600000"]')).toContainText('单挡位 ¥9.00');
+  // 待评估行：无条，占位文案
+  await expect(table.locator('[data-code="600004"] [data-testid="valuation-bar-effective"]')).not.toBeVisible();
+  await expect(table.locator('[data-code="600004"]').getByText('尚未评估，先评估挡位再决定是否开启监控')).toBeVisible();
+});
+
+test('first ready report shows candidate bar and applying enables monitoring', async ({ page }) => {
+  const s = scenario();
+  // 600004 生成首次 ready 报告（无旧挡位）
+  s.reports['600004'] = report('600004', '待评公司', 'ready', { evaluated_at: '2026-11-11T09:00:00' });
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  // 候选条 + 角标
+  const candidate = table.locator('[data-code="600004"] [data-testid="valuation-bar-candidate"]');
+  await expect(candidate).toBeVisible();
+  await expect(table.locator('[data-code="600004"]')).toContainText('评估结果 · 未启用监控');
+  // 应用前：状态为待应用，不是监控中
+  await expect(table.locator('[data-code="600004"]')).toContainText('待应用');
+  // 确认应用 → alerts 更新（enabled=true）
+  await table.locator('[data-code="600004"]').getByRole('button', { name: '查看并应用' }).click();
+  const dialog = page.getByRole('heading', { name: '待评公司 · 四挡位估值报告' }).locator('../..');
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByText('确认后保存四条价格线，并开启价格提醒。')).toBeVisible();
+  await dialog.getByTestId('valuation-apply-button').click();
+  await expect(s.applyCalls).toEqual([{ code: '600004', evaluated_at: '2026-11-11T09:00:00' }]);
+  await expect(dialog).not.toBeVisible();
+  // 应用后：alerts 更新为监控中（生效条替换候选条）
+  await expect(table.locator('[data-code="600004"] [data-testid="valuation-bar-effective"]')).toBeVisible();
+  await expect(table.locator('[data-code="600004"]')).toContainText('监控中');
+});
+
+test('stale apply is rejected with 409 and old monitoring stays untouched', async ({ page }) => {
+  const s = scenario();
+  await setup(page, s);
+  s.applyStatus = 409;
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  await table.locator('[data-code="000001"]').getByRole('button', { name: '对比并应用' }).click();
+  const dialog = page.getByRole('heading', { name: '测试公司 · 四挡位估值报告' }).locator('../..');
+  await expect(dialog).toBeVisible();
+  // 新旧对比：旧生效值划线
+  await expect(dialog).toContainText('划线为当前生效值');
+  await dialog.getByTestId('valuation-apply-button').click();
+  await expect(dialog.getByRole('alert')).toContainText('报告已更新');
+  // 旧挡位未被动过
+  expect(s.alerts['000001']?.updated_at).toBe('2026-11-01T10:00:00');
+});
+
+test('non-ready report cannot be applied and failure retriable', async ({ page }) => {
+  const s = scenario();
+  s.perCode['600004'] = { state: 'failed', error: 'run 终态 failed' };
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  // 非 ready 行不出现「应用」按钮
+  await expect(table.locator('[data-code="600000"]').getByRole('button', { name: /应用/ })).toHaveCount(0);
+  // 失败行显示原因与重试
+  await expect(table.locator('[data-code="600004"]')).toContainText('评估失败');
+  await table.locator('[data-code="600004"]').getByRole('button', { name: '重试评估' }).click();
+  await expect(s.analyzeCalls).toEqual([['600004']]);
+});
+
+test('pause and resume keep levels and persist via enabled endpoint', async ({ page }) => {
+  const s = scenario();
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  await table.locator('[data-code="000001"]').getByRole('button', { name: '暂停', exact: true }).click();
+  await expect(s.enabledCalls).toEqual([{ code: '000001', enabled: false }]);
+  await expect(table.locator('[data-code="000001"]')).toContainText('已暂停');
+  // 挡位条仍显示（保留配置）
+  await expect(table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]')).toBeVisible();
+  await table.locator('[data-code="000001"]').getByRole('button', { name: '恢复监控' }).click();
+  await expect(s.enabledCalls).toEqual([{ code: '000001', enabled: false }, { code: '000001', enabled: true }]);
+  await expect(table.locator('[data-code="000001"]')).toContainText('监控中');
+});
+
+test('out-of-range and missing current price are explicit, not misleading', async ({ page }) => {
+  const s = scenario();
+  s.prices['600004'] = { close: 27.8, realtime: 2.0, pe: 9.0, pb: 1.2, yield_ttm: 3.8 }; // 低于全部阈值
+  s.reports['600004'] = report('600004', '待评公司', 'ready', { evaluated_at: '2026-11-11T09:00:00' });
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  await expect(table.locator('[data-code="600004"]')).toContainText('低于重仓线');
+  // 缺现价（realtime 与 close 都缺失才视为缺失）
+  s.prices['600000'] = { close: null, realtime: null, pe: null, pb: null, yield_ttm: null };
+  await page.reload();
+  await expect(table.locator('[data-code="600000"]').getByText('现价缺失')).toBeVisible();
+});
+
+test('narrow viewport keeps primary actions reachable without page overflow', async ({ page }) => {
+  const s = scenario();
+  s.reports['600004'] = report('600004', '待评公司', 'ready', { evaluated_at: '2026-11-11T09:00:00' });
+  await setup(page, s);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  await expect(table.getByText('测试公司')).toBeVisible();
+  // 页面整体不横向溢出（表格容器内部横滑是允许的）
+  const overflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
+  // 主操作可达：待应用的对比按钮与非 ready 行的重评入口都在窄屏渲染
+  await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '查看并应用' })).toBeVisible();
+  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '重新评估' })).toBeVisible();
+});
