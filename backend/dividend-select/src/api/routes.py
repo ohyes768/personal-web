@@ -59,7 +59,7 @@ from src.api.models import (
 )
 from src.services.data_reader import DataReader
 from src.services.favorites_service import FavoritesService
-from src.services.filter_service import FilterService
+from src.services.filter_service import FilterService, normalize_search_keyword
 from src.services.screening_service import evaluate_stock, DIVIDEND_YEARS
 from src.services.m120_service import M120Service
 from src.services.pe_service import PEDataService
@@ -476,6 +476,7 @@ def _build_stock_list(
     sort_by: str,
     sort_order: str,
     wanted_codes: Optional[set[str]],
+    search: Optional[str] = None,
 ) -> StockListResponse:
     """股票列表的同步构建：读取、筛选、排序、组装模型（供线程池执行）。"""
     # 读取数据
@@ -493,18 +494,26 @@ def _build_stock_list(
     if wanted_codes:
         df = df[df["股票代码"].astype(str).str.zfill(6).isin(wanted_codes)]
 
-    # 筛选
-    # 如果设置了min_yield，则使用3年连续分红筛选（3年平均>=min_yield 且 每年都有分红）
-    if min_yield is not None and min_yield > 0:
-        df = filter_service.filter_by_3y_dividend(df, min_avg_yield=min_yield)
-    if max_yield is not None:
-        df = filter_service.filter_by_yield_range(df, None, max_yield)
-    df = filter_service.filter_by_exchange(df, exchange)
-    df = filter_service.filter_by_industry(df, industry)
-    df = filter_service.filter_by_index(df, index)
+    # 搜索关键词：命中即覆盖完整收集池，跳过股息率/交易所/行业/指数筛选
+    # （需求：已收集但低于阈值或不符合选股关注条件的股票也能被搜到）
+    keyword = normalize_search_keyword(search)
+    if keyword:
+        df = filter_service.filter_by_search(df, keyword)
+        # 相关度排序取代通用排序（通用排序只按股息率，会把精确命中挤到后面）
+        df = filter_service.sort_by_search_relevance(df, keyword)
+    else:
+        # 筛选
+        # 如果设置了min_yield，则使用3年连续分红筛选（3年平均>=min_yield 且 每年都有分红）
+        if min_yield is not None and min_yield > 0:
+            df = filter_service.filter_by_3y_dividend(df, min_avg_yield=min_yield)
+        if max_yield is not None:
+            df = filter_service.filter_by_yield_range(df, None, max_yield)
+        df = filter_service.filter_by_exchange(df, exchange)
+        df = filter_service.filter_by_industry(df, industry)
+        df = filter_service.filter_by_index(df, index)
 
-    # 排序
-    df = sort_service.sort_by_field(df, sort_by, sort_order)
+        # 排序
+        df = sort_service.sort_by_field(df, sort_by, sort_order)
 
     # 批量查询申万行业信息
     codes = df["股票代码"].astype(str).str.zfill(6).tolist()
@@ -555,6 +564,7 @@ async def get_stocks(
     sort_by: str = Query("avg_yield_3y", description="排序字段"),
     sort_order: str = Query("desc", description="排序方向(asc/desc)"),
     codes: Annotated[Optional[str], Query(description="逗号分隔的六位股票代码精确过滤，与筛选参数取交集；不传保持原行为")] = None,
+    search: Annotated[Optional[str], Query(description="股票名称或代码包含匹配（忽略首尾空格）；命中时覆盖完整收集池并忽略股息率/交易所等筛选")] = None,
 ):
     """获取股票列表（支持筛选、排序，无分页）"""
     if data_reader is None or filter_service is None or sort_service is None:
@@ -566,7 +576,7 @@ async def get_stocks(
     return await asyncio.to_thread(
         _build_stock_list,
         min_yield, max_yield, exchange, industry, index,
-        sort_by, sort_order, wanted_codes,
+        sort_by, sort_order, wanted_codes, search,
     )
 
 

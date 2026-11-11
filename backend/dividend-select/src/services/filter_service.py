@@ -10,6 +10,16 @@ from src.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 
+def normalize_search_keyword(keyword: Optional[str]) -> str:
+    """
+    搜索关键词归一：去掉首尾空格；空值/空串视为未搜索。
+
+    模块级函数（不是 service 实例方法）：路由的控制流依赖它，
+    换成实例方法会被 mock 掉的 service 破坏（实例方法返回 Mock 对象 → 恒真）。
+    """
+    return (keyword or "").strip()
+
+
 class FilterService:
     """
     数据筛选服务
@@ -227,3 +237,90 @@ class FilterService:
         )
 
         return filtered_df
+
+    # 搜索相关度分级：数值越小越靠前
+    SEARCH_RANK_EXACT_CODE = 0
+    SEARCH_RANK_CODE_PREFIX = 1
+    SEARCH_RANK_NAME_PREFIX = 2
+    SEARCH_RANK_NAME_CONTAINS = 3
+    SEARCH_RANK_CODE_CONTAINS = 4
+    SEARCH_RANK_OTHER = 5
+
+    @staticmethod
+    def normalize_search_keyword(keyword: Optional[str]) -> str:
+        """关键词归一：去掉首尾空格；空值/空串视为未搜索。"""
+        return normalize_search_keyword(keyword)
+
+    def filter_by_search(self, df: pd.DataFrame, keyword: str) -> pd.DataFrame:
+        """
+        按股票名称或代码包含匹配过滤。
+
+        语料是**完整收集池**（调用方不得先做股息率/交易所等预筛），
+        因此低于阈值、但已被收集的股票同样能被搜到。
+        代码按 6 位 str 归一后做子串匹配，前导零不丢。
+        """
+        key = self.normalize_search_keyword(keyword)
+        if not key or df.empty:
+            return df
+
+        key_lower = key.lower()
+        if "股票名称" in df.columns:
+            names = df["股票名称"].astype(str)
+            name_hit = names.str.lower().str.contains(key_lower, regex=False, na=False)
+        else:
+            name_hit = pd.Series(False, index=df.index)
+        if "股票代码" in df.columns:
+            codes = df["股票代码"].astype(str).str.zfill(6)
+            code_hit = codes.str.contains(key, regex=False, na=False)
+        else:
+            code_hit = pd.Series(False, index=df.index)
+
+        filtered_df = df[name_hit | code_hit]
+        logger.debug(f"股票搜索: 关键词='{key}', 结果={len(filtered_df)}条")
+        return filtered_df
+
+    def sort_by_search_relevance(self, df: pd.DataFrame, keyword: str) -> pd.DataFrame:
+        """
+        按搜索相关度排序：代码全等 > 代码前缀 > 名称前缀 > 名称包含 > 代码包含。
+
+        同级按 3 年平均股息率降序，再按代码升序，保证结果稳定。
+        """
+        key = self.normalize_search_keyword(keyword)
+        if not key or df.empty:
+            return df
+
+        key_lower = key.lower()
+        if "股票代码" in df.columns:
+            codes = df["股票代码"].astype(str).str.zfill(6)
+        else:
+            codes = pd.Series("", index=df.index, dtype="object")
+        if "股票名称" in df.columns:
+            name_lower = df["股票名称"].astype(str).str.lower()
+        else:
+            name_lower = pd.Series("", index=df.index, dtype="object")
+
+        rank = pd.Series(self.SEARCH_RANK_OTHER, index=df.index, dtype="int64")
+        rank = rank.mask(codes.str.contains(key, regex=False, na=False), self.SEARCH_RANK_CODE_CONTAINS)
+        rank = rank.mask(name_lower.str.contains(key_lower, regex=False, na=False), self.SEARCH_RANK_NAME_CONTAINS)
+        rank = rank.mask(name_lower.str.startswith(key_lower, na=False), self.SEARCH_RANK_NAME_PREFIX)
+        rank = rank.mask(codes.str.startswith(key, na=False), self.SEARCH_RANK_CODE_PREFIX)
+        rank = rank.mask(codes == key, self.SEARCH_RANK_EXACT_CODE)
+
+        if "3年平均股息率(%)" in df.columns:
+            yields = pd.to_numeric(
+                df["3年平均股息率(%)"].replace("-", None), errors="coerce"
+            ).fillna(-1.0)
+        else:
+            yields = pd.Series(-1.0, index=df.index)
+
+        sort_columns = ["_search_rank", "_search_yield"]
+        ascending = [True, False]
+        if "股票代码" in df.columns:
+            sort_columns.append("股票代码")
+            ascending.append(True)
+
+        ranked = df.assign(_search_rank=rank, _search_yield=yields)
+        ranked = ranked.sort_values(
+            by=sort_columns, ascending=ascending, kind="stable"
+        )
+        return ranked.drop(columns=["_search_rank", "_search_yield"])
