@@ -71,8 +71,12 @@ options:
   --cold --no-buildx  全部 compose 真冷构建
 
 说明:
+  git pull 前若工作区有未提交改动，脚本会自动 stash → pull → stash pop，
+  改动原样保留，不再因 "cannot pull with rebase" 中止部署；只有真正
+  冲突（本地提交与远端分叉）时才停下并提示处理方式。
+
   task-web 连带处理业务仓库 stock-info-dingding（方案 B：业务代码不进本仓）：
-    1) 先在业务仓库 checkout 上 git pull --ff-only 更新代码
+    1) 先在业务仓库 checkout 上 git pull --ff-only 更新代码（同样带自动 stash）
     2) 再 docker compose build stock-info-image 重建 stock-info:latest
     3) 校验 /workspace/stock-info-dingding 下的运行时 env_file 是否就位（缺失只告警）
   路径默认 /home/ohyes768/stock-info-dingding，可用根 .env 里的
@@ -178,6 +182,79 @@ sync_nginx() {
     echo "============================================================"
     echo "nginx 配置已更新并 reload"
     echo "============================================================"
+}
+
+# ---- git pull 封装：工作区脏时自动 stash → pull → 恢复 ----
+# 本仓和业务仓都配置了 pull.rebase=true，只要工作区有未提交改动，
+# `git pull` 会直接报 "cannot pull with rebase: You have unstaged changes"
+# 而中止整个部署。NAS checkout 上带临时改动是常态，这里自动收尾，
+# 拉取完成后把改动原样恢复，不需要人工先 stash。
+# 额外参数原样传给 git pull（业务仓用 --ff-only）。
+# 失败时打印可直接照做的处理步骤，并把 stash 保留下来方便取回。
+git_pull_tolerant() {
+    # 规范化成绝对路径：-C 的相对路径 + 下面 rebase-merge 等 gitdir 探测
+    # 都依赖它，否则提示里会出现 "cd ." 这种没法照做的命令
+    local dir
+    dir=$(cd "$1" 2>/dev/null && pwd) || {
+        echo "错误: 目录不存在: $1" >&2
+        return 1
+    }
+    shift || true
+    local -a g=(git -C "$dir")
+    local has_dirty=false stashed=false rc=0 gitdir
+
+    if [[ -n "$("${g[@]}" status --porcelain --untracked-files=no 2>/dev/null)" ]]; then
+        has_dirty=true
+    fi
+
+    if $has_dirty; then
+        echo "  工作区有未提交改动 → 自动 stash，拉取完成后恢复"
+        if ! "${g[@]}" stash push --quiet -m "deploy-nas auto-stash $(date '+%F %T')"; then
+            echo "错误: $dir 的未提交改动无法 stash，部署已中止（文件未被修改）。" >&2
+            echo "  处理: cd $dir && git status 查看后手动处理。" >&2
+            return 1
+        fi
+        stashed=true
+    fi
+
+    "${g[@]}" pull "$@" || rc=$?
+
+    if [[ $rc -ne 0 ]]; then
+        # 拉取失败且停在 rebase/merge 冲突态：此时不能 pop，改动留在 stash
+        # --absolute-git-dir：相对路径会按调用方 cwd 解析，探测就错了
+        gitdir=$("${g[@]}" rev-parse --absolute-git-dir 2>/dev/null || echo "$dir/.git")
+        if [[ -d "$gitdir/rebase-merge" || -d "$gitdir/rebase-apply" || -f "$gitdir/MERGE_HEAD" ]]; then
+            echo "错误: $dir 拉取进入冲突态（本地提交与远端分叉），部署已中止。" >&2
+            if $stashed; then
+                echo "  本地改动仍保存在 stash: git -C $dir stash list" >&2
+            fi
+            echo "  处理: cd $dir 解决冲突（git rebase --continue 或 git rebase --abort）后重跑。" >&2
+            return 1
+        fi
+        echo "错误: $dir 的 git pull 失败，部署已中止。" >&2
+        if $stashed; then
+            echo "  正在恢复本地改动…"
+            if ! "${g[@]}" stash pop --quiet; then
+                echo "  警告: 恢复本地改动冲突，改动仍完整保存在 stash（git -C $dir stash list）。" >&2
+                return 1
+            fi
+            echo "  本地改动已恢复"
+        fi
+        echo "  处理: cd $dir && git status 查看；修好后重跑，或加 --no-pull 用当前 checkout 构建。" >&2
+        return 1
+    fi
+
+    if $stashed; then
+        if "${g[@]}" stash pop --quiet; then
+            echo "  本地改动已恢复"
+        else
+            echo "错误: $dir 拉取后恢复本地改动发生冲突。" >&2
+            echo "  改动仍完整保存在 stash 里（git -C $dir stash list），未丢失。" >&2
+            echo "  处理: cd $dir && git status 解决冲突，完成后 git stash drop。" >&2
+            return 1
+        fi
+    fi
+    return 0
 }
 
 # ---- 服务映射 ----
@@ -323,10 +400,8 @@ update_task_web_business_repo() {
 
         current=$(git -C "$path" rev-parse --short HEAD 2>/dev/null || echo "?")
         echo "  --- git pull 业务仓库 $(basename "$path") ($path, 当前 $current) ---"
-        if ! git -C "$path" pull --ff-only; then
-            echo "错误: $path 更新失败（本地改动、分支分叉或无远端凭据）。" >&2
-            echo "  处理: cd $path && git status 查看；修好重跑，" >&2
-            echo "        或加 --no-pull 用当前 checkout 直接构建（会打进旧代码）。" >&2
+        if ! git_pull_tolerant "$path" --ff-only; then
+            echo "  也可加 --no-pull 用当前 checkout 直接构建（会打进旧代码）。" >&2
             exit 1
         fi
     done
@@ -352,7 +427,7 @@ if [[ "$TARGET" == "nginx" ]]; then
     if $DO_PULL; then
         echo ""
         echo "==> git pull"
-        git pull
+        git_pull_tolerant "." || exit 1
     fi
     sync_nginx
     exit 0
@@ -374,7 +449,7 @@ echo "============================================================"
 if $DO_PULL; then
     echo ""
     echo "==> [1/3] git pull"
-    git pull
+    git_pull_tolerant "." || exit 1
 fi
 
 # ---- Step 2: build ----
