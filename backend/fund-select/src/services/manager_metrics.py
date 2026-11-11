@@ -37,9 +37,16 @@ RISK_FREE_ANNUAL_PCT = 2.0  # 夏普无风险利率（与 risk_service 口径一
 TRADING_DAYS = 252
 
 
+# 年化最低任期：不足 90 天（一个季度）的段年化无统计意义。
+# 实测：1 天任期回报 4.16% → 年化 2.9 亿%（方一航 019113，新发基金建仓期）。
+MIN_ANNUALIZE_DAYS = 90
+
+
 def annualize(tenure_return_pct: float | None, tenure_days: int | None) -> float | None:
-    """累计任职回报 → 年化。days=0 或 return<=-100 返回 None。"""
+    """累计任职回报 → 年化。days=0、days<90 或 return<=-100 返回 None。"""
     if not tenure_return_pct or not tenure_days or tenure_days <= 0:
+        return None
+    if tenure_days < MIN_ANNUALIZE_DAYS:
         return None
     if tenure_return_pct <= -100:
         return None
@@ -72,12 +79,22 @@ def weighted_annual(tenures: Sequence[dict[str, Any]]) -> float | None:
 
 
 def pick_representative(tenures: Sequence[dict[str, Any]]) -> dict[str, Any] | None:
-    """代表基金：主动权益优先 → 任期最长 → 在管优先。"""
+    """代表基金：主动权益优先 → 任期最长 → 在管优先。
+
+    注意优先级：任期最长必须在在管之前。若反过来，新建仓的短在管段
+    会压过真正的长任期段（实测刘小明：36 天在管段被选为代表，
+    最长任期显示 0.1 年，而其 22% 加权年化来自已离任的长段）。
+    另外优先选年化可用的段（≥90 天），风险指标窗口才有意义。
+    """
     eq = [t for t in tenures if is_active_equity(t.get("fund_type"))]
     pool = eq or list(tenures)
     if not pool:
         return None
-    return max(pool, key=lambda t: (t.get("is_current", False), t.get("tenure_days") or 0))
+    return max(pool, key=lambda t: (
+        t.get("annual_return") is not None,
+        t.get("tenure_days") or 0,
+        bool(t.get("is_current")),
+    ))
 
 
 def slice_series(series: Sequence[tuple[str, float]],

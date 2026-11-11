@@ -28,10 +28,21 @@ class TestAnnualize:
         assert annualize(-100.0, 1000) is None
         assert annualize(-120.0, 1000) is None
 
+    def test_short_tenure_floor(self):
+        """短任期年化地板：<90 天的段年化无意义，返回 None。
+
+        实测回归：1 天任期回报 4.16% → 年化 2.9 亿%（方一航 019113），
+        曾把全市场加权年化 Top1 刷成 12 万%。
+        """
+        assert annualize(4.16, 1) is None
+        assert annualize(20.0, 89) is None
+        # 90 天起恢复有效
+        assert annualize(20.0, 90) is not None
+
     def test_short_tenure(self):
-        # 82 天赚 0.28% → 年化约 1.25%
-        ann = annualize(0.28, 82)
-        assert ann == pytest_approx(((1.0028) ** (365 / 82) - 1) * 100, 1e-6)
+        # 120 天赚 0.28% → 年化约 0.85%（90 天以上才年化）
+        ann = annualize(0.28, 120)
+        assert ann == pytest_approx(((1.0028) ** (365 / 120) - 1) * 100, 1e-6)
 
 
 def pytest_approx(expected, tol):
@@ -98,13 +109,27 @@ class TestWeightedAnnual:
 
 class TestPickRepresentative:
     def test_prefers_active_equity_longest_current(self):
+        """优先级：主动权益 → 任期最长（在管只是平级 tie-break）。"""
         tenures = [
             _t("bd", "债券型-长债", 9999, 100.0),
             _t("s", "混合型-偏股", 1000, 10.0),
             _t("l", "股票型", 5000, 50.0),
             _t("q", "QDII-混合", 8000, 90.0, current=False),
         ]
-        assert pick_representative(tenures)["fund_code"] == "l"
+        # q 任期 8000 天最长（且是权益段）→ 胜出；l 虽在管但只有 5000 天
+        assert pick_representative(tenures)["fund_code"] == "q"
+
+    def test_longest_beats_current(self):
+        """回归锁：任期最长优先于在管优先。
+
+        若反过来，新建仓 36 天的短在管段会压过长任期离任段
+        （实测刘小明：最长任期显示 0.1 年，加权 22% 却来自长段）。
+        """
+        tenures = [
+            _t("new", "混合型-偏股", 36, 1.0, ann=None, current=True),
+            _t("old", "混合型-偏股", 1825, 120.0, ann=17.5, current=False),
+        ]
+        assert pick_representative(tenures)["fund_code"] == "old"
 
     def test_falls_back_to_all_when_no_equity(self):
         tenures = [_t("b", "债券型-长债", 3000, 5.0)]
