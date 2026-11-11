@@ -126,3 +126,19 @@ apps/index-trends/.next/
 apps/index-trends/node_modules/
 
 backend/task-web/data/
+
+# service-manager：SQLite 台账与备份走 named volume，本地 dev 数据不入库
+backend/service-manager/data/
+backend/service-manager/.venv/
+backend/service-manager/.uvcache/
+backend/service-manager/.pytest-tmp*/
+backend/service-manager/.pytest_cache/
+apps/service-manager/node_modules/
+apps/service-manager/.next/
+apps/service-manager/playwright-report/
+apps/service-manager/test-results/
+
+# pnpm 本地 store（pnpm install 在工作区根创建，体积大，不入库）
+.pnpm-store/
+# 本地工具运行时目录（docker buildx / xdg）
+.tooling/

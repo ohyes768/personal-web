@@ -51,7 +51,7 @@ NAS 部署脚本（Ubuntu Server + docker-compose.nas.yml）
   ./scripts/deploy-nas.sh <target> [side] [options]
 
 target:
-  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | nginx | all
+  dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | service-manager | nginx | all
   （nginx 只同步 nginx/web.conf 到 nginx 容器并 reload，不走 build/up，忽略 side）
 
 side:（默认 both）
@@ -106,6 +106,7 @@ options:
   ./scripts/deploy-nas.sh kids-catalog both
   ./scripts/deploy-nas.sh index-trends both
   ./scripts/deploy-nas.sh task-web both      # 连带更新业务仓库 + 重建 stock-info:latest
+  ./scripts/deploy-nas.sh service-manager both   # 前端 3012 + 后端 8102 + socket-proxy
   ./scripts/deploy-nas.sh nginx              # 同步 nginx/web.conf + reload（忽略 side）
   ./scripts/deploy-nas.sh all
   ./scripts/deploy-nas.sh dividend frontend --no-pull
@@ -263,7 +264,7 @@ git_pull_tolerant() {
 get_services() {
     local target="$1" side="$2"
     case "$target" in
-        dividend|douyin|rss-relay|macro|fund-select|housing-map|skill-manager|kids-catalog|index-trends|task-web)
+        dividend|douyin|rss-relay|macro|fund-select|housing-map|skill-manager|kids-catalog|index-trends|task-web|service-manager)
             case "$side" in
                 backend)  echo "${target}-backend" ;;
                 frontend) echo "${target}-frontend" ;;
@@ -278,10 +279,10 @@ get_services() {
             if [[ "$side" != "both" ]]; then
                 echo "提示: target=all 时 side 强制 both（忽略 '$side'）" >&2
             fi
-            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend fund-select-backend fund-select-frontend housing-map-backend housing-map-frontend skill-manager-backend skill-manager-frontend index-trends-backend index-trends-frontend task-web-backend task-web-frontend"
+            echo "dividend-backend dividend-frontend douyin-backend douyin-frontend rss-relay-backend rss-relay-frontend macro-backend macro-frontend fund-select-backend fund-select-frontend housing-map-backend housing-map-frontend skill-manager-backend skill-manager-frontend index-trends-backend index-trends-frontend task-web-backend task-web-frontend service-manager-backend service-manager-frontend"
             ;;
         *)
-            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | all，实际 '$target'" >&2
+            echo "错误: target 必须是 dividend | douyin | rss-relay | macro | fund-select | housing-map | skill-manager | kids-catalog | index-trends | task-web | service-manager | all，实际 '$target'" >&2
             exit 1
             ;;
     esac
@@ -305,6 +306,7 @@ get_buildx_config() {
         kids-catalog-frontend) echo "apps/kids-catalog:apps/kids-catalog/Dockerfile:kids-catalog-frontend" ;;
         index-trends-frontend) echo "apps/index-trends:apps/index-trends/Dockerfile:index-trends-frontend" ;;
         task-web-frontend) echo "apps/task-web:apps/task-web/Dockerfile:task-web-frontend" ;;
+        service-manager-frontend) echo "apps/service-manager:apps/service-manager/Dockerfile:service-manager-frontend" ;;
         *) return 1 ;;
     esac
 }

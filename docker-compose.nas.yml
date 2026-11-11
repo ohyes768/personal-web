@@ -44,6 +44,9 @@
 #   /api/index-trends/*  → index-trends-backend:8100/api/*  (nginx 直转后端)
 #   /tasks/*             → task-web-frontend:3011  (basePath = /tasks，apps/task-web/)
 #   /api/task-web/*      → task-web-backend:8101/api/*  (nginx 直转后端)
+#   /services/*          → service-manager-frontend:3012  (basePath = /services，apps/service-manager/)
+#   /api/services/*      → service-manager-backend:8102/api/*  (nginx 直转后端，剥前缀)
+#                          容器元数据经 socket-proxy（只读 GET）读取 Docker Engine
 #
 # 数据卷（用 named volume，docker 自动管理在 /var/lib/docker/volumes/）：
 #   dividend-data / dividend-logs / dividend-config
@@ -54,6 +57,7 @@
 #   housing-map-data / housing-map-logs
 #   index-trends-data
 #   task-web-data（SQLite + 运行日志；业务仓库 bind mount 见 task-web-backend 服务）
+#   service-manager-data（SQLite 台账 + 恢复前备份）
 # skill-manager 服务已合并到主文件，各服务共享 .env 变量，详见 docs/skill-manager-nas-setup.md
 # =============================================================================
 
@@ -637,6 +641,84 @@ services:
     networks: [app-net]
     depends_on:
       task-web-backend: { condition: service_healthy }
+
+  # ---------------------------------------------------------------------------
+  # service-manager（NAS 服务台账：容器发现 + 端口域名证书 + 发布动态）
+  # Docker 只读走 socket-proxy：后端不挂 docker.sock，也不挂宿主目录。
+  # ---------------------------------------------------------------------------
+  service-manager-socket-proxy:
+    # 锁定 digest 由部署侧填写实测版本；此处用可获取的明确 tag。
+    # 只开 CONTAINERS/PING/VERSION，POST=0 → 仅 GET/HEAD 能到达 Engine。
+    image: tecnativa/docker-socket-proxy:0.2.0
+    container_name: service-manager-socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - PING=1
+      - VERSION=1
+      - POST=0
+      - IMAGES=0
+      - INFO=0
+      - EVENTS=0
+      - NETWORKS=0
+      - VOLUMES=0
+      - EXEC=0
+      - SECRETS=0
+      - AUTH=0
+      - BUILD=0
+      - COMMIT=0
+      - CONFIGS=0
+      - DISTRIBUTION=0
+      - NODES=0
+      - PLUGINS=0
+      - SERVICES=0
+      - SESSION=0
+      - SWARM=0
+      - SYSTEM=0
+      - TASKS=0
+    volumes:
+      # 只有这个容器挂 socket，且只读挂载；API 层只读由 POST=0 保证
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks: [sm-docker-net]
+    # 不发布任何主机端口；不接入 app-net
+
+  service-manager-backend:
+    build: { context: ./backend/service-manager }
+    container_name: service-manager-backend
+    restart: unless-stopped
+    expose: ["8102"]
+    volumes:
+      - service-manager-data:/app/data
+    environment: [TZ=Asia/Shanghai,
+                  "SERVICE_MANAGER_ADMIN_PASSWORD=${SERVICE_MANAGER_ADMIN_PASSWORD:?service-manager 需要管理口令}",
+                  "SERVICE_MANAGER_SESSION_SECRET=${SERVICE_MANAGER_SESSION_SECRET:?service-manager 需要会话签名密钥}",
+                  "SERVICE_MANAGER_PUBLIC_ORIGIN=${SERVICE_MANAGER_PUBLIC_ORIGIN:-https://web.duomi77.cn:9443}",
+                  "SERVICE_MANAGER_ALLOWED_ORIGINS=${SERVICE_MANAGER_ALLOWED_ORIGINS:-}",
+                  "SERVICE_MANAGER_GITHUB_TOKEN=${SERVICE_MANAGER_GITHUB_TOKEN:-}",
+                  "SERVICE_MANAGER_DOCKER_HOST=tcp://service-manager-socket-proxy:2375",
+                  SERVICE_MANAGER_DATA_DIR=/app/data,
+                  SERVICE_MANAGER_SECURE_COOKIE=true,
+                  SERVICE_MANAGER_SERVICE_PORT=8102]
+    networks: [app-net, sm-docker-net]
+    depends_on:
+      - service-manager-socket-proxy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8102/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  service-manager-frontend:
+    image: service-manager-frontend:latest
+    container_name: service-manager-frontend
+    restart: unless-stopped
+    ports: ["127.0.0.1:3012:3012"]
+    build:
+      context: ./apps/service-manager
+      args: { SERVICE_MANAGER_API_ORIGIN: http://service-manager-backend:8102 }
+    networks: [app-net]
+    depends_on:
+      service-manager-backend: { condition: service_healthy }
 # =============================================================================
 # 网络 & 数据卷
 # =============================================================================
@@ -647,6 +729,10 @@ networks:
   n8n-net:
     name: n8n_default
     external: true
+  # service-manager 专用：只有 socket-proxy 与后端接入，internal 不允许出网
+  sm-docker-net:
+    name: service-manager-docker-net
+    internal: true
 
 volumes:
   dividend-data:
@@ -683,3 +769,5 @@ volumes:
     name: index-trends-data
   task-web-data:
     name: task-web-data
+  service-manager-data:
+    name: service-manager-data
