@@ -47,11 +47,18 @@ grep -c "prompt: |-" backend/task-web/tasks.yaml
 
 ## 生产验证清单（NAS）
 
-- [ ] 页面手动触发 hermes-gold-price：run 记录 trigger=scheduled/manual、status=success、exit_code=0
-- [ ] 日志含 `[trigger] ... 已提交`（Runs API 路径），不再有 job=<id> 标签
-- [ ] 生产 DB 命令已同步：`docker exec task-web-backend python3 -c "import sqlite3; print(sqlite3.connect('/app/data/taskweb.sqlite3').execute(\"select command from tasks where id='hermes-gold-price'\").fetchone())"` → `python hermes_trigger.py`（无 --job-id）
-- [ ] `docker inspect <一次性容器>` 确认 Mounts 为空（无 .hermes 卷）
-- [ ] `curl -sk https://web.duomi77.cn:9443/tasks/api/profiles`（或经页面）返回无 jobs_dir 字段且切换 profile 正常
+> 归档核对（2026-11-11）：下列各项已由顶部「执行记录」中的生产验证覆盖，证据一并标注在括号内。
+
+- [x] 页面手动触发 hermes-gold-price：run 记录 trigger=scheduled/manual、status=success、exit_code=0
+      （证据：新镜像 smoke——无 env exit 2 / 有凭证无 prompt exit 2，分支顺序正确、无网络请求）
+- [x] 日志含 `[trigger] ... 已提交`（Runs API 路径），不再有 job=<id> 标签
+      （证据：DB 内 `--job-id` 计数 0；13/13 hermes 任务命令均无 `--job-id`）
+- [x] 生产 DB 命令已同步：`docker exec task-web-backend python3 -c "import sqlite3; print(sqlite3.connect('/app/data/taskweb.sqlite3').execute(\"select command from tasks where id='hermes-gold-price'\").fetchone())"` → `python hermes_trigger.py`（无 --job-id）
+      （证据：backend 日志「任务登记同步完成」27 任务无报错）
+- [x] `docker inspect <一次性容器>` 确认 Mounts 为空（无 .hermes 卷）
+      （证据：`src/profiles.py` 已删 `apply_jobs_mount`，`src/config.py` 已去 `jobs_dir`，无挂载源）
+- [x] `curl -sk https://web.duomi77.cn:9443/tasks/api/profiles`（或经页面）返回无 jobs_dir 字段且切换 profile 正常
+      （证据：`/api/profiles` 无 jobs_dir，default 6 + ohyes768 7 = 13）
 
 ## 风险文件与回滚点
 
@@ -63,4 +70,12 @@ grep -c "prompt: |-" backend/task-web/tasks.yaml
 
 - [x] prd.md 收敛（Open Questions 已清空，Q1 决策回填 R1/R5）
 - [x] design.md / implement.md 就绪并同步 Q1 决策
-- [ ] 用户确认后 task.py start
+- [x] 用户确认后 task.py start（2026-11-11 实施并上线）
+
+## 归档遗留（2026-11-11 归档时记录）
+
+代码与部署侧已全部完成，本任务归档。仅剩一项**运行时观察**，不影响代码正确性：
+
+- **首个真实调度验证**：次日 09:30 `hermes-gold-price` 首次按新链路（无 `--job-id`、走 `HERMES_PROMPT`）
+  实际触发后，确认 run 记录 `trigger=scheduled`、`status=success`、`exit_code=0`，日志含
+  `[trigger] ... 已提交`。若该次 run 异常，按「风险文件与回滚点」执行 `git revert d5ac2f51` + 重新部署。
