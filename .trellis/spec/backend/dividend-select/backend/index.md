@@ -21,6 +21,7 @@ This directory contains guidelines for backend development. Fill in each file wi
 | [M120 Snapshot Continuity](./m120-snapshot-contract.md) | 跨周读取、历史文件保留、状态时间与周六调度 | Active |
 | [Scheduler Lifecycle](./scheduler-lifecycle.md) | 调度器有界关闭、在跑任务等待与取消 | Active |
 | [Screening / Watchlist Contract](./screening-watchlist-contract.md) | 筛选三态、历史 ROE、批量收藏与旧缓存迁移 | Active |
+| [Stock Search Contract](./stock-search-contract.md) | 「全部」页股票搜索：完整收集池匹配、相关度排序、收藏范围收窄 | Active |
 | [Financial Quarterly Contract](./financial-quarterly-contract.md) | 最新季度扣非单季口径、数据季度=报告期、latest_quarter_label 全链路透传 | Active |
 | [Directory Structure](./directory-structure.md) | Module organization and file layout | To fill |
 | [Database Guidelines](./database-guidelines.md) | ORM patterns, queries, migrations | To fill |

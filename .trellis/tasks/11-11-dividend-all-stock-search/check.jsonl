@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/index.md", "reason": "后端包 Quality Check：新增查询参数后需回归既有接口行为"}
+{"file": ".trellis/spec/backend/dividend-select/backend/snapshot-cache-contract.md", "reason": "校验 /stocks 新参数符合 Annotated/线程隔离/codes 交集约束"}
+{"file": ".trellis/spec/backend/dividend-select/backend/code-type-guidelines.md", "reason": "校验代码前导零在搜索匹配与响应中不丢失"}
+{"file": ".trellis/spec/backend/dividend-select/backend/screening-watchlist-contract.md", "reason": "校验搜索未改变选股关注筛选规则与收藏独立语义"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "校验前端 lint / node:test / build / playwright 验证口径"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层一致性复核：后端语义与前端调用、UI 文案一致"}

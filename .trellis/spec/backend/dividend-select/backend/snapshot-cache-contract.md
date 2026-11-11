@@ -52,6 +52,9 @@
   返回 422（与 batch favorites 同口径）；空/None 保持原行为。
 - 与筛选参数取**交集**：`codes` 先过滤，`min_yield>0` 等筛选继续生效；
   前端收藏资料请求用 `min_yield=0&codes=…`（阈值外收藏保留，缺资料前端占位）。
+- `/stocks?search=关键词`（2026-11-11 新增）：关键词非空时搜索覆盖**完整收集池**，
+  忽略股息率/交易所等筛选，`codes` 仍与之取交集。详见
+  [股息率「全部」页股票搜索契约](./stock-search-contract.md)。
 
 ### 前端请求边界（apps/dividend）
 

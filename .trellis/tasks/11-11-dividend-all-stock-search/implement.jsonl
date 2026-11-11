@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/backend/dividend-select/backend/index.md", "reason": "dividend-select 后端包规范索引：Pre-Development Checklist 与 Quality Check 入口"}
+{"file": ".trellis/spec/backend/dividend-select/backend/code-type-guidelines.md", "reason": "股票代码全程 6 位 str + zfill(6) 契约；搜索按代码子串匹配必须保留前导零"}
+{"file": ".trellis/spec/backend/dividend-select/backend/snapshot-cache-contract.md", "reason": "/stocks 查询参数扩展规则（Annotated 写法、内部直接调用坑）、codes 交集语义、前端请求边界"}
+{"file": ".trellis/spec/backend/dividend-select/backend/screening-watchlist-contract.md", "reason": "收藏独立于阈值、fav=1 行为；搜索需复用现有收藏入口而不新建关注池"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层契约检查清单：避免同一筛选语义在前后端各写一份"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范：dividend 的 lint/test/build 验证口径与 node:test 运行方式"}
