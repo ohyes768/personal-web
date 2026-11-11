@@ -15,7 +15,7 @@
 3. [x] 报告读取与人工应用，保护旧配置并处理取消收藏/陈旧报告竞态（POST /valuation/{code}/apply + PUT /favorites/{code}/alerts/enabled）。
 4. [x] 替换 alerts 页为全部收藏表格，接入筛选、搜索及状态（FavoritesTrackingTab，?tab=alerts URL 保留）。
 5. [x] 报告阅读、价格对比、确认应用、监控暂停/恢复（ValuationReportModal + 安全 Markdown）。
-6. [x] 紧凑四阈值五区间条、现价标记及无有效结果时隐藏（ValuationPriceBar 400px，按用户复核加宽并补回每档 PE/区间名/距各档距离；单挡位/未评估/失败/非 ready 均有明确非条形）。
+6. [x] 紧凑四阈值五区间条、现价标记及无有效结果时隐藏（ValuationPriceBar 400px，按用户复核加宽；随后再精简到 3 层，行高 130px → 86px；单挡位/未评估/失败/非 ready 均有明确非条形）。
 7. [x] 收藏成功快捷评估入口及旧 URL 兼容（ScreeningTab 收藏消息行「评估挡位」按钮；旧 ?tab=alerts 直达收藏跟踪）。
 8. [x] trellis-check、相关 specs 更新（新增 valuation-contract.md、index 与 refresh-jobs 合同更新）；提交和部署按用户后续指示处理。
 

@@ -89,15 +89,21 @@ A local skill checkout is never proof of deployment.
   render text instead of a bar; nothing renders without prices. Out-of-range
   current prices show 低于重仓线/高于全卖线 with edge arrows; missing realtime
   and close show 现价缺失.
-  Price bar layout (2026-11-11 revised after user review: 248px read as too
-  narrow, now 400px inside the table column): explicit layers instead of
-  ad-hoc absolute offsets — row1 four level prices + current price label
-  (staggered when close), row2 track + four clickable dots (click shows the
-  dividend yield at that price) + current-price marker, row3 per-level PE
-  (omitted entirely when no PE data), row4 zone names that fit, row5 current
-  zone plus distance to each level. Labels never collide: price/PE rows
-  stagger independently and threshold positions map to [8, 92] so edge labels
-  are not clipped.
+  Price bar layout (2026-11-11 revised twice after user review: 248px read as too
+  narrow → 400px; then the 5-layer version read as too tall → distilled to 3
+  layers, row height 130px → 86px). Layers: row1 four level prices + current
+  price label (staggered when close), row2 five-band track + four clickable
+  dots (click shows the dividend yield at that price) + current-price marker,
+  row3 zone names that fit. Information that was duplicated elsewhere moved out
+  of the bar instead of being deleted: per-level PE/PB and distance-to-each-level
+  percentages live in the bar's hover title and in the report modal's price
+  cards; the nearest-level distance appears once in the 现价 column; the zone
+  legend highlights the current band instead of repeating the zone name in a
+  second line. Candidates read as muted prices/track plus a 未启用 tag rather
+  than a nested dashed card. Labels never collide: price rows stagger
+  independently, threshold positions map to [8, 92], and zone names are laid
+  out against an occupied-width cursor so a name that would overlap is dropped
+  (or yields the slot to the out-of-range / 未启用 notice).
 
 ## 4. Validation & Error Matrix
 | Condition | Result |

@@ -182,13 +182,13 @@ export function deriveFavoriteTrackingState(
 }
 
 export const TRACKING_STATE_META: Record<FavoriteTrackingState, { label: string; note: string }> = {
-  monitoring: { label: '监控中', note: '当前生效挡位持续监控' },
-  paused: { label: '已暂停', note: '保留挡位配置，暂不推送提醒' },
-  pending_apply: { label: '待应用', note: '评估完成，确认后开启监控' },
-  evaluating: { label: '评估中', note: '正在复用基本面材料，补充估值依据' },
-  failed: { label: '评估失败', note: '请求未完成，可重新评估' },
-  not_ready: { label: '未出价格', note: '暂未生成有效挡位，可查看原因' },
-  unevaluated: { label: '待评估', note: '收藏后尚未评估挡位' },
+  monitoring: { label: '监控中', note: '' },
+  paused: { label: '已暂停', note: '挡位保留，未推送提醒' },
+  pending_apply: { label: '待应用', note: '确认后开启监控' },
+  evaluating: { label: '评估中', note: '正在补充估值依据' },
+  failed: { label: '评估失败', note: '可重试' },
+  not_ready: { label: '未出价格', note: '未生成价格，可查看原因' },
+  unevaluated: { label: '待评估', note: '' },
 };
 
 /** 五种筛选的谓词（重叠仅发生在 待应用 ∩ 监控中/已暂停） */

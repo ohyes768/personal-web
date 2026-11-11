@@ -230,10 +230,13 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   // 监控中行：生效条（无候选角标）
   const effective = table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]');
   await expect(effective).toBeVisible();
-  // 生效条带每档 PE 与距各档距离（旧样式的信息收进条内）
-  await expect(effective).toContainText('PE 5.1');
-  await expect(effective).toContainText('距重仓');
+  // 精简后：每档 PE 与距各档距离走悬浮 tooltip，不再占条的高度
+  await expect(effective).toHaveAttribute('title', /PE 5\.1/);
+  await expect(effective).toHaveAttribute('title', /距/);
+  // 区间名行仍在（当前所在段高亮）
   await expect(effective).toContainText('持有区');
+  // 距离落到现价列（离现价最近的一条线）
+  await expect(table.locator('[data-code="000001"]')).toContainText('距减仓 -13.6%');
   // 重评待应用重叠：监控中 + 新评估待应用
   await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
   await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '对比并应用' })).toBeVisible();
@@ -253,10 +256,10 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   await setup(page, s);
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
-  // 候选条 + 角标
+  // 候选条：价格弱化 + 「未启用」标记（不再用虚线卡片，省高度）
   const candidate = table.locator('[data-code="600004"] [data-testid="valuation-bar-candidate"]');
   await expect(candidate).toBeVisible();
-  await expect(table.locator('[data-code="600004"]')).toContainText('评估结果 · 未启用监控');
+  await expect(table.locator('[data-code="600004"]')).toContainText('未启用');
   // 应用前：状态为待应用，不是监控中
   await expect(table.locator('[data-code="600004"]')).toContainText('待应用');
   // 确认应用 → alerts 更新（enabled=true）
@@ -346,7 +349,12 @@ test('narrow viewport keeps primary actions reachable without page overflow', as
     clientWidth: document.documentElement.clientWidth,
   }));
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
-  // 主操作可达：待应用的对比按钮与非 ready 行的重评入口都在窄屏渲染
+  // 主操作可达：待应用的对比按钮与非 ready 行的缺口入口都在窄屏渲染
   await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '查看并应用' })).toBeVisible();
-  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '重新评估' })).toBeVisible();
+  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' })).toBeVisible();
+  // 重新评估收在报告面板里（行内不再重复一个入口）
+  await table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' }).click();
+  const gapDialog = page.getByRole('heading', { name: '缺口公司 · 四挡位估值报告' }).locator('../..');
+  await expect(gapDialog.getByRole('button', { name: '重新评估' })).toBeVisible();
+  await gapDialog.getByRole('button', { name: '返回列表' }).click();
 });

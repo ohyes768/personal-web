@@ -18,6 +18,7 @@ import { QUALITY_DIMENSION_LABELS, QUALITY_DIMENSION_ORDER, type QualityDimensio
 import {
   TRACKING_STATE_META,
   VALUATION_LEVEL_KEYS,
+  VALUATION_LEVEL_LABEL,
   VALUATION_STATUS_LABEL,
   deriveFavoriteTrackingState,
   matchesTrackingFilter,
@@ -340,11 +341,37 @@ function TrackingRow({
 }) {
   const { stock, alertItem, report, derived, currentPrice, price, liveError } = row;
   const meta = TRACKING_STATE_META[derived.state];
+  // 徽章已经说清的状态不再补一句说明（避免每行固定多占一行）
+  const needsNote = derived.state === 'evaluating'
+    || derived.state === 'failed'
+    || derived.state === 'not_ready'
+    || derived.state === 'paused'
+    || (derived.state === 'pending_apply' && !derived.effective);
   const evaluatingNow = derived.state === 'evaluating' || evaluating;
   const levels = alertItem?.levels ?? null;
   const candidateLevels = derived.state === 'pending_apply' && report?.levels
     ? reportLevelsToAlertLevels(report.levels)
     : null;
+
+  // 距各档距离（现价列）：距现价最近的一条价格线，含方向
+  const distanceNote = useMemo(() => {
+    const source = levels ?? candidateLevels;
+    if (!source || currentPrice == null) return '';
+    const priced = VALUATION_LEVEL_KEYS
+      .map(key => ({ key, price: source[key]?.price }))
+      .filter(item => item.price != null && item.price > 0)
+      .map(item => ({
+        key: item.key,
+        price: item.price as number,
+        pct: ((currentPrice - (item.price as number)) / (item.price as number)) * 100,
+      }));
+    if (!priced.length) return '';
+    const nearest = priced.reduce((best, item) => (
+      Math.abs(item.pct) < Math.abs(best.pct) ? item : best
+    ));
+    const sign = nearest.pct > 0 ? '+' : '';
+    return `距${VALUATION_LEVEL_LABEL[nearest.key]} ${sign}${nearest.pct.toFixed(1)}%`;
+  }, [levels, candidateLevels, currentPrice]);
 
   const statePill = (() => {
     if (evaluatingNow) {
@@ -382,21 +409,24 @@ function TrackingRow({
       <td className="p-3">
         {currentPrice != null ? (
           <>
-            <div className="font-mono font-semibold tabular-nums">{currentPrice.toFixed(2)}</div>
+            <div
+              className="font-mono font-semibold tabular-nums"
+              title={priceUpdatedAt ? `现价数据更新于 ${new Date(priceUpdatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}` : undefined}
+            >
+              {currentPrice.toFixed(2)}
+            </div>
             <div className="text-[10px] font-mono text-ink-muted tabular-nums">
               PE {price?.pe != null ? price.pe.toFixed(1) : '—'} · PB {price?.pb != null ? price.pb.toFixed(2) : '—'}
             </div>
+            {/* 距各档距离：条上只表达位置关系，精确数字放现价列（行高由条决定，这里不额外加高） */}
+            {distanceNote && (
+              <div className="mt-0.5 text-[10px] font-mono text-ink-muted tabular-nums whitespace-normal max-w-[150px]">
+                {distanceNote}
+              </div>
+            )}
           </>
         ) : (
           <span className="text-xs text-ink-muted">现价缺失</span>
-        )}
-        {priceUpdatedAt && (
-          <div
-            className="text-[10px] text-ink-muted mt-0.5"
-            title={`现价数据更新于 ${new Date(priceUpdatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`}
-          >
-            已更新
-          </div>
         )}
       </td>
 
@@ -452,21 +482,23 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 状态 */}
+      {/* 状态：徽章说话；只有需要额外解释的状态才补一行（每行最多 3 行） */}
       <td className="p-3">
         {statePill}
-        <div className="mt-1 text-xs text-ink-muted max-w-[180px] whitespace-normal">{meta.note}</div>
+        {needsNote && (
+          <div className="mt-1 text-xs text-ink-muted max-w-[180px] whitespace-normal">{meta.note}</div>
+        )}
+        {derived.pendingApply && derived.effective && (
+          <div className="mt-1 text-xs text-accent">新评估待应用 · 旧挡位仍生效</div>
+        )}
         {report && derived.state !== 'evaluating' && (
           <div className="mt-1 text-[10px] text-ink-muted">
-            最近评估 {new Date(report.evaluated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+            评估于 {new Date(report.evaluated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
           </div>
-        )}
-        {derived.pendingApply && (
-          <div className="mt-1 text-xs text-accent">新评估待应用 · 旧挡位持续生效</div>
         )}
       </td>
 
-      {/* 操作 */}
+      {/* 操作：主按钮 + 最多 3 个链接（不换行），「重新评估」收在报告面板里 */}
       <td className="p-3">
         <div className="flex flex-col items-start gap-1.5">
           {evaluatingNow ? (
@@ -484,15 +516,13 @@ function TrackingRow({
           ) : null}
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {report && (
+            {report && !derived.pendingApply && (
               <button type="button" className={linkBtn} onClick={onOpenReport}>
                 {derived.state === 'not_ready' ? '查看缺口' : '查看报告'}
               </button>
             )}
-            {(derived.state === 'not_ready' || ((derived.state === 'monitoring' || derived.state === 'paused') && report)) && !evaluatingNow && (
-              <button type="button" className={linkBtn} disabled={!configured} onClick={onEvaluate}>
-                重新评估
-              </button>
+            {!report && (derived.state === 'monitoring' || derived.state === 'paused') && !evaluatingNow && (
+              <button type="button" className={linkBtn} disabled={!configured} onClick={onEvaluate}>评估挡位</button>
             )}
             {(derived.state === 'monitoring' || derived.state === 'paused') && (
               <button type="button" className={linkBtn} disabled={togglePending}
