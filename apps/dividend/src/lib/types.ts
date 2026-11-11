@@ -147,6 +147,12 @@ export interface DividendQueryParams {
   sort_order?: 'asc' | 'desc';
   /** 逗号分隔的六位股票代码精确过滤；与筛选参数取交集，不传保持原行为 */
   codes?: string;
+  /**
+   * 股票名称或代码包含匹配（忽略首尾空格）。
+   * 传入非空关键词时覆盖完整收集池：忽略股息率/交易所等筛选，
+   * 已收集但低于阈值的股票同样能命中；codes 仍与之取交集。
+   */
+  search?: string | null;
 }
 
 // ========== 组件 Props 类型 ==========

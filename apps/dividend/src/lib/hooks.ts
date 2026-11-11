@@ -70,6 +70,10 @@ export function useDividendData(enabled: boolean = true) {
  * 获取 M120 / 实时价 / 静态PE / PB
  *
  * enabled=false 时清空并跳过请求：挡位监控等不需要全量 M120 的 Tab 不拉。
+ *
+ * 全量 M120（/m120?min_yield=0 本来就返回全部股票）先落在 state，
+ * 再按当前展示的 code 派生出子集：搜索命中的阈值外股票也能拿到 M120/现价，
+ * 且搜索每次命中不会重新拉一遍 M120。
  */
 export function useTechnicalData(
   enabled: boolean,
@@ -77,7 +81,7 @@ export function useTechnicalData(
   refreshKey?: number,
   minYield?: number,
 ) {
-  const [technicalData, setTechnicalData] = useState<Map<string, TechnicalIndicators>>(new Map());
+  const [technicalDataMap, setTechnicalDataMap] = useState<Map<string, TechnicalIndicators>>(new Map());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   /** 最近一次成功拉取的时间戳（ISO 字符串），用于在卡片上展示现价更新时间 */
@@ -88,8 +92,8 @@ export function useTechnicalData(
   const memoizedStockCodes = useMemo(() => JSON.parse(stockCodesKey) as string[], [stockCodesKey]);
 
   useEffect(() => {
-    if (!enabled || memoizedStockCodes.length === 0) {
-      setTechnicalData(new Map());
+    if (!enabled) {
+      setTechnicalDataMap(new Map());
       setPriceUpdatedAt(null);
       return;
     }
@@ -107,28 +111,23 @@ export function useTechnicalData(
 
         const newTechnicalData = new Map<string, TechnicalIndicators>();
 
-        // 处理 M120 数据
+        // 处理 M120 数据（全量落盘，展示时再按 code 取用）
         const m120Map = new Map(m120Response.items.map(item => [item.code, item]));
 
-        // 合并数据
-        memoizedStockCodes.forEach(code => {
-          const m120 = m120Map.get(code);
-
-          if (m120) {
-            newTechnicalData.set(code, {
-              m120: m120?.m120 ?? null,
-              close: m120?.close ?? null,
-              deviation: m120?.deviation ?? null,
-              realtime: m120?.realtime ?? null,
-              realtimeDeviation: m120?.realtime_deviation ?? null,
-              yield_ttm: m120?.yield_ttm ?? null,
-              pe: m120?.pe ?? null,
-              pb: m120?.pb ?? null,
-            });
-          }
+        m120Map.forEach((m120, code) => {
+          newTechnicalData.set(code, {
+            m120: m120?.m120 ?? null,
+            close: m120?.close ?? null,
+            deviation: m120?.deviation ?? null,
+            realtime: m120?.realtime ?? null,
+            realtimeDeviation: m120?.realtime_deviation ?? null,
+            yield_ttm: m120?.yield_ttm ?? null,
+            pe: m120?.pe ?? null,
+            pb: m120?.pb ?? null,
+          });
         });
 
-        setTechnicalData(newTechnicalData);
+        setTechnicalDataMap(newTechnicalData);
         // 仅在成功填充数据时更新现价时间戳
         if (newTechnicalData.size > 0) {
           setPriceUpdatedAt(new Date().toISOString());
@@ -143,7 +142,17 @@ export function useTechnicalData(
     };
 
     fetchTechnicalData();
-  }, [enabled, memoizedStockCodes, refreshKey]);
+  }, [enabled, refreshKey]);
+
+  // 派生：只暴露当前展示的 code（其余留在 state 里供后续搜索命中直接取用）
+  const technicalData = useMemo(() => {
+    const subset = new Map<string, TechnicalIndicators>();
+    memoizedStockCodes.forEach(code => {
+      const item = technicalDataMap.get(code);
+      if (item) subset.set(code, item);
+    });
+    return subset;
+  }, [technicalDataMap, memoizedStockCodes]);
 
   return { technicalData, loading, error, priceUpdatedAt };
 }

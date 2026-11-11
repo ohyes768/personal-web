@@ -9,9 +9,10 @@ import { RefreshJobProgress } from '@/components/RefreshJobProgress';
 import { Suspense, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { StarIcon as StarIconOutline } from '@heroicons/react/24/outline';
+import { StarIcon as StarIconOutline, MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { ScreeningTab } from '@/components/ScreeningTab';
 import { DividendTable } from '@/components/DividendTable';
+import { StockSearchBar } from '@/components/StockSearchBar';
 import { DetailModal } from '@/components/DetailModal';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
 import { CompareDrawer } from '@/components/CompareDrawer';
@@ -21,9 +22,11 @@ import { SchedulerSettingsModal } from '@/components/SchedulerSettingsModal';
 import { DataUpdateDrawer } from '@/components/DataUpdateDrawer';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
+import { useStockSearch } from '@/lib/hooks/useStockSearch';
 import { useAlertsStatus } from '@/lib/hooks/useAlertsStatus';
 import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { dividendApi } from '@/lib/api';
+import { normalizeSearchKeyword } from '@/lib/stock-search';
 import type { DividendStock, DividendStockWithTechnical, AlertConfigRequest, AlertStatusItem, AlertLevels, IndexRefreshItem, HoldingsStatus, PriceItem, TechnicalIndicators } from '@/lib/types';
 
 const MAX_COMPARE_SELECT = 5;
@@ -351,6 +354,9 @@ function DividendPageContent() {
   const [exchangeFilter, setExchangeFilter] = useState<string>('');
   // 股息率阈值输入
   const [minYieldInput, setMinYieldInput] = useState('3.5');
+  // 股票搜索输入：命中完整收集池（不受股息率阈值限制）
+  const [searchInput, setSearchInput] = useState('');
+  const searchKeyword = normalizeSearchKeyword(searchInput);
 
   // URL query 同步 tab（?tab=alerts）+ 收藏过滤（?fav=1）
   // 提前解析：主列表/技术指标按 Tab 按需加载依赖 activeTab（11-02 提速任务）
@@ -360,6 +366,8 @@ function DividendPageContent() {
   const activeTab: TabKey = tabParam === 'alerts' ? 'alerts' : tabParam === 'screening' ? 'screening' : 'all';
   // 兼容旧 ?tab=watchlist 书签 → 等价于 all + 只看收藏
   const favOnly = searchParams.get('fav') === '1' || tabParam === 'watchlist';
+  // 搜索只在「全部」页生效
+  const searchActive = activeTab === 'all' && searchKeyword.length > 0;
   const handleTabChange = useCallback((tab: TabKey) => {
     const params = new URLSearchParams(searchParams.toString());
     if (tab === 'all') params.delete('tab');
@@ -511,12 +519,6 @@ function DividendPageContent() {
     URL.revokeObjectURL(url);
   };
 
-  // 股票代码列表
-  const stockCodes = useMemo(() => data.map(s => s.code), [data]);
-
-  // 技术指标数据：仅"全部"Tab 拉全量 M120；挡位监控的现价走 /prices 独立通道
-  const { technicalData } = useTechnicalData(activeTab === 'all', stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
-
   // 详情弹框
   const detailModal = useDetailModal();
 
@@ -542,6 +544,30 @@ function DividendPageContent() {
 
   // 收藏（watchlist）
   const watchlist = useWatchlist();
+
+  // 股票搜索：只看收藏时把范围收窄到收藏 codes
+  // （收藏为空时传 '' 而不是 undefined——空 codes 会被后端当成「不过滤」，会退化成全池搜索）
+  const searchScopeCodes = useMemo(
+    () => (favOnly ? [...watchlist.codes].join(',') : undefined),
+    [favOnly, watchlist.codes],
+  );
+  const { results: searchResults, loading: searchLoading, error: searchError } = useStockSearch(
+    activeTab === 'all',
+    searchKeyword,
+    searchScopeCodes,
+  );
+
+  // 股票代码列表：阈值内代码 ∪ 搜索命中代码
+  // （搜索命中的是阈值外的已收集股票，也要能拿到 M120/现价）
+  const stockCodes = useMemo(() => {
+    if (searchResults.length === 0) return data.map(s => s.code);
+    const codes = new Set(data.map(s => s.code));
+    searchResults.forEach(stock => codes.add(stock.code));
+    return [...codes];
+  }, [data, searchResults]);
+
+  // 技术指标数据：仅"全部"Tab 拉全量 M120；挡位监控的现价走 /prices 独立通道
+  const { technicalData } = useTechnicalData(activeTab === 'all', stockCodes, refreshKey, parseFloat(minYieldInput) || 0);
 
   const [favoriteStocks, setFavoriteStocks] = useState<DividendStock[]>([]);
   const [favoriteLoadError, setFavoriteLoadError] = useState('');
@@ -609,13 +635,41 @@ function DividendPageContent() {
     }));
   }, [data, technicalData]);
 
-  // 按 tab + 收藏过滤显示数据（"只看收藏"仅在 all tab 生效）
+  // 搜索结果行：后端已按相关度排序，逐项补上技术指标（阈值外股票也有 M120/现价）
+  const searchRows: DividendStockWithTechnical[] = useMemo(() => searchResults.map(stock => ({
+    ...stock,
+    technical: technicalData.get(stock.code) || undefined,
+  })), [searchResults, technicalData]);
+
+  // 按 tab + 搜索 + 收藏过滤显示数据（"只看收藏"仅在 all tab 生效）
+  // 搜索优先级最高：命中的是完整收集池，股息率阈值不参与
   const displayData = useMemo(() => {
+    if (activeTab === 'all' && searchActive) {
+      return searchRows;
+    }
     if (activeTab === 'all' && favOnly) {
       return independentFavorites;
     }
     return stocksWithTechnical;
-  }, [stocksWithTechnical, activeTab, favOnly, independentFavorites]);
+  }, [searchRows, stocksWithTechnical, activeTab, favOnly, independentFavorites, searchActive]);
+
+  // 搜索状态文案：范围（已收集总数来自 /stats，不硬编码）与命中数
+  const searchStatus = searchError
+    ? `搜索失败：${searchError}`
+    : searchActive
+      ? (searchLoading
+        ? '正在匹配已收集股票…'
+        : `在 ${totalCollected ?? '—'} 只已收集股票中匹配到 ${searchResults.length} 只`)
+      : (totalCollected != null
+        ? `按名称或代码搜索已收集的 ${totalCollected} 只股票`
+        : '按名称或代码搜索已收集股票');
+
+  // 搜索无匹配：显示明确空状态（不做全市场搜索，也不触发采集）
+  const showSearchEmptyState = activeTab === 'all'
+    && searchActive
+    && !searchLoading
+    && searchResults.length === 0
+    && !(favOnly && watchlist.total === 0);
 
   // 挡位监控 Tab：从挡位状态直接派生，现价链只依赖挡位代码（不等资料/M120 响应）。
   // 资料未回或缺失时用挡位 item 的名称占位，条目不消失（收藏独立于股息率筛选）。
@@ -1005,59 +1059,69 @@ function DividendPageContent() {
 
       {/* 三个 tab 的面板区：flex-1 撑满首屏剩余高度，短内容 tab 页面高度一致 */}
       <div className="flex-1">
-      {/* 筛选条件：与「选股关注」筛选表单同层同位置（面板区顶部），三个 tab 排版骨架一致。
-          仅"全部"tab 显示（挡位监控列表不吃这两个筛选；只看收藏模式下列表来自收藏夹，查询不生效）。 */}
-      {activeTab === 'all' && !favOnly && (
-        <div className="mb-4 rounded-xl border border-rule bg-paper-card p-4 flex flex-wrap items-center gap-x-3 gap-y-2">
-          <label className="text-sm text-ink-muted">交易所:</label>
-          <select
-            value={exchangeFilter}
-            onChange={(e) => setExchangeFilter(e.target.value)}
-            className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
-          >
-            <option value="">全部</option>
-            <option value="沪市主板">沪市主板</option>
-            <option value="深市主板">深市主板</option>
-          </select>
-          <label className="text-sm text-ink-muted ml-2">股息率≥:</label>
-          <input
-            type="number"
-            value={minYieldInput}
-            onChange={(e) => setMinYieldInput(e.target.value)}
-            className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
-            placeholder="3"
-            min="0"
-            step="0.1"
+      {/* 「全部」tab 顶部面板：股票搜索 + 筛选条件（与「选股关注」筛选表单同层同位置）。
+          搜索覆盖完整收集池（不受股息率阈值限制）；交易所/股息率筛选在只看收藏模式下不显示。 */}
+      {activeTab === 'all' && (
+        <div className="mb-4 rounded-xl border border-rule bg-paper-card p-4 space-y-3">
+          <StockSearchBar
+            value={searchInput}
+            onChange={setSearchInput}
+            loading={searchActive && searchLoading}
+            status={searchStatus}
           />
-          <span className="text-sm text-ink-muted">%</span>
-          <button
-            onClick={() => {
-              const minYield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
-              refetch({
-                min_yield: minYield,
-                exchange: exchangeFilter || undefined,
-              });
-              setRefreshKey(k => k + 1);
-            }}
-            disabled={loading}
-            className={`
-              px-4 py-1.5 rounded font-medium transition-all flex items-center gap-2 text-sm
-              ${loading
-                ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                : 'bg-indigo-600 text-white hover:bg-indigo-500'
-              }
-            `}
-          >
-            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            查询
-          </button>
+          {!favOnly && (
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <label className="text-sm text-ink-muted">交易所:</label>
+              <select
+                value={exchangeFilter}
+                onChange={(e) => setExchangeFilter(e.target.value)}
+                className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
+              >
+                <option value="">全部</option>
+                <option value="沪市主板">沪市主板</option>
+                <option value="深市主板">深市主板</option>
+              </select>
+              <label className="text-sm text-ink-muted ml-2">股息率≥:</label>
+              <input
+                type="number"
+                value={minYieldInput}
+                onChange={(e) => setMinYieldInput(e.target.value)}
+                className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
+                placeholder="3"
+                min="0"
+                step="0.1"
+              />
+              <span className="text-sm text-ink-muted">%</span>
+              <button
+                onClick={() => {
+                  const minYield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
+                  refetch({
+                    min_yield: minYield,
+                    exchange: exchangeFilter || undefined,
+                  });
+                  setRefreshKey(k => k + 1);
+                }}
+                disabled={loading}
+                className={`
+                  px-4 py-1.5 rounded font-medium transition-all flex items-center gap-2 text-sm
+                  ${loading
+                    ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
+                    : 'bg-indigo-600 text-white hover:bg-indigo-500'
+                  }
+                `}
+              >
+                <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                </svg>
+                查询
+              </button>
+            </div>
+          )}
         </div>
       )}
       {activeTab === 'all' && favOnly && favoriteLoadError && <p role="alert" className="mb-3 text-red-600">收藏资料加载失败：{favoriteLoadError}，暂显示已有资料。</p>}
-      {/* 只看收藏 空状态 */}
-      {activeTab === 'all' && favOnly && displayData.length === 0 && !loading && (
+      {/* 只看收藏 空状态（搜索中不显示：搜索有自己的空状态文案） */}
+      {activeTab === 'all' && favOnly && !searchActive && displayData.length === 0 && !loading && (
         <div className="bg-paper-card rounded-lg p-12 text-center">
           <StarIconOutline className="w-12 h-12 mx-auto mb-3 text-gray-500" />
           <p className="text-gray-400 mb-4">
@@ -1070,6 +1134,34 @@ function DividendPageContent() {
             查看全部 →
           </button>
         </div>
+      )}
+
+      {/* 搜索无匹配 空状态：明确说明只覆盖已收集股票，不做全市场搜索也不触发采集 */}
+      {showSearchEmptyState && (
+        <div className="bg-paper-card rounded-lg p-12 text-center">
+          <MagnifyingGlassIcon className="w-12 h-12 mx-auto mb-3 text-gray-500" />
+          <h2 className="text-xl font-semibold text-ink mb-2">
+            {searchError ? '股票搜索失败' : '没有找到匹配的已收集股票'}
+          </h2>
+          <p className="text-ink-muted mb-4">
+            {searchError
+              ? `请稍后重试：${searchError}`
+              : favOnly
+                ? `收藏中没有匹配「${searchKeyword}」的股票`
+                : `搜索只覆盖已收集的 ${totalCollected ?? '—'} 只股票；未收集的股票不会出现在这里，也不会触发采集。`}
+          </p>
+          <button
+            onClick={() => setSearchInput('')}
+            className="text-blue-400 hover:underline text-sm"
+          >
+            清除搜索 →
+          </button>
+        </div>
+      )}
+
+      {/* 搜索加载中：占位骨架（避免旧列表突然清空后闪空表） */}
+      {searchActive && searchLoading && searchResults.length === 0 && (
+        <div className="bg-paper-card rounded-lg h-40 animate-pulse" />
       )}
 
       {/* 表格 - 使用 refreshKey 作为 key 强制刷新；all+favOnly 用过滤后的 displayData */}
@@ -1116,7 +1208,9 @@ function DividendPageContent() {
           )}
         </div>
       ) : (
-        !(activeTab === 'all' && favOnly && displayData.length === 0) && (
+        !(activeTab === 'all' && favOnly && displayData.length === 0)
+        && !showSearchEmptyState
+        && !(searchActive && searchLoading && searchResults.length === 0) && (
           <DividendTable
             key={refreshKey}
             data={displayData}
