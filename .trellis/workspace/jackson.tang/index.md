@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 62
+- **Total Sessions**: 65
 - **Last Active**: 2026-11-11
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~506 | Active |
+| `journal-2.md` | ~691 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,9 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 65 | 2026-11-11 | 经理 tab 样式统一与刷新入口 | `a023440` | `master` |
+| 64 | 2026-11-11 | 服务管理台验收复核：补 cookie 属性测试与 nginx 裸路径兜底 | - | `master` |
+| 63 | 2026-11-11 | NAS 服务管理台 V1（台账 + 只读 Docker 发现 + URL/TLS/Release 检查） | - | `master` |
 | 62 | 2026-11-11 | kids 浏览器播放改为底部悬浮播放条 | `cf441fd0`, `a00c4ab8`, `b3054d8a` | `master` |
 | 61 | 2026-11-11 | Dividend 全部页股票搜索上线——完整收集池匹配与星标复用 | `88f5bc1c`, `73a546da`, `298bb542` | `master` |
 | 60 | 2026-11-11 | kids 设备歌单浏览器播放：补齐 PRD 缺口并上线 | `3573ac9f`, `bff06dae`, `ec3b704e`, `17633de6`, `ffcb168a`, `4eda04ff` | `master` |

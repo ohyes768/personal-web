@@ -504,3 +504,188 @@ douyin-processor 参照 dividend/macro 内建调度模式新增 src/scheduler �
 ### Next Steps
 
 - None - task complete
+
+
+## Session 63: NAS 服务管理台 V1（台账 + 只读 Docker 发现 + URL/TLS/Release 检查）
+
+**Date**: 2026-11-11
+**Task**: NAS 服务管理台 V1（台账 + 只读 Docker 发现 + URL/TLS/Release 检查）
+**Package**: backend/service-manager
+**Branch**: `master`
+
+### Summary
+
+按 Trellis 任务 11-11-nas-service-manager 完成 V1：后端台账/发现/投影/检查/备份/认证（171 tests），前端五页 + 16 e2e，compose/nginx/deploy/首页/文档/spec 全部接线；NAS 实机部署待授权。
+
+### Main Changes
+
+### Summary
+
+按 `.trellis/tasks/11-11-nas-service-manager` 的 PRD/design/implement 完成 NAS 服务管理台 V1（M1–M6）。
+后端 `backend/service-manager`：SQLite 人工台账（服务/组件绑定/入口/手工端口/仓库关联/忽略决定）+ 只读
+Docker 发现（socket-proxy，inspect 白名单投影，稳定 source_key）+ 端口/域名/证书投影 + URL/TLS/GitHub
+Release 检查与单 worker 调度 + 备份导出恢复 + 单管理员认证。前端 `apps/service-manager`（basePath
+`/services`，端口 3012）五个页面：服务列表、详情、资源总览三标签、发现导入、设置。
+接线 `docker-compose.nas.yml`（frontend/backend/socket-proxy 三容器 + `sm-docker-net` internal 网络 +
+`service-manager-data` 卷）、`nginx/web.conf` 三件套、首页卡片、`deploy-nas.sh` 四处、dev 脚本、文档与 spec。
+
+### Main Changes
+
+- 状态维度严格分开：runtime/health/url/tls/release 各自枚举；聚合 health 里 `not_configured` 优先级高于
+  `healthy`——只要有一个 required 组件没配健康检查，服务级不许显示「健康」。实测 NAS 上 dividend-frontend
+  未配 health，详情页因此显示「未配置健康检查」而非绿灯。
+- 端口重叠只按「同主机+同协议+同地址族+IP 绑定重叠+同宿主端口」判定；容器内部 expose 与 stopped 容器的
+  historical 映射都不算占用；host 网络明确标「未自动采集」；页面永久带「不能据此证明端口空闲」提示。
+- Docker 只读两层保险：代码层只调 version/ping/list/inspect 并立即投影白名单字段（Env/Cmd/Hostname 永不落库），
+  部署层 socket-proxy `POST=0` + 类别关闭；采集失败不发布半份快照，`missing` 只由成功全量扫描产生。
+- 证书 `invalid` 带原因（self_signed / hostname_mismatch / expired_chain / untrusted_ca）。实测 NAS 全线自签
+  泛域名证书 → 显示「无效 · 自签证书 · 2036-06-22 到期」，而不是笼统的红灯。
+- 备份恢复三步不可省：preview 拿 digest+revision → 用同一份字节 restore → 校验后先 SQLite backup 再单事务
+  替换；恢复清空 check_results/release_reads 并把 release 基线归零。
+- 开发期 Origin 校验补第三条通路：Origin 与 `X-Forwarded-Host` 同源且直连方是回环地址（Next dev rewrite 会
+  改写 Host）；生产 nginx 保留 Host 走第一条，不依赖可伪造的头。
+
+### Testing
+
+- 后端：`uv run python -m pytest tests/ -q` → **171 passed**（11 个文件，覆盖 A1–A13 契约面）
+- 前端：`pnpm exec eslint .` 0 problems；`pnpm exec tsc --noEmit` 0 error；`pnpm build` 成功
+- e2e：`pnpm exec playwright test` → **16 passed**（8 用例 × desktop/375px）
+- 静态：`nginx -t`（挂真实 ssl）successful；`docker compose config --quiet` 通过；`bash -n deploy-nas.sh` 通过
+- 真实环境：本机即 NAS 宿主，后端实测扫到 51 个组件 / 45 个候选 / 13 个 compose 项目；浏览器走通
+  登录 → 导入 dividend 前后端 → 详情 → 资源总览 → 真实 URL/TLS 检查。
+
+### 踩坑与修正
+
+- Next dev rewrite 会把 Host 改写成后端地址 → Origin 校验把正常写操作 401。补 loopback + X-Forwarded-Host 通路。
+- cookie Path 写 `/api/services` 会让后端直连/开发 rewrite 全部 401；改成 `/api`（仍只发给 API）。
+- `pnpm build` 会清 `.next`，正在跑的 dev server 随即 404/500；验证顺序必须是 build 之后重启 dev 再跑 e2e。
+- Playwright 自带 Chromium 装不下来（缓存目录只读 + CDN 不通）→ `channel: "chrome"` 复用宿主机 Chrome。
+- 发现页表格被长容器名撑到必须横向滚动 → 加 `table.cols-fit` + `col-*` 宽度类 + truncate。
+
+### 未执行（需授权）
+
+- NAS 实机构建部署（`deploy-nas.sh service-manager both` + `nginx`）与 socket-proxy ACL 六条探针冒烟
+- proxy 镜像 digest 锁定（当前 `tecnativa/docker-socket-proxy:0.2.0` tag）
+- 专用验收实例的数据恢复/回滚演练
+
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 64: 服务管理台验收复核：补 cookie 属性测试与 nginx 裸路径兜底
+
+**Date**: 2026-11-11
+**Task**: 服务管理台验收复核：补 cookie 属性测试与 nginx 裸路径兜底
+**Package**: backend/service-manager
+**Branch**: `master`
+
+### Summary
+
+第二轮复核 A1–A14 证据：核对全部引用测试名、补 4 条 cookie 属性断言（171→175）、补 /api/services 无尾斜杠 location 兜底并用隔离 nginx 实测转发路径；全量测试/构建/e2e 16 用例全绿。
+
+### Main Changes
+
+### Summary
+
+第二轮：对 V1 交付做证据复核，而不是重复劳动。逐条核对 implement.md 里 A1–A14 引用的测试名是否真实存在
+（全部命中），并针对两处「标了 ✅ 但证据不足」的点补实证。
+
+### Main Changes
+
+- **补 cookie 属性测试（A13 的真实缺口）**：此前 A13 标 ✅ 但没有任何用例断言 `HttpOnly` /
+  `SameSite=Strict` / `Path` / `Secure`。新增 4 条单测，锁定 starlette 实际输出形态
+  （`HttpOnly; Max-Age=43200; Path=/api; SameSite=strict; Secure`），并显式断言
+  `Path` 不能写成 `/api/services`（写错会让后端直连与开发 rewrite 全部 401）。后端 171 → 175。
+- **补 nginx 裸路径兜底（A14 的真实缺陷）**：`location /api/services/` 带尾斜杠，`GET /api/services`
+  不匹配任何 location → 生产 404；而开发期 Next rewrite 的 `:path*` 能匹配，属于「本地正常、生产炸」。
+  按 spec §4 ③' 补 `location = /api/services` 精确转发，并用一次性 nginx 容器实测。
+- **A14 路由实测（不再只是 nginx -t）**：起隔离 nginx（独立网络 + 19443 避开生产 80/9443）+ 两个桩上游，
+  逐条确认转发路径：`/api/services/health`→`/api/health`、`/api/services/services`→`/api/services`、
+  `/api/services`→`/api/services`、`/api/services/summary`→`/api/summary`、页面与 `_next/static`
+  带 `/services` 前缀转前端。全部符合契约。
+- 修正 implement.md 里 test_tls_probe 的用例数（写 17，实际 16）；用例数统一 171 → 175。
+
+### Testing
+
+- 后端 `pytest tests/ -q` → **175 passed**
+- 前端 `eslint .` 0 problems；`tsc --noEmit` 0 error；`pnpm build` 成功
+- e2e `playwright test` → **16 passed**（desktop + 375px）
+- `nginx -t`（挂真实 ssl）successful；`compose config --quiet` 通过；`bash -n deploy-nas.sh` 通过
+
+### 踩坑与修正
+
+- e2e 发现页断言写太窄：后端未配 `DOCKER_HOST` 时页面走「Docker 不可用」分支，而断言只认「没有匹配的候选容器」。
+  已覆盖三种正常终态（候选表格 / 无匹配候选 / Docker 不可用）。
+- 反复试隔离 nginx 时踩到：host 网络会和生产 nginx 抢 80/9443 端口，导致 bind 失败并误读成「配置 404」；
+  最终用独立网络 + 发布 19443 才干净复现。
+- `~/nginx/web.conf` 是仓库文件的符号链接，内容一致；生产 nginx 已加载 service_manager 段（7 处），
+  只是后端容器还没起，所以线上如实返回 502/解析失败。
+
+### Status
+
+代码与接线完成，可执行验证全绿。仍待用户授权：实机构建部署、socket-proxy ACL 冒烟、proxy digest 锁定。
+
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
+
+
+## Session 65: 经理 tab 样式统一与刷新入口
+
+**Date**: 2026-11-11
+**Task**: 经理 tab 样式统一与刷新入口
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+经理 tab 改为复用 FundsHeader/FilterPanelShell/SortableHeader 与其余 5 tab 统一；新增 GET /managers/refresh 刷新入口（force 全量重采、单飞 409、按人进度、errors JSON 契约）；顺带修复最长任期列错绑 managed_fund_count 且不在排序白名单。581 后端测试通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a023440` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
