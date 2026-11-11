@@ -468,3 +468,39 @@ douyin-processor 参照 dividend/macro 内建调度模式新增 src/scheduler �
 ### Next Steps
 
 - None - task complete
+
+
+## Session 62: kids 浏览器播放改为底部悬浮播放条
+
+**Date**: 2026-11-11
+**Task**: kids 浏览器播放改为底部悬浮播放条
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+把设备歌单页的行内播放器改成固定在视口底部的悬浮播放条：播放条为页面级单例（候选区与设备歌单表共用状态），原生 audio controls 保留暂停/拖动/音量，上一首/下一首与曲目抽屉（向上展开、当前曲高亮）齐备，占位留白避免遮挡内容并适配 iPhone 安全区。顺带清掉行内播放器的死 CSS，修掉 390px 下抽屉越界与候选行标题一字一行。NAS 实测桌面与 390px 均只有 1 个 audio 实例、播放条贴底、无横向滚动。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `cf441fd0` | (see git log) |
+| `a00c4ab8` | (see git log) |
+| `b3054d8a` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
