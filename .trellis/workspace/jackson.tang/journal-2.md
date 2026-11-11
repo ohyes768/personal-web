@@ -393,3 +393,42 @@ douyin-processor 参照 dividend/macro 内建调度模式新增 src/scheduler �
 ### Next Steps
 
 - None - task complete
+
+
+## Session 60: kids 设备歌单浏览器播放：补齐 PRD 缺口并上线
+
+**Date**: 2026-11-11
+**Task**: kids 设备歌单浏览器播放：补齐 PRD 缺口并上线
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+盘点发现任务主体（后端 tracks 接口/nginx 静态路由/候选行播放器）已落地并上线，本轮补齐 PRD 缺口：播放器加上一首/下一首、移动端 playsInline、「当前设备歌单」表新增操作列可按编号播放、后端 /api/collections 增加 published 字段（上月发布的合集也能播）、生成中禁用播放。修掉两个自引入问题：同集合在候选区与设备歌单表重复渲染两个播放器导致重复出声；390px 下合集名称被挤成一字一行。NAS 实测：/kids-audio Range 206、tracks 接口 200/404、线上播放与下一首切歌正常、390px 无横向滚动。后端 pytest 245 passed/1 skipped，2 条失败在干净树上同样复现（Windows 磁盘慢 + 顺序偶发）。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `3573ac9f` | (see git log) |
+| `bff06dae` | (see git log) |
+| `ec3b704e` | (see git log) |
+| `17633de6` | (see git log) |
+| `ffcb168a` | (see git log) |
+| `4eda04ff` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
