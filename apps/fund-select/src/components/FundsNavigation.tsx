@@ -16,6 +16,7 @@ export type FundsNavTab =
   | 'stock'
   | 'discovery-bond'
   | 'discovery-stock'
+  | 'managers'
   | 'sharpe-board';
 
 const TABS: { key: FundsNavTab; href: string; label: string }[] = [
@@ -23,6 +24,7 @@ const TABS: { key: FundsNavTab; href: string; label: string }[] = [
   { key: 'stock', href: '/stock', label: '股基·雪球三分法' },
   { key: 'discovery-bond', href: '/discovery-bond', label: '债基·市场' },
   { key: 'discovery-stock', href: '/discovery-stock', label: '股基·市场' },
+  { key: 'managers', href: '/managers', label: '经理' },
   { key: 'sharpe-board', href: '/sharpe-board', label: '夏普榜单' },
 ];
 

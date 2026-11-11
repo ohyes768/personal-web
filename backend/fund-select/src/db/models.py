@@ -53,6 +53,64 @@ class Fund(Base):
     updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
 
 
+class Manager(Base):
+    """基金经理实体（东财经理 ID 为主键，非姓名——规避 118 组重名串号）。
+
+    首版 scope 恒为 stock_active（库内主动权益基金涉及的经理）。
+    业绩字段（tenure_weighted_annual 等）由 manager_refresh 聚合计算。
+    """
+    __tablename__ = "managers"
+
+    manager_id = Column(String(16), primary_key=True)  # 东财经理 ID，如 30189744
+    name = Column(String(64), nullable=False, index=True)
+    company = Column(String(128), nullable=True)
+
+    # 从业（dt=14「累计从业时间」，天；含研究员期，≠ 单只任职年限）
+    career_days = Column(Integer, nullable=True)
+    career_years = Column(Float, nullable=True)
+
+    # 在管概况（dt=14）
+    current_scale_yi = Column(Float, nullable=True)
+    current_fund_count = Column(Integer, nullable=True)
+    managed_fund_count = Column(Integer, nullable=True)  # 累计管理过（含离任，tenures 聚合）
+
+    # 经理口径业绩（mgr-3y-v1 口径；见 manager_metrics）
+    tenure_weighted_annual = Column(Float, nullable=True)  # 管理时长加权年化 %
+    longest_tenure_annual = Column(Float, nullable=True)   # 最长任期单只年化 %
+    longest_tenure_years = Column(Float, nullable=True)
+    max_drawdown = Column(Float, nullable=True)            # 代表基金最大回撤 %（负值）
+    sharpe = Column(Float, nullable=True)
+    calmar = Column(Float, nullable=True)
+    representative_fund = Column(String(6), nullable=True)
+
+    scope = Column(String(16), nullable=False, default="stock_active", index=True)
+    fetched_at = Column(DateTime, nullable=True)  # 档案页采集时间；NULL = 待续采
+    updated_at = Column(DateTime, default=lambda: datetime.now(UTC), onupdate=lambda: datetime.now(UTC))
+
+
+class ManagerTenure(Base):
+    """经理历任基金明细（含已离任）。同一经理可在同一基金上有两段任期，
+    唯一键必须带 start_date。"""
+    __tablename__ = "manager_tenures"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    manager_id = Column(String(16), ForeignKey("managers.manager_id"), index=True, nullable=False)
+    fund_code = Column(String(6), index=True, nullable=False)
+    fund_name = Column(String(128), nullable=True)
+    fund_type = Column(String(64), nullable=True)  # akshare 子类原值，如 混合型-偏股
+    size_yi = Column(Float, nullable=True)
+    start_date = Column(Date, nullable=True)
+    end_date = Column(Date, nullable=True)  # NULL = 至今
+    tenure_days = Column(Integer, nullable=True)
+    tenure_return = Column(Float, nullable=True)  # 任职回报 %
+    annual_return = Column(Float, nullable=True)  # 任职年化 %
+    is_current = Column(Boolean, nullable=False, default=True)
+
+    __table_args__ = (
+        UniqueConstraint("manager_id", "fund_code", "start_date", name="uq_tenure_mfc"),
+    )
+
+
 class FundPerformance(Base):
     """业绩指标（净值收益 / 回撤）"""
     __tablename__ = "fund_performance"

@@ -79,6 +79,47 @@ class ScreenResponse(BaseModel):
     items: list[FundListItem]
 
 
+class ManagerListItem(BaseModel):
+    """经理列表行（/managers/screen）"""
+    manager_id: str
+    name: str
+    company: Optional[str] = None
+    career_years: Optional[float] = None
+    current_scale_yi: Optional[float] = None
+    current_fund_count: Optional[int] = None
+    managed_fund_count: Optional[int] = None
+    weighted_annual: Optional[float] = None      # 管理时长加权年化 %
+    longest_tenure_annual: Optional[float] = None
+    longest_tenure_years: Optional[float] = None
+    max_drawdown: Optional[float] = None         # 负值 %
+    sharpe: Optional[float] = None
+    calmar: Optional[float] = None
+    representative_fund: Optional[str] = None
+
+
+class ManagerTenureItem(BaseModel):
+    fund_code: str
+    fund_name: Optional[str] = None
+    fund_type: Optional[str] = None
+    size_yi: Optional[float] = None
+    start_date: Optional[date] = None
+    end_date: Optional[date] = None
+    tenure_days: Optional[int] = None
+    tenure_return: Optional[float] = None
+    annual_return: Optional[float] = None
+    is_current: bool = True
+
+
+class ManagerDetailResponse(ManagerListItem):
+    career_days: Optional[int] = None
+    tenures: list[ManagerTenureItem] = []
+
+
+class ManagerScreenResponse(BaseModel):
+    total: int
+    items: list[ManagerListItem]
+
+
 class HoldingsDTO(BaseModel):
     report_date: Optional[date] = None
     rate_bond_pct: Optional[float] = None

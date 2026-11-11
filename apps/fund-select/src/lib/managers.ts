@@ -1,0 +1,97 @@
+/**
+ * 经理维度类型与 API（/api/funds/managers/*，任务 11-10-fund-manager-evaluation）
+ */
+import { getJson } from './api';
+
+export interface ManagerListItem {
+  manager_id: string;
+  name: string;
+  company: string | null;
+  career_years: number | null;
+  current_scale_yi: number | null;
+  current_fund_count: number | null;
+  managed_fund_count: number | null;
+  /** 管理时长加权年化 %（排除债基/货币/FOF 段） */
+  weighted_annual: number | null;
+  longest_tenure_annual: number | null;
+  longest_tenure_years: number | null;
+  /** 代表基金最大回撤 %（负值；按任职窗口切片计算） */
+  max_drawdown: number | null;
+  sharpe: number | null;
+  calmar: number | null;
+  representative_fund: string | null;
+}
+
+export interface ManagerTenure {
+  fund_code: string;
+  fund_name: string | null;
+  fund_type: string | null;
+  size_yi: number | null;
+  start_date: string | null;
+  end_date: string | null;
+  tenure_days: number | null;
+  tenure_return: number | null;
+  annual_return: number | null;
+  is_current: boolean;
+}
+
+export interface ManagerDetail extends ManagerListItem {
+  career_days: number | null;
+  tenures: ManagerTenure[];
+}
+
+export interface ManagerScreenResponse {
+  total: number;
+  items: ManagerListItem[];
+}
+
+export interface ManagerFilters {
+  min_career_years: number | null;
+  min_weighted_annual: number | null;
+  max_drawdown: number | null;
+  min_scale_yi: number | null;
+  keyword: string | null;
+  sort: string;
+  order: 'asc' | 'desc';
+  page: number;
+  limit: number;
+}
+
+export const MANAGER_DEFAULT_FILTERS: ManagerFilters = {
+  min_career_years: 5,        // 从业 ≥5 年：穿越一轮完整牛熊的及格线
+  min_weighted_annual: null,  // 默认不卡收益，先看全貌
+  max_drawdown: null,
+  min_scale_yi: null,
+  keyword: null,
+  sort: 'weighted_annual',
+  order: 'desc',
+  page: 1,
+  limit: 50,
+};
+
+const BASE = '/funds/api/funds/managers';
+
+function buildQuery(f: Partial<ManagerFilters>): string {
+  const params = new URLSearchParams();
+  if (f.min_career_years != null) params.set('min_career_years', String(f.min_career_years));
+  if (f.min_weighted_annual != null) params.set('min_weighted_annual', String(f.min_weighted_annual));
+  if (f.max_drawdown != null) params.set('max_drawdown', String(f.max_drawdown));
+  if (f.min_scale_yi != null) params.set('min_scale_yi', String(f.min_scale_yi));
+  if (f.keyword) params.set('keyword', f.keyword);
+  if (f.sort) params.set('sort', f.sort);
+  if (f.order) params.set('order', f.order);
+  if (f.page != null && f.page > 1) params.set('page', String(f.page));
+  if (f.limit != null && f.limit !== 50) params.set('limit', String(f.limit));
+  const q = params.toString();
+  return q ? `?${q}` : '';
+}
+
+export const managerApi = {
+  screen(filters: Partial<ManagerFilters>, signal?: AbortSignal): Promise<ManagerScreenResponse> {
+    return getJson(`${BASE}/screen${buildQuery(filters)}`, signal);
+  },
+
+  getDetail(managerId: string, signal?: AbortSignal): Promise<ManagerDetail> {
+    return getJson(`${BASE}/${managerId}`, signal);
+  },
+};

@@ -39,8 +39,8 @@ function buildQuery(filters: Partial<FundFilters>, coarseMapping?: Record<string
   return q ? `?${q}` : '';
 }
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url, { cache: 'no-store' });
+export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(url, { cache: 'no-store', signal });
   if (!res.ok) {
     const detail = await res.text().catch(() => '');
     throw new Error(`请求失败 ${res.status}: ${detail.slice(0, 120)}`);
