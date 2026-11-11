@@ -4,6 +4,7 @@ import {Fragment, useCallback, useEffect, useState} from "react";
 import CollectionPlayer from "./audio-player";
 import CandidatePicker, {type Candidate} from "./candidate-picker";
 import {describeGeneration, type IntegrationState} from "./generation-progress";
+import {type PlayingCollection} from "./playing";
 
 type Entry = {number: number; title: string; track_count: number};
 type Published = {number: number; title: string; folder: string};
@@ -35,7 +36,9 @@ export default function DevicePlaylist() {
   // 只记取消勾选的合集：新出现的合集默认勾上，用户的取消不会因刷新丢失。
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   // 浏览器播放：整个页面只允许一个合集在播（候选区与设备歌单表共用这一状态）。
-  const [playing, setPlaying] = useState<string | null>(null);
+  const [playing, setPlaying] = useState<PlayingCollection | null>(null);
+  const playFrom = (origin: PlayingCollection["origin"]) => (folder: string | null) =>
+    setPlaying(folder ? {folder, origin} : null);
   const load = useCallback(async () => {
     const next = await request<DirectoryState>("");
     setState(next);
@@ -147,7 +150,7 @@ export default function DevicePlaylist() {
       {state.generation.integration.metadata_errors.map(item => <li key={item.title}>{item.title}：{item.message}</li>)}
     </ul>}
     {!loading && <CandidatePicker candidates={candidates} unchecked={unchecked}
-      disabled={running || submitting} playing={playing} onPlay={setPlaying}
+      disabled={running || submitting} playing={playing} onPlay={playFrom("candidates")}
       onToggle={toggle} onSetAll={setAll}
       onConfirm={confirm} confirming={confirming} />}
     {snapshot ? <>
@@ -162,13 +165,13 @@ export default function DevicePlaylist() {
             <tr>
               <td className="playlist-number">{item.number}</td><td>{item.title}</td><td>{item.track_count} 首</td>
               <td>{folder
-                ? (playing === folder
+                ? (playing?.folder === folder
                   ? <button type="button" className="secondary" onClick={() => setPlaying(null)}>停止</button>
                   : <button type="button" className="secondary" title="在浏览器里播放该合集" disabled={running || submitting}
-                    onClick={() => setPlaying(folder)}>播放</button>)
+                    onClick={() => playFrom("device")(folder)}>播放</button>)
                 : <span className="playlist-unplayable" title="该合集不在本月候选清单中，暂无本地目录可播放">不可播</span>}</td>
             </tr>
-            {folder && playing === folder && <tr className="playlist-player-row">
+            {folder && playing?.folder === folder && playing.origin === "device" && <tr className="playlist-player-row">
               <td colSpan={4}><CollectionPlayer key={folder} folder={folder} title={item.title}
                 onClose={() => setPlaying(null)}/></td>
             </tr>}

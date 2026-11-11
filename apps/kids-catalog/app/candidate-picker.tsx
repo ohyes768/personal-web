@@ -2,11 +2,12 @@
 
 import {Fragment} from "react";
 import CollectionPlayer from "./audio-player";
+import {type PlayingCollection} from "./playing";
 
 export type Candidate = {folder: string; title: string; confirmed: boolean; track_count: number; source?: string; platform?: string};
 
 type CandidatePickerProps = {candidates: Candidate[]; unchecked: Set<string>; disabled: boolean;
-  playing: string | null; onPlay: (folder: string | null) => void;
+  playing: PlayingCollection | null; onPlay: (folder: string | null) => void;
   onToggle: (folder: string) => void; onSetAll: (checked: boolean) => void;
   onConfirm: (candidate: Candidate) => void; confirming: string | null};
 
@@ -14,6 +15,7 @@ export default function CandidatePicker({candidates, unchecked, disabled, playin
   const selectedCount = candidates.filter(row => !unchecked.has(row.folder)).length;
   const allSelected = selectedCount === candidates.length;
   // 浏览器播放：播放状态由设备歌单页统一持有，候选区与设备歌单表同一时间只播一个合集。
+  // 播放器只在发起播放的那一处展开，避免同一合集出现两个播放器一起出声。
   return <section className="playlist-candidates" aria-labelledby="candidate-heading">
     <div className="candidates-head">
       <h3 id="candidate-heading">选择要加入歌单的合集（{selectedCount}/{candidates.length}）</h3>
@@ -41,12 +43,12 @@ export default function CandidatePicker({candidates, unchecked, disabled, playin
           <button className="secondary" disabled={disabled || confirming !== null}
             onClick={() => onConfirm(row)}>{confirming === row.folder ? "正在核对…" : "确认保留曲目"}</button>
         </>}
-        {playing === row.folder
+        {playing?.folder === row.folder
           ? <button className="secondary" onClick={() => onPlay(null)}>停止</button>
           : <button className="secondary" title="在浏览器里播放该合集" disabled={disabled}
             onClick={() => onPlay(row.folder)}>播放</button>}
       </li>
-      {playing === row.folder && <li className="player-row">
+      {playing?.folder === row.folder && playing.origin === "candidates" && <li className="player-row">
         <CollectionPlayer key={row.folder} folder={row.folder} title={row.title} onClose={() => onPlay(null)}/>
       </li>}
       </Fragment>)}
