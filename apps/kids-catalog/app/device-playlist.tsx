@@ -1,6 +1,6 @@
 "use client";
 
-import {Fragment, useCallback, useEffect, useState} from "react";
+import {useCallback, useEffect, useState} from "react";
 import CollectionPlayer from "./audio-player";
 import CandidatePicker, {type Candidate} from "./candidate-picker";
 import {describeGeneration, type IntegrationState} from "./generation-progress";
@@ -35,10 +35,10 @@ export default function DevicePlaylist() {
   const [message, setMessage] = useState("");
   // 只记取消勾选的合集：新出现的合集默认勾上，用户的取消不会因刷新丢失。
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
-  // 浏览器播放：整个页面只允许一个合集在播（候选区与设备歌单表共用这一状态）。
+  // 浏览器播放：底部悬浮播放条是页面级单例，候选区与设备歌单表共用这一状态。
   const [playing, setPlaying] = useState<PlayingCollection | null>(null);
-  const playFrom = (origin: PlayingCollection["origin"]) => (folder: string | null) =>
-    setPlaying(folder ? {folder, origin} : null);
+  const startPlayback = (folder: string, title: string) => setPlaying({folder, title});
+  const stopPlayback = () => setPlaying(null);
   const load = useCallback(async () => {
     const next = await request<DirectoryState>("");
     setState(next);
@@ -150,7 +150,8 @@ export default function DevicePlaylist() {
       {state.generation.integration.metadata_errors.map(item => <li key={item.title}>{item.title}：{item.message}</li>)}
     </ul>}
     {!loading && <CandidatePicker candidates={candidates} unchecked={unchecked}
-      disabled={running || submitting} playing={playing} onPlay={playFrom("candidates")}
+      disabled={running || submitting} playing={playing?.folder ?? null}
+      onPlay={startPlayback} onStop={stopPlayback}
       onToggle={toggle} onSetAll={setAll}
       onConfirm={confirm} confirming={confirming} />}
     {snapshot ? <>
@@ -161,21 +162,15 @@ export default function DevicePlaylist() {
         <thead><tr><th scope="col">编号</th><th scope="col">合集名称</th><th scope="col">曲目数</th><th scope="col">操作</th></tr></thead>
         <tbody>{snapshot.items.map(item => {
           const folder = folderOfNumber.get(item.number) ?? folderOfTitle.get(item.title);
-          return <Fragment key={item.number}>
-            <tr>
-              <td className="playlist-number">{item.number}</td><td>{item.title}</td><td>{item.track_count} 首</td>
-              <td>{folder
-                ? (playing?.folder === folder
-                  ? <button type="button" className="secondary" onClick={() => setPlaying(null)}>停止</button>
-                  : <button type="button" className="secondary" title="在浏览器里播放该合集" disabled={running || submitting}
-                    onClick={() => playFrom("device")(folder)}>播放</button>)
-                : <span className="playlist-unplayable" title="该合集不在本月候选清单中，暂无本地目录可播放">不可播</span>}</td>
-            </tr>
-            {folder && playing?.folder === folder && playing.origin === "device" && <tr className="playlist-player-row">
-              <td colSpan={4}><CollectionPlayer key={folder} folder={folder} title={item.title}
-                onClose={() => setPlaying(null)}/></td>
-            </tr>}
-          </Fragment>;
+          return <tr key={item.number}>
+            <td className="playlist-number">{item.number}</td><td>{item.title}</td><td>{item.track_count} 首</td>
+            <td>{folder
+              ? (playing?.folder === folder
+                ? <button type="button" className="secondary" onClick={stopPlayback}>停止</button>
+                : <button type="button" className="secondary" title="在浏览器里播放该合集" disabled={running || submitting}
+                  onClick={() => startPlayback(folder, item.title)}>播放</button>)
+              : <span className="playlist-unplayable" title="该合集不在本月候选清单中，暂无本地目录可播放">不可播</span>}</td>
+          </tr>;
         })}</tbody>
       </table></div>
     </> : !loading && <p className="playlist-empty">还没有设备歌单。下载完成后，勾选合集并点击“生成歌单”。</p>}
@@ -187,5 +182,10 @@ export default function DevicePlaylist() {
           onClick={() => confirm(item)}>{confirming === (item.folder ?? item.title) ? "正在核对…" : "确认当前保留曲目"}</button>}
       </li>)}</ul>
     </details>}
+    {/* 底部悬浮播放条：固定在视口底部，页面级单例；留白避免遮住最后一行内容。 */}
+    {playing && <>
+      <div className="player-spacer" aria-hidden="true"/>
+      <CollectionPlayer folder={playing.folder} title={playing.title} onClose={stopPlayback}/>
+    </>}
   </section>;
 }

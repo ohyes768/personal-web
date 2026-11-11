@@ -1,3 +1,4 @@
-// 浏览器播放状态：同一时间只允许一个合集在播，并记住是从哪一处发起的。
-// 播放器只在发起处展开（候选区 / 设备歌单表），避免同一合集出现两个播放器同时出声。
-export type PlayingCollection = {folder: string; origin: "candidates" | "device"};
+// 底部悬浮播放条的状态：当前播放的合集（目录名 + 展示标题）。
+// 播放条是页面级单例：候选清单与「当前设备歌单」表共用这一份状态，
+// 同一时刻只会有一个播放器实例。
+export type PlayingCollection = {folder: string; title: string};
