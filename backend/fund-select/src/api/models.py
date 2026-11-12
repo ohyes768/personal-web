@@ -95,6 +95,10 @@ class ManagerListItem(BaseModel):
     sharpe: Optional[float] = None
     calmar: Optional[float] = None
     representative_fund: Optional[str] = None
+    # ── 派生指标（11-12 调研：tenures 聚合，无额外采集）──
+    tenure_win_rate: Optional[float] = None      # 任期胜率 %（tenure_return>0 占比）
+    solo_ratio: Optional[float] = None           # 独管比例 %（在管基金中仅自己一位经理）
+    rep_divergence: Optional[float] = None       # 代表作背离 pp（最长任期年化 − 加权年化）
 
 
 class ManagerTenureItem(BaseModel):

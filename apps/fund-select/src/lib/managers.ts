@@ -20,6 +20,12 @@ export interface ManagerListItem {
   sharpe: number | null;
   calmar: number | null;
   representative_fund: string | null;
+  /** 任期胜率 %（tenure_return>0 的任期占比；无回报数据时 null） */
+  tenure_win_rate: number | null;
+  /** 独管比例 %（在管基金中仅自己一位经理的占比） */
+  solo_ratio: number | null;
+  /** 代表作背离 pp（最长任期年化 − 加权年化；>15 视为代表作依赖） */
+  rep_divergence: number | null;
 }
 
 export interface ManagerTenure {
@@ -50,6 +56,8 @@ export interface ManagerFilters {
   min_weighted_annual: number | null;
   max_drawdown: number | null;
   min_scale_yi: number | null;
+  min_win_rate: number | null;
+  min_solo_ratio: number | null;
   keyword: string | null;
   sort: string;
   order: 'asc' | 'desc';
@@ -62,6 +70,8 @@ export const MANAGER_DEFAULT_FILTERS: ManagerFilters = {
   min_weighted_annual: null,  // 默认不卡收益，先看全貌
   max_drawdown: null,
   min_scale_yi: null,
+  min_win_rate: null,
+  min_solo_ratio: null,
   keyword: null,
   sort: 'weighted_annual',
   order: 'desc',
@@ -77,6 +87,8 @@ function buildQuery(f: Partial<ManagerFilters>): string {
   if (f.min_weighted_annual != null) params.set('min_weighted_annual', String(f.min_weighted_annual));
   if (f.max_drawdown != null) params.set('max_drawdown', String(f.max_drawdown));
   if (f.min_scale_yi != null) params.set('min_scale_yi', String(f.min_scale_yi));
+  if (f.min_win_rate != null) params.set('min_win_rate', String(f.min_win_rate));
+  if (f.min_solo_ratio != null) params.set('min_solo_ratio', String(f.min_solo_ratio));
   if (f.keyword) params.set('keyword', f.keyword);
   if (f.sort) params.set('sort', f.sort);
   if (f.order) params.set('order', f.order);

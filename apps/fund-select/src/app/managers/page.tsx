@@ -38,10 +38,17 @@ const MANAGER_DIMENSIONS: Dimension[] = [
   { key: 'min_weighted_annual', label: '加权年化', unit: '%', min: -20, max: 50, step: 1 },
   { key: 'max_drawdown', label: '最大回撤', unit: '%', min: 0, max: 100, step: 5 },
   { key: 'min_scale_yi', label: '在管规模', unit: '亿', min: 0, max: 2000, step: 10 },
+  { key: 'min_win_rate', label: '任期胜率', unit: '%', min: 0, max: 100, step: 10 },
+  { key: 'min_solo_ratio', label: '独管比例', unit: '%', min: 0, max: 100, step: 10 },
 ];
 
-type NumericKey = 'min_career_years' | 'min_weighted_annual' | 'max_drawdown' | 'min_scale_yi';
-const NUMERIC_KEYS: NumericKey[] = ['min_career_years', 'min_weighted_annual', 'max_drawdown', 'min_scale_yi'];
+type NumericKey =
+  | 'min_career_years' | 'min_weighted_annual' | 'max_drawdown' | 'min_scale_yi'
+  | 'min_win_rate' | 'min_solo_ratio';
+const NUMERIC_KEYS: NumericKey[] = [
+  'min_career_years', 'min_weighted_annual', 'max_drawdown', 'min_scale_yi',
+  'min_win_rate', 'min_solo_ratio',
+];
 
 /** chip 文案：与基金 tab 的 FilterChipBar 同构（label + 关系符 + 值） */
 const CHIP_LABELS: Record<NumericKey, { label: string; fmt: (v: number) => string }> = {
@@ -49,6 +56,8 @@ const CHIP_LABELS: Record<NumericKey, { label: string; fmt: (v: number) => strin
   min_weighted_annual: { label: '加权年化', fmt: v => `≥ ${v}%` },
   max_drawdown: { label: '最大回撤', fmt: v => `≤ ${v}%` },
   min_scale_yi: { label: '在管规模', fmt: v => `≥ ${v} 亿` },
+  min_win_rate: { label: '任期胜率', fmt: v => `≥ ${v}%` },
+  min_solo_ratio: { label: '独管比例', fmt: v => `≥ ${v}%` },
 };
 
 function ManagersPageInner() {
@@ -212,6 +221,8 @@ function ManagersPageInner() {
                   <th className="px-1.5 py-2 text-left text-xs font-medium text-ink-muted">公司</th>
                   <SortableHeader label="从业" field="career_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
                   <SortableHeader label="加权年化" field="weighted_annual" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="胜率" field="tenure_win_rate" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="任期胜率：任职回报为正的任期占比。中位数约 55%，≥2/3 显著优于平均" />
+                  <SortableHeader label="独管" field="solo_ratio" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="独管比例：在管基金中仅自己一位经理的占比。共管多 → 贡献难归因（挂名风险）" />
                   <SortableHeader label="最长任期" field="longest_tenure_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
                   <SortableHeader label="回撤" field="max_drawdown" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
                   <SortableHeader label="夏普" field="sharpe" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
@@ -222,7 +233,7 @@ function ManagersPageInner() {
               <tbody>
                 {loading && !data && (
                   <tr>
-                    <td colSpan={9} className="p-8">
+                    <td colSpan={11} className="p-8">
                       <div className="space-y-2 animate-pulse" aria-label="加载中">
                         {Array.from({ length: 6 }).map((_, i) => (
                           <div key={i} className="h-8 bg-paper-tint rounded" />
@@ -233,7 +244,7 @@ function ManagersPageInner() {
                 )}
                 {!loading && data && data.items.length === 0 && (
                   <tr>
-                    <td colSpan={9} className="p-12 text-center text-ink-muted">
+                    <td colSpan={11} className="p-12 text-center text-ink-muted">
                       暂无数据，请调整筛选条件
                     </td>
                   </tr>
@@ -326,7 +337,14 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
         <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.career_years)}</td>
         <td className={`${td} text-right tnum whitespace-nowrap font-medium ${(m.weighted_annual ?? 0) >= 10 ? 'text-up' : (m.weighted_annual ?? 0) < 0 ? 'text-down' : ''}`}>
           {fmtPct(m.weighted_annual)}
+          {(m.rep_divergence ?? 0) > 15 && (
+            <div className="text-[10px] font-normal text-star" title={`最长任期年化比整体高 ${m.rep_divergence}pp，业绩集中在单只代表作`}>
+              代表作 +{m.rep_divergence}pp
+            </div>
+          )}
         </td>
+        <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtPct(m.tenure_win_rate, 0)}</td>
+        <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtPct(m.solo_ratio, 0)}</td>
         <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.longest_tenure_years)}</td>
         <td className={`${td} text-right tnum whitespace-nowrap ${(m.max_drawdown ?? 0) <= -60 ? 'text-down' : ''}`}>
           {fmtPct(m.max_drawdown)}
@@ -339,7 +357,7 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
       </tr>
       {expanded && (
         <tr className="bg-paper-tint">
-          <td colSpan={9} className="px-3 py-3">
+          <td colSpan={11} className="px-3 py-3">
             {detailLoading ? (
               <span className="text-xs text-ink-muted inline-flex items-center gap-1">
                 <ArrowPathIcon className="w-3 h-3 animate-spin" /> 加载历任基金…

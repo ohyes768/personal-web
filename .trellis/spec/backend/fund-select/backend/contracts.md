@@ -889,3 +889,36 @@ run.errors = json.dumps(stats["errors"][:20], ensure_ascii=False)[:1900]
 `FundsHeader` 内部 `useSearchParams()`（`?scheduler=1` 自动开齿轮弹框），
 静态预渲染要求页面在 Suspense 边界内，否则 `pnpm build` 报
 `useSearchParams() should be wrapped in a suspense boundary`。
+
+---
+
+## 15. 经理派生指标：任期胜率 / 独管比例 / 代表作背离（11-12）
+
+三个指标全部由 `manager_tenures` 聚合派生，**不新增采集**。
+
+### 15.1 口径
+
+| 指标 | 定义 | 备注 |
+|---|---|---|
+| `tenure_win_rate` | `tenure_return > 0` 的任期占比 % | 无回报数据的经理为 None；不设天数下限（与 annualize 的 90 天地板是两回事） |
+| `solo_ratio` | is_current 任期中该基金仅一位（stock_active 范围内）经理的占比 % | 共管判断只需布尔，范围缩小不影响结果 |
+| `rep_divergence` | `longest_tenure_annual − tenure_weighted_annual` pp | 仅展示不进筛选；>15 视为代表作依赖（幸存者偏差） |
+
+### 15.2 SQLite 布尔求和陷阱
+
+`func.sum(col > 0)` 编译成 `sum(tenure_return > 0)`，SQLite 执行正确，但
+SQLAlchemy 把结果列类型标成 Boolean —— Python 侧拿到 `True/False` 而不是整数，
+`True * 100 / 3` 会得出 33.3（把 3 段 2 胜算成 1 胜）。必须用
+`func.sum(case((col > 0, 1), else_=0))` 显式转整数。
+
+### 15.3 聚合在服务层、筛选在 Python 侧
+
+派生指标不落库：`_load_aggregates` 两条 GROUP BY（1881 经理 / 2 万任期，
+毫秒级）在 `screen()` 内存中合并进 DTO；`min_win_rate` / `min_solo_ratio`
+筛选取「None 不命中」语义（与 SQL 侧 NULL 语义一致）。
+排序白名单新增 `tenure_win_rate` / `solo_ratio`（`SORT_COLUMNS` 中列为 None，
+仅用于取默认方向 desc）。
+
+### 15.4 详情接口也要带聚合
+
+`get_detail` 与 `screen` 共用 `_load_aggregates`，否则列表有值、详情 None。

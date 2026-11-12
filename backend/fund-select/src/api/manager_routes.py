@@ -30,7 +30,7 @@ router = router_managers
 
 VALID_SORTS = ("career_years", "weighted_annual", "max_drawdown", "sharpe",
                "calmar", "current_scale_yi", "managed_fund_count",
-               "longest_tenure_years", "name")
+               "longest_tenure_years", "tenure_win_rate", "solo_ratio", "name")
 
 # 单飞：经理全量采集要跑 20-40 分钟，重复点击只应有一次在跑
 _refresh_lock = threading.Lock()
@@ -127,6 +127,8 @@ async def manager_screen(
     max_drawdown: Optional[float] = Query(None, ge=0, le=100, description="最大回撤 ≤ %（绝对值）"),
     min_scale_yi: Optional[float] = Query(None, ge=0, le=100000, description="在管规模 ≥ 亿"),
     min_sharpe: Optional[float] = Query(None, ge=-10, le=100, description="夏普 ≥"),
+    min_win_rate: Optional[float] = Query(None, ge=0, le=100, description="任期胜率 ≥ %"),
+    min_solo_ratio: Optional[float] = Query(None, ge=0, le=100, description="独管比例 ≥ %"),
     keyword: Optional[str] = Query(None, max_length=50, description="姓名/公司模糊匹配"),
     sort: str = Query("weighted_annual", description="排序字段"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -144,6 +146,8 @@ async def manager_screen(
         max_drawdown=max_drawdown,
         min_scale_yi=min_scale_yi,
         min_sharpe=min_sharpe,
+        min_win_rate=min_win_rate,
+        min_solo_ratio=min_solo_ratio,
         keyword=keyword,
         sort=sort,
         order=order,

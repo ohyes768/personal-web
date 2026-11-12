@@ -202,3 +202,113 @@ class TestSortLongestTenure:
                if it["longest_tenure_years"] is not None]
         assert got == sorted(got, reverse=True)
         assert got[0] == 9.5
+
+
+class TestDerivedMetrics:
+    """派生指标（11-12 调研）：任期胜率 / 独管比例 / 代表作背离。"""
+
+    @pytest.fixture
+    def seeded_metrics(self, db_session, client):
+        """构造可手算的场景：
+
+        - m_calc：3 段任期 2 赢 1 输 → 胜率 66.7；在管 2 只，一只独管一只共管 → 独管 50
+          加权 5 / 最长 18 → 背离 13.0
+        - m_solo：2 段全赢 → 胜率 100；在管 1 只独管 → 独管 100
+        - m_zero：任期全亏 → 胜率 0
+        - m_noret：任期无回报数据 → 胜率 None（不命中筛选）
+        """
+        from src.db.models import Manager, ManagerTenure
+        from datetime import date
+
+        def tenure(mid, code, ret, current=True):
+            return ManagerTenure(
+                manager_id=mid, fund_code=code, fund_name=f"基金{code}",
+                start_date=date(2020, 1, 1), tenure_days=1000,
+                tenure_return=ret, annual_return=ret / 10, is_current=current)
+
+        db_session.add_all([
+            Manager(manager_id="m_calc", name="手算甲", company="华夏基金",
+                    career_years=10, scope="stock_active",
+                    tenure_weighted_annual=5.0, longest_tenure_annual=18.0),
+            Manager(manager_id="m_solo", name="独管乙", company="华夏基金",
+                    career_years=8, scope="stock_active",
+                    tenure_weighted_annual=8.0, longest_tenure_annual=10.0),
+            Manager(manager_id="m_zero", name="全亏丙", company="易方达基金",
+                    career_years=6, scope="stock_active",
+                    tenure_weighted_annual=-3.0, longest_tenure_annual=-1.0),
+            Manager(manager_id="m_noret", name="无数据丁", company="易方达基金",
+                    career_years=6, scope="stock_active"),
+            # m_calc: 3 段（2 赢 1 输），在管 2 只（A 独管 + B 共管）
+            tenure("m_calc", "000011", 50.0),                       # 赢，在管
+            tenure("m_calc", "000022", 30.0),                       # 赢，在管（共管）
+            tenure("m_calc", "000033", -10.0, current=False),       # 输，已离任
+            # m_solo: 2 段全赢，1 只在管独管
+            tenure("m_solo", "000044", 20.0),
+            tenure("m_solo", "000055", 10.0, current=False),
+            # m_zero: 2 段全亏
+            tenure("m_zero", "000066", -5.0),
+            tenure("m_zero", "000077", -8.0),
+            # m_noret: 有任期但无回报
+            ManagerTenure(manager_id="m_noret", fund_code="000088",
+                          start_date=date(2020, 1, 1), tenure_days=500,
+                          tenure_return=None, is_current=True),
+            # 000022 第二位经理 → m_calc 的 000022 变共管
+            tenure("m_solo", "000022", 12.0),
+        ])
+        db_session.commit()
+        return db_session
+
+    def _row(self, client, mid):
+        items = client.get("/api/funds/managers/screen", params={"limit": 50}).json()["items"]
+        return next(it for it in items if it["manager_id"] == mid)
+
+    def test_win_rate_computed(self, client, seeded_metrics):
+        row = self._row(client, "m_calc")
+        assert row["tenure_win_rate"] == 66.7   # 2/3
+        assert self._row(client, "m_solo")["tenure_win_rate"] == 100.0
+        assert self._row(client, "m_zero")["tenure_win_rate"] == 0.0
+
+    def test_win_rate_none_when_no_return_data(self, client, seeded_metrics):
+        assert self._row(client, "m_noret")["tenure_win_rate"] is None
+
+    def test_solo_ratio_computed(self, client, seeded_metrics):
+        # m_calc 在管 2 只：000011 独管 + 000022 共管（m_solo 也在管） → 50%
+        assert self._row(client, "m_calc")["solo_ratio"] == 50.0
+        # m_solo 在管 2 只：000044 独管 + 000022 共管 → 50%
+        assert self._row(client, "m_solo")["solo_ratio"] == 50.0
+
+    def test_rep_divergence(self, client, seeded_metrics):
+        row = self._row(client, "m_calc")
+        assert row["rep_divergence"] == 13.0    # 18.0 - 5.0
+        # 单边缺失 → None
+        assert self._row(client, "m_noret")["rep_divergence"] is None
+
+    def test_filter_min_win_rate_excludes_none(self, client, seeded_metrics):
+        items = client.get("/api/funds/managers/screen",
+                           params={"min_win_rate": 50, "limit": 50}).json()["items"]
+        ids = {it["manager_id"] for it in items}
+        assert ids == {"m_calc", "m_solo"}      # m_zero(0) 与 m_noret(None) 不命中
+
+    def test_filter_min_solo_ratio(self, client, seeded_metrics):
+        items = client.get("/api/funds/managers/screen",
+                           params={"min_solo_ratio": 80, "limit": 50}).json()["items"]
+        ids = {it["manager_id"] for it in items}
+        assert "m_calc" not in ids and "m_solo" not in ids  # 都是 50%
+
+    def test_sort_by_win_rate(self, client, seeded_metrics):
+        items = client.get("/api/funds/managers/screen",
+                           params={"sort": "tenure_win_rate", "limit": 50}).json()["items"]
+        rates = [it["tenure_win_rate"] for it in items if it["tenure_win_rate"] is not None]
+        assert rates == sorted(rates, reverse=True)
+        assert rates[0] == 100.0
+
+    def test_detail_includes_aggregates(self, client, seeded_metrics):
+        body = client.get("/api/funds/managers/m_calc").json()
+        assert body["tenure_win_rate"] == 66.7
+        assert body["solo_ratio"] == 50.0
+        assert body["rep_divergence"] == 13.0
+
+    def test_paginated_manager_with_tenures(self, client, seeded):
+        """既有 seeded 夹具（m1 有 1 段全赢任期）胜率 100，不回归。"""
+        row = self._row(client, "m1")
+        assert row["tenure_win_rate"] == 100.0
