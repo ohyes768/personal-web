@@ -236,10 +236,11 @@ class QualityService:
         except (OSError, ValueError):
             return {}
 
-    def _save_one(self, score: QualityScore, data_date: str, analysis_duration_seconds: float) -> None:
+    def _save_one(self, score: QualityScore, data_date: str, analysis_duration_seconds: float,
+                  run_id: str | None = None) -> None:
         scored_at = _now()
         record = {**score.model_dump(), "scored_at": scored_at, "data_date": data_date,
-                  "analysis_duration_seconds": analysis_duration_seconds}
+                  "analysis_duration_seconds": analysis_duration_seconds, "run_id": run_id}
         with self._file_lock:
             merged = self._read_all()
             merged[score.code] = record
@@ -525,7 +526,8 @@ class QualityService:
                 kind, score, error, duration, bump = "failed", None, f"评级过程异常: {exc}"[:300], None, False
             if kind == "completed" and score is not None:
                 try:
-                    self._save_one(score, item["data_date"], duration if duration is not None else 0.0)
+                    self._save_one(score, item["data_date"], duration if duration is not None else 0.0,
+                                   run_id=item.get("run_id"))
                 except (OSError, ValueError) as exc:
                     logger.exception("评分落盘失败 %s", code)
                     kind, error, bump = "failed", f"评分结果保存失败: {exc}", False

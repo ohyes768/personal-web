@@ -10,6 +10,7 @@ from typing import Annotated, Optional
 
 import pandas as pd
 from fastapi import APIRouter, Body, Depends, Header, HTTPException, Query
+from fastapi.responses import Response
 
 from src.api.models import (
     ScreeningRequest, ScreeningResponse,
@@ -83,7 +84,8 @@ from src.api.helpers.aux_data import (
 )
 from src.utils.atomic_file import atomic_csv
 from src.services.refresh_jobs import RefreshJobManager
-from src.services.hermes_client import HermesConfig, get_run, poll_run, stop_run, submit_run
+from src.services.hermes_client import HermesApiError, HermesConfig, get_run, poll_run, stop_run, submit_run
+from src.services.session_export import build_session_markdown
 from src.services.quality_service import QualityService, QueueConflict
 from src.services.quality_version import current_quality_skill_version
 from src.services.valuation_service import (
@@ -3884,6 +3886,38 @@ async def get_valuation_reports():
             "per_code": valuation_service.get_per_code(),
             "hermes_configured": HermesConfig.from_env().is_configured,
             "current_skill_version": current_valuation_skill_version()}
+
+
+async def _download_run_session(run_id: str) -> Response:
+    """下载一个 Hermes run 的会话记录（markdown attachment）。quality/valuation 共用。"""
+    cfg = HermesConfig.from_env()
+    if not cfg.is_configured:
+        raise HTTPException(status_code=503, detail="Hermes 未配置（需设置 HERMES_BASE_URL 与 HERMES_API_KEY）")
+    try:
+        markdown = build_session_markdown(cfg, run_id)
+    except HermesApiError as exc:
+        text = str(exc)
+        if text.startswith("session_not_found"):
+            raise HTTPException(status_code=404, detail=f"Hermes 无此会话记录：{run_id}（终态超过保留期或 run 不存在）")
+        raise HTTPException(status_code=502, detail=f"拉取会话记录失败：{text[:200]}")
+    filename = f"hermes-{run_id}-session.md"
+    return Response(
+        content=markdown,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.get("/valuation/runs/{run_id}/session")
+async def download_valuation_run_session(run_id: str):
+    """下载该估值 run 的完整会话记录（markdown），用于排查慢跑与调整 skill"""
+    return await _download_run_session(run_id)
+
+
+@router.get("/quality/runs/{run_id}/session")
+async def download_quality_run_session(run_id: str):
+    """下载该评级 run 的完整会话记录（markdown），用于排查慢跑与调整 skill"""
+    return await _download_run_session(run_id)
 
 
 def _valuation_level_to_alert(report: dict) -> dict:

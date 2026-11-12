@@ -641,3 +641,44 @@ class TestQueueControls:
             assert keys[1].endswith("-c1")
 
         asyncio.run(scenario())
+
+
+class TestSessionExport:
+    """run_id 落盘与会话 markdown 组装（Hermes 打桩，不真连）"""
+
+    def test_saved_record_contains_run_id(self, tmp_path):
+        service, job = run_service(tmp_path, ["000001"], {"000001": stock()},
+                                   lambda cfg, prompt, key: "run-runid9",
+                                   lambda cfg, run_id: fake_report("000001", "样本"))
+        assert job["status"] == "succeeded"
+        saved = ValuationService(service.reports_path).get_all()["000001"]
+        assert saved["run_id"] == "run-runid9"
+
+    def test_build_session_markdown_renders_summary_and_messages(self):
+        from src.services.session_export import build_session_markdown
+
+        def fake_get_session(cfg, run_id):
+            return {"session": {
+                "model": "test-model", "message_count": 3, "tool_call_count": 2,
+                "api_call_count": 2, "input_tokens": 100, "output_tokens": 50,
+                "cache_read_tokens": 0, "cache_write_tokens": 0,
+                "started_at": 1794389400.0, "ended_at": 1794389460.0,
+            }}
+
+        def fake_get_messages(cfg, run_id):
+            return [
+                {"role": "user", "content": "评估 000001", "timestamp": 1794389400.0},
+                {"role": "tool", "tool_name": "terminal", "content": "x" * 10,
+                 "timestamp": 1794389405.0},
+                {"role": "assistant", "content": [{"type": "text", "text": "结论：ready"}],
+                 "timestamp": 1794389460.0},
+            ]
+
+        markdown = build_session_markdown(None, "run_x",
+                                          get_session_fn=fake_get_session,
+                                          get_session_messages_fn=fake_get_messages)
+        assert "# Hermes run 会话记录：run_x" in markdown
+        assert "test-model" in markdown and "消息数：3" in markdown
+        assert "tool: terminal" in markdown
+        assert "(+5.0s)" in markdown
+        assert "结论：ready" in markdown

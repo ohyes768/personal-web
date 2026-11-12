@@ -40,6 +40,8 @@ export interface ValuationReportRecord {
   evaluated_at: string;
   data_date: string | null;
   analysis_duration_seconds: number | null;
+  /** 本次估值的 Hermes run id（session_id 同值）；旧报告可能缺失 */
+  run_id?: string | null;
 }
 
 export interface ValuationPerCodeItem {

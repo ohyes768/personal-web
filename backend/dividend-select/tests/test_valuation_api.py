@@ -325,3 +325,60 @@ class TestQueueRoutes:
         configure_hermes(monkeypatch)
         response = test_client.post("/valuation/queue/nonexistent/cancel")
         assert response.status_code == 409
+
+
+class TestRunSessionDownload:
+    """会话记录下载端点：markdown attachment / 404 / 502 / 503"""
+
+    def _configure(self, monkeypatch):
+        monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
+        monkeypatch.setenv("HERMES_API_KEY", "secret")
+
+    def test_download_returns_markdown_attachment(self, client, monkeypatch):
+        test_client, _, _, _ = client
+        self._configure(monkeypatch)
+        monkeypatch.setattr(routes, "build_session_markdown",
+                            lambda cfg, run_id: f"# 会话 {run_id}\n- 消息数：3\n")
+        response = test_client.get("/valuation/runs/run_abc123/session")
+        assert response.status_code == 200
+        assert "attachment" in response.headers["content-disposition"]
+        assert "hermes-run_abc123-session.md" in response.headers["content-disposition"]
+        assert "run_abc123" in response.text
+
+    def test_unknown_session_404(self, client, monkeypatch):
+        from src.services.hermes_client import HermesApiError
+        test_client, _, _, _ = client
+        self._configure(monkeypatch)
+
+        def raise_not_found(cfg, run_id):
+            raise HermesApiError(f"session_not_found: {run_id}")
+        monkeypatch.setattr(routes, "build_session_markdown", raise_not_found)
+        response = test_client.get("/valuation/runs/missing/session")
+        assert response.status_code == 404
+        assert "无此会话记录" in response.json()["detail"]
+
+    def test_upstream_error_502(self, client, monkeypatch):
+        from src.services.hermes_client import HermesApiError
+        test_client, _, _, _ = client
+        self._configure(monkeypatch)
+
+        def raise_api_error(cfg, run_id):
+            raise HermesApiError("消息查询失败 HTTP 500: boom")
+        monkeypatch.setattr(routes, "build_session_markdown", raise_api_error)
+        response = test_client.get("/valuation/runs/x/session")
+        assert response.status_code == 502
+
+    def test_unconfigured_503(self, client, monkeypatch):
+        test_client, _, _, _ = client
+        monkeypatch.delenv("HERMES_BASE_URL", raising=False)
+        monkeypatch.delenv("HERMES_API_KEY", raising=False)
+        assert test_client.get("/valuation/runs/x/session").status_code == 503
+
+    def test_quality_route_shares_handler(self, client, monkeypatch):
+        test_client, _, _, _ = client
+        self._configure(monkeypatch)
+        monkeypatch.setattr(routes, "build_session_markdown",
+                            lambda cfg, run_id: f"# 会话 {run_id}\n")
+        response = test_client.get("/quality/runs/run_q/session")
+        assert response.status_code == 200
+        assert "run_q" in response.text

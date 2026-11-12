@@ -35,6 +35,8 @@ export interface QualityScore {
   data_date: string;
   /** 后端实测的单股 Hermes 提交与轮询耗时；旧结果未记录 */
   analysis_duration_seconds?: number | null;
+  /** 本次评级的 Hermes run id（session_id 同值）；旧结果可能缺失 */
+  run_id?: string | null;
 }
 
 export type QualityJob = RefreshJob & { kind: 'quality'; per_code?: QualityPerCodeMap; cancelled?: number };

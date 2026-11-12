@@ -125,3 +125,34 @@ class ApiClient {
 export { ApiClient };
 export const apiClient = new ApiClient();
 export const directClient = new ApiClient('', 'direct');
+
+/**
+ * 下载文件端点：返回 Blob（Content-Disposition attachment 的 markdown 等非 JSON 响应）。
+ * 错误响应仍是 JSON detail，走与 request 一致的报错提取。
+ */
+export async function downloadFile(endpoint: string): Promise<Blob> {
+  const response = await fetch(endpoint);
+  if (!response.ok) {
+    let serverMsg = '';
+    try {
+      const body = await response.clone().json();
+      serverMsg = typeof body.detail === 'string' ? body.detail
+        : body.detail && typeof body.detail.message === 'string' ? body.detail.message
+          : body.message || body.error || '';
+    } catch { /* 非 JSON 错误体忽略 */ }
+    throw new ApiHttpError(serverMsg || `下载失败 (HTTP ${response.status})`, response.status);
+  }
+  return response.blob();
+}
+
+/** 触发浏览器保存 Blob 为文件 */
+export function saveBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}

@@ -11,6 +11,8 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { QualitySkillVersion } from './QualitySkillVersion';
+import { SessionDownloadButton } from './SessionDownloadButton';
+import { dividendApi } from '@/lib/api';
 import {
   QUALITY_DIMENSION_LABELS,
   QUALITY_DIMENSION_ORDER,
@@ -49,6 +51,7 @@ export function QualityReportContent({ score, currentSkillVersion }: QualityRepo
         <span>数据日期 {score.data_date}</span>
         <span>评分时间 {score.scored_at}</span>
         <span>分析耗时 {formatAnalysisDuration(score.analysis_duration_seconds)}</span>
+        <SessionDownloadButton runId={score.run_id} download={dividendApi.downloadQualitySession} />
       </div>
 
       <QualitySkillVersion version={score.skill_version} currentVersion={currentSkillVersion} />

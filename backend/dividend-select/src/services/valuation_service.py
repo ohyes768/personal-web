@@ -360,10 +360,11 @@ class ValuationService:
         except (OSError, ValueError):
             return {}
 
-    def _save_one(self, report: ValuationReport, data_date: str, analysis_duration_seconds: float) -> None:
+    def _save_one(self, report: ValuationReport, data_date: str, analysis_duration_seconds: float,
+                  run_id: str | None = None) -> None:
         evaluated_at = _now()
         record = {**report.model_dump(), "evaluated_at": evaluated_at, "data_date": data_date,
-                  "analysis_duration_seconds": analysis_duration_seconds}
+                  "analysis_duration_seconds": analysis_duration_seconds, "run_id": run_id}
         with self._file_lock:
             merged = self._read_all()
             merged[report.code] = record
@@ -648,7 +649,8 @@ class ValuationService:
                 kind, report, error, duration, bump = "failed", None, f"估值过程异常: {exc}"[:300], None, False
             if kind == "completed" and report is not None:
                 try:
-                    self._save_one(report, item["data_date"], duration if duration is not None else 0.0)
+                    self._save_one(report, item["data_date"], duration if duration is not None else 0.0,
+                                   run_id=item.get("run_id"))
                 except (OSError, ValueError) as exc:
                     logger.exception("估值结果落盘失败 %s", code)
                     kind, error, bump = "failed", f"估值结果保存失败: {exc}", False

@@ -3,7 +3,7 @@ import type { RefreshJob, RefreshKind } from './types';
  * 股息率模块 API 封装
  * 所有股息率相关 API 调用必须通过此文件
  */
-import { directClient } from './api-client';
+import { directClient, downloadFile, saveBlob } from './api-client';
 import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse } from './screening';
 import type { FavoritesResponse } from './watchlist';
 import type { QualityJob, QualityMoveAction, QualityQueueSnapshot, QualityScoresResponse } from './quality';
@@ -76,6 +76,16 @@ export const dividendApi = {
   /** 暂停/恢复挡位监控：仅翻转 enabled，不改 levels */
   setAlertsEnabled: (code: string, enabled: boolean) =>
     directClient.put<FavoritesResponse>(`/api/dividend/favorites/${code}/alerts/enabled`, { enabled }),
+  /** 下载估值 run 的 Hermes 会话记录（markdown 文件），用于排查慢跑 */
+  downloadValuationSession: async (runId: string) => {
+    const blob = await downloadFile(`/api/dividend/valuation/runs/${encodeURIComponent(runId)}/session`);
+    saveBlob(blob, `hermes-${runId}-session.md`);
+  },
+  /** 下载评级 run 的 Hermes 会话记录（markdown 文件），用于排查慢跑 */
+  downloadQualitySession: async (runId: string) => {
+    const blob = await downloadFile(`/api/dividend/quality/runs/${encodeURIComponent(runId)}/session`);
+    saveBlob(blob, `hermes-${runId}-session.md`);
+  },
   /**
    * 获取股票列表
    */

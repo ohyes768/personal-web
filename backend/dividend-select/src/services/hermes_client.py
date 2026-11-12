@@ -145,6 +145,47 @@ def stop_run(cfg: HermesConfig, run_id: str) -> str:
     return status
 
 
+def get_session(cfg: HermesConfig, session_id: str) -> dict:
+    """查询 run 会话元数据（session_id 即 run_id）。404 抛 HermesApiError（session_not_found 前缀）。"""
+    try:
+        resp = requests.get(
+            f"{cfg.base_url}/api/sessions/{session_id}",
+            headers=_auth_headers(cfg),
+            timeout=HTTP_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise HermesApiError(f"会话查询请求异常: {exc}") from exc
+    if resp.status_code == 404:
+        raise HermesApiError(f"session_not_found: {session_id}")
+    if not 200 <= resp.status_code < 300:
+        raise HermesApiError(f"会话查询失败 HTTP {resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    if not isinstance(data, dict):
+        raise HermesApiError(f"会话查询响应不是 JSON 对象: {resp.text[:300]}")
+    return data
+
+
+def get_session_messages(cfg: HermesConfig, session_id: str) -> list:
+    """查询 run 会话的完整消息历史（进行中的 session 同样可查）。"""
+    try:
+        resp = requests.get(
+            f"{cfg.base_url}/api/sessions/{session_id}/messages",
+            headers=_auth_headers(cfg),
+            timeout=HTTP_TIMEOUT,
+        )
+    except requests.RequestException as exc:
+        raise HermesApiError(f"消息查询请求异常: {exc}") from exc
+    if resp.status_code == 404:
+        raise HermesApiError(f"session_not_found: {session_id}")
+    if not 200 <= resp.status_code < 300:
+        raise HermesApiError(f"消息查询失败 HTTP {resp.status_code}: {resp.text[:300]}")
+    data = resp.json()
+    messages = data.get("data") if isinstance(data, dict) else data
+    if not isinstance(messages, list):
+        raise HermesApiError(f"消息查询响应不是列表: {str(data)[:300]}")
+    return messages
+
+
 def poll_run(cfg: HermesConfig, run_id: str) -> str:
     """轮询至终态；completed 返回 output，失败终态/空输出抛错，超时抛 HermesTimeout。
 

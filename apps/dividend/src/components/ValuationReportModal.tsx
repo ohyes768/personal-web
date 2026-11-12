@@ -13,6 +13,7 @@ import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkBreaks from 'remark-breaks';
 import { Modal } from './shared-ui/Modal';
+import { SessionDownloadButton } from './SessionDownloadButton';
 import {
   VALUATION_LEVEL_KEYS,
   VALUATION_LEVEL_LABEL,
@@ -21,6 +22,7 @@ import {
   type ValuationLevelKey,
   type ValuationReportRecord,
 } from '@/lib/valuation';
+import { dividendApi } from '@/lib/api';
 import type { AlertLevels } from '@/lib/types';
 
 const markdownComponents: Components = {
@@ -75,6 +77,7 @@ export function ValuationReportModal({
           <span>耗时 {formatValuationDuration(report.analysis_duration_seconds)}</span>
           <span>Skill {report.skill_version ? `v${report.skill_version}` : '版本未知'}</span>
           <span>证据 {report.evidence.length} 条</span>
+          <SessionDownloadButton runId={report.run_id} download={dividendApi.downloadValuationSession} />
         </div>
         {versionMismatch && (
           <p className="text-sm text-amber-700">当前已部署 Skill v{currentSkillVersion}，与报告版本不同，建议重新评估。</p>
