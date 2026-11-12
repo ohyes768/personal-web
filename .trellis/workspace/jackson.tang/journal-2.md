@@ -934,3 +934,85 @@ weighted_annual 原含离任段（职业生涯口径）；新增 current_weighte
 ### Next Steps
 
 - None - task complete
+
+
+## Session 72: NAS 清理与死链修复：n8n 下线 / 一次性容器泄漏 / 2443 vhost
+
+**Date**: 2026-11-12
+**Task**: NAS 清理与死链修复：n8n 下线 / 一次性容器泄漏 / 2443 vhost
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+## NAS 清理与死链修复
+
+### n8n 彻底下线
+- `docker-compose.nas.yml`：移除 `douyin-backend` 的 `n8n-net` 挂载 + networks 段的 `n8n-net` 声明。
+  此前 n8n 容器虽已删，但 compose 里还写着 `n8n-net`（external: n8n_default），
+  每次重建 douyin 都会把容器重新接回 `n8n_default`，导致网络永远删不掉。
+- 重建 douyin-backend 后 `n8n_default` 成功删除（douyin 后端自 2026-11 已由
+  APScheduler 自调度，不再依赖 n8n 触发）。
+- nginx compose 侧移除 `./n8n.conf` 挂载、4443 端口发布、`n8n_default` 网络，
+  nginx 容器重建后 4443 已不监听。
+- 归档：`~/archive/n8n/`（docker-compose.yml + data/ + backups/ + 两份 workflow
+  导出 + nginx-n8n.conf + README 恢复步骤）。
+
+### 一次性容器泄漏
+- `~/stock-info-dingding/run_git_pull.sh`（task-web 每日 08:10 任务）：脚本通过
+  Docker Engine API 建 alpine/git 容器，AutoRemove 关着（要抓完整 stderr），
+  但建完从不 DELETE → NAS 上每天多一个 `git-pull-*` 停止容器。
+  改为日志取完后显式 DELETE（成功路径），失败保留供排查、7 天后由
+  `prune_stale_containers()` 自动清。
+- `stock-info:latest` 镜像里烤的是旧脚本，需重建镜像才生效。
+
+### 死 vhost：2443 / music.duomi77.cn
+- `~/nginx/songloft.conf` 写死 `proxy_pass http://172.17.0.3:58091`，
+  而 172.17.0.3 上根本没有容器（bridge 上只有 songloft=.2 / ddns-go=.4 /
+  buildkit=.5），且 songloft 只接默认 bridge、nginx 接 nginx_nginx-bridge，
+  跨网段被 DOCKER-ISOLATION 拦掉 → 连接一直 SYN_SENT 到 60s 超时 504。
+- 改为 `proxy_pass http://host.docker.internal:4000`（songloft 容器 58091
+  发布到宿主 4000；host.docker.internal 由 nginx compose 的 extra_hosts
+  指向宿主网关），并补 `proxy_http_version 1.1`。
+
+### 陷阱记录：bind mount 的 inode
+- Docker **文件级** bind mount 绑的是 inode，不是路径。编辑工具「写临时文件 +
+  rename」会换 inode，容器仍看旧 inode 的旧内容——`nginx -s reload` 静默
+  不生效（本例 reload 两次都没用，必须 `docker compose up -d --force-recreate
+  nginx` 重建才重新绑定）。
+- `scripts/deploy-nas.sh` 的 `sync_nginx()` 已用 `docker compose restart nginx`
+  规避同一问题（restart 会重新解析 bind mount 路径）。
+- 今后改 `~/nginx/*.conf` 或仓库 `nginx/web.conf` 后，务必确认容器内
+  inode 与宿主一致。
+
+### 顺带清理
+- 删除孤儿容器 `economic-frontend`（服务早已从 compose 移除，无卷无引用）
+  及其它一次性停止容器（stock-info-image / hermes-trigger-image / boring_tu /
+  pensive_yalow / agitated_banzai / git-pull-* 共 5 个）。
+- 全端口回归：80(http) 200、443/2443/7443/8443/9443/3443 200、
+  10443/1443 302、12443 401、18080(http) 403、6443(xiaomusic Host) 200。
+- 遗留（未动，与本次无关）：navidrome 原生服务未运行（宿主 4533 无人监听，
+  6443 带 navidrome Host 时 502）。
+
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `e8c47f7` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete

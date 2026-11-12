@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 71
+- **Total Sessions**: 72
 - **Last Active**: 2026-11-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~936 | Active |
+| `journal-2.md` | ~1018 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 72 | 2026-11-12 | NAS 清理与死链修复：n8n 下线 / 一次性容器泄漏 / 2443 vhost | `e8c47f7` | `master` |
 | 71 | 2026-11-12 | 经理↔基金双向关联：徽章跳转+在榜汇总+反向链接 | `8bf41c2` | `master` |
 | 70 | 2026-11-12 | 经理详情拆在任/已离任双 tab | `8a11b2a` | `master` |
 | 69 | 2026-11-12 | 服务管理台实机上线：部署前置检查 + 修生产写操作 401 | - | `master` |
