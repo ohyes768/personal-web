@@ -162,7 +162,8 @@ export function ValuationReportModal({
         {/* 研究正文（skill report_md） */}
         <div className="border-t border-rule pt-3">
           <h3 className="text-sm font-semibold text-ink mb-2">估值依据</h3>
-          <div className="quality-reader-content text-sm">
+          {/* md-body/quality-reader-md 提供表格边框、断词修正与标题排版；缺了表格会裸渲染塌缩 */}
+          <div className="quality-reader-content md-body quality-reader-md text-sm">
             <ReactMarkdown remarkPlugins={[remarkGfm, remarkBreaks]} components={markdownComponents}>
               {report.report_md}
             </ReactMarkdown>
