@@ -4,12 +4,15 @@
 - 单次总超时 10 秒，并发上限 4（由调用方持有 semaphore）
 - 重定向最多 3 跳，每跳重新校验协议与主机
 - 200–399 → reachable；401/403 → auth_required；其余 → unexpected_status
-- TLS 握手失败独立报错，不绕过验证当作成功
+- 证书不被信任（自签/链不全/域名不符）时，先跳过校验重试一次：
+  HTTP 层确实答话就算「可达」，证书本身的问题一律交给 TLS 维度说，
+  免得把「锁不配钥匙」误报成「门都没开」
 """
 
 from __future__ import annotations
 
 import asyncio
+import ssl
 from dataclasses import dataclass
 from typing import Any
 
@@ -23,6 +26,32 @@ MAX_REDIRECTS = 3
 MAX_BODY_BYTES = 64 * 1024
 DEFAULT_TIMEOUT = 10.0
 DEFAULT_CONCURRENCY = 4
+
+# 证书校验失败的特征串：httpx 把 ssl 异常包成 ConnectError，原始异常类型
+# 不一定还在链上（httpcore 会用文字重塑异常），所以类型 + 文字双判定。
+_CERT_ERROR_MARKERS = (
+    "certificate_verify_failed",
+    "certificate verify failed",
+    "self-signed certificate",
+    "certificate has expired",
+    "hostname mismatch",
+    "unable to get local issuer certificate",
+)
+
+
+def is_cert_verification_error(exc: BaseException | None) -> bool:
+    """判断异常是不是「证书不被信任」造成的（而不是网络不通）。"""
+    current: BaseException | None = exc
+    seen = 0
+    while current is not None and seen < 5:
+        if isinstance(current, ssl.SSLCertVerificationError):
+            return True
+        text = str(current).lower()
+        if any(marker in text for marker in _CERT_ERROR_MARKERS):
+            return True
+        current = current.__cause__ or current.__context__
+        seen += 1
+    return False
 
 
 @dataclass
@@ -71,6 +100,10 @@ class ProbeResult:
     error_message: str | None = None
     body_bytes: int = 0
     truncated: bool = False
+    # 证书校验是否通过。为 False 时表示「跳过校验重试后才拿到响应」，
+    # 证书本身的问题由 TLS 维度单独报，这里只留个底。
+    tls_verified: bool = True
+    tls_error: str | None = None
 
 
 async def probe_url(
@@ -79,6 +112,7 @@ async def probe_url(
     expected_ranges: list[str] | None = None,
     config: ProbeConfig | None = None,
     transport: httpx.AsyncBaseTransport | None = None,
+    verify: bool = True,
 ) -> ProbeResult:
     cfg = config or ProbeConfig()
     parsed = parse_http_url(url)
@@ -97,7 +131,7 @@ async def probe_url(
         follow_redirects=False,
         timeout=httpx.Timeout(cfg.timeout),
         transport=transport,
-        verify=True,
+        verify=verify,
     ) as client:
         while True:
             try:
@@ -139,6 +173,14 @@ async def probe_url(
                     redirects=redirects,
                 )
             except httpx.ConnectError as exc:
+                if verify and is_cert_verification_error(exc):
+                    return await _probe_without_cert_check(
+                        url,
+                        expected_ranges=expected_ranges,
+                        cfg=cfg,
+                        transport=transport,
+                        cert_error=str(exc) or "证书校验失败",
+                    )
                 return ProbeResult(
                     state=UrlState.UNREACHABLE,
                     method=method,
@@ -147,6 +189,14 @@ async def probe_url(
                     redirects=redirects,
                 )
             except httpx.HTTPError as exc:
+                if verify and is_cert_verification_error(exc):
+                    return await _probe_without_cert_check(
+                        url,
+                        expected_ranges=expected_ranges,
+                        cfg=cfg,
+                        transport=transport,
+                        cert_error=str(exc) or "证书校验失败",
+                    )
                 return ProbeResult(
                     state=UrlState.UNREACHABLE,
                     method=method,
@@ -214,6 +264,48 @@ async def probe_url(
             )
 
 
+async def _probe_without_cert_check(
+    url: str,
+    *,
+    expected_ranges: list[str] | None,
+    cfg: ProbeConfig,
+    transport: httpx.AsyncBaseTransport | None,
+    cert_error: str,
+) -> ProbeResult:
+    """证书不被信任时，跳过校验再试一次，区分「锁不配钥匙」与「门都没开」。
+
+    - 跳过校验后拿到响应 → 状态照常按 HTTP 码判定（可达/需认证/状态异常），
+      证书的问题由 TLS 维度单独报，这里只在 payload 里留底。
+    - 跳过校验后依然连不上 → 真的不可达，保留这次的网络错误。
+    """
+    retry = await probe_url(
+        url,
+        expected_ranges=expected_ranges,
+        config=cfg,
+        transport=transport,
+        verify=False,
+    )
+    if retry.error_code:
+        return ProbeResult(
+            state=UrlState.UNREACHABLE,
+            method=retry.method,
+            error_code=retry.error_code,
+            error_message=retry.error_message,
+            redirects=retry.redirects,
+        )
+    return ProbeResult(
+        state=retry.state,
+        status_code=retry.status_code,
+        method=retry.method,
+        final_url=retry.final_url,
+        redirects=retry.redirects,
+        body_bytes=retry.body_bytes,
+        truncated=retry.truncated,
+        tls_verified=False,
+        tls_error=cert_error,
+    )
+
+
 def _result_from_status(
     status_code: int,
     expected_ranges: list[str] | None,
@@ -248,6 +340,8 @@ def to_outcome(result: ProbeResult) -> CheckOutcome:
         "redirects": result.redirects,
         "body_bytes": result.body_bytes,
         "body_truncated": result.truncated,
+        "tls_verified": result.tls_verified,
+        "tls_error": result.tls_error,
         "perspective": "probed from service-manager backend",
     }
     if result.error_code:

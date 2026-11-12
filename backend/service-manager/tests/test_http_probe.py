@@ -109,6 +109,81 @@ def test_connect_error_is_unreachable() -> None:
     assert result.error_code == "connect_error"
 
 
+CERT_ERROR_TEXT = (
+    "[SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: "
+    "self-signed certificate (_ssl.c:1011)"
+)
+
+
+def test_self_signed_cert_is_not_reported_as_unreachable() -> None:
+    """自签证书：跳过校验后能答话 → 可达（证书问题归 TLS 维度）。"""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        if len(calls) == 1:
+            raise httpx.ConnectError(CERT_ERROR_TEXT)
+        return httpx.Response(200)
+
+    result = run(probe_url("https://x/y", transport=transport(handler)))
+    assert result.state is UrlState.REACHABLE
+    assert result.status_code == 200
+    assert result.tls_verified is False
+    assert "self-signed" in (result.tls_error or "")
+    assert len(calls) == 2
+
+
+def test_cert_error_without_working_retry_stays_unreachable() -> None:
+    """跳过校验后仍连不上 → 真的不可达。"""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError(CERT_ERROR_TEXT)
+
+    result = run(probe_url("https://x/y", transport=transport(handler)))
+    assert result.state is UrlState.UNREACHABLE
+    assert result.error_code == "connect_error"
+
+
+def test_plain_connect_error_is_not_retried() -> None:
+    """网络不通不该触发重试（重试只会浪费时间）。"""
+    calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(request.url.path)
+        raise httpx.ConnectError("connection refused")
+
+    result = run(probe_url("https://x/y", transport=transport(handler)))
+    assert result.state is UrlState.UNREACHABLE
+    assert len(calls) == 1
+
+
+def test_outcome_payload_records_that_cert_check_was_skipped() -> None:
+    from src.checks.common import CheckStatus
+    from src.checks.http_probe import to_outcome
+
+    outcome = to_outcome(
+        ProbeResult(
+            state=UrlState.REACHABLE,
+            status_code=200,
+            method="HEAD",
+            tls_verified=False,
+            tls_error=CERT_ERROR_TEXT,
+        )
+    )
+    assert outcome.check_status is CheckStatus.SUCCESS
+    assert outcome.current_state == "reachable"
+    assert outcome.payload["tls_verified"] is False
+    assert "self-signed" in outcome.payload["tls_error"]
+
+
+def test_cert_verification_error_detection() -> None:
+    from src.checks.http_probe import is_cert_verification_error
+
+    assert is_cert_verification_error(httpx.ConnectError(CERT_ERROR_TEXT)) is True
+    assert is_cert_verification_error(httpx.ConnectError("connection refused")) is False
+    assert is_cert_verification_error(None) is False
+
+
 def test_redirect_chain_followed_within_limit() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path == "/a":

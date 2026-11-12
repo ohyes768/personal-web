@@ -54,6 +54,10 @@
 - 探测目标（`probe_url` 或 `url`）不能是 loopback：容器内 localhost 指管理台自身，直接 400 拒绝，不静默改写。
 - 云元数据地址（169.254.169.254 等）与 URL 里的账号密码/凭据类 query 一律拒绝。
 - HEAD 先试，405/501 才退 GET，最多读 64 KiB，总超时 10 秒，并发 4，重定向 ≤3 跳且每跳重新校验。
+- **证书不被信任不算「不可达」**：校验失败（自签/链不全/域名不符）时跳过校验重试一次，
+  HTTP 层确实答话就按 HTTP 码判定（可达/需认证/状态异常），payload 记 `tls_verified=false` 与 `tls_error`。
+  证书本身的问题一律由 TLS 维度单独报（`invalid` + 原因 + 到期日）——URL 维度只回答「能不能进去」。
+  跳过校验后仍连不上才算 `unreachable`。
 - 证书从**登记 URL 的原始 host+port** 检查（不从 probe_url、不从最终跳转站点），同 host 不同端口分别检查。
 - `invalid` 要带原因（`self_signed`/`hostname_mismatch`/`expired_chain`/`untrusted_ca`）：
   自签证书没过期 ≠ 坏证书，页面要能区分。验证失败后允许单独取公开叶证书展示到期时间，**状态仍是 invalid**。

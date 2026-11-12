@@ -121,6 +121,7 @@ docker inspect service-manager-backend --format '{{json .HostConfig.Binds}}'    
 | caddy / ddns-go / songloft（无 compose 标签） | 归入未分组候选，`source_key` 为 `nas:container:<id>`，重建后需人工重新关联 |
 | 任一已登记容器 `docker compose up -d` 重建 | 台账关联不变（`nas:compose:{project}:{service}:{n}`），观测自动更新 |
 | 自签证书入口 | 状态 `invalid` + 原因「自签证书」，到期时间仍可见（不是「无法连接」） |
+| 自签证书入口的 URL 维度 | 显示**可达**（HTTP 层确实答话；证书问题由 TLS 列负责），不误报「不可达」 |
 
 ## 7. 回滚
 
