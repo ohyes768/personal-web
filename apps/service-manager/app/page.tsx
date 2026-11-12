@@ -238,7 +238,7 @@ function ServiceList() {
                 <th>运行</th>
                 <th>健康</th>
                 <th>URL</th>
-                <th>TLS</th>
+                <th title="HTTPS 证书：有没有人信它、什么时候到期">证书</th>
                 <th>发布</th>
                 <th>操作</th>
               </tr>
