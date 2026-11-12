@@ -255,3 +255,29 @@ def test_binding_covers_rules() -> None:
     assert binding_covers("::", "fe80::1") is True
     assert binding_covers("", "10.0.0.1") is True
     assert binding_covers("10.0.0.1", "10.0.0.2") is False
+
+
+def test_domains_carry_tls_invalid_reason(store, registry) -> None:
+    """域名行要带证书无效原因，页面才能说清「为什么无效」而不是只给红灯。"""
+    from src.checks.common import CheckOutcome, CheckStatus, CheckStore
+
+    proj = projector(store, registry, [])
+    service = registry.create_service(ServiceCreate(name="a"))
+    endpoint = registry.add_endpoint(
+        service.id,
+        EndpointInput(url="https://web.duomi77.cn:9443/a", kind="external"),
+    )
+    CheckStore(store).record(
+        target_type="endpoint",
+        target_id=endpoint.id,
+        check_kind="tls",
+        outcome=CheckOutcome(
+            check_status=CheckStatus.SUCCESS,
+            current_state="invalid",
+            payload={"invalid_reason": "self_signed", "days_remaining": 3510},
+        ),
+        interval_seconds=3600,
+    )
+    row = proj.domains()["items"][0]
+    assert row["tls_state"] == "invalid"
+    assert row["tls_invalid_reason"] == "self_signed"

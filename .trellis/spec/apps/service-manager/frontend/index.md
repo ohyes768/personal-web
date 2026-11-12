@@ -23,6 +23,7 @@
 | `stale` 数据要显式标「数据已陈旧」 | 旧值当当前值用 |
 | 端口页永久显示「不包含宿主进程全部监听，不能据此证明端口空闲」 | 省略这句提示 |
 | 证书 `invalid` 要写原因（自签/域名不符/链过期/不受信） | 只显示「无效」 |
+| 证书徽章按原因给准确说法，不笼统说「无效」（=证书坏了） | 自签证书显示「无效」红标 |
 
 文案与配色集中在 `lib/status.ts`（`RUNTIME`/`HEALTH`/`URL_STATE`/`TLS_STATE`/`RELEASE_STATE`/`describeCheck`/
 `portText`/`composeFileText`/`tlsInvalidReason`）；**不要在页面里手写状态字符串**。

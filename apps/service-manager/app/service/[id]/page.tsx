@@ -17,12 +17,13 @@ import {
   formatTime,
   healthTooltip,
   HEALTH,
+  invalidReasonOf,
   portKindLabel,
   portText,
   RELEASE_STATE,
   RUNTIME,
   tlsTooltip,
-  TLS_STATE,
+  tlsTone,
   URL_STATE,
 } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
@@ -332,7 +333,10 @@ function ServiceDetailView() {
           />
           <StateBadge tone={URL_STATE[detail.status.url]} title={describeCheck(detail.status.url_check)} />
           <StateBadge
-            tone={TLS_STATE[detail.status.tls]}
+            tone={tlsTone(
+              detail.status.tls,
+              invalidReasonOf(detail.status.tls_check),
+            )}
             title={tlsTooltip(detail.status.tls_check)}
           />
           <StateBadge tone={RELEASE_STATE[detail.status.release]} />

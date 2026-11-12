@@ -9,11 +9,12 @@ import {
   formatRelative,
   healthTooltip,
   HEALTH,
+  invalidReasonOf,
   isOwnService,
   RELEASE_STATE,
   RUNTIME,
   tlsTooltip,
-  TLS_STATE,
+  tlsTone,
   URL_STATE,
 } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
@@ -321,7 +322,10 @@ function ServiceList() {
                   </td>
                   <td>
                     <StateBadge
-                      tone={TLS_STATE[item.status.tls]}
+                      tone={tlsTone(
+                        item.status.tls,
+                        invalidReasonOf(item.status.tls_check),
+                      )}
                       title={tlsTooltip(item.status.tls_check)}
                     />
                   </td>

@@ -13,8 +13,8 @@ import {
   formatTime,
   portKindLabel,
   portText,
-  TLS_STATE,
   tlsInvalidReason,
+  tlsTone,
 } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
 import { SafeLink, StateBadge, Toast } from "@/components/Widgets";
@@ -218,7 +218,9 @@ function ResourcesView() {
                       </div>
                     </td>
                     <td>
-                      <StateBadge tone={TLS_STATE[row.tls_state]} />
+                      <StateBadge
+                        tone={tlsTone(row.tls_state, row.tls_invalid_reason)}
+                      />
                       {row.tls_days_remaining !== null ? (
                         <div className="small muted">{row.tls_days_remaining} 天</div>
                       ) : null}
@@ -260,7 +262,9 @@ function ResourcesView() {
                       {row.host}:{row.port}
                     </td>
                     <td>
-                      <StateBadge tone={TLS_STATE[row.tls_state]} />
+                      <StateBadge
+                        tone={tlsTone(row.tls_state, row.invalid_reason)}
+                      />
                       {row.invalid_reason ? (
                         <div className="small muted">{tlsInvalidReason(row.invalid_reason)}</div>
                       ) : null}

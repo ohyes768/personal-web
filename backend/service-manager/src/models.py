@@ -447,6 +447,8 @@ class DomainOverviewRow(BaseModel):
     route_target: RouteTarget | None = None
     tls_state: TlsState = TlsState.UNKNOWN
     tls_days_remaining: int | None = None
+    # 证书无效的原因（self_signed 等），页面据此说清「为什么无效」
+    tls_invalid_reason: str | None = None
     is_ip: bool = False
 
 

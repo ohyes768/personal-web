@@ -173,18 +173,47 @@ export function composeFileText(file: {
 export function tlsInvalidReason(reason: string | null | undefined): string {
   switch (reason) {
     case "self_signed":
-      return "自签证书（不是签发机构签发）";
+      return "自签证书：没有公共机构背书，浏览器会先警告";
     case "hostname_mismatch":
-      return "证书与访问的域名不匹配";
+      return "证书上的域名和访问的域名对不上";
     case "expired_chain":
       return "证书链已过期";
     case "untrusted_ca":
-      return "签发机构不在信任列表";
+      return "签发机构不在系统信任列表里";
     case "unknown":
-      return "验证未通过";
+      return "验证没通过";
     default:
       return "";
   }
+}
+
+/**
+ * 证书徽章：一个笼统的「无效」会让人以为证书坏了。
+ * 按实际原因给更准的说法：自签 / 不受信任 / 域名不符 / 链已过期。
+ * 自签与「不受信」是**警告**（证书能用，但客户端会拦一下），
+ * 域名不符和链过期才是真的坏（红）。
+ */
+export function tlsTone(state: TlsState, invalidReason?: string | null): Tone {
+  const base = TLS_STATE[state];
+  if (state !== "invalid") return base;
+  switch (invalidReason) {
+    case "self_signed":
+      return { tone: "warn", label: "自签" };
+    case "untrusted_ca":
+      return { tone: "warn", label: "不受信任" };
+    case "hostname_mismatch":
+      return { tone: "bad", label: "域名不符" };
+    case "expired_chain":
+      return { tone: "bad", label: "链已过期" };
+    default:
+      return base;
+  }
+}
+
+/** 从检查结果里取证书无效的原因（列表/详情页用）。 */
+export function invalidReasonOf(check: CheckView | null): string | null {
+  const reason = check?.payload?.invalid_reason;
+  return typeof reason === "string" ? reason : null;
 }
 
 /**
@@ -194,9 +223,7 @@ export function tlsInvalidReason(reason: string | null | undefined): string {
 export function tlsTooltip(check: CheckView | null): string {
   const when = describeCheck(check);
   if (!check?.payload) return when;
-  const reason = tlsInvalidReason(
-    typeof check.payload.invalid_reason === "string" ? check.payload.invalid_reason : "",
-  );
+  const reason = tlsInvalidReason(invalidReasonOf(check));
   const notAfter =
     typeof check.payload.not_after === "string" ? check.payload.not_after : "";
   const bits = [reason, notAfter ? `有效期至 ${notAfter.slice(0, 10)}` : ""].filter(

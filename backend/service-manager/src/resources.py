@@ -228,8 +228,11 @@ class ResourceProjector:
                     state = TlsState(check.current_state)
                 except ValueError:
                     state = TlsState.UNKNOWN
+            invalid_reason = None
             if check is not None and check.payload:
                 days = check.payload.get("days_remaining")
+                raw_reason = check.payload.get("invalid_reason")
+                invalid_reason = raw_reason if isinstance(raw_reason, str) else None
             rows.append(
                 DomainOverviewRow(
                     host=parsed.host.lower(),
@@ -245,6 +248,7 @@ class ResourceProjector:
                     route_target=endpoint.route_target,
                     tls_state=state,
                     tls_days_remaining=days if isinstance(days, int) else None,
+                    tls_invalid_reason=invalid_reason,
                     is_ip=parsed.is_ip,
                 )
             )

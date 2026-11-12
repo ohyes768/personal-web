@@ -244,6 +244,8 @@ export interface DomainOverviewRow {
   route_target: RouteTarget | null;
   tls_state: TlsState;
   tls_days_remaining: number | null;
+  /** 证书无效的原因（self_signed 等） */
+  tls_invalid_reason: string | null;
   is_ip: boolean;
 }
 
