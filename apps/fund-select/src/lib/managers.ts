@@ -26,6 +26,8 @@ export interface ManagerListItem {
   solo_ratio: number | null;
   /** 代表作背离 pp（最长任期年化 − 加权年化；>15 视为代表作依赖） */
   rep_divergence: number | null;
+  /** 在管年化 %（仅 is_current 主动权益段的时长加权；无在管段时 null） */
+  current_weighted_annual: number | null;
 }
 
 export interface ManagerTenure {

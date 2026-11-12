@@ -99,6 +99,7 @@ class ManagerListItem(BaseModel):
     tenure_win_rate: Optional[float] = None      # 任期胜率 %（tenure_return>0 占比）
     solo_ratio: Optional[float] = None           # 独管比例 %（在管基金中仅自己一位经理）
     rep_divergence: Optional[float] = None       # 代表作背离 pp（最长任期年化 − 加权年化）
+    current_weighted_annual: Optional[float] = None  # 在管年化 %（仅 is_current 主动权益段）
 
 
 class ManagerTenureItem(BaseModel):

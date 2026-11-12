@@ -213,6 +213,7 @@ class TestDerivedMetrics:
 
         - m_calc：3 段任期 2 赢 1 输 → 胜率 66.7；在管 2 只，一只独管一只共管 → 独管 50
           加权 5 / 最长 18 → 背离 13.0
+          在管段年化 5.0/3.0 等权 → 在管年化 4.0（离任段 -1.0 不计入）
         - m_solo：2 段全赢 → 胜率 100；在管 1 只独管 → 独管 100
         - m_zero：任期全亏 → 胜率 0
         - m_noret：任期无回报数据 → 胜率 None（不命中筛选）
@@ -223,6 +224,7 @@ class TestDerivedMetrics:
         def tenure(mid, code, ret, current=True):
             return ManagerTenure(
                 manager_id=mid, fund_code=code, fund_name=f"基金{code}",
+                fund_type="混合型-偏股",
                 start_date=date(2020, 1, 1), tenure_days=1000,
                 tenure_return=ret, annual_return=ret / 10, is_current=current)
 
@@ -331,3 +333,63 @@ class TestMaxFundCount:
         assert "m_few" in ids
         assert "m_many" not in ids
         assert "m_null" not in ids  # NULL 不命中，与其它筛选语义一致
+
+
+class TestCurrentWeightedAnnual:
+    """在管年化：仅 is_current 主动权益段（含离任口径的反向验证）。"""
+
+    def test_current_only_excludes_departed(self, client, db_session):
+        from datetime import date
+        from src.db.models import Manager, ManagerTenure
+
+        def t(mid, code, ret, current=True):
+            return ManagerTenure(
+                manager_id=mid, fund_code=code, fund_name=f"基金{code}",
+                fund_type="混合型-偏股", start_date=date(2020, 1, 1),
+                tenure_days=1000, tenure_return=ret, annual_return=ret / 10,
+                is_current=current)
+
+        db_session.add(Manager(manager_id="m_cur", name="在管甲", scope="stock_active"))
+        db_session.add_all([
+            t("m_cur", "000011", 50.0),                    # 在管，年化 5.0
+            t("m_cur", "000022", 30.0),                    # 在管，年化 3.0
+            t("m_cur", "000033", -10.0, current=False),    # 离任，年化 -1.0（不计入）
+        ])
+        db_session.commit()
+        items = client.get("/api/funds/managers/screen", params={"limit": 50}).json()["items"]
+        row = next(it for it in items if it["manager_id"] == "m_cur")
+        # 在管两段年化 5.0 / 3.0 等天数 → 4.0；离任段不计入
+        assert row["current_weighted_annual"] == 4.0
+
+    def test_all_departed_yields_none(self, client, db_session):
+        from datetime import date
+        from src.db.models import Manager, ManagerTenure
+        db_session.add(Manager(manager_id="m_past", name="离任甲", scope="stock_active",
+                               tenure_weighted_annual=9.0))
+        db_session.add(ManagerTenure(
+            manager_id="m_past", fund_code="000099", fund_type="混合型-偏股",
+            start_date=date(2015, 1, 1), tenure_days=2000,
+            tenure_return=80.0, annual_return=12.0, is_current=False))
+        db_session.commit()
+        items = client.get("/api/funds/managers/screen", params={"limit": 50}).json()["items"]
+        row = next(it for it in items if it["manager_id"] == "m_past")
+        assert row["current_weighted_annual"] is None   # 无在管段
+        assert row["weighted_annual"] == 9.0            # 存量字段含离任，不变
+
+    def test_bond_tenures_excluded(self, client, db_session):
+        """债基在管段不计入在管年化（与含离任口径同一套排除规则）。"""
+        from datetime import date
+        from src.db.models import Manager, ManagerTenure
+        db_session.add(Manager(manager_id="m_mixed", name="混合乙", scope="stock_active"))
+        db_session.add_all([
+            ManagerTenure(manager_id="m_mixed", fund_code="000101", fund_type="混合型-偏股",
+                          start_date=date(2020, 1, 1), tenure_days=1000,
+                          tenure_return=40.0, annual_return=8.0, is_current=True),
+            ManagerTenure(manager_id="m_mixed", fund_code="000102", fund_type="债券型-长债",
+                          start_date=date(2020, 1, 1), tenure_days=1000,
+                          tenure_return=12.0, annual_return=4.0, is_current=True),
+        ])
+        db_session.commit()
+        items = client.get("/api/funds/managers/screen", params={"limit": 50}).json()["items"]
+        row = next(it for it in items if it["manager_id"] == "m_mixed")
+        assert row["current_weighted_annual"] == 8.0    # 债基段被排除

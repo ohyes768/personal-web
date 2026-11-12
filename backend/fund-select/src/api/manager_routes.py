@@ -30,7 +30,8 @@ router = router_managers
 
 VALID_SORTS = ("career_years", "weighted_annual", "max_drawdown", "sharpe",
                "calmar", "current_scale_yi", "managed_fund_count",
-               "longest_tenure_years", "tenure_win_rate", "solo_ratio", "name")
+               "longest_tenure_years", "tenure_win_rate", "solo_ratio",
+               "current_weighted_annual", "name")
 
 # 单飞：经理全量采集要跑 20-40 分钟，重复点击只应有一次在跑
 _refresh_lock = threading.Lock()

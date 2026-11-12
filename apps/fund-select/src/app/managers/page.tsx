@@ -222,7 +222,8 @@ function ManagersPageInner() {
                   <SortableHeader label="经理" field="name" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} align="left" className="w-[8.5rem]" />
                   <th className="px-1.5 py-2 text-left text-xs font-medium text-ink-muted">公司</th>
                   <SortableHeader label="从业" field="career_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
-                  <SortableHeader label="加权年化" field="weighted_annual" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="年化·含离任" field="weighted_annual" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="全部任期（含已离任）的时长加权年化：职业生涯整体口径" />
+                  <SortableHeader label="在管年化" field="current_weighted_annual" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="仅当前在管的主动权益段时长加权：当下状态口径。无在管段显示 -" />
                   <SortableHeader label="胜率" field="tenure_win_rate" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="任期胜率：任职回报为正的任期占比。中位数约 55%，≥2/3 显著优于平均" />
                   <SortableHeader label="独管" field="solo_ratio" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="独管比例：在管基金中仅自己一位经理的占比。共管多 → 贡献难归因（挂名风险）" />
                   <SortableHeader label="最长任期" field="longest_tenure_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
@@ -337,13 +338,18 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
           <div className="truncate" title={m.company ?? ''}>{m.company ?? '-'}</div>
         </td>
         <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.career_years)}</td>
-        <td className={`${td} text-right tnum whitespace-nowrap font-medium ${(m.weighted_annual ?? 0) >= 10 ? 'text-up' : (m.weighted_annual ?? 0) < 0 ? 'text-down' : ''}`}>
-          {fmtPct(m.weighted_annual)}
+        <td className={`${td} text-right tnum whitespace-nowrap`}>
+          <div className={`font-medium ${(m.weighted_annual ?? 0) >= 10 ? 'text-up' : (m.weighted_annual ?? 0) < 0 ? 'text-down' : ''}`}>
+            {fmtPct(m.weighted_annual)}
+          </div>
           {(m.rep_divergence ?? 0) > 15 && (
             <div className="text-[10px] font-normal text-star" title={`最长任期年化比整体高 ${m.rep_divergence}pp，业绩集中在单只代表作`}>
               代表作 +{m.rep_divergence}pp
             </div>
           )}
+        </td>
+        <td className={`${td} text-right tnum whitespace-nowrap font-medium ${(m.current_weighted_annual ?? 0) >= 10 ? 'text-up' : (m.current_weighted_annual ?? 0) < 0 ? 'text-down' : 'text-ink-muted'}`}>
+          {fmtPct(m.current_weighted_annual)}
         </td>
         <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtPct(m.tenure_win_rate, 0)}</td>
         <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtPct(m.solo_ratio, 0)}</td>

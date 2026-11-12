@@ -10,6 +10,10 @@
   共管多 → 贡献难归因（挂名风险）。
 - rep_divergence 代表作背离：longest_tenure_annual - tenure_weighted_annual。
   >15pp 说明业绩集中在单只代表作（幸存者偏差），只做展示不进筛选。
+- current_weighted_annual 在管年化：仅 is_current 段的时长加权年化。
+  managers.tenure_weighted_annual 含离任段（职业生涯口径）；在管口径回答
+  「他现在管的这几只表现如何」。两者背离本身有信息量：含离任高、在管低
+  = 状态下滑或新管不久。同样只展示+排序，不进筛选。
 """
 from __future__ import annotations
 
@@ -20,6 +24,7 @@ from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
 from src.db.models import Manager, ManagerTenure
+from src.services.manager_metrics import is_active_equity
 
 
 # 排序白名单（防注入；键 → (列, 默认方向)）
@@ -33,6 +38,7 @@ SORT_COLUMNS: dict[str, tuple] = {
     "managed_fund_count": (Manager.managed_fund_count, "asc"),
     "longest_tenure_years": (Manager.longest_tenure_years, "desc"),
     "tenure_win_rate": (None, "desc"),   # 派生列，仅用于取默认方向
+    "current_weighted_annual": (None, "desc"),  # 同上（在管口径年化）
     "solo_ratio": (None, "desc"),        # 同上
     "name": (Manager.name, "asc"),
 }
@@ -107,6 +113,7 @@ class ManagerService:
             "managed_fund_count": lambda it: None if it["managed_fund_count"] is None else -it["managed_fund_count"],
             "longest_tenure_years": lambda it: it["longest_tenure_years"],
             "tenure_win_rate": lambda it: it["tenure_win_rate"],
+            "current_weighted_annual": lambda it: it["current_weighted_annual"],
             "solo_ratio": lambda it: it["solo_ratio"],
             "name": lambda it: it["name"],
         }.get(sort, lambda it: it["weighted_annual"])
@@ -169,8 +176,38 @@ class ManagerService:
             solo = sum(1 for c in codes if fund_mgr_count.get(c, 0) == 1)
             solo_ratio[mid] = round(solo * 100.0 / len(codes), 1)
 
+        # 在管年化：is_current + 主动权益段的时长加权（口径同
+        # manager_metrics.weighted_annual，只是范围收窄到在管段）。
+        # 20k 行拉回 Python 判定 fund_type（排除规则是 Python 函数，SQL 化会丢精度）
+        cur_annual_rows = self.db.execute(
+            select(
+                ManagerTenure.manager_id,
+                ManagerTenure.fund_type,
+                ManagerTenure.annual_return,
+                ManagerTenure.tenure_days,
+            ).where(
+                ManagerTenure.manager_id.in_(manager_ids),
+                ManagerTenure.is_current == True,  # noqa: E712
+            )
+        ).all()
+        acc: dict[str, float] = defaultdict(float)
+        days_sum: dict[str, float] = defaultdict(float)
+        for mid, ftype, ann, days in cur_annual_rows:
+            if not is_active_equity(ftype) or ann is None or not days or days <= 0:
+                continue
+            acc[mid] += ann * days
+            days_sum[mid] += days
+        current_annual: dict[str, Optional[float]] = {mid: None for mid in manager_ids}
+        for mid in manager_ids:
+            if days_sum[mid] > 0:
+                current_annual[mid] = round(acc[mid] / days_sum[mid], 2)
+
         return {
-            mid: {"tenure_win_rate": win_rate[mid], "solo_ratio": solo_ratio[mid]}
+            mid: {
+                "tenure_win_rate": win_rate[mid],
+                "solo_ratio": solo_ratio[mid],
+                "current_weighted_annual": current_annual[mid],
+            }
             for mid in manager_ids
         }
 
