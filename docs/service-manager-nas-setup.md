@@ -35,6 +35,12 @@ SERVICE_MANAGER_GITHUB_TOKEN=
 
 前两项缺失时 `docker compose config` 就会因为 `${VAR:?}` 直接报错，不会起一个没有认证的管理台。
 
+> **不必手工填**：`deploy-nas.sh service-manager both`（以及 `all`）在构建前会检查这两项，
+> 缺失时自动生成随机值写进根 `.env`（并把 `.env` 权限收到 600），
+> 同时把**登录口令打印在终端**。2026-11-12 首次上线就是这么走的。
+> 报 `required variable SERVICE_MANAGER_ADMIN_PASSWORD is missing` 就是这个检查没覆盖到的场景，
+> 手动补上即可。
+
 ## 3. 部署
 
 ```bash
@@ -131,3 +137,46 @@ docker inspect service-manager-backend --format '{{json .HostConfig.Binds}}'    
 - 端口总览**不包含宿主进程的全部监听**，不能据此证明端口空闲
 - 不解析 Compose 文件内容（不读 YAML/.env/私钥），只展示 Docker 标签里的路径元信息
 - 只读一层：前端「从台账移除」只删本应用记录与关联，容器照常运行
+
+## 9. 2026-11-12 实机上线记录（首次）
+
+```bash
+./scripts/deploy-nas.sh service-manager both --no-pull   # 三容器起来，backend healthy
+./scripts/deploy-nas.sh nginx --no-pull                  # nginx -t 通过后 reload
+```
+
+冒烟结果（`https://127.0.0.1:9443`）：
+
+| 项 | 结果 |
+|---|---|
+| `/services` | 200 |
+| `/services/_next/static/css/*.css` | 200 |
+| `/api/services/health` | 200 `{"status":"ok"}` |
+| `/api/services/services`（未登录） | 401 |
+| `/api/services`（无尾斜杠） | 401（**不是 404** → 精确兜底生效） |
+| 登录 → cookie | HttpOnly / Path=/api / Secure=TRUE |
+| 登录后 `/api/services/summary` | 200，`docker_available=true` |
+| `/api/services/discovery` | 48 个候选、13 个 Compose 项目 |
+
+socket-proxy 只读边界（从后端容器内发起，期望仅前三项 200，其余 403）：
+
+```
+GET  /containers/json   200      POST /containers/create   403
+GET  /version            200      POST /containers/x/kill   403
+GET  /_ping              200      POST /containers/x/exec   403
+GET  /images/json        403      DELETE /containers/x      403
+GET  /networks           403      GET  /volumes              403
+GET  /info               403      POST /images/create       403
+```
+
+容器隔离：proxy `PortBindings={}` 且只在 `service-manager-docker-net`（`Internal: true`）；
+后端 `Binds` 只有 `service-manager-data`，**没有 docker.sock**。
+
+### 上线时踩到并已修的两个生产缺陷
+
+1. **`/api/services` 裸路径 404**：nginx 只有带尾斜杠的 location，裸路径不匹配 → 生产 404
+   而开发期 Next rewrite 的 `:path*` 能匹配。已补 `location = /api/services` 精确兜底。
+2. **所有写操作 401（登录却正常）**：nginx 的 `$host` **不含端口**，浏览器 Origin 含端口，
+   字面比较不等 → Origin 校验失败。登录路由本来就没挂 Origin 校验，所以只有它能过。
+   已两处同改：nginx 改 `$http_host`；后端同源判断放宽到「hostname + scheme 相同」。
+   **口诀：登录能过、其它写操作 401 → 先查 nginx 传的 Host 带没带端口。**

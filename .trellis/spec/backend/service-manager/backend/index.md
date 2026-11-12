@@ -59,7 +59,12 @@
 - 口令常量时间比较；session 用 itsdangerous 签名，12 小时，cookie `HttpOnly` + `SameSite=Strict` + `Path=/api`
   （`/api` 同时覆盖外部的 `/api/services/*` 与后端直连的 `/api/*`；不能写成 `/api/services`，否则直连全 401）。
 - 写请求（非 GET/HEAD/OPTIONS）必须带 Origin，且满足其一：与请求 Host 同源 / 命中 allowlist /
-  与 `X-Forwarded-Host` 同源**且直连方是回环地址**（仅开发期 Next rewrite 用；生产 nginx 保留 Host 走第一条）。
+  与 `X-Forwarded-Host` 同源**且直连方是回环地址**（仅开发期 Next rewrite 用）。
+- **反代的 `$host` 不含端口**：nginx 文档里 `$host` 是「去掉端口的 host 名」，
+  而浏览器 Origin 带端口（`https://web.duomi77.cn:9443`）。字面比较必然不等 →
+  生产上所有写操作 401，而开发期 Next rewrite 会带 `X-Forwarded-Host` 所以本地正常。
+  两处都要做：nginx 侧用 `$http_host`（保留原始 Host），后端侧同源判断放宽到
+  「hostname 与 scheme 相同即接受」（跨站仍拒绝）。这是「本地正常、生产炸」的真实案例。
 - 登录失败按来源限速 5 次/分钟。生产缺口令或签名密钥时 `Settings` 直接抛错，拒绝启动。
 
 ### 2.7 备份与恢复

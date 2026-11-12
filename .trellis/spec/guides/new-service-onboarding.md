@@ -82,6 +82,15 @@ volumes:
 
 > **Warning**：数据目录能否 gitignore 取决于数据来源。运行时生成/可经 API 拉取的数据（fund-select/macro 模式）→ gitignore；**静态快照数据（无运行时获取路径，如 housing-map 的爬取快照）必须入 git**——NAS 部署链路是 `git pull` → `docker build`，gitignore 的数据永远到不了 NAS，build 时 `COPY data` 直接失败（2026-09-18 housing-map 首次 NAS 部署实测踩坑）。只 ignore 运行时会重写的派生产物（`*.bak.*`、人读 CSV）。
 
+## 3.5 需要校验 Origin 的服务：Host 头必须带端口
+
+写操作要校验 `Origin` 的服务（当前只有 service-manager），nginx 必须传
+`proxy_set_header Host $http_host;`（**带端口**），不能沿用别处的 `$host`——
+`$host` 是去端口的 host 名，浏览器 Origin 带端口，字面比较必然不等 →
+生产上所有写操作 401，而开发期本地正常（Next rewrite 会补 `X-Forwarded-Host`）。
+
+排查口诀：登录能过但其它写操作 401 → 基本就是这个。
+
 ## 4. nginx location 三件套（模板）
 
 ```nginx

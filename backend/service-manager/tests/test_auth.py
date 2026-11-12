@@ -9,6 +9,26 @@ from src.config import Settings
 from src.errors import ApiError
 
 
+def make_request(*, host: str, scheme: str = "https", client=("127.0.0.1", 5000)):
+    """构造一个最小可用的 ASGI Request（Request.url 需要 path/query_string/server）。"""
+    from starlette.requests import Request
+
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "scheme": scheme,
+            "path": "/api/services/services",
+            "raw_path": b"/api/services/services",
+            "query_string": b"",
+            "root_path": "",
+            "headers": [(b"host", host.encode())],
+            "client": client,
+            "server": ("127.0.0.1", 9443),
+        }
+    )
+
+
 def make_auth(**kwargs) -> AuthService:
     defaults = {
         "password": "pw",
@@ -79,18 +99,10 @@ def test_origin_allowlist_includes_configured_extras() -> None:
 
 
 def test_origin_same_host_passes() -> None:
-    from starlette.requests import Request
-
     from src.auth import _origin_matches_host
 
-    scope = {
-        "type": "http",
-        "method": "POST",
-        "headers": [(b"host", b"127.0.0.1:3012")],
-    }
-    request = Request(scope)
+    request = make_request(host="127.0.0.1:3012", scheme="http")
     assert _origin_matches_host("http://127.0.0.1:3012", request) is True
-    assert _origin_matches_host("http://127.0.0.1:9999", request) is False
     assert _origin_matches_host("https://evil.example", request) is False
 
 
@@ -177,3 +189,33 @@ def test_session_cookie_is_signed_and_not_plaintext() -> None:
     # 签名 token 形如 <payload>.<timestamp>.<signature>，不能直接暴露主体名
     assert token.count(".") == 2
     assert "admin" not in token.split(".")[0]
+
+
+def test_origin_accepts_host_without_port() -> None:
+    """反代 `$host` 不含端口、浏览器 Origin 含端口时也须同源。
+
+    这是生产实测踩到的坑：nginx `$host` 是去端口的 host 名，
+    Origin 却是 https://host:port → 字面不等 → 写操作全 401。
+    """
+    from src.auth import _origin_matches_host
+
+    request = make_request(host="127.0.0.1", scheme="https")
+    assert _origin_matches_host("https://127.0.0.1:9443", request) is True
+    assert _origin_matches_host("https://127.0.0.1", request) is True
+    # 跨站仍拒绝
+    assert _origin_matches_host("https://evil.example:9443", request) is False
+
+
+def test_origin_requires_same_scheme_when_port_differs() -> None:
+    from src.auth import _origin_matches_host
+
+    request = make_request(host="web.duomi77.cn", scheme="https")
+    assert _origin_matches_host("https://web.duomi77.cn:9443", request) is True
+    assert _origin_matches_host("http://web.duomi77.cn:9443", request) is False
+
+
+def test_origin_with_port_in_host_still_matches() -> None:
+    from src.auth import _origin_matches_host
+
+    request = make_request(host="web.duomi77.cn:9443", scheme="https")
+    assert _origin_matches_host("https://web.duomi77.cn:9443", request) is True

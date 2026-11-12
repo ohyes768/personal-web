@@ -158,7 +158,15 @@ class AuthService:
 
 
 def _origin_matches_host(origin: str, request: Request) -> bool:
-    """Origin 的 host[:port] 是否等于本次请求的 Host。"""
+    """Origin 的 host[:port] 是否等于本次请求的 Host。
+
+    两层判断：
+    1. netloc 完全相等（最严格，正常反代都会命中）；
+    2. hostname 与 scheme 相同即接受——反代的 `$host` 变量**不含端口**
+       （nginx 文档：$host 是去端口的 host 名），而浏览器 Origin 带端口，
+       两者字面不等但指向同一个入口。只放宽到 hostname 相同，
+       跨站（hostname 不同）依然被拒。
+    """
     parts = urlsplit(origin)
     if not parts.scheme or not parts.hostname:
         return False
@@ -171,8 +179,16 @@ def _origin_matches_host(origin: str, request: Request) -> bool:
     # 默认端口省略写法：https://a:443 == https://a
     if parts.port is None:
         default_port = 443 if parts.scheme == "https" else 80
-        return host_header == f"{parts.hostname.lower()}:{default_port}"
-    return False
+        if host_header == f"{parts.hostname.lower()}:{default_port}":
+            return True
+    # Host 头部可能带端口，拆出来比 hostname
+    host_name = host_header.rsplit(":", 1)[0] if ":" in host_header else host_header
+    host_name = host_name.strip("[]")
+    if host_name != parts.hostname.lower():
+        return False
+    # 端口不同时，要求 scheme 一致，避免 http 入口的 Origin 打到 https 入口
+    host_scheme = request.url.scheme
+    return host_scheme == parts.scheme
 
 
 def _is_loopback_peer(request: Request) -> bool:

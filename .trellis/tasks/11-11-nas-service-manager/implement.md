@@ -116,10 +116,10 @@
 - [x] 为 Nginx 补 upstream、页面、静态资源、API 三件套，确认无尾斜杠请求覆盖；前端路由和 API 前缀不双拼。 ✅
 - [x] 更新 deploy-nas target/all/buildx/help、首页卡片与健康列表、启动脚本、文档、ignore 与新 package/spec；不改变旧模块行为。 ✅
 - [x] 后端全量 `uv run pytest tests/ -v`；前端 lint/typecheck/build/e2e 全量；`docker compose -f docker-compose.nas.yml config --quiet` 和 `bash -n scripts/deploy-nas.sh` 通过。 ✅
-- [ ] 有实现部署授权后才构建/启动新模块；执行 Nginx 配置测试，静态资源/页面/API/登录 cookie 冒烟。 ⏳（待 NAS 部署授权）
-- [ ] 从后端网络验证 proxy 允许必要 GET，同时对新建/重启/exec/DELETE 与非授权类别使用无副作用的无效目标请求，断言 proxy 403；不拿真实业务容器试写操作。 ⏳（待 NAS 部署授权）
+- [x] 有实现部署授权后才构建/启动新模块；执行 Nginx 配置测试，静态资源/页面/API/登录 cookie 冒烟。 ✅（2026-11-12 已部署：页面/静态资源/health/401/登录 cookie 全部实测通过）
+- [x] 从后端网络验证 proxy 允许必要 GET，同时对新建/重启/exec/DELETE 与非授权类别使用无副作用的无效目标请求，断言 proxy 403；不拿真实业务容器试写操作。 ✅（2026-11-12 实测：仅 containers/json、version、_ping 为 200，其余 9 类全 403）
 - [x] 对实际 NAS 选取 personal-web 多服务、immich 多组件、host 网络、无标签各一例导入验证；不调整被管理容器配置。 ✅
-- [ ] 使用专用验收实例/数据卷验证恢复与回滚，禁止用生产台账做破坏性恢复实验。 ⏳（待 NAS 部署授权）
+- [ ] 使用专用验收实例/数据卷验证恢复与回滚，禁止用生产台账做破坏性恢复实验。 ⏳（仍未做：破坏性恢复实验需独立数据卷，本轮未创建）
 - [x] 全范围 trellis-check，逐项登记 A1–A14 证据；按项目要求更新 spec、审核本任务提交文件列表。没有用户实现授权时停留在规划状态。 ✅
 
 **交付**：可部署 V1、操作说明与回滚步骤；覆盖 A13/A14。
@@ -203,11 +203,26 @@ scripts/deploy-nas.sh:    bash -n                             → 通过
 | A13 未登录 401、环境变量/Token/私钥不进响应/导出/日志、proxy 只读 | ✅ | `test_api.py::test_ledger_requires_auth`、`test_backup_export_excludes_observability`、`test_docker_reader.py::test_projection_never_leaks_env_or_command`；proxy `POST=0`（ACL 冒烟待实机执行） |
 | A14 `/services` 页面/静态资源/API rewrite/登录 cookie/首页入口可用 | ✅ | e2e 全量通过；首页已加卡片与 health 探测；**用一次性 nginx 容器（隔离端口 19443 + app-net + 桩上游）实测六条路由的转发路径**：`/api/services/health`→`/api/health`、`/api/services/services`→`/api/services`、`/api/services`→`/api/services`（精确兜底）、`/api/services/summary`→`/api/summary`、页面与 `_next/static` 均带 `/services` 前缀转前端；cookie 属性（HttpOnly/SameSite=strict/Path=/api/Secure）已有 4 条单测 |
 
-### 未执行（需用户授权）
+### 2026-11-12 实机部署已完成
 
-1. **NAS 实机构建与部署**：`./scripts/deploy-nas.sh service-manager both` + `./scripts/deploy-nas.sh nginx`。本次只做到静态校验与本地端到端，未重建/未重启任何容器。
-2. **socket-proxy ACL 冒烟**：`docs/service-manager-nas-setup.md` §5 的六条探针（GET list 200，其余 403）需在真实三容器起来后执行。
-3. **镜像 digest 锁定**：proxy 目前用 `tecnativa/docker-socket-proxy:0.2.0` tag，实机拉取后应改为 digest。
+- 三容器已上线：`service-manager-backend`（healthy）/ `service-manager-frontend` / `service-manager-socket-proxy`
+- nginx 已 reload（`nginx -t` 通过）
+- 冒烟全过：页面 200、静态资源 200、health 200、未登录 401、裸路径 401（兜底生效）、
+  登录 cookie 属性正确、summary/discovery 正常（48 候选 / 13 项目）
+- socket-proxy ACL 12 条探针符合预期：仅 3 条 GET 放行，其余全 403
+- 真实导入验证：dividend 前后端 → 「股息率分析」服务，runtime=running、health=not_configured
+  （未配 healthcheck 故不显示「健康」）、URL=unreachable + 自签原因、TLS=invalid + self_signed + 3510 天
+
+### 部署过程中发现并修复的两个生产缺陷
+
+1. **所有写操作 401（登录却正常）**：nginx `$host` 不含端口，浏览器 Origin 含端口 → 同源判定不等。
+   已改 nginx 用 `$http_host` + 后端同源判断放宽到 hostname+scheme 相同。后端用例 175 → 178。
+2. **`/api/services` 裸路径生产 404**：nginx 缺无尾斜杠精确兜底（第一轮已补）。
+
+### 仍未执行
+
+1. **破坏性恢复/回滚演练**：需独立验收实例与数据卷，本轮未创建（回滚步骤见 setup 文档 §7）。
+2. **镜像 digest 锁定**：proxy 仍用 `tecnativa/docker-socket-proxy:0.2.0` tag。
 
 ### 验收过程中发现并修复的两个真实缺陷
 

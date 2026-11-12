@@ -426,6 +426,37 @@ check_task_web_business_env() {
     fi
 }
 
+# ---- service-manager 前置检查：根 .env 必须有两项必需配置 ----
+# compose 里写的是 ${VAR:?...}（缺了就拒绝启动，避免起一个没有认证的管理台）。
+# 但那报错是 compose 的英文内部信息，看不出该做什么；这里提前用中文说清楚，
+# 并在缺失时自动生成随机值写入 .env（.env 已被 gitignore，不会进版本库）。
+ensure_service_manager_env() {
+    local key value generated=0
+    touch .env
+    for key in SERVICE_MANAGER_ADMIN_PASSWORD SERVICE_MANAGER_SESSION_SECRET; do
+        if grep -qE "^${key}=." .env 2>/dev/null; then
+            continue
+        fi
+        # 缺键或值为空 → 生成随机值
+        value=$(head -c 24 /dev/urandom | base64 | tr -d '/+=' | head -c 24)
+        if grep -qE "^${key}=" .env 2>/dev/null; then
+            # 键存在但值为空：就地替换，不追加（避免出现重复键）
+            sed -i "s|^${key}=.*|${key}=${value}|" .env
+        else
+            printf '%s=%s\n' "$key" "$value" >> .env
+        fi
+        generated=1
+        echo "  已生成 ${key} 并写入 .env"
+        if [[ "$key" == "SERVICE_MANAGER_ADMIN_PASSWORD" ]]; then
+            echo "  登录口令: ${value}"
+            echo "  （请记下来；网页登录用它。改 .env 后需重启容器）"
+        fi
+    done
+    if [[ $generated -eq 1 ]]; then
+        chmod 600 .env
+    fi
+}
+
 # ---- nginx target：只同步 web.conf + reload，不走 build/up ----
 if [[ "$TARGET" == "nginx" ]]; then
     if $DO_PULL; then
@@ -438,6 +469,15 @@ if [[ "$TARGET" == "nginx" ]]; then
 fi
 
 SERVICES=$(get_services "$TARGET" "$SIDE")
+
+# service-manager 需要根 .env 里的管理口令与会话签名密钥，先检查再构建
+# （all 目标也会构建它，所以一并检查）
+if [[ "$TARGET" == "service-manager" || "$TARGET" == "all" ]]; then
+    echo ""
+    echo "==> 检查 service-manager 必需配置"
+    ensure_service_manager_env
+fi
+
 echo "============================================================"
 echo "部署目标: $SERVICES"
 echo "  pull:      $DO_PULL"

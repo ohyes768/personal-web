@@ -35,7 +35,7 @@
     ".trellis/spec/backend/service-manager/backend/index.md",
     ".trellis/spec/apps/service-manager/frontend/index.md"
   ],
-  "notes": "2026-11-11 实现完成（M1–M6 代码与接线）：后端 171 tests passed；前端 eslint 0 problems、tsc 0 error、build 成功、playwright 16 用例（desktop + 375px）全过；nginx -t 通过；compose config 通过。NAS 实机构建/部署与 socket-proxy ACL 冒烟待用户授权后执行（步骤见 docs/service-manager-nas-setup.md）。",
+  "notes": "2026-11-12 已上线 NAS：三个容器 + nginx reload 完成，冒烟与 socket-proxy ACL 实测通过。上线中修掉两个生产缺陷（nginx $host 不含端口导致写操作 401；裸路径 /api/services 404）。后端 178 tests passed，前端 e2e 15 passed + 1 skipped。仍未做：破坏性恢复/回滚演练、proxy 镜像 digest 锁定。",
   "meta": {
     "target_packages": [
       "apps/service-manager",
@@ -47,7 +47,7 @@
       "M3": "访问入口、资源投影与导出恢复 —— 完成",
       "M4": "URL、证书、发布动态及检查调度 —— 完成",
       "M5": "前端页面与可用性 —— 完成",
-      "M6": "NAS 接线、全量验收与回滚材料 —— 接线完成，实机部署待授权"
+      "M6": "NAS 接线 + 实机部署 + ACL 冒烟 —— 完成（2026-11-12）；破坏性恢复演练与 digest 锁定待办"
     },
     "ports": {
       "frontend": 3012,
