@@ -283,15 +283,26 @@ def test_scheduler_loop_stops_on_event(store, registry) -> None:
     assert store.get_state("checker_heartbeat") is not None
 
 
-def test_aggregate_health_never_claims_healthy_when_any_unconfigured() -> None:
+def test_aggregate_health_uses_only_components_with_healthcheck() -> None:
+    """聚合只统计配了健康检查的组件；一个都没配才是不适用（页面显示 "-"）。"""
     from src.models import ComponentView, HealthState
     from src.status import compute_health
 
+    # 混合：前端没配检查、后端报了健康 → 用后端的状态
     mixed = [
         ComponentView(source_key="a", health=HealthState.HEALTHY),
         ComponentView(source_key="b", health=HealthState.NOT_CONFIGURED),
     ]
-    assert compute_health(components=mixed, bound=True) is HealthState.NOT_CONFIGURED
+    assert compute_health(components=mixed, bound=True) is HealthState.HEALTHY
+    # 一个都没配 → 不适用
+    none_configured = [
+        ComponentView(source_key="a", health=HealthState.NOT_CONFIGURED),
+        ComponentView(source_key="b", health=HealthState.NOT_CONFIGURED),
+    ]
+    assert (
+        compute_health(components=none_configured, bound=True)
+        is HealthState.NOT_CONFIGURED
+    )
     all_ok = [
         ComponentView(source_key="a", health=HealthState.HEALTHY),
         ComponentView(source_key="b", health=HealthState.HEALTHY),
@@ -303,3 +314,15 @@ def test_aggregate_health_never_claims_healthy_when_any_unconfigured() -> None:
     ]
     assert compute_health(components=broken, bound=True) is HealthState.UNHEALTHY
     assert compute_health(components=[], bound=False) is HealthState.UNKNOWN
+
+
+def test_aggregate_health_ignores_not_required_components() -> None:
+    """非 required 组件不参与聚合：可选组件坏了不等于服务坏了。"""
+    from src.models import ComponentView, HealthState
+    from src.status import compute_health
+
+    components = [
+        ComponentView(source_key="core", health=HealthState.HEALTHY, required=True),
+        ComponentView(source_key="optional", health=HealthState.UNHEALTHY, required=False),
+    ]
+    assert compute_health(components=components, bound=True) is HealthState.HEALTHY

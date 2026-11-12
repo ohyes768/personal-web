@@ -29,8 +29,12 @@
 
 `runtime` / `health` / `url` / `tls` / `release` 五个枚举各自独立，任何聚合都要保留分维度信息。
 
-- **Docker health 未配置 = `not_configured`，永远不能显示成 `healthy`**（`compute_health` 里
-  `not_configured` 优先级高于 `healthy`，只要有一个 required 组件没配检查，服务级就不许写「健康」）。
+- **Docker health 未配置 = `not_configured`，页面显示 `-`**（该维度对这个服务不适用，
+  不是异常，也不需要使用者去维护）。聚合只统计**配了健康检查**的 required 组件：
+  一个都没配 → `-`；配了的按 unhealthy > starting > unknown > healthy 聚合。
+  混合时（前端没配、后端有）用已配组件的状态，覆盖范围在 tooltip 里写「N/M 个组件配置了检查」——
+  前端容器本来就不需要自我检查（它是 `depends_on: service_healthy` 的「等别人」的一方），
+  把它算成「没检查」反倒掩盖了后端报出的真实状态。
 - `required` 组件全 running → `running`；部分 → `partial`；全停 → `stopped`；有 `missing` → `missing`；
   没绑组件 → `unknown`。
 - 检查失败时 `check_status=error`，`current_state` 仍写该维度的失败值，**只保留**旧 `last_success` 与 payload，

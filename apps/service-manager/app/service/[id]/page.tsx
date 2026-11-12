@@ -15,6 +15,7 @@ import {
   composeFileText,
   describeCheck,
   formatTime,
+  healthTooltip,
   HEALTH,
   portKindLabel,
   portText,
@@ -324,7 +325,10 @@ function ServiceDetailView() {
       <div className="card tight">
         <div className="badge-stack" style={{ marginBottom: 8 }}>
           <StateBadge tone={RUNTIME[detail.status.runtime]} />
-          <StateBadge tone={HEALTH[detail.status.health]} title="Docker health 未配置时会显示「未配置检查」" />
+          <StateBadge
+            tone={HEALTH[detail.status.health]}
+            title={healthTooltip(detail.components, detail.status.health)}
+          />
           <StateBadge tone={URL_STATE[detail.status.url]} title={describeCheck(detail.status.url_check)} />
           <StateBadge tone={TLS_STATE[detail.status.tls]} title={describeCheck(detail.status.tls_check)} />
           <StateBadge tone={RELEASE_STATE[detail.status.release]} />
@@ -455,10 +459,15 @@ function ServiceDetailView() {
                     <span className="badge muted">{component.state}</span>
                     {component.health !== "not_configured" ? (
                       <div className="small">
-                        <StateBadge tone={HEALTH[component.health]} />
+                        <StateBadge
+                          tone={HEALTH[component.health]}
+                          title="Docker 健康检查"
+                        />
                       </div>
                     ) : (
-                      <div className="small muted">未配置健康检查</div>
+                      <div className="small muted" title="该容器没配 Docker 健康检查">
+                        -
+                      </div>
                     )}
                     <div className="small muted">观测于 {formatTime(component.last_seen_at)}</div>
                   </td>

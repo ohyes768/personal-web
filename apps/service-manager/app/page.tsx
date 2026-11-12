@@ -7,6 +7,7 @@ import {
   abnormalTones,
   describeCheck,
   formatRelative,
+  healthTooltip,
   HEALTH,
   RELEASE_STATE,
   RUNTIME,
@@ -266,7 +267,10 @@ function ServiceList() {
                     <div className="small muted">{item.component_count} 个组件</div>
                   </td>
                   <td>
-                    <StateBadge tone={HEALTH[item.status.health]} />
+                    <StateBadge
+                      tone={HEALTH[item.status.health]}
+                      title={healthTooltip(undefined, item.status.health)}
+                    />
                   </td>
                   <td>
                     <StateBadge tone={URL_STATE[item.status.url]} title={describeCheck(item.status.url_check)} />

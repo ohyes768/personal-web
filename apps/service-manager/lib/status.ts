@@ -27,8 +27,9 @@ export const HEALTH: Record<HealthState, Tone> = {
   healthy: { tone: "ok", label: "健康" },
   unhealthy: { tone: "bad", label: "不健康" },
   starting: { tone: "warn", label: "启动中" },
-  // 关键：未配置健康检查绝不能说「健康」
-  not_configured: { tone: "muted", label: "未配置检查" },
+  // 没配健康检查 → 这个维度对本服务不适用，显示 "-"。
+  // 不要求使用者去维护它；有自我检查的组件照常显示真实状态。
+  not_configured: { tone: "muted", label: "-" },
   unknown: { tone: "muted", label: "未知" },
 };
 
@@ -184,4 +185,20 @@ export function tlsInvalidReason(reason: string | null | undefined): string {
     default:
       return "";
   }
+}
+
+/** 健康徽章的 tooltip：说明覆盖了多少个组件，避免「1/2 组件报了健康」被误读。 */
+export function healthTooltip(
+  components: { health: HealthState }[] | undefined,
+  state: HealthState,
+): string {
+  if (state === "not_configured") {
+    return "该服务没有组件配置 Docker 健康检查，此维度不适用（显示 -）";
+  }
+  if (!components || components.length === 0) return "Docker 健康检查";
+  const configured = components.filter((c) => c.health !== "not_configured").length;
+  if (configured < components.length) {
+    return `Docker 健康检查：${configured}/${components.length} 个组件配置了检查`;
+  }
+  return "Docker 健康检查";
 }

@@ -50,21 +50,30 @@ def compute_runtime(
 def compute_health(*, components: list[ComponentView], bound: bool) -> HealthState:
     """一个服务多个组件时的聚合健康。
 
-    优先级：unhealthy > starting > unknown > not_configured > healthy。
-    只要有一个组件没有配置健康检查，聚合结果就不许写「健康」——否则
-    「前端没配检查、后端报 healthy」会被误读成整个服务健康。
+    只统计**配置了健康检查**的组件：
+    - 一个都没配 → not_configured（页面显示 "-"，表示这个维度对本服务不适用，
+      不是异常，也不需要用户去维护）；
+    - 配了的按 unhealthy > starting > unknown > healthy 聚合。
+
+    为什么混合时不再降级为 not_configured：前端容器本来就不需要自我检查
+    （它是 depends_on service_healthy 的「等别人」的一方），把它算成
+    「没检查」会让整个服务显示 "-"，反倒掩盖了后端报出的真实状态。
+    覆盖范围由调用方通过组件明细与 tooltip 说明。
     """
     if not bound or not components:
         return HealthState.UNKNOWN
     required = [item for item in components if item.required] or components
-    values = [item.health for item in required]
+    configured = [
+        item.health for item in required if item.health != HealthState.NOT_CONFIGURED
+    ]
+    if not configured:
+        return HealthState.NOT_CONFIGURED
     for priority in (
         HealthState.UNHEALTHY,
         HealthState.STARTING,
         HealthState.UNKNOWN,
-        HealthState.NOT_CONFIGURED,
     ):
-        if priority in values:
+        if priority in configured:
             return priority
     return HealthState.HEALTHY
 
