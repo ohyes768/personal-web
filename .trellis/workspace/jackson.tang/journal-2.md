@@ -757,3 +757,37 @@ MANAGER_DEFAULT_FILTERS 落地调研分层口径：硬门槛(从业5/规模5亿/
 ### Next Steps
 
 - None - task complete
+
+
+## Session 68: 经理年化双口径拆分：含离任 + 在管
+
+**Date**: 2026-11-12
+**Task**: 经理年化双口径拆分：含离任 + 在管
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+weighted_annual 原含离任段（职业生涯口径）；新增 current_weighted_annual 仅在管段（当下状态），派生指标模式不新增采集。前端双列并排+悬停口径说明，两口径背离即状态信号（江峰 21.8%→-19.7%）。594 测试通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `162e9a1` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
