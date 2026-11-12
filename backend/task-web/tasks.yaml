@@ -640,6 +640,8 @@ tasks:
     command: python hermes_trigger.py
     prompt: |-
       运行 python3 /home/ohyes768/skills/photo/natgeo-daily/scripts/natgeo_daily.py（自动抓取国家地理每日一图、翻译描述并推送钉钉）。完成后汇报：标题、摄影师、一句中文摘要、是否推送成功；脚本退出码非 0 时原样转述 stderr。
+      退出码语义：0=成功（输出含「按回执跳过」说明该内容此前已送达）；2=当日照片提取失败；3=钉钉推送被拒；5=投递结果未知（消息可能已进群）。
+      **退出码 5 时禁止重跑脚本或重新推送**——先核对群消息是否已有该条，确认没有再决定是否重发（重发同内容也会被回执去重）。
     skills: [natgeo-daily]
     env_file: /hermes-home/gw-8643.env
     network: nginx_nginx-bridge
