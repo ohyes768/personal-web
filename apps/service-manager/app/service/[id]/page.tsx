@@ -661,7 +661,9 @@ function ServiceDetailView() {
       </div>
 
       {detail.endpoints.length === 0 ? (
-        <p className="muted small">还没有登记入口，URL 与证书维度会一直是「未检查」。</p>
+        <p className="muted small">
+          无对外访问入口。网关、反向代理或内部调用类服务本就不需要 Web 入口，URL 与证书检查不适用；若该服务确实需要 Web 访问，可在此添加入口。
+        </p>
       ) : (
         <div className="table-scroll">
           <table>

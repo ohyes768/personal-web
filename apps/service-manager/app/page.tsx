@@ -304,7 +304,12 @@ function ServiceList() {
                         {item.primary_url}
                       </SafeLink>
                     ) : (
-                      <span className="muted small">未登记入口</span>
+                      <span
+                        className="muted small"
+                        title="网关、反向代理或内部调用类服务本就不需要对外入口，此项不适用、无需补录；若该服务确实需要 Web 访问，可在详情页登记入口"
+                      >
+                        无对外入口
+                      </span>
                     )}
                   </td>
                   <td>

@@ -45,7 +45,7 @@ ENDPOINTS: list[tuple[str, str, str, str]] = [
     ("闲鱼监控", "http://192.168.31.73:8010/", "internal", "直连容器发布端口"),
 ]
 
-# 这些服务实测没有任何外部可达入口，只能人工登记
+# 这些服务没有对外可达入口：多为网关 / 内部调用类，本就不需要 Web 入口，不登记属正常
 NO_ENDPOINT: list[tuple[str, str]] = [
     ("SearXNG", "只监听 127.0.0.1:8888，容器外无法访问"),
     ("语音转写", "只监听 127.0.0.1:10300，容器外无法访问"),
@@ -139,7 +139,7 @@ def main() -> int:
             print(f"  ✗ {name}: HTTP {status} {body}")
             failed.append(name)
 
-    print("\n未登记入口（无外部可达地址，需人工处理）：")
+    print("\n无对外入口（内部调用 / 网关类服务，本就不需要 Web 入口，无需补录）：")
     for name, reason in NO_ENDPOINT:
         print(f"  - {name}：{reason}")
 

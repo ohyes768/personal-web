@@ -186,7 +186,7 @@ function ResourcesView() {
 
       {tab === "domains" ? (
         domains.length === 0 ? (
-          <p className="muted">还没有登记入口，域名视图从入口的 URL 推导。</p>
+          <p className="muted">暂无可展示的域名：域名视图从入口 URL 推导，无对外入口的服务不产生域名。</p>
         ) : (
           <div className="table-scroll">
             <table>
