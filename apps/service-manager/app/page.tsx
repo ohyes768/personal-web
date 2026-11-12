@@ -12,6 +12,7 @@ import {
   isOwnService,
   RELEASE_STATE,
   RUNTIME,
+  tlsTooltip,
   TLS_STATE,
   URL_STATE,
 } from "@/lib/status";
@@ -319,7 +320,10 @@ function ServiceList() {
                     <StateBadge tone={URL_STATE[item.status.url]} title={describeCheck(item.status.url_check)} />
                   </td>
                   <td>
-                    <StateBadge tone={TLS_STATE[item.status.tls]} title={describeCheck(item.status.tls_check)} />
+                    <StateBadge
+                      tone={TLS_STATE[item.status.tls]}
+                      title={tlsTooltip(item.status.tls_check)}
+                    />
                   </td>
                   <td>
                     <StateBadge tone={RELEASE_STATE[item.status.release]} />

@@ -187,7 +187,26 @@ export function tlsInvalidReason(reason: string | null | undefined): string {
   }
 }
 
-/** 健康徽章的 tooltip：说明覆盖了多少个组件，避免「1/2 组件报了健康」被误读。 */export function healthTooltip(
+/**
+ * 证书徽章的 tooltip：说清楚「为什么无效」和「什么时候到期」，
+ * 别只丢一个红灯让人猜。
+ */
+export function tlsTooltip(check: CheckView | null): string {
+  const when = describeCheck(check);
+  if (!check?.payload) return when;
+  const reason = tlsInvalidReason(
+    typeof check.payload.invalid_reason === "string" ? check.payload.invalid_reason : "",
+  );
+  const notAfter =
+    typeof check.payload.not_after === "string" ? check.payload.not_after : "";
+  const bits = [reason, notAfter ? `有效期至 ${notAfter.slice(0, 10)}` : ""].filter(
+    Boolean,
+  );
+  return bits.length ? `${bits.join(" · ")} · ${when}` : when;
+}
+
+/** 健康徽章的 tooltip：说明覆盖了多少个组件，避免「1/2 组件报了健康」被误读。 */
+export function healthTooltip(
   components: { health: HealthState }[] | undefined,
   state: HealthState,
 ): string {

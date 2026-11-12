@@ -21,6 +21,7 @@ import {
   portText,
   RELEASE_STATE,
   RUNTIME,
+  tlsTooltip,
   TLS_STATE,
   URL_STATE,
 } from "@/lib/status";
@@ -330,7 +331,10 @@ function ServiceDetailView() {
             title={healthTooltip(detail.components, detail.status.health)}
           />
           <StateBadge tone={URL_STATE[detail.status.url]} title={describeCheck(detail.status.url_check)} />
-          <StateBadge tone={TLS_STATE[detail.status.tls]} title={describeCheck(detail.status.tls_check)} />
+          <StateBadge
+            tone={TLS_STATE[detail.status.tls]}
+            title={tlsTooltip(detail.status.tls_check)}
+          />
           <StateBadge tone={RELEASE_STATE[detail.status.release]} />
         </div>
         <p className="small muted">
