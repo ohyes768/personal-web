@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 66
+- **Total Sessions**: 67
 - **Last Active**: 2026-11-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~725 | Active |
+| `journal-2.md` | ~759 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 67 | 2026-11-12 | 经理筛选分层默认值 + 在管只数筛选 | `a410b5f` | `master` |
 | 66 | 2026-11-12 | 经理筛选三项派生指标：胜率/独管/代表作背离 | `2415110` | `master` |
 | 65 | 2026-11-11 | 经理 tab 样式统一与刷新入口 | `a023440` | `master` |
 | 64 | 2026-11-11 | 服务管理台验收复核：补 cookie 属性测试与 nginx 裸路径兜底 | - | `master` |

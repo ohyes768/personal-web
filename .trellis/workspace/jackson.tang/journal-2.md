@@ -723,3 +723,37 @@ Release 检查与单 worker 调度 + 备份导出恢复 + 单管理员认证。�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 67: 经理筛选分层默认值 + 在管只数筛选
+
+**Date**: 2026-11-12
+**Task**: 经理筛选分层默认值 + 在管只数筛选
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+MANAGER_DEFAULT_FILTERS 落地调研分层口径：硬门槛(从业5/规模5亿/只数8)+质量门槛(胜率60/独管50)，收益回撤不默认卡。新增 max_fund_count 参数与面板维度。默认组合命中 200 人。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `a410b5f` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
