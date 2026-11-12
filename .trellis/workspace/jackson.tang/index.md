@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 70
+- **Total Sessions**: 71
 - **Last Active**: 2026-11-12
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~902 | Active |
+| `journal-2.md` | ~936 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 71 | 2026-11-12 | 经理↔基金双向关联：徽章跳转+在榜汇总+反向链接 | `8bf41c2` | `master` |
 | 70 | 2026-11-12 | 经理详情拆在任/已离任双 tab | `8a11b2a` | `master` |
 | 69 | 2026-11-12 | 服务管理台实机上线：部署前置检查 + 修生产写操作 401 | - | `master` |
 | 68 | 2026-11-12 | 经理年化双口径拆分：含离任 + 在管 | `162e9a1` | `master` |

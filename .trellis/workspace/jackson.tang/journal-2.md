@@ -900,3 +900,37 @@ weighted_annual 原含离任段（职业生涯口径）；新增 current_weighte
 ### Next Steps
 
 - None - task complete
+
+
+## Session 71: 经理↔基金双向关联：徽章跳转+在榜汇总+反向链接
+
+**Date**: 2026-11-12
+**Task**: 经理↔基金双向关联：徽章跳转+在榜汇总+反向链接
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+三层闭环上线：1) 经理详情任期基金代码变可点徽章（归属tab+在榜N周），点击跳对应tab自动开抽屉；2) 经理列表行挂『在榜N』汇总；3) 基金抽屉经理名可点回经理页。URL 协议：tab ?code= / 经理 ?keyword= / 榜单 ?focus=。踩坑：basePath 下 Link href 不能带 /funds 前缀；抽屉 stub 模式依赖数组须用 effective?.code；discovery 无自有详情端点。597 测试通过，线上双向跳转验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8bf41c2` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
