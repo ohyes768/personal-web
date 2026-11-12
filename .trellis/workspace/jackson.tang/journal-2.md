@@ -791,3 +791,78 @@ weighted_annual 原含离任段（职业生涯口径）；新增 current_weighte
 ### Next Steps
 
 - None - task complete
+
+
+## Session 69: 服务管理台实机上线：部署前置检查 + 修生产写操作 401
+
+**Date**: 2026-11-12
+**Task**: 服务管理台实机上线：部署前置检查 + 修生产写操作 401
+**Package**: backend/service-manager
+**Branch**: `master`
+
+### Summary
+
+修 deploy-nas.sh 缺前置检查（自动生成 .env 两项并打印口令）；修 nginx $host 不含端口导致所有写操作 401（nginx 改 $http_host + 后端同源判断放宽，175→178）；实机三容器上线，冒烟与 socket-proxy ACL 12 条探针全过。
+
+### Main Changes
+
+### Summary
+
+实机部署并验收 NAS 服务管理台。用户在 NAS 上执行 deploy-nas.sh 时撞到
+「required variable SERVICE_MANAGER_ADMIN_PASSWORD is missing」，本轮定位并修掉它，
+继续把部署跑完，最后发现并修掉一个更隐蔽的生产缺陷（写操作全 401）。
+
+### Main Changes
+
+- **部署脚本前置检查**：service-manager 与 all 目标在构建前检查根 .env 的管理口令与签名密钥，
+  缺失时自动生成随机值写入（.env 权限收 600）、空值就地替换不追加重复键，并把登录口令打印在终端。
+  用户不再需要先读文档再手工填 .env。
+- **nginx `$host` 不含端口 → 写操作全 401**：nginx 文档里 `$host` 是去端口的 host 名，
+  浏览器 Origin 带端口（https://host:9443），字面比较必然不等 → Origin 校验失败；
+  登录路由本就没挂 Origin 校验，所以「登录能过、其它写操作 401」这个症状极具迷惑性。
+  两处同改：nginx 改 `$http_host`；后端同源判断放宽到 hostname+scheme 相同（跨站仍拒绝）。
+  后端用例 175 → 178。
+- 契约与文档：后端 spec 与 new-service-onboarding 增补「Host 头必须带端口」条目；
+  setup 文档补免填 .env 说明与实机上线记录。
+
+### Testing
+
+- 后端 `pytest tests/ -q` → **178 passed**；eslint 0 problems；tsc 0 error
+- `nginx -t` / `compose config --quiet` / `bash -n` 全通过
+- 实机：三容器上线（backend healthy）+ nginx reload
+- 冒烟：页面 200 / 静态资源 200 / health 200 / 未登录 401 / 裸路径 401（兜底生效）/
+  登录 cookie（HttpOnly + Path=/api + Secure）/ 写操作 201
+- socket-proxy ACL 12 条探针：仅 containers/json、version、_ping 为 200，其余 9 类全 403
+- 容器隔离：proxy PortBindings={} 且只在 internal 网络；后端 Binds 只有数据卷，无 docker.sock
+- 真实导入 dividend 前后端 → runtime=running、health=not_configured（未配 healthcheck
+  故不显示「健康」）、URL=unreachable + 自签原因、TLS=invalid + self_signed + 3510 天到期
+
+### 踩坑与修正
+
+- buildx 报 `open ~/.docker/buildx/activity/.tmp-xxx: permission denied` 不是真权限问题，
+  是会话沙箱限制（工作区外路径）；改用提权执行部署命令解决。
+- 反复用 host 网络起隔离 nginx 会和生产 nginx 抢 80/9443 端口，报错「Address in use」
+  被误读成配置 404；最终改用独立网络 + 发布 19443 才干净复现。
+- 排查 401 时先怀疑了 CSRF 逻辑本身，实际是 Host 头语义差异——先打印反代实际传的
+  Host 再看后端判定，能省很多弯路。
+
+### Status
+
+已上线并推送（dfc7bc3）。仍未做：破坏性恢复/回滚演练（需独立数据卷）、proxy 镜像 digest 锁定。
+
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
