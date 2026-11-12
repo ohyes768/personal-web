@@ -195,3 +195,31 @@ def test_ignored_decisions_persist(registry: Registry) -> None:
     assert "nas:container:abc" in registry.ignored_keys()
     registry.set_ignored(["nas:container:abc"], False)
     assert "nas:container:abc" not in registry.ignored_keys()
+
+
+def test_projects_by_service_reads_compose_project(registry: Registry, store) -> None:
+    """分组用：服务 → compose 项目（从 source_key 解析，不问 Docker）。"""
+    own = registry.create_service(ServiceCreate(name="股息率"))
+    other = registry.create_service(ServiceCreate(name="相册"))
+    loose = registry.create_service(ServiceCreate(name="音乐工作站"))
+    with store.transaction() as conn:
+        registry.bind_component(conn, own.id, "nas:compose:personal-web:dividend-backend:1")
+        registry.bind_component(conn, own.id, "nas:compose:personal-web:dividend-frontend:1")
+        registry.bind_component(conn, other.id, "nas:compose:immich:immich-server:1")
+        registry.bind_component(conn, loose.id, "nas:container:abcdef123456")
+
+    projects = registry.projects_by_service()
+    assert projects[own.id] == ["personal-web"]
+    assert projects[other.id] == ["immich"]
+    # 游离容器没有 compose 项目，不进任何分组
+    assert loose.id not in projects
+
+
+def test_project_from_source_key() -> None:
+    from src.docker_reader import project_from_source_key
+
+    assert project_from_source_key("nas:compose:personal-web:macro-frontend:1") == (
+        "personal-web"
+    )
+    assert project_from_source_key("nas:container:abc123def456") is None
+    assert project_from_source_key("") is None

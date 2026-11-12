@@ -17,6 +17,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.db import Store
+from src.docker_reader import project_from_source_key
 from src.errors import bad_request, conflict, not_found
 from src.models import (
     ComponentOverrideInput,
@@ -389,6 +390,27 @@ class Registry:
             )
             for row in rows
         }
+
+    def projects_by_service(self) -> dict[str, list[str]]:
+        """service_id → 它包含的 compose 项目（按绑定顺序去重）。
+
+        只读台账里的 source_key，不额外问 Docker；没有 compose 标签的
+        游离容器（nas:container:*）不计入任何项目。
+        """
+        with self.store.read() as conn:
+            rows = conn.execute(
+                "SELECT service_id, source_key FROM service_components "
+                "ORDER BY created_at"
+            ).fetchall()
+        result: dict[str, list[str]] = {}
+        for row in rows:
+            project = project_from_source_key(row["source_key"])
+            if not project:
+                continue
+            bucket = result.setdefault(row["service_id"], [])
+            if project not in bucket:
+                bucket.append(project)
+        return result
 
     # ------------------------------------------------------------------
     # 部署信息覆盖

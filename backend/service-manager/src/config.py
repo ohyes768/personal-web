@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     # ---- 数据 ----
     data_dir: Path = Field(default=Path("./data"), alias="SERVICE_MANAGER_DATA_DIR")
 
+    # ---- 分组 ----
+    # 「我自己开发的」应用所在的 compose 项目（逗号分隔）。台账里属于这些
+    # 项目的服务在列表里单独一个 tab，其余归「其他」。
+    own_projects: str = Field(
+        default="personal-web", alias="SERVICE_MANAGER_OWN_PROJECTS"
+    )
+
     # ---- Docker ----
     # 经 socket proxy 的 HTTP 端点；空 = 不使用 Docker（台账仍可用）
     docker_host: str = Field(default="", alias="SERVICE_MANAGER_DOCKER_HOST")
@@ -72,3 +79,9 @@ class Settings(BaseSettings):
             if cleaned:
                 items.append(cleaned)
         return tuple(dict.fromkeys(items))
+
+    @property
+    def own_project_list(self) -> tuple[str, ...]:
+        """自己开发的 compose 项目名（去重、去空）。"""
+        items = [item.strip() for item in self.own_projects.split(",")]
+        return tuple(dict.fromkeys(item for item in items if item))

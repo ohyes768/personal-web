@@ -31,6 +31,9 @@ SERVICE_MANAGER_PUBLIC_ORIGIN=https://web.duomi77.cn:9443
 
 # 可选：GitHub Token（公开仓库不需要；配了限流上限从 60/h 提到 5000/h）
 SERVICE_MANAGER_GITHUB_TOKEN=
+
+# 可选：哪些 compose 项目算「我自己开发的」（列表里单独一个 tab）；默认 personal-web
+SERVICE_MANAGER_OWN_PROJECTS=personal-web
 ```
 
 前两项缺失时 `docker compose config` 就会因为 `${VAR:?}` 直接报错，不会起一个没有认证的管理台。

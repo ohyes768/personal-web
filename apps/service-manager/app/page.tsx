@@ -9,6 +9,7 @@ import {
   formatRelative,
   healthTooltip,
   HEALTH,
+  isOwnService,
   RELEASE_STATE,
   RUNTIME,
   TLS_STATE,
@@ -32,6 +33,7 @@ function ServiceList() {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [onlyAbnormal, setOnlyAbnormal] = useState(false);
+  const [group, setGroup] = useState<"own" | "other">("own");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -72,6 +74,26 @@ function ServiceList() {
         ? items.filter((item) => abnormalTones(item.status).length > 0)
         : items,
     [items, onlyAbnormal],
+  );
+
+  // 分组：自己开发的（personal-web compose 项目）一个 tab，其余另一个。
+  // summary 还没回来时先不分组，避免首屏闪一下空的「我自己的」。
+  const ownProjects = useMemo(() => summary?.own_projects ?? [], [summary]);
+  const grouped = ownProjects.length > 0;
+  const groups = useMemo(() => {
+    const own = grouped
+      ? visible.filter((item) => isOwnService(item, ownProjects)).length
+      : visible.length;
+    return { own, other: grouped ? visible.length - own : 0 };
+  }, [visible, ownProjects, grouped]);
+  const tabItems = useMemo(
+    () =>
+      grouped
+        ? visible.filter((item) =>
+            group === "own" ? isOwnService(item, ownProjects) : !isOwnService(item, ownProjects),
+          )
+        : visible,
+    [visible, group, ownProjects, grouped],
   );
 
   async function create(event: React.FormEvent) {
@@ -140,6 +162,25 @@ function ServiceList() {
           <span>Docker 读取不可用：{summary.docker_error ?? "未配置"}。人工台账仍可正常使用。</span>
         </div>
       ) : null}
+
+      <div className="tabs" role="tablist">
+        <button
+          role="tab"
+          aria-selected={group === "own"}
+          className={group === "own" ? "active" : ""}
+          onClick={() => setGroup("own")}
+        >
+          {ownProjects.join("、") || "我自己的"}（{groups.own}）
+        </button>
+        <button
+          role="tab"
+          aria-selected={group === "other"}
+          className={group === "other" ? "active" : ""}
+          onClick={() => setGroup("other")}
+        >
+          其他（{groups.other}）
+        </button>
+      </div>
 
       <div className="card tight">
         <div className="btn-row">
@@ -215,12 +256,14 @@ function ServiceList() {
 
       {loading ? (
         <p className="muted">加载中…</p>
-      ) : visible.length === 0 ? (
+      ) : tabItems.length === 0 ? (
         <div className="card">
           <p>
             {items.length === 0
               ? "台账还是空的。可以先「新增服务」，或到「发现导入」从运行中的容器建立。"
-              : "没有匹配的服务。"}
+              : grouped
+                ? `这个分组里没有服务（${group === "own" ? ownProjects.join("、") : "其他"}）。`
+                : "没有匹配的服务。"}
           </p>
           <div className="btn-row">
             <Link className="btn" href="/discovery">
@@ -244,7 +287,7 @@ function ServiceList() {
               </tr>
             </thead>
             <tbody>
-              {visible.map((item) => (
+              {tabItems.map((item) => (
                 <tr key={item.id}>
                   <td>
                     <Link href={`/service/${item.id}`}>{item.name}</Link>
@@ -302,7 +345,9 @@ function ServiceList() {
           </table>
         </div>
       )}
-      <p className="small muted">共 {total} 个服务</p>
+      <p className="small muted">
+        共 {total} 个服务，当前分组 {tabItems.length} 个
+      </p>
       <Toast message={toast} />
     </>
   );

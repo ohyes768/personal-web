@@ -246,3 +246,18 @@ def test_restore_rejects_unknown_schema(client: TestClient) -> None:
     )
     assert response.status_code == 400
     assert response.json()["code"] == "unsupported_schema"
+
+
+def test_services_list_exposes_projects(client: TestClient) -> None:
+    """列表要带 compose 项目，前端据此分「自己开发的 / 其他」tab。"""
+    login(client)
+    created = client.post("/api/services", json={"name": "股息率"}, headers=ORIGIN).json()
+    items = client.get("/api/services").json()["items"]
+    item = next(entry for entry in items if entry["id"] == created["id"])
+    # 没关联组件 → 没有 compose 项目
+    assert item["projects"] == []
+
+
+def test_summary_reports_own_projects(client: TestClient) -> None:
+    login(client)
+    assert client.get("/api/summary").json()["own_projects"] == ["personal-web"]

@@ -78,6 +78,18 @@ def compute_source_key(
     return f"nas:container:{short_id}", oneoff
 
 
+def project_from_source_key(source_key: str) -> str | None:
+    """从 source_key 反解 compose 项目名。
+
+    nas:compose:{project}:{service}:{number} → {project}
+    nas:container:{id} → None（没有 compose 项目，游离容器）
+    """
+    parts = (source_key or "").split(":")
+    if len(parts) >= 4 and parts[0] == "nas" and parts[1] == "compose":
+        return parts[2] or None
+    return None
+
+
 def _ip_family(host_ip: str) -> str:
     try:
         address = ipaddress.ip_address(host_ip)

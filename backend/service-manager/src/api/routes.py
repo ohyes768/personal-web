@@ -165,8 +165,11 @@ def logout(
 def summary(
     _: AuthDep,
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> SummaryResponse:
-    return SummaryResponse(**projector.summary())
+    payload = projector.summary()
+    payload["own_projects"] = list(settings.own_project_list)
+    return SummaryResponse(**payload)
 
 
 # ---------------------------------------------------------------------------
@@ -188,11 +191,17 @@ def list_services(
     items, total = registry.list_services(
         query=query, category=category, tag=tag, page=page, page_size=page_size
     )
+    projects = registry.projects_by_service()
     payload = []
     for item in items:
         detail_status = projector.status_for(item.id)
         payload.append(
-            item.model_copy(update={"status": detail_status}).model_dump()
+            item.model_copy(
+                update={
+                    "status": detail_status,
+                    "projects": projects.get(item.id, []),
+                }
+            ).model_dump()
         )
     return {
         "items": payload,

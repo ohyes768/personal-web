@@ -187,8 +187,7 @@ export function tlsInvalidReason(reason: string | null | undefined): string {
   }
 }
 
-/** 健康徽章的 tooltip：说明覆盖了多少个组件，避免「1/2 组件报了健康」被误读。 */
-export function healthTooltip(
+/** 健康徽章的 tooltip：说明覆盖了多少个组件，避免「1/2 组件报了健康」被误读。 */export function healthTooltip(
   components: { health: HealthState }[] | undefined,
   state: HealthState,
 ): string {
@@ -201,4 +200,19 @@ export function healthTooltip(
     return `Docker 健康检查：${configured}/${components.length} 个组件配置了检查`;
   }
   return "Docker 健康检查";
+}
+
+/**
+ * 台账分组：属于「我自己开发的」compose 项目 = 自己那组，其余算其他。
+ *
+ * 还没关联容器的服务（多半是人工登记的）先归自己这组，关联后按 compose
+ * 项目自动归位；只有容器、没有 compose 标签的（如 nas:container:*）算其他。
+ */
+export function isOwnService(
+  item: { projects: string[]; component_count: number },
+  ownProjects: string[],
+): boolean {
+  if (ownProjects.length === 0) return false;
+  if (item.component_count === 0) return true;
+  return item.projects.some((project) => ownProjects.includes(project));
 }

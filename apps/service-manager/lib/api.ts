@@ -165,6 +165,8 @@ export interface ServiceListItem {
   updated_at: string;
   primary_url: string | null;
   component_count: number;
+  /** 该服务包含的 compose 项目（自己开发的 vs 其他，用来分 tab） */
+  projects: string[];
   status: ServiceStatus;
 }
 
@@ -291,6 +293,8 @@ export interface SummaryResponse {
   unread_releases: number;
   registry_revision: number;
   checker_heartbeat: string | null;
+  /** 「我自己开发的」compose 项目名（列表据此分 tab） */
+  own_projects: string[];
 }
 
 export interface RefreshJobView {

@@ -361,6 +361,8 @@ class ServiceListItem(BaseModel):
     updated_at: str
     primary_url: str | None = None
     component_count: int = 0
+    # 该服务包含的 compose 项目（自己开发的 vs 其他，用来分 tab）
+    projects: list[str] = Field(default_factory=list)
     status: ServiceStatus = Field(default_factory=ServiceStatus)
 
 
@@ -530,6 +532,8 @@ class SummaryResponse(BaseModel):
     unread_releases: int = 0
     registry_revision: int = 0
     checker_heartbeat: str | None = None
+    # 「我自己开发的」compose 项目名（前端据此分 tab）
+    own_projects: list[str] = Field(default_factory=list)
 
 
 class BackupPreviewResponse(BaseModel):

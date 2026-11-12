@@ -75,7 +75,19 @@
   「hostname 与 scheme 相同即接受」（跨站仍拒绝）。这是「本地正常、生产炸」的真实案例。
 - 登录失败按来源限速 5 次/分钟。生产缺口令或签名密钥时 `Settings` 直接抛错，拒绝启动。
 
-### 2.7 备份与恢复
+### 2.7 分组（自己开发的 vs 其他）
+
+- `GET /api/services` 的每项带 `projects`：该服务包含的 compose 项目，
+  由 `service_components.source_key`（`nas:compose:{project}:...`）反解，**不额外问 Docker**；
+  没有 compose 标签的游离容器（`nas:container:*`）不进任何项目。
+- `GET /api/summary` 带 `own_projects`：哪些 compose 项目算「我自己开发的」，
+  由 `SERVICE_MANAGER_OWN_PROJECTS`（逗号分隔，默认 `personal-web`）决定。
+- 前端据此把列表分成两个 tab。分组是**纯展示**，不改任何检查口径，
+  一个服务同时属于多个项目时，只要命中任一 own 项目就算「自己那组」；
+  **一个组件都没关联的服务**（人工登记）也算「自己那组」，
+  而「有容器但没有 compose 标签」（`nas:container:*`）算其他。
+
+### 2.8 备份与恢复
 
 - 导出只含**人工表**：services / service_components / component_overrides / endpoints / port_notes /
   release_sources / discovery_decisions。排除观测、检查结果、job、release 缓存与已读、以及任何凭据。

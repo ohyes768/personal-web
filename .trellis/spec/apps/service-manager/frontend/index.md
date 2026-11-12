@@ -30,6 +30,10 @@
 
 ## 3. 交互约束
 
+- 列表按「自己开发的 / 其他」分两个 tab（`role="tablist"` + `role="tab"`）：
+  归属由后端 `summary.own_projects` 与每项的 `projects` 判定，
+  **前端不硬编码项目名**（改了 `SERVICE_MANAGER_OWN_PROJECTS` 就生效）。
+  还没关联容器的服务（人工登记）归第一组；搜索 / 分类 / 只看异常在 tab 内照常生效，tab 上带各自的数量。
 - 所有用户录入/展示的 URL 走 `SafeLink`：只有 `http(s)` 才渲染成可点链接，其余退化成纯文本。
   发布正文用 `white-space: pre-wrap` 的 `<div>` 显示原文（不注入 HTML）。
 - `PATCH` 409（revision 冲突）要提示「请刷新后重试」并重新拉取；不要静默覆盖。
