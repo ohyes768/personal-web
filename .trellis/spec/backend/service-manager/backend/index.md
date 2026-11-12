@@ -15,6 +15,9 @@
 - `docker_reader.project_container()` 把 inspect **投影到白名单字段**（id/name/image/两个 compose 标签/
   state/health/network_mode/ports/mounts）。`Env`、`Cmd`、`Hostname`、原始 inspect **永不落库、永不进日志**。
   生产上还有 `docker-socket-proxy` 的 `POST=0` 兜底，但代码层不得依赖它。
+- socket-proxy 的镜像**必须锁 digest**（`tag@sha256:...`）：它是全仓唯一摸得到
+  `docker.sock` 的容器，tag 可被移动，恶意镜像能无视 `POST=0` 全放行。
+  升级见 `docs/service-manager-nas-setup.md` §5，改完要重跑白名单探针。
 - 采集失败（超时/连接拒绝）**不发布半份快照**，也不把「采不到」当成「容器消失了」：
   `missing` 只在一次**成功全量扫描**里没出现才标。
 

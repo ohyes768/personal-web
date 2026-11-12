@@ -10,7 +10,7 @@
 # 端口未被占用（应为空输出）
 ss -lntH | grep -E ':(3012|8102)\b'
 
-# 镜像可获取（实施时锁 digest；这里先确认能拉）
+# 镜像可获取（compose 里已锁 digest；拉 tag 再核对 RepoDigest，见 §5）
 docker pull tecnativa/docker-socket-proxy:0.2.0
 
 # Docker 版本（客户端要能协商；NAS 实测 29.1.3）
@@ -107,12 +107,36 @@ docker exec service-manager-backend sh -c '
 
 期望：`GET list` 200；其余 403（`POST=0` 与类别关闭）。
 
+### 镜像锁 digest（为什么）
+
+compose 里写的是 `tecnativa/docker-socket-proxy:0.2.0@sha256:083bd0ed…`。
+
+**这个容器是全仓唯一摸得到 `docker.sock` 的东西**（`/var/run/docker.sock` 只读挂入）。
+镜像被替换 ≠ 别的镜像被替换：一个恶意版本可以无视 `POST=0`、`CONTAINERS=1` 这些环境变量
+直接全放行，只读防线就是纸糊的。而 tag（`0.2.0`）是**可移动的牌子**，
+维护者随时能改指向，下次 `up` 就拉到别的内容；digest 是内容哈希，改不了。
+
+`tag@digest` 两个都写，**digest 说了算，tag 只当注释**。
+
+升级步骤：
+
+1. `docker pull tecnativa/docker-socket-proxy:<新 tag>`
+2. `docker image inspect tecnativa/docker-socket-proxy:<新 tag> --format '{{index .RepoDigests 0}}'`
+   —— 取 pull 时仓库写入的权威 digest（Docker Hub 连不上时这是最可靠的来源）
+3. 换掉 compose 里的 digest，`docker compose -f docker-compose.nas.yml config` 校验
+4. `docker compose -f docker-compose.nas.yml up -d --force-recreate --no-build service-manager-socket-proxy`
+5. **重跑本节的白名单探针**，确认 4 项 200 / 5 项 403 不变
+
 再确认 proxy 没有对外暴露端口，后端没有挂 socket：
 
 ```bash
 docker inspect service-manager-socket-proxy --format '{{json .HostConfig.PortBindings}}'   # {}
 docker inspect service-manager-backend --format '{{json .HostConfig.Binds}}'               # 只应有 data 卷
 ```
+
+2026-11-12 实测：锁 digest 并重建后，`/_ping` `/version` `/containers/json` `/containers/x/json`
+全部 200，`/images/json` `/networks` `/volumes` `/info` `/events` 全部 403，
+`POST /containers/<x>/kill` 403；管理台扫描仍正常（42 组件 / 24 服务全部 running）。
 
 ## 6. 真实数据抽验
 

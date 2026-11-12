@@ -646,9 +646,14 @@ services:
   # Docker 只读走 socket-proxy：后端不挂 docker.sock，也不挂宿主目录。
   # ---------------------------------------------------------------------------
   service-manager-socket-proxy:
-    # 锁定 digest 由部署侧填写实测版本；此处用可获取的明确 tag。
     # 只开 CONTAINERS/PING/VERSION，POST=0 → 仅 GET/HEAD 能到达 Engine。
-    image: tecnativa/docker-socket-proxy:0.2.0
+    #
+    # 锁 digest：这是全仓唯一摸得到 docker.sock 的容器（只读挂载），镜像被换
+    # 等于门卫换内贼——恶意版本可以无视 POST=0 等环境变量直接全放行。
+    # tag 可移动，digest 不可；两者都写，digest 说了算，tag 只当注释。
+    # 0.2.0 / 2024-07-09 构建 / linux-amd64，digest 取自 pull 时仓库写入的 RepoDigest。
+    # 升级时手动换 digest，并重跑 §权限探针（见 docs/service-manager-nas-setup.md）。
+    image: tecnativa/docker-socket-proxy:0.2.0@sha256:083bd0ed8783e366d745f332f0e4489816dd35d984bef8f16e6d89484a22c082
     container_name: service-manager-socket-proxy
     restart: unless-stopped
     environment:
