@@ -866,3 +866,37 @@ weighted_annual 原含离任段（职业生涯口径）；新增 current_weighte
 ### Next Steps
 
 - None - task complete
+
+
+## Session 70: 经理详情拆在任/已离任双 tab
+
+**Date**: 2026-11-12
+**Task**: 经理详情拆在任/已离任双 tab
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+展开详情的历任基金由单表混排改为 pill 双 tab（在任默认/已离任），说明文案随 tab 切换口径，空分组空态文案。线上双向切换验证通过。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `8a11b2a` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
