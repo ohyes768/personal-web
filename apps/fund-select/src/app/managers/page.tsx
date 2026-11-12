@@ -322,6 +322,11 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
   onToggle: () => void;
 }) {
   const td = 'px-1.5 py-1.5';
+  // 展开详情的 tenure tab：默认在任。切换经理时组件复用，但 hidden 状态无副作用
+  const [tenureTab, setTenureTab] = useState<'current' | 'past'>('current');
+  const currentTenures = detail?.tenures?.filter(t => t.is_current) ?? [];
+  const pastTenures = detail?.tenures?.filter(t => !t.is_current) ?? [];
+  const shownTenures = tenureTab === 'current' ? currentTenures : pastTenures;
   return (
     <>
       <tr
@@ -372,9 +377,43 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
               </span>
             ) : detail?.tenures?.length ? (
               <div>
-                <div className="text-[11px] text-ink-muted mb-1.5">
-                  历任基金 {detail.tenures.length} 只（含离任）· 代表基金按高亮行计算风险指标
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                  {/* 在任 / 已离任 分 tab：默认在任（当下状态优先） */}
+                  <div className="flex items-center gap-0.5" role="tablist" aria-label="历任基金分组">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={tenureTab === 'current'}
+                      onClick={() => setTenureTab('current')}
+                      className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                        tenureTab === 'current' ? 'bg-accent text-white' : 'bg-paper-deep text-ink-muted hover:text-ink-strong'
+                      }`}
+                    >
+                      在任 {currentTenures.length}
+                    </button>
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={tenureTab === 'past'}
+                      onClick={() => setTenureTab('past')}
+                      className={`px-2 py-0.5 rounded text-xs transition-colors ${
+                        tenureTab === 'past' ? 'bg-accent text-white' : 'bg-paper-deep text-ink-muted hover:text-ink-strong'
+                      }`}
+                    >
+                      已离任 {pastTenures.length}
+                    </button>
+                  </div>
+                  <span className="text-[11px] text-ink-muted">
+                    {tenureTab === 'current'
+                      ? '当前在管基金 · 在管年化按这些段加权'
+                      : '已离任基金 · 计入「年化·含离任」口径'}
+                  </span>
                 </div>
+                {shownTenures.length === 0 ? (
+                  <span className="text-xs text-ink-muted">
+                    {tenureTab === 'current' ? '无在管基金' : '无已离任基金'}
+                  </span>
+                ) : (
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="text-left text-ink-muted border-b border-rule">
@@ -389,12 +428,11 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
                     </tr>
                   </thead>
                   <tbody>
-                    {detail.tenures.map(t => (
+                    {shownTenures.map(t => (
                       <tr key={`${t.fund_code}-${t.start_date}`} className="border-b border-rule/50 last:border-b-0">
                         <td className="py-1 pr-2 font-mono text-info whitespace-nowrap">{t.fund_code}</td>
                         <td className="py-1 pr-2">
                           <span className="truncate">{t.fund_name}</span>
-                          {!t.is_current && <span className="ml-1 text-[10px] text-ink-soft">已离任</span>}
                         </td>
                         <td className="py-1 pr-2 text-ink-muted">{t.fund_type ?? '-'}</td>
                         <td className="py-1 pr-2 tnum text-right">{fmtNum(t.size_yi, 1)}</td>
@@ -410,6 +448,7 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
                     ))}
                   </tbody>
                 </table>
+                )}
               </div>
             ) : (
               <span className="text-xs text-ink-muted">无历任基金数据</span>
