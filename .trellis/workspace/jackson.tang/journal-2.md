@@ -689,3 +689,37 @@ Release 检查与单 worker 调度 + 备份导出恢复 + 单管理员认证。�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 66: 经理筛选三项派生指标：胜率/独管/代表作背离
+
+**Date**: 2026-11-12
+**Task**: 经理筛选三项派生指标：胜率/独管/代表作背离
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+落地经理筛选调研结论：任期胜率（中位数55%，识别稳定盈利）、独管比例（识别共管稀释/挂名）、代表作背离（>15pp 标记幸存者偏差，仅展示）。全部由 manager_tenures 聚合不新增采集；API 加 min_win_rate/min_solo_ratio 筛选与排序；前端加列与维度。修复 func.sum(布尔) 返回 Boolean 的类型陷阱（case 显式转整数）。590 测试通过，线上验证胜率≥80且独管≥80 命中 144 人。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2415110` | (see git log) |
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
