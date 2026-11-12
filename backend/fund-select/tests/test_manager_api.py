@@ -393,3 +393,88 @@ class TestCurrentWeightedAnnual:
         items = client.get("/api/funds/managers/screen", params={"limit": 50}).json()["items"]
         row = next(it for it in items if it["manager_id"] == "m_mixed")
         assert row["current_weighted_annual"] == 8.0    # 债基段被排除
+
+
+class TestCrossTabAffiliation:
+    """跨 tab 关联（双向闭环）：详情任期归属徽章 + 列表在榜汇总。"""
+
+    @pytest.fixture
+    def seeded_affil(self, db_session):
+        """- 000011：yaml bond 名单（override 注入不了 detail 内部的 resolve，
+        所以直接用 funds.market_type + 观测表两条真实路径）
+
+        命中路径设计：
+        - 000011 → market_type='stock' → discovery-stock 徽章；观测 2 周
+        - 000022 → market_type='bond' → discovery-bond 徽章；未在榜
+        - 000099 → 不在 funds 表 → 无归属
+        """
+        from datetime import date as d, datetime
+        from src.db.models import (
+            Fund, Manager, ManagerTenure, SharpeBoardObservation, SharpeBoardWeek,
+        )
+
+        db_session.add_all([
+            Fund(code="000011", name="股票A", market_type="stock", is_active=True),
+            Fund(code="000022", name="债券B", market_type="bond", is_active=True),
+            Manager(manager_id="m_aff", name="关联甲", scope="stock_active"),
+            ManagerTenure(manager_id="m_aff", fund_code="000011", fund_name="股票A",
+                          fund_type="混合型-偏股", start_date=d(2020, 1, 1),
+                          tenure_days=1000, tenure_return=50.0, annual_return=5.0,
+                          is_current=True),
+            ManagerTenure(manager_id="m_aff", fund_code="000022", fund_name="债券B",
+                          fund_type="债券型-长债", start_date=d(2020, 1, 1),
+                          tenure_days=1000, tenure_return=12.0, annual_return=3.0,
+                          is_current=True),
+            ManagerTenure(manager_id="m_aff", fund_code="000099", fund_name="幽灵C",
+                          fund_type="混合型-偏股", start_date=d(2020, 1, 1),
+                          tenure_days=500, tenure_return=5.0, annual_return=1.0,
+                          is_current=False),
+        ])
+        wk = SharpeBoardWeek(source="stock", profile_version="v1", week_start=d(2026, 11, 2),
+                             profile_json="{}", profile_hash="h", algorithm_version="v1",
+                             status="complete", started_at=datetime(2026, 11, 2, 8, 0))
+        db_session.add(wk)
+        db_session.flush()
+        db_session.add_all([
+            SharpeBoardObservation(week_id=wk.id, code="000011", name="股票A", sharpe=1.2),
+        ])
+        # 第二周（discovery-stock 源）→ 累计 2 周
+        wk2 = SharpeBoardWeek(source="discovery-stock", profile_version="v1",
+                              week_start=d(2026, 11, 9), profile_json="{}", profile_hash="h2",
+                              algorithm_version="v1", status="complete",
+                              started_at=datetime(2026, 11, 9, 9, 0))
+        db_session.add(wk2)
+        db_session.flush()
+        db_session.add(SharpeBoardObservation(week_id=wk2.id, code="000011", name="股票A", sharpe=1.1))
+        db_session.commit()
+        return db_session
+
+    def test_detail_affiliation_market_and_board(self, client, seeded_affil):
+        body = client.get("/api/funds/managers/m_aff").json()
+        by_code = {t["fund_code"]: t for t in body["tenures"]}
+        aff11 = by_code["000011"]["affiliation"]
+        assert aff11 is not None
+        assert aff11["tab"] == "discovery-stock"
+        assert aff11["board_weeks"] == 2        # 两个 source 各一周，历史累计
+        assert aff11["fund_name_market"] == "股票A"
+        aff22 = by_code["000022"]["affiliation"]
+        assert aff22["tab"] == "discovery-bond"
+        assert aff22["board_weeks"] == 0
+        # 不在 funds 表且未在榜 → 无归属（前端不渲染徽章）
+        assert by_code["000099"]["affiliation"] is None
+
+    def test_list_board_on_current(self, client, seeded_affil):
+        """列表行汇总：在管 2 只、其中 1 只在榜。"""
+        items = client.get("/api/funds/managers/screen", params={"limit": 50}).json()["items"]
+        row = next(it for it in items if it["manager_id"] == "m_aff")
+        assert row["current_fund_total"] == 2
+        assert row["board_on_current"] == 1     # 000099 已离任不计入
+
+    def test_affiliation_prefers_yaml_over_market(self, client, seeded_affil, monkeypatch):
+        """yaml 老名单优先于 market 全量（窄而精）。"""
+        from src.services import manager_service as ms
+        monkeypatch.setattr(ms, "resolve_universe_codes",
+                            lambda kind: {"bond": ["000011"], "stock": []}[kind])
+        body = client.get("/api/funds/managers/m_aff").json()
+        aff = next(t for t in body["tenures"] if t["fund_code"] == "000011")["affiliation"]
+        assert aff["tab"] == "bond"

@@ -148,15 +148,19 @@ function parseTop5Bonds(s: string | null | undefined): Array<{ name: string; pct
 interface RowDetailDrawerBondProps {
   fund: FundListItem | null;
   onClose: () => void;
+  /** URL 直达（?code=）时只传 code：头部先显示代码，详情加载后回填名称 */
+  stub?: string | null;
 }
 
-export function RowDetailDrawerBond({ fund, onClose }: RowDetailDrawerBondProps) {
+export function RowDetailDrawerBond({ fund, onClose, stub }: RowDetailDrawerBondProps) {
+  // stub 模式 = fund 为 null 但有 code：复用同一抽屉壳，头部 code 先行
+  const effective = fund ?? (stub ? { code: stub, name: '', fund_type: '' } as FundListItem : null);
   const [detail, setDetail] = useState<FundDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Escape 关闭 + body overflow 锁定
   useEffect(() => {
-    if (!fund) return;
+    if (!effective) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -166,25 +170,25 @@ export function RowDetailDrawerBond({ fund, onClose }: RowDetailDrawerBondProps)
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [fund, onClose]);
+  }, [effective, onClose]);
 
   // 监听 fund.code 拉详情（债基路由）
   useEffect(() => {
-    if (!fund) {
+    if (!effective) {
       setDetail(null);
       return;
     }
     setLoading(true);
     setDetail(null);
     let cancelled = false;
-    fundApi.getDetail(fund.code)
+    fundApi.getDetail(effective.code)
       .then(d => { if (!cancelled) setDetail(d); })
       .catch(() => { if (!cancelled) setDetail(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [fund?.code]);
+  }, [effective?.code]);
 
-  if (!fund) return null;
+  if (!effective) return null;
 
   // 响应式宽度（沿用 RowDetailDrawer）
   const width = typeof window === 'undefined'
@@ -214,10 +218,10 @@ export function RowDetailDrawerBond({ fund, onClose }: RowDetailDrawerBondProps)
           <div className="flex items-center justify-between px-6 py-4">
             <div className="min-w-0 flex-1">
               <h2 id="row-detail-drawer-bond-title" className="text-base font-semibold text-ink-strong truncate">
-                <span className="font-mono text-info mr-2">{fund.code}</span>
-                {fund.name}
+                <span className="font-mono text-info mr-2">{effective.code}</span>
+                {detail?.name || effective.name}
               </h2>
-              <p className="text-xs text-ink-muted mt-0.5 truncate">{fund.fund_type || '-'}</p>
+              <p className="text-xs text-ink-muted mt-0.5 truncate">{effective.fund_type || '-'}</p>
             </div>
             <button
               onClick={onClose}

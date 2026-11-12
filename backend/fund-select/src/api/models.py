@@ -100,6 +100,15 @@ class ManagerListItem(BaseModel):
     solo_ratio: Optional[float] = None           # 独管比例 %（在管基金中仅自己一位经理）
     rep_divergence: Optional[float] = None       # 代表作背离 pp（最长任期年化 − 加权年化）
     current_weighted_annual: Optional[float] = None  # 在管年化 %（仅 is_current 主动权益段）
+    board_on_current: int = 0                        # 在管基金中上过夏普榜的数量（历史累计）
+    current_fund_total: int = 0                      # 当前在管基金数（tenures.is_current 计数）
+
+
+class TenureAffiliation(BaseModel):
+    """任期基金的跨 tab 归属（徽章 + 跳转落点）"""
+    tab: Optional[str] = None               # bond / stock / discovery-bond / discovery-stock
+    board_weeks: int = 0                    # 上过夏普榜的周数（历史累计，complete 周）
+    fund_name_market: Optional[str] = None  # funds 表正式名称（档案快照可能过时）
 
 
 class ManagerTenureItem(BaseModel):
@@ -113,6 +122,7 @@ class ManagerTenureItem(BaseModel):
     tenure_return: Optional[float] = None
     annual_return: Optional[float] = None
     is_current: bool = True
+    affiliation: Optional[TenureAffiliation] = None
 
 
 class ManagerDetailResponse(ManagerListItem):

@@ -11,7 +11,7 @@
  */
 'use client';
 
-import { Suspense, useCallback, useMemo, useState } from 'react';
+import { Suspense, useCallback, useMemo, useState, useEffect } from 'react';
 
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -24,6 +24,8 @@ import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawerBond } from '@/components/RowDetailDrawerBond';
 import { useCompare, useDiscoveryBondFundList, useFeeDetails } from '@/lib/hooks';
 import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions } from '@/lib/compareDimensions';
+import { useSearchParams } from 'next/navigation';
+
 import { useFilters } from '@/lib/useFilters';
 import {
   BOND_MARKET_TYPE_OPTIONS,
@@ -42,6 +44,18 @@ function DiscoveryBondPageInner() {
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
+  // 双向闭环落点：经理页徽章 ?code=XXXX 直达，抽屉内按 code 拉完整详情
+  const codeParam = useSearchParams().get('code');
+  const [stubCode, setStubCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (codeParam) {
+      setStubCode(codeParam);
+      // 用完即清，避免关闭抽屉后刷新页面又弹开
+      const url = new URL(window.location.href);
+      url.searchParams.delete('code');
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [codeParam]);
 
   // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
   const [preFilters, setPreFilters] = useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS_BOND);
@@ -163,6 +177,7 @@ function DiscoveryBondPageInner() {
       />
 
       <RowDetailDrawerBond
+        stub={stubCode}
         fund={detailFund}
         onClose={() => setDetailFund(null)}
       />

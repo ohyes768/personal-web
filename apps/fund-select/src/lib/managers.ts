@@ -28,6 +28,17 @@ export interface ManagerListItem {
   rep_divergence: number | null;
   /** 在管年化 %（仅 is_current 主动权益段的时长加权；无在管段时 null） */
   current_weighted_annual: number | null;
+  /** 在管基金中上过夏普榜的数量（历史累计） */
+  board_on_current: number;
+  /** 当前在管基金数（is_current 计数） */
+  current_fund_total: number;
+}
+
+/** 任期基金的跨 tab 归属（徽章 + 跳转落点） */
+export interface TenureAffiliation {
+  tab: 'bond' | 'stock' | 'discovery-bond' | 'discovery-stock' | null;
+  board_weeks: number;
+  fund_name_market: string | null;
 }
 
 export interface ManagerTenure {
@@ -41,6 +52,7 @@ export interface ManagerTenure {
   tenure_return: number | null;
   annual_return: number | null;
   is_current: boolean;
+  affiliation?: TenureAffiliation | null;
 }
 
 export interface ManagerDetail extends ManagerListItem {

@@ -14,6 +14,10 @@
   managers.tenure_weighted_annual 含离任段（职业生涯口径）；在管口径回答
   「他现在管的这几只表现如何」。两者背离本身有信息量：含离任高、在管低
   = 状态下滑或新管不久。同样只展示+排序，不进筛选。
+- board_on_current 在管在榜数：当前在管基金出现在夏普周观测里的数量
+  （历史累计口径：上过任何一周的榜即算；列表行汇总徽章用）。
+- get_detail 的任期行带 affiliation 归属（tab 名单/在榜周数），前端渲染
+  可点徽章并跳转对应 tab（双向闭环的第 1 层）。
 """
 from __future__ import annotations
 
@@ -23,7 +27,8 @@ from typing import Optional
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
-from src.db.models import Manager, ManagerTenure
+from src.db.models import Fund, Manager, ManagerTenure, SharpeBoardObservation, SharpeBoardWeek
+from src.data.fund_universe import resolve_universe_codes
 from src.services.manager_metrics import is_active_equity
 
 
@@ -202,11 +207,22 @@ class ManagerService:
             if days_sum[mid] > 0:
                 current_annual[mid] = round(acc[mid] / days_sum[mid], 2)
 
+        # 在管在榜数：在管基金 ∩ 夏普周观测（历史累计，上过任何一周即算）。
+        # 观测表 distinct code 仅百余只，先取集合再内存交集，避免大 IN
+        board_codes = set(self.db.execute(
+            select(SharpeBoardObservation.code).distinct()
+        ).scalars())
+        board_on_current: dict[str, int] = {}
+        for mid, codes in cur_by_mgr.items():
+            board_on_current[mid] = sum(1 for c in codes if c in board_codes)
+
         return {
             mid: {
                 "tenure_win_rate": win_rate[mid],
                 "solo_ratio": solo_ratio[mid],
                 "current_weighted_annual": current_annual[mid],
+                "board_on_current": board_on_current.get(mid, 0),
+                "current_fund_total": len(cur_by_mgr.get(mid, [])),
             }
             for mid in manager_ids
         }
@@ -221,6 +237,7 @@ class ManagerService:
             .order_by(ManagerTenure.tenure_days.desc())
         ).scalars().all()
         aggregates = self._load_aggregates([manager_id]).get(manager_id, {})
+        affiliations = self._load_affiliations([t.fund_code for t in tenures])
         return {
             **self._to_dto(m),
             **aggregates,
@@ -237,10 +254,70 @@ class ManagerService:
                     "tenure_return": t.tenure_return,
                     "annual_return": t.annual_return,
                     "is_current": t.is_current,
+                    "affiliation": affiliations.get(t.fund_code),
                 }
                 for t in tenures
             ],
         }
+
+    def _load_affiliations(self, fund_codes: list[str]) -> dict[str, dict | None]:
+        """任期基金的跨 tab 归属（徽章数据，一次两条小查询）。
+
+        - tab：老两 tab 按 yaml 名单成员（resolve universe），market 两 tab
+          按 funds.market_type（债基·市场/股基·市场）。命中多个取优先级
+          首个（老名单窄而精，优先于市场全量）。
+        - board_weeks：该基金出现在夏普周观测的周数（历史累计）。
+        - fund_name_market：funds 表的正式名称（tenures 的 name 是东财档案
+          快照，可能过时）。
+        """
+        codes = [c for c in set(fund_codes) if c]
+        if not codes:
+            return {}
+
+        # market 两 tab：funds.market_type（'bond'/'stock'，None=other）
+        market_rows = self.db.execute(
+            select(Fund.code, Fund.name, Fund.market_type).where(Fund.code.in_(codes))
+        ).all()
+        fund_info = {code: (name, mtype) for code, name, mtype in market_rows}
+
+        # 老两 tab 名单：yaml 成员（缓存读文件，量小）
+        bond_yaml = set(resolve_universe_codes("bond"))
+        stock_yaml = set(resolve_universe_codes("stock"))
+
+        # 在榜周数：code → count(weeks)
+        board_rows = self.db.execute(
+            select(SharpeBoardObservation.code, func.count(SharpeBoardObservation.id))
+            .join(SharpeBoardWeek, SharpeBoardWeek.id == SharpeBoardObservation.week_id)
+            .where(
+                SharpeBoardObservation.code.in_(codes),
+                SharpeBoardWeek.status == "complete",
+            )
+            .group_by(SharpeBoardObservation.code)
+        ).all()
+        board_weeks = dict(board_rows)
+
+        out: dict[str, dict | None] = {}
+        for code in codes:
+            name, mtype = fund_info.get(code, (None, None))
+            tab = None
+            if code in bond_yaml:
+                tab = "bond"
+            elif code in stock_yaml:
+                tab = "stock"
+            elif mtype == "bond":
+                tab = "discovery-bond"
+            elif mtype == "stock":
+                tab = "discovery-stock"
+            weeks = board_weeks.get(code, 0)
+            if tab is None and weeks == 0:
+                out[code] = None
+                continue
+            out[code] = {
+                "tab": tab,
+                "board_weeks": weeks,
+                "fund_name_market": name,
+            }
+        return out
 
     @staticmethod
     def _to_dto(m: Manager) -> dict:

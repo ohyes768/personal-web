@@ -3,7 +3,7 @@
  */
 'use client';
 
-import { Suspense, useMemo, useState } from 'react';
+import { Suspense, useMemo, useState, useEffect } from 'react';
 
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -18,6 +18,8 @@ import { useCompare, useFeeDetails, useFundList } from '@/lib/hooks';
 import {
   feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions,
 } from '@/lib/compareDimensions';
+import { useSearchParams } from 'next/navigation';
+
 import { useFilters } from '@/lib/useFilters';
 import type { FundListItem } from '@/lib/types';
 
@@ -27,6 +29,18 @@ function FundsPageInner() {
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
+  // 双向闭环落点：经理页徽章 ?code=XXXX 直达，抽屉内按 code 拉完整详情
+  const codeParam = useSearchParams().get('code');
+  const [stubCode, setStubCode] = useState<string | null>(null);
+  useEffect(() => {
+    if (codeParam) {
+      setStubCode(codeParam);
+      // 用完即清，避免关闭抽屉后刷新页面又弹开
+      const url = new URL(window.location.href);
+      url.searchParams.delete('code');
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [codeParam]);
 
   const compareDimensions = useMemo(
     () => [...fundCompareDimensions, ...fundDisplayOnlyDimensions, ...feeDetailDimensions],
@@ -110,6 +124,7 @@ function FundsPageInner() {
       />
 
       <RowDetailDrawerBond
+        stub={stubCode}
         fund={detailFund}
         onClose={() => setDetailFund(null)}
       />

@@ -54,7 +54,8 @@ function SharpeBoardPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [reloadTick, setReloadTick] = useState(0);
   const [hiddenCodes, setHiddenCodes] = useState<ReadonlySet<string>>(new Set());
-  const [focusCode, setFocusCode] = useState<string | null>(null);
+  // 双向闭环落点：经理页徽章 ?focus=CODE 直达并聚焦该基金曲线
+  const [focusCode, setFocusCode] = useState<string | null>(() => searchParams.get('focus'));
   const [schedulerOpen, setSchedulerOpen] = useState(searchParams.get('scheduler') === '1');
   // 详情抽屉：榜单行只有 code/name，传 stub，抽屉内部按 code 拉完整详情
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
@@ -80,6 +81,11 @@ function SharpeBoardPageInner() {
         if (controller.signal.aborted) return;
         setData(res);
         setLoading(false);
+        // URL focus 校验：code 不在本次榜单则还原为用户手动聚焦语义（null）
+        const urlFocus = searchParams.get('focus');
+        if (urlFocus && !res.series.some(sr => sr.code === urlFocus)) {
+          setFocusCode(prev => (prev === urlFocus ? null : prev));
+        }
       })
       .catch((err: unknown) => {
         if (controller.signal.aborted) return;

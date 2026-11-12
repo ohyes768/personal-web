@@ -13,6 +13,8 @@
 'use client';
 
 import { ArrowPathIcon, FunnelIcon, XMarkIcon } from '@heroicons/react/24/outline';
+import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { FilterPanelShell, DimensionControl, type Dimension } from '@/components/FilterSidebar';
@@ -26,6 +28,7 @@ import {
   type ManagerFilters,
   type ManagerListItem,
   type ManagerScreenResponse,
+  type TenureAffiliation,
 } from '@/lib/managers';
 
 const fmtPct = (v: number | null, digits = 1) =>
@@ -63,7 +66,13 @@ const CHIP_LABELS: Record<NumericKey, { label: string; fmt: (v: number) => strin
 };
 
 function ManagersPageInner() {
-  const [filters, setFilters] = useState<ManagerFilters>(MANAGER_DEFAULT_FILTERS);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const [filters, setFilters] = useState<ManagerFilters>(() => {
+    // 第 3 层落点：基金详情抽屉 ?keyword=经理名 跳转过来直接出结果
+    const kw = searchParams.get('keyword');
+    return kw ? { ...MANAGER_DEFAULT_FILTERS, keyword: kw } : MANAGER_DEFAULT_FILTERS;
+  });
   const [data, setData] = useState<ManagerScreenResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -215,22 +224,22 @@ function ManagersPageInner() {
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">{panel}</aside>
 
-          <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
+          <section className="min-w-0 overflow-x-auto bg-paper-card rounded-lg border border-rule">
             <table className="w-full table-fixed text-xs">
               <thead className="border-b border-rule-strong">
                 <tr>
-                  <SortableHeader label="经理" field="name" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} align="left" className="w-[8.5rem]" />
-                  <th className="px-1.5 py-2 text-left text-xs font-medium text-ink-muted">公司</th>
+                  <SortableHeader label="经理" field="name" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} align="left" className="w-[7rem] min-w-[7rem]" />
+                  <th className="px-1.5 py-2 text-left text-xs font-medium text-ink-muted w-[7rem] min-w-[7rem]">公司</th>
                   <SortableHeader label="从业" field="career_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
-                  <SortableHeader label="年化·含离任" field="weighted_annual" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="全部任期（含已离任）的时长加权年化：职业生涯整体口径" />
-                  <SortableHeader label="在管年化" field="current_weighted_annual" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="仅当前在管的主动权益段时长加权：当下状态口径。无在管段显示 -" />
-                  <SortableHeader label="胜率" field="tenure_win_rate" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="任期胜率：任职回报为正的任期占比。中位数约 55%，≥2/3 显著优于平均" />
-                  <SortableHeader label="独管" field="solo_ratio" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="独管比例：在管基金中仅自己一位经理的占比。共管多 → 贡献难归因（挂名风险）" />
-                  <SortableHeader label="最长任期" field="longest_tenure_years" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
-                  <SortableHeader label="回撤" field="max_drawdown" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
-                  <SortableHeader label="夏普" field="sharpe" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
-                  <SortableHeader label="规模" field="current_scale_yi" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
-                  <th className="px-1.5 py-2 text-right text-xs font-medium text-ink-muted">在管</th>
+                  <SortableHeader label="年化·含离任" field="weighted_annual" className="w-[5.5rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="全部任期（含已离任）的时长加权年化：职业生涯整体口径" />
+                  <SortableHeader label="在管年化" field="current_weighted_annual" className="w-[5.5rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="仅当前在管的主动权益段时长加权：当下状态口径。无在管段显示 -" />
+                  <SortableHeader label="胜率" field="tenure_win_rate" className="w-[4rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="任期胜率：任职回报为正的任期占比。中位数约 55%，≥2/3 显著优于平均" />
+                  <SortableHeader label="独管" field="solo_ratio" className="w-[4rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} tip="独管比例：在管基金中仅自己一位经理的占比。共管多 → 贡献难归因（挂名风险）" />
+                  <SortableHeader label="最长任期" field="longest_tenure_years" className="w-[4.5rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="回撤" field="max_drawdown" className="w-[4.5rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="夏普" field="sharpe" className="w-[4rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <SortableHeader label="规模" field="current_scale_yi" className="w-[4.5rem]" currentSort={filters.sort} currentOrder={filters.order} onSort={toggleSort} />
+                  <th className="px-1.5 py-2 text-right text-xs font-medium text-ink-muted w-[5.5rem]">在管</th>
                 </tr>
               </thead>
               <tbody>
@@ -314,6 +323,45 @@ function ManagersPageInner() {
   );
 }
 
+/** 归属徽章：tab 跳转 + 在榜周数；无归属时退化为纯代码 */
+const AFFILIATION_TABS: Record<NonNullable<TenureAffiliation['tab']>, { label: string; href: string }> = {
+  'bond': { label: '债基名单', href: '/bond' },
+  'stock': { label: '股基名单', href: '/stock' },
+  'discovery-bond': { label: '债基·市场', href: '/discovery-bond' },
+  'discovery-stock': { label: '股基·市场', href: '/discovery-stock' },
+};
+
+function AffiliationBadges({ aff, code, name }: {
+  aff: TenureAffiliation | null | undefined;
+  code: string;
+  name: string | null;
+}) {
+  const tabInfo = aff?.tab ? AFFILIATION_TABS[aff.tab] : null;
+  return (
+    <span className="inline-flex items-center gap-1">
+      {tabInfo ? (
+        <Link
+          href={`${tabInfo.href}?code=${code}`}
+          className="inline-flex items-center rounded bg-info-tint px-1.5 py-[1px] font-mono text-[11px] text-info transition-colors hover:bg-info hover:text-white"
+          title={`到${tabInfo.label}查看${name ?? code}的详情`}
+        >
+          {code}
+        </Link>
+      ) : (
+        <span className="font-mono text-info">{code}</span>
+      )}
+      {aff && aff.board_weeks > 0 && (
+        <span
+          className="inline-flex items-center rounded-full bg-up-tint px-1.5 py-[1px] text-[10px] text-up"
+          title="上过夏普周榜的周数（历史累计）"
+        >
+          在榜 {aff.board_weeks} 周
+        </span>
+      )}
+    </span>
+  );
+}
+
 function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
   manager: ManagerListItem;
   expanded: boolean;
@@ -364,8 +412,16 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
         </td>
         <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.sharpe, 2)}</td>
         <td className={`${td} text-right tnum whitespace-nowrap`}>{fmtNum(m.current_scale_yi, 0)}</td>
-        <td className={`${td} text-right tnum whitespace-nowrap text-ink-muted`}>
-          {m.current_fund_count ?? '-'}/{m.managed_fund_count ?? '-'}
+        <td className={`${td} text-right whitespace-nowrap`}>
+          <div className="tnum text-ink-muted">
+            {m.current_fund_count ?? '-'}/{m.managed_fund_count ?? '-'}
+          </div>
+          {m.board_on_current > 0 && (
+            <div className="mt-0.5 inline-flex items-center gap-0.5 rounded-full bg-up-tint px-1.5 py-[1px] text-[10px] text-up"
+                 title={`在管 ${m.current_fund_total} 只中有 ${m.board_on_current} 只上过夏普周榜`}>
+              在榜 {m.board_on_current}
+            </div>
+          )}
         </td>
       </tr>
       {expanded && (
@@ -430,7 +486,9 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
                   <tbody>
                     {shownTenures.map(t => (
                       <tr key={`${t.fund_code}-${t.start_date}`} className="border-b border-rule/50 last:border-b-0">
-                        <td className="py-1 pr-2 font-mono text-info whitespace-nowrap">{t.fund_code}</td>
+                        <td className="py-1 pr-2 whitespace-nowrap">
+                          <AffiliationBadges aff={t.affiliation} code={t.fund_code} name={t.fund_name} />
+                        </td>
                         <td className="py-1 pr-2">
                           <span className="truncate">{t.fund_name}</span>
                         </td>

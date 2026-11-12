@@ -46,15 +46,19 @@ function sortAnnualRanks(ranks: FundDetail['achievement_ranks']) {
 interface RowDetailDrawerProps {
   fund: FundListItem | null;
   onClose: () => void;
+  /** URL 直达（?code=）时只传 code：头部先显示代码，详情加载后回填名称 */
+  stub?: string | null;
 }
 
-export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
+export function RowDetailDrawer({ fund, onClose, stub }: RowDetailDrawerProps) {
+  // stub 模式 = fund 为 null 但有 code：复用同一抽屉壳，头部 code 先行
+  const effective = fund ?? (stub ? { code: stub, name: '', fund_type: '' } as FundListItem : null);
   const [detail, setDetail] = useState<FundDetail | null>(null);
   const [loading, setLoading] = useState(false);
 
   // Escape 关闭 + body overflow 锁定
   useEffect(() => {
-    if (!fund) return;
+    if (!effective) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
     };
@@ -64,25 +68,25 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
       document.removeEventListener('keydown', handleKeyDown);
       document.body.style.overflow = '';
     };
-  }, [fund, onClose]);
+  }, [effective, onClose]);
 
   // 监听 fund.code 拉详情
   useEffect(() => {
-    if (!fund) {
+    if (!effective) {
       setDetail(null);
       return;
     }
     setLoading(true);
     setDetail(null);
     let cancelled = false;
-    stockApi.getDetail(fund.code)
+    stockApi.getDetail(effective.code)
       .then(d => { if (!cancelled) setDetail(d); })
       .catch(() => { if (!cancelled) setDetail(null); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [fund?.code]);
+  }, [effective?.code]);
 
-  if (!fund) return null;
+  if (!effective) return null;
 
   // 响应式宽度（沿用 CompareDrawer）
   const width = typeof window === 'undefined'
@@ -115,11 +119,11 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                 <span
                   className="font-mono text-info text-xs tracking-wide"
                 >
-                  {fund.code}
+                  {effective.code}
                 </span>
-                {fund.fund_type && (
+                {effective.fund_type && (
                   <span className="text-[10px] uppercase tracking-[0.12em] text-ink-soft">
-                    {fund.fund_type}
+                    {effective.fund_type}
                   </span>
                 )}
               </div>
@@ -128,7 +132,7 @@ export function RowDetailDrawer({ fund, onClose }: RowDetailDrawerProps) {
                 className="mt-1 text-xl text-ink-strong leading-tight"
                 style={{ fontFamily: 'var(--font-serif)', fontWeight: 600 }}
               >
-                {fund.name}
+                {detail?.name || effective.name}
               </h2>
             </div>
             <button

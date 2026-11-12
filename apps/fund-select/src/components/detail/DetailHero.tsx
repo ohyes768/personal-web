@@ -4,6 +4,8 @@
  * 设计目标：让用户在前两屏内拿到「这只基金值不值得看」的结论，
  * 4 张明细表作为补充。
  */
+import Link from 'next/link';
+
 import type { FundDetail } from '@/lib/types';
 import { Signal } from './Signal';
 import { RiskMetricsGrid } from './RiskMetricsGrid';
@@ -135,7 +137,15 @@ export function DetailHero({ fund }: DetailHeroProps) {
             const yr = fund.mgr_experience_years_max ?? fund.mgr_experience_years;
             return yr !== null && yr !== undefined ? `${yr.toFixed(1)} 年` : '-';
           })()}
-          sub={fund.mgr_name ?? '-'}
+          sub={fund.mgr_name ? (
+            <Link
+              href={`/managers?keyword=${encodeURIComponent(fund.mgr_name.split('、')[0])}`}
+              className="text-info underline-offset-2 hover:underline"
+              title={`到经理页搜索 ${fund.mgr_name}`}
+            >
+              {fund.mgr_name}
+            </Link>
+          ) : '-'}
         />
       </div>
 
@@ -176,7 +186,7 @@ function KpiCell({
 }: {
   label: string;
   value: string;
-  sub: string;
+  sub: React.ReactNode;
   accent?: 'up' | 'down';
 }) {
   const valueClass = accent === 'up'

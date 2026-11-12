@@ -922,3 +922,44 @@ SQLAlchemy 把结果列类型标成 Boolean —— Python 侧拿到 `True/False`
 ### 15.4 详情接口也要带聚合
 
 `get_detail` 与 `screen` 共用 `_load_aggregates`，否则列表有值、详情 None。
+
+---
+
+## 16. 经理 ↔ 基金跨 tab 关联（11-12 双向闭环）
+
+### 16.1 URL 直达参数是唯一跨页交互协议
+
+| 落点页 | 参数 | 行为 |
+|---|---|---|
+| 4 个基金 tab | `?code=` | 打开详情抽屉（stub 只传 code），用后 `history.replaceState` 清参数防刷新重弹 |
+| 经理页 | `?keyword=` | 预填搜索框 |
+| 夏普榜单 | `?focus=` | 聚焦该基金曲线；code 不在本次榜单时还原 null |
+
+### 16.2 basePath 陷阱：Link href 不带 /funds 前缀
+
+Next.js `Link` 自动补 `basePath=/funds`，href 写 `/funds/managers` 会产出
+`/funds/funds/managers`（404）。跨页链接一律写相对路径（`/managers?...`）。
+`<a href>` 原生标签才需要手写前缀（FundsHeader 的「返回首页」用的 `/`）。
+
+### 16.3 详情抽屉 stub 模式
+
+`RowDetailDrawer` / `RowDetailDrawerBond` 接受 `stub?: string | null`：
+fund 为 null 但 stub 有 code 时复用同一抽屉壳，头部先显示 code、
+`detail?.name || effective.name` 回填名称。**依赖数组必须用
+`effective?.code`**——写 `fund?.code` 时 stub 模式不触发拉取（fund 恒 null），
+抽屉空白。
+
+### 16.4 详情接口路径（D2 决策）
+
+`/api/funds/{code}` 是唯一详情端点；discovery-* 没有自己的 `/{code}`。
+抽屉统一走 `fundApi.getDetail`（Bond drawer）或 `stockApi.getDetail`
+（stock drawer，路径 `/api/funds/stock/{code}` 与 `/api/funds/{code}`
+返回同构 DTO）。给 discovery 页接新跳转时不要发明新端点。
+
+### 16.5 归属徽章数据（affiliation）
+
+`get_detail` 的每条 tenure 带 `affiliation`：`tab`（老 yaml 名单优先于
+market_type 全量）/ `board_weeks`（complete 周观测计数，历史累计）/
+`fund_name_market`。列表行带 `board_on_current` / `current_fund_total`
+汇总。并行会话重写同文件的 JSX 时必须核对 `AffiliationBadges` 调用点
+是否还在（本次曾被 8a11b2a 覆盖回纯文本）。
