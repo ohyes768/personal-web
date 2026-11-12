@@ -312,3 +312,22 @@ class TestDerivedMetrics:
         """既有 seeded 夹具（m1 有 1 段全赢任期）胜率 100，不回归。"""
         row = self._row(client, "m1")
         assert row["tenure_win_rate"] == 100.0
+
+
+class TestMaxFundCount:
+    """在管只数 ≤ N（11-12 默认分层：精力分散硬门槛，中基协上限 10）。"""
+
+    def test_max_fund_count(self, client, db_session):
+        from src.db.models import Manager
+        db_session.add_all([
+            Manager(manager_id="m_few", name="专注甲", current_fund_count=3, scope="stock_active"),
+            Manager(manager_id="m_many", name="一拖多乙", current_fund_count=15, scope="stock_active"),
+            Manager(manager_id="m_null", name="无数据丙", current_fund_count=None, scope="stock_active"),
+        ])
+        db_session.commit()
+        items = client.get("/api/funds/managers/screen",
+                           params={"max_fund_count": 8, "limit": 50}).json()["items"]
+        ids = {it["manager_id"] for it in items}
+        assert "m_few" in ids
+        assert "m_many" not in ids
+        assert "m_null" not in ids  # NULL 不命中，与其它筛选语义一致

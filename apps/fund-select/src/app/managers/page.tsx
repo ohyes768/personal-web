@@ -40,14 +40,15 @@ const MANAGER_DIMENSIONS: Dimension[] = [
   { key: 'min_scale_yi', label: '在管规模', unit: '亿', min: 0, max: 2000, step: 10 },
   { key: 'min_win_rate', label: '任期胜率', unit: '%', min: 0, max: 100, step: 10 },
   { key: 'min_solo_ratio', label: '独管比例', unit: '%', min: 0, max: 100, step: 10 },
+  { key: 'max_fund_count', label: '在管只数', unit: '只', min: 1, max: 50, step: 1 },
 ];
 
 type NumericKey =
   | 'min_career_years' | 'min_weighted_annual' | 'max_drawdown' | 'min_scale_yi'
-  | 'min_win_rate' | 'min_solo_ratio';
+  | 'min_win_rate' | 'min_solo_ratio' | 'max_fund_count';
 const NUMERIC_KEYS: NumericKey[] = [
   'min_career_years', 'min_weighted_annual', 'max_drawdown', 'min_scale_yi',
-  'min_win_rate', 'min_solo_ratio',
+  'min_win_rate', 'min_solo_ratio', 'max_fund_count',
 ];
 
 /** chip 文案：与基金 tab 的 FilterChipBar 同构（label + 关系符 + 值） */
@@ -58,6 +59,7 @@ const CHIP_LABELS: Record<NumericKey, { label: string; fmt: (v: number) => strin
   min_scale_yi: { label: '在管规模', fmt: v => `≥ ${v} 亿` },
   min_win_rate: { label: '任期胜率', fmt: v => `≥ ${v}%` },
   min_solo_ratio: { label: '独管比例', fmt: v => `≥ ${v}%` },
+  max_fund_count: { label: '在管只数', fmt: v => `≤ ${v} 只` },
 };
 
 function ManagersPageInner() {

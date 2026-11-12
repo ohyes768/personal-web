@@ -52,6 +52,7 @@ class ManagerService:
         min_sharpe: Optional[float] = None,
         min_win_rate: Optional[float] = None,      # 任期胜率 ≥ %（0-100）
         min_solo_ratio: Optional[float] = None,    # 独管比例 ≥ %（0-100）
+        max_fund_count: Optional[int] = None,      # 在管基金数 ≤ N（精力分散门槛，中基协上限 10）
         keyword: Optional[str] = None,             # 姓名/公司模糊
         sort: str = "weighted_annual",
         order: str = "desc",
@@ -75,6 +76,8 @@ class ManagerService:
             q = q.where(Manager.current_scale_yi >= min_scale_yi)
         if min_sharpe is not None:
             q = q.where(Manager.sharpe >= min_sharpe)
+        if max_fund_count is not None:
+            q = q.where(Manager.current_fund_count <= max_fund_count)
 
         rows = self.db.execute(q).scalars().all()
         aggregates = self._load_aggregates([m.manager_id for m in rows])

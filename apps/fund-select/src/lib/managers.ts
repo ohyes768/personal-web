@@ -58,6 +58,8 @@ export interface ManagerFilters {
   min_scale_yi: number | null;
   min_win_rate: number | null;
   min_solo_ratio: number | null;
+  /** 在管基金数 ≤ N（精力分散门槛；中基协硬性上限 10 只） */
+  max_fund_count: number | null;
   keyword: string | null;
   sort: string;
   order: 'asc' | 'desc';
@@ -66,12 +68,14 @@ export interface ManagerFilters {
 }
 
 export const MANAGER_DEFAULT_FILTERS: ManagerFilters = {
-  min_career_years: 5,        // 从业 ≥5 年：穿越一轮完整牛熊的及格线
-  min_weighted_annual: null,  // 默认不卡收益，先看全貌
+  // 分层默认值（11-12 调研：硬门槛 + 质量门槛；收益/回撤不默认卡，先看全貌）
+  min_career_years: 5,        // 硬门槛：穿越一轮完整牛熊的及格线
+  min_weighted_annual: null,
   max_drawdown: null,
-  min_scale_yi: null,
-  min_win_rate: null,
-  min_solo_ratio: null,
+  min_scale_yi: 5,            // 硬门槛：<2 亿有清盘风险，5 亿可投资范围已自由
+  min_win_rate: 60,           // 质量门槛：胜率中位数 ~55%，60 即优于平均
+  min_solo_ratio: 50,         // 质量门槛：过半在管为独管，共管贡献难归因
+  max_fund_count: 8,          // 硬门槛：精力分散（中基协硬性上限 10，8 留缓冲）
   keyword: null,
   sort: 'weighted_annual',
   order: 'desc',
@@ -89,6 +93,7 @@ function buildQuery(f: Partial<ManagerFilters>): string {
   if (f.min_scale_yi != null) params.set('min_scale_yi', String(f.min_scale_yi));
   if (f.min_win_rate != null) params.set('min_win_rate', String(f.min_win_rate));
   if (f.min_solo_ratio != null) params.set('min_solo_ratio', String(f.min_solo_ratio));
+  if (f.max_fund_count != null) params.set('max_fund_count', String(f.max_fund_count));
   if (f.keyword) params.set('keyword', f.keyword);
   if (f.sort) params.set('sort', f.sort);
   if (f.order) params.set('order', f.order);
