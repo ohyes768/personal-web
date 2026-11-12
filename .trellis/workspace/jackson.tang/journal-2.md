@@ -1016,3 +1016,70 @@ Session summary was not supplied.
 ### Next Steps
 
 - None - task complete
+
+
+## Session 73: Navidrome 归档与 6443 端口归位
+
+**Date**: 2026-11-12
+**Task**: Navidrome 归档与 6443 端口归位
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+Session summary was not supplied.
+
+### Main Changes
+
+## Navidrome 归档与 6443 端口归位
+
+### 背景
+Navidrome 服务早已不存在（无容器、无镜像、`~/navidrome/` 目录已被删除），
+但 `~/nginx/navidrome.conf` 还在，监听 6443 且 `server_name _`（成为该端口
+默认 server），反代到 `192.168.31.73:4533`——该地址无人监听 → 502。
+同时 `xiaomusic.conf` 也监听 6443（`server_name xiaomusic.duomi77.cn`），
+被 navidrome 的默认 server 抢了路由。
+
+### 归档
+- `~/nginx/navidrome.conf` → `~/archive/navidrome/navidrome.conf`
+- 新建 `~/archive/navidrome/docker-compose.yml`：原始 compose
+  （`~/navidrome/docker-compose.yml`）已不存在，依据 `~/.openclaw/workspace`
+  下的历史文档（`ha-voice-control-doc.md`、`update-navidrome-doc.js`）重建，
+  还原了 ND_PORT / 音乐库挂载 / media_net 网络 / 4433→宿主映射。
+- `~/archive/navidrome/README.md`：记录下线原因、归档内容、恢复步骤，
+  以及 openclaw 文档里规划过的「Docker DNS 直连」备选方案。
+
+### nginx 侧清理
+- `~/nginx/docker-compose.yml`：删除 `./navidrome.conf` 的 bind mount 与
+  `navidrome_default` 外部网络声明（含服务段 `networks` 里的 `- navidrome_default`）。
+  **bind mount 必须同步删**：源文件移走后 Docker 会在原路径创建同名目录，
+  下次 nginx 重建会因 `conf.d/navidrome.conf` 是目录而启动失败。
+- nginx 容器重建后删除孤儿网络 `navidrome_default`（compose project
+  "navidrome" 遗留，此前只有 nginx 挂在上面）。
+- 6443 现由 xiaomusic 独占，裸 IP / xiaomusic Host 均为 200。
+
+### 全端口回归
+80(http) 200、18080(http) 403、443/2443/6443/7443/8443/9443/3443 → 200、
+10443/1443 → 302、12443 → 401。
+
+### 遗留（未动，与本次无关）
+- `fund_lof_default` / `homeassistant_default` 两个外部网络也只剩 nginx 挂着，
+  属各自 compose project 的残骸，未在本次范围内。
+- `media_net` 保留（无 compose 标签，手工创建），重建 navidrome 时正好用得上。
+
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
