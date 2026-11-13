@@ -3,7 +3,7 @@
   "name": "fund-sharpe-trend",
   "title": "夏普走势页：单基金滚动夏普稳定性视图",
   "description": "新增导航第七 Tab「夏普走势」（/funds/sharpe-trend?code=xxx）：后端现算单基金周频滚动 3 年夏普曲线（纯净值口径，不 join 基准避免样本截断），前端单曲线 + 0.8 参考线 + 稳定性 KPI（当前/最高/最低/均值/连续达标周数）；股基两 tab 列表代码、经理页任期徽章、夏普榜单行三处入口带 code 跳转。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": null,
   "scope": "apps/fund-select + backend/fund-select",
   "package": "backend/douyin-processor",
@@ -11,7 +11,7 @@
   "creator": "jackson.tang",
   "assignee": "jackson.tang",
   "createdAt": "2026-11-13",
-  "completedAt": null,
+  "completedAt": "2026-11-13",
   "branch": "master",
   "base_branch": "master",
   "worktree_path": null,
@@ -23,6 +23,7 @@
   "relatedFiles": [],
   "notes": "",
   "meta": {
-    "package": "backend/fund-select"
+    "package": "backend/fund-select",
+    "commit": "fa7c165"
   }
 }
