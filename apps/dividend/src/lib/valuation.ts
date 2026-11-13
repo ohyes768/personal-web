@@ -277,3 +277,91 @@ export function formatValuationDuration(seconds: number | null | undefined): str
   if (h > 0) return `${h}小时${m}分${s}秒`;
   return `${m}分${s}秒`;
 }
+
+/** 现价所处的五分区（与 ValuationPriceBar 的区间划分同一口径） */
+export type ValuationZone = 'heavy' | 'add' | 'hold' | 'reduce' | 'full';
+
+export const VALUATION_ZONE_LABEL: Record<ValuationZone, string> = {
+  heavy: '重仓区',
+  add: '加仓区',
+  hold: '持有区',
+  reduce: '减仓区',
+  full: '全卖区',
+};
+
+/** 告警档位文案（对齐后端 AlertService 的 LEVEL_META） */
+export const VALUATION_ALERT_LABEL: Record<ValuationLevelKey, string> = {
+  heavy_position: '可加仓',
+  add_position: '加仓价位',
+  reduce_position: '该减仓',
+  full_exit: '全部清仓',
+};
+
+export interface ValuationZoneResult {
+  /** 现价所在区间；档位不足四条时判不出（null） */
+  zone: ValuationZone | null;
+  /** 命中的告警档位（持有区不命中） */
+  hitKey: ValuationLevelKey | null;
+  hitLabel: string | null;
+  hitPrice: number | null;
+  /** 距命中档位线的百分比（后端 distance_pct 同口径，可正可负） */
+  distancePct: number | null;
+  /** 是否会触发提醒 */
+  willTrigger: boolean;
+}
+
+/**
+ * 现价落在挡位的哪一区、会不会触发提醒。
+ *
+ * 区间口径与 ValuationPriceBar.currentSegSide 一致（四条线重仓<加仓<减仓<全卖）：
+ * ≤重仓=重仓区、≤加仓=加仓区、≤减仓=持有区、≤全卖=减仓区、>全卖=全卖区。
+ * 命中判定严格复刻后端 AlertService._find_hit_level：先卖后买、severity 高者优先，
+ * 持有区两边都不命中（不推提醒）。
+ */
+export function resolveValuationZone(
+  levels: AlertLevels | null | undefined,
+  price: number | null | undefined,
+): ValuationZoneResult {
+  const empty: ValuationZoneResult = {
+    zone: null, hitKey: null, hitLabel: null, hitPrice: null, distancePct: null, willTrigger: false,
+  };
+  if (!levels || price == null || !(price > 0)) return empty;
+
+  const points = VALUATION_LEVEL_KEYS
+    .map(key => ({ key, price: levels[key]?.price }))
+    .filter((p): p is { key: ValuationLevelKey; price: number } => p.price != null && p.price > 0);
+  // 不足四条线判不出区间（手工配置可能只填一档）
+  if (points.length !== VALUATION_LEVEL_KEYS.length) return empty;
+
+  const sorted = [...points].sort((a, b) => a.price - b.price);
+  const [heavy, add, reduce, full] = sorted;
+
+  const zone: ValuationZone = price <= heavy.price ? 'heavy'
+    : price <= add.price ? 'add'
+      : price <= reduce.price ? 'hold'
+        : price <= full.price ? 'reduce'
+          : 'full';
+
+  // 命中判定：卖出方向（减仓/全卖）优先于买入方向（加仓/重仓），同向取 severity 高者
+  const sellHits = points
+    .filter(p => (p.key === 'reduce_position' || p.key === 'full_exit') && price >= p.price)
+    .sort((a, b) => severity(b.key) - severity(a.key));
+  const buyHits = points
+    .filter(p => (p.key === 'heavy_position' || p.key === 'add_position') && price <= p.price)
+    .sort((a, b) => severity(b.key) - severity(a.key));
+  const hit = sellHits[0] ?? buyHits[0] ?? null;
+
+  return {
+    zone,
+    hitKey: hit?.key ?? null,
+    hitLabel: hit ? VALUATION_ALERT_LABEL[hit.key] : null,
+    hitPrice: hit?.price ?? null,
+    distancePct: hit ? ((price - hit.price) / hit.price) * 100 : null,
+    willTrigger: !!hit,
+  };
+}
+
+/** 告警 severity（对齐后端 LEVEL_META） */
+function severity(key: ValuationLevelKey): number {
+  return key === 'heavy_position' || key === 'full_exit' ? 2 : 1;
+}

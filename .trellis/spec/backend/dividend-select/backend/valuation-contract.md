@@ -112,6 +112,14 @@ A local skill checkout is never proof of deployment.
   four prices against the currently effective ones and applies without opening
   the long report. Applying always writes enabled=true, so a paused stock
   becomes monitored again after an apply.
+- The confirm card also states where the current price lands after the apply
+  (2026-11-13): 旧挡位在 X 区 → 新挡位在 Y 区, plus whether the next price
+  refresh will push a DingTalk alert. Zone and hit rules come from
+  `resolveValuationZone` (`apps/dividend/src/lib/valuation.ts`) and must stay
+  identical to the backend `AlertService._find_hit_level`: sell side first
+  (减仓/全卖, severity 2 wins), then buy side (重仓/加仓); 持有区 hits nothing.
+  A re-evaluation can move the price across a threshold (e.g. 持有区 → 减仓区),
+  so applying silently would fire an alert the user never saw coming.
 - FavoritesTrackingTab row states derive from alerts + report + per_code:
   monitoring / paused (effective levels exist), pending_apply (ready report
   newer than `alerts.updated_at`; overlaps monitoring/paused), evaluating,
@@ -183,3 +191,7 @@ A local skill checkout is never proof of deployment.
   (row 「应用」 → confirm card → apply, report modal read path kept separate),
   stale 409 shown inside the confirm card, non-ready gaps, paused badge without
   a row pause action, out-of-range/missing price, narrow-viewport overflow.
+- `apps/dividend/src/lib/valuation.test.ts` (`node --experimental-strip-types
+  --test src/lib/valuation.test.ts`): zone + hit resolution — 持有区 no hit,
+  each other zone hits its own level, sell before buy, severity ordering,
+  fewer than four levels or missing price → no zone.

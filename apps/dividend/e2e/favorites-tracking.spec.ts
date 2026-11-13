@@ -275,6 +275,9 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   await expect(confirmDialog).toBeVisible();
   await expect(page.getByRole('heading', { name: '待评公司 · 四挡位估值报告' })).toHaveCount(0);
   await expect(confirmDialog.getByText('重仓')).toBeVisible();
+  // 现价 ¥27.80 高于新全卖线 ¥19 → 应用后落在全卖区、会推「全部清仓」提醒
+  await expect(confirmDialog.getByText('应用后落在 全卖区')).toBeVisible();
+  await expect(confirmDialog.getByText(/会推送「全部清仓」钉钉提醒/)).toBeVisible();
   // 确认应用 → alerts 更新（enabled=true）
   await confirmDialog.getByTestId('valuation-confirm-apply-button').click();
   await expect(s.applyCalls).toEqual([{ code: '600004', evaluated_at: '2026-11-11T09:00:00' }]);
@@ -295,6 +298,9 @@ test('stale apply is rejected with 409 and old monitoring stays untouched', asyn
   await expect(confirmDialog).toBeVisible();
   // 新旧对比：旧生效价一列可见
   await expect(confirmDialog.getByText('¥8.50')).toBeVisible();
+  // 现价 ¥12.10 在新旧两套挡位里都落在持有区 → 不触发提醒
+  await expect(confirmDialog.getByText(/旧挡位在 持有区（不触发提醒）/)).toBeVisible();
+  await expect(confirmDialog.getByText('应用后不会触发提醒')).toBeVisible();
   await confirmDialog.getByTestId('valuation-confirm-apply-button').click();
   await expect(confirmDialog.getByRole('alert')).toContainText('报告已更新');
   // 旧挡位未被动过

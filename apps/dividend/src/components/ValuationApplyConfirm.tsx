@@ -11,6 +11,9 @@ import { Modal } from './shared-ui/Modal';
 import {
   VALUATION_LEVEL_KEYS,
   VALUATION_LEVEL_LABEL,
+  VALUATION_ZONE_LABEL,
+  reportLevelsToAlertLevels,
+  resolveValuationZone,
   type ValuationReportRecord,
 } from '@/lib/valuation';
 import type { AlertLevels } from '@/lib/types';
@@ -21,6 +24,8 @@ export interface ValuationApplyConfirmProps {
   report: ValuationReportRecord | null;
   /** 当前生效挡位（对比用；为空表示首次应用） */
   effectiveLevels: AlertLevels | null;
+  /** 现价（判断应用后落在哪一区、会不会触发提醒） */
+  currentPrice: number | null;
   applyPending?: boolean;
   applyError?: string;
   onApply: (report: ValuationReportRecord) => Promise<void> | void;
@@ -36,7 +41,7 @@ interface CompareRow {
 }
 
 export function ValuationApplyConfirm({
-  isOpen, onClose, report, effectiveLevels, applyPending = false, applyError = '', onApply,
+  isOpen, onClose, report, effectiveLevels, currentPrice, applyPending = false, applyError = '', onApply,
 }: ValuationApplyConfirmProps) {
   if (!report) return null;
 
@@ -48,6 +53,31 @@ export function ValuationApplyConfirm({
     return { key, next, old, delta, pe: point?.pe ?? null, pb: point?.pb ?? null };
   }).filter(r => r.next != null);
   const hasOld = rows.some(r => r.old != null);
+
+  // 应用后现价落在哪一区、会不会立刻触发提醒（口径与后端告警一致）
+  const newZone = resolveValuationZone(reportLevelsToAlertLevels(report.levels), currentPrice);
+  const oldZone = resolveValuationZone(effectiveLevels, currentPrice);
+  const zoneText = newZone.zone && currentPrice != null ? (
+    <div className={`rounded-lg border px-3 py-2 ${newZone.willTrigger ? 'border-amber-200 bg-amber-50' : 'border-rule bg-paper-tint'}`}>
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-sm">
+        <span className="font-mono font-semibold tabular-nums text-ink">现价 ¥{currentPrice.toFixed(2)}</span>
+        {oldZone.zone ? (
+          <span className="text-ink-muted">
+            旧挡位在 {VALUATION_ZONE_LABEL[oldZone.zone]}（{oldZone.willTrigger ? `触发${oldZone.hitLabel}` : '不触发提醒'}）
+            {' → '}
+            新挡位在 {VALUATION_ZONE_LABEL[newZone.zone]}
+          </span>
+        ) : (
+          <span className="text-ink-muted">应用后落在 {VALUATION_ZONE_LABEL[newZone.zone]}</span>
+        )}
+      </div>
+      <p className={`mt-1 text-xs ${newZone.willTrigger ? 'text-amber-700' : 'text-ink-muted'}`}>
+        {newZone.willTrigger
+          ? `应用后下一次价格刷新会推送「${newZone.hitLabel}」钉钉提醒（距该档位线 ${newZone.distancePct != null ? (newZone.distancePct >= 0 ? '+' : '') + newZone.distancePct.toFixed(1) : '—'}%）`
+          : '应用后不会触发提醒'}
+      </p>
+    </div>
+  ) : null;
 
   return (
     <Modal
@@ -85,6 +115,8 @@ export function ValuationApplyConfirm({
             ? '应用后用新挡位覆盖当前生效挡位，并开启价格提醒；旧挡位不再生效。'
             : '应用后保存四条价格线，并开启价格提醒。'}
         </p>
+
+        {zoneText}
 
         <table className="w-full text-sm">
           <thead>

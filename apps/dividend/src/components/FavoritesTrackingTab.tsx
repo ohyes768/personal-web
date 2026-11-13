@@ -170,6 +170,7 @@ export function FavoritesTrackingTab({
   const applyModalEffective: AlertLevels | null = applyModalCode
     ? (alertsStatus.alertMap.get(applyModalCode)?.levels ?? null)
     : null;
+  const applyModalPrice = applyModalCode ? (priceMap.get(applyModalCode)?.realtime ?? priceMap.get(applyModalCode)?.close ?? null) : null;
   const jobProgress = job && (job.status === 'queued' || job.status === 'running')
     ? { processed: job.processed, total: job.total }
     : null;
@@ -304,6 +305,7 @@ export function FavoritesTrackingTab({
         onClose={() => { setApplyCode(null); setApplyError(''); }}
         report={applyModalRecord}
         effectiveLevels={applyModalEffective}
+        currentPrice={applyModalPrice}
         onApply={handleApply}
         applyPending={actionPending === applyModalCode}
         applyError={applyError}
