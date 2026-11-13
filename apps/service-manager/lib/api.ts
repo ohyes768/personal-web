@@ -28,6 +28,8 @@ export type ReleaseState =
   | "not_configured";
 export type CheckStatus = "never" | "success" | "error";
 export type EndpointKind = "internal" | "external" | "admin";
+/** 归属：这条服务是不是我维护的（决定列表分组，逐条可改） */
+export type Ownership = "mine" | "other";
 export type JobState =
   | "queued"
   | "running"
@@ -161,11 +163,12 @@ export interface ServiceListItem {
   description: string;
   category: string;
   tags: string[];
+  ownership: Ownership;
   revision: number;
   updated_at: string;
   primary_url: string | null;
   component_count: number;
-  /** 该服务包含的 compose 项目（自己开发的 vs 其他，用来分 tab） */
+  /** 该服务包含的 compose 项目（来源信息，不再决定分组） */
   projects: string[];
   status: ServiceStatus;
 }
@@ -177,6 +180,7 @@ export interface ServiceDetail {
   category: string;
   tags: string[];
   notes: string;
+  ownership: Ownership;
   revision: number;
   created_at: string;
   updated_at: string;

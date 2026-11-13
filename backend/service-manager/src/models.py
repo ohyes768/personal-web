@@ -108,6 +108,17 @@ class RefreshKind(StrEnum):
     ALL = "all"
 
 
+class Ownership(StrEnum):
+    """归属：这条服务是不是我维护的。
+
+    逐条可设（页面上直接改），不再由 compose 项目名单全局推导；
+    `SERVICE_MANAGER_OWN_PROJECTS` 只作为新建服务时的默认值。
+    """
+
+    MINE = "mine"
+    OTHER = "other"
+
+
 # ---------------------------------------------------------------------------
 # 观测视图（先定义：被台账详情引用）
 # ---------------------------------------------------------------------------
@@ -192,6 +203,8 @@ class ServiceCreate(BaseModel):
     category: str = Field(default="", max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=20)
     notes: str = Field(default="", max_length=4000)
+    # 不给就按默认口径判定（无组件 → 我维护的）
+    ownership: Ownership | None = None
 
     @field_validator("name")
     @classmethod
@@ -230,6 +243,7 @@ class ServicePatch(BaseModel):
     category: str | None = Field(default=None, max_length=64)
     tags: list[str] | None = Field(default=None, max_length=20)
     notes: str | None = Field(default=None, max_length=4000)
+    ownership: Ownership | None = None
     revision: int
 
     @field_validator("name")
@@ -341,6 +355,7 @@ class ServiceDetail(BaseModel):
     category: str
     tags: list[str]
     notes: str
+    ownership: Ownership = Ownership.MINE
     revision: int
     created_at: str
     updated_at: str
@@ -357,11 +372,12 @@ class ServiceListItem(BaseModel):
     description: str
     category: str
     tags: list[str]
+    ownership: Ownership = Ownership.MINE
     revision: int
     updated_at: str
     primary_url: str | None = None
     component_count: int = 0
-    # 该服务包含的 compose 项目（自己开发的 vs 其他，用来分 tab）
+    # 该服务包含的 compose 项目（来源信息，不再决定分组）
     projects: list[str] = Field(default_factory=list)
     status: ServiceStatus = Field(default_factory=ServiceStatus)
 

@@ -8,6 +8,7 @@ import {
   ApiError,
   type ComponentView,
   type EndpointRecord,
+  type Ownership,
   type ReleaseListResponse,
   type ServiceDetail,
 } from "@/lib/api";
@@ -146,6 +147,20 @@ function ServiceDetailView() {
       await load();
     } catch (caught) {
       report(caught, "保存失败");
+    }
+  }
+
+  async function changeOwnership(next: Ownership) {
+    if (!detail || detail.ownership === next) return;
+    try {
+      await api.patchService(detail.id, {
+        ownership: next,
+        revision: detail.revision,
+      });
+      setToast(next === "mine" ? "已标为我维护的" : "已标为别人的");
+      await load();
+    } catch (caught) {
+      report(caught, "改归属失败");
     }
   }
 
@@ -323,6 +338,22 @@ function ServiceDetailView() {
 
       <h1>{detail.name}</h1>
       <p className="lead">{detail.description || "还没有填写用途说明"}</p>
+
+      <div className="btn-row" style={{ marginBottom: 12 }}>
+        <label className="small" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
+          归属
+          <select
+            value={detail.ownership}
+            onChange={(event) => void changeOwnership(event.target.value as Ownership)}
+            aria-label="归属"
+            title="这条服务是不是你维护的（决定列表分到哪个分组）"
+          >
+            <option value="mine">我维护的</option>
+            <option value="other">别人的</option>
+          </select>
+        </label>
+        <span className="small muted">归属决定列表分组，可随时改。</span>
+      </div>
 
       <div className="card tight">
         <div className="badge-stack" style={{ marginBottom: 8 }}>

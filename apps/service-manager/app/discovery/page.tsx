@@ -74,6 +74,11 @@ function DiscoveryView() {
     () => items.filter((item) => selected.includes(item.source_key)),
     [items, selected],
   );
+  // 已归属的容器要能看出归到谁名下：按 service_id 查名字
+  const serviceNames = useMemo(
+    () => new Map(services.map((item) => [item.id, item.name])),
+    [services],
+  );
 
   function toggle(sourceKey: string) {
     setSelected((current) =>
@@ -296,7 +301,9 @@ function DiscoveryView() {
                     <div className="small muted">{item.image_ref}</div>
                     {item.oneoff ? <span className="badge warn">一次性任务</span> : null}
                     {item.bound_service_id ? (
-                      <span className="badge info">已绑定</span>
+                      <span className="badge info">
+                        已归属 → {serviceNames.get(item.bound_service_id) ?? item.bound_service_id}
+                      </span>
                     ) : null}
                   </td>
                   <td className="small">

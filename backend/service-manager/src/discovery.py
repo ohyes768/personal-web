@@ -15,7 +15,13 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.db import Store
-from src.docker_reader import ContainerReader, DockerUnavailable, ScanResult, scan
+from src.docker_reader import (
+    ContainerReader,
+    DockerUnavailable,
+    ScanResult,
+    project_from_source_key,
+    scan,
+)
 from src.errors import conflict
 from src.models import (
     ComposeFileView,
@@ -26,7 +32,7 @@ from src.models import (
     MountView,
     PortView,
 )
-from src.registry import Registry
+from src.registry import Registry, default_ownership
 
 DOCKER_CHECK_KIND = "docker_scan"
 
@@ -233,7 +239,9 @@ class DiscoveryService:
 
     # -- 导入 ------------------------------------------------------------
 
-    def import_components(self, payload: DiscoveryImportRequest) -> dict[str, Any]:
+    def import_components(
+        self, payload: DiscoveryImportRequest, own_projects: tuple[str, ...] = ()
+    ) -> dict[str, Any]:
         components = self.components()
         for item in payload.components:
             observed = components.get(item.source_key)
@@ -267,9 +275,22 @@ class DiscoveryService:
 
                 now = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 service_id = str(uuid.uuid4())
+                # 默认归属：按这批组件的 compose 项目判定（之后页面上可逐条改）
+                projects = [
+                    project
+                    for project in (
+                        project_from_source_key(item.source_key)
+                        for item in payload.components
+                    )
+                    if project
+                ]
+                ownership = default_ownership(
+                    len(payload.components), projects, own_projects
+                )
                 conn.execute(
                     "INSERT INTO services(id, name, description, category, tags, notes,"
-                    " revision, created_at, updated_at) VALUES (?,?,?,?,?,?,1,?,?)",
+                    " ownership, revision, created_at, updated_at)"
+                    " VALUES (?,?,?,?,?,?,?,1,?,?)",
                     (
                         service_id,
                         name,
@@ -277,6 +298,7 @@ class DiscoveryService:
                         payload.category,
                         json.dumps(payload.tags, ensure_ascii=False),
                         "",
+                        ownership.value,
                         now,
                         now,
                     ),

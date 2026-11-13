@@ -85,22 +85,27 @@
   「hostname 与 scheme 相同即接受」（跨站仍拒绝）。这是「本地正常、生产炸」的真实案例。
 - 登录失败按来源限速 5 次/分钟。生产缺口令或签名密钥时 `Settings` 直接抛错，拒绝启动。
 
-### 2.7 分组（自己开发的 vs 其他）
+### 2.7 归属（我维护的 / 别人的）
 
+- 归属是**台账里的一条字段**：`services.ownership` = `mine` | `other`，**逐条可改**
+  （详情页头部下拉、列表行内下拉都直接 PATCH）。
+- 不再由 compose 项目名单全局推导分组；`SERVICE_MANAGER_OWN_PROJECTS`（默认 `personal-web`）
+  **只作为新建服务时的默认值**：
+  - 没关联容器（人工登记）→ `mine`
+  - 组件的 compose 项目命中 own 名单 → `mine`
+  - 其余（有容器但没有 compose 标签、或项目不在名单里）→ `other`
+- 旧库没有这一列时：启动时 `registry.backfill_ownership()` 按上面口径回填一次
+  （列值 `''` 表示未判定，回填只动未判定的行，用户改过的不会被覆盖）。
+  加列是向后兼容的（`ALTER TABLE`），**不升 schema 版本**。
 - `GET /api/services` 的每项带 `projects`：该服务包含的 compose 项目，
   由 `service_components.source_key`（`nas:compose:{project}:...`）反解，**不额外问 Docker**；
-  没有 compose 标签的游离容器（`nas:container:*`）不进任何项目。
-- `GET /api/summary` 带 `own_projects`：哪些 compose 项目算「我自己开发的」，
-  由 `SERVICE_MANAGER_OWN_PROJECTS`（逗号分隔，默认 `personal-web`）决定。
-- 前端据此把列表分成两个 tab。分组是**纯展示**，不改任何检查口径，
-  一个服务同时属于多个项目时，只要命中任一 own 项目就算「自己那组」；
-  **一个组件都没关联的服务**（人工登记）也算「自己那组」，
-  而「有容器但没有 compose 标签」（`nas:container:*`）算其他。
+  现在只作来源信息展示，**不再决定分组**。
 
 ### 2.8 备份与恢复
 
 - 导出只含**人工表**：services / service_components / component_overrides / endpoints / port_notes /
   release_sources / discovery_decisions。排除观测、检查结果、job、release 缓存与已读、以及任何凭据。
+  恢复时**归属也一起还原**；老备份没有 `ownership` 字段时按 2.7 的默认口径兜底，不要全落一边。
 - 恢复三步不可省：`preview`（返回 digest + registry_revision）→ 用**同一份字节** `restore` →
   校验 digest 与 revision 一致 → 先 `backup_to()` 落一份本地快照 → 单事务替换 → 失败整笔回滚。
 - 恢复会清空 `check_results` 与 `release_reads`，并把 `release_sync.baseline_done` 归零

@@ -31,6 +31,8 @@ CREATE TABLE IF NOT EXISTS services (
     category TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     notes TEXT NOT NULL DEFAULT '',
+    -- 归属（我维护的 / 别人的）：逐条可设。'' = 尚未判定，启动时按旧口径回填。
+    ownership TEXT NOT NULL DEFAULT '',
     revision INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -239,6 +241,9 @@ class Store:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
+                self._ensure_column(
+                    conn, "services", "ownership", "TEXT NOT NULL DEFAULT ''"
+                )
                 stored = self._get_state(conn, "schema_version")
                 if stored is None:
                     self._set_state(conn, "schema_version", str(SCHEMA_VERSION))
@@ -249,6 +254,21 @@ class Store:
                         f"{SCHEMA_VERSION}; refusing to open"
                     )
             self._initialized = True
+
+    @staticmethod
+    def _ensure_column(
+        conn: sqlite3.Connection, table: str, column: str, declaration: str
+    ) -> None:
+        """给已有库补列（CREATE TABLE IF NOT EXISTS 不会改动已存在的表）。
+
+        追加列是向后兼容的：旧二进制读这张表时忽略未知列，所以不升 schema 版本。
+        """
+        existing = {
+            row["name"] for row in conn.execute(f"PRAGMA table_info({table})")
+        }
+        if column in existing:
+            return
+        conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

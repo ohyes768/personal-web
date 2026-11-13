@@ -66,24 +66,6 @@ export const JOB_STATE: Record<string, Tone> = {
   interrupted: { tone: "warn", label: "已中断" },
 };
 
-/** 汇总页「异常」判定：任一维度落在 bad/warn 且不是「未检查」。 */
-export function abnormalTones(status: {
-  runtime: RuntimeState;
-  health: HealthState;
-  url: UrlState;
-  tls: TlsState;
-  release: ReleaseState;
-}): Tone[] {
-  const tones = [
-    RUNTIME[status.runtime],
-    HEALTH[status.health],
-    URL_STATE[status.url],
-    TLS_STATE[status.tls],
-    RELEASE_STATE[status.release],
-  ];
-  return tones.filter((item) => item.tone === "bad" || item.tone === "warn");
-}
-
 /** 时间显示：统一按 Asia/Shanghai，并标出陈旧数据。 */
 export function formatTime(value: string | null): string {
   if (!value) return "—";
@@ -248,17 +230,3 @@ export function healthTooltip(
   return "Docker 健康检查";
 }
 
-/**
- * 台账分组：属于「我自己开发的」compose 项目 = 自己那组，其余算其他。
- *
- * 还没关联容器的服务（多半是人工登记的）先归自己这组，关联后按 compose
- * 项目自动归位；只有容器、没有 compose 标签的（如 nas:container:*）算其他。
- */
-export function isOwnService(
-  item: { projects: string[]; component_count: number },
-  ownProjects: string[],
-): boolean {
-  if (ownProjects.length === 0) return false;
-  if (item.component_count === 0) return true;
-  return item.projects.some((project) => ownProjects.includes(project));
-}

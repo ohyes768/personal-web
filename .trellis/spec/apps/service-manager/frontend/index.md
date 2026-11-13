@@ -31,10 +31,14 @@
 
 ## 3. 交互约束
 
-- 列表按「自己开发的 / 其他」分两个 tab（`role="tablist"` + `role="tab"`）：
-  归属由后端 `summary.own_projects` 与每项的 `projects` 判定，
-  **前端不硬编码项目名**（改了 `SERVICE_MANAGER_OWN_PROJECTS` 就生效）。
-  还没关联容器的服务（人工登记）归第一组；搜索 / 分类 / 只看异常在 tab 内照常生效，tab 上带各自的数量。
+- 列表按「我维护的 / 别人的」分两个 tab（`role="tablist"` + `role="tab"`）：
+  归属是后端 `services.ownership`（`mine` / `other`）**逐条可设**的字段，
+  列表行内下拉与详情页头部下拉都直接 PATCH，改完立刻重新分组；
+  **前端不按 compose 项目名推导归属**（`SERVICE_MANAGER_OWN_PROJECTS` 只是新建时的默认值）。
+  搜索 / 分类筛选在 tab 内照常生效，tab 上带各自的数量。
+- 台账条目只从 Docker 发现来（发现导入页）：列表页**没有「新增服务」入口**，
+  但发现导入页的「（新建服务）」必须保留——从容器认领一组容器时仍要建台账条目。
+- 每行要能看到「用途」（`description`），不用点进详情页才知道这条服务是干什么的。
 - 所有用户录入/展示的 URL 走 `SafeLink`：只有 `http(s)` 才渲染成可点链接，其余退化成纯文本。
   发布正文用 `white-space: pre-wrap` 的 `<div>` 显示原文（不注入 HTML）。
 - `PATCH` 409（revision 冲突）要提示「请刷新后重试」并重新拉取；不要静默覆盖。

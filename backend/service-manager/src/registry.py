@@ -23,6 +23,7 @@ from src.models import (
     ComponentOverrideInput,
     EndpointInput,
     EndpointRecord,
+    Ownership,
     PortNoteInput,
     PortNoteRecord,
     ReleaseSourceInput,
@@ -36,6 +37,24 @@ from src.models import (
 from src.urls import ParsedUrl, parse_http_url, validate_probe_url
 
 JOURNAL_MODE = "wal"
+
+
+def default_ownership(
+    component_count: int, projects: list[str], own_projects: tuple[str, ...]
+) -> Ownership:
+    """新建服务时的默认归属（沿用旧分组口径）。
+
+    - 一个组件都没关联（人工登记）→ 我维护的
+    - 组件带 compose 项目且命中 own 名单 → 我维护的
+    - 其余（有容器但没有 compose 标签、或项目不在名单里）→ 别人的
+
+    归属之后可以在页面上逐条改，这个默认值只管「刚建出来时算哪边」。
+    """
+    if component_count == 0:
+        return Ownership.MINE
+    if any(project in own_projects for project in projects):
+        return Ownership.MINE
+    return Ownership.OTHER
 
 
 def _now() -> str:
@@ -54,6 +73,7 @@ def _row_to_service(row: sqlite3.Row) -> dict[str, Any]:
         "category": row["category"],
         "tags": json.loads(row["tags"] or "[]"),
         "notes": row["notes"],
+        "ownership": row["ownership"] or Ownership.MINE.value,
         "revision": int(row["revision"]),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
@@ -113,10 +133,12 @@ class Registry:
     def create_service(self, payload: ServiceCreate) -> ServiceDetail:
         now = _now()
         service_id = _new_id()
+        ownership = payload.ownership or default_ownership(0, [], ())
         with self.store.transaction() as conn:
             conn.execute(
                 "INSERT INTO services(id, name, description, category, tags, notes,"
-                " revision, created_at, updated_at) VALUES (?,?,?,?,?,?,1,?,?)",
+                " ownership, revision, created_at, updated_at)"
+                " VALUES (?,?,?,?,?,?,?,1,?,?)",
                 (
                     service_id,
                     payload.name,
@@ -124,6 +146,7 @@ class Registry:
                     payload.category,
                     json.dumps(payload.tags, ensure_ascii=False),
                     payload.notes,
+                    ownership.value,
                     now,
                     now,
                 ),
@@ -203,6 +226,7 @@ class Registry:
                         description=service["description"],
                         category=service["category"],
                         tags=service["tags"],
+                        ownership=service["ownership"],
                         revision=service["revision"],
                         updated_at=service["updated_at"],
                         primary_url=primary,
@@ -269,6 +293,8 @@ class Registry:
                 updates["tags"] = json.dumps(payload.tags, ensure_ascii=False)
             if payload.notes is not None:
                 updates["notes"] = payload.notes
+            if payload.ownership is not None:
+                updates["ownership"] = payload.ownership.value
             updates["revision"] = payload.revision + 1
             updates["updated_at"] = _now()
             assignments = ", ".join(f"{key} = ?" for key in updates)
@@ -411,6 +437,33 @@ class Registry:
             if project not in bucket:
                 bucket.append(project)
         return result
+
+    def backfill_ownership(self, own_projects: tuple[str, ...]) -> int:
+        """给旧库补归属：只处理尚未判定（ownership=''）的行。
+
+        口径与旧分组一致（无组件 → 我维护的；组件的 compose 项目命中 own 名单
+        → 我维护的；其余 → 别人的）。已经判定的行不动，用户改过的归属不会被覆盖。
+        """
+        projects = self.projects_by_service()
+        with self.store.transaction() as conn:
+            rows = conn.execute(
+                "SELECT s.id AS id, COUNT(sc.source_key) AS n FROM services s "
+                "LEFT JOIN service_components sc ON sc.service_id = s.id "
+                "WHERE s.ownership = '' GROUP BY s.id"
+            ).fetchall()
+            if not rows:
+                return 0
+            for row in rows:
+                service_id = row["id"]
+                value = default_ownership(
+                    int(row["n"]), projects.get(service_id, []), own_projects
+                )
+                conn.execute(
+                    "UPDATE services SET ownership = ? WHERE id = ?",
+                    (value.value, service_id),
+                )
+            Store.bump_registry_revision(conn)
+            return len(rows)
 
     # ------------------------------------------------------------------
     # 部署信息覆盖

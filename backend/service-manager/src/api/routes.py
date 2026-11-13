@@ -436,8 +436,9 @@ def discovery_import(
     _: WriteDep,
     discovery: Annotated[DiscoveryService, Depends(get_discovery)],
     store: Annotated[Store, Depends(get_store)],
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, Any]:
-    result = discovery.import_components(payload)
+    result = discovery.import_components(payload, settings.own_project_list)
     result["registry_revision"] = store.registry_revision
     return result
 
@@ -669,6 +670,7 @@ async def backup_restore(
             raw=raw,
             confirm=confirm,
             data_dir=settings.data_dir,
+            own_projects=settings.own_project_list,
         )
     except BackupError as exc:
         from src.errors import ApiError

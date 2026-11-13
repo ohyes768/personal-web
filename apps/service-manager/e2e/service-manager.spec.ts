@@ -28,17 +28,19 @@ test("登录门禁：未登录只显示登录表单", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "服务", exact: true })).toHaveCount(0);
 });
 
-test("手工建服务、加端口、搜索、删除", async ({ page }) => {
+test("台账条目走接口建立后，搜索、加端口、删除都可用", async ({ page }) => {
   await login(page);
   const name = `e2e-服务-${Date.now()}`;
 
-  await page.getByRole("button", { name: "新增服务" }).click();
-  await page.locator("#new-name").fill(name);
-  await page.locator("#new-category").fill("e2e");
-  await page.getByRole("button", { name: "保存" }).click();
-  await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+  // 列表页不再有「新增服务」入口：台账条目从发现导入来（这里用接口代劳）
+  await expect(page.getByRole("button", { name: "新增服务" })).toHaveCount(0);
+  const created = await page.request.post("/api/services/services", {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { name, category: "e2e" },
+  });
+  expect(created.ok()).toBeTruthy();
 
-  // 搜索命中
+  await page.goto("/services");
   await page.getByLabel("搜索服务").fill(name);
   await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
 
@@ -59,12 +61,48 @@ test("手工建服务、加端口、搜索、删除", async ({ page }) => {
   await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
 });
 
+test("归属可逐条改：列表行里的下拉与详情页的一致", async ({ page }) => {
+  await login(page);
+  const name = `e2e-归属-${Date.now()}`;
+  const created = await page.request.post("/api/services/services", {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { name, category: "e2e" },
+  });
+  expect(created.ok()).toBeTruthy();
+  const serviceId = (await created.json()).id as string;
+
+  await page.goto("/services");
+  await page.getByLabel("搜索服务").fill(name);
+  const rowSelect = page.getByLabel(`${name} 的归属`);
+  await expect(rowSelect).toHaveValue("mine");
+
+  // 改成「别人的」：行内下拉直接生效，列表随之分到另一个分组
+  await rowSelect.selectOption("other");
+  await expect(page.getByText("已标为别人的")).toBeVisible();
+
+  await page.goto(`/services/service/${serviceId}`);
+  await expect(page.getByLabel("归属")).toHaveValue("other");
+
+  // 复原，避免污染台账
+  await page.getByLabel("归属").selectOption("mine");
+  await expect(page.getByText("已标为我维护的")).toBeVisible();
+  const removed = await page.request.delete(`/api/services/services/${serviceId}`, {
+    headers: { Origin: new URL(page.url()).origin },
+  });
+  expect(removed.ok()).toBeTruthy();
+});
+
 test("入口表单：localhost 探测被拒并给出说明", async ({ page }) => {
   await login(page);
   const name = `e2e-入口-${Date.now()}`;
-  await page.getByRole("button", { name: "新增服务" }).click();
-  await page.locator("#new-name").fill(name);
-  await page.getByRole("button", { name: "保存" }).click();
+  // 列表页没有「新增服务」入口了，条目走接口建（发现导入在真实环境里做这件事）
+  const created = await page.request.post("/api/services/services", {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { name },
+  });
+  expect(created.ok()).toBeTruthy();
+  await page.goto("/services");
+  await page.getByLabel("搜索服务").fill(name);
   await page.getByRole("link", { name, exact: true }).click();
 
   await page.getByRole("button", { name: "添加入口" }).click();

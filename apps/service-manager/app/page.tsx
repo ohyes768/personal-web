@@ -1,16 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, ApiError, type ServiceListItem, type SummaryResponse } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  abnormalTones,
+  api,
+  ApiError,
+  type Ownership,
+  type ServiceListItem,
+  type SummaryResponse,
+} from "@/lib/api";
+import { describeJob, waitForJob } from "@/lib/jobs";
+import {
   describeCheck,
   formatRelative,
   healthTooltip,
   HEALTH,
   invalidReasonOf,
-  isOwnService,
   RELEASE_STATE,
   RUNTIME,
   tlsTooltip,
@@ -18,7 +23,7 @@ import {
   URL_STATE,
 } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
-import { SafeLink, StateBadge, Toast } from "@/components/Widgets";
+import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
 
 export default function HomePage() {
   return (
@@ -34,14 +39,18 @@ function ServiceList() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
-  const [onlyAbnormal, setOnlyAbnormal] = useState(false);
-  const [group, setGroup] = useState<"own" | "other">("own");
+  const [group, setGroup] = useState<Ownership>("mine");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
-  const [creating, setCreating] = useState(false);
-  const [newName, setNewName] = useState("");
-  const [newCategory, setNewCategory] = useState("");
+  // 刷新任务在后台跑，按钮各自转圈；两类任务互不阻塞。
+  const [pending, setPending] = useState<{ docker: boolean; all: boolean }>({
+    docker: false,
+    all: false,
+  });
+  const aborters = useRef<Set<AbortController>>(new Set());
+  // 同一类任务的防重入（state 更新要等一次渲染，用 ref 才能挡住连点）
+  const inFlight = useRef<Set<"docker" | "all">>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,61 +74,76 @@ function ServiceList() {
     void load();
   }, [load]);
 
+  // 离开页面时停掉还在轮询的刷新任务，别让后台继续空转
+  useEffect(() => {
+    const controllers = aborters.current;
+    return () => {
+      controllers.forEach((controller) => controller.abort());
+      controllers.clear();
+    };
+  }, []);
+
   const categories = useMemo(
     () => Array.from(new Set(items.map((item) => item.category).filter(Boolean))).sort(),
     [items],
   );
 
-  const visible = useMemo(
-    () =>
-      onlyAbnormal
-        ? items.filter((item) => abnormalTones(item.status).length > 0)
-        : items,
-    [items, onlyAbnormal],
+  // 分组：归属是台账里的一个字段（我维护的 / 别人的），逐条可改。
+  const groups = useMemo(
+    () => ({
+      mine: items.filter((item) => item.ownership === "mine").length,
+      other: items.filter((item) => item.ownership === "other").length,
+    }),
+    [items],
   );
-
-  // 分组：自己开发的（personal-web compose 项目）一个 tab，其余另一个。
-  // summary 还没回来时先不分组，避免首屏闪一下空的「我自己的」。
-  const ownProjects = useMemo(() => summary?.own_projects ?? [], [summary]);
-  const grouped = ownProjects.length > 0;
-  const groups = useMemo(() => {
-    const own = grouped
-      ? visible.filter((item) => isOwnService(item, ownProjects)).length
-      : visible.length;
-    return { own, other: grouped ? visible.length - own : 0 };
-  }, [visible, ownProjects, grouped]);
   const tabItems = useMemo(
-    () =>
-      grouped
-        ? visible.filter((item) =>
-            group === "own" ? isOwnService(item, ownProjects) : !isOwnService(item, ownProjects),
-          )
-        : visible,
-    [visible, group, ownProjects, grouped],
+    () => items.filter((item) => item.ownership === group),
+    [items, group],
   );
 
-  async function create(event: React.FormEvent) {
-    event.preventDefault();
-    if (!newName.trim()) return;
+  async function changeOwnership(item: ServiceListItem, next: Ownership) {
+    if (item.ownership === next) return;
     try {
-      await api.createService({ name: newName.trim(), category: newCategory.trim() });
-      setNewName("");
-      setNewCategory("");
-      setCreating(false);
-      setToast("已新增服务");
+      await api.patchService(item.id, { ownership: next, revision: item.revision });
+      setToast(next === "mine" ? "已标为我维护的" : "已标为别人的");
       await load();
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "新增失败");
+      setToast(caught instanceof ApiError ? caught.message : "改归属失败");
     }
   }
 
   async function refresh(kind: "docker" | "all") {
+    if (inFlight.current.has(kind)) return;
+    const label = kind === "docker" ? "容器扫描" : "巡检";
+    inFlight.current.add(kind);
+    setPending((prev) => ({ ...prev, [kind]: true }));
+    const controller = new AbortController();
+    aborters.current.add(controller);
     try {
       const job = await api.refresh(kind);
-      setToast(job.deduplicated ? "已有同类型任务在跑，复用现有任务" : `已提交${kind === "docker" ? "容器扫描" : "巡检"}任务`);
-      window.setTimeout(() => void load(), 3000);
+      if (controller.signal.aborted) return;
+      setToast(
+        job.deduplicated
+          ? "已有同类型任务在跑，复用现有任务"
+          : `已提交${label}任务`,
+      );
+      // 任务在后台跑，轮询到终态再刷新列表——固定等 3 秒会漏掉慢任务的结果。
+      const result = await waitForJob(job.id, { signal: controller.signal });
+      if (result.aborted) return;
+      if (result.timedOut) {
+        setToast(`${label}还没跑完，仍在后台执行，稍后再看`);
+      } else if (result.job) {
+        setToast(describeJob(label, result.job));
+      }
+      await load();
     } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "刷新失败");
+      if (!controller.signal.aborted) {
+        setToast(caught instanceof ApiError ? caught.message : `${label}失败`);
+      }
+    } finally {
+      aborters.current.delete(controller);
+      inFlight.current.delete(kind);
+      setPending((prev) => ({ ...prev, [kind]: false }));
     }
   }
 
@@ -185,11 +209,11 @@ function ServiceList() {
       <div className="tabs" role="tablist">
         <button
           role="tab"
-          aria-selected={group === "own"}
-          className={group === "own" ? "active" : ""}
-          onClick={() => setGroup("own")}
+          aria-selected={group === "mine"}
+          className={group === "mine" ? "active" : ""}
+          onClick={() => setGroup("mine")}
         >
-          {ownProjects.join("、") || "我自己的"}（{groups.own}）
+          我维护的（{groups.mine}）
         </button>
         <button
           role="tab"
@@ -197,7 +221,7 @@ function ServiceList() {
           className={group === "other" ? "active" : ""}
           onClick={() => setGroup("other")}
         >
-          其他（{groups.other}）
+          别人的（{groups.other}）
         </button>
       </div>
 
@@ -223,32 +247,39 @@ function ServiceList() {
               </option>
             ))}
           </select>
-          <label className="small" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-            <input
-              type="checkbox"
-              checked={onlyAbnormal}
-              onChange={(event) => setOnlyAbnormal(event.target.checked)}
-            />
-            只看异常
-          </label>
           <button
             className="btn"
             type="button"
+            disabled={pending.docker}
+            aria-busy={pending.docker}
             title="重新扫描 Docker 容器，刷新「发现容器 / 已关联组件 / 未入账」与各服务的运行、健康状态"
             onClick={() => void refresh("docker")}
           >
-            扫描容器
+            {pending.docker ? (
+              <>
+                <Spinner />
+                扫描中…
+              </>
+            ) : (
+              "扫描容器"
+            )}
           </button>
           <button
             className="btn"
             type="button"
+            disabled={pending.all}
+            aria-busy={pending.all}
             title="巡检全部已登记入口：URL 可达性、TLS 证书，并同步已配置的 GitHub 发布"
             onClick={() => void refresh("all")}
           >
-            巡检
-          </button>
-          <button className="btn primary" type="button" onClick={() => setCreating((value) => !value)}>
-            新增服务
+            {pending.all ? (
+              <>
+                <Spinner />
+                巡检中…
+              </>
+            ) : (
+              "巡检"
+            )}
           </button>
         </div>
 
@@ -256,34 +287,6 @@ function ServiceList() {
           巡检：逐一检查全部已登记入口的可达性与证书有效期，并同步已配置的 GitHub 发布；
           容器观测不在其中，由「扫描容器」负责（后台每 60 秒自动扫一次）。
         </p>
-
-        {creating ? (
-          <form onSubmit={create} style={{ marginTop: 12 }}>
-            <div className="form-grid">
-              <div className="field">
-                <label htmlFor="new-name">名称（必填）</label>
-                <input
-                  id="new-name"
-                  value={newName}
-                  onChange={(event) => setNewName(event.target.value)}
-                  required
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="new-category">分类</label>
-                <input
-                  id="new-category"
-                  value={newCategory}
-                  onChange={(event) => setNewCategory(event.target.value)}
-                  placeholder="金融 / 媒体 / 基础设施"
-                />
-              </div>
-            </div>
-            <button className="btn primary" type="submit">
-              保存
-            </button>
-          </form>
-        ) : null}
       </div>
 
       {error ? <p className="notice bad">{error}</p> : null}
@@ -294,10 +297,8 @@ function ServiceList() {
         <div className="card">
           <p>
             {items.length === 0
-              ? "台账还是空的。可以先「新增服务」，或到「发现导入」从运行中的容器建立。"
-              : grouped
-                ? `这个分组里没有服务（${group === "own" ? ownProjects.join("、") : "其他"}）。`
-                : "没有匹配的服务。"}
+              ? "台账还是空的。到「发现导入」从运行中的容器建立台账条目。"
+              : `这个分组里没有服务（${group === "mine" ? "我维护的" : "别人的"}）。`}
           </p>
           <div className="btn-row">
             <Link className="btn" href="/discovery">
@@ -325,6 +326,11 @@ function ServiceList() {
                 <tr key={item.id}>
                   <td>
                     <Link href={`/service/${item.id}`}>{item.name}</Link>
+                    {item.description ? (
+                      <div className="small truncate" title={item.description}>
+                        {item.description}
+                      </div>
+                    ) : null}
                     {item.category ? <div className="small muted">{item.category}</div> : null}
                     {item.tags.length ? (
                       <div className="small muted">{item.tags.join(" · ")}</div>
@@ -382,6 +388,18 @@ function ServiceList() {
                           打开
                         </SafeLink>
                       ) : null}
+                      <select
+                        value={item.ownership}
+                        onChange={(event) =>
+                          void changeOwnership(item, event.target.value as Ownership)
+                        }
+                        aria-label={`${item.name} 的归属`}
+                        title="这条服务是不是你维护的（决定列表分组）"
+                        style={{ minHeight: 26, padding: "2px 6px", fontSize: 12 }}
+                      >
+                        <option value="mine">我维护的</option>
+                        <option value="other">别人的</option>
+                      </select>
                     </div>
                   </td>
                 </tr>

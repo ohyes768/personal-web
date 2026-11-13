@@ -51,6 +51,11 @@ export function Toast({ message }: { message: string | null }) {
   );
 }
 
+/** 加载指示：按钮内联的旋转环。语义交给按钮本身（aria-busy + 文案），这里只画形状。 */
+export function Spinner() {
+  return <span className="spinner" aria-hidden="true" />;
+}
+
 /** 只在 http/https 时渲染可点链接：用户录入的 URL 一律限协议。 */
 export function SafeLink({
   href,
