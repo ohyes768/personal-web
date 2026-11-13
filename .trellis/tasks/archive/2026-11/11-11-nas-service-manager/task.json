@@ -3,7 +3,7 @@
   "name": "nas-service-manager",
   "title": "NAS 服务管理台 V1 规划",
   "description": "规划单 NAS Docker Compose 服务台账、部署路径、端口、域名证书、运行检查、GitHub Release 与导出恢复；仅规划，待评审。",
-  "status": "in_progress",
+  "status": "completed",
   "dev_type": "fullstack",
   "scope": "backend/service-manager + apps/service-manager",
   "package": "backend/service-manager",
@@ -11,7 +11,7 @@
   "creator": "jackson.tang",
   "assignee": "jackson.tang",
   "createdAt": "2026-11-11",
-  "completedAt": null,
+  "completedAt": "2026-11-13",
   "branch": null,
   "base_branch": "master",
   "worktree_path": null,
@@ -35,7 +35,7 @@
     ".trellis/spec/backend/service-manager/backend/index.md",
     ".trellis/spec/apps/service-manager/frontend/index.md"
   ],
-  "notes": "2026-11-12 已上线 NAS：三个容器 + nginx reload 完成，冒烟与 socket-proxy ACL 实测通过。上线中修掉两个生产缺陷（nginx $host 不含端口导致写操作 401；裸路径 /api/services 404）。后端 178 tests passed，前端 e2e 15 passed + 1 skipped。仍未做：破坏性恢复/回滚演练、proxy 镜像 digest 锁定。",
+  "notes": "2026-11-12 已上线 NAS：三个容器 + nginx reload 完成，冒烟与 socket-proxy ACL 实测通过。上线中修掉两个生产缺陷（nginx $host 不含端口导致写操作 401；裸路径 /api/services 404）。后端 178 tests passed，前端 e2e 15 passed + 1 skipped。2026-11-13 归档：proxy 镜像 digest 锁定已由提交 d57cf502 完成，不再列为待办。仍未做：破坏性恢复/回滚演练（需独立数据卷，禁止用生产台账做破坏性实验），如需继续请新开任务。",
   "meta": {
     "target_packages": [
       "apps/service-manager",
@@ -47,7 +47,7 @@
       "M3": "访问入口、资源投影与导出恢复 —— 完成",
       "M4": "URL、证书、发布动态及检查调度 —— 完成",
       "M5": "前端页面与可用性 —— 完成",
-      "M6": "NAS 接线 + 实机部署 + ACL 冒烟 —— 完成（2026-11-12）；破坏性恢复演练与 digest 锁定待办"
+      "M6": "NAS 接线 + 实机部署 + ACL 冒烟 —— 完成（2026-11-12）；digest 锁定由 d57cf502 完成，破坏性恢复演练留待后续任务"
     },
     "ports": {
       "frontend": 3012,
