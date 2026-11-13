@@ -25,12 +25,28 @@ from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
 
-from src.db.models import Fund, FundPerformance
+from datetime import date, timedelta
+
+from sqlalchemy import select
+
+from src.db.models import Fund, FundAchievementRank, FundPerformance
 
 # base_rows 冻结的 Fund 行字段（入选谓词评估所需 + 名称快照）。
 # dd_3y 不在此列：它在 FundPerformance 行上，由 freeze_dd_rows 在本轮业绩
 # commit 后就地合并进 base_rows（发布谓词的合并形态见发布侧文档）。
-BASE_ROW_FIELDS = ("name", "market_subtype", "age_years", "size_yi", "mgr_experience_years")
+# mgr_experience_years_max（11-13-sharpe-board-v2-rules 修复）：entry_predicate
+# 的 min_mgr_exp 优先读该列（共管取最长），缺了会静默回退到取最短而误杀
+# 「老将+新人」组合——曾实测 0/97 的观测证据里带此字段。
+BASE_ROW_FIELDS = (
+    "name", "market_subtype", "age_years", "size_yi",
+    "mgr_experience_years", "mgr_experience_years_max",
+)
+
+# v2 同类排名冻结口径（PRD R1 / design §2、§11）
+PEER_PERIOD_KIND = "阶段业绩"
+PEER_PERIOD = "近3年"
+PEER_STALE_DAYS = 90          # as_of_date 距今超过 90 天视为无数据
+_PEER_QUERY_CHUNK = 500       # SQLite 参数上限防御，批量 in_ 分块
 
 
 @dataclass
@@ -47,11 +63,14 @@ class SharpeRunCapture:
       雪球三分法为 yaml 名单）。按 code 去重由发布侧保证。
     filters / collection_prefilters：规则条件随 capture 保存的副本
       （filters 由创建方从 profile 填；collection_prefilters 由市场链路冻结）。
+    peer_rows：code → 本轮近3年同类排名分位快照（v2 门槛证据；由
+      freeze_peer_rows 批量冻结，发布只读冻结，不回读可能被 L5 覆盖的共享表）。
     """
 
     run_id: str
     base_rows: dict[str, dict] = field(default_factory=dict)
     risk_rows: dict[str, dict] = field(default_factory=dict)
+    peer_rows: dict[str, dict] = field(default_factory=dict)
     errors: list[str] = field(default_factory=list)
     diagnostics: dict = field(default_factory=dict)
     universe_codes: list[str] = field(default_factory=list)
@@ -99,3 +118,72 @@ def freeze_dd_rows(db: Session, base_rows: dict[str, dict]) -> None:
     for code, row in base_rows.items():
         perf = db.get(FundPerformance, code)
         row["dd_3y"] = perf.dd_3y if perf is not None else None
+
+
+def _parse_peer_percentile(raw: str | None) -> float | None:
+    """'278/1951' → 14.25（rank/total*100）；格式异常 → None。
+
+    独立于 filter_service._parse_peer_rank：本函数只要百分位数值，
+    且不返回 dict，便于谓词直接比较（v2 max_peer_pct 门）。
+    """
+    if not raw or "/" not in raw:
+        return None
+    try:
+        rank_s, total_s = raw.split("/", 1)
+        rank = int(rank_s.strip())
+        total = int(total_s.strip())
+    except (ValueError, TypeError):
+        return None
+    if rank <= 0 or total <= 0 or rank > total:
+        return None
+    return round(rank / total * 100, 4)
+
+
+def freeze_peer_rows(db: Session, codes: list[str], *, today: date | None = None) -> dict[str, dict]:
+    """批量冻结近 3 年同类排名分位（v2 发布侧唯一 peer 数据来源）。
+
+    为什么必须冻结：fund_achievement_rank 会被市场链路 L5 阶段
+    delete+bulk insert 覆盖重写；发布时若回读该表，拿到的可能是下一轮数据。
+    与 dd_3y 同一个「发布不回读共享行」契约（design §2、§11）。
+
+    一次批量 in_ 查询（≤500 codes 分块），不做 per-code 查询。
+    返回 {code: {"peer_pct": float, "peer_raw": str, "as_of": "YYYY-MM-DD"}}；
+    以下情形不入字典（= 无数据 → 谓词 max_peer_pct 门不命中）：
+      - 无记录 / peer_rank 为空或格式异常
+      - as_of_date 距 today 超过 PEER_STALE_DAYS（90 天）
+      - 陈旧判定用数据自带 as_of_date，不用写入时间（design §11 附带发现）
+
+    today 可注入以便测试；默认 date.today()。
+    """
+    if today is None:
+        today = date.today()
+    stale_cutoff = today - timedelta(days=PEER_STALE_DAYS)
+
+    out: dict[str, dict] = {}
+    for start in range(0, len(codes), _PEER_QUERY_CHUNK):
+        chunk = codes[start:start + _PEER_QUERY_CHUNK]
+        if not chunk:
+            continue
+        rows = db.execute(
+            select(
+                FundAchievementRank.code,
+                FundAchievementRank.peer_rank,
+                FundAchievementRank.as_of_date,
+            ).where(
+                FundAchievementRank.code.in_(chunk),
+                FundAchievementRank.period_kind == PEER_PERIOD_KIND,
+                FundAchievementRank.period == PEER_PERIOD,
+            )
+        ).all()
+        for code, raw, as_of in rows:
+            if as_of is None or as_of < stale_cutoff:
+                continue
+            pct = _parse_peer_percentile(raw)
+            if pct is None:
+                continue
+            out[code] = {
+                "peer_pct": pct,
+                "peer_raw": raw,
+                "as_of": as_of.isoformat(),
+            }
+    return out

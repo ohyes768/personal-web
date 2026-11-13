@@ -36,6 +36,7 @@ export interface SharpeBoardAttempt {
 export interface SharpeBoardItem {
   code: string;
   name: string;
+  /** v2：52 周窗口内在榜周数（不是全历史累计） */
   listed_weeks: number;
   consecutive_weeks: number;
   /** 最近上榜夏普（不是「当前夏普」，R3） */
@@ -45,6 +46,12 @@ export interface SharpeBoardItem {
   /** 近 1 年/近 3 年收益（实时表当前值，仅展示） */
   ret_1y: number | null;
   ret_3y: number | null;
+  /** v2：近 12 周夏普≥0.8 的周数 / 分母（不足12周为实际周数） */
+  near_12w_qualified: number | null;
+  near_12w_total: number | null;
+  /** v2：同类排名分位（%，如前 14.2%）与数据日期 */
+  peer_pct: number | null;
+  peer_as_of: string | null;
 }
 
 /** 曲线序列（全部命中基金，不随 items 分页；values 长度 == weeks 长度） */
@@ -84,7 +91,7 @@ export interface SharpeBoardFilters {
   profileVersion: string;
   /** 展示下限：最近上榜夏普 ≥ X（含等于）；null = 不限 */
   minLatestSharpe: number | null;
-  /** 至少上榜几周（全历史累计） */
+  /** 至少上榜几周（v2：52 周窗口内累计） */
   minWeeks: number;
   /** 只看最新成功一周在榜的基金 */
   latestOnly: boolean;
@@ -96,7 +103,7 @@ export interface SharpeBoardFilters {
 
 export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
   source: 'discovery-stock',
-  profileVersion: 'v1',
+  profileVersion: 'v2',
   minLatestSharpe: null,
   minWeeks: 1,
   latestOnly: false,
@@ -111,7 +118,8 @@ export const SOURCE_OPTIONS: { value: SharpeSource; label: string }[] = [
 ];
 
 export const RANGE_OPTIONS: { value: SharpeRange; label: string }[] = [
-  { value: 'all', label: '全部' },
+  // v2：窗口恒为最近 52 周，all 与 1y 等价；range 只是窗口内的缩放
+  { value: 'all', label: '近一年(52周)' },
   { value: '3m', label: '近 3 个月' },
   { value: '6m', label: '近 6 个月' },
   { value: '1y', label: '近 1 年' },
@@ -258,6 +266,13 @@ export function describeEntryFilters(profile: SharpeBoardProfile): string[] {
   if (exp !== null) out.push(`经理从业 ≥ ${exp} 年`);
   const sharpe = num(f.min_sharpe);
   if (sharpe !== null) out.push(`近三年夏普 ≥ ${sharpe}`);
+  // v2 三道新门（11-13 任务）
+  const ir = num(f.min_ir);
+  if (ir !== null) out.push(`信息比率 IR ≥ ${ir}`);
+  const days = num(f.min_sample_days);
+  if (days !== null) out.push(`样本交易日 ≥ ${days} 天`);
+  const peer = num(f.max_peer_pct);
+  if (peer !== null) out.push(`近三年同类排名前 ${peer}%`);
   if (f.exclude_qdii === true) out.push('排除 QDII');
   return out;
 }

@@ -56,7 +56,7 @@ test('URL 参数往返：非默认值全部保留', () => {
   const filters = {
     ...DEFAULT_SHARPE_FILTERS,
     source: 'stock' as const,
-    profileVersion: 'v2',
+    profileVersion: 'v1',  // 非默认值（默认已切 v2）
     minLatestSharpe: 0.9,
     minWeeks: 3,
     latestOnly: true,
@@ -98,7 +98,7 @@ test('请求查询串始终显式携带 source/range/分页', () => {
   const q = sharpeFiltersToQuery(DEFAULT_SHARPE_FILTERS);
   const params = new URLSearchParams(q);
   assert.equal(params.get('source'), 'discovery-stock');
-  assert.equal(params.get('profile_version'), 'v1');
+  assert.equal(params.get('profile_version'), 'v2');  // 默认已切 v2
   assert.equal(params.get('range'), 'all');
   assert.equal(params.get('page'), '1');
   assert.equal(params.get('limit'), '50');
@@ -191,4 +191,30 @@ test('describePrefilters：市场来源有预筛约束，雪球来源为空', ()
   const parts = describePrefilters(market);
   assert.ok(parts.includes('近三年收益 ≥ 20%'));
   assert.equal(describePrefilters(response().profile).length, 0);
+});
+
+test('describeEntryFilters：v2 三道新门全部渲染', () => {
+  const profile = {
+    ...response().profile,
+    version: 'v2',
+    algorithm_version: 'risk-3y-v2',
+    filters: {
+      ...response().profile.filters,
+      min_ir: 0.5,
+      min_sample_days: 700,
+      max_peer_pct: 20,
+    },
+  };
+  const parts = describeEntryFilters(profile);
+  assert.ok(parts.includes('信息比率 IR ≥ 0.5'));
+  assert.ok(parts.includes('样本交易日 ≥ 700 天'));
+  assert.ok(parts.includes('近三年同类排名前 20%'));
+  // v1 五条件仍保留
+  assert.ok(parts.includes('近三年夏普 ≥ 0.8'));
+});
+
+test('默认筛选使用 v2 规则版本', () => {
+  assert.equal(DEFAULT_SHARPE_FILTERS.profileVersion, 'v2');
+  const q = sharpeFiltersToQuery(DEFAULT_SHARPE_FILTERS);
+  assert.equal(new URLSearchParams(q).get('profile_version'), 'v2');
 });

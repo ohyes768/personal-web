@@ -33,6 +33,14 @@ export function SharpeBoardProfileCard({ profile }: { profile: SharpeBoardProfil
           （来源 {SOURCE_LABEL[profile.source] ?? profile.source} · 规则版本 {profile.version} · 口径 {profile.algorithm_version}）
         </span>
       </p>
+      <p className="mt-1">
+        <span className="inline-flex items-center rounded bg-info-tint px-1.5 py-0.5 font-medium text-info">
+          统计口径：近 52 周（约 1 年）
+        </span>
+        <span className="ml-2">
+          在榜周数、连续周数、近12周达标与曲线均只统计最近 52 周；更早的观测仍保留在库里供走势页查询。
+        </span>
+      </p>
       {pre.length > 0 && (
         <p className="mt-1">
           <span className="font-medium text-ink-strong">采集预筛约束：</span>

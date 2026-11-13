@@ -234,16 +234,24 @@ class SharpeBoardAttemptDTO(BaseModel):
 
 
 class SharpeBoardItemDTO(BaseModel):
-    """榜单列表项（R3：排序 (listed_weeks DESC, latest_sharpe DESC, code ASC)）"""
+    """榜单列表项（R3：排序 (listed_weeks DESC, latest_sharpe DESC, code ASC)）
+
+    v2（11-13 任务）：listed_weeks 改为 52 周窗口内计数；新增近12周达标
+    与同类分位展示字段。
+    """
     code: str
     name: str                      # 最近上榜观测的名称快照（改名不抹历史）
-    listed_weeks: int              # 累计在榜周数（全历史）
-    consecutive_weeks: int         # 最近一段连续在榜周数（缺席/未知中断）
+    listed_weeks: int              # 52 周窗口内在榜周数
+    consecutive_weeks: int         # 窗口内最近一段连续在榜周数
     latest_sharpe: Optional[float] = None  # 最近上榜夏普（不是「当前夏普」）
     last_listed_week: Optional[date] = None
     on_latest_board: bool = False  # 是否在最新成功（complete）榜单内
     ret_1y: Optional[float] = None  # 近 1 年收益（FundPerformance，回退 MarketFundRank；仅展示）
     ret_3y: Optional[float] = None  # 近 3 年收益（同上）
+    near_12w_qualified: Optional[int] = None  # 近12周夏普≥0.8 的周数
+    near_12w_total: Optional[int] = None      # 分母（不足12周为实际周数）
+    peer_pct: Optional[float] = None          # 同类排名分位（%，如 14.2）
+    peer_as_of: Optional[str] = None          # 同类排名数据日期 ISO
 
 
 class SharpeBoardSeriesDTO(BaseModel):

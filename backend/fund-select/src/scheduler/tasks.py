@@ -21,7 +21,9 @@ from src.scheduler.daily_refresh import bootstrap_from_csv
 from src.services import benchmark_refresh
 from src.services.market_universe_refresh import refresh as refresh_market_db
 from src.services.refresh_service import persist_snapshot, snapshot_fund
-from src.services.sharpe_capture import SharpeRunCapture, freeze_base_row, freeze_dd_rows
+from src.services.sharpe_capture import (
+    SharpeRunCapture, freeze_base_row, freeze_dd_rows, freeze_peer_rows,
+)
 from src.utils.config import PROJECT_ROOT, get_stock_funds_config_path
 from src.utils.logger import setup_logger
 
@@ -179,6 +181,9 @@ def refresh_stock_funds_sync(
             # 本轮全部 FundPerformance commit 后补冻结 dd_3y（入选谓词消费，
             # 不在 Fund 行上）；发布只读 capture，不回读共享行
             freeze_dd_rows(db, capture.base_rows)
+            # v2 同类排名分位：snapshot_fund(fetch_ranking=True) 已在主循环
+            # 内把 achievement 写库，此处主循环结束后统一批量冻结（design §11）。
+            capture.peer_rows = freeze_peer_rows(db, codes)
         bench_failed = benchmark_refresh.refresh(db, codes)
         errors.extend(bench_failed)
 

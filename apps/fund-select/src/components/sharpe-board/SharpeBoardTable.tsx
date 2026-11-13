@@ -33,6 +33,18 @@ function formatRet(v: number | null): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
 }
 
+/** 近12周达标：n/分母（不足12周按实际）；null → - */
+function formatNear12w(q: number | null, total: number | null): string {
+  if (q === null || total === null) return '-';
+  return `${q}/${total}`;
+}
+
+/** 同类分位：前 X%（保留 1 位小数）；null → - */
+function formatPeerPct(v: number | null): string {
+  if (v === null) return '-';
+  return `前 ${v.toFixed(1)}%`;
+}
+
 /** 涨红跌绿（与站内 up/down 语义一致），null 不着色 */
 function retClass(v: number | null): string {
   if (v === null) return 'text-ink-muted';
@@ -58,15 +70,17 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
 
   return (
     <div className="w-full min-w-0 overflow-x-auto">
-      <table className="w-full min-w-[560px] table-fixed text-xs">
+      <table className="w-full min-w-[760px] table-fixed text-xs">
         <thead className="border-b border-rule-strong">
           <tr>
             <th className={`${th} w-[4.5rem]`}>代码</th>
             <th className={`${th} w-[8rem]`}>名称</th>
             <th className={`${th} text-right`}>近1年收益</th>
             <th className={`${th} text-right`}>近3年收益</th>
-            <th className={`${th} text-right`}>累计在榜周数</th>
+            <th className={`${th} text-right`}>近52周在榜</th>
             <th className={`${th} text-right`}>最近连续周数</th>
+            <th className={`${th} text-right`}>近12周达标</th>
+            <th className={`${th} text-right`}>同类分位</th>
             <th className={`${th} text-right`}>最近上榜夏普</th>
             <th className={`${th} text-right`}>最近上榜周</th>
             <th className={`${th} text-center`}>最新周榜</th>
@@ -132,6 +146,24 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
                 </td>
                 <td className={`${td} text-right tnum font-semibold text-ink-strong`}>{item.listed_weeks}</td>
                 <td className={`${td} text-right tnum text-ink-muted`}>{item.consecutive_weeks}</td>
+                <td
+                  className={`${td} text-right tnum whitespace-nowrap ${
+                    item.near_12w_qualified !== null && item.near_12w_total !== null
+                    && item.near_12w_qualified < item.near_12w_total / 2
+                      ? 'text-down' : 'text-ink-strong'
+                  }`}
+                  title="近 12 周中夏普 ≥0.8 的周数"
+                >
+                  {formatNear12w(item.near_12w_qualified, item.near_12w_total)}
+                </td>
+                <td className={`${td} text-right tnum whitespace-nowrap text-ink-strong`}>
+                  <span
+                    className={item.peer_as_of ? 'hover-tip' : undefined}
+                    data-tip={item.peer_as_of ? `同类排名数据日期 ${item.peer_as_of}` : undefined}
+                  >
+                    {formatPeerPct(item.peer_pct)}
+                  </span>
+                </td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>
                   {item.latest_sharpe !== null ? item.latest_sharpe.toFixed(2) : '-'}
                 </td>

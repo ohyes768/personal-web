@@ -61,7 +61,9 @@ from src.services.market_rank_refresh import refresh as refresh_market_rank_db
 from src.services.market_risk_refresh import refresh as refresh_market_risk_db
 from src.services.market_size_refresh import refresh as refresh_market_size_db
 from src.services.market_universe_refresh import refresh as refresh_market_universe_db
-from src.services.sharpe_capture import SharpeRunCapture, freeze_base_rows, freeze_dd_rows
+from src.services.sharpe_capture import (
+    SharpeRunCapture, freeze_base_rows, freeze_dd_rows, freeze_peer_rows,
+)
 from src.utils.logger import setup_logger
 logger = setup_logger("fund-select.market_full")
 
@@ -483,6 +485,11 @@ def refresh_market_full_sync(
                                   failed=stage_results["L5_achievement"].get("result", {}).get("failed", 0))
         else:
             logger.info("[market_full] task=%s profile=bond 跳过 L5 achievement 阶段", task_id)
+
+        # v2 同类排名分位冻结：必须在 L5 之后（L5 会 delete+bulk insert 重写
+        # fund_achievement_rank，早一行就会冻到上一轮过期数据）。design §11。
+        if capture is not None and not skip_achievement_actual:
+            capture.peer_rows = freeze_peer_rows(db, codes)
 
         # 阶段错误汇入 capture（stock 基准/风险错误在 market_risk_refresh 内汇入；
         # 其余阶段失败在此汇入）。有输入采集错误则本轮不得发布完整榜（design 第 4 条）

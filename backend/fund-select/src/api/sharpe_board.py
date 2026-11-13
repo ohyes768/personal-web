@@ -27,7 +27,7 @@ async def sharpe_board(
         "discovery-stock", pattern="^(stock|discovery-stock)$",
         description="榜单来源：stock=股基·雪球三分法，discovery-stock=股基·市场",
     ),
-    profile_version: str = Query("v1", min_length=1, max_length=16, description="规则版本"),
+    profile_version: str = Query("v2", min_length=1, max_length=16, description="规则版本"),
     min_latest_sharpe: Optional[float] = Query(
         None, ge=-10, le=10,
         description="最近上榜夏普下限（含等于；按全历史最近一次上榜值判断，R5）",

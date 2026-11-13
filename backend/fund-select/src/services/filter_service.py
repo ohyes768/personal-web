@@ -108,6 +108,9 @@ def entry_predicate(
     min_mgr_exp: Optional[float] = None,
     min_sharpe: Optional[float] = None,
     exclude_qdii: bool = False,
+    min_ir: Optional[float] = None,
+    min_sample_days: Optional[float] = None,
+    max_peer_pct: Optional[float] = None,
 ):
     """入选谓词（行级）：实时 SQL 筛选（_screen 的 where 链）与夏普榜单 capture
     冻结数据共用的同一份阈值语义。
@@ -124,6 +127,14 @@ def entry_predicate(
       「互认基金」——字段是 market_subtype（精确 akshare 子类），不是 fund_type
     - 市场子类成员判定（market_types IN 精确 subtype）不在此谓词内：与 _screen
       一致，成员判定是 universe 层（SQL .in_），调用方自行组合
+
+    v2 新增三道门（11-13-sharpe-board-v2-rules）：三个参数默认 None 时行为与
+    v1 逐字节一致，供 v1 profile 继续沿用；v2 profile 才传值。
+    - min_ir：信息比率 ≥ X；NULL 不命中（QDII 无基准等场景）
+    - min_sample_days：样本交易日数 ≥ X；NULL 不命中
+    - max_peer_pct：同类分位 ≤ X%（即前 X%），含等号；无数据/格式异常 →
+      freeze_peer_rows 阶段已丢弃该 code，此处 peer_pct 为 None 即不命中。
+      同类排名的 90 天陈旧过滤在冻结阶段完成，谓词保持纯函数（不依赖 today()）。
     """
     def predicate(row) -> bool:
         if exclude_qdii:
@@ -156,6 +167,20 @@ def entry_predicate(
             v = _predicate_field(row, "sharpe")
             # sharpe 为 NULL（无风险指标）一并排除，与 SQL 筛选惯例一致
             if v is None or v < min_sharpe:
+                return False
+        # ---- v2 三道新门槛（参数 None 时整段跳过，v1 行为不变）----
+        if min_ir is not None:
+            v = _predicate_field(row, "ir")
+            if v is None or v < min_ir:
+                return False
+        if min_sample_days is not None:
+            v = _predicate_field(row, "sample_days")
+            if v is None or v < min_sample_days:
+                return False
+        if max_peer_pct is not None:
+            v = _predicate_field(row, "peer_pct")
+            # 前 X%：rank/total*100 <= X（含等号）
+            if v is None or v > max_peer_pct:
                 return False
         return True
 

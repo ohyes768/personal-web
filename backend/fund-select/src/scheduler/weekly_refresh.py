@@ -21,7 +21,9 @@ TIMEZONE = ZoneInfo("Asia/Shanghai")
 # capture，design「本轮采集与发布」第 6 条）。周键 = 任务开始时刻所在北京时间
 # 自然周（recording_week），不用结束时刻。
 BOARD_SOURCES = {"stock": "stock", "discovery-stock": "discovery-stock"}
-BOARD_PROFILE_VERSION = "v1"
+# v2（11-13-sharpe-board-v2-rules）：三道新门槛。改回 "v1" 即可回滚规则，
+# v1 历史周行已按版本隔离（迁移脚本先导出存档再删）。
+BOARD_PROFILE_VERSION = "v2"
 
 
 def _now() -> str:

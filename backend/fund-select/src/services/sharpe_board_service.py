@@ -42,6 +42,8 @@ WEEK_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED_NO_NEW_DATA}
 
 # 夏普算法口径（risk_service：近 3 年日频复权 vs TRI，√252 年化）；口径变更必须升版本
 ALGORITHM_VERSION = "risk-3y-v1"
+# v2：入选门槛加 IR / 样本天数 / 同类分位三道门（11-13-sharpe-board-v2-rules）
+ALGORITHM_VERSION_V2 = "risk-3y-v2"
 
 # 入选条件（PRD 首版工程默认值），参数名与 FilterService 对齐，供后续步骤共用谓词
 _ENTRY_FILTERS = {
@@ -53,16 +55,33 @@ _ENTRY_FILTERS = {
     "exclude_qdii": False,
 }
 
+# v2 新增三道门（PRD R1）。参数改值 = 改版本，历史 v1 周行不受影响。
+_V2_EXTRA_FILTERS = {
+    "min_ir": 0.5,          # 信息比率 ≥0.5（跑赢基准效率）
+    "min_sample_days": 700, # 样本交易日 ≥700（3 年约 750，留缺口余量）
+    "max_peer_pct": 20.0,   # 近 3 年同类排名前 20%（分位 ≤20%）
+}
+
 # 市场来源采集预筛（weekly_refresh 现值）
 _MARKET_PREFILTERS = {"min_ret_3y": 20, "min_size_yi": 5, "min_mgr_exp": 5}
 
 
 def _entry_filters() -> dict:
+    """v1 五条件深拷贝（v1 profile 与 v2 的基底都用这一份，勿单改）。"""
     return copy.deepcopy(_ENTRY_FILTERS)
 
 
-# 两套固定 profile；键 (source, version)。market_subtypes 是市场来源的确定
+def _v2_filters() -> dict:
+    """v1 五条件 + 三道新门（v2 是 v1 的超集，不是另起一套）。"""
+    filters = _entry_filters()
+    filters.update(copy.deepcopy(_V2_EXTRA_FILTERS))
+    return filters
+
+
+# 固定 profile；键 (source, version)。market_subtypes 是市场来源的确定
 # 副本（DISCOVERY_STOCK_SUBTYPES 快照），雪球三分法走 yaml 名单为 None。
+# ⚠ v1 两条必须保持一字不改：v1 历史周行的 profile_json 按当时规则冻结，
+#   改这里会让新读到的 v1 profile 与已落库快照不一致（契约 §13）。
 SHARPE_BOARD_PROFILES: dict[tuple[str, str], dict] = {
     ("stock", "v1"): {
         "source": "stock",
@@ -79,6 +98,22 @@ SHARPE_BOARD_PROFILES: dict[tuple[str, str], dict] = {
         "collection_prefilters": dict(_MARKET_PREFILTERS),
         "market_subtypes": list(DISCOVERY_STOCK_SUBTYPES),
         "algorithm_version": ALGORITHM_VERSION,
+    },
+    ("stock", "v2"): {
+        "source": "stock",
+        "version": "v2",
+        "filters": _v2_filters(),
+        "collection_prefilters": {},
+        "market_subtypes": None,
+        "algorithm_version": ALGORITHM_VERSION_V2,
+    },
+    ("discovery-stock", "v2"): {
+        "source": "discovery-stock",
+        "version": "v2",
+        "filters": _v2_filters(),
+        "collection_prefilters": dict(_MARKET_PREFILTERS),
+        "market_subtypes": list(DISCOVERY_STOCK_SUBTYPES),
+        "algorithm_version": ALGORITHM_VERSION_V2,
     },
 }
 
@@ -205,10 +240,13 @@ def _finite(value) -> bool:
 
 def _make_observation(
     week_id: int, code: str, base: dict, risk: dict, run_id: str,
+    peer: dict | None = None,
 ) -> SharpeBoardObservation:
     """由本轮冻结数据构造观测行（调用方先经 _finite 校验 sharpe）。
 
     name 是入选时名称快照；evidence 保存本轮筛选字段值 + 来源刷新 ID。
+    peer（v2）：本轮冻结的同类排名分位快照，写进 evidence 供聚合展示，
+    v1 无此数据传 None 保持旧 evidence 结构。
     metric_calculated_at/returns_end_date 本轮未知时留空（R7 不伪造日期）。
     """
     calculated_at = risk.get("calculated_at")
@@ -225,6 +263,11 @@ def _make_observation(
         evidence_json=canonical_json({
             "risk_run_id": run_id,
             "base": base,
+            "risk": {
+                "ir": risk.get("ir"),
+                "sample_days": risk.get("sample_days"),
+            },
+            "peer": peer,
             "benchmark_source": risk.get("benchmark_source"),
         }),
     )
@@ -318,9 +361,17 @@ def publish_week_board(
     predicate = entry_predicate(**profile["filters"])
     subtypes = profile.get("market_subtypes")
     subtype_set = set(subtypes) if subtypes is not None else None
+    # v2 三道门所需字段（v1 profile 不含这些参数 → 谓词整段跳过，行为不变）
+    v2_filters = profile["filters"]
+    gates = {
+        "ir": v2_filters.get("min_ir"),
+        "sample_days": v2_filters.get("min_sample_days"),
+        "peer": v2_filters.get("max_peer_pct"),
+    }
 
     selected: list[dict] = []
     missing: list[str] = []
+    gate_missing: dict[str, list[str]] = {}
     for code in dict.fromkeys(capture.universe_codes):  # 按 code 去重，不受页长限制
         base = capture.base_rows.get(code)
         risk = capture.risk_rows.get(code)
@@ -331,10 +382,32 @@ def publish_week_board(
             continue
         if subtype_set is not None and base.get("market_subtype") not in subtype_set:
             continue
-        if predicate({**base, "sharpe": risk.get("sharpe")}):
-            selected.append({"code": code, "base": base, "risk": risk})
+        peer = capture.peer_rows.get(code)
+        # v2 诊断：区分「数据缺失」与「不达标」。缺失单独记，不达标不记
+        # （不达标是正常筛选结果，进诊断会淹没真正的采集问题）。
+        for gate_name, threshold in gates.items():
+            if threshold is None:
+                continue
+            value = {
+                "ir": risk.get("ir"),
+                "sample_days": risk.get("sample_days"),
+                "peer": (peer or {}).get("peer_pct"),
+            }[gate_name]
+            if value is None:
+                gate_missing.setdefault(gate_name, []).append(code)
+        pred_input = {
+            **base,
+            "sharpe": risk.get("sharpe"),
+            "ir": risk.get("ir"),
+            "sample_days": risk.get("sample_days"),
+            "peer_pct": (peer or {}).get("peer_pct"),
+        }
+        if predicate(pred_input):
+            selected.append({"code": code, "base": base, "risk": risk, "peer": peer})
     if missing:
         diagnostics["missing_evidence"] = missing
+    if gate_missing:
+        diagnostics["gate_missing"] = gate_missing
 
     writable = [s for s in selected if _finite(s["risk"].get("sharpe"))]
     invalid = [s["code"] for s in selected if not _finite(s["risk"].get("sharpe"))]
@@ -377,7 +450,10 @@ def publish_week_board(
     try:
         if written:
             for s in fresh:
-                db.add(_make_observation(row.id, s["code"], s["base"], s["risk"], capture.run_id))
+                db.add(_make_observation(
+                    row.id, s["code"], s["base"], s["risk"], capture.run_id,
+                    peer=s.get("peer"),
+                ))
         db.commit()
     except IntegrityError:
         db.rollback()
@@ -396,8 +472,21 @@ def publish_week_board(
 # 只读聚合（implement 步骤 4：design「API 与统计合同」）
 # ─────────────────────────────────────────────────────────────
 
-# range → 周历起点向前裁剪的自然日数（all 不裁）。只裁图，不改任何统计。
-_RANGE_DAYS: dict[str, int | None] = {"all": None, "3m": 91, "6m": 182, "1y": 365}
+# 52 周窗口（11-13-sharpe-board-v2-rules）：榜单统计与图表统一卡在最近一年。
+# 364 = 52×7 恰为 7 的倍数，起点天然落在周一网格上；旧 range=1y 用 365 天
+# （52 周+1 天）会让起点落周日、series 全 null（契约 §13 记录过该回归）。
+WINDOW_WEEKS = 52
+QUALIFIED_SHARPE = 0.8          # 近12周「达标」的绝对参考线（与入选规则解耦）
+NEAR_WEEKS = 12                 # 近12周达标统计窗口
+
+# range → 窗口内缩放的周数（含当前周）。all/1y 等价 = 完整 52 周窗口。
+# 相对旧的 _RANGE_DAYS（自然日）：1y 从 365 天改为整 52 周，顺手治好对齐缺陷。
+_RANGE_WEEKS: dict[str, int] = {"all": 52, "1y": 52, "6m": 26, "3m": 13}
+
+
+def _window_start(current: date) -> date:
+    """当前周周一往前数 51 个周一（含当前周共 52 个周一）。"""
+    return current - timedelta(weeks=WINDOW_WEEKS - 1)
 
 
 def _current_week() -> date:
@@ -428,7 +517,7 @@ def aggregate_board(
     db: Session,
     *,
     source: str,
-    profile_version: str = "v1",
+    profile_version: str = "v2",
     min_latest_sharpe: float | None = None,
     min_weeks: int = 1,
     latest_only: bool = False,
@@ -436,20 +525,25 @@ def aggregate_board(
     page: int = 1,
     limit: int = 50,
 ) -> dict:
-    """夏普榜单聚合：全历史聚合 → 展示筛选 → 排序 → total → 周历/series → 分页切片。
+    """夏普榜单聚合：52 周窗口内聚合 → 展示筛选 → 排序 → total → 周历/series → 分页。
 
-    - 统计（listed_weeks/latest_sharpe/last_listed_week/consecutive_weeks）只按
-      当前 source/version 的 complete 周全历史计算；range 只裁周历（图），
-      不改累计周数、最近上榜值和命中集合（下限判断用全历史最新记录）。
-    - latest_only 用当前来源最新 complete 周榜（不是各基金最后一次记录周）；
-      最新 complete 空榜 → 命中零只。
-    - series 为全部命中基金，不随 items 分页；范围内无点保留 null 不造点。
-    - 不 JOIN 实时 Fund 表（失活/清盘基金历史仍在）；300 只×104 周预算内
-      Python 内存聚合，不截断。
+    v2（11-13-sharpe-board-v2-rules）口径变更：
+    - 统计（listed_weeks / consecutive_weeks / latest_sharpe / near_12w）只按
+      **最近 52 周**的 complete 周计算，窗口外数据不参与（但不删除观测行）。
+      窗口起点 = 当前周 - 51 周，恰为周一网格（364 天 = 52×7）。
+    - range 语义收窄为窗口内缩放：all/1y=52 周、6m=26 周、3m=13 周，
+      起点取 max(window_start, range_start)，绝不让用户看到超出 52 周的数据。
+    - latest_only 用当前来源最新 complete 周榜；最新空榜 → 命中零只。
+    - series 为全部命中基金，不随分页；范围内无点保留 null 不造点。
+    - 窗口截断后一年没上榜的基金 listed_weeks=0 → 被 min_weeks=1 默认筛掉
+      （PRD R5 已声明为预期的连带后果）。
+    - 不 JOIN 实时 Fund 表（失活/清盘基金历史仍在）。
     """
-    if range_key not in _RANGE_DAYS:
+    if range_key not in _RANGE_WEEKS:
         raise ValueError(f"unknown range: {range_key}")
     profile = get_profile(source, profile_version)
+    current = _current_week()
+    window_start = _window_start(current)
 
     week_rows = db.execute(
         select(SharpeBoardWeek).where(
@@ -486,44 +580,90 @@ def aggregate_board(
             )
         ).scalars().all())
 
-    # 1) 全历史聚合 per code（name 用最近上榜观测的名称快照）
+    # 1) 52 周窗口内聚合 per code（name 用窗口内最近上榜观测的名称快照）
     stats: dict[str, dict] = {}
     for code, eps in entries.items():
         eps.sort(key=lambda e: e[0])
-        last_week, last_obs = eps[-1]
-        week_set = {w for w, _ in eps}
+        # 窗口截断：只保留最近 52 周的观测，历史行仍在库里但不参与统计
+        eps_in = [(w, o) for w, o in eps if w >= window_start]
+        if not eps_in:
+            # 只在窗口外上榜过 → listed_weeks=0，由 min_weeks 默认筛掉
+            stats[code] = {
+                "code": code, "name": eps[0][1].name,
+                "listed_weeks": 0, "consecutive_weeks": 0,
+                "latest_sharpe": None, "last_listed_week": None,
+                "on_latest_board": code in latest_codes,
+                "week_sharpe": {},
+                "near_12w_qualified": None, "near_12w_total": None,
+                "peer_pct": None, "peer_as_of": None,
+            }
+            continue
+        last_week, last_obs = eps_in[-1]
+        week_set = {w for w, _ in eps_in}
         consecutive = 0
         w = last_week
-        while w in week_set:  # 缺席/未知周中断（design：最近一段连续在榜周数）
+        while w in week_set and w >= window_start:
+            # 连续段跨窗口边界时截断（design §5.0）
             consecutive += 1
             w -= timedelta(days=7)
+        recent = eps_in[-NEAR_WEEKS:]
+        # 同类分位：取窗口内最新一条带 peer 证据的观测（v2 发布时冻结）
+        peer_pct = None
+        peer_as_of = None
+        for _, o in reversed(eps_in):
+            if not o.evidence_json:
+                continue
+            try:
+                ev = json.loads(o.evidence_json)
+            except (TypeError, ValueError):
+                continue
+            p = ev.get("peer")
+            if isinstance(p, dict) and p.get("peer_pct") is not None:
+                peer_pct = p["peer_pct"]
+                peer_as_of = p.get("as_of")
+                break
         stats[code] = {
             "code": code,
             "name": last_obs.name,
-            "listed_weeks": len(eps),
+            "listed_weeks": len(eps_in),
             "consecutive_weeks": consecutive,
             "latest_sharpe": last_obs.sharpe,
             "last_listed_week": last_week,
             "on_latest_board": code in latest_codes,
-            "week_sharpe": dict(eps),
+            "week_sharpe": dict(eps_in),
+            "near_12w_qualified": sum(
+                1 for _, o in recent if o.sharpe >= QUALIFIED_SHARPE
+            ),
+            "near_12w_total": len(recent),
+            "peer_pct": peer_pct,
+            "peer_as_of": peer_as_of,
         }
 
-    # 2) 展示筛选（全历史；下限含等于，R5）
+    # 2) 展示筛选（52 周窗口内统计；下限含等于，R5）
     matched = [
         s for s in stats.values()
         if s["listed_weeks"] >= min_weeks
-        and (min_latest_sharpe is None or s["latest_sharpe"] >= min_latest_sharpe)
+        and (min_latest_sharpe is None
+             or (s["latest_sharpe"] is not None
+                 and s["latest_sharpe"] >= min_latest_sharpe))
         and (not latest_only or s["code"] in latest_codes)
     ]
 
     # 3) 排序：在榜周数降序 → 最近上榜夏普降序 → 代码升序（R3）
-    matched.sort(key=lambda s: (-s["listed_weeks"], -s["latest_sharpe"], s["code"]))
+    #    窗口外基金的 latest_sharpe 为 None（min_weeks=0 时才可能进 matched），
+    #    用 -inf 排末尾，不能对 None 取负号。
+    def _sort_key(s):
+        sh = s["latest_sharpe"]
+        return (-s["listed_weeks"], -sh if sh is not None else float("-inf"), s["code"])
+
+    matched.sort(key=_sort_key)
 
     # 4) total 在切片前算；items 切片在排序后（contracts 分页不变量）
     total = len(matched)
     offset = (page - 1) * limit
     item_keys = ("code", "name", "listed_weeks", "consecutive_weeks",
-                 "latest_sharpe", "last_listed_week", "on_latest_board")
+                 "latest_sharpe", "last_listed_week", "on_latest_board",
+                 "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of")
     items_page = [{k: s[k] for k in item_keys} for s in matched[offset:offset + limit]]
 
     # 4b) 展示补充：近 1 年/近 3 年收益（仅展示，不参与统计/排序/命中集合）。
@@ -554,20 +694,15 @@ def aggregate_board(
         it["ret_1y"] = r1
         it["ret_3y"] = r3
 
-    # 5) 周历：首次观测周 → 当前自然周；range 只裁起点，缺席/失败/停机留位
-    current = _current_week()
+    # 5) 周历：52 周窗口内的周一序列；range 在窗口内再裁起点。
+    #    364=52×7 恰为 7 的倍数，range 起点与窗口起点都天然在周一网格上，
+    #    不再需要旧 365 天方案那套「对齐回周一」的修补（design §5.0）。
     first_obs_week = min((eps[0][0] for eps in entries.values()), default=None)
     weeks: list[date] = []
     if first_obs_week is not None and first_obs_week <= current:
-        cutoff_days = _RANGE_DAYS[range_key]
-        if cutoff_days:
-            start = current - timedelta(days=cutoff_days)
-            # 裁剪起点对齐回周一网格：365=52周+1 天会使起点落到周日，
-            # 周历整体脱离周一键后观测值对位全部落空（range 只裁起点，终点仍为当前周）
-            start -= timedelta(days=start.weekday())
-        else:
-            start = first_obs_week
-        start = max(first_obs_week, start)
+        range_start = current - timedelta(weeks=_RANGE_WEEKS[range_key] - 1)
+        # 两个上界：窗口起点（52 周）与 range 起点；再取首次观测周。
+        start = max(window_start, range_start, first_obs_week)
         w = start
         while w <= current:
             weeks.append(w)

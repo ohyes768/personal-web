@@ -244,7 +244,7 @@ function SharpeBoardPageInner() {
             {!error && data && phase === 'ok' && !rangeHasPoint && (
               <div className="h-[420px] flex flex-col items-center justify-center gap-2 text-ink-muted">
                 <p className="text-sm">所选时间范围内无数据点</p>
-                <p className="text-xs">范围只裁图；列表仍按全历史统计，切换「全部」可看到完整曲线。</p>
+                <p className="text-xs">范围只裁图；列表按近 52 周窗口统计，切换到「近一年(52周)」可看到完整曲线。</p>
               </div>
             )}
             {!error && data && phase === 'ok' && rangeHasPoint && (
