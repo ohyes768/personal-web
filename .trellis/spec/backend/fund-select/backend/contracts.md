@@ -1107,3 +1107,172 @@ sharpe = _ratio_annualized(w - rf_daily_aligned)
 // Correct — 相对 basePath
 <Link href={`/sharpe-trend?code=${code}`}>
 ```
+
+---
+
+## 18. 夏普榜单 v2：三道门 + 52 周窗口（11-13-sharpe-board-v2-rules，2026-11-13）
+
+### 18.1 Scope / Trigger
+
+触发本节的条件：改 v2 profile / `entry_predicate` 三道门 / `freeze_peer_rows` /
+发布侧 peer 合并 / 52 周窗口聚合 / 榜单 DTO 新字段 / v1 迁移脚本任何一处。
+设计依据与生产数据实测见 `.trellis/tasks/11-13-sharpe-board-v2-rules/research/v2-gate-impact.md`。
+
+### 18.2 v2 入选规则（profile 版本隔离）
+
+`SHARPE_BOARD_PROFILES` 新增 `(stock, v2)` / `(discovery-stock, v2)`，
+**v1 两条一字不改**（v1 历史周行的 `profile_json` 按当时规则冻结，改 v1 常量会让
+新读到的 profile 与已落库快照不一致）。v2 是 v1 的超集：
+
+```python
+_V2_EXTRA_FILTERS = {
+    "min_ir": 0.5,           # 信息比率（跑赢基准效率）
+    "min_sample_days": 700,  # 3 年约 750 交易日，留缺口余量
+    "max_peer_pct": 20.0,    # 近 3 年同类排名前 20%
+}
+ALGORITHM_VERSION_V2 = "risk-3y-v2"
+```
+
+- 默认值三处同步切 v2：`weekly_refresh.BOARD_PROFILE_VERSION`、
+  `api/sharpe_board.py` 的 `profile_version`、`aggregate_board` 默认参数。
+- **回滚规则只需改 `BOARD_PROFILE_VERSION` 一行**（v1 profile 完整保留）。
+- 实测叠加影响（2026-11-02 周）：stock 29→10、discovery-stock 68→33，不空榜。
+- 被否决的两条（勿重提）：规模 ≤100 亿（只影响 2 只，且逻辑不成立）、
+  连续性门槛进入选规则（只筛 1~3 只，降级为展示统计）。
+
+### 18.3 `entry_predicate` 三个新参数（向后兼容铁律）
+
+```python
+entry_predicate(..., min_ir=None, min_sample_days=None, max_peer_pct=None)
+```
+
+- 三个参数默认 `None` = **整段跳过**，v1 profile 调用逐字节不变（由回归测试锁）。
+- NULL 一律不命中；`max_peer_pct` 用 `<=`（含等号，前 20% ↔ 20.0）。
+- **谓词是纯函数，不依赖 `date.today()`**：同类排名的 90 天陈旧过滤、格式校验
+  全在 `freeze_peer_rows` 取值阶段完成，谓词只做数值比较。这样等价性测试可重现。
+
+### 18.4 peer 数据必须冻结（与 `dd_3y` 同一个坑）
+
+`fund_achievement_rank` 会被市场链路 L5 `delete + bulk insert` 覆盖重写。
+发布时回读该表会拿到**下一轮**数据。唯一正确做法：
+
+```python
+freeze_peer_rows(db, codes) -> {code: {"peer_pct", "peer_raw", "as_of"}}
+```
+
+- 一次批量 `in_` 查询（500 codes 分块），**禁止 per-code 查询**。
+- 无记录 / `peer_rank` 格式异常 / `as_of_date` 超 90 天 → 不入字典（= 无数据，不命中）。
+- **陈旧判定用数据自带 `as_of_date`**，不是发布日：`refresh_service.py` 用
+  `out["achievement_as_of_date"] = ref.date()`（取数参考日）而非 `today()`。
+- 冻结进 `capture.peer_rows`；发布只读冻结，evidence_json 里存 `peer` 快照。
+
+**两条链路冻结位置不同**（design §11，早一行就是过期数据）：
+
+| 链路 | achievement 写入时机 | 冻结位置 |
+|---|---|---|
+| stock（雪球 yaml） | `snapshot_fund(fetch_ranking=True)` → `persist_snapshot` 主循环内 | 主循环**之后**，与 `freeze_dd_rows` 同处 |
+| discovery-stock（市场） | **L5** `refresh_market_achievement` | **L5 之后**（L3 的 `freeze_dd_rows` 处还没跑 L5） |
+
+### 18.5 既有缺陷修复：`BASE_ROW_FIELDS`
+
+```python
+BASE_ROW_FIELDS = ("name", "market_subtype", "age_years", "size_yi",
+                   "mgr_experience_years", "mgr_experience_years_max")
+```
+
+`min_mgr_exp` 优先读 `_max`（共管取最长），缺了该列会静默回退到取最短而误杀
+「老将+新人」组合。实测修复前 0/97 的观测证据里带此字段。
+**改这个字段会改变 `evidence_json` 结构**——已有测试断言改为「包含关键字段」
+而非全等（否则每次加字段都会挂）。
+
+### 18.6 发布侧诊断 `gate_missing`
+
+区分「数据缺失」与「不达标」：缺失进 `diagnostics["gate_missing"]`（按门分桶），
+不达标是正常筛选结果**不进诊断**（否则淹没真正的采集问题）。
+
+### 18.7 52 周窗口（统计 + 图表统一卡一年）
+
+```python
+WINDOW_WEEKS = 52
+_RANGE_WEEKS = {"all": 52, "1y": 52, "6m": 26, "3m": 13}
+def _window_start(current): return current - timedelta(weeks=WINDOW_WEEKS - 1)
+```
+
+- **364 = 52×7 恰是 7 的倍数**，窗口起点天然落在周一网格。
+  旧 `_RANGE_DAYS["1y"] = 365`（52 周+1 天）会让起点落周日、series 全 null
+  （§13 记录的 2026-11-05 真实回归）——改用整周数后该缺陷自然消失。
+- `listed_weeks` / `consecutive_weeks` / `latest_sharpe` / `near_12w` 全部
+  **只统计窗口内**；窗口外仍有观测的基金 `listed_weeks=0` → 被默认
+  `min_weeks=1` 筛掉（预期连带后果，实测 13 只被挤出视图）。
+- **窗口只作用于聚合，不删除任何观测行**（AC9c）。
+- `range` 语义收窄为**窗口内缩放**：起点 `max(window_start, range_start, first_obs)`，
+  绝不让用户看到超出 52 周的数据；`all` 与 `1y` 等价。
+- `QUALIFIED_SHARPE = 0.8` 是展示用的绝对参考线，与 v2 `min_sharpe` 解耦。
+
+### 18.8 DTO 新字段（三处同步，§3a 静默砍字段陷阱）
+
+`SharpeBoardItemDTO` / `SharpeBoardItem` / 页面三处同步新增：
+`near_12w_qualified` / `near_12w_total` / `peer_pct` / `peer_as_of`。
+**`aggregate_board` 的 `item_keys` 元组必须同步加字段**，否则被过滤掉。
+
+`peer_as_of` 是 ISO **字符串**（来自 evidence_json），不是 date 对象。
+
+### 18.9 已知排序陷阱
+
+窗口外基金 `latest_sharpe=None`，`min_weeks=0` 时可能进 `matched`。
+**排序键必须对 None 取 `-inf`**，不能写 `-s["latest_sharpe"]`（TypeError）：
+
+```python
+def _sort_key(s):
+    sh = s["latest_sharpe"]
+    return (-s["listed_weeks"], -sh if sh is not None else float("-inf"), s["code"])
+```
+
+### 18.10 v1 历史处置（迁移脚本）
+
+`scripts/migrate_v1_archive.py` 三阶段，**默认 dry-run**：
+
+1. 导出 v1 weeks（全 status）+ observations → JSON + SQL + manifest(sha256)
+2. 验证：重读比对行数/哈希；临时库重放 SQL 比对
+3. 删除：**仅 `--apply` 执行**；单事务，先删 observations 再删 weeks
+
+- 存档落 `data/archive/`（不入 git），可完整恢复。
+- **部署顺序**：代码上线（版本仍 v1）→ 跑迁移 → 切 `BOARD_PROFILE_VERSION=v2`。
+  不能边删边写新 v1 行。
+- **不做历史回溯**：v2 三道门里「同类排名前 20%」历史上根本不存在
+  （`fund_achievement_rank` 只有 6 个 `as_of` 快照，非时序）。强行用今日快照
+  回填历史周 = 前视偏差，`listed_weeks` 会系统性偏乐观。v2 从上线周干净积累。
+
+### 18.11 Tests Required
+
+- `tests/test_filter_service.py::TestV2EntryGates`：三道门边界/等号/NULL/组合/默认 None 回归
+- `tests/test_sharpe_board_service.py::TestV2Profiles`：v1 不被污染、v2 是 v1 超集、版本升级
+- `tests/test_sharpe_board_service.py::TestV2PublishGates`：三道门拦截、gate_missing 诊断、v1 兼容
+- `tests/test_sharpe_board_service.py::TestFiftyTwoWeekWindow`：100 周封顶 52、周一网格、
+  不足 52 不补零、range 别名、近12周达标、peer 展示、窗口不删数据
+- `tests/test_sharpe_board_capture.py::TestFreezePeerRows`：解析/90 天陈旧/格式异常/500 分块
+- `tests/test_sharpe_board_capture.py::TestV2PeerFreezeWiring`：stock 链路冻结
+- `tests/test_migrate_v1_archive.py`：导出→验证→删除→恢复、只删 v1、dry-run 不删
+- 前端 `sharpe-board.test.ts`：默认 v2、describeEntryFilters 三道门、URL 往返
+
+全量：后端 **668 passed**（630 基线 + 38 新增）；前端 37 passed + `tsc --noEmit` +
+`pnpm build` 通过。
+
+### 18.12 Wrong vs Correct
+
+```python
+# Wrong — 发布时回读会被 L5 覆盖的共享表
+peer = db.get(FundAchievementRank, code).peer_rank
+# Correct — 只读本轮冻结的 capture.peer_rows
+peer = capture.peer_rows.get(code)
+
+# Wrong — 谓词里读 date.today()（测试不可重现）
+if (today - as_of).days > 90: return False
+# Correct — 陈旧过滤在 freeze_peer_rows 完成，谓词只比数值
+if v is None or v > max_peer_pct: return False
+
+# Wrong — 365 天裁剪起点落周日，series 全 null
+start = current - timedelta(days=365)
+# Correct — 52 个整周，起点天然周一
+start = current - timedelta(weeks=51)
+```

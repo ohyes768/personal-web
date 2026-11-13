@@ -44,3 +44,68 @@ npm run build   # standalone EPERM 见 §5
 - `sharpe-chart.test.ts`：固定断言 `option.series[0].data === [0.95, null, 1.05]`、`connectNulls===false`、`smooth===false`；孤立点 symbolSize>0、连续段 0；下限参考线存在。
 - `sharpe-board.test.ts`：URL parse/serialize 默认值省略、AbortController 接线、五状态分类函数。
 - 浏览器（改动后必测）：1440/390 无横溢出、断线与单点、翻页不重置图（canvas 同节点）、range 只裁图统计不变、来源快速切换。
+
+## 7. v2 规则与 52 周窗口（11-13-sharpe-board-v2-rules，2026-11-13）
+
+后端契约见 [backend §18](../backend/fund-select/backend/contracts.md)（三道门、peer 冻结、
+52 周聚合、DTO 同步）。本节只记前端专属部分。
+
+### 7.1 默认版本切 v2
+
+`DEFAULT_SHARPE_FILTERS.profileVersion = 'v2'`（原 v1）。
+`sharpeFiltersToQuery` 始终显式发 `profile_version`，URL 默认值省略不写。
+`?profile_version=v1` 仍可访问历史版本（版本隔离）。
+
+**测试注意**：`sharpeFiltersToSearch` 的「非默认值往返」用例原本用 v2 当非默认值，
+v2 变默认后须改用 v1，否则失去对 `profile_version` 参数的往返覆盖。
+
+### 7.2 `describeEntryFilters` 支持 v2 三道门
+
+`SharpeBoardProfile.filters` 是 `Record<string, number | boolean>`，
+新增键直接按数值渲染，v1 profile 无这些键时自动跳过：
+
+- `min_ir` → `信息比率 IR ≥ 0.5`
+- `min_sample_days` → `样本交易日 ≥ 700 天`
+- `max_peer_pct` → `近三年同类排名前 20%`
+
+### 7.3 表格新增两列（共 12 列）
+
+| 列 | 渲染 | 备注 |
+|---|---|---|
+| 近52周在榜 | `listed_weeks` | 列名从「累计在榜周数」改，反映口径变更 |
+| 近12周达标 | `formatNear12w(q, total)` → `n/m`；null → `—` | 达标数 < 半数时 `text-down` 预警 |
+| 同类分位 | `formatPeerPct` → `前 14.2%`；null → `—` | `peer_as_of` 挂 `hover-tip` 显示数据日期 |
+
+`min-w` 从 `560px` 提到 `760px`（12 列）；容器仍是**局部横向滚动**，
+整页 `document.documentElement.scrollWidth <= 390` 不变。
+
+### 7.4 「近 52 周」口径提示
+
+`SharpeBoardProfileCard` 加一条独立说明行（蓝色徽标 + 说明），
+与「规则版本 v2」相邻。理由：窗口截断后一年没上榜的基金 `listed_weeks=0`
+会被默认 `min_weeks=1` 筛掉，老基金「资历归零」容易让用户以为出 bug。
+页面另两处过期文案同步：
+- 无点空态：「列表仍按全历史统计」→「列表按近 52 周窗口统计」
+- `RANGE_OPTIONS.all`：'全部' → '近一年(52周)'
+
+### 7.5 常见坑（补充 §5）
+
+- **`pnpm build` 与 `next dev` 共用 `.next`**：dev 期间 build 会清掉 dev 的 chunk，
+  反之亦然。验证 build 产物时**另起一个端口的 `next start`**，不要复用 dev server。
+- **容器里的 `next start` 用镜像内 `.next`**：本地 `pnpm build` 不会更新正在运行的
+  `fund-select-frontend` 容器（nginx upstream 指向它）。端到端浏览器验证必须
+  等部署；本地只能验到「build 产物含新代码 + 单测 + tsc」。
+- **`next start` 对 `basePath` 的 `/funds/api/*` 不自动代理**：独立起的验证 server
+  会因无后端代理返回 404，这是正常的，不代表前端代码有问题。
+
+### 7.6 Tests Required（补充 §6）
+
+```bash
+node --experimental-strip-types --test src/lib/sharpe-board.test.ts   # 15 passed
+npx tsc --noEmit
+pnpm build
+```
+
+- 默认 v2、URL 往返（用 v1 当非默认值）
+- `describeEntryFilters` 三道门全部渲染且 v1 五条件仍在
+- 改 DTO 时三处同步：`src/api/models.py` ↔ `src/lib/sharpe-board.ts` ↔ 页面消费
