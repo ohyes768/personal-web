@@ -1138,3 +1138,26 @@ Navidrome 服务早已不存在（无容器、无镜像、`~/navidrome/` 目录�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 76: 夏普榜单 v2 三道门 + 52 周窗口
+<!-- trellis-session: v=2 fp=131d1663527af471 -->
+
+**Date**: 2026-11-13
+**Task**: 夏普榜单 v2 三道门 + 52 周窗口
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；修复 BASE_ROW_FIELDS 缺 mgr_experience_years_max；新增 peer 冻结、gate_missing 诊断、v1 存档迁移脚本；前后端部署到 NAS 验证通过。后端 668 passed / 前端 37 passed / tsc+build 通过。契约 §18、前端契约 §7。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1e599f6d` | docs(trellis): 夏普榜单 v2 任务规划与契约 §18 |
+
+### Status
+
+[OK] **Completed**
