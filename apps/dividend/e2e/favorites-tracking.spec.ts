@@ -238,7 +238,8 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   await expect(table.locator('[data-code="000001"]')).toContainText('距减仓 -13.6%');
   // 重评待应用重叠：监控中 + 新评估待应用
   await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
-  await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '对比并应用' })).toBeVisible();
+  await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '应用' })).toBeVisible();
+  await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '查看报告' })).toBeVisible();
   // 已暂停 + 单挡位旧配置：条隐藏（不足两条价格线），显示单挡位文本
   await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-effective"]')).not.toBeVisible();
   await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-candidate"]')).not.toBeVisible();
@@ -261,14 +262,23 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   await expect(table.locator('[data-code="600004"]')).toContainText('未启用');
   // 应用前：状态为待应用，不是监控中
   await expect(table.locator('[data-code="600004"]')).toContainText('待应用');
+  // 「查看报告」与「应用」是两个独立动作：查看只开报告弹窗
+  await table.locator('[data-code="600004"]').getByRole('button', { name: '查看报告' }).click();
+  const reportDialog = page.getByRole('heading', { name: '待评公司 · 四挡位估值报告' }).locator('../..');
+  await expect(reportDialog).toBeVisible();
+  await expect(reportDialog.getByText('确认后保存四条价格线，并开启价格提醒。')).toBeVisible();
+  await reportDialog.getByRole('button', { name: '暂不应用' }).click();
+  await expect(reportDialog).not.toBeVisible();
+  // 「应用」走紧凑确认卡，不打开报告弹窗
+  await table.locator('[data-code="600004"]').getByRole('button', { name: '应用' }).click();
+  const confirmDialog = page.getByRole('heading', { name: '确认应用挡位 · 待评公司' }).locator('../..');
+  await expect(confirmDialog).toBeVisible();
+  await expect(page.getByRole('heading', { name: '待评公司 · 四挡位估值报告' })).toHaveCount(0);
+  await expect(confirmDialog.getByText('重仓')).toBeVisible();
   // 确认应用 → alerts 更新（enabled=true）
-  await table.locator('[data-code="600004"]').getByRole('button', { name: '查看并应用' }).click();
-  const dialog = page.getByRole('heading', { name: '待评公司 · 四挡位估值报告' }).locator('../..');
-  await expect(dialog).toBeVisible();
-  await expect(dialog.getByText('确认后保存四条价格线，并开启价格提醒。')).toBeVisible();
-  await dialog.getByTestId('valuation-apply-button').click();
+  await confirmDialog.getByTestId('valuation-confirm-apply-button').click();
   await expect(s.applyCalls).toEqual([{ code: '600004', evaluated_at: '2026-11-11T09:00:00' }]);
-  await expect(dialog).not.toBeVisible();
+  await expect(confirmDialog).not.toBeVisible();
   // 应用后：alerts 更新为监控中（生效条替换候选条）
   await expect(table.locator('[data-code="600004"] [data-testid="valuation-bar-effective"]')).toBeVisible();
   await expect(table.locator('[data-code="600004"]')).toContainText('监控中');
@@ -280,13 +290,13 @@ test('stale apply is rejected with 409 and old monitoring stays untouched', asyn
   s.applyStatus = 409;
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
-  await table.locator('[data-code="000001"]').getByRole('button', { name: '对比并应用' }).click();
-  const dialog = page.getByRole('heading', { name: '测试公司 · 四挡位估值报告' }).locator('../..');
-  await expect(dialog).toBeVisible();
-  // 新旧对比：旧生效值划线
-  await expect(dialog).toContainText('划线为当前生效值');
-  await dialog.getByTestId('valuation-apply-button').click();
-  await expect(dialog.getByRole('alert')).toContainText('报告已更新');
+  await table.locator('[data-code="000001"]').getByRole('button', { name: '应用' }).click();
+  const confirmDialog = page.getByRole('heading', { name: '确认应用挡位 · 测试公司' }).locator('../..');
+  await expect(confirmDialog).toBeVisible();
+  // 新旧对比：旧生效价一列可见
+  await expect(confirmDialog.getByText('¥8.50')).toBeVisible();
+  await confirmDialog.getByTestId('valuation-confirm-apply-button').click();
+  await expect(confirmDialog.getByRole('alert')).toContainText('报告已更新');
   // 旧挡位未被动过
   expect(s.alerts['000001']?.updated_at).toBe('2026-11-01T10:00:00');
 });
@@ -305,19 +315,19 @@ test('non-ready report cannot be applied and failure retriable', async ({ page }
   await expect(s.analyzeCalls).toEqual([['600004']]);
 });
 
-test('pause and resume keep levels and persist via enabled endpoint', async ({ page }) => {
+test('paused rows keep the badge but the row no longer offers pause actions', async ({ page }) => {
   const s = scenario();
   await setup(page, s);
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
-  await table.locator('[data-code="000001"]').getByRole('button', { name: '暂停', exact: true }).click();
-  await expect(s.enabledCalls).toEqual([{ code: '000001', enabled: false }]);
-  await expect(table.locator('[data-code="000001"]')).toContainText('已暂停');
+  const row = table.locator('[data-code="600000"]');
+  await expect(row).toContainText('已暂停');
+  // 行内不再有暂停/恢复入口（启用监控改到「挡位设置」里勾选）
+  await expect(row.getByRole('button', { name: '暂停' })).toHaveCount(0);
+  await expect(row.getByRole('button', { name: '恢复监控' })).toHaveCount(0);
+  await expect(row.getByRole('button', { name: '挡位设置' })).toBeVisible();
   // 挡位条仍显示（保留配置）
   await expect(table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]')).toBeVisible();
-  await table.locator('[data-code="000001"]').getByRole('button', { name: '恢复监控' }).click();
-  await expect(s.enabledCalls).toEqual([{ code: '000001', enabled: false }, { code: '000001', enabled: true }]);
-  await expect(table.locator('[data-code="000001"]')).toContainText('监控中');
 });
 
 test('out-of-range and missing current price are explicit, not misleading', async ({ page }) => {
@@ -348,8 +358,9 @@ test('narrow viewport keeps primary actions reachable without page overflow', as
     clientWidth: document.documentElement.clientWidth,
   }));
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
-  // 主操作可达：待应用的对比按钮与非 ready 行的缺口入口都在窄屏渲染
-  await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '查看并应用' })).toBeVisible();
+  // 主操作可达：待应用的「应用」与「查看报告」、非 ready 行的缺口入口都在窄屏渲染
+  await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '应用' })).toBeVisible();
+  await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '查看报告' })).toBeVisible();
   await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' })).toBeVisible();
   // 重新评估收在报告面板里（行内不再重复一个入口）
   await table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' }).click();

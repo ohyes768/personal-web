@@ -10,6 +10,7 @@
 - For apps/dividend 「全部」页股票搜索（搜索条、`/api/dividend/stocks?search=`、只看收藏时收窄到收藏 codes），read [股息率「全部」页股票搜索契约](../backend/dividend-select/backend/stock-search-contract.md).
 - For apps/skill-manager UI work, read [skill-manager control language](./skill-manager-ui.md); use `lib/ui.ts` constants, never hand-rolled button/input classes.
 - For apps/service-manager（NAS 服务管理台，`/services`）, read [service-manager frontend contract](../apps/service-manager/frontend/index.md); 状态展示铁律（五个维度不许合并、未配置 health 不许显示「健康」、端口范围提示）与 SafeLink/真实 URL 约束都在那里。
+- For apps/dividend 收藏跟踪 Tab（四挡位估值的行状态、查看报告 / 应用两个动作、确认卡），read [四挡位估值契约](../backend/dividend-select/backend/valuation-contract.md)；行内「应用」写生效挡位，「查看报告」只读，两者不合并。
 - For apps/dividend 弹窗（`src/components/shared-ui/Modal.tsx`）：**正文不要再套 `max-h-*` + `overflow-y-auto` 容器**。Modal 内容区（`flex-1 overflow-y-auto p-6`）已是唯一竖向滚动区，嵌套会渲染出两条竖向滚动条（长报告尤其明显）。底部操作区用 Modal 的 `footer` 插槽钉在弹框底部，正文滚动时按钮始终可见；只有「列表本身需要独立滚动」这种局部场景（如某块名单）才保留内层横滑/滚动容器。
 - For apps/macro time-series charts, read [ECharts contracts](./macro-echarts.md).
 - For apps/index-trends candlestick+channel charts, read [index-trends ECharts contracts](./index-trends-echarts.md); the valuation display contract lives in the same file.

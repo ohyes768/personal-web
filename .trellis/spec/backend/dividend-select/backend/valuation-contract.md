@@ -103,13 +103,21 @@ A local skill checkout is never proof of deployment.
   the stored report; failures, non-ready results and stale applies never touch
   favorites alerts. Applying writes enabled=true and the four prices with
   pe/pb — the AlertService monitor then treats it like any hand-configured
-  alert. Pause/resume flips `enabled` only and is available regardless of how
-  the levels arrived.
+  alert. `enabled` itself is only toggled from 挡位设置 (AlertSettingsModal);
+  the tracking row no longer carries a pause/resume action (2026-11-13: nobody
+  used it, and it crowded out the apply action).
+- The tracking row splits read and write (2026-11-13): a pending_apply row
+  shows two actions — 「查看报告」 opens the report modal (read path, its footer
+  keeps 对比并应用) and 「应用」 opens a compact confirm card that lists the new
+  four prices against the currently effective ones and applies without opening
+  the long report. Applying always writes enabled=true, so a paused stock
+  becomes monitored again after an apply.
 - FavoritesTrackingTab row states derive from alerts + report + per_code:
   monitoring / paused (effective levels exist), pending_apply (ready report
   newer than `alerts.updated_at`; overlaps monitoring/paused), evaluating,
   failed, not_ready, unevaluated. Filters: 全部收藏 / 待评估 (never-applied and
-  no pending report) / 待应用 (pendingApply) / 监控中 / 已暂停. Bar semantics:
+  no pending report) / 待应用 (pendingApply) — 监控中 / 已暂停 have no filter
+  chip, the row badge distinguishes them. Bar semantics:
   effective bar (≥2 levels) solid; candidate bar dashed with the
   「评估结果 · 未启用监控」badge for a first ready report; single-level configs
   render text instead of a bar; nothing renders without prices. Out-of-range
@@ -171,6 +179,7 @@ A local skill checkout is never proof of deployment.
   failed evaluation never touches alerts, queue cancel/move routes
   (200/409/422) with cancelled accounting.
 - `e2e/favorites-tracking.spec.ts`: filter counts and overlap semantics,
-  effective/candidate/single-level/hidden bar states, apply flow with identity,
-  stale 409 dialog, non-ready gaps, pause/resume, out-of-range/missing price,
-  narrow-viewport overflow.
+  effective/candidate/single-level/hidden bar states, apply flow with identity
+  (row 「应用」 → confirm card → apply, report modal read path kept separate),
+  stale 409 shown inside the confirm card, non-ready gaps, paused badge without
+  a row pause action, out-of-range/missing price, narrow-viewport overflow.

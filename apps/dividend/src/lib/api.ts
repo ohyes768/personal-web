@@ -73,9 +73,8 @@ export const dividendApi = {
   /** 将 ready 报告应用为挡位监控配置（开启监控）；陈旧报告 409，非 ready 400 */
   applyValuationReport: (code: string, evaluatedAt: string) =>
     directClient.post<FavoritesResponse>(`/api/dividend/valuation/${code}/apply`, { evaluated_at: evaluatedAt }),
-  /** 暂停/恢复挡位监控：仅翻转 enabled，不改 levels */
-  setAlertsEnabled: (code: string, enabled: boolean) =>
-    directClient.put<FavoritesResponse>(`/api/dividend/favorites/${code}/alerts/enabled`, { enabled }),
+  // 挡位监控的启停（enabled）走挡位设置弹框的整份配置保存（updateAlertConfig），
+  // 行内不再有独立的暂停/恢复入口（2026-11-13）。
   /** 下载估值 run 的 Hermes 会话记录（markdown 文件），用于排查慢跑 */
   downloadValuationSession: async (runId: string) => {
     const blob = await downloadFile(`/api/dividend/valuation/runs/${encodeURIComponent(runId)}/session`);

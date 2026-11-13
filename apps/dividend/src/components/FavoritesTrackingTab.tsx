@@ -1,11 +1,10 @@
 /**
  * FavoritesTrackingTab — 收藏跟踪（替换原「挡位监控」Tab，?tab=alerts URL 保持兼容）
  *
- * 展示全部收藏（不限于已配置挡位），五种筛选 + 名称/代码搜索：
+ * 展示全部收藏（不限于已配置挡位），三种筛选 + 名称/代码搜索：
  *   全部收藏 / 待评估（从未应用挡位且无待应用报告）/ 待应用（可与监控中/已暂停重叠）
- *   / 监控中 / 已暂停
- * 行内：评估挡位/重评/重试、查看报告、对比并应用（ready 报告确认后才写 alerts 并开启监控）、
- *   暂停/恢复监控、挡位设置（既有 AlertSettingsModal）。
+ * 行内：评估挡位/重评/重试、待应用行分「应用」（紧凑确认卡）与「查看报告」（报告弹窗）、
+ *   挡位设置（既有 AlertSettingsModal，启用监控的开关也收在这里）。
  * 价格条：ValuationPriceBar 窄条（四阈值五区间）；未评估/失败/非 ready 不画条。
  */
 'use client';
@@ -32,6 +31,7 @@ import type { AlertLevels, DividendStockWithTechnical, PriceItem } from '@/lib/t
 import type { UseAlertsStatusResult } from '@/lib/hooks/useAlertsStatus';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityQueuePanel } from './QualityQueuePanel';
+import { ValuationApplyConfirm } from './ValuationApplyConfirm';
 import { ValuationPriceBar } from './ValuationPriceBar';
 import { ValuationReportModal } from './ValuationReportModal';
 
@@ -71,6 +71,7 @@ export function FavoritesTrackingTab({
   const [filter, setFilter] = useState<TrackingFilterKey>('all');
   const [searchInput, setSearchInput] = useState('');
   const [reportCode, setReportCode] = useState<string | null>(null);
+  const [applyCode, setApplyCode] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [applyError, setApplyError] = useState('');
@@ -139,6 +140,7 @@ export function FavoritesTrackingTab({
       await Promise.all([alertsStatus.refresh(), refreshValuation()]);
       setNotice(`${report.name} 挡位已应用，监控已开启`);
       setReportCode(null);
+      setApplyCode(null);
     } catch (err) {
       const text = err instanceof Error ? err.message : '应用失败，请重试';
       setApplyError(text);
@@ -147,28 +149,26 @@ export function FavoritesTrackingTab({
     }
   }, [alertsStatus, refreshValuation]);
 
-  const handleToggleEnabled = useCallback(async (code: string, enabled: boolean) => {
-    setActionPending(code);
-    try {
-      await dividendApi.setAlertsEnabled(code, enabled);
-      await alertsStatus.refresh();
-      setNotice(enabled ? '已恢复监控，挡位配置保留' : '已暂停提醒，挡位配置保留');
-    } catch (err) {
-      setNotice(err instanceof Error ? `操作失败：${err.message}` : '操作失败，请重试');
-    } finally {
-      setActionPending(null);
-    }
-  }, [alertsStatus]);
-
   const openReport = useCallback((code: string) => {
     setApplyError('');
     setReportCode(code);
+  }, []);
+
+  /** 行内「应用」：打开确认卡（不经过报告弹窗） */
+  const openApplyConfirm = useCallback((code: string) => {
+    setApplyError('');
+    setApplyCode(code);
   }, []);
 
   const reportModalCode = reportCode;
   const reportModalRecord = reportModalCode ? reports[reportModalCode] ?? null : null;
   const reportModalEffective: AlertLevels | null = reportModalCode
     ? (alertsStatus.alertMap.get(reportModalCode)?.levels ?? null)
+    : null;
+  const applyModalCode = applyCode;
+  const applyModalRecord = applyModalCode ? reports[applyModalCode] ?? null : null;
+  const applyModalEffective: AlertLevels | null = applyModalCode
+    ? (alertsStatus.alertMap.get(applyModalCode)?.levels ?? null)
     : null;
   const jobProgress = job && (job.status === 'queued' || job.status === 'running')
     ? { processed: job.processed, total: job.total }
@@ -262,11 +262,10 @@ export function FavoritesTrackingTab({
                 valuationVersion={currentSkillVersion}
                 priceUpdatedAt={priceUpdatedAt}
                 evaluating={(perCode[row.code]?.state === 'queued' || perCode[row.code]?.state === 'running') || actionPending === row.code}
-                togglePending={actionPending === row.code}
                 configured={configured}
                 onEvaluate={() => void submitEvaluate([row.code])}
                 onOpenReport={() => openReport(row.code)}
-                onToggleEnabled={enabled => void handleToggleEnabled(row.code, enabled)}
+                onOpenApplyConfirm={() => openApplyConfirm(row.code)}
                 onOpenSettings={() => onOpenAlertSettings(row.code)}
               />
             ))}
@@ -298,6 +297,17 @@ export function FavoritesTrackingTab({
         applyPending={actionPending === reportModalCode}
         applyError={applyError}
       />
+
+      {/* 应用确认卡：行内「应用」的确认步骤 */}
+      <ValuationApplyConfirm
+        isOpen={!!applyModalRecord}
+        onClose={() => { setApplyCode(null); setApplyError(''); }}
+        report={applyModalRecord}
+        effectiveLevels={applyModalEffective}
+        onApply={handleApply}
+        applyPending={actionPending === applyModalCode}
+        applyError={applyError}
+      />
     </section>
   );
 }
@@ -309,11 +319,10 @@ function TrackingRow({
   valuationVersion,
   priceUpdatedAt,
   evaluating,
-  togglePending,
   configured,
   onEvaluate,
   onOpenReport,
-  onToggleEnabled,
+  onOpenApplyConfirm,
   onOpenSettings,
 }: {
   row: {
@@ -332,11 +341,10 @@ function TrackingRow({
   valuationVersion: string | null;
   priceUpdatedAt: string | null;
   evaluating: boolean;
-  togglePending: boolean;
   configured: boolean;
   onEvaluate: () => void;
   onOpenReport: () => void;
-  onToggleEnabled: (enabled: boolean) => void;
+  onOpenApplyConfirm: () => void;
   onOpenSettings: () => void;
 }) {
   const { stock, alertItem, report, derived, currentPrice, price, liveError } = row;
@@ -520,15 +528,17 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 操作：主按钮 + 最多 3 个链接（不换行），「重新评估」收在报告面板里 */}
+      {/* 操作：待应用行给两个并列动作（应用 / 查看报告），其余状态保持单入口。
+          行内不再放「暂停/恢复监控」——启用监控改到「挡位设置」里勾选。 */}
       <td className="p-3">
         <div className="flex flex-col items-start gap-1.5">
           {evaluatingNow ? (
             <button type="button" className={ghostBtn} disabled>评估中…</button>
           ) : derived.pendingApply ? (
-            <button type="button" className={primaryBtn} onClick={onOpenReport}>
-              {derived.effective ? '对比并应用' : '查看并应用'}
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button type="button" className={primaryBtn} onClick={onOpenApplyConfirm}>应用</button>
+              <button type="button" className={ghostBtn} onClick={onOpenReport}>查看报告</button>
+            </div>
           ) : derived.state === 'unevaluated' ? (
             <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '调用 Hermes 四挡位估值（约几分钟）' : 'Hermes 未配置'} onClick={onEvaluate}>
               评估挡位
@@ -545,12 +555,6 @@ function TrackingRow({
             )}
             {!report && (derived.state === 'monitoring' || derived.state === 'paused') && !evaluatingNow && (
               <button type="button" className={linkBtn} disabled={!configured} onClick={onEvaluate}>评估挡位</button>
-            )}
-            {(derived.state === 'monitoring' || derived.state === 'paused') && (
-              <button type="button" className={linkBtn} disabled={togglePending}
-                onClick={() => onToggleEnabled(derived.state === 'paused')}>
-                {derived.state === 'paused' ? '恢复监控' : '暂停'}
-              </button>
             )}
             <button type="button" className={linkBtn} onClick={onOpenSettings}>挡位设置</button>
           </div>
