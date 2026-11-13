@@ -2,39 +2,35 @@
  * ValuationPriceBar — 收藏跟踪价格条（四阈值五区间）
  *
  * 职责单一：回答「现价在我的四条价格线之间处于什么位置」。
- * 精简后的三层结构（2026-11-11 distill）：
+ * 两层结构（2026-11-13 收口）：
  *   行1 四档价签 + 现价签（相邻过近时错层）
  *   行2 五区间色条 + 四圆点（点击看该价位股息率）+ 现价标记
- *   行3 区间名（当前所在段高亮）
+ *
+ * 区间名不在这里画了：五区间图例是全局常量，每行重画既重复又被裁剪
+ * （「挤不下就不画」导致同一张表里各行图例不一致）。改由收藏跟踪表的
+ * 「区间」列逐行给一个结论（当前区 + 到下一个变盘线还有多远），
+ * 色带上的五段颜色与「区间」列的色点同源（VALUATION_ZONE_COLOR）。
  *
  * 移出的信息一律走渐进披露，不再占高度：
  * - 每档 PE/PB → 报告面板四价卡片已有；条上悬浮 tooltip 也带
- * - 距各档距离百分比 → 条上位置已表达同一事实，精确数字留在 tooltip
- * - 「当前所在区」文字块 → 行3 的高亮已表达，不再重复一遍
- * - 生效态的卡片边框/底色 → 表格行已分格，去掉嵌套卡片；候选态保留虚线框，
- *   那是「尚未启用监控」的语义信号，不是装饰
+ * - 距各档距离百分比 → 「区间」列回答「下一步」，精确四档距离留在 tooltip
+ * - 「当前所在区」→ 「区间」列，条上位置只表达几何关系
+ * - 生效态的卡片边框/底色 → 表格行已分格，去掉嵌套卡片；候选态用弱化价签/色条
  */
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { AlertLevels } from '@/lib/types';
-import { VALUATION_LEVEL_KEYS, VALUATION_LEVEL_LABEL, type ValuationLevelKey } from '@/lib/valuation';
+import {
+  VALUATION_LEVEL_KEYS,
+  VALUATION_LEVEL_LABEL,
+  VALUATION_ZONE_COLOR,
+  VALUATION_ZONE_LABEL,
+  type ValuationLevelKey,
+  type ValuationZone,
+} from '@/lib/valuation';
 
-const SEG_COLORS: Record<string, string> = {
-  heavy: '#5A9472',
-  add: '#C9951F',
-  hold: '#D9D2C2',
-  reduce: '#D4893A',
-  full: '#9B2F2F',
-};
-
-const SEG_LABELS: Record<string, string> = {
-  heavy: '重仓区',
-  add: '加仓区',
-  hold: '持有区',
-  reduce: '减仓区',
-  full: '全卖区',
-};
+const SEG_COLORS = VALUATION_ZONE_COLOR;
 
 export type ValuationBarVariant = 'effective' | 'candidate';
 
@@ -152,11 +148,13 @@ export function ValuationPriceBar({
   const pct = (p: number) => pctOf(p, minP, maxP);
 
   // 五区间：<重仓 / 重仓~加仓 / 加仓~减仓 / 减仓~全卖 / >全卖
-  const segments = [{ side: 'heavy', left: 0, width: pct(points[0].price) }];
+  const segments: Array<{ side: ValuationZone; left: number; width: number }> = [
+    { side: 'heavy', left: 0, width: pct(points[0].price) },
+  ];
   for (let i = 0; i < points.length - 1; i++) {
     const left = pct(points[i].price);
     const right = pct(points[i + 1].price);
-    const side = i === 0 ? 'add' : i === 1 ? 'hold' : 'reduce';
+    const side: ValuationZone = i === 0 ? 'add' : i === 1 ? 'hold' : 'reduce';
     segments.push({ side, left, width: Math.max(right - left, 0.5) });
   }
   segments.push({ side: 'full', left: pct(maxP), width: 100 - pct(maxP) });
@@ -166,7 +164,7 @@ export function ValuationPriceBar({
   const aboveAll = hasPrice && currentPrice > maxP;
   const markerPct = !hasPrice ? null : belowAll ? 8 : aboveAll ? 92 : pct(currentPrice);
 
-  const currentSegSide = !hasPrice
+  const currentSegSide: ValuationZone | null = !hasPrice
     ? null
     : currentPrice <= points[0].price ? 'heavy'
       : currentPrice <= points[1].price ? 'add'
@@ -200,10 +198,11 @@ export function ValuationPriceBar({
       return `${VALUATION_LEVEL_LABEL[p.key]} ¥${fmtPrice(p.price)}${pePb ? ` · ${pePb}` : ''}${dist ? ` · ${dist}` : ''}`;
     }).join('　'));
     if (hasPrice) {
-      lines.push(`现价 ¥${fmtPrice(currentPrice)}${fmtPePb(currentPE, currentPB) ? ` · ${fmtPePb(currentPE, currentPB)}` : ''}${currentSegSide ? ` · ${SEG_LABELS[currentSegSide]}` : ''}`);
+      lines.push(`现价 ¥${fmtPrice(currentPrice)}${fmtPePb(currentPE, currentPB) ? ` · ${fmtPePb(currentPE, currentPB)}` : ''}${currentSegSide ? ` · ${VALUATION_ZONE_LABEL[currentSegSide]}` : ''}`);
     } else {
       lines.push('现价缺失');
     }
+    if (variant === 'candidate') lines.push('评估结果尚未应用，监控未启用');
     return lines.join('\n');
   })();
 
@@ -334,61 +333,6 @@ export function ValuationPriceBar({
               />
             )}
           </div>
-        )}
-      </div>
-
-      {/* 行3 区间名：按实际占位依次排布，挤不下的不画（当前所在段高亮） */}
-      <div className="relative h-[15px]">
-        {(() => {
-          // 区间名约占 10% 宽（3 字 + 色点），右侧预留越界/未启用提示的位置
-          const LABEL_W = 10;
-          let cursor = 0;
-          const outOfRange = (belowAll || aboveAll);
-          const reserved = variant === 'candidate' || outOfRange;
-          return segments.map((seg, i) => {
-            const isFirst = i === 0;
-            const isLast = i === segments.length - 1;
-            // 越界时该端的区间名让位给越界提示；候选态让位给「未启用」标签
-            if (reserved && isLast) return null;
-            if (outOfRange && isFirst) return null;
-            if (!isFirst && !isLast && seg.width < 12) return null;
-            const center = seg.left + seg.width / 2;
-            const left = isFirst ? 0 : isLast ? 100 - LABEL_W : center - LABEL_W / 2;
-            const right = left + LABEL_W;
-            if (left < cursor) return null; // 与上一个名称重叠，放弃
-            cursor = right;
-            const isCurrent = currentSegSide === seg.side;
-            return (
-              <div
-                key={`${seg.side}-${i}`}
-                className="absolute top-0 whitespace-nowrap"
-                style={{ left: `${left}%`, transform: isFirst ? 'translateX(0)' : 'translateX(-50%)' }}
-              >
-                <span className={`inline-flex items-center gap-1 text-[9px] ${isCurrent ? 'text-ink font-medium' : 'text-ink-muted'}`}>
-                  <span
-                    className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: SEG_COLORS[seg.side] }}
-                    aria-hidden
-                  />
-                  {SEG_LABELS[seg.side]}
-                </span>
-              </div>
-            );
-          });
-        })()}
-        {belowAll && (
-          <span className="absolute left-0 top-0 text-[9px] text-accent whitespace-nowrap">低于重仓线</span>
-        )}
-        {aboveAll && (
-          <span className="absolute right-0 top-0 text-[9px] text-accent whitespace-nowrap">高于全卖线</span>
-        )}
-        {variant === 'candidate' && (
-          <span
-            className="absolute right-0 top-0 text-[9px] text-ink-muted whitespace-nowrap"
-            title="评估结果尚未应用，监控未启用"
-          >
-            未启用
-          </span>
         )}
       </div>
     </div>

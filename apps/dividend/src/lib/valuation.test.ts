@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveValuationZone } from './valuation.ts';
+import { resolveValuationZone, resolveZoneSteps } from './valuation.ts';
 import type { AlertLevels } from './types.ts';
 
 function levels(heavy: number, add: number, reduce: number, full: number): AlertLevels {
@@ -75,4 +75,65 @@ test('缺现价或挡位为空时判不出', () => {
   assert.equal(resolveValuationZone(four, null).zone, null);
   assert.equal(resolveValuationZone(null, 30).zone, null);
   assert.equal(resolveValuationZone(four, 0).zone, null);
+});
+
+/* ---------------- resolveZoneSteps：「区间」列的下一步 ---------------- */
+
+test('持有区给两条变盘线：上距减仓、下距加仓', () => {
+  const steps = resolveZoneSteps(four, 35);
+  assert.equal(steps.length, 2);
+  assert.deepEqual(steps.map(s => [s.key, s.direction]), [
+    ['reduce_position', 'up'],
+    ['add_position', 'down'],
+  ]);
+  // 都以现价为基准：(37.66-35)/35 = +7.6%，(30.12-35)/35 = -13.9%
+  assert.ok(Math.abs(steps[0].pct - 7.6) < 0.05);
+  assert.ok(Math.abs(steps[1].pct - 13.94) < 0.05);
+});
+
+test('减仓区只盯全卖线（再涨就该全清）', () => {
+  const steps = resolveZoneSteps(four, 39.96);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].key, 'full_exit');
+  assert.equal(steps[0].direction, 'up');
+  // 44.30/39.96-1 = +10.9%
+  assert.ok(Math.abs(steps[0].pct - 10.86) < 0.05);
+});
+
+test('加仓区向下盯重仓线：跌破就升级为「可加仓」', () => {
+  const steps = resolveZoneSteps(four, 28);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].key, 'heavy_position');
+  assert.equal(steps[0].direction, 'down');
+  // 1 - 26.58/28 = 5.07%
+  assert.ok(Math.abs(steps[0].pct - 5.07) < 0.05);
+});
+
+test('重仓区向上盯重仓线：涨回线之上就不再是「可加仓」', () => {
+  const steps = resolveZoneSteps(four, 20);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].key, 'heavy_position');
+  assert.equal(steps[0].direction, 'up');
+});
+
+test('全卖区向下盯全卖线：跌回线内降级为「该减仓」', () => {
+  const steps = resolveZoneSteps(four, 50);
+  assert.equal(steps.length, 1);
+  assert.equal(steps[0].key, 'full_exit');
+  assert.equal(steps[0].direction, 'down');
+  // 1 - 44.30/50 = 11.4%
+  assert.ok(Math.abs(steps[0].pct - 11.4) < 0.05);
+});
+
+test('正好踩线时距离为 0，且方向仍按所在区给出', () => {
+  const steps = resolveZoneSteps(four, 37.66);
+  assert.equal(steps[0].pct, 0);
+  assert.equal(steps[0].direction, 'up');
+});
+
+test('档位/现价不完整时区间列留空（不编造）', () => {
+  assert.deepEqual(resolveZoneSteps({ heavy_position: { price: 10 } }, 9), []);
+  assert.deepEqual(resolveZoneSteps(four, null), []);
+  assert.deepEqual(resolveZoneSteps(null, 30), []);
+  assert.deepEqual(resolveZoneSteps(four, 0), []);
 });

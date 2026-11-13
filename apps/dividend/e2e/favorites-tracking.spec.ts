@@ -232,10 +232,16 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   // 精简后：每档 PE 与距各档距离走悬浮 tooltip，不再占条的高度
   await expect(effective).toHaveAttribute('title', /PE 5\.1/);
   await expect(effective).toHaveAttribute('title', /距/);
-  // 区间名行仍在（当前所在段高亮）
-  await expect(effective).toContainText('持有区');
-  // 距离落到现价列（离现价最近的一条线）
-  await expect(table.locator('[data-code="000001"]')).toContainText('距减仓 -13.6%');
+  // 区间名不在条里画了（图例是全局常量，每行重画既重复又被裁剪）
+  await expect(effective).not.toContainText('持有区');
+  // 结论落到独立的「区间」列：当前区 + 到下一个变盘线还有多远
+  const zone = table.locator('[data-code="000001"] [data-testid="valuation-zone"]');
+  await expect(zone).toContainText('持有区');
+  // 现价 12.10，档位 8.5/9.5/14/21：↑减仓 (14-12.1)/12.1=15.7%，↓加仓 (12.1-9.5)/12.1=21.5%
+  await expect(zone).toContainText('↑减仓 15.7%');
+  await expect(zone).toContainText('↓加仓 21.5%');
+  // 现价列只留价格与 PE/PB，距离不再混在这里
+  await expect(table.locator('[data-code="000001"]')).not.toContainText('距减仓');
   // 重评待应用重叠：监控中 + 新评估待应用
   await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
   await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '应用' })).toBeVisible();
@@ -256,10 +262,10 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   await setup(page, s);
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
-  // 候选条：价格弱化 + 「未启用」标记（不再用虚线卡片，省高度）
+  // 候选条：价格弱化；「未启用」在条的悬浮说明里（条下不再有第三行）
   const candidate = table.locator('[data-code="600004"] [data-testid="valuation-bar-candidate"]');
   await expect(candidate).toBeVisible();
-  await expect(table.locator('[data-code="600004"]')).toContainText('未启用');
+  await expect(candidate).toHaveAttribute('title', /未启用/);
   // 应用前：状态为待应用，不是监控中
   await expect(table.locator('[data-code="600004"]')).toContainText('待应用');
   // 「查看报告」与「应用」是两个独立动作：查看只开报告弹窗
@@ -343,7 +349,10 @@ test('out-of-range and missing current price are explicit, not misleading', asyn
   await setup(page, s);
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
-  await expect(table.locator('[data-code="600004"]')).toContainText('低于重仓线');
+  // 低于全部阈值：区间仍是重仓区，但方向变成「↑重仓」——涨回去才离开重仓区
+  const zone = table.locator('[data-code="600004"] [data-testid="valuation-zone"]');
+  await expect(zone).toContainText('重仓区');
+  await expect(zone).toContainText('↑重仓');
   // 缺现价（realtime 与 close 都缺失才视为缺失）
   s.prices['600000'] = { close: null, realtime: null, pe: null, pb: null, yield_ttm: null };
   await page.reload();

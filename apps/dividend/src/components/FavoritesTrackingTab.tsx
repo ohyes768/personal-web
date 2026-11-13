@@ -19,10 +19,15 @@ import {
   VALUATION_LEVEL_KEYS,
   VALUATION_LEVEL_LABEL,
   VALUATION_STATUS_LABEL,
+  VALUATION_ZONE_COLOR,
+  VALUATION_ZONE_LABEL,
+  VALUATION_ZONE_TEXT_COLOR,
   buildValuationQueue,
   deriveFavoriteTrackingState,
   matchesTrackingFilter,
   reportLevelsToAlertLevels,
+  resolveValuationZone,
+  resolveZoneSteps,
   type FavoriteTrackingDerived,
   type TrackingFilterKey,
   type ValuationReportRecord,
@@ -248,6 +253,7 @@ export function FavoritesTrackingTab({
               <th className="p-3 font-medium">股票 / 基本面</th>
               <th className="p-3 font-medium">现价（元）</th>
               <th className="p-3 font-medium">挡位（元）</th>
+              <th className="p-3 font-medium" title="现价落在哪一区，以及再涨/跌多少会改变告警动作">区间</th>
               <th className="p-3 font-medium">评估 / 版本</th>
               <th className="p-3 font-medium">评估与监控状态</th>
               <th className="p-3 font-medium">操作</th>
@@ -272,7 +278,7 @@ export function FavoritesTrackingTab({
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={6} className="p-10 text-center text-ink-muted">
+                <td colSpan={7} className="p-10 text-center text-ink-muted">
                   {rows.length === 0
                     ? '还没有收藏的股票，去「全部」或「选股关注」添加收藏。'
                     : '没有符合条件的收藏股，试试其他状态或搜索词。'}
@@ -364,24 +370,16 @@ function TrackingRow({
     ? reportLevelsToAlertLevels(report.levels)
     : null;
 
-  // 距各档距离（现价列）：距现价最近的一条价格线，含方向
-  const distanceNote = useMemo(() => {
+  // 「区间」列：当前所在区 + 到下一个会改变告警动作的价格线还有多远。
+  // 口径见 resolveValuationZone / resolveZoneSteps（与后端 AlertService 一致）。
+  const zoneInfo = useMemo(() => {
     const source = levels ?? candidateLevels;
-    if (!source || currentPrice == null) return '';
-    const priced = VALUATION_LEVEL_KEYS
-      .map(key => ({ key, price: source[key]?.price }))
-      .filter(item => item.price != null && item.price > 0)
-      .map(item => ({
-        key: item.key,
-        price: item.price as number,
-        pct: ((currentPrice - (item.price as number)) / (item.price as number)) * 100,
-      }));
-    if (!priced.length) return '';
-    const nearest = priced.reduce((best, item) => (
-      Math.abs(item.pct) < Math.abs(best.pct) ? item : best
-    ));
-    const sign = nearest.pct > 0 ? '+' : '';
-    return `距${VALUATION_LEVEL_LABEL[nearest.key]} ${sign}${nearest.pct.toFixed(1)}%`;
+    if (!source || currentPrice == null) return null;
+    const zone = resolveValuationZone(source, currentPrice);
+    return {
+      zone,
+      steps: resolveZoneSteps(source, currentPrice),
+    };
   }, [levels, candidateLevels, currentPrice]);
 
   const statePill = (() => {
@@ -429,12 +427,6 @@ function TrackingRow({
             <div className="text-[10px] font-mono text-ink-muted tabular-nums">
               PE {price?.pe != null ? price.pe.toFixed(1) : '—'} · PB {price?.pb != null ? price.pb.toFixed(2) : '—'}
             </div>
-            {/* 距各档距离：条上只表达位置关系，精确数字放现价列（行高由条决定，这里不额外加高） */}
-            {distanceNote && (
-              <div className="mt-0.5 text-[10px] font-mono text-ink-muted tabular-nums whitespace-normal max-w-[150px]">
-                {distanceNote}
-              </div>
-            )}
           </>
         ) : (
           <span className="text-xs text-ink-muted">现价缺失</span>
@@ -490,6 +482,36 @@ function TrackingRow({
                   ? `${VALUATION_STATUS_LABEL[report.status]}：${report.summary.slice(0, 40)}${report.summary.length > 40 ? '…' : ''}`
                   : '尚未评估，先评估挡位再决定是否开启监控'}
           </div>
+        )}
+      </td>
+
+      {/* 区间：当前所在区 + 到下一个变盘线还有多远（口径同后端告警判定） */}
+      <td className="p-3 align-top">
+        {zoneInfo?.zone.zone ? (
+          <div className="max-w-[152px] whitespace-normal" data-testid="valuation-zone">
+            <span
+              className="inline-flex items-center gap-1 text-xs font-semibold"
+              style={{ color: VALUATION_ZONE_TEXT_COLOR[zoneInfo.zone.zone] }}
+            >
+              <span
+                className="inline-block h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: VALUATION_ZONE_COLOR[zoneInfo.zone.zone] }}
+                aria-hidden
+              />
+              {VALUATION_ZONE_LABEL[zoneInfo.zone.zone]}
+            </span>
+            {zoneInfo.steps.map(step => (
+              <div
+                key={step.key}
+                className="mt-0.5 whitespace-nowrap font-mono text-[10px] tabular-nums text-ink-muted"
+                title={`再${step.direction === 'up' ? '涨' : '跌'} ${step.pct.toFixed(1)}% 到${VALUATION_LEVEL_LABEL[step.key]}线 ¥${step.price.toFixed(2)}`}
+              >
+                {step.direction === 'up' ? '↑' : '↓'}{VALUATION_LEVEL_LABEL[step.key]} {step.pct.toFixed(1)}%
+              </div>
+            ))}
+          </div>
+        ) : (
+          <span className="text-xs text-ink-muted">—</span>
         )}
       </td>
 

@@ -289,6 +289,24 @@ export const VALUATION_ZONE_LABEL: Record<ValuationZone, string> = {
   full: '全卖区',
 };
 
+/** 五区间色（价格条色带与「区间」列共用，单一来源） */
+export const VALUATION_ZONE_COLOR: Record<ValuationZone, string> = {
+  heavy: '#5A9472',
+  add: '#C9951F',
+  hold: '#D9D2C2',
+  reduce: '#D4893A',
+  full: '#9B2F2F',
+};
+
+/** 区间名文字色：持有区底色太浅，文字走中性色保证对比度 */
+export const VALUATION_ZONE_TEXT_COLOR: Record<ValuationZone, string> = {
+  heavy: VALUATION_ZONE_COLOR.heavy,
+  add: VALUATION_ZONE_COLOR.add,
+  hold: '#6B6864',
+  reduce: VALUATION_ZONE_COLOR.reduce,
+  full: VALUATION_ZONE_COLOR.full,
+};
+
 /** 告警档位文案（对齐后端 AlertService 的 LEVEL_META） */
 export const VALUATION_ALERT_LABEL: Record<ValuationLevelKey, string> = {
   heavy_position: '可加仓',
@@ -364,4 +382,53 @@ export function resolveValuationZone(
 /** 告警 severity（对齐后端 LEVEL_META） */
 function severity(key: ValuationLevelKey): number {
   return key === 'heavy_position' || key === 'full_exit' ? 2 : 1;
+}
+
+/** 「再走多远会改变告警动作」的一步：目标价位线 + 方向 + 按现价算的百分比 */
+export interface ValuationZoneStep {
+  key: ValuationLevelKey;
+  price: number;
+  /** up = 还要涨才够到该线；down = 还要跌 */
+  direction: 'up' | 'down';
+  /** 距该线的百分比（绝对值；0 表示正好踩线） */
+  pct: number;
+}
+
+/**
+ * 现价沿「改变告警动作」的方向，到下一个会变盘的价位线还有多远。
+ *
+ * 与区间一一对应（口径同 resolveValuationZone）：
+ * - 重仓区：涨回重仓线 → 不再是「可加仓」（1 步，↑）
+ * - 加仓区：跌回重仓线 → 升为「可加仓」（1 步，↓）
+ * - 持有区：上下各一条改变动作的线 → 涨到减仓「该减仓」、跌到加仓「加仓价位」（2 步）
+ * - 减仓区：涨到全卖线 → 「全部清仓」（1 步，↑）
+ * - 全卖区：跌回全卖线 → 降级为「该减仓」（1 步，↓）
+ *
+ * 档位不足四条时判不出（返回空数组）。
+ */
+export function resolveZoneSteps(
+  levels: AlertLevels | null | undefined,
+  price: number | null | undefined,
+): ValuationZoneStep[] {
+  if (!levels || price == null || !(price > 0)) return [];
+
+  const points = VALUATION_LEVEL_KEYS
+    .map(key => ({ key, price: levels[key]?.price }))
+    .filter((p): p is { key: ValuationLevelKey; price: number } => p.price != null && p.price > 0);
+  if (points.length !== VALUATION_LEVEL_KEYS.length) return [];
+
+  const sorted = [...points].sort((a, b) => a.price - b.price);
+  const [heavy, add, reduce, full] = sorted;
+  const step = (point: typeof heavy, direction: ValuationZoneStep['direction']): ValuationZoneStep => ({
+    key: point.key,
+    price: point.price,
+    direction,
+    pct: Math.abs((point.price - price) / price) * 100,
+  });
+
+  if (price <= heavy.price) return [step(heavy, 'up')];
+  if (price <= add.price) return [step(heavy, 'down')];
+  if (price <= reduce.price) return [step(reduce, 'up'), step(add, 'down')];
+  if (price <= full.price) return [step(full, 'up')];
+  return [step(full, 'down')];
 }

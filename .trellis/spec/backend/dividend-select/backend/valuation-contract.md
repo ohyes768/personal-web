@@ -131,21 +131,33 @@ A local skill checkout is never proof of deployment.
   render text instead of a bar; nothing renders without prices. Out-of-range
   current prices show 低于重仓线/高于全卖线 with edge arrows; missing realtime
   and close show 现价缺失.
-  Price bar layout (2026-11-11 revised twice after user review: 248px read as too
-  narrow → 400px; then the 5-layer version read as too tall → distilled to 3
-  layers, row height 130px → 86px). Layers: row1 four level prices + current
-  price label (staggered when close), row2 five-band track + four clickable
-  dots (click shows the dividend yield at that price) + current-price marker,
-  row3 zone names that fit. Information that was duplicated elsewhere moved out
-  of the bar instead of being deleted: per-level PE/PB and distance-to-each-level
-  percentages live in the bar's hover title and in the report modal's price
-  cards; the nearest-level distance appears once in the 现价 column; the zone
-  legend highlights the current band instead of repeating the zone name in a
-  second line. Candidates read as muted prices/track plus a 未启用 tag rather
-  than a nested dashed card. Labels never collide: price rows stagger
-  independently, threshold positions map to [8, 92], and zone names are laid
-  out against an occupied-width cursor so a name that would overlap is dropped
-  (or yields the slot to the out-of-range / 未启用 notice).
+  Price bar layout (history: 248px read as too narrow → 400px; a 5-layer version
+  read as too tall → 3 layers; 2026-11-13 → 2 layers, row height 46px). The bar
+  now answers only "where does the current price sit between my four lines":
+  row1 four level prices + current price label (staggered when close), row2
+  five-band track + four clickable dots (click shows the dividend yield at that
+  price) + current-price marker. **The bar no longer draws zone names.** A zone
+  legend is a global constant, and redrawing it per row was both redundant and
+  lossy: the old `LABEL_W`/`cursor` clipping dropped a name whenever a band was
+  narrow or two names collided, so the same colour band showed a different
+  legend on different rows. Band colours and the row's zone column share one
+  source, `VALUATION_ZONE_COLOR`.
+- The tracking table has a dedicated **区间 column** (after 挡位（元）, `colSpan`
+  7). Each row states the conclusion once: the zone the current price sits in,
+  plus how far the price must move to reach the next line that changes the
+  alert action — `resolveZoneSteps` in `apps/dividend/src/lib/valuation.ts`.
+  Steps per zone: 重仓区 → 重仓线 up; 加仓区 → 重仓线 down; 持有区 → 减仓线 up
+  **and** 加仓线 down (two lines); 减仓区 → 全卖线 up; 全卖区 → 全卖线 down.
+  Percentages are measured against the current price (not against the target
+  line), and the arrow carries the direction, so no sign convention has to be
+  remembered. Out-of-range prices need no extra wording: a price above 全卖 still
+  reads 全卖区 + ↓全卖, below 重仓 still 重仓区 + ↑重仓. Cells with fewer than four
+  levels or no current price render — rather than inventing a zone.
+- Candidates read as muted prices/track; the 未启用 notice lives in the bar's
+  hover title instead of a third text row (it used to occupy the dropped row).
+  Labels never collide: price rows stagger, threshold positions map to [8, 92].
+  Per-level PE/PB and all four distance percentages stay in the hover title and
+  the report modal's price cards.
 
 ## 4. Validation & Error Matrix
 | Condition | Result |
