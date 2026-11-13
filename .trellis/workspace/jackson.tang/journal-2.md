@@ -1083,3 +1083,35 @@ Navidrome 服务早已不存在（无容器、无镜像、`~/navidrome/` 目录�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 74: 归档三个 Trellis 任务：hermes 共享信号量 / 基金经理评价 / NAS 服务管理台
+
+**Date**: 2026-11-13
+**Task**: 归档三个 Trellis 任务：hermes 共享信号量 / 基金经理评价 / NAS 服务管理台
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+拉取最新 master（497cd53d→45af5d9e，44 提交）；归档 11-11-hermes-cross-service-semaphore、11-10-fund-manager-evaluation、11-11-nas-service-manager，活动任务由 5 降至 2。归档前校准记录：fund-manager-evaluation 实施清单按实际代码回填 55 项并标注 3 处实现偏差；nas-service-manager 移除已由 d57cf502 完成的 digest 锁定待办，破坏性恢复演练明确留待新任务。验证：backend/fund-select 全量 597 passed。
+
+### Main Changes
+
+- Detailed change bullets were not supplied; see the summary above.
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- Validation was not recorded for this session.
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
