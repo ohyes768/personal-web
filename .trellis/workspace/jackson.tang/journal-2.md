@@ -1161,3 +1161,28 @@ v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 77: service-manager 标签体系：可维护可筛选 + 分类字段退役
+<!-- trellis-session: v=2 fp=224220608695b442 -->
+
+**Date**: 2026-11-13
+**Task**: service-manager 标签体系：可维护可筛选 + 分类字段退役
+**Package**: apps/service-manager
+**Branch**: `master`
+
+### Summary
+
+照搬 skill-manager 的标签交互：行内药丸 + 编辑弹窗（勾选/新建）+ 药丸多选 AND 筛选；候选词表改由后端 summary.all_tags 提供。category 字段退役：迁移先转标签后删列（同一事务、幂等），24 条服务的分类值并入标签，界面与 API 的分类入口全部下线。新增 e2e 三条用例并加 afterEach 清理。验证：后端 pytest 208 passed，前端 tsc/eslint 0 问题，e2e 23 passed / 1 skipped，前后端容器已重建上线。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `da3152e6` | feat(service-manager): 标签体系——可维护可筛选，分类字段退役 |
+| `7c58f13a` | docs(trellis): 标签体系任务落地——PRD/实施清单按实现回填 |
+| `c4c1afa2` | chore(task): archive 11-13-service-manager-tags |
+
+### Status
+
+[OK] **Completed**

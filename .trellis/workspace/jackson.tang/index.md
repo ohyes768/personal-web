@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 76
+- **Total Sessions**: 77
 - **Last Active**: 2026-11-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1163 | Active |
+| `journal-2.md` | ~1188 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 77 | 2026-11-13 | service-manager 标签体系：可维护可筛选 + 分类字段退役 | `da3152e6`, `7c58f13a`, `c4c1afa2` | `master` |
 | 76 | 2026-11-13 | 夏普榜单 v2 三道门 + 52 周窗口 | `1e599f6d` | `master` |
 | 75 | 2026-11-13 | 夏普走势页：现算滚动夏普与稳定性 KPI | `fa7c165` | `master` |
 | 74 | 2026-11-13 | 归档三个 Trellis 任务：hermes 共享信号量 / 基金经理评价 / NAS 服务管理台 | - | `master` |
