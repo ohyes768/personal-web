@@ -963,3 +963,147 @@ market_type 全量）/ `board_weeks`（complete 周观测计数，历史累计�
 `fund_name_market`。列表行带 `board_on_current` / `current_fund_total`
 汇总。并行会话重写同文件的 JSX 时必须核对 `AffiliationBadges` 调用点
 是否还在（本次曾被 8a11b2a 覆盖回纯文本）。
+
+---
+
+## 17. 夏普走势页：现算滚动夏普（11-13-fund-sharpe-trend，2026-11-13）
+
+### 17.1 Scope / Trigger
+
+新增导航第七 Tab「夏普走势」（`/funds/sharpe-trend?code=xxx`），用现算的
+周频滚动 3 年夏普曲线回答「这只基金稳不稳」。触发本节的条件：改
+`/sharpe-trend` API、`sharpe_trend_service` 口径/KPI、走势页前端、三处入口。
+
+**与夏普榜单（§13）的分工**（不要合并）：
+- 榜单 = 每周冻结的周观测（只在 ≥0.8 入选时记录，**有幸存者偏差**），
+  回答「谁一直好」，横向比 N 只。
+- 走势 = 现算完整滚动曲线（**跌破 0.8 也看得见**），回答「这一只稳不稳」，
+  纵向单只。
+- 两者最新值同口径，可互相印证。
+
+### 17.2 口径决定：纯净值，不 join 基准（**最关键**）
+
+`risk_service.compute_risk_metrics` 在有基准时会把 `r_p` 与 `r_b` 做
+inner join。生产库 `fund_benchmark` 只有 561 只、最早 2023-11-08，
+**会把历史 3 年窗口截断成 1 年**。
+
+实测（000628，同一份净值、同一窗口定义，仅差是否 join）：
+
+| 窗口截止 | join 基准 | 纯净值 | 样本天数 |
+|---|---|---|---|
+| 2026-11-13 | 0.9753 | 0.9216 | 723 vs 728 |
+| 2024-12-31 | 1.8048 | 0.3298 | 280 vs 729 |
+| 2024-09-30 | 2.4216 | 0.6845 | 219 vs 729 |
+
+若沿用 join 口径，曲线会在 2025 年前后出现**虚假断崖**（同一只基金被
+算成 2.42「优秀」而非 0.68「不稳定」），恰好与「稳定性」判断相反。
+
+**决定：走势页用纯净值口径** —— 只用 `R_p`（东财日增长率/100）与
+`R_f`，不 join `fund_benchmark`。夏普定义本来就不需要基准，基准只服务
+IR/alpha。`rolling_sharpe_series` 的签名里没有 `r_b`，且回归测试
+`test_benchmark_rows_do_not_truncate_window` 逐点比对「有/无基准行」结果
+一致 + 历史窗口 sample_days ≥700。
+
+公式与 `risk_service` 一致：`mean(excess)/std(excess, ddof=1) × √252`；
+`std=0`/NaN → 无定义（该周不出点）。`MIN_SAMPLE_DAYS=250`、
+`TRADING_DAYS=252`、`WINDOW_YEARS=3`。
+
+`risk_free_rate` 生产库当前为**空表**（fetcher 存在但未入调度）→
+`rf_basis="zero"`，如实标注不静默；有数据时 `"rate"`。
+
+**最新点与列表值的对齐**：列表夏普窗口用 `today - 3年`，走势最后一点
+用「最新净值日所在周的最后交易日」回看 3 年。末日相同时数值一致
+（000628 实测 0.9216 vs 走势 0.9163，差 <0.6% 来自窗口起点差 1 天 /
+样本 728 vs 729），契约允许此小数级差异，不强行改算法。
+
+### 17.3 API
+
+`GET /api/funds/sharpe-trend/{code}?range=all|3y|1y`（默认 all）
+
+- 静态路由必须在通用 `/{code}` 详情路由**之前**注册（`main.py`），
+  否则 `/sharpe-trend/000628` 被吞掉报「基金不存在: sharpe-trend」。
+- 三个 DTO 全部在 `models.py` 显式声明（§3a 静默砍字段）：
+  `SharpeTrendPointDTO`（date / sharpe / sample_days）、
+  `SharpeTrendStatsDTO`（11 字段）、`SharpeTrendResponse`（9 字段）。
+  后端加字段要三处同步：`models.py` ↔ `lib/sharpe-trend.ts` ↔ 页面。
+- `range` 只裁**返回的点集**，不改每个点的 3 年滚动窗口。
+- 错误语义（与正常空态分开）：
+
+| 场景 | 响应 |
+|---|---|
+| code 不在 Fund 表 | 404（**不打网络**：akshare 对未知代码抛解析异常，会被误判 502） |
+| 净值网络失败 | 502 `净值拉取失败: ...`（可重试） |
+| 净值 < 250 日 | 200 + `points=[]` + `diagnostics.insufficient_history`（正常空态） |
+| 无有效点但样本够 | 200 + `diagnostics.no_valid_points` |
+
+- `rf_basis` / `algorithm_version="trend-v1"` / `diagnostics` 必须如实返回，
+  前端在 KPI 次级行展示口径。
+
+### 17.4 KPI 定义（threshold 默认 0.8，与榜单入选线一致）
+
+- 有效点 = sharpe 非 None 的点；None（样本不足/无定义）不计入统计，
+  但**打断**连续达标/连续低于的计数。
+- `current` = 最后一个有效点（不是最后一个点）；`max/min/mean` 基于区间内有效点。
+- `above_ratio` = ≥阈值周数 / 有效周数（≥ 含等号）。
+- `consecutive_above` = 从最新点往回连续 ≥阈值 的点数。
+- `longest_below` = 全区最长连续 <阈值 的周数（回答「最差能差多久」）。
+- `trend_12w` = 最近 12 个有效点的最小二乘斜率（每周变化量）；不足 12 → None。
+
+### 17.5 性能与缓存（不落库）
+
+实测：净值拉取 0.12s + 603 个周点计算 0.17s ≈ **0.3s/请求**，
+无需预计算落库。`sharpe_trend_service._cached_nav` 是进程内 TTL 1h
+缓存（按 code 键），失败不缓存（可重试）。**本页纯读：不写任何表、
+不进调度、不影响周榜发布。**
+
+### 17.6 前端契约
+
+- `FundsNavigation` 七 Tab；走势页自行组装头部（同 sharpe-board 模式，
+  不套 FundsHeader），`active="sharpe-trend"`。
+- 无 code → 代码输入框引导态（不造曲线）；带 code → 自动加载。
+- 图表**复用** `SharpeChart` + `buildSharpeChartOption`（单 series，
+  `minLatestSharpe=0.8` 挂参考线），`dynamic(ssr:false)`。
+- `lib/sharpe-trend.ts` 独立 DTO / URL parse / fetch（全路径
+  `/funds/api/funds/...`）；code/range 切换用 AbortController 中止旧请求。
+- basePath 铁律：所有跳转 Link 用相对路径 `/sharpe-trend?code=...`，
+  **不得**带 `/funds` 前缀。
+
+### 17.7 三处入口（**第一版只支持股基**）
+
+| 入口 | 改动 | 注意 |
+|---|---|---|
+| 股基两 tab 列表代码列 | `FundTable` 加 `trendEnabled` prop，仅 `stock`/`discovery-stock` 传 true | Link 必须 `stopPropagation`，否则同时触发 `onRowClick` 开抽屉 |
+| 详情抽屉夏普 KPI | `RiskMetricsGrid` 加 `trendHref` prop；`DetailHero` 传 `/sharpe-trend?code=${fund.code}` | 只有 `RowDetailDrawer`（股基）用；债基 `RowDetailDrawerBond` 不用；显式分支渲染 Link/div，别用动态 Wrapper（TS 会把 Link 的必填 href 强加给 div） |
+| 夏普榜单行代码 | `SharpeBoardTable` 代码 → Link，下方保留极小「详情」按钮 | 行点击是聚焦，Link 需 `stopPropagation`；名称点击仍开抽屉 |
+
+债基两 tab 不传 `trendEnabled`（默认 false）→ 代码纯文本，零行为变化。
+后端对任意 code 都能算，但前端第一版不暴露债基入口。
+
+### 17.8 Tests Required
+
+- 后端 `tests/test_sharpe_trend.py`（33 用例）：纯净值口径不被基准截断
+  （**最关键回归**）、rf 空表/有值、样本不足、缓存失败可重试、
+  KPI 边界（全达标/全不达标/恰好 12 点/单点/None 缺口打断连续计数）、
+  range 只裁点不改窗口、路由顺序、404/502/422/insufficient 200。
+- 前端 `lib/sharpe-trend.test.ts`（13 用例）：URL parse 非法值回退、
+  href 相对路径、格式化、状态分类、fetch 查询串与错误处理。
+- 全量：后端 `pytest tests/ -q` = **630 passed**（597 基线 + 33 新增）；
+  前端 `node --experimental-strip-types --test` 三文件 = 35 passed；
+  `tsc --noEmit` 通过。本 app 无 ESLint 交互配置，`next lint` 不能非交互运行。
+
+### 17.9 Wrong vs Correct
+
+```python
+# Wrong — 沿用 compute_risk_metrics 的 inner join → 历史窗口被基准截断
+joined = pd.concat([r_p.rename("p"), r_b.rename("b")], axis=1, join="inner")
+sharpe = _ratio_annualized(joined["p"] - rf)
+# Correct — 纯净值：走势页不 join 基准，全窗口 3 年样本
+w = r_p[(idx >= end - 1095d) & (idx <= end)]
+sharpe = _ratio_annualized(w - rf_daily_aligned)
+```
+
+```tsx
+// Wrong — <Link href="/funds/sharpe-trend"> 变 /funds/funds/... 404
+// Correct — 相对 basePath
+<Link href={`/sharpe-trend?code=${code}`}>
+```

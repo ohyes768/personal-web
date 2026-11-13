@@ -136,6 +136,7 @@ function DiscoveryStockPageInner() {
               onRowClick={setDetailFund}
               ddBarCapPct={60}
               marketKind="stock"
+              trendEnabled
             />
             <Pagination
               page={filters.page}

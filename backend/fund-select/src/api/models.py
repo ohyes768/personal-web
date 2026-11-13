@@ -274,3 +274,52 @@ class SharpeBoardResponse(BaseModel):
     weeks: list[date] = []         # 统一周历（周一日期），range 只裁起点
     series: list[SharpeBoardSeriesDTO] = []
     diagnostics: SharpeBoardDiagnosticsDTO = SharpeBoardDiagnosticsDTO()
+
+
+# ──────────────────────────────────────────────────────────────────
+# 夏普走势（GET /api/funds/sharpe-trend/{code}），任务 11-13-fund-sharpe-trend
+# ⚠ 每个顶层字段都必须显式声明：response_model 序列化会静默丢弃未声明字段
+#   （contracts §3a 陷阱）。后端 DTO 加字段要三处同步：models.py ↔
+#   apps/fund-select/src/lib/sharpe-trend.ts ↔ 页面消费。
+# ──────────────────────────────────────────────────────────────────
+
+class SharpeTrendPointDTO(BaseModel):
+    """一个周观测点：该自然周最后一个交易日的 trailing-3y 夏普。
+
+    sharpe=None 表示该周样本不足或无定义（前端断线不补零）。
+    """
+    date: date
+    sharpe: Optional[float] = None
+    sample_days: int = 0
+
+
+class SharpeTrendStatsDTO(BaseModel):
+    """展示区间内稳定性统计（None 表示无定义 / 点数不足）"""
+    threshold: float = 0.8
+    current: Optional[float] = None
+    max: Optional[float] = None
+    min: Optional[float] = None
+    mean: Optional[float] = None
+    above_count: int = 0
+    valid_count: int = 0
+    above_ratio: Optional[float] = None
+    consecutive_above: int = 0
+    longest_below: int = 0
+    trend_12w: Optional[float] = None
+
+
+class SharpeTrendResponse(BaseModel):
+    """单基金夏普走势响应（现算，不落库）。
+
+    rf_basis：zero = risk_free_rate 表为空按 rf=0（生产库现状）；rate = 用库内利率。
+    diagnostics：insufficient_history / no_valid_points / nav_end_date / total_points。
+    """
+    code: str
+    name: Optional[str] = None
+    range: str = "all"
+    rf_basis: str = "zero"
+    algorithm_version: str = "trend-v1"
+    threshold: float = 0.8
+    points: list[SharpeTrendPointDTO] = []
+    stats: SharpeTrendStatsDTO = SharpeTrendStatsDTO()
+    diagnostics: dict = {}

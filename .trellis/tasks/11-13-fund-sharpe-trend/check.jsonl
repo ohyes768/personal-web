@@ -1,0 +1,3 @@
+{"file": ".trellis/tasks/11-13-fund-sharpe-trend/research/contracts-excerpt.md", "reason": "验收依据：DTO 字段齐全、路由顺序、夏普数值口径与只读边界"}
+{"file": ".trellis/tasks/11-13-fund-sharpe-trend/research/data-basis.md", "reason": "验收依据：无基准截断、性能、rf 空表降级"}
+{"file": ".trellis/spec/frontend/fund-sharpe-board.md", "reason": "验收依据：图表契约与常见坑"}

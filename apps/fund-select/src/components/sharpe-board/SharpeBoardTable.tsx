@@ -8,8 +8,11 @@
  */
 'use client';
 
+import Link from 'next/link';
+
 import type { SharpeBoardItem } from '@/lib/sharpe-board';
 import { formatWeekDay } from '@/lib/sharpe-board';
+import { sharpeTrendHref } from '@/lib/sharpe-trend';
 
 interface SharpeBoardTableProps {
   items: SharpeBoardItem[];
@@ -82,16 +85,26 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
                 onClick={() => onFocusToggle(item.code)}
               >
                 <td className={`${td} font-mono whitespace-nowrap`}>
+                  {/* 代码 → 夏普走势页（完整滚动曲线）；详情抽屉仍由名称点击打开 */}
+                  <Link
+                    href={sharpeTrendHref(item.code)}
+                    className="text-info underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-info"
+                    aria-label={`查看 ${item.name} 夏普走势`}
+                    title="查看夏普走势"
+                    onClick={e => e.stopPropagation()}
+                  >
+                    {item.code}
+                  </Link>
                   <button
                     type="button"
-                    className="text-info underline-offset-4 hover:underline focus-visible:outline-2 focus-visible:outline-info"
+                    className="block text-[10px] text-ink-soft hover:text-info underline-offset-2 hover:underline"
                     aria-label={`查看 ${item.name} 详情`}
                     onClick={e => {
                       e.stopPropagation();
                       onOpenDetail(item.code, item.name);
                     }}
                   >
-                    {item.code}
+                    详情
                   </button>
                 </td>
                 <td className={`${td} text-ink-strong`}>

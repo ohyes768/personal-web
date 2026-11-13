@@ -1,0 +1,4 @@
+{"file": ".trellis/tasks/11-13-fund-sharpe-trend/research/contracts-excerpt.md", "reason": "fund-select 后端契约摘录：§3a DTO 显式声明、§4 basePath 陷阱、§13 夏普公式与周键、路由注册顺序、只读边界"}
+{"file": ".trellis/spec/frontend/fund-sharpe-board.md", "reason": "夏普榜单前端契约：ECharts 实例生命周期、翻页不重建图、Tailwind 任意值陈旧缓存坑、图表零尺寸守卫——走势页复用同一套图表基建"}
+{"file": ".trellis/spec/frontend/index.md", "reason": "fund-select 前端总约定：basePath 相对路径铁律、返回首页链接、无 ESLint 配置须如实报告"}
+{"file": ".trellis/tasks/11-13-fund-sharpe-trend/research/data-basis.md", "reason": "调研实测：基准 inner join 截断历史窗口的证据（0.68 vs 2.42）、现算性能 0.3s/请求、rf 表为空、可复用前端资产"}

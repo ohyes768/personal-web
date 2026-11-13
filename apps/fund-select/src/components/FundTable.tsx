@@ -3,10 +3,13 @@
  */
 'use client';
 
+import Link from 'next/link';
+
 import type { SortOrder } from './SortableHeader';
 import { SortableHeader } from './SortableHeader';
 import type { FundListItem } from '@/lib/types';
 import { resolveCoarseLabel } from '@/lib/types';
+import { sharpeTrendHref } from '@/lib/sharpe-trend';
 import { RankInline } from '@/lib/rankColor';
 
 interface FundTableProps {
@@ -29,6 +32,9 @@ interface FundTableProps {
   ddBarCapPct?: number;
   /** 市场 tab 类型列上下文：影响 chip 文案（债基侧 value/label 不同）；老 tab 不传 */
   marketKind?: 'stock' | 'bond';
+  /** 代码列可点跳「夏普走势」页（仅股基两 tab 传 true；债基第一版不支持）。
+   *  点击需 stopPropagation，避免同时触发 onRowClick 打开详情抽屉。 */
+  trendEnabled?: boolean;
 }
 
 const NAME_MAX = 10;
@@ -112,7 +118,7 @@ function HoverName({ name }: { name: string }) {
 export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
   showBondColumns = true, showRiskColumns = false, onRowClick,
-  ddBarCapPct = DD_BAR_CAP_BOND, marketKind,
+  ddBarCapPct = DD_BAR_CAP_BOND, marketKind, trendEnabled = false,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -175,7 +181,18 @@ export function FundTable({
                 onClick={onRowClick ? () => onRowClick(fund) : undefined}
                 className={`border-b border-rule transition-colors hover:bg-paper-tint ${onRowClick ? 'cursor-pointer' : ''} ${selected ? 'bg-info-tint' : ''}`}
               >
-                <td className={`${td} font-mono text-info whitespace-nowrap`}>{fund.code}</td>
+                <td className={`${td} font-mono text-info whitespace-nowrap`}>
+                  {trendEnabled ? (
+                    <Link
+                      href={sharpeTrendHref(fund.code)}
+                      onClick={e => e.stopPropagation()}
+                      className="hover:underline decoration-info/60 underline-offset-2"
+                      title="查看夏普走势"
+                    >
+                      {fund.code}
+                    </Link>
+                  ) : fund.code}
+                </td>
                 <td className={`${td} w-[7rem] text-ink-strong`}>
                   <HoverName name={fund.name} />
                 </td>

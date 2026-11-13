@@ -97,8 +97,8 @@ export function DetailHero({ fund }: DetailHeroProps) {
         {headline}
       </p>
 
-      {/* 6 个风险指标卡片（3 列 × 2 行） */}
-      <RiskMetricsGrid fund={fund} />
+      {/* 6 个风险指标卡片（3 列 × 2 行）；夏普卡片可点跳走势页（相对 basePath 路径） */}
+      <RiskMetricsGrid fund={fund} trendHref={`/sharpe-trend?code=${fund.code}`} />
 
       {/* 4 个 KPI 大数字卡片 */}
       <div className="mt-2 grid grid-cols-2 md:grid-cols-4 gap-px bg-rule">

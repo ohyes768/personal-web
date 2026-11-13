@@ -6,6 +6,8 @@
  */
 'use client';
 
+import Link from 'next/link';
+
 import type { FundDetail } from '@/lib/types';
 
 import {
@@ -86,7 +88,14 @@ const RISK_FIELDS: RiskField[] = [
   },
 ];
 
-export function RiskMetricsGrid({ fund }: { fund: FundDetail }) {
+interface RiskMetricsGridProps {
+  fund: FundDetail;
+  /** 夏普卡片可点跳「夏普走势」页（仅股基抽屉传；债基第一版不支持）。
+   *  不传时组件行为与旧版一致。 */
+  trendHref?: string;
+}
+
+export function RiskMetricsGrid({ fund, trendHref }: RiskMetricsGridProps) {
   return (
     <div className="mt-5 grid grid-cols-2 md:grid-cols-3 gap-2">
       {RISK_FIELDS.map(f => {
@@ -108,11 +117,13 @@ export function RiskMetricsGrid({ fund }: { fund: FundDetail }) {
               ? 'text-down'
               : 'text-ink-soft';
 
-        return (
-          <div
-            key={f.key}
-            className="rounded-md border border-rule bg-paper-tint/40 p-3 hover:border-rule-strong transition-colors"
-          >
+        const isSharpeLink = f.key === 'sharpe' && !!trendHref;
+        const cardClass = `rounded-md border border-rule bg-paper-tint/40 p-3 hover:border-rule-strong transition-colors block ${isSharpeLink ? 'hover:bg-info-tint/40 cursor-pointer' : ''}`;
+
+        // 只有夏普卡片（且传了 href）才是链接；其余保持普通 div。
+        // 显式分支而非动态 Wrapper：避免 TS 把 Link 的必填 href 强加给 div 分支。
+        const body = (
+          <>
             <div className="flex items-baseline justify-between gap-2">
               <span
                 className="text-[11px] uppercase tracking-[0.12em] text-ink-soft font-medium"
@@ -138,10 +149,28 @@ export function RiskMetricsGrid({ fund }: { fund: FundDetail }) {
               <span className={`text-[11px] font-medium ${verdictClass}`}>
                 {RISK_VERDICT[seg]}
               </span>
+              {isSharpeLink && (
+                <span className="ml-auto text-[10px] text-info whitespace-nowrap">看走势 →</span>
+              )}
             </div>
             <div className="mt-1.5 text-[10px] text-ink-soft leading-snug">
               {f.threshold}
             </div>
+          </>
+        );
+
+        return isSharpeLink ? (
+          <Link
+            key={f.key}
+            href={trendHref as string}
+            title="查看夏普走势（完整滚动曲线）"
+            className={cardClass}
+          >
+            {body}
+          </Link>
+        ) : (
+          <div key={f.key} className={cardClass}>
+            {body}
           </div>
         );
       })}
