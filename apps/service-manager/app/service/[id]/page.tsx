@@ -29,6 +29,8 @@ import {
 } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
 import { CopyButton, SafeLink, StateBadge, Toast } from "@/components/Widgets";
+import { TagBadge } from "@/components/TagBadge";
+import { TagEditor } from "@/components/TagEditor";
 
 export default function ServicePage() {
   return (
@@ -71,13 +73,15 @@ function ServiceDetailView() {
   const [draft, setDraft] = useState({
     name: "",
     description: "",
-    category: "",
-    tags: "",
     notes: "",
   });
   const [endpointDraft, setEndpointDraft] = useState<EndpointDraft | null>(null);
   const [editingEndpointId, setEditingEndpointId] = useState<string | null>(null);
   const [repoDraft, setRepoDraft] = useState("");
+  // 标签编辑弹窗（候选词表按需拉取，不在首屏多打一次请求）
+  const [editingTags, setEditingTags] = useState(false);
+  const [savingTags, setSavingTags] = useState(false);
+  const [tagCandidates, setTagCandidates] = useState<string[]>([]);
   const [tagNote, setTagNote] = useState("");
   const [portDraft, setPortDraft] = useState({ host_ip: "", host_port: "", container_port: "", note: "" });
 
@@ -93,8 +97,6 @@ function ServiceDetailView() {
       setDraft({
         name: loaded.name,
         description: loaded.description,
-        category: loaded.category,
-        tags: loaded.tags.join(", "),
         notes: loaded.notes,
       });
       setRepoDraft(
@@ -134,11 +136,6 @@ function ServiceDetailView() {
       await api.patchService(detail.id, {
         name: draft.name,
         description: draft.description,
-        category: draft.category,
-        tags: draft.tags
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
         notes: draft.notes,
         revision: detail.revision,
       });
@@ -161,6 +158,43 @@ function ServiceDetailView() {
       await load();
     } catch (caught) {
       report(caught, "改归属失败");
+    }
+  }
+
+  async function openTagEditor() {
+    if (tagCandidates.length === 0) {
+      try {
+        const list = await api.listServices({ page: 1, page_size: 100 });
+        setTagCandidates(
+          Array.from(new Set(list.items.flatMap((item) => item.tags))).sort(),
+        );
+      } catch {
+        // 候选拉不到也要能编辑：TagEditor 会用本条已有标签兜底
+      }
+    }
+    setEditingTags(true);
+  }
+
+  async function saveTags(tags: string[]) {
+    if (!detail) return;
+    setSavingTags(true);
+    try {
+      const updated = await api.patchService(detail.id, {
+        tags,
+        revision: detail.revision,
+      });
+      setDetail(updated);
+      // 候选词表跟上：新建的标签立刻出现在弹窗里
+      setTagCandidates((prev) =>
+        Array.from(new Set([...prev, ...updated.tags])).sort(),
+      );
+      setEditingTags(false);
+      setToast("标签已保存");
+      await load();
+    } catch (caught) {
+      report(caught, "保存标签失败");
+    } finally {
+      setSavingTags(false);
     }
   }
 
@@ -339,6 +373,28 @@ function ServiceDetailView() {
       <h1>{detail.name}</h1>
       <p className="lead">{detail.description || "还没有填写用途说明"}</p>
 
+      <div className="tag-row" style={{ marginBottom: 10 }}>
+        {detail.tags.map((tag) => (
+          // 用 Link 而不是 window.location：basePath（/services）只有 Link 会自动带
+          <Link
+            key={tag}
+            href={`/?tag=${encodeURIComponent(tag)}`}
+            title="回列表并按这个标签筛选"
+            style={{ textDecoration: "none" }}
+          >
+            <TagBadge tag={tag} />
+          </Link>
+        ))}
+        <button
+          type="button"
+          className="tag-add"
+          onClick={() => void openTagEditor()}
+          aria-label="编辑标签"
+        >
+          ＋标签
+        </button>
+      </div>
+
       <div className="btn-row" style={{ marginBottom: 12 }}>
         <label className="small" style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
           归属
@@ -409,22 +465,6 @@ function ServiceDetailView() {
                 value={draft.name}
                 onChange={(event) => setDraft({ ...draft, name: event.target.value })}
                 required
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="edit-category">分类</label>
-              <input
-                id="edit-category"
-                value={draft.category}
-                onChange={(event) => setDraft({ ...draft, category: event.target.value })}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="edit-tags">标签（逗号分隔）</label>
-              <input
-                id="edit-tags"
-                value={draft.tags}
-                onChange={(event) => setDraft({ ...draft, tags: event.target.value })}
               />
             </div>
           </div>
@@ -961,6 +1001,16 @@ function ServiceDetailView() {
         </>
       )}
 
+      {editingTags ? (
+        <TagEditor
+          title={detail.name}
+          tags={detail.tags}
+          allTags={tagCandidates}
+          busy={savingTags}
+          onSave={(tags) => void saveTags(tags)}
+          onClose={() => setEditingTags(false)}
+        />
+      ) : null}
       <Toast message={toast} />
     </>
   );

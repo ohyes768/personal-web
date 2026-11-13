@@ -18,7 +18,7 @@ from src.registry import Registry
 
 def test_create_and_get_service(registry: Registry) -> None:
     detail = registry.create_service(
-        ServiceCreate(name="股息率", category="金融", tags=["public", "public", "stock"])
+        ServiceCreate(name="股息率", tags=["public", "public", "stock"])
     )
     assert detail.id
     assert detail.name == "股息率"
@@ -68,11 +68,10 @@ def test_patch_requires_matching_revision(registry: Registry) -> None:
 
 def test_patch_partial_leaves_other_fields(registry: Registry) -> None:
     detail = registry.create_service(
-        ServiceCreate(name="a", description="d", category="c", tags=["t"])
+        ServiceCreate(name="a", description="d", tags=["t"])
     )
     updated = registry.update_service(detail.id, ServicePatch(notes="n", revision=1))
     assert updated.description == "d"
-    assert updated.category == "c"
     assert updated.tags == ["t"]
     assert updated.notes == "n"
 

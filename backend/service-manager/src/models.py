@@ -200,7 +200,6 @@ class ServiceCreate(BaseModel):
 
     name: Name
     description: str = Field(default="", max_length=2000)
-    category: str = Field(default="", max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=20)
     notes: str = Field(default="", max_length=4000)
     # 不给就按默认口径判定（无组件 → 我维护的）
@@ -221,16 +220,20 @@ class ServiceCreate(BaseModel):
 
 
 def clean_tags(value: list[str]) -> list[str]:
-    seen: list[str] = []
+    """标签清洗：去空白、丢空串、限长 32、去重并按字典序排序。
+
+    排序与 skill-manager 一致：筛选栏把标签按字典序排成一行，
+    顺序稳定才不会因为保存动作而跳动。
+    """
+    seen: set[str] = set()
     for tag in value:
         cleaned = tag.strip()
         if not cleaned:
             continue
         if len(cleaned) > 32:
             raise ValueError("tag too long (max 32)")
-        if cleaned not in seen:
-            seen.append(cleaned)
-    return seen
+        seen.add(cleaned)
+    return sorted(seen)
 
 
 class ServicePatch(BaseModel):
@@ -240,7 +243,6 @@ class ServicePatch(BaseModel):
 
     name: Name | None = None
     description: str | None = Field(default=None, max_length=2000)
-    category: str | None = Field(default=None, max_length=64)
     tags: list[str] | None = Field(default=None, max_length=20)
     notes: str | None = Field(default=None, max_length=4000)
     ownership: Ownership | None = None
@@ -352,7 +354,6 @@ class ServiceDetail(BaseModel):
     id: str
     name: str
     description: str
-    category: str
     tags: list[str]
     notes: str
     ownership: Ownership = Ownership.MINE
@@ -370,7 +371,6 @@ class ServiceListItem(BaseModel):
     id: str
     name: str
     description: str
-    category: str
     tags: list[str]
     ownership: Ownership = Ownership.MINE
     revision: int
@@ -423,7 +423,6 @@ class DiscoveryImportRequest(BaseModel):
     service_id: str | None = None
     name: Name | None = None
     description: str = Field(default="", max_length=2000)
-    category: str = Field(default="", max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=20)
 
 
@@ -553,6 +552,8 @@ class SummaryResponse(BaseModel):
     docker_error: str | None = None
     docker_last_success_at: str | None = None
     counts: dict[str, dict[str, int]] = Field(default_factory=dict)
+    # 全库标签词表：筛选栏的候选来源（不随搜索结果缩小）
+    all_tags: list[str] = Field(default_factory=list)
     unread_releases: int = 0
     registry_revision: int = 0
     checker_heartbeat: str | None = None

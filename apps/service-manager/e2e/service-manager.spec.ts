@@ -7,6 +7,19 @@ import { expect, test, type Page } from "@playwright/test";
 
 const PASSWORD = process.env.SM_E2E_PASSWORD || "devpass";
 
+/** 用例里通过接口造的条目：登记在这里，afterEach 无条件清掉。 */
+const createdServiceIds: string[] = [];
+
+test.afterEach(async ({ page }) => {
+  for (const id of createdServiceIds.splice(0)) {
+    await page.request
+      .delete(`/api/services/services/${id}`, {
+        headers: { Origin: new URL(page.url()).origin },
+      })
+      .catch(() => undefined);
+  }
+});
+
 async function login(page: Page) {
   await page.goto("/services");
   // 会话检查是异步的：等「门禁表单」或「已登录内容」二者之一出现，再决定要不要登录。
@@ -36,9 +49,10 @@ test("台账条目走接口建立后，搜索、加端口、删除都可用", as
   await expect(page.getByRole("button", { name: "新增服务" })).toHaveCount(0);
   const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
-    data: { name, category: "e2e" },
+    data: { name },
   });
   expect(created.ok()).toBeTruthy();
+  createdServiceIds.push((await created.json()).id as string);
 
   await page.goto("/services");
   await page.getByLabel("搜索服务").fill(name);
@@ -66,10 +80,11 @@ test("归属可逐条改：列表行里的下拉与详情页的一致", async ({
   const name = `e2e-归属-${Date.now()}`;
   const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
-    data: { name, category: "e2e" },
+    data: { name },
   });
   expect(created.ok()).toBeTruthy();
   const serviceId = (await created.json()).id as string;
+  createdServiceIds.push(serviceId);
 
   await page.goto("/services");
   await page.getByLabel("搜索服务").fill(name);
@@ -86,10 +101,91 @@ test("归属可逐条改：列表行里的下拉与详情页的一致", async ({
   // 复原，避免污染台账
   await page.getByLabel("归属").selectOption("mine");
   await expect(page.getByText("已标为我维护的")).toBeVisible();
-  const removed = await page.request.delete(`/api/services/services/${serviceId}`, {
+});
+
+test("标签可维护：弹窗里勾选已有标签 + 新建一个，保存后列表行立即更新", async ({ page }) => {
+  await login(page);
+  const name = `e2e-标签-${Date.now()}`;
+  const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
+    data: { name },
   });
-  expect(removed.ok()).toBeTruthy();
+  expect(created.ok()).toBeTruthy();
+  createdServiceIds.push((await created.json()).id as string);
+
+  await page.goto("/services");
+  await page.getByLabel("搜索服务").fill(name);
+
+  // 打开标签弹窗
+  await page.getByLabel(`编辑 ${name} 的标签`).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+
+  // 新建一个标签：输入 + 回车
+  await dialog.getByLabel("新标签").fill("e2e-标签");
+  await dialog.getByLabel("新标签").press("Enter");
+  await expect(dialog.getByRole("button", { name: "e2e-标签" })).toBeVisible();
+
+  // 重复添加要报错
+  await dialog.getByLabel("新标签").fill("e2e-标签");
+  await dialog.getByLabel("新标签").press("Enter");
+  await expect(dialog.getByText("该标签已勾选")).toBeVisible();
+
+  // 保存 → 列表行立即出现这个标签
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  const row = page.locator("tbody tr", { hasText: name });
+  await expect(row.getByRole("button", { name: "e2e-标签", exact: true })).toBeVisible();
+
+});
+
+test("标签可筛选：多选是 AND，可一键清除", async ({ page }) => {
+  await login(page);
+  const name = `e2e-筛选-${Date.now()}`;
+  const created = await page.request.post("/api/services/services", {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { name, tags: ["e2e-a", "e2e-b"] },
+  });
+  expect(created.ok()).toBeTruthy();
+  createdServiceIds.push((await created.json()).id as string);
+
+  await page.goto("/services");
+  await page.getByLabel("搜索服务").fill(name);
+  const row = page.locator("tbody tr", { hasText: name });
+  await expect(row.getByRole("button", { name: "e2e-a", exact: true })).toBeVisible();
+
+  // 候选来自全库并集：刚建的标签出现在筛选栏
+  const filterBar = page.locator(".tag-filter-bar");
+  await expect(filterBar.getByRole("button", { name: "e2e-a" })).toBeVisible();
+  await expect(filterBar.getByRole("button", { name: "e2e-b" })).toBeVisible();
+
+  // 勾一个 → 只剩同时具备的（这条仍然命中）
+  await filterBar.getByRole("button", { name: "e2e-a" }).click();
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
+
+  // 再勾一个 AND 条件 → 仍然命中
+  await filterBar.getByRole("button", { name: "e2e-b" }).click();
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
+
+  // 勾一个这条没有的标签 → 命中不到
+  await filterBar.getByRole("button", { name: "self" }).click();
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
+  await expect(page.getByText("没有同时具备这些标签的服务")).toBeVisible();
+
+  // 一键清除 → 恢复
+  await page.getByRole("button", { name: "清除标签筛选" }).click();
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
+
+});
+
+test("分类字段已退役：界面上没有分类入口", async ({ page }) => {
+  await login(page);
+  await page.goto("/services");
+  await expect(page.getByLabel("按分类筛选")).toHaveCount(0);
+  await expect(page.getByText("分类")).toHaveCount(0);
+
+  await page.goto("/services/discovery");
+  await expect(page.locator("#import-category")).toHaveCount(0);
 });
 
 test("入口表单：localhost 探测被拒并给出说明", async ({ page }) => {

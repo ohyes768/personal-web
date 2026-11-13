@@ -28,7 +28,6 @@ CREATE TABLE IF NOT EXISTS services (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     description TEXT NOT NULL DEFAULT '',
-    category TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     notes TEXT NOT NULL DEFAULT '',
     -- 归属（我维护的 / 别人的）：逐条可设。'' = 尚未判定，启动时按旧口径回填。
@@ -269,6 +268,20 @@ class Store:
         if column in existing:
             return
         conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+
+    @staticmethod
+    def _drop_column(conn: sqlite3.Connection, table: str, column: str) -> bool:
+        """删掉一列（SQLite ≥ 3.35）。列不存在时什么都不做，返回是否真的删了。
+
+        删列是**不可逆**的：值必须先搬到别处（见 registry 的分类退役迁移）。
+        """
+        existing = {
+            row["name"] for row in conn.execute(f"PRAGMA table_info({table})")
+        }
+        if column not in existing:
+            return False
+        conn.execute(f"ALTER TABLE {table} DROP COLUMN {column}")
+        return True
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

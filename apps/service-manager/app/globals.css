@@ -122,8 +122,108 @@ tr:last-child td { border-bottom: none; }
 .btn-mini { padding: 2px 8px; font-size: 12px; min-height: 26px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
-/* 加载指示：按钮里的旋转环（只在进行中的操作上出现） */
-.spinner {
+/* 标签药丸：列表展示、筛选栏、编辑弹窗共用 */
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+.tag-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  white-space: nowrap;
+  border: 1px solid var(--border);
+  background: var(--muted-bg);
+  color: var(--muted);
+  cursor: pointer;
+}
+.tag-pill:hover { border-color: var(--info); color: var(--info); }
+/* 选中态：实心深底（不只靠颜色区分，aria-pressed 也标出来了） */
+.tag-pill.active {
+  background: var(--info);
+  border-color: var(--info);
+  color: #fff;
+}
+.tag-pill.active:hover { color: #fff; }
+.tag-pill.static { cursor: default; }
+.tag-pill.static:hover { border-color: var(--border); color: var(--muted); }
+.tag-add {
+  border: 1px dashed var(--border);
+  background: transparent;
+  color: var(--muted);
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 1px 8px;
+  cursor: pointer;
+}
+.tag-add:hover { border-color: var(--info); color: var(--info); }
+
+.tag-filter-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  border-top: 1px solid var(--border);
+  margin-top: 10px;
+  padding-top: 10px;
+}
+.tag-candidates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-height: 180px;
+  overflow-y: auto;
+  margin: 12px 0;
+}
+
+/* 弹窗（标签编辑） */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(17, 24, 39, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.dialog {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px;
+  width: 100%;
+  max-width: 420px;
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.dialog-title { font-size: 15px; margin: 0 0 4px; }
+.dialog-row { display: flex; gap: 8px; align-items: center; }
+.dialog-row input { flex: 1 1 auto; min-width: 0; }
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+.link-btn {
+  border: none;
+  background: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+.link-btn:hover { color: var(--info); }
+
+/* 加载指示：按钮里的旋转环（只在进行中的操作上出现） */.spinner {
   width: 12px;
   height: 12px;
   flex: none;

@@ -61,7 +61,15 @@ def _now() -> str:
 
 def export_payload(store: Store) -> dict[str, Any]:
     with store.read() as conn:
-        services = [dict(row) for row in conn.execute("SELECT * FROM services").fetchall()]
+        # 显式列名：services 表的列会随「分类退役」减少，用 SELECT * 会把
+        # 已退役的字段又带进备份（旧备份的 category 键恢复时会被忽略）。
+        services = [
+            dict(row)
+            for row in conn.execute(
+                "SELECT id, name, description, tags, notes, ownership, revision,"
+                " created_at, updated_at FROM services"
+            ).fetchall()
+        ]
         components = [
             dict(row)
             for row in conn.execute("SELECT * FROM service_components").fetchall()
@@ -293,13 +301,12 @@ def restore(
                 count, projects = legacy_ownership_inputs(payload, item["id"])
                 ownership = default_ownership(count, projects, own_projects).value
             conn.execute(
-                "INSERT INTO services(id, name, description, category, tags, notes,"
-                " ownership, revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                "INSERT INTO services(id, name, description, tags, notes,"
+                " ownership, revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
                 (
                     item["id"],
                     item["name"],
                     item.get("description", ""),
-                    item.get("category", ""),
                     item.get("tags", "[]"),
                     item.get("notes", ""),
                     ownership,

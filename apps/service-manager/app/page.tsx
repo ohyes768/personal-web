@@ -10,6 +10,7 @@ import {
   type SummaryResponse,
 } from "@/lib/api";
 import { describeJob, waitForJob } from "@/lib/jobs";
+import { matchesTags } from "@/lib/tagFilter";
 import {
   describeCheck,
   formatRelative,
@@ -24,6 +25,9 @@ import {
 } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
 import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
+import { TagBadge } from "@/components/TagBadge";
+import { TagEditor } from "@/components/TagEditor";
+import { TagFilterBar } from "@/components/TagFilterBar";
 
 export default function HomePage() {
   return (
@@ -38,8 +42,11 @@ function ServiceList() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState("");
   const [group, setGroup] = useState<Ownership>("mine");
+  // 标签筛选（多选 AND）与标签编辑弹窗
+  const [tagFilter, setTagFilter] = useState<string[]>([]);
+  const [editingTags, setEditingTags] = useState<ServiceListItem | null>(null);
+  const [savingTags, setSavingTags] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -57,7 +64,7 @@ function ServiceList() {
     setError(null);
     try {
       const [list, totals] = await Promise.all([
-        api.listServices({ query, category, page: 1, page_size: 100 }),
+        api.listServices({ query, page: 1, page_size: 100 }),
         api.summary(),
       ]);
       setItems(list.items);
@@ -68,7 +75,7 @@ function ServiceList() {
     } finally {
       setLoading(false);
     }
-  }, [query, category]);
+  }, [query]);
 
   useEffect(() => {
     void load();
@@ -83,10 +90,15 @@ function ServiceList() {
     };
   }, []);
 
-  const categories = useMemo(
-    () => Array.from(new Set(items.map((item) => item.category).filter(Boolean))).sort(),
-    [items],
-  );
+  // 从详情页点标签跳回来时带上 ?tag=xxx：初次进入按这个标签筛。
+  // 用 window.location 读而不是 useSearchParams——后者在静态页要挂 Suspense 边界。
+  useEffect(() => {
+    const tag = new URLSearchParams(window.location.search).get("tag");
+    if (tag) setTagFilter([tag]);
+  }, []);
+
+  // 候选标签：后端给的全库词表（不随搜索/分组缩小，筛选栏才选得到别的标签）
+  const allTags = useMemo(() => summary?.all_tags ?? [], [summary]);
 
   // 分组：归属是台账里的一个字段（我维护的 / 别人的），逐条可改。
   const groups = useMemo(
@@ -96,10 +108,54 @@ function ServiceList() {
     }),
     [items],
   );
+  // 筛选链：归属分组 → 搜索（后端）→ 标签（前端，多选 AND）
   const tabItems = useMemo(
-    () => items.filter((item) => item.ownership === group),
-    [items, group],
+    () =>
+      items.filter(
+        (item) => item.ownership === group && matchesTags(item.tags, tagFilter),
+      ),
+    [items, group, tagFilter],
   );
+
+  function toggleTagFilter(tag: string) {
+    setTagFilter((prev) =>
+      prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag],
+    );
+  }
+
+  async function saveTags(tags: string[]) {
+    if (!editingTags) return;
+    setSavingTags(true);
+    try {
+      const updated = await api.patchService(editingTags.id, {
+        tags,
+        revision: editingTags.revision,
+      });
+      // 就地更新：revision 必须跟着后端返回的走，否则下一次 PATCH 会 409
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === updated.id
+            ? { ...item, tags: updated.tags, revision: updated.revision }
+            : item,
+        ),
+      );
+      // 词表也要跟上：新建的标签立刻能出现在筛选栏里
+      setSummary((prev) =>
+        prev
+          ? {
+              ...prev,
+              all_tags: Array.from(new Set([...prev.all_tags, ...updated.tags])).sort(),
+            }
+          : prev,
+      );
+      setEditingTags(null);
+      setToast("标签已保存");
+    } catch (caught) {
+      setToast(caught instanceof ApiError ? caught.message : "保存标签失败");
+    } finally {
+      setSavingTags(false);
+    }
+  }
 
   async function changeOwnership(item: ServiceListItem, next: Ownership) {
     if (item.ownership === next) return;
@@ -235,20 +291,7 @@ function ServiceList() {
             aria-label="搜索服务"
             style={{ flex: "1 1 320px" }}
           />
-          <select
-            value={category}
-            onChange={(event) => setCategory(event.target.value)}
-            aria-label="按分类筛选"
-          >
-            <option value="">全部分类</option>
-            {categories.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-          <button
-            className="btn"
+          <button            className="btn"
             type="button"
             disabled={pending.docker}
             aria-busy={pending.docker}
@@ -287,6 +330,8 @@ function ServiceList() {
           巡检：逐一检查全部已登记入口的可达性与证书有效期，并同步已配置的 GitHub 发布；
           容器观测不在其中，由「扫描容器」负责（后台每 60 秒自动扫一次）。
         </p>
+
+        <TagFilterBar allTags={allTags} selected={tagFilter} onChange={setTagFilter} />
       </div>
 
       {error ? <p className="notice bad">{error}</p> : null}
@@ -298,9 +343,16 @@ function ServiceList() {
           <p>
             {items.length === 0
               ? "台账还是空的。到「发现导入」从运行中的容器建立台账条目。"
-              : `这个分组里没有服务（${group === "mine" ? "我维护的" : "别人的"}）。`}
+              : tagFilter.length > 0
+                ? `没有同时具备这些标签的服务（${tagFilter.join("、")}）。`
+                : `这个分组里没有服务（${group === "mine" ? "我维护的" : "别人的"}）。`}
           </p>
           <div className="btn-row">
+            {tagFilter.length > 0 ? (
+              <button className="btn" type="button" onClick={() => setTagFilter([])}>
+                清除标签筛选
+              </button>
+            ) : null}
             <Link className="btn" href="/discovery">
               去发现导入
             </Link>
@@ -331,10 +383,25 @@ function ServiceList() {
                         {item.description}
                       </div>
                     ) : null}
-                    {item.category ? <div className="small muted">{item.category}</div> : null}
-                    {item.tags.length ? (
-                      <div className="small muted">{item.tags.join(" · ")}</div>
-                    ) : null}
+                    <div className="tag-row" style={{ marginTop: 2 }}>
+                      {item.tags.map((tag) => (
+                        <TagBadge
+                          key={tag}
+                          tag={tag}
+                          active={tagFilter.includes(tag)}
+                          onClick={() => toggleTagFilter(tag)}
+                        />
+                      ))}
+                      <button
+                        type="button"
+                        className="tag-add"
+                        onClick={() => setEditingTags(item)}
+                        aria-label={`编辑 ${item.name} 的标签`}
+                        title="编辑标签"
+                      >
+                        ＋标签
+                      </button>
+                    </div>
                   </td>
                   <td>
                     {item.primary_url ? (
@@ -410,7 +477,18 @@ function ServiceList() {
       )}
       <p className="small muted">
         共 {total} 个服务，当前分组 {tabItems.length} 个
+        {tagFilter.length > 0 ? `（标签筛选：${tagFilter.join("、")}）` : ""}
       </p>
+      {editingTags ? (
+        <TagEditor
+          title={editingTags.name}
+          tags={editingTags.tags}
+          allTags={allTags}
+          busy={savingTags}
+          onSave={(tags) => void saveTags(tags)}
+          onClose={() => setEditingTags(null)}
+        />
+      ) : null}
       <Toast message={toast} />
     </>
   );

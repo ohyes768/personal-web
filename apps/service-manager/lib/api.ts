@@ -161,7 +161,6 @@ export interface ServiceListItem {
   id: string;
   name: string;
   description: string;
-  category: string;
   tags: string[];
   ownership: Ownership;
   revision: number;
@@ -177,7 +176,6 @@ export interface ServiceDetail {
   id: string;
   name: string;
   description: string;
-  category: string;
   tags: string[];
   notes: string;
   ownership: Ownership;
@@ -306,6 +304,8 @@ export interface SummaryResponse {
   docker_error: string | null;
   docker_last_success_at: string | null;
   counts: Record<string, Record<string, number>>;
+  /** 全库标签词表：筛选栏的候选来源 */
+  all_tags: string[];
   unread_releases: number;
   registry_revision: number;
   checker_heartbeat: string | null;
@@ -390,7 +390,6 @@ export const api = {
   // 服务台账
   listServices: (params: {
     query?: string;
-    category?: string;
     tag?: string;
     page?: number;
     page_size?: number;

@@ -31,7 +31,6 @@ function DiscoveryView() {
   const [selected, setSelected] = useState<string[]>([]);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
-  const [category, setCategory] = useState("");
   const [attachTo, setAttachTo] = useState("");
   const [services, setServices] = useState<{ id: string; name: string }[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -113,13 +112,11 @@ function DiscoveryView() {
         service_id: attachTo || null,
         name: attachTo ? null : name.trim(),
         description,
-        category,
         tags: [],
       });
       setSelected([]);
       setName("");
       setDescription("");
-      setCategory("");
       setAttachTo("");
       setToast(result.created ? "已新建服务并关联组件" : "已追加到现有服务");
       router.push(`/service/${result.service_id}`);
@@ -223,14 +220,6 @@ function DiscoveryView() {
                     value={name}
                     onChange={(event) => setName(event.target.value)}
                     required
-                  />
-                </div>
-                <div className="field">
-                  <label htmlFor="import-category">分类</label>
-                  <input
-                    id="import-category"
-                    value={category}
-                    onChange={(event) => setCategory(event.target.value)}
                   />
                 </div>
               </>

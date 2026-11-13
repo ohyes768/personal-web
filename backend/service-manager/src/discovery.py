@@ -288,14 +288,13 @@ class DiscoveryService:
                     len(payload.components), projects, own_projects
                 )
                 conn.execute(
-                    "INSERT INTO services(id, name, description, category, tags, notes,"
+                    "INSERT INTO services(id, name, description, tags, notes,"
                     " ownership, revision, created_at, updated_at)"
-                    " VALUES (?,?,?,?,?,?,?,1,?,?)",
+                    " VALUES (?,?,?,?,?,?,1,?,?)",
                     (
                         service_id,
                         name,
                         payload.description,
-                        payload.category,
                         json.dumps(payload.tags, ensure_ascii=False),
                         "",
                         ownership.value,

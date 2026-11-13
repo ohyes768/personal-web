@@ -15,7 +15,7 @@ from src.registry import Registry
 
 def seed(registry: Registry, store) -> None:
     service = registry.create_service(
-        ServiceCreate(name="股息率", description="d", category="金融", tags=["public"])
+        ServiceCreate(name="股息率", description="d", tags=["public"])
     )
     registry.add_endpoint(
         service.id, EndpointInput(url="https://web.duomi77.cn:9443/dividend", label="web")

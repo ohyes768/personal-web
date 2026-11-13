@@ -183,13 +183,12 @@ def list_services(
     registry: Annotated[Registry, Depends(get_registry)],
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
     query: str = Query(default="", max_length=200),
-    category: str = Query(default="", max_length=64),
     tag: str = Query(default="", max_length=64),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=50, ge=1, le=100),
 ) -> dict[str, Any]:
     items, total = registry.list_services(
-        query=query, category=category, tag=tag, page=page, page_size=page_size
+        query=query, tag=tag, page=page, page_size=page_size
     )
     projects = registry.projects_by_service()
     payload = []

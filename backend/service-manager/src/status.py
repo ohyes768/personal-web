@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+import json
+
 from typing import Any
 
 from src.checks.common import CheckStore
@@ -258,6 +260,15 @@ class StatusProjector:
             components = conn.execute(
                 "SELECT COUNT(*) AS c FROM service_components"
             ).fetchone()["c"]
+            tag_rows = conn.execute("SELECT tags FROM services").fetchall()
+        # 全库标签词表：筛选栏的候选项要覆盖全部标签，
+        # 不能只反映「当前搜索命中的那几条」的标签。
+        all_tags: set[str] = set()
+        for row in tag_rows:
+            try:
+                all_tags.update(json.loads(row["tags"] or "[]"))
+            except json.JSONDecodeError:
+                continue
         counts = {
             "runtime": {item.value: 0 for item in RuntimeState},
             "health": {item.value: 0 for item in HealthState},
@@ -298,6 +309,7 @@ class StatusProjector:
             "docker_error": error,
             "docker_last_success_at": self.discovery.last_success_at(),
             "counts": counts,
+            "all_tags": sorted(all_tags),
             "unread_releases": unread_total,
             "checker_heartbeat": self.registry.store.get_state("checker_heartbeat"),
             "registry_revision": self.registry.store.registry_revision,
