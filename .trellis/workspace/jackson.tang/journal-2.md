@@ -1115,3 +1115,26 @@ Navidrome 服务早已不存在（无容器、无镜像、`~/navidrome/` 目录�
 ### Next Steps
 
 - None - task complete
+
+
+## Session 75: 夏普走势页：现算滚动夏普与稳定性 KPI
+<!-- trellis-session: v=2 fp=92c1b78c6fed8e40 -->
+
+**Date**: 2026-11-13
+**Task**: 夏普走势页：现算滚动夏普与稳定性 KPI
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+新增导航第七 Tab /sharpe-trend?code=xxx。后端现算周频滚动 3 年夏普（纯净值口径，不 join 基准避免历史窗口被 2023-11 起基准数据截断；实测 000628 在 2024-09-30 窗口 join 版 2.42/n=219 vs 纯净值 0.68/n=729），0.8 达标线 + 6 项 KPI + TTL 1h 净值缓存 + rf_basis 透明化。前端复用 SharpeChart，三处入口（股基列表代码/抽屉夏普卡/榜单行代码），债基不暴露。测试 630 passed（+33）、前端 lib 35 passed、tsc 通过、浏览器端到端验证三入口与区间切换。contracts §17 + frontend 契约 + Trellis 任务归档。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa7c165` | feat(fund-select): 夏普走势页——单基金现算滚动夏普与稳定性 KPI |
+
+### Status
+
+[OK] **Completed**

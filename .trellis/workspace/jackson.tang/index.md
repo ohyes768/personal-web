@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 74
+- **Total Sessions**: 75
 - **Last Active**: 2026-11-13
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1117 | Active |
+| `journal-2.md` | ~1140 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 75 | 2026-11-13 | 夏普走势页：现算滚动夏普与稳定性 KPI | `fa7c165` | `master` |
 | 74 | 2026-11-13 | 归档三个 Trellis 任务：hermes 共享信号量 / 基金经理评价 / NAS 服务管理台 | - | `master` |
 | 73 | 2026-11-12 | Navidrome 归档与 6443 端口归位 | - | `master` |
 | 72 | 2026-11-12 | NAS 清理与死链修复：n8n 下线 / 一次性容器泄漏 / 2443 vhost | `e8c47f7` | `master` |
