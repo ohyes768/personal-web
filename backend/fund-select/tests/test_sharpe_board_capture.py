@@ -560,10 +560,13 @@ class TestFreezeBaseRow:
         _seed_fund(db_session, "000001", size_yi=42.0)
         db_session.commit()
         row = freeze_base_row(db_session, "000001")
-        assert row == {
-            "name": "基金000001", "market_subtype": "股票型",
-            "age_years": 6.0, "size_yi": 42.0, "mgr_experience_years": 8.0,
-        }
+        # 断言关键字段而非全等：v2 起 BASE_ROW_FIELDS 还含
+        # mgr_experience_years_max（AC11），全等断言会随字段扩展反复失败。
+        assert row["name"] == "基金000001"
+        assert row["market_subtype"] == "股票型"
+        assert row["age_years"] == 6.0
+        assert row["size_yi"] == 42.0
+        assert row["mgr_experience_years"] == 8.0
 
     def test_freeze_is_snapshot_not_live_reference(self, db_session):
         """冻结后修改 Fund 行，快照不变（纯拷贝）"""
@@ -900,3 +903,121 @@ class TestCalculatedAtFreeze:
         refresh_fund_risks(db_session, ["000001"], capture=cap)
         value = cap.risk_rows["000001"]["calculated_at"]
         assert isinstance(value, dt) and value.tzinfo is UTC
+
+
+# ─────────────────────────────────────────────────────────────
+# v2（11-13-sharpe-board-v2-rules）：冻结字段修复 + peer 数据冻结
+# ─────────────────────────────────────────────────────────────
+from datetime import date as _date, timedelta as _timedelta  # noqa: E402
+
+from src.db.models import FundAchievementRank  # noqa: E402
+from src.services.sharpe_capture import (  # noqa: E402
+    BASE_ROW_FIELDS,
+    PEER_STALE_DAYS,
+    _parse_peer_percentile,
+    freeze_peer_rows,
+)
+
+
+class TestBaseRowFieldsV2:
+    def test_mgr_experience_years_max_in_frozen_fields(self):
+        """AC11：修复既有缺陷——冻结字段必须含共管取最长的经理年限列。"""
+        assert "mgr_experience_years_max" in BASE_ROW_FIELDS
+
+    def test_freeze_base_row_includes_max_field(self, db_session):
+        db_session.add(Fund(
+            code="700001", name="老将+新人共管", fund_type="股票型",
+            age_years=6.0, size_yi=20.0, mgr_name="老将", mgr_company="某司",
+            mgr_days=8000, mgr_experience_years=22.0,
+            mgr_experience_years_max=22.0, is_active=True))
+        db_session.commit()
+        frozen = freeze_base_row(db_session, "700001")
+        assert frozen["mgr_experience_years_max"] == 22.0
+        assert frozen["mgr_experience_years"] == 22.0
+
+
+class TestParsePeerPercentile:
+    def test_normal(self):
+        assert _parse_peer_percentile("278/1951") == 14.2491
+        assert _parse_peer_percentile(" 1/5 ") == 20.0
+        assert _parse_peer_percentile("2/6") == 33.3333
+
+    def test_invalid_formats_return_none(self):
+        for raw in (None, "", "abc", "abc/def", "0/100", "101/100", "-1/100",
+                    "10/0", "10/-5", "10/", "/100"):
+            assert _parse_peer_percentile(raw) is None, raw
+
+
+class TestFreezePeerRows:
+    """AC5 / design §2：批量冻结，90 天陈旧用数据自带 as_of_date。"""
+
+    TODAY = _date(2026, 11, 13)
+
+    def _ach(self, db, code, raw, as_of):
+        db.add(FundAchievementRank(
+            code=code, period_kind="阶段业绩", period="近3年",
+            ret=1.0, max_dd=-5.0, peer_rank=raw, as_of_date=as_of,
+        ))
+        db.commit()
+
+    def test_normal_frozen(self, db_session):
+        self._ach(db_session, "710001", "278/1951", self.TODAY)
+        out = freeze_peer_rows(db_session, ["710001"], today=self.TODAY)
+        assert out["710001"]["peer_pct"] == 14.2491
+        assert out["710001"]["peer_raw"] == "278/1951"
+        assert out["710001"]["as_of"] == "2026-11-13"
+
+    def test_stale_boundary_90_days(self, db_session):
+        # 恰好 90 天：保留；91 天：丢弃
+        self._ach(db_session, "710002", "10/100",
+                  self.TODAY - _timedelta(days=PEER_STALE_DAYS))
+        self._ach(db_session, "710003", "10/100",
+                  self.TODAY - _timedelta(days=PEER_STALE_DAYS + 1))
+        out = freeze_peer_rows(db_session, ["710002", "710003"], today=self.TODAY)
+        assert "710002" in out
+        assert "710003" not in out
+
+    def test_invalid_rank_and_missing_code_excluded(self, db_session):
+        self._ach(db_session, "710004", "abc", self.TODAY)
+        out = freeze_peer_rows(db_session, ["710004", "799999"], today=self.TODAY)
+        assert out == {}
+
+    def test_wrong_period_not_picked(self, db_session):
+        db_session.add(FundAchievementRank(
+            code="710005", period_kind="阶段业绩", period="近1年",
+            peer_rank="1/100", as_of_date=self.TODAY))
+        db_session.commit()
+        assert freeze_peer_rows(db_session, ["710005"], today=self.TODAY) == {}
+
+    def test_batch_over_500_codes(self, db_session):
+        """500+ codes 分块查询，不触发 SQLite 参数上限报错。"""
+        codes = [f"{720000 + i:06d}" for i in range(520)]
+        self._ach(db_session, codes[-1], "1/100", self.TODAY)
+        out = freeze_peer_rows(db_session, codes, today=self.TODAY)
+        assert list(out) == [codes[-1]]
+
+    def test_empty_codes_returns_empty(self, db_session):
+        assert freeze_peer_rows(db_session, [], today=self.TODAY) == {}
+
+
+class TestV2PeerFreezeWiring:
+    """design §11：两条链路都在 achievement 落库后冻结 peer_rows。"""
+
+    def test_stock_chain_freezes_peer_rows(self, db_session, monkeypatch):
+        from src.services.sharpe_capture import SharpeRunCapture
+
+        # 预置 achievement（模拟 snapshot_fund(fetch_ranking=True) 已写库）
+        db_session.add(FundAchievementRank(
+            code="300001", period_kind="阶段业绩", period="近3年",
+            ret=1.0, max_dd=-5.0, peer_rank="1/10", as_of_date=date(2026, 11, 7)))
+        db_session.commit()
+
+        helper = TestStockRefreshCapture()
+        cap = SharpeRunCapture(run_id="run-v2w1")
+        # freeze_peer_rows 的 today 固定到 2026-11-13 以便陈旧判定稳定
+        with patch("src.services.sharpe_capture.date") as mock_date:
+            mock_date.today.return_value = date(2026, 11, 13)
+            mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
+            helper._run_stock_refresh(db_session, monkeypatch, cap)
+        assert cap.peer_rows["300001"]["peer_pct"] == 10.0
+        assert "300002" not in cap.peer_rows  # 无 achievement 记录的 code 不入字典

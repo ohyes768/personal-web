@@ -141,7 +141,7 @@ def test_stock_tabs_capture_and_publish(monkeypatch, tmp_path, tab, source):
     assert published['source'] == source
     assert published['capture'] is cap
     assert published['trigger'] == 'manual'
-    assert published['profile_version'] == 'v1'
+    assert published['profile_version'] == 'v2'  # 11-13 任务：默认规则版本切 v2
     assert published['started_at'].tzinfo is not None  # 周键需要 aware
     assert published['started_at'] <= published['finished_at']
     assert result['snapshot_status'] == 'complete'

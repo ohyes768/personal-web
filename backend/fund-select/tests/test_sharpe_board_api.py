@@ -108,7 +108,9 @@ def _seed_three_weeks(db, *, source="stock", version="v1", extra_week2=None):
 
 
 def _get(client, **params):
-    base = {"source": "stock"}
+    # fixture 种子是 v1 数据；API 默认版本已切 v2（11-13 任务），
+    # 这组聚合测试显式查 v1，默认版本行为由 TestApiValidation 单独验证。
+    base = {"source": "stock", "profile_version": "v1"}
     base.update(params)
     return client.get("/api/funds/sharpe-board", params=base).json()
 
@@ -232,46 +234,50 @@ class TestRangeOnlyTrimsChart:
             assert len(s["values"]) == len(all_body["weeks"])
 
     def test_no_points_in_range_all_null_series(self, client, ranged_db):
-        """下限判断使用范围外最新记录：C 最近上榜 0.9（6 月，3m 范围外），
-        下限 0.9 含等于 → C 仍命中，但范围内无点 → 全 null 不造点"""
+        """v2 52 周窗口：C 只在 2026-06-01 上榜（52 周窗口内，3m 范围外）。
+        range=3m 只裁周历、不改统计/命中 → C 仍命中，但 3m 内无点 → 全 null。"""
         body = _get(client, range="3m", min_latest_sharpe=0.9)
-        assert body["total"] == 3  # A 1.05 / B 0.94 / C 0.9 全部 ≥ 下限（全历史判断）
+        assert body["total"] == 3  # A 1.05 / B 0.94 / C 0.9 全部 ≥ 下限
         by_code = {it["code"]: it for it in body["items"]}
         assert by_code["000003"]["latest_sharpe"] == 0.9
-        assert by_code["000003"]["last_listed_week"] == "2026-06-01"  # 范围外最新记录
+        assert by_code["000003"]["last_listed_week"] == "2026-06-01"
         c_series = [s for s in body["series"] if s["code"] == "000003"][0]
-        assert c_series["values"] == [None] * len(body["weeks"])  # 范围内无点不造点
-        assert body["weeks"][0] == "2026-08-03"  # 3m 裁剪：current(11-02) - 91 天
-        assert len(body["weeks"]) == 14
+        assert c_series["values"] == [None] * len(body["weeks"])  # 3m 内无点不造点
+        # 13 个整周（current 11-02 往前 12 周），起点落在周一网格
+        assert body["weeks"][0] == "2026-08-10"
+        assert len(body["weeks"]) == 13
+        assert all(date.fromisoformat(w).weekday() == 0 for w in body["weeks"])
 
     def test_range_trims_old_only_not_recent(self, client, ranged_db):
         """1y 覆盖全部观测周：图与 all 相同（回归：cutoff 不误裁）"""
         body = _get(client, range="1y")
         assert body["weeks"] == _get(client, range="all")["weeks"]
 
-    def test_1y_cutoff_aligns_to_monday_grid(self, client, board_db):
-        """回归：365 = 52周+1 天，raw cutoff（current-365）落在周日。首观测早于
-        cutoff 时不触发 first_obs 钳制，起点必须对齐回周一，否则周历整体脱离
-        周一键、范围内 values 全 null（2026-11-05 浏览器实测 300×105 压力数据实锤）。
-        终点保持当前周（range 只裁起点，AC4）。"""
+    def test_52week_window_aligns_to_monday_grid(self, client, board_db):
+        """v2 回归：52 周窗口起点天然落在周一（364 = 52×7，不再有旧 365 天
+        方案「raw cutoff 落周日 → series 全 null」的错位缺陷）。
+        2024-11-04 的旧观测在 52 周窗口外：不进统计、不进周历、不造点。"""
         _seed_week(board_db, date(2024, 11, 4), {"000004": ("基金D旧", 0.42)})
         _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95), "000002": ("基金B", 0.90), "000004": ("基金D", 0.50)})
         _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92), "000004": ("基金D", 0.50)})
         _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05), "000002": ("基金B", 0.94), "000004": ("基金D", 0.50)})
         body = _get(client, range="1y")
         weeks = [date.fromisoformat(w) for w in body["weeks"]]
-        assert weeks[0] == date(2025, 10, 27)  # raw 2025-11-02（周日）对齐回周一
-        assert weeks[-1] == WEEK3  # 终点仍为当前周，不漂移
+        # current=WEEK3(2026-11-02)，窗口起点 = current - 51 周 = 2025-11-10（周一）
+        assert weeks[0] == date(2025, 11, 10)
+        assert weeks[0].weekday() == 0
+        assert (weeks[-1] - weeks[0]).days == 51 * 7  # 恰 51 个整周
+        assert weeks[-1] == WEEK3  # 终点仍为当前周
         assert all(w.weekday() == 0 for w in weeks)  # 全周一网格
         d_series = [s for s in body["series"] if s["code"] == "000004"][0]
-        assert d_series["values"][-3:] == [0.50, 0.50, 0.50]  # 范围内旧点对位成功
-        assert d_series["values"][0] is None  # 2024-11-04 旧点被裁掉，不造点
-        # 统计不变：all 与 1y 的累计周数一致（旧周仍在全历史）
+        assert d_series["values"][-3:] == [0.50, 0.50, 0.50]  # 窗口内点对位成功
+        assert d_series["values"][0] is None  # 2024-11-04 旧点被窗口裁掉
+        # 1y 与 all 等价（52 周整窗口）；统计只按窗口内累计
         all_body = _get(client, range="all")
-        d_all = [s for s in all_body["series"] if s["code"] == "000004"][0]
+        assert body["weeks"] == all_body["weeks"]
         it_1y = {it["code"]: it for it in body["items"]}["000004"]
         it_all = {it["code"]: it for it in all_body["items"]}["000004"]
-        assert it_1y["listed_weeks"] == it_all["listed_weeks"] == 4
+        assert it_1y["listed_weeks"] == it_all["listed_weeks"] == 3  # 旧周不计
 
 
 class TestStatusSemantics:
@@ -367,7 +373,7 @@ class TestHistoryPreservation:
     def test_default_source_is_discovery_stock(self, client, board_db):
         """不带 source 走默认 discovery-stock（design 合同）"""
         _seed_three_weeks(board_db, source="discovery-stock")
-        body = client.get("/api/funds/sharpe-board").json()
+        body = client.get("/api/funds/sharpe-board?profile_version=v1").json()
         assert body["profile"]["source"] == "discovery-stock"
         assert body["total"] == 2
 
@@ -431,7 +437,7 @@ class TestPaginationInvariants:
         })
         _seed_week(board_db, WEEK2, {"000003": ("C", 0.9), "000001": ("A", 0.5)})
         _seed_week(board_db, WEEK3, {"000003": ("C", 0.95), "000002": ("B", 1.2)})
-        body = sbs.aggregate_board(board_db, source="stock")
+        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1")
         # C 3 周；其余 1 周，按最近夏普降序 B 1.2 → D 0.9 → A 0.5
         assert [it["code"] for it in body["items"]] == ["000003", "000002", "000004", "000001"]
 
@@ -457,17 +463,21 @@ class TestApiValidation:
         assert client.get(f"/api/funds/sharpe-board?{qs}").status_code == 422
 
     def test_unknown_version_404(self, client):
-        r = client.get("/api/funds/sharpe-board?profile_version=v2")
+        r = client.get("/api/funds/sharpe-board?profile_version=v9")
         assert r.status_code == 404
 
     def test_default_params_ok(self, client, board_db):
-        """全部默认参数（含默认 source/版本/range/page/limit）→ 200"""
-        _seed_three_weeks(board_db, source="discovery-stock")
+        """全部默认参数 → 200；默认规则版本已切 v2（11-13 任务 AC3）"""
+        _seed_three_weeks(board_db, source="discovery-stock", version="v2")
         r = client.get("/api/funds/sharpe-board")
         assert r.status_code == 200
         body = r.json()
-        assert body["profile"]["version"] == "v1"
-        assert body["profile"]["algorithm_version"] == "risk-3y-v1"
+        assert body["profile"]["version"] == "v2"
+        assert body["profile"]["algorithm_version"] == "risk-3y-v2"
+        # 显式 v1 仍可访问（版本隔离，历史不被污染）
+        r1 = client.get("/api/funds/sharpe-board?profile_version=v1")
+        assert r1.status_code == 200
+        assert r1.json()["profile"]["version"] == "v1"
 
     def test_response_fields_all_present(self, client, board_db):
         """design 返回体 9 个顶层字段全部透出（Pydantic 静默砍字段陷阱）"""
@@ -478,7 +488,9 @@ class TestApiValidation:
             assert key in body, f"响应缺 {key} 字段（schema 未声明）"
         item = body["items"][0]
         for key in ("code", "name", "listed_weeks", "consecutive_weeks",
-                    "latest_sharpe", "last_listed_week", "on_latest_board"):
+                    "latest_sharpe", "last_listed_week", "on_latest_board",
+                    # v2 新增（DTO 显式声明，防 Pydantic 静默砍字段）
+                    "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of"):
             assert key in item
         attempt = body["latest_attempt"]
         for key in ("week_start", "status", "trigger", "started_at",
@@ -487,7 +499,7 @@ class TestApiValidation:
 
     def test_route_registered_before_detail_route(self, client):
         """/sharpe-board 不被通用 /{code} 吞掉（注册顺序证据：响应是榜单结构）"""
-        body = client.get("/api/funds/sharpe-board").json()
+        body = client.get("/api/funds/sharpe-board?profile_version=v1").json()
         assert "profile" in body  # 若被 /{code} 匹配会返回 404/基金详情结构
 
 
@@ -498,7 +510,7 @@ class TestServiceLevelAggregation:
         _seed_week(board_db, WEEK3, status="failed",
                    diagnostics={"stale_codes": ["000001"]},
                    errors=["x"])
-        body = sbs.aggregate_board(board_db, source="stock")
+        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1")
         assert body["diagnostics"]["no_board_weeks"] == []
         assert body["diagnostics"]["latest_diagnostics"] == {"stale_codes": ["000001"]}
         assert body["latest_attempt"]["errors"] == ["x"]
@@ -506,7 +518,7 @@ class TestServiceLevelAggregation:
     def test_attempt_time_is_shanghai_aware(self, board_db, fixed_now):
         """UTC 存储行 → latest_attempt 时间带 +08:00（展示北京时间契约）"""
         _seed_week(board_db, WEEK3, {"000001": ("A", 0.9)})
-        body = sbs.aggregate_board(board_db, source="stock")
+        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1")
         started = body["latest_attempt"]["started_at"]
         assert isinstance(started, datetime)
         assert started.utcoffset().total_seconds() == 8 * 3600
