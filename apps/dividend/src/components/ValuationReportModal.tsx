@@ -66,9 +66,62 @@ export function ValuationReportModal({
     && report.skill_version !== currentSkillVersion;
   const hasOld = isReady && !!effectiveLevels && VALUATION_LEVEL_KEYS.some(k => effectiveLevels[k]?.price);
 
+  // 底部操作区：固定在弹框底部，正文滚动时按钮始终可见
+  const footer = (
+    <div>
+      {applyError && <p role="alert" className="mb-2 text-sm text-red-600">{applyError}</p>}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <p className="text-xs text-ink-muted">
+          {isReady
+            ? hasOld
+              ? '确认后替换当前四条价格线，监控继续开启。'
+              : '确认后保存四条价格线，并开启价格提醒。'
+            : '当前报告未生成价格，仅阅读。'}
+        </p>
+        <div className="flex items-center gap-2">
+          {onReevaluate && (
+            <button
+              type="button"
+              className="rounded border border-rule-strong px-3 py-1.5 text-sm text-ink hover:bg-paper-tint"
+              onClick={() => onReevaluate(report.code)}
+            >
+              重新评估
+            </button>
+          )}
+          <button
+            type="button"
+            className="rounded border border-rule-strong px-3 py-1.5 text-sm text-ink hover:bg-paper-tint"
+            onClick={onClose}
+          >
+            {isReady ? '暂不应用' : '返回列表'}
+          </button>
+          {isReady && (
+            <button
+              type="button"
+              disabled={applyPending}
+              className="rounded bg-accent px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+              data-testid="valuation-apply-button"
+              onClick={() => void onApply(report)}
+            >
+              {applyPending ? '应用中…' : hasOld ? '对比并应用' : '确认并开启监控'}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`${report.name} · 四挡位估值报告`} size="lg">
-      <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+    <Modal
+      isOpen={isOpen}
+      onClose={onClose}
+      title={`${report.name} · 四挡位估值报告`}
+      size="lg"
+      footer={footer}
+    >
+      {/* 正文不再自带滚动容器：Modal 内容区已是唯一竖向滚动区，
+          这里再套一层会出现两条竖向滚动条（报告越长越明显） */}
+      <div className="space-y-4">
         {/* 元数据 */}
         <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-sm text-ink-muted">
           <span>{report.code}</span>
@@ -191,49 +244,6 @@ export function ValuationReportModal({
             </ul>
           </details>
         )}
-      </div>
-
-      {/* 底部操作 */}
-      <div className="mt-4 border-t border-rule pt-3">
-        {applyError && <p role="alert" className="mb-2 text-sm text-red-600">{applyError}</p>}
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-xs text-ink-muted">
-            {isReady
-              ? hasOld
-                ? '确认后替换当前四条价格线，监控继续开启。'
-                : '确认后保存四条价格线，并开启价格提醒。'
-              : '当前报告未生成价格，仅阅读。'}
-          </p>
-          <div className="flex items-center gap-2">
-            {onReevaluate && (
-              <button
-                type="button"
-                className="rounded border border-rule-strong px-3 py-1.5 text-sm text-ink hover:bg-paper-tint"
-                onClick={() => onReevaluate(report.code)}
-              >
-                重新评估
-              </button>
-            )}
-            <button
-              type="button"
-              className="rounded border border-rule-strong px-3 py-1.5 text-sm text-ink hover:bg-paper-tint"
-              onClick={onClose}
-            >
-              {isReady ? '暂不应用' : '返回列表'}
-            </button>
-            {isReady && (
-              <button
-                type="button"
-                disabled={applyPending}
-                className="rounded bg-accent px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-                data-testid="valuation-apply-button"
-                onClick={() => void onApply(report)}
-              >
-                {applyPending ? '应用中…' : hasOld ? '对比并应用' : '确认并开启监控'}
-              </button>
-            )}
-          </div>
-        </div>
       </div>
     </Modal>
   );
