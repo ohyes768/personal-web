@@ -1,24 +1,24 @@
 /**
  * 夏普曲线纯 option 测试（node --experimental-strip-types --test）
- * 锁定 implement.md 步骤 5 的固定断言：完整数据透传、断线、单点、下限参考线
+ * 锁定 implement.md 步骤 5 的固定断言：完整数据透传、缺席周连线（connectNulls）、单点、下限参考线
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import { buildSharpeChartOption, isolatedPoints } from './sharpe-chart.ts';
 
-test('固定断言：完整数据透传 + connectNulls:false + smooth:false（implement.md 步骤 5）', () => {
+test('固定断言：完整数据透传 + connectNulls:true + smooth:false（2026-11-13 改为跨缺席周连线）', () => {
   const option = buildSharpeChartOption({
     weeks: ['2026-10-19', '2026-10-26', '2026-11-02'],
     series: [{ code: '000001', name: 'A', values: [0.95, null, 1.05] }],
     minLatestSharpe: 1,
   });
   assert.deepEqual(option.series[0].data, [0.95, null, 1.05]);
-  assert.equal(option.series[0].connectNulls, false);
+  assert.equal(option.series[0].connectNulls, true);
   assert.equal(option.series[0].smooth, false);
 });
 
-test('断线不跨缺席周：缺席 null 原样保留、不补零不连线', () => {
+test('缺席周 null 原样透传：数据不补点不补值（连线由 connectNulls 渲染层完成）', () => {
   const option = buildSharpeChartOption({
     weeks: ['2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09'],
     series: [{ code: '000001', name: 'A', values: [0.9, null, 0.92, null] }],

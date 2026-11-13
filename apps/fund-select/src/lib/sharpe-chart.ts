@@ -5,8 +5,8 @@
  * 本文件必须保持零依赖：node --experimental-strip-types 测试直接执行（.ts 相对 import），
  * 不引 React、不引 echarts。
  *
- * 图合同（PRD R4 / implement 步骤 5 固定断言）：
- * - 缺席周 null 留空、connectNulls:false 断线、smooth:false
+ * 图合同（PRD R4 / implement 步骤 5 固定断言；2026-11-13 按用户要求改为跨缺席周连线）：
+ * - 缺席周 null 原样透传（不造点不补值）、connectNulls:true 渲染层跨缺席周连线、smooth:false
  * - 单点（前后均无相邻非空点的孤立点）必须可见：showSymbol:true + symbolSize
  *   回调只给孤立点尺寸，非孤立点 0（300 只基金全显 symbol 会铺满画布）
  * - 纵轴 scale:true，不强制从零
@@ -59,7 +59,7 @@ interface SeriesSpec {
   name: string;
   type: 'line';
   data: (number | null)[];
-  connectNulls: false;
+  connectNulls: true;
   smooth: false;
   showSymbol: true;
   symbolSize: (value: unknown, params: { dataIndex: number }) => number;
@@ -130,7 +130,7 @@ export function buildSharpeChartOption(input: SharpeChartInput): SharpeChartOpti
       name: s.code,
       type: 'line',
       data: s.values,
-      connectNulls: false,
+      connectNulls: true,
       smooth: false,
       showSymbol: true,
       symbolSize: (_value: unknown, params: { dataIndex: number }) =>
