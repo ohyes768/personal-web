@@ -11,6 +11,8 @@ export default defineConfig({
   reporter: [["list"]],
   use: {
     baseURL: process.env.SM_E2E_BASE_URL || "http://127.0.0.1:3012",
+    // 指到 nginx 入口（https://…:9443，自签证书）跑生产拓扑时用；直连 3012 不受影响
+    ignoreHTTPSErrors: true,
     trace: "off",
     screenshot: "off",
   },

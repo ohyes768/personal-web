@@ -697,7 +697,11 @@ services:
                   "SERVICE_MANAGER_ADMIN_PASSWORD=${SERVICE_MANAGER_ADMIN_PASSWORD:?service-manager 需要管理口令}",
                   "SERVICE_MANAGER_SESSION_SECRET=${SERVICE_MANAGER_SESSION_SECRET:?service-manager 需要会话签名密钥}",
                   "SERVICE_MANAGER_PUBLIC_ORIGIN=${SERVICE_MANAGER_PUBLIC_ORIGIN:-https://web.duomi77.cn:9443}",
-                  "SERVICE_MANAGER_ALLOWED_ORIGINS=${SERVICE_MANAGER_ALLOWED_ORIGINS:-}",
+                  # 允许的额外写请求来源。默认带上前端容器的回环入口：直连
+                  # 127.0.0.1:3012（SSH 隧道、e2e）时 Next rewrite 会把 Host 改写成
+                  # 后端地址，后端按 Origin==Host 判同源就会拒掉写操作；生产走 nginx
+                  # 时 nginx 原样透传 Host，走同一条判定的第 1 条路径，不受影响。
+                  "SERVICE_MANAGER_ALLOWED_ORIGINS=${SERVICE_MANAGER_ALLOWED_ORIGINS:-http://127.0.0.1:3012,http://localhost:3012}",
                   "SERVICE_MANAGER_GITHUB_TOKEN=${SERVICE_MANAGER_GITHUB_TOKEN:-}",
                   "SERVICE_MANAGER_DOCKER_HOST=tcp://service-manager-socket-proxy:2375",
                   SERVICE_MANAGER_DATA_DIR=/app/data,

@@ -63,6 +63,12 @@ e2e 前置：后端 8102（`SERVICE_MANAGER_ADMIN_PASSWORD=devpass`）+ 前端 3
 `SM_E2E_PASSWORD` 可覆盖口令。本机无法下载 Playwright 自带 Chromium，`playwright.config.ts` 用
 `channel: "chrome"` 复用宿主机 Chrome。
 
+e2e 跑在 NAS 容器栈上（后端也在容器里）时，写操作需要后端放行回环来源：
+Next rewrite 会把 `Host` 改写成后端容器地址，后端按 `Origin == Host` 判同源就拒了。
+compose 默认已带 `SERVICE_MANAGER_ALLOWED_ORIGINS=http://127.0.0.1:3012,http://localhost:3012`，
+所以 `pnpm exec playwright test` 直接可用；也可把 `SM_E2E_BASE_URL` 指到 nginx 入口
+（如 `https://web.duomi77.cn:9443`）跑生产拓扑——那条路径 nginx 保留 Host，写操作本来就能过。
+
 ## 6. Wrong vs Correct
 
 ```tsx
