@@ -116,7 +116,7 @@ function ServiceList() {
   async function refresh(kind: "docker" | "all") {
     try {
       const job = await api.refresh(kind);
-      setToast(job.deduplicated ? "已有同类型任务在跑，复用现有任务" : `已提交${kind === "docker" ? "容器扫描" : "全量检查"}任务`);
+      setToast(job.deduplicated ? "已有同类型任务在跑，复用现有任务" : `已提交${kind === "docker" ? "容器扫描" : "巡检"}任务`);
       window.setTimeout(() => void load(), 3000);
     } catch (caught) {
       setToast(caught instanceof ApiError ? caught.message : "刷新失败");
@@ -136,19 +136,36 @@ function ServiceList() {
             <div className="num">{summary.services}</div>
             <div className="lbl">业务服务</div>
           </div>
-          <div className="kpi">
+          <div
+            className="kpi"
+            title={`上次扫描观测到的容器总数：运行 ${summary.docker_running} · 已消失 ${summary.docker_missing}`}
+          >
+            <div className="num">{summary.docker_components}</div>
+            <div className="lbl">发现容器</div>
+          </div>
+          <div
+            className="kpi"
+            title={`已关联到业务服务的容器：${summary.components} / ${summary.docker_components}`}
+          >
             <div className="num">{summary.components}</div>
             <div className="lbl">已关联组件</div>
           </div>
-          <div className="kpi">
-            <div className="num" style={{ color: summary.docker_available ? "var(--ok)" : "var(--warn)" }}>
-              {summary.docker_available ? "可用" : "不可用"}
+          <div
+            className="kpi"
+            title={`发现但没关联到任何业务服务的容器：${summary.unregistered_components} 个，其中 ${summary.ignored_components} 个已标记忽略，实际待处理 ${summary.unregistered_components - summary.ignored_components} 个`}
+          >
+            <div
+              className="num"
+              style={{
+                color:
+                  summary.unregistered_components - summary.ignored_components > 0
+                    ? "var(--warn)"
+                    : undefined,
+              }}
+            >
+              {summary.unregistered_components}
             </div>
-            <div className="lbl">Docker 读取</div>
-          </div>
-          <div className="kpi">
-            <div className="num">{summary.unread_releases}</div>
-            <div className="lbl">未读发布</div>
+            <div className="lbl">未入账</div>
           </div>
           <div className="kpi">
             <div className="num small" style={{ fontSize: 13 }}>
@@ -214,16 +231,31 @@ function ServiceList() {
             />
             只看异常
           </label>
-          <button className="btn" type="button" onClick={() => void refresh("docker")}>
+          <button
+            className="btn"
+            type="button"
+            title="重新扫描 Docker 容器，刷新「发现容器 / 已关联组件 / 未入账」与各服务的运行、健康状态"
+            onClick={() => void refresh("docker")}
+          >
             扫描容器
           </button>
-          <button className="btn" type="button" onClick={() => void refresh("all")}>
-            全量检查
+          <button
+            className="btn"
+            type="button"
+            title="巡检全部已登记入口：URL 可达性、TLS 证书，并同步已配置的 GitHub 发布"
+            onClick={() => void refresh("all")}
+          >
+            巡检
           </button>
           <button className="btn primary" type="button" onClick={() => setCreating((value) => !value)}>
             新增服务
           </button>
         </div>
+
+        <p className="small muted" style={{ marginTop: 8 }}>
+          巡检：逐一检查全部已登记入口的可达性与证书有效期，并同步已配置的 GitHub 发布；
+          容器观测不在其中，由「扫描容器」负责（后台每 60 秒自动扫一次）。
+        </p>
 
         {creating ? (
           <form onSubmit={create} style={{ marginTop: 12 }}>

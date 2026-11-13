@@ -527,6 +527,12 @@ class RefreshJobView(BaseModel):
 class SummaryResponse(BaseModel):
     services: int = 0
     components: int = 0
+    # 容器侧观测计数：发现 vs 已关联 vs 未入账
+    docker_components: int = 0
+    docker_running: int = 0
+    docker_missing: int = 0
+    unregistered_components: int = 0
+    ignored_components: int = 0
     docker_available: bool = False
     docker_error: str | None = None
     docker_last_success_at: str | None = None

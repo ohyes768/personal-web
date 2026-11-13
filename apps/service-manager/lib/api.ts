@@ -288,6 +288,16 @@ export interface ReleaseListResponse {
 export interface SummaryResponse {
   services: number;
   components: number;
+  /** 上次扫描观测到的容器总数 */
+  docker_components: number;
+  /** 其中正在运行的 */
+  docker_running: number;
+  /** 其中已消失（成功扫描里没出现）的 */
+  docker_missing: number;
+  /** 发现但没关联到任何业务服务的容器 */
+  unregistered_components: number;
+  /** 未入账里被标记忽略的（有意不入账） */
+  ignored_components: number;
   docker_available: boolean;
   docker_error: string | null;
   docker_last_success_at: string | null;

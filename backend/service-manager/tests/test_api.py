@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.main import build_app
+from tests.conftest import FakeReader, container_payload
 
 ORIGIN = {"Origin": "http://localhost:3012"}
 
@@ -261,3 +262,50 @@ def test_services_list_exposes_projects(client: TestClient) -> None:
 def test_summary_reports_own_projects(client: TestClient) -> None:
     login(client)
     assert client.get("/api/summary").json()["own_projects"] == ["personal-web"]
+
+
+def test_summary_reports_container_counts(settings, monkeypatch) -> None:
+    """发现容器 / 已关联 / 未入账：三个数要能对上账。
+
+    - 发现：上次扫描观测到的容器总数
+    - 已关联：绑到业务服务的组件数
+    - 未入账：发现了但没绑到任何服务；其中被标记忽略的是有意不入账
+    """
+    reader = FakeReader(
+        [
+            container_payload(service="a", container_id="a" * 64),
+            container_payload(service="b", container_id="b" * 64),
+            container_payload(service="c", container_id="c" * 64),
+        ]
+    )
+    monkeypatch.setattr("src.main.DockerClient", lambda *args, **kwargs: reader)
+    app = build_app(settings.model_copy(update={"docker_host": "tcp://fake:2375"}))
+    with TestClient(app) as client:
+        client.app.state.discovery.run_scan()
+        login(client)
+        imported = client.post(
+            "/api/discovery/import",
+            json={
+                "components": [
+                    {"source_key": "nas:compose:personal-web:a:1", "required": True}
+                ],
+                "name": "已关联服务",
+            },
+            headers=ORIGIN,
+        )
+        assert imported.status_code == 200
+        decided = client.patch(
+            "/api/discovery/decisions",
+            json={"source_keys": ["nas:compose:personal-web:c:1"], "ignored": True},
+            headers=ORIGIN,
+        )
+        assert decided.status_code == 200
+
+        summary = client.get("/api/summary").json()
+        assert summary["docker_components"] == 3
+        assert summary["docker_running"] == 3
+        assert summary["docker_missing"] == 0
+        assert summary["components"] == 1
+        # 3 - 1 绑定 = 2 未入账，其中 1 个已标记忽略
+        assert summary["unregistered_components"] == 2
+        assert summary["ignored_components"] == 1

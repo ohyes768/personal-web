@@ -275,9 +275,25 @@ class StatusProjector:
             counts["release"][status.release.value] += 1
             unread_total += status.unread_releases
         available, error = self.discovery.scan_available()
+        # 容器侧计数：发现（上次扫描观测到的容器）vs 已关联（绑到业务服务的容器）。
+        # 「未入账」= 发现但没绑到任何服务；其中被标记忽略的是有意不入账，
+        # 剩下的才是真需要人决策的候选。
+        observed = self.discovery.components()
+        bound_keys = set(self.registry.binding_map())
+        ignored_keys = self.registry.ignored_keys()
+        unbound = [key for key in observed if key not in bound_keys]
         return {
             "services": len(services),
             "components": int(components),
+            "docker_components": len(observed),
+            "docker_running": sum(
+                1 for item in observed.values() if item.get("state") == "running"
+            ),
+            "docker_missing": sum(
+                1 for item in observed.values() if item.get("state") == "missing"
+            ),
+            "unregistered_components": len(unbound),
+            "ignored_components": sum(1 for key in unbound if key in ignored_keys),
             "docker_available": available,
             "docker_error": error,
             "docker_last_success_at": self.discovery.last_success_at(),
