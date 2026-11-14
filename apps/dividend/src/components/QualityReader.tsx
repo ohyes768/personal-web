@@ -14,6 +14,7 @@ import { QualityReportContent } from './QualityReportContent';
 import { ScreeningCheckPanel } from './ScreeningCheckPanel';
 import { useQualityReports } from '@/lib/hooks/useQualityReports';
 import { useStockScreening } from '@/lib/hooks/useStockScreening';
+import { screeningStatusMark } from '@/lib/screening';
 import { returnHref, selectReport, sortReports } from '@/lib/quality-reader';
 
 export function QualityReader() {
@@ -127,11 +128,16 @@ export function QualityReader() {
             disabled={!reports.length}
           >
             {!reports.length && <option value="">加载中…</option>}
-            {reports.map((report) => (
-              <option key={report.code} value={report.code}>
-                {report.name}（{report.code}）
-              </option>
-            ))}
+            {reports.map((report) => {
+              const status = screening.statusMap?.[report.code];
+              const mark = status ? `${screeningStatusMark(status)} ` : '';
+              const hint = status === 'eligible' ? '符合条件' : status === 'excluded' ? '未符合' : status === 'insufficient_data' ? '待补数据' : '';
+              return (
+                <option key={report.code} value={report.code}>
+                  {mark}{report.name}（{report.code}）{hint ? ` ${hint}` : ''}
+                </option>
+              );
+            })}
           </select>
           <span className="quality-reader-progress" aria-live="polite">{progress}</span>
         </div>

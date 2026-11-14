@@ -116,6 +116,25 @@ export function readStoredScreeningConditions(): ScreeningConditions {
   }
 }
 
+/** 批量筛选状态的最小条目（阅读页下拉列表标注用） */
+export interface ScreeningStatusItem {
+  code: string;
+  status: ScreeningStatus;
+}
+/** 批量筛选状态响应 */
+export interface ScreeningStatusesResponse {
+  items: ScreeningStatusItem[];
+  total: number;
+  conditions: ScreeningConditions;
+}
+
+/** 状态到下拉列表前缀标记的映射（✓ 符合 / ✗ 不符 / ？待补） */
+export function screeningStatusMark(status: ScreeningStatus): string {
+  if (status === 'eligible') return '✓';
+  if (status === 'excluded') return '✗';
+  return '?';
+}
+
 /** 条件是否就是默认条件（用于阅读页说明「当前筛选条件」来源） */
 export function isDefaultScreeningConditions(conditions: ScreeningConditions): boolean {
   return (['min_yield', 'min_roe', 'min_roe_avg_3y', 'max_quarter_profit_decline_pct', 'min_cagr_3y'] as const)

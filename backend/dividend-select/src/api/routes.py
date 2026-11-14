@@ -14,7 +14,7 @@ from fastapi.responses import Response
 
 from src.api.models import (
     ScreeningRequest, ScreeningResponse,
-    StockScreeningResponse,
+    StockScreeningResponse, ScreeningStatusesResponse, ScreeningStatusItem,
     FavoritesBatchRequest, FavoritesBatchResponse,
     BoardInfo,
     BoardInfoResponse,
@@ -634,6 +634,39 @@ async def screen_stocks(body: ScreeningRequest):
                              financial_last_updated=file_mtime_iso(financial_path) if financial_path else None,
                              last_updated=stocks.last_updated, total=len(items),
                              dividend_years=list(DIVIDEND_YEARS))
+
+
+@router.get("/stocks/screen/statuses", response_model=ScreeningStatusesResponse)
+async def get_screening_statuses(
+    min_yield: float = Query(3.5, ge=0, le=100, allow_inf_nan=False, description="近三年平均股息率下限(%)"),
+    min_roe: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="最近年度 ROE 下限(%)"),
+    min_roe_avg_3y: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="近三年平均 ROE 下限(%)"),
+    max_quarter_profit_decline_pct: float = Query(30, gt=0, le=100, allow_inf_nan=False, description="单季扣非最大降幅(%)"),
+    min_cagr_3y: float = Query(0, ge=-100, le=100, allow_inf_nan=False, description="扣非净利润3年复合增长率下限(%)"),
+):
+    """批量筛选状态：全池每股只回 code + status（阅读页下拉列表标注用，无明细）"""
+    if data_reader is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+
+    conditions = ScreeningRequest(
+        min_yield=min_yield,
+        min_roe=min_roe,
+        min_roe_avg_3y=min_roe_avg_3y,
+        max_quarter_profit_decline_pct=max_quarter_profit_decline_pct,
+        min_cagr_3y=min_cagr_3y,
+    )
+    stocks = await get_stocks(
+        min_yield=0, max_yield=None, exchange=None, industry=None,
+        index=None, sort_by="avg_yield_3y", sort_order="desc",
+    )
+    items = [
+        ScreeningStatusItem(code=stock.code, status=evaluate_stock(stock, conditions).status)
+        for stock in stocks.items
+    ]
+    return ScreeningStatusesResponse(items=items, total=len(items), conditions=conditions)
+
+
+
 
 
 @router.get("/stocks/{code}/screening", response_model=StockScreeningResponse)

@@ -300,3 +300,46 @@ def test_stock_screening_endpoint_unknown_code(monkeypatch):
     app = FastAPI()
     app.include_router(routes.router)
     assert TestClient(app).get("/stocks/999999/screening").status_code == 404
+
+
+def test_screening_statuses_endpoint_returns_all_codes(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    from src.api.models import StockListResponse
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+
+    async def load(**kwargs):
+        return StockListResponse(total=3, items=[
+            stock(code="000001"),
+            stock(code="000002", avg_yield_3y=1.0),
+            stock(code="000003", latest_quarter_yoy_pct=None),
+        ])
+    monkeypatch.setattr(routes, "get_stocks", load)
+    app = FastAPI()
+    app.include_router(routes.router)
+    body = TestClient(app).get("/stocks/screen/statuses").json()
+    assert body["total"] == 3
+    assert body["conditions"]["min_yield"] == 3.5
+    statuses = {item["code"]: item["status"] for item in body["items"]}
+    assert statuses == {"000001": "eligible", "000002": "excluded", "000003": "insufficient_data"}
+    # 只回最小字段，不带股票明细
+    assert set(body["items"][0].keys()) == {"code", "status"}
+
+
+def test_screening_statuses_endpoint_applies_thresholds(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    from src.api.models import StockListResponse
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+
+    async def load(**kwargs):
+        return StockListResponse(total=1, items=[stock(code="000004", avg_yield_3y=4.0)])
+    monkeypatch.setattr(routes, "get_stocks", load)
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+    assert client.get("/stocks/screen/statuses", params={"min_yield": 5}).json()["items"][0]["status"] == "excluded"
+    assert client.get("/stocks/screen/statuses", params={"min_yield": 3}).json()["items"][0]["status"] == "eligible"
+    assert client.get("/stocks/screen/statuses", params={"min_yield": -1}).status_code == 422

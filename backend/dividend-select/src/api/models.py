@@ -615,6 +615,29 @@ class ScreeningResponse(BaseModel):
     total: int
 
 
+class ScreeningStatusItem(BaseModel):
+    """批量筛选状态的最小条目（阅读页下拉列表标注用）"""
+    code: str
+    status: Literal["eligible", "excluded", "insufficient_data"]
+
+
+class ScreeningStatusesResponse(BaseModel):
+    """批量筛选状态：只回 code + status，不带股票明细与逐条判定"""
+    items: list[ScreeningStatusItem] = Field(default_factory=list)
+    total: int
+    conditions: ScreeningRequest
+
+
+class ScreeningResponse(BaseModel):
+    items: list[ScreeningItem]
+    counts: dict[str, int]
+    conditions: ScreeningRequest
+    last_updated: Optional[str] = None
+    financial_last_updated: Optional[str] = None
+    dividend_years: list[int] = Field(default_factory=lambda: [2023, 2024, 2025])
+    total: int
+
+
 class FavoritesBatchRequest(BaseModel):
     codes: list[str] = Field(..., min_length=1, max_length=1000)
 

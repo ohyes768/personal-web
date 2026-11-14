@@ -4,7 +4,7 @@ import type { RefreshJob, RefreshKind } from './types';
  * 所有股息率相关 API 调用必须通过此文件
  */
 import { directClient, downloadFile, saveBlob } from './api-client';
-import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse, StockScreeningResponse } from './screening';
+import type { ScreeningConditions, ScreeningResponse, BatchFavoriteResponse, StockScreeningResponse, ScreeningStatusesResponse } from './screening';
 import type { FavoritesResponse } from './watchlist';
 import type { QualityJob, QualityMoveAction, QualityQueueSnapshot, QualityScoresResponse } from './quality';
 import type {
@@ -44,6 +44,9 @@ export const dividendApi = {
       `/api/dividend/stocks/${encodeURIComponent(code)}/screening`,
       { ...conditions },
     ),
+  /** 批量筛选状态：全池每股只回 code + status（阅读页下拉列表标注用） */
+  getScreeningStatuses: (conditions: ScreeningConditions) =>
+    directClient.get<ScreeningStatusesResponse>('/api/dividend/stocks/screen/statuses', { ...conditions }),
   addFavoritesBatch: (codes: string[]) =>
     directClient.post<BatchFavoriteResponse>('/api/dividend/favorites/batch', { codes }),
   /** 提交五维基本面评级（异步 job；Hermes 未配置返回 503） */

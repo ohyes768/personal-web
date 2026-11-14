@@ -142,6 +142,19 @@ async function setupQualityApi(page: Page, state: QualityApiState) {
       await route.fulfill({ json: screeningFixture(code) });
       return;
     }
+    // 批量筛选状态（下拉列表标注用；与单股复核同一套 fixture 判定）
+    if (url.pathname.endsWith('/screen/statuses')) {
+      if (state.screeningFails) {
+        await route.fulfill({ status: 500, json: { detail: '筛选状态失败' } });
+        return;
+      }
+      await route.fulfill({ json: {
+        items: Object.keys(state.scores).map(code => ({ code, status: screeningFixture(code).status })),
+        total: Object.keys(state.scores).length,
+        conditions: { min_yield: 5, min_roe: 10, min_roe_avg_3y: 10, max_quarter_profit_decline_pct: 30, min_cagr_3y: 0 },
+      } });
+      return;
+    }
     await route.fulfill({ json: {} });
   });
 }
@@ -342,6 +355,23 @@ test('reading still works when the screening verdict cannot be loaded', async ({
   await page.goto('/quality-reader?code=000001');
   await expect(page.getByRole('heading', { name: '甲公司', exact: true })).toBeVisible();
   await expect(page.getByText(/筛选复核加载失败/)).toBeVisible();
+  // 状态映射同样失败：下拉不显示标记，但选择功能正常
+  const select = page.getByRole('combobox', { name: '选择股票' });
+  await expect(select).toBeEnabled();
+  await expect(select.locator('option')).toHaveCount(3);
+});
+
+test('company select marks each option with its screening status', async ({ page }) => {
+  const state = newState();
+  await setupQualityApi(page, state);
+  await page.goto('/quality-reader?code=000001');
+  const select = page.getByRole('combobox', { name: '选择股票' });
+  await expect(select.locator('option')).toHaveCount(3);
+  // ✓ 符合 / ✗ 未符合：与面板判定同源
+  await expect(select.locator('option').filter({ hasText: '甲公司' })).toHaveText(/✓/);
+  await expect(select.locator('option').filter({ hasText: '乙公司' })).toHaveText(/✗/);
+  await expect(select.locator('option').filter({ hasText: '乙公司' })).toHaveText(/未符合/);
+  await expect(select.locator('option').filter({ hasText: '丙公司' })).toHaveText(/✓/);
 });
 
 test('reader layout does not overflow horizontally on phone and desktop', async ({ page }, testInfo) => {
