@@ -113,6 +113,7 @@ def refresh(
                 mgr_name = mgr_company = None
                 mgr_days = mgr_exp_years = None
                 mgr_days_max = mgr_exp_years_max = None
+                mgrs: list[dict[str, Any]] = []
                 if write_mgr:
                     mgrs = mgr_by_code.get(code) or []
                     if mgrs:
@@ -143,7 +144,11 @@ def refresh(
                         old_ft = (existing_fund_type_map.get(code) or "").strip()
                         if new_ft and not old_ft:
                             update_values["fund_type"] = new_ft
-                    if write_mgr:
+                    # ⚠ 只有**确实有经理记录**时才写 mgr_*。
+                    # 无条件写会把「akshare 经理表里没这只基金」变成「把已有值清成 NULL」——
+                    # yaml 名单基金的 mgr 来自雪球 basic 接口（更准），不能被 akshare 的
+                    # 缺记录抹掉（回归：11-14 全量刷新修复）。
+                    if write_mgr and mgrs:
                         update_values.update(
                             mgr_name=mgr_name,
                             mgr_company=mgr_company,
@@ -168,7 +173,7 @@ def refresh(
                         is_active=True,
                         updated_at=now,
                     )
-                    if write_mgr:
+                    if write_mgr and mgrs:
                         new_fund.mgr_name = mgr_name
                         new_fund.mgr_company = mgr_company
                         new_fund.mgr_days = mgr_days

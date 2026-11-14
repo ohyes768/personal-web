@@ -261,6 +261,7 @@ def refresh_market_full_sync(
     preset_task_id: Optional[str] = None,
     pipeline_profile: str = "stock",
     capture: SharpeRunCapture | None = None,
+    use_cache: bool = True,
 ) -> dict:
     """市场 tab 全量数据 refresh（profile-driven 流水线 + 分阶段重算 codes）。
 
@@ -341,10 +342,20 @@ def refresh_market_full_sync(
 
         # L0 全市场名单（ak.fund_name_em）—— 前置步骤，让 universe 表是最新的
         # 之前需要单独点"刷新"按钮跑这个；现在合并到全量刷新里
+        #
+        # ⚠ 必须同时回填经理字段（11-14 全量刷新修复）：
+        # 预筛 1（min_mgr_exp）读 funds.mgr_experience_years_max，SQL 里
+        # `NULL >= 5` 不成立 → 不回填则该字段全 NULL，整个 universe 被砍成 0
+        # （实测 16239 → 1236，一次淘汰 15003 只）。fetch_manager_by_fund_code
+        # 从 576747b8 重构起就没有调用方了，这里补回来。
         def _stage_l0(d):
             from src.data.market_universe_fetcher import fetch_market_universe
+            from src.data.manager_fetcher import fetch_manager_by_fund_code
             df = fetch_market_universe()
-            return refresh_market_universe_db(d, df, task_id=f"{task_id}_L0")
+            mgr_by_code = fetch_manager_by_fund_code(use_cache=use_cache)
+            return refresh_market_universe_db(
+                d, df, task_id=f"{task_id}_L0", mgr_by_code=mgr_by_code,
+            )
 
         stage_results["L0_universe"] = _run_stage(db, task_id, "L0_universe",
                                                    len(codes) or 1, _stage_l0)

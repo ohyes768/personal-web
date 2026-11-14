@@ -209,7 +209,7 @@ class TestLoadMarketUniverse:
 class TestRefreshMarketFullSyncSignature:
 
     def test_accepts_three_user_params_plus_task_id(self):
-        """新签名：universe_filter + 3 用户参数 + preset_task_id + pipeline_profile + capture"""
+        """新签名：universe_filter + 3 用户参数 + preset_task_id + pipeline_profile + capture + use_cache"""
         import inspect
         sig = inspect.signature(refresh_market_full_sync)
         params = list(sig.parameters.keys())
@@ -221,7 +221,8 @@ class TestRefreshMarketFullSyncSignature:
             "preset_task_id",
             "pipeline_profile",
             "capture",
-        ], f"签名变更：新增 capture（夏普榜单本轮采集捕获）；当前参数: {params}"
+            "use_cache",   # 11-14：L0 回填经理表时是否用本地缓存
+        ], f"签名变更：新增 capture（夏普榜单本轮采集捕获）/ use_cache；当前参数: {params}"
 
     def test_no_longer_accepts_min_ret_1y_or_max_nav_stale_days(self):
         """旧参数被移除：min_ret_1y / max_nav_stale_days"""
@@ -243,10 +244,17 @@ class TestRefreshMarketFullSync:
                 "market_type": "stock",
             }]),
         )
+        # 经理表：L0 回填 mgr_* 用（11-14 修复：不回填则预筛 1 把 universe 砍成 0）
+        monkeypatch.setattr(
+            "src.data.manager_fetcher.fetch_manager_by_fund_code",
+            lambda use_cache=True: {"000001": [{"name": "张三", "company": "某司", "days": 3650}]},
+        )
         monkeypatch.setattr(
             "src.services.market_full_pipeline.refresh_market_universe_db",
-            lambda db, df, task_id=None: {"task_id": task_id, "total": len(df),
-                                                 "inserted": len(df), "updated": 0, "failed": 0, "errors": []},
+            lambda db, df, task_id=None, mgr_by_code=None: {
+                "task_id": task_id, "total": len(df),
+                "inserted": len(df), "updated": 0, "failed": 0, "errors": [],
+            },
         )
         monkeypatch.setattr(
             "src.services.market_full_pipeline.fetch_market_rank_bulk",
