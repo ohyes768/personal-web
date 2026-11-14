@@ -14,6 +14,7 @@ from fastapi.responses import Response
 
 from src.api.models import (
     ScreeningRequest, ScreeningResponse,
+    StockScreeningResponse,
     FavoritesBatchRequest, FavoritesBatchResponse,
     BoardInfo,
     BoardInfoResponse,
@@ -63,7 +64,7 @@ from src.api.models import (
 from src.services.data_reader import DataReader
 from src.services.favorites_service import FavoritesService
 from src.services.filter_service import FilterService, normalize_search_keyword
-from src.services.screening_service import evaluate_stock, DIVIDEND_YEARS
+from src.services.screening_service import evaluate_stock, build_checks, DIVIDEND_YEARS
 from src.services.m120_service import M120Service
 from src.services.pe_service import PEDataService
 from src.services.realtime_service import get_realtime_service
@@ -484,6 +485,28 @@ def _normalize_codes_filter(codes: Optional[str]) -> Optional[set[str]]:
     return set(normalized) or None
 
 
+def _build_single_stock_model(code: str) -> Optional[DividendStock]:
+    """单股模型（含股东户数与财务指标），供单股筛选复核接口使用。"""
+    if data_reader is None:
+        return None
+    row = data_reader.get_stock_by_code(code)
+    if row is None:
+        return None
+    info = stock_info_service.get_stock_info(code) if stock_info_service is not None else None
+    shareholder_map = (
+        shareholder_reader.read_map()
+        if shareholder_reader is not None and shareholder_reader.check_exists()
+        else {}
+    )
+    financial_map = (
+        financial_reader.read_map()
+        if financial_reader is not None and financial_reader.check_exists()
+        else {}
+    )
+    key = str(row["股票代码"]).zfill(6)
+    return _row_to_stock_model(row, info, shareholder_map.get(key), financial_map.get(key))
+
+
 def _build_stock_list(
     min_yield: float,
     max_yield: Optional[float],
@@ -611,6 +634,45 @@ async def screen_stocks(body: ScreeningRequest):
                              financial_last_updated=file_mtime_iso(financial_path) if financial_path else None,
                              last_updated=stocks.last_updated, total=len(items),
                              dividend_years=list(DIVIDEND_YEARS))
+
+
+@router.get("/stocks/{code}/screening", response_model=StockScreeningResponse)
+async def get_stock_screening(
+    code: str,
+    min_yield: float = Query(3.5, ge=0, le=100, allow_inf_nan=False, description="近三年平均股息率下限(%)"),
+    min_roe: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="最近年度 ROE 下限(%)"),
+    min_roe_avg_3y: float = Query(10, ge=0, le=100, allow_inf_nan=False, description="近三年平均 ROE 下限(%)"),
+    max_quarter_profit_decline_pct: float = Query(30, gt=0, le=100, allow_inf_nan=False, description="单季扣非最大降幅(%)"),
+    min_cagr_3y: float = Query(0, ge=-100, le=100, allow_inf_nan=False, description="扣非净利润3年复合增长率下限(%)"),
+):
+    """单股筛选复核：状态 + 原因 + 逐条条件判定（基本面资料阅读页用）"""
+    if data_reader is None:
+        raise HTTPException(status_code=500, detail="服务未初始化")
+
+    conditions = ScreeningRequest(
+        min_yield=min_yield,
+        min_roe=min_roe,
+        min_roe_avg_3y=min_roe_avg_3y,
+        max_quarter_profit_decline_pct=max_quarter_profit_decline_pct,
+        min_cagr_3y=min_cagr_3y,
+    )
+    stock = await asyncio.to_thread(_build_single_stock_model, code)
+    if stock is None:
+        raise HTTPException(status_code=404, detail=f"股票 {code} 不存在")
+
+    item = evaluate_stock(stock, conditions)
+    financial_path = find_latest_aux_file("财务指标汇总")
+    return StockScreeningResponse(
+        code=stock.code,
+        name=stock.name,
+        status=item.status,
+        reasons=item.reasons,
+        warnings=item.warnings,
+        checks=build_checks(stock, conditions),
+        conditions=conditions,
+        last_updated=file_mtime_iso(data_reader.csv_path) if data_reader.check_csv_exists() else None,
+        financial_last_updated=file_mtime_iso(financial_path) if financial_path else None,
+    )
 
 
 @router.get("/stocks/{code}", response_model=StockDetailResponse)

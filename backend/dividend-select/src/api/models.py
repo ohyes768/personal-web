@@ -578,6 +578,33 @@ class ScreeningItem(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class ScreeningCheck(BaseModel):
+    """单条筛选条件的逐项判定（阅读页「筛选条件复核」逐条展示用）"""
+    key: str = Field(..., description="稳定标识，如 yield_3y / roe / cagr_3y")
+    label: str = Field(..., description="条件名，如「近三年平均股息率」")
+    # pass=符合；fail=不符合（会被排除）；missing=数据缺失（待补）；warn=只提示不排除
+    result: Literal["pass", "fail", "missing", "warn"]
+    value_text: str = Field("", description="观测值展示文本，如 4.29% / 2023、2024、2025")
+    threshold_text: str = Field("", description="门槛展示文本，如 ≥ 3.5%")
+    detail: str = Field("", description="不符合/缺失/提示的具体说明")
+    # 该条判定对应的失败/缺失事实（进 reasons），提示（进 warnings）留空
+    reason: str = Field("", description="失败或缺失的事实描述")
+    warning: str = Field("", description="提示描述（不参与排除）")
+
+
+class StockScreeningResponse(BaseModel):
+    """单股筛选复核结果：状态 + 原因 + 逐条判定"""
+    code: str
+    name: str
+    status: Literal["eligible", "excluded", "insufficient_data"]
+    reasons: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    checks: list[ScreeningCheck] = Field(default_factory=list)
+    conditions: ScreeningRequest
+    last_updated: Optional[str] = None
+    financial_last_updated: Optional[str] = None
+
+
 class ScreeningResponse(BaseModel):
     items: list[ScreeningItem]
     counts: dict[str, int]

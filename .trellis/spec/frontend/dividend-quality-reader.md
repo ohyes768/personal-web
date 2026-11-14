@@ -7,9 +7,24 @@
 
 ## 1. 边界
 
-- 只改 `apps/dividend` 前端；**不新增后端接口**，不改动 `nginx/web.conf`，不改 `basePath`。
-- 只读：阅读页不提交分析、不轮询任务、不调用 `/api/dividend/quality/*` 下的写接口（analyze / jobs / queue）。
-- 数据源只有一个：`GET /api/dividend/quality` 的 `scores`（全量已落盘结果）。
+- 主体只改 `apps/dividend` 前端；阅读页**新增**一个只读数据源 `GET /api/dividend/stocks/{code}/screening`（单股筛选复核），
+  该接口由本仓库 `backend/dividend-select` 提供，契约见
+  [`../../backend/dividend-select/backend/screening-watchlist-contract.md`](../../backend/dividend-select/backend/screening-watchlist-contract.md)；
+  不改 `nginx/web.conf`，不改 `basePath`。
+- 只读：阅读页不提交分析、不轮询任务、不调用 `/api/dividend/quality/*` 下的写接口（analyze / jobs / queue），
+  **也不发任何非 GET 请求**（筛选复核走 GET + query，不用 POST）。
+- 数据源两个：`GET /api/dividend/quality` 的 `scores`（全量已落盘结果）与单股筛选复核接口（只取当前公司）。
+
+## 1.1 筛选条件复核面板
+
+- 阅读页在公司名/代码之后、报告正文之前展示「筛选条件复核」面板：逐条列出该公司在**当前筛选条件**下的判定
+  （符合 / 不符 / 待补 / 提示），不符行标红并写「不符 · 需复核」，待补行标黄；末尾附后端给出的「未符合原因」与「提示」。
+- 条件来源：选股关注页保存在 `localStorage` 的 `dividend-screening-conditions-v1`（键名由 `src/lib/screening.ts` 的
+  `SCREENING_STORAGE_KEY` 单点定义）；没有保存或损坏时用 `DEFAULT_SCREENING`。面板明示当前用的门槛与来源
+  （「默认条件」/「选股关注页保存的条件」）。
+- 判定规则**不在前端实现**：后端 `screening_service.build_checks` 是唯一口径，`evaluate_stock` 由它派生，
+  因此列表页的「未符合原因」与本页的逐条判定永远一致。
+- 换篇时清空上一家的判定结果再拉取新公司的；拉取失败只让面板显示失败提示，报告正文照常可读。
 
 ## 2. 阅读集合与顺序
 
@@ -63,6 +78,8 @@
 | 正文为空 | 「暂无完整报告正文」，其余结构可读 |
 | 刷新失败 | 非阻断提示 + **保留旧内容** |
 | 刷新时新增/删除结果 | 保留所选 `code`；删除则进入不存在状态 |
+| 筛选复核加载中 | 面板显示「正在按当前筛选条件核对…」，报告正文照常可读 |
+| 筛选复核加载失败 | 面板显示失败提示，报告正文照常可读（不阻断阅读） |
 
 主页面阅读入口**只出现在选股关注（screening）视图**，紧接“评级队列”，在结果工具栏同排，不独占头部行；保持来源查询参数；入口高度与队列按钮一致，窄屏同组局部横向滚动，避免增加独立行。全部与挡位监控视图不显示阅读入口（避免占用垂直高度）；因此主页面入口不会再生成 `fromTab=all` / `fromFav=1` 的返回参数，阅读页仍兼容旧书签与手带参数。
 
@@ -71,12 +88,15 @@
 - 单栏；正文 17px / 行高 1.8；左右 ≥16px 留白（桌面 24px）；控件触摸区域 ≥44px；select 字号 ≥16px（避免手机自动缩放）。
 - 底部翻页栏固定并适配 `env(safe-area-inset-bottom)`；正文底部留白与翻页栏高度共用 CSS 变量。
 - 宽表格与代码块**局部**横滑，不产生整页横向滚动；长链接与长串用 `overflow-wrap` 换行。
+- 「筛选条件复核」面板同样不撑破整页：宽表走 `quality-reader-table-wrap` 局部横滑。
 - 桌面正文限宽 48rem，保持可读行长。
 - 控件有可读名称（`选择公司` / `刷新资料` / `上一篇` / `下一篇`），有 `focus-visible` 轮廓与 `disabled` 状态；进度提示用 `aria-live="polite"`，避免整篇报告被重复朗读。
 
 ## 9. 验证
 
-- 单测：`node --experimental-strip-types --test src/lib/quality-reader.test.ts`（纯函数：排序、code 选择、前缀判定、链接参数白名单）。
-- E2E：`npx playwright test e2e/quality-reader.spec.ts e2e/screening.spec.ts`。写接口必须拦截并断言调用数为 0。
+- 单测：`node --experimental-strip-types --test src/lib/quality-reader.test.ts src/lib/screening.test.ts`
+  （纯函数：排序、code 选择、前缀判定、链接参数白名单、条件存取、逐条判定计数）。
+- E2E：`npx playwright test e2e/quality-reader.spec.ts e2e/screening.spec.ts`。写接口必须拦截并断言调用数为 0；
+  筛选复核接口用 GET mock，断言「不符」标识随当前公司变化、复核失败不阻断正文。
 - 线上前缀用 Playwright route 模拟 nginx 剥前缀转发（**不能用 `**/dividend/**`，会误伤 `/api/dividend/*`**）；真实容器形态仍需按 `docs/dividend-testing-checklist.md` 做部署 smoke。
 - 项目当前**没有 ESLint 配置**，`npm run lint`（`next lint`）会进入交互式向导不可用；`next build` 内建的类型检查可作为替代。

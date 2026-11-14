@@ -54,6 +54,44 @@ const THREE_SCORES: Record<string, ScoreFixture> = {
   '000003': score({ code: '000003', name: '丙公司', report_md: '## 业务验证\n\n正常报告正文。' }),
 };
 
+interface ScreeningCheckFixture {
+  key: string;
+  label: string;
+  result: 'pass' | 'fail' | 'missing' | 'warn';
+  value_text: string;
+  threshold_text: string;
+  detail: string;
+  reason: string;
+  warning: string;
+}
+
+/** 单股筛选复核响应；000002 有一条不符，用来验证阅读页的标识 */
+function screeningFixture(code: string) {
+  const failing = code === '000002';
+  const checks: ScreeningCheckFixture[] = [
+    {
+      key: 'yield_3y', label: '近三年平均股息率', result: failing ? 'fail' : 'pass',
+      value_text: failing ? '4.29%' : '5.10%', threshold_text: '≥ 5%',
+      detail: failing ? '低于门槛 5%，需复核' : '', reason: failing ? '近三年平均股息率低于 5%' : '', warning: '',
+    },
+    {
+      key: 'roe', label: '最近年度 ROE', result: 'pass', value_text: '16.66%', threshold_text: '≥ 10%',
+      detail: '', reason: '', warning: '',
+    },
+  ];
+  return {
+    code,
+    name: code === '000002' ? '乙公司' : '甲公司',
+    status: failing ? 'excluded' : 'eligible',
+    reasons: failing ? ['近三年平均股息率低于 5%'] : [],
+    warnings: [],
+    checks,
+    conditions: { min_yield: 5, min_roe: 10, min_roe_avg_3y: 10, max_quarter_profit_decline_pct: 30, min_cagr_3y: 0 },
+    last_updated: '2026-11-01T10:00:00+08:00',
+    financial_last_updated: '2026-10-30T10:00:00+08:00',
+  };
+}
+
 interface QualityApiState {
   scores: Record<string, ScoreFixture>;
   hermesConfigured: boolean;
@@ -61,6 +99,8 @@ interface QualityApiState {
   /** 第几次请求（0 起）后开始失败 */
   failFromRequest?: number;
   requestCount: number;
+  /** 单股筛选复核是否返回失败 */
+  screeningFails?: boolean;
   /** 记录被拦截的写接口调用 */
   writeCalls: string[];
 }
@@ -90,6 +130,16 @@ async function setupQualityApi(page: Page, state: QualityApiState) {
           scores: state.scores,
         },
       });
+      return;
+    }
+    // 单股筛选复核（只读 GET）
+    if (url.pathname.endsWith('/screening')) {
+      if (state.screeningFails) {
+        await route.fulfill({ status: 500, json: { detail: '筛选复核失败' } });
+        return;
+      }
+      const code = url.pathname.split('/').slice(-2)[0];
+      await route.fulfill({ json: screeningFixture(code) });
       return;
     }
     await route.fulfill({ json: {} });
@@ -255,6 +305,43 @@ test('reader never calls quality write endpoints', async ({ page }) => {
   await page.getByRole('button', { name: '刷新资料' }).click();
   await expect(page.getByRole('heading', { name: '乙公司', exact: true })).toBeVisible();
   expect(state.writeCalls).toEqual([]);
+});
+
+test('reader marks the screening conditions the company does not meet', async ({ page }) => {
+  const state = newState();
+  await setupQualityApi(page, state);
+  await page.goto('/quality-reader?code=000002');
+  await expect(page.getByRole('heading', { name: '筛选条件复核' })).toBeVisible();
+  await expect(page.getByText('未符合', { exact: true })).toBeVisible();
+  await expect(page.getByText('不符 · 需复核')).toBeVisible();
+  await expect(page.getByText('1 项不符合，需复核')).toBeVisible();
+  // 原因来自后端判定，原样展示
+  await expect(page.getByText('近三年平均股息率低于 5%')).toBeVisible();
+  // 门槛与当前值都在表里，阅读时可直接对照
+  await expect(page.getByText('近三年平均股息率').first()).toBeVisible();
+  await expect(page.getByText('4.29%')).toBeVisible();
+  await expect(page.getByText('≥ 5%')).toBeVisible();
+});
+
+test('reader keeps the screening verdict of the company being read', async ({ page }) => {
+  const state = newState();
+  await setupQualityApi(page, state);
+  await page.goto('/quality-reader?code=000001');
+  await expect(page.getByText('符合条件', { exact: true })).toBeVisible();
+  await expect(page.getByText('不符 · 需复核')).toHaveCount(0);
+  // 换篇后复核结论跟着换，不残留上一篇的不符项
+  await page.getByRole('button', { name: '下一篇', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '乙公司', exact: true })).toBeVisible();
+  await expect(page.getByText('未符合', { exact: true })).toBeVisible();
+  await expect(page.getByText('不符 · 需复核')).toHaveCount(1);
+});
+
+test('reading still works when the screening verdict cannot be loaded', async ({ page }) => {
+  const state = newState({ screeningFails: true });
+  await setupQualityApi(page, state);
+  await page.goto('/quality-reader?code=000001');
+  await expect(page.getByRole('heading', { name: '甲公司', exact: true })).toBeVisible();
+  await expect(page.getByText(/筛选复核加载失败/)).toBeVisible();
 });
 
 test('reader layout does not overflow horizontally on phone and desktop', async ({ page }, testInfo) => {

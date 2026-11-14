@@ -11,7 +11,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { QualityReportContent } from './QualityReportContent';
+import { ScreeningCheckPanel } from './ScreeningCheckPanel';
 import { useQualityReports } from '@/lib/hooks/useQualityReports';
+import { useStockScreening } from '@/lib/hooks/useStockScreening';
 import { returnHref, selectReport, sortReports } from '@/lib/quality-reader';
 
 export function QualityReader() {
@@ -34,6 +36,9 @@ export function QualityReader() {
 
   const current = useMemo(() => selectReport(reports, codeParam), [reports, codeParam]);
   const index = current ? reports.findIndex(report => report.code === current.code) : -1;
+
+  /** 当前公司按当前筛选条件的复核结果（只读；与选股关注页同源） */
+  const screening = useStockScreening(current?.code ?? null);
 
   /** 用浏览器真实 pathname 拼当前页 query（保留 fromTab/fromFav，清掉 hash） */
   const buildUrl = useCallback((code: string | null) => {
@@ -169,6 +174,11 @@ export function QualityReader() {
           <article className="quality-reader-article">
             <h2 ref={titleRef} tabIndex={-1} className="quality-reader-company">{current.name}</h2>
             <p className="quality-reader-code">{current.code}</p>
+            <ScreeningCheckPanel
+              data={screening.data}
+              loading={screening.loading}
+              error={screening.error}
+            />
             <QualityReportContent score={current} currentSkillVersion={snapshot?.current_skill_version} />
           </article>
         )}

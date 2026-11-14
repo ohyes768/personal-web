@@ -325,6 +325,46 @@ input[type="number"] {
   color: var(--color-ink-muted);
 }
 
+/* 筛选条件复核面板：逐条判定，不符/待补的行直接标出来 */
+.quality-reader-check {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-rule);
+  border-radius: 12px;
+  background: var(--color-paper-card);
+  font-size: 0.9375rem;
+  line-height: 1.6;
+}
+
+.quality-reader-check .quality-reader-section {
+  margin-top: 0;
+}
+
+.quality-reader-check-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.quality-reader-check-status {
+  display: inline-block;
+  padding: 2px 10px;
+  border: 1px solid;
+  border-radius: 999px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.quality-reader-check-notes {
+  margin-top: 10px;
+}
+
+.quality-reader-check-notes .quality-reader-list {
+  margin-top: 4px;
+}
+
 /* 正文：17px / 1.8，长链接与长串不撑破整页 */
 .quality-reader-content {
   margin-top: 16px;

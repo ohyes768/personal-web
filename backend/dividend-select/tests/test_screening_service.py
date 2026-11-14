@@ -1,6 +1,8 @@
+import pathlib
+
 import pytest
 from src.api.models import DividendStock, ScreeningRequest
-from src.services.screening_service import evaluate_stock
+from src.services.screening_service import evaluate_stock, build_checks
 
 
 def stock(**updates):
@@ -171,3 +173,130 @@ def test_severe_quarter_wins_nonfinite_peer(quarter, missing):
     result = evaluate_stock(stock(**{f"{quarter}_quarter_yoy_pct": -30, f"{peer}_quarter_yoy_pct": missing}), ScreeningRequest())
     assert result.status == "excluded"
     assert any("相邻季度" in reason for reason in result.reasons)
+
+
+# ===== 逐条判定（阅读页「筛选条件复核」） =====
+
+
+def check_by_key(checks, key):
+    return next(check for check in checks if check.key == key)
+
+
+def test_checks_cover_every_screening_condition():
+    checks = build_checks(stock(), ScreeningRequest())
+    keys = [check.key for check in checks]
+    assert keys == [
+        "yield_3y", "dividend_2023", "dividend_2024", "dividend_2025",
+        "roe", "roe_avg_3y", "roe_history", "annual_profit", "annual_profit_year",
+        "annual_yoy", "cagr_3y", "quarter_decline", "quarter_pair",
+    ]
+    assert all(check.result == "pass" for check in checks)
+    assert check_by_key(checks, "yield_3y").value_text == "3.50%"
+    assert check_by_key(checks, "yield_3y").threshold_text == "≥ 3.5%"
+
+
+def test_checks_mark_threshold_breach_and_missing():
+    checks = build_checks(stock(avg_yield_3y=2.0, roe=None), ScreeningRequest())
+    assert check_by_key(checks, "yield_3y").result == "fail"
+    assert check_by_key(checks, "yield_3y").value_text == "2.00%"
+    assert check_by_key(checks, "roe").result == "missing"
+    assert check_by_key(checks, "roe").value_text == "待补"
+
+
+def test_checks_mark_uncomputable_cagr_as_warning_not_failure():
+    checks = build_checks(stock(net_profit_cagr_3y=None), ScreeningRequest())
+    cagr = check_by_key(checks, "cagr_3y")
+    assert cagr.result == "warn"
+    assert cagr.value_text == "不可计算"
+    assert cagr.reason == ""
+
+
+def test_checks_mark_single_negative_quarter_as_warning():
+    checks = build_checks(stock(latest_quarter_yoy_pct=-10), ScreeningRequest())
+    assert check_by_key(checks, "quarter_pair").result == "warn"
+    assert check_by_key(checks, "quarter_decline").result == "pass"
+
+
+def test_checks_keep_reason_order_consistent_with_evaluate_stock():
+    samples = [
+        stock(),
+        stock(avg_yield_3y=1.0, roe=5, roe_avg_3y=2, dividend_2024=0),
+        stock(net_profit_ex_non_recurring_yoy=-1, roe_avg_3y=None),
+        stock(roe_history=[], roe_year=None, annual_profit_year=None),
+        stock(latest_quarter_yoy_pct=-30, previous_quarter_yoy_pct=None),
+        stock(previous_quarter_label="2025Q3", previous_quarter_yoy_pct=-50),
+        stock(net_profit_cagr_3y=-4, latest_quarter_yoy_pct=-10, previous_quarter_yoy_pct=-5),
+    ]
+    for sample in samples:
+        checks = build_checks(sample, ScreeningRequest())
+        item = evaluate_stock(sample, ScreeningRequest())
+        failures = [check.reason for check in checks if check.result == "fail" and check.reason]
+        missing = [check.reason for check in checks if check.result == "missing" and check.reason]
+        warnings = [check.warning for check in checks if check.warning]
+        assert item.reasons == failures + missing
+        assert item.warnings == warnings
+
+
+class _StubReader:
+    """单股复核接口只需要「数据文件是否存在」与 CSV 路径"""
+    csv_path = pathlib.Path("/tmp/does-not-exist.csv")
+
+    def check_csv_exists(self):
+        return False
+
+
+def test_stock_screening_endpoint_returns_checks(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+    monkeypatch.setattr(routes, "_build_single_stock_model", lambda code: stock(code=code, name="东阿阿胶"))
+    monkeypatch.setattr(routes, "find_latest_aux_file", lambda *args: None)
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+    body = client.get("/stocks/000423/screening").json()
+    assert body["code"] == "000423"
+    assert body["name"] == "东阿阿胶"
+    assert body["status"] == "eligible"
+    assert body["conditions"]["min_yield"] == 3.5
+    assert body["conditions"]["min_cagr_3y"] == 0
+    assert [check["key"] for check in body["checks"]][0] == "yield_3y"
+    assert all(check["result"] == "pass" for check in body["checks"])
+
+
+def test_stock_screening_endpoint_uses_requested_thresholds(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+    monkeypatch.setattr(routes, "_build_single_stock_model", lambda code: stock(code=code, avg_yield_3y=4.0))
+    monkeypatch.setattr(routes, "find_latest_aux_file", lambda *args: None)
+    app = FastAPI()
+    app.include_router(routes.router)
+    client = TestClient(app)
+    body = client.get("/stocks/000423/screening", params={"min_yield": 5}).json()
+    assert body["status"] == "excluded"
+    assert any(check["result"] == "fail" and check["key"] == "yield_3y" for check in body["checks"])
+
+
+@pytest.mark.parametrize("params", [{"min_yield": -1}, {"min_roe": 101}, {"max_quarter_profit_decline_pct": 0},
+                                    {"max_quarter_profit_decline_pct": 101}, {"min_cagr_3y": -101}])
+def test_stock_screening_endpoint_validates_thresholds(params):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    app = FastAPI()
+    app.include_router(routes.router)
+    assert TestClient(app).get("/stocks/000423/screening", params=params).status_code == 422
+
+
+def test_stock_screening_endpoint_unknown_code(monkeypatch):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from src.api import routes
+    monkeypatch.setattr(routes, "data_reader", _StubReader())
+    monkeypatch.setattr(routes, "_build_single_stock_model", lambda code: None)
+    app = FastAPI()
+    app.include_router(routes.router)
+    assert TestClient(app).get("/stocks/999999/screening").status_code == 404
