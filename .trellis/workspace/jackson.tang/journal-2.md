@@ -1232,3 +1232,26 @@ v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 80: service-manager 恢复主入口与证书监控
+<!-- trellis-session: v=2 fp=946f38bc2c6db1b2 -->
+
+**Date**: 2026-11-14
+**Task**: service-manager 恢复主入口与证书监控
+**Package**: apps/service-manager
+**Branch**: `master`
+
+### Summary
+
+上一轮砍证书列的依据是「人工表用量为 0」，但后端检查一直在跑、14 个证书全部 valid，只是界面不显示。这一轮捡回监控：列表页恢复「主入口」（行内可编辑 URL）与「证书」（徽章 + 到期天数）两列；后端新增 PUT /services/{id}/primary-endpoint（只收 url，类型与是否查证书按 URL 判定，规则只写一处），列表项带 primary_endpoint。URL/发布维度、域名证书总览页、人工端口、发布动态、组件明细仍下线。验证：后端 pytest 200 passed，前端 tsc/eslint 0 问题，e2e 27 passed / 1 skipped。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `bb57d32e` | feat(service-manager): 恢复主入口与证书监控 |
+
+### Status
+
+[OK] **Completed**
