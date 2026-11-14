@@ -12,6 +12,23 @@ export function StateBadge({ tone, title }: { tone: Tone; title?: string }) {
   );
 }
 
+/** 只在 http/https 时渲染成可点链接，其余退化成纯文本。 */
+export function SafeLink({
+  href,
+  children,
+  ...rest
+}: React.AnchorHTMLAttributes<HTMLAnchorElement> & { href: string }) {
+  const allowed = /^https?:\/\//i.test(href);
+  if (!allowed) {
+    return <span className="mono wrap-anywhere">{href}</span>;
+  }
+  return (
+    <a href={href} target="_blank" rel="noreferrer noopener" {...rest}>
+      {children}
+    </a>
+  );
+}
+
 export function Toast({ message }: { message: string | null }) {
   if (!message) return null;
   return (

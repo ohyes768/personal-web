@@ -54,6 +54,7 @@ from src.models import (
     DiscoveryImportRequest,
     EndpointInput,
     EndpointRecord,
+    PrimaryEndpointInput,
     LoginRequest,
     PortNoteInput,
     PortNoteRecord,
@@ -258,6 +259,17 @@ def delete_service(
 
 
 # ---- 组件绑定 ---------------------------------------------------------------
+
+
+@router.put("/services/{service_id}/primary-endpoint", response_model=EndpointRecord)
+def upsert_primary_endpoint(
+    service_id: str,
+    payload: PrimaryEndpointInput,
+    _: WriteDep,
+    registry: Annotated[Registry, Depends(get_registry)],
+) -> EndpointRecord:
+    """登记/更新主入口：只收 URL，类型与是否查证书由后端按 URL 判定。"""
+    return registry.upsert_primary_endpoint(service_id, payload.url)
 
 
 @router.post("/services/{service_id}/components/{source_key}/required")

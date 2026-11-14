@@ -122,6 +122,14 @@ tr:last-child td { border-bottom: none; }
 .btn-mini { padding: 2px 8px; font-size: 12px; min-height: 26px; }
 .btn-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
+/* 主入口单元���：URL + 「改/登记」小按钮 */
+.entry-cell {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: baseline;
+}
+
 /* 行内编辑（名称 + 用途）：直接在列表行里改 */
 .inline-edit {
   display: flex;

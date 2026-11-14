@@ -191,16 +191,17 @@ test("资源总览只剩端口视图（域名与证书已下线）", async ({ pa
   await expect(page.getByRole("columnheader", { name: "端口" })).toBeVisible();
 });
 
-test("详情页已下线：路由 404，列表页没有详情/主入口/巡检", async ({ page }) => {
+test("详情页仍下线：路由 404，列表页没有详情/打开/巡检", async ({ page }) => {
   await login(page);
   await page.goto("/services");
-  // 列表页只剩运行与健康两个状态维度
+  // 列表页的状态维度：运行 + 健康（URL/发布维度不展示）
   await expect(page.getByRole("columnheader", { name: "运行" })).toBeVisible();
   await expect(page.getByRole("columnheader", { name: "健康" })).toBeVisible();
-  await expect(page.getByRole("columnheader", { name: "主入口" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "URL" })).toHaveCount(0);
-  await expect(page.getByRole("columnheader", { name: "证书" })).toHaveCount(0);
   await expect(page.getByRole("columnheader", { name: "发布" })).toHaveCount(0);
+  // 主入口与证书列在（可维护 URL、能看证书到期）
+  await expect(page.getByRole("columnheader", { name: "主入口" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "证书" })).toBeVisible();
   // 没有「巡检」「详情」「打开」
   await expect(page.getByRole("button", { name: "巡检" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "详情" })).toHaveCount(0);
@@ -209,6 +210,42 @@ test("详情页已下线：路由 404，列表页没有详情/主入口/巡检",
   // 直接访问详情页路由 → 404
   const response = await page.goto("/services/service/whatever-id");
   expect(response?.status()).toBe(404);
+});
+
+test("主入口可行内登记，证书列出现状态", async ({ page }) => {
+  await login(page);
+  const name = `e2e-入口-${Date.now()}`;
+  const created = await page.request.post("/api/services/services", {
+    headers: { Origin: new URL(page.url()).origin },
+    data: { name },
+  });
+  expect(created.ok()).toBeTruthy();
+  const serviceId = ((await created.json()) as { id: string }).id;
+  createdServiceIds.push(serviceId);
+
+  await page.goto("/services");
+  await page.getByLabel("搜索服务").fill(name);
+  const row = page.locator(`tr[data-service-id="${serviceId}"]`);
+  // 没有入口时是中性文案 + 「登记」
+  await expect(row.getByText("无对外入口")).toBeVisible();
+
+  await row.getByRole("button", { name: /登记/ }).click();
+  await row.getByRole("textbox", { name: "主入口 URL" }).fill("https://web.duomi77.cn:9443/e2e");
+  await row.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByText("主入口已保存")).toBeVisible();
+
+  // URL 显示出来了；证书列先「未检查」（检查是异步的，不在这里断言最终状态）
+  await expect(row.getByText("https://web.duomi77.cn:9443/e2e")).toBeVisible();
+  await expect(row.locator("td").nth(4)).toContainText("未检查");
+});
+
+test("证书列存在且存量 https 入口显示有效", async ({ page }) => {
+  await login(page);
+  await page.goto("/services");
+  await expect(page.getByRole("columnheader", { name: "证书" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "主入口" })).toBeVisible();
+  // 存量的 https 入口有真实的证书状态（不是「未检查」）
+  await expect(page.getByText("有效").first()).toBeVisible();
 });
 
 test("发现页展示候选表格（或明确的不可用提示）", async ({ page }) => {

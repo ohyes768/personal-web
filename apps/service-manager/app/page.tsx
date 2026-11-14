@@ -10,9 +10,17 @@ import {
 } from "@/lib/api";
 import { describeJob, waitForJob } from "@/lib/jobs";
 import { matchesTags } from "@/lib/tagFilter";
-import { formatRelative, healthTooltip, HEALTH, RUNTIME } from "@/lib/status";
+import {
+  formatRelative,
+  healthTooltip,
+  HEALTH,
+  RUNTIME,
+  tlsEndpointTooltip,
+  tlsInvalidReason,
+  tlsTone,
+} from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
-import { Spinner, StateBadge, Toast } from "@/components/Widgets";
+import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
 import { TagBadge } from "@/components/TagBadge";
 import { TagEditor } from "@/components/TagEditor";
 import { TagFilterBar } from "@/components/TagFilterBar";
@@ -38,6 +46,10 @@ function ServiceList() {
   const [editingInfo, setEditingInfo] = useState<ServiceListItem | null>(null);
   const [infoDraft, setInfoDraft] = useState({ name: "", description: "" });
   const [savingInfo, setSavingInfo] = useState(false);
+  // 主入口 URL 的行内编辑（点一下变输入框，回车/失焦保存）
+  const [editingUrl, setEditingUrl] = useState<string | null>(null);
+  const [urlDraft, setUrlDraft] = useState("");
+  const [savingUrl, setSavingUrl] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -177,6 +189,35 @@ function ServiceList() {
       setToast(caught instanceof ApiError ? caught.message : "保存失败");
     } finally {
       setSavingInfo(false);
+    }
+  }
+
+  async function saveUrl(item: ServiceListItem) {
+    const url = urlDraft.trim();
+    if (!url) {
+      setToast("主入口 URL 不能为空");
+      return;
+    }
+    if (item.primary_endpoint?.url === url) {
+      setEditingUrl(null);
+      return;
+    }
+    setSavingUrl(true);
+    try {
+      await api.upsertPrimaryEndpoint(item.id, url);
+      setEditingUrl(null);
+      setToast("主入口已保存，证书状态稍后更新");
+      await load();
+      // 触发一次该服务的证书检查，别让用户干等下一轮定时
+      try {
+        await api.refresh("tls", item.id);
+      } catch {
+        // 检查提交失败不影响保存结果
+      }
+    } catch (caught) {
+      setToast(caught instanceof ApiError ? caught.message : "保存主入口失败");
+    } finally {
+      setSavingUrl(false);
     }
   }
 
@@ -357,8 +398,10 @@ function ServiceList() {
             <thead>
               <tr>
                 <th>服务</th>
+                <th>主入口</th>
                 <th>运行</th>
                 <th>健康</th>
+                <th title="HTTPS 证书：有没有人信它、什么时候到期">证书</th>
                 <th>操作</th>
               </tr>
             </thead>
@@ -435,6 +478,81 @@ function ServiceList() {
                     </div>
                   </td>
                   <td>
+                    {editingUrl === item.id ? (
+                      <div className="inline-edit">
+                        <input
+                          value={urlDraft}
+                          onChange={(event) => setUrlDraft(event.target.value)}
+                          onKeyDown={(event) => {
+                            if (event.key === "Enter") {
+                              event.preventDefault();
+                              void saveUrl(item);
+                            }
+                            if (event.key === "Escape") setEditingUrl(null);
+                          }}
+                          onBlur={() => void saveUrl(item)}
+                          aria-label="主入口 URL"
+                          placeholder="https://…"
+                          autoFocus
+                        />
+                        <div className="btn-row">
+                          <button
+                            className="btn btn-mini primary"
+                            type="button"
+                            disabled={savingUrl}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => void saveUrl(item)}
+                          >
+                            {savingUrl ? "保存中…" : "保存"}
+                          </button>
+                          <button
+                            className="btn btn-mini"
+                            type="button"
+                            disabled={savingUrl}
+                            onMouseDown={(event) => event.preventDefault()}
+                            onClick={() => setEditingUrl(null)}
+                          >
+                            取消
+                          </button>
+                        </div>
+                      </div>
+                    ) : item.primary_endpoint ? (
+                      <div className="entry-cell">
+                        <SafeLink href={item.primary_endpoint.url} className="mono wrap-anywhere">
+                          {item.primary_endpoint.url}
+                        </SafeLink>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => {
+                            setEditingUrl(item.id);
+                            setUrlDraft(item.primary_endpoint?.url ?? "");
+                          }}
+                          aria-label={`编辑「${item.name}」的主入口`}
+                        >
+                          改
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="entry-cell">
+                        <span className="muted small">
+                          无对外入口
+                        </span>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => {
+                            setEditingUrl(item.id);
+                            setUrlDraft("");
+                          }}
+                          aria-label={`登记「${item.name}」的主入口`}
+                        >
+                          登记
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                  <td>
                     <StateBadge tone={RUNTIME[item.status.runtime]} />
                     <div className="small muted">{item.component_count} 个组件</div>
                   </td>
@@ -443,6 +561,32 @@ function ServiceList() {
                       tone={HEALTH[item.status.health]}
                       title={healthTooltip(undefined, item.status.health)}
                     />
+                  </td>
+                  <td>
+                    {item.primary_endpoint?.tls_check ? (
+                      <>
+                        <StateBadge
+                          tone={tlsTone(
+                            (item.primary_endpoint.tls_state ?? "unknown") as never,
+                            item.primary_endpoint.tls_invalid_reason,
+                          )}
+                          title={tlsEndpointTooltip(item.primary_endpoint)}
+                        />
+                        {item.primary_endpoint.tls_days_remaining !== null &&
+                        item.primary_endpoint.tls_days_remaining >= 0 ? (
+                          <div className="small muted">
+                            {item.primary_endpoint.tls_days_remaining} 天
+                          </div>
+                        ) : null}
+                        {item.primary_endpoint.tls_invalid_reason ? (
+                          <div className="small muted">
+                            {tlsInvalidReason(item.primary_endpoint.tls_invalid_reason)}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <span className="muted small">-</span>
+                    )}
                   </td>
                   <td>
                     <div className="row-actions">

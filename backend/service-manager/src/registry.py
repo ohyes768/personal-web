@@ -22,9 +22,11 @@ from src.errors import bad_request, conflict, not_found
 from src.models import (
     ComponentOverrideInput,
     EndpointInput,
+    EndpointKind,
     EndpointRecord,
     PortNoteInput,
     PortNoteRecord,
+    PrimaryEndpointView,
     ReleaseSourceInput,
     ReleaseSourceRecord,
     ServiceCreate,
@@ -157,6 +159,7 @@ class Registry:
             clauses.append("s.tags LIKE ?")
             params.append(f'%"{tag}"%')
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        primary_views = self.primary_endpoint_views()
         with self.store.read() as conn:
             total = int(
                 conn.execute(
@@ -200,6 +203,7 @@ class Registry:
                         revision=service["revision"],
                         updated_at=service["updated_at"],
                         primary_url=primary,
+                        primary_endpoint=primary_views.get(service["id"]),
                         component_count=component_count,
                     )
                 )
@@ -579,6 +583,101 @@ class Registry:
             if cur.rowcount == 0:
                 raise not_found("入口不存在")
             Store.bump_registry_revision(conn)
+
+    # ------------------------------------------------------------------
+    # 主入口（列表页用）
+    # ------------------------------------------------------------------
+
+    def primary_endpoints(self) -> dict[str, EndpointRecord]:
+        """service_id → 它的主入口（external 优先，否则第一个）。
+
+        一服务一入口是既有的用法（20 条入口覆盖 20 条服务）。
+        """
+        buckets: dict[str, list[EndpointRecord]] = {}
+        for endpoint in self.list_endpoints(only_enabled=True):
+            buckets.setdefault(endpoint.service_id, []).append(endpoint)
+        result: dict[str, EndpointRecord] = {}
+        for service_id, items in buckets.items():
+            external = [item for item in items if item.kind == EndpointKind.EXTERNAL]
+            result[service_id] = (external or items)[0]
+        return result
+
+    def primary_endpoint_views(self) -> dict[str, PrimaryEndpointView]:
+        """service_id → 主入口视图（含证书状态与到期天数）。
+
+        证书状态来自最近一次 TLS 检查；没查过就是 unknown（前端显示「未检查」）。
+        """
+        checks = self.tls_checks()
+        views: dict[str, PrimaryEndpointView] = {}
+        for service_id, endpoint in self.primary_endpoints().items():
+            check = checks.get(endpoint.id, {})
+            payload = check.get("payload") or {}
+            days = payload.get("days_remaining")
+            views[service_id] = PrimaryEndpointView(
+                id=endpoint.id,
+                url=endpoint.url,
+                label=endpoint.label,
+                kind=endpoint.kind,
+                tls_check=endpoint.tls_check,
+                tls_state=str(check.get("state") or "unknown"),
+                tls_days_remaining=int(days) if isinstance(days, (int, float)) else None,
+                tls_not_after=payload.get("not_after"),
+                tls_invalid_reason=payload.get("invalid_reason"),
+            )
+        return views
+
+    def tls_checks(self) -> dict[str, dict[str, Any]]:
+        """endpoint_id → 最近一次 TLS 检查的 {state, payload, error}。"""
+        with self.store.read() as conn:
+            rows = conn.execute(
+                "SELECT target_id, check_status, current_state, last_success_payload,"
+                " error_message FROM check_results WHERE check_kind = 'tls'"
+            ).fetchall()
+        result: dict[str, dict[str, Any]] = {}
+        for row in rows:
+            payload: dict[str, Any] = {}
+            if row["last_success_payload"]:
+                try:
+                    payload = json.loads(row["last_success_payload"])
+                except json.JSONDecodeError:
+                    payload = {}
+            result[row["target_id"]] = {
+                "status": row["check_status"],
+                "state": row["current_state"] or "unknown",
+                "payload": payload,
+                "error": row["error_message"],
+            }
+        return result
+
+    def upsert_primary_endpoint(self, service_id: str, url: str) -> EndpointRecord:
+        """按 URL 登记/更新主入口。
+
+        类型与是否查证书**按 URL 自动判定**（规则只写这一处）：
+        - 内网地址（192.168 / 10. / 172.16-31.）→ internal，不查证书
+        - 其余 → external；`https` 才查证书
+        """
+        parsed = parse_http_url(url)
+        kind = (
+            EndpointKind.INTERNAL
+            if parsed.host.startswith(("192.168.", "10.", "172."))
+            else EndpointKind.EXTERNAL
+        )
+        tls_check = parsed.scheme == "https"
+        existing = self.primary_endpoints().get(service_id)
+        payload = EndpointInput(
+            label=existing.label if existing else "",
+            kind=kind,
+            url=url,
+            probe_url=existing.probe_url if existing else None,
+            enabled=True,
+            expected_status_ranges=existing.expected_status_ranges if existing else [],
+            tls_check=tls_check,
+            route_target=existing.route_target if existing else None,
+            renewal_note=existing.renewal_note if existing else "",
+        )
+        if existing is None:
+            return self.add_endpoint(service_id, payload)
+        return self.update_endpoint(service_id, existing.id, payload)
 
     def list_endpoints(self, *, only_enabled: bool = False) -> list[EndpointRecord]:
         sql = "SELECT * FROM endpoints"

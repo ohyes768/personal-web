@@ -72,6 +72,20 @@ export interface PortView {
   source: "docker" | "manual";
 }
 
+/** 主入口（列表页的「主入口」与「证书」两列的数据源）。 */
+export interface PrimaryEndpointView {
+  id: string;
+  url: string;
+  label: string;
+  kind: "internal" | "external" | "admin";
+  tls_check: boolean;
+  /** 证书状态：valid / expiring / expired / invalid / unknown */
+  tls_state: string;
+  tls_days_remaining: number | null;
+  tls_not_after: string | null;
+  tls_invalid_reason: string | null;
+}
+
 /** 写操作（新建 / 改标签 / 改名称用途）之后前端要用到的字段。 */
 export interface ServicePatchResult {
   id: string;
@@ -89,6 +103,8 @@ export interface ServiceListItem {
   revision: number;
   updated_at: string;
   primary_url: string | null;
+  /** 主入口（含证书状态）；没有登记入口时为 null */
+  primary_endpoint: PrimaryEndpointView | null;
   component_count: number;
   /** 该服务包含的 compose 项目（来源信息，不再决定分组） */
   projects: string[];
@@ -251,6 +267,12 @@ export const api = {
     request<ServicePatchResult>("/services", { method: "POST", body: JSON.stringify(body) }),
   patchService: (id: string, body: Record<string, unknown>) =>
     request<ServicePatchResult>(`/services/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
+  /** 登记/更新主入口：只收 URL，类型与是否查证书由后端按 URL 判定。 */
+  upsertPrimaryEndpoint: (serviceId: string, url: string) =>
+    request<{ id: string; url: string; kind: string; tls_check: boolean }>(
+      `/services/${serviceId}/primary-endpoint`,
+      { method: "PUT", body: JSON.stringify({ url }) },
+    ),
   deleteService: (id: string) =>
     request<{ deleted: string }>(`/services/${id}`, { method: "DELETE" }),
 

@@ -283,6 +283,29 @@ class EndpointRecord(EndpointInput):
     revision: int
 
 
+class PrimaryEndpointInput(BaseModel):
+    """行内改主入口：只收 URL，类型与是否查证书由后端按 URL 判定。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(min_length=1, max_length=2048)
+
+
+class PrimaryEndpointView(BaseModel):
+    """列表页要显示的主入口信息（含证书状态）。"""
+
+    id: str
+    url: str
+    label: str = ""
+    kind: EndpointKind = EndpointKind.EXTERNAL
+    tls_check: bool = True
+    # 证书状态：valid / expiring / expired / invalid / unknown
+    tls_state: str = "unknown"
+    tls_days_remaining: int | None = None
+    tls_not_after: str | None = None
+    tls_invalid_reason: str | None = None
+
+
 class PortNoteInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -360,6 +383,8 @@ class ServiceListItem(BaseModel):
     revision: int
     updated_at: str
     primary_url: str | None = None
+    # 主入口（含证书状态）；没有登记入口时为 None
+    primary_endpoint: PrimaryEndpointView | None = None
     component_count: int = 0
     # 该服务包含的 compose 项目（来源信息，不再决定分组）
     projects: list[str] = Field(default_factory=list)

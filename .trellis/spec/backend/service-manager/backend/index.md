@@ -138,15 +138,18 @@
 |------|---------|
 | `GET /api/services/{id}`（服务详情） | 仍可用（200） |
 | 入口 CRUD（`/services/{id}/endpoints*`） | 仍可用；20 条入口数据仍在库里 |
+| `PUT /services/{id}/primary-endpoint` | **新增**：只收 `url`，按 URL 判定 kind/tls_check 并 upsert（列表页行内改 URL 用它） |
 | 人工端口（`port-notes`）、发布源（`release-source`）、`/services/{id}/releases` | 仍可用 |
 | URL / TLS / Release 检查（`checker.py`、`checks/`） | **仍在跑**（巡检接口仍可用），只是前端不再展示 URL/证书/发布三个维度 |
 | 资源总览的 `/resources/domains`、`/resources/certificates` | 仍可用（数据源是入口） |
 
 要点：
 
-- **下线的是界面，不是检查**：后端仍会检查各入口的 URL 与证书并写 `check_results`；
-  前端不再展示这三个维度（`ServiceStatus` 的前端类型已裁到 runtime + health）。
-  以后要接回 URL/证书显示，接口与数据都是现成的。
+- **下线的是界面，不是检查**：后端仍会检查各入口的 URL 与证书并写 `check_results`。
+  2026-11-14 起列表页**恢复**了「主入口」与「证书」两列（URL 行内可编辑，证书显示状态与到期天数）；
+  **URL / 发布**两个维度仍不展示（发布没有任何仓库关联，显示只会是假状态）。
+- `GET /api/services` 的每项带 `primary_endpoint`（url/label/kind/tls_check + 证书状态与到期天数）；
+  主入口的选取规则与既有行为一致：**external 优先，否则第一个**。
 - **备份格式不变**：导出仍含 endpoints / port_notes / release_sources；
   旧备份恢复照旧能用。
 - 分类（category）与归属（ownership）两列已删，导出用**显式列名**（不再 `SELECT *`）。
