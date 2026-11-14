@@ -48,6 +48,28 @@ PEER_PERIOD = "近3年"
 PEER_STALE_DAYS = 90          # as_of_date 距今超过 90 天视为无数据
 _PEER_QUERY_CHUNK = 500       # SQLite 参数上限防御，批量 in_ 分块
 
+# v3 年度同类排名口径（11-14-sharpe-board-v3-yearly-peer）
+# 年度业绩排名是「某自然年的最终排名」，历史固定值 —— 与阶段业绩的滚动排名不同，
+# 后者标题是「截至今天」、每次调用会变。实测：库内 as_of=2026-09-09 的 2023 年
+# 排名与 2026-11-14 实时接口值逐字一致（3456/4165），故可安全用于历史回溯。
+YEARLY_PERIOD_KIND = "年度业绩"
+YEARLY_WINDOW = 3             # 取最近 3 个「已完成」自然年度
+MIN_YEARLY_TOP_PCT = 25.0     # 单年分位 ≤25%（前 25%）算该年达标
+MIN_YEARLY_YEARS = 2          # 3 年中至少 2 年达标
+
+def yearly_window(ref_year: int | None = None, *, window: int = YEARLY_WINDOW) -> list[str]:
+    """最近 window 个「已完成」自然年度（升序字符串）。
+
+    今年未结束 → 从 ref_year-1 往前数。
+      2026 → ["2023","2024","2025"]
+      2027 → ["2024","2025","2026"]
+    排除当年是刻意设计：当年只过了几个月，年度排名是「今年以来」的不完整
+    排名，与完整年度不可比（用户明确要求「除开今年往前三年」）。
+    """
+    if ref_year is None:
+        ref_year = date.today().year
+    return [str(y) for y in range(ref_year - window, ref_year)]
+
 
 @dataclass
 class SharpeRunCapture:
@@ -185,5 +207,84 @@ def freeze_peer_rows(db: Session, codes: list[str], *, today: date | None = None
                 "peer_pct": pct,
                 "peer_raw": raw,
                 "as_of": as_of.isoformat(),
+            }
+    return out
+
+
+def freeze_yearly_peer_rows(
+    db: Session,
+    codes: list[str],
+    *,
+    ref_year: int | None = None,
+    top_pct: float = MIN_YEARLY_TOP_PCT,
+    min_years: int = MIN_YEARLY_YEARS,
+) -> dict[str, dict]:
+    """批量冻结「最近 N 个完整年度」的同类排名分位与达标情况（v3 唯一 peer 来源）。
+
+    与 v2 的 freeze_peer_rows 的区别：
+      - 用「年度业绩」而非「阶段业绩·近3年」（后者是滚动值，不可回溯）
+      - **不做 as_of 陈旧判断**：年度排名是历史事实，不存在「过期」
+      - 达标与否在冻结时算好（qualified/qualified_years），谓词只读布尔
+
+    为什么达标要在冻结阶段算：谓词是纯函数、只做数值比较；阈值随 profile 版本
+    可能变。把「当时用什么阈值、算出了什么」连同证据一起冻结，符合
+    contracts §13「发布只读本轮冻结证据」的契约。
+
+    一次批量 in_ 查询（500 codes 分块），禁止 per-code 查询。
+
+    返回 {code: {
+        "years": {"2023": 8.2, "2024": None, "2025": 12.5},  # 分位或 None
+        "qualified_years": 2,       # 分位 ≤ top_pct 的年数
+        "yearly_top_pct": 25.0,     # 本轮阈值快照
+        "min_years": 2,             # 本轮达标年数门槛快照
+        "qualified": True,          # qualified_years >= min_years
+        "window": ["2023", "2024", "2025"],
+    }}
+    只有「至少一年有有效排名」的 code 才入字典；完全无数据的 code 不入
+    （= 无证据 → 谓词不命中，并由发布侧计入 gate_missing 诊断）。
+    """
+    window = yearly_window(ref_year)
+    out: dict[str, dict] = {}
+
+    for start in range(0, len(codes), _PEER_QUERY_CHUNK):
+        chunk = codes[start:start + _PEER_QUERY_CHUNK]
+        if not chunk:
+            continue
+        rows = db.execute(
+            select(
+                FundAchievementRank.code,
+                FundAchievementRank.period,
+                FundAchievementRank.peer_rank,
+            ).where(
+                FundAchievementRank.code.in_(chunk),
+                FundAchievementRank.period_kind == YEARLY_PERIOD_KIND,
+                FundAchievementRank.period.in_(window),
+            )
+        ).all()
+
+        # code → {year: pct or None}
+        by_code: dict[str, dict[str, float | None]] = {}
+        for code, period, raw in rows:
+            if code not in by_code:
+                by_code.setdefault(code, {})
+            # 同一年可能有多行（不同 as_of 快照）：取第一个有效分位即可，
+            # 年度排名本身是固定值，重复行是同值冗余。
+            if by_code[code].get(period) is None:
+                by_code[code][period] = _parse_peer_percentile(raw)
+
+        for code, year_pcts in by_code.items():
+            years = {y: year_pcts.get(y) for y in window}
+            if all(v is None for v in years.values()):
+                continue  # 窗口内全无有效数据 → 不入字典
+            qualified_years = sum(
+                1 for v in years.values() if v is not None and v <= top_pct
+            )
+            out[code] = {
+                "years": years,
+                "qualified_years": qualified_years,
+                "yearly_top_pct": top_pct,
+                "min_years": min_years,
+                "qualified": qualified_years >= min_years,
+                "window": list(window),
             }
     return out

@@ -56,7 +56,7 @@ test('URL 参数往返：非默认值全部保留', () => {
   const filters = {
     ...DEFAULT_SHARPE_FILTERS,
     source: 'stock' as const,
-    profileVersion: 'v1',  // 非默认值（默认已切 v2）
+    profileVersion: 'v1',  // 非默认值（默认已切 v3）
     minLatestSharpe: 0.9,
     minWeeks: 3,
     latestOnly: true,
@@ -98,7 +98,7 @@ test('请求查询串始终显式携带 source/range/分页', () => {
   const q = sharpeFiltersToQuery(DEFAULT_SHARPE_FILTERS);
   const params = new URLSearchParams(q);
   assert.equal(params.get('source'), 'discovery-stock');
-  assert.equal(params.get('profile_version'), 'v2');  // 默认已切 v2
+  assert.equal(params.get('profile_version'), 'v3');  // 默认已切 v3
   assert.equal(params.get('range'), 'all');
   assert.equal(params.get('page'), '1');
   assert.equal(params.get('limit'), '50');
@@ -213,8 +213,27 @@ test('describeEntryFilters：v2 三道新门全部渲染', () => {
   assert.ok(parts.includes('近三年夏普 ≥ 0.8'));
 });
 
-test('默认筛选使用 v2 规则版本', () => {
-  assert.equal(DEFAULT_SHARPE_FILTERS.profileVersion, 'v2');
+test('默认筛选使用 v3 规则版本', () => {
+  assert.equal(DEFAULT_SHARPE_FILTERS.profileVersion, 'v3');
   const q = sharpeFiltersToQuery(DEFAULT_SHARPE_FILTERS);
-  assert.equal(new URLSearchParams(q).get('profile_version'), 'v2');
+  assert.equal(new URLSearchParams(q).get('profile_version'), 'v3');
+});
+
+test('describeEntryFilters：v3 年度同类排名门槛文案', () => {
+  const profile = {
+    ...response().profile,
+    version: 'v3',
+    filters: {
+      ...response().profile.filters,
+      min_ir: 0.5,
+      min_sample_days: 700,
+      min_yearly_top_pct: 25,
+      min_yearly_years: 2,
+    },
+  };
+  delete (profile.filters as Record<string, unknown>).max_peer_pct;
+  const parts = describeEntryFilters(profile);
+  assert.ok(parts.includes('近 3 个完整年度中至少 2 年同类排名前 25%'));
+  // 不再出现 v2 的滚动口径文案
+  assert.ok(!parts.some(p => p.includes('近三年同类排名前')));
 });

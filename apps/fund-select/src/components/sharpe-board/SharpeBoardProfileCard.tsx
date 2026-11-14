@@ -35,6 +35,16 @@ export function SharpeBoardProfileCard({ profile }: { profile: SharpeBoardProfil
       </p>
       <p className="mt-1">
         <span className="inline-flex items-center rounded bg-info-tint px-1.5 py-0.5 font-medium text-info">
+          同类排名口径
+        </span>
+        <span className="ml-2">
+          {profile.filters.min_yearly_years !== undefined
+            ? `最近 3 个完整年度（不含当年）中至少 ${profile.filters.min_yearly_years} 年排前 ${profile.filters.min_yearly_top_pct}%；年度排名是历史固定值，因此可回溯。`
+            : '沿用滚动口径（近三年分位）。'}
+        </span>
+      </p>
+      <p className="mt-1">
+        <span className="inline-flex items-center rounded bg-info-tint px-1.5 py-0.5 font-medium text-info">
           统计口径：近 52 周（约 1 年）
         </span>
         <span className="ml-2">

@@ -44,6 +44,8 @@ WEEK_STATUSES = {STATUS_COMPLETE, STATUS_FAILED, STATUS_SKIPPED_NO_NEW_DATA}
 ALGORITHM_VERSION = "risk-3y-v1"
 # v2：入选门槛加 IR / 样本天数 / 同类分位三道门（11-13-sharpe-board-v2-rules）
 ALGORITHM_VERSION_V2 = "risk-3y-v2"
+# v3：同类分位改用年度口径（11-14-sharpe-board-v3-yearly-peer）
+ALGORITHM_VERSION_V3 = "risk-3y-v3"
 
 # 入选条件（PRD 首版工程默认值），参数名与 FilterService 对齐，供后续步骤共用谓词
 _ENTRY_FILTERS = {
@@ -62,6 +64,16 @@ _V2_EXTRA_FILTERS = {
     "max_peer_pct": 20.0,   # 近 3 年同类排名前 20%（分位 ≤20%）
 }
 
+# v3：把 v2 的滚动同类分位（max_peer_pct）换成年度口径。
+# 年度排名是历史固定值，故周榜历史可回溯（v2 的滚动排名不行）。
+# 实测（2026-11-14，当前 36 只 v2 成员）：前25%至少2年 → 保留 29 只（81%）。
+_V3_EXTRA_FILTERS = {
+    "min_ir": 0.5,             # 沿用 v2：信息比率 ≥0.5
+    "min_sample_days": 700,    # 沿用 v2：样本交易日 ≥700
+    "min_yearly_top_pct": 25.0,  # 单年同类分位 ≤25% 算该年达标
+    "min_yearly_years": 2,     # 最近 3 个完整年度中至少 2 年达标
+}
+
 # 市场来源采集预筛（weekly_refresh 现值）
 _MARKET_PREFILTERS = {"min_ret_3y": 20, "min_size_yi": 5, "min_mgr_exp": 5}
 
@@ -69,6 +81,17 @@ _MARKET_PREFILTERS = {"min_ret_3y": 20, "min_size_yi": 5, "min_mgr_exp": 5}
 def _entry_filters() -> dict:
     """v1 五条件深拷贝（v1 profile 与 v2 的基底都用这一份，勿单改）。"""
     return copy.deepcopy(_ENTRY_FILTERS)
+
+
+def _v3_filters() -> dict:
+    """v1 五条件 + v3 四道门（IR/样本天数/年度分位阈值/年度达标年数）。
+
+    注意：v3 **不含** max_peer_pct（滚动口径），改用 min_yearly_* 两个参数。
+    两者不可混用，语义不同（单分位 ≤X vs N年中M年达标）。
+    """
+    filters = _entry_filters()
+    filters.update(copy.deepcopy(_V3_EXTRA_FILTERS))
+    return filters
 
 
 def _v2_filters() -> dict:
@@ -114,6 +137,22 @@ SHARPE_BOARD_PROFILES: dict[tuple[str, str], dict] = {
         "collection_prefilters": dict(_MARKET_PREFILTERS),
         "market_subtypes": list(DISCOVERY_STOCK_SUBTYPES),
         "algorithm_version": ALGORITHM_VERSION_V2,
+    },
+    ("stock", "v3"): {
+        "source": "stock",
+        "version": "v3",
+        "filters": _v3_filters(),
+        "collection_prefilters": {},
+        "market_subtypes": None,
+        "algorithm_version": ALGORITHM_VERSION_V3,
+    },
+    ("discovery-stock", "v3"): {
+        "source": "discovery-stock",
+        "version": "v3",
+        "filters": _v3_filters(),
+        "collection_prefilters": dict(_MARKET_PREFILTERS),
+        "market_subtypes": list(DISCOVERY_STOCK_SUBTYPES),
+        "algorithm_version": ALGORITHM_VERSION_V3,
     },
 }
 
@@ -358,15 +397,21 @@ def publish_week_board(
         return row, True
 
     diagnostics: dict = dict(capture.diagnostics)
-    predicate = entry_predicate(**profile["filters"])
+    prof_filters = profile["filters"]
+    # min_yearly_top_pct 不是谓词参数：它是冻结阶段算 qualified_years 用的阈值
+    # （已随 peer_rows 冻结），谓词只需读算好的 qualified_years。
+    predicate_kwargs = {
+        k: v for k, v in prof_filters.items() if k != "min_yearly_top_pct"
+    }
+    predicate = entry_predicate(**predicate_kwargs)
     subtypes = profile.get("market_subtypes")
     subtype_set = set(subtypes) if subtypes is not None else None
-    # v2 三道门所需字段（v1 profile 不含这些参数 → 谓词整段跳过，行为不变）
-    v2_filters = profile["filters"]
+    # 三道门前置值（v1 profile 不含这些参数 → 谓词整段跳过，行为不变）
     gates = {
-        "ir": v2_filters.get("min_ir"),
-        "sample_days": v2_filters.get("min_sample_days"),
-        "peer": v2_filters.get("max_peer_pct"),
+        "ir": prof_filters.get("min_ir"),
+        "sample_days": prof_filters.get("min_sample_days"),
+        "peer": prof_filters.get("max_peer_pct"),          # v2 滚动口径
+        "yearly": prof_filters.get("min_yearly_years"),    # v3 年度口径
     }
 
     selected: list[dict] = []
@@ -383,16 +428,18 @@ def publish_week_board(
         if subtype_set is not None and base.get("market_subtype") not in subtype_set:
             continue
         peer = capture.peer_rows.get(code)
-        # v2 诊断：区分「数据缺失」与「不达标」。缺失单独记，不达标不记
+        # 诊断：区分「数据缺失」与「不达标」。缺失单独记，不达标不记
         # （不达标是正常筛选结果，进诊断会淹没真正的采集问题）。
         for gate_name, threshold in gates.items():
             if threshold is None:
                 continue
-            value = {
-                "ir": risk.get("ir"),
-                "sample_days": risk.get("sample_days"),
-                "peer": (peer or {}).get("peer_pct"),
-            }[gate_name]
+            if gate_name == "peer":
+                value = (peer or {}).get("peer_pct")
+            elif gate_name == "yearly":
+                # 年度口径：qualified_years 缺失才算「无证据」
+                value = (peer or {}).get("qualified_years")
+            else:
+                value = risk.get(gate_name)
             if value is None:
                 gate_missing.setdefault(gate_name, []).append(code)
         pred_input = {
@@ -400,7 +447,8 @@ def publish_week_board(
             "sharpe": risk.get("sharpe"),
             "ir": risk.get("ir"),
             "sample_days": risk.get("sample_days"),
-            "peer_pct": (peer or {}).get("peer_pct"),
+            "peer_pct": (peer or {}).get("peer_pct"),            # v2
+            "qualified_years": (peer or {}).get("qualified_years"),  # v3
         }
         if predicate(pred_input):
             selected.append({"code": code, "base": base, "risk": risk, "peer": peer})
@@ -517,7 +565,7 @@ def aggregate_board(
     db: Session,
     *,
     source: str,
-    profile_version: str = "v2",
+    profile_version: str = "v3",
     min_latest_sharpe: float | None = None,
     min_weeks: int = 1,
     latest_only: bool = False,
@@ -596,6 +644,8 @@ def aggregate_board(
                 "week_sharpe": {},
                 "near_12w_qualified": None, "near_12w_total": None,
                 "peer_pct": None, "peer_as_of": None,
+                "peer_years": None, "peer_qualified_years": None,
+                "peer_window": None,
             }
             continue
         last_week, last_obs = eps_in[-1]
@@ -607,9 +657,15 @@ def aggregate_board(
             consecutive += 1
             w -= timedelta(days=7)
         recent = eps_in[-NEAR_WEEKS:]
-        # 同类分位：取窗口内最新一条带 peer 证据的观测（v2 发布时冻结）
+        # 同类排名证据：取窗口内最新一条带 peer 数据的观测。
+        # v2 冻结的是 {peer_pct, as_of}（滚动口径）；v3 是
+        # {years, qualified_years, window}（年度口径）。两者字段不同，
+        # 分别读取以同时支持两个版本的展示。
         peer_pct = None
         peer_as_of = None
+        peer_years = None
+        peer_qualified_years = None
+        peer_window = None
         for _, o in reversed(eps_in):
             if not o.evidence_json:
                 continue
@@ -618,7 +674,14 @@ def aggregate_board(
             except (TypeError, ValueError):
                 continue
             p = ev.get("peer")
-            if isinstance(p, dict) and p.get("peer_pct") is not None:
+            if not isinstance(p, dict):
+                continue
+            if p.get("qualified_years") is not None:
+                peer_years = p.get("years")
+                peer_qualified_years = p["qualified_years"]
+                peer_window = p.get("window")
+                break
+            if p.get("peer_pct") is not None:
                 peer_pct = p["peer_pct"]
                 peer_as_of = p.get("as_of")
                 break
@@ -637,6 +700,9 @@ def aggregate_board(
             "near_12w_total": len(recent),
             "peer_pct": peer_pct,
             "peer_as_of": peer_as_of,
+            "peer_years": peer_years,
+            "peer_qualified_years": peer_qualified_years,
+            "peer_window": peer_window,
         }
 
     # 2) 展示筛选（52 周窗口内统计；下限含等于，R5）
@@ -663,7 +729,8 @@ def aggregate_board(
     offset = (page - 1) * limit
     item_keys = ("code", "name", "listed_weeks", "consecutive_weeks",
                  "latest_sharpe", "last_listed_week", "on_latest_board",
-                 "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of")
+                 "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of",
+                 "peer_years", "peer_qualified_years", "peer_window")
     items_page = [{k: s[k] for k in item_keys} for s in matched[offset:offset + limit]]
 
     # 4b) 展示补充：近 1 年/近 3 年收益（仅展示，不参与统计/排序/命中集合）。

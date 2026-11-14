@@ -45,6 +45,26 @@ function formatPeerPct(v: number | null): string {
   return `前 ${v.toFixed(1)}%`;
 }
 
+/** v3 年度口径：达标年数 / 窗口年数，如 `2/3 年`；null → - */
+function formatPeerYears(
+  qualified: number | null, window: string[] | null,
+): string {
+  if (qualified === null || window === null || window.length === 0) return '-';
+  return `${qualified}/${window.length} 年`;
+}
+
+/** 年度明细 tooltip 文本：2023 前8.2% · 2024 前12.0% · 2025 无数据 */
+function peerYearsTip(
+  years: Record<string, number | null> | null,
+  window: string[] | null,
+): string | undefined {
+  if (!years || !window) return undefined;
+  return window.map(y => {
+    const v = years[y];
+    return v === null || v === undefined ? `${y} 无数据` : `${y} 前${v.toFixed(1)}%`;
+  }).join(' · ');
+}
+
 /** 涨红跌绿（与站内 up/down 语义一致），null 不着色 */
 function retClass(v: number | null): string {
   if (v === null) return 'text-ink-muted';
@@ -157,12 +177,21 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
                   {formatNear12w(item.near_12w_qualified, item.near_12w_total)}
                 </td>
                 <td className={`${td} text-right tnum whitespace-nowrap text-ink-strong`}>
-                  <span
-                    className={item.peer_as_of ? 'hover-tip' : undefined}
-                    data-tip={item.peer_as_of ? `同类排名数据日期 ${item.peer_as_of}` : undefined}
-                  >
-                    {formatPeerPct(item.peer_pct)}
-                  </span>
+                  {item.peer_qualified_years !== null ? (
+                    <span
+                      className="hover-tip"
+                      data-tip={peerYearsTip(item.peer_years, item.peer_window)}
+                    >
+                      {formatPeerYears(item.peer_qualified_years, item.peer_window)}
+                    </span>
+                  ) : (
+                    <span
+                      className={item.peer_as_of ? 'hover-tip' : undefined}
+                      data-tip={item.peer_as_of ? `同类排名数据日期 ${item.peer_as_of}` : undefined}
+                    >
+                      {formatPeerPct(item.peer_pct)}
+                    </span>
+                  )}
                 </td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>
                   {item.latest_sharpe !== null ? item.latest_sharpe.toFixed(2) : '-'}

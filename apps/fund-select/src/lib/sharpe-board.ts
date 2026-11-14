@@ -49,9 +49,13 @@ export interface SharpeBoardItem {
   /** v2：近 12 周夏普≥0.8 的周数 / 分母（不足12周为实际周数） */
   near_12w_qualified: number | null;
   near_12w_total: number | null;
-  /** v2：同类排名分位（%，如前 14.2%）与数据日期 */
+  /** v2 滚动口径：同类排名分位（%，如前 14.2%）与数据日期 */
   peer_pct: number | null;
   peer_as_of: string | null;
+  /** v3 年度口径：各年分位 / 达标年数 / 评估年度窗口 */
+  peer_years: Record<string, number | null> | null;
+  peer_qualified_years: number | null;
+  peer_window: string[] | null;
 }
 
 /** 曲线序列（全部命中基金，不随 items 分页；values 长度 == weeks 长度） */
@@ -103,7 +107,7 @@ export interface SharpeBoardFilters {
 
 export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
   source: 'discovery-stock',
-  profileVersion: 'v2',
+  profileVersion: 'v3',
   minLatestSharpe: null,
   minWeeks: 1,
   latestOnly: false,
@@ -271,8 +275,16 @@ export function describeEntryFilters(profile: SharpeBoardProfile): string[] {
   if (ir !== null) out.push(`信息比率 IR ≥ ${ir}`);
   const days = num(f.min_sample_days);
   if (days !== null) out.push(`样本交易日 ≥ ${days} 天`);
+  // v2 滚动口径
   const peer = num(f.max_peer_pct);
   if (peer !== null) out.push(`近三年同类排名前 ${peer}%`);
+  // v3 年度口径（与滚动口径互斥，不会同时出现）
+  const yearlyTop = num(f.min_yearly_top_pct);
+  const yearlyYears = num(f.min_yearly_years);
+  if (yearlyTop !== null && yearlyYears !== null) {
+    // 窗口固定 3 个完整年度（不含当年），min_yearly_years 是「其中至少几年达标」
+    out.push(`近 3 个完整年度中至少 ${yearlyYears} 年同类排名前 ${yearlyTop}%`);
+  }
   if (f.exclude_qdii === true) out.push('排除 QDII');
   return out;
 }

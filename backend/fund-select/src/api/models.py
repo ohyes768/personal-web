@@ -250,8 +250,13 @@ class SharpeBoardItemDTO(BaseModel):
     ret_3y: Optional[float] = None  # 近 3 年收益（同上）
     near_12w_qualified: Optional[int] = None  # 近12周夏普≥0.8 的周数
     near_12w_total: Optional[int] = None      # 分母（不足12周为实际周数）
+    # v2 滚动口径（保留以支持 v2 版本查询）
     peer_pct: Optional[float] = None          # 同类排名分位（%，如 14.2）
     peer_as_of: Optional[str] = None          # 同类排名数据日期 ISO
+    # v3 年度口径（11-14 任务）
+    peer_years: Optional[dict] = None         # {"2023": 8.2, "2024": None, ...}
+    peer_qualified_years: Optional[int] = None  # 达标年数（3 年中）
+    peer_window: Optional[list[str]] = None  # 评估年度 ["2023","2024","2025"]
 
 
 class SharpeBoardSeriesDTO(BaseModel):

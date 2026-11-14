@@ -111,6 +111,7 @@ def entry_predicate(
     min_ir: Optional[float] = None,
     min_sample_days: Optional[float] = None,
     max_peer_pct: Optional[float] = None,
+    min_yearly_years: Optional[float] = None,
 ):
     """入选谓词（行级）：实时 SQL 筛选（_screen 的 where 链）与夏普榜单 capture
     冻结数据共用的同一份阈值语义。
@@ -135,6 +136,12 @@ def entry_predicate(
     - max_peer_pct：同类分位 ≤ X%（即前 X%），含等号；无数据/格式异常 →
       freeze_peer_rows 阶段已丢弃该 code，此处 peer_pct 为 None 即不命中。
       同类排名的 90 天陈旧过滤在冻结阶段完成，谓词保持纯函数（不依赖 today()）。
+
+    v3 新增年度同类排名门槛（min_yearly_years，默认 None = 不判断）：
+    - 语义：最近 N 个完整年度中，同类分位 ≤ top_pct 的年数 ≥ min_yearly_years
+    - 谓词只读冻结好的 qualified_years（阈值与达标年数在 freeze_yearly_peer_rows
+      里按本轮 profile 快照算好），保持纯函数；无证据（None）不命中
+    - 与 max_peer_pct 不可混用：后者是滚动口径「单个分位 ≤ X」，语义不同
     """
     def predicate(row) -> bool:
         if exclude_qdii:
@@ -181,6 +188,13 @@ def entry_predicate(
             v = _predicate_field(row, "peer_pct")
             # 前 X%：rank/total*100 <= X（含等号）
             if v is None or v > max_peer_pct:
+                return False
+        # ---- v3 年度同类排名门槛（参数 None 时整段跳过）----
+        if min_yearly_years is not None:
+            # qualified_years 由 freeze_yearly_peer_rows 冻结时算好
+            # （阈值也在冻结时快照），谓词只做数值比较，不重复算分位
+            v = _predicate_field(row, "qualified_years")
+            if v is None or v < min_yearly_years:
                 return False
         return True
 
