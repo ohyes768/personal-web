@@ -1040,3 +1040,75 @@ class TestV3PublishGates:
         row, _ = self._publish(db_session, cap, version="v2")
         assert row.profile_version == "v2"
         assert row.selected_count == 1
+
+
+class TestAggregateSourceAll:
+    """source=all 聚合两条链路的观测（11-15-source-segmented 回归）。"""
+
+    WEEK = date(2026, 11, 2)
+
+    def _seed(self, db, code, sharpe, *, source):
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        row = SharpeBoardWeek(
+            source=source, profile_version="v3", week_start=self.WEEK,
+            profile_json="{}", profile_hash="h",
+            algorithm_version="risk-3y-v3", status="complete",
+            selected_count=1,
+            started_at=datetime.combine(self.WEEK, datetime.min.time(), tzinfo=tz),
+        )
+        db.add(row)
+        db.flush()
+        db.add(SharpeBoardObservation(
+            week_id=row.id, code=code, name=f"基金{code}", sharpe=sharpe,
+            evidence_json=json.dumps({"peer": {"peer_pct": 12.5, "as_of": "2026-11-07"}}),
+        ))
+        db.commit()
+
+    def test_all_merges_both_sources(self, db_session, monkeypatch):
+        """同名基金两条链路同一周都上榜 → 一周只算一次（stock 口径为准）。"""
+        self._seed(db_session, "500001", 0.9, source="stock")
+        self._seed(db_session, "500001", 1.1, source="discovery-stock")
+        monkeypatch.setattr(sbs, "_current_week", lambda: self.WEEK)
+        body = sbs.aggregate_board(db_session, source="all", profile_version="v3")
+        assert body["profile"]["source"] == "all"
+        assert body["total"] == 1
+        it = body["items"][0]
+        assert it["code"] == "500001"
+        assert it["listed_weeks"] == 1
+        assert it["latest_sharpe"] == 0.9  # 同周取三分法观测
+
+    def test_all_distinct_weeks_accumulate(self, db_session, monkeypatch):
+        """同名基金两条链路不同周 → 两周都算（跨来源累计）。"""
+        self._seed(db_session, "500001", 0.9, source="stock")
+        # 第二条 seed 改到上一周
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        prev_week = self.WEEK - timedelta(weeks=1)
+        row = SharpeBoardWeek(
+            source="discovery-stock", profile_version="v3", week_start=prev_week,
+            profile_json="{}", profile_hash="h",
+            algorithm_version="risk-3y-v3", status="complete",
+            selected_count=1,
+            started_at=datetime.combine(prev_week, datetime.min.time(), tzinfo=tz),
+        )
+        db_session.add(row)
+        db_session.flush()
+        db_session.add(SharpeBoardObservation(
+            week_id=row.id, code="500001", name="基金500001", sharpe=1.1,
+            evidence_json=json.dumps({"peer": {"peer_pct": 12.5, "as_of": "2026-11-07"}}),
+        ))
+        db_session.commit()
+        monkeypatch.setattr(sbs, "_current_week", lambda: self.WEEK)
+        body = sbs.aggregate_board(db_session, source="all", profile_version="v3")
+        it = body["items"][0]
+        assert it["listed_weeks"] == 2
+        assert it["consecutive_weeks"] == 2
+
+    def test_all_union_of_distinct_codes(self, db_session, monkeypatch):
+        """不同基金分属两条链路 → all 态并集都出现。"""
+        self._seed(db_session, "500001", 0.9, source="stock")
+        self._seed(db_session, "500002", 1.2, source="discovery-stock")
+        monkeypatch.setattr(sbs, "_current_week", lambda: self.WEEK)
+        body = sbs.aggregate_board(db_session, source="all", profile_version="v3")
+        assert {it["code"] for it in body["items"]} == {"500001", "500002"}

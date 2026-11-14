@@ -644,17 +644,31 @@ def aggregate_board(
     entries: dict[str, list[tuple[date, SharpeBoardObservation]]] = {}
     if complete_weeks:
         rows = db.execute(
-            select(SharpeBoardWeek.week_start, SharpeBoardObservation)
+            select(SharpeBoardWeek.week_start, SharpeBoardWeek.source, SharpeBoardObservation)
             .join(SharpeBoardObservation, SharpeBoardObservation.week_id == SharpeBoardWeek.id)
             .where(
-                SharpeBoardWeek.source == source,
+                SharpeBoardWeek.source.in_(sources),
                 SharpeBoardWeek.profile_version == profile_version,
                 SharpeBoardWeek.status == STATUS_COMPLETE,
             )
             .order_by(SharpeBoardWeek.week_start.asc(), SharpeBoardObservation.code.asc())
         ).all()
-        for week_start, obs in rows:
+        for week_start, _src, obs in rows:
             entries.setdefault(obs.code, []).append((week_start, obs))
+
+        # source=all 时同一 code 同一周可能来自两条链路（各发各的榜）：
+        # 一周只算一次（listed_weeks 语义 = 在榜周数），同周取三分法（stock）
+        # 观测为准（rows 顺序聚合序即观测身份，映射回来判来源）；
+        # 单来源查询无同周重复，此步是恒等变换。
+        if source == "all":
+            src_of = {id(obs): s for _w, s, obs in rows}
+            for code, eps in entries.items():
+                by_week: dict[date, SharpeBoardObservation] = {}
+                for w, o in eps:
+                    cur = by_week.get(w)
+                    if cur is None or src_of.get(id(o)) == "stock":
+                        by_week[w] = o
+                entries[code] = sorted(by_week.items(), key=lambda e: e[0])
 
     # 最新 complete 周榜成员（latest_only / on_latest_board 共用）
     latest_codes: set[str] = set()
