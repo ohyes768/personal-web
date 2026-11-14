@@ -1255,3 +1255,26 @@ v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 81: 基金代码快速搜索（header 搜索框 + URL 跳转）
+<!-- trellis-session: v=2 fp=5ca37804961ed310 -->
+
+**Date**: 2026-11-14
+**Task**: 基金代码快速搜索（header 搜索框 + URL 跳转）
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+四个基金 tab header 右上角加代码搜索框：输入6位代码回车，后端 lookup 判定所属 tab（yaml名单优先、other按subtype细分避开2653只债券型陷阱），自动跳转并开抽屉。新增 GET /api/funds/lookup/{code}，注册在 /{code} 之前；found=false 返200、格式非法422、path用相对路径。后端733 passed(+23)/前端50(+12)/tsc+build通过，生产实测五类场景全对。契约§20。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ee73a068` | feat(fund-select): 基金代码快速搜索（header 搜索框 + URL 跳转） |
+
+### Status
+
+[OK] **Completed**

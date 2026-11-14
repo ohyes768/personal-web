@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 80
+- **Total Sessions**: 81
 - **Last Active**: 2026-11-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1257 | Active |
+| `journal-2.md` | ~1280 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 81 | 2026-11-14 | 基金代码快速搜索（header 搜索框 + URL 跳转） | `ee73a068` | `master` |
 | 80 | 2026-11-14 | service-manager 恢复主入口与证书监控 | `bb57d32e` | `master` |
 | 79 | 2026-11-14 | 夏普榜单 v3：年度同类排名 + 历史回溯 | `b39f6871` | `master` |
 | 78 | 2026-11-14 | service-manager 瘦身：砍掉详情页与未用能力 | `ac242fc2` | `master` |
