@@ -1186,3 +1186,26 @@ v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 78: service-manager 瘦身：砍掉详情页与未用能力
+<!-- trellis-session: v=2 fp=9248712545c28ceb -->
+
+**Date**: 2026-11-14
+**Task**: service-manager 瘦身：砍掉详情页与未用能力
+**Package**: apps/service-manager
+**Branch**: `master`
+
+### Summary
+
+按人工表实际占用统计砍掉从未用过的能力：详情页、入口维护/主入口列/URL·证书·发布徽章、巡检按钮、组件明细、域名证书视图、单服务检查。列表页接住名称与用途的行内编辑 + 移除台账条目。后端一律不动（接口/表/20 条入口数据/检查子系统/备份格式全留），spec 新增 §2.10 写明「下线的是界面，不是检查」。同时收尾了另一个会话遗留未提交的「退役归属」改动（fce23da9）与 e2e 全局兜底清理（ab10d368）。验证：后端 pytest 194 passed，前端 tsc/eslint 0 问题，e2e 23 passed / 1 skipped。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `ac242fc2` | refactor(service-manager): 砍掉详情页与从未用过的能力，列表页一处做完 |
+
+### Status
+
+[OK] **Completed**
