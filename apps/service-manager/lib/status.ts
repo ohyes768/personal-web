@@ -1,13 +1,6 @@
 /** 状态文案与配色（design §6 / §8：颜色外辅以文字，不抹平维度）。 */
 
-import type {
-  CheckView,
-  HealthState,
-  ReleaseState,
-  RuntimeState,
-  TlsState,
-  UrlState,
-} from "./api";
+import type { HealthState, RuntimeState } from "./api";
 
 export interface Tone {
   /** 语义色，用于 badge 背景 */
@@ -33,54 +26,6 @@ export const HEALTH: Record<HealthState, Tone> = {
   unknown: { tone: "muted", label: "未知" },
 };
 
-export const URL_STATE: Record<UrlState, Tone> = {
-  reachable: { tone: "ok", label: "可达" },
-  auth_required: { tone: "warn", label: "需认证" },
-  unexpected_status: { tone: "warn", label: "状态异常" },
-  unreachable: { tone: "bad", label: "不可达" },
-  unknown: { tone: "muted", label: "未检查" },
-};
-
-export const TLS_STATE: Record<TlsState, Tone> = {
-  valid: { tone: "ok", label: "有效" },
-  expiring: { tone: "warn", label: "即将到期" },
-  expired: { tone: "bad", label: "已过期" },
-  invalid: { tone: "bad", label: "无效" },
-  unknown: { tone: "muted", label: "未检查" },
-};
-
-export const RELEASE_STATE: Record<ReleaseState, Tone> = {
-  unread: { tone: "info", label: "有新版本" },
-  no_unread: { tone: "ok", label: "无未读" },
-  no_releases: { tone: "muted", label: "暂无正式发布" },
-  error: { tone: "bad", label: "检查失败" },
-  not_configured: { tone: "muted", label: "未关联仓库" },
-};
-
-export const JOB_STATE: Record<string, Tone> = {
-  queued: { tone: "muted", label: "排队中" },
-  running: { tone: "info", label: "运行中" },
-  completed: { tone: "ok", label: "完成" },
-  partial_failed: { tone: "warn", label: "部分失败" },
-  failed: { tone: "bad", label: "失败" },
-  interrupted: { tone: "warn", label: "已中断" },
-};
-
-/** 时间显示：统一按 Asia/Shanghai，并标出陈旧数据。 */
-export function formatTime(value: string | null): string {
-  if (!value) return "—";
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("zh-CN", {
-    timeZone: "Asia/Shanghai",
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
 
 export function formatRelative(value: string | null): string {
   if (!value) return "从未";
@@ -93,23 +38,6 @@ export function formatRelative(value: string | null): string {
   const hours = Math.round(minutes / 60);
   if (hours < 24) return `${hours} 小时前`;
   return `${Math.round(hours / 24)} 天前`;
-}
-
-/** 检查结果的一行说明：区分「本次请求失败」与「观测到的异常」。 */
-export function describeCheck(check: CheckView | null, fallback = "未检查"): string {
-  if (!check) return fallback;
-  const when = formatRelative(check.last_attempt_at);
-  if (check.check_status === "never") return "未检查";
-  if (check.check_status === "error") {
-    const lastOk = check.last_success_at
-      ? `（上次成功 ${formatRelative(check.last_success_at)}）`
-      : "";
-    return `${when}检查失败：${check.error_message ?? check.error_code ?? "未知错误"}${lastOk}`;
-  }
-  if (check.stale) {
-    return `${when}（数据已陈旧）`;
-  }
-  return when;
 }
 
 export function portKindLabel(kind: string): string {
@@ -150,71 +78,6 @@ export function composeFileText(file: {
   }
   return file.resolved ?? file.raw;
 }
-
-/** 证书 invalid 的原因说明：自签/域名不符/链过期/不受信。 */
-export function tlsInvalidReason(reason: string | null | undefined): string {
-  switch (reason) {
-    case "self_signed":
-      return "自签证书：没有公共机构背书，浏览器会先警告";
-    case "hostname_mismatch":
-      return "证书上的域名和访问的域名对不上";
-    case "expired_chain":
-      return "证书链已过期";
-    case "untrusted_ca":
-      return "签发机构不在系统信任列表里";
-    case "unknown":
-      return "验证没通过";
-    default:
-      return "";
-  }
-}
-
-/**
- * 证书徽章：一个笼统的「无效」会让人以为证书坏了。
- * 按实际原因给更准的说法：自签 / 不受信任 / 域名不符 / 链已过期。
- * 自签与「不受信」是**警告**（证书能用，但客户端会拦一下），
- * 域名不符和链过期才是真的坏（红）。
- */
-export function tlsTone(state: TlsState, invalidReason?: string | null): Tone {
-  const base = TLS_STATE[state];
-  if (state !== "invalid") return base;
-  switch (invalidReason) {
-    case "self_signed":
-      return { tone: "warn", label: "自签" };
-    case "untrusted_ca":
-      return { tone: "warn", label: "不受信任" };
-    case "hostname_mismatch":
-      return { tone: "bad", label: "域名不符" };
-    case "expired_chain":
-      return { tone: "bad", label: "链已过期" };
-    default:
-      return base;
-  }
-}
-
-/** 从检查结果里取证书无效的原因（列表/详情页用）。 */
-export function invalidReasonOf(check: CheckView | null): string | null {
-  const reason = check?.payload?.invalid_reason;
-  return typeof reason === "string" ? reason : null;
-}
-
-/**
- * 证书徽章的 tooltip：说清楚「为什么无效」和「什么时候到期」，
- * 别只丢一个红灯让人猜。
- */
-export function tlsTooltip(check: CheckView | null): string {
-  const when = describeCheck(check);
-  if (!check?.payload) return when;
-  const reason = tlsInvalidReason(invalidReasonOf(check));
-  const notAfter =
-    typeof check.payload.not_after === "string" ? check.payload.not_after : "";
-  const bits = [reason, notAfter ? `有效期至 ${notAfter.slice(0, 10)}` : ""].filter(
-    Boolean,
-  );
-  return bits.length ? `${bits.join(" · ")} · ${when}` : when;
-}
-
-/** 健康徽章的 tooltip：说明覆盖了多少个组件，避免「1/2 组件报了健康」被误读。 */
 export function healthTooltip(
   components: { health: HealthState }[] | undefined,
   state: HealthState,

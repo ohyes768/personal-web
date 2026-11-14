@@ -10,20 +10,9 @@ import {
 } from "@/lib/api";
 import { describeJob, waitForJob } from "@/lib/jobs";
 import { matchesTags } from "@/lib/tagFilter";
-import {
-  describeCheck,
-  formatRelative,
-  healthTooltip,
-  HEALTH,
-  invalidReasonOf,
-  RELEASE_STATE,
-  RUNTIME,
-  tlsTooltip,
-  tlsTone,
-  URL_STATE,
-} from "@/lib/status";
+import { formatRelative, healthTooltip, HEALTH, RUNTIME } from "@/lib/status";
 import SessionGate from "@/components/SessionGate";
-import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
+import { Spinner, StateBadge, Toast } from "@/components/Widgets";
 import { TagBadge } from "@/components/TagBadge";
 import { TagEditor } from "@/components/TagEditor";
 import { TagFilterBar } from "@/components/TagFilterBar";
@@ -45,17 +34,18 @@ function ServiceList() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [editingTags, setEditingTags] = useState<ServiceListItem | null>(null);
   const [savingTags, setSavingTags] = useState(false);
+  // 行内编辑：名称 + 用途（详情页下线后，说明的维护都在列表页就地完成）
+  const [editingInfo, setEditingInfo] = useState<ServiceListItem | null>(null);
+  const [infoDraft, setInfoDraft] = useState({ name: "", description: "" });
+  const [savingInfo, setSavingInfo] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   // 刷新任务在后台跑，按钮各自转圈；两类任务互不阻塞。
-  const [pending, setPending] = useState<{ docker: boolean; all: boolean }>({
-    docker: false,
-    all: false,
-  });
+  const [pending, setPending] = useState<{ docker: boolean }>({ docker: false });
   const aborters = useRef<Set<AbortController>>(new Set());
   // 同一类任务的防重入（state 更新要等一次渲染，用 ref 才能挡住连点）
-  const inFlight = useRef<Set<"docker" | "all">>(new Set());
+  const inFlight = useRef<Set<"docker">>(new Set());
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -144,9 +134,72 @@ function ServiceList() {
     }
   }
 
-  async function refresh(kind: "docker" | "all") {
+  function startEditInfo(item: ServiceListItem) {
+    setEditingInfo(item);
+    setInfoDraft({ name: item.name, description: item.description });
+  }
+
+  function cancelEditInfo() {
+    setEditingInfo(null);
+    setInfoDraft({ name: "", description: "" });
+  }
+
+  async function saveInfo() {
+    if (!editingInfo) return;
+    const name = infoDraft.name.trim();
+    if (!name) {
+      setToast("名称不能为空");
+      return;
+    }
+    setSavingInfo(true);
+    try {
+      const updated = await api.patchService(editingInfo.id, {
+        name,
+        description: infoDraft.description,
+        revision: editingInfo.revision,
+      });
+      // 就地更新：revision 用后端返回值覆盖，否则下一次 PATCH 会 409
+      setItems((prev) =>
+        prev.map((item) =>
+          item.id === updated.id
+            ? {
+                ...item,
+                name: updated.name,
+                description: updated.description,
+                revision: updated.revision,
+              }
+            : item,
+        ),
+      );
+      cancelEditInfo();
+      setToast("已保存");
+    } catch (caught) {
+      setToast(caught instanceof ApiError ? caught.message : "保存失败");
+    } finally {
+      setSavingInfo(false);
+    }
+  }
+
+  async function removeService(item: ServiceListItem) {
+    if (
+      !window.confirm(
+        `从台账移除「${item.name}」？只删除本应用的记录与关联，运行中的容器不受影响。`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await api.deleteService(item.id);
+      setToast("已移除");
+      await load();
+    } catch (caught) {
+      setToast(caught instanceof ApiError ? caught.message : "移除失败");
+    }
+  }
+
+  async function refresh(kind: "docker") {
     if (inFlight.current.has(kind)) return;
-    const label = kind === "docker" ? "容器扫描" : "巡检";
+    const label = "容器扫描";
     inFlight.current.add(kind);
     setPending((prev) => ({ ...prev, [kind]: true }));
     const controller = new AbortController();
@@ -183,7 +236,7 @@ function ServiceList() {
     <>
       <h1>服务</h1>
       <p className="lead">
-        台账里的服务、它们对应的容器、入口与证书。状态分维度显示，不用一个绿灯抹平。
+        台账里的服务、它们对应的容器，以及运行与健康两个状态。名称、用途、标签都在这一页就地改。
       </p>
 
       {summary ? (
@@ -265,28 +318,10 @@ function ServiceList() {
               "扫描容器"
             )}
           </button>
-          <button
-            className="btn"
-            type="button"
-            disabled={pending.all}
-            aria-busy={pending.all}
-            title="巡检全部已登记入口：URL 可达性、TLS 证书，并同步已配置的 GitHub 发布"
-            onClick={() => void refresh("all")}
-          >
-            {pending.all ? (
-              <>
-                <Spinner />
-                巡检中…
-              </>
-            ) : (
-              "巡检"
-            )}
-          </button>
         </div>
 
         <p className="small muted" style={{ marginTop: 8 }}>
-          巡检：逐一检查全部已登记入口的可达性与证书有效期，并同步已配置的 GitHub 发布；
-          容器观测不在其中，由「扫描容器」负责（后台每 60 秒自动扫一次）。
+          扫描容器：重新读取 Docker 容器状态与健康检查（后台每 60 秒自动扫一次）。
         </p>
 
         <TagFilterBar allTags={allTags} selected={tagFilter} onChange={setTagFilter} />
@@ -322,25 +357,63 @@ function ServiceList() {
             <thead>
               <tr>
                 <th>服务</th>
-                <th>主入口</th>
                 <th>运行</th>
                 <th>健康</th>
-                <th>URL</th>
-                <th title="HTTPS 证书：有没有人信它、什么时候到期">证书</th>
-                <th>发布</th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
               {tabItems.map((item) => (
-                <tr key={item.id}>
+                <tr key={item.id} data-service-id={item.id}>
                   <td>
-                    <Link href={`/service/${item.id}`}>{item.name}</Link>
-                    {item.description ? (
-                      <div className="small truncate" title={item.description}>
-                        {item.description}
+                    {editingInfo?.id === item.id ? (
+                      <div className="inline-edit">
+                        <input
+                          value={infoDraft.name}
+                          onChange={(event) =>
+                            setInfoDraft({ ...infoDraft, name: event.target.value })
+                          }
+                          aria-label="名称"
+                          placeholder="名称"
+                        />
+                        <textarea
+                          value={infoDraft.description}
+                          onChange={(event) =>
+                            setInfoDraft({ ...infoDraft, description: event.target.value })
+                          }
+                          aria-label="用途"
+                          placeholder="用途说明"
+                          rows={2}
+                        />
+                        <div className="btn-row">
+                          <button
+                            className="btn btn-mini primary"
+                            type="button"
+                            disabled={savingInfo}
+                            onClick={() => void saveInfo()}
+                          >
+                            {savingInfo ? "保存中…" : "保存"}
+                          </button>
+                          <button
+                            className="btn btn-mini"
+                            type="button"
+                            disabled={savingInfo}
+                            onClick={cancelEditInfo}
+                          >
+                            取消
+                          </button>
+                        </div>
                       </div>
-                    ) : null}
+                    ) : (
+                      <>
+                        <span className="service-name">{item.name}</span>
+                        {item.description ? (
+                          <div className="small truncate" title={item.description}>
+                            {item.description}
+                          </div>
+                        ) : null}
+                      </>
+                    )}
                     <div className="tag-row" style={{ marginTop: 2 }}>
                       {item.tags.map((tag) => (
                         <TagBadge
@@ -362,20 +435,6 @@ function ServiceList() {
                     </div>
                   </td>
                   <td>
-                    {item.primary_url ? (
-                      <SafeLink href={item.primary_url} className="mono wrap-anywhere">
-                        {item.primary_url}
-                      </SafeLink>
-                    ) : (
-                      <span
-                        className="muted small"
-                        title="网关、反向代理或内部调用类服务本就不需要对外入口，此项不适用、无需补录；若该服务确实需要 Web 访问，可在详情页登记入口"
-                      >
-                        无对外入口
-                      </span>
-                    )}
-                  </td>
-                  <td>
                     <StateBadge tone={RUNTIME[item.status.runtime]} />
                     <div className="small muted">{item.component_count} 个组件</div>
                   </td>
@@ -386,33 +445,23 @@ function ServiceList() {
                     />
                   </td>
                   <td>
-                    <StateBadge tone={URL_STATE[item.status.url]} title={describeCheck(item.status.url_check)} />
-                  </td>
-                  <td>
-                    <StateBadge
-                      tone={tlsTone(
-                        item.status.tls,
-                        invalidReasonOf(item.status.tls_check),
-                      )}
-                      title={tlsTooltip(item.status.tls_check)}
-                    />
-                  </td>
-                  <td>
-                    <StateBadge tone={RELEASE_STATE[item.status.release]} />
-                    {item.status.unread_releases > 0 ? (
-                      <div className="small muted">{item.status.unread_releases} 条未读</div>
-                    ) : null}
-                  </td>
-                  <td>
                     <div className="row-actions">
-                      <Link className="btn btn-mini" href={`/service/${item.id}`}>
-                        详情
-                      </Link>
-                      {item.primary_url ? (
-                        <SafeLink className="btn btn-mini" href={item.primary_url}>
-                          打开
-                        </SafeLink>
-                      ) : null}
+                      <button
+                        className="btn btn-mini"
+                        type="button"
+                        onClick={() => startEditInfo(item)}
+                        aria-label={`编辑「${item.name}」的名称与用途`}
+                      >
+                        编辑
+                      </button>
+                      <button
+                        className="btn btn-mini danger"
+                        type="button"
+                        onClick={() => void removeService(item)}
+                        aria-label={`从台账移除「${item.name}」`}
+                      >
+                        移除
+                      </button>
                     </div>
                   </td>
                 </tr>

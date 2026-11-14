@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
@@ -119,7 +118,7 @@ function DiscoveryView() {
       setDescription("");
       setAttachTo("");
       setToast(result.created ? "已新建服务并关联组件" : "已追加到现有服务");
-      router.push(`/service/${result.service_id}`);
+      router.push("/");
     } catch (caught) {
       setToast(caught instanceof ApiError ? caught.message : "导入失败");
     }
@@ -349,11 +348,6 @@ function DiscoveryView() {
                           忽略
                         </button>
                       )}
-                      {item.bound_service_id ? (
-                        <Link className="btn btn-mini" href={`/service/${item.bound_service_id}`}>
-                          查看服务
-                        </Link>
-                      ) : null}
                     </div>
                   </td>
                 </tr>

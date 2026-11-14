@@ -41,7 +41,7 @@ test("登录门禁：未登录只显示登录表单", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "服务", exact: true })).toHaveCount(0);
 });
 
-test("台账条目走接口建立后，搜索、加端口、删除都可用", async ({ page }) => {
+test("台账条目：搜索命中、行内改名称与用途、移除", async ({ page }) => {
   await login(page);
   const name = `e2e-服务-${Date.now()}`;
 
@@ -49,30 +49,31 @@ test("台账条目走接口建立后，搜索、加端口、删除都可用", as
   await expect(page.getByRole("button", { name: "新增服务" })).toHaveCount(0);
   const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
-    data: { name },
+    data: { name, description: "初始用途" },
   });
   expect(created.ok()).toBeTruthy();
-  createdServiceIds.push((await created.json()).id as string);
+  // response body 只能读一次：先把 id 存下来
+  const serviceId = ((await created.json()) as { id: string }).id;
+  createdServiceIds.push(serviceId);
 
   await page.goto("/services");
   await page.getByLabel("搜索服务").fill(name);
-  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
+  await expect(page.getByText("初始用途")).toBeVisible();
 
-  await page.getByRole("link", { name, exact: true }).click();
-  await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+  // 行内编辑：名称 + 用途（编辑时名称变成 input 的 value，不能再按文本找行）
+  const row = page.locator(`tr[data-service-id="${serviceId}"]`);
+  // 行内有两个带「编辑」字样的按钮（编辑标签 / 编辑名称与用途），按名字精确挑后者
+  await row.getByRole("button", { name: /的名称与用途$/ }).click();
+  await row.getByRole("textbox", { name: "名称", exact: true }).fill(`${name}-改`);
+  await row.getByRole("textbox", { name: "用途", exact: true }).fill("改过的用途说明");
+  await row.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByText("改过的用途说明")).toBeVisible();
+  await expect(page.getByText(`${name}-改`)).toBeVisible();
 
-  // 手工端口
-  await page.locator("#pn-ip").fill("0.0.0.0");
-  await page.locator("#pn-port").fill("39999");
-  await page.locator("#pn-note").fill("e2e 人工端口");
-  await page.getByRole("button", { name: "记录端口" }).click();
-  await expect(page.getByText("39999")).toBeVisible();
-
-  // 删除台账（确认对话框）
+  // 移除台账条目（确认对话框）
   page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "从台账移除" }).click();
-  await expect(page.getByRole("heading", { name: "服务", exact: true })).toBeVisible();
-  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
+  await row.getByRole("button", { name: /^从台账移除/ }).click();
+  await expect(page.getByText(`${name}-改`)).toHaveCount(0);
 });
 
 test("归属字段已退役：列表平铺，没有分组 tab 也没有归属下拉", async ({ page }) => {
@@ -93,7 +94,7 @@ test("归属字段已退役：列表平铺，没有分组 tab 也没有归属下
 
   await page.goto("/services");
   await page.getByLabel("搜索服务").fill(name);
-  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
+  await expect(page.getByText(name, { exact: true })).toHaveCount(1);
 });
 
 test("标签可维护：弹窗里勾选已有标签 + 新建一个，保存后列表行立即更新", async ({ page }) => {
@@ -158,18 +159,18 @@ test("标签可筛选：多选是 AND，可一键清除", async ({ page }) => {
 
   // 勾一个 → 两条都命中
   await filterBar.getByRole("button", { name: "e2e-a" }).click();
-  await expect(page.getByRole("link", { name: both, exact: true })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: onlyOne, exact: true })).toHaveCount(1);
+  await expect(page.getByText(both, { exact: true })).toHaveCount(1);
+  await expect(page.getByText(onlyOne, { exact: true })).toHaveCount(1);
 
   // 再勾一个 AND 条件 → 只剩同时具备的那条
   await filterBar.getByRole("button", { name: "e2e-b" }).click();
-  await expect(page.getByRole("link", { name: both, exact: true })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: onlyOne, exact: true })).toHaveCount(0);
+  await expect(page.getByText(both, { exact: true })).toHaveCount(1);
+  await expect(page.getByText(onlyOne, { exact: true })).toHaveCount(0);
 
   // 一键清除 → 恢复（筛选栏上的「清除标签」）
   await filterBar.getByRole("button", { name: "清除标签" }).click();
-  await expect(page.getByRole("link", { name: both, exact: true })).toHaveCount(1);
-  await expect(page.getByRole("link", { name: onlyOne, exact: true })).toHaveCount(1);
+  await expect(page.getByText(both, { exact: true })).toHaveCount(1);
+  await expect(page.getByText(onlyOne, { exact: true })).toHaveCount(1);
 });
 
 test("分类字段已退役：界面上没有分类入口", async ({ page }) => {
@@ -182,40 +183,32 @@ test("分类字段已退役：界面上没有分类入口", async ({ page }) => 
   await expect(page.locator("#import-category")).toHaveCount(0);
 });
 
-test("入口表单：localhost 探测被拒并给出说明", async ({ page }) => {
-  await login(page);
-  const name = `e2e-入口-${Date.now()}`;
-  // 列表页没有「新增服务」入口了，条目走接口建（发现导入在真实环境里做这件事）
-  const created = await page.request.post("/api/services/services", {
-    headers: { Origin: new URL(page.url()).origin },
-    data: { name },
-  });
-  expect(created.ok()).toBeTruthy();
-  await page.goto("/services");
-  await page.getByLabel("搜索服务").fill(name);
-  await page.getByRole("link", { name, exact: true }).click();
-
-  await page.getByRole("button", { name: "添加入口" }).click();
-  await page.locator("#ep-url").fill("https://web.duomi77.cn:9443/e2e");
-  await page.locator("#ep-probe").fill("http://localhost:3003/");
-  await page.getByRole("button", { name: "保存入口" }).click();
-  // 断言后端拒绝的提示（表单里本来就有一句 hint 也提到 localhost，必须限定到提示条）
-  await expect(page.getByRole("status")).toContainText("localhost");
-
-  page.once("dialog", (dialog) => dialog.accept());
-  await page.getByRole("button", { name: "从台账移除" }).click();
-});
-
-test("资源总览三个标签可切换并显示范围说明", async ({ page }) => {
+test("资源总览只剩端口视图（域名与证书已下线）", async ({ page }) => {
   await login(page);
   await page.getByRole("link", { name: "资源总览" }).click();
   await expect(page.getByText(/不能据此证明端口空闲/)).toBeVisible();
-  await page.getByRole("tab", { name: "域名" }).click();
-  await page.getByRole("tab", { name: "证书" }).click();
-  await expect(page.getByRole("tab", { name: "证书" })).toHaveAttribute(
-    "aria-selected",
-    "true",
-  );
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "端口" })).toBeVisible();
+});
+
+test("详情页已下线：路由 404，列表页没有详情/主入口/巡检", async ({ page }) => {
+  await login(page);
+  await page.goto("/services");
+  // 列表页只剩运行与健康两个状态维度
+  await expect(page.getByRole("columnheader", { name: "运行" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "健康" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: "主入口" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "URL" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "证书" })).toHaveCount(0);
+  await expect(page.getByRole("columnheader", { name: "发布" })).toHaveCount(0);
+  // 没有「巡检」「详情」「打开」
+  await expect(page.getByRole("button", { name: "巡检" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "详情" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "打开" })).toHaveCount(0);
+
+  // 直接访问详情页路由 → 404
+  const response = await page.goto("/services/service/whatever-id");
+  expect(response?.status()).toBe(404);
 });
 
 test("发现页展示候选表格（或明确的不可用提示）", async ({ page }) => {
