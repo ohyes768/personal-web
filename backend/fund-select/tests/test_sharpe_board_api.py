@@ -110,7 +110,9 @@ def _seed_three_weeks(db, *, source="stock", version="v1", extra_week2=None):
 def _get(client, **params):
     # fixture 种子是 v1 数据；API 默认版本已切 v2（11-13 任务），
     # 这组聚合测试显式查 v1，默认版本行为由 TestApiValidation 单独验证。
-    base = {"source": "stock", "profile_version": "v1"}
+    # min_listed_pct=0 = 不限占比：多数用例关心统计/排序口径，
+    # 占比筛选本身有专门用例（TestListedPctFilter）；生产默认是 60%。
+    base = {"source": "stock", "profile_version": "v1", "min_listed_pct": 0}
     base.update(params)
     return client.get("/api/funds/sharpe-board", params=base).json()
 
@@ -174,12 +176,18 @@ class TestOrderingAndConsecutive:
 
 
 class TestDisplayFilters:
-    """AC3/R5：min_weeks、latest_only"""
+    """AC3/R5：min_listed_pct、latest_only"""
 
-    def test_min_weeks_3_only_b(self, client, three_weeks):
-        body = _get(client, min_weeks=3)
-        assert body["total"] == 1
-        assert [it["code"] for it in body["items"]] == ["000002"]
+    def test_min_listed_pct_keeps_only_high_ratio(self, client, three_weeks):
+        """在榜占比 = 在榜周数 ÷ 可评周数：A=2/3(67%)、B=3/3(100%)。
+
+        下限 100% → 只有 B（每可评周都在榜）；下限 60% → 两只都留。
+        """
+        strict = _get(client, min_listed_pct=100)
+        assert strict["total"] == 1
+        assert [it["code"] for it in strict["items"]] == ["000002"]
+        loose = _get(client, min_listed_pct=60)
+        assert {it["code"] for it in loose["items"]} == {"000001", "000002"}
 
     def test_latest_only_drops_not_on_latest_board(self, client, board_db):
         _seed_three_weeks(board_db, extra_week2={"000003": ("基金D", 0.91)})
@@ -452,7 +460,8 @@ class TestPaginationInvariants:
         })
         _seed_week(board_db, WEEK2, {"000003": ("C", 0.9), "000001": ("A", 0.5)})
         _seed_week(board_db, WEEK3, {"000003": ("C", 0.95), "000002": ("B", 1.2)})
-        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1")
+        body = sbs.aggregate_board(board_db, source="stock", profile_version="v1",
+                                  min_listed_pct=0)  # 本例只测排序，不限占比
         # C 3 周；其余 1 周，按最近夏普降序 B 1.2 → D 0.9 → A 0.5
         assert [it["code"] for it in body["items"]] == ["000003", "000002", "000004", "000001"]
 
@@ -558,6 +567,44 @@ class TestGapWeekSemantics:
         assert a["evaluable_weeks"] == 2
 
 
+class TestListedPctFilter:
+    """在榜占比筛选（11-14-sharpe-board-listed-pct-filter）
+
+    占比 = 在榜周数 ÷ 可评周数（与表格「在榜/可评」同源），默认下限 60%。
+    """
+
+    def test_api_default_is_60_pct(self, client, three_weeks):
+        """不传参数 → 默认 60%：A=2/3(67%) 留、B=3/3(100%) 留"""
+        body = client.get(
+            "/api/funds/sharpe-board",
+            params={"source": "stock", "profile_version": "v1"},
+        ).json()
+        assert {it["code"] for it in body["items"]} == {"000001", "000002"}
+
+    def test_zero_pct_means_unlimited(self, client, board_db):
+        """min_listed_pct=0 → 不限（等价旧 min_weeks=1：窗口内在过榜的都留）"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        body = _get(client, min_listed_pct=0)
+        assert {it["code"] for it in body["items"]} == {"000001"}
+
+    def test_never_listed_fund_never_passes(self, client, board_db):
+        """窗口内从未上榜的基金：占比再低也看不到（硬门槛）"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        body = _get(client, min_listed_pct=0)
+        assert all(it["listed_weeks"] >= 1 for it in body["items"])
+
+    def test_ratio_uses_evaluable_denominator(self, client, board_db):
+        """分母是可评周数（不是 52）：数据缺口周不拉低占比"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        _seed_week(board_db, WEEK2, status="skipped_no_new_data",
+                   diagnostics={"stale_codes": ["000001"]})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client, min_listed_pct=100)
+        it = body["items"][0]
+        assert it["listed_weeks"] == 2 and it["evaluable_weeks"] == 2  # 2/2 = 100%
+        assert body["total"] == 1  # 缺口周不拉低占比 → 100% 下仍在
+
+
 class TestApiValidation:
     """参数合同：非法 422、未知版本 404"""
 
@@ -566,8 +613,8 @@ class TestApiValidation:
         "source=",                # 空
         "min_latest_sharpe=11",   # 越上界
         "min_latest_sharpe=-11",  # 越下界
-        "min_weeks=0",
-        "min_weeks=-1",
+        "min_listed_pct=-1",
+        "min_listed_pct=101",
         "range=2m",               # 白名单外
         "page=0",
         "page=-1",

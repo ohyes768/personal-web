@@ -6,7 +6,7 @@
 
 - 五 Tab 公共导航是 `src/components/FundsNavigation.tsx`，`FundsHeader` 与新页共用；`FundsTab`/`exportKind` 仍只代表四个采集来源，**不得**把夏普榜单伪造进刷新来源。旧四页除导航组件替换外零行为变化。
 - basePath 契约同 contracts §4：`<Link>` 用相对路径（`/sharpe-board`）；`fetch` 必须写全路径 `/funds/api/funds/sharpe-board`；URL 同步只拼 `?qs`。
-- `src/lib/sharpe-board.ts` 独立持有 TS DTO（对齐后端 6 个 `SharpeBoard*` DTO）、URL 参数 parse/serialize（**默认值省略不写**：source=discovery-stock、range=all、page=1、min_weeks=1 都不落 URL）、`fetchSharpeBoard`。**source 切换必须 AbortController 中止旧请求**，否则旧来源响应会覆盖新来源状态。
+- `src/lib/sharpe-board.ts` 独立持有 TS DTO（对齐后端 6 个 `SharpeBoard*` DTO）、URL 参数 parse/serialize（**默认值省略不写**：source=discovery-stock、range=all、page=1、min_listed_pct=60 都不落 URL）、`fetchSharpeBoard`。**source 切换必须 AbortController 中止旧请求**，否则旧来源响应会覆盖新来源状态。
 - 后端 DTO 加字段时三处同步（同 §3a 三处清单）：`src/api/models.py` ↔ `src/lib/sharpe-board.ts` ↔ 页面消费；枚举值（source/range/status）两端字面一致。
 
 ## 2. ECharts 图表
@@ -83,7 +83,7 @@ v2 变默认后须改用 v1，否则失去对 `profile_version` 参数的往返�
 
 `SharpeBoardProfileCard` 加一条独立说明行（蓝色徽标 + 说明），
 与「规则版本 v2」相邻。理由：窗口截断后一年没上榜的基金 `listed_weeks=0`
-会被默认 `min_weeks=1` 筛掉，老基金「资历归零」容易让用户以为出 bug。
+会被硬门槛（窗口内曾在榜）筛掉，老基金「资历归零」容易让用户以为出 bug。
 页面另两处过期文案同步：
 - 无点空态：「列表仍按全历史统计」→「列表按近 52 周窗口统计」
 - `RANGE_OPTIONS.all`：'全部' → '近一年(52周)'
@@ -208,3 +208,35 @@ pnpm build
 - `listedWeeksTip` / `consecutiveWeeksTip`：含分母口径与缺口周日期；
 - 图表：缺口周竖线在 markLine 内（与下限线共存）、无缺口周时不画标记、
   tooltip 命中缺口周时提示正确、标记挂在第一条可见 series。
+
+## 10. 在榜占比筛选 + 时间范围精简（11-14-sharpe-board-listed-pct-filter，2026-11-14）
+
+后端契约见 [backend §23](../backend/fund-select/backend/contracts.md)。
+
+### 10.1 「至少上榜」改为在榜占比
+
+- `SharpeBoardFilters.minWeeks` → `minListedPct`（默认 **60**，可手动改 0~100）。
+- URL 参数 `min_weeks` → `min_listed_pct`；默认值（60）不写进 URL。
+- 输入框是 `type="number"` `min=0 max=100 step=1`，`title` 说明
+  「在榜占比 = 在榜周数 ÷ 可评周数（该基金有有效样本的周数）；0 = 不限」。
+- 判定在后端：占比 = `listed_weeks / evaluable_weeks × 100`（与表格 `在榜/可评` 同源），
+  含等于；前端只负责传值，**不要**自己按 `listed_weeks/52` 算。
+
+### 10.2 时间范围去掉「近 1 年」
+
+- `SharpeRange` 去掉 `'1y'`；`RANGE_OPTIONS` 只留 3 项，按时长升序
+  （3 个月 → 6 个月 → 近一年(52周)）。
+- 旧 URL `?range=1y` 回落默认 `all`（同样 52 周视图，行为不变）。
+
+### 10.3 注意
+
+- `sharpeFiltersActive` 用 `DEFAULT_SHARPE_FILTERS.minListedPct`（60）作基准；
+  `page.tsx` 的 `pageAffecting` 判定与 `clearDisplayFilters` 同步改名。
+- 清空输入框 → 0（= 不限）；`Number('') = 0` 的坑必须显式判空串，避免误触。
+- 「清除展示筛选」把占比重置为 60（不是 0）——回到默认视图，不是全放。
+
+### 10.4 Tests Required（补充 §6）
+
+- `minListedPct` 默认 60、URL 往返、越界回落 60、默认值省略不写 URL；
+- 旧参数 `min_weeks=3` → 落默认 60；
+- `RANGE_OPTIONS` 恰 3 项且不含 `1y`；`?range=1y` → `all`。

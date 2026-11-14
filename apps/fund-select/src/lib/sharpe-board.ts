@@ -10,7 +10,8 @@
 
 /** 榜单来源：all = 两条链路聚合（11-15-source-segmented），stock = 三分法，discovery-stock = 市场 */
 export type SharpeSource = 'all' | 'stock' | 'discovery-stock';
-export type SharpeRange = '3m' | '6m' | '1y' | 'all';
+/** 图时间范围：all = 近一年(52 周)。旧 '1y' 与 all 等价，已从下拉移除 */
+export type SharpeRange = '3m' | '6m' | 'all';
 
 /** 固定规则 profile（source/version/filters/prefilters/algorithm） */
 export interface SharpeBoardProfile {
@@ -102,8 +103,8 @@ export interface SharpeBoardFilters {
   profileVersion: string;
   /** 展示下限：最近上榜夏普 ≥ X（含等于）；null = 不限 */
   minLatestSharpe: number | null;
-  /** 至少上榜几周（v2：52 周窗口内累计） */
-  minWeeks: number;
+  /** 在榜占比下限（%，在榜周数 ÷ 可评周数；0=不限） */
+  minListedPct: number;
   /** 只看最新成功一周在榜的基金 */
   latestOnly: boolean;
   /** 图时间范围（只裁图，不改统计与命中集合） */
@@ -116,7 +117,7 @@ export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
   source: 'all',
   profileVersion: 'v3',
   minLatestSharpe: null,
-  minWeeks: 1,
+  minListedPct: 60,
   latestOnly: false,
   range: 'all',
   page: 1,
@@ -130,11 +131,11 @@ export const SOURCE_OPTIONS: { value: SharpeSource; label: string }[] = [
 ];
 
 export const RANGE_OPTIONS: { value: SharpeRange; label: string }[] = [
-  // v2：窗口恒为最近 52 周，all 与 1y 等价；range 只是窗口内的缩放
-  { value: 'all', label: '近一年(52周)' },
+  // 窗口恒为最近 52 周，range 只是窗口内的缩放；旧 '1y' 与 'all' 等价已移除，
+  // 按时长升序排列
   { value: '3m', label: '近 3 个月' },
   { value: '6m', label: '近 6 个月' },
-  { value: '1y', label: '近 1 年' },
+  { value: 'all', label: '近一年(52周)' },
 ];
 
 const SOURCES = new Set<string>(SOURCE_OPTIONS.map(o => o.value));
@@ -145,7 +146,7 @@ export function parseSharpeFiltersFromSearch(search: URLSearchParams): SharpeBoa
   const sourceRaw = search.get('source');
   const rangeRaw = search.get('range');
   const minSharpeRaw = search.get('min_latest_sharpe');
-  const minWeeksRaw = search.get('min_weeks');
+  const minPctRaw = search.get('min_listed_pct');
   const pageRaw = search.get('page');
   const limitRaw = search.get('limit');
   const filters: SharpeBoardFilters = { ...DEFAULT_SHARPE_FILTERS };
@@ -156,9 +157,10 @@ export function parseSharpeFiltersFromSearch(search: URLSearchParams): SharpeBoa
     const v = Number(minSharpeRaw);
     if (Number.isFinite(v) && v >= -10 && v <= 10) filters.minLatestSharpe = v;
   }
-  if (minWeeksRaw !== null && minWeeksRaw !== '') {
-    const v = Number(minWeeksRaw);
-    if (Number.isInteger(v) && v >= 1) filters.minWeeks = v;
+  // 旧参数 min_weeks（周数）已下线：旧链接落到默认 60%
+  if (minPctRaw !== null && minPctRaw !== '') {
+    const v = Number(minPctRaw);
+    if (Number.isFinite(v) && v >= 0 && v <= 100) filters.minListedPct = Math.round(v);
   }
   if (search.get('latest_only') === '1') filters.latestOnly = true;
   if (rangeRaw && RANGES.has(rangeRaw)) filters.range = rangeRaw as SharpeRange;
@@ -181,7 +183,9 @@ export function sharpeFiltersToSearch(filters: SharpeBoardFilters): URLSearchPar
     params.set('profile_version', filters.profileVersion);
   }
   if (filters.minLatestSharpe !== null) params.set('min_latest_sharpe', String(filters.minLatestSharpe));
-  if (filters.minWeeks !== DEFAULT_SHARPE_FILTERS.minWeeks) params.set('min_weeks', String(filters.minWeeks));
+  if (filters.minListedPct !== DEFAULT_SHARPE_FILTERS.minListedPct) {
+    params.set('min_listed_pct', String(filters.minListedPct));
+  }
   if (filters.latestOnly) params.set('latest_only', '1');
   if (filters.range !== DEFAULT_SHARPE_FILTERS.range) params.set('range', filters.range);
   if (filters.page !== DEFAULT_SHARPE_FILTERS.page) params.set('page', String(filters.page));
@@ -197,7 +201,7 @@ export function sharpeFiltersToQuery(filters: SharpeBoardFilters): string {
   params.set('range', filters.range);
   params.set('page', String(filters.page));
   params.set('limit', String(filters.limit));
-  params.set('min_weeks', String(filters.minWeeks));
+  params.set('min_listed_pct', String(filters.minListedPct));
   const q = params.toString();
   return q ? `?${q}` : '';
 }
@@ -248,7 +252,7 @@ export function classifySharpeBoard(
 export function sharpeFiltersActive(filters: SharpeBoardFilters): boolean {
   return (
     filters.minLatestSharpe !== null
-    || filters.minWeeks !== DEFAULT_SHARPE_FILTERS.minWeeks
+    || filters.minListedPct !== DEFAULT_SHARPE_FILTERS.minListedPct
     || filters.latestOnly
   );
 }

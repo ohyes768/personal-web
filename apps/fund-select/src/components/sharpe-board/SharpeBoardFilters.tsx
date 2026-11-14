@@ -1,5 +1,5 @@
 /**
- * 夏普榜单展示筛选条：来源切换 + 夏普下限 + 至少上榜几周 + 只看最新周 + 时间范围
+ * 夏普榜单展示筛选条：来源切换 + 夏普下限 + 在榜占比下限 + 只看最新周 + 时间范围
  *
  * 展示筛选只影响呈现，不改记录条件/历史数据（R5）；来源切换由父组件重置列表页
  * 并中止旧请求。390px 换行（flex-wrap）。
@@ -38,9 +38,16 @@ export function SharpeBoardFilters({ filters, onChange }: SharpeBoardFiltersProp
     }
   }
 
-  function onMinWeeksChange(event: ChangeEvent<HTMLInputElement>) {
-    const v = Number(event.target.value);
-    onChange({ minWeeks: Number.isInteger(v) && v >= 1 ? v : 1 });
+  function onMinListedPctChange(event: ChangeEvent<HTMLInputElement>) {
+    const raw = event.target.value;
+    if (raw === '') {
+      onChange({ minListedPct: 0 });   // 空 = 不限占比
+      return;
+    }
+    const v = Number(raw);
+    if (Number.isFinite(v) && v >= 0 && v <= 100) {
+      onChange({ minListedPct: Math.round(v) });
+    }
   }
 
   return (
@@ -95,13 +102,16 @@ export function SharpeBoardFilters({ filters, onChange }: SharpeBoardFiltersProp
         至少上榜
         <input
           type="number"
-          min={1}
-          value={filters.minWeeks}
-          onChange={onMinWeeksChange}
-          aria-label="至少上榜几周"
-          className={`${control} w-14 tnum`}
+          min={0}
+          max={100}
+          step={1}
+          value={filters.minListedPct}
+          onChange={onMinListedPctChange}
+          aria-label="在榜占比下限（%，在榜周数 ÷ 可评周数）"
+          title="在榜占比 = 在榜周数 ÷ 可评周数（近 52 周内该基金有有效样本的周数）；0 = 不限"
+          className={`${control} w-16 tnum`}
         />
-        周
+        %
       </label>
 
       <label className={labelCls}>

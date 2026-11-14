@@ -25,6 +25,7 @@ import { SharpeBoardEmptyCard, SharpeBoardStatusBar } from '@/components/sharpe-
 import { SharpeBoardTable } from '@/components/sharpe-board/SharpeBoardTable';
 import {
   classifySharpeBoard,
+  DEFAULT_SHARPE_FILTERS,
   fetchSharpeBoard,
   hasPointInRange,
   parseSharpeFiltersFromSearch,
@@ -107,7 +108,7 @@ function SharpeBoardPageInner() {
     (patch: Partial<Filters>) => {
       const next: Filters = { ...filters, ...patch };
       const pageAffecting =
-        'source' in patch || 'minLatestSharpe' in patch || 'minWeeks' in patch || 'latestOnly' in patch;
+        'source' in patch || 'minLatestSharpe' in patch || 'minListedPct' in patch || 'latestOnly' in patch;
       if (pageAffecting) next.page = 1;
       const qs = sharpeFiltersToSearch(next).toString();
       router.push(qs ? `?${qs}` : '?', { scroll: false });
@@ -141,7 +142,7 @@ function SharpeBoardPageInner() {
   }, []);
 
   const clearDisplayFilters = useCallback(() => {
-    updateFilters({ minLatestSharpe: null, minWeeks: 1, latestOnly: false });
+    updateFilters({ minLatestSharpe: null, minListedPct: DEFAULT_SHARPE_FILTERS.minListedPct, latestOnly: false });
   }, [updateFilters]);
 
   // 聚焦 = 除目标外全部隐藏（与图例隐藏合并为 effectiveHidden）

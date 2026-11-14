@@ -621,7 +621,7 @@ def aggregate_board(
     source: str,
     profile_version: str = "v3",
     min_latest_sharpe: float | None = None,
-    min_weeks: int = 1,
+    min_listed_pct: float = 60.0,
     latest_only: bool = False,
     range_key: str = "all",
     page: int = 1,
@@ -637,8 +637,6 @@ def aggregate_board(
       起点取 max(window_start, range_start)，绝不让用户看到超出 52 周的数据。
     - latest_only 用当前来源最新 complete 周榜；最新空榜 → 命中零只。
     - series 为全部命中基金，不随分页；范围内无点保留 null 不造点。
-    - 窗口截断后一年没上榜的基金 listed_weeks=0 → 被 min_weeks=1 默认筛掉
-      （PRD R5 已声明为预期的连带后果）。
     - 不 JOIN 实时 Fund 表（失活/清盘基金历史仍在）。
 
     source="all"（11-15-source-segmented）：聚合 stock + discovery-stock 两条
@@ -655,6 +653,13 @@ def aggregate_board(
     - evaluable_weeks = 窗口内该基金有有效样本的周数（= 52 − gap 周数），
       作为「近52周在榜」的分母；listed_weeks 仍是分子、排序键不变。
     - source=all 时 gap 取「所有在册来源都缺口」：任一来源能给出有效样本即视为可评。
+
+    在榜占比筛选（11-14-sharpe-board-listed-pct-filter）：
+    - min_listed_pct 取代旧的 min_weeks（周数）：命中条件 =
+      listed_weeks / evaluable_weeks × 100 >= min_listed_pct（默认 60%）。
+      分母与表格「近52周在榜」的 `在榜/可评` 同源，用户看到的分数就是被筛的分数。
+    - 硬门槛 listed_weeks >= 1 保留：窗口内从未上榜的基金任何下限都看不到。
+    - min_listed_pct=0 ≡ 不限（等价旧 min_weeks=1）。
     """
     if range_key not in _RANGE_WEEKS:
         raise ValueError(f"unknown range: {range_key}")
@@ -834,9 +839,14 @@ def aggregate_board(
         }
 
     # 2) 展示筛选（52 周窗口内统计；下限含等于，R5）
+    #    在榜占比 = 在榜周数 ÷ 可评周数（11-14-sharpe-board-listed-pct-filter）：
+    #    整数左乘比较，避免浮点误差；min_listed_pct=0 恒真（= 不限）。
+    #    硬门槛 listed_weeks >= 1：窗口内从未上榜的基金任何下限都看不到（沿用
+    #    旧 min_weeks>=1 语义，避免「0/52」噪声行）。
     matched = [
         s for s in stats.values()
-        if s["listed_weeks"] >= min_weeks
+        if s["listed_weeks"] >= 1
+        and s["listed_weeks"] * 100 >= min_listed_pct * s["evaluable_weeks"]
         and (min_latest_sharpe is None
              or (s["latest_sharpe"] is not None
                  and s["latest_sharpe"] >= min_latest_sharpe))
@@ -844,8 +854,7 @@ def aggregate_board(
     ]
 
     # 3) 排序：在榜周数降序 → 最近上榜夏普降序 → 代码升序（R3）
-    #    窗口外基金的 latest_sharpe 为 None（min_weeks=0 时才可能进 matched），
-    #    用 -inf 排末尾，不能对 None 取负号。
+    #    latest_sharpe 为 None 的基金用 -inf 排末尾，不能对 None 取负号。
     def _sort_key(s):
         sh = s["latest_sharpe"]
         return (-s["listed_weeks"], -sh if sh is not None else float("-inf"), s["code"])

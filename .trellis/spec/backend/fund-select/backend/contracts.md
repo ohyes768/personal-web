@@ -780,8 +780,8 @@ publish_week_board(db, capture, *, source, profile_version, week_start, trigger,
 - **规则 profile**：`(stock, v1)`（雪球 yaml 名单，market_subtypes=None）与 `(discovery-stock, v1)`（market_subtypes=DISCOVERY_STOCK_SUBTYPES 确定副本 + 采集预筛 min_ret_3y=20/min_size_yi=5/min_mgr_exp=5）。filters=入选条件（成立≥3年/规模≥5亿/回撤绝对值≤30%/经理≥5年/夏普≥0.8/不排 QDII）。**记录参数 filters.min_sharpe 与展示参数 min_latest_sharpe 分开**。规则变更必须换 version，不改旧周行。
 - **周键**：任务 `started_at`（非 finished_at）转 Asia/Shanghai 所在周周一；跨周完成仍归开始周。
 - **冻结范围（易漏）**：入选谓词消费的 `dd_3y` 在 `FundPerformance` 行上，`freeze_base_row` 冻结不到——两条链路必须在 commit 点调 `freeze_dd_rows` 合并进 `base_rows[code]["dd_3y"]`，发布侧只读 capture，**禁止回读共享最新表**（普通刷新会覆盖）。risk_rows 冻结本轮 sharpe + `returns_end_date` + `benchmark_source` + `calculated_at`。
-- **API**：`GET /api/funds/sharpe-board`，参数 `source=stock|discovery-stock`（默认 discovery-stock）/`profile_version=v1`（未知 404）/`min_latest_sharpe` 可空 [-10,10]/`min_weeks>=1` 默认 1/`latest_only` 默认 false/`range=3m|6m|1y|all` 默认 all/`page>=1`/`limit 1..200` 默认 50。返回 9 字段：profile/latest_published_week/latest_attempt/stale/total/items/weeks/series/diagnostics——**全部在 Pydantic DTO 显式声明**（§3a 静默砍字段）。items=当页（code/name/listed_weeks/consecutive_weeks/latest_sharpe/last_listed_week/on_latest_board）；series=全部命中不随分页。静态 router 必须注册在通用 `/{code}` 详情路由**之前**（main.py）。
-- **聚合顺序**：complete 周全历史聚合 → 展示筛选（min_latest_sharpe 含等号、min_weeks、latest_only 用当前来源最新 complete 周而非各基金最后记录周）→ 排序 `(listed_weeks DESC, latest_sharpe DESC, code ASC)` → total 切片前算 → 切片（§分页不变量）。weeks 周历=首次观测周→当前周周一，range **只裁起点且起点对齐回周一网格**，终点恒为当前周；失败/停机/空榜周留位。consecutive_weeks=从最近上榜周向前数相邻自然周，缺席/未知中断（**§21 起细化：数据缺口周不中断，真实缺席才中断**）。stale=当前周无 complete 榜。
+- **API**：`GET /api/funds/sharpe-board`，参数 `source=stock|discovery-stock`（默认 discovery-stock）/`profile_version=v1`（未知 404）/`min_latest_sharpe` 可空 [-10,10]/`min_listed_pct` [0,100] 默认 60（**旧 `min_weeks` 已下线，见 §23**）/`latest_only` 默认 false/`range=3m|6m|1y|all` 默认 all/`page>=1`/`limit 1..200` 默认 50。返回 9 字段：profile/latest_published_week/latest_attempt/stale/total/items/weeks/series/diagnostics——**全部在 Pydantic DTO 显式声明**（§3a 静默砍字段）。items=当页（code/name/listed_weeks/consecutive_weeks/latest_sharpe/last_listed_week/on_latest_board）；series=全部命中不随分页。静态 router 必须注册在通用 `/{code}` 详情路由**之前**（main.py）。
+- **聚合顺序**：complete 周全历史聚合 → 展示筛选（min_latest_sharpe 含等号、**min_listed_pct 在榜占比**、latest_only 用当前来源最新 complete 周而非各基金最后记录周）→ 排序 `(listed_weeks DESC, latest_sharpe DESC, code ASC)` → total 切片前算 → 切片（§分页不变量）。weeks 周历=首次观测周→当前周周一，range **只裁起点且起点对齐回周一网格**，终点恒为当前周；失败/停机/空榜周留位。consecutive_weeks=从最近上榜周向前数相邻自然周，缺席/未知中断（**§21 起细化：数据缺口周不中断，真实缺席才中断**）。stale=当前周无 complete 榜。
 
 ### 4. Validation & Error Matrix
 
@@ -1283,8 +1283,8 @@ def _window_start(current): return current - timedelta(weeks=WINDOW_WEEKS - 1)
   旧 `_RANGE_DAYS["1y"] = 365`（52 周+1 天）会让起点落周日、series 全 null
   （§13 记录的 2026-11-05 真实回归）——改用整周数后该缺陷自然消失。
 - `listed_weeks` / `consecutive_weeks` / `latest_sharpe` / `near_12w` 全部
-  **只统计窗口内**；窗口外仍有观测的基金 `listed_weeks=0` → 被默认
-  `min_weeks=1` 筛掉（预期连带后果，实测 13 只被挤出视图）。
+  **只统计窗口内**；窗口外仍有观测的基金 `listed_weeks=0` → 被硬门槛
+  （窗口内曾在榜，v2 时写作 `min_weeks=1`）筛掉（预期连带后果，实测 13 只被挤出视图）。
 - **窗口只作用于聚合，不删除任何观测行**（AC9c）。
 - `range` 语义收窄为**窗口内缩放**：起点 `max(window_start, range_start, first_obs)`，
   绝不让用户看到超出 52 周的数据；`all` 与 `1y` 等价。
@@ -1300,7 +1300,7 @@ def _window_start(current): return current - timedelta(weeks=WINDOW_WEEKS - 1)
 
 ### 18.9 已知排序陷阱
 
-窗口外基金 `latest_sharpe=None`，`min_weeks=0` 时可能进 `matched`。
+窗口外基金 `latest_sharpe=None`（v2 旧 `min_weeks=0` 时可能进 `matched`；§23 起为硬门槛，永不进）。
 **排序键必须对 None 取 `-inf`**，不能写 `-s["latest_sharpe"]`（TypeError）：
 
 ```python
@@ -1881,3 +1881,65 @@ const query = [
 - `TestSubtypeUniverse::test_long_bond_subtype_in_bond_universe` — `债券型-长债` ∈ 债基 universe
 - `TestSubtypeUniverse::test_every_declared_subtype_is_reachable_from_ui_mapping` — 后端 universe 与前端粗类别表一一对应（前端漏项即失败）
 - `TestMarketTypeFilter::*` — market_type 在 curated / market / all 三态下都收窄；不在 universe 里的白名单返回空集而不报错
+
+## 23. 在榜占比筛选 + 时间范围精简（11-14-sharpe-board-listed-pct-filter，2026-11-14）
+
+### 23.1 Scope / Trigger
+
+「至少上榜 1 周」几乎不过滤（生产库 53 只全通过），用户看不出筛选器在做什么；
+而 v4 口径（§21）已引入「可评周数」并在表格显示 `在榜/可评` 分数。筛选条件应与
+这个分数同源：**在榜占比 = 在榜周数 ÷ 可评周数**。
+
+同时 `range=1y` 与 `range=all` 自 v2 起完全等价（`_RANGE_WEEKS` 都是 52 周），
+下拉里两个选项是重复的。
+
+### 23.2 API 参数变更
+
+| 旧 | 新 |
+|---|---|
+| `min_weeks: int = Query(1, ge=1)` | `min_listed_pct: float = Query(60, ge=0, le=100)` |
+
+判定（`aggregate_board` 第 2 段展示筛选）：
+
+```python
+s["listed_weeks"] >= 1                                            # 硬门槛：窗口内曾在榜
+and s["listed_weeks"] * 100 >= min_listed_pct * s["evaluable_weeks"]   # 占比（整数左乘，避免浮点误差）
+```
+
+- 分母 `evaluable_weeks` 与表格「近52周在榜」同源（§21）；
+- `min_listed_pct=0` 恒真 ≡ 不限（等价旧 `min_weeks=1`）；
+- 硬门槛保留：窗口内从未上榜的基金任何下限都看不到（避免「0/52」噪声行）；
+- 越界（-1 / 101）→ 422；旧参数 `min_weeks` 已下线（FastAPI 忽略未知参数 → 旧链接落默认 60%）。
+
+生产库 `source=all` / v3 / 53 只命中实测：≥0% → 53、≥50% → 41、**≥60% → 32**、≥80% → 22。
+
+### 23.3 时间范围精简
+
+- 前端 `SharpeRange` 去掉 `'1y'`；`RANGE_OPTIONS` 只留 3 项，按时长升序：
+  `3m 近 3 个月` / `6m 近 6 个月` / `all 近一年(52周)`。
+- 后端 `_RANGE_WEEKS` 保留 `1y` 兼容旧链接（52 周，与 all 等价），但前端不再暴露；
+  旧 URL `?range=1y` 在前端回落默认 `all`，**行为不变**。
+
+### 23.4 前端三处同步
+
+- `SharpeBoardFilters.minWeeks` → `minListedPct`，默认 60；
+- URL 参数 `min_weeks` → `min_listed_pct`（默认值不写进 URL）；
+- `sharpeFiltersActive` 用 60 作基准；`page.tsx` 的 `pageAffecting` 与
+  `clearDisplayFilters` 同步改名；
+- 筛选条是**可编辑数字输入**（0~100，步长 1），不是预设下拉；`title` 说明分母口径。
+
+### 23.5 陷阱
+
+1. `sharpeFiltersActive` 忘了改默认 → 「筛选已激活」永远为 false。
+2. `parseSharpeFiltersFromSearch` 里 `Number('') = 0` → 空串必须显式判断，
+   否则清空输入框会意外变成「不限」。
+3. `min_listed_pct=0` 与硬门槛 `listed_weeks>=1` 是两件事：不限占比 ≠ 显示从未在榜的基金。
+4. 测试里直接调 `aggregate_board(...)` 不带 `min_listed_pct` 时默认是 60%，
+   只测统计/排序的旧用例要显式传 `min_listed_pct=0`，否则命中集被悄悄收窄。
+
+### 23.6 Tests Required
+
+- `test_sharpe_board_api.py::TestListedPctFilter`：API 默认 60%、0%=不限、
+  从未在榜不通过、分母用可评周数（缺口周不拉低占比）；越界 422；
+- `sharpe-board.test.ts`：默认 60 / URL 往返 / 越界回落 / 旧 `min_weeks` 落默认 /
+  `RANGE_OPTIONS` 只 3 项且不含 `1y`。

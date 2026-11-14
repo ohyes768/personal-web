@@ -8,6 +8,7 @@
 - source 默认 discovery-stock（股基·市场）；profile_version 未知 → 404
 - min_latest_sharpe 是展示下限（最近一次上榜值，含等于），与记录规则
   min_sharpe=0.8 分开（R5）
+- min_listed_pct 是在榜占比下限（默认 60%，在榜周数 ÷ 可评周数，含等于）
 - range 只裁周历（图），不改累计周数/最近上榜值/命中集合（R5/AC4）
 """
 from typing import Optional
@@ -32,7 +33,10 @@ async def sharpe_board(
         None, ge=-10, le=10,
         description="最近上榜夏普下限（含等于；按全历史最近一次上榜值判断，R5）",
     ),
-    min_weeks: int = Query(1, ge=1, description="至少上榜几周（全历史累计）"),
+    min_listed_pct: float = Query(
+        60, ge=0, le=100,
+        description="在榜占比下限（%，在榜周数 ÷ 可评周数，含等于；0=不限）",
+    ),
     latest_only: bool = Query(False, description="只看最新成功（complete）一周在榜的基金"),
     range: str = Query("all", pattern="^(3m|6m|1y|all)$",
                        description="图时间范围（只裁图，不改统计与命中集合）"),
@@ -56,7 +60,7 @@ async def sharpe_board(
         source=source,
         profile_version=profile_version,
         min_latest_sharpe=min_latest_sharpe,
-        min_weeks=min_weeks,
+        min_listed_pct=min_listed_pct,
         latest_only=latest_only,
         range_key=range,
         page=page,

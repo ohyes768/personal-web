@@ -15,6 +15,7 @@ import {
   hasPointInRange,
   listedWeeksTip,
   parseSharpeFiltersFromSearch,
+  RANGE_OPTIONS,
   sharpeFiltersActive,
   sharpeFiltersToQuery,
   sharpeFiltersToSearch,
@@ -61,9 +62,9 @@ test('URL 参数往返：非默认值全部保留', () => {
     source: 'stock' as const,
     profileVersion: 'v1',  // 非默认值（默认已切 v3）
     minLatestSharpe: 0.9,
-    minWeeks: 3,
+    minListedPct: 80,
     latestOnly: true,
-    range: '1y' as const,
+    range: '3m' as const,
     page: 2,
     limit: 25,
   };
@@ -75,14 +76,14 @@ test('非法值逐字段回退默认', () => {
   const parsed = parseSharpeFiltersFromSearch(new URLSearchParams({
     source: 'bond',
     min_latest_sharpe: '99',
-    min_weeks: '0',
+    min_listed_pct: '120',
     range: '2y',
     page: '-1',
     limit: '999',
   }));
   assert.equal(parsed.source, 'all');
   assert.equal(parsed.minLatestSharpe, null);
-  assert.equal(parsed.minWeeks, 1);
+  assert.equal(parsed.minListedPct, 60);
   assert.equal(parsed.range, 'all');
   assert.equal(parsed.page, 1);
   assert.equal(parsed.limit, 50);
@@ -105,7 +106,7 @@ test('请求查询串始终显式携带 source/range/分页', () => {
   assert.equal(params.get('range'), 'all');
   assert.equal(params.get('page'), '1');
   assert.equal(params.get('limit'), '50');
-  assert.equal(params.get('min_weeks'), '1');
+  assert.equal(params.get('min_listed_pct'), '60');
   assert.equal(params.get('min_latest_sharpe'), null);
   assert.equal(q.startsWith('?'), true);
 });
@@ -164,7 +165,7 @@ test('classify：有命中 → ok', () => {
 test('sharpeFiltersActive：默认不激活，任一展示筛选激活', () => {
   assert.equal(sharpeFiltersActive(DEFAULT_SHARPE_FILTERS), false);
   assert.equal(sharpeFiltersActive({ ...DEFAULT_SHARPE_FILTERS, minLatestSharpe: 1 }), true);
-  assert.equal(sharpeFiltersActive({ ...DEFAULT_SHARPE_FILTERS, minWeeks: 2 }), true);
+  assert.equal(sharpeFiltersActive({ ...DEFAULT_SHARPE_FILTERS, minListedPct: 80 }), true);
   assert.equal(sharpeFiltersActive({ ...DEFAULT_SHARPE_FILTERS, latestOnly: true }), true);
   // range 只裁图，不算筛选激活
   assert.equal(sharpeFiltersActive({ ...DEFAULT_SHARPE_FILTERS, range: '3m' }), false);
@@ -269,4 +270,40 @@ test('连续周数 tooltip：数据缺口不打断连续 + 列出缺口周', () 
   assert.match(tip, /真实缺席/);
   assert.match(tip, /2026-02-16/);
   assert.doesNotMatch(consecutiveWeeksTip(32, []), /数据缺口周：/);
+});
+
+// ── 在榜占比筛选 + 时间范围精简（11-14-sharpe-board-listed-pct-filter）────────
+
+test('在榜占比下限：默认 60%，URL 往返，越界回落默认', () => {
+  assert.equal(DEFAULT_SHARPE_FILTERS.minListedPct, 60);
+  const parsed = parseSharpeFiltersFromSearch(new URLSearchParams({ min_listed_pct: '80' }));
+  assert.equal(parsed.minListedPct, 80);
+  const roundTrip = parseSharpeFiltersFromSearch(
+    sharpeFiltersToSearch({ ...DEFAULT_SHARPE_FILTERS, minListedPct: 80 }),
+  );
+  assert.equal(roundTrip.minListedPct, 80);
+  // 越界回落默认
+  assert.equal(
+    parseSharpeFiltersFromSearch(new URLSearchParams({ min_listed_pct: '120' })).minListedPct,
+    60,
+  );
+  assert.equal(
+    parseSharpeFiltersFromSearch(new URLSearchParams({ min_listed_pct: '-5' })).minListedPct,
+    60,
+  );
+  // 默认值不写进 URL
+  assert.equal(sharpeFiltersToSearch(DEFAULT_SHARPE_FILTERS).get('min_listed_pct'), null);
+});
+
+test('旧参数 min_weeks 已下线：旧链接落到默认 60%', () => {
+  const parsed = parseSharpeFiltersFromSearch(new URLSearchParams({ min_weeks: '3' }));
+  assert.equal(parsed.minListedPct, 60);
+});
+
+test('时间范围：去掉与「近一年(52周)」重复的「近 1 年」，只留 3 项', () => {
+  assert.deepEqual(RANGE_OPTIONS.map(o => o.value), ['3m', '6m', 'all']);
+  assert.ok(!RANGE_OPTIONS.some(o => (o.value as string) === '1y'));
+  // 旧链接 ?range=1y → 回落默认（同样 52 周视图，行为不变）
+  const parsed = parseSharpeFiltersFromSearch(new URLSearchParams({ range: '1y' }));
+  assert.equal(parsed.range, 'all');
 });

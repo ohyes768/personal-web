@@ -839,18 +839,18 @@ class TestFiftyTwoWeekWindow:
         assert len(body["weeks"]) == 20  # 不补零
 
     def test_window_excluded_fund_dropped_by_default(self, db_session, monkeypatch):
-        """窗口外才有观测 → listed_weeks=0 → 默认 min_weeks=1 筛掉。"""
+        """窗口外才有观测 → listed_weeks=0 → 硬门槛（窗口内曾在榜）筛掉。
+
+        占比下限放到 0（不限）也看不到它：min_listed_pct 只管「在榜占比」，
+        「从未在榜」是另一道硬门槛。
+        """
         # 该 code 只在 60 周前上榜，与窗口内另一只基金共存
         self._seed_weeks(db_session, [self.WEEK - timedelta(weeks=60)],
                          code="500002", version="v2")
         self._seed_weeks(db_session, [self.WEEK], code="500001", version="v2")
-        body = self._agg(db_session, monkeypatch)
+        body = self._agg(db_session, monkeypatch, min_listed_pct=0)
         assert [it["code"] for it in body["items"]] == ["500001"]
-        # 显式 min_weeks=0 可以看到它，且统计为 0
-        body0 = self._agg(db_session, monkeypatch, min_weeks=0)
-        it2 = {it["code"]: it for it in body0["items"]}["500002"]
-        assert it2["listed_weeks"] == 0
-        assert it2["latest_sharpe"] is None
+        assert "500002" not in {it["code"] for it in body["items"]}
 
     def test_range_aliases_and_grid(self, db_session, monkeypatch):
         weeks = [self.WEEK - timedelta(weeks=i) for i in range(60)][::-1]
