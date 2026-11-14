@@ -27,9 +27,19 @@ from typing import Optional
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.orm import Session
 
-from src.db.models import Fund, Manager, ManagerTenure, SharpeBoardObservation, SharpeBoardWeek
+from src.db.models import (
+    Fund,
+    FundAchievementRank,
+    FundPerformance,
+    Manager,
+    ManagerTenure,
+    MarketFundRank,
+    SharpeBoardObservation,
+    SharpeBoardWeek,
+)
 from src.data.fund_universe import resolve_universe_codes
 from src.services.manager_metrics import is_active_equity
+from src.utils.rank import parse_peer_rank
 
 
 # 排序白名单（防注入；键 → (列, 默认方向)）
@@ -65,7 +75,7 @@ class ManagerService:
         min_solo_ratio: Optional[float] = None,    # 独管比例 ≥ %（0-100）
         max_fund_count: Optional[int] = None,      # 在管基金数 ≤ N（精力分散门槛，中基协上限 10）
         keyword: Optional[str] = None,             # 姓名/公司模糊
-        sort: str = "weighted_annual",
+        sort: str = "current_weighted_annual",     # 默认「在管年化」：当下状态口径
         order: str = "desc",
         page: int = 1,
         limit: int = 50,
@@ -238,6 +248,7 @@ class ManagerService:
         ).scalars().all()
         aggregates = self._load_aggregates([manager_id]).get(manager_id, {})
         affiliations = self._load_affiliations([t.fund_code for t in tenures])
+        tenure_returns = self._load_tenure_returns([t.fund_code for t in tenures])
         return {
             **self._to_dto(m),
             **aggregates,
@@ -255,10 +266,83 @@ class ManagerService:
                     "annual_return": t.annual_return,
                     "is_current": t.is_current,
                     "affiliation": affiliations.get(t.fund_code),
+                    **tenure_returns.get(t.fund_code, {}),
                 }
                 for t in tenures
             ],
         }
+
+    def _load_tenure_returns(self, fund_codes: list[str]) -> dict[str, dict]:
+        """任期基金的近 1 年 / 近 3 年 / 近 5 年收益 + 同类排名（与股票 tab 主表同口径）。
+
+        数据源与股票 tab 一致，但顺序相反——这里以「基金自身口径」为准：
+        - 收益：FundPerformance（雪球链路）优先，缺失回退 MarketFundRank（市场链路）
+        - 排名：FundAchievementRank 的阶段业绩/近1年、近3年、近5年（同类分位）
+
+        近 5 年只有 FundPerformance 一条链路：market_fund_rank 表没有 ret_5y 列
+        （市场链路只到近3年/今年以来/成立以来），故无回退，缺失即为空。
+
+        注意口径差异：任期内的「任职回报」按任职窗口算，而这里近 1/3/5 年是
+        基金自身的时间窗口收益——两者对已离任的经理不必然一致
+        （经理离任后基金可能换了人）。故命名用「近1年」而非「任职近1年」。
+        """
+        codes = [c for c in set(fund_codes) if c]
+        if not codes:
+            return {}
+
+        # 收益：FundPerformance 优先，MarketFundRank 回退（仅近1年/近3年）
+        ret_map: dict[str, tuple[float | None, float | None, float | None]] = {}
+        perf_rows = self.db.execute(
+            select(
+                FundPerformance.code,
+                FundPerformance.ret_1y,
+                FundPerformance.ret_3y,
+                FundPerformance.ret_5y,
+            ).where(FundPerformance.code.in_(codes))
+        ).all()
+        for code, r1, r3, r5 in perf_rows:
+            ret_map[code] = (r1, r3, r5)
+        missing = [c for c in codes if c not in ret_map or ret_map[c] == (None, None, None)]
+        if missing:
+            rank_rows = self.db.execute(
+                select(MarketFundRank.code, MarketFundRank.ret_1y, MarketFundRank.ret_3y)
+                .where(MarketFundRank.code.in_(missing))
+            ).all()
+            for code, r1, r3 in rank_rows:
+                prev = ret_map.get(code) or (None, None, None)
+                ret_map[code] = (prev[0] if prev[0] is not None else r1,
+                                 prev[1] if prev[1] is not None else r3,
+                                 prev[2])
+
+        # 同类排名：阶段业绩/近1年、近3年、近5年（与股票 tab RANK_PERIODS 同源）
+        ach_rows = self.db.execute(
+            select(
+                FundAchievementRank.code,
+                FundAchievementRank.period,
+                FundAchievementRank.peer_rank,
+            ).where(
+                FundAchievementRank.code.in_(codes),
+                FundAchievementRank.period_kind == "阶段业绩",
+                FundAchievementRank.period.in_(("近1年", "近3年", "近5年")),
+            )
+        ).all()
+        rank_map: dict[str, dict[str, dict | None]] = defaultdict(dict)
+        for code, period, peer_rank in ach_rows:
+            rank_map[code][period] = parse_peer_rank(peer_rank)
+
+        out: dict[str, dict] = {}
+        for code in codes:
+            r1, r3, r5 = ret_map.get(code, (None, None, None))
+            ranks = rank_map.get(code, {})
+            out[code] = {
+                "ret_1y": r1,
+                "ret_3y": r3,
+                "ret_5y": r5,
+                "rank_1y": ranks.get("近1年"),
+                "rank_3y": ranks.get("近3年"),
+                "rank_5y": ranks.get("近5年"),
+            }
+        return out
 
     def _load_affiliations(self, fund_codes: list[str]) -> dict[str, dict | None]:
         """任期基金的跨 tab 归属（徽章数据，一次两条小查询）。

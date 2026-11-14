@@ -11,7 +11,7 @@
  */
 'use client';
 
-import { Suspense, useCallback, useMemo, useState, useEffect } from 'react';
+import { Suspense, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -24,7 +24,7 @@ import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawer } from '@/components/RowDetailDrawer';
 import { useCompare, useDiscoveryStockFundList, useFeeDetails } from '@/lib/hooks';
 import { feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions } from '@/lib/compareDimensions';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useFilters } from '@/lib/useFilters';
 import {
@@ -47,15 +47,31 @@ function DiscoveryStockPageInner() {
   // 双向闭环落点：经理页徽章 ?code=XXXX 直达，抽屉内按 code 拉完整详情
   const codeParam = useSearchParams().get('code');
   const [stubCode, setStubCode] = useState<string | null>(null);
+  const focusParam = useSearchParams().get('focus');
+  const router = useRouter();
+  // 处理过的 code 记录：避免清筛选触发重渲染后重复处理同一个 code
+  const handledCodeRef = useRef<string | null>(null);
   useEffect(() => {
-    if (codeParam) {
-      setStubCode(codeParam);
-      // 用完即清，避免关闭抽屉后刷新页面又弹开
-      const url = new URL(window.location.href);
-      url.searchParams.delete('code');
-      window.history.replaceState(null, '', url.toString());
+    if (!codeParam || handledCodeRef.current === codeParam) return;
+    handledCodeRef.current = codeParam;
+    setStubCode(codeParam);
+
+    if (focusParam === '1') {
+      // 来自 header 代码搜索：一次导航同时完成「清筛选 + 去掉 code/focus」。
+      // 不能先 clearAll() 再 replaceState —— 两次导航会互相覆盖，
+      // 实测结果是筛选没被清掉、目标基金仍在列表外。
+      // 同时也绕开 discovery-* 页的 preFilters 锁定字段（clearAll 清不到它们）。
+      // ⚠ 只推 query（'?cleared=1'），绝不拼 url.pathname：
+      // pathname 已含 basePath /funds，再拼会变成 /funds/funds/... 404（契约 §4）。
+      router.push('?cleared=1', { scroll: false });
+      return;
     }
-  }, [codeParam]);
+
+    // 普通 ?code= 直达（经理页徽章等）：只清参数，不动筛选
+    const url = new URL(window.location.href);
+    url.searchParams.delete('code');
+    window.history.replaceState(null, '', url.toString());
+  }, [codeParam, focusParam, router]);
 
   // 预筛选值（来自全量 refresh 完成时回写；lockedFields 在左侧 disabled）
   const [preFilters, setPreFilters] = useState<FullRefreshFilters>(DEFAULT_FULL_REFRESH_FILTERS_STOCK);
@@ -183,7 +199,12 @@ function DiscoveryStockPageInner() {
       <RowDetailDrawer
         stub={stubCode}
         fund={detailFund}
-        onClose={() => setDetailFund(null)}
+        onClose={() => {
+          // stub 模式（?code= 直达 / 代码搜索）下 detailFund 恒为 null，
+          // 只清 detailFund 会导致抽屉关不掉 —— 两个都要清。
+          setStubCode(null);
+          setDetailFund(null);
+        }}
       />
     </main>
   );

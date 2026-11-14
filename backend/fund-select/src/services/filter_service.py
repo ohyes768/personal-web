@@ -32,6 +32,7 @@ from src.data.market_subtype_map import (
     DISCOVERY_BOND_SUBTYPES,
     DISCOVERY_STOCK_SUBTYPES,
 )
+from src.utils.rank import parse_peer_rank
 
 # 各 tab 的默认市场 universe（akshare 子类精确枚举）
 DEFAULT_DISCOVERY_UNIVERSE: dict[str, list[str]] = {
@@ -70,18 +71,9 @@ def _parse_peer_rank(value: str | None) -> dict | None:
     """'1694/5606' → {'pct': 30.2, 'total': 5606, 'rank': 1694}；格式异常/缺分母 → None。
 
     用于股票 tab 同类排名显示；债基 tab 永远返回 None（无入库数据）。
+    实现已移至 src/utils/rank.py（经理明细的历任基金行共用）。
     """
-    if not value or "/" not in value:
-        return None
-    try:
-        rank_s, total_s = value.split("/", 1)
-        rank = int(rank_s.strip())
-        total = int(total_s.strip())
-    except (ValueError, TypeError):
-        return None
-    if rank <= 0 or total <= 0 or rank > total:
-        return None
-    return {"pct": round(rank / total * 100, 1), "total": total, "rank": rank}
+    return parse_peer_rank(value)
 
 
 # stock tab 主表 4 个排名口径：(period_kind, period) → DTO 键

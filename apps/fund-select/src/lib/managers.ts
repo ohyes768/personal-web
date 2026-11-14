@@ -2,6 +2,7 @@
  * 经理维度类型与 API（/api/funds/managers/*，任务 11-10-fund-manager-evaluation）
  */
 import { getJson } from './api';
+import type { RankPercentile } from './types';
 
 export interface ManagerListItem {
   manager_id: string;
@@ -53,6 +54,18 @@ export interface ManagerTenure {
   annual_return: number | null;
   is_current: boolean;
   affiliation?: TenureAffiliation | null;
+  /** 基金自身口径近 1 年收益 %（与股票 tab 主表同源：FundPerformance → MarketFundRank） */
+  ret_1y: number | null;
+  /** 基金自身口径近 3 年收益 % */
+  ret_3y: number | null;
+  /** 基金自身口径近 5 年收益 %（仅 FundPerformance 链路，无市场回退） */
+  ret_5y: number | null;
+  /** 近 1 年同类排名分位 */
+  rank_1y: RankPercentile | null;
+  /** 近 3 年同类排名分位 */
+  rank_3y: RankPercentile | null;
+  /** 近 5 年同类排名分位 */
+  rank_5y: RankPercentile | null;
 }
 
 export interface ManagerDetail extends ManagerListItem {
@@ -91,7 +104,9 @@ export const MANAGER_DEFAULT_FILTERS: ManagerFilters = {
   min_solo_ratio: 50,         // 质量门槛：过半在管为独管，共管贡献难归因
   max_fund_count: 8,          // 硬门槛：精力分散（中基协硬性上限 10，8 留缓冲）
   keyword: null,
-  sort: 'weighted_annual',
+  // 默认排「在管年化」：当下状态口径，比「年化·含离任」更贴近可投性
+  // （后者含已离任的历史业绩，会把已卸任业绩突出的经理顶到前面）
+  sort: 'current_weighted_annual',
   order: 'desc',
   page: 1,
   limit: 50,

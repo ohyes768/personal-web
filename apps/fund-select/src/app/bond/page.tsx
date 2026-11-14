@@ -3,7 +3,7 @@
  */
 'use client';
 
-import { Suspense, useMemo, useState, useEffect } from 'react';
+import { Suspense, useMemo, useState, useEffect, useRef } from 'react';
 
 import { CompareDrawer } from '@/components/CompareDrawer';
 import { CompareFloatingBar } from '@/components/CompareFloatingBar';
@@ -18,7 +18,7 @@ import { useCompare, useFeeDetails, useFundList } from '@/lib/hooks';
 import {
   feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions,
 } from '@/lib/compareDimensions';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
 import { useFilters } from '@/lib/useFilters';
 import type { FundListItem } from '@/lib/types';
@@ -32,15 +32,31 @@ function FundsPageInner() {
   // 双向闭环落点：经理页徽章 ?code=XXXX 直达，抽屉内按 code 拉完整详情
   const codeParam = useSearchParams().get('code');
   const [stubCode, setStubCode] = useState<string | null>(null);
+  const focusParam = useSearchParams().get('focus');
+  const router = useRouter();
+  // 处理过的 code 记录：避免清筛选触发重渲染后重复处理同一个 code
+  const handledCodeRef = useRef<string | null>(null);
   useEffect(() => {
-    if (codeParam) {
-      setStubCode(codeParam);
-      // 用完即清，避免关闭抽屉后刷新页面又弹开
-      const url = new URL(window.location.href);
-      url.searchParams.delete('code');
-      window.history.replaceState(null, '', url.toString());
+    if (!codeParam || handledCodeRef.current === codeParam) return;
+    handledCodeRef.current = codeParam;
+    setStubCode(codeParam);
+
+    if (focusParam === '1') {
+      // 来自 header 代码搜索：一次导航同时完成「清筛选 + 去掉 code/focus」。
+      // 不能先 clearAll() 再 replaceState —— 两次导航会互相覆盖，
+      // 实测结果是筛选没被清掉、目标基金仍在列表外。
+      // 同时也绕开 discovery-* 页的 preFilters 锁定字段（clearAll 清不到它们）。
+      // ⚠ 只推 query（'?cleared=1'），绝不拼 url.pathname：
+      // pathname 已含 basePath /funds，再拼会变成 /funds/funds/... 404（契约 §4）。
+      router.push('?cleared=1', { scroll: false });
+      return;
     }
-  }, [codeParam]);
+
+    // 普通 ?code= 直达（经理页徽章等）：只清参数，不动筛选
+    const url = new URL(window.location.href);
+    url.searchParams.delete('code');
+    window.history.replaceState(null, '', url.toString());
+  }, [codeParam, focusParam, router]);
 
   const compareDimensions = useMemo(
     () => [...fundCompareDimensions, ...fundDisplayOnlyDimensions, ...feeDetailDimensions],
@@ -127,7 +143,12 @@ function FundsPageInner() {
       <RowDetailDrawerBond
         stub={stubCode}
         fund={detailFund}
-        onClose={() => setDetailFund(null)}
+        onClose={() => {
+          // stub 模式（?code= 直达 / 代码搜索）下 detailFund 恒为 null，
+          // 只清 detailFund 会导致抽屉关不掉 —— 两个都要清。
+          setStubCode(null);
+          setDetailFund(null);
+        }}
       />
     </main>
   );

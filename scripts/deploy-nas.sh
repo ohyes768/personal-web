@@ -342,6 +342,23 @@ ensure_buildx_builder() {
     echo "    已创建 '$builder_name'（pnpm cache 持久 + Docker Hub 走国内 mirror）"
 }
 
+# ---- 重建前清掉占着 container_name 的容器 ----
+# compose 固定 container_name 时，旧容器还占着这个名字，新容器只能拿临时名
+# （<hash>_<service>），随后改名就报
+#   "The container name ... is already in use by container ..."，整次部署在最后一步挂掉。
+# 重建前把目标服务的旧容器（含上次失败留下的临时容器）删掉，compose 就能直接用回正式名字。
+cleanup_conflicting_containers() {
+    local services="$1" svc ids
+    for svc in $services; do
+        # -a 覆盖停止与 Created 状态；临时容器带着同样的 compose 标签，一并清掉
+        ids=$(docker compose "${COMPOSE_ARGS[@]}" ps -aq "$svc" 2>/dev/null || true)
+        if [[ -n "$ids" ]]; then
+            echo "  --- 清理旧容器 $svc（$ids）---"
+            docker rm -f $ids >/dev/null 2>&1 || true
+        fi
+    done
+}
+
 compose_build() {
     local svc="$1"
     local args=()
@@ -550,6 +567,7 @@ fi
 # ---- Step 3: restart（--no-build：镜像已由上一步 buildx/compose 打好，禁止 compose 再用旧名偷偷重建） ----
 echo ""
 echo "==> [3/3] docker compose up -d --force-recreate --no-build"
+cleanup_conflicting_containers "$SERVICES"
 docker compose "${COMPOSE_ARGS[@]}" up -d --force-recreate --no-build $SERVICES
 
 # ---- 验证状态 ----

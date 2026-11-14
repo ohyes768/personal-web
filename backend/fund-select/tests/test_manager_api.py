@@ -83,6 +83,19 @@ class TestScreen:
         # NULL 排尾部
         assert items[-1]["weighted_annual"] is None
 
+    def test_default_sort_is_current_weighted_annual(self, client, seeded):
+        """默认排「在管年化」（当下状态口径），不是「年化·含离任」。
+
+        seeded 里 m1 有在管段（在管年化 10.48），m2/m3/m4 无在管段 → 在管年化 None。
+        若默认排 weighted_annual，m3(20.0) 应在前；排 current_weighted_annual 则 m1 在前。
+        """
+        r = client.get("/api/funds/managers/screen")
+        items = r.json()["items"]
+        assert items[0]["manager_id"] == "m1"
+        assert items[0]["current_weighted_annual"] == 10.48
+        # 无在管段的经理在管年化为 None，排在尾部
+        assert items[-1]["current_weighted_annual"] is None
+
     def test_sort_max_drawdown_asc_prefers_small(self, client, seeded):
         r = client.get("/api/funds/managers/screen", params={"sort": "max_drawdown"})
         items = [it for it in r.json()["items"] if it["max_drawdown"] is not None]
@@ -478,3 +491,90 @@ class TestCrossTabAffiliation:
         body = client.get("/api/funds/managers/m_aff").json()
         aff = next(t for t in body["tenures"] if t["fund_code"] == "000011")["affiliation"]
         assert aff["tab"] == "bond"
+
+
+class TestTenureReturns:
+    """历任基金行的近 1 年 / 近 3 年收益 + 同类排名（与股票 tab 主表同口径）。"""
+
+    @pytest.fixture
+    def seeded_returns(self, db_session):
+        from src.db.models import FundAchievementRank, FundPerformance, MarketFundRank
+        d = date(2020, 1, 1)
+        db_session.add(Manager(manager_id="m_ret", name="收益甲", scope="stock_active"))
+        db_session.add_all([
+            # 000011：FundPerformance 链路有收益 + 同类排名
+            ManagerTenure(manager_id="m_ret", fund_code="000011", fund_name="基金A",
+                          fund_type="混合型-偏股", start_date=d, tenure_days=1000,
+                          tenure_return=50.0, annual_return=5.0, is_current=True),
+            # 000022：只有 MarketFundRank 链路（回退）
+            ManagerTenure(manager_id="m_ret", fund_code="000022", fund_name="基金B",
+                          fund_type="混合型-偏股", start_date=d, tenure_days=900,
+                          tenure_return=40.0, annual_return=4.0, is_current=True),
+            # 000033：完全无数据 → 两列都空
+            ManagerTenure(manager_id="m_ret", fund_code="000033", fund_name="基金C",
+                          fund_type="混合型-偏股", start_date=d, tenure_days=800,
+                          tenure_return=30.0, annual_return=3.0, is_current=True),
+        ])
+        db_session.add(FundPerformance(code="000011", as_of_date=d,
+                                       ret_1y=12.5, ret_3y=40.2, ret_5y=88.1))
+        db_session.add(MarketFundRank(code="000022", ret_1y=-8.4, ret_3y=25.6))
+        # 同类排名：阶段业绩/近1年、近3年、近5年
+        db_session.add(FundAchievementRank(code="000011", period_kind="阶段业绩", period="近1年",
+                                           peer_rank="1694/5606", as_of_date=d))
+        db_session.add(FundAchievementRank(code="000011", period_kind="阶段业绩", period="近3年",
+                                           peer_rank="800/4000", as_of_date=d))
+        db_session.add(FundAchievementRank(code="000011", period_kind="阶段业绩", period="近5年",
+                                           peer_rank="120/3000", as_of_date=d))
+        db_session.commit()
+        return db_session
+
+    def _row(self, client, code):
+        body = client.get("/api/funds/managers/m_ret").json()
+        return next(t for t in body["tenures"] if t["fund_code"] == code)
+
+    def test_returns_from_fund_performance(self, client, seeded_returns):
+        row = self._row(client, "000011")
+        assert row["ret_1y"] == 12.5
+        assert row["ret_3y"] == 40.2
+        assert row["ret_5y"] == 88.1
+        # 同类排名分位：1694/5606 → 30.2%
+        assert row["rank_1y"]["pct"] == 30.2
+        assert row["rank_1y"]["rank"] == 1694
+        assert row["rank_1y"]["total"] == 5606
+        assert row["rank_3y"]["pct"] == 20.0
+        assert row["rank_3y"]["rank"] == 800
+        assert row["rank_5y"]["pct"] == 4.0
+        assert row["rank_5y"]["rank"] == 120
+
+    def test_returns_fallback_to_market_rank(self, client, seeded_returns):
+        """FundPerformance 缺失时回退 MarketFundRank（与股票 tab 同链路）。"""
+        row = self._row(client, "000022")
+        assert row["ret_1y"] == -8.4
+        assert row["ret_3y"] == 25.6
+        assert row["rank_1y"] is None      # 市场链路无同类排名
+        assert row["rank_3y"] is None
+
+    def test_ret_5y_has_no_market_fallback(self, client, seeded_returns):
+        """近 5 年只有 FundPerformance 一条链路：market_fund_rank 无 ret_5y 列。
+
+        故回退到市场链路的基金近 5 年为空（不造数），与股票 tab 同口径。
+        """
+        row = self._row(client, "000022")
+        assert row["ret_5y"] is None
+        assert row["rank_5y"] is None
+
+    def test_missing_returns_are_null(self, client, seeded_returns):
+        """无数据的基金两列留空（前端显示 -），不造数。"""
+        row = self._row(client, "000033")
+        assert row["ret_1y"] is None
+        assert row["ret_3y"] is None
+        assert row["ret_5y"] is None
+        assert row["rank_1y"] is None
+        assert row["rank_3y"] is None
+        assert row["rank_5y"] is None
+
+    def test_tenure_return_fields_unchanged(self, client, seeded_returns):
+        """任职口径字段不受影响：新列是基金自身口径，不覆盖任职回报。"""
+        row = self._row(client, "000011")
+        assert row["tenure_return"] == 50.0
+        assert row["annual_return"] == 5.0
