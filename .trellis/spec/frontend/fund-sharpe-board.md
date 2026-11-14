@@ -18,7 +18,7 @@
 
 ## 3. 状态与文案
 
-五种状态必须区分，不能都渲染成「暂无数据」：首次无数据（库空）、请求失败（可重试）、成功空榜 vs 采集失败（StatusBar：失败红条带 errors、样本未更新灰条、stale 提示「旧榜日期不冒充本周」）、展示筛选无匹配（带「清除展示筛选」）、时间范围内无点（列表保留，图不造点）。字段文案是「最近上榜夏普」，不得写成「当前夏普」；「最近连续周数」含义是最近一段连续在榜（缺席中断）。
+五种状态必须区分，不能都渲染成「暂无数据」：首次无数据（库空）、请求失败（可重试）、成功空榜 vs 采集失败（StatusBar：失败红条带 errors、样本未更新灰条、stale 提示「旧榜日期不冒充本周」）、展示筛选无匹配（带「清除展示筛选」）、时间范围内无点（列表保留，图不造点）。字段文案是「最近上榜夏普」，不得写成「当前夏普」；「最近连续周数」含义是最近一段连续在榜（**§9 起：数据缺口周不中断，真实缺席才中断**）。
 
 ## 4. 布局
 
@@ -146,3 +146,65 @@ peer_qualified_years !== null  →  `2/3 年`（hover 显示各年明细）
   `SharpeBoardProfile.filters` 是 `Record<string, number | boolean>`，直接读即可。
 - 年度窗口固定 3 年（不含当年），**不要**用 `min_yearly_years` 当窗口大小——
   它是「其中至少几年达标」的门槛（2），窗口长度是硬编码 3。
+
+## 9. 数据缺口周口径（11-14-sharpe-board-gap-weeks，2026-11-14）
+
+后端契约见 [backend §21](../backend/fund-select/backend/contracts.md)。本节只记前端专属部分。
+
+### 9.1 「近52周在榜」列渲染 `在榜/可评`
+
+- 文案：`formatListedWeeks(listed, evaluable)` → `51/51`；`evaluable` 缺失（老后端）
+  时只显示 `51`（**不能显示 `51/0`**）。
+- 分母 = 该基金**有有效样本**的周数（数据缺口周不计入）。表头 `title` 与单元格
+  `hover-tip` 都要说清分母口径。
+- `hover-tip--wrap`（多行换行）用于这两列的长文案；`data-tip` 是 `content: attr()`
+  的纯文本，**不要写 `\n`**（不换行），用「；」分隔。
+
+### 9.2 「最近连续周数」列 tooltip
+
+`consecutiveWeeksTip(consecutive, gapWeeks)`：说明「数据缺口周跳过、不中断，真实缺席
+（可评却未上榜）才中断」+ 列出该基金的数据缺口周（ISO 日期）。
+
+### 9.3 图表标注数据缺口周
+
+- `buildSharpeChartOption` 新增入参 `gapWeeks`（来自 `diagnostics.gap_weeks`）；
+  缺口周画**竖线 markLine**（标签「数据缺口周」），与夏普下限线共用同一 markLine 的
+  `data` 数组。
+- 标注挂在**第一条可见** series 上（图例隐藏的 series 不绘制 markLine）；全部隐藏时
+  退回第一条。
+- tooltip 命中缺口周时提示「数据缺口周：无榜 / 样本未更新（不计入在榜、不打断连续）」，
+  **不**误报「本周无在榜记录」。
+- `buildSharpeChartOption` 仍必须是**零依赖纯函数**（node:test 直跑，不 import echarts）。
+
+### 9.4 规则说明卡
+
+`SharpeBoardProfileCard` 新增 `gapWeeks` prop：窗口内有缺口周时追加一行
+（周数 + 日期 + 成因 + 「不计入在榜、也不打断连续周数——图上以竖线标出」）。
+
+### 9.5 注意
+
+- `SharpeBoardItem` 新增 `evaluable_weeks: number` 与 `gap_weeks: string[]`；
+  `SharpeBoardDiagnostics` 新增 `gap_weeks: string[]`（**三处同步**：
+  `src/api/models.py` ↔ `src/lib/sharpe-board.ts` ↔ 页面消费）。
+- 走势页 `/sharpe-trend` 复用同一 `SharpeChart` 组件，但走势接口没有榜单周概念 →
+  传 `gapWeeks={[]}`（**必传**，否则 tsc 报缺 prop）。
+- `near_12w` 未同步改口径（仍按最近 12 条观测），缺口周落在最近 12 周内时会差 1 周；
+  已知不一致，另开任务。
+- **本地端到端验证可行**（修正 §7.5 的旧结论）：`pnpm build` 后
+  `BACKEND_URL=http://127.0.0.1:8195 npx next start -p 3105` —— 应用自带代理路由
+  `src/app/api/funds/[...path]/route.ts` 会把 `/funds/api/*` 转发到 `BACKEND_URL`，
+  不需要 nginx。本地后端用生产库副本起 uvicorn（`DATABASE_URL=sqlite:////tmp/xxx.db`），
+  即可在浏览器里验证真实数据下的新口径。
+
+### 9.6 Tests Required（补充 §6）
+
+```bash
+node --experimental-strip-types --test src/lib/sharpe-board.test.ts src/lib/sharpe-chart.test.ts
+npx tsc --noEmit
+pnpm build
+```
+
+- `formatListedWeeks`：`51/51`、`50/51`、`8/52`、evaluable 缺失 → `51`；
+- `listedWeeksTip` / `consecutiveWeeksTip`：含分母口径与缺口周日期；
+- 图表：缺口周竖线在 markLine 内（与下限线共存）、无缺口周时不画标记、
+  tooltip 命中缺口周时提示正确、标记挂在第一条可见 series。

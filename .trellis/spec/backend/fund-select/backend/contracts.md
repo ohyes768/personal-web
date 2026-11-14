@@ -754,7 +754,7 @@ publish_week_board(db, capture, *, source, profile_version, week_start, trigger,
 - **周键**：任务 `started_at`（非 finished_at）转 Asia/Shanghai 所在周周一；跨周完成仍归开始周。
 - **冻结范围（易漏）**：入选谓词消费的 `dd_3y` 在 `FundPerformance` 行上，`freeze_base_row` 冻结不到——两条链路必须在 commit 点调 `freeze_dd_rows` 合并进 `base_rows[code]["dd_3y"]`，发布侧只读 capture，**禁止回读共享最新表**（普通刷新会覆盖）。risk_rows 冻结本轮 sharpe + `returns_end_date` + `benchmark_source` + `calculated_at`。
 - **API**：`GET /api/funds/sharpe-board`，参数 `source=stock|discovery-stock`（默认 discovery-stock）/`profile_version=v1`（未知 404）/`min_latest_sharpe` 可空 [-10,10]/`min_weeks>=1` 默认 1/`latest_only` 默认 false/`range=3m|6m|1y|all` 默认 all/`page>=1`/`limit 1..200` 默认 50。返回 9 字段：profile/latest_published_week/latest_attempt/stale/total/items/weeks/series/diagnostics——**全部在 Pydantic DTO 显式声明**（§3a 静默砍字段）。items=当页（code/name/listed_weeks/consecutive_weeks/latest_sharpe/last_listed_week/on_latest_board）；series=全部命中不随分页。静态 router 必须注册在通用 `/{code}` 详情路由**之前**（main.py）。
-- **聚合顺序**：complete 周全历史聚合 → 展示筛选（min_latest_sharpe 含等号、min_weeks、latest_only 用当前来源最新 complete 周而非各基金最后记录周）→ 排序 `(listed_weeks DESC, latest_sharpe DESC, code ASC)` → total 切片前算 → 切片（§分页不变量）。weeks 周历=首次观测周→当前周周一，range **只裁起点且起点对齐回周一网格**，终点恒为当前周；失败/停机/空榜周留位。consecutive_weeks=从最近上榜周向前数相邻自然周，缺席/未知中断。stale=当前周无 complete 榜。
+- **聚合顺序**：complete 周全历史聚合 → 展示筛选（min_latest_sharpe 含等号、min_weeks、latest_only 用当前来源最新 complete 周而非各基金最后记录周）→ 排序 `(listed_weeks DESC, latest_sharpe DESC, code ASC)` → total 切片前算 → 切片（§分页不变量）。weeks 周历=首次观测周→当前周周一，range **只裁起点且起点对齐回周一网格**，终点恒为当前周；失败/停机/空榜周留位。consecutive_weeks=从最近上榜周向前数相邻自然周，缺席/未知中断（**§21 起细化：数据缺口周不中断，真实缺席才中断**）。stale=当前周无 complete 榜。
 
 ### 4. Validation & Error Matrix
 
@@ -1568,4 +1568,108 @@ router.push(res.path)
 raise HTTPException(404)
 # Correct — 200 + found=False
 return {"code": code, "found": False, "path": None, ...}
+```
+
+## 21. 夏普榜单数据缺口周口径（11-14-sharpe-board-gap-weeks，2026-11-14）
+
+### 21.1 Scope / Trigger
+
+节假日休市（春节等）会让某一周的**风险样本尾日没有前进**（停在上一周的交易日），
+该周发布结果因此不是「这只基金没达标」，而是**数据不可用**：
+
+| 来源 | 2026-02-16 实测 | 含义 |
+|---|---|---|
+| stock（雪球三分法） | `skipped_no_new_data`，`selected_count=0` | 整周没发榜 |
+| discovery-stock（市场） | `complete`，但只入选 2 只（正常周 19~44 只） | 发了榜，但 38 只候选样本未更新 |
+
+旧口径把这两周都算成「缺席」→ 连续周数被数据缺失打断（`003598` 显示 51 在榜 /
+38 连续），把**数据缺一周**误读成**表现断档**。本节定义缺口周口径。
+
+### 21.2 判定模型（三态）
+
+窗口内每个 (基金, 周) 归为三类：
+
+| 类别 | 判定 | 计入在榜 | 中断连续 |
+|---|---|---|---|
+| `listed` 在榜 | 该周有该基金观测 | ✅ | 否 |
+| `gap` 数据缺口 | 该基金该周**没有有效样本**：该来源该周没有 complete 榜（failed / skipped_no_new_data / 未跑），**或** 该基金在该周该来源的 `diagnostics.stale_codes` 里（样本尾日未前进） | ❌ | **否**（跳过） |
+| `miss` 可评缺席 | 发了 complete 榜、该基金样本新鲜，却没进榜 | ❌ | **是** |
+
+信号全部取自库里已有事实，无新阈值、无启发式：
+
+- 周是否发榜 → `sharpe_board_weeks.status`；
+- 基金样本是否更新 → 同周 `sharpe_board_weeks.diagnostics_json.stale_codes`
+  （发布侧第 6 步写入：入选谓词通过但样本尾日未前进的基金）。
+
+实测：窗口内除 2026-02-16 外所有周 `stale_codes` 为空 → 信号稀疏且精确。
+
+**source=all 的合并**：`gap` = **所有**在册来源都缺口（stock 没发榜 + discovery-stock
+该基金 stale → gap）；任一来源能给出有效样本即为可评（miss 判定）。
+
+### 21.3 统计口径
+
+| 字段 | 定义 |
+|---|---|
+| `listed_weeks` | 窗口内在榜周数（**分子，排序键不变**） |
+| `evaluable_weeks`（新） | 窗口内该基金**有有效样本**的周数 = 52 − 缺口周数（**分母**） |
+| `consecutive_weeks` | 从最近上榜周逐周 -7 天回退：在榜记 1；**缺口周跳过**（不计数、不中断）；miss 周中断 |
+| `gap_weeks`（新，列表项） | 该基金**在榜期间**的缺口周（ISO 日期；上榜前的缺口与它无关，不列） |
+
+`consecutive_weeks` 仍是「在榜周数」的连续段长度（缺口周不在榜，不计入长度）。
+
+`003598` 实测结果：在榜 51 / 可评 51 / 连续 51 / 缺口周 ['2026-02-16'] → 前端显示
+**51/51**。`008261`（2026-03-30 真实缺席）在榜 50 / 可评 51 / 连续 32 —— 真实缺席
+仍然中断连续。
+
+### 21.4 DTO（三处同步，§3a 静默砍字段陷阱）
+
+- `SharpeBoardItemDTO`：`evaluable_weeks: int = 0`、`gap_weeks: list[date] = []`；
+- `SharpeBoardDiagnosticsDTO`：`gap_weeks: list[date] = []`（**周级**缺口周）；
+- `aggregate_board` 的 `item_keys` 元组必须同步加两个字段，否则被过滤掉。
+
+`diagnostics.gap_weeks`（周级）与既有 `no_board_weeks` 并存、语义不同：
+
+- `no_board_weeks` = 周历内**没发 complete 榜**的周；
+- `gap_weeks` = 周历内**数据不可用**的周 = 没发榜 **或** 该周任一来源有基金样本未更新。
+
+### 21.5 陷阱
+
+1. `week_meta` 必须按 **(source, week_start)** 建键——`all` 模式同周两行，用单键会串。
+2. `stale_codes` 解析要容错（`diagnostics_json` NULL / 非 dict / `stale_codes` 非 list
+   → 空集），一条脏数据不得让整页聚合失败。
+3. `missing_evidence`（nav 失败）**不算**缺口周：当周若 complete 而某基金缺证据，
+   它只是没参评，视同 miss（保守口径，与旧行为一致）。
+4. 排序键仍用 `listed_weeks`（分子）——改分母不重排榜单。
+5. 只读聚合层修正，**不改历史周行/观测行**；回滚 = revert 代码。
+
+### 21.6 Tests Required
+
+- `test_sharpe_board_api.py::TestGapWeekSemantics`：
+  stale 基金缺口周不打断连续 / 真实缺席仍中断 / 上榜前缺口不进 `gap_weeks` /
+  `source=all` 需全部来源都缺口才算缺口；
+- `test_response_fields_all_present` 补 `evaluable_weeks` / `gap_weeks` /
+  `diagnostics.gap_weeks`（§3a 回归）。
+
+### 21.7 Wrong vs Correct
+
+```python
+# Wrong — 任何缺席都中断连续（数据缺一周被当成表现断档）
+while w in week_set and w >= window_start:
+    consecutive += 1
+    w -= timedelta(days=7)
+
+# Correct — 缺口周跳过不中断，只有可评却缺席（miss）才中断
+while w >= window_start:
+    if w in week_set:
+        consecutive += 1
+    elif w not in gap_all:
+        break
+    w -= timedelta(days=7)
+```
+
+```python
+# Wrong — 只看「该周有没有榜」，忽略「这只基金那周有没有新样本」
+gap = week_status[w] != STATUS_COMPLETE
+# Correct — 榜发了但该基金 stale，同样是缺口
+gap = (week_status[w] != STATUS_COMPLETE) or (code in stale_codes[w])
 ```

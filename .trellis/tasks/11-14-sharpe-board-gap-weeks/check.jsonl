@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/backend/fund-select/backend/contracts.md", "reason": "复核 DTO 三处同步与统计口径是否与合同一致"}
+{"file": ".trellis/spec/frontend/fund-sharpe-board.md", "reason": "复核前端列语义、图表零依赖纯函数与测试要求"}
