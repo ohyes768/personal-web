@@ -9,9 +9,10 @@ Applies to the screening Tab, historical financial fields, screening API and bat
 - FinancialFetcher adds annual ROE history and previous adjacent quarter; FinancialReader.row_to_data converts a cached row without rereading the file.
 
 ## 3. Contracts
-Defaults: min_yield=3.5, min_roe=10, min_roe_avg_3y=10, max_quarter_profit_decline_pct=30. Minimum thresholds are finite values in [0,100]; the maximum decline is a positive finite percentage in (0,100]. The frontend saves one set of conditions in localStorage and restores defaults on request. Legacy saved conditions missing the decline field use 30; explicit invalid values do not silently pass validation. Request and response condition snapshots include the decline field.
+Defaults: min_yield=3.5, min_roe=10, min_roe_avg_3y=10, max_quarter_profit_decline_pct=30, min_cagr_3y=0. Minimum thresholds are finite values in [0,100]; the maximum decline is a positive finite percentage in (0,100]. The 3-year CAGR threshold is a finite percentage in [-100,100] (0 = profit must not shrink over three years; 5–10 asks for mild growth). The frontend saves one set of conditions in localStorage and restores defaults on request. Legacy saved conditions missing the decline field use 30 and missing the CAGR field use 0, without clearing the other stored thresholds; explicit invalid values do not silently pass validation. Request and response condition snapshots include the decline and CAGR fields.
 Screening starts with the collected pool, never an already threshold-filtered frontend list. The current dividend window is explicitly 2023/2024/2025, inherited from existing data; do not advertise automatically rolling years.
-Eligible requires continuous dividend, yield threshold, latest annual ROE threshold, consecutive three-year ROE completeness and mean threshold, latest annual adjusted net profit >0, annual adjusted profit YOY >=0, and two adjacent single-quarter YOYs not both negative. Either single-quarter YOY <= -max_quarter_profit_decline_pct excludes (equality fails). Current yield is display-only.
+Eligible requires continuous dividend, yield threshold, latest annual ROE threshold, consecutive three-year ROE completeness and mean threshold, latest annual adjusted net profit >0, annual adjusted profit YOY >=0, the 3-year adjusted-profit CAGR at or above min_cagr_3y, and two adjacent single-quarter YOYs not both negative. Either single-quarter YOY <= -max_quarter_profit_decline_pct excludes (equality fails). Current yield is display-only.
+The 3-year CAGR gate uses `net_profit_cagr_3y` (adjusted net profit compound growth over the last three year-ends, computed only when both endpoints are positive). An uncomputable CAGR (a loss year inside the window, or missing history) is a warning, not missing data and not a failure: refreshing the data cannot manufacture a CAGR for a loss year, so the stock is neither excluded nor parked in 待补数据. A later computable value is judged normally.
 Reasons represent failure/missing facts; warnings highlight one negative quarter. A definite failure takes precedence over missing data. Otherwise missing required data means insufficient_data.
 Annual amount/year travel as CSV `最近年度扣非净利润(元)` / `扣非利润年度` and API `annual_net_profit_ex_non_recurring` / `annual_profit_year`. These come from the latest 12-31 cumulative statement, even if newer quarterly statements exist. They do not use the latest single-quarter amount. A single available annual statement can supply amount/year even without a YOY base. Missing/nonfinite amounts remain null. Both columns join the required cache schema; old cache needs a full-pool force=true refresh. A shrinking annual loss still fails the positive-profit gate.
 Annual ROE is weighted annual ROE from 12-31 statements, never quarterly ROE. CSV fields: ROE年度, 近3年平均ROE, 近3年ROE历史 (JSON [{year,value}]), 前一季度扣非同比(%), 前一季度. ROE average preserves precision. Invalid/nonfinite numeric cells become null.
@@ -30,6 +31,9 @@ Clicking a row opens a per-stock detail modal; the checkbox, 基本面操作, �
 | Annual adjusted profit zero/negative, even with nonnegative YOY | excluded |
 | Annual amount missing/nonfinite | insufficient unless another gate fails |
 | One negative, other zero/positive | allowed with warning if other gates pass |
+| 3-year CAGR below min_cagr_3y | excluded; reason names the observed CAGR and the threshold |
+| 3-year CAGR equal to min_cagr_3y | allowed |
+| 3-year CAGR uncomputable (loss year / missing history) | allowed with warning; not insufficient_data, not excluded |
 | Missing quarter/base zero/nonadjacent labels | insufficient unless another gate fails |
 | Missing ROE year/value | insufficient unless another gate fails |
 | NaN/infinity in CSV | null; must not crash JSON serialization |
@@ -46,7 +50,8 @@ Bad: annual adjusted profit -50 after -100 gives +50% YOY but remains excluded. 
 
 ## 6. Tests Required
 Financial tests: three consecutive annual values, missing year/null/nonfinite values, Q1/Q4 transition, cumulative single-quarter derivation, prior-year zero/negative base, CSV roundtrip and old cache.
-Screening tests: boundary inclusion, failure precedence, absent history, adjacent labels and current yield independence.
+Screening tests: boundary inclusion, failure precedence, absent history, adjacent labels and current yield independence. CAGR tests: below/at/above the threshold, a configurable stricter threshold, a negative threshold, an uncomputable CAGR (warning, still eligible) and the default threshold value.
+Frontend tests assert legacy condition defaulting, persistence/reset and changed-condition notice for the new field (decline and CAGR).
 Profit tests: maximum decline 20/30/50 boundaries and finite validation; severe quarter with missing peer; annual positive/zero/loss/nonfinite; latest annual versus newer quarter, one annual row without YOY, CSV roundtrip and legacy cache schema. Frontend tests assert legacy condition defaulting, persistence/reset and changed-condition notice for the new field.
 Batch tests: duplicates, metadata preservation, mixed valid/invalid codes, disk failure rollback and API shape.
 Browser tests: empty old list does not hide new Tab, persisted conditions/reset, failed favorite retry, legacy favorites outside threshold.

@@ -566,6 +566,8 @@ class ScreeningRequest(BaseModel):
     min_yield: float = Field(3.5, ge=0, le=100, allow_inf_nan=False)
     min_roe: float = Field(10, ge=0, le=100, allow_inf_nan=False)
     min_roe_avg_3y: float = Field(10, ge=0, le=100, allow_inf_nan=False)
+    # 扣非净利润3年复合增长率下限（%）；0 = 三年不缩水（默认），5~10 = 要求温和增长
+    min_cagr_3y: float = Field(0, ge=-100, le=100, allow_inf_nan=False)
     exchange: Optional[str] = None
 
 

@@ -128,6 +128,23 @@ class TestAnalyze:
         response = test_client.post("/valuation/analyze", json={"codes": ["000001"]})
         assert response.status_code == 503
 
+    def test_failed_analysis_exposes_run_id_for_session_download(self, client, monkeypatch):
+        test_client, manager, _, _ = client
+        monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
+        monkeypatch.setenv("HERMES_API_KEY", "secret")
+        monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", "1.0.0")
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: "run-fail-1")
+        monkeypatch.setattr(routes, "poll_run", lambda cfg, run_id: "")
+        monkeypatch.setattr(routes, "get_run", lambda cfg, run_id: {"status": "failed", "error": "boom"})
+        monkeypatch.setattr(routes, "stop_run", lambda cfg, run_id: "stopping")
+        accepted = test_client.post("/valuation/analyze", json={"codes": ["000001"]})
+        assert accepted.status_code == 202
+        assert wait_job(manager, accepted.json()["job_id"])["status"] == "failed"
+        # 失败也要带 run_id：界面据此下载失败那次的会话记录
+        per_code = test_client.get("/valuation").json()["per_code"]
+        assert per_code["000001"]["state"] == "failed"
+        assert per_code["000001"]["run_id"] == "run-fail-1"
+
     def test_code_not_in_pool_400(self, client, monkeypatch):
         test_client, _, _, _ = client
         configure_hermes(monkeypatch)

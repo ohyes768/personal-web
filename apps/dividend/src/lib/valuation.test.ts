@@ -6,7 +6,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveValuationZone, resolveZoneSteps } from './valuation.ts';
+import { deriveValuationEvalState, resolveValuationZone, resolveZoneSteps } from './valuation.ts';
 import type { AlertLevels } from './types.ts';
 
 function levels(heavy: number, add: number, reduce: number, full: number): AlertLevels {
@@ -136,4 +136,48 @@ test('档位/现价不完整时区间列留空（不编造）', () => {
   assert.deepEqual(resolveZoneSteps(four, null), []);
   assert.deepEqual(resolveZoneSteps(null, 30), []);
   assert.deepEqual(resolveZoneSteps(four, 0), []);
+});
+
+/* ---------------- deriveValuationEvalState：评估状态（与监控开关无关） ---------------- */
+
+function derived(report: any, pendingApply = false) {
+  return { state: 'monitoring' as const, pendingApply, effective: true, report };
+}
+
+test('有 ready 报告 → 评估完成', () => {
+  const r = deriveValuationEvalState(derived({ status: 'ready', evaluated_at: '2026-11-11T10:00:00' }), null);
+  assert.equal(r, 'succeeded');
+});
+
+test('ready 报告新于生效挡位 → 待应用（评估完成的子状态）', () => {
+  const r = deriveValuationEvalState(derived({ status: 'ready', evaluated_at: '2026-11-11T10:00:00' }, true), null);
+  assert.equal(r, 'pending_apply');
+});
+
+test('在跑一律评估中（queued/running/cancelling）', () => {
+  for (const state of ['queued', 'running', 'cancelling'] as const) {
+    assert.equal(deriveValuationEvalState(derived(null), { state }), 'evaluating');
+  }
+});
+
+test('最近一次失败优先于旧的成功报告：不拿旧报告冒充成功', () => {
+  const r = deriveValuationEvalState(
+    derived({ status: 'ready', evaluated_at: '2026-01-01T00:00:00' }),
+    { state: 'failed', error: 'run 终态 failed' },
+  );
+  assert.equal(r, 'failed');
+});
+
+test('非 ready 报告 → 未出价格', () => {
+  for (const status of ['insufficient_data', 'blocked', 'not_applicable'] as const) {
+    assert.equal(deriveValuationEvalState(derived({ status, evaluated_at: '2026-11-11T10:00:00' }), null), 'not_ready');
+  }
+});
+
+test('无报告无任务 → 待评估；手工挡位也算未评估过', () => {
+  assert.equal(deriveValuationEvalState(derived(null), null), 'unevaluated');
+  assert.equal(
+    deriveValuationEvalState({ state: 'paused' as const, pendingApply: false, effective: true, report: null }, null),
+    'unevaluated',
+  );
 });

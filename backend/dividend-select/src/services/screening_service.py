@@ -48,6 +48,13 @@ def evaluate_stock(stock: DividendStock, conditions: ScreeningRequest) -> Screen
     if stock.annual_profit_year is None:
         missing.append("年度扣非净利润报告年度缺失")
     check(stock.net_profit_ex_non_recurring_yoy, 0, "最近年度扣非利润同比")
+    # 扣非净利润3年复合增长率：算不出来（近三年有亏损/数据不足）不算缺失数据，
+    # 只提示不参与判定——刷新数据也补不出亏损年的复合增长率。
+    cagr_3y = stock.net_profit_cagr_3y
+    if cagr_3y is None or not math.isfinite(cagr_3y):
+        warnings.append("扣非净利润3年复合增长率不可计算（近三年存在亏损或数据不足），未参与该条件判定")
+    elif cagr_3y < conditions.min_cagr_3y:
+        failures.append(f"扣非净利润3年复合增长率 {cagr_3y:g}% 低于 {conditions.min_cagr_3y:g}%")
     latest, previous = stock.latest_quarter_yoy_pct, stock.previous_quarter_yoy_pct
     for value, label in ((previous, stock.previous_quarter_label), (latest, stock.latest_quarter_label)):
         if (adjacent_quarters(stock.previous_quarter_label, stock.latest_quarter_label)

@@ -11,6 +11,7 @@ import { QualityReportModal } from './QualityReportModal';
 import { QualityQueuePanel } from './QualityQueuePanel';
 import { QualityReaderEntry } from './QualityReaderEntry';
 import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
+import { SessionDownloadButton } from './SessionDownloadButton';
 
 const STORAGE_KEY = 'dividend-screening-conditions-v1';
 const pct = (value?: number | null) => value == null || !Number.isFinite(value) ? '待补' : `${value.toFixed(2)}%`;
@@ -109,7 +110,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   const { priceMap } = useRealtimePrices(eligibleCodes);
   const activeView = view === 'insufficient_data' && result?.counts.insufficient_data === 0 ? 'eligible' : view;
   const rows = result?.items.filter(item => item.status === activeView) || [];
-  const valid = [conditions.min_yield, conditions.min_roe, conditions.min_roe_avg_3y].every(value => Number.isFinite(value) && value >= 0 && value <= 100) && Number.isFinite(conditions.max_quarter_profit_decline_pct) && conditions.max_quarter_profit_decline_pct > 0 && conditions.max_quarter_profit_decline_pct <= 100;
+  const valid = [conditions.min_yield, conditions.min_roe, conditions.min_roe_avg_3y].every(value => Number.isFinite(value) && value >= 0 && value <= 100) && Number.isFinite(conditions.max_quarter_profit_decline_pct) && conditions.max_quarter_profit_decline_pct > 0 && conditions.max_quarter_profit_decline_pct <= 100 && Number.isFinite(conditions.min_cagr_3y) && conditions.min_cagr_3y >= -100 && conditions.min_cagr_3y <= 100;
   const changed = result && (['min_yield', 'min_roe', 'min_roe_avg_3y', 'max_quarter_profit_decline_pct'] as const).some(key => result.conditions[key] !== conditions[key]) || !!result && (result.conditions.exchange || '') !== (conditions.exchange || '');
   const selectCode = (code: string) => setSelected(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
   // 未符合/待补视图多一列「原因」；符合条件视图为 8 列
@@ -121,17 +122,17 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   return <section aria-label="选股关注" className="space-y-4">
     <form onSubmit={event => { event.preventDefault(); if (!valid) return; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conditions)); } catch {} void query(conditions); }} className="rounded-xl border border-rule bg-paper-card p-5">
       <h2 className="text-lg font-semibold text-ink">选出值得持续关注的公司</h2>
-      <p className="mt-1 text-sm text-ink-muted">分红稳定、ROE 达标、最近年度扣非净利润为正且同比不下滑；连续两季扣非同比为负或任一季降幅达到所设阈值时排除。当前股息率由你人工判断。</p>
+      <p className="mt-1 text-sm text-ink-muted">分红稳定、ROE 达标、三年扣非利润复合增长、最近年度扣非净利润为正且同比不下滑；连续两季扣非同比为负或任一季降幅达到所设阈值时排除。当前股息率由你人工判断。</p>
       <div className="mt-4 flex flex-wrap items-end gap-4">
-        {([['min_yield', '近三年平均股息率 ≥'], ['min_roe_avg_3y', '近三年平均 ROE ≥'], ['min_roe', '最近年度 ROE ≥'], ['max_quarter_profit_decline_pct', '单季扣非利润最大降幅']] as const).map(([key, label]) => <label key={key} className="text-sm text-ink">
+        {([['min_yield', '近三年平均股息率 ≥', '0'], ['min_roe_avg_3y', '近三年平均 ROE ≥', '0'], ['min_roe', '最近年度 ROE ≥', '0'], ['max_quarter_profit_decline_pct', '单季扣非利润最大降幅', '0.1'], ['min_cagr_3y', '扣非净利润3年复合增长率 ≥', '-100']] as const).map(([key, label, min]) => <label key={key} className="text-sm text-ink">
           <span className="block mb-1">{label}</span>
-          <input aria-label={label} type="number" min={key === 'max_quarter_profit_decline_pct' ? '0.1' : '0'} max="100" step="0.1" required value={Number.isNaN(conditions[key]) ? '' : conditions[key]} onChange={event => setConditions(prev => ({ ...prev, [key]: event.target.value === '' ? NaN : Number(event.target.value) }))} className="w-24 rounded border border-rule-strong bg-paper px-3 py-2" /> %
+          <input aria-label={label} type="number" min={min} max="100" step="0.1" required value={Number.isNaN(conditions[key]) ? '' : conditions[key]} onChange={event => setConditions(prev => ({ ...prev, [key]: event.target.value === '' ? NaN : Number(event.target.value) }))} className="w-24 rounded border border-rule-strong bg-paper px-3 py-2" /> %
         </label>)}
         <label className="text-sm text-ink"><span className="block mb-1">交易所</span><select aria-label="选股交易所" value={conditions.exchange || ''} onChange={event => setConditions(prev => ({ ...prev, exchange: event.target.value || undefined }))} className="rounded border border-rule-strong bg-paper px-3 py-2"><option value="">全部</option><option>沪市主板</option><option>深市主板</option></select></label>
         <button className={`${buttonClass} bg-indigo-600 text-white`} disabled={loading || saving || !valid}>{loading ? '筛选中…' : '查询候选'}</button>
         <button type="button" className={buttonClass} disabled={loading || saving} onClick={() => { const next = { ...DEFAULT_SCREENING }; setConditions(next); try { localStorage.removeItem(STORAGE_KEY); } catch {} void query(next); }}>恢复默认</button>
       </div>
-      <p className="mt-3 text-xs text-ink-muted">固定条件：近三年每年分红、最近年度扣非净利润 &gt; 0、年度扣非同比 ≥ 0、不能连续两季单季扣非同比为负。单季同比 ≤ −所设降幅时排除。条件在此浏览器保存。</p>
+      <p className="mt-3 text-xs text-ink-muted">固定条件：近三年每年分红、最近年度扣非净利润 &gt; 0、年度扣非同比 ≥ 0、不能连续两季单季扣非同比为负。单季同比 ≤ −所设降幅时排除。扣非净利润3年复合增长率默认 0%（三年利润不缩水），调到 5~10% 可要求温和增长；算不出来（近三年有亏损）时只提示、不排除。条件在此浏览器保存。</p>
     </form>
     {error && <p role="alert" className="text-red-600">{error}<button className={`${buttonClass} ml-3`} onClick={() => void query(conditions)} disabled={!valid}>重试筛选</button></p>}
     {result && <>
@@ -184,6 +185,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
                     return <span className="inline-flex items-center gap-2">
                       <span className="text-xs text-red-700" title={live.error || '评级失败'}>失败</span>
                       <button className={buttonClass} disabled={saving || !qualityConfigured} title={live.error || '重新发起评级'} onClick={() => void analyze([stock.code])}>重试</button>
+                      <SessionDownloadButton runId={live.run_id} download={dividendApi.downloadQualitySession} />
                     </span>;
                   }
                   return status !== 'eligible'

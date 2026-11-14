@@ -76,6 +76,8 @@ export interface QualityPerCodeStatus {
   item_id?: string | null;
   /** 服务端等待序号，从 1 开始；前端不再按 queued_at 重排 */
   position?: number | null;
+  /** 本次分析的 Hermes run id（session_id 同值）；失败时用于下载失败那次的会话记录 */
+  run_id?: string | null;
 }
 export type QualityPerCodeMap = Record<string, QualityPerCodeStatus>;
 

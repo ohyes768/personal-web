@@ -26,6 +26,7 @@ from src.api.models import DividendStock
 from src.services.hermes_client import HermesConfig, HermesError, HermesRunCancelled, HermesRunFailed
 from src.services.hermes_limiter import HermesLimiter
 from src.services.quality_version import VERSION_PATTERN, current_quality_skill_version
+from src.services.run_log import STATE_CANCELLED, STATE_COMPLETED, STATE_FAILED, RunLog
 from src.utils.atomic_file import atomic_write
 from src.utils.logger import setup_logger
 
@@ -186,6 +187,7 @@ class QualityService:
     逐股实时状态（queued/running/completed/failed + 受理/开始/结束时间）保存在内存
     items，供前端队列面板与列表行内展示；受理时快照 payload 与 data_date（幂等键逐项），
     排队期间数据变化不影响已受理项。服务重启后清空（job 置 interrupted，语义一致）。
+    最近一次尝试的终态（含失败的 run_id）另存台账文件，重启后失败行仍可下载会话记录。
     """
 
     def __init__(self, quality_path: Path, limiter: HermesLimiter | None = None):
@@ -202,13 +204,20 @@ class QualityService:
         self._accepting = False
         self._progress: Optional[Callable] = None
         self._cancel_generations = self._load_generations()
+        # 最近一次分析尝试台账：失败也留 run_id，界面才能下载失败那次的会话记录
+        self._run_log = RunLog(self._run_log_path())
 
     # ---- 逐股状态 ----
 
+    def _run_log_path(self) -> Path:
+        return self.quality_path.with_name("quality_run_log.json")
+
     def get_per_code(self) -> dict:
+        # 台账有自己的锁：先读出来，别占着 _cond（调度线程频繁取它）
+        failed = self._run_log.failed_entries()
         with self._cond:
             positions = {code: index + 1 for index, code in enumerate(self._pending)}
-            return {code: {
+            result = {code: {
                 "state": item.get("state"),
                 "error": item.get("error"),
                 "updated_at": item.get("updated_at"),
@@ -218,7 +227,26 @@ class QualityService:
                 "finished_at": item.get("finished_at"),
                 "item_id": item.get("attempt_id"),
                 "position": positions.get(code),
+                "run_id": item.get("run_id"),
             } for code, item in self._items.items()}
+            # 服务重启后内存队列清空：把台账里最近一次失败的记录并回来，
+            # 失败行才能继续下载那次的会话记录（run_id 来自台账，不来自内存）。
+            for code, entry in failed.items():
+                if code in result:
+                    continue
+                result[code] = {
+                    "state": STATE_FAILED,
+                    "error": entry.get("error"),
+                    "updated_at": entry.get("updated_at"),
+                    "name": entry.get("name"),
+                    "queued_at": entry.get("queued_at"),
+                    "started_at": entry.get("started_at"),
+                    "finished_at": entry.get("finished_at"),
+                    "item_id": None,
+                    "position": None,
+                    "run_id": entry.get("run_id"),
+                }
+            return result
 
     def queue_snapshot(self) -> dict:
         per_code = self.get_per_code()
@@ -536,10 +564,26 @@ class QualityService:
                     self._store_generation(code, int(item.get("cancel_generation") or 0) + 1)
                 except OSError:
                     logger.exception("取消后的幂等代数未能落盘 %s", code)
+            self._record_attempt(code, item, kind, error)
             self._finish_item(code, item, kind, error, progress)
         finally:
             if holds_slot:
                 self._limiter.release()
+
+    def _record_attempt(self, code: str, item: dict, kind: str, error: str | None) -> None:
+        """把这一次尝试的终态写进台账：失败也留 run_id，界面才能下载会话记录。"""
+        state = {STATE_COMPLETED: STATE_COMPLETED, STATE_CANCELLED: STATE_CANCELLED}.get(kind, STATE_FAILED)
+        self._run_log.record(
+            code,
+            state=state,
+            run_id=item.get("run_id"),
+            name=item.get("name"),
+            error=error if state == STATE_FAILED else None,
+            attempt_id=item.get("attempt_id"),
+            queued_at=item.get("queued_at"),
+            started_at=item.get("started_at"),
+            finished_at=_now(),
+        )
 
     def _execute(self, item, hermes_config, submit_run_fn, poll_run_fn, stop_run_fn, get_run_fn):
         with self._cond:

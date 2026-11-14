@@ -9,6 +9,7 @@ def stock(**updates):
                   roe=10, roe_avg_3y=10, roe_year=2025,
                   roe_history=[dict(year=y, value=10) for y in [2023, 2024, 2025]],
                   net_profit_ex_non_recurring_yoy=0, annual_net_profit_ex_non_recurring=100, annual_profit_year=2025,
+                  net_profit_cagr_3y=8,
                   latest_quarter_label="2026Q1", previous_quarter_label="2025Q4",
                   latest_quarter_yoy_pct=0, previous_quarter_yoy_pct=0)
     fields.update(updates)
@@ -52,12 +53,44 @@ def test_screen_route_loads_full_collected_pool(monkeypatch):
     body = response.json()
     assert body['counts'] == {'eligible': 1, 'excluded': 1, 'insufficient_data': 0}
     assert body['conditions']['max_quarter_profit_decline_pct'] == 30
+    assert body['conditions']['min_cagr_3y'] == 0
     assert body['items'][0]['stock']['annual_profit_year'] == 2025
     assert body['items'][0]['stock']['annual_net_profit_ex_non_recurring'] == 100
     assert body['total'] == 2
     assert body['financial_last_updated'] == '2026-10-10T01:00:00+08:00'
     assert calls[0] == dict(min_yield=0, max_yield=None, exchange=None, industry=None, index=None, sort_by='avg_yield_3y', sort_order='desc')
     assert TestClient(app).post('/stocks/screen', json={'min_roe': -1}).status_code == 422
+
+
+def test_cagr_threshold_excludes_shrinking_profit():
+    # 默认阈值 0：三年利润缩水即排除
+    result = evaluate_stock(stock(net_profit_cagr_3y=-4), ScreeningRequest())
+    assert result.status == "excluded"
+    assert any("3年复合增长率" in reason for reason in result.reasons)
+
+
+def test_cagr_threshold_is_inclusive():
+    assert evaluate_stock(stock(net_profit_cagr_3y=0), ScreeningRequest()).status == "eligible"
+    assert evaluate_stock(stock(net_profit_cagr_3y=-0.01), ScreeningRequest()).status == "excluded"
+
+
+def test_cagr_threshold_is_configurable():
+    request = ScreeningRequest(min_cagr_3y=10)
+    assert evaluate_stock(stock(net_profit_cagr_3y=8), request).status == "excluded"
+    assert evaluate_stock(stock(net_profit_cagr_3y=12), request).status == "eligible"
+    # 负阈值：放宽到"允许三年小幅缩水"
+    assert evaluate_stock(stock(net_profit_cagr_3y=-1), ScreeningRequest(min_cagr_3y=-5)).status == "eligible"
+
+
+def test_uncomputable_cagr_warns_but_does_not_exclude():
+    result = evaluate_stock(stock(net_profit_cagr_3y=None), ScreeningRequest())
+    assert result.status == "eligible"
+    assert any("3年复合增长率不可计算" in warning for warning in result.warnings)
+
+
+def test_default_cagr_threshold():
+    # 默认 0 = 三年利润不缩水（更严的档位由用户在表单里调）
+    assert ScreeningRequest().min_cagr_3y == 0
 
 
 def test_display_yield_does_not_filter():

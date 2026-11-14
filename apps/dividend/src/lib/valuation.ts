@@ -54,6 +54,8 @@ export interface ValuationPerCodeItem {
   finished_at?: string | null;
   item_id?: string | null;
   position?: number | null;
+  /** 本次分析的 Hermes run id（session_id 同值）；失败时用于下载失败那次的会话记录 */
+  run_id?: string | null;
 }
 
 export type ValuationPerCodeMap = Record<string, ValuationPerCodeItem>;
@@ -207,6 +209,52 @@ export interface FavoriteTrackingDerived {
   /** 是否存在生效挡位（无论启用与否） */
   effective: boolean;
   report: ValuationReportRecord | null;
+}
+
+/**
+ * 评估状态（只讲评估本身，与 alerts.enabled 无关）。
+ *
+ * 列表状态列不再混入「监控中/已暂停」——那是推送开关，不是评估结果；
+ * 两者挤在一格会让人以为「暂停 = 没评估」。监控开关仍在「挡位设置」里。
+ * - unevaluated：从未评估过（无报告、无在跑记录）
+ * - evaluating：queued/running/cancelling
+ * - failed：最近一次评估失败
+ * - not_ready：出过结果但状态不是 ready（资料不足/阻断/不适用）
+ * - succeeded：有 ready 报告（无论是否已应用）
+ * - pending_apply：ready 报告新于生效挡位，等待确认应用（succeeded 的子状态）
+ */
+export type ValuationEvalState =
+  | 'unevaluated'
+  | 'evaluating'
+  | 'failed'
+  | 'not_ready'
+  | 'succeeded'
+  | 'pending_apply';
+
+export const VALUATION_EVAL_STATE_META: Record<ValuationEvalState, { label: string; tone: 'ok' | 'warn' | 'bad' | 'idle' }> = {
+  succeeded: { label: '评估完成', tone: 'ok' },
+  pending_apply: { label: '待应用', tone: 'warn' },
+  evaluating: { label: '评估中', tone: 'idle' },
+  failed: { label: '评估失败', tone: 'bad' },
+  not_ready: { label: '未出价格', tone: 'idle' },
+  unevaluated: { label: '待评估', tone: 'idle' },
+};
+
+/**
+ * 推导评估状态。优先看实时任务（在跑/失败），再看报告。
+ * 「失败」优先于旧的成功报告：最近一次评估失败时，列表要说失败，而不是拿旧报告冒充成功。
+ */
+export function deriveValuationEvalState(
+  derived: FavoriteTrackingDerived,
+  perCode: ValuationPerCodeItem | null | undefined,
+): ValuationEvalState {
+  const live = perCode?.state;
+  if (live === 'queued' || live === 'running' || live === 'cancelling') return 'evaluating';
+  if (live === 'failed') return 'failed';
+  if (derived.pendingApply) return 'pending_apply';
+  if (derived.report) return derived.report.status === 'ready' ? 'succeeded' : 'not_ready';
+  // 有生效挡位但从未评估（手工配置）：仍算未评估过
+  return 'unevaluated';
 }
 
 export function deriveFavoriteTrackingState(

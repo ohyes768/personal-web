@@ -204,6 +204,9 @@ test('favorites tab shows all favorites with filter counts and legacy URL', asyn
   await expect(page.getByRole('button', { name: /待应用\s*1/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /监控中/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /已暂停/ })).toHaveCount(0);
+  // 状态列已改名为「评估状态」（监控不再是这一列的事）
+  await expect(page.getByRole('columnheader', { name: '评估状态' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '评估与监控状态' })).toHaveCount(0);
   // 四行都在
   const table = page.getByRole('table');
   await expect(table.getByText('测试公司')).toBeVisible();
@@ -288,9 +291,13 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   await confirmDialog.getByTestId('valuation-confirm-apply-button').click();
   await expect(s.applyCalls).toEqual([{ code: '600004', evaluated_at: '2026-11-11T09:00:00' }]);
   await expect(confirmDialog).not.toBeVisible();
-  // 应用后：alerts 更新为监控中（生效条替换候选条）
+  // 应用后：生效条替换候选条；状态列讲评估（应用后不再是「待应用」）
   await expect(table.locator('[data-code="600004"] [data-testid="valuation-bar-effective"]')).toBeVisible();
-  await expect(table.locator('[data-code="600004"]')).toContainText('监控中');
+  const applied = table.locator('[data-code="600004"]');
+  await expect(applied.locator('[data-eval-state]')).toHaveAttribute('data-eval-state', 'succeeded');
+  await expect(applied.locator('[data-eval-state]')).toContainText('评估完成');
+  // 状态列不再混入监控（「监控中」只存在于挡位设置里）
+  await expect(applied.locator('[data-eval-state]')).not.toContainText('监控');
 });
 
 test('stale apply is rejected with 409 and old monitoring stays untouched', async ({ page }) => {
@@ -327,13 +334,56 @@ test('non-ready report cannot be applied and failure retriable', async ({ page }
   await expect(s.analyzeCalls).toEqual([['600004']]);
 });
 
+test('failed valuation row offers the failed run session download', async ({ page }) => {
+  const s = scenario();
+  s.perCode['600004'] = { state: 'failed', error: 'run 终态 failed', run_id: 'run-val-fail-1' };
+  await setup(page, s);
+  await page.route('**/api/dividend/valuation/runs/run-val-fail-1/session', route => route.fulfill({
+    status: 200,
+    contentType: 'text/markdown; charset=utf-8',
+    body: '# Hermes run 会话记录：run-val-fail-1\n\n## 消息记录（0 条）\n',
+  }));
+  await page.goto('/?tab=alerts');
+  const row = page.getByRole('table').locator('[data-code="600004"]');
+  await expect(row).toContainText('评估失败');
+  const button = row.getByRole('button', { name: '下载会话记录' });
+  await expect(button).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await button.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('hermes-run-val-fail-1-session.md');
+});
+
+test('succeeded valuation row also offers the session download', async ({ page }) => {
+  const s = scenario();
+  // 000001 有 ready 报告，让这次成功评估带上 run_id（会话记录挂在报告上）
+  s.reports['000001'] = { ...s.reports['000001']!, run_id: 'run-val-ok-1' };
+  await setup(page, s);
+  await page.route('**/api/dividend/valuation/runs/run-val-ok-1/session', route => route.fulfill({
+    status: 200,
+    contentType: 'text/markdown; charset=utf-8',
+    body: '# Hermes run 会话记录：run-val-ok-1\n\n## 消息记录（3 条）\n',
+  }));
+  await page.goto('/?tab=alerts');
+  const row = page.getByRole('table').locator('[data-code="000001"]');
+  await expect(row.locator('[data-eval-state]')).toBeVisible();
+  const button = row.getByRole('button', { name: '下载会话记录' });
+  await expect(button).toBeVisible();
+  const downloadPromise = page.waitForEvent('download');
+  await button.click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe('hermes-run-val-ok-1-session.md');
+});
+
 test('paused rows keep the badge but the row no longer offers pause actions', async ({ page }) => {
   const s = scenario();
   await setup(page, s);
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
   const row = table.locator('[data-code="600000"]');
-  await expect(row).toContainText('已暂停');
+  // 状态列只讲评估：该行有非 ready 报告 → 未出价格；监控开关不再占据这一列
+  await expect(row.locator('[data-eval-state]')).toHaveAttribute('data-eval-state', 'not_ready');
+  await expect(row).not.toContainText('已暂停');
   // 行内不再有暂停/恢复入口（启用监控改到「挡位设置」里勾选）
   await expect(row.getByRole('button', { name: '暂停' })).toHaveCount(0);
   await expect(row.getByRole('button', { name: '恢复监控' })).toHaveCount(0);

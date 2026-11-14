@@ -14,6 +14,7 @@ from src.services.quality_service import (
     parse_quality_output,
 )
 from src.services.refresh_jobs import RefreshJobManager
+from src.services.run_log import RunLog
 
 CFG = HermesConfig(base_url="http://nas:8642", api_key="secret", profile="ohyes768",
                    poll_interval=0, timeout=5, max_concurrent=4)
@@ -353,6 +354,62 @@ class TestSubmitAnalysis:
             assert [code for code, item in after.items() if item["state"] == "queued"] == ["000002"]
             gate.set()
             await manager.close(timeout=5)
+
+
+class TestFailureRunLog:
+    """失败也要留下 run_id：界面靠它下载失败那次的 Hermes 会话记录。"""
+
+    def test_failed_run_id_in_per_code_and_log(self, tmp_path):
+        def poll_fn(cfg, run_id):
+            raise HermesRunFailed("run xx 终态 failed")
+
+        service, job = run_service(
+            tmp_path, ["000001"], {"000001": stock()},
+            lambda cfg, prompt, key: "run-fail-1", poll_fn,
+        )
+        assert job["status"] == "failed"
+        per_code = service.get_per_code()
+        assert per_code["000001"]["state"] == "failed"
+        assert per_code["000001"]["run_id"] == "run-fail-1"
+        log = json.loads((tmp_path / "quality_run_log.json").read_text(encoding="utf-8"))
+        assert log["000001"]["state"] == "failed"
+        assert log["000001"]["run_id"] == "run-fail-1"
+        assert "终态 failed" in log["000001"]["error"]
+
+    def test_restart_keeps_failed_run_id(self, tmp_path):
+        def poll_fn(cfg, run_id):
+            raise HermesRunFailed("run xx 终态 failed")
+
+        run_service(tmp_path, ["000001"], {"000001": stock()},
+                    lambda cfg, prompt, key: "run-fail-1", poll_fn)
+        # 模拟服务重启：内存队列清空，台账里的失败记录仍要能被界面看到
+        restarted = QualityService(tmp_path / "quality_scores.json")
+        per_code = restarted.get_per_code()
+        assert per_code["000001"]["state"] == "failed"
+        assert per_code["000001"]["run_id"] == "run-fail-1"
+        assert per_code["000001"]["item_id"] is None
+
+    def test_success_replaces_failed_entry(self, tmp_path):
+        def poll_fn(cfg, run_id):
+            raise HermesRunFailed("run xx 终态 failed")
+
+        run_service(tmp_path, ["000001"], {"000001": stock()},
+                    lambda cfg, prompt, key: "run-fail-1", poll_fn)
+        service, job = run_service(
+            tmp_path, ["000001"], {"000001": stock()},
+            lambda cfg, prompt, key: "run-ok-1",
+            lambda cfg, run_id: fake_output("000001", "样本"),
+        )
+        assert job["status"] == "succeeded"
+        log = json.loads((tmp_path / "quality_run_log.json").read_text(encoding="utf-8"))
+        assert log["000001"]["state"] == "completed"
+        assert log["000001"]["run_id"] == "run-ok-1"
+        assert service.get_per_code()["000001"]["state"] == "completed"
+
+    def test_cancelled_attempt_not_surfaced_as_failure(self, tmp_path):
+        RunLog(tmp_path / "quality_run_log.json").record("000001", state="cancelled", run_id="run-cancel-1")
+        service = QualityService(tmp_path / "quality_scores.json")
+        assert service.get_per_code() == {}
 
 
 class TestQueueAppend:
@@ -744,7 +801,10 @@ class TestQueueControls:
             service.submit_analysis(
                 ["000001", "600000"], cfg, stocks, "2026-09-30", manager, submit_fn,
                 lambda cfg, run_id: fake_output("000001", "样本"))
-            _wait_until(lambda: service.get_per_code().get("600000", {}).get("state") == "queued")
+            # 等 000001 真的开跑（并发上限 1，它占着名额，600000 必然还在排队）；
+            # 否则下面 move_item 会撞上「还在排队」的 000001，断言随机失败。
+            _wait_until(lambda: service.get_per_code().get("000001", {}).get("state") == "running")
+            assert service.get_per_code()["600000"]["state"] == "queued"
             old_id = service.get_per_code()["600000"]["item_id"]
             service.cancel_item(old_id, manager)
             again = service.submit_analysis(

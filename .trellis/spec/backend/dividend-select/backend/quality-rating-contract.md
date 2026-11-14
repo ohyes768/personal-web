@@ -165,6 +165,31 @@ written via `atomic_write` after each stock completes.
 - Wrong: subtract `data_date` from `scored_at` or let the model invent timing.
   Correct: measure the individual request in the backend and save numeric seconds.
 
+### Failed run session ledger (2026-11-14)
+- Scope / trigger: changing how a failed Hermes run is recorded, what `per_code`
+  exposes, or how the UI reaches the failed run's session transcript.
+- Contract: `src/services/run_log.py` keeps one ledger entry per stock — the
+  latest attempt — in `data/quality_run_log.json` (quality) and
+  `data/valuation_run_log.json` (valuation): `state`
+  (`completed`/`failed`/`cancelled`), `run_id`, `error`, `name` and the
+  lifecycle timestamps. A failed attempt therefore keeps its `run_id` even
+  though no report is persisted. `per_code` exposes `run_id` for every entry
+  and merges the ledger's failed entries for stocks that are not in the live
+  queue, so the failure (and its session download) survives a service restart.
+  A later successful attempt replaces the failed entry; a cancelled attempt is
+  never surfaced as a failure.
+- Validation / cases: the failed row in the screening table and the failed row
+  in favorites tracking render 下载会话记录 and download
+  `hermes-<run_id>-session.md` from `GET /quality/runs/{run_id}/session` and
+  `GET /valuation/runs/{run_id}/session` (both read the transcript from the
+  Hermes gateway, retention permitting).
+- Tests: `TestFailureRunLog` (quality + valuation service level),
+  `test_failed_analysis_exposes_run_id_for_session_download` (API level),
+  screening + favorites Playwright cases for the failed-row download.
+- Wrong: keep `run_id` only in memory, or surface the previous successful
+  report's transcript as if it were the failed one. Correct: persist the
+  attempt ledger and let each failed row download exactly its own run.
+
 Hermes config comes from env only: `HERMES_BASE_URL`, `HERMES_API_KEY`,
 `HERMES_PROFILE` (default `ohyes768`), `HERMES_POLL_INTERVAL` (30s),
 `HERMES_TIMEOUT` (3600s), `HERMES_MAX_CONCURRENT` (4). Unset base/key keeps

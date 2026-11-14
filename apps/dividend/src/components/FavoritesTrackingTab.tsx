@@ -15,7 +15,7 @@ import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
 import { useValuation } from '@/lib/hooks/useValuation';
 import { QUALITY_DIMENSION_LABELS, QUALITY_DIMENSION_ORDER, type QualityDimensionKey } from '@/lib/quality';
 import {
-  TRACKING_STATE_META,
+  VALUATION_EVAL_STATE_META,
   VALUATION_LEVEL_KEYS,
   VALUATION_LEVEL_LABEL,
   VALUATION_STATUS_LABEL,
@@ -24,11 +24,13 @@ import {
   VALUATION_ZONE_TEXT_COLOR,
   buildValuationQueue,
   deriveFavoriteTrackingState,
+  deriveValuationEvalState,
   matchesTrackingFilter,
   reportLevelsToAlertLevels,
   resolveValuationZone,
   resolveZoneSteps,
   type FavoriteTrackingDerived,
+  type ValuationPerCodeItem,
   type TrackingFilterKey,
   type ValuationReportRecord,
 } from '@/lib/valuation';
@@ -36,6 +38,7 @@ import type { AlertLevels, DividendStockWithTechnical, PriceItem } from '@/lib/t
 import type { UseAlertsStatusResult } from '@/lib/hooks/useAlertsStatus';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityQueuePanel } from './QualityQueuePanel';
+import { SessionDownloadButton } from './SessionDownloadButton';
 import { ValuationApplyConfirm } from './ValuationApplyConfirm';
 import { ValuationPriceBar } from './ValuationPriceBar';
 import { ValuationReportModal } from './ValuationReportModal';
@@ -107,7 +110,16 @@ export function FavoritesTrackingTab({
       );
       const price = priceMap.get(code);
       const currentPrice = price?.realtime ?? price?.close ?? null;
-      return { code, stock, alertItem, report, derived, currentPrice, price, liveError: live?.error ?? null };
+      // Hermes 会话记录：成功与失败都给下载入口——成功时用来复盘「这份挡位怎么推出来的」，
+      // 失败时用来排查「为什么没出价」。优先取最近一次评估的 run_id（per_code 上的
+      // 失败/在跑记录），没有才退回报告里那次成功评估的 run_id（旧报告可能缺失）。
+      const sessionRunId = live?.run_id ?? report?.run_id ?? null;
+      return {
+        code, stock, alertItem, report, derived, currentPrice, price,
+        liveError: live?.error ?? null,
+        sessionRunId,
+        perCodeItem: live,
+      };
     });
   }, [codes, stockByCode, alertsStatus.alertMap, reports, perCode, priceMap]);
 
@@ -255,7 +267,7 @@ export function FavoritesTrackingTab({
               <th className="p-3 font-medium">挡位（元）</th>
               <th className="p-3 font-medium" title="现价落在哪一区，以及再涨/跌多少会改变告警动作">区间</th>
               <th className="p-3 font-medium">评估 / 版本</th>
-              <th className="p-3 font-medium">评估与监控状态</th>
+              <th className="p-3 font-medium">评估状态</th>
               <th className="p-3 font-medium">操作</th>
             </tr>
           </thead>
@@ -342,6 +354,10 @@ function TrackingRow({
     currentPrice: number | null;
     price?: { pe?: number | null; pb?: number | null; yield_ttm?: number | null } | null;
     liveError: string | null;
+    /** 本次评估的 Hermes run id（成功或失败都有）；有值时可下载会话记录 */
+    sessionRunId: string | null;
+    /** per_code 实时条目：推导评估状态用（在跑/失败） */
+    perCodeItem: ValuationPerCodeItem | null;
   };
   qualityScore: { dimensions: Record<QualityDimensionKey, number | null>; skill_version?: string | null } | null;
   qualityVersion: string | null;
@@ -355,16 +371,22 @@ function TrackingRow({
   onOpenApplyConfirm: () => void;
   onOpenSettings: () => void;
 }) {
-  const { stock, alertItem, report, derived, currentPrice, price, liveError } = row;
+  const { stock, alertItem, report, derived, currentPrice, price, liveError, sessionRunId } = row;
   const currentValuationVersion = valuationVersion;
-  const meta = TRACKING_STATE_META[derived.state];
+  // 状态列只讲评估（监控开关不在这列：那是推送设置，不是评估结果）
+  const evalState = deriveValuationEvalState(derived, row.perCodeItem);
+  const evalMeta = VALUATION_EVAL_STATE_META[evalState];
   // 徽章已经说清的状态不再补一句说明（避免每行固定多占一行）
-  const needsNote = derived.state === 'evaluating'
-    || derived.state === 'failed'
-    || derived.state === 'not_ready'
-    || derived.state === 'paused'
-    || (derived.state === 'pending_apply' && !derived.effective);
-  const evaluatingNow = derived.state === 'evaluating' || evaluating;
+  const needsNote = evalState === 'evaluating'
+    || evalState === 'failed'
+    || evalState === 'not_ready'
+    || (evalState === 'pending_apply' && !derived.effective);
+  const evaluatingNow = evalState === 'evaluating' || evaluating;
+  // 需要额外解释的评估状态才补一句（徽章已说清的不再重复）
+  const evalNote = evalState === 'evaluating' ? '正在补充估值依据'
+    : evalState === 'failed' ? (liveError ? liveError : '可重试')
+      : evalState === 'not_ready' ? '未生成价格，可查看原因'
+        : '';
   const levels = alertItem?.levels ?? null;
   const candidateLevels = derived.state === 'pending_apply' && report?.levels
     ? reportLevelsToAlertLevels(report.levels)
@@ -382,18 +404,21 @@ function TrackingRow({
     };
   }, [levels, candidateLevels, currentPrice]);
 
-  const statePill = (() => {
-    if (evaluatingNow) {
+  const evalPill = (() => {
+    if (evaluatingNow && evalState !== 'failed') {
       return <span className="inline-flex items-center gap-1 rounded bg-paper-tint px-1.5 py-0.5 text-xs text-info animate-pulse">评估中</span>;
     }
-    const tone = derived.state === 'monitoring' ? 'bg-emerald-50 text-emerald-700'
-      : derived.state === 'pending_apply' ? 'bg-amber-50 text-amber-700'
-        : derived.state === 'failed' ? 'bg-red-50 text-red-700'
+    const tone = evalMeta.tone === 'ok' ? 'bg-emerald-50 text-emerald-700'
+      : evalMeta.tone === 'warn' ? 'bg-amber-50 text-amber-700'
+        : evalMeta.tone === 'bad' ? 'bg-red-50 text-red-700'
           : 'bg-paper-tint text-ink-muted';
     return (
-      <span className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${tone}`}>
-        {derived.state === 'monitoring' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600" />}
-        {meta.label}
+      <span
+        className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${tone}`}
+        data-eval-state={evalState}
+      >
+        {evalState === 'succeeded' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600" />}
+        {evalMeta.label}
       </span>
     );
   })();
@@ -477,7 +502,8 @@ function TrackingRow({
             {evaluatingNow
               ? '评估进行中，完成后在此显示价格挡位'
               : derived.state === 'failed'
-                ? `评估失败${liveError ? `：${liveError}` : ''}，可重试`
+                // 失败原因已经在「评估状态」列显示；这里只说评估没出结果，不重复同一句话
+                ? '评估失败，暂无挡位'
                 : report && report.status !== 'ready'
                   ? `${VALUATION_STATUS_LABEL[report.status]}：${report.summary.slice(0, 40)}${report.summary.length > 40 ? '…' : ''}`
                   : '尚未评估，先评估挡位再决定是否开启监控'}
@@ -541,11 +567,11 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 状态：徽章说话；只有需要额外解释的状态才补一行（每行最多 3 行） */}
+      {/* 评估状态：只讲评估（成功/失败/在跑/待评估），监控开关不在这列 */}
       <td className="p-3">
-        {statePill}
+        {evalPill}
         {needsNote && (
-          <div className="mt-1 text-xs text-ink-muted max-w-[180px] whitespace-normal">{meta.note}</div>
+          <div className="mt-1 text-xs text-ink-muted max-w-[180px] whitespace-normal">{evalNote}</div>
         )}
         {derived.pendingApply && derived.effective && (
           <div className="mt-1 text-xs text-accent">新评估待应用 · 旧挡位仍生效</div>
@@ -579,6 +605,13 @@ function TrackingRow({
             )}
             {!report && (derived.state === 'monitoring' || derived.state === 'paused') && !evaluatingNow && (
               <button type="button" className={linkBtn} disabled={!configured} onClick={onEvaluate}>评估挡位</button>
+            )}
+            {sessionRunId && (
+              <span title={evalState === 'failed'
+                ? `评估失败，可下载本次 Hermes 会话排查：${liveError ?? '未知原因'}`
+                : '下载本次评估的 Hermes 会话记录'}>
+                <SessionDownloadButton runId={sessionRunId} download={dividendApi.downloadValuationSession} />
+              </span>
             )}
             <button type="button" className={linkBtn} onClick={onOpenSettings}>挡位设置</button>
           </div>
