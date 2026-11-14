@@ -59,11 +59,13 @@ async def screen(
     sort: str = Query("size_yi", description="排序字段"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
     limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """筛选（分页：page/limit 默认 1/50）"""
+    """筛选（分页：page/limit 默认 1/50；source 默认 curated=旧债基 tab 行为）"""
     if sort not in ("size_yi", "age_years", "mgr_experience_years", "dd_3y",
                     "ret_1y", "ret_3y", "ret_5y", "fee_annual", "code"):
         raise HTTPException(status_code=422, detail=f"不支持的排序字段: {sort}")
@@ -76,6 +78,7 @@ async def screen(
         sort=sort,
         order=order,
         exclude_qdii=exclude_qdii,
+        source=source,
         page=page,
         limit=limit,
     )
@@ -120,9 +123,13 @@ async def refresh(
 
 
 @router.get("/stats", response_model=StatsResponse)
-async def stats(db=Depends(get_db)):
-    """债基 tab 库内概况（funds.yaml ∩ is_active）"""
-    counts = FilterService(db).universe_stats("bond")
+async def stats(
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段（与 /screen 一致）"),
+    db=Depends(get_db),
+):
+    """债基 tab 库内概况（source=curated: funds.yaml ∩ is_active；market/all 见 _universe_stats_sourced）"""
+    counts = FilterService(db).universe_stats_sourced("bond", "discovery-bond", source)
     last_run = db.execute(
         select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
     ).scalars().first()
@@ -191,16 +198,18 @@ async def stock_screen(
     sort: str = Query("ret_5y"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
     limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """股票 tab 筛选（funds_stock.yaml ∩ is_active；分页 page/limit 默认 1/50）"""
+    """股票 tab 筛选（source 默认 curated=旧股票 tab 行为；分页 page/limit 默认 1/50）"""
     return FilterService(db).screen_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
-        page=page, limit=limit,
+        source=source, page=page, limit=limit,
     )
 
 
@@ -243,9 +252,13 @@ async def stock_refresh_status(
 
 
 @router_stock.get("/stats", response_model=StatsResponse)
-async def stock_stats(db=Depends(get_db)):
-    """股票 tab 库内概况（funds_stock.yaml ∩ is_active）"""
-    counts = FilterService(db).universe_stats("stock")
+async def stock_stats(
+    source: str = Query("curated", pattern="^(curated|market|all)$",
+                        description="来源分段（与 /screen 一致）"),
+    db=Depends(get_db),
+):
+    """股票 tab 库内概况（source=curated: funds_stock.yaml ∩ is_active）"""
+    counts = FilterService(db).universe_stats_sourced("stock", "discovery-stock", source)
     last_run = db.execute(
         select(RefreshRun).order_by(RefreshRun.started_at.desc()).limit(1)
     ).scalars().first()

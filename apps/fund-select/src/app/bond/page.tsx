@@ -1,5 +1,8 @@
 /**
- * 债基·雪球三分法主页（/funds/bond），与股基·雪球三分法页（/funds/stock）平列
+ * 债基主页（/funds/bond）：来源分段 = 全部 | 三分法 | 市场（11-15-source-segmented）
+ * - curated：雪球三分法 yaml 名单（原「债基·雪球三分法」tab）
+ * - market：akshare 子类圈定（原「债基·市场」tab，此时展示市场类型多选）
+ * - all：两者并集（默认浏览态）
  */
 'use client';
 
@@ -14,6 +17,7 @@ import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
 import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawerBond } from '@/components/RowDetailDrawerBond';
+import { SourceSegmented } from '@/components/SourceSegmented';
 import { useCompare, useFeeDetails, useFundList } from '@/lib/hooks';
 import {
   feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions,
@@ -26,6 +30,7 @@ import type { FundListItem } from '@/lib/types';
 function FundsPageInner() {
   const { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount } = useFilters();
   const { items, total, loading, error, reload } = useFundList(filters);
+  const source = filters.source ?? 'all';
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
@@ -68,6 +73,7 @@ function FundsPageInner() {
     <main className="min-h-screen pb-20">
       <FundsHeader
         active="bond"
+        titleOverride="债基"
         total={total}
         activeFilterCount={activeCount}
         onOpenMobileFilter={() => setSheetOpen(true)}
@@ -76,6 +82,12 @@ function FundsPageInner() {
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <SourceSegmented
+            value={source}
+            onChange={next => setFilter('source', next)}
+          />
+        </div>
         <FilterChipBar
           filters={filters}
           onRemove={key => setFilter(key, key === 'exclude_qdii' ? false : null)}
@@ -88,6 +100,7 @@ function FundsPageInner() {
               onChange={(key, v) => setFilter(key, v)}
               onClearAll={clearAll}
               activeCount={activeCount}
+              showMarketTypes={source === 'market'}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -121,6 +134,7 @@ function FundsPageInner() {
         onChange={(key, v) => setFilter(key, v)}
         onClearAll={clearAll}
         activeCount={activeCount}
+        showMarketTypes={source === 'market'}
       />
 
       <CompareFloatingBar

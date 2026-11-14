@@ -7,6 +7,12 @@
 - screen_discovery_bond  — 债基·市场 tab（akshare market_subtype 子类精确 IN）
 - screen_discovery_stock — 股基·市场 tab
 
+来源合并（11-15-source-segmented，两 tab + 来源分段控件）：
+- screen / screen_stock 新增 source 参数（curated|market|all，默认 curated）：
+  curated = yaml 名单；market = akshare 子类圈定；all = 两者并集。
+  行上带 in_curated 标记（code ∈ yaml 名单），供「全部」态徽章展示。
+- screen_discovery_* 保留为 market 薄包装（旧路由兼容，不再从导航进入）。
+
 fund_type 只当表格展示字段，不做成员判定。
 yaml 手工名单已经分好债基/股票宇宙，不需要 LIKE 股票型/QDII/混合型。
 市场 tab 用 akshare 子类（market_subtype 字段）+ market_type tab 分类作为成员判定。
@@ -197,6 +203,10 @@ class FilterService:
     def __init__(self, db: Session):
         self.db = db
 
+    # 来源分段（11-15-source-segmented）：curated=三分法 yaml 名单，market=akshare 子类，
+    # all=并集。行上带 in_curated 标记供「全部」态徽章展示。
+    SOURCE_VALUES = ("all", "curated", "market")
+
     def screen(
         self,
         min_age: Optional[float] = None,          # 成立年限 ≥ X（年）
@@ -209,10 +219,14 @@ class FilterService:
         universe_codes: list[str] | None = None,
         page: int = 1,
         limit: int = 50,
+        source: str = "curated",
     ) -> dict:
-        return self._screen(
-            "bond", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
-            sort, order, universe_codes, exclude_qdii,
+        """债基筛选：source=curated（yaml 名单，默认=旧债基 tab）/ market / all（并集）。"""
+        return self._screen_sourced(
+            curated_kind="bond", market_kind="discovery-bond", source=source,
+            min_age=min_age, min_size_yi=min_size_yi, max_dd_3y=max_dd_3y,
+            min_mgr_exp=min_mgr_exp, sort=sort, order=order,
+            universe_codes=universe_codes, exclude_qdii=exclude_qdii,
             page=page, limit=limit,
         )
 
@@ -229,13 +243,91 @@ class FilterService:
         universe_codes: list[str] | None = None,
         page: int = 1,
         limit: int = 50,
+        source: str = "curated",
     ) -> dict:
-        """股票 tab 筛选：成员 = funds_stock.yaml ∩ is_active（不看 fund_type）。"""
-        return self._screen(
-            "stock", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
-            sort, order, universe_codes, exclude_qdii, min_sharpe,
-            page=page, limit=limit,
+        """股基筛选：source=curated（funds_stock.yaml，默认=旧股票 tab）/ market / all。"""
+        return self._screen_sourced(
+            curated_kind="stock", market_kind="discovery-stock", source=source,
+            min_age=min_age, min_size_yi=min_size_yi, max_dd_3y=max_dd_3y,
+            min_mgr_exp=min_mgr_exp, sort=sort, order=order,
+            universe_codes=universe_codes, exclude_qdii=exclude_qdii,
+            min_sharpe=min_sharpe, page=page, limit=limit,
         )
+
+    def _screen_sourced(
+        self,
+        *,
+        curated_kind: str,
+        market_kind: str,
+        source: str,
+        min_age: Optional[float] = None,
+        min_size_yi: Optional[float] = None,
+        max_dd_3y: Optional[float] = None,
+        min_mgr_exp: Optional[float] = None,
+        min_sharpe: Optional[float] = None,
+        sort: str = "size_yi",
+        order: str = "desc",
+        exclude_qdii: bool = False,
+        universe_codes: list[str] | None = None,
+        page: int = 1,
+        limit: int = 50,
+    ) -> dict:
+        """统一入口：按 source 决定成员判定，_screen 完成筛选与排序。
+
+        - curated：yaml 名单（resolve_universe_codes），in_curated 恒 True
+        - market：akshare 子类圈定（DEFAULT_DISCOVERY_UNIVERSE），in_curated 按
+          code 是否 ∈ yaml 名单逐行算（市场子类 ∩ 名单有交集）
+        - all：两个 universe 的 code 并集（SQL IN，不取回再过滤）
+        """
+        if source not in self.SOURCE_VALUES:
+            raise ValueError(f"unknown source: {source}")
+        curated_codes = resolve_universe_codes(curated_kind, universe_codes)
+
+        if source == "curated":
+            if not curated_codes:
+                return {"total": 0, "items": []}
+            result = self._screen(
+                curated_kind, min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+                sort, order, curated_codes, exclude_qdii, min_sharpe,
+                page=page, limit=limit,
+            )
+        else:
+            types = DEFAULT_DISCOVERY_UNIVERSE[market_kind]
+            if source == "market":
+                if not types:
+                    return {"total": 0, "items": []}
+                result = self._screen(
+                    market_kind, min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+                    sort, order, None, exclude_qdii, min_sharpe, types,
+                    page=page, limit=limit,
+                )
+            else:  # all：yaml ∪ 子类（并集 code IN，一次查询）
+                if not types and not curated_codes:
+                    return {"total": 0, "items": []}
+                union_codes = list(dict.fromkeys(curated_codes))  # 去重保序
+                if types:
+                    union_extra = self.db.execute(
+                        select(Fund.code).where(
+                            Fund.is_active == True,  # noqa: E712
+                            Fund.market_subtype.in_(types),
+                        )
+                    ).scalars().all()
+                    union_codes = list(dict.fromkeys(union_codes + union_extra))
+                if not union_codes:
+                    return {"total": 0, "items": []}
+                result = self._screen(
+                    "all-codes", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
+                    sort, order, union_codes, exclude_qdii, min_sharpe,
+                    page=page, limit=limit,
+                )
+
+        # in_curated 标记：curated 态恒 True；market/all 态按名单成员逐行算
+        curated_set = set(curated_codes)
+        for it in result.get("items", []):
+            it["in_curated"] = it["code"] in curated_set
+        result["source"] = source
+        return result
+
 
     def screen_discovery_bond(
         self,
@@ -347,6 +439,68 @@ class FilterService:
             "with_holdings": with_hold,
         }
 
+    def universe_stats_sourced(
+        self,
+        curated_kind: str,
+        market_kind: str,
+        source: str = "curated",
+    ) -> dict:
+        """按来源分段统计（与 _screen_sourced 的成员判定一致）。
+
+        - curated：yaml 名单
+        - market：akshare 子类圈定
+        - all：yaml ∪ 子类（并集）
+        """
+        empty = {"total": 0, "with_performance": 0, "with_fees": 0, "with_holdings": 0}
+        if source == "curated":
+            return self.universe_stats(curated_kind)
+        if source == "market":
+            return self.universe_stats(market_kind)
+        if source == "all":
+            curated_codes = set(resolve_universe_codes(curated_kind))
+            types = DEFAULT_DISCOVERY_UNIVERSE[market_kind]
+            active_q = select(Fund.code).where(Fund.is_active == True)  # noqa: E712
+            if types:
+                active_q = active_q.where(Fund.market_subtype.in_(types))
+            active = set(self.db.execute(active_q).scalars().all())
+            # 名单基金不一定在子类里（或子类字段为空）——并集要显式加回来
+            curated_active = self.db.execute(
+                select(Fund.code).where(
+                    Fund.is_active == True,  # noqa: E712
+                    Fund.code.in_(curated_codes),
+                )
+            ).scalars().all() if curated_codes else []
+            active |= set(curated_active)
+            if not active:
+                return empty
+            return self._stats_for_codes(active)
+        raise ValueError(f"unknown source: {source}")
+
+    def _stats_for_codes(self, codes: set[str]) -> dict:
+        """对给定 code 集合统计活跃数与关联表覆盖（universe_stats 的并集分支）。"""
+        empty = {"total": 0, "with_performance": 0, "with_fees": 0, "with_holdings": 0}
+        if not codes:
+            return empty
+        with_perf = self.db.execute(
+            select(func.count()).select_from(FundPerformance).where(
+                FundPerformance.code.in_(codes)
+            )
+        ).scalar() or 0
+        with_fees = self.db.execute(
+            select(func.count()).select_from(FundFees).where(FundFees.code.in_(codes))
+        ).scalar() or 0
+        with_hold = self.db.execute(
+            select(func.count()).select_from(FundHoldingsBond).where(
+                FundHoldingsBond.code.in_(codes)
+            )
+        ).scalar() or 0
+        return {
+            "total": len(codes),
+            "with_performance": with_perf,
+            "with_fees": with_fees,
+            "with_holdings": with_hold,
+        }
+
     def _screen(
         self,
         kind: str,
@@ -366,9 +520,10 @@ class FilterService:
         page: int = 1,
         limit: int = 50,
     ) -> dict:
-        # 成员判定：bond/stock 走 yaml；discovery-* 走 market_subtype
-        if kind in ("bond", "stock"):
-            codes = resolve_universe_codes(kind, universe_codes)
+        # 成员判定：bond/stock 走 yaml；discovery-* 走 market_subtype；
+        # all-codes 直接用调用方给定的 code 并集（_screen_sourced 的 all 态）
+        if kind in ("bond", "stock", "all-codes"):
+            codes = resolve_universe_codes(kind, universe_codes) if kind != "all-codes" else (universe_codes or [])
             if not codes:
                 return {"total": 0, "items": []}
             q = (

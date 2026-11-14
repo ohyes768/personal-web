@@ -1,8 +1,11 @@
 /**
- * 股基·雪球三分法主页（/funds/stock）
+ * 股基主页（/funds/stock）：来源分段 = 全部 | 三分法 | 市场（11-15-source-segmented）
+ * - curated：funds_stock.yaml 名单（原「股基·雪球三分法」tab）
+ * - market：akshare 子类圈定（原「股基·市场」tab，此时展示市场类型多选）
+ * - all：两者并集（默认浏览态）
  *
- * 与债基·雪球三分法页（/funds/bond）平列，复用：
- *   - FundsHeader（nav「债基·雪球三分法 | 股基·雪球三分法 | 债基·市场 | 股基·市场」）
+ * 复用：
+ *   - FundsHeader（nav 收敛后 5 tab）
  *   - FilterPanel / FilterSheet（5 维度筛选：四维 + 夏普）
  *   - FilterChipBar / FundTable / CompareDrawer / CompareFloatingBar
  * 差异：
@@ -22,6 +25,7 @@ import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
 import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawer } from '@/components/RowDetailDrawer';
+import { SourceSegmented } from '@/components/SourceSegmented';
 import { useCompare, useFeeDetails, useStockFundList } from '@/lib/hooks';
 import {
   feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions,
@@ -34,6 +38,7 @@ import { STOCK_DEFAULT_FILTERS, type FundListItem } from '@/lib/types';
 function StockFundsPageInner() {
   const { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount } = useFilters(STOCK_DEFAULT_FILTERS);
   const { items, total, loading, error, reload } = useStockFundList(filters);
+  const source = filters.source ?? 'all';
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
@@ -76,6 +81,7 @@ function StockFundsPageInner() {
     <main className="min-h-screen pb-20">
       <FundsHeader
         active="stock"
+        titleOverride="股基"
         total={total}
         activeFilterCount={activeCount}
         onOpenMobileFilter={() => setSheetOpen(true)}
@@ -84,6 +90,12 @@ function StockFundsPageInner() {
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
+        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+          <SourceSegmented
+            value={source}
+            onChange={next => setFilter('source', next)}
+          />
+        </div>
         <FilterChipBar
           filters={filters}
           onRemove={key => setFilter(key, key === 'exclude_qdii' ? false : null)}
@@ -97,6 +109,7 @@ function StockFundsPageInner() {
               onClearAll={clearAll}
               activeCount={activeCount}
               dimensions={STOCK_DIMENSIONS}
+              showMarketTypes={source === 'market'}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -135,6 +148,7 @@ function StockFundsPageInner() {
         onClearAll={clearAll}
         activeCount={activeCount}
         dimensions={STOCK_DIMENSIONS}
+        showMarketTypes={source === 'market'}
       />
 
       <CompareFloatingBar

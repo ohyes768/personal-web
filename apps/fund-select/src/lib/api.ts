@@ -25,6 +25,8 @@ function buildQuery(filters: Partial<FundFilters>, coarseMapping?: Record<string
   if (filters.sort) params.set('sort', filters.sort);
   if (filters.order) params.set('order', filters.order);
   if (filters.exclude_qdii) params.set('exclude_qdii', 'true');
+  // 来源分段（11-15-source-segmented）：curated 默认不传（后端默认一致）
+  if (filters.source && filters.source !== 'curated') params.set('source', filters.source);
   // market_types：粗类别 → 精确 subtype 展开（前端持有 UI 粗类别，后端只认精确值）
   if (filters.market_types && filters.market_types.length > 0) {
     const expanded = coarseMapping

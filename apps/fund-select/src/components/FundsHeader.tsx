@@ -41,6 +41,8 @@ interface FundsHeaderProps {
   onFullRefreshComplete?: (preFilters: FullRefreshFilters) => void;
   /** 当前生效的预筛选值（用于初始化弹窗 default） */
   preFilters?: FullRefreshFilters;
+  /** 标题覆盖（11-15-source-segmented：合并页不再按 tab 命名，如「债基」「股基」） */
+  titleOverride?: string;
 }
 
 const TITLE: Record<FundsTab, string> = {
@@ -84,8 +86,9 @@ export function FundsHeader({
   exportKind,
   onFullRefreshComplete,
   preFilters,
+  titleOverride,
 }: FundsHeaderProps) {
-  const title = TITLE[active];
+  const title = titleOverride ?? TITLE[active];
   const refreshUrl = REFRESH_URL[exportKind];
   const statusUrl = refreshUrl ? `${refreshUrl}/status` : undefined;
   const fullRefreshApi = FULL_REFRESH_API[exportKind];

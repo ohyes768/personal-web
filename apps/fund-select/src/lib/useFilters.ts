@@ -25,13 +25,20 @@
 import { useCallback, useMemo } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 
-import { DEFAULT_FILTERS, LIMIT_OPTIONS, type FundFilters } from './types';
+import { DEFAULT_FILTERS, LIMIT_OPTIONS, type FundFilters, type SourceSegment } from './types';
 
 export type NumericFilterKey = 'min_age' | 'min_size_yi' | 'max_dd_3y' | 'min_mgr_exp' | 'min_sharpe';
-export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii' | 'market_types';
+export type FilterKey = NumericFilterKey | 'sort' | 'order' | 'exclude_qdii' | 'market_types' | 'source';
 
 const NUMERIC_KEYS: NumericFilterKey[] = ['min_age', 'min_size_yi', 'max_dd_3y', 'min_mgr_exp', 'min_sharpe'];
 const DEFAULT_LIMIT = 50;
+
+const SOURCE_VALUES = ['all', 'curated', 'market'] as const;
+
+function parseSource(search: URLSearchParams): SourceSegment {
+  const raw = search.get('source');
+  return SOURCE_VALUES.includes(raw as SourceSegment) ? (raw as SourceSegment) : 'all';
+}
 
 function parseExcludeQdii(search: URLSearchParams): boolean {
   return search.get('exclude_qdii') === '1';
@@ -148,6 +155,8 @@ export function filtersToSearch(filters: FundFilters): URLSearchParams {
   if (filters.market_types && filters.market_types.length > 0) {
     params.set('market_type', filters.market_types.join(','));
   }
+  // 来源分段（11-15-source-segmented）：all = 默认不写 URL（避免噪音）
+  if (filters.source && filters.source !== 'all') params.set('source', filters.source);
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set('sort', filters.sort);
   if (filters.order !== DEFAULT_FILTERS.order) params.set('order', filters.order);
   // 分页：默认 page=1 / limit=50 不写 URL；其余写
@@ -194,6 +203,9 @@ export function useFilters(initial?: Partial<FundFilters>) {
       next.page = 1;
     } else if (key === 'market_types') {
       next.market_types = Array.isArray(value) && value.length > 0 ? (value as string[]) : null;
+      next.page = 1;
+    } else if (key === 'source') {
+      next.source = (value as SourceSegment);
       next.page = 1;
     } else {
       next[key] = value === null || value === '' ? null : Number(value);

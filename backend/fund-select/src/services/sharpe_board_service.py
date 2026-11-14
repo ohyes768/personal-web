@@ -162,6 +162,36 @@ def get_profile(source: str, version: str = "v1") -> dict:
     return copy.deepcopy(SHARPE_BOARD_PROFILES[(source, version)])
 
 
+def _merged_profile(sources: list[str], version: str) -> dict:
+    """source="all" 的展示用合并 profile（不参与发布/冻结，仅榜单页展示）。
+
+    - source 字段 = "all"
+    - filters：两条链路规则相同时取交集语义的那份；不同时取 curated（stock）
+      那份并在 collection_prefilters 里保留市场预筛，避免伪造一条不存在的规则
+    - market_subtypes：并集
+    """
+    profiles = [get_profile(s, version) for s in sources]
+    base = copy.deepcopy(profiles[0])
+    base["source"] = "all"
+    same_filters = all(p["filters"] == profiles[0]["filters"] for p in profiles[1:])
+    if not same_filters:
+        # filters 有差异（理论不发生：同一 version 两条链路 filters 相同，
+        # 差异在 collection_prefilters）——保守取第一份并标记
+        base["filters_merged"] = False
+    merged_pre: dict = {}
+    for p in profiles:
+        for k, v in (p.get("collection_prefilters") or {}).items():
+            merged_pre.setdefault(k, v)
+    base["collection_prefilters"] = merged_pre
+    subs: list[str] = []
+    for p in profiles:
+        for s in (p.get("market_subtypes") or []):
+            if s not in subs:
+                subs.append(s)
+    base["market_subtypes"] = subs or None
+    return base
+
+
 def canonical_json(payload) -> str:
     """排序键 + 紧凑分隔符 + 中文不转义：同一规则任何构造顺序得到同一字节串。"""
     return json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
@@ -586,16 +616,23 @@ def aggregate_board(
     - 窗口截断后一年没上榜的基金 listed_weeks=0 → 被 min_weeks=1 默认筛掉
       （PRD R5 已声明为预期的连带后果）。
     - 不 JOIN 实时 Fund 表（失活/清盘基金历史仍在）。
+
+    source="all"（11-15-source-segmented）：聚合 stock + discovery-stock 两条
+    链路的观测（周历并集、同 code 合并周值、on_latest_board = 任一来源最新
+    complete 榜成员）；profile 返回两条规则副本（profile 的 source 字段为
+    "all"，filters 取两份并集展示用 JSON——实际发布规则仍按各自 profile 冻结）。
     """
     if range_key not in _RANGE_WEEKS:
         raise ValueError(f"unknown range: {range_key}")
-    profile = get_profile(source, profile_version)
+    sources = ["stock", "discovery-stock"] if source == "all" else [source]
+    profile = _merged_profile(sources, profile_version) if source == "all" \
+        else get_profile(source, profile_version)
     current = _current_week()
     window_start = _window_start(current)
 
     week_rows = db.execute(
         select(SharpeBoardWeek).where(
-            SharpeBoardWeek.source == source,
+            SharpeBoardWeek.source.in_(sources),
             SharpeBoardWeek.profile_version == profile_version,
         ).order_by(SharpeBoardWeek.week_start.asc())
     ).scalars().all()

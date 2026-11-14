@@ -24,8 +24,8 @@ router = APIRouter(tags=["sharpe-board"])
 @router.get("/sharpe-board", response_model=SharpeBoardResponse)
 async def sharpe_board(
     source: str = Query(
-        "discovery-stock", pattern="^(stock|discovery-stock)$",
-        description="榜单来源：stock=股基·雪球三分法，discovery-stock=股基·市场",
+        "discovery-stock", pattern="^(all|stock|discovery-stock)$",
+        description="榜单来源：stock=股基·雪球三分法，discovery-stock=股基·市场，all=两者聚合",
     ),
     profile_version: str = Query("v3", min_length=1, max_length=16, description="规则版本"),
     min_latest_sharpe: Optional[float] = Query(
@@ -42,7 +42,10 @@ async def sharpe_board(
 ):
     """夏普榜单：列表（分页）+ 统一周历 + 全部命中基金的曲线序列"""
     try:
-        get_profile(source, profile_version)
+        if source == "all":
+            get_profile("stock", profile_version)  # all 复用同一 version 存在性校验
+        else:
+            get_profile(source, profile_version)
     except KeyError:
         raise HTTPException(
             status_code=404,

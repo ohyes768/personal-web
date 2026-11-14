@@ -8,7 +8,8 @@
  */
 'use client';
 
-export type SharpeSource = 'stock' | 'discovery-stock';
+/** 榜单来源：all = 两条链路聚合（11-15-source-segmented），stock = 三分法，discovery-stock = 市场 */
+export type SharpeSource = 'all' | 'stock' | 'discovery-stock';
 export type SharpeRange = '3m' | '6m' | '1y' | 'all';
 
 /** 固定规则 profile（source/version/filters/prefilters/algorithm） */
@@ -106,7 +107,7 @@ export interface SharpeBoardFilters {
 }
 
 export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
-  source: 'discovery-stock',
+  source: 'all',
   profileVersion: 'v3',
   minLatestSharpe: null,
   minWeeks: 1,
@@ -117,8 +118,9 @@ export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
 };
 
 export const SOURCE_OPTIONS: { value: SharpeSource; label: string }[] = [
-  { value: 'discovery-stock', label: '股基·市场' },
-  { value: 'stock', label: '股基·雪球三分法' },
+  { value: 'all', label: '全部' },
+  { value: 'discovery-stock', label: '市场' },
+  { value: 'stock', label: '三分法' },
 ];
 
 export const RANGE_OPTIONS: { value: SharpeRange; label: string }[] = [

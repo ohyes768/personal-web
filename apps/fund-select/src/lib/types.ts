@@ -15,6 +15,8 @@ export interface FundListItem {
   fund_type: string;
   /** akshare 精确子类（fund_type 全空，用这个做类型列展示；与后端 models.FundListItem.market_subtype 同步） */
   market_subtype: string;
+  /** 来源分段标记：code ∈ 雪球三分法 yaml 名单（11-15-source-segmented） */
+  in_curated?: boolean;
   size_yi: number | null;
   age_years: number | null;
   dd_3y: number | null;
@@ -49,6 +51,8 @@ export interface FundListItem {
 export interface ScreenResponse {
   total: number;
   items: FundListItem[];
+  /** 来源分段回显（/screen 与 /stock/screen 带此字段；discovery 路由没有） */
+  source?: SourceSegment;
 }
 
 export interface FundFees {
@@ -113,6 +117,8 @@ export interface FundFilters {
   exclude_qdii: boolean;
   /** akshare 基金类型（粗分类），null = 走 tab 默认 universe */
   market_types: string[] | null;
+  /** 来源分段（11-15-source-segmented）：默认 all；仅债基/股基合并页消费 */
+  source?: SourceSegment;
   sort: string;
   order: 'asc' | 'desc';
   /** 分页（仅前端 state，写入 URL）；page=1 / limit=50 默认值不进 URL */
@@ -120,10 +126,19 @@ export interface FundFilters {
   limit: number;
 }
 
+/**
+ * 来源分段（11-15-source-segmented）：
+ * - all = 三分法名单 ∪ 市场子类（默认，浏览态）
+ * - curated = 雪球三分法 yaml 名单
+ * - market = akshare 市场子类圈定
+ */
+export type SourceSegment = 'all' | 'curated' | 'market';
+
 /** 每页条数选项（与后端 limit 取值范围 1-200 对齐） */
 export const LIMIT_OPTIONS = [25, 50, 100] as const;
 
 export const DEFAULT_FILTERS: FundFilters = {
+  source: 'all',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 5,
@@ -139,6 +154,7 @@ export const DEFAULT_FILTERS: FundFilters = {
 
 /** 股票基金 tab 默认筛选（决策：3 / 5 / 30 / 5 / 夏普 0.8，按 ret_3y desc） */
 export const STOCK_DEFAULT_FILTERS: FundFilters = {
+  source: 'all',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 30,
@@ -154,6 +170,7 @@ export const STOCK_DEFAULT_FILTERS: FundFilters = {
 
 /** 债基·市场 tab 默认筛选：默认 universe = 4 个粗类别全选（债基侧无 REITs） */
 export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
+  source: 'all',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 5,
@@ -169,6 +186,7 @@ export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
 
 /** 股基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
 export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
+  source: 'all',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 30,

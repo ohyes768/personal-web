@@ -31,6 +31,8 @@ class FundListItem(BaseModel):
     name: str
     fund_type: str
     market_subtype: Optional[str] = None  # akshare 精确子类（fund_type 全空，用这个做 UI 展示）
+    # 来源分段标记（11-15-source-segmented）：in_curated = code ∈ 三分法 yaml 名单
+    in_curated: Optional[bool] = None
     size_yi: Optional[float] = None
     age_years: Optional[float] = None
     dd_3y: Optional[float] = None
@@ -77,6 +79,7 @@ class FundListItem(BaseModel):
 class ScreenResponse(BaseModel):
     total: int
     items: list[FundListItem]
+    source: Optional[str] = None  # 来源分段（curated/market/all；旧 discovery 路由无此字段）
 
 
 class ManagerListItem(BaseModel):

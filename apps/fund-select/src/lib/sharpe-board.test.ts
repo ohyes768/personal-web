@@ -77,7 +77,7 @@ test('非法值逐字段回退默认', () => {
     page: '-1',
     limit: '999',
   }));
-  assert.equal(parsed.source, 'discovery-stock');
+  assert.equal(parsed.source, 'all');
   assert.equal(parsed.minLatestSharpe, null);
   assert.equal(parsed.minWeeks, 1);
   assert.equal(parsed.range, 'all');
@@ -97,7 +97,7 @@ test('min_latest_sharpe 支持负数与边界 -10/10（含等于的展示下限�
 test('请求查询串始终显式携带 source/range/分页', () => {
   const q = sharpeFiltersToQuery(DEFAULT_SHARPE_FILTERS);
   const params = new URLSearchParams(q);
-  assert.equal(params.get('source'), 'discovery-stock');
+  assert.equal(params.get('source'), 'all');
   assert.equal(params.get('profile_version'), 'v3');  // 默认已切 v3
   assert.equal(params.get('range'), 'all');
   assert.equal(params.get('page'), '1');
