@@ -2,7 +2,7 @@
  * 收藏跟踪（收藏跟踪 Tab，旧 ?tab=alerts URL）e2e
  *
  * 覆盖 AC1–AC6 的浏览器路径：收藏全集与筛选计数、待应用重叠语义、
- * 生效/候选/隐藏三种价格条、现价越界与缺失、首次评估到确认应用（应用前不开启监控）、
+ * 生效/候选/隐藏三种价格条、现价越界与缺失、首次评估到确认应用（应用前不使用该挡位）、
  * 暂停/恢复、非 ready 不可应用、失败重试与旧 URL 兼容。
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -16,13 +16,12 @@ type ReportStatus = 'ready' | 'insufficient_data' | 'blocked' | 'not_applicable'
 
 export interface TrackingScenario {
   codes: string[];
-  alerts: Record<string, { enabled: boolean; updated_at: string; levels: Record<string, { price: number; pe?: number; pb?: number }> } | undefined>;
+  alerts: Record<string, { updated_at: string; levels: Record<string, { price: number; pe?: number; pb?: number }> } | undefined>;
   prices: Record<string, { close: number | null; realtime: number | null; pe: number | null; pb: number | null; yield_ttm: number | null } | undefined>;
   reports: Record<string, Record<string, unknown> | undefined>;
   perCode: Record<string, Record<string, unknown>>;
   analyzeCalls: string[][];
   applyCalls: Array<{ code: string; evaluated_at: string }>;
-  enabledCalls: Array<{ code: string; enabled: boolean }>;
   applyStatus: number;
 }
 
@@ -30,12 +29,12 @@ export function scenario(): TrackingScenario {
   return {
     codes: ['000001', '600000', '600004', '600005'],
     alerts: {
-      // 000001：监控中（旧挡位四档，生效条可画）
-      '000001': { enabled: true, updated_at: '2026-11-01T10:00:00', levels: {
+      // 000001：已配置四档（生效条可画）
+      '000001': { updated_at: '2026-11-01T10:00:00', levels: {
         heavy_position: { price: 8.5, pe: 5.1, pb: 0.7 }, add_position: { price: 9.5, pe: 5.7, pb: 0.8 },
         reduce_position: { price: 14, pe: 8.4, pb: 1.0 }, full_exit: { price: 21, pe: 12.6, pb: 1.5 } } },
-      // 600000：已暂停（手工只配一档 → 不画条，单挡位文本）
-      '600000': { enabled: false, updated_at: '2026-11-02T10:00:00', levels: { heavy_position: { price: 9 } } },
+      // 600000：手工只配一档（不画条，显示单挡位文本）
+      '600000': { updated_at: '2026-11-02T10:00:00', levels: { heavy_position: { price: 9 } } },
       // 600004/600005：无挡位
       '600004': undefined,
       '600005': undefined,
@@ -59,7 +58,6 @@ export function scenario(): TrackingScenario {
     perCode: {},
     analyzeCalls: [],
     applyCalls: [],
-    enabledCalls: [],
     applyStatus: 0,
   };
 }
@@ -101,31 +99,19 @@ export async function setup(page: Page, s: TrackingScenario) {
     });
     const alertStatus = () => ({
       total: s.codes.length,
-      enabled_count: s.codes.filter(code => s.alerts[code]?.enabled).length,
-      triggered_today_count: 0,
-      dingtalk_configured: false,
       items: s.codes.map(code => {
         const alerts = s.alerts[code];
         return {
           code, name: code === '000001' ? '测试公司' : code === '600000' ? '暂停公司' : code === '600005' ? '缺口公司' : '待评公司',
-          enabled: !!alerts?.enabled,
           has_levels: !!alerts?.levels && Object.keys(alerts.levels).length > 0,
           level_count: alerts?.levels ? Object.keys(alerts.levels).length : 0,
           updated_at: alerts?.updated_at ?? null,
           levels: alerts?.levels ?? null,
-          triggered_today: [],
         };
       }),
     });
     if (url.pathname.endsWith('/favorites/alerts/status')) {
       await route.fulfill({ json: alertStatus() });
-    } else if (url.pathname.endsWith('/alerts/enabled')) {
-      const code = url.pathname.split('/favorites/')[1].split('/')[0];
-      const enabled = route.request().postDataJSON().enabled as boolean;
-      s.enabledCalls.push({ code, enabled });
-      const alerts = s.alerts[code];
-      if (alerts) s.alerts[code] = { ...alerts, enabled };
-      await route.fulfill({ json: favorites() });
     } else if (url.pathname.endsWith('/favorites')) {
       await route.fulfill({ json: favorites() });
     } else if (url.pathname.endsWith('/stocks')) {
@@ -177,7 +163,7 @@ export async function setup(page: Page, s: TrackingScenario) {
         await route.fulfill({ status: s.applyStatus, json: { message: '报告已更新' } });
         return;
       }
-      s.alerts[code] = { enabled: true, updated_at: '2026-11-11T11:00:00',
+      s.alerts[code] = { updated_at: '2026-11-11T11:00:00',
         levels: { heavy_position: { price: 10, pe: 5.1, pb: 0.7 }, add_position: { price: 12, pe: 6.1, pb: 0.8 },
           reduce_position: { price: 15, pe: 7.6, pb: 1.0 }, full_exit: { price: 19, pe: 9.7, pb: 1.3 } } };
       await route.fulfill({ json: favorites() });
@@ -197,8 +183,8 @@ test('favorites tab shows all favorites with filter counts and legacy URL', asyn
   const s = scenario();
   await setup(page, s);
   await page.goto('/?tab=alerts');
-  await expect(page.getByText('4 只收藏 · 1 只监控中')).toBeVisible();
-  // 三种筛选与计数（监控中/已暂停不设筛选：有挡位的默认都在列表里，行内徽章区分暂停）
+  await expect(page.getByText('4 只收藏 · 1 份待确认')).toBeVisible();
+  // 三种筛选与计数（推送与监控已移除，不再有按启停状态的筛选）
   await expect(page.getByRole('button', { name: /全部收藏\s*4/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /待评估\s*2/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /待应用\s*1/ })).toBeVisible();
@@ -229,7 +215,7 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   await setup(page, s);
   await page.goto('/?tab=alerts');
   const table = page.getByRole('table');
-  // 监控中行：生效条（无候选角标）
+  // 已配置挡位行：生效条（无候选角标）
   const effective = table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]');
   await expect(effective).toBeVisible();
   // 精简后：每档 PE 与距各档距离走悬浮 tooltip，不再占条的高度
@@ -245,17 +231,17 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   await expect(zone).toContainText('↓加仓 21.5%');
   // 现价列只留价格与 PE/PB，距离不再混在这里
   await expect(table.locator('[data-code="000001"]')).not.toContainText('距减仓');
-  // 重评待应用重叠：监控中 + 新评估待应用
+  // 重评待应用重叠：已有生效挡位 + 新评估待应用
   await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
   await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '应用' })).toBeVisible();
   await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '查看报告' })).toBeVisible();
-  // 已暂停 + 单挡位旧配置：条隐藏（不足两条价格线），显示单挡位文本
+  // 单挡位旧配置：条隐藏（不足两条价格线），显示单挡位文本
   await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-effective"]')).not.toBeVisible();
   await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-candidate"]')).not.toBeVisible();
   await expect(table.locator('[data-code="600000"]')).toContainText('单挡位 ¥9.00');
   // 待评估行：无条，占位文案
   await expect(table.locator('[data-code="600004"] [data-testid="valuation-bar-effective"]')).not.toBeVisible();
-  await expect(table.locator('[data-code="600004"]').getByText('尚未评估，先评估挡位再决定是否开启监控')).toBeVisible();
+  await expect(table.locator('[data-code="600004"]').getByText('尚未评估，先评估挡位再决定是否设置')).toBeVisible();
 });
 
 test('first ready report shows candidate bar and applying enables monitoring', async ({ page }) => {
@@ -269,7 +255,7 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   const candidate = table.locator('[data-code="600004"] [data-testid="valuation-bar-candidate"]');
   await expect(candidate).toBeVisible();
   await expect(candidate).toHaveAttribute('title', /未启用/);
-  // 应用前：状态为待应用，不是监控中
+  // 应用前：状态为待应用，尚未使用该挡位
   await expect(table.locator('[data-code="600004"]')).toContainText('待应用');
   // 「查看报告」与「应用」是两个独立动作：查看只开报告弹窗
   await table.locator('[data-code="600004"]').getByRole('button', { name: '查看报告' }).click();
@@ -296,7 +282,7 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   const applied = table.locator('[data-code="600004"]');
   await expect(applied.locator('[data-eval-state]')).toHaveAttribute('data-eval-state', 'succeeded');
   await expect(applied.locator('[data-eval-state]')).toContainText('评估完成');
-  // 状态列不再混入监控（「监控中」只存在于挡位设置里）
+  // 状态列不再混入监控（推送与监控已整体移除）
   await expect(applied.locator('[data-eval-state]')).not.toContainText('监控');
 });
 
@@ -384,7 +370,7 @@ test('paused rows keep the badge but the row no longer offers pause actions', as
   // 状态列只讲评估：该行有非 ready 报告 → 未出价格；监控开关不再占据这一列
   await expect(row.locator('[data-eval-state]')).toHaveAttribute('data-eval-state', 'not_ready');
   await expect(row).not.toContainText('已暂停');
-  // 行内不再有暂停/恢复入口（启用监控改到「挡位设置」里勾选）
+  // 行内没有暂停/恢复入口（该功能已移除）
   await expect(row.getByRole('button', { name: '暂停' })).toHaveCount(0);
   await expect(row.getByRole('button', { name: '恢复监控' })).toHaveCount(0);
   await expect(row.getByRole('button', { name: '挡位设置' })).toBeVisible();

@@ -146,7 +146,7 @@ function derived(
   pendingApply = false,
 ): FavoriteTrackingDerived {
   return {
-    state: 'monitoring',
+    state: 'configured',
     pendingApply,
     effective: true,
     report: report as FavoriteTrackingDerived['report'],
@@ -186,7 +186,7 @@ test('非 ready 报告 → 未出价格', () => {
 test('无报告无任务 → 待评估；手工挡位也算未评估过', () => {
   assert.equal(deriveValuationEvalState(derived(null), null), 'unevaluated');
   assert.equal(
-    deriveValuationEvalState({ state: 'paused' as const, pendingApply: false, effective: true, report: null }, null),
+    deriveValuationEvalState({ state: 'configured' as const, pendingApply: false, effective: true, report: null }, null),
     'unevaluated',
   );
 });

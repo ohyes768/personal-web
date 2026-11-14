@@ -34,7 +34,6 @@ class FavoritesService:
                 "added_at": "2026-06-15T08:00:00",
                 "note": null,
                 "alerts": {                              # 可选，缺省视为未配置
-                    "enabled": true,
                     "star_rating": 4,                     # 1-5，可选
                     "strategy": "深度价值 + 净现金垫",     # 可选
                     "doc_url": "https://...",              # 可选
@@ -51,8 +50,8 @@ class FavoritesService:
         "notify": {"enabled": false, "rules": [], "last_notified_at": null}
     }
 
-    挡位监控由 AlertService（src/services/alert_service.py）负责，
-    本服务只管 alerts 字段的存取。
+    挡位推送与监控已移除（2026-11-14），本服务只管 alerts 字段的存取。
+    历史数据里残留的 enabled 字段读出来会被忽略，不主动清理。
     """
 
     # 单例

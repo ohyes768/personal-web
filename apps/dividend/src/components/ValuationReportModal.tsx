@@ -4,7 +4,7 @@
  * 内容：身份/期间/版本/耗时、四份价格（重评时对比旧生效值划线）、summary、
  * risks/data_gaps/invalidation_conditions、report_md 安全 Markdown（react-markdown + remark-gfm，
  * 同 quality-reader 渲染约定）。
- * 底部：确认应用（仅 ready；写 alerts 并开启监控）与 暂不应用。
+ * 底部：确认应用（仅 ready；写入四条价格线）与 暂不应用。
  * 非 ready（insufficient_data/blocked/not_applicable）展示原因与缺口，不渲染任何价格，不可应用。
  */
 'use client';
@@ -103,7 +103,7 @@ export function ValuationReportModal({
               data-testid="valuation-apply-button"
               onClick={() => void onApply(report)}
             >
-              {applyPending ? '应用中…' : hasOld ? '对比并应用' : '确认并开启监控'}
+              {applyPending ? '应用中…' : hasOld ? '对比并应用' : '确认并使用挡位'}
             </button>
           )}
         </div>

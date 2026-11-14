@@ -187,15 +187,17 @@ export function reportLevelsToAlertLevels(levels: Record<string, ValuationLevelP
 
 /**
  * 单股派生状态（收藏跟踪行）。
- * - monitoring/paused：存在生效挡位（与 alerts.enabled 对应）
- * - pending_apply：ready 报告新于当前配置（可与 monitoring/paused 重叠）
+ *
+ * 挡位钉钉推送与监控已移除（2026-11-14）：不再有 monitoring/paused——
+ * 那两种状态只反映推送开关，没有开关就没有可派生的含义。
+ * - pending_apply：ready 报告新于当前配置
  * - evaluating/failed：per_code 实时状态
  * - not_ready：存在非 ready 报告且无生效挡位
  * - unevaluated：无报告、无任务、无生效挡位
+ * - configured：有四条生效挡位，但没有新于它的报告（等价于「已应用，无事可做」）
  */
 export type FavoriteTrackingState =
-  | 'monitoring'
-  | 'paused'
+  | 'configured'
   | 'pending_apply'
   | 'evaluating'
   | 'failed'
@@ -204,7 +206,7 @@ export type FavoriteTrackingState =
 
 export interface FavoriteTrackingDerived {
   state: FavoriteTrackingState;
-  /** 待应用标志：与 monitoring/paused 可重叠 */
+  /** 待应用标志：与已有生效挡位可重叠 */
   pendingApply: boolean;
   /** 是否存在生效挡位（无论启用与否） */
   effective: boolean;
@@ -214,7 +216,7 @@ export interface FavoriteTrackingDerived {
 /**
  * 评估状态（只讲评估本身，与 alerts.enabled 无关）。
  *
- * 列表状态列不再混入「监控中/已暂停」——那是推送开关，不是评估结果；
+ * 列表状态列只讲评估——推送与监控已整体移除（2026-11-14）；
  * 两者挤在一格会让人以为「暂停 = 没评估」。监控开关仍在「挡位设置」里。
  * - unevaluated：从未评估过（无报告、无在跑记录）
  * - evaluating：queued/running/cancelling
@@ -258,7 +260,6 @@ export function deriveValuationEvalState(
 }
 
 export function deriveFavoriteTrackingState(
-  alertsEnabled: boolean | undefined,
   alertsLevels: AlertLevels | null | undefined,
   alertsUpdatedAt: string | null | undefined,
   report: ValuationReportRecord | null | undefined,
@@ -270,14 +271,14 @@ export function deriveFavoriteTrackingState(
     && isReportNewerThanAlerts(report.evaluated_at, alertsUpdatedAt);
   const live = perCode?.state;
   let state: FavoriteTrackingState;
-  if (effective) {
-    state = alertsEnabled ? 'monitoring' : 'paused';
-  } else if (live === 'queued' || live === 'running' || live === 'cancelling') {
+  if (live === 'queued' || live === 'running' || live === 'cancelling') {
     state = 'evaluating';
   } else if (live === 'failed') {
     state = 'failed';
   } else if (report) {
     state = report.status === 'ready' ? 'pending_apply' : 'not_ready';
+  } else if (effective) {
+    state = 'configured';
   } else {
     state = 'unevaluated';
   }
@@ -286,16 +287,15 @@ export function deriveFavoriteTrackingState(
 }
 
 export const TRACKING_STATE_META: Record<FavoriteTrackingState, { label: string; note: string }> = {
-  monitoring: { label: '监控中', note: '' },
-  paused: { label: '已暂停', note: '挡位保留，未推送提醒' },
-  pending_apply: { label: '待应用', note: '确认后开启监控' },
+  configured: { label: '已配置挡位', note: '' },
+  pending_apply: { label: '待应用', note: '确认后使用新挡位' },
   evaluating: { label: '评估中', note: '正在补充估值依据' },
   failed: { label: '评估失败', note: '可重试' },
   not_ready: { label: '未出价格', note: '未生成价格，可查看原因' },
   unevaluated: { label: '待评估', note: '' },
 };
 
-/** 三种筛选的谓词（监控中/已暂停不设筛选：有挡位的默认都在监控，行内徽章区分暂停） */
+/** 三种筛选的谓词（推送与监控已移除，不再有按启停状态的筛选） */
 export type TrackingFilterKey = 'all' | 'pending' | 'ready';
 
 export function matchesTrackingFilter(filter: TrackingFilterKey, derived: FavoriteTrackingDerived): boolean {

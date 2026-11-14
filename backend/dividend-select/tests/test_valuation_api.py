@@ -1,7 +1,7 @@
 """valuation 路由集成测试（TestClient + 假 Hermes，不真连）。
 
 覆盖：analyze 受理/503/400/422、GET /valuation、apply 成功/陈旧 409/非 ready 400/未收藏 404、
-alerts/enabled 暂停恢复、失败与未应用不覆盖旧监控。
+失败与未应用不覆盖旧挡位（推送与监控已移除，不再有启停接口）。
 """
 import json
 import time
@@ -217,33 +217,6 @@ class TestApply:
         reports = test_client.get("/valuation").json()["reports"]
         response = test_client.post("/valuation/600519/apply",
                                     json={"evaluated_at": reports["600519"]["evaluated_at"]})
-        assert response.status_code == 404
-
-
-class TestAlertsEnabled:
-    def test_pause_keeps_levels(self, client):
-        test_client, _, _, _ = client
-        response = test_client.put("/favorites/600000/alerts/enabled", json={"enabled": False})
-        assert response.status_code == 200
-        item = next(it for it in response.json()["items"] if it["code"] == "600000")
-        assert item["alerts"]["enabled"] is False
-        assert item["alerts"]["levels"]["heavy_position"]["price"] == 9.0
-
-    def test_resume(self, client):
-        test_client, _, _, _ = client
-        assert test_client.put("/favorites/600000/alerts/enabled", json={"enabled": False}).status_code == 200
-        response = test_client.put("/favorites/600000/alerts/enabled", json={"enabled": True})
-        item = next(it for it in response.json()["items"] if it["code"] == "600000")
-        assert item["alerts"]["enabled"] is True
-
-    def test_no_alerts_400(self, client):
-        test_client, _, _, _ = client
-        response = test_client.put("/favorites/000001/alerts/enabled", json={"enabled": False})
-        assert response.status_code == 400
-
-    def test_not_favorited_404(self, client):
-        test_client, _, _, _ = client
-        response = test_client.put("/favorites/999999/alerts/enabled", json={"enabled": False})
         assert response.status_code == 404
 
 

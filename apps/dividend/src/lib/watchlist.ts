@@ -5,7 +5,6 @@ import { directClient } from './api-client';
 import type {
   AlertConfigRequest,
   AlertStatusResponse,
-  AlertCheckResult,
 } from './types';
 
 export interface FavoriteItem {
@@ -66,9 +65,3 @@ export const clearAlerts = (code: string): Promise<FavoritesResponse> =>
  */
 export const getAlertsStatus = (): Promise<AlertStatusResponse> =>
   directClient.get<AlertStatusResponse>('/api/dividend/favorites/alerts/status');
-
-/**
- * 手动触发挡位检查（前端"测试推送"按钮用）
- */
-export const checkAlerts = (): Promise<AlertCheckResult> =>
-  directClient.post<AlertCheckResult>('/api/dividend/favorites/alerts/check', {});

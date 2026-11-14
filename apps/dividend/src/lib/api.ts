@@ -79,7 +79,7 @@ export const dividendApi = {
   /** 获取全部已落盘估值报告 + 逐股实时状态 */
   getValuationStatus: () =>
     directClient.get<ValuationStatusResponse>('/api/dividend/valuation'),
-  /** 将 ready 报告应用为挡位监控配置（开启监控）；陈旧报告 409，非 ready 400 */
+  /** 将 ready 报告的四条价格线写入该股挡位；陈旧报告 409，非 ready 400 */
   applyValuationReport: (code: string, evaluatedAt: string) =>
     directClient.post<FavoritesResponse>(`/api/dividend/valuation/${code}/apply`, { evaluated_at: evaluatedAt }),
   // 挡位监控的启停（enabled）走挡位设置弹框的整份配置保存（updateAlertConfig），

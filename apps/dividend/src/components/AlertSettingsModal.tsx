@@ -2,7 +2,7 @@
  * AlertSettingsModal — 挡位监控设置弹框
  *
  * 4 档价格（重仓/加仓/减仓/全卖），每档含 price + 选填 pe
- * 元数据：enabled + updated_at（自动记录，只读显示）
+ * 元数据：updated_at（自动记录，只读显示）；推送与监控已移除，不再有启用开关
  *
  * 触发判断只在后端做（看价格），PE 仅作推送时展示。
  */
@@ -83,7 +83,6 @@ Header:
         "reduce_position": {"price": 15.0},                         # 减仓
         "full_exit":       {"price": 18.0}                          # 全卖
       },
-      "enabled": true                       # 选填，默认 true
     }
   ]
 }
@@ -100,7 +99,7 @@ Header:
 }
 
 说明：
-- 4 档 price 必填 > 0；pe/pb/enabled 选填
+- 4 档 price 必填 > 0；pe/pb 选填
 - code 必须已收藏（POST /api/dividend/favorites/{code}）；未收藏 → 该条 fail，不会自动加入
 - 每条独立处理，部分失败不影响其他
 - 缺/错 token → 401；服务端未配 AGENT_API_TOKEN → 503`;
@@ -115,7 +114,6 @@ export function AlertSettingsModal({
   onSubmit,
   onClear,
 }: AlertSettingsModalProps) {
-  const [enabled, setEnabled] = useState(false);
   const [levels, setLevels] = useState<AlertLevels>({ ...EMPTY_LEVELS });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -134,7 +132,6 @@ export function AlertSettingsModal({
   // 同步 currentConfig 到本地表单
   useEffect(() => {
     if (!isOpen) return;
-    setEnabled(currentConfig?.enabled ?? false);
     setLevels(levelsToForm(currentConfig?.levels));
     setError(null);
   }, [isOpen, currentConfig]);
@@ -180,8 +177,8 @@ export function AlertSettingsModal({
     if (!stock) return;
     setError(null);
 
-    if (enabled && validLevelCount === 0) {
-      setError('启用监控时至少需要配置 1 档价格');
+    if (validLevelCount === 0) {
+      setError('至少需要配置 1 档价格');
       return;
     }
 
@@ -195,7 +192,6 @@ export function AlertSettingsModal({
     setSaving(true);
     try {
       const body: AlertConfigRequest = {
-        enabled,
         levels: validLevels,
       };
       await onSubmit(stock.code, body);
@@ -326,17 +322,6 @@ export function AlertSettingsModal({
             </pre>
           </div>
         </details>
-
-        {/* 启用监控 */}
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={e => setEnabled(e.target.checked)}
-            className="w-4 h-4 accent-indigo-500"
-          />
-          <span>启用监控（触发时推送钉钉）</span>
-        </label>
 
         {error && (
           <div className="bg-red-900/40 border border-red-700 text-red-200 px-3 py-2 rounded text-sm">

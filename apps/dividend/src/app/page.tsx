@@ -312,7 +312,6 @@ function UpdateTaskRow({
 function buildCurrentConfig(item: AlertStatusItem | undefined): AlertConfigRequest | null {
   if (!item) return null;
   return {
-    enabled: item.enabled,
     levels: item.levels ?? {
       heavy_position: null,
       add_position: null,

@@ -2,9 +2,9 @@
  * FavoritesTrackingTab — 收藏跟踪（替换原「挡位监控」Tab，?tab=alerts URL 保持兼容）
  *
  * 展示全部收藏（不限于已配置挡位），三种筛选 + 名称/代码搜索：
- *   全部收藏 / 待评估（从未应用挡位且无待应用报告）/ 待应用（可与监控中/已暂停重叠）
+ *   全部收藏 / 待评估（从未应用挡位且无待应用报告）/ 待应用（可与已有生效挡位重叠）
  * 行内：评估挡位/重评/重试、待应用行分「应用」（紧凑确认卡）与「查看报告」（报告弹窗）、
- *   挡位设置（既有 AlertSettingsModal，启用监控的开关也收在这里）。
+ *   挡位设置（AlertSettingsModal，只编辑四条价格线）。推送与监控已移除。
  * 价格条：ValuationPriceBar 窄条（四阈值五区间）；未评估/失败/非 ready 不画条。
  */
 'use client';
@@ -102,7 +102,6 @@ export function FavoritesTrackingTab({
       const report = reports[code] ?? null;
       const live = perCode[code] ?? null;
       const derived = deriveFavoriteTrackingState(
-        alertItem?.enabled,
         alertItem?.levels ?? null,
         alertItem?.updated_at ?? null,
         report,
@@ -140,7 +139,6 @@ export function FavoritesTrackingTab({
   }, [rows]);
 
   const pendingApplyCount = counts.ready;
-  const monitoringCount = rows.filter(row => row.derived.state === 'monitoring').length;
 
   const submitEvaluate = useCallback(async (codeList: string[]) => {
     if (!codeList.length) return;
@@ -200,7 +198,7 @@ export function FavoritesTrackingTab({
         <div className="rounded-lg border border-rule bg-paper-tint px-4 py-2.5 flex items-center justify-between gap-3">
           <p className="text-sm text-ink">
             <b>{pendingApplyCount} 份挡位评估等待确认</b>
-            <span className="text-ink-muted"> · 包含首次评估与监控中的新评估，应用前旧挡位持续生效</span>
+            <span className="text-ink-muted"> · 包含首次评估与已有挡位后的新评估，应用前旧挡位持续生效</span>
           </p>
           <button type="button" className={`${chip} ${chipActive} shrink-0`} onClick={() => setFilter('ready')}>
             查看待应用
@@ -225,7 +223,7 @@ export function FavoritesTrackingTab({
           ))}
         </div>
         <p className="ml-auto text-xs text-ink-muted">
-          {rows.length} 只收藏 · {monitoringCount} 只监控中
+          {rows.length} 只收藏
           {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
         </p>
         <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
@@ -348,7 +346,7 @@ function TrackingRow({
   row: {
     code: string;
     stock: DividendStockWithTechnical;
-    alertItem?: { enabled: boolean; levels?: AlertLevels | null; updated_at?: string | null } | null;
+    alertItem?: { levels?: AlertLevels | null; updated_at?: string | null } | null;
     report: ValuationReportRecord | null;
     derived: FavoriteTrackingDerived;
     currentPrice: number | null;
@@ -506,7 +504,7 @@ function TrackingRow({
                 ? '评估失败，暂无挡位'
                 : report && report.status !== 'ready'
                   ? `${VALUATION_STATUS_LABEL[report.status]}：${report.summary.slice(0, 40)}${report.summary.length > 40 ? '…' : ''}`
-                  : '尚未评估，先评估挡位再决定是否开启监控'}
+                  : '尚未评估，先评估挡位再决定是否设置'}
           </div>
         )}
       </td>
@@ -579,7 +577,7 @@ function TrackingRow({
       </td>
 
       {/* 操作：待应用行给两个并列动作（应用 / 查看报告），其余状态保持单入口。
-          行内不再放「暂停/恢复监控」——启用监控改到「挡位设置」里勾选。 */}
+          挡位推送与监控已移除，行内不存在启停入口。 */}
       <td className="p-3">
         <div className="flex flex-col items-start gap-1.5">
           {evaluatingNow ? (
@@ -603,7 +601,7 @@ function TrackingRow({
                 {derived.state === 'not_ready' ? '查看缺口' : '查看报告'}
               </button>
             )}
-            {!report && (derived.state === 'monitoring' || derived.state === 'paused') && !evaluatingNow && (
+            {!report && derived.effective && !evaluatingNow && (
               <button type="button" className={linkBtn} disabled={!configured} onClick={onEvaluate}>评估挡位</button>
             )}
             {sessionRunId && (

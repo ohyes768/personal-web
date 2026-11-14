@@ -475,11 +475,6 @@ class AlertConfigRequest(BaseModel):
     levels: AlertLevels = Field(default_factory=AlertLevels)
 
 
-class AlertEnabledRequest(BaseModel):
-    """挡位监控启停请求：仅翻转 enabled，不改 levels（收藏跟踪行暂停/恢复用）"""
-    enabled: bool = Field(..., description="true=恢复监控，false=暂停监控")
-
-
 class ValuationApplyRequest(BaseModel):
     """估值报告应用请求：按报告身份（evaluated_at）应用，防止陈旧报告覆盖"""
     evaluated_at: str = Field(..., min_length=1, description="要应用的估值报告 evaluated_at")
@@ -489,36 +484,19 @@ class ValuationApplyRequest(BaseModel):
 
 
 class AlertStatusItem(BaseModel):
-    """单只股票的挡位状态"""
+    """单只股票的挡位状态（只读：四条价格线，不再有监控开关）"""
     code: str
     name: Optional[str] = None
-    enabled: bool
     has_levels: bool = Field(..., description="是否配置了至少 1 档价格")
     level_count: int = Field(..., description="已配置档位数（0-4）")
     updated_at: Optional[str] = Field(None, description="挡位最后更新时间 (ISO 8601)")
     levels: Optional[AlertLevels] = None
-    triggered_today: list = Field(
-        default_factory=list,
-        description="今日此股触发的档位 key 列表",
-    )
 
 
 class AlertStatusResponse(BaseModel):
-    """所有收藏股票的挡位状态 + 今日触发汇总"""
+    """所有收藏股票的挡位状态（推送已移除，仅提供四条价格线）"""
     total: int = Field(..., description="收藏总数")
-    enabled_count: int = Field(..., description="已启用监控的股票数")
-    triggered_today_count: int = Field(..., description="今日累计触发档位数")
-    dingtalk_configured: bool = Field(..., description="钉钉 webhook 是否已配置")
     items: list[AlertStatusItem] = Field(default_factory=list)
-
-
-class AlertCheckResult(BaseModel):
-    """手动触发挡位检查的返回"""
-    checked_at: str
-    scanned: int
-    triggered: list[dict] = Field(default_factory=list)
-    pushed: bool
-    push_error: Optional[str] = None
 
 
 # ========== Batch API 模型（外部 agent 入口） ==========
