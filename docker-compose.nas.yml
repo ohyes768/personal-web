@@ -34,7 +34,7 @@
 #   /macro/*     → macro-frontend:3001   (basePath = /macro)
 #   /api/macro/*    → macro-backend:8094/api/*  (nginx 直转后端；macro 前端 BFF 已删除)
 #   /funds/*         → fund-select-frontend:3005  (basePath = /funds，apps/fund-select/)
-#   /api/funds/*   → fund-select-backend:8095/api/*  (nginx 直转后端；fund-select 前端 BFF 仅本地)
+#   /api/funds/*   → fund-select-backend:8095/api/funds/*  (nginx 原样直转后端)
 #   /map/*         → housing-map-frontend:3007  (basePath = /map，apps/housing-map/)
 #   /api/map/*     → housing-map-backend:8096/api/*  (nginx 直转后端)
 #   /skills/*      → skill-manager-frontend:3008  (basePath = /skills，apps/skill-manager/)
