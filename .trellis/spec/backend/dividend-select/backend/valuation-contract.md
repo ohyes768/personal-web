@@ -112,6 +112,13 @@ A local skill checkout is never proof of deployment.
   four prices against the currently effective ones and applies without opening
   the long report. Applying always writes enabled=true, so a paused stock
   becomes monitored again after an apply.
+- **Session download covers both outcomes** (2026-11-14): every row with a
+  Hermes run id offers 下载会话记录. The id resolves as `per_code.run_id` first
+  (the latest run, including a failed one) and falls back to `report.run_id`
+  (the run behind the successful report; absent on old reports). Successes are
+  downloadable so a user can audit how a 挡位 was derived, failures so they can
+  debug why no price came out. `GET /valuation/runs/{run_id}/session` accepts
+  any run id, terminal or not.
 - The confirm card also states where the current price lands after the apply
   (2026-11-13): 旧挡位在 X 区 → 新挡位在 Y 区, plus whether the next price
   refresh will push a DingTalk alert. Zone and hit rules come from
@@ -125,7 +132,14 @@ A local skill checkout is never proof of deployment.
   newer than `alerts.updated_at`; overlaps monitoring/paused), evaluating,
   failed, not_ready, unevaluated. Filters: 全部收藏 / 待评估 (never-applied and
   no pending report) / 待应用 (pendingApply) — 监控中 / 已暂停 have no filter
-  chip, the row badge distinguishes them. Bar semantics:
+  chip. **The status column is 评估状态 only** (2026-11-14): it renders
+  `deriveValuationEvalState` — 评估完成 / 待应用 / 评估中 / 评估失败 / 未出价格 /
+  待评估, driven by `data-eval-state`. Monitoring is a delivery switch, not an
+  evaluation result, so 监控中/已暂停 no longer appear in this column (the
+  `enabled` checkbox in 挡位设置 remains the only place to read it; the row
+  state machine still computes monitoring/paused for filters and actions).
+  A failed latest run wins over an older successful report, so a stale report
+  can never make the row read 评估完成. Bar semantics:
   effective bar (≥2 levels) solid; candidate bar dashed with the
   「评估结果 · 未启用监控」badge for a first ready report; single-level configs
   render text instead of a bar; nothing renders without prices. Out-of-range

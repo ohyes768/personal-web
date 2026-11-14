@@ -7,6 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deriveValuationEvalState, resolveValuationZone, resolveZoneSteps } from './valuation.ts';
+import type { FavoriteTrackingDerived } from './valuation.ts';
 import type { AlertLevels } from './types.ts';
 
 function levels(heavy: number, add: number, reduce: number, full: number): AlertLevels {
@@ -140,8 +141,16 @@ test('档位/现价不完整时区间列留空（不编造）', () => {
 
 /* ---------------- deriveValuationEvalState：评估状态（与监控开关无关） ---------------- */
 
-function derived(report: any, pendingApply = false) {
-  return { state: 'monitoring' as const, pendingApply, effective: true, report };
+function derived(
+  report: { status: string; evaluated_at: string } | null,
+  pendingApply = false,
+): FavoriteTrackingDerived {
+  return {
+    state: 'monitoring',
+    pendingApply,
+    effective: true,
+    report: report as FavoriteTrackingDerived['report'],
+  };
 }
 
 test('有 ready 报告 → 评估完成', () => {
