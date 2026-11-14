@@ -9,6 +9,8 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   reporter: [["list"]],
+  // 跑完兜底清理：用例超时时它自己的 afterEach 可能来不及跑
+  globalTeardown: "./e2e/global-teardown.ts",
   use: {
     baseURL: process.env.SM_E2E_BASE_URL || "http://127.0.0.1:3012",
     // 指到 nginx 入口（https://…:9443，自签证书）跑生产拓扑时用；直连 3012 不受影响
