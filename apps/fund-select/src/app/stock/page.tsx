@@ -37,7 +37,9 @@ import { useSearchParams } from 'next/navigation';
 
 import { useFilters } from '@/lib/useFilters';
 import {
-  STOCK_DEFAULT_FILTERS, STOCK_MARKET_TYPE_OPTIONS, STOCK_OPTION_LABELS, type FundListItem,
+  DEFAULT_FULL_REFRESH_FILTERS_STOCK,
+  STOCK_DEFAULT_FILTERS, STOCK_MARKET_TYPE_OPTIONS, STOCK_OPTION_LABELS,
+  type FullRefreshFilters, type FundListItem,
 } from '@/lib/types';
 
 /** 股基来源分段只有两态（没有「全部」：与「市场」逐只同集） */
@@ -55,6 +57,11 @@ function StockFundsPageInner() {
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
+  // 全量刷新的预筛参数（11-14 修复：合并页丢了这两个 prop，按钮整个不渲染）。
+  // 只作为「全量刷新」弹框的初始值，不锁定页面筛选（合并页支持自由筛选）。
+  const [preFilters, setPreFilters] = useState<FullRefreshFilters>(
+    DEFAULT_FULL_REFRESH_FILTERS_STOCK
+  );
   // 双向闭环落点：经理页徽章 ?code=XXXX 直达，抽屉内按 code 拉完整详情
   const codeParam = useSearchParams().get('code');
   const [stubCode, setStubCode] = useState<string | null>(null);
@@ -90,6 +97,8 @@ function StockFundsPageInner() {
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
         exportKind="stock"
+        onFullRefreshComplete={pf => setPreFilters(pf)}
+        preFilters={preFilters}
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">

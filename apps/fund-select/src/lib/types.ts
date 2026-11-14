@@ -130,10 +130,12 @@ export interface FundFilters {
 
 /**
  * 来源分段（11-15-source-segmented）：
- * - all = 三分法名单 ∪ 市场子类（债基默认：三分法有 3 只固收+/FOF 不在市场 universe 内）
+ * - market = akshare 市场子类圈定（该 tab 的「全集」口径）
  * - curated = 雪球三分法 yaml 名单
- * - market = akshare 市场子类圈定（股基默认：股基三分法 142 只全部含在市场 universe 内，
- *   「全部」与「市场」逐只同集，多一个分段只是噪音）
+ * - all = 三分法名单 ∪ 市场子类（**后端仍支持**，前端不再暴露这个分段）
+ *
+ * 两个 tab 都只提供「市场 | 三分法」两态；默认值按「换分段前后首屏行集不变」
+ * 那一态选（股基 all ≡ market → market；债基 all ≡ curated → curated）。
  */
 export type SourceSegment = 'all' | 'curated' | 'market';
 
@@ -141,7 +143,9 @@ export type SourceSegment = 'all' | 'curated' | 'market';
 export const LIMIT_OPTIONS = [25, 50, 100] as const;
 
 export const DEFAULT_FILTERS: FundFilters = {
-  source: 'all',
+  // 债基默认落在「三分法」：改分段前后的默认筛选下，all 与 curated **逐行同集**
+  // （13 行），market 只有 11 行 → 默认跟 all 同集，首屏一行不变
+  source: 'curated',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 5,
@@ -175,7 +179,8 @@ export const STOCK_DEFAULT_FILTERS: FundFilters = {
 
 /** 债基·市场 tab 默认筛选：默认 universe = 4 个粗类别全选（债基侧无 REITs） */
 export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
-  source: 'all',
+  // 老 discovery 路由没有 source 参数，这里只是别往 URL 里塞无意义的值
+  source: 'market',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 5,
@@ -191,7 +196,7 @@ export const DISCOVERY_BOND_DEFAULT_FILTERS: FundFilters = {
 
 /** 股基·市场 tab 默认筛选：默认 universe = 5 个粗类别全选 */
 export const DISCOVERY_STOCK_DEFAULT_FILTERS: FundFilters = {
-  source: 'all',
+  source: 'market',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 30,

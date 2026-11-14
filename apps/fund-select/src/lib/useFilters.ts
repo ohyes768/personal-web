@@ -41,10 +41,17 @@ const DEFAULT_LIMIT = 50;
 const SOURCE_VALUES = ['all', 'curated', 'market'] as const;
 
 /** 解析 ?source=：命中合法值用之，否则回退到该 tab 的默认分段
- *  （债基默认 all、股基默认 market —— 由 DEFAULT_FILTERS / STOCK_DEFAULT_FILTERS 决定）。 */
+ *  （债基默认 curated、股基默认 market —— 由 DEFAULT_FILTERS / STOCK_DEFAULT_FILTERS 决定）。
+ *
+ *  ⚠ `all` 的归一化：两个 tab 现在都只提供「市场 | 三分法」两态，**「全部」已下线**。
+ *  老链接（?source=all）落到没有「全部」的那个 tab 上时，必须归一到该 tab 的默认分段，
+ *  否则分段控件一个都不选中（用户看到"没选中的来源"，请求却按 all 发出去）。
+ *  归一后行集不变：股基 all ≡ market、债基 all ≡ curated（默认筛选下逐行相同）。 */
 function parseSource(search: URLSearchParams, fallback: SourceSegment = 'all'): SourceSegment {
   const raw = search.get('source');
-  return SOURCE_VALUES.includes(raw as SourceSegment) ? (raw as SourceSegment) : fallback;
+  if (!raw || !SOURCE_VALUES.includes(raw as SourceSegment)) return fallback;
+  if (raw === 'all' && fallback !== 'all') return fallback;
+  return raw as SourceSegment;
 }
 
 function parseExcludeQdii(search: URLSearchParams): boolean {

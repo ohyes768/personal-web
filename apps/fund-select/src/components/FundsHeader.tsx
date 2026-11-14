@@ -61,16 +61,24 @@ const REFRESH_URL: Partial<Record<FundsTab, string>> = {
   'managers': '/funds/api/funds/managers/refresh',
 };
 
-/** discovery-* tab 的全量 refresh：start 闭包 + poll 闭包（避免组件持有 URL 字符串） */
+/**
+ * tab 的「全量刷新」端点（跑市场全量流水线 L0..L5）。
+ *
+ * ⚠ 11-14 修复：key 原来只有 'discovery-bond' / 'discovery-stock'，而 11-15 合并页
+ * 之后 /bond 与 /stock 页传的是 exportKind="bond" / "stock" → 查表 undefined →
+ * 按钮整个不渲染（全量刷新入口失联，只能等每周定时任务）。
+ * 现在 key 与 exportKind 对齐；后端端点仍在 /api/funds/discovery-* 前缀下
+ * （那套 router 活着，只是前端不再从 discovery-* 路由进）。
+ */
 const FULL_REFRESH_API: Partial<Record<FundsTab, {
   startFullRefresh: (filters: FullRefreshFilters) => Promise<{ task_id: string; status: string }>;
   pollFullRefreshStatus: (taskId: string) => Promise<RefreshStatus>;
 }>> = {
-  'discovery-bond': {
+  'bond': {
     startFullRefresh: (filters: FullRefreshFilters) => discoveryBondApi.fullRefresh(filters),
     pollFullRefreshStatus: (taskId: string) => discoveryBondApi.getFullRefreshStatus(taskId),
   },
-  'discovery-stock': {
+  'stock': {
     startFullRefresh: (filters: FullRefreshFilters) => discoveryStockApi.fullRefresh(filters),
     pollFullRefreshStatus: (taskId: string) => discoveryStockApi.getFullRefreshStatus(taskId),
   },
