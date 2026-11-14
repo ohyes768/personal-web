@@ -925,19 +925,20 @@ SQLAlchemy 把结果列类型标成 Boolean —— Python 侧拿到 `True/False`
 
 ---
 
-## 15.5 历任基金行的近 1 年 / 近 3 年（与股票 tab 同口径）
+## 15.5 历任基金行的近 1 年 / 近 3 年 / 近 5 年（与股票 tab 同口径）
 
-经理明细页展开后的「历任基金」表在「年化」后加两列 `近1年` / `近3年`，
+经理明细页展开后的「历任基金」表在「年化」后加三列 `近1年` / `近3年` / `近5年`，
 数据源与股票 tab 主表**完全一致**（同表、同回退链、同排名口径）：
 
 | 字段 | 来源 | 备注 |
 |---|---|---|
 | `ret_1y` / `ret_3y` | `FundPerformance`（雪球链路）优先 → `MarketFundRank`（市场链路）回退 | 逐项回退：perf 的某列为 null 时取 market 值 |
-| `rank_1y` / `rank_3y` | `FundAchievementRank`（`阶段业绩` / `近1年`、`近3年`） | 走 `src/utils/rank.py` 的 `parse_peer_rank`（与 filter_service 同一份实现） |
+| `ret_5y` | `FundPerformance` 唯一链路 | `market_fund_rank` 表**没有** `ret_5y` 列（市场链路只到近3年/今年以来/成立以来），故无回退，缺失即为空 |
+| `rank_1y` / `rank_3y` / `rank_5y` | `FundAchievementRank`（`阶段业绩` / `近1年`、`近3年`、`近5年`） | 走 `src/utils/rank.py` 的 `parse_peer_rank`（与 filter_service 同一份实现） |
 
 ### 15.6 口径差异必须写在表头提示里
 
-这两列是**基金自身时间窗口**的收益，与同一行的「任职回报」（按该经理任职窗口算）
+这几列是**基金自身时间窗口**的收益，与同一行的「任职回报」（按该经理任职窗口算）
 **不是一回事**：经理离任后基金可能已换人。所以列名用「近1年」而非「任职近1年」，
 表头加 tooltip 说明差异，避免读者把两者当同一口径。
 
@@ -946,6 +947,35 @@ SQLAlchemy 把结果列类型标成 Boolean —— Python 侧拿到 `True/False`
 `_parse_peer_rank` 原在 `filter_service` 私有。经理明细也要显示同类排名，
 两处共用一份实现，故提取到 `src/utils/rank.py`；`filter_service._parse_peer_rank`
 保留为薄封装（旧调用点与测试 import 路径不变）。
+
+### 15.8 展开行的 colSpan 必须等于列表表列数
+
+经理列表表有 **12** 列（经理/公司/从业/年化·含离任/在管年化/胜率/独管/最长任期/
+回撤/夏普/规模/在管）。展开的详情行 `td` 必须写 `colSpan={12}`——写成 11 会
+少合并「在管」列（5.5rem），详情面板比列表窄一截，肉眼看是两个不同宽度。
+加载态与空态的 `colSpan` 同样要改。
+
+### 15.9 详情内层表要 table-fixed + 显式列宽
+
+展开层里的「历任基金」表若不设 `table-fixed` 且不显式给列宽，内容会把表格
+撑出容器，父级 `overflow-x-auto` 出现横向滚动条，视觉上又和列表对不齐。
+给每列显式 `w-[…]` 后，内层表与外层列表表同宽铺满。
+
+**列宽总和要 ≤ 可用宽度**：外层 `td` 的内容宽 = 列表表宽 − 左右 padding
+（1280 视口约 1044px）。列宽总和超出时 `table-fixed` 会按比例压缩，最窄的列
+（代码列要塞「在榜 N 周」徽章）就被挤到内容溢出。
+
+**flex 子项要 `shrink-0`**：`RankInline` 的排名色点是 `w-1.5` 的固定尺寸，
+在窄列里会被 flex 压成 0 宽（色点消失）。给色点与百分比加 `shrink-0`。
+
+### 15.10 详情表列宽与内容匹配
+
+| 列 | 宽度 | 依据 |
+|---|---|---|
+| 代码 | 8rem | 6 位代码 + 「在榜 N 周」徽章（约 61px） |
+| 名称 | 7rem | 基金名最长约 10 字，超出截断 |
+| 任职期间 | 9.5rem | 「2021-02-11~2025-04-12」最长 21 字符 |
+| 近1年/近3年/近5年 | 7rem | 收益值（如 `+110.95%`）+ 排名行（色点 + `18.9%` + `395/2091`） |
 
 ---
 
@@ -1438,4 +1468,104 @@ window = [str(y) for y in range(ref_year - 3, ref_year)]
 risk_rows[code] = {"sharpe": db.get(FundRiskMetrics, code).sharpe}
 # Correct — 按当周往前 3 年窗口重算
 m = compute_risk_metrics(r_p_windowed, r_b_windowed, rf)
+```
+
+---
+
+## 20. 基金代码快速搜索：lookup 路由判定（11-14-fund-code-quick-search，2026-11-14）
+
+### 20.1 Scope / Trigger
+
+触发本节：改 `lookup_service.resolve_tab` 的判定优先级 / `/lookup/{code}` 路由 /
+`FundCodeSearch` 组件任何一处。
+
+### 20.2 判定优先级（yaml 名单优先于 market_type）
+
+```
+1. 在 funds.yaml（债基精选 31 只）        → bond
+2. 在 funds_stock.yaml（股基 142 只）     → stock
+3. market_type 以「债券」开头              → discovery-bond   ← 含脏值防御
+4. market_type == 'stock'                  → discovery-stock
+5. market_type == 'other' + subtype 属债券 → discovery-bond
+6. 其余（other+混合/FOF/货币/空，或未知）  → discovery-stock
+7. 库内无该 code                            → found=False
+```
+
+**为什么 yaml 优先**：yaml 是精选名单，名单内的基金用户多半从对应雪球 tab 认识；
+market_type 是全市场粗分类。两份名单无交集（实测 31 / 142 / 交集 0）。
+
+**为什么 `other` 必须再看 subtype（实测关键陷阱）**：生产库 `other` 有 5115 只，
+其中 **2653 只 `market_subtype` 是「债券型-*」**。若笼统兜底到股基市场，
+这两千多只会跳到错误 tab。必须先用 `DISCOVERY_BOND_SUBTYPES` /
+「债券」前缀判定。
+
+**脏值防御**：`market_type` 有一行被误写成 `'债券型-长债'`（code=519622，
+是 subtype 的值写进了 type 字段）。凡以「债券」开头一律按 bond。
+
+### 20.3 API 契约
+
+`GET /api/funds/lookup/{code}`，`code` 必须 6 位数字（`pattern=r"^\d{6}$"`）。
+
+```python
+class FundLookupResponse(BaseModel):
+    code: str
+    found: bool
+    name: Optional[str] = None
+    tab: Optional[str] = None          # bond|stock|discovery-bond|discovery-stock
+    market_type: Optional[str] = None
+    in_yaml: Optional[str] = None      # 'bond'|'stock'|None
+    path: Optional[str] = None         # '/discovery-stock?code=002910'
+```
+
+- **查不到（found=False）返回 200**，不是 404：这是业务结果，不是错误。
+  返回 404 会让前端必须区分「代码不存在」与「接口挂了」。
+- **格式非法返回 422**：那是调用方 bug，应明确暴露。
+- **`/lookup/{code}` 必须注册在通用 `/{code}` 之前**（契约 §13 同一类陷阱）。
+
+### 20.4 `path` 是相对路径（basePath 契约）
+
+返回值 `path` 形如 `/discovery-stock?code=002910`，**不带 `/funds` 前缀**——
+前端 `router.push(path)` 时 Next 会自动补 basePath；写 `/funds/...` 会变成
+`/funds/funds/...` 404（§4 已记录该陷阱）。
+
+### 20.5 前端接入
+
+- `FundsHeader` 新增可选 prop `showCodeSearch?: boolean`（**默认 false**）。
+  只有四个基金 tab 传 true；经理 / 夏普榜单 / 走势页复用同一 header 但不显示。
+- 搜索框**不参与筛选状态**：不写进 `?qs`，避免污染可分享的筛选链接。
+  它是一次性跳转动作。
+- 桌面 ≥640px 显示行内输入框；<640px 收成图标，点击展开覆盖式输入框
+  （直接塞行内框会挤压「共 N 只」破坏 header 布局）。
+
+### 20.6 Tests Required
+
+- `test_lookup_service.py`：六级优先级全覆盖，重点 `other`+债券型 → discovery-bond
+- `test_lookup_api.py`：200/422 语义、**路由不被 `/{code}` 吞**、7 字段透出
+- `src/lib/lookup.test.ts`：归一化（trim/全角/夹字符）、6 位校验、状态分类
+
+全量：后端 **733 passed**（710 基线 + 23 新增）；前端 50 passed + `tsc` + `build`。
+
+### 20.7 Wrong vs Correct
+
+```python
+# Wrong — other 一律兜底股基市场（2653 只债基跳错 tab）
+if mtype == 'other': return 'discovery-stock'
+# Correct — other 按 subtype 细分
+if mtype == 'other':
+    if msub in BOND_SUBTYPES or msub.startswith('债券'): return 'discovery-bond'
+    return 'discovery-stock'
+```
+
+```tsx
+// Wrong — path 加了 /funds 前缀，变 /funds/funds/... 404
+router.push(`/funds${res.path}`)
+// Correct — 后端已给相对路径
+router.push(res.path)
+```
+
+```python
+# Wrong — 找不到返回 404（前端要区分业务未命中与接口故障）
+raise HTTPException(404)
+# Correct — 200 + found=False
+return {"code": code, "found": False, "path": None, ...}
 ```

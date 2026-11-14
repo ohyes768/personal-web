@@ -100,6 +100,7 @@ function DiscoveryBondPageInner() {
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
         exportKind="discovery-bond"
+        showCodeSearch
         onFullRefreshComplete={handleFullRefreshComplete}
         preFilters={preFilters}
       />

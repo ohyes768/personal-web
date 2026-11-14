@@ -336,3 +336,18 @@ class SharpeTrendResponse(BaseModel):
     points: list[SharpeTrendPointDTO] = []
     stats: SharpeTrendStatsDTO = SharpeTrendStatsDTO()
     diagnostics: dict = {}
+
+
+class FundLookupResponse(BaseModel):
+    """基金代码 → 所属 tab 的路由判定（11-14-fund-code-quick-search）
+
+    ⚠ 所有字段显式声明：response_model 会静默丢弃未声明字段（contracts §3a）。
+    found=False 时 tab/path 为 None（HTTP 仍返回 200，不是错误）。
+    """
+    code: str
+    found: bool
+    name: Optional[str] = None
+    tab: Optional[str] = None              # bond|stock|discovery-bond|discovery-stock
+    market_type: Optional[str] = None
+    in_yaml: Optional[str] = None          # 'bond'|'stock'|None（命中哪份精选名单）
+    path: Optional[str] = None             # '/discovery-stock?code=002910'（相对路径）

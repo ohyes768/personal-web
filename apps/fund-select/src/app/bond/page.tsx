@@ -57,6 +57,7 @@ function FundsPageInner() {
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
         exportKind="bond"
+        showCodeSearch
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">

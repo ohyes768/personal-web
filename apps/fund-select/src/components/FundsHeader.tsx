@@ -16,6 +16,7 @@ import { useState } from 'react';
 import { Cog6ToothIcon, FunnelIcon } from '@heroicons/react/24/outline';
 
 import { discoveryBondApi, discoveryStockApi } from '@/lib/api';
+import { FundCodeSearch } from './FundCodeSearch';
 import { FundsNavigation } from './FundsNavigation';
 import { FullRefreshDialog } from './FullRefreshDialog';
 import { RefreshStatusPopover } from './RefreshStatusPopover';
@@ -41,6 +42,9 @@ interface FundsHeaderProps {
   onFullRefreshComplete?: (preFilters: FullRefreshFilters) => void;
   /** 当前生效的预筛选值（用于初始化弹窗 default） */
   preFilters?: FullRefreshFilters;
+  /** 是否显示「基金代码快速搜索」框（仅四个基金 tab 传 true；
+   *  经理/榜单/走势页复用同一 header 但不需要，默认 false） */
+  showCodeSearch?: boolean;
 }
 
 const TITLE: Record<FundsTab, string> = {
@@ -84,6 +88,7 @@ export function FundsHeader({
   exportKind,
   onFullRefreshComplete,
   preFilters,
+  showCodeSearch = false,
 }: FundsHeaderProps) {
   const title = TITLE[active];
   const refreshUrl = REFRESH_URL[exportKind];
@@ -140,6 +145,7 @@ export function FundsHeader({
               />
             </>
           )}
+          {showCodeSearch && <FundCodeSearch />}
           <span className="hidden sm:inline text-sm text-ink-muted">
             共 <span className="tnum font-semibold text-ink-strong">{total}</span> {totalUnit}
           </span>

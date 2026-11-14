@@ -9,12 +9,13 @@ API 路由定义
 import json
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path, Query
 from sqlalchemy import select
 
 from src.api.models import (
     AchievementRankDTO,
     FundDetailResponse,
+    FundLookupResponse,
     RefreshResponse,
     RefreshStatusResponse,
     ScreenResponse,
@@ -32,6 +33,7 @@ from src.scheduler.tasks import (
 )
 # refresh_market_full_sync 单独 import（避免 tasks.py 循环依赖 market_full_pipeline）
 from src.services.filter_service import FilterService
+from src.services.lookup_service import resolve_tab
 from src.utils.logger import setup_logger
 
 logger = setup_logger("fund-select.api")
@@ -128,6 +130,25 @@ async def stats(db=Depends(get_db)):
         **counts,
         last_refresh_at=last_run.finished_at if last_run else None,
     )
+
+
+@router.get("/lookup/{code}", response_model=FundLookupResponse)
+async def fund_lookup(
+    code: str = Path(..., pattern=r"^\d{6}$", description="6 位基金代码"),
+    db=Depends(get_db),
+):
+    """基金代码 → 所属 tab 的路由判定（供 header 快速搜索用）。
+
+    ⚠ 必须注册在通用 /{code} 详情路由之前：FastAPI 按注册顺序匹配，
+    后注册会让 /api/funds/lookup/002910 被 /{code} 吞掉当基金代码查
+    （contracts §13 同类陷阱）。
+
+    查不到返回 200 + found=false（业务结果，不是错误）；格式非法由
+    pattern 校验返回 422（调用方 bug，明确暴露）。
+    """
+    if len(code) != 6 or not code.isdigit():
+        raise HTTPException(status_code=422, detail="基金代码必须是 6 位数字")
+    return resolve_tab(db, code)
 
 
 @router.get("/{code}", response_model=FundDetailResponse)

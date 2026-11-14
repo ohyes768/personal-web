@@ -65,6 +65,7 @@ function StockFundsPageInner() {
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
         exportKind="stock"
+        showCodeSearch
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
