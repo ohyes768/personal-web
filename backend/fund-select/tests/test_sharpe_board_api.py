@@ -467,13 +467,13 @@ class TestApiValidation:
         assert r.status_code == 404
 
     def test_default_params_ok(self, client, board_db):
-        """全部默认参数 → 200；默认规则版本已切 v2（11-13 任务 AC3）"""
-        _seed_three_weeks(board_db, source="discovery-stock", version="v2")
+        """全部默认参数 → 200；默认规则版本已切 v3（11-14 任务）"""
+        _seed_three_weeks(board_db, source="discovery-stock", version="v3")
         r = client.get("/api/funds/sharpe-board")
         assert r.status_code == 200
         body = r.json()
-        assert body["profile"]["version"] == "v2"
-        assert body["profile"]["algorithm_version"] == "risk-3y-v2"
+        assert body["profile"]["version"] == "v3"
+        assert body["profile"]["algorithm_version"] == "risk-3y-v3"
         # 显式 v1 仍可访问（版本隔离，历史不被污染）
         r1 = client.get("/api/funds/sharpe-board?profile_version=v1")
         assert r1.status_code == 200
@@ -490,7 +490,9 @@ class TestApiValidation:
         for key in ("code", "name", "listed_weeks", "consecutive_weeks",
                     "latest_sharpe", "last_listed_week", "on_latest_board",
                     # v2 新增（DTO 显式声明，防 Pydantic 静默砍字段）
-                    "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of"):
+                    "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of",
+                    # v3 年度口径
+                    "peer_years", "peer_qualified_years", "peer_window"):
             assert key in item
         attempt = body["latest_attempt"]
         for key in ("week_start", "status", "trigger", "started_at",

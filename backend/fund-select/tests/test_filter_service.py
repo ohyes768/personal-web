@@ -299,3 +299,49 @@ class TestV2EntryGates:
         p = entry_predicate(min_ir=0.5, min_sample_days=700, max_peer_pct=20.0)
         # 显式排除 QDII 不在 v2 门内
         assert p(self._row(market_subtype="QDII-股票")) is True
+
+
+class TestV3YearlyGate:
+    """v3 年度同类排名门槛（11-14 任务）：谓词只读冻结好的 qualified_years。"""
+
+    @staticmethod
+    def _row(**kw):
+        base = dict(age_years=4.0, size_yi=10.0, dd_3y=-15.0,
+                    mgr_experience_years=6.0, sharpe=1.0,
+                    market_subtype="混合型-偏股",
+                    ir=0.6, sample_days=720, qualified_years=2)
+        base.update(kw)
+        return SimpleNamespace(**base)
+
+    def test_min_years_boundary(self):
+        p = entry_predicate(min_yearly_years=2)
+        assert p(self._row(qualified_years=2)) is True    # 含等号
+        assert p(self._row(qualified_years=3)) is True
+        assert p(self._row(qualified_years=1)) is False
+        assert p(self._row(qualified_years=0)) is False
+        assert p(self._row(qualified_years=None)) is False  # 无证据不命中
+
+    def test_default_none_does_not_affect_v2(self):
+        """min_yearly_years 默认 None → v2 三道门行为逐字节不变。"""
+        rows = [
+            self._row(ir=0.6, sample_days=720),
+            self._row(ir=0.4),
+            self._row(sample_days=699),
+            self._row(ir=None, sample_days=None),
+        ]
+        v2 = entry_predicate(min_ir=0.5, min_sample_days=700)
+        v3_default = entry_predicate(min_ir=0.5, min_sample_days=700,
+                                     min_yearly_years=None)
+        assert [v2(r) for r in rows] == [v3_default(r) for r in rows]
+
+    def test_combined_with_v2_gates(self):
+        p = entry_predicate(min_ir=0.5, min_sample_days=700, min_yearly_years=2)
+        assert p(self._row()) is True
+        assert p(self._row(ir=0.4)) is False          # IR 挡
+        assert p(self._row(qualified_years=1)) is False  # 年度挡
+
+    def test_does_not_depend_on_peer_pct(self):
+        """v3 不看滚动 peer_pct（那是 v2 的门）。"""
+        p = entry_predicate(min_yearly_years=2)
+        assert p(self._row(peer_pct=None)) is True    # peer_pct 缺不影响
+        assert p(self._row(peer_pct=99.0)) is True

@@ -925,6 +925,30 @@ SQLAlchemy 把结果列类型标成 Boolean —— Python 侧拿到 `True/False`
 
 ---
 
+## 15.5 历任基金行的近 1 年 / 近 3 年（与股票 tab 同口径）
+
+经理明细页展开后的「历任基金」表在「年化」后加两列 `近1年` / `近3年`，
+数据源与股票 tab 主表**完全一致**（同表、同回退链、同排名口径）：
+
+| 字段 | 来源 | 备注 |
+|---|---|---|
+| `ret_1y` / `ret_3y` | `FundPerformance`（雪球链路）优先 → `MarketFundRank`（市场链路）回退 | 逐项回退：perf 的某列为 null 时取 market 值 |
+| `rank_1y` / `rank_3y` | `FundAchievementRank`（`阶段业绩` / `近1年`、`近3年`） | 走 `src/utils/rank.py` 的 `parse_peer_rank`（与 filter_service 同一份实现） |
+
+### 15.6 口径差异必须写在表头提示里
+
+这两列是**基金自身时间窗口**的收益，与同一行的「任职回报」（按该经理任职窗口算）
+**不是一回事**：经理离任后基金可能已换人。所以列名用「近1年」而非「任职近1年」，
+表头加 tooltip 说明差异，避免读者把两者当同一口径。
+
+### 15.7 排名解析下沉到 utils
+
+`_parse_peer_rank` 原在 `filter_service` 私有。经理明细也要显示同类排名，
+两处共用一份实现，故提取到 `src/utils/rank.py`；`filter_service._parse_peer_rank`
+保留为薄封装（旧调用点与测试 import 路径不变）。
+
+---
+
 ## 16. 经理 ↔ 基金跨 tab 关联（11-12 双向闭环）
 
 ### 16.1 URL 直达参数是唯一跨页交互协议

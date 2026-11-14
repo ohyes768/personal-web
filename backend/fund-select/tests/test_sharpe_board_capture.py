@@ -1001,23 +1001,200 @@ class TestFreezePeerRows:
 
 
 class TestV2PeerFreezeWiring:
-    """design §11：两条链路都在 achievement 落库后冻结 peer_rows。"""
+    """design §11：两条链路都在 achievement 落库后冻结 peer_rows。
+
+    11-14 起冻结口径改为年度（v3），字段从 peer_pct 变为年度达标结构。
+    """
 
     def test_stock_chain_freezes_peer_rows(self, db_session, monkeypatch):
         from src.services.sharpe_capture import SharpeRunCapture
 
-        # 预置 achievement（模拟 snapshot_fund(fetch_ranking=True) 已写库）
-        db_session.add(FundAchievementRank(
-            code="300001", period_kind="阶段业绩", period="近3年",
-            ret=1.0, max_dd=-5.0, peer_rank="1/10", as_of_date=date(2026, 11, 7)))
+        # 预置年度 achievement（模拟 snapshot_fund(fetch_ranking=True) 已写库）
+        for year in ("2023", "2024"):
+            db_session.add(FundAchievementRank(
+                code="300001", period_kind="年度业绩", period=year,
+                ret=1.0, max_dd=-5.0, peer_rank="1/10",
+                as_of_date=date(2026, 9, 9)))
         db_session.commit()
 
         helper = TestStockRefreshCapture()
         cap = SharpeRunCapture(run_id="run-v2w1")
-        # freeze_peer_rows 的 today 固定到 2026-11-13 以便陈旧判定稳定
+        # ref_year 固定到 2026 -> 窗口 2023/2024/2025
         with patch("src.services.sharpe_capture.date") as mock_date:
-            mock_date.today.return_value = date(2026, 11, 13)
+            mock_date.today.return_value = date(2026, 11, 14)
             mock_date.side_effect = lambda *a, **kw: date(*a, **kw)
             helper._run_stock_refresh(db_session, monkeypatch, cap)
-        assert cap.peer_rows["300001"]["peer_pct"] == 10.0
+        assert cap.peer_rows["300001"]["qualified_years"] == 2
+        assert cap.peer_rows["300001"]["qualified"] is True
         assert "300002" not in cap.peer_rows  # 无 achievement 记录的 code 不入字典
+
+
+# ─────────────────────────────────────────────────────────────
+# v3 年度同类排名（11-14-sharpe-board-v3-yearly-peer）
+# ─────────────────────────────────────────────────────────────
+from src.services.sharpe_capture import (  # noqa: E402
+    MIN_YEARLY_TOP_PCT, MIN_YEARLY_YEARS, YEARLY_WINDOW,
+    freeze_yearly_peer_rows, yearly_window,
+)
+
+
+class TestYearlyWindow:
+    def test_2026_window_excludes_current_year(self):
+        assert yearly_window(2026) == ["2023", "2024", "2025"]
+
+    def test_window_rolls_with_year(self):
+        assert yearly_window(2027) == ["2024", "2025", "2026"]
+        assert yearly_window(2024) == ["2021", "2022", "2023"]
+
+    def test_window_ascending_order(self):
+        w = yearly_window(2026)
+        assert w == sorted(w), "窗口应升序，展示与断言都依赖顺序"
+
+    def test_defaults_match_profile_constants(self):
+        assert YEARLY_WINDOW == 3
+        assert MIN_YEARLY_TOP_PCT == 25.0
+        assert MIN_YEARLY_YEARS == 2
+
+
+class TestFreezeYearlyPeerRows:
+    """年度排名是历史固定值：不做 as_of 陈旧判断（与 v2 滚动口径的关键差异）。"""
+
+    def _add(self, db, code, year, raw, as_of=_date(2026, 9, 9)):
+        db.add(FundAchievementRank(
+            code=code, period_kind="年度业绩", period=year,
+            ret=1.0, max_dd=-5.0, peer_rank=raw, as_of_date=as_of,
+        ))
+
+    def test_all_three_years_top25_qualified(self, db_session):
+        for y in ("2023", "2024", "2025"):
+            self._add(db_session, "810001", y, "1/100")   # 1% 分位
+        db_session.commit()
+        out = freeze_yearly_peer_rows(db_session, ["810001"], ref_year=2026)
+        it = out["810001"]
+        assert it["qualified_years"] == 3
+        assert it["qualified"] is True
+        assert it["window"] == ["2023", "2024", "2025"]
+        assert it["yearly_top_pct"] == 25.0
+
+    def test_two_of_three_years_qualified(self, db_session):
+        self._add(db_session, "810002", "2023", "1/100")     # 1% 达标
+        self._add(db_session, "810002", "2024", "2/100")     # 2% 达标
+        self._add(db_session, "810002", "2025", "80/100")    # 80% 不达标
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810002"], ref_year=2026)["810002"]
+        assert it["qualified_years"] == 2
+        assert it["qualified"] is True
+
+    def test_only_one_year_qualified(self, db_session):
+        self._add(db_session, "810003", "2023", "1/100")
+        self._add(db_session, "810003", "2024", "90/100")
+        self._add(db_session, "810003", "2025", "95/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810003"], ref_year=2026)["810003"]
+        assert it["qualified_years"] == 1
+        assert it["qualified"] is False
+
+    def test_missing_year_counts_as_not_qualified(self, db_session):
+        """缺年不影响已有年份的判定，但缺失年不能算作达标。"""
+        self._add(db_session, "810004", "2023", "1/100")
+        self._add(db_session, "810004", "2025", "1/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810004"], ref_year=2026)["810004"]
+        assert it["years"]["2024"] is None
+        assert it["qualified_years"] == 2
+        assert it["qualified"] is True
+
+    def test_boundary_exactly_25_pct_qualified(self, db_session):
+        """分位恰好 25.0% 算达标（含等号）。"""
+        for y in ("2023", "2024"):
+            self._add(db_session, "810005", y, "25/100")   # 25.0%
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810005"], ref_year=2026)["810005"]
+        assert it["years"]["2023"] == 25.0
+        assert it["qualified_years"] == 2
+
+    def test_just_over_boundary_not_qualified(self, db_session):
+        for y in ("2023", "2024"):
+            self._add(db_session, "810006", y, "2501/10000")  # 25.01%
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810006"], ref_year=2026)["810006"]
+        assert it["years"]["2023"] > 25.0
+        assert it["qualified_years"] == 0
+
+    def test_invalid_rank_becomes_none(self, db_session):
+        """全部年份格式异常 → 等同无数据，不入字典（发布侧计 gate_missing）。"""
+        self._add(db_session, "810007", "2023", "abc")
+        self._add(db_session, "810007", "2024", "0/100")
+        self._add(db_session, "810007", "2025", "101/100")
+        db_session.commit()
+        out = freeze_yearly_peer_rows(db_session, ["810007"], ref_year=2026)
+        assert out == {}
+
+    def test_partial_invalid_keeps_valid_years(self, db_session):
+        """部分年份异常时，无效年记 None，有效年仍参与判定。"""
+        self._add(db_session, "810013", "2023", "abc")     # 无效
+        self._add(db_session, "810013", "2024", "1/100")    # 达标
+        self._add(db_session, "810013", "2025", "2/100")    # 达标
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810013"], ref_year=2026)["810013"]
+        assert it["years"]["2023"] is None
+        assert it["years"]["2024"] == 1.0
+        assert it["qualified_years"] == 2
+        assert it["qualified"] is True
+
+    def test_no_data_at_all_excluded_from_dict(self, db_session):
+        """窗口内全无有效排名 → 不入字典（无证据，发布侧计诊断）。"""
+        out = freeze_yearly_peer_rows(db_session, ["810008"], ref_year=2026)
+        assert out == {}
+
+    def test_stale_as_of_still_used(self, db_session):
+        """关键差异：年度排名不看 as_of 陈旧度，两年前写入照样有效。"""
+        for y in ("2023", "2024"):
+            self._add(db_session, "810009", y, "1/100", as_of=_date(2024, 1, 1))
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810009"], ref_year=2026)["810009"]
+        assert it["qualified"] is True
+
+    def test_year_outside_window_ignored(self, db_session):
+        self._add(db_session, "810010", "2022", "1/100")   # 窗口外
+        self._add(db_session, "810010", "2023", "1/100")
+        self._add(db_session, "810010", "2024", "1/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810010"], ref_year=2026)["810010"]
+        assert "2022" not in it["years"]
+        assert it["qualified_years"] == 2
+
+    def test_window_rolls_with_ref_year(self, db_session):
+        """ref_year=2027 → 窗口 2024/2025/2026，2023 年数据不再参与。"""
+        for y in ("2023", "2024", "2025"):
+            self._add(db_session, "810011", y, "1/100")
+        db_session.commit()
+        it = freeze_yearly_peer_rows(db_session, ["810011"], ref_year=2027)["810011"]
+        assert it["window"] == ["2024", "2025", "2026"]
+        assert it["years"]["2026"] is None
+        assert it["qualified_years"] == 2          # 2024/2025 达标，2026 缺
+        assert it["qualified"] is True
+
+    def test_batch_chunks_over_500(self, db_session):
+        codes = [f"{830000 + i:06d}" for i in range(520)]
+        for y in ("2023", "2024"):
+            self._add(db_session, codes[-1], y, "1/100")
+        db_session.commit()
+        out = freeze_yearly_peer_rows(db_session, codes, ref_year=2026)
+        assert codes[-1] in out
+        assert len(out) == 1
+
+    def test_custom_threshold_and_min_years(self, db_session):
+        for y in ("2023", "2024"):
+            self._add(db_session, "810012", y, "15/100")   # 15%
+        db_session.commit()
+        # 阈值 10% → 都不达标
+        strict = freeze_yearly_peer_rows(
+            db_session, ["810012"], ref_year=2026, top_pct=10.0, min_years=1)
+        assert strict["810012"]["qualified"] is False
+        # 阈值 20% + 只要 1 年 → 达标
+        loose = freeze_yearly_peer_rows(
+            db_session, ["810012"], ref_year=2026, top_pct=20.0, min_years=1)
+        assert loose["810012"]["qualified"] is True
+        assert loose["810012"]["yearly_top_pct"] == 20.0
+        assert loose["810012"]["min_years"] == 1

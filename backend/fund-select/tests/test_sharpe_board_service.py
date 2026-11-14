@@ -899,3 +899,144 @@ class TestFiftyTwoWeekWindow:
         it = self._agg(db_session, monkeypatch)["items"][0]
         assert it["peer_pct"] == 12.5
         assert it["peer_as_of"] == "2026-11-07"
+
+
+# ─────────────────────────────────────────────────────────────
+# v3 profile（11-14-sharpe-board-v3-yearly-peer）
+# ─────────────────────────────────────────────────────────────
+class TestV3Profiles:
+    WEEK = date(2026, 11, 2)
+
+    def test_v3_profiles_exist(self):
+        for src in ("stock", "discovery-stock"):
+            assert sbs.get_profile(src, "v3")["source"] == src
+
+    def test_v3_filters_use_yearly_peer_not_rolling(self):
+        v3 = sbs.get_profile("stock", "v3")["filters"]
+        # 年度口径两个参数
+        assert v3["min_yearly_top_pct"] == 25.0
+        assert v3["min_yearly_years"] == 2
+        # 不再有滚动口径参数（两者语义不同，不可混用）
+        assert "max_peer_pct" not in v3
+        # v1 五条件 + v2 的 IR/样本门都保留
+        for k, v in sbs.get_profile("stock", "v1")["filters"].items():
+            assert v3[k] == v
+        assert v3["min_ir"] == 0.5
+        assert v3["min_sample_days"] == 700
+
+    def test_v1_v2_not_polluted_by_v3(self):
+        v1 = sbs.get_profile("stock", "v1")["filters"]
+        v2 = sbs.get_profile("stock", "v2")["filters"]
+        assert "min_yearly_top_pct" not in v1 and "min_yearly_years" not in v1
+        assert "min_yearly_top_pct" not in v2 and "min_yearly_years" not in v2
+        assert v2["max_peer_pct"] == 20.0   # v2 滚动口径原样
+        assert v1 == {
+            "min_age": 3, "min_size_yi": 5, "max_dd_3y": 30,
+            "min_mgr_exp": 5, "min_sharpe": 0.8, "exclude_qdii": False,
+        }
+
+    def test_three_algorithm_versions_distinct(self):
+        vs = {sbs.get_profile("stock", v)["algorithm_version"]
+              for v in ("v1", "v2", "v3")}
+        assert len(vs) == 3
+        assert "risk-3y-v3" in vs
+
+    def test_v3_inherits_prefilters_and_subtypes(self):
+        for src in ("stock", "discovery-stock"):
+            p2, p3 = sbs.get_profile(src, "v2"), sbs.get_profile(src, "v3")
+            assert p3["collection_prefilters"] == p2["collection_prefilters"]
+            assert p3["market_subtypes"] == p2["market_subtypes"]
+
+
+class TestV3PublishGates:
+    """v3 发布：年度达标才入选，且 evidence 存年度证据。"""
+
+    WEEK = date(2026, 11, 2)
+
+    def _publish(self, db, capture, version="v3"):
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Shanghai")
+        started = datetime.combine(self.WEEK + timedelta(days=5),
+                                   datetime.min.time(), tzinfo=tz) + timedelta(hours=8)
+        return sbs.publish_week_board(
+            db, source="stock", profile_version=version, capture=capture,
+            trigger="scheduled", started_at=started,
+            finished_at=started + timedelta(hours=1),
+        )
+
+    def _cap(self, rows):
+        base, risk, peer = {}, {}, {}
+        for code, spec in rows.items():
+            base[code] = {
+                "name": f"基金{code}", "market_subtype": "股票型",
+                "age_years": 6.0, "size_yi": 20.0,
+                "mgr_experience_years": 8.0, "mgr_experience_years_max": 8.0,
+                "dd_3y": -10.0,
+            }
+            risk[code] = {
+                "sharpe": 1.0, "ir": 0.7, "sample_days": 746,
+                "returns_end_date": date(2026, 10, 30),
+                "calculated_at": datetime(2026, 10, 31, 8, 40, tzinfo=UTC),
+                "benchmark_source": "fetched",
+            }
+            p = spec.get("peer", "qualified")
+            if p == "qualified":
+                peer[code] = {
+                    "years": {"2023": 10.0, "2024": 12.0, "2025": 15.0},
+                    "qualified_years": 3, "yearly_top_pct": 25.0,
+                    "min_years": 2, "qualified": True,
+                    "window": ["2023", "2024", "2025"],
+                }
+            elif p == "partial":
+                peer[code] = {
+                    "years": {"2023": 10.0, "2024": 12.0, "2025": 80.0},
+                    "qualified_years": 2, "yearly_top_pct": 25.0,
+                    "min_years": 2, "qualified": True,
+                    "window": ["2023", "2024", "2025"],
+                }
+            elif p == "fail":
+                peer[code] = {
+                    "years": {"2023": 90.0, "2024": 95.0, "2025": 80.0},
+                    "qualified_years": 0, "yearly_top_pct": 25.0,
+                    "min_years": 2, "qualified": False,
+                    "window": ["2023", "2024", "2025"],
+                }
+        return SharpeRunCapture(
+            run_id="run-v3", base_rows=base, risk_rows=risk,
+            peer_rows=peer, universe_codes=list(rows),
+        )
+
+    def test_yearly_qualified_and_partial_both_pass(self, db_session):
+        cap = self._cap({
+            "900001": {"peer": "qualified"},
+            "900002": {"peer": "partial"},   # 2/3 达标 → 通过
+            "900003": {"peer": "fail"},      # 0/3 → 挡掉
+        })
+        row, _ = self._publish(db_session, cap)
+        assert row.selected_count == 2
+        codes = sorted(o.code for o in db_session.query(SharpeBoardObservation).all())
+        assert codes == ["900001", "900002"]
+
+    def test_evidence_stores_yearly_detail(self, db_session):
+        cap = self._cap({"900010": {"peer": "partial"}})
+        self._publish(db_session, cap)
+        obs = db_session.query(SharpeBoardObservation).one()
+        ev = json.loads(obs.evidence_json)
+        assert ev["peer"]["qualified_years"] == 2
+        assert ev["peer"]["window"] == ["2023", "2024", "2025"]
+        assert ev["peer"]["years"]["2025"] == 80.0
+
+    def test_no_peer_evidence_blocked_and_diagnosed(self, db_session):
+        """无年度数据：既不入选，也不进 gate_missing（因为不在 peer_rows 里）。"""
+        cap = self._cap({"900020": {"peer": None}})
+        row, _ = self._publish(db_session, cap)
+        assert row.selected_count == 0
+
+    def test_v2_profile_ignores_yearly_params(self, db_session):
+        """v2 profile 无 min_yearly_years → 年度不达标也不影响 v2 发布。"""
+        cap = self._cap({"900030": {"peer": "fail"}})
+        # v2 需要 peer_pct 字段，这里补一个合格值
+        cap.peer_rows["900030"]["peer_pct"] = 10.0
+        row, _ = self._publish(db_session, cap, version="v2")
+        assert row.profile_version == "v2"
+        assert row.selected_count == 1
