@@ -22,6 +22,7 @@ import {
 import SessionGate from "@/components/SessionGate";
 import { SafeLink, Spinner, StateBadge, Toast } from "@/components/Widgets";
 import { TagBadge } from "@/components/TagBadge";
+import { ServiceInfoEditor } from "@/components/ServiceInfoEditor";
 import { TagEditor } from "@/components/TagEditor";
 import { TagFilterBar } from "@/components/TagFilterBar";
 
@@ -42,14 +43,9 @@ function ServiceList() {
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [editingTags, setEditingTags] = useState<ServiceListItem | null>(null);
   const [savingTags, setSavingTags] = useState(false);
-  // 行内编辑：名称 + 用途（详情页下线后，说明的维护都在列表页就地完成）
+  // 编辑弹窗：名称 + 用途（+ 尚未登记时的主入口 URL）
   const [editingInfo, setEditingInfo] = useState<ServiceListItem | null>(null);
-  const [infoDraft, setInfoDraft] = useState({ name: "", description: "" });
   const [savingInfo, setSavingInfo] = useState(false);
-  // 主入口 URL 的行内编辑（点一下变输入框，回车/失焦保存）
-  const [editingUrl, setEditingUrl] = useState<string | null>(null);
-  const [urlDraft, setUrlDraft] = useState("");
-  const [savingUrl, setSavingUrl] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -148,26 +144,19 @@ function ServiceList() {
 
   function startEditInfo(item: ServiceListItem) {
     setEditingInfo(item);
-    setInfoDraft({ name: item.name, description: item.description });
   }
 
   function cancelEditInfo() {
     setEditingInfo(null);
-    setInfoDraft({ name: "", description: "" });
   }
 
-  async function saveInfo() {
+  async function saveInfo(values: { name: string; description: string; url: string | null }) {
     if (!editingInfo) return;
-    const name = infoDraft.name.trim();
-    if (!name) {
-      setToast("名称不能为空");
-      return;
-    }
     setSavingInfo(true);
     try {
       const updated = await api.patchService(editingInfo.id, {
-        name,
-        description: infoDraft.description,
+        name: values.name,
+        description: values.description,
         revision: editingInfo.revision,
       });
       // 就地更新：revision 用后端返回值覆盖，否则下一次 PATCH 会 409
@@ -183,41 +172,25 @@ function ServiceList() {
             : item,
         ),
       );
+      // 还没登记过主入口的话，这次顺手登记一个（填了就纳入 URL / 证书检查）
+      if (values.url) {
+        await api.upsertPrimaryEndpoint(editingInfo.id, values.url);
+      }
       cancelEditInfo();
-      setToast("已保存");
+      setToast(values.url ? "已保存，主入口已登记" : "已保存");
+      await load();
+      if (values.url) {
+        // 触发一次该服务的证书检查，别让用户干等下一轮定时
+        try {
+          await api.refresh("tls", editingInfo.id);
+        } catch {
+          // 检查提交失败不影响保存结果
+        }
+      }
     } catch (caught) {
       setToast(caught instanceof ApiError ? caught.message : "保存失败");
     } finally {
       setSavingInfo(false);
-    }
-  }
-
-  async function saveUrl(item: ServiceListItem) {
-    const url = urlDraft.trim();
-    if (!url) {
-      setToast("主入口 URL 不能为空");
-      return;
-    }
-    if (item.primary_endpoint?.url === url) {
-      setEditingUrl(null);
-      return;
-    }
-    setSavingUrl(true);
-    try {
-      await api.upsertPrimaryEndpoint(item.id, url);
-      setEditingUrl(null);
-      setToast("主入口已保存，证书状态稍后更新");
-      await load();
-      // 触发一次该服务的证书检查，别让用户干等下一轮定时
-      try {
-        await api.refresh("tls", item.id);
-      } catch {
-        // 检查提交失败不影响保存结果
-      }
-    } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "保存主入口失败");
-    } finally {
-      setSavingUrl(false);
     }
   }
 
@@ -409,54 +382,12 @@ function ServiceList() {
               {tabItems.map((item) => (
                 <tr key={item.id} data-service-id={item.id}>
                   <td>
-                    {editingInfo?.id === item.id ? (
-                      <div className="inline-edit">
-                        <input
-                          value={infoDraft.name}
-                          onChange={(event) =>
-                            setInfoDraft({ ...infoDraft, name: event.target.value })
-                          }
-                          aria-label="名称"
-                          placeholder="名称"
-                        />
-                        <textarea
-                          value={infoDraft.description}
-                          onChange={(event) =>
-                            setInfoDraft({ ...infoDraft, description: event.target.value })
-                          }
-                          aria-label="用途"
-                          placeholder="用途说明"
-                          rows={2}
-                        />
-                        <div className="btn-row">
-                          <button
-                            className="btn btn-mini primary"
-                            type="button"
-                            disabled={savingInfo}
-                            onClick={() => void saveInfo()}
-                          >
-                            {savingInfo ? "保存中…" : "保存"}
-                          </button>
-                          <button
-                            className="btn btn-mini"
-                            type="button"
-                            disabled={savingInfo}
-                            onClick={cancelEditInfo}
-                          >
-                            取消
-                          </button>
-                        </div>
+                    <span className="service-name">{item.name}</span>
+                    {item.description ? (
+                      <div className="small truncate" title={item.description}>
+                        {item.description}
                       </div>
-                    ) : (
-                      <>
-                        <span className="service-name">{item.name}</span>
-                        {item.description ? (
-                          <div className="small truncate" title={item.description}>
-                            {item.description}
-                          </div>
-                        ) : null}
-                      </>
-                    )}
+                    ) : null}
                     <div className="tag-row" style={{ marginTop: 2 }}>
                       {item.tags.map((tag) => (
                         <TagBadge
@@ -478,78 +409,16 @@ function ServiceList() {
                     </div>
                   </td>
                   <td>
-                    {editingUrl === item.id ? (
-                      <div className="inline-edit">
-                        <input
-                          value={urlDraft}
-                          onChange={(event) => setUrlDraft(event.target.value)}
-                          onKeyDown={(event) => {
-                            if (event.key === "Enter") {
-                              event.preventDefault();
-                              void saveUrl(item);
-                            }
-                            if (event.key === "Escape") setEditingUrl(null);
-                          }}
-                          onBlur={() => void saveUrl(item)}
-                          aria-label="主入口 URL"
-                          placeholder="https://…"
-                          autoFocus
-                        />
-                        <div className="btn-row">
-                          <button
-                            className="btn btn-mini primary"
-                            type="button"
-                            disabled={savingUrl}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => void saveUrl(item)}
-                          >
-                            {savingUrl ? "保存中…" : "保存"}
-                          </button>
-                          <button
-                            className="btn btn-mini"
-                            type="button"
-                            disabled={savingUrl}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={() => setEditingUrl(null)}
-                          >
-                            取消
-                          </button>
-                        </div>
-                      </div>
-                    ) : item.primary_endpoint ? (
-                      <div className="entry-cell">
-                        <SafeLink href={item.primary_endpoint.url} className="mono wrap-anywhere">
-                          {item.primary_endpoint.url}
-                        </SafeLink>
-                        <button
-                          type="button"
-                          className="link-btn"
-                          onClick={() => {
-                            setEditingUrl(item.id);
-                            setUrlDraft(item.primary_endpoint?.url ?? "");
-                          }}
-                          aria-label={`编辑「${item.name}」的主入口`}
-                        >
-                          改
-                        </button>
-                      </div>
+                    {item.primary_endpoint ? (
+                      <SafeLink
+                        href={item.primary_endpoint.url}
+                        className="mono wrap-anywhere"
+                        title="已登记的主入口不在台账里改"
+                      >
+                        {item.primary_endpoint.url}
+                      </SafeLink>
                     ) : (
-                      <div className="entry-cell">
-                        <span className="muted small">
-                          无对外入口
-                        </span>
-                        <button
-                          type="button"
-                          className="link-btn"
-                          onClick={() => {
-                            setEditingUrl(item.id);
-                            setUrlDraft("");
-                          }}
-                          aria-label={`登记「${item.name}」的主入口`}
-                        >
-                          登记
-                        </button>
-                      </div>
+                      <span className="muted small">无对外入口</span>
                     )}
                   </td>
                   <td>
@@ -618,6 +487,17 @@ function ServiceList() {
         共 {total} 个服务，当前显示 {tabItems.length} 个
         {tagFilter.length > 0 ? `（标签筛选：${tagFilter.join("、")}）` : ""}
       </p>
+      {editingInfo ? (
+        <ServiceInfoEditor
+          title={editingInfo.name}
+          name={editingInfo.name}
+          description={editingInfo.description}
+          endpointUrl={editingInfo.primary_endpoint?.url ?? null}
+          busy={savingInfo}
+          onSave={(values) => void saveInfo(values)}
+          onClose={cancelEditInfo}
+        />
+      ) : null}
       {editingTags ? (
         <TagEditor
           title={editingTags.name}

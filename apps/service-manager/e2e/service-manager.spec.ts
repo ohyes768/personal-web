@@ -41,7 +41,7 @@ test("登录门禁：未登录只显示登录表单", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "服务", exact: true })).toHaveCount(0);
 });
 
-test("台账条目：搜索命中、行内改名称与用途、移除", async ({ page }) => {
+test("台账条目：搜索命中、弹窗改名称与用途、移除", async ({ page }) => {
   await login(page);
   const name = `e2e-服务-${Date.now()}`;
 
@@ -60,13 +60,15 @@ test("台账条目：搜索命中、行内改名称与用途、移除", async ({
   await page.getByLabel("搜索服务").fill(name);
   await expect(page.getByText("初始用途")).toBeVisible();
 
-  // 行内编辑：名称 + 用途（编辑时名称变成 input 的 value，不能再按文本找行）
+  // 编辑走弹窗：名称 + 用途
   const row = page.locator(`tr[data-service-id="${serviceId}"]`);
-  // 行内有两个带「编辑」字样的按钮（编辑标签 / 编辑名称与用途），按名字精确挑后者
   await row.getByRole("button", { name: /的名称与用途$/ }).click();
-  await row.getByRole("textbox", { name: "名称", exact: true }).fill(`${name}-改`);
-  await row.getByRole("textbox", { name: "用途", exact: true }).fill("改过的用途说明");
-  await row.getByRole("button", { name: "保存" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel("名称").fill(`${name}-改`);
+  await dialog.getByLabel("用途").fill("改过的用途说明");
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   await expect(page.getByText("改过的用途说明")).toBeVisible();
   await expect(page.getByText(`${name}-改`)).toBeVisible();
 
@@ -212,7 +214,7 @@ test("详情页仍下线：路由 404，列表页没有详情/打开/巡检", as
   expect(response?.status()).toBe(404);
 });
 
-test("主入口可行内登记，证书列出现状态", async ({ page }) => {
+test("主入口在编辑弹窗里登记，列表列只读，证书列出现状态", async ({ page }) => {
   await login(page);
   const name = `e2e-入口-${Date.now()}`;
   const created = await page.request.post("/api/services/services", {
@@ -226,13 +228,16 @@ test("主入口可行内登记，证书列出现状态", async ({ page }) => {
   await page.goto("/services");
   await page.getByLabel("搜索服务").fill(name);
   const row = page.locator(`tr[data-service-id="${serviceId}"]`);
-  // 没有入口时是中性文案 + 「登记」
+  // 没有入口时是中性文案；主入口在列表页是只读的（没有「改」按钮）
   await expect(row.getByText("无对外入口")).toBeVisible();
+  await expect(row.getByRole("button", { name: /^改$/ })).toHaveCount(0);
 
-  await row.getByRole("button", { name: /登记/ }).click();
-  await row.getByRole("textbox", { name: "主入口 URL" }).fill("https://web.duomi77.cn:9443/e2e");
-  await row.getByRole("button", { name: "保存" }).click();
-  await expect(page.getByText("主入口已保存")).toBeVisible();
+  // 登记走编辑弹窗
+  await row.getByRole("button", { name: /的名称与用途$/ }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("主入口 URL").fill("https://web.duomi77.cn:9443/e2e");
+  await dialog.getByRole("button", { name: "保存" }).click();
+  await expect(page.getByText("已保存，主入口已登记")).toBeVisible();
 
   // URL 显示出来了；证书列先「未检查」（检查是异步的，不在这里断言最终状态）
   await expect(row.getByText("https://web.duomi77.cn:9443/e2e")).toBeVisible();

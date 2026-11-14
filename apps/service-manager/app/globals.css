@@ -130,17 +130,6 @@ tr:last-child td { border-bottom: none; }
   align-items: baseline;
 }
 
-/* 行内编辑（名称 + 用途）：直接在列表行里改 */
-.inline-edit {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 260px;
-}
-.inline-edit textarea {
-  min-height: 48px;
-  resize: vertical;
-}
 .service-name {
   font-weight: 600;
 }
