@@ -57,13 +57,13 @@ function FundsPageInner() {
         onOpenMobileFilter={() => setSheetOpen(true)}
         onRefreshed={reload}
         exportKind="bond"
-        showCodeSearch
       />
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4">
         <FilterChipBar
           filters={filters}
           onRemove={key => setFilter(key, key === 'exclude_qdii' ? false : null)}
+          showCodeSearch
         />
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">

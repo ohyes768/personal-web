@@ -10,10 +10,13 @@ import { XMarkIcon, FunnelIcon } from '@heroicons/react/24/outline';
 
 import type { FundFilters } from '@/lib/types';
 import type { FilterKey, NumericFilterKey } from '@/lib/useFilters';
+import { FundCodeSearch } from './FundCodeSearch';
 
 interface FilterChipBarProps {
   filters: Pick<FundFilters, NumericFilterKey | 'exclude_qdii' | 'market_types'>;
   onRemove: (key: FilterKey, value?: string) => void;
+  /** 是否显示基金代码搜索框（右侧，与经理页搜索框同位置；仅四个基金 tab） */
+  showCodeSearch?: boolean;
 }
 
 const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => string }> = {
@@ -26,22 +29,25 @@ const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => stri
 
 const NUMERIC_KEYS = Object.keys(LABELS) as NumericFilterKey[];
 
-export function FilterChipBar({ filters, onRemove }: FilterChipBarProps) {
+export function FilterChipBar({ filters, onRemove, showCodeSearch = false }: FilterChipBarProps) {
   const activeNumeric = NUMERIC_KEYS.filter(k => filters[k] !== null);
   const marketTypes = filters.market_types ?? [];
   const hasQdii = filters.exclude_qdii;
 
-  if (activeNumeric.length === 0 && !hasQdii && marketTypes.length === 0) {
-    return (
-      <div className="flex items-center gap-1.5 text-xs text-ink-soft py-1.5">
-        <FunnelIcon className="w-3.5 h-3.5" />
-        未筛选
-      </div>
-    );
-  }
+  // ⚠ 单一返回结构：搜索框在任何筛选状态下都处在同一个 DOM 位置。
+  // 曾经用「无筛选/有筛选」两个 return 分支，切换时输入框被卸载重建，
+  // 正在输入的代码与焦点会丢失（表现为「搜索时前端崩溃」）。
+  const hasAnyFilter =
+    activeNumeric.length > 0 || hasQdii || marketTypes.length > 0;
 
   return (
     <div className="flex items-center gap-2 flex-wrap py-1.5">
+      {!hasAnyFilter && (
+        <>
+          <FunnelIcon className="w-3.5 h-3.5 text-ink-soft" />
+          <span className="text-xs text-ink-soft">未筛选</span>
+        </>
+      )}
       {activeNumeric.map(key => {
         const v = filters[key] as number;
         const meta = LABELS[key];
@@ -88,6 +94,7 @@ export function FilterChipBar({ filters, onRemove }: FilterChipBarProps) {
           </button>
         </span>
       )}
+      {showCodeSearch && <FundCodeSearch className="ml-auto" compact />}
     </div>
   );
 }
