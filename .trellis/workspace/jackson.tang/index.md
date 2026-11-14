@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-2.md`
-- **Total Sessions**: 78
+- **Total Sessions**: 79
 - **Last Active**: 2026-11-14
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-2.md` | ~1211 | Active |
+| `journal-2.md` | ~1234 | Active |
 | `journal-1.md` | ~2042 | Archived |
 <!-- @@@/auto:active-documents -->
 
@@ -30,6 +30,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 79 | 2026-11-14 | 夏普榜单 v3：年度同类排名 + 历史回溯 | `b39f6871` | `master` |
 | 78 | 2026-11-14 | service-manager 瘦身：砍掉详情页与未用能力 | `ac242fc2` | `master` |
 | 77 | 2026-11-13 | service-manager 标签体系：可维护可筛选 + 分类字段退役 | `da3152e6`, `7c58f13a`, `c4c1afa2` | `master` |
 | 76 | 2026-11-13 | 夏普榜单 v2 三道门 + 52 周窗口 | `1e599f6d` | `master` |

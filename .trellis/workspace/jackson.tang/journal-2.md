@@ -1209,3 +1209,26 @@ v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 79: 夏普榜单 v3：年度同类排名 + 历史回溯
+<!-- trellis-session: v=2 fp=051ec1a0ced636c2 -->
+
+**Date**: 2026-11-14
+**Task**: 夏普榜单 v3：年度同类排名 + 历史回溯
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+同类排名从滚动分位改为「最近3个完整年度中至少2年前25%」；因年度排名是历史固定值，回溯补满 88 周×2来源历史，曲线从1点变51点。修复基准缓存起始日 bug（必须从首周前推3年）。契约 §19 §8。后端 710 passed / 前端 38 passed。生产：49只命中、52周、曲线中位37点。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b39f6871` | test(fund-select): v3 年度排名门槛测试（37 个新用例） |
+
+### Status
+
+[OK] **Completed**
