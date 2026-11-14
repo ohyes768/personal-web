@@ -23,6 +23,8 @@ export function useFundList(filters: FundFilters) {
     filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
     filters.page, filters.limit,
+    // 代码搜索态（11-16）：进/出搜索必须触发重拉（否则列表不会变成单只）
+    filters.search_code,
   ].join('|');
 
   useEffect(() => {
@@ -63,6 +65,8 @@ export function useStockFundList(filters: FundFilters) {
     filters.min_sharpe,
     filters.exclude_qdii, filters.sort, filters.order,
     filters.page, filters.limit,
+    // 代码搜索态（11-16）：进/出搜索必须触发重拉（否则列表不会变成单只）
+    filters.search_code,
   ].join('|');
 
   useEffect(() => {
@@ -104,6 +108,7 @@ export function useDiscoveryBondFundList(filters: FundFilters) {
     filters.exclude_qdii, filters.sort, filters.order,
     (filters.market_types ?? []).join(','),
     filters.page, filters.limit,
+    filters.search_code,
   ].join('|');
 
   useEffect(() => {
@@ -145,6 +150,7 @@ export function useDiscoveryStockFundList(filters: FundFilters) {
     filters.exclude_qdii, filters.sort, filters.order,
     (filters.market_types ?? []).join(','),
     filters.page, filters.limit,
+    filters.search_code,
   ].join('|');
 
   useEffect(() => {

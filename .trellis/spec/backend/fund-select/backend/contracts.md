@@ -1524,26 +1524,58 @@ class FundLookupResponse(BaseModel):
 
 ### 20.4 `path` 是相对路径（basePath 契约）
 
-返回值 `path` 形如 `/discovery-stock?code=002910`，**不带 `/funds` 前缀**——
-前端 `router.push(path)` 时 Next 会自动补 basePath；写 `/funds/...` 会变成
-`/funds/funds/...` 404（§4 已记录该陷阱）。
+返回值 `path` **不带 `/funds` 前缀**——前端用 Next router 跳转时 Next 会自动补
+basePath；写 `/funds/...` 会变成 `/funds/funds/...` 404（§4 已记录该陷阱）。
+
+**11-16 起 `path` 的形式变了**（代码搜索改为「列表出结果」）：
+
+```
+tab=bond            → /bond?search_code=003547
+tab=stock           → /stock?search_code=002910
+tab=discovery-bond  → /bond?search_code=...      ← 收敛到合并页
+tab=discovery-stock → /stock?search_code=...     ← 收敛到合并页
+```
+
+- `tab` 字段语义**不变**（仍是四值分类，经理页徽章等复用）。
+- `discovery-*` 直接给合并页：它们只是 redirect 壳，经壳会多一跳且把
+  `source=market` 留在 URL 里（退出搜索后用户莫名处在「市场」分段）。
+- **`search_code=` ≠ `code=`**：前者是「列表锁定这一只、点行才开抽屉」，
+  后者是「直达并自动开抽屉」（经理页徽章）。两个参数各管一件事，互不覆盖。
 
 ### 20.5 前端接入
 
-- `FundsHeader` 新增可选 prop `showCodeSearch?: boolean`（**默认 false**）。
-  只有四个基金 tab 传 true；经理 / 夏普榜单 / 走势页复用同一 header 但不显示。
-- 搜索框**不参与筛选状态**：不写进 `?qs`，避免污染可分享的筛选链接。
-  它是一次性跳转动作。
-- 桌面 ≥640px 显示行内输入框；<640px 收成图标，点击展开覆盖式输入框
-  （直接塞行内框会挤压「共 N 只」破坏 header 布局）。
+- 搜索框在筛选 chip 行右侧（`FilterChipBar` 的 `showCodeSearch`），
+  经理 / 夏普榜单 / 走势页不显示。
+- **搜索态是 URL 状态**：`?search_code=<6 位>`，与筛选参数**并存**
+  （进入/退出搜索都不动任何筛选维度）。解析与序列化在 `lib/search-code.ts` +
+  `lib/useFilters.ts`。
+- **落点 URL 必须由 `buildSearchHref` 拼，不能直接 `router.push(res.path)`**：
+  后端 `path` 只有 `search_code`，直接 push 会把当前筛选整串丢掉（实测踩到）。
+  规则：同页保留当前查询串（替换 `search_code`、`page` 归 1）；跨页只带
+  `search_code`；两者都清掉互斥的 `code` / `focus`。
+- **搜索态不参与 `activeCount`**：它有自己的 chip（「代码搜索 XXX ×」），
+  混进筛选计数会让「筛选(3)」与实际维度对不上。
+- 退出搜索的三个触发：点 chip ×、改任一筛选维度/分类/来源/每页条数、
+  点「清空」。**不退出**：翻页、改排序。
+- `FundTable` 用 `highlightCode` 高亮命中行（accent 竖条 + 浅底，与对比选中的
+  整行 info-tint 区分，两者可叠加）；`emptyHint` 给搜索空结果文案。
+- 搜索态隐藏 `Pagination`（结果只有 1 行）。
 
 ### 20.6 Tests Required
 
 - `test_lookup_service.py`：六级优先级全覆盖，重点 `other`+债券型 → discovery-bond
-- `test_lookup_api.py`：200/422 语义、**路由不被 `/{code}` 吞**、7 字段透出
+- `test_lookup_api.py`：200/422 语义、**路由不被 `/{code}` 吞**、7 字段透出、
+  `path` 用 `search_code=` 且 discovery-* 收敛到合并页
+- `test_code_search.py`（11-16）：`/screen?code=` 与 `/stock/screen?code=`
+  单条命中、**阈值被忽略**、`is_active=false` 仍返回、宇宙外仍返回、
+  不存在 code → total=0、非法 code → 422、不带 code 时老链路不变
 - `src/lib/lookup.test.ts`：归一化（trim/全角/夹字符）、6 位校验、状态分类
+- `src/lib/search-code.test.ts`（11-16）：`parseSearchCode` /
+  `searchCodeApiQuery`（只发 `code=`）/ **`buildSearchHref` 保留筛选**、
+  跨页只带 `search_code`、清互斥参数
 
-全量：后端 **733 passed**（710 基线 + 23 新增）；前端 50 passed + `tsc` + `build`。
+全量（11-16 后）：后端 **769 passed**（733 基线 + 23 新增 + 13 个 path 断言更新）；
+前端 74 passed + `tsc` + `build`。
 
 ### 20.7 Wrong vs Correct
 
@@ -1559,8 +1591,10 @@ if mtype == 'other':
 ```tsx
 // Wrong — path 加了 /funds 前缀，变 /funds/funds/... 404
 router.push(`/funds${res.path}`)
-// Correct — 后端已给相对路径
+// Wrong — 直接 push 后端 path：把当前筛选整串丢掉（实测：筛着规模 ≥5 亿，搜完回来没了）
 router.push(res.path)
+// Correct — 相对路径交给 Next 补 basePath，并让 buildSearchHref 决定筛选去留
+router.push(buildSearchHref(res.path, window.location.search, window.location.pathname))
 ```
 
 ```python
@@ -1569,6 +1603,22 @@ raise HTTPException(404)
 # Correct — 200 + found=False
 return {"code": code, "found": False, "path": None, ...}
 ```
+
+### 20.8 代码搜索语义：`/screen?code=` 故意不套阈值
+
+`GET /api/funds/screen?code=003547`、`GET /api/funds/stock/screen?code=003547`
+走 `FilterService.search_by_code(code, curated_kind)`：
+
+| 维度 | 行为 | 理由 |
+|---|---|---|
+| 阈值（age/size/dd/mgr/sharpe/exclude_qdii） | **全部忽略** | 搜的是「库里这一只」，不是「当前筛选命中的这一只」；否则用户搜 002910 却因规模 4.9 亿看不到结果，会以为代码错了 |
+| `is_active` | **不要求** | 代码搜索是查询动作，已清盘基金也该能点开看历史 |
+| 当前 tab 宇宙 | **不要求** | 正常路径前端已先经 lookup 判 tab；这里只认 code |
+| 排序/分页 | 不生效（结果 ≤1 条） | — |
+
+返回结构与 `/screen` 同构（`{total, items}`，条目带 `in_curated`），
+表格与文案因此完全复用。**不要**把 `code` 分支塞进 `_screen`：`_screen`
+承担排序/分页/宇宙语义，加单条特例会污染 6 个调用点。
 
 ## 21. 夏普榜单数据缺口周口径（11-14-sharpe-board-gap-weeks，2026-11-14）
 

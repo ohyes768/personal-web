@@ -35,6 +35,10 @@ interface FundTableProps {
   /** 代码列可点跳「夏普走势」页（仅股基两 tab 传 true；债基第一版不支持）。
    *  点击需 stopPropagation，避免同时触发 onRowClick 打开详情抽屉。 */
   trendEnabled?: boolean;
+  /** 代码搜索态（11-16）：命中的那一行高亮（与对比选中的 info-tint 区分开）。 */
+  highlightCode?: string | null;
+  /** 空列表文案覆盖（代码搜索查不到时说明「该代码不在库中」）。 */
+  emptyHint?: string;
 }
 
 const NAME_MAX = 10;
@@ -119,6 +123,7 @@ export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
   showBondColumns = true, showRiskColumns = false, onRowClick,
   ddBarCapPct = DD_BAR_CAP_BOND, marketKind, trendEnabled = false,
+  highlightCode = null, emptyHint,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -141,7 +146,9 @@ export function FundTable({
 
   if (items.length === 0) {
     return (
-      <div className="p-12 text-center text-ink-muted">暂无数据，请调整筛选条件</div>
+      <div className="p-12 text-center text-ink-muted">
+        {emptyHint ?? '暂无数据，请调整筛选条件'}
+      </div>
     );
   }
 
@@ -175,11 +182,16 @@ export function FundTable({
             const selected = isSelected(fund.code);
             const disabled = !selected && isCompareFull;
             const mgrTip = `${fund.mgr_name || '-'} / ${fund.mgr_company || '-'}`;
+            // 代码搜索命中行：左侧 accent 竖条 + 浅色底，与对比选中的整行 info-tint 区分
+            // （两者可以同时出现：搜索态下也能勾对比）
+            const highlighted = highlightCode !== null && fund.code === highlightCode;
             return (
               <tr
                 key={fund.code}
                 onClick={onRowClick ? () => onRowClick(fund) : undefined}
-                className={`border-b border-rule transition-colors hover:bg-paper-tint ${onRowClick ? 'cursor-pointer' : ''} ${selected ? 'bg-info-tint' : ''}`}
+                className={`border-b border-rule transition-colors hover:bg-paper-tint ${onRowClick ? 'cursor-pointer' : ''} ${selected ? 'bg-info-tint' : ''} ${highlighted ? 'bg-accent/[0.06] shadow-[inset_3px_0_0_0_var(--color-accent)]' : ''}`}
+                aria-current={highlighted ? 'true' : undefined}
+                data-highlighted={highlighted ? 'true' : undefined}
               >
                 <td className={`${td} font-mono text-info whitespace-nowrap`}>
                   {trendEnabled ? (

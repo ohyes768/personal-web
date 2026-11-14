@@ -61,12 +61,26 @@ class TestLookupApi:
         b = r.json()
         assert b["found"] is True
         assert b["tab"] == "discovery-stock"
-        assert b["path"] == "/discovery-stock?code=000003"
+        assert b["path"] == "/stock?search_code=000003"
         assert b["name"] == "市场股基"
 
     def test_found_bond(self, client):
         b = client.get("/api/funds/lookup/000004").json()
         assert b["tab"] == "discovery-bond"
+        # 11-16：discovery-* 落点收敛到合并页（redirect 壳直跳会更脏）
+        assert b["path"] == "/bond?search_code=000004"
+
+    def test_discovery_stock_collapses_to_stock_path(self, client):
+        """discovery-* 的 path 不再经 redirect 壳，直接落合并页。"""
+        b = client.get("/api/funds/lookup/000003").json()
+        assert b["tab"] == "discovery-stock"
+        assert b["path"] == "/stock?search_code=000003"
+
+    def test_path_uses_search_code_not_code(self, client):
+        """`code=` 是「直达+自动开抽屉」协议，搜索必须用 `search_code=`。"""
+        b = client.get("/api/funds/lookup/000003").json()
+        assert "search_code=000003" in b["path"]
+        assert "?code=" not in b["path"]
 
     def test_not_found_returns_200(self, client):
         """查不到 = 业务结果，返回 200 + found=false（不是 404）。"""

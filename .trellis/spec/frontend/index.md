@@ -15,6 +15,7 @@
 - For apps/macro time-series charts, read [ECharts contracts](./macro-echarts.md).
 - For apps/index-trends candlestick+channel charts, read [index-trends ECharts contracts](./index-trends-echarts.md); the valuation display contract lives in the same file.
 - For apps/fund-select 夏普榜单页（`/funds/sharpe-board`）或其图表/展示筛选，read [fund-sharpe-board 前端契约](./fund-sharpe-board.md); 后端周榜/聚合契约在同包 backend contracts §13.
+- For apps/fund-select 基金代码搜索（`?search_code=`、`buildSearchHref`、搜索 chip），read [fund-select backend contracts](../backend/fund-select/backend/contracts.md) §20；核心约束：搜索态与筛选并存、落点 URL 必须走 `buildSearchHref`（直接 push 后端 path 会丢筛选）、搜索态不计入 `activeCount`。
 - For apps/fund-select 夏普走势页（`/funds/sharpe-trend`）或其 KPI/入口，read [fund-sharpe-trend 前端契约](./fund-sharpe-trend.md); 后端现算口径契约在 backend contracts §17.
 - For backend/index-trends weekly pipeline or lixinger valuation, read [index-trends backend spec](../backend/index-trends/backend/index.md) (weekly-pipeline.md, valuation-contract.md).
 - For apps/housing-map housing-type switching, project points or nearby comparison, read [New-house projects on the shared map](../backend/housing-map/backend/newhouse-map.md); market classification, distance and price text live in `lib/market-map.ts`.
@@ -28,5 +29,6 @@
 - Most apps still have no ESLint configuration, so `next lint` (deprecated in Next 15, removed in Next 16) prompts interactively and cannot run in a script or CI — report this limitation explicitly. apps/dividend is the exception since 2026-11-04: it has `apps/dividend/eslint.config.mjs` (flat config, `FlatCompat` bridge because `eslint-config-next@15` only ships eslintrc-style configs) and its `lint` script is `eslint`.
 - Keep [historical Plotly contracts](./macro-plotly.md) for archived tasks, not as current rendering instructions.
 - For apps/dividend: run `node --experimental-strip-types --test src/lib/quality-reader.test.ts` and `npx playwright test` (full suite). The screening table's compact rating cell renders dimension labels inline (`业务模式4护城河4…`, unrated dimensions show `—`) since upstream change `66b268af`; the Skill version moved into the button `title` tooltip since `3cf5836e` — assert against that shape, not the old `4/4/3/3/5（v4.3.0）` string.
+- For apps/fund-select 代码搜索改动：另跑 `node --experimental-strip-types --test src/lib/search-code.test.ts`（归一化、只发 `code=`、`buildSearchHref` 保留筛选）与后端 `tests/test_code_search.py`（阈值被忽略、清盘基金仍返回）。
 - For apps/dividend 四挡位估值改动：另跑 `node --experimental-strip-types --test src/lib/valuation.test.ts`（现价落在哪一区 / 会不会触发提醒，判定口径必须与后端 `AlertService._find_hit_level` 一致）。
 - For apps/dividend 股票搜索改动：另跑 `node --experimental-strip-types --test src/lib/stock-search.test.ts` 与 `npx playwright test e2e/stock-search.spec.ts`（搜索命中阈值外股票、无匹配空状态、清空恢复、只看收藏带 codes）。

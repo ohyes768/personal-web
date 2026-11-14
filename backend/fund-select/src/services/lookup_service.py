@@ -34,6 +34,17 @@ TAB_STOCK = "stock"
 TAB_DISCOVERY_BOND = "discovery-bond"
 TAB_DISCOVERY_STOCK = "discovery-stock"
 
+# tab → 前端落点页（11-16：代码搜索改为「列表出结果」，落点用 search_code 参数）
+# discovery-* 在 11-15 之后只是 redirect 壳（/discovery-stock → /stock?source=market），
+# 直接给合并页：少一跳，且不会把 source=market 留在 URL 里（退出搜索后用户
+# 会莫名处在「市场」分段）。tab 字段本身语义不变，仍是四值分类。
+PAGE_BY_TAB: dict[str, str] = {
+    TAB_BOND: "/bond",
+    TAB_STOCK: "/stock",
+    TAB_DISCOVERY_BOND: "/bond",
+    TAB_DISCOVERY_STOCK: "/stock",
+}
+
 _BOND_SUBTYPES = set(DISCOVERY_BOND_SUBTYPES)
 _STOCK_SUBTYPES = set(DISCOVERY_STOCK_SUBTYPES)
 
@@ -77,6 +88,10 @@ def resolve_tab(db, code: str) -> dict:
     找不到时 found=False、tab/path 为 None；调用方（API）仍返回 200。
     path 是**相对路径**（不带 /funds 前缀，Next basePath 会自动补，
     写成 /funds/... 会变成 /funds/funds/... 404 —— contracts §4）。
+
+    path 用 `search_code=` 而不是 `code=`（11-16）：`code=` 是「直达并自动开抽屉」
+    协议（经理页徽章），`search_code=` 是「列表里只显示这一只、点行才开抽屉」。
+    两个参数各管一件事，互不覆盖。
     """
     bond_codes, stock_codes = _yaml_membership()
 
@@ -101,5 +116,5 @@ def resolve_tab(db, code: str) -> dict:
         "tab": tab,
         "market_type": fund.market_type,
         "in_yaml": in_yaml,
-        "path": f"/{tab}?code={code}",
+        "path": f"{PAGE_BY_TAB[tab]}?search_code={code}",
     }

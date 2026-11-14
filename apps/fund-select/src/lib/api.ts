@@ -12,10 +12,16 @@ import {
   type StatsResponse,
 } from './types';
 import type { FundFilters } from './types';
+import { searchCodeApiQuery } from './search-code';
 
 const BASE = '/funds/api/funds';  // 原生 fetch 不吃 basePath，需带全路径
 
 function buildQuery(filters: Partial<FundFilters>, coarseMapping?: Record<string, string[]>): string {
+  // 代码搜索态（11-16）：只发 code=，不带任何阈值——后端在搜索短路里也会忽略它们，
+  // 这里不拼是为了让网络面板里一眼看出「这是搜索，不是筛选」。
+  const searchCode = searchCodeApiQuery(filters.search_code);
+  if (searchCode !== null) return `?${searchCode}`;
+
   const params = new URLSearchParams();
   if (filters.min_age != null) params.set('min_age', String(filters.min_age));
   if (filters.min_size_yi != null) params.set('min_size_yi', String(filters.min_size_yi));

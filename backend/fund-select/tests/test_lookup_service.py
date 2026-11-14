@@ -48,14 +48,14 @@ class TestYamlPriority:
         r = resolve_tab(seeded, "000001")
         assert r["tab"] == TAB_BOND
         assert r["in_yaml"] == "bond"
-        assert r["path"] == "/bond?code=000001"
+        assert r["path"] == "/bond?search_code=000001"
 
     def test_stock_yaml_wins_over_market_type(self, seeded):
         """000002 在股基名单，即使 market_type=bond 也判 stock。"""
         r = resolve_tab(seeded, "000002")
         assert r["tab"] == TAB_STOCK
         assert r["in_yaml"] == "stock"
-        assert r["path"] == "/stock?code=000002"
+        assert r["path"] == "/stock?search_code=000002"
 
 
 class TestMarketTypeFallback:

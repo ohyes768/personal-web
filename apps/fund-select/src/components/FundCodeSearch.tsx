@@ -1,10 +1,14 @@
 /**
  * 基金代码快速搜索（筛选 chip 行右侧，与经理页搜索框同位置）
  *
- * - 输入 6 位代码回车 → 查后端 /lookup/{code} → 跳到对应 tab 并自动开抽屉
+ * - 输入 6 位代码回车 → 查后端 /lookup/{code} → 跳到对应 tab，**列表里出结果**
+ *   （URL 带 ?search_code=xxx，主表只显示这一只并高亮；点行才开抽屉）
  * - 只做跳转，不参与筛选状态（不写 ?qs，避免污染可分享的筛选链接）
  * - 查不到 / 接口失败 → **弹框提示**（曾经只显示一行小字，用户根本看不到）
  * - 样式对齐经理页的「搜索姓名 / 公司」框：w-36、py-0.5、text-xs、ml-auto
+ *
+ * 11-16 变更：命中后不再追加 `focus=1`（那会触发目标页清空筛选 + 自动弹抽屉）。
+ * `path` 由后端给成 `<page>?search_code=<code>`，这里原样 push。
  */
 'use client';
 
@@ -15,6 +19,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   classifyLookup, fetchFundLookup, normalizeCode, type FundLookup,
 } from '@/lib/lookup';
+import { buildSearchHref } from '@/lib/search-code';
 
 interface FundCodeSearchProps {
   /** 布局类（chip 行传 ml-auto 靠右） */
@@ -100,13 +105,15 @@ export function FundCodeSearch({ className = '', compact = false }: FundCodeSear
       setResult(res);
       if (res.found && res.path) {
         // path 由后端给好，是相对路径（basePath 自动补前缀，不能再加 /funds）。
-        // 追加 focus=1：目标页据此清空筛选，保证该基金出现在列表里
-        // （否则它可能被当前筛选条件挡掉，只弹出抽屉而列表里找不到）。
-        // 清空放在跳转前：跳转后组件可能卸载，此处同步清理最安全
+        // 形如 /stock?search_code=002910 —— 目标页据此把主表锁成这一只，
+        // 不再清筛选、不自动弹抽屉（11-16）。点行才由用户主动打开详情。
+        //
+        // ⚠ 不能直接 router.push(res.path)：那会把当前筛选参数整串丢掉
+        // （实测：筛着规模 ≥ 5 亿，搜完回来筛选没了）。
+        // buildSearchHref 负责「同页保留筛选 / 跨页只带 search_code」。
         setInput('');
         setResult(null);
-        const sep = res.path.includes('?') ? '&' : '?';
-        router.push(`${res.path}${sep}focus=1`);
+        router.push(buildSearchHref(res.path, window.location.search, window.location.pathname));
         return;
       }
       // found=false：明确弹框，而不是一行容易被忽略的小字

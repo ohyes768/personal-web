@@ -22,13 +22,15 @@ import { useCompare, useFeeDetails, useFundList } from '@/lib/hooks';
 import {
   feeDetailDimensions, fundCompareDimensions, fundDisplayOnlyDimensions,
 } from '@/lib/compareDimensions';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
 
 import { useFilters } from '@/lib/useFilters';
 import type { FundListItem } from '@/lib/types';
 
 function FundsPageInner() {
-  const { filters, setFilter, toggleSort, clearAll, setPage, setLimit, activeCount } = useFilters();
+  const {
+    filters, setFilter, setSearchCode, toggleSort, clearAll, setPage, setLimit, activeCount,
+  } = useFilters();
   const { items, total, loading, error, reload } = useFundList(filters);
   const source = filters.source ?? 'all';
   const compare = useCompare<FundListItem>(5);
@@ -37,8 +39,7 @@ function FundsPageInner() {
   // 双向闭环落点：经理页徽章 ?code=XXXX 直达，抽屉内按 code 拉完整详情
   const codeParam = useSearchParams().get('code');
   const [stubCode, setStubCode] = useState<string | null>(null);
-  const focusParam = useSearchParams().get('focus');
-  const router = useRouter();
+  const searchCode = filters.search_code ?? null;
   // 处理过的 code 记录：避免清筛选触发重渲染后重复处理同一个 code
   const handledCodeRef = useRef<string | null>(null);
   useEffect(() => {
@@ -46,22 +47,13 @@ function FundsPageInner() {
     handledCodeRef.current = codeParam;
     setStubCode(codeParam);
 
-    if (focusParam === '1') {
-      // 来自 header 代码搜索：一次导航同时完成「清筛选 + 去掉 code/focus」。
-      // 不能先 clearAll() 再 replaceState —— 两次导航会互相覆盖，
-      // 实测结果是筛选没被清掉、目标基金仍在列表外。
-      // 同时也绕开 discovery-* 页的 preFilters 锁定字段（clearAll 清不到它们）。
-      // ⚠ 只推 query（'?cleared=1'），绝不拼 url.pathname：
-      // pathname 已含 basePath /funds，再拼会变成 /funds/funds/... 404（契约 §4）。
-      router.push('?cleared=1', { scroll: false });
-      return;
-    }
-
-    // 普通 ?code= 直达（经理页徽章等）：只清参数，不动筛选
+    // ?code= 直达（经理页徽章等）：开抽屉 + 只清参数，不动筛选。
+    // 11-16 起 header 代码搜索改用 ?search_code=（列表出结果，不再走这里），
+    // 因此原来的 focus=1 分支已删除。
     const url = new URL(window.location.href);
     url.searchParams.delete('code');
     window.history.replaceState(null, '', url.toString());
-  }, [codeParam, focusParam, router]);
+  }, [codeParam]);
 
   const compareDimensions = useMemo(
     () => [...fundCompareDimensions, ...fundDisplayOnlyDimensions, ...feeDetailDimensions],
@@ -92,6 +84,8 @@ function FundsPageInner() {
           filters={filters}
           onRemove={key => setFilter(key, key === 'exclude_qdii' ? false : null)}
           showCodeSearch
+          searchCode={searchCode}
+          onClearSearch={() => setSearchCode(null)}
         />
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">
@@ -115,14 +109,23 @@ function FundsPageInner() {
               isCompareFull={compare.isFull}
               onToggleCompare={compare.toggle}
               onRowClick={setDetailFund}
+              highlightCode={searchCode}
+              emptyHint={
+                searchCode
+                  ? `代码 ${searchCode} 不在基金库中。点上方「代码搜索」的 × 可回到筛选列表。`
+                  : undefined
+              }
             />
-            <Pagination
-              page={filters.page}
-              limit={filters.limit}
-              total={total}
-              onPageChange={setPage}
-              onLimitChange={setLimit}
-            />
+            {/* 搜索态只有 1 行，翻页器没有意义 */}
+            {!searchCode && (
+              <Pagination
+                page={filters.page}
+                limit={filters.limit}
+                total={total}
+                onPageChange={setPage}
+                onLimitChange={setLimit}
+              />
+            )}
           </section>
         </div>
       </div>

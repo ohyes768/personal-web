@@ -61,15 +61,25 @@ async def screen(
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
     source: str = Query("curated", pattern="^(curated|market|all)$",
                         description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
+    code: Optional[str] = Query(None, pattern=r"^\d{6}$",
+                                description="按代码精确取一只（命中时忽略全部阈值/来源）"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
     limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """筛选（分页：page/limit 默认 1/50；source 默认 curated=旧债基 tab 行为）"""
+    """筛选（分页：page/limit 默认 1/50；source 默认 curated=旧债基 tab 行为）
+
+    `code` 非空 = 代码搜索：只按代码取这一只，其余筛选参数全部不生效
+    （见 FilterService.search_by_code 的语义说明）。
+    """
     if sort not in ("size_yi", "age_years", "mgr_experience_years", "dd_3y",
                     "ret_1y", "ret_3y", "ret_5y", "fee_annual", "code"):
         raise HTTPException(status_code=422, detail=f"不支持的排序字段: {sort}")
     svc = FilterService(db)
+    if code is not None:
+        result = svc.search_by_code(code, "bond")
+        result["source"] = source
+        return result
     return svc.screen(
         min_age=min_age,
         min_size_yi=min_size_yi,
@@ -200,11 +210,20 @@ async def stock_screen(
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
     source: str = Query("curated", pattern="^(curated|market|all)$",
                         description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
+    code: Optional[str] = Query(None, pattern=r"^\d{6}$",
+                                description="按代码精确取一只（命中时忽略全部阈值/来源）"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
     limit: int = Query(50, ge=1, le=200, description="每页条数"),
     db=Depends(get_db),
 ):
-    """股票 tab 筛选（source 默认 curated=旧股票 tab 行为；分页 page/limit 默认 1/50）"""
+    """股票 tab 筛选（source 默认 curated=旧股票 tab 行为；分页 page/limit 默认 1/50）
+
+    `code` 非空 = 代码搜索（语义同 `/screen`）：只按代码取这一只。
+    """
+    if code is not None:
+        result = FilterService(db).search_by_code(code, "stock")
+        result["source"] = source
+        return result
     return FilterService(db).screen_stock(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,

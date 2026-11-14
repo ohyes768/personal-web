@@ -3,6 +3,7 @@
  *
  * 老 tab（bond / stock）：只显示 numeric + exclude_qdii
  * market tab：加 market_types 多选 chip（每个类型单独一个 ×）
+ * 代码搜索态（11-16）：额外一枚「代码 002910 ×」chip，点 × 退出搜索回到原筛选列表
  */
 'use client';
 
@@ -17,6 +18,10 @@ interface FilterChipBarProps {
   onRemove: (key: FilterKey, value?: string) => void;
   /** 是否显示基金代码搜索框（右侧，与经理页搜索框同位置；仅四个基金 tab） */
   showCodeSearch?: boolean;
+  /** 当前代码搜索态（6 位代码）；null/缺省 = 未搜索 */
+  searchCode?: string | null;
+  /** 退出代码搜索态（点 chip 的 ×） */
+  onClearSearch?: () => void;
 }
 
 const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => string }> = {
@@ -29,10 +34,13 @@ const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => stri
 
 const NUMERIC_KEYS = Object.keys(LABELS) as NumericFilterKey[];
 
-export function FilterChipBar({ filters, onRemove, showCodeSearch = false }: FilterChipBarProps) {
+export function FilterChipBar({
+  filters, onRemove, showCodeSearch = false, searchCode = null, onClearSearch,
+}: FilterChipBarProps) {
   const activeNumeric = NUMERIC_KEYS.filter(k => filters[k] !== null);
   const marketTypes = filters.market_types ?? [];
   const hasQdii = filters.exclude_qdii;
+  const searching = Boolean(searchCode);
 
   // ⚠ 单一返回结构：搜索框在任何筛选状态下都处在同一个 DOM 位置。
   // 曾经用「无筛选/有筛选」两个 return 分支，切换时输入框被卸载重建，
@@ -42,7 +50,19 @@ export function FilterChipBar({ filters, onRemove, showCodeSearch = false }: Fil
 
   return (
     <div className="flex items-center gap-2 flex-wrap py-1.5">
-      {!hasAnyFilter && (
+      {searching && (
+        <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2 py-0.5 text-xs text-accent">
+          代码搜索 <span className="tnum font-mono font-medium">{searchCode}</span>
+          <button
+            onClick={() => onClearSearch?.()}
+            className="hover:text-down"
+            aria-label="退出代码搜索，回到筛选列表"
+          >
+            <XMarkIcon className="w-3 h-3" />
+          </button>
+        </span>
+      )}
+      {!hasAnyFilter && !searching && (
         <>
           <FunnelIcon className="w-3.5 h-3.5 text-ink-soft" />
           <span className="text-xs text-ink-soft">未筛选</span>

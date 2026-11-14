@@ -119,6 +119,8 @@ export interface FundFilters {
   market_types: string[] | null;
   /** 来源分段（11-15-source-segmented）：默认 all；仅债基/股基合并页消费 */
   source?: SourceSegment;
+  /** 代码搜索态（11-16）：6 位代码 = 列表锁定这一只；null/缺失 = 正常筛选 */
+  search_code?: string | null;
   sort: string;
   order: 'asc' | 'desc';
   /** 分页（仅前端 state，写入 URL）；page=1 / limit=50 默认值不进 URL */

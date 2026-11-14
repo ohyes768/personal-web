@@ -328,6 +328,63 @@ class FilterService:
         result["source"] = source
         return result
 
+    def search_by_code(self, code: str, curated_kind: str) -> dict:
+        """代码搜索：按 code 精确取一只（11-16-fund-code-search-list-result）。
+
+        与 `_screen` 的差别（**故意**，勿"补齐"成筛选语义）：
+        - **不套任何阈值**：搜的是「库里这一只」，不是「当前筛选命中的这一只」。
+          否则用户搜 002910 却因规模 4.9 亿看不到结果，会以为代码错了。
+        - **不要求 is_active**：代码搜索是查询动作，已清盘基金也该能点开看历史。
+        - **不要求 ∈ 当前 tab 宇宙**：正常路径前端已先经 lookup 判定 tab；这里只认 code。
+        - **不排序不分页**：结果最多 1 条。
+
+        返回值与 `/screen` 同构（`{total, items}`），条目带 `in_curated`，
+        表格与文案因此可以完全复用。
+        """
+        row = self.db.execute(
+            select(Fund, FundPerformance, FundFees, FundHoldingsBond,
+                   FundRiskMetrics, MarketFundRank)
+            .outerjoin(FundPerformance, Fund.code == FundPerformance.code)
+            .outerjoin(FundFees, Fund.code == FundFees.code)
+            .outerjoin(FundHoldingsBond, Fund.code == FundHoldingsBond.code)
+            .outerjoin(FundRiskMetrics, Fund.code == FundRiskMetrics.code)
+            .outerjoin(MarketFundRank, Fund.code == MarketFundRank.code)
+            .where(Fund.code == code)
+        ).first()
+        if row is None:
+            return {"total": 0, "items": []}
+
+        f = row[0]
+        # 排名：与 _screen 同口径（4 个周期各一行）
+        ach_for_code: dict[tuple[str, str], str | None] = {}
+        pairs = [(pk, pp) for pk, pp, _ in RANK_PERIODS]
+        ach_rows = self.db.execute(
+            select(
+                FundAchievementRank.period_kind,
+                FundAchievementRank.period,
+                FundAchievementRank.peer_rank,
+            )
+            .where(FundAchievementRank.code == code)
+            .where(
+                or_(*[
+                    and_(
+                        FundAchievementRank.period_kind == pk,
+                        FundAchievementRank.period == pp,
+                    )
+                    for pk, pp in pairs
+                ])
+            )
+        ).all()
+        for r in ach_rows:
+            ach_for_code[(r.period_kind, r.period)] = r.peer_rank
+
+        item = self._to_dto(
+            f, row[1], row[2], row[3], row[4], row[5], ach_for_code=ach_for_code,
+        )
+        item["in_curated"] = code in set(
+            resolve_universe_codes(curated_kind)
+        )
+        return {"total": 1, "items": [item]}
 
     def screen_discovery_bond(
         self,
