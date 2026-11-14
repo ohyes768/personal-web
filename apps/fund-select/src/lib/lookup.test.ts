@@ -80,3 +80,17 @@ test('classifyLookup：found=true 但 path 为空 → not-found（防御）', ()
 test('classifyLookup：error 优先于 result', () => {
   assert.equal(classifyLookup(mkLookup(), '网络错误'), 'error');
 });
+
+test('classifyLookup：not-found 场景（弹框触发条件）', () => {
+  // 后端返回 found=false 时必须能区分出来，供 UI 弹框
+  assert.equal(classifyLookup(mkLookup({
+    found: false, tab: null, path: null, name: null,
+  }), null), 'not-found');
+});
+
+test('归一化后仍为 null 的输入（弹框提示用）', () => {
+  // 这些输入点查询应弹「请输入完整的基金代码」
+  for (const bad of ['', '1', '12345', 'abc', '  ']) {
+    assert.equal(normalizeCode(bad), null, bad);
+  }
+});

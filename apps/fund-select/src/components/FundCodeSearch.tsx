@@ -3,14 +3,14 @@
  *
  * - 输入 6 位代码回车 → 查后端 /lookup/{code} → 跳到对应 tab 并自动开抽屉
  * - 只做跳转，不参与筛选状态（不写 ?qs，避免污染可分享的筛选链接）
- * - 样式对齐经理页的「搜索姓名 / 公司」框：w-40、py-0.5、text-xs、ml-auto
- * - compact：由 FilterChipBar 传入，使用该行的紧凑尺寸
+ * - 查不到 / 接口失败 → **弹框提示**（曾经只显示一行小字，用户根本看不到）
+ * - 样式对齐经理页的「搜索姓名 / 公司」框：w-36、py-0.5、text-xs、ml-auto
  */
 'use client';
 
 import { MagnifyingGlassIcon } from '@heroicons/react/24/outline';
 import { useRouter } from 'next/navigation';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   classifyLookup, fetchFundLookup, normalizeCode, type FundLookup,
@@ -23,48 +23,113 @@ interface FundCodeSearchProps {
   compact?: boolean;
 }
 
+/** 查不到 / 出错时的弹框（原生 <dialog>，与 SchedulerDialog 同模式） */
+function LookupAlert({
+  title, message, onClose,
+}: { title: string; message: string; onClose: () => void }) {
+  const ref = useRef<HTMLDialogElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (!el.open) el.showModal();
+  }, []);
+
+  return (
+    <dialog
+      ref={ref}
+      aria-labelledby="lookup-alert-title"
+      onCancel={e => { e.preventDefault(); onClose(); }}
+      onClick={e => { if (e.target === ref.current) onClose(); }}
+      className="rounded-lg border border-rule bg-paper-card p-0 text-ink-strong backdrop:bg-black/40 max-w-[22rem]"
+    >
+      <div className="p-4">
+        <h2 id="lookup-alert-title" className="text-sm font-semibold text-ink-strong">
+          {title}
+        </h2>
+        <p className="mt-1.5 text-xs leading-5 text-ink-muted whitespace-pre-line">
+          {message}
+        </p>
+        <div className="mt-4 flex justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            autoFocus
+            className="inline-flex min-h-9 items-center justify-center rounded-md border border-rule-strong px-3 text-sm text-ink hover:bg-paper-deep focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-info"
+          >
+            知道了
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}
+
 export function FundCodeSearch({ className = '', compact = false }: FundCodeSearchProps) {
   const router = useRouter();
   const [input, setInput] = useState('');
   const [result, setResult] = useState<FundLookup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
+  /** 弹框内容；null = 不显示 */
+  const [alert, setAlert] = useState<{ title: string; message: string } | null>(null);
 
   const code = normalizeCode(input);
   const canSubmit = code !== null && !loading;
   const phase = classifyLookup(result, error);
 
   const submit = useCallback(async () => {
-    if (code === null || loading) return;
+    if (loading) return;
+    if (code === null) {
+      // 输入不足/非法也给出明确反馈（按了没反应会被当成卡死）
+      const raw = input.trim();
+      setAlert({
+        title: '请输入完整的基金代码',
+        message: raw
+          ? `「${raw}」不是有效的 6 位基金代码。`
+          : '请输入 6 位数字的基金代码，例如 002910。',
+      });
+      return;
+    }
     setLoading(true);
     setError(null);
     setResult(null);
+    setAlert(null);
     try {
       const res = await fetchFundLookup(code);
       setResult(res);
       if (res.found && res.path) {
-        // path 由后端给好，是相对路径（basePath 自动补前缀，不能再加 /funds）
+        // path 由后端给好，是相对路径（basePath 自动补前缀，不能再加 /funds）。
+        // 追加 focus=1：目标页据此清空筛选，保证该基金出现在列表里
+        // （否则它可能被当前筛选条件挡掉，只弹出抽屉而列表里找不到）。
         // 清空放在跳转前：跳转后组件可能卸载，此处同步清理最安全
         setInput('');
         setResult(null);
-        router.push(res.path);
+        const sep = res.path.includes('?') ? '&' : '?';
+        router.push(`${res.path}${sep}focus=1`);
         return;
       }
+      // found=false：明确弹框，而不是一行容易被忽略的小字
+      setAlert({
+        title: '未找到该基金',
+        message:
+          `代码 ${res.code} 不在基金库里。\n\n` +
+          '请确认代码是否正确（6 位数字）；' +
+          '如果是新基金，可能还没被采集过。',
+      });
     } catch (e) {
-      setError(e instanceof Error ? e.message : '查询失败，请重试');
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      setAlert({
+        title: '查询失败',
+        message: `暂时无法查询该代码，请稍后重试。\n\n${msg.slice(0, 120)}`,
+      });
     } finally {
       setLoading(false);
     }
-  }, [code, loading, router]);
+  }, [code, input, loading, router]);
 
-  const hint =
-    phase === 'not-found' ? `未找到 ${result?.code ?? ''}` :
-    phase === 'error' ? (error ?? '查询失败') : null;
-
-  const size = compact
-    ? 'px-2 py-0.5 text-xs'
-    : 'px-2 py-1 text-sm';
+  const size = compact ? 'px-2 py-0.5 text-xs' : 'px-2 py-1 text-sm';
 
   return (
     <div className={`relative ${className}`}>
@@ -74,7 +139,6 @@ export function FundCodeSearch({ className = '', compact = false }: FundCodeSear
           className="pointer-events-none absolute left-1.5 h-3.5 w-3.5 text-ink-soft"
         />
         <input
-          ref={inputRef}
           type="text"
           inputMode="numeric"
           maxLength={6}
@@ -96,14 +160,20 @@ export function FundCodeSearch({ className = '', compact = false }: FundCodeSear
           {loading ? '查询中' : '查询'}
         </button>
       </div>
-      {/* 结果提示：贴在这一行下方，不撑高布局 */}
-      {hint !== null && (
-        <span
-          role="status"
-          className="absolute right-0 top-full mt-1 z-20 whitespace-nowrap text-xs text-down bg-paper-card px-1.5 py-0.5 rounded border border-rule shadow-sm"
-        >
-          {hint}
+
+      {/* 错误时保留一行轻提示作为兜底（弹框可能被浏览器拦截） */}
+      {phase === 'error' && error && alert === null && (
+        <span role="status" className="absolute right-0 top-full mt-1 whitespace-nowrap text-xs text-down">
+          {error.slice(0, 40)}
         </span>
+      )}
+
+      {alert !== null && (
+        <LookupAlert
+          title={alert.title}
+          message={alert.message}
+          onClose={() => setAlert(null)}
+        />
       )}
     </div>
   );
