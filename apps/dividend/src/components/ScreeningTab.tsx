@@ -5,7 +5,7 @@ import { useRealtimePrices } from '@/lib/hooks/useRealtimePrices';
 import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
 import { dividendApi } from '@/lib/api';
 import { buildQualityQueue, isQualityPending, QUALITY_DIMENSION_ORDER, QUALITY_DIMENSION_LABELS } from '@/lib/quality';
-import { DEFAULT_SCREENING, restoreScreeningConditions, type ScreeningConditions, type ScreeningItem, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
+import { DEFAULT_SCREENING, restoreScreeningConditions, SCREENING_STORAGE_KEY, type ScreeningConditions, type ScreeningItem, type ScreeningResponse, type ScreeningStatus } from '@/lib/screening';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityReportModal } from './QualityReportModal';
 import { QualityQueuePanel } from './QualityQueuePanel';
@@ -13,7 +13,6 @@ import { QualityReaderEntry } from './QualityReaderEntry';
 import { ScreeningStockDetailModal } from './ScreeningStockDetailModal';
 import { SessionDownloadButton } from './SessionDownloadButton';
 
-const STORAGE_KEY = 'dividend-screening-conditions-v1';
 const pct = (value?: number | null) => value == null || !Number.isFinite(value) ? '待补' : `${value.toFixed(2)}%`;
 const isDeclining = (value?: number | null) => value != null && Number.isFinite(value) && value < 0;
 const statusNames: Record<ScreeningStatus, string> = { eligible: '符合条件', excluded: '未符合', insufficient_data: '待补数据' };
@@ -61,7 +60,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   useEffect(() => {
     let next = { ...DEFAULT_SCREENING };
     try {
-      next = restoreScreeningConditions(JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'));
+      next = restoreScreeningConditions(JSON.parse(localStorage.getItem(SCREENING_STORAGE_KEY) || 'null'));
     } catch { /* unavailable storage uses defaults */ }
     setConditions(next); void query(next);
     return () => { invalidateRequest(); };
@@ -115,12 +114,26 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
   const selectCode = (code: string) => setSelected(prev => { const next = new Set(prev); if (next.has(code)) next.delete(code); else next.add(code); return next; });
   // 未符合/待补视图多一列「原因」；符合条件视图为 8 列
   const showReason = activeView !== 'eligible';
+  // 表头：把每个筛选条件的实际值都列出来，方便对照判定
+  const tableHeaders: [string, string][] = [
+    ['股票', ''],
+    ['基本面操作', ''],
+    ['五维评级', ''],
+    ['三年股息率', '近三年平均股息率'],
+    ['近三年平均ROE', '近三年平均 ROE'],
+    ['最近年度ROE', '最近年度 ROE'],
+    ['3年CAGR', '扣非净利润3年复合增长率：三年首尾的年化复合增速，近三年有亏损时算不出来'],
+    ['当前股息率（TTM）', '当前股息率，只展示不参与筛选'],
+    ['最新季扣非同比', '最新单季扣非净利润同比'],
+    ...(showReason ? [['原因', '未符合条件的原因与提示']] as [string, string][] : []),
+    ['收藏', ''],
+  ];
   // 评级弹框与详情弹框互斥：开一个先关另一个
   const openDetail = (item: ScreeningItem) => { setQualityModalCode(null); setDetailItem(item); };
   const openQuality = (code: string) => { setDetailItem(null); setQualityModalCode(code); };
 
   return <section aria-label="选股关注" className="space-y-4">
-    <form onSubmit={event => { event.preventDefault(); if (!valid) return; try { localStorage.setItem(STORAGE_KEY, JSON.stringify(conditions)); } catch {} void query(conditions); }} className="rounded-xl border border-rule bg-paper-card p-5">
+    <form onSubmit={event => { event.preventDefault(); if (!valid) return; try { localStorage.setItem(SCREENING_STORAGE_KEY, JSON.stringify(conditions)); } catch {} void query(conditions); }} className="rounded-xl border border-rule bg-paper-card p-5">
       <h2 className="text-lg font-semibold text-ink">选出值得持续关注的公司</h2>
       <p className="mt-1 text-sm text-ink-muted">分红稳定、ROE 达标、三年扣非利润复合增长、最近年度扣非净利润为正且同比不下滑；连续两季扣非同比为负或任一季降幅达到所设阈值时排除。当前股息率由你人工判断。</p>
       <div className="mt-4 flex flex-wrap items-end gap-4">
@@ -130,7 +143,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
         </label>)}
         <label className="text-sm text-ink"><span className="block mb-1">交易所</span><select aria-label="选股交易所" value={conditions.exchange || ''} onChange={event => setConditions(prev => ({ ...prev, exchange: event.target.value || undefined }))} className="rounded border border-rule-strong bg-paper px-3 py-2"><option value="">全部</option><option>沪市主板</option><option>深市主板</option></select></label>
         <button className={`${buttonClass} bg-indigo-600 text-white`} disabled={loading || saving || !valid}>{loading ? '筛选中…' : '查询候选'}</button>
-        <button type="button" className={buttonClass} disabled={loading || saving} onClick={() => { const next = { ...DEFAULT_SCREENING }; setConditions(next); try { localStorage.removeItem(STORAGE_KEY); } catch {} void query(next); }}>恢复默认</button>
+        <button type="button" className={buttonClass} disabled={loading || saving} onClick={() => { const next = { ...DEFAULT_SCREENING }; setConditions(next); try { localStorage.removeItem(SCREENING_STORAGE_KEY); } catch {} void query(next); }}>恢复默认</button>
       </div>
       <p className="mt-3 text-xs text-ink-muted">固定条件：近三年每年分红、最近年度扣非净利润 &gt; 0、年度扣非同比 ≥ 0、不能连续两季单季扣非同比为负。单季同比 ≤ −所设降幅时排除。扣非净利润3年复合增长率默认 0%（三年利润不缩水），调到 5~10% 可要求温和增长；算不出来（近三年有亏损）时只提示、不排除。条件在此浏览器保存。</p>
     </form>
@@ -161,7 +174,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
       <div className="overflow-x-auto rounded-xl border border-rule bg-paper-card">
         <table className="w-full text-sm text-ink whitespace-nowrap"><thead className="bg-paper-deep text-left"><tr>
           <th className="p-3"><input aria-label="勾选全部候选" type="checkbox" disabled={activeView !== 'eligible' || eligibleCodes.length === 0 || saving} checked={eligibleCodes.length > 0 && eligibleCodes.every(code => selected.has(code))} onChange={event => setSelected(new Set(event.target.checked ? eligibleCodes : []))} /></th>
-          {['股票', '基本面操作', '五维评级', '三年股息率', '当前股息率（TTM）', '最新季扣非同比', ...(showReason ? ['原因'] : []), '收藏'].map(label => <th key={label} className="p-3 font-medium">{label}</th>)}
+          {tableHeaders.map(([label, hint]) => <th key={label} className="p-3 font-medium" title={hint || undefined}>{label}</th>)}
         </tr></thead><tbody>
           {rows.map(item => {
             const { stock, status, reasons, warnings } = item;
@@ -207,6 +220,13 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
                 </span> : <span className="text-ink-muted">—</span>}
               </td>
               <td className="p-3 font-mono tabular-nums">{pct(stock.avg_yield_3y)}</td>
+              <td className="p-3 font-mono tabular-nums">{pct(stock.roe_avg_3y)}</td>
+              <td className="p-3 font-mono tabular-nums">{pct(stock.roe)}</td>
+              <td className="p-3 font-mono tabular-nums">
+                {stock.net_profit_cagr_3y == null || !Number.isFinite(stock.net_profit_cagr_3y)
+                  ? <span className="text-ink-muted" title="近三年有亏损或数据不足，算不出复合增长率">待补</span>
+                  : <span className={stock.net_profit_cagr_3y > 0 ? 'text-up' : stock.net_profit_cagr_3y < 0 ? 'text-down' : ''}>{stock.net_profit_cagr_3y.toFixed(2)}%</span>}
+              </td>
               <td className="p-3 font-mono tabular-nums">{pct(priceMap.get(stock.code)?.yield_ttm)}</td>
               <td className="p-3">
                 <span className={`font-mono tabular-nums ${isDeclining(stock.latest_quarter_yoy_pct) ? 'font-medium text-amber-700' : ''}`}>{pct(stock.latest_quarter_yoy_pct)}</span>
@@ -225,7 +245,7 @@ export function ScreeningTab({ watchlist, refreshRevision = 0, sourceQuery = 'ta
               </td>
             </tr>;
           })}
-          {rows.length === 0 && <tr><td colSpan={showReason ? 9 : 8} className="p-10 text-center text-ink-muted">{activeView === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
+          {rows.length === 0 && <tr><td colSpan={showReason ? 12 : 11} className="p-10 text-center text-ink-muted">{activeView === 'eligible' ? '暂无符合条件的股票，可以调整条件或补充数据。' : '暂无股票'}</td></tr>}
         </tbody></table>
       </div>
     </>}

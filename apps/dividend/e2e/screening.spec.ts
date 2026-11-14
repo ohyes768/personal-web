@@ -6,7 +6,8 @@ const stock = {
   roe: 12, roe_year: 2025, roe_avg_3y: 11,
   roe_history: [{ year: 2023, value: 10 }, { year: 2024, value: 11 }, { year: 2025, value: 12 }],
   annual_net_profit_ex_non_recurring: 120000000, annual_profit_year: 2025,
-  net_profit_ex_non_recurring_yoy: 2, latest_quarter_label: '2026Q2', latest_quarter_yoy_pct: -1,
+  net_profit_ex_non_recurring_yoy: 2, net_profit_cagr_3y: 8.5,
+  latest_quarter_label: '2026Q2', latest_quarter_yoy_pct: -1,
   previous_quarter_label: '2026Q1', previous_quarter_yoy_pct: 2,
 };
 
@@ -179,6 +180,21 @@ test('failed rating row offers the failed run session download', async ({ page }
   await button.click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe('hermes-run-fail-1-session.md');
+});
+
+test('screening list shows the value behind every threshold condition', async ({ page }) => {
+  await setup(page);
+  await page.goto('/?tab=screening');
+  // 筛选条件的实际值都在列表里能对照：股息率 / 近三年平均ROE / 最近年度ROE / 3年CAGR
+  await expect(page.getByRole('columnheader', { name: '三年股息率' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '近三年平均ROE' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '最近年度ROE' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '3年CAGR' })).toBeVisible();
+  const row = page.getByRole('row', { name: /测试公司/ });
+  await expect(row.getByRole('cell', { name: '4.00%', exact: true })).toBeVisible();
+  await expect(row.getByRole('cell', { name: '11.00%', exact: true })).toBeVisible();
+  await expect(row.getByRole('cell', { name: '12.00%', exact: true })).toBeVisible();
+  await expect(row.getByRole('cell', { name: '8.50%', exact: true })).toBeVisible();
 });
 
 test('screening remains accessible with no stocks in old filter, allows retrying failed favorite', async ({ page }) => {
