@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '股基·雪球三分法',
+  title: '股基',
 };
 
 export default function StockLayout({ children }: { children: React.ReactNode }) {
