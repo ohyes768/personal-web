@@ -30,8 +30,6 @@ CREATE TABLE IF NOT EXISTS services (
     description TEXT NOT NULL DEFAULT '',
     tags TEXT NOT NULL DEFAULT '[]',
     notes TEXT NOT NULL DEFAULT '',
-    -- 归属（我维护的 / 别人的）：逐条可设。'' = 尚未判定，启动时按旧口径回填。
-    ownership TEXT NOT NULL DEFAULT '',
     revision INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -240,9 +238,8 @@ class Store:
             self.db_path.parent.mkdir(parents=True, exist_ok=True)
             with self._connect() as conn:
                 conn.executescript(_SCHEMA)
-                self._ensure_column(
-                    conn, "services", "ownership", "TEXT NOT NULL DEFAULT ''"
-                )
+                # 归属字段退役：直接删列（语义已由标签承担，无需迁移数据）
+                self._drop_column(conn, "services", "ownership")
                 stored = self._get_state(conn, "schema_version")
                 if stored is None:
                     self._set_state(conn, "schema_version", str(SCHEMA_VERSION))

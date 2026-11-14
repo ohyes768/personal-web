@@ -259,11 +259,6 @@ def test_services_list_exposes_projects(client: TestClient) -> None:
     assert item["projects"] == []
 
 
-def test_summary_reports_own_projects(client: TestClient) -> None:
-    login(client)
-    assert client.get("/api/summary").json()["own_projects"] == ["personal-web"]
-
-
 def test_summary_reports_container_counts(settings, monkeypatch) -> None:
     """发现容器 / 已关联 / 未入账：三个数要能对上账。
 

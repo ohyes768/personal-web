@@ -108,17 +108,6 @@ class RefreshKind(StrEnum):
     ALL = "all"
 
 
-class Ownership(StrEnum):
-    """归属：这条服务是不是我维护的。
-
-    逐条可设（页面上直接改），不再由 compose 项目名单全局推导；
-    `SERVICE_MANAGER_OWN_PROJECTS` 只作为新建服务时的默认值。
-    """
-
-    MINE = "mine"
-    OTHER = "other"
-
-
 # ---------------------------------------------------------------------------
 # 观测视图（先定义：被台账详情引用）
 # ---------------------------------------------------------------------------
@@ -202,8 +191,6 @@ class ServiceCreate(BaseModel):
     description: str = Field(default="", max_length=2000)
     tags: list[str] = Field(default_factory=list, max_length=20)
     notes: str = Field(default="", max_length=4000)
-    # 不给就按默认口径判定（无组件 → 我维护的）
-    ownership: Ownership | None = None
 
     @field_validator("name")
     @classmethod
@@ -245,7 +232,6 @@ class ServicePatch(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     tags: list[str] | None = Field(default=None, max_length=20)
     notes: str | None = Field(default=None, max_length=4000)
-    ownership: Ownership | None = None
     revision: int
 
     @field_validator("name")
@@ -356,7 +342,6 @@ class ServiceDetail(BaseModel):
     description: str
     tags: list[str]
     notes: str
-    ownership: Ownership = Ownership.MINE
     revision: int
     created_at: str
     updated_at: str
@@ -372,7 +357,6 @@ class ServiceListItem(BaseModel):
     name: str
     description: str
     tags: list[str]
-    ownership: Ownership = Ownership.MINE
     revision: int
     updated_at: str
     primary_url: str | None = None
@@ -557,8 +541,6 @@ class SummaryResponse(BaseModel):
     unread_releases: int = 0
     registry_revision: int = 0
     checker_heartbeat: str | None = None
-    # 「我自己开发的」compose 项目名（前端据此分 tab）
-    own_projects: list[str] = Field(default_factory=list)
 
 
 class BackupPreviewResponse(BaseModel):

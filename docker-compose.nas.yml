@@ -706,7 +706,6 @@ services:
                   "SERVICE_MANAGER_DOCKER_HOST=tcp://service-manager-socket-proxy:2375",
                   SERVICE_MANAGER_DATA_DIR=/app/data,
                   SERVICE_MANAGER_SECURE_COOKIE=true,
-                  "SERVICE_MANAGER_OWN_PROJECTS=${SERVICE_MANAGER_OWN_PROJECTS:-personal-web}",
                   SERVICE_MANAGER_SERVICE_PORT=8102]
     networks: [app-net, sm-docker-net]
     depends_on:

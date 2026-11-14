@@ -75,32 +75,25 @@ test("台账条目走接口建立后，搜索、加端口、删除都可用", as
   await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
 });
 
-test("归属可逐条改：列表行里的下拉与详情页的一致", async ({ page }) => {
+test("归属字段已退役：列表平铺，没有分组 tab 也没有归属下拉", async ({ page }) => {
   await login(page);
-  const name = `e2e-归属-${Date.now()}`;
+  await page.goto("/services");
+  // 不再有「我维护的 / 别人的」两个分组 tab
+  await expect(page.getByRole("tab")).toHaveCount(0);
+  // 行里与详情页都没有归属下拉
+  await expect(page.locator('select[aria-label$="的归属"]')).toHaveCount(0);
+
+  const name = `e2e-平铺-${Date.now()}`;
   const created = await page.request.post("/api/services/services", {
     headers: { Origin: new URL(page.url()).origin },
     data: { name },
   });
   expect(created.ok()).toBeTruthy();
-  const serviceId = (await created.json()).id as string;
-  createdServiceIds.push(serviceId);
+  createdServiceIds.push((await created.json()).id as string);
 
   await page.goto("/services");
   await page.getByLabel("搜索服务").fill(name);
-  const rowSelect = page.getByLabel(`${name} 的归属`);
-  await expect(rowSelect).toHaveValue("mine");
-
-  // 改成「别人的」：行内下拉直接生效，列表随之分到另一个分组
-  await rowSelect.selectOption("other");
-  await expect(page.getByText("已标为别人的")).toBeVisible();
-
-  await page.goto(`/services/service/${serviceId}`);
-  await expect(page.getByLabel("归属")).toHaveValue("other");
-
-  // 复原，避免污染台账
-  await page.getByLabel("归属").selectOption("mine");
-  await expect(page.getByText("已标为我维护的")).toBeVisible();
+  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
 });
 
 test("标签可维护：弹窗里勾选已有标签 + 新建一个，保存后列表行立即更新", async ({ page }) => {
@@ -141,41 +134,42 @@ test("标签可维护：弹窗里勾选已有标签 + 新建一个，保存后�
 
 test("标签可筛选：多选是 AND，可一键清除", async ({ page }) => {
   await login(page);
-  const name = `e2e-筛选-${Date.now()}`;
-  const created = await page.request.post("/api/services/services", {
-    headers: { Origin: new URL(page.url()).origin },
-    data: { name, tags: ["e2e-a", "e2e-b"] },
-  });
-  expect(created.ok()).toBeTruthy();
-  createdServiceIds.push((await created.json()).id as string);
+  const stamp = Date.now();
+  // 两条都带 e2e-a，只有一条带 e2e-b：AND 语义能自证，不依赖词表里已有什么
+  const both = `e2e-筛选-双-${stamp}`;
+  const onlyOne = `e2e-筛选-单-${stamp}`;
+  for (const [name, tags] of [
+    [both, ["e2e-a", "e2e-b"]],
+    [onlyOne, ["e2e-a"]],
+  ]) {
+    const created = await page.request.post("/api/services/services", {
+      headers: { Origin: new URL(page.url()).origin },
+      data: { name, tags },
+    });
+    expect(created.ok()).toBeTruthy();
+    createdServiceIds.push((await created.json()).id as string);
+  }
 
   await page.goto("/services");
-  await page.getByLabel("搜索服务").fill(name);
-  const row = page.locator("tbody tr", { hasText: name });
-  await expect(row.getByRole("button", { name: "e2e-a", exact: true })).toBeVisible();
-
-  // 候选来自全库并集：刚建的标签出现在筛选栏
   const filterBar = page.locator(".tag-filter-bar");
+  // 候选来自全库并集：刚建的标签出现在筛选栏
   await expect(filterBar.getByRole("button", { name: "e2e-a" })).toBeVisible();
   await expect(filterBar.getByRole("button", { name: "e2e-b" })).toBeVisible();
 
-  // 勾一个 → 只剩同时具备的（这条仍然命中）
+  // 勾一个 → 两条都命中
   await filterBar.getByRole("button", { name: "e2e-a" }).click();
-  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: both, exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: onlyOne, exact: true })).toHaveCount(1);
 
-  // 再勾一个 AND 条件 → 仍然命中
+  // 再勾一个 AND 条件 → 只剩同时具备的那条
   await filterBar.getByRole("button", { name: "e2e-b" }).click();
-  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: both, exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: onlyOne, exact: true })).toHaveCount(0);
 
-  // 勾一个这条没有的标签 → 命中不到
-  await filterBar.getByRole("button", { name: "self" }).click();
-  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(0);
-  await expect(page.getByText("没有同时具备这些标签的服务")).toBeVisible();
-
-  // 一键清除 → 恢复
-  await page.getByRole("button", { name: "清除标签筛选" }).click();
-  await expect(page.getByRole("link", { name, exact: true })).toHaveCount(1);
-
+  // 一键清除 → 恢复（筛选栏上的「清除标签」）
+  await filterBar.getByRole("button", { name: "清除标签" }).click();
+  await expect(page.getByRole("link", { name: both, exact: true })).toHaveCount(1);
+  await expect(page.getByRole("link", { name: onlyOne, exact: true })).toHaveCount(1);
 });
 
 test("分类字段已退役：界面上没有分类入口", async ({ page }) => {

@@ -5,7 +5,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   api,
   ApiError,
-  type Ownership,
   type ServiceListItem,
   type SummaryResponse,
 } from "@/lib/api";
@@ -42,7 +41,6 @@ function ServiceList() {
   const [total, setTotal] = useState(0);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [query, setQuery] = useState("");
-  const [group, setGroup] = useState<Ownership>("mine");
   // 标签筛选（多选 AND）与标签编辑弹窗
   const [tagFilter, setTagFilter] = useState<string[]>([]);
   const [editingTags, setEditingTags] = useState<ServiceListItem | null>(null);
@@ -100,21 +98,10 @@ function ServiceList() {
   // 候选标签：后端给的全库词表（不随搜索/分组缩小，筛选栏才选得到别的标签）
   const allTags = useMemo(() => summary?.all_tags ?? [], [summary]);
 
-  // 分组：归属是台账里的一个字段（我维护的 / 别人的），逐条可改。
-  const groups = useMemo(
-    () => ({
-      mine: items.filter((item) => item.ownership === "mine").length,
-      other: items.filter((item) => item.ownership === "other").length,
-    }),
-    [items],
-  );
-  // 筛选链：归属分组 → 搜索（后端）→ 标签（前端，多选 AND）
+  // 筛选链：搜索（后端）→ 标签（前端，多选 AND）。列表平铺，不分组。
   const tabItems = useMemo(
-    () =>
-      items.filter(
-        (item) => item.ownership === group && matchesTags(item.tags, tagFilter),
-      ),
-    [items, group, tagFilter],
+    () => items.filter((item) => matchesTags(item.tags, tagFilter)),
+    [items, tagFilter],
   );
 
   function toggleTagFilter(tag: string) {
@@ -154,17 +141,6 @@ function ServiceList() {
       setToast(caught instanceof ApiError ? caught.message : "保存标签失败");
     } finally {
       setSavingTags(false);
-    }
-  }
-
-  async function changeOwnership(item: ServiceListItem, next: Ownership) {
-    if (item.ownership === next) return;
-    try {
-      await api.patchService(item.id, { ownership: next, revision: item.revision });
-      setToast(next === "mine" ? "已标为我维护的" : "已标为别人的");
-      await load();
-    } catch (caught) {
-      setToast(caught instanceof ApiError ? caught.message : "改归属失败");
     }
   }
 
@@ -262,25 +238,6 @@ function ServiceList() {
         </div>
       ) : null}
 
-      <div className="tabs" role="tablist">
-        <button
-          role="tab"
-          aria-selected={group === "mine"}
-          className={group === "mine" ? "active" : ""}
-          onClick={() => setGroup("mine")}
-        >
-          我维护的（{groups.mine}）
-        </button>
-        <button
-          role="tab"
-          aria-selected={group === "other"}
-          className={group === "other" ? "active" : ""}
-          onClick={() => setGroup("other")}
-        >
-          别人的（{groups.other}）
-        </button>
-      </div>
-
       <div className="card tight">
         <div className="btn-row">
           <input
@@ -291,7 +248,8 @@ function ServiceList() {
             aria-label="搜索服务"
             style={{ flex: "1 1 320px" }}
           />
-          <button            className="btn"
+          <button
+            className="btn"
             type="button"
             disabled={pending.docker}
             aria-busy={pending.docker}
@@ -345,7 +303,7 @@ function ServiceList() {
               ? "台账还是空的。到「发现导入」从运行中的容器建立台账条目。"
               : tagFilter.length > 0
                 ? `没有同时具备这些标签的服务（${tagFilter.join("、")}）。`
-                : `这个分组里没有服务（${group === "mine" ? "我维护的" : "别人的"}）。`}
+                : "没有匹配的服务。"}
           </p>
           <div className="btn-row">
             {tagFilter.length > 0 ? (
@@ -455,18 +413,6 @@ function ServiceList() {
                           打开
                         </SafeLink>
                       ) : null}
-                      <select
-                        value={item.ownership}
-                        onChange={(event) =>
-                          void changeOwnership(item, event.target.value as Ownership)
-                        }
-                        aria-label={`${item.name} 的归属`}
-                        title="这条服务是不是你维护的（决定列表分组）"
-                        style={{ minHeight: 26, padding: "2px 6px", fontSize: 12 }}
-                      >
-                        <option value="mine">我维护的</option>
-                        <option value="other">别人的</option>
-                      </select>
                     </div>
                   </td>
                 </tr>
@@ -476,7 +422,7 @@ function ServiceList() {
         </div>
       )}
       <p className="small muted">
-        共 {total} 个服务，当前分组 {tabItems.length} 个
+        共 {total} 个服务，当前显示 {tabItems.length} 个
         {tagFilter.length > 0 ? `（标签筛选：${tagFilter.join("、")}）` : ""}
       </p>
       {editingTags ? (

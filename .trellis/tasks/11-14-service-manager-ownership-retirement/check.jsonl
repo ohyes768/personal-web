@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/apps/service-manager/frontend/index.md", "reason": "前端验收口径：交互约束与 375px 无横向滚动"}
+{"file": ".trellis/spec/backend/service-manager/backend/index.md", "reason": "后端验收口径：Docker 只读边界与备份恢复"}

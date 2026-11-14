@@ -44,8 +44,6 @@ def build_app(settings: Settings) -> FastAPI:
     registry = Registry(store)
     # 分类退役：先把分类值并进标签，再删掉 category 列（同一事务，失败回滚）
     registry.migrate_category_to_tags()
-    # 旧库没有归属列：按旧分组口径回填一次（已判定的不动）
-    registry.backfill_ownership(settings.own_project_list)
     reader = (
         DockerClient(settings.docker_host, timeout=settings.docker_timeout)
         if settings.docker_host

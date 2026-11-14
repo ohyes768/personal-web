@@ -25,8 +25,6 @@ from typing import Any
 from src.db import Store
 from src.docker_reader import project_from_source_key
 from src.errors import bad_request, conflict
-from src.models import Ownership
-from src.registry import default_ownership
 
 SCHEMA_VERSION = 1
 MAX_BYTES = 5 * 1024 * 1024
@@ -66,7 +64,7 @@ def export_payload(store: Store) -> dict[str, Any]:
         services = [
             dict(row)
             for row in conn.execute(
-                "SELECT id, name, description, tags, notes, ownership, revision,"
+                "SELECT id, name, description, tags, notes, revision,"
                 " created_at, updated_at FROM services"
             ).fetchall()
         ]
@@ -246,25 +244,6 @@ def preview(store: Store, raw: bytes) -> Preview:
     )
 
 
-def legacy_ownership_inputs(
-    payload: dict[str, Any], service_id: str
-) -> tuple[int, list[str]]:
-    """旧备份没有归属字段时，从备份内容还原旧口径需要的输入。
-
-    返回 (组件数, compose 项目列表)：老备份里归属只能按这个推。
-    """
-    count = 0
-    projects: list[str] = []
-    for item in payload.get("service_components") or []:
-        if item.get("service_id") != service_id:
-            continue
-        count += 1
-        project = project_from_source_key(item.get("source_key") or "")
-        if project and project not in projects:
-            projects.append(project)
-    return count, projects
-
-
 def restore(
     store: Store,
     *,
@@ -274,7 +253,6 @@ def restore(
     raw: bytes,
     confirm: bool,
     data_dir,
-    own_projects: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     if not confirm:
         raise bad_request("恢复需要 confirm=true")
@@ -295,21 +273,15 @@ def restore(
         conn.execute("DELETE FROM release_reads")
         conn.execute("UPDATE release_sync SET baseline_done = 0, etag = NULL")
         for item in payload.get("services") or []:
-            ownership = item.get("ownership") or ""
-            if ownership not in (Ownership.MINE.value, Ownership.OTHER.value):
-                # 旧备份没有归属字段：按旧口径兜底，避免恢复后全落一边
-                count, projects = legacy_ownership_inputs(payload, item["id"])
-                ownership = default_ownership(count, projects, own_projects).value
             conn.execute(
                 "INSERT INTO services(id, name, description, tags, notes,"
-                " ownership, revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?)",
+                " revision, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?)",
                 (
                     item["id"],
                     item["name"],
                     item.get("description", ""),
                     item.get("tags", "[]"),
                     item.get("notes", ""),
-                    ownership,
                     int(item.get("revision", 1)),
                     item["created_at"],
                     item["updated_at"],

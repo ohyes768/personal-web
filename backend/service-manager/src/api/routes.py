@@ -167,9 +167,7 @@ def summary(
     projector: Annotated[StatusProjector, Depends(get_status_projector)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> SummaryResponse:
-    payload = projector.summary()
-    payload["own_projects"] = list(settings.own_project_list)
-    return SummaryResponse(**payload)
+    return SummaryResponse(**projector.summary())
 
 
 # ---------------------------------------------------------------------------
@@ -437,7 +435,7 @@ def discovery_import(
     store: Annotated[Store, Depends(get_store)],
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> dict[str, Any]:
-    result = discovery.import_components(payload, settings.own_project_list)
+    result = discovery.import_components(payload)
     result["registry_revision"] = store.registry_revision
     return result
 
@@ -669,7 +667,6 @@ async def backup_restore(
             raw=raw,
             confirm=confirm,
             data_dir=settings.data_dir,
-            own_projects=settings.own_project_list,
         )
     except BackupError as exc:
         from src.errors import ApiError

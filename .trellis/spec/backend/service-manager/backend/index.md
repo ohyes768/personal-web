@@ -85,21 +85,19 @@
   「hostname 与 scheme 相同即接受」（跨站仍拒绝）。这是「本地正常、生产炸」的真实案例。
 - 登录失败按来源限速 5 次/分钟。生产缺口令或签名密钥时 `Settings` 直接抛错，拒绝启动。
 
-### 2.7 归属（我维护的 / 别人的）
+### 2.7 归属（ownership）已退役
 
-- 归属是**台账里的一条字段**：`services.ownership` = `mine` | `other`，**逐条可改**
-  （详情页头部下拉、列表行内下拉都直接 PATCH）。
-- 不再由 compose 项目名单全局推导分组；`SERVICE_MANAGER_OWN_PROJECTS`（默认 `personal-web`）
-  **只作为新建服务时的默认值**：
-  - 没关联容器（人工登记）→ `mine`
-  - 组件的 compose 项目命中 own 名单 → `mine`
-  - 其余（有容器但没有 compose 标签、或项目不在名单里）→ `other`
-- 旧库没有这一列时：启动时 `registry.backfill_ownership()` 按上面口径回填一次
-  （列值 `''` 表示未判定，回填只动未判定的行，用户改过的不会被覆盖）。
-  加列是向后兼容的（`ALTER TABLE`），**不升 schema 版本**。
-- `GET /api/services` 的每项带 `projects`：该服务包含的 compose 项目，
+- `services.ownership` **列已删除**：API 不再接受也不再返回；列表也不再按它分组。
+- **语义交给标签**：谁维护哪些服务，用 `personal-web` 这类标签表达（手动打，导入不自动加）。
+  不要为了「分组」再往台账里加第二个说法——两套语义并存必然漂移。
+- 迁移：启动时直接 `ALTER TABLE services DROP COLUMN ownership`
+  （`Store._drop_column`，列不存在时是 no-op）。**不把旧值迁成标签**——
+  用户已手动打好标签，迁移只会造出重复标签。
+- 连带下线：`SERVICE_MANAGER_OWN_PROJECTS` 环境变量、`summary.own_projects` 字段
+  （曾经用来按 compose 项目名单推导分组，现在没有任何消费者）。
+- `GET /api/services` 的每项仍带 `projects`：该服务包含的 compose 项目，
   由 `service_components.source_key`（`nas:compose:{project}:...`）反解，**不额外问 Docker**；
-  现在只作来源信息展示，**不再决定分组**。
+  只作来源信息展示。
 
 ### 2.8 备份与恢复
 

@@ -28,8 +28,6 @@ export type ReleaseState =
   | "not_configured";
 export type CheckStatus = "never" | "success" | "error";
 export type EndpointKind = "internal" | "external" | "admin";
-/** 归属：这条服务是不是我维护的（决定列表分组，逐条可改） */
-export type Ownership = "mine" | "other";
 export type JobState =
   | "queued"
   | "running"
@@ -162,7 +160,6 @@ export interface ServiceListItem {
   name: string;
   description: string;
   tags: string[];
-  ownership: Ownership;
   revision: number;
   updated_at: string;
   primary_url: string | null;
@@ -178,7 +175,6 @@ export interface ServiceDetail {
   description: string;
   tags: string[];
   notes: string;
-  ownership: Ownership;
   revision: number;
   created_at: string;
   updated_at: string;
@@ -310,7 +306,6 @@ export interface SummaryResponse {
   registry_revision: number;
   checker_heartbeat: string | null;
   /** 「我自己开发的」compose 项目名（列表据此分 tab） */
-  own_projects: string[];
 }
 
 export interface RefreshJobView {
