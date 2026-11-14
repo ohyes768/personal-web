@@ -262,6 +262,7 @@ function SharpeTrendPageInner() {
                     weeks={weeks}
                     series={series}
                     minLatestSharpe={DEFAULT_TREND_THRESHOLD}
+                    gapWeeks={[]}
                     hiddenCodes={new Set<string>()}
                     onLegendChange={() => { /* 单基金无图例联动 */ }}
                   />

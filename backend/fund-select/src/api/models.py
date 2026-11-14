@@ -248,11 +248,15 @@ class SharpeBoardItemDTO(BaseModel):
 
     v2（11-13 任务）：listed_weeks 改为 52 周窗口内计数；新增近12周达标
     与同类分位展示字段。
+    v4 口径（11-14-sharpe-board-gap-weeks）：新增可评周数与数据缺口周——
+    数据缺口周（无榜 / 样本未更新）不计入在榜、也不打断连续周数。
     """
     code: str
     name: str                      # 最近上榜观测的名称快照（改名不抹历史）
-    listed_weeks: int              # 52 周窗口内在榜周数
-    consecutive_weeks: int         # 窗口内最近一段连续在榜周数
+    listed_weeks: int              # 52 周窗口内在榜周数（分子）
+    evaluable_weeks: int = 0       # 可评周数（分母）：窗口内该基金有有效样本的周数
+    consecutive_weeks: int         # 窗口内最近一段连续在榜周数（数据缺口周不中断）
+    gap_weeks: list[date] = []     # 该基金的数据缺口周（无榜 / 样本未更新）
     latest_sharpe: Optional[float] = None  # 最近上榜夏普（不是「当前夏普」）
     last_listed_week: Optional[date] = None
     on_latest_board: bool = False  # 是否在最新成功（complete）榜单内
@@ -279,6 +283,7 @@ class SharpeBoardSeriesDTO(BaseModel):
 class SharpeBoardDiagnosticsDTO(BaseModel):
     """数据状态透明化（R6/R7：成功空榜/采集失败/样本未更新可区分）"""
     no_board_weeks: list[date] = []    # 周历内无 complete 榜的周（失败/停机/未跑）
+    gap_weeks: list[date] = []         # 周历内数据不可用的周（没发榜 或 有基金样本未更新）
     latest_diagnostics: dict = {}      # 最新尝试行的 diagnostics_json 原样（stale_codes 等）
 
 

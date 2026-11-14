@@ -8,9 +8,12 @@ import { test } from 'node:test';
 import {
   DEFAULT_SHARPE_FILTERS,
   classifySharpeBoard,
+  consecutiveWeeksTip,
   describeEntryFilters,
   describePrefilters,
+  formatListedWeeks,
   hasPointInRange,
+  listedWeeksTip,
   parseSharpeFiltersFromSearch,
   sharpeFiltersActive,
   sharpeFiltersToQuery,
@@ -42,7 +45,7 @@ function response(overrides: Partial<SharpeBoardResponse> = {}): SharpeBoardResp
     items: [],
     weeks: [],
     series: [],
-    diagnostics: { no_board_weeks: [], latest_diagnostics: {} },
+    diagnostics: { no_board_weeks: [], gap_weeks: [], latest_diagnostics: {} },
     ...overrides,
   };
 }
@@ -236,4 +239,34 @@ test('describeEntryFilters：v3 年度同类排名门槛文案', () => {
   assert.ok(parts.includes('近 3 个完整年度中至少 2 年同类排名前 25%'));
   // 不再出现 v2 的滚动口径文案
   assert.ok(!parts.some(p => p.includes('近三年同类排名前')));
+});
+
+// ── 数据缺口周口径（11-14-sharpe-board-gap-weeks）────────────────────────────
+
+test('在榜列文案：在榜/可评（分母 = 该基金有有效样本的周数）', () => {
+  assert.equal(formatListedWeeks(51, 51), '51/51');
+  assert.equal(formatListedWeeks(50, 51), '50/51');
+  assert.equal(formatListedWeeks(8, 52), '8/52');
+  // 老后端没有可评周数 → 只显示在榜周数（不显示 "51/0"）
+  assert.equal(formatListedWeeks(51, null), '51');
+  assert.equal(formatListedWeeks(51, 0), '51');
+});
+
+test('在榜列 tooltip：说明分母口径 + 列出数据缺口周', () => {
+  const tip = listedWeeksTip(51, 51, ['2026-02-16']);
+  assert.match(tip, /51\/51/);
+  assert.match(tip, /可评 51 周/);
+  assert.match(tip, /2026-02-16/);
+  assert.match(tip, /不打断连续/);
+  // 无缺口周 → 不提缺口
+  assert.doesNotMatch(listedWeeksTip(51, 51, []), /数据缺口周/);
+});
+
+test('连续周数 tooltip：数据缺口不打断连续 + 列出缺口周', () => {
+  const tip = consecutiveWeeksTip(51, ['2026-02-16']);
+  assert.match(tip, /最近连续 51 周/);
+  assert.match(tip, /数据缺口周跳过、不中断/);
+  assert.match(tip, /真实缺席/);
+  assert.match(tip, /2026-02-16/);
+  assert.doesNotMatch(consecutiveWeeksTip(32, []), /数据缺口周：/);
 });

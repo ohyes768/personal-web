@@ -44,6 +44,8 @@ interface SharpeChartProps {
   weeks: string[];
   series: SharpeChartSeriesInput[];
   minLatestSharpe: number | null;
+  /** 数据缺口周（没发榜 / 样本未更新）：竖线标记 + tooltip 提示 */
+  gapWeeks: readonly string[];
   /** 图例取消选中的 code 集（父组件持有） */
   hiddenCodes: ReadonlySet<string>;
   /** 图例点击切换回传：code → 是否可见 */
@@ -54,6 +56,7 @@ export default function SharpeChart({
   weeks,
   series,
   minLatestSharpe,
+  gapWeeks,
   hiddenCodes,
   onLegendChange,
 }: SharpeChartProps) {
@@ -67,8 +70,8 @@ export default function SharpeChart({
   // 依赖签名保持实例存活 → dataZoom 缩放/图例交互状态不被重置
   // （implement 步骤 5：「翻页不重置图状态」）
   const dataSignature = useMemo(
-    () => JSON.stringify([weeks, series.map(s => [s.code, s.values])]),
-    [weeks, series],
+    () => JSON.stringify([weeks, gapWeeks, series.map(s => [s.code, s.values])]),
+    [weeks, gapWeeks, series],
   );
 
   // 数据变化：全量重设 option（含最新 legend.selected）
@@ -82,6 +85,7 @@ export default function SharpeChart({
         weeks,
         series,
         minLatestSharpe,
+        gapWeeks,
         hiddenCodes: hiddenRef.current,
       });
       const existing = echarts.getInstanceByDom(el);

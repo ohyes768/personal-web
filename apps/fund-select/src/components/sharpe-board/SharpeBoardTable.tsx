@@ -11,7 +11,12 @@
 import Link from 'next/link';
 
 import type { SharpeBoardItem } from '@/lib/sharpe-board';
-import { formatWeekDay } from '@/lib/sharpe-board';
+import {
+  consecutiveWeeksTip,
+  formatListedWeeks,
+  formatWeekDay,
+  listedWeeksTip,
+} from '@/lib/sharpe-board';
 import { sharpeTrendHref } from '@/lib/sharpe-trend';
 
 interface SharpeBoardTableProps {
@@ -97,8 +102,18 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
             <th className={`${th} w-[8rem]`}>名称</th>
             <th className={`${th} text-right`}>近1年收益</th>
             <th className={`${th} text-right`}>近3年收益</th>
-            <th className={`${th} text-right`}>近52周在榜</th>
-            <th className={`${th} text-right`}>最近连续周数</th>
+            <th
+              className={`${th} text-right`}
+              title="在榜周数 / 可评周数（该基金有有效样本的周数）；数据缺口周不计入在榜、不打断连续"
+            >
+              近52周在榜
+            </th>
+            <th
+              className={`${th} text-right`}
+              title="最近一段连续在榜周数；数据缺口周跳过不中断，真实缺席（可评却未上榜）才中断"
+            >
+              最近连续周数
+            </th>
             <th className={`${th} text-right`}>近12周达标</th>
             <th className={`${th} text-right`}>同类分位</th>
             <th className={`${th} text-right`}>最近上榜夏普</th>
@@ -164,8 +179,23 @@ export function SharpeBoardTable({ items, loading, focusCode, onFocusToggle, onO
                 <td className={`${td} text-right tnum whitespace-nowrap ${retClass(item.ret_3y)}`}>
                   {formatRet(item.ret_3y)}
                 </td>
-                <td className={`${td} text-right tnum font-semibold text-ink-strong`}>{item.listed_weeks}</td>
-                <td className={`${td} text-right tnum text-ink-muted`}>{item.consecutive_weeks}</td>
+                <td className={`${td} text-right tnum font-semibold text-ink-strong whitespace-nowrap`}>
+                  {/* 在榜/可评：分母 = 该基金有有效样本的周数（数据缺口周不计入） */}
+                  <span
+                    className="hover-tip hover-tip--wrap"
+                    data-tip={listedWeeksTip(item.listed_weeks, item.evaluable_weeks, item.gap_weeks)}
+                  >
+                    {formatListedWeeks(item.listed_weeks, item.evaluable_weeks)}
+                  </span>
+                </td>
+                <td className={`${td} text-right tnum text-ink-muted whitespace-nowrap`}>
+                  <span
+                    className="hover-tip hover-tip--wrap"
+                    data-tip={consecutiveWeeksTip(item.consecutive_weeks, item.gap_weeks)}
+                  >
+                    {item.consecutive_weeks}
+                  </span>
+                </td>
                 <td
                   className={`${td} text-right tnum whitespace-nowrap ${
                     item.near_12w_qualified !== null && item.near_12w_total !== null

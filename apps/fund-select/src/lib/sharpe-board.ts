@@ -39,7 +39,11 @@ export interface SharpeBoardItem {
   name: string;
   /** v2：52 周窗口内在榜周数（不是全历史累计） */
   listed_weeks: number;
+  /** 可评周数（分母）：窗口内该基金有有效样本的周数（数据缺口周不计入） */
+  evaluable_weeks: number;
   consecutive_weeks: number;
+  /** 该基金在榜期间的数据缺口周（无榜 / 样本未更新）；不计入在榜、不打断连续 */
+  gap_weeks: string[];
   /** 最近上榜夏普（不是「当前夏普」，R3） */
   latest_sharpe: number | null;
   last_listed_week: string | null;
@@ -69,6 +73,8 @@ export interface SharpeBoardSeries {
 /** 数据状态透明化（成功空榜/采集失败/样本未更新可区分） */
 export interface SharpeBoardDiagnostics {
   no_board_weeks: string[];
+  /** 周历内数据不可用的周：没发榜，或该周有基金样本未更新（节假日休市等） */
+  gap_weeks: string[];
   latest_diagnostics: Record<string, unknown>;
 }
 
@@ -321,4 +327,46 @@ export function formatBoardTime(iso: string | null): string {
     minute: '2-digit',
     hour12: false,
   }).format(new Date(iso));
+}
+
+// ─────────────────────────────────────────────────────────────
+// 数据缺口周口径（11-14-sharpe-board-gap-weeks）
+//
+// 「近52周在榜」= 在榜周数 / 可评周数：分母是窗口内该基金**有有效样本**的周数。
+// 数据缺口周（没发榜 / 样本未更新）既不计入在榜，也不打断连续周数——
+// 连续段只被「可评却没上榜」的真实缺席打断。
+// ─────────────────────────────────────────────────────────────
+
+/** 在榜列文案：在榜/可评（51/51）；可评周数缺失（老后端）→ 只显示在榜周数 */
+export function formatListedWeeks(
+  listed: number,
+  evaluable: number | null | undefined,
+): string {
+  if (typeof evaluable !== 'number' || evaluable <= 0) return `${listed}`;
+  return `${listed}/${evaluable}`;
+}
+
+/** 在榜列 tooltip：分母口径 + 该基金的数据缺口周 */
+export function listedWeeksTip(
+  listed: number,
+  evaluable: number | null | undefined,
+  gapWeeks: readonly string[] = [],
+): string {
+  const head =
+    typeof evaluable === 'number' && evaluable > 0
+      ? `近 52 周在榜 ${listed}/${evaluable}：在榜 ${listed} 周 ÷ 可评 ${evaluable} 周（该基金有有效样本的周数）`
+      : `近 52 周在榜 ${listed} 周`;
+  if (gapWeeks.length === 0) return head;
+  return `${head}；数据缺口周（无榜 / 样本未更新，不计入在榜、也不打断连续）：${gapWeeks.join('、')}`;
+}
+
+/** 连续周数列 tooltip：连续段口径 + 该基金的数据缺口周 */
+export function consecutiveWeeksTip(
+  consecutive: number,
+  gapWeeks: readonly string[] = [],
+): string {
+  const base =
+    `最近连续 ${consecutive} 周：从最近上榜周逐周往回数；数据缺口周跳过、不中断，真实缺席（可评却未上榜）才中断`;
+  if (gapWeeks.length === 0) return base;
+  return `${base}；该基金的数据缺口周：${gapWeeks.join('、')}`;
 }

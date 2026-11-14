@@ -197,7 +197,9 @@ function SharpeBoardPageInner() {
       </header>
 
       <div className="max-w-[1400px] mx-auto px-3 sm:px-4 py-4 space-y-3">
-        {data && <SharpeBoardProfileCard profile={data.profile} />}
+        {data && (
+          <SharpeBoardProfileCard profile={data.profile} gapWeeks={data.diagnostics.gap_weeks} />
+        )}
         {data && <SharpeBoardStatusBar data={data} />}
 
         <SharpeBoardFilters filters={filters} onChange={updateFilters} />
@@ -252,6 +254,7 @@ function SharpeBoardPageInner() {
                 weeks={data.weeks}
                 series={data.series}
                 minLatestSharpe={filters.minLatestSharpe}
+                gapWeeks={data.diagnostics.gap_weeks}
                 hiddenCodes={effectiveHidden}
                 onLegendChange={onLegendChange}
               />

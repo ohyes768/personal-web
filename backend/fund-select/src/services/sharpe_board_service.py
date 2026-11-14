@@ -591,6 +591,30 @@ def _attempt_payload(row: SharpeBoardWeek) -> dict:
     }
 
 
+def _week_stale_codes(week: SharpeBoardWeek) -> set[str]:
+    """该周样本未更新的基金（diagnostics.stale_codes）。
+
+    发布侧语义（publish_week_board 第 6 步）：入选谓词通过、但样本尾日相对上次
+    发布没有前进的基金 → 不写新点、留空断线。这里把它提升为统计层的
+    「该基金本周没有有效样本」信号——数据缺口周（节假日休市等）据此豁免。
+
+    容错：diagnostics_json 为 NULL / 非 dict / stale_codes 非 list → 空集，
+    脏数据不得让整页聚合失败。
+    """
+    if not week.diagnostics_json:
+        return set()
+    try:
+        data = json.loads(week.diagnostics_json)
+    except (TypeError, ValueError):
+        return set()
+    if not isinstance(data, dict):
+        return set()
+    codes = data.get("stale_codes")
+    if not isinstance(codes, list):
+        return set()
+    return {c for c in codes if isinstance(c, str)}
+
+
 def aggregate_board(
     db: Session,
     *,
@@ -621,6 +645,16 @@ def aggregate_board(
     链路的观测（周历并集、同 code 合并周值、on_latest_board = 任一来源最新
     complete 榜成员）；profile 返回两条规则副本（profile 的 source 字段为
     "all"，filters 取两份并集展示用 JSON——实际发布规则仍按各自 profile 冻结）。
+
+    数据缺口周（11-14-sharpe-board-gap-weeks）：
+    - 窗口内每个 (基金, 周) 归三类：listed（在榜）/ gap（数据缺口）/ miss（可评缺席）。
+    - gap = 该基金该周没有有效样本：该来源该周没发 complete 榜，或该基金在该周
+      该来源的 diagnostics.stale_codes 里（样本尾日未前进，节假日休市常见）。
+    - gap 周不计入在榜、**也不打断连续周数**；只有 miss（发了榜、样本新鲜、没进榜）
+      才中断连续——真实缺席仍中断，数据缺失不冒充表现断档。
+    - evaluable_weeks = 窗口内该基金有有效样本的周数（= 52 − gap 周数），
+      作为「近52周在榜」的分母；listed_weeks 仍是分子、排序键不变。
+    - source=all 时 gap 取「所有在册来源都缺口」：任一来源能给出有效样本即视为可评。
     """
     if range_key not in _RANGE_WEEKS:
         raise ValueError(f"unknown range: {range_key}")
@@ -639,6 +673,34 @@ def aggregate_board(
     complete_weeks = [w for w in week_rows if w.status == STATUS_COMPLETE]
     complete_by_week = {w.week_start: w for w in complete_weeks}
     latest_complete = complete_weeks[-1] if complete_weeks else None
+
+    # 数据缺口判定用的事实：(source, week_start) → (发布状态, 样本未更新的基金)
+    week_meta: dict[tuple[str, date], tuple[str, set[str]]] = {
+        (w.source, w.week_start): (w.status, _week_stale_codes(w)) for w in week_rows
+    }
+
+    def _is_gap(code: str, week: date) -> bool:
+        """该基金该周是否数据缺口（无榜 / 样本未更新）。
+
+        scope 内任一来源能给出有效样本 → 不是缺口（可评）；所有来源都缺口 → 缺口。
+        """
+        for src in sources:
+            meta = week_meta.get((src, week))
+            if meta is None:
+                continue  # 该来源这周没有批次行 → 没发榜 → 缺口
+            status, stale = meta
+            if status != STATUS_COMPLETE:
+                continue  # 没发榜（failed / skipped_no_new_data）→ 缺口
+            if code not in stale:
+                return False  # 该来源样本新鲜 → 可评
+        return True
+
+    # 窗口内的周一网格（52 周，与窗口起点同为周一）
+    grid_weeks: list[date] = []
+    _gw = window_start
+    while _gw <= current:
+        grid_weeks.append(_gw)
+        _gw += timedelta(days=7)
 
     # 全历史观测（观测只在发布 complete 时写入，天然无 failed/skipped 值）
     entries: dict[str, list[tuple[date, SharpeBoardObservation]]] = {}
@@ -685,11 +747,16 @@ def aggregate_board(
         eps.sort(key=lambda e: e[0])
         # 窗口截断：只保留最近 52 周的观测，历史行仍在库里但不参与统计
         eps_in = [(w, o) for w, o in eps if w >= window_start]
+        # 数据缺口：该基金该周没有有效样本（该来源没发 complete 榜 / 该基金样本未更新）
+        gap_all = {w for w in grid_weeks if _is_gap(code, w)}
+        # 可评周数（分母）：窗口内该基金有有效样本的周数
+        evaluable_weeks = len(grid_weeks) - len(gap_all)
         if not eps_in:
             # 只在窗口外上榜过 → listed_weeks=0，由 min_weeks 默认筛掉
             stats[code] = {
                 "code": code, "name": eps[0][1].name,
-                "listed_weeks": 0, "consecutive_weeks": 0,
+                "listed_weeks": 0, "evaluable_weeks": evaluable_weeks,
+                "consecutive_weeks": 0, "gap_weeks": [],
                 "latest_sharpe": None, "last_listed_week": None,
                 "on_latest_board": code in latest_codes,
                 "week_sharpe": {},
@@ -700,13 +767,21 @@ def aggregate_board(
             }
             continue
         last_week, last_obs = eps_in[-1]
+        first_week = eps_in[0][0]
         week_set = {w for w, _ in eps_in}
         consecutive = 0
         w = last_week
-        while w in week_set and w >= window_start:
+        while w >= window_start:
             # 连续段跨窗口边界时截断（design §5.0）
-            consecutive += 1
+            if w in week_set:
+                consecutive += 1
+            elif w not in gap_all:
+                # 可评但缺席（真实缺席）→ 中断；数据缺口周 → 跳过，不中断
+                break
             w -= timedelta(days=7)
+        # 该基金在榜期间的数据缺口周（含连续段之外、被真实缺席截断之前的那些）；
+        # 上榜之前的缺口与该基金无关，不展示
+        gap_weeks = [w for w in grid_weeks if w in gap_all and first_week <= w <= last_week]
         recent = eps_in[-NEAR_WEEKS:]
         # 同类排名证据：取窗口内最新一条带 peer 数据的观测。
         # v2 冻结的是 {peer_pct, as_of}（滚动口径）；v3 是
@@ -740,7 +815,9 @@ def aggregate_board(
             "code": code,
             "name": last_obs.name,
             "listed_weeks": len(eps_in),
+            "evaluable_weeks": evaluable_weeks,
             "consecutive_weeks": consecutive,
+            "gap_weeks": gap_weeks,
             "latest_sharpe": last_obs.sharpe,
             "last_listed_week": last_week,
             "on_latest_board": code in latest_codes,
@@ -778,7 +855,8 @@ def aggregate_board(
     # 4) total 在切片前算；items 切片在排序后（contracts 分页不变量）
     total = len(matched)
     offset = (page - 1) * limit
-    item_keys = ("code", "name", "listed_weeks", "consecutive_weeks",
+    item_keys = ("code", "name", "listed_weeks", "evaluable_weeks",
+                 "consecutive_weeks", "gap_weeks",
                  "latest_sharpe", "last_listed_week", "on_latest_board",
                  "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of",
                  "peer_years", "peer_qualified_years", "peer_window")
@@ -842,8 +920,17 @@ def aggregate_board(
     # 7) 状态与诊断：latest_attempt 是最新尝试行（任意状态）；当前周无 complete
     #    榜即 stale（失败/停机/未跑，不冒充本周，R6/R7）
     latest_attempt = week_rows[-1] if week_rows else None
+    # 周级数据缺口周：没发 complete 榜，或该周任一来源有基金样本未更新
+    # （stale_codes 非空 → 该周对部分基金不可评）。与 no_board_weeks 并存：
+    # 后者只含「根本没发榜」的周，前者含「发了榜但数据不完整」的周。
+    board_gap_weeks = [
+        w for w in weeks
+        if w not in complete_by_week
+        or any(week_meta.get((src, w), ("", set()))[1] for src in sources)
+    ]
     diagnostics = {
         "no_board_weeks": [w for w in weeks if w not in complete_by_week],
+        "gap_weeks": board_gap_weeks,
         "latest_diagnostics": (
             json.loads(latest_attempt.diagnostics_json)
             if latest_attempt is not None and latest_attempt.diagnostics_json else {}

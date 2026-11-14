@@ -302,15 +302,24 @@ class TestStatusSemantics:
             "000001"] == [0.95, None, None]
 
     def test_gap_week_axis_with_downtime(self, client, board_db):
-        """停机周在周历留空位：WEEK2 无任何周行 → weeks 仍三格 + 诊断列出无榜周"""
+        """停机周在周历留空位：WEEK2 无任何周行 → weeks 仍三格 + 诊断列出无榜周
+
+        v4 口径（11-14-sharpe-board-gap-weeks）：无榜周 = 数据缺口 → 不打断连续，
+        基金A 的连续段跨过 WEEK2（2 周）；真实缺席（可评却未上榜）才中断。
+        """
         _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
         _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
         body = _get(client)
         assert body["weeks"] == ["2026-10-19", "2026-10-26", "2026-11-02"]
         assert body["diagnostics"]["no_board_weeks"] == ["2026-10-26"]
+        assert body["diagnostics"]["gap_weeks"] == ["2026-10-26"]
         assert body["series"][0]["values"] == [0.95, None, 1.05]
-        # 缺席/未知中断连续计数：10-26 未知 → 最近连续 1 周
-        assert body["items"][0]["consecutive_weeks"] == 1
+        # 无榜周是数据缺口 → 连续不中断（跨过 WEEK2）
+        assert body["items"][0]["consecutive_weeks"] == 2
+        assert body["items"][0]["listed_weeks"] == 2
+        assert body["items"][0]["gap_weeks"] == ["2026-10-26"]
+        # 可评周数 = 窗口内有有效样本的周数（本 fixture 只有 WEEK1/WEEK3 发过榜）
+        assert body["items"][0]["evaluable_weeks"] == 2
 
     def test_no_history_empty_state(self, client, board_db):
         """首次无数据：零榜 → total=0、weeks 空、stale、无 published"""
@@ -335,16 +344,22 @@ class TestStatusSemantics:
         assert body["stale"] is True
 
     def test_skipped_week_visible_in_diagnostics(self, client, board_db):
-        """skipped_no_new_data 周也无榜（R6：不重复抄旧值冒充在榜）"""
+        """skipped_no_new_data 周也无榜（R6：不重复抄旧值冒充在榜）
+
+        v4 口径：该周是数据缺口（没发榜 + 该基金样本未更新）→ 不打断连续。
+        """
         _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
         _seed_week(board_db, WEEK2, status="skipped_no_new_data",
                    diagnostics={"stale_codes": ["000001"]})
         _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
         body = _get(client)
         assert body["diagnostics"]["no_board_weeks"] == ["2026-10-26"]
+        assert body["diagnostics"]["gap_weeks"] == ["2026-10-26"]
         assert body["diagnostics"]["latest_diagnostics"] == {}  # 最新是 WEEK3 complete
         assert body["items"][0]["listed_weeks"] == 2
-        assert body["items"][0]["consecutive_weeks"] == 1
+        assert body["items"][0]["consecutive_weeks"] == 2  # 跨过缺口周
+        assert body["items"][0]["evaluable_weeks"] == 2
+        assert body["items"][0]["gap_weeks"] == ["2026-10-26"]
 
 
 class TestHistoryPreservation:
@@ -442,6 +457,107 @@ class TestPaginationInvariants:
         assert [it["code"] for it in body["items"]] == ["000003", "000002", "000004", "000001"]
 
 
+class TestGapWeekSemantics:
+    """数据缺口周口径（11-14-sharpe-board-gap-weeks）
+
+    - gap（无榜 / 该基金样本未更新）→ 不计入在榜、不打断连续
+    - miss（发了榜、样本新鲜、没进榜）→ 真实缺席，中断连续
+    - evaluable_weeks = 可评周数（在榜列的分母）
+    """
+
+    def test_stale_fund_gap_does_not_break_streak(self, client, board_db):
+        """发了榜但该基金样本未更新 → 数据缺口 → 连续跨过该周"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)},
+                   diagnostics={"stale_codes": ["000001"]})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client)
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["listed_weeks"] == 2
+        assert a["consecutive_weeks"] == 2       # 跨过 WEEK2 缺口周
+        assert a["evaluable_weeks"] == 2        # WEEK1/WEEK3 可评（WEEK2 样本未更新）
+        assert a["gap_weeks"] == ["2026-10-26"]
+        # 周级诊断：发了榜但数据不全 → 属 gap，不属 no_board
+        assert body["diagnostics"]["gap_weeks"] == ["2026-10-26"]
+        assert body["diagnostics"]["no_board_weeks"] == []
+
+    def test_real_absence_still_breaks_streak(self, client, board_db):
+        """发了榜、样本新鲜、只是没进榜 → 真实缺席 → 中断连续（旧口径保留）"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)})
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client)
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["consecutive_weeks"] == 1
+        assert a["gap_weeks"] == []
+        assert a["evaluable_weeks"] == 3        # 三周都发了榜、都可评
+
+    def test_gap_weeks_exclude_pre_listing_weeks(self, client, board_db):
+        """上榜前的缺口周与该基金无关 → 不进 gap_weeks（可评周数分母仍受其影响）"""
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)})
+        _seed_week(board_db, WEEK3, {"000002": ("基金B", 0.94)})
+        body = _get(client)
+        b = {it["code"]: it for it in body["items"]}["000002"]
+        assert b["gap_weeks"] == []
+        assert b["listed_weeks"] == 2
+        assert b["consecutive_weeks"] == 2
+        assert b["evaluable_weeks"] == 2        # 只有 WEEK2/WEEK3 发过榜
+
+    def test_gap_before_real_break_still_listed(self, client, board_db):
+        """缺口周即使落在连续段之外（在真实缺席截断之前）也进 gap_weeks"""
+        prev = date(2026, 10, 12)
+        _seed_week(board_db, prev, {"000001": ("基金A", 0.90)})
+        _seed_week(board_db, WEEK1, {"000002": ("基金B", 0.92)},
+                   diagnostics={"stale_codes": ["000001"]})   # A 样本未更新 → 缺口
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.93)})  # A 可评却没进榜 → 缺席
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)})
+        body = _get(client)
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["gap_weeks"] == ["2026-10-19"]
+        assert a["consecutive_weeks"] == 1     # 被 WEEK2 的真实缺席截断
+        assert a["listed_weeks"] == 2
+        assert a["evaluable_weeks"] == 3      # 10-12 / 10-26 / 11-02 可评
+
+    def test_all_source_gap_needs_all_sources_gap(self, client, board_db):
+        """source=all：只有全部来源都缺口才算缺口周（任一来源可评即为可评）"""
+        # stock 在 WEEK2 整周没发榜；discovery-stock 发了榜且 000001 样本新鲜
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="discovery-stock", version="v3")
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)},
+                   source="discovery-stock", version="v3")
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="discovery-stock", version="v3")
+        body = _get(client, source="all", profile_version="v3")
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        # discovery-stock 那周可评（样本新鲜、只是没进榜）→ 真实缺席 → 中断
+        assert a["consecutive_weeks"] == 1
+        assert a["gap_weeks"] == []
+        assert a["evaluable_weeks"] == 3
+
+    def test_all_source_gap_when_every_source_gap(self, client, board_db):
+        """source=all：stock 没发榜 + discovery-stock 该基金 stale → 缺口周"""
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK1, {"000001": ("基金A", 0.95)},
+                   source="discovery-stock", version="v3")
+        _seed_week(board_db, WEEK2, {"000002": ("基金B", 0.92)},
+                   source="discovery-stock", version="v3",
+                   diagnostics={"stale_codes": ["000001"]})
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="stock", version="v3")
+        _seed_week(board_db, WEEK3, {"000001": ("基金A", 1.05)},
+                   source="discovery-stock", version="v3")
+        body = _get(client, source="all", profile_version="v3")
+        a = {it["code"]: it for it in body["items"]}["000001"]
+        assert a["consecutive_weeks"] == 2       # 跨过 WEEK2 缺口周
+        assert a["gap_weeks"] == ["2026-10-26"]
+        assert a["evaluable_weeks"] == 2
+
+
 class TestApiValidation:
     """参数合同：非法 422、未知版本 404"""
 
@@ -492,8 +608,12 @@ class TestApiValidation:
                     # v2 新增（DTO 显式声明，防 Pydantic 静默砍字段）
                     "near_12w_qualified", "near_12w_total", "peer_pct", "peer_as_of",
                     # v3 年度口径
-                    "peer_years", "peer_qualified_years", "peer_window"):
+                    "peer_years", "peer_qualified_years", "peer_window",
+                    # v4 数据缺口周口径
+                    "evaluable_weeks", "gap_weeks"):
             assert key in item
+        for key in ("no_board_weeks", "gap_weeks", "latest_diagnostics"):
+            assert key in body["diagnostics"]
         attempt = body["latest_attempt"]
         for key in ("week_start", "status", "trigger", "started_at",
                     "finished_at", "selected_count", "errors"):
