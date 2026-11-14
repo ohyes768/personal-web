@@ -1819,6 +1819,30 @@ gap = (week_status[w] != STATUS_COMPLETE) or (code in stale_codes[w])
    与 `source` 正交 —— 三种 source 下都生效。`market` 态下还会把 universe 子类集合同步收窄
    （两者叠加等价于交集）。
 
+### 22.4b 前端 hook 的依赖数组必须包含全部影响请求的维度
+
+`useFundList` / `useStockFundList` 的 `useEffect` 依赖是拼出来的 `query` 字符串。
+**凡是会影响请求内容的筛选维度，都必须进这个字符串** —— 漏一个 = 改了筛选不重新请求
+（URL 变了、chip 出来了、列表纹丝不动，用户以为筛选坏了）。
+
+11-14 实战踩坑：合并页（11-15 之前）的两个 hook 漏了 `market_types` 和 `source`
+（两个 `useDiscovery*` hook 反而有 `market_types`）→ 合并后「基金类型」多选一直是死控件。
+
+```typescript
+const query = [
+  filters.min_age, filters.min_size_yi, filters.max_dd_3y, filters.min_mgr_exp,
+  filters.min_sharpe,
+  filters.exclude_qdii, filters.sort, filters.order,
+  filters.page, filters.limit,
+  filters.search_code,
+  (filters.market_types ?? []).join(','),   // ← 漏了 = 改了类型不重拉
+  filters.source ?? '',                     // ← 漏了 = 切分段不重拉
+].join('|');
+```
+
+**验收手法**：改完筛选后在浏览器网络面板确认**确实发出了新的 `/api/funds/*/screen`
+请求**（只看 URL 变化会被骗 —— URL 变了不代表请求发了）。
+
 ### 22.5 source 必须真的从 URL 解析（死控件的修复）
 
 `useFilters.parseFiltersFromSearch()` 早期**从不读 `?source=`** —— `parseSource()`
