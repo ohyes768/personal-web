@@ -58,7 +58,8 @@ export async function getJson<T>(url: string, signal?: AbortSignal): Promise<T> 
 
 export const fundApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${BASE}/screen${buildQuery(filters)}`);
+    // 债基侧粗类别 → 精确 subtype 展开（前端持有 UI 粗类别，后端只认精确值）
+    return getJson(`${BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_BOND)}`, signal);
   },
 
   getDetail(code: string): Promise<FundDetail> {
@@ -86,7 +87,8 @@ const STOCK_BASE = '/funds/api/funds/stock';
 
 export const stockApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${STOCK_BASE}/screen${buildQuery(filters)}`);
+    // 股基侧粗类别 → 精确 subtype 展开
+    return getJson(`${STOCK_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_STOCK)}`, signal);
   },
 
   getDetail(code: string): Promise<FundDetail> {
@@ -111,7 +113,7 @@ const DISCOVERY_STOCK_BASE = '/funds/api/funds/discovery-stock';
 
 export const discoveryBondApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${DISCOVERY_BOND_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_BOND)}`);
+    return getJson(`${DISCOVERY_BOND_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_BOND)}`, signal);
   },
 
   getStats(): Promise<StatsResponse> {
@@ -143,7 +145,7 @@ export const discoveryBondApi = {
 
 export const discoveryStockApi = {
   screen(filters: Partial<FundFilters>, signal?: AbortSignal): Promise<ScreenResponse> {
-    return getJson(`${DISCOVERY_STOCK_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_STOCK)}`);
+    return getJson(`${DISCOVERY_STOCK_BASE}/screen${buildQuery(filters, COARSE_TO_SUBTYPES_STOCK)}`, signal);
   },
 
   getStats(): Promise<StatsResponse> {

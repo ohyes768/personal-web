@@ -1,8 +1,11 @@
 /**
- * 股基主页（/funds/stock）：来源分段 = 全部 | 三分法 | 市场（11-15-source-segmented）
+ * 股基主页（/funds/stock）：来源分段 = 市场 | 三分法（11-15-source-segmented）
+ * - market：akshare 子类圈定（默认浏览态，此时展示市场类型多选）
  * - curated：funds_stock.yaml 名单（原「股基·雪球三分法」tab）
- * - market：akshare 子类圈定（原「股基·市场」tab，此时展示市场类型多选）
- * - all：两者并集（默认浏览态）
+ *
+ * 为什么没有「全部」：股基三分法 142 只**全部**含在市场 universe 内，
+ * 「全部」与「市场」逐只同集（已按 code 集合核对），多一个分段只是噪音。
+ * 三分法成员在「市场」态用行内徽章标出。
  *
  * 复用：
  *   - FundsHeader（nav 收敛后 5 tab）
@@ -33,14 +36,22 @@ import {
 import { useSearchParams } from 'next/navigation';
 
 import { useFilters } from '@/lib/useFilters';
-import { STOCK_DEFAULT_FILTERS, type FundListItem } from '@/lib/types';
+import {
+  STOCK_DEFAULT_FILTERS, STOCK_MARKET_TYPE_OPTIONS, STOCK_OPTION_LABELS, type FundListItem,
+} from '@/lib/types';
+
+/** 股基来源分段只有两态（没有「全部」：与「市场」逐只同集） */
+const STOCK_SOURCE_SEGMENTS = [
+  { key: 'market' as const, label: '市场', title: 'akshare 市场子类圈定（全量）' },
+  { key: 'curated' as const, label: '三分法', title: '仅雪球三分法名单（142 只）' },
+];
 
 function StockFundsPageInner() {
   const {
     filters, setFilter, setSearchCode, toggleSort, clearAll, setPage, setLimit, activeCount,
   } = useFilters(STOCK_DEFAULT_FILTERS);
   const { items, total, loading, error, reload } = useStockFundList(filters);
-  const source = filters.source ?? 'all';
+  const source = filters.source ?? 'market';
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
@@ -86,14 +97,23 @@ function StockFundsPageInner() {
           <SourceSegmented
             value={source}
             onChange={next => setFilter('source', next)}
+            segments={STOCK_SOURCE_SEGMENTS}
           />
         </div>
         <FilterChipBar
           filters={filters}
-          onRemove={key => setFilter(key, key === 'exclude_qdii' ? false : null)}
+          onRemove={(key, value) => {
+            if (key === 'exclude_qdii') setFilter(key, false);
+            else if (key === 'market_types' && value != null) {
+              // 只移除这一个类型（不是整组清空）
+              const rest = (filters.market_types ?? []).filter(t => t !== value);
+              setFilter('market_types', rest.length > 0 ? rest : null);
+            } else setFilter(key, null);
+          }}
           showCodeSearch
           searchCode={searchCode}
           onClearSearch={() => setSearchCode(null)}
+          marketTypeLabels={STOCK_OPTION_LABELS}
         />
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">
@@ -104,6 +124,7 @@ function StockFundsPageInner() {
               activeCount={activeCount}
               dimensions={STOCK_DIMENSIONS}
               showMarketTypes={source === 'market'}
+              marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -119,6 +140,8 @@ function StockFundsPageInner() {
               onToggleCompare={compare.toggle}
               showBondColumns={false}
               showRiskColumns
+              marketKind="stock"
+              showCuratedBadge={source === 'market'}
               onRowClick={setDetailFund}
               ddBarCapPct={60}
               trendEnabled
@@ -152,6 +175,7 @@ function StockFundsPageInner() {
         activeCount={activeCount}
         dimensions={STOCK_DIMENSIONS}
         showMarketTypes={source === 'market'}
+        marketTypeOptions={STOCK_MARKET_TYPE_OPTIONS}
       />
 
       <CompareFloatingBar

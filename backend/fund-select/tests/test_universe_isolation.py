@@ -7,7 +7,7 @@ from src.services.filter_service import FilterService
 
 def _mk(code: str, **kw) -> Fund:
     defaults = dict(
-        code=code, name=f"基金{code}", fund_type="债券型-长期纯债",
+        code=code, name=f"基金{code}", fund_type="债券型-长债",
         age_years=5.0, size_yi=10.0,
         mgr_name="张", mgr_company="某司",
         mgr_days=2000, mgr_experience_years=5.5,
@@ -20,13 +20,13 @@ def _mk(code: str, **kw) -> Fund:
 def _seed_mixed(db):
     """同一张表里混入债基宇宙、股票宇宙、两边都不在的活跃基金。"""
     db.add_all([
-        _mk("100001", fund_type="债券型-长期纯债"),          # 债基 yaml
+        _mk("100001", fund_type="债券型-长债"),          # 债基 yaml
         _mk("100002", fund_type="混合型-偏债"),              # 债基 yaml（类型不是债）
-        _mk("100003", fund_type="债券型-长期纯债", is_active=False),  # 债基 yaml 但清盘
+        _mk("100003", fund_type="债券型-长债", is_active=False),  # 债基 yaml 但清盘
         _mk("100004", market_subtype="QDII"),                    # 债基 yaml
         _mk("200001", fund_type="股票型-标准指数"),          # 股票 yaml
         _mk("200002", fund_type="混合型-偏股"),              # 股票 yaml
-        _mk("200003", fund_type="债券型-长期纯债"),          # 股票 yaml（类型是债，仍属股票宇宙）
+        _mk("200003", fund_type="债券型-长债"),          # 股票 yaml（类型是债，仍属股票宇宙）
         _mk("300001", fund_type="股票型-标准指数"),          # 两边 yaml 都没有
     ])
     db.add_all([

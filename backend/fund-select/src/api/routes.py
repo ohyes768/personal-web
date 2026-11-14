@@ -44,6 +44,18 @@ router_discovery_bond = APIRouter(prefix="/discovery-bond", tags=["discovery-bon
 router_discovery_stock = APIRouter(prefix="/discovery-stock", tags=["discovery-stock"])
 
 
+def _parse_market_types(raw: Optional[str]) -> list[str] | None:
+    """查询串 '债券型,定开债券' → ['债券型','定开债券']；None/空 → None（走默认）
+
+    四个筛选路由（/screen、/stock/screen、discovery-bond/screen、discovery-stock/screen）
+    共用：前端 UI 选的是粗类别，展开成精确 market_subtype 后以 CSV 传进来。
+    """
+    if not raw:
+        return None
+    out = [s.strip() for s in raw.split(",") if s.strip()]
+    return out if out else None
+
+
 @router.get("/health", tags=["system"])
 async def health():
     """健康检查"""
@@ -61,6 +73,8 @@ async def screen(
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
     source: str = Query("curated", pattern="^(curated|market|all)$",
                         description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
+    market_type: Optional[str] = Query(None,
+                                       description="精确 market_subtype 白名单，CSV；空 = 不按类型收窄"),
     code: Optional[str] = Query(None, pattern=r"^\d{6}$",
                                 description="按代码精确取一只（命中时忽略全部阈值/来源）"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
@@ -89,6 +103,7 @@ async def screen(
         order=order,
         exclude_qdii=exclude_qdii,
         source=source,
+        market_types=_parse_market_types(market_type),
         page=page,
         limit=limit,
     )
@@ -210,6 +225,8 @@ async def stock_screen(
     exclude_qdii: bool = Query(False, description="排除 fund_type 以 QDII 开头或互认基金"),
     source: str = Query("curated", pattern="^(curated|market|all)$",
                         description="来源分段：curated=雪球三分法名单，market=市场子类，all=并集"),
+    market_type: Optional[str] = Query(None,
+                                       description="精确 market_subtype 白名单，CSV；空 = 不按类型收窄"),
     code: Optional[str] = Query(None, pattern=r"^\d{6}$",
                                 description="按代码精确取一只（命中时忽略全部阈值/来源）"),
     page: int = Query(1, ge=1, description="页码，1-indexed"),
@@ -228,7 +245,8 @@ async def stock_screen(
         min_age=min_age, min_size_yi=min_size_yi,
         max_dd_3y=max_dd_3y, min_mgr_exp=min_mgr_exp, min_sharpe=min_sharpe,
         sort=sort, order=order, exclude_qdii=exclude_qdii,
-        source=source, page=page, limit=limit,
+        source=source, market_types=_parse_market_types(market_type),
+        page=page, limit=limit,
     )
 
 
@@ -316,14 +334,6 @@ async def stock_fund_detail(code: str, db=Depends(get_db)):
 # 成员 = market_type ∈ DEFAULT_DISCOVERY_UNIVERSE ∩ is_active
 # 单只详情复用 /api/funds/{code}（设计决策 D2）
 # ──────────────────────────────────────────────────────────────────
-
-
-def _parse_market_types(raw: Optional[str]) -> list[str] | None:
-    """查询串 '债券型,定开债券' → ['债券型','定开债券']；None/空 → None（走默认）"""
-    if not raw:
-        return None
-    out = [s.strip() for s in raw.split(",") if s.strip()]
-    return out if out else None
 
 
 @router_discovery_bond.get("/screen", response_model=ScreenResponse)

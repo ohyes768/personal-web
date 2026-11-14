@@ -363,7 +363,7 @@ class TestMarketFullPipelineCapture:
         cap = SharpeRunCapture(run_id="run-bond")
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                universe_filter=["债券型-中短债", "债券型-长债"],
                 pipeline_profile="bond",
                 preset_task_id="test-cap-bond",
                 capture=cap,

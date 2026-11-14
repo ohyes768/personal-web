@@ -7,12 +7,14 @@
 - all 为 yaml ∪ 子类并集，in_curated 逐行标记正确
 - universe_stats_sourced 三态计数一致（total(all) = |A∪M|）
 - 非法 source 拒绝
+- market_type（精确 subtype 白名单）在三种 source 下都生效
 """
 import pytest
 
 from src.services.filter_service import FilterService
 
-BOND_SUBTYPE = "债券型-长期纯债"     # ∈ DISCOVERY_BOND_SUBTYPES
+BOND_SUBTYPE = "债券型-长债"     # ∈ DISCOVERY_BOND_SUBTYPES（akshare 原值）
+BOND_SUBTYPE_2 = "债券型-中短债"  # ∈ DISCOVERY_BOND_SUBTYPES（另一个纯债子类）
 STOCK_SUBTYPE = "混合型-偏股"        # ∈ DISCOVERY_STOCK_SUBTYPES
 
 
@@ -129,3 +131,96 @@ class TestUniverseStatsSourced:
     def test_stats_invalid_source(self, sourced_db):
         with pytest.raises(ValueError):
             FilterService(sourced_db).universe_stats_sourced("bond", "discovery-bond", "x")
+
+
+class TestSubtypeUniverse:
+    """SUBCLASS_TO_CATEGORY 的键必须是 akshare 基金类型列的**原值**。
+
+    历史事故：键写成「债券型-长期纯债」，而 akshare 原值是「债券型-长债」——
+    生产库 2653 只长债全部降级 other，混不进债基 universe，债基·市场少了一大片。
+    """
+
+    def test_long_bond_subtype_in_bond_universe(self):
+        from src.data.market_subtype_map import (
+            DISCOVERY_BOND_SUBTYPES, SUBCLASS_TO_CATEGORY,
+        )
+        assert "债券型-长债" in DISCOVERY_BOND_SUBTYPES
+        assert SUBCLASS_TO_CATEGORY["债券型-长债"] == "bond"
+
+    def test_every_declared_subtype_is_reachable_from_ui_mapping(self):
+        """契约 §8a：后端 universe 与前端粗类别表必须一一对应（不漏不多）。"""
+        from src.data.market_subtype_map import (
+            DISCOVERY_BOND_SUBTYPES, DISCOVERY_STOCK_SUBTYPES,
+        )
+        import sys
+        from pathlib import Path
+        import re
+
+        ts = (Path(__file__).resolve().parents[3]
+              / "apps" / "fund-select" / "src" / "lib" / "types.ts")
+        if not ts.exists():          # 单测可脱离前端仓库运行
+            pytest.skip("前端 types.ts 不在测试环境")
+        src = ts.read_text(encoding="utf-8")
+
+        def _ui_subtypes(block: str) -> set[str]:
+            m = re.search(re.escape(block) + r"[^=]*=\s*\{(.*?)\};", src, re.S)
+            assert m, f"前端找不到 {block}"
+            return set(re.findall(r"'([^']+)'", m.group(1)))
+
+        ui_bond = _ui_subtypes("COARSE_TO_SUBTYPES_BOND")
+        ui_stock = _ui_subtypes("COARSE_TO_SUBTYPES_STOCK")
+        # 前端表允许比后端 universe 多（覆盖历史子类），但不能少
+        missing_bond = set(DISCOVERY_BOND_SUBTYPES) - ui_bond
+        missing_stock = set(DISCOVERY_STOCK_SUBTYPES) - ui_stock
+        assert not missing_bond, f"前端债基粗类别表漏了 {missing_bond}"
+        assert not missing_stock, f"前端股基粗类别表漏了 {missing_stock}"
+
+
+class TestMarketTypeFilter:
+    """market_type（精确 subtype 白名单）在三种 source 下都生效。
+
+    前端 UI 选的是粗类别，展开成精确 subtype 后以 CSV 传进来；后端不再
+    把它当 universe（universe 由 source 决定），而是额外的 WHERE 条件。
+    """
+
+    @pytest.fixture
+    def typed_db(self, sourced_db):
+        from src.db.models import Fund
+        sourced_db.add(Fund(code="000012", name="中短债", market_subtype=BOND_SUBTYPE_2,
+                            age_years=5.0, size_yi=10.0, mgr_experience_years=8.0,
+                            is_active=True))
+        sourced_db.commit()
+        return sourced_db
+
+    def test_market_filters_by_subtype(self, typed_db):
+        r = FilterService(typed_db).screen(source="market", market_types=[BOND_SUBTYPE_2])
+        assert {it["code"] for it in r["items"]} == {"000012"}
+
+    def test_curated_filters_by_subtype(self, typed_db):
+        """三分法态：只保留名单里子类命中白名单的那只（000001=长债 命中，000002=其他 被剔除）"""
+        r = FilterService(typed_db).screen(source="curated", market_types=[BOND_SUBTYPE])
+        assert {it["code"] for it in r["items"]} == {"000001"}
+
+    def test_all_filters_by_subtype(self, typed_db):
+        r = FilterService(typed_db).screen(source="all", market_types=[BOND_SUBTYPE_2])
+        assert {it["code"] for it in r["items"]} == {"000012"}
+
+    def test_no_market_type_means_no_restriction(self, typed_db):
+        r = FilterService(typed_db).screen(source="market", market_types=None)
+        assert {it["code"] for it in r["items"]} == {"000001", "000010", "000012"}
+
+    def test_market_type_outside_universe_returns_empty(self, typed_db):
+        """白名单里全是不在 universe 的子类 → 空集（不报错）"""
+        r = FilterService(typed_db).screen(source="market", market_types=["货币型-普通货币"])
+        assert r["total"] == 0
+
+    def test_stock_side_market_type(self, typed_db):
+        from src.db.models import Fund
+        typed_db.add(Fund(code="000020", name="股基", market_subtype=STOCK_SUBTYPE,
+                          age_years=5.0, size_yi=10.0, mgr_experience_years=8.0,
+                          is_active=True))
+        typed_db.commit()
+        r = FilterService(typed_db).screen_stock(source="market", market_types=[STOCK_SUBTYPE])
+        assert {it["code"] for it in r["items"]} == {"000020"}
+        r2 = FilterService(typed_db).screen_stock(source="market", market_types=[BOND_SUBTYPE])
+        assert {it["code"] for it in r2["items"]} == set()

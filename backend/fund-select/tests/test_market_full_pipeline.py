@@ -555,7 +555,7 @@ class TestPipelineProfile:
         from datetime import date
         db_session.add_all([
             _mk_fund("000001", "债券型-中短债", size_yi=10, is_active=True),
-            _mk_fund("000002", "债券型-长期纯债", size_yi=10, is_active=True),
+            _mk_fund("000002", "债券型-长债", size_yi=10, is_active=True),
             _mk_fund("000003", "股票型", size_yi=10, is_active=True),
         ])
         # 给 000001/000002/000003 写入 nav_date + ret_3y（让 L1 后预筛 2 不把它们都砍掉）
@@ -598,7 +598,7 @@ class TestPipelineProfile:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                universe_filter=["债券型-中短债", "债券型-长债"],
                 pipeline_profile="bond",
                 preset_task_id="test-bond-profile",
             )
@@ -661,7 +661,7 @@ class TestPipelineProfile:
         # 跑 bond profile
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result_bond = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债"],
+                universe_filter=["债券型-中短债", "债券型-长债"],
                 pipeline_profile="bond",
                 preset_task_id="test-total-bond",
             )
@@ -690,7 +690,7 @@ class TestL6FeesHoldings:
         from datetime import date
         db_session.add_all([
             _mk_fund("000001", "债券型-中短债", size_yi=10, is_active=True),
-            _mk_fund("000002", "债券型-长期纯债", size_yi=10, is_active=True),
+            _mk_fund("000002", "债券型-长债", size_yi=10, is_active=True),
             _mk_fund("000003", "债券型-利率债", size_yi=10, is_active=True),
             _mk_fund("000004", "股票型", size_yi=10, is_active=True),  # 非债基，应被过滤
         ])
@@ -730,7 +730,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-count",
             )
@@ -762,7 +762,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债", "股票型"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债", "股票型"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-filter",
             )
@@ -792,7 +792,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             result = refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-fail",
             )
@@ -827,7 +827,7 @@ class TestL6FeesHoldings:
 
         with patch("src.services.market_full_pipeline.SessionLocal", return_value=db_session):
             refresh_market_full_sync(
-                universe_filter=["债券型-中短债", "债券型-长期纯债", "债券型-利率债"],
+                universe_filter=["债券型-中短债", "债券型-长债", "债券型-利率债"],
                 pipeline_profile="bond",
                 preset_task_id="test-l6-persist",
             )

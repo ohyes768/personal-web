@@ -510,8 +510,35 @@ function resolveCoarseLabel(s: string, kind?: 'stock' | 'bond') {
 | universe | 精确 subtype 列表 |
 |---|---|
 | **stock** | 股票型 / 指数型-海外股票 / 指数型-其他 / 指数型-股票 / 混合型-平衡 / 混合型-绝对收益 / 混合型-灵活 / 混合型-偏股 / QDII-普通股票 / QDII-混合偏股 / QDII-混合灵活 / QDII-混合平衡 / QDII-FOF / QDII-REITs / Reits / REITs |
-| **bond** | 债券型-中短债 / 债券型-混合一级 / 债券型-混合二级 / 债券型-混合债 / 债券型-利率债 / 债券型-信用债 / 债券型-长期纯债 / 指数型-固收 / QDII-纯债 / QDII-混合债 / 混合型-偏债 |
+| **bond** | 债券型-中短债 / 债券型-混合一级 / 债券型-混合二级 / 债券型-混合债 / 债券型-利率债 / 债券型-信用债 / **债券型-长债** / 指数型-固收 / QDII-纯债 / QDII-混合债 / 混合型-偏债 |
 | **other**（不进 universe） | FOF-稳健型 / FOF-均衡型 / FOF-进取型 / 货币型-普通货币 / 货币型-浮动净值 / QDII-商品 / 商品 / 其他 |
+
+### Convention: 键名必须是 akshare 基金类型列的**原值**（逐字一致）
+
+`SUBCLASS_TO_CATEGORY` 的键就是 `funds.market_subtype` 里的原始字符串，**写错一个字符，整类基金静默降级 other**（不进任何 universe，UI 勾不出来，用户只看到"基金凭空少了"）。
+
+**实战踩坑（11-14 修）**：键写成 `"债券型-长期纯债"`，而 akshare 的原值是 `"债券型-长债"` —— 生产库 2653 只长债（库内第三大类）全部落在 `other`：
+
+| | 修复前 | 修复后 |
+|---|---|---|
+| 债基 universe | 7129 只 | **9782 只**（+2653） |
+| 债基三分法 31 只中不在 universe 的 | 8 只 | 3 只（见 §22 债基「全部」分段） |
+
+**排查手法**：拿生产库 `SELECT market_subtype, count(*) FROM funds GROUP BY 1` 的**实际取值**
+跟映射表键集求差集 —— 差集里出现的键就是"库里真实存在但映射表没声明"的子类。
+
+```python
+# 一次性核对（新增/修改映射后必跑）
+map_keys = set(SUBCLASS_TO_CATEGORY)
+db_values = {row[0] for row in db.execute(text("SELECT DISTINCT market_subtype FROM funds"))}
+print("库里有、映射表没有：", db_values - map_keys)   # 必须为空（或逐个显式补映射）
+print("映射表有、库里没有：", map_keys - db_values)   # 允许（预留给未来子类）
+```
+
+前端 `COARSE_TO_SUBTYPES_*` 同样必须逐字一致：写错一个字符 → 该粗类别展开出的
+subtype 列表在库里匹配不到任何一行 → 勾了等于没勾（静默空集）。回归由
+`tests/test_source_segmented.py::TestSubtypeUniverse` 锁住（自动比对后端
+universe 与前端粗类别表，前端漏项直接失败）。
 
 ### Convention: 修改 SUBCLASS_TO_CATEGORY 必须同步改前端 COARSE_TO_SUBTYPES_STOCK/BOND
 
@@ -1723,3 +1750,96 @@ gap = week_status[w] != STATUS_COMPLETE
 # Correct — 榜发了但该基金 stale，同样是缺口
 gap = (week_status[w] != STATUS_COMPLETE) or (code in stale_codes[w])
 ```
+
+---
+
+## 22. 来源分段（source）与 market_type 筛选（11-15-source-segmented + 11-14 收尾）
+
+### 22.1 三态来源分段模型
+
+`/api/funds/screen` 与 `/api/funds/stock/screen`（合并后的债基 / 股基页）都带
+`source` 参数，`pattern="^(curated|market|all)$"`，**默认 `curated`**：
+
+| source | 成员判定 | 行上 `in_curated` |
+|---|---|---|
+| `curated` | yaml 名单（`config/funds.yaml` / `config/funds_stock.yaml`） | 恒 True |
+| `market` | `funds.market_subtype ∈ DISCOVERY_{BOND,STOCK}_SUBTYPES` | 按 code 是否 ∈ 名单逐行算 |
+| `all` | 两个 universe 的 code 并集（SQL IN 一次查询） | 同上 |
+
+`in_curated` 由后端逐行算好返回，前端**不再自己比对名单**。
+
+### 22.2 「全部」不是永远冗余 —— 按数据决定
+
+「全部 = 三分法 ∪ 市场」是否冗余**取决于数据**，不能想当然砍掉。实测（生产库，code 集合逐只比对）：
+
+| tab | curated | market | all | all ≡ market？ |
+|---|---|---|---|---|
+| 股基 | 142 | 16239 | 16239 | **是**（142 只全部含在市场 universe 内） |
+| 债基（修 `债券型-长债` 前） | 31 | 7129 | 7137 | 否（8 只不在） |
+| 债基（修 `债券型-长债` 后） | 31 | 9782 | 9785 | 否（**3 只**不在） |
+
+- **股基**：三分法 142 只全部含在市场 universe 内 → 「全部」与「市场」**逐只同集**
+  → 前端砍掉「全部」分段，只留「市场 | 三分法」两态（`SourceSegmented` 的
+  `segments` prop 覆盖三态为两态），默认 `source='market'`（与旧 `all` 行集完全一致，
+  用户可见行为不变）。
+- **债基**：三分法里有 3 只 akshare 记成 `混合型-灵活` / `QDII-FOF` 的固收+
+  （`001756` 嘉实策略优选混合 / `004010` 华泰柏瑞鼎利灵活配置混合A / `017970`
+  摩根海外稳健配置混合(QDII-FOF)），它们不在债基市场 universe 内 → **保留三态**
+  「全部 | 三分法 | 市场」，默认 `source='all'`。
+
+**规矩**：改动 yaml 名单或 `SUBCLASS_TO_CATEGORY` 后，必须重新核对 curated ⊆ market
+是否仍成立；成立 → 该 tab 可以砍「全部」，不成立 → 必须留。
+
+### 22.3 三分法成员用行内徽章标出
+
+「市场」态下用户看不出哪几只来自雪球三分法。后端已在 `market` / `all` 态返回
+`in_curated`，前端在**类型列**加一枚「三分法」徽章（`FundTable` 的
+`showCuratedBadge` prop，只在 `source !== 'curated'` 时开——三分法态整表都是名单成员，
+重复标是噪音）。
+
+徽章位置选类型列而不是名称列：名称列宽度固定 7rem 且要放 10 字截断名，塞不下徽章。
+
+### 22.4 market_type 在合并页也必须能筛（静默死控件的修复）
+
+前端 `buildQuery()` 会把 UI 粗类别展开成精确 subtype 写进 `?market_type=`。
+**后端 `/screen` 与 `/stock/screen` 早期根本不接这个参数**（只有
+`discovery-bond/screen`、`discovery-stock/screen` 接），于是：
+
+- 前端 `api.ts` 调 `fundApi.screen` / `stockApi.screen` 时**没传粗类映射**
+  → 展开不生效 → 后端收到粗类别名（如「纯债型」）→ 匹配不到任何 `market_subtype`
+  → 静默空集 / 或因参数不被识别而**完全不过滤**（更糟：用户以为筛了，其实没筛）。
+
+**契约**：
+
+1. 后端 `/screen`、`/stock/screen` 必须接 `market_type: Optional[str] = Query(None)`，
+   用 `_parse_market_types()` 拆 CSV（**只拆不展开**，粗→精展开在前端）。
+2. 前端 `fundApi.screen` 必须传 `COARSE_TO_SUBTYPES_BOND`，`stockApi.screen` 必须传
+   `COARSE_TO_SUBTYPES_STOCK`。
+3. 语义：`market_type` 是**额外的 WHERE 条件**（`funds.market_subtype IN (...)`），
+   与 `source` 正交 —— 三种 source 下都生效。`market` 态下还会把 universe 子类集合同步收窄
+   （两者叠加等价于交集）。
+
+### 22.5 source 必须真的从 URL 解析（死控件的修复）
+
+`useFilters.parseFiltersFromSearch()` 早期**从不读 `?source=`** —— `parseSource()`
+写好了但没人调用，`filters.source` 每次都回落到默认值。于是分段控件点不动
+（URL 变了、列表不变）。三个返回分支（cleared / 无 numeric / 有 numeric）都必须带上
+`source`，缺一个就复现这个 bug。
+
+`parseSource(search, fallback)` 的 fallback 取该 tab 的默认分段
+（债基 `all`、股基 `market`），**不能硬编码 'all'** —— 否则股基页 URL 不带
+`source=` 时会回落到 `all`（虽然当前与 `market` 同集，但语义错了）。
+
+### 22.6 换分段时清掉 market_type
+
+「基金类型」筛选只在「市场」态暴露（`showMarketTypes={source === 'market'}`）。
+切分段时必须把 `market_types` 一起清掉（`setFilter('source', ...)` 里置 null），
+否则会出现「UI 上看不到这个条件、列表却被它悄悄收窄」的鬼状态。
+
+### 22.7 Tests Required
+
+`backend/fund-select/tests/test_source_segmented.py`：
+
+- `TestSubtypeUniverse::test_long_bond_subtype_in_bond_universe` — `债券型-长债` ∈ 债基 universe
+- `TestSubtypeUniverse::test_every_declared_subtype_is_reachable_from_ui_mapping` — 后端 universe 与前端粗类别表一一对应（前端漏项即失败）
+- `TestMarketTypeFilter::*` — market_type 在 curated / market / all 三态下都收窄；不在 universe 里的白名单返回空集而不报错

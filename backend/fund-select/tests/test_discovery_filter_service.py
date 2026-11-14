@@ -15,7 +15,7 @@ def _mk_fund(code: str, market_subtype: str, market_type: str = "", **kw):
     defaults = dict(
         code=code,
         name=f"基金{code}",
-        fund_type=kw.pop("fund_type", "债券型-长期纯债"),
+        fund_type=kw.pop("fund_type", "债券型-长债"),
         market_subtype=market_subtype,
         market_type=market_type or categorize(market_subtype),
         age_years=kw.pop("age_years", 5.0),
@@ -70,8 +70,8 @@ class TestScreenDiscoveryBond:
 
     def test_filters_combine_with_market_type(self, db_session):
         db_session.add_all([
-            _mk_fund("000001", market_subtype="债券型-长期纯债", age_years=10, size_yi=50),
-            _mk_fund("000002", market_subtype="债券型-长期纯债", age_years=1, size_yi=10),
+            _mk_fund("000001", market_subtype="债券型-长债", age_years=10, size_yi=50),
+            _mk_fund("000002", market_subtype="债券型-长债", age_years=1, size_yi=10),
         ])
         db_session.commit()
 
@@ -298,9 +298,9 @@ class TestRegressionExistingTabs:
             lambda *args, **kwargs: ["000001", "000002"],
         )
         db_session.add_all([
-            _mk_fund("000001", market_subtype="债券型-长期纯债", fund_type="中长期纯债"),
+            _mk_fund("000001", market_subtype="债券型-长债", fund_type="中长期纯债"),
             _mk_fund("000002", market_subtype="股票型", fund_type="股票型"),
-            _mk_fund("000003", market_subtype="债券型-长期纯债", fund_type="中长期纯债"),
+            _mk_fund("000003", market_subtype="债券型-长债", fund_type="中长期纯债"),
         ])
         db_session.commit()
 
@@ -321,7 +321,7 @@ class TestRegressionExistingTabs:
 class TestDiscoveryPagination:
     """discovery-* tab 分页：total 仍是筛后总数，items 切片"""
     @staticmethod
-    def _seed_many(db, n: int = 30, subtype: str = "债券型-长期纯债"):
+    def _seed_many(db, n: int = 30, subtype: str = "债券型-长债"):
         """seed N 只同 subtype，规模递增"""
         rows = [
             _mk_fund(f"{900000 + i}", market_subtype=subtype, size_yi=float(i + 1))
@@ -382,12 +382,12 @@ class TestDiscoveryPagination:
         # 5 只有 size_yi（valued）
         for i in range(5):
             code = f"{910000 + i}"
-            db_session.add(_mk_fund(code, market_subtype="债券型-长期纯债",
+            db_session.add(_mk_fund(code, market_subtype="债券型-长债",
                                     size_yi=float(10 - i)))
         # 3 只 size_yi=None
         for i in range(3):
             code = f"{920000 + i}"
-            db_session.add(_mk_fund(code, market_subtype="债券型-长期纯债",
+            db_session.add(_mk_fund(code, market_subtype="债券型-长债",
                                     size_yi=None))
         db_session.commit()
         r = FilterService(db_session).screen_discovery_bond(

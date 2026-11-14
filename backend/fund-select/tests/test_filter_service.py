@@ -139,7 +139,7 @@ class TestPagination:
             code = f"{i + 10:06d}"
             codes.append(code)
             rows.append(Fund(
-                code=code, name=f"基金{code}", fund_type="债券型-长期纯债",
+                code=code, name=f"基金{code}", fund_type="债券型-长债",
                 age_years=5.0, size_yi=float(i + 1),  # 1..30
                 mgr_name="张", mgr_company="某司",
                 mgr_days=3650, mgr_experience_years=10.0, is_active=True,

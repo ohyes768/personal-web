@@ -204,7 +204,7 @@ class TestRefreshMarketSize:
         db_session.add(Fund(
             code="000001", name="测试基金", is_active=True,
             fund_type="中长期纯债",
-            market_subtype="债券型-长期纯债",
+            market_subtype="债券型-长债",
             market_type="bond",
             mgr_name="老经理",
             mgr_days=5000,
@@ -216,7 +216,7 @@ class TestRefreshMarketSize:
 
         f = db_session.get(Fund, "000001")
         assert f.fund_type == "中长期纯债"      # 不动
-        assert f.market_subtype == "债券型-长期纯债"
+        assert f.market_subtype == "债券型-长债"
         assert f.market_type == "bond"
         assert f.mgr_name == "老经理"
         assert f.mgr_days == 5000

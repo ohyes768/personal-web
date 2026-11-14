@@ -130,9 +130,10 @@ export interface FundFilters {
 
 /**
  * 来源分段（11-15-source-segmented）：
- * - all = 三分法名单 ∪ 市场子类（默认，浏览态）
+ * - all = 三分法名单 ∪ 市场子类（债基默认：三分法有 3 只固收+/FOF 不在市场 universe 内）
  * - curated = 雪球三分法 yaml 名单
- * - market = akshare 市场子类圈定
+ * - market = akshare 市场子类圈定（股基默认：股基三分法 142 只全部含在市场 universe 内，
+ *   「全部」与「市场」逐只同集，多一个分段只是噪音）
  */
 export type SourceSegment = 'all' | 'curated' | 'market';
 
@@ -154,9 +155,11 @@ export const DEFAULT_FILTERS: FundFilters = {
   limit: 50,
 };
 
-/** 股票基金 tab 默认筛选（决策：3 / 5 / 30 / 5 / 夏普 0.8，按 ret_3y desc） */
+/** 股票基金 tab 默认筛选（决策：3 / 5 / 30 / 5 / 夏普 0.8，按 ret_3y desc）
+ *  source='market'：股基三分法 142 只全部含在市场 universe 内，「市场」即全集
+ *  （旧默认 'all' 与 'market' 逐只同集，切换无可见差别 → 直接砍掉「全部」分段） */
 export const STOCK_DEFAULT_FILTERS: FundFilters = {
-  source: 'all',
+  source: 'market',
   min_age: 3,
   min_size_yi: 5,
   max_dd_3y: 30,
@@ -242,7 +245,9 @@ export const COARSE_TO_SUBTYPES_STOCK: Record<string, string[]> = {
 };
 
 export const COARSE_TO_SUBTYPES_BOND: Record<string, string[]> = {
-  '纯债型': ['债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-利率债', '债券型-信用债', '债券型-长期纯债'],
+  // ⚠ subtype 必须是 akshare 基金类型列的原值：长债的 akshare 原值是「债券型-长债」
+  //   （写成「长期纯债」会匹配不到库里 2653 只长债，勾「纯债型」会漏掉它们）
+  '纯债型': ['债券型-中短债', '债券型-混合一级', '债券型-混合二级', '债券型-利率债', '债券型-信用债', '债券型-长债'],
   '混合型': ['债券型-混合债', '混合型-偏债'],  // 混合债基（区别于混合一级/二级；含偏债混合）
   '指数型': ['指数型-固收'],
   'QDII': ['QDII-纯债', 'QDII-混合债'],

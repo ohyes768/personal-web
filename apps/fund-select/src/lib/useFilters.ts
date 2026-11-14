@@ -40,9 +40,11 @@ const DEFAULT_LIMIT = 50;
 
 const SOURCE_VALUES = ['all', 'curated', 'market'] as const;
 
-function parseSource(search: URLSearchParams): SourceSegment {
+/** 解析 ?source=：命中合法值用之，否则回退到该 tab 的默认分段
+ *  （债基默认 all、股基默认 market —— 由 DEFAULT_FILTERS / STOCK_DEFAULT_FILTERS 决定）。 */
+function parseSource(search: URLSearchParams, fallback: SourceSegment = 'all'): SourceSegment {
   const raw = search.get('source');
-  return SOURCE_VALUES.includes(raw as SourceSegment) ? (raw as SourceSegment) : 'all';
+  return SOURCE_VALUES.includes(raw as SourceSegment) ? (raw as SourceSegment) : fallback;
 }
 
 function parseExcludeQdii(search: URLSearchParams): boolean {
@@ -84,10 +86,11 @@ export function parseFiltersFromSearch(
   const search_code = parseSearchCode(search.get('search_code'));
   const exclude_qdii = parseExcludeQdii(search);
   const market_types = parseMarketTypes(search);
+  const source = parseSource(search, fallback.source ?? 'all');
   const page = parsePage(search);
   const limit = parseLimit(search);
   if (search.get('cleared') === '1') {
-    // 用户主动"清空"：全部维度不限；exclude_qdii / market_types 仍按 URL 正交解析
+    // 用户主动"清空"：全部维度不限；exclude_qdii / market_types / source 仍按 URL 正交解析
     return {
       min_age: null,
       min_size_yi: null,
@@ -97,6 +100,7 @@ export function parseFiltersFromSearch(
       exclude_qdii,
       market_types,
       search_code,
+      source,
       sort: (search.get('sort') as string) || fallback.sort,
       order: (search.get('order') as 'asc' | 'desc') || fallback.order,
       page,
@@ -112,6 +116,7 @@ export function parseFiltersFromSearch(
       exclude_qdii,
       market_types: market_types ?? fallback.market_types,
       search_code,
+      source,
       page,
       limit,
     };
@@ -127,6 +132,7 @@ export function parseFiltersFromSearch(
     exclude_qdii,
     market_types,
     search_code,
+    source,
     sort: fallback.sort,
     order: fallback.order,
     page,
@@ -225,6 +231,9 @@ export function useFilters(initial?: Partial<FundFilters>) {
     } else if (key === 'source') {
       next.source = (value as SourceSegment);
       next.page = 1;
+      // 换分段时清掉「基金类型」：该筛选只在「市场」态暴露，留着会在
+      // 「三分法」态里静默收窄名单（UI 上又看不到这个条件）
+      next.market_types = null;
     } else {
       next[key] = value === null || value === '' ? null : Number(value);
       next.page = 1;

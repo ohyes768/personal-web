@@ -22,6 +22,8 @@ interface FilterChipBarProps {
   searchCode?: string | null;
   /** 退出代码搜索态（点 chip 的 ×） */
   onClearSearch?: () => void;
+  /** 粗类别 → 展示文案（债基侧 value≠label，如 '混合型' → '混合债基'）；缺省 = 原样显示 */
+  marketTypeLabels?: Record<string, string>;
 }
 
 const LABELS: Record<NumericFilterKey, { label: string; fmt: (v: number) => string }> = {
@@ -36,6 +38,7 @@ const NUMERIC_KEYS = Object.keys(LABELS) as NumericFilterKey[];
 
 export function FilterChipBar({
   filters, onRemove, showCodeSearch = false, searchCode = null, onClearSearch,
+  marketTypeLabels,
 }: FilterChipBarProps) {
   const activeNumeric = NUMERIC_KEYS.filter(k => filters[k] !== null);
   const marketTypes = filters.market_types ?? [];
@@ -92,11 +95,11 @@ export function FilterChipBar({
           key={t}
           className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-info-tint text-info"
         >
-          基金类型: {t}
+          基金类型: {marketTypeLabels?.[t] ?? t}
           <button
             onClick={() => onRemove('market_types', t)}
             className="hover:text-down"
-            aria-label={`移除基金类型 ${t}`}
+            aria-label={`移除基金类型 ${marketTypeLabels?.[t] ?? t}`}
           >
             <XMarkIcon className="w-3 h-3" />
           </button>

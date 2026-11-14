@@ -43,7 +43,7 @@ def db(db_session):
         # QDII（exclude_qdii 会剔掉）
         _mk("000004", name="QDII基", market_subtype="QDII-普通股票"),
         # 债基（股票 tab 宇宙外）
-        _mk("000005", name="债基", market_type="bond", market_subtype="债券型-长期纯债"),
+        _mk("000005", name="债基", market_type="bond", market_subtype="债券型-长债"),
     ])
     db_session.add_all([
         FundPerformance(code="000001", as_of_date=date(2026, 9, 1),

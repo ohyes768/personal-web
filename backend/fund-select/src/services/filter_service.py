@@ -220,14 +220,19 @@ class FilterService:
         page: int = 1,
         limit: int = 50,
         source: str = "curated",
+        market_types: list[str] | None = None,
     ) -> dict:
-        """债基筛选：source=curated（yaml 名单，默认=旧债基 tab）/ market / all（并集）。"""
+        """债基筛选：source=curated（yaml 名单，默认=旧债基 tab）/ market / all（并集）。
+
+        market_types：精确 market_subtype 白名单（前端把 UI 粗类别展开后传）。
+        None = 不按类型收窄。
+        """
         return self._screen_sourced(
             curated_kind="bond", market_kind="discovery-bond", source=source,
             min_age=min_age, min_size_yi=min_size_yi, max_dd_3y=max_dd_3y,
             min_mgr_exp=min_mgr_exp, sort=sort, order=order,
             universe_codes=universe_codes, exclude_qdii=exclude_qdii,
-            page=page, limit=limit,
+            page=page, limit=limit, market_types=market_types,
         )
 
     def screen_stock(
@@ -244,14 +249,20 @@ class FilterService:
         page: int = 1,
         limit: int = 50,
         source: str = "curated",
+        market_types: list[str] | None = None,
     ) -> dict:
-        """股基筛选：source=curated（funds_stock.yaml，默认=旧股票 tab）/ market / all。"""
+        """股基筛选：source=curated（funds_stock.yaml，默认=旧股票 tab）/ market / all。
+
+        market_types：精确 market_subtype 白名单（前端把 UI 粗类别展开后传）。
+        None = 不按类型收窄。
+        """
         return self._screen_sourced(
             curated_kind="stock", market_kind="discovery-stock", source=source,
             min_age=min_age, min_size_yi=min_size_yi, max_dd_3y=max_dd_3y,
             min_mgr_exp=min_mgr_exp, sort=sort, order=order,
             universe_codes=universe_codes, exclude_qdii=exclude_qdii,
             min_sharpe=min_sharpe, page=page, limit=limit,
+            market_types=market_types,
         )
 
     def _screen_sourced(
@@ -271,6 +282,7 @@ class FilterService:
         universe_codes: list[str] | None = None,
         page: int = 1,
         limit: int = 50,
+        market_types: list[str] | None = None,
     ) -> dict:
         """统一入口：按 source 决定成员判定，_screen 完成筛选与排序。
 
@@ -278,10 +290,16 @@ class FilterService:
         - market：akshare 子类圈定（DEFAULT_DISCOVERY_UNIVERSE），in_curated 按
           code 是否 ∈ yaml 名单逐行算（市场子类 ∩ 名单有交集）
         - all：两个 universe 的 code 并集（SQL IN，不取回再过滤）
+
+        market_types（精确 subtype 白名单）与 source 正交：三种 source 下都作为
+        额外的 WHERE 条件生效（market 态下还会把 universe 子类集合同步收窄，
+        两者等价）。前端只在「市场」态暴露这个筛选。
         """
         if source not in self.SOURCE_VALUES:
             raise ValueError(f"unknown source: {source}")
         curated_codes = resolve_universe_codes(curated_kind, universe_codes)
+        # 子类白名单：空列表 = 不限；None 与空列表语义一致
+        subtype_filter = list(market_types) if market_types else None
 
         if source == "curated":
             if not curated_codes:
@@ -289,17 +307,21 @@ class FilterService:
             result = self._screen(
                 curated_kind, min_age, min_size_yi, max_dd_3y, min_mgr_exp,
                 sort, order, curated_codes, exclude_qdii, min_sharpe,
-                page=page, limit=limit,
+                page=page, limit=limit, subtype_filter=subtype_filter,
             )
         else:
             types = DEFAULT_DISCOVERY_UNIVERSE[market_kind]
             if source == "market":
+                # universe 子类集合同步收窄（与 subtype_filter 叠加后等价于交集）
+                if subtype_filter:
+                    allow = set(subtype_filter)
+                    types = [t for t in types if t in allow]
                 if not types:
                     return {"total": 0, "items": []}
                 result = self._screen(
                     market_kind, min_age, min_size_yi, max_dd_3y, min_mgr_exp,
                     sort, order, None, exclude_qdii, min_sharpe, types,
-                    page=page, limit=limit,
+                    page=page, limit=limit, subtype_filter=subtype_filter,
                 )
             else:  # all：yaml ∪ 子类（并集 code IN，一次查询）
                 if not types and not curated_codes:
@@ -318,7 +340,7 @@ class FilterService:
                 result = self._screen(
                     "all-codes", min_age, min_size_yi, max_dd_3y, min_mgr_exp,
                     sort, order, union_codes, exclude_qdii, min_sharpe,
-                    page=page, limit=limit,
+                    page=page, limit=limit, subtype_filter=subtype_filter,
                 )
 
         # in_curated 标记：curated 态恒 True；market/all 态按名单成员逐行算
@@ -576,7 +598,13 @@ class FilterService:
         max_nav_stale_days: Optional[int] = None,
         page: int = 1,
         limit: int = 50,
+        subtype_filter: list[str] | None = None,
     ) -> dict:
+        """kind 决定成员判定（yaml 名单 / market_subtype / code 并集）。
+
+        subtype_filter：额外的精确 market_subtype 白名单，对**所有** kind 生效
+        （前端 UI 选的是粗类别，展开成精确子类后由这里收窄）。
+        """
         # 成员判定：bond/stock 走 yaml；discovery-* 走 market_subtype；
         # all-codes 直接用调用方给定的 code 并集（_screen_sourced 的 all 态）
         if kind in ("bond", "stock", "all-codes"):
@@ -611,6 +639,10 @@ class FilterService:
             )
         else:
             raise ValueError(f"unknown screen kind: {kind}")
+
+        # 精确 subtype 白名单（粗类别展开后传入）：与 kind 无关，统一收窄
+        if subtype_filter:
+            q = q.where(Fund.market_subtype.in_(subtype_filter))
 
         if exclude_qdii:
             # market_subtype 为 NULL/空 的保留；只丢掉 QDII* 与「互认基金」

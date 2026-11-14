@@ -3,6 +3,10 @@
  * - curated：雪球三分法 yaml 名单（原「债基·雪球三分法」tab）
  * - market：akshare 子类圈定（原「债基·市场」tab，此时展示市场类型多选）
  * - all：两者并集（默认浏览态）
+ *
+ * 为什么债基保留「全部」：债基三分法 31 只里有 3 只是 akshare 记成
+ * 「混合型-灵活 / QDII-FOF」的固收+（001756 / 004010 / 017970），
+ * 它们不在债基市场 universe 内 —— 砍掉「全部」这 3 只就看不到了。
  */
 'use client';
 
@@ -25,7 +29,9 @@ import {
 import { useSearchParams } from 'next/navigation';
 
 import { useFilters } from '@/lib/useFilters';
-import type { FundListItem } from '@/lib/types';
+import {
+  BOND_MARKET_TYPE_OPTIONS, BOND_OPTION_LABELS, type FundListItem,
+} from '@/lib/types';
 
 function FundsPageInner() {
   const {
@@ -82,10 +88,18 @@ function FundsPageInner() {
         </div>
         <FilterChipBar
           filters={filters}
-          onRemove={key => setFilter(key, key === 'exclude_qdii' ? false : null)}
+          onRemove={(key, value) => {
+            if (key === 'exclude_qdii') setFilter(key, false);
+            else if (key === 'market_types' && value != null) {
+              // 只移除这一个类型（不是整组清空）
+              const rest = (filters.market_types ?? []).filter(t => t !== value);
+              setFilter('market_types', rest.length > 0 ? rest : null);
+            } else setFilter(key, null);
+          }}
           showCodeSearch
           searchCode={searchCode}
           onClearSearch={() => setSearchCode(null)}
+          marketTypeLabels={BOND_OPTION_LABELS}
         />
         <div className="grid grid-cols-1 lg:grid-cols-[10.5rem_minmax(0,1fr)] gap-3 items-start">
           <aside className="hidden lg:block sticky top-16">
@@ -95,6 +109,7 @@ function FundsPageInner() {
               onClearAll={clearAll}
               activeCount={activeCount}
               showMarketTypes={source === 'market'}
+              marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
             />
           </aside>
           <section className="min-w-0 overflow-x-clip bg-paper-card rounded-lg border border-rule">
@@ -108,6 +123,8 @@ function FundsPageInner() {
               isSelected={compare.isSelected}
               isCompareFull={compare.isFull}
               onToggleCompare={compare.toggle}
+              marketKind="bond"
+              showCuratedBadge={source === 'market'}
               onRowClick={setDetailFund}
               highlightCode={searchCode}
               emptyHint={
@@ -138,6 +155,7 @@ function FundsPageInner() {
         onClearAll={clearAll}
         activeCount={activeCount}
         showMarketTypes={source === 'market'}
+        marketTypeOptions={BOND_MARKET_TYPE_OPTIONS}
       />
 
       <CompareFloatingBar

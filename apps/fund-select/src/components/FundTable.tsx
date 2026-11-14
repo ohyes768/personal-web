@@ -32,6 +32,8 @@ interface FundTableProps {
   ddBarCapPct?: number;
   /** 市场 tab 类型列上下文：影响 chip 文案（债基侧 value/label 不同）；老 tab 不传 */
   marketKind?: 'stock' | 'bond';
+  /** 「市场」态标出雪球三分法成员（行内徽章）；三分法态整表都是名单成员，不用标 */
+  showCuratedBadge?: boolean;
   /** 代码列可点跳「夏普走势」页（仅股基两 tab 传 true；债基第一版不支持）。
    *  点击需 stopPropagation，避免同时触发 onRowClick 打开详情抽屉。 */
   trendEnabled?: boolean;
@@ -69,17 +71,42 @@ const truncateName = (name: string, max = NAME_MAX): string =>
 /** 类型列：上行浅灰底 chip 显示 5 粗类别，下行灰字显示精确 market_subtype。
  *  - 已知 subtype → 两行（chip + 小字）
  *  - 未知 subtype（如QDII-商品 / 商品 / 其他） → 单行灰字
- *  - subtype 为空 → 单行 "-" */
-function TypeCell({ subtype, kind }: { subtype: string | null; kind?: 'stock' | 'bond' }) {
+ *  - subtype 为空 → 单行 "-"
+ *  - showCuratedBadge 且该行 in_curated → 粗类别 chip 旁加「三分法」徽章
+ *    （市场态下标出哪些是雪球三分法选中的；三分法态下整表都是名单成员，不重复标） */
+function TypeCell({
+  subtype, kind, inCurated, showCuratedBadge,
+}: {
+  subtype: string | null;
+  kind?: 'stock' | 'bond';
+  inCurated?: boolean;
+  showCuratedBadge?: boolean;
+}) {
   if (!subtype) return <span className="text-ink-soft">-</span>;
   const coarse = resolveCoarseLabel(subtype, kind);
+  const badge = showCuratedBadge && inCurated ? (
+    <span
+      className="shrink-0 px-1 py-0.5 rounded text-[9px] font-medium bg-accent/15 text-accent"
+      title="雪球三分法名单成员"
+    >
+      三分法
+    </span>
+  ) : null;
   if (!coarse) {
-    return <span className="text-ink-soft">{subtype}</span>;
+    return (
+      <div className="flex flex-col gap-0.5 leading-tight">
+        <span className="text-ink-soft">{subtype}</span>
+        {badge}
+      </div>
+    );
   }
   return (
     <div className="flex flex-col gap-0.5 leading-tight">
-      <span className="inline-block self-start px-1.5 py-0.5 rounded text-[10px] font-medium bg-paper-tint text-ink-strong">
-        {coarse}
+      <span className="flex flex-wrap items-center gap-1">
+        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-medium bg-paper-tint text-ink-strong">
+          {coarse}
+        </span>
+        {badge}
       </span>
       <span className="text-[10px] text-ink-soft">{subtype}</span>
     </div>
@@ -123,7 +150,7 @@ export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
   showBondColumns = true, showRiskColumns = false, onRowClick,
   ddBarCapPct = DD_BAR_CAP_BOND, marketKind, trendEnabled = false,
-  highlightCode = null, emptyHint,
+  highlightCode = null, emptyHint, showCuratedBadge = false,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -209,7 +236,12 @@ export function FundTable({
                   <HoverName name={fund.name} />
                 </td>
                 <td className={`${td} leading-tight`}>
-                  <TypeCell subtype={fund.market_subtype} kind={marketKind} />
+                  <TypeCell
+                    subtype={fund.market_subtype}
+                    kind={marketKind}
+                    inCurated={fund.in_curated}
+                    showCuratedBadge={showCuratedBadge}
+                  />
                 </td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.size_yi)}</td>
                 <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.age_years, 1)}</td>
