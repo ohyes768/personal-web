@@ -148,7 +148,9 @@
 - **下线的是界面，不是检查**：后端仍会检查各入口的 URL 与证书并写 `check_results`。
   2026-11-14 起列表页**恢复**了「主入口」与「证书」两列（URL 行内可编辑，证书显示状态与到期天数）；
   **URL / 发布**两个维度仍不展示（发布没有任何仓库关联，显示只会是假状态）。
-- `GET /api/services` 的每项带 `primary_endpoint`（url/label/kind/tls_check + 证书状态与到期天数）；
+- `GET /api/services` 的每项带 `primary_endpoint`（url/label/kind/tls_check + 证书状态与到期天数
+  + `server_port`：主入口 URL 上的端口，用 `parse_http_url(...).effective_port` 算，与证书检查
+  的口径一致（省略端口时取 scheme 默认 443/80）；
   主入口的选取规则与既有行为一致：**external 优先，否则第一个**。
 - **备份格式不变**：导出仍含 endpoints / port_notes / release_sources；
   旧备份恢复照旧能用。

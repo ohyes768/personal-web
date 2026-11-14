@@ -613,9 +613,15 @@ class Registry:
             check = checks.get(endpoint.id, {})
             payload = check.get("payload") or {}
             days = payload.get("days_remaining")
+            server_port: int | None = None
+            try:
+                server_port = parse_http_url(endpoint.url).effective_port
+            except Exception:  # noqa: BLE001 - URL 不合法时只是没有端口
+                server_port = None
             views[service_id] = PrimaryEndpointView(
                 id=endpoint.id,
                 url=endpoint.url,
+                server_port=server_port,
                 label=endpoint.label,
                 kind=endpoint.kind,
                 tls_check=endpoint.tls_check,

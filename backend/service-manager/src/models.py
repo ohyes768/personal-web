@@ -304,6 +304,8 @@ class PrimaryEndpointView(BaseModel):
     tls_days_remaining: int | None = None
     tls_not_after: str | None = None
     tls_invalid_reason: str | None = None
+    # 服务器端口：主入口 URL 上的端口（省略时取 scheme 默认 443/80）
+    server_port: int | None = None
 
 
 class PortNoteInput(BaseModel):

@@ -84,6 +84,8 @@ export interface PrimaryEndpointView {
   tls_days_remaining: number | null;
   tls_not_after: string | null;
   tls_invalid_reason: string | null;
+  /** 服务器端口：主入口 URL 上的端口（省略时取 scheme 默认 443/80） */
+  server_port: number | null;
 }
 
 /** 写操作（新建 / 改标签 / 改名称用途）之后前端要用到的字段。 */

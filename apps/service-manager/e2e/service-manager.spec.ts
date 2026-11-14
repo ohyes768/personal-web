@@ -20,6 +20,14 @@ test.afterEach(async ({ page }) => {
   }
 });
 
+/** 按表头名取列下标：列一多，写死下标就容易随改列而失效。 */
+async function columnIndex(page: Page, header: string): Promise<number> {
+  return page.locator("thead th").evaluateAll(
+    (cells, name) => cells.findIndex((cell) => cell.textContent?.trim() === name),
+    header,
+  );
+}
+
 async function login(page: Page) {
   await page.goto("/services");
   // 会话检查是异步的：等「门禁表单」或「已登录内容」二者之一出现，再决定要不要登录。
@@ -241,7 +249,22 @@ test("主入口在编辑弹窗里登记，列表列只读，证书列出现状�
 
   // URL 显示出来了；证书列先「未检查」（检查是异步的，不在这里断言最终状态）
   await expect(row.getByText("https://web.duomi77.cn:9443/e2e")).toBeVisible();
-  await expect(row.locator("td").nth(4)).toContainText("未检查");
+  const certColumn = await columnIndex(page, "证书");
+  await expect(row.locator("td").nth(certColumn)).toContainText("未检查");
+});
+
+test("服务器端口列：从主入口 URL 派生", async ({ page }) => {
+  await login(page);
+  await page.goto("/services");
+  const header = page.getByRole("columnheader", { name: "服务器端口" });
+  await expect(header).toBeVisible();
+  // 走 nginx 反代的服务对外端口是 9443（Docker 只看得到容器内部端口 300x）
+  const portColumn = await columnIndex(page, "服务器端口");
+  const row = page.locator("tbody tr", { hasText: "RSS中转服务" });
+  await expect(row.locator("td").nth(portColumn)).toHaveText("9443");
+  // 没有入口的服务没有端口
+  const noEntry = page.locator("tbody tr", { hasText: "Nginx 反代" });
+  await expect(noEntry.locator("td").nth(portColumn)).toHaveText("—");
 });
 
 test("证书列存在且存量 https 入口显示有效", async ({ page }) => {

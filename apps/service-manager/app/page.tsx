@@ -372,6 +372,7 @@ function ServiceList() {
               <tr>
                 <th>服务</th>
                 <th>主入口</th>
+                <th title="这条服务在服务器上监听的端口（取自主入口 URL；省略端口时按 https→443、http→80）">服务器端口</th>
                 <th>运行</th>
                 <th>健康</th>
                 <th title="HTTPS 证书：有没有人信它、什么时候到期">证书</th>
@@ -420,6 +421,9 @@ function ServiceList() {
                     ) : (
                       <span className="muted small">无对外入口</span>
                     )}
+                  </td>
+                  <td className="mono">
+                    {item.primary_endpoint?.server_port ?? "—"}
                   </td>
                   <td>
                     <StateBadge tone={RUNTIME[item.status.runtime]} />
