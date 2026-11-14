@@ -1276,3 +1276,142 @@ start = current - timedelta(days=365)
 # Correct — 52 个整周，起点天然周一
 start = current - timedelta(weeks=51)
 ```
+
+---
+
+## 19. 夏普榜单 v3：年度同类排名口径 + 历史回溯（11-14-sharpe-board-v3-yearly-peer，2026-11-14）
+
+### 19.1 Scope / Trigger
+
+触发本节：改年度门槛 / `freeze_yearly_peer_rows` / `yearly_window` /
+回溯脚本 / v3 profile 任何一处。设计依据见任务 `research/yearly-rank-interface.md`。
+
+### 19.2 为什么换口径（核心事实）
+
+`ak.fund_individual_achievement_xq` 返回两类排名，性质截然不同：
+
+| 类型 | period_kind | 性质 | 能否回溯 |
+|---|---|---|---|
+| 年度业绩 | `年度业绩` | 某自然年的**最终**排名，历史固定值 | ✅ |
+| 阶段业绩 | `阶段业绩` | 滚动窗口（「截至今天」），每次调用会变 | ❌ |
+
+**实测证据**：库内 `as_of=2026-09-09` 写入的 2023 年排名（`3456/4165`）与
+2026-11-14 实时接口值**逐字一致**。这是 v3 敢做历史回溯的唯一根据。
+
+v2 用滚动分位（`阶段业绩/近3年`），历史上不存在 → 榜单只能从上线周积累（只有 1 个点）。
+v3 换成年度排名 → 每周判定都能用同一份历史数据复现 → 可补满历史曲线。
+
+### 19.3 门槛定义
+
+```python
+YEARLY_PERIOD_KIND = "年度业绩"
+YEARLY_WINDOW = 3             # 最近 3 个「已完成」自然年度
+MIN_YEARLY_TOP_PCT = 25.0     # 单年分位 ≤25% 算该年达标
+MIN_YEARLY_YEARS = 2          # 3 年中至少 2 年达标
+
+def yearly_window(ref_year):   # 2026 → ["2023","2024","2025"]
+    return [str(y) for y in range(ref_year - 3, ref_year)]
+```
+
+- **排除当年**：当年未结束，年度排名是「今年以来」的不完整值，与完整年度不可比。
+- **不做 `as_of` 陈旧判断**：年度排名是历史事实，不存在过期
+  （v2 的 `PEER_STALE_DAYS=90` 只适用于滚动口径）。
+- 缺失年份记 `None`，不计入达标年数。
+
+### 19.4 `freeze_yearly_peer_rows`（唯一 peer 数据来源）
+
+```python
+freeze_yearly_peer_rows(db, codes, *, ref_year=None,
+                        top_pct=25.0, min_years=2) -> dict[str, dict]
+# {code: {"years": {"2023": 8.2, "2024": None, "2025": 12.5},
+#         "qualified_years": 2, "yearly_top_pct": 25.0,
+#         "min_years": 2, "qualified": True, "window": [...]}}
+```
+
+- 一次批量 `in_` 查询（500 分块），禁止 per-code。
+- **`qualified` 在冻结时算好**，不在谓词里算：阈值随 profile 版本变，
+  把「当时用什么阈值、算出了什么」一并冻结，符合 §13「发布只读本轮证据」。
+- 窗口内**全部年份都无有效排名**的 code 不入字典（无证据 → 发布侧计 `gate_missing`）。
+
+### 19.5 谓词参数与不可混用的警告
+
+```python
+entry_predicate(..., min_yearly_years=None)   # v3：只读 qualified_years
+```
+
+- 只读冻结好的 `qualified_years`，保持纯函数。
+- **`min_yearly_top_pct` 不是谓词参数**——它是冻结阈值，已随 peer_rows 固化。
+  发布侧必须过滤掉它再传给 `entry_predicate`（否则 TypeError）。
+- **不可与 `max_peer_pct` 混用**：后者是滚动口径「单个分位 ≤ X」，
+  前者是「N 年中 M 年达标」，语义完全不同。同一个参数名在不同版本表示不同
+  含义会让排障极难，故 v3 profile 不含 `max_peer_pct`。
+
+### 19.6 v3 profile
+
+`_V3_EXTRA_FILTERS = {min_ir: 0.5, min_sample_days: 700,
+                      min_yearly_top_pct: 25.0, min_yearly_years: 2}`
+
+- `ALGORITHM_VERSION_V3 = "risk-3y-v3"`；默认版本切 v3（周任务/API/聚合三处）。
+- v1 / v2 profile **一字不改**，历史周行按版本隔离。
+- 实测影响（2026-11-14，36 只 v2 成员）：前25%至少2年 → 保留 29 只（81%）。
+
+### 19.7 历史回溯脚本
+
+`scripts/backfill_v3_yearly_peer.py`（基于 `backfill_sharpe_board_ext.py`）：
+
+| 项 | v1 ext 脚本 | v3 脚本 |
+|---|---|---|
+| profile | v1 | v3 |
+| risk_rows | 只存 sharpe | **补 ir + sample_days**（v3 门槛需要） |
+| peer 数据 | 无 | `freeze_yearly_peer_rows`，**一次冻结全周共享** |
+
+- **夏普/IR/样本天数必须按周算**（当周往前 3 年窗口），不能用今天的值——
+  那正是 v2 里拒绝的前视偏差。
+- **年度排名全周共享不构成前视偏差**：它是已发生的历史事实。
+- 幂等：已存在 complete 周的 `(source, v3, week)` 由 `publish_week_board` 跳过。
+- 默认 dry-run，`--publish` 才写库；净值/基准 pickle 缓存复用一次网络拉取。
+
+### 19.8 展示（DTO 三处同步）
+
+v2 的 `peer_pct`（单值滚动分位）保留以支持 `?profile_version=v2` 查询；
+v3 新增：
+- `peer_years: dict[str, float|null]` — 各年分位
+- `peer_qualified_years: int|null` — 达标年数
+- `peer_window: list[str]|null` — 评估年度
+
+前端「同类分位」列：有 `peer_qualified_years` 时渲染 `2/3 年`（hover 显示各年明细），
+否则回退 v2 的 `前 X%`。
+
+### 19.9 Tests Required
+
+- `test_sharpe_board_capture.py::TestYearlyWindow`：窗口滚动/升序/默认常量
+- `test_sharpe_board_capture.py::TestFreezeYearlyPeerRows`：3年/2年/1年达标、
+  缺年、边界 25.0%、超界 25.01%、格式异常、**as_of 陈旧仍有效**、窗口外年份忽略、
+  500 分块、自定义阈值
+- `test_filter_service.py::TestV3YearlyGate`：边界/NULL/默认 None 回归/不看 peer_pct
+- `test_sharpe_board_service.py::TestV3Profiles`：v1/v2 未污染、三版本 algorithm 互异
+- `test_sharpe_board_service.py::TestV3PublishGates`：达标/部分达标入选、evidence 明细、
+  v2 忽略年度参数
+- `test_backfill_v3.py`：dry-run 不写、周键周一、evidence 含年度、幂等、**v2 数据零影响**
+
+全量：后端 **705 passed**（668 基线 + 37 新增）；前端 38 passed + `tsc --noEmit`。
+
+### 19.10 Wrong vs Correct
+
+```python
+# Wrong — 把冻结阈值当谓词参数（TypeError）
+predicate = entry_predicate(**profile["filters"])
+# Correct — 过滤掉冻结专用参数
+kw = {k: v for k, v in profile["filters"].items() if k != "min_yearly_top_pct"}
+predicate = entry_predicate(**kw)
+
+# Wrong — 用年度排名的「当年」数据（不完整年度，与完整年不可比）
+window = [str(y) for y in range(ref_year - 3, ref_year + 1)]
+# Correct — 排除当年
+window = [str(y) for y in range(ref_year - 3, ref_year)]
+
+# Wrong — 回溯时夏普用今天的值（前视偏差）
+risk_rows[code] = {"sharpe": db.get(FundRiskMetrics, code).sharpe}
+# Correct — 按当周往前 3 年窗口重算
+m = compute_risk_metrics(r_p_windowed, r_b_windowed, rf)
+```

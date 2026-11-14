@@ -109,3 +109,40 @@ pnpm build
 - 默认 v2、URL 往返（用 v1 当非默认值）
 - `describeEntryFilters` 三道门全部渲染且 v1 五条件仍在
 - 改 DTO 时三处同步：`src/api/models.py` ↔ `src/lib/sharpe-board.ts` ↔ 页面消费
+
+## 8. v3 年度同类排名（11-14-sharpe-board-v3-yearly-peer，2026-11-14）
+
+后端契约见 [backend §19](../backend/fund-select/backend/contracts.md)。
+
+### 8.1 默认版本 v3
+
+`DEFAULT_SHARPE_FILTERS.profileVersion = 'v3'`（原 v2）。
+`?profile_version=v2` 仍可查（v2 的 `peer_pct` 滚动口径字段保留）。
+
+### 8.2 「同类分位」列双口径渲染
+
+```
+peer_qualified_years !== null  →  `2/3 年`（hover 显示各年明细）
+否则                            →  `前 14.2%`（v2 滚动口径，或 `-`）
+```
+
+- `peer_years` 是 `{"2023": 8.2, "2024": null, "2025": 12.5}` 形态，
+  `null` 表示该年无数据，tooltip 显示「2023 无数据」而不是 0。
+- `peer_window` 决定列出的年份顺序（后端给的是升序）。
+- 两个口径的字段**不会同时有值**：v2 观测冻结 `peer_pct`，v3 冻结 `qualified_years`。
+
+### 8.3 规则说明卡新增「同类排名口径」一行
+
+`SharpeBoardProfileCard` 用 `filters.min_yearly_years` 判断当前是 v3 还是旧版：
+
+- 有该字段 → 「最近 3 个完整年度（不含当年）中至少 N 年排前 X%；年度排名是历史固定值，因此可回溯。」
+- 无 → 「沿用滚动口径（近三年分位）。」
+
+`describeEntryFilters` 同样按参数存在性渲染，两种口径文案不共存。
+
+### 8.4 注意
+
+- `min_yearly_top_pct` / `min_yearly_years` 是 v3 专有 filter 键，
+  `SharpeBoardProfile.filters` 是 `Record<string, number | boolean>`，直接读即可。
+- 年度窗口固定 3 年（不含当年），**不要**用 `min_yearly_years` 当窗口大小——
+  它是「其中至少几年达标」的门槛（2），窗口长度是硬编码 3。
