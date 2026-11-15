@@ -34,9 +34,12 @@ interface FundTableProps {
   marketKind?: 'stock' | 'bond';
   /** 「市场」态标出雪球三分法成员（行内徽章）；三分法态整表都是名单成员，不用标 */
   showCuratedBadge?: boolean;
-  /** 代码列可点跳「夏普走势」页（仅股基两 tab 传 true；债基第一版不支持）。
+  /** 代码列可点跳「夏普走势」独立页（仅股基 tab 传 true；债基第一版不支持）。
    *  点击需 stopPropagation，避免同时触发 onRowClick 打开详情抽屉。 */
   trendEnabled?: boolean;
+  /** 点「夏普」列数值就地打开走势弹框的回调（股基 tab 传）。
+   *  代码列仍是跳独立页；夏普列数值才是弹框入口。 */
+  onTrendOpen?: (code: string) => void;
   /** 代码搜索态（11-16）：命中的那一行高亮（与对比选中的 info-tint 区分开）。 */
   highlightCode?: string | null;
   /** 空列表文案覆盖（代码搜索查不到时说明「该代码不在库中」）。 */
@@ -150,7 +153,7 @@ export function FundTable({
   items, loading, error, sort, order, onSort, isSelected, isCompareFull, onToggleCompare,
   showBondColumns = true, showRiskColumns = false, onRowClick,
   ddBarCapPct = DD_BAR_CAP_BOND, marketKind, trendEnabled = false,
-  highlightCode = null, emptyHint, showCuratedBadge = false,
+  onTrendOpen, highlightCode = null, emptyHint, showCuratedBadge = false,
 }: FundTableProps) {
   if (loading) {
     return (
@@ -222,11 +225,12 @@ export function FundTable({
               >
                 <td className={`${td} font-mono text-info whitespace-nowrap`}>
                   {trendEnabled ? (
+                    // 代码列跳「夏普走势」独立页（方便单独输入 / 分享链接）
                     <Link
                       href={sharpeTrendHref(fund.code)}
                       onClick={e => e.stopPropagation()}
                       className="hover:underline decoration-info/60 underline-offset-2"
-                      title="查看夏普走势"
+                      title="在独立页查看夏普走势"
                     >
                       {fund.code}
                     </Link>
@@ -286,7 +290,19 @@ export function FundTable({
                   </div>
                 </td>
                 {showRiskColumns && (
-                  <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.sharpe)}</td>
+                  <td className={`${td} text-right tnum whitespace-nowrap`}>
+                    {onTrendOpen ? (
+                      // 点夏普数值就地弹「夏普走势」弹框（样式与独立页一致）
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); onTrendOpen(fund.code); }}
+                        className="text-info hover:underline decoration-info/60 underline-offset-2"
+                        title="查看夏普走势（弹框）"
+                      >
+                        {fmt(fund.sharpe)}
+                      </button>
+                    ) : fmt(fund.sharpe)}
+                  </td>
                 )}
                 {showBondColumns && <td className={`${td} text-right tnum whitespace-nowrap`}>{fmt(fund.rate_bond_pct, 1, '%')}</td>}
                 <td className={`${td} text-center`}>

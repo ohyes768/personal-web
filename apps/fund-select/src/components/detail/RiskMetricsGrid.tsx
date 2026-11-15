@@ -93,9 +93,11 @@ interface RiskMetricsGridProps {
   /** 夏普卡片可点跳「夏普走势」页（仅股基抽屉传；债基第一版不支持）。
    *  不传时组件行为与旧版一致。 */
   trendHref?: string;
+  /** 夏普卡片就地弹「夏普走势」弹框（优先于 trendHref 整页跳转）。 */
+  onTrendOpen?: () => void;
 }
 
-export function RiskMetricsGrid({ fund, trendHref }: RiskMetricsGridProps) {
+export function RiskMetricsGrid({ fund, trendHref, onTrendOpen }: RiskMetricsGridProps) {
   return (
     <div className="mt-5 grid grid-cols-2 md:grid-cols-3 gap-2">
       {RISK_FIELDS.map(f => {
@@ -117,11 +119,11 @@ export function RiskMetricsGrid({ fund, trendHref }: RiskMetricsGridProps) {
               ? 'text-down'
               : 'text-ink-soft';
 
-        const isSharpeLink = f.key === 'sharpe' && !!trendHref;
+        const isSharpeLink = f.key === 'sharpe' && (!!trendHref || !!onTrendOpen);
         const cardClass = `rounded-md border border-rule bg-paper-tint/40 p-3 hover:border-rule-strong transition-colors block ${isSharpeLink ? 'hover:bg-info-tint/40 cursor-pointer' : ''}`;
 
-        // 只有夏普卡片（且传了 href）才是链接；其余保持普通 div。
-        // 显式分支而非动态 Wrapper：避免 TS 把 Link 的必填 href 强加给 div 分支。
+        // 只有夏普卡片（传了 onTrendOpen / trendHref）才交互；其余保持普通 div。
+        // 显式分支而非动态 Wrapper：避免 TS 把 Link 的必填 href 强加给 button/div 分支。
         const body = (
           <>
             <div className="flex items-baseline justify-between gap-2">
@@ -160,14 +162,27 @@ export function RiskMetricsGrid({ fund, trendHref }: RiskMetricsGridProps) {
         );
 
         return isSharpeLink ? (
-          <Link
-            key={f.key}
-            href={trendHref as string}
-            title="查看夏普走势（完整滚动曲线）"
-            className={cardClass}
-          >
-            {body}
-          </Link>
+          onTrendOpen ? (
+            // 弹框形态：不离开详情抽屉，就地看走势
+            <button
+              key={f.key}
+              type="button"
+              onClick={onTrendOpen}
+              title="查看夏普走势（完整滚动曲线）"
+              className={`${cardClass} w-full text-left`}
+            >
+              {body}
+            </button>
+          ) : (
+            <Link
+              key={f.key}
+              href={trendHref as string}
+              title="查看夏普走势（完整滚动曲线）"
+              className={cardClass}
+            >
+              {body}
+            </Link>
+          )
         ) : (
           <div key={f.key} className={cardClass}>
             {body}

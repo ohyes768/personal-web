@@ -18,6 +18,13 @@
 页面自行组装头部（返回首页 `<a href="/">` + h1 + `FundsNavigation`），
 **不套 `FundsHeader`**（它没有 `sharpe-trend` 的 active 值）。
 
+> **11-16 就地弹框**：股基列表点「夏普」列数值、详情抽屉点夏普卡片，改为**就地弹框**
+> `components/sharpe-trend/SharpeTrendDialog.tsx`（不离开当前页）。弹框与独立 Tab 页共用
+> `components/sharpe-trend/SharpeTrendBody.tsx`（区间切换 + 6 格稳定性 KPI + 滚动夏普曲线），
+> 两边**样式一致**。独立 Tab 页保留（导航第七 Tab + `?code=` 直达 + 代码输入框），方便手动输入 / 分享链接。
+> 弹框头部另有「独立页」链接（`sharpeTrendHref(code, range)`）跳过去。
+> 取数抽成 `lib/useSharpeTrend.ts`（AbortController 中止旧请求），页与弹框共用。
+
 ## 2. URL 协议
 
 - `?code=xxxxxx` — 6 位数字，`FUND_CODE_PATTERN = /^\d{6}$/`，非法回退 null
@@ -51,21 +58,30 @@
 `formatSharpe` 两位小数，`formatRatio` 百分比，`formatSlope` 带符号。
 **口径说明必须显示**：`rf_basis="zero"` 时写「按 0（利率表为空）」，不静默。
 
-## 5. 三处入口（第一版只支持股基）
+## 5. 入口（11-16 就地弹框版，只支持股基）
 
-1. `FundTable` 加 `trendEnabled?: boolean`，仅 `stock/page.tsx` 与
-   `discovery-stock/page.tsx` 传 true。代码列 Link 的 `onClick` 必须
-   `e.stopPropagation()`，否则同时触发 `<tr onClick>` 打开详情抽屉。
-2. `RiskMetricsGrid` 加 `trendHref?: string`，**只有**夏普卡片包 `<Link>`；
-   `DetailHero` 传 `/sharpe-trend?code=${fund.code}`。
-   `RowDetailDrawerBond`（债基）不使用 `DetailHero`，故无此入口。
-   ⚠ 用显式 `isSharpeLink ? <Link .../> : <div>...` 分支，
-   别用动态 `const Wrapper = isLink ? Link : 'div'` —— TS 会把 Link 的
-   必填 `href` 强加给 div 分支报 TS2322。
-3. `SharpeBoardTable` 代码列改成 Link（保留下方 10px「详情」小按钮开抽屉），
-   行点击是「聚焦」，Link 同样需 `stopPropagation`。
+1. `FundTable`：
+   - `trendEnabled?: boolean` → 代码列 Link 跳**独立页**（`sharpeTrendHref`），
+     `onClick` 必须 `e.stopPropagation()`（否则同时触发 `<tr onClick>` 开详情抽屉）。
+   - `onTrendOpen?: (code) => void` → **「夏普」列数值**变按钮，点它弹
+     `SharpeTrendDialog`（就地看走势，不离开列表）。同样 `stopPropagation`。
+   - `stock/page.tsx` 同时传两者；`SharpeBoardTable` / 债基 tab 不传 → 零变化。
+2. `RiskMetricsGrid` 加 `onTrendOpen?: () => void`，**只有**夏普卡片变按钮走弹框；
+   `trendHref?: string` 保留为不传 `onTrendOpen` 时的整页跳转兜底。
+   `DetailHero → RowDetailDrawer → stock/page.tsx` 一路把 `onTrendOpen` 透传下来，
+   `stock/page.tsx` 用同一个 `trendCode` state 弹同一个 `SharpeTrendDialog`。
+   ⚠ `isSharpeLink ? (onTrendOpen ? <button/> : <Link/>) : <div/>` 显式分支，
+   别用动态 `const Wrapper = isLink ? Link : 'div'` —— TS 会把 Link 的必填 `href`
+   强加给 div 分支报 TS2322。
+3. `SharpeBoardTable` 代码列仍是 Link 跳独立页（保留下方「详情」小按钮开抽屉），
+   行点击「聚焦」需 `stopPropagation`。
 
-债基两 tab 不传 `trendEnabled`（默认 false）→ 代码纯文本，UI 零变化。
+弹框与详情页的层级：`SharpeTrendDialog` 用 `z-[60]` 盖在 `RowDetailDrawer`（`z-50`）之上；
+**Escape 必须在 capture 阶段 `stopPropagation`**，否则详情抽屉的 document 监听也会触发，
+两层一起关 + 两处 `body.overflow` 恢复互相打架。弹框内切区间用 `setRange`（不改 URL），
+独立页切区间用 `router.push`（同步 `?range=`），二者共用 `useSharpeTrend(code, range)`。
+
+债基两 tab 不传 `trendEnabled` / `onTrendOpen` → 代码、夏普均纯文本，UI 零变化。
 
 ## 6. 常见坑
 
@@ -74,6 +90,8 @@
   删 `.next` 重启 dev；`SharpeChart` 有零尺寸守卫 + ResizeObserver。
 - **复用榜单图表**：`SharpeChart` 的 `onLegendChange` 单基金无意义，
   传空函数即可；`hiddenCodes` 传空 Set。
+- **弹框开在抽屉之上**：Escape 用 capture + `stopPropagation`（见 §5）；
+  遮罩点击 / × 只关弹框，不动下层抽屉。
 - **无 ESLint 配置**：`next lint` 不能非交互运行，如实报告，不得声称通过。
 
 ## 7. Tests Required
@@ -85,5 +103,6 @@ node --experimental-strip-types --test src/lib/sharpe-trend.test.ts \
 pnpm exec tsc --noEmit
 ```
 浏览器 E2E（人工）：无 code 引导态 → 输入 002910 跳转 → 区间切 1y
-点数 453→52 且不整页刷新 → 股基列表/抽屉夏普卡/榜单行三处跳转 →
-债基代码不可点。
+点数 453→52 且不整页刷新 → 股基列表「夏普」数值弹框、抽屉夏普卡片弹框、
+代码列 / 榜单行跳独立页 → 弹框内切区间不改 URL、Escape 只关弹框保留抽屉 →
+债基代码与夏普均不可点。

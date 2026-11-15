@@ -28,6 +28,7 @@ import { FundsHeader } from '@/components/FundsHeader';
 import { FundTable } from '@/components/FundTable';
 import { Pagination } from '@/components/Pagination';
 import { RowDetailDrawer } from '@/components/RowDetailDrawer';
+import { SharpeTrendDialog } from '@/components/sharpe-trend/SharpeTrendDialog';
 import { SourceSegmented } from '@/components/SourceSegmented';
 import { useCompare, useFeeDetails, useStockFundList } from '@/lib/hooks';
 import {
@@ -57,6 +58,8 @@ function StockFundsPageInner() {
   const compare = useCompare<FundListItem>(5);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [detailFund, setDetailFund] = useState<FundListItem | null>(null);
+  // 夏普走势弹框：点夏普列数值 / 详情抽屉夏普卡片就地弹框，不离开列表
+  const [trendCode, setTrendCode] = useState<string | null>(null);
   // 全量刷新的预筛参数（11-14 修复：合并页丢了这两个 prop，按钮整个不渲染）。
   // 只作为「全量刷新」弹框的初始值，不锁定页面筛选（合并页支持自由筛选）。
   const [preFilters, setPreFilters] = useState<FullRefreshFilters>(
@@ -152,6 +155,7 @@ function StockFundsPageInner() {
               marketKind="stock"
               showCuratedBadge={source === 'market'}
               onRowClick={setDetailFund}
+              onTrendOpen={setTrendCode}
               ddBarCapPct={60}
               trendEnabled
               highlightCode={searchCode}
@@ -207,6 +211,7 @@ function StockFundsPageInner() {
       <RowDetailDrawer
         stub={stubCode}
         fund={detailFund}
+        onTrendOpen={setTrendCode}
         onClose={() => {
           // stub 模式（?code= 直达 / 代码搜索）下 detailFund 恒为 null，
           // 只清 detailFund 会导致抽屉关不掉 —— 两个都要清。
@@ -214,6 +219,9 @@ function StockFundsPageInner() {
           setDetailFund(null);
         }}
       />
+
+      {/* 夏普走势弹框（点夏普列数值 / 详情抽屉夏普卡片弹出；与独立页同款） */}
+      <SharpeTrendDialog code={trendCode} onClose={() => setTrendCode(null)} />
     </main>
   );
 }
