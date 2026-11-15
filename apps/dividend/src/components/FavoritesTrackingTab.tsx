@@ -66,7 +66,13 @@ const chipActive = 'bg-paper-deep border-accent text-accent font-medium';
 const chipIdle = 'border-rule text-ink-muted hover:text-ink hover:border-rule-strong';
 const linkBtn = 'text-xs text-accent hover:underline underline-offset-4 disabled:opacity-40 disabled:no-underline';
 const ghostBtn = 'rounded border border-rule-strong px-2.5 py-1 text-xs text-ink hover:bg-paper-tint disabled:opacity-40';
-const primaryBtn = 'rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50';
+/**
+ * 操作列主按钮的统宽：4 个中文字（12px）+ px-3 内边距 = 72px。
+ * 「评估挡位 / 重试评估 / 再评估 / 应用」字��数不同（2~4），不定宽的话同一列里
+ * 按钮参差不齐；给最小宽度后短文案也补到 72px，整列对得上。
+ */
+const BTN_SLOT = 'min-w-[4.5rem] inline-flex items-center justify-center';
+const primaryBtn = `rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:opacity-90 disabled:opacity-50 ${BTN_SLOT}`;
 
 function normalize(keyword: string): string {
   return keyword.trim().toLowerCase();
@@ -522,7 +528,8 @@ function TrackingRow({
   /** 评估类按钮：文案随「有没有评估过 / 失败没成」变化 */
   const evaluateButton = (() => {
     if (actions.evaluate === 'running') {
-      return <button type="button" className={ghostBtn} disabled>评估中…</button>;
+      // 评估中也是同一个按钮位，宽度跟着主按钮走（否则行一开跑按钮就缩一下）
+      return <button type="button" className={`${ghostBtn} ${BTN_SLOT}`} disabled>评估中…</button>;
     }
     if (actions.evaluate === 'evaluate') {
       return (
@@ -724,17 +731,20 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 操作：只放对这只股票的动作——评估/重试/再评估、应用、挡位设置 */}
+      {/* 操作：只放对这只股票的动作——评估/重试/再评估、应用、挡位设置。
+          主按钮一行、挡位设置固定另起一行：否则同一列里链接的行位会随按钮个数跳动。 */}
       <td className="p-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {evaluateButton}
           {actions.apply && (
             <button type="button" className={primaryBtn} onClick={onOpenApplyConfirm}>应用</button>
           )}
-          {actions.links.includes('settings') && (
-            <button type="button" className={linkBtn} onClick={onOpenSettings}>挡位设置</button>
-          )}
         </div>
+        {actions.links.includes('settings') && (
+          <div className="mt-1">
+            <button type="button" className={linkBtn} onClick={onOpenSettings}>挡位设置</button>
+          </div>
+        )}
       </td>
     </tr>
   );
