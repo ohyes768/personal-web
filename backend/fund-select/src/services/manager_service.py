@@ -31,6 +31,7 @@ from src.db.models import (
     Fund,
     FundAchievementRank,
     FundPerformance,
+    FundRiskMetrics,
     Manager,
     ManagerTenure,
     MarketFundRank,
@@ -249,6 +250,7 @@ class ManagerService:
         aggregates = self._load_aggregates([manager_id]).get(manager_id, {})
         affiliations = self._load_affiliations([t.fund_code for t in tenures])
         tenure_returns = self._load_tenure_returns([t.fund_code for t in tenures])
+        tenure_sharpe = self._load_tenure_sharpe([t.fund_code for t in tenures])
         return {
             **self._to_dto(m),
             **aggregates,
@@ -266,11 +268,30 @@ class ManagerService:
                     "annual_return": t.annual_return,
                     "is_current": t.is_current,
                     "affiliation": affiliations.get(t.fund_code),
+                    "sharpe": tenure_sharpe.get(t.fund_code),
                     **tenure_returns.get(t.fund_code, {}),
                 }
                 for t in tenures
             ],
         }
+
+    def _load_tenure_sharpe(self, fund_codes: list[str]) -> dict[str, float | None]:
+        """任期基金的「当前夏普」（与股基主表 / 夏普走势同一口径）。
+
+        数据源 FundRiskMetrics.sharpe：近 3 年窗口、基于日增长率复权收益 vs
+        benchmark TRI —— 与 filter_service 里基金列表的 sharpe 列完全一致。
+        按基金自身口径取当前值（不是按经理任职窗口切片）：经理离任后基金可能
+        已换人，这里展示的是「这只基金现在近 3 年夏普」，与右侧近1/3/5年收益
+        的「基金自身口径」保持一致。缺指标（benchmark 不可用 / 样本不足）→ None。
+        """
+        codes = [c for c in set(fund_codes) if c]
+        if not codes:
+            return {}
+        rows = self.db.execute(
+            select(FundRiskMetrics.code, FundRiskMetrics.sharpe)
+            .where(FundRiskMetrics.code.in_(codes))
+        ).all()
+        return {code: sharpe for code, sharpe in rows}
 
     def _load_tenure_returns(self, fund_codes: list[str]) -> dict[str, dict]:
         """任期基金的近 1 年 / 近 3 年 / 近 5 年收益 + 同类排名（与股票 tab 主表同口径）。

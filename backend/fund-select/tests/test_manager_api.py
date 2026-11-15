@@ -498,7 +498,7 @@ class TestTenureReturns:
 
     @pytest.fixture
     def seeded_returns(self, db_session):
-        from src.db.models import FundAchievementRank, FundPerformance, MarketFundRank
+        from src.db.models import FundAchievementRank, FundPerformance, FundRiskMetrics, MarketFundRank
         d = date(2020, 1, 1)
         db_session.add(Manager(manager_id="m_ret", name="收益甲", scope="stock_active"))
         db_session.add_all([
@@ -518,6 +518,12 @@ class TestTenureReturns:
         db_session.add(FundPerformance(code="000011", as_of_date=d,
                                        ret_1y=12.5, ret_3y=40.2, ret_5y=88.1))
         db_session.add(MarketFundRank(code="000022", ret_1y=-8.4, ret_3y=25.6))
+        # 当前夏普：000011/000022 有值，000033 无指标（benchmark 不可用 / 样本不足）
+        db_session.add_all([
+            FundRiskMetrics(code="000011", sharpe=0.92, as_of_date=d),
+            FundRiskMetrics(code="000022", sharpe=-0.15, as_of_date=d),
+            FundRiskMetrics(code="000033", sharpe=None, as_of_date=d),
+        ])
         # 同类排名：阶段业绩/近1年、近3年、近5年
         db_session.add(FundAchievementRank(code="000011", period_kind="阶段业绩", period="近1年",
                                            peer_rank="1694/5606", as_of_date=d))
@@ -578,3 +584,12 @@ class TestTenureReturns:
         row = self._row(client, "000011")
         assert row["tenure_return"] == 50.0
         assert row["annual_return"] == 5.0
+
+    def test_tenure_sharpe_from_risk_metrics(self, client, seeded_returns):
+        """当前夏普取 FundRiskMetrics.sharpe（与股基主表夏普列同口径）。"""
+        assert self._row(client, "000011")["sharpe"] == 0.92
+        assert self._row(client, "000022")["sharpe"] == -0.15  # 允许负值
+
+    def test_missing_sharpe_is_null(self, client, seeded_returns):
+        """无风险指标的基金夏普为 null（前端显示 -，仍可点开走势弹框）。"""
+        assert self._row(client, "000033")["sharpe"] is None

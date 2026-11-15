@@ -22,6 +22,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { FilterPanelShell, DimensionControl, type Dimension } from '@/components/FilterSidebar';
 import { FundsHeader } from '@/components/FundsHeader';
 import { Pagination } from '@/components/Pagination';
+import { SharpeTrendDialog } from '@/components/sharpe-trend/SharpeTrendDialog';
 import { SortableHeader } from '@/components/SortableHeader';
 import { RankInline } from '@/lib/rankColor';
 import {
@@ -97,6 +98,8 @@ function ManagersPageInner() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<ManagerDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  // 夏普走势弹框：点历任基金行的夏普数值就地弹出，与股基列表同款
+  const [trendCode, setTrendCode] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
 
@@ -284,6 +287,7 @@ function ManagersPageInner() {
                     detail={expandedId === m.manager_id ? detail : null}
                     detailLoading={expandedId === m.manager_id && detailLoading}
                     onToggle={() => toggleExpand(m.manager_id)}
+                    onTrendOpen={setTrendCode}
                   />
                 ))}
               </tbody>
@@ -334,6 +338,9 @@ function ManagersPageInner() {
           </div>
         </>
       )}
+
+      {/* 夏普走势弹框（点历任基金行的夏普数值弹出；与股基列表/独立页同款） */}
+      <SharpeTrendDialog code={trendCode} onClose={() => setTrendCode(null)} />
     </main>
   );
 }
@@ -377,12 +384,14 @@ function AffiliationBadges({ aff, code, name }: {
   );
 }
 
-function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
+function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle, onTrendOpen }: {
   manager: ManagerListItem;
   expanded: boolean;
   detail: ManagerDetail | null;
   detailLoading: boolean;
   onToggle: () => void;
+  /** 点历任基金行的夏普数值 → 页面级弹「夏普走势」 */
+  onTrendOpen: (code: string) => void;
 }) {
   const td = 'px-1.5 py-1.5';
   // 展开详情的 tenure tab：默认在任。切换经理时组件复用，但 hidden 状态无副作用
@@ -499,6 +508,14 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
                       <th className="w-[3rem] py-1 pr-2 text-right font-medium">天数</th>
                       <th className="w-[4rem] py-1 pr-2 text-right font-medium">任职回报</th>
                       <th className="w-[3.5rem] py-1 pr-2 text-right font-medium">年化</th>
+                      <th className="w-[3.5rem] py-1 pr-2 text-right font-medium">
+                        <span
+                          className="hover-tip hover-tip--wrap hover-tip--right"
+                          data-tip="当前夏普：近 3 年窗口、与股基列表夏普列同口径；基金自身口径，不是按经理任职窗口切片。点数值可弹「夏普走势」"
+                        >
+                          夏普
+                        </span>
+                      </th>
                       <th className="w-[7rem] py-1 pr-2 text-right font-medium">
                         <span
                           className="hover-tip hover-tip--wrap hover-tip--right"
@@ -545,6 +562,16 @@ function ManagerRow({ manager: m, expanded, detail, detailLoading, onToggle }: {
                         </td>
                         <td className={`py-1 pr-2 tnum text-right ${(t.annual_return ?? 0) >= 0 ? 'text-up' : 'text-down'}`}>
                           {fmtPct(t.annual_return)}
+                        </td>
+                        <td className="py-1 pr-2 tnum text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={e => { e.stopPropagation(); onTrendOpen(t.fund_code); }}
+                            className="text-info hover:underline decoration-info/60 underline-offset-2"
+                            title="查看夏普走势（弹框）"
+                          >
+                            {t.sharpe != null ? fmtNum(t.sharpe, 2) : '-'}
+                          </button>
                         </td>
                         <td className="py-1 pr-2 text-right">
                           <div className={`tnum whitespace-nowrap ${retColor(t.ret_1y)}`}>{fmtRet(t.ret_1y)}</div>

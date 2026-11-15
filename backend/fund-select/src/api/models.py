@@ -126,6 +126,8 @@ class ManagerTenureItem(BaseModel):
     annual_return: Optional[float] = None
     is_current: bool = True
     affiliation: Optional[TenureAffiliation] = None
+    # 当前夏普（FundRiskMetrics.sharpe，近 3 年窗口；与股基主表夏普列同口径）
+    sharpe: Optional[float] = None
     # 基金自身口径的近 1 年 / 近 3 年 / 近 5 年收益与同类排名（与股票 tab 主表同口径）
     ret_1y: Optional[float] = None
     ret_3y: Optional[float] = None

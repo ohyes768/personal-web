@@ -54,6 +54,8 @@ export interface ManagerTenure {
   annual_return: number | null;
   is_current: boolean;
   affiliation?: TenureAffiliation | null;
+  /** 当前夏普（FundRiskMetrics.sharpe，近 3 年窗口；与股基主表夏普列同口径，缺失为 null） */
+  sharpe: number | null;
   /** 基金自身口径近 1 年收益 %（与股票 tab 主表同源：FundPerformance → MarketFundRank） */
   ret_1y: number | null;
   /** 基金自身口径近 3 年收益 % */
