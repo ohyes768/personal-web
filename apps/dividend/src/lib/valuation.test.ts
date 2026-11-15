@@ -278,6 +278,7 @@ test('从没评估过 → 评估挡位', () => {
   );
   assert.equal(actions.evaluate, 'evaluate');
   assert.equal(actions.apply, false);
+  assert.deepEqual(actions.reportLinks, []);
   assert.deepEqual(actions.links, ['settings']);
 });
 
@@ -297,7 +298,8 @@ test('已评估并应用 → 再评估 + 查看报告', () => {
   );
   assert.equal(actions.evaluate, 'reevaluate');
   assert.equal(actions.apply, false);
-  assert.deepEqual(actions.links, ['view_report', 'settings']);
+  assert.deepEqual(actions.reportLinks, ['view_report']);
+  assert.deepEqual(actions.links, ['settings']);
 });
 
 test('有更新的待应用报告 → 应用 + 再评估 + 查看报告', () => {
@@ -307,7 +309,8 @@ test('有更新的待应用报告 → 应用 + 再评估 + 查看报告', () => 
   );
   assert.equal(actions.evaluate, 'reevaluate');
   assert.equal(actions.apply, true);
-  assert.deepEqual(actions.links, ['view_report', 'settings']);
+  assert.deepEqual(actions.reportLinks, ['view_report']);
+  assert.deepEqual(actions.links, ['settings']);
 });
 
 test('失败与待应用并存：重试与应用同时给出（修正「失败盖住待应用」）', () => {
@@ -317,7 +320,8 @@ test('失败与待应用并存：重试与应用同时给出（修正「失败�
   );
   assert.equal(actions.evaluate, 'retry');
   assert.equal(actions.apply, true);
-  assert.deepEqual(actions.links, ['view_report', 'settings']);
+  assert.deepEqual(actions.reportLinks, ['view_report']);
+  assert.deepEqual(actions.links, ['settings']);
 });
 
 test('非 ready 报告 → 再评估 + 查看缺口', () => {
@@ -328,7 +332,8 @@ test('非 ready 报告 → 再评估 + 查看缺口', () => {
   );
   assert.equal(actions.evaluate, 'reevaluate');
   assert.equal(actions.apply, false);
-  assert.deepEqual(actions.links, ['view_gaps', 'settings']);
+  assert.deepEqual(actions.reportLinks, ['view_gaps']);
+  assert.deepEqual(actions.links, ['settings']);
 });
 
 test('评估中：不给评估按钮', () => {

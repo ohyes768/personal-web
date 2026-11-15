@@ -310,4 +310,9 @@ test('the evaluation column keeps time, version and session download on the same
   // 生效条下面只标生效时间，不标生效那套的版本（报告按 code 覆盖后查不到）
   await expect(row).toContainText('生效于 11-12 10:00');
   await expect(row.locator('[data-testid="valuation-bar-effective"]')).toHaveCount(1);
+  // 报告入口与状态徽章同列（评估列）：它和「下载会话记录」一样是这次评估的产物。
+  // 操作列只留对股票的动作，不放链接。
+  const evalCell = row.locator('td:has([data-eval-state])');
+  await expect(evalCell.getByRole('link', { name: /^查看报告/ })).toBeVisible();
+  await expect(row.locator('td').last().getByRole('link')).toHaveCount(0);
 });

@@ -433,15 +433,23 @@ export function deriveFavoriteTrackingState(
 /** 行内「评估」按钮的种类 */
 export type TrackingEvaluateAction = 'none' | 'running' | 'evaluate' | 'retry' | 'reevaluate';
 
-/** 行内次要链接 */
-export type TrackingLink = 'view_report' | 'view_gaps' | 'settings';
+/** 这份评估的产物入口：打开报告正文（进「评估」列） */
+export type TrackingReportLink = 'view_report' | 'view_gaps';
+
+/** 行内其他操作（进「操作」列） */
+export type TrackingLink = 'settings';
 
 export interface TrackingActions {
   /** 评估类按钮（评估挡位 / 重试评估 / 再评估 / 评估中） */
   evaluate: TrackingEvaluateAction;
   /** 是否给「应用」按钮（有更新的待应用报告时） */
   apply: boolean;
-  /** 次要链接（查看报告 / 查看缺口 / 挡位设置） */
+  /**
+   * 报告入口：查看报告（ready）/ 查看缺口（非 ready）。
+   * 与「下载会话记录」是一对——都是这次评估的产物，所以都进「评估」列。
+   */
+  reportLinks: TrackingReportLink[];
+  /** 其他操作 */
   links: TrackingLink[];
 }
 
@@ -453,7 +461,7 @@ export interface TrackingActions {
  * - 最近一次取消 → 「再评估」
  * - 已成功评估过（有报告）→ 「再评估」
  * - 有更新的待应用报告 → 额外给「应用」
- * - 有报告 → 给「查看报告」（非 ready 报告给「查看缺口」）
+ * - 有报告 → 给报告入口（非 ready 报告给「查看缺口」）
  */
 export function deriveTrackingActions(
   attempt: ValuationAttempt,
@@ -464,10 +472,9 @@ export function deriveTrackingActions(
     : attempt.state === 'failed' ? 'retry'
     : attempt.state === 'none' ? 'evaluate'
     : 'reevaluate';
-  const links: TrackingLink[] = [];
-  if (report) links.push(report.status === 'ready' ? 'view_report' : 'view_gaps');
-  links.push('settings');
-  return { evaluate, apply: derived.pendingApply, links };
+  const reportLinks: TrackingReportLink[] = [];
+  if (report) reportLinks.push(report.status === 'ready' ? 'view_report' : 'view_gaps');
+  return { evaluate, apply: derived.pendingApply, reportLinks, links: ['settings'] };
 }
 
 

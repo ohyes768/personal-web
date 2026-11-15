@@ -680,11 +680,35 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 评估：最近一次 attempt 的状态 + 溯源 + 会话下载（四者同源） */}
+      {/* 评估：最近一次 attempt 的状态 + 溯源 + 这份评估的产物入口（四者同源） */}
       <td className="p-3">
         {evalPill}
-        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-ink-muted">
+        <div className="mt-1 text-xs text-ink-muted">
           {attemptLine}
+        </div>
+        {/* 这份评估的两个产物：报告正文与会话记录。放在评估列是因为它们讲的
+            都是「这次评估」本身，不是对这只股票的动作 */}
+        <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+          {actions.reportLinks.includes('view_report') && (
+            <ValuationReaderEntry
+              sourceQuery={sourceQuery}
+              code={row.code}
+              className={linkBtn}
+              ariaLabel={`查看报告 · ${stock.name}`}
+            >
+              查看报告
+            </ValuationReaderEntry>
+          )}
+          {actions.reportLinks.includes('view_gaps') && (
+            <ValuationReaderEntry
+              sourceQuery={sourceQuery}
+              code={row.code}
+              className={linkBtn}
+              ariaLabel={`查看缺口 · ${stock.name}`}
+            >
+              查看缺口
+            </ValuationReaderEntry>
+          )}
           {sessionBlock}
         </div>
         {needsNote && (
@@ -695,32 +719,12 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 操作：单行按钮组。主按钮按状态取一个，待应用时额外给「应用」。 */}
+      {/* 操作：只放对这只股票的动作——评估/重试/再评估、应用、挡位设置 */}
       <td className="p-3">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           {evaluateButton}
           {actions.apply && (
             <button type="button" className={primaryBtn} onClick={onOpenApplyConfirm}>应用</button>
-          )}
-          {actions.links.includes('view_report') && (
-            <ValuationReaderEntry
-              sourceQuery={sourceQuery}
-              code={row.code}
-              className={linkBtn}
-              ariaLabel={`查看报告 · ${stock.name}`}
-            >
-              查看报告
-            </ValuationReaderEntry>
-          )}
-          {actions.links.includes('view_gaps') && (
-            <ValuationReaderEntry
-              sourceQuery={sourceQuery}
-              code={row.code}
-              className={linkBtn}
-              ariaLabel={`查看缺口 · ${stock.name}`}
-            >
-              查看缺口
-            </ValuationReaderEntry>
           )}
           {actions.links.includes('settings') && (
             <button type="button" className={linkBtn} onClick={onOpenSettings}>挡位设置</button>
