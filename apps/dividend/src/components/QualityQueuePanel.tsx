@@ -10,6 +10,19 @@ import { formatElapsedSince } from '@/lib/quality';
 
 const buttonClass = 'rounded border border-rule-strong px-2 py-1 text-xs text-ink hover:border-accent disabled:opacity-40';
 
+/**
+ * 错误摘要：压成一行。
+ *
+ * 后端原文可能很长（如「run xxx 超过 3600s 未完成（最后状态 running）」），
+ * 直接渲染会把弹框撑高；这里只显示摘要，全文留在 title 提示里。
+ */
+export function summarizeQueueError(error: string | null | undefined, maxLength = 36): string {
+  if (!error) return '';
+  const flat = error.replace(/\s+/g, ' ').trim();
+  if (!flat) return '';
+  return flat.length > maxLength ? `${flat.slice(0, maxLength)}…` : flat;
+}
+
 /** 队列面板行的最小结构（Quality/Valuation 行都满足） */
 export interface QueueRowData {
   code: string;
@@ -107,7 +120,14 @@ export function QualityQueuePanel({ view, onCancel, onMove, label = '评级' }: 
                       >
                         {cancelling ? '取消中…' : '取消'}
                       </button>
-                      {row.error && <span className="basis-full text-xs text-red-700">{row.error}</span>}
+                      {row.error && (
+                        <span
+                          className="basis-full truncate text-xs text-red-700"
+                          title={row.error}
+                        >
+                          {summarizeQueueError(row.error)}
+                        </span>
+                      )}
                     </li>
                   );
                 })}

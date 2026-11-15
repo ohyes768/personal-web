@@ -148,6 +148,11 @@ test('non-ready report cannot be applied and failure retriable', async ({ page }
   await expect(table.locator('[data-code="600000"]').getByRole('button', { name: /应用/ })).toHaveCount(0);
   // 失败行显示原因与重试
   await expect(table.locator('[data-code="600004"]')).toContainText('评估失败');
+  // 失败原文不渲染在行里（后端原文可能很长，如「run xxx 超过 3600s 未完成」会把行撑高），
+  // 原文只留在徽章的悬停提示里
+  const failedBadge = table.locator('[data-code="600004"] [data-eval-state="failed"]');
+  await expect(failedBadge).toHaveAttribute('title', /run 终态 failed/);
+  await expect(table.locator('[data-code="600004"]')).not.toContainText('run 终态 failed');
   await table.locator('[data-code="600004"]').getByRole('button', { name: '重试评估' }).click();
   await expect(s.analyzeCalls).toEqual([['600004']]);
 });

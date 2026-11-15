@@ -258,14 +258,14 @@ export function FavoritesTrackingTab({
           {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
         </p>
         <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
-        <ValuationReaderEntry sourceQuery={sourceQuery} />
+        <ValuationReaderEntry sourceQuery={sourceQuery} variant="toolbar" />
         <input
           type="search"
           value={searchInput}
           onChange={e => setSearchInput(e.target.value)}
           placeholder="搜索名称 / 代码"
           aria-label="搜索收藏的股票名称或代码"
-          className="w-44 rounded border border-rule-strong bg-paper px-3 py-1.5 text-sm text-ink focus:outline-none focus:border-accent"
+          className="w-44 rounded border border-rule-strong bg-paper px-3 py-2 text-sm text-ink focus:outline-none focus:border-accent"
         />
       </div>
 
@@ -423,18 +423,18 @@ function TrackingRow({
   // 状态列只讲评估（监控开关不在这列：那是推送设置，不是评估结果）
   const evalState = deriveValuationEvalState(derived, row.perCodeItem);
   const evalMeta = VALUATION_EVAL_STATE_META[evalState];
-  // 徽章已经说清的状态不再补一句说明（避免每行固定多占一行）
+  // 徽章已经说清的状态不再补一句说明（避免每行固定多占一行）。
+  // 失败尤其不补：后端原文可能很长（如「run xxx 超过 3600s 未完成（最后状态 running）」），
+  // 直接渲染会把行撑高——原文留在徽章的悬停提示里。
   const needsNote = evalState === 'evaluating'
-    || evalState === 'failed'
     || evalState === 'cancelled'
     || evalState === 'not_ready'
     || (evalState === 'pending_apply' && !derived.effective);
   const evaluatingNow = isAttemptRunning(attempt.state) || evaluating;
   const evalNote = evalState === 'evaluating' ? '正在补充估值依据'
-    : evalState === 'failed' ? (attempt.error ? attempt.error : '可重试')
-      : evalState === 'cancelled' ? '本次评估被取消，可重新评估'
-        : evalState === 'not_ready' ? '未生成价格，可查看原因'
-          : '';
+    : evalState === 'cancelled' ? '本次评估被取消，可重新评估'
+      : evalState === 'not_ready' ? '未生成价格，可查看原因'
+        : '';
   const levels = alertItem?.levels ?? null;
   const candidateLevels = derived.pendingApply && report?.levels
     ? reportLevelsToAlertLevels(report.levels)
@@ -503,10 +503,15 @@ function TrackingRow({
       : evalMeta.tone === 'warn' ? 'bg-amber-50 text-amber-700'
         : evalMeta.tone === 'bad' ? 'bg-red-50 text-red-700'
           : 'bg-paper-tint text-ink-muted';
+    // 失败原因原文可能很长，列表不渲染，只留在徽章的悬停提示里
+    const errorTitle = evalState === 'failed' && attempt.error
+      ? `评估失败：${attempt.error}`
+      : undefined;
     return (
       <span
         className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${tone}`}
         data-eval-state={evalState}
+        title={errorTitle}
       >
         {evalState === 'succeeded' && <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-600" />}
         {evalMeta.label}
@@ -693,7 +698,7 @@ function TrackingRow({
             <ValuationReaderEntry
               sourceQuery={sourceQuery}
               code={row.code}
-              className={linkBtn}
+              variant="inline"
               ariaLabel={`查看报告 · ${stock.name}`}
             >
               查看报告
@@ -703,7 +708,7 @@ function TrackingRow({
             <ValuationReaderEntry
               sourceQuery={sourceQuery}
               code={row.code}
-              className={linkBtn}
+              variant="inline"
               ariaLabel={`查看缺口 · ${stock.name}`}
             >
               查看缺口
