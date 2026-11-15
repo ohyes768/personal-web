@@ -6,8 +6,14 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { deriveValuationEvalState, resolveValuationZone, resolveZoneSteps } from './valuation.ts';
-import type { FavoriteTrackingDerived } from './valuation.ts';
+import {
+  deriveTrackingActions,
+  deriveValuationAttempt,
+  deriveValuationEvalState,
+  resolveValuationZone,
+  resolveZoneSteps,
+} from './valuation.ts';
+import type { FavoriteTrackingDerived, ValuationReportRecord } from './valuation.ts';
 import type { AlertLevels } from './types.ts';
 
 function levels(heavy: number, add: number, reduce: number, full: number): AlertLevels {
@@ -183,10 +189,153 @@ test('非 ready 报告 → 未出价格', () => {
   }
 });
 
-test('无报告无任务 → 待评估；手工挡位也算未评估过', () => {
-  assert.equal(deriveValuationEvalState(derived(null), null), 'unevaluated');
+test('无报告无任务 → 待评估', () => {
   assert.equal(
-    deriveValuationEvalState({ state: 'configured' as const, pendingApply: false, effective: true, report: null }, null),
+    deriveValuationEvalState({ state: 'unevaluated', pendingApply: false, effective: false, report: null }, null),
     'unevaluated',
   );
+});
+
+test('有生效挡位但从未走过 Hermes → 手工挡位（不再显示「待评估」）', () => {
+  assert.equal(
+    deriveValuationEvalState({ state: 'configured' as const, pendingApply: false, effective: true, report: null }, null),
+    'manual',
+  );
+});
+
+/* ---------------- deriveValuationAttempt：最近一次尝试的溯源 ---------------- */
+
+function report(extra: Partial<ValuationReportRecord> = {}): ValuationReportRecord {
+  return {
+    schema_version: '1', skill_version: '1.2', code: '600004', name: '测试', currency: 'CNY',
+    as_of: '2026-11-14', status: 'ready', levels: null, valuation: null, evidence: [],
+    data_gaps: [], confidence: null, risks: [], invalidation_conditions: [], summary: '摘要',
+    analysis: {}, report_md: '', evaluated_at: '2026-11-14T09:30:00', data_date: null,
+    analysis_duration_seconds: 60, run_id: 'run-ok',
+    ...extra,
+  };
+}
+
+test('没有实时条目时退回报告：成功那次的时间/版本/会话都取自报告', () => {
+  const attempt = deriveValuationAttempt(report(), null);
+  assert.equal(attempt.state, 'completed');
+  assert.equal(attempt.at, '2026-11-14T09:30:00');
+  assert.equal(attempt.skillVersion, '1.2');
+  assert.equal(attempt.runId, 'run-ok');
+});
+
+test('从没评估过：state=none，各项为空', () => {
+  const attempt = deriveValuationAttempt(null, null);
+  assert.equal(attempt.state, 'none');
+  assert.equal(attempt.at, null);
+  assert.equal(attempt.runId, null);
+});
+
+test('失败那次：时间取结束时间、run_id 取失败那次（不退回旧报告）', () => {
+  const attempt = deriveValuationAttempt(
+    report({ evaluated_at: '2026-11-12T09:00:00', run_id: 'run-old' }),
+    { state: 'failed', error: 'run 终态 failed', finished_at: '2026-11-15T10:02:00', run_id: 'run-fail' },
+  );
+  assert.equal(attempt.state, 'failed');
+  assert.equal(attempt.at, '2026-11-15T10:02:00');
+  assert.equal(attempt.runId, 'run-fail');
+  assert.equal(attempt.error, 'run 终态 failed');
+  assert.equal(attempt.skillVersion, null);
+});
+
+test('排队中：给队列位次，时间取入队时间', () => {
+  const attempt = deriveValuationAttempt(null, {
+    state: 'queued', queued_at: '2026-11-15T09:00:00', position: 2, run_id: null,
+  });
+  assert.equal(attempt.state, 'queued');
+  assert.equal(attempt.at, '2026-11-15T09:00:00');
+  assert.equal(attempt.position, 2);
+});
+
+test('取消：单独成态，时间取结束时间', () => {
+  const attempt = deriveValuationAttempt(null, {
+    state: 'cancelled', finished_at: '2026-11-15T11:00:00', run_id: 'run-cancel',
+  });
+  assert.equal(attempt.state, 'cancelled');
+  assert.equal(attempt.at, '2026-11-15T11:00:00');
+});
+
+test('成功：实时条目与报告同时存在时，run_id 以实时条目为准（同一次尝试）', () => {
+  const attempt = deriveValuationAttempt(report({ run_id: 'run-report' }), {
+    state: 'completed', run_id: 'run-live', finished_at: '2026-11-14T09:30:00',
+  });
+  assert.equal(attempt.state, 'completed');
+  assert.equal(attempt.runId, 'run-live');
+  assert.equal(attempt.skillVersion, '1.2');
+});
+
+/* ---------------- deriveTrackingActions：行内动作 ---------------- */
+
+test('从没评估过 → 评估挡位', () => {
+  const actions = deriveTrackingActions(
+    deriveValuationAttempt(null, null),
+    { state: 'unevaluated', pendingApply: false, effective: false, report: null },
+  );
+  assert.equal(actions.evaluate, 'evaluate');
+  assert.equal(actions.apply, false);
+  assert.deepEqual(actions.links, ['settings']);
+});
+
+test('最近一次失败 → 重试评估', () => {
+  const actions = deriveTrackingActions(
+    deriveValuationAttempt(null, { state: 'failed', error: 'x' }),
+    { state: 'failed', pendingApply: false, effective: false, report: null },
+  );
+  assert.equal(actions.evaluate, 'retry');
+  assert.equal(actions.apply, false);
+});
+
+test('已评估并应用 → 再评估 + 查看报告', () => {
+  const actions = deriveTrackingActions(
+    deriveValuationAttempt(report(), null),
+    { state: 'configured', pendingApply: false, effective: true, report: report() },
+  );
+  assert.equal(actions.evaluate, 'reevaluate');
+  assert.equal(actions.apply, false);
+  assert.deepEqual(actions.links, ['view_report', 'settings']);
+});
+
+test('有更新的待应用报告 → 应用 + 再评估 + 查看报告', () => {
+  const actions = deriveTrackingActions(
+    deriveValuationAttempt(report(), null),
+    { state: 'pending_apply', pendingApply: true, effective: false, report: report() },
+  );
+  assert.equal(actions.evaluate, 'reevaluate');
+  assert.equal(actions.apply, true);
+  assert.deepEqual(actions.links, ['view_report', 'settings']);
+});
+
+test('失败与待应用并存：重试与应用同时给出（修正「失败盖住待应用」）', () => {
+  const actions = deriveTrackingActions(
+    deriveValuationAttempt(report(), { state: 'failed', error: 'boom' }),
+    { state: 'failed', pendingApply: true, effective: true, report: report() },
+  );
+  assert.equal(actions.evaluate, 'retry');
+  assert.equal(actions.apply, true);
+  assert.deepEqual(actions.links, ['view_report', 'settings']);
+});
+
+test('非 ready 报告 → 再评估 + 查看缺口', () => {
+  const notReady = report({ status: 'insufficient_data' });
+  const actions = deriveTrackingActions(
+    deriveValuationAttempt(notReady, null),
+    { state: 'not_ready', pendingApply: false, effective: false, report: notReady },
+  );
+  assert.equal(actions.evaluate, 'reevaluate');
+  assert.equal(actions.apply, false);
+  assert.deepEqual(actions.links, ['view_gaps', 'settings']);
+});
+
+test('评估中：不给评估按钮', () => {
+  const actions = deriveTrackingActions(
+    deriveValuationAttempt(null, { state: 'running' }),
+    { state: 'evaluating', pendingApply: false, effective: false, report: null },
+  );
+  assert.equal(actions.evaluate, 'running');
+  assert.equal(actions.apply, false);
 });

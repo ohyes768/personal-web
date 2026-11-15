@@ -131,6 +131,114 @@ export function buildValuationQueue(perCode: ValuationPerCodeMap): ValuationQueu
 export const VALUATION_LEVEL_KEYS = ['heavy_position', 'add_position', 'reduce_position', 'full_exit'] as const;
 export type ValuationLevelKey = (typeof VALUATION_LEVEL_KEYS)[number];
 
+/* =====================================================================
+ * attempt（最近一次评估尝试）与 report（最新一份可用报告）是两件事
+ *
+ * 现状把两者揉成一个 derived.state，导致：
+ * - 最近一次失败会盖住「待应用」（徽章显示失败，"应用"按钮却指向旧报告）
+ * - 报告已应用后 derived.state 仍是 'pending_apply'，语义失真
+ *
+ * 这里把「最近一次尝试」单独立出来：状态、时间、版本、会话 run_id 四者
+ * 永远描述同一次尝试，行内不再出现「下载的是失败那次、时间写的是上次成功那次」。
+ * ===================================================================== */
+
+/** 最近一次尝试的状态：none = 从没提交过评估 */
+export type ValuationAttemptState =
+  | 'none'
+  | 'queued'
+  | 'running'
+  | 'cancelling'
+  | 'completed'
+  | 'failed'
+  | 'cancelled';
+
+export interface ValuationAttempt {
+  /** 最近一次尝试的状态 */
+  state: ValuationAttemptState;
+  /** 这次尝试的时间：成功=报告评估时间；失败/取消=结束时间；排队=入队时间 */
+  at: string | null;
+  /** 这次尝试用的 skill 版本（失败/取消那次没有版本可言） */
+  skillVersion: string | null;
+  /** 这次尝试的 Hermes run id：成功或失败都能下载会话记录 */
+  runId: string | null;
+  /** 失败原因（仅 failed） */
+  error: string | null;
+  /** 队列位次（排队中才有，1 起） */
+  position: number | null;
+  /** 这次尝试对应的报告（成功才有） */
+  report: ValuationReportRecord | null;
+}
+
+/** 尝试是否仍在进行中（排队/运行/取消中） */
+export function isAttemptRunning(state: ValuationAttemptState): boolean {
+  return state === 'queued' || state === 'running' || state === 'cancelling';
+}
+
+/**
+ * 推导最近一次评估尝试。
+ *
+ * 口径：
+ * - per_code 有条目 → 以它为准（它记录的是最近一次尝试，含失败/取消）
+ * - per_code 没有条目 → 退回已落盘报告（服务重启后内存队列清空，
+ *   只有失败行能从台账并回来；成功的靠报告本身）
+ * - 都没有 → 从没评估过
+ *
+ * 成功那次的版本与时间取自报告：报告就是那次尝试的产物（同一次 run_id）。
+ */
+export function deriveValuationAttempt(
+  report: ValuationReportRecord | null | undefined,
+  perCode: ValuationPerCodeItem | null | undefined,
+): ValuationAttempt {
+  const state = perCode?.state;
+  if (!state) {
+    // 没有实时条目：有报告就是那次成功尝试的产物
+    if (report) {
+      return {
+        state: 'completed',
+        at: report.evaluated_at ?? null,
+        skillVersion: report.skill_version ?? null,
+        runId: report.run_id ?? null,
+        error: null,
+        position: null,
+        report,
+      };
+    }
+    return { state: 'none', at: null, skillVersion: null, runId: null, error: null, position: null, report: null };
+  }
+  if (isAttemptRunning(state)) {
+    return {
+      state,
+      at: perCode?.started_at ?? perCode?.queued_at ?? perCode?.updated_at ?? null,
+      skillVersion: null,
+      runId: perCode?.run_id ?? null,
+      error: null,
+      position: perCode?.position ?? null,
+      report: null,
+    };
+  }
+  if (state === 'failed' || state === 'cancelled') {
+    return {
+      state,
+      at: perCode?.finished_at ?? perCode?.updated_at ?? null,
+      skillVersion: null,
+      runId: perCode?.run_id ?? null,
+      error: perCode?.error ?? null,
+      position: null,
+      report: null,
+    };
+  }
+  // completed：报告就是这次尝试的产物
+  return {
+    state: 'completed',
+    at: report?.evaluated_at ?? perCode?.finished_at ?? perCode?.updated_at ?? null,
+    skillVersion: report?.skill_version ?? null,
+    runId: perCode?.run_id ?? report?.run_id ?? null,
+    error: null,
+    position: null,
+    report: report ?? null,
+  };
+}
+
 export const VALUATION_STATUS_LABEL: Record<ValuationStatus, string> = {
   ready: '评估完成',
   insufficient_data: '资料不足',
@@ -190,17 +298,22 @@ export function reportLevelsToAlertLevels(levels: Record<string, ValuationLevelP
  *
  * 挡位钉钉推送与监控已移除（2026-11-14）：不再有 monitoring/paused——
  * 那两种状态只反映推送开关，没有开关就没有可派生的含义。
- * - pending_apply：ready 报告新于当前配置
- * - evaluating/failed：per_code 实时状态
- * - not_ready：存在非 ready 报告且无生效挡位
- * - unevaluated：无报告、无任务、无生效挡位
- * - configured：有四条生效挡位，但没有新于它的报告（等价于「已应用，无事可做」）
+ *
+ * 语义修正（2026-11-15）：此前只要存在 ready 报告就置为 'pending_apply'，
+ * 哪怕报告早已应用过，语义失真；现在 pending_apply 只在报告确实新于生效挡位时成立。
+ * - evaluating：最近一次尝试在跑（queued/running/cancelling）
+ * - failed/cancelled：最近一次尝试失败 / 被取消
+ * - pending_apply：ready 报告新于当前生效挡位，等你确认应用
+ * - not_ready：最近一次尝试出结果，但不是 ready（资料不足/阻断/不适用）
+ * - configured：有生效挡位，且没有新于它的报告（等价于「已应用，无事可做」）
+ * - unevaluated：从未评估过
  */
 export type FavoriteTrackingState =
   | 'configured'
   | 'pending_apply'
   | 'evaluating'
   | 'failed'
+  | 'cancelled'
   | 'not_ready'
   | 'unevaluated';
 
@@ -218,17 +331,24 @@ export interface FavoriteTrackingDerived {
  *
  * 列表状态列只讲评估——推送与监控已整体移除（2026-11-14）；
  * 两者挤在一格会让人以为「暂停 = 没评估」。监控开关仍在「挡位设置」里。
- * - unevaluated：从未评估过（无报告、无在跑记录）
+ *
+ * 语义修正（2026-11-15）：状态讲的是「最近一次尝试」，不再与「可用报告」混为一谈——
+ * 最近一次失败时，即使还留着一份待应用的旧报告，徽章也要说失败（旧报告另由挡位列与操作列表达）。
+ * - unevaluated：从未评估过（无报告、无在跑记录、无生效挡位）
+ * - manual：只有手工挡位，从没走过 Hermes 估值
  * - evaluating：queued/running/cancelling
  * - failed：最近一次评估失败
+ * - cancelled：最近一次评估被取消
  * - not_ready：出过结果但状态不是 ready（资料不足/阻断/不适用）
- * - succeeded：有 ready 报告（无论是否已应用）
- * - pending_apply：ready 报告新于生效挡位，等待确认应用（succeeded 的子状态）
+ * - succeeded：有 ready 报告且没有更新的待应用报告
+ * - pending_apply：ready 报告新于生效挡位，等待确认应用
  */
 export type ValuationEvalState =
   | 'unevaluated'
+  | 'manual'
   | 'evaluating'
   | 'failed'
+  | 'cancelled'
   | 'not_ready'
   | 'succeeded'
   | 'pending_apply';
@@ -238,26 +358,34 @@ export const VALUATION_EVAL_STATE_META: Record<ValuationEvalState, { label: stri
   pending_apply: { label: '待应用', tone: 'warn' },
   evaluating: { label: '评估中', tone: 'idle' },
   failed: { label: '评估失败', tone: 'bad' },
+  cancelled: { label: '已取消', tone: 'idle' },
   not_ready: { label: '未出价格', tone: 'idle' },
+  manual: { label: '手工挡位', tone: 'idle' },
   unevaluated: { label: '待评估', tone: 'idle' },
 };
 
 /**
- * 推导评估状态。优先看实时任务（在跑/失败），再看报告。
- * 「失败」优先于旧的成功报告：最近一次评估失败时，列表要说失败，而不是拿旧报告冒充成功。
+ * 推导评估状态：讲「最近一次尝试」，不再与「可用报告」混为一谈。
+ *
+ * 「失败/取消」优先于旧的成功报告：最近一次尝试没成，列表要说没成，
+ * 而不是拿旧报告冒充成功；旧报告另由挡位列与操作列表达（仍可查看/应用）。
  */
 export function deriveValuationEvalState(
   derived: FavoriteTrackingDerived,
   perCode: ValuationPerCodeItem | null | undefined,
 ): ValuationEvalState {
-  const live = perCode?.state;
-  if (live === 'queued' || live === 'running' || live === 'cancelling') return 'evaluating';
-  if (live === 'failed') return 'failed';
-  if (derived.pendingApply) return 'pending_apply';
-  if (derived.report) return derived.report.status === 'ready' ? 'succeeded' : 'not_ready';
-  // 有生效挡位但从未评估（手工配置）：仍算未评估过
-  return 'unevaluated';
+  const attempt = deriveValuationAttempt(derived.report, perCode);
+  if (isAttemptRunning(attempt.state)) return 'evaluating';
+  if (attempt.state === 'failed') return 'failed';
+  if (attempt.state === 'cancelled') return 'cancelled';
+  if (derived.report) {
+    if (derived.report.status !== 'ready') return 'not_ready';
+    return derived.pendingApply ? 'pending_apply' : 'succeeded';
+  }
+  // 没有任何 Hermes 评估痕迹：手工挡位 or 从没评估
+  return derived.effective ? 'manual' : 'unevaluated';
 }
+
 
 export function deriveFavoriteTrackingState(
   alertsLevels: AlertLevels | null | undefined,
@@ -275,22 +403,80 @@ export function deriveFavoriteTrackingState(
     state = 'evaluating';
   } else if (live === 'failed') {
     state = 'failed';
+  } else if (live === 'cancelled') {
+    state = 'cancelled';
+  } else if (pendingApply) {
+    state = 'pending_apply';
   } else if (report) {
-    state = report.status === 'ready' ? 'pending_apply' : 'not_ready';
+    // 有报告但没有更新的待应用报告：已应用（或报告比生效挡位旧）
+    state = report.status === 'ready' ? 'configured' : 'not_ready';
   } else if (effective) {
     state = 'configured';
   } else {
     state = 'unevaluated';
   }
-  // 有生效挡位时 pending_apply 只作重叠标志，不改变主状态
-  return { state: pendingApply && !effective ? 'pending_apply' : state, pendingApply, effective, report: report ?? null };
+  return { state, pendingApply, effective, report: report ?? null };
 }
+
+/* =====================================================================
+ * 行内动作推导
+ *
+ * 一行的动作由三个事实共同决定：
+ * - attempt（最近一次尝试）：决定「评估 / 重试 / 再评估 / 评估中」
+ * - report（最新一份可用报告）：决定「查看报告 / 查看缺口」
+ * - pendingApply：决定「应用」
+ *
+ * 关键修正：失败与待应用可以并存，两件事都要露出——
+ * 现状 pendingApply 优先命中「应用」，把「重试评估」挤掉了。
+ * ===================================================================== */
+
+/** 行内「评估」按钮的种类 */
+export type TrackingEvaluateAction = 'none' | 'running' | 'evaluate' | 'retry' | 'reevaluate';
+
+/** 行内次要链接 */
+export type TrackingLink = 'view_report' | 'view_gaps' | 'settings';
+
+export interface TrackingActions {
+  /** 评估类按钮（评估挡位 / 重试评估 / 再评估 / 评估中） */
+  evaluate: TrackingEvaluateAction;
+  /** 是否给「应用」按钮（有更新的待应用报告时） */
+  apply: boolean;
+  /** 次要链接（查看报告 / 查看缺口 / 挡位设置） */
+  links: TrackingLink[];
+}
+
+/**
+ * 推导行内动作。
+ *
+ * - 从没提交过评估 → 「评估挡位」
+ * - 最近一次失败 → 「重试评估」（失败原因由评估状态列承载）
+ * - 最近一次取消 → 「再评估」
+ * - 已成功评估过（有报告）→ 「再评估」
+ * - 有更新的待应用报告 → 额外给「应用」
+ * - 有报告 → 给「查看报告」（非 ready 报告给「查看缺口」）
+ */
+export function deriveTrackingActions(
+  attempt: ValuationAttempt,
+  derived: FavoriteTrackingDerived,
+): TrackingActions {
+  const report = derived.report;
+  const evaluate: TrackingEvaluateAction = isAttemptRunning(attempt.state) ? 'running'
+    : attempt.state === 'failed' ? 'retry'
+    : attempt.state === 'none' ? 'evaluate'
+    : 'reevaluate';
+  const links: TrackingLink[] = [];
+  if (report) links.push(report.status === 'ready' ? 'view_report' : 'view_gaps');
+  links.push('settings');
+  return { evaluate, apply: derived.pendingApply, links };
+}
+
 
 export const TRACKING_STATE_META: Record<FavoriteTrackingState, { label: string; note: string }> = {
   configured: { label: '已配置挡位', note: '' },
   pending_apply: { label: '待应用', note: '确认后使用新挡位' },
   evaluating: { label: '评估中', note: '正在补充估值依据' },
   failed: { label: '评估失败', note: '可重试' },
+  cancelled: { label: '已取消', note: '本次评估被取消，可重新评估' },
   not_ready: { label: '未出价格', note: '未生成价格，可查看原因' },
   unevaluated: { label: '待评估', note: '' },
 };
@@ -303,11 +489,11 @@ export function matchesTrackingFilter(filter: TrackingFilterKey, derived: Favori
     case 'all':
       return true;
     case 'pending':
-      // 待评估：从未应用过挡位（无生效挡位），且当前没有待应用报告
+      // 待评估：还没出过可用价格（无生效挡位、无待应用报告），需要再评估一次
       return !derived.effective
         && !derived.pendingApply
         && (derived.state === 'unevaluated' || derived.state === 'evaluating'
-          || derived.state === 'failed' || derived.state === 'not_ready');
+          || derived.state === 'failed' || derived.state === 'cancelled' || derived.state === 'not_ready');
     case 'ready':
       return derived.pendingApply;
     default:

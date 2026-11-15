@@ -2,10 +2,15 @@
  * FavoritesTrackingTab — 收藏跟踪（替换原「挡位监控」Tab，?tab=alerts URL 保持兼容）
  *
  * 展示全部收藏（不限于已配置挡位），三种筛选 + 名称/代码搜索：
- *   全部收藏 / 待评估（从未应用挡位且无待应用报告）/ 待应用（可与已有生效挡位重叠）
- * 行内：评估挡位/重评/重试、待应用行分「应用」（紧凑确认卡）与「查看报告」（报告弹窗）、
- *   挡位设置（AlertSettingsModal，只编辑四条价格线）。推送与监控已移除。
- * 价格条：ValuationPriceBar 窄条（四阈值五区间）；未评估/失败/非 ready 不画条。
+ *   全部收藏 / 待评估（还没出过可用价格）/ 待应用（可与已有生效挡位重叠）
+ *
+ * 行内六列（2026-11-15 重构）：
+ *   股票/基本面 │ 现价 │ 挡位 │ 区间 │ 评估 │ 操作
+ * - 「评估」列只讲最近一次 attempt：状态徽章 + 这次尝试的时间/版本 + 会话下载。
+ *   四者永远指向同一次尝试，不再出现「下载的是失败那次、时间写的是上次成功那次」。
+ * - 「挡位」列只画一条生效条；候选那套价不占表格宽度，由「应用」确认卡与
+ *   独立阅读页 /valuation-reader 承载。
+ * - 「操作」列单行按钮组：评估/重试/再评估 + 应用 + 查看报告 + 挡位设置。
  */
 'use client';
 
@@ -24,12 +29,17 @@ import {
   VALUATION_ZONE_TEXT_COLOR,
   buildValuationQueue,
   deriveFavoriteTrackingState,
+  deriveTrackingActions,
+  deriveValuationAttempt,
   deriveValuationEvalState,
+  isAttemptRunning,
   matchesTrackingFilter,
   reportLevelsToAlertLevels,
   resolveValuationZone,
   resolveZoneSteps,
   type FavoriteTrackingDerived,
+  type TrackingActions,
+  type ValuationAttempt,
   type ValuationPerCodeItem,
   type TrackingFilterKey,
   type ValuationReportRecord,
@@ -38,10 +48,12 @@ import type { AlertLevels, DividendStockWithTechnical, PriceItem } from '@/lib/t
 import type { UseAlertsStatusResult } from '@/lib/hooks/useAlertsStatus';
 import type { UseWatchlistResult } from '@/lib/hooks/useWatchlist';
 import { QualityQueuePanel } from './QualityQueuePanel';
+import { QualitySkillVersion } from './QualitySkillVersion';
 import { SessionDownloadButton } from './SessionDownloadButton';
 import { ValuationApplyConfirm } from './ValuationApplyConfirm';
 import { ValuationPriceBar } from './ValuationPriceBar';
-import { ValuationReportModal } from './ValuationReportModal';
+import { ValuationReaderEntry } from './ValuationReaderEntry';
+import { Modal } from './shared-ui/Modal';
 
 const FILTERS: Array<{ key: TrackingFilterKey; label: string }> = [
   { key: 'all', label: '全部收藏' },
@@ -60,6 +72,15 @@ function normalize(keyword: string): string {
   return keyword.trim().toLowerCase();
 }
 
+/** MM-DD HH:mm（自己拼格式，不走 toLocaleString：各浏览器 locale 的分隔符不一致） */
+function formatMoment(iso: string | null | undefined): string {
+  if (!iso) return '—';
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return '—';
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
+}
+
 export function FavoritesTrackingTab({
   watchlist,
   stocks,
@@ -67,6 +88,7 @@ export function FavoritesTrackingTab({
   priceMap,
   priceUpdatedAt,
   onOpenAlertSettings,
+  sourceQuery,
 }: {
   watchlist: UseWatchlistResult;
   stocks: DividendStockWithTechnical[];
@@ -75,14 +97,17 @@ export function FavoritesTrackingTab({
   priceMap: Map<string, PriceItem>;
   priceUpdatedAt: string | null;
   onOpenAlertSettings: (code: string) => void;
+  /** 主页面当前 query（回跳阅读页时还原视图） */
+  sourceQuery: string;
 }) {
   const [filter, setFilter] = useState<TrackingFilterKey>('all');
   const [searchInput, setSearchInput] = useState('');
-  const [reportCode, setReportCode] = useState<string | null>(null);
   const [applyCode, setApplyCode] = useState<string | null>(null);
   const [notice, setNotice] = useState('');
   const [actionPending, setActionPending] = useState<string | null>(null);
   const [applyError, setApplyError] = useState('');
+  /** 再评估覆盖待应用报告的确认（待确认的股票代码） */
+  const [confirmReevaluate, setConfirmReevaluate] = useState<{ code: string; name: string } | null>(null);
 
   const { reports, perCode, configured, currentSkillVersion, job, message: valuationMessage, pollError,
           analyze, refresh: refreshValuation, cancelQueueItem, moveQueueItem } = useValuation();
@@ -109,15 +134,15 @@ export function FavoritesTrackingTab({
       );
       const price = priceMap.get(code);
       const currentPrice = price?.realtime ?? price?.close ?? null;
-      // Hermes 会话记录：成功与失败都给下载入口——成功时用来复盘「这份挡位怎么推出来的」，
-      // 失败时用来排查「为什么没出价」。优先取最近一次评估的 run_id（per_code 上的
-      // 失败/在跑记录），没有才退回报告里那次成功评估的 run_id（旧报告可能缺失）。
-      const sessionRunId = live?.run_id ?? report?.run_id ?? null;
+      // 最近一次尝试（成功或失败）：状态、时间、版本、会话 run_id 四者同源
+      const attempt = deriveValuationAttempt(report, live);
       return {
         code, stock, alertItem, report, derived, currentPrice, price,
-        liveError: live?.error ?? null,
-        sessionRunId,
+        attempt,
         perCodeItem: live,
+        actions: deriveTrackingActions(attempt, derived),
+        /** 生效挡位最后一次写入时间（应用或手工编辑） */
+        effectiveUpdatedAt: alertItem?.updated_at ?? null,
       };
     });
   }, [codes, stockByCode, alertsStatus.alertMap, reports, perCode, priceMap]);
@@ -147,6 +172,23 @@ export function FavoritesTrackingTab({
     setActionPending(null);
   }, [analyze]);
 
+  /** 行内「评估 / 重试评估 / 再评估」：有待应用报告时先确认覆盖 */
+  const requestEvaluate = useCallback((code: string) => {
+    const row = rows.find(r => r.code === code);
+    if (row?.derived.pendingApply) {
+      setConfirmReevaluate({ code, name: row.stock.name });
+      return;
+    }
+    void submitEvaluate([code]);
+  }, [rows, submitEvaluate]);
+
+  const confirmReevaluateAndRun = useCallback(async () => {
+    const target = confirmReevaluate;
+    setConfirmReevaluate(null);
+    if (!target) return;
+    await submitEvaluate([target.code]);
+  }, [confirmReevaluate, submitEvaluate]);
+
   const handleApply = useCallback(async (report: ValuationReportRecord) => {
     setApplyError('');
     setActionPending(report.code);
@@ -154,7 +196,6 @@ export function FavoritesTrackingTab({
       await dividendApi.applyValuationReport(report.code, report.evaluated_at);
       await Promise.all([alertsStatus.refresh(), refreshValuation()]);
       setNotice(`${report.name} 挡位已应用，监控已开启`);
-      setReportCode(null);
       setApplyCode(null);
     } catch (err) {
       const text = err instanceof Error ? err.message : '应用失败，请重试';
@@ -164,22 +205,12 @@ export function FavoritesTrackingTab({
     }
   }, [alertsStatus, refreshValuation]);
 
-  const openReport = useCallback((code: string) => {
-    setApplyError('');
-    setReportCode(code);
-  }, []);
-
-  /** 行内「应用」：打开确认卡（不经过报告弹窗） */
+  /** 行内「应用」的确认步骤（紧凑确认卡） */
   const openApplyConfirm = useCallback((code: string) => {
     setApplyError('');
     setApplyCode(code);
   }, []);
 
-  const reportModalCode = reportCode;
-  const reportModalRecord = reportModalCode ? reports[reportModalCode] ?? null : null;
-  const reportModalEffective: AlertLevels | null = reportModalCode
-    ? (alertsStatus.alertMap.get(reportModalCode)?.levels ?? null)
-    : null;
   const applyModalCode = applyCode;
   const applyModalRecord = applyModalCode ? reports[applyModalCode] ?? null : null;
   const applyModalEffective: AlertLevels | null = applyModalCode
@@ -227,6 +258,7 @@ export function FavoritesTrackingTab({
           {pendingApplyCount > 0 && <span className="text-accent font-medium"> · {pendingApplyCount} 份待确认</span>}
         </p>
         <QualityQueuePanel view={valuationQueueView} onCancel={cancelQueueItem} onMove={moveQueueItem} label="估值" />
+        <ValuationReaderEntry sourceQuery={sourceQuery} />
         <input
           type="search"
           value={searchInput}
@@ -244,7 +276,7 @@ export function FavoritesTrackingTab({
           {valuationMessage}
           {jobProgress && <span className="ml-2 text-ink-muted">（{jobProgress.processed}/{jobProgress.total}）</span>}
           {valuationMessage && job && (job.status === 'partial_failed' || job.status === 'failed') && job.failed_codes.length > 0 && (
-            <button className={`${ghostBtn} ml-2`} disabled={!configured} onClick={() => void submitEvaluate(job.failed_codes)}>
+            <button type="button" className={`${ghostBtn} ml-2`} disabled={!configured} onClick={() => void submitEvaluate(job.failed_codes)}>
               重试失败 {job.failed_codes.length} 只
             </button>
           )}
@@ -264,8 +296,7 @@ export function FavoritesTrackingTab({
               <th className="p-3 font-medium">现价（元）</th>
               <th className="p-3 font-medium">挡位（元）</th>
               <th className="p-3 font-medium" title="现价落在哪一区，以及再涨/跌多少会改变告警动作">区间</th>
-              <th className="p-3 font-medium">评估 / 版本</th>
-              <th className="p-3 font-medium">评估状态</th>
+              <th className="p-3 font-medium" title="最近一次评估的状态、时间与版本；会话记录可下载排查">评估</th>
               <th className="p-3 font-medium">操作</th>
             </tr>
           </thead>
@@ -278,17 +309,17 @@ export function FavoritesTrackingTab({
                 qualityVersion={qualityVersion}
                 valuationVersion={currentSkillVersion}
                 priceUpdatedAt={priceUpdatedAt}
-                evaluating={(perCode[row.code]?.state === 'queued' || perCode[row.code]?.state === 'running') || actionPending === row.code}
+                evaluating={actionPending === row.code}
                 configured={configured}
-                onEvaluate={() => void submitEvaluate([row.code])}
-                onOpenReport={() => openReport(row.code)}
+                sourceQuery={sourceQuery}
+                onEvaluate={() => requestEvaluate(row.code)}
                 onOpenApplyConfirm={() => openApplyConfirm(row.code)}
                 onOpenSettings={() => onOpenAlertSettings(row.code)}
               />
             ))}
             {visible.length === 0 && (
               <tr>
-                <td colSpan={7} className="p-10 text-center text-ink-muted">
+                <td colSpan={6} className="p-10 text-center text-ink-muted">
                   {rows.length === 0
                     ? '还没有收藏的股票，去「全部」或「选股关注」添加收藏。'
                     : '没有符合条件的收藏股，试试其他状态或搜索词。'}
@@ -302,19 +333,6 @@ export function FavoritesTrackingTab({
         显示 {visible.length} / {rows.length} 只收藏 · 待应用包含仍在使用旧挡位监控的股票 · 评估完成后由你确认应用
       </p>
 
-      {/* 报告面板 */}
-      <ValuationReportModal
-        isOpen={!!reportModalRecord}
-        onClose={() => { setReportCode(null); setApplyError(''); }}
-        report={reportModalRecord}
-        effectiveLevels={reportModalEffective}
-        currentSkillVersion={currentSkillVersion}
-        onApply={handleApply}
-        onReevaluate={code => { setReportCode(null); void submitEvaluate([code]); }}
-        applyPending={actionPending === reportModalCode}
-        applyError={applyError}
-      />
-
       {/* 应用确认卡：行内「应用」的确认步骤 */}
       <ValuationApplyConfirm
         isOpen={!!applyModalRecord}
@@ -326,6 +344,36 @@ export function FavoritesTrackingTab({
         applyPending={actionPending === applyModalCode}
         applyError={applyError}
       />
+
+      {/* 再评估覆盖待应用报告：确认后才提交 */}
+      <Modal
+        isOpen={!!confirmReevaluate}
+        onClose={() => setConfirmReevaluate(null)}
+        title="确认重新评估"
+        size="sm"
+        footer={(
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              className="rounded border border-rule-strong px-3 py-1.5 text-sm text-ink hover:bg-paper-tint"
+              onClick={() => setConfirmReevaluate(null)}
+            >
+              取消
+            </button>
+            <button
+              type="button"
+              className="rounded bg-accent px-3.5 py-1.5 text-sm font-medium text-white hover:opacity-90"
+              onClick={() => void confirmReevaluateAndRun()}
+            >
+              确认重新评估
+            </button>
+          </div>
+        )}
+      >
+        <p className="text-sm text-ink">
+          重新评估会覆盖 {confirmReevaluate?.name} 当前待应用的报告（尚未生效），已生效的挡位不受影响。
+        </p>
+      </Modal>
     </section>
   );
 }
@@ -338,8 +386,8 @@ function TrackingRow({
   priceUpdatedAt,
   evaluating,
   configured,
+  sourceQuery,
   onEvaluate,
-  onOpenReport,
   onOpenApplyConfirm,
   onOpenSettings,
 }: {
@@ -351,10 +399,11 @@ function TrackingRow({
     derived: FavoriteTrackingDerived;
     currentPrice: number | null;
     price?: { pe?: number | null; pb?: number | null; yield_ttm?: number | null } | null;
-    liveError: string | null;
-    /** 本次评估的 Hermes run id（成功或失败都有）；有值时可下载会话记录 */
-    sessionRunId: string | null;
-    /** per_code 实时条目：推导评估状态用（在跑/失败） */
+    /** 最近一次评估尝试（成功或失败） */
+    attempt: ValuationAttempt;
+    /** 生效挡位最后一次写入时间 */
+    effectiveUpdatedAt: string | null;
+    actions: TrackingActions;
     perCodeItem: ValuationPerCodeItem | null;
   };
   qualityScore: { dimensions: Record<QualityDimensionKey, number | null>; skill_version?: string | null } | null;
@@ -364,31 +413,75 @@ function TrackingRow({
   priceUpdatedAt: string | null;
   evaluating: boolean;
   configured: boolean;
+  /** 主页面当前 query（阅读页回跳时还原视图） */
+  sourceQuery: string;
   onEvaluate: () => void;
-  onOpenReport: () => void;
   onOpenApplyConfirm: () => void;
   onOpenSettings: () => void;
 }) {
-  const { stock, alertItem, report, derived, currentPrice, price, liveError, sessionRunId } = row;
-  const currentValuationVersion = valuationVersion;
+  const { stock, alertItem, report, derived, currentPrice, price, attempt, actions } = row;
   // 状态列只讲评估（监控开关不在这列：那是推送设置，不是评估结果）
   const evalState = deriveValuationEvalState(derived, row.perCodeItem);
   const evalMeta = VALUATION_EVAL_STATE_META[evalState];
   // 徽章已经说清的状态不再补一句说明（避免每行固定多占一行）
   const needsNote = evalState === 'evaluating'
     || evalState === 'failed'
+    || evalState === 'cancelled'
     || evalState === 'not_ready'
     || (evalState === 'pending_apply' && !derived.effective);
-  const evaluatingNow = evalState === 'evaluating' || evaluating;
-  // 需要额外解释的评估状态才补一句（徽章已说清的不再重复）
+  const evaluatingNow = isAttemptRunning(attempt.state) || evaluating;
   const evalNote = evalState === 'evaluating' ? '正在补充估值依据'
-    : evalState === 'failed' ? (liveError ? liveError : '可重试')
-      : evalState === 'not_ready' ? '未生成价格，可查看原因'
-        : '';
+    : evalState === 'failed' ? (attempt.error ? attempt.error : '可重试')
+      : evalState === 'cancelled' ? '本次评估被取消，可重新评估'
+        : evalState === 'not_ready' ? '未生成价格，可查看原因'
+          : '';
   const levels = alertItem?.levels ?? null;
-  const candidateLevels = derived.state === 'pending_apply' && report?.levels
+  const candidateLevels = derived.pendingApply && report?.levels
     ? reportLevelsToAlertLevels(report.levels)
     : null;
+
+  /** 「评估」列第二行：这次 attempt 的时间 + 版本（与下载的会话同源） */
+  const attemptLine = (() => {
+    if (evalState === 'manual') {
+      // 只有手工挡位：从没走过 Hermes，时间是挡位最后写入时间
+      return <span className="tabular-nums">挡位配置于 {formatMoment(row.effectiveUpdatedAt)}</span>;
+    }
+    if (isAttemptRunning(attempt.state)) {
+      return (
+        <span>
+          {attempt.position ? `队列第 ${attempt.position} 位` : '排队中'}
+          {attempt.at ? <span className="ml-1 tabular-nums">· {formatMoment(attempt.at)}</span> : null}
+        </span>
+      );
+    }
+    if (attempt.state === 'failed' || attempt.state === 'cancelled') {
+      return <span className="tabular-nums">{formatMoment(attempt.at)} · {attempt.state === 'failed' ? '失败' : '已取消'}</span>;
+    }
+    if (attempt.state === 'completed' && attempt.at) {
+      const outdated = !!valuationVersion && attempt.skillVersion && attempt.skillVersion !== valuationVersion;
+      return (
+        <span className="tabular-nums">
+          {formatMoment(attempt.at)}
+          {attempt.skillVersion ? <span className="ml-1 font-mono">v{attempt.skillVersion}</span> : null}
+          {outdated && (
+            <span className="ml-1 text-amber-700" title={`当前已部署 v${valuationVersion}，可重评`}>需重评</span>
+          )}
+        </span>
+      );
+    }
+    return <span>—</span>;
+  })();
+
+  /** 会话下载：与上面这次 attempt 同源（成功/失败/取消都能下） */
+  const sessionBlock = attempt.runId ? (
+    <span title={attempt.state === 'failed'
+      ? `评估失败，可下载本次 Hermes 会话排查：${attempt.error ?? '未知原因'}`
+      : attempt.state === 'cancelled'
+        ? '本次评估被取消，可下载会话记录复盘'
+        : '下载本次评估的 Hermes 会话记录'}>
+      <SessionDownloadButton runId={attempt.runId} download={dividendApi.downloadValuationSession} />
+    </span>
+  ) : null;
 
   // 「区间」列：当前所在区 + 到下一个会改变告警动作的价格线还有多远。
   // 口径见 resolveValuationZone / resolveZoneSteps（与后端 AlertService 一致）。
@@ -421,6 +514,35 @@ function TrackingRow({
     );
   })();
 
+  /** 评估类按钮：文案随「有没有评估过 / 失败没成」变化 */
+  const evaluateButton = (() => {
+    if (actions.evaluate === 'running') {
+      return <button type="button" className={ghostBtn} disabled>评估中…</button>;
+    }
+    if (actions.evaluate === 'evaluate') {
+      return (
+        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '调用 Hermes 四挡位估值（约几分钟）' : 'Hermes 未配置'} onClick={onEvaluate}>
+          评估挡位
+        </button>
+      );
+    }
+    if (actions.evaluate === 'retry') {
+      return (
+        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '重试这次失败的估值' : 'Hermes 未配置'} onClick={onEvaluate}>
+          重试评估
+        </button>
+      );
+    }
+    if (actions.evaluate === 'reevaluate') {
+      return (
+        <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '用 Hermes 重新评估这一只（约几分钟）' : 'Hermes 未配置'} onClick={onEvaluate}>
+          再评估
+        </button>
+      );
+    }
+    return null;
+  })();
+
   return (
     <tr className="border-t border-rule align-top hover:bg-paper-tint/60" data-code={stock.code}>
       {/* 股票 / 基本面 */}
@@ -430,7 +552,9 @@ function TrackingRow({
         {qualityScore ? (
           <div className="mt-0.5 text-xs text-ink-muted" title={QUALITY_DIMENSION_ORDER.map(key => `${QUALITY_DIMENSION_LABELS[key]} ${qualityScore.dimensions[key] ?? '未评分'}`).join(' / ')}>
             {QUALITY_DIMENSION_ORDER.map(key => qualityScore.dimensions[key] ?? '—').join('/')}
-            <span className="ml-1">{qualityScore.skill_version ? `v${qualityScore.skill_version}` : (qualityVersion ? '需重评' : '')}</span>
+            <span className="ml-1">
+              <QualitySkillVersion version={qualityScore.skill_version} currentVersion={qualityVersion} />
+            </span>
           </div>
         ) : (
           <div className="mt-0.5 text-xs text-ink-muted">基本面未评级</div>
@@ -456,57 +580,74 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 挡位条 */}
+      {/* 挡位条：只画一条（生效的），候选那套价由确认卡与阅读页承载 */}
       <td className="p-3">
         {(() => {
-          if (!levels) return null;
-          const levelCount = VALUATION_LEVEL_KEYS.filter(key => levels[key]?.price).length;
-          if (levelCount >= 2) {
+          if (levels) {
+            const levelCount = VALUATION_LEVEL_KEYS.filter(key => levels[key]?.price).length;
+            if (levelCount >= 2) {
+              return (
+                <>
+                  <ValuationPriceBar
+                    levels={levels}
+                    currentPrice={currentPrice}
+                    currentPE={price?.pe ?? null}
+                    currentPB={price?.pb ?? null}
+                    dividend2025={stock.dividend_2025 ?? null}
+                    yieldTtm={price?.yield_ttm ?? null}
+                    variant="effective"
+                    title="当前生效挡位"
+                  />
+                  {/* 生效挡位的时间（来源可查：alerts.updated_at）；版本不写——报告按 code 覆盖写，
+                      候选报告成功后旧报告已被顶掉，生效挡位当年用的哪版 skill 事后查不到。
+                      「新挡位待应用」不在这里重复：评估状态列已经说了「旧挡位仍生效」。 */}
+                  <div className="mt-0.5 text-[10px] text-ink-muted">
+                    生效于 {formatMoment(row.effectiveUpdatedAt)}
+                  </div>
+                </>
+              );
+            }
+            // 单挡位（手工配置可能只填一档）：不足两条价格线不画条，明确列出该档
+            const only = VALUATION_LEVEL_KEYS.map(key => levels[key]).find(lv => lv?.price);
             return (
-              <ValuationPriceBar
-                levels={levels}
-                currentPrice={currentPrice}
-                currentPE={price?.pe ?? null}
-                currentPB={price?.pb ?? null}
-                dividend2025={stock.dividend_2025 ?? null}
-                yieldTtm={price?.yield_ttm ?? null}
-                variant="effective"
-                title="当前生效挡位"
-              />
+              <div className="text-xs text-ink-muted max-w-[220px] whitespace-normal">
+                单挡位 ¥{only?.price.toFixed(2)}（仅一条价格线，不足画图条）
+              </div>
             );
           }
-          // 单挡位（手工配置可能只填一档）：不足两条价格线不画条，明确列出该档
-          const only = VALUATION_LEVEL_KEYS.map(key => levels[key]).find(lv => lv?.price);
+          if (candidateLevels) {
+            return (
+              <>
+                <ValuationPriceBar
+                  levels={candidateLevels}
+                  currentPrice={currentPrice}
+                  currentPE={price?.pe ?? null}
+                  currentPB={price?.pb ?? null}
+                  dividend2025={stock.dividend_2025 ?? null}
+                  yieldTtm={price?.yield_ttm ?? null}
+                  variant="candidate"
+                  title="评估结果预览，尚未应用"
+                />
+                <div className="mt-0.5 text-[10px] text-ink-muted">
+                  待应用 · {formatMoment(report?.evaluated_at)}
+                  {report?.skill_version ? <span className="ml-1 font-mono">v{report.skill_version}</span> : null}
+                </div>
+              </>
+            );
+          }
           return (
             <div className="text-xs text-ink-muted max-w-[220px] whitespace-normal">
-              单挡位 ¥{only?.price.toFixed(2)}（仅一条价格线，不足画图条）
+              {evaluatingNow
+                ? '评估进行中，完成后在此显示价格挡位'
+                : derived.state === 'failed'
+                  // 失败原因已经在「评估状态」列显示；这里只说评估没出结果，不重复同一句话
+                  ? '评估失败，暂无挡位'
+                  : report && report.status !== 'ready'
+                    ? `${VALUATION_STATUS_LABEL[report.status]}：${report.summary.slice(0, 40)}${report.summary.length > 40 ? '…' : ''}`
+                    : '尚未评估，先评估挡位再决定是否设置'}
             </div>
           );
         })()}
-        {!levels && candidateLevels && (
-          <ValuationPriceBar
-            levels={candidateLevels}
-            currentPrice={currentPrice}
-            currentPE={price?.pe ?? null}
-            currentPB={price?.pb ?? null}
-            dividend2025={stock.dividend_2025 ?? null}
-            yieldTtm={price?.yield_ttm ?? null}
-            variant="candidate"
-            title="评估结果预览，尚未应用"
-          />
-        )}
-        {!levels && !candidateLevels && (
-          <div className="text-xs text-ink-muted max-w-[220px] whitespace-normal">
-            {evaluatingNow
-              ? '评估进行中，完成后在此显示价格挡位'
-              : derived.state === 'failed'
-                // 失败原因已经在「评估状态」列显示；这里只说评估没出结果，不重复同一句话
-                ? '评估失败，暂无挡位'
-                : report && report.status !== 'ready'
-                  ? `${VALUATION_STATUS_LABEL[report.status]}：${report.summary.slice(0, 40)}${report.summary.length > 40 ? '…' : ''}`
-                  : '尚未评估，先评估挡位再决定是否设置'}
-          </div>
-        )}
       </td>
 
       {/* 区间：当前所在区 + 到下一个变盘线还有多远（口径同后端告警判定） */}
@@ -539,35 +680,13 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 评估 / 版本：报告时间 + skill 版本；手工配置无报告时显示配置时间 */}
-      <td className="p-3 text-xs text-ink-muted whitespace-nowrap">
-        {report ? (
-          <>
-            <div className="tabular-nums">
-              {new Date(report.evaluated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-            </div>
-            <div className="mt-0.5 font-mono">
-              {report.skill_version ? `v${report.skill_version}` : '版本未记录'}
-              {currentValuationVersion && report.skill_version && report.skill_version !== currentValuationVersion && (
-                <span className="ml-1 text-amber-700" title={`当前已部署 v${currentValuationVersion}，可重评`}>需重评</span>
-              )}
-            </div>
-          </>
-        ) : alertItem?.updated_at ? (
-          <>
-            <div className="tabular-nums">
-              {new Date(alertItem.updated_at).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
-            </div>
-            <div className="mt-0.5">手工配置</div>
-          </>
-        ) : (
-          '—'
-        )}
-      </td>
-
-      {/* 评估状态：只讲评估（成功/失败/在跑/待评估），监控开关不在这列 */}
+      {/* 评估：最近一次 attempt 的状态 + 溯源 + 会话下载（四者同源） */}
       <td className="p-3">
         {evalPill}
+        <div className="mt-1 flex flex-wrap items-center gap-x-2 text-xs text-ink-muted">
+          {attemptLine}
+          {sessionBlock}
+        </div>
         {needsNote && (
           <div className="mt-1 text-xs text-ink-muted max-w-[180px] whitespace-normal">{evalNote}</div>
         )}
@@ -576,43 +695,36 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 操作：待应用行给两个并列动作（应用 / 查看报告），其余状态保持单入口。
-          挡位推送与监控已移除，行内不存在启停入口。 */}
+      {/* 操作：单行按钮组。主按钮按状态取一个，待应用时额外给「应用」。 */}
       <td className="p-3">
-        <div className="flex flex-col items-start gap-1.5">
-          {evaluatingNow ? (
-            <button type="button" className={ghostBtn} disabled>评估中…</button>
-          ) : derived.pendingApply ? (
-            <div className="flex items-center gap-1.5">
-              <button type="button" className={primaryBtn} onClick={onOpenApplyConfirm}>应用</button>
-              <button type="button" className={ghostBtn} onClick={onOpenReport}>查看报告</button>
-            </div>
-          ) : derived.state === 'unevaluated' ? (
-            <button type="button" className={primaryBtn} disabled={!configured} title={configured ? '调用 Hermes 四挡位估值（约几分钟）' : 'Hermes 未配置'} onClick={onEvaluate}>
-              评估挡位
-            </button>
-          ) : derived.state === 'failed' ? (
-            <button type="button" className={primaryBtn} disabled={!configured} onClick={onEvaluate}>重试评估</button>
-          ) : null}
-
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
-            {report && !derived.pendingApply && (
-              <button type="button" className={linkBtn} onClick={onOpenReport}>
-                {derived.state === 'not_ready' ? '查看缺口' : '查看报告'}
-              </button>
-            )}
-            {!report && derived.effective && !evaluatingNow && (
-              <button type="button" className={linkBtn} disabled={!configured} onClick={onEvaluate}>评估挡位</button>
-            )}
-            {sessionRunId && (
-              <span title={evalState === 'failed'
-                ? `评估失败，可下载本次 Hermes 会话排查：${liveError ?? '未知原因'}`
-                : '下载本次评估的 Hermes 会话记录'}>
-                <SessionDownloadButton runId={sessionRunId} download={dividendApi.downloadValuationSession} />
-              </span>
-            )}
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+          {evaluateButton}
+          {actions.apply && (
+            <button type="button" className={primaryBtn} onClick={onOpenApplyConfirm}>应用</button>
+          )}
+          {actions.links.includes('view_report') && (
+            <ValuationReaderEntry
+              sourceQuery={sourceQuery}
+              code={row.code}
+              className={linkBtn}
+              ariaLabel={`查看报告 · ${stock.name}`}
+            >
+              查看报告
+            </ValuationReaderEntry>
+          )}
+          {actions.links.includes('view_gaps') && (
+            <ValuationReaderEntry
+              sourceQuery={sourceQuery}
+              code={row.code}
+              className={linkBtn}
+              ariaLabel={`查看缺口 · ${stock.name}`}
+            >
+              查看缺口
+            </ValuationReaderEntry>
+          )}
+          {actions.links.includes('settings') && (
             <button type="button" className={linkBtn} onClick={onOpenSettings}>挡位设置</button>
-          </div>
+          )}
         </div>
       </td>
     </tr>

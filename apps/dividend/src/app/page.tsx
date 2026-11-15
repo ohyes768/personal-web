@@ -1160,6 +1160,7 @@ function DividendPageContent() {
           priceMap={alertPriceMap}
           priceUpdatedAt={alertPriceUpdatedAt}
           onOpenAlertSettings={handleOpenAlertSettings}
+          sourceQuery={searchParams.toString()}
         />
       ) : (
         !(activeTab === 'all' && favOnly && displayData.length === 0)

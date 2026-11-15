@@ -5,179 +5,8 @@
  * 生效/候选/隐藏三种价格条、现价越界与缺失、首次评估到确认应用（应用前不使用该挡位）、
  * 暂停/恢复、非 ready 不可应用、失败重试与旧 URL 兼容。
  */
-import { expect, test, type Page } from '@playwright/test';
-
-const stockBase = {
-  exchange: '深市主板', sw_level1: '银行', avg_yield_3y: 4.2,
-  dividend_2025: 0.5,
-};
-
-type ReportStatus = 'ready' | 'insufficient_data' | 'blocked' | 'not_applicable';
-
-export interface TrackingScenario {
-  codes: string[];
-  alerts: Record<string, { updated_at: string; levels: Record<string, { price: number; pe?: number; pb?: number }> } | undefined>;
-  prices: Record<string, { close: number | null; realtime: number | null; pe: number | null; pb: number | null; yield_ttm: number | null } | undefined>;
-  reports: Record<string, Record<string, unknown> | undefined>;
-  perCode: Record<string, Record<string, unknown>>;
-  analyzeCalls: string[][];
-  applyCalls: Array<{ code: string; evaluated_at: string }>;
-  applyStatus: number;
-}
-
-export function scenario(): TrackingScenario {
-  return {
-    codes: ['000001', '600000', '600004', '600005'],
-    alerts: {
-      // 000001：已配置四档（生效条可画）
-      '000001': { updated_at: '2026-11-01T10:00:00', levels: {
-        heavy_position: { price: 8.5, pe: 5.1, pb: 0.7 }, add_position: { price: 9.5, pe: 5.7, pb: 0.8 },
-        reduce_position: { price: 14, pe: 8.4, pb: 1.0 }, full_exit: { price: 21, pe: 12.6, pb: 1.5 } } },
-      // 600000：手工只配一档（不画条，显示单挡位文本）
-      '600000': { updated_at: '2026-11-02T10:00:00', levels: { heavy_position: { price: 9 } } },
-      // 600004/600005：无挡位
-      '600004': undefined,
-      '600005': undefined,
-    },
-    prices: {
-      '000001': { close: 11.9, realtime: 12.1, pe: 8.0, pb: 1.0, yield_ttm: 4.1 },
-      '600000': { close: 10.0, realtime: 10.2, pe: 7.0, pb: 0.9, yield_ttm: 4.5 },
-      '600004': { close: 27.8, realtime: 27.8, pe: 9.0, pb: 1.2, yield_ttm: 3.8 },
-      '600005': undefined,
-    },
-    reports: {
-      // 000001：重评 ready，evaluated_at 晚于 alerts.updated_at → 待应用重叠
-      '000001': report('000001', '测试公司', 'ready', { evaluated_at: '2026-11-11T10:00:00' }),
-      // 600000：非 ready（资料不足）→ 不出价格
-      '600000': report('600000', '暂停公司', 'insufficient_data', { evaluated_at: '2026-11-10T10:00:00' }),
-      // 600005：非 ready 且无旧挡位 → 占位说明 + 查看缺口
-      '600005': report('600005', '缺口公司', 'insufficient_data', { evaluated_at: '2026-11-09T10:00:00' }),
-      // 600004：无报告
-      '600004': undefined,
-    },
-    perCode: {},
-    analyzeCalls: [],
-    applyCalls: [],
-    applyStatus: 0,
-  };
-}
-
-function report(code: string, name: string, status: ReportStatus, opts?: { evaluated_at?: string; skill_version?: string | null }) {
-  const levels = status === 'ready' ? {
-    heavy_position: { price: 10, pe: 5.1, pb: 0.7 },
-    add_position: { price: 12, pe: 6.1, pb: 0.8 },
-    reduce_position: { price: 15, pe: 7.6, pb: 1.0 },
-    full_exit: { price: 19, pe: 9.7, pb: 1.3 },
-  } : null;
-  return {
-    schema_version: '1.0.0', skill_version: opts?.skill_version ?? '1.0.0',
-    code, name, currency: 'CNY', as_of: '2026-11-11', status,
-    levels, valuation: status === 'ready' ? { primary_method: 'pe_multiple' } : null,
-    evidence: [{ id: 'e1', title: '年报摘要', kind: 'official', origin: 'inline:2026-11-11:年报',
-      locator: '第二节', period: '2025 年度', published_at: '2026-03-30', accessed_at: '2026-11-11', verification: 'reused' }],
-    data_gaps: status === 'insufficient_data' ? ['缺少可持续分红依据'] : [],
-    confidence: { level: 'medium', reason: '上游复用' },
-    risks: ['分红波动'], invalidation_conditions: ['分红政策变更'],
-    summary: status === 'ready' ? '四点均有公司级依据' : '核心材料不足，暂不出价',
-    analysis: { business: 'b', normalization: 'n', dividend: 'd', valuation: 'v', risk: 'r' },
-    report_md: '## 估值依据\n\n内容完整。',
-    evaluated_at: opts?.evaluated_at ?? '2026-11-11T10:00:00',
-    data_date: '2026-10-12', analysis_duration_seconds: 92.5,
-  };
-}
-
-export async function setup(page: Page, s: TrackingScenario) {
-  await page.route('**/api/dividend/**', async route => {
-    const url = new URL(route.request().url());
-    const favorites = () => ({
-      version: 1, total: s.codes.length, codes: s.codes,
-      items: s.codes.map(code => ({
-        code, added_at: '2026-10-09',
-        alerts: s.alerts[code] ? { ...s.alerts[code] } : undefined,
-      })),
-      notify: { enabled: false, rules: [], last_notified_at: null },
-    });
-    const alertStatus = () => ({
-      total: s.codes.length,
-      items: s.codes.map(code => {
-        const alerts = s.alerts[code];
-        return {
-          code, name: code === '000001' ? '测试公司' : code === '600000' ? '暂停公司' : code === '600005' ? '缺口公司' : '待评公司',
-          has_levels: !!alerts?.levels && Object.keys(alerts.levels).length > 0,
-          level_count: alerts?.levels ? Object.keys(alerts.levels).length : 0,
-          updated_at: alerts?.updated_at ?? null,
-          levels: alerts?.levels ?? null,
-        };
-      }),
-    });
-    if (url.pathname.endsWith('/favorites/alerts/status')) {
-      await route.fulfill({ json: alertStatus() });
-    } else if (url.pathname.endsWith('/favorites')) {
-      await route.fulfill({ json: favorites() });
-    } else if (url.pathname.endsWith('/stocks')) {
-      const requested = (url.searchParams.get('codes') ?? '').split(',').filter(Boolean);
-      const names: Record<string, string> = { '000001': '测试公司', '600000': '暂停公司', '600004': '待评公司', '600005': '缺口公司' };
-      await route.fulfill({ json: {
-        total: requested.length,
-        items: requested.map(code => ({ ...stockBase, code, name: names[code] ?? `股票${code}` })),
-        last_updated: '2026-11-11',
-      } });
-    } else if (url.pathname.endsWith('/prices')) {
-      const requested = (url.searchParams.get('codes') ?? '').split(',').filter(Boolean);
-      await route.fulfill({ json: {
-        total: requested.length,
-        items: requested.map(code => ({ code, ...(s.prices[code] ?? {}) })),
-        last_updated: '2026-11-11T15:00:00',
-      } });
-    } else if (url.pathname.endsWith('/valuation')) {
-      await route.fulfill({ json: {
-        total: Object.keys(s.reports).filter(code => s.reports[code]).length,
-        reports: Object.fromEntries(Object.entries(s.reports).filter(([, v]) => !!v)),
-        per_code: s.perCode,
-        hermes_configured: true,
-        current_skill_version: '1.0.0',
-      } });
-    } else if (url.pathname.endsWith('/valuation/analyze')) {
-      const codes = route.request().postDataJSON().codes as string[];
-      s.analyzeCalls.push(codes);
-      for (const code of codes) s.perCode[code] = { state: 'running', error: null };
-      await route.fulfill({ status: 202, json: {
-        job_id: 'val-job-1', kind: 'valuation', status: 'running', total: codes.length,
-        processed: 0, succeeded: 0, failed: 0, remaining: codes.length,
-        codes, failed_codes: [], retry_codes: [], error: null, finished_at: null, message: '',
-        per_code: s.perCode,
-      } });
-    } else if (url.pathname.includes('/valuation/jobs/')) {
-      await route.fulfill({ json: {
-        job_id: 'val-job-1', kind: 'valuation', status: 'succeeded', total: 1,
-        processed: 1, succeeded: 1, failed: 0, remaining: 0,
-        codes: [], failed_codes: [], retry_codes: [], error: null,
-        finished_at: '2026-11-11T10:05:00', message: '已处理 1/1，成功 1，失败 0，未处理 0',
-        per_code: s.perCode,
-      } });
-    } else if (url.pathname.endsWith('/apply')) {
-      const code = url.pathname.split('/valuation/')[1].split('/')[0];
-      const evaluated_at = route.request().postDataJSON().evaluated_at as string;
-      s.applyCalls.push({ code, evaluated_at });
-      if (s.applyStatus) {
-        await route.fulfill({ status: s.applyStatus, json: { message: '报告已更新' } });
-        return;
-      }
-      s.alerts[code] = { updated_at: '2026-11-11T11:00:00',
-        levels: { heavy_position: { price: 10, pe: 5.1, pb: 0.7 }, add_position: { price: 12, pe: 6.1, pb: 0.8 },
-          reduce_position: { price: 15, pe: 7.6, pb: 1.0 }, full_exit: { price: 19, pe: 9.7, pb: 1.3 } } };
-      await route.fulfill({ json: favorites() });
-    } else if (url.pathname.includes('/quality')) {
-      await route.fulfill({ json: { total: 0, scores: {}, per_code: {}, hermes_configured: true, current_skill_version: '4.4.0' } });
-    } else if (url.pathname.endsWith('/refresh/jobs')) {
-      await route.fulfill({ json: null });
-    } else if (url.pathname.endsWith('/stats')) {
-      await route.fulfill({ json: { total_stocks: 100, yield_stats: {}, yield_distribution: {}, industry_distribution: {}, index_distribution: {}, csv_last_modified: null } });
-    } else {
-      await route.fulfill({ json: { needs_update: false, missing_codes: [], days_since_update: 0 } });
-    }
-  });
-}
+import { expect, test } from '@playwright/test';
+import { report, scenario, setup } from './tracking-fixture';
 
 test('favorites tab shows all favorites with filter counts and legacy URL', async ({ page }) => {
   const s = scenario();
@@ -190,8 +19,10 @@ test('favorites tab shows all favorites with filter counts and legacy URL', asyn
   await expect(page.getByRole('button', { name: /待应用\s*1/ })).toBeVisible();
   await expect(page.getByRole('button', { name: /监控中/ })).toHaveCount(0);
   await expect(page.getByRole('button', { name: /已暂停/ })).toHaveCount(0);
-  // 状态列已改名为「评估状态」（监控不再是这一列的事）
-  await expect(page.getByRole('columnheader', { name: '评估状态' })).toBeVisible();
+  // 评估列已合并「状态 + 版本 + 会话下载」（原「评估状态」与「评估 / 版本」两列）
+  await expect(page.getByRole('columnheader', { name: '评估' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: '评估状态' })).toHaveCount(0);
+  await expect(page.getByRole('columnheader', { name: '评估 / 版本' })).toHaveCount(0);
   await expect(page.getByRole('columnheader', { name: '评估与监控状态' })).toHaveCount(0);
   // 四行都在
   const table = page.getByRole('table');
@@ -199,9 +30,9 @@ test('favorites tab shows all favorites with filter counts and legacy URL', asyn
   await expect(table.getByText('暂停公司')).toBeVisible();
   await expect(table.getByText('待评公司')).toBeVisible();
   await expect(table.getByText('缺口公司')).toBeVisible();
-  // 非 ready 无旧挡位：占位说明 + 查看缺口，无应用按钮
+  // 非 ready 无旧挡位：占位说明 + 查看缺口链接，无应用按钮
   await expect(table.locator('[data-code="600005"]')).toContainText('核心材料不足，暂不出价');
-  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' })).toBeVisible();
+  await expect(table.locator('[data-code="600005"]').getByRole('link', { name: /^查看缺口/ })).toBeVisible();
   await expect(table.locator('[data-code="600005"]').getByRole('button', { name: /应用/ })).toHaveCount(0);
   // 搜索过滤
   await page.getByLabel('搜索收藏的股票名称或代码').fill('600000');
@@ -234,7 +65,13 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   // 重评待应用重叠：已有生效挡位 + 新评估待应用
   await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
   await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '应用' })).toBeVisible();
-  await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '查看报告' })).toBeVisible();
+  // 「查看报告」是链接：跳独立阅读页，不再开弹窗
+  await expect(table.locator('[data-code="000001"]').getByRole('link', { name: /^查看报告/ })).toBeVisible();
+  // 生效条只画一条，候选那套价不进表格（由确认卡与阅读页承载）
+  await expect(table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]')).toHaveCount(1);
+  await expect(table.locator('[data-code="000001"] [data-testid="valuation-bar-candidate"]')).toHaveCount(0);
+  // 生效挡位的时间标在条下（版本不写：报告按 code 覆盖后查不到生效那套的版本）
+  await expect(table.locator('[data-code="000001"]')).toContainText('生效于 11-01 10:00');
   // 单挡位旧配置：条隐藏（不足两条价格线），显示单挡位文本
   await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-effective"]')).not.toBeVisible();
   await expect(table.locator('[data-code="600000"] [data-testid="valuation-bar-candidate"]')).not.toBeVisible();
@@ -257,18 +94,13 @@ test('first ready report shows candidate bar and applying enables monitoring', a
   await expect(candidate).toHaveAttribute('title', /未启用/);
   // 应用前：状态为待应用，尚未使用该挡位
   await expect(table.locator('[data-code="600004"]')).toContainText('待应用');
-  // 「查看报告」与「应用」是两个独立动作：查看只开报告弹窗
-  await table.locator('[data-code="600004"]').getByRole('button', { name: '查看报告' }).click();
-  const reportDialog = page.getByRole('heading', { name: '待评公司 · 四挡位估值报告' }).locator('../..');
-  await expect(reportDialog).toBeVisible();
-  await expect(reportDialog.getByText('确认后保存四条价格线，并开启价格提醒。')).toBeVisible();
-  await reportDialog.getByRole('button', { name: '暂不应用' }).click();
-  await expect(reportDialog).not.toBeVisible();
-  // 「应用」走紧凑确认卡，不打开报告弹窗
+  // 「查看报告」与「应用」是两个独立动作：查看是链接，指向独立阅读页（不再开报告弹窗）
+  const reportLink = table.locator('[data-code="600004"]').getByRole('link', { name: /^查看报告/ });
+  await expect(reportLink).toHaveAttribute('href', '/valuation-reader?code=600004&fromTab=alerts');
+  // 「应用」走紧凑确认卡
   await table.locator('[data-code="600004"]').getByRole('button', { name: '应用' }).click();
   const confirmDialog = page.getByRole('heading', { name: '确认应用挡位 · 待评公司' }).locator('../..');
   await expect(confirmDialog).toBeVisible();
-  await expect(page.getByRole('heading', { name: '待评公司 · 四挡位估值报告' })).toHaveCount(0);
   await expect(confirmDialog.getByText('重仓')).toBeVisible();
   // 现价 ¥27.80 高于新全卖线 ¥19 → 应用后落在全卖区、会推「全部清仓」提醒
   await expect(confirmDialog.getByText('应用后落在 全卖区')).toBeVisible();
@@ -411,11 +243,71 @@ test('narrow viewport keeps primary actions reachable without page overflow', as
   expect(overflow.scrollWidth).toBeLessThanOrEqual(overflow.clientWidth + 1);
   // 主操作可达：待应用的「应用」与「查看报告」、非 ready 行的缺口入口都在窄屏渲染
   await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '应用' })).toBeVisible();
-  await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '查看报告' })).toBeVisible();
-  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' })).toBeVisible();
-  // 重新评估收在报告面板里（行内不再重复一个入口）
-  await table.locator('[data-code="600005"]').getByRole('button', { name: '查看缺口' }).click();
-  const gapDialog = page.getByRole('heading', { name: '缺口公司 · 四挡位估值报告' }).locator('../..');
-  await expect(gapDialog.getByRole('button', { name: '重新评估' })).toBeVisible();
-  await gapDialog.getByRole('button', { name: '返回列表' }).click();
+  await expect(table.locator('[data-code="600004"]').getByRole('link', { name: /^查看报告/ })).toBeVisible();
+  await expect(table.locator('[data-code="600005"]').getByRole('link', { name: /^查看缺口/ })).toBeVisible();
+  // 重新评估是行内常驻入口（不再收在报告面板里）
+  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '再评估' })).toBeVisible();
+});
+
+test('evaluated rows keep a re-evaluate entry, and it asks before overwriting a pending report', async ({ page }) => {
+  const s = scenario();
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const table = page.getByRole('table');
+  // 已评估过的行也要有评估入口：没评估过的叫「评估挡位」，评估过的叫「再评估」
+  await expect(table.locator('[data-code="600004"]').getByRole('button', { name: '评估挡位' })).toBeVisible();
+  await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '再评估' })).toBeVisible();
+  await expect(table.locator('[data-code="600005"]').getByRole('button', { name: '再评估' })).toBeVisible();
+  // 没有待应用报告时直接提交，不打扰
+  await table.locator('[data-code="600005"]').getByRole('button', { name: '再评估' }).click();
+  await expect(s.analyzeCalls).toEqual([['600005']]);
+  // 有待应用报告时先确认（覆盖的是尚未生效的报告）
+  await table.locator('[data-code="000001"]').getByRole('button', { name: '再评估' }).click();
+  const confirm = page.getByRole('heading', { name: '确认重新评估' }).locator('../..');
+  await expect(confirm).toBeVisible();
+  await expect(confirm).toContainText('会覆盖');
+  await expect(s.analyzeCalls).toEqual([['600005']]);
+  await confirm.getByRole('button', { name: '确认重新评估' }).click();
+  await expect(s.analyzeCalls).toEqual([['600005'], ['000001']]);
+});
+
+test('a failed attempt does not hide the pending report: retry and apply both stay available', async ({ page }) => {
+  const s = scenario();
+  // 000001 有一份新的 ready 报告待应用，但最近一次尝试失败了
+  s.perCode['000001'] = {
+    state: 'failed', error: 'run 终态 failed', run_id: 'run-val-fail-2',
+    finished_at: '2026-11-15T10:02:00',
+  };
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const row = page.getByRole('table').locator('[data-code="000001"]');
+  // 状态讲的是最近一次尝试：失败
+  await expect(row.locator('[data-eval-state]')).toHaveAttribute('data-eval-state', 'failed');
+  await expect(row).toContainText('评估失败');
+  // 溯源行写的是本次失败的时间（不是旧报告的时间）
+  await expect(row).toContainText('11-15 10:02');
+  // 失败不盖住待应用：重试与应用同时给出
+  await expect(row.getByRole('button', { name: '重试评估' })).toBeVisible();
+  await expect(row.getByRole('button', { name: '应用' })).toBeVisible();
+  // 会话下载指向失败那次
+  await expect(row.getByRole('button', { name: '下载会话记录' })).toBeVisible();
+});
+
+test('the evaluation column keeps time, version and session download on the same attempt', async ({ page }) => {
+  const s = scenario();
+  // 000001 已应用（报告早于生效挡位），评估列写的是那份报告的时间与版本
+  s.alerts['000001'] = {
+    updated_at: '2026-11-12T10:00:00',
+    levels: s.alerts['000001']!.levels,
+  };
+  await setup(page, s);
+  await page.goto('/?tab=alerts');
+  const row = page.getByRole('table').locator('[data-code="000001"]');
+  // 已应用：徽章是评估完成，溯源写报告的时间与版本
+  await expect(row.locator('[data-eval-state]')).toHaveAttribute('data-eval-state', 'succeeded');
+  await expect(row).toContainText('11-11 10:00');
+  await expect(row).toContainText('v1.0.0');
+  // 生效条下面只标生效时间，不标生效那套的版本（报告按 code 覆盖后查不到）
+  await expect(row).toContainText('生效于 11-12 10:00');
+  await expect(row.locator('[data-testid="valuation-bar-effective"]')).toHaveCount(1);
 });
