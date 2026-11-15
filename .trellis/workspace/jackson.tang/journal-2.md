@@ -1278,3 +1278,70 @@ v2 入选规则（IR≥0.5/样本≥700/同类前20%）+ 52 周窗口统计；�
 ### Status
 
 [OK] **Completed**
+
+
+## Session 82: 夏普榜单数据缺口周口径修正
+<!-- trellis-session: v=2 fp=65d98f3f48a18308 -->
+
+**Date**: 2026-11-15
+**Task**: 夏普榜单数据缺口周口径修正
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+连续周数不再被无榜/样本未更新的缺口周打断；在榜列改为 在榜/可评 分数；图表与页面标注缺口周。契约 §21 + §9。
+
+### Main Changes
+
+- 后端: _week_stale_codes/_is_gap 判定缺口周，逐基金 gap_weeks/evaluable_weeks，诊断新增 gap_weeks
+- DTO 三处同步: models.py / sharpe-board.ts / ProfileCard；sharpe-chart.ts 纯函数新增 gapWeeks 入参与 markLine 竖线
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `84ab060e` | feat(fund-select): 夏普榜单数据缺口周口径——连续周数不再被无榜周打断 |
+| `07316cc2` | docs(trellis): 夏普榜单数据缺口周任务规划与契约 §21 |
+
+### Testing
+
+- [OK] 后端 pytest 795 passed；前端 lib 35 passed；tsc + pnpm build 通过
+- [OK] 生产复核: 缺口周 2026-02-16 识别正确，页面「数据缺口周 1 个」徽章 + 34/51 在榜/可评
+
+### Status
+
+[OK] **Completed**
+
+
+## Session 83: 夏普榜单在榜占比筛选 + 精简时间范围
+<!-- trellis-session: v=2 fp=e4b9bc6a595a173c -->
+
+**Date**: 2026-11-15
+**Task**: 夏普榜单在榜占比筛选 + 精简时间范围
+**Package**: backend/douyin-processor
+**Branch**: `master`
+
+### Summary
+
+「至少上榜 N 周」改为「在榜占比 ≥ N%」（min_listed_pct，默认 60%，可编辑）；时间范围去掉与「近一年(52周)」重复的「近 1 年」。契约 §23 + §10。
+
+### Main Changes
+
+- 后端: min_weeks 下线 → min_listed_pct（0~100，默认 60，含等于），保留在榜 0 周硬门槛
+- 前端: 筛选条改可编辑百分比输入 + 分母口径 title，URL 参数 min_listed_pct，RANGE_OPTIONS 去掉 1y 只留 3 项
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b056c798` | feat(fund-select): 「至少上榜」改在榜占比筛选（默认60%）+ 去掉重复的近1年范围 |
+
+### Testing
+
+- [OK] 后端 pytest 795 passed；前端 lib 35 passed；tsc + pnpm build 通过
+- [OK] 生产验收 source=all: 0%→53 / 30%→44 / 60%→32 / 100%→8 / 越界 422；003598、012124 在列，210002 不在列
+
+### Status
+
+[OK] **Completed**

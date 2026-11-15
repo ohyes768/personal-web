@@ -70,4 +70,13 @@ pnpm build
 
 ## 7. 提交（Phase 3.4）
 
-- [ ] 7.1 后端 + 前端 + spec 一个功能提交；任务目录归档与 journal 走 `/trellis:finish-work`。
+- [x] 7.1 后端 + 前端 + spec 一个功能提交；任务目录归档与 journal 走 `/trellis:finish-work`。
+
+## 8. 收尾复核（2026-11-15）
+
+- 生产复核（容器内直连 `fund-select-backend:8095`）：`evaluable_weeks` / `gap_weeks` 字段已上线，
+  缺口周 `2026-02-16` 正确识别；诊断里 `gap_weeks=[2026-02-16]`、`no_board_weeks=[]`。
+- 页面复核（`/funds/sharpe-board`）：顶部「数据缺口周 1 个」徽章 + 说明行，表格在榜列显示
+  `34/51`、`31/51` 形式的「在榜/可评」，连续周数列 hover 说明「缺口周跳过不中断」。
+- 回归：后端 `pytest` 795 passed；前端 lib 测试 35 passed；`tsc --noEmit` 与 `pnpm build` 均通过。
+- 提交：`84ab060e`（功能）、`07316cc2`（规划与契约 §21）。
