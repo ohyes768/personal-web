@@ -8,6 +8,7 @@
 - basePath 契约同 contracts §4：`<Link>` 用相对路径（`/sharpe-board`）；`fetch` 必须写全路径 `/funds/api/funds/sharpe-board`；URL 同步只拼 `?qs`。
 - `src/lib/sharpe-board.ts` 独立持有 TS DTO（对齐后端 6 个 `SharpeBoard*` DTO）、URL 参数 parse/serialize（**默认值省略不写**：source=discovery-stock、range=all、page=1、min_listed_pct=60 都不落 URL）、`fetchSharpeBoard`。**source 切换必须 AbortController 中止旧请求**，否则旧来源响应会覆盖新来源状态。
 - 后端 DTO 加字段时三处同步（同 §3a 三处清单）：`src/api/models.py` ↔ `src/lib/sharpe-board.ts` ↔ 页面消费；枚举值（source/range/status）两端字面一致。
+- **前端来源只有两态**（§11）：`SharpeSource = 'stock' | 'discovery-stock'`；后端 API 仍接受 `source=all`（两条链路聚合，其它调用方/脚本可能仍用），但本页不生成该值，老链接 `?source=all` 由 parse 归一到默认「市场」。改这段时**不要**把 `SharpeRange` 的 `'all'`（近一年 52 周）一起当成下线来源删掉。
 
 ## 2. ECharts 图表
 
@@ -240,3 +241,43 @@ pnpm build
 - `minListedPct` 默认 60、URL 往返、越界回落 60、默认值省略不写 URL；
 - 旧参数 `min_weeks=3` → 落默认 60；
 - `RANGE_OPTIONS` 恰 3 项且不含 `1y`；`?range=1y` → `all`。
+
+## 11. 来源分段收敛为两态（11-15-source-segmented 收尾）
+
+债基/股基列表页早已把「全部」下线为「市场 | 三分法」两态；夏普榜单页是最后一处
+三态残留，本次一并收敛，与列表页统一。
+
+### 11.1 决定与数据事实
+
+- 「全部」在**列表页**是冗余（与某一态逐行同集），但在**夏普榜单**不是：后端
+  `source=all` 是「三分法链路 + 市场链路」两条独立发榜记录的聚合，实测命中
+  53 只 ≠ 市场 49 只 ≠ 三分法 21 只，且数据缺口周判定口径不同（全来源都缺口才算缺口）。
+- 用户明确要求仍删掉 → 接受失去聚合视图。后端 `source=all` 的 API 与聚合实现
+  **保留不动**（兼容、走势页/脚本等其它调用方可能仍用），只下线前端分段。
+- 默认来源回到 `discovery-stock`（与 §1 契约默认值一致；此前被 11-15 临时改成 `all`）。
+
+### 11.2 前端改动点
+
+- `SharpeSource` 收窄为 `'stock' | 'discovery-stock'`；`SOURCE_OPTIONS` 只留
+  市场 → 三分法两态；`DEFAULT_SHARPE_FILTERS.source = 'discovery-stock'`。
+- `SOURCES` 由 `SOURCE_OPTIONS` 推导 → `?source=all` 不在集合内，自动回落到默认
+  「市场」，不会出现「一个分段都没选中、请求却按 all 发出去」。**不要**为此写特判分支，
+  也不要把 `source=all` 重新加进 `SOURCES`。
+- `SharpeBoardFilters.tsx` 去掉多余的 `as SharpeSource` cast（类型收窄后 `opt.value`
+  已是正确类型）。
+- `SharpeBoardProfileCard.tsx` 的 `SOURCE_LABEL` 不需要 `'all'` 条目（本页不再产生该值）；
+  fallback `?? profile.source` 保留即可。
+- `SharpeRange` 的 `'all'` = 近一年 52 周，是**时间范围**不是来源，本次不动。
+
+### 11.3 Tests Required（补充 §6）
+
+- `SOURCE_OPTIONS` 恰两态、无「全部」；默认 source = `discovery-stock`；
+- `?source=all` / 非法 source → 归一到「市场」，且序列化不再写回 `all`；
+- 两态来源 URL 往返正常。
+
+### 11.4 浏览器验证注意
+
+- `3005` 是 Docker 容器（nginx upstream 指向 `fund-select-frontend` 容器），本地
+  `pnpm build` **不会**更新它，端到端验证必须另起独立端口的 `next start`（§9.5），
+  并用 `BACKEND_URL` 指向真实后端容器 IP（如 `http://172.27.0.13:8095`）；
+  `/funds/api/*` 由应用自带代理路由转发，不需要 nginx。

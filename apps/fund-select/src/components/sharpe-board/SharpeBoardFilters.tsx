@@ -13,7 +13,6 @@ import {
   SOURCE_OPTIONS,
   type SharpeBoardFilters,
   type SharpeRange,
-  type SharpeSource,
 } from '@/lib/sharpe-board';
 
 interface SharpeBoardFiltersProps {
@@ -58,7 +57,7 @@ export function SharpeBoardFilters({ filters, onChange }: SharpeBoardFiltersProp
           <button
             key={opt.value}
             type="button"
-            onClick={() => onChange({ source: opt.value as SharpeSource })}
+            onClick={() => onChange({ source: opt.value })}
             aria-pressed={filters.source === opt.value}
             className={`px-2.5 py-1 rounded text-sm transition-colors ${
               filters.source === opt.value

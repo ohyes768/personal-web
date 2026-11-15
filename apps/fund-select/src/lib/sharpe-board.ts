@@ -8,8 +8,14 @@
  */
 'use client';
 
-/** 榜单来源：all = 两条链路聚合（11-15-source-segmented），stock = 三分法，discovery-stock = 市场 */
-export type SharpeSource = 'all' | 'stock' | 'discovery-stock';
+/**
+ * 榜单来源：stock = 三分法，discovery-stock = 市场。
+ *
+ * 「全部」（all，两条链路聚合）已从 UI 下线（与基金列表页的「市场 | 三分法」两态统一）：
+ * 后端仍支持 source=all（API 兼容、其它调用方可能仍用），但本页不再暴露这个分段，
+ * 老链接 ?source=all 由 parseSharpeFiltersFromSearch 归一到默认来源「市场」。
+ */
+export type SharpeSource = 'stock' | 'discovery-stock';
 /** 图时间范围：all = 近一年(52 周)。旧 '1y' 与 all 等价，已从下拉移除 */
 export type SharpeRange = '3m' | '6m' | 'all';
 
@@ -114,7 +120,7 @@ export interface SharpeBoardFilters {
 }
 
 export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
-  source: 'all',
+  source: 'discovery-stock',
   profileVersion: 'v3',
   minLatestSharpe: null,
   minListedPct: 60,
@@ -124,8 +130,8 @@ export const DEFAULT_SHARPE_FILTERS: SharpeBoardFilters = {
   limit: 50,
 };
 
+/** 两态来源分段（「全部」已下线，见 SharpeSource）。顺序与基金列表页一致：市场 → 三分法。 */
 export const SOURCE_OPTIONS: { value: SharpeSource; label: string }[] = [
-  { value: 'all', label: '全部' },
   { value: 'discovery-stock', label: '市场' },
   { value: 'stock', label: '三分法' },
 ];
@@ -141,7 +147,13 @@ export const RANGE_OPTIONS: { value: SharpeRange; label: string }[] = [
 const SOURCES = new Set<string>(SOURCE_OPTIONS.map(o => o.value));
 const RANGES = new Set<string>(RANGE_OPTIONS.map(o => o.value));
 
-/** 从 URL 解析展示筛选；非法值逐字段回退默认（不抛错） */
+/**
+ * 从 URL 解析展示筛选；非法值逐字段回退默认（不抛错）。
+ *
+ * ⚠ `source=all` 的归一化：本页来源分段现只有「市场 | 三分法」两态（「全部」已下线），
+ * 老链接 ?source=all 不在 SOURCES 内 → 回落到默认来源「市场」，不会出现「一个分段都没
+ * 选中、请求却按 all 发出去」的状态。后端 API 仍支持 all，只是本页不再生成这个值。
+ */
 export function parseSharpeFiltersFromSearch(search: URLSearchParams): SharpeBoardFilters {
   const sourceRaw = search.get('source');
   const rangeRaw = search.get('range');

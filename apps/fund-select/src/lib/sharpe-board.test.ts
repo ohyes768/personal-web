@@ -16,6 +16,7 @@ import {
   listedWeeksTip,
   parseSharpeFiltersFromSearch,
   RANGE_OPTIONS,
+  SOURCE_OPTIONS,
   sharpeFiltersActive,
   sharpeFiltersToQuery,
   sharpeFiltersToSearch,
@@ -81,7 +82,7 @@ test('非法值逐字段回退默认', () => {
     page: '-1',
     limit: '999',
   }));
-  assert.equal(parsed.source, 'all');
+  assert.equal(parsed.source, 'discovery-stock');
   assert.equal(parsed.minLatestSharpe, null);
   assert.equal(parsed.minListedPct, 60);
   assert.equal(parsed.range, 'all');
@@ -101,7 +102,7 @@ test('min_latest_sharpe 支持负数与边界 -10/10（含等于的展示下限�
 test('请求查询串始终显式携带 source/range/分页', () => {
   const q = sharpeFiltersToQuery(DEFAULT_SHARPE_FILTERS);
   const params = new URLSearchParams(q);
-  assert.equal(params.get('source'), 'all');
+  assert.equal(params.get('source'), 'discovery-stock');
   assert.equal(params.get('profile_version'), 'v3');  // 默认已切 v3
   assert.equal(params.get('range'), 'all');
   assert.equal(params.get('page'), '1');
@@ -306,4 +307,35 @@ test('时间范围：去掉与「近一年(52周)」重复的「近 1 年」，�
   // 旧链接 ?range=1y → 回落默认（同样 52 周视图，行为不变）
   const parsed = parseSharpeFiltersFromSearch(new URLSearchParams({ range: '1y' }));
   assert.equal(parsed.range, 'all');
+});
+
+// ── 来源分段收敛：「全部」下线（11-15-source-segmented 的夏普榜单收尾）──────────
+
+test('来源分段只有「市场 | 三分法」两态，无「全部」', () => {
+  assert.deepEqual(SOURCE_OPTIONS.map(o => o.value), ['discovery-stock', 'stock']);
+  assert.deepEqual(SOURCE_OPTIONS.map(o => o.label), ['市场', '三分法']);
+  // 默认来源落在「市场」
+  assert.equal(DEFAULT_SHARPE_FILTERS.source, 'discovery-stock');
+});
+
+test('老链接 ?source=all → 归一到默认「市场」，不产生未选中的分段', () => {
+  const parsed = parseSharpeFiltersFromSearch(new URLSearchParams({ source: 'all' }));
+  assert.equal(parsed.source, 'discovery-stock');
+  // 归一后序列化不应再写回 all（默认值省略，URL 干净）
+  assert.equal(sharpeFiltersToSearch(parsed).get('source'), null);
+  assert.equal(sharpeFiltersToQuery(parsed).includes('source=discovery-stock'), true);
+});
+
+test('非法/下线来源逐字段回退默认，合法两态正常往返', () => {
+  for (const bad of ['all', 'bond', '']) {
+    assert.equal(
+      parseSharpeFiltersFromSearch(new URLSearchParams({ source: bad })).source,
+      'discovery-stock',
+    );
+  }
+  for (const good of ['stock', 'discovery-stock'] as const) {
+    const filters = { ...DEFAULT_SHARPE_FILTERS, source: good };
+    const parsed = parseSharpeFiltersFromSearch(sharpeFiltersToSearch(filters));
+    assert.equal(parsed.source, good);
+  }
 });
