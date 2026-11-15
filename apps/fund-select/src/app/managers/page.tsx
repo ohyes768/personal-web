@@ -3,6 +3,8 @@
  *
  * 以经理为主体的列表：从业年限 / 加权年化 / 回撤 / 规模筛选 + 排序 + 分页。
  * 点击行展开历任基金（含已离任，按需拉取 /managers/{id}）。
+ * 展开行的基金代码徽章走 ?search_code= （列表只出这一只，与 header 代码搜索
+ * 同语义；原来的 ?code= 直达开抽屉会让列表仍显示全量，已改，见 11-15 收尾）。
  *
  * 视觉契约（任务 11-11-fund-manager-tab-refresh）：与另外 5 个 tab 统一——
  *   FundsHeader（返回首页 / 标题 / 导航 / 总数 / 刷新 / 齿轮）
@@ -340,8 +342,8 @@ function ManagersPageInner() {
 const AFFILIATION_TABS: Record<NonNullable<TenureAffiliation['tab']>, { label: string; href: string }> = {
   'bond': { label: '债基名单', href: '/bond' },
   'stock': { label: '股基名单', href: '/stock' },
-  'discovery-bond': { label: '债基·市场', href: '/discovery-bond' },
-  'discovery-stock': { label: '股基·市场', href: '/discovery-stock' },
+  'discovery-bond': { label: '债基·市场', href: '/bond' },
+  'discovery-stock': { label: '股基·市场', href: '/stock' },
 };
 
 function AffiliationBadges({ aff, code, name }: {
@@ -354,7 +356,7 @@ function AffiliationBadges({ aff, code, name }: {
     <span className="inline-flex items-center gap-1">
       {tabInfo ? (
         <Link
-          href={`${tabInfo.href}?code=${code}`}
+          href={`${tabInfo.href}?search_code=${code}`}
           className="inline-flex items-center rounded bg-info-tint px-1.5 py-[1px] font-mono text-[11px] text-info transition-colors hover:bg-info hover:text-white"
           title={`到${tabInfo.label}查看${name ?? code}的详情`}
         >
