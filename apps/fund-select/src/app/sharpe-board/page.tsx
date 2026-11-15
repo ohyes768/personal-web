@@ -171,8 +171,8 @@ function SharpeBoardPageInner() {
             >
               ← 返回首页
             </a>
-            <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
-              <h1 className="text-lg font-semibold text-ink-strong">夏普榜单</h1>
+            <h1 className="text-lg font-semibold text-ink-strong mt-0.5">夏普榜单</h1>
+            <div className="mt-1">
               <FundsNavigation active="sharpe-board" />
             </div>
           </div>

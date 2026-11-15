@@ -59,8 +59,8 @@ function SharpeTrendPageInner() {
             <a href="/" className="text-xs text-ink-muted hover:text-ink-strong transition-colors">
               ← 返回首页
             </a>
-            <div className="flex items-baseline gap-3 mt-0.5 flex-wrap">
-              <h1 className="text-lg font-semibold text-ink-strong">夏普走势</h1>
+            <h1 className="text-lg font-semibold text-ink-strong mt-0.5">夏普走势</h1>
+            <div className="mt-1">
               <FundsNavigation active="sharpe-trend" />
             </div>
           </div>
