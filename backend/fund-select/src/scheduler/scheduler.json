@@ -40,6 +40,16 @@
       "cron_human": "每周六 10:05（北京时间）",
       "enabled": true,
       "description": "市场全量刷新：三年收益 ≥20%、规模 ≥5 亿、经理从业 ≥5 年"
+    },
+    {
+      "id": "monthly_managers_refresh",
+      "name": "经理·月度刷新",
+      "tab": "managers",
+      "target": "refresh_managers",
+      "cron": "5 11 1-7 * sat",
+      "cron_human": "每月第一个周六 11:05（北京时间）",
+      "enabled": true,
+      "description": "经理全量重采（约 1900 人档案 + 净值，0.3s 限速跑 20-40 分钟）；手动刷新进行中时本轮自动跳过"
     }
   ]
 }

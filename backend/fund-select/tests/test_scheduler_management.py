@@ -32,12 +32,12 @@ def client(manager):
 
 def test_pause_is_independent_and_persistent(client, manager, tmp_path, monkeypatch):
     jobs = client.get('/api/funds/scheduler/jobs').json()['jobs']
-    assert len(jobs) == 4 and all(j['enabled'] for j in jobs)
+    assert len(jobs) == 5 and all(j['enabled'] for j in jobs)
     assert client.patch(f'/api/funds/scheduler/jobs/{IDS[0]}', json={'enabled': False}).status_code == 200
     second = SchedulerManager(state_dir=tmp_path)
     monkeypatch.setattr(second.scheduler, 'start', Mock())
     second.start(None)
-    assert [j['enabled'] for j in second.list_jobs()] == [False, True, True, True]
+    assert [j['enabled'] for j in second.list_jobs() if j['id'] in IDS] == [False, True, True, True]
     assert second.list_jobs()[0]['next_run_time'] is None
 
 
@@ -46,7 +46,7 @@ def test_old_disabled_setting_migrates_to_all_tabs(tmp_path, monkeypatch):
     instance = SchedulerManager(state_dir=tmp_path)
     monkeypatch.setattr(instance.scheduler, 'start', Mock())
     instance.start(None)
-    assert [j['enabled'] for j in instance.list_jobs()] == [False, True, False, False]
+    assert [j['enabled'] for j in instance.list_jobs() if j['id'] in IDS] == [False, True, False, False]
 
 
 def test_write_failure_keeps_state(client, manager, monkeypatch):
