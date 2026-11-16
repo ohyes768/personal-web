@@ -640,10 +640,8 @@ function TrackingRow({
                   variant="candidate"
                   title="评估结果预览，尚未应用"
                 />
-                <div className="mt-0.5 text-[10px] text-ink-muted">
-                  待应用 · {formatMoment(report?.evaluated_at)}
-                  {report?.skill_version ? <span className="ml-1 font-mono">v{report.skill_version}</span> : null}
-                </div>
+                {/* 待应用的时间与版本不在这里重复：「评估」列的溯源行（attemptLine）
+                    已经写了这次 attempt 的时间和 v 版本，「待应用」状态也由评估徽章表达。 */}
               </>
             );
           }
