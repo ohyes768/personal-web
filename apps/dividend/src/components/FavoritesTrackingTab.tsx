@@ -303,7 +303,7 @@ export function FavoritesTrackingTab({
               <th className="p-3 font-medium">股票</th>
               <th className="p-3 font-medium" title="基本面评级：各维度评分与所用评分技能版本">基本面</th>
               <th className="p-3 font-medium">现价（元）</th>
-              <th className="p-3 font-medium">挡位（元）</th>
+              <th className="p-3 font-medium min-w-[420px]" title="四挡位价格条（设计宽度 400px，min-width 锁住不被挤压）">挡位（元）</th>
               <th className="p-3 font-medium" title="现价落在哪一区，以及再涨/跌多少会改变告警动作">区间</th>
               <th className="p-3 font-medium" title="最近一次评估的状态、时间与版本；会话记录可下载排查">评估</th>
               <th className="p-3 font-medium">操作</th>
@@ -492,14 +492,15 @@ function TrackingRow({
     ? `查看报告${attempt.skillVersion ? ` · v${attempt.skillVersion}` : ''} · 评估于 ${formatMoment(attempt.at)}`
     : undefined;
 
-  /** 会话下载：与上面这次 attempt 同源（成功/失败/取消都能下） */
+  /** 会话下载：与上面这次 attempt 同源（成功/失败/取消都能下）；
+      行内用短文案「会话」，完整说明在悬停里 */
   const sessionBlock = attempt.runId ? (
     <span title={attempt.state === 'failed'
       ? `评估失败，可下载本次 Hermes 会话排查：${attempt.error ?? '未知原因'}`
       : attempt.state === 'cancelled'
         ? '本次评估被取消，可下载会话记录复盘'
         : '下载本次评估的 Hermes 会话记录'}>
-      <SessionDownloadButton runId={attempt.runId} download={dividendApi.downloadValuationSession} />
+      <SessionDownloadButton runId={attempt.runId} download={dividendApi.downloadValuationSession} label="会话" />
     </span>
   ) : null;
 
@@ -621,20 +622,19 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 现价 */}
+      {/* 现价：只留价格本身；PE/PB 进悬停（悬停本就有更新时间），不再占第二行宽度 */}
       <td className="p-3">
         {currentPrice != null ? (
-          <>
-            <div
-              className="font-mono font-semibold tabular-nums"
-              title={priceUpdatedAt ? `现价数据更新于 ${new Date(priceUpdatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}` : undefined}
-            >
-              {currentPrice.toFixed(2)}
-            </div>
-            <div className="text-[10px] font-mono text-ink-muted tabular-nums">
-              PE {price?.pe != null ? price.pe.toFixed(1) : '—'} · PB {price?.pb != null ? price.pb.toFixed(2) : '—'}
-            </div>
-          </>
+          <div
+            className="font-mono font-semibold tabular-nums"
+            title={
+              (priceUpdatedAt ? `现价数据更新于 ${new Date(priceUpdatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}` : '')
+              + (price?.pe != null || price?.pb != null
+                ? `${priceUpdatedAt ? '；' : ''}PE ${price?.pe != null ? price.pe.toFixed(1) : '—'} · PB ${price?.pb != null ? price.pb.toFixed(2) : '—'}` : '')
+            }
+          >
+            {currentPrice.toFixed(2)}
+          </div>
         ) : (
           <span className="text-xs text-ink-muted">现价缺失</span>
         )}
@@ -786,7 +786,7 @@ function TrackingRow({
             <button type="button" className={primaryBtn} onClick={onOpenApplyConfirm}>应用</button>
           )}
           {actions.links.includes('settings') && (
-            <button type="button" className={ghostBtn} onClick={onOpenSettings}>挡位设置</button>
+            <button type="button" className={ghostBtn} onClick={onOpenSettings} title="设置该股的挡位监控价格与开关">设置</button>
           )}
         </div>
       </td>

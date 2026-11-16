@@ -169,7 +169,7 @@ test('failed valuation row offers the failed run session download', async ({ pag
   await page.goto('/?tab=alerts');
   const row = page.getByRole('table').locator('[data-code="600004"]');
   await expect(row).toContainText('评估失败');
-  const button = row.getByRole('button', { name: '下载会话记录' });
+  const button = row.getByRole('button', { name: '会话' });
   await expect(button).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await button.click();
@@ -190,7 +190,7 @@ test('succeeded valuation row also offers the session download', async ({ page }
   await page.goto('/?tab=alerts');
   const row = page.getByRole('table').locator('[data-code="000001"]');
   await expect(row.locator('[data-eval-state]')).toBeVisible();
-  const button = row.getByRole('button', { name: '下载会话记录' });
+  const button = row.getByRole('button', { name: '会话' });
   await expect(button).toBeVisible();
   const downloadPromise = page.waitForEvent('download');
   await button.click();
@@ -210,7 +210,7 @@ test('paused rows keep the badge but the row no longer offers pause actions', as
   // 行内没有暂停/恢复入口（该功能已移除）
   await expect(row.getByRole('button', { name: '暂停' })).toHaveCount(0);
   await expect(row.getByRole('button', { name: '恢复监控' })).toHaveCount(0);
-  await expect(row.getByRole('button', { name: '挡位设置' })).toBeVisible();
+  await expect(row.getByRole('button', { name: '设置' })).toBeVisible();
   // 挡位条仍显示（保留配置）
   await expect(table.locator('[data-code="000001"] [data-testid="valuation-bar-effective"]')).toBeVisible();
 });
@@ -295,7 +295,7 @@ test('a failed attempt does not hide the pending report: retry and apply both st
   await expect(row.getByRole('button', { name: '重试评估' })).toBeVisible();
   await expect(row.getByRole('button', { name: '应用' })).toBeVisible();
   // 会话下载指向失败那次
-  await expect(row.getByRole('button', { name: '下载会话记录' })).toBeVisible();
+  await expect(row.getByRole('button', { name: '会话' })).toBeVisible();
 });
 
 test('the evaluation column keeps time, version and session download on the same attempt', async ({ page }) => {
