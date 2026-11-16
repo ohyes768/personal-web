@@ -622,19 +622,23 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 现价：只留价格本身；PE/PB 进悬停（悬停本就有更新时间），不再占第二行宽度 */}
+      {/* 现价：一行价格、一行 PE、一行 PB（PE/PB 各占一行，不合并省宽度） */}
       <td className="p-3">
         {currentPrice != null ? (
-          <div
-            className="font-mono font-semibold tabular-nums"
-            title={
-              (priceUpdatedAt ? `现价数据更新于 ${new Date(priceUpdatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}` : '')
-              + (price?.pe != null || price?.pb != null
-                ? `${priceUpdatedAt ? '；' : ''}PE ${price?.pe != null ? price.pe.toFixed(1) : '—'} · PB ${price?.pb != null ? price.pb.toFixed(2) : '—'}` : '')
-            }
-          >
-            {currentPrice.toFixed(2)}
-          </div>
+          <>
+            <div
+              className="font-mono font-semibold tabular-nums"
+              title={priceUpdatedAt ? `现价数据更新于 ${new Date(priceUpdatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}` : undefined}
+            >
+              {currentPrice.toFixed(2)}
+            </div>
+            <div className="font-mono text-[10px] text-ink-muted tabular-nums">
+              PE {price?.pe != null ? price.pe.toFixed(1) : '—'}
+            </div>
+            <div className="font-mono text-[10px] text-ink-muted tabular-nums">
+              PB {price?.pb != null ? price.pb.toFixed(2) : '—'}
+            </div>
+          </>
         ) : (
           <span className="text-xs text-ink-muted">现价缺失</span>
         )}
