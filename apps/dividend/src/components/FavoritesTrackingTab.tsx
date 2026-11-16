@@ -4,13 +4,15 @@
  * 展示全部收藏（不限于已配置挡位），三种筛选 + 名称/代码搜索：
  *   全部收藏 / 待评估（还没出过可用价格）/ 待应用（可与已有生效挡位重叠）
  *
- * 行内六列（2026-11-15 重构）：
- *   股票/基本面 │ 现价 │ 挡位 │ 区间 │ 评估 │ 操作
+ * 行内七列：
+ *   股票 │ 基本面 │ 现价 │ 挡位 │ 区间 │ 评估 │ 操作
+ * - 「基本面」列：评分一行、版本一行；未评级时空态按钮直接发起分析
+ *   （口径与筛选页一致：排队/评级中→进行中提示，失败→失败+重试+会话下载）。
  * - 「评估」列只讲最近一次 attempt：状态徽章 + 这次尝试的时间/版本 + 会话下载。
  *   四者永远指向同一次尝试，不再出现「下载的是失败那次、时间写的是上次成功那次」。
  * - 「挡位」列只画一条生效条；候选那套价不占表格宽度，由「应用」确认卡与
  *   独立阅读页 /valuation-reader 承载。
- * - 「操作」列单行按钮组：评估/重试/再评估 + 应用 + 查看报告 + 挡位设置。
+ * - 「操作」列单行按钮组：评估/重试/再评估 + 应用 + 挡位设置。
  */
 'use client';
 
@@ -18,7 +20,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { dividendApi } from '@/lib/api';
 import { useQualityAnalysis } from '@/lib/hooks/useQualityAnalysis';
 import { useValuation } from '@/lib/hooks/useValuation';
-import { QUALITY_DIMENSION_LABELS, QUALITY_DIMENSION_ORDER, type QualityDimensionKey } from '@/lib/quality';
+import { isQualityPending, QUALITY_DIMENSION_LABELS, QUALITY_DIMENSION_ORDER, type QualityDimensionKey, type QualityPerCodeStatus } from '@/lib/quality';
 import {
   VALUATION_EVAL_STATE_META,
   VALUATION_LEVEL_KEYS,
@@ -117,7 +119,7 @@ export function FavoritesTrackingTab({
 
   const { reports, perCode, configured, currentSkillVersion, job, message: valuationMessage, pollError,
           analyze, refresh: refreshValuation, cancelQueueItem, moveQueueItem } = useValuation();
-  const { qualityScores, currentSkillVersion: qualityVersion } = useQualityAnalysis();
+  const { qualityScores, qualityPerCode, qualityConfigured, currentSkillVersion: qualityVersion, analyze: analyzeQuality } = useQualityAnalysis();
   const keyword = normalize(searchInput);
   const stockByCode = useMemo(() => {
     const map = new Map<string, DividendStockWithTechnical>();
@@ -314,6 +316,9 @@ export function FavoritesTrackingTab({
                 row={row}
                 qualityScore={qualityScores[row.code] ?? null}
                 qualityVersion={qualityVersion}
+                qualityLive={qualityPerCode[row.code] ?? null}
+                qualityConfigured={qualityConfigured}
+                onAnalyzeQuality={() => void analyzeQuality([row.code])}
                 valuationVersion={currentSkillVersion}
                 priceUpdatedAt={priceUpdatedAt}
                 evaluating={actionPending === row.code}
@@ -389,6 +394,8 @@ function TrackingRow({
   row,
   qualityScore,
   qualityVersion,
+  qualityLive,
+  qualityConfigured,
   valuationVersion,
   priceUpdatedAt,
   evaluating,
@@ -397,6 +404,7 @@ function TrackingRow({
   onEvaluate,
   onOpenApplyConfirm,
   onOpenSettings,
+  onAnalyzeQuality,
 }: {
   row: {
     code: string;
@@ -415,6 +423,12 @@ function TrackingRow({
   };
   qualityScore: { dimensions: Record<QualityDimensionKey, number | null>; skill_version?: string | null } | null;
   qualityVersion: string | null;
+  /** 这只股票的评级实时状态（queued/running/failed 等），用于空态按钮分支 */
+  qualityLive: QualityPerCodeStatus | null;
+  /** Hermes 评级是否已配置；false 时置灰分析按钮 */
+  qualityConfigured: boolean;
+  /** 发起基本面评级分析 */
+  onAnalyzeQuality: () => void;
   /** 当前已部署的估值 skill 版本；与行报告版本不一致时提示需重评 */
   valuationVersion: string | null;
   priceUpdatedAt: string | null;
@@ -569,7 +583,8 @@ function TrackingRow({
         <div className="text-xs text-ink-muted">{stock.code} · {stock.sw_level1 || '—'}</div>
       </td>
 
-      {/* 基本面评级：评分一行、版本一行，从「股票」列拆出独立两行 */}
+      {/* 基本面评级：评分一行、版本一行；未评级时空态按钮直接发起分析
+          （口径与筛选页一致：排队/评级中→进行中提示，失败→失败+重试+会话下载） */}
       <td className="p-3">
         {qualityScore ? (
           <>
@@ -583,8 +598,26 @@ function TrackingRow({
               <QualitySkillVersion version={qualityScore.skill_version} currentVersion={qualityVersion} />
             </div>
           </>
+        ) : isQualityPending(qualityLive) ? (
+          <span className="text-xs text-ink-muted animate-pulse" title="评级任务进行中，完成后自动刷新">
+            {qualityLive?.state === 'queued' ? '排队中…' : '评级中…'}
+          </span>
+        ) : qualityLive?.state === 'failed' ? (
+          <span className="inline-flex items-center gap-2">
+            <span className="text-xs text-red-700" title={qualityLive.error || '评级失败'}>失败</span>
+            <button type="button" className={ghostBtn} disabled={!qualityConfigured} title={qualityLive.error || '重新发起评级'} onClick={onAnalyzeQuality}>重试</button>
+            {qualityLive.run_id && <SessionDownloadButton runId={qualityLive.run_id} download={dividendApi.downloadQualitySession} />}
+          </span>
         ) : (
-          <div className="text-xs text-ink-muted">未评级</div>
+          <button
+            type="button"
+            className={ghostBtn}
+            disabled={!qualityConfigured}
+            title={qualityConfigured ? '对这只股票调用 AI 五维基本面评级（约几分钟）' : 'Hermes 未配置（需 HERMES_BASE_URL 与 HERMES_API_KEY），无法评级'}
+            onClick={onAnalyzeQuality}
+          >
+            分析
+          </button>
         )}
       </td>
 
