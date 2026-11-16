@@ -538,7 +538,10 @@ function TrackingRow({
     // 失败原因原文可能很长，列表不渲染，只留在徽章的悬停提示里
     const errorTitle = evalState === 'failed' && attempt.error
       ? `评估失败：${attempt.error}`
-      : undefined;
+      // 待应用且已有生效挡位：补充说明不占一行，进徽章悬停
+      : evalState === 'pending_apply' && derived.effective
+        ? '新评估已就绪，确认应用后才启用；旧挡位在应用前持续生效'
+        : undefined;
     return (
       <span
         className={`inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs ${tone}`}
@@ -781,9 +784,7 @@ function TrackingRow({
         {needsNote && (
           <div className="mt-1 text-xs text-ink-muted max-w-[180px] whitespace-normal">{evalNote}</div>
         )}
-        {derived.pendingApply && derived.effective && (
-          <div className="mt-1 text-xs text-accent">新评估待应用 · 旧挡位仍生效</div>
-        )}
+        {/* 「新评估待应用 · 旧挡位仍生效」不再单独占一行：语义进徽章悬停 */}
       </td>
 
       {/* 操作：只放对这只股票的动作——评估/重试/再评估、应用、挡位设置。

@@ -62,8 +62,9 @@ test('effective bar, single-level fallback and hidden bar follow state semantics
   await expect(zone).toContainText('↓加仓 21.5%');
   // 现价列只留价格与 PE/PB，距离不再混在这里
   await expect(table.locator('[data-code="000001"]')).not.toContainText('距减仓');
-  // 重评待应用重叠：已有生效挡位 + 新评估待应用
-  await expect(table.locator('[data-code="000001"]', { hasText: '新评估待应用' })).toBeVisible();
+  // 重评待应用重叠：徽章是「待应用」，补充说明进悬停不占行
+  await expect(table.locator('[data-code="000001"] [data-eval-state="pending_apply"]')).toBeVisible();
+  await expect(table.locator('[data-code="000001"]')).not.toContainText('新评估待应用 · 旧挡位仍生效');
   await expect(table.locator('[data-code="000001"]').getByRole('button', { name: '应用' })).toBeVisible();
   // 「查看报告」是链接：跳独立阅读页，不再开弹窗
   await expect(table.locator('[data-code="000001"]').getByRole('link', { name: /^查看报告/ })).toBeVisible();
