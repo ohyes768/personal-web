@@ -743,7 +743,7 @@ function TrackingRow({
         </div>
         {actions.links.includes('settings') && (
           <div className="mt-1">
-            <button type="button" className={linkBtn} onClick={onOpenSettings}>挡位设置</button>
+            <button type="button" className={ghostBtn} onClick={onOpenSettings}>挡位设置</button>
           </div>
         )}
       </td>
