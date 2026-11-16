@@ -298,7 +298,8 @@ export function FavoritesTrackingTab({
         <table className="w-full text-sm text-ink whitespace-nowrap">
           <thead className="bg-paper-deep text-left">
             <tr>
-              <th className="p-3 font-medium">股票 / 基本面</th>
+              <th className="p-3 font-medium">股票</th>
+              <th className="p-3 font-medium" title="基本面评级：各维度评分与所用评分技能版本">基本面</th>
               <th className="p-3 font-medium">现价（元）</th>
               <th className="p-3 font-medium">挡位（元）</th>
               <th className="p-3 font-medium" title="现价落在哪一区，以及再涨/跌多少会改变告警动作">区间</th>
@@ -561,19 +562,28 @@ function TrackingRow({
 
   return (
     <tr className="border-t border-rule align-top hover:bg-paper-tint/60" data-code={stock.code}>
-      {/* 股票 / 基本面 */}
+      {/* 股票 */}
       <td className="p-3">
         <div className="font-medium text-ink">{stock.name}</div>
         <div className="text-xs text-ink-muted">{stock.code} · {stock.sw_level1 || '—'}</div>
+      </td>
+
+      {/* 基本面评级：评分一行、版本一行，从「股票」列拆出独立两行 */}
+      <td className="p-3">
         {qualityScore ? (
-          <div className="mt-0.5 text-xs text-ink-muted" title={QUALITY_DIMENSION_ORDER.map(key => `${QUALITY_DIMENSION_LABELS[key]} ${qualityScore.dimensions[key] ?? '未评分'}`).join(' / ')}>
-            {QUALITY_DIMENSION_ORDER.map(key => qualityScore.dimensions[key] ?? '—').join('/')}
-            <span className="ml-1">
+          <>
+            <div
+              className="text-xs tabular-nums"
+              title={QUALITY_DIMENSION_ORDER.map(key => `${QUALITY_DIMENSION_LABELS[key]} ${qualityScore.dimensions[key] ?? '未评分'}`).join(' / ')}
+            >
+              {QUALITY_DIMENSION_ORDER.map(key => qualityScore.dimensions[key] ?? '—').join('/')}
+            </div>
+            <div className="text-xs text-ink-muted">
               <QualitySkillVersion version={qualityScore.skill_version} currentVersion={qualityVersion} />
-            </span>
-          </div>
+            </div>
+          </>
         ) : (
-          <div className="mt-0.5 text-xs text-ink-muted">基本面未评级</div>
+          <div className="text-xs text-ink-muted">未评级</div>
         )}
       </td>
 
