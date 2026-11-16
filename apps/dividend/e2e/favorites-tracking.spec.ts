@@ -308,10 +308,11 @@ test('the evaluation column keeps time, version and session download on the same
   await setup(page, s);
   await page.goto('/?tab=alerts');
   const row = page.getByRole('table').locator('[data-code="000001"]');
-  // 已应用：徽章是评估完成，溯源写报告的时间与版本
+  // 已应用：徽章是评估完成，徽章旁是报告时间（版本不占文字，进「查看报告」悬停）
   await expect(row.locator('[data-eval-state]')).toHaveAttribute('data-eval-state', 'succeeded');
   await expect(row).toContainText('11-11 10:00');
-  await expect(row).toContainText('v1.0.0');
+  await expect(row).not.toContainText('v1.0.0');
+  await expect(row.getByRole('link', { name: /^查看报告/ })).toHaveAttribute('title', /v1\.0\.0/);
   // 生效条不再单独标时间（评估列已有 attempt 时间可推算）
   await expect(row.locator('[data-testid="valuation-bar-effective"]')).toHaveCount(1);
   // 报告入口与状态徽章同列（评估列）：它和「下载会话记录」一样是这次评估的产物。

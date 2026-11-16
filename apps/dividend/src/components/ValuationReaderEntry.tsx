@@ -36,6 +36,8 @@ export interface ValuationReaderEntryProps {
   children?: ReactNode;
   /** 无障碍标签 */
   ariaLabel?: string;
+  /** 悬停提示（如报告版本与评估时间） */
+  title?: string;
 }
 
 export function ValuationReaderEntry({
@@ -44,6 +46,7 @@ export function ValuationReaderEntry({
   variant = 'default',
   children,
   ariaLabel,
+  title,
 }: ValuationReaderEntryProps) {
   const [href, setHref] = useState('./valuation-reader');
 
@@ -64,6 +67,7 @@ export function ValuationReaderEntry({
       className={className}
       data-testid={code ? 'valuation-report-link' : 'valuation-reader-entry'}
       aria-label={ariaLabel}
+      title={title}
     >
       {children ?? '估值资料阅读'}
     </a>

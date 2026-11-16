@@ -446,7 +446,7 @@ function TrackingRow({
     ? reportLevelsToAlertLevels(report.levels)
     : null;
 
-  /** 「评估」列第二行：这次 attempt 的时间 + 版本（与下载的会话同源） */
+  /** 「评估」列第一行的时间部分：这次 attempt 的时间（版本不占文字，进「查看报告」悬停） */
   const attemptLine = (() => {
     if (evalState === 'manual') {
       // 只有手工挡位：从没走过 Hermes，时间是挡位最后写入时间
@@ -468,7 +468,6 @@ function TrackingRow({
       return (
         <span className="tabular-nums">
           {formatMoment(attempt.at)}
-          {attempt.skillVersion ? <span className="ml-1 font-mono">v{attempt.skillVersion}</span> : null}
           {outdated && (
             <span className="ml-1 text-amber-700" title={`当前已部署 v${valuationVersion}，可重评`}>需重评</span>
           )}
@@ -477,6 +476,11 @@ function TrackingRow({
     }
     return <span>—</span>;
   })();
+
+  /** 「查看报告」的悬停：版本 + 评估时间是这份报告的溯源，不占行内高度 */
+  const reportLinkTitle = attempt.at
+    ? `查看报告${attempt.skillVersion ? ` · v${attempt.skillVersion}` : ''} · 评估于 ${formatMoment(attempt.at)}`
+    : undefined;
 
   /** 会话下载：与上面这次 attempt 同源（成功/失败/取消都能下） */
   const sessionBlock = attempt.runId ? (
@@ -687,11 +691,12 @@ function TrackingRow({
         )}
       </td>
 
-      {/* 评估：最近一次 attempt 的状态 + 溯源 + 这份评估的产物入口（四者同源） */}
+      {/* 评估：第一行徽章 + 时间（同一次 attempt），第二行产物入口。
+          版本不占文字：进「查看报告」悬停，仅「需重评」时在时间旁露文字。 */}
       <td className="p-3">
-        {evalPill}
-        <div className="mt-1 text-xs text-ink-muted">
-          {attemptLine}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          {evalPill}
+          <span className="text-xs text-ink-muted">{attemptLine}</span>
         </div>
         {/* 这份评估的两个产物：报告正文与会话记录。放在评估列是因为它们讲的
             都是「这次评估」本身，不是对这只股票的动作 */}
@@ -702,6 +707,7 @@ function TrackingRow({
               code={row.code}
               variant="inline"
               ariaLabel={`查看报告 · ${stock.name}`}
+              title={reportLinkTitle}
             >
               查看报告
             </ValuationReaderEntry>
