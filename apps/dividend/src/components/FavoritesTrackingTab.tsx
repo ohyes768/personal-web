@@ -432,15 +432,13 @@ function TrackingRow({
   // 徽章已经说清的状态不再补一句说明（避免每行固定多占一行）。
   // 失败尤其不补：后端原文可能很长（如「run xxx 超过 3600s 未完成（最后状态 running）」），
   // 直接渲染会把行撑高——原文留在徽章的悬停提示里。
-  const needsNote = evalState === 'evaluating'
-    || evalState === 'cancelled'
+  const needsNote = evalState === 'cancelled'
     || evalState === 'not_ready'
     || (evalState === 'pending_apply' && !derived.effective);
   const evaluatingNow = isAttemptRunning(attempt.state) || evaluating;
-  const evalNote = evalState === 'evaluating' ? '正在补充估值依据'
-    : evalState === 'cancelled' ? '本次评估被取消，可重新评估'
-      : evalState === 'not_ready' ? '未生成价格，可查看原因'
-        : '';
+  const evalNote = evalState === 'cancelled' ? '本次评估被取消，可重新评估'
+    : evalState === 'not_ready' ? '未生成价格，可查看原因'
+      : '';
   const levels = alertItem?.levels ?? null;
   const candidateLevels = derived.pendingApply && report?.levels
     ? reportLevelsToAlertLevels(report.levels)
@@ -453,12 +451,8 @@ function TrackingRow({
       return <span className="tabular-nums">挡位配置于 {formatMoment(row.effectiveUpdatedAt)}</span>;
     }
     if (isAttemptRunning(attempt.state)) {
-      return (
-        <span>
-          {attempt.position ? `队列第 ${attempt.position} 位` : '排队中'}
-          {attempt.at ? <span className="ml-1 tabular-nums">· {formatMoment(attempt.at)}</span> : null}
-        </span>
-      );
+      // 排队/运行的状态由徽章说清（排队含位次），这里只留时间
+      return <span className="tabular-nums">{attempt.at ? formatMoment(attempt.at) : '—'}</span>;
     }
     if (attempt.state === 'failed' || attempt.state === 'cancelled') {
       return <span className="tabular-nums">{formatMoment(attempt.at)} · {attempt.state === 'failed' ? '失败' : '已取消'}</span>;
@@ -506,6 +500,12 @@ function TrackingRow({
   }, [levels, candidateLevels, currentPrice]);
 
   const evalPill = (() => {
+    if (isAttemptRunning(attempt.state)) {
+      // 排队与运行分开说：排队带位次，运行才叫「评估中」，不再上下两行互相打架
+      return attempt.state === 'queued'
+        ? <span className="inline-flex items-center gap-1 rounded bg-paper-tint px-1.5 py-0.5 text-xs text-ink-muted animate-pulse" data-eval-state="evaluating">{attempt.position ? `排队中 · 第 ${attempt.position} 位` : '排队中'}</span>
+        : <span className="inline-flex items-center gap-1 rounded bg-paper-tint px-1.5 py-0.5 text-xs text-info animate-pulse" data-eval-state="evaluating">评估中</span>;
+    }
     if (evaluatingNow && evalState !== 'failed') {
       return <span className="inline-flex items-center gap-1 rounded bg-paper-tint px-1.5 py-0.5 text-xs text-info animate-pulse">评估中</span>;
     }
