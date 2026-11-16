@@ -733,19 +733,18 @@ function TrackingRow({
       </td>
 
       {/* 操作：只放对这只股票的动作——评估/重试/再评估、应用、挡位设置。
-          主按钮一行、挡位设置固定另起一行：否则同一列里链接的行位会随按钮个数跳动。 */}
+          全部一行不换行：flex-wrap 会让挤压时按钮掉行、行高跳；nowrap 后
+          这列的最小宽度固定为整组按钮宽，挤压由表格横向滚动消化。 */}
       <td className="p-3">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <div className="flex flex-nowrap items-center gap-x-2">
           {evaluateButton}
           {actions.apply && (
             <button type="button" className={primaryBtn} onClick={onOpenApplyConfirm}>应用</button>
           )}
-        </div>
-        {actions.links.includes('settings') && (
-          <div className="mt-1">
+          {actions.links.includes('settings') && (
             <button type="button" className={ghostBtn} onClick={onOpenSettings}>挡位设置</button>
-          </div>
-        )}
+          )}
+        </div>
       </td>
     </tr>
   );
