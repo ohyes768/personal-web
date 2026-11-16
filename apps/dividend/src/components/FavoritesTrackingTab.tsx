@@ -456,7 +456,8 @@ function TrackingRow({
       return <span className="tabular-nums">{attempt.at ? formatMoment(attempt.at) : '—'}</span>;
     }
     if (attempt.state === 'failed' || attempt.state === 'cancelled') {
-      return <span className="tabular-nums">{formatMoment(attempt.at)} · {attempt.state === 'failed' ? '失败' : '已取消'}</span>;
+      // 失败/取消已由左侧徽章表达，时间旁不重复（取消时徽章也显示「已取消」）
+      return <span className="tabular-nums">{formatMoment(attempt.at)}</span>;
     }
     if (attempt.state === 'completed' && attempt.at) {
       const outdated = !!valuationVersion && attempt.skillVersion && attempt.skillVersion !== valuationVersion;
