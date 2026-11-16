@@ -610,12 +610,9 @@ function TrackingRow({
                     variant="effective"
                     title="当前生效挡位"
                   />
-                  {/* 生效挡位的时间（来源可查：alerts.updated_at）；版本不写——报告按 code 覆盖写，
-                      候选报告成功后旧报告已被顶掉，生效挡位当年用的哪版 skill 事后查不到。
-                      「新挡位待应用」不在这里重复：评估状态列已经说了「旧挡位仍生效」。 */}
-                  <div className="mt-0.5 text-[10px] text-ink-muted">
-                    生效于 {formatMoment(row.effectiveUpdatedAt)}
-                  </div>
+                  {/* 生效挡位的时间与版本都不写——报告按 code 覆盖写，候选报告成功后
+                      旧报告已被顶掉，生效挡位当年用的哪版 skill 事后查不到；时间也可由
+                      「评估」列的 attempt 时间推算，这里不再单独占一行。 */}
                 </>
               );
             }
