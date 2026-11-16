@@ -463,7 +463,12 @@ function TrackingRow({
   const attemptLine = (() => {
     if (evalState === 'manual') {
       // 只有手工挡位：从没走过 Hermes，时间是挡位最后写入时间
-      return <span className="tabular-nums">挡位配置于 {formatMoment(row.effectiveUpdatedAt)}</span>;
+      // 「配置于」不占文字：徽章已是「手工挡位」，前缀进悬停，与其他行的时间口径一致
+      return (
+        <span className="tabular-nums" title={`挡位配置于 ${formatMoment(row.effectiveUpdatedAt)}`}>
+          {formatMoment(row.effectiveUpdatedAt)}
+        </span>
+      );
     }
     if (isAttemptRunning(attempt.state)) {
       // 排队/运行的状态由徽章说清（排队含位次），这里只留时间
