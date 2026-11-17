@@ -14,7 +14,7 @@
 import { useSearchParams } from 'next/navigation';
 import { useState } from 'react';
 
-import { Cog6ToothIcon, FunnelIcon } from '@heroicons/react/24/outline';
+import { ArrowPathIcon, Cog6ToothIcon, FunnelIcon } from '@heroicons/react/24/outline';
 
 import { discoveryBondApi, discoveryStockApi } from '@/lib/api';
 import { FundsNavigation } from './FundsNavigation';
@@ -143,6 +143,7 @@ export function FundsHeader({
                 aria-label="市场刷新"
                 title={quickBusy ? '三分法刷新进行中，暂不可用' : '市场全量流水线（名单 → 业绩 → 经理 → 净值 → 风险指标），约 10 分钟起，低频'}
               >
+                <ArrowPathIcon className={`w-4 h-4 ${fullBusy ? 'animate-spin' : ''}`} />
                 市场刷新
               </button>
               <FullRefreshDialog
