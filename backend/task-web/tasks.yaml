@@ -176,7 +176,7 @@ tasks:
     skills: [daily-pick-brief]
     env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    cron: "30 17 * * mon-fri"
+    cron: "10 15 * * mon-fri"
     timeout: 3600
 
   - id: hermes-daily-industry
@@ -197,7 +197,7 @@ tasks:
     skills: [daily-pick-brief]
     env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
-    cron: "10 18 * * mon-fri"
+    cron: "20 15 * * mon-fri"
     timeout: 3600
 
   # 迁移来源：n8n「RSS Push」14:42 投顾
