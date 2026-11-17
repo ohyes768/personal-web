@@ -134,7 +134,7 @@ class TestSubmitAnalysis:
         clock = [100.0]
         monkeypatch.setattr(quality_service, "monotonic", lambda: clock[0], raising=False)
 
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             clock[0] += 2.0
             return "run-1"
 
@@ -152,7 +152,7 @@ class TestSubmitAnalysis:
         submitted, polls = [], []
         captured = {}
 
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             submitted.append(key)
             return f"run-{len(submitted)}"
 
@@ -195,7 +195,7 @@ class TestSubmitAnalysis:
         assert service.get_per_code()["000001"]["state"] == "completed"
 
     def test_one_failure_does_not_block_other(self, tmp_path):
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             return key  # 直接用幂等键当 run_id，便于 poll 按股票区分
 
         def poll_fn(cfg, run_id):
@@ -268,14 +268,14 @@ class TestSubmitAnalysis:
             gate = threading.Event()
             started = threading.Event()
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 started.set()
                 assert gate.wait(120)
                 return "run-1"
 
             stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
 
-            def submit_by_key(cfg, prompt, key):
+            def submit_by_key(cfg, prompt, key, instructions=""):
                 started.set()
                 assert gate.wait(120)
                 return f"run-{key}"
@@ -332,7 +332,7 @@ class TestSubmitAnalysis:
                 "600000": stock(code="600000", name="丙"),
             }
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 started.set()
                 assert gate.wait(120)
                 return "run-1"
@@ -435,7 +435,7 @@ class TestQueueAppend:
                                poll_interval=0, timeout=5, max_concurrent=2)
             stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 if "600519" in key:
                     second_started.set()
                 return key
@@ -470,7 +470,7 @@ class TestQueueAppend:
             started = threading.Event()
             stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 started.set()
                 assert gate.wait(120)
                 return f"run-{key}"
@@ -519,7 +519,7 @@ class TestQueueAppend:
             started = threading.Event()
             submit_count = [0]
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 submit_count[0] += 1
                 started.set()
                 assert gate.wait(120)
@@ -559,7 +559,7 @@ class TestQueueAppend:
             attempts_lock = threading.Lock()
             stocks = {"000001": stock(), "600000": stock(code="600000", name="乙")}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 return key
 
             def poll_fn(cfg, run_id):
@@ -611,7 +611,7 @@ class TestQueueAppend:
             order = []
             order_lock = threading.Lock()
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 return key
 
             def poll_fn(cfg, run_id):
@@ -643,7 +643,7 @@ class TestQueueAppend:
             codes = ["000001", "000002", "600000", "600519", "601318"]
             stocks = {c: stock(code=c, name=f"股{i}") for i, c in enumerate(codes)}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 return key
 
             def poll_fn(cfg, run_id):
@@ -673,7 +673,7 @@ class TestQueueAppend:
             started = threading.Event()
             stocks = {"000001": stock(), "600519": stock(code="600519", name="新股")}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 started.set()
                 assert gate.wait(120)
                 return f"run-{key}"
@@ -735,7 +735,7 @@ class TestQueueControls:
             release = threading.Event()
             submitted = []
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 submitted.append(key)
                 if len(submitted) == 1:
                     assert release.wait(5)
@@ -792,7 +792,7 @@ class TestQueueControls:
             manager = RefreshJobManager(tmp_path / "jobs")
             release = threading.Event()
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 if "000001" in key and not release.is_set():
                     assert release.wait(5)
                 return key
@@ -836,7 +836,7 @@ class TestQueueControls:
             phase = {"status": "running"}
             polled = threading.Event()
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 return "run-1"
 
             def stop_fn(cfg, run_id):
@@ -911,7 +911,7 @@ class TestQueueControls:
             release = threading.Event()
             submitted = []
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 submitted.append(key)
                 return key
 
@@ -956,7 +956,7 @@ class TestQueueControls:
             release = threading.Event()
             first = {"done": False}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 keys.append(key)
                 if not first["done"]:
                     first["done"] = True
@@ -1002,7 +1002,7 @@ class TestQueueControls:
             release = threading.Event()
             stops = []
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 entered.set()
                 assert release.wait(5)
                 return "run-late"
@@ -1087,7 +1087,7 @@ class TestQueueControls:
             manager = RefreshJobManager(tmp_path / "jobs")
             release = threading.Event()
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 assert release.wait(5)
                 return key
 
@@ -1120,7 +1120,7 @@ class TestQueueControls:
             stocks = {code: stock(code=code, name=name) for code, name in
                       (("000001", "甲"), ("000002", "乙"), ("600000", "丙"), ("601318", "丁"))}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 if "000001" in key:
                     assert release.wait(5)
                 return key
@@ -1169,7 +1169,7 @@ class TestQueueControls:
             stocks = {code: stock(code=code, name=name) for code, name in
                       (("000001", "跑"), ("000002", "甲"), ("600000", "乙"), ("601318", "丙"))}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 submitted.append(key)
                 if "000001" in key:
                     assert release.wait(5)
@@ -1223,7 +1223,7 @@ class TestQueueControls:
                         and manager.get(financial["job_id"])["status"] == "running")
             stocks = {"000001": stock(), "600000": stock(code="600000", name="乙")}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 submitted.append(key)
                 return key
 

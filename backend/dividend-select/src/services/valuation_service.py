@@ -36,6 +36,23 @@ from src.utils.logger import setup_logger
 logger = setup_logger(__name__)
 
 SKILL_NAME = "stock-four-level-valuation"
+
+# 随 run 提交的 ephemeral system prompt：预算与收口纪律（每次 API 调用可见，
+# 不被上下文压缩稀释，不落对话记录）。只放 skill 管不住的流程纪律——估值戒律
+# （不映射评分/不以现价比例推导等）由 skill 运行时自己约束，不在这里重复。
+# 数字 6 与宿主 pre_tool_call 硬闸（probe_guard.py，HERMES_PROBE_BUDGET 默认 6）
+# 保持一致：提示词预告过的拦截才是可预期的拦截。
+VALUATION_INSTRUCTIONS = (
+    "预算纪律：检索类调用上限 6 次，超限会被硬闸直接拒绝。"
+    "同一数据主题核验一次即为足，重复确认不产生新信息。\n"
+    "收口纪律：两轮定向补查后仍缺，立即按已有事实收口。"
+    "insufficient_data 是合规产出，禁止为收集完美证据重开研究。\n"
+    "结论固定：每步计算先写下结论再继续；修改假设必须有新证据，禁止无新证据重算；"
+    "上下文被压缩后从工作目录已存文件续做，禁止从头重新核验。\n"
+    "完成定义：写出 draft.json 并通过 finalize 与 check 才算完成。"
+    "优先交付不完美的 result，而不是继续收集证据。"
+)
+
 VALUATION_FILE = "valuation_reports.json"
 LEVEL_KEYS = ("heavy_position", "add_position", "reduce_position", "full_exit")
 ANALYSIS_SECTIONS = ("business", "normalization", "dividend", "valuation", "risk")
@@ -463,7 +480,7 @@ class ValuationService:
         data_date: str,
         refresh_jobs,
         quality_scores: dict,
-        submit_run_fn: Callable[[HermesConfig, str, str], str],
+        submit_run_fn: Callable[[HermesConfig, str, str, str], str],
         poll_run_fn: Callable[[HermesConfig, str], str],
         market_snapshot_fn: Callable[[str], dict] | None = None,
         stop_run_fn: Optional[Callable[[HermesConfig, str], str]] = None,
@@ -717,7 +734,7 @@ class ValuationService:
         expected_version = item["skill_version"]
         prompt = build_prompt(item["payload"], expected_version, item["data_date"])
         try:
-            run_id = submit_run_fn(hermes_config, prompt, self._idempotency_key(item))
+            run_id = submit_run_fn(hermes_config, prompt, self._idempotency_key(item), VALUATION_INSTRUCTIONS)
         except HermesError as exc:
             return "failed", None, str(exc)[:300], None, False
         with self._cond:

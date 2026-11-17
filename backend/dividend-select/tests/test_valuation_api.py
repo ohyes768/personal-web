@@ -89,7 +89,7 @@ def configure_hermes(monkeypatch, version="1.0.0", status="ready"):
     monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
     monkeypatch.setenv("HERMES_API_KEY", "secret")
     monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", version)
-    monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
+    monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key, instructions="": key)
     monkeypatch.setattr(routes, "poll_run",
                         lambda cfg, run_id: fake_report(run_id.split("-")[1], "样本", status=status))
     # _watch 路径用的单次查询/停止也要打桩
@@ -133,7 +133,7 @@ class TestAnalyze:
         monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
         monkeypatch.setenv("HERMES_API_KEY", "secret")
         monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", "1.0.0")
-        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: "run-fail-1")
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key, instructions="": "run-fail-1")
         monkeypatch.setattr(routes, "poll_run", lambda cfg, run_id: "")
         monkeypatch.setattr(routes, "get_run", lambda cfg, run_id: {"status": "failed", "error": "boom"})
         monkeypatch.setattr(routes, "stop_run", lambda cfg, run_id: "stopping")
@@ -227,7 +227,7 @@ class TestOldMonitorPreserved:
         monkeypatch.setenv("HERMES_BASE_URL", "http://nas:8642")
         monkeypatch.setenv("HERMES_API_KEY", "secret")
         monkeypatch.setenv("HERMES_VALUATION_SKILL_VERSION", "1.0.0")
-        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key: key)
+        monkeypatch.setattr(routes, "submit_run", lambda cfg, prompt, key, instructions="": key)
         monkeypatch.setattr(routes, "poll_run",
                             lambda cfg, run_id: (_ for _ in ()).throw(Exception("run 失败")))
         monkeypatch.setattr(routes, "get_run",

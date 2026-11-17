@@ -208,7 +208,7 @@ class TestSubmitValuation:
         clock = [100.0]
         monkeypatch.setattr(valuation_service, "monotonic", lambda: clock[0], raising=False)
 
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             clock[0] += 2.0
             return "run-1"
 
@@ -227,7 +227,7 @@ class TestSubmitValuation:
     def test_two_stocks_and_non_ready_saved(self, tmp_path):
         runs = {}
 
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             code = key.split("-")[1]
             runs[key] = code
             return key  # run_id 用幂等键本身，便于 poll 侧识别
@@ -248,7 +248,7 @@ class TestSubmitValuation:
         assert saved["600000"]["levels"] is None
 
     def test_failed_poll_marks_failed(self, tmp_path):
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             return "run-1"
 
         def poll_fn(cfg, run_id):
@@ -267,7 +267,7 @@ class TestSubmitValuation:
         manager = RefreshJobManager(tmp_path / "jobs")
         stocks = {"000001": stock()}
 
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             return "run-1"
 
         def poll_fn(cfg, run_id):
@@ -287,7 +287,7 @@ class TestSubmitValuation:
     def test_idempotency_key_includes_version_and_code(self, tmp_path, monkeypatch):
         captured = {}
 
-        def submit_fn(cfg, prompt, key):
+        def submit_fn(cfg, prompt, key, instructions=""):
             captured["key"] = key
             return "run-1"
 
@@ -308,7 +308,7 @@ class TestSubmitValuation:
             gate = threading.Event()
             runs = {}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 code = key.split("-")[1]
                 runs[key] = code
                 return key
@@ -351,7 +351,7 @@ class TestSubmitValuation:
             gate = threading.Event()
             runs = {}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 runs[key] = key.split("-")[1]
                 return key
 
@@ -445,7 +445,7 @@ class TestQueueControls:
             release = threading.Event()
             submitted = []
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 submitted.append(key)
                 if len(submitted) == 1:
                     assert release.wait(5)
@@ -501,7 +501,7 @@ class TestQueueControls:
             manager = RefreshJobManager(tmp_path / "jobs")
             release = threading.Event()
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 if "000001" in key and not release.is_set():
                     assert release.wait(5)
                 return key
@@ -556,7 +556,7 @@ class TestQueueControls:
 
             service.submit_valuation(
                 ["000001"], CFG1, {"000001": stock()}, "2026-09-30", manager, {},
-                lambda cfg, prompt, key: "run-1",
+                lambda cfg, prompt, key, instructions="": "run-1",
                 lambda *args: (_ for _ in ()).throw(AssertionError("不应走阻塞轮询")),
                 stop_run_fn=stop_fn, get_run_fn=get_fn)
             assert polled.wait(5)  # 确认已提交到 Hermes，避免走提交前取消分支。
@@ -613,7 +613,7 @@ class TestQueueControls:
             release = threading.Event()
             first = {"done": False}
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 keys.append(key)
                 if not first["done"]:
                     first["done"] = True
@@ -656,7 +656,7 @@ class TestFailureRunLog:
 
         service, job = run_service(
             tmp_path, ["000001"], {"000001": stock()},
-            lambda cfg, prompt, key: "run-fail-1", poll_fn,
+            lambda cfg, prompt, key, instructions="": "run-fail-1", poll_fn,
         )
         assert job["status"] == "failed"
         per_code = service.get_per_code()
@@ -671,7 +671,7 @@ class TestFailureRunLog:
             raise HermesRunFailed("run xx 终态 failed")
 
         run_service(tmp_path, ["000001"], {"000001": stock()},
-                    lambda cfg, prompt, key: "run-fail-1", poll_fn)
+                    lambda cfg, prompt, key, instructions="": "run-fail-1", poll_fn)
         restarted = ValuationService(tmp_path / "valuation_reports.json")
         per_code = restarted.get_per_code()
         assert per_code["000001"]["state"] == "failed"
@@ -683,10 +683,10 @@ class TestFailureRunLog:
             raise HermesRunFailed("run xx 终态 failed")
 
         run_service(tmp_path, ["000001"], {"000001": stock()},
-                    lambda cfg, prompt, key: "run-fail-1", poll_fn)
+                    lambda cfg, prompt, key, instructions="": "run-fail-1", poll_fn)
         service, job = run_service(
             tmp_path, ["000001"], {"000001": stock()},
-            lambda cfg, prompt, key: "run-ok-1",
+            lambda cfg, prompt, key, instructions="": "run-ok-1",
             lambda cfg, run_id: fake_report("000001", "样本"),
         )
         assert job["status"] == "succeeded"
@@ -706,7 +706,7 @@ class TestSessionExport:
 
     def test_saved_record_contains_run_id(self, tmp_path):
         service, job = run_service(tmp_path, ["000001"], {"000001": stock()},
-                                   lambda cfg, prompt, key: "run-runid9",
+                                   lambda cfg, prompt, key, instructions="": "run-runid9",
                                    lambda cfg, run_id: fake_report("000001", "样本"))
         assert job["status"] == "succeeded"
         saved = ValuationService(service.reports_path).get_all()["000001"]

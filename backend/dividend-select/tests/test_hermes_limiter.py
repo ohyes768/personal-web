@@ -99,7 +99,7 @@ class TestCrossServiceCap:
             lock = threading.Lock()
             stats = {"inflight": 0, "max_seen": 0}
 
-            def tracked_submit(cfg, prompt, key):
+            def tracked_submit(cfg, prompt, key, instructions=""):
                 with lock:
                     stats["inflight"] += 1
                     stats["max_seen"] = max(stats["max_seen"], stats["inflight"])
@@ -136,7 +136,7 @@ class TestCrossServiceCap:
             manager = RefreshJobManager(tmp_path / "jobs")
             submitted = []
 
-            def submit_fn(cfg, prompt, key):
+            def submit_fn(cfg, prompt, key, instructions=""):
                 submitted.append(key)
                 return key
 
@@ -169,7 +169,7 @@ class TestCrossServiceCap:
                       for code, name in (("000001", "甲"), ("000002", "乙"), ("600000", "丙"))}
             job = valuation.submit_valuation(
                 ["000001", "000002", "600000"], CFG, stocks, "2026-09-30", manager, {},
-                lambda cfg, prompt, key: key,
+                lambda cfg, prompt, key, instructions="": key,
                 lambda cfg, run_id: fake_valuation_output(run_id.split("-")[1], "样本"))
             await manager.close(timeout=10)
             return manager.get(job["job_id"]), limiter
