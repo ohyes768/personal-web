@@ -152,23 +152,52 @@ tasks:
 
   # ---- 2026-11-06 第二批：需挂载宿主目录的任务（volumes/network/user 新能力）----
 
-  # ---- 财报阅读已改为 Hermes skill（daily-pick-brief），容器直跑版退役 ----
+  # ---- 财报阅读拆分（2026-11-17）：单次 run 干完全部步骤会撞 Hermes 工具迭代上限，
+  # 2026-11-16 两份分析写完但 RSS/钉钉投递被截断。拆成两个任务：
+  #   hermes-daily-pick          17:30 选股+主推送+财报分析（含 RSS+钉钉摘要）
+  #   hermes-daily-industry      18:10 年报行业学习（含 RSS+钉钉摘要），衔接读历史 JSON
   # skill 流程：agent 在宿主机跑 daily_pick.py（守卫 DAILY_PICK_ONCE_DAILY=1 防当日重复推送，
   # HERMES_SYNC=1 同步等完深度分析，data/reports/logs 产物契约不变）
   - id: hermes-daily-pick
     name: 每日财报阅读（AI）
     group: ai
-    description: 经 Hermes Runs API 触发 daily-pick-brief skill；选股/去重/推送历史由脚本维护，AI 研判同步完成后退出
+    description: 经 Hermes Runs API 触发 daily-pick-brief skill 第一段；选股+主推送+财报分析及投递，行业学习由 hermes-daily-industry 接力
     targets: [dingtalk]
     engine: docker
     image: hermes-trigger:latest
     command: python hermes_trigger.py
     prompt: |-
-      按 daily-pick-brief skill 执行每日财报阅读：运行脚本主流程（守卫自动防当日重复推送），判读结果（推送成功/已跳过/无推荐/失败）并如实转述标的信息。
+      按 daily-pick-brief skill 执行每日财报阅读（第一段，只做到财报分析投递为止）：
+      1) 运行脚本主流程选股并推主卡片（守卫自动防当日重复推送）；
+      2) 按 financial-statement-analysis skill 写财报分析，产物落 data/reports/{code}-{period}-fsa-{yyyymmdd}.md；
+      3) 按 skill 第 5 步契约投递：先 RSS 发布（--channel caibao --source daily-pick，需 --insecure）拿 detail_url，再推钉钉摘要【财报分析】。
+      本段不得执行年报行业学习（由 hermes-daily-industry 任务接力）。
+      判读结果（推送成功/已跳过/无推荐/失败）并如实转述标的信息；若 detail_url 未生成必须写明原因。
     skills: [daily-pick-brief]
     env_file: /hermes-home/gw-8642.env
     network: nginx_nginx-bridge
     cron: "30 17 * * mon-fri"
+    timeout: 3600
+
+  - id: hermes-daily-industry
+    name: 财报行业学习（AI）
+    group: ai
+    description: 经 Hermes Runs API 触发 daily-pick-brief skill 第二段；年报行业学习+RSS+钉钉摘要，衔接当日 hermes-daily-pick 的推送历史
+    targets: [dingtalk]
+    engine: docker
+    image: hermes-trigger:latest
+    command: python hermes_trigger.py
+    prompt: |-
+      按 daily-pick-brief skill 执行年报行业学习（第二段接力，不做选股、不推主卡片）：
+      1) 读 ~/.hermes/skills/daily-pick-brief/data/daily_pick_history.json 最后一条记录，日期不是今天则如实转述后结束；
+      2) 用 scripts/daily_pick.py --latest-annual <code> 查年报公告（NO_ANNUAL_REPORT 则转述后结束）；
+      3) 按 annual-report-industry-learning skill 写行业学习，产物落 data/reports/{code}-{period}-industry-{yyyymmdd}.md；
+      4) 按 skill 第 5 步契约投递：先 RSS 发布（--channel caibao --source daily-pick，需 --insecure）拿 detail_url，再推钉钉摘要【财报行业学习】（正文 300–450 字硬上限）。
+      判读结果并如实转述；若 detail_url 未生成必须写明原因。
+    skills: [daily-pick-brief]
+    env_file: /hermes-home/gw-8642.env
+    network: nginx_nginx-bridge
+    cron: "10 18 * * mon-fri"
     timeout: 3600
 
   # 迁移来源：n8n「RSS Push」14:42 投顾
