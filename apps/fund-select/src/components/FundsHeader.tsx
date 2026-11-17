@@ -5,8 +5,9 @@
  *
  * 各 tab 通过 `<FundsHeader active="bond" right={...}>` 等传入。
  *
- * 注意：discovery-* tab 只有一个「全量刷新」按钮（5 阶段流水线已内置 fund_name_em 拉名单）；
- * 老 tab 的「刷新」按钮保留（刷新 yaml 名单 60 只的业绩）。
+ * 注意：discovery-* tab 只有一个「市场刷新」按钮（5 阶段流水线已内置 fund_name_em 拉名单）；
+ * 老 tab 的「三分法刷新」按钮保留（刷新 yaml 名单 60 只的业绩）。
+ * 两种刷新互斥：任一进行中时另一入口禁用（11-17 方案 B）。
  */
 'use client';
 
@@ -102,6 +103,9 @@ export function FundsHeader({
   const fullRefreshApi = FULL_REFRESH_API[exportKind];
 
   const [fullOpen, setFullOpen] = useState(false);
+  // 两种刷新互斥：三分法刷新（名单业绩）与市场刷新（全量流水线）不允许同时跑
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [fullBusy, setFullBusy] = useState(false);
   const searchParams = useSearchParams();
   const [schedulerOpen, setSchedulerOpen] = useState(searchParams.get('scheduler') === '1');
 
@@ -126,16 +130,20 @@ export function FundsHeader({
               refreshUrl={refreshUrl}
               statusUrl={statusUrl}
               onRefreshed={onRefreshed}
+              disabled={fullBusy}
+              onBusyChange={setQuickBusy}
             />
           )}
           {fullRefreshApi && onFullRefreshComplete && (
             <>
               <button
                 onClick={() => setFullOpen(true)}
-                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:bg-info-tint hover:text-info transition-colors"
-                aria-label="全量刷新"
+                disabled={quickBusy}
+                className="inline-flex items-center gap-1 px-3 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:bg-info-tint hover:text-info transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-paper-deep disabled:hover:text-ink-muted"
+                aria-label="市场刷新"
+                title={quickBusy ? '三分法刷新进行中，暂不可用' : '市场全量流水线（名单 → 业绩 → 经理 → 净值 → 风险指标），约 10 分钟起，低频'}
               >
-                全量刷新
+                市场刷新
               </button>
               <FullRefreshDialog
                 open={fullOpen}
@@ -148,6 +156,8 @@ export function FundsHeader({
                   onRefreshed();
                 }}
                 initial={preFilters}
+                disabled={quickBusy}
+                onBusyChange={setFullBusy}
               />
             </>
           )}

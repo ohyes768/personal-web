@@ -15,6 +15,10 @@ interface RefreshStatusPopoverProps {
   refreshUrl?: string;
   /** 覆盖默认状态端点。股票 tab 传 '/funds/api/funds/stock/refresh/status' */
   statusUrl?: string;
+  /** 按钮禁用（市场刷新进行中时互斥） */
+  disabled?: boolean;
+  /** 忙碌状态上报（running/starting 时 true），供 header 互斥市场刷新 */
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const POLL_INTERVAL_MS = 1000;  // 市场 tab 全量 27800 只 ~10s 完成；1s 轮询才能看到进度跳动
@@ -32,7 +36,12 @@ function describeScope(refreshUrl?: string): string {
   return '拉取数据中…';
 }
 
-export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: RefreshStatusPopoverProps) {
+/** 按钮文案：经理 tab 是「经理刷新」，其余是「三分法刷新」（刷 yaml 配置名单业绩） */
+function buttonLabel(refreshUrl?: string): string {
+  return refreshUrl?.includes('/managers/') ? '经理刷新' : '三分法刷新';
+}
+
+export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl, disabled = false, onBusyChange }: RefreshStatusPopoverProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [starting, setStarting] = useState(false);
   const [status, setStatus] = useState<RefreshStatus | null>(null);
@@ -100,6 +109,10 @@ export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: Ref
   };
 
   const running = status?.status === 'running';
+  // 忙碌状态上报给 header：三分法刷新进行中时禁用「市场刷新」入口
+  useEffect(() => {
+    onBusyChange?.(starting || running);
+  }, [starting, running, onBusyChange]);
   const pct = status && status.total > 0
     ? Math.round(((status.completed + status.failed) / status.total) * 100)
     : 0;
@@ -108,12 +121,14 @@ export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: Ref
     <div className="relative">
       <button
         onClick={() => setIsOpen(o => !o)}
-        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:bg-info-tint hover:text-info transition-colors"
-        aria-label="刷新数据"
+        disabled={disabled}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg bg-paper-deep text-ink-muted hover:bg-info-tint hover:text-info transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-paper-deep disabled:hover:text-ink-muted"
+        aria-label="三分法刷新"
+        title={disabled ? '市场刷新进行中，暂不可用' : '刷新三分法配置名单的业绩（净值/持仓/费率）'}
         aria-expanded={isOpen}
       >
         <ArrowPathIcon className={`w-4 h-4 ${running ? 'animate-spin' : ''}`} />
-        刷新
+        {buttonLabel(refreshUrl)}
       </button>
 
       {isOpen && (
@@ -121,13 +136,13 @@ export function RefreshStatusPopover({ onRefreshed, refreshUrl, statusUrl }: Ref
           <div className="fixed inset-0 z-40" onClick={() => setIsOpen(false)} aria-hidden="true" />
           <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-paper-card border border-rule rounded-lg shadow-lg p-4">
             <div className="flex items-center justify-between mb-3">
-              <span className="text-sm font-semibold text-ink-strong">数据刷新</span>
+              <span className="text-sm font-semibold text-ink-strong">{buttonLabel(refreshUrl)}</span>
               <button
                 onClick={startRefresh}
-                disabled={starting || running}
+                disabled={starting || running || disabled}
                 className="px-2.5 py-1 text-xs text-white bg-accent hover:bg-accent-hover disabled:opacity-50 rounded transition-colors"
               >
-                {running ? '刷新中…' : starting ? '启动中…' : '立即刷新'}
+                {disabled ? '市场刷新中…' : running ? '刷新中…' : starting ? '启动中…' : '立即刷新'}
               </button>
             </div>
 
