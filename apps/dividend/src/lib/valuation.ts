@@ -539,12 +539,21 @@ export const VALUATION_ZONE_COLOR: Record<ValuationZone, string> = {
   full: '#9B2F2F',
 };
 
-/** 区间名文字色：持有区底色太浅，文字走中性色保证对比度 */
+/**
+ * 区间名文字色（「区间」列标签，白底小字号）。
+ * 各区取本色系的加深变体，WCAG AA ≥4.5:1 on #FFFFFF：
+ * heavy #3D6B50 ≈6.1:1（原区色 #5A9472 仅 3.55:1）
+ * add   #8A5F0B ≈5.6:1（= warn-deep；原区色 #C9951F 仅 2.69:1）
+ * hold  #6B6864 ≈5.0:1（本色 #D9D2C2 太浅，沿用中性色）
+ * reduce #9A5B16 ≈5.4:1（原区色 #D4893A 仅 2.82:1）
+ * full  #9B2F2F ≈7.4:1（本色已达标）
+ * 色带本身仍用 VALUATION_ZONE_COLOR（大面积图形不要求 4.5:1）。
+ */
 export const VALUATION_ZONE_TEXT_COLOR: Record<ValuationZone, string> = {
-  heavy: VALUATION_ZONE_COLOR.heavy,
-  add: VALUATION_ZONE_COLOR.add,
+  heavy: '#3D6B50',
+  add: '#8A5F0B',
   hold: '#6B6864',
-  reduce: VALUATION_ZONE_COLOR.reduce,
+  reduce: '#9A5B16',
   full: VALUATION_ZONE_COLOR.full,
 };
 

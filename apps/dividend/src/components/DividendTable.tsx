@@ -4,14 +4,14 @@
 'use client';
 
 import { Button } from './shared-ui/Button';
-import { ChevronUpIcon, ChevronDownIcon, StarIcon as StarIconOutline, BellIcon } from '@heroicons/react/24/outline';
+import { ChevronUpIcon, ChevronDownIcon, ChevronUpDownIcon, StarIcon as StarIconOutline, BellIcon } from '@heroicons/react/24/outline';
 import { StarIcon as StarIconSolid } from '@heroicons/react/24/solid';
 import { useState, useMemo, useEffect, useRef, useCallback, forwardRef } from 'react';
 import { createPortal } from 'react-dom';
 import type { DividendStock, TechnicalIndicators, AlertStatusItem, LevelKey } from '@/lib/types';
 import { LEVEL_META } from '@/lib/types';
 
-type SortField = 'avg_yield_3y' | 'realtime_yield';
+type SortField = 'avg_yield_3y' | 'realtime_yield' | 'm120' | 'shareholder_count' | 'roe' | 'cagr_3y';
 type SortOrder = 'asc' | 'desc';
 
 const formatValue = (value: number | null | undefined): string => {
@@ -42,14 +42,6 @@ const calcRealtimeYieldValue = (dividend2025: number | null | undefined, realtim
 const formatYieldTtm = (technical: TechnicalIndicators | null): string => {
   if (!technical || technical.yield_ttm === null || technical.yield_ttm === undefined) return '-';
   return technical.yield_ttm.toFixed(2) + '%';
-};
-
-const formatSwIndustry = (stock: DividendStock): string[] => {
-  return [
-    stock.sw_level1 || '-',
-    stock.sw_level2 || '-',
-    stock.sw_level3 || '-',
-  ];
 };
 
 /**
@@ -225,6 +217,7 @@ export function DividendTable({
     return [...data].sort((a, b) => {
       let aVal: number, bVal: number;
 
+      // 无数据统一 -Infinity：默认排序（降序）下沉底
       if (sortField === 'avg_yield_3y') {
         aVal = a.avg_yield_3y ?? 0;
         bVal = b.avg_yield_3y ?? 0;
@@ -233,10 +226,18 @@ export function DividendTable({
         const techB = technicalData.get(b.code);
         aVal = calcRealtimeYieldValue(a.dividend_2025, techA?.realtime ?? null);
         bVal = calcRealtimeYieldValue(b.dividend_2025, techB?.realtime ?? null);
+      } else if (sortField === 'm120') {
+        aVal = technicalData.get(a.code)?.m120 ?? -Infinity;
+        bVal = technicalData.get(b.code)?.m120 ?? -Infinity;
+      } else if (sortField === 'shareholder_count') {
+        aVal = a.shareholder_count ?? -Infinity;
+        bVal = b.shareholder_count ?? -Infinity;
+      } else if (sortField === 'roe') {
+        aVal = a.roe ?? -Infinity;
+        bVal = b.roe ?? -Infinity;
       } else {
-        // 不应到达（SortField 已移除 yield_ttm），兜底用 3 年平均
-        aVal = a.avg_yield_3y ?? 0;
-        bVal = b.avg_yield_3y ?? 0;
+        aVal = a.net_profit_cagr_3y ?? -Infinity;
+        bVal = b.net_profit_cagr_3y ?? -Infinity;
       }
 
       if (aVal === bVal) return 0;
@@ -255,15 +256,19 @@ export function DividendTable({
     }
   };
 
-  // 渲染排序图标
+  // 渲染排序图标（未激活列用上下箭头，替代 Unicode ↕）
   const SortIcon = ({ field }: { field: SortField }) => {
     if (field !== sortField) {
-      return <span className="opacity-30">↕</span>;
+      return <ChevronUpDownIcon className="w-3 h-3 inline opacity-30" />;
     }
     return sortOrder === 'desc'
       ? <ChevronDownIcon className="w-3 h-3 inline" />
       : <ChevronUpIcon className="w-3 h-3 inline" />;
   };
+
+  // 激活列的 aria-sort（读屏器播报排序方向）
+  const ariaSortFor = (field: SortField) =>
+    sortField === field ? (sortOrder === 'asc' ? ('ascending' as const) : ('descending' as const)) : undefined;
   if (data.length === 0) {
     return (
       <div className="border border-rule rounded-lg bg-paper-card">
@@ -277,7 +282,7 @@ export function DividendTable({
   return (
     <>
       <div className="border border-rule rounded-lg overflow-x-auto bg-paper-card">
-      <table className="w-full min-w-[1320px]">
+      <table className="w-full min-w-[1280px]">
         <thead className="bg-paper-deep border-b-2 border-ink-strong">
           <tr>
             <th className="w-16 px-2 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="收藏 / 挡位监控">
@@ -289,40 +294,55 @@ export function DividendTable({
             <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               名称
             </th>
-            <th className="w-8 px-1 py-3 text-center text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
-              市场
-            </th>
             <th className="w-28 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               行业
             </th>
             <th
               className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
               onClick={() => handleSort('avg_yield_3y')}
+              aria-sort={ariaSortFor('avg_yield_3y')}
             >
               3年股息率 <SortIcon field="avg_yield_3y" />
             </th>
             <th
               className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
               onClick={() => handleSort('realtime_yield')}
+              aria-sort={ariaSortFor('realtime_yield')}
             >
               实时股息率 <SortIcon field="realtime_yield" />
             </th>
-            <th className="w-14 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
-              M120
+            <th
+              className="w-14 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
+              onClick={() => handleSort('m120')}
+              aria-sort={ariaSortFor('m120')}
+            >
+              M120 <SortIcon field="m120" />
             </th>
-            <th className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
-              户数
+            <th
+              className="w-16 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap cursor-pointer hover:text-accent select-none"
+              onClick={() => handleSort('shareholder_count')}
+              aria-sort={ariaSortFor('shareholder_count')}
+            >
+              户数 <SortIcon field="shareholder_count" />
             </th>
-            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="加权净资产收益率(%)">
-              ROE
+            <th
+              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
+              onClick={() => handleSort('roe')}
+              aria-sort={ariaSortFor('roe')}
+            >
+              ROE <SortIcon field="roe" />
             </th>
             <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               扣非同比
             </th>
-            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
-              3年CAGR
+            <th
+              className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider cursor-pointer hover:text-accent select-none"
+              onClick={() => handleSort('cagr_3y')}
+              aria-sort={ariaSortFor('cagr_3y')}
+            >
+              3年CAGR <SortIcon field="cagr_3y" />
             </th>
-            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider" title="分红比例 = 每股分红 / 每股净利润（最近一期年报）">
+            <th className="w-20 px-2 py-3 text-right text-[11px] font-semibold text-ink-strong uppercase tracking-wider">
               分红比例
             </th>
             <th className="w-56 px-2 py-3 text-left text-[11px] font-semibold text-ink-strong whitespace-nowrap">
@@ -352,6 +372,7 @@ export function DividendTable({
                   }
                 `}
                 tabIndex={0}
+                onClick={() => onOpenModal('quarterly', stock)}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     onOpenModal('quarterly', stock);
@@ -391,26 +412,21 @@ export function DividendTable({
                 <td className="w-28 px-2 py-3 text-sm font-semibold text-ink-strong whitespace-nowrap">
                   {stock.name}
                 </td>
-                <td
-                  className="w-8 px-1 py-3 text-sm text-gray-300 text-center"
-                  title={stock.exchange}
-                >
-                  {stock.exchange?.charAt(0) || '-'}
-                </td>
                 <td className="w-28 px-2 py-3 text-xs text-gray-300 leading-tight">
-                  {formatSwIndustry(stock).map((level, index) => {
-                    const display = truncateIndustry(level);
-                    const isTruncated = display !== level;
+                  {(() => {
+                    // 取最细一级有值的行业（此前固定三行，缺级时满屏「-」）
+                    const levels = [stock.sw_level3, stock.sw_level2, stock.sw_level1]
+                      .map((v) => v?.trim())
+                      .filter((v): v is string => !!v);
+                    const industry = levels[0];
+                    if (!industry) return <span className="text-gray-400">-</span>;
+                    const display = truncateIndustry(industry);
                     return (
-                      <div
-                        key={index}
-                        className="truncate"
-                        title={isTruncated ? level : undefined}
-                      >
+                      <span className="truncate block" title={display !== industry ? industry : undefined}>
                         {display}
-                      </div>
+                      </span>
                     );
-                  })}
+                  })()}
                 </td>
                 <td className="w-20 px-2 py-3 text-sm text-right">
                   <span className={`font-mono ${

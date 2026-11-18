@@ -304,11 +304,11 @@ export function FavoritesTrackingTab({
           <thead className="bg-paper-deep text-left">
             <tr>
               <th className="p-3 font-medium">股票</th>
-              <th className="p-3 font-medium" title="基本面评级：各维度评分与所用评分技能版本">基本面</th>
+              <th className="p-3 font-medium">基本面</th>
               <th className="p-3 font-medium">现价（元）</th>
-              <th className="p-3 font-medium min-w-[500px]" title="四挡位价格条（本表加宽到 480px）">挡位（元）</th>
+              <th className="p-3 font-medium min-w-[440px]">挡位（元）</th>
               <th className="p-3 font-medium" title="现价落在哪一区，以及再涨/跌多少会改变告警动作">区间</th>
-              <th className="p-3 font-medium" title="最近一次评估的状态、时间与版本；会话记录可下载排查">评估</th>
+              <th className="p-3 font-medium">评估</th>
               <th className="p-3 font-medium">操作</th>
             </tr>
           </thead>
@@ -670,7 +670,6 @@ function TrackingRow({
                     yieldTtm={price?.yield_ttm ?? null}
                     variant="effective"
                     title="当前生效挡位"
-                    style={{ width: 480 }}
                   />
                   {/* 生效挡位的时间与版本都不写——报告按 code 覆盖写，候选报告成功后
                       旧报告已被顶掉，生效挡位当年用的哪版 skill 事后查不到；时间也可由

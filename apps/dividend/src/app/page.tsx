@@ -20,6 +20,7 @@ import { AlertSettingsModal } from '@/components/AlertSettingsModal';
 import { FavoritesTrackingTab } from '@/components/FavoritesTrackingTab';
 import { SchedulerSettingsModal } from '@/components/SchedulerSettingsModal';
 import { DataUpdateDrawer } from '@/components/DataUpdateDrawer';
+import { AgentBatchDoc } from '@/components/AgentBatchDoc';
 import { useDividendData, useTechnicalData, useDetailModal, useCompare, useDataUpdate } from '@/lib/hooks';
 import { useWatchlist } from '@/lib/hooks/useWatchlist';
 import { useStockSearch } from '@/lib/hooks/useStockSearch';
@@ -386,6 +387,32 @@ function DividendPageContent() {
   // 股息率数据：仅"全部"Tab 加载主列表；挡位监控/选股关注不拉全量 stocks
   const { data, total, loading, error, refetch } = useDividendData(activeTab === 'all');
 
+  // 已生效的筛选条件（副标题与重试按钮读它，不读输入框里的未应用值）
+  const [appliedFilter, setAppliedFilter] = useState<{ exchange: string; min_yield: number }>({ exchange: '', min_yield: 3.5 });
+  const prevTabRef = useRef<TabKey | null>(null);
+  // 筛选即改即生效：交易所即选即生效、股息率输入停 350ms 后自动应用（替代手动点「查询」）；
+  // 切回「全部」tab 时按已生效条件重拉（useDividendData 回 tab 只会拉默认 3.5）
+  useEffect(() => {
+    if (activeTab !== 'all' || favOnly) {
+      prevTabRef.current = activeTab;
+      return;
+    }
+    const wasAway = prevTabRef.current !== null && prevTabRef.current !== 'all';
+    prevTabRef.current = 'all';
+    const timer = setTimeout(() => {
+      const min_yield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
+      const changed = min_yield !== appliedFilter.min_yield || exchangeFilter !== appliedFilter.exchange;
+      // 切回 tab 时 useDividendData 会按默认 3.5 拉一次；若已生效条件就是默认值，
+      // 不再重发第二遍相同请求
+      const isDefault = min_yield === 3.5 && exchangeFilter === '';
+      if (!changed && (!wasAway || isDefault)) return;
+      setAppliedFilter({ exchange: exchangeFilter, min_yield });
+      refetch({ min_yield, exchange: exchangeFilter || undefined });
+      setRefreshKey(k => k + 1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [minYieldInput, exchangeFilter, activeTab, favOnly, appliedFilter, refetch]);
+
   // 全量股票数（来自 /api/dividend/stats，未应用 min_yield 筛选）。
   // mount 时拉一次、与 activeTab 无关：头部副标题与「全部」徽标在任意 tab 都显示稳定值，
   // 避免切走 tab 时因 useDividendData 停止拉取而把计数清零。
@@ -713,9 +740,9 @@ function DividendPageContent() {
             <h1 className="text-4xl font-bold mt-4 text-ink">股息率</h1>
             <p className="text-ink-muted mt-1">
               {activeTab === 'all' && totalCollected !== null
-                ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${minYieldInput}%`
+                ? `共收集 ${totalCollected} 只股票，其中 ${total} 只 3年股息率 ≥ ${appliedFilter.min_yield}%${appliedFilter.exchange ? `（${appliedFilter.exchange}）` : ''}`
                 : activeTab === 'all'
-                  ? `共 ${total} 只股票 | 3年股息率 ≥ ${minYieldInput}%`
+                  ? `共 ${total} 只股票 | 3年股息率 ≥ ${appliedFilter.min_yield}%`
                   : activeTab === 'alerts'
                     ? `已收藏 ${watchlist.total} 只，按估值挡位跟踪监控`
                     : '按分红与经营质量筛选，收藏后持续关注'}
@@ -936,6 +963,8 @@ function DividendPageContent() {
               actionDisabled={updateState.realtime === 'loading'}
             />
             </div>
+
+            <AgentBatchDoc />
             </div>
             </DataUpdateDrawer>
           </div>
@@ -986,17 +1015,27 @@ function DividendPageContent() {
         {/* 阅读入口只在选股关注视图出现（与评级队列同排）；全部/挡位监控不占独立高度。 */}
       </div>
 
-      {/* 错误提示 */}
+      {/* 错误提示：浅底深字（down 系语义色，AA 对比度）+ 重试 */}
       {error && (
-        <div className="mb-4 bg-red-900/50 border border-red-700 text-red-200 px-4 py-3 rounded">
-          {error}
+        <div role="alert" className="mb-4 bg-down-tint border border-down px-4 py-3 rounded flex items-center justify-between gap-3">
+          <span className="text-down-deep text-sm">加载失败：{error}</span>
+          <button
+            type="button"
+            onClick={() => {
+              refetch({ min_yield: appliedFilter.min_yield, exchange: appliedFilter.exchange || undefined });
+              setRefreshKey(k => k + 1);
+            }}
+            className="shrink-0 px-3 py-1.5 rounded text-sm font-medium bg-down text-white hover:opacity-90 transition-opacity"
+          >
+            重试
+          </button>
         </div>
       )}
 
       {/* 更新状态提示 */}
       {updateState.message && (
-        <div className="mb-4 bg-blue-900/50 border border-blue-700 text-blue-200 px-4 py-3 rounded">
-          {updateState.message}
+        <div className="mb-4 bg-info-tint border border-info px-4 py-3 rounded">
+          <span className="text-info text-sm">{updateState.message}</span>
         </div>
       )}
 
@@ -1060,8 +1099,9 @@ function DividendPageContent() {
           />
           {!favOnly && (
             <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-              <label className="text-sm text-ink-muted">交易所:</label>
+              <label htmlFor="filter-exchange" className="text-sm text-ink-muted">交易所</label>
               <select
+                id="filter-exchange"
                 value={exchangeFilter}
                 onChange={(e) => setExchangeFilter(e.target.value)}
                 className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
@@ -1070,40 +1110,21 @@ function DividendPageContent() {
                 <option value="沪市主板">沪市主板</option>
                 <option value="深市主板">深市主板</option>
               </select>
-              <label className="text-sm text-ink-muted ml-2">股息率≥:</label>
+              <label htmlFor="filter-min-yield" className="text-sm text-ink-muted ml-2">股息率≥</label>
               <input
+                id="filter-min-yield"
                 type="number"
                 value={minYieldInput}
                 onChange={(e) => setMinYieldInput(e.target.value)}
                 className="bg-paper text-ink border border-rule-strong rounded px-3 py-1.5 text-sm w-20 focus:outline-none focus:border-accent focus:ring-2 focus:ring-accent/20 transition-colors"
-                placeholder="3"
+                placeholder="3.5"
                 min="0"
                 step="0.1"
               />
               <span className="text-sm text-ink-muted">%</span>
-              <button
-                onClick={() => {
-                  const minYield = minYieldInput === '' ? 3.5 : (parseFloat(minYieldInput) || 0);
-                  refetch({
-                    min_yield: minYield,
-                    exchange: exchangeFilter || undefined,
-                  });
-                  setRefreshKey(k => k + 1);
-                }}
-                disabled={loading}
-                className={`
-                  px-4 py-1.5 rounded font-medium transition-all flex items-center gap-2 text-sm
-                  ${loading
-                    ? 'bg-paper-deep text-ink-muted cursor-not-allowed'
-                    : 'bg-accent text-white hover:bg-accent-hover'
-                  }
-                `}
-              >
-                <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                查询
-              </button>
+              {loading && (
+                <span className="text-xs text-ink-muted">查询中…</span>
+              )}
             </div>
           )}
         </div>

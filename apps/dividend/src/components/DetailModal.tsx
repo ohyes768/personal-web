@@ -41,6 +41,9 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
   const [stockInfo, setBoardInfo] = useState<BoardInfo | null>(null);
   const [stockDetail, setStockDetail] = useState<DividendStock | null>(null);
   const [loading, setLoading] = useState(false);
+  // 加载失败（此前只 console.error，UI 误显示「暂无数据」）：展示错误 + 重试
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [retryKey, setRetryKey] = useState(0);
 
   // 从 localStorage 读取缓存
   const getCache = useCallback((code: string): BoardInfo | null => {
@@ -74,6 +77,16 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
     }
   }, []);
 
+  const retryLoad = useCallback(() => {
+    setLoadError(null);
+    setRetryKey(k => k + 1);
+  }, []);
+
+  // 弹框类型/股票变化时重置错误态
+  useEffect(() => {
+    setLoadError(null);
+  }, [isOpen, stock, type]);
+
   // 获取股票信息
   useEffect(() => {
     if (!isOpen || !stock || type !== 'sector') {
@@ -99,11 +112,12 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
       })
       .catch((err: unknown) => {
         console.error('Failed to fetch stock info:', err);
+        setLoadError(err instanceof Error ? err.message : '板块信息加载失败');
       })
       .finally(() => {
         setLoading(false);
       });
-  }, [isOpen, stock, type, getCache, setCache]);
+  }, [isOpen, stock, type, retryKey, getCache, setCache]);
 
   // 获取股票详情（分红历史）
   useEffect(() => {
@@ -119,11 +133,12 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
       })
       .catch((err: unknown) => {
         console.error('Failed to fetch stock detail:', err);
+        setLoadError(err instanceof Error ? err.message : '分红数据加载失败');
       })
       .finally(() => {
         setLoading(false);
       });
-  }, [isOpen, stock, type]);
+  }, [isOpen, stock, type, retryKey]);
 
   if (!stock || !type) return null;
 
@@ -142,6 +157,21 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
 
     if (loading) {
       return <div className="flex items-center justify-center py-8 text-gray-400">加载中...</div>;
+    }
+
+    if (loadError) {
+      return (
+        <div className="py-8 text-center">
+          <p className="text-sm text-down-deep">加载失败：{loadError}</p>
+          <button
+            type="button"
+            onClick={retryLoad}
+            className="mt-3 px-4 py-1.5 rounded text-sm font-medium bg-down text-white hover:opacity-90 transition-opacity"
+          >
+            重试
+          </button>
+        </div>
+      );
     }
 
     if (!history || history.length === 0) {
@@ -296,14 +326,27 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
           </div>
         )}
 
-        {!loading && conceptBoards.length > 0 && (
+        {!loading && loadError && (
+          <div className="py-4 text-center">
+            <p className="text-sm text-down-deep">加载失败：{loadError}</p>
+            <button
+              type="button"
+              onClick={retryLoad}
+              className="mt-3 px-4 py-1.5 rounded text-sm font-medium bg-down text-white hover:opacity-90 transition-opacity"
+            >
+              重试
+            </button>
+          </div>
+        )}
+
+        {!loading && !loadError && conceptBoards.length > 0 && (
           <div>
             <h3 className="text-base font-semibold text-gray-200 mb-3">概念板块</h3>
             <div className="flex flex-wrap gap-2">
               {conceptBoards.map((board, index) => (
                 <span
                   key={index}
-                  className="px-3 py-1.5 bg-blue-900/30 border border-blue-700 text-blue-300 rounded-full text-sm"
+                  className="px-3 py-1.5 bg-info-tint border border-info text-info rounded-full text-sm"
                 >
                   {board}
                 </span>
@@ -313,14 +356,14 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
         )}
 
         {/* 行业板块 */}
-        {!loading && industryBoards.length > 0 && (
+        {!loading && !loadError && industryBoards.length > 0 && (
           <div>
             <h3 className="text-base font-semibold text-gray-200 mb-3">行业板块</h3>
             <div className="flex flex-wrap gap-2">
               {industryBoards.map((board, index) => (
                 <span
                   key={index}
-                  className="px-3 py-1.5 bg-green-900/30 border border-green-700 text-green-300 rounded-full text-sm"
+                  className="px-3 py-1.5 bg-up-tint border border-up text-up-deep rounded-full text-sm"
                 >
                   {board}
                 </span>
@@ -329,7 +372,7 @@ export function DetailModal({ isOpen, onClose, type, stock }: DetailModalProps) 
           </div>
         )}
 
-        {!loading && conceptBoards.length === 0 && industryBoards.length === 0 && (
+        {!loading && !loadError && conceptBoards.length === 0 && industryBoards.length === 0 && (
           <p className="text-sm text-gray-400">暂无板块信息</p>
         )}
       </div>

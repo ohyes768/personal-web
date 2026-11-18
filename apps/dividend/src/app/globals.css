@@ -22,6 +22,7 @@
   --color-up-deep:     #2F6345;   /* 文字/徽标用深绿（~5.1:1 on up-tint） */
   --color-up-tint:     #E8F0E5;
   --color-down:        #A8453A;
+  --color-down-deep:   #8C3528;   /* 小字号错误文字（~6.6:1 on down-tint）；down 本身 4.9:1 留给大字号 */
   --color-down-tint:   #F5E8E5;
   --color-star:        #C9951F;
 

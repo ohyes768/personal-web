@@ -19,6 +19,12 @@ import type {
   TechnicalIndicators,
 } from '@/lib/types';
 import { formatBeijingTs } from '@/lib/formatTs';
+import {
+  resolveValuationZone,
+  VALUATION_ZONE_TEXT_COLOR,
+  VALUATION_ZONE_LABEL,
+  type ValuationZone,
+} from '@/lib/valuation';
 
 export interface AlertSettingsModalProps {
   isOpen: boolean;
@@ -38,11 +44,20 @@ export interface AlertSettingsModalProps {
 type LevelKey = 'heavy_position' | 'add_position' | 'reduce_position' | 'full_exit';
 
 const LEVEL_DEFS: Array<{ key: LevelKey; label: string; emoji: string; hint: string }> = [
-  { key: 'heavy_position',  label: '重仓档', emoji: '🟢', hint: '买入最深，价格最低' },
-  { key: 'add_position',    label: '加仓档', emoji: '🟡', hint: '开始加仓' },
-  { key: 'reduce_position', label: '减仓档', emoji: '🟠', hint: '开始减仓' },
-  { key: 'full_exit',       label: '全卖档', emoji: '🔴', hint: '全部清仓，价格最高' },
+  { key: 'heavy_position',  label: '重仓档', emoji: '🟢', hint: '跌破此价 → 重仓买入（四档最低）' },
+  { key: 'add_position',    label: '加仓档', emoji: '🟡', hint: '跌破此价 → 开始加仓' },
+  { key: 'reduce_position', label: '减仓档', emoji: '🟠', hint: '涨破此价 → 开始减仓' },
+  { key: 'full_exit',       label: '全卖档', emoji: '🔴', hint: '涨破此价 → 全部清仓（四档最高）' },
 ];
+
+// 「当前所在区」标记落到哪一档行：五区里持有区无动作，不点亮任何行（最多亮一个，互斥）。
+const ZONE_ROW: Record<ValuationZone, LevelKey | null> = {
+  heavy: 'heavy_position',
+  add: 'add_position',
+  hold: null,
+  reduce: 'reduce_position',
+  full: 'full_exit',
+};
 
 const EMPTY_LEVELS: AlertLevels = {
   heavy_position: null,
@@ -66,44 +81,6 @@ function formatUpdatedAt(iso?: string | null): string {
   return formatBeijingTs(iso) ?? iso;
 }
 
-// 对接文档（外部 agent 调用 batch 接口的说明，常量避免每次渲染重建）
-const AGENT_DOC_TEXT = `POST /api/dividend/favorites/alerts/batch
-Header:
-  Content-Type: application/json
-  X-API-Token: <AGENT_API_TOKEN>    # 找运维拿，缺/错 → 401
-
-请求体（一次最多 100 条）：
-{
-  "updates": [
-    {
-      "code": "600000",                      # 6 位股票代码
-      "levels": {
-        "heavy_position":  {"price": 10.0, "pe": 8.5, "pb": 1.2},  # 重仓（必填 price>0，pe/pb 选填）
-        "add_position":    {"price": 12.0},                         # 加仓
-        "reduce_position": {"price": 15.0},                         # 减仓
-        "full_exit":       {"price": 18.0}                          # 全卖
-      },
-    }
-  ]
-}
-
-响应（HTTP 200，部分失败也是 200）：
-{
-  "results": [
-    {"code": "600000", "ok": true, "error": null},
-    {"code": "abc",    "ok": false, "error": "股票代码格式错误: abc"},
-    {"code": "000001", "ok": false, "error": "000001 不在收藏中"}
-  ],
-  "success_count": 1,
-  "fail_count": 2
-}
-
-说明：
-- 4 档 price 必填 > 0；pe/pb 选填
-- code 必须已收藏（POST /api/dividend/favorites/{code}）；未收藏 → 该条 fail，不会自动加入
-- 每条独立处理，部分失败不影响其他
-- 缺/错 token → 401；服务端未配 AGENT_API_TOKEN → 503`;
-
 export function AlertSettingsModal({
   isOpen,
   onClose,
@@ -117,26 +94,29 @@ export function AlertSettingsModal({
   const [levels, setLevels] = useState<AlertLevels>({ ...EMPTY_LEVELS });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const handleCopyDoc = async () => {
-    try {
-      await navigator.clipboard.writeText(AGENT_DOC_TEXT);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // clipboard API 在非 HTTPS / 旧浏览器可能失败，静默忽略
-    }
-  };
+  // 行内确认（替代原生 confirm()）：挡位顺序异常时的「仍要保存」、清除配置前的二次确认
+  const [orderWarnMsg, setOrderWarnMsg] = useState<string | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
 
   // 同步 currentConfig 到本地表单
   useEffect(() => {
     if (!isOpen) return;
     setLevels(levelsToForm(currentConfig?.levels));
     setError(null);
+    setOrderWarnMsg(null);
+    setConfirmClear(false);
   }, [isOpen, currentConfig]);
 
   const currentPrice = technical?.realtime ?? technical?.close ?? null;
+
+  // 「当前所在区」单一标记：与收藏跟踪「区间」列同一口径（resolveValuationZone）。
+  // 最多亮一个——现价落在哪一区，就在那一档点亮；持有区（无动作）不亮。
+  // 四档未填齐时判不出区间，不亮（与价格条「不足两条线不画」的口径一致）。
+  const zoneResult = useMemo(
+    () => resolveValuationZone(levels, currentPrice ?? undefined),
+    [levels, currentPrice],
+  );
+  const markerKey = zoneResult.zone ? ZONE_ROW[zoneResult.zone] : null;
 
   const updateLevel = (key: LevelKey, field: 'price' | 'pe' | 'pb', raw: string) => {
     setLevels(prev => {
@@ -173,22 +153,8 @@ export function AlertSettingsModal({
 
   const validLevelCount = (Object.keys(validLevels) as LevelKey[]).filter(k => validLevels[k] !== null).length;
 
-  const handleSave = async () => {
+  const doSave = async () => {
     if (!stock) return;
-    setError(null);
-
-    if (validLevelCount === 0) {
-      setError('至少需要配置 1 档价格');
-      return;
-    }
-
-    // 校验：减仓 > 加仓，全卖 > 减仓，加仓 > 重仓（提示但不阻止）
-    const orderWarn = checkLevelOrder(validLevels);
-    if (orderWarn) {
-      const ok = confirm(`挡位价格顺序异常：\n${orderWarn}\n\n仍要保存？`);
-      if (!ok) return;
-    }
-
     setSaving(true);
     try {
       const body: AlertConfigRequest = {
@@ -204,20 +170,40 @@ export function AlertSettingsModal({
     }
   };
 
-  const handleClear = async () => {
+  const handleSave = async () => {
     if (!stock) return;
-    const ok = confirm(`确认清除 ${stock.name}（${stock.code}）的挡位配置？`);
-    if (!ok) return;
-    setSaving(true);
-    try {
-      await onClear(stock.code);
-      onClose();
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : '清除失败';
-      setError(msg);
-    } finally {
-      setSaving(false);
+    setError(null);
+    setOrderWarnMsg(null);
+
+    if (validLevelCount === 0) {
+      setError('至少需要配置 1 档价格');
+      return;
     }
+
+    // 校验：减仓 > 加仓，全卖 > 减仓，加仓 > 重仓（提示但不阻止 → 行内确认）
+    const orderWarn = checkLevelOrder(validLevels);
+    if (orderWarn) {
+      setOrderWarnMsg(orderWarn);
+      return;
+    }
+
+    await doSave();
+  };
+
+  const handleClearClick = () => {
+    if (!stock) return;
+    if (!confirmClear) {
+      setConfirmClear(true);
+      return;
+    }
+    setConfirmClear(false);
+    setSaving(true);
+    onClear(stock.code)
+      .then(() => onClose())
+      .catch(err => {
+        setError(err instanceof Error ? err.message : '清除失败');
+      })
+      .finally(() => setSaving(false));
   };
 
   return (
@@ -253,11 +239,6 @@ export function AlertSettingsModal({
             const priceStr = lv && lv.price ? String(lv.price) : '';
             const peStr = lv && lv.pe !== null && lv.pe !== undefined ? String(lv.pe) : '';
             const pbStr = lv && lv.pb !== null && lv.pb !== undefined ? String(lv.pb) : '';
-            const hit = currentPrice !== null && lv && lv.price > 0
-              ? (key === 'heavy_position' || key === 'add_position'
-                  ? currentPrice <= lv.price
-                  : currentPrice >= lv.price)
-              : false;
             return (
               <div key={key} className="grid grid-cols-[100px_1fr_1fr_1fr_28px] gap-2 px-3 py-2 items-center border-t border-rule">
                 <div className="flex flex-col">
@@ -292,8 +273,14 @@ export function AlertSettingsModal({
                   className="bg-paper-card border border-rule rounded px-2 py-1 text-right font-mono text-sm focus:outline-none focus:border-accent"
                 />
                 <div className="text-center">
-                  {hit ? (
-                    <span title="当前价已触发此档" className="text-amber-400 text-xs">●</span>
+                  {markerKey === key && zoneResult.zone && currentPrice !== null ? (
+                    <span
+                      title={`现价 ¥${currentPrice.toFixed(2)} 处于${VALUATION_ZONE_LABEL[zoneResult.zone]}`}
+                      className="text-xs font-bold"
+                      style={{ color: VALUATION_ZONE_TEXT_COLOR[zoneResult.zone] }}
+                    >
+                      ●
+                    </span>
                   ) : null}
                 </div>
               </div>
@@ -301,30 +288,27 @@ export function AlertSettingsModal({
           })}
         </div>
 
-        {/* 对接文档（默认折叠，给外部 agent 对接用） */}
-        <details className="border border-rule rounded">
-          <summary className="px-3 py-2 cursor-pointer text-sm select-none flex items-center justify-between bg-paper-tint rounded">
-            <span>📄 对接文档 · 外部 agent batch 接口</span>
-            <span className="text-[11px] text-ink-muted">点击展开 / 收起</span>
-          </summary>
-          <div className="px-3 py-3 space-y-2">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={handleCopyDoc}
-                className="text-xs px-2 py-1 rounded border border-rule hover:bg-paper-tint bg-paper-card"
-              >
-                {copied ? '✓ 已复制' : '复制全部'}
-              </button>
+        {orderWarnMsg && (
+          <div className="border border-rule-strong bg-warn-tint rounded px-3 py-2 text-sm text-warn-deep">
+            <div className="font-medium">挡位价格顺序异常：</div>
+            <ul className="mt-1 list-disc list-inside text-ink">
+              {orderWarnMsg.split('\n').map(line => (
+                <li key={line}>{line.replace(/^· /, '')}</li>
+              ))}
+            </ul>
+            <div className="mt-2 flex gap-2">
+              <Button size="sm" variant="secondary" onClick={() => setOrderWarnMsg(null)}>
+                返回修改
+              </Button>
+              <Button size="sm" variant="primary" onClick={doSave} disabled={saving}>
+                仍要保存
+              </Button>
             </div>
-            <pre className="text-[11px] font-mono whitespace-pre-wrap bg-paper-deep p-3 rounded overflow-x-auto text-ink">
-              {AGENT_DOC_TEXT}
-            </pre>
           </div>
-        </details>
+        )}
 
         {error && (
-          <div className="bg-red-900/40 border border-red-700 text-red-200 px-3 py-2 rounded text-sm">
+          <div className="bg-down-tint border border-down text-down px-3 py-2 rounded text-sm">
             {error}
           </div>
         )}
@@ -334,11 +318,11 @@ export function AlertSettingsModal({
           <div>
             <Button
               variant="ghost"
-              onClick={handleClear}
+              onClick={handleClearClick}
               disabled={saving || !currentConfig}
-              className="text-red-400 hover:text-red-300"
+              className={confirmClear ? 'text-down font-semibold' : 'text-down'}
             >
-              清除挡位
+              {confirmClear ? '再点一次确认清除' : '清除挡位'}
             </Button>
           </div>
           <div className="flex items-center gap-2">

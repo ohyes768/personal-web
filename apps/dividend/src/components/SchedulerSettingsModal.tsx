@@ -24,12 +24,13 @@ export interface SchedulerSettingsModalProps {
   onClose: () => void;
 }
 
+// 状态徽章：浅底深字（语义 tint + deep 文字，AA 对比度）
 const STATUS_META: Record<SchedulerJobRun['status'], { label: string; cls: string }> = {
-  partial_failed: { label: '部分失败', cls: 'bg-yellow-900/50 text-yellow-300 border-yellow-700' },
-  interrupted: { label: '已中断', cls: 'bg-red-900/50 text-red-300 border-red-700' },
-  success: { label: '成功', cls: 'bg-green-900/50 text-green-300 border-green-700' },
-  skipped: { label: '跳过', cls: 'bg-yellow-900/50 text-yellow-300 border-yellow-700' },
-  failed: { label: '失败', cls: 'bg-red-900/50 text-red-300 border-red-700' },
+  partial_failed: { label: '部分失败', cls: 'bg-warn-tint text-warn-deep border-warn' },
+  interrupted: { label: '已中断', cls: 'bg-down-tint text-down-deep border-down' },
+  success: { label: '成功', cls: 'bg-up-tint text-up-deep border-up' },
+  skipped: { label: '跳过', cls: 'bg-warn-tint text-warn-deep border-warn' },
+  failed: { label: '失败', cls: 'bg-down-tint text-down-deep border-down' },
 };
 
 function formatTs(iso?: string | null): string {
@@ -166,8 +167,8 @@ export function SchedulerSettingsModal({ isOpen, onClose }: SchedulerSettingsMod
           <div
             className={`px-4 py-2 rounded text-sm border ${
               toast.kind === 'success'
-                ? 'bg-green-900/50 border-green-700 text-green-200'
-                : 'bg-red-900/50 border-red-700 text-red-200'
+                ? 'bg-up-tint border-up text-up-deep'
+                : 'bg-down-tint border-down text-down-deep'
             }`}
           >
             {toast.msg}
